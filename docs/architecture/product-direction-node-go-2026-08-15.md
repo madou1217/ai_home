@@ -209,7 +209,7 @@ node_owned -> write_frozen -> migrated_and_verified -> go_owned
 
 | `identity_scheme_version=1` | 身份向量 |
 | --- | --- |
-| Codex OAuth | `user_id + account_id`；没有 workspace 时使用规范 `personal` |
+| Codex OAuth | `user_id`；工作区（`account_id` / `chatgpt_account_id`）不参与身份 |
 | Claude OAuth | `account_uuid`；organization 暂属 Profile，不参与身份 |
 
 规范化邮箱只用于导入关联与冲突提示。reauth 必须重新派生同一身份；若官方证据要求改变
@@ -224,6 +224,22 @@ Claude 等 Provider 的身份向量，必须另写 ADR 和显式 rekey/mapping�
 
 这里刻意不沿用“OAuth 恒等于 `provider + email`”的旧规则：仅按邮箱会错误合并真实
 不同的账号。
+
+**2026-09-15 修订：Codex OAuth 身份去掉 workspace。** 原表把 `account_id` 写进身份向量，
+与 `README.md`「导入 / 导出去重规则」的既有条款冲突——该节明确要求「不读取 provider
+`account_id`、`chatgpt_account_id` 或 refresh token hash 作为本地 `accountRef` 身份」，
+并把 Codex 的 `account_id` 定义为上游协议字段（进入内部模型后统一命名
+`upstreamAccountId`，不参与本地账号寻址）；`docs/architecture/codex-native-credential-sync.md`
+同样声明不引入 workspace 专属的 accountRef 方案。工作区因此从身份向量中移除，只作为
+上游元数据经 `UpstreamAccountID()` 保留与回写。同一用户在不同工作区之间切换不再产生
+第二个本地账号。
+
+实现见 `core/accounts/codex/account_profile.go`（`oauthIdentitySeed`）与
+`core/accounts/codex/oauth.go`。身份向量仍为 `oauth:codex:<user_id>`，与 Node 现行的
+`oauth:codex:<email>` 不同：两端的 `acct_` 派生算法逐字节一致（`sha256("unique:" + seed)`
+取前 20 个十六进制字符），差异只在种子，因此 Node 旧账号迁移仍需 §8.1 的显式映射账本。
+把 Node 也切到 `user_id` 属于会改写既有生产 `accountRef` 的变更，按本节要求必须另写 ADR
+并显式 rekey，不得静默执行。
 
 ### 8.2 NativeCredentialLease
 

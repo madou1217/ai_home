@@ -50,7 +50,7 @@ func NewAccountProfile(source Profile) (AccountProfile, error) {
 		email:        email,
 		plan:         plan,
 		isFedRAMP:    source.IsFedRAMP,
-		identitySeed: oauthIdentitySeed(source.UserID, source.AccountID),
+		identitySeed: oauthIdentitySeed(source.UserID),
 	}, nil
 }
 
@@ -67,7 +67,7 @@ func (profile AccountProfile) IdentitySeed() string {
 // IsValid 判断公开资料是否由领域构造器完整创建。
 func (profile AccountProfile) IsValid() bool {
 	return profile.identitySeed != "" &&
-		profile.identitySeed == oauthIdentitySeed(profile.userID, profile.accountID)
+		profile.identitySeed == oauthIdentitySeed(profile.userID)
 }
 
 // DisplayName 返回当前 Codex ID Token 未提供的展示名称。
@@ -96,6 +96,8 @@ func (profile AccountProfile) UserID() string {
 }
 
 // AccountID 返回 ChatGPT 工作区 ID 或 personal。
+//
+// 工作区属于上游协议元数据，保留用于回写上游，不参与本地账号身份派生。
 func (profile AccountProfile) AccountID() string {
 	return profile.accountID
 }
@@ -111,6 +113,11 @@ func (profile AccountProfile) IsFedRAMP() bool {
 }
 
 // oauthIdentitySeed 集中定义 Codex OAuth 凭据和公开资料共享的身份格式。
-func oauthIdentitySeed(userID string, accountID string) string {
-	return fmt.Sprintf("oauth:codex:%s:%s", userID, accountID)
+//
+// 身份只取稳定用户 ID。ChatGPT 工作区 ID（account_id / chatgpt_account_id）是上游
+// 协议元数据：按 README「导入 / 导出去重规则」，它不得作为本地 accountRef 身份，
+// 因此不参与身份种子派生，只经 UpstreamAccountID 保留并回写上游。同一用户在不同
+// 工作区之间切换不会改变本地账号身份，与 Node 的账号寻址规则一致。
+func oauthIdentitySeed(userID string) string {
+	return fmt.Sprintf("oauth:codex:%s", userID)
 }

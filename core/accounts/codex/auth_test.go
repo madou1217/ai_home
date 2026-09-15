@@ -45,7 +45,7 @@ func TestNewOAuthAuthParsesCanonicalIdentity(t *testing.T) {
 	if got, want := sealed.Kind(), AuthKindOAuth; got != want {
 		t.Fatalf("认证类型错误: got=%q want=%q", got, want)
 	}
-	if got, want := auth.IdentitySeed(), "oauth:codex:user-123:workspace-456"; got != want {
+	if got, want := auth.IdentitySeed(), "oauth:codex:user-123"; got != want {
 		t.Fatalf("身份种子错误: got=%q want=%q", got, want)
 	}
 	if got, want := auth.UserID(), "user-123"; got != want {
@@ -127,8 +127,9 @@ func TestOAuthAuthUsesOnlyAccessTokenExpiry(t *testing.T) {
 	}
 }
 
-func TestOAuthIdentitySeedSeparatesWorkspacesAndStabilizesPersonal(t *testing.T) {
-	// 同一用户的不同 workspace 必须是不同账号，personal 重建后必须保持同一身份。
+func TestOAuthIdentitySeedExcludesWorkspaceAndStabilizesPersonal(t *testing.T) {
+	// 工作区是上游元数据，不参与本地账号身份：同一用户切换工作区必须保持同一账号；
+	// personal 重建后同样必须保持同一身份。
 	build := func(accountID string) *OAuthAuth {
 		t.Helper()
 		authClaims := map[string]any{"chatgpt_user_id": "user-123"}
@@ -151,13 +152,19 @@ func TestOAuthIdentitySeedSeparatesWorkspacesAndStabilizesPersonal(t *testing.T)
 
 	workspaceA := build("workspace-a")
 	workspaceB := build("workspace-b")
-	if workspaceA.IdentitySeed() == workspaceB.IdentitySeed() {
-		t.Fatal("同一用户的不同 workspace 不得共享身份种子")
+	if got, want := workspaceA.IdentitySeed(), workspaceB.IdentitySeed(); got != want {
+		t.Fatalf("工作区不得参与本地账号身份: got=%q want=%q", got, want)
+	}
+	if workspaceA.AccountID() != "workspace-a" || workspaceB.AccountID() != "workspace-b" {
+		t.Fatal("工作区 ID 必须作为上游元数据保留")
 	}
 	personalA := build("")
 	personalB := build("")
 	if got, want := personalA.IdentitySeed(), personalB.IdentitySeed(); got != want {
 		t.Fatalf("personal 身份不稳定: got=%q want=%q", got, want)
+	}
+	if got, want := personalA.IdentitySeed(), workspaceA.IdentitySeed(); got != want {
+		t.Fatalf("personal 与显式工作区必须共享同一本地账号: got=%q want=%q", got, want)
 	}
 }
 
@@ -234,7 +241,7 @@ func TestNewOAuthAuthFallsBackToSubjectAndPersonalWorkspace(t *testing.T) {
 	if got, want := auth.AccountID(), PersonalAccountID; got != want {
 		t.Fatalf("personal 工作区回退错误: got=%q want=%q", got, want)
 	}
-	if got, want := auth.IdentitySeed(), "oauth:codex:subject-user:personal"; got != want {
+	if got, want := auth.IdentitySeed(), "oauth:codex:subject-user"; got != want {
 		t.Fatalf("personal 身份种子错误: got=%q want=%q", got, want)
 	}
 	if got, want := auth.Email(), "profile@example.com"; got != want {

@@ -87,7 +87,7 @@ func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
 		refreshedAtMS:     input.RefreshedAtMS,
 		accessExpiresAtMS: readAccessTokenExpiryMS(accessToken),
 		profile:           profile,
-		identitySeed:      oauthIdentitySeed(profile.UserID, profile.AccountID),
+		identitySeed:      oauthIdentitySeed(profile.UserID),
 	}, nil
 }
 
@@ -163,6 +163,8 @@ func (auth *OAuthAuth) UserID() string {
 }
 
 // AccountID 返回领域有效工作区 ID，个人账号返回 personal。
+//
+// 该值只作为上游协议元数据保留，不参与本地账号身份派生（见 oauthIdentitySeed）。
 func (auth *OAuthAuth) AccountID() string {
 	return auth.Profile().AccountID
 }

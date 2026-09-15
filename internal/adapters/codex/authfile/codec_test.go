@@ -51,7 +51,7 @@ func TestDecodeOAuthAuthFile(t *testing.T) {
 	if oauth.Kind() != codex.AuthKindOAuth {
 		t.Fatalf("认证类型错误: %q", oauth.Kind())
 	}
-	if got, want := oauth.IdentitySeed(), "oauth:codex:user-123:workspace-456"; got != want {
+	if got, want := oauth.IdentitySeed(), "oauth:codex:user-123"; got != want {
 		t.Fatalf("身份种子错误: got=%q want=%q", got, want)
 	}
 	if got, want := oauth.RefreshedAtMS(), int64(1_700_000_000_000); got != want {

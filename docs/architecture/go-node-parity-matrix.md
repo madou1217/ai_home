@@ -277,6 +277,51 @@ Canonical。** 同协议时这些信息是 1:1 的，重建一遍只会丢；跨
 **结论**：`stop_details` 独立于分发改造，即使同协议走了透传，跨协议路径仍然需要
 它。应作为 refusal 分类的细化进入 Canonical。
 
+## Codex workspace 与账号身份对齐（2026-09-15）
+
+**问题**：同一 Codex OAuth 账号在两端派生出的 `accountRef` 不同。两端的 `acct_` 派生
+算法逐字节一致（`acct_` + `sha256("unique:" + identitySeed)` 的前 20 个十六进制字符），
+差异只在身份种子：
+
+| 实现 | 身份种子 | 依据 |
+| --- | --- | --- |
+| Node | `oauth:codex:<email>` | `lib/account/account-identity.js`、`lib/account/transfer-core.js`（`buildOAuthIdentity`） |
+| Go（改前） | `oauth:codex:<user_id>:<account_id>` | `core/accounts/codex/account_profile.go`（`oauthIdentitySeed`） |
+
+实测（`alice@example.com` / `user-123` / `workspace-456`）：
+
+```
+Node  acct_84132d53950d53bf0f8e
+Go    acct_22e13c417833aef26cec   （workspace-456）
+Go    acct_4a6fd2d115fe1edacb4a   （personal）
+```
+
+**权威判定**：Node 的行为在这条路径上是权威，因为它同时被两份最新文档固定，且 Go 的
+实现直接违反其中一条：
+
+- `README.md`（导入 / 导出去重规则）：「不读取 provider `account_id`、`chatgpt_account_id`
+  或 refresh token hash 作为本地 `accountRef` 身份」；并把 Codex `account_id` 定义为上游
+  协议字段，进入内部模型后统一命名为 `upstreamAccountId`，不参与本地账号寻址。
+- `docs/architecture/codex-native-credential-sync.md`：「No workspace-specific accountRef
+  scheme is introduced.」
+
+**已修（Go）**：`oauthIdentitySeed` 改为只取稳定用户 ID，工作区从本地账号身份中移除，
+仅经 `UpstreamAccountID()` 保留并回写上游。同一用户切换工作区不再产生第二个本地账号。
+改动文件：
+
+- `core/accounts/codex/account_profile.go` — 身份种子与 `IsValid` 同步收紧
+- `core/accounts/codex/oauth.go` — 构造器改用新种子；`AccountID` 注释明确其为上游元数据
+- `core/accounts/codex/auth_test.go`、`internal/adapters/codex/authfile/codec_test.go` —
+  断言从「不同 workspace 必须不同身份」反转为「工作区不参与身份」
+
+验证：`go test ./...` 全部通过（84 个包）。
+
+**仍未闭环**：Go 现为 `oauth:codex:<user_id>`，Node 仍为 `oauth:codex:<email>`。两端
+`accountRef` 依然不同，因此 Node 旧账号迁移仍必须按
+[`product-direction-node-go-2026-08-15.md` §8.1](./product-direction-node-go-2026-08-15.md)
+生成显式映射账本。把 Node 切到 `user_id` 会改写既有生产 `accountRef`，属于 §8.1 要求
+「另写 ADR 和显式 rekey」的变更，本轮不执行。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

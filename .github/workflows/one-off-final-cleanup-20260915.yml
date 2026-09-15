@@ -1,0 +1,73 @@
+name: one-off final merged branch cleanup
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/one-off-final-cleanup-20260915.yml]
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    if: contains(github.event.head_commit.message, '[aih-final-cleanup-20260915]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Verify merged history and remove only the expected branch tip
+        shell: python
+        run: |
+          import subprocess, pathlib, os
+          def git(*args):
+              return subprocess.run(['git', *args], check=True, text=True, capture_output=True).stdout.strip()
+          ref = 'refs/heads/fix/codex-native-credential-sync-20260915'
+          expected = '6902da9ccc46531441f0ff48ee04cfd1368dbb92'
+          git('merge-base', '--is-ancestor', expected, 'origin/main')
+          current = git('ls-remote', '--refs', 'origin', ref)
+          if current:
+              if current.split()[0] != expected:
+                  raise RuntimeError('Branch changed after merge; leaving it untouched')
+              git('push', '--force-with-lease=' + ref + ':' + expected, 'origin', ':' + ref)
+          remaining = git('ls-remote', '--heads', 'origin')
+          refs = [line.split()[1] for line in remaining.splitlines() if line]
+          if refs != ['refs/heads/main']:
+              raise RuntimeError('Unexpected concurrent branches preserved: ' + repr(refs))
+          report = pathlib.Path('docs/maintenance/codex-native-sync-verification-20260915.md')
+          report.parent.mkdir(parents=True, exist_ok=True)
+          text = '''# Codex native credential synchronization verification
+
+          Date: 2026-09-15.
+
+          - PR #1 merged at `0791d0d4dec3271e44aeabed4b83d5e015fd635e`.
+          - PR #2 merged at `81912477a0ff1caeaa03db7ff086c4a86fdf7183`.
+          - Final tested PR #2 head: `6902da9ccc46531441f0ff48ee04cfd1368dbb92`.
+          - Full repository CI, including model snapshot check: [run 34962359418](https://github.com/madou1217/ai_home/actions/runs/34962359418), successful before merge.
+          - Web lint and build: [run 34962359534](https://github.com/madou1217/ai_home/actions/runs/34962359534), successful before merge.
+          - Final local focused/integration set: 67 passed, including actual SQLite/native files and mocked upstream HTTP. Physical App/keychain validation was not performed.
+
+          The exact merged feature branch tip was checked as an ancestor of main and removed with an expected-tip lease. Remote branch enumeration then returned only `refs/heads/main`. Unexpected concurrent work would have been preserved instead of deleted. Main was never force-pushed.
+
+          Five older divergent branches were preserved as verified archive tags rather than forcing conflicting old code onto main. See [branch consolidation](branch-consolidation-20260915.md); this is not a claim that all archived historical feature changes were code-merged.
+
+          The implemented reverse bridge covers local file-backed Codex credentials in the documented roots. AIH must be running (startup also reconciles offline changes). Native keychain-only/custom stores, current upstream protocol documentation, live desktop identity/transport handoff and the original missing-provider end-to-end path remain separately unverified. Deploy the updated Node server before expecting runtime behavior.
+
+          Implementation: [native credential synchronization](../architecture/codex-native-credential-sync.md). No credentials, native account files, or private session data are included in this record. User authorized implementation, merge and cleanup; self-review was performed, with no independent reviewer available.
+          '''
+          import textwrap
+          text = '\n'.join(line[10:] if line.startswith('          ') else line for line in text.splitlines()) + '\n'
+          report.write_text(text)
+          print(remaining)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write(text)
+      - name: Commit verification record and remove this one-off workflow
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/one-off-final-cleanup-20260915.yml
+          git add docs/maintenance/codex-native-sync-verification-20260915.md
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: record merged credential fix and main-only branch cleanup'
+          git push origin HEAD:refs/heads/main
+          git rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"

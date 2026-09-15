@@ -362,10 +362,45 @@ Go 原先有两个键，都不等于规范键：
 | `GET /v1/models/{id}` | ✅ 已补（`3da26cf0`） |
 | `GET /v1/blobs/{id}` | ✅ 已补（`ae9ba450`，含 `internal/adapters/imageblob` 内容寻址 LRU 仓） |
 | `POST /v1/messages/count_tokens` | ✅ 已补（`142541ea`，纯本地估算，规则与 Node 逐条同构） |
-| `/v1/images/generations`、`/v1/images/edits` | ⬜ 待做（需新建图像子系统） |
-| `POST /v1{beta?}/models/{model}:generateContent`、`:streamGenerateContent` | ⬜ 待做（需新建 Gemini 客户端协议 adapter） |
+| `POST /v1{beta?}/models/{model}:generateContent`、`:streamGenerateContent` | ✅ 已补（`17357be8`，新增 Gemini 客户端协议） |
+| `/v1/images/generations`、`/v1/images/edits` | ⬜ 待做（协议翻译层已完成，剩账号/征召与 HTTP 层） |
 
-当前采集结果：`node_endpoint=14`、`go_endpoint=20`、`missing_in_go=4`。
+当前采集结果：`node_endpoint=14`、`go_endpoint=22`、`missing_in_go=2`（仅剩两条 `/v1/images/*`）。
+
+### Gemini 入口的三个易错点（`17357be8`）
+
+1. **`/v1/models/` 现在承载两条能力**，dispatcher 必须先判 Gemini 的路径形态。单模型回显
+   接受任意非空段，`gemini-3.0-pro:generateContent` 会被当成模型 ID 直接 200 回显，
+   Gemini 入口则永久不可达且**没有任何报错**。
+2. **Gemini 的 `functionCall` 没有必填调用 ID**，`functionResponse` 按 name 回指。缺失时
+   调用 ID 回退为函数名，保证调用与结果配对；代价是同一轮内对同一函数的两次并行调用会
+   共用 ID——这是 Gemini 线协议的信息缺失，本地补不出来。
+3. **流式必须缓冲工具参数**：`functionCall.args` 是对象而不是字符串增量，逐段成帧会把参数
+   反复覆盖。工具调用在完成时才成帧一次。
+
+两处共享层决策（已显式定下并写入代码注释）：`isCrossProtocolClient` 加入 Gemini（Gemini→
+Responses 按定义属跨协议，漏掉会让 codex 上游套用更严格的同协议字段投影）；
+`RouteScope.accepts` 保持未列出，因此 Gemini 入口只接受 all 作用域的模型路由规则——
+归属哪个作用域是产品决策，这里取保守默认而不是猜。
+
+### 剩余 2 条（图像）的真实剩余工作
+
+协议翻译层**已经完成**，不再是"要新建子系统"：
+
+- 请求解析：`internal/adapters/imagegeneration` + `internal/adapters/imagedata`（`223ec657`）
+- 响应渲染：`internal/adapters/images`（`7be67c98`），含 blob URL 落仓与非无损回退
+
+还缺的是**接线**：
+
+1. 账号/征召层：按请求的 `provider`（Node 也支持该字段）或本地可路由模型目录确定 Provider，
+   再用 `accountrouting.Recruiter.Recruit` 取账号；api-key 账号的 `Credential()` 直接给出
+   `APIKey()` 与 `BaseURL()`，可做 passthrough。
+2. 上游策略：Node 有四个策略（agy/gemini Code Assist、**codex Images API**、passthrough、
+   unsupported）。注意 **codex OAuth 账号在 Node 侧是能生成图片的**（走 codex 专属 Images API），
+   因此只做 passthrough 会让 codex 账号在 Go 侧退化为 unsupported——这是需要显式决定的范围问题。
+3. HTTP 层：`POST` 处理、multipart 编辑请求解析（Node 的 `image-generation-multipart.js`）、
+   错误 envelope（`{error:{message,type,code}}`）、以及 `Content-Type: multipart/form-data` 与
+   JSON 两条入口。
 
 ### 补齐时必须同时改采集器
 
@@ -384,52 +419,6 @@ Go 原先有两个键，都不等于规范键：
 
 缺陷 2 与 3 由 `GO_PREFIX_MOUNT_OVERRIDES` 逐条显式改记解决（每条附上 Node 侧的对应形态），
 并在挂载循环里跳过其原始形态，保证一条能力只产生一条记录。
-
-### 剩余 4 条的真实成本
-
-不是补胶水，而是两个新子系统。
-
-**图像子系统（2 条：`/v1/images/generations`、`/v1/images/edits`）**
-
-已完成纯函数层（`223ec657`）：
-
-- `internal/adapters/imagedata` ← `lib/server/image-data.js`：媒体类型归一化、规范 base64
-  解码（重新编码后逐字节比对）、魔数嗅探。
-- `internal/adapters/imagegeneration` ← `lib/server/image-generation-request.js`：模式选择、
-  必填项、`n`/`size`/`quality`/`response_format`、background 与 output_format 交互、
-  mask 规则、image/images 二选一。
-
-两个易错点已用测试钉住：Node 用 `Number(body.n)`，所以 `n: "2"` 与 `n: true` 被接受、
-`n: ""` 与 `n: 2.5` 被拒（严格要求 JSON 数字会让 Go 在 Node 成功的请求上报 400）；
-请求入口白名单是 `{png,jpeg,webp}` 且**刻意不含 gif**，尽管底层 image-data 认 gif——
-共用一个集合会让 gif 绕过请求闸门。
-
-**仍需决策才能继续的部分**（不是纯函数，无法靠对照 Node 直接定）：
-
-- 图片端点要按请求的模型征召 Provider + 账号，再向该账号的上游发 passthrough 调用。
-  Go 侧可复用的缝是 `accountrouting.Recruiter.Recruit`（api-key 账号的 `Credential()`
-  直接给出 `APIKey()` 与 `BaseURL()`）。**未定的是：Go 当前 Provider 范围（codex/claude/agy）
-  中哪些声明支持图片**，以及是否复用聊天链路的 capability router。Node 侧由
-  `image-generation-strategy.js` 注册四个策略（agy/gemini Code Assist、codex Images API、
-  passthrough、unsupported）来回答这个问题。
-- 多部分（multipart）编辑请求的解析（Node 的 `image-generation-multipart.js`）与错误
-  envelope 渲染可以直接照搬，无阻塞。
-
-**Gemini 客户端协议（2 条：`:generateContent`、`:streamGenerateContent`）**
-
-需要新增协议 ID + `clientprotocol.Adapter`（请求解码 + 非流式聚合 + 流式渲染）+ 带冒号
-形态的路径 Handler + 注册接线。参照量级：`openaichatcompletions` adapter 约 3000 行（含测试）。
-
-**接线前必须先定的两处语义**（都在共享层，猜错会静默改变行为）：
-
-1. `application/inferencegateway/route_rule.go` 的 `RouteScope.accepts` 决定哪些模型路由规则
-   对该入口生效。当前未列出的协议只接受 `RouteScopeAll` 规则——这是一个保守默认值，
-   但 Gemini 入口该归 Codex / Claude / 还是新设 agy 作用域，需要明确决定。
-2. `internal/adapters/codex/responses/request_encoder.go` 的 `isCrossProtocolClient` 决定
-   哪些客户端协议已完成字段投影审查。Gemini→Responses 按定义属于跨协议，若不加进去，
-   codex 上游会对 Gemini 请求套用更严格的字段投影，属于静默行为差异。
-
-两者都需要按模块分批实现并各自带测试，不能合并成一次改动。
 
 ## 维护
 

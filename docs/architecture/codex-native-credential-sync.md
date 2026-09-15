@@ -64,13 +64,20 @@ newer native files into the database first. Automatic auth-update hooks pass
 `preserveNativeLogin`: they must not select the old default again over a different
 native login, a logout or unreadable native login state. Explicit `set-default`
 remains an intentional selection and can project the selected account after
-saving any independently logged-in identity.
+saving any independently logged-in identity. An unorderable target credential
+generation stops managed runtime projection rather than overwriting the native file.
 
 A refresh HTTP call captures the DB auth generation used for its request. Late
 success, rejection or transport failure cannot overwrite or invalidate a newer
 App login. Publication is conditional; metadata-only concurrent edits are
 merged without losing an otherwise valid rotated refresh grant. Auth-generation
 changes cancel the old result. Failures contain codes, not raw source credentials.
+
+Manual Codex account deletion records a non-secret removal marker in the
+existing key-value store within the deletion transaction. The automatic
+observer respects it across restarts, even if a standalone App leaves its
+credentials on disk. An explicit account registration can restore that identity
+and clears the marker transactionally. No deleted account is silently recreated.
 
 No global default-account pointer, historical thread metadata, session data,
 or other provider records are modified by reverse observation. A running AIH

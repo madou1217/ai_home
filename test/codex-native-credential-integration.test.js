@@ -255,3 +255,36 @@ for (const provider of ['claude', 'grok']) {
     assert.equal(service.getAccountState(ref).runtimeState, null);
   });
 }
+
+
+test('independent native files cannot resurrect a manually deleted account across observer restarts', t => {
+  const f = fixture(t), old = auth(1), ref = f.register(old);
+  f.write(auth(2));
+  assert.equal(f.sync().scan().updated.length, 1);
+  const { deleteAccountRef, resolveAccountRef } = require('../lib/server/account-ref-store');
+  assert.equal(deleteAccountRef(fs, f.aiHomeDir, ref), true);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = f.sync().scan();
+    assert.equal(result.updated.length, 0);
+    assert.ok(result.skipped.some(item => item.reason === 'account_deleted_by_user'));
+    assert.equal(resolveAccountRef(fs, f.aiHomeDir, ref), null);
+  }
+  f.register(old); // Explicit re-add is a new user decision, unlike observation.
+  assert.equal(f.sync().scan().updated.length, 1);
+  assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, ref).auth, auth(2));
+});
+
+
+test('managed projection preserves a different native grant when generation clocks cannot order it', t => {
+  const f = fixture(t), old = auth(1), ref = f.register(old), candidate = auth(1);
+  candidate.tokens.refresh_token = 'test-unordered-new-native-refresh';
+  const runtimeFile = path.join(f.aiHomeDir, 'run', 'codex-desktop', ref, 'auth.json');
+  f.write(candidate, runtimeFile);
+  const runtime = prepareCodexAppServerRuntimeHome(fs, { desktopAccountRef: ref }, { processObj: {
+    platform: 'linux', env: { HOME: f.hostHomeDir, AIH_HOST_HOME: f.hostHomeDir, AI_HOME_DIR: f.aiHomeDir,
+      CODEX_HOME: f.codexHome, CODEX_SQLITE_HOME: f.codexHome }
+  } });
+  assert.equal(runtime, null);
+  assert.deepEqual(JSON.parse(fs.readFileSync(runtimeFile)), candidate);
+  assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, ref).auth, old);
+});

@@ -609,6 +609,9 @@ ACP/CodeBuddy 私有记录形态与 Claude 的 `{type:'user'|'assistant', messag
 `timestamp` 是**毫秒**（Claude 是 ISO 字符串），统一转成 ISO 输出。
 `.meta.json` / `.file-rollback.ndjson` 是旁挂元数据，**不**当会话消息读。
 
+边界：适配器**不读账号沙箱**（`auth-projections/<provider>/<accountRef>`）。沙箱里的
+`projects` 只是指向宿主地区存储的软链接（见 §13.4），读宿主地区根就是读全部。
+
 ### 13.3 合同变更：新增能力 + polling
 
 | Provider | `capabilities` 变化 | `sessionSync` 变化 |
@@ -626,17 +629,43 @@ ACP/CodeBuddy 私有记录形态与 Claude 的 `{type:'user'|'assistant', messag
 `DEFAULT_HOST_PROJECT_PROVIDERS`、`CACHEABLE_SESSION_MESSAGE_PROVIDERS` 均由其派生
 （后者另行显式加入家族四员，因为单 JSONL 文件的 size/mtime 就是有效新鲜度键）。
 
-### 13.4 切换账号不影响历史：`projects` 成为共享条目
+### 13.4 切换账号不影响历史：`projects` 是指向地区存储的软链接，且**绝不搬迁**
 
 ```js
 // lib/runtime/provider-storage-policy.js —— 家族四员
-sharedEntries: Object.freeze(['projects'])
+sharedEntries: Object.freeze(['projects'])   // 账号投影里 projects ⇒ 宿主地区存储的软链接
 ```
 
-`projects` 属于**产品而非账号**。声明成共享条目后（`lib/cli/services/session-store.js`
-的 `SESSION_STORE_ALLOWLIST` 同步登记），每个账号投影里的 `projects` 都链接到宿主
-那一份，于是"换个账号选中，看到的会话列表完全一致"。注意 `settings.json` /
-`.mcp.json` / `sessions` 仍是账号私有——共享面保持最小。
+`projects` 属于**产品而非账号**：同一台机器上同地区 WorkBuddy 与 CodeBuddy 写的是
+同一份会话。aih 让每个账号投影里的 `<configDir>/projects` 成为一条指向宿主**地区存储**
+的**软链接**——一份物理数据，账号只是入口。aih 展示的会话由
+`lib/sessions/session-reader-codebuddy.js` 直接读**宿主地区根**得到，因此换个账号选中，
+看到的列表完全一致。
+
+**关键：投影里已有的会话既不被复制、也不被移动。** 通用链路对非 opencode Provider 的逻辑
+是"检测到什么条目就共享什么"（`shareAllDetectedEntries`），并且建链前会调
+`mergeEntryIntoStore`（**move**，跨设备时退化为 copy + unlink）把投影内容搬进宿主。
+对 CodeBuddy 家族这会**搬走**账号投影里的真实会话——正是被否决的 copy/迁移策略。
+`lib/cli/services/session-store.js` 因此为家族四员引入
+`SESSION_STORE_PRODUCT_LEVEL_PROVIDERS`，走两条收紧规则：
+
+1. **共享面严格等于声明的 `sharedEntries`**（不再"检测到什么就共享什么"，也不吃
+   `isLikelySessionName` 启发式）。否则 `history.jsonl` / `shell-snapshots` 这类名字
+   会被顺带链接进宿主。实现上 `shareAllDetectedEntries` 对该集合取反，
+   检测循环对它们只认 allowlist 命中项。
+2. **绝不迁移**：投影里的 `projects` 是**空目录**时才安全丢弃并建链；里面**已有真实
+   会话文件**则如实返回 `unresolved`，让上层 fail-closed——aih 不复制、不移动、不覆盖，
+   由人决定。这条与 `zcode-shared-session-store.js` 的"投影残留就地删除、绝不复制/移动"
+   同口径。
+
+`precreatedDirectories` 因此为四员都补上 `projects`：链接需要宿主那一份先存在，
+否则首个进程会把 `projects` 建在一次性投影里，之后就只剩 fail-closed。
+
+**WorkBuddy 隔离缺陷（同轮修掉）**：`workbuddy` / `workbuddycn` 此前
+`privateArtifacts` 为空，上面第 1 条的"检测到什么就共享什么"会把
+`settings.json` / `.mcp.json` / `sessions` 一并链接进宿主目录——后果是同一台机器上
+**所有** WorkBuddy 账号共用一份配置与会话索引。现补齐三项私有声明，与
+`codebuddy` / `codebuddycn` 对称，共享面收敛为只剩 `projects`。
 
 ### 13.5 可续聊：relay 只给自带 CLI 的两个站点
 
@@ -668,6 +697,11 @@ sharedEntries: Object.freeze(['projects'])
 - `node --test test/session-reader-codebuddy.test.js`：8 pass。覆盖：国内站两数据根
   合并、国际站不串味、同地区两入口结果相同、切账号结果不变、跨 Provider 定位会话文件、
   ACP→消息形态（thinking / tool / system-reminder 剥离）、标题回退、快照去重。
+- `node --test test/codebuddy-shared-session-store.test.js`：7 pass。覆盖"不复制/不迁移"
+  语义：共享条目严格为 `['projects']`、四员 `settings.json`/`.mcp.json`/`sessions` 保持
+  私有、全新投影只**建链**（`migrated:0, linked:1`）、幂等、**投影里已有真实会话时报
+  `unresolved` 且两侧存储都原封不动**、空残留目录丢弃后建链、两个账号的链接解析到同一
+  物理存储。
 - `node --test test/codebuddy-provider.test.js`：48 pass（含共享条目 `['projects']`）。
 - 实机烟测：`~/.workbuddy`（32 项目 / 34 会话）与 `~/.workbuddy-ai`（2 / 3）经适配器
   读出后，cn 侧两 Provider 结果一致、global 侧同理。

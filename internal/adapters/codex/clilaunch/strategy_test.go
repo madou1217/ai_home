@@ -147,11 +147,11 @@ func TestStrategyBuildsAPIKeyProviderArgs(t *testing.T) {
 	}
 	arguments := result.Arguments()
 	wantArguments := []string{
-		"-c", "model_provider=aih_account",
-		"-c", `model_providers.aih_account.name="AIH Account"`,
-		"-c", "model_providers.aih_account.base_url=https://gateway.example.test/openai/v1",
-		"-c", "model_providers.aih_account.wire_api=responses",
-		"-c", "model_providers.aih_account.env_key=OPENAI_API_KEY",
+		"-c", "model_provider=aih_server",
+		"-c", `model_providers.aih_server.name="AIH Server"`,
+		"-c", "model_providers.aih_server.base_url=https://gateway.example.test/openai/v1",
+		"-c", "model_providers.aih_server.wire_api=responses",
+		"-c", "model_providers.aih_server.env_key=OPENAI_API_KEY",
 	}
 	if !slices.Equal(arguments, wantArguments) {
 		t.Fatalf("API Key 参数错误:\n got=%v\nwant=%v", arguments, wantArguments)

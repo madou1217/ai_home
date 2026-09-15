@@ -11,9 +11,15 @@ import (
 )
 
 const (
-	binaryName       = "codex"
-	apiProviderKey   = "aih_account"
-	apiProviderLabel = "AIH Account"
+	binaryName = "codex"
+	// apiProviderKey/apiProviderLabel 必须与 Node 的受管 provider 保持一致：
+	// lib/cli/services/ai-cli/codex-provider-args.js 与 pty/codex-config-sync.js 的
+	// AIH_CODEX_PROVIDER_KEY/AIH_CODEX_PROVIDER_NAME。Node 的
+	// codex-session-provider-alignment 会把任何不等于该规范键的 `aih_*` 当作旧形态
+	// 重写，而线程 rollout 里记录的 provider 名若在 config.toml 查不到，Codex 桌面端
+	// 会拒绝恢复该线程。Go 曾用 `aih_account`，会被当成旧 provider 改写。
+	apiProviderKey   = "aih_server"
+	apiProviderLabel = "AIH Server"
 )
 
 var (

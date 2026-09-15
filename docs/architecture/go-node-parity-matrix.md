@@ -322,6 +322,36 @@ Go    acct_4a6fd2d115fe1edacb4a   （personal）
 生成显式映射账本。把 Node 切到 `user_id` 会改写既有生产 `accountRef`，属于 §8.1 要求
 「另写 ADR 和显式 rekey」的变更，本轮不执行。
 
+### 受管 Codex provider key
+
+Node 的受管 provider 规范键只有一个：`aih_server` / `AIH Server`
+（`lib/cli/services/ai-cli/codex-provider-args.js`、`lib/cli/services/pty/codex-config-sync.js`）。
+Node 的 `codex-session-provider-alignment` 把任何 `aih` / `aih_*` 中不等于该规范键的值
+判定为旧形态并重写（`isLegacyAihProvider`），覆盖 codex state DB 的
+`threads.model_provider` 与 rollout `session_meta`。线程里记录的 provider 名若在
+`config.toml` 查不到，Codex 桌面端会拒绝恢复该线程——即
+`docs/codex-native-credential-sync.md` 记录的 missing-provider / thread-restore 问题。
+
+Go 原先有两个键，都不等于规范键：
+
+| Go 策略 | 改前 | 改后 |
+| --- | --- | --- |
+| 账号 API Key 启动（`clilaunch/strategy.go`） | `aih_account` / `AIH Account` | `aih_server` / `AIH Server` |
+| Gateway profile 启动（`clilaunch/gateway_strategy.go`） | `aih_gateway` / `AIH Gateway` | 未改，见下 |
+
+**已修**：账号启动策略改用规范键。其 provider 形状（`wire_api=responses` +
+`env_key=OPENAI_API_KEY` + 指向网关的 `base_url`）与 Node 沙箱侧 `aih_server` 定义一致。
+验证：`go test ./...` 全绿，`test/pty-launch.test.js`、`test/codex-provider-args.test.js`
+24 项通过。
+
+**仍未闭环**：`gateway_strategy.go` 仍用 `aih_gateway`，且其认证模型与 Node 的
+`aih_server` 不同——Go 用 `env_key=AIH_GATEWAY_CLIENT_KEY` +
+`env_http_headers={X-Account-Ref=AIH_GATEWAY_ACCOUNT_REF}`，Node 用宿主
+`[model_providers.aih_server.auth]` 命令表或沙箱 `env_key=OPENAI_API_KEY`，账号固定走
+`http_headers.X-Account-Ref` 字面值。只改键名会让同一个 `aih_server` 在两端出现两种
+认证定义，因此这一项需要先就认证模型（env 变量命名与 header 传递方式）达成一致，本轮
+不单方面改。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

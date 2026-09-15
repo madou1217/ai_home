@@ -387,18 +387,47 @@ Go 原先有两个键，都不等于规范键：
 
 ### 剩余 4 条的真实成本
 
-不是补胶水，而是两个新子系统：
+不是补胶水，而是两个新子系统。
 
-- **图像子系统**（覆盖 2 条：images/generations、images/edits）：Node 侧由
-  `image-generations-endpoint.js`（facade）、`image-generation-executor.js`、
-  `image-generation-request.js`、`image-generation-multipart.js`、
-  `image-generation-strategy.js` 及四个策略（agy/gemini Code Assist、codex Images API、
-  passthrough、unsupported）共同承担。Go 的 `internal/adapters/imageblob` 已经把 blob 仓建好，
-  但请求规范化、账号征召后的 passthrough 调用、multipart 解析与错误 envelope 仍需新建。
-- **Gemini 客户端协议**（覆盖 2 条）：`core/inference` 目前只有
-  `openai.responses`、`openai.chat_completions`、`anthropic.messages` 三个 `ClientProtocolID`，
-  没有 Gemini。需要新增协议 ID、`clientprotocol.Adapter`（请求解码 + 非流式聚合 + 流式渲染）、
-  带 `:generateContent` 冒号形态的路径解析 Handler，以及协议注册与路由接线。
+**图像子系统（2 条：`/v1/images/generations`、`/v1/images/edits`）**
+
+已完成纯函数层（`223ec657`）：
+
+- `internal/adapters/imagedata` ← `lib/server/image-data.js`：媒体类型归一化、规范 base64
+  解码（重新编码后逐字节比对）、魔数嗅探。
+- `internal/adapters/imagegeneration` ← `lib/server/image-generation-request.js`：模式选择、
+  必填项、`n`/`size`/`quality`/`response_format`、background 与 output_format 交互、
+  mask 规则、image/images 二选一。
+
+两个易错点已用测试钉住：Node 用 `Number(body.n)`，所以 `n: "2"` 与 `n: true` 被接受、
+`n: ""` 与 `n: 2.5` 被拒（严格要求 JSON 数字会让 Go 在 Node 成功的请求上报 400）；
+请求入口白名单是 `{png,jpeg,webp}` 且**刻意不含 gif**，尽管底层 image-data 认 gif——
+共用一个集合会让 gif 绕过请求闸门。
+
+**仍需决策才能继续的部分**（不是纯函数，无法靠对照 Node 直接定）：
+
+- 图片端点要按请求的模型征召 Provider + 账号，再向该账号的上游发 passthrough 调用。
+  Go 侧可复用的缝是 `accountrouting.Recruiter.Recruit`（api-key 账号的 `Credential()`
+  直接给出 `APIKey()` 与 `BaseURL()`）。**未定的是：Go 当前 Provider 范围（codex/claude/agy）
+  中哪些声明支持图片**，以及是否复用聊天链路的 capability router。Node 侧由
+  `image-generation-strategy.js` 注册四个策略（agy/gemini Code Assist、codex Images API、
+  passthrough、unsupported）来回答这个问题。
+- 多部分（multipart）编辑请求的解析（Node 的 `image-generation-multipart.js`）与错误
+  envelope 渲染可以直接照搬，无阻塞。
+
+**Gemini 客户端协议（2 条：`:generateContent`、`:streamGenerateContent`）**
+
+需要新增协议 ID + `clientprotocol.Adapter`（请求解码 + 非流式聚合 + 流式渲染）+ 带冒号
+形态的路径 Handler + 注册接线。参照量级：`openaichatcompletions` adapter 约 3000 行（含测试）。
+
+**接线前必须先定的两处语义**（都在共享层，猜错会静默改变行为）：
+
+1. `application/inferencegateway/route_rule.go` 的 `RouteScope.accepts` 决定哪些模型路由规则
+   对该入口生效。当前未列出的协议只接受 `RouteScopeAll` 规则——这是一个保守默认值，
+   但 Gemini 入口该归 Codex / Claude / 还是新设 agy 作用域，需要明确决定。
+2. `internal/adapters/codex/responses/request_encoder.go` 的 `isCrossProtocolClient` 决定
+   哪些客户端协议已完成字段投影审查。Gemini→Responses 按定义属于跨协议，若不加进去，
+   codex 上游会对 Gemini 请求套用更严格的字段投影，属于静默行为差异。
 
 两者都需要按模块分批实现并各自带测试，不能合并成一次改动。
 

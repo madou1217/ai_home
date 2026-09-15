@@ -1,0 +1,36 @@
+name: one-off native sync CI diagnostic
+on:
+  push:
+    branches: [fix/codex-native-credential-sync-20260915]
+    paths: [.github/workflows/one-off-native-sync-ci-diagnostic-20260915.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    if: contains(github.event.head_commit.message, '[aih-ci-diagnostic-20260915]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch logs of the failed repository test run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run view 34960344847 --repo madou1217/ai_home --log-failed > "$RUNNER_TEMP/aih-failed-ci.log"
+      - name: Print bounded assertion failure contexts
+        shell: python
+        run: |
+          import pathlib, os
+          lines = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'aih-failed-ci.log').read_text(errors='replace').splitlines()
+          matches = [i for i, line in enumerate(lines) if 'not ok ' in line or 'ERR_ASSERTION' in line or 'tests failed' in line]
+          wanted = set(range(max(0, len(lines)-100), len(lines)))
+          for index in matches:
+              wanted.update(range(max(0,index-4), min(len(lines),index+70)))
+          for index in sorted(wanted):
+              print(f'{index+1}: {lines[index]}')
+          print(f'Failure matches: {len(matches)}; total lines: {len(lines)}')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-sync-failed-ci-log-20260915
+          path: ${{ runner.temp }}/aih-failed-ci.log
+          retention-days: 1

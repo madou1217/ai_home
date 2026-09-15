@@ -363,62 +363,45 @@ Go 原先有两个键，都不等于规范键：
 | `GET /v1/blobs/{id}` | ✅ 已补（`ae9ba450`，含 `internal/adapters/imageblob` 内容寻址 LRU 仓） |
 | `POST /v1/messages/count_tokens` | ✅ 已补（`142541ea`，纯本地估算，规则与 Node 逐条同构） |
 | `POST /v1{beta?}/models/{model}:generateContent`、`:streamGenerateContent` | ✅ 已补（`17357be8`，新增 Gemini 客户端协议） |
-| `/v1/images/generations`、`/v1/images/edits` | ⬜ 待做（协议翻译层已完成，剩账号/征召与 HTTP 层） |
+| `/v1/images/generations`、`/v1/images/edits` | ✅ 已补（`545b217d`，含 codex / agy / passthrough / unsupported 四个策略） |
 
-当前采集结果：`node_endpoint=14`、`go_endpoint=22`、`missing_in_go=2`（仅剩两条 `/v1/images/*`）。
+**当前采集结果：`node_endpoint=14`、`go_endpoint=24`、`missing_in_go=0`。7 条缺口全部闭环。**
+
+### 补齐时必须同时改采集器
+
+三条早期路由各暴露了一个采集器缺陷；**在 Go 里加路由后必须重跑采集器**，否则对齐矩阵会继续
+显示「缺失」，而实际上功能已经存在：
+
+1. **Go 常量只认字符串字面量。** 拼接式常量（`PathPrefix = Path + "/"`）解析不到，挂载会被
+   静默跳过。`PathPrefix` 因此改为字面量，并用 `TestPathPrefixMatchesPath` 守住一致性。
+2. **`routeIdentity` 把 match 维度算进身份。** Go 前缀挂载永远匹配不上 Node 的 regex 条目。
+3. **采集器只在 Node 侧套用 `normalizePrefixPath`。** Go 侧保留原始字面量路径。
+
+2 与 3 由 `GO_PREFIX_MOUNT_OVERRIDES` 逐条显式改记解决（一个挂载可映射多条 Node 能力，
+`addRoute` 按 path 去重）。
 
 ### Gemini 入口的三个易错点（`17357be8`）
 
 1. **`/v1/models/` 现在承载两条能力**，dispatcher 必须先判 Gemini 的路径形态。单模型回显
    接受任意非空段，`gemini-3.0-pro:generateContent` 会被当成模型 ID 直接 200 回显，
    Gemini 入口则永久不可达且**没有任何报错**。
-2. **Gemini 的 `functionCall` 没有必填调用 ID**，`functionResponse` 按 name 回指。缺失时
-   调用 ID 回退为函数名，保证调用与结果配对；代价是同一轮内对同一函数的两次并行调用会
-   共用 ID——这是 Gemini 线协议的信息缺失，本地补不出来。
-3. **流式必须缓冲工具参数**：`functionCall.args` 是对象而不是字符串增量，逐段成帧会把参数
-   反复覆盖。工具调用在完成时才成帧一次。
+2. **Gemini 的 `functionCall` 没有必填调用 ID**，`functionResponse` 按 name 回指；缺失时调用
+   ID 回退为函数名，代价是同一轮内对同一函数的两次并行调用会共用 ID。
+3. **流式必须缓冲工具参数**：`functionCall.args` 是对象而不是字符串增量，逐段成帧会反复覆盖。
 
-两处共享层决策（已显式定下并写入代码注释）：`isCrossProtocolClient` 加入 Gemini（Gemini→
-Responses 按定义属跨协议，漏掉会让 codex 上游套用更严格的同协议字段投影）；
-`RouteScope.accepts` 保持未列出，因此 Gemini 入口只接受 all 作用域的模型路由规则——
-归属哪个作用域是产品决策，这里取保守默认而不是猜。
+### 图像子系统（`545b217d`）
 
-### 剩余 2 条（图像）的真实剩余工作
-
-协议翻译层**已经完成**，不再是"要新建子系统"：
-
-- 请求解析：`internal/adapters/imagegeneration` + `internal/adapters/imagedata`（`223ec657`）
-- 响应渲染：`internal/adapters/images`（`7be67c98`），含 blob URL 落仓与非无损回退
-
-还缺的是**接线**：
-
-1. 账号/征召层：按请求的 `provider`（Node 也支持该字段）或本地可路由模型目录确定 Provider，
-   再用 `accountrouting.Recruiter.Recruit` 取账号；api-key 账号的 `Credential()` 直接给出
-   `APIKey()` 与 `BaseURL()`，可做 passthrough。
-2. 上游策略：Node 有四个策略（agy/gemini Code Assist、**codex Images API**、passthrough、
-   unsupported）。注意 **codex OAuth 账号在 Node 侧是能生成图片的**（走 codex 专属 Images API），
-   因此只做 passthrough 会让 codex 账号在 Go 侧退化为 unsupported——这是需要显式决定的范围问题。
-3. HTTP 层：`POST` 处理、multipart 编辑请求解析（Node 的 `image-generation-multipart.js`）、
-   错误 envelope（`{error:{message,type,code}}`）、以及 `Content-Type: multipart/form-data` 与
-   JSON 两条入口。
-
-### 补齐时必须同时改采集器
-
-三条已补路由各暴露了一个采集器缺陷；**在 Go 里加路由后必须重跑采集器**，否则对齐矩阵会继续
-显示「缺失」，而实际上功能已经存在：
-
-1. **Go 常量只认字符串字面量。** `collectGoRoutes` 通过 `parseGoStringConstants` 解析 Go 常量，
-   其正则只匹配 `Ident = "字面量"`。写成 `PathPrefix = Path + "/"` 的拼接常量解析不到，
-   挂载会被静默跳过。`PathPrefix` 因此改为字面量，并用 `TestPathPrefixMatchesPath` 守住它与
-   `Path` 的一致性。
-2. **`routeIdentity` 把 match 维度算进身份。** Go 的 `http.ServeMux` 只能按前缀或精确路径挂载，
-   参数化路径只能写成前缀子树；而 Node 侧可能是 regex。前缀形态永远匹配不上 regex 条目。
-3. **采集器只在 Node 侧套用 `normalizePrefixPath`。** Go 侧保留原始字面量路径，于是同一个能力
-   在两端得到不同的 path。`/v1/blobs` 就是这种情况：Node 侧被映射为 `/v1/blobs/{id}`，
-   Go 侧却是 `/v1/blobs/`。
-
-缺陷 2 与 3 由 `GO_PREFIX_MOUNT_OVERRIDES` 逐条显式改记解决（每条附上 Node 侧的对应形态），
-并在挂载循环里跳过其原始形态，保证一条能力只产生一条记录。
+- 策略：`codex`（OAuth Images API，模型固定 `gpt-image-2`）、`agy`（Code Assist
+  `:generateContent` + `responseModalities:[TEXT,IMAGE]`）、`passthrough`（api-key 账号转发到
+  `{baseUrl}/v1/images/*`）、`unsupported`（显式 400）。
+- 能力闸门逐条复刻 Node 的错误码（mask / 输入数量 / size / quality 取值 / background /
+  output_format / output_compression / moderation）。
+- 输出归一化拒绝非规范 base64、非图片字节、声明与字节不一致的媒体类型、带凭据的 URL。
+- **一处必须记住的 Go 陷阱**：`response, err := sendUpstream(...)` 复用了上面 `json.Marshal`
+  已经声明为 `error` 的 `err`，导致成功路径上的 nil `*Error` 被装箱成非 nil interface——
+  **每一次成功的 codex / agy 图片生成都会被当成失败**。三个策略现在都用新变量接收该错误。
+- Provider 解析：请求显式声明优先；否则按本地可路由模型目录反查，多个候选时拒绝而不是
+  任意选一个。
 
 ## 维护
 

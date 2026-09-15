@@ -105,7 +105,11 @@ test('set-default preflight adopts fresh host OAuth before forward projection', 
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.codexHome, 'auth.json'))), fresh);
   const config = fs.readFileSync(path.join(f.codexHome, 'config.toml'), 'utf8');
   assert.match(config, /^model_provider = "openai"$/m);
-  assert.doesNotMatch(config, /model_providers\.aih_server/);
+  const registration = require('smol-toml').parse(config).model_providers.aih_server;
+  assert.equal(registration.name, 'AIH Server');
+  assert.ok(registration.auth.args.includes('--gateway'));
+  assert.equal(registration.env_key, undefined);
+  assert.equal(registration.bearer_token, undefined);
 });
 
 test('automatic projection cannot replace a different independent native login', t => {

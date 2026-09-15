@@ -307,7 +307,7 @@ test('syncGlobalConfigToHost writes the canonical codex API-key provider block f
   assert.doesNotMatch(hostConfig, /aih_10/);
 });
 
-test('host API-key sync pairs native and managed endpoints and removes them on OAuth switch', (t) => {
+test('host API-key sync pairs endpoints and removes only native override on OAuth switch', (t) => {
   const fixture = createFixture(t);
   const custom = registerCodexAccount(fixture, '31', {
     env: { OPENAI_API_KEY: 'custom-test-key', OPENAI_BASE_URL: 'https://custom.example/v1' }
@@ -344,7 +344,7 @@ test('syncGlobalConfigToHost switches host config to oauth mode when DB has no A
   assert.doesNotMatch(hostConfig, /^\[model_providers\.aih_20\]$/m);
 });
 
-test('syncGlobalConfigToHost removes stale AIH auth command when switching to OAuth', (t) => {
+test('syncGlobalConfigToHost upgrades stale AIH auth command and retains registration on OAuth', (t) => {
   const fixture = createFixture(t);
   const accountRef = registerCodexAccount(fixture, '21', {
     auth: { tokens: { access_token: 'oauth-access-token' } }
@@ -369,8 +369,11 @@ test('syncGlobalConfigToHost removes stale AIH auth command when switching to OA
   const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
   assert.match(hostConfig, /^preferred_auth_method = "oauth"$/m);
   assert.match(hostConfig, /^model_provider = "openai"$/m);
-  assert.doesNotMatch(hostConfig, /^\[model_providers\.aih_server\]/m);
-  assert.doesNotMatch(hostConfig, /aih-codex-provider-auth/);
+  assert.match(hostConfig, /^\[model_providers\.aih_server\]/m);
+  assert.match(hostConfig, /aih-codex-provider-auth/);
+  assert.match(hostConfig, /'--gateway'/);
+  assert.doesNotMatch(hostConfig, /env_key|bearer_token/);
+  assert.doesNotMatch(hostConfig, /\/tmp\/aih-codex-provider-auth/);
 });
 
 test('syncGlobalConfigToHost keeps legacy codex hook flag for older codex versions', (t) => {

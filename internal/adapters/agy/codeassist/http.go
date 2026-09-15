@@ -20,6 +20,12 @@ const (
 	maxProjectBytes = 2 * 1024 * 1024
 )
 
+// GenerateContentURL 是 Code Assist 非流式 generateContent 的完整地址。
+//
+// 图片生成走这条入口：它与流式入口共享同一个 base，只是不带 `?alt=sse`。
+// 导出它是为了让图片子系统复用同一份地址定义，而不是各写一份字面量。
+const GenerateContentURL = defaultBaseURL + ":generateContent"
+
 func loadProject(
 	ctx context.Context,
 	client HTTPClient,

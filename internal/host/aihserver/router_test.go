@@ -27,6 +27,7 @@ func TestRouterMountsSub2APIImport(t *testing.T) {
 		models:            fallback,
 		blobs:             fallback,
 		tokenCount:        fallback,
+		images:            fallback,
 		inference:         fallback,
 		gemini:            fallback,
 		claudeRelayLeases: fallback,

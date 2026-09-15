@@ -36,6 +36,7 @@ import (
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
+	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -46,6 +47,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
+	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
@@ -61,6 +63,7 @@ type serverHandlers struct {
 	accountAuth       http.Handler
 	models            http.Handler
 	blobs             http.Handler
+	images            http.Handler
 	tokenCount        http.Handler
 	inference         http.Handler
 	gemini            http.Handler
@@ -652,6 +655,30 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建图片 blob Handler 失败: %w", err)
 	}
+	// 图片入口与 blob 取回共用同一个进程内图片仓，因此 response_format=url 生成的
+	// 图片能被 GET /v1/blobs/{id} 取回。
+	imageHandler, err := imagesapi.NewHandler(imagesapi.Dependencies{
+		Registry: images.NewRegistry(
+			images.ChatGPTCodexBaseURL,
+			agycodeassist.GenerateContentURL,
+		),
+		Accounts: imageAccountSource{
+			catalog:    catalog,
+			recruiter:  inference.recruiter,
+			transports: imageTransportPolicy{},
+		},
+		Providers: imageProviderResolver{
+			catalog: catalog,
+			models:  inference.models,
+		},
+		HTTP:       http.DefaultClient,
+		Authorizer: clientAuthorizer,
+		Blobs:      images.BlobStoreAdapter{Store: imageBlobs},
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建图片 Handler 失败: %w", err)
+	}
 	// count_tokens 是纯本地估算：不选账号、不发上游请求，因此只依赖客户端鉴权。
 	tokenCountHandler, err := anthropicmessagesapi.NewTokenCountHandler(
 		anthropicmessagesapi.TokenCountDependencies{
@@ -687,6 +714,7 @@ func newHandlers(
 			accountAuth:       accountAuthHandler,
 			models:            modelsHandler,
 			blobs:             blobsHandler,
+			images:            imageHandler,
 			tokenCount:        tokenCountHandler,
 			inference:         inference.handler,
 			gemini:            inference.gemini,

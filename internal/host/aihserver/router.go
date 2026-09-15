@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
+	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -83,6 +84,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// /v1/messages/count_tokens：纯本地估算，必须先于 /v1/messages 之外单独挂载，
 	// 否则会被 Messages 入口当成推理请求。
 	mux.Handle(anthropicmessagesapi.CountTokensPath, handlers.tokenCount)
+	// /v1/images/*：图片生成与编辑，与其它 /v1 路由共用客户端密钥闸门。
+	mux.Handle(imagesapi.GenerationsPath, handlers.images)
+	mux.Handle(imagesapi.EditsPath, handlers.images)
 	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)

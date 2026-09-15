@@ -71,6 +71,8 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/v1/chat/completions': ['POST'],
   '/v1/messages': ['POST'],
   '/v1/messages/count_tokens': ['POST'],
+  '/v1/images/generations': ['POST'],
+  '/v1/images/edits': ['POST'],
   '/v1{beta?}/models/{model}:generateContent': ['POST'],
   '/v1{beta?}/models/{model}:streamGenerateContent': ['POST'],
   '/v1/claude-relay-leases': ['POST'],

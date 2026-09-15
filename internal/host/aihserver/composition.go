@@ -63,6 +63,7 @@ type serverHandlers struct {
 	blobs             http.Handler
 	tokenCount        http.Handler
 	inference         http.Handler
+	gemini            http.Handler
 	codexResponsesWS  http.Handler
 	claudeRelayLeases http.Handler
 	claudeNativeRelay http.Handler
@@ -688,6 +689,7 @@ func newHandlers(
 			blobs:             blobsHandler,
 			tokenCount:        tokenCountHandler,
 			inference:         inference.handler,
+			gemini:            inference.gemini,
 			codexResponsesWS:  webSocketHandler,
 			claudeRelayLeases: relayLeaseHandler,
 			claudeNativeRelay: nativeRelayHandler,

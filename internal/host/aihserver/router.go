@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientpropsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
+	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -65,7 +66,15 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	mux.Handle(modelsapi.Path, handlers.models)
-	mux.Handle(modelsapi.PathPrefix, handlers.models)
+	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，
+	// 以及 Gemini 的 POST /v1/models/{model}:generateContent[Stream]。dispatcher 先按
+	// Gemini 的路径形态判断，避免 `:generateContent` 被单模型回显当成模型 ID 吞掉。
+	mux.Handle(modelsapi.PathPrefix, modelsDispatcher{
+		models: handlers.models,
+		gemini: handlers.gemini,
+	})
+	// /v1beta/models/ 只承载 Gemini：beta 前缀下没有单模型查询能力。
+	mux.Handle(geminiapi.BetaPathPrefix, handlers.gemini)
 	// /v1/blobs/{id}：取回被剥离出请求的图片字节，与其它 /v1 路由共用客户端密钥闸门。
 	//
 	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`
@@ -145,6 +154,35 @@ func handleReadiness(
 		ModelCount:            status.modelCount,
 		RouteCount:            status.routeCount,
 	})
+}
+
+// modelsDispatcher 让 /v1/models/ 子树按路径形态分流。
+//
+// 顺序很重要：Gemini 的 `:generateContent` 后缀必须先判定。单模型查询会把
+// `/v1/models/gemini-3.0-pro:generateContent` 当成一个合法模型 ID 并回显 200，
+// 一旦先走它，Gemini 入口就永远不可达且没有任何报错。
+type modelsDispatcher struct {
+	models http.Handler
+	gemini http.Handler
+}
+
+func (dispatcher modelsDispatcher) ServeHTTP(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if _, isGemini := geminiapi.ParseTarget(request.URL.Path); isGemini {
+		if dispatcher.gemini == nil {
+			handleRouteNotFound(response, request)
+			return
+		}
+		dispatcher.gemini.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.models == nil {
+		handleRouteNotFound(response, request)
+		return
+	}
+	dispatcher.models.ServeHTTP(response, request)
 }
 
 // responsesDispatcher 让同一个标准路径按 HTTP 或 WebSocket 传输分流。

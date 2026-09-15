@@ -143,10 +143,15 @@ func rejectUnsupportedRequest(
 }
 
 // isCrossProtocolClient 只识别已经完成字段投影审查的客户端协议。
+//
+// Gemini 入口同样是跨协议：它的请求被翻译成 Canonical 后再编码为 Responses，
+// 因此与 Anthropic / Chat Completions 走同一套字段投影规则。漏掉它会让 codex 上游
+// 把 Gemini 请求当成同协议客户端，套用更严格的字段校验，属于静默行为差异。
 func isCrossProtocolClient(protocol inference.ClientProtocolID) bool {
 	switch protocol {
 	case inference.ClientProtocolAnthropicMessages,
-		inference.ClientProtocolOpenAIChatCompletions:
+		inference.ClientProtocolOpenAIChatCompletions,
+		inference.ClientProtocolGeminiGenerateContent:
 		return true
 	default:
 		return false

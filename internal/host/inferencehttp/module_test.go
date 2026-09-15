@@ -392,7 +392,7 @@ func startModuleServer(
 ) (string, *http.Client) {
 	t.Helper()
 
-	handler, err := New(Dependencies{
+	module, err := New(Dependencies{
 		Executor:   executor,
 		Authorizer: protocolAuthorizer{},
 		Clock: func() time.Time {
@@ -402,7 +402,7 @@ func startModuleServer(
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(module.Router)
 	t.Cleanup(server.Close)
 	return server.URL, &http.Client{Timeout: 3 * time.Second}
 }

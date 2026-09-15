@@ -71,6 +71,8 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/v1/chat/completions': ['POST'],
   '/v1/messages': ['POST'],
   '/v1/messages/count_tokens': ['POST'],
+  '/v1{beta?}/models/{model}:generateContent': ['POST'],
+  '/v1{beta?}/models/{model}:streamGenerateContent': ['POST'],
   '/v1/claude-relay-leases': ['POST'],
   '/v1/management/accounts': ['GET', 'POST'],
   '/v1/management/accounts/': ['GET', 'PATCH', 'PUT', 'DELETE', 'POST'],
@@ -88,20 +90,50 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
 // Go 的 http.ServeMux 只能按前缀或精确路径挂载，参数化路径因此写成 `Path + "/"` 子树。
 // 采集器只在 Node 侧（scanNodeFile）套用 normalizePrefixPath，Go 侧保留原始字面量路径，
 // 于是同一个能力在两端会得到不同的 path，routeIdentity 对不上，能力永远显示为「Go 缺失」。
-// 这里逐条显式改记，保证一条能力只产生一条记录、且与 Node 的身份一致。
+//
+// 值是一个数组：一个 Go 前缀挂载可以同时承载多条 Node 能力（`/v1/models/` 既服务单模型
+// 查询，也服务 Gemini 的 :generateContent 两个入口，由 router 的 dispatcher 分流）。
+// addRoute 按 path 去重，因此多个挂载映射到同一组路径不会产生重复记录。
 const GO_PREFIX_MOUNT_OVERRIDES = Object.freeze({
   // Node 侧是 regex（lib/server/v1-router.js: `^/v1/models/([^/]+)$`）。
-  '/v1/models/': {
-    path: '/v1/models/{id}',
-    pattern: '^/v1/models/([^/]+)$',
-    match: 'regex'
-  },
+  '/v1/models/': [
+    {
+      path: '/v1/models/{id}',
+      pattern: '^/v1/models/([^/]+)$',
+      match: 'regex'
+    },
+    {
+      path: '/v1{beta?}/models/{model}:generateContent',
+      pattern: '^/v1(?:beta)?/models/([^/:]+):generateContent$',
+      match: 'regex'
+    },
+    {
+      path: '/v1{beta?}/models/{model}:streamGenerateContent',
+      pattern: '^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$',
+      match: 'regex'
+    }
+  ],
   // Node 侧是 prefix，normalizePrefixPath 把 `/v1/blobs` 映射为 `/v1/blobs/{id}`。
-  '/v1/blobs/': {
-    path: '/v1/blobs/{id}',
-    pattern: '/v1/blobs/*',
-    match: 'prefix'
-  }
+  '/v1/blobs/': [
+    {
+      path: '/v1/blobs/{id}',
+      pattern: '/v1/blobs/*',
+      match: 'prefix'
+    }
+  ],
+  // beta 前缀只承载 Gemini 的两个入口；与上面重复的条目会被 addRoute 去重。
+  '/v1beta/models/': [
+    {
+      path: '/v1{beta?}/models/{model}:generateContent',
+      pattern: '^/v1(?:beta)?/models/([^/:]+):generateContent$',
+      match: 'regex'
+    },
+    {
+      path: '/v1{beta?}/models/{model}:streamGenerateContent',
+      pattern: '^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$',
+      match: 'regex'
+    }
+  ]
 });
 
 function listFiles(relativeDir, predicate) {
@@ -718,18 +750,20 @@ function collectGoRoutes() {
     if (!base) continue;
     const suffix = match[3] ? '/' : '';
     const path = `${base}${suffix}`;
-    const asRegex = GO_PREFIX_MOUNT_OVERRIDES[path];
-    if (asRegex) {
-      addGoRoute(routes, {
-        file,
-        text,
-        index: match.index,
-        path: asRegex.path,
-        pattern: asRegex.pattern,
-        match: asRegex.match,
-        expression: match[0],
-        kind: 'endpoint',
-      });
+    const overrides = GO_PREFIX_MOUNT_OVERRIDES[path];
+    if (overrides) {
+      for (const override of overrides) {
+        addGoRoute(routes, {
+          file,
+          text,
+          index: match.index,
+          path: override.path,
+          pattern: override.pattern,
+          match: override.match,
+          expression: match[0],
+          kind: 'endpoint',
+        });
+      }
       continue;
     }
     addGoRoute(routes, {

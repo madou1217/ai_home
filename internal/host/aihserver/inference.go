@@ -34,6 +34,7 @@ const (
 // inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。
 type inferenceComposition struct {
 	handler        http.Handler
+	gemini         http.Handler
 	models         *inferencecatalog.AtomicCatalog
 	recruiter      *accountrouting.Recruiter
 	codexUpstream  *codexresponses.Adapter
@@ -149,7 +150,7 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	handler, err := inferencehttp.New(inferencehttp.Dependencies{
+	module, err := inferencehttp.New(inferencehttp.Dependencies{
 		Executor:                    runtimeComponents.Executor(),
 		Authorizer:                  dependencies.authorizer,
 		Clock:                       dependencies.clock,
@@ -158,7 +159,8 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	composition.handler = handler
+	composition.handler = module.Router
+	composition.gemini = module.Gemini
 	composition.models = activeCatalog
 	composition.recruiter = runtimeComponents.Recruiter()
 	composition.codexUpstream = codexAdapter

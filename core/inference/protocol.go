@@ -61,6 +61,11 @@ const (
 	ClientProtocolOpenAIChatCompletions ClientProtocolID = "openai.chat_completions"
 	// ClientProtocolAnthropicMessages 表示 Anthropic Messages 客户端协议。
 	ClientProtocolAnthropicMessages ClientProtocolID = "anthropic.messages"
+	// ClientProtocolGeminiGenerateContent 表示 Gemini generateContent 客户端协议。
+	//
+	// 它同时覆盖 :generateContent 与 :streamGenerateContent：两者请求体完全一致，
+	// 区别只在响应是单个 JSON 还是 SSE，由传输层选择聚合器或流式渲染器。
+	ClientProtocolGeminiGenerateContent ClientProtocolID = "gemini.generate_content"
 )
 
 // IsValid 判断客户端入口协议是否已有完整 Decoder 和 Renderer 计划。
@@ -68,7 +73,8 @@ func (protocolID ClientProtocolID) IsValid() bool {
 	switch protocolID {
 	case ClientProtocolOpenAIResponses,
 		ClientProtocolOpenAIChatCompletions,
-		ClientProtocolAnthropicMessages:
+		ClientProtocolAnthropicMessages,
+		ClientProtocolGeminiGenerateContent:
 		return true
 	default:
 		return false

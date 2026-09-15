@@ -9,9 +9,11 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/gemini"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openaichatcompletions"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 )
@@ -38,16 +40,31 @@ type Dependencies struct {
 	MaxBodyBytes int64
 }
 
-// New 创建精确注册 Responses、Chat Completions 和 Messages 的 HTTP Handler。
-func New(dependencies Dependencies) (http.Handler, error) {
+// Module 是推理 HTTP 组合模块暴露的入口集合。
+type Module struct {
+	// Router 是 Responses、Chat Completions 与 Messages 共用的入口 mux。
+	Router http.Handler
+	// Gemini 是 generateContent 入口。
+	//
+	// 它必须单独挂载：Gemini 的模型名在路径里（`/v1{beta?}/models/{model}:generateContent`），
+	// 与其它协议共享的 mux 路径形态不同，且要和单模型查询共用 `/v1/models/` 前缀。
+	Gemini http.Handler
+}
+
+// New 创建精确注册 Responses、Chat Completions、Messages 与 Gemini 的入口。
+func New(dependencies Dependencies) (Module, error) {
 	if dependencies.Executor == nil ||
 		dependencies.Authorizer == nil ||
 		dependencies.Clock == nil {
-		return nil, ErrInvalidDependencies
+		return Module{}, ErrInvalidDependencies
 	}
 	protocols, err := newProtocolRegistry(dependencies.Clock)
 	if err != nil {
-		return nil, ErrInvalidDependencies
+		return Module{}, ErrInvalidDependencies
+	}
+	geminiAdapter, err := gemini.NewAdapter(dependencies.Clock)
+	if err != nil {
+		return Module{}, ErrInvalidDependencies
 	}
 	responses, err := openairesponsesapi.NewHandler(
 		openairesponsesapi.Dependencies{
@@ -58,7 +75,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		},
 	)
 	if err != nil {
-		return nil, ErrInvalidDependencies
+		return Module{}, ErrInvalidDependencies
 	}
 	chat, err := openaichatcompletionsapi.NewHandler(
 		openaichatcompletionsapi.Dependencies{
@@ -69,7 +86,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		},
 	)
 	if err != nil {
-		return nil, ErrInvalidDependencies
+		return Module{}, ErrInvalidDependencies
 	}
 	messages, err := anthropicmessagesapi.NewHandler(
 		anthropicmessagesapi.Dependencies{
@@ -81,14 +98,23 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		},
 	)
 	if err != nil {
-		return nil, ErrInvalidDependencies
+		return Module{}, ErrInvalidDependencies
+	}
+	geminiHandler, err := geminiapi.NewHandler(geminiapi.Dependencies{
+		Adapter:      geminiAdapter,
+		Executor:     dependencies.Executor,
+		Authorizer:   dependencies.Authorizer,
+		MaxBodyBytes: dependencies.MaxBodyBytes,
+	})
+	if err != nil {
+		return Module{}, ErrInvalidDependencies
 	}
 
 	router := http.NewServeMux()
 	router.Handle(openairesponsesapi.Path, responses)
 	router.Handle(openaichatcompletionsapi.Path, chat)
 	router.Handle(anthropicmessagesapi.Path, messages)
-	return router, nil
+	return Module{Router: router, Gemini: geminiHandler}, nil
 }
 
 // newProtocolRegistry 创建只读且可并发共享的客户端协议策略注册表。

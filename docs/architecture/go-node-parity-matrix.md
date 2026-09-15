@@ -51,8 +51,10 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 `go_implementation=private_canary`、`cutover_blocking=true`。切流仍需协议 shadow、数据库/
 runtime migration、rollback plan 与显式确认。
 
-已知残留差异（不阻塞路由存在性，但切流前必须处理）：**Go 还没有 vision guard 的剥离/入仓
-链路**，blob 仓目前只由 `response_format=url` 的图片响应写入，请求里被剥离出来的图片不会进仓。
+已知残留差异（不阻塞路由存在性，但切流前必须处理）：**Go 的 vision guard 只对离线模态索引里
+存在的模型生效（codex/claude）**，索引查不到时失败开放、不剥离。因此未收录 Provider
+（grok、opencode、kimi 等）的图片不会被换成借视文本，比 Node 的索引覆盖窄。
+`GET /v1/blobs/{id}` 的入仓现在有两条链路：被剥离的图片，以及 `response_format=url` 的图片响应。
 该残留已记入 manifest 的 `gateway.vision.blobs.blockers`。
 
 `/v1/` 和 `/v1beta/` 是 Node 的 scope guard，不是 endpoint。采集器保留它们是为了

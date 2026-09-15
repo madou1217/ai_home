@@ -634,14 +634,16 @@
       "cutover_blocking": true,
       "blockers": [
         "public endpoint remains Node until the full gate passes",
-        "Go has no vision-guard population path yet: blobs are only written by response_format=url image responses, not by stripping images out of requests"
+        "Go vision-guard population now exists, but only for models present in Go's offline modality index (codex/claude); unlisted providers fail open and are not stripped, which is narrower than Node's index"
       ],
       "evidence": [
         "lib/server/vision-image-guard.js",
         "lib/server/image-blob-store.js",
         "lib/server/v1-router.js",
         "internal/adapters/imageblob/store.go",
-        "internal/transport/http/blobsapi/handler.go"
+        "internal/transport/http/blobsapi/handler.go",
+        "application/visionguard/guard.go",
+        "core/inference/request_images.go"
       ]
     },
     {

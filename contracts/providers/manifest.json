@@ -1355,7 +1355,8 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "session_history"
+        "session_history",
+        "quota_usage"
       ],
       "authOptions": [
         {
@@ -1434,7 +1435,8 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "session_history"
+        "session_history",
+        "quota_usage"
       ],
       "authOptions": [
         {
@@ -1514,7 +1516,8 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "session_history"
+        "session_history",
+        "quota_usage"
       ],
       "authOptions": [
         {
@@ -1585,7 +1588,8 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
-        "session_history"
+        "session_history",
+        "quota_usage"
       ],
       "authOptions": [
         {

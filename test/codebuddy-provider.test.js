@@ -66,16 +66,18 @@ test('codebuddy auth options cover browser login and API key', () => {
 
 // 能力面是刻意收敛的：只有已实现适配器的能力才允许声明。声明未实现的能力会让
 // WebUI/gateway 认为该 provider 支持对应功能，进而产生空轮询或 404。
-test('codebuddy declares api_key_account and session_history only', () => {
+test('codebuddy declares api_key_account, session_history and quota_usage', () => {
   assert.equal(providerSupports('codebuddy', 'api_key_account'), true);
   // 会话读取适配器已落地，因此允许声明 session_history。
   assert.equal(providerSupports('codebuddy', 'session_history'), true);
+  // 余额/积分接口已接入（POST {endpoint}/billing/meter/get-user-resource-summary，
+  // 适配器 lib/cli/services/usage/codebuddy-quota-probe.js），因此允许声明 quota_usage。
+  assert.equal(providerSupports('codebuddy', 'quota_usage'), true);
   // account_session_store 刻意保持不声明：会话读的是宿主地区目录而不是账号沙箱，
   // 声明它会把列表判成"按账号隔离"，而"切换账号不变历史"正是本轮要保证的行为。
   assert.equal(providerSupports('codebuddy', 'account_session_store'), false);
   for (const capability of [
     'model_catalog',
-    'quota_usage',
     'session_runtime',
     'fabric_runtime',
     'gateway_profile',

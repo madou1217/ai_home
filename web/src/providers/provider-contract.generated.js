@@ -407,7 +407,8 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "blue",
     "capabilities": [
       "api_key_account",
-      "session_history"
+      "session_history",
+      "quota_usage"
     ],
     "authOptions": [
       {
@@ -439,7 +440,8 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "purple",
     "capabilities": [
       "api_key_account",
-      "session_history"
+      "session_history",
+      "quota_usage"
     ],
     "authOptions": [
       {
@@ -471,7 +473,8 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "blue",
     "capabilities": [
       "api_key_account",
-      "session_history"
+      "session_history",
+      "quota_usage"
     ],
     "authOptions": [
       {
@@ -503,7 +506,8 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "purple",
     "capabilities": [
       "api_key_account",
-      "session_history"
+      "session_history",
+      "quota_usage"
     ],
     "authOptions": [
       {

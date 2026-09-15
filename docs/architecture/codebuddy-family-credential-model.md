@@ -319,6 +319,8 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
       本轮**不做**：国内侧已由 HOME 隔离 + HOME 相对投影天然实现"一账号一份"，且注入会让沙箱
       不再与 App 共用登录态，与产品目标冲突（详见 §11.3）。
 - [x] 安装器增加"优先探测 App 内嵌 CLI"分支（复用版本一致性），npm 安装作为回退。见 §10。
+- [x] 额度/用量探测（`quota_usage`）接入家族四员：`POST {endpoint}/billing/meter/get-user-resource-summary`，
+      账户级聚合 + 明细桶，实测同地区 work/code 共用一份账户级用量。见 §14。
 - [ ] 若要做真正意义的凭据共用，评估集成入口：`codebuddy --serve`（REST/ACP over SSE）优先于自实现 bootstrap。
 
 
@@ -708,6 +710,107 @@ sharedEntries: Object.freeze(['projects'])   // 账号投影里 projects ⇒ 宿
 
 ### 13.8 已知限制（未做）
 
-- 额度/用量探测（`quota_usage` / `usage_scan`）尚未接入：本期目标是**会话**打通。
-  同地区 work/code 共用一份用量的实测结论待补（见 §8 待办）。
 - WorkBuddy 桌面端的"新建会话"仍需在桌面端发起；aih 只负责读取与（codebuddy 侧）续聊。
+
+> 额度/用量探测（`quota_usage`）**已闭环**，见 §14；原 §8 待办"同地区 work/code 共用一份
+> 用量的实测结论"已由该节的实测取代。
+
+## 14. 额度探测闭环：`quota_usage` 对家族四员打开（2026-09-15 实现）
+
+§13 解决的是**历史**（会话）；本节解决同一家族的**用量**。目标是"闭环"——四支 Provider
+都声明 `quota_usage`，用真实桌面端/CLI 同款接口读到真实余额，展示层不需要为家族单开分支。
+
+### 14.1 端点：桌面端/官网同款计费接口
+
+| 项 | 值 |
+| --- | --- |
+| 方法 / 路径 | `POST {endpoint}/billing/meter/get-user-resource-summary` |
+| Body | `{}`（无参） |
+| 鉴权 | `Authorization: Bearer <auth.accessToken>` |
+| 身份头 | `X-User-Id: <account.uid>`、`X-Domain: <auth.domain>` |
+| 语言 | `Accept-Language: zh` / `en`（决定 `PackageName` 语言） |
+| UA | **必须真实客户端 UA**（见坑 2） |
+
+发行版级 `endpoint`（`lib/account/codebuddy-billing.js` 的 `CODEBUDDY_FAMILY_BILLING_ENDPOINTS`）：
+
+| Provider | endpoint | 共享凭据文件（HOME 相对） |
+| --- | --- | --- |
+| `codebuddy` | `https://www.codebuddy.ai` | `…/Tencent-Cloud.coding-copilot.info` |
+| `workbuddy` | `https://www.workbuddy.ai` | `…/workbuddy-desktop-ai.info` |
+| `codebuddycn` | `https://copilot.tencent.com` | `…/workbuddy-desktop.info` |
+| `workbuddycn` | `https://copilot.tencent.com` | `…/workbuddy-desktop.info` |
+
+凭据路径与 §3.1 / §10.3 的 `authArtifact` **同源**（`CODEBUDDY_FAMILY_AUTH_PATHS` 直接复用
+`provider-storage-policy` 的 `CODEBUDDY_*_SHARED_AUTH_PATH`），所以"读会话用的那份凭据"和
+"读余额用的那份凭据"永远是同一个文件，不会出现两套口径。
+
+### 14.2 两个实测坑（错了就是静默 403 / 404）
+
+1. **路径不带 `/v2` 前缀。** 老接口 `get-user-resource` 走 `/v2`；`#97550` 引入的三个新接口
+   （`get-user-resource-summary` / `paid-packages` / `free-packages`）在网关里注册的是**无前缀**
+   路径。带 `/v2` → `404 Route Not Found`。
+2. **国内站网关拦脚本 UA。** `copilot.tencent.com` 对脚本默认 UA（`Python-urllib/3.x`、
+   `undici`、`curl/…`）返回 `HTTP 403` + `{"code":10085,"msg":"请求不合法"}`。这不是鉴权失败，
+   是 WAF 拦脚本形态；换成任意真实客户端 UA 即 `200`。探测固定带
+   `User-Agent: CodeBuddy/1.0 (ai-home)`（`CODEBUDDY_PROBE_USER_AGENT`）。UA 本身不参与鉴权。
+
+排查顺序也因此固定为：先确认无 `/v2`，再确认带 UA，最后才怀疑 token。
+
+### 14.3 响应与聚合语义
+
+响应形状 `{code:0,msg:'OK',data}`：
+
+```
+data.Packages[] = { PackageCode, CycleTotalCapacity, CycleRemainCapacity,
+                    CycleUsedCapacity, CycleFrozenCapacity, CapacityUnit }
+data.SubscriptionPackageCode, data.IsPaidUser, data.IsProtectedPriceUser, data.ProTrialStatus?
+```
+
+四个 Capacity 字段都是**字符串**（可能带小数），`CapacityUnit` 实测为 `credit(s)`。
+
+- **积分是可跨包通用的**，所以权威值是**账户级聚合**：`probe()` 产出的 `entries[0]` 是一条
+  `type:'credits'` 的聚合项（`sum(remain)/sum(total)`），供"账号还剩多少%"使用。
+- 每个 `PackageCode` 另发一条 `category:'detail'` 明细项，供展示层列桶。
+- `lib/account/usage-remaining.js` 的 `getUsageRemainingPctValues` **跳过 `category:'detail'`**
+  （与 kimi 跳过 `category:'gift'` 同理）：一个已用尽的赠送包不应把账户级剩余率拖到 0%。
+- `remainingPct` 只在**能算出来**时才有值：有 `CycleRemainCapacity` 用 `remain/total`；没有
+  remain 但有 `CycleUsedCapacity` 用 `(total-used)/total`；两者都缺 → `null`（未知），
+  **不回退成 100%**——把"字段缺失"显示成"满格"会掩盖真实状态，也会让聚合虚高。
+- 家族**没有"重置时间"概念**（按 cycle 结算但不暴露 cycle 边界），因此 `resetIn` / `resetAtMs`
+  恒为空，不臆造。
+
+商品码 → 桶名按**前缀**匹配（尾缀是随机短串，`TCACA_code_007_nzdH5h4Nl0`），未登记回退
+`code_<NNN>`；`SubscriptionPackageCode` → 档位名只对有 `CODEBUDDY_PAID_PLAN_LABELS` 的付费码
+生效，体验/试用包（`IsPaidUser:false`）刻意不标档位，避免展示成 "Pro" 误导。
+
+### 14.4 落点文件
+
+| 文件 | 职责 |
+| --- | --- |
+| `lib/account/codebuddy-billing.js`（新） | endpoint / 凭据路径 / 商品码与档位码表 + 解析器 |
+| `lib/cli/services/usage/codebuddy-quota-probe.js`（新） | 读共享凭据 → POST → `Packages[]` → `entries[]` |
+| `lib/account/usage-remaining.js` | 登记 `codebuddy_credit_balance` 快照型 + `USAGE_SOURCE_CODEBUDDY` 来源；extractor 跳过 detail |
+| `lib/account/derived-state.js` | `codebuddy_credit_balance` 计入额度派生状态 |
+| `lib/cli/services/usage/cache.js`、`lib/server/accounts.js` | 家族 `cliName` 走 trusted-snapshot 校验分支 |
+| `lib/cli/services/usage/snapshot.js` | 家族分派：`refreshCodebuddyUsageSnapshotAsync` |
+| `core/providers/builtins.go` + 三份生成物 | 四员 `Capabilities` 增补 `CapabilityQuotaUsage` |
+
+家族**没有 token 刷新链路**（与 zcode/kimi 不同）：`accessToken` 由桌面端/CLI 自己维护，
+过期的正确处置是重新登录，所以探测**不做**任何续期尝试，`401/403` 一律如实上报。
+
+### 14.5 验证
+
+- `node --test test/codebuddy-quota-probe.test.js`：21 pass。覆盖：端点/路径解析（确认无 `/v2`）、
+  商品码与档位映射、聚合 + 明细产出、**已用尽明细包不把账户级拖到 0%**、Capacity 字段部分缺失
+  时取 `null` 而非 100%、共享凭据读取、e2e（stub fetch，断言 endpoint 与三个头）、api-key 账号
+  空操作、缺凭据报错、非家族 Provider 拒绝、国内站 WAF 403、200 但业务错误、egress/代理透传、
+  传输失败、trusted 校验存活。
+- `node --test test/codebuddy-provider.test.js` + `test/provider-catalog.test.js`：声明
+  `quota_usage`，`listProvidersByCapability('quotaUsage')` 含家族四员。
+- **实机**：用本机真实 `.info` 凭据跑一次探测，三支可得账户级剩余率——
+  `workbuddy` 16.67%（100/600 credits）、`codebuddy` 16.67%（100/600）、`workbuddycn` 约 68%
+  （≈1408/2056，随真实用量浮动），均产出 trusted 快照（聚合 `credits` + `activity`/
+  `proTrialMon`/`freeMon` 明细）。**聚合值没有被用尽的明细包拖低**：`proTrialMon` 为
+  `0/500`，而账户级仍是 `100/600 = 16.67%`，正是 §14.3 的语义。国际站两支
+  （`workbuddy` / `codebuddy`）在同一账号下读到**完全一致的余额**，再次印证 §13.1 的
+  "同地区两个产品跑同一套 runtime、共用一份账户级用量"。

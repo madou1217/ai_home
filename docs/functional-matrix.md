@@ -63,6 +63,11 @@ CodeBuddy 家族在这条轴之上还有一层**数据面打通**：同一站点
 丢弃建链，有真实会话则 `unresolved` 交人决定）。家族里只有自带 CLI 的 `codebuddy` /
 `codebuddycn` 能被 aih 启动/续聊，桌面端两个 Provider 仅可读、可列进会话目录。详见同文件 §13。
 
+用量侧同样打通：家族四员都声明 `quota_usage`，走桌面端/官网同款
+`POST {endpoint}/billing/meter/get-user-resource-summary` 接口，产出**账户级聚合**（积分可跨包
+通用，明细以 `category:'detail'` 单列、不参与账户级剩余率）。同一账号下 work/code 读到一致余额，
+印证同地区共用一份账户级用量。详见同文件 §14。
+
 | Provider | 用户认证入口 | API Key/Token | 模型目录 | 原生额度 | 会话读取/同步 | 网关状态 | 关键限制 |
 |---|---|---|---|---|---|---|---|
 | Codex / ChatGPT (`codex`) | Browser OAuth、device auth | `OPENAI_API_KEY`、`OPENAI_BASE_URL` | 支持 | 支持 | 官方 hook；Codex event 可增量读取 | 默认主链 | Codex App 账号只允许 ChatGPT OAuth；临时凭据投影与共享 session/config 分离 |
@@ -76,9 +81,9 @@ CodeBuddy 家族在这条轴之上还有一层**数据面打通**：同一站点
 | Kimi (`kimi`) | Kimi Code OAuth/device flow | `MOONSHOT_API_KEY`、`KIMI_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 不可用 | 默认网关候选 | 支持 Moonshot CN/Global API Key；当前网页无法同步原生会话 |
 | Kiro (`kiro`) | AWS Builder ID device flow | 内部保留 `KIRO_API_KEY` 环境入口 | 支持 | 不支持统一额度快照 | SQLite 会话读取 + 文件轮询 | 默认网关候选 | 原生登录可经 Google/GitHub/AWS Builder ID；session store 位于 Kiro SQLite |
 | CodeBuddy Global (`codebuddy`) | 原生浏览器登录（选国际站） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL`、`CODEBUDDY_AUTH_TOKEN` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 文件轮询（JSONL；**同地区与 `workbuddy` 共用一份历史**） | 默认网关候选 | 与 `codebuddycn` 同族（`family=codebuddy`、`site=global`）但账号体系不互通；凭据 `Tencent-Cloud.coding-copilot.info`（**站点不可归因**，只能按 token realm 判站）；自带 CLI，可被 aih 启动/续聊 |
-| CodeBuddy CN (`codebuddycn`) | 原生浏览器登录（选国内站 copilot.tencent.com） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL`、`CODEBUDDY_AUTH_TOKEN` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 文件轮询（JSONL；**同地区与 `workbuddycn` 共用一份历史**） | 默认网关候选 | 与 `codebuddy` 同族不互通；凭据 `workbuddy-desktop.info`（与 `workbuddycn` 同一文件）；零安装复用 WorkBuddy.app 内嵌 CLI，可被 aih 启动/续聊 |
+| CodeBuddy CN (`codebuddycn`) | 原生浏览器登录（选国内站 copilot.tencent.com） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL`、`CODEBUDDY_AUTH_TOKEN` | 当前不在通用 model-catalog capability 成员中 | 支持（CodeBuddy 计费额度） | 文件轮询（JSONL；**同地区与 `workbuddycn` 共用一份历史**） | 默认网关候选 | 与 `codebuddy` 同族不互通；凭据 `workbuddy-desktop.info`（与 `workbuddycn` 同一文件）；零安装复用 WorkBuddy.app 内嵌 CLI，可被 aih 启动/续聊 |
 | WorkBuddy Global (`workbuddy`) | 原生浏览器登录（国际站 workbuddy.ai） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 文件轮询（JSONL；**同地区与 `codebuddy` 共用一份历史**） | 默认网关候选 | 仅桌面端（复用 WorkBuddy AI.app 内嵌的 CodeBuddy Code runtime）；凭据 `workbuddy-desktop-ai.info`；数据根 `~/.workbuddy-ai`；历史可读、可列进会话目录，但**不可被 aih 启动**（无独立 CLI） |
-| WorkBuddy CN (`workbuddycn`) | 原生浏览器登录（国内站 workbuddy.cn） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 不支持统一额度快照 | 文件轮询（JSONL；**同地区与 `codebuddycn` 共用一份历史**，`projects` 是软链接、不复制） | 默认网关候选 | 仅桌面端（复用 WorkBuddy.app 内嵌的 CodeBuddy Code runtime）；凭据 `workbuddy-desktop.info`；数据根 `~/.workbuddy`；与 `codebuddycn` 同一国内账号；历史可读、可列进会话目录，但**不可被 aih 启动**（无独立 CLI） |
+| WorkBuddy CN (`workbuddycn`) | 原生浏览器登录（国内站 workbuddy.cn） | `CODEBUDDY_API_KEY`、`CODEBUDDY_BASE_URL` | 当前不在通用 model-catalog capability 成员中 | 支持（CodeBuddy 计费额度） | 文件轮询（JSONL；**同地区与 `codebuddycn` 共用一份历史**，`projects` 是软链接、不复制） | 默认网关候选 | 仅桌面端（复用 WorkBuddy.app 内嵌的 CodeBuddy Code runtime）；凭据 `workbuddy-desktop.info`；数据根 `~/.workbuddy`；与 `codebuddycn` 同一国内账号；历史可读、可列进会话目录，但**不可被 aih 启动**（无独立 CLI） |
 
 证据：`lib/provider-catalog-data.json`、`lib/provider-catalog.js`、`lib/cli/services/ai-cli/provider-registry.js`、`lib/provider-native-capability-registry.js`、`lib/server/provider-session-hook-config.js`、`lib/sessions/session-reader.js`、`web/src/pages/Accounts.tsx`。
 

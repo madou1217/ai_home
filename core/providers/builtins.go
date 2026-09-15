@@ -530,7 +530,11 @@ func builtinCodebuddy() Definition {
 		// session_history：会话读取适配器已落地
 		// （lib/sessions/session-reader-codebuddy.js）。**刻意不声明 account_session_store**：
 		// 会话读的是宿主地区目录而不是账号沙箱（见 SessionSync 的说明）。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
+		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
+		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
+		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
+		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -636,7 +640,11 @@ func builtinCodebuddyCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		// 与 codebuddy 同口径：会话历史已接入，账号隔离存储不声明（读的是宿主地区目录）。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
+		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
+		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
+		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
+		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -722,7 +730,11 @@ func builtinWorkbuddy() Definition {
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
 		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
 		// 客户端能力仍是 desktop-only（没有可安装的独立 CLI），因此可读历史、不可自行启动。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
+		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
+		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
+		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
+		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -796,7 +808,11 @@ func builtinWorkbuddyCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory},
+		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
+		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
+		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
+		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,

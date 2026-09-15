@@ -1,0 +1,64 @@
+name: verify host provider retention
+on:
+  push:
+    branches: [fix/codex-host-provider-retention-20260915]
+    paths: [.github/workflows/verify-host-provider-retention.yml]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify inspected source and apply targeted changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object lib/account/host-sync.js)" = ffddf3f70979f8430f7e1f1371976d51e826a456
+          test "$(git hash-object lib/server/token-refresh-daemon.js)" = 13c3857d07fb92e0d4806b66e9d7124887f551d4
+          test "$(git hash-object test/host-sync.test.js)" = 56327b888406cc5ce93de65235776abf04b47eab
+          test "$(git hash-object package.json)" = b32ad3035bce8a6b823f5b24f29d8399ab4b589b
+          git apply --check .github/aih-host-provider-retention.patch
+          git apply .github/aih-host-provider-retention.patch
+          node --check lib/account/codex-host-provider.js
+          node --check lib/account/host-sync.js
+          node --check lib/server/token-refresh-daemon.js
+      - name: Install repository dependencies
+        run: npm install
+      - name: Confirm the original OAuth deletion fails both expiration cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp lib/account/host-sync.js "$RUNNER_TEMP/host-sync.patched.js"
+          git show HEAD:lib/account/host-sync.js > lib/account/host-sync.js
+          set +e
+          node --test --test-name-pattern='API-key -> OAuth retains registration' test/codex-host-provider-lifecycle.test.js > "$RUNNER_TEMP/host-provider-before.log" 2>&1
+          result=$?
+          set -e
+          cp "$RUNNER_TEMP/host-sync.patched.js" lib/account/host-sync.js
+          cat "$RUNNER_TEMP/host-provider-before.log"
+          test "$result" -ne 0
+          grep -q '# fail 2' "$RUNNER_TEMP/host-provider-before.log"
+      - name: Verify corrected registration and existing configuration lifecycles
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test test/codex-host-provider-lifecycle.test.js test/host-sync.test.js test/config-sync.test.js test/server.token-refresh-daemon.test.js
+      - name: Publish verified source and remove temporary transfer files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git rm .github/aih-host-provider-retention.patch .github/workflows/verify-host-provider-retention.yml
+          git add package.json lib/account/host-sync.js lib/server/token-refresh-daemon.js test/host-sync.test.js
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(codex): retain aih_server across OAuth defaults and heal missing host registration' -m 'Default provider selection is independent of historical registration. Use gateway command authentication in both modes; add a server-owned scoped missing-registration reconciler. Baseline deletion reproduces for expired and unexpired OAuth snapshots; targeted configuration/daemon regression passes. Full PR CI and physical App verification remain separate gates. User authorized fix and push; self-review performed, no independent reviewer available.'
+          git push origin HEAD:refs/heads/fix/codex-host-provider-retention-20260915

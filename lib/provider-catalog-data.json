@@ -109,6 +109,36 @@
       "accentVar": "var(--provider-zcode)",
       "softVar": "var(--provider-zcode-soft)",
       "tagColor": "geekblue"
+    },
+    {
+      "id": "codebuddy",
+      "label": "CodeBuddy",
+      "short": "CB",
+      "terminalIcon": "❖",
+      "terminalIconAsset": "assets/provider-icons/codebuddy.png",
+      "accentVar": "var(--provider-codebuddy)",
+      "softVar": "var(--provider-codebuddy-soft)",
+      "tagColor": "blue"
+    },
+    {
+      "id": "codebuddycn",
+      "label": "CodeBuddy CN",
+      "short": "CBCN",
+      "terminalIcon": "✦",
+      "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
+      "accentVar": "var(--provider-codebuddycn)",
+      "softVar": "var(--provider-codebuddycn-soft)",
+      "tagColor": "purple"
+    },
+    {
+      "id": "workbuddy",
+      "label": "WorkBuddy",
+      "short": "WB",
+      "terminalIcon": "◉",
+      "terminalIconAsset": "assets/provider-icons/workbuddy.png",
+      "accentVar": "var(--provider-workbuddy)",
+      "softVar": "var(--provider-workbuddy-soft)",
+      "tagColor": "blue"
     }
   ],
   "fallback": {

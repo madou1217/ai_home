@@ -10,6 +10,9 @@ import grokIcon from '@/assets/icons/grok.svg';
 import kimiIcon from '@/assets/icons/kimi.svg';
 import kiroIcon from '@/assets/icons/kiro.svg';
 import zcodeIcon from '@/assets/icons/zcode.svg';
+import codebuddyIcon from '@/assets/icons/codebuddy.svg';
+import codebuddycnIcon from '@/assets/icons/codebuddycn.svg';
+import workbuddyIcon from '@/assets/icons/workbuddy.svg';
 import qoderIcon from '@/assets/icons/qoder.png';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
@@ -20,6 +23,9 @@ import kimiTerminalIcon from '../../../../assets/provider-icons/kimi.png';
 import opencodeTerminalIcon from '../../../../assets/provider-icons/opencode.png';
 import grokTerminalIcon from '../../../../assets/provider-icons/grok.png';
 import zcodeTerminalIcon from '../../../../assets/provider-icons/zcode.png';
+import codebuddyTerminalIcon from '../../../../assets/provider-icons/codebuddy.png';
+import codebuddycnTerminalIcon from '../../../../assets/provider-icons/codebuddycn.png';
+import workbuddyTerminalIcon from '../../../../assets/provider-icons/workbuddy.png';
 import {
   PROVIDER_CATALOG,
   PROVIDER_FALLBACK,
@@ -69,7 +75,12 @@ const ICONS: Partial<Record<Provider, string>> = {
   qodercn: qoderIcon,
   kimi: kimiIcon,
   kiro: kiroIcon,
-  zcode: zcodeIcon
+  zcode: zcodeIcon,
+  // CodeBuddy 家族：自绘品牌记号（同目录 codebuddy*.svg / workbuddy.svg），
+  // 三个站点/产品各自独立图形，见各文件头部的素材来源说明。
+  codebuddy: codebuddyIcon,
+  codebuddycn: codebuddycnIcon,
+  workbuddy: workbuddyIcon
 };
 
 const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
@@ -83,7 +94,12 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   qoder: aiHomeMark,
   qodercn: aiHomeMark,
   kiro: aiHomeMark,
-  zcode: zcodeTerminalIcon
+  zcode: zcodeTerminalIcon,
+  // 终端 profile 需要位图，因此用与各自 SVG 同形的 64x64 PNG
+  // （生成脚本 scripts/gen-provider-icons.js，路径与 Provider 合同声明一致）。
+  codebuddy: codebuddyTerminalIcon,
+  codebuddycn: codebuddycnTerminalIcon,
+  workbuddy: workbuddyTerminalIcon
 };
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(

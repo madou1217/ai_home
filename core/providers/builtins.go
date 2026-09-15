@@ -22,6 +22,9 @@ func BuiltinManifest() Manifest {
 			builtinKimi(),
 			builtinKiro(),
 			builtinZcode(),
+			builtinCodebuddy(),
+			builtinCodebuddyCN(),
+			builtinWorkbuddy(),
 		},
 		Fallback: Presentation{
 			ID:                "codex",
@@ -471,6 +474,284 @@ func builtinZcode() Definition {
 				[]string{"ZCode.exe"},
 				[]string{"zcode"},
 			),
+		},
+	}
+}
+
+// builtinCodebuddy 定义 CodeBuddy Code CLI 与 CodeBuddy IDE 桌面端。
+//
+// 原生事实（2026-09-14 实测 @tencent-ai/codebuddy-code@2.150.0 + 官方 Homebrew cask）：
+//   - CLI 包：npm `@tencent-ai/codebuddy-code`，bin 别名 codebuddy / cbc / codebuddy-code。
+//   - 配置根目录：`~/.codebuddy`，只能由环境变量 `CODEBUDDY_CONFIG_DIR` 覆盖
+//     （CLI 没有 --config-dir 参数，故本定义刻意不填 ConfigDirFlag）；账号隔离
+//     因此在 launch-profile 里走环境变量注入，而不是命令行注入。
+//   - configDir 不涵盖共享登录态；内嵌 CLI 读取 HOME 下的 CodeBuddyExtension
+//     auth/*.info，启动隔离必须同时重定向 HOME，凭据导入链仍需单独适配。
+//   - 登录入口：CLI 没有 `login` 子命令。首次交互式启动会打印
+//     "Select login method:" 选择国内站 / 国际站 / 企业域名 / iOA，TUI 内另有
+//     `/login`、`/logout` 斜杠命令。因此 LoginArgs 为空数组，登录形态即
+//     "裸启动 + CLI 自己弹出登录方式选择"，与官方文档描述一致。
+//   - 非交互入口：`-p/--print`（配合 `--output-format json|stream-json`）。
+//   - 会话恢复：`-c/--continue`、`-r/--resume <sessionId>`、`--session-id <uuid>`。
+//   - 桌面端：CodeBuddy IDE（VS Code 内核）。macOS 安装包名 `CodeBuddy.app`、
+//     bundle id 前缀 `com.tencent.codebuddy`，官方 Homebrew cask 为 `codebuddy`。
+//
+// 本次刻意不声明的能力（能力 = 已落地适配器的声明，未实现就不声明，避免出现
+// "声称支持但无实现"的链路）：
+//   - model_catalog：统一模型目录探测链路未接入（无上游端点/协议适配）。
+//   - quota_usage / usage_scan：额度探测与本地用量扫描未接入。
+//   - session_history / account_session_store：会话历史读取未接入。
+//   - session_runtime / fabric_runtime / gateway_profile：Fabric runtime 与内置
+//     网关 profile 路由未接入。
+//     上述每一项都应作为独立的后续迭代，而不是在这里提前声明。
+//
+// 站点边界：本 Provider 代表**国际站**（codebuddy.ai）。国内站是独立 Provider
+// `codebuddycn`，原因见 builtinCodebuddyCN 的说明。
+//
+// CLI/IDE 可能共享 HOME 下的 .info 登录态；本批不接管宿主凭据文件。
+// reloadsHostAuth=false 表示尚未接通自动导入，并不表示上游凭据必然不通用。
+// HOME 与 --user-data-dir 均按账号隔离，首次登录由原生程序完成。
+func builtinCodebuddy() Definition {
+	reloadsHostAuth := false
+	return Definition{
+		ID:           "codebuddy",
+		Presentation: presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
+		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
+		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		AuthOptions: []AuthOption{
+			authOption(
+				AuthModeOAuthBrowser,
+				"CodeBuddy 登录",
+				"使用 CodeBuddy Code 原生浏览器登录流程（首次启动选择国内站 / 国际站 / 企业域名）。",
+			),
+			authOption(
+				AuthModeAPIKey,
+				"CodeBuddy 密钥",
+				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（非交互模式固定使用该密钥）。",
+			),
+		},
+		// 会话同步未接入：CLI 有 projects/<project>/<sessionId>/*.jsonl 落盘，
+		// 但 AIH 侧还没有适配器，因此不声明 hook/polling，避免产生空轮询。
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		CLI: &CLIConfig{
+			Order:      12,
+			GlobalDir:  ".codebuddy",
+			ConfigFile: "settings.json",
+			// 空数组而非 nil：CLI 无 login 子命令，登录由裸启动的交互式选择完成。
+			LoginArgs:  []string{},
+			BinaryName: "codebuddy",
+			Package:    "@tencent-ai/codebuddy-code",
+			// CODEBUDDY_CONFIG_DIR：唯一的 configDir 覆盖手段（无 --config-dir 参数）。
+			// CODEBUDDY_INTERNET_ENVIRONMENT：国内站（internal）/ 内网 iOA（ioa）与
+			// API Key 搭配使用时必须显式指定，否则国内密钥会被路由到国际站而鉴权失败。
+			// CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT：IDE / Copilot 侧读取的同义开关
+			// （2026-09-14 在 WorkBuddy.app 的 app.asar 内实测到 ENV_KEY_ 常量），
+			// CLI 与 IDE 各自读自己的键，所以两个都要声明，避免只配一个时出现
+			// "CLI 走国内站、IDE 仍打国际站"的静默分裂。
+			// CODEBUDDY_AUTH_TOKEN：平台级 token（Token 刷新 / 计费查询），属账号私有。
+			EnvKeys: []string{
+				"CODEBUDDY_API_KEY",
+				"CODEBUDDY_BASE_URL",
+				"CODEBUDDY_AUTH_TOKEN",
+				"CODEBUDDY_INTERNET_ENVIRONMENT",
+				"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+				"CODEBUDDY_CONFIG_DIR",
+			},
+			// 命中 `-p` / `--print` 即判定为非交互调用（读取 stdin 后打印退出）。
+			Headless: &HeadlessConfig{TriggerFlags: []string{"-p", "--print"}},
+			// 只声明 macOS Desktop：`desktopClient[platform]` 存在 = Toolkit 会在该平台
+			// 列出这个桌面应用，而列表里的每个应用都必须有安装/更新/卸载生命周期
+			// （见 test/toolkit-app-lifecycle-matrix.test.js 的不变量）。CodeBuddy IDE
+			// 目前只有 macOS 有可验证的免交互安装源（官方 Homebrew cask `codebuddy`），
+			// Windows/Linux 官方只提供浏览器下载页（SPA，无法解析直链），因此这里
+			// 刻意不声明，避免展示一个无法管理的应用。codex / claude / kimi 对 linux
+			// 用的是同一取舍。
+			//
+			// 等 Windows/Linux 出现可验证的安装源时，在这里补 DesktopPlatform 并在
+			// lib/server/app-installers/codebuddy.js 补对应 resolveDesktopInstallPlans
+			// 即可（安装器里的 windows/linux hint 已经写好了人工指引）。
+			//
+			// ExecNames 必须是 bundle 内真实存在的可执行名。2026-09-14 实测
+			// `CodeBuddy.app/Contents/MacOS/` 下只有 `Electron`（VS Code 内核的
+			// Electron 主程序），没有以产品命名的可执行文件；`findDesktopClientRecord`
+			// 会用 `execNames.find(存在者) || execNames[0]` 取值，若只写 "CodeBuddy"
+			// 会解析出一个不存在的可执行路径，桌面端重启链路随之整体失效。
+			// 同族的 CodeBuddy CN / WorkBuddy 也都是 `Electron`。
+			DesktopClient: &DesktopClient{
+				// 凭据不通用：桌面端只做账号隔离，不做 host auth 投影（独立登录）。
+				ReloadsHostAuth: &reloadsHostAuth,
+				MacOS: &DesktopPlatform{
+					ClientName:   "CodeBuddy",
+					ExecNames:    []string{"Electron"},
+					BundleID:     "com.tencent.codebuddy",
+					PathIncludes: []string{"/CodeBuddy.app/Contents/MacOS/"},
+					InstallPaths: []string{
+						"/Applications/CodeBuddy.app",
+						"{hostHomeDir}/Applications/CodeBuddy.app",
+					},
+				},
+			},
+		},
+	}
+}
+
+// builtinCodebuddyCN 定义 CodeBuddy **国内站**（copilot.tencent.com / codebuddy.cn）。
+//
+// 为什么国内站是独立 Provider，而不是同一个 Provider 的第二个站点：
+//   - 账号体系不互通。国内站与国际站各自发凭据，同一个自然人两边是不同的账号；
+//     AIH 的账号身份轴就是 Provider（accountRef 绑定 Provider、展示标签形如
+//     `<provider>-<n>`、存储策略按 Provider 分派），把两套互不互认的身份塞进同一个
+//     Provider 会出现"同 Provider 下两个无法互认的 OAuth 身份"，且 identitySeed
+//     无法区分站点。
+//   - 实机佐证（2026-09-14）：国内/国际是**两个独立 App、两个 bundle id**——
+//     `CodeBuddy.app`（com.tencent.codebuddy，codebuddy.ai）与
+//     `CodeBuddy CN.app`（com.tencent.codebuddycn，copilot.tencent.com），
+//     官方 Homebrew cask 也分别维护 `codebuddy` 与 `codebuddy-cn`。
+//   - 与既有先例一致：`qoder`（全球站）与 `qodercn`（国内站）就是两个 Provider。
+//
+// CLI 侧是**同一个 npm 包**（`@tencent-ai/codebuddy-code`，官方 install.sh 从
+// myqcloud 拉同一份 releases），站点在首次登录时选择，并由
+// CODEBUDDY_INTERNET_ENVIRONMENT=internal 显式固定。因此这里刻意声明
+// `InstallRegion: "cn"`、复用同一个 Package/BinaryName，只用默认站点 env 与
+// 独立的 GlobalDir 表达"国内站账号"——不伪造第二个二进制。
+func builtinCodebuddyCN() Definition {
+	reloadsHostAuth := false
+	return Definition{
+		ID:           "codebuddycn",
+		Presentation: presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
+		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, true),
+		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		AuthOptions: []AuthOption{
+			authOption(
+				AuthModeOAuthBrowser,
+				"CodeBuddy CN 登录",
+				"使用 CodeBuddy Code 原生登录流程并选择国内站（copilot.tencent.com）。",
+			),
+			authOption(
+				AuthModeAPIKey,
+				"CodeBuddy CN 密钥",
+				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
+			),
+		},
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		CLI: &CLIConfig{
+			Order:      13,
+			GlobalDir:  ".codebuddy-cn",
+			ConfigFile: "settings.json",
+			// 与 codebuddy 同理：CLI 无 login 子命令，登录由裸启动的交互式选择完成。
+			LoginArgs:  []string{},
+			BinaryName: "codebuddy",
+			Package:    "@tencent-ai/codebuddy-code",
+			// 国内站安装计划只走官方国内入口（copilot.tencent.com）。
+			InstallRegion: "cn",
+			// EnvKeys 与 codebuddy 完全一致：同一个二进制读同一组键，区别只在
+			// 账号为国内站时把 INTERNET_ENVIRONMENT 固定成 internal。
+			EnvKeys: []string{
+				"CODEBUDDY_API_KEY",
+				"CODEBUDDY_BASE_URL",
+				"CODEBUDDY_AUTH_TOKEN",
+				"CODEBUDDY_INTERNET_ENVIRONMENT",
+				"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT",
+				"CODEBUDDY_CONFIG_DIR",
+			},
+			Headless: &HeadlessConfig{TriggerFlags: []string{"-p", "--print"}},
+			// 桌面端只声明 macOS：国内官方 Homebrew cask `codebuddy-cn` 可免交互
+			// 安装/更新/卸载 CodeBuddy CN.app；Windows/Linux 官方只给浏览器下载页
+			// （安装器里留了 hint），声明了就会出现"无法管理的应用"，违反
+			// test/toolkit-app-lifecycle-matrix.test.js 的不变量。
+			DesktopClient: &DesktopClient{
+				ReloadsHostAuth: &reloadsHostAuth,
+				MacOS: &DesktopPlatform{
+					ClientName:   "CodeBuddy CN",
+					ExecNames:    []string{"Electron"},
+					BundleID:     "com.tencent.codebuddycn",
+					PathIncludes: []string{"/CodeBuddy CN.app/Contents/MacOS/"},
+					InstallPaths: []string{
+						"/Applications/CodeBuddy CN.app",
+						"{hostHomeDir}/Applications/CodeBuddy CN.app",
+					},
+				},
+			},
+		},
+	}
+}
+
+// builtinWorkbuddy 定义 WorkBuddy 桌面端（国内站 workbuddy.cn）。
+//
+// 与 CodeBuddy 的关系（2026-09-14 核实）：
+//   - 同账号体系、同运行时。WorkBuddy.app 的 app.asar 里同时读取
+//     WORKBUDDY_CONFIG_DIR 与 CODEBUDDY_CONFIG_DIR，并内嵌 CodeBuddy Code
+//     runtime（CODEBUDDY_CONFIG_DIR 出现 63 次）；实测进程 env 为
+//     CODEBUDDY_INTERNET_ENVIRONMENT=internal、CODEBUDDY_HOST=workbuddy-desktop。
+//   - 但是**独立的产品，不是 CodeBuddy CN 的第二个构建**：Homebrew 官方 cask
+//     分别为 `workbuddy-cn`（WorkBuddy.app，workbuddy.cn）与 `workbuddy-ai`
+//     （WorkBuddy AI.app，workbuddy.ai），说明 WorkBuddy 自己就有一组
+//     国内/海外双站点，与 CodeBuddy 的双站点是平行的两条产品线。
+//   - 因此它不能作为 codebuddycn 的"第二个桌面客户端"：DesktopClient 每个
+//     Provider 只有一份（macos/windows/linux），且 bundle id 与数据根都不同。
+//     把它做成自己的 Provider，其桌面端就与 kimi 的 Kimi.app 完全同构——
+//     "同一账号、凭据不通用、各自独立登录"。
+//
+// 本轮只覆盖国内站（本机实际安装的 WorkBuddy.app 就是 workbuddy-cn）。WorkBuddy AI
+// （workbuddy.ai）没有实机安装证据，按"未验证不声明"留作后续迭代。
+func builtinWorkbuddy() Definition {
+	reloadsHostAuth := false
+	return Definition{
+		ID:           "workbuddy",
+		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "blue"),
+		Gateway:      GatewayActive,
+		// 桌面优先：WorkBuddy 不对独立分发 CLI（它把 CodeBuddy Code runtime
+		// 内嵌在 App 内），所以不声明可安装的 CLI 客户端。
+		Clients:      clientSupport(false, true),
+		Capabilities: []Capability{CapabilityAPIKeyAccount},
+		AuthOptions: []AuthOption{
+			authOption(
+				AuthModeOAuthBrowser,
+				"WorkBuddy 登录",
+				"使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。",
+			),
+			authOption(
+				AuthModeAPIKey,
+				"WorkBuddy 密钥",
+				"绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。",
+			),
+		},
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		// Clients.CLI=false 时仍然需要 CLIConfig：DesktopClient 挂在它下面，
+		// 且 globalDir 是账号投影根。这里如实声明 WorkBuddy 自己的数据根。
+		CLI: &CLIConfig{
+			Order:      14,
+			GlobalDir:  ".workbuddy",
+			ConfigFile: "settings.json",
+			LoginArgs:  []string{},
+			// 没有独立 CLI 分发，因此不声明 BinaryName / Package：
+			// provider-registry 只按 clients.cli 判定可安装 CLI，这里为 false，
+			// 不会出现"声称可安装但装不了"的条目。
+			EnvKeys: []string{
+				"WORKBUDDY_CONFIG_DIR",
+				"WORKBUDDY_USER_DATA_DIR",
+				"CODEBUDDY_CONFIG_DIR",
+				"CODEBUDDY_INTERNET_ENVIRONMENT",
+			},
+			DesktopClient: &DesktopClient{
+				// 共享 .info 的宿主凭据导入尚未接通；连接器 credentials 不属于主站登录态。
+				ReloadsHostAuth: &reloadsHostAuth,
+				// 实测进程 env 中的真实键：WorkBuddy 用它解析 userData 根。
+				// 把它指向账号隔离目录 = 每个账号一份独立登录态（独立扫码）。
+				UserDataEnvKey: "WORKBUDDY_USER_DATA_DIR",
+				MacOS: &DesktopPlatform{
+					ClientName:   "WorkBuddy",
+					ExecNames:    []string{"Electron"},
+					BundleID:     "com.tencent.workbuddy.mac",
+					PathIncludes: []string{"/WorkBuddy.app/Contents/MacOS/"},
+					InstallPaths: []string{
+						"/Applications/WorkBuddy.app",
+						"{hostHomeDir}/Applications/WorkBuddy.app",
+					},
+				},
+			},
 		},
 	}
 }

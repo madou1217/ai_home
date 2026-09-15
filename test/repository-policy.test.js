@@ -97,12 +97,21 @@ function isAhrTaskFile(relativePath) {
   return relativePath.startsWith('.ahr/');
 }
 
+// .workbuddy/ is the agent tooling's own working state (memory notes, automations,
+// skills) and is gitignored via `*.md`. It is not repository documentation, so the
+// root-markdown allowlist does not apply — same rationale as .ahr/ above. Without
+// this exemption every agent session that writes a memory note turns this test red.
+function isWorkBuddyAgentData(relativePath) {
+  return relativePath.startsWith('.workbuddy/');
+}
+
 test('repository policy keeps only root AGENTS and README markdown files (docs/ excepted)', () => {
   const markdownFiles = collectFiles(repoRoot, {
     include: (relativePath, fileName) => fileName.toLowerCase().endsWith('.md')
       && !isDocsMarkdown(relativePath)
       && !isProviderSkillAsset(relativePath)
       && !isAhrTaskFile(relativePath)
+      && !isWorkBuddyAgentData(relativePath)
   });
 
   const unexpectedMarkdown = markdownFiles.filter((relativePath) => (

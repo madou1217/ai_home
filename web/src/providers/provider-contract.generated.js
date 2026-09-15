@@ -371,6 +371,93 @@ export const PROVIDER_DEFINITIONS = [
       "cli": false,
       "desktop": true
     }
+  },
+  {
+    "id": "codebuddy",
+    "label": "CodeBuddy",
+    "short": "CB",
+    "terminalIcon": "❖",
+    "terminalIconAsset": "assets/provider-icons/codebuddy.png",
+    "accentVar": "var(--provider-codebuddy)",
+    "softVar": "var(--provider-codebuddy-soft)",
+    "tagColor": "blue",
+    "capabilities": [
+      "api_key_account"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "CodeBuddy 登录",
+        "description": "使用 CodeBuddy Code 原生浏览器登录流程（首次启动选择国内站 / 国际站 / 企业域名）。"
+      },
+      {
+        "value": "api-key",
+        "label": "CodeBuddy 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL（非交互模式固定使用该密钥）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "codebuddycn",
+    "label": "CodeBuddy CN",
+    "short": "CBCN",
+    "terminalIcon": "✦",
+    "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
+    "accentVar": "var(--provider-codebuddycn)",
+    "softVar": "var(--provider-codebuddycn-soft)",
+    "tagColor": "purple",
+    "capabilities": [
+      "api_key_account"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "CodeBuddy CN 登录",
+        "description": "使用 CodeBuddy Code 原生登录流程并选择国内站（copilot.tencent.com）。"
+      },
+      {
+        "value": "api-key",
+        "label": "CodeBuddy CN 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": true
+    }
+  },
+  {
+    "id": "workbuddy",
+    "label": "WorkBuddy",
+    "short": "WB",
+    "terminalIcon": "◉",
+    "terminalIconAsset": "assets/provider-icons/workbuddy.png",
+    "accentVar": "var(--provider-workbuddy)",
+    "softVar": "var(--provider-workbuddy-soft)",
+    "tagColor": "blue",
+    "capabilities": [
+      "api_key_account"
+    ],
+    "authOptions": [
+      {
+        "value": "oauth-browser",
+        "label": "WorkBuddy 登录",
+        "description": "使用 WorkBuddy 原生浏览器登录流程（国内站 workbuddy.cn 账号体系）。"
+      },
+      {
+        "value": "api-key",
+        "label": "WorkBuddy 密钥",
+        "description": "绑定 CODEBUDDY_API_KEY / CODEBUDDY_BASE_URL，并固定 CODEBUDDY_INTERNET_ENVIRONMENT=internal。"
+      }
+    ],
+    "clients": {
+      "cli": false,
+      "desktop": true
+    }
   }
 ];
 

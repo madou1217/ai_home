@@ -1,0 +1,24 @@
+<?xml version="1.0" standalone="no"?>
+<!--
+  WorkBuddy 品牌图标。
+
+  与 codebuddy.svg / codebuddycn.svg 共用同一套视觉语法：1024 画布深色圆角方块 +
+  白色主体记号 + 品牌色内核。主体换成同心圆环 + 实心圆点"◉"（与 builtins.go 里
+  `presentation(... "◉" ...)` 声明的终端图标同形），避免与 CodeBuddy 家族的两个
+  星形记号混淆——它们是同一账号体系下的不同产品，列表里必须一眼可分。
+
+  几何与 assets/provider-icons/workbuddy.png 一致：外环中心线半径 304、
+  线宽 136（覆盖半径 236..372），圆心实心半径 118。
+
+  说明：这里没有内嵌腾讯官方 Logo 的矢量路径（官方未公开可再分发的 SVG 资源），
+  因此采用「同构视觉 + 品牌绿 #12B76A」的自绘记号，避免伪造商标图形。若后续拿到
+  官方授权素材，只需替换本文件的 path 数据，消费侧无需改动。
+-->
+<svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <!-- 深色圆角底板（与 codebuddy.svg 的圆角半径一致：204.8 = 1024 * 0.2） -->
+  <path d="M0 0m204.8 0l614.4 0q204.8 0 204.8 204.8l0 614.4q0 204.8-204.8 204.8l-614.4 0q-204.8 0-204.8-204.8l0-614.4q0-204.8 204.8-204.8Z" fill="#101010"></path>
+  <!-- 白色圆环：中心线半径 304，线宽 136 -->
+  <circle cx="512" cy="512" r="304" fill="none" stroke="#FFFFFF" stroke-width="136"></circle>
+  <!-- 品牌绿圆心 -->
+  <circle cx="512" cy="512" r="118" fill="#12B76A"></circle>
+</svg>

@@ -40,6 +40,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
@@ -60,6 +61,7 @@ type serverHandlers struct {
 	accountAuth       http.Handler
 	models            http.Handler
 	blobs             http.Handler
+	tokenCount        http.Handler
 	inference         http.Handler
 	codexResponsesWS  http.Handler
 	claudeRelayLeases http.Handler
@@ -649,6 +651,16 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建图片 blob Handler 失败: %w", err)
 	}
+	// count_tokens 是纯本地估算：不选账号、不发上游请求，因此只依赖客户端鉴权。
+	tokenCountHandler, err := anthropicmessagesapi.NewTokenCountHandler(
+		anthropicmessagesapi.TokenCountDependencies{
+			Authorizer: clientAuthorizer,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 count_tokens Handler 失败: %w", err)
+	}
 	initialModelRecovery, err := accountapp.NewInitialModelRefreshRecovery(
 		catalog,
 		store,
@@ -674,6 +686,7 @@ func newHandlers(
 			accountAuth:       accountAuthHandler,
 			models:            modelsHandler,
 			blobs:             blobsHandler,
+			tokenCount:        tokenCountHandler,
 			inference:         inference.handler,
 			codexResponsesWS:  webSocketHandler,
 			claudeRelayLeases: relayLeaseHandler,

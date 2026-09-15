@@ -71,6 +71,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 挂载写成 `Path + "/"` 而不是直接引用 PathPrefix：路由采集器只把 `Ident.Ident + "/"`
 	// 这种形态识别为前缀挂载，否则会记成 exact，与 Node 的 prefix 身份对不上。
 	mux.Handle(blobsapi.Path+"/", handlers.blobs)
+	// /v1/messages/count_tokens：纯本地估算，必须先于 /v1/messages 之外单独挂载，
+	// 否则会被 Messages 入口当成推理请求。
+	mux.Handle(anthropicmessagesapi.CountTokensPath, handlers.tokenCount)
 	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)

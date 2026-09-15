@@ -70,6 +70,7 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/v1/responses': ['POST'],
   '/v1/chat/completions': ['POST'],
   '/v1/messages': ['POST'],
+  '/v1/messages/count_tokens': ['POST'],
   '/v1/claude-relay-leases': ['POST'],
   '/v1/management/accounts': ['GET', 'POST'],
   '/v1/management/accounts/': ['GET', 'PATCH', 'PUT', 'DELETE', 'POST'],

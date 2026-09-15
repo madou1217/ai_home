@@ -51,10 +51,15 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 `go_implementation=private_canary`、`cutover_blocking=true`。切流仍需协议 shadow、数据库/
 runtime migration、rollback plan 与显式确认。
 
-已知残留差异（不阻塞路由存在性，但切流前必须处理）：**Go 的 vision guard 只对离线模态索引里
-存在的模型生效（codex/claude）**，索引查不到时失败开放、不剥离。因此未收录 Provider
-（grok、opencode、kimi 等）的图片不会被换成借视文本，比 Node 的索引覆盖窄。
-`GET /v1/blobs/{id}` 的入仓现在有两条链路：被剥离的图片，以及 `response_format=url` 的图片响应。
+vision guard 的覆盖面已按 Node 的兜底语义对齐（2026-09-16）：索引命中以索引为准；
+未命中但模型名落在已知视觉家族（`claude-`、`gemini-`、`gpt-4o|4.1|5`、`o1|o3`，
+含版本分隔符归一化）时保留图片；其余按纯文本处理。**未知模型按纯文本处理而不是放行**，
+与 Node 的 `buildFallbackModalities` 同构——两种误判代价不对等：错剥一张图，模型仍能按
+文本借视；错放一张图，上游整条 400 拒绝，模型连回合都拿不到。
+
+`GET /v1/blobs/{id}` 的入仓有两条链路：被剥离的图片，以及 `response_format=url` 的图片响应。
+残留差异是索引覆盖本身：Go 的映射覆盖 7 个 Provider，Node 的 models.dev 读取覆盖更广，
+因此少数「未映射 Provider + 不属视觉家族 + 实际能看图」的模型仍会被误剥。
 该残留已记入 manifest 的 `gateway.vision.blobs.blockers`。
 
 `/v1/` 和 `/v1beta/` 是 Node 的 scope guard，不是 endpoint。采集器保留它们是为了
@@ -175,8 +180,15 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   生成，全部 canonical model 被嵌入 Go 二进制。服务启动时只解码和校验一次，
   HTTP 热路径是 O(1) 只读 map，
   不访问 SQLite、文件系统或上游。
-- 只映射当前重构范围内的 `codex -> openai`、`claude -> anthropic`。权威快照未命中时
-  明确降级为 `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
+- Provider → models.dev 命名空间的映射只登记「模型 ID 就是厂商模型 ID」的单值情形：
+  `codex→openai`、`claude→anthropic`、`gemini→google`、`agy→google`、`grok→xai`、
+  `kimi→moonshotai`、`zcode→zhipuai`。**聚合类 Provider（opencode、qoder/qodercn、
+  codebuddy 家族、kiro）刻意不登记**——它们的模型 ID 来自多个厂商，映射到任何单一
+  命名空间都是查错而不是查不到。权威快照未命中时明确降级为
+  `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
+  快照本身已含全部命名空间（386 条记录），因此新增映射不需要重新生成快照；
+  `provider_mapping_test.go` 用快照里真实存在的模型逐个钉住映射，防止写错命名空间后
+  静默退化成「查不到」。
 
 升级 SDK 依赖后重新生成索引：
 

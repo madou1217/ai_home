@@ -634,7 +634,7 @@
       "cutover_blocking": true,
       "blockers": [
         "public endpoint remains Node until the full gate passes",
-        "Go vision-guard population now exists, but only for models present in Go's offline modality index (codex/claude); unlisted providers fail open and are not stripped, which is narrower than Node's index"
+        "Go vision-guard coverage now follows Node's fallback semantics (index hit wins, known vision families keep their images, everything else is treated as text-only), but Go's provider->models.dev mapping covers 7 providers while Node reads the wider models.dev catalog; a few vision-capable models outside both the mapping and the vision families can still be stripped"
       ],
       "evidence": [
         "lib/server/vision-image-guard.js",

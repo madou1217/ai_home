@@ -1,5 +1,6 @@
 import type { ChatRuntimeSession } from '@/chat-runtime';
 import type { Session } from '@/types';
+import { branchResultSession } from './message-operation';
 
 interface AdoptionContext {
   readonly session: Session;
@@ -71,6 +72,12 @@ export function resolveNativeSessionAdoption(
   }
   const nativeSessionId = resolveBoundNativeSessionId(current, resolved.runtimeBinding);
   if (!nativeSessionId) return null;
+  if (resolved.policy.lineage) {
+    const branch = branchResultSession({ result: { session: resolved } });
+    const unchanged = current.runtimeSessionId === branch.runtimeSessionId
+      && current.accountRef === branch.accountRef && current.mode === branch.mode && !current.draft;
+    return { nativeSessionId, session: unchanged ? null : branch };
+  }
   const unchanged = current.id === nativeSessionId && current.draft === false;
   return {
     nativeSessionId,

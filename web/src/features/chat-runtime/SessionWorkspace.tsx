@@ -11,6 +11,7 @@ import type { Provider } from '@/types';
 import { useWorkbench } from '@/features/project-workbench/WorkbenchContext';
 import Composer from './Composer';
 import ConversationTimeline from './ConversationTimeline';
+import BranchParentLink from './BranchParentLink';
 import InteractionDock from './InteractionDock';
 import PlanImplementationPrompt from './PlanImplementationPrompt';
 import QueueDock from './QueueDock';
@@ -95,10 +96,8 @@ export default function SessionWorkspace(props: Props) {
     <main className={styles.workspace}>
       <WorkspaceHeader title={projection.title || props.title} projection={projection} mobile={props.mobile}
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
-      {projection.parentSessionId ? <a className={styles.branchParent}
-        href={`/ui/chat?sessionId=${encodeURIComponent(projection.parentSessionId)}&provider=${encodeURIComponent(props.runtimeTarget.provider)}`}>
-        {projection.regenerated ? '重新生成的回答 · 返回原会话' : '分支会话 · 返回原会话'}
-      </a> : null}
+      {projection.parentSessionId ? <BranchParentLink parentSessionId={projection.parentSessionId}
+        regenerated={projection.regenerated} target={props.runtimeTarget} /> : null}
       <ConversationTimeline
         controller={props.controller}
         actions={actions}

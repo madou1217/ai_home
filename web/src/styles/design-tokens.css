@@ -82,6 +82,7 @@
   --c-kimi:    #1a73e8;  /* Moonshot blue */
   --c-kiro:    #ff9900;  /* AWS orange */
   --c-zcode:   #3b6ef5;  /* Z.ai blue */
+  --c-codebuddy: #0052d9; /* Tencent CodeBuddy blue */
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
@@ -243,6 +244,12 @@
   --provider-kiro-soft: rgba(255, 153, 0, 0.12);
   --provider-zcode: var(--c-zcode);
   --provider-zcode-soft: rgba(59, 110, 245, 0.12);
+  --provider-codebuddy: var(--c-codebuddy);
+  --provider-codebuddy-soft: rgba(0, 82, 217, 0.12);
+  --provider-codebuddycn: var(--c-codebuddycn);
+  --provider-codebuddycn-soft: rgba(122, 63, 242, 0.12);
+  --provider-workbuddy: var(--c-workbuddy);
+  --provider-workbuddy-soft: rgba(18, 183, 106, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
   --provider-accent: var(--c-brand-600);

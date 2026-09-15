@@ -279,6 +279,23 @@ test('api client exposes non-2xx failures as typed runtime errors', async () => 
   );
 });
 
+test('api client resolves canonical Work identity and rejects a different project or session', async () => {
+  const session = { sessionId: 'parent', provider: 'codex', executionAccountRef: 'account-1', projectPath: '/repo',
+    state: 'idle', lastEventSeq: 1, createdAt: 1, updatedAt: 1, policy: {},
+    runtimeBinding: { nativeSessionId: 'native-parent' }, capabilitySnapshot: {} };
+  const input = { sessionId: 'parent', provider: 'codex', executionAccountRef: 'account-1', projectPath: '/repo' };
+  const fixture = createTransport([jsonResponse({ ok: true, status: 'adopted', session })]);
+  const result = await new ChatRuntimeApiClient(fixture.transport).resolveSession(input);
+  assert.equal(result.session.runtimeBinding.nativeSessionId, 'native-parent');
+  assert.deepEqual(JSON.parse(String(fixture.requests[0].init?.body)), input);
+  for (const patch of [{ sessionId: 'other' }, { projectPath: '/other' }, { policy: { workspaceMode: 'chat' } }]) {
+    const client = new ChatRuntimeApiClient(createTransport([
+      jsonResponse({ ok: true, status: 'adopted', session: { ...session, ...patch } }),
+    ]).transport);
+    await assert.rejects(client.resolveSession(input), /chat_runtime_session_identity_mismatch/);
+  }
+});
+
 test('api client opens event streams with an encoded session and explicit cursor', () => {
   const paths: string[] = [];
   const stream = { onopen: null, onmessage: null, onerror: null, close() {} };

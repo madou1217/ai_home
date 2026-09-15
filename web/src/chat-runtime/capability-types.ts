@@ -5,7 +5,7 @@ export type ChatCapabilityName =
   | 'mode.plan' | 'interaction.question' | 'interaction.approval'
   | 'interaction.plan_confirmation' | 'turn.interrupt' | 'turn.steer.current'
   | 'turn.steer.tool_boundary' | 'turn.queue' | 'slash.execute'
-  | 'terminal.stream' | 'run.adopt';
+  | 'terminal.stream' | 'run.adopt' | 'session.goal';
 
 export interface CapabilityDescriptor {
   readonly support: CapabilitySupport;

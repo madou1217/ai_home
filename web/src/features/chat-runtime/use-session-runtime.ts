@@ -86,8 +86,8 @@ export async function openSessionRuntime(
   api: ChatRuntimeApi,
   onSessionResolved?: (session: ChatRuntimeSession) => void,
 ): Promise<SessionRuntimeController> {
-  const session = target.nativeSessionId
-    ? (await api.resolveSession({ ...target, nativeSessionId: target.nativeSessionId })).session
+  const session = target.nativeSessionId || target.sessionId
+    ? (await api.resolveSession(target)).session
     : await api.createSession(target);
   const controller = new SessionRuntimeController(session.sessionId, api);
   try {

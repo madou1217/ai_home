@@ -13,6 +13,75 @@ const { codexForkSource, findCodexForkReceipt, readCodexInjectionReceipt } = req
 const { prepareNativeBranch } = require('../lib/server/chat-runtime/native-branch-operation');
 const { CodexBranchOperationPort } = require('../lib/server/chat-runtime/codex-branch-operation-port');
 
+test('native Work goal set/get/clear survives AIH recovery without starting another turn', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t);
+  let service = f.open();
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'goal-probe-turn', type: 'turn.submit',
+    payload: { content: 'Run the local tool probe once.' } });
+  await waitFor(() => fs.existsSync(path.join(f.root, 'marker')));
+  const threadId = service.getSnapshot(session.sessionId).runtimeBinding.nativeSessionId;
+  const inspection = f.client();
+  // A paused native goal tests the protocol and persistence without authorizing
+  // an automatic native loop outside AIH's current single-turn lifecycle.
+  const set = await inspection.request('thread/goal/set', {
+    threadId, objective: 'Verify durable Work goal ownership', status: 'paused', tokenBudget: 2000
+  });
+  assert.equal(set.goal.status, 'paused');
+  const read = await inspection.request('thread/goal/get', { threadId });
+  assert.equal(read.goal.objective, set.goal.objective);
+  await waitFor(() => service.getSnapshot(session.sessionId).policy.contextState?.goal?.status === 'paused');
+  assert.equal(service.getSnapshot(session.sessionId).policy.contextState.goalSource, 'native');
+  service.close();
+  f.disconnect();
+  const offlineClient = f.client();
+  const cleared = await offlineClient.request('thread/goal/clear', { threadId });
+  assert.equal(cleared.cleared, true);
+  service = f.open();
+  await service.waitForRecovery();
+  const restored = service.getSnapshot(session.sessionId);
+  assert.equal(restored.state, 'running');
+  assert.equal(restored.policy.contextState.goal, undefined);
+  assert.equal(restored.policy.contextState.goalSource, undefined);
+  fs.writeFileSync(path.join(f.root, 'release'), 'continue');
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  assert.equal(fs.readFileSync(path.join(f.root, 'marker'), 'utf8'), 'executed\n');
+  assert.equal(f.requests.length, 2);
+});
+
+test('native Work fork keeps the inherited AIH goal after resuming an empty native goal store', {
+  skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
+}, async (t) => {
+  const f = await nativeFixture(t, { modelOutput: (_body, index) => [{ type: 'message', id: `msg-${index}`,
+    role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: `Answer ${index}`, annotations: [] }] }] });
+  const service = f.open();
+  const session = await service.createSession({ provider: 'codex', executionAccountRef: 'tool-probe',
+    projectPath: f.root, policy: { approvalMode: 'bypass' } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'aih-goal', type: 'session.goal.set',
+    payload: { objective: 'Preserve this explicit goal', tokenBudget: 3000 } });
+  await service.dispatchCommand(session.sessionId, { commandId: 'parent-turn', type: 'turn.submit',
+    payload: { content: 'Answer once.' } });
+  await waitFor(() => service.getSnapshot(session.sessionId).state === 'idle');
+  const source = service.getSnapshot(session.sessionId);
+  const anchor = source.timeline.find((item) => item.kind === 'message' && item.detail.role === 'assistant');
+  const fork = await service.dispatchCommand(session.sessionId, { commandId: 'goal-fork', type: 'session.fork',
+    payload: { sourceItemId: anchor.id } });
+  const childId = fork.result.session.sessionId;
+  await service.dispatchCommand(childId, { commandId: 'child-turn', type: 'turn.submit',
+    payload: { content: 'Continue this branch.' } });
+  await waitFor(() => service.getSnapshot(childId).state === 'idle');
+  const child = service.getSnapshot(childId);
+  assert.equal(child.failedTurn, undefined);
+  assert.equal(child.policy.contextState.goalSource, 'aih');
+  assert.equal(child.policy.contextState.goal.objective, 'Preserve this explicit goal');
+  assert.equal(child.policy.contextState.goal.tokenBudget, 3000);
+  assert.equal(service.getSnapshot(session.sessionId).policy.contextState.goalSource, 'aih');
+  assert.equal(f.requests.length, 2);
+});
+
 for (const mode of ['running', 'completed', 'stop']) test(`lost turn/start receipt recovers the accepted native turn (${mode})`, {
   skip: !process.env.AIH_TEST_CODEX_EXECUTABLE, timeout: 40000
 }, async (t) => {

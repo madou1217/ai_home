@@ -3,6 +3,7 @@ import type {
   ChatRuntimeSession,
 } from '@/chat-runtime';
 import type { AggregatedProject, Provider, Session } from '@/types';
+import { branchResultSession } from './message-operation';
 
 export interface CanonicalSessionDirectoryQuery {
   readonly provider: Provider;
@@ -212,6 +213,9 @@ function projectRuntimeSession(
     || session.provider !== query.provider
     || session.projectPath !== query.projectPath
     || (query.nativeSessionId && nativeSessionId !== query.nativeSessionId)) return [];
+  if (session.policy.lineage && session.policy.workspaceMode !== 'chat') {
+    return [{ ...branchResultSession({ result: { session } }), status: session.state }];
+  }
   return [{
     id: nativeSessionId,
     title: '新会话',
@@ -263,6 +267,10 @@ function mergeSessionHistory(history: Session, canonical: Session): Session {
   return {
     ...canonical,
     ...history,
+    ...(canonical.runtimeSessionId ? {
+      runtimeSessionId: canonical.runtimeSessionId, mode: canonical.mode,
+      accountRef: canonical.accountRef, title: canonical.title,
+    } : {}),
     updatedAt: Math.max(history.updatedAt, canonical.updatedAt),
     status: canonical.status,
   };

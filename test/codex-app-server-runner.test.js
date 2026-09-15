@@ -736,6 +736,41 @@ test('resident client accepts a verified API-key execution credential context', 
   await mock.close();
 });
 
+// 钉网关的 app-server 不自报账号，验证器返回 oauth/runtime-home；归一化器必须认这一档，
+// 否则每个 native codex 会话在 ensureConnected 阶段就被拦死。
+test('resident client accepts the gateway-pinned OAuth runtime-home tier', async () => {
+  __resetClientsForTest();
+  const mock = await createMockAppServer(() => {});
+  const client = getAppServerClient({
+    accountRef: 'acct_44444444444444444444',
+    runtimeScope: 'runtime-home-context-ok',
+    runtimeFingerprint: 'runtime-home-context-ok-v1',
+    endpoint: mock.endpoint,
+    async accountIdentityValidator() {
+      return {
+        verified: true,
+        kind: 'oauth',
+        assurance: 'runtime-home',
+        identityHash: 'e'.repeat(64),
+        runtimeHomeHash: 'f'.repeat(64),
+        email: 'must-not-leave-validator'
+      };
+    }
+  });
+
+  await client.ensureConnected();
+
+  assert.deepStrictEqual(client.getVerifiedAccountIdentity(), {
+    verified: true,
+    kind: 'oauth',
+    assurance: 'runtime-home',
+    identityHash: 'e'.repeat(64),
+    runtimeHomeHash: 'f'.repeat(64)
+  });
+  client.destroy();
+  await mock.close();
+});
+
 test('resident reconnect keeps identity verification as the transport barrier', async (t) => {
   __resetClientsForTest();
   const wss = new WebSocket.Server({ port: 0, host: '127.0.0.1' });

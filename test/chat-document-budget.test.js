@@ -105,6 +105,20 @@ test('历史 seed 超预算时保留连续尾部,不注入孤立 assistant', () 
   assert.ok(result.appliedTokens <= result.budgetTokens);
 });
 
+test('历史 seed 裁剪保留首个 system/developer 指令边界', () => {
+  const system = { type: 'message', role: 'system', content: [{ type: 'input_text', text: '必须保持的系统约束' }] };
+  const items = [
+    system,
+    { role: 'user', content: [{ type: 'input_text', text: '旧'.repeat(5000) }] },
+    { role: 'assistant', content: [{ type: 'output_text', text: '旧答复' }] },
+    { role: 'user', content: [{ type: 'input_text', text: '最新请求' }] }
+  ];
+  const result = budgetHistoryItems(items, 1000);
+  assert.deepEqual(result.items, [system, items[3]]);
+  assert.equal(result.pinnedTokens, estimateTextTokens(JSON.stringify(system)));
+  assert.ok(result.appliedTokens <= result.budgetTokens);
+});
+
 test('历史 seed 遇到过大消息时停止回溯,不跨 gap 保留孤立 assistant', () => {
   const items = [
     { role: 'user', content: [{ type: 'input_text', text: '较早但可用' }] },

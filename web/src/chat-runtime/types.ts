@@ -105,6 +105,18 @@ export interface FailedTurn {
   readonly outcomeUnknown?: boolean;
 }
 
+export type ChatGoalStatus = 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete';
+export interface ChatGoal {
+  readonly threadId: string;
+  readonly objective: string;
+  readonly status: ChatGoalStatus;
+  readonly tokenBudget: number | null;
+  readonly tokensUsed: number;
+  readonly timeUsedSeconds: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
 export interface SessionQueueEntry {
   readonly queueId: string;
   readonly sessionId: string;
@@ -159,7 +171,8 @@ export interface SessionSnapshot {
 export type ChatRuntimeCommandName =
   | 'runtime.prewarm' | 'turn.submit' | 'turn.retry' | 'turn.regenerate' | 'session.fork' | 'turn.intervene' | 'turn.interrupt'
   | 'queue.add' | 'queue.edit' | 'queue.remove' | 'queue.move' | 'queue.dispatch'
-  | 'interaction.answer' | 'approval.decide' | 'slash.execute' | 'session.policy.set';
+  | 'interaction.answer' | 'approval.decide' | 'slash.execute' | 'session.policy.set'
+  | 'session.goal.set' | 'session.goal.get' | 'session.goal.clear';
 
 interface CommandPayloadByName {
   'runtime.prewarm': Record<string, never>;
@@ -178,6 +191,9 @@ interface CommandPayloadByName {
   'approval.decide': ApprovalDecisionPayload;
   'slash.execute': { name: string; arguments?: string };
   'session.policy.set': { key: string; value: unknown };
+  'session.goal.set': { objective: string; tokenBudget?: number | null };
+  'session.goal.get': Record<string, never>;
+  'session.goal.clear': Record<string, never>;
 }
 
 export type ChatRuntimeCommand<N extends ChatRuntimeCommandName = ChatRuntimeCommandName> = {
@@ -209,6 +225,8 @@ interface EventPayloadByType {
   'session.runtime.bound': RuntimeProjectionPayload;
   'session.runtime.rebound': RuntimeProjectionPayload;
   'session.policy.changed': { policy: Readonly<Record<string, unknown>> };
+  'session.goal.updated': { goal: ChatGoal };
+  'session.goal.cleared': { goalId?: string };
   'session.closed': Record<string, never>;
   'session.snapshot.reset': SessionSnapshot;
   'turn.queued': StateProjectionPayload;

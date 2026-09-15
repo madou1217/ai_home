@@ -77,6 +77,17 @@ test('resolved runtime adoption fails closed and avoids duplicate writes', () =>
   })), null);
 });
 
+test('native-only branch selection regains its persisted canonical identity on resolution', () => {
+  const current = { ...draft, id: 'native-child', draft: false };
+  const resolved = runtimeSession({ runtimeBinding: { nativeSessionId: 'native-child' },
+    policy: { lineage: { parentSessionId: 'parent' }, title: '任务 · 分支' } });
+  const adoption = resolveNativeSessionAdoption(current, resolved);
+  assert.equal(adoption?.session?.runtimeSessionId, 'canonical-1');
+  assert.equal(adoption?.session?.accountRef, 'account-1');
+  assert.equal(adoption?.session?.mode, 'work');
+  assert.equal(resolveNativeSessionAdoption(adoption!.session!, resolved)?.session, null);
+});
+
 function runtimeSession(
   overrides: Partial<ChatRuntimeSession> = {},
 ): ChatRuntimeSession {

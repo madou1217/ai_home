@@ -52,6 +52,21 @@ test('slash execution strips the UI prefix', async () => {
   });
 });
 
+test('goal actions use the shared provider-neutral command contract', async () => {
+  const commands: SessionCommandInput[] = [];
+  const actions = new SessionRuntimeActions({
+    dispatch: async (command) => { commands.push(command); },
+  }, () => `goal-${commands.length + 1}`);
+  await actions.setGoal('  ship harness  ', 1200);
+  await actions.getGoal();
+  await actions.clearGoal();
+  assert.deepEqual(commands, [
+    { commandId: 'goal-1', type: 'session.goal.set', payload: { objective: 'ship harness', tokenBudget: 1200 } },
+    { commandId: 'goal-2', type: 'session.goal.get', payload: {} },
+    { commandId: 'goal-3', type: 'session.goal.clear', payload: {} },
+  ]);
+});
+
 test('retry reuses its command identity after a lost acknowledgement and a page reload', async () => {
   const commands: SessionCommandInput[] = [];
   const dispatcher = { dispatch: async (command: SessionCommandInput) => {

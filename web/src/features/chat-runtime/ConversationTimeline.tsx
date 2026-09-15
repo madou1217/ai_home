@@ -5,10 +5,11 @@ import type {
   SessionProjection,
   SessionRuntimeController,
   TimelineItem,
+  CommandCatalogEntry,
 } from '@/chat-runtime';
 import { useSessionSelector } from '@/chat-runtime';
 import type { Provider, Session } from '@/types';
-import { MessageOperation } from './message-operation';
+import { MessageOperation, messageOperationAvailable, messageOperationFailure } from './message-operation';
 import FileDrawer, { type FileDrawerTab } from '@/components/chat/FileDrawer';
 import InSessionSearchBar from '@/components/chat/InSessionSearchBar';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from '@/components/chat/chat-global-shortcuts';
@@ -58,6 +59,16 @@ export default function ConversationTimeline({
   const idle = useSessionSelector(controller.store, (projection) => projection.state === 'idle');
   const operation = useMemo(() => new MessageOperation(actions, controller.sessionId), [actions, controller.sessionId]);
   const [branching, setBranching] = useState(false);
+  const [commands, setCommands] = useState<readonly CommandCatalogEntry[]>([]);
+  useEffect(() => {
+    let disposed = false;
+    setCommands([]);
+    if (connection.interactive) void controller.getCommandCatalog().then(
+      (catalog) => { if (!disposed) setCommands(catalog); },
+      () => { if (!disposed) setCommands([]); },
+    );
+    return () => { disposed = true; };
+  }, [controller, connection.interactive]);
   // 会话内检索(Cmd/Ctrl+F,事件源在 Chat.tsx;快捷键事实源见 chat-global-shortcuts)。
   // 消息序与 DOM 中 [data-chat-anchor-key] 行序一致:每条 message item 恰好渲染一行。
   const [searchOpen, setSearchOpen] = useState(false);
@@ -85,10 +96,10 @@ export default function ConversationTimeline({
       window.dispatchEvent(new Event('aih:chat-sessions-changed'));
       onBranchSession?.(session);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '消息操作失败，请重试');
+      toast.error(messageOperationFailure(error));
     } finally { setBranching(false); }
   };
-  const messageActions = workspaceMode === 'chat' && idle && connection.interactive && !branching && onBranchSession;
+  const messageActions = idle && connection.interactive && !branching && onBranchSession;
   useLayoutEffect(() => {
     firstTextPaintProbe.observeCommittedTimeline(items);
   }, [firstTextPaintProbe, items]);
@@ -145,9 +156,9 @@ export default function ConversationTimeline({
           onOpenFile={preview.openFile}
           mobile={mobile}
           progress={item.id === presentation.progressItemId ? <TurnProgress store={controller.store} /> : undefined}
-          onFork={messageActions && item.kind === 'message' && item.status === 'completed'
+          onFork={messageActions && messageOperationAvailable(commands, item, 'fork')
             ? () => void operate('fork', item.id) : undefined}
-          onRetry={messageActions && item.kind === 'message' && item.detail.role === 'assistant' && item.status === 'completed'
+          onRetry={messageActions && messageOperationAvailable(commands, item, 'regenerate')
             ? () => void operate('regenerate', item.id) : undefined}
         />
       ))}

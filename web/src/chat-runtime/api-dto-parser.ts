@@ -178,7 +178,11 @@ function assertResolutionIdentity(
     protocolFailure('chat_runtime_session_execution_account_mismatch');
   }
   const nativeSessionId = session.runtimeBinding.nativeSessionId;
-  if (nativeSessionId !== expected.nativeSessionId) {
+  if (expected.sessionId && (session.sessionId !== expected.sessionId
+    || session.projectPath !== expected.projectPath || session.policy.workspaceMode === 'chat')) {
+    protocolFailure('chat_runtime_session_identity_mismatch');
+  }
+  if (expected.nativeSessionId && nativeSessionId !== expected.nativeSessionId) {
     protocolFailure('chat_runtime_native_session_mismatch');
   }
 }

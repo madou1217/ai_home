@@ -1,4 +1,5 @@
 import type { AggregatedProject, Session } from '@/types';
+import { preserveCanonicalSessionIdentity } from '@/features/legacy-chat/project-selection-policy';
 
 interface PersistedSessionIdentity {
   readonly projectPath?: string;
@@ -27,9 +28,13 @@ export function resolveCanonicalSessionSelection(
     ? sessionIdentity(input.selectedSession)
     : persistedIdentity(input.persistedSelection);
   if (!identity) return null;
-  const resolved = findSession(input.projects, identity);
-  if (!resolved) return null;
+  const found = findSession(input.projects, identity);
+  if (!found) return null;
+  const resolved = { ...found, session: found.session.runtimeSessionId ? found.session
+    : preserveCanonicalSessionIdentity(input.selectedSession, found.session) };
   if (input.selectedSession
+    && input.selectedSession.runtimeSessionId === resolved.session.runtimeSessionId
+    && input.selectedSession.accountRef === resolved.session.accountRef
     && input.selectedSession.updatedAt >= resolved.session.updatedAt
     && input.selectedSession.status === resolved.session.status) return null;
   return resolved;

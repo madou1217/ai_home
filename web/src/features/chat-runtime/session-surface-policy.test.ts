@@ -80,6 +80,18 @@ test('saved sessions use the currently selected credential without credential bi
   }).status, 'ready');
 });
 
+test('Work branches keep both identities and reject another account before native resolution', () => {
+  const branch = { ...savedSession, mode: 'work' as const, runtimeSessionId: 'canonical-child', accountRef: 'account-1' };
+  const result = resolveSessionRuntimeTarget({ session: branch, account, approvalMode: 'confirm' });
+  assert.equal(result.status, 'ready');
+  if (result.status === 'ready') {
+    assert.equal(result.target.sessionId, 'canonical-child');
+    assert.equal(result.target.nativeSessionId, 'native-thread-1');
+  }
+  assert.deepEqual(resolveSessionRuntimeTarget({ session: branch, account: { ...account, accountRef: 'account-2' },
+    approvalMode: 'confirm' }), { status: 'blocked', reason: 'provider_mismatch' });
+});
+
 test('every Chat account uses Harness and never inherits the Work directory or native identity', () => {
   for (const provider of ['codex', 'claude', 'gemini'] as const) {
     const chat: Session = { ...savedSession, provider, mode: 'chat', projectPath: undefined,

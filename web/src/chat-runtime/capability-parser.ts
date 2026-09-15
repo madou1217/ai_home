@@ -15,7 +15,7 @@ const CAPABILITIES = new Set<ChatCapabilityName>([
   'session.resume', 'timeline.reasoning', 'timeline.tool', 'timeline.diff',
   'mode.plan', 'interaction.question', 'interaction.approval',
   'interaction.plan_confirmation', 'turn.interrupt', 'turn.steer.current',
-  'turn.steer.tool_boundary', 'turn.queue', 'slash.execute', 'terminal.stream', 'run.adopt',
+  'turn.steer.tool_boundary', 'turn.queue', 'slash.execute', 'terminal.stream', 'run.adopt', 'session.goal',
 ]);
 const SUPPORT = new Set<CapabilitySupport>(['native', 'emulated', 'unsupported', 'unknown']);
 const SNAPSHOT_FIELDS = new Set([

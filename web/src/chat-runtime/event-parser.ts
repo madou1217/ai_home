@@ -32,6 +32,7 @@ import type {
 const EVENT_TYPES = new Set<ChatRuntimeEventType>([
   'session.created', 'session.runtime.bound', 'session.runtime.rebound',
   'session.policy.changed', 'session.closed', 'session.snapshot.reset',
+  'session.goal.updated', 'session.goal.cleared',
   'turn.queued', 'turn.started', 'turn.phase.changed', 'turn.interrupt.requested', 'turn.metrics.updated',
   'turn.interrupted', 'turn.completed', 'turn.failed',
   'queue.item.added', 'queue.item.updated', 'queue.item.moved',
@@ -150,6 +151,10 @@ function validateDomainPayload(
   }
   if (type === 'session.created') sessionState(payload.state);
   if (type === 'session.policy.changed') record(payload.policy, 'chat_runtime_policy_invalid');
+  if (type === 'session.goal.updated') return { goal: parseGoal(payload.goal) };
+  if (type === 'session.goal.cleared') {
+    return payload.goalId === undefined ? {} : { goalId: text(payload.goalId, 'chat_runtime_goal_id_invalid') };
+  }
   if (type === 'stream.error') return validateStreamError(payload);
   if (type === 'runtime.prewarm.failed') {
     return {
@@ -158,6 +163,27 @@ function validateDomainPayload(
     };
   }
   return payload;
+}
+
+function parseGoal(value: unknown): Record<string, unknown> {
+  const goal = record(value, 'chat_runtime_goal_invalid');
+  const status = text(goal.status, 'chat_runtime_goal_status_invalid');
+  if (!['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete'].includes(status)) {
+    protocolFailure('chat_runtime_goal_status_invalid');
+  }
+  const tokenBudget = goal.tokenBudget === null
+    ? null
+    : nonNegativeInteger(goal.tokenBudget, 'chat_runtime_goal_token_budget_invalid');
+  return {
+    threadId: text(goal.threadId, 'chat_runtime_goal_thread_invalid'),
+    objective: text(goal.objective, 'chat_runtime_goal_objective_invalid'),
+    status,
+    tokenBudget,
+    tokensUsed: nonNegativeInteger(goal.tokensUsed, 'chat_runtime_goal_tokens_used_invalid'),
+    timeUsedSeconds: nonNegativeInteger(goal.timeUsedSeconds, 'chat_runtime_goal_time_used_invalid'),
+    createdAt: nonNegativeInteger(goal.createdAt, 'chat_runtime_goal_created_at_invalid'),
+    updatedAt: nonNegativeInteger(goal.updatedAt, 'chat_runtime_goal_updated_at_invalid'),
+  };
 }
 
 function validateStateProjectionPayload(

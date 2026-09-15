@@ -20,7 +20,7 @@ export function usePersistedChatSelection(
 ): void {
   useEffect(() => {
     // 纯聊天模式 (Chat 模式)：完全不持久化任何 projectPath 或 projectDirName，避免本地路径污染 URL
-    if (isChatMode || session?.mode === 'chat') {
+    if (session ? session.mode === 'chat' : isChatMode) {
       writePersistedSelection({
         projectPath: undefined,
         sessionId: session?.runtimeSessionId || (session?.draft ? undefined : session?.id),
@@ -31,12 +31,12 @@ export function usePersistedChatSelection(
     }
 
     writePersistedSelection({
-      projectPath: project?.path,
+      projectPath: session?.projectPath || project?.path,
       sessionId: session?.draft ? undefined : session?.id,
       provider: session?.draft ? undefined : session?.provider,
       projectDirName: session?.draft ? undefined : session?.projectDirName,
     });
-  }, [isChatMode, project?.path, session?.draft, session?.id, session?.mode, session?.projectDirName, session?.provider]);
+  }, [isChatMode, project?.path, session?.draft, session?.id, session?.runtimeSessionId, session?.mode, session?.projectPath, session?.projectDirName, session?.provider]);
 }
 
 // 纯聊天(chat 模式)会话的刷新恢复：它们没有 projectPath，不进 canonical/project

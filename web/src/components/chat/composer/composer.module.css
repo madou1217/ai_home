@@ -759,6 +759,28 @@
   color: var(--color-faint, #d9d9d9);
 }
 
+.sessionGoal {
+  min-width: 0;
+  max-width: min(42vw, 360px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--event-goal, #0d9488);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionGoal > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.goalControl { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.goalControlButton { color: var(--color-text-secondary); }
+.goalEditor { display: grid; width: 280px; gap: 8px; }
+.goalEditorActions { display: flex; justify-content: flex-end; gap: 4px; }
+
 /* =============================================================================
  * dsh 风格 SlashCommandMenu 浮层组件
  * ========================================================================== */

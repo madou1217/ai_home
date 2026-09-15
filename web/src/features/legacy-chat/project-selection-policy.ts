@@ -95,3 +95,9 @@ function matchesSelection(session: Session, selection: PersistedChatSelection): 
     && (!selection.provider || session.provider === selection.provider)
     && (!selection.projectDirName || session.projectDirName === selection.projectDirName);
 }
+export function preserveCanonicalSessionIdentity(current: Session | null, incoming: Session): Session {
+  if (!current?.runtimeSessionId || current.id !== incoming.id || current.provider !== incoming.provider
+    || current.projectPath !== incoming.projectPath) return incoming;
+  return { ...incoming, runtimeSessionId: current.runtimeSessionId, accountRef: current.accountRef,
+    mode: current.mode, title: current.title, updatedAt: Math.max(current.updatedAt, incoming.updatedAt) };
+}

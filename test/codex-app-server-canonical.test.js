@@ -77,6 +77,24 @@ test('maps every terminal Codex turn status to the canonical lifecycle', () => {
   }
 });
 
+test('maps Codex goal lifecycle into durable canonical session events', () => {
+  const goal = {
+    threadId: 'thread-1', objective: 'finish the migration', status: 'active',
+    tokenBudget: 1000, tokensUsed: 24, timeUsedSeconds: 7, createdAt: 10, updatedAt: 20
+  };
+  assert.deepEqual(mapCodexAppServerMessage(message('thread/goal/updated', {
+    threadId: 'thread-1', turnId: 'turn-1', goal
+  })), {
+    type: 'session.goal.updated', turnId: 'turn-1',
+    payload: { goal }
+  });
+  assert.deepEqual(mapCodexAppServerMessage(message('thread/goal/cleared', {
+    threadId: 'thread-1'
+  })), {
+    type: 'session.goal.cleared', payload: { goalId: 'thread-1' }
+  });
+});
+
 test('redacts native provider diagnostics before canonical events leave the adapter', () => {
   const turn = mapCodexAppServerMessage(message('turn/completed', {
     threadId: 'thread-1',
@@ -404,7 +422,6 @@ test('maps question requests, request resolution and unknown methods observably'
 test('classifies known Codex notifications as exact no-op results', () => {
   const methods = [
     'mcpServer/startupStatus/updated',
-    'thread/goal/cleared',
     'thread/settings/updated',
     'thread/status/changed',
     'thread/tokenUsage/updated',

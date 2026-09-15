@@ -18,6 +18,7 @@ function oauthFixture(overrides = {}) {
     aiHomeDir: '/tmp/aih-codex-identity',
     platform: 'darwin',
     getProfileDir: () => runtimeDir,
+    gatewayPinnedProvider: overrides.gatewayPinnedProvider === true,
     readAccountCredentialRecord: () => ({
       accountRef,
       provider: 'codex',
@@ -170,5 +171,80 @@ test('identity validator rejects a credential record bound to a foreign accountR
       accountResult: { account: { type: 'chatgpt', email: fixture.email } }
     }),
     (error) => error.code === 'codex_account_identity_local_mismatch'
+  );
+});
+
+// 被 aih 钉在本机网关（-c model_provider=aih_server）的 app-server 按 codex 契约不自报账号。
+// 这四条的重点不是「新分支能过」，而是**收窄之后闸门还咬得住**。
+test('gateway-pinned OAuth app-server verifies by runtime home when codex reports no account', async () => {
+  const fixture = oauthFixture({ gatewayPinnedProvider: true });
+
+  const verified = await fixture.validator({
+    initializeResult: { codexHome: path.join(fixture.runtimeDir, '.codex') },
+    accountResult: { account: null, requiresOpenaiAuth: false }
+  });
+
+  assert.equal(verified.verified, true);
+  assert.equal(verified.kind, 'oauth');
+  assert.equal(verified.assurance, 'runtime-home');
+  assert.match(verified.identityHash, /^[a-f0-9]{64}$/);
+  assert.match(verified.runtimeHomeHash, /^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(verified).includes(fixture.email), false);
+  assert.equal(JSON.stringify(verified).includes('secret-token'), false);
+});
+
+test('gateway-pinned validator still fails closed where the account binding could be forged', async (t) => {
+  const fixture = oauthFixture({ gatewayPinnedProvider: true });
+  const matchingHome = { codexHome: path.join(fixture.runtimeDir, '.codex') };
+  const cases = [
+    {
+      // 没登录的原生 app-server 同样不报账号，而 codexHome 照样匹配（那就是我们自己的投影目录）。
+      // 放行条件必须是合取，否则这一条会被当成钉网关而整道闸门失效。
+      name: 'not signed in',
+      input: { initializeResult: matchingHome, accountResult: { account: null, requiresOpenaiAuth: true } },
+      code: 'codex_app_server_account_identity_missing'
+    },
+    {
+      // 家目录是钉网关形态下唯一的账号绑定，它必须仍然是硬判据。
+      name: 'foreign runtime home',
+      input: {
+        initializeResult: { codexHome: '/tmp/host/.codex' },
+        accountResult: { account: null, requiresOpenaiAuth: false }
+      },
+      code: 'codex_app_server_runtime_home_mismatch'
+    },
+    {
+      // 对方真报了账号就按强判据核对，绝不因为「声明过钉网关」而退到弱判据。
+      name: 'foreign chatgpt account reported anyway',
+      input: {
+        initializeResult: matchingHome,
+        accountResult: { account: { type: 'chatgpt', email: 'other@example.com' }, requiresOpenaiAuth: false }
+      },
+      code: 'codex_app_server_account_identity_mismatch'
+    }
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      await assert.rejects(fixture.validator(scenario.input), (error) => {
+        assert.equal(error.code, scenario.code);
+        assertErrorDoesNotExpose(error, [fixture.email, 'secret-token']);
+        return true;
+      });
+    });
+  }
+});
+
+// reset-credit 的 stdio app-server 只对自带 OPENAI_API_KEY 的 api-key 账号中转，OAuth 账号仍连
+// 官方 provider、必然自报 chatgpt —— 那条路上空账号就是异常，严判据必须继续拒绝。
+test('unpinned OAuth app-server keeps rejecting an empty account', async () => {
+  const fixture = oauthFixture();
+
+  await assert.rejects(
+    fixture.validator({
+      initializeResult: { codexHome: path.join(fixture.runtimeDir, '.codex') },
+      accountResult: { account: null, requiresOpenaiAuth: false }
+    }),
+    (error) => error.code === 'codex_app_server_account_type_mismatch'
   );
 });

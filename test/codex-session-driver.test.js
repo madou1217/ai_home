@@ -185,6 +185,54 @@ test('Codex driver reuses resident client and persists mapped native events', as
   assert.deepEqual(fixture.bound, [NATIVE_THREAD_ID]);
 });
 
+test('Codex branch driver rehydrates deferred native goal state after resume', async () => {
+  const goal = {
+    threadId: NATIVE_THREAD_ID, objective: 'finish the branch', status: 'active',
+    tokenBudget: null, tokensUsed: 3, timeUsedSeconds: 4, createdAt: 1, updatedAt: 2
+  };
+  const fixture = createFixture({
+    nativeSessionId: NATIVE_THREAD_ID,
+    lineage: true,
+    goal
+  });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  assert.equal(fixture.client.methods().includes('thread/goal/get'), true);
+  assert.deepEqual(fixture.events.find((event) => event.type === 'session.goal.updated')?.payload.goal, goal);
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await turn;
+});
+
+test('a fork with an AIH goal does not query or clear it from an empty native goal', async () => {
+  let policy = { workspaceMode: 'chat', lineage: { parentSessionId: 'parent' },
+    contextState: { goalSource: 'aih', goal: { objective: 'user-owned goal' } } };
+  const fixture = createFixture({ nativeSessionId: NATIVE_THREAD_ID, lineage: true,
+    getSessionPolicy: () => policy });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  assert.equal(fixture.client.methods().includes('thread/goal/get'), false);
+  fixture.client.notify('thread/goal/cleared', { threadId: NATIVE_THREAD_ID });
+  await nextTask();
+  assert.equal(fixture.events.some((event) => event.type.startsWith('session.goal.')), false);
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID, turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await turn;
+  // Re-evaluate the live policy on the next turn, rather than caching ownership
+  // when the driver was constructed.
+  policy = { ...policy, contextState: { goalSource: 'native', goal: { objective: 'native goal' } } };
+  const resumed = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  assert.equal(fixture.client.methods().includes('thread/goal/get'), true);
+  fixture.client.notify('turn/completed', {
+    threadId: NATIVE_THREAD_ID, turn: { id: 'native-turn-1', status: 'completed' }
+  });
+  await resumed;
+});
+
 test('context window failure rebuilds the native thread and retries the turn once', async () => {
   const fixture = createFixture({ nativeSessionId: NATIVE_THREAD_ID });
   const turn = fixture.entry.driver.startTurn(turnContext());
@@ -926,6 +974,7 @@ function createFixture(overrides = {}) {
     runtimeBinding: overrides.nativeSessionId ? { nativeSessionId: overrides.nativeSessionId } : {},
     policy: {
       approvalMode: overrides.approvalMode || 'confirm',
+      ...(overrides.lineage ? { lineage: { parentSessionId: 'parent', commandId: 'branch' } } : {}),
       ...(overrides.workspaceMode ? { workspaceMode: overrides.workspaceMode } : {})
     }
   };
@@ -982,6 +1031,7 @@ function createFakeClient(decisionOrder, overrides) {
         error.code = 'codex_app_server_rpc_error';
         throw error;
       }
+      if (method === 'thread/goal/get') return { goal: overrides.goal || null };
       if (method === 'thread/read') return { thread: { id: NATIVE_THREAD_ID, turns: overrides.historyTurns || [] } };
       if (method === 'thread/turns/list') return { data: overrides.historyTurns || [], nextCursor: null };
       if (method === 'turn/start') {

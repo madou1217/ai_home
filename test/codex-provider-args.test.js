@@ -8,6 +8,8 @@ const {
   hasCodexModelProviderArg,
   injectCodexProviderArgs
 } = require('../lib/cli/services/ai-cli/codex-provider-args');
+const { buildCodexGatewayConnection } = require('../lib/server/codex-gateway-connection');
+const { APP_SERVER_PINS_GATEWAY_PROVIDER } = require('../lib/server/codex-app-server-endpoint');
 
 test('codex startup policy args suppress warnings and disable update checks', () => {
   assert.deepEqual(buildCodexStartupPolicyArgs(), [
@@ -94,4 +96,22 @@ test('codex provider args are scoped after native subcommands', () => {
     injectCodexProviderArgs(['--model', 'resume', 'prompt'], providerArgs),
     ['-c', 'model_provider=aih_server', '--model', 'resume', 'prompt']
   );
+});
+
+// codex-app-server-endpoint.js 用 APP_SERVER_PINS_GATEWAY_PROVIDER 向身份校验方声明
+// 「我起的 app-server 一定被钉在本机网关上，所以 codex 不会自报账号」。那个声明成立的前提就是
+// 下面这条链：网关连接 env 的两个值都有兜底 → 永远非空 → 即使 force 为 false 也必然吐出
+// model_provider 覆盖。哪天 endpoint 改成有条件钉而常量忘了跟着改，闸门会静默放松，
+// 所以把前提本身钉成测试。
+test('gateway connection env forces the provider override even when force is false', () => {
+  for (const config of [{}, { port: 9527, apiKey: '' }, { host: '127.0.0.1', apiKey: 'aih_client_x' }]) {
+    const { env } = buildCodexGatewayConnection(config, 'acct_11111111111111111111');
+    assert.ok(env.OPENAI_BASE_URL, 'base url must never be empty');
+    assert.ok(env.OPENAI_API_KEY, 'api key must never be empty');
+    assert.ok(
+      buildCodexProviderArgs(env, { force: false }).includes('model_provider=aih_server'),
+      'per-account app-server is pinned to the aih provider regardless of force'
+    );
+  }
+  assert.equal(APP_SERVER_PINS_GATEWAY_PROVIDER, true);
 });

@@ -38,6 +38,7 @@ import {
 } from './project-selection-policy';
 import type { PersistedChatSelection } from './runtime-types';
 import { useProjectCatalogTransport } from './use-project-catalog-transport';
+import { preserveCanonicalSessionIdentity } from './project-selection-policy';
 
 export interface ProjectCatalog {
   readonly projects: AggregatedProject[];
@@ -99,12 +100,7 @@ export function useProjectCatalog(
 
   useLayoutEffect(() => {
     selectedSessionRef.current = selectedSession;
-  }, [
-    selectedSession?.provider,
-    selectedSession?.id,
-    selectedSession?.projectDirName,
-    selectedSession?.draft,
-  ]);
+  }, [selectedSession]);
   useEffect(() => {
     selectedProjectRef.current = selectedProject;
   }, [selectedProject]);
@@ -182,7 +178,7 @@ export function useProjectCatalog(
             (s) => s.id === targetSelection.sessionId,
           );
           if (match && selectedSessionRef.current?.id === targetSelection.sessionId) {
-            setSelectedSession(match);
+            setSelectedSession((current) => preserveCanonicalSessionIdentity(current, match));
           }
         }
       } catch (_error) {
@@ -252,7 +248,7 @@ export function useProjectCatalog(
       const found = findProjectBySessionId(mergedProjects, targetSelection);
       if (found) {
         setSelectedProject(found.project);
-        setSelectedSession(found.session);
+        setSelectedSession((current) => preserveCanonicalSessionIdentity(current, found.session));
         setExpandedProjects((curr) => new Set([...curr, found.project.id]));
       }
     } else if (targetSelection.projectPath) {

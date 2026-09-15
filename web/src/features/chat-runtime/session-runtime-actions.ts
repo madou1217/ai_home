@@ -114,6 +114,23 @@ export class SessionRuntimeActions {
     return this.send('session.policy.set', { key, value });
   }
 
+  setGoal(objective: string, tokenBudget?: number | null): Promise<unknown> {
+    const value = objective.trim();
+    if (!value) throw new Error('chat_goal_objective_required');
+    return this.send('session.goal.set', {
+      objective: value,
+      ...(tokenBudget === undefined ? {} : { tokenBudget }),
+    });
+  }
+
+  getGoal(): Promise<unknown> {
+    return this.send('session.goal.get', {});
+  }
+
+  clearGoal(): Promise<unknown> {
+    return this.send('session.goal.clear', {});
+  }
+
   private send<N extends SessionCommandInput['type']>(
     type: N,
     payload: Extract<SessionCommandInput, { type: N }>['payload'],

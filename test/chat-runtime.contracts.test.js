@@ -71,6 +71,24 @@ test('turn submit rejects empty optional model controls', () => {
   }
 });
 
+test('goal commands normalize bounded objectives and token budgets', () => {
+  assert.deepEqual(normalizeCommand({
+    commandId: 'goal-set', sessionId: 'session-1', type: 'session.goal.set',
+    payload: { objective: ' ship ', tokenBudget: 1000 }
+  }).payload, { objective: 'ship', tokenBudget: 1000 });
+  assert.deepEqual(normalizeCommand({
+    commandId: 'goal-clear', sessionId: 'session-1', type: 'session.goal.clear', payload: {}
+  }).payload, {});
+  assert.throws(() => normalizeCommand({
+    commandId: 'goal-invalid', sessionId: 'session-1', type: 'session.goal.set',
+    payload: { objective: 'ship', tokenBudget: 0 }
+  }), (error) => error.code === 'chat_goal_token_budget_invalid');
+  assert.throws(() => normalizeCommand({
+    commandId: 'goal-invalid-payload', sessionId: 'session-1', type: 'session.goal.clear',
+    payload: { objective: 'unexpected' }
+  }), (error) => error.code === 'chat_goal_payload_invalid');
+});
+
 test('turn submit accepts session attachment identities and supports image-only turns', () => {
   const command = normalizeCommand({
     commandId: 'turn-images', sessionId: 'session-1', type: 'turn.submit',

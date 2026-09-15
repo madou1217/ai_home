@@ -8,6 +8,7 @@ export interface SessionRuntimeTarget {
   readonly executionAccountRef: string;
   readonly projectPath: string;
   readonly nativeSessionId?: string;
+  readonly sessionId?: string;
   readonly chatSessionId?: string;
   readonly policy: Readonly<{ approvalMode: ApprovalMode; workspaceMode?: 'chat' }>;
 }
@@ -52,6 +53,7 @@ export function resolveSessionRuntimeTarget(
   if (!projectPath) return blocked('project_path_required');
   if (!input.account) return blocked('account_required');
   if (input.account.provider !== input.session.provider) return blocked('provider_mismatch');
+  if (input.session.accountRef && input.session.accountRef !== input.account.accountRef) return blocked('provider_mismatch');
   if (!descriptor.acceptsAccount(input.account)) return blocked('account_required');
 
   return {
@@ -61,6 +63,7 @@ export function resolveSessionRuntimeTarget(
       executionAccountRef: input.account.accountRef,
       projectPath,
       ...(!input.session.draft ? { nativeSessionId: input.session.id } : {}),
+      ...(input.session.runtimeSessionId ? { sessionId: input.session.runtimeSessionId } : {}),
       policy: { approvalMode: input.approvalMode },
     },
   };

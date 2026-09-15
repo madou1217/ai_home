@@ -79,3 +79,16 @@ test('capability catalog trims and deduplicates provider command descriptors', a
     }
   ]);
 });
+
+test('capability catalog exposes the provider-neutral goal lifecycle when supported', async () => {
+  const commands = await createCapabilityCommandCatalog().list({
+    capabilitySnapshot: { capabilities: {
+      'session.goal': { support: 'emulated' }
+    } }
+  });
+  assert.deepEqual(commands.slice(-3), [
+    { id: 'session.goal.set', type: 'session.goal.set' },
+    { id: 'session.goal.get', type: 'session.goal.get' },
+    { id: 'session.goal.clear', type: 'session.goal.clear' }
+  ]);
+});

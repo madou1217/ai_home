@@ -304,16 +304,34 @@ for (const credentialKind of ['codex', 'codex-api-key', 'claude', 'agy', 'kimi']
     threadStarts: 3, imports: 3, compactions: 1, restored: true, nativeProcessRestarted: true,
     exactFork: true, regenerate: true, roleInherited: true }));
   if (credentialKind === 'kimi') {
-    const noticesBefore = service.getSnapshot(fork.sessionId).timeline.filter((item) => item.detail?.code === 'contextCompaction').length;
     const manualBefore = rpc.filter((call) => call.method === 'thread/compact/start').length;
-    pressureResponsePending = true;
-    await submit(service, fork.sessionId, 'automatic-pressure', 'Exercise automatic context pressure');
-    await submit(service, fork.sessionId, 'automatic-pressure-next', 'Continue after context pressure');
-    assert.ok(service.getSnapshot(fork.sessionId).timeline.filter((item) => item.detail?.code === 'contextCompaction').length > noticesBefore);
+    let compactionCycles = 0;
+    for (let cycle = 1; cycle <= 2; cycle += 1) {
+      const noticesBefore = service.getSnapshot(fork.sessionId).timeline
+        .filter((item) => item.detail?.code === 'contextCompaction').length;
+      pressureResponsePending = true;
+      await submit(service, fork.sessionId, `automatic-pressure-${cycle}`, `Exercise automatic context pressure ${cycle}`);
+      await submit(service, fork.sessionId, `automatic-pressure-${cycle}-next`, `Continue after context pressure ${cycle}`);
+      assert.ok(service.getSnapshot(fork.sessionId).timeline
+        .filter((item) => item.detail?.code === 'contextCompaction').length > noticesBefore);
+      assert.equal(service.getSnapshot(fork.sessionId).policy.contextState.compaction.status, 'completed');
+      compactionCycles += 1;
+    }
     assert.equal(rpc.filter((call) => call.method === 'thread/compact/start').length, manualBefore,
       'automatic compaction must come from the native loop, without an AIH manual request');
-    assert.equal(service.getSnapshot(fork.sessionId).policy.contextState.compaction.status, 'completed');
-    console.log(JSON.stringify({ provider, automaticCompaction: true }));
+    console.log(JSON.stringify({ provider, automaticCompaction: true, compactionCycles }));
+    const postCompactionTimeline = service.getSnapshot(fork.sessionId).timeline;
+    const postCompactionAnswer = [...postCompactionTimeline].reverse().find((item) =>
+      item.kind === 'message' && item.detail?.role === 'assistant' && item.status === 'completed');
+    assert.ok(postCompactionAnswer, '连续压缩后必须仍有可定位的 assistant 锚点');
+    const postCompactionFork = (await service.dispatchCommand(fork.sessionId, {
+      commandId: 'post-compaction-fork', type: 'session.fork',
+      payload: { sourceItemId: postCompactionAnswer.id }
+    })).result.session;
+    await submit(service, postCompactionFork.sessionId, 'post-compaction-continue',
+      'Continue from the facts retained after repeated compaction');
+    assert.match(JSON.stringify(requests.at(-1).body.input), /context pressure 2|cobalt-42/,
+      '分支继续必须保留压缩后的近期事实或原始会话事实');
     const queueSession = await service.openChatSession({ provider, executionAccountRef: 'acct_probe' });
     let releaseResponse;
     responseGate = new Promise((resolve) => { releaseResponse = resolve; });

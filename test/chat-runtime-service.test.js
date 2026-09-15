@@ -66,6 +66,51 @@ async function createSession(service, overrides = {}) {
   });
 }
 
+test('service persists provider-neutral goal lifecycle through commands and reload-safe projection', async (t) => {
+  const { service } = createFixture(t);
+  const session = await createSession(service, { sessionId: 'goal-session' });
+
+  const set = await service.dispatchCommand(session.sessionId, {
+    commandId: 'goal-set-1', type: 'session.goal.set',
+    payload: { objective: 'Ship the harness integration', tokenBudget: 5000 }
+  });
+  assert.equal(set.result.goal.objective, 'Ship the harness integration');
+  assert.equal(set.result.goal.status, 'active');
+
+  const snapshot = service.store.getSnapshot(session.sessionId);
+  assert.equal(snapshot.policy.contextState.goal.objective, 'Ship the harness integration');
+  assert.equal(snapshot.policy.contextState.goal.tokenBudget, 5000);
+  assert.equal(snapshot.policy.contextState.goalSource, 'aih');
+  assert.equal(service.store.listEvents(session.sessionId).filter((event) => (
+    event.type === 'session.goal.updated'
+  )).length, 1);
+
+  const read = await service.dispatchCommand(session.sessionId, {
+    commandId: 'goal-get-1', type: 'session.goal.get', payload: {}
+  });
+  assert.equal(read.result.goal.threadId, 'goal-session');
+
+  const clear = await service.dispatchCommand(session.sessionId, {
+    commandId: 'goal-clear-1', type: 'session.goal.clear', payload: {}
+  });
+  assert.equal(clear.result.goal, null);
+  assert.equal(service.store.getSnapshot(session.sessionId).policy.contextState.goal, undefined);
+  assert.equal(service.store.listEvents(session.sessionId).filter((event) => (
+    event.type === 'session.goal.cleared'
+  )).length, 1);
+});
+
+test('goal mutation is rejected while a session turn is active', async (t) => {
+  const { service } = createFixture(t);
+  const session = await createSession(service, { sessionId: 'busy-goal-session' });
+  service.store.setSessionState(session.sessionId, 'running', {
+    turnId: 'turn-1', runId: 'run-1', state: 'running'
+  });
+  await assert.rejects(() => service.dispatchCommand(session.sessionId, {
+    commandId: 'goal-busy', type: 'session.goal.set', payload: { objective: 'blocked' }
+  }), (error) => error.code === 'chat_goal_session_busy');
+});
+
 test('service resolves one default runtime and publishes session only after persistence', async (t) => {
   const eventHub = new ChatRuntimeEventHub();
   let service;
@@ -216,6 +261,56 @@ test('service resolves one stable session for a native provider session', async 
   assert.equal(adopted.session.runtimeBinding.nativeSessionId, 'thread-1');
   assert.equal(Object.hasOwn(adopted.session, 'nativeSessionId'), false);
   assert.equal(service.listSessions().length, 1);
+});
+
+test('exact canonical resolution validates provider, account, native identity and project without creating or rebinding', async (t) => {
+  const { service } = createFixture(t);
+  const input = { provider: 'codex', executionAccountRef: 'account-1', projectPath: '/repo/one', nativeSessionId: 'thread-1' };
+  const { session } = await service.resolveSession(input);
+  const exact = { ...input, sessionId: session.sessionId };
+  assert.equal((await service.resolveSession(exact)).session.sessionId, session.sessionId);
+  assert.equal((await service.resolveSession({ ...exact, nativeSessionId: undefined })).session.runtimeBinding.nativeSessionId, 'thread-1');
+  for (const patch of [{ provider: 'claude' }, { executionAccountRef: 'account-2' },
+    { projectPath: '/other' }, { nativeSessionId: 'other-thread' }]) {
+    await assert.rejects(service.resolveSession({ ...exact, ...patch }), { code: 'chat_session_identity_mismatch' });
+  }
+  await assert.rejects(service.resolveSession({ ...exact, sessionId: 'missing' }), { code: 'chat_session_not_found' });
+  assert.equal(service.listSessions().length, 1);
+  assert.equal(service.store.getSession(session.sessionId).executionAccountRef, 'account-1');
+});
+
+test('native Work branches reject credential rebinding while ordinary Work retains that behavior', async (t) => {
+  const { service } = createFixture(t);
+  const input = { provider: 'codex', executionAccountRef: 'account-1', projectPath: '/repo/one', nativeSessionId: 'branch-thread',
+    policy: { lineage: { parentSessionId: 'parent' } } };
+  const { session } = await service.resolveSession(input);
+  await assert.rejects(service.resolveSession({ ...input, executionAccountRef: 'account-2' }), { code: 'chat_branch_account_mismatch' });
+  assert.equal(service.store.getSession(session.sessionId).executionAccountRef, 'account-1');
+});
+
+test('message operation errors expose durable recovery disposition including a lost native fork receipt', async (t) => {
+  const { service } = createFixture(t, { drivers: { codex: { driver: { startTurn: async () => ({}), historyBranch: {
+    plan: async (_command, projection) => ({ threadId: 'thread-1', sourceItemId: 'answer', lastTurnId: 'turn-1', items: [], projection }),
+    native: () => ({ fork: async () => { throw new Error('receipt lost'); }, recoverFork: async () => null })
+  } } } } });
+  const { session } = await service.resolveSession({ provider: 'codex', executionAccountRef: 'account-1',
+    projectPath: '/repo/one', nativeSessionId: 'thread-1' });
+  service.store.appendEvent(session.sessionId, { type: 'timeline.item.completed',
+    source: { provider: 'codex', runtimeId: 'probe' }, payload: { item: timelineItem('answer', 1) } });
+  const command = { commandId: 'fork-lost', type: 'session.fork', payload: { sourceItemId: 'answer' } };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await assert.rejects(service.dispatchCommand(session.sessionId, command), (error) => {
+      assert.equal(error.code, 'chat_branch_fork_outcome_unknown');
+      assert.deepEqual(error.details.commandRecovery, { commandId: 'fork-lost', disposition: 'resume' });
+      return true;
+    });
+  }
+  assert.equal(service.store.getCommand('fork-lost').status, 'accepted');
+  await assert.rejects(service.dispatchCommand(session.sessionId, { ...command, commandId: 'missing-anchor',
+    payload: { sourceItemId: 'absent' } }), (error) => {
+    assert.deepEqual(error.details.commandRecovery, { commandId: 'missing-anchor', disposition: 'new_command' });
+    return true;
+  });
 });
 
 test('service resumes one native session with a different execution credential', async (t) => {

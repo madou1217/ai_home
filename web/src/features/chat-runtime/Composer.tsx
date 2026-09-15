@@ -51,7 +51,7 @@ export default function Composer(props: ComposerProps) {
       {props.workspaceMode === 'chat' ? (
         <div className={styles.chatSessionBar} aria-label="会话状态">
           <div className={styles.chatSessionSummary}>
-            <SessionMetrics store={props.store} onCompact={compactContext} />
+            <SessionMetrics store={props.store} actions={props.actions} onCompact={compactContext} />
           </div>
           <ChatSessionSettings store={props.store} actions={props.actions} />
         </div>

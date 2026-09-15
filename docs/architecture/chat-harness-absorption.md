@@ -1,6 +1,11 @@
 # AIH Chat Harness：源码依据、决策和交付清单
 
-更新：2026-09-13。状态按后端、页面、持久化和真实验收分别判定，组件存在不能代表能力完成。
+更新：2026-09-15。状态按后端、页面、持久化和真实验收分别判定，组件存在不能代表能力完成。
+
+最新增量：Work 分支命令、子会话事务、消息入口和父会话导航已接通，见下方「Work 产品接线」；
+审批、压缩切口、原生 active goal continuation 的完整语义与真实 1M 持续会话仍未完成；AIH 侧的 goal
+set/get/clear 控制面已接通。历史验收段落保留当时的范围和结果，
+不能将其中的「未接入」或「已验」脱离日期当成当前整体状态。
 
 ## 固定参考来源
 
@@ -119,6 +124,13 @@ provider driver。当前没有为对齐命名引入 Cordis、第二个 inbox 或
 - 1M 输入继续由两道独立闸门保护：`turn/start` 的字符传输上限，以及按真实 `model_context_window` 计算的
   token 预算。窗口未知时不猜测；传输超限可分段注入，token 超预算会裁剪附件并披露。
   裁剪不是无损压缩；尚未完成真实 1M 多轮、反复压缩、断线恢复和分支的完整验收。
+- 历史 seed 裁剪现在保留开头连续的 system/developer 指令，并从剩余预算中扣除其 token；工具
+  call/result 仍作为不可拆分单元。Work 合并原生与继承历史时只排除显式 `stale`、`rollback`、
+  `rolled-back`、`superseded` 标记，未知状态保持原样，避免把回滚副作用带入子会话，也避免猜测性
+  丢弃未来协议状态。
+- Chat 分支会保留 `contextCompaction`、`context_compacted` 和 `codex_warning` 这些公开元数据，
+  但不会把它们伪装成可注入的 Responses item；连续两次高用量自动压缩后，仍可定位 assistant
+  锚点并创建分支继续对话。
 
 ### Codex 分页历史与恢复 hydration（2026-09-13）
 
@@ -162,6 +174,17 @@ provider driver。当前没有为对齐命名引入 Cordis、第二个 inbox 或
 - 本批没有改动 web 源码，没有重启/部署 9527；只读 `/readyz` 为 ready。未将 native 本地模型测试写成
   真实 provider 或浏览器验收，未提交推送当前工作区。
 
+### 2026-09-14 压缩后分支回归
+
+- 真实本地 Codex Harness 联合回归：`test/chat-harness.native.test.js` 与
+  `test/chat-harness-tools.native.test.js` 共 **31 pass、0 fail**。Kimi 接线路径额外完成两次
+  850000-token 高用量自动压缩、压缩后 assistant 精确锚点分支、分支继续、停止/队列恢复和压缩后续聊。
+- 首次回归暴露 `codex_warning` 元数据被错误当成不可逆历史，导致压缩后 Chat 分支拒绝；现已将
+  `contextCompaction`、`context_compacted`、`codex_warning` 保留为公开提示但从 child seed 排除，
+  修复后 Kimi native 场景通过。该证据仍使用临时 HOME 与本地确定性模型，不代表真实上游 1M 容量验收。
+- 串行 Node 全量回归：**6971 tests，6932 pass、39 skip、0 fail**，日志为
+  `/tmp/aih-harness-continuation-full.log`；本轮未部署、未重启 9527、未提交或推送。
+
 上下文溢出继续暴露三个问题：旧转换器只接受 raw `message`，把 native `userMessage/agentMessage`
 全部丢掉；替换 native thread 后持久 activeTurn 仍锚定旧 turn；已注入的分支 seed 不一定出现在
 typed turn 列表中。现在 `codex-history-seed` 共用分页读取，按明确形状转换消息、图片和有私有证据的
@@ -177,12 +200,78 @@ reasoning，合并 AIH 原始分支 seed 并按 item ID 去重；替换 thread �
 
 | 项目 | 当前证据与缺口 | 下一步证明 |
 | --- | --- | --- |
-| Work 完整历史与分支 | 带 ID 的 raw、完整性覆盖、精确切口规划、持久 fork/inject 检查点及原生回执找回已实现；AIH 分支命令与 UI 尚未接入 | 接通命令和子会话事务；补用户消息映射、审批及压缩切口、active goal 边界 |
+| Work 完整历史与分支 | 带 ID 的 raw、精确切口、持久 fork/inject 检查点、用户消息映射、服务命令和 UI 已接通；隔离真实原生场景及浏览器已验 | 继续审批及压缩切口、原生 active goal continuation、多用户 steering 映射边界及真实 Provider 验收 |
 | 扩展执行前控制 | 命令前检查有效；工具钩子目前在通知/持久化层 | 执行器提供真正可等待的执行前入口，native marker 证明拒绝后没有执行 |
-| 1M 持续会话 | 窗口预算、原生压缩、溢出一次恢复已覆盖；没有真实 1M 多轮压力结果 | 多次压缩、断线重连、分支后任务事实保持，区分裁剪与摘要损失 |
+| 1M 持续会话 | 窗口预算、原生压缩、溢出一次恢复已覆盖；本地确定性模型已验证连续两次自动压缩后分支继续 | 仍缺真实 1M 上游容量压力；需继续区分裁剪损失与摘要损失 |
 | 各 Provider 与第二 adapter | 共用命令及 Codex adapter；真实上游能力未逐项闭合 | reasoning/图片/停止/压缩/恢复逐 provider 的真实矩阵，决定 Pi adapter 是否必要 |
 
-这些条目是后续工作，当前批次仍在工作区，不能表述为已经部署到 9527 或全部 Harness 集成完成。
+这些条目仍有后续工作；代码提交与当前运行的 9527 是两项独立证据，不能表述为全部 Harness 集成完成。
+
+### Work 产品接线（2026-09-14）
+
+- `chat-runtime-service` 已把 `session.fork` / `turn.regenerate` 分派到 Work 原生计划、检查点和
+  `work-branch-repository` 子会话事务。原生 fork/resume 不发送 raw 时，`codex-rollout-turn` 从
+  经账号身份验证的本地 rollout 读取 exact turn 的落盘证据；不把缺失通知当成完整历史。
+- 消息按钮使用服务端命令目录；目录检查当前 driver 的 `historyBranch` 端口，避免旧 capability
+  snapshot 或 provider 名称硬编码决定入口。工具卡、审批回答投影及非终态消息不提供分支按钮。
+- Work 返回 `id = nativeThreadId`、`runtimeSessionId = AIH sessionId`，保留项目与账号。精确 AIH
+  identity resolve 校验 provider/account/project/native；查无结果直接失败，不创建会话或更换凭据。
+  原生分支禁止被另一个账号接管；普通 Work 会话原有显式更换执行凭据的行为保留。
+- 父会话链接先解析持久 lineage 的 AIH ID，再导航到原生 ID + projectPath。目录合并、原生
+  adoption、项目快照与硬刷新均保留分支身份；旧 native-only 记录不能覆盖已确认的账号和 AIH ID。
+- 错误响应携带由持久 command/operation 推导的 `commandRecovery`。只有明确 `new_command`
+  才清除浏览器命令 ID；`resume`、未知 HTTP 失败和丢回执均复用原 ID。恢复只查找原生回执，
+  不重新执行 fork/inject；UI 使用紧凑中文消息解释尚待确认的结果，不把内部错误码作为产品提示。
+  Chat 重新生成的子会话已提交、子 turn 尚未被接收时也保留原命令，修复运行时暂不可用后另建
+  子会话的窗口。Chat/Work 共用 `branch-session-identity` 计算确定性子 ID。
+
+### Codex active goal 投影（2026-09-14）
+
+- Codex 的 `thread/goal/updated` / `thread/goal/cleared` 不再作为静默通知丢弃，统一映射为
+  `session.goal.updated` / `session.goal.cleared`，并由 `EventRepository` 投影到持久的
+  `policy.contextState.goal`。刷新和重开数据库后目标状态仍可见，前端会话度量条以紧凑目标标识显示。
+- Work 分支继续使用 `deferGoalContinuation: true`；带 lineage 的子会话恢复时读取
+  `thread/goal/get`，把原生继承的 goal 重新同步到 AIH。普通无 goal 会话不增加每轮探测 RPC，
+  旧版 app-server 不支持 goal 查询时也不会阻断回合。
+- 当前已补齐共同命令契约 `session.goal.set/get/clear`：目标写入 AIH 的 `contextState`，以
+  `session.goal.updated/cleared` 事件持久化，命令幂等、空闲态变更和能力目录均受同一边界控制。
+  Codex 目前以 `emulated` 能力暴露该控制面；该控制面尚未调用原生 `thread/goal/set` RPC，也不会把
+  AIH 投影误称为所有 Provider 的原生 active-goal 调度器。原生 Codex goal 的读取/继承仍由
+  `thread/goal/get` 和通知链负责，后续若其他 Provider 提供真实 goal API，只需在 driver capability
+  中升级为 native。
+
+验证证据：
+
+- Node 定向 60 pass，日志 `/tmp/aih-work-ui-backend-final.log`。首次全量串行 6853 tests、
+  6814 pass、39 skip、0 fail（`/tmp/aih-work-ui-full.log`）；随后发现并补充上述 Chat 子回合
+  提交前失败窗口，最终结果另记，旧全量不能当作覆盖该最后补丁。
+- 真实 Codex 进程专项 5 pass：Work assistant/user 切口、regenerate、fork/inject 丢回执、legacy。
+  使用 codex-cli 0.154.0-alpha.3、临时 HOME 和本地确定性模型，不访问真实上游；日志
+  `/tmp/aih-work-ui-native.log`。
+  最后补丁后的完整 Chat/Work 原生联合 31 pass、0 skip、0 fail，日志
+  `/tmp/aih-work-ui-native-final.log`；运行时组装/Actor/扩展专项 34 pass，
+  `/tmp/aih-work-ui-wiring-final.log`。
+- Web 相关 202 pass、26 个新增/改动 TS/TSX 文件 ESLint 通过、Node 22 完整
+  `cd web && npm run build` 通过；日志 `/tmp/aih-work-ui-{web,eslint,build}-final.log`。
+  首次构建使用了不兼容的 npm 子进程 Node，报 `No such module: http_parser`；固定 Node 22 后通过，
+  没有修改依赖或掩盖编译错误。
+- 5194 隔离浏览器使用实际 `CanonicalChatRuntime` / 消息组件连接 5195 测试 HTTP 服务和真实
+  Codex 进程。点击中途 assistant 分支后故意返回 503，刷新再点仍是同一 command ID、唯一子会话。
+- 本次 active goal 增量定向 Node **103 pass、0 fail**（含 Codex canonical、driver、分支和持久
+  context projection）；Web event parser **18 pass、0 fail**，改动文件 ESLint 与 Node 22
+  `cd web && npm run build` 均通过。
+  分支仅含 cut 前工具和消息；重新生成、父会话链接、继续输入、硬刷新和 390px 移动端已检查。
+  marker 始终是 `before\nafter\n`，旧工具没有重跑；共 5 次模型请求（原会话 3、重新生成 1、
+  分支继续 1）。截图 `output/playwright/work-branch-{desktop,mobile}.png`。
+  隔离页面外壳、账号展示和本地模型是测试 fixture；未模拟用户登录、未写用户会话。
+  浏览器两条错误分别为 fixture favicon 404 与故意注入的 503，没有组件异常；此次未重启 9527。
+
+设计边界：`MessageOperation` / command recovery → 幂等命令 → HTTP 状态不能决定原生操作是否执行 →
+丢回执后刷新重试与唯一子会话；`session-resolution-coordinator` / `branch-navigation` → Adapter →
+统一会话与原生目录身份显式转换 → 两账号/错误路径单测及父链接点击；`project-selection-policy` →
+投影合并 → 原生目录刷新不能丢 canonical metadata → hydration/目录与恢复测试。
+SOLID 保留编排、事务、driver 和页面边界；DRY 复用目录与解析；KISS/YAGNI 不增加第二个会话库、
+执行循环或插件平台。后续审批、压缩切口和原生 active goal continuation 专题不因本批入口接通而视为完成。
 
 设计边界：`codex-history-pages` → Adapter + Map/Set → 协议补全和投影分离、身份去重 → 分页回归；
 `codex-app-server-json-rpc-client` → scoped port → 重连内读取不解除普通命令屏障 → WebSocket 故障注入；
@@ -449,3 +538,48 @@ Codex raw/history 仍有明确边界：raw item 不是完整的 Work 历史；`t
 因此提交协调器只对明确 RPC 拒绝立即失败；遇到 `codex_app_server_disconnected` 时等待 transport 的同一轮自动恢复，绝不再次发送输入。恢复通过 `clientUserMessageId == runId` 在 `thread/resume` 的 durable history 中查找精确 native turn，先导入历史并持久化 `nativeTurnId`，再继续运行、完成或取消。不会借用“最新一轮”：找不到或出现多个匹配时，本轮以 `codex_turn_start_outcome_unknown` 收尾，`outcomeUnknown=true`、`retryable=false`，停止意图也不能把未确认执行伪装成已成功取消。
 
 验证覆盖三类已接收场景：原回合仍运行、离线期间已完成、断线后用户点击停止；marker 均只写一次，`turn/start` 只发送一次。另覆盖找不到锚点时刷新后仍保留结果未确认并拒绝一键重试。该边界避免 AIH 主动制造重复副作用，但不宣称外部系统 exactly-once；用户仍需在结果未知时核对实际文件或外部状态。
+
+
+### Goal 来源与 Work 恢复修正（2026-09-15）
+
+纠正先前“原生 goal set/clear RPC 不存在”的结论：固定 Codex `96883599` 的
+`request_processors/thread_goal_processor.rs` 实现了 set/get/clear。本机
+`codex-cli 0.154.0-alpha.3` 的隔离进程也实测 set(paused)/get/clear 成功。
+原生 set(active) 会触发独立自动续跑，当前 AIH 仍按一个 native turn 管理回合；因此
+能力继续标记 emulated，不能仅接通 RPC 就声称原生 continuation 已集成。
+
+本次修正：
+
+- goal 事件在 Chat 和 Work 共同持久化；`goalSource` 明确区分 AIH 与原生，clear 同时清除来源。
+- `CodexSessionGoalSync` 在每次恢复时读取实时 policy；继承的 AIH goal 不接受原生空状态或
+  原生恢复时主动发出的 cleared 通知，避免分支继续输入时目标消失。
+- 重启恢复和 WebSocket 自动重连共用 goal 同步端口；重连使用恢复专用 client，避免在
+  `waitForReconnect` 内请求普通 client 形成等待环。持久化完成后才开放恢复结果。
+- 原生读取失败保留上次状态；缺失 goal 字段、异账号 thread 或非法形状明确失败。
+  旧读取不能覆盖更新的通知；持久化失败不能缓存为“已同步”。
+- 真实 Work 场景完成 native paused goal 创建/读取、AIH 离线时 clear、重启补齐；marker
+  始终一行，模型仅两次请求。另一真实 Work 分支保留 AIH 目标、预算与来源并继续输入成功。
+
+设计模式：`codex-session-goal-sync` → Adapter + 顺序版本校验 → 隔离原生元数据同步与
+AIH 生命周期 → driver、持久化 gate、乱序通知、异账号拒绝及真实 Work 恢复/分支测试。
+`chat-context-state` → 持久投影 → goal 不再受 Chat-only 上下文指标限制 → Work 事件与重开库测试。
+SOLID 分离协议同步与投影；DRY 复用重启/重连恢复端口；KISS/YAGNI 未增加第二个自动执行循环。
+
+本次提交前验证：
+
+- Node 全量串行回归：7012 tests、6971 pass、41 skip、0 fail；日志
+  `/tmp/aih-all-delivery-node-final.log`。随后新增的网关启动身份边界测试单独验证：
+  身份校验、启动参数、常驻连接与模型目录共 60 pass，日志
+  `/tmp/aih-all-delivery-identity-final.log`。
+- Chat/Work 真实原生联合回归：33 pass、0 skip、0 fail，日志
+  `/tmp/aih-all-delivery-native.log`；均使用临时 HOME、本地确定性模型，不使用用户凭据或真实上游。
+- Web 全量测试 517 pass；40 个改动脚本文件 ESLint 通过；Node 22 下完整
+  `cd web && npm run build` 通过。日志分别为 `/tmp/aih-all-delivery-web-final.log`、
+  `/tmp/aih-all-delivery-eslint-final.log`、`/tmp/aih-all-delivery-build-final.log`。
+- Provider Go 测试、`npm run providers:check`、`npm run models:check` 均通过。
+- 本轮浏览器通道因原生服务不可用未能重新验收；没有重启或部署 9527。
+  既有页面验收保持原日期，不以本轮构建和单测替代真实页面证据。
+
+按本会话的 all 提交推送授权进行 self-review，并将 CodeBuddy 家族接入单独提交；
+`undefined/` 中的安装缓存与二进制保留本地，不提交。原生 active goal 自动续跑、
+真实 1M 持续会话与逐 Provider 上游能力矩阵仍是开放项。

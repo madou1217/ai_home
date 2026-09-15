@@ -120,6 +120,22 @@ test('canonical directory rejects non-string native identities at the projection
   assert.deepEqual(directory, { sessions: [] });
 });
 
+test('Work branch directory survives reload and native history merging with its canonical account identity', async () => {
+  const branch = { ...runtimeSession('canonical-child', 'native-child', 'account-a'),
+    policy: { title: '任务 · 分支', lineage: { parentSessionId: 'parent' } } };
+  const directory = await loadCanonicalSessionDirectory([{ provider: 'codex', projectPath }], {
+    listSessions: async () => [branch],
+  });
+  const [merged] = mergeCanonicalSessionDirectory([project('repo', projectPath, [{
+    ...canonicalSession('native-child', 10, 'idle'), title: 'native preview',
+  }])], directory.sessions);
+  assert.equal(merged.sessions.length, 1);
+  assert.equal(merged.sessions[0].runtimeSessionId, 'canonical-child');
+  assert.equal(merged.sessions[0].accountRef, 'account-a');
+  assert.equal(merged.sessions[0].mode, 'work');
+  assert.equal(merged.sessions[0].title, '任务 · 分支');
+});
+
 test('canonical directory bounds concurrent project queries', async () => {
   let active = 0;
   let peak = 0;

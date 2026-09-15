@@ -21,6 +21,26 @@ test('event parser accepts the canonical schema and matching sequence', () => {
   assert.equal(parsed.seq, 3);
 });
 
+test('event parser accepts and validates the Codex goal projection', () => {
+  const parsed = parseChatRuntimeEvent(JSON.stringify({
+    ...event(),
+    type: 'session.goal.updated',
+    payload: { goal: {
+      threadId: 'thread-1', objective: 'ship', status: 'active', tokenBudget: null,
+      tokensUsed: 2, timeUsedSeconds: 3, createdAt: 1, updatedAt: 2,
+    } },
+  }), 'session-1');
+  assert.equal(parsed.type, 'session.goal.updated');
+  if (parsed.type !== 'session.goal.updated') assert.fail('expected goal event');
+  assert.equal(parsed.payload.goal.objective, 'ship');
+  assert.throws(() => parseChatRuntimeEvent(JSON.stringify({
+    ...event(), type: 'session.goal.updated', payload: { goal: {
+      threadId: 'thread-1', objective: 'ship', status: 'unknown', tokenBudget: null,
+      tokensUsed: 2, timeUsedSeconds: 3, createdAt: 1, updatedAt: 2,
+    } },
+  }), 'session-1'), /chat_runtime_goal_status_invalid/);
+});
+
 test('event parser rejects foreign schemas, sessions, and stored sequence zero', () => {
   const cases = [
     [{ ...event(), schema: 'provider.private.v1' }, 'chat_runtime_event_schema_invalid'],

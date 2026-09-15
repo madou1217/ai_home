@@ -168,6 +168,7 @@ export class ChatRuntimeApiError extends Error {
 }
 
 function normalizeResolutionInput(input: ResolveSessionInput): ResolveSessionInput {
+  if (!input.sessionId && !input.nativeSessionId) protocolFailure('chat_runtime_session_identity_required');
   return {
     ...input,
     provider: requiredIdentity(input.provider, 'chat_runtime_session_provider_invalid'),
@@ -175,10 +176,10 @@ function normalizeResolutionInput(input: ResolveSessionInput): ResolveSessionInp
       input.executionAccountRef,
       'chat_runtime_session_execution_account_invalid',
     ),
-    nativeSessionId: requiredIdentity(
-      input.nativeSessionId,
-      'chat_runtime_native_session_id_invalid',
-    ),
+    ...(input.sessionId ? { sessionId: requiredIdentity(input.sessionId, 'chat_runtime_session_id_invalid') } : {}),
+    ...(input.nativeSessionId ? { nativeSessionId: requiredIdentity(
+      input.nativeSessionId, 'chat_runtime_native_session_id_invalid',
+    ) } : {}),
   };
 }
 

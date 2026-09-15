@@ -32,7 +32,8 @@ export interface CreateSessionInput {
 }
 
 export interface ResolveSessionInput extends CreateSessionInput {
-  readonly nativeSessionId: string;
+  readonly sessionId?: string;
+  readonly nativeSessionId?: string;
 }
 
 export type SessionResolutionStatus = 'created' | 'adopted';

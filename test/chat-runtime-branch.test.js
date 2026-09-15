@@ -78,6 +78,31 @@ test('regeneration excludes the selected answer and later messages, resubmits th
   assert.equal(f.runs.length, count);
 });
 
+test('regeneration resumes the committed child when submitting its turn fails before acceptance', async (t) => {
+  const f = fixture(t);
+  const parent = await source(f);
+  const command = { commandId: 'regenerate-submit-unavailable', type: 'turn.regenerate', payload: { sourceItemId: 'assistant-1' } };
+  const acquire = f.service.actors.acquire.bind(f.service.actors);
+  let fail = true;
+  f.service.actors.acquire = async (session, ...rest) => {
+    if (fail && session.policy.lineage?.commandId === command.commandId) {
+      fail = false;
+      throw new Error('child runtime temporarily unavailable');
+    }
+    return acquire(session, ...rest);
+  };
+  await assert.rejects(f.service.dispatchCommand(parent.sessionId, command), (error) => {
+    assert.deepEqual(error.details.commandRecovery, { commandId: command.commandId, disposition: 'resume' });
+    return true;
+  });
+  assert.equal(f.service.store.getCommand(command.commandId).status, 'accepted');
+  const before = f.service.listSessions().length;
+  const result = await f.service.dispatchCommand(parent.sessionId, command);
+  await f.service.waitForActorIdle(result.result.session.sessionId);
+  assert.equal(f.service.listSessions().length, before);
+  assert.equal(f.runs.at(-1).command.payload.content, 'question 1');
+});
+
 test('forking at a user message excludes the answer in the same turn', async (t) => {
   const f = fixture(t);
   const parent = await source(f);
@@ -251,6 +276,10 @@ test('work history reversibility is explicit and never treats a canonical tool c
   assert.deepEqual(assessHistoryItem({ kind: 'reasoning', id: 'r1', status: 'completed' }), {
     reversible: false, kind: 'reasoning', reason: 'native_item_shape_not_persisted'
   });
+  assert.deepEqual(assessHistoryItem({ kind: 'notice', id: 'compact-1', status: 'completed',
+    detail: { code: 'contextCompaction' } }), { reversible: true, reason: '' });
+  assert.deepEqual(assessHistoryItem({ kind: 'notice', id: 'warning-1', status: 'completed',
+    detail: { code: 'codex_warning' } }), { reversible: true, reason: '' });
 });
 
 test('private raw reasoning survives restart and nested branches without entering public history', async (t) => {

@@ -61,6 +61,15 @@ test('canonical selection refreshes runtime state without requiring an owner', (
   }), null);
 });
 
+test('directory refresh adds canonical branch metadata and never downgrades it from a stale native-only row', () => {
+  const branch = { ...canonicalSession, runtimeSessionId: 'canonical-child', accountRef: 'account-a', mode: 'work' as const };
+  const upgraded = resolveCanonicalSessionSelection({ ready: true,
+    projects: [{ ...directoryProjects[0], sessions: [branch] }], selectedSession: canonicalSession, persistedSelection: {} });
+  assert.equal(upgraded?.session.runtimeSessionId, 'canonical-child');
+  assert.equal(resolveCanonicalSessionSelection({ ready: true, projects: directoryProjects,
+    selectedSession: branch, persistedSelection: {} }), null);
+});
+
 test('canonical selection does not override an explicit different session', () => {
   assert.equal(resolveCanonicalSessionSelection({
     ready: true,

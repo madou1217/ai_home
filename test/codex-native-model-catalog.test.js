@@ -174,6 +174,32 @@ test('Codex native catalog fails closed before model/list without verified ident
   assert.deepEqual(fixture.requests, []);
 });
 
+// 钉网关时 codex 不自报账号，身份改由 CODEX_HOME 比对承担，档次如实标成 runtime-home。
+// 它必须与 identity 同级放行，否则 /composer/catalog 会对每个 native codex 会话 503。
+test('Codex native catalog accepts the runtime-home assurance tier', async () => {
+  const fixture = createFixture({
+    identity: { verified: true, kind: 'oauth', assurance: 'runtime-home' }
+  });
+  const catalog = new CodexNativeModelCatalog({ client: fixture.client });
+
+  assert.deepEqual(await catalog.resolveTurnSettings(), {
+    model: 'gpt-account-default', reasoningEffort: 'medium'
+  });
+});
+
+test('Codex native catalog still fails closed for an unknown assurance tier', async () => {
+  const fixture = createFixture({
+    identity: { verified: true, kind: 'oauth', assurance: 'runtime-home-ish' }
+  });
+  const catalog = new CodexNativeModelCatalog({ client: fixture.client });
+
+  await assert.rejects(
+    catalog.resolveTurnSettings(),
+    (error) => error.code === 'codex_native_model_identity_not_verified'
+  );
+  assert.deepEqual(fixture.requests, []);
+});
+
 function createFixture(overrides = {}) {
   const requests = [];
   const sequence = [];

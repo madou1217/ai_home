@@ -90,6 +90,11 @@ export default function Chat() {
 
   const initialSelectionRef = useRef<PersistedChatSelection>(readPersistedSelection());
   const projectCatalog = useProjectCatalog(initialSelectionRef.current);
+  useEffect(() => {
+    if (projectCatalog.selectedSession) {
+      handleModeChange(projectCatalog.selectedSession.mode || 'work');
+    }
+  }, [projectCatalog.selectedSession?.id, projectCatalog.selectedSession?.mode, handleModeChange]);
   const canonicalDirectory = useCanonicalSessionDirectory(
     projectCatalog.displayProjects,
     resolveCanonicalSessionDirectoryFocus(projectCatalog.selectedSession, {
@@ -102,7 +107,7 @@ export default function Chat() {
   );
   const accountCatalog = useChatAccountCatalog(
     projectCatalog.selectedSession?.provider,
-    projectCatalog.selectedSession?.mode === 'chat' ? projectCatalog.selectedSession.accountRef : undefined,
+    projectCatalog.selectedSession?.accountRef,
   );
   const [selectedModel, setSelectedModel] = useState('');
   const [legacyRunningSessionKeys, setLegacyRunningSessionKeys] = useState<Set<string>>(new Set());

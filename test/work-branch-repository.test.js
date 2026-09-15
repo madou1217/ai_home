@@ -14,7 +14,9 @@ function fixture(t) {
   t.after(() => { stores.forEach((s) => s.close()); fs.rmSync(root, { recursive: true, force: true }); });
   const store = open();
   const source = store.createSession({ provider: 'codex', executionAccountRef: 'a', projectPath: root,
-    runtimeBinding: { nativeSessionId: 'native-source' }, policy: { model: 'm', approvalMode: 'confirm' } });
+    runtimeBinding: { nativeSessionId: 'native-source' }, policy: { model: 'm', approvalMode: 'confirm',
+      contextState: { goal: { threadId: 'native-source', objective: 'finish branch', status: 'active',
+        tokenBudget: null, tokensUsed: 1, timeUsedSeconds: 2, createdAt: 1, updatedAt: 2 } } } });
   const foreign = store.createSession({ provider: 'codex', executionAccountRef: 'b' });
   const attach = (sessionId) => store.createAttachments(sessionId,
     [{ filePath: path.join(root, 'image.png'), name: 'image.png', mimeType: 'image/png' }])[0].attachmentId;
@@ -56,6 +58,7 @@ test('ready native operation commits child, exact timeline, attachment ownership
   assert.equal(child.projectPath, f.source.projectPath);
   assert.equal(child.executionAccountRef, 'a');
   assert.equal(child.runtimeBinding.nativeSessionId, 'native-child');
+  assert.equal(child.policy.contextState.goal.objective, 'finish branch');
   const snapshot = f.store.getSnapshot(child.sessionId);
   assert.deepEqual(snapshot.timeline.map((item) => item.id), ['user', 'tool', 'answer']);
   assert.equal(snapshot.timeline[1].detail.callId, 'call');

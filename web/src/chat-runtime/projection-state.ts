@@ -119,6 +119,16 @@ export class ProjectionState {
     } else if (event.type === 'session.runtime.bound' || event.type === 'session.runtime.rebound') {
       this.applyRuntimeProjection(event.payload);
     } else if (event.type === 'session.policy.changed') this.policy = event.payload.policy;
+    else if (event.type === 'session.goal.updated') {
+      this.policy = { ...this.policy, contextState: {
+        ...((this.policy.contextState as Record<string, unknown> | undefined) || {}),
+        goal: event.payload.goal,
+      } };
+    } else if (event.type === 'session.goal.cleared') {
+      const contextState = { ...((this.policy.contextState as Record<string, unknown> | undefined) || {}) };
+      delete contextState.goal;
+      this.policy = { ...this.policy, contextState };
+    }
     else if (event.type !== 'session.snapshot.reset') return false;
     return true;
   }

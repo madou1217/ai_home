@@ -333,6 +333,113 @@ func TestHandlerRejectsInvalidLocalSnapshot(t *testing.T) {
 	}
 }
 
+// TestPathPrefixMatchesPath 守住 PathPrefix 与 Path 的一致性。
+//
+// PathPrefix 为了能被路由采集器解析而写成字面量，因此这里显式断言二者仍然对应。
+func TestPathPrefixMatchesPath(t *testing.T) {
+	t.Parallel()
+
+	if got, want := modelsapi.PathPrefix, modelsapi.Path+"/"; got != want {
+		t.Fatalf("PathPrefix = %q, want %q", got, want)
+	}
+}
+
+// TestHandlerEchoesSingleModelWithoutCatalogLookup 验证 GET /v1/models/{model} 与 Node 一致：
+// 任何非空 ID 都返回 200，不校验本地目录，也不读取目录快照。
+func TestHandlerEchoesSingleModelWithoutCatalogLookup(t *testing.T) {
+	t.Parallel()
+
+	reader := &modelReaderStub{
+		models: []accountapp.RoutableModel{
+			newRoutableModel(t, "codex", "known-model"),
+		},
+	}
+	handler := newTestHandler(t, reader)
+
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(
+		unauthorized,
+		httptest.NewRequest(http.MethodGet, modelsapi.PathPrefix+"known-model", nil),
+	)
+	if unauthorized.Code != http.StatusUnauthorized || reader.calls != 0 {
+		t.Fatalf(
+			"unauthorized status=%d reader_calls=%d",
+			unauthorized.Code,
+			reader.calls,
+		)
+	}
+
+	for _, modelID := range []string{"known-model", "not-in-catalog"} {
+		request := httptest.NewRequest(
+			http.MethodGet,
+			modelsapi.PathPrefix+modelID,
+			nil,
+		)
+		request.Header.Set("Authorization", "Bearer local-model-key")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf(
+				"GET %s status=%d body=%s",
+				request.URL.Path,
+				response.Code,
+				response.Body,
+			)
+		}
+		var document struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			OwnedBy string `json:"owned_by"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+		if document.ID != modelID ||
+			document.Object != "model" ||
+			document.OwnedBy != "aih-server" ||
+			document.Created <= 0 {
+			t.Fatalf("single model response = %#v", document)
+		}
+	}
+	if reader.calls != 0 {
+		t.Fatalf("单模型查询不应读取目录: reader_calls=%d", reader.calls)
+	}
+}
+
+// TestHandlerSingleModelPathBoundaries 验证只有恰好一段路径才算单模型查询。
+func TestHandlerSingleModelPathBoundaries(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, &modelReaderStub{})
+	for _, path := range []string{
+		modelsapi.PathPrefix,
+		modelsapi.PathPrefix + "a/b",
+		modelsapi.PathPrefix + "%2F",
+		modelsapi.PathPrefix + "%20%20%20",
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer local-model-key")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("GET %s status=%d body=%s", path, response.Code, response.Body)
+		}
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		modelsapi.PathPrefix+"known-model",
+		nil,
+	)
+	request.Header.Set("Authorization", "Bearer local-model-key")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST single model status=%d body=%s", response.Code, response.Body)
+	}
+}
+
 // modelReaderStub 返回预设的本地目录快照。
 type modelReaderStub struct {
 	models []accountapp.RoutableModel

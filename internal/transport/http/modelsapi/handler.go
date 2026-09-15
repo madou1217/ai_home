@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
@@ -15,6 +17,12 @@ import (
 const (
 	// Path 是 OpenAI 兼容模型目录的规范路径。
 	Path = "/v1/models"
+	// PathPrefix 是单模型查询的路径前缀，对应 OpenAI GET /v1/models/{model}。
+	//
+	// 写成字面量而不是 Path + "/"：仓库的路由采集器（scripts/collect-gateway-routes.js）
+	// 只解析 Go 的字符串字面量常量，拼接式常量会让这条路由在对齐矩阵里凭空消失。
+	// 与 Path 的一致性由 TestPathPrefixMatchesPath 守住。
+	PathPrefix = "/v1/models/"
 )
 
 var (
@@ -62,7 +70,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}, nil
 }
 
-// ServeHTTP 完成客户端鉴权，并按请求形态选择标准 OpenAI 或 Codex 目录投影。
+// ServeHTTP 完成客户端鉴权，并按请求形态选择单模型、标准 OpenAI 或 Codex 目录投影。
 func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -74,13 +82,18 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusUnauthorized, "unauthorized_client")
 		return
 	}
-	if request.URL.Path != Path {
+	modelID, isSingleModel := singleModelID(request.URL.Path)
+	if !isSingleModel && request.URL.Path != Path {
 		writeError(response, http.StatusNotFound, "route_not_found")
 		return
 	}
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		response.Header().Set("Allow", http.MethodGet+", "+http.MethodHead)
 		writeError(response, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	if isSingleModel {
+		writeSingleModel(response, request, modelID)
 		return
 	}
 	options, valid := parseCatalogOptions(request.URL.RawQuery)
@@ -115,6 +128,51 @@ func (handler *Handler) ServeHTTP(
 	case catalogProtocolCodex:
 		writeJSON(response, http.StatusOK, newCodexModelList(views))
 	}
+}
+
+// singleModelID 从 /v1/models/{model} 提取模型 ID。
+//
+// 只接受恰好一段路径，因此 /v1/models/ 与 /v1/models/a/b 都不算单模型查询；
+// 提取失败时返回 false，由调用方按未命中路由处理。
+func singleModelID(path string) (string, bool) {
+	if !strings.HasPrefix(path, PathPrefix) {
+		return "", false
+	}
+	remainder := path[len(PathPrefix):]
+	if remainder == "" || strings.Contains(remainder, "/") {
+		return "", false
+	}
+	decoded, err := url.PathUnescape(remainder)
+	if err != nil {
+		return "", false
+	}
+	id := strings.TrimSpace(decoded)
+	if id == "" {
+		return "", false
+	}
+	return id, true
+}
+
+// writeSingleModel 按 OpenAI 合同回显单个模型对象。
+//
+// 与 Node 的 GET /v1/models/{id} 逐字段一致：不校验本地目录，任何非空 ID 都返回 200，
+// owned_by 固定为 aih-server，created 取当前秒。因此这里不读取 ModelReader，
+// 单模型查询也不会因为目录未就绪而失败。
+func writeSingleModel(
+	response http.ResponseWriter,
+	request *http.Request,
+	modelID string,
+) {
+	if request.Method == http.MethodHead {
+		writeJSONHeaders(response, http.StatusOK)
+		return
+	}
+	writeJSON(response, http.StatusOK, modelView{
+		ID:      modelID,
+		Object:  "model",
+		Created: time.Now().Unix(),
+		OwnedBy: "aih-server",
+	})
 }
 
 // catalogOptions 保存一次请求选择的目录协议和显式扩展。

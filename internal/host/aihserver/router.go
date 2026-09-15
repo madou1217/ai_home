@@ -64,6 +64,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(accountsapi.SelectionPath, handlers.accounts)
 	mux.Handle(accountsapi.DefaultsPath+"/", handlers.accounts)
 	mux.Handle(modelsapi.Path, handlers.models)
+	mux.Handle(modelsapi.PathPrefix, handlers.models)
 	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)

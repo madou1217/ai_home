@@ -65,6 +65,7 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/healthz': ['GET', 'HEAD'],
   '/readyz': ['GET', 'HEAD'],
   '/v1/models': ['GET', 'HEAD'],
+  '/v1/models/{id}': ['GET', 'HEAD'],
   '/v1/props': ['GET'],
   '/v1/responses': ['POST'],
   '/v1/chat/completions': ['POST'],
@@ -79,6 +80,20 @@ const GO_METHODS_BY_MOUNT = Object.freeze({
   '/v1/management/account-selections/resolve': ['POST'],
   '/v1/management/account-auth-jobs': ['POST'],
   '/v1/management/account-auth-jobs/': ['GET', 'DELETE', 'POST'],
+});
+
+// Go 用前缀挂载实现、但在 Node 侧是参数化 regex 的路径。
+//
+// Go 的 http.ServeMux 只能按前缀或精确路径挂载，单模型查询因此写成
+// `mux.Handle(modelsapi.PathPrefix, …)`（即 `/v1/models/` 子树）。Node 的同一能力是
+// `^/v1/models/([^/]+)$`。routeIdentity 把 match 维度算进身份，若照前缀登记，
+// 这条能力会永远显示为「Go 缺失」。这里显式改记为 regex，并在挂载循环里跳过前缀形态，
+// 保证一条能力只产生一条记录。
+const GO_PREFIX_MOUNT_AS_REGEX = Object.freeze({
+  '/v1/models/': {
+    path: '/v1/models/{id}',
+    pattern: '^/v1/models/([^/]+)$'
+  }
 });
 
 function listFiles(relativeDir, predicate) {
@@ -695,6 +710,20 @@ function collectGoRoutes() {
     if (!base) continue;
     const suffix = match[3] ? '/' : '';
     const path = `${base}${suffix}`;
+    const asRegex = GO_PREFIX_MOUNT_AS_REGEX[path];
+    if (asRegex) {
+      addGoRoute(routes, {
+        file,
+        text,
+        index: match.index,
+        path: asRegex.path,
+        pattern: asRegex.pattern,
+        match: 'regex',
+        expression: match[0],
+        kind: 'endpoint',
+      });
+      continue;
+    }
     addGoRoute(routes, {
       file,
       text,

@@ -15,7 +15,9 @@ const {
   comparableNodeRoutes,
 } = require('../scripts/collect-gateway-routes');
 
-const EXPECTED_MISSING_GO_PATHS = [
+// 这 7 条曾经是 Go 的数据面缺口，现已全部实现；manifest 必须同时记录 Go 路由与
+// 「生产入口仍归 Node」两个事实，缺一不可。
+const IMPLEMENTED_GO_PATHS = [
   '/v1{beta?}/models/{model}:generateContent',
   '/v1{beta?}/models/{model}:streamGenerateContent',
   '/v1/blobs/{id}',
@@ -185,21 +187,48 @@ test('v1/v1beta 作用域守卫不被登记为 endpoint', () => {
   assert.deepEqual(manifest.route_baseline.guards_not_endpoints, ['/v1/', '/v1beta/']);
 });
 
-test('Gemini、image/blob、count_tokens 和 models detail 缺口在 manifest 中显式登记', () => {
+test('Go 已实现全部数据面 capability route，且 manifest 同时保留 Node ownership', () => {
   const routes = collectGatewayRoutes();
   assert.deepEqual(
-    new Set(routes.comparable.missing_in_go.map((route) => route.path)),
-    new Set(EXPECTED_MISSING_GO_PATHS),
+    routes.comparable.missing_in_go.map((route) => route.path),
+    [],
+    'Go 不应再缺失任何可比较的 Node 数据面路由',
   );
+  assert.deepEqual(manifest.route_baseline.missing_go_capability_routes, []);
 
-  for (const missingPath of EXPECTED_MISSING_GO_PATHS) {
+  for (const implementedPath of IMPLEMENTED_GO_PATHS) {
     const entry = manifest.entries.find((candidate) => (
-      (candidate.node_routes || []).some((route) => route.path === missingPath)
+      (candidate.node_routes || []).some((route) => route.path === implementedPath)
     ));
-    assert.ok(entry, `manifest 未登记缺口: ${missingPath}`);
-    assert.equal(entry.production_owner, 'node');
-    assert.equal(entry.migration_state, 'node_owned');
-    assert.equal(entry.cutover_blocking, true, missingPath);
-    assert.deepEqual(entry.go_routes || [], [], missingPath);
+    assert.ok(entry, `manifest 未登记该能力: ${implementedPath}`);
+    // 已实现 ≠ 已切流：production owner 与 migration state 必须继续冻结在 Node。
+    assert.equal(entry.production_owner, 'node', implementedPath);
+    assert.equal(entry.migration_state, 'node_owned', implementedPath);
+    assert.equal(entry.go_implementation, 'private_canary', implementedPath);
+    assert.equal(entry.cutover_blocking, true, implementedPath);
+    const goRoutes = entry.go_routes || [];
+    assert.ok(goRoutes.length > 0, `${implementedPath} 缺少 go_routes 登记`);
+    assert.ok(
+      goRoutes.some((route) => route.path === implementedPath),
+      `${implementedPath} 的 go_routes 未覆盖该路径`,
+    );
+    for (const goRoute of goRoutes) {
+      assert.ok(Array.isArray(goRoute.methods) && goRoute.methods.length > 0, implementedPath);
+      assert.equal(goRoute.transport, 'http', implementedPath);
+    }
+  }
+});
+
+test('已实现的路由在采集结果里确实存在对应 Go endpoint', () => {
+  const routes = collectGatewayRoutes();
+  const goPaths = new Set(routes.go.routes
+    .filter((route) => route.kind === 'endpoint')
+    .map((route) => route.path));
+  for (const implementedPath of IMPLEMENTED_GO_PATHS) {
+    assert.equal(
+      goPaths.has(implementedPath),
+      true,
+      `Go 采集结果缺少 ${implementedPath}`,
+    );
   }
 });

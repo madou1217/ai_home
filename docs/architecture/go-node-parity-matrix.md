@@ -16,6 +16,11 @@ Preview Server 使用 `127.0.0.1:19527`，Preview Web 使用 `127.0.0.1:19528`�
 
 路由采集结果（`node scripts/collect-gateway-routes.js --json`）：
 
+> **下表的 Node 299 / Go 19 是 2026-08-19 的 Go Refactor .1 基线快照，仅作历史记录。**
+> 当前数字见本文「数据面路由补齐」一节（Node 333 / Go 26，`missing_in_go=0`）。
+> 最新基线同时冻结在 `contracts/route-ownership/manifest.json` 的 `route_baseline`，
+> 并由 `test/go-route-ownership-manifest.test.js` 与源码采集结果逐字段比对。
+
 | 项目 | Node | Go Preview | 口径 |
 | --- | ---: | ---: | --- |
 | 路由记录 | 299 | 19 | 按方法、传输和协议证据保留记录 |
@@ -26,24 +31,33 @@ Preview Server 使用 `127.0.0.1:19527`，Preview Web 使用 `127.0.0.1:19528`�
 | HTTP endpoint 路径模式 | 215 | 17 | 仅 HTTP 传输 |
 | WebSocket endpoint 路径模式 | 7 | 1 | 仅 WebSocket 传输 |
 
-### 当前可比较数据面与明确缺口
+### 当前可比较数据面与缺口状态（2026-09-15 更新）
 
-Node 中符合 `/v1*`、`/healthz`、`/readyz` 且为 HTTP endpoint 的记录为 14 条。Go
-当前明确缺少以下 7 个 capability route：
+Node 中符合 `/v1*`、`/healthz`、`/readyz` 且为 HTTP endpoint 的记录为 14 条。**这 14 条
+Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺口及其落点，便于回溯：
 
-| Node capability route | Go 状态 | 说明 |
+| Node capability route | Go 状态 | Go 实现落点 |
 | --- | --- | --- |
-| `/v1{beta?}/models/{model}:generateContent` | 缺失 | Gemini 非流式；Node 同时匹配 `/v1` 与 `/v1beta` |
-| `/v1{beta?}/models/{model}:streamGenerateContent` | 缺失 | Gemini 流式；Node 同时匹配 `/v1` 与 `/v1beta` |
-| `/v1/blobs/{id}` | 缺失 | vision guard 使用的图像 blob 读取链路 |
-| `/v1/images/edits` | 缺失 | OpenAI image edit |
-| `/v1/images/generations` | 缺失 | OpenAI image generation |
-| `/v1/messages/count_tokens` | 缺失 | Anthropic 本地 token count，不发起推理 |
-| `/v1/models/{id}` | 缺失 | 单模型查询 |
+| `/v1{beta?}/models/{model}:generateContent` | ✅ 已实现 | `internal/adapters/clientprotocol/gemini` + `internal/transport/http/geminiapi` |
+| `/v1{beta?}/models/{model}:streamGenerateContent` | ✅ 已实现 | 同上（同协议 ID，流式由路径决定） |
+| `/v1/blobs/{id}` | ✅ 已实现 | `internal/adapters/imageblob` + `internal/transport/http/blobsapi` |
+| `/v1/images/edits` | ✅ 已实现 | `internal/adapters/images` + `internal/transport/http/imagesapi` |
+| `/v1/images/generations` | ✅ 已实现 | 同上 |
+| `/v1/messages/count_tokens` | ✅ 已实现 | `internal/adapters/clientprotocol/anthropicmessages/token_count.go` |
+| `/v1/models/{id}` | ✅ 已实现 | `internal/transport/http/modelsapi` |
+
+**已实现 ≠ 已切流。** `127.0.0.1:9527` 的 production owner 仍是 Node，manifest 中这 7 个
+条目全部保持 `production_owner=node`、`migration_state=node_owned`、
+`go_implementation=private_canary`、`cutover_blocking=true`。切流仍需协议 shadow、数据库/
+runtime migration、rollback plan 与显式确认。
+
+已知残留差异（不阻塞路由存在性，但切流前必须处理）：**Go 还没有 vision guard 的剥离/入仓
+链路**，blob 仓目前只由 `response_format=url` 的图片响应写入，请求里被剥离出来的图片不会进仓。
+该残留已记入 manifest 的 `gateway.vision.blobs.blockers`。
 
 `/v1/` 和 `/v1beta/` 是 Node 的 scope guard，不是 endpoint。采集器保留它们是为了
 保留源码证据，但 manifest 的 `guards_not_endpoints` 只冻结这两个数据面命名空间守卫。
-Node 其余 5 个 guard 也仍按 `guard` 分类，不能在路由计数中被误读成可调用 endpoint。
+Node 其余 guard 也仍按 `guard` 分类，不能在路由计数中被误读成可调用 endpoint。
 
 ### Ownership 与非数据面
 
@@ -53,38 +67,49 @@ app-server surface 仍由 Node 持有；它们不因 Go Preview 已存在就自�
 Go 的账号管理 API `/v1/management/*` 与 Node 的 `/v0/webui/management/*` 是不同语义的
 控制面，不通过兼容别名伪装成同一路由。
 
-## Go Preview 当前 endpoint 记录
+## Go Preview 当前 endpoint 记录（2026-09-15）
 
-Go 当前为 18 条 endpoint 记录、17 个去重路径模式，另有 1 条 `/` fallback 和 1 条
+Go 当前为 25 条 endpoint 记录、24 个去重 HTTP 路径模式，另有 1 条 `/` fallback 和 1 条
 `/v1/responses` WebSocket endpoint。HTTP 路由的标准化路径如下：
 
 ```
 /healthz
 /readyz
+/v1/blobs/{id}
 /v1/chat/completions
 /v1/claude-relay-leases
+/v1/images/edits
+/v1/images/generations
 /v1/management/account-aliases/
-/v1/management/account-auth-jobs/
 /v1/management/account-auth-jobs
+/v1/management/account-auth-jobs/
 /v1/management/account-defaults/
-/v1/management/account-imports/sub2api
 /v1/management/account-imports
+/v1/management/account-imports/sub2api
 /v1/management/account-selections/resolve
-/v1/management/accounts/
 /v1/management/accounts
+/v1/management/accounts/
 /v1/messages
+/v1/messages/count_tokens
 /v1/models
+/v1/models/{id}
 /v1/props
 /v1/responses
+/v1{beta?}/models/{model}:generateContent
+/v1{beta?}/models/{model}:streamGenerateContent
 ```
 
 `/v1/responses` 的 WebSocket dispatch 是单独的 transport record；`/` 是 fallback，不是
 业务 endpoint。完整记录（方法、匹配类型、源文件、行号和表达式）由 collector JSON
 提供，manifest 只登记用于 ownership/cutover 判断的能力条目。
 
-## 本阶段不做的事情
+## 本阶段仍然不做的事情
 
-- 不补齐上述 7 个 Go route，不把源码缺口伪装成已迁移能力。
+- 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
+- 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
+- 不把「Go 已有路由」等同于「已切流」：7 条路由已实现，但 manifest 中它们仍是
+  `node_owned` + `cutover_blocking`，切流必须走
+  `node_owned -> write_frozen -> migrated_and_verified -> go_owned` 状态机并显式确认。
 - 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
 - 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
 - 下一阶段若要推进，必须在 capability parity、协议 shadow、数据库/runtime migration、

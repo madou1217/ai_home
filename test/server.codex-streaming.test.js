@@ -21,12 +21,15 @@ async function listen(t, handler) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function gateway(t, upstream, { native = false, stream = true, timeoutMs = 2000, maxAttempts = 1 } = {}) {
+async function gateway(t, upstream, { native = false, stream = true, timeoutMs = 2000, maxAttempts = 1, poolSize = 1, payload = {} } = {}) {
   const usages = [];
   const failures = [];
   const requests = [];
   const state = {
-    accounts: { codex: [{ accountRef: 'acct_stream_test', accessToken: 'local-test', apiKeyMode: true, openaiBaseUrl: upstream }] },
+    accounts: { codex: Array.from({ length: poolSize }, (_, n) => ({
+      accountRef: n ? `acct_stream_test_${n}` : 'acct_stream_test', accessToken: n ? `local-test-${n}` : 'local-test',
+      apiKeyMode: true, openaiBaseUrl: upstream
+    })) },
     cursors: { codex: 0 },
     metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
   };
@@ -34,12 +37,12 @@ async function gateway(t, upstream, { native = false, stream = true, timeoutMs =
     handleCodexChatCompletions({
       options: { codexBaseUrl: upstream, upstreamTimeoutMs: timeoutMs, maxAttempts, failureThreshold: 1, logRequests: true },
       state, req, res,
-      requestJson: { model: 'gpt-6-astra', stream, messages: [{ role: 'user', content: 'local test' }] },
+      requestJson: { model: 'gpt-6-astra', stream, messages: [{ role: 'user', content: 'local test' }], ...payload },
       routeKey: native ? 'POST /v1/responses' : 'POST /v1/chat/completions',
       requestStartedAt: Date.now(), cooldownMs: 1000,
       requestMeta: { requestId: 'stream-test', ...(native ? { clientProtocol: 'openai_responses' } : {}) },
       deps: {
-        chooseServerAccount: (pool) => pool[0],
+        chooseServerAccount: poolSize > 1 ? require('../lib/server/router').chooseServerAccount : (pool) => pool[0],
         pushMetricError: () => {},
         writeJson: (r, status, payload) => { r.writeHead(status, { 'content-type': 'application/json' }); r.end(JSON.stringify(payload)); },
         fetchWithTimeout: async (url, init) => { requests.push(init); return fetch(url, init); },
@@ -284,3 +287,32 @@ test('codex keeps non-stream responses aggregated', async (t) => {
   const response = await fetch(app.url, { signal: AbortSignal.timeout(2000) });
   assert.equal((await response.json()).choices[0].message.content, '完整回答');
 });
+
+
+for (const native of [true, false]) {
+  test(`metadata-only quota failure retries a sibling before ${native ? 'Responses' : 'Chat'} output`, { timeout: 6000 }, async t => {
+    const attempts = [];
+    const upstream = await listen(t, (req, res) => {
+      const first = req.headers.authorization === 'Bearer local-test';
+      attempts.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(frame({ type: 'response.created', response: { id: first ? 'resp_rejected' : 'resp_success', output: [] } }));
+      res.write(frame({ type: 'response.in_progress', response: { output: [] } }));
+      res.end(first
+        ? frame({ type: 'response.failed', response: { error: { code: 'usage_limit_reached', message: 'quota ended', resets_in_seconds: 300 } } })
+        : frame({ type: 'response.output_text.delta', delta: 'continued-on-second-account' }) + completed());
+    });
+    const app = await gateway(t, upstream, { native, poolSize: 2, maxAttempts: 2,
+      payload: { store: false, input: [{ role: 'user', content: 'preserve the completed tool history' }] } });
+    const response = await fetch(app.url, { signal: AbortSignal.timeout(3000) });
+    const text = await response.text();
+    assert.match(text, /continued-on-second-account/);
+    assert.doesNotMatch(text, /resp_rejected|usage_limit_reached|quota ended/);
+    assert.equal(response.headers.get('x-aih-server-account-ref'), 'acct_stream_test_1');
+    assert.deepEqual(attempts, ['Bearer local-test', 'Bearer local-test-1']);
+    assert.equal(app.state.metrics.totalSuccess, 1);
+    assert.equal(app.state.metrics.totalFailures, 0);
+    assert.equal(app.failures[0][1], 'usage_limit_reached');
+    assert.equal(app.failures[0][4].scope, 'model');
+  });
+}

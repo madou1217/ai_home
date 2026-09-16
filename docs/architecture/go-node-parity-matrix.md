@@ -523,13 +523,24 @@ Go 原先有两个键，都不等于规范键：
 
 | 项 | Go | Node | 结论 |
 | --- | --- | --- | --- |
-| Codex OAuth 身份向量 | `oauth:codex:<user_id>` | `oauth:codex:<email>` | **真实分歧，需 ADR**（见下） |
+| Codex OAuth 身份向量 | `oauth:codex:<user_id>` | `oauth:codex:<email>` | **已修**（2026-09-16）：Node 统一到 `user_id`，ADR + rekey 工具已落地 |
+| Claude OAuth 身份向量 | `oauth:claude:uuid:<uuid>`（小写、强制 UUID 形状） | 同前缀，但**保留大小写、不校验形状** | **已修**（2026-09-16）：同一份 UUID 曾在两端得到不同 `accountRef` |
+| AGY OAuth 身份向量 | `oauth:agy:<email>`（严格邮箱校验） | 同前缀，但原先接受任意非空串 | **已修**（2026-09-16）：校验强度对齐，19 条向量实测一致 |
+| 其余 Provider 身份向量 | **Go 未实现**（只有 codex/claude/agy 三个包） | 9 个 Provider 各自有向量 | 不是分歧而是缺口：Node 的向量已写成规格，见 [`oauth-identity-vector-spec.md`](./oauth-identity-vector-spec.md) |
 | Gateway provider 认证 | `env_key=AIH_GATEWAY_CLIENT_KEY` + `env_http_headers={X-Account-Ref=…}` | 命令行字面 `http_headers.X-Account-Ref=acct_…` | 差异存在但收益边际：accountRef 是非秘密哈希，改 Node 的 PTY 启动链风险大于收益，暂不改 |
 | 刷新被拒后的抑制 | `suppressesRefresh`（按 AccountRef + credential.updated_at 精确匹配） | `lib/server/kimi-token-refresh.js` 的 `reason:'suppressed'`、`lib/server/token-refresh-result.js` 的 `invalid_grant` 分类、`codex-auth-invalid-reconciler.js` 的 `refresh_rejected_access_token_still_valid` | **Node 已有等价能力**，不是缺口 |
 | `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
 
 ### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）
+
+> 同日把同一类核对推到了 Go 侧仅有的另外两个 Provider，并扫出全部 12 个 Provider 的向量现状。
+> 结论汇总见 [`oauth-identity-vector-spec.md`](./oauth-identity-vector-spec.md)（Go 实现其余
+> Provider 时的照抄规格）与
+> [`oauth-email-identity-exception-adr.md`](./oauth-email-identity-exception-adr.md)（AGY/Gemini
+> 的例外裁决、Kiro 的待取证）。仍有两条实测确认的 §8.1 违规未修：`grok` 让可变邮箱压过可用的
+> 稳定 `user_id`；`kiro` 轮换凭据会改变 `accountRef`。两条都已在
+> `test/oauth-identity-vector-spec.test.js` 里写成特征化断言，CI 可见。
 
 两端 `acct_` 派生算法逐字节一致（`acct_` + `sha256("unique:" + identitySeed)` 前 20 位十六进制），
 差异只在种子。用户 2026-09-16 选定「写 ADR + 显式 rekey」，ADR 见

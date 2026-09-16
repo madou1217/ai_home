@@ -143,11 +143,13 @@
       "go_implementation": "private_canary",
       "cutover_blocking": true,
       "blockers": [
-        "readiness semantics are not yet the public Node contract"
+        "Go now serves the Node contract as a superset (always 200, ready = any provider has accounts, accounts + gateway present); the blocker is now the shared cutover gate, not a semantic difference"
       ],
       "evidence": [
-        "lib/server/server.js",
+        "internal/adapters/accounts/sqliteaccount/routing_index.go",
+        "internal/host/aihserver/readiness.go",
         "internal/host/aihserver/router.go",
+        "lib/server/server.js",
         "scripts/collect-gateway-routes.js"
       ]
     },

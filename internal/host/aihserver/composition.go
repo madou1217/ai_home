@@ -734,6 +734,7 @@ func newHandlers(
 					stale:      status.Stale,
 					modelCount: status.ModelCount,
 					routeCount: status.RouteCount,
+					accounts:   accountCountsByProvider(catalog, store),
 				}
 			},
 		}, []io.Closer{

@@ -14,6 +14,7 @@ import (
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
@@ -1433,11 +1434,12 @@ func assertCatalogReadiness(
 	)
 	assertStatus(t, exchange, http.StatusOK)
 	var document struct {
-		Ready                 bool `json:"ready"`
-		InferenceCatalogReady bool `json:"inference_catalog_ready"`
-		InferenceCatalogStale bool `json:"inference_catalog_stale"`
-		ModelCount            int  `json:"model_count"`
-		RouteCount            int  `json:"route_count"`
+		Ready                 bool           `json:"ready"`
+		Accounts              map[string]int `json:"accounts"`
+		InferenceCatalogReady bool           `json:"inference_catalog_ready"`
+		InferenceCatalogStale bool           `json:"inference_catalog_stale"`
+		ModelCount            int            `json:"model_count"`
+		RouteCount            int            `json:"route_count"`
 	}
 	decodeJSON(t, exchange.body, &document)
 	if !document.Ready ||
@@ -1446,6 +1448,24 @@ func assertCatalogReadiness(
 		document.ModelCount != modelCount ||
 		document.RouteCount != routeCount {
 		t.Fatalf("readyz catalog status = %#v", document)
+	}
+	// `ready` 与 Node 同义：至少一个 Provider 有账号。这个测试服务器登记了账号，所以
+	// `ready` 为真必须**由 accounts 里的真实计数**支撑，而不是恰好为真。
+	//
+	// 同时守住键集完整性：Node 用 `SUPPORTED_SERVER_PROVIDERS.reduce` 铺满全部 Provider，
+	// 省略键会让 Fabric 的 --runtime-diagnostics 把「没有账号」读成「不认识这个 Provider」。
+	if len(document.Accounts) != len(providers.BuiltinManifest().Providers) {
+		t.Fatalf("readyz accounts = %#v", document.Accounts)
+	}
+	totalAccounts := 0
+	for _, count := range document.Accounts {
+		if count < 0 {
+			t.Fatalf("readyz accounts has a negative count: %#v", document.Accounts)
+		}
+		totalAccounts += count
+	}
+	if totalAccounts < 1 {
+		t.Fatalf("readyz reports ready with no accounts: %#v", document.Accounts)
 	}
 }
 

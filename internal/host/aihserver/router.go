@@ -19,15 +19,38 @@ import (
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
+//
+// `/healthz` 只填 OK 与 Service，其余字段靠 omitempty 不出现，与 Node 的
+// `{ok:true, service:'aih-server'}` 逐字段一致。
+//
+// `/readyz` 是 Node 契约的**超集**：Node 的 `ok` / `service` / `ready` / `accounts` /
+// `gateway` 五个字段语义完全对齐（含 `gateway` 的 camelCase 键名），Go 额外的目录字段作为
+// 追加信息保留——追加对 Node 的消费方无害，而缺字段会让它们静默拿到相反结论。
 type systemStatusResponse struct {
-	OK                    bool     `json:"ok"`
-	Service               string   `json:"service"`
-	Ready                 bool     `json:"ready,omitempty"`
-	Capabilities          []string `json:"capabilities,omitempty"`
-	InferenceCatalogReady bool     `json:"inference_catalog_ready,omitempty"`
-	InferenceCatalogStale bool     `json:"inference_catalog_stale,omitempty"`
-	ModelCount            int      `json:"model_count,omitempty"`
-	RouteCount            int      `json:"route_count,omitempty"`
+	OK      bool   `json:"ok"`
+	Service string `json:"service"`
+	Ready   bool   `json:"ready,omitempty"`
+	// Accounts 是按 Provider 分组的账号数量；与 Node 一样覆盖**全部**受支持 Provider，
+	// 没有账号的 Provider 记 0 而不是省略。
+	Accounts map[string]int `json:"accounts,omitempty"`
+	// Gateway 与 Node 的 `buildFabricGatewayReadiness` 同形状。Go 没有 Fabric 数据面，
+	// 因此恒为「未发现」的真值，而不是缺字段。
+	Gateway               *gatewayReadinessView `json:"gateway,omitempty"`
+	Capabilities          []string              `json:"capabilities,omitempty"`
+	InferenceCatalogReady bool                  `json:"inference_catalog_ready,omitempty"`
+	InferenceCatalogStale bool                  `json:"inference_catalog_stale,omitempty"`
+	ModelCount            int                   `json:"model_count,omitempty"`
+	RouteCount            int                   `json:"route_count,omitempty"`
+}
+
+// gatewayReadinessView 是 Fabric 反向账号网关的就绪投影。
+//
+// 键名刻意用 Node 的 camelCase：这是一个**跨实现契约**字段，改成本仓惯用的 snake_case
+// 会让读它的 Node 侧消费方（`README.md` 与 Fabric 诊断链）静默拿到 undefined。
+type gatewayReadinessView struct {
+	Ready             bool `json:"ready"`
+	ConnectedServers  int  `json:"connectedServers"`
+	AvailableAccounts int  `json:"availableAccounts"`
 }
 
 // catalogReadiness 是 Host 探针读取的低敏原子目录状态。
@@ -36,6 +59,8 @@ type catalogReadiness struct {
 	stale      bool
 	modelCount int
 	routeCount int
+	// accounts 是按 Provider 分组的账号数量，已由 Composition Root 补齐全部 Provider。
+	accounts map[string]int
 }
 
 // systemErrorResponse 是 Host 级路由错误的稳定响应。
@@ -122,7 +147,19 @@ func handleHealth(response http.ResponseWriter, request *http.Request) {
 	})
 }
 
-// handleReadiness 明确当前进程已经装配的稳定能力。
+// handleReadiness 报告「这个进程能不能真的服务请求」，并附带当前装配的稳定能力。
+//
+// 语义与 Node 的 `/readyz` 对齐，而不是按 Go 自己的目录健康重新定义：
+//
+//   - **状态码恒为 200**。Node 那边「HTTP 200 但 `ready=false`」是被文档依赖的诊断信号
+//     （`docs/fabric/08-current-status.md`：节点活着、缺的是 provider 账号）。若这里改成
+//     503，同一条诊断会被读成「节点挂了」——结论反向。
+//   - `ready` = 至少一个 Provider 有账号（Node：`accounts.some(count>0) || gateway.ready`）。
+//     「目录是否就绪」仍然可读，但走 `inference_catalog_ready` 这个追加字段。
+//   - `accounts` 与 `gateway` 是 Node 的契约字段，不能缺：Fabric 的 `--runtime-diagnostics`
+//     会从 `accounts` 推导 `missing_provider_account:<provider>`。
+//
+// 账号数来自进程内索引，不是每次请求打 SQLite；这条性质是它能挂在未鉴权端点上的前提。
 func handleReadiness(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -135,14 +172,13 @@ func handleReadiness(
 	if statusReader != nil {
 		status = statusReader()
 	}
-	httpStatus := http.StatusOK
-	if !status.ready {
-		httpStatus = http.StatusServiceUnavailable
-	}
-	writeSystemJSON(response, httpStatus, systemStatusResponse{
-		OK:      status.ready,
-		Service: "aih-server",
-		Ready:   status.ready,
+	gateway := gatewayReadinessView{}
+	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
+		OK:       true,
+		Service:  "aih-server",
+		Ready:    hasEnabledProviderAccount(status.accounts) || gateway.Ready,
+		Accounts: status.accounts,
+		Gateway:  &gateway,
 		Capabilities: []string{
 			"account_management_v1",
 			"account_usage_v1",
@@ -158,6 +194,18 @@ func handleReadiness(
 		ModelCount:            status.modelCount,
 		RouteCount:            status.routeCount,
 	})
+}
+
+// hasEnabledProviderAccount 判断是否至少有一个 Provider 有账号。
+//
+// 与 Node 的 `Object.values(accounts).some((count) => count > 0)` 同构。
+func hasEnabledProviderAccount(accounts map[string]int) bool {
+	for _, count := range accounts {
+		if count > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // modelsDispatcher 让 /v1/models/ 子树按路径形态分流。

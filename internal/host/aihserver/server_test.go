@@ -15,6 +15,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	"github.com/madou1217/ai_home/internal/host/aihserver"
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
@@ -43,13 +44,25 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 	assertJSONField(t, health.body, "service", "aih-server")
 
 	ready := performRequest(t, client, http.MethodGet, baseURL+"/readyz", "", nil)
+	// 状态码恒为 200，与 Node 一致：Node 侧「HTTP 200 但 ready=false」是被 Fabric 诊断链
+	// 依赖的信号（节点活着、缺的是账号），503 会让同一条诊断读成「节点挂了」。
 	assertStatus(t, ready, http.StatusOK)
 	var readiness struct {
-		Ready        bool     `json:"ready"`
-		Capabilities []string `json:"capabilities"`
+		OK       bool           `json:"ok"`
+		Service  string         `json:"service"`
+		Ready    bool           `json:"ready"`
+		Accounts map[string]int `json:"accounts"`
+		Gateway  *struct {
+			Ready             bool `json:"ready"`
+			ConnectedServers  int  `json:"connectedServers"`
+			AvailableAccounts int  `json:"availableAccounts"`
+		} `json:"gateway"`
+		InferenceCatalogReady bool     `json:"inference_catalog_ready"`
+		Capabilities          []string `json:"capabilities"`
 	}
 	decodeJSON(t, ready.body, &readiness)
-	if !readiness.Ready ||
+	if !readiness.OK ||
+		readiness.Service != "aih-server" ||
 		len(readiness.Capabilities) != 8 ||
 		readiness.Capabilities[0] != "account_management_v1" ||
 		readiness.Capabilities[1] != "account_usage_v1" ||
@@ -60,6 +73,28 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		readiness.Capabilities[6] != "claude_relay_leases_v1" ||
 		readiness.Capabilities[7] != "claude_native_relay_v1" {
 		t.Fatalf("readyz response = %#v", readiness)
+	}
+	// 这个测试服务器没有登记任何账号，因此 `ready` 必须是 false——它表达的是
+	// 「能不能真的服务请求」，而不是「目录装配好了没有」。后者走追加字段。
+	if readiness.Ready {
+		t.Fatalf("no accounts registered but readyz reports ready: %s", ready.body)
+	}
+	// accounts 必须覆盖全部受支持 Provider（缺席记 0，而不是省略键）：Fabric 的
+	// --runtime-diagnostics 按 `accounts[provider] === 0` 推导 missing_provider_account。
+	if len(readiness.Accounts) != len(providers.BuiltinManifest().Providers) {
+		t.Fatalf("accounts = %#v", readiness.Accounts)
+	}
+	for providerID, count := range readiness.Accounts {
+		if count != 0 {
+			t.Fatalf("provider %s has %d accounts on an empty server", providerID, count)
+		}
+	}
+	// gateway 是 Node 的契约字段，Go 没有 Fabric 数据面时也必须以「未发现」的真值出现。
+	if readiness.Gateway == nil ||
+		readiness.Gateway.Ready ||
+		readiness.Gateway.ConnectedServers != 0 ||
+		readiness.Gateway.AvailableAccounts != 0 {
+		t.Fatalf("gateway = %#v", readiness.Gateway)
 	}
 
 	unauthorized := performRequest(

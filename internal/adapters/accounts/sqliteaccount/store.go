@@ -164,6 +164,17 @@ func (store *Store) ListRoutableModels(
 	return store.routes.listModels(ctx, store.catalog)
 }
 
+// CountAccountsByProvider 返回按 Provider 分组的账号数量，不访问 SQLite。
+//
+// 数据来自进程内路由索引，因此不需要 ctx、不返回 error，也不需要上层缓存：索引在每次
+// 账号写入时同步更新，读到的永远是当前值。供 `/readyz` 的 `accounts` 字段使用。
+func (store *Store) CountAccountsByProvider() map[string]int {
+	if store == nil || store.routes == nil {
+		return map[string]int{}
+	}
+	return store.routes.countByProvider()
+}
+
 // acceptsAccount 校验账号快照和当前 Provider 注册表。
 func (store *Store) acceptsAccount(account accountcore.Account) bool {
 	return store != nil &&

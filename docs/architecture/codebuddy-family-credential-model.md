@@ -865,3 +865,43 @@ runtime pool 只用于**补充**运行态（`runtimeAccountMap` 查不到就是 
   `proTrialMon` 为 `0/500`，而账户级仍是 `100/600 = 16.67%`，正是 §14.3 的语义。国际站两支
   （`workbuddy` / `codebuddy`）在同一账号下读到**完全一致的余额**，再次印证 §13.1 的
   "同地区两个产品跑同一套 runtime、共用一份账户级用量"。
+
+### 14.7 展示面全覆盖核查（含 CLI；三处"疑似缺口"实测为非缺口）
+
+§14.5 只说了 **WebUI** 一个展示面。为确认闭环，把家族快照能到达的**所有**消费方都过了一遍；
+结论是**其余展示面已由既有的"数值兜底"覆盖，无需加家族分支**。记录如下，避免后人再去"修"
+一个本来正常的地方：
+
+| 展示面 | 路径 | 家族表现 | 是否需要加分支 |
+| --- | --- | --- | --- |
+| WebUI 账号页 | `UsageSnapshotCell.tsx` + `usage-snapshot-format.ts` | 聚合行 + 明细桶（§14.5） | **需要**（已加） |
+| 交互式终端标题 | `pty/usage-status-runtime.js` → `formatUsageRemainingShort` | `[o:<id>:17%]` | **不需要**：窗口格式化返回空后**回落到 `buildUsageStatusFromCache` 的数值**（实测 `getUsageRemainingPctValues` = `[16.67]`），不是 `?` |
+| CLI 账号列表 `aih <p> ls` | `profile/list.js:246` | `[Remaining: 16.7%]` | **不需要**：`formatUsageLabel` 返回空后，调用方在 `list.js:247` 用索引态 `remainingPct` 兜底 |
+| 调度 / 模型-账号索引 | `model-account-index.js`、`model-capability-index.js` → `getUsageRemainingPctValues` | 账户级 16.67% | **不需要**（走 §14.3 的聚合值） |
+
+**为什么 CLI 不需要家族分支**：`window-format.js` 的 `WINDOW_CAPABLE_KINDS` 只有
+codex/claude/kimi，家族（以及**已上线的 zcode**）都返回空——这是**有意且有测试**的行为
+（`test/usage.window-format.test.js`："non-windowed kinds yield nothing here"）。语义窗口
+（5h / 7days）对**按 credits 计费的额度桶**本就不适用：家族 entry 没有 `window` 字段，
+即使把 kind 加进 `WINDOW_CAPABLE_KINDS` 也会被 `filter(entry => entry.window)` 滤光，
+**加了等于白加**。契约是"格式化器只认时间窗，非时间窗 kind 由调用方自行兜底"，而两个调用方
+（终端标题、`ls`）都**确实**有数值兜底。
+
+**另两处"看起来像缺口"实则不是**：
+
+- `lib/server/provider-usage-policies.js` 的策略注册表只登记了 **5/15** 个 provider
+  （codex/gemini/agy/claude/kimi）——家族**和** zcode/grok/qoder/opencode/kiro 等一样缺席。
+  未登记时 `resolve()` 返回 `FALLBACK_USAGE_POLICY`（`status:'not_applicable'`），
+  而 `isUsageDecisionSchedulable` 只在 `exhausted` 时返回 false，故兜底是"**保持可调度**"。
+  这对家族**安全**（额度耗尽由上游 429 + 账号 runtime 态兜底），且**不是家族特有问题**——
+  是这张表本身的既存覆盖度问题，单独给家族补会与另外 9 支不一致，故**不改**，仅记录。
+- `web/src/pages/AccountsGoPreview.tsx` 的用量分支同样没有家族——但该页**只在
+  `npm run go-preview:web`（`AIH_GO_ACCOUNTS_PREVIEW=1`）的隔离进程里加载**，且按
+  `docs/functional-matrix.md` ACC-003 / WEB-048 的既定边界**刻意**把 quota 投影为
+  `unknown`（"没有证据时不伪造健康/可调度"）。家族不进 Go Preview 是**设计**，不是缺口。
+
+**唯一确实退化但仍可接受的一处**：`aih <p> usage` 的详细输出在
+`presenter.js:formatUsageSnapshotLines` 里对未知 kind 落到 `[JSON.stringify(cache)]`——
+家族会打印原始 JSON 而非格式化行。这是**诊断面**，原始 JSON 可读；zcode 同样如此，属既存行为，
+本轮不改。
+

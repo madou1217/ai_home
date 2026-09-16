@@ -2,6 +2,7 @@ package providerlaunch_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -69,6 +70,7 @@ func TestServiceDispatchesExactlyOneLaunchMode(t *testing.T) {
 
 // nativeBuilder 记录 Native 分支是否被调用。
 type nativeBuilder struct {
+	err         error
 	spec        providerlaunch.LaunchSpec
 	calls       int
 	lastRequest accountapp.LaunchSelectionRequest
@@ -80,11 +82,12 @@ func (builder *nativeBuilder) Build(
 ) (providerlaunch.LaunchSpec, error) {
 	builder.calls++
 	builder.lastRequest = request
-	return builder.spec, nil
+	return builder.spec, builder.err
 }
 
 // gatewayBuilder 记录 Gateway 分支是否被调用。
 type gatewayBuilder struct {
+	err   error
 	spec  providerlaunch.GatewayLaunchSpec
 	calls int
 }
@@ -95,7 +98,7 @@ func (builder *gatewayBuilder) Build(
 	providerlaunch.GatewayEndpoint,
 ) (providerlaunch.GatewayLaunchSpec, error) {
 	builder.calls++
-	return builder.spec, nil
+	return builder.spec, builder.err
 }
 
 // nativeServiceSpec 使用真实 Native Planner 构造有效联合值成员。
@@ -152,4 +155,40 @@ func gatewayServiceSpec(t *testing.T) providerlaunch.GatewayLaunchSpec {
 		t.Fatalf("GatewayPlanner.Build() error = %v", err)
 	}
 	return spec
+}
+
+// TestServiceNeverFallsBackAcrossAuthenticationModes encodes the Node incident:
+// an OAuth failure must not enter relay, and an empty relay pool must not adopt
+// a native/default credential. Availability is not a transport-selection input.
+func TestServiceNeverFallsBackAcrossAuthenticationModes(t *testing.T) {
+	for _, mode := range []string{"native", "relay"} {
+		t.Run(mode, func(t *testing.T) {
+			failure := errors.New("synthetic transport unavailable")
+			native := &nativeBuilder{err: failure}
+			gateway := &gatewayBuilder{err: failure}
+			service, err := providerlaunch.NewService(providerlaunch.ServiceDependencies{Native: native, Gateway: gateway})
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"relay", "36"}
+			if mode == "native" {
+				args = []string{"36"}
+			}
+			intent, err := providerlaunch.ParseLaunchIntent(mustProviderCatalog(t), "codex", args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = service.Plan(context.Background(), intent, gatewayTestEndpoint(t))
+			if !errors.Is(err, failure) {
+				t.Fatalf("lost failure: %v", err)
+			}
+			wantNative, wantGateway := 0, 1
+			if mode == "native" {
+				wantNative, wantGateway = 1, 0
+			}
+			if native.calls != wantNative || gateway.calls != wantGateway {
+				t.Fatalf("mode=%s native=%d gateway=%d", mode, native.calls, gateway.calls)
+			}
+		})
+	}
 }

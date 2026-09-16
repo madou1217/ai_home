@@ -318,7 +318,8 @@ test('default Codex CLI omits an unsupported configured service tier without hid
     [
       'exec',
       '-c', 'suppress_unstable_features_warning=true',
-      '-c', 'check_for_update_on_startup=false'
+      '-c', 'check_for_update_on_startup=false',
+      '-c', 'model_provider=openai'
     ]
   );
 });

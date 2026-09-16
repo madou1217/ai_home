@@ -121,6 +121,19 @@ export type AccountUsageSnapshot =
       } | null;
       models: GeminiUsageModel[];
       modelForwardingRules?: Record<string, string>;
+    }
+  | {
+      // CodeBuddy 家族四支（codebuddy / codebuddycn / workbuddy / workbuddycn）共用同一个
+      // kind：同地区 work/code 是同一个账号、同一份积分。
+      // entries[0] 是账户级聚合（无 category），其余是 category='detail' 的每包明细
+      // （activity / proTrialMon / freeMon …），单位见 unitType（实测为 credits）。
+      kind: 'codebuddy_credit_balance';
+      capturedAt: number;
+      // 仅当订阅码能映射到付费档位时才有（体验/试用包刻意不标档位）。
+      account?: {
+        planType: string;
+      } | null;
+      entries: CodexUsageEntry[];
     };
 
 export interface Account {

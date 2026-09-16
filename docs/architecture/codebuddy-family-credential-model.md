@@ -793,7 +793,28 @@ data.SubscriptionPackageCode, data.IsPaidUser, data.IsProtectedPriceUser, data.P
 | `lib/account/derived-state.js` | `codebuddy_credit_balance` 计入额度派生状态 |
 | `lib/cli/services/usage/cache.js`、`lib/server/accounts.js` | 家族 `cliName` 走 trusted-snapshot 校验分支 |
 | `lib/cli/services/usage/snapshot.js` | 家族分派：`refreshCodebuddyUsageSnapshotAsync` |
+| `web/src/components/account/UsageSnapshotCell.tsx` | 家族展示分支：聚合行「账户额度」+ 每包明细行 |
+| `web/src/components/account/usage-snapshot-format.ts` | `buildCodebuddyCreditRows()`：entries → 展示行（纯函数，可单测） |
+| `web/src/types/index.ts` | `AccountUsageSnapshot` 联合类型加 `codebuddy_credit_balance` |
 | `core/providers/builtins.go` + 三份生成物 | 四员 `Capabilities` 增补 `CapabilityQuotaUsage` |
+
+### 14.5 展示层：为什么必须显式加分支
+
+`UsageSnapshotCell` 是**按 provider/kind 显式分支**的（codex/claude/kimi 一支、zcode、agy、
+gemini 各一支），最后落到通用兜底——兜底只渲染 `record.remainingPct` 这**一条账号级进度条**。
+家族若不加入分支，账号级数值仍会显示（兜底能读到 `remainingPct`），但 §14.3 特意产出的
+**每包明细永远看不到**，等于白算。因此新增一支：聚合行标「账户额度」，明细行用商品桶名
+（`activity` / `proTrialMon` / `freeMon`），hover 显示「总/剩余/已用」（`unitType=credits`）。
+
+行构造抽到 `buildCodebuddyCreditRows()`（纯函数），因为 Web 侧测试只覆盖纯 helper、不渲染
+组件（`node:test`，无 DOM renderer）。三条语义在该函数里固定：
+
+- 聚合行（`category !== 'detail'`）标「账户额度」并**保持入参顺序**（聚合永远是第一行）——
+  聚合是全量口径，排到明细后面会误导。
+- 明细用尽（`0%`）**要显示**：那正是"这个包用完了"这件事本身。
+- `remainingPct` 非有限值的行**丢弃**（不渲染成 0%），与 §14.3 "未知不伪装成满格"同源。
+- 行携带原始 `entry`，供 tooltip 读 `resetIn`/`resetAtMs`/units——**不能用
+  `entries[index]` 回查**，因为过滤后下标会错位。
 
 家族**没有 token 刷新链路**（与 zcode/kimi 不同）：`accessToken` 由桌面端/CLI 自己维护，
 过期的正确处置是重新登录，所以探测**不做**任何续期尝试，`401/403` 一律如实上报。
@@ -805,7 +826,7 @@ data.SubscriptionPackageCode, data.IsPaidUser, data.IsProtectedPriceUser, data.P
 （`accounts.js` 内部的 `loadCodex/Agy/Kimi/ZcodeServerAccounts` 走的是各自硬编码的
 cliName，家族没有对应 loader，因此不经过它们。）
 
-### 14.5 验证
+### 14.6 验证
 
 - `node --test test/codebuddy-quota-probe.test.js`：21 pass。覆盖：端点/路径解析（确认无 `/v2`）、
   商品码与档位映射、聚合 + 明细产出、**已用尽明细包不把账户级拖到 0%**、Capacity 字段部分缺失
@@ -817,6 +838,12 @@ cliName，家族没有对应 loader，因此不经过它们。）
   非家族 cliName 读同一份合法快照返回 `null`（校验按 cliName 分派，不靠"形状对了"放行）。
 - `node --test test/codebuddy-provider.test.js` + `test/provider-catalog.test.js`：声明
   `quota_usage`，`listProvidersByCapability('quotaUsage')` 含家族四员。
+- `bun test web/src`（524 pass）：`UsageSnapshotCell.test.ts` 里 4 条
+  `buildCodebuddyCreditRows` 用例——聚合行标「账户额度」且保持首位、明细用尽 `0%` 仍显示、
+  非有限值行被丢弃、行携带原始 `entry` 供 tooltip（`总 600 / 剩余 100 credits` / `已用 500`）。
+  另跑 `tsc --noEmit` 并 `comm` 对比改动前后错误列表：家族新 kind 未进
+  `AccountUsageSnapshot` 联合类型会新增 2 条错误（TS2367/TS2339），补齐后回到基线 101 条、
+  **无新增**；`cd web && npm run build` 通过。
 - **实机（穿到 server 闸门）**：用本机真实 `.info` 凭据跑真实端点，再把快照落盘后经
   `readTrustedUsageSnapshot` 读回，三支的账户级剩余率**前后一致**——
   `workbuddy` 16.67%（100/600 credits）、`codebuddy` 16.67%（100/600）、`workbuddycn` 约 68%

@@ -342,3 +342,56 @@ export function groupAgyQuotaModels(
 
   return result;
 }
+
+export interface CodebuddyCreditEntryLike {
+  bucket?: string;
+  category?: string;
+  remainingPct?: number | null;
+  window?: string;
+  windowMinutes?: number | null;
+  // 以下字段仅供渲染 tooltip / 重置倒计时使用（单位额度与结算窗口）。
+  resetIn?: string;
+  resetAtMs?: number;
+  totalUnits?: number | null;
+  usedUnits?: number | null;
+  remainingUnits?: number | null;
+  unitType?: string;
+}
+
+export interface CodebuddyCreditRow {
+  key: string;
+  label: string;
+  value: number;
+  isAggregate: boolean;
+  /** 行对应的原始 entry：调用方还要用它的 resetIn/resetAtMs/units 渲染 tooltip。 */
+  entry: CodebuddyCreditEntryLike;
+}
+
+/**
+ * `codebuddy_credit_balance` 快照的 entries → 展示行（CodeBuddy 家族四支共用）。
+ *
+ * - entries[0] 约定为**账户级聚合**（不带 category，或 category !== 'detail'），是权威值，
+ *   也是账号级剩余率的来源；其余带 category='detail' 的是每个额度包的明细。
+ *   聚合行统一叫「账户额度」，明细行用商品桶名（activity / proTrialMon / freeMon …）。
+ * - 只保留 remainingPct 可渲染（有限数字）的行；明细用尽（0%）**要显示**——那正是
+ *   「这个包用完了」这件事本身，过滤掉反而让人以为包不存在。
+ * - **顺序保持入参顺序**（聚合在前），不重排：聚合是全量口径，排到明细后面会误导。
+ */
+export function buildCodebuddyCreditRows(
+  entries: CodebuddyCreditEntryLike[] | null | undefined
+): CodebuddyCreditRow[] {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry && typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
+    .map((entry, index) => {
+      const isAggregate = entry.category !== 'detail';
+      const windowLabel = formatWindowDuration(entry.windowMinutes, entry.window || '');
+      const base = isAggregate ? '账户额度' : String(entry.bucket || 'usage');
+      return {
+        key: `${entry.category || 'aggregate'}:${entry.bucket || 'credits'}:${index}`,
+        label: windowLabel ? `${base} · ${windowLabel}` : base,
+        value: Number(entry.remainingPct),
+        isAggregate,
+        entry
+      };
+    });
+}

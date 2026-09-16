@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildCodebuddyCreditRows,
   buildUsageUnitsTooltipLines,
   formatResetAt,
   formatResetIn,
@@ -216,4 +217,68 @@ test('resolveActiveAgyQuotaGroupKeys preserves the unambiguous single-group fall
   ]);
 
   assert.deepEqual(resolveActiveAgyQuotaGroupKeys(groups, [], true), ['gemini']);
+});
+
+test('buildCodebuddyCreditRows labels the aggregate as 账户额度 and keeps the emitted order', () => {
+  const rows = buildCodebuddyCreditRows([
+    // entries[0] 约定为账户级聚合（无 category）。
+    { bucket: 'credits', remainingPct: 16.67, windowMinutes: 0, window: '' },
+    { bucket: 'activity', category: 'detail', remainingPct: 100, windowMinutes: 0, window: '' },
+    { bucket: 'proTrialMon', category: 'detail', remainingPct: 0, windowMinutes: 0, window: '' }
+  ]);
+
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].label, '账户额度');
+  assert.equal(rows[0].isAggregate, true);
+  assert.equal(rows[0].value, 16.67);
+  assert.deepEqual(rows.slice(1).map((row) => row.label), ['activity', 'proTrialMon']);
+  assert.deepEqual(rows.slice(1).map((row) => row.isAggregate), [false, false]);
+  // 聚合是全量口径，必须留在第一位——排到明细后面会误导。
+  assert.equal(rows[0].label, '账户额度');
+});
+
+test('buildCodebuddyCreditRows keeps an exhausted package at 0% and drops unrenderable rows', () => {
+  const rows = buildCodebuddyCreditRows([
+    { bucket: 'credits', remainingPct: 50 },
+    // 用尽的包**要显示**：那正是"这个包用完了"这件事本身。
+    { bucket: 'freeMon', category: 'detail', remainingPct: 0 },
+    // 算不出来的（null / 缺失 / NaN）不显示，避免渲染成 0% 的误导。
+    { bucket: 'unknownNull', category: 'detail', remainingPct: null },
+    { bucket: 'unknownMissing', category: 'detail' },
+    { bucket: 'unknownNaN', category: 'detail', remainingPct: Number.NaN }
+  ]);
+
+  assert.deepEqual(rows.map((row) => row.label), ['账户额度', 'freeMon']);
+  assert.equal(rows[1].value, 0);
+});
+
+test('buildCodebuddyCreditRows tolerates absent entries and appends a window label', () => {
+  assert.deepEqual(buildCodebuddyCreditRows(null), []);
+  assert.deepEqual(buildCodebuddyCreditRows(undefined), []);
+  assert.deepEqual(buildCodebuddyCreditRows([]), []);
+
+  const rows = buildCodebuddyCreditRows([
+    { bucket: 'credits', remainingPct: 80, windowMinutes: 1440, window: '1days' }
+  ]);
+  assert.equal(rows[0].label, '账户额度 · 1day');
+});
+
+test('buildCodebuddyCreditRows carries its source entry for tooltip rendering', () => {
+  const aggregate = {
+    bucket: 'credits',
+    remainingPct: 16.67,
+    windowMinutes: 0,
+    window: '',
+    totalUnits: 600,
+    remainingUnits: 100,
+    usedUnits: 500,
+    unitType: 'credits'
+  };
+  const rows = buildCodebuddyCreditRows([aggregate]);
+
+  assert.equal(rows[0].entry, aggregate);
+  assert.deepEqual(buildUsageUnitsTooltipLines(rows[0].entry), {
+    title: '总 600 / 剩余 100 credits',
+    detail: '已用 500'
+  });
 });

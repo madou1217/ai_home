@@ -8,6 +8,7 @@ import type {
 import Button from '@/components/ui/AppButton';
 import BurningParticles from '@/features/accounts/BurningParticles';
 import {
+  buildCodebuddyCreditRows,
   buildUsageUnitsTooltipLines,
   formatResetAt,
   formatResetIn,
@@ -38,6 +39,10 @@ export function getUsageBarColor(value: number | null) {
   if (value > 30) return '#faad14';
   return '#ff4d4f';
 }
+
+// CodeBuddy 家族四支共用同一份 `codebuddy_credit_balance` 快照（同地区 work/code 是同一个
+// 账号、同一份积分），因此这里按 **provider 集合 + kind** 分支，而不是按单个 provider。
+const CODEBUDDY_FAMILY_PROVIDERS = ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'];
 
 function orderCodexEntries(entries: CodexUsageEntry[]) {
   return [...entries].sort((a, b) => {
@@ -404,6 +409,66 @@ export default function UsageSnapshotCell({
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
+          </Button>
+        ) : null}
+        {record.usageRefreshing ? (
+          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Spin size="small" />
+            <span>刷新中</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // CodeBuddy 家族：entries[0] 是**账户级聚合**（bucket=credits，权威值，也是
+  // record.remainingPct 的来源），其余是 category='detail' 的每包明细
+  // （activity / proTrialMon / freeMon …）。两者都渲染——聚合行给总量，明细行给每个额度包
+  // 的剩余；hover 展示「总/剩余/已用」（unitType=credits）。
+  // 放在通用兜底分支之前，否则就只剩一条账号级进度条，明细永远看不到。
+  if (
+    snapshot?.kind === 'codebuddy_credit_balance'
+    && CODEBUDDY_FAMILY_PROVIDERS.includes(String(record.provider || ''))
+  ) {
+    const rows = buildCodebuddyCreditRows(snapshot.entries);
+    if (rows.length === 0) {
+      return record.usageRefreshing ? (
+        <Space size={6}>
+          <span>-</span>
+          <Spin size="small" />
+        </Space>
+      ) : <>-</>;
+    }
+    const visibleRows = hideModels ? rows.slice(0, 1) : (expanded ? rows : rows.slice(0, 2));
+    return (
+      <div style={{ minWidth: 200 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {visibleRows.map((row, index) => {
+            const rawEntry = row.entry;
+            const unitsLines = buildUsageUnitsTooltipLines(rawEntry);
+            return (
+              <UsageMetaLine
+                key={row.key}
+                label={row.label}
+                value={row.value}
+                resetIn={rawEntry.resetIn}
+                resetAtMs={rawEntry.resetAtMs}
+                running={running}
+                activityRate={activityRate}
+                effectKey={`${effectKeyPrefix}:bucket:${rawEntry.bucket || 'usage'}:${index}`}
+                progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
+              />
+            );
+          })}
+        </div>
+        {!hideModels && rows.length > 2 ? (
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? '收起' : `展开 ${rows.length - 2} 项`}
           </Button>
         ) : null}
         {record.usageRefreshing ? (

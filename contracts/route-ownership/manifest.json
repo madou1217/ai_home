@@ -633,8 +633,7 @@
       "go_implementation": "private_canary",
       "cutover_blocking": true,
       "blockers": [
-        "public endpoint remains Node until the full gate passes",
-        "Go vision-guard coverage now follows Node's fallback semantics (index hit wins, known vision families keep their images, everything else is treated as text-only), but Go's provider->models.dev mapping covers 7 providers while Node reads the wider models.dev catalog; a few vision-capable models outside both the mapping and the vision families can still be stripped"
+        "public endpoint remains Node until the full gate passes"
       ],
       "evidence": [
         "lib/server/vision-image-guard.js",
@@ -643,7 +642,8 @@
         "internal/adapters/imageblob/store.go",
         "internal/transport/http/blobsapi/handler.go",
         "application/visionguard/guard.go",
-        "core/inference/request_images.go"
+        "core/inference/request_images.go",
+        "internal/adapters/modelmetadata/modelsdev/index.go"
       ]
     },
     {

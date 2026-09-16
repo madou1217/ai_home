@@ -58,9 +58,11 @@ vision guard 的覆盖面已按 Node 的兜底语义对齐（2026-09-16）：索
 文本借视；错放一张图，上游整条 400 拒绝，模型连回合都拿不到。
 
 `GET /v1/blobs/{id}` 的入仓有两条链路：被剥离的图片，以及 `response_format=url` 的图片响应。
-残留差异是索引覆盖本身：Go 的映射覆盖 7 个 Provider，Node 的 models.dev 读取覆盖更广，
-因此少数「未映射 Provider + 不属视觉家族 + 实际能看图」的模型仍会被误剥。
-该残留已记入 manifest 的 `gateway.vision.blobs.blockers`。
+**覆盖残留已闭合**（2026-09-16）：索引补上聚合 Provider 命名空间与基座回退后，
+不再存在「未映射 Provider + 不属视觉家族 + 实际能看图」的盲区。家族表同时改为按主版本号
+判定（`^gpt-[4-9]`、`^o[1-9]`）而不是枚举具体版本——枚举已经腐坏过：Node 的
+`gpt-(4o|4[.-]1|5)` 会把目录里已有的 gpt-6 判成看不见图片。`visionguard` 的
+`TestVisionFamilyTableAgreesWithSnapshot` 用快照反查家族表，腐坏会直接失败而不是静默剥图。
 
 `/v1/` 和 `/v1beta/` 是 Node 的 scope guard，不是 endpoint。采集器保留它们是为了
 保留源码证据，但 manifest 的 `guards_not_endpoints` 只冻结这两个数据面命名空间守卫。
@@ -180,15 +182,21 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   生成，全部 canonical model 被嵌入 Go 二进制。服务启动时只解码和校验一次，
   HTTP 热路径是 O(1) 只读 map，
   不访问 SQLite、文件系统或上游。
-- Provider → models.dev 命名空间的映射只登记「模型 ID 就是厂商模型 ID」的单值情形：
-  `codex→openai`、`claude→anthropic`、`gemini→google`、`agy→google`、`grok→xai`、
-  `kimi→moonshotai`、`zcode→zhipuai`。**聚合类 Provider（opencode、qoder/qodercn、
-  codebuddy 家族、kiro）刻意不登记**——它们的模型 ID 来自多个厂商，映射到任何单一
-  命名空间都是查错而不是查不到。权威快照未命中时明确降级为
-  `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
-  快照本身已含全部命名空间（386 条记录），因此新增映射不需要重新生成快照；
-  `provider_mapping_test.go` 用快照里真实存在的模型逐个钉住映射，防止写错命名空间后
-  静默退化成「查不到」。
+- 快照收录 canonical models **加** 消费方会用到的 Provider 命名空间（`providerNamespaces`，
+  共 16 个：openai、github-copilot、anthropic、google、google-vertex、xai、moonshotai、
+  moonshotai-cn、kimi-for-coding、zai、zhipuai、zai-coding-plan、zhipuai-coding-plan、
+  zhipu、opencode、opencode-go），共 656 条记录。聚合 Provider 的模型只存在于它们自己的
+  命名空间里，只读 canonical models 会让这些模型一律查不到。
+- 查找分三层，与 Node 的 `models-dev-metadata` 同构：
+  1. 该 Provider 的**候选命名空间列表**按序精确命中（列表而非单值：聚合 Provider 的模型 ID
+     来自多个厂商，映射到任何单一命名空间都是查错）；
+  2. 基座模型回退——按模型名前缀推断厂商命名空间（`gpt-*`/`o<数字>`/`claude-*`/`gemini-*`/
+     `grok-*`/`kimi-*`/`glm-*`）；
+  3. 逐步裁掉尾段再试，让 provider 自定义的能力/档位后缀（`…-thinking`、`…-high`）
+     落到基座模型的模态。
+  三层都不命中才降级为 `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
+  `provider_mapping_test.go` 用快照里真实存在的模型逐个钉住映射——写错命名空间不会报错，
+  只会静默退化成「查不到」。
 
 升级 SDK 依赖后重新生成索引：
 

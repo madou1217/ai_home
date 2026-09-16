@@ -106,11 +106,17 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusInternalServerError, "internal_error")
 		return
 	}
+	// created 与 Node 的 `buildOpenAIModelsList` 一致：整个响应共用同一个「当前秒」。
+	// 目录项没有真实创建时间，此前这里固定输出 0，而同文件的单模型回显用的是 now——
+	// 同一个字段在同一个包里两种语义。0 是 JS 的 falsy 值，客户端 `created || fallback`
+	// 会静默丢掉它；契约要求的又恰好是 unix 秒。
+	now := time.Now().Unix()
 	views, err := newModelViews(
 		models,
 		handler.modalities,
 		options.includeModalities,
 		options.capability,
+		now,
 	)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error")
@@ -271,6 +277,8 @@ type modelModalitiesView struct {
 // 改写为 `aih`，两者都是 AIH 内部词汇：OpenAI 合同里 `owned_by` 是「拥有该模型的组织」，
 // 而 Node 的 WebUI 依赖厂商名反查 Provider 分组，写内部 ID 会让分组整块落空。
 //
+// `created` 由调用方传入，整个响应共用同一个值（Node 在 map 之外取一次 now）。
+//
 // capability 过滤刻意放在去重**之后**：Node 的 `filterOpenAIModelsBodyByCapability` 作用在
 // 已经去重的 `data` 数组上，每个模型项只按 `item.aih_modalities` 判一次——也就是首个
 // Provider 的记录。若在去重前逐 (Provider, 模型) 过滤，同名模型会因为不同 Provider 的模态
@@ -280,6 +288,7 @@ func newModelViews(
 	modalities modelmetadata.Reader,
 	includeModalities bool,
 	capability string,
+	created int64,
 ) ([]modelView, error) {
 	if modalities == nil {
 		return nil, errInvalidModelSnapshot
@@ -306,7 +315,7 @@ func newModelViews(
 		view := modelView{
 			ID:      modelID,
 			Object:  "model",
-			Created: 0,
+			Created: created,
 			OwnedBy: resolveModelOwner(model.ProviderID(), modelID),
 		}
 		if includeModalities {

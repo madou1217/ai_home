@@ -534,6 +534,56 @@ Go 原先有两个键，都不等于规范键：
 按 `product-direction-node-go-2026-08-15.md` §8.1 属于「必须另写 ADR 和显式 rekey、不能静默改变
 既有 accountRef」的变更。因此在拿到显式授权前不动 Node，Go 侧的 workspace 排除已独立完成。
 
+## `/readyz`：同一条路径上的两套语义（cutover blocker，待决策）
+
+manifest 的 `gateway.readiness` 条目早就写着 blocker：**「readiness semantics are not yet the
+public Node contract」**，但本文此前从未解释这条 blocker 具体指什么。补上（2026-09-16 核对）。
+
+`/healthz` 两端**已经一致**：Node 与 Go 都返回 `{ok:true, service:"aih-server"}`，没有多余字段。
+分歧全在 `/readyz`：
+
+| 维度 | Node（`lib/server/server.js:1110`） | Go（`internal/host/aihserver/router.go`） |
+| --- | --- | --- |
+| HTTP 状态码 | **恒为 200** | catalog 未就绪时 **503** |
+| `ready` 的含义 | `accounts.some(count>0) \|\| gateway.ready`——**有没有可用账号** | catalog 就绪（模型索引已发布） |
+| `accounts` | 每个受支持 Provider 的账号数（`{codex:N, claude:N, …}`） | **不返回** |
+| `gateway` | `{ready, connectedServers, availableAccounts}`（Fabric broker 就绪） | **不返回**（Go 无 Fabric 数据面） |
+| Go 额外字段 | — | `capabilities[]`、`inference_catalog_ready`、`inference_catalog_stale`、`model_count`、`route_count` |
+
+### 为什么这不是「Go 顺手写错」，而是真分歧
+
+Node 那侧的 `200 + ready=false` 是**被文档依赖的诊断信号**，不是疏漏：
+
+- `docs/fabric/08-current-status.md` 多处用「`/readyz` 当前 HTTP 200 但 `ready=false`，
+  provider account counts 全为 0」证明「节点活着，缺的是 provider 账号，不是控制面能力」。
+  若该端点改回 503，同一条诊断会被读成「节点挂了」——**结论反向**。
+- `README.md:493` 把 `gateway` 字段写成对外契约：「`/readyz` 的 `gateway` 字段可用于确认
+  Server 1 是否已发现可用的反向账号网关」。
+- Fabric registry agent 的 `--runtime-diagnostics` 会读取 `/readyz` 的 provider account counts，
+  产出 `missing_provider_account:<provider> (cli=yes account_total=0 account_source=readyz)`，
+  再由 `aih fabric nodes <node>` 展示。
+
+Go 那侧也不是随手写的：`modelsapi` 的 `modelView` 注释明确写着「**不会暴露账号数量或身份**」——
+Go 有意不让公开端点泄漏账号规模，并把 `/readyz` 从「账号健康」改成了「目录/能力健康」。
+
+所以两边各自成立，但**同一条路径上的两套语义比缺一个字段更危险**：消费方不会报错，
+只会静默得到相反的结论。这也是它必须是 `cutover_blocking` 的原因。
+
+### 三个可选解（未决，等授权）
+
+1. **Go 改为 Node 契约的超集**：恒 200；`ready` 改成 `账号>0 || gateway.ready`；补
+   `accounts` 与 `gateway`（Go 无 Fabric，`gateway` 如实报 `{ready:false,0,0}`）；Go 现有的
+   catalog 字段作为**追加**保留（追加对 Node 消费方无害）。代价：公开端点开始暴露账号规模，
+   与 `modelView` 的既有原则冲突；且 `accounts` 需要一次 DB 读，落在未鉴权端点上。
+2. **Node 改为 Go 契约**：把 `/readyz` 变成能力/目录就绪，恒 200 或按需 503。代价：改掉
+   README 与 Fabric 诊断链依赖的信号，`aih fabric nodes` 的 runtime gap 诊断会失效。
+3. **拆分路径**：`/readyz` 保留 Node 契约（供 Fabric/编排用），Go 的目录就绪另开一条
+   路径（例如 `/readyz/catalog`）。代价：Node 侧也要加一条，且迁移期两条路径并存。
+
+推荐 1（迁移目标必须能顶替 Node，追加字段对两端都安全），但**需要先确认公开暴露 provider
+账号数是可以接受的**——这条与 §1 里「不照抄 Node 的 `aih_modalities`」是同一类判断，
+不能只在 Go 侧单方面决定。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

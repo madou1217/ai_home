@@ -83,6 +83,22 @@ func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 			)
 		}
 	}
+	// created 与 Node 一致：整个响应共用同一个「当前秒」，不是 0。
+	// 0 是 JS 的 falsy 值，客户端 `created || fallback` 会静默丢掉这个字段。
+	sharedCreated := document.Data[0].Created
+	if sharedCreated <= 0 {
+		t.Fatalf("created = %d, want a positive unix second", sharedCreated)
+	}
+	for index, item := range document.Data {
+		if item.Created != sharedCreated {
+			t.Fatalf(
+				"data[%d].created = %d, want the shared %d",
+				index,
+				item.Created,
+				sharedCreated,
+			)
+		}
+	}
 	var rawDocument struct {
 		Data []map[string]json.RawMessage `json:"data"`
 	}

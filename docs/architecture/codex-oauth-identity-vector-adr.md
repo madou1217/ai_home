@@ -1,11 +1,17 @@
-# ADR：Codex OAuth 身份向量统一到 `user_id`
+# ADR：OAuth 身份向量与 Go 对齐（Codex / Claude / AGY）
 
-- **状态**：已实施（Implemented）。Node 已切到 `user_id` 向量；rekey 的账本、dry-run 与
+> 文件名保留 `codex-oauth-identity-vector-adr.md` 是历史原因：Codex 是触发这份决策的案例，
+> 已有链接都指向它。文档范围后来扩到 Go 侧已实现身份派生的**全部三个 Provider**
+> （`core/accounts/` 下只有 `codex`、`claude`、`agy`），因为它们是同一类问题的同一批核对。
+
+- **状态**：Codex 已实施（Implemented）。Node 已切到 `user_id` 向量；rekey 的账本、dry-run 与
   apply 均已落地并测试；**对真实数据的 apply 仍待操作者复核账本后执行**。
+  Claude 的三个分歧已修并钉住；AGY 的校验强度已对齐，但其「以邮箱为身份」本身仍是待裁决的
+  §8.1 例外（见文末）。
 - **日期**：2026-09-16
 - **依据**：`product-direction-node-go-2026-08-15.md` §8.1「身份与迁移」
-- **触发**：`go-node-parity-matrix.md` 把这条列为「唯一需要决策的项」；用户 2026-09-16 选择
-  「写 ADR + 显式 rekey」。
+- **触发**：`go-node-parity-matrix.md` 把 Codex 那条列为「唯一需要决策的项」；
+  用户 2026-09-16 选择「写 ADR + 显式 rekey」，随后要求「直接闭环」。
 
 ## 背景
 
@@ -164,10 +170,72 @@ Node 侧先迁完再对齐 Go，顺序不能反——反了会让 Go 按旧 ref 
 ## 本 ADR 不授权的事
 
 - **不授权直接在生产上执行 rekey**。执行需要单独的排期与 dry-run 结果。
-- 不授权同时改 Claude 的身份向量（已是 `account_uuid`，合规）。
+- 不授权改 Claude 的**向量**（已是 `account_uuid`，合规）。本批只修了它的**归一化与校验**，
+  因为那是「同一份 UUID 得到两个 accountRef」的直接原因。
+- 不授权把 AGY 的邮箱向量换成别的字段——没有更稳定的字段可用；那条需要先有上游证据，
+  见上文的「待裁决的 §8.1 例外」。
 - 不授权顺手改 email 在**导入关联与冲突提示**里的用法——§8.1 明确保留：
   「规范化邮箱只用于导入关联与冲突提示」。
 - 不授权引入「按邮箱回退」的兜底：缺失稳定字段就报 `identity_unverifiable`。
+
+## 同批核对：Claude 与 AGY
+
+Codex 修完后，同一类问题在 Go 侧仅有的另外两个 Provider 上继续核对。两个都是**实测**得出结论，
+不是读源码推断——这一步很关键，我第一次对 Claude 的假设（「Node 优先用邮箱」）就是错的。
+
+### Claude：向量本身是对的，**归一化**错了（已修）
+
+§8.1 的表格规定 Claude OAuth 用 `account_uuid`，两端都照做了。但**同一份 UUID 会被归一化成
+不同结果**，所以同一个账号在两端仍会派生出不同的 `accountRef`。三处分歧，实测确认：
+
+| 输入 | Go | Node（改前） | Node（改后） |
+| --- | --- | --- | --- |
+| `1FB09D73-…`（大写） | 小写 → 同一个 ref | **保留大写 → 不同的 ref** | 小写 |
+| `" uuid "`（带空白） | 拒绝 | trim 后接受 | 拒绝 |
+| `not-a-uuid` | 拒绝 | 接受 → 铸出假身份 | 拒绝 |
+
+第一行是最严重的：它不是「坏输入被接受」，而是**好输入得到两个账号**。
+
+另外关掉了一条**潜伏**分歧：Node 的通用 email 分支排在 uuid 分支之前，所以当凭据里带
+`claudeAiOauth.email` 时 Node 会走邮箱向量。仓库自己写凭据时把邮箱放在
+`account.emailAddress`，所以这条路径在生产里够不到——但它够得到，而且一旦够到就违反 §8.1。
+已把 claude 分支提到 email 分支之前，并且**不回退邮箱**（缺 UUID 即 `identity_unverifiable`）。
+
+### AGY：邮箱就是身份，是待裁决的 §8.1 例外
+
+AGY 的原生 `oauthToken` 文档里**没有** user id 或 uuid，只有邮箱。所以它不是「选错了字段」，
+而是**没有更稳定的字段可选**。两端一致（都是 `oauth:agy:<email>`），所以这不是对齐 bug。
+
+真正的分歧在**校验强度**：Go 的 `normalizeEmail` 会拒绝非邮箱形状的值，Node 原先只做
+trim + lowercase，于是能铸出 `oauth:agy:no-at-sign` 这种 Go 直接拒绝的种子——即
+「Node 能建、Go 永远寻址不到」的账号。已对齐，并且**逐条实测**过 Go 的行为：
+
+- Go 的规则实际是 RFC 5322 的 dot-atom 加上 `mail.ParseAddress` 的宽松处；
+- 接受 `user@localhost`（不要求域名有点）、`user+tag@…`、`user@[127.0.0.1]`（地址字面量）；
+- 拒绝 `a:b@…`、`a..b@…`、`.a@…`、`a.@…`、`"a b"@…`、`a@c.com.`、`@…`、`a@`。
+
+Node 侧现在用 dot-atom + 地址字面量镜像这套规则，19 条实测向量全部一致。
+**残留**：Go 的解析器还接受极少数真实登录不可能产生的形态（例如带转义字符的 quoted local part）。
+两边不一致时 Node 选择**拒绝**——失败方向是关闭的（拒绝铸身份），而不是开放的（编一个 Go
+不会产生的身份）。
+
+### 为什么 AGY 的例外要单独裁决
+
+§8.1 第一条要求「`accountRef` 创建后不因**邮箱变化**而改变」，而 AGY 的身份**就是**邮箱，
+邮箱一变 ref 就变。这是已知的、无法在现有上游字段下消除的张力。它需要的是
+「上游是否提供更稳定字段」的证据，而不是一次重构——所以这里如实记录，不擅自改。
+
+### 三份契约
+
+| 契约 | 用途 |
+| --- | --- |
+| `contracts/codex-oauth-identity.json` | Codex 的 15 条向量（claim 顺序、trim、各拒绝分支、**邮箱永不成身份**、**只认 ID Token**） |
+| `contracts/claude-oauth-identity.json` | Claude 的 10 条向量（大小写、未 trim、UUID 形状） |
+| `contracts/agy-oauth-identity.json` | AGY 的 17 条向量（邮箱形状校验强度） |
+
+三份都由 Node 与 Go 各自的测试读同一文件。共用的原语在
+`lib/account/identity-components.js`——**只有一份实现**，因为「Go 的 TrimSpace 与 JS 的 `\s`
+不是同一套空白集」这种细节，抄第二遍就一定会漂。
 
 ## 参考
 

@@ -49,12 +49,30 @@ test('oauth identity: codex never derives its vector from the email', () => {
   assert.equal(degraded.degraded, true);
 });
 
-test('oauth ladder: claude falls back to native uuid when email absent', () => {
+test('oauth ladder: claude identity is the account uuid, lowercased', () => {
+  // §8.1 的表格规定 Claude OAuth 的身份向量是 `oauth:claude:uuid:<account_uuid>`，
+  // 邮箱不参与。UUID 必须完整（Go 强制 UUID 形状）且统一小写——大小写会改变 accountRef。
+  const uuid = '1fb09d73-89ab-cdef-0123-456789abcdef';
   const result = identity.resolveNativeAuthIdentitySeed('claude', { credentials: {
-    claudeAiOauth: { accessToken: 'x', account: { uuid: '1fb09d73' } }
+    claudeAiOauth: { accessToken: 'x', account: { uuid } }
   } });
-  assert.equal(result.identitySeed, 'oauth:claude:uuid:1fb09d73');
+  assert.equal(result.identitySeed, `oauth:claude:uuid:${uuid}`);
   assert.equal(result.degraded, false);
+
+  // 大写输入必须得到同一个小写种子。
+  const upper = identity.resolveNativeAuthIdentitySeed('claude', { credentials: {
+    claudeAiOauth: { accessToken: 'x', account: { uuid: uuid.toUpperCase() } }
+  } });
+  assert.equal(upper.identitySeed, result.identitySeed);
+});
+
+test('oauth ladder: claude never falls back to the email', () => {
+  // 带邮箱但缺 UUID 的 Claude 凭据必须不可验证，而不是退到邮箱向量。
+  const result = identity.resolveNativeAuthIdentitySeed('claude', { credentials: {
+    claudeAiOauth: { accessToken: 'x', email: 'claude@example.com' }
+  } });
+  assert.equal(result.identitySeed, '');
+  assert.equal(result.degraded, true);
 });
 
 test('oauth identity rejects CLI-id fallback when no stable identity exists', () => {

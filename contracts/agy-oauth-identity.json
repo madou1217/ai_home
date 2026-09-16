@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "identity_scheme_version": 1,
+  "provider": "agy",
+  "kind": "oauth",
+  "seed_prefix": "oauth:agy:",
+  "source_field": "nativeAuth.email",
+  "normalization": "Go-style trim, lowercase, then a reachable subset of mail.ParseAddress (dot-atom local/domain, address literal allowed)",
+  "note": "Shared cross-language vectors, each one probed directly against Go's normalizeEmail. AGY has no stable field other than the email, so the email IS the vector here — a §8.1 exception that needs its own ADR. What this contract pins is that the VALIDATION strength matches, so Node cannot mint `oauth:agy:<garbage>` that Go would refuse. See docs/architecture/codex-oauth-identity-vector-adr.md.",
+  "vectors": [
+    {
+      "name": "a canonical email resolves",
+      "email": "user@example.com",
+      "want_identity_seed": "oauth:agy:user@example.com",
+      "want_account_ref": "acct_5446464529167a027199"
+    },
+    {
+      "name": "an uppercase email is lowercased",
+      "email": "USER@Example.COM",
+      "want_identity_seed": "oauth:agy:user@example.com",
+      "want_account_ref": "acct_5446464529167a027199"
+    },
+    {
+      "name": "a surrounding-whitespace email is trimmed, matching Go's TrimSpace",
+      "email": " user@example.com ",
+      "want_identity_seed": "oauth:agy:user@example.com",
+      "want_account_ref": "acct_5446464529167a027199"
+    },
+    {
+      "name": "a domain without a dot is accepted, matching mail.ParseAddress",
+      "email": "user@localhost",
+      "want_identity_seed": "oauth:agy:user@localhost",
+      "want_account_ref": "acct_60ab6b5e45553cb280fc"
+    },
+    {
+      "name": "a plus tag is accepted",
+      "email": "user+tag@example.com",
+      "want_identity_seed": "oauth:agy:user+tag@example.com",
+      "want_account_ref": "acct_6b4b8e16c1d708d1fbae"
+    },
+    {
+      "name": "an address literal is accepted, matching mail.ParseAddress",
+      "email": "user@[127.0.0.1]",
+      "want_identity_seed": "oauth:agy:user@[127.0.0.1]",
+      "want_account_ref": "acct_e402436e044db97ff775"
+    },
+    {
+      "name": "a colon in the local part is rejected",
+      "email": "user:tag@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "consecutive dots in the local part are rejected",
+      "email": "user..name@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a leading dot in the local part is rejected",
+      "email": ".user@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a trailing dot in the local part is rejected",
+      "email": "user.@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a quoted local part is rejected",
+      "email": "\"a b\"@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a trailing dot in the domain is rejected",
+      "email": "user@example.com.",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a missing local part is rejected",
+      "email": "@example.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a missing domain is rejected",
+      "email": "user@",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a missing at-sign is rejected",
+      "email": "no-at-sign",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "whitespace inside the address is rejected",
+      "email": "a b@c.com",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "an empty value is rejected",
+      "email": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    }
+  ]
+}

@@ -343,7 +343,8 @@ test('Claude login captures its scoped keychain directly into DB without a crede
     claudeAiOauth: {
       accessToken: 'claude-access',
       refreshToken: 'claude-refresh',
-      account: { uuid: 'claude-account-uuid' }
+      // Claude 的 UUID 必须是完整 UUID：Go 强制形状校验，Node 已对齐。
+      account: { uuid: '2a1c9f4e-5b6d-4e7a-8c9d-0e1f2a3b4c5d' }
     }
   };
 

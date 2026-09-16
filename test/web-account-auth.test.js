@@ -1178,7 +1178,7 @@ test('createAuthJobManager runs claude browser oauth natively and writes .creden
           expires_in: 3600,
           scope: 'user:inference user:profile',
           account: {
-            uuid: 'claude-browser-account',
+            uuid: '3b2d0e5f-6c7e-4f8b-9dae-1f2a3b4c5d6e',
             email_address: 'claude@example.com'
           }
         })
@@ -1655,7 +1655,7 @@ test('createAuthJobManager marks claude oauth job succeeded when credentials fil
     claudeAiOauth: {
       accessToken: 'claude-access-token',
       refreshToken: 'claude-refresh-token',
-      account: { uuid: 'claude-file-account' }
+      account: { uuid: '1fb09d73-89ab-cdef-0123-456789abcdef' }
     }
   }));
 
@@ -1919,7 +1919,7 @@ test('createAuthJobManager marks claude oauth job succeeded when .credentials fi
     claudeAiOauth: {
       accessToken: 'claude-access-token',
       refreshToken: 'claude-refresh-token',
-      email: 'claude-file@example.com'
+      account: { uuid: '1fb09d73-89ab-cdef-0123-456789abcdef' }
     }
   }));
 

@@ -15,6 +15,7 @@
  */
 
 const test = require('node:test');
+const { credential: familyCredential } = require('./helpers/codebuddy-credential');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -616,12 +617,8 @@ const SHARED_AUTH_FILE_BY_PROVIDER = Object.freeze({
 test('the shared credential projects into the sandbox HOME and back to the host', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codebuddy-shared-auth-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
-  const payload = {
-    account: { uid: 'shared-user-42' },
-    auth: { accessToken: 'access-token', refreshToken: 'refresh-token' }
-  };
-
   for (const [provider, expectedFile] of Object.entries(SHARED_AUTH_FILE_BY_PROVIDER)) {
+    const payload = familyCredential(provider, { uid: 'shared-user-42' });
     const accountRef = upsertAccountRef(fs, aiHomeDir, {
       provider,
       cliAccountId: '1',

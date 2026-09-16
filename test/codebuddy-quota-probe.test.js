@@ -9,6 +9,7 @@
 //   4. 账号级额度是**多包求和**，不是包间取 min。
 
 const test = require('node:test');
+const { credential: familyCredential } = require('./helpers/codebuddy-credential');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -63,14 +64,7 @@ function writeSharedCredential(aiHomeDir, provider, accountRef, overrides = {}) 
     ...relative
   );
   fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
-  const payload = {
-    account: { uid: overrides.uid ?? 'uid-abc-123', nickname: 'tester' },
-    auth: {
-      accessToken: overrides.accessToken ?? 'tok-abc-123',
-      domain: overrides.domain ?? 'www.workbuddy.cn',
-      tokenType: overrides.tokenType ?? 'Bearer'
-    }
-  };
+  const payload = familyCredential(provider, { ...overrides, marker: overrides.accessToken });
   fs.writeFileSync(credentialPath, JSON.stringify(payload), 'utf8');
   return credentialPath;
 }
@@ -264,7 +258,7 @@ test('readCodebuddySharedCredential reads token/uid/domain from the projection f
   });
   const credential = readCodebuddySharedCredential(fs, aiHomeDir, provider, accountRef);
   assert.deepEqual(credential, {
-    accessToken: 'tok-live',
+    accessToken: familyCredential(provider, { marker: 'tok-live', uid: 'uid-live', domain: 'www.workbuddy.cn' }).auth.accessToken,
     uid: 'uid-live',
     domain: 'www.workbuddy.cn'
   });
@@ -311,7 +305,7 @@ test('probe posts to the CN endpoint with the headers the gateway requires', asy
   assert.equal(calls[0].init.method, 'POST');
   assert.equal(calls[0].init.body, '{}');
   const headers = calls[0].init.headers;
-  assert.equal(headers.Authorization, 'Bearer tok-cn');
+  assert.equal(headers.Authorization, `Bearer ${familyCredential(provider, { marker: 'tok-cn', uid: 'uid-cn', domain: 'www.workbuddy.cn' }).auth.accessToken}`);
   assert.equal(headers['X-User-Id'], 'uid-cn');
   assert.equal(headers['X-Domain'], 'www.workbuddy.cn');
   assert.equal(headers['User-Agent'], CODEBUDDY_PROBE_USER_AGENT);
@@ -392,7 +386,7 @@ test('probe rejects a record belonging to a different provider', async () => {
   assert.equal(fetchCalls, 0);
 });
 
-test('probe surfaces the CN WAF 403 as an auth-shaped error', async () => {
+test('probe distinguishes CN WAF rejection from invalid OAuth', async () => {
   const provider = 'workbuddycn';
   const { aiHomeDir, accountRef } = setupFamilyAccount(provider);
   const probe = createCodebuddyQuotaProbe({
@@ -402,8 +396,8 @@ test('probe surfaces the CN WAF 403 as an auth-shaped error', async () => {
     fetchWithTimeout: async () => makeOkResponse({ code: 10085, msg: '请求不合法' }, 403)
   });
   const result = await probe.probe(accountRef);
-  assert.equal(result.error, 'codebuddy_resource_http_403');
-  assert.equal(result.auth, true);
+  assert.equal(result.error, 'codebuddy_resource_waf_rejected');
+  assert.equal(result.auth, false);
 });
 
 test('probe surfaces a business error carried on HTTP 200', async () => {
@@ -501,4 +495,49 @@ test('probe output survives the trusted-snapshot check used by the cache', async
   assert.equal(snapshot.source, USAGE_SOURCE_CODEBUDDY);
   assert.ok(Array.isArray(snapshot.entries));
   assert.ok(Number.isFinite(Number(snapshot.capturedAt)));
+});
+
+
+test('partial packages cannot manufacture an aggregate percentage or a false exhaustion', () => {
+  const snapshot = probePrivate.parseCodebuddyResourceSummary({ data: { Packages: [
+    { PackageCode: 'a', CycleTotalCapacity: '100', CycleRemainCapacity: '0' },
+    { PackageCode: 'b', CycleTotalCapacity: '500' }
+  ] } }, 1);
+  assert.equal(snapshot.entries[0].remainingPct, null);
+  assert.equal(snapshot.entries[0].remainingUnits, null);
+  assert.equal(getMinRemainingPctFromUsageSnapshot(snapshot), null);
+});
+
+test('complete per-package remain or total-minus-used is summed, not mixed globally', () => {
+  const snapshot = probePrivate.parseCodebuddyResourceSummary({ data: { Packages: [
+    { PackageCode: 'a', CycleTotalCapacity: '100', CycleRemainCapacity: '20' },
+    { PackageCode: 'b', CycleTotalCapacity: '200', CycleUsedCapacity: '50' }
+  ] } }, 1);
+  assert.equal(snapshot.entries[0].remainingUnits, 170);
+  assert.equal(snapshot.entries[0].remainingPct, 17000 / 300);
+  assert.equal(snapshot.entries[0].usedUnits, null);
+});
+
+test('unreadable or differently denominated packages leave the aggregate unknown', () => {
+  for (const extra of [{ PackageCode: 'missing' }, { PackageCode: 'usd', CycleTotalCapacity: '200', CycleRemainCapacity: '200', CapacityUnit: 'USD' }]) {
+    const snapshot = probePrivate.parseCodebuddyResourceSummary({ data: { Packages: [
+      { PackageCode: 'a', CycleTotalCapacity: '100', CycleRemainCapacity: '0', CapacityUnit: 'credits' }, extra
+    ] } }, 1);
+    assert.equal(snapshot.entries[0].remainingPct, null);
+  }
+});
+
+test('capacity parsing rejects booleans, objects, negative and non-finite values', () => {
+  for (const value of [true, false, [], {}, -1, '-1', 'Infinity', NaN]) assert.equal(probePrivate.readCapacity(value), null);
+  assert.equal(probePrivate.readCapacity('0'), 0);
+  assert.equal(probePrivate.readCapacity('1.25'), 1.25);
+});
+
+test('a paid-looking product code cannot override IsPaidUser=false or absent', () => {
+  for (const IsPaidUser of [false, undefined]) {
+    const snapshot = probePrivate.parseCodebuddyResourceSummary(makeSummaryPayload({
+      SubscriptionPackageCode: 'TCACA_code_002_AkiJS3ZHF5', IsPaidUser
+    }), 1);
+    assert.equal(snapshot.account, undefined);
+  }
 });

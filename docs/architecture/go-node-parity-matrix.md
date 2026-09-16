@@ -542,10 +542,12 @@ Node 的 email 取值链**优先读存储字段**（`payload.email`/`credentials
 而 Node 其实**已经**解出了 `chatgptUserId` / `userId`（`codex-auth-metadata.js:68-69`），
 只是身份没用它们——改动量小。
 
-**rekey 未执行，且不应直接执行**：§8.1 要求「必须生成显式映射账本
-（`old_account_ref -> account_ref + resolution`）」，而该账本目前在仓库里**只以散文形式存在、
-没有任何实现**。因此前置交付物是账本 + dry-run；唯一不可自动化的分支是「同一 `user_id`
-对应多条旧记录」的合并裁决（email 向量下会被拆开，`user_id` 向量下会合并，方向反转且不可逆）。
+**rekey 工具已落地**（2026-09-16）：§8.1 要求的映射账本此前在仓库里**只以散文形式存在、
+没有任何实现**，现已补齐——`lib/cli/services/account/codex-identity-rekey.js` +
+`scripts/codex-identity-rekey.js`（默认 dry-run 只写账本；`--apply` 需 `--confirm-apply`，
+且账本有冲突/不可迁移/不属于已知向量的条目就拒绝执行）。重写按构造完整：枚举 SQLite schema
+重写每一个 `account_ref` 列，不靠手工表清单。**对真实数据的 apply 仍待操作者复核账本后执行**
+——仓库里没有真实数据，盲目跑一遍正是 §8.1 禁止的「静默改变既有 accountRef」。
 
 ## `/readyz`：同一条路径上的两套语义（2026-09-16 已按方案 1 闭合）
 

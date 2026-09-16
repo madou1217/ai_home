@@ -17,12 +17,15 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-pool-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const aiHomeDir = path.join(root, 'aih'), hostHomeDir = path.join(root, 'home');
-  const now = Date.now(), email = 'pool@example.invalid';
+  const now = Date.now(), email = 'pool@example.invalid', userId = 'pool-user';
   const jwt = value => `test.${Buffer.from(JSON.stringify(value)).toString('base64url')}.test-signature`;
+  // codex 身份来自 ID Token 的稳定 user_id，邮箱只做展示
+  // （docs/architecture/codex-oauth-identity-vector-adr.md）。
   const auth = generation => ({ auth_mode: 'chatgpt', last_refresh: new Date(now - 100000 + generation * 1000).toISOString(),
     tokens: { access_token: jwt({ iat: Math.floor(now / 1000) - 100 + generation, exp: Math.floor(now / 1000) + 7200,
-      'https://api.openai.com/profile': { email } }), refresh_token: `test-pool-refresh-${generation}`, id_token: jwt({ email }) } });
-  const ref = registerAccountIdentity(fs, aiHomeDir, { provider: 'codex', identitySeed: `oauth:codex:${email}` }).accountRef;
+      'https://api.openai.com/profile': { email } }), refresh_token: `test-pool-refresh-${generation}`,
+      id_token: jwt({ email, 'https://api.openai.com/auth': { chatgpt_user_id: userId } }) } });
+  const ref = registerAccountIdentity(fs, aiHomeDir, { provider: 'codex', identitySeed: `oauth:codex:${userId}` }).accountRef;
   writeAccountNativeAuth(fs, aiHomeDir, ref, { auth: auth(1) });
   const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir });
   const accountStateService = createAccountStateService({ fs, accountStateIndex });

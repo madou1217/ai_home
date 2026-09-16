@@ -11,6 +11,7 @@ const { buildOAuthIdentity, buildApiKeyIdentity } = require('../lib/account/tran
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { buildCodexSnapshotAccount } = require('../lib/account/codex-auth-metadata');
+const { codexOAuthAuth } = require('./codex-identity-fixtures');
 
 function makeSandbox() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-identity-'));
@@ -21,16 +22,31 @@ function registerAccount(sb, provider, cliAccountId, identitySeed) {
   return registerAccountIdentity(fs, sb.root, { provider, cliAccountId, identitySeed }).accountRef;
 }
 
-test('oauth identity: codex email matches transfer-core dedup (the invariant)', () => {
-  const auth = {
-    tokens: { access_token: 'a', account_id: 'acct-1' },
-    email: 'alice@example.com'
-  };
+test('oauth identity: codex user_id matches transfer-core dedup (the invariant)', () => {
+  // The invariant is unchanged — registration and the transfer-core dedup must
+  // agree on one seed. What changed is the vector: `oauth:codex:<user_id>`, not
+  // the email. See docs/architecture/codex-oauth-identity-vector-adr.md.
+  const auth = codexOAuthAuth({ userId: 'alice-user-id', email: 'alice@example.com' });
   const identitySeed = buildOAuthIdentity('codex', auth);
   const result = identity.resolveNativeAuthIdentitySeed('codex', { auth });
   assert.equal(result.identitySeed, identitySeed);
-  assert.equal(result.identitySeed, 'oauth:codex:alice@example.com');
+  assert.equal(result.identitySeed, 'oauth:codex:alice-user-id');
   assert.equal(result.degraded, false);
+});
+
+test('oauth identity: codex never derives its vector from the email', () => {
+  // The regression the ADR exists for: email changes must not move accountRef.
+  const withEmail = codexOAuthAuth({ userId: 'alice-user-id', email: 'alice@example.com' });
+  const withOtherEmail = codexOAuthAuth({ userId: 'alice-user-id', email: 'renamed@example.com' });
+  assert.equal(buildOAuthIdentity('codex', withEmail), buildOAuthIdentity('codex', withOtherEmail));
+
+  // And an email-only credential is unverifiable rather than silently identified
+  // by email.
+  const emailOnly = codexOAuthAuth({ userId: null, email: 'alice@example.com' });
+  assert.equal(buildOAuthIdentity('codex', emailOnly), '');
+  const degraded = identity.resolveNativeAuthIdentitySeed('codex', { auth: emailOnly });
+  assert.equal(degraded.identitySeed, '');
+  assert.equal(degraded.degraded, true);
 });
 
 test('oauth ladder: claude falls back to native uuid when email absent', () => {

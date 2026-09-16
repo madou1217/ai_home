@@ -10,6 +10,7 @@ const {
   buildOAuthIdentity,
   buildApiKeyIdentity
 } = require('../lib/server/web-account-transfer');
+const { codexOAuthAuth } = require('./codex-identity-fixtures');
 
 function makeJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
@@ -238,26 +239,35 @@ test('inferImportProvider recognizes codex auth.json payload', () => {
   }), 'codex');
 });
 
-test('buildOAuthIdentity only accepts provider email for oauth identity', () => {
+test('buildOAuthIdentity requires a stable user id for codex, never the email', () => {
+  // 邮箱不是 codex 的身份：§8.1 要求 accountRef 不因邮箱变化而改变。
+  // 见 docs/architecture/codex-oauth-identity-vector-adr.md。
   const accessToken = makeJwt({
     'https://api.openai.com/profile': {
       email: 'Identity@Example.com'
     }
   });
+
+  // 只有邮箱 → 身份不可验证，而不是 `oauth:codex:identity@example.com`。
   assert.equal(buildCodexAuthIdentityKey({
     tokens: {
       access_token: accessToken,
       refresh_token: 'opaque-refresh-token'
     }
-  }), 'oauth:codex:identity@example.com');
+  }), '');
 
-  assert.equal(buildCodexAuthIdentityKey({
+  // 有稳定 user_id 才派生身份，而且**邮箱换成什么都不影响结果**。
+  const withUser = (email) => buildCodexAuthIdentityKey({
     tokens: {
-      access_token: accessToken,
+      access_token: makeJwt({ 'https://api.openai.com/profile': { email } }),
+      id_token: makeJwt({ 'https://api.openai.com/auth': { chatgpt_user_id: 'user-123' } }),
       refresh_token: 'rt_secret'
     }
-  }), 'oauth:codex:identity@example.com');
+  });
+  assert.equal(withUser('Identity@Example.com'), 'oauth:codex:user-123');
+  assert.equal(withUser('renamed@example.com'), 'oauth:codex:user-123');
 
+  // 连 user_id 都没有（只有 account_id）→ 仍然不可验证。
   assert.equal(buildOAuthIdentity('codex', {
     tokens: {
       refresh_token: 'rt_secret',
@@ -267,8 +277,12 @@ test('buildOAuthIdentity only accepts provider email for oauth identity', () => 
 });
 
 test('buildOAuthIdentity scopes identical email by provider', () => {
-  assert.equal(buildOAuthIdentity('codex', { email: 'same@example.com' }), 'oauth:codex:same@example.com');
   assert.equal(buildOAuthIdentity('gemini', { email: 'same@example.com' }), 'oauth:gemini:same@example.com');
+  // codex 不再以邮箱为身份，但前缀仍按 provider 区分。
+  assert.equal(
+    buildOAuthIdentity('codex', codexOAuthAuth({ userId: 'same', email: 'same@example.com' })),
+    'oauth:codex:same'
+  );
 });
 
 test('buildApiKeyIdentity uses provider normalized url and key', () => {

@@ -1,6 +1,7 @@
 # ADR：Codex OAuth 身份向量统一到 `user_id`
 
-- **状态**：决策已定（Accepted）。**rekey 未执行**，需按 §「Rekey 程序」排期。
+- **状态**：已实施（Implemented）。Node 已切到 `user_id` 向量；rekey 的账本、dry-run 与
+  apply 均已落地并测试；**对真实数据的 apply 仍待操作者复核账本后执行**。
 - **日期**：2026-09-16
 - **依据**：`product-direction-node-go-2026-08-15.md` §8.1「身份与迁移」
 - **触发**：`go-node-parity-matrix.md` 把这条列为「唯一需要决策的项」；用户 2026-09-16 选择
@@ -74,41 +75,66 @@ userId: String(authClaim.user_id || '').trim(),
   `utf8.RuneError`、含控制字符。**非法即 `identity_unverifiable`，不回退邮箱。**
 - `core/accounts/codex/oauth.go:90` — 唯一使用点。
 
-### Node（改）
+### Node（已改）
 
 **身份向量构造**，四处必须同时改，漏一处就会出现「同一个账号两个 `accountRef`」：
 
-| 位置 | 现状 |
+| 位置 | 改动 |
 | --- | --- |
-| `lib/account/account-identity.js:425` | 通用 `oauth:${provider}:${email}`（codex 走这条） |
-| `lib/account/transfer-core.js:117-129` | `extractOAuthEmail` 的 codex 分支 |
-| `lib/server/codex-app-server-account-identity.js:56` | 期望身份的 `identitySeed` |
-| `lib/server/codex-app-server-account-identity.js:91` | app-server 自报身份的 `actualIdentityHash` |
+| `lib/account/codex-auth-metadata.js` | 新增 `buildCodexOAuthIdentitySeed` / `resolveCodexIdentityUserId` / `isCodexIdentityComponent`（唯一实现） |
+| `lib/account/account-identity.js` | codex 分支走新向量，且必须放在通用 email 分支**之前** |
+| `lib/account/transfer-core.js` | `buildOAuthIdentity` 对 codex 直接返回新向量 |
+| `lib/server/codex-app-server-account-identity.js` | 期望身份用新向量；app-server 自报的**邮箱**改为与凭据邮箱直接比对，不再绕身份哈希 |
 
-**claim 提取**（`lib/account/codex-auth-metadata.js:68-69`）需与 Go 对齐两处：
+**第五处（实现时才暴露出来的）**：`lib/account/standard-transfer.js` 的
+`buildFlatAccountExportFileName` 原本要求 `buildOAuthIdentity('codex', auth)` 非空——那对
+codex 等价于「邮箱存在」。身份换成 user_id 后，这条闸门会**误封**凭据里没有 id_token 的账号，
+用户连备份都做不了。已改为：codex 的导出标签优先用邮箱、缺失时回落到 `accountRef` 后缀，
+不再复算身份向量——导出是「搬走一个已注册账号」，它的稳定身份就是 `accountRef`；
+「身份不可派生」该由 rekey 工具报告，不该由导出拒绝。
 
-- 补 `sub` 回退（Go 的第三级，Node 现在没有）。
-- `userId` 现在**只从 `authClaim` 读**，而 `chatgptUserId` 同时读 `authClaim` 和 `authJson`。
-  Go 的取值链在两类 claim 上是统一的，Node 需补齐。
-
-**校验**：Node 需要 `isIdentityComponent` 的等价物（现有 `normalizeEmail` 只做
-`trim().toLowerCase()`，不拒绝 `:`/控制字符）。缺失或非法一律 `identity_unverifiable`。
+**app-server 自报邮箱那一处值得单独记**：`account/read` 只会自报邮箱，所以它和身份向量必须
+分开——否则身份改成 user_id 之后，这道校验闸门会对**每个**账号恒失败。改动前的
+`sha256('oauth:codex:' + email)` 两边对比等价于直接比邮箱，因此改成直接比邮箱在语义上是等价的，
+只是把「这个进程是不是那个账号」与「账号身份怎么派生」解耦了。顺带删掉了因此变成死代码的
+`sameHash`（邮箱不是秘密，常量时间比较没有收益）。
 
 ## Rekey 程序
 
 §8.1 要求「必须生成显式映射账本：`old_account_ref -> account_ref + resolution`」。
-**该账本目前在仓库里只以散文形式存在，没有任何实现**，因此它是本 ADR 的前置交付物。
 
-落地顺序（不可交换）：
+### 已落地的工具
 
-1. **先建账本**，单向，格式 `old_account_ref -> new_account_ref + resolution`。
-2. 对每个 Codex OAuth 账号，用其**当前凭据**同时算出 old（email 向量）与 new（user_id 向量）。
-3. **三态裁决**：
-   - `new` 不存在 → 迁移。
-   - `new` 已存在且指向同一个 old → 无需动作。
-   - `new` 已存在但对应**另一个** old → 冲突，**逐条人工裁决，不自动合并**。
-4. 禁止：双写、回读 fallback、影子账号表（§8.1 明文）。
-5. 回滚：账本保留 old 向量，可按 ledger 反向重放。
+- **共享身份向量模块**：`lib/account/codex-auth-metadata.js` 的
+  `buildCodexOAuthIdentitySeed` / `resolveCodexIdentityUserId`，复刻 Go 的取值链与校验
+  （`chatgpt_user_id` → `user_id` → `sub`；拒绝含 `:`、控制字符、U+FFFD、trim 后为空）。
+- **跨语言钉住**：`contracts/codex-oauth-identity.json` 是两端共读的 15 条向量，
+  由 `test/codex-oauth-identity-vector.test.js` 与
+  `core/accounts/codex/oauth_identity_contract_test.go` 各自跑一遍。种子差一个字符会直接
+  失败，而不是静默铸出第二个账号。
+- **账本 + dry-run + apply**：`lib/cli/services/account/codex-identity-rekey.js`，驱动脚本
+  `scripts/codex-identity-rekey.js`。默认 dry-run，只写账本、不动账号；`--apply` 需要
+  `--confirm-apply`，且账本有任意阻塞项就拒绝执行。
+
+定性不靠猜凭据形状，而是**直接复算两条向量**（拿凭据里的邮箱复算旧 ref、拿稳定 user_id
+复算新 ref），再与落库的 `accountRef` 比。四种结果：`already_current` / `migrate` /
+`conflict` / `unverifiable`（外加 `unrecognized`，用于既不属于任何已知向量的账号）。
+
+重写**按构造完整**：`apply` 枚举 SQLite schema，重写每一个名为 `account_ref` 的列，
+而不是靠手工维护的表清单——新增一张带该列的表会自动进入重写范围，不会静默留下过期引用。
+`account_cli_aliases.account_ref` 是 `account_refs` 的外键且没有 `ON UPDATE CASCADE`，
+所以 `PRAGMA foreign_keys` 必须在 `BEGIN` **之前**关闭（它在事务内是 no-op），提交前再跑
+一次 `foreign_key_check` 兜底。
+
+### 操作顺序（不可交换）
+
+1. `node scripts/codex-identity-rekey.js` —— 只读，产出账本到
+   `<ai-home>/migration/codex-identity-ledger.json`。
+2. **人工复核账本**，逐条裁决冲突。
+3. `node scripts/codex-identity-rekey.js --apply --confirm-apply --ledger <path>`。
+
+**仍待操作者执行的**：第 3 步针对真实数据。仓库里没有真实数据，盲目跑一遍正是 §8.1 禁止的
+「静默改变既有 accountRef」，所以工具把这一步留给复核过账本的人。
 
 ### 唯一不可逆的部分
 
@@ -116,8 +142,14 @@ userId: String(authClaim.user_id || '').trim(),
 `user_id` 向量下它们会**合并成一个**。§8.1 说「仅按邮箱会错误合并真实不同的账号」——
 换成 `user_id` 后，风险变成反方向的「错误合并同一用户的多条记录」。
 
-因此第 3 步的冲突分支**必须人工确认**，这是整条迁移里唯一不能自动化的地方。
-迁移前必须先跑一次 dry-run，把冲突清单列出来。
+因此工具把它判为 `conflict` 并**拒绝 apply**，绝不自动合并；`unverifiable` 与
+`unrecognized` 同样阻塞执行，因为部分迁移会把账号体系留在「一部分旧 ref、一部分新 ref」
+的分裂状态，比不迁移更糟。
+
+### 已知的未覆盖项
+
+`aih.db`（Go 侧的账号库）不在本工具的写入范围内：它由 Go 拥有，重写它属于 Go 的迁移职责。
+Node 侧先迁完再对齐 Go，顺序不能反——反了会让 Go 按旧 ref 找不到已迁移的账号。
 
 ## 影响面
 

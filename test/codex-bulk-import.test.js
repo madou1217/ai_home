@@ -14,11 +14,18 @@ const { registerAccountIdentity } = require('../lib/account/account-registration
 const { normalizeIdentitySeed } = require('../lib/account/account-identity');
 const { buildApiKeyIdentity } = require('../lib/account/transfer-core');
 const { resolveAccountRefByCliId } = require('../lib/server/account-ref-store');
+const { codexAuthClaim } = require('./codex-identity-fixtures');
 
 function makeJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${header}.${body}.sig`;
+}
+
+// Codex OAuth 身份向量是 `oauth:codex:<user_id>`（邮箱不是身份），所以每个 OAuth 夹具的
+// ID Token 都必须带用户 ID。见 docs/architecture/codex-oauth-identity-vector-adr.md。
+function makeCodexIdToken(userId, overrides = {}) {
+  return makeJwt({ ...codexAuthClaim({ chatgpt_user_id: userId }), ...overrides });
 }
 
 function makeService(root, overrides = {}) {
@@ -40,11 +47,11 @@ function resolveTestAccountRef(aiHomeDir, cliAccountId) {
   return record.accountRef;
 }
 
-function registerOAuthAccount(aiHomeDir, cliAccountId, email) {
+function registerOAuthAccount(aiHomeDir, cliAccountId, userId) {
   return registerAccountIdentity(fs, aiHomeDir, {
     provider: 'codex',
     cliAccountId,
-    identitySeed: `oauth:codex:${email}`
+    identitySeed: `oauth:codex:${userId}`
   }).accountRef;
 }
 
@@ -65,7 +72,7 @@ test('importCodexTokensFromOutput stores the first account without creating a pr
       email: 'worker@example.com',
       refresh_token: 'rt_worker_token',
       access_token: 'at_worker_token',
-      id_token: 'id_worker_token',
+      id_token: makeCodexIdToken('worker-user'),
       account_id: 'acct-worker'
     }));
 
@@ -87,7 +94,7 @@ test('importCodexTokensFromOutput stores the first account without creating a pr
   }
 });
 
-test('importCodexTokensFromOutput rejects oauth records without email even when account_id exists', async () => {
+test('importCodexTokensFromOutput rejects oauth records without a stable user id even when account_id exists', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-bulk-import-'));
   try {
     const sourceDir = path.join(root, 'source');
@@ -122,18 +129,18 @@ test('importCodexTokensFromOutput skips existing oauth identity without overwrit
       email: 'worker@example.com',
       refresh_token: 'rt_worker_new',
       access_token: makeJwt({ exp: 1774000000 }),
-      id_token: makeJwt({ email: 'worker@example.com', exp: 1773000000 }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1773000000 }),
       account_id: 'acct-worker',
       last_refresh: '2026-03-08T12:00:00.000Z'
     }));
 
     const { aiHomeDir, service, profilesDir } = makeService(root);
-    const existingAccountRef = registerOAuthAccount(aiHomeDir, '1', 'worker@example.com');
+    const existingAccountRef = registerOAuthAccount(aiHomeDir, '1', 'worker-user');
     writeAccountNativeAuth(fs, aiHomeDir, existingAccountRef, { auth: {
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
       tokens: {
-        id_token: makeJwt({ email: 'worker@example.com', exp: 1772000000 }),
+        id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1772000000 }),
         access_token: makeJwt({ exp: 1772500000 }),
         refresh_token: 'rt_worker_old',
         account_id: 'acct-worker'
@@ -158,7 +165,7 @@ test('importCodexTokensFromOutput skips existing oauth identity without overwrit
   }
 });
 
-test('importCodexTokensFromOutput keeps only the best source credential for the same email identity', async () => {
+test('importCodexTokensFromOutput keeps only the best source credential for the same user identity', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-bulk-import-'));
   try {
     const sourceDir = path.join(root, 'source');
@@ -167,7 +174,7 @@ test('importCodexTokensFromOutput keeps only the best source credential for the 
       email: 'worker@example.com',
       refresh_token: 'rt_worker_old',
       access_token: makeJwt({ exp: 1772500000 }),
-      id_token: makeJwt({ email: 'worker@example.com', exp: 1772000000 }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1772000000 }),
       account_id: 'acct-worker',
       last_refresh: '2026-03-08T10:00:00.000Z'
     }));
@@ -175,7 +182,7 @@ test('importCodexTokensFromOutput keeps only the best source credential for the 
       email: 'worker@example.com',
       refresh_token: 'rt_worker_new',
       access_token: makeJwt({ exp: 1774500000 }),
-      id_token: makeJwt({ email: 'worker@example.com', exp: 1773500000 }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1773500000 }),
       account_id: 'acct-worker',
       last_refresh: '2026-03-08T12:00:00.000Z'
     }));
@@ -293,6 +300,7 @@ test('importCodexTokensFromOutput imports sub2api codex oauth and api-key bundle
           credentials: {
             email: 'sub2api-oauth@example.com',
             access_token: makeJwt({ 'https://api.openai.com/profile': { email: 'sub2api-oauth@example.com' } }),
+            id_token: makeCodexIdToken('sub2api-user', { email: 'sub2api-oauth@example.com' }),
             refresh_token: 'rt_sub2api_oauth',
             chatgpt_account_id: 'acct-sub2api'
           }

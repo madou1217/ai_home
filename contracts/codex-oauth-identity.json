@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "identity_scheme_version": 1,
+  "provider": "codex",
+  "kind": "oauth",
+  "seed_prefix": "oauth:codex:",
+  "claim_namespace": "https://api.openai.com/auth",
+  "profile_claim_namespace": "https://api.openai.com/profile",
+  "user_id_claim_order": [
+    "chatgpt_user_id",
+    "user_id",
+    "sub"
+  ],
+  "source_token": "id_token",
+  "account_ref_algorithm": "acct_ + sha256('unique:' + identitySeed)[:20] (hex)",
+  "note": "Shared cross-language vectors. Both the Node and the Go suites read this file, so a one-character divergence in the identity vector fails a test instead of silently minting a second account for the same upstream account. See docs/architecture/codex-oauth-identity-vector-adr.md.",
+  "vectors": [
+    {
+      "name": "chatgpt_user_id wins over auth user_id and sub",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyLTEyMyIsInVzZXJfaWQiOiJhdXRoLXVzZXIifX0.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "user-123",
+      "want_identity_seed": "oauth:codex:user-123",
+      "want_account_ref": "acct_2cf6c0e7c01fc215249e"
+    },
+    {
+      "name": "auth user_id wins over the standard sub",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJ1c2VyX2lkIjoiYXV0aC11c2VyIn19.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "auth-user",
+      "want_identity_seed": "oauth:codex:auth-user",
+      "want_account_ref": "acct_2026f8c94839127227d0"
+    },
+    {
+      "name": "standard sub is the last resort",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6e319.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "sub-user",
+      "want_identity_seed": "oauth:codex:sub-user",
+      "want_account_ref": "acct_49ee07c1e969650dc70e"
+    },
+    {
+      "name": "leading and trailing whitespace is trimmed",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiIgIHVzZXItMTIzICAifX0.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "user-123",
+      "want_identity_seed": "oauth:codex:user-123",
+      "want_account_ref": "acct_2cf6c0e7c01fc215249e"
+    },
+    {
+      "name": "NEL and NBSP are trimmed the way Go strings.TrimSpace trims them",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiLChXVzZXItMTIzwqAifX0.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "user-123",
+      "want_identity_seed": "oauth:codex:user-123",
+      "want_account_ref": "acct_2cf6c0e7c01fc215249e"
+    },
+    {
+      "name": "a colon is rejected because it would make the seed ambiguous",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyOjEyMyJ9fQ.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a control character is rejected",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyXHUwMDAwMTIzIn19.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "U+FFFD is rejected, matching Go's utf8.RuneError check",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2Vy77-9MTIzIn19.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a whitespace-only chatgpt_user_id is skipped, so the standard sub wins",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiIgICAifX0.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "sub-user",
+      "want_identity_seed": "oauth:codex:sub-user",
+      "want_account_ref": "acct_49ee07c1e969650dc70e"
+    },
+    {
+      "name": "an email alone is never an identity",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIiLCJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20iLCJodHRwczovL2FwaS5vcGVuYWkuY29tL3Byb2ZpbGUiOnsiZW1haWwiOiJ1c2VyQGV4YW1wbGUuY29tIn0sImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6e319.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "claims in the access token are ignored; only the ID token counts",
+      "tokens": {
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF91c2VyX2lkIjoidXNlci0xMjMifSwic3ViIjoic3ViLXVzZXIifQ.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "no tokens at all is not an identity",
+      "tokens": {},
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "an undecodable ID token is not an identity",
+      "tokens": {
+        "id_token": "not-a-jwt",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "every candidate is whitespace-only, so the identity is unverifiable",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIgICAiLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF91c2VyX2lkIjoiICAgIiwidXNlcl9pZCI6IsKFIn19.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    },
+    {
+      "name": "a non-empty but invalid candidate fails instead of falling through to sub",
+      "tokens": {
+        "id_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzdWItdXNlciIsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyOjEyMyJ9fQ.InNpZ25hdHVyZSI",
+        "access_token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhY2Nlc3MtdXNlciJ9.InNpZ25hdHVyZSI"
+      },
+      "want_user_id": "",
+      "want_identity_seed": "",
+      "want_account_ref": ""
+    }
+  ]
+}

@@ -32,6 +32,15 @@ function makeJwt(payload) {
   return `${header}.${body}.sig`;
 }
 
+// Codex OAuth 的身份向量是 `oauth:codex:<user_id>`，不再是邮箱；其它 Provider 仍是邮箱
+// 向量。见 docs/architecture/codex-oauth-identity-vector-adr.md。
+function makeCodexIdToken(userId, overrides = {}) {
+  return makeJwt({
+    'https://api.openai.com/auth': { chatgpt_user_id: userId },
+    ...overrides
+  });
+}
+
 function registerTestAccount(aiHomeDir, provider, cliAccountId, identitySeed) {
   return registerAccountIdentity(fs, aiHomeDir, {
     provider,
@@ -40,8 +49,13 @@ function registerTestAccount(aiHomeDir, provider, cliAccountId, identitySeed) {
   }).accountRef;
 }
 
-function registerOAuthAccount(aiHomeDir, provider, cliAccountId, email) {
-  return registerTestAccount(aiHomeDir, provider, cliAccountId, `oauth:${provider}:${email}`);
+function registerOAuthAccount(aiHomeDir, provider, cliAccountId, identity) {
+  return registerTestAccount(
+    aiHomeDir,
+    provider,
+    cliAccountId,
+    provider === 'codex' ? `oauth:codex:${identity}` : `oauth:${provider}:${identity}`
+  );
 }
 
 function registerApiKeyAccount(aiHomeDir, provider, cliAccountId, env) {
@@ -61,12 +75,12 @@ test('exportCliproxyapiData writes portable data without syncing host config', (
     const aiHomeDir = path.join(root, '.ai_home');
     const hostHomeDir = path.join(root, 'home');
     const outPath = path.join(root, 'cliproxyapi-data.json');
-    const idToken = makeJwt({ email: 'worker@example.com', exp: 1773000000 });
+    const idToken = makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1773000000 });
     const accessToken = makeJwt({
       exp: 1774000000,
       'https://api.openai.com/profile': { email: 'worker@example.com' }
     });
-    const codexAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'worker@example.com');
+    const codexAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'worker-user');
     writeAccountNativeAuth(fs, aiHomeDir, codexAccountRef, { auth: {
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
@@ -141,7 +155,7 @@ test('importCliproxyapiCodexAuths imports codex oauth auth files from local CLIP
     writeJson(path.join(authDir, 'worker@example.com.json'), {
       type: 'codex',
       email: 'worker@example.com',
-      id_token: makeJwt({ email: 'worker@example.com', exp: 1773000000 }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1773000000 }),
       access_token: makeJwt({ exp: 1774000000 }),
       refresh_token: 'rt_worker',
       account_id: 'acct-worker',
@@ -150,18 +164,18 @@ test('importCliproxyapiCodexAuths imports codex oauth auth files from local CLIP
     writeJson(path.join(authDir, 'dupe@example.com.json'), {
       type: 'codex',
       email: 'dupe@example.com',
-      id_token: makeJwt({ email: 'dupe@example.com', exp: 1773000001 }),
+      id_token: makeCodexIdToken('dupe-user', { email: 'dupe@example.com', exp: 1773000001 }),
       access_token: makeJwt({ exp: 1774000001 }),
       refresh_token: 'rt_dupe',
       account_id: 'acct-dupe',
       last_refresh: '2026-03-08T08:00:01.000Z'
     });
-    const existingAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'dupe@example.com');
+    const existingAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'dupe-user');
     writeAccountNativeAuth(fs, aiHomeDir, existingAccountRef, { auth: {
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
       tokens: {
-        id_token: makeJwt({ email: 'dupe@example.com', exp: 1773000001 }),
+        id_token: makeCodexIdToken('dupe-user', { email: 'dupe@example.com', exp: 1773000001 }),
         access_token: makeJwt({ exp: 1774000001 }),
         refresh_token: 'rt_dupe',
         account_id: 'acct-dupe'
@@ -190,7 +204,7 @@ test('importCliproxyapiCodexAuths imports codex oauth auth files from local CLIP
   }
 });
 
-test('importCliproxyapiCodexAuths skips same-email oauth account when incoming credential expires later', () => {
+test('importCliproxyapiCodexAuths skips same-identity oauth account when incoming credential expires later', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cliproxyapi-import-'));
   try {
     const aiHomeDir = path.join(root, '.ai_home');
@@ -201,7 +215,7 @@ test('importCliproxyapiCodexAuths skips same-email oauth account when incoming c
     writeJson(path.join(authDir, 'worker@example.com.json'), {
       type: 'codex',
       email: 'worker@example.com',
-      id_token: makeJwt({ email: 'worker@example.com', exp: 1775000000 }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1775000000 }),
       access_token: makeJwt({ exp: 1775500000 }),
       refresh_token: 'rt_worker_new',
       account_id: 'acct-worker-new',
@@ -209,12 +223,12 @@ test('importCliproxyapiCodexAuths skips same-email oauth account when incoming c
       expired: new Date(1775500000 * 1000).toISOString()
     });
 
-    const existingAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'worker@example.com');
+    const existingAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'worker-user');
     writeAccountNativeAuth(fs, aiHomeDir, existingAccountRef, { auth: {
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
       tokens: {
-        id_token: makeJwt({ email: 'worker@example.com', exp: 1772000000 }),
+        id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com', exp: 1772000000 }),
         access_token: makeJwt({ exp: 1772500000 }),
         refresh_token: 'rt_worker_old',
         account_id: 'acct-worker-old'
@@ -254,7 +268,7 @@ test('importCliproxyapiCodexAuths stores first account without creating a provid
     writeJson(path.join(authDir, 'worker@example.com.json'), {
       type: 'codex',
       email: 'worker@example.com',
-      id_token: makeJwt({ email: 'worker@example.com' }),
+      id_token: makeCodexIdToken('worker-user', { email: 'worker@example.com' }),
       access_token: makeJwt({ exp: 1778000000 }),
       refresh_token: 'rt_worker_token',
       account_id: 'acct-worker',

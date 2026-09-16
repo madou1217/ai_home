@@ -176,6 +176,16 @@ function makeJwt(payload) {
   ].join('.');
 }
 
+// codex OAuth 的身份来自 ID Token 里的稳定 user_id，邮箱不参与派生
+// （见 docs/architecture/codex-oauth-identity-vector-adr.md）。邮箱仍然可以放进
+// claim 里做展示，但它决定不了 accountRef。
+function codexIdToken(userId, overrides = {}) {
+  return makeJwt({
+    'https://api.openai.com/auth': { chatgpt_user_id: userId },
+    ...overrides
+  });
+}
+
 function createLoopbackCallbackStub(calls = []) {
   return (options) => {
     const record = {
@@ -624,6 +634,9 @@ test('createAuthJobManager uses a login runtime and exposes accountRef after OAu
 
   fs.writeFileSync(path.join(runningJob.configDir, 'auth.json'), JSON.stringify({
     tokens: {
+      id_token: codexIdToken('device-user', {
+        'https://api.openai.com/profile': { email: 'device@example.com' }
+      }),
       access_token: makeJwt({
         'https://api.openai.com/profile': { email: 'device@example.com' }
       }),
@@ -756,6 +769,9 @@ test('createAuthJobManager notifies auth job changes for live watchers', async (
   onDataHandler('Visit https://verify.example.com/device and enter code LIVE-1234');
   fs.writeFileSync(path.join(runningJob.configDir, 'auth.json'), JSON.stringify({
     tokens: {
+      id_token: codexIdToken('live-user', {
+        'https://api.openai.com/profile': { email: 'live@example.com' }
+      }),
       access_token: makeJwt({
         'https://api.openai.com/profile': { email: 'live@example.com' }
       }),
@@ -980,7 +996,7 @@ test('createAuthJobManager manages codex browser oauth without spawning a local 
         text: async () => JSON.stringify({
           access_token: 'new-access-token',
           refresh_token: 'rt_new',
-          id_token: makeJwt({ email: 'code@example.com' }),
+          id_token: codexIdToken('code-user', { email: 'code@example.com' }),
           expires_in: 3600
         })
       };
@@ -1054,7 +1070,7 @@ test('createAuthJobManager auto-completes codex browser oauth from loopback call
         text: async () => JSON.stringify({
           access_token: 'new-access-token',
           refresh_token: 'rt_new',
-          id_token: makeJwt({ email: 'loopback@example.com' }),
+          id_token: codexIdToken('loopback-user', { email: 'loopback@example.com' }),
           expires_in: 3600
         })
       };
@@ -1101,7 +1117,7 @@ test('createAuthJobManager keeps manual callback fallback when loopback callback
       text: async () => JSON.stringify({
         access_token: 'new-access-token',
         refresh_token: 'rt_new',
-        id_token: makeJwt({ email: 'manual@example.com' }),
+        id_token: codexIdToken('manual-user', { email: 'manual@example.com' }),
         expires_in: 3600
       })
     }),
@@ -1466,7 +1482,7 @@ test('createAuthJobManager accepts opaque codex refresh token from browser oauth
       text: async () => JSON.stringify({
         access_token: 'new-access-token',
         refresh_token: 'not-rt-token',
-        id_token: makeJwt({ email: 'opaque@example.com' }),
+        id_token: codexIdToken('opaque-user', { email: 'opaque@example.com' }),
         expires_in: 3600
       })
     }),
@@ -1693,7 +1709,7 @@ test('createAuthJobManager preserves succeeded status after oauth artifact compl
     tokens: {
       access_token: 'codex-access-token',
       refresh_token: 'codex-refresh-token',
-      id_token: makeJwt({ email: 'user@example.com' })
+      id_token: codexIdToken('reauth-target-user', { email: 'user@example.com' })
     }
   }));
 
@@ -1712,7 +1728,7 @@ test('createAuthJobManager reauth requires fresh oauth artifacts instead of reus
   const accountRef = registerAccountIdentity(fs, root, {
     provider: 'codex',
     cliAccountId: '9',
-    identitySeed: 'oauth:codex:reauth@example.com'
+    identitySeed: 'oauth:codex:reauth-target-user'
   }).accountRef;
   writeAccountNativeAuth(fs, root, accountRef, {
     auth: {
@@ -1750,9 +1766,12 @@ test('createAuthJobManager reauth requires fresh oauth artifacts instead of reus
         text: async () => JSON.stringify({
           access_token: 'new-access-token',
           refresh_token: 'rt_new',
-          id_token: makeJwt({
+          id_token: codexIdToken('reauth-target-user', {
             email: 'reauth@example.com',
-            'https://api.openai.com/auth': { account_id: 'upstream-reauth' }
+            'https://api.openai.com/auth': {
+              chatgpt_user_id: 'reauth-target-user',
+              account_id: 'upstream-reauth'
+            }
           }),
           expires_in: 3600
         })
@@ -1792,7 +1811,7 @@ test('createAuthJobManager reauth preserves the target when OAuth returns a diff
   const targetRef = registerAccountIdentity(fs, root, {
     provider: 'codex',
     cliAccountId: '9',
-    identitySeed: 'oauth:codex:original@example.com'
+    identitySeed: 'oauth:codex:original-user'
   }).accountRef;
   writeAccountNativeAuth(fs, root, targetRef, {
     auth: {
@@ -1825,9 +1844,12 @@ test('createAuthJobManager reauth preserves the target when OAuth returns a diff
       text: async () => JSON.stringify({
         access_token: 'different-access-token',
         refresh_token: 'rt_different',
-        id_token: makeJwt({
+        id_token: codexIdToken('different-user', {
           email: 'different@example.com',
-          'https://api.openai.com/auth': { account_id: 'upstream-different' }
+          'https://api.openai.com/auth': {
+            chatgpt_user_id: 'different-user',
+            account_id: 'upstream-different'
+          }
         }),
         expires_in: 3600
       })
@@ -1843,7 +1865,7 @@ test('createAuthJobManager reauth preserves the target when OAuth returns a diff
     `${running.redirectUri}?code=ok&state=${running.oauthState}`
   );
 
-  const differentRef = getPublicAccountRef('unique:oauth:codex:different@example.com');
+  const differentRef = getPublicAccountRef('unique:oauth:codex:different-user');
   assert.equal(completed.ok, true);
   assert.equal(manager.getJob(started.jobId).accountRef, differentRef);
   assert.equal(

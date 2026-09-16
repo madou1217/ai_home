@@ -173,6 +173,16 @@ function makeJwt(payload) {
   return `${header}.${body}.sig`;
 }
 
+// codex 的身份来自 ID Token 里的稳定 user_id，邮箱只做展示
+// （docs/architecture/codex-oauth-identity-vector-adr.md）。任何 codex OAuth 夹具都必须带
+// 一个含 user_id 的 ID Token，否则身份不可验证、账号会被判为 invalid。
+function codexIdToken(userId, overrides = {}) {
+  return makeJwt({
+    'https://api.openai.com/auth': { chatgpt_user_id: userId },
+    ...overrides
+  });
+}
+
 function stringifyJson(value) {
   return JSON.stringify(value);
 }
@@ -244,6 +254,8 @@ function makeSub2ApiCodexOauthBundle({ email, refreshToken, upstreamAccountId })
       type: 'oauth',
       credentials: {
         email,
+        // codex 身份来自 ID Token 的稳定 user_id，不是邮箱（见 ADR）。
+        id_token: codexIdToken(`user-${email}`),
         refresh_token: refreshToken,
         chatgpt_account_id: upstreamAccountId
       }
@@ -388,6 +400,7 @@ test('web ui account import streams job state through accounts watch', async () 
           content: JSON.stringify({
             access_token: accessToken,
             refresh_token: 'rt_import_sse',
+            id_token: codexIdToken('import-sse-user'),
             chatgpt_account_id: 'acc_import_sse'
           })
         }), 'utf8')
@@ -463,6 +476,7 @@ test('web ui account import streams job state through accounts websocket watch',
           content: JSON.stringify({
             access_token: accessToken,
             refresh_token: 'rt_import_ws',
+            id_token: codexIdToken('import-ws-user'),
             chatgpt_account_id: 'acc_import_ws'
           })
         }), 'utf8')
@@ -515,7 +529,9 @@ test('web ui account import accepts flat codex oauth json and export returns met
       content: JSON.stringify({
         access_token: accessToken,
         refresh_token: 'rt_test',
-        id_token: '',
+        // 身份只取自 ID Token（与 Go 的 parseIDTokenProfile 一致），所以稳定 user_id 必须
+        // 出现在这里，而不是只在 access token 里。
+        id_token: codexIdToken('user_chatgpt_123'),
         chatgpt_account_id: 'acc_123',
         plan_type: 'team'
       })
@@ -587,7 +603,7 @@ test('web ui account import accepts its own exported bundle content', async () =
     });
     registerStoredAccount(sourceAiHomeDir, {
       provider: 'codex',
-      identitySeed: 'oauth:codex:bundle@example.com',
+      identitySeed: 'oauth:codex:bundle-user',
       nativeAuth: {
         auth: {
           auth_mode: 'chatgpt',
@@ -596,7 +612,7 @@ test('web ui account import accepts its own exported bundle content', async () =
           tokens: {
             access_token: accessToken,
             refresh_token: 'rt_bundle',
-            id_token: '',
+            id_token: codexIdToken('bundle-user'),
             account_id: 'acc_bundle'
           },
           last_refresh: '2026-05-22T00:00:00.000Z'
@@ -749,7 +765,7 @@ test('web ui account import ignores legacy AIH local accountId fields', async ()
                 tokens: {
                   access_token: accessToken,
                   refresh_token: 'rt_legacy_local_id',
-                  id_token: '',
+                  id_token: codexIdToken('legacy-local-id-user'),
                   account_id: 'provider-account-id'
                 }
               }
@@ -1087,6 +1103,7 @@ test('web ui account import does not use provider account_id as local accountRef
             email: 'flat@example.com',
             access_token: accessToken,
             refresh_token: 'rt_flat',
+            id_token: codexIdToken('flat-user'),
             account_id: 'acc_external'
           })
         }), 'utf8')
@@ -1104,14 +1121,17 @@ test('web ui account import does not use provider account_id as local accountRef
   }
 });
 
-test('web ui account import skips same-provider duplicate oauth accounts by email only', async () => {
+test('web ui account import skips same-provider duplicate oauth accounts by user identity', async () => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-dedupe-oauth-'));
   try {
     const deps = createDeps(aiHomeDir);
-    const firstToken = makeJwt({
+    // 去重键是**稳定 user_id**，不是邮箱（见
+    // docs/architecture/codex-oauth-identity-vector-adr.md）。两条记录带同一个 user_id
+    // 才去重；邮箱大小写不同不影响判定。
+    const firstToken = codexIdToken('same-user', {
       'https://api.openai.com/profile': { email: 'same@example.com' }
     });
-    const secondToken = makeJwt({
+    const secondToken = codexIdToken('same-user', {
       'https://api.openai.com/profile': { email: 'SAME@example.com' }
     });
     const importRes = createResCapture();
@@ -1131,12 +1151,14 @@ test('web ui account import skips same-provider duplicate oauth accounts by emai
               provider: 'codex',
               access_token: firstToken,
               refresh_token: 'rt_same_first',
+              id_token: codexIdToken('same-user'),
               account_id: 'provider-account-a'
             },
             {
               provider: 'codex',
               access_token: secondToken,
               refresh_token: 'rt_same_second',
+              id_token: codexIdToken('same-user'),
               account_id: 'provider-account-b'
             }
           ]
@@ -1153,6 +1175,52 @@ test('web ui account import skips same-provider duplicate oauth accounts by emai
     const importedAuth = readCodexAuth(aiHomeDir, accountRef);
     assert.equal(importedAuth.tokens.account_id, 'provider-account-a');
     assert.equal(importedAuth.email, 'same@example.com');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('web ui account import keeps the same email separate when the user id differs', async () => {
+  // 合并方向反转后的正面覆盖：邮箱相同、user_id 不同 = 两个真实不同的账号。
+  // 邮箱向量下它们会被错误合并；user_id 向量下必须保持独立。
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-same-email-'));
+  try {
+    const deps = createDeps(aiHomeDir);
+    const importRes = createResCapture();
+    await handleWebUIRequest({
+      method: 'POST',
+      pathname: '/v0/webui/accounts/import',
+      url: new URL('http://localhost/v0/webui/accounts/import'),
+      req: { headers: {} },
+      res: importRes,
+      options: {},
+      state: {},
+      deps: {
+        ...deps,
+        readRequestBody: async () => Buffer.from(JSON.stringify({
+          accounts: [
+            {
+              provider: 'codex',
+              refresh_token: 'rt_distinct_a',
+              id_token: codexIdToken('distinct-user-a'),
+              account_id: 'provider-account-a'
+            },
+            {
+              provider: 'codex',
+              refresh_token: 'rt_distinct_b',
+              id_token: codexIdToken('distinct-user-b'),
+              account_id: 'provider-account-b'
+            }
+          ]
+        }), 'utf8')
+      }
+    });
+
+    const importBody = await readCompletedImportBody(importRes, deps);
+    assert.equal(importBody.imported, 2);
+    assert.equal(importBody.summary.created, 2);
+    assert.equal(importBody.summary.skipped, 0);
+    assert.equal(listCliAccountRefRecords(fs, aiHomeDir, 'codex').length, 2);
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
@@ -1198,11 +1266,14 @@ test('web ui account import keeps same email separate across oauth providers', a
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-web-account-transfer-provider-scope-'));
   try {
     const deps = createDeps(aiHomeDir);
-    const codexToken = makeJwt({
-      'https://api.openai.com/profile': { email: 'shared@example.com' }
+    // 同一个字符串在两个 Provider 下必须是两个账号。codex 现在用 user_id 派生身份，
+    // 所以这里把同一个值分别当作 codex 的 user_id 与 gemini 的邮箱，保持断言语义不变。
+    const sharedIdentity = 'shared@example.com';
+    const codexToken = codexIdToken(sharedIdentity, {
+      'https://api.openai.com/profile': { email: sharedIdentity }
     });
     const geminiToken = makeJwt({
-      email: 'shared@example.com'
+      email: sharedIdentity
     });
     const importRes = createResCapture();
     await handleWebUIRequest({
@@ -1220,7 +1291,8 @@ test('web ui account import keeps same email separate across oauth providers', a
             {
               provider: 'codex',
               access_token: codexToken,
-              refresh_token: 'rt_shared'
+              refresh_token: 'rt_shared',
+              id_token: codexIdToken(sharedIdentity)
             },
             {
               provider: 'gemini',
@@ -1500,6 +1572,7 @@ test('web ui account import accepts uploaded sub2api TXT files', async () => {
               type: 'oauth',
               credentials: {
                 email: 'upload-txt@example.com',
+                id_token: codexIdToken('upload-txt-user'),
                 refresh_token: 'rt_upload_txt',
                 chatgpt_account_id: 'acc_upload_txt'
               }
@@ -1552,7 +1625,7 @@ test('web ui account import accepts uploaded credential folders', async () => {
           }
         }),
         refresh_token: 'rt_folder_upload',
-        id_token: '',
+        id_token: codexIdToken('folder-user'),
         account_id: 'acc_folder_upload'
       }
     };
@@ -1605,7 +1678,7 @@ test('web ui account import accepts uploaded zip archives', async () => {
           }
         }),
         refresh_token: 'rt_zip_upload',
-        id_token: '',
+        id_token: codexIdToken('zip-user'),
         account_id: 'acc_zip_upload'
       }
     };
@@ -1663,6 +1736,7 @@ test('web ui account import accepts uploaded cpa zip archives with flat codex to
         email: 'cpa-zip@example.com',
         access_token: accessToken,
         refresh_token: 'rt_cpa_zip_upload',
+        id_token: codexIdToken('cpa-zip-user'),
         account_id: 'acc_cpa_zip_upload'
       })
     }]);
@@ -1786,6 +1860,7 @@ test('web ui account import accepts uploaded cliproxy zip roots with nested code
         email: 'cliproxy-root@example.com',
         access_token: accessToken,
         refresh_token: 'rt_cliproxy_root_upload',
+        id_token: codexIdToken('cliproxy-root-user'),
         account_id: 'acc_cliproxy_root_upload'
       })
     }]);
@@ -1899,6 +1974,7 @@ test('web ui account import works when fs only exposes ensureDirSync instead of 
       content: JSON.stringify({
         access_token: accessToken,
         refresh_token: 'rt_test_compat',
+        id_token: codexIdToken('compat-user'),
         chatgpt_account_id: 'acc_456',
         plan_type: 'team'
       })

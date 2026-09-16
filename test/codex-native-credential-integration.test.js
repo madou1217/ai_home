@@ -23,10 +23,15 @@ const jwt = value => `test.${Buffer.from(JSON.stringify(value)).toString('base64
 function auth(generation, email = 'native@example.invalid') {
   const now = TEST_NOW_SECONDS;
   const iat = now - 3600 + generation * 600;
+  // codex 的身份来自 ID Token 里的稳定 user_id，邮箱只做展示
+  // （docs/architecture/codex-oauth-identity-vector-adr.md）。这里从邮箱派生一个稳定
+  // user_id，让不同邮箱仍然代表不同账号，同时邮箱本身不再参与身份派生。
+  const userId = `user-${email}`;
   return { auth_mode: 'chatgpt', last_refresh: new Date(iat * 1000).toISOString(), tokens: {
     access_token: jwt({ iat, exp: now + 7200, 'https://api.openai.com/profile': { email },
       'https://api.openai.com/auth': { chatgpt_account_id: 'test-workspace' } }),
-    id_token: jwt({ email }), refresh_token: `test-refresh-${generation}-${email}`, account_id: 'test-workspace'
+    id_token: jwt({ email, 'https://api.openai.com/auth': { chatgpt_user_id: userId } }),
+    refresh_token: `test-refresh-${generation}-${email}`, account_id: 'test-workspace'
   } };
 }
 function fixture(t) {

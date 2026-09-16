@@ -13,6 +13,14 @@ const {
 } = require('../lib/server/account-credential-store');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { readTransferMetadata } = require('../lib/account/transfer-metadata-store');
+const { buildCodexIdToken } = require('./codex-identity-fixtures');
+
+// codex 的身份来自 ID Token 里的稳定 user_id，邮箱只做展示
+// （docs/architecture/codex-oauth-identity-vector-adr.md）。所以任何 codex OAuth 夹具
+// 都必须带一个含 user_id 的 ID Token，否则身份不可验证。
+function codexIdToken(userId) {
+  return buildCodexIdToken({ 'https://api.openai.com/auth': { chatgpt_user_id: userId } });
+}
 
 function getSingleCredentialRecord(aiHomeDir, provider) {
   const records = listAccountCredentialRecords(fs, aiHomeDir, provider);
@@ -73,6 +81,8 @@ function makeSub2ApiCodexOauthBundle({ email, refreshToken, accountId }) {
       type: 'oauth',
       credentials: {
         email,
+        // codex 身份来自 ID Token 的稳定 user_id，不是邮箱（见 ADR）。
+        id_token: codexIdToken(`user-${email}`),
         refresh_token: refreshToken,
         chatgpt_account_id: accountId
       }
@@ -426,6 +436,7 @@ test('runUnifiedImport imports sub2api account TXT files', async () => {
           type: 'oauth',
           credentials: {
             email: 'txt-codex@example.com',
+            id_token: codexIdToken('txt-codex-user'),
             refresh_token: 'rt_txt_codex',
             chatgpt_account_id: 'acc_txt_codex'
           }
@@ -703,6 +714,7 @@ test('runUnifiedImport infers cpa zip folders with flat codex token JSON files',
     fs.writeFileSync(path.join(zipExtractDir, 'cpa', 'token_worker.json'), JSON.stringify({
       type: 'codex',
       email: 'cpa@example.com',
+      id_token: codexIdToken('cpa-user'),
       access_token: '',
       refresh_token: 'rt_cpa_worker',
       account_id: 'acc_cpa_worker'
@@ -899,6 +911,7 @@ test('runUnifiedImport imports mixed flat single-account JSON zip roots through 
       type: 'oauth',
       credentials: {
         email: 'worker@example.com',
+        id_token: codexIdToken('worker-user'),
         refresh_token: 'rt_worker',
         chatgpt_account_id: 'acc_worker'
       }
@@ -999,6 +1012,7 @@ test('runUnifiedImport infers nested cliproxy zip roots with codex token JSON fi
     fs.writeFileSync(path.join(zipExtractDir, 'cliproxy-export', 'cpa', 'token_nested.json'), JSON.stringify({
       type: 'codex',
       email: 'nested-cpa@example.com',
+      id_token: codexIdToken('nested-cpa-user'),
       access_token: '',
       refresh_token: 'rt_nested_cpa_worker',
       account_id: 'acc_nested_cpa_worker'

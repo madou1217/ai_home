@@ -8,10 +8,21 @@ const { getPublicAccountRef } = require('../lib/account/public-account-ref');
 const {
   createCodexAppServerAccountIdentityValidator
 } = require('../lib/server/codex-app-server-account-identity');
+const {
+  DEFAULT_CODEX_EMAIL,
+  DEFAULT_CODEX_USER_ID,
+  codexAccountRef,
+  codexOAuthAuth
+} = require('./codex-identity-fixtures');
 
+// accountRef 现在从 `oauth:codex:<user_id>` 派生，不再是邮箱
+// （docs/architecture/codex-oauth-identity-vector-adr.md）。凭据必须带一个含用户 ID 的
+// ID Token，否则身份不可验证。
 function oauthFixture(overrides = {}) {
-  const email = overrides.email || 'native@example.com';
-  const accountRef = getPublicAccountRef(`unique:oauth:codex:${email}`);
+  const email = overrides.email || DEFAULT_CODEX_EMAIL;
+  const userId = overrides.userId === undefined ? DEFAULT_CODEX_USER_ID : overrides.userId;
+  const auth = overrides.auth || codexOAuthAuth({ userId, email });
+  const accountRef = overrides.accountRef || codexAccountRef(userId);
   const runtimeDir = path.join('/tmp', 'aih-codex-identity', accountRef);
   const validator = createCodexAppServerAccountIdentityValidator({
     accountRef,
@@ -23,10 +34,10 @@ function oauthFixture(overrides = {}) {
       accountRef,
       provider: 'codex',
       env: {},
-      nativeAuth: { auth: { email, tokens: { access_token: 'secret-token' } } }
+      nativeAuth: { auth }
     })
   });
-  return { accountRef, email, runtimeDir, validator };
+  return { accountRef, auth, email, userId, runtimeDir, validator };
 }
 
 function assertErrorDoesNotExpose(error, sensitiveValues) {
@@ -161,7 +172,9 @@ test('identity validator rejects a credential record bound to a foreign accountR
     readAccountCredentialRecord: () => ({
       provider: 'codex',
       env: {},
-      nativeAuth: { auth: { email: fixture.email } }
+      // 凭据本身是完好的（含用户 ID），失败必须来自「它不属于这个 accountRef」，
+      // 而不是来自身份不可验证——否则这条测试会因为错的原因通过。
+      nativeAuth: { auth: fixture.auth }
     })
   });
 
@@ -171,6 +184,26 @@ test('identity validator rejects a credential record bound to a foreign accountR
       accountResult: { account: { type: 'chatgpt', email: fixture.email } }
     }),
     (error) => error.code === 'codex_account_identity_local_mismatch'
+  );
+});
+
+test('identity validator fails closed when the credential carries no stable user id', async () => {
+  // 邮箱不是身份。改动前这里会用邮箱派生出一个 accountRef 并放行；现在必须拒绝，
+  // 因为按邮箱派生的账号会在邮箱变更时改写 accountRef（§8.1 明文禁止）。
+  const fixture = oauthFixture({
+    auth: codexOAuthAuth({ userId: null, email: 'native@example.com' })
+  });
+
+  await assert.rejects(
+    fixture.validator({
+      initializeResult: { codexHome: path.join(fixture.runtimeDir, '.codex') },
+      accountResult: { account: { type: 'chatgpt', email: fixture.email } }
+    }),
+    (error) => {
+      assert.equal(error.code, 'codex_account_identity_unavailable');
+      assertErrorDoesNotExpose(error, [fixture.email, 'secret-token']);
+      return true;
+    }
   );
 });
 

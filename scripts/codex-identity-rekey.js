@@ -35,6 +35,7 @@ function printHelp() {
     'Default is a dry run: it writes the mapping ledger and changes nothing.',
     '',
     'Options:',
+    '  --provider NAME      codex (default) or grok; identity migrations never cross Providers.',
     '  --ai-home PATH       AIH data root. Defaults to AIH_HOME_DIR/AIH_HOME/AI_HOME or ~/.ai_home.',
     '  --ledger PATH        Ledger path. Defaults to <ai-home>/migration/codex-identity-ledger.json.',
     '  --apply              Rewrite stored accountRefs from a previously reviewed ledger.',
@@ -56,13 +57,18 @@ function readOptionValue(argv, index, name) {
 }
 
 function parseArgs(argv) {
-  const options = { apply: false, confirmApply: false, json: false, aiHome: '', ledger: '', help: false };
+  const options = { apply: false, confirmApply: false, json: false, aiHome: '', ledger: '', help: false, provider: 'codex' };
   for (let index = 0; index < argv.length; index += 1) {
     const token = String(argv[index] || '');
     if (token === '--apply') options.apply = true;
     else if (token === '--confirm-apply') options.confirmApply = true;
     else if (token === '--json') options.json = true;
     else if (token === '--help' || token === '-h') options.help = true;
+    else if (token === '--provider' || token.startsWith('--provider=')) {
+      const read = readOptionValue(argv, index, '--provider');
+      if (!['codex', 'grok'].includes(read.value)) throw new Error('unsupported_identity_rekey_provider');
+      options.provider = read.value; index += read.consumed;
+    }
     else if (token === '--ai-home' || token.startsWith('--ai-home=')) {
       const read = readOptionValue(argv, index, '--ai-home');
       options.aiHome = read.value;
@@ -85,9 +91,9 @@ function resolveAiHomeDir(explicit) {
   return aiHomeDir;
 }
 
-function formatSummary(summary) {
+function formatSummary(summary, provider = 'codex') {
   return [
-    `codex 账号总数            ${summary.total}`,
+    `${provider} 账号总数            ${summary.total}`,
     `已在 user_id 向量（不动） ${summary.already_current}`,
     `API-key（不适用，不动）   ${summary.not_applicable || 0}`,
     `可迁移                    ${summary.migrate}`,
@@ -104,7 +110,7 @@ function main(argv) {
     return 0;
   }
   const aiHomeDir = resolveAiHomeDir(options.aiHome);
-  const ledgerPath = String(options.ledger || '').trim() || path.join(aiHomeDir, LEDGER_RELATIVE_PATH);
+  const ledgerPath = String(options.ledger || '').trim() || path.join(aiHomeDir, 'migration', `${options.provider}-identity-ledger.json`);
 
   if (options.apply) {
     if (!options.confirmApply) {
@@ -120,6 +126,7 @@ function main(argv) {
       process.stderr.write(`拒绝执行：读取账本失败 ${ledgerPath}: ${error.message}\n`);
       return 2;
     }
+    if (ledger.provider !== options.provider) throw new Error('ledger_provider_mismatch');
     const result = applyCodexIdentityRekey({ fs, aiHomeDir, ledger });
     if (!result.applied) {
       process.stderr.write(`rekey 未执行：${result.reason}\n`);
@@ -133,7 +140,7 @@ function main(argv) {
     return 0;
   }
 
-  const { ledger, summary } = planCodexIdentityRekey({ fs, aiHomeDir });
+  const { ledger, summary } = planCodexIdentityRekey({ fs, aiHomeDir, provider: options.provider });
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
   // The ledger carries account identifiers/email; do not create world-readable diagnostics.
   const tempPath = `${ledgerPath}.${process.pid}.tmp`;
@@ -145,14 +152,14 @@ function main(argv) {
     return 0;
   }
   process.stdout.write(`账本已写入 ${ledgerPath}（本次未改动任何账号）。\n\n`);
-  process.stdout.write(`${formatSummary(summary)}\n`);
+  process.stdout.write(`${formatSummary(summary, options.provider)}\n`);
   const applicability = ledgerIsApplicable(ledger);
   if (!applicability.applicable) {
     process.stdout.write(`\n执行前必须先解决：\n- ${applicability.blockers.join('\n- ')}\n`);
   } else if (summary.migrate > 0) {
     process.stdout.write(
       '\n账本无阻塞。复核后执行：\n'
-      + `  node scripts/codex-identity-rekey.js --apply --confirm-apply --ledger ${ledgerPath}\n`
+      + `  node scripts/codex-identity-rekey.js --provider ${options.provider} --apply --confirm-apply --ledger ${ledgerPath}\n`
     );
   } else {
     process.stdout.write('\n没有需要迁移的账号。\n');

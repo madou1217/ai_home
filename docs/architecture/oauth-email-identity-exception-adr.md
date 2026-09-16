@@ -76,3 +76,11 @@ refresh_token rt-2 -> oauth:kiro:token:1f23b7dadfb229cb
   所以拒绝比回退更正确。
 - 不授权把 `grok` 的优先级问题一并归入「例外」。`grok` 的凭据里**有**稳定 `user_id`，
   却被邮箱压过——那是**违规**，不是例外，必须修（见 spec 的「关闭顺序建议」）。
+
+
+## 2026-09-16：Grok 违规已修正
+
+Grok 不再属于本 ADR 的待修项：稳定 user_id/userId 优先，其次 principal_id/principalId，
+冲突或缺失时返回不可核验；规范化后的去重 ID 集合参与摘要，邮箱与轮换令牌不参与。
+已有账号重登保留原 accountRef；需要改写引用时显式使用通用 OAuth rekey v2 账本。
+Kiro 的证据限制不变：本机不存在对应原生存储或 AIH 账号，不能虚构稳定字段。

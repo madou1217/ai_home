@@ -15,6 +15,9 @@
   身份或签发方不同不互换，时间相同但令牌不同不猜测覆盖。
 - 复用既有账号引用并 CAS 写入；独立 App 更新经 Server 生命周期回收，既有同授权 CN
   产品账号同步更新。国际 CodeBuddy/WorkBuddy 即使 uid 相同也保留各自授权。
+- CN CodeBuddy 的独立CLI与WorkBuddy内嵌CLI分别读取两个固定 host ID。账号隔离的运行目录
+  同时生成两份受管投影；任一原生读取器续期后先回收较新版本再同步投影，DB仍为唯一持久真值。
+  不复制到宿主另一应用、不跨用户/签发方覆盖。
 - 捕获、注册、投影、宿主同步、后台观察与额度读取接线完成。账号在 DB 已有可验证凭据时，
   不再要求先启动一次 CLI。删除标记阻止自动重新登记；更新通知失败会重试。
 - 10085 WAF 403 不再标为认证失效。配额返回期间凭据发生变化则拒绝发布旧结果。
@@ -48,23 +51,34 @@
   2可迁移、0身份冲突；存在外部运行引用与嵌入式路径，**未对生产执行 apply**。
 - 修正 pending OAuth 成功测试夹具：使用已上线的稳定 user_id，而非仅 email；原有成功/原子性断言不变。
 
+### D. Grok 稳定身份与按 Provider 参数化的迁移
+
+- Grok 稳定用户ID优先，不再以可变邮箱或轮换令牌派生身份。别名冲突、非法字符或缺失稳定ID时拒绝。
+- 多个原生授权配置按去重、排序后的稳定ID集合生成摘要；单纯更新邮箱或续期不创建新身份。
+- 捕获拒绝不同用户，重登保留同身份既有旧引用；多条历史记录实际属于同用户时拒绝自动挑选。
+- `scripts/oauth-identity-rekey.js --provider codex|grok` 复用同一v2规划/事务工具；
+  旧Codex脚本保持兼容，不建立运行时旧向量fallback或影子账号表。
+- Grok 真实数据只读 dry-run：2条可迁移、0身份冲突，但外部引用/嵌入式路径仍需离线协调，未apply。
+- 核心向量、别名冲突、邮箱变化、令牌轮换、旧引用保留、跨用户拒绝、两种旧向量迁移均有回归。
+
 ## 验证
 
 - `node --test test/codex-identity-rekey.test.js test/codex-rekey-safety.test.js test/pty-runtime.test.js`：194/194。
 - CodeBuddy凭据/配额/原生投影/宿主/后台相关：137/137。
 - native-session / WorkBuddy / provider runtime相关：137/137；生产子进程链路追加2/2。
-- Node 22.16.0 完整 `npm test`：7325项，7281通过，0失败，44跳过。
+- Node 22.16.0 完整 `npm test`：7340项，7296通过，0失败，44跳过。
 - Web `bun test web/src`：524通过、0失败；没有修改web源码。
 - models SDK离线一致性检查通过；Go core/providers、providerlaunch、providercli三包通过。
-- 远程CI结果在最终交付状态中记录，不把跳过的native smoke说成运行成功。
+- 首轮Ubuntu CI发现旧安装测试错误调用 `resolveDesktopLifecyclePlans(options)`，把平台对象当action，
+  macOS上偶然走默认平台通过而Linux失败。已改成 `('uninstall', options)`，分别验证cask和精确清理路径，
+  不是跳过平台断言。最终远程CI结论见对应提交检查，不把跳过的native smoke说成运行成功。
 
 ## 尚不能自动执行的操作，不以代码交付代替数据审批
 
 - 真实rekey必须先处置账本所列活动/外部引用，给出停写、备份和映射计划；不能为清空TODO破坏旧线程。
 - Kiro本机两处已知原生存储均不存在，AIH账号库也没有Kiro账号；无真实材料可证明新的稳定身份字段。
   不编造JWT字段或把旋转token哈希重新命名为稳定身份。
-- Grok真实载荷同时存在user_id/principal_id/email；原规格已知优先级问题属独立身份版本迁移，
-  本次不在后台凭据修复里静默改写现存Grok账号引用。
+- Grok身份选择缺陷与通用工具已修复；真实账号引用改写仍受账本门禁保护，不在后台静默执行。
 - 其余9个Provider的Go完整账号域属于原评审明确标注的范围扩张，Go aih.db也仍由Go迁移链拥有。
   本次没有切换正式CLI/Web/Server ownership，也没有创建虚假Go provider空实现。
 

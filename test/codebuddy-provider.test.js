@@ -630,7 +630,7 @@ test('the shared credential projects into the sandbox HOME and back to the host'
     assert.ok(runtimeDir, `${provider}: runtime dir must resolve`);
 
     const materialized = materializeProviderAuth(fs, runtimeDir, provider, { aiHomeDir, accountRef });
-    assert.equal(materialized.materialized, 1, `${provider}: ${JSON.stringify(materialized)}`);
+    assert.equal(materialized.materialized, provider === 'codebuddycn' ? 2 : 1, `${provider}: ${JSON.stringify(materialized)}`);
 
     // CLI 用 os.homedir() 定位凭据：沙箱里必须是同样的 HOME 相对路径。
     const relativePath = [...CODEBUDDY_EXTENSION_AUTH_DIR, expectedFile];
@@ -767,9 +767,15 @@ test('the two WorkBuddy providers are desktop-only and each owns a distinct app'
     assert.equal(plans.length, 1, provider);
     assert.deepEqual(plans[0].args, ['install', '--cask', cask], provider);
     // 卸载同样走同一个 cask，避免"装国际站、卸国内站"。
-    const lifecycle = installer.resolveDesktopLifecyclePlans({ platform: 'darwin', hostHomeDir: '/h' });
-    assert.equal(lifecycle.length, 1, provider);
-    assert.deepEqual(lifecycle[0].args, ['uninstall', '--cask', cask], provider);
+    const lifecycle = installer.resolveDesktopLifecyclePlans('uninstall', { platform: 'darwin', hostHomeDir: '/h' });
+    const caskPlans = lifecycle.filter(plan => plan.command === 'brew');
+    assert.equal(caskPlans.length, 1, provider);
+    assert.deepEqual(caskPlans[0].args, ['uninstall', '--cask', cask], provider);
+    const cleanup = lifecycle.find(plan => plan.args.includes('--aih-managed-path-cleanup'));
+    assert.ok(cleanup, `${provider}: declared user-installed application cleanup`);
+    const cleanupPayload = JSON.parse(Buffer.from(cleanup.args.at(-1), 'base64').toString('utf8'));
+    assert.deepEqual(cleanupPayload.trees, [provider === 'workbuddy'
+      ? '/h/Applications/WorkBuddy AI.app' : '/h/Applications/WorkBuddy.app']);
     // 不声明 CLI：WorkBuddy 不对独立分发 CLI（把 CodeBuddy runtime 内嵌在 App 内）。
     assert.equal(typeof installer.listCliBinaryNames, 'undefined', provider);
   }

@@ -1,5 +1,11 @@
 # OAuth 身份向量规格（Node 为参考实现）
 
+> 2026-09-16 修订：Grok 已改为稳定 ID 集合向量，不再让邮箱优先，也不以令牌降级创建账号。
+> `scripts/oauth-identity-rekey.js --provider grok` 提供显式 v2 账本与事务迁移；
+> 原生重登按实际身份匹配并沿用旧引用，不在后台静默 rekey。
+> 历史分析保留在下文；当前可执行合同见 `test/grok-stable-identity.test.js`，
+> 全部交付状态见 [交付记录](../maintenance/provider-review-delivery-20260916.md)。
+
 > 这份文档存在的原因很具体：**Go 目前只为 `codex`、`claude`、`agy` 三个 Provider 实现了身份派生**
 > （`core/accounts/` 下只有这三个包）。其余 Provider 的向量**只存在于 Node**。
 > Go 以后实现它们时，必须逐字节照抄；否则就会重演「同一个上游账号在两端铸出两个 `accountRef`」——

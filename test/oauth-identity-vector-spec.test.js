@@ -7,7 +7,7 @@
 // one of these vectors, this file fails and points at the spec, instead of the
 // change landing silently.
 //
-// Two of the assertions below deliberately pin **known §8.1 violations**. They
+// The Kiro assertion below deliberately pins **known §8.1 violations**. They
 // are written as characterizations, not as endorsements: they exist so the
 // violation is visible in CI and so fixing it is a conscious act that updates
 // this file. Read the comments before "fixing" a failure here.
@@ -74,22 +74,12 @@ test('the codebuddy family scopes the same subject by provider', () => {
 // 并且让修复成为一个必须显式改动本文件的动作。修的时候请一并更新 spec 文档。
 // ---------------------------------------------------------------------------
 
-test('KNOWN §8.1 VIOLATION: grok lets the mutable email beat an available stable id', () => {
-  // §8.1 要求「accountRef 创建后不因邮箱变化而改变」。这里凭据同时提供了
-  // `user_id`（稳定）与 `email`（可变），却选了 email。
-  //
-  // 与 Codex 修复前的病完全同形。修法明确（调换优先级），但会改写既有 grok 账号的
-  // accountRef，所以需要自己的迁移账本，不能静默改。
-  const withStableId = seedFor('grok', {
-    auth: { access_token: 'at', refresh_token: 'rt', email: 'g@example.com', user_id: 'grok-stable-1' }
-  });
-  assert.equal(withStableId, 'oauth:grok:g@example.com');
-
-  // 同一个 user_id、改邮箱 → 身份跟着变。这就是违规本身。
-  const renamedEmail = seedFor('grok', {
-    auth: { access_token: 'at', refresh_token: 'rt', email: 'renamed@example.com', user_id: 'grok-stable-1' }
-  });
-  assert.notEqual(renamedEmail, withStableId);
+test('grok ignores mutable email when a stable native user id is available', () => {
+  const before = seedFor('grok', { auth: { key: 'at', refresh_token: 'rt', email: 'g@example.com', user_id: 'grok-stable-1' } });
+  const after = seedFor('grok', { auth: { key: 'rotated', refresh_token: 'new', email: 'renamed@example.com', user_id: 'grok-stable-1' } });
+  assert.equal(after, before);
+  assert.match(before, /^oauth:grok:auth:[a-f0-9]{16}$/);
+  assert.equal(seedFor('grok', { auth: { key: 'at', email: 'g@example.com' } }), '');
 });
 
 test('KNOWN §8.1 VIOLATION: kiro rotates its accountRef when the credential rotates', () => {

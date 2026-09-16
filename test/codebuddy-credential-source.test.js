@@ -177,3 +177,25 @@ test('deleting a legacy family account also suppresses its canonical native obse
   deleteAccountRef(fs, f.aiHomeDir, legacy);
   assert.throws(() => f.adopt('codebuddy', c, { automatic: true }), /account_deleted_by_user/);
 });
+
+
+test('CN projection works with both official CLI distributions and reclaims renewal from either reader', t => {
+  const f = fixture(t), old = credential('codebuddycn', { iat: older }), fresh = credential('codebuddycn', { iat: newer });
+  const a = f.adopt('codebuddycn', old), runtime = resolveAccountRuntimeDir(f.aiHomeDir, 'codebuddycn', a.accountRef);
+  const options = { aiHomeDir: f.aiHomeDir, accountRef: a.accountRef };
+  assert.equal(materializeProviderAuth(fs, runtime, 'codebuddycn', options).materialized, 2);
+  f.write('codebuddycn', fresh, runtime, 1);
+  assert.equal(materializeProviderAuth(fs, runtime, 'codebuddycn', options).materialized, 2);
+  for (const file of codebuddyCredentialPaths(runtime, 'codebuddycn')) assert.deepEqual(JSON.parse(fs.readFileSync(file)), fresh);
+  assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, a.accountRef).credentials, fresh);
+  assert.equal(fs.existsSync(codebuddyCredentialPaths(f.home, 'codebuddycn')[0]), false);
+});
+
+test('CN mirror does not overwrite a different user found in the other distribution file', t => {
+  const f = fixture(t), a = f.adopt('codebuddycn', credential('codebuddycn'));
+  const runtime = resolveAccountRuntimeDir(f.aiHomeDir, 'codebuddycn', a.accountRef);
+  const other = credential('codebuddycn', { uid: 'different-user' }); const file = f.write('codebuddycn', other, runtime, 1);
+  const result = materializeProviderAuth(fs, runtime, 'codebuddycn', { aiHomeDir: f.aiHomeDir, accountRef: a.accountRef });
+  assert.equal(result.missing, true); assert.equal(result.materialized, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), other);
+});

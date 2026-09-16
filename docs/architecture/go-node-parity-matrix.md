@@ -428,7 +428,9 @@ Go    acct_4a6fd2d115fe1edacb4a   （personal）
 `accountRef` 依然不同，因此 Node 旧账号迁移仍必须按
 [`product-direction-node-go-2026-08-15.md` §8.1](./product-direction-node-go-2026-08-15.md)
 生成显式映射账本。把 Node 切到 `user_id` 会改写既有生产 `accountRef`，属于 §8.1 要求
-「另写 ADR 和显式 rekey」的变更，本轮不执行。
+「另写 ADR 和显式 rekey」的变更——**ADR 已于 2026-09-16 落地**
+（[`codex-oauth-identity-vector-adr.md`](./codex-oauth-identity-vector-adr.md)），
+决策为「统一到 `user_id`、Node 改」，但 rekey 本身**未执行**，需先补 §8.1 要求的映射账本。
 
 ### 受管 Codex provider key
 
@@ -527,12 +529,23 @@ Go 原先有两个键，都不等于规范键：
 | `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
 
-### 唯一需要决策的项：Codex OAuth 身份向量
+### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）
 
 两端 `acct_` 派生算法逐字节一致（`acct_` + `sha256("unique:" + identitySeed)` 前 20 位十六进制），
-差异只在种子。把 Node 也切到 `user_id` 才能让两端种子一致，但那会**改写既有生产 `accountRef`**，
-按 `product-direction-node-go-2026-08-15.md` §8.1 属于「必须另写 ADR 和显式 rekey、不能静默改变
-既有 accountRef」的变更。因此在拿到显式授权前不动 Node，Go 侧的 workspace 排除已独立完成。
+差异只在种子。用户 2026-09-16 选定「写 ADR + 显式 rekey」，ADR 见
+[`codex-oauth-identity-vector-adr.md`](./codex-oauth-identity-vector-adr.md)。
+
+**结论：统一到 `user_id`，Go 不改、Node 改。** 判据不是「跟 Go 走」，而是 §8.1 自己写死的两条
+约束 Node 都违反了：`accountRef` 不得因邮箱变化而改变、不得回退邮箱。更硬的一条证据是
+Node 的 email 取值链**优先读存储字段**（`payload.email`/`credentials.email`/`meta.email` …
+六个本地字段，只有最后两个才解 JWT），所以 Node 的 `accountRef` 可能根本不由上游事实决定。
+而 Node 其实**已经**解出了 `chatgptUserId` / `userId`（`codex-auth-metadata.js:68-69`），
+只是身份没用它们——改动量小。
+
+**rekey 未执行，且不应直接执行**：§8.1 要求「必须生成显式映射账本
+（`old_account_ref -> account_ref + resolution`）」，而该账本目前在仓库里**只以散文形式存在、
+没有任何实现**。因此前置交付物是账本 + dry-run；唯一不可自动化的分支是「同一 `user_id`
+对应多条旧记录」的合并裁决（email 向量下会被拆开，`user_id` 向量下会合并，方向反转且不可逆）。
 
 ## `/readyz`：同一条路径上的两套语义（2026-09-16 已按方案 1 闭合）
 

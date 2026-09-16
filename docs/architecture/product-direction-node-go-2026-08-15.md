@@ -241,6 +241,14 @@ Claude 等 Provider 的身份向量，必须另写 ADR 和显式 rekey/mapping�
 把 Node 也切到 `user_id` 属于会改写既有生产 `accountRef` 的变更，按本节要求必须另写 ADR
 并显式 rekey，不得静默执行。
 
+**2026-09-16 补充：ADR 已落地。** 见
+[`codex-oauth-identity-vector-adr.md`](./codex-oauth-identity-vector-adr.md)。决策为
+**统一到 `user_id`（Go 不改、Node 改）**，判据是本节的既有条款而非「跟 Go 走」——Node 现行的
+`oauth:codex:<email>` 同时违反「`accountRef` 不因邮箱变化而改变」和「不得回退邮箱」两条，
+且其 email 取值链优先读本地存储字段，`accountRef` 可能不由上游事实决定。
+本节要求的「显式映射账本（`old_account_ref -> account_ref + resolution`）」**目前尚无实现**，
+是 rekey 的前置交付物；rekey 本身未执行。
+
 ### 8.2 NativeCredentialLease
 
 Go-owned 账号启动原生 CLI 时，凭据仍只属于 Go。Go 签发一次有界

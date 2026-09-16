@@ -89,6 +89,7 @@ function formatSummary(summary) {
   return [
     `codex 账号总数            ${summary.total}`,
     `已在 user_id 向量（不动） ${summary.already_current}`,
+    `API-key（不适用，不动）   ${summary.not_applicable || 0}`,
     `可迁移                    ${summary.migrate}`,
     `冲突（需人工裁决）        ${summary.conflict}`,
     `缺稳定 user_id（不可迁移）${summary.unverifiable}`,
@@ -134,7 +135,10 @@ function main(argv) {
 
   const { ledger, summary } = planCodexIdentityRekey({ fs, aiHomeDir });
   fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-  fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  // The ledger carries account identifiers/email; do not create world-readable diagnostics.
+  const tempPath = `${ledgerPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(ledger, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+  try { fs.renameSync(tempPath, ledgerPath); } finally { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); }
 
   if (options.json) {
     process.stdout.write(`${JSON.stringify(ledger, null, 2)}\n`);

@@ -5,6 +5,7 @@ const fsBase = require('node:fs');
 const fse = require('fs-extra');
 const os = require('node:os');
 const path = require('node:path');
+const { buildCodexIdToken, codexAuthClaim } = require('./codex-identity-fixtures');
 const { createPtyRuntime } = require('../lib/cli/services/pty/runtime');
 const { createSessionStoreService } = require('../lib/cli/services/session-store');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
@@ -3411,12 +3412,14 @@ test('runtime atomically assigns a Codex CLI id only after pending OAuth succeed
   const loginRuntimeDir = resolveLoginRuntimeDir(aiHomeDir, 'codex', loginSessionId);
   assert.equal(spawns[0].options.env.CODEX_HOME, path.join(loginRuntimeDir, '.codex'));
   assert.equal(fsBase.statSync(spawns[0].options.env.CODEX_HOME).isDirectory(), true);
-  const idTokenPayload = Buffer.from(JSON.stringify({ email: 'pending-login@example.com' }))
-    .toString('base64url');
+  const idToken = buildCodexIdToken({
+    email: 'pending-login@example.com',
+    ...codexAuthClaim({ chatgpt_user_id: 'pending-login-user' })
+  });
   fsBase.writeFileSync(path.join(loginRuntimeDir, '.codex', 'auth.json'), JSON.stringify({
     tokens: {
       access_token: 'test-access-token',
-      id_token: `e30.${idTokenPayload}.signature`,
+      id_token: idToken,
       refresh_token: 'test-refresh-token',
       account_id: 'upstream-test-account'
     }

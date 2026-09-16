@@ -754,7 +754,7 @@ func builtinWorkbuddy() Definition {
 		// Clients.CLI=false 时仍然需要 CLIConfig：DesktopClient 挂在它下面，
 		// 且 globalDir 是账号投影根。这里如实声明 WorkBuddy 自己的数据根。
 		CLI: &CLIConfig{
-			Order:      14,
+			Order: 14,
 			// 国际站的数据根是 `.workbuddy-ai`（官方 cask workbuddy-ai 的 zap 清单
 			// 与 ~/.workbuddy-ai 实机目录一致），与国内站的 `.workbuddy` 不同名。
 			GlobalDir:  ".workbuddy-ai",
@@ -831,7 +831,7 @@ func builtinWorkbuddyCN() Definition {
 		// （见 lib/server/webui-project-cache.js 的 buildProjectsSnapshot）。
 		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{
-			Order:      15,
+			Order: 15,
 			// 国内站的数据根是 `.workbuddy`（官方 cask workbuddy-cn 的 zap 清单
 			// 与 ~/.workbuddy 实机目录一致）。
 			GlobalDir:  ".workbuddy",

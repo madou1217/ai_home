@@ -28,7 +28,7 @@ type clientSupport struct {
 
 // clientDefinition 是只暴露给 TypeScript Client 的最小 Provider 投影。
 type clientDefinition struct {
-	ID                string                 `json:"id"`
+	ID string `json:"id"`
 	// Family/Site 让浏览器按产品族聚合国内站/国际站，而不必在 UI 层硬编码
 	// 任何 provider 名单。聚合只影响展示，账号仍挂在具体 provider 上。
 	Family            string                 `json:"family"`
@@ -241,10 +241,10 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("/** 由同一生成源构建的 Provider 展示目录。 */\n")
 	output.WriteString("export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(\n")
 	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {\n")
-  output.WriteString("    id: definition.id,\n")
-  output.WriteString("    family: definition.family,\n")
-  output.WriteString("    site: definition.site,\n")
-  output.WriteString("    label: definition.label,\n")
+	output.WriteString("    id: definition.id,\n")
+	output.WriteString("    family: definition.family,\n")
+	output.WriteString("    site: definition.site,\n")
+	output.WriteString("    label: definition.label,\n")
 	output.WriteString("    short: definition.short,\n")
 	output.WriteString("    terminalIcon: definition.terminalIcon,\n")
 	output.WriteString("    terminalIconAsset: definition.terminalIconAsset,\n")
@@ -302,10 +302,10 @@ func renderClientJavaScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("export const PROVIDER_IDS = Object.freeze(PROVIDER_DEFINITIONS.map((definition) => definition.id));\n\n")
 	output.WriteString("export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(\n")
 	output.WriteString("  PROVIDER_DEFINITIONS.map((definition) => [definition.id, {\n")
-  output.WriteString("    id: definition.id,\n")
-  output.WriteString("    family: definition.family,\n")
-  output.WriteString("    site: definition.site,\n")
-  output.WriteString("    label: definition.label,\n")
+	output.WriteString("    id: definition.id,\n")
+	output.WriteString("    family: definition.family,\n")
+	output.WriteString("    site: definition.site,\n")
+	output.WriteString("    label: definition.label,\n")
 	output.WriteString("    short: definition.short,\n")
 	output.WriteString("    terminalIcon: definition.terminalIcon,\n")
 	output.WriteString("    terminalIconAsset: definition.terminalIconAsset,\n")

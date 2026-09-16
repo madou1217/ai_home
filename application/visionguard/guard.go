@@ -11,87 +11,25 @@ package visionguard
 import (
 	"encoding/base64"
 	"errors"
-	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
-// visionFamilyPatterns 是「索引也查不到」时的最后一道家族兜底。
-//
-// 与 Node 的 VISION_INPUT_MODEL_PATTERNS 相比，这里把 OpenAI 一条从「枚举具体版本」
-// 改成「按主版本号」，原因是枚举会随时间腐坏：Node 写的是 `gpt-(4o|4[.-]1|5)`，
-// 而当前目录里已经有 gpt-6-astra，枚举表会把 gpt-6 判成看不见图片。
-//
-// 放宽的边界仍然保守，逐条对当前 models.dev 快照验证过：
-//   - `^gpt-[4-9]` 覆盖 gpt-4.x / 5.x / 6.x（快照里全部含 image 输入）；
-//     刻意排除 `gpt-3.5-turbo` 与 `gpt-oss-*`（快照里都是纯文本）。
-//   - `^o[1-9]` 覆盖 o 系列推理模型。已知例外是 `o3-mini`（快照里纯文本），但它在
-//     索引里能解析到（基座回退 → openai/o3-mini），因此永远不会走到这条兜底。
-//
-// 新增模型应当补 models.dev 数据，而不是继续放宽正则。
-var visionFamilyPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^claude-`),
-	regexp.MustCompile(`^gemini-`),
-	regexp.MustCompile(`^gpt-[4-9]`),
-	regexp.MustCompile(`^o[1-9]($|[.-])`),
-}
-
-// normalizeVersionSeparators 把「数字.数字」里的点换成横线，使 `gpt-4.1-mini` 与
-// `gpt-4-1-mini` 命中同一条家族规则（与 Node 的 normalizeModelVersionSeparators 一致）。
-//
-// 手写扫描而不是正则：Go 的 RE2 不支持 Node 版本里用到的 `(?=...)` 前瞻。
-func normalizeVersionSeparators(modelID string) string {
-	runes := []rune(modelID)
-	changed := false
-	for index := 1; index < len(runes)-1; index++ {
-		if runes[index] != '.' {
-			continue
-		}
-		if unicode.IsDigit(runes[index-1]) && unicode.IsDigit(runes[index+1]) {
-			runes[index] = '-'
-			changed = true
-		}
-	}
-	if !changed {
-		return modelID
-	}
-	return string(runes)
-}
-
-// lookupKeys 返回用于家族匹配的模型 ID 变体：原样与版本分隔符归一化后的形态。
-func lookupKeys(modelID string) []string {
-	trimmed := strings.TrimSpace(modelID)
-	if trimmed == "" {
-		return nil
-	}
-	normalized := normalizeVersionSeparators(trimmed)
-	if normalized == trimmed {
-		return []string{trimmed}
-	}
-	return []string{trimmed, normalized}
-}
-
-// matchesVisionFamily 判断模型名是否属于已知的「能看见图片」家族。
-func matchesVisionFamily(modelID string) bool {
-	for _, key := range lookupKeys(modelID) {
-		for _, pattern := range visionFamilyPatterns {
-			if pattern.MatchString(key) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // ErrInvalidDependencies 表示守卫缺少模态读取或 blob 写入端口。
 var ErrInvalidDependencies = errors.New("vision guard 依赖无效")
 
-// VisionReader 返回指定 Provider 与模型是否具备视觉能力。
+// VisionReader 返回指定 Provider 与模型的模态判定。
+//
+// 实现必须是「总是有答案」的：快照未命中时按保守家族兜底，而不是返回「不知道」。
+// 这条合同把家族启发式留在模态索引里（与 Node 的 getModelModalities 同构），
+// 守卫因此只负责策略——能看图就保留，否则剥离。
 type VisionReader interface {
-	LookupModalities(providerID string, modelID string) (modelmetadata.Modalities, bool)
+	LookupOrInferModalities(
+		providerID string,
+		modelID string,
+	) (modelmetadata.Modalities, bool)
 }
 
 // BlobWriter 暂存被剥离出来的图片字节并返回内容寻址 ID。
@@ -133,18 +71,17 @@ type Result struct {
 
 // Apply 返回替换后的请求。
 //
-// 判定顺序刻意先做廉价短路，再做模态查询：
+// 判定顺序刻意先做廉价短路：
 //  1. 请求里没有图片 → 原样返回，连模态查询都不做；
-//  2. 索引命中且模型能看见图片 → 原样返回；
-//  3. 索引未命中，但模型名属于已知的视觉家族（claude- / gemini- / gpt-4o|4.1|5 /
-//     o1|o3）→ 认定能看见图片，原样返回。这一步保护「索引没收录但确实能看图」的模型，
-//     避免把它们的图片无谓剥离；
-//  4. 其余情况（索引明确说是纯文本，或未命中且不属视觉家族）→ 逐张替换。
+//  2. 模态判定说该模型能看见图片 → 原样返回；
+//  3. 其余（快照明确说是纯文本，或连家族兜底也认不出来）→ 逐张替换。
 //
-// 第 4 步对未知模型采取「按纯文本处理」而不是放行，与 Node 的
-// buildFallbackModalities 同构。理由是两种误判的代价不对等：错剥一张图，模型仍能按
-// 文本指示借视，请求成功；错放一张图，上游整条 400 拒绝，模型连一个回合都拿不到，
-// 连借视的机会都没有。
+// 第 3 步对未知模型按纯文本处理而不是放行。理由是两种误判的代价不对等：错剥一张图，
+// 模型仍能按文本指示借视，请求成功；错放一张图，上游整条 400 拒绝，模型连一个回合都
+// 拿不到，连借视的机会都没有。
+//
+// 家族启发式不在这里——它住在模态索引里（见 modelsdev.LookupOrInferModalities），
+// 这样模型目录的 capability 过滤与守卫共用同一份判定，不会各自演化出两套规则。
 func (guard *Guard) Apply(
 	request inference.Request,
 	providerID inference.ProviderID,
@@ -156,13 +93,10 @@ func (guard *Guard) Apply(
 	if !request.HasImageContents() {
 		return request, result
 	}
-	modalities, found := guard.modalities.LookupModalities(string(providerID), request.Model())
-	if found {
-		if supportsVision(modalities) {
-			return request, result
-		}
-	} else if matchesVisionFamily(request.Model()) {
-		// 索引没收录，但模型名落在已知视觉家族里：宁可保留图片。
+	if modalities, found := guard.modalities.LookupOrInferModalities(
+		string(providerID),
+		request.Model(),
+	); found && supportsVision(modalities) {
 		return request, result
 	}
 	replaced, changed := request.ReplaceImageContents(func(image inference.ImageContent) string {

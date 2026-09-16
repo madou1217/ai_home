@@ -171,13 +171,42 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
 不带该字段、改由 opt-in 暴露**；但 Go 若日后要实现 `?capability=` 过滤，必须自己持有等价能力
 数据，不能假设可以依赖响应体里的自定义字段。
 
-**Go 侧已实现：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露。**
+**Go 侧已实现：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露，能力过滤独立持有数据。**
 
 - `GET /v1/models` 仍只返回 `id/object/created/owned_by`，不会泄漏自定义字段。
 - `GET /v1/models?include=modalities` 才为每项增加
   `aih_modalities: {input,output}`。
-- `client_version` 继续选择 Codex 目录合同；它不能与 `include` 混用。未知、重复或混合
-  query 一律返回 `400 invalid_query`，避免客户端意图被静默误判。
+- `GET /v1/models?capability=vision|image_out`（2026-09-15 补齐）：Go 不再依赖响应体里的
+  自定义字段，而是直接读模态索引判定，因此**不需要** `include=modalities` 就能过滤。
+  两条语义与 Node 的 `filterOpenAIModelsBodyByCapability` 对齐：
+  - `vision` 看输入模态、`image_out` 看输出模态；
+  - **未知取值失败开放**（不过滤），与 Node 的 `modelMatchesCapability` 一致——拼错的
+    能力名应该让目录原样返回，客户端拿到空列表比拿到未过滤列表更难排查；
+  - 过滤发生在**去重之后**，每个模型项只按首个 Provider 的模态判一次。Node 作用在已去重的
+    `data` 数组上，若 Go 在去重前逐 (Provider, 模型) 过滤，同名模型会因不同 Provider 的模态
+    不同而在两端得到不同结果。
+- `capability` 可与 `include=modalities` 组合；**不可**与 `client_version` 组合。Node 那条
+  Codex 路径不套过滤器（`isCodexNativeModelsRequest` 分支直接调 `handleCodexModels`），
+  混用会静默丢掉过滤意图；Go 选择返回 `400 invalid_query` 而不是假装过滤生效。
+  `capability` 取空值等同「没有要求过滤」（与 Node 的 `if (!capability) return bodyText`
+  一致）；其余未知键仍按 Go 既有严格合同报 400。
+- `client_version` 继续选择 Codex 目录合同；未知、重复或混合 query 一律返回
+  `400 invalid_query`，避免客户端意图被静默误判。
+- `owned_by` 输出**厂商名**而不是 AIH 的 Provider ID（2026-09-15 修正）。Go 原先直接输出
+  `claude` / `codex` / `agy` / `zcode`，并在同名模型冲突时改写成 `aih`——两个都是 AIH 内部
+  词汇。判据不是「Node 这么做」，而是两条独立证据：
+  1. **OpenAI 合同**：`owned_by` 是「拥有该模型的组织」，`anthropic` / `google` / `openai`
+     才是组织名，`agy` / `zcode` / `qoder` 是 AIH 的路由标签，对外部客户端没有意义。
+  2. **本仓有真实消费者，且消费者依赖厂商名**：Node 的 WebUI 在
+     `lib/server/webui-openai-model-routes.js` 的 `resolveProviderFromOpenAIModel` 里
+     **反查** `owned_by` 来把模型归到 Provider 分组（`anthropic→claude`、`openai→codex`、
+     `google→gemini`、`zhipu→zcode`、`opencode→opencode`）。写内部 ID 会让分组整块落空。
+  实现按 `resolveModelOwner` = `inferOwnerFromModelID(id) || inferOwnerFromProvider(provider)
+  || 'aih-server'`，与 Node 的 `lib/server/models.js` 同序。与 Node 的唯一差别是大小写：
+  Node 用区分大小写的 `startsWith`，Go 先转小写——方向是「多认出来」而不是认错，且模型 ID
+  在两端本来就是规范小写。聚合 Provider（agy / qoder / kiro / codebuddy / workbuddy …）
+  承载多家模型，模型名认不出时返回 `aih-server` 兜底，不猜厂商。
+  单模型回显 `GET /v1/models/{id}` 的 `owned_by: "aih-server"` 两端本来就一致。
 - 权威数据由 `internal/tools/modelsdevmodalities` 从 `@opencode-ai/models` SDK 离线快照
   生成，全部 canonical model 被嵌入 Go 二进制。服务启动时只解码和校验一次，
   HTTP 热路径是 O(1) 只读 map，
@@ -197,6 +226,33 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   三层都不命中才降级为 `{input:["text"],output:["text"]}`，不靠模型名猜测能力。
   `provider_mapping_test.go` 用快照里真实存在的模型逐个钉住映射——写错命名空间不会报错，
   只会静默退化成「查不到」。
+
+- 端口有两个方法，对应两类消费方的不同诉求：
+  - `LookupModalities` 是**纯快照查询**，三层都不命中就返回未命中。需要「权威性」的调用方
+    用它（例如给模型目录补 `aih_modalities` 时宁可降级为纯文本，也不猜）。
+  - `LookupOrInferModalities` 是**总是有答案**的判定（快照命中 → 家族兜底 → 未命中），
+    供 `?capability=` 过滤与 vision guard 使用。两者共用同一份判定，不会各自演化出两套规则。
+
+- 家族兜底（对应 Node 的 `buildFallbackModalities` + `computeModelModalities`）有两条规则：
+  1. **视觉家族**只影响输入：`^claude-` / `^gemini-` / `^gpt-[4-9]` / `^o[1-9]($|[.-])`。
+     OpenAI 一条刻意**按主版本号**而不是枚举具体版本——枚举会随时间腐坏。
+  2. **图像生成家族**同时影响输入与输出，逐字对应 Node 的 `IMAGE_MODEL_PATTERN`：
+     `(?:^|[-_/])image(?:$|[-_])|nano-?banana|flash-image`。这条规则对**快照命中**与
+     **家族兜底**两条路径都生效（Node 的 `computeModelModalities` 末段同样无条件补）：
+     少补输入会让 vision guard 剥掉用户贴给 `gemini-3.1-flash-image` 的图，少补输出会让
+     `?capability=image_out` 漏掉这批模型。
+     这条判定**不做**版本分隔符归一化（Node 的 `isImageGenerationModel` 只用小写原名），
+     与视觉家族那张表刻意不同，两端必须保持这个差别。
+
+- **家族表已双向同步（2026-09-15）**：Go 的 `^gpt-[4-9]` / `^o[1-9]` 反向同步回了 Node 的
+  `VISION_INPUT_MODEL_PATTERNS`。Node 原先写的是枚举 `gpt-(4o|4[.-]1|5)` 与 `o[13]`，
+  目录里出现 `gpt-6-astra` 之后会把能看图的 gpt-6 判成纯文本，进而剥掉它的图片。放宽边界
+  逐条对当前快照验证过：`gpt-3.5-turbo` 与 `gpt-oss-*` 在快照里是纯文本，仍被排除在外。
+
+- 已知**未对齐**项（有意保留）：Node 的模态索引还有一层运行时覆盖
+  `registerProbedModelModalities`（上游 OAuth/API 实时 `/models` 探测结果会覆盖快照，
+  见 `lib/server/http-utils.js`）。Go 侧没有这层——快照是唯一数据源，因为 Go 的模型目录
+  不走上游探测。探测结果与快照不一致时，两端对同一模型的 `?capability=` 判定可能不同。
 
 升级 SDK 依赖后重新生成索引：
 

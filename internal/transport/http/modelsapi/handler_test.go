@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -14,15 +15,18 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
-// TestHandlerReturnsUniqueLocalModels 验证目录鉴权、排序去重和 OpenAI envelope。
+// TestHandlerReturnsUniqueLocalModels 验证目录鉴权、排序去重、OpenAI envelope
+// 与 `owned_by` 的厂商归属解析。
 func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 	t.Parallel()
 
 	reader := &modelReaderStub{
 		models: []accountapp.RoutableModel{
 			newRoutableModel(t, "claude", "claude-opus-5"),
+			newRoutableModel(t, "codex", "gpt-5.6-sol"),
 			newRoutableModel(t, "claude", "shared-model"),
 			newRoutableModel(t, "codex", "shared-model"),
+			newRoutableModel(t, "agy", "unknown-thing"),
 		},
 	}
 	handler := newTestHandler(t, reader)
@@ -59,13 +63,25 @@ func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if document.Object != "list" ||
-		len(document.Data) != 2 ||
-		document.Data[0].ID != "claude-opus-5" ||
-		document.Data[0].OwnedBy != "claude" ||
-		document.Data[1].ID != "shared-model" ||
-		document.Data[1].OwnedBy != "aih" {
+	if document.Object != "list" || len(document.Data) != 4 {
 		t.Fatalf("models response = %#v", document)
+	}
+	// owned_by 必须是厂商名（OpenAI 合同 + Node WebUI 反查分组依赖它），
+	// 而不是 AIH 的 Provider ID；判不出来时才落到 aih-server。
+	wantOwners := []string{"anthropic", "openai", "anthropic", "aih-server"}
+	wantIDs := []string{"claude-opus-5", "gpt-5.6-sol", "shared-model", "unknown-thing"}
+	for index, want := range wantIDs {
+		if document.Data[index].ID != want ||
+			document.Data[index].Object != "model" ||
+			document.Data[index].OwnedBy != wantOwners[index] {
+			t.Fatalf(
+				"data[%d] = %#v, want id=%q owned_by=%q",
+				index,
+				document.Data[index],
+				want,
+				wantOwners[index],
+			)
+		}
 	}
 	var rawDocument struct {
 		Data []map[string]json.RawMessage `json:"data"`
@@ -143,6 +159,151 @@ func TestHandlerIncludesModalitiesOnlyWhenRequested(t *testing.T) {
 	}
 	assertStringSlice(t, document.Data[1].Modalities.Input, []string{"text"})
 	assertStringSlice(t, document.Data[1].Modalities.Output, []string{"text"})
+}
+
+// TestHandlerFiltersCatalogByCapability 验证 `?capability=` 与 Node 的
+// `filterOpenAIModelsBodyByCapability` 同构：vision 看输入模态、image_out 看输出模态，
+// 未收录的模型走家族兜底（图像生成模型必须同时算作能看图），未知取值失败开放。
+func TestHandlerFiltersCatalogByCapability(t *testing.T) {
+	t.Parallel()
+
+	reader := &modelReaderStub{
+		models: []accountapp.RoutableModel{
+			newRoutableModel(t, "claude", "claude-opus-5"),
+			newRoutableModel(t, "gemini", "gemini-3.1-flash-image"),
+			newRoutableModel(t, "codex", "gpt-5.5-text"),
+			newRoutableModel(t, "agy", "nano-banana"),
+		},
+	}
+	modalities := &modalityReaderStub{
+		models: map[string]modelmetadata.Modalities{
+			"claude/claude-opus-5": newModalities(
+				t,
+				[]string{"text", "image"},
+				[]string{"text"},
+			),
+			"gemini/gemini-3.1-flash-image": newModalities(
+				t,
+				[]string{"text", "image"},
+				[]string{"text", "image"},
+			),
+			"codex/gpt-5.5-text": newModalities(
+				t,
+				[]string{"text"},
+				[]string{"text"},
+			),
+		},
+		// nano-banana 不在快照里，只能靠图像生成家族兜底认出来。
+		inferred: map[string]modelmetadata.Modalities{
+			"nano-banana": newModalities(
+				t,
+				[]string{"text", "image"},
+				[]string{"text", "image"},
+			),
+		},
+	}
+	handler := newTestHandlerWithModalities(t, reader, modalities)
+
+	tests := []struct {
+		name   string
+		target string
+		ids    []string
+	}{
+		{
+			name:   "no filter",
+			target: modelsapi.Path,
+			ids:    []string{"claude-opus-5", "gemini-3.1-flash-image", "gpt-5.5-text", "nano-banana"},
+		},
+		{
+			name:   "vision",
+			target: modelsapi.Path + "?capability=vision",
+			ids:    []string{"claude-opus-5", "gemini-3.1-flash-image", "nano-banana"},
+		},
+		{
+			name:   "image out",
+			target: modelsapi.Path + "?capability=image_out",
+			ids:    []string{"gemini-3.1-flash-image", "nano-banana"},
+		},
+		{
+			name:   "capability is case and space insensitive",
+			target: modelsapi.Path + "?capability=%20VISION%20",
+			ids:    []string{"claude-opus-5", "gemini-3.1-flash-image", "nano-banana"},
+		},
+		{
+			name:   "unknown capability fails open",
+			target: modelsapi.Path + "?capability=audio_in",
+			ids:    []string{"claude-opus-5", "gemini-3.1-flash-image", "gpt-5.5-text", "nano-banana"},
+		},
+		{
+			name:   "empty capability means no filter",
+			target: modelsapi.Path + "?capability=",
+			ids:    []string{"claude-opus-5", "gemini-3.1-flash-image", "gpt-5.5-text", "nano-banana"},
+		},
+		{
+			name:   "capability combines with modalities opt in",
+			target: modelsapi.Path + "?capability=image_out&include=modalities",
+			ids:    []string{"gemini-3.1-flash-image", "nano-banana"},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.target, nil)
+			request.Header.Set("Authorization", "Bearer local-model-key")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body)
+			}
+			var document struct {
+				Data []struct {
+					ID            string `json:"id"`
+					AIHModalities *struct {
+						Input  []string `json:"input"`
+						Output []string `json:"output"`
+					} `json:"aih_modalities"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			ids := make([]string, 0, len(document.Data))
+			for _, item := range document.Data {
+				ids = append(ids, item.ID)
+			}
+			assertStringSlice(t, ids, test.ids)
+			wantModalities := strings.Contains(test.target, "include=modalities")
+			for _, item := range document.Data {
+				if wantModalities && item.AIHModalities == nil {
+					t.Fatalf("model %s missing aih_modalities: %s", item.ID, response.Body)
+				}
+				if !wantModalities && item.AIHModalities != nil {
+					t.Fatalf("model %s leaked aih_modalities: %s", item.ID, response.Body)
+				}
+			}
+		})
+	}
+}
+
+// TestHandlerRejectsCapabilityQueryCombinations 验证 capability 不能与 Codex 目录合同
+// 混用，也不能重复；这些 query 在 Node 会被静默忽略，Go 选择显式报错。
+func TestHandlerRejectsCapabilityQueryCombinations(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(t, &modelReaderStub{})
+	for _, target := range []string{
+		modelsapi.Path + "?capability=vision&client_version=0.146.0",
+		modelsapi.Path + "?capability=vision&capability=image_out",
+		modelsapi.Path + "?capability=vision&refresh=true",
+	} {
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.Header.Set("Authorization", "Bearer local-model-key")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("GET %s status=%d body=%s", target, response.Code, response.Body)
+		}
+	}
 }
 
 // TestHandlerProjectsCodexCatalogWithoutRefreshing 验证 client_version 只选择
@@ -450,6 +611,9 @@ type modelReaderStub struct {
 // modalityReaderStub 返回按 Provider 和真实模型 ID 索引的测试模态。
 type modalityReaderStub struct {
 	models map[string]modelmetadata.Modalities
+	// inferred 模拟快照未命中时的家族兜底，键是模型 ID（与 Provider 无关）。
+	// 真实家族规则由 modelsdev 的索引测试钉住，这里只验证 Handler 的消费方式。
+	inferred map[string]modelmetadata.Modalities
 }
 
 // LookupModalities 返回不可变测试值；未命中由 Handler 采用文本兜底。
@@ -458,6 +622,18 @@ func (reader *modalityReaderStub) LookupModalities(
 	modelID string,
 ) (modelmetadata.Modalities, bool) {
 	modalities, found := reader.models[providerID+"/"+modelID]
+	return modalities, found
+}
+
+// LookupOrInferModalities 先精确命中，再走测试提供的家族兜底。
+func (reader *modalityReaderStub) LookupOrInferModalities(
+	providerID string,
+	modelID string,
+) (modelmetadata.Modalities, bool) {
+	if modalities, found := reader.LookupModalities(providerID, modelID); found {
+		return modalities, true
+	}
+	modalities, found := reader.inferred[modelID]
 	return modalities, found
 }
 
@@ -517,6 +693,17 @@ func newRoutableModel(
 		t.Fatalf("accounts.NewRoutableModel() error = %v", err)
 	}
 	return model
+}
+
+// newModalities 构造测试用的模态值对象。
+func newModalities(t *testing.T, input []string, output []string) modelmetadata.Modalities {
+	t.Helper()
+
+	modalities, err := modelmetadata.NewModalities(input, output)
+	if err != nil {
+		t.Fatalf("modelmetadata.NewModalities() error = %v", err)
+	}
+	return modalities
 }
 
 // assertStringSlice 验证 HTTP 传输数组保持数据源的稳定顺序。

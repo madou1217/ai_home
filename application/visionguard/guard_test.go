@@ -10,19 +10,24 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
-	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
 // fakeReader 按 (provider, model) 返回预设模态；未登记即「查不到」。
+//
+// 它刻意不复制家族兜底——家族启发式住在模态索引里，由 modelsdev 的用例覆盖；
+// 守卫只消费判定结果。
 type fakeReader struct {
 	entries map[string][]string
+	// providers 记录被查询过的 Provider，用于验证守卫确实带上了 Provider。
+	providers []string
 }
 
-// LookupModalities 实现 visionguard.VisionReader。
-func (reader fakeReader) LookupModalities(
+// LookupOrInferModalities 实现 visionguard.VisionReader。
+func (reader *fakeReader) LookupOrInferModalities(
 	providerID string,
 	modelID string,
 ) (modelmetadata.Modalities, bool) {
+	reader.providers = append(reader.providers, providerID)
 	values, found := reader.entries[providerID+"/"+modelID]
 	if !found {
 		return modelmetadata.Modalities{}, false
@@ -75,24 +80,28 @@ func base64Source(t *testing.T, payload string) inference.MediaSource {
 }
 
 // newGuard 创建使用内存 blob 仓的守卫。
-func newGuard(t *testing.T, entries map[string][]string) (*visionguard.Guard, *imageblob.Store) {
+func newGuard(
+	t *testing.T,
+	entries map[string][]string,
+) (*visionguard.Guard, *fakeReader, *imageblob.Store) {
 	t.Helper()
+	reader := &fakeReader{entries: entries}
 	store := imageblob.NewStore(0)
 	guard, err := visionguard.New(visionguard.Dependencies{
-		Modalities: fakeReader{entries: entries},
+		Modalities: reader,
 		Blobs:      images.BlobStoreAdapter{Store: store},
 	})
 	if err != nil {
 		t.Fatalf("visionguard.New() error = %v", err)
 	}
-	return guard, store
+	return guard, reader, store
 }
 
 // TestGuardReplacesImagesForTextOnlyModel 验证纯文本模型的图片被换成可借视文本。
 func TestGuardReplacesImagesForTextOnlyModel(t *testing.T) {
 	t.Parallel()
 
-	guard, store := newGuard(t, map[string][]string{
+	guard, _, store := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
 	request := imageRequest(t, "gpt-5-codex", base64Source(t, "png-bytes"))
@@ -122,14 +131,14 @@ func TestGuardReplacesImagesForTextOnlyModel(t *testing.T) {
 	}
 }
 
-// TestGuardLeavesVisionModelsAlone 验证能看图的模型完全不被改动。
+// TestGuardLeavesVisionModelsAlone 验证判定为能看图的模型完全不被改动。
 func TestGuardLeavesVisionModelsAlone(t *testing.T) {
 	t.Parallel()
 
-	guard, store := newGuard(t, map[string][]string{
-		"codex/gpt-5-codex": {"text", "image"},
+	guard, _, store := newGuard(t, map[string][]string{
+		"codex/gpt-5.5": {"text", "image"},
 	})
-	request := imageRequest(t, "gpt-5-codex", base64Source(t, "png-bytes"))
+	request := imageRequest(t, "gpt-5.5", base64Source(t, "png-bytes"))
 	rewritten, result := guard.Apply(request, "codex")
 
 	if result.Changed || result.Count != 0 {
@@ -143,21 +152,18 @@ func TestGuardLeavesVisionModelsAlone(t *testing.T) {
 	}
 }
 
-// TestGuardStripsUnlistedNonVisionModels 验证未收录且不属视觉家族的模型按纯文本处理。
+// TestGuardStripsWhenReaderHasNoAnswer 验证判定未命中时按纯文本处理。
 //
-// 这与 Node 的 buildFallbackModalities 同构：两种误判代价不对等——错剥一张图，
-// 模型仍能按文本借视；错放一张图，上游整条 400 拒绝，模型连回合都拿不到。
-func TestGuardStripsUnlistedNonVisionModels(t *testing.T) {
+// 这是守卫的策略选择：错剥一张图仍可借视，错放一张图会被上游整条 400 拒绝。
+func TestGuardStripsWhenReaderHasNoAnswer(t *testing.T) {
 	t.Parallel()
 
-	guard, store := newGuard(t, map[string][]string{
-		"codex/gpt-5-codex": {"text"},
-	})
-	request := imageRequest(t, "glm-5.2", base64Source(t, "png-bytes"))
+	guard, _, store := newGuard(t, map[string][]string{})
+	request := imageRequest(t, "unrecognized-model", base64Source(t, "png-bytes"))
 	rewritten, result := guard.Apply(request, "opencode")
 
 	if !result.Changed || result.Count != 1 {
-		t.Fatalf("unlisted non-vision model should be rewritten: %#v", result)
+		t.Fatalf("unrecognized model should be rewritten: %#v", result)
 	}
 	if rewritten.HasImageContents() {
 		t.Fatal("image should have been stripped")
@@ -167,62 +173,11 @@ func TestGuardStripsUnlistedNonVisionModels(t *testing.T) {
 	}
 }
 
-// TestGuardKeepsUnlistedVisionFamilies 验证未收录但属视觉家族的模型不被剥离。
-//
-// 这是折中的另一半：索引只覆盖部分 Provider，家族兜底保证 claude/gemini/gpt-4o 等
-// 常见视觉模型即使没被收录也不会被无谓剥掉图片。
-func TestGuardKeepsUnlistedVisionFamilies(t *testing.T) {
-	t.Parallel()
-
-	guard, store := newGuard(t, map[string][]string{})
-	for _, model := range []string{
-		"claude-opus-5",
-		"gemini-3.5-flash",
-		// 当前主力模型：家族表按主版本号判定，不枚举具体版本。
-		"gpt-5.5",
-		"gpt-5.6-sol",
-		"gpt-6-astra",
-		// 版本分隔符归一化：点号版本与横线版本命中同一条家族规则。
-		"gpt-5-5",
-		"gpt-5.2-codex",
-		"o4-mini",
-	} {
-		request := imageRequest(t, model, base64Source(t, "png-bytes"))
-		rewritten, result := guard.Apply(request, "opencode")
-		if result.Changed {
-			t.Fatalf("vision family %q must not be rewritten: %#v", model, result)
-		}
-		if !rewritten.HasImageContents() {
-			t.Fatalf("vision family %q must keep its images", model)
-		}
-	}
-	if store.Len() != 0 {
-		t.Fatalf("blob store len = %d, want 0", store.Len())
-	}
-}
-
-// TestGuardIndexWinsOverFamilyFallback 验证索引命中时以索引为准。
-//
-// 家族兜底只是「查不到时」的保守默认；索引明确说某模型是纯文本（哪怕名字像视觉家族），
-// 就必须按纯文本处理。
-func TestGuardIndexWinsOverFamilyFallback(t *testing.T) {
-	t.Parallel()
-
-	guard, _ := newGuard(t, map[string][]string{
-		"codex/gpt-5-codex": {"text"},
-	})
-	request := imageRequest(t, "gpt-5-codex", base64Source(t, "png-bytes"))
-	rewritten, result := guard.Apply(request, "codex")
-	if !result.Changed || rewritten.HasImageContents() {
-		t.Fatalf("index must win over the family fallback: %#v", result)
-	}
-}
-
 // TestGuardIgnoresRequestsWithoutImages 验证纯文本请求不触发任何查询与写入。
 func TestGuardIgnoresRequestsWithoutImages(t *testing.T) {
 	t.Parallel()
 
-	guard, store := newGuard(t, map[string][]string{
+	guard, reader, store := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
 	text, err := inference.NewTextContent("plain")
@@ -245,13 +200,31 @@ func TestGuardIgnoresRequestsWithoutImages(t *testing.T) {
 	if result.Changed || store.Len() != 0 {
 		t.Fatalf("result = %#v store=%d", result, store.Len())
 	}
+	if len(reader.providers) != 0 {
+		t.Fatalf("text-only request must not query modalities: %v", reader.providers)
+	}
+}
+
+// TestGuardPassesProviderToReader 验证判定带上已解析的 Provider。
+//
+// 同一个模型名在不同 Provider 下的模态可能不同，漏掉 Provider 会让判定用错条目。
+func TestGuardPassesProviderToReader(t *testing.T) {
+	t.Parallel()
+
+	guard, reader, _ := newGuard(t, map[string][]string{})
+	request := imageRequest(t, "claude-shared", base64Source(t, "png-bytes"))
+	guard.Apply(request, "agy")
+
+	if len(reader.providers) != 1 || reader.providers[0] != "agy" {
+		t.Fatalf("providers = %v, want [agy]", reader.providers)
+	}
 }
 
 // TestGuardPassesThroughRemoteImageURL 验证远程图片地址原样交给 agent。
 func TestGuardPassesThroughRemoteImageURL(t *testing.T) {
 	t.Parallel()
 
-	guard, store := newGuard(t, map[string][]string{
+	guard, _, store := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
 	source, err := inference.NewURLMediaSource("https://example.test/cat.png", "image/png")
@@ -282,7 +255,7 @@ func TestGuardPassesThroughRemoteImageURL(t *testing.T) {
 func TestGuardReportsUnrecoverableSource(t *testing.T) {
 	t.Parallel()
 
-	guard, _ := newGuard(t, map[string][]string{
+	guard, _, _ := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
 	source, err := inference.NewFileIDMediaSource("file-abc123")
@@ -303,34 +276,11 @@ func TestGuardReportsUnrecoverableSource(t *testing.T) {
 	}
 }
 
-// TestGuardScopesLookupByProvider 验证判定带上 Provider。
-//
-// 同一个模型名在不同 Provider 下的模态可能不同，漏掉 Provider 会让判定用错条目。
-func TestGuardScopesLookupByProvider(t *testing.T) {
-	t.Parallel()
-
-	// 用视觉家族名，才能把「索引命中」与「家族兜底」两条路径区分开：
-	// claude 下索引明确说是纯文本 → 剥离；codex 下未登记 → 家族兜底保留。
-	guard, _ := newGuard(t, map[string][]string{
-		"claude/claude-shared": {"text"},
-	})
-	request := imageRequest(t, "claude-shared", base64Source(t, "png-bytes"))
-
-	_, claudeResult := guard.Apply(request, "claude")
-	if !claudeResult.Changed {
-		t.Fatalf("claude result = %#v, want changed (index says text-only)", claudeResult)
-	}
-	_, codexResult := guard.Apply(request, "codex")
-	if codexResult.Changed {
-		t.Fatalf("codex result = %#v, want unchanged (unregistered, vision family)", codexResult)
-	}
-}
-
 // TestRewriteMatchesApply 验证满足 inferencegateway 端口的 Rewrite 与 Apply 一致。
 func TestRewriteMatchesApply(t *testing.T) {
 	t.Parallel()
 
-	guard, _ := newGuard(t, map[string][]string{
+	guard, _, _ := newGuard(t, map[string][]string{
 		"codex/gpt-5-codex": {"text"},
 	})
 	request := imageRequest(t, "gpt-5-codex", base64Source(t, "png-bytes"))
@@ -353,69 +303,8 @@ func TestNewRejectsIncompleteDependencies(t *testing.T) {
 		t.Fatal("expected error for missing dependencies")
 	}
 	if _, err := visionguard.New(visionguard.Dependencies{
-		Modalities: fakeReader{},
+		Modalities: &fakeReader{},
 	}); err == nil {
 		t.Fatal("expected error for missing blob writer")
 	}
-}
-
-// TestVisionFamilyTableAgreesWithSnapshot 用权威快照反查家族表，防止它随时间腐坏。
-//
-// 这条用例的动机来自一次真实腐坏：Node 的家族表把 OpenAI 写成 `gpt-(4o|4[.-]1|5)`，
-// 目录里出现 gpt-6 之后，枚举表会把看不见的版本判成"看不见图片"的反面——即把能看图的
-// 模型判成纯文本。因此这里用快照（models.dev 固定目录）逐条核对：
-//   - 命中的模型，快照必须说它含 image 输入；
-//   - 刻意排除的模型，快照必须说它是纯文本。
-//
-// 快照升级后如果某条断言失效，说明家族表该更新了，而不是放宽测试。
-func TestVisionFamilyTableAgreesWithSnapshot(t *testing.T) {
-	t.Parallel()
-
-	index, err := modelsdev.New()
-	if err != nil {
-		t.Fatalf("modelsdev.New() error = %v", err)
-	}
-	visionModels := []string{
-		"gpt-5.5",
-		"gpt-5.6-sol",
-		"gpt-6-astra",
-		"o4-mini",
-		"claude-opus-5",
-		"gemini-3.5-flash",
-	}
-	for _, model := range visionModels {
-		modalities, found := index.LookupModalities("codex", model)
-		if !found {
-			t.Fatalf("snapshot is missing %q", model)
-		}
-		if !supportsImageInput(modalities.Input()) {
-			t.Fatalf(
-				"family table claims %q is vision-capable but the snapshot says %v",
-				model,
-				modalities.Input(),
-			)
-		}
-	}
-
-	// 家族表刻意排除的纯文本家族：快照必须同意，否则就是漏保护。
-	textOnlyModels := []string{"gpt-3.5-turbo", "gpt-oss-120b"}
-	for _, model := range textOnlyModels {
-		modalities, found := index.LookupModalities("codex", model)
-		if !found {
-			t.Fatalf("snapshot is missing %q", model)
-		}
-		if supportsImageInput(modalities.Input()) {
-			t.Fatalf("excluded model %q unexpectedly supports image input", model)
-		}
-	}
-}
-
-// supportsImageInput 判断模态列表是否包含 image。
-func supportsImageInput(values []string) bool {
-	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), "image") {
-			return true
-		}
-	}
-	return false
 }

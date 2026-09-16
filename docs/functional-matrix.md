@@ -254,7 +254,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 
 | 编号 | HTTP 入口 | 功能 | 状态 | 主要证据 |
 |---|---|---|---|---|
-| GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias。正式入口由 Node 持有，Go 仅为私有 Preview | 稳定/迁移中 | `lib/server/v1-router.js`、`internal/transport/http/modelsapi` |
+| GW-001 | `GET /v1/models` | 聚合启用账号模型、能力过滤、cache/SWR；不暴露通配 alias。正式入口由 Node 持有，Go 仅为私有 Preview。Go 侧已实现 `?capability=vision\|image_out` 过滤（读模态索引，不依赖响应体自定义字段；未知取值失败开放；过滤在去重后按首个 Provider 判定）与 `?include=modalities` opt-in | 稳定/迁移中 | `lib/server/v1-router.js`、`lib/server/model-modality-index.js`、`internal/transport/http/modelsapi` |
 | GW-002 | `GET /v1/models/:id` | 查询单模型可见性/描述；Go 已实现等价入口（任何非空 id 都回显，不校验本地目录），正式 ownership 仍是 Node | 稳定/迁移中 | `getModelIdFromModelsPath`、`internal/transport/http/modelsapi/handler.go`、`contracts/route-ownership/manifest.json` |
 | GW-003 | `POST /v1/chat/completions` | OpenAI Chat Completions，支持 stream/tool/usage/reasoning 适配；Go 私有路径已对 Codex 与 Claude 真实账号完成流/非流验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openaichatcompletionsapi`、`internal/adapters/clientprotocol/openaichatcompletions`、`contracts/route-ownership/manifest.json` |
 | GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 私有路径已对 Codex 与 Claude 真实账号完成验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses`、`contracts/route-ownership/manifest.json` |

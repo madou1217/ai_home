@@ -14,6 +14,9 @@ var (
 // Reader 是模型目录投影所需的最小元数据读取端口。
 type Reader interface {
 	LookupModalities(providerID string, modelID string) (Modalities, bool)
+	// LookupOrInferModalities 在快照未命中时按保守家族兜底，供「需要明确判定」的消费方
+	// （模型目录 capability 过滤、vision guard）使用：它们要的是答案，不是「不知道」。
+	LookupOrInferModalities(providerID string, modelID string) (Modalities, bool)
 }
 
 // Modalities 是不共享可变切片的输入和输出模态值对象。

@@ -110,6 +110,7 @@ func (handler *Handler) ServeHTTP(
 		models,
 		handler.modalities,
 		options.includeModalities,
+		options.capability,
 	)
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error")
@@ -179,6 +180,11 @@ func writeSingleModel(
 type catalogOptions struct {
 	protocol          catalogProtocol
 	includeModalities bool
+	// capability 是按能力过滤的条件；空表示不过滤。
+	//
+	// 取值与 Node 一致：`vision` / `image_out`。未知取值不过滤（与 Node 的
+	// modelMatchesCapability 一样失败开放），避免拼错的能力名把整个目录隐藏掉。
+	capability string
 }
 
 // catalogProtocol 表示同一路径上的客户端目录合同。
@@ -191,26 +197,50 @@ const (
 	catalogProtocolCodex
 )
 
-// parseCatalogOptions 严格区分标准扩展与 Codex 目录，不接受重复或混合参数。
+// parseCatalogOptions 严格区分标准扩展与 Codex 目录，不接受重复、未知或混合参数。
 // client_version 的值不比较、不参与目录计算，也不会触发上游刷新。
+//
+// `capability` 可以与 `include=modalities` 组合（两者都是显式意图，互不冲突），
+// 但不能与 `client_version` 组合：Codex 目录合同有自己的形状，Node 那条路径会把
+// capability 静默丢掉（`isCodexNativeModelsRequest` 分支不套过滤器），Go 选择报错而不是
+// 假装过滤生效。
+//
+// `capability` 取空值时等同「没有要求过滤」——与 Node 的
+// `if (!capability) return bodyText` 一致：客户端把变量拼进 query 而变量为空是常见形态，
+// 不该因此拿到 400。真正未知的键仍然报错（见下方白名单），这是 Go 侧既有的严格合同。
 func parseCatalogOptions(rawQuery string) (catalogOptions, bool) {
+	options := catalogOptions{protocol: catalogProtocolOpenAI}
 	if rawQuery == "" {
-		return catalogOptions{protocol: catalogProtocolOpenAI}, true
+		return options, true
 	}
 	values, err := url.ParseQuery(rawQuery)
-	if err != nil || len(values) != 1 {
+	if err != nil || len(values) == 0 || len(values) > 2 {
 		return catalogOptions{}, false
 	}
-	if clientVersions, found := values["client_version"]; found && len(clientVersions) == 1 {
+	if clientVersions, found := values["client_version"]; found {
+		if len(clientVersions) != 1 || len(values) != 1 {
+			return catalogOptions{}, false
+		}
 		return catalogOptions{protocol: catalogProtocolCodex}, true
 	}
-	if includes, found := values["include"]; found && len(includes) == 1 && includes[0] == "modalities" {
-		return catalogOptions{
-			protocol:          catalogProtocolOpenAI,
-			includeModalities: true,
-		}, true
+	for key := range values {
+		if key != "include" && key != "capability" {
+			return catalogOptions{}, false
+		}
 	}
-	return catalogOptions{}, false
+	if includes, found := values["include"]; found {
+		if len(includes) != 1 || includes[0] != "modalities" {
+			return catalogOptions{}, false
+		}
+		options.includeModalities = true
+	}
+	if capabilities, found := values["capability"]; found {
+		if len(capabilities) != 1 {
+			return catalogOptions{}, false
+		}
+		options.capability = strings.ToLower(strings.TrimSpace(capabilities[0]))
+	}
+	return options, true
 }
 
 // modelList 是 OpenAI 兼容模型列表 envelope。
@@ -234,16 +264,29 @@ type modelModalitiesView struct {
 	Output []string `json:"output"`
 }
 
-// newModelViews 校验有序唯一元组并按模型 ID 去重；跨 Provider 同名归属显示为 aih。
+// newModelViews 校验有序唯一元组并按模型 ID 去重。
+//
+// `owned_by` 由 resolveModelOwner 按「模型 ID 优先、Provider 兜底」解析成**厂商名**，
+// 与 Node 的 `buildOpenAIModelsList` 一致。早先这里直接输出 Provider ID 并在同名冲突时
+// 改写为 `aih`，两者都是 AIH 内部词汇：OpenAI 合同里 `owned_by` 是「拥有该模型的组织」，
+// 而 Node 的 WebUI 依赖厂商名反查 Provider 分组，写内部 ID 会让分组整块落空。
+//
+// capability 过滤刻意放在去重**之后**：Node 的 `filterOpenAIModelsBodyByCapability` 作用在
+// 已经去重的 `data` 数组上，每个模型项只按 `item.aih_modalities` 判一次——也就是首个
+// Provider 的记录。若在去重前逐 (Provider, 模型) 过滤，同名模型会因为不同 Provider 的模态
+// 不同而在两端得到不同的结果。
 func newModelViews(
 	models []accountapp.RoutableModel,
 	modalities modelmetadata.Reader,
 	includeModalities bool,
+	capability string,
 ) ([]modelView, error) {
 	if modalities == nil {
 		return nil, errInvalidModelSnapshot
 	}
 	views := make([]modelView, 0, len(models))
+	// owners 与 views 一一对应，记录每个模型项的首个 Provider，供能力过滤判定使用。
+	owners := make([]string, 0, len(models))
 	previousProviderID := ""
 	for _, model := range models {
 		if !model.IsValid() {
@@ -253,9 +296,6 @@ func newModelViews(
 		if len(views) > 0 && views[len(views)-1].ID == modelID {
 			if model.ProviderID() <= previousProviderID {
 				return nil, errInvalidModelSnapshot
-			}
-			if views[len(views)-1].OwnedBy != model.ProviderID() {
-				views[len(views)-1].OwnedBy = "aih"
 			}
 			previousProviderID = model.ProviderID()
 			continue
@@ -267,7 +307,7 @@ func newModelViews(
 			ID:      modelID,
 			Object:  "model",
 			Created: 0,
-			OwnedBy: model.ProviderID(),
+			OwnedBy: resolveModelOwner(model.ProviderID(), modelID),
 		}
 		if includeModalities {
 			view.AIHModalities = newModelModalitiesView(
@@ -277,18 +317,84 @@ func newModelViews(
 			)
 		}
 		views = append(views, view)
+		owners = append(owners, model.ProviderID())
 		previousProviderID = model.ProviderID()
 	}
-	return views, nil
+	return filterViewsByCapability(views, owners, modalities, capability), nil
 }
 
-// newModelModalitiesView 从本地索引读取能力，未命中时明确降级为纯文本。
+// filterViewsByCapability 按能力过滤已去重的模型项；空或未知能力不过滤（失败开放）。
+func filterViewsByCapability(
+	views []modelView,
+	owners []string,
+	reader modelmetadata.Reader,
+	capability string,
+) []modelView {
+	normalized := normalizeCapability(capability)
+	if normalized == "" {
+		return views
+	}
+	filtered := make([]modelView, 0, len(views))
+	for index, view := range views {
+		if modelMatchesCapability(reader, owners[index], view.ID, normalized) {
+			filtered = append(filtered, view)
+		}
+	}
+	return filtered
+}
+
+// normalizeCapability 归一化能力名，并让未知取值退化为「不过滤」。
+//
+// 与 Node 的 modelMatchesCapability 一致：拼错的能力名应该让目录原样返回，而不是把整个
+// 目录隐藏掉——客户端拿到空列表比拿到未过滤列表更难排查。
+func normalizeCapability(capability string) string {
+	normalized := strings.ToLower(strings.TrimSpace(capability))
+	switch normalized {
+	case "vision", "image_out":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+// modelMatchesCapability 判断模型是否满足能力过滤；capability 必须是已知取值。
+//
+// 判定走 LookupOrInferModalities：它总是给出答案（未收录时按保守家族兜底），因此这里不需要
+// 再区分「未命中」——把判不出来的模型当成不满足，与 vision guard 的保守方向一致。
+func modelMatchesCapability(
+	reader modelmetadata.Reader,
+	providerID string,
+	modelID string,
+	capability string,
+) bool {
+	modalities, found := reader.LookupOrInferModalities(providerID, modelID)
+	if !found {
+		return false
+	}
+	target := modalities.Input()
+	if capability == "image_out" {
+		target = modalities.Output()
+	}
+	return containsModality(target, "image")
+}
+
+// containsModality 判断模态列表是否包含 image。
+func containsModality(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
+}
+
+// newModelModalitiesView 从本地索引读取能力；未命中时按保守家族兜底，仍无答案才降级为纯文本。
 func newModelModalitiesView(
 	reader modelmetadata.Reader,
 	providerID string,
 	modelID string,
 ) *modelModalitiesView {
-	modalities, found := reader.LookupModalities(providerID, modelID)
+	modalities, found := reader.LookupOrInferModalities(providerID, modelID)
 	if !found {
 		modalities = modelmetadata.TextOnly()
 	}

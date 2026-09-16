@@ -19,16 +19,24 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 )
 
-// visionFamilyPatterns 是「未收录模型」的保守家族兜底，与 Node 的
-// VISION_INPUT_MODEL_PATTERNS 逐条一致。
+// visionFamilyPatterns 是「索引也查不到」时的最后一道家族兜底。
 //
-// 它只在离线索引查不到该 (Provider, 模型) 时生效。表格刻意保持小而明确：
+// 与 Node 的 VISION_INPUT_MODEL_PATTERNS 相比，这里把 OpenAI 一条从「枚举具体版本」
+// 改成「按主版本号」，原因是枚举会随时间腐坏：Node 写的是 `gpt-(4o|4[.-]1|5)`，
+// 而当前目录里已经有 gpt-6-astra，枚举表会把 gpt-6 判成看不见图片。
+//
+// 放宽的边界仍然保守，逐条对当前 models.dev 快照验证过：
+//   - `^gpt-[4-9]` 覆盖 gpt-4.x / 5.x / 6.x（快照里全部含 image 输入）；
+//     刻意排除 `gpt-3.5-turbo` 与 `gpt-oss-*`（快照里都是纯文本）。
+//   - `^o[1-9]` 覆盖 o 系列推理模型。已知例外是 `o3-mini`（快照里纯文本），但它在
+//     索引里能解析到（基座回退 → openai/o3-mini），因此永远不会走到这条兜底。
+//
 // 新增模型应当补 models.dev 数据，而不是继续放宽正则。
 var visionFamilyPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^claude-`),
 	regexp.MustCompile(`^gemini-`),
-	regexp.MustCompile(`^gpt-(4o|4[.-]1|5)`),
-	regexp.MustCompile(`^o[13](?:$|[.-])`),
+	regexp.MustCompile(`^gpt-[4-9]`),
+	regexp.MustCompile(`^o[1-9]($|[.-])`),
 }
 
 // normalizeVersionSeparators 把「数字.数字」里的点换成横线，使 `gpt-4.1-mini` 与

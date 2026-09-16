@@ -48,6 +48,10 @@ func TestIndexResolvesCurrentCodexAndClaudeModels(t *testing.T) {
 }
 
 // TestIndexFailsClosedForUnknownModel 验证索引不会猜测未知模型能力。
+//
+// 注意「未知 Provider」与「未知模型」是两件事：没有命名空间映射的 Provider 仍可能承载
+// 厂商自有模型 ID，基座回退会按模型名前缀解析它们（这是聚合 Provider 能查到模型的
+// 唯一路径）。只有模型本身也认不出来时才必须未命中。
 func TestIndexFailsClosedForUnknownModel(t *testing.T) {
 	t.Parallel()
 
@@ -58,8 +62,12 @@ func TestIndexFailsClosedForUnknownModel(t *testing.T) {
 	if _, found := index.LookupModalities("codex", "future-unknown-model"); found {
 		t.Fatal("unknown model unexpectedly found")
 	}
-	if _, found := index.LookupModalities("unknown-provider", "gpt-5.6-sol"); found {
-		t.Fatal("unknown provider unexpectedly found")
+	if _, found := index.LookupModalities("unknown-provider", "future-unknown-model"); found {
+		t.Fatal("unknown provider with unknown model unexpectedly found")
+	}
+	// 未映射 Provider + 厂商自有模型 ID：应当由基座回退解析，而不是静默降级为纯文本。
+	if _, found := index.LookupModalities("unknown-provider", "gpt-5.6-sol"); !found {
+		t.Fatal("unmapped provider serving a known vendor model should resolve via the base fallback")
 	}
 }
 

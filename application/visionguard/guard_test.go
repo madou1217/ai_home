@@ -10,6 +10,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
+	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
 // fakeReader 按 (provider, model) 返回预设模态；未登记即「查不到」。
@@ -177,12 +178,14 @@ func TestGuardKeepsUnlistedVisionFamilies(t *testing.T) {
 	for _, model := range []string{
 		"claude-opus-5",
 		"gemini-3.5-flash",
-		"gpt-4o-mini",
-		"gpt-4.1-nano",
+		// 当前主力模型：家族表按主版本号判定，不枚举具体版本。
+		"gpt-5.5",
+		"gpt-5.6-sol",
+		"gpt-6-astra",
 		// 版本分隔符归一化：点号版本与横线版本命中同一条家族规则。
-		"gpt-4-1-mini",
+		"gpt-5-5",
 		"gpt-5.2-codex",
-		"o3-mini",
+		"o4-mini",
 	} {
 		request := imageRequest(t, model, base64Source(t, "png-bytes"))
 		rewritten, result := guard.Apply(request, "opencode")
@@ -354,4 +357,65 @@ func TestNewRejectsIncompleteDependencies(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected error for missing blob writer")
 	}
+}
+
+// TestVisionFamilyTableAgreesWithSnapshot 用权威快照反查家族表，防止它随时间腐坏。
+//
+// 这条用例的动机来自一次真实腐坏：Node 的家族表把 OpenAI 写成 `gpt-(4o|4[.-]1|5)`，
+// 目录里出现 gpt-6 之后，枚举表会把看不见的版本判成"看不见图片"的反面——即把能看图的
+// 模型判成纯文本。因此这里用快照（models.dev 固定目录）逐条核对：
+//   - 命中的模型，快照必须说它含 image 输入；
+//   - 刻意排除的模型，快照必须说它是纯文本。
+//
+// 快照升级后如果某条断言失效，说明家族表该更新了，而不是放宽测试。
+func TestVisionFamilyTableAgreesWithSnapshot(t *testing.T) {
+	t.Parallel()
+
+	index, err := modelsdev.New()
+	if err != nil {
+		t.Fatalf("modelsdev.New() error = %v", err)
+	}
+	visionModels := []string{
+		"gpt-5.5",
+		"gpt-5.6-sol",
+		"gpt-6-astra",
+		"o4-mini",
+		"claude-opus-5",
+		"gemini-3.5-flash",
+	}
+	for _, model := range visionModels {
+		modalities, found := index.LookupModalities("codex", model)
+		if !found {
+			t.Fatalf("snapshot is missing %q", model)
+		}
+		if !supportsImageInput(modalities.Input()) {
+			t.Fatalf(
+				"family table claims %q is vision-capable but the snapshot says %v",
+				model,
+				modalities.Input(),
+			)
+		}
+	}
+
+	// 家族表刻意排除的纯文本家族：快照必须同意，否则就是漏保护。
+	textOnlyModels := []string{"gpt-3.5-turbo", "gpt-oss-120b"}
+	for _, model := range textOnlyModels {
+		modalities, found := index.LookupModalities("codex", model)
+		if !found {
+			t.Fatalf("snapshot is missing %q", model)
+		}
+		if supportsImageInput(modalities.Input()) {
+			t.Fatalf("excluded model %q unexpectedly supports image input", model)
+		}
+	}
+}
+
+// supportsImageInput 判断模态列表是否包含 image。
+func supportsImageInput(values []string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), "image") {
+			return true
+		}
+	}
+	return false
 }

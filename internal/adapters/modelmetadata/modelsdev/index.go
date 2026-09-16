@@ -19,28 +19,6 @@ var (
 	embeddedSnapshot []byte
 )
 
-// providerSourceIDs 把 AIH Provider 映射到 models.dev 基础模型命名空间。
-//
-// 只登记「该 Provider 的模型 ID 就是厂商模型 ID」的情形，因此映射是单值的。
-// 聚合类 Provider（opencode、qoder/qodercn、codebuddy 家族、kiro）的模型 ID 来自
-// 多个厂商，映射到任何单一命名空间都会查错，因此刻意不登记——它们由消费方
-// （例如 vision guard 的家族兜底）处理，而不是在这里猜一个命名空间。
-//
-// 快照本身包含全部命名空间（见 modalities.json），因此新增映射不需要重新生成快照。
-var providerSourceIDs = map[string]string{
-	"codex":  "openai",
-	"claude": "anthropic",
-	"gemini": "google",
-	// Antigravity 承载的就是 Gemini 模型。
-	"agy": "google",
-	// Grok CLI 的模型 ID 即 xAI 的模型 ID。
-	"grok": "xai",
-	// Kimi Code 的模型 ID 即 Moonshot 的模型 ID。
-	"kimi": "moonshotai",
-	// ZCode 背后是 z.ai / BigModel（zhipu）。
-	"zcode": "zhipuai",
-}
-
 // snapshotRecord 是生成快照的 JSON 传输形状。
 type snapshotRecord struct {
 	Input  []string `json:"input"`
@@ -76,6 +54,15 @@ func New() (*Index, error) {
 }
 
 // LookupModalities 按 AIH Provider 和真实模型 ID 返回不可变值对象。
+//
+// 解析顺序与 Node 的 models-dev-metadata 一致，分三层：
+//  1. 该 Provider 的候选命名空间按序精确命中（聚合 Provider 在这里才能查到自己的模型）；
+//  2. 基座模型回退：按模型名前缀推断厂商命名空间；
+//  3. 逐步裁掉尾段再试——provider 自定义的能力/档位后缀（…-thinking、…-high）在固定
+//     目录里不存在，落到基座模型的模态即可。
+//
+// 任何一层都不命中时返回未命中，由调用方决定降级策略（模型目录降级为纯文本，
+// vision guard 走家族兜底）。
 func (index *Index) LookupModalities(
 	providerID string,
 	modelID string,
@@ -83,12 +70,158 @@ func (index *Index) LookupModalities(
 	if index == nil || index.models == nil {
 		return modelmetadata.Modalities{}, false
 	}
-	sourceProviderID, found := providerSourceIDs[providerID]
-	if !found {
+	id := strings.TrimSpace(modelID)
+	if id == "" {
 		return modelmetadata.Modalities{}, false
 	}
-	modalities, found := index.models[sourceProviderID+"/"+modelID]
-	return modalities, found
+	stripped := stripKnownModelPrefix(id)
+	for _, namespace := range providerNamespacesFor(providerID, id, stripped) {
+		if modalities, found := index.models[namespace+"/"+stripped]; found {
+			return modalities, true
+		}
+	}
+	for _, key := range baseModelCandidates(id, stripped) {
+		if modalities, found := index.models[key]; found {
+			return modalities, true
+		}
+	}
+	return modelmetadata.Modalities{}, false
+}
+
+// providerNamespacesFor 返回该 Provider 与模型组合的候选 models.dev 命名空间（按序）。
+//
+// 只登记「查得到才有意义」的候选：聚合 Provider 的模型 ID 来自多个厂商，因此候选是
+// 一组命名空间而不是一个；没有稳定候选的 Provider 返回空，交给基座回退按模型 ID 推断。
+func providerNamespacesFor(
+	providerID string,
+	modelID string,
+	strippedModelID string,
+) []string {
+	// 模型 ID 自带聚合前缀时，前缀本身就是最精确的候选。
+	if strings.HasPrefix(modelID, "opencode-go/") {
+		return []string{"opencode-go"}
+	}
+	if strings.HasPrefix(modelID, "opencode/") {
+		return []string{"opencode"}
+	}
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "codex":
+		return []string{"openai", "github-copilot"}
+	case "claude":
+		return []string{"anthropic"}
+	case "gemini":
+		return []string{"google", "google-vertex"}
+	case "opencode":
+		return []string{"opencode-go", "opencode"}
+	case "agy":
+		// Antigravity 承载多家模型，候选按模型名前缀选择。
+		switch {
+		case hasPrefixFold(strippedModelID, "claude-"):
+			return []string{"anthropic", "github-copilot", "google-vertex"}
+		case hasPrefixFold(strippedModelID, "gemini-"),
+			hasPrefixFold(strippedModelID, "gemma-"):
+			return []string{"google", "github-copilot", "google-vertex"}
+		case isOpenAIFamily(strippedModelID):
+			return []string{"openai", "github-copilot"}
+		case hasPrefixFold(strippedModelID, "grok-"):
+			return []string{"xai"}
+		default:
+			return []string{"github-copilot"}
+		}
+	case "kimi":
+		// OAuth 走 kimi-for-coding；api-key 走 moonshotai-cn / moonshotai。
+		return []string{"kimi-for-coding", "moonshotai-cn", "moonshotai"}
+	case "zcode":
+		// GLM 模型挂在 Z.AI / 智谱 Coding Plan。
+		return []string{"zai-coding-plan", "zhipuai-coding-plan", "zai", "zhipuai"}
+	default:
+		return nil
+	}
+}
+
+// baseModelCandidates 返回基座模型候选键（厂商前缀推断 + 逐步裁尾）。
+func baseModelCandidates(modelID string, strippedModelID string) []string {
+	candidates := make([]string, 0, 16)
+	if strings.Contains(modelID, "/") {
+		candidates = append(candidates, modelID)
+	}
+	// 与 Node 一致：这些判断彼此独立，不做 else 短路。
+	if isOpenAIFamily(strippedModelID) {
+		candidates = append(candidates, "openai/"+strippedModelID)
+	}
+	if hasPrefixFold(strippedModelID, "claude-") {
+		candidates = append(candidates, "anthropic/"+strippedModelID)
+	}
+	if hasPrefixFold(strippedModelID, "gemini-") || hasPrefixFold(strippedModelID, "gemma-") {
+		candidates = append(candidates, "google/"+strippedModelID)
+	}
+	if hasPrefixFold(strippedModelID, "grok-") {
+		candidates = append(candidates, "xai/"+strippedModelID)
+	}
+	if hasPrefixFold(strippedModelID, "kimi-") {
+		candidates = append(candidates, "moonshotai/"+strippedModelID)
+	}
+	if hasPrefixFold(strippedModelID, "glm-") {
+		candidates = append(candidates, "zhipuai/"+strippedModelID, "zhipu/"+strippedModelID)
+	}
+	// 能力/档位后缀变体：逐步裁掉尾段，落到基座模型的元数据。
+	trimmed := strippedModelID
+	for strings.Contains(trimmed, "-") {
+		trimmed = trimmed[:strings.LastIndex(trimmed, "-")]
+		if trimmed == "" {
+			break
+		}
+		for _, prefix := range baseModelNamespaces {
+			candidates = append(candidates, prefix+"/"+trimmed)
+		}
+		if strings.Contains(trimmed, "/") {
+			candidates = append(candidates, trimmed)
+		}
+	}
+	return candidates
+}
+
+// baseModelNamespaces 是基座回退会尝试的命名空间。
+var baseModelNamespaces = []string{
+	"openai",
+	"anthropic",
+	"google",
+	"xai",
+	"moonshotai",
+	"zhipuai",
+	"zhipu",
+}
+
+// stripKnownModelPrefix 去掉模型 ID 自带的聚合前缀。
+func stripKnownModelPrefix(modelID string) string {
+	switch {
+	case strings.HasPrefix(modelID, "opencode-go/"):
+		return modelID[len("opencode-go/"):]
+	case strings.HasPrefix(modelID, "opencode/"):
+		return modelID[len("opencode/"):]
+	default:
+		return modelID
+	}
+}
+
+// isOpenAIFamily 判断模型名是否属于 OpenAI 命名空间下的家族。
+func isOpenAIFamily(modelID string) bool {
+	lowered := strings.ToLower(modelID)
+	if strings.HasPrefix(lowered, "gpt-") ||
+		strings.HasPrefix(lowered, "chatgpt-") ||
+		strings.HasPrefix(lowered, "text-embedding-") {
+		return true
+	}
+	// o1 / o3 / o4 这类推理模型：o 紧跟一位数字。
+	if len(lowered) >= 2 && lowered[0] == 'o' && lowered[1] >= '0' && lowered[1] <= '9' {
+		return true
+	}
+	return false
+}
+
+// hasPrefixFold 判断是否以指定前缀开头（大小写不敏感）。
+func hasPrefixFold(value string, prefix string) bool {
+	return len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix)
 }
 
 //go:generate npm run --prefix ../../../.. models:generate

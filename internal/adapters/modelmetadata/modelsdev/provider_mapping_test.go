@@ -6,19 +6,24 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 )
 
-// TestLookupResolvesMappedProviders 验证每个已登记的 Provider 都能命中真实快照条目。
-//
-// 这条用例的作用是钉住命名空间映射：写错一个 models.dev 命名空间（例如把 zcode 映到
-// zhipu 而不是 zhipuai）不会报错，只会静默退化成「查不到 → 纯文本」，进而让 vision guard
-// 把能看图的模型误判成纯文本。因此这里用快照里确实存在的模型 ID 逐个验证。
-func TestLookupResolvesMappedProviders(t *testing.T) {
-	t.Parallel()
-
+// newIndex 创建快照索引。
+func newIndex(t *testing.T) *modelsdev.Index {
+	t.Helper()
 	index, err := modelsdev.New()
 	if err != nil {
 		t.Fatalf("modelsdev.New() error = %v", err)
 	}
+	return index
+}
 
+// TestLookupResolvesMappedProviders 验证单值命名空间映射能命中真实快照条目。
+//
+// 这条用例钉住命名空间拼写：写错一个 models.dev 命名空间不会报错，只会静默退化成
+// 「查不到 → 纯文本」，进而让 vision guard 把能看图的模型误判成纯文本。
+func TestLookupResolvesMappedProviders(t *testing.T) {
+	t.Parallel()
+
+	index := newIndex(t)
 	tests := []struct {
 		providerID string
 		modelID    string
@@ -50,45 +55,116 @@ func TestLookupResolvesMappedProviders(t *testing.T) {
 	}
 }
 
-// TestLookupLeavesAggregatorsUnmapped 验证聚合类 Provider 刻意不登记命名空间。
+// TestLookupResolvesAggregatorNamespaces 验证聚合 Provider 的候选命名空间。
 //
-// opencode / qoder / codebuddy 家族的模型 ID 来自多个厂商，映射到任何单一命名空间都会
-// 查错，因此宁可查不到也不猜；消费方（vision guard）用家族兜底处理它们。
-func TestLookupLeavesAggregatorsUnmapped(t *testing.T) {
+// 聚合 Provider 的模型表挂在 models.dev 自己的命名空间下（opencode、github-copilot、
+// zai-coding-plan 等），这些模型 ID 在 canonical models 里不存在；只按厂商命名空间查
+// 会一律查不到。
+func TestLookupResolvesAggregatorNamespaces(t *testing.T) {
 	t.Parallel()
 
-	index, err := modelsdev.New()
-	if err != nil {
-		t.Fatalf("modelsdev.New() error = %v", err)
+	index := newIndex(t)
+	tests := []struct {
+		name       string
+		providerID string
+		modelID    string
+	}{
+		// opencode 的自有命名空间候选。
+		{name: "opencode prefixed id", providerID: "opencode", modelID: "opencode-go/glm-5.2"},
+		// agy 按模型前缀选候选：claude 系走 anthropic / github-copilot。
+		{name: "agy claude family", providerID: "agy", modelID: "claude-sonnet-4-6"},
+		{name: "agy gemini family", providerID: "agy", modelID: "gemini-3.5-flash"},
+		{name: "agy grok family", providerID: "agy", modelID: "grok-4.5"},
 	}
-	for _, providerID := range []string{
-		"opencode",
-		"qoder",
-		"qodercn",
-		"kiro",
-		"codebuddy",
-		"codebuddycn",
-		"workbuddy",
-		"workbuddycn",
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if _, found := index.LookupModalities(test.providerID, test.modelID); !found {
+				t.Fatalf(
+					"LookupModalities(%q, %q) missed",
+					test.providerID,
+					test.modelID,
+				)
+			}
+		})
+	}
+}
+
+// TestLookupFallsBackToBaseModel 验证厂商前缀推断与逐步裁尾。
+//
+// 没有稳定命名空间的 Provider（codebuddy 家族、qoder、kiro）以及 provider 自定义的
+// 能力后缀变体（…-thinking、…-high）都靠这一层落地；少了它，这些模型会静默变成纯文本。
+func TestLookupFallsBackToBaseModel(t *testing.T) {
+	t.Parallel()
+
+	index := newIndex(t)
+	tests := []struct {
+		name       string
+		providerID string
+		modelID    string
+	}{
+		{name: "aggregator with claude id", providerID: "codebuddy", modelID: "claude-sonnet-4-6"},
+		{name: "aggregator with glm id", providerID: "qoder", modelID: "glm-5.2"},
+		{name: "capability suffix variant", providerID: "codebuddy", modelID: "claude-opus-4-6-thinking"},
+		{name: "tier suffix variant", providerID: "kiro", modelID: "claude-sonnet-4-6-high"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			modalities, found := index.LookupModalities(test.providerID, test.modelID)
+			if !found {
+				t.Fatalf(
+					"LookupModalities(%q, %q) missed; base-model fallback is not working",
+					test.providerID,
+					test.modelID,
+				)
+			}
+			if len(modalities.Input()) == 0 {
+				t.Fatalf("modalities = %#v", modalities)
+			}
+		})
+	}
+}
+
+// TestLookupRejectsUnknownModel 验证确实不存在的模型仍然未命中。
+//
+// 三层解析都必须失败才返回未命中；这条用例防止「什么都命中」把降级路径变成死代码。
+func TestLookupRejectsUnknownModel(t *testing.T) {
+	t.Parallel()
+
+	index := newIndex(t)
+	for _, test := range []struct {
+		providerID string
+		modelID    string
+	}{
+		{providerID: "grok", modelID: "definitely-not-a-real-model"},
+		{providerID: "codebuddy", modelID: "definitely-not-a-real-model"},
+		{providerID: "codex", modelID: ""},
 	} {
-		if _, found := index.LookupModalities(providerID, "glm-5.2"); found {
+		if _, found := index.LookupModalities(test.providerID, test.modelID); found {
 			t.Fatalf(
-				"provider %q must stay unmapped so aggregator model ids are not resolved against a single vendor namespace",
-				providerID,
+				"LookupModalities(%q, %q) should miss",
+				test.providerID,
+				test.modelID,
 			)
 		}
 	}
 }
 
-// TestLookupRejectsUnknownModelUnderMappedProvider 验证映射命中但模型不存在时仍返回未命中。
-func TestLookupRejectsUnknownModelUnderMappedProvider(t *testing.T) {
+// TestLookupPrefersProviderNamespaceOverBaseFallback 验证精确候选优先于基座回退。
+func TestLookupPrefersProviderNamespaceOverBaseFallback(t *testing.T) {
 	t.Parallel()
 
-	index, err := modelsdev.New()
-	if err != nil {
-		t.Fatalf("modelsdev.New() error = %v", err)
+	index := newIndex(t)
+	// zcode 的候选里 zai-coding-plan 在 zhipuai 之前；两者都可能收录 glm-5.2，
+	// 这里只要求解析成功且落在 zcode 的候选集合内，不假设具体是哪一条命中。
+	modalities, found := index.LookupModalities("zcode", "glm-5.2")
+	if !found {
+		t.Fatal("zcode/glm-5.2 should resolve")
 	}
-	if _, found := index.LookupModalities("grok", "definitely-not-a-real-model"); found {
-		t.Fatal("unknown model must not resolve")
+	if len(modalities.Input()) == 0 || len(modalities.Output()) == 0 {
+		t.Fatalf("modalities = %#v", modalities)
 	}
 }

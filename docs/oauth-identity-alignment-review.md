@@ -1,5 +1,9 @@
 # Codex/Claude/AGY OAuth 身份对齐：需求 · TODO · DONE
 
+> 2026-09-16 复核交付：新增修复、精确验证与真实数据阻塞见
+> [Provider review 交付记录](maintenance/provider-review-delivery-20260916.md)。
+> 下文保留原评审时间点的事实；不得把历史“未做”或早期测试数量当作当前状态。
+
 提交：`474a52ee` · `ae60c7ac` · `2860409f` · `2f79dbbe` · `28f2dd7c`（均已推送，工作树干净）
 
 ---

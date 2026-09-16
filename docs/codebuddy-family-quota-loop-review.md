@@ -1,5 +1,9 @@
 # CodeBuddy 家族「额度探测闭环」— 需求 / 交付 / 未完成 评审文档
 
+> 2026-09-16 复核交付：新增修复、精确验证与真实数据阻塞见
+> [Provider review 交付记录](maintenance/provider-review-delivery-20260916.md)。
+> 下文保留原评审时间点的事实；不得把历史“未做”或早期测试数量当作当前状态。
+
 - 状态：**待 review**
 - 评审对象：2026-09-15 ~ 2026-09-16 的 CodeBuddy 家族工作（分支 `main`）
 - 当前 HEAD：`dd90ee4d`（已推送，与 `origin/main` 同步，0/0）

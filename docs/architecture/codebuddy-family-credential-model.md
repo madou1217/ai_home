@@ -826,6 +826,17 @@ gemini 各一支），最后落到通用兜底——兜底只渲染 `record.rema
 （`accounts.js` 内部的 `loadCodex/Agy/Kimi/ZcodeServerAccounts` 走的是各自硬编码的
 cliName，家族没有对应 loader，因此不经过它们。）
 
+**账号从哪来（与运行时账号池无关）**：家族四支在 **Node runtime pool** 里**没有槽位**——
+`lib/server/accounts.js` 的 `loadServerRuntimeAccounts()` 只枚举 11 个 provider
+（codex/gemini/claude/agy/opencode/qoder/qodercn/grok/kimi/kiro/zcode），实测（注册家族账号后
+调用它）返回的 pool 里四支全部缺失。**但这不影响账号可见性**：WebUI/托盘的账号列表由
+`webui-account-live.js` 的 `buildFastAccountsSnapshot()` 产出，它按 `SUPPORTED_SERVER_PROVIDERS`
+（= 合同全量 provider）逐支调 `listAccountCredentialRecords()` 读 **DB 凭据记录**，
+runtime pool 只用于**补充**运行态（`runtimeAccountMap` 查不到就是 `null`）。
+所以家族账号照常列出，只是运行态落在既有的"未知不伪装"分支——与
+"这些 provider 没有 aih 托管的运行时"一致。**已加回归测试钉住**（见 §14.6）：一旦有人把枚举
+改成以 pool 为准，四支就会静默消失。
+
 ### 14.6 验证
 
 - `node --test test/codebuddy-quota-probe.test.js`：21 pass。覆盖：端点/路径解析（确认无 `/v2`）、
@@ -844,6 +855,9 @@ cliName，家族没有对应 loader，因此不经过它们。）
   另跑 `tsc --noEmit` 并 `comm` 对比改动前后错误列表：家族新 kind 未进
   `AccountUsageSnapshot` 联合类型会新增 2 条错误（TS2367/TS2339），补齐后回到基线 101 条、
   **无新增**；`cd web && npm run build` 通过。
+- `node --test test/webui-account-live.test.js`：**账号可见性**——先断言运行时账号池里
+  确实没有家族槽位，再断言四支仍全部出现在 `readAccountsFastSnapshot` 的账号快照里
+  （列表按 provider 读 DB 凭据记录，与 pool 无关）；防止将来把枚举改成以 pool 为准。
 - **实机（穿到 server 闸门）**：用本机真实 `.info` 凭据跑真实端点，再把快照落盘后经
   `readTrustedUsageSnapshot` 读回，三支的账户级剩余率**前后一致**——
   `workbuddy` 16.67%（100/600 credits）、`codebuddy` 16.67%（100/600）、`workbuddycn` 约 68%

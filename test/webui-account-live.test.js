@@ -1606,3 +1606,49 @@ test('fast account snapshot preserves the Kimi public subscription name', (t) =>
   assert.equal(record.planName, 'Allegretto');
   assert.equal(record.region, 'overseas');
 });
+
+test('family accounts surface in the fast snapshot even though the runtime pool has no slot for them', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-family-'));
+  // 家族四支在 **Node runtime pool** 里没有槽位：`loadServerRuntimeAccounts` 只枚举 11 个
+  // provider（codex/gemini/claude/agy/opencode/qoder/qodercn/grok/kimi/kiro/zcode），
+  // 家族不在其中。但账号列表**不是**从 pool 枚举的，而是按 provider 读 **DB 凭据记录**
+  // （`listAccountCredentialRecords`），pool 只用于补充运行态。所以家族账号照样要出现——
+  // 一旦哪天有人把枚举改成以 pool 为准，这些账号就会在账号页/托盘里"静默消失"。
+  const familyProviders = ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'];
+  const refs = {};
+  for (const provider of familyProviders) {
+    refs[provider] = registerDbAccount(root, provider, '1', {
+      env: { CODEBUDDY_API_KEY: 'key-' + provider }
+    });
+  }
+
+  const ctx = buildRefreshContext({
+    aiHomeDir: root,
+    provider: 'codebuddy',
+    accountRef: refs.codebuddy,
+    status: { configured: true, accountName: 'family@example.com' }
+  });
+  // 前提断言：运行时账号池里确实没有家族的任何槽位。
+  for (const provider of familyProviders) {
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(ctx.state.accounts, provider),
+      false,
+      provider + ' 不该出现在 runtime pool 里（这是本用例的前提）'
+    );
+  }
+
+  const snapshot = readAccountsFastSnapshot(ctx);
+  const byProvider = new Map(snapshot.accounts.map((item) => [item.provider, item]));
+
+  for (const provider of familyProviders) {
+    const record = byProvider.get(provider);
+    assert.ok(record, provider + ' 必须出现在账号快照里');
+    assert.equal(record.accountRef, refs[provider]);
+    // 没有 runtime 记录 ≠ 被丢弃：运行态按"未知"保留，不伪造。
+    assert.equal(record.apiKeyMode, true);
+    assert.equal(record.provider, provider);
+  }
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+

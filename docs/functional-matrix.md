@@ -641,6 +641,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | OPS-016 | Test runner cleanup | 全量 test 分片/清理与 focused Node test | 开发 | `scripts/run-tests.js`、`test/test-runner-cleanup.test.js` |
 | OPS-017 | Postinstall | 修复权限/hooks/本地可执行项 | 内部 | `scripts/postinstall.js` |
 | OPS-018 | models.dev SDK 快照 | 模型元数据（modalities、上下文窗口、定价）来自 `@opencode-ai/models` npm 依赖内置的离线快照，package.json 钉精确版本；升级依赖后 `npm run models:generate` 重新派生 Go 模态索引，`npm run models:check` 离线校验一致。运行时完全离线，不存在抓取上游的定时任务 | 运维/稳定 | `scripts/gen-models-dev-modalities.js`、`internal/tools/modelsdevmodalities` |
+| OPS-019 | OAuth 身份迁移计划与恢复验证 | 独立脚本仅公开只读 plan；内部服务在临时 SQLite/文件上验证提交标记、回滚和进程中断恢复。真实账号 apply/recover/rollback 仍由命令门禁拒绝，不等于生产迁移已开放 | 内部验证/公开只读 | `scripts/oauth-identity-maintenance.js`、`docs/architecture/account-maintenance-recovery.md` |
 
 ## 13. 兼容、废弃与未公开能力清单
 

@@ -588,7 +588,7 @@ test('createAuthJobManager uses a login runtime and exposes accountRef after OAu
     processObj: {
       ...process,
       cwd: () => root,
-      env: { ...process.env, HOME: root, USERPROFILE: root },
+      env: { ...process.env, HOME: root, USERPROFILE: root, AIH_HOST_HOME: root, REAL_HOME: root },
       platform: process.platform,
       kill() {
         return true;
@@ -2009,7 +2009,7 @@ test('createAuthJobManager marks Kimi OAuth succeeded when its credential file a
   const credentialsPath = path.join(running.configDir, 'credentials', 'kimi-code.json');
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
   fs.writeFileSync(credentialsPath, JSON.stringify({
-    access_token: 'kimi-access-token',
+    access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
     refresh_token: 'kimi-refresh-token',
     expires_at: 1770000000000,
     token_type: 'Bearer'
@@ -2023,7 +2023,7 @@ test('createAuthJobManager marks Kimi OAuth succeeded when its credential file a
   assert.match(completed.accountRef, /^acct_/);
   assert.deepEqual(readAccountNativeAuth(fs, root, completed.accountRef), {
     credentials: {
-      access_token: 'kimi-access-token',
+      access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
       refresh_token: 'kimi-refresh-token',
       expires_at: 1770000000000,
       token_type: 'Bearer'

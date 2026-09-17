@@ -135,10 +135,11 @@ test('AGY and OpenCode projections round-trip through the account database', (t)
     },
     {
       provider: 'opencode',
-      nativeAuth: { auth: { 'opencode-go': { type: 'api', key: 'open-key' } } },
+      nativeAuth: { auth: { 'opencode-go': { type: 'oauth', account_id: 'projection-user', access: 'open-access', refresh: 'open-refresh' } } },
       authPath: ['.local', 'share', 'opencode', 'auth.json'],
       mutate(payload) {
-        payload['opencode-go'].key = 'refreshed-key';
+        payload['opencode-go'].access = 'refreshed-access';
+        payload['opencode-go'].refresh = 'refreshed-refresh';
         return payload;
       },
       expectedField: 'auth'
@@ -364,13 +365,14 @@ test('Claude login captures its scoped keychain directly into DB without a crede
   assert.equal(fs.existsSync(path.join(runtimeDir, '.claude', '.credentials.json')), false);
 });
 
-test('Qoder login registers encrypted projection with canonical login metadata', (t) => {
+test('Qoder materialized native projection uses UID while console metadata remains a label', (t) => {
   const fixture = createProjectionFixture(t);
   const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'qodercn', 'scoped');
   const credentialsPath = path.join(runtimeDir, '.auth', 'user');
   const machineIdPath = path.join(runtimeDir, '.auth', 'machine_id');
   fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
-  fs.writeFileSync(credentialsPath, 'opaque-official-qoder-credential', 'utf8');
+  const nativeCredential = JSON.stringify({ uid: 'qoder-user-A', security_oauth_token: 'fixture-qoder-token' });
+  fs.writeFileSync(credentialsPath, nativeCredential, 'utf8');
   fs.writeFileSync(machineIdPath, 'machine-id', 'utf8');
 
   const registration = registerProviderAuthProjection(fs, runtimeDir, 'qodercn', {
@@ -384,7 +386,7 @@ test('Qoder login registers encrypted projection with canonical login metadata',
   assert.deepEqual(
     readAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef),
     {
-      credentials: 'opaque-official-qoder-credential',
+      credentials: nativeCredential,
       machineId: 'machine-id',
       userInfo: { email: 'qoder-cn@example.com' }
     }
@@ -430,6 +432,7 @@ test('Kimi login registers and materializes OAuth credentials with its device id
   const credentialsPath = path.join(runtimeDir, '.kimi-code', 'credentials', 'kimi-code.json');
   const deviceIdPath = path.join(runtimeDir, '.kimi-code', 'device_id');
   const credentials = {
+    user_id: 'kimi-device-fixture-user',
     access_token: 'kimi-access-token',
     refresh_token: 'kimi-refresh-token',
     expires_at: 1770000000000,
@@ -698,13 +701,13 @@ test('ZCode re-login with the same upstream user refreshes the existing account'
     'oauth:active_provider': 'zai',
     'oauth:zai:access_token': 'zai-access-first',
     zcodejwttoken: 'zcode-jwt-first',
-    'oauth:zai:user_info': JSON.stringify({ email: 'zcode-user@example.com', name: 'Zcode User' })
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'zcode-user-A', email: 'zcode-user@example.com', name: 'Zcode User' })
   };
   const secondCredentials = {
     'oauth:active_provider': 'zai',
     'oauth:zai:access_token': 'zai-access-second',
     zcodejwttoken: 'zcode-jwt-second',
-    'oauth:zai:user_info': JSON.stringify({ email: 'zcode-user@example.com', name: 'Zcode User' })
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'zcode-user-A', email: 'zcode-user@example.com', name: 'Zcode User' })
   };
   writeZcodeProjection(firstRuntime, firstCredentials);
   writeZcodeProjection(secondRuntime, secondCredentials);
@@ -733,12 +736,12 @@ test('ZCode reauth does not overwrite a requested account with another native us
   const targetCredentials = {
     'oauth:zai:access_token': 'zai-access-target',
     zcodejwttoken: 'zcode-jwt-target',
-    'oauth:zai:user_info': JSON.stringify({ email: 'target@example.com' })
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'zcode-target', email: 'target@example.com' })
   };
   const replacementCredentials = {
     'oauth:zai:access_token': 'zai-access-replacement',
     zcodejwttoken: 'zcode-jwt-replacement',
-    'oauth:zai:user_info': JSON.stringify({ email: 'replacement@example.com' })
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'zcode-replacement', email: 'replacement@example.com' })
   };
   writeZcodeProjection(targetRuntime, targetCredentials);
   writeZcodeProjection(replacementRuntime, replacementCredentials);
@@ -762,7 +765,7 @@ test('ZCode reauth does not overwrite a requested account with another native us
   });
 });
 
-test('Kiro login extracts OAuth metadata from SQLite and registers the account', (t) => {
+test('Kiro native SQLite login registers only after authenticated identity enrichment', async (t) => {
   const { DatabaseSync } = require('node:sqlite');
   const fixture = createProjectionFixture(t);
   const runtimeDir = path.join(fixture.aiHomeDir, 'run', 'login', 'kiro', 'scoped');
@@ -781,9 +784,11 @@ test('Kiro login extracts OAuth metadata from SQLite and registers the account',
   );
   database.close();
 
-  const registration = registerProviderAuthProjection(fs, runtimeDir, 'kiro', {
+  const { registerKiroNativeLogin } = require('../lib/account/kiro-native-login');
+  const registration = await registerKiroNativeLogin(fs, runtimeDir, {
     aiHomeDir: fixture.aiHomeDir,
-    cliAccountId: '18'
+    cliAccountId: '18',
+    request: async () => new Response(JSON.stringify({ userInfo: { userId: 'aws-fixture-user', email: 'discard@example.invalid' } }))
   });
 
   assert.equal(registration.registered, true);
@@ -793,6 +798,8 @@ test('Kiro login extracts OAuth metadata from SQLite and registers the account',
   assert.equal(nativeAuth.auth.refresh_token, 'kiro-refresh-token');
   assert.equal(typeof nativeAuth.database, 'string');
   assert.ok(nativeAuth.database.length > 0);
+  assert.equal(nativeAuth.identityEvidence.subject, 'aws-fixture-user');
+  assert.equal(JSON.stringify(nativeAuth.identityEvidence).includes('discard@example.invalid'), false);
 });
 
 test('AGY, Gemini and OpenCode login projections register one accountRef-backed DB record', (t) => {
@@ -833,11 +840,11 @@ test('AGY, Gemini and OpenCode login projections register one accountRef-backed 
       cliAccountId: '13',
       files: [
         [['.local', 'share', 'opencode', 'auth.json'], {
-          openai: { type: 'oauth', refresh: 'opencode-refresh' }
+          openai: { type: 'oauth', account_id: 'opencode-fixture-user', refresh: 'opencode-refresh' }
         }]
       ],
       expectedNativeAuth: {
-        auth: { openai: { type: 'oauth', refresh: 'opencode-refresh' } }
+        auth: { openai: { type: 'oauth', account_id: 'opencode-fixture-user', refresh: 'opencode-refresh' } }
       }
     }
   ];

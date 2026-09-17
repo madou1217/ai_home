@@ -129,15 +129,15 @@ test('opencode identity fingerprints configured credentials, not provider names 
   assert.equal(first.identitySeed.includes('google'), false);
 });
 
-test('opencode OAuth identity hashes refresh credentials and ignores rotating access data', () => {
+test('opencode OAuth identity uses a stable account id and ignores rotating grants', () => {
   const first = identity.resolveNativeAuthIdentitySeed('opencode', { auth: {
-    anthropic: { type: 'oauth', access: 'access-a', refresh: 'refresh-stable', expires: 100 }
+    anthropic: { type: 'oauth', account_id: 'opencode-user-A', access: 'access-a', refresh: 'refresh-first', expires: 100 }
   } });
   const second = identity.resolveNativeAuthIdentitySeed('opencode', { auth: {
-    anthropic: { type: 'oauth', access: 'access-b', refresh: 'refresh-stable', expires: 200 }
+    anthropic: { type: 'oauth', account_id: 'opencode-user-A', access: 'access-b', refresh: 'refresh-second', expires: 200 }
   } });
   const differentAccount = identity.resolveNativeAuthIdentitySeed('opencode', { auth: {
-    anthropic: { type: 'oauth', access: 'access-c', refresh: 'refresh-other', expires: 300 }
+    anthropic: { type: 'oauth', account_id: 'opencode-user-B', access: 'access-c', refresh: 'refresh-other', expires: 300 }
   } });
 
   assert.equal(first.identitySeed, second.identitySeed);
@@ -146,7 +146,7 @@ test('opencode OAuth identity hashes refresh credentials and ignores rotating ac
   assert.equal(first.degraded, false);
 });
 
-test('kimi OAuth identity hashes opaque refresh credentials as a fallback', () => {
+test('kimi token-only credentials are unverifiable rather than rotating local identity', () => {
   const first = identity.resolveNativeAuthIdentitySeed('kimi', { credentials: {
     access_token: 'access-a',
     refresh_token: 'refresh-stable',
@@ -168,9 +168,9 @@ test('kimi OAuth identity hashes opaque refresh credentials as a fallback', () =
 
   assert.equal(first.identitySeed, second.identitySeed);
   assert.equal(first.identitySeed, legacyBehindEmptyCanonical.identitySeed);
-  assert.match(first.identitySeed, /^oauth:kimi:token:[a-f0-9]{16}$/);
+  assert.equal(first.identitySeed, '');
   assert.equal(first.identitySeed.includes('refresh-stable'), false);
-  assert.equal(first.degraded, false);
+  assert.equal(first.degraded, true);
 });
 
 test('kimi OAuth identity uses stable user_id across rotating tokens and devices', () => {
@@ -199,7 +199,7 @@ test('kimi OAuth identity uses stable user_id across rotating tokens and devices
   assert.equal(first.degraded, false);
 });
 
-test('zcode OAuth identity uses user_info email across rotating tokens when user_id is absent', () => {
+test('zcode email-only credentials cannot create an OAuth identity', () => {
   const first = identity.resolveNativeAuthIdentitySeed('zcode', { credentials: {
     'oauth:active_provider': 'zai',
     'oauth:zai:access_token': 'zai-access-a',
@@ -218,11 +218,10 @@ test('zcode OAuth identity uses user_info email across rotating tokens when user
     'oauth:zai:user_info': JSON.stringify({ email: 'other@example.com' })
   } });
 
-  assert.equal(first.identitySeed, second.identitySeed, '同 email 两次登录（不同 token）必须得到同一种子');
-  assert.equal(first.identitySeed, `oauth:zcode:user:${identity.hashApiKeySecret('zcode.user@example.com')}`);
-  assert.notEqual(first.identitySeed, differentUser.identitySeed);
-  assert.equal(first.identitySeed.includes('zcode.user@example.com'), false);
-  assert.equal(first.degraded, false);
+  for (const result of [first, second, differentUser]) {
+    assert.equal(result.identitySeed, '');
+    assert.equal(result.degraded, true);
+  }
 });
 
 test('zcode OAuth identity prefers user_id over email and keeps the legacy precedence', () => {

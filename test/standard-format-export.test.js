@@ -689,7 +689,7 @@ test('importStandardAccountRecords stores flat Kimi OAuth credentials and device
       platform: 'moonshot',
       type: 'oauth',
       credentials: {
-        access_token: 'kimi-access',
+        access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
         refresh_token: 'kimi-refresh',
         expires_at: 0,
         expiresAt: 1786657475,
@@ -712,7 +712,7 @@ test('importStandardAccountRecords stores flat Kimi OAuth credentials and device
     assert.equal(result.imported, 1);
     assert.deepEqual(nativeAuth, {
       credentials: {
-        access_token: 'kimi-access',
+        access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
         refresh_token: 'kimi-refresh',
         expires_at: 1786657475,
         expires_in: 900,
@@ -738,7 +738,7 @@ test('importStandardAccountRecords selects one complete Kimi OAuth snapshot inst
         device_id: 'canonical-device'
       },
       auth: {
-        access_token: 'legacy-access',
+        access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
         refresh_token: 'legacy-refresh',
         expires_at: 1786657475,
         token_type: 'Bearer',
@@ -757,7 +757,7 @@ test('importStandardAccountRecords selects one complete Kimi OAuth snapshot inst
     assert.equal(result.imported, 1);
     assert.deepEqual(readAccountNativeAuth(fs, aiHomeDir, accountRef), {
       credentials: {
-        access_token: 'legacy-access',
+        access_token: 'e30.eyJzdWIiOiJraW1pLWZpeHR1cmUtdXNlciJ9.signature',
         refresh_token: 'legacy-refresh',
         expires_at: 1786657475,
         token_type: 'Bearer'

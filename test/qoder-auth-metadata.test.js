@@ -45,21 +45,12 @@ test('decrypt rejects wrong credential prefix (global vs CN)', () => {
   assert.equal(decryptQoderCredentials(encrypted, salt, 'qoder-cli-cn'), null);
 });
 
-test('buildQoderIdentitySeed prefers email then uid then token hash', () => {
-  assert.equal(
-    buildQoderIdentitySeed('qoder', { email: 'A@Example.com' }),
-    'oauth:qoder:a@example.com'
-  );
-  assert.equal(
-    buildQoderIdentitySeed('qodercn', { uid: 'u-99' }),
-    'oauth:qodercn:uid:u-99'
-  );
-  assert.equal(
-    buildQoderIdentitySeed('qoder', { username: 'MeaDeo' }),
-    'oauth:qoder:username:meadeo'
-  );
-  const tokenSeed = buildQoderIdentitySeed('qoder', { security_oauth_token: 'secret-token' });
-  assert.match(tokenSeed, /^oauth:qoder:token:[0-9a-f]{16}$/);
+test('buildQoderIdentitySeed requires UID plus a grant and never treats a display label as identity', () => {
+  assert.equal(buildQoderIdentitySeed('qoder', { email: 'A@Example.com' }), '');
+  assert.equal(buildQoderIdentitySeed('qodercn', { uid: 'u-99', security_oauth_token: 'fixture-token' }), 'oauth:qodercn:uid:u-99');
+  assert.equal(buildQoderIdentitySeed('qoder', { username: 'MeaDeo' }), '');
+  assert.equal(buildQoderIdentitySeed('qoder', { security_oauth_token: 'secret-token' }), '');
+  assert.equal(buildQoderIdentitySeed('qoder', { uid: 'u-99' }), '');
   assert.equal(buildQoderIdentitySeed('qoder', {}), '');
 });
 

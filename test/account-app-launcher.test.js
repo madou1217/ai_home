@@ -1928,7 +1928,7 @@ test('zcode desktop close 把沙箱里刷新过的活凭据捕获回 DB', (t) =>
     identitySeed: 'test:zcode:close-capture'
   });
   writeAccountNativeAuth(nodeFs, aiHomeDir, accountRef, {
-    credentials: { zcodejwttoken: 'db-jwt-stale' }
+    credentials: { zcodejwttoken: 'db-jwt-stale', 'oauth:zai:user_info': JSON.stringify({ user_id: 'close-user-A' }) }
   });
   const profileDir = nodePath.join(aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef);
   const liveCredentialsPath = nodePath.join(profileDir, '.zcode', 'v2', 'credentials.json');
@@ -1937,7 +1937,8 @@ test('zcode desktop close 把沙箱里刷新过的活凭据捕获回 DB', (t) =>
     'oauth:active_provider': 'zai',
     'oauth:zai:access_token': 'live-access-fresh',
     'oauth:zai:refresh_token': 'live-refresh-fresh',
-    zcodejwttoken: 'live-jwt-fresh'
+    zcodejwttoken: 'live-jwt-fresh',
+    'oauth:zai:user_info': JSON.stringify({ user_id: 'close-user-A' })
   }));
 
   const launcher = createAccountAppLauncher({

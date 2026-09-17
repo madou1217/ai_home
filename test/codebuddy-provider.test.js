@@ -165,7 +165,7 @@ test('codebuddy declares a desktop client only on platforms with a real install 
 const { resolveNativeAuthIdentitySeed, detectIdentityKind } = require('../lib/account/account-identity');
 
 test('codebuddy identity seed resolves nested oauth payloads and stays stable', () => {
-  const nativeAuth = { credentials: { oauth: { user_id: 'cb-user-42' } } };
+  const nativeAuth = { credentials: { oauth: { user_id: 'cb-user-42', access_token: 'fixture-access' } } };
   const seed = resolveNativeAuthIdentitySeed('codebuddy', nativeAuth).identitySeed;
   assert.ok(seed.startsWith('oauth:codebuddy:user:'), seed);
   assert.equal(
@@ -175,11 +175,11 @@ test('codebuddy identity seed resolves nested oauth payloads and stays stable', 
   );
 });
 
-test('codebuddy identity seed degrades to a token hash instead of failing', () => {
+test('codebuddy identity rejects token-only enrollment instead of rotating its account reference', () => {
   const result = resolveNativeAuthIdentitySeed('codebuddy', { credentials: { access_token: 'tok-only' } });
-  assert.equal(result.kind, 'oauth');
-  assert.equal(result.degraded, false, 'token fallback is a normal, non-degraded resolution');
-  assert.ok(result.identitySeed.startsWith('oauth:codebuddy:token:'), result.identitySeed);
+  assert.equal(result.kind, '');
+  assert.equal(result.degraded, true);
+  assert.equal(result.identitySeed, '');
 });
 
 test('codebuddy identity seed reports degraded when no credentials exist', () => {
@@ -190,10 +190,10 @@ test('codebuddy identity seed reports degraded when no credentials exist', () =>
 
 test('CodeBuddy user id can coexist with email and a distinct organization account id', () => {
   const resolve = (credentials) => resolveNativeAuthIdentitySeed('codebuddycn', { credentials }).identitySeed;
-  assert.equal(resolve({ oauth: { user_id: 'user-1', email: 'person@example.test', accountId: 'org-1' } }),
-    resolve({ oauth: { user_id: 'user-1' } }));
+  assert.equal(resolve({ oauth: { user_id: 'user-1', access_token: 'fixture-access', email: 'person@example.test', accountId: 'org-1' } }),
+    resolve({ oauth: { user_id: 'user-1', access_token: 'fixture-access' } }));
   assert.equal(resolve({ account: { uid: 'user-1' }, auth: { accessToken: 'opaque-test-token' } }),
-    resolve({ oauth: { user_id: 'user-1' } }));
+    resolve({ oauth: { user_id: 'user-1', access_token: 'fixture-access' } }));
   assert.equal(resolve({ account: { uid: 'user-1' }, auth: { user_id: 'user-2' } }), '');
 });
 
@@ -556,7 +556,7 @@ test('codebuddycn installer uses the domestic cask and the domestic CLI entry', 
 });
 
 test('codebuddycn identity seed is namespaced by site, not shared with codebuddy', () => {
-  const nativeAuth = { credentials: { oauth: { user_id: 'shared-user-7' } } };
+  const nativeAuth = { credentials: { oauth: { user_id: 'shared-user-7', access_token: 'fixture-access' } } };
   const seedCn = resolveNativeAuthIdentitySeed('codebuddycn', nativeAuth).identitySeed;
   const seedIntl = resolveNativeAuthIdentitySeed('codebuddy', nativeAuth).identitySeed;
   assert.ok(seedCn.startsWith('oauth:codebuddycn:user:'), seedCn);

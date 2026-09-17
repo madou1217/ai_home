@@ -14,8 +14,12 @@ const { createMaintenancePlan, applyMaintenancePlan } = require('../../lib/cli/s
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-maintenance-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const ref = registerAccountIdentity(fs, root, { provider: 'codex', identitySeed: 'oauth:codex:old@example.invalid' }).accountRef;
-  writeAccountNativeAuth(fs, root, ref, { auth: codexOAuthAuth({ email: 'old@example.invalid', userId: 'stable-fixture-user' }) });
+  // Parallel files run real process probes. Each owned fixture therefore needs
+  // a distinct upstream identity as well as a distinct temporary data directory.
+  const fixtureID = path.basename(root);
+  const email = `${fixtureID}@example.invalid`.toLowerCase();
+  const ref = registerAccountIdentity(fs, root, { provider: 'codex', identitySeed: `oauth:codex:${email}` }).accountRef;
+  writeAccountNativeAuth(fs, root, ref, { auth: codexOAuthAuth({ email, userId: `stable-${fixtureID}` }) });
   writeDefaultAccountRef(fs, root, 'codex', ref);
   const runtime = path.join(root, 'run/codex-desktop', ref);
   fs.mkdirSync(path.join(runtime, '.codex'), { recursive: true });

@@ -90,6 +90,13 @@ suite intentionally forbids ps execution; that run asserts conservative
 `quiescence_unverifiable` rejection, while focused native runs verify the
 permitted-OS success path. No production guard is weakened for sandbox tests.
 
+Ubuntu's first full run exposed a second fixture issue: concurrent temporary
+data roots reused the same synthetic upstream account, so a real process probe
+correctly detected another test's CLI as active. Each fixture now has distinct
+old and stable identities. A new regression first fails against the fixed-ID
+helper, then passes after isolation; no process detection or migration assertion
+is disabled.
+
 These are real process-crash and fault-injection tests, not a physical power-cut,
 storage-controller or real-account migration certification. Generic rogue
 writers which bypass AIH's participation must still be drained/checked by a

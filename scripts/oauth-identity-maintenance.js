@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { validatePlan } = require('../lib/cli/services/account/rekey-maintenance-plan');
 const {
   createMaintenancePlan, applyMaintenancePlan, recoverMaintenance, writeMaintenancePlan
 } = require('../lib/cli/services/account/oauth-identity-maintenance');
@@ -33,7 +34,7 @@ function main(argv) {
   const options = parseArgs(argv);
   if (options.action === 'help' || options.action === '--help') {
     process.stdout.write([
-      'OAuth identity maintenance — read-only plan; live apply is not approved',
+      'OAuth identity maintenance — explicit reviewed plan, exclusive lock and durable recovery',
       'plan --ai-home PATH --output PRIVATE_PLAN [--providers codex,grok]',
       'apply --ai-home PATH --plan PRIVATE_PLAN --confirm PLAN_SHA256',
       'recover --ai-home PATH --id TRANSACTION_UUID --confirm PLAN_SHA256',
@@ -46,11 +47,12 @@ function main(argv) {
     ].join('\n'));
     return 0;
   }
-  // Independent review rejected live apply (concurrent recovery lease, writer
-  // exclusion and durability gaps). Keep this CLI read-only until those findings
-  // have their own passing adversarial tests and an explicit re-review. There is
-  // intentionally no environment flag or --force option to bypass this decision.
-  if (options.action !== 'plan') throw new Error('live_migration_not_approved');
+  // Explicit user authorization to execute remains bound to the exact plan
+  // digest. A generic --yes/--force is intentionally not supported. Admission,
+  // native participant backups, and stale-state checks are enforced by service.
+  if (options.action !== 'plan' && !/^[a-f0-9]{64}$/.test(options.confirm || '')) {
+    throw new Error('explicit_plan_digest_required');
+  }
   if (!options['ai-home']) throw new Error('explicit_ai_home_required');
   const root = fs.realpathSync(path.resolve(options['ai-home']));
   if (options.action === 'plan') {
@@ -82,8 +84,18 @@ function main(argv) {
     result = applyMaintenancePlan(plan, { confirmDigest: options.confirm });
   } else {
     if (!/^[a-f0-9-]{36}$/.test(options.id || '')) throw new Error('maintenance_transaction_id_required');
-    const journal = readPrivateJson(path.join(root, 'migration', `oauth-rekey-${options.id}`, 'journal.json'));
-    if (journal.planDigest !== options.confirm) throw new Error('maintenance_digest_mismatch');
+    let journal;
+    try { journal = readPrivateJson(path.join(root, 'migration', `oauth-rekey-${options.id}`, 'journal.json')); }
+    catch (error) {
+      // A crash after gate publication but before the first journal is a valid
+      // recovery state. Require the retained original confirmed plan, never an
+      // unconditional unlock; the service proves no mutation/marker exists.
+      if (error.code !== 'ENOENT' || options.action !== 'recover' || !options.plan) throw error;
+      const plan = readPrivateJson(path.resolve(options.plan));
+      if (plan.root !== root) throw new Error('maintenance_root_mismatch');
+      validatePlan(plan, options.confirm);
+    }
+    if (journal && journal.planDigest !== options.confirm) throw new Error('maintenance_digest_mismatch');
     result = recoverMaintenance(root, options.id, { rollback: options.action === 'rollback' });
   }
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');

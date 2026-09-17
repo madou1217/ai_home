@@ -1,5 +1,9 @@
 # Account maintenance: real-data read-only rehearsal
 
+> Subsequent closure: native SQLite participants and confirmed public execution
+> are documented in [native-store closure](account-maintenance-native-closure.md).
+> The dated checkpoint below is preserved as historical evidence.
+
 ## Checkpoint and result (2026-09-17)
 
 Step 4 examines the real account database and the existing planner's filesystem

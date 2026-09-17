@@ -1,5 +1,9 @@
 # Account maintenance: mutual-exclusion checkpoint
 
+> Subsequent closure: native SQLite participants and confirmed public execution
+> are documented in [native-store closure](account-maintenance-native-closure.md).
+> The dated checkpoint below is preserved as historical evidence.
+
 ## Accepted scope
 
 This checkpoint establishes cross-process exclusion for the future identity

@@ -1,5 +1,9 @@
 # Account maintenance: database/filesystem recovery checkpoint
 
+> Subsequent closure: native SQLite participants and confirmed public execution
+> are documented in [native-store closure](account-maintenance-native-closure.md).
+> The dated checkpoint below is preserved as historical evidence.
+
 ## Accepted scope and public gate
 
 Step 3 verifies compensation and process-crash recovery for an explicitly

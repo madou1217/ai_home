@@ -80,13 +80,13 @@ test('an actual SQLite schema snapshot does not erase an unknown native database
   const f=fixture(t), copy=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'aih-blocked-rehearsal-')));fs.chmodSync(copy,0o700);
   t.after(()=>fs.rmSync(copy,{recursive:true,force:true}));
   const nativePath=path.join(f.runtime,'.codex/state_5.sqlite');
-  const db=new DatabaseSync(nativePath);db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,rollout_path TEXT)');
+  const db=new DatabaseSync(nativePath);db.exec('CREATE TABLE threads(id TEXT PRIMARY KEY,unclassified_address TEXT)');
   db.prepare('INSERT INTO threads VALUES(?,?)').run('native-session',path.join(f.runtime,'.codex/sessions/session.jsonl'));db.close();
   await snapshotReadonlyDatabase(path.join(f.root,'app-state.db'),path.join(copy,'app-state.db'),{aihDatabase:true});
   const receipt=await copyRehearsalScope(f.root,copy);
   assert.equal(receipt.records.filter(row=>row.type==='native-sqlite').length,1);
   const plan=createMaintenancePlan(copy,['codex']);
-  assert.ok(plan.blockers.some(blocker=>blocker.reason==='rekey_unclassified_file_reference'));
+  assert.ok(plan.blockers.some(blocker=>blocker.reason==='native_reference_unclassified'));
   const before=hashBackup(path.join(copy,'app-state.db'));
   assert.throws(()=>applyMaintenancePlan(plan,{confirmDigest:plan.digest}), /plan_has_blockers/);
   assert.equal(hashBackup(path.join(copy,'app-state.db')),before);

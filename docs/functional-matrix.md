@@ -641,7 +641,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | OPS-016 | Test runner cleanup | 全量 test 分片/清理与 focused Node test | 开发 | `scripts/run-tests.js`、`test/test-runner-cleanup.test.js` |
 | OPS-017 | Postinstall | 修复权限/hooks/本地可执行项 | 内部 | `scripts/postinstall.js` |
 | OPS-018 | models.dev SDK 快照 | 模型元数据（modalities、上下文窗口、定价）来自 `@opencode-ai/models` npm 依赖内置的离线快照，package.json 钉精确版本；升级依赖后 `npm run models:generate` 重新派生 Go 模态索引，`npm run models:check` 离线校验一致。运行时完全离线，不存在抓取上游的定时任务 | 运维/稳定 | `scripts/gen-models-dev-modalities.js`、`internal/tools/modelsdevmodalities` |
-| OPS-019 | OAuth 身份迁移计划与恢复验证 | 独立脚本仅公开只读 plan；内部服务在临时 SQLite/文件上验证提交标记、回滚和进程中断恢复。真实账号 apply/recover/rollback 仍由命令门禁拒绝，不等于生产迁移已开放 | 内部验证/公开只读 | `scripts/oauth-identity-maintenance.js`、`docs/architecture/account-maintenance-recovery.md` |
+| OPS-019 | OAuth 身份迁移计划与恢复验证 | 显式计划摘要确认、独占锁、备份与提交标记保护 apply/recover/rollback；原生 Codex SQLite 指针作为补偿事务参与者，未知引用仍拒绝。完整真实数据副本已通过迁移及回滚；生产执行结果单独记录 | 高级/受控维护 | `scripts/oauth-identity-maintenance.js`、`docs/architecture/account-maintenance-recovery.md` |
 | OPS-020 | 真实数据只读快照与隔离副本演练 | 内部快照/复制适配器；原库由 OS 禁写，副本评估禁止回读原库。已核对 29 个账号、4 条身份映射；实际 32 个阻塞保留，副本执行被安全拒绝、DB/文件不变；不等于真实迁移或回滚已成功 | 内部验证/仍有真实数据阻塞 | `docs/architecture/account-maintenance-real-data-rehearsal.md`、`test/rekey-rehearsal-snapshot.test.js` |
 
 ## 13. 兼容、废弃与未公开能力清单

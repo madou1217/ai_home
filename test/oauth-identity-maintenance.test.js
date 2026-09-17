@@ -192,10 +192,10 @@ test('maintenance CLI requires an explicit root and digest and never accepts a b
   assert.deepEqual(parseArgs(['plan', '--ai-home', '/fixture', '--output', '/plan']), { action: 'plan', 'ai-home': '/fixture', output: '/plan' });
 });
 
-test('public migration CLI cannot execute unapproved production writes or recovery', () => {
+test('public migration CLI cannot touch a data root without the exact plan confirmation', () => {
   const { main } = require('../scripts/oauth-identity-maintenance');
   for (const action of ['apply','recover','rollback']) {
-    assert.throws(() => main([action,'--ai-home','/not-accessed']), /live_migration_not_approved/);
+    assert.throws(() => main([action,'--ai-home','/not-accessed']), /explicit_plan_digest_required/);
   }
 });
 

@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "identity_scheme_version": 1,
+  "providers": [
+    "gemini",
+    "opencode",
+    "grok",
+    "qoder",
+    "qodercn",
+    "kimi",
+    "kiro",
+    "zcode",
+    "codebuddy",
+    "codebuddycn",
+    "workbuddy",
+    "workbuddycn"
+  ],
+  "rules": {
+    "email_exception": [
+      "gemini"
+    ],
+    "subject_digest": [
+      "kimi",
+      "zcode",
+      "codebuddy",
+      "codebuddycn",
+      "workbuddy",
+      "workbuddycn"
+    ],
+    "opencode": "oauth:opencode:auth:<sha256(sorted upstream:type:(id:subject|key:sha256(key)[:16]))[:16]>",
+    "qoder": "oauth:<provider>:uid:<uid>; api_key:<provider>:pat:<sha256(pat)[:16]>",
+    "kiro": "oauth:kiro:user:<sha256(endpoint + newline + GetUsageLimits.userInfo.userId)[:16]>"
+  },
+  "unsupported": {
+    "encrypted_zcode_without_materialized_identity": "reject",
+    "encrypted_qoder_blob_without_materialized_uid": "reject",
+    "kiro_token_only": "reject"
+  },
+  "vectors": [
+    {
+      "name": "gemini-positive-0",
+      "provider": "gemini",
+      "nativeAuth": {
+        "googleAccounts": {
+          "active": "User@Example.Invalid"
+        },
+        "oauthCreds": {
+          "access_token": "fixture-access",
+          "expiry_date": 1700003600000
+        }
+      },
+      "identitySeed": "oauth:gemini:user@example.invalid",
+      "accountRef": "acct_ebfc2c2e7231123a0926"
+    },
+    {
+      "name": "opencode-positive-1",
+      "provider": "opencode",
+      "nativeAuth": {
+        "auth": {
+          "anthropic": {
+            "type": "oauth",
+            "account_id": "contract-User-A",
+            "access": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture",
+            "refresh": "fixture-refresh"
+          },
+          "empty": {}
+        }
+      },
+      "identitySeed": "oauth:opencode:auth:55a0f20b6feed63e",
+      "accountRef": "acct_611978150e2454bbd1d1"
+    },
+    {
+      "name": "grok-positive-2",
+      "provider": "grok",
+      "nativeAuth": {
+        "auth": {
+          "default": {
+            "user_id": "contract-User-A",
+            "key": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture",
+            "refresh_token": "fixture-refresh"
+          }
+        }
+      },
+      "identitySeed": "oauth:grok:auth:8532e727a4836845",
+      "accountRef": "acct_3c01cf30441b19716ec6"
+    },
+    {
+      "name": "qoder-positive-3",
+      "provider": "qoder",
+      "nativeAuth": {
+        "userInfo": {
+          "uid": "contract-User-A",
+          "security_oauth_token": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture",
+          "email": "ignored@example.invalid"
+        }
+      },
+      "identitySeed": "oauth:qoder:uid:contract-User-A",
+      "accountRef": "acct_1cbc11fc9b3e3aa3919d"
+    },
+    {
+      "name": "qodercn-positive-4",
+      "provider": "qodercn",
+      "nativeAuth": {
+        "userInfo": {
+          "uid": "contract-User-A",
+          "security_oauth_token": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture"
+        }
+      },
+      "identitySeed": "oauth:qodercn:uid:contract-User-A",
+      "accountRef": "acct_bd8886454db49a5e3228"
+    },
+    {
+      "name": "kimi-positive-5",
+      "provider": "kimi",
+      "nativeAuth": {
+        "credentials": {
+          "user_id": "contract-User-A",
+          "access_token": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture",
+          "refresh_token": "fixture-refresh"
+        }
+      },
+      "identitySeed": "oauth:kimi:user:19f6867c5005d7e7",
+      "accountRef": "acct_b4a92dcfa95407d4b17c"
+    },
+    {
+      "name": "zcode-positive-6",
+      "provider": "zcode",
+      "nativeAuth": {
+        "credentials": {
+          "oauth:zai:user_info": "{\"user_id\":\"contract-User-A\"}",
+          "zcodejwttoken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture"
+        }
+      },
+      "identitySeed": "oauth:zcode:user:19f6867c5005d7e7",
+      "accountRef": "acct_b777737f5b4288788cc9"
+    },
+    {
+      "name": "codebuddy-positive-7",
+      "provider": "codebuddy",
+      "nativeAuth": {
+        "credentials": {
+          "account": {
+            "uid": "contract-User-A"
+          },
+          "auth": {
+            "domain": "www.codebuddy.ai",
+            "accessToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy5jb2RlYnVkZHkuYWkvYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture",
+            "refreshToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy5jb2RlYnVkZHkuYWkvYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture"
+          }
+        }
+      },
+      "identitySeed": "oauth:codebuddy:user:19f6867c5005d7e7",
+      "accountRef": "acct_36b4d193b4541ee50009"
+    },
+    {
+      "name": "codebuddycn-positive-8",
+      "provider": "codebuddycn",
+      "nativeAuth": {
+        "credentials": {
+          "account": {
+            "uid": "contract-User-A"
+          },
+          "auth": {
+            "domain": "www.workbuddy.cn",
+            "accessToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuY24vYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture",
+            "refreshToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuY24vYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture"
+          }
+        }
+      },
+      "identitySeed": "oauth:codebuddycn:user:19f6867c5005d7e7",
+      "accountRef": "acct_e33d23266ee14e99553b"
+    },
+    {
+      "name": "workbuddy-positive-9",
+      "provider": "workbuddy",
+      "nativeAuth": {
+        "credentials": {
+          "account": {
+            "uid": "contract-User-A"
+          },
+          "auth": {
+            "domain": "www.workbuddy.ai",
+            "accessToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuYWkvYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture",
+            "refreshToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuYWkvYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture"
+          }
+        }
+      },
+      "identitySeed": "oauth:workbuddy:user:19f6867c5005d7e7",
+      "accountRef": "acct_bb131bc10891dce47dd9"
+    },
+    {
+      "name": "workbuddycn-positive-10",
+      "provider": "workbuddycn",
+      "nativeAuth": {
+        "credentials": {
+          "account": {
+            "uid": "contract-User-A"
+          },
+          "auth": {
+            "domain": "www.workbuddy.cn",
+            "accessToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuY24vYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture",
+            "refreshToken": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpc3MiOiJodHRwczovL3d3dy53b3JrYnVkZHkuY24vYXV0aC9yZWFsbXMvY29waWxvdCIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAzNjAwfQ.fixture"
+          }
+        }
+      },
+      "identitySeed": "oauth:workbuddycn:user:19f6867c5005d7e7",
+      "accountRef": "acct_70b9b398328fbd4505dd"
+    },
+    {
+      "name": "kiro-positive-11",
+      "provider": "kiro",
+      "nativeAuth": {
+        "auth": {
+          "access_token": "fixture-kiro-<&>",
+          "refresh_token": "fixture-refresh",
+          "region": "us-east-1"
+        },
+        "identityEvidence": {
+          "version": 1,
+          "source": "aws-codewhisperer:GetUsageLimits",
+          "endpoint": "https://codewhisperer.us-east-1.amazonaws.com",
+          "subject": "contract-User-A",
+          "tokenBinding": "be1437a835c3a0e3242b6c15a39f32286911163a4022c7fa3791086e54c142bf",
+          "observedAtMs": 1700000000000
+        }
+      },
+      "identitySeed": "oauth:kiro:user:1bc011a00e048288",
+      "accountRef": "acct_0f66b52fe98db5a633a9"
+    },
+    {
+      "name": "agy-positive-12",
+      "provider": "agy",
+      "nativeAuth": {
+        "email": "User@Example.Invalid",
+        "oauthToken": {
+          "auth_method": "consumer",
+          "token": {
+            "access_token": "fixture-access",
+            "refresh_token": "fixture-refresh",
+            "expiry": "2023-11-14T23:13:20Z",
+            "token_type": "Bearer"
+          }
+        }
+      },
+      "identitySeed": "oauth:agy:user@example.invalid",
+      "accountRef": "acct_6d1187927473d3df5e6d"
+    },
+    {
+      "name": "opencode-positive-13",
+      "provider": "opencode",
+      "nativeAuth": {
+        "auth": {
+          "upstream": {
+            "type": "api",
+            "key": "fixture-static-key"
+          }
+        }
+      },
+      "identitySeed": "oauth:opencode:auth:7876a72da7d7de76",
+      "accountRef": "acct_94634eb037a58e93356f"
+    },
+    {
+      "name": "opencode-positive-14",
+      "provider": "opencode",
+      "nativeAuth": {
+        "auth": {
+          "a": {
+            "type": "api",
+            "key": "fixture-static-key"
+          },
+          "b": {
+            "type": "oauth",
+            "account_id": "contract-User-A",
+            "access": "e30.eyJzdWIiOiJjb250cmFjdC1Vc2VyLUEiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMH0.fixture",
+            "refresh": "fixture-refresh"
+          }
+        }
+      },
+      "identitySeed": "oauth:opencode:auth:4aa0f561df375c21",
+      "accountRef": "acct_e9ec50f716d0f37f2d00"
+    },
+    {
+      "name": "kimi-missing-stable-subject",
+      "provider": "kimi",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "kiro-missing-stable-subject",
+      "provider": "kiro",
+      "nativeAuth": {
+        "auth": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "zcode-missing-stable-subject",
+      "provider": "zcode",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "codebuddy-missing-stable-subject",
+      "provider": "codebuddy",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "codebuddycn-missing-stable-subject",
+      "provider": "codebuddycn",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "workbuddy-missing-stable-subject",
+      "provider": "workbuddy",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "workbuddycn-missing-stable-subject",
+      "provider": "workbuddycn",
+      "nativeAuth": {
+        "credentials": {
+          "access_token": "fixture-opaque",
+          "refresh_token": "fixture-refresh",
+          "email": "mutable@example.invalid"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "opencode-missing-stable-subject",
+      "provider": "opencode",
+      "nativeAuth": {
+        "auth": {
+          "upstream": {
+            "type": "oauth",
+            "email": "mutable@example.invalid",
+            "refresh": "fixture-refresh"
+          }
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "qoder-missing-stable-subject",
+      "provider": "qoder",
+      "nativeAuth": {
+        "userInfo": {
+          "email": "mutable@example.invalid",
+          "security_oauth_token": "fixture-opaque"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    },
+    {
+      "name": "qodercn-missing-stable-subject",
+      "provider": "qodercn",
+      "nativeAuth": {
+        "userInfo": {
+          "email": "mutable@example.invalid",
+          "security_oauth_token": "fixture-opaque"
+        }
+      },
+      "identitySeed": "",
+      "accountRef": ""
+    }
+  ],
+  "fixture_notice": "Synthetic credentials only; no production secrets."
+}

@@ -167,10 +167,11 @@ func TestDecoderUsesProviderStrategyRegistry(t *testing.T) {
 	decoder := nativeaccount.NewDecoder()
 	if !decoder.Supports("codex") ||
 		!decoder.Supports("claude") ||
-		decoder.Supports("gemini") {
+		!decoder.Supports("gemini") ||
+		decoder.Supports("unknown") {
 		t.Fatal("原生账号策略注册表错误")
 	}
-	_, _, err := decoder.Decode("gemini", []byte(`{}`))
+	_, _, err := decoder.Decode("unknown", []byte(`{}`))
 	if !errors.Is(err, nativeaccount.ErrInvalidNativeArtifacts) {
 		t.Fatalf("Decode(gemini) error = %v", err)
 	}

@@ -113,17 +113,22 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 		listDocument.Data[0].ProviderID != "codex" {
 		t.Fatalf("账号列表错误: %#v", listDocument.Data)
 	}
-	models := commandRequest(
-		t,
-		client,
-		http.MethodGet,
-		baseURL+modelsapi.Path,
-		clientKey,
-		nil,
-	)
-	if models.status != http.StatusOK ||
-		!strings.Contains(models.body, `"id":"gpt-5.6-sol"`) {
-		t.Fatalf("本地模型目录错误: %#v", models)
+	// Registration commits before asynchronous model discovery. Wait for the
+	// observable catalog outcome rather than racing the background worker; an
+	// HTTP failure or timeout still fails this real-listener smoke test.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		models := commandRequest(t, client, http.MethodGet, baseURL+modelsapi.Path, clientKey, nil)
+		if models.status != http.StatusOK {
+			t.Fatalf("本地模型目录错误: %#v", models)
+		}
+		if strings.Contains(models.body, `"id":"gpt-5.6-sol"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("异步模型目录未完成: %#v", models)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	cancel()

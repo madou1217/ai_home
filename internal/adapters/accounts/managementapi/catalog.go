@@ -12,6 +12,7 @@ import (
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 )
 
@@ -457,9 +458,9 @@ func validAccountMetadata(dto accountViewDTO) bool {
 		dto.ProfileUpdatedAt != ""
 }
 
-// validNativeProviderID 限制官方 artifact 导入在当前实现的 Codex、Claude 边界内。
+// validNativeProviderID uses the same implemented decoder registry as the server.
 func validNativeProviderID(value string) bool {
-	return value == "codex" || value == "claude"
+	return nativeaccount.NewDecoder().Supports(value)
 }
 
 // validJSONObject 限制原生 artifact 顶层为 JSON 对象，不把 null 或数组上传到 Server。

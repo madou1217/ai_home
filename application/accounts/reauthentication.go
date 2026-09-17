@@ -6,6 +6,7 @@ import (
 	"time"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
@@ -160,12 +161,34 @@ func (reauthentication Reauthentication) ShouldReplaceCredential(
 			return false, ErrReauthenticationGenerationUnordered
 		}
 		return incoming.RefreshedAtMS() > stored.RefreshedAtMS(), nil
+	case *agy.OAuthAuth:
+		stored, valid := current.(*agy.OAuthAuth)
+		if !valid {
+			return false, ErrReauthenticationGenerationUnordered
+		}
+		// Native files may omit refresh time. Compare the recorded access expiry
+		// in that case; never substitute file mtime or import arrival time.
+		if incoming.RefreshedAtMS() > 0 && stored.RefreshedAtMS() > 0 {
+			return incoming.RefreshedAtMS() > stored.RefreshedAtMS(), nil
+		}
+		return incoming.ExpiresAtMS() > stored.ExpiresAtMS(), nil
 	case *claude.OAuthAuth:
 		stored, valid := current.(*claude.OAuthAuth)
 		if !valid || incoming.ExpiresAtMS() <= 0 || stored.ExpiresAtMS() <= 0 {
 			return false, ErrReauthenticationGenerationUnordered
 		}
 		return incoming.ExpiresAtMS() > stored.ExpiresAtMS(), nil
+	case *accountcore.NativeCredential:
+		stored, valid := current.(*accountcore.NativeCredential)
+		if !valid || incoming.ProviderID() != stored.ProviderID() ||
+			incoming.AuthKind() != stored.AuthKind() {
+			return false, ErrReauthenticationGenerationUnordered
+		}
+		newer, ordered := incoming.NewerThan(stored)
+		if !ordered {
+			return false, ErrReauthenticationGenerationUnordered
+		}
+		return newer, nil
 	default:
 		return false, ErrReauthenticationGenerationUnordered
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	// errUnsupportedNativeProvider 表示导入请求超出当前 Codex、Claude 边界。
+	// errUnsupportedNativeProvider 表示 Provider 没有可执行的原生解析策略。
 	errUnsupportedNativeProvider = errors.New("原生账号 Provider 不受支持")
 	// errInvalidNativeArtifacts 表示 artifact 槽位或官方内容不满足导入合同。
 	errInvalidNativeArtifacts = errors.New("原生账号 artifact 无效")
@@ -117,7 +117,7 @@ func writeNativeImportInputError(
 			response,
 			http.StatusUnprocessableEntity,
 			"unsupported_provider",
-			"当前只支持 Codex 和 Claude",
+			"当前 Provider 没有已验证的原生账号导入策略",
 		)
 		return
 	}

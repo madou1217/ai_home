@@ -5,8 +5,6 @@ import (
 	"errors"
 
 	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/accounts/claude"
-	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/providers"
 )
 
@@ -120,7 +118,8 @@ func (defaults *ProviderDefaults) canonicalProviderID(
 	return canonicalProviderID, nil
 }
 
-// supportsProviderDefault 限定本阶段只交付已经重构完成的 Codex 和 Claude 账号。
+// supportsProviderDefault 保持默认关系与 Catalog 同步；凭据存在性和账号归属
+// 仍由 SQLite adapter 在事务内校验，而不是在应用层复制 Provider 列表。
 func supportsProviderDefault(providerID string) bool {
-	return providerID == codex.ProviderID || providerID == claude.ProviderID
+	return providerID != ""
 }

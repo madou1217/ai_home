@@ -1,5 +1,11 @@
 # AI Home 当前功能矩阵
 
+> 2026-09-17 账号域增量：Go native artifact 解析/持久化/同身份重登/默认关系扩展至
+> Catalog 的 15 个具体标识；显式 `account import <provider> --artifact-file <file.json>`
+> 已接通 Go CLI → Management API。此增量不代表这些 Provider 的推理、额度、Browser OAuth
+> 或默认 Web 页面已迁移；正式 Node ownership 不变。验证与明确限制见
+> [Go 原生账号扩展](architecture/extended-go-native-accounts.md)。下文历史快照保留原口径。
+
 > 快照日期：2026-08-19
 > 用途：作为逐功能重构、技术栈迁移与回归验收的基线；本文件描述“当前真实存在什么”，不代表这些能力都已达到同一成熟度。
 > 本轮增量：记录 G1 Codex/Claude 账号控制面收口，并冻结 Go Refactor .1 的只读路由/ownership 基线；只把当前工作区已有实现标为完成，真实 Provider 验收仍以独立证据为准。

@@ -38,13 +38,25 @@ type OAuthAuth struct {
 
 // NewOAuthAuth 校验原生凭据并建立不会从轮换 secret 派生的稳定身份。
 func NewOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
+	return newOAuthAuth(input, false)
+}
+
+// NewNativeOAuthAuth preserves an omitted native refresh timestamp as unknown
+// (zero), rather than manufacturing a date. Explicit OAuth exchange construction
+// stays strict through NewOAuthAuth. Access expiry and actual grants remain required.
+func NewNativeOAuthAuth(input OAuthInput) (*OAuthAuth, error) {
+	return newOAuthAuth(input, true)
+}
+
+func newOAuthAuth(input OAuthInput, allowUnknownRefresh bool) (*OAuthAuth, error) {
 	email, err := normalizeEmail(input.Email)
 	if err != nil ||
 		!validSecret(input.AccessToken) ||
 		!validSecret(input.RefreshToken) ||
 		input.ExpiresAtMS <= 0 ||
 		input.ExpiresAtMS > maxUnixMillis ||
-		input.RefreshedAtMS <= 0 ||
+		input.RefreshedAtMS < 0 ||
+		(input.RefreshedAtMS == 0 && !allowUnknownRefresh) ||
 		input.RefreshedAtMS >= input.ExpiresAtMS ||
 		!validMetadata(input.TokenType, 32) ||
 		input.AuthMethod != AuthMethodConsumer {
@@ -108,7 +120,7 @@ func (auth *OAuthAuth) ExpiresAtMS() int64 {
 	return auth.expiresAtMS
 }
 
-// RefreshedAtMS 返回最近一次取得 Token 的时间。
+// RefreshedAtMS 返回原生记录的刷新时间；原生 artifact 未记录时为零（未知）。
 func (auth *OAuthAuth) RefreshedAtMS() int64 {
 	if auth == nil {
 		return 0

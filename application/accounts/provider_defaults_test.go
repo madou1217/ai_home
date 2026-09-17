@@ -94,7 +94,7 @@ func TestProviderDefaultsRejectsInvalidDependenciesAndRequests(t *testing.T) {
 		t.Fatalf("NewProviderDefaults() error = %v", err)
 	}
 	validRef := newManagementTestAccount(t).Ref()
-	for _, providerID := range []string{"Codex", "gemini", "unknown", ""} {
+	for _, providerID := range []string{"Codex", "unknown", ""} {
 		if _, err := defaults.Get(context.Background(), providerID); !errors.Is(
 			err,
 			accountapp.ErrInvalidProviderDefault,

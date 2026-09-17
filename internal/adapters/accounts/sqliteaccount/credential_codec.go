@@ -42,6 +42,12 @@ func newCredentialRegistry() credentialRegistry {
 		claudeCredentialCodec{},
 		agyCredentialCodec{},
 	}
+	for _, providerID := range []string{
+		"gemini", "opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode",
+		"codebuddy", "codebuddycn", "workbuddy", "workbuddycn",
+	} {
+		codecs = append(codecs, nativeCredentialCodec{providerID: providerID})
+	}
 	registry := make(credentialRegistry, len(codecs))
 	for _, codec := range codecs {
 		registry[codec.ProviderID()] = codec

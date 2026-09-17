@@ -268,11 +268,15 @@ func supportsReauthentication(
 	authMode string,
 ) bool {
 	switch providerID {
+	case "agy":
+		return authKind == "oauth" && authMode == "consumer"
 	case codex.ProviderID:
 		return authKind == codex.AuthKindOAuth.String() && authMode == ""
 	case claude.ProviderID:
 		return authKind == claude.AuthKindOAuth.String() &&
 			authMode == claude.OAuthModeRefreshable.String()
+	case "gemini", "opencode", "grok", "qoder", "qodercn", "kimi", "kiro", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+		return authKind == "oauth" && authMode == "native_auth_json"
 	default:
 		return false
 	}

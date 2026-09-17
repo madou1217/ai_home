@@ -172,8 +172,11 @@ func (importer *AccountImporter) reauthenticateImportedAccount(
 
 // isRefreshableImportCredential 只判断能力，不读取或复制刷新凭据内容。
 func isRefreshableImportCredential(credential Credential) bool {
-	_, refreshable := credential.(refreshableImportCredential)
-	return refreshable
+	if native, ok := credential.(interface{ SupportsNativeReauthentication() bool }); ok {
+		return native.SupportsNativeReauthentication()
+	}
+	refreshable, ok := credential.(refreshableImportCredential)
+	return ok && refreshable.RefreshToken() != ""
 }
 
 // importedAccountMatches 验证应用端口没有返回其他聚合或 Provider。

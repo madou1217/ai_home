@@ -71,6 +71,9 @@ func runAccount(
 			writeAccountImportUsage(runtime.stdout)
 			return nil
 		}
+		if len(arguments) == 4 && arguments[2] == "--artifact-file" {
+			return runAccountArtifactImport(ctx, arguments[1], arguments[3], runtime)
+		}
 		if len(arguments) != 2 || !isCLIProvider(arguments[1]) {
 			writeAccountImportUsage(runtime.stderr)
 			return fmt.Errorf("%w: import 需要一个 Provider（codex 或 claude）", errInvalidCommand)

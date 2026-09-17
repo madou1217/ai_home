@@ -12,6 +12,7 @@ import (
 	"io"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/claude/nativeauth"
@@ -37,10 +38,82 @@ type Decoder struct {
 func NewDecoder() *Decoder {
 	return &Decoder{
 		strategies: map[string]decodeStrategy{
-			"codex":  decodeCodex,
-			"claude": decodeClaude,
+			"codex":       decodeCodex,
+			"claude":      decodeClaude,
+			"agy":         decodeAGY,
+			"gemini":      decodeExtended("gemini", geminiIdentity),
+			"opencode":    decodeExtended("opencode", openCodeIdentity),
+			"grok":        decodeExtended("grok", grokIdentity),
+			"qoder":       decodeExtended("qoder", qoderIdentity),
+			"qodercn":     decodeExtended("qodercn", qoderIdentity),
+			"kimi":        decodeExtended("kimi", subjectIdentity),
+			"kiro":        decodeExtended("kiro", kiroIdentity),
+			"zcode":       decodeExtended("zcode", zcodeIdentity),
+			"codebuddy":   decodeExtended("codebuddy", codebuddyIdentity),
+			"codebuddycn": decodeExtended("codebuddycn", codebuddyIdentity),
+			"workbuddy":   decodeExtended("workbuddy", codebuddyIdentity),
+			"workbuddycn": decodeExtended("workbuddycn", codebuddyIdentity),
 		},
 	}
+}
+
+// decodeAGY 把 Antigravity 的邮箱与 consumer oauthToken 组合成既有领域值。
+func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, error) {
+	artifacts, err := decodeArtifactObject(data, "native_auth_json")
+	if err != nil {
+		return nil, nil, invalidArtifacts("AGY artifact 结构无效")
+	}
+	var native struct {
+		Email      string `json:"email"`
+		OAuthToken struct {
+			AuthMethod string `json:"auth_method"`
+			Token      struct {
+				AccessToken   string `json:"access_token"`
+				RefreshToken  string `json:"refresh_token"`
+				Expiry        any    `json:"expiry"`
+				ExpiryDate    any    `json:"expiry_date"`
+				ExpiresAtMS   int64  `json:"expires_at_ms"`
+				RefreshedAtMS int64  `json:"refreshed_at_ms"`
+				TokenType     string `json:"token_type"`
+			} `json:"token"`
+		} `json:"oauthToken"`
+	}
+	if err := decodeStrictJSON(artifacts["native_auth_json"], &native); err != nil {
+		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")
+	}
+	expiresAtMS := native.OAuthToken.Token.ExpiresAtMS
+	if expiresAtMS == 0 {
+		expiresAtMS = parseAGYTime(native.OAuthToken.Token.Expiry)
+	}
+	if expiresAtMS == 0 {
+		expiresAtMS = parseAGYTime(native.OAuthToken.Token.ExpiryDate)
+	}
+	refreshedAtMS := native.OAuthToken.Token.RefreshedAtMS
+	auth, err := agy.NewNativeOAuthAuth(agy.OAuthInput{
+		Email: native.Email, AccessToken: native.OAuthToken.Token.AccessToken,
+		RefreshToken: native.OAuthToken.Token.RefreshToken, ExpiresAtMS: expiresAtMS,
+		RefreshedAtMS: refreshedAtMS, TokenType: native.OAuthToken.Token.TokenType,
+		AuthMethod: agy.AuthMethod(native.OAuthToken.AuthMethod),
+	})
+	if err != nil {
+		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")
+	}
+	return auth, nil, nil
+}
+
+// DecodeNativeAuth reuses the exact import policy for SQLite restoration.
+func (decoder *Decoder) DecodeNativeAuth(
+	providerID string,
+	nativeAuthJSON []byte,
+) (accountapp.Credential, error) {
+	envelope, err := json.Marshal(map[string]json.RawMessage{
+		"native_auth_json": nativeAuthJSON,
+	})
+	if err != nil {
+		return nil, ErrInvalidNativeArtifacts
+	}
+	credential, _, err := decoder.Decode(providerID, envelope)
+	return credential, err
 }
 
 // Supports 判断 Provider 是否已经注册原生账号转换策略。

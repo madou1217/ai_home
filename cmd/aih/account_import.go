@@ -93,6 +93,7 @@ func writeImportResult(
 func writeAccountImportUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
 	_, _ = fmt.Fprintln(output, "  aih account import <codex|claude>")
+	_, _ = fmt.Fprintln(output, "  aih account import <provider> --artifact-file <file.json>  # 显式原生 artifact envelope")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "行为:")
 	_, _ = fmt.Fprintln(output, "  从本机官方 CLI 读取 artifact，再提交到 AIH_SERVER_BASE_URL；首次导入分配数字别名，同身份导入原地更新。")
@@ -102,6 +103,7 @@ func writeAccountImportUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "官方来源:")
 	_, _ = fmt.Fprintln(output, "  claude: macOS Keychain 与 $CLAUDE_CONFIG_DIR/.credentials.json 按完整性、同身份和更新时间仲裁，再与 .claude.json 的 oauthAccount 组合")
 	_, _ = fmt.Fprintln(output, "  codex:  $CODEX_HOME/auth.json")
+	_, _ = fmt.Fprintln(output, "  其他 Provider: 显式 {native_auth_json: ...} 文件，按真实 Provider 策略验证，不扫描宿主目录。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（账号写入目标 Go Server，默认 http://127.0.0.1:9527）")

@@ -46,7 +46,7 @@ func (agyCredentialCodec) Decode(
 	if err := decodeCredentialJSON(payload, &document); err != nil {
 		return nil, err
 	}
-	credential, err := agy.NewOAuthAuth(agy.OAuthInput{
+	credential, err := agy.NewNativeOAuthAuth(agy.OAuthInput{
 		Email:         document.Email,
 		AccessToken:   document.AccessToken,
 		RefreshToken:  document.RefreshToken,

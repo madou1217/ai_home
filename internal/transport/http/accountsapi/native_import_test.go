@@ -132,7 +132,7 @@ func TestHandlerRejectsInvalidNativeImportRequests(t *testing.T) {
 			method: http.MethodPost,
 			path:   accountsapi.NativeImportPath,
 			body: marshalRequestJSON(t, map[string]any{
-				"provider_id": "gemini",
+				"provider_id": "unknown-provider",
 				"artifacts": map[string]any{
 					"auth_json": map[string]any{},
 				},

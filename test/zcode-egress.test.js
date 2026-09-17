@@ -856,7 +856,7 @@ test('prepareAccountAppEgress 在绑定状态未知时保留现有原生设置',
     action: 'open',
     kind: 'desktop',
     fs: {
-      existsSync: () => true,
+      existsSync: target => !target.endsWith('oauth-rekey.lock'),
       mkdirSync() {
         throw new Error('app-state read denied');
       }

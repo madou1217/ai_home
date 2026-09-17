@@ -207,6 +207,11 @@ function createRuntimeHarness(env = {}, overrides = {}) {
   });
 
   const fsImpl = {
+    // The harness delegates actual file I/O; include the OS-lock primitives.
+    realpathSync: fsBase.realpathSync.bind(fsBase),
+    lstatSync: fsBase.lstatSync.bind(fsBase),
+    fsyncSync: fsBase.fsyncSync.bind(fsBase),
+    chmodSync: fsBase.chmodSync.bind(fsBase),
     existsSync: (target) => {
       const normalized = String(target || '');
       if (normalized.endsWith('.aih_env.json')) return false;
@@ -4766,7 +4771,13 @@ test('runtime auto-switches before starting codex when preflight sees token_expi
   standbyAccountRef = resolveHarnessAccountRef('codex', '10016');
 
   runtime.runCliPtyTracked('codex', '10015', [], false);
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Preflight schedules the replacement asynchronously. Wait for its observable
+  // spawn, not a 300ms wall-clock guess that fails under parallel disk/lock work.
+  // The exact one-spawn, selected account and resume-argument assertions remain.
+  const deadline = Date.now() + 2000;
+  while (spawns.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 
   assert.equal(upserts.length, 1);
   assert.equal(upserts[0].provider, 'codex');

@@ -462,14 +462,17 @@ const CODEBUDDY_CN_SHARED_AUTH_PATH = [...CODEBUDDY_EXTENSION_AUTH_DIR, 'workbud
    （`no two sites in the family share a credential file`）。
 5. 四个 Provider 的 `hostAuthRoot` 统一为 `[]`（凭据都相对宿主 HOME）。
 
-### 11.3 已知限制（未做，留作后续）
+### 11.3 独立发行件捕获缺口已闭合（2026-09-16）
 
-- 若用户**只**装了独立分发件（没有 WorkBuddy.app / WorkBuddy AI.app），国内站 CLI 会写
-  `Tencent-Cloud.coding-copilot.info`，而 aih 的 `codebuddycn` / `workbuddycn` 不认那个
-  文件 → 该账号在沙箱内登录后不会被捕获注册。取舍理由见 §11.2 第 4 条。
-- 彻底解决需要按 realm 校验 token 站点（或按 §5.2 给每账号注入唯一
-  `ACC_PRODUCT_CONFIG_*` 的 `authentication.id`）。后者会让沙箱不再与 App 共用登录态，
-  与本次的产品目标冲突，故不采用。
+本节旧版记录的“只装独立发行件时国内账号无法捕获”已由 `29795c88` 修复。
+保留 §11.2 的 primary artifact 声明，同时由 `codebuddy-credential-source.js`
+发现独立发行件的 `Tencent-Cloud.coding-copilot.info`。文件名本身不证明站点；
+必须核验 token realm、subject、account.uid 与 auth.domain，才能用于对应国内 Provider。
+
+同一身份的不同发行件凭据按 token 自身时间更新；不同用户或国际授权域不混用。
+物化、原生 App 反向同步和重登都有明确校验，未注入每账号唯一 authentication.id，
+也没有迁移/复制共享会话历史。`test/codebuddy-credential-source.test.js` 覆盖
+standalone-only、跨地区拒绝、新旧凭据竞争、两种发行件读写及不同用户保护。
 
 ## 12. 国内/国际站点在产品族上的合并（2026-09-15 实现）
 
@@ -900,8 +903,11 @@ codex/claude/kimi，家族（以及**已上线的 zcode**）都返回空——�
   `docs/functional-matrix.md` ACC-003 / WEB-048 的既定边界**刻意**把 quota 投影为
   `unknown`（"没有证据时不伪造健康/可调度"）。家族不进 Go Preview 是**设计**，不是缺口。
 
-**唯一确实退化但仍可接受的一处**：`aih <p> usage` 的详细输出在
-`presenter.js:formatUsageSnapshotLines` 里对未知 kind 落到 `[JSON.stringify(cache)]`——
-家族会打印原始 JSON 而非格式化行。这是**诊断面**，原始 JSON 可读；zcode 同样如此，属既存行为，
-本轮不改。
+**详细输出后续已补齐（`29795c88`）**：`presenter.js:formatUsageSnapshotLines`
+将 CodeBuddy 家族交给 `credit-format.js`，按账户聚合与每包明细输出额度和剩余比例，
+缺字段明确为 unknown。`test/usage.credit-format.test.js` 钉住该行为；未知 kind 仍保留
+原有 JSON 诊断输出，不通过扩大时间窗格式化器来伪造非时间窗语义。
+
+2026-09-18 的历史评审核对、明确保留的产品边界和验证结果见
+[账号身份生产验收](account-identity-production-acceptance-2026-09-18.md)。
 

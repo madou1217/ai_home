@@ -1,5 +1,9 @@
 # OAuth rekey: native SQLite participants and complete rehearsal
 
+> Production acceptance: the original Codex/Grok accounts were migrated on
+> 2026-09-18, service restored, and remaining migrations verified as zero.
+> See [production receipt and historical-review reconciliation](account-identity-production-acceptance-2026-09-18.md).
+
 ## Scope and admission
 
 This closes the native-store gap found by the real-data rehearsal. The earlier

@@ -128,3 +128,25 @@ Go 账号域已实现不代表正式 Node CLI、9527 网关或默认 WebUI 已�
 | `rekey-live-observation-policy` | Scoped Strategy | 无关派生观测不阻塞目标身份事务，目标引用仍严格 | 旧/新/转义身份、未知字段、元数据、旧日志兼容测试 |
 | `rekey-consistency` | 独立校验适配器 | 比较完整前后事实，不只看成功返回或行数 | 主库指纹、原生读回、外键与数字别名验证 |
 | 本轮文档核对 | 无新模式 | 文档纠偏不需要新增框架或重复实现 | 历史提交、现有测试、安装策略与实际回执交叉核对 |
+
+
+## 5. 收尾实测发现并修复：未知额度误判耗尽
+
+通过公开 `evaluateProviderModelUsage` 边界复现：Codex、Claude、Gemini、AGY、Kimi
+快照条目 `remainingPct: null` 都被提前执行 `Number(null)` 转成 0，结果为 `exhausted`，
+使模型账号索引把尚无额度证据的候选账号排除。此前测试覆盖“没有对应桶”，未覆盖“有桶但值为空”。
+
+修复复用 `provider-usage-policy.js` 的数值归一化边界，策略读取桶与账号摘要时不再提前强转。
+空值、空串、布尔值和容器不能证明耗尽；真实数字 0 和数值字符串 `"0"` 仍然耗尽，
+数值字符串兼容及原有范围裁剪不变。未知桶不会把同模型的已知健康桶拖成零；另有真实零桶仍阻止路由。
+这不绕过独立的账号启停、凭据无效或实际上游限额状态。
+
+新增 `test/provider-usage-unknown.test.js` 的 19 项用例在旧代码上 14 项失败，修复后
+19/19 通过；包含两种真实模型索引入口的 unknown/zero 分离，不只测试私有帮助函数。
+加上原有策略及索引测试，Node22 定向 33/33 通过；Node26 新增用例 19/19 通过。
+Go 侧已有显式 `AvailabilityUnknown` 和“只有 exhausted 才生成 quota block”的独立合同，
+不把 Node 的动态类型补丁复制进 Go 账号库。
+
+模式：`provider-usage-policy.normalizeRemainingPct -> shared normalization boundary ->`
+在类型信息丢失之前保留 unknown，策略层复用而不重复实现 -> 五 Provider、摘要回退、
+混合桶及两种模型索引的反例和正向用例。没有新增依赖或改变额度上游接口。

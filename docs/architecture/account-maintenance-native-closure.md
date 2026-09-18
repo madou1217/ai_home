@@ -129,3 +129,43 @@ transaction orchestration are separate. Existing backups, fingerprints, SQL
 updates, metadata validation and admission locks are reused. No new dependency,
 account shadow table, general-purpose workflow framework, vendor protocol
 reverse engineering, WebUI redesign or Node→Go ownership switch is introduced.
+
+## Runtime observations outside the selected identity transaction
+
+The first original-store attempt correctly refused four long-lived foreground
+AIH terminal clients holding SQLite connections; no migration ran and the service
+was restored. Their exact tmux sessions and native processes were subsequently
+preserved through replacement direct terminal attachments, then only those old
+foreground attachments were detached. Empty, disconnected, zero-loaded-thread
+account app-server engines were gracefully retired after explicit inspection.
+
+A second attempt stopped on a stale plan, again without changing identities.
+Read-only comparison found no changed planned edit or native participant. It found
+only `run/account-activity.json`, `run/codex/cli-hook-state.json`, and diagnostic
+SQLite content belonging to other, unmapped accounts. These can legitimately
+advance while the selected account graph is offline.
+
+`rekey-live-observation-policy` now defines a narrowly scoped distinction:
+recognized account-activity/hook observation JSON with **no old or new target
+identity reference** is not a restoration target. Its presence, path, ownership
+and mode remain checked. Unknown schemas, arbitrary files and records mentioning
+a target identity retain the old strict content fingerprint. Native diagnostic
+rows outside both target roots may append; their schema is still fingerprinted
+and every column is still inspected for unknown machine references. Native logs
+inside a migrated root remain fully state-checked. No file is overwritten or
+cleared to achieve quiescence.
+
+New filesystem plans record `observationPolicy: 1`. Old durable journals without
+that field explicitly retain the original strict policy, so this refinement does
+not reinterpret their previously recorded before/after state. The policy is not
+a command-line override and unknown policy versions are rejected.
+
+`test/rekey-live-observation.test.js` verifies unrelated observation updates survive
+both apply and rollback, target-identity/escaped-identity refusal, strict metadata
+and arbitrary-file checks, unrelated native diagnostic append, unknown native
+fields/schema, mapped native log updates, and legacy-journal compatibility.
+
+Pattern: `rekey-live-observation-policy -> scoped Strategy -> separate derived
+unrelated liveness from the transaction's authoritative inputs -> seven positive
+and adversarial tests`. Main SQLite still receives the full before/after check;
+no account, credential, usage or native pointer consistency rule is weakened.

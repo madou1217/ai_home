@@ -58,30 +58,40 @@ func TestGatewayStrategyBuildsPoolAndPinnedResponsesProviders(t *testing.T) {
 			}
 			arguments := strings.Join(result.Arguments(), "\n")
 			for _, expected := range []string{
-				`model_provider="aih_gateway"`,
-				`model_providers.aih_gateway.base_url="http://127.0.0.1:9527/v1"`,
-				`model_providers.aih_gateway.wire_api="responses"`,
-				`model_providers.aih_gateway.env_key="AIH_GATEWAY_CLIENT_KEY"`,
-				`model_providers.aih_gateway.request_max_retries=0`,
-				`model_providers.aih_gateway.stream_max_retries=0`,
+				`model_provider=aih_server`,
+				`model_providers.aih_server.name="AIH Server"`,
+				`model_providers.aih_server.base_url=http://127.0.0.1:9527/v1`,
+				`model_providers.aih_server.wire_api=responses`,
+				`model_providers.aih_server.env_key=OPENAI_API_KEY`,
+				`model_providers.aih_server.request_max_retries=0`,
+				`model_providers.aih_server.stream_max_retries=0`,
 			} {
 				if !strings.Contains(arguments, expected) {
 					t.Fatalf("Gateway 参数缺少 %q: %v", expected, result.Arguments())
 				}
 			}
 			values := result.Environment().RevealSet()
-			if values["AIH_GATEWAY_CLIENT_KEY"] != codexGatewayKey ||
-				slices.Contains(result.Environment().UnsetNames(), "CODEX_HOME") {
+			unsetNames := result.Environment().UnsetNames()
+			if values["OPENAI_API_KEY"] != codexGatewayKey ||
+				slices.Contains(unsetNames, "OPENAI_API_KEY") ||
+				!slices.Contains(unsetNames, "AIH_GATEWAY_CLIENT_KEY") ||
+				!slices.Contains(unsetNames, "AIH_GATEWAY_ACCOUNT_REF") ||
+				slices.Contains(unsetNames, "CODEX_HOME") {
 				t.Fatalf("Gateway 环境错误: %v", result.Environment())
 			}
+			if _, found := values["AIH_GATEWAY_CLIENT_KEY"]; found {
+				t.Fatal("Gateway 不得继续设置旧 client key 环境变量")
+			}
+			if _, found := values["AIH_GATEWAY_ACCOUNT_REF"]; found {
+				t.Fatal("Gateway 不得继续通过环境变量传递固定账号")
+			}
+			header := "model_providers.aih_server.http_headers.X-Account-Ref=" + accountRef.String()
 			if test.pinned {
-				if values["AIH_GATEWAY_ACCOUNT_REF"] != accountRef.String() ||
-					!strings.Contains(arguments, `env_http_headers={"X-Account-Ref"="AIH_GATEWAY_ACCOUNT_REF"}`) {
+				if !strings.Contains(arguments, header) {
 					t.Fatalf("固定账号映射错误: args=%v env=%v", result.Arguments(), result.Environment())
 				}
-			} else if _, found := values["AIH_GATEWAY_ACCOUNT_REF"]; found ||
-				!slices.Contains(result.Environment().UnsetNames(), "AIH_GATEWAY_ACCOUNT_REF") {
-				t.Fatalf("账号池残留固定账号: %v", result.Environment())
+			} else if strings.Contains(arguments, "http_headers.X-Account-Ref=") {
+				t.Fatalf("账号池不应残留固定账号 header: %v", result.Arguments())
 			}
 			formatted := fmt.Sprintf("%v\n%+v\n%#v", result, result, result)
 			if strings.Contains(formatted, codexGatewayKey) {

@@ -39,5 +39,8 @@ jobs:
       - name: Verify Go index matches the models.dev SDK snapshot
         run: npm run models:check
 
+      - name: Run Go test suite
+        run: go test ./...
+
       - name: Run test suite
         run: npm test

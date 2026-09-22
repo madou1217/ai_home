@@ -1,3 +1,29 @@
+.models-probe-status {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hos-space-2, 8px);
+  margin-bottom: var(--hos-space-4, 16px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
+  border: 1px solid color-mix(in srgb, var(--c-danger-600) 22%, var(--hos-border, #e2e8f0));
+  border-radius: var(--hos-radius-sm, 12px);
+  background: color-mix(in srgb, var(--hos-surface-raised, #fbfcfd) 94%, var(--c-danger-600) 6%);
+  color: var(--hos-muted-strong, #475569);
+  font-size: var(--hos-text-caption, 12px);
+}
+.models-probe-status-message {
+  flex: 1 1 240px;
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-probe-status-link,
+.models-probe-status-copy {
+  flex: 0 0 auto;
+  font-size: var(--hos-text-caption, 12px);
+}
 .models-live-refresh {
   border-color: color-mix(in srgb, var(--c-teal-500) 26%, transparent);
 }

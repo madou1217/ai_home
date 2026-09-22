@@ -2,7 +2,7 @@ import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
-import { Alert, Form, Input, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
+import { Form, Input, Segmented, Select, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
@@ -21,6 +21,7 @@ import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { buildProviderSelectOptions } from '@/providers/catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
 import { openExternalUrl } from '@/services/open-external-url';
@@ -777,51 +778,32 @@ export default function Models() {
       {globalProbeError ? (() => {
         const probeError = parseUpstreamError(globalProbeError);
         return (
-          <Alert
-            type={catalog?.source === 'remote' ? 'warning' : 'error'}
-            showIcon
-            style={{ marginBottom: 16 }}
-            message={(
-              <Space size={8} wrap>
-                <span>部分账号模型探测失败</span>
-                {probeError.statusCode ? <Tag color="error" style={{ marginInlineEnd: 0 }}>HTTP {probeError.statusCode}</Tag> : null}
-              </Space>
-            )}
-            description={(
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Typography.Paragraph
-                  type="secondary"
-                  style={{ margin: 0, fontSize: 13 }}
-                  ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
-                >
-                  {probeError.message}
-                </Typography.Paragraph>
-                <Space size={12} wrap>
-                  {probeError.url ? (
-                    <Typography.Link
-                      href={probeError.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ fontSize: 12 }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        void openExternalUrl(probeError.url).catch(() => message.error('无法打开外部链接'));
-                      }}
-                    >
-                      提交上游 issue ›
-                    </Typography.Link>
-                  ) : null}
-                  <Typography.Text
-                    type="secondary"
-                    copyable={{ text: probeError.raw, tooltips: ['复制原始错误', '已复制'] }}
-                    style={{ fontSize: 12 }}
-                  >
-                    原始错误
-                  </Typography.Text>
-                </Space>
-              </Space>
-            )}
-          />
+          <div className="models-probe-status" role="status">
+            <Tag color={catalog?.source === 'remote' ? 'warning' : 'error'}>部分账号模型探测失败</Tag>
+            {probeError.statusCode ? <Tag color="error">HTTP {probeError.statusCode}</Tag> : null}
+            <span className="models-probe-status-message" title={probeError.message}>{probeError.message}</span>
+            {probeError.url ? (
+              <Typography.Link
+                href={probeError.url}
+                target="_blank"
+                rel="noreferrer"
+                className="models-probe-status-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  void openExternalUrl(probeError.url).catch(() => message.error('无法打开外部链接'));
+                }}
+              >
+                提交上游 issue ›
+              </Typography.Link>
+            ) : null}
+            <Typography.Text
+              type="secondary"
+              copyable={{ text: probeError.raw, tooltips: ['复制原始错误', '已复制'] }}
+              className="models-probe-status-copy"
+            >
+              原始错误
+            </Typography.Text>
+          </div>
         );
       })() : null}
 

@@ -424,10 +424,12 @@ Go    acct_4a6fd2d115fe1edacb4a   （personal）
 
 验证：`go test ./...` 全部通过（84 个包）。
 
-**仍未闭环**：Go 现为 `oauth:codex:<user_id>`，Node 仍为 `oauth:codex:<email>`。两端
-`accountRef` 依然不同，因此 Node 旧账号迁移仍必须按
-[`product-direction-node-go-2026-08-15.md` §8.1](./product-direction-node-go-2026-08-15.md)
-生成显式映射账本。把 Node 切到 `user_id` 会改写既有生产 `accountRef`，属于 §8.1 要求
+**已闭环（2026-09-18）**：Node 已统一到 `oauth:codex:<user_id>`，显式映射账本、
+事务迁移、恢复门禁及真实生产 rekey 均已执行。Codex 与同批 Grok 旧引用已迁移，重新规划为
+待迁移身份 0 / blocker 0；Go `aih.db` 当时账号数为 0，因此不存在需要伪造的 Go 数据迁移。
+完整生产证据见
+[`account-identity-production-acceptance-2026-09-18.md`](./account-identity-production-acceptance-2026-09-18.md)。
+把 Node 切到 `user_id` 曾经会改写既有生产 `accountRef`，所以当时属于 §8.1 要求
 「另写 ADR 和显式 rekey」的变更——**ADR 已于 2026-09-16 落地**
 （[`codex-oauth-identity-vector-adr.md`](./codex-oauth-identity-vector-adr.md)），
 决策为「统一到 `user_id`、Node 改」，但 rekey 本身**未执行**，需先补 §8.1 要求的映射账本。
@@ -524,7 +526,7 @@ Go 原先有两个键，都不等于规范键：
 | Codex OAuth 身份向量 | `oauth:codex:<user_id>` | `oauth:codex:<email>` | **已修**（2026-09-16）：Node 统一到 `user_id`，ADR + rekey 工具已落地 |
 | Claude OAuth 身份向量 | `oauth:claude:uuid:<uuid>`（小写、强制 UUID 形状） | 同前缀，但**保留大小写、不校验形状** | **已修**（2026-09-16）：同一份 UUID 曾在两端得到不同 `accountRef` |
 | AGY OAuth 身份向量 | `oauth:agy:<email>`（严格邮箱校验） | 同前缀，但原先接受任意非空串 | **已修**（2026-09-16）：校验强度对齐，19 条向量实测一致 |
-| 其余 Provider 身份向量 | **Go 未实现**（只有 codex/claude/agy 三个包） | 9 个 Provider 各自有向量 | 不是分歧而是缺口：Node 的向量已写成规格，见 [`oauth-identity-vector-spec.md`](./oauth-identity-vector-spec.md) |
+| 其余 Provider 身份向量 | 专用 typed 包仍集中在 codex/claude/agy；**统一原生账号域已由 `957ecc02` 覆盖全部 15 个具体 Provider 标识** | Node 各 Provider 的稳定主体策略 | **已闭环账号域**：共享 native strategy + SQLite 注册/读回/续期/篡改契约；这不等于 15 个 Provider 的推理/runtime 已切到 Go |
 | Gateway provider 认证 | `env_key=OPENAI_API_KEY` + 命令行字面 `http_headers.X-Account-Ref=acct_…` | 同左；宿主持久配置使用互斥的 `auth` 命令表 | **已修（2026-09-22）**：Go 改为 Node 正式契约；旧 Go 私有 env 名仅清理不再设置 |
 | 刷新被拒后的抑制 | `suppressesRefresh`（按 AccountRef + credential.updated_at 精确匹配） | `lib/server/kimi-token-refresh.js` 的 `reason:'suppressed'`、`lib/server/token-refresh-result.js` 的 `invalid_grant` 分类、`codex-auth-invalid-reconciler.js` 的 `refresh_rejected_access_token_still_valid` | **Node 已有等价能力**，不是缺口 |
 | `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |

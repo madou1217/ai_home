@@ -2,7 +2,11 @@
 
 > 2026-09-16 复核交付：新增修复、精确验证与真实数据阻塞见
 > [Provider review 交付记录](maintenance/provider-review-delivery-20260916.md)。
-> 下文保留原评审时间点的事实；不得把历史“未做”或早期测试数量当作当前状态。
+> **2026-09-18 最终闭环**：R7/T1 的真实 Codex rekey 已在生产完成，并同步迁移有明确账本的 Grok；
+> R8 的 Go `aih.db` 当时账号数为 0，明确不适用；R9/T7 已由 `957ecc02` 的统一原生账号域
+> 覆盖全部 15 个具体 Provider 标识。完整证据见
+> [账号身份生产验收](architecture/account-identity-production-acceptance-2026-09-18.md)。
+> 下文保留原评审时间点的事实；不得把历史“未做”、待授权或早期测试数量当作当前状态。
 
 提交：`474a52ee` · `ae60c7ac` · `2860409f` · `2f79dbbe` · `28f2dd7c`（均已推送，工作树干净）
 

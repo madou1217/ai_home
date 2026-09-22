@@ -1,5 +1,7 @@
 # Provider review 交付记录 — 2026-09-16
 
+> **最终状态（2026-09-22）：已复核闭环。** 本文当时保留的“真实 rekey 未执行”已由 2026-09-18 生产迁移闭环；CodeBuddy 家族的独立国内凭据捕获、WorkBuddy 新建/续聊、usage 明细均已实现。`--serve` / ACP 已完成评估并明确不进入生产数据面。历史证据继续保留，不再把这些条目标成待办。
+
 ## 本次已实现并验证
 
 本记录对应 `codebuddy-family-quota-loop-review.md` 与 `oauth-identity-alignment-review.md`

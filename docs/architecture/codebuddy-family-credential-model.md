@@ -315,13 +315,15 @@ headless bundle 中的 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET` 协议：
       并说明该路径**不受 `CODEBUDDY_CONFIG_DIR` 约束**。见 §10 / §11。
       文件名按 Provider 区分：`codebuddycn` / `workbuddycn` → `workbuddy-desktop.info`，
       `codebuddy` → `Tencent-Cloud.coding-copilot.info`，`workbuddy` → `workbuddy-desktop-ai.info`。
-- [ ] 启动策略注入每账号唯一的 `ACC_PRODUCT_CONFIG_V3.authentication.id`，实现凭据文件名级隔离。
-      本轮**不做**：国内侧已由 HOME 隔离 + HOME 相对投影天然实现"一账号一份"，且注入会让沙箱
-      不再与 App 共用登录态，与产品目标冲突（详见 §11.3）。
+- [x] **设计裁决完成：不注入**每账号唯一的 `ACC_PRODUCT_CONFIG_V3.authentication.id`。
+      国内侧已由 HOME 隔离 + HOME 相对投影天然实现“一账号一份”；强行注入会让沙箱
+      不再与 App 共用登录态，与产品目标冲突（详见 §11.3）。该项是明确的“不实施”决策，不再作为 TODO。
 - [x] 安装器增加"优先探测 App 内嵌 CLI"分支（复用版本一致性），npm 安装作为回退。见 §10。
 - [x] 额度/用量探测（`quota_usage`）接入家族四员：`POST {endpoint}/billing/meter/get-user-resource-summary`，
       账户级聚合 + 明细桶，实测同地区 work/code 共用一份账户级用量。见 §14。
-- [ ] 若要做真正意义的凭据共用，评估集成入口：`codebuddy --serve`（REST/ACP over SSE）优先于自实现 bootstrap。
+- [x] `codebuddy --serve` / ACP 集成入口已完成评估：已安装 runtime 暴露 REST/HTTP-SSE 与 ACP stdio，
+      ACP initialize 可用；生产数据面**不接入**该入口，继续复用现有 `--print --output-format stream-json`
+      子进程通道。不新增常驻开放端口、不使用 `--auth none`、不自实现 sidecar bootstrap。
 
 
 ## 9. 提交前修正（2026-09-15）
@@ -711,9 +713,13 @@ sharedEntries: Object.freeze(['projects'])   // 账号投影里 projects ⇒ 宿
 - 实机烟测：`~/.workbuddy`（32 项目 / 34 会话）与 `~/.workbuddy-ai`（2 / 3）经适配器
   读出后，cn 侧两 Provider 结果一致、global 侧同理。
 
-### 13.8 已知限制（未做）
+### 13.8 后续实现补充（2026-09-16，最终复核 2026-09-22）
 
-- WorkBuddy 桌面端的"新建会话"仍需在桌面端发起；aih 只负责读取与（codebuddy 侧）续聊。
+- WorkBuddy Global / CN 已接入 AIH 原生会话链路：从**匹配的桌面 App 内嵌 runtime**创建新会话，
+  并按 exact session id 续聊；不会从通用 PATH 偷用另一个发行版。WorkBuddy 仍是“桌面分发，
+  无独立 CLI”这一产品事实，但这**不等于 AIH 不能启动其内嵌 runtime**。
+- 四个家族成员的 `stream-json` 都进入统一解析器；普通 WebUI 消息走 headless 流，
+  不误开交互终端。真实在线供应商推理与测试夹具必须继续区分。
 
 > 额度/用量探测（`quota_usage`）**已闭环**，见 §14；原 §8 待办"同地区 work/code 共用一份
 > 用量的实测结论"已由该节的实测取代。

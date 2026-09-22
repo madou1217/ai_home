@@ -3,8 +3,10 @@
 > 2026-09-16 复核交付：新增修复、精确验证与真实数据阻塞见
 > [Provider review 交付记录](maintenance/provider-review-delivery-20260916.md)。
 > 下文保留原评审时间点的事实；不得把历史“未做”或早期测试数量当作当前状态。
+>
+> 2026-09-22 最终复核：§4.2 当时列出的四项遗留均已结案——独立国内发行件凭据捕获与 CLI usage 明细由 `29795c88` 完成；WorkBuddy 新建/精确续聊由 `4aac415a` 完成；`--serve`/ACP 已完成技术评估并明确**不进入生产数据面**，继续复用 `--print --output-format stream-json` 子进程通道。当前状态以本段、`provider-review-delivery-20260916.md` 与架构文档为准。
 
-- 状态：**待 review**
+- 状态：**已复核闭环（2026-09-22）**
 - 评审对象：2026-09-15 ~ 2026-09-16 的 CodeBuddy 家族工作（分支 `main`）
 - 当前 HEAD：`dd90ee4d`（已推送，与 `origin/main` 同步，0/0）
 - 相关源码文档：[`docs/architecture/codebuddy-family-credential-model.md`](architecture/codebuddy-family-credential-model.md)
@@ -123,7 +125,7 @@
 
 ---
 
-## 四、未完成 / 未做（Not done）
+## 四、历史未完成 / 未做（截至 `dd90ee4d`，现已复核）
 
 **请重点 review 这一节。** 分为「刻意不做」与「确实遗留」两类。
 
@@ -135,14 +137,14 @@
 | `provider-usage-policies.js` 保持只登记 5/15 provider | 家族**和 zcode/grok/qoder/opencode/kiro 一样缺席**，属**该表自身既存覆盖度**问题；未登记时的兜底是"保持可调度"（**安全**）。单独补家族会与另外 9 支不一致 | §14.7 |
 | Go Preview 不显示家族额度 | `AccountsGoPreview.tsx` **只在隔离进程**加载，且**刻意**把 quota 投影为 `unknown`（"没证据不伪造"） | §14.7 / ACC-003 |
 
-### 4.2 确实遗留（建议 review 是否排期）
+### 4.2 当时的四项遗留：最终裁决（2026-09-22）
 
-| 项 | 影响 | 现状 |
+| 当时项目 | 当前状态 | 证据 / 设计结论 |
 | --- | --- | --- |
-| **只装独立分发件时的凭据捕获缺口** | 用户若**只**装了独立分发件（无 WorkBuddy.app），国内站 CLI 会写 `Tencent-Cloud.coding-copilot.info`，而 aih 的 `codebuddycn`/`workbuddycn` **不认**该文件 → 该账号登录后**不会被捕获注册** | 文档 §11.3，**未做** |
-| WorkBuddy 桌面端"新建会话" | 仍需在**桌面端**发起；aih 只负责读取与（codebuddy 侧）续聊 | 文档 §13.8，**未做** |
-| `aih <p> usage` 详细输出 | 对**未知 kind** 落到 `[JSON.stringify(cache)]`，家族会打印原始 JSON 而非格式化行。**诊断面**、zcode 同样如此 | §14.7，**未改** |
-| 评估 `codebuddy --serve` 集成入口 | 若要**真正意义的凭据共用**，应优先评估官方 REST/ACP 入口而非自实现 bootstrap | 文档 §8，**未做** |
+| **只装独立分发件时的凭据捕获缺口** | **已完成** | `29795c88`：按 issuer / domain / uid-sub 核验 `Tencent-Cloud.coding-copilot.info`，文件名不再决定站点；standalone-only、跨地区拒绝、续期竞争均有回归 |
+| WorkBuddy 桌面端“新建会话” | **已完成** | `4aac415a`：AIH 可通过所选 WorkBuddy App 的内嵌 runtime 创建新会话并按 exact session id 续聊；仍不把 WorkBuddy 伪装成独立 CLI 分发 |
+| `aih <p> usage` 详细输出 | **已完成** | `29795c88`：`credit-format.js` 输出账户聚合与包明细，未知字段明确显示 `unknown`；未知 snapshot kind 仍保留 JSON 诊断语义 |
+| 评估 `codebuddy --serve` / ACP | **评估完成，决定不接生产数据面** | 已验证官方 REST/HTTP-SSE/ACP 能力与 ACP initialize；生产继续复用 `--print --output-format stream-json`，不新增常驻开放端口、不使用 `--auth none`、不自实现 sidecar bootstrap |
 
 ### 4.3 环境 / 仓库既存问题（**非本次引入，但建议一并处理**）
 
@@ -182,15 +184,12 @@
 
 ---
 
-## 六、需你决策的点
+## 六、历史待决策点（2026-09-22 已结案）
 
-1. **§4.2 的凭据捕获缺口**（只装独立分发件 → 账号不被捕获）是否**值得排期**？影响面取决于
-   "只装独立分发件"的用户占比。
-2. **§4.3 的 lock 漂移**（`smol-toml` 缺锁）建议**单独提一个修复提交**——它会让任何新机器
-   `npm install` 出现不一致。**本次未擅自改 lock**。
-3. **§4.2 的 `usage` 原始 JSON**：是否要为**所有**非时间窗 kind 统一做格式化（会同时改善 zcode）？
-   本次刻意未动共享格式化代码，避免影响 5 个已上线 Provider。
-4. **§4.1 的"刻意不做"三项**：若认可，建议在文档里标注为**产品决策**而非待办，以免被反复重提。
+1. §4.2 的凭据捕获缺口、WorkBuddy 新建/续聊、CodeBuddy 家族 usage 详细输出均已由后续提交完成，不再排期。
+2. lockfile 已按仓库既定 **no-lockfile** 策略结案：根/Web 锁文件不跟踪，CI 使用 `npm install`；不得把旧本机忽略锁重新解释成仓库漏提交。
+3. `--serve` / ACP 已评估但不进入生产数据面；当前 `--print stream-json` 通道是明确架构选择，不再作为 TODO。
+4. §4.1 三项属于产品/架构边界，不再进入“未完成”扫描；其中每账号唯一 `authentication.id` 明确不实施，避免破坏与 App 共用登录态。
 
 ---
 

@@ -7,7 +7,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
+const {
+  writeDefaultAccountRef,
+  writeDefaultProviderProfile
+} = require('../lib/account/default-account-store');
 const {
   writeAccountCredentials,
   writeAccountNativeAuth
@@ -118,6 +121,34 @@ test('default Codex CLI switches API key and OAuth environments without credenti
   assert.equal(restoredApiKeyRuntime.env.OPENAI_API_KEY, 'gateway-test-key');
   assert.equal(restoredApiKeyRuntime.env.OPENAI_BASE_URL, 'http://127.0.0.1:9541/v1');
   assert.equal(processObj.env.OPENAI_API_KEY, 'stale-shell-key');
+});
+
+test('default Codex CLI uses the built-in AIH Server profile when selected', (t) => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-default-server-'));
+  const aiHomeDir = path.join(homeDir, '.ai_home');
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  writeDefaultProviderProfile(fs, aiHomeDir, 'codex', '.aih-server');
+  writeServerConfig({ apiKey: 'gateway-default-key', port: 9542 }, { fs, aiHomeDir });
+
+  const runtime = buildCodexDefaultCliEnv(fs, {
+    aiHomeDir,
+    processObj: {
+      platform: 'darwin',
+      env: {
+        HOME: homeDir,
+        OPENAI_API_KEY: 'stale-shell-key',
+        OPENAI_BASE_URL: 'https://stale-shell.example/v1'
+      }
+    }
+  });
+
+  assert.equal(runtime.authMode, 'apikey');
+  assert.equal(runtime.providerProfile, '.aih-server');
+  assert.equal(runtime.accountRef, '');
+  assert.equal(runtime.env.OPENAI_API_KEY, 'gateway-default-key');
+  assert.equal(runtime.env.OPENAI_BASE_URL, 'http://127.0.0.1:9542/v1');
+  assert.equal(runtime.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, '');
 });
 
 test('AIH-managed Codex launches preserve the authentication selected by the caller', (t) => {

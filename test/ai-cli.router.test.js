@@ -8,6 +8,7 @@ const { runAiCliCommandRouter } = require('../lib/cli/commands/ai-cli/router');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const {
   readDefaultAccountRef,
+  readDefaultProviderProfile,
   writeDefaultAccountRef
 } = require('../lib/account/default-account-store');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
@@ -127,6 +128,46 @@ test('`aih claude .aih-server` explicitly targets built-in AIH server profile', 
 
   assert.deepEqual(exits, []);
   assert.deepEqual(runCalls, [{ cliName: 'claude', id: '', forwardArgs: ['--version'] }]);
+});
+
+test('a selected account and AIH Server profile each control the implicit provider launch', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'claude');
+  const runCalls = [];
+  const options = {
+    processImpl: { env: {}, exit: () => {} },
+    fs,
+    PROFILES_DIR: profilesDir,
+    aiHomeDir,
+    HOST_HOME_DIR: root,
+    runCliPty: (provider, id, forwardArgs) => runCalls.push({ provider, id, forwardArgs })
+  };
+
+  writeDefaultAccountRef(fs, aiHomeDir, 'claude', accountRef);
+  runAiCliCommandRouter('claude', ['claude'], options);
+  runAiCliCommandRouter('claude', ['claude', '--version'], options);
+  assert.deepEqual(runCalls, [
+    { provider: 'claude', id: accountRef, forwardArgs: [] },
+    { provider: 'claude', id: accountRef, forwardArgs: ['--version'] }
+  ]);
+
+  runAiCliCommandRouter('claude', ['claude', 'set-default'], {
+    ...options,
+    syncGlobalConfigToHost: () => ({ ok: true, gateway: true })
+  });
+  runAiCliCommandRouter('claude', ['claude'], options);
+  runAiCliCommandRouter('claude', ['claude', '--version'], options);
+  assert.deepEqual(runCalls.slice(2), [
+    { provider: 'claude', id: '', forwardArgs: [] },
+    { provider: 'claude', id: '', forwardArgs: ['--version'] }
+  ]);
+
+  runAiCliCommandRouter('claude', ['claude', 'set-default', '12'], {
+    ...options,
+    syncGlobalConfigToHost: () => ({ ok: true })
+  });
+  runAiCliCommandRouter('claude', ['claude'], options);
+  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'claude'), '');
+  assert.equal(runCalls.at(-1).id, accountRef);
 });
 
 test('`aih claude terminal-icon` is handled by ai-home instead of native passthrough', (t) => {
@@ -768,6 +809,165 @@ test('`aih codex set-default` persists accountRef without touching the desktop c
   assert.equal(logs.some((line) => line.includes('Set Account ID 12 as default for codex')), true);
   assert.equal(logs.some((line) => line.includes('desktop client')), false);
 });
+
+test('`aih codex set-default` selects the built-in AIH Server profile', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t);
+  writeDefaultAccountRef(fs, aiHomeDir, 'codex', accountRef);
+  const exits = [];
+  const logs = [];
+  const syncCalls = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter('codex', ['codex', 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: (provider, selectedRef, options) => {
+        syncCalls.push({ provider, selectedRef, options });
+        return { ok: true, gateway: true };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(exits, [0]);
+  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'codex'), '');
+  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+  assert.deepEqual(syncCalls, [{
+    provider: 'codex',
+    selectedRef: '',
+    options: { gateway: true }
+  }]);
+  assert.equal(logs.some((line) => line.includes('Set AIH Server as the default provider for codex')), true);
+});
+
+for (const provider of ['claude', 'opencode', 'kimi']) {
+  test(`\`aih ${provider} set-default\` selects the built-in AIH Server profile`, (t) => {
+    const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, provider);
+    writeDefaultAccountRef(fs, aiHomeDir, provider, accountRef);
+    const exits = [];
+    const syncCalls = [];
+
+    runAiCliCommandRouter(provider, [provider, 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: (selectedProvider, selectedRef, options) => {
+        syncCalls.push({ selectedProvider, selectedRef, options });
+        return { ok: true, gateway: true };
+      }
+    });
+
+    assert.deepEqual(exits, [0]);
+    assert.equal(readDefaultAccountRef(fs, aiHomeDir, provider), '');
+    assert.equal(readDefaultProviderProfile(fs, aiHomeDir, provider), AIH_SERVER_PROFILE_ID);
+    assert.deepEqual(syncCalls, [{ selectedProvider: provider, selectedRef: '', options: { gateway: true } }]);
+  });
+}
+
+test('a provider without an AIH Server profile still requires an account ID', (t) => {
+  const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t, 'gemini');
+  const exits = [];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    runAiCliCommandRouter('gemini', ['gemini', 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(exits, [1]);
+  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'gemini'), '');
+  assert.equal(errors.some((line) => line.includes('Invalid ID')), true);
+});
+
+test('failed host sync does not change the existing default account', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'claude');
+  writeDefaultAccountRef(fs, aiHomeDir, 'claude', accountRef);
+  const exits = [];
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    runAiCliCommandRouter('claude', ['claude', 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs, PROFILES_DIR: profilesDir, aiHomeDir, HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: () => ({ ok: false, reason: 'host_config_changed' })
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(exits, [1]);
+  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'claude'), accountRef);
+  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'claude'), '');
+});
+
+test('`aih codex --restart-client` restarts the learned desktop client without launching Codex', () => {
+  const exits = [];
+  const restartCalls = [];
+  const runCalls = [];
+  runAiCliCommandRouter('codex', ['codex', '--restart-client'], {
+    processImpl: { exit: (code) => exits.push(code) },
+    fs,
+    aiHomeDir: '/tmp/aih-test-home',
+    HOST_HOME_DIR: '/tmp',
+    restartDetectedDesktopClient: (provider, options) => {
+      restartCalls.push({ provider, options });
+      return { detected: true, restarted: true, clientName: 'Codex' };
+    },
+    runCliPty: (...args) => runCalls.push(args)
+  });
+
+  assert.deepEqual(exits, [0]);
+  assert.deepEqual(restartCalls, [{ provider: 'codex', options: { forceQuit: false } }]);
+  assert.deepEqual(runCalls, []);
+});
+
+test('`aih codex --restart-client` reports failure when the client cannot be restarted', () => {
+  const exits = [];
+  const runCalls = [];
+  runAiCliCommandRouter('codex', ['codex', '--restart-client'], {
+    processImpl: { exit: (code) => exits.push(code) },
+    restartDetectedDesktopClient: () => ({ reason: 'stop_timeout', restarted: false, launched: false }),
+    runCliPty: (...args) => runCalls.push(args)
+  });
+
+  assert.deepEqual(exits, [1]);
+  assert.deepEqual(runCalls, []);
+});
+
+for (const provider of ['claude', 'opencode', 'kimi']) {
+  test(`\`aih ${provider} --restart-client\` only restarts the selected desktop client`, () => {
+    const exits = [];
+    const restartCalls = [];
+    const runCalls = [];
+    runAiCliCommandRouter(provider, [provider, '--restart-client', '--force-quit-client'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      restartDetectedDesktopClient: (selectedProvider, options) => {
+        restartCalls.push({ selectedProvider, options });
+        return { detected: true, restarted: true, clientName: provider };
+      },
+      runCliPty: (...args) => runCalls.push(args)
+    });
+
+    assert.deepEqual(exits, [0]);
+    assert.deepEqual(restartCalls, [{ selectedProvider: provider, options: { forceQuit: true } }]);
+    assert.deepEqual(runCalls, []);
+  });
+}
 
 test('`aih codex unset-default` clears current default pointer without user account id', (t) => {
   const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t);

@@ -16,7 +16,7 @@ npm install
 
 ### 账号
 
-使用内置 AIH Server profile 启动客户端：
+未设置默认账号时，支持 AIH Server profile 的客户端会使用内置网关启动：
 
 ```bash
 aih gemini
@@ -69,10 +69,15 @@ aih kiro ls
 
 ```bash
 aih codex set-default 1
+aih codex set-default                 # 将内置 AIH Server 设为默认 provider
+aih claude set-default                # 同样适用于 Claude、OpenCode、Kimi
+aih codex --restart-client            # 重启/启动已识别的桌面客户端
 aih codex unset-default
 aih codex set-mobile 1
 aih codex unset-mobile
 ```
+
+支持内置 AIH Server 的 Codex、Claude、OpenCode、Kimi 可用不带 ID 的 `set-default` 切换宿主 CLI 默认配置；带 ID 时切回指定账号。Claude、OpenCode、Kimi 的宿主配置在切回账号或执行 `unset-default` 时恢复原文；若配置期间被外部修改，会停止恢复以避免覆盖用户改动。OpenCode 的 `opencode.jsonc` 会保留原有注释与无关选项。Server 地址或 Key 变更后重新执行 `set-default` 可刷新宿主配置。独立的 `--restart-client` 未成功重启或启动客户端时返回非零退出码。
 
 `set-mobile` 只接受 Codex ChatGPT OAuth 账号；API Key 账号不能设为 Codex App 账号。
 
@@ -353,7 +358,7 @@ aih server start
 - `base_url`: `http://127.0.0.1:9527/v1`
 - `api_key`: 未配置时可使用 `dummy`
 
-`aih claude`、`aih codex` 不带账号 ID 时会使用内置 AIH Server profile，不需要把 `127.0.0.1:9527` 手动添加成 provider 账号。
+`aih claude`、`aih codex`、`aih opencode`、`aih kimi` 不带账号 ID 时使用当前默认选择；未设置默认账号时使用内置 AIH Server profile，不需要把 `127.0.0.1:9527` 手动添加成 provider 账号。
 
 启动后台服务：
 

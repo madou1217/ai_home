@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const fse = require('fs-extra');
 const os = require('node:os');
 const path = require('node:path');
+const { parse: parseJsonc } = require('jsonc-parser');
+const { parse: parseToml } = require('smol-toml');
 const { createHostConfigSyncer } = require('../lib/account/host-sync');
+const { writeServerConfig } = require('../lib/server/server-config-store');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const {
   writeAccountCredentials,
@@ -76,6 +79,252 @@ function createClaudeSyncer(fixture, options = {}) {
     ...options
   });
 }
+
+function createGatewaySyncer(fixture, provider) {
+  return createHostConfigSyncer({
+    fs,
+    fse,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir: fixture.hostHomeDir,
+    cliConfigs: { [provider]: { globalDir: provider === 'opencode' ? '.config/opencode' : '.kimi-code' } }
+  });
+}
+
+test('syncGlobalConfigToHost selects AIH Server in OpenCode without losing preferences', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify({ theme: 'system', provider: { other: { name: 'Other' } } }));
+  writeServerConfig({ apiKey: 'gateway-key', port: 9544 }, { fs, aiHomeDir: fixture.aiHomeDir });
+
+  const result = createGatewaySyncer(fixture, 'opencode')('opencode', '', { gateway: true });
+
+  assert.equal(result.ok, true);
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(config.$schema, 'https://opencode.ai/config.json');
+  assert.equal(config.theme, 'system');
+  assert.deepEqual(config.provider.other, { name: 'Other' });
+  assert.equal(config.provider.aih.options.baseURL, 'http://127.0.0.1:9544/v1');
+  assert.equal(config.provider.aih.options.apiKey, 'gateway-key');
+  assert.ok(config.provider.aih.models[config.model.slice('aih/'.length)]);
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+});
+
+test('syncGlobalConfigToHost preserves OpenCode JSONC comments and restores its original content', (t) => {
+  const fixture = createFixture(t);
+  const dir = path.join(fixture.hostHomeDir, '.config', 'opencode');
+  fs.mkdirSync(dir, { recursive: true });
+  const jsoncPath = path.join(dir, 'opencode.jsonc');
+  const original = '{ // preserve\n "theme": "system", "model": "anthropic/old"\n}\n';
+  fs.writeFileSync(jsoncPath, original);
+  const sync = createGatewaySyncer(fixture, 'opencode');
+
+  const result = sync('opencode', '', { gateway: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.existsSync(path.join(dir, 'opencode.json')), false);
+  const generated = fs.readFileSync(jsoncPath, 'utf8');
+  assert.match(generated, /\/\/ preserve/);
+  assert.equal(parseJsonc(generated).$schema, 'https://opencode.ai/config.json');
+  assert.equal(parseJsonc(generated).theme, 'system');
+  assert.match(parseJsonc(generated).model, /^aih\//);
+  assert.ok(parseJsonc(generated).provider.aih);
+  fs.appendFileSync(jsoncPath, '// external edit\n');
+  assert.equal(sync('opencode', '', { restoreGateway: true }).ok, false);
+  fs.writeFileSync(jsoncPath, generated);
+  assert.equal(sync('opencode', '', { restoreGateway: true }).ok, true);
+  assert.equal(fs.readFileSync(jsoncPath, 'utf8'), original);
+});
+
+test('syncGlobalConfigToHost preserves a custom OpenCode schema', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.jsonc');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, '{"$schema":"https://example.invalid/custom-schema.json"}\n');
+
+  const result = createGatewaySyncer(fixture, 'opencode')('opencode', '', { gateway: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(parseJsonc(fs.readFileSync(configPath, 'utf8')).$schema,
+    'https://example.invalid/custom-schema.json');
+});
+
+test('switching from AIH Server to an OpenCode account restores its previous host config', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const original = '{"theme":"system"}\n';
+  fs.writeFileSync(configPath, original);
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'opencode', cliAccountId: '1', identitySeed: 'test:host-sync:opencode:1'
+  });
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, {
+    auth: { anthropic: { type: 'api', key: 'account-key' } }
+  });
+  const sync = createGatewaySyncer(fixture, 'opencode');
+
+  assert.equal(sync('opencode', '', { gateway: true }).ok, true);
+  const result = sync('opencode', registration.accountRef, { restoreGateway: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(fixture.hostHomeDir, '.local', 'share', 'opencode', 'auth.json'), 'utf8')),
+    { anthropic: { type: 'api', key: 'account-key' } });
+});
+
+test('a changed OpenCode gateway config blocks account projection before writing credentials', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, '{"theme":"system"}\n');
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'opencode', cliAccountId: '1', identitySeed: 'test:host-sync:opencode:conflict'
+  });
+  writeAccountNativeAuth(fs, fixture.aiHomeDir, registration.accountRef, {
+    auth: { anthropic: { type: 'api', key: 'account-key' } }
+  });
+  const sync = createGatewaySyncer(fixture, 'opencode');
+  assert.equal(sync('opencode', '', { gateway: true }).ok, true);
+  fs.appendFileSync(configPath, '\n "external": true\n');
+
+  const result = sync('opencode', registration.accountRef, { restoreGateway: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'gateway_default_restore_failed');
+  assert.equal(fs.existsSync(path.join(fixture.hostHomeDir, '.local', 'share', 'opencode', 'auth.json')), false);
+});
+
+test('a gateway state journal with the original config still present can be restored', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const original = '{"theme":"system"}\n';
+  fs.writeFileSync(configPath, original);
+  const sync = createGatewaySyncer(fixture, 'opencode');
+  assert.equal(sync('opencode', '', { gateway: true }).ok, true);
+  fs.writeFileSync(configPath, original);
+
+  assert.equal(sync('opencode', '', { restoreGateway: true }).ok, true);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+});
+
+test('syncGlobalConfigToHost selects AIH Server in Kimi and preserves other sections on resync', (t) => {
+  const fixture = createFixture(t);
+  const configPath = path.join(fixture.hostHomeDir, '.kimi-code', 'config.toml');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, 'default_model = "custom/model"\n\n[thinking]\nenabled = false\n');
+  writeServerConfig({ apiKey: 'gateway-key', port: 9545 }, { fs, aiHomeDir: fixture.aiHomeDir });
+  const sync = createGatewaySyncer(fixture, 'kimi');
+
+  assert.equal(sync('kimi', '', { gateway: true }).ok, true);
+  assert.equal(sync('kimi', '', { gateway: true }).ok, true);
+
+  const content = fs.readFileSync(configPath, 'utf8');
+  const config = parseToml(content);
+  assert.equal(config.default_model, 'aih-server/kimi-for-coding');
+  assert.deepEqual(config.thinking, { enabled: false });
+  assert.equal(config.providers['aih-server'].base_url, 'http://127.0.0.1:9545/v1');
+  assert.equal(config.providers['aih-server'].api_key, 'gateway-key');
+  assert.equal(config.models['aih-server/kimi-for-coding'].model, 'kimi-for-coding');
+  assert.equal(content.match(/\[providers\."aih-server"\]/g).length, 1);
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+});
+
+for (const [provider, globalDir, fileName, original] of [
+  ['claude', '.claude', 'settings.json', '{"env":{"CUSTOM_SETTING":"keep"}}\n'],
+  ['opencode', '.config/opencode', 'opencode.json', '{"theme":"system"}\n'],
+  ['kimi', '.kimi-code', 'config.toml', 'default_model = "custom/model"\n']
+]) {
+  test(`syncGlobalConfigToHost restores the original ${provider} config after selecting AIH Server`, (t) => {
+    const fixture = createFixture(t);
+    const configPath = path.join(fixture.hostHomeDir, globalDir, fileName);
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, original);
+    const sync = createHostConfigSyncer({
+      fs, fse,
+      ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir: fixture.hostHomeDir,
+      cliConfigs: { [provider]: { globalDir } }
+    });
+
+    assert.equal(sync(provider, '', { gateway: true }).ok, true);
+    assert.equal(sync(provider, '', { restoreGateway: true }).ok, true);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+  });
+
+  test(`syncGlobalConfigToHost detects external edits to ${provider} gateway config`, (t) => {
+    const fixture = createFixture(t);
+    const configPath = path.join(fixture.hostHomeDir, globalDir, fileName);
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, original);
+    const sync = createHostConfigSyncer({
+      fs, fse,
+      ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir: fixture.hostHomeDir,
+      cliConfigs: { [provider]: { globalDir } }
+    });
+
+    assert.equal(sync(provider, '', { gateway: true }).ok, true);
+    fs.appendFileSync(configPath, '\n# external edit\n');
+    assert.equal(sync(provider, '', { restoreGateway: true }).ok, false);
+    assert.match(fs.readFileSync(configPath, 'utf8'), /external edit/);
+  });
+}
+
+test('syncGlobalConfigToHost selects AIH Server in Claude settings without replacing unrelated preferences', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    permissions: { allow: ['Read'] },
+    env: { ANTHROPIC_AUTH_TOKEN: 'old-token', CUSTOM_SETTING: 'keep' }
+  }));
+  writeServerConfig({ apiKey: 'gateway-key', port: 9543 }, { fs, aiHomeDir: fixture.aiHomeDir });
+
+  const result = createClaudeSyncer(fixture)('claude', '', { gateway: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+    permissions: { allow: ['Read'] },
+    env: {
+      CUSTOM_SETTING: 'keep',
+      ANTHROPIC_AUTH_TOKEN: 'gateway-key',
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:9543'
+    }
+  });
+  assert.equal(fs.statSync(settingsPath).mode & 0o777, 0o600);
+});
+
+test('syncGlobalConfigToHost does not overwrite invalid Claude settings for AIH Server', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, '{invalid');
+
+  const result = createClaudeSyncer(fixture)('claude', '', { gateway: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'claude_gateway_config_sync_failed');
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), '{invalid');
+});
+
+test('syncGlobalConfigToHost refuses a symlinked gateway host config', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  const outsidePath = path.join(fixture.root, 'outside.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(outsidePath, '{"env":{"CUSTOM_SETTING":"untouched"}}\n');
+  fs.symlinkSync(outsidePath, settingsPath);
+
+  const result = createClaudeSyncer(fixture)('claude', '', { gateway: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(fs.readFileSync(outsidePath, 'utf8'), '{"env":{"CUSTOM_SETTING":"untouched"}}\n');
+  assert.equal(fs.lstatSync(settingsPath).isSymbolicLink(), true);
+});
 
 test('syncGlobalConfigToHost writes the reconciled Claude credentials snapshot', (t) => {
   const fixture = createFixture(t);
@@ -305,6 +554,28 @@ test('syncGlobalConfigToHost writes the canonical codex API-key provider block f
   assert.match(hostConfig, /model_providers\.aih_server\.auth/);
   assert.match(hostConfig, /^hooks = true$/m);
   assert.doesNotMatch(hostConfig, /aih_10/);
+});
+
+test('syncGlobalConfigToHost selects the unpinned AIH Server profile without rewriting auth.json', (t) => {
+  const fixture = createFixture(t);
+  const authPath = path.join(fixture.hostCodexDir, 'auth.json');
+  fs.writeFileSync(authPath, JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'oauth' } }), 'utf8');
+  const sync = createCodexSyncer(fixture, {
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9543, apiKey: 'gateway-key' })
+  });
+
+  const result = sync('codex', '', { gateway: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')), {
+    auth_mode: 'chatgpt',
+    tokens: { access_token: 'oauth' }
+  });
+  const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
+  assert.match(hostConfig, /^preferred_auth_method = "apikey"$/m);
+  assert.match(hostConfig, /^model_provider = "aih_server"$/m);
+  assert.match(hostConfig, /^base_url = "http:\/\/127\.0\.0\.1:9543\/v1"$/m);
+  assert.doesNotMatch(hostConfig, /X-Account-Ref/);
 });
 
 test('host API-key sync pairs endpoints and removes only native override on OAuth switch', (t) => {

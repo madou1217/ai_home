@@ -1,155 +1,115 @@
 # AI Home Web — 设计规范（Design System）
 
-> 视觉方向：**Calm Operator Console（冷静的运维控制台）**。2026-09 重设计定稿，取代此前的「HarmonyOS 6 毛玻璃」语言。
-> 唯一 token 来源：[`src/styles/design-tokens.css`](src/styles/design-tokens.css)；antd 的 JS 镜像：[`src/theme/antd-theme.ts`](src/theme/antd-theme.ts)。
-> 任何组件 **禁止** 写死颜色 / 字号 / 间距 / 圆角 / 阴影，一律引用 token。组件 CSS 中出现裸 `#hex` / `rgba()` 视为缺陷。
+> 视觉方向：**Cyber HUD（极客 / 赛博朋克控制台）**，2026-09 定稿，取代此前的 Calm Operator Console。
+> 唯一 token 来源：[`src/styles/design-tokens.css`](src/styles/design-tokens.css)；HUD 材质层：[`src/styles/hud.css`](src/styles/hud.css)；antd 的 JS 镜像：[`src/theme/antd-theme.ts`](src/theme/antd-theme.ts)。
+> 组件 **禁止** 写死颜色 / 字号 / 间距 / 圆角 / 阴影，一律引用 token。组件 CSS 中出现裸 `#hex` / `rgba()` 视为缺陷（品牌色、xterm / Monaco 调色板除外）。
 
-## 0. 设计原则
+## 0. 原则
 
-1. **数据是主角，界面退后。** 表面平整、1px 发丝线分层、不用毛玻璃 / 光晕 / 渐变按钮 / 弹性回弹。
-2. **颜色只表达语义。** 中性灰阶承担结构；一个克制的强调色（Accent）表达「可交互 / 已选中 / 焦点」；状态色表达健康度；**Provider 品牌色是唯一的装饰色**，只用在图标、状态点与细进度条上。
-3. **主操作用墨色（Ink）。** 主按钮是墨底（浅色主题近黑、深色主题近白），不与强调色竞争。一个区域最多一个主按钮。
-4. **密度适中、对齐严格。** 控件 32px、4px 间距栅格、数字等宽（`tabular-nums`），适合长时间盯多账号 / 多 Provider。
-5. **深浅主题同时设计。** 所有表面都来自语义 token，深色不是「反色补丁」。
-6. **遵守 AGENTS.md「UI Visual Constraints」**：不使用大块 `Alert` 作为页面内容；不使用左侧彩色竖条；账号操作保持语义图标。
+1. **功能必须真实（零虚构）。** 界面上的每个字段、数值、按钮都来自真实代码与接口；HUD 只改变外观，不引入演示数据、虚构指标或不存在的功能。没有后端支撑的动作不做。
+2. **HUD 语言：** Void Black 画布 + 赛博网格；切角面板 + 青色角标；Orbitron 展示字体 + JetBrains Mono 数据字体；关键数值发光；状态用 LED。
+3. **颜色只表达语义。** Electric Cyan = 可交互 / 选中 / 焦点；Matrix Green = 健康；Amber = 冷却 / 警告；Rose = 离线 / 错误。Provider 品牌色只用在其图标上。
+4. **可读性优先于氛围。** 正文次级色、长文阅读字体、`prefers-reduced-motion`、CRT / 音效可关闭，都是硬约束。
+5. **不使用浏览器原生 `alert` / `confirm` / `prompt`。** 确认框用 `utils/confirm-action` 或 antd `Modal.confirm`（已通过 `holderRender` 注入 HUD 主题），提示用 antd `message` / `notification`。
+6. **遵守 AGENTS.md「UI Visual Constraints」**：不用大块 `Alert` 作为页面内容；不用左侧粗彩色竖条（角标与顶部短指示条不属于此类）；账号操作保持语义图标。
 
-## 1. 分层模型
+## 1. 分层
 
 ```
-Primitive  →  Semantic  →  Domain
-原始刻度       语义别名      领域语义（provider / event）
---c-*          --color-*     --provider-*  --event-*
---space-*      --hos-*（历史命名，值已并入本规范；新代码优先用 --color-* / --space-*）
+Primitive → Semantic → Domain → HUD
+--c-*       --color-*   --provider-* --event-*   --hud-*（切角 / 角标 / 网格 / 光效）
 ```
 
-- 新代码只用 Semantic / Domain 层（`--color-text`、`--space-4`、`--provider-accent` …）。
-- `--hos-*` 是历史命名，保留名字以免大面积改引用，但**取值已按本规范重定**：玻璃材质 token 退化为不透明表面，模糊 token 为 `none`，弹性曲线等于标准曲线。
+`--hos-*` 为历史命名，取值已并入语义层；新代码使用 `--color-*` / `--space-*` / `--hud-*`。
 
-## 2. 色系（Color）
+## 2. 色系
 
-### 2.1 中性与结构（浅色 / 深色）
+默认主题为深色 HUD（`config.ts` 的 `headScripts` 在首帧前按 `localStorage['aih.theme']` 写入 `data-theme`，缺省 `dark`）；浅色为「日光 HUD」。写入入口唯一：`services/theme-persistence.ts`。
 
-| Token | 浅色 | 深色 | 用途 |
+| Token | 深色 HUD | 日光 HUD | 用途 |
 |---|---|---|---|
-| `--color-bg` | `#f7f7f8` | `#0f0f11` | 画布（页面底） |
-| `--color-surface` | `#ffffff` | `#17171a` | 卡片、表格、侧栏 |
-| `--color-surface-raised` | `#fcfcfc` | `#1e1e22` | 抬升面、悬浮层 |
-| `--color-surface-muted` | `#f1f1f3` | `#1b1b1f` | 次级表面、表头、轨道 |
-| `--color-surface-sunken` | `#eaeaed` | `#0b0b0d` | 下沉区（代码、输入槽） |
-| `--color-border` | `#e3e3e7` | `#2b2b31` | 默认描边 / 分隔线 |
-| `--color-border-strong` | `#d1d1d6` | `#3b3b42` | 悬停描边、强分隔 |
-| `--color-heading` | `#18181b` | `#fafafa` | 标题 |
-| `--color-text` | `#27272a` | `#e4e4e7` | 正文 |
-| `--color-muted-strong` | `#52525b` | `#d4d4d8` | 次要正文、表头 |
-| `--color-muted` | `#71717a` | `#a1a1aa` | 说明文字（≥4.5:1） |
-| `--color-faint` | `#8a8a93` | `#8b8b94` | 仅限元信息/占位，不承载必要信息 |
-| `--color-disabled` | `#d1d1d6` | `#5b5b63` | 禁用 |
+| `--color-bg` | `#05080e` | `#eef3f7` | 画布（叠加 32px 网格） |
+| `--color-surface` / `--hud-panel-bg` | `#0a101a` / `rgba(10,16,26,.85)` | `#ffffff` | 面板 |
+| `--color-surface-raised` | `#0c1524` | `#f7fafc` | 浮层、弹窗 |
+| `--color-surface-sunken` | `#03060b` | `#dce5ed` | 输入槽、代码块 |
+| `--color-border` / `-strong` | `#15263d` / `#23405f` | `#cbd8e3` / `#aabdcd` | 发丝线 |
+| `--color-heading` / `--color-text` | `#f2fbff` / `#e2f1f8` | `#07121f` / `#13233a` | 标题 / 正文 |
+| `--color-muted` | `#7f9bb3` | `#4f6a83` | 次级正文（≥4.5:1） |
+| `--color-faint` | `#5c7890` | `#6f879c` | 仅标签 / 元信息 |
+| `--color-accent` | `#00f0ff` | `#0086a0` | Electric Cyan |
+| `--color-success` | `#00ff66` | `#00874a` | Matrix Green |
+| `--color-warning` | `#ffaa00` | `#b86e00` | Amber |
+| `--color-danger` | `#ff0055` | `#c20042` | Rose |
 
-### 2.2 交互色
+> 规范原色 `#5c7890` 在面板上约 3.9:1，不满足正文对比度，因此只作 `--color-faint`（大写标签、元信息），次级正文上调为 `#7f9bb3`。
 
-| Token | 浅色 | 深色 | 用途 |
-|---|---|---|---|
-| `--color-ink` / `--color-on-ink` | `#18181b` / `#fff` | `#f4f4f5` / `#18181b` | 主按钮、移动端主操作 |
-| `--color-accent` | `#2f5bd3` | `#7b9cff` | 链接、选中、Tab 指示、焦点环 |
-| `--color-accent-soft` | accent 8% | accent 14% | 选中行 / 选中菜单弱底 |
-| `--color-brand*` | = accent | = accent | 历史别名，等同 accent |
+## 3. 字体
 
-### 2.3 状态色（前景 + `-soft` 底）
+- `--font-body` / `--font-mono`：JetBrains Mono（中文回落系统黑体）——界面、数据、表格。
+- `--font-display`：Orbitron——页面标题、面板标题、KPI 数值、品牌。
+- `--font-prose`：系统无衬线——会话消息正文等长文阅读（`.hud-prose`）。
+- 字体经 `@fontsource` 随包分发（`app.tsx` 引入），不依赖外网 CDN，桌面端离线可用。
+- 字阶：正文 13、表格 13、标签 10–11（大写字距 `--tracking-caps`）、页面标题 20、KPI 20–24。
 
-`--color-success #15803d / #5cc389` · `--color-warning #b45309 / #e0a94a` · `--color-danger #c2322b / #f07068` · `--color-info = accent`。
-徽章实底盘 `--tint-* / --ink-* / --bd-*` 保留（见 token 文件），深色自动翻转为「半透明色相底 + 浅色字」。
+## 4. 几何与光效（`--hud-*` + `hud.css`）
 
-### 2.4 Provider 与事件
+- **切角面板**：`clip-path` 四角切 `--hud-chamfer`（10px），左上 / 右下 2px 青色角标（`--hud-tick`）。适用：`.hud-panel`、`.unified-section-card`、`.surface-card`、`.hos-kpi-strip`、弹窗。小卡用 `.hud-panel--sm`（6px，单角标）。
+- **按钮**：5px 对角切角；主按钮 = 半透明青底 + 青框 + 青字 + 光晕，悬停实底青 + 黑字；默认按钮 = 抬升面 + 描边，悬停青框。
+- **圆角**：基础 2–4px，轮廓由切角表达；圆形只留给 LED、头像、计数。
+- **光效**：`--hud-glow-accent`（面板 / 按钮外发光）、`--hud-text-glow*`（数值与标题发光，仅深色主题生效）。
+- **网格**：`--hud-grid-size` 32px，线色 `--hud-grid-line`。
+- **通用类**：`.hud-display`、`.hud-glow*`、`.hud-label`、`.hud-led(--ok|--warn|--err|--info|--live)`、`.hud-track`。
 
-- Provider 强调色 `--provider-<id>` / `-soft` 不变；会话容器用 `data-provider` 注入 `--provider-accent`。**Claude 珊瑚色只代表 Claude，不再作为移动端全局强调色。**
-- 事件语义色 `--event-*` 只用于事件块图标与状态徽章。
+## 5. 动效与反馈
 
-## 3. 字体（Typography）
-
-- 字体族：`--font-body` = `Inter, "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`；`--font-display` 与正文同族（不再用 Sora/Manrope/Plus Jakarta 三套混用）；`--font-mono` = `"JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`。
-- **不从 Google Fonts 远程加载字体**：桌面端（Tauri）与内网环境离线可用，系统字体兜底。
-- 字阶（桌面）：display 28 · h1 20（页面标题）· h2 16（卡片标题）· h3 14（小节）· body 14 · body-sm 13（表格、表单辅助）· caption 12 · micro 11。
-- 字重：标题 600、标签 500、正文 400；`--weight-bold` 收敛为 600，不使用 800 超粗。
-- 数字：KPI、表格数值、计数一律 `font-variant-numeric: tabular-nums`。
-- 移动端（≤768px）整体上调一档，正文 15、输入框 ≥16px（防 iOS 缩放）。
-
-## 4. 间距 · 圆角 · 阴影
-
-- 间距：4px 基准 `--space-*` 刻度不变（`--space-4 8` · `--space-6 12` · `--space-8 16` · `--space-12 24`）。
-- 页面内距：桌面 24px、移动 16px；区块间距 16px；卡片内距 16px。
-- 圆角：`--hos-radius-2xs 4`（标签）· `xs 6`（按钮、输入、菜单项）· `sm 8`（下拉、小卡）· `md/lg 10`（卡片）· `xl 12`（弹窗）· `2xl 14` · `pill`（仅状态点 / 头像 / 计数胶囊）。
-- 阴影：卡片**无阴影**，靠 1px 描边分层；浮层（下拉 / Popover）`--elevation-3`；弹窗 `--elevation-4`；深色下阴影加深并保留描边。
-- 材质：不使用 `backdrop-filter` 毛玻璃。自定义壁纸仍可用，但只作为画布的淡化背景（被 90% 的画布色覆盖），不穿透卡片。
-
-## 5. 动效
-
-- 时长：`--motion-fast 120ms`（悬停 / 按压 / 颜色）· `--motion-base 160ms`（展开、下拉）· `--motion-slow 240ms`（抽屉、页面级）。
-- 缓动：`--ease-standard cubic-bezier(0.2, 0, 0, 1)`；不使用超调（overshoot）弹簧；按钮不做位移 / 缩放。
-- 状态点「运行中」可以缓慢呼吸（1.6s），其他元素不做循环动画。`prefers-reduced-motion` 下全部归零。
+- 时长 `--motion-fast 120ms` / `--motion-base 160ms` / `--motion-slow 240ms`，`--ease-standard`；LED 呼吸只用于真实的「运行中 / 在线」。
+- **CRT 扫描线**：`components/hud/HudEffects` 渲染固定覆盖层，默认开启，可在顶栏与设置页关闭（`services/hud-preferences.ts`，键 `aih.hud`）。
+- **Web Audio 音效**：`services/hud-sfx.ts` 用 `OscillatorNode` 合成（增益 0.035），通过事件委托接入：点击可交互元素 → 按键音；`message` / `notification` 出现 → 成功 / 警告音；弹窗打开 → 开启音。默认开启，可静音；首次用户手势后才创建 AudioContext。
+- `prefers-reduced-motion` 下所有动效时长归零、LED 不呼吸。
 
 ## 6. 组件规则
 
 | 组件 | 规则 |
 |---|---|
-| 页面头 `PageScaffold` | 标题 h1 20/600 + 同行副标题 13 muted；右侧操作：次要按钮在左、唯一主按钮在最右。移动端副标题换行、操作为 40px 图标按钮。 |
-| 卡片 `SectionCard` | surface 底、1px 描边、圆角 10、无阴影；头部 48px + 底部发丝线；内距 16。 |
-| 按钮 | 高 32（sm 24 / lg 40），圆角 6，字重 500；全局关闭 antd 双汉字自动插空格（`AntdThemeProvider` 的 `button.autoInsertSpace=false`）。主按钮 = Ink；默认 = surface + 描边；文字按钮悬停出现 overlay 底；危险 = danger 字色。无渐变、无投影、无位移。 |
-| 输入 / 选择 | 高 32，圆角 6，1px 描边；悬停 border-strong；聚焦 accent 描边 + 3px accent 20% 光环。带前后缀的输入只有外框一层描边。 |
-| 表格 `ListTable` | 表头 surface-muted、12–13px muted-strong 500；行发丝线；悬停 overlay；数值列右对齐、等宽数字。 |
-| Tabs / Segmented | Tabs：accent 下划线指示；Segmented：muted 轨道 + surface 选中块 + elevation-1，圆角 6。 |
-| 标签 Tag | 圆角 4，tint 底无描边，12px。 |
-| 弹窗 / 抽屉 / 下拉 | 不透明 raised 表面 + 描边；弹窗圆角 12；抽屉贴边侧无圆角；遮罩 40%（深色 60%）。焦点环只画在可交互控件上，不画在对话框容器上。 |
-| KPI 条 | `components/ui/kpi-strip.css`（`.hos-kpi-strip`）或 `ServiceWidgetGrid`：一个容器内多个单元格，发丝线分隔；标签 12 muted、数值 20/600 等宽、说明 12 muted；状态用 6px 点 + 文字。 |
-| 行内提示 | `components/ui/InlineNote`：取代大块 Alert，图标 + 13px 文字，只有图标带状态色；不超过两行。 |
-| 空态 | antd `PRESENTED_IMAGE_SIMPLE` + 13px muted 文案。 |
-| 焦点 | 所有可交互元素 `:focus-visible` 显示 2px accent 光环（`--ring-focus`）。 |
+| HUD 顶栏 | `components/hud/HudHeader`：品牌 `AI_HOME`；遥测全部来自 `/v0/webui/management/status`（网关状态、可调度 / 总账号、冷却、成功率、请求数、策略、运行时长），15s 轮询、页面隐藏时暂停；SFX / CRT / 主题开关。 |
+| 导航 | `[NN] 中文名 CODE`，编号与代号见 `components/hud/hud-nav.ts`，只做展示，不改路由名。 |
+| 页面头 | Orbitron 标题 + `// 副标题`；右侧操作次要在左、主按钮在右。 |
+| 卡片 / 面板 | 切角 + 角标，悬停描边转青。 |
+| KPI | 单个 HUD 条内多格，`hud-label` 标签 + `hud-display` 发光数值（颜色按真实语义）。 |
+| 状态 | `hud-led` + 大写等宽文字。 |
+| 表格 | 等宽数据，表头大写字距。 |
+| 输入 | 凹槽底色，聚焦青框 + 辉光。 |
+| 弹窗 / 确认 | 切角 + 青框 + Orbitron 青色标题；确认用 `confirmAction`。 |
+| 提示 | 按类型着色图标 + 青色描边面板。 |
+| 行内提示 | `components/ui/InlineNote`（取代大块 Alert）。 |
+| 复制 | 只复制界面已展示的真实标识（accountRef、URL、路径、会话 ID），不展示任何密钥明文。 |
 
-## 7. 应用外壳（Shell）
+## 7. 外壳
 
-- 桌面侧栏 232px，surface 底 + 右侧发丝线；菜单项高 36、圆角 6；选中 = surface-muted 底 + heading 字 + 500 字重；分组箭头 muted。
-- 侧栏底部是 Server 选择器（保留原行为）。
-- 移动端：隐藏 ProLayout 顶栏，底部 TabBar（surface 底 + 顶部发丝线，选中项 = accent），页面画布连续铺满整屏。
+- 桌面：ProLayout `mix`——通栏 HUD 顶栏（60px）+ 左侧编号导航（248px）+ 侧栏底部 Server 选择器（原行为）。
+- 移动（≤767px）：隐藏顶栏，底部 HUD TabBar；CRT / 音效 / 主题开关在「设置 → 外观」。
+- 会话页保持三栏与移动端 iOS 导航栈。
 
-## 7.1 页面级约定（本轮重设计）
+## 7.2 已知保留项
 
-- **仪表盘**：四个指标卡合并为一条 KPI 条；原彩色「健康 Hero」改为中性状态行（状态点 + 文案 + 健康条 + 计数胶囊），不再整块着色；冷却提示改为行内提示；Provider 卡片保持网格，扁平化。
-- **账号管理**：统计条 + 列表卡片沿用结构，去除亮白描边、深色主题可读。
-- **设置 / Server / SSH / 工具 / 模型 / 用量 / 生图**：保持信息架构，只替换材质、颜色、圆角和提示样式。
-- **AI 会话**：保留三栏与移动端 iOS 导航栈，只替换材质与强调色。
-- 所有页面：业务行为、路由、数据、文案语义不变。
+- 设置页两列网格的左列随右列行高下移（改为独立两列会改变阅读顺序）。
+- 模型用量页顶部为加载状态预留 30px 状态槽（防跳动，有测试守卫）。
+- 终端 / xterm、Monaco、分享卡导出图、HTML 预览窗口保持固定配色。
 
-## 7.2 已知保留项（本轮不改）
+## 8. 断点
 
-- 设置页「基础设置」为两列网格，左列卡片随右列高卡片的行高下移；改为独立两列会改变阅读顺序，留作后续结构优化。
-- 模型用量页顶部为加载/错误状态预留 30px 状态槽（防止布局跳动，有测试守卫），空闲时表现为一段留白。
-- 终端 / xterm、Monaco 编辑器、分享卡导出图、HTML 预览窗口保持固定配色（无法读取 CSS 变量或需恒定深色）。
-- 分享卡导出页脚文案「HarmonyOS 6.1」属于产品文案，未改动。
+xs 480 · sm 640 · **md 768（移动 ↔ 桌面）** · lg 1024 · xl 1280（顶栏遥测完整显示 ≥1440）· 2xl 1560。
 
-## 8. 断点（Breakpoints）
+## 9. 层级
 
-| 名称 | 宽度 | 含义 |
-|---|---|---|
-| xs | 480px | 手机竖屏 |
-| sm | 640px | 大手机 |
-| **md** | **768px** | **移动 ↔ 桌面布局切换点** |
-| lg | 1024px | 平板横屏 |
-| xl | 1280px | 桌面（Provider 网格 4 列起点） |
-| 2xl | 1560px | 宽屏 |
+`--z-base 0` · `raised 10` · `sticky 100` · `drawer 1000` · `overlay 1100` · `modal 1200` · `popover 1300` · `toast 1400` · CRT 覆盖层 3000（`pointer-events: none`）。
 
-### 移动端会话导航（iOS 标准）
+## 10. 验收清单
 
-聊天页在 ≤768px **不使用抽屉**，使用原生 iOS 导航栈（`Chat.tsx` + `.mobileStack`）：列表页大标题「会话」→ 点击会话从右侧 push 进入对话页 → 左上角返回或左缘滑动返回；导航条不透明 surface + 底部发丝线，适配 `env(safe-area-inset-top)`；点击目标 ≥40px。
-
-## 9. 层级（Z-index）
-
-`--z-base 0` · `raised 10` · `sticky 100` · `drawer 1000` · `overlay 1100` · `modal 1200` · `popover 1300` · `toast 1400`
-
-## 10. 验收清单（每次 UI 改动都要过）
-
-1. `cd web && npm run build`、改动文件 eslint、相关单测通过。
-2. 浅色 / 深色桌面（1440×900）与移动（390×844）真实渲染截图检查：无浅色块残留在深色页、标题可见。
-3. 无大块 Alert、无左侧彩色竖条、无毛玻璃、无渐变按钮 / 光晕投影。
-4. 桌面与移动只有一个强调色；Claude 珊瑚色只出现在 Claude 标识上。
+1. `cd web && npm run build`、改动文件 eslint、`bun test web/src`、相关 node 测试通过。
+2. 深色 HUD / 日光 HUD 桌面（1440×900）与移动（390×844）真实截图检查。
+3. 界面数据全部来自真实接口；无演示数据、无虚构功能；无浏览器原生 alert / confirm。
+4. CRT、音效、主题三个开关可用且持久化；`prefers-reduced-motion` 生效。
 5. 业务行为不变：路由、按钮动作、轮询 / SSE、弹窗流程。
 
 ## 11. 事件块（Event Block）统一约定
@@ -214,4 +174,5 @@ Primitive  →  Semantic  →  Domain
 - [x] **硬编码色清零**：8 个组件/页面 CSS 共 299 处 `#hex` / `rgba()` 全部吸附到 token（灰阶 → neutral ramp，有色语义 → tint/ink/bd 盘，透明色 → `color-mix`）；脚本见 `web/scripts/migrate-colors.pl`
 - [x] **死代码清理**：chat.module.css 移除 98 个已迁移到 EventBlock 的旧外壳 class（thinking/plan/goal/memory/confirmation/answer/tool/shell 等），文件 70.7KB → 53.2KB；选择器感知移除（逗号分支全死才删，保留 `:global(.ant-*)` 与动态 `taskDockBadge_*`）
 - [x] TagBlock `thinking` 分支已委托 `ThinkingBlock`（无内联）
-- [x] **2026-09 Calm Operator Console 重设计**：token 重定值（中性灰阶 + 单一强调色 + 墨色主按钮）、移除毛玻璃 / 光晕 / 弹性动效、统一字体栈并去掉远程字体、深色主题逐页修复、仪表盘与设置页大块提示改为行内提示、移动端强调色与桌面统一。
+- [x] ~~2026-09 Calm Operator Console 重设计~~（已被 Cyber HUD 取代）：token 重定值（中性灰阶 + 单一强调色 + 墨色主按钮）、移除毛玻璃 / 光晕 / 弹性动效、统一字体栈并去掉远程字体、深色主题逐页修复、仪表盘与设置页大块提示改为行内提示、移动端强调色与桌面统一。
+- [x] **2026-09 Cyber HUD 重设计**：深色 HUD 默认 + 日光 HUD、切角面板与角标、Orbitron / JetBrains Mono 本地字体、HUD 顶栏真实遥测、编号导航、CRT 扫描线与 Web Audio 音效开关、静态确认框 / 提示主题化、原生 window.confirm 清零。

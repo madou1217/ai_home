@@ -60,6 +60,11 @@ function getProfileStatus(profile: ControlPlaneProfile) {
   return { color: 'default', label: 'offline' };
 }
 
+const PROFILE_STATUS_LED: Record<string, string> = {
+  green: 'hud-led hud-led--ok',
+  orange: 'hud-led hud-led--warn'
+};
+
 function formatProfileDetail(profile: ControlPlaneProfile) {
   const chunks = [
     `${profile.schedulableAccountCount} 可调度账号`,
@@ -261,7 +266,7 @@ export default function FabricServerSetup() {
           <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {record.name || record.endpoint}
           </strong>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{record.endpoint}</Typography.Text>
+          <Typography.Text type="secondary" className="server-setup-endpoint" style={{ fontSize: 12 }}>{record.endpoint}</Typography.Text>
           {record.lastError && (
             <Typography.Text type="danger" style={{ fontSize: 12 }}>{record.lastError}</Typography.Text>
           )}
@@ -277,7 +282,10 @@ export default function FabricServerSetup() {
         return (
           <Space wrap size={[4, 4]}>
             {active && <Tag className="settings-current-tag">当前</Tag>}
-            <Tag color={status.color}>{status.label}</Tag>
+            <Tag color={status.color} className="server-setup-status-tag">
+              <span className={PROFILE_STATUS_LED[status.color] || 'hud-led'} aria-hidden="true" />
+              {status.label}
+            </Tag>
             <Tag>{formatProfileDetail(record)}</Tag>
           </Space>
         );
@@ -323,6 +331,7 @@ export default function FabricServerSetup() {
 
   return (
     <PageScaffold ghost
+      code="SETUP"
       title={setupModalRequired
         ? '连接 AIH Server'
         : hasReadyServer

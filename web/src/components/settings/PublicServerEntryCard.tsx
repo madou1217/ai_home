@@ -29,6 +29,16 @@ function configurationErrorMessage(error: unknown, fallback: string) {
   return reason && !/^[a-z][a-z0-9_.:-]+$/iu.test(reason) ? reason : fallback;
 }
 
+// 状态标签颜色 → HUD LED（仅映射已有状态色；连接中为真实进行态，LED 呼吸）
+const STATUS_LED_BY_COLOR: Record<string, string> = {
+  green: 'hud-led hud-led--ok',
+  blue: 'hud-led hud-led--info hud-led--live',
+  orange: 'hud-led hud-led--warn',
+  red: 'hud-led hud-led--err'
+};
+
+const resolveStatusLedClass = (color: string) => STATUS_LED_BY_COLOR[color] || 'hud-led';
+
 const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
   const [localProfileId, setLocalProfileId] = useState('');
   const [publicProfileIds, setPublicProfileIds] = useState<string[]>([]);
@@ -125,7 +135,7 @@ const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
   };
 
   return (
-    <ProCard className="settings-panel settings-public-entry-card" bordered bodyStyle={{ padding: 16 }}>
+    <ProCard className="settings-panel hud-panel settings-public-entry-card" bordered bodyStyle={{ padding: 16 }}>
       <div className="settings-panel-head">
         <div>
           <h2>公网入口</h2>
@@ -187,7 +197,10 @@ const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
                 <span>{row.endpoint}</span>
               </div>
               <div className="settings-public-entry-status-meta">
-                <Tag color={row.statusColor}>{row.statusLabel}</Tag>
+                <Tag color={row.statusColor} className="settings-public-entry-tag">
+                  <span className={resolveStatusLedClass(row.statusColor)} aria-hidden="true" />
+                  {row.statusLabel}
+                </Tag>
                 {row.retryLabel && <span>{row.retryLabel}</span>}
                 {row.attempts > 0 && <span>尝试 {row.attempts} 次</span>}
               </div>
@@ -240,7 +253,10 @@ const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
                 <span>{row.endpoint}</span>
               </div>
               <div className="settings-public-entry-status-meta">
-                <Tag color={row.statusColor}>{row.statusLabel}</Tag>
+                <Tag color={row.statusColor} className="settings-public-entry-tag">
+                  <span className={resolveStatusLedClass(row.statusColor)} aria-hidden="true" />
+                  {row.statusLabel}
+                </Tag>
                 <span>{row.bindPortLabel}</span>
               </div>
               {row.lastError && <span className="settings-public-entry-error">{row.lastError}</span>}

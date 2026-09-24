@@ -24,17 +24,23 @@ export interface UsageChartPalette {
   heading: string;
   text: string;
   muted: string;
+  /** 轴标签 / 次要刻度：HUD faint 文字 */
+  faint: string;
   border: string;
   /** 浮层（tooltip）底色：随主题翻转的 raised 表面 */
   surface: string;
   /** 中性占位系列（例如「其他」条形） */
   neutral: string;
   brand: string;
+  /** 成功 / 金额类系列（成本、缓存读取） */
+  success: string;
   teal: string;
   amber: string;
   blue: string;
   violet: string;
   danger: string;
+  /** 深色 HUD 下系列线条的辉光半径；日光主题为 0（不发光） */
+  glow: number;
 }
 
 interface EChartCanvasProps {
@@ -58,26 +64,29 @@ function readPalette(element: HTMLElement): UsageChartPalette {
     heading: readCssVariable(element, '--color-heading', isDark ? '#fafafa' : '#18181b'),
     text: readCssVariable(element, '--color-text', isDark ? '#e4e4e7' : '#27272a'),
     muted: readCssVariable(element, '--color-muted', isDark ? '#a1a1aa' : '#71717a'),
+    faint: readCssVariable(element, '--color-faint', isDark ? '#5c7890' : '#6f879c'),
     border: readCssVariable(element, '--color-border', isDark ? '#2b2b31' : '#e3e3e7'),
     surface: readCssVariable(element, '--color-surface-raised', isDark ? '#1e1e22' : '#fcfcfc'),
     neutral: readCssVariable(element, '--color-disabled', isDark ? '#5b5b63' : '#d1d1d6'),
-    brand: readCssVariable(element, '--color-accent', isDark ? '#7b9cff' : '#2f5bd3'),
-    teal: readCssVariable(element, '--c-teal-500', '#0d9488'),
+    brand: readCssVariable(element, '--color-accent', isDark ? '#00f0ff' : '#0086a0'),
+    success: readCssVariable(element, '--color-success', isDark ? '#00ff66' : '#00874a'),
+    teal: readCssVariable(element, '--color-success', isDark ? '#00ff66' : '#00874a'),
     amber: readCssVariable(element, '--color-warning', isDark ? '#e0a94a' : '#b45309'),
     blue: readCssVariable(element, '--c-info-500', '#4a72e0'),
     violet: readCssVariable(element, '--c-purple-500', '#8b5cf6'),
-    danger: readCssVariable(element, '--color-danger', isDark ? '#f07068' : '#c2322b')
+    danger: readCssVariable(element, '--color-danger', isDark ? '#f07068' : '#c2322b'),
+    glow: isDark ? 8 : 0
   };
 }
 
-/** 统一的 tooltip 外观：不透明 raised 表面 + 发丝线描边，文字随主题翻转。 */
+/** 统一的 tooltip 外观：HUD 浮层 —— 不透明 raised 表面 + 青色发丝框 + 辉光，等宽数据字体，方角。 */
 export function buildChartTooltipStyle(palette: UsageChartPalette) {
   return {
     backgroundColor: palette.surface,
-    borderColor: palette.border,
+    borderColor: palette.brand,
     borderWidth: 1,
-    textStyle: { color: palette.text, fontSize: 12 },
-    extraCssText: 'box-shadow: var(--elevation-3); border-radius: var(--hos-radius-sm);'
+    textStyle: { color: palette.text, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' },
+    extraCssText: 'box-shadow: var(--elevation-3), var(--hud-glow-accent); border-radius: 0; font-family: var(--font-mono);'
   };
 }
 

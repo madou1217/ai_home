@@ -83,11 +83,12 @@
 .mobileNavTitleLarge {
   flex: 1;
   font-family: var(--font-display);
-  /* iOS large-title：2xl / 600 */
+  /* iOS large-title：2xl / 600；HUD 青色辉光 */
   font-size: var(--text-2xl);
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-tight);
-  color: var(--color-heading);
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .mobileNavCenter {
@@ -103,6 +104,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   color: var(--color-heading);
@@ -116,8 +119,9 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
 }
 
 .mobileNavBadge img,
@@ -136,7 +140,18 @@
   height: 6px;
   border: 2px solid var(--color-surface);
   border-radius: var(--hos-radius-pill);
-  background: var(--provider-accent);
+  /* 运行中 = HUD ok LED */
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+  animation: mobileLedBreathe 1.6s ease-in-out infinite;
+}
+
+@keyframes mobileLedBreathe {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileNavBadgeRunning::after { animation: none; }
 }
 
 .mobileBack {
@@ -173,4 +188,4 @@
   transition: background var(--motion-fast) var(--ease-standard);
 }
 
-.mobileNavAction:active { background: var(--color-overlay); }
+.mobileNavAction:active { background: var(--color-accent-soft); color: var(--color-accent); }

@@ -3,6 +3,8 @@
  * 吸收 dsh 2.0 生产级多 Tab 状态协同，基于 BroadcastChannel 实现跨 Tab 会话与模型状态毫秒级自愈
  */
 
+import { applyThemeMode } from '@/services/theme-persistence';
+
 export interface CrossTabSyncEvent {
   type: 'SESSION_FORKED' | 'SESSION_PINNED' | 'SESSION_UPDATED' | 'MODEL_CHANGED' | 'THEME_CHANGED';
   payload: any;
@@ -82,7 +84,8 @@ if (typeof document !== 'undefined') {
   crossTabSync.subscribe('THEME_CHANGED', (event) => {
     const theme = event?.payload?.theme;
     if (theme === 'dark' || theme === 'light') {
-      document.documentElement.setAttribute('data-theme', theme);
+      // 发起方已持久化（同源 localStorage 共享），这里只应用、不重复写入。
+      applyThemeMode(theme, { persist: false });
     }
   });
 }

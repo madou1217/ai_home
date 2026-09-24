@@ -1,12 +1,13 @@
 /* =============================================================================
- * 全局底座 — Calm Operator Console（见 web/DESIGN.md）
- * 平整的画布、不透明表面、1px 发丝线分层；不使用毛玻璃与光晕。
+ * 全局底座 — Cyber HUD（见 web/DESIGN.md）
+ * Void Black 画布 + 32px 赛博网格；面板切角、角标与光效在 styles/hud.css。
  * ========================================================================== */
 
 @import './styles/design-tokens.css';
 @import './styles/unified.css';
 @import './styles/App.css';
 @import './styles/mobile-shell.css';
+@import './styles/hud.css';
 
 html, body {
   margin: 0;
@@ -20,18 +21,20 @@ html, body {
   color: var(--color-text);
 }
 
-/* 自定义壁纸（设置 → 外观）：保留功能，但只作为被画布色大幅覆盖的淡背景，
- * 不穿透卡片、不影响文字对比度。未设置壁纸时只有纯色画布。 */
+/* 画布：赛博网格叠在（可选的）自定义壁纸之上。壁纸被画布色 90% 覆盖，
+ * 只作为淡背景，不穿透面板、不影响文字对比度。 */
 body {
   background-image:
+    linear-gradient(to right, var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hud-grid-line) 1px, transparent 1px),
     linear-gradient(
       color-mix(in srgb, var(--color-bg) 90%, transparent),
       color-mix(in srgb, var(--color-bg) 90%, transparent)
     ),
     var(--hos-custom-wallpaper, none);
-  background-size: cover, cover;
-  background-position: center, center;
-  background-repeat: no-repeat;
+  background-size: var(--hud-grid-size) var(--hud-grid-size), var(--hud-grid-size) var(--hud-grid-size), cover, cover;
+  background-position: 0 0, 0 0, center, center;
+  background-repeat: repeat, repeat, no-repeat, no-repeat;
   background-attachment: fixed;
 }
 
@@ -45,9 +48,11 @@ body {
   display: none !important;
 }
 
-/* 侧栏：surface 底 + 右侧发丝线 */
+/* 侧栏：半透明 HUD 面板 + 青色描边 */
 .ant-pro-sider {
-  background: var(--color-surface) !important;
+  background: var(--hud-panel-bg) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
   border-inline-end: 1px solid var(--color-border) !important;
 }
 
@@ -55,41 +60,91 @@ body {
   border-inline-end: none !important;
 }
 
-.ant-pro-sider-logo {
-  padding-block: 16px !important;
-  border-block-end: none !important;
-}
-
-.ant-pro-sider-logo > a > h1,
-.ant-pro-sider-logo h1 {
-  color: var(--color-heading) !important;
-  font-size: 15px !important;
-  font-weight: 600 !important;
-  letter-spacing: -0.01em;
-}
-
-.ant-pro-sider-logo img {
-  width: 22px !important;
-  height: 22px !important;
-  border-radius: 6px;
-}
-
 .ant-pro-sider .ant-menu {
   background: transparent !important;
-  font-size: 13.5px;
+  font-size: 13px;
+}
+
+.ant-pro-sider .ant-menu-item,
+.ant-pro-sider .ant-menu-submenu-title {
+  position: relative;
+  border-radius: 0 !important;
+}
+
+.ant-pro-sider .ant-menu-item-selected {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.ant-pro-sider .ant-menu-item-selected::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--color-accent);
+  border-right: 2px solid var(--color-accent);
 }
 
 .ant-pro-sider .ant-menu-item-selected,
 .ant-pro-sider .ant-menu-submenu-selected > .ant-menu-submenu-title {
-  font-weight: 500;
+  font-weight: 600;
+  text-shadow: var(--hud-text-glow);
 }
 
 .ant-pro-sider .ant-menu-submenu-selected > .ant-menu-submenu-title {
-  color: var(--color-heading) !important;
+  color: var(--color-accent) !important;
+}
+
+/* HUD 导航标签：编号 · 中文名 · 英文代号 */
+.hud-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+}
+
+.hud-nav-no {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-faint);
+  letter-spacing: 0.04em;
+}
+
+.hud-nav-no::before { content: '['; }
+.hud-nav-no::after { content: ']'; }
+
+.ant-menu-item-selected .hud-nav-no,
+.ant-menu-submenu-selected > .ant-menu-submenu-title .hud-nav-no {
+  color: var(--color-accent);
+}
+
+.hud-nav-dom {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-nav-code {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-faint);
+}
+
+.ant-pro-sider-collapsed .hud-nav-no,
+.ant-pro-sider-collapsed .hud-nav-code,
+.ant-menu-inline-collapsed .hud-nav-no,
+.ant-menu-inline-collapsed .hud-nav-code {
+  display: none;
 }
 
 .ant-pro-sider-collapsed-button {
-  background: var(--color-surface) !important;
+  background: var(--color-surface-raised) !important;
   border: 1px solid var(--color-border) !important;
   box-shadow: none !important;
   color: var(--color-muted) !important;
@@ -100,10 +155,21 @@ body {
   border-block-start: 1px solid var(--color-border);
 }
 
-/* 顶栏（仅在 ProLayout 需要时出现） */
+/* HUD 顶栏：通栏半透明面板，底部青色发丝线 */
 .ant-pro-global-header,
 .ant-pro-layout .ant-pro-layout-header {
-  background: var(--color-surface) !important;
-  border-bottom: 1px solid var(--color-border) !important;
-  box-shadow: none !important;
+  background: var(--hud-panel-bg) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border)) !important;
+  box-shadow: 0 1px 18px color-mix(in srgb, var(--color-accent) 8%, transparent) !important;
+}
+
+.ant-pro-global-header-header-actions {
+  gap: var(--space-4);
+}
+
+.ant-pro-top-nav-header-main,
+.ant-pro-global-header {
+  gap: var(--space-8);
 }

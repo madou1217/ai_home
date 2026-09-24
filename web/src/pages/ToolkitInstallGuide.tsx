@@ -77,6 +77,7 @@ export default function ToolkitInstallGuide() {
 
   return (
     <PageScaffold
+      code="TOOLKIT"
       title="安装指南与命令"
       subTitle="一次只查看一个系统；命令仅生成和复制，不会自动执行。"
       className="toolkit-scaffold toolkit-guide-scaffold"
@@ -85,7 +86,7 @@ export default function ToolkitInstallGuide() {
         <Button icon={<ArrowLeftOutlined />} href={buildAppHref('/toolkit')}>返回开发工具</Button>
       )}
     >
-      <section className="toolkit-guide-page" aria-labelledby="toolkit-guide-title">
+      <section className="toolkit-guide-page hud-panel" aria-labelledby="toolkit-guide-title">
         <header className="toolkit-panel-header">
           <div>
             <div className="toolkit-panel-kicker">PLATFORM PLAYBOOK</div>

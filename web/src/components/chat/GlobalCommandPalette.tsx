@@ -1,4 +1,5 @@
 import { memo, useEffect, useState, useMemo, useRef } from 'react';
+import { applyThemeMode } from '@/services/theme-persistence';
 import { history } from '@umijs/max';
 import {
   SearchOutlined,
@@ -83,13 +84,12 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
     },
     {
       id: 'act-theme',
-      title: '切换流光主题 (深色 / 浅色)',
+      title: '切换 HUD 主题 (深色 / 日光)',
       category: '快捷操作',
       icon: <BgColorsOutlined />,
       action: () => {
-        const root = document.documentElement;
-        const isDark = root.getAttribute('data-theme') === 'dark';
-        root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        applyThemeMode(isDark ? 'light' : 'dark');
         try {
           import('@/services/cross-tab-session-sync').then((m) =>
             m.crossTabSync.broadcast('THEME_CHANGED', { theme: isDark ? 'light' : 'dark' })

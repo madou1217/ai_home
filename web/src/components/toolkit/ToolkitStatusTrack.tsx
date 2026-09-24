@@ -19,7 +19,7 @@ export default function ToolkitStatusTrack({
   ariaLabel = '工具状态轨道'
 }: ToolkitStatusTrackProps) {
   return (
-    <ol className="toolkit-status-track" aria-label={ariaLabel}>
+    <ol className="toolkit-status-track hud-kpi-strip" aria-label={ariaLabel}>
       {items.map((item, index) => (
         <li key={`${item.label}-${index}`} data-tone={item.tone || 'neutral'}>
           <span className="toolkit-status-track-index" aria-hidden="true">
@@ -27,7 +27,7 @@ export default function ToolkitStatusTrack({
           </span>
           <span className="toolkit-status-track-copy">
             <span className="toolkit-status-track-label">{item.label}</span>
-            <strong>{item.value}</strong>
+            <strong className="hud-display">{item.value}</strong>
             {item.detail && <small>{item.detail}</small>}
           </span>
         </li>

@@ -3,10 +3,12 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+  font-family: var(--font-mono);
 }
 
 .prompt {
   margin-bottom: var(--space-5);
+  font-family: var(--font-prose);
   color: var(--color-muted);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);

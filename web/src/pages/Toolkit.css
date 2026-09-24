@@ -14,12 +14,10 @@
   padding: 0;
 }
 
+/* 控制台外壳：挂全局 .hud-panel（切角 + 青色角标 + 半透明 HUD 底） */
 .toolkit-console {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
   box-shadow: none;
 }
 
@@ -27,7 +25,7 @@
   margin: 0;
   padding: 0 var(--space-10);
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: transparent;
 }
 
 .toolkit-primary-tabs > .ant-tabs-nav::before {
@@ -51,12 +49,14 @@
 }
 
 .toolkit-primary-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: var(--color-heading);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-primary-tabs .ant-tabs-ink-bar {
   height: 2px;
   background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 
 .toolkit-primary-tabs > .ant-tabs-content-holder {
@@ -78,12 +78,12 @@
   min-width: 0;
   padding: var(--space-10) var(--space-6);
   border-right: 1px solid var(--color-border);
-  background: var(--color-surface-soft);
+  background: color-mix(in srgb, var(--color-surface-soft) 70%, transparent);
 }
 
 .toolkit-secondary-nav-label,
 .toolkit-panel-kicker {
-  color: var(--color-faint);
+  color: var(--color-accent);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
@@ -93,9 +93,12 @@
 
 .toolkit-secondary-nav-label {
   padding: 0 var(--space-6) var(--space-6);
+  color: var(--color-accent);
+  opacity: 0.8;
 }
 
 .toolkit-secondary-nav-item {
+  position: relative;
   display: grid;
   grid-template-columns: 24px 24px minmax(0, 1fr);
   align-items: start;
@@ -104,7 +107,7 @@
   margin: 0 0 var(--space-3);
   padding: var(--space-6);
   border: 1px solid transparent;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 0;
   background: transparent;
   color: var(--color-muted-strong);
   font: inherit;
@@ -121,11 +124,24 @@
   color: var(--color-heading);
 }
 
-/* 选中：surface-muted 底 + heading 字（与侧栏菜单同一语言），不做彩色描边 */
+/* 选中：HUD 选中态 —— 青色描边 + 柔和辉光 + 左上角标（与侧栏导航同一语言） */
 .toolkit-secondary-nav-item[data-active='true'] {
-  border-color: var(--color-border);
-  background: var(--color-surface);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
   color: var(--color-heading);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.toolkit-secondary-nav-item[data-active='true']::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
 }
 
 .toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-index,
@@ -135,9 +151,16 @@
 
 .toolkit-secondary-nav-index {
   padding-top: var(--hos-space-0-5);
-  color: var(--color-faint);
+  color: color-mix(in srgb, var(--color-accent) 60%, var(--color-faint));
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
   font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+}
+
+.toolkit-secondary-nav-item[data-active='true'] .toolkit-secondary-nav-index {
+  text-shadow: var(--hud-text-glow);
 }
 
 .toolkit-secondary-nav-icon {
@@ -213,8 +236,9 @@
   font-family: var(--font-display);
   font-size: var(--text-2xl);
   font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-tight);
+  letter-spacing: var(--tracking-wide);
   line-height: var(--leading-tight);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-panel-header p {
@@ -248,6 +272,7 @@
 
 /* The status rail is the page's primary visual anchor: observed state, mutable
    configuration and non-executing guidance stay visibly distinct. */
+/* HUD KPI 条：外框由 .hud-kpi-strip（hud.css）画切角 + 角标；数值等宽粗体（斜杠零）+ 状态色辉光 */
 .toolkit-status-track {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -255,9 +280,6 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-10);
-  background: var(--color-surface);
   list-style: none;
 }
 
@@ -296,6 +318,7 @@
   padding-top: var(--hos-space-0-5);
   color: var(--track-color);
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
 }
@@ -308,9 +331,9 @@
 }
 
 .toolkit-status-track-label {
-  color: var(--color-muted);
+  color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: 10px;
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
@@ -320,10 +343,20 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-heading);
-  font-family: var(--font-display);
-  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-h3);
+  font-variant-numeric: tabular-nums slashed-zero;
   line-height: var(--leading-snug);
   overflow-wrap: anywhere;
+}
+
+/* 有状态色的读数：数值跟随状态色并发光（中性读数保持 heading 色） */
+.toolkit-status-track > li:not([data-tone='neutral']) .toolkit-status-track-copy strong {
+  color: var(--track-color);
+}
+
+[data-theme='dark'] .toolkit-status-track > li:not([data-tone='neutral']) .toolkit-status-track-copy strong {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--track-color) 55%, transparent);
 }
 
 .toolkit-status-track-copy small {
@@ -425,8 +458,9 @@
 
 .toolkit-tool-option[data-active='true'],
 .toolkit-mirror-option[data-active='true'] {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-accent);
   background: var(--color-accent-soft);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .toolkit-tool-option > span:first-child {
@@ -782,16 +816,49 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* 诊断 / 配置面板：HUD 切角面板 + 左上青色角标（与全局 .hud-panel 同一套 token） */
 .toolkit-observation-card,
 .toolkit-tool-config-card,
 .toolkit-proxy-apply,
 .toolkit-connectivity,
-.toolkit-scoped-proxies {
+.toolkit-scoped-proxies,
+.toolkit-environment-action {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
   min-width: 0;
   padding: var(--space-10);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-10);
-  background: var(--color-surface);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+  transition: border-color var(--motion-base) var(--ease-standard);
+}
+
+.toolkit-observation-card::before,
+.toolkit-tool-config-card::before,
+.toolkit-proxy-apply::before,
+.toolkit-connectivity::before,
+.toolkit-scoped-proxies::before,
+.toolkit-environment-action::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
+.toolkit-observation-card:hover,
+.toolkit-tool-config-card:hover,
+.toolkit-connectivity-grid article:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
 }
 
 .toolkit-observation-card .toolkit-inspection-list {
@@ -854,13 +921,19 @@
 }
 
 .toolkit-connectivity-grid article {
+  --hud-cut: var(--hud-chamfer-sm);
   display: grid;
   min-width: 0;
   gap: var(--space-4);
   padding: var(--space-6);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
 }
 
 .toolkit-connectivity-grid article > div {
@@ -979,6 +1052,7 @@
   color: var(--color-warning);
 }
 
+/* 应用 / 资源 / 代理节点卡：组件挂 .hud-panel.hud-panel--sm（小切角 + 左上角标） */
 .toolkit-app-card {
   position: relative;
   display: flex;
@@ -987,15 +1061,7 @@
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
   box-shadow: none;
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-
-.toolkit-app-card:hover {
-  border-color: var(--color-border-strong);
 }
 
 .toolkit-app-card > div:first-child,
@@ -1037,8 +1103,9 @@
   overflow: hidden;
   color: var(--color-heading);
   font-family: var(--font-display);
-  font-size: var(--hos-text-h2); /* 规范:模块卡片标题 = H2 */
-  font-weight: var(--weight-semibold);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
   line-height: var(--leading-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1147,7 +1214,11 @@
 }
 
 .toolkit-detail-label {
-  color: var(--color-muted);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -1184,7 +1255,7 @@
   gap: var(--space-6);
   padding: var(--space-6) var(--space-8);
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  background: color-mix(in srgb, var(--color-surface-sunken) 60%, transparent);
 }
 
 .toolkit-card-actions > * {
@@ -1352,8 +1423,9 @@
 }
 
 .toolkit-mirror-row.active {
-  border-color: var(--color-info);
+  border-color: var(--color-accent);
   background: var(--color-info-soft);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .toolkit-cmd-box {
@@ -1398,12 +1470,8 @@
 }
 
 .toolkit-environment-action {
-  min-width: 0;
   margin-top: var(--space-8);
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-10);
-  background: var(--color-surface-soft);
 }
 
 .toolkit-environment-action > h3 {
@@ -1525,7 +1593,8 @@
 }
 
 .proxy-node-grid > article[data-current-outbound='true'] {
-  border-color: var(--color-accent);
+  border-color: var(--color-accent) !important;
+  box-shadow: var(--hud-glow-accent);
 }
 
 .proxy-country-flag {

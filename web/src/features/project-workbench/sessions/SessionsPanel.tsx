@@ -48,6 +48,7 @@ export default function SessionsPanel({ sessions, selectedSession, runningSessio
               <span className={chatStyles.sessionTitle}>{session.title || '新会话'}</span>
             </div>
             <span className={chatStyles.sessionTime}>
+              {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}
               {isRunning ? '进行中' : dayjs(session.updatedAt).fromNow()}
             </span>
           </div>

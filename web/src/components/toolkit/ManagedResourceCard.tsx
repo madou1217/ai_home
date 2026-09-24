@@ -37,6 +37,8 @@ export default function ManagedResourceCard({
 }: ManagedResourceCardProps) {
   const cardClassName = [
     'toolkit-app-card',
+    'hud-panel',
+    'hud-panel--sm',
     'toolkit-managed-resource-card',
     installed ? 'installed' : 'uninstalled',
     className

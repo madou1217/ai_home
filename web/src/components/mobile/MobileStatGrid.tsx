@@ -35,12 +35,12 @@ export default function MobileStatGrid({
         <div key={it.key} className="mobile-stat-tile">
           <div className="mobile-stat-label">
             {it.dotColor ? (
-              <span className="mobile-stat-dot" style={{ background: it.dotColor }} />
+              <span className="mobile-stat-dot" style={{ background: it.dotColor, color: it.dotColor }} />
             ) : null}
             <span>{it.label}</span>
           </div>
           <div
-            className="mobile-stat-value"
+            className={`mobile-stat-value${it.valueColor ? ' mobile-stat-value--tinted' : ''}`}
             style={it.valueColor ? { color: it.valueColor } : undefined}
           >
             {it.value}

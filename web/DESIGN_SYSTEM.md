@@ -1,6 +1,6 @@
 # AIH Web Design System（组件契约）
 
-> 视觉方向与 token 的唯一来源是 [`web/DESIGN.md`](./DESIGN.md)（Calm Operator Console）。本文只约束组件用法。
+> 视觉方向与 token 的唯一来源是 [`web/DESIGN.md`](./DESIGN.md)（Cyber HUD）。本文只约束组件用法。
 
 本目录下所有页面必须遵守以下规则。任何新页面、重构、补丁都不得绕过。
 
@@ -15,7 +15,7 @@
 
 ### 卡片：`SectionCard`（`src/components/ui/SectionCard.tsx`）
 - 唯一的 `ProCard` 包装：**禁止直接使用 `ProCard`**。
-- 默认 `bordered`、`headerBordered`，padding **16px**，圆角 **10px**，无阴影（1px `--color-border` 描边分层）。
+- 默认 `bordered`、`headerBordered`，padding **16px**；HUD 切角面板 + 左上 / 右下青色角标（`styles/hud.css`），标题 Orbitron 青色。
 - `extra` 只放右上角；与 `PageScaffold.extra` 的“右侧 action”语义保持一致。
 - 需要并排成组时用 `gutter`，禁止散点 `ProCard colSpan` 拼接 stat 条。
 
@@ -29,7 +29,7 @@
   - 空态统一 `Empty.PRESENTED_IMAGE_SIMPLE` + 文案 **“暂无数据”**
 
 ### 样式令牌：`src/styles/unified.css`
-- 定义 `--unified-page-padding`(24)、`--unified-card-padding`(16)、`--unified-card-border-radius`(10)、`--unified-pagination-margin`(16)、`--unified-section-gap`(16)。
+- 定义 `--unified-page-padding`(24)、`--unified-card-padding`(16)、`--unified-card-border-radius`(4，轮廓由切角表达)、`--unified-pagination-margin`(16)、`--unified-section-gap`(16)。
 - 应用目标：`.ant-pro-page-container-content`、`.ant-pro-card`、`.ant-pagination`、`.unified-empty`。
 - **禁止**任何 CSS 覆盖 `ant-table` 单元格背景与 `ant-layout` 的 `min-height`。
 
@@ -48,7 +48,7 @@
 ## 反模式（一律拒绝评审/合入）
 - 直接 `<PageContainer>` / `<ProCard>` / `<ProTable>` / `<Table>`。
 - 列表上方平铺 `Statistic` 卡片（应进 `headerContent` Descriptions 条或 KPI 条）。
-- 页面内容里的整块 `Alert`（应改用 `InlineNote`）；毛玻璃、渐变按钮、光晕投影、左侧彩色竖条。
+- 页面内容里的整块 `Alert`（应改用 `InlineNote`）；左侧粗彩色竖条；浏览器原生 `alert` / `confirm` / `prompt`（应改用 `utils/confirm-action`）；界面上的演示 / 虚构数据。
 - 各页自写 `padding` / `margin` 做布局（应走令牌）。
 - 自定义行 hover、自定义空态文案/图。
 - `Tabs` 包裹表格做切换（应走 `toolbar.menu type="tab"`）。

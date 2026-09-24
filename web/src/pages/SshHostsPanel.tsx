@@ -328,7 +328,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     return (
       <Breadcrumb
         separator={<RightOutlined style={{ fontSize: '10px', color: 'var(--color-faint)' }} />}
-        style={{ marginBottom: '16px', background: 'var(--color-surface-muted)', padding: '8px 12px', borderRadius: 'var(--hos-radius-xs)' }}
+        style={{ marginBottom: '16px', background: 'var(--color-surface-sunken)', padding: '8px 12px', border: '1px solid var(--color-border)', fontFamily: 'var(--font-mono)' }}
       >
         {breadcrumbItems}
       </Breadcrumb>
@@ -375,9 +375,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         )}
 
         {result.status === 'reachable' && (
-          <div style={{ background: 'var(--color-surface-muted)', padding: '16px', borderRadius: 'var(--hos-radius-sm)', border: '1px solid var(--color-border)' }}>
+          <div className="hud-panel hud-panel--sm" style={{ padding: '16px' }}>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4 }}>系统平台 / 架构</div>
+              <div className="hud-label" style={{ marginBottom: 4 }}>系统平台 / 架构</div>
               <Space size={6}>
                 <Tag color="blue">{result.platform || '未知'}</Tag>
                 <Tag color="cyan">{result.arch || '未知'}</Tag>
@@ -385,7 +385,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </div>
 
             <div>
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 8 }}>依赖项检测</div>
+              <div className="hud-label" style={{ marginBottom: 8 }}>依赖项检测</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Node.js</span>
@@ -408,8 +408,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
             {result.recommendation && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
-                <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4 }}>诊断建议</div>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
+                <div className="hud-label" style={{ marginBottom: 4 }}>诊断建议</div>
+                <p className="hud-prose" style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
               </div>
             )}
           </div>
@@ -686,7 +686,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             className="directory-list-container"
             style={{
               border: '1px solid var(--color-border)',
-              borderRadius: 'var(--hos-radius-sm)',
               height: '350px',
               overflowY: 'auto',
               background: 'var(--color-surface)'
@@ -732,6 +731,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                           cursor: 'pointer',
                           background: isSelected ? 'var(--color-accent-soft)' : 'var(--color-surface)',
                           borderBottom: '1px solid var(--color-border)',
+                          boxShadow: isSelected ? 'inset 0 0 0 1px var(--color-accent)' : undefined,
+                          color: isSelected ? 'var(--color-accent)' : undefined,
+                          fontFamily: 'var(--font-mono)',
                           userSelect: 'none'
                         }}
                         onClick={() => setSelectedDirPath(dir.path)}
@@ -750,7 +752,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           {/* 3. 选定路径显示 */}
           <div style={{ marginTop: '16px' }}>
             <span style={{ marginRight: '8px', fontWeight: 500 }}>当前选定路径:</span>
-            <code style={{ background: 'var(--color-surface-muted)', padding: '4px 8px', borderRadius: 'var(--hos-radius-2xs)', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
+            <code style={{ background: 'var(--color-surface-sunken)', border: '1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border))', color: 'var(--color-accent)', padding: '4px 8px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
               {selectedDirPath || '未选择'}
             </code>
           </div>

@@ -373,6 +373,13 @@ export default function Dashboard() {
     critical: { label: '无健康账号', dot: 'crit' }
   };
   const health = healthMeta[overallHealth];
+  // HUD 指示灯：与 health.dot 一一对应（纯展示映射），连接中用呼吸的 info 灯。
+  const healthLedClass: Record<string, string> = {
+    idle: 'hud-led--info hud-led--live',
+    ok: 'hud-led--ok',
+    warn: 'hud-led--warn',
+    crit: 'hud-led--err'
+  };
   // 成功率徽标阈值:无请求不评健康色;>=95% 健康,>=80% 告警,<80% 异常。
   const totalRequestsCount = Number(metrics?.totalRequests || 0);
   const successRateValue = Number(metrics?.successRate || 0);
@@ -413,7 +420,7 @@ export default function Dashboard() {
     const offline = row.total === 0;
     const statusEntries = Object.entries(row.statuses || {}).filter(([, c]) => Number(c) > 0);
     return (
-      <div className={`dash-pcard${offline ? ' dash-pcard--offline' : ''}`} key={row.key}>
+      <div className={`dash-pcard hud-panel hud-panel--sm${offline ? ' dash-pcard--offline' : ''}`} key={row.key}>
         <div className="dash-pcard-head">
           <ProviderIcon provider={row.provider} size={18} />
           <span className="dash-pcard-name">{providerNames[row.provider as keyof typeof providerNames] || row.provider}</span>
@@ -438,7 +445,7 @@ export default function Dashboard() {
   };
 
   return (
-    <PageScaffold ghost
+    <PageScaffold ghost code="DASHBOARD"
       className="dash-page"
       title="网关仪表盘"
       subTitle="展示本地 Server 调度、熔断、恢复和队列的真实运行态。"
@@ -477,6 +484,7 @@ export default function Dashboard() {
               value: totalRequestsCount.toLocaleString(),
               subtitle: totalRequestsCount > 0 ? `成功率 ${formatPercent(metrics?.successRate)}` : '暂无请求',
               status: successRateStatus,
+              valueTone: 'accent',
             },
             {
               title: "并发排队中",
@@ -489,23 +497,24 @@ export default function Dashboard() {
               value: formatUptime(displayedUptimeSec),
               subtitle: `后端 ${status?.backend || 'Node'}`,
               status: 'healthy',
+              valueTone: 'accent',
             },
           ]}
         />
       </div>
       {/* ── Hero:系统健康一眼概览 ── */}
-      <div className={`dash-hero dash-hero--${overallHealth}`}>
+      <div className={`dash-hero hud-panel dash-hero--${overallHealth}`}>
         <div className="dash-hero-head">
           <span className="dash-hero-status">
-            <span className={`dash-dot dash-dot--${health.dot}`} />
+            <span className={`dash-dot dash-dot--${health.dot} hud-led ${healthLedClass[health.dot] || ''}`} />
             {health.label}
           </span>
           <span className="dash-hero-uptime">运行 {formatUptime(displayedUptimeSec)}</span>
         </div>
         <div className="dash-hero-body">
           <div className="dash-hero-metric">
-            <div className="dash-hero-value">{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</div>
-            <div className="dash-hero-cap">{Number(status?.totalRequests || 0) > 0 ? '请求成功率' : '暂无请求'}</div>
+            <div className="dash-hero-value hud-display hud-glow">{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</div>
+            <div className="dash-hero-cap hud-label">{Number(status?.totalRequests || 0) > 0 ? '请求成功率' : '暂无请求'}</div>
           </div>
           <div className="dash-hero-side">
             <div className="dash-hero-health">
@@ -569,7 +578,7 @@ export default function Dashboard() {
               const showPipeline = isCrossRoute || isAlias;
 
               return (
-                <div className="dash-error-item" key={item.__key}>
+                <div className="dash-error-item hud-panel hud-panel--sm" key={item.__key}>
                   <div className="dash-error-top">
                     <div className="dash-error-account-info">
                       {provider ? <ProviderIcon provider={provider as Provider} size={16} /> : null}
@@ -684,7 +693,7 @@ export default function Dashboard() {
       {routeRows.length > 0 ? (
         <>
           <div className="dash-block-title">热点路由</div>
-          <div className="dash-route-list">
+          <div className="dash-route-list hud-panel">
             {routeRows.map((r) => (
               <div className="dash-route-item" key={r.key}>
                 <div className="dash-route-line">
@@ -701,7 +710,7 @@ export default function Dashboard() {
       ) : null}
 
       {/* ── 运行参数:降级为可折叠紧凑区(静态配置、低频关注) ── */}
-      <details className="dash-params">
+      <details className="dash-params hud-panel">
         <summary>服务运行参数</summary>
         <div className="dash-params-grid">
           {runtimeParams.map(([k, v]) => (

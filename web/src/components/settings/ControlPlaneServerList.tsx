@@ -16,6 +16,20 @@ const CONTROL_PLANE_PROFILE_STATUS: Record<ControlPlaneProfileState, { tone: Sta
   offline: { tone: 'offline', label: '离线' }
 };
 
+// 状态 → HUD LED（只映射真实状态，不额外发明「在线心跳」）
+const STATUS_LED: Record<StatusTone | 'pending', string> = {
+  ready: 'hud-led hud-led--ok',
+  degraded: 'hud-led hud-led--warn',
+  offline: 'hud-led',
+  pending: 'hud-led hud-led--info'
+};
+
+const ROUTE_HEALTH_LED: Record<string, string> = {
+  green: 'hud-led--ok',
+  orange: 'hud-led--warn',
+  red: 'hud-led--err'
+};
+
 const getControlPlaneProfileStatus = (state: ControlPlaneProfileState) => (
   CONTROL_PLANE_PROFILE_STATUS[state] || CONTROL_PLANE_PROFILE_STATUS.offline
 );
@@ -67,7 +81,10 @@ function RouteChip({ route }: { route: ServerRouteView }) {
       className={`cp-route-chip cp-route-chip--health-${route.healthColor}${route.primary ? ' cp-route-chip--primary' : ''}`}
       title={route.endpoint}
     >
-      <span className={`cp-route-dot cp-route-dot--${route.healthColor}`} aria-hidden="true" />
+      <span
+        className={`cp-route-dot cp-route-dot--${route.healthColor} hud-led ${ROUTE_HEALTH_LED[route.healthColor] || ''}`}
+        aria-hidden="true"
+      />
       <span className="cp-route-kind">{route.kindLabel}</span>
       <span className="cp-route-endpoint">{route.endpointLabel}</span>
       <span className="cp-route-rtt">{route.rttLabel}</span>
@@ -160,15 +177,21 @@ export default function ControlPlaneServerList({
             key={row.stableServerId}
             size="small"
             bordered={false}
-            className={`cp-server-card${active ? ' cp-server-card--active' : ''}`}
+            className={`cp-server-card hud-panel hud-panel--sm${active ? ' cp-server-card--active' : ''}`}
           >
             <div className="cp-server-card-head">
               <div className="cp-server-card-title">
                 <Space size={6} wrap>
                   {authorizationPending ? (
-                    <span className="cp-status-pill cp-status-pill--pending">已发现，待授权</span>
+                    <span className="cp-status-pill cp-status-pill--pending">
+                      <span className={STATUS_LED.pending} aria-hidden="true" />
+                      已发现，待授权
+                    </span>
                   ) : (
-                    <span className={`cp-status-pill cp-status-pill--${status.tone}`}>{status.label}</span>
+                    <span className={`cp-status-pill cp-status-pill--${status.tone}`}>
+                      <span className={STATUS_LED[status.tone]} aria-hidden="true" />
+                      {status.label}
+                    </span>
                   )}
                   <span className="cp-server-card-name" title={name}>{name}</span>
                   {!authorizationPending && isControlPlaneManagementKeyConfigured(profile) && (

@@ -392,7 +392,7 @@ const ProjectList = ({
                       isSameSession(selectedSession, session) ? styles.sessionItemActive : ''
                     }`}
                     onClick={() => onSelectSession(session)}
-                    style={{ padding: '8px 10px', borderRadius: 8 }}
+                    style={{ padding: '8px 10px' }}
                   >
                     <div className={styles.sessionHeader}>
                       <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
@@ -644,6 +644,7 @@ const ProjectList = ({
                                   />
                                 </div>
                                 <span className={styles.sessionTime}>
+                                  {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}
                                   {isRunning ? '进行中' : dayjs(session.updatedAt).fromNow()}
                                 </span>
                               </div>

@@ -116,7 +116,9 @@
   .ant-page-header-heading-extra .m-header-actions { gap: var(--hos-space-2, 8px); }
 }
 
-/* ---- 底部 TabBar 本体 ---- */
+/* ---- 底部 TabBar 本体(Cyber HUD) ----
+ * 半透明 HUD 面板 + 毛玻璃、顶部青色调发丝线;标签等宽小字距;
+ * 选中项 = 青色 + 文字辉光 + 图标上方一段 2px 青色刻度(不是左侧色条)。 */
 .mobile-tabbar {
   display: none;
 }
@@ -137,15 +139,17 @@
     align-items: stretch;
     height: var(--mobile-tabbar-safe);
     padding: var(--hos-space-1-5, 6px) var(--hos-space-2, 8px) env(safe-area-inset-bottom);
-    /* 不透明 surface + 顶部发丝线；不用毛玻璃（DESIGN.md §7） */
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    font-family: var(--font-body);
+    background: var(--hud-panel-bg);
+    -webkit-backdrop-filter: var(--hud-panel-blur);
+    backdrop-filter: var(--hud-panel-blur);
+    border-top: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    font-family: var(--font-mono);
     transition: transform var(--motion-slow, 240ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
     will-change: transform;
   }
 
   .mobile-tabbar-item {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -153,12 +157,15 @@
     gap: var(--hos-space-1, 4px);
     min-height: 44px;
     border: none;
+    border-radius: 0;
     background: transparent;
     cursor: pointer;
     color: var(--color-muted);
     font-family: inherit;
-    font-size: var(--hos-text-micro, 11px);
-    font-weight: var(--weight-medium, 500);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: var(--tracking-caps, 0.12em);
+    text-transform: uppercase;
     line-height: 1.2;
     -webkit-tap-highlight-color: transparent;
     transition: color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
@@ -166,39 +173,69 @@
   }
 
   .mobile-tabbar-item .anticon {
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1;
   }
 
-  /* 选中态：强调色（图标 + 文字），无光晕 */
+  .mobile-tabbar-item:active {
+    color: var(--color-muted-strong);
+  }
+
+  /* 选中态:青色图标 + 文字辉光(浅色主题 --hud-text-glow 为 none,
+   * drop-shadow(none) 在计算期失效 → 自动退回无滤镜) */
   .mobile-tabbar-item-active,
   .mobile-tabbar-item-active .anticon {
     color: var(--color-accent);
+  }
+  .mobile-tabbar-item-active {
+    text-shadow: var(--hud-text-glow);
+  }
+  .mobile-tabbar-item-active .anticon {
+    filter: drop-shadow(var(--hud-text-glow));
+  }
+  /* 图标上方 2px 青色刻度 */
+  .mobile-tabbar-item-active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 20px;
+    height: 2px;
+    transform: translateX(-50%);
+    background: var(--color-accent);
+    box-shadow: var(--hud-glow-accent);
   }
 }
 
 /* ============================================================================
  * 「更多」动作面板(MobileMoreSheet):TabBar 第 5 个 tab 弹出的底部 Sheet,
- * 列低频页面入口。raised 不透明表面、顶部圆角 12;行 = 描边圆角行 + 图标 + 文字,
+ * 列低频页面入口。HUD 面板:方角、顶部青色边沿;行 = 发丝线方角行 + 图标 + 文字,
  * 不用左竖条/大块提示块。
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .mobile-more-sheet .ant-drawer-content {
-    border-radius: var(--hos-radius-xl, 12px) var(--hos-radius-xl, 12px) 0 0;
-    background: var(--color-surface-raised);
+    border-radius: 0;
+    background: var(--hud-panel-bg);
+    -webkit-backdrop-filter: var(--hud-panel-blur);
+    backdrop-filter: var(--hud-panel-blur);
+    border-top: 1px solid var(--color-accent);
+    box-shadow: var(--hud-glow-accent);
     font-family: var(--font-body);
   }
   .mobile-more-sheet .ant-drawer-header {
-    border-bottom: none;
-    padding: var(--hos-space-4, 16px) var(--hos-space-4, 16px) var(--hos-space-2, 8px);
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--hos-space-4, 16px) var(--hos-space-4, 16px) var(--hos-space-3, 12px);
   }
   .mobile-more-sheet .ant-drawer-title {
-    font-size: var(--text-lg, 17px);
-    font-weight: var(--weight-semibold, 600);
-    color: var(--color-heading);
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: var(--tracking-wide, 0.04em);
+    color: var(--color-accent);
+    text-shadow: var(--hud-text-glow);
   }
   .mobile-more-sheet .ant-drawer-body {
-    padding: 0 var(--hos-space-4, 16px) calc(var(--hos-space-4, 16px) + env(safe-area-inset-bottom));
+    padding: var(--hos-space-3, 12px) var(--hos-space-4, 16px) calc(var(--hos-space-4, 16px) + env(safe-area-inset-bottom));
   }
 
   .mobile-more-entries {
@@ -214,7 +251,7 @@
     min-height: 56px;
     padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
     border: 1px solid var(--color-border);
-    border-radius: var(--hos-radius-lg, 10px);
+    border-radius: var(--hos-radius-xs, 2px);
     background: var(--color-surface);
     box-shadow: none;
     cursor: pointer;
@@ -225,6 +262,7 @@
   }
   .mobile-more-entry:active {
     background: var(--color-surface-muted);
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
   }
   .mobile-more-entry-icon {
     flex: 0 0 auto;
@@ -232,8 +270,9 @@
     place-items: center;
     width: 36px;
     height: 36px;
-    border-radius: var(--hos-radius-sm, 8px);
-    background: var(--color-surface-muted);
+    border: 1px solid var(--color-border);
+    border-radius: var(--hos-radius-xs, 2px);
+    background: var(--color-surface-sunken);
     color: var(--color-muted-strong);
     font-size: 18px;
   }
@@ -242,6 +281,7 @@
     min-width: 0;
     font-size: var(--text-md, 15px);
     font-weight: var(--weight-medium, 500);
+    letter-spacing: 0.02em;
     color: var(--color-heading);
   }
   .mobile-more-entry-arrow {
@@ -250,41 +290,32 @@
     font-size: var(--hos-text-caption, 12px);
   }
 
-  /* 当前页入口:强调色弱底 + 强调色图标/文字,与 TabBar 选中态同一语言 */
+  /* 当前页入口:强调色弱底 + 青框微光 + 青色图标/文字,与 TabBar 选中态同一语言 */
   .mobile-more-entry-active {
-    border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    border-color: var(--color-accent);
     background: var(--color-accent-soft);
+    box-shadow: var(--hud-glow-accent);
   }
   .mobile-more-entry-active .mobile-more-entry-icon {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
     background: var(--color-accent-soft);
     color: var(--color-accent);
   }
-  .mobile-more-entry-active .mobile-more-entry-label {
+  .mobile-more-entry-active .mobile-more-entry-label,
+  .mobile-more-entry-active .mobile-more-entry-arrow {
     color: var(--color-accent);
+    text-shadow: var(--hud-text-glow);
   }
 }
 
 /* ============================================================================
- * 移动端按钮:颜色完全交给 antd 主题(主按钮 = 墨色、开关选中 = 强调色,见
- * src/theme/antd-theme.ts),这里只补触控手感——圆角 6、字重 500、次按钮描边走
- * token、无投影。不再用赤陶色做主按钮 / 开关(赤陶只代表 Claude)。
+ * 移动端按钮:颜色 / 切角 / 辉光完全交给 styles/hud.css(主按钮 = 半透明青底 +
+ * 青框 + 辉光;默认按钮 = surface-raised + 发丝线,悬停转青),这里只补触控手感:
+ * 方角(图标按钮等不走切角的形态)与字体族。不再在移动端压掉 HUD 辉光。
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .ant-btn {
-    border-radius: var(--hos-radius-xs, 6px);
+    border-radius: var(--hos-radius-xs, 2px);
     font-family: var(--font-body);
-    font-weight: var(--weight-medium, 500);
-  }
-  .ant-btn-primary:not(:disabled) {
-    box-shadow: none !important;
-  }
-  .ant-btn-default:not(:disabled):not(.ant-btn-dangerous) {
-    border-color: var(--color-border) !important;
-    color: var(--color-text);
-    box-shadow: none;
-  }
-  .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):hover {
-    border-color: var(--color-border-strong) !important;
-    color: var(--color-heading) !important;
   }
 }

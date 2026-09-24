@@ -5,16 +5,18 @@
  * 共享组件 PageHeaderActions 依赖它们，故独立成文件由组件自带，
  * mobile-cards.css 以 @import 保留原有引入方的行为。 */
 
-/* 原生移动图标按钮(刷新等):次要 = surface + 1px 描边;主要(.primary)= 墨底。
- * 40px 触控目标、圆角 10,无投影 / 无光晕。 */
+/* 原生移动图标按钮(刷新等)—— Cyber HUD:
+ *   次要 = surface-raised + 1px 发丝线,按下转青框;
+ *   主要(.primary)= 半透明青底 + 青框 + 青色图标 + 辉光(与 hud.css 主按钮同一语言)。
+ * 40px 触控目标、方角(≤2px)。 */
 .m-icon-btn {
   flex: none;
   width: 40px;
   height: 40px;
   padding: 0;
-  border-radius: var(--hos-radius-lg, 10px);
+  border-radius: var(--hos-radius-xs, 2px);
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-muted-strong);
   display: inline-flex;
   align-items: center;
@@ -24,17 +26,28 @@
   box-shadow: none;
   -webkit-tap-highlight-color: transparent;
   transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
-    border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
+    border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
-.m-icon-btn:active { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
+.m-icon-btn:active {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-raised));
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
 .m-icon-btn:disabled { opacity: .5; cursor: default; }
 .m-icon-btn.primary {
-  background: var(--color-ink);
-  border-color: var(--color-ink);
-  color: var(--color-on-ink);
-  box-shadow: none;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
 }
-.m-icon-btn.primary:active { background: var(--color-ink-hover); border-color: var(--color-ink-hover); }
+.m-icon-btn.primary .anticon { filter: drop-shadow(var(--hud-text-glow)); }
+.m-icon-btn.primary:active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.m-icon-btn.primary:active .anticon { filter: none; }
 
-/* 页头右侧原生操作:一排紧凑图标按钮(主操作墨色 + 次操作描边) */
+/* 页头右侧原生操作:一排紧凑图标按钮(主操作青色 HUD + 次操作描边) */
 .m-header-actions { display: inline-flex; align-items: center; gap: var(--hos-space-2, 8px); }

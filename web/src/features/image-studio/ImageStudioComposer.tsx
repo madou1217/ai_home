@@ -12,6 +12,13 @@ import {
   formatImageStudioModelAvailability,
   getImageStudioQualityOptions,
 } from './image-studio-utils';
+import {
+  IMAGE_STUDIO_MODERATION_OPTIONS,
+  IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS,
+  IMAGE_STUDIO_PROMPT_PRESETS as PROMPT_PRESETS,
+  IMAGE_STUDIO_SIZE_VALUES,
+  imageStudioBackgroundOptions,
+} from './image-studio-options';
 import styles from './image-studio.module.css';
 
 const { TextArea } = Input;
@@ -62,21 +69,6 @@ interface ImageStudioComposerProps {
   onClearMask: () => void;
   onSubmit: () => void;
 }
-
-const PROMPT_PRESETS = [
-  {
-    label: '产品母版',
-    value: 'Editorial product portrait on a warm neutral sweep, precise material texture, restrained shadows, art-directed studio light.',
-  },
-  {
-    label: '空间概念',
-    value: 'Architectural concept frame with disciplined geometry, natural material palette, cinematic daylight, human-scale details.',
-  },
-  {
-    label: '视觉系统',
-    value: 'A clear visual system study presented as a contact sheet, consistent subject, varied composition and lighting, production-ready art direction.',
-  },
-];
 
 const OUTPUT_COUNT_OPTIONS = Array.from({ length: 10 }, (_, index) => {
   const value = index + 1;
@@ -312,7 +304,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
               <Select
                 value={size || 'auto'}
                 onChange={onSizeChange}
-                options={['auto', '1024x1024', '1536x1024', '1024x1536'].map((value) => ({ value, label: value }))}
+                options={IMAGE_STUDIO_SIZE_VALUES.map((value) => ({ value, label: value }))}
               />
             </label>
           )}
@@ -332,11 +324,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
               <Select
                 value={background || 'auto'}
                 onChange={onBackgroundChange}
-                options={[
-                  { value: 'auto', label: '自动' },
-                  { value: 'opaque', label: '不透明' },
-                  { value: 'transparent', label: '透明', disabled: outputFormat === 'jpeg' },
-                ]}
+                options={imageStudioBackgroundOptions(outputFormat)}
               />
             </label>
           )}
@@ -346,11 +334,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
               <Select
                 value={outputFormat || 'png'}
                 onChange={onOutputFormatChange}
-                options={[
-                  { value: 'png', label: 'PNG' },
-                  { value: 'jpeg', label: 'JPEG' },
-                  { value: 'webp', label: 'WebP' },
-                ]}
+                options={IMAGE_STUDIO_OUTPUT_FORMAT_OPTIONS}
               />
             </label>
           )}
@@ -371,10 +355,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
               <Select
                 value={moderation || 'auto'}
                 onChange={onModerationChange}
-                options={[
-                  { value: 'auto', label: '自动' },
-                  { value: 'low', label: '低限制' },
-                ]}
+                options={IMAGE_STUDIO_MODERATION_OPTIONS}
               />
             </label>
           )}

@@ -11,6 +11,11 @@ import {
 import Button from '@/components/ui/AppButton';
 import { renderAccountRegionTag } from '@/features/accounts/AccountBadges';
 import type { Account, ManagedAppItem } from '@/types';
+import {
+  managedAppAccountIsRunning as accountIsRunning,
+  managedAppAccountLabel as accountLabel,
+  sortManagedAppAccounts
+} from './managed-app-presentation';
 import './ManagedAppAccountActions.css';
 
 export type ManagedAppLaunchTarget = Pick<ManagedAppItem, 'id' | 'name' | 'provider' | 'type'>;
@@ -24,15 +29,6 @@ interface Props {
   buttonLabel?: string;
   onOpen: (app: ManagedAppLaunchTarget, accountRef?: string, unscoped?: boolean) => void;
   onClose: (app: ManagedAppLaunchTarget, accountRef: string) => void;
-}
-
-function accountLabel(account: Account) {
-  return String(account.displayName || account.email || account.accountRef || '未命名账号').trim();
-}
-
-function accountIsRunning(account: Account, runningAccountPids: Record<string, number[]>) {
-  return Array.isArray(runningAccountPids[account.accountRef])
-    && runningAccountPids[account.accountRef].length > 0;
 }
 
 /**
@@ -53,12 +49,7 @@ export default function ManagedAppAccountActions({
   const kind = app.type === 'desktop' ? 'desktop' : 'cli';
   const Icon = kind === 'desktop' ? DesktopOutlined : CodeOutlined;
   const runningPids = kind === 'desktop' ? runningAccountPids : runningCliAccountPids;
-  const providerAccounts = accounts
-    .filter((account) => account.provider === app.provider)
-    .sort((left, right) => {
-      if (Boolean(left.isDefault) !== Boolean(right.isDefault)) return left.isDefault ? -1 : 1;
-      return accountLabel(left).localeCompare(accountLabel(right), 'zh-CN');
-    });
+  const providerAccounts = sortManagedAppAccounts(accounts, app.provider);
   const defaultAccount = providerAccounts.find((account) => account.isDefault && account.configured);
   const hasRunningAccount = providerAccounts.some((account) => accountIsRunning(account, runningPids));
 

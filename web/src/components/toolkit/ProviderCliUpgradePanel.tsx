@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Spin, Tag } from 'antd';
 import { CloudDownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import { toolkitAPI } from '@/services/api';
-import type { ProviderCliUpgradeStatusResponse } from '@/types';
 import ManagedResourceCard from './ManagedResourceCard';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
-import {
-  getProviderCliUpgradeRows,
-  getUpgradeModeSummary,
-  type ProviderCliUpgradeTone
-} from './provider-cli-upgrade-presentation';
+import type { ProviderCliUpgradeTone } from './provider-cli-upgrade-presentation';
+import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
 
 // 只读面板：这里的「刷新」只是重新拉取服务端已有的状态，不会触发检查，更不会安装任何东西。
 // 真要手动跑一轮，那是一次分钟级的后台作业（要 spawn 真二进制 + 走 npm 网络），
@@ -33,31 +27,7 @@ const TRACK_TONES: Record<ProviderCliUpgradeTone, 'neutral' | 'info' | 'success'
 };
 
 export default function ProviderCliUpgradePanel() {
-  const [data, setData] = useState<ProviderCliUpgradeStatusResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const fetchStatus = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await toolkitAPI.getProviderCliUpgradeStatus();
-      setData(response);
-      setError('');
-    } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  const rows = useMemo(() => getProviderCliUpgradeRows(data), [data]);
-  const mode = useMemo(() => getUpgradeModeSummary(data?.scheduler || null, data?.global), [data]);
-  const updatable = rows.filter((row) => row.statusLabel === '有新版' || row.statusLabel === '待升级').length;
-  const attention = rows.filter((row) => row.attention).length;
+  const { data, loading, error, fetchStatus, rows, mode, updatable, attention } = useProviderCliUpgrade();
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-provider-cli-upgrade">

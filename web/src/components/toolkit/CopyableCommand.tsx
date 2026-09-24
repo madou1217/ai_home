@@ -1,7 +1,8 @@
-import { useState } from 'react';
 import { CopyOutlined } from '@ant-design/icons';
-import { message, Tooltip } from 'antd';
+import { Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
+import { UNRESOLVED_COMMAND_PARAMETER as UNRESOLVED_PARAMETER } from './guided-command';
+import { useCommandCopy } from './use-command-copy';
 
 interface CopyableCommandProps {
   command: string;
@@ -12,8 +13,6 @@ interface CopyableCommandProps {
   compact?: boolean;
 }
 
-const UNRESOLVED_PARAMETER = /\{\{[^}]+\}\}|<[a-z][a-z0-9_-]*>/i;
-
 export default function CopyableCommand({
   command,
   disabled = false,
@@ -22,7 +21,7 @@ export default function CopyableCommand({
   copyLabel = '复制命令',
   compact = false
 }: CopyableCommandProps) {
-  const [copying, setCopying] = useState(false);
+  const { copying, copy } = useCommandCopy();
   const hasUnresolvedParameter = UNRESOLVED_PARAMETER.test(command);
   const copyDisabled = disabled || !command.trim() || hasUnresolvedParameter;
   const reason = disabledReason
@@ -30,19 +29,7 @@ export default function CopyableCommand({
 
   const handleCopy = async () => {
     if (copyDisabled) return;
-    setCopying(true);
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('当前浏览器不支持剪贴板写入');
-      }
-      await navigator.clipboard.writeText(command);
-      message.success('命令已复制');
-    } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : '无法写入剪贴板';
-      message.error(`复制失败：${detail}`);
-    } finally {
-      setCopying(false);
-    }
+    await copy(command);
   };
 
   const copyButton = (

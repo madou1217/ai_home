@@ -1,44 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Input, Select, Tag } from 'antd';
 import CopyableCommand from './CopyableCommand';
+import {
+  GUIDED_COMMAND_CATEGORY_LABELS as CATEGORY_LABELS,
+  missingGuidedParameters,
+  renderGuidedCommand as renderCommand,
+  type GuidedCommandTask
+} from './guided-command';
 
-export interface GuidedCommandParameter {
-  key: string;
-  label: string;
-  placeholder: string;
-}
-
-export interface GuidedCommandTask {
-  id: string;
-  label: string;
-  command: string;
-  category: 'install' | 'update' | 'configure' | 'use' | 'uninstall' | 'inspect';
-  platform?: string;
-  description?: string;
-  danger?: boolean;
-  parameters?: GuidedCommandParameter[];
-}
+export type { GuidedCommandParameter, GuidedCommandTask } from './guided-command';
 
 interface GuidedCommandPanelProps {
   tasks: GuidedCommandTask[];
   title?: string;
   emptyText?: string;
-}
-
-const CATEGORY_LABELS: Record<GuidedCommandTask['category'], string> = {
-  install: '安装',
-  update: '更新',
-  configure: '配置',
-  use: '使用',
-  uninstall: '卸载',
-  inspect: '检查'
-};
-
-function renderCommand(template: string, values: Record<string, string>) {
-  return template.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
-    const value = values[key]?.trim();
-    return value || `{{${key}}}`;
-  });
 }
 
 export default function GuidedCommandPanel({
@@ -61,9 +36,7 @@ export default function GuidedCommandPanel({
   const renderedCommand = selectedTask
     ? renderCommand(selectedTask.command, parameterValues)
     : '';
-  const missingParameters = (selectedTask?.parameters || []).filter(
-    (parameter) => !parameterValues[parameter.key]?.trim()
-  );
+  const missingParameters = missingGuidedParameters(selectedTask, parameterValues);
 
   if (!selectedTask) {
     return <div className="toolkit-empty-inline">{emptyText}</div>;

@@ -24,14 +24,14 @@
 .sidebarSkeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-3-5, 14px);
-  padding: var(--hos-space-3, 12px) var(--hos-space-3, 12px) var(--hos-space-1, 4px);
+  gap: var(--hos-space-3-5);
+  padding: var(--hos-space-3) var(--hos-space-3) var(--hos-space-1);
 }
 
 .sidebarSkeletonRow {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
 }
 
 .sidebarSkeletonRow :global(.ant-skeleton-input) {
@@ -50,19 +50,19 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--hos-space-1-5, 6px);
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) var(--hos-space-2, 8px);
-  border-bottom: 1px solid var(--hos-border, #e2e8f0);
-  background: var(--hos-surface-raised, #fbfcfd);
+  gap: var(--hos-space-1-5);
+  padding: var(--hos-space-2-5) var(--hos-space-3) var(--hos-space-2);
+  border-bottom: 1px solid var(--hos-border);
+  background: var(--hos-surface-raised);
 }
 
 .refreshBarMobile {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--hos-space-3-5, 14px);
-  padding: var(--hos-space-3, 12px) var(--hos-space-4, 18px) var(--hos-space-2-5, 10px); /* 归级:原 18px */
-  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+  gap: var(--hos-space-3-5);
+  padding: var(--hos-space-3) var(--hos-space-4) var(--hos-space-2-5); /* 归级:原 18px */
+  background: var(--color-surface);
 }
 
 .refreshBtn {
@@ -71,11 +71,11 @@
   min-width: 32px !important;
   min-height: 32px !important;
   padding: 0 !important;
-  border: 1px solid var(--hos-border, #e2e8f0) !important;
-  background: var(--hos-surface, #ffffff) !important;
-  color: var(--hos-muted-strong, #475569) !important;
-  font-size: var(--hos-text-body-sm, 13px) !important;
-  border-radius: var(--hos-radius-xs, 6px) !important; /* 归级:原 6px */
+  border: 1px solid var(--hos-border) !important;
+  background: var(--hos-surface) !important;
+  color: var(--hos-muted-strong) !important;
+  font-size: var(--hos-text-body-sm) !important;
+  border-radius: var(--hos-radius-xs) !important; /* 归级:原 6px */
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -83,9 +83,9 @@
 }
 
 .refreshBtn:hover {
-  border-color: var(--hos-border-strong, #cbd5e1) !important;
-  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08)) !important;
-  color: var(--hos-heading, #0f172a) !important;
+  border-color: var(--hos-border-strong) !important;
+  background: var(--color-overlay) !important;
+  color: var(--hos-heading) !important;
 }
 
 .refreshBtnMobile {
@@ -96,19 +96,19 @@
 
 .remoteSessionsPanel {
   flex-shrink: 0;
-  margin: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px) var(--hos-space-2-5, 10px);
-  padding: var(--hos-space-2-5, 10px);
-  border: 1px solid var(--hos-border, #e2e8f0);
-  border-radius: var(--hos-radius-xs, 8px);
-  background: var(--hos-surface, #ffffff);
-  box-shadow: var(--elevation-1);
+  margin: var(--hos-space-2) var(--hos-space-2-5) var(--hos-space-2-5);
+  padding: var(--hos-space-2-5);
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs);
+  background: var(--hos-surface);
+  box-shadow: none;
 }
 
 .remoteSessionsHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
   min-width: 0;
 }
 
@@ -118,7 +118,7 @@
   flex: 0 1 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
 }
 
 .remoteSessionsProfileSelect {
@@ -132,21 +132,21 @@
 .remoteSessionsTitleBlock {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-0-5, 2px);
+  gap: var(--hos-space-0-5);
   min-width: 0;
 }
 
 .remoteSessionsEyebrow {
-  color: var(--hos-muted, #64748b);
-  font-size: var(--hos-text-micro, 10px);
-  font-weight: 700;
+  color: var(--hos-muted);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
   line-height: 1;
   text-transform: uppercase;
 }
 
 .remoteSessionsTitle {
-  color: var(--hos-heading, #0f172a);
-  font-size: var(--hos-text-body-sm, 13px);
+  color: var(--hos-heading);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -161,17 +161,17 @@
   height: 28px;
   flex: 0 0 28px;
   padding: 0;
-  border: 1px solid var(--hos-border, #e2e8f0);
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
   background: var(--color-surface-raised);
-  color: var(--hos-muted-strong, #475569);
+  color: var(--hos-muted-strong);
   cursor: pointer;
 }
 
 .remoteSessionsRefresh:hover:not(:disabled) {
-  border-color: var(--hos-border-strong, #cbd5e1);
-  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
-  color: var(--hos-heading, #0f172a);
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
 }
 
 .remoteSessionsRefresh:disabled {
@@ -182,23 +182,23 @@
 .remoteNodeSelector {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--hos-space-1, 5px); /* 归级:原 5px */
-  margin-top: var(--hos-space-2, 8px);
+  gap: var(--hos-space-1); /* 归级:原 5px */
+  margin-top: var(--hos-space-2);
   min-width: 0;
 }
 
 .remoteNodeOption {
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
   max-width: 100%;
   min-height: 24px;
-  padding: var(--hos-space-0-5, 3px) var(--hos-space-2, 8px); /* 归级:原 3px */
-  border: 1px solid var(--hos-border, #e2e8f0);
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  padding: var(--hos-space-0-5) var(--hos-space-2); /* 归级:原 3px */
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
   background: var(--color-surface-raised);
-  color: var(--hos-muted-strong, #475569);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--hos-muted-strong);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   line-height: 1.2;
   cursor: pointer;
 }
@@ -212,48 +212,53 @@
 
 .remoteNodeStatus {
   flex: 0 0 auto;
-  font-size: var(--hos-text-micro, 10px);
+  font-size: var(--hos-text-micro);
 }
 
 .remoteNodeStatusOnline {
-  color: var(--c-success-600);
+  color: var(--color-success);
 }
 
 .remoteNodeStatusOffline {
-  color: var(--c-danger-600);
+  color: var(--color-danger);
 }
 
 .remoteNodeStatusUnknown {
-  color: var(--hos-muted, #64748b);
+  color: var(--hos-muted);
 }
 
-.remoteNodeOption:hover,
+.remoteNodeOption:hover {
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
+}
+
 .remoteNodeOptionActive {
-  border-color: var(--hos-border-strong, #cbd5e1);
-  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
-  color: var(--hos-heading, #0f172a);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--hos-heading);
 }
 
 .remoteSessionsStats,
 .remoteSessionsSummaryRow {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
   min-width: 0;
 }
 
 .remoteSessionsStats {
-  margin-top: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-2);
 }
 
 .remoteSessionsStats span,
 .remoteSessionsSummaryRow span {
   max-width: 100%;
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px);
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  padding: var(--hos-space-0-5) var(--hos-space-1-5);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
   background: var(--color-surface-muted);
-  color: var(--hos-muted-strong, #475569);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--hos-muted-strong);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -263,23 +268,23 @@
 .remoteSessionsSummaryRows {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1, 5px); /* 归级:原 5px */
-  margin-top: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1); /* 归级:原 5px */
+  margin-top: var(--hos-space-1-5); /* 归级:原 7px */
   min-width: 0;
 }
 
 .remoteSessionsNotice,
 .remoteSessionsWarning {
-  margin-top: var(--hos-space-2, 8px);
-  padding: var(--hos-space-1-5, 7px) var(--hos-space-2, 8px); /* 归级:原 7px */
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
-  font-size: var(--hos-text-caption, 12px);
+  margin-top: var(--hos-space-2);
+  padding: var(--hos-space-1-5) var(--hos-space-2); /* 归级:原 7px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  font-size: var(--hos-text-caption);
   line-height: 1.45;
 }
 
 .remoteSessionsNotice {
   background: var(--color-surface-muted);
-  color: var(--hos-muted-strong, #475569);
+  color: var(--hos-muted-strong);
 }
 
 .remoteSessionsWarning {
@@ -290,8 +295,8 @@
 .remoteSessionList {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1, 4px);
-  margin-top: var(--hos-space-2, 8px);
+  gap: var(--hos-space-1);
+  margin-top: var(--hos-space-2);
   min-width: 0;
 }
 
@@ -299,22 +304,25 @@
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
   width: 100%;
   min-width: 0;
   min-height: 34px;
-  padding: var(--hos-space-1-5, 6px);
+  padding: var(--hos-space-1-5);
   border: 0;
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
   background: var(--color-surface-sunken);
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.remoteSessionItem:hover,
+.remoteSessionItem:hover {
+  background: var(--color-overlay);
+}
+
 .remoteSessionItemActive {
-  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
+  background: var(--color-accent-soft);
 }
 
 .remoteSessionProvider {
@@ -331,7 +339,7 @@
 .remoteSessionProvider [data-provider-icon-fallback] {
   position: relative;
   z-index: 1;
-  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
 }
 
 .remoteSessionProviderRunning::after {
@@ -342,15 +350,14 @@
   width: 5px;
   height: 5px;
   border: 2px solid var(--color-surface);
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--provider-accent, var(--color-success));
-  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+  border-radius: var(--hos-radius-pill);
+  background: var(--provider-accent);
 }
 
 .remoteSessionMain {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-0-5, 2px);
+  gap: var(--hos-space-0-5);
   min-width: 0;
 }
 
@@ -364,30 +371,30 @@
 }
 
 .remoteSessionTitle {
-  color: var(--hos-heading, #0f172a);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 700;
+  color: var(--hos-heading);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
   line-height: 1.25;
 }
 
 .remoteSessionMeta {
-  color: var(--hos-muted, #64748b);
-  font-size: var(--hos-text-micro, 10px);
+  color: var(--hos-muted);
+  font-size: var(--hos-text-micro);
   line-height: 1.2;
 }
 
 .remoteSessionStatus,
 .remoteSessionTime {
   white-space: nowrap;
-  font-size: var(--hos-text-micro, 10px);
+  font-size: var(--hos-text-micro);
   line-height: 1;
 }
 
 .remoteSessionStatus {
-  padding: var(--hos-space-0-5, 3px) var(--hos-space-1, 5px); /* 归级:原 3px、5px */
-  border-radius: var(--hos-radius-pill, 999px);
+  padding: var(--hos-space-0-5) var(--hos-space-1); /* 归级:原 3px、5px */
+  border-radius: var(--hos-radius-pill);
   background: var(--color-surface-muted);
-  color: var(--hos-muted-strong, #475569);
+  color: var(--hos-muted-strong);
 }
 
 .remoteSessionStatusRunning {
@@ -396,13 +403,13 @@
 }
 
 .remoteSessionTime {
-  color: var(--hos-muted, #64748b);
+  color: var(--hos-muted);
 }
 
 .remoteSessionStream {
-  margin-top: var(--hos-space-2-5, 10px);
-  padding-top: var(--hos-space-2, 9px); /* 归级:原 9px */
-  border-top: 1px solid var(--hos-border, #e2e8f0);
+  margin-top: var(--hos-space-2-5);
+  padding-top: var(--hos-space-2); /* 归级:原 9px */
+  border-top: 1px solid var(--hos-border);
   min-width: 0;
 }
 
@@ -410,27 +417,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
   min-width: 0;
 }
 
 .remoteSessionStreamTitleBlock {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-0-5, 2px);
+  gap: var(--hos-space-0-5);
   min-width: 0;
 }
 
 .remoteSessionStreamEyebrow {
-  color: var(--hos-muted, #64748b);
-  font-size: var(--hos-text-micro, 10px);
-  font-weight: 700;
+  color: var(--hos-muted);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
   line-height: 1;
 }
 
 .remoteSessionStreamTitle {
-  color: var(--hos-heading, #0f172a);
-  font-size: var(--hos-text-caption, 12px);
+  color: var(--hos-heading);
+  font-size: var(--hos-text-caption);
   line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -445,25 +452,25 @@
   height: 26px;
   flex: 0 0 26px;
   padding: 0;
-  border: 1px solid var(--hos-border, #e2e8f0);
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
+  border: 1px solid var(--hos-border);
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
   background: var(--color-surface-raised);
-  color: var(--hos-muted-strong, #475569);
+  color: var(--hos-muted-strong);
   cursor: pointer;
 }
 
 .remoteSessionStreamClose:hover {
-  border-color: var(--hos-border-strong, #cbd5e1);
-  background: var(--hos-primary-soft, rgba(10, 89, 247, 0.08));
-  color: var(--hos-heading, #0f172a);
+  border-color: var(--hos-border-strong);
+  background: var(--color-overlay);
+  color: var(--hos-heading);
 }
 
 .remoteSessionStreamEvents {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
   max-height: 180px;
-  margin-top: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-2);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
@@ -472,39 +479,39 @@
 .remoteSessionStreamEvent {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
-  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
   align-items: start;
   min-width: 0;
 }
 
 .remoteSessionStreamRole {
-  padding-top: var(--hos-space-0-5, 2px);
-  color: var(--hos-muted, #64748b);
-  font-size: var(--hos-text-micro, 10px);
-  font-weight: 700;
+  padding-top: var(--hos-space-0-5);
+  color: var(--hos-muted);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
   line-height: 1.2;
   white-space: nowrap;
 }
 
 .remoteSessionStreamEvent p {
   margin: 0;
-  color: var(--hos-text, #1e293b);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  color: var(--hos-text);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .remoteSessionStreamEventUser p {
-  color: var(--hos-heading, #0f172a);
+  color: var(--hos-heading);
 }
 
 .remoteSessionInputForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
   align-items: end;
-  margin-top: var(--hos-space-2, 8px);
+  margin-top: var(--hos-space-2);
   min-width: 0;
 }
 
@@ -513,24 +520,25 @@
 }
 
 .remoteSessionInput :global(textarea) {
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
   line-height: 1.45;
 }
 
 .projectItem {
   position: relative;
   min-height: 34px;
-  padding: var(--hos-space-1-5, 7px) var(--hos-space-8, 36px) var(--hos-space-1-5, 7px) var(--hos-space-3, 12px); /* 归级:原 7px、36px */
+  padding: var(--hos-space-1-5) var(--hos-space-8) var(--hos-space-1-5) var(--hos-space-3); /* 归级:原 7px、36px */
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2, 8px);
-  transition: background 0.2s ease, color 0.2s ease;
+  gap: var(--hos-space-2);
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
   user-select: none;
 }
 
 .projectItem:hover {
-  background: var(--color-surface-sunken);
+  background: var(--color-overlay);
 }
 
 .projectItemActive {
@@ -540,14 +548,14 @@
 .projectIcon {
   width: 13px;
   height: 13px;
-  transition: transform 0.2s ease;
+  transition: transform var(--motion-base) var(--ease-standard);
   opacity: 0.7;
   flex-shrink: 0;
 }
 
 .projectName {
-  font-size: var(--hos-text-body-sm, 13px);
-  color: var(--hos-heading, #0f172a);
+  font-size: var(--hos-text-body-sm);
+  color: var(--hos-heading);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -555,13 +563,13 @@
 }
 
 .projectName strong {
-  font-weight: 800;
+  font-weight: var(--weight-semibold);
 }
 
 .projectProviders {
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-1, 4px);
+  gap: var(--hos-space-1);
   flex-shrink: 0;
 }
 
@@ -572,7 +580,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--hos-radius-pill, 50%);
+  border-radius: var(--hos-radius-pill);
   line-height: 0;
 }
 
@@ -582,15 +590,15 @@
 .sessionProviderSlot [data-provider-icon-fallback] {
   position: relative;
   z-index: 1;
-  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
 }
 
 .projectProviderRunning {
-  background: var(--provider-accent-soft, var(--color-info-soft));
+  background: var(--provider-accent-soft);
 }
 
 .sessionList {
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px) var(--hos-space-1, 4px) var(--hos-space-6, 26px); /* 归级:原 26px */
+  padding: var(--hos-space-0-5) var(--hos-space-2) var(--hos-space-1) var(--hos-space-6); /* 归级:原 26px */
 }
 
 .sessionItem {
@@ -599,20 +607,20 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 28px;
-  padding: var(--hos-space-1, 4px) var(--hos-space-8, 34px) var(--hos-space-1, 4px) var(--hos-space-2, 8px); /* 归级:原 34px */
+  padding: var(--hos-space-1) var(--hos-space-8) var(--hos-space-1) var(--hos-space-2); /* 归级:原 34px */
   cursor: pointer;
-  margin-bottom: var(--hos-space-0-5, 1px); /* 归级:原 1px */
-  border-radius: var(--hos-radius-xs, 6px); /* 归级:原 6px */
-  transition: background 0.15s ease;
+  margin-bottom: var(--hos-space-0-5); /* 归级:原 1px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  transition: background var(--motion-fast) var(--ease-standard);
 }
 
 .sessionItem:hover {
-  background: var(--color-surface-muted);
+  background: var(--color-overlay);
 }
 
 .sessionItemActive {
   /* 仅用背景高亮区分活跃会话，不用竖条（全局禁止黑边/竖条） */
-  background: var(--color-info-soft) !important;
+  background: var(--color-accent-soft) !important;
 }
 
 .sessionItemActive .sessionTitle {
@@ -621,13 +629,14 @@
 }
 
 .sessionItemRunning {
-  background: linear-gradient(90deg, var(--color-info-soft) 0%, color-mix(in srgb, var(--color-surface) 0%, transparent) 72%);
+  /* 运行态由 provider 图标角标的状态点表达，行本身不着色 */
+  background: transparent;
 }
 
 .sessionHeader {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
   min-width: 0;
   margin-bottom: 0;
 }
@@ -652,17 +661,16 @@
   width: 5px;
   height: 5px;
   border: 2px solid var(--color-surface);
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--provider-accent, var(--color-success));
-  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+  border-radius: var(--hos-radius-pill);
+  background: var(--provider-accent);
 }
 
 .sessionTitle {
   display: flex;
   align-items: center;
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
   line-height: 1.25;
-  color: var(--hos-muted-strong, #475569);
+  color: var(--hos-muted-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -670,9 +678,9 @@
 }
 
 .sessionTime {
-  padding-left: var(--hos-space-2, 8px);
-  color: var(--hos-muted, #64748b);
-  font-size: var(--hos-text-micro, 10px);
+  padding-left: var(--hos-space-2);
+  color: var(--hos-muted);
+  font-size: var(--hos-text-micro);
   line-height: 1;
   white-space: nowrap;
 }
@@ -689,17 +697,17 @@
   height: 22px;
   background: transparent;
   border: none;
-  border-radius: var(--hos-radius-xs, 5px); /* 归级:原 5px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 5px */
   cursor: pointer;
   color: var(--color-faint);
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
   padding: 0;
   flex-shrink: 0;
   transform: translateY(-50%);
 }
 
 .archiveBtn:hover {
-  color: var(--c-danger-500);
+  color: var(--color-danger);
 }
 
 .archiveBtn:disabled {
@@ -720,8 +728,8 @@
 }
 
 .sessionMore {
-  padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  padding: var(--hos-space-1) var(--hos-space-3);
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   color: var(--color-muted);
   text-align: center;
 }
@@ -732,94 +740,92 @@
 
 .mobileConfirmDescription {
   color: var(--color-muted-strong);
-  font-size: var(--hos-text-body, 14px);
+  font-size: var(--hos-text-body);
   line-height: 1.6;
 }
 
 @media (max-width: 768px) {.refreshBar {
-    padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px) 0 0;
-    gap: var(--hos-space-2, 8px);
+    padding: var(--hos-space-2) var(--hos-space-3) 0 0;
+    gap: var(--hos-space-2);
     background: var(--color-surface);
   }/* 单行头部：标题（左）+ 操作按钮（右）合成一行 iOS 式头部，替代「大标题独占一行 +
    * 工具栏独占一行」的两行结构。粘顶 + 毛玻璃 + 顶部安全区，滚动时头部固定。 */.refreshBarMobile {
     position: sticky;
     top: 0;
-    z-index: var(--z-sticky, 100);
+    z-index: var(--z-sticky);
     justify-content: space-between;
-    gap: var(--hos-space-2, 8px);
-    padding: calc(env(safe-area-inset-top) + 10px) var(--hos-space-4, 16px) var(--hos-space-2-5, 10px);
-    background: color-mix(in srgb, var(--color-bg-elevated, #fff) 82%, transparent);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
-    border-bottom: 1px solid var(--color-border-subtle);
+    gap: var(--hos-space-2);
+    padding: calc(env(safe-area-inset-top) + 10px) var(--hos-space-4) var(--hos-space-2-5);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
   }.refreshBarTitle {
     flex: 1;
     min-width: 0;
     font-family: var(--font-display);
-    /* 列表根视图大标题:对齐 .mobileNavTitleLarge 的 2xl/extrabold,大大方方 */
+    /* 列表根视图大标题：对齐 .mobileNavTitleLarge 的 2xl / 600 */
     font-size: var(--text-2xl);
-    font-weight: var(--weight-extrabold);
+    font-weight: var(--weight-semibold);
     letter-spacing: var(--tracking-tight);
     color: var(--color-heading);
   }.refreshBtn {
-    width: 34px !important;
-    height: 34px !important;
-    min-width: 34px !important;
-    font-size: var(--hos-text-h3, 15px) !important;
-    border-radius: var(--hos-radius-xs, 9px) !important; /* 归级:原 9px */
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: var(--hos-text-h3) !important;
+    border-radius: var(--hos-radius-xs) !important; /* 归级:原 9px */
   }.refreshBtnMobile {
   display: flex;
   align-items: center;
   justify-content: center;
 }/* 项目行:移动端卡片化(对齐 memory webui-mobile-shell「手机专属布局」铁律,
      不再用 PC 贴边小行)。圆角卡 + 边框 + 横向 margin 形成卡片列,呼吸感更强。 */.projectItem {
-    margin: 0 var(--hos-space-3, 12px);
-    padding: var(--hos-space-3-5, 14px) var(--hos-space-12, 48px) var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
-    gap: var(--hos-space-2-5, 10px);
+    margin: 0 var(--hos-space-3);
+    padding: var(--hos-space-3-5) var(--hos-space-12) var(--hos-space-3-5) var(--hos-space-4);
+    gap: var(--hos-space-2-5);
     min-height: 52px;
-    border-radius: var(--hos-radius-sm, 12px);
+    border-radius: var(--hos-radius-sm);
     background: var(--color-surface);
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid var(--color-border);
     /* 卡片之间留 8px 间距 */
-    margin-bottom: var(--hos-space-2, 8px);
-    transition: background var(--motion-fast) var(--ease-emphasized), transform var(--motion-fast) var(--ease-emphasized), border-color var(--motion-fast) var(--ease-standard);
+    margin-bottom: var(--hos-space-2);
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
     -webkit-tap-highlight-color: transparent;
   }.projectItem:active {
     background: var(--color-surface-muted);
-    border-color: var(--color-border);
-    transform: scale(0.985);
+    border-color: var(--color-border-strong);
   }.projectItemActive {
-    background: var(--color-info-soft);
-    border-color: color-mix(in srgb, var(--color-info) 32%, transparent);
+    background: var(--color-accent-soft);
+    border-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
   }/* 列表容器左右留白,卡片不贴屏幕边 */.sidebarContent {
-    padding: var(--hos-space-2-5, 10px) var(--hos-space-1, 4px) var(--hos-space-4, 16px);
+    padding: var(--hos-space-2-5) var(--hos-space-1) var(--hos-space-4);
   }.projectName {
-    font-size: var(--hos-text-h3, 16px); /* 归级:原 16px */
+    font-size: var(--hos-text-h3); /* 归级:原 16px */
     line-height: 1.4;
   }.mobileConfirmModal :global(.ant-modal) {
     width: calc(100vw - 32px) !important;
     max-width: calc(100vw - 32px);
     margin: 0 auto;
   }.mobileConfirmModal :global(.ant-modal-content) {
-    border-radius: var(--hos-radius-md, 16px);
+    border-radius: var(--hos-radius-md);
     overflow: hidden;
   }.mobileConfirmModal :global(.ant-modal-header) {
-    padding: var(--hos-space-4, 18px) var(--hos-space-4, 18px) var(--hos-space-2, 8px); /* 归级:原 18px */
+    padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-2); /* 归级:原 18px */
   }.mobileConfirmModal :global(.ant-modal-title) {
-    font-size: var(--hos-text-h2, 18px);
+    font-size: var(--hos-text-h2);
     line-height: 1.4;
   }.mobileConfirmModal :global(.ant-modal-body) {
-    padding: 0 var(--hos-space-4, 18px) var(--hos-space-2, 8px); /* 归级:原 18px */
+    padding: 0 var(--hos-space-4) var(--hos-space-2); /* 归级:原 18px */
   }.mobileConfirmModal :global(.ant-modal-footer) {
     display: flex;
     justify-content: flex-end;
-    gap: var(--hos-space-2-5, 10px);
-    padding: var(--hos-space-3, 12px) var(--hos-space-4, 18px) 0; /* 归级:原 18px */
+    gap: var(--hos-space-2-5);
+    padding: var(--hos-space-3) var(--hos-space-4) 0; /* 归级:原 18px */
   }.mobileConfirmModal :global(.ant-modal-footer .ant-btn) {
     min-width: 72px;
     height: 36px;
-    border-radius: var(--hos-radius-xs, 10px); /* 归级:原 10px */
-    font-size: var(--hos-text-body, 14px);
+    border-radius: var(--hos-radius-xs); /* 归级:原 10px */
+    font-size: var(--hos-text-body);
   }/* 归档按钮：原本是实心灰方块（视觉重、像占位）。移动端无 hover，改为轻量描边、
    * 透明底、静默色，只在需要时才显眼——让列表主体（项目名 + provider 图标）更突出。 */.archiveBtn {
     display: inline-flex;
@@ -830,101 +836,82 @@
     right: 8px;
     background-color: transparent;
     color: var(--color-muted);
-    border-radius: var(--hos-radius-xs, 8px);
+    border-radius: var(--hos-radius-xs);
     opacity: 0.55;
   }.archiveBtn:active {
     background-color: var(--color-surface-sunken);
     opacity: 1;
   }/* 会话子列表:缩进改用 margin 居中,子项也是轻量卡片(浅底+圆角),与项目卡视觉分层。 */.sessionList {
-    padding: var(--hos-space-1, 4px) var(--hos-space-3, 12px) var(--hos-space-1, 4px);
+    padding: var(--hos-space-1) var(--hos-space-3) var(--hos-space-1);
     display: flex;
     flex-direction: column;
-    gap: var(--hos-space-1-5, 6px);
+    gap: var(--hos-space-1-5);
   }.sessionItem {
-    padding: var(--hos-space-3, 12px) var(--hos-space-10, 44px) var(--hos-space-3, 12px) var(--hos-space-3-5, 14px); /* 归级:原 44px */
+    padding: var(--hos-space-3) var(--hos-space-10) var(--hos-space-3) var(--hos-space-3-5); /* 归级:原 44px */
     margin-bottom: 0;
     min-height: 46px;
-    border-radius: var(--hos-radius-10, 10px);
-    background: var(--color-surface-sunken);
+    border-radius: var(--hos-radius-sm);
+    background: var(--color-surface-muted);
     border: 1px solid transparent;
-    transition: background var(--motion-fast) var(--ease-emphasized), transform var(--motion-fast) var(--ease-emphasized), border-color var(--motion-fast) var(--ease-standard);
+    transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
     -webkit-tap-highlight-color: transparent;
   }.sessionItem:active {
-    background: var(--color-surface-muted);
-    transform: scale(0.985);
+    background: var(--color-surface-sunken);
   }.sessionTitle {
-    font-size: var(--hos-text-h3, 15px);
+    font-size: var(--hos-text-h3);
     line-height: 1.4;
   }.sessionTime {
-    font-size: var(--hos-text-caption, 12px);
-    color: var(--hos-muted, #64748b);
-    margin-right: var(--hos-space-1, 4px);
+    font-size: var(--hos-text-caption);
+    color: var(--hos-muted);
+    margin-right: var(--hos-space-1);
   }
 }
 
-/* 左侧会话项：鸿蒙 6 胶囊卡片交互 */
+/* 左侧会话项：扁平行，悬停 overlay、选中 accent 弱底 */
 .sessionItem {
-  border-radius: var(--hos-radius-sm, 14px) !important; /* 归级:原 14px */
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-}
-
-.sessionItem:hover {
-  background: rgba(255, 255, 255, 0.75) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
-}
-
-.sessionItemActive {
-  background: rgba(255, 255, 255, 0.95) !important;
-  border: 1px solid rgba(37, 99, 235, 0.25) !important;
-  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.08) !important;
+  border-radius: var(--hos-radius-xs) !important;
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard) !important;
 }
 
 /* =============================================================================
- * HarmonyOS 6 侧边栏与工作区卡片深度质感
+ * 侧边栏与工作区卡片（不透明表面 + 发丝线）
  * ========================================================================== */
 .projectListContainer {
-  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.75)) !important;
-  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(180%) !important;
-  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(180%) !important;
-  border-right: 1px solid rgba(0, 0, 0, 0.06) !important;
+  background: var(--color-surface) !important;
+  border-right: 1px solid var(--color-border) !important;
 }
 
 .projectCard {
-  border-radius: var(--hos-radius-md, 16px) !important;
-  background: rgba(255, 255, 255, 0.65) !important;
-  border: 1px solid rgba(255, 255, 255, 0.8) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  border-radius: var(--hos-radius-lg) !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+  transition: border-color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard) !important;
 }
 
 .projectCard:hover {
-  background: rgba(255, 255, 255, 0.9) !important;
-  transform: translateY(-1px) !important;
-  box-shadow: var(--hos-shadow-card, 0 4px 16px rgba(0, 0, 0, 0.04)) !important;
+  border-color: var(--color-border-strong) !important;
 }
 
 /* =============================================================================
- * HarmonyOS 6.1 侧边栏统一顶栏规范 (Unified Sider Header)
+ * 侧边栏统一顶栏 (Unified Sider Header)
  * ========================================================================== */
 .sidebarUnifiedHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--hos-space-2, 8px);
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
-  border-bottom: 0.8px solid var(--color-border-subtle, rgba(0, 0, 0, 0.05));
-  background: var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.65));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  gap: var(--hos-space-2);
+  padding: var(--hos-space-2-5) var(--hos-space-3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .sidebarHeaderActions {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
 }
 
 .sidebarActionBtn {
@@ -935,32 +922,20 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  border-radius: var(--hos-radius-pill, 9999px);
-  border: 0.8px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.8);
-  color: var(--color-text-secondary, #475569);
-  font-size: var(--hos-text-body-sm, 13px);
+  border-radius: var(--hos-radius-xs);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
-  transition: all 0.16s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
-}
-
-[data-theme='dark'] .sidebarActionBtn {
-  background: rgba(30, 41, 59, 0.75);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--hos-ink-400, #94a3b8);
+  box-shadow: none;
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .sidebarActionBtn:hover {
-  background: var(--hos-white, #ffffff);
-  color: var(--hos-blue-700, #0a59f7);
-  border-color: rgba(10, 89, 247, 0.3);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 89, 247, 0.15);
-}
-
-[data-theme='dark'] .sidebarActionBtn:hover {
-  background: rgba(51, 65, 85, 0.9);
-  color: var(--hos-blue-500, #3b82f6);
-  border-color: rgba(10, 89, 247, 0.4);
+  background: var(--color-overlay);
+  color: var(--color-heading);
+  border-color: var(--color-border-strong);
 }

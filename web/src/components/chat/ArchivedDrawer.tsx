@@ -66,8 +66,8 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
       open={open}
       width={isMobile ? '100vw' : 420}
       styles={{
-        body: { padding: '8px 16px', background: '#fafafa' },
-        header: { background: '#fafafa', borderBottom: '1px solid #f0f0f0' }
+        body: { padding: '8px 16px', background: 'var(--color-bg)' },
+        header: { background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }
       }}
     >
       {loading ? (
@@ -78,9 +78,9 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
               style={{
                 padding: '14px 16px',
                 marginBottom: '12px',
-                background: '#fff',
-                borderRadius: '16px',
-                border: '1px solid #f0f0f0'
+                background: 'var(--color-surface)',
+                borderRadius: 'var(--hos-radius-lg)',
+                border: '1px solid var(--color-border)'
               }}
             >
               <Skeleton
@@ -105,10 +105,9 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
               style={{
                 padding: '14px 16px',
                 marginBottom: '12px',
-                background: '#fff',
-                borderRadius: '16px',
-                border: '1px solid #f0f0f0',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+                background: 'var(--color-surface)',
+                borderRadius: 'var(--hos-radius-lg)',
+                border: '1px solid var(--color-border)'
               }}
               actions={canUnarchiveSession(session) ? [
                 <Popconfirm
@@ -123,7 +122,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                     type="text"
                     icon={<UndoOutlined />}
                     size="small"
-                    style={{ color: 'var(--color-info)', background: 'var(--color-info-soft)', borderRadius: '8px', padding: '4px 12px' }}
+                    style={{ color: 'var(--color-accent)', background: 'var(--color-accent-soft)', borderRadius: 'var(--hos-radius-xs)', padding: '4px 12px' }}
                   >
                     还原
                   </Button>
@@ -138,7 +137,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                   </span>
                 }
                 description={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: isMobile ? 12 : 11, color: '#999' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: isMobile ? 12 : 11, color: 'var(--color-muted)' }}>
                     <Tag
                       color={getProviderTagColor(session.provider)}
                       style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}

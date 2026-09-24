@@ -213,7 +213,7 @@ const ProjectList = ({
       styles={{
         content: { paddingBottom: 'calc(16px + env(safe-area-inset-bottom))' },
         header: { paddingRight: 28 },
-        body: { fontSize: 14, lineHeight: 1.6, color: '#475569' },
+        body: { fontSize: 14, lineHeight: 1.6, color: 'var(--color-muted-strong)' },
       }}
     >
       {mobileConfirm?.description ? (
@@ -406,7 +406,7 @@ const ProjectList = ({
                         style={{ opacity: pinnedSessionIds.has(session.id) ? 1 : undefined }}
                       >
                         {pinnedSessionIds.has(session.id) ? (
-                          <PushpinFilled style={{ color: '#f59e0b' }} />
+                          <PushpinFilled style={{ color: 'var(--color-warning)' }} />
                         ) : (
                           <PushpinOutlined />
                         )}

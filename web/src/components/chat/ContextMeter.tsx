@@ -37,10 +37,10 @@ export const ContextMeter = memo(function ContextMeter({
   if (stats.usedTokens <= 0 && !unknown && !stale && !compacting && !onCompactSuggest) return null;
 
   const strokeColor = stats.isCritical
-    ? '#ef4444'
+    ? 'var(--color-danger)'
     : stats.isWarning
-    ? '#f59e0b'
-    : 'var(--color-primary, #3b82f6)';
+    ? 'var(--color-warning)'
+    : 'var(--color-accent)';
 
   const content = (
     <div className={styles.contextMeterPopover}>
@@ -111,7 +111,7 @@ export const ContextMeter = memo(function ContextMeter({
               cy="8"
               r={RADIUS}
               fill="none"
-              stroke="rgba(0, 0, 0, 0.08)"
+              style={{ stroke: 'var(--color-border)' }}
               strokeWidth="2"
             />
             <circle
@@ -119,7 +119,7 @@ export const ContextMeter = memo(function ContextMeter({
               cy="8"
               r={RADIUS}
               fill="none"
-              stroke={strokeColor}
+              style={{ stroke: strokeColor }}
               strokeWidth="2"
               strokeDasharray={`${(CIRCUMFERENCE * stats.percent) / 100} ${CIRCUMFERENCE}`}
               strokeLinecap="round"

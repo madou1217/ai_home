@@ -38,24 +38,24 @@ export function buildHtmlPreviewWindowDocument(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title}</title>
   <style>
-    :root { color-scheme: dark; font-family: "Avenir Next", "PingFang SC", sans-serif; }
+    :root { color-scheme: dark; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-    body { display: flex; flex-direction: column; background: #17191f; color: #f6f7f9; }
-    .toolbar { min-height: 56px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #30343d; background: #111318; }
+    body { display: flex; flex-direction: column; background: #0f0f11; color: #e4e4e7; }
+    .toolbar { min-height: 56px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #2b2b31; background: #17171a; }
     .identity { min-width: 0; display: flex; align-items: center; gap: 10px; }
-    .signal { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #65d49a; box-shadow: 0 0 0 4px rgba(101, 212, 154, .14); }
-    .title { overflow: hidden; color: #f6f7f9; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-    .subtitle { color: #8f96a3; font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .signal { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #5cc389; }
+    .title { overflow: hidden; color: #fafafa; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .subtitle { color: #a1a1aa; font-family: "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
     .controls, .devices { display: flex; align-items: center; gap: 6px; }
-    .device { min-height: 32px; padding: 5px 12px; border: 1px solid #363b46; border-radius: 7px; background: #1d2027; color: #aeb4bf; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .device:hover { border-color: #626b7b; color: #fff; }
-    .device[aria-pressed="true"] { border-color: #f0b35b; background: #f0b35b; color: #17191f; }
-    .fullscreen { min-height: 32px; padding: 5px 12px; border: 1px solid #626b7b; border-radius: 7px; background: transparent; color: #f6f7f9; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .fullscreen:hover { border-color: #f6f7f9; background: #252a34; }
+    .device { min-height: 32px; padding: 5px 12px; border: 1px solid #2b2b31; border-radius: 6px; background: #17171a; color: #a1a1aa; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
+    .device:hover { border-color: #3b3b42; color: #fafafa; }
+    .device[aria-pressed="true"] { border-color: #f4f4f5; background: #f4f4f5; color: #18181b; }
+    .fullscreen { min-height: 32px; padding: 5px 12px; border: 1px solid #3b3b42; border-radius: 6px; background: transparent; color: #e4e4e7; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 120ms, border-color 120ms; }
+    .fullscreen:hover { border-color: #52525b; background: rgba(255, 255, 255, .07); }
     .fullscreen[hidden] { display: none; }
-    .stage { flex: 1; min-height: 0; padding: 16px; display: flex; align-items: center; justify-content: center; overflow: auto; background: radial-gradient(circle at 50% 0%, #252a34 0%, #17191f 54%); }
-    .preview { display: block; border: 1px solid #3a404b; background: #fff; box-shadow: 0 24px 70px rgba(0, 0, 0, .42); transition: width .18s ease, height .18s ease, border-radius .18s ease; }
+    .stage { flex: 1; min-height: 0; padding: 16px; display: flex; align-items: center; justify-content: center; overflow: auto; background: #0f0f11; }
+    .preview { display: block; border: 1px solid #2b2b31; background: #fff; transition: width 160ms cubic-bezier(0.2, 0, 0, 1), height 160ms cubic-bezier(0.2, 0, 0, 1), border-radius 160ms cubic-bezier(0.2, 0, 0, 1); }
     .preview:fullscreen { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
     .stage[data-device="desktop"] .preview { width: 100%; height: 100%; border-radius: 10px; }
     .stage[data-device="mobile"] .preview { width: min(390px, calc(100vw - 24px)); height: min(844px, calc(100vh - 96px)); border-width: 8px; border-color: #090a0d; border-radius: 30px; }

@@ -697,7 +697,7 @@ export default function Models() {
       .map((provider) => getModelDisplayLabel(provider, model.id))
       .find(Boolean) || '';
     return (
-      <article className={`models-global-row ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
+      <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
         <div className="models-global-main">
           <div className="models-global-title-line">
             <h3 title={model.id}>{displayLabel || model.id}</h3>
@@ -732,6 +732,7 @@ export default function Models() {
 
   return (
     <PageScaffold ghost
+      code="MODELS"
       title={accountScoped ? '账号模型管理' : '全局模型目录'}
       subTitle={accountScoped
         ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')} 的独立模型开关和手动补充。`
@@ -814,19 +815,19 @@ export default function Models() {
         >
           <div className="models-live-refresh-grid">
             <div>
-              <span>刷新状态</span>
+              <span className="hud-label">刷新状态</span>
               <strong>{formatCatalogJobStatus(catalogJob)}</strong>
             </div>
             <div>
-              <span>探测范围</span>
+              <span className="hud-label">探测范围</span>
               <strong>{formatCatalogProbeScope(catalogJob)}</strong>
             </div>
             <div>
-              <span>可见模型</span>
+              <span className="hud-label">可见模型</span>
               <strong>{getCatalogJobVisibleCount(catalogJob) ?? '-'}</strong>
             </div>
             <div>
-              <span>探测账号</span>
+              <span className="hud-label">探测账号</span>
               <strong>{catalogJob.catalog?.scannedAccounts ?? '-'}</strong>
             </div>
           </div>

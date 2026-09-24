@@ -501,6 +501,19 @@ body {
 .ant-message .ant-message-loading .anticon,
 .ant-notification .ant-notification-notice-icon-info { color: var(--color-accent) !important; filter: drop-shadow(0 0 4px var(--color-accent)); }
 
+/* 桌面端 HUD 顶栏 60px：全局提示下移到顶栏下方，避免压住遥测条；移动端无顶栏，保持默认位置 */
+@media (min-width: 768px) {
+  .ant-message {
+    top: 72px !important;
+  }
+
+  .ant-notification-topRight,
+  .ant-notification-topLeft,
+  .ant-notification-top {
+    top: 72px !important;
+  }
+}
+
 /* 行内提示与 Alert：细描边 + 状态色图标 */
 .ant-alert {
   border-radius: 2px !important;

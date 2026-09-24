@@ -1,27 +1,36 @@
-/* 行内提示（DESIGN.md §6「行内提示」）：图标 + 13px 文字，不做整块彩底。 */
+/* 行内提示（DESIGN.md §6「行内提示」）：HUD 风格 —— 状态色发光图标 + 等宽正文，
+ * 不做整块彩底；只留一条极淡的状态色发丝框，读作 HUD 读数条而不是 Alert 大块。 */
 .hos-inline-note {
+  --hos-inline-note-tone: var(--color-accent);
   display: flex;
   min-width: 0;
   align-items: flex-start;
   gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--hos-inline-note-tone) 22%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--hos-inline-note-tone) 4%, transparent);
   color: var(--color-muted-strong);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
   line-height: var(--leading-normal);
 }
+
+.hos-inline-note--info { --hos-inline-note-tone: var(--color-accent); }
+.hos-inline-note--success { --hos-inline-note-tone: var(--color-success); }
+.hos-inline-note--warning { --hos-inline-note-tone: var(--color-warning); }
+.hos-inline-note--error { --hos-inline-note-tone: var(--color-danger); }
 
 .hos-inline-note-icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   height: calc(var(--hos-text-body-sm) * 1.55);
-  color: var(--color-muted);
+  color: var(--hos-inline-note-tone);
   font-size: var(--hos-text-body-sm);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--hos-inline-note-tone) 70%, transparent));
 }
 
-.hos-inline-note--info .hos-inline-note-icon { color: var(--color-accent); }
-.hos-inline-note--success .hos-inline-note-icon { color: var(--color-success); }
-.hos-inline-note--warning .hos-inline-note-icon { color: var(--color-warning); }
-.hos-inline-note--error .hos-inline-note-icon { color: var(--color-danger); }
 .hos-inline-note--error .hos-inline-note-text { color: var(--color-danger); }
 
 .hos-inline-note-body {

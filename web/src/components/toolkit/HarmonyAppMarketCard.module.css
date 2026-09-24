@@ -1,18 +1,10 @@
-/* 应用市场卡片：扁平 surface + 1px 发丝线，悬停只加深描边（无位移 / 光晕 / 毛玻璃）。 */
+/* 应用市场卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青。 */
 .marketCard {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   min-height: 160px;
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-
-.marketCard:hover {
-  border-color: var(--color-border-strong);
 }
 
 .cardTop {
@@ -29,8 +21,9 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
 }
 
 .titleInfo {
@@ -51,8 +44,10 @@
 .appName {
   overflow: hidden;
   color: var(--color-heading);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

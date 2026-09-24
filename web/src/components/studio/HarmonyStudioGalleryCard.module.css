@@ -1,16 +1,8 @@
-/* 画廊卡片：扁平 surface + 1px 发丝线，悬停只加深描边（无位移 / 缩放 / 光晕 / 毛玻璃）。 */
+/* 画廊卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青（无位移 / 缩放）。 */
 .galleryCard {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-
-.galleryCard:hover {
-  border-color: var(--color-border-strong);
 }
 
 .imageContainer {

@@ -1,22 +1,14 @@
-/* Fabric 节点卡片：扁平 surface + 1px 发丝线，悬停只加深描边（无位移 / 光晕）。 */
+/* Fabric 节点卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青。 */
 .meshCard {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   min-height: 160px;
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-
-.meshCard:hover {
-  border-color: var(--color-border-strong);
 }
 
 .cardBusy {
-  border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
+  border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border)) !important;
 }
 
 .cardOffline {
@@ -49,7 +41,7 @@
   font-size: var(--hos-text-h2);
 }
 
-/* 状态点（6–8px 实心点 + surface 描边分隔图标），不做光晕 */
+/* 状态点：HUD LED（实心点 + 同色辉光，surface 描边分隔图标） */
 .radarPulse {
   position: absolute;
   top: -2px;
@@ -62,10 +54,12 @@
 
 .pulseOnline {
   background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
 }
 
 .pulseBusy {
   background: var(--color-warning);
+  box-shadow: 0 0 6px var(--color-warning);
 }
 
 .pulseOffline {
@@ -89,8 +83,10 @@
 .nodeName {
   overflow: hidden;
   color: var(--color-heading);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -139,10 +135,12 @@
 }
 
 .metricValue {
-  color: var(--color-heading);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-shadow: var(--hud-text-glow);
 }
 
 .metricIcon {

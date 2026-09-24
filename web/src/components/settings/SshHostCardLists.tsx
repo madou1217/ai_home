@@ -58,7 +58,7 @@ export function SshConnectionCardList({
   return (
     <div className="ssh-card-list">
       {connections.map((connection) => (
-        <Card key={connection.id} bordered={false} className="ssh-list-card">
+        <Card key={connection.id} bordered={false} className="ssh-list-card hud-panel hud-panel--sm">
           <div className="ssh-list-card-head">
             <div className="ssh-list-card-title">
               <span className="ssh-list-card-name" title={connection.label}>{connection.label}</span>
@@ -109,13 +109,14 @@ export function SshWorkspaceCardList({ workspaces, connections, loading, onEdit,
       {workspaces.map((workspace) => {
         const connection = connections.find((item) => item.id === workspace.connectionId);
         return (
-          <Card key={workspace.id} bordered={false} className="ssh-list-card">
+          <Card key={workspace.id} bordered={false} className="ssh-list-card hud-panel hud-panel--sm">
             <div className="ssh-list-card-head">
               <div className="ssh-list-card-title">
                 <span className="ssh-list-card-name" title={workspace.label}>{workspace.label}</span>
                 <code className="ssh-list-card-path" title={workspace.remoteRoot}>{workspace.remoteRoot}</code>
               </div>
               <span className={`ssh-connection-pill${connection ? '' : ' ssh-connection-pill--missing'}`}>
+                <span className={`hud-led ${connection ? 'hud-led--info' : 'hud-led--err'}`} aria-hidden="true" />
                 {connection ? connection.label : '连接已删除'}
               </span>
             </div>

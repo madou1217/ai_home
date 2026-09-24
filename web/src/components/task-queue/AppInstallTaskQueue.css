@@ -384,3 +384,139 @@
     animation: none;
   }
 }
+
+/* ===========================================================================
+ * Cyber HUD：浮动入口 = 青色 HUD 按钮（半透明青底 + 青框 + 辉光）；展开面板 = 青色发丝框 +
+ * 角标；任务项方角，状态文字按真实状态发光；进度条为 3px 细轨。
+ * ========================================================================= */
+.webui-task-queue-trigger {
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-raised));
+  color: var(--color-accent);
+  box-shadow: var(--elevation-3), var(--hud-glow-accent);
+}
+
+.webui-task-queue-trigger:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.webui-task-queue-trigger-icon {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, currentColor 60%, transparent));
+}
+
+.webui-task-queue-count {
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.webui-task-queue-trigger-label {
+  letter-spacing: var(--tracking-wide);
+}
+
+.webui-task-queue-panel {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: 0;
+  box-shadow: var(--elevation-3), var(--hud-glow-accent);
+}
+
+.webui-task-queue-panel::before,
+.webui-task-queue-panel::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+.webui-task-queue-panel::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--hud-tick-color);
+  border-inline-start: 2px solid var(--hud-tick-color);
+}
+
+.webui-task-queue-panel::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--hud-tick-color);
+  border-bottom: 2px solid var(--hud-tick-color);
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger {
+  border-radius: 0;
+}
+
+.webui-task-queue.is-expanded .webui-task-queue-trigger:hover {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-kicker {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-header strong {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.webui-task-queue-stream-status {
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-stream-status.is-connected i {
+  box-shadow: 0 0 6px var(--color-success);
+}
+
+.webui-task-queue-stream-status.is-reconnecting i,
+.webui-task-queue-stream-status.is-connecting i {
+  box-shadow: 0 0 6px var(--color-warning);
+}
+
+.webui-task-queue-stream-status.is-offline i {
+  box-shadow: 0 0 6px var(--color-danger);
+}
+
+.webui-task-queue-item {
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.webui-task-queue-item:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+.webui-task-queue-item.is-success .webui-task-queue-item-heading > span {
+  text-shadow: var(--hud-text-glow-success);
+}
+
+.webui-task-queue-item.is-error .webui-task-queue-item-heading > span {
+  text-shadow: var(--hud-text-glow-danger);
+}
+
+.webui-task-queue-item-meta,
+.webui-task-queue-item-detail {
+  font-family: var(--font-mono);
+}
+
+.webui-task-queue-item .ant-progress-inner,
+.webui-task-queue-item .ant-progress-bg {
+  border-radius: 0 !important;
+}
+
+.webui-task-queue-item .ant-progress-bg {
+  height: 3px !important;
+}
+
+.webui-task-queue-item .ant-progress-text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}

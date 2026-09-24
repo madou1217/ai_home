@@ -8,7 +8,7 @@ import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
 import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal, Grid } from 'antd';
 import MobilePills from '@/components/mobile/MobilePills';
-import { LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CopyOutlined, LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { configAPI, managementAPI, serverProfilesAPI } from '@/services/api';
 import {
   addControlPlaneProfilesChangeListener,
@@ -62,6 +62,10 @@ import {
 } from '@/services/server-route-presentation';
 import { buildAppHref } from '@/services/app-navigation';
 import { DynamicWallpaperEngine } from '@/services/dynamic-wallpaper-engine';
+import { useHudPreferences } from '@/components/hud/use-hud-preferences';
+import { useThemeMode } from '@/hooks/use-theme-mode';
+import { applyThemeMode } from '@/services/theme-persistence';
+import { crossTabSync } from '@/services/cross-tab-session-sync';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -120,26 +124,31 @@ interface SettingsSectionItem {
 
 const SETTINGS_PAGE_META = {
   settings: {
+    code: 'CONFIG',
     title: '设置',
     eyebrow: '配置',
     description: '管理 server、额度刷新和模型别名。'
   },
   basic: {
+    code: 'CONFIG',
     title: '基础设置',
     eyebrow: '配置',
     description: '管理 server、额度刷新和本地服务参数。'
   },
   aliases: {
+    code: 'CONFIG',
     title: '模型别名',
     eyebrow: '配置',
     description: '管理模型展示、路由和别名配置。'
   },
   'control-planes': {
+    code: 'NODES',
     title: 'Server 管理',
     eyebrow: 'Fabric',
     description: '使用 Server URL 和 Management Key 管理 AIH Server。'
   },
   'ssh-hosts': {
+    code: 'SSH',
     title: 'SSH 开发机',
     eyebrow: 'Fabric',
     description: '管理 SSH 连接和可用于远端开发的工作区。'
@@ -196,6 +205,15 @@ const Settings = ({ section }: SettingsProps) => {
   // 动态壁纸：localStorage 持久化 + 启动恢复（见 app.tsx），此处仅作设置入口。
   const [hasCustomWallpaper, setHasCustomWallpaper] = useState(() => Boolean(DynamicWallpaperEngine.getSavedWallpaper()));
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
+  // HUD 显示偏好（CRT / 音效）与主题：与 HUD 顶栏开关共用同一份状态，移动端从这里切换。
+  const [hudPrefs, setHudPrefs] = useHudPreferences();
+  const themeMode = useThemeMode();
+
+  const handleThemeModeChange = (dark: boolean) => {
+    const next = dark ? 'dark' : 'light';
+    applyThemeMode(next);
+    crossTabSync.broadcast('THEME_CHANGED', { theme: next });
+  };
 
   const handleWallpaperFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -225,6 +243,17 @@ const Settings = ({ section }: SettingsProps) => {
     DynamicWallpaperEngine.clearWallpaper();
     setHasCustomWallpaper(false);
     message.success('已恢复默认背景');
+  };
+
+  // 复制页面上已展示的默认 Server URL（与 Models / ModelUsage 的复制交互一致）
+  const handleCopyServerEndpoint = async (endpoint: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('当前浏览器不支持剪贴板写入');
+      await navigator.clipboard.writeText(endpoint);
+      message.success('Server URL 已复制');
+    } catch (error: unknown) {
+      message.error(`复制失败：${error instanceof Error ? error.message : '无法写入剪贴板'}`);
+    }
   };
 
   const syncControlPlaneProfiles = (profiles: ControlPlaneProfile[], preferredProfileId = '') => {
@@ -606,7 +635,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const basicSettingsContent = (
     <div className="settings-grid">
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>AIH Server</h2>
@@ -635,7 +664,7 @@ const Settings = ({ section }: SettingsProps) => {
 
       <SettingsGroupCard
         title="外观个性化"
-        description="自定义动态壁纸，自动从图片萃取强调色并生成全局光晕背景。"
+        description="自定义动态壁纸（自动萃取强调色并生成全局光晕背景）与 HUD 显示效果。"
       >
         <SettingsItem
           title="自定义动态壁纸"
@@ -658,6 +687,51 @@ const Settings = ({ section }: SettingsProps) => {
             }
           />
         )}
+        <div className="settings-hud-display" role="group" aria-label="HUD 显示">
+          <span className="settings-hud-display-label hud-label">HUD 显示</span>
+          <SettingsItem
+            title="CRT 扫描线"
+            subtitle="在界面上叠加 CRT 扫描线纹理"
+            action={
+              <Switch
+                size="small"
+                checked={hudPrefs.crt}
+                checkedChildren="ON"
+                unCheckedChildren="OFF"
+                aria-label="CRT 扫描线"
+                onChange={(checked) => setHudPrefs({ crt: checked })}
+              />
+            }
+          />
+          <SettingsItem
+            title="交互音效 SFX"
+            subtitle="点击与切换时播放 Web Audio 提示音"
+            action={
+              <Switch
+                size="small"
+                checked={hudPrefs.sfx}
+                checkedChildren="ON"
+                unCheckedChildren="MUTE"
+                aria-label="交互音效 SFX"
+                onChange={(checked) => setHudPrefs({ sfx: checked })}
+              />
+            }
+          />
+          <SettingsItem
+            title="主题"
+            subtitle={themeMode === 'dark' ? '深色 HUD（夜间）' : '日光 HUD（白天）'}
+            action={
+              <Switch
+                size="small"
+                checked={themeMode === 'dark'}
+                checkedChildren="深色"
+                unCheckedChildren="日光"
+                aria-label="主题 深色/日光"
+                onChange={handleThemeModeChange}
+              />
+            }
+          />
+        </div>
         <input
           ref={wallpaperFileInputRef}
           type="file"
@@ -667,7 +741,7 @@ const Settings = ({ section }: SettingsProps) => {
         />
       </SettingsGroupCard>
 
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>账号调度</h2>
@@ -732,7 +806,7 @@ const Settings = ({ section }: SettingsProps) => {
         </Form>
       </ProCard>
 
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
+      <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>服务配置</h2>
@@ -860,15 +934,29 @@ const Settings = ({ section }: SettingsProps) => {
 
   const controlPlanesContent = (
     <div className="settings-control-plane-page">
-      <ProCard className="settings-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 16 }}>
+      <ProCard className="settings-panel hud-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 16 }}>
         <p className="settings-control-plane-scope-copy">
           默认 Server 用于无参数页面；点击“打开”会用显式 server 参数固定当前标签页，可同时操作多台 Server。
         </p>
-        <div className="settings-control-plane-current">
+        <div className="settings-control-plane-current hud-panel hud-panel--sm">
           <div className="settings-control-plane-current-main">
-            <span>默认 Server</span>
+            <span className="hud-label">默认 Server</span>
             <strong>{formatActiveControlPlaneLabel(activeControlPlaneProfile)}</strong>
-            <em>{formatActiveControlPlaneEndpoint(activeControlPlaneProfile)}</em>
+            <span className="settings-control-plane-endpoint">
+              <em>{formatActiveControlPlaneEndpoint(activeControlPlaneProfile)}</em>
+              {activeControlPlaneProfile?.endpoint ? (
+                <Button
+                  size="small"
+                  type="text"
+                  className="settings-copy-trigger"
+                  icon={<CopyOutlined />}
+                  aria-label="复制 Server URL"
+                  onClick={() => handleCopyServerEndpoint(activeControlPlaneProfile.endpoint)}
+                >
+                  COPY
+                </Button>
+              ) : null}
+            </span>
           </div>
           <div className="settings-control-plane-current-actions">
             <Select
@@ -1029,6 +1117,7 @@ const Settings = ({ section }: SettingsProps) => {
     const meta = SETTINGS_PAGE_META[standaloneSection.key];
     return (
       <PageScaffold
+        code={meta.code}
         title={meta.title}
         subTitle={meta.description}
         extra={standaloneSection.actions}
@@ -1044,6 +1133,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   return (
     <PageScaffold
+      code={SETTINGS_PAGE_META.settings.code}
       title={SETTINGS_PAGE_META.settings.title}
       subTitle={SETTINGS_PAGE_META.settings.description}
       extra={extraActions}

@@ -34,17 +34,26 @@
   flex-direction: column;
   gap: var(--hos-space-1);
 }
-.models-live-refresh-grid span {
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption);
-}
 .models-live-refresh-grid strong {
   overflow: hidden;
-  color: var(--color-heading);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums slashed-zero;
   text-overflow: ellipsis;
+  text-shadow: var(--hud-text-glow);
   white-space: nowrap;
+}
+/* 刷新任务状态着色：成功 / 失败按真实 job.status */
+.models-live-refresh--succeeded .models-live-refresh-grid > div:first-child strong {
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
+}
+.models-live-refresh--failed .models-live-refresh-grid > div:first-child strong {
+  color: var(--color-danger);
+  text-shadow: var(--hud-text-glow-danger);
 }
 .models-live-refresh p {
   margin: var(--hos-space-2-5) 0 0;
@@ -69,6 +78,25 @@
 .models-provider-scroll > .ant-segmented {
   min-width: max-content;
   margin-right: var(--space-12);
+}
+/* Provider 筛选 = HUD 分段：等宽小号字距，选中项青色描边 + 辉光 */
+.models-provider-scroll .ant-segmented,
+.models-provider-scroll .ant-segmented-item {
+  border-radius: 0 !important;
+}
+.models-provider-scroll .ant-segmented-item-label {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: 0.02em;
+}
+.models-provider-scroll .ant-segmented-item-selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
+  color: var(--color-accent) !important;
+  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent) !important;
+}
+.models-provider-scroll .ant-segmented-thumb {
+  border-radius: 0 !important;
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
 }
 .models-search {
   width: min(320px, 100%);
@@ -106,8 +134,10 @@
 }
 .models-account-context-main strong {
   color: var(--color-heading);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
 }
 .models-account-context-main span {
   color: var(--color-muted);
@@ -120,6 +150,7 @@
   align-items: center;
   gap: var(--hos-space-2-5);
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-weight: var(--weight-regular);
 }
@@ -128,8 +159,8 @@
   align-items: stretch;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
 }
 .models-search :where(.ant-input-affix-wrapper) {
   flex: 1;
@@ -148,18 +179,19 @@
   height: 28px;
   margin-right: var(--hos-space-1);
   border: 0 !important;
-  border-radius: var(--hos-radius-xs) !important;
-  background: var(--color-surface) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   color: var(--color-muted-strong) !important;
   box-shadow: none !important;
 }
 .models-search :where(.ant-input-search-button:hover) {
   background: var(--color-overlay) !important;
-  color: var(--color-heading) !important;
+  color: var(--color-accent) !important;
 }
 .models-catalog-desc {
   margin: 0 0 var(--hos-space-3-5);
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   line-height: 1.45;
 }
@@ -248,6 +280,7 @@
 .models-model-default-control--active {
   color: var(--color-success);
 }
+/* 全局模型行：组件挂 .hud-panel.hud-panel--sm（小切角 + 左上角标） */
 .models-global-row {
   display: grid;
   min-width: 0;
@@ -256,12 +289,9 @@
   gap: var(--hos-space-3-5);
   min-height: 66px;
   padding: var(--hos-space-3) var(--hos-space-3-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-raised);
 }
 .models-global-row--disabled {
-  background: var(--color-surface-muted);
+  opacity: 0.62;
 }
 .models-global-main {
   min-width: 0;
@@ -318,6 +348,7 @@
   overflow: hidden;
   margin: var(--hos-space-1) 0 0;
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-weight: var(--weight-regular);
   line-height: 1.45;
@@ -370,8 +401,8 @@
     display: block !important;
     padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-1-5) !important;
     border: 1px solid var(--color-border) !important;
-    border-radius: var(--hos-radius-lg) !important;
-    background: var(--color-surface) !important;
+    border-radius: 0 !important;
+    background: var(--hud-panel-bg) !important;
     box-shadow: none;
   }
   .models-model-row-main { min-width: 0; }

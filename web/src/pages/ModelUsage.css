@@ -1,14 +1,50 @@
-/* KPI 条（DESIGN.md §6）：一个描边容器承载全部核心指标；单元格之间的 1px 发丝线
- * 是容器底色（--color-border）透过 1px grid gap 露出来的缝，不用竖条也不用逐格描边。 */
+/* KPI 条（DESIGN.md §6 / §HUD）：一个 HUD 切角容器承载全部核心指标（左上 / 右下青色角标）；
+ * 单元格之间的 1px 发丝线是容器底色（--color-border）透过 1px grid gap 露出来的缝，
+ * 不用竖条也不用逐格描边。数值等宽粗体（斜杠零）+ 发光，标签为大写字距 HUD 标签。 */
 .usage-kpi-rail {
+  --hud-cut: var(--hud-chamfer);
+  position: relative;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1px;
   margin-bottom: var(--hos-space-4);
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
+  border-radius: 0;
   background: var(--color-border);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
+  );
+}
+
+.usage-kpi-rail::before,
+.usage-kpi-rail::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+/* 角标用两段渐变画 L 形（不用单侧 border，避免与「左侧色条」混淆） */
+.usage-kpi-rail::before {
+  top: 0;
+  left: 0;
+  background:
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) top left / 100% 2px no-repeat,
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) top left / 2px 100% no-repeat;
+}
+
+.usage-kpi-rail::after {
+  right: 0;
+  bottom: 0;
+  background:
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) bottom right / 100% 2px no-repeat,
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) bottom right / 2px 100% no-repeat;
 }
 
 .usage-kpi-item {
@@ -22,26 +58,37 @@
 }
 
 .usage-kpi-item > span {
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption);
-  font-weight: var(--weight-regular);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .usage-kpi-item > strong {
   overflow: hidden;
-  color: var(--color-heading);
-  font-family: var(--font-display);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h1);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   line-height: var(--leading-tight);
   text-overflow: ellipsis;
+  text-shadow: var(--hud-text-glow);
   white-space: nowrap;
+}
+
+/* 成本 = 金额读数，用 success 色 + 绿色辉光 */
+.usage-kpi-item--cost > strong {
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
 }
 
 .usage-kpi-item > small {
   overflow: hidden;
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
@@ -83,7 +130,7 @@
   bottom: 0;
   left: 0;
   height: 2px;
-  border-radius: var(--hos-radius-pill);
+  border-radius: 0;
   background: var(--color-border-subtle);
   content: '';
   overflow: hidden;
@@ -96,8 +143,9 @@
   z-index: 1;
   width: 34%;
   height: 2px;
-  border-radius: var(--hos-radius-pill);
+  border-radius: 0;
   background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
   content: '';
   opacity: 0;
   transform: translateX(-110%);
@@ -191,10 +239,12 @@
 }
 
 .usage-chart-heading strong {
-  color: var(--color-heading);
+  color: var(--color-accent);
   font-family: var(--font-display);
-  font-size: var(--hos-text-h2);
-  font-weight: var(--weight-semibold);
+  font-size: var(--hos-text-h3);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .usage-chart-heading span {
@@ -230,6 +280,34 @@
 .usage-provider-scroll > .ant-segmented {
   min-width: max-content;
   margin-right: var(--space-12);
+}
+
+/* 筛选分段 = HUD 分段：方角、等宽字，选中项青色描边 + 辉光 */
+.usage-filter-space .ant-segmented,
+.usage-filter-space .ant-segmented-item,
+.usage-filter-space .ant-segmented-thumb,
+.usage-chart-heading .ant-segmented,
+.usage-chart-heading .ant-segmented-item,
+.usage-chart-heading .ant-segmented-thumb {
+  border-radius: 0 !important;
+}
+
+.usage-filter-space .ant-segmented-item-label,
+.usage-chart-heading .ant-segmented-item-label {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+
+.usage-filter-space .ant-segmented-item-selected,
+.usage-chart-heading .ant-segmented-item-selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
+  color: var(--color-accent) !important;
+  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent) !important;
+}
+
+.usage-filter-space .ant-segmented-thumb,
+.usage-chart-heading .ant-segmented-thumb {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface)) !important;
 }
 
 .usage-chart-canvas {
@@ -268,7 +346,7 @@
   gap: 1px;
   margin-bottom: var(--hos-space-4);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
+  border-radius: 0;
   background: var(--color-border);
   overflow: hidden;
 }
@@ -283,15 +361,20 @@
 }
 
 .usage-breakdown-summary span {
-  color: var(--color-muted);
-  font-size: var(--text-xs);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .usage-breakdown-summary strong {
   overflow: hidden;
-  color: var(--color-heading);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h2);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  text-shadow: var(--hud-text-glow);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -315,8 +398,9 @@
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
   place-items: center;
 }
 

@@ -1,4 +1,5 @@
-/* Server 列表卡片：扁平 surface + 1px 发丝线；「默认」用中性描边标签表达，不用彩色描边/光环。
+/* Server 列表卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm）+ 1px 发丝线；
+ * 默认 Server = 青色描边 + 柔和辉光；状态用 HUD 标签 + LED；路由胶囊等宽。
  * 强调色统一走 --color-accent（Claude 珊瑚色只代表 Claude）。 */
 .cp-server-list {
   --cp-acc: var(--color-accent);
@@ -20,16 +21,14 @@
 
 .cp-server-card.ant-card {
   min-width: 0;
-  border: 1px solid var(--cp-line);
-  border-radius: var(--cp-radius);
-  background: var(--cp-surface);
   box-shadow: none;
 }
 .cp-server-card.ant-card > .ant-card-body {
   padding: var(--hos-space-4) var(--hos-space-5);
 }
 .cp-server-card--active.ant-card {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-accent) !important;
+  box-shadow: var(--hud-glow-accent);
 }
 
 .cp-server-card-head {
@@ -52,8 +51,10 @@
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--cp-ink);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
@@ -65,6 +66,7 @@
   align-items: center;
   gap: var(--hos-space-2);
   color: var(--cp-ink-3);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
 }
 .cp-server-error {
@@ -79,16 +81,18 @@
   gap: var(--hos-space-1-5);
 }
 
-/* 状态标签：圆角 4 的 tint 底小标签（DESIGN.md §6 标签 Tag） */
+/* 状态标签：HUD 标签 —— 状态色发丝框 + 弱底 + LED + 大写字距 */
 .cp-status-pill {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: 0 var(--space-3);
-  border-radius: var(--hos-radius-2xs);
-  font-size: var(--hos-text-caption);
-  font-weight: var(--weight-medium);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   line-height: 20px;
   white-space: nowrap;
 }
@@ -122,12 +126,15 @@
   align-items: center;
   height: 24px;
   padding: 0 var(--space-4);
-  border-radius: var(--hos-radius-2xs);
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
   background: var(--color-accent-soft);
   color: var(--color-accent);
   font-size: var(--hos-text-caption);
-  font-weight: var(--weight-medium);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   line-height: 1;
+  box-shadow: var(--hud-glow-accent);
 }
 
 .cp-route-row {
@@ -144,25 +151,19 @@
   gap: var(--hos-space-1-5);
   padding: var(--space-1) var(--space-4) var(--space-1) var(--space-3);
   border: 1px solid var(--cp-line);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-muted);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
   color: var(--cp-ink-2);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
 }
-/* 健康度只由圆点颜色表达；主路由用更强的完整描边 */
+/* 健康度只由 LED 颜色表达；主路由用青色描边 */
 .cp-route-chip--primary {
-  border-color: var(--color-border-strong);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--cp-line));
 }
 .cp-route-dot {
-  width: 7px;
-  height: 7px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-pill);
-  background: var(--cp-ink-3);
 }
-.cp-route-dot--green { background: var(--cp-run); }
-.cp-route-dot--orange { background: var(--cp-warn); }
-.cp-route-dot--red { background: var(--cp-crit); }
 .cp-route-kind {
   flex: 0 0 auto;
   color: var(--cp-ink);
@@ -188,13 +189,16 @@
   padding-top: var(--hos-space-2-5);
   border-top: 1px solid var(--cp-line);
   color: var(--cp-ink-2);
-  font-size: var(--hos-text-body-sm);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
   font-weight: var(--weight-regular);
 }
 .cp-server-card-footer b {
-  color: var(--cp-ink);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-shadow: var(--hud-text-glow);
 }
 .cp-footer-pending {
   color: var(--cp-ink-3);

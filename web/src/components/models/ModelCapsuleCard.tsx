@@ -33,7 +33,7 @@ export function formatTokensK(n?: number): string {
 }
 
 /**
- * 模型能力卡片：扁平 surface + 发丝线描边，模型 ID / 能力标签 / 启用状态
+ * 模型能力卡片：HUD 小切角面板 + 发丝线描边，模型 ID / 能力标签 / 启用状态
  */
 export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   modelId,
@@ -48,7 +48,7 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   onCopyId,
 }: ModelCapsuleCardProps) {
   return (
-    <div className={`${styles.cardContainer} ${enabled ? '' : styles.cardDisabled}`}>
+    <div className={`${styles.cardContainer} hud-panel hud-panel--sm ${enabled ? '' : styles.cardDisabled}`}>
       <div className={styles.cardHeader}>
         <div className={styles.titleArea}>
           <div className={styles.idLine}>

@@ -15,6 +15,13 @@ const RUNTIME_STATUS_META: Record<string, { color: string; label: string }> = {
   unknown: { color: 'default', label: '未知' }
 };
 
+// 状态色 → HUD LED（只映射真实状态；default 为无辉光的中性灯）
+const RUNTIME_STATUS_LED: Record<string, string> = {
+  success: 'hud-led hud-led--ok',
+  warning: 'hud-led hud-led--warn',
+  error: 'hud-led hud-led--err'
+};
+
 export const getRuntimeStatusMeta = (status?: string) => {
   const key = String(status || 'unknown').trim() || 'unknown';
   return RUNTIME_STATUS_META[key] || {
@@ -49,7 +56,8 @@ const RuntimeStatusTag = ({ status, fallback, reason, until }: RuntimeStatusTagP
   const formattedReason = formatAccountIssueReason(normalizedReason);
   const normalizedUntil = Number(until || 0);
   const tag = (
-    <Tag color={meta.color}>
+    <Tag color={meta.color} className="runtime-status-tag">
+      <span className={RUNTIME_STATUS_LED[meta.color] || 'hud-led'} aria-hidden="true" />
       {fallback || meta.label}
     </Tag>
   );
@@ -59,7 +67,7 @@ const RuntimeStatusTag = ({ status, fallback, reason, until }: RuntimeStatusTagP
   return (
     <Tooltip
       title={(
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
+        <div className="runtime-status-tip">
           <div>{fallback || meta.label}</div>
           {normalizedReason ? <div>错误信息: {formattedReason}</div> : null}
           {normalizedUntil ? <div>恢复时间: {formatRuntimeUntil(normalizedUntil)}</div> : null}

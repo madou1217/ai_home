@@ -53,3 +53,127 @@
 .settings-form .ant-form-item-extra {
   font-family: var(--font-prose);
 }
+
+/* =========================================================================
+ * /server-setup 首启门控 —— HUD 引导屏（FabricServerSetup.tsx）
+ * 只重排已有字段 / 动作的外观：网格画布、切角面板、Orbitron 代号、等宽输入。
+ * ====================================================================== */
+
+/* 页面画布：在全局 32px 网格之上叠一层更明显的青色网格 + 顶部径向微光，读作「引导控制台」 */
+.server-setup-page.unified-page-wrapper {
+  min-height: 100%;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent) 0%, transparent 60%),
+    linear-gradient(to right, color-mix(in srgb, var(--color-accent) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 6%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, var(--hud-grid-size) var(--hud-grid-size), var(--hud-grid-size) var(--hud-grid-size);
+}
+
+/* 已保存 Server 表格：名称 / 地址 / 错误全部等宽数据字体 */
+.server-setup-cell {
+  min-width: 0;
+}
+.server-setup-name {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-setup-endpoint.ant-typography,
+.server-setup-error.ant-typography {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+.server-setup-error.ant-typography {
+  overflow-wrap: anywhere;
+}
+.ant-tag.server-setup-detail-tag {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.server-setup-footer {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+.ant-btn.server-setup-footer-link {
+  padding: 0;
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* 弹窗：代号行（Orbitron 青色 + LED），与 PageScaffold 的 `SYS // CODE` 同语言 */
+.server-setup-boot-code {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-shadow: var(--hud-text-glow);
+}
+.server-setup-boot-mode {
+  margin-inline-start: auto;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
+  font-family: var(--font-mono);
+  line-height: 18px;
+  text-shadow: none;
+}
+.server-setup-boot-intro.ant-typography {
+  margin-bottom: var(--space-6);
+  font-size: var(--hos-text-body-sm);
+  line-height: var(--leading-normal);
+}
+
+/* 字段组：小切角面板（发丝线 + 左上角标），字段间发丝线分隔 */
+.settings-form-panel.hud-panel {
+  margin-bottom: var(--space-8);
+  padding: var(--space-8) var(--space-8) var(--space-2);
+  background: var(--color-surface-sunken) !important;
+}
+.settings-form-panel .ant-form-item + .ant-form-item {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+.settings-form-panel .ant-form-item-label > label {
+  color: var(--color-muted-strong);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+.settings-form-panel .ant-input,
+.settings-form-panel .ant-input-affix-wrapper {
+  font-family: var(--font-mono);
+}
+
+/* 门控模式（首次连接 / 必须授权）：遮罩换成不透明网格画布，整屏读作 HUD 引导屏 */
+.server-setup-boot--gate .ant-modal-mask {
+  background-color: color-mix(in srgb, var(--color-bg) 94%, transparent) !important;
+  background-image:
+    radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--color-accent) 10%, transparent) 0%, transparent 65%),
+    linear-gradient(to right, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px) !important;
+  background-size: 100% 100%, var(--hud-grid-size) var(--hud-grid-size), var(--hud-grid-size) var(--hud-grid-size) !important;
+}
+.server-setup-boot--gate .ant-modal-title {
+  font-size: 16px !important;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 767px) {
+  .settings-form-panel.hud-panel {
+    padding: var(--space-6) var(--space-6) var(--space-1);
+  }
+}

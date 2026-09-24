@@ -8,7 +8,7 @@
   --ssh-ink-3: var(--color-muted);
   --ssh-line: var(--color-border);
   --ssh-surface: var(--color-surface);
-  --ssh-radius: var(--hos-radius-lg);
+  --ssh-radius: 0;
 
   display: flex;
   min-width: 0;
@@ -51,7 +51,8 @@
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--ssh-ink);
-  font-family: var(--font-display);
+  /* 用户自定义名称常含数字，不用 Orbitron（其 0 为斜杠方块）；等宽粗体 */
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h3);
   font-weight: 700;
   letter-spacing: var(--tracking-wide);
@@ -148,4 +149,210 @@
 }
 .ssh-list-card-footer--end {
   justify-content: flex-end;
+}
+
+/* =========================================================================
+ * SshHostsPanel 浮层（连接 / 工作空间弹窗、诊断抽屉、远程目录浏览器）HUD 化。
+ * 组件 SshHostsPanel.tsx 通过引入 SshHostCardLists 共享本文件。
+ * ====================================================================== */
+.ssh-form-body {
+  margin-top: var(--space-8);
+}
+.ssh-filter-note {
+  margin-bottom: var(--space-6);
+}
+.ant-btn.ssh-filter-clear {
+  padding: 0 var(--space-2);
+}
+.ssh-private-key-input.ant-input,
+textarea.ssh-private-key-input {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+.ssh-remote-root-input.ant-input,
+.ant-input.ssh-remote-root-input {
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+}
+
+/* 诊断抽屉 */
+.ssh-diag-placeholder {
+  padding: var(--space-12) 0;
+  text-align: center;
+}
+.ssh-diag-loading {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+}
+.ssh-diag-loading-icon {
+  color: var(--color-accent);
+  font-size: 24px;
+  filter: drop-shadow(0 0 6px var(--color-accent));
+}
+.ssh-diag-loading-text {
+  color: var(--color-muted);
+  font-size: var(--hos-text-body, 13px);
+}
+.ssh-diag-panel {
+  padding: var(--space-8);
+}
+.ssh-diag-section {
+  margin-bottom: var(--space-8);
+}
+.ssh-diag-caption {
+  margin-bottom: var(--space-3);
+}
+.ssh-diag-rows {
+  display: flex;
+  flex-direction: column;
+}
+.ssh-diag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.ssh-diag-row:last-child {
+  border-bottom: 0;
+}
+.ssh-diag-row-name {
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.ant-tag.ssh-diag-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-end: 0;
+}
+.ant-tag.ssh-diag-mono-tag {
+  font-family: var(--font-mono);
+}
+.ssh-diag-advice {
+  margin-top: var(--space-10);
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--color-border);
+}
+.ssh-diag-advice-text {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--hos-text-body, 13px);
+  line-height: var(--leading-normal);
+}
+
+/* 远程目录浏览器 */
+.ssh-dir-breadcrumb.ant-breadcrumb {
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+}
+.ssh-dir-crumb {
+  cursor: pointer;
+  color: var(--color-accent);
+}
+.ssh-dir-crumb--current {
+  cursor: default;
+  color: var(--color-heading);
+  font-weight: 600;
+}
+.ssh-dir-crumb-sep {
+  color: var(--color-faint);
+  font-size: 10px;
+}
+.ssh-dir-list {
+  height: 350px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+.ssh-dir-loading {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+}
+.ssh-dir-loading-icon {
+  color: var(--color-accent);
+  font-size: 24px;
+}
+.ssh-dir-rows {
+  padding: 0;
+}
+.ssh-dir-item {
+  position: relative;
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  user-select: none;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+/* 悬停 / 选中：左缘 2px 青色细轨（悬停指示，非粗彩条）+ 弱青底 */
+.ssh-dir-item::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--color-accent);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.ssh-dir-item:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+.ssh-dir-item:hover::before {
+  opacity: 0.6;
+}
+.ssh-dir-item--parent {
+  background: var(--color-surface-muted);
+}
+.ssh-dir-item--selected,
+.ssh-dir-item--selected:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
+}
+.ssh-dir-item--selected::before {
+  opacity: 1;
+  box-shadow: 0 0 6px var(--color-accent);
+}
+.ssh-dir-item-icon {
+  margin-right: var(--space-4);
+  color: var(--color-warning);
+}
+.ssh-dir-item-up {
+  color: var(--color-accent);
+}
+.ssh-dir-empty {
+  padding: var(--space-20, 40px) 0;
+  text-align: center;
+}
+.ssh-dir-selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+.ssh-dir-selected-path {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  word-break: break-all;
 }

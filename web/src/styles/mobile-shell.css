@@ -244,6 +244,8 @@
     gap: var(--hos-space-2, 8px);
   }
   .mobile-more-entry {
+    --hud-cut: var(--hud-chamfer-sm, 6px);
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--hos-space-3, 12px);
@@ -251,9 +253,16 @@
     min-height: 56px;
     padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
     border: 1px solid var(--color-border);
-    border-radius: var(--hos-radius-xs, 2px);
+    border-radius: 0;
     background: var(--color-surface);
     box-shadow: none;
+    /* HUD 小切角（左上 / 右下），与 .hud-panel--sm 同语言 */
+    clip-path: polygon(
+      0 var(--hud-cut), var(--hud-cut) 0,
+      100% 0, 100% calc(100% - var(--hud-cut)),
+      calc(100% - var(--hud-cut)) 100%, 0 100%
+    );
+    font-family: var(--font-body);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     text-align: start;
@@ -271,7 +280,7 @@
     width: 36px;
     height: 36px;
     border: 1px solid var(--color-border);
-    border-radius: var(--hos-radius-xs, 2px);
+    border-radius: 0;
     background: var(--color-surface-sunken);
     color: var(--color-muted-strong);
     font-size: 18px;
@@ -294,7 +303,20 @@
   .mobile-more-entry-active {
     border-color: var(--color-accent);
     background: var(--color-accent-soft);
-    box-shadow: var(--hud-glow-accent);
+    /* 切角 clip-path 会裁掉外发光，选中改用内发光 */
+    box-shadow: inset 0 0 14px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  /* 当前页入口：左上青色角标 */
+  .mobile-more-entry-active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--hud-tick, 10px);
+    height: var(--hud-tick, 10px);
+    border-top: 2px solid var(--hud-tick-color, var(--color-accent));
+    border-left: 2px solid var(--hud-tick-color, var(--color-accent));
+    pointer-events: none;
   }
   .mobile-more-entry-active .mobile-more-entry-icon {
     border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);

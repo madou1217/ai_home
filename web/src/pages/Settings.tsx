@@ -642,7 +642,7 @@ const Settings = ({ section }: SettingsProps) => {
             <p>选择或切换当前连接的 AIH Server。</p>
           </div>
         </div>
-        <div style={{ marginTop: 12 }}>
+        <div className="settings-server-select-row">
           <ControlPlaneProfileSelect className="settings-server-select-trigger" />
         </div>
       </ProCard>
@@ -1047,6 +1047,7 @@ const Settings = ({ section }: SettingsProps) => {
             name: 'AIH Server'
           }}
         >
+          <div className="settings-form-panel hud-panel hud-panel--sm">
                   <Form.Item
                     name="endpoint"
                     label="Server URL"
@@ -1073,6 +1074,7 @@ const Settings = ({ section }: SettingsProps) => {
           >
             <Input.Password autoComplete="new-password" placeholder="Management Key" />
           </Form.Item>
+          </div>
 
                   <Form.Item>
                     <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlaneSaving}>

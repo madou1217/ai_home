@@ -69,7 +69,8 @@
 }
 
 .itemClickable:hover {
-  background: var(--color-overlay-subtle);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .itemIconWrapper {
@@ -97,7 +98,8 @@
 .itemTitle {
   color: var(--color-heading);
   font-size: var(--hos-text-body);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
 }
 
 .itemDanger {
@@ -106,6 +108,7 @@
 
 .itemSubtitle {
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--hos-text-caption);
   line-height: var(--leading-snug);
 }

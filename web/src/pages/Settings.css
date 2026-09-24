@@ -129,7 +129,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-heading);
-  font-family: var(--font-display);
+  /* Server 名是用户数据（常含数字），用等宽粗体而非 Orbitron（其 0 为斜杠方块） */
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h2);
   font-weight: 700;
   letter-spacing: var(--tracking-wide);
@@ -237,9 +238,10 @@
   gap: var(--hos-space-1-5);
 }
 .settings-public-entry-field > span {
-  color: var(--color-heading);
-  font-size: var(--hos-text-caption);
+  color: var(--color-muted-strong);
+  font-size: 11px;
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
 }
 .settings-public-entry-field .ant-select {
   width: 100%;
@@ -276,6 +278,7 @@
 }
 .settings-public-entry-status-main strong {
   color: var(--color-heading);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
 }
 .settings-public-entry-status-main span,
@@ -738,6 +741,7 @@
 }
 .settings-endpoint-hints .ant-btn {
   max-width: 100%;
+  font-family: var(--font-mono);
 }
 .settings-endpoint-hints .ant-btn > span:last-child {
   min-width: 0;
@@ -776,6 +780,9 @@
 .settings-panel .ant-form-item-label > label {
   color: var(--color-heading);
   font-weight: var(--weight-medium);
+  /* HUD 表单标签：小号字距，与弹窗表单（.settings-form）一致 */
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
 }
 /* 帮助文字占用 antd 的 item margin 区域；显式留出上 4 / 下 8 的间距，
  * 避免与下一个字段标签相撞。 */
@@ -784,6 +791,7 @@
   padding-top: var(--space-2);
   padding-bottom: var(--space-4);
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--hos-text-caption);
   line-height: var(--leading-normal);
 }
@@ -890,6 +898,9 @@
 }
 
 /* 设置页 AIH Server 选择器：普通 32px 控件外观（描边 + surface 底）。 */
+.settings-server-select-row {
+  margin-top: var(--space-6);
+}
 .settings-server-select-trigger {
   width: 100% !important;
   max-width: 320px;

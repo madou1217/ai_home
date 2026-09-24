@@ -121,8 +121,10 @@
 }
 
 .statusState {
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
 }
 
 .statusOnline {
@@ -130,6 +132,7 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
 }
 
 .statusOffline {

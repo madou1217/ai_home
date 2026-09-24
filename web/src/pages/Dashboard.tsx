@@ -28,6 +28,14 @@ import './Dashboard.css';
 
 const PROVIDERS: Provider[] = providerIds;
 
+// Hero 成功率数值的发光色调（纯展示映射，见 heroSuccessTone）
+const HERO_VALUE_GLOW: Record<'healthy' | 'warning' | 'error' | 'neutral', string> = {
+  healthy: 'hud-glow-success',
+  warning: 'hud-glow-warning',
+  error: 'hud-glow-danger',
+  neutral: ''
+};
+
 // 账号口径数据（/v0/webui/accounts）的刷新节流：跟随管理快照节奏，但不至于每帧都打一次接口。
 const WEBUI_ACCOUNTS_MIN_INTERVAL_MS = 15000;
 
@@ -391,6 +399,16 @@ export default function Dashboard() {
         : successRateValue >= 0.8
           ? 'warning'
           : 'error';
+  // Hero 成功率取自 status（与 KPI 条的 metrics 口径分开），色调按其自身数值、同一阈值映射
+  const heroSuccessRate = Number(status?.successRate || 0);
+  const heroSuccessTone: 'healthy' | 'warning' | 'error' | 'neutral' =
+    Number(status?.totalRequests || 0) === 0
+      ? 'neutral'
+      : heroSuccessRate >= 0.95
+        ? 'healthy'
+        : heroSuccessRate >= 0.8
+          ? 'warning'
+          : 'error';
   const totalQueueRunning = PROVIDERS.reduce((sum, p) => sum + normalizeQueueCount(status?.queue?.[p]?.running), 0);
   const formatUptime = (sec?: number | null) => {
     if (typeof sec !== 'number' || !Number.isFinite(sec)) return '-';
@@ -513,7 +531,7 @@ export default function Dashboard() {
         </div>
         <div className="dash-hero-body">
           <div className="dash-hero-metric">
-            <div className="dash-hero-value hud-display hud-glow">{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</div>
+            <div className={`dash-hero-value dash-hero-value--${heroSuccessTone} hud-display ${HERO_VALUE_GLOW[heroSuccessTone]}`}>{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</div>
             <div className="dash-hero-cap hud-label">{Number(status?.totalRequests || 0) > 0 ? '请求成功率' : '暂无请求'}</div>
           </div>
           <div className="dash-hero-side">
@@ -598,7 +616,7 @@ export default function Dashboard() {
                         onClick={() => copyErrorText(errorText, item.__key)}
                         title="复制错误详情"
                       >
-                        {isCopied ? <CheckOutlined style={{ color: 'var(--color-success)' }} /> : <CopyOutlined />}
+                        {isCopied ? <CheckOutlined className="dash-error-copy-ok" /> : <CopyOutlined />}
                       </button>
                     </div>
                   </div>

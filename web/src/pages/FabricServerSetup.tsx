@@ -262,13 +262,13 @@ export default function FabricServerSetup() {
       width: 240,
       ellipsis: true,
       render: (_, record) => (
-        <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
-          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Space direction="vertical" size={0} className="server-setup-cell">
+          <strong className="server-setup-name">
             {record.name || record.endpoint}
           </strong>
-          <Typography.Text type="secondary" className="server-setup-endpoint" style={{ fontSize: 12 }}>{record.endpoint}</Typography.Text>
+          <Typography.Text type="secondary" className="server-setup-endpoint">{record.endpoint}</Typography.Text>
           {record.lastError && (
-            <Typography.Text type="danger" style={{ fontSize: 12 }}>{record.lastError}</Typography.Text>
+            <Typography.Text type="danger" className="server-setup-error">{record.lastError}</Typography.Text>
           )}
         </Space>
       )
@@ -286,7 +286,7 @@ export default function FabricServerSetup() {
               <span className={PROFILE_STATUS_LED[status.color] || 'hud-led'} aria-hidden="true" />
               {status.label}
             </Tag>
-            <Tag>{formatProfileDetail(record)}</Tag>
+            <Tag className="server-setup-detail-tag">{formatProfileDetail(record)}</Tag>
           </Space>
         );
       }
@@ -332,6 +332,7 @@ export default function FabricServerSetup() {
   return (
     <PageScaffold ghost
       code="SETUP"
+      className="server-setup-page"
       title={setupModalRequired
         ? '连接 AIH Server'
         : hasReadyServer
@@ -365,7 +366,8 @@ export default function FabricServerSetup() {
             title: '就绪 Server',
             value: readyProfiles.length,
             suffix: '个',
-            status: readyProfiles.length > 0 ? 'success' : 'warning'
+            status: readyProfiles.length > 0 ? 'success' : 'warning',
+            valueStyle: { color: readyProfiles.length > 0 ? 'var(--color-success)' : 'var(--color-warning)' }
           }}
         />
         <StatisticCard
@@ -385,8 +387,8 @@ export default function FabricServerSetup() {
           loading={false}
         />
         {hasReadyServer && (
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)', display: 'flex', gap: 16 }}>
-            <Button type="link" onClick={() => navigate('/fabric/servers')} style={{ padding: 0 }}>
+          <div className="server-setup-footer">
+            <Button type="link" className="server-setup-footer-link" onClick={() => navigate('/fabric/servers')}>
               打开高级 Server 设置
             </Button>
           </div>
@@ -401,6 +403,7 @@ export default function FabricServerSetup() {
             : '连接 AIH Server'}
         open={setupModalOpen}
         width={760}
+        rootClassName={setupModalRequired ? 'server-setup-boot server-setup-boot--gate' : 'server-setup-boot'}
         footer={null}
         closable={!setupModalRequired}
         maskClosable={!setupModalRequired}
@@ -411,8 +414,14 @@ export default function FabricServerSetup() {
           if (!setupModalRequired) setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
         }}
       >
+        {/* HUD 引导代号行：纯展示，内容来自真实的弹窗模式（initial / add / authorize） */}
+        <div className="server-setup-boot-code" aria-hidden="true">
+          <span className="hud-led hud-led--info" />
+          <span>SYS // SETUP</span>
+          <span className="server-setup-boot-mode">{effectiveDialog.mode.toUpperCase()}</span>
+        </div>
         {effectiveDialog.mode === 'initial' && (
-          <Typography.Paragraph type="secondary">
+          <Typography.Paragraph type="secondary" className="server-setup-boot-intro hud-prose">
             首次使用需要连接一台 AIH Server。验证 Server 网关地址和 Management Key 后才能进入工作台。
           </Typography.Paragraph>
         )}
@@ -427,28 +436,30 @@ export default function FabricServerSetup() {
             managementKey: ''
           }}
         >
-          <Form.Item
-            name="endpoint"
-            label="Server 网关地址"
-            help="原生客户端要求远程 Server 使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost。其他连接路径会在保存后自动发现。"
-            rules={[{ required: true, message: '请输入 Server 网关地址' }]}
-          >
-            <Input
-              disabled={effectiveDialog.mode === 'authorize'}
-              placeholder="https://aih.example.com"
-            />
-          </Form.Item>
-          <Form.Item name="name" label="显示名称">
-            <Input placeholder="Home Fabric / Company Fabric" />
-          </Form.Item>
-          <Form.Item
-            name="managementKey"
-            label="Management Key"
-            help="可通过 aih server config --show-secrets 查看。"
-            rules={[{ required: true, message: '请输入 Management Key' }]}
-          >
-            <Input.Password autoComplete="new-password" placeholder="Management Key" />
-          </Form.Item>
+          <div className="settings-form-panel hud-panel hud-panel--sm">
+            <Form.Item
+              name="endpoint"
+              label="Server 网关地址"
+              help="原生客户端要求远程 Server 使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost。其他连接路径会在保存后自动发现。"
+              rules={[{ required: true, message: '请输入 Server 网关地址' }]}
+            >
+              <Input
+                disabled={effectiveDialog.mode === 'authorize'}
+                placeholder="https://aih.example.com"
+              />
+            </Form.Item>
+            <Form.Item name="name" label="显示名称">
+              <Input placeholder="Home Fabric / Company Fabric" />
+            </Form.Item>
+            <Form.Item
+              name="managementKey"
+              label="Management Key"
+              help="可通过 aih server config --show-secrets 查看。"
+              rules={[{ required: true, message: '请输入 Management Key' }]}
+            >
+              <Input.Password autoComplete="new-password" placeholder="Management Key" />
+            </Form.Item>
+          </div>
           <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>
             {effectiveDialog.mode === 'authorize'
               ? '授权并连接'

@@ -307,7 +307,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     // 根目录项
     breadcrumbItems.push(
       <Breadcrumb.Item key="root" onClick={() => loadRemoteDirectory(dirBrowserConnId, '/')}>
-        <span style={{ cursor: 'pointer', color: 'var(--color-accent)' }}>[Root]</span>
+        <span className="ssh-dir-crumb">[Root]</span>
       </Breadcrumb.Item>
     );
 
@@ -318,7 +318,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       const isLast = index === parts.length - 1;
       breadcrumbItems.push(
         <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadRemoteDirectory(dirBrowserConnId, targetPath)}>
-          <span style={isLast ? { fontWeight: 600, color: 'var(--color-heading)' } : { cursor: 'pointer', color: 'var(--color-accent)' }}>
+          <span className={isLast ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
             {part}
           </span>
         </Breadcrumb.Item>
@@ -327,8 +327,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
     return (
       <Breadcrumb
-        separator={<RightOutlined style={{ fontSize: '10px', color: 'var(--color-faint)' }} />}
-        style={{ marginBottom: '16px', background: 'var(--color-surface-sunken)', padding: '8px 12px', border: '1px solid var(--color-border)', fontFamily: 'var(--font-mono)' }}
+        separator={<RightOutlined className="ssh-dir-crumb-sep" />}
+        className="ssh-dir-breadcrumb"
       >
         {breadcrumbItems}
       </Breadcrumb>
@@ -338,11 +338,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const renderDiagnosticDrawerContent = () => {
     if (!activeDiagnosticConn) return null;
     const state = testStates[activeDiagnosticConn.id];
-    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--color-muted)' }}>等待测试连接...</div>;
+    if (!state) return <div className="ssh-diag-placeholder hud-label">等待测试连接...</div>;
     if (state.loading) return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
-        <LoadingOutlined style={{ fontSize: 24, color: 'var(--color-accent)' }} />
-        <span style={{ color: 'var(--color-muted)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
+      <div className="ssh-diag-loading">
+        <LoadingOutlined className="ssh-diag-loading-icon" />
+        <span className="ssh-diag-loading-text">正在连接远程主机并执行依赖诊断，请稍后...</span>
       </div>
     );
 
@@ -375,41 +375,41 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         )}
 
         {result.status === 'reachable' && (
-          <div className="hud-panel hud-panel--sm" style={{ padding: '16px' }}>
-            <div style={{ marginBottom: 16 }}>
-              <div className="hud-label" style={{ marginBottom: 4 }}>系统平台 / 架构</div>
+          <div className="ssh-diag-panel hud-panel hud-panel--sm">
+            <div className="ssh-diag-section">
+              <div className="ssh-diag-caption hud-label">系统平台 / 架构</div>
               <Space size={6}>
-                <Tag color="blue">{result.platform || '未知'}</Tag>
-                <Tag color="cyan">{result.arch || '未知'}</Tag>
+                <Tag color="blue" className="ssh-diag-mono-tag">{result.platform || '未知'}</Tag>
+                <Tag color="cyan" className="ssh-diag-mono-tag">{result.arch || '未知'}</Tag>
               </Space>
             </div>
 
             <div>
-              <div className="hud-label" style={{ marginBottom: 8 }}>依赖项检测</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Node.js</span>
-                  <Tag color={result.commands?.node ? 'green' : 'red'}>{result.commands?.node ? '已安装' : '未检测到'}</Tag>
+              <div className="ssh-diag-caption hud-label">依赖项检测</div>
+              <div className="ssh-diag-rows">
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Node.js</span>
+                  <Tag color={result.commands?.node ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.node ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.node ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Npm</span>
-                  <Tag color={result.commands?.npm ? 'green' : 'red'}>{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Npm</span>
+                  <Tag color={result.commands?.npm ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.npm ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Git</span>
-                  <Tag color={result.commands?.git ? 'green' : 'red'}>{result.commands?.git ? '已安装' : '未检测到'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Git</span>
+                  <Tag color={result.commands?.git ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.git ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.git ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>AIH Agent</span>
-                  <Tag color={result.commands?.aih ? 'green' : 'orange'}>{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">AIH Agent</span>
+                  <Tag color={result.commands?.aih ? 'green' : 'orange'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.aih ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
                 </div>
               </div>
             </div>
 
             {result.recommendation && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
-                <div className="hud-label" style={{ marginBottom: 4 }}>诊断建议</div>
-                <p className="hud-prose" style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
+              <div className="ssh-diag-advice">
+                <div className="ssh-diag-caption hud-label">诊断建议</div>
+                <p className="ssh-diag-advice-text hud-prose">{result.recommendation}</p>
               </div>
             )}
           </div>
@@ -460,10 +460,10 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               children: (
                 <>
                   {filterConnectionId && (
-                    <InlineNote tone="info" style={{ marginBottom: 12 }}>
+                    <InlineNote tone="info" className="ssh-filter-note">
                       <span>
                         当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
-                        <Button type="link" size="small" onClick={() => setFilterConnectionId('')} style={{ padding: '0 4px' }}>
+                        <Button type="link" size="small" className="ssh-filter-clear" onClick={() => setFilterConnectionId('')}>
                           清除筛选
                         </Button>
                       </span>
@@ -503,7 +503,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           <Form.Item
             name="label"
             label="连接名称 (Label)"
@@ -573,7 +573,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               <Input.TextArea
                 rows={6}
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..."
-                style={{ fontFamily: 'monospace' }}
+                className="ssh-private-key-input"
               />
             </Form.Item>
           )}
@@ -610,7 +610,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           <Form.Item
             name="connectionId"
             label="关联物理连接 (SSH Connection)"
@@ -640,7 +640,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 <Input
                   placeholder="不准手填，请点击右侧选择目录"
                   readOnly
-                  style={{ width: '360px', background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
+                  className="ssh-remote-root-input"
+                  style={{ width: '360px' }}
                 />
               </Form.Item>
               <Button
@@ -677,46 +678,31 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         cancelText="取消"
         width={700}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           {/* 1. 面包屑路径层级 */}
           {renderBreadcrumbs()}
 
           {/* 2. 目录详细列表 */}
-          <div
-            className="directory-list-container"
-            style={{
-              border: '1px solid var(--color-border)',
-              height: '350px',
-              overflowY: 'auto',
-              background: 'var(--color-surface)'
-            }}
-          >
+          <div className="directory-list-container ssh-dir-list">
             {loadingDirs ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: '12px' }}>
-                <LoadingOutlined style={{ fontSize: '24px' }} />
-                <span>正在获取远程目录列表，请稍后...</span>
+              <div className="ssh-dir-loading">
+                <LoadingOutlined className="ssh-dir-loading-icon" />
+                <span className="hud-label">正在获取远程目录列表，请稍后...</span>
               </div>
             ) : (
-              <div style={{ padding: '8px 0' }}>
+              <div className="ssh-dir-rows">
                 {parentPath && currentPath !== '/' && (
                   <div
-                    className="dir-item"
-                    style={{
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      background: 'var(--color-surface-muted)',
-                      borderBottom: '1px solid var(--color-border)',
-                      userSelect: 'none'
-                    }}
+                    className="dir-item ssh-dir-item ssh-dir-item--parent"
                     onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, parentPath)}
                   >
-                    <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
-                    <strong style={{ color: 'var(--color-accent)' }}>.. (返回上级目录)</strong>
+                    <FolderOpenOutlined className="ssh-dir-item-icon" />
+                    <strong className="ssh-dir-item-up">.. (返回上级目录)</strong>
                   </div>
                 )}
 
                 {dirList.length === 0 ? (
-                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--color-muted)' }}>
+                  <div className="ssh-dir-empty hud-label">
                     没有子目录。双击上级目录可返回。
                   </div>
                 ) : (
@@ -725,21 +711,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                     return (
                       <div
                         key={dir.path}
-                        className="dir-item"
-                        style={{
-                          padding: '8px 16px',
-                          cursor: 'pointer',
-                          background: isSelected ? 'var(--color-accent-soft)' : 'var(--color-surface)',
-                          borderBottom: '1px solid var(--color-border)',
-                          boxShadow: isSelected ? 'inset 0 0 0 1px var(--color-accent)' : undefined,
-                          color: isSelected ? 'var(--color-accent)' : undefined,
-                          fontFamily: 'var(--font-mono)',
-                          userSelect: 'none'
-                        }}
+                        className={`dir-item ssh-dir-item${isSelected ? ' ssh-dir-item--selected' : ''}`}
                         onClick={() => setSelectedDirPath(dir.path)}
                         onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, dir.path)}
                       >
-                        <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
+                        <FolderOpenOutlined className="ssh-dir-item-icon" />
                         <span>{dir.name}</span>
                       </div>
                     );
@@ -750,9 +726,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           </div>
 
           {/* 3. 选定路径显示 */}
-          <div style={{ marginTop: '16px' }}>
-            <span style={{ marginRight: '8px', fontWeight: 500 }}>当前选定路径:</span>
-            <code style={{ background: 'var(--color-surface-sunken)', border: '1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border))', color: 'var(--color-accent)', padding: '4px 8px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
+          <div className="ssh-dir-selected">
+            <span className="ssh-dir-selected-label hud-label">当前选定路径:</span>
+            <code className="ssh-dir-selected-path">
               {selectedDirPath || '未选择'}
             </code>
           </div>

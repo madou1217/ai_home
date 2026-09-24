@@ -207,6 +207,7 @@ function ControlPlaneProfileSelectBody({
         trigger={['click']}
         disabled={!canSwitch}
         placement="topLeft"
+        rootClassName={styles.menu}
         menu={{
           items: menuItems,
           selectedKeys: [selectedProfileId],

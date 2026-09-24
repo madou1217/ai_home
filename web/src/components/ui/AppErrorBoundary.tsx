@@ -27,15 +27,9 @@ export default class AppErrorBoundary extends Component<AppErrorBoundaryProps, A
     const { error } = this.state;
     if (!error) return this.props.children;
     return (
-      <div style={{
-        padding: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 12,
-      }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>页面渲染出错</div>
-        <div style={{ fontSize: 12, opacity: 0.65, wordBreak: 'break-all' }}>
+      <div className="app-error-boundary hud-panel hud-panel--sm" role="alert">
+        <div className="app-error-boundary-title">页面渲染出错</div>
+        <div className="app-error-boundary-detail">
           {String(error.message || error)}
         </div>
         <Button size="small" onClick={() => window.location.reload()}>

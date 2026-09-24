@@ -124,3 +124,71 @@ test('routes assigned to a disabled Go Core are reported as failing closed', asy
 
   assert.match(errors.join('\n'), /fail closed with 503/);
 });
+
+test('readiness is ready when Go Core is disabled and owns no routes', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog });
+
+  const readiness = await host.readiness();
+
+  assert.equal(readiness.enabled, false);
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.forwarding, false);
+});
+
+test('readiness fails closed when routes are assigned but Go Core is disabled', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreRoutes: ['gateway.models.list'] }, {}),
+    createGoCoreSupervisor: factory,
+    log: silentLog
+  });
+
+  const readiness = await host.readiness();
+
+  assert.equal(readiness.ready, false);
+  assert.deepEqual(readiness.routes, ['gateway.models.list']);
+});
+
+test('readiness merges Go /readyz.ready with forwarding availability', async () => {
+  let goReady = true;
+  const fetchImpl = async (url) => {
+    assert.equal(url, 'http://127.0.0.1:19550/readyz');
+    return { ok: true, status: 200, json: async () => ({ ready: goReady }) };
+  };
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
+    createGoCoreSupervisor: factory,
+    fetchImpl,
+    log: silentLog
+  });
+
+  assert.equal((await host.readiness()).ready, false, 'not ready before Go is serving');
+  await host.start();
+  const ready = await host.readiness();
+  assert.equal(ready.go_ready, true);
+  assert.equal(ready.forwarding, true);
+  assert.equal(ready.ready, true);
+
+  goReady = false;
+  const notReady = await host.readiness();
+  assert.equal(notReady.go_ready, false);
+  assert.equal(notReady.ready, false);
+});
+
+test('readiness reports an unreachable Go /readyz without throwing', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
+    createGoCoreSupervisor: factory,
+    fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+    log: silentLog
+  });
+  await host.start();
+
+  const readiness = await host.readiness();
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.go_readyz_error, 'go_core_readyz_unreachable');
+});

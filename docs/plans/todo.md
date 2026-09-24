@@ -18,7 +18,8 @@
     （zcode 3：无静态凭据或 artifact 无效；opencode 1：artifact 无效）。演练中发现并修复原生 `api-key`
     auth_kind 违反列约束导致 OpenCode API Key 导入全部 `account_not_found`（4748d838）。
   - 2026-09-25 已 `apply` + `verify`（ok）：Go `aih.db` 28 个账号（29 条迁移，其中 1 条并入同一 Codex 身份），0 失败、0 Go 独有账号；apply 前备份在 `~/.ai_home/backups/aih.db.pre-p1-apply.20260925021035`。
-- [ ] S5 就绪态：Node `/readyz` 汇合 Go 状态（进程、首轮同步、Go `/readyz.ready`、已划转路由）；补真实 `startLocalServer` + 真 Go 的端到端测试
+- [x] S5 就绪态：Node `/readyz` 汇合 Go 状态（进程、首轮同步、Go `/readyz.ready`、已划转路由）；补真实 `startLocalServer` + 真 Go 的端到端测试
+  - 2026-09-25 完成：`goCoreHost.readiness()` 按需探测 Go `/readyz`，Node `/readyz` 增加 `go_core` 字段；有 Go 路由而转发不可用或 Go 不 ready 时整体 `ready=false`。`test/server.go-core-e2e.test.js` 用真实 startLocalServer + 真实 Go 验证就绪汇合、转发与杀进程后的失败关闭。
 - [ ] S6 `/v1/models` 对齐：当前两端**不可能完全一致**——Node 合并别名/手动模型/上游探测、排除图片模型、`localeCompare` 排序、总是带 `aih_modalities`；Go 只读 `account_models`、字节序排序、`aih_modalities` 需 `?include=modalities`。需先决定以谁为准并改代码；`gateway:shadow` 只比状态码+键结构，需加 id/顺序/owned_by 比对
 - [ ] S7 切 `/v1/models`：`aih server config set --go-core --go-core-routes gateway.models.list,gateway.models.detail,gateway.props`（依赖 S6 结论）
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据

@@ -22,6 +22,7 @@ import {
   formatProxyGroupLabel,
   formatProxyNodeLabel
 } from './zcode-egress-presentation';
+import './account-overlays.css';
 
 interface AccountEgressFormValues {
   mode: AccountEgressMode;
@@ -297,13 +298,13 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
         ]}
       >
         <Spin spinning={loading}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        <Typography.Paragraph type="secondary" className="egress-intro">
           当前仅支持 macOS。AIH 使用独立 sing-box sidecar，并为每个账号保持固定的
           127.0.0.1 本地端口；它不会改写系统代理，也不会创建或接管 TUN。系统代理和外部 TUN
           模式都只读取当前状态。订阅地址、YAML 与单节点链接继续在节点库中导入，账号出口只消费
           解析后的节点，不启动其它代理核心。未绑定账号不会继承其它账号或宿主进程的代理环境。
         </Typography.Paragraph>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary" className="egress-intro egress-intro--last">
           AIH 仅访问中性连通性地址，不调用 ZCode 接口，也不调用其它 provider 推理接口。绑定无法解析或连通性探测失败时会
           阻止启动与请求并保留现有设置，不会回退到全局代理或直连。
           绑定记录无法读取或 marker 无法识别时同样阻止启动并保留现有设置，用户手工设置不变。
@@ -311,7 +312,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             ? ' ZCode 原生链路中，模型、MCP、命令工具和内置浏览器统一消费账号隔离的 setting.json；用户手工设置会安全合并。'
             : ' 其他 provider 在 CLI、Desktop 和 Gateway 边界注入该账号的回环代理；不修改系统级网络配置。'}
         </Typography.Paragraph>
-          <Space wrap size={8} style={{ marginBottom: 16 }}>
+          <div className="egress-toolbar">
             <Button
               size="small"
               icon={<ImportOutlined />}
@@ -320,16 +321,24 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             >
               导入节点或订阅
             </Button>
-            <Typography.Text type="secondary">
+            <Typography.Text type="secondary" className="aih-overlay-hint">
               只写入中立节点仓；不会启动、重载或停止其它代理核心，也不会更改系统代理或 TUN。
             </Typography.Text>
-          </Space>
-          <Space wrap size={8} style={{ marginBottom: 12 }}>
-            <Tag color={runtime?.dataPlaneReady ? 'success' : 'default'}>
+          </div>
+          <div className="egress-runtime hud-panel hud-panel--sm">
+            <span
+              className={`egress-runtime-state egress-runtime-state--${runtime?.dataPlaneReady ? 'ready' : 'idle'}`}
+            >
+              <span
+                className={`hud-led${runtime?.dataPlaneReady ? ' hud-led--ok hud-led--live' : ''}`}
+                aria-hidden="true"
+              />
               {runtime?.dataPlaneReady ? '数据面就绪' : '未运行'}
-            </Tag>
+            </span>
             <Typography.Text type="secondary">{runtimeDescription}</Typography.Text>
-            {runtime?.proxyServer ? <Typography.Text code>{runtime.proxyServer}</Typography.Text> : null}
+            {runtime?.proxyServer ? (
+              <Typography.Text code className="egress-runtime-endpoint">{runtime.proxyServer}</Typography.Text>
+            ) : null}
             {runtimeGroup ? <Tag>{runtimeGroup.name}</Tag> : null}
             {runtimeNode ? <Tag color="blue">{runtimeNode.name}</Tag> : null}
             {runtime?.health.monitoring ? (
@@ -339,6 +348,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             ) : null}
             <Button
               size="small"
+              className="egress-runtime-rotate"
               icon={<RetweetOutlined />}
               loading={rotating}
               disabled={!runtime?.canRotate || submitting}
@@ -346,44 +356,44 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             >
               立即换一个节点
             </Button>
-          </Space>
+          </div>
           {runtimeError ? (
-            <Typography.Paragraph type="warning" style={{ marginBottom: 12 }}>
+            <Typography.Paragraph type="warning" className="egress-message">
               运行态读取失败：{runtimeError}
             </Typography.Paragraph>
           ) : null}
           {runtime?.health.lastError ? (
-            <Typography.Paragraph type="warning" style={{ marginBottom: 12 }}>
+            <Typography.Paragraph type="warning" className="egress-message">
               最近健康探测：{runtime.health.lastError}
             </Typography.Paragraph>
           ) : null}
           {applyDescription ? (
-            <Space size={8} style={{ marginBottom: 16 }}>
+            <div className="egress-apply">
               <Tag color={applyDescription.color}>{applyResult?.applied ? '运行时' : '待启动'}</Tag>
               <Typography.Text type={applyResult?.ok || applyResult?.rolledBack ? 'secondary' : 'danger'}>
                 {applyDescription.text}
               </Typography.Text>
-            </Space>
+            </div>
           ) : null}
           <Form form={form} layout="vertical" initialValues={{ mode: 'url' }}>
           <Form.Item name="mode" label="出口来源">
-            <Radio.Group>
+            <Radio.Group className="aih-choice-tiles">
               <Space direction="vertical">
-                <Radio value="system">现有系统代理（只读复用）</Radio>
-                <Radio value="tun">现有外部 TUN（只读复用）</Radio>
-                <Radio value="url">单个 HTTP / SOCKS 地址</Radio>
-                <Radio value="node">节点库中的单节点</Radio>
-                <Radio value="group">节点组自动调度</Radio>
+                <Radio value="system"><span className="aih-choice-tile-title">现有系统代理（只读复用）</span></Radio>
+                <Radio value="tun"><span className="aih-choice-tile-title">现有外部 TUN（只读复用）</span></Radio>
+                <Radio value="url"><span className="aih-choice-tile-title">单个 HTTP / SOCKS 地址</span></Radio>
+                <Radio value="node"><span className="aih-choice-tile-title">节点库中的单节点</span></Radio>
+                <Radio value="group"><span className="aih-choice-tile-title">节点组自动调度</span></Radio>
               </Space>
             </Radio.Group>
           </Form.Item>
           {mode === 'system' ? (
-            <Typography.Paragraph type="secondary">
+            <Typography.Paragraph type="secondary" className="egress-intro">
               按 HTTPS、HTTP、SOCKS 顺序读取当前系统代理；未配置时拒绝启动，不会修改系统设置。
             </Typography.Paragraph>
           ) : null}
           {mode === 'tun' ? (
-            <Typography.Paragraph type="secondary">
+            <Typography.Paragraph type="secondary" className="egress-intro">
               仅在检测到外部 TUN 已激活时使用；AIH 不创建、不启停，也不接管该 TUN。
             </Typography.Paragraph>
           ) : null}
@@ -394,7 +404,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
               extra="支持 host:port、HTTP(S)、SOCKS4/4a/5；带凭据的地址请先作为单节点导入节点库。"
               rules={[{ required: true, whitespace: true, message: '请输入代理地址' }]}
             >
-              <Input placeholder="127.0.0.1:10801" autoComplete="off" />
+              <Input placeholder="127.0.0.1:10801" autoComplete="off" className="aih-mono-input" />
             </Form.Item>
           ) : null}
           {mode === 'node' ? (
@@ -429,7 +439,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
                     disabled={nodesUnavailable || groupOptions.length === 0}
                   />
                 </Form.Item>
-                <Space wrap size={8} style={{ marginBottom: 16 }}>
+                <div className="egress-group-actions">
                   {selectedGroup ? (
                     <>
                       <Tag>常规：{selectedGroup.strategy || 'sticky'}</Tag>
@@ -444,7 +454,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
                   >
                     管理手动组与调度策略
                   </Button>
-                </Space>
+                </div>
               </>
             ) : null}
           {nodesUnavailable ? (

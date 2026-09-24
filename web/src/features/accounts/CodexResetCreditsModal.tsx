@@ -530,11 +530,15 @@ export function CodexResetCreditsModal({
               className="codex-reset-credits__status"
               role="status"
             >
+              <span
+                className={`hud-led hud-led--${statusType === 'warning' ? 'warn' : 'info'}${consumeRequestPending || recoveryStatus === 'checking' ? ' hud-led--live' : ''}`}
+                aria-hidden="true"
+              />
               {statusText}
             </Typography.Text>
           ) : null}
 
-          <div className="codex-reset-credits__table-wrap">
+          <div className="codex-reset-credits__table-wrap hud-panel hud-panel--sm">
             <table className="codex-reset-credits__table">
               <thead>
                 <tr>

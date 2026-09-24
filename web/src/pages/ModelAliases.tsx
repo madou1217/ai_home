@@ -8,6 +8,7 @@ import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 import { providerIds, providerNames } from '@/components/chat/ProviderIcon';
 import '@/components/mobile/mobile-cards.css';
+import './ModelAliases.css';
 
 const PROVIDER_OPTIONS = providerIds;
 const getProviderDisplayName = (provider: string) => providerNames[provider as keyof typeof providerNames] || provider;
@@ -191,7 +192,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       title: '别名 (Alias)',
       dataIndex: 'alias',
       key: 'alias',
-      render: (text: any) => <strong>{text}</strong>,
+      render: (text: any) => <strong className="model-alias-name">{text}</strong>,
     },
     {
       title: '目标模型 (Target)',
@@ -200,9 +201,9 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       render: (text: any) => {
         const label = findModelLabel(text);
         return (
-          <span>
+          <span className="model-alias-target">
             {text}
-            {label ? <span style={{ color: 'var(--color-muted)', marginLeft: 6 }}>({label})</span> : null}
+            {label ? <span className="model-alias-target-label">({label})</span> : null}
           </span>
         );
       },
@@ -212,7 +213,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       dataIndex: 'priority',
       key: 'priority',
       width: 90,
-      render: (value: any) => Number(value) || 0,
+      render: (value: any) => <span className="model-alias-priority">{Number(value) || 0}</span>,
     },
     {
       title: '请求范围',
@@ -273,8 +274,8 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
       <div className="mobile-card" key={record.id}>
         <div className="mobile-card-head">
           <div className="mobile-card-head-main">
-            <div className="mobile-card-title"><span className="mobile-card-title-text">{record.alias}</span></div>
-            <div className="mobile-card-subtitle">
+            <div className="mobile-card-title"><span className="mobile-card-title-text model-alias-name">{record.alias}</span></div>
+            <div className="mobile-card-subtitle model-alias-target">
               {record.target}{label ? ` (${label})` : ''}
             </div>
           </div>
@@ -303,7 +304,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
           </div>
         </div>
         {record.description ? (
-          <div className="mobile-card-subtitle" style={{ marginTop: 8, whiteSpace: 'normal' }}>{record.description}</div>
+          <div className="mobile-card-subtitle model-alias-description">{record.description}</div>
         ) : null}
         <div className="mobile-card-foot">
           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
@@ -324,9 +325,9 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
     <SectionCard title="模型别名">
       {isMobile ? (
         loading && sortedAliases.length === 0 ? (
-          <div style={{ padding: '48px 0', textAlign: 'center' }}><Spin /></div>
+          <div className="model-alias-loading"><Spin /></div>
         ) : sortedAliases.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型别名" style={{ padding: '32px 0' }} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模型别名" className="model-alias-empty" />
         ) : (
           <div className="mobile-card-list">{sortedAliases.map(renderAliasCard)}</div>
         )
@@ -371,7 +372,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
             rules={[{ required: true, message: '请输入别名' }]}
             help="客户端请求的模型名称，通配符只能放在末尾且前缀至少 2 个字符"
           >
-            <Input placeholder="输入别名或尾部通配符" />
+            <Input placeholder="输入别名或尾部通配符" className="model-alias-mono-input" />
           </Form.Item>
 
           <Form.Item

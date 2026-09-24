@@ -3,18 +3,15 @@
   gap: var(--hos-space-3-5, 14px);
 }
 
+/* 结果状态头：挂 .hud-panel.hud-panel--sm（小切角 + 左上角标）；
+ * 状态只由图标颜色 + 辉光表达，不整块着色（web/DESIGN.md §6 行内提示）。 */
 .account-app-install-result__status {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--hos-space-2-5, 10px);
-  padding: var(--hos-space-3, 12px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 8px);
-  background: var(--color-surface-muted);
+  padding: var(--hos-space-3, 12px) var(--hos-space-3-5, 14px);
 }
-
-/* 结果状态只由图标颜色表达：中性表面 + 描边，不整块着色（web/DESIGN.md §6 行内提示）。 */
 
 .account-app-install-result__status > .anticon {
   margin-top: var(--hos-space-0-5, 2px);
@@ -23,15 +20,17 @@
 
 .account-app-install-result.is-success .account-app-install-result__status > .anticon {
   color: var(--color-success);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-success) 60%, transparent));
 }
 
 .account-app-install-result.is-error .account-app-install-result__status > .anticon {
   color: var(--color-danger);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-danger) 60%, transparent));
 }
 
 .account-app-install-result__status div {
   display: grid;
-  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
+  gap: var(--hos-space-1, 3px);
 }
 
 .account-app-install-result__status strong {
@@ -40,29 +39,40 @@
 
 .account-app-install-result__status span {
   color: var(--color-muted);
+  font-family: var(--font-prose);
   line-height: 1.55;
 }
 
+/* 元信息：HUD 小标签 + 等宽数值，行间发丝线 */
 .account-app-install-result__metadata {
   display: grid;
-  gap: var(--hos-space-2, 7px); /* 归级:原 7px */
   margin: 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .account-app-install-result__metadata > div {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: baseline;
   gap: var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-2, 8px) 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .account-app-install-result__metadata dt {
-  color: var(--color-muted);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .account-app-install-result__metadata dd {
   min-width: 0;
   margin: 0;
   color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -73,17 +83,25 @@
 
 .account-app-install-result__reasons > strong {
   color: var(--color-danger);
-  font-size: var(--hos-text-caption, 12px);
+  font-size: 10px;
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  text-shadow: var(--hud-text-glow-danger);
 }
 
 .account-app-install-result__reasons ul {
   display: grid;
-  gap: var(--hos-space-1-5, 5px); /* 归级:原 5px */
+  gap: var(--hos-space-1-5, 5px);
   margin: 0;
-  padding-left: var(--hos-space-5, 20px);
+  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) var(--hos-space-2-5, 10px) var(--hos-space-6, 24px);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
+  background: var(--color-surface-sunken);
 }
 
 .account-app-install-result__reasons li {
   color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption, 12px);
   overflow-wrap: anywhere;
 }

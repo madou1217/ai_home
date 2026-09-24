@@ -33,17 +33,22 @@
   flex-direction: column;
   gap: var(--hos-space-2, 8px);
 }
+/* 模板标题 = HUD 小标签（大写字距、faint）；模板正文 = 凹槽等宽读数框 */
 .accounts-import-template > div {
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
 .accounts-import-template pre {
+  margin: 0;
   padding: var(--hos-space-3, 12px);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 6px);
+  border-radius: 0;
   background: var(--color-surface-sunken);
-  color: var(--color-text);
+  color: var(--color-muted-strong);
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
@@ -62,12 +67,51 @@
 }
 .accounts-import-running > span:last-child {
   color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 /* 导出弹窗 */
 .accounts-export-popover .ant-popover-inner {
   padding: var(--hos-space-1, 4px);
-  border-radius: var(--hos-radius-sm, 8px);
+  border-radius: 2px;
+}
+/* 导出菜单：每项 = 格式名 + 一行说明；悬停青色描边读数行 */
+.accounts-export-menu.ant-menu {
+  min-width: 240px;
+  border-inline-end: 0 !important;
+  background: transparent;
+}
+.accounts-export-menu .ant-menu-item {
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding-block: var(--hos-space-2, 8px);
+  border: 1px solid transparent;
+  border-radius: 0;
+  line-height: var(--leading-snug, 1.4);
+}
+.accounts-export-menu .ant-menu-item + .ant-menu-item {
+  border-top-color: var(--color-border);
+}
+.accounts-export-menu .ant-menu-item:hover,
+.accounts-export-menu .ant-menu-item:focus-visible {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent) !important;
+  color: var(--color-accent);
+}
+.accounts-export-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-0-5, 2px);
+  white-space: normal;
+}
+.accounts-export-menu-item > span {
+  font-weight: var(--weight-semibold, 600);
+}
+.accounts-export-menu-item > small {
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption, 12px);
 }
 .accounts-remote-control-plane-list .ant-list-item {
   padding: var(--hos-space-2, 8px) 0;
@@ -91,7 +135,10 @@
 }
 .account-app-install-copy__hint {
   margin-top: var(--hos-space-2-5, 10px) !important;
+  padding-top: var(--hos-space-2-5, 10px);
+  border-top: 1px solid var(--color-border);
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
 }
@@ -143,7 +190,7 @@
 /* 命中路由高亮的卡片 */
 .account-mobile-card.accounts-row-target {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
 }
 
 

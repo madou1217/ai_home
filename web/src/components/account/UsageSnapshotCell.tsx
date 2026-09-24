@@ -33,20 +33,38 @@ function formatUsagePercent(value: number | null) {
   return value == null ? '-' : `${value.toFixed(1)}%`;
 }
 
-// 燃烧粒子（BurningParticles）要在 JS 里按 HSL 抖动色相，只能吃字面 hex；
-// 进度条本身用 getUsageBarTokenColor 的语义 token，随深浅主题翻转。
-export function getUsageBarColor(value: number | null) {
-  if (value == null) return '#d9d9d9';
-  if (value > 80) return '#52c41a';
-  if (value > 30) return '#faad14';
-  return '#ff4d4f';
+function getUsageBarTokenName(value: number | null) {
+  if (value == null) return '--color-disabled';
+  if (value > 80) return '--color-success';
+  if (value > 30) return '--color-warning';
+  return '--color-danger';
 }
 
 function getUsageBarTokenColor(value: number | null) {
-  if (value == null) return 'var(--color-disabled)';
-  if (value > 80) return 'var(--color-success)';
-  if (value > 30) return 'var(--color-warning)';
-  return 'var(--color-danger)';
+  return `var(${getUsageBarTokenName(value)})`;
+}
+
+// 状态语义（与进度条颜色同一阈值）：用于百分比读数的着色 / 辉光类名。
+function getUsageBarTone(value: number | null) {
+  if (value == null) return 'none';
+  if (value > 80) return 'ok';
+  if (value > 30) return 'warn';
+  return 'danger';
+}
+
+// 燃烧粒子（BurningParticles）要在 JS 里按 HSL 抖动色相，需要具体的 #rrggbb。
+// 这里在运行时读取当前主题（深色 HUD / 日光 HUD）的语义状态色，不写死字面色值；
+// 读不到（SSR / 非 hex token）时返回空串，粒子模型回落到它自己的默认火焰色。
+export function getUsageBarColor(value: number | null) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return '';
+  try {
+    const resolved = window.getComputedStyle(document.documentElement)
+      .getPropertyValue(getUsageBarTokenName(value))
+      .trim();
+    return /^#[0-9a-f]{6}$/i.test(resolved) ? resolved : '';
+  } catch (_error) {
+    return '';
+  }
 }
 
 // CodeBuddy 家族四支共用同一份 `codebuddy_credit_balance` 快照（同地区 work/code 是同一个
@@ -122,24 +140,7 @@ function CopyableModelId({ modelId }: { modelId: string }) {
     <span
       onClick={handleCopy}
       title="点击复制模型 ID"
-      style={{
-        color: 'color-mix(in srgb, var(--hos-white) 75%, transparent)',
-        cursor: 'pointer',
-        fontSize: 11.5,
-        fontFamily: 'var(--font-mono, monospace)',
-        wordBreak: 'break-all',
-        transition: 'color 0.15s ease',
-        userSelect: 'all',
-        textAlign: 'left'
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.color = 'var(--hos-white)';
-        e.currentTarget.style.textDecoration = 'underline';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.color = 'color-mix(in srgb, var(--hos-white) 75%, transparent)';
-        e.currentTarget.style.textDecoration = 'none';
-      }}
+      className="usage-model-id-copy"
     >
       {modelId}
     </span>
@@ -157,55 +158,19 @@ function AgyGroupModelsTooltip({
   const visibleMembers = (isLargeList && !showAll) ? members.slice(0, maxInitial) : members;
 
   return (
-    <div style={{ minWidth: 320, maxWidth: 540, padding: '2px 0' }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(140px, auto) 1fr',
-          alignItems: 'center',
-          gap: 16,
-          paddingBottom: 5,
-          marginBottom: 6,
-          borderBottom: '1px solid color-mix(in srgb, var(--hos-white) 18%, transparent)',
-          fontSize: 11,
-          color: 'color-mix(in srgb, var(--hos-white) 65%, transparent)'
-        }}
-      >
-        <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>名称 ({members.length})</span>
-        <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>模型 ID</span>
+    <div className="usage-group-models">
+      <div className="usage-group-models-row usage-group-models-head">
+        <span>名称 ({members.length})</span>
+        <span>模型 ID</span>
       </div>
       <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          maxHeight: showAll ? 280 : 190,
-          overflowY: 'auto',
-          paddingRight: 4
-        }}
+        className="usage-group-models-list"
+        style={{ maxHeight: showAll ? 280 : 190 }}
       >
         {visibleMembers.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(140px, auto) 1fr',
-              alignItems: 'center',
-              gap: 16
-            }}
-          >
-            <span
-              style={{
-                color: 'var(--hos-white)',
-                textAlign: 'left',
-                fontWeight: 500,
-                fontSize: 11.5,
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {m.name}
-            </span>
-            <div style={{ textAlign: 'left', minWidth: 0 }}>
+          <div key={m.id} className="usage-group-models-row">
+            <span className="usage-group-models-name">{m.name}</span>
+            <div className="usage-group-models-id">
               <CopyableModelId modelId={m.id} />
             </div>
           </div>
@@ -213,15 +178,7 @@ function AgyGroupModelsTooltip({
       </div>
       {isLargeList ? (
         <div
-          style={{
-            marginTop: 6,
-            paddingTop: 4,
-            borderTop: '1px solid color-mix(in srgb, var(--hos-white) 12%, transparent)',
-            textAlign: 'center',
-            cursor: 'pointer',
-            color: 'color-mix(in srgb, var(--hos-white) 85%, transparent)',
-            fontSize: 11
-          }}
+          className="usage-group-models-toggle"
           onClick={(e) => {
             e.stopPropagation();
             setShowAll((curr) => !curr);
@@ -236,10 +193,10 @@ function AgyGroupModelsTooltip({
 
 function UsageUnitsTooltipBody({ content }: { content: { title: string; detail: string } }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
-      <span style={{ whiteSpace: 'nowrap' }}>{content.title}</span>
+    <div className="usage-units-tooltip">
+      <span>{content.title}</span>
       {content.detail ? (
-        <span style={{ whiteSpace: 'nowrap', opacity: 0.72 }}>{content.detail}</span>
+        <span className="usage-units-tooltip-detail">{content.detail}</span>
       ) : null}
     </div>
   );
@@ -268,11 +225,11 @@ function UsageMetaLine({
   const resetLabel = formatResetAt(resetAtMs);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ color: 'var(--color-muted-strong)', fontSize: 'clamp(12.5px, 3.2vw, 13.5px)', whiteSpace: 'nowrap' }}>{label}</span>
+    <div className="usage-meta-line">
+      <div className="usage-meta-line-head">
+        <span className="usage-meta-line-label">{label}</span>
         {resetInLabel ? (
-          <span style={{ textAlign: 'right', minWidth: 0, color: 'var(--color-muted)', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+          <span className="usage-meta-line-reset-in">
             {resetInLabel}
           </span>
         ) : null}
@@ -285,7 +242,7 @@ function UsageMetaLine({
         tooltip={progressTooltip}
       />
       {resetLabel ? (
-        <div style={{ color: 'var(--color-muted)', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+        <div className="usage-meta-line-reset-at">
           {resetLabel}
         </div>
       ) : null}
@@ -307,7 +264,6 @@ function UsageProgressBar({
   tooltip?: React.ReactNode;
 }) {
   const percent = Math.max(0, Math.min(100, Number(value || 0)));
-  const color = getUsageBarColor(value);
   const strokeColor = getUsageBarTokenColor(value);
 
   const line = (
@@ -323,13 +279,13 @@ function UsageProgressBar({
         {running && value != null ? (
           <BurningParticles
             anchorPct={percent}
-            color={color}
+            color={getUsageBarColor(value)}
             activityRate={activityRate}
             seedKey={effectKey}
           />
         ) : null}
       </div>
-      <span className="usage-progress-value">{formatUsagePercent(value)}</span>
+      <span className={`usage-progress-value usage-progress-value--${getUsageBarTone(value)}`}>{formatUsagePercent(value)}</span>
     </div>
   );
 
@@ -395,7 +351,7 @@ export default function UsageSnapshotCell({
     const visibleEntries = hideModels ? entries.slice(0, 1) : (expanded ? entries : entries.slice(0, 2));
     return (
       <div style={{ minWidth: 180 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="usage-meta-list">
           {visibleEntries.map((entry, index) => (
             <UsageMetaLine
               key={`${entry.window}-${index}`}
@@ -415,14 +371,14 @@ export default function UsageSnapshotCell({
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            className="usage-expand-toggle"
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="usage-refreshing">
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -452,7 +408,7 @@ export default function UsageSnapshotCell({
     const visibleRows = hideModels ? rows.slice(0, 1) : (expanded ? rows : rows.slice(0, 2));
     return (
       <div style={{ minWidth: 200 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="usage-meta-list">
           {visibleRows.map((row, index) => {
             const rawEntry = row.entry;
             const unitsLines = buildUsageUnitsTooltipLines(rawEntry);
@@ -475,14 +431,14 @@ export default function UsageSnapshotCell({
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            className="usage-expand-toggle"
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${rows.length - 2} 项`}
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="usage-refreshing">
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -510,19 +466,11 @@ export default function UsageSnapshotCell({
     return (
       <div style={{ minWidth: 200 }}>
         {planName ? (
-          <div
-            style={{
-              fontWeight: 600,
-              fontSize: 'clamp(12px, 3vw, 12.5px)',
-              color: 'var(--color-heading)',
-              letterSpacing: '0.15px',
-              marginBottom: 4
-            }}
-          >
+          <div className="usage-group-title usage-group-title--plan">
             {planName}
           </div>
         ) : null}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="usage-meta-list">
           {visibleEntries.map((entry, index) => {
             const windowLabel = formatWindowDuration(entry.windowMinutes, entry.window) || entry.window || '';
             const label = entry.bucket
@@ -549,14 +497,14 @@ export default function UsageSnapshotCell({
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            className="usage-expand-toggle"
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="usage-refreshing">
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -574,7 +522,7 @@ export default function UsageSnapshotCell({
 
     return (
       <div style={{ minWidth: 220 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="usage-meta-list usage-meta-list--groups">
           {groups.map((group) => {
             const visibleLimits = hideModels
               ? group.limits.slice(0, 1)
@@ -586,31 +534,21 @@ export default function UsageSnapshotCell({
                 key={group.key}
                 data-usage-quota-group={group.key}
                 data-usage-group-active={groupRunning ? 'true' : 'false'}
-                style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+                className="usage-quota-group"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div className="usage-quota-group-head">
                   <Tooltip
                     overlayClassName="token-usage-tooltip-overlay"
                     title={<AgyGroupModelsTooltip members={group.members} />}
                     placement="topLeft"
                   >
-                    <span
-                      style={{
-                        fontFamily: 'var(--font-body)',
-                        fontWeight: 600,
-                        fontSize: 'clamp(12px, 3vw, 12.5px)',
-                        color: 'var(--color-heading)',
-                        letterSpacing: '0.15px',
-                        cursor: 'help',
-                        borderBottom: '1px dotted var(--color-faint)'
-                      }}
-                    >
+                    <span className="usage-group-title usage-group-title--help">
                       {group.title}
                     </span>
                   </Tooltip>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="usage-meta-list">
                   {visibleLimits.map((limit, index) => (
                     <UsageMetaLine
                       key={`${limit.key}-${index}`}
@@ -629,7 +567,7 @@ export default function UsageSnapshotCell({
           })}
         </div>
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="usage-refreshing">
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -644,7 +582,7 @@ export default function UsageSnapshotCell({
     const visibleModels = hideModels ? models.slice(0, 1) : (expanded ? models : models.slice(0, 2));
     return (
       <div style={{ minWidth: 220 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="usage-meta-list">
           {visibleModels.map((model, index) => (
             <UsageMetaLine
               key={`${model.model}-${index}`}
@@ -662,14 +600,14 @@ export default function UsageSnapshotCell({
           <Button
             type="link"
             size="small"
-            style={{ padding: 0, height: 22, marginTop: 4, fontSize: 13 }}
+            className="usage-expand-toggle"
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? '收起' : `展开 ${models.length - 2} 个模型`}
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="usage-refreshing">
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -695,7 +633,7 @@ export default function UsageSnapshotCell({
         effectKey={`${effectKeyPrefix}:remaining`}
       />
       {record.usageRefreshing ? (
-        <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="usage-refreshing">
           <Spin size="small" />
           <span>刷新中</span>
         </div>

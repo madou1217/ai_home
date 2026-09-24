@@ -675,7 +675,7 @@ export default function Models() {
     const rowKey = getModelRowKey(model);
     const displayLabel = getModelDisplayLabel(model.provider, model.id);
     return (
-      <div key={rowKey} style={{ marginBottom: 12 }}>
+      <div key={rowKey} className="models-capsule-slot">
         <ModelCapsuleCard
           modelId={model.id}
           displayName={displayLabel}
@@ -781,6 +781,10 @@ export default function Models() {
         const probeError = parseUpstreamError(globalProbeError);
         return (
           <div className="models-probe-status" role="status">
+            <span
+              className={`hud-led ${catalog?.source === 'remote' ? 'hud-led--warn' : 'hud-led--err'}`}
+              aria-hidden="true"
+            />
             <Tag color={catalog?.source === 'remote' ? 'warning' : 'error'}>部分账号模型探测失败</Tag>
             {probeError.statusCode ? <Tag color="error">HTTP {probeError.statusCode}</Tag> : null}
             <span className="models-probe-status-message" title={probeError.message}>{probeError.message}</span>
@@ -899,7 +903,7 @@ export default function Models() {
                         .filter((account) => providerFilter === 'all' || account.provider === providerFilter)
                         .map((account) => ({
                           label: (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span className="models-account-option">
                               <ProviderIcon provider={account.provider} size={14} />
                               <span>{getAccountLabel(account)}</span>
                             </span>
@@ -983,7 +987,7 @@ export default function Models() {
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '12px' }}>
+        <div className="models-manual-form">
           <Form.Item
             name="provider"
             label="Provider"
@@ -1006,7 +1010,7 @@ export default function Models() {
             label="模型 ID"
             rules={[{ required: true, message: '请输入模型 ID' }]}
           >
-            <Input placeholder="例如 gpt-5.6-sol-wm 或 provider-custom-model" autoFocus />
+            <Input placeholder="例如 gpt-5.6-sol-wm 或 provider-custom-model" autoFocus className="models-mono-input" />
           </Form.Item>
           <Form.Item name="description" label="备注">
             <Input placeholder="可选，用于区分手动补充来源" />

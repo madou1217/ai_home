@@ -1,0 +1,46 @@
+/* 模型别名（设置页内嵌）—— HUD 数据读数：别名 = 青色等宽，目标模型 = 等宽，
+ * 显示名 / 备注为次级文字；空态与加载态只保留居中留白（antd Empty / Spin 已全局 HUD 化）。 */
+.model-alias-name {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: 0.02em;
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.model-alias-target {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.model-alias-target-label {
+  margin-left: var(--hos-space-1-5, 6px);
+  color: var(--color-muted);
+  font-family: var(--font-body);
+}
+
+.model-alias-priority {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold, 600);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.model-alias-description {
+  margin-top: var(--hos-space-2, 8px);
+  font-family: var(--font-prose);
+  white-space: normal;
+}
+
+.model-alias-loading {
+  padding: 48px 0;
+  text-align: center;
+}
+
+.model-alias-empty {
+  padding: 32px 0;
+}
+
+.ant-input.model-alias-mono-input {
+  font-family: var(--font-mono);
+}

@@ -199,10 +199,12 @@ export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'regio
   );
 }
 
+// HUD 方形读数徽标：2px 圆角 + 同色发丝框（圆形只留给 LED / 头像 / 计数，web/DESIGN.md §4）。
 const accountRoleIconStyle: React.CSSProperties = {
   width: 18,
   height: 18,
-  borderRadius: 9,
+  borderRadius: 2,
+  border: '1px solid color-mix(in srgb, currentColor 40%, transparent)',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',

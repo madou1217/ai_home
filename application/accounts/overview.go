@@ -72,6 +72,8 @@ type AccountOverviewInput struct {
 	SubscriptionKind string
 	SubscriptionRaw  string
 	ProfileUpdatedAt time.Time
+	// WorkspaceID 是 Codex 领域工作区（个人账号为 personal），其余 Provider 为空。
+	WorkspaceID      string
 	ModelSummary     AccountModelSummary
 	HasUsageSnapshot bool
 	UsageSnapshot    usagecore.Snapshot
@@ -89,6 +91,7 @@ type AccountOverview struct {
 	subscriptionKind string
 	subscriptionRaw  string
 	profileUpdatedAt time.Time
+	workspaceID      string
 	modelSummary     AccountModelSummary
 	hasUsageSnapshot bool
 	usageSnapshot    usagecore.Snapshot
@@ -114,6 +117,7 @@ func NewAccountOverview(input AccountOverviewInput) (AccountOverview, error) {
 		subscriptionKind: input.SubscriptionKind,
 		subscriptionRaw:  input.SubscriptionRaw,
 		profileUpdatedAt: input.ProfileUpdatedAt,
+		workspaceID:      input.WorkspaceID,
 		modelSummary:     input.ModelSummary,
 		hasUsageSnapshot: input.HasUsageSnapshot,
 		usageSnapshot:    input.UsageSnapshot,
@@ -153,6 +157,11 @@ func (overview AccountOverview) DisplayName() string {
 // Email 返回公开邮箱。
 func (overview AccountOverview) Email() string {
 	return overview.email
+}
+
+// WorkspaceID 返回 Codex 领域工作区；个人账号为 personal，其余 Provider 为空。
+func (overview AccountOverview) WorkspaceID() string {
+	return overview.workspaceID
 }
 
 // SubscriptionKind 返回稳定订阅分类。
@@ -283,6 +292,7 @@ func validProfileOverview(input AccountOverviewInput) bool {
 			input.Email == "" &&
 			input.SubscriptionKind == "" &&
 			input.SubscriptionRaw == "" &&
+			input.WorkspaceID == "" &&
 			input.ProfileUpdatedAt.IsZero()
 	}
 	normalizedTime, err := normalizePersistedTime(input.ProfileUpdatedAt)
@@ -291,7 +301,8 @@ func validProfileOverview(input AccountOverviewInput) bool {
 		validPublicText(input.DisplayName, 256) &&
 		validPublicText(input.Email, 320) &&
 		validMetadataToken(input.SubscriptionKind, 64) &&
-		validPublicText(input.SubscriptionRaw, 128)
+		validPublicText(input.SubscriptionRaw, 128) &&
+		validPublicText(input.WorkspaceID, 256)
 }
 
 // validUsageOverview 校验额度快照确实属于同一账号和 Provider。

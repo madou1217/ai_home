@@ -52,6 +52,16 @@ test('Node <-> Go account sync converges both stores and is quiet at steady stat
   assert.equal(go.defaults.claude, refs.claudeOauth);
   assert.equal(go.accounts.filter((account) => !account.enabled).length, 1, 'Node status down is mirrored');
 
+  // 工作区在两端是同一事实：Go 管理 API 的 workspace_id 与 Node 共享模型逐账号一致。
+  const { resolveCodexWorkspaceFields } = require('../lib/account/codex-auth-metadata');
+  for (const record of readNodeAccounts(aiHomeDir).accounts.filter((account) => account.provider === 'codex' && account.nativeAuth.auth)) {
+    const nodeWorkspace = resolveCodexWorkspaceFields(record.nativeAuth.auth);
+    if (nodeWorkspace.workspaceError) continue;
+    const goView = await client.getAccount(record.accountRef);
+    assert.equal(goView.ok, true, record.accountRef);
+    assert.equal(goView.data.workspace_id, nodeWorkspace.workspaceId, `workspace of ${record.accountRef}`);
+  }
+
   // 稳态：没有任何变化时不发任何写请求。
   const steady = await sync.reconcile();
   assert.deepEqual({ pushed: steady.pushed, pulled: steady.pulled, enabled: steady.enabledChanged, defaults: steady.defaultsChanged, deleted: steady.deleted, adopted: steady.adopted },

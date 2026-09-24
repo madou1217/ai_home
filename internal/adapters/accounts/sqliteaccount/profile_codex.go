@@ -30,6 +30,7 @@ func (codexProfileCodec) Encode(
 		email:            value.Email(),
 		subscriptionKind: value.SubscriptionKind(),
 		subscriptionRaw:  value.SubscriptionRaw(),
+		workspaceID:      value.AccountID(),
 		json:             payload,
 	}, err
 }

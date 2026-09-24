@@ -25,6 +25,7 @@ const accountOverviewSelectSQL = `
 	       COALESCE(p.display_name, ''), COALESCE(p.email, ''),
 	       COALESCE(p.subscription_kind, ''), COALESCE(p.subscription_raw, ''),
 	       COALESCE(p.updated_at_ms, 0),
+	       COALESCE(p.workspace_id, ''),
 	       (
 	         SELECT json_object(
 	           'stored_count', COUNT(*),
@@ -177,6 +178,7 @@ func (store *Store) scanAccountOverview(row rowScanner) (accountapp.AccountOverv
 		&input.SubscriptionKind,
 		&input.SubscriptionRaw,
 		&profileUpdatedAtMS,
+		&input.WorkspaceID,
 		&modelSummaryJSON,
 		&usageSnapshotJSON,
 	); err != nil {

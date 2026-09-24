@@ -102,8 +102,15 @@ func (decoder *responseDecoder) Apply(payload []byte) error {
 	}
 	for _, candidate := range envelope.Response.Candidates {
 		for _, part := range candidate.Content.Parts {
-			if part.Thought || part.Signature != "" {
-				return fmt.Errorf("%w: unsupported thought", ErrInvalidUpstreamResponse)
+			// 思考部分是模型内部推理，Canonical 事件无法表达：整段丢弃，绝不当正文输出。
+			// Gemini 3 等思考模型总会返回它，此前一律拒绝导致这些模型在 Go 上完全不可用。
+			if part.Thought {
+				continue
+			}
+			// 签名对文本部分是可选回传；对函数调用是下一轮的必需回传，丢了会让工具循环
+			// 在上游 400，所以函数调用带签名仍失败关闭，不静默降级。
+			if part.Signature != "" && part.FunctionCall != nil {
+				return fmt.Errorf("%w: unsupported function call signature", ErrInvalidUpstreamResponse)
 			}
 			if part.Text != nil && *part.Text != "" {
 				if err := decoder.appendText(*part.Text); err != nil {
@@ -117,9 +124,12 @@ func (decoder *responseDecoder) Apply(payload []byte) error {
 			}
 		}
 		if envelope.Response.UsageMetadata != nil {
+			// Gemini 的 candidatesTokenCount 不含思考 token（单列 thoughtsTokenCount）；
+			// Canonical 用量按 OpenAI 语义把推理计入输出，所以输出 = 候选 + 思考。
 			usage, err := inference.NewUsage(inference.UsageInput{
-				InputTokens:     envelope.Response.UsageMetadata.PromptTokenCount,
-				OutputTokens:    envelope.Response.UsageMetadata.CandidatesTokenCount,
+				InputTokens: envelope.Response.UsageMetadata.PromptTokenCount,
+				OutputTokens: envelope.Response.UsageMetadata.CandidatesTokenCount +
+					envelope.Response.UsageMetadata.ThoughtsTokenCount,
 				ReasoningTokens: envelope.Response.UsageMetadata.ThoughtsTokenCount,
 			})
 			if err != nil {

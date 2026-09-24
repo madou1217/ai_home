@@ -58,14 +58,41 @@ func TestResponseDecoderPreservesTextToolIdentityUsageAndTerminal(t *testing.T) 
 	}
 }
 
-func TestResponseDecoderRejectsUnexpectedThoughtAsPlainText(t *testing.T) {
+func TestResponseDecoderDropsThoughtsWithoutLeakingThemAsText(t *testing.T) {
+	t.Parallel()
+
+	var text string
+	decoder := newResponseDecoder(
+		"gemini-3-flash",
+		func(event inference.StreamEvent) error {
+			if delta, ok := event.(inference.TextDeltaEvent); ok {
+				text += delta.Delta()
+			}
+			return nil
+		},
+	)
+	frames := [][]byte{
+		[]byte(`{"response":{"candidates":[{"content":{"parts":[{"thought":true,"text":"secret reasoning","thoughtSignature":"signature"}]}}]}}`),
+		[]byte(`{"response":{"candidates":[{"content":{"parts":[{"text":"ok","thoughtSignature":"text-signature"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"thoughtsTokenCount":20}}}`),
+	}
+	for index, frame := range frames {
+		if err := decoder.Apply(frame); err != nil {
+			t.Fatalf("Apply(frame=%d) error = %v", index, err)
+		}
+	}
+	if text != "ok" || !decoder.Terminal() {
+		t.Fatalf("text=%q terminal=%v, want only the answer text", text, decoder.Terminal())
+	}
+}
+
+func TestResponseDecoderRejectsSignedFunctionCall(t *testing.T) {
 	t.Parallel()
 
 	decoder := newResponseDecoder(
-		"claude-opus-4-6-thinking",
+		"gemini-3-flash",
 		func(inference.StreamEvent) error { return nil },
 	)
-	err := decoder.Apply([]byte(`{"response":{"candidates":[{"content":{"parts":[{"thought":true,"text":"secret reasoning","thoughtSignature":"signature"}]},"finishReason":"STOP"}]}}`))
+	err := decoder.Apply([]byte(`{"response":{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call_1","name":"lookup","args":{}},"thoughtSignature":"required-next-turn"}]},"finishReason":"STOP"}]}}`))
 	if !errors.Is(err, ErrInvalidUpstreamResponse) {
 		t.Fatalf("Apply() error = %v, want ErrInvalidUpstreamResponse", err)
 	}

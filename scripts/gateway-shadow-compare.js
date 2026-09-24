@@ -26,7 +26,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 function parseArgs(argv) {
   const out = {
     node: '', go: '', nodeKey: '', goKey: '',
-    model: 'claude-opus-4-6', includeInference: false, json: false
+    model: 'claude-opus-4-6', geminiModel: '', includeInference: false, json: false
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -36,6 +36,7 @@ function parseArgs(argv) {
     else if (arg === '--node-key') { out.nodeKey = next(); i += 1; }
     else if (arg === '--go-key') { out.goKey = next(); i += 1; }
     else if (arg === '--model') { out.model = next(); i += 1; }
+    else if (arg === '--gemini-model') { out.geminiModel = next(); i += 1; }
     else if (arg === '--include-inference') out.includeInference = true;
     else if (arg === '--json') out.json = true;
   }
@@ -56,8 +57,21 @@ function readOnlyProbes() {
 }
 
 /** 推理探针：每个客户端协议一次最小请求。 */
-function inferenceProbes(model) {
+function inferenceProbes(model, geminiModel) {
+  const gemini = geminiModel ? [{
+    name: 'gemini',
+    method: 'POST',
+    path: `/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+    body: { contents: [{ role: 'user', parts: [{ text: 'say ok' }] }], generationConfig: { maxOutputTokens: 16 } }
+  }] : [];
   return [
+    {
+      name: 'chat',
+      method: 'POST',
+      path: '/v1/chat/completions',
+      body: { model, max_tokens: 16, messages: [{ role: 'user', content: 'say ok' }] }
+    },
+    ...gemini,
     {
       name: 'responses',
       method: 'POST',
@@ -70,7 +84,19 @@ function inferenceProbes(model) {
       path: '/v1/messages',
       body: {
         model,
-        max_tokens: 64_000,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'say ok' }]
+      }
+    },
+    {
+      name: 'messages:sse',
+      method: 'POST',
+      path: '/v1/messages',
+      stream: true,
+      body: {
+        model,
+        max_tokens: 16,
+        stream: true,
         messages: [{ role: 'user', content: 'say ok' }]
       }
     }
@@ -145,11 +171,18 @@ async function probe(baseUrl, key, spec) {
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
     });
     const text = await res.text();
+    if (spec.stream && String(res.headers.get('content-type') || '').includes('text/event-stream')) {
+      // SSE 只比事件类型序列（合并相邻重复的 delta），不比正文。
+      const events = text.split('\n').filter((line) => line.startsWith('event:')).map((line) => line.slice(6).trim());
+      const sequence = events.filter((event, index) => event !== events[index - 1]);
+      return { status: res.status, structure: `sse[${sequence.join('>')}]`, elapsedMs: Date.now() - started };
+    }
     let parsed = null;
     try { parsed = JSON.parse(text); } catch (_e) { parsed = null; }
     return {
       status: res.status,
       structure: parsed ? structureOf(parsed) : '<non-json>',
+      errorMessage: res.status >= 400 && parsed && parsed.error ? String(parsed.error.message || parsed.error.code || '').slice(0, 200) : undefined,
       body: spec.catalog ? parsed : undefined,
       elapsedMs: Date.now() - started
     };
@@ -171,7 +204,7 @@ async function main() {
 
   const specs = [
     ...readOnlyProbes(),
-    ...(args.includeInference ? inferenceProbes(args.model) : [])
+    ...(args.includeInference ? inferenceProbes(args.model, args.geminiModel) : [])
   ];
 
   const rows = [];
@@ -214,6 +247,8 @@ async function main() {
         console.log(`\n  ${r.probe} ${r.path}`);
         console.log(`    node: status=${r.node.status} structure=${r.node.structure}`);
         console.log(`    go:   status=${r.go.status} structure=${r.go.structure}`);
+        if (r.node.errorMessage) console.log(`    node error: ${r.node.errorMessage}`);
+        if (r.go.errorMessage) console.log(`    go error: ${r.go.errorMessage}`);
         if (r.catalog && !r.catalog.match) {
           const c = r.catalog;
           console.log(`    目录: node ${c.nodeCount} 项 / go ${c.goCount} 项`);

@@ -5625,3 +5625,49 @@ test('model-filtered pool exhaustion reports the complete request account pool',
     7
   );
 });
+
+test('native Gemini generateContent strips the Code Assist {response} envelope', async () => {
+  const standard = {
+    candidates: [{ content: { role: 'model', parts: [{ text: 'pong' }] }, finishReason: 'STOP', index: 0 }],
+    usageMetadata: { promptTokenCount: 3, thoughtsTokenCount: 9, totalTokenCount: 13 },
+    modelVersion: 'gemini-3-flash'
+  };
+  for (const stream of [false, true]) {
+    const res = createResCapture();
+    const state = {
+      accounts: { gemini: [{ accountRef: accountRef('g1'), provider: 'gemini', email: 'g@example.com', accessToken: 'tok', authType: 'oauth-personal' }] },
+      cursors: { gemini: 0 },
+      metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+    };
+    const path = stream ? '/v1beta/models/gemini-3-flash:streamGenerateContent' : '/v1beta/models/gemini-3-flash:generateContent';
+    await handleUpstreamPassthrough({
+      options: { provider: 'gemini', geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', upstreamTimeoutMs: 3000, maxAttempts: 1, failureThreshold: 1, logRequests: false },
+      state,
+      req: { url: path, headers: { 'content-type': 'application/json' } },
+      res,
+      method: 'POST',
+      bodyBuffer: Buffer.from('{}'),
+      requestJson: { model: 'gemini-3-flash', contents: [{ role: 'user', parts: [{ text: 'ping' }] }] },
+      routeKey: `POST ${path}`,
+      requestStartedAt: Date.now(),
+      cooldownMs: 1000,
+      requestMeta: { clientProtocol: stream ? 'gemini_stream_generate_content' : 'gemini_generate_content' },
+      deps: {
+        chooseServerAccount: (pool) => pool[0],
+        pushMetricError: () => {},
+        writeJson: (r, code, body) => { r.statusCode = code; r.end(JSON.stringify(body)); },
+        fetchWithTimeout: async () => { throw new Error('should_not_call_passthrough'); },
+        // 缓冲路径的上游原样返回 cloudcode-pa 信封。
+        fetchGeminiCodeAssistGenerateContent: async () => ({ response: standard, traceId: 'trace-1', metadata: {} }),
+        markProxyAccountFailure: () => {},
+        markProxyAccountSuccess: () => {},
+        appendProxyRequestLog: () => {}
+      }
+    });
+    assert.equal(res.statusCode, 200);
+    const body = String(res.body);
+    const json = stream ? JSON.parse(body.replace(/^data: /, '').trim()) : JSON.parse(body);
+    assert.deepEqual(json, standard, `stream=${stream}`);
+    assert.equal(body.includes('traceId'), false);
+  }
+});

@@ -1,7 +1,7 @@
 'use strict';
 
 // S5 端到端：真实 startLocalServer 在进程内监督真实 Go Core（aih-server 二进制），
-// 首轮账号同步后 Node /readyz 汇合 Go 状态，已划转的 /v1/models 由 Go 应答。
+// 首轮账号同步后 Node /readyz 汇合 Go 状态，已划转的 /v1/props 由 Go 应答。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -72,7 +72,7 @@ async function startWithGoCore(t, env) {
 }
 
 test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
-  const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.models.list' });
+  const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.props' });
   assert.equal(goHost.status().state, 'ready');
   assert.equal(goHost.status().accountsSynced, true);
 
@@ -81,21 +81,24 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.equal(readyz.go_core.state, 'ready');
   assert.equal(readyz.go_core.accounts_synced, true);
   assert.equal(readyz.go_core.forwarding, true);
-  assert.deepEqual(readyz.go_core.routes, ['gateway.models.list']);
+  assert.deepEqual(readyz.go_core.routes, ['gateway.props']);
   assert.equal(readyz.go_core.ready, readyz.go_core.go_ready);
 
-  const unauthorized = await fetch(`${base}/v1/models`);
+  const unauthorized = await fetch(`${base}/v1/props`);
   assert.equal(unauthorized.status, 401, 'Node still enforces its client key before forwarding');
 
-  const models = await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
-  assert.equal(models.status, 200);
-  const body = await models.json();
-  assert.equal(body.object, 'list');
-  assert.ok(Array.isArray(body.data));
+  const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
+  assert.equal(props.status, 200);
+  assert.equal(typeof (await props.json()), 'object');
+
+  // 模型目录只能在推理全部划转后跟随（S6），单独划转会被整体拒绝并失败关闭。
+  const { resolveGoOwnedEntryIds, loadRouteOwnershipManifest } = require('../lib/server/go-core-route-ownership');
+  const rejected = resolveGoOwnedEntryIds(loadRouteOwnershipManifest(), ['gateway.models.list']);
+  assert.match(rejected.errors.join('\n'), /moves only after every inference route/);
 });
 
 test('Node /readyz fails closed when the Go process dies and recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
-  const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.models.list' });
+  const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.props' });
   assert.equal(goHost.status().state, 'ready');
   process.kill(goHost.status().pid, 'SIGKILL');
   const deadline = Date.now() + 5000;
@@ -106,8 +109,8 @@ test('Node /readyz fails closed when the Go process dies and recovers after auto
   const readyz = await (await fetch(`${base}/readyz`)).json();
   assert.equal(readyz.ready, false);
   assert.equal(readyz.go_core.ready, false);
-  const models = await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
-  assert.equal(models.status, 503);
+  const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
+  assert.equal(props.status, 503);
 
   // 监督器按退避自动拉起 Go，转发随之恢复；Go 的输出落在 logs/go-core.log。
   const recoverBy = Date.now() + 15000;
@@ -116,7 +119,7 @@ test('Node /readyz fails closed when the Go process dies and recovers after auto
   }
   assert.equal(goHost.status().state, 'ready');
   assert.equal(goHost.status().restarts, 1);
-  const recovered = await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
+  const recovered = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
   assert.equal(recovered.status, 200);
   assert.equal(fs.existsSync(goHost.status().logFile), true);
 });

@@ -48,7 +48,9 @@ function parseArgs(argv) {
 function readOnlyProbes() {
   return [
     { name: 'props', method: 'GET', path: '/v1/props' },
-    { name: 'models', method: 'GET', path: '/v1/models' },
+    { name: 'models', method: 'GET', path: '/v1/models', catalog: true },
+    { name: 'models:vision', method: 'GET', path: '/v1/models?capability=vision', catalog: true },
+    { name: 'models:image', method: 'GET', path: '/v1/models?capability=image_out', catalog: true },
     { name: 'health', method: 'GET', path: '/healthz', skipAuth: true }
   ];
 }
@@ -91,6 +93,45 @@ function structureOf(value, depth = 0) {
   ).join(',')}}`;
 }
 
+/**
+ * 模型目录的语义比对（结构指纹只看键，看不出目录内容差异）：
+ * id 集合差、共同 id 的顺序、逐 id 的 owned_by 与 aih_modalities。
+ */
+function compareModelCatalogs(nodeBody, goBody) {
+  const itemsOf = (body) => (body && Array.isArray(body.data) ? body.data : []);
+  const nodeItems = itemsOf(nodeBody);
+  const goItems = itemsOf(goBody);
+  const goById = new Map(goItems.map((item) => [item.id, item]));
+  const nodeIds = new Set(nodeItems.map((item) => item.id));
+  const onlyNode = nodeItems.map((item) => item.id).filter((id) => !goById.has(id));
+  const onlyGo = goItems.map((item) => item.id).filter((id) => !nodeIds.has(id));
+  const nodeOrder = nodeItems.map((item) => item.id).filter((id) => goById.has(id));
+  const goOrder = goItems.map((item) => item.id).filter((id) => nodeIds.has(id));
+  const firstOrderDiff = nodeOrder.findIndex((id, index) => goOrder[index] !== id);
+  const ownerDiffs = [];
+  const modalityDiffs = [];
+  for (const item of nodeItems) {
+    const other = goById.get(item.id);
+    if (!other) continue;
+    if (item.owned_by !== other.owned_by) ownerDiffs.push({ id: item.id, node: item.owned_by, go: other.owned_by });
+    if (JSON.stringify(item.aih_modalities || null) !== JSON.stringify(other.aih_modalities || null)) {
+      modalityDiffs.push({ id: item.id, node: item.aih_modalities || null, go: other.aih_modalities || null });
+    }
+  }
+  return {
+    nodeCount: nodeItems.length,
+    goCount: goItems.length,
+    onlyNode,
+    onlyGo,
+    orderMatches: firstOrderDiff === -1,
+    firstOrderDiff: firstOrderDiff === -1 ? null : { index: firstOrderDiff, node: nodeOrder[firstOrderDiff], go: goOrder[firstOrderDiff] },
+    ownerDiffs,
+    modalityDiffs,
+    match: onlyNode.length === 0 && onlyGo.length === 0 && firstOrderDiff === -1
+      && ownerDiffs.length === 0 && modalityDiffs.length === 0
+  };
+}
+
 async function probe(baseUrl, key, spec) {
   const headers = { accept: 'application/json' };
   if (!spec.skipAuth && key) headers.authorization = `Bearer ${key}`;
@@ -109,6 +150,7 @@ async function probe(baseUrl, key, spec) {
     return {
       status: res.status,
       structure: parsed ? structureOf(parsed) : '<non-json>',
+      body: spec.catalog ? parsed : undefined,
       elapsedMs: Date.now() - started
     };
   } catch (error) {
@@ -137,26 +179,30 @@ async function main() {
     // 顺序执行：并发会让两侧命中不同的账号冷却状态，比对失去意义。
     const nodeResult = await probe(args.node, args.nodeKey, spec);
     const goResult = await probe(args.go, args.goKey, spec);
+    const catalog = spec.catalog ? compareModelCatalogs(nodeResult.body, goResult.body) : null;
+    delete nodeResult.body;
+    delete goResult.body;
     rows.push({
       probe: spec.name,
       path: spec.path,
       node: nodeResult,
       go: goResult,
       statusMatch: nodeResult.status === goResult.status,
-      structureMatch: nodeResult.structure === goResult.structure
+      structureMatch: nodeResult.structure === goResult.structure,
+      catalog
     });
   }
 
-  const mismatches = rows.filter((r) => !r.statusMatch || !r.structureMatch);
+  const mismatches = rows.filter((r) => !r.statusMatch || !r.structureMatch || (r.catalog && !r.catalog.match));
 
   if (args.json) {
     console.log(JSON.stringify({ rows, mismatchCount: mismatches.length }, null, 2));
   } else {
     console.log('probe        path                 node        go          一致');
     for (const r of rows) {
-      const verdict = r.statusMatch && r.structureMatch
-        ? '✓'
-        : (r.statusMatch ? '结构✗' : '状态✗');
+      const verdict = !r.statusMatch
+        ? '状态✗'
+        : (!r.structureMatch ? '结构✗' : (r.catalog && !r.catalog.match ? '目录✗' : '✓'));
       console.log(
         `${r.probe.padEnd(12)} ${r.path.padEnd(20)} `
         + `${String(r.node.status).padEnd(11)} ${String(r.go.status).padEnd(11)} ${verdict}`
@@ -168,6 +214,15 @@ async function main() {
         console.log(`\n  ${r.probe} ${r.path}`);
         console.log(`    node: status=${r.node.status} structure=${r.node.structure}`);
         console.log(`    go:   status=${r.go.status} structure=${r.go.structure}`);
+        if (r.catalog && !r.catalog.match) {
+          const c = r.catalog;
+          console.log(`    目录: node ${c.nodeCount} 项 / go ${c.goCount} 项`);
+          if (c.onlyNode.length) console.log(`    仅 node: ${c.onlyNode.join(', ')}`);
+          if (c.onlyGo.length) console.log(`    仅 go: ${c.onlyGo.join(', ')}`);
+          if (!c.orderMatches) console.log(`    顺序首个分歧 #${c.firstOrderDiff.index}: node=${c.firstOrderDiff.node} go=${c.firstOrderDiff.go}`);
+          for (const d of c.ownerDiffs) console.log(`    owned_by ${d.id}: node=${d.node} go=${d.go}`);
+          for (const d of c.modalityDiffs) console.log(`    modalities ${d.id}: node=${JSON.stringify(d.node)} go=${JSON.stringify(d.go)}`);
+        }
       }
     }
     console.log(`\n探针 ${rows.length} 条，不一致 ${mismatches.length} 条。`);
@@ -176,4 +231,6 @@ async function main() {
   process.exit(mismatches.length ? 1 : 0);
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { compareModelCatalogs, structureOf };

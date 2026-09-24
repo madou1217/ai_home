@@ -49,9 +49,9 @@ test('the checked-in manifest assigns nothing to Go, so the default forwards not
 });
 
 test('operator canary accepts data-plane entries that have a Go implementation', () => {
-  const resolved = resolveGoOwnedEntryIds(manifest, 'gateway.models.list, gateway.anthropic.messages');
-  assert.deepEqual([...resolved.entryIds].sort(), ['gateway.anthropic.messages', 'gateway.models.list']);
-  assert.deepEqual(resolved.canaryIds, ['gateway.models.list', 'gateway.anthropic.messages']);
+  const resolved = resolveGoOwnedEntryIds(manifest, 'gateway.models.detail, gateway.anthropic.messages');
+  assert.deepEqual([...resolved.entryIds].sort(), ['gateway.anthropic.messages', 'gateway.models.detail']);
+  assert.deepEqual(resolved.canaryIds, ['gateway.models.detail', 'gateway.anthropic.messages']);
   assert.deepEqual(resolved.errors, []);
 });
 
@@ -78,4 +78,22 @@ test('entries formally marked go_owned are forwarded without an operator canary'
       : entry))
   };
   assert.deepEqual([...resolveGoOwnedEntryIds(promoted, []).entryIds], ['gateway.props']);
+});
+
+test('the model catalog moves to Go only after every inference route', () => {
+  const { CATALOG_ENTRY_ID, INFERENCE_ENTRY_IDS } = require('../lib/server/go-core-route-ownership');
+  const manifest = loadRouteOwnershipManifest();
+  const alone = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID]);
+  assert.equal(alone.entryIds.size, 0);
+  assert.match(alone.errors[0], /moves only after every inference route/);
+
+  const partial = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID, 'gateway.anthropic.messages']);
+  assert.equal(partial.errors.length, 1);
+
+  const complete = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID, ...INFERENCE_ENTRY_IDS]);
+  assert.deepEqual(complete.errors, []);
+  assert.equal(complete.entryIds.has(CATALOG_ENTRY_ID), true);
+
+  // 目录无关的只读条目可以独立划转。
+  assert.deepEqual(resolveGoOwnedEntryIds(manifest, ['gateway.props', 'gateway.models.detail']).errors, []);
 });

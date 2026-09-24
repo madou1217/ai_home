@@ -73,7 +73,8 @@ npm run go:build                                   # 构建 bin/native/<platform
 aih server config set --go-core                    # Node Server 进程拉起并监督 Go Core
 aih server restart
 # P1 账号迁移完成、Go /readyz ready 之后才划转路由：
-aih server config set --go-core-routes gateway.models.list,gateway.models.detail,gateway.props
+aih server config set --go-core-routes gateway.models.detail,gateway.props
+# gateway.models.list 只能在全部推理条目划给 Go 之后划转（Go 目录 = Go 能路由的模型，见 todo S6）
 aih server restart
 ```
 

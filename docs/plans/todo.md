@@ -20,8 +20,12 @@
   - 2026-09-25 已 `apply` + `verify`（ok）：Go `aih.db` 28 个账号（29 条迁移，其中 1 条并入同一 Codex 身份），0 失败、0 Go 独有账号；apply 前备份在 `~/.ai_home/backups/aih.db.pre-p1-apply.20260925021035`。
 - [x] S5 就绪态：Node `/readyz` 汇合 Go 状态（进程、首轮同步、Go `/readyz.ready`、已划转路由）；补真实 `startLocalServer` + 真 Go 的端到端测试
   - 2026-09-25 完成：`goCoreHost.readiness()` 按需探测 Go `/readyz`，Node `/readyz` 增加 `go_core` 字段；有 Go 路由而转发不可用或 Go 不 ready 时整体 `ready=false`。`test/server.go-core-e2e.test.js` 用真实 startLocalServer + 真实 Go 验证就绪汇合、转发与杀进程后的失败关闭。
-- [ ] S6 `/v1/models` 对齐：当前两端**不可能完全一致**——Node 合并别名/手动模型/上游探测、排除图片模型、`localeCompare` 排序、总是带 `aih_modalities`；Go 只读 `account_models`、字节序排序、`aih_modalities` 需 `?include=modalities`。需先决定以谁为准并改代码；`gateway:shadow` 只比状态码+键结构，需加 id/顺序/owned_by 比对
-- [ ] S7 切 `/v1/models`：`aih server config set --go-core --go-core-routes gateway.models.list,gateway.models.detail,gateway.props`（依赖 S6 结论）
+- [x] S6 `/v1/models` 对齐（以 Node 为准）：
+  - 影子工具加目录语义比对（id 集合差、共同 id 顺序、owned_by、aih_modalities）与 capability 探针。
+  - Go 改动：`aih_modalities` 默认输出；Codex 目录按 Node 规则剔除 `visibility` 非 list/default/public 与 `supported_in_api=false` 的项（真实比对抓到 `gpt-reserve`）。
+  - 2026-09-25 真实影子（Node 生产 9527 vs Go 读 aih.db 快照，委托刷新）：结构一致、无 Go 独有 id，38 个共同 id 的顺序/owned_by/modalities 全部一致。
+  - 剩余差异是**模型全集**：Node 396 / Go 38，差集是 Node 独有的中转/原生 Provider 模型。结论：目录描述「本网关能路由的模型」，Go 目录只能在推理全部划给 Go 后跟随。`go-core-route-ownership` 强制该约束（单独划转 `gateway.models.list` 整体拒绝）。
+- [ ] S7 切只读路由：按 S6 结论，`gateway.models.list` 随推理最后划转；本步只划与目录无关的 `gateway.props`、`gateway.models.detail`：`aih server config set --go-core --go-core-routes gateway.props,gateway.models.detail`
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据
 - [ ] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
 - [ ] S10 打包：postinstall 构建/下载 Go 构件 + 版本/sha 校验；Go 崩溃自动重启；Go stderr 落日志；基准测试（Node 直出 vs Node→Go vs Go 直连：TTFB、p50/p99、吞吐、RSS/CPU）

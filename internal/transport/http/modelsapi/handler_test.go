@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -105,13 +104,14 @@ func TestHandlerReturnsUniqueLocalModels(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &rawDocument); err != nil {
 		t.Fatalf("json.Unmarshal(raw) error = %v", err)
 	}
-	if _, found := rawDocument.Data[0]["aih_modalities"]; found {
-		t.Fatalf("default model leaked aih_modalities: %s", response.Body)
+	// 与 Node 的 buildOpenAIModelsList 一致：aih_modalities 默认输出。
+	if _, found := rawDocument.Data[0]["aih_modalities"]; !found {
+		t.Fatalf("default model is missing aih_modalities: %s", response.Body)
 	}
 }
 
-// TestHandlerIncludesModalitiesOnlyWhenRequested 验证扩展字段显式 opt-in，未知模型保守降级。
-func TestHandlerIncludesModalitiesOnlyWhenRequested(t *testing.T) {
+// TestHandlerIncludesModalitiesWithLegacyOptIn 验证历史 include=modalities 仍被接受，未知模型保守降级。
+func TestHandlerIncludesModalitiesWithLegacyOptIn(t *testing.T) {
 	t.Parallel()
 
 	reader := &modelReaderStub{
@@ -288,13 +288,9 @@ func TestHandlerFiltersCatalogByCapability(t *testing.T) {
 				ids = append(ids, item.ID)
 			}
 			assertStringSlice(t, ids, test.ids)
-			wantModalities := strings.Contains(test.target, "include=modalities")
 			for _, item := range document.Data {
-				if wantModalities && item.AIHModalities == nil {
+				if item.AIHModalities == nil {
 					t.Fatalf("model %s missing aih_modalities: %s", item.ID, response.Body)
-				}
-				if !wantModalities && item.AIHModalities != nil {
-					t.Fatalf("model %s leaked aih_modalities: %s", item.ID, response.Body)
 				}
 			}
 		})

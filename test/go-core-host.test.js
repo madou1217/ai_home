@@ -74,7 +74,7 @@ test('a disabled Go Core never spawns and claims no routes by default', async ()
 test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the host', async () => {
   const { factory, calls } = fakeSupervisorFactory();
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, {}),
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
     createGoCoreSupervisor: factory,
     aiHomeDir: '/tmp/aih-home',
     publicPort: 9527,
@@ -93,14 +93,14 @@ test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the 
   const clientKey = calls.options.clientKey();
   assert.ok(managementKey.length >= 32 && clientKey.length >= 32);
   assert.notEqual(managementKey, clientKey);
-  assert.deepEqual(host.status().routes, ['gateway.models.list']);
+  assert.deepEqual(host.status().routes, ['gateway.props']);
 });
 
 test('a failed Go Core start is reported but does not throw out of the Node host', async () => {
   const { factory } = fakeSupervisorFactory({ failStart: true });
   const errors = [];
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, {}),
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
     createGoCoreSupervisor: factory,
     log: { log() {}, error: (message) => errors.push(message) }
   });
@@ -115,7 +115,7 @@ test('routes assigned to a disabled Go Core are reported as failing closed', asy
   const errors = [];
   const { factory } = fakeSupervisorFactory();
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreRoutes: ['gateway.models.list'] }, {}),
+    settings: resolveGoCoreSettings({ goCoreRoutes: ['gateway.props'] }, {}),
     createGoCoreSupervisor: factory,
     log: { log() {}, error: (message) => errors.push(message) }
   });
@@ -139,7 +139,7 @@ test('readiness is ready when Go Core is disabled and owns no routes', async () 
 test('readiness fails closed when routes are assigned but Go Core is disabled', async () => {
   const { factory } = fakeSupervisorFactory();
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreRoutes: ['gateway.models.list'] }, {}),
+    settings: resolveGoCoreSettings({ goCoreRoutes: ['gateway.props'] }, {}),
     createGoCoreSupervisor: factory,
     log: silentLog
   });
@@ -147,7 +147,7 @@ test('readiness fails closed when routes are assigned but Go Core is disabled', 
   const readiness = await host.readiness();
 
   assert.equal(readiness.ready, false);
-  assert.deepEqual(readiness.routes, ['gateway.models.list']);
+  assert.deepEqual(readiness.routes, ['gateway.props']);
 });
 
 test('readiness merges Go /readyz.ready with forwarding availability', async () => {
@@ -158,7 +158,7 @@ test('readiness merges Go /readyz.ready with forwarding availability', async () 
   };
   const { factory } = fakeSupervisorFactory();
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
     createGoCoreSupervisor: factory,
     fetchImpl,
     log: silentLog
@@ -180,7 +180,7 @@ test('readiness merges Go /readyz.ready with forwarding availability', async () 
 test('readiness reports an unreachable Go /readyz without throwing', async () => {
   const { factory } = fakeSupervisorFactory();
   const host = createGoCoreHost({
-    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.models.list'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
     createGoCoreSupervisor: factory,
     fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
     log: silentLog

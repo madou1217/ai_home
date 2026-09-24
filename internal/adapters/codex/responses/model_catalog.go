@@ -201,6 +201,24 @@ func classifyModelsMediaType(raw string) string {
 type modelIdentityDTO struct {
 	Slug string `json:"slug"`
 	ID   string `json:"id"`
+	// Visibility 与 SupportedInAPI 是上游对目录项的公开性声明；与 Node 的
+	// filterCodexModelEntries 一致，隐藏项与不支持 API 的项不进入账号目录。
+	Visibility     string `json:"visibility"`
+	SupportedInAPI *bool  `json:"supported_in_api"`
+}
+
+// listedModelIdentity 判断目录项是否对客户端公开：显式 supported_in_api=false 或
+// 非 list/default/public 的 visibility 都视为隐藏（缺省视为公开）。
+func listedModelIdentity(entry modelIdentityDTO) bool {
+	if entry.SupportedInAPI != nil && !*entry.SupportedInAPI {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(entry.Visibility)) {
+	case "", "list", "default", "public":
+		return true
+	default:
+		return false
+	}
 }
 
 // modelCatalogEnvelopeDTO 同时覆盖 ChatGPT OAuth 和 OpenAI API Key 响应。
@@ -248,11 +266,17 @@ func decodeModelCatalog(
 		if !validModelCatalogID(model) {
 			return modelCatalog{}, ErrInvalidModelCatalog
 		}
+		if !listedModelIdentity(entry) {
+			continue
+		}
 		if _, found := seen[model]; found {
 			return modelCatalog{}, ErrInvalidModelCatalog
 		}
 		seen[model] = struct{}{}
 		models = append(models, model)
+	}
+	if len(models) == 0 {
+		return modelCatalog{}, ErrInvalidModelCatalog
 	}
 	sort.Strings(models)
 	return modelCatalog{models: models}, nil

@@ -212,3 +212,26 @@ func TestFetchRealCodexModelCatalogChecksBeforeInference(t *testing.T) {
 		t.Fatalf("catalog.require(gpt-5.6-luna) error = %v", err)
 	}
 }
+
+// TestDecodeRealCodexModelCatalogDropsHiddenModels 与 Node filterCodexModelEntries 对齐：
+// visibility 非 list/default/public、或 supported_in_api=false 的项不进入账号目录。
+func TestDecodeRealCodexModelCatalogDropsHiddenModels(t *testing.T) {
+	catalog, err := decodeRealCodexModelCatalog([]byte(`{"models":[
+		{"slug":"gpt-5.6-sol","visibility":"list"},
+		{"slug":"gpt-5.6-terra"},
+		{"slug":"gpt-reserve","visibility":"hide"},
+		{"slug":"gpt-internal","supported_in_api":false}
+	]}`), codexauth.AuthKindOAuth)
+	if err != nil {
+		t.Fatalf("decodeRealCodexModelCatalog() error = %v", err)
+	}
+	if got := catalog.diagnosticModels(); len(got) != 2 || got[0] != "gpt-5.6-sol" || got[1] != "gpt-5.6-terra" {
+		t.Fatalf("catalog = %v, want only listed models", got)
+	}
+	if err := catalog.require("gpt-reserve"); err == nil {
+		t.Fatal("hidden model must not be routable")
+	}
+	if _, err := decodeRealCodexModelCatalog([]byte(`{"models":[{"slug":"gpt-reserve","visibility":"hide"}]}`), codexauth.AuthKindOAuth); err == nil {
+		t.Fatal("catalog with only hidden models must be rejected like an empty catalog")
+	}
+}

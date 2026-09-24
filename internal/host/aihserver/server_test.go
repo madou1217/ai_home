@@ -217,8 +217,9 @@ func TestServerMountsSystemAndAccountRoutes(t *testing.T) {
 		nil,
 	)
 	assertStatus(t, models, http.StatusOK)
+	// aih_modalities 与 Node 一致默认输出。
 	if !strings.Contains(models.body, `"id":"gpt-5.6-sol"`) ||
-		strings.Contains(models.body, `"aih_modalities"`) {
+		!strings.Contains(models.body, `"aih_modalities"`) {
 		t.Fatalf("本地模型目录缺少已注册账号模型: %s", models.body)
 	}
 	t.Logf(

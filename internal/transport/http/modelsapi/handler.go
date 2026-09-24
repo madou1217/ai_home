@@ -215,7 +215,9 @@ const (
 // `if (!capability) return bodyText` 一致：客户端把变量拼进 query 而变量为空是常见形态，
 // 不该因此拿到 400。真正未知的键仍然报错（见下方白名单），这是 Go 侧既有的严格合同。
 func parseCatalogOptions(rawQuery string) (catalogOptions, bool) {
-	options := catalogOptions{protocol: catalogProtocolOpenAI}
+	// aih_modalities 与 Node 的 buildOpenAIModelsList 一致默认输出；include=modalities
+	// 仍被接受（历史客户端会带），只是不再改变结果。
+	options := catalogOptions{protocol: catalogProtocolOpenAI, includeModalities: true}
 	if rawQuery == "" {
 		return options, true
 	}
@@ -264,7 +266,7 @@ type modelView struct {
 	AIHModalities *modelModalitiesView `json:"aih_modalities,omitempty"`
 }
 
-// modelModalitiesView 是显式 opt-in 才输出的 AIH 模态扩展。
+// modelModalitiesView 是 AIH 模态扩展（与 Node 一致总是输出）。
 type modelModalitiesView struct {
 	Input  []string `json:"input"`
 	Output []string `json:"output"`

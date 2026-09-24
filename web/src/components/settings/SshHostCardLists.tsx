@@ -1,35 +1,16 @@
 import { Card, Empty, Popconfirm, Space, Spin } from 'antd';
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import {
+  SSH_AUTH_LABELS as AUTH_LABELS,
+  SSH_DELETE_CONNECTION_CONFIRM,
+  SSH_DELETE_WORKSPACE_CONFIRM,
+  formatSshTarget
+} from '@/features/ssh-hosts/ssh-hosts-model';
+import type { SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
 import './SshHostCardLists.css';
 
-export interface SshConnection {
-  id: string;
-  label: string;
-  host: string;
-  port: number;
-  user: string;
-  authType: 'key' | 'key-file' | 'password' | 'agent';
-  identityFile?: string;
-  privateKey?: string;
-  password?: string;
-  createdAt: number;
-}
-
-export interface SshWorkspace {
-  id: string;
-  connectionId: string;
-  label: string;
-  remoteRoot: string;
-  createdAt: number;
-}
-
-const AUTH_LABELS: Record<SshConnection['authType'], string> = {
-  agent: 'SSH Agent',
-  'key-file': '私钥文件',
-  key: '粘贴私钥',
-  password: '密码'
-};
+export type { SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
 
 interface ConnectionListProps {
   connections: SshConnection[];
@@ -62,8 +43,8 @@ export function SshConnectionCardList({
           <div className="ssh-list-card-head">
             <div className="ssh-list-card-title">
               <span className="ssh-list-card-name" title={connection.label}>{connection.label}</span>
-              <code className="ssh-list-card-endpoint" title={`${connection.user}@${connection.host}:${connection.port}`}>
-                {connection.user}@{connection.host}:{connection.port}
+              <code className="ssh-list-card-endpoint" title={formatSshTarget(connection)}>
+                {formatSshTarget(connection)}
               </code>
             </div>
             <span className={`ssh-auth-pill ssh-auth-pill--${connection.authType}`}>{AUTH_LABELS[connection.authType]}</span>
@@ -77,7 +58,7 @@ export function SshConnectionCardList({
             <Space size={6} wrap>
               <Button size="small" icon={<EditOutlined />} onClick={() => onEdit(connection)}>编辑</Button>
               <Popconfirm
-                title="将同步删除关联该连接的所有工作空间！确认删除？"
+                title={SSH_DELETE_CONNECTION_CONFIRM}
                 onConfirm={() => onDelete(connection.id)}
                 okText="确认"
                 cancelText="取消"
@@ -121,15 +102,15 @@ export function SshWorkspaceCardList({ workspaces, connections, loading, onEdit,
               </span>
             </div>
             {connection && (
-              <div className="ssh-list-card-meta" title={`${connection.user}@${connection.host}:${connection.port}`}>
-                {connection.user}@{connection.host}:{connection.port}
+              <div className="ssh-list-card-meta" title={formatSshTarget(connection)}>
+                {formatSshTarget(connection)}
               </div>
             )}
             <div className="ssh-list-card-footer ssh-list-card-footer--end">
               <Space size={6} wrap>
                 <Button size="small" icon={<EditOutlined />} onClick={() => onEdit(workspace)}>编辑</Button>
                 <Popconfirm
-                  title="仅在数据库中删除此空间，不会影响远程服务器的物理文件。确认移除？"
+                  title={SSH_DELETE_WORKSPACE_CONFIRM}
                   onConfirm={() => onDelete(workspace.id)}
                   okText="确认"
                   cancelText="取消"

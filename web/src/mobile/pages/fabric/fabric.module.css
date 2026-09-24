@@ -1,0 +1,189 @@
+/* Fabric 移动端页面（Server / SSH / 首启）共用的局部样式：只用语义 token。 */
+
+/* HudField 已负责标签与间距，去掉 antd Form.Item 自带的底部留白 */
+.formItem:global(.ant-form-item) {
+  margin-bottom: 0;
+}
+.formItem :global(.ant-form-item-explain-error) {
+  padding-top: 4px;
+  font-size: 12px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 等宽端点 + COPY：长地址折行，不撑破单列 */
+.endpoint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.endpoint code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.note {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.noteErr {
+  composes: note;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.sheetActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sheetActions > * {
+  flex: 1 1 calc(50% - 4px);
+}
+
+.errorBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* SSH 诊断 */
+.diag {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.diagVerdict {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-accent);
+  background: var(--color-surface-sunken);
+}
+.diagVerdict[data-tone='ok'] { border-left-color: var(--color-success); }
+.diagVerdict[data-tone='warn'] { border-left-color: var(--color-warning); }
+.diagVerdict[data-tone='err'] { border-left-color: var(--color-danger); }
+.diagAdvice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* SSH 远程目录浏览器 */
+.dir {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dirCrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 calc(-1 * var(--mhud-gutter));
+  padding: 0 var(--mhud-gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.dirCrumbs::-webkit-scrollbar { display: none; }
+.dirCrumbItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.dirCrumbSep {
+  color: var(--color-faint);
+  font-size: 10px;
+}
+.dirCrumb {
+  min-height: var(--mhud-hit);
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dirCrumb:disabled {
+  color: var(--color-heading);
+  font-weight: 700;
+  cursor: default;
+}
+.dirLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 0;
+}
+.dirList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+.dirRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--mhud-hit);
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.dirRow + .dirRow { border-top: 1px solid var(--color-border); }
+.dirRow:active { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+.dirRow > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dirRowArrow { color: var(--color-faint); font-size: 10px; }
+.dirSelected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dirSelected code {
+  overflow-wrap: anywhere;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

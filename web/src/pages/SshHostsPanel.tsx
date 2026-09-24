@@ -1,35 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Modal, Tag, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import { Form, Input, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
 import InlineNote from '@/components/ui/InlineNote';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import { SshConnectionCardList, SshWorkspaceCardList } from '@/components/settings/SshHostCardLists';
-import type { SshConnection, SshWorkspace } from '@/components/settings/SshHostCardLists';
+import type { SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
+import {
+  SSH_AUTH_OPTIONS,
+  SSH_CONNECTION_FORM_DEFAULTS,
+  buildRemotePathCrumbs,
+  buildSshConnectionFormValues
+} from '@/features/ssh-hosts/ssh-hosts-model';
+import { useSshDirectoryBrowser, useSshHosts } from '@/features/ssh-hosts/use-ssh-hosts';
 import { LoadingOutlined, FolderOpenOutlined, FolderAddOutlined, LinkOutlined, RightOutlined } from '@ant-design/icons';
-import { sshHostsAPI } from '@/services/api';
-import type { SshHostTestResult } from '@/types';
-
-// 密码掩码常量
-const PASSWORD_MASK = '******';
-
-interface RemoteDirItem {
-  name: string;
-  path: string;
-}
 
 export default function SshHostsPanel({ setActions }: { setActions?: (actions: React.ReactNode) => void }) {
   // ------------------------------------------
-  // 1. 数据状态声明
+  // 1. 数据状态（数据与请求由 useSshHosts 统一提供，移动端共用）
   // ------------------------------------------
-  const [connections, setConnections] = useState<SshConnection[]>([]);
+  const {
+    connections,
+    workspaces,
+    loadingConns,
+    loadingWorkspaces,
+    testStates,
+    testingIds,
+    saveConnection,
+    deleteConnection,
+    testConnection,
+    saveWorkspace,
+    deleteWorkspace
+  } = useSshHosts();
   const [activeTab, setActiveTab] = useState<'connections' | 'workspaces'>('connections');
   const [filterConnectionId, setFilterConnectionId] = useState<string>('');
   const [diagnosticDrawerVisible, setDiagnosticDrawerVisible] = useState(false);
   const [activeDiagnosticConn, setActiveDiagnosticConn] = useState<SshConnection | null>(null);
-  const [workspaces, setWorkspaces] = useState<SshWorkspace[]>([]);
-  const [loadingConns, setLoadingConns] = useState(false);
-  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
 
   // Connection 弹窗状态
   const [connModalVisible, setConnModalVisible] = useState(false);
@@ -43,9 +49,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const [wsForm] = Form.useForm();
   const [selectedConnIdInForm, setSelectedConnIdInForm] = useState<string>('');
 
-  // 连通性测试状态存储：key 为 connection.id，value 为测试中 (loading) 或测试结果 (result)
-  const [testStates, setTestStates] = useState<Record<string, { loading: boolean; result?: SshHostTestResult }>>({});
-  
   useEffect(() => {
     if (setActions) {
       setActions(
@@ -78,45 +81,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   }, [setActions]);
 
   // 远程目录浏览器状态
-  const [dirModalVisible, setDirModalVisible] = useState(false);
-  const [dirBrowserConnId, setDirBrowserConnId] = useState<string>('');
-  const [currentPath, setCurrentPath] = useState<string>('');
-  const [parentPath, setParentPath] = useState<string>('');
-  const [dirList, setDirList] = useState<RemoteDirItem[]>([]);
-  const [loadingDirs, setLoadingDirs] = useState(false);
-  const [selectedDirPath, setSelectedDirPath] = useState<string>('');
-
-  // ------------------------------------------
-  // 2. 数据获取
-  // ------------------------------------------
-  const fetchConnections = async () => {
-    setLoadingConns(true);
-    try {
-      const data = await sshHostsAPI.listConnections() as any;
-      setConnections(data || []);
-    } catch (err: any) {
-      message.error(`加载远程连接失败: ${err.message || '未知错误'}`);
-    } finally {
-      setLoadingConns(false);
-    }
-  };
-
-  const fetchWorkspaces = async () => {
-    setLoadingWorkspaces(true);
-    try {
-      const data = await sshHostsAPI.listWorkspaces() as any;
-      setWorkspaces(data || []);
-    } catch (err: any) {
-      message.error(`加载工作空间失败: ${err.message || '未知错误'}`);
-    } finally {
-      setLoadingWorkspaces(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchConnections();
-    fetchWorkspaces();
-  }, []);
+  const dirBrowser = useSshDirectoryBrowser();
 
   // ------------------------------------------
   // 3. Connection 物理连接管理逻辑
@@ -125,81 +90,24 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     if (conn) {
       setEditingConn(conn);
       setAuthType(conn.authType);
-      connForm.setFieldsValue({
-        label: conn.label,
-        host: conn.host,
-        port: conn.port,
-        user: conn.user,
-        authType: conn.authType,
-        identityFile: conn.identityFile || '',
-        password: conn.password || (conn.authType === 'password' ? PASSWORD_MASK : ''),
-        privateKey: conn.privateKey || (conn.authType === 'key' ? PASSWORD_MASK : '')
-      });
+      connForm.setFieldsValue(buildSshConnectionFormValues(conn));
     } else {
       setEditingConn(null);
       setAuthType('agent');
       connForm.resetFields();
-      connForm.setFieldsValue({ port: 22, authType: 'agent' });
+      connForm.setFieldsValue(SSH_CONNECTION_FORM_DEFAULTS);
     }
     setConnModalVisible(true);
   };
 
-  const handleSaveConn = async (values: any): Promise<boolean> => {
-    try {
-      if (editingConn) {
-        await sshHostsAPI.updateConnection(editingConn.id, values);
-        message.success('更新远程连接配置成功');
-      } else {
-        await sshHostsAPI.createConnection(values);
-        message.success('添加远程连接成功');
-      }
-      await fetchConnections();
-      return true;
-    } catch (err: any) {
-      message.error(`保存失败: ${err?.response?.data?.message || err?.message || '未知错误'}`);
-      return false;
-    }
-  };
+  const handleSaveConn = (values: Record<string, unknown>): Promise<boolean> => saveConnection(editingConn, values);
 
-  const handleDeleteConn = async (id: string) => {
-    try {
-      await sshHostsAPI.deleteConnection(id);
-      message.success('删除连接成功');
-      fetchConnections();
-      fetchWorkspaces(); // 级联删除，同时刷新工作空间
-    } catch (err: any) {
-      message.error(`删除失败: ${err.message || '未知错误'}`);
-    }
-  };
+  const handleDeleteConn = (id: string) => deleteConnection(id);
 
   const handleTestConnection = async (conn: SshConnection) => {
     setActiveDiagnosticConn(conn);
     setDiagnosticDrawerVisible(true);
-    setTestStates(prev => ({ ...prev, [conn.id]: { loading: true } }));
-
-    try {
-      const result = await sshHostsAPI.testConnection({
-        connectionId: conn.id,
-        timeoutMs: 5000
-      }) as any;
-
-      setTestStates(prev => ({
-        ...prev,
-        [conn.id]: { loading: false, result }
-      }));
-    } catch (err: any) {
-      setTestStates(prev => ({
-        ...prev,
-        [conn.id]: {
-          loading: false,
-          result: {
-            status: 'unreachable',
-            target: conn.host,
-            stderr: err?.response?.data?.message || err.message || '连接超时，无法建立 SSH 连接。'
-          }
-        }
-      }));
-    }
+    await testConnection(conn);
   };
 
   // ------------------------------------------
@@ -226,100 +134,39 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     setWsModalVisible(true);
   };
 
-  const handleSaveWs = async (values: any): Promise<boolean> => {
-    try {
-      if (editingWs) {
-        await sshHostsAPI.updateWorkspace(editingWs.id, values);
-        message.success('更新工作空间配置成功');
-      } else {
-        await sshHostsAPI.createWorkspace(values);
-        message.success('工作空间创建成功');
-      }
-      await fetchWorkspaces();
-      return true;
-    } catch (err: any) {
-      message.error(`保存工作区失败: ${err?.response?.data?.message || err?.message || '未知错误'}`);
-      return false;
-    }
-  };
+  const handleSaveWs = (values: Record<string, unknown>): Promise<boolean> => saveWorkspace(editingWs, values);
 
-  const handleDeleteWs = async (id: string) => {
-    try {
-      await sshHostsAPI.deleteWorkspace(id);
-      message.success('工作空间已移除 (远端磁盘数据未受影响)');
-      fetchWorkspaces();
-    } catch (err: any) {
-      message.error(`移除失败: ${err.message || '未知错误'}`);
-    }
-  };
+  const handleDeleteWs = (id: string) => deleteWorkspace(id);
 
   // ------------------------------------------
   // 5. 远程目录浏览器逻辑
   // ------------------------------------------
   const openDirectoryBrowser = () => {
-    if (!selectedConnIdInForm) {
-      message.warning('请先选择一个远程 SSH 连接');
-      return;
-    }
-    setDirBrowserConnId(selectedConnIdInForm);
-    setSelectedDirPath('');
-    setCurrentPath('');
-    setDirList([]);
-    setDirModalVisible(true);
-    loadRemoteDirectory(selectedConnIdInForm, '');
-  };
-
-  const loadRemoteDirectory = async (connectionId: string, subDir: string) => {
-    setLoadingDirs(true);
-    try {
-      const res = await sshHostsAPI.browseSshDirectory({ connectionId, subDir });
-      if (res.ok) {
-        setCurrentPath(res.currentDir);
-        setParentPath(res.parentDir);
-        setDirList(res.directories || []);
-        setSelectedDirPath(res.currentDir);
-      } else {
-        message.error(res.message || '加载远程目录失败');
-      }
-    } catch (err: any) {
-      message.error(`远程执行失败: ${err?.response?.data?.message || err.message || '无法建立 SSH 连接，请先在下方测试该连接。'}`);
-      setDirModalVisible(false);
-    } finally {
-      setLoadingDirs(false);
-    }
+    dirBrowser.openFor(selectedConnIdInForm);
   };
 
   const handleConfirmDirectory = () => {
-    if (!selectedDirPath) {
-      message.warning('请选择一个目录');
-      return;
-    }
-    wsForm.setFieldsValue({ remoteRoot: selectedDirPath });
-    setDirModalVisible(false);
+    const selected = dirBrowser.confirm();
+    if (selected) wsForm.setFieldsValue({ remoteRoot: selected });
   };
 
   // 构造面包屑
   const renderBreadcrumbs = () => {
-    if (!currentPath) return null;
-    const parts = currentPath.split('/').filter(Boolean);
+    if (!dirBrowser.currentPath) return null;
     const breadcrumbItems = [];
 
     // 根目录项
     breadcrumbItems.push(
-      <Breadcrumb.Item key="root" onClick={() => loadRemoteDirectory(dirBrowserConnId, '/')}>
+      <Breadcrumb.Item key="root" onClick={() => dirBrowser.navigate('/')}>
         <span className="ssh-dir-crumb">[Root]</span>
       </Breadcrumb.Item>
     );
 
-    let pathAccumulator = '';
-    parts.forEach((part, index) => {
-      pathAccumulator += `/${part}`;
-      const targetPath = pathAccumulator;
-      const isLast = index === parts.length - 1;
+    buildRemotePathCrumbs(dirBrowser.currentPath).forEach((crumb, index) => {
       breadcrumbItems.push(
-        <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadRemoteDirectory(dirBrowserConnId, targetPath)}>
-          <span className={isLast ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
-            {part}
+        <Breadcrumb.Item key={index} onClick={crumb.last ? undefined : () => dirBrowser.navigate(crumb.path)}>
+          <span className={crumb.last ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
+            {crumb.name}
           </span>
         </Breadcrumb.Item>
       );
@@ -436,7 +283,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 <SshConnectionCardList
                   connections={connections}
                   loading={loadingConns}
-                  testingIds={Object.entries(testStates).filter(([, state]) => state.loading).map(([id]) => id)}
+                  testingIds={testingIds}
                   onTest={handleTestConnection}
                   onViewWorkspaces={(connection) => {
                     setFilterConnectionId(connection.id);
@@ -546,10 +393,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             rules={[{ required: true }]}
           >
             <Radio.Group onChange={(e) => setAuthType(e.target.value)}>
-              <Radio.Button value="agent">SSH Agent 免密</Radio.Button>
-              <Radio.Button value="key-file">私钥文件</Radio.Button>
-              <Radio.Button value="key">粘贴私钥</Radio.Button>
-              <Radio.Button value="password">账户密码</Radio.Button>
+              {SSH_AUTH_OPTIONS.map((option) => (
+                <Radio.Button key={option.value} value={option.value}>{option.label}</Radio.Button>
+              ))}
             </Radio.Group>
           </Form.Item>
 
@@ -671,9 +517,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           ========================================== */}
       <Modal
         title="远程工作目录浏览器"
-        open={dirModalVisible}
+        open={dirBrowser.open}
         onOk={handleConfirmDirectory}
-        onCancel={() => setDirModalVisible(false)}
+        onCancel={dirBrowser.close}
         okText="确认选择该路径"
         cancelText="取消"
         width={700}
@@ -684,36 +530,36 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
           {/* 2. 目录详细列表 */}
           <div className="directory-list-container ssh-dir-list">
-            {loadingDirs ? (
+            {dirBrowser.loading ? (
               <div className="ssh-dir-loading">
                 <LoadingOutlined className="ssh-dir-loading-icon" />
                 <span className="hud-label">正在获取远程目录列表，请稍后...</span>
               </div>
             ) : (
               <div className="ssh-dir-rows">
-                {parentPath && currentPath !== '/' && (
+                {dirBrowser.parentPath && dirBrowser.currentPath !== '/' && (
                   <div
                     className="dir-item ssh-dir-item ssh-dir-item--parent"
-                    onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, parentPath)}
+                    onDoubleClick={() => dirBrowser.navigate(dirBrowser.parentPath)}
                   >
                     <FolderOpenOutlined className="ssh-dir-item-icon" />
                     <strong className="ssh-dir-item-up">.. (返回上级目录)</strong>
                   </div>
                 )}
 
-                {dirList.length === 0 ? (
+                {dirBrowser.dirs.length === 0 ? (
                   <div className="ssh-dir-empty hud-label">
                     没有子目录。双击上级目录可返回。
                   </div>
                 ) : (
-                  dirList.map(dir => {
-                    const isSelected = selectedDirPath === dir.path;
+                  dirBrowser.dirs.map(dir => {
+                    const isSelected = dirBrowser.selectedPath === dir.path;
                     return (
                       <div
                         key={dir.path}
                         className={`dir-item ssh-dir-item${isSelected ? ' ssh-dir-item--selected' : ''}`}
-                        onClick={() => setSelectedDirPath(dir.path)}
-                        onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, dir.path)}
+                        onClick={() => dirBrowser.select(dir.path)}
+                        onDoubleClick={() => dirBrowser.navigate(dir.path)}
                       >
                         <FolderOpenOutlined className="ssh-dir-item-icon" />
                         <span>{dir.name}</span>
@@ -729,7 +575,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           <div className="ssh-dir-selected">
             <span className="ssh-dir-selected-label hud-label">当前选定路径:</span>
             <code className="ssh-dir-selected-path">
-              {selectedDirPath || '未选择'}
+              {dirBrowser.selectedPath || '未选择'}
             </code>
           </div>
         </div>

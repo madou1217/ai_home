@@ -208,10 +208,3 @@
   color: var(--cp-ink-3);
   font-weight: var(--weight-regular);
 }
-
-/* control-planes 统计区（服务器/可调度账号/会话）：窄屏纵向堆叠，避免三列挤压折行错位 */
-@media (max-width: 767px) {
-  .settings-control-plane-shell .ant-pro-statistic-card.ant-pro-card-contain-card > .ant-pro-card-body {
-    flex-direction: column;
-  }
-}

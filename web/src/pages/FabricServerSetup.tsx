@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Modal, Space, Tag, Typography, message } from 'antd';
+import { Form, Input, Modal, Space, Tag, Typography } from 'antd';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { StatisticCard } from '@ant-design/pro-components';
 import {
@@ -11,30 +11,20 @@ import {
   PlusOutlined
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
-import {
-  isControlPlaneManagementKeyConfigured,
-  isControlPlaneProfileReady,
-  listControlPlaneProfiles,
-  refreshControlPlaneDeviceState,
-  removeControlPlaneProfileSecure,
-  saveControlPlaneProfileSecure,
-  syncSharedControlPlaneProfiles
-} from '@/services/control-plane-profiles';
-import {
-  getActiveControlPlaneProfileId,
-  resolveStoredActiveControlPlaneProfile,
-  selectActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
-  syncStoredActiveControlPlaneProfile
-} from '@/services/control-plane-selection';
+import { isControlPlaneManagementKeyConfigured, isControlPlaneProfileReady } from '@/services/control-plane-profiles';
 import { getBrowserControlEndpoint } from '@/services/control-plane-endpoints';
-import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
 import {
   CLOSED_SERVER_SETUP_DIALOG,
   resolveRequiredServerSetupDialog,
   resolveServerSetupFormDefaults,
   type ServerSetupDialogState
 } from '@/services/server-setup-state';
+import {
+  formatServerSetupProfileDetail as formatProfileDetail,
+  getServerSetupProfileStatus as getProfileStatus,
+  useServerSetupProfiles,
+  type ServerSetupFormValues as SaveFormValues
+} from '@/components/control-plane/use-server-setup-profiles';
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -43,102 +33,45 @@ import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 
-type SaveFormValues = {
-  endpoint?: string;
-  name?: string;
-  managementKey?: string;
-};
-
-function normalizeError(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error || '操作失败');
-}
-
-function getProfileStatus(profile: ControlPlaneProfile) {
-  if (isControlPlaneProfileReady(profile)) return { color: 'green', label: 'ready' };
-  if (profile.state === 'degraded') return { color: 'orange', label: 'degraded' };
-  return { color: 'default', label: 'offline' };
-}
-
 const PROFILE_STATUS_LED: Record<string, string> = {
   green: 'hud-led hud-led--ok',
   orange: 'hud-led hud-led--warn'
 };
 
-function formatProfileDetail(profile: ControlPlaneProfile) {
-  const chunks = [
-    `${profile.schedulableAccountCount} 可调度账号`,
-    `${profile.sessionCount} 会话`
-  ];
-  return chunks.join(' · ');
-}
-
 type ProfileRow = ControlPlaneProfile & { __key: string };
-
-function getInitialServerSetupState() {
-  const profiles = listControlPlaneProfiles();
-  const active = resolveStoredActiveControlPlaneProfile(profiles, getActiveControlPlaneProfileId());
-  return {
-    profiles,
-    activeProfileId: active.profileId,
-    dialog: resolveRequiredServerSetupDialog(profiles, active.profileId)
-      || CLOSED_SERVER_SETUP_DIALOG
-  };
-}
 
 export default function FabricServerSetup() {
   const navigate = useNavigate();
   const [saveForm] = Form.useForm<SaveFormValues>();
-  const [initialState] = useState(getInitialServerSetupState);
-  const [profiles, setProfiles] = useState<ControlPlaneProfile[]>(initialState.profiles);
-  const [activeProfileId, setActiveProfileId] = useState(initialState.activeProfileId);
-  const [checkingId, setCheckingId] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [setupDialog, setSetupDialog] = useState<ServerSetupDialogState>(initialState.dialog);
+  // 数据与操作（连接 / 同步 / 移除 / 设为当前）由 useServerSetupProfiles 提供，移动端首启页共用
+  const {
+    profiles,
+    activeProfileId,
+    activeProfile,
+    readyProfiles,
+    hasReadyServer,
+    checkingId,
+    saving,
+    saveServer,
+    refreshProfile: handleRefreshProfile,
+    removeProfile: handleRemoveProfile,
+    selectProfile: handleSelectProfile
+  } = useServerSetupProfiles();
+  const [setupDialog, setSetupDialog] = useState<ServerSetupDialogState>(
+    () => resolveRequiredServerSetupDialog(profiles, activeProfileId) || CLOSED_SERVER_SETUP_DIALOG
+  );
 
-  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || null;
-  const readyProfiles = profiles.filter(isControlPlaneProfileReady);
   const requiredDialog = resolveRequiredServerSetupDialog(profiles, activeProfileId);
   const effectiveDialog = setupDialog.mode === 'closed' && requiredDialog
     ? requiredDialog
     : setupDialog;
   const setupModalOpen = effectiveDialog.mode !== 'closed';
   const setupModalRequired = Boolean(requiredDialog);
-  const hasReadyServer = readyProfiles.length > 0;
   const dialogDefaults = resolveServerSetupFormDefaults({
     dialog: effectiveDialog,
     profiles,
     browserEndpoint: getBrowserControlEndpoint()
   });
-
-  const syncProfiles = (preferredProfileId = '') => {
-    const nextProfiles = listControlPlaneProfiles();
-    const resolution = preferredProfileId
-      ? selectActiveControlPlaneProfile(nextProfiles, preferredProfileId)
-      : syncStoredActiveControlPlaneProfile(nextProfiles);
-    setProfiles(nextProfiles);
-    setActiveProfileId(resolution.profileId);
-    return resolution;
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    syncSharedControlPlaneProfiles()
-      .then((result) => {
-        if (cancelled) return;
-        const nextProfiles = result.profiles.length > 0 ? result.profiles : listControlPlaneProfiles();
-        const preferredProfileId = result.activeProfileId || activeProfileId;
-        const resolution = preferredProfileId
-          ? selectActiveControlPlaneProfile(nextProfiles, preferredProfileId)
-          : syncStoredActiveControlPlaneProfile(nextProfiles);
-        setProfiles(nextProfiles);
-        setActiveProfileId(resolution.profileId);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!setupModalOpen) return;
@@ -157,89 +90,11 @@ export default function FabricServerSetup() {
 
   const handleSaveServer = async (values: SaveFormValues) => {
     const completingInitialSetup = !hasReadyServer;
-    setSaving(true);
-    try {
-      const profile = await connectControlPlaneProfile({
-        profiles,
-        profileId: effectiveDialog.profileId,
-        endpoint: values.endpoint,
-        name: values.name,
-        managementKey: values.managementKey
-      });
-      try {
-        await refreshControlPlaneDeviceState(profile);
-      } catch (error) {
-        await saveControlPlaneProfileSecure({
-          name: profile.name,
-          stableServerId: profile.stableServerId,
-          endpoint: profile.endpoint,
-          routes: profile.routes,
-          activeRouteId: profile.activeRouteId,
-          descriptor: profile.descriptor,
-          state: 'degraded',
-          managementKey: profile.managementKey,
-          credentialRef: profile.credentialRef,
-          managementKeyConfigured: profile.managementKeyConfigured,
-          lastError: normalizeError(error)
-        });
-        await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
-        syncProfiles();
-        throw error;
-      }
-      await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
-      syncProfiles();
-      saveForm.setFieldValue('managementKey', '');
-      setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
-      message.success('Server 已保存并设为当前');
-      if (completingInitialSetup) navigate('/dashboard', { replace: true });
-    } catch (error) {
-      message.error(normalizeError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRefreshProfile = async (profile: ControlPlaneProfile) => {
-    setCheckingId(profile.id);
-    try {
-      if (!isControlPlaneManagementKeyConfigured(profile)) throw new Error('missing_management_key');
-      await refreshControlPlaneDeviceState(profile);
-      message.success('Server 已同步');
-      syncProfiles();
-    } catch (error) {
-      await saveControlPlaneProfileSecure({
-        name: profile.name,
-        endpoint: profile.endpoint,
-        descriptor: profile.descriptor,
-        state: isControlPlaneManagementKeyConfigured(profile) ? 'degraded' : 'offline',
-        managementKey: profile.managementKey,
-        credentialRef: profile.credentialRef,
-        managementKeyConfigured: profile.managementKeyConfigured,
-        lastError: normalizeError(error)
-      });
-      syncProfiles();
-      message.error(normalizeError(error));
-    } finally {
-      setCheckingId('');
-    }
-  };
-
-  const handleRemoveProfile = async (profileId: string) => {
-    try {
-      await removeControlPlaneProfileSecure(profileId);
-      syncProfiles();
-    } catch (error) {
-      message.error(normalizeError(error));
-    }
-  };
-
-  const handleSelectProfile = async (profileId: string) => {
-    try {
-      const resolution = await selectActiveControlPlaneProfileSecure(profiles, profileId);
-      setActiveProfileId(resolution.profileId);
-    } catch (error) {
-      message.error(normalizeError(error));
-    }
+    const saved = await saveServer(effectiveDialog.profileId, values);
+    if (!saved) return;
+    saveForm.setFieldValue('managementKey', '');
+    setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
+    if (completingInitialSetup) navigate('/dashboard', { replace: true });
   };
 
   const openAddServer = () => {

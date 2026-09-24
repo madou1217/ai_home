@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Modal, Tag, Alert, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import { Form, Input, Modal, Tag, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
@@ -306,7 +307,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     // 根目录项
     breadcrumbItems.push(
       <Breadcrumb.Item key="root" onClick={() => loadRemoteDirectory(dirBrowserConnId, '/')}>
-        <span style={{ cursor: 'pointer', color: 'var(--color-info)' }}>[Root]</span>
+        <span style={{ cursor: 'pointer', color: 'var(--color-accent)' }}>[Root]</span>
       </Breadcrumb.Item>
     );
 
@@ -317,7 +318,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
       const isLast = index === parts.length - 1;
       breadcrumbItems.push(
         <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadRemoteDirectory(dirBrowserConnId, targetPath)}>
-          <span style={isLast ? { fontWeight: 'bold' } : { cursor: 'pointer', color: 'var(--color-info)' }}>
+          <span style={isLast ? { fontWeight: 600, color: 'var(--color-heading)' } : { cursor: 'pointer', color: 'var(--color-accent)' }}>
             {part}
           </span>
         </Breadcrumb.Item>
@@ -326,8 +327,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
     return (
       <Breadcrumb
-        separator={<RightOutlined style={{ fontSize: '10px', color: '#bfbfbf' }} />}
-        style={{ marginBottom: '16px', background: '#f5f5f5', padding: '8px 12px', borderRadius: '4px' }}
+        separator={<RightOutlined style={{ fontSize: '10px', color: 'var(--color-faint)' }} />}
+        style={{ marginBottom: '16px', background: 'var(--color-surface-muted)', padding: '8px 12px', borderRadius: 'var(--hos-radius-xs)' }}
       >
         {breadcrumbItems}
       </Breadcrumb>
@@ -337,11 +338,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const renderDiagnosticDrawerContent = () => {
     if (!activeDiagnosticConn) return null;
     const state = testStates[activeDiagnosticConn.id];
-    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--hos-muted, #64748b)' }}>等待测试连接...</div>;
+    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--color-muted)' }}>等待测试连接...</div>;
     if (state.loading) return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
-        <LoadingOutlined style={{ fontSize: 24, color: 'var(--hos-blue-700, #0a59f7)' }} />
-        <span style={{ color: 'var(--hos-muted, #64748b)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
+        <LoadingOutlined style={{ fontSize: 24, color: 'var(--color-accent)' }} />
+        <span style={{ color: 'var(--color-muted)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
       </div>
     );
 
@@ -352,34 +353,31 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     return (
       <Space direction="vertical" style={{ width: '100%' }} size="large">
         {result.status === 'reachable' && (
-          <Alert
-            message="SSH 连通成功"
-            description={`已成功建立连接。远程主机: ${targetLabel}。`}
-            type="success"
-            showIcon
-          />
+          <InlineNote tone="success" description={`已成功建立连接。远程主机: ${targetLabel}。`}>
+            SSH 连通成功
+          </InlineNote>
         )}
         {result.status === 'auth-required' && (
-          <Alert
-            message="拒绝访问 (认证未通过)"
+          <InlineNote
+            tone="warning"
             description="主机可达，但 SSH 认证失败。请检查当前连接配置的私钥文件路径、私钥内容或密码；使用 SSH Agent 时，请确认当前 AIH Server 运行用户的 ssh-agent 已加载对应密钥。"
-            type="warning"
-            showIcon
-          />
+          >
+            拒绝访问 (认证未通过)
+          </InlineNote>
         )}
         {result.status === 'unreachable' && (
-          <Alert
-            message="连接失败"
+          <InlineNote
+            tone="error"
             description={result.stderr || "网络不可达，请检查 IP 端口是否开通，或者 SSHD 服务是否启动。"}
-            type="error"
-            showIcon
-          />
+          >
+            连接失败
+          </InlineNote>
         )}
 
         {result.status === 'reachable' && (
-          <div style={{ background: 'var(--hos-surface-muted, #f1f5f9)', padding: '16px', borderRadius: '8px', border: '1px solid var(--hos-border, #e2e8f0)' }}>
+          <div style={{ background: 'var(--color-surface-muted)', padding: '16px', borderRadius: 'var(--hos-radius-sm)', border: '1px solid var(--color-border)' }}>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 4 }}>系统平台 / 架构</div>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4 }}>系统平台 / 架构</div>
               <Space size={6}>
                 <Tag color="blue">{result.platform || '未知'}</Tag>
                 <Tag color="cyan">{result.arch || '未知'}</Tag>
@@ -387,7 +385,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </div>
 
             <div>
-              <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 8 }}>依赖项检测</div>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 8 }}>依赖项检测</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Node.js</span>
@@ -409,9 +407,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             </div>
 
             {result.recommendation && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--hos-border, #e2e8f0)' }}>
-                <div style={{ fontSize: 12, color: 'var(--hos-muted, #64748b)', marginBottom: 4 }}>诊断建议</div>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--hos-text, #1e293b)', lineHeight: 1.5 }}>{result.recommendation}</p>
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4 }}>诊断建议</div>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
               </div>
             )}
           </div>
@@ -462,19 +460,14 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               children: (
                 <>
                   {filterConnectionId && (
-                    <Alert
-                      message={
-                        <span>
-                          当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
-                          <Button type="link" size="small" onClick={() => setFilterConnectionId('')} style={{ padding: '0 4px' }}>
-                            清除筛选
-                          </Button>
-                        </span>
-                      }
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 12 }}
-                    />
+                    <InlineNote tone="info" style={{ marginBottom: 12 }}>
+                      <span>
+                        当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
+                        <Button type="link" size="small" onClick={() => setFilterConnectionId('')} style={{ padding: '0 4px' }}>
+                          清除筛选
+                        </Button>
+                      </span>
+                    </InlineNote>
                   )}
                   <SshWorkspaceCardList
                     workspaces={filteredWorkspaces}
@@ -647,7 +640,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 <Input
                   placeholder="不准手填，请点击右侧选择目录"
                   readOnly
-                  style={{ width: '360px', background: '#f5f5f5', color: '#595959' }}
+                  style={{ width: '360px', background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
                 />
               </Form.Item>
               <Button
@@ -692,11 +685,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           <div
             className="directory-list-container"
             style={{
-              border: '1px solid #d9d9d9',
-              borderRadius: '4px',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--hos-radius-sm)',
               height: '350px',
               overflowY: 'auto',
-              background: '#fff'
+              background: 'var(--color-surface)'
             }}
           >
             {loadingDirs ? (
@@ -712,19 +705,19 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                     style={{
                       padding: '8px 16px',
                       cursor: 'pointer',
-                      background: '#fcfcfc',
-                      borderBottom: '1px solid #f0f0f0',
+                      background: 'var(--color-surface-muted)',
+                      borderBottom: '1px solid var(--color-border)',
                       userSelect: 'none'
                     }}
                     onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, parentPath)}
                   >
-                    <FolderOpenOutlined style={{ marginRight: '8px', color: '#faad14' }} />
-                    <strong style={{ color: 'var(--color-info)' }}>.. (返回上级目录)</strong>
+                    <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
+                    <strong style={{ color: 'var(--color-accent)' }}>.. (返回上级目录)</strong>
                   </div>
                 )}
 
                 {dirList.length === 0 ? (
-                  <div style={{ padding: '40px 0', textAlign: 'center', color: '#bfbfbf' }}>
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--color-muted)' }}>
                     没有子目录。双击上级目录可返回。
                   </div>
                 ) : (
@@ -737,14 +730,14 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                         style={{
                           padding: '8px 16px',
                           cursor: 'pointer',
-                          background: isSelected ? '#e6f7ff' : '#fff',
-                          borderBottom: '1px solid #f5f5f5',
+                          background: isSelected ? 'var(--color-accent-soft)' : 'var(--color-surface)',
+                          borderBottom: '1px solid var(--color-border)',
                           userSelect: 'none'
                         }}
                         onClick={() => setSelectedDirPath(dir.path)}
                         onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, dir.path)}
                       >
-                        <FolderOpenOutlined style={{ marginRight: '8px', color: '#faad14' }} />
+                        <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
                         <span>{dir.name}</span>
                       </div>
                     );
@@ -756,8 +749,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
           {/* 3. 选定路径显示 */}
           <div style={{ marginTop: '16px' }}>
-            <span style={{ marginRight: '8px', fontWeight: 'bold' }}>当前选定路径:</span>
-            <code style={{ background: '#f5f5f5', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>
+            <span style={{ marginRight: '8px', fontWeight: 500 }}>当前选定路径:</span>
+            <code style={{ background: 'var(--color-surface-muted)', padding: '4px 8px', borderRadius: 'var(--hos-radius-2xs)', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
               {selectedDirPath || '未选择'}
             </code>
           </div>

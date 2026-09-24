@@ -1,42 +1,33 @@
+/* Fabric 节点卡片：扁平 surface + 1px 发丝线，悬停只加深描边（无位移 / 光晕）。 */
 .meshCard {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   min-height: 160px;
-  padding: var(--hos-space-5, 18px) var(--hos-space-5, 20px); /* 归级:原 18px */
-  border-radius: var(--hos-radius-xl, 24px);
-  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85));
-  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
-  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04));
-  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease, border-color 0.22s ease;
-}
-
-[data-theme='dark'] .meshCard {
-  background: rgba(30, 41, 59, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-lg);
+  background: var(--color-surface);
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
 .meshCard:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08));
-  border-color: rgba(10, 89, 247, 0.3);
+  border-color: var(--color-border-strong);
 }
 
 .cardBusy {
-  border-color: rgba(245, 158, 11, 0.3);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
 }
 
 .cardOffline {
-  opacity: 0.58;
+  opacity: 0.6;
 }
 
 .cardHeader {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-3, 12px);
-  margin-bottom: var(--hos-space-3, 12px);
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
 }
 
 .avatarWrap {
@@ -50,159 +41,144 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--hos-radius-md, 14px); /* 归级:原 14px */
-  background: rgba(10, 89, 247, 0.08);
-  color: var(--hos-blue-700, #0a59f7);
-  font-size: var(--hos-text-h2, 20px); /* 归级:原 20px */
+  width: 40px;
+  height: 40px;
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-h2);
 }
 
-[data-theme='dark'] .nodeIcon {
-  background: rgba(10, 89, 247, 0.15);
-}
-
+/* 状态点（6–8px 实心点 + surface 描边分隔图标），不做光晕 */
 .radarPulse {
   position: absolute;
   top: -2px;
   right: -2px;
   width: 10px;
   height: 10px;
-  border-radius: var(--hos-radius-pill, 50%);
+  border: 2px solid var(--color-surface);
+  border-radius: var(--hos-radius-pill);
 }
 
 .pulseOnline {
-  background: var(--hos-green-500, #10b981);
-  box-shadow: 0 0 0 2px var(--hos-white, #ffffff), 0 0 8px rgba(16, 185, 129, 0.6);
+  background: var(--color-success);
 }
 
 .pulseBusy {
-  background: var(--hos-amber-500, #f59e0b);
-  box-shadow: 0 0 0 2px var(--hos-white, #ffffff), 0 0 8px rgba(245, 158, 11, 0.6);
+  background: var(--color-warning);
 }
 
 .pulseOffline {
-  background: var(--hos-ink-400, #94a3b8);
+  background: var(--color-disabled);
 }
 
 .titleInfo {
   display: flex;
-  flex-direction: column;
-  gap: var(--hos-space-0-5, 2px);
-  min-width: 0;
   flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .nameLine {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--space-4);
 }
 
 .nodeName {
-  font-size: var(--hos-text-h3, 15px);
-  font-weight: 700;
-  color: var(--hos-ink-700, #1e293b);
   overflow: hidden;
+  color: var(--color-heading);
+  font-size: var(--hos-text-h3);
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-[data-theme='dark'] .nodeName {
-  color: var(--hos-ink-50, #f8fafc);
-}
-
 .roleTag {
   margin: 0;
-  border-radius: var(--hos-radius-pill, 9999px);
   border: none;
-  font-size: var(--hos-text-micro, 10px);
-  font-weight: 600;
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--hos-ink-500, #64748b);
-}
-
-[data-theme='dark'] .roleTag {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--hos-ink-300, #cbd5e1);
+  border-radius: var(--hos-radius-2xs);
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
 }
 
 .nodeHost {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-  color: var(--hos-ink-500, #64748b);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
 }
 
 .cardBody {
   display: flex;
   flex-direction: column;
-  margin: var(--hos-space-2, 8px) 0 var(--hos-space-3-5, 14px);
+  margin: var(--space-4) 0 var(--space-7);
 }
 
 .metricsRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--hos-space-2, 8px);
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
-  border-radius: var(--hos-radius-md, 14px); /* 归级:原 14px */
-  background: rgba(0, 0, 0, 0.02);
-}
-
-[data-theme='dark'] .metricsRow {
-  background: rgba(255, 255, 255, 0.03);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-muted);
 }
 
 .metricItem {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-0-5, 2px);
+  gap: var(--space-1);
 }
 
 .metricLabel {
-  font-size: var(--hos-text-micro, 10px);
-  font-weight: 600;
-  color: var(--hos-ink-400, #94a3b8);
+  color: var(--color-muted);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-medium);
 }
 
 .metricValue {
-  font-size: var(--hos-text-body-sm, 13px);
-  font-weight: 700;
-  color: var(--hos-ink-700, #1e293b);
+  color: var(--color-heading);
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
 
-[data-theme='dark'] .metricValue {
-  color: var(--hos-ink-50, #f8fafc);
+.metricIcon {
+  margin-right: var(--space-2);
+  color: var(--color-muted);
 }
 
 .cardFooter {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-top: 1px solid rgba(0, 0, 0, 0.04);
-  padding-top: var(--hos-space-2-5, 10px);
-}
-
-[data-theme='dark'] .cardFooter {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
 }
 
 .sessionState {
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
 }
 
 .sessionCount {
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-1, 4px);
-  color: var(--hos-ink-500, #64748b);
+  gap: var(--space-2);
+  color: var(--color-muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessionIcon {
+  color: var(--color-warning);
 }
 
 .statusLabel {
-  color: var(--hos-ink-400, #94a3b8);
+  color: var(--color-muted);
 }
 
 .actionBtn {
-  border-radius: var(--hos-radius-pill, 9999px) !important;
-  font-weight: 600 !important;
+  font-weight: var(--weight-medium) !important;
 }

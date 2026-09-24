@@ -21,14 +21,8 @@
 }
 
 @media (max-width: 767.98px) {
-  /* 0) 字体：桌面用 Sora/Manrope（拉丁字型重、中文靠 fallback）。移动端整体换系统字体栈
-   *    （iOS=SF/苹方，Android=Roboto/思源），贴原生观感、中文渲染更干净。design.reuse-antd-pro
-   *    第 0 章「一致性路线 + 手感层」：字体族属手感层，换成系统栈不破坏品牌 token（色/圆角/间距不变）。
-   *    覆盖 --font-display / --font-body 令牌，令所有读令牌的标题/正文一并生效。--font-mono 保持等宽。 */
-  :root {
-    --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
-    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif;
-  }
+  /* 0) 字体：沿用全站唯一字体栈（--font-body，见 DESIGN.md §3），不在移动端另换字体族。
+   *    这里只补手感层：去点击灰块、抗锯齿。 */
   body {
     font-family: var(--font-body);
     /* 惯性滚动 + 去点击灰块，手感层通用底子 */
@@ -60,8 +54,11 @@
   /* 2) 普通滚动页（.unified-page-wrapper）：顶部补刘海安全区、底部给 TabBar 让位。
    *    Chat 是 fullBleed 全高布局、且对话态会隐藏 TabBar，自己管理安全区/留白，不走这里。 */
   .unified-page-wrapper {
-    /* 统一到会话页设计语言的浅底,让白色卡片浮起来 */
-    background: var(--hos-mobile-bg, #f1f1f7);
+    /* 画布 = --color-bg（与 body 同色）。min-height 让画布铺满整屏，
+       内容较短时不会在页面中段露出另一种底色的断层。 */
+    background: var(--hos-mobile-bg, var(--color-bg));
+    min-height: 100dvh;
+    box-sizing: border-box;
     padding-top: env(safe-area-inset-top);
     /* !important:unified.css 移动端用简写 padding:0 16px 16px 会把 bottom 重置成 16px,
        导致最后一张卡片被固定 TabBar 遮住。这里强制底部留出 TabBar 安全高度。 */
@@ -139,13 +136,12 @@
     grid-auto-columns: 1fr;
     align-items: stretch;
     height: var(--mobile-tabbar-safe);
-    padding: var(--hos-space-2, 7px) var(--hos-space-2-5, 10px) env(safe-area-inset-bottom); /* 归级:原 7px */
-    background: color-mix(in srgb, var(--hos-white, #ffffff) 86%, transparent);
-    -webkit-backdrop-filter: saturate(180%) blur(22px);
-    backdrop-filter: saturate(180%) blur(22px);
-    border-top: 1px solid var(--hos-ink-100, #ececf4);
-    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
-    transition: transform var(--motion-slow, 0.32s) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
+    padding: var(--hos-space-1-5, 6px) var(--hos-space-2, 8px) env(safe-area-inset-bottom);
+    /* 不透明 surface + 顶部发丝线；不用毛玻璃（DESIGN.md §7） */
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    font-family: var(--font-body);
+    transition: transform var(--motion-slow, 240ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
     will-change: transform;
   }
 
@@ -154,52 +150,52 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--hos-space-1, 3px); /* 归级:原 3px */
+    gap: var(--hos-space-1, 4px);
+    min-height: 44px;
     border: none;
     background: transparent;
     cursor: pointer;
-    color: var(--hos-gray-400, #8b8ba3);
-    font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: var(--hos-text-micro, 11px);
+    font-weight: var(--weight-medium, 500);
+    line-height: 1.2;
     -webkit-tap-highlight-color: transparent;
-    transition: color .18s ease;
+    transition: color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
     text-decoration: none;
   }
 
   .mobile-tabbar-item .anticon {
-    font-size: var(--hos-text-h1, 23px); /* 归级:原 23px */
+    font-size: 22px;
     line-height: 1;
-    transition: transform .18s var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
-  .mobile-tabbar-item:active .anticon { transform: scale(0.9); }
 
-  /* 选中态:赤陶色 + 图标上方一条短赤陶指示条,干净不遮挡图标 */
-  .mobile-tabbar-item-active { color: var(--hos-orange-500, #d97757); }
+  /* 选中态：强调色（图标 + 文字），无光晕 */
+  .mobile-tabbar-item-active,
   .mobile-tabbar-item-active .anticon {
-    color: var(--hos-orange-500, #d97757);
-    filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--hos-orange-500, #d97757) 40%, transparent));
+    color: var(--color-accent);
   }
 }
 
 /* ============================================================================
  * 「更多」动作面板(MobileMoreSheet):TabBar 第 5 个 tab 弹出的底部 Sheet,
- * 列低频页面入口。整边框圆角行 + 图标 + 文字,不用左竖条/大块提示块。
+ * 列低频页面入口。raised 不透明表面、顶部圆角 12;行 = 描边圆角行 + 图标 + 文字,
+ * 不用左竖条/大块提示块。
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .mobile-more-sheet .ant-drawer-content {
-    border-radius: var(--hos-radius-2xl, 20px) var(--hos-radius-2xl, 20px) 0 0;
-    background: var(--hos-mobile-bg, #f1f1f7);
-    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
+    border-radius: var(--hos-radius-xl, 12px) var(--hos-radius-xl, 12px) 0 0;
+    background: var(--color-surface-raised);
+    font-family: var(--font-body);
   }
   .mobile-more-sheet .ant-drawer-header {
     border-bottom: none;
     padding: var(--hos-space-4, 16px) var(--hos-space-4, 16px) var(--hos-space-2, 8px);
   }
   .mobile-more-sheet .ant-drawer-title {
-    font-size: var(--hos-text-h3, 16px);
-    font-weight: 700;
-    color: var(--hos-surface-dark-900, #1b1b2b);
+    font-size: var(--text-lg, 17px);
+    font-weight: var(--weight-semibold, 600);
+    color: var(--color-heading);
   }
   .mobile-more-sheet .ant-drawer-body {
     padding: 0 var(--hos-space-4, 16px) calc(var(--hos-space-4, 16px) + env(safe-area-inset-bottom));
@@ -215,17 +211,20 @@
     align-items: center;
     gap: var(--hos-space-3, 12px);
     width: 100%;
-    padding: var(--hos-space-3, 12px);
-    border: 1px solid var(--hos-ink-100, #ececf4);
-    border-radius: var(--hos-radius-lg, 16px);
-    background: var(--hos-white, #ffffff);
-    box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
+    min-height: 56px;
+    padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--hos-radius-lg, 10px);
+    background: var(--color-surface);
+    box-shadow: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     text-align: start;
+    transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+      border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
   }
   .mobile-more-entry:active {
-    background: var(--hos-ink-50, #f6f6fb);
+    background: var(--color-surface-muted);
   }
   .mobile-more-entry-icon {
     flex: 0 0 auto;
@@ -233,71 +232,59 @@
     place-items: center;
     width: 36px;
     height: 36px;
-    border-radius: var(--hos-radius-sm, 12px);
-    background: var(--hos-ink-50, #f6f6fb);
-    color: var(--hos-ink-700, #4a4a68);
-    font-size: var(--hos-text-h2, 18px);
+    border-radius: var(--hos-radius-sm, 8px);
+    background: var(--color-surface-muted);
+    color: var(--color-muted-strong);
+    font-size: 18px;
   }
   .mobile-more-entry-label {
     flex: 1 1 auto;
     min-width: 0;
-    font-size: var(--hos-text-body, 14px);
-    font-weight: 600;
-    color: var(--hos-surface-dark-900, #1b1b2b);
+    font-size: var(--text-md, 15px);
+    font-weight: var(--weight-medium, 500);
+    color: var(--color-heading);
   }
   .mobile-more-entry-arrow {
     flex: 0 0 auto;
-    color: var(--hos-gray-400, #8b8ba3);
+    color: var(--color-faint);
     font-size: var(--hos-text-caption, 12px);
   }
 
-  /* 当前页入口:赤陶强调,与 TabBar 选中态同一语言 */
+  /* 当前页入口:强调色弱底 + 强调色图标/文字,与 TabBar 选中态同一语言 */
   .mobile-more-entry-active {
-    border-color: color-mix(in srgb, var(--hos-orange-500, #d97757) 45%, var(--hos-ink-100, #ececf4));
-    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 8%, var(--hos-white, #ffffff));
+    border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+    background: var(--color-accent-soft);
   }
   .mobile-more-entry-active .mobile-more-entry-icon {
-    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 14%, var(--hos-white, #ffffff));
-    color: var(--hos-orange-500, #d97757);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
   }
   .mobile-more-entry-active .mobile-more-entry-label {
-    color: var(--hos-orange-600, #c05a3a);
+    color: var(--color-accent);
   }
 }
 
 /* ============================================================================
- * 移动端按钮/开关统一到会话页设计语言:主操作赤陶(不再纯黑)、次操作干净描边、
- * 开关选中态赤陶。一处覆盖 = 全站移动端按钮一致。
+ * 移动端按钮:颜色完全交给 antd 主题(主按钮 = 墨色、开关选中 = 强调色,见
+ * src/theme/antd-theme.ts),这里只补触控手感——圆角 6、字重 500、次按钮描边走
+ * token、无投影。不再用赤陶色做主按钮 / 开关(赤陶只代表 Claude)。
  * ==========================================================================*/
 @media (max-width: 767.98px) {
   .ant-btn {
-    border-radius: var(--hos-radius-sm, 12px);
-    font-family: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
-    font-weight: 600;
+    border-radius: var(--hos-radius-xs, 6px);
+    font-family: var(--font-body);
+    font-weight: var(--weight-medium, 500);
   }
   .ant-btn-primary:not(:disabled) {
-    background: var(--hos-orange-500, #d97757) !important;
-    border-color: transparent !important;
-    box-shadow: 0 3px 10px color-mix(in srgb, var(--hos-orange-500, #d97757) 32%, transparent) !important;
+    box-shadow: none !important;
   }
-  .ant-btn-primary:not(:disabled):hover,
-  .ant-btn-primary:not(:disabled):active,
-  .ant-btn-primary:not(:disabled):focus {
-    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 88%, #000) !important;
-    border-color: transparent !important;
+  .ant-btn-default:not(:disabled):not(.ant-btn-dangerous) {
+    border-color: var(--color-border) !important;
+    color: var(--color-text);
+    box-shadow: none;
   }
-  .ant-btn-default:not(:disabled) {
-    border-color: var(--hos-mobile-line-2, #e2e2ee) !important;
-    color: var(--hos-surface-dark-900, #1b1b2b);
-    box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
-  }
-  .ant-btn-default:not(:disabled):hover {
-    color: var(--hos-orange-500, #d97757) !important;
-    border-color: color-mix(in srgb, var(--hos-orange-500, #d97757) 45%, var(--hos-mobile-line-2, #e2e2ee)) !important;
-  }
-  /* 开关选中态:赤陶,与强调色一致 */
-  .ant-switch.ant-switch-checked { background: var(--hos-orange-500, #d97757) !important; }
-  .ant-switch.ant-switch-checked:hover:not(.ant-switch-disabled) {
-    background: color-mix(in srgb, var(--hos-orange-500, #d97757) 88%, #000) !important;
+  .ant-btn-default:not(:disabled):not(.ant-btn-dangerous):hover {
+    border-color: var(--color-border-strong) !important;
+    color: var(--color-heading) !important;
   }
 }

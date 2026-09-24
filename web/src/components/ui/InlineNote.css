@@ -1,0 +1,52 @@
+/* 行内提示（DESIGN.md §6「行内提示」）：图标 + 13px 文字，不做整块彩底。 */
+.hos-inline-note {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--space-3);
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
+  line-height: var(--leading-normal);
+}
+
+.hos-inline-note-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: calc(var(--hos-text-body-sm) * 1.55);
+  color: var(--color-muted);
+  font-size: var(--hos-text-body-sm);
+}
+
+.hos-inline-note--info .hos-inline-note-icon { color: var(--color-accent); }
+.hos-inline-note--success .hos-inline-note-icon { color: var(--color-success); }
+.hos-inline-note--warning .hos-inline-note-icon { color: var(--color-warning); }
+.hos-inline-note--error .hos-inline-note-icon { color: var(--color-danger); }
+.hos-inline-note--error .hos-inline-note-text { color: var(--color-danger); }
+
+.hos-inline-note-body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hos-inline-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hos-inline-note-desc {
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  overflow-wrap: anywhere;
+}
+
+.hos-inline-note-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-inline-start: auto;
+}

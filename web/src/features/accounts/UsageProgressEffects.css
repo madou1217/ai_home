@@ -15,11 +15,12 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  /* 活动流光（仅真实燃烧中的轨道）：刻意保留的实时活动效果，颜色取 --hos-white 混透明。 */
   background-image: linear-gradient(
     100deg,
-    rgba(255, 255, 255, 0) 30%,
-    rgba(255, 255, 255, 0.45) 50%,
-    rgba(255, 255, 255, 0) 70%
+    transparent 30%,
+    color-mix(in srgb, var(--hos-white) 45%, transparent) 50%,
+    transparent 70%
   );
   background-size: 220% 100%;
   background-repeat: no-repeat;
@@ -36,24 +37,19 @@
   }
 }
 
-/* remainingPct 下降：进度条做一次短促回弹 */
+/* remainingPct 下降：进度条做一次短促提亮（只变颜色，不做缩放回弹） */
 .usage-progress-effects--pulsing .ant-progress-bg {
-  animation: usage-progress-damage 0.55s ease;
+  animation: usage-progress-damage var(--motion-slower, 320ms) var(--ease-standard);
 }
 
 @keyframes usage-progress-damage {
   0% {
-    transform: scaleX(1);
+    filter: brightness(1);
   }
-  28% {
-    transform: scaleX(1.035);
+  35% {
     filter: brightness(1.18);
   }
-  60% {
-    transform: scaleX(0.985);
-  }
   100% {
-    transform: scaleX(1);
     filter: brightness(1);
   }
 }

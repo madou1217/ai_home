@@ -1,4 +1,5 @@
-import { Alert, Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
+import { Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { PlayCircleOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/AppButton';
@@ -146,14 +147,14 @@ export default function EnvironmentActionPanel({
     <section className="toolkit-environment-action" aria-labelledby="toolkit-environment-action-title">
       <div className="toolkit-panel-kicker">STRUCTURED ACTION</div>
       <h3 id="toolkit-environment-action-title">受控执行</h3>
-      <Alert
-        type={detected ? 'info' : 'warning'}
-        showIcon
-        message={detected ? '先生成计划，再显式确认执行' : `${managerId} 未被当前 AIH 进程检测到`}
+      <InlineNote
+        tone={detected ? 'info' : 'warning'}
         description={detected
           ? '服务端只接受结构化参数和固定命令白名单，不接受任意 Shell。安装脚本类指南仍只允许复制。'
           : '可以继续查看和复制安装指南，但在管理器可被 PATH/用户目录探测到之前不会开放执行按钮。'}
-      />
+      >
+        {detected ? '先生成计划，再显式确认执行' : `${managerId} 未被当前 AIH 进程检测到`}
+      </InlineNote>
       <Form
         form={form}
         layout="inline"
@@ -217,12 +218,12 @@ export default function EnvironmentActionPanel({
       )}
 
       {result && (
-        <Alert
-          type={result.ok ? 'success' : 'error'}
-          showIcon
-          message={result.ok ? '执行完成' : '执行失败'}
+        <InlineNote
+          tone={result.ok ? 'success' : 'error'}
           description={(result.stdout || result.stderr || result.message || result.error || '').slice(0, 4000)}
-        />
+        >
+          {result.ok ? '执行完成' : '执行失败'}
+        </InlineNote>
       )}
     </section>
   );

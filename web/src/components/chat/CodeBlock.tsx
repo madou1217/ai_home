@@ -45,7 +45,7 @@ export const CodeBlock = memo(function CodeBlock({
         >
           {copied ? (
             <>
-              <CheckOutlined style={{ color: '#52c41a', marginRight: 4 }} />
+              <CheckOutlined style={{ color: 'var(--color-success)', marginRight: 4 }} />
               <span>已复制</span>
             </>
           ) : (

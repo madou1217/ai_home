@@ -749,7 +749,7 @@ export default function ModelUsage() {
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--hos-mobile-run, #13a65a)' }}>{formatCost(row.costUsd)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success)' }}>{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
   );
@@ -784,7 +784,7 @@ export default function ModelUsage() {
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success, #15803d)' }}>{formatCost(row.costUsd)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success)' }}>{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
   );
@@ -950,7 +950,7 @@ export default function ModelUsage() {
         </>
       ) : (
       <SectionCard bordered >
-        <Space size={12} wrap>
+        <Space size={12} wrap className="usage-filter-space">
           <Segmented
             value={rangeMode}
             options={RANGE_OPTIONS}
@@ -966,11 +966,13 @@ export default function ModelUsage() {
               format="YYYY-MM-DD HH:mm"
             />
           ) : null}
-          <Segmented
-            value={provider}
-            options={PROVIDER_OPTIONS}
-            onChange={(value) => handleProviderChange(value as ProviderFilter)}
-          />
+          <div className="usage-provider-scroll">
+            <Segmented
+              value={provider}
+              options={PROVIDER_OPTIONS}
+              onChange={(value) => handleProviderChange(value as ProviderFilter)}
+            />
+          </div>
           <Select
             allowClear
             showSearch

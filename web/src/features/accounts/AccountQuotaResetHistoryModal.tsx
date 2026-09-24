@@ -133,8 +133,8 @@ export default function AccountQuotaResetHistoryModal({
                 const tagColor = isUpgrade ? 'purple' : (isEarly ? 'blue' : 'green');
                 const tagLabel = isUpgrade ? '套餐升级重置' : (isEarly ? '提前回血重置' : '自然周期重置');
                 const icon = isUpgrade 
-                  ? <ThunderboltOutlined style={{ color: '#722ed1' }} />
-                  : (isEarly ? <ThunderboltOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined style={{ color: '#52c41a' }} />);
+                  ? <ThunderboltOutlined style={{ color: 'var(--event-thinking)' }} />
+                  : (isEarly ? <ThunderboltOutlined style={{ color: 'var(--color-accent)' }} /> : <CheckCircleOutlined style={{ color: 'var(--color-success)' }} />);
                 const resetTimeMs = event.occurredAtMs || event.detectedAtMs;
 
                 return {
@@ -145,15 +145,15 @@ export default function AccountQuotaResetHistoryModal({
                       <Space orientation="horizontal" size="small" style={{ marginBottom: 4 }}>
                         <Tag color={tagColor}>{tagLabel}</Tag>
                         {event.windowLabel ? <Tag>{event.windowLabel}</Tag> : null}
-                        <Text strong style={{ color: '#1f1f1f' }}>{formatTime(resetTimeMs)}</Text>
+                        <Text strong style={{ color: 'var(--color-heading)' }}>{formatTime(resetTimeMs)}</Text>
                       </Space>
                       <div>
                         <Text strong>用量变化：</Text>
                         <Text type="secondary">
                           {formatPct(event.previousRemainingPct)}
                         </Text>
-                        <Text strong style={{ margin: '0 6px', color: '#52c41a' }}>➔</Text>
-                        <Text strong style={{ color: '#52c41a' }}>
+                        <Text strong style={{ margin: '0 6px', color: 'var(--color-success)' }}>➔</Text>
+                        <Text strong style={{ color: 'var(--color-success)' }}>
                           {formatPct(event.currentRemainingPct)}
                         </Text>
                       </div>

@@ -1,0 +1,43 @@
+/* KPI 条（DESIGN.md §6）：给 StatisticCard.Group 挂 .hos-kpi-strip，
+ * 多个单元格共用一个描边容器，单元格之间 1px 发丝线（容器底色透出的缝），不用左侧竖条。
+ * 使用方：Settings（Server 管理）、FabricServerSetup、Models、ProxyPoolPanel。 */
+.ant-pro-card.hos-kpi-strip {
+  margin-bottom: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-lg);
+  background: var(--color-border);
+  overflow: hidden;
+}
+.ant-pro-card.hos-kpi-strip > .ant-pro-card-body {
+  gap: 1px;
+  padding: 0;
+  background: var(--color-border);
+}
+.hos-kpi-strip .ant-pro-statistic-card,
+.hos-kpi-strip .ant-pro-card-divider {
+  background: var(--color-surface);
+}
+/* 单元格本身不再画描边 / 圆角 / 阴影，分隔只来自容器的 1px 缝 */
+.hos-kpi-strip .ant-pro-card.ant-pro-statistic-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.hos-kpi-strip .ant-pro-card-divider {
+  display: none;
+}
+.hos-kpi-strip .ant-pro-statistic-card > .ant-pro-card-body {
+  padding: var(--space-6) var(--space-8);
+}
+.hos-kpi-strip .ant-statistic-title {
+  margin-bottom: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+}
+.hos-kpi-strip .ant-statistic-content {
+  color: var(--color-heading);
+  font-size: var(--hos-text-h1);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}

@@ -320,11 +320,12 @@ export default function Chat() {
             justifyContent: 'space-between',
             gap: 8,
             padding: '6px 12px',
-            borderRadius: 'var(--hos-radius-lg, 14px)',
-            background: 'var(--hos-glass-bg-subtle, rgba(255, 255, 255, 0.85))',
-            boxShadow: 'var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08))',
+            borderRadius: 'var(--hos-radius-sm)',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-surface-raised)',
+            boxShadow: 'var(--elevation-3)',
             fontSize: 12,
-            color: 'var(--color-text-secondary, #6b7280)',
+            color: 'var(--color-muted-strong)',
           }}
         >
           <span>
@@ -341,7 +342,7 @@ export default function Chat() {
               padding: 0,
               cursor: 'pointer',
               fontSize: 12,
-              color: 'var(--hos-primary-blue, #0a59f7)',
+              color: 'var(--color-accent)',
             }}
           >
             重试

@@ -1,4 +1,5 @@
-import { Alert, Space } from 'antd';
+import { Space } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import {
   CopyOutlined,
   CloudDownloadOutlined,
@@ -30,12 +31,10 @@ export default function ProxyCoreStatusRail({
   const presentation = coreStatusPresentation(core);
 
   return (
-    <Alert
+    <InlineNote
       className="toolkit-status-rail"
-      type={presentation.type}
-      showIcon
+      tone={presentation.type}
       icon={<SafetyCertificateOutlined />}
-      message={presentation.title}
       description={presentation.description}
       action={(
         <Space wrap>
@@ -97,6 +96,8 @@ export default function ProxyCoreStatusRail({
           )}
         </Space>
       )}
-    />
+    >
+      {presentation.title}
+    </InlineNote>
   );
 }

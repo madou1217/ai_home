@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Divider, Select, Tag, Typography, message } from 'antd';
+import { Divider, Select, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { LinkOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
@@ -124,7 +125,7 @@ const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
   };
 
   return (
-    <ProCard className="settings-panel settings-public-entry-card" bordered bodyStyle={{ padding: 18 }}>
+    <ProCard className="settings-panel settings-public-entry-card" bordered bodyStyle={{ padding: 16 }}>
       <div className="settings-panel-head">
         <div>
           <h2>公网入口</h2>
@@ -132,11 +133,7 @@ const PublicServerEntryCard = ({ profiles }: PublicServerEntryCardProps) => {
         </div>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        message="直接使用客户端安全保存的 Management Key，无需重复输入。"
-      />
+      <InlineNote tone="info">直接使用客户端安全保存的 Management Key，无需重复输入。</InlineNote>
 
       <div className="settings-public-entry-fields">
         <label className="settings-public-entry-field">

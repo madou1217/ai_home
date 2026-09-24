@@ -32,7 +32,8 @@
 /* 对话页：默认停在右侧屏外，激活时滑入 */
 .mobileScreenChat {
   transform: translateX(100%);
-  box-shadow: -8px 0 28px color-mix(in srgb, var(--c-neutral-900) 14%, transparent);
+  /* push 进来的页面只用一条发丝线分界，不投阴影 */
+  box-shadow: -1px 0 0 var(--color-border);
   z-index: var(--z-raised);
 }
 
@@ -51,12 +52,11 @@
 /* 列表屏（导航栈根视图）：底部为 MobileTabBar 让位，最后一条会话不被遮住。
  * 对话屏（.mobileScreenChat）进入沉浸态、TabBar 已隐藏，不需要此留白。 */
 .mobileScreen:not(.mobileScreenChat) .mobileScreenBody {
-  padding-bottom: var(--mobile-tabbar-safe, 52px);
+  padding-bottom: var(--mobile-tabbar-safe);
 }
 
-/* 顶部导航条（毛玻璃 + 安全区）——移动端要"大大方方":增高到 56px、横向留白加大、
- * 毛玻璃底色更实(82%→90%)避免深色主题透出黑底、模糊稍重。ProLayout 顶栏高度已回收,
- * 顶部有充足垂直空间,不再压缩。 */
+/* 顶部导航条（不透明 surface + 底部发丝线 + 安全区）——高 56px、横向留白加大。
+ * ProLayout 顶栏高度已回收，顶部有充足垂直空间，不再压缩。 */
 .mobileNav {
   position: relative;
   z-index: var(--z-sticky);
@@ -65,10 +65,8 @@
   gap: var(--space-3);
   min-height: 56px;
   padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-6) var(--space-3);
-  background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
-  -webkit-backdrop-filter: saturate(180%) blur(22px);
-  backdrop-filter: saturate(180%) blur(22px);
-  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .mobileNavSide {
@@ -85,9 +83,9 @@
 .mobileNavTitleLarge {
   flex: 1;
   font-family: var(--font-display);
-  /* iOS large-title:恢复 2xl/extrabold,列表根视图标题要大气醒目 */
+  /* iOS large-title：2xl / 600 */
   font-size: var(--text-2xl);
-  font-weight: var(--weight-extrabold);
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-tight);
   color: var(--color-heading);
 }
@@ -118,15 +116,15 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: var(--hos-radius-10, 10px);
-  background: var(--provider-accent-soft, var(--color-surface-muted));
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-muted);
 }
 
 .mobileNavBadge img,
 .mobileNavBadge [data-provider-icon-fallback] {
   position: relative;
   z-index: 1;
-  border-radius: var(--hos-radius-xs, 4px); /* 归级:原 4px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
 }
 
 .mobileNavBadgeRunning::after {
@@ -137,19 +135,18 @@
   width: 6px;
   height: 6px;
   border: 2px solid var(--color-surface);
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--provider-accent, var(--color-success));
-  box-shadow: 0 0 0 1px var(--provider-accent-soft, var(--color-success-soft));
+  border-radius: var(--hos-radius-pill);
+  background: var(--provider-accent);
 }
 
 .mobileBack {
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-0-5, 1px); /* 归级:原 1px */
+  gap: var(--hos-space-0-5); /* 归级:原 1px */
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--provider-accent, var(--color-info));
+  color: var(--color-accent);
   font-size: var(--text-md);
   font-weight: var(--weight-medium);
   padding: var(--space-2) var(--space-3) var(--space-2) 0;
@@ -167,7 +164,7 @@
   width: 40px;
   height: 40px;
   border: none;
-  border-radius: var(--hos-radius-pill, 999px);
+  border-radius: var(--hos-radius-xs);
   background: transparent;
   cursor: pointer;
   color: var(--color-heading);
@@ -176,4 +173,4 @@
   transition: background var(--motion-fast) var(--ease-standard);
 }
 
-.mobileNavAction:active { background: var(--color-surface-muted); }
+.mobileNavAction:active { background: var(--color-overlay); }

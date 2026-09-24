@@ -2,7 +2,8 @@ import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
-import { Alert, Form, Input, Segmented, Select, Space, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
+import '@/components/ui/kpi-strip.css';
+import { Form, Input, Segmented, Select, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
@@ -21,6 +22,7 @@ import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import { buildProviderSelectOptions } from '@/providers/catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
 import { openExternalUrl } from '@/services/open-external-url';
@@ -767,8 +769,8 @@ export default function Models() {
         </Button>
       ].filter(Boolean)}
     >
-      {/* 顶部统计 —— 框架 StatisticCard.Group */}
-      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+      {/* 顶部统计 —— 一条 KPI 条（StatisticCard.Group + 发丝线分隔） */}
+      <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
         <StatisticCard statistic={{ title: '账号模型', value: metricSource.length }} />
         <StatisticCard statistic={{ title: accountScoped ? '启用模型' : '可见模型', value: visibleUnionCount }} />
         <StatisticCard statistic={{ title: '手动补充', value: manualCount }} />
@@ -777,51 +779,32 @@ export default function Models() {
       {globalProbeError ? (() => {
         const probeError = parseUpstreamError(globalProbeError);
         return (
-          <Alert
-            type={catalog?.source === 'remote' ? 'warning' : 'error'}
-            showIcon
-            style={{ marginBottom: 16 }}
-            message={(
-              <Space size={8} wrap>
-                <span>部分账号模型探测失败</span>
-                {probeError.statusCode ? <Tag color="error" style={{ marginInlineEnd: 0 }}>HTTP {probeError.statusCode}</Tag> : null}
-              </Space>
-            )}
-            description={(
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Typography.Paragraph
-                  type="secondary"
-                  style={{ margin: 0, fontSize: 13 }}
-                  ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
-                >
-                  {probeError.message}
-                </Typography.Paragraph>
-                <Space size={12} wrap>
-                  {probeError.url ? (
-                    <Typography.Link
-                      href={probeError.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ fontSize: 12 }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        void openExternalUrl(probeError.url).catch(() => message.error('无法打开外部链接'));
-                      }}
-                    >
-                      提交上游 issue ›
-                    </Typography.Link>
-                  ) : null}
-                  <Typography.Text
-                    type="secondary"
-                    copyable={{ text: probeError.raw, tooltips: ['复制原始错误', '已复制'] }}
-                    style={{ fontSize: 12 }}
-                  >
-                    原始错误
-                  </Typography.Text>
-                </Space>
-              </Space>
-            )}
-          />
+          <div className="models-probe-status" role="status">
+            <Tag color={catalog?.source === 'remote' ? 'warning' : 'error'}>部分账号模型探测失败</Tag>
+            {probeError.statusCode ? <Tag color="error">HTTP {probeError.statusCode}</Tag> : null}
+            <span className="models-probe-status-message" title={probeError.message}>{probeError.message}</span>
+            {probeError.url ? (
+              <Typography.Link
+                href={probeError.url}
+                target="_blank"
+                rel="noreferrer"
+                className="models-probe-status-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  void openExternalUrl(probeError.url).catch(() => message.error('无法打开外部链接'));
+                }}
+              >
+                提交上游 issue ›
+              </Typography.Link>
+            ) : null}
+            <Typography.Text
+              type="secondary"
+              copyable={{ text: probeError.raw, tooltips: ['复制原始错误', '已复制'] }}
+              className="models-probe-status-copy"
+            >
+              原始错误
+            </Typography.Text>
+          </div>
         );
       })() : null}
 
@@ -889,20 +872,22 @@ export default function Models() {
                   {/* Segmented 没有分组能力，所以这里保持"每个 Provider 一个 chip"，
                       靠 providerNames 的站点后缀（"Qoder · 国内站"）区分同族站点——
                       同族站点模型清单不同，筛选轴必须留在真实 Provider 上。 */}
-                  <Segmented
-                    value={providerFilter}
-                    onChange={(value) => {
-                      setProviderFilter(value as ProviderFilter);
-                      setAccountFilter('all');
-                    }}
-                    options={[
-                      { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
-                      ...PROVIDERS.map((provider) => ({
-                        label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
-                        value: provider
-                      }))
-                    ]}
-                  />
+                  <div className="models-provider-scroll">
+                    <Segmented
+                      value={providerFilter}
+                      onChange={(value) => {
+                        setProviderFilter(value as ProviderFilter);
+                        setAccountFilter('all');
+                      }}
+                      options={[
+                        { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
+                        ...PROVIDERS.map((provider) => ({
+                          label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
+                          value: provider
+                        }))
+                      ]}
+                    />
+                  </div>
                   <Select
                     className="models-account-filter"
                     value={accountFilter}

@@ -38,6 +38,8 @@ import {
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import '@/components/settings/settings-shared.css';
+import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 
@@ -274,7 +276,7 @@ export default function FabricServerSetup() {
         const active = record.id === activeProfileId;
         return (
           <Space wrap size={[4, 4]}>
-            {active && <Tag color="green">当前</Tag>}
+            {active && <Tag className="settings-current-tag">当前</Tag>}
             <Tag color={status.color}>{status.label}</Tag>
             <Tag>{formatProfileDetail(record)}</Tag>
           </Space>
@@ -348,7 +350,7 @@ export default function FabricServerSetup() {
         />
       }
     >
-      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+      <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
         <StatisticCard
           statistic={{
             title: '就绪 Server',
@@ -374,7 +376,7 @@ export default function FabricServerSetup() {
           loading={false}
         />
         {hasReadyServer && (
-          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--hos-border, #e2e8f0)', display: 'flex', gap: 16 }}>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)', display: 'flex', gap: 16 }}>
             <Button type="link" onClick={() => navigate('/fabric/servers')} style={{ padding: 0 }}>
               打开高级 Server 设置
             </Button>
@@ -407,6 +409,7 @@ export default function FabricServerSetup() {
         )}
         <Form
           form={saveForm}
+          className="settings-form"
           layout="vertical"
           onFinish={handleSaveServer}
           initialValues={{

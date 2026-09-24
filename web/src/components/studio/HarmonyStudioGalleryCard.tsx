@@ -23,8 +23,7 @@ export interface HarmonyStudioGalleryCardProps {
 }
 
 /**
- * HarmonyOS 6 风格灵感工坊画廊卡片 (ArkUI Studio Gallery Card)
- * 采用 24px Squircle 超级圆角、通透亚克力毛玻璃、画廊微光悬浮与流光操作胶囊
+ * 灵感工坊画廊卡片：扁平 surface + 发丝线描边，图片预览 / 标题 / 模型 / 提示词
  */
 export const HarmonyStudioGalleryCard = memo(function HarmonyStudioGalleryCard({
   title,

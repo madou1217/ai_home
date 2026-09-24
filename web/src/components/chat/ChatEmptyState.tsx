@@ -24,25 +24,13 @@ export default function ChatEmptyState({
             <RocketOutlined />
           </div>
           <h2 className={styles.emptyTitleHarmony}>AI Home 纯聊天模式</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', margin: '16px 0 20px', maxWidth: 440 }}>
-            {['💡 构思全栈系统架构', '⚡ 优化高并发流式渲染', '🎨 设计鸿蒙亚克力质感组件', '🔍 审查代码逻辑缺陷'].map((prompt) => (
+          <div className={styles.emptyPromptChips}>
+            {['💡 构思全栈系统架构', '⚡ 优化高并发流式渲染', '🎨 设计一个数据表格组件', '🔍 审查代码逻辑缺陷'].map((prompt) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={onCreateSession}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 'var(--hos-radius-pill, 9999px)',
-                  border: '0.8px solid rgba(10, 89, 247, 0.2)',
-                  background: 'rgba(255, 255, 255, 0.7)',
-                  backdropFilter: 'blur(12px)',
-                  color: '#1e293b',
-                  fontSize: 12,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.14s ease',
-                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)'
-                }}
+                className={styles.emptyPromptChip}
               >
                 {prompt}
               </button>
@@ -56,16 +44,7 @@ export default function ChatEmptyState({
             type="primary"
             icon={<MessageOutlined />}
             onClick={onCreateSession}
-            style={{
-              height: 42,
-              padding: '0 24px',
-              borderRadius: 'var(--hos-radius-pill, 9999px)',
-              fontSize: 15,
-              fontWeight: 500,
-              background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%)',
-              boxShadow: '0 8px 24px -4px rgba(37, 99, 235, 0.35)',
-              border: 'none',
-            }}
+            className={styles.emptyPrimaryBtn}
           >
             发起新对话
           </Button>
@@ -77,7 +56,7 @@ export default function ChatEmptyState({
   return (
     <div className={styles.emptyContainerHarmony}>
       <div className={styles.emptyCardHarmony}>
-        <div className={styles.emptyIconBadgeHarmony} style={{ color: '#0d9488', background: 'rgba(13, 148, 136, 0.12)' }}>
+        <div className={styles.emptyIconBadgeHarmony}>
           <FolderOpenOutlined />
         </div>
         <h2 className={styles.emptyTitleHarmony}>
@@ -95,16 +74,7 @@ export default function ChatEmptyState({
             type="primary"
             icon={<PlusOutlined />}
             onClick={onCreateSession}
-            style={{
-              height: 42,
-              padding: '0 24px',
-              borderRadius: 'var(--hos-radius-pill, 9999px)',
-              fontSize: 15,
-              fontWeight: 500,
-              background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
-              boxShadow: '0 8px 24px -4px rgba(13, 148, 136, 0.35)',
-              border: 'none',
-            }}
+            className={styles.emptyPrimaryBtn}
           >
             新建工作区会话
           </Button>
@@ -113,16 +83,7 @@ export default function ChatEmptyState({
             type="primary"
             icon={<FolderOpenOutlined />}
             onClick={onOpenProject}
-            style={{
-              height: 42,
-              padding: '0 24px',
-              borderRadius: 'var(--hos-radius-pill, 9999px)',
-              fontSize: 15,
-              fontWeight: 500,
-              background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)',
-              boxShadow: '0 8px 24px -4px rgba(37, 99, 235, 0.35)',
-              border: 'none',
-            }}
+            className={styles.emptyPrimaryBtn}
           >
             打开项目目录
           </Button>

@@ -23,8 +23,7 @@ export interface FabricNodeMeshCardProps {
 }
 
 /**
- * HarmonyOS 6 风格超级终端分布式 Mesh 节点卡片 (ArkUI Super Device Mesh Card)
- * 采用 24px Squircle 超级圆角、通透亚克力毛玻璃、呼吸水滴雷达环与分布式设备拓扑质感
+ * Fabric Mesh 节点卡片：扁平 surface + 发丝线描边，状态用实心圆点表达
  */
 export const FabricNodeMeshCard = memo(function FabricNodeMeshCard({
   name,
@@ -68,7 +67,7 @@ export const FabricNodeMeshCard = memo(function FabricNodeMeshCard({
             <div className={styles.metricItem}>
               <span className={styles.metricLabel}>往返时延 (RTT)</span>
               <strong className={styles.metricValue}>
-                <WifiOutlined style={{ color: '#0a59f7', marginRight: 4 }} />
+                <WifiOutlined className={styles.metricIcon} />
                 {latencyMs}ms
               </strong>
             </div>
@@ -92,7 +91,7 @@ export const FabricNodeMeshCard = memo(function FabricNodeMeshCard({
         <div className={styles.sessionState}>
           {activeSessions !== undefined ? (
             <span className={styles.sessionCount}>
-              <ThunderboltFilled style={{ color: '#eab308' }} /> {activeSessions} 活跃会话
+              <ThunderboltFilled className={styles.sessionIcon} /> {activeSessions} 活跃会话
             </span>
           ) : (
             <span className={styles.statusLabel}>

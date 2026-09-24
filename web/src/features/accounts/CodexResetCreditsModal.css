@@ -29,8 +29,8 @@
 
 .codex-reset-credits__table-wrap {
   overflow: hidden;
-  border: 1px solid #e8e8e8;
-  border-radius: var(--hos-radius-xs, 8px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm, 8px);
 }
 
 .codex-reset-credits__table {
@@ -42,7 +42,7 @@
 .codex-reset-credits__table th,
 .codex-reset-credits__table td {
   padding: var(--hos-space-2-5, 10px) var(--hos-space-3-5, 14px);
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
 }
 
@@ -53,15 +53,16 @@
 }
 
 .codex-reset-credits__table th {
-  background: #fafafa;
-  color: #595959;
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
   font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
+  font-weight: var(--weight-medium, 500);
 }
 
 .codex-reset-credits__table td {
-  color: #262626;
+  color: var(--color-text);
   font-size: var(--hos-text-body-sm, 13px);
+  font-variant-numeric: tabular-nums;
 }
 
 .codex-reset-credits__table tbody tr:last-child td {

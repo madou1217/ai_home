@@ -21,6 +21,6 @@
 @media (prefers-reduced-motion: reduce) {
   [data-account-activity="active"] {
     animation: none !important;
-    filter: drop-shadow(0 0 3px rgba(22, 119, 255, 0.45));
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 45%, transparent));
   }
 }

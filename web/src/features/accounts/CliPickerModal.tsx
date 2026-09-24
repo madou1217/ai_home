@@ -62,7 +62,7 @@ export function CliPickerModal({
           readOnly
           value={workdir}
           placeholder="默认：当前用户主目录"
-          style={{ background: '#f5f5f5', color: '#595959' }}
+          style={{ background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
         />
         <Button onClick={onBrowseWorkdir}>选择文件夹</Button>
       </Space.Compact>

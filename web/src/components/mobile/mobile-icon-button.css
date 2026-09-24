@@ -5,31 +5,36 @@
  * 共享组件 PageHeaderActions 依赖它们，故独立成文件由组件自带，
  * mobile-cards.css 以 @import 保留原有引入方的行为。 */
 
-/* 原生移动图标按钮(刷新等)——赤陶描边、够大的触控目标 */
+/* 原生移动图标按钮(刷新等):次要 = surface + 1px 描边;主要(.primary)= 墨底。
+ * 40px 触控目标、圆角 10,无投影 / 无光晕。 */
 .m-icon-btn {
   flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--hos-radius-sm, 12px);
-  border: 1px solid var(--hos-ink-100, #ececf4);
-  background: var(--hos-white, #ffffff);
-  color: var(--hos-gray-600, #5a5a72);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--hos-radius-lg, 10px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted-strong);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
+  font-size: 17px;
   cursor: pointer;
-  box-shadow: var(--hos-mobile-shadow-xs, 0 1px 2px rgba(27, 27, 43, .05));
-  transition: background .15s;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
+    border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
-.m-icon-btn:active { background: var(--hos-mobile-surface-2, #fafaff); }
-.m-icon-btn:disabled { opacity: .5; }
+.m-icon-btn:active { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
+.m-icon-btn:disabled { opacity: .5; cursor: default; }
 .m-icon-btn.primary {
-  background: var(--hos-orange-500, #d97757);
-  border-color: transparent;
-  color: var(--hos-white, #fff);
-  box-shadow: 0 3px 9px color-mix(in srgb, var(--hos-orange-500, #d97757) 38%, transparent);
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-on-ink);
+  box-shadow: none;
 }
+.m-icon-btn.primary:active { background: var(--color-ink-hover); border-color: var(--color-ink-hover); }
 
-/* 页头右侧原生操作:一排紧凑图标按钮(主操作赤陶 + 次操作描边) */
+/* 页头右侧原生操作:一排紧凑图标按钮(主操作墨色 + 次操作描边) */
 .m-header-actions { display: inline-flex; align-items: center; gap: var(--hos-space-2, 8px); }

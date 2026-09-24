@@ -33,8 +33,7 @@ export function formatTokensK(n?: number): string {
 }
 
 /**
- * HarmonyOS 6 风格模型能力胶囊卡片 (ArkUI Capability Capsule Card)
- * 采用 Squircle 超级圆角、高斯通透毛玻璃、流光能力徽标与物理弹性交互
+ * 模型能力卡片：扁平 surface + 发丝线描边，模型 ID / 能力标签 / 启用状态
  */
 export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   modelId,
@@ -85,7 +84,7 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
         <div className={styles.capsuleTags}>
           {contextWindow ? (
             <span className={styles.metricCapsule}>
-              <ThunderboltFilled style={{ color: '#0a59f7' }} /> 上下文 {formatTokensK(contextWindow)}
+              <ThunderboltFilled className={styles.metricIcon} /> 上下文 {formatTokensK(contextWindow)}
             </span>
           ) : null}
           {maxOutputTokens ? (

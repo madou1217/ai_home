@@ -17,6 +17,7 @@
 
 .unified-page-wrapper .ant-page-header {
   padding-inline: 0 !important;
+  padding-block: var(--space-10) var(--space-2) !important;
 }
 
 .unified-page-content {

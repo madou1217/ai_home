@@ -807,6 +807,18 @@
   text-align: center;
 }
 
+/* 「展开更多 / 收起」：青色可交互文字，悬停辉光 */
+.sessionMoreAction {
+  cursor: pointer;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  transition: text-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.sessionMoreAction:hover {
+  text-shadow: var(--hud-text-glow);
+}
+
 .mobileConfirmModal :global(.ant-modal) {
   max-width: min(360px, calc(100vw - 32px));
 }
@@ -881,7 +893,7 @@
     max-width: calc(100vw - 32px);
     margin: 0 auto;
   }.mobileConfirmModal :global(.ant-modal-content) {
-    border-radius: var(--hos-radius-md);
+    border-radius: 0;
     overflow: hidden;
   }.mobileConfirmModal :global(.ant-modal-header) {
     padding: var(--hos-space-4) var(--hos-space-4) var(--hos-space-2); /* 归级:原 18px */

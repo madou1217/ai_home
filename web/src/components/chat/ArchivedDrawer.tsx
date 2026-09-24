@@ -13,6 +13,7 @@ import {
 import { lifecycleErrorMessage } from './useSessionLifecycle';
 import Button from '@/components/ui/AppButton';
 import dayjs from 'dayjs';
+import styles from './chat-overlays.module.css';
 
 interface Props {
   open: boolean;
@@ -71,18 +72,9 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
       }}
     >
       {loading ? (
-        <div style={{ paddingTop: 8 }}>
+        <div className={styles.archivedList}>
           {Array.from({ length: 5 }).map((_, index) => (
-            <div
-              key={index}
-              style={{
-                padding: '14px 16px',
-                marginBottom: '12px',
-                background: 'var(--color-surface)',
-                borderRadius: 'var(--hos-radius-lg)',
-                border: '1px solid var(--color-border)'
-              }}
-            >
+            <div key={index} className={`hud-panel hud-panel--sm ${styles.archivedItem}`}>
               <Skeleton
                 active
                 avatar={{ size: 'small' }}
@@ -93,22 +85,16 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
           ))}
         </div>
       ) : sessions.length === 0 ? (
-        <Empty description="暂无归档会话" style={{ marginTop: 60 }} />
+        <Empty description={<span className="hud-label">暂无归档会话</span>} className={styles.archivedEmpty} />
       ) : (
         <List
           dataSource={sessions}
           split={false}
-          style={{ paddingTop: 8 }}
+          className={styles.archivedList}
           renderItem={(session) => (
             <List.Item
               key={getSessionRunKey(session)}
-              style={{
-                padding: '14px 16px',
-                marginBottom: '12px',
-                background: 'var(--color-surface)',
-                borderRadius: 'var(--hos-radius-lg)',
-                border: '1px solid var(--color-border)'
-              }}
+              className={`hud-panel hud-panel--sm ${styles.archivedItem}`}
               actions={canUnarchiveSession(session) ? [
                 <Popconfirm
                   key="restore"
@@ -122,7 +108,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                     type="text"
                     icon={<UndoOutlined />}
                     size="small"
-                    style={{ color: 'var(--color-accent)', background: 'var(--color-accent-soft)', borderRadius: 'var(--hos-radius-xs)', padding: '4px 12px' }}
+                    className={styles.archivedRestoreButton}
                   >
                     还原
                   </Button>
@@ -132,12 +118,12 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
               <List.Item.Meta
                 avatar={<ProviderIcon provider={session.provider} size={18} />}
                 title={
-                  <span style={{ fontSize: isMobile ? 15 : 13, lineHeight: 1.45 }}>
+                  <span className={styles.archivedTitle} data-mobile={isMobile ? 'true' : undefined}>
                     {session.title}
                   </span>
                 }
                 description={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: isMobile ? 12 : 11, color: 'var(--color-muted)' }}>
+                  <div className={styles.archivedMeta} data-mobile={isMobile ? 'true' : undefined}>
                     <Tag
                       color={getProviderTagColor(session.provider)}
                       style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
@@ -151,7 +137,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                     >
                       {session.origin === 'native' ? '原生归档' : '历史归档'}
                     </Tag>
-                    <span>最后更新 {dayjs(archivedSessionTime(session)).fromNow()}</span>
+                    <span className={styles.archivedTime}>最后更新 {dayjs(archivedSessionTime(session)).fromNow()}</span>
                   </div>
                 }
               />

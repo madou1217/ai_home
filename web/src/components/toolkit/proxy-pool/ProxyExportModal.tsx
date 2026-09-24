@@ -58,7 +58,7 @@ export default function ProxyExportModal({ open, onClose }: ProxyExportModalProp
 
   return (
     <Modal title="聚合配置导出" open={open} onCancel={close} footer={null} width={760}>
-      <Paragraph type="secondary">
+      <Paragraph type="secondary" className="proxy-export-intro">
         生成可下载或复制的配置内容，不会冒充长期在线订阅链接。只输出编译器实际支持的节点，并明确列出跳过项。
       </Paragraph>
       <div className="proxy-export-toolbar">

@@ -4,6 +4,7 @@ import { applyThemeMode } from '@/services/theme-persistence';
 import { crossTabSync } from '@/services/cross-tab-session-sync';
 import type { HudGatewayState } from './use-hud-telemetry';
 import { useHudTelemetry } from './use-hud-telemetry';
+import { useMobileMode } from '@/mobile/use-mobile-mode';
 import { useHudPreferences } from './use-hud-preferences';
 import { formatHudCount, formatHudPercent, formatHudUptime } from './hud-format';
 import styles from './hud-header.module.css';
@@ -35,7 +36,10 @@ export function HudBrand({ logo }: { logo: string }) {
  * 顶栏遥测条：全部来自 /webui/management/status 的真实字段
  * （网关状态、可调度 / 总账号、冷却账号、成功率、请求总数、调度策略、运行时长）。
  */
-export function HudTelemetryBar({ enabled }: { enabled: boolean }) {
+export function HudTelemetryBar({ enabled: requested }: { enabled: boolean }) {
+  // 手机视口由移动端 HUD 顶栏自己轮询；桌面顶栏被隐藏时不再重复请求
+  const mobile = useMobileMode();
+  const enabled = requested && !mobile;
   const { state, status, receivedAt } = useHudTelemetry(enabled);
   const [now, setNow] = useState(() => Date.now());
 

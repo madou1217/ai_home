@@ -9,6 +9,7 @@ import {
   resolveKimiDesktopSessionExpiryDelay
 } from '@/features/accounts/kimi-desktop-login';
 import type { KimiDesktopLoginPhase } from '@/features/accounts/kimi-desktop-login';
+import './account-overlays.css';
 
 interface KimiDesktopLoginModalProps {
   open: boolean;
@@ -134,21 +135,25 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
       destroyOnHidden
       width={360}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '8px 0' }}>
-        {phase === 'loading' ? (
-          <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Spin />
+      <div className="kimi-desktop-login">
+        {phase === 'loading' || qrUrl ? (
+          <div className="kimi-desktop-login-frame hud-panel hud-panel--sm">
+            {phase === 'loading' ? (
+              <div className="kimi-desktop-login-loading">
+                <Spin />
+              </div>
+            ) : (
+              <QRCode
+                value={qrUrl}
+                size={200}
+                status={qrStatus}
+                onRefresh={phase === 'STATUS_EXPIRED' ? () => void startSession() : undefined}
+              />
+            )}
           </div>
-        ) : qrUrl ? (
-          <QRCode
-            value={qrUrl}
-            size={200}
-            status={qrStatus}
-            onRefresh={phase === 'STATUS_EXPIRED' ? () => void startSession() : undefined}
-          />
         ) : null}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Tag color={getKimiDesktopSessionStatusTagColor(phase)} style={{ margin: 0 }}>
+        <div className="kimi-desktop-login-state">
+          <Tag color={getKimiDesktopSessionStatusTagColor(phase)}>
             {getKimiDesktopSessionStatusText(phase)}
           </Tag>
           {phase === 'error' || phase === 'STATUS_EXPIRED' ? (
@@ -157,7 +162,7 @@ export function KimiDesktopLoginModal({ open, accountRef, accountLabel, onClose,
             </Button>
           ) : null}
         </div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text type="secondary" className="aih-overlay-hint">
           使用微信扫码确认后，桌面登录态将由 ai-home 托管，二维码约 3 分钟内有效。
         </Typography.Text>
       </div>

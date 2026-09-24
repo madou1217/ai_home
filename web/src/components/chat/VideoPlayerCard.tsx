@@ -63,7 +63,7 @@ export const VideoPlayerCard = memo(function VideoPlayerCard({
   }, []);
 
   return (
-    <div ref={containerRef} className={styles.videoPlayerCard}>
+    <div ref={containerRef} className={`hud-panel hud-panel--sm ${styles.videoPlayerCard}`}>
       <div className={styles.videoHeader}>
         <span className={styles.videoTitle}>
           <VideoCameraOutlined /> {title}

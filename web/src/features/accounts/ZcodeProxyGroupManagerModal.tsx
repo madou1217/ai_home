@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Modal, Select, Space, Tag, Typography, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Tag, Typography, message } from 'antd';
 import { proxyPoolAPI } from '@/services/api';
 import type { ProxyGroup, ProxyGroupStrategy, ProxyNode } from '@/types';
+import './account-overlays.css';
 import {
   PROXY_GROUP_STRATEGY_OPTIONS,
   describeProxyGroupKind,
@@ -194,9 +195,8 @@ export function ZcodeProxyGroupManagerModal({
         </Button>
       ]}
     >
-      <Space wrap style={{ width: '100%', marginBottom: 16 }}>
+      <div className="egress-group-picker">
         <Select
-          style={{ minWidth: 360 }}
           showSearch
           optionFilterProp="label"
           value={creating ? undefined : editingId || undefined}
@@ -208,11 +208,11 @@ export function ZcodeProxyGroupManagerModal({
         <Button icon={<PlusOutlined />} disabled={submitting} onClick={beginCreate}>
           新建手动组
         </Button>
-      </Space>
+      </div>
 
       {creating || selectedGroup ? (
         <>
-          <Space wrap size={8} style={{ marginBottom: 12 }}>
+          <div className="egress-group-meta">
             <Tag color={editingManualGroup ? 'blue' : 'default'}>
               {creating ? '新手动组' : describeProxyGroupKind(selectedGroup)}
             </Tag>
@@ -222,7 +222,7 @@ export function ZcodeProxyGroupManagerModal({
                 自动组成员由订阅、国家或系统规则生成，这里只调整调度策略。
               </Typography.Text>
             ) : null}
-          </Space>
+          </div>
           <Form form={form} layout="vertical" initialValues={DEFAULT_GROUP_VALUES}>
             {editingManualGroup ? (
               <>

@@ -1,5 +1,7 @@
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import './Accounts.css';
+import '@/features/accounts/account-overlays.css';
+import './AccountsGoPreview.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
@@ -17,7 +19,6 @@ import {
   Select,
   Radio,
   Segmented,
-  Alert,
   message,
   Card,
   Dropdown,
@@ -70,6 +71,8 @@ import type {
   AccountModelView
 } from '@/services/account-management/types.ts';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
+import { InlineNote } from '@/components/ui/InlineNote';
+import { AuthJobStatusPanel } from '@/features/accounts/AuthProgressModal';
 import { PROVIDER_AUTH_OPTIONS } from '@/providers/catalog';
 import UsageSnapshotCell from '@/components/account/UsageSnapshotCell';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
@@ -529,7 +532,8 @@ const accountRoleTagStyle: React.CSSProperties = {
 const accountRoleIconStyle: React.CSSProperties = {
   width: 18,
   height: 18,
-  borderRadius: 9,
+  borderRadius: 2,
+  border: '1px solid color-mix(in srgb, currentColor 40%, transparent)',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -737,7 +741,7 @@ function mergeAccountRecord(
 }
 
 export default function Accounts() {
-  const { Paragraph, Text } = Typography;
+  const { Text } = Typography;
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
   const location = useLocation();
@@ -1984,7 +1988,7 @@ export default function Accounts() {
       label: record.isDefault
         ? '取消默认账号'
         : (!record.configured ? '未配置账号不能设为默认账号' : '设为默认账号'),
-      icon: record.isDefault ? <CheckCircleOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined />,
+      icon: record.isDefault ? <CheckCircleOutlined style={{ color: 'var(--color-accent)' }} /> : <CheckCircleOutlined />,
       disabled: Boolean(!record.isDefault && !record.configured)
     });
     if (canReauthAccount(record)) {
@@ -2058,7 +2062,7 @@ export default function Accounts() {
               </div>
             </div>
             {getAccountSecondaryLabel(record) ? (
-              <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountSecondaryLabel(record)}
               </div>
             ) : null}
@@ -2224,7 +2228,7 @@ export default function Accounts() {
         return (
           <div>
             <div>{t.absolute}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{t.relative}</div>
           </div>
         );
       }
@@ -2245,7 +2249,7 @@ export default function Accounts() {
         return (
           <div>
             <div>{t.absolute}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{t.relative}</div>
           </div>
         );
       }
@@ -2367,8 +2371,45 @@ export default function Accounts() {
       : ''
   ), [removingAccountRefs]);
 
+  // 独立预览页（layout:false）没有全站 HUD 顶栏：这里补一条 HUD 状态条，
+  // 只复用本页已有的数据（账号状态 / 账号总数 / 正常可用 / 当前来源），不发额外请求。
+  const hudSourceLabel = activeProvider === 'all'
+    ? '全部'
+    : (providerNames[activeProvider as Provider] || String(activeProvider));
+
   return (
-    <PageScaffold ghost
+    <div className="go-preview-shell">
+    <header className="go-preview-hud" aria-label="Go 账号预览状态">
+      <div className="go-preview-hud-brand">
+        <span className="go-preview-hud-logo">AI_HOME</span>
+        <span className="go-preview-hud-route">Go 账号预览</span>
+      </div>
+      <dl className="go-preview-hud-telemetry">
+        <div>
+          <dt className="hud-label">账号状态</dt>
+          <dd>
+            <span
+              className={`hud-led ${hydratingDetails ? 'hud-led--info hud-led--live' : 'hud-led--ok'}`}
+              aria-hidden="true"
+            />
+            {hydratingDetails ? '详情补全中' : '就绪'}
+          </dd>
+        </div>
+        <div>
+          <dt className="hud-label">账号</dt>
+          <dd className="hud-display">{providerStats.all.total}</dd>
+        </div>
+        <div>
+          <dt className="hud-label">正常可用</dt>
+          <dd className="hud-display go-preview-hud-ok">{providerStats.all.healthy}</dd>
+        </div>
+        <div>
+          <dt className="hud-label">来源</dt>
+          <dd>{hudSourceLabel}</dd>
+        </div>
+      </dl>
+    </header>
+    <PageScaffold ghost code="ACCOUNTS"
       title="账号池管理"
       subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
       extra={isMobile ? (
@@ -2415,13 +2456,14 @@ export default function Accounts() {
               value: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
               hint: `耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
               valueColor: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
-                ? 'var(--color-danger, #dc2626)' : undefined
+                ? 'var(--color-danger)' : undefined
             }
           ]}
         />
       ) : (
-        <StatisticCard.Group className="accounts-stat-group" direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard.Group className="accounts-stat-group hos-kpi-strip" direction="row" style={{ marginBottom: 16 }}>
           <StatisticCard
+            className={hydratingDetails ? 'accounts-stat--accent' : 'accounts-stat--success'}
             statistic={{
               title: '账号状态',
               value: hydratingDetails ? '详情补全中' : '就绪',
@@ -2429,31 +2471,34 @@ export default function Accounts() {
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].healthy > 0 ? 'accounts-stat--success' : 'accounts-stat--accent'}
             statistic={{
               title: '正常可用',
               value: `${providerStats[activeProvider].healthy} / ${providerStats[activeProvider].total}`
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 ? 'accounts-stat--warning' : 'accounts-stat--accent'}
             statistic={{
               title: '待处理问题',
               value: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
               description: `阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
               valueStyle: {
                 color: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
-                  ? 'var(--color-warning, #d97706)'
+                  ? 'var(--color-warning)'
                   : undefined
               }
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 ? 'accounts-stat--danger' : 'accounts-stat--accent'}
             statistic={{
               title: '耗尽/停用',
               value: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
               description: `耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
               valueStyle: {
                 color: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
-                  ? 'var(--color-danger, #dc2626)'
+                  ? 'var(--color-danger)'
                   : undefined
               }
             }}
@@ -2471,7 +2516,7 @@ export default function Accounts() {
         confirmLoading={importingAccounts}
         okButtonProps={{ disabled: !canSubmitImport }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="aih-overlay-stack">
           <Segmented
             value={importMode}
             onChange={handleImportModeChange}
@@ -2481,17 +2526,17 @@ export default function Accounts() {
             ]}
           />
           {importMode === 'file' ? (
-            <Alert
-              type={importFileName ? 'success' : 'info'}
-              showIcon
-              message={importFileName ? `已选择 ${importFileName}` : '选择单份 sub2api JSON 文件'}
+            <InlineNote
+              tone={importFileName ? 'success' : 'info'}
               description="只接受 type=sub2api-data 的文本 JSON；账号写入后由 Go 在后台异步刷新模型。"
               action={
                 <Button size="small" onClick={() => importInputRef.current?.click()}>
                   {importFileName ? '重新选择' : '选择文件'}
                 </Button>
               }
-            />
+            >
+              {importFileName ? `已选择 ${importFileName}` : '选择单份 sub2api JSON 文件'}
+            </InlineNote>
           ) : null}
           <input
             ref={importInputRef}
@@ -2502,17 +2547,17 @@ export default function Accounts() {
           />
           {importMode === 'text' ? (
             <div className="accounts-import-paste">
-              <Alert
-                type="info"
-                showIcon
-                message="sub2api 迁移 JSON"
+              <InlineNote
+                tone="info"
                 description="只导入一份 sub2api-data JSON；AIH 内部 accountRef/id 不作为迁移身份。"
                 action={
                   <Button size="small" onClick={() => setImportText(SUB2API_TEMPLATE)}>
                     填入模板
                   </Button>
                 }
-              />
+              >
+                sub2api 迁移 JSON
+              </InlineNote>
               <div className="accounts-import-template">
                 <div>格式模板</div>
                 <pre>{SUB2API_TEMPLATE}</pre>
@@ -2698,10 +2743,10 @@ export default function Accounts() {
               label="Claude 认证方式"
               rules={[{ required: true, message: '请选择 Claude 认证方式' }]}
             >
-              <Radio.Group>
+              <Radio.Group className="aih-choice-tiles">
                 <Space direction="vertical">
-                  <Radio value="api-key">ANTHROPIC_API_KEY</Radio>
-                  <Radio value="auth-token">ANTHROPIC_AUTH_TOKEN</Radio>
+                  <Radio value="api-key"><span className="aih-choice-tile-title">ANTHROPIC_API_KEY</span></Radio>
+                  <Radio value="auth-token"><span className="aih-choice-tile-title">ANTHROPIC_AUTH_TOKEN</span></Radio>
                 </Space>
               </Radio.Group>
             </Form.Item>
@@ -2764,7 +2809,7 @@ export default function Accounts() {
               label="认证方式"
               rules={[{ required: true, message: '请选择认证方式' }]}
             >
-              <Radio.Group size="large">
+              <Radio.Group size="large" className="aih-choice-tiles">
                 <Space direction="vertical">
                   {providerAuthOptions.map((option) => (
                     <Radio
@@ -2774,16 +2819,16 @@ export default function Accounts() {
                     >
                       <Space direction="vertical" size={0}>
                         <Space align="center" size={6}>
-                          <span>{option.label}</span>
+                          <span className="aih-choice-tile-title">{option.label}</span>
                           {option.disabled && (
-                            <Tag color="default" bordered={false} style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px' }}>
+                            <Tag color="default" bordered={false} style={{ marginInlineEnd: 0 }}>
                               已停用
                             </Tag>
                           )}
                         </Space>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <span className="aih-choice-tile-desc">
                           {option.disabledReason || option.description}
-                        </Text>
+                        </span>
                       </Space>
                     </Radio>
                   ))}
@@ -2837,50 +2882,31 @@ export default function Accounts() {
       >
         {addJob ? (
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Alert
-              type={
-                addJob.status === 'failed'
-                  ? 'error'
-                  : addJob.status === 'succeeded'
-                    ? 'success'
-                    : addJob.status === 'expired'
-                      ? 'warning'
-                    : addJob.status === 'cancelled'
-                      ? 'warning'
-                      : 'info'
-              }
-              showIcon
-              message={authSubjectLabel || 'OAuth 授权'}
-              description={
-                addJob.status === 'running'
-                  ? '正在等待授权完成...'
-                  : addJob.status === 'succeeded'
-                    ? (authSuccessClosing ? '授权已完成，账号已经可用。弹窗将在 3 秒后自动关闭。' : '授权已完成，账号已经可用。')
-                    : addJob.status === 'expired'
-                      ? (addJob.error || '授权已过期，请重新发起。')
-                    : addJob.status === 'cancelled'
-                      ? (addJob.error || '授权流程已取消。')
-                      : (addJob.error || '授权失败，请查看下方日志。')
-              }
+            <AuthJobStatusPanel
+              job={addJob}
+              title={authSubjectLabel || 'OAuth 授权'}
+              successClosing={authSuccessClosing}
             />
 
             {Boolean(addJob.expiresAt || addJob.pollIntervalMs) && (
-              <Card size="small" title="授权状态">
+              <Card size="small" title="授权状态" className="hud-panel hud-panel--sm aih-overlay-section">
                 {addJob.expiresAt ? (
-                  <Paragraph>
-                    <Text strong>过期时间：</Text> {dayjs(addJob.expiresAt).format('YYYY-MM-DD HH:mm:ss')}
-                  </Paragraph>
+                  <div className="aih-kv">
+                    <span className="hud-label">过期时间</span>
+                    <span className="aih-kv-value">{dayjs(addJob.expiresAt).format('YYYY-MM-DD HH:mm:ss')}</span>
+                  </div>
                 ) : null}
                 {addJob.pollIntervalMs ? (
-                  <Paragraph>
-                    <Text strong>建议轮询间隔：</Text> {Math.round(addJob.pollIntervalMs / 1000)} 秒
-                  </Paragraph>
+                  <div className="aih-kv">
+                    <span className="hud-label">建议轮询间隔</span>
+                    <span className="aih-kv-value">{Math.round(addJob.pollIntervalMs / 1000)} 秒</span>
+                  </div>
                 ) : null}
               </Card>
             )}
 
             {addJob.authMode === 'oauth-browser' && (
-              <Card size="small" title="浏览器授权">
+              <Card size="small" title="浏览器授权" className="hud-panel hud-panel--sm aih-overlay-section">
                 {renderAuthDetail(
                   '邮箱',
                   getAuthJobIdentity(addJob),
@@ -2892,21 +2918,21 @@ export default function Accounts() {
                   { copyMessage: '已复制授权链接', openable: true }
                 )}
                 {addJob.callbackCaptureStatus ? (
-                  <Alert
-                    style={{ marginBottom: 12 }}
-                    type={addJob.callbackCaptureStatus === 'unavailable' ? 'warning' : 'info'}
-                    showIcon
-                    message={addJob.callbackCaptureStatus === 'unavailable'
-                      ? '本地自动接收不可用'
-                      : '本地自动接收已启动'}
+                  <InlineNote
+                    className="auth-progress-capture-note"
+                    tone={addJob.callbackCaptureStatus === 'unavailable' ? 'warning' : 'info'}
                     description={addJob.callbackCaptureStatus === 'unavailable'
                       ? (addJob.callbackCaptureError || '请授权后把浏览器地址栏里的完整回调地址粘贴到下方。')
                       : (addJob.callbackListeningUrl || addJob.redirectUri || '等待浏览器授权回调。')}
-                  />
+                  >
+                    {addJob.callbackCaptureStatus === 'unavailable'
+                      ? '本地自动接收不可用'
+                      : '本地自动接收已启动'}
+                  </InlineNote>
                 ) : null}
                 {addJob.status === 'running' ? (
                   <Space direction="vertical" style={{ width: '100%' }} size="small">
-                    <Text type="secondary">{getCallbackUiCopy().hint}</Text>
+                    <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy().hint}</Text>
                     <Input.TextArea
                       value={authCallbackUrl}
                       onChange={(event) => setAuthCallbackUrl(event.target.value)}
@@ -2933,21 +2959,7 @@ export default function Accounts() {
                   key: 'logs',
                   label: '授权日志',
                   children: (
-                    <pre
-                      style={{
-                        margin: 0,
-                        minHeight: 48,
-                        maxHeight: 240,
-                        padding: '8px 10px',
-                        overflow: 'auto',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        background: 'var(--hos-surface-muted, #f1f5f9)',
-                        borderRadius: 6
-                      }}
-                    >
+                    <pre className="aih-log">
                       {String(addJob.logs || '').trimStart() || '等待供应商返回授权输出...'}
                     </pre>
                   )
@@ -2968,14 +2980,14 @@ export default function Accounts() {
         destroyOnClose
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="模型策略只作用于当前账号"
+          <InlineNote
+            tone="info"
             description="跟随上游使用已探测模型；强制启用/停用只修改该账号的模型关系，不会改变其他账号或上游目录。"
-          />
+          >
+            模型策略只作用于当前账号
+          </InlineNote>
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Text type="secondary">
+            <Text type="secondary" className="go-preview-model-count">
               {modelManagementLoading ? '正在读取模型快照…' : `已保存 ${modelManagementModels.length} 个模型关系`}
             </Text>
             <Button
@@ -2996,10 +3008,15 @@ export default function Accounts() {
           ) : (
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               {modelManagementModels.map((model) => (
-                <Card key={model.modelId} size="small" bodyStyle={{ padding: 12 }}>
+                <Card
+                  key={model.modelId}
+                  size="small"
+                  bodyStyle={{ padding: 12 }}
+                  className={`hud-panel hud-panel--sm go-preview-model-row${model.effective ? ' go-preview-model-row--effective' : ''}`}
+                >
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <Space wrap size={[6, 6]}>
-                      <Typography.Text strong>{model.modelId}</Typography.Text>
+                      <Typography.Text strong className="go-preview-model-id">{model.modelId}</Typography.Text>
                       <Tag color={model.upstreamAvailable ? 'green' : 'default'}>
                         {model.upstreamAvailable ? '上游可用' : '上游未发现'}
                       </Tag>
@@ -3008,7 +3025,7 @@ export default function Accounts() {
                       </Tag>
                     </Space>
                     <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                      <Text type="secondary">人工策略</Text>
+                      <span className="hud-label">人工策略</span>
                       <Select
                         value={model.manualPolicy}
                         options={MODEL_POLICY_OPTIONS}
@@ -3028,5 +3045,6 @@ export default function Accounts() {
         </Space>
       </Drawer>
     </PageScaffold>
+    </div>
   );
 };

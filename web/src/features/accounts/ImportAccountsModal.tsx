@@ -1,6 +1,8 @@
-import { Alert, Button, Input, Modal, Segmented, Select } from 'antd';
+import { Button, Input, Modal, Segmented, Select } from 'antd';
+import { InlineNote } from '@/components/ui/InlineNote';
 import { PASTE_TEMPLATES } from '@/features/accounts/account-import-export';
 import type { ImportMode, PasteTemplate } from '@/features/accounts/account-import-export';
+import './account-overlays.css';
 
 interface ImportAccountsModalProps {
   open: boolean;
@@ -49,7 +51,7 @@ export function ImportAccountsModal({
       confirmLoading={importing}
       okButtonProps={{ disabled: !canSubmit }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="aih-overlay-stack">
         <Segmented
           value={mode}
           onChange={(value) => onModeChange(value as ImportMode)}
@@ -61,30 +63,30 @@ export function ImportAccountsModal({
           ]}
         />
         {mode === 'file' ? (
-          <Alert
-            type={fileName ? 'success' : 'info'}
-            showIcon
-            message={fileName ? `已选择 ${fileName}` : '选择 JSON / JSONL / ZIP 文件'}
+          <InlineNote
+            tone={fileName ? 'success' : 'info'}
             description="支持迁移 JSON、Antigravity Manager、JSONL 和 zip 导入包。"
             action={
               <Button size="small" onClick={onPickFile}>
                 {fileName ? '重新选择' : '选择文件'}
               </Button>
             }
-          />
+          >
+            {fileName ? `已选择 ${fileName}` : '选择 JSON / JSONL / ZIP 文件'}
+          </InlineNote>
         ) : null}
         {mode === 'folder' ? (
-          <Alert
-            type={fileName ? 'success' : 'info'}
-            showIcon
-            message={fileName ? `已选择 ${fileName}` : '选择账号文件夹'}
+          <InlineNote
+            tone={fileName ? 'success' : 'info'}
             description="支持包含 provider 目录、账号目录、JSON 文件或嵌套 ZIP 的文件夹，上传后由统一导入器自动发现。"
             action={
               <Button size="small" onClick={onPickFolder}>
                 {fileName ? '重新选择' : '选择文件夹'}
               </Button>
             }
-          />
+          >
+            {fileName ? `已选择 ${fileName}` : '选择账号文件夹'}
+          </InlineNote>
         ) : null}
         {mode === 'text' ? (
           <div className="accounts-import-paste">
@@ -96,19 +98,19 @@ export function ImportAccountsModal({
                 label: template.label
               }))}
             />
-            <Alert
-              type="info"
-              showIcon
-              message={activePasteTemplate.label}
+            <InlineNote
+              tone="info"
               description={activePasteTemplate.description}
               action={
                 <Button size="small" onClick={onFillTemplate}>
                   填入模板
                 </Button>
               }
-            />
+            >
+              {activePasteTemplate.label}
+            </InlineNote>
             <div className="accounts-import-template">
-              <div>格式模板</div>
+              <div className="hud-label">格式模板</div>
               <pre>{activePasteTemplate.value}</pre>
             </div>
             <Input.TextArea
@@ -120,12 +122,12 @@ export function ImportAccountsModal({
           </div>
         ) : null}
         {mode === 'cliproxyapi' ? (
-          <Alert
-            type="info"
-            showIcon
-            message="从 CLIProxyAPI 配置导入"
+          <InlineNote
+            tone="info"
             description="读取本机 CLIProxyAPI 配置和账号凭据，导入到 AI Home 账号池；无需上传文件。"
-          />
+          >
+            从 CLIProxyAPI 配置导入
+          </InlineNote>
         ) : null}
       </div>
     </Modal>

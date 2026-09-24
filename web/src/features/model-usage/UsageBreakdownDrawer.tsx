@@ -31,7 +31,6 @@ interface UsageBreakdownDrawerProps {
   target: UsageBreakdownTarget | null;
   data: ModelUsageBreakdownResponse | null;
   loading: boolean;
-  isMobile: boolean;
   accountsByRef: Map<string, Account>;
   onClose: () => void;
 }
@@ -49,7 +48,6 @@ export default function UsageBreakdownDrawer({
   target,
   data,
   loading,
-  isMobile,
   accountsByRef,
   onClose
 }: UsageBreakdownDrawerProps) {
@@ -223,7 +221,7 @@ export default function UsageBreakdownDrawer({
       title={title}
       open={Boolean(target)}
       onClose={onClose}
-      width={isMobile ? '100%' : 1040}
+      width={1040}
       destroyOnClose
     >
       {target?.kind === 'session' ? (
@@ -232,7 +230,7 @@ export default function UsageBreakdownDrawer({
           <Button type="text" size="small" icon={<CopyOutlined />} onClick={copySessionId}>
             复制
           </Button>
-          {target.row.cwd ? <Text type="secondary">{target.row.cwd}</Text> : null}
+          {target.row.cwd ? <Text type="secondary" className="usage-breakdown-cwd">{target.row.cwd}</Text> : null}
         </div>
       ) : null}
 
@@ -247,7 +245,7 @@ export default function UsageBreakdownDrawer({
             <div><span>Output</span><strong>{formatTokens(summary.outputTokens)}</strong></div>
             <div><span>Cache</span><strong>{formatTokens(getCacheTokens(summary))}</strong></div>
             <div><span>缓存率</span><strong>{formatCacheRate(summary.cacheHitRate)}</strong></div>
-            <div><span>成本</span><strong>{formatCost(summary.costUsd)}</strong></div>
+            <div className="usage-breakdown-summary-cost"><span>成本</span><strong>{formatCost(summary.costUsd)}</strong></div>
           </div>
           <Tabs
             items={[

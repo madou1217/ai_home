@@ -4,17 +4,16 @@ import { DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined } from '@a
 import Button from '@/components/ui/AppButton';
 import { isControlPlaneManagementKeyConfigured } from '@/services/control-plane-profiles';
 import { buildServerScopedAppHref } from '@/services/app-navigation';
-import type { ControlPlaneProfile, ControlPlaneProfileState } from '@/types';
+import type { ControlPlaneProfile } from '@/types';
+import {
+  getControlPlaneProfileStatus,
+  summarizeControlPlaneServerMetrics,
+  type ControlPlaneStatusTone
+} from '@/components/control-plane/server-list-presentation';
 import type { ServerRouteRow, ServerRouteView } from '@/services/server-route-presentation';
 import './ControlPlaneServerList.css';
 
-type StatusTone = 'ready' | 'degraded' | 'offline';
-
-const CONTROL_PLANE_PROFILE_STATUS: Record<ControlPlaneProfileState, { tone: StatusTone; label: string }> = {
-  ready: { tone: 'ready', label: '就绪' },
-  degraded: { tone: 'degraded', label: '连接异常' },
-  offline: { tone: 'offline', label: '离线' }
-};
+type StatusTone = ControlPlaneStatusTone;
 
 // 状态 → HUD LED（只映射真实状态，不额外发明「在线心跳」）
 const STATUS_LED: Record<StatusTone | 'pending', string> = {
@@ -30,10 +29,6 @@ const ROUTE_HEALTH_LED: Record<string, string> = {
   red: 'hud-led--err'
 };
 
-const getControlPlaneProfileStatus = (state: ControlPlaneProfileState) => (
-  CONTROL_PLANE_PROFILE_STATUS[state] || CONTROL_PLANE_PROFILE_STATUS.offline
-);
-
 interface ControlPlaneServerListProps {
   rows: ServerRouteRow[];
   activeControlPlaneId: string;
@@ -45,13 +40,9 @@ interface ControlPlaneServerListProps {
 }
 
 function buildMetricsNodes(profile: ControlPlaneProfile): ReactNode[] {
-  const syncUnavailable = profile.state === 'degraded' || Boolean(profile.lastError);
-  const cachedSummary = [
-    profile.lastStatusSyncAt > 0 ? `账号 ${profile.accountCount}` : '',
-    profile.lastSessionsSyncAt > 0 ? `会话 ${profile.sessionCount}` : ''
-  ].filter(Boolean).join(' · ');
+  const { unavailable, cachedSummary, accounts, sessions } = summarizeControlPlaneServerMetrics(profile);
 
-  if (syncUnavailable) {
+  if (unavailable) {
     return [
       <span key="unavailable" className="cp-footer-pending">
         数据无法获取
@@ -61,16 +52,14 @@ function buildMetricsNodes(profile: ControlPlaneProfile): ReactNode[] {
   }
 
   return [
-    profile.lastStatusSyncAt > 0 && (
+    accounts && (
       <span key="accounts">
-        账号 <b>{profile.activeAccountCount}/{profile.accountCount}</b>
-        {profile.lastAccountsSyncAt > 0 && profile.schedulableAccountCount > 0
-          ? `（${profile.schedulableAccountCount} 可调度）`
-          : ''}
+        账号 <b>{accounts.active}/{accounts.total}</b>
+        {accounts.schedulable > 0 ? `（${accounts.schedulable} 可调度）` : ''}
       </span>
     ),
-    profile.lastSessionsSyncAt > 0 && (
-      <span key="sessions">会话 <b>{profile.sessionCount}</b></span>
+    sessions !== null && (
+      <span key="sessions">会话 <b>{sessions}</b></span>
     )
   ].filter(Boolean);
 }

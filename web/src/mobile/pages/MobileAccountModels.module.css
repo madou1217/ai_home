@@ -1,0 +1,68 @@
+/* /accounts/:provider/:accountRef/models 移动端局部样式：语义 token、等宽数值、直角 / 切角 */
+
+.accountHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.accountDesc {
+  min-width: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.jobError {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.probeError {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.probeMessage {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.probeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.switchSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--mhud-hit);
+  min-height: var(--mhud-hit);
+}
+.disabledRow {
+  opacity: 0.55;
+}
+
+.sheetFooter {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.sheetFooter > * {
+  flex: 1;
+}
+
+.manualForm {
+  margin-top: 12px;
+}
+.monoInput {
+  font-family: var(--font-mono);
+}

@@ -15,6 +15,7 @@
 
 .managed-app-account-name-text {
   min-width: 0;
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -22,7 +23,25 @@
 
 .managed-app-account-muted {
   margin-left: var(--hos-space-2);
-  color: var(--color-muted);
+  color: var(--color-faint);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+}
+
+.managed-app-account-default-icon {
+  color: var(--color-warning);
+}
+
+/* 运行中：真实运行态（runningAccountPids 非空）→ 呼吸 LED + 等宽大写读数 */
+.managed-app-account-running-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
 }
 
 .managed-app-account-runtime,

@@ -112,7 +112,7 @@ export const ShareCardModal = memo(function ShareCardModal({
     >
       <div className={styles.shareModalBody}>
         {/* 卡片容器 */}
-        <div ref={cardRef} className={styles.harmonyShareCard}>
+        <div ref={cardRef} className={`hud-panel ${styles.harmonyShareCard}`}>
           <div className={styles.shareCardHeader}>
             <div className={styles.shareCardAuthor}>
               <div className={styles.shareCardAvatar}>
@@ -137,7 +137,7 @@ export const ShareCardModal = memo(function ShareCardModal({
           <div className={styles.shareCardFooter}>
             <div className={styles.shareCardBrand}>
               <span className={styles.shareCardLogo}>⚡</span>
-              <span className={styles.shareCardBrandText}>AI Home Console · HarmonyOS 6</span>
+              <span className={`hud-label ${styles.shareCardBrandText}`}>AI Home Console · HarmonyOS 6</span>
             </div>
           </div>
         </div>

@@ -1,0 +1,137 @@
+/* 服务端目录浏览器 / 打开项目弹窗（HUD：凹槽路径条、发丝线目录列表、青色选中态 + 辉光、等宽路径） */
+
+.body {
+  margin-top: var(--space-8);
+}
+
+.breadcrumb {
+  margin-bottom: var(--space-8) !important;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+}
+
+.crumbLink {
+  cursor: pointer;
+  color: var(--color-accent);
+  transition: text-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.crumbLink:hover {
+  text-shadow: var(--hud-text-glow);
+}
+
+.crumbCurrent {
+  font-weight: 700;
+  color: var(--color-heading);
+}
+
+.crumbSeparator {
+  font-size: 10px;
+  color: var(--color-faint);
+}
+
+.listPanel {
+  height: 350px;
+  overflow-y: auto;
+}
+
+.listInner {
+  padding: var(--space-4) 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  box-shadow: inset 2px 0 0 transparent;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.row:hover {
+  background: var(--color-overlay);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: var(--color-accent-soft);
+  box-shadow: inset 2px 0 0 var(--color-accent), var(--hud-glow-accent);
+  color: var(--color-accent);
+}
+
+.rowIcon {
+  color: var(--color-muted-strong);
+}
+
+.rowSelected .rowIcon {
+  color: var(--color-accent);
+}
+
+.loading {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  color: var(--color-muted);
+}
+
+.loadingIcon {
+  font-size: 24px;
+  color: var(--color-accent);
+}
+
+.empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--color-faint);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+}
+
+.selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+}
+
+.selectionPath {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* 打开项目弹窗 */
+.openProjectBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+}
+
+.readonlyPath {
+  font-family: var(--font-mono) !important;
+  color: var(--color-muted-strong) !important;
+}

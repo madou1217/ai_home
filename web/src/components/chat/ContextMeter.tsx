@@ -48,7 +48,10 @@ export const ContextMeter = memo(function ContextMeter({
         <span className={styles.contextMeterTitle}>
           <DashboardOutlined /> 上下文占用
         </span>
-        <span className={styles.contextMeterPercent}>{compacting ? '…' : stale || unknown ? '—' : `${stats.percent}%`}</span>
+        <span
+          className={styles.contextMeterPercent}
+          data-level={compacting || stale || unknown ? undefined : stats.isCritical ? 'danger' : stats.isWarning ? 'warning' : 'ok'}
+        >{compacting ? '…' : stale || unknown ? '—' : `${stats.percent}%`}</span>
       </div>
       {!unknown && !stale ? <div className={styles.contextMeterBarBg}>
         <div
@@ -123,7 +126,7 @@ export const ContextMeter = memo(function ContextMeter({
               style={{ stroke: strokeColor }}
               strokeWidth="2"
               strokeDasharray={`${(CIRCUMFERENCE * stats.percent) / 100} ${CIRCUMFERENCE}`}
-              strokeLinecap="round"
+              strokeLinecap="butt"
               transform="rotate(-90 8 8)"
             />
           </svg>}

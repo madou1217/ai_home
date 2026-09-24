@@ -68,3 +68,17 @@ test('getAccountRegionMeta exposes Kimi effective region and explicit unknown st
   });
   assert.equal(getAccountRegionMeta(makeAccount({ provider: 'codex', region: 'china' })), null);
 });
+
+test('getAccountDisplayBadgeMeta mirrors renderAccountDisplayBadge branch order', async () => {
+  const { getAccountDisplayBadgeMeta, getAccountStatusDetailLines } = await import('./AccountBadges.tsx');
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ configured: false, authPendingStale: true })), { status: 'warning', label: '授权超时' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ runtimeStatus: 'auth_invalid' })), { status: 'error', label: '需要重新登录' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ status: 'down' })), { status: 'default', label: '已关闭' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ runtimeStatus: 'rate_limited' })), { status: 'warning', label: '限流中' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 0 })), { status: 'error', label: '已耗尽' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ apiKeyMode: true })), { status: 'success', label: '可调度' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 50, quotaStatus: 'available' })), { status: 'success', label: '正常' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 50, quotaStatus: 'pending' })), { status: 'processing', label: '等待采集' });
+  assert.equal(getAccountStatusDetailLines(makeAccount({ runtimeStatus: 'rate_limited', runtimeReason: 'boom' })).length, 1);
+  assert.equal(getAccountStatusDetailLines(makeAccount({ remainingPct: 50, quotaStatus: 'available' })).length, 0);
+});

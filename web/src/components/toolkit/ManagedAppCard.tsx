@@ -7,23 +7,15 @@ import ManagedAppIcon from './ManagedAppIcon';
 import ManagedAppAccountActions from './ManagedAppAccountActions';
 import ManagedResourceCard from './ManagedResourceCard';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
+import {
+  getAppCurrentVersion,
+  getAppHookStatusDetail as getHookStatusDetail,
+  hasExistingAppConfig as hasExistingConfig,
+  SYNC_MODE_DESCRIPTIONS,
+  SYNC_MODE_LABELS
+} from './managed-app-presentation';
 
-export const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: '即时通知',
-  polling: '定时检查',
-  unavailable: '不可读取'
-};
-
-const SYNC_MODE_DESCRIPTIONS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: `${SESSION_SYNC_SUMMARY} 当前使用即时通知，新回合后可立即刷新。`,
-  polling: `${SESSION_SYNC_SUMMARY} 当前定时检查会话文件，可能有轻微延迟。`,
-  unavailable: '当前 Provider 没有可读取的本地会话文件。'
-};
-
-const HOOK_REASON_LABELS: Record<string, string> = {
-  disabled: '即时刷新已禁用',
-  missing_events: '即时刷新配置不完整'
-};
+export { SYNC_MODE_LABELS } from './managed-app-presentation';
 
 export interface ManagedAppCardProps {
   app: ManagedAppItem;
@@ -39,24 +31,6 @@ export interface ManagedAppCardProps {
   onCloseApp: (app: ManagedAppItem, accountRef: string) => void;
   onInstallHooks: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
-}
-
-function hasExistingConfig(app: ManagedAppItem) {
-  return Boolean(app.configExists && app.configName);
-}
-
-function getHookStatusDetail(app: ManagedAppItem) {
-  if (!app.hookSupported || app.hookInstalled) return '';
-  const reasonKey = String(app.hookReason || '').trim();
-  const reason = HOOK_REASON_LABELS[reasonKey]
-    || (reasonKey ? `即时刷新状态：${reasonKey}` : '即时刷新尚未通过验证');
-  const missingEvents = (app.hookMissingEvents || [])
-    .map((event) => String(event || '').trim())
-    .filter(Boolean);
-  return [
-    reason,
-    missingEvents.length > 0 ? `缺少事件：${missingEvents.join('、')}` : ''
-  ].filter(Boolean).join('；');
 }
 
 export default function ManagedAppCard({
@@ -77,9 +51,7 @@ export default function ManagedAppCard({
   const canInstall = Boolean(app.installAvailable);
   const existingConfig = hasExistingConfig(app);
   const hookStatusDetail = getHookStatusDetail(app);
-  const currentVersion = app.installed
-    ? (app.version && app.version !== '-' ? app.version : '未探测到')
-    : '未安装';
+  const currentVersion = getAppCurrentVersion(app);
   const details = [
     {
       label: '当前版本',

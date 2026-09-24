@@ -32,8 +32,8 @@ export default function SessionMetrics({ store, actions, onCompact }: {
   const contextStale = Boolean(context?.stale);
   const compacting = status === 'running';
   const contextMeter = <>
-    {status === 'failed' ? <span role="status">压缩失败，可重试</span>
-        : status === 'cancelled' ? <span role="status">压缩已停止</span>
+    {status === 'failed' ? <span role="status" className={styles.compactStatus} data-state="failed">压缩失败，可重试</span>
+        : status === 'cancelled' ? <span role="status" className={styles.compactStatus} data-state="cancelled">压缩已停止</span>
           : null}
     {projection.items.length > 0 ? <ContextMeter
       messages={[]} maxTokens={window} usedTokens={used}

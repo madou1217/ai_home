@@ -117,3 +117,51 @@ export function formatImportJobProgress(job: AccountImportJob | null) {
   const label = String(progress.label || '').trim();
   return `${percent}%${label ? ` · ${label}` : ''}`;
 }
+/* ---------------------------------------------------------------------------
+ * 文件 / 文件夹上传：浏览器 File → 导入接口的 upload 负载
+ * ------------------------------------------------------------------------ */
+
+export type ImportUploadKind = 'file' | 'folder';
+
+/** 文件选择器的 accept：与导入弹窗文案一致（JSON / JSONL / ZIP，粘贴模板也允许 .txt）。 */
+export const IMPORT_FILE_ACCEPT = '.json,.jsonl,.txt,.zip,application/json,application/zip';
+
+interface ImportFileLike {
+  name: string;
+  webkitRelativePath?: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+}
+
+export function encodeBytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * 把选中的文件读成导入接口的 upload 条目：一律 base64（ZIP 是二进制，JSON 也走同一通道，
+ * 服务端 normalizeUploadedFiles 统一解码）；文件夹上传保留 webkitRelativePath 目录结构。
+ */
+export async function readImportUploadFiles(files: ArrayLike<ImportFileLike>) {
+  const list = Array.from(files);
+  return Promise.all(list.map(async (file) => ({
+    name: file.name,
+    relativePath: String(file.webkitRelativePath || '').trim() || file.name,
+    contentBase64: encodeBytesToBase64(new Uint8Array(await file.arrayBuffer())),
+    encoding: 'base64' as const
+  })));
+}
+
+/** 导入弹窗里「已选择 …」的展示名：单文件为文件名，文件夹为顶层目录名 + 文件数。 */
+export function describeImportSelection(files: ArrayLike<Pick<ImportFileLike, 'name' | 'webkitRelativePath'>>, kind: ImportUploadKind) {
+  const list = Array.from(files);
+  if (list.length === 0) return '';
+  if (kind === 'folder') {
+    const root = String(list[0].webkitRelativePath || '').split('/')[0] || list[0].name;
+    return `${root}（${list.length} 个文件）`;
+  }
+  return list.length === 1 ? list[0].name : `${list[0].name} 等 ${list.length} 个文件`;
+}

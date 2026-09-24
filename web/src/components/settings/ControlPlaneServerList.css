@@ -11,7 +11,7 @@
   --cp-ink-3: var(--color-muted);
   --cp-line: var(--color-border);
   --cp-surface: var(--color-surface);
-  --cp-radius: var(--hos-radius-lg);
+  --cp-radius: 0;
 
   display: flex;
   min-width: 0;
@@ -28,7 +28,8 @@
 }
 .cp-server-card--active.ant-card {
   border-color: var(--color-accent) !important;
-  box-shadow: var(--hud-glow-accent);
+  /* 面板有 clip-path 切角，外发光会被裁掉，改用内发光表达选中 */
+  box-shadow: inset 0 0 18px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
 .cp-server-card-head {
@@ -51,7 +52,8 @@
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--cp-ink);
-  font-family: var(--font-display);
+  /* 用户自定义名称常含数字，不用 Orbitron（其 0 为斜杠方块）；等宽粗体 */
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h3);
   font-weight: 700;
   letter-spacing: var(--tracking-wide);
@@ -114,9 +116,11 @@
 }
 .cp-key-configured {
   flex: 0 0 auto;
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption);
-  font-weight: var(--weight-medium);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 /* 「默认」标记：强调色弱底小标签（与 setup 页「当前」一致），高度与 small 按钮对齐 */
@@ -203,11 +207,4 @@
 .cp-footer-pending {
   color: var(--cp-ink-3);
   font-weight: var(--weight-regular);
-}
-
-/* control-planes 统计区（服务器/可调度账号/会话）：窄屏纵向堆叠，避免三列挤压折行错位 */
-@media (max-width: 767px) {
-  .settings-control-plane-shell .ant-pro-statistic-card.ant-pro-card-contain-card > .ant-pro-card-body {
-    flex-direction: column;
-  }
 }

@@ -1173,6 +1173,15 @@
   color: var(--color-accent);
 }
 
+.codeBlockCopyIcon {
+  margin-right: var(--hos-space-1);
+}
+
+.codeBlockCopyIconDone {
+  color: var(--color-success);
+  filter: drop-shadow(0 0 4px var(--color-success));
+}
+
 .codeBlockContent {
   margin: 0 !important;
   padding: var(--hos-space-3) var(--hos-space-4) !important;
@@ -1206,18 +1215,23 @@
   justify-content: center;
   width: 36px;
   height: 36px;
+  flex: none;
   padding: 0;
-  border: none;
-  background: var(--color-ink);
-  color: var(--color-on-ink);
-  border-radius: var(--hos-radius-pill);
+  /* HUD 主操作：半透明青底 + 青框 + 辉光（与全局主按钮一致） */
+  border: 1px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  border-radius: 2px;
+  box-shadow: var(--hud-glow-accent);
   font-size: var(--hos-text-h2); /* 归级:原 20px */
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .audioPlayBtn:hover {
-  background: var(--color-ink-hover);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .audioInfo {
@@ -1235,7 +1249,8 @@
 }
 
 .audioTitle {
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-weight: 600;
   color: var(--color-heading);
   display: flex;
   align-items: center;
@@ -1253,8 +1268,9 @@
   height: 16px;
   display: flex;
   align-items: center;
-  background: var(--color-overlay);
-  border-radius: var(--hos-radius-pill);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
   overflow: hidden;
   padding: 0 var(--hos-space-1);
 }
@@ -1265,7 +1281,8 @@
   top: 0;
   bottom: 0;
   background: var(--color-accent-soft);
-  border-radius: var(--hos-radius-pill);
+  border-right: 1px solid var(--color-accent);
+  border-radius: 0;
   transition: width var(--motion-base) var(--ease-standard);
 }
 
@@ -1282,7 +1299,8 @@
 .audioWaveBar {
   width: 2px;
   background: var(--color-accent);
-  border-radius: var(--hos-radius-xs); /* 归级:原 1px */
+  border-radius: 0;
+  box-shadow: 0 0 4px var(--color-accent);
   opacity: 0.7;
   transition: height 0.15s ease;
 }
@@ -1385,7 +1403,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: #000;
+  background: black; /* 媒体画布：letterbox 纯黑，不随主题翻转 */
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1417,17 +1435,20 @@
   width: 48px;
   height: 48px;
   padding: 0;
-  border: none;
-  background: var(--color-surface);
-  color: var(--color-heading);
-  border-radius: var(--hos-radius-pill);
+  border: 1px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  color: var(--color-accent);
+  border-radius: 2px;
+  box-shadow: var(--hud-glow-accent);
   font-size: var(--hos-text-display);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .videoBigPlayBtn:hover {
-  background: var(--color-surface-raised);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .videoControlBar {
@@ -1451,12 +1472,14 @@
   color: var(--color-heading);
   font-size: var(--hos-text-h3); /* 归级:原 16px */
   cursor: pointer;
-  border-radius: var(--hos-radius-xs);
-  transition: background var(--motion-fast) var(--ease-standard);
+  border-radius: 2px;
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .videoControlBtn:hover {
-  background: var(--color-overlay);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .videoTrack {

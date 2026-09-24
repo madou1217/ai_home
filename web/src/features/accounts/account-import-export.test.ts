@@ -133,3 +133,22 @@ test('formatImportJobProgress renders percent with optional label', () => {
     '20%'
   );
 });
+test('readImportUploadFiles encodes every file as base64 and keeps folder paths', async () => {
+  const { readImportUploadFiles, describeImportSelection } = await import('./account-import-export.ts');
+  const encoder = new TextEncoder();
+  const makeFile = (name: string, text: string, webkitRelativePath = '') => ({
+    name,
+    webkitRelativePath,
+    arrayBuffer: async () => encoder.encode(text).buffer as ArrayBuffer
+  });
+  const uploads = await readImportUploadFiles([makeFile('a.json', '{"x":1}', 'dir/a.json')]);
+  assert.deepEqual(uploads, [{
+    name: 'a.json',
+    relativePath: 'dir/a.json',
+    contentBase64: Buffer.from('{"x":1}').toString('base64'),
+    encoding: 'base64'
+  }]);
+  assert.equal(describeImportSelection([makeFile('a.json', '')], 'file'), 'a.json');
+  assert.equal(describeImportSelection([makeFile('a.json', ''), makeFile('b.zip', '')], 'file'), 'a.json 等 2 个文件');
+  assert.equal(describeImportSelection([makeFile('a.json', '', 'dump/a.json'), makeFile('b.json', '', 'dump/b.json')], 'folder'), 'dump（2 个文件）');
+});

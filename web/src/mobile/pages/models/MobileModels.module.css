@@ -1,0 +1,132 @@
+/* 移动端模型目录（仅语义 token；切角用 clip-path，圆角为 0） */
+
+.sourceLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catalogMeta {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-faint);
+  overflow-wrap: anywhere;
+}
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+.accountOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sideCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.manualTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-accent);
+}
+
+.rowHidden {
+  opacity: 0.62;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+}
+
+.probeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.probeMessage {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.probeCode {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cardActions > * {
+  flex: 1 1 0;
+}
+
+.jobError {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
+.sheetStack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chevron {
+  flex: none;
+  color: var(--color-faint);
+  font-size: 12px;
+}
+
+.form :global(.ant-form-item) {
+  margin-bottom: 14px;
+}
+
+.form :global(.ant-form-item-label > label) {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted-strong);
+}
+
+.monoInput {
+  font-family: var(--font-mono);
+}

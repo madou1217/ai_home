@@ -51,7 +51,7 @@ export function AccountAppInstallResultModal({
       onCancel={onClose}
     >
       <div className={`account-app-install-result is-${succeeded ? 'success' : 'error'}`}>
-        <div className="account-app-install-result__status" role={succeeded ? 'status' : 'alert'}>
+        <div className="account-app-install-result__status hud-panel hud-panel--sm" role={succeeded ? 'status' : 'alert'}>
           {succeeded ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
           <div>
             <strong>{providerName} {clientLabel(kind)}{succeeded ? '已安装' : '未安装成功'}</strong>

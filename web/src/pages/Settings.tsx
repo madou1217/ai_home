@@ -2,14 +2,13 @@ import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsG
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
-import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal, Grid } from 'antd';
-import MobilePills from '@/components/mobile/MobilePills';
+import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal } from 'antd';
 import { CopyOutlined, LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
-import { configAPI, managementAPI, serverProfilesAPI } from '@/services/api';
+import { configAPI, serverProfilesAPI } from '@/services/api';
 import {
   addControlPlaneProfilesChangeListener,
   isControlPlaneManagementKeyConfigured,
@@ -35,9 +34,7 @@ import {
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
 import type {
-  UsageConfig,
   ServerConfig,
-  ManagementRestartEvent,
   ControlPlaneEndpointHint,
   ControlPlaneProfile
 } from '@/types';
@@ -49,7 +46,6 @@ import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import PublicServerEntryCard from '@/components/settings/PublicServerEntryCard';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
-import { rotateManagementKey as updateServerManagementKey } from '@/services/management-key-rotation';
 import {
   discoverNativeServers,
   isNativeDesktopRuntime,
@@ -61,11 +57,18 @@ import {
   buildServerRouteRows
 } from '@/services/server-route-presentation';
 import { buildAppHref } from '@/services/app-navigation';
-import { DynamicWallpaperEngine } from '@/services/dynamic-wallpaper-engine';
-import { useHudPreferences } from '@/components/hud/use-hud-preferences';
-import { useThemeMode } from '@/hooks/use-theme-mode';
-import { applyThemeMode } from '@/services/theme-persistence';
-import { crossTabSync } from '@/services/cross-tab-session-sync';
+import {
+  SERVER_FORM_DEFAULTS,
+  SERVER_PORT_RULES,
+  USAGE_FIELD_RULES,
+  USAGE_FORM_DEFAULTS,
+  toUsageConfig,
+  toUsageFormValues,
+  type UsageFormValues
+} from '@/features/settings/settings-config';
+import { saveServerConfig } from '@/features/settings/save-server-config';
+import { useAppearanceSettings } from '@/features/settings/use-appearance-settings';
+import { useManagementRestart } from '@/features/settings/use-management-restart';
 
 type NumericAddonInputProps = ComponentProps<typeof InputNumber> & {
   addonAfter: React.ReactNode;
@@ -182,9 +185,6 @@ const Settings = ({ section }: SettingsProps) => {
   const [usageForm] = Form.useForm();
   const [serverForm] = Form.useForm();
   const [controlPlaneForm] = Form.useForm();
-  const screens = Grid.useBreakpoint();
-  const isMobile = !screens.md;
-  const [settingsTab, setSettingsTab] = useState(getInitialSettingsTab());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverSaving, setServerSaving] = useState(false);
@@ -199,51 +199,21 @@ const Settings = ({ section }: SettingsProps) => {
   const [extraActions, setExtraActions] = useState<React.ReactNode>(null);
   const [controlPlaneEndpointHints, setControlPlaneEndpointHints] = useState<ControlPlaneEndpointHint[]>([]);
   const [controlPlaneEndpointWarnings, setControlPlaneEndpointWarnings] = useState<string[]>([]);
-  const [restarting, setRestarting] = useState(false);
-  const [restartEvent, setRestartEvent] = useState<ManagementRestartEvent | null>(null);
-  const restartFallbackTimerRef = useRef<number | null>(null);
-  // 动态壁纸：localStorage 持久化 + 启动恢复（见 app.tsx），此处仅作设置入口。
-  const [hasCustomWallpaper, setHasCustomWallpaper] = useState(() => Boolean(DynamicWallpaperEngine.getSavedWallpaper()));
-  const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
-  // HUD 显示偏好（CRT / 音效）与主题：与 HUD 顶栏开关共用同一份状态，移动端从这里切换。
-  const [hudPrefs, setHudPrefs] = useHudPreferences();
-  const themeMode = useThemeMode();
-
-  const handleThemeModeChange = (dark: boolean) => {
-    const next = dark ? 'dark' : 'light';
-    applyThemeMode(next);
-    crossTabSync.broadcast('THEME_CHANGED', { theme: next });
-  };
-
-  const handleWallpaperFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      message.warning('请选择图片文件');
-      return;
-    }
-    // dataUrl 持久化在 localStorage，限制原图体积避免撑爆配额。
-    if (file.size > 2 * 1024 * 1024) {
-      message.warning('图片不能超过 2MB');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      if (!dataUrl) return;
-      DynamicWallpaperEngine.saveWallpaper(dataUrl);
-      setHasCustomWallpaper(true);
-      message.success('动态壁纸已应用');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleWallpaperClear = () => {
-    DynamicWallpaperEngine.clearWallpaper();
-    setHasCustomWallpaper(false);
-    message.success('已恢复默认背景');
-  };
+  // 一键重启服务：restart + management watch 推送（与移动端设置共用）
+  const { restarting, restartNote: restartAlert, restartServer: handleRestartServer } = useManagementRestart();
+  // 动态壁纸（localStorage 持久化 + 启动恢复，见 app.tsx）、HUD 显示偏好（CRT / 音效）与主题：
+  // 与 HUD 顶栏开关共用同一份状态，逻辑在 features/settings 与移动端设置共用。
+  const {
+    hasCustomWallpaper,
+    wallpaperFileInputRef,
+    openWallpaperPicker,
+    handleWallpaperFileChange,
+    handleWallpaperClear,
+    hudPrefs,
+    setHudPrefs,
+    themeMode,
+    handleThemeModeChange
+  } = useAppearanceSettings();
 
   // 复制页面上已展示的默认 Server URL（与 Models / ModelUsage 的复制交互一致）
   const handleCopyServerEndpoint = async (endpoint: string) => {
@@ -269,12 +239,6 @@ const Settings = ({ section }: SettingsProps) => {
     syncControlPlaneProfiles(listControlPlaneProfiles(), preferredProfileId)
   );
 
-  const clearRestartFallbackTimer = () => {
-    if (restartFallbackTimerRef.current === null) return;
-    window.clearTimeout(restartFallbackTimerRef.current);
-    restartFallbackTimerRef.current = null;
-  };
-
   const loadConfig = async () => {
     setLoading(true);
     try {
@@ -288,11 +252,7 @@ const Settings = ({ section }: SettingsProps) => {
       const defaultControlEndpoint = resolveDefaultControlEndpoint(endpointHints);
       setControlPlaneEndpointHints(endpointHints);
       setControlPlaneEndpointWarnings(normalizeEndpointHintWarnings(endpointHints, endpointHintsPayload.warnings));
-      usageForm.setFieldsValue({
-        threshold_pct: config.threshold_pct,
-        active_refresh_interval: parseInterval(config.active_refresh_interval),
-        background_refresh_interval: parseInterval(config.background_refresh_interval)
-      });
+      usageForm.setFieldsValue(toUsageFormValues(config));
       serverForm.setFieldsValue(serverConfig);
       if (section === 'control-planes') {
         controlPlaneForm.setFieldsValue({
@@ -317,59 +277,10 @@ const Settings = ({ section }: SettingsProps) => {
     syncSavedControlPlaneProfiles(activeControlPlaneId);
   }), [activeControlPlaneId]);
 
-  useEffect(() => {
-    const source = managementAPI.watch({
-      onRestart: (event) => {
-        setRestartEvent(event);
-        if (event.status === 'queued' || event.status === 'starting') {
-          setRestarting(true);
-          return;
-        }
-        clearRestartFallbackTimer();
-        setRestarting(false);
-        if (event.status === 'started') {
-          message.success('服务重启已启动');
-          return;
-        }
-        if (event.status === 'failed') {
-          message.error(event.message || '重启服务失败');
-        }
-      }
-    });
-    return () => {
-      clearRestartFallbackTimer();
-      source.close();
-    };
-  }, []);
-
-  const parseInterval = (interval: string): number => {
-    const match = interval.match(/^(\d+)([smh])$/);
-    if (!match) return 60;
-    const [, value, unit] = match;
-    const num = parseInt(value);
-    switch (unit) {
-      case 's': return num;
-      case 'm': return num * 60;
-      case 'h': return num * 3600;
-      default: return num;
-    }
-  };
-
-  const formatInterval = (seconds: number): string => {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    return `${Math.floor(seconds / 3600)}h`;
-  };
-
-  const handleSave = async (values: any) => {
+  const handleSave = async (values: UsageFormValues) => {
     setSaving(true);
     try {
-      const config: UsageConfig = {
-        threshold_pct: values.threshold_pct,
-        active_refresh_interval: formatInterval(values.active_refresh_interval),
-        background_refresh_interval: formatInterval(values.background_refresh_interval)
-      };
-      await configAPI.update(config);
+      await configAPI.update(toUsageConfig(values));
       message.success('保存额度配置成功');
     } catch (_error) {
       message.error('保存额度配置失败');
@@ -381,21 +292,9 @@ const Settings = ({ section }: SettingsProps) => {
   const handleSaveServer = async (values: ServerConfig) => {
     setServerSaving(true);
     try {
-      const apiKey = String(values.apiKey || '').trim();
-      const managementKey = String(values.managementKey || '').trim();
-      if (managementKey && !activeControlPlaneProfile) throw new Error('请先选择 Server');
-      const nextConfig: Partial<ServerConfig> = {
-        host: values.openNetwork ? '0.0.0.0' : (values.host || '127.0.0.1'),
-        port: Number(values.port || 9527),
-        openNetwork: Boolean(values.openNetwork),
-        ...(apiKey ? { apiKey } : {})
-      };
-      const saved = await configAPI.updateServer(nextConfig);
-      if (managementKey) {
-        const profile = activeControlPlaneProfile;
-        if (!profile) throw new Error('请先选择 Server');
-        await updateServerManagementKey(profile, managementKey);
-        syncSavedControlPlaneProfiles(profile.id);
+      const { saved, rotatedProfileId } = await saveServerConfig(values, activeControlPlaneProfile);
+      if (rotatedProfileId) {
+        syncSavedControlPlaneProfiles(rotatedProfileId);
       }
       serverForm.setFieldsValue({
         ...saved,
@@ -407,24 +306,6 @@ const Settings = ({ section }: SettingsProps) => {
       message.error(error?.message || '保存服务配置失败');
     } finally {
       setServerSaving(false);
-    }
-  };
-
-  const handleRestartServer = async () => {
-    setRestarting(true);
-    try {
-      const result = await managementAPI.restart();
-      if (result.job) {
-        setRestartEvent(result.job);
-      }
-      clearRestartFallbackTimer();
-      restartFallbackTimerRef.current = window.setTimeout(() => {
-        setRestarting(false);
-      }, 70_000);
-    } catch (error: any) {
-      clearRestartFallbackTimer();
-      message.error(error?.response?.data?.message || error?.message || '重启服务失败');
-      setRestarting(false);
     }
   };
 
@@ -605,28 +486,6 @@ const Settings = ({ section }: SettingsProps) => {
     }
   };
 
-  const getRestartAlert = () => {
-    if (!restartEvent && !restarting) return null;
-    const status = restartEvent?.status || 'queued';
-    if (status === 'failed') {
-      return {
-        type: 'error' as const,
-        message: restartEvent?.message || '重启服务失败'
-      };
-    }
-    if (status === 'started') {
-      return {
-        type: 'success' as const,
-        message: restartEvent?.pid ? `服务重启已启动，pid ${restartEvent.pid}` : '服务重启已启动'
-      };
-    }
-    return {
-      type: 'info' as const,
-      message: status === 'starting' ? '服务正在重启' : '服务重启已排队'
-    };
-  };
-
-  const restartAlert = getRestartAlert();
   const serverRouteRows = buildServerRouteRows(controlPlaneProfiles);
   const logicalControlPlaneProfiles = serverRouteRows.map((row) => row.profile);
   const controlPlaneOverview = summarizeControlPlaneProfiles(logicalControlPlaneProfiles);
@@ -642,7 +501,7 @@ const Settings = ({ section }: SettingsProps) => {
             <p>选择或切换当前连接的 AIH Server。</p>
           </div>
         </div>
-        <div style={{ marginTop: 12 }}>
+        <div className="settings-server-select-row">
           <ControlPlaneProfileSelect className="settings-server-select-trigger" />
         </div>
       </ProCard>
@@ -670,7 +529,7 @@ const Settings = ({ section }: SettingsProps) => {
           title="自定义动态壁纸"
           subtitle={hasCustomWallpaper ? '已应用自定义壁纸（≤2MB 图片）' : '选择一张图片作为全局背景'}
           action={
-            <Button onClick={() => wallpaperFileInputRef.current?.click()}>
+            <Button onClick={openWallpaperPicker}>
               选择图片
             </Button>
           }
@@ -753,20 +612,13 @@ const Settings = ({ section }: SettingsProps) => {
           disabled={loading}
           layout="vertical"
           onFinish={handleSave}
-          initialValues={{
-            threshold_pct: 95,
-            active_refresh_interval: 60,
-            background_refresh_interval: 3600
-          }}
+          initialValues={USAGE_FORM_DEFAULTS}
         >
           <Form.Item
             name="threshold_pct"
             label="自动切换阈值 (%)"
             help="当账号剩余额度低于此百分比时，自动切换到下一个可用账号"
-            rules={[
-              { required: true, message: '请输入阈值' },
-              { type: 'number', min: 0, max: 100, message: '阈值必须在 0-100 之间' }
-            ]}
+            rules={USAGE_FIELD_RULES.threshold_pct}
           >
             <NumericAddonInput min={0} max={100} addonAfter="%" />
           </Form.Item>
@@ -775,10 +627,7 @@ const Settings = ({ section }: SettingsProps) => {
             name="active_refresh_interval"
             label="活跃刷新间隔 (秒)"
             help="正在使用的账号额度刷新间隔时间"
-            rules={[
-              { required: true, message: '请输入刷新间隔' },
-              { type: 'number', min: 10, message: '间隔不能小于 10 秒' }
-            ]}
+            rules={USAGE_FIELD_RULES.active_refresh_interval}
           >
             <NumericAddonInput min={10} addonAfter="秒" />
           </Form.Item>
@@ -787,10 +636,7 @@ const Settings = ({ section }: SettingsProps) => {
             name="background_refresh_interval"
             label="后台刷新间隔 (秒)"
             help="未使用账号的额度刷新间隔时间"
-            rules={[
-              { required: true, message: '请输入刷新间隔' },
-              { type: 'number', min: 60, message: '间隔不能小于 60 秒' }
-            ]}
+            rules={USAGE_FIELD_RULES.background_refresh_interval}
           >
             <NumericAddonInput min={60} addonAfter="秒" />
           </Form.Item>
@@ -818,13 +664,7 @@ const Settings = ({ section }: SettingsProps) => {
           disabled={loading}
           layout="vertical"
           onFinish={handleSaveServer}
-          initialValues={{
-            host: '127.0.0.1',
-            port: 9527,
-            apiKey: '',
-            managementKey: '',
-            openNetwork: false
-          }}
+          initialValues={SERVER_FORM_DEFAULTS}
         >
           <InlineNote tone="info" className="settings-inline-alert">
             开启开放网络后，Server 会监听 0.0.0.0。监听配置保存后，需要点击“一键重启服务”才会生效。
@@ -864,10 +704,7 @@ const Settings = ({ section }: SettingsProps) => {
           <Form.Item
             name="port"
             label="端口"
-            rules={[
-              { required: true, message: '请输入端口' },
-              { type: 'number', min: 1, max: 65535, message: '端口必须在 1-65535 之间' }
-            ]}
+            rules={SERVER_PORT_RULES}
           >
             <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
@@ -1047,6 +884,7 @@ const Settings = ({ section }: SettingsProps) => {
             name: 'AIH Server'
           }}
         >
+          <div className="settings-form-panel hud-panel hud-panel--sm">
                   <Form.Item
                     name="endpoint"
                     label="Server URL"
@@ -1073,6 +911,7 @@ const Settings = ({ section }: SettingsProps) => {
           >
             <Input.Password autoComplete="new-password" placeholder="Management Key" />
           </Form.Item>
+          </div>
 
                   <Form.Item>
                     <Button type="primary" htmlType="submit" icon={<LinkOutlined />} loading={controlPlaneSaving}>
@@ -1140,29 +979,12 @@ const Settings = ({ section }: SettingsProps) => {
       ghost
       className="animate__animated animate__fadeIn animate__faster"
     >
-      {isMobile ? (
-        (() => {
-          // 移动端放开全部 section（基础/别名/Server/SSH）：顶栏隐藏后移动端只能经
-          // MobilePills 到达这些区，Server/SSH 卡片本身已做移动适配，直接全量渲染。
-          const active = sectionItems.find((it) => it.key === settingsTab) || sectionItems[0];
-          return (
-            <>
-              <MobilePills
-                items={sectionItems.map((it) => ({ key: it.key, label: it.label }))}
-                activeKey={active?.key || 'basic'}
-                onChange={(key) => setSettingsTab(key as SettingsSectionKey)}
-              />
-              {active?.children}
-            </>
-          );
-        })()
-      ) : (
-        <Tabs
-          className="settings-tabs"
-          defaultActiveKey={getInitialSettingsTab()}
-          items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
-        />
-      )}
+      {/* 移动端（< 768px）由 web/src/mobile/pages/MobileSettings 独立渲染，桌面页不挂载。 */}
+      <Tabs
+        className="settings-tabs"
+        defaultActiveKey={getInitialSettingsTab()}
+        items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
+      />
     </PageScaffold>
   );
 };

@@ -9,6 +9,7 @@ import {
 import * as echarts from 'echarts/core';
 import type { EChartsCoreOption, EChartsType } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
+import { readThemeMode } from '@/services/theme-mode';
 
 echarts.use([
   AriaComponent,
@@ -31,14 +32,18 @@ export interface UsageChartPalette {
   surface: string;
   /** 中性占位系列（例如「其他」条形） */
   neutral: string;
+  /** Electric Cyan：主系列（输入 / Tokens 条形） */
   brand: string;
-  /** 成功 / 金额类系列（成本、缓存读取） */
+  /** Matrix Green：成功 / 金额类系列（成本、缓存读取） */
   success: string;
-  teal: string;
+  /** Amber：缓存写入、缓存命中率 */
   amber: string;
-  blue: string;
-  violet: string;
+  /** Rose：输出 */
   danger: string;
+  /** 推理系列：与事件块「思考」同一语义色（--event-thinking） */
+  violet: string;
+  /** 轴 / 图例 / tooltip 的等宽数据字体栈（--font-mono 的实际取值，canvas 不能解析 var()） */
+  fontMono: string;
   /** 深色 HUD 下系列线条的辉光半径；日光主题为 0（不发光） */
   glow: number;
 }
@@ -55,26 +60,25 @@ function readCssVariable(element: HTMLElement, name: string, fallback: string) {
 }
 
 /**
- * 渲染时从 CSS 变量读取图表配色（design-tokens.css），轴线 / 网格 / 文字随主题翻转；
- * 第二个参数只是变量缺失（如测试环境）时的兜底值，取自同一套 token 的浅 / 深色取值。
+ * 渲染时从 CSS 变量读取图表配色（design-tokens.css），轴线 / 网格 / 文字 / 系列色随主题翻转；
+ * 第二个参数只是变量缺失（如测试环境）时的兜底值，取自同一套 HUD token 的日光 / 深色取值。
  */
 function readPalette(element: HTMLElement): UsageChartPalette {
-  const isDark = document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
+  const isDark = readThemeMode() === 'dark' || document.body.classList.contains('dark');
   return {
-    heading: readCssVariable(element, '--color-heading', isDark ? '#fafafa' : '#18181b'),
-    text: readCssVariable(element, '--color-text', isDark ? '#e4e4e7' : '#27272a'),
-    muted: readCssVariable(element, '--color-muted', isDark ? '#a1a1aa' : '#71717a'),
+    heading: readCssVariable(element, '--color-heading', isDark ? '#f2fbff' : '#07121f'),
+    text: readCssVariable(element, '--color-text', isDark ? '#e2f1f8' : '#13233a'),
+    muted: readCssVariable(element, '--color-muted', isDark ? '#7f9bb3' : '#4f6a83'),
     faint: readCssVariable(element, '--color-faint', isDark ? '#5c7890' : '#6f879c'),
-    border: readCssVariable(element, '--color-border', isDark ? '#2b2b31' : '#e3e3e7'),
-    surface: readCssVariable(element, '--color-surface-raised', isDark ? '#1e1e22' : '#fcfcfc'),
-    neutral: readCssVariable(element, '--color-disabled', isDark ? '#5b5b63' : '#d1d1d6'),
+    border: readCssVariable(element, '--color-border', isDark ? '#15263d' : '#cbd8e3'),
+    surface: readCssVariable(element, '--color-surface-raised', isDark ? '#0c1524' : '#f7fafc'),
+    neutral: readCssVariable(element, '--color-disabled', isDark ? '#3a5068' : '#aabdcd'),
     brand: readCssVariable(element, '--color-accent', isDark ? '#00f0ff' : '#0086a0'),
     success: readCssVariable(element, '--color-success', isDark ? '#00ff66' : '#00874a'),
-    teal: readCssVariable(element, '--color-success', isDark ? '#00ff66' : '#00874a'),
-    amber: readCssVariable(element, '--color-warning', isDark ? '#e0a94a' : '#b45309'),
-    blue: readCssVariable(element, '--c-info-500', '#4a72e0'),
-    violet: readCssVariable(element, '--c-purple-500', '#8b5cf6'),
-    danger: readCssVariable(element, '--color-danger', isDark ? '#f07068' : '#c2322b'),
+    amber: readCssVariable(element, '--color-warning', isDark ? '#ffaa00' : '#b86e00'),
+    danger: readCssVariable(element, '--color-danger', isDark ? '#ff0055' : '#c20042'),
+    violet: readCssVariable(element, '--event-thinking', isDark ? '#c38bff' : '#7c3aed'),
+    fontMono: readCssVariable(element, '--font-mono', "'JetBrains Mono', ui-monospace, monospace"),
     glow: isDark ? 8 : 0
   };
 }
@@ -85,9 +89,20 @@ export function buildChartTooltipStyle(palette: UsageChartPalette) {
     backgroundColor: palette.surface,
     borderColor: palette.brand,
     borderWidth: 1,
-    textStyle: { color: palette.text, fontSize: 12, fontFamily: 'JetBrains Mono, monospace' },
+    textStyle: { color: palette.text, fontSize: 12, fontFamily: palette.fontMono },
     extraCssText: 'box-shadow: var(--elevation-3), var(--hud-glow-accent); border-radius: 0; font-family: var(--font-mono);'
   };
+}
+
+/** 所有图表统一的等宽数据字体（轴标签、图例、数值）——在各图 option 之上兜底注入。 */
+function withHudTextStyle(option: EChartsCoreOption, palette: UsageChartPalette): EChartsCoreOption {
+  const base = (option as { textStyle?: Record<string, unknown> }).textStyle || {};
+  return { ...option, textStyle: { fontFamily: palette.fontMono, ...base } };
+}
+
+function renderOption(chart: EChartsType, host: HTMLElement, build: (palette: UsageChartPalette) => EChartsCoreOption) {
+  const palette = readPalette(host);
+  chart.setOption(withHudTextStyle(build(palette), palette), { notMerge: true, lazyUpdate: true });
 }
 
 export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EChartCanvasProps) {
@@ -116,7 +131,7 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
     observer.observe(host);
     // 主题切换（html[data-theme] / body.dark）后重新读取 CSS 变量并重绘，轴线与文字跟随主题。
     const themeObserver = new MutationObserver(() => {
-      chart.setOption(buildOptionRef.current(readPalette(host)), { notMerge: true, lazyUpdate: true });
+      renderOption(chart, host, buildOptionRef.current);
     });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -133,7 +148,7 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
     const host = hostRef.current;
     const chart = chartRef.current;
     if (!host || !chart) return;
-    chart.setOption(buildOption(readPalette(host)), { notMerge: true, lazyUpdate: true });
+    renderOption(chart, host, buildOption);
   }, [buildOption]);
 
   return <div ref={hostRef} className="usage-chart-canvas" role="img" aria-label={ariaLabel} />;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Modal, Space, Tag, Typography, message } from 'antd';
+import { Form, Input, Modal, Space, Tag, Typography } from 'antd';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { StatisticCard } from '@ant-design/pro-components';
 import {
@@ -11,30 +11,20 @@ import {
   PlusOutlined
 } from '@ant-design/icons';
 import type { ProColumns } from '@ant-design/pro-components';
-import {
-  isControlPlaneManagementKeyConfigured,
-  isControlPlaneProfileReady,
-  listControlPlaneProfiles,
-  refreshControlPlaneDeviceState,
-  removeControlPlaneProfileSecure,
-  saveControlPlaneProfileSecure,
-  syncSharedControlPlaneProfiles
-} from '@/services/control-plane-profiles';
-import {
-  getActiveControlPlaneProfileId,
-  resolveStoredActiveControlPlaneProfile,
-  selectActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
-  syncStoredActiveControlPlaneProfile
-} from '@/services/control-plane-selection';
+import { isControlPlaneManagementKeyConfigured, isControlPlaneProfileReady } from '@/services/control-plane-profiles';
 import { getBrowserControlEndpoint } from '@/services/control-plane-endpoints';
-import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
 import {
   CLOSED_SERVER_SETUP_DIALOG,
   resolveRequiredServerSetupDialog,
   resolveServerSetupFormDefaults,
   type ServerSetupDialogState
 } from '@/services/server-setup-state';
+import {
+  formatServerSetupProfileDetail as formatProfileDetail,
+  getServerSetupProfileStatus as getProfileStatus,
+  useServerSetupProfiles,
+  type ServerSetupFormValues as SaveFormValues
+} from '@/components/control-plane/use-server-setup-profiles';
 import type { ControlPlaneProfile } from '@/types';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -43,102 +33,45 @@ import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
 
-type SaveFormValues = {
-  endpoint?: string;
-  name?: string;
-  managementKey?: string;
-};
-
-function normalizeError(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return String(error || '操作失败');
-}
-
-function getProfileStatus(profile: ControlPlaneProfile) {
-  if (isControlPlaneProfileReady(profile)) return { color: 'green', label: 'ready' };
-  if (profile.state === 'degraded') return { color: 'orange', label: 'degraded' };
-  return { color: 'default', label: 'offline' };
-}
-
 const PROFILE_STATUS_LED: Record<string, string> = {
   green: 'hud-led hud-led--ok',
   orange: 'hud-led hud-led--warn'
 };
 
-function formatProfileDetail(profile: ControlPlaneProfile) {
-  const chunks = [
-    `${profile.schedulableAccountCount} 可调度账号`,
-    `${profile.sessionCount} 会话`
-  ];
-  return chunks.join(' · ');
-}
-
 type ProfileRow = ControlPlaneProfile & { __key: string };
-
-function getInitialServerSetupState() {
-  const profiles = listControlPlaneProfiles();
-  const active = resolveStoredActiveControlPlaneProfile(profiles, getActiveControlPlaneProfileId());
-  return {
-    profiles,
-    activeProfileId: active.profileId,
-    dialog: resolveRequiredServerSetupDialog(profiles, active.profileId)
-      || CLOSED_SERVER_SETUP_DIALOG
-  };
-}
 
 export default function FabricServerSetup() {
   const navigate = useNavigate();
   const [saveForm] = Form.useForm<SaveFormValues>();
-  const [initialState] = useState(getInitialServerSetupState);
-  const [profiles, setProfiles] = useState<ControlPlaneProfile[]>(initialState.profiles);
-  const [activeProfileId, setActiveProfileId] = useState(initialState.activeProfileId);
-  const [checkingId, setCheckingId] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [setupDialog, setSetupDialog] = useState<ServerSetupDialogState>(initialState.dialog);
+  // 数据与操作（连接 / 同步 / 移除 / 设为当前）由 useServerSetupProfiles 提供，移动端首启页共用
+  const {
+    profiles,
+    activeProfileId,
+    activeProfile,
+    readyProfiles,
+    hasReadyServer,
+    checkingId,
+    saving,
+    saveServer,
+    refreshProfile: handleRefreshProfile,
+    removeProfile: handleRemoveProfile,
+    selectProfile: handleSelectProfile
+  } = useServerSetupProfiles();
+  const [setupDialog, setSetupDialog] = useState<ServerSetupDialogState>(
+    () => resolveRequiredServerSetupDialog(profiles, activeProfileId) || CLOSED_SERVER_SETUP_DIALOG
+  );
 
-  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || null;
-  const readyProfiles = profiles.filter(isControlPlaneProfileReady);
   const requiredDialog = resolveRequiredServerSetupDialog(profiles, activeProfileId);
   const effectiveDialog = setupDialog.mode === 'closed' && requiredDialog
     ? requiredDialog
     : setupDialog;
   const setupModalOpen = effectiveDialog.mode !== 'closed';
   const setupModalRequired = Boolean(requiredDialog);
-  const hasReadyServer = readyProfiles.length > 0;
   const dialogDefaults = resolveServerSetupFormDefaults({
     dialog: effectiveDialog,
     profiles,
     browserEndpoint: getBrowserControlEndpoint()
   });
-
-  const syncProfiles = (preferredProfileId = '') => {
-    const nextProfiles = listControlPlaneProfiles();
-    const resolution = preferredProfileId
-      ? selectActiveControlPlaneProfile(nextProfiles, preferredProfileId)
-      : syncStoredActiveControlPlaneProfile(nextProfiles);
-    setProfiles(nextProfiles);
-    setActiveProfileId(resolution.profileId);
-    return resolution;
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    syncSharedControlPlaneProfiles()
-      .then((result) => {
-        if (cancelled) return;
-        const nextProfiles = result.profiles.length > 0 ? result.profiles : listControlPlaneProfiles();
-        const preferredProfileId = result.activeProfileId || activeProfileId;
-        const resolution = preferredProfileId
-          ? selectActiveControlPlaneProfile(nextProfiles, preferredProfileId)
-          : syncStoredActiveControlPlaneProfile(nextProfiles);
-        setProfiles(nextProfiles);
-        setActiveProfileId(resolution.profileId);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!setupModalOpen) return;
@@ -157,89 +90,11 @@ export default function FabricServerSetup() {
 
   const handleSaveServer = async (values: SaveFormValues) => {
     const completingInitialSetup = !hasReadyServer;
-    setSaving(true);
-    try {
-      const profile = await connectControlPlaneProfile({
-        profiles,
-        profileId: effectiveDialog.profileId,
-        endpoint: values.endpoint,
-        name: values.name,
-        managementKey: values.managementKey
-      });
-      try {
-        await refreshControlPlaneDeviceState(profile);
-      } catch (error) {
-        await saveControlPlaneProfileSecure({
-          name: profile.name,
-          stableServerId: profile.stableServerId,
-          endpoint: profile.endpoint,
-          routes: profile.routes,
-          activeRouteId: profile.activeRouteId,
-          descriptor: profile.descriptor,
-          state: 'degraded',
-          managementKey: profile.managementKey,
-          credentialRef: profile.credentialRef,
-          managementKeyConfigured: profile.managementKeyConfigured,
-          lastError: normalizeError(error)
-        });
-        await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
-        syncProfiles();
-        throw error;
-      }
-      await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
-      syncProfiles();
-      saveForm.setFieldValue('managementKey', '');
-      setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
-      message.success('Server 已保存并设为当前');
-      if (completingInitialSetup) navigate('/dashboard', { replace: true });
-    } catch (error) {
-      message.error(normalizeError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRefreshProfile = async (profile: ControlPlaneProfile) => {
-    setCheckingId(profile.id);
-    try {
-      if (!isControlPlaneManagementKeyConfigured(profile)) throw new Error('missing_management_key');
-      await refreshControlPlaneDeviceState(profile);
-      message.success('Server 已同步');
-      syncProfiles();
-    } catch (error) {
-      await saveControlPlaneProfileSecure({
-        name: profile.name,
-        endpoint: profile.endpoint,
-        descriptor: profile.descriptor,
-        state: isControlPlaneManagementKeyConfigured(profile) ? 'degraded' : 'offline',
-        managementKey: profile.managementKey,
-        credentialRef: profile.credentialRef,
-        managementKeyConfigured: profile.managementKeyConfigured,
-        lastError: normalizeError(error)
-      });
-      syncProfiles();
-      message.error(normalizeError(error));
-    } finally {
-      setCheckingId('');
-    }
-  };
-
-  const handleRemoveProfile = async (profileId: string) => {
-    try {
-      await removeControlPlaneProfileSecure(profileId);
-      syncProfiles();
-    } catch (error) {
-      message.error(normalizeError(error));
-    }
-  };
-
-  const handleSelectProfile = async (profileId: string) => {
-    try {
-      const resolution = await selectActiveControlPlaneProfileSecure(profiles, profileId);
-      setActiveProfileId(resolution.profileId);
-    } catch (error) {
-      message.error(normalizeError(error));
-    }
+    const saved = await saveServer(effectiveDialog.profileId, values);
+    if (!saved) return;
+    saveForm.setFieldValue('managementKey', '');
+    setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
+    if (completingInitialSetup) navigate('/dashboard', { replace: true });
   };
 
   const openAddServer = () => {
@@ -262,13 +117,13 @@ export default function FabricServerSetup() {
       width: 240,
       ellipsis: true,
       render: (_, record) => (
-        <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
-          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Space direction="vertical" size={0} className="server-setup-cell">
+          <strong className="server-setup-name">
             {record.name || record.endpoint}
           </strong>
-          <Typography.Text type="secondary" className="server-setup-endpoint" style={{ fontSize: 12 }}>{record.endpoint}</Typography.Text>
+          <Typography.Text type="secondary" className="server-setup-endpoint">{record.endpoint}</Typography.Text>
           {record.lastError && (
-            <Typography.Text type="danger" style={{ fontSize: 12 }}>{record.lastError}</Typography.Text>
+            <Typography.Text type="danger" className="server-setup-error">{record.lastError}</Typography.Text>
           )}
         </Space>
       )
@@ -286,7 +141,7 @@ export default function FabricServerSetup() {
               <span className={PROFILE_STATUS_LED[status.color] || 'hud-led'} aria-hidden="true" />
               {status.label}
             </Tag>
-            <Tag>{formatProfileDetail(record)}</Tag>
+            <Tag className="server-setup-detail-tag">{formatProfileDetail(record)}</Tag>
           </Space>
         );
       }
@@ -332,6 +187,7 @@ export default function FabricServerSetup() {
   return (
     <PageScaffold ghost
       code="SETUP"
+      className="server-setup-page"
       title={setupModalRequired
         ? '连接 AIH Server'
         : hasReadyServer
@@ -365,7 +221,8 @@ export default function FabricServerSetup() {
             title: '就绪 Server',
             value: readyProfiles.length,
             suffix: '个',
-            status: readyProfiles.length > 0 ? 'success' : 'warning'
+            status: readyProfiles.length > 0 ? 'success' : 'warning',
+            valueStyle: { color: readyProfiles.length > 0 ? 'var(--color-success)' : 'var(--color-warning)' }
           }}
         />
         <StatisticCard
@@ -385,8 +242,8 @@ export default function FabricServerSetup() {
           loading={false}
         />
         {hasReadyServer && (
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)', display: 'flex', gap: 16 }}>
-            <Button type="link" onClick={() => navigate('/fabric/servers')} style={{ padding: 0 }}>
+          <div className="server-setup-footer">
+            <Button type="link" className="server-setup-footer-link" onClick={() => navigate('/fabric/servers')}>
               打开高级 Server 设置
             </Button>
           </div>
@@ -401,6 +258,7 @@ export default function FabricServerSetup() {
             : '连接 AIH Server'}
         open={setupModalOpen}
         width={760}
+        rootClassName={setupModalRequired ? 'server-setup-boot server-setup-boot--gate' : 'server-setup-boot'}
         footer={null}
         closable={!setupModalRequired}
         maskClosable={!setupModalRequired}
@@ -411,8 +269,14 @@ export default function FabricServerSetup() {
           if (!setupModalRequired) setSetupDialog(CLOSED_SERVER_SETUP_DIALOG);
         }}
       >
+        {/* HUD 引导代号行：纯展示，内容来自真实的弹窗模式（initial / add / authorize） */}
+        <div className="server-setup-boot-code" aria-hidden="true">
+          <span className="hud-led hud-led--info" />
+          <span>SYS // SETUP</span>
+          <span className="server-setup-boot-mode">{effectiveDialog.mode.toUpperCase()}</span>
+        </div>
         {effectiveDialog.mode === 'initial' && (
-          <Typography.Paragraph type="secondary">
+          <Typography.Paragraph type="secondary" className="server-setup-boot-intro hud-prose">
             首次使用需要连接一台 AIH Server。验证 Server 网关地址和 Management Key 后才能进入工作台。
           </Typography.Paragraph>
         )}
@@ -427,28 +291,30 @@ export default function FabricServerSetup() {
             managementKey: ''
           }}
         >
-          <Form.Item
-            name="endpoint"
-            label="Server 网关地址"
-            help="原生客户端要求远程 Server 使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost。其他连接路径会在保存后自动发现。"
-            rules={[{ required: true, message: '请输入 Server 网关地址' }]}
-          >
-            <Input
-              disabled={effectiveDialog.mode === 'authorize'}
-              placeholder="https://aih.example.com"
-            />
-          </Form.Item>
-          <Form.Item name="name" label="显示名称">
-            <Input placeholder="Home Fabric / Company Fabric" />
-          </Form.Item>
-          <Form.Item
-            name="managementKey"
-            label="Management Key"
-            help="可通过 aih server config --show-secrets 查看。"
-            rules={[{ required: true, message: '请输入 Management Key' }]}
-          >
-            <Input.Password autoComplete="new-password" placeholder="Management Key" />
-          </Form.Item>
+          <div className="settings-form-panel hud-panel hud-panel--sm">
+            <Form.Item
+              name="endpoint"
+              label="Server 网关地址"
+              help="原生客户端要求远程 Server 使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost。其他连接路径会在保存后自动发现。"
+              rules={[{ required: true, message: '请输入 Server 网关地址' }]}
+            >
+              <Input
+                disabled={effectiveDialog.mode === 'authorize'}
+                placeholder="https://aih.example.com"
+              />
+            </Form.Item>
+            <Form.Item name="name" label="显示名称">
+              <Input placeholder="Home Fabric / Company Fabric" />
+            </Form.Item>
+            <Form.Item
+              name="managementKey"
+              label="Management Key"
+              help="可通过 aih server config --show-secrets 查看。"
+              rules={[{ required: true, message: '请输入 Management Key' }]}
+            >
+              <Input.Password autoComplete="new-password" placeholder="Management Key" />
+            </Form.Item>
+          </div>
           <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>
             {effectiveDialog.mode === 'authorize'
               ? '授权并连接'

@@ -1,4 +1,4 @@
-/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: file-preview */
+/* 拆分自 chat.module.css。域: file-preview（HUD：方角、发丝线、等宽元信息、切角信任面板） */
 
 .toolBody,
 .filePreviewViewport,
@@ -221,7 +221,8 @@
    桌面是右侧 700 抽屉;手机改成底部 90% 大 sheet:圆角顶 + 抓手,靠 flex 链让预览
    面板撑满 sheet(不用桌面的固定 100vh-120px,避免双滚动),标签栏可横向滑动。 */
 .fileDrawerMobile :global(.ant-drawer-content) {
-  border-radius: var(--hos-radius-md) var(--hos-radius-md) 0 0; /* 归级:原 18px */
+  border-radius: 0; /* HUD：底部 sheet 方角，顶边青色发丝线 */
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
   overflow: hidden;
 }
 
@@ -237,9 +238,9 @@
 
 .fileDrawerGrabber {
   width: 40px;
-  height: 5px;
-  border-radius: var(--hos-radius-xs); /* 归级:原 3px */
-  background: var(--color-border);
+  height: 4px;
+  border-radius: 0;
+  background: var(--color-border-strong);
 }
 
 /* flex 链:body → tabs → content-holder → tabpane → pane,层层 100%/flex 撑满 */
@@ -342,7 +343,7 @@
   min-height: 24px;
   padding: var(--hos-space-0-5) var(--hos-space-2-5);
   border: 1px solid var(--chat-panel-border, var(--color-border));
-  border-radius: var(--chat-panel-radius, 8px);
+  border-radius: var(--chat-panel-radius, 2px);
   display: inline-flex;
   align-items: center;
   background: var(--color-surface-sunken);
@@ -409,25 +410,23 @@
   gap: var(--hos-space-2);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-bottom: 0;
-  border-radius: var(--chat-panel-radius, 8px) var(--chat-panel-radius, 8px) 0 0;
+  border-radius: var(--chat-panel-radius, 2px) var(--chat-panel-radius, 2px) 0 0;
   background: var(--color-surface-raised);
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
   line-height: 1.45;
 }
 
 .filePreviewHtmlStatus strong {
-  color: var(--color-text);
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
   font-size: var(--hos-text-caption);
   font-weight: var(--weight-semibold);
 }
 
 .filePreviewHtmlStatusDot {
-  width: 7px;
-  height: 7px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-pill);
-  background: var(--color-success);
 }
 
 .filePreviewHtmlLauncher {
@@ -439,7 +438,7 @@
   justify-content: center;
   gap: var(--hos-space-8);
   border: 1px solid var(--chat-panel-border, var(--color-border));
-  border-radius: 0 0 var(--chat-panel-radius, 8px) var(--chat-panel-radius, 8px);
+  border-radius: 0 0 var(--chat-panel-radius, 2px) var(--chat-panel-radius, 2px);
   background: var(--color-surface);
 }
 
@@ -451,13 +450,15 @@
 }
 
 .filePreviewHtmlLauncherCopy strong {
-  color: var(--color-heading);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
   font-size: var(--hos-text-h2);
   font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
 
 .filePreviewHtmlLauncherCopy span {
+  font-family: var(--font-prose);
   color: var(--color-muted);
   font-size: var(--hos-text-body-sm);
   line-height: 1.65;
@@ -492,7 +493,7 @@
   max-width: 100%;
   height: auto;
   border: 1px solid var(--chat-panel-border, var(--color-border));
-  border-radius: var(--chat-panel-radius, 8px);
+  border-radius: var(--chat-panel-radius, 2px);
   background: var(--color-surface);
 }
 
@@ -512,9 +513,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--hos-space-4); /* 归级:原 18px */
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: var(--hud-panel-bg);
+  /* 边框 / 背景 / 切角由全局 .hud-panel 提供 */
 }
 
 .fileTrustHeader {
@@ -524,13 +523,17 @@
 }
 
 .fileTrustTitle {
-  color: var(--color-heading);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
   font-size: var(--hos-text-h2); /* 归级:原 17px */
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
   line-height: 1.4;
 }
 
 .fileTrustDescription {
+  font-family: var(--font-prose);
   color: var(--color-muted-strong);
   font-size: var(--hos-text-body-sm);
   line-height: 1.6;
@@ -543,11 +546,14 @@
   flex-direction: column;
   gap: var(--hos-space-1); /* 归级:原 5px */
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
 }
 
-.fileTrustTarget > span,
+.fileTrustTarget > span {
+  line-height: 1.5;
+}
+
 .fileTrustFooter > span {
   color: var(--color-muted);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
@@ -576,19 +582,21 @@
   padding: var(--hos-space-3);
   align-items: flex-start;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
+  border-radius: 2px;
   background: var(--color-surface);
   transition: border-color var(--motion-base) var(--ease-standard),
-              background var(--motion-base) var(--ease-standard);
+              background var(--motion-base) var(--ease-standard),
+              box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .fileTrustOption:hover {
-  border-color: var(--color-border-strong);
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
 }
 
 .fileTrustOption:has(:global(input:checked)) {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .fileTrustOptionContent {
@@ -599,7 +607,7 @@
 }
 
 .fileTrustOptionContent strong {
-  color: var(--color-text);
+  color: var(--color-heading);
   font-size: var(--hos-text-body-sm);
   line-height: 1.45;
 }
@@ -658,16 +666,13 @@
   justify-content: center;
   gap: var(--hos-space-2-5);
   border: 1px dashed var(--chat-panel-border, var(--color-border-strong));
-  border-radius: var(--chat-panel-radius, 8px);
+  border-radius: var(--chat-panel-radius, 2px);
   background: var(--color-surface-raised);
   color: var(--ink-neutral);
   text-align: center;
 }
 
 .filePreviewRawMediaTitle {
-  color: var(--color-text);
-  font-size: var(--hos-text-body);
-  font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
 
@@ -690,7 +695,7 @@
   margin: 0;
   padding: var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
-  border-radius: var(--chat-panel-radius, 8px);
+  border-radius: var(--chat-panel-radius, 2px);
   background: var(--color-surface-sunken) !important;
   color: var(--color-text);
   font-size: var(--hos-text-body-sm);
@@ -746,7 +751,7 @@
 .filePreviewMarkdown :global(pre) {
   padding: var(--hos-space-3-5) var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
-  border-radius: var(--chat-panel-radius, 8px);
+  border-radius: var(--chat-panel-radius, 2px);
   background: var(--color-surface-sunken) !important;
   overflow: auto;
 }
@@ -754,8 +759,9 @@
 .filePreviewMarkdown :global(blockquote) {
   margin: var(--hos-space-3) 0;
   padding: var(--hos-space-2) var(--hos-space-3-5);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
   color: var(--color-muted-strong);
 }
 
@@ -764,6 +770,15 @@
   border-collapse: collapse;
   margin: var(--hos-space-3) 0;
   font-size: var(--hos-text-body-sm);
+}
+
+.filePreviewMarkdown :global(th) {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: var(--color-surface-sunken);
 }
 
 .filePreviewMarkdown :global(th),
@@ -779,9 +794,11 @@
 
 .mobileControlsLabel {
   margin-bottom: var(--hos-space-2);
-  font-size: var(--hos-text-body-sm);
+  font-size: var(--hos-text-caption);
   font-weight: 600;
-  color: var(--color-muted-strong);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
 
 @media (max-width: 768px) {.toolBody {

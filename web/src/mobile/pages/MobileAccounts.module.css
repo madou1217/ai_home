@@ -1,0 +1,204 @@
+/* /accounts 移动端局部样式：语义 token、等宽数值、直角 / 切角（无大圆角） */
+
+/* ---- 账号行（SwipeRow 内容） ---- */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+}
+.rowRemoving {
+  opacity: 0.25;
+  transform: translateX(-12px);
+}
+.quota {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.quotaTrack {
+  width: 52px;
+}
+.quotaNone {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-faint);
+}
+
+/* ---- 导入进度 ---- */
+.importProgress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-muted-strong);
+}
+
+/* ---- 详情抽屉 ---- */
+.sheetStack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.statusBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-accent);
+  background: var(--color-surface-sunken);
+}
+.statusLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--mhud-hit);
+}
+.statusDetail {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.switchLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-faint);
+}
+.identity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+.identityText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inlineIconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--mhud-hit);
+  height: var(--mhud-hit);
+  margin: -10px -10px -10px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.inlineIconBtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -6px;
+}
+.quotaPanel {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+.muted {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 13px;
+}
+.probeLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.probeActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.actionList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+}
+.actionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.actionItem:last-child {
+  border-bottom: 0;
+}
+.actionItem:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface));
+}
+.actionItem:disabled {
+  color: var(--color-faint);
+  cursor: not-allowed;
+}
+.actionItem:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.actionItemActive .actionIcon {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
+}
+.actionIcon {
+  display: inline-flex;
+  width: 20px;
+  justify-content: center;
+  color: var(--color-muted-strong);
+  font-size: 16px;
+}
+.actionLabel {
+  flex: 1;
+  min-width: 0;
+}
+.actionArrow {
+  color: var(--color-faint);
+  font-size: 11px;
+}
+.sheetFooter {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.sheetFooter > * {
+  flex: 1;
+}
+.cardDesc {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.55;
+}

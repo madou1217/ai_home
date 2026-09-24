@@ -73,7 +73,7 @@ export const AudioWaveformPlayer = memo(function AudioWaveformPlayer({
   const progressPercent = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
 
   return (
-    <div className={styles.audioPlayerCapsule}>
+    <div className={`hud-panel hud-panel--sm ${styles.audioPlayerCapsule}`}>
       <button
         type="button"
         className={styles.audioPlayBtn}

@@ -3,6 +3,7 @@ import { Modal, Timeline, Tag, Spin, Empty, Typography, Space, Button } from 'an
 import { HistoryOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import type { Account } from '@/types';
 import { accountsAPI } from '@/services/api';
+import './account-overlays.css';
 
 const { Text } = Typography;
 
@@ -121,7 +122,7 @@ export default function AccountQuotaResetHistoryModal({
       destroyOnClose
     >
       <Spin spinning={loading}>
-        <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: '16px 8px 8px 8px' }}>
+        <div className="quota-reset-history-scroll">
           {events.length === 0 ? (
             <Empty description="暂无配额重置记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
@@ -132,42 +133,42 @@ export default function AccountQuotaResetHistoryModal({
                 
                 const tagColor = isUpgrade ? 'purple' : (isEarly ? 'blue' : 'green');
                 const tagLabel = isUpgrade ? '套餐升级重置' : (isEarly ? '提前回血重置' : '自然周期重置');
-                const icon = isUpgrade 
-                  ? <ThunderboltOutlined style={{ color: 'var(--event-thinking)' }} />
-                  : (isEarly ? <ThunderboltOutlined style={{ color: 'var(--color-accent)' }} /> : <CheckCircleOutlined style={{ color: 'var(--color-success)' }} />);
+                const icon = isUpgrade
+                  ? <ThunderboltOutlined className="quota-reset-dot--upgrade" />
+                  : (isEarly ? <ThunderboltOutlined className="quota-reset-dot--early" /> : <CheckCircleOutlined className="quota-reset-dot--natural" />);
                 const resetTimeMs = event.occurredAtMs || event.detectedAtMs;
 
                 return {
                   color: isEarly ? 'blue' : 'green',
                   dot: icon,
                   children: (
-                    <div style={{ marginBottom: 14 }}>
-                      <Space orientation="horizontal" size="small" style={{ marginBottom: 4 }}>
+                    <div className="quota-reset-event">
+                      <div className="quota-reset-event-head">
                         <Tag color={tagColor}>{tagLabel}</Tag>
                         {event.windowLabel ? <Tag>{event.windowLabel}</Tag> : null}
-                        <Text strong style={{ color: 'var(--color-heading)' }}>{formatTime(resetTimeMs)}</Text>
-                      </Space>
-                      <div>
-                        <Text strong>用量变化：</Text>
-                        <Text type="secondary">
+                        <span className="quota-reset-event-time">{formatTime(resetTimeMs)}</span>
+                      </div>
+                      <div className="quota-reset-event-delta">
+                        <span className="hud-label">用量变化</span>
+                        <span className="hud-display quota-reset-event-from">
                           {formatPct(event.previousRemainingPct)}
-                        </Text>
-                        <Text strong style={{ margin: '0 6px', color: 'var(--color-success)' }}>➔</Text>
-                        <Text strong style={{ color: 'var(--color-success)' }}>
+                        </span>
+                        <span className="quota-reset-event-arrow" aria-hidden="true">➔</span>
+                        <span className="hud-display quota-reset-event-to">
                           {formatPct(event.currentRemainingPct)}
-                        </Text>
+                        </span>
                       </div>
                       {isUpgrade ? (
-                        <div style={{ marginTop: 3 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                        <div className="quota-reset-event-meta">
+                          <Text type="secondary">
                             ✨ 账号套餐升级生效：{event.previousPlanType ? event.previousPlanType.toUpperCase() : 'FREE'} ➔ {event.currentPlanType ? event.currentPlanType.toUpperCase() : 'PRO'} (额度窗口重置回满)
                           </Text>
                         </div>
                       ) : null}
                       {event.exhaustedAtMs ? (
-                        <div style={{ marginTop: 3 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            <ClockCircleOutlined style={{ marginRight: 4 }} />
+                        <div className="quota-reset-event-meta">
+                          <Text type="secondary">
+                            <ClockCircleOutlined />
                             耗尽时间点：<Text strong>{formatTime(event.exhaustedAtMs)}</Text>
                             {resetTimeMs > event.exhaustedAtMs ? (
                               <span> (耗尽后经历了 {formatDuration(resetTimeMs - event.exhaustedAtMs)} 恢复)</span>
@@ -176,16 +177,16 @@ export default function AccountQuotaResetHistoryModal({
                         </div>
                       ) : null}
                       {!isEarly && event.detectedAtMs > resetTimeMs + 60000 ? (
-                        <div style={{ marginTop: 2 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            <EyeOutlined style={{ marginRight: 4 }} />
+                        <div className="quota-reset-event-meta">
+                          <Text type="secondary">
+                            <EyeOutlined />
                             系统观测同步于：{formatTime(event.detectedAtMs)}
                           </Text>
                         </div>
                       ) : null}
                       {isEarly && event.earlyDurationMs && event.earlyDurationMs > 0 && event.earlyDurationMs < 7 * 24 * 3600 * 1000 ? (
-                        <div style={{ marginTop: 2 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
+                        <div className="quota-reset-event-meta">
+                          <Text type="secondary">
                             ⚡ 推断提前了约 <Text strong>{formatDuration(event.earlyDurationMs)}</Text> 回满
                           </Text>
                         </div>

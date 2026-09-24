@@ -76,6 +76,11 @@
   line-height: var(--leading-tight, 1.25);
   color: var(--color-accent);
 }
+/* 成功率数值按真实语义着色（heroSuccessTone：≥95% 健康 / ≥80% 告警 / 其余错误；无请求为中性） */
+.dash-hero-value--healthy { color: var(--color-success); }
+.dash-hero-value--warning { color: var(--color-warning); }
+.dash-hero-value--error { color: var(--color-danger); }
+.dash-hero-value--neutral { color: var(--color-muted); }
 .dash-hero-cap {
   margin-top: var(--space-2, 4px);
 }
@@ -223,8 +228,8 @@
 .dash-pcard {
   padding: var(--space-7, 14px) var(--space-8, 16px);
 }
-/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色外辉光 */
-.dash-pcard:hover { box-shadow: var(--hud-glow-accent); }
+/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色内辉光（切角 clip-path 会裁掉外发光） */
+.dash-pcard:hover { box-shadow: inset 0 0 16px color-mix(in srgb, var(--color-accent) 10%, transparent); }
 /* 离线：内容降权，表面保持不透明（深色下不出现半透明灰块） */
 .dash-pcard--offline > * { opacity: 0.6; }
 .dash-pcard-head {
@@ -351,6 +356,10 @@
     background-color var(--motion-fast, 120ms) var(--ease-standard),
     border-color var(--motion-fast, 120ms) var(--ease-standard),
     color var(--motion-fast, 120ms) var(--ease-standard);
+}
+.dash-error-copy-ok {
+  color: var(--color-success);
+  filter: drop-shadow(0 0 4px var(--color-success));
 }
 .dash-error-copy-btn:hover {
   background: color-mix(in srgb, var(--color-accent) 10%, transparent);
@@ -559,15 +568,6 @@
   color: var(--color-heading);
   word-break: break-word;
   font-variant-numeric: tabular-nums;
-}
-
-/* ── 手机：健康行纵向堆叠 ── */
-@media (max-width: 767px) {
-  .dash-hero-body {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-6, 12px);
-  }
 }
 
 /* ── 桌面网格 ── */

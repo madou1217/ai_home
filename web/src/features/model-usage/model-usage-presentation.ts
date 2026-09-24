@@ -90,7 +90,7 @@ export function buildModelMixData(
     counts.set(model, (counts.get(model) || 0) + 1);
     return counts;
   }, new Map<string, number>());
-  const head = ranked.slice(0, Math.max(1, limit)).map((row) => ({
+  const head: ModelMixDatum[] = ranked.slice(0, Math.max(1, limit)).map((row) => ({
     key: `${row.provider}:${row.model}`,
     label: (modelNameCounts.get(row.model || '未知模型') || 0) > 1
       ? `${row.provider} · ${row.model || '未知模型'}`

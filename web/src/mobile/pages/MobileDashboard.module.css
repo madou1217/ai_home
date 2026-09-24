@@ -1,0 +1,177 @@
+/* 移动端网关仪表盘：只用语义 token；数字一律等宽字体。 */
+
+.channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.channelHealth {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: var(--font-prose);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textValue {
+  display: block;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+
+.idle {
+  opacity: 0.5;
+}
+
+.ratio {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.counts {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.dim {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.errorMeta {
+  color: var(--color-danger);
+}
+
+.expander {
+  --hud-cut: var(--mhud-cut-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--mhud-hit);
+  padding: 0 12px;
+  border: 1px dashed var(--color-border);
+  background: transparent;
+  color: var(--color-muted-strong);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+  clip-path: polygon(0 var(--hud-cut), var(--hud-cut) 0, 100% 0, 100% 100%, 0 100%);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.expander:active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.expander:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.routeList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.routeItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.routeLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.routeName {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.routeCount {
+  flex: none;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cardHint {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.loadError {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+.loadErrorText {
+  color: var(--color-danger);
+  font-family: var(--font-prose);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* 详情抽屉 */
+.sheetGauge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sheetGaugeValue {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.sheetGaugeUnit {
+  margin-left: 6px;
+  color: var(--color-muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-shadow: none;
+}
+
+.errorText {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface-sunken));
+  color: var(--color-text);
+  font-family: var(--font-prose);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

@@ -1,13 +1,13 @@
-import { Alert, Form, Input, Modal, Radio, Select, Space, Tag, Typography } from 'antd';
+import { Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
 import ProviderIcon from '@/components/chat/ProviderIcon';
+import { InlineNote } from '@/components/ui/InlineNote';
 import {
   PROVIDER_AUTH_OPTIONS,
   getProviderSiteLabel,
   providerFamilies,
 } from '@/providers/catalog';
 import type { AccountAuthMode, Provider } from '@/types';
-
-const { Text } = Typography;
+import './account-overlays.css';
 
 interface AddAccountModalProps {
   open: boolean;
@@ -86,7 +86,7 @@ export function AddAccountModal({
             label="认证方式"
             rules={[{ required: true, message: '请选择认证方式' }]}
           >
-            <Radio.Group size="large">
+            <Radio.Group size="large" className="aih-choice-tiles">
               <Space direction="vertical">
                 {providerAuthOptions.map((option) => (
                   <Radio
@@ -96,16 +96,16 @@ export function AddAccountModal({
                   >
                     <Space direction="vertical" size={0}>
                       <Space align="center" size={6}>
-                        <span>{option.label}</span>
+                        <span className="aih-choice-tile-title">{option.label}</span>
                         {option.disabled && (
-                          <Tag color="default" bordered={false} style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px' }}>
+                          <Tag color="default" bordered={false} style={{ marginInlineEnd: 0 }}>
                             已停用
                           </Tag>
                         )}
                       </Space>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <span className="aih-choice-tile-desc">
                         {option.disabledReason || option.description}
-                      </Text>
+                      </span>
                     </Space>
                   </Radio>
                 ))}
@@ -164,13 +164,13 @@ export function AddAccountModal({
 
         {selectedAuthMode === 'vertex-ai' ? (
           <>
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Vertex AI 占位模式"
+            <InlineNote
+              tone="info"
+              className="add-account-note"
               description="Google Cloud Vertex AI 认证暂未接入真实账号验证。提交后将创建占位账号记录，为后续接入打好基础。"
-            />
+            >
+              Vertex AI 占位模式
+            </InlineNote>
             <Form.Item
               name="projectId"
               label="GCP Project ID"

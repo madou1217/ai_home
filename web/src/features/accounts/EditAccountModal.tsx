@@ -1,5 +1,6 @@
 import { Form, Input, Radio, Space } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
+import './account-overlays.css';
 
 interface EditAccountModalProps {
   open: boolean;
@@ -48,10 +49,10 @@ export function EditAccountModal({
           label="Claude 认证方式"
           rules={[{ required: true, message: '请选择 Claude 认证方式' }]}
         >
-          <Radio.Group>
+          <Radio.Group className="aih-choice-tiles">
             <Space direction="vertical">
-              <Radio value="api-key">ANTHROPIC_API_KEY</Radio>
-              <Radio value="auth-token">ANTHROPIC_AUTH_TOKEN</Radio>
+              <Radio value="api-key"><span className="aih-choice-tile-title">ANTHROPIC_API_KEY</span></Radio>
+              <Radio value="auth-token"><span className="aih-choice-tile-title">ANTHROPIC_AUTH_TOKEN</span></Radio>
             </Space>
           </Radio.Group>
         </Form.Item>
@@ -69,7 +70,7 @@ export function EditAccountModal({
         label="接口地址"
         extra="自定义反代或网关地址。如不修改请留空。"
       >
-        <Input placeholder="https://api.openai.com/v1" />
+        <Input placeholder="https://api.openai.com/v1" className="aih-mono-input" />
       </Form.Item>
     </ModalForm>
   );

@@ -9,7 +9,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
   ManagedOpenAIModelItem,
-  OpenAIModelItem,
   Provider,
   WebUiOpenAIModelAccount,
   WebUiOpenAIModelsJob,
@@ -21,171 +20,48 @@ import PaginatedList from '@/components/ui/PaginatedList';
 import { ModalForm, StatisticCard } from '@ant-design/pro-components';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
-import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
-import { buildProviderSelectOptions } from '@/providers/catalog';
+import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
+import {
+  DEFAULT_MANUAL_MODEL_PROVIDER,
+  MODEL_PROVIDERS,
+  MODEL_STATUS_FILTER_OPTIONS,
+  buildGlobalModelRows,
+  buildManualProviderOptions,
+  buildModelAccountOptions,
+  countGlobalModelRowsByProvider,
+  filterGlobalModelRows,
+  formatCatalogJobStatus,
+  formatCatalogProbeScope,
+  formatUpdatedAt,
+  getAccountLabel,
+  getCatalogJobScopeKey,
+  getCatalogJobVisibleCount,
+  getGlobalModelDisplayLabel,
+  getManagedModelSource,
+  getModelDisplayLabel as getCatalogModelDisplayLabel,
+  getVisibleModelProbeError,
+  isCatalogJobActive,
+  isGlobalModelVisible,
+  normalizeProvider,
+  pickLatestCatalogJob,
+  resolveManualModelAccountForProvider,
+  resolveManualModelDefaults,
+  type AccountFilter,
+  type GlobalModelRow,
+  type ModelStatusFilter,
+  type ProviderFilter
+} from '@/features/models/model-catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
 import { openExternalUrl } from '@/services/open-external-url';
+import {
+  countOpenCodeGroups,
+  filterAccountModelRows,
+  formatScopedAccountTitle,
+  getModelRowKey,
+  type ModelGroupFilter
+} from '@/features/models/account-models';
 
-type ProviderFilter = Provider | 'all';
-type AccountFilter = string | 'all';
-type ModelStatusFilter = 'all' | 'enabled' | 'disabled' | 'manual';
-type ModelGroupFilter = 'all' | 'go' | 'zen' | 'free';
-
-type GlobalModelAccount = {
-  key: string;
-  label: string;
-  model: ManagedOpenAIModelItem;
-};
-
-type GlobalModelRow = OpenAIModelItem & {
-  accountModels: ManagedOpenAIModelItem[];
-  accounts: GlobalModelAccount[];
-  providers: Provider[];
-  enabledCount: number;
-  disabledCount: number;
-  manualCount: number;
-  visible: boolean;
-};
-
-const PROVIDERS: Provider[] = providerIds;
-const IGNORABLE_MODEL_PROBE_ERRORS = ['operation was aborted', 'aborterror'];
-
-function formatUpdatedAt(value?: number) {
-  const timestamp = Number(value || 0);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return '尚未刷新';
-  return new Date(timestamp).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-}
-
-function isIgnorableModelProbeError(error?: string) {
-  const normalized = String(error || '').trim().toLowerCase();
-  return IGNORABLE_MODEL_PROBE_ERRORS.some((pattern) => normalized.includes(pattern));
-}
-
-function getVisibleModelProbeError(catalog: WebUiOpenAIModelsResponse | null) {
-  if (!catalog) return '';
-  const candidates = [catalog.firstError, ...Object.values(catalog.errorsByAccountRef || {})];
-  return candidates.find((error) => error && !isIgnorableModelProbeError(error)) || '';
-}
-
-function isCatalogJobActive(job: WebUiOpenAIModelsJob | null) {
-  return Boolean(job && (job.status === 'queued' || job.status === 'running'));
-}
-
-function formatCatalogJobStatus(job: WebUiOpenAIModelsJob | null) {
-  if (!job) return '空闲';
-  if (job.status === 'queued') return '排队中';
-  if (job.status === 'running') return '探测中';
-  if (job.status === 'succeeded') return '已完成';
-  return '失败';
-}
-
-function formatCatalogProbeScope(job: WebUiOpenAIModelsJob | null) {
-  if (job?.accountScope) return '当前账号';
-  return '后台调度';
-}
-
-// 账号级刷新任务的 catalog.data 会合并 alias 派生条目（网关出口口径），
-// 与下方账号模型列表（探测行）口径不同；卡片计数改为按 managedData 去重，保持同屏一致。
-function getCatalogJobVisibleCount(job: WebUiOpenAIModelsJob | null) {
-  const catalog = job?.catalog;
-  if (!catalog) return null;
-  if (!job?.accountScope) return Array.isArray(catalog.data) ? catalog.data.length : null;
-  const scopeRef = String(job.accountScope.accountRef || '').trim();
-  const ids = new Set(
-    (Array.isArray(catalog.managedData) ? catalog.managedData : [])
-      .filter((item) => !scopeRef || item.accountRef === scopeRef)
-      .map((item) => String(item.id || '').trim())
-      .filter(Boolean)
-  );
-  return ids.size;
-}
-
-function getModelRowKey(model: Pick<ManagedOpenAIModelItem, 'accountRef' | 'id'>) {
-  return `${model.accountRef || 'global'}:${model.id}`;
-}
-
-function getCatalogJobScopeKey(job: Pick<WebUiOpenAIModelsJob, 'accountScope'> | null) {
-  const scope = job?.accountScope;
-  if (!scope) return 'global';
-  return String(scope.accountRef || '').trim() || 'global';
-}
-
-function getAccountLabel(account: Pick<WebUiOpenAIModelAccount, 'displayName' | 'email' | 'accountRef' | 'provider'>) {
-  if (account.displayName) return account.displayName;
-  if (account.email) return account.email;
-  const providerName = providerNames[account.provider];
-  if (providerName && String(account.accountRef || '').startsWith('acct_')) {
-    return `${providerName} 账号`;
-  }
-  return account.accountRef;
-}
-
-function normalizeProvider(value: string | null): ProviderFilter {
-  return value && PROVIDERS.includes(value as Provider) ? value as Provider : 'all';
-}
-
-function sortProviders(providers: Provider[]) {
-  const order = new Map(PROVIDERS.map((provider, index) => [provider, index]));
-  return [...providers].sort((left, right) => {
-    return (order.get(left) ?? Number.MAX_SAFE_INTEGER) - (order.get(right) ?? Number.MAX_SAFE_INTEGER)
-      || left.localeCompare(right);
-  });
-}
-
-// 从模型 id 抽取版本向量做"版本判断"：claude-opus-4-8 → [4,8]、gpt-5 → [5]、gemini-2.5-pro → [2,5]。
-function parseModelVersion(id: string): number[] {
-  const matches = String(id || '').match(/\d+/g);
-  return matches ? matches.map((chunk) => Number(chunk)) : [];
-}
-
-// 版本降序：越新（版本号越大）的模型排越前；缺失位补 -1 让"无版本"沉底。
-function compareModelVersionDesc(leftId: string, rightId: string) {
-  const left = parseModelVersion(leftId);
-  const right = parseModelVersion(rightId);
-  const len = Math.max(left.length, right.length);
-  for (let index = 0; index < len; index += 1) {
-    const leftValue = left[index] ?? -1;
-    const rightValue = right[index] ?? -1;
-    if (leftValue !== rightValue) return rightValue - leftValue;
-  }
-  return 0;
-}
-
-// 账号模型列表排序：默认模型永远置顶 → 其次版本新→旧 → 最后 id 兜底。
-function compareAccountModelRows(left: ManagedOpenAIModelItem, right: ManagedOpenAIModelItem) {
-  const leftDefault = left.defaultModel === true ? 0 : 1;
-  const rightDefault = right.defaultModel === true ? 0 : 1;
-  if (leftDefault !== rightDefault) return leftDefault - rightDefault;
-  return compareModelVersionDesc(left.id, right.id) || left.id.localeCompare(right.id);
-}
-
-function isGlobalModelVisible(row: Pick<GlobalModelRow, 'enabledCount' | 'visible'>) {
-  return row.visible || row.enabledCount > 0;
-}
-
-function globalModelMatchesStatus(row: GlobalModelRow, status: ModelStatusFilter) {
-  const visible = isGlobalModelVisible(row);
-  if (status === 'enabled') return visible;
-  if (status === 'disabled') return !visible && row.disabledCount > 0;
-  if (status === 'manual') return visible && row.manualCount > 0;
-  return visible;
-}
-
-function globalModelMatchesQuery(row: GlobalModelRow, query: string) {
-  if (!query) return true;
-  return row.id.toLowerCase().includes(query)
-    || row.owned_by.toLowerCase().includes(query)
-    || row.accounts.some((account) => (
-      account.key.toLowerCase().includes(query)
-      || account.label.toLowerCase().includes(query)
-    ));
-}
 
 export default function Models() {
   const screens = Grid.useBreakpoint();
@@ -271,14 +147,7 @@ export default function Models() {
   useEffect(() => {
     const watcher = modelsAPI.watchOpenAICompatibleRefresh({
       onSnapshot: (jobs) => {
-        const sorted = [...jobs].sort((left, right) => {
-          const leftAt = Number(left.finishedAt || left.startedAt || 0);
-          const rightAt = Number(right.finishedAt || right.startedAt || 0);
-          return rightAt - leftAt;
-        });
-        const latest = sorted
-          .filter((job) => getCatalogJobScopeKey(job) === pageScopeKey)
-          .find(isCatalogJobActive) || sorted.find((job) => getCatalogJobScopeKey(job) === pageScopeKey) || null;
+        const latest = pickLatestCatalogJob(jobs, pageScopeKey);
         if (!latest) return;
         setCatalogJob(latest);
         if (latest.catalog) setCatalog(latest.catalog);
@@ -310,37 +179,13 @@ export default function Models() {
     }
   }, [accountScoped, buildCatalogRequestOptions, loadModels, scopedAccountRef]);
 
-  const managedSource = useMemo<ManagedOpenAIModelItem[]>(() => {
-    const managed = Array.isArray(catalog?.managedData) ? catalog.managedData : [];
-    return managed.filter((model) => model.accountRef && model.provider);
-  }, [catalog]);
+  const managedSource = useMemo<ManagedOpenAIModelItem[]>(() => getManagedModelSource(catalog), [catalog]);
 
-  const accountOptions = useMemo<WebUiOpenAIModelAccount[]>(() => {
-    const accountsByRef = new Map<string, WebUiOpenAIModelAccount>();
-    (Array.isArray(catalog?.accounts) ? catalog.accounts : []).forEach((account) => {
-      if (!account.accountRef) return;
-      accountsByRef.set(account.accountRef, account);
-    });
-    managedSource.forEach((model) => {
-      if (!model.accountRef || accountsByRef.has(model.accountRef)) return;
-      accountsByRef.set(model.accountRef, {
-        provider: model.provider,
-        accountRef: model.accountRef,
-        displayName: model.accountRef
-      });
-    });
-    if (accountScoped && scopedProvider && scopedAccountRef && !accountsByRef.has(scopedAccountRef)) {
-      accountsByRef.set(scopedAccountRef, {
-        provider: scopedProvider,
-        accountRef: scopedAccountRef,
-        displayName: scopedAccountRef
-      });
-    }
-    return Array.from(accountsByRef.values()).sort((left, right) => (
-      left.provider.localeCompare(right.provider)
-      || left.accountRef.localeCompare(right.accountRef)
-    ));
-  }, [accountScoped, catalog, managedSource, scopedAccountRef, scopedProvider]);
+  const accountOptions = useMemo<WebUiOpenAIModelAccount[]>(() => buildModelAccountOptions(
+    catalog,
+    managedSource,
+    accountScoped && scopedProvider && scopedAccountRef ? { provider: scopedProvider, accountRef: scopedAccountRef } : null
+  ), [accountScoped, catalog, managedSource, scopedAccountRef, scopedProvider]);
 
   const accountByRef = useMemo(() => {
     return new Map(accountOptions.map((account) => [account.accountRef, account]));
@@ -348,18 +193,22 @@ export default function Models() {
 
   const scopedAccount = scopedAccountRef ? accountByRef.get(scopedAccountRef) : null;
   const scopedAccountLabel = scopedAccount ? getAccountLabel(scopedAccount) : scopedAccountRef;
+  const scopedAccountTitle = formatScopedAccountTitle(scopedAccountLabel, scopedProvider);
 
   useEffect(() => {
     if (!manualModalOpen) return;
-    const provider = manualProvider || 'codex';
-    const currentAccountRef = String(manualForm.getFieldValue('accountRef') || '');
-    const currentAccount = accountByRef.get(currentAccountRef);
-    if (currentAccount && currentAccount.provider === provider) return;
+    const provider = manualProvider || DEFAULT_MANUAL_MODEL_PROVIDER;
     const source = accountScoped && scopedAccount
       ? [scopedAccount]
       : accountOptions;
-    const nextAccount = source.find((account) => account.provider === provider);
-    manualForm.setFieldsValue({ accountRef: nextAccount?.accountRef });
+    const next = resolveManualModelAccountForProvider(
+      source,
+      accountByRef,
+      provider,
+      String(manualForm.getFieldValue('accountRef') || '')
+    );
+    if (!next.changed) return;
+    manualForm.setFieldsValue({ accountRef: next.accountRef });
   }, [accountByRef, accountOptions, accountScoped, manualForm, manualModalOpen, manualProvider, scopedAccount]);
 
   const openManualModal = useCallback(() => {
@@ -372,15 +221,8 @@ export default function Models() {
     }
     const preferredProvider = accountScoped && scopedProvider
       ? scopedProvider
-      : selectedAccount?.provider || (providerFilter === 'all' ? 'codex' : providerFilter);
-    const account = selectedAccount && selectedAccount.provider === preferredProvider
-      ? selectedAccount
-      : accountOptions.find((item) => item.provider === preferredProvider) || accountOptions[0];
-    manualForm.setFieldsValue({
-      provider: account?.provider || preferredProvider,
-      accountRef: account?.accountRef,
-      enabled: true
-    });
+      : selectedAccount?.provider || (providerFilter === 'all' ? DEFAULT_MANUAL_MODEL_PROVIDER : providerFilter);
+    manualForm.setFieldsValue(resolveManualModelDefaults(accountOptions, selectedAccount, preferredProvider));
     setManualModalOpen(true);
   }, [accountByRef, accountFilter, accountOptions, accountScoped, manualForm, providerFilter, scopedAccountRef, scopedProvider]);
 
@@ -451,144 +293,42 @@ export default function Models() {
     }
   }, [loadModels]);
 
-  const accountModelRows = useMemo(() => {
-    const query = queryKeyword.trim().toLowerCase();
-    return managedSource.filter((model) => {
-      if (providerFilter !== 'all' && model.provider !== providerFilter) return false;
-      if (accountFilter !== 'all' && model.accountRef !== accountFilter) return false;
-      if (statusFilter === 'enabled' && model.enabled === false) return false;
-      if (statusFilter === 'disabled' && model.enabled !== false) return false;
-      if (statusFilter === 'manual' && model.manual !== true) return false;
-      if (groupFilter === 'go' && !model.id.startsWith('opencode-go/')) return false;
-      if (groupFilter === 'zen' && !model.id.startsWith('opencode/')) return false;
-      if (groupFilter === 'free' && !model.id.endsWith('-free')) return false;
-      if (!query) return true;
-      return model.id.toLowerCase().includes(query)
-        || model.accountRef.toLowerCase().includes(query)
-        || getAccountLabel(accountByRef.get(model.accountRef) || { provider: model.provider, displayName: '', email: '', accountRef: model.accountRef }).toLowerCase().includes(query);
-    }).sort(compareAccountModelRows);
-  }, [accountByRef, accountFilter, managedSource, providerFilter, queryKeyword, statusFilter, groupFilter]);
+  const accountModelRows = useMemo(() => filterAccountModelRows(managedSource, {
+    provider: providerFilter,
+    accountRef: accountFilter,
+    status: statusFilter,
+    group: groupFilter,
+    query: queryKeyword.trim().toLowerCase()
+  }, (model) => getAccountLabel(accountByRef.get(model.accountRef) || { provider: model.provider, displayName: '', email: '', accountRef: model.accountRef })), [accountByRef, accountFilter, managedSource, providerFilter, queryKeyword, statusFilter, groupFilter]);
 
-  const globalModelRows = useMemo<GlobalModelRow[]>(() => {
-    const rowsById = new Map<string, GlobalModelRow>();
-    const ensureRow = (model: OpenAIModelItem | ManagedOpenAIModelItem) => {
-      const id = String(model.id || '').trim();
-      if (!id) return null;
-      const existing = rowsById.get(id);
-      if (existing) return existing;
-      const row: GlobalModelRow = {
-        id,
-        object: 'model',
-        created: Number(model.created || 0),
-        owned_by: model.owned_by || 'aih',
-        accountModels: [],
-        accounts: [],
-        providers: [],
-        enabledCount: 0,
-        disabledCount: 0,
-        manualCount: 0,
-        visible: false
-      };
-      rowsById.set(id, row);
-      return row;
-    };
+  const globalModelRows = useMemo<GlobalModelRow[]>(
+    () => buildGlobalModelRows(catalog, managedSource, accountByRef),
+    [accountByRef, catalog, managedSource]
+  );
 
-    (Array.isArray(catalog?.data) ? catalog.data : []).forEach((model) => {
-      const row = ensureRow(model);
-      if (!row) return;
-      row.visible = true;
-      row.created = Number(model.created || row.created || 0);
-      row.owned_by = model.owned_by || row.owned_by;
-      PROVIDERS.forEach((provider) => {
-        if ((catalog?.byProvider?.[provider] || []).includes(model.id) && !row.providers.includes(provider)) {
-          row.providers.push(provider);
-        }
-      });
-    });
+  const globalRows = useMemo(() => filterGlobalModelRows(globalModelRows, {
+    provider: providerFilter,
+    account: accountFilter,
+    status: statusFilter,
+    query: queryKeyword.trim().toLowerCase()
+  }), [accountFilter, globalModelRows, providerFilter, queryKeyword, statusFilter]);
 
-    managedSource.forEach((model) => {
-      const row = ensureRow(model);
-      if (!row) return;
-      const account = accountByRef.get(model.accountRef);
-      if (!row.providers.includes(model.provider)) row.providers.push(model.provider);
-      row.accountModels.push(model);
-      row.accounts.push({
-        key: model.accountRef,
-        label: account ? getAccountLabel(account) : model.accountRef,
-        model
-      });
-      if (model.enabled === false) {
-        row.disabledCount += 1;
-      } else {
-        row.enabledCount += 1;
-      }
-      if (model.manual) row.manualCount += 1;
-      if (!row.owned_by || row.owned_by === 'aih') row.owned_by = model.owned_by || row.owned_by;
-    });
-
-    return Array.from(rowsById.values())
-      .map((row) => {
-        const accountsByRef = new Map<string, GlobalModelAccount>();
-        row.accounts.forEach((account) => {
-          if (!accountsByRef.has(account.key)) accountsByRef.set(account.key, account);
-        });
-        return {
-          ...row,
-          providers: sortProviders(row.providers),
-          accountModels: [...row.accountModels].sort((left, right) => (
-            left.provider.localeCompare(right.provider)
-            || left.accountRef.localeCompare(right.accountRef)
-          )),
-          accounts: Array.from(accountsByRef.values()).sort((left, right) => {
-            const leftDisabled = left.model.enabled === false ? 1 : 0;
-            const rightDisabled = right.model.enabled === false ? 1 : 0;
-            return leftDisabled - rightDisabled
-              || left.model.provider.localeCompare(right.model.provider)
-              || left.label.localeCompare(right.label);
-          })
-        };
-      })
-      .sort((left, right) => {
-        const leftVisible = isGlobalModelVisible(left) ? 0 : 1;
-        const rightVisible = isGlobalModelVisible(right) ? 0 : 1;
-        return leftVisible - rightVisible || left.id.localeCompare(right.id);
-      });
-  }, [accountByRef, catalog, managedSource]);
-
-  const globalRows = useMemo(() => {
-    const query = queryKeyword.trim().toLowerCase();
-    return globalModelRows.filter((row) => {
-      if (providerFilter !== 'all' && !row.providers.includes(providerFilter)) return false;
-      if (accountFilter !== 'all' && !row.accountModels.some((model) => model.accountRef === accountFilter)) return false;
-      if (!globalModelMatchesStatus(row, statusFilter)) return false;
-      return globalModelMatchesQuery(row, query);
-    });
-  }, [accountFilter, globalModelRows, providerFilter, queryKeyword, statusFilter]);
-
-  const providerCountRows = useMemo(() => {
-    const query = queryKeyword.trim().toLowerCase();
-    return globalModelRows.filter((row) => {
-      if (accountFilter !== 'all' && !row.accountModels.some((model) => model.accountRef === accountFilter)) return false;
-      if (!globalModelMatchesStatus(row, statusFilter)) return false;
-      return globalModelMatchesQuery(row, query);
-    });
-  }, [accountFilter, globalModelRows, queryKeyword, statusFilter]);
-
-  const providerCounts = useMemo(() => {
-    return PROVIDERS.reduce<Record<string, number>>((acc, provider) => {
-      acc[provider] = providerCountRows.filter((model) => model.providers.includes(provider)).length;
-      return acc;
-    }, { all: providerCountRows.length });
-  }, [providerCountRows]);
+  const providerCounts = useMemo(() => countGlobalModelRowsByProvider(globalModelRows, {
+    account: accountFilter,
+    status: statusFilter,
+    query: queryKeyword.trim().toLowerCase()
+  }), [accountFilter, globalModelRows, queryKeyword, statusFilter]);
 
   const metricSource = accountScoped
     ? managedSource.filter((model) => model.accountRef === scopedAccountRef)
     : managedSource;
 
   const isOpenCodeScoped = (accountScoped && scopedProvider === 'opencode') || (!accountScoped && providerFilter === 'opencode');
-  const openCodeGoCount = metricSource.filter((m) => m.id.startsWith('opencode-go/')).length;
-  const openCodeZenCount = metricSource.filter((m) => m.id.startsWith('opencode/')).length;
-  const openCodeFreeCount = metricSource.filter((m) => m.id.endsWith('-free')).length;
+  const {
+    go: openCodeGoCount,
+    zen: openCodeZenCount,
+    free: openCodeFreeCount
+  } = countOpenCodeGroups(metricSource);
   const visibleUnionCount = accountScoped
     ? metricSource.filter((model) => model.enabled !== false).length
     : globalModelRows.filter(isGlobalModelVisible).length;
@@ -596,28 +336,13 @@ export default function Models() {
   const globalProbeError = getVisibleModelProbeError(catalog);
   const manualAccountOptionSource = accountScoped && scopedAccount
     ? [scopedAccount]
-    : accountOptions.filter((account) => account.provider === (manualProvider || 'codex'));
+    : accountOptions.filter((account) => account.provider === (manualProvider || DEFAULT_MANUAL_MODEL_PROVIDER));
   const manualAccountOptions = manualAccountOptionSource
     .map((account) => ({
       label: getAccountLabel(account),
       value: account.accountRef
     }));
-  // Provider 下拉按产品族分组：多站点产品（qoder / codebuddy / workbuddy）只出现一个
-  // 分组，站点是组内二级选项；value 仍是真实 Provider ID，提交链路不变。
-  const manualProviderOptions = buildProviderSelectOptions().map((option) => (
-    'options' in option
-      ? {
-        ...option,
-        options: option.options.map((child) => ({
-          ...child,
-          disabled: !accountOptions.some((account) => account.provider === child.value)
-        }))
-      }
-      : {
-        ...option,
-        disabled: !accountOptions.some((account) => account.provider === option.value)
-      }
-  ));
+  const manualProviderOptions = buildManualProviderOptions(accountOptions);
   const canCreateManualModel = accountScoped
     ? Boolean(scopedAccount)
     : accountOptions.length > 0;
@@ -636,11 +361,7 @@ export default function Models() {
 
   // 上游探测的 display_name(如 kimi 的 "K2.7 Coding")与模型 id 可能完全不同,
   // 标题优先显示 displayName 与 CLI /model 选择器对齐,真实 id 收进副标题。
-  const getModelDisplayLabel = (provider: string, id: string) => {
-    const byModel = catalog?.labels?.[provider];
-    const label = byModel ? String(byModel[id] || '').trim() : '';
-    return label && label !== id ? label : '';
-  };
+  const getModelDisplayLabel = (provider: string, id: string) => getCatalogModelDisplayLabel(catalog, provider, id);
 
   // 手机端头部只放得下图标按钮：这里若沿用带文案的 Button，会和相邻图标按钮
   // 一起把刷新按钮挤出 390px 视口（父容器裁剪，横向溢出门禁看不见）。
@@ -675,7 +396,7 @@ export default function Models() {
     const rowKey = getModelRowKey(model);
     const displayLabel = getModelDisplayLabel(model.provider, model.id);
     return (
-      <div key={rowKey} style={{ marginBottom: 12 }}>
+      <div key={rowKey} className="models-capsule-slot">
         <ModelCapsuleCard
           modelId={model.id}
           displayName={displayLabel}
@@ -693,9 +414,7 @@ export default function Models() {
 
   const renderGlobalModelRow = (model: GlobalModelRow) => {
     const visible = isGlobalModelVisible(model);
-    const displayLabel = model.providers
-      .map((provider) => getModelDisplayLabel(provider, model.id))
-      .find(Boolean) || '';
+    const displayLabel = getGlobalModelDisplayLabel(catalog, model);
     return (
       <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
         <div className="models-global-main">
@@ -735,7 +454,7 @@ export default function Models() {
       code="MODELS"
       title={accountScoped ? '账号模型管理' : '全局模型目录'}
       subTitle={accountScoped
-        ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')} 的独立模型开关和手动补充。`
+        ? `${scopedAccountTitle} 的独立模型开关和手动补充。`
         : '按模型聚合展示可见状态；客户端看到的是所有启用账号模型的去重合集。'}
       extra={isMobile ? (
         <div className="m-header-actions">
@@ -781,6 +500,10 @@ export default function Models() {
         const probeError = parseUpstreamError(globalProbeError);
         return (
           <div className="models-probe-status" role="status">
+            <span
+              className={`hud-led ${catalog?.source === 'remote' ? 'hud-led--warn' : 'hud-led--err'}`}
+              aria-hidden="true"
+            />
             <Tag color={catalog?.source === 'remote' ? 'warning' : 'error'}>部分账号模型探测失败</Tag>
             {probeError.statusCode ? <Tag color="error">HTTP {probeError.statusCode}</Tag> : null}
             <span className="models-probe-status-message" title={probeError.message}>{probeError.message}</span>
@@ -845,7 +568,7 @@ export default function Models() {
       >
         <p className="models-catalog-desc">
           {accountScoped
-            ? `${scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')}，更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`
+            ? `${scopedAccountTitle}，更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`
             : `端点 ${catalog?.endpoint || '/v1/models'}，当前可见模型 ${visibleUnionCount} 个。更新时间 ${formatUpdatedAt(catalog?.updatedAt)}。`}
         </p>
 
@@ -854,7 +577,7 @@ export default function Models() {
             <div className="models-account-context-main">
               {scopedProvider ? <ProviderIcon provider={scopedProvider} size={20} /> : <ApiOutlined />}
               <div>
-                <strong>{scopedAccountLabel && !scopedAccountLabel.startsWith('acct_') ? scopedAccountLabel : (scopedProvider ? `${providerNames[scopedProvider]} 账号` : '当前账号')}</strong>
+                <strong>{scopedAccountTitle}</strong>
               </div>
             </div>
             <div className="models-account-context-stats">
@@ -882,7 +605,7 @@ export default function Models() {
                       }}
                       options={[
                         { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
-                        ...PROVIDERS.map((provider) => ({
+                        ...MODEL_PROVIDERS.map((provider) => ({
                           label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
                           value: provider
                         }))
@@ -899,7 +622,7 @@ export default function Models() {
                         .filter((account) => providerFilter === 'all' || account.provider === providerFilter)
                         .map((account) => ({
                           label: (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span className="models-account-option">
                               <ProviderIcon provider={account.provider} size={14} />
                               <span>{getAccountLabel(account)}</span>
                             </span>
@@ -935,12 +658,7 @@ export default function Models() {
               <Segmented
                 value={statusFilter}
                 onChange={(value) => setStatusFilter(value as ModelStatusFilter)}
-                options={[
-                  { label: '全部', value: 'all' },
-                  { label: '启用', value: 'enabled' },
-                  { label: '停用', value: 'disabled' },
-                  { label: '手动', value: 'manual' }
-                ]}
+                options={MODEL_STATUS_FILTER_OPTIONS}
               />
             </>
           )}
@@ -971,7 +689,7 @@ export default function Models() {
         onOpenChange={setManualModalOpen}
         form={manualForm}
         layout="vertical"
-        initialValues={{ provider: 'codex', enabled: true }}
+        initialValues={{ provider: DEFAULT_MANUAL_MODEL_PROVIDER, enabled: true }}
         onFinish={submitManualModel}
         submitter={{
           searchConfig: {
@@ -983,7 +701,7 @@ export default function Models() {
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '12px' }}>
+        <div className="models-manual-form">
           <Form.Item
             name="provider"
             label="Provider"
@@ -1006,7 +724,7 @@ export default function Models() {
             label="模型 ID"
             rules={[{ required: true, message: '请输入模型 ID' }]}
           >
-            <Input placeholder="例如 gpt-5.6-sol-wm 或 provider-custom-model" autoFocus />
+            <Input placeholder="例如 gpt-5.6-sol-wm 或 provider-custom-model" autoFocus className="models-mono-input" />
           </Form.Item>
           <Form.Item name="description" label="备注">
             <Input placeholder="可选，用于区分手动补充来源" />

@@ -1,31 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Empty, Segmented } from 'antd';
-import dayjs from 'dayjs';
 
-import type { ModelUsageTrend, ModelUsageTrendPoint } from '@/types';
+import type { ModelUsageTrend } from '@/types';
 import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
 import { formatCost, formatTokens } from './model-usage-presentation';
+import { buildTrendSlots as buildSlots, formatTrendAxisTime as formatAxisTime } from './model-usage-query';
 
 type TrendMode = 'tokens' | 'cost' | 'cache';
 
 interface UsageTrendChartProps {
   trend: ModelUsageTrend;
-}
-
-function buildSlots(trend: ModelUsageTrend) {
-  if (!trend.bucketMs || trend.toMs < trend.fromMs) return [];
-  const points = new Map(trend.points.map((point) => [point.bucketStartMs, point]));
-  const slots: Array<ModelUsageTrendPoint | null> = [];
-  for (let timestamp = trend.fromMs; timestamp <= trend.toMs; timestamp += trend.bucketMs) {
-    slots.push(points.get(timestamp) || null);
-    if (slots.length >= 120) break;
-  }
-  return slots;
-}
-
-function formatAxisTime(timestamp: number, bucketMs: number) {
-  if (bucketMs < 24 * 60 * 60 * 1000) return dayjs(timestamp).format('MM-DD HH:mm');
-  return dayjs(timestamp).format('MM-DD');
 }
 
 function createBaseOption(
@@ -43,7 +27,7 @@ function createBaseOption(
       left: 0,
       itemWidth: 12,
       itemHeight: 6,
-      textStyle: { color: palette.muted, fontSize: 11 }
+      textStyle: { color: palette.muted, fontSize: 11, fontFamily: palette.fontMono }
     },
     tooltip: {
       trigger: 'axis',
@@ -56,11 +40,11 @@ function createBaseOption(
       data: labels,
       axisLine: { lineStyle: { color: palette.border } },
       axisTick: { show: false },
-      axisLabel: { color: palette.faint, hideOverlap: true, fontSize: 11 }
+      axisLabel: { color: palette.faint, hideOverlap: true, fontSize: 11, fontFamily: palette.fontMono }
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: palette.faint, fontSize: 11 },
+      axisLabel: { color: palette.faint, fontSize: 11, fontFamily: palette.fontMono },
       splitLine: { lineStyle: { color: palette.border, type: 'dashed' } }
     }
   };
@@ -79,7 +63,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
       return {
         ...base,
         tooltip: { ...base.tooltip, valueFormatter: (value: unknown) => formatCost(Number(value) || 0) },
-        yAxis: { ...base.yAxis, axisLabel: { color: palette.faint, formatter: (value: number) => formatCost(value) } },
+        yAxis: { ...base.yAxis, axisLabel: { ...base.yAxis.axisLabel, formatter: (value: number) => formatCost(value) } },
         series: [{
           name: '估算成本',
           type: 'line',
@@ -100,7 +84,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
           ...base.yAxis,
           min: 0,
           max: 100,
-          axisLabel: { color: palette.faint, formatter: '{value}%' }
+          axisLabel: { ...base.yAxis.axisLabel, formatter: '{value}%' }
         },
         series: [{
           name: '缓存命中率',
@@ -114,17 +98,18 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
         }]
       };
     }
+    // HUD 系列色全部来自语义 token：青（输入）/ 绿（缓存读取）/ 琥珀（缓存写入）/ 玫红（输出）/ 思考紫（推理）
     const tokenSeries = [
-      ['输入', 'inputTokens', palette.blue],
+      ['输入', 'inputTokens', palette.brand],
       ['缓存读取', 'cacheReadInputTokens', palette.success],
       ['缓存写入', 'cacheCreationInputTokens', palette.amber],
-      ['输出', 'outputTokens', palette.brand],
+      ['输出', 'outputTokens', palette.danger],
       ['推理', 'reasoningOutputTokens', palette.violet]
     ] as const;
     return {
       ...base,
       tooltip: { ...base.tooltip, valueFormatter: (value: unknown) => formatTokens(Number(value) || 0) },
-      yAxis: { ...base.yAxis, axisLabel: { color: palette.faint, formatter: (value: number) => formatTokens(value) } },
+      yAxis: { ...base.yAxis, axisLabel: { ...base.yAxis.axisLabel, formatter: (value: number) => formatTokens(value) } },
       series: tokenSeries.map(([name, field, color]) => ({
         name,
         type: 'line',

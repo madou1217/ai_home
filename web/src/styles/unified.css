@@ -1,7 +1,8 @@
 :root {
   --unified-page-padding: var(--space-12, 24px);
   --unified-card-padding: var(--space-8, 16px);
-  --unified-card-border-radius: var(--hos-radius-lg, 10px);
+  /* HUD：轮廓由切角（hud.css）表达，容器本身方角 */
+  --unified-card-border-radius: 0;
   --unified-pagination-margin: var(--space-8, 16px);
   --unified-section-gap: var(--space-8, 16px);
 }
@@ -44,8 +45,8 @@
   }
 }
 
-/* 2. 统一卡片：圆角/边框走 antd 主题 token（borderRadiusLG + colorBorderSecondary），
- *    仅扁平阴影留一条非 !important 规则（antd Card 无阴影 token）。 */
+/* 2. 统一卡片：切角 / 角标 / 半透明底 / 标题 Orbitron 由 hud.css 统一绘制（后加载，同权重覆盖），
+ *    这里只保留方角 / 发丝线 / 去阴影的基础兜底。 */
 .ant-pro-card.unified-section-card {
   border-radius: var(--unified-card-border-radius) !important;
   background: var(--color-surface) !important;
@@ -141,13 +142,16 @@
 }
 .unified-list-table-skeleton-head {
   padding-bottom: var(--hos-space-3, 12px);
-  border-bottom: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
+  border-bottom: 1px solid var(--color-border);
 }
 .unified-list-table-skeleton-headcell {
   overflow: hidden;
-  color: var(--color-muted, var(--hos-ink-400, #94a3b8));
-  font-size: var(--hos-text-body-sm, 13px);
-  font-weight: 500;
+  /* HUD 标签语言：大写字距、faint，与表头一致 */
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

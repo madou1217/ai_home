@@ -1,5 +1,5 @@
-/* 图像工坊（Calm Operator Console）：三栏都是随主题翻转的扁平表面 + 1px 发丝线。
- * 画布舞台用 surface-sunken 作为中性看图底；强调色统一为 --color-accent，主按钮走全局墨色。
+/* 图像工坊（Cyber HUD）：三栏随主题翻转的 HUD 切角面板 + 1px 发丝线（HUD 层见文件末尾）。
+ * 画布舞台用 surface-sunken 作为中性看图底；强调色统一为 --color-accent，主按钮走全局 HUD 主按钮。
  * 下列 --studio-* 只是语义 token 的局部别名，方便整体微调。 */
 .pageContainer {
   --studio-accent: var(--color-accent);
@@ -1228,3 +1228,121 @@
 .revisionStatus_succeeded { text-shadow: var(--hud-text-glow-success); }
 .revisionStatus_running { text-shadow: var(--hud-text-glow); }
 .revisionStatus_failed { text-shadow: var(--hud-text-glow-danger); }
+
+/* ---- HUD 细节：控制台字段 / 能力徽标 / 素材槽 / 读数 ---- */
+.workspaceReadout {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  text-transform: uppercase;
+}
+
+.fieldLabel,
+.parameterGrid label > span {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.composerPanel :global(.ant-select-selector),
+.composerPanel :global(.ant-input),
+.composerPanel :global(.ant-input-affix-wrapper),
+.composerPanel :global(.ant-segmented) {
+  border-radius: 0 !important;
+}
+
+.composerCounter,
+.sessionMeta,
+.revisionStripHeader > span {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.capabilityRow span {
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  text-transform: uppercase;
+}
+
+/* 能力可用 = Matrix Green 描边 + 辉光（按模型真实能力） */
+.capabilityRow span[data-active='true'] {
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
+}
+
+.assetDropLabel,
+.assetPreview,
+.maskUnavailable,
+.assetPreview img,
+.assetPreviewFallback,
+.maskUnavailable span,
+.presetRow button,
+.canvasImageWrap img,
+.outputPicker button span,
+.revisionNumber {
+  border-radius: 0;
+}
+
+.assetDropLabel {
+  background: var(--color-surface-sunken);
+}
+
+.assetDropLabel:hover,
+.assetDropLabel:focus-within {
+  box-shadow: var(--hud-glow-accent);
+}
+
+.assetDropLabel span {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+
+.assetPreview span {
+  font-family: var(--font-mono);
+}
+
+.presetRow button {
+  font-family: var(--font-mono);
+}
+
+.presetRow button:hover,
+.presetRow button:focus-visible {
+  background: var(--color-accent-soft);
+}
+
+.canvasEmptyMark {
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+}
+
+.canvasImageWrap img {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+}
+
+.revisionEmpty {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* 压在缩略图上的序号：保留固定深底白字（可读性），只加青色发丝框 */
+.revisionNumber,
+.outputPicker button span {
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.initialLoading span {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint);
+}
+
+.composerSubmit > span {
+  font-family: var(--font-prose);
+}

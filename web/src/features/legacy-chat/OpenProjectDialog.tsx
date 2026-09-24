@@ -1,6 +1,7 @@
 import { Input } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
+import styles from './directory-picker.module.css';
 
 type OpenProjectDialogProps = {
   open: boolean;
@@ -32,13 +33,13 @@ export default function OpenProjectDialog({
       }}
       submitter={{ searchConfig: { submitText: '打开', resetText: '取消' } }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+      <div className={styles.openProjectBody}>
         <Button onClick={onPickDirectory}>选择文件夹</Button>
         <Input
           placeholder="不准手填，请点击选择文件夹按钮选择"
           value={projectPath}
           readOnly
-          style={{ background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
+          className={styles.readonlyPath}
         />
         <Input
           placeholder="项目名称（可选）"

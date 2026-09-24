@@ -1,35 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Modal, Tag, Space, Select, Breadcrumb, message, Radio, Tabs, Drawer } from 'antd';
+import { Form, Input, Modal, Tag, Space, Select, Breadcrumb, Radio, Tabs, Drawer } from 'antd';
 import InlineNote from '@/components/ui/InlineNote';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import { ModalForm } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import { SshConnectionCardList, SshWorkspaceCardList } from '@/components/settings/SshHostCardLists';
-import type { SshConnection, SshWorkspace } from '@/components/settings/SshHostCardLists';
+import type { SshConnection, SshWorkspace } from '@/features/ssh-hosts/ssh-hosts-model';
+import {
+  SSH_AUTH_OPTIONS,
+  SSH_CONNECTION_FORM_DEFAULTS,
+  buildRemotePathCrumbs,
+  buildSshConnectionFormValues
+} from '@/features/ssh-hosts/ssh-hosts-model';
+import { useSshDirectoryBrowser, useSshHosts } from '@/features/ssh-hosts/use-ssh-hosts';
 import { LoadingOutlined, FolderOpenOutlined, FolderAddOutlined, LinkOutlined, RightOutlined } from '@ant-design/icons';
-import { sshHostsAPI } from '@/services/api';
-import type { SshHostTestResult } from '@/types';
-
-// 密码掩码常量
-const PASSWORD_MASK = '******';
-
-interface RemoteDirItem {
-  name: string;
-  path: string;
-}
 
 export default function SshHostsPanel({ setActions }: { setActions?: (actions: React.ReactNode) => void }) {
   // ------------------------------------------
-  // 1. 数据状态声明
+  // 1. 数据状态（数据与请求由 useSshHosts 统一提供，移动端共用）
   // ------------------------------------------
-  const [connections, setConnections] = useState<SshConnection[]>([]);
+  const {
+    connections,
+    workspaces,
+    loadingConns,
+    loadingWorkspaces,
+    testStates,
+    testingIds,
+    saveConnection,
+    deleteConnection,
+    testConnection,
+    saveWorkspace,
+    deleteWorkspace
+  } = useSshHosts();
   const [activeTab, setActiveTab] = useState<'connections' | 'workspaces'>('connections');
   const [filterConnectionId, setFilterConnectionId] = useState<string>('');
   const [diagnosticDrawerVisible, setDiagnosticDrawerVisible] = useState(false);
   const [activeDiagnosticConn, setActiveDiagnosticConn] = useState<SshConnection | null>(null);
-  const [workspaces, setWorkspaces] = useState<SshWorkspace[]>([]);
-  const [loadingConns, setLoadingConns] = useState(false);
-  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
 
   // Connection 弹窗状态
   const [connModalVisible, setConnModalVisible] = useState(false);
@@ -43,9 +49,6 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const [wsForm] = Form.useForm();
   const [selectedConnIdInForm, setSelectedConnIdInForm] = useState<string>('');
 
-  // 连通性测试状态存储：key 为 connection.id，value 为测试中 (loading) 或测试结果 (result)
-  const [testStates, setTestStates] = useState<Record<string, { loading: boolean; result?: SshHostTestResult }>>({});
-  
   useEffect(() => {
     if (setActions) {
       setActions(
@@ -78,45 +81,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   }, [setActions]);
 
   // 远程目录浏览器状态
-  const [dirModalVisible, setDirModalVisible] = useState(false);
-  const [dirBrowserConnId, setDirBrowserConnId] = useState<string>('');
-  const [currentPath, setCurrentPath] = useState<string>('');
-  const [parentPath, setParentPath] = useState<string>('');
-  const [dirList, setDirList] = useState<RemoteDirItem[]>([]);
-  const [loadingDirs, setLoadingDirs] = useState(false);
-  const [selectedDirPath, setSelectedDirPath] = useState<string>('');
-
-  // ------------------------------------------
-  // 2. 数据获取
-  // ------------------------------------------
-  const fetchConnections = async () => {
-    setLoadingConns(true);
-    try {
-      const data = await sshHostsAPI.listConnections() as any;
-      setConnections(data || []);
-    } catch (err: any) {
-      message.error(`加载远程连接失败: ${err.message || '未知错误'}`);
-    } finally {
-      setLoadingConns(false);
-    }
-  };
-
-  const fetchWorkspaces = async () => {
-    setLoadingWorkspaces(true);
-    try {
-      const data = await sshHostsAPI.listWorkspaces() as any;
-      setWorkspaces(data || []);
-    } catch (err: any) {
-      message.error(`加载工作空间失败: ${err.message || '未知错误'}`);
-    } finally {
-      setLoadingWorkspaces(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchConnections();
-    fetchWorkspaces();
-  }, []);
+  const dirBrowser = useSshDirectoryBrowser();
 
   // ------------------------------------------
   // 3. Connection 物理连接管理逻辑
@@ -125,81 +90,24 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     if (conn) {
       setEditingConn(conn);
       setAuthType(conn.authType);
-      connForm.setFieldsValue({
-        label: conn.label,
-        host: conn.host,
-        port: conn.port,
-        user: conn.user,
-        authType: conn.authType,
-        identityFile: conn.identityFile || '',
-        password: conn.password || (conn.authType === 'password' ? PASSWORD_MASK : ''),
-        privateKey: conn.privateKey || (conn.authType === 'key' ? PASSWORD_MASK : '')
-      });
+      connForm.setFieldsValue(buildSshConnectionFormValues(conn));
     } else {
       setEditingConn(null);
       setAuthType('agent');
       connForm.resetFields();
-      connForm.setFieldsValue({ port: 22, authType: 'agent' });
+      connForm.setFieldsValue(SSH_CONNECTION_FORM_DEFAULTS);
     }
     setConnModalVisible(true);
   };
 
-  const handleSaveConn = async (values: any): Promise<boolean> => {
-    try {
-      if (editingConn) {
-        await sshHostsAPI.updateConnection(editingConn.id, values);
-        message.success('更新远程连接配置成功');
-      } else {
-        await sshHostsAPI.createConnection(values);
-        message.success('添加远程连接成功');
-      }
-      await fetchConnections();
-      return true;
-    } catch (err: any) {
-      message.error(`保存失败: ${err?.response?.data?.message || err?.message || '未知错误'}`);
-      return false;
-    }
-  };
+  const handleSaveConn = (values: Record<string, unknown>): Promise<boolean> => saveConnection(editingConn, values);
 
-  const handleDeleteConn = async (id: string) => {
-    try {
-      await sshHostsAPI.deleteConnection(id);
-      message.success('删除连接成功');
-      fetchConnections();
-      fetchWorkspaces(); // 级联删除，同时刷新工作空间
-    } catch (err: any) {
-      message.error(`删除失败: ${err.message || '未知错误'}`);
-    }
-  };
+  const handleDeleteConn = (id: string) => deleteConnection(id);
 
   const handleTestConnection = async (conn: SshConnection) => {
     setActiveDiagnosticConn(conn);
     setDiagnosticDrawerVisible(true);
-    setTestStates(prev => ({ ...prev, [conn.id]: { loading: true } }));
-
-    try {
-      const result = await sshHostsAPI.testConnection({
-        connectionId: conn.id,
-        timeoutMs: 5000
-      }) as any;
-
-      setTestStates(prev => ({
-        ...prev,
-        [conn.id]: { loading: false, result }
-      }));
-    } catch (err: any) {
-      setTestStates(prev => ({
-        ...prev,
-        [conn.id]: {
-          loading: false,
-          result: {
-            status: 'unreachable',
-            target: conn.host,
-            stderr: err?.response?.data?.message || err.message || '连接超时，无法建立 SSH 连接。'
-          }
-        }
-      }));
-    }
+    await testConnection(conn);
   };
 
   // ------------------------------------------
@@ -226,100 +134,39 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
     setWsModalVisible(true);
   };
 
-  const handleSaveWs = async (values: any): Promise<boolean> => {
-    try {
-      if (editingWs) {
-        await sshHostsAPI.updateWorkspace(editingWs.id, values);
-        message.success('更新工作空间配置成功');
-      } else {
-        await sshHostsAPI.createWorkspace(values);
-        message.success('工作空间创建成功');
-      }
-      await fetchWorkspaces();
-      return true;
-    } catch (err: any) {
-      message.error(`保存工作区失败: ${err?.response?.data?.message || err?.message || '未知错误'}`);
-      return false;
-    }
-  };
+  const handleSaveWs = (values: Record<string, unknown>): Promise<boolean> => saveWorkspace(editingWs, values);
 
-  const handleDeleteWs = async (id: string) => {
-    try {
-      await sshHostsAPI.deleteWorkspace(id);
-      message.success('工作空间已移除 (远端磁盘数据未受影响)');
-      fetchWorkspaces();
-    } catch (err: any) {
-      message.error(`移除失败: ${err.message || '未知错误'}`);
-    }
-  };
+  const handleDeleteWs = (id: string) => deleteWorkspace(id);
 
   // ------------------------------------------
   // 5. 远程目录浏览器逻辑
   // ------------------------------------------
   const openDirectoryBrowser = () => {
-    if (!selectedConnIdInForm) {
-      message.warning('请先选择一个远程 SSH 连接');
-      return;
-    }
-    setDirBrowserConnId(selectedConnIdInForm);
-    setSelectedDirPath('');
-    setCurrentPath('');
-    setDirList([]);
-    setDirModalVisible(true);
-    loadRemoteDirectory(selectedConnIdInForm, '');
-  };
-
-  const loadRemoteDirectory = async (connectionId: string, subDir: string) => {
-    setLoadingDirs(true);
-    try {
-      const res = await sshHostsAPI.browseSshDirectory({ connectionId, subDir });
-      if (res.ok) {
-        setCurrentPath(res.currentDir);
-        setParentPath(res.parentDir);
-        setDirList(res.directories || []);
-        setSelectedDirPath(res.currentDir);
-      } else {
-        message.error(res.message || '加载远程目录失败');
-      }
-    } catch (err: any) {
-      message.error(`远程执行失败: ${err?.response?.data?.message || err.message || '无法建立 SSH 连接，请先在下方测试该连接。'}`);
-      setDirModalVisible(false);
-    } finally {
-      setLoadingDirs(false);
-    }
+    dirBrowser.openFor(selectedConnIdInForm);
   };
 
   const handleConfirmDirectory = () => {
-    if (!selectedDirPath) {
-      message.warning('请选择一个目录');
-      return;
-    }
-    wsForm.setFieldsValue({ remoteRoot: selectedDirPath });
-    setDirModalVisible(false);
+    const selected = dirBrowser.confirm();
+    if (selected) wsForm.setFieldsValue({ remoteRoot: selected });
   };
 
   // 构造面包屑
   const renderBreadcrumbs = () => {
-    if (!currentPath) return null;
-    const parts = currentPath.split('/').filter(Boolean);
+    if (!dirBrowser.currentPath) return null;
     const breadcrumbItems = [];
 
     // 根目录项
     breadcrumbItems.push(
-      <Breadcrumb.Item key="root" onClick={() => loadRemoteDirectory(dirBrowserConnId, '/')}>
-        <span style={{ cursor: 'pointer', color: 'var(--color-accent)' }}>[Root]</span>
+      <Breadcrumb.Item key="root" onClick={() => dirBrowser.navigate('/')}>
+        <span className="ssh-dir-crumb">[Root]</span>
       </Breadcrumb.Item>
     );
 
-    let pathAccumulator = '';
-    parts.forEach((part, index) => {
-      pathAccumulator += `/${part}`;
-      const targetPath = pathAccumulator;
-      const isLast = index === parts.length - 1;
+    buildRemotePathCrumbs(dirBrowser.currentPath).forEach((crumb, index) => {
       breadcrumbItems.push(
-        <Breadcrumb.Item key={index} onClick={isLast ? undefined : () => loadRemoteDirectory(dirBrowserConnId, targetPath)}>
-          <span style={isLast ? { fontWeight: 600, color: 'var(--color-heading)' } : { cursor: 'pointer', color: 'var(--color-accent)' }}>
-            {part}
+        <Breadcrumb.Item key={index} onClick={crumb.last ? undefined : () => dirBrowser.navigate(crumb.path)}>
+          <span className={crumb.last ? 'ssh-dir-crumb ssh-dir-crumb--current' : 'ssh-dir-crumb'}>
+            {crumb.name}
           </span>
         </Breadcrumb.Item>
       );
@@ -327,8 +174,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
 
     return (
       <Breadcrumb
-        separator={<RightOutlined style={{ fontSize: '10px', color: 'var(--color-faint)' }} />}
-        style={{ marginBottom: '16px', background: 'var(--color-surface-sunken)', padding: '8px 12px', border: '1px solid var(--color-border)', fontFamily: 'var(--font-mono)' }}
+        separator={<RightOutlined className="ssh-dir-crumb-sep" />}
+        className="ssh-dir-breadcrumb"
       >
         {breadcrumbItems}
       </Breadcrumb>
@@ -338,11 +185,11 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
   const renderDiagnosticDrawerContent = () => {
     if (!activeDiagnosticConn) return null;
     const state = testStates[activeDiagnosticConn.id];
-    if (!state) return <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--color-muted)' }}>等待测试连接...</div>;
+    if (!state) return <div className="ssh-diag-placeholder hud-label">等待测试连接...</div>;
     if (state.loading) return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
-        <LoadingOutlined style={{ fontSize: 24, color: 'var(--color-accent)' }} />
-        <span style={{ color: 'var(--color-muted)', fontSize: 13 }}>正在连接远程主机并执行依赖诊断，请稍后...</span>
+      <div className="ssh-diag-loading">
+        <LoadingOutlined className="ssh-diag-loading-icon" />
+        <span className="ssh-diag-loading-text">正在连接远程主机并执行依赖诊断，请稍后...</span>
       </div>
     );
 
@@ -375,41 +222,41 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
         )}
 
         {result.status === 'reachable' && (
-          <div className="hud-panel hud-panel--sm" style={{ padding: '16px' }}>
-            <div style={{ marginBottom: 16 }}>
-              <div className="hud-label" style={{ marginBottom: 4 }}>系统平台 / 架构</div>
+          <div className="ssh-diag-panel hud-panel hud-panel--sm">
+            <div className="ssh-diag-section">
+              <div className="ssh-diag-caption hud-label">系统平台 / 架构</div>
               <Space size={6}>
-                <Tag color="blue">{result.platform || '未知'}</Tag>
-                <Tag color="cyan">{result.arch || '未知'}</Tag>
+                <Tag color="blue" className="ssh-diag-mono-tag">{result.platform || '未知'}</Tag>
+                <Tag color="cyan" className="ssh-diag-mono-tag">{result.arch || '未知'}</Tag>
               </Space>
             </div>
 
             <div>
-              <div className="hud-label" style={{ marginBottom: 8 }}>依赖项检测</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Node.js</span>
-                  <Tag color={result.commands?.node ? 'green' : 'red'}>{result.commands?.node ? '已安装' : '未检测到'}</Tag>
+              <div className="ssh-diag-caption hud-label">依赖项检测</div>
+              <div className="ssh-diag-rows">
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Node.js</span>
+                  <Tag color={result.commands?.node ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.node ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.node ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Npm</span>
-                  <Tag color={result.commands?.npm ? 'green' : 'red'}>{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Npm</span>
+                  <Tag color={result.commands?.npm ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.npm ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.npm ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Git</span>
-                  <Tag color={result.commands?.git ? 'green' : 'red'}>{result.commands?.git ? '已安装' : '未检测到'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">Git</span>
+                  <Tag color={result.commands?.git ? 'green' : 'red'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.git ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />{result.commands?.git ? '已安装' : '未检测到'}</Tag>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>AIH Agent</span>
-                  <Tag color={result.commands?.aih ? 'green' : 'orange'}>{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
+                <div className="ssh-diag-row">
+                  <span className="ssh-diag-row-name">AIH Agent</span>
+                  <Tag color={result.commands?.aih ? 'green' : 'orange'} className="ssh-diag-tag"><span className={`hud-led ${result.commands?.aih ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />{result.commands?.aih ? '已配置' : '免装模式'}</Tag>
                 </div>
               </div>
             </div>
 
             {result.recommendation && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
-                <div className="hud-label" style={{ marginBottom: 4 }}>诊断建议</div>
-                <p className="hud-prose" style={{ margin: 0, fontSize: 13, color: 'var(--color-text)', lineHeight: 1.5 }}>{result.recommendation}</p>
+              <div className="ssh-diag-advice">
+                <div className="ssh-diag-caption hud-label">诊断建议</div>
+                <p className="ssh-diag-advice-text hud-prose">{result.recommendation}</p>
               </div>
             )}
           </div>
@@ -436,7 +283,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 <SshConnectionCardList
                   connections={connections}
                   loading={loadingConns}
-                  testingIds={Object.entries(testStates).filter(([, state]) => state.loading).map(([id]) => id)}
+                  testingIds={testingIds}
                   onTest={handleTestConnection}
                   onViewWorkspaces={(connection) => {
                     setFilterConnectionId(connection.id);
@@ -460,10 +307,10 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               children: (
                 <>
                   {filterConnectionId && (
-                    <InlineNote tone="info" style={{ marginBottom: 12 }}>
+                    <InlineNote tone="info" className="ssh-filter-note">
                       <span>
                         当前正在筛选连接 <strong>{connections.find(c => c.id === filterConnectionId)?.label || '已未知'}</strong> 的工作空间。
-                        <Button type="link" size="small" onClick={() => setFilterConnectionId('')} style={{ padding: '0 4px' }}>
+                        <Button type="link" size="small" className="ssh-filter-clear" onClick={() => setFilterConnectionId('')}>
                           清除筛选
                         </Button>
                       </span>
@@ -503,7 +350,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           <Form.Item
             name="label"
             label="连接名称 (Label)"
@@ -546,10 +393,9 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
             rules={[{ required: true }]}
           >
             <Radio.Group onChange={(e) => setAuthType(e.target.value)}>
-              <Radio.Button value="agent">SSH Agent 免密</Radio.Button>
-              <Radio.Button value="key-file">私钥文件</Radio.Button>
-              <Radio.Button value="key">粘贴私钥</Radio.Button>
-              <Radio.Button value="password">账户密码</Radio.Button>
+              {SSH_AUTH_OPTIONS.map((option) => (
+                <Radio.Button key={option.value} value={option.value}>{option.label}</Radio.Button>
+              ))}
             </Radio.Group>
           </Form.Item>
 
@@ -573,7 +419,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
               <Input.TextArea
                 rows={6}
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..."
-                style={{ fontFamily: 'monospace' }}
+                className="ssh-private-key-input"
               />
             </Form.Item>
           )}
@@ -610,7 +456,7 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           destroyOnClose: true,
         }}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           <Form.Item
             name="connectionId"
             label="关联物理连接 (SSH Connection)"
@@ -640,7 +486,8 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
                 <Input
                   placeholder="不准手填，请点击右侧选择目录"
                   readOnly
-                  style={{ width: '360px', background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
+                  className="ssh-remote-root-input"
+                  style={{ width: '360px' }}
                 />
               </Form.Item>
               <Button
@@ -670,76 +517,51 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           ========================================== */}
       <Modal
         title="远程工作目录浏览器"
-        open={dirModalVisible}
+        open={dirBrowser.open}
         onOk={handleConfirmDirectory}
-        onCancel={() => setDirModalVisible(false)}
+        onCancel={dirBrowser.close}
         okText="确认选择该路径"
         cancelText="取消"
         width={700}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div className="ssh-form-body">
           {/* 1. 面包屑路径层级 */}
           {renderBreadcrumbs()}
 
           {/* 2. 目录详细列表 */}
-          <div
-            className="directory-list-container"
-            style={{
-              border: '1px solid var(--color-border)',
-              height: '350px',
-              overflowY: 'auto',
-              background: 'var(--color-surface)'
-            }}
-          >
-            {loadingDirs ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', flexDirection: 'column', gap: '12px' }}>
-                <LoadingOutlined style={{ fontSize: '24px' }} />
-                <span>正在获取远程目录列表，请稍后...</span>
+          <div className="directory-list-container ssh-dir-list">
+            {dirBrowser.loading ? (
+              <div className="ssh-dir-loading">
+                <LoadingOutlined className="ssh-dir-loading-icon" />
+                <span className="hud-label">正在获取远程目录列表，请稍后...</span>
               </div>
             ) : (
-              <div style={{ padding: '8px 0' }}>
-                {parentPath && currentPath !== '/' && (
+              <div className="ssh-dir-rows">
+                {dirBrowser.parentPath && dirBrowser.currentPath !== '/' && (
                   <div
-                    className="dir-item"
-                    style={{
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      background: 'var(--color-surface-muted)',
-                      borderBottom: '1px solid var(--color-border)',
-                      userSelect: 'none'
-                    }}
-                    onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, parentPath)}
+                    className="dir-item ssh-dir-item ssh-dir-item--parent"
+                    onDoubleClick={() => dirBrowser.navigate(dirBrowser.parentPath)}
                   >
-                    <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
-                    <strong style={{ color: 'var(--color-accent)' }}>.. (返回上级目录)</strong>
+                    <FolderOpenOutlined className="ssh-dir-item-icon" />
+                    <strong className="ssh-dir-item-up">.. (返回上级目录)</strong>
                   </div>
                 )}
 
-                {dirList.length === 0 ? (
-                  <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--color-muted)' }}>
+                {dirBrowser.dirs.length === 0 ? (
+                  <div className="ssh-dir-empty hud-label">
                     没有子目录。双击上级目录可返回。
                   </div>
                 ) : (
-                  dirList.map(dir => {
-                    const isSelected = selectedDirPath === dir.path;
+                  dirBrowser.dirs.map(dir => {
+                    const isSelected = dirBrowser.selectedPath === dir.path;
                     return (
                       <div
                         key={dir.path}
-                        className="dir-item"
-                        style={{
-                          padding: '8px 16px',
-                          cursor: 'pointer',
-                          background: isSelected ? 'var(--color-accent-soft)' : 'var(--color-surface)',
-                          borderBottom: '1px solid var(--color-border)',
-                          boxShadow: isSelected ? 'inset 0 0 0 1px var(--color-accent)' : undefined,
-                          color: isSelected ? 'var(--color-accent)' : undefined,
-                          fontFamily: 'var(--font-mono)',
-                          userSelect: 'none'
-                        }}
-                        onClick={() => setSelectedDirPath(dir.path)}
-                        onDoubleClick={() => loadRemoteDirectory(dirBrowserConnId, dir.path)}
+                        className={`dir-item ssh-dir-item${isSelected ? ' ssh-dir-item--selected' : ''}`}
+                        onClick={() => dirBrowser.select(dir.path)}
+                        onDoubleClick={() => dirBrowser.navigate(dir.path)}
                       >
-                        <FolderOpenOutlined style={{ marginRight: '8px', color: 'var(--color-warning)' }} />
+                        <FolderOpenOutlined className="ssh-dir-item-icon" />
                         <span>{dir.name}</span>
                       </div>
                     );
@@ -750,10 +572,10 @@ export default function SshHostsPanel({ setActions }: { setActions?: (actions: R
           </div>
 
           {/* 3. 选定路径显示 */}
-          <div style={{ marginTop: '16px' }}>
-            <span style={{ marginRight: '8px', fontWeight: 500 }}>当前选定路径:</span>
-            <code style={{ background: 'var(--color-surface-sunken)', border: '1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border))', color: 'var(--color-accent)', padding: '4px 8px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}>
-              {selectedDirPath || '未选择'}
+          <div className="ssh-dir-selected">
+            <span className="ssh-dir-selected-label hud-label">当前选定路径:</span>
+            <code className="ssh-dir-selected-path">
+              {dirBrowser.selectedPath || '未选择'}
             </code>
           </div>
         </div>

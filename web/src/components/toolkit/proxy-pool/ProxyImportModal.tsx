@@ -145,7 +145,7 @@ export default function ProxyImportModal({
             label: '节点 / 配置文本',
             children: (
               <>
-                <Paragraph type="secondary">
+                <Paragraph type="secondary" className="proxy-import-intro">
                   支持当前解析器明确识别的单节点链接、Base64 节点列表和 Mihomo/Clash YAML。HTTP(S) 订阅地址不会在这里被误解析为代理节点。
                 </Paragraph>
                 <ConfigCodeEditor
@@ -164,7 +164,7 @@ export default function ProxyImportModal({
             label: '订阅 URL',
             children: (
               <Form form={subscriptionForm} layout="vertical">
-                <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                <Paragraph type="secondary" className="proxy-import-intro proxy-import-intro--form">
                   首次导入会立即发起一次受限同步；当前版本只承诺手动同步，不会显示并不存在的后台定时任务。
                   服务端会校验协议、响应大小和内网目标。
                   {storageOnly

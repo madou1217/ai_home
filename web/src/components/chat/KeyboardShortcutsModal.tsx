@@ -55,8 +55,8 @@ export const KeyboardShortcutsModal = memo(function KeyboardShortcutsModal({
       <div className={styles.shortcutsModalBody}>
         {categories.map((cat) => (
           <div key={cat} className={styles.shortcutsGroup}>
-            <div className={styles.shortcutsGroupTitle}>{cat}</div>
-            <div className={styles.shortcutsGroupList}>
+            <div className={`hud-label ${styles.shortcutsGroupTitle}`}>{cat}</div>
+            <div className={`hud-panel hud-panel--sm ${styles.shortcutsGroupList}`}>
               {SHORTCUTS.filter((s) => s.category === cat).map((s) => (
                 <div key={s.key} className={styles.shortcutRow}>
                   <span className={styles.shortcutDesc}>{s.description}</span>

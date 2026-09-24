@@ -108,3 +108,43 @@
   background: var(--color-overlay);
   color: var(--color-accent);
 }
+
+/* 切换下拉（Dropdown rootClassName）：HUD 列表 —— 等宽 Server 名、行间发丝线、
+ * 悬停 / 当前项左缘 2px 青色细轨 + 弱青底（选中额外内发光）。浮层外框由全局 hud.css 负责。 */
+.menu :global(.ant-dropdown-menu) {
+  font-family: var(--font-mono);
+}
+
+.menu :global(.ant-dropdown-menu-item) {
+  border-radius: 0 !important;
+  font-size: var(--hos-text-caption);
+}
+
+.menu :global(.ant-dropdown-menu-item + .ant-dropdown-menu-item) {
+  border-top: 1px solid var(--color-border);
+}
+
+.menu :global(.ant-dropdown-menu-item:hover) {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+.menu :global(.ant-dropdown-menu-item-selected) {
+  background: var(--color-accent-soft) !important;
+  color: var(--color-accent) !important;
+  box-shadow: inset 2px 0 0 var(--color-accent), inset 0 0 12px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+/* 顶栏当前 Server 徽标（CurrentServerBadge） */
+.badge {
+  margin-inline-end: var(--space-4);
+  font-family: var(--font-mono);
+}
+
+.badgeRemote {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}

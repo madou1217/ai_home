@@ -35,24 +35,35 @@ export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region'
   return { color: 'default', label: '区域未知', endpoint: '' };
 }
 
-export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {
+export type AccountBadgeStatus = 'success' | 'processing' | 'default' | 'error' | 'warning';
+
+export interface AccountBadgeMeta {
+  status: AccountBadgeStatus;
+  label: string;
+}
+
+const RUNTIME_STATUS_META: Record<string, AccountBadgeMeta> = {
+  healthy: { status: 'success', label: '正常' },
+  rate_limited: { status: 'warning', label: '限流中' },
+  auth_invalid: { status: 'error', label: '认证失效' },
+  overloaded: { status: 'warning', label: '上游繁忙' },
+  transient_network: { status: 'warning', label: '网络抖动' },
+  service_unavailable: { status: 'error', label: '服务不可用' },
+  upstream_error: { status: 'error', label: '上游错误' },
+  cooling_down: { status: 'default', label: '冷却中' },
+  unknown: { status: 'default', label: '未知' }
+};
+
+export function getRuntimeStatusMeta(record: Pick<Account, 'runtimeStatus'>): AccountBadgeMeta {
   const status = record.runtimeStatus || 'unknown';
+  return RUNTIME_STATUS_META[status] || { status: 'default', label: status };
+}
+
+export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {
   const reason = record.runtimeReason;
   const until = record.runtimeUntil;
 
-  const statusMap: Record<string, { status: 'success' | 'processing' | 'default' | 'error' | 'warning'; label: string }> = {
-    healthy: { status: 'success', label: '正常' },
-    rate_limited: { status: 'warning', label: '限流中' },
-    auth_invalid: { status: 'error', label: '认证失效' },
-    overloaded: { status: 'warning', label: '上游繁忙' },
-    transient_network: { status: 'warning', label: '网络抖动' },
-    service_unavailable: { status: 'error', label: '服务不可用' },
-    upstream_error: { status: 'error', label: '上游错误' },
-    cooling_down: { status: 'default', label: '冷却中' },
-    unknown: { status: 'default', label: '未知' }
-  };
-
-  const meta = statusMap[status] || { status: 'default', label: status };
+  const meta = getRuntimeStatusMeta(record);
   const normalizedReason = String(reason || '').trim();
   const formattedReason = formatAccountIssueReason(normalizedReason);
   const normalizedUntil = Number(until || 0);
@@ -80,21 +91,26 @@ export function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' |
   );
 }
 
-export function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReason'>) {
+export function getPolicyBlockedMeta(record: Pick<Account, 'schedulableReason'>): AccountBadgeMeta | null {
   const rawReason = String(record.schedulableReason || '').trim();
   if (!rawReason) return null;
-  const reason = formatSchedulableReason(rawReason);
-  const meta = (
+  return (
     rawReason === 'codex_free_plan_below_server_min_remaining'
-      ? { status: 'warning' as const, label: 'Free 阈值停池' }
+      ? { status: 'warning', label: 'Free 阈值停池' }
       : rawReason === 'codex_free_plan_missing_rate_limits'
-        ? { status: 'warning' as const, label: 'Free 待确认' }
+        ? { status: 'warning', label: 'Free 待确认' }
         : rawReason === 'codex_team_plan_missing_rate_limits'
-          ? { status: 'warning' as const, label: 'Team 待确认' }
+          ? { status: 'warning', label: 'Team 待确认' }
           : rawReason === 'agy_access_token_required'
-            ? { status: 'warning' as const, label: '需 Token' }
-          : { status: 'warning' as const, label: '已停池' }
+            ? { status: 'warning', label: '需 Token' }
+          : { status: 'warning', label: '已停池' }
   );
+}
+
+export function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReason'>) {
+  const meta = getPolicyBlockedMeta(record);
+  if (!meta) return null;
+  const reason = formatSchedulableReason(record.schedulableReason);
   const badge = <Badge status={meta.status} text={meta.label} />;
   if (!reason) return badge;
   return (
@@ -106,21 +122,26 @@ export function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReaso
   );
 }
 
-export function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quotaReason'>) {
+export function getQuotaStateMeta(record: Pick<Account, 'quotaStatus' | 'quotaReason'>): AccountBadgeMeta | null {
   const status = String(record.quotaStatus || '').trim();
   if (!status) return null;
   const rawReason = String(record.quotaReason || '').trim();
-  const reason = formatQuotaReason(record.quotaReason);
-  const meta = (
-    status === 'probe_failed' ? { status: 'error' as const, label: '采集失败' }
+  return (
+    status === 'probe_failed' ? { status: 'error', label: '采集失败' }
       : status === 'provider_unavailable' && rawReason === 'codex_team_plan_missing_rate_limits'
-        ? { status: 'warning' as const, label: 'Team 待确认' }
+        ? { status: 'warning', label: 'Team 待确认' }
         : status === 'provider_unavailable' && rawReason === 'codex_free_plan_missing_rate_limits'
-          ? { status: 'warning' as const, label: 'Free 待确认' }
-        : status === 'provider_unavailable' ? { status: 'warning' as const, label: '上游未返回' }
-        : status === 'pending' ? { status: 'processing' as const, label: '等待采集' }
-          : { status: 'default' as const, label: '额度未知' }
+          ? { status: 'warning', label: 'Free 待确认' }
+        : status === 'provider_unavailable' ? { status: 'warning', label: '上游未返回' }
+        : status === 'pending' ? { status: 'processing', label: '等待采集' }
+          : { status: 'default', label: '额度未知' }
   );
+}
+
+export function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quotaReason'>) {
+  const meta = getQuotaStateMeta(record);
+  if (!meta) return null;
+  const reason = formatQuotaReason(record.quotaReason);
   const badge = <Badge status={meta.status} text={meta.label} />;
   if (!reason) return badge;
   return (
@@ -130,6 +151,48 @@ export function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quo
       </span>
     </Tooltip>
   );
+}
+
+/**
+ * 账号综合状态徽章的纯数据版（与 renderAccountDisplayBadge 同一分支顺序与文案）。
+ * 移动端用它渲染 LED + 短文字，桌面继续用带 Tooltip 的 renderAccountDisplayBadge。
+ */
+export function getAccountDisplayBadgeMeta(record: Account): AccountBadgeMeta {
+  if (!record.configured && record.authPendingStale) return { status: 'warning', label: '授权超时' };
+  if (requiresAccountReauth(record)) return { status: 'error', label: '需要重新登录' };
+  const state = getAccountDisplayState(record);
+  if (state === 'disabled') return { status: 'default', label: '已关闭' };
+  if (state === 'unconfigured') return { status: 'default', label: '未配置' };
+  if (state === 'runtime_blocked') return getRuntimeStatusMeta(record);
+  if (state === 'policy_blocked') return getPolicyBlockedMeta(record) || { status: 'warning', label: '已停池' };
+  if (state === 'usage_attention') return getQuotaStateMeta(record) || { status: 'warning', label: '额度待确认' };
+  if (state === 'exhausted') return { status: 'error', label: '已耗尽' };
+  if (record.apiKeyMode) return { status: 'success', label: '可调度' };
+  return { status: 'success', label: '正常' };
+}
+
+/**
+ * 综合状态的补充说明（桌面在徽章 Tooltip 里展示的同一批原因文本），按行返回。
+ * 只读取账号记录上的真实字段：运行时原因 / 恢复时间、停池原因、额度原因。
+ */
+export function getAccountStatusDetailLines(record: Account): string[] {
+  const lines: string[] = [];
+  const state = getAccountDisplayState(record);
+  if (state === 'runtime_blocked') {
+    const reason = String(record.runtimeReason || '').trim();
+    const until = Number(record.runtimeUntil || 0);
+    if (reason) lines.push(`错误信息: ${formatAccountIssueReason(reason)}`);
+    if (until) lines.push(`恢复时间: ${formatRuntimeUntil(until)}`);
+  } else if (state === 'policy_blocked') {
+    const reason = formatSchedulableReason(record.schedulableReason);
+    if (reason) lines.push(reason);
+  } else if (state === 'usage_attention') {
+    const reason = formatQuotaReason(record.quotaReason);
+    if (reason) lines.push(reason);
+  } else if (state === 'healthy' && record.apiKeyMode) {
+    lines.push('密钥已配置且当前没有运行时阻塞；网络和模型接口可达性请看模型探测。');
+  }
+  return lines;
 }
 
 export function renderAccountDisplayBadge(record: Account) {
@@ -199,10 +262,12 @@ export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'regio
   );
 }
 
+// HUD 方形读数徽标：2px 圆角 + 同色发丝框（圆形只留给 LED / 头像 / 计数，web/DESIGN.md §4）。
 const accountRoleIconStyle: React.CSSProperties = {
   width: 18,
   height: 18,
-  borderRadius: 9,
+  borderRadius: 2,
+  border: '1px solid color-mix(in srgb, currentColor 40%, transparent)',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',

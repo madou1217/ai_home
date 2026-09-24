@@ -48,7 +48,7 @@ test('Go Core invocation keeps credentials out of argv and binds a private endpo
   assert.equal(invocation.args.includes('client-secret'), false);
 });
 
-test('enabled supervisor starts only after private readyz and stops its child', async () => {
+test('enabled supervisor starts once the private endpoint serves (not only once accounts exist) and stops its child', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-supervisor-'));
   const binaryPath = path.join(tempDir, 'aih-server');
   fs.writeFileSync(binaryPath, 'placeholder');
@@ -71,12 +71,12 @@ test('enabled supervisor starts only after private readyz and stops its child', 
         spawned.push({ command, args, options });
         return child;
       },
-      fetchImpl: async (url, options) => {
-        assert.equal(url, 'http://127.0.0.1:19550/readyz');
-        assert.equal(options.headers.authorization, 'Bearer client-secret');
+      fetchImpl: async (url) => {
+        // 门限是进程在服务（/healthz），不要求 aih.db 已有账号：账号由 Node 在 Go 起来后同步。
+        assert.equal(url, 'http://127.0.0.1:19550/healthz');
         return {
           ok: true,
-          json: async () => ({ service: 'aih-server', ready: true })
+          json: async () => ({ ok: true, service: 'aih-server' })
         };
       },
       sleep: async () => {}

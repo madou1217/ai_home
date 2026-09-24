@@ -1,6 +1,6 @@
 import type { Settings as LayoutSettings } from "@ant-design/pro-components";
 import type { ReactNode } from "react";
-import { history } from "@umijs/max";
+import { history, Link } from "@umijs/max";
 import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
 import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
@@ -170,8 +170,15 @@ export function rootContainer(container: ReactNode) {
   );
 }
 
-// 侧栏菜单项：保留 ProLayout 默认渲染（链接 / 图标 / 中文名），在前后补 HUD 编号与英文代号。
-function renderHudMenuLabel(item: { path?: string }, dom: ReactNode) {
+interface HudMenuItem {
+  path?: string;
+  isUrl?: boolean;
+  target?: string;
+  children?: unknown[];
+}
+
+// 侧栏菜单项：保留 ProLayout 默认渲染（图标 / 中文名），在前后补 HUD 编号与英文代号。
+function renderHudMenuLabel(item: HudMenuItem, dom: ReactNode) {
   const code = resolveHudNavCode(item.path);
   if (!code) return dom;
   return (
@@ -180,6 +187,18 @@ function renderHudMenuLabel(item: { path?: string }, dom: ReactNode) {
       <span className="hud-nav-dom">{dom}</span>
       <span className="hud-nav-code">{code.code}</span>
     </span>
+  );
+}
+
+// 覆盖 menuItemRender 会顶掉 umi 默认实现里的 <Link> 包裹，菜单就再也不能切页；
+// 这里按 umi plugin-layout 的默认逻辑补回路由链接。
+function renderHudMenuItem(item: HudMenuItem, dom: ReactNode) {
+  const label = renderHudMenuLabel(item, dom);
+  if (item.isUrl || item.children || !item.path) return label;
+  return (
+    <Link to={item.path.replace("/*", "")} target={item.target}>
+      {label}
+    </Link>
   );
 }
 
@@ -202,8 +221,8 @@ export const layout = ({ initialState }: any) => {
       <HudTelemetryBar enabled={!isGoAccountsPreview && resolveCurrentServerProfileGate().ready} />
     ),
     actionsRender: () => [<HudToggles key="hud-toggles" />],
-    menuItemRender: (item: { path?: string }, dom: ReactNode) => renderHudMenuLabel(item, dom),
-    subMenuItemRender: (item: { path?: string }, dom: ReactNode) => renderHudMenuLabel(item, dom),
+    menuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuItem(item, dom),
+    subMenuItemRender: (item: HudMenuItem, dom: ReactNode) => renderHudMenuLabel(item, dom),
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
       // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），

@@ -17,55 +17,72 @@ export default defineConfig({
   define: {
     "process.env.AIH_GO_ACCOUNTS_PREVIEW": JSON.stringify(process.env.AIH_GO_ACCOUNTS_PREVIEW || ""),
   },
-  // 全面融入 HarmonyOS 6 (ArkUI) 设计系统规范：深空/通透亚克力、超级曲率与流光强调色。
-  // 这里只放与主题无关的结构型 token（圆角、字体、控件高度）与两主题通用的品牌色；
-  // 会随深浅翻转的颜色在 src/theme/antd-theme.ts，由 AntdThemeProvider 运行时注入。
+  // Calm Operator Console（见 web/DESIGN.md）：这里只放与主题无关的结构型 token
+  // （圆角、字体、控件高度）；会随深浅翻转的颜色在 src/theme/antd-theme.ts，
+  // 由 AntdThemeProvider 运行时注入。取值与 src/styles/design-tokens.css 对齐。
   antd: {
     theme: {
       token: {
-        colorSuccess: "#10b981",
-        colorWarning: "#f59e0b",
-        colorError: "#ef4444",
-        borderRadius: 12,
-        borderRadiusLG: 20,
-        borderRadiusSM: 8,
-        borderRadiusXS: 6,
-        fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif",
+        borderRadius: 6,
+        borderRadiusLG: 10,
+        borderRadiusSM: 4,
+        borderRadiusXS: 4,
+        controlHeight: 32,
+        controlHeightLG: 40,
+        controlHeightSM: 24,
+        fontSize: 14,
+        fontFamily: "Inter, 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+        fontFamilyCode: "'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace",
+        motionDurationFast: "0.12s",
+        motionDurationMid: "0.16s",
+        motionDurationSlow: "0.24s",
+        wireframe: false,
       },
       components: {
         Table: {
           headerSplitColor: "transparent",
-          rowHoverBg: "rgba(10, 89, 247, 0.04)",
-          borderRadius: 16,
+          borderRadius: 10,
+          cellPaddingBlock: 12,
+          cellPaddingInline: 12,
         },
         Card: {
-          borderRadiusLG: 20,
+          borderRadiusLG: 10,
         },
         Button: {
-          borderRadius: 9999,
-          borderRadiusLG: 9999,
-          borderRadiusSM: 9999,
-          controlHeight: 38,
-          controlHeightLG: 42,
-          controlHeightSM: 28,
+          borderRadius: 6,
+          borderRadiusLG: 8,
+          borderRadiusSM: 4,
+          fontWeight: 500,
+          primaryShadow: "none",
+          defaultShadow: "none",
+          dangerShadow: "none",
         },
         Select: {
-          borderRadius: 14,
-          borderRadiusLG: 18,
-          borderRadiusSM: 10,
+          borderRadius: 6,
+          borderRadiusLG: 8,
+          borderRadiusSM: 4,
         },
         Input: {
-          borderRadius: 14,
-          borderRadiusLG: 18,
-          borderRadiusSM: 10,
+          borderRadius: 6,
+          borderRadiusLG: 8,
+          borderRadiusSM: 4,
         },
         Modal: {
-          borderRadiusLG: 24,
+          borderRadiusLG: 12,
           headerBg: "transparent",
         },
         Segmented: {
-          borderRadius: 9999,
-          borderRadiusSM: 9999,
+          borderRadius: 6,
+          borderRadiusSM: 4,
+        },
+        Tag: {
+          borderRadiusSM: 4,
+        },
+        Menu: {
+          itemHeight: 36,
+          itemBorderRadius: 6,
+          itemMarginInline: 8,
+          iconSize: 15,
         },
       },
     },

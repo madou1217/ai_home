@@ -1,86 +1,87 @@
 /* =============================================================================
  * AI Home — Design Tokens (Single Source of Truth)
  * -----------------------------------------------------------------------------
- * 这是整个 Web UI 的设计规范地基。任何颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效
- * 都应引用这里的 token，禁止在组件里写魔法数字与硬编码颜色。
+ * 视觉方向：Calm Operator Console（冷静的运维控制台），规范见 web/DESIGN.md。
+ * 任何颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效都应引用这里的 token，
+ * 禁止在组件里写魔法数字与硬编码颜色。
  *
  * 分层：
  *   1. Primitive  原始刻度（--c-*, --space-*, --text-*, --hos-radius-* ...）
- *   2. Semantic   语义别名（--color-bg / --color-text / --color-danger ...）
+ *   2. Semantic   语义别名（--color-bg / --color-text / --color-accent ...）
  *   3. Domain     领域语义（provider 强调色、事件语义色）
  *
- * 旧别名（--app-* / --m-* / 原始 --radius-* 刻度）已全量迁移到 --hos-* 等价物
- * 并删除定义；新代码直接引用 --hos-* / 语义层 token。
- * 详见 web/DESIGN.md。
+ * --hos-* 是历史命名（原 HarmonyOS 玻璃体系）。为避免大面积改引用而保留名字，
+ * 取值已并入本规范：玻璃表面 → 不透明表面，模糊 → none，弹性曲线 → 标准曲线，
+ * 灰阶 / 蓝色常量 → 语义别名（随深浅主题翻转）。新代码直接用语义层。
  * ========================================================================== */
 
 :root {
   color-scheme: light;
 
   /* ---------------------------------------------------------------------------
-   * 0. HARMONYOS 6 字体阶梯体系 (Typography Scale Hierarchy)
+   * 0. 字阶（Typography Scale）— 桌面 8 级
    * ------------------------------------------------------------------------ */
-  --hos-text-display: 32px;
-  --hos-text-h1: 24px;
-  --hos-text-h2: 18px;
-  --hos-text-h3: 15px;
+  --hos-text-display: 28px;
+  --hos-text-h1: 20px;
+  --hos-text-h2: 16px;
+  --hos-text-h3: 14px;
   --hos-text-body: 14px;
   --hos-text-body-sm: 13px;
   --hos-text-caption: 12px;
-  --hos-text-micro: 10px;
+  --hos-text-micro: 11px;
 
   /* ---------------------------------------------------------------------------
    * 1. PRIMITIVES — Color ramps
-   * 中性色采用 slate，品牌主色为近黑（沿用现有视觉）。
+   * 中性色为 zinc 系（无蓝偏），强调色为克制的蓝，主操作为墨色。
    * ------------------------------------------------------------------------ */
 
-  /* Neutral (slate) */
+  /* Neutral (zinc) */
   --c-neutral-0:  #ffffff;
-  --c-neutral-25: #fbfcfd;
-  --c-neutral-50: #f8fafc;
-  --c-neutral-100:#f1f5f9;
-  --c-neutral-150:#eaeff5;
-  --c-neutral-200:#e2e8f0;
-  --c-neutral-300:#cbd5e1;
-  --c-neutral-400:#94a3b8;
-  --c-neutral-500:#64748b;
-  --c-neutral-600:#475569;
-  --c-neutral-700:#334155;
-  --c-neutral-800:#1e293b;
-  --c-neutral-900:#0f172a;
-  --c-neutral-950:#020617;
+  --c-neutral-25: #fcfcfc;
+  --c-neutral-50: #f7f7f8;
+  --c-neutral-100:#f1f1f3;
+  --c-neutral-150:#eaeaed;
+  --c-neutral-200:#e3e3e7;
+  --c-neutral-300:#d1d1d6;
+  --c-neutral-400:#a0a0a8;
+  --c-neutral-500:#71717a;
+  --c-neutral-600:#52525b;
+  --c-neutral-700:#3f3f46;
+  --c-neutral-800:#27272a;
+  --c-neutral-900:#18181b;
+  --c-neutral-950:#0c0c0e;
 
-  /* Brand (near-black, mono-ink) */
-  --c-brand-soft:  rgba(10, 89, 247, 0.08);
-  --c-brand-500:   #2563eb;
-  --c-brand-600:   #0a59f7;
-  --c-brand-700:   #1d4ed8;
-  --c-brand-900:   #093bb0;
+  /* Accent (restrained blue) — 历史名 brand */
+  --c-brand-soft:  rgba(47, 91, 211, 0.08);
+  --c-brand-500:   #4a72e0;
+  --c-brand-600:   #2f5bd3;
+  --c-brand-700:   #2449b8;
+  --c-brand-900:   #1c3a94;
 
   /* Status hues */
-  --c-info-500:    #3b82f6;
-  --c-info-600:    #2563eb;
+  --c-info-500:    #4a72e0;
+  --c-info-600:    #2f5bd3;
   --c-success-500: #16a34a;
   --c-success-600: #15803d;
-  --c-warning-500: #d97706;
-  --c-warning-600: #b45309;
-  --c-danger-500:  #ef4444;
-  --c-danger-600:  #dc2626;
+  --c-warning-500: #b45309;
+  --c-warning-600: #92400e;
+  --c-danger-500:  #dc3b33;
+  --c-danger-600:  #c2322b;
   --c-purple-500:  #8b5cf6;
   --c-purple-600:  #7c3aed;
   --c-teal-500:    #0d9488;
 
-  /* Provider brand hues */
+  /* Provider brand hues（唯一的装饰色，仅用于图标 / 状态点 / 细进度条） */
   --c-codex:   #10a37f;  /* OpenAI green */
   --c-claude:  #d97757;  /* Anthropic coral */
   --c-gemini:  #4285f4;  /* Google blue */
   --c-agy:     #8b5cf6;  /* Antigravity purple */
-  --c-opencode: #1f2937; /* OpenCode neutral */
-  --c-grok:    #00bcd4;  /* xAI cyan */
+  --c-opencode: #52525b; /* OpenCode neutral */
+  --c-grok:    #00a3b8;  /* xAI cyan */
   --c-qoder:   #6366f1;  /* Qoder indigo */
   --c-qodercn: #8b5cf6;  /* Qoder CN violet */
   --c-kimi:    #1a73e8;  /* Moonshot blue */
-  --c-kiro:    #ff9900;  /* AWS orange */
+  --c-kiro:    #f59e0b;  /* AWS orange */
   --c-zcode:   #3b6ef5;  /* Z.ai blue */
   --c-codebuddy: #0052d9; /* Tencent CodeBuddy blue */
   --c-codebuddycn: #7a3ff2; /* Tencent CodeBuddy CN violet */
@@ -89,41 +90,40 @@
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
-   * 字体族 + 模块化字号刻度（1.2 比例，基准 14px）。
+   * 单一系统字体栈，不从远程加载字体（桌面端 / 内网离线可用）。
    * ------------------------------------------------------------------------ */
-  --font-display: 'Sora', 'Manrope', 'Noto Sans SC', sans-serif;
-  --font-body: 'Manrope', 'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Cascadia Mono', monospace;
+  --font-body: 'Inter', 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
 
-  /* 旧字阶保留为别名,逐档指向 HarmonyOS 八级字阶(32/24/18/15/14/13/12/10)。
-   * 此前它是一套独立取值(11/16/22 等不在阶内),与 --hos-text-* 并存,
-   * 组件里 137 处引用因此产生字阶外字号。就近归级,不在阶内的档位向邻近档合并。 */
-  --text-2xs: var(--hos-text-micro);   /* 10px */
-  --text-xs:  var(--hos-text-caption); /* 归级:原 11px → 12px */
+  /* 旧字阶别名，逐档指向 8 级字阶 */
+  --text-2xs: var(--hos-text-micro);   /* 11px */
+  --text-xs:  var(--hos-text-caption); /* 12px */
   --text-sm:  var(--hos-text-caption); /* 12px */
   --text-base:var(--hos-text-body-sm); /* 13px */
   --text-md:  var(--hos-text-body);    /* 14px */
-  --text-lg:  var(--hos-text-h3);      /* 归级:原 16px → 15px */
-  --text-xl:  var(--hos-text-h2);      /* 18px */
-  --text-2xl: var(--hos-text-h1);      /* 归级:原 22px → 24px */
-  --text-3xl: 28px;
-  --text-4xl: 34px;
+  --text-lg:  var(--hos-text-h2);      /* 16px */
+  --text-xl:  var(--hos-text-h2);      /* 16px */
+  --text-2xl: var(--hos-text-h1);      /* 20px */
+  --text-3xl: 24px;
+  --text-4xl: var(--hos-text-display); /* 28px */
 
   --leading-tight: 1.25;
   --leading-snug:  1.4;
-  --leading-normal:1.6;
-  --leading-relaxed:1.75;
+  --leading-normal:1.55;
+  --leading-relaxed:1.7;
 
+  /* 标题 600、标签 500、正文 400；bold 收敛为 600，不用超粗 */
   --weight-regular: 400;
   --weight-medium:  500;
   --weight-semibold:600;
-  --weight-bold:    700;
-  --weight-extrabold:800;
+  --weight-bold:    600;
+  --weight-extrabold:700;
 
   --tracking-tight: -0.01em;
   --tracking-normal: 0;
-  --tracking-wide: 0.04em;
-  --tracking-caps: 0.08em;
+  --tracking-wide: 0.02em;
+  --tracking-caps: 0.06em;
 
   /* ---------------------------------------------------------------------------
    * 3. PRIMITIVES — Spacing scale (4px base)
@@ -147,20 +147,21 @@
 
   /* ---------------------------------------------------------------------------
    * 4. PRIMITIVES — Elevation / Motion
+   * 卡片无阴影（靠描边分层）；阴影只给浮层。
    * ------------------------------------------------------------------------ */
-  --elevation-1: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --elevation-2: 0 2px 8px rgba(15, 23, 42, 0.08);
-  --elevation-3: 0 8px 24px rgba(15, 23, 42, 0.10);
-  --elevation-4: 0 16px 44px rgba(15, 23, 42, 0.14);
-  --ring-focus: 0 0 0 3px rgba(23, 23, 23, 0.20);
-  --ring-focus-info: 0 0 0 3px rgba(59, 130, 246, 0.28);
+  --elevation-1: 0 1px 2px rgba(24, 24, 27, 0.05);
+  --elevation-2: 0 2px 6px rgba(24, 24, 27, 0.06);
+  --elevation-3: 0 8px 24px rgba(24, 24, 27, 0.08), 0 1px 3px rgba(24, 24, 27, 0.04);
+  --elevation-4: 0 16px 48px rgba(24, 24, 27, 0.14), 0 2px 6px rgba(24, 24, 27, 0.05);
+  --ring-focus: 0 0 0 3px rgba(47, 91, 211, 0.28);
+  --ring-focus-info: 0 0 0 3px rgba(47, 91, 211, 0.28);
 
   --motion-instant: 80ms;
   --motion-fast: 120ms;
-  --motion-base: 180ms;
-  --motion-slow: 280ms;
-  --motion-slower: 420ms;
-  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-base: 160ms;
+  --motion-slow: 240ms;
+  --motion-slower: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -189,41 +190,51 @@
 
   --color-border: var(--c-neutral-200);
   --color-border-strong: var(--c-neutral-300);
-  --color-border-subtle: rgba(15, 23, 42, 0.06);
+  --color-border-subtle: rgba(24, 24, 27, 0.06);
 
-  /* 状态叠加层：悬浮高亮与进度/仪表轨道底。深浅色下必须反向，
-   * 组件里禁止再写 rgba(0, 0, 0, 0.0x)——那种写法在深色模式不翻转。 */
-  --color-overlay-subtle: rgba(15, 23, 42, 0.02);
-  --color-overlay: rgba(15, 23, 42, 0.05);
+  /* 状态叠加层：悬浮高亮与进度/仪表轨道底。深浅色下反向。 */
+  --color-overlay-subtle: rgba(24, 24, 27, 0.025);
+  --color-overlay: rgba(24, 24, 27, 0.05);
+  --color-scrim: rgba(12, 12, 14, 0.4);
 
   --color-text: var(--c-neutral-800);
   --color-heading: var(--c-neutral-900);
   --color-muted: var(--c-neutral-500);
   --color-muted-strong: var(--c-neutral-600);
-  --color-faint: var(--c-neutral-400);
-  /* 禁用态与最淡前景（禁用按钮、拖拽握柄、打字尾字符）：比 faint 更弱一档。 */
+  --color-faint: #8a8a93;
   --color-disabled: var(--c-neutral-300);
-  --color-on-brand: var(--c-neutral-0);
 
-  --color-brand: var(--c-brand-600);
-  --color-brand-strong: var(--c-brand-900);
-  --color-brand-soft: var(--c-brand-soft);
+  /* 主操作：墨色（深色主题翻转为近白） */
+  --color-ink: var(--c-neutral-900);
+  --color-ink-hover: var(--c-neutral-700);
+  --color-on-ink: var(--c-neutral-0);
+
+  /* 强调色：链接 / 选中 / Tab 指示 / 焦点 */
+  --color-accent: var(--c-brand-600);
+  --color-accent-hover: var(--c-brand-700);
+  --color-accent-soft: var(--c-brand-soft);
+  --color-on-accent: var(--c-neutral-0);
+
+  /* 历史别名：brand = accent */
+  --color-brand: var(--color-accent);
+  --color-brand-strong: var(--color-accent-hover);
+  --color-brand-soft: var(--color-accent-soft);
+  --color-on-brand: var(--color-on-accent);
 
   /* Status semantics (fg + soft bg) */
-  --color-info: var(--c-info-600);
-  --color-info-soft: rgba(37, 99, 235, 0.10);
+  --color-info: var(--color-accent);
+  --color-info-soft: var(--color-accent-soft);
   --color-success: var(--c-success-600);
-  --color-success-soft: rgba(22, 163, 74, 0.10);
+  --color-success-soft: rgba(21, 128, 61, 0.09);
   --color-warning: var(--c-warning-500);
-  --color-warning-soft: rgba(217, 119, 6, 0.12);
+  --color-warning-soft: rgba(180, 83, 9, 0.09);
   --color-danger: var(--c-danger-600);
-  --color-danger-soft: rgba(220, 38, 38, 0.10);
+  --color-danger-soft: rgba(194, 50, 43, 0.08);
   --color-attention: var(--c-warning-500);
-  --color-attention-soft: rgba(217, 119, 6, 0.12);
+  --color-attention-soft: rgba(180, 83, 9, 0.09);
 
   /* ---------------------------------------------------------------------------
    * 7. DOMAIN — Provider accents
-   * 每个 provider 的强调色 + 弱化底色，用于会话标识与气泡强调。
    * ------------------------------------------------------------------------ */
   --provider-codex: var(--c-codex);
   --provider-codex-soft: rgba(16, 163, 127, 0.12);
@@ -234,9 +245,9 @@
   --provider-agy: var(--c-agy);
   --provider-agy-soft: rgba(139, 92, 246, 0.12);
   --provider-opencode: var(--c-opencode);
-  --provider-opencode-soft: rgba(31, 41, 55, 0.10);
+  --provider-opencode-soft: rgba(82, 82, 91, 0.12);
   --provider-grok: var(--c-grok);
-  --provider-grok-soft: rgba(0, 188, 212, 0.12);
+  --provider-grok-soft: rgba(0, 163, 184, 0.12);
   --provider-qoder: var(--c-qoder);
   --provider-qoder-soft: rgba(99, 102, 241, 0.12);
   --provider-qodercn: var(--c-qodercn);
@@ -244,7 +255,7 @@
   --provider-kimi: var(--c-kimi);
   --provider-kimi-soft: rgba(26, 115, 232, 0.12);
   --provider-kiro: var(--c-kiro);
-  --provider-kiro-soft: rgba(255, 153, 0, 0.12);
+  --provider-kiro-soft: rgba(245, 158, 11, 0.14);
   --provider-zcode: var(--c-zcode);
   --provider-zcode-soft: rgba(59, 110, 245, 0.12);
   --provider-codebuddy: var(--c-codebuddy);
@@ -257,71 +268,65 @@
   --provider-workbuddycn-soft: rgba(122, 63, 242, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
-  --provider-accent: var(--c-brand-600);
-  --provider-accent-soft: var(--c-brand-soft);
+  --provider-accent: var(--color-accent);
+  --provider-accent-soft: var(--color-accent-soft);
 
   /* ---------------------------------------------------------------------------
    * 8. DOMAIN — Event semantics
-   * 事件块（工具/思考/计划/目标/记忆/通知/确认）统一的语义色与几何。
+   * 事件语义色只用于图标与状态徽章，不做左侧强调条。
    * ------------------------------------------------------------------------ */
-  --event-radius: var(--hos-radius-sm, 12px);
-  --event-radius-sm: var(--hos-radius-xs, 8px);
+  --event-radius: var(--hos-radius-sm, 8px);
+  --event-radius-sm: var(--hos-radius-xs, 6px);
   --event-border: var(--color-border);
   --event-bg: var(--color-surface);
   --event-bg-muted: var(--color-surface-muted);
   --event-header-gap: var(--space-4);
-  --event-pad-x: var(--space-8);
-  --event-pad-y: var(--space-6);
+  --event-pad-x: var(--space-6);
+  --event-pad-y: var(--space-4);
 
   --event-tool: var(--c-neutral-600);
-  --event-tool-soft: rgba(71, 85, 105, 0.10);
+  --event-tool-soft: rgba(82, 82, 91, 0.10);
   --event-thinking: var(--c-purple-600);
-  --event-thinking-soft: rgba(124, 58, 237, 0.10);
+  --event-thinking-soft: rgba(124, 58, 237, 0.09);
   --event-plan: var(--c-info-600);
-  --event-plan-soft: rgba(37, 99, 235, 0.10);
+  --event-plan-soft: rgba(47, 91, 211, 0.09);
   --event-goal: var(--c-teal-500);
-  --event-goal-soft: rgba(13, 148, 136, 0.10);
+  --event-goal-soft: rgba(13, 148, 136, 0.09);
   --event-memory: var(--c-warning-500);
-  --event-memory-soft: rgba(217, 119, 6, 0.10);
+  --event-memory-soft: rgba(180, 83, 9, 0.09);
   --event-notify: var(--c-info-600);
-  --event-notify-soft: rgba(37, 99, 235, 0.10);
+  --event-notify-soft: rgba(47, 91, 211, 0.09);
   --event-ask: var(--c-purple-600);
-  --event-ask-soft: rgba(124, 58, 237, 0.10);
+  --event-ask-soft: rgba(124, 58, 237, 0.09);
 
   /* ---------------------------------------------------------------------------
    * 8c. DOMAIN — Status badge palette (solid tints)
-   * 会话内徽章 / 标签 / 状态片的实底配色：底(bg) / 字(ink) / 边(bd)。
-   * 沿用既有视觉，集中沉淀为 token —— 组件层禁止再写这些原始值。
+   * 徽章 / 标签 / 状态片的实底配色：底(bg) / 字(ink) / 边(bd)。
    * ------------------------------------------------------------------------ */
-  --c-accent-blue:  #2f5aa8;   /* 强调蓝：链接 / 激活 / 主操作 */
-  --c-accent-green: #35a06f;   /* 强调绿：成功 / 确认 */
+  --c-accent-blue:  var(--color-accent);
+  --c-accent-green: var(--color-success);
 
-  --tint-info:    #eef4ff;  --ink-info:    #2f5aa8;
-  --tint-success: #ecfdf3;  --ink-success: #067647;  --bd-success: #9bd3b4;
-  --tint-warning: #fff7e6;  --ink-warning: #9a5a00;
-  --tint-danger:  #fff1f0;  --ink-danger:  #b42318;  --bd-danger:  #ffccc7;
-  --tint-neutral: #f2f4f7;  --ink-neutral: #667085;
+  --tint-info:    #eef2fc;  --ink-info:    #2449b8;
+  --tint-success: #ecf7f0;  --ink-success: #166534;  --bd-success: #b7dfc4;
+  --tint-warning: #fdf4e7;  --ink-warning: #92400e;
+  --tint-danger:  #fcefee;  --ink-danger:  #a82a24;  --bd-danger:  #f1c6c3;
+  --tint-neutral: #f1f1f3;  --ink-neutral: #52525b;
 
   /* ---------------------------------------------------------------------------
    * 9. LAYOUT — Shell dimensions
    * ------------------------------------------------------------------------ */
-  --layout-sidebar-w: 276px;
-  --layout-topbar-h: 64px;
-  --layout-topbar-h-mobile: 56px;
-  --layout-mobilenav-h: 68px;
+  --layout-sidebar-w: 232px;
+  --layout-topbar-h: 56px;
+  --layout-topbar-h-mobile: 52px;
+  --layout-mobilenav-h: 60px;
   --layout-page-max: 1560px;
   --layout-chat-max: 860px;
   --visual-viewport-height: 100dvh;
 }
 
 /* ===========================================================================
- * BREAKPOINTS (文档化常量；CSS @media 无法读取变量，统一在此声明标准)
- *   --bp-xs:  480px   手机竖屏
- *   --bp-sm:  640px   大手机
- *   --bp-md:  768px   平板竖屏 / 移动布局切换点
- *   --bp-lg:  1024px  平板横屏 / 桌面侧栏切换点
- *   --bp-xl:  1280px  桌面
- *   --bp-2xl: 1560px  宽屏内容上限
+ * BREAKPOINTS (文档化常量；CSS @media 无法读取变量)
+ *   xs 480 · sm 640 · md 768（移动/桌面切换）· lg 1024 · xl 1280 · 2xl 1560
  * ========================================================================= */
 
 @media (prefers-reduced-motion: reduce) {
@@ -335,48 +340,40 @@
 }
 
 /* ===========================================================================
- * 移动端字号刻度（≤768px）—— 向 iOS Dynamic Type 对齐
- * 一处统一上调，所有引用 --text-* 的组件自动适配；body 提到 16px，
- * 既符合手机可读性，也避免 iOS 输入框聚焦时自动放大。
+ * 移动端字号刻度（≤768px）—— 整体上调一档，输入框 ≥16px 防 iOS 缩放
  * ========================================================================= */
 @media (max-width: 768px) {
   :root {
-    /* 手机端整体上提一档以保可读性(原设计意图),但每一档仍必须落在八级字阶内。 */
-    --text-2xs: var(--hos-text-caption); /* 归级:原 11px → 12px */
+    --text-2xs: var(--hos-text-caption); /* 12px */
     --text-xs:  var(--hos-text-caption); /* 12px */
     --text-sm:  var(--hos-text-body-sm); /* 13px */
-    --text-base:var(--hos-text-h3);      /* 15px */
-    --text-md:  var(--hos-text-h3);      /* 归级:原 16px → 15px */
-    --text-lg:  var(--hos-text-h2);      /* 归级:原 17px → 18px */
-    --text-xl:  var(--hos-text-h2);      /* 归级:原 20px → 18px */
-    --text-2xl: var(--hos-text-h1);      /* 24px */
-    --text-3xl: 30px;
-    --text-4xl: 34px;
+    --text-base:15px;
+    --text-md:  15px;
+    --text-lg:  17px;
+    --text-xl:  18px;
+    --text-2xl: 22px;
+    --text-3xl: 26px;
+    --text-4xl: 30px;
   }
 }
 
 /* =============================================================================
- * 9. HARMONYOS 6 视觉设计语言规范 (HarmonyOS Design System)
- * -----------------------------------------------------------------------------
- * 1. 材质：超轻透通透毛玻璃 (Acrylic & Ultra-Thin Glass)
- * 2. 曲率：超级连续圆角 / 微曲率几何 (Super Ellipse / Squircle)
- * 3. 光影：自然环境弥散柔光与多层高光微描边 (Ambient Glow & Inner Highlight)
- * 4. 交互：弹性物理阻尼动效与呼吸律动 (Spring Dynamics & Pulsing Glow)
+ * 10. 历史 --hos-* 命名（值并入 Calm Operator Console）
  * ========================================================================== */
 :root {
-  /* HarmonyOS 6 连续曲率微曲率半径 */
-  --hos-radius-2xs: 6px;  /* 补档:6px 微圆角档 */
-  --hos-radius-xs: 8px;
-  --hos-radius-10: 10px;  /* 补档:10px 档,px 直标避免与 4pt 空间刻度混淆 */
-  --hos-radius-sm: 12px;
-  --hos-radius-14: 14px; /* 补档:规范「超级曲率」14px(选择器/输入框),原刻度缺此档 */
-  --hos-radius-md: 16px;
-  --hos-radius-lg: 20px;
-  --hos-radius-xl: 24px;
-  --hos-radius-2xl: 32px;
+  /* 圆角：按钮 / 输入 6、下拉 8、卡片 10、弹窗 12 */
+  --hos-radius-2xs: 4px;
+  --hos-radius-xs: 6px;
+  --hos-radius-10: 6px;
+  --hos-radius-sm: 8px;
+  --hos-radius-14: 6px;
+  --hos-radius-md: 10px;
+  --hos-radius-lg: 10px;
+  --hos-radius-xl: 12px;
+  --hos-radius-2xl: 14px;
   --hos-radius-pill: 9999px;
 
-  /* HarmonyOS 6 间距阶梯(4pt 基准,含半档) */
+  /* 间距阶梯(4pt 基准,含半档) */
   --hos-space-0-5: 2px;
   --hos-space-1: 4px;
   --hos-space-1-5: 6px;
@@ -392,77 +389,73 @@
   --hos-space-10: 40px;
   --hos-space-12: 48px;
 
-  /* HarmonyOS 6 色板(常量色;语义/主题色见下文 glass/dark 覆写) */
+  /* 常量色：--hos-white 仍为纯白（既用于「有色底上的白字」也曾被当表面用，
+   * 表面用法应改为 --color-surface）。其余灰阶 / 蓝色常量改为语义别名，随主题翻转。 */
   --hos-white: #ffffff;
-  --hos-ink-50: #f8fafc;
-  --hos-ink-100: #ececf4;
-  --hos-ink-200: #e2e8f0;
-  --hos-ink-300: #cbd5e1;
-  --hos-ink-400: #94a3b8;
-  --hos-ink-500: #64748b;
-  --hos-ink-700: #1e293b;
-  --hos-ink-900: #0f172a;
-  --hos-surface-dark-800: #1f1f1f;
-  --hos-surface-dark-900: #1b1b2b;
-  --hos-blue-700: #0a59f7;
-  --hos-blue-600: #2563eb;
-  --hos-blue-500: #3b82f6;
-  --hos-orange-500: #d97757;
-  --hos-orange-600: #d97706;
-  --hos-red-600: #dc2626;
-  --hos-red-500: #ef4444;
-  --hos-green-600: #16a34a;
-  --hos-green-500: #10b981;
-  --hos-amber-500: #f59e0b;
-  --hos-gray-600: #5a5a72;
-  --hos-gray-500: #8c8c8c;
-  --hos-gray-400: #8b8ba3;
+  --hos-ink-50: var(--color-surface-muted);
+  --hos-ink-100: var(--color-border);
+  --hos-ink-200: var(--color-border);
+  --hos-ink-300: var(--color-border-strong);
+  --hos-ink-400: var(--color-faint);
+  --hos-ink-500: var(--color-muted);
+  --hos-ink-700: var(--color-text);
+  --hos-ink-900: var(--color-heading);
+  --hos-surface-dark-800: var(--color-text);
+  --hos-surface-dark-900: var(--color-heading);
+  --hos-blue-700: var(--color-accent);
+  --hos-blue-600: var(--color-accent);
+  --hos-blue-500: var(--color-accent);
+  --hos-orange-500: var(--c-claude);   /* 仅代表 Claude；UI 强调请用 --color-accent */
+  --hos-orange-600: var(--color-warning);
+  --hos-red-600: var(--color-danger);
+  --hos-red-500: var(--color-danger);
+  --hos-green-600: var(--color-success);
+  --hos-green-500: var(--color-success);
+  --hos-amber-500: var(--color-warning);
+  --hos-gray-600: var(--color-muted-strong);
+  --hos-gray-500: var(--color-muted);
+  --hos-gray-400: var(--color-faint);
 
-  /* HarmonyOS 6 亚克力/毛玻璃高斯模糊材质 */
-  --hos-blur-subtle: blur(12px) saturate(180%);
-  --hos-blur-card: blur(20px) saturate(190%);
-  --hos-blur-floating: blur(32px) saturate(200%);
+  /* 材质：不再使用毛玻璃。blur 为 none，玻璃底退化为不透明表面。 */
+  --hos-blur-subtle: none;
+  --hos-blur-card: none;
+  --hos-blur-floating: none;
 
-  /* HarmonyOS 6 通透多层背景色 */
-  --hos-glass-bg-subtle: rgba(255, 255, 255, 0.65);
-  --hos-glass-bg-card: rgba(255, 255, 255, 0.82);
-  --hos-glass-bg-floating: rgba(255, 255, 255, 0.92);
-  --hos-glass-bg-dark: rgba(20, 24, 33, 0.82);
+  --hos-glass-bg-subtle: var(--color-surface);
+  --hos-glass-bg-card: var(--color-surface);
+  --hos-glass-bg-floating: var(--color-surface-raised);
+  --hos-glass-bg-dark: var(--color-surface);
 
-  /* HarmonyOS 6 双层光影微描边 (Inner Highlight + Outer Hairline) */
-  --hos-glass-border: 1px solid rgba(255, 255, 255, 0.6);
-  --hos-glass-border-subtle: 1px solid rgba(0, 0, 0, 0.05);
-  --hos-glass-border-dark: 1px solid rgba(255, 255, 255, 0.08);
+  --hos-glass-border: 1px solid var(--color-border);
+  --hos-glass-border-subtle: 1px solid var(--color-border);
+  --hos-glass-border-dark: 1px solid var(--color-border);
 
-  /* HarmonyOS 6 弥散环境投影与高光 */
-  --hos-shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
-  --hos-shadow-floating: 0 12px 36px -4px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
-  --hos-shadow-glow-blue: 0 8px 24px -4px rgba(59, 110, 245, 0.25);
-  --hos-shadow-glow-purple: 0 8px 24px -4px rgba(139, 92, 246, 0.25);
+  --hos-shadow-card: none;
+  --hos-shadow-floating: var(--elevation-3);
+  --hos-shadow-glow-blue: none;
+  --hos-shadow-glow-purple: none;
 
-  /* HarmonyOS 6 弹性物理曲线 */
-  --hos-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --hos-ease-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 曲线：不做超调回弹 */
+  --hos-ease-spring: var(--ease-standard);
+  --hos-ease-smooth: var(--ease-standard);
 
-  /* 移动端会话页设计语言(mobile-cards.css 旧全局 token 的原位迁移,值不变)。
-   * 已有等价物直接复用上方刻度:white、surface-dark-900、gray-600、gray-400、
-   * ink-100、orange-500。 */
-  --hos-mobile-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  --hos-mobile-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --hos-mobile-bg: #f1f1f7;
-  --hos-mobile-surface-2: #fafaff;
-  --hos-mobile-ink-4: #b6b6c8;
-  --hos-mobile-line-2: #e2e2ee;
-  --hos-mobile-run: #13a65a;
-  --hos-mobile-radius: 18px;
-  --hos-mobile-shadow-xs: 0 1px 2px rgba(27, 27, 43, .05);
-  --hos-mobile-shadow-sm: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+  /* 移动端（原 mobile-cards.css 全局 token）：统一到语义层 */
+  --hos-mobile-font: var(--font-body);
+  --hos-mobile-mono: var(--font-mono);
+  --hos-mobile-bg: var(--color-bg);
+  --hos-mobile-surface-2: var(--color-surface-raised);
+  --hos-mobile-ink-4: var(--color-faint);
+  --hos-mobile-line-2: var(--color-border);
+  --hos-mobile-run: var(--color-success);
+  --hos-mobile-radius: 12px;
+  --hos-mobile-shadow-xs: none;
+  --hos-mobile-shadow-sm: none;
 
-  /* 在线状态点(沉淀自历史用点的兜底值) */
-  --hos-status-online: #22c55e;
-  --hos-status-online-soft: rgba(34, 197, 94, 0.08);
+  /* 在线状态点 */
+  --hos-status-online: var(--color-success);
+  --hos-status-online-soft: var(--color-success-soft);
 
-  /* 语义桥接:链接到语义层以随深色主题自适应 */
+  /* 语义桥接 */
   --hos-bg: var(--color-bg);
   --hos-surface: var(--color-surface);
   --hos-surface-raised: var(--color-surface-raised);
@@ -473,81 +466,108 @@
   --hos-heading: var(--color-heading);
   --hos-muted: var(--color-muted);
   --hos-muted-strong: var(--color-muted-strong);
-  --hos-primary-soft: var(--color-brand-soft);
-  --hos-shadow-soft: var(--elevation-3);
+  --hos-primary-soft: var(--color-accent-soft);
+  --hos-shadow-soft: var(--elevation-2);
 }
 
 /* =============================================================================
- * 10. HARMONYOS 6 深色与灵动主题自适应 (Dark & Dynamic Adaptations)
+ * 11. 深色主题（与浅色同时设计）
  * ========================================================================== */
 [data-theme='dark'],
 .dark-theme,
 body.dark {
-  --color-bg: #0f172a;
-  --color-bg-elevated: #1e293b;
-  --color-surface: #1e293b;
-  --color-surface-raised: #334155;
-  --color-surface-muted: #1e293b;
-  --color-surface-soft: #0f172a;
-  --color-border: rgba(255, 255, 255, 0.12);
-  --color-border-strong: rgba(255, 255, 255, 0.2);
+  color-scheme: dark;
+
+  --color-bg: #0f0f11;
+  --color-bg-elevated: #1e1e22;
+  --color-surface: #17171a;
+  --color-surface-raised: #1e1e22;
+  --color-surface-muted: #1b1b1f;
+  --color-surface-soft: #131316;
+  --color-surface-sunken: #0b0b0d;
+  --color-border: #2b2b31;
+  --color-border-strong: #3b3b42;
   --color-border-subtle: rgba(255, 255, 255, 0.06);
-  --color-text: #f8fafc;
-  --color-heading: #ffffff;
-  --color-muted: #94a3b8;
-  /* 深色下整条前景阶梯必须向"更亮"走：底色是 #0f172a，把 faint/disabled 调暗
-   * 等于压向背景、对比度反而更差。实测(WCAG 对比度, on #0f172a / on #1e293b)：
-   *   muted-strong #cbd5e1 = 12.02 / 9.85
-   *   muted        #94a3b8 =  6.96 / 5.71
-   *   faint        #8a97ab =  6.03 / 4.94   ← 正文级前景，两种面上都过 4.5
-   *   disabled     #6b7a8f =  4.09 / 3.35   ← 禁用/装饰态，WCAG 豁免，仍保持最弱一档 */
-  --color-muted-strong: #cbd5e1;
-  --color-faint: #8a97ab;
-  --color-disabled: #6b7a8f;
 
-  --color-overlay-subtle: rgba(255, 255, 255, 0.04);
-  --color-overlay: rgba(255, 255, 255, 0.09);
+  /* 对比度（on #17171a）：heading 17.5 · text 14.6 · muted-strong 12.4 · muted 7.3 · faint 5.3 */
+  --color-heading: #fafafa;
+  --color-text: #e4e4e7;
+  --color-muted-strong: #d4d4d8;
+  --color-muted: #a1a1aa;
+  --color-faint: #8b8b94;
+  --color-disabled: #5b5b63;
 
-  /* 状态弱底与其前景：浅色版是不透明浅底 + 深色文字，深色下必须换成
-   * 半透明色相底 + 浅色文字，否则是深色页面上的一块浅底白字。 */
-  --tint-info: rgba(59, 130, 246, 0.16);
-  --ink-info: #93c5fd;
-  --tint-success: rgba(16, 185, 129, 0.16);
-  --ink-success: #6ee7b7;
-  --bd-success: rgba(16, 185, 129, 0.35);
-  --tint-warning: rgba(245, 158, 11, 0.16);
-  --ink-warning: #fcd34d;
-  --tint-danger: rgba(239, 68, 68, 0.16);
-  --ink-danger: #fca5a5;
-  --bd-danger: rgba(239, 68, 68, 0.35);
+  --color-overlay-subtle: rgba(255, 255, 255, 0.03);
+  --color-overlay: rgba(255, 255, 255, 0.07);
+  --color-scrim: rgba(0, 0, 0, 0.6);
+
+  --color-ink: #f4f4f5;
+  --color-ink-hover: #d4d4d8;
+  --color-on-ink: #18181b;
+
+  --color-accent: #7b9cff;
+  --color-accent-hover: #9bb4ff;
+  --color-accent-soft: rgba(123, 156, 255, 0.14);
+  --color-on-accent: #0f0f11;
+
+  --color-success: #5cc389;
+  --color-success-soft: rgba(92, 195, 137, 0.14);
+  --color-warning: #e0a94a;
+  --color-warning-soft: rgba(224, 169, 74, 0.14);
+  --color-danger: #f07068;
+  --color-danger-soft: rgba(240, 112, 104, 0.14);
+  --color-attention: #e0a94a;
+  --color-attention-soft: rgba(224, 169, 74, 0.14);
+
+  --c-opencode: #a1a1aa;
+  --event-tool: #a1a1aa;
+  --event-thinking: #b79bf5;
+  --event-plan: #7b9cff;
+  --event-goal: #4fc4b6;
+  --event-memory: #e0a94a;
+  --event-notify: #7b9cff;
+  --event-ask: #b79bf5;
+
+  --tint-info: rgba(123, 156, 255, 0.14);
+  --ink-info: #a9bdff;
+  --tint-success: rgba(92, 195, 137, 0.14);
+  --ink-success: #8fdcae;
+  --bd-success: rgba(92, 195, 137, 0.32);
+  --tint-warning: rgba(224, 169, 74, 0.14);
+  --ink-warning: #f0c677;
+  --tint-danger: rgba(240, 112, 104, 0.14);
+  --ink-danger: #f7a19b;
+  --bd-danger: rgba(240, 112, 104, 0.32);
   --tint-neutral: rgba(255, 255, 255, 0.06);
-  --ink-neutral: #94a3b8;
+  --ink-neutral: #a1a1aa;
 
-  --hos-glass-bg-subtle: rgba(30, 41, 59, 0.65);
-  --hos-glass-bg-card: rgba(30, 41, 59, 0.80);
-  /* 规范深色悬浮层用更深的 slate-900 底,与卡片层拉开层次 */
-  --hos-glass-bg-floating: rgba(15, 23, 42, 0.92);
-  --hos-glass-border: 1px solid rgba(255, 255, 255, 0.12);
-  --hos-glass-border-subtle: 1px solid rgba(255, 255, 255, 0.06);
-  --hos-shadow-card: 0 8px 24px -2px rgba(0, 0, 0, 0.32);
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --elevation-3: 0 10px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --elevation-4: 0 20px 56px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --ring-focus: 0 0 0 3px rgba(123, 156, 255, 0.35);
+  --ring-focus-info: 0 0 0 3px rgba(123, 156, 255, 0.35);
 }
 
 /* =============================================================================
- * 11. HARMONYOS 6 无障碍外发光微焦点轮廓 (Accessibility Focus Rings)
+ * 12. 焦点（Accessibility Focus Rings）
+ * 只画在可交互控件上；对话框 / 抽屉容器（tabindex=-1）不画。
  * ========================================================================== */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2.5px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.25) !important;
-  border-radius: inherit;
-  transition: box-shadow 0.12s var(--hos-ease-smooth, cubic-bezier(0.2, 0.8, 0.2, 1));
 }
 
 button:focus-visible,
+a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
+summary:focus-visible,
 [role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="option"]:focus-visible,
 [tabindex="0"]:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2.5px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.25) !important;
+  box-shadow: var(--ring-focus) !important;
 }

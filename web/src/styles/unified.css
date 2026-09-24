@@ -1,9 +1,9 @@
 :root {
-  --unified-page-padding: var(--hos-space-8, 32px);
-  --unified-card-padding: var(--hos-space-6, 24px);
-  --unified-card-border-radius: var(--hos-radius-lg, 20px);
-  --unified-pagination-margin: var(--hos-space-4, 16px);
-  --unified-section-gap: var(--hos-space-5, 20px);
+  --unified-page-padding: var(--space-12, 24px);
+  --unified-card-padding: var(--space-8, 16px);
+  --unified-card-border-radius: var(--hos-radius-lg, 10px);
+  --unified-pagination-margin: var(--space-8, 16px);
+  --unified-section-gap: var(--space-8, 16px);
 }
 
 /* 1. 统一页面布局：PageScaffold 标准模式采用 wrapper + content 兄弟结构，
@@ -11,7 +11,7 @@
 .unified-page-wrapper {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-5, 18px); /* 归级:原 18px */
+  gap: var(--unified-section-gap);
   padding: 0 var(--unified-page-padding) var(--unified-page-padding);
 }
 
@@ -46,12 +46,26 @@
 /* 2. 统一卡片：圆角/边框走 antd 主题 token（borderRadiusLG + colorBorderSecondary），
  *    仅扁平阴影留一条非 !important 规则（antd Card 无阴影 token）。 */
 .ant-pro-card.unified-section-card {
-  border-radius: var(--hos-radius-lg, 20px) !important;
-  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
-  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
-  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.9) !important;
-  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04)) !important;
+  border-radius: var(--unified-card-border-radius) !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+}
+
+.ant-pro-card.unified-section-card > .ant-pro-card-header {
+  min-height: 48px;
+  padding: var(--space-6) var(--unified-card-padding) !important;
+}
+
+.ant-pro-card.unified-section-card.ant-pro-card-border.ant-pro-card-has-header > .ant-pro-card-header,
+.ant-pro-card.unified-section-card > .ant-pro-card-header.ant-pro-card-header-border {
+  border-block-end: 1px solid var(--color-border) !important;
+}
+
+.ant-pro-card.unified-section-card .ant-pro-card-title {
+  font-size: var(--hos-text-h3);
+  font-weight: 600;
+  color: var(--color-heading);
 }
 
 .ant-pro-card.unified-section-card .ant-pro-card-body {
@@ -95,9 +109,9 @@
 
 /* 3. 统一 ProTable 表格与大厂行 hover 高亮 */
 .unified-list-table {
-  border: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
-  border-radius: var(--hos-radius-sm, 12px);
-  background: var(--hos-white, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--unified-card-border-radius);
+  background: var(--color-surface);
   overflow: hidden;
 }
 
@@ -113,9 +127,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--hos-space-3-5, 14px);
-  border: 1px solid var(--color-border, var(--hos-ink-200, #e2e8f0));
-  border-radius: var(--hos-radius-sm, 12px);
-  background: var(--hos-white, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--unified-card-border-radius);
+  background: var(--color-surface);
   padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px) var(--hos-space-5, 18px); /* 归级:原 18px */
 }
 .unified-list-table-skeleton-head,
@@ -132,7 +146,7 @@
   overflow: hidden;
   color: var(--color-muted, var(--hos-ink-400, #94a3b8));
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: 600;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -205,7 +219,7 @@
 /* 5. 统一空态样式 */
 .unified-empty,
 .ant-table-placeholder .ant-empty-description {
-  color: var(--color-text-secondary, var(--hos-ink-500, #64748b)) !important;
+  color: var(--color-muted) !important;
   font-size: var(--hos-text-body-sm, 13px) !important;
 }
 

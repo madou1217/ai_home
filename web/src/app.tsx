@@ -37,6 +37,36 @@ import logo from "../../assets/brand/ai-home-app-icon.png";
 // 该开关只由 scripts/go-accounts-preview.js 注入，正式 Web 构建保持原有门禁。
 const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
 
+// ProLayout 的外壳 token 直接写 CSS 变量：它们只进入 CSS 值、不参与 antd 的派生计算，
+// 因此能随 data-theme 运行时翻转，与 design-tokens.css 保持同一来源（见 web/DESIGN.md §7）。
+const LAYOUT_TOKEN = {
+  bgLayout: "transparent",
+  colorTextAppListIcon: "var(--color-muted)",
+  sider: {
+    colorMenuBackground: "var(--color-surface)",
+    colorMenuItemDivider: "var(--color-border)",
+    colorTextMenu: "var(--color-muted-strong)",
+    colorTextMenuSecondary: "var(--color-muted)",
+    colorTextMenuSelected: "var(--color-heading)",
+    colorTextMenuActive: "var(--color-heading)",
+    colorTextMenuItemHover: "var(--color-heading)",
+    colorTextMenuTitle: "var(--color-heading)",
+    colorBgMenuItemHover: "var(--color-overlay)",
+    colorBgMenuItemSelected: "var(--color-surface-muted)",
+    colorBgMenuItemCollapsedElevated: "var(--color-surface-raised)",
+    colorTextCollapsedButton: "var(--color-muted)",
+    colorTextCollapsedButtonHover: "var(--color-heading)",
+    colorBgCollapsedButton: "var(--color-surface)",
+  },
+  header: {
+    colorBgHeader: "var(--color-surface)",
+    colorHeaderTitle: "var(--color-heading)",
+  },
+  pageContainer: {
+    colorBgPageContainer: "transparent",
+  },
+};
+
 function resolveCurrentServerProfileGate() {
   return resolveFabricProfileGateState(
     listControlPlaneProfiles(),
@@ -106,6 +136,7 @@ export async function getInitialState(): Promise<{
       contentWidth: "Fluid",
       fixedHeader: true,
       fixSiderbar: true,
+      siderWidth: 232,
     },
     desktopInitializationError,
   };
@@ -130,6 +161,7 @@ export const layout = ({ initialState }: any) => {
   return {
     logo,
     title: "AI Home",
+    token: LAYOUT_TOKEN,
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
       // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），

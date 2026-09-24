@@ -5,7 +5,7 @@ import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
 import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
 import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
-import MobileTabBar from "@/components/mobile/MobileTabBar";
+import MobileApp from "@/mobile/MobileApp";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
@@ -224,8 +224,6 @@ export const layout = ({ initialState }: any) => {
         />
       </div>
     ),
-    // 移动端底部 TabBar：桌面隐藏、手机上承接跨页导航（见 mobile-shell.css）。
-    // 挂在 children 之后，随各页内容一起铺，固定定位不参与布局流。
     childrenRender: (children: any) => {
       const profileGate = resolveCurrentServerProfileGate();
       const canRenderWorkspace = isGoAccountsPreview || canRenderFabricWorkspace(
@@ -247,10 +245,12 @@ export const layout = ({ initialState }: any) => {
           )}
           {/* 页面级渲染兜底：单页 render 抛错不再整树卸载成白屏 */}
           <AppErrorBoundary>
-            {canRenderWorkspace ? children : null}
+            {/* 手机视口：MobileApp 按路由渲染独立的移动端 HUD 页面（web/src/mobile），桌面页不挂载 */}
+            <MobileApp workspaceEnabled={canRenderWorkspace} dataPlaneReady={canRenderDataPlane}>
+              {canRenderWorkspace ? children : null}
+            </MobileApp>
           </AppErrorBoundary>
           {canRenderDataPlane && <AppInstallTaskQueue />}
-          {canRenderDataPlane && <MobileTabBar />}
         </>
       );
     },

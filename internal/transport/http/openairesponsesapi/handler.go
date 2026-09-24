@@ -139,6 +139,7 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
+	ctx = inferenceapi.ContextWithServedAccountHeaders(ctx, response)
 	request = request.WithContext(ctx)
 
 	body, err := inferenceapi.ReadJSONBody(

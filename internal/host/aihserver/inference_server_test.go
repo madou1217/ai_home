@@ -55,6 +55,13 @@ func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
 		[]byte(payload),
 	)
 	assertStatus(t, exchange, http.StatusOK)
+	// 与 Node 宿主一致：响应头声明实际服务的账号与 Provider。
+	if got := exchange.header.Get(inferenceapi.ServedAccountRefHeader); got != firstRef {
+		t.Fatalf("served account header = %q, want %q", got, firstRef)
+	}
+	if got := exchange.header.Get(inferenceapi.ServedProviderHeader); got != "codex" {
+		t.Fatalf("served provider header = %q, want codex", got)
+	}
 	if upstream.LastAuthorization() != "Bearer "+firstKey || upstream.CallCount() != 1 {
 		t.Fatalf(
 			"固定账号未命中: authorization=%q calls=%d",

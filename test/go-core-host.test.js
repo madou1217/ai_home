@@ -68,7 +68,7 @@ test('a disabled Go Core never spawns and claims no routes by default', async ()
 
   assert.equal(calls.start, 0);
   assert.deepEqual(host.status().routes, []);
-  assert.equal(host.tryHandleHttp({ method: 'GET', headers: {} }, {}, { method: 'GET', pathname: '/v1/models' }), false);
+  assert.equal(await host.tryHandleHttp({ method: 'GET', headers: {} }, {}, { method: 'GET', pathname: '/v1/models' }), false);
 });
 
 test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the host', async () => {

@@ -161,6 +161,7 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusBadRequest, "INVALID_ARGUMENT", "Invalid account reference")
 		return
 	}
+	ctx = inferenceapi.ContextWithServedAccountHeaders(ctx, response)
 	request = request.WithContext(ctx)
 
 	body, err := inferenceapi.ReadJSONBody(response, request, handler.maxBodyBytes)

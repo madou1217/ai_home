@@ -626,6 +626,7 @@ func (coordinator *Coordinator) executeAttempt(
 ) (attemptOutcome, error) {
 	stream := newAttemptStream(emit, coordinator.clock)
 	outcome := newAttemptOutcome(stream, false)
+	observeAccount(ctx, invocation.Account().Ref(), invocation.Account().ProviderID())
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
 		return outcome, stream.Err()

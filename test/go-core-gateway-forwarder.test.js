@@ -26,7 +26,7 @@ function close(server) {
 /** 假 Go Core：记录收到的请求，按路径返回 JSON、SSE 或永不结束的响应。 */
 async function startFakeGo(t) {
   const seen = [];
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
@@ -72,9 +72,9 @@ async function startNodeHost(t, forwarderOptions) {
     agent: new http.Agent({ keepAlive: false }),
     ...forwarderOptions
   });
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
-    if (forwarder.tryHandleHttp(req, res, { method: req.method, pathname, requestId: 'req-123' })) return;
+    if (await forwarder.tryHandleHttp(req, res, { method: req.method, pathname, requestId: 'req-123' })) return;
     writeJson(res, 404, { ok: false, error: 'handled_by_node' });
   });
   server.on('upgrade', (req, socket, head) => {
@@ -285,4 +285,48 @@ test('with a host decision, usable pins reach Go and deferred requests stay with
     ['gateway.anthropic.messages', 'http', 'acct_0123456789abcdef0123'],
     ['gateway.anthropic.messages', 'http', 'acct_ffffffffffffffffffff']
   ]);
+});
+
+test('model-aware decisions buffer the body, hand it back to Node or forward it whole', async (t) => {
+  const go = await startFakeGo(t);
+  const decisions = [];
+  const nodeBodies = [];
+  const forwarder = createGoCoreGatewayForwarder({
+    routeTable,
+    requiredClientKey: CLIENT_KEY,
+    writeJson,
+    agent: new http.Agent({ keepAlive: false }),
+    entryIds: new Set(['gateway.anthropic.messages', 'gateway.gemini.generate_content']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    needsRequestModel: () => true,
+    deferToNode: async (input) => {
+      decisions.push(input.model);
+      return input.model === 'claude-opus-4-8';
+    }
+  });
+  const { readRequestBody } = require('../lib/server/http-utils-utils');
+  const server = http.createServer(async (req, res) => {
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+    if (await forwarder.tryHandleHttp(req, res, { method: req.method, pathname, requestId: 'req-1' })) return;
+    nodeBodies.push((await readRequestBody(req)).toString('utf8'));
+    writeJson(res, 200, { ok: true, handledBy: 'node' });
+  });
+  const port = await listen(server);
+  t.after(() => close(server));
+  const post = (path, payload) => request(port, {
+    method: 'POST', path, headers: { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json' }
+  }, JSON.stringify(payload));
+
+  const aliased = await post('/v1/messages', { model: 'claude-opus-4-8', messages: [] });
+  assert.match(aliased.body, /handledBy/);
+  assert.deepEqual(nodeBodies, [JSON.stringify({ model: 'claude-opus-4-8', messages: [] })], 'Node reads the already-buffered body');
+  assert.equal(go.seen.length, 0);
+
+  const native = await post('/v1/messages', { model: 'claude-haiku-4-5', messages: [] });
+  assert.equal(native.status, 200);
+  assert.equal(go.seen.length, 1);
+  assert.equal(go.seen[0].body, JSON.stringify({ model: 'claude-haiku-4-5', messages: [] }));
+
+  await post('/v1beta/models/gemini-3-flash:generateContent', { contents: [] });
+  assert.deepEqual(decisions, ['claude-opus-4-8', 'claude-haiku-4-5', 'gemini-3-flash'], 'Gemini model comes from the path');
 });

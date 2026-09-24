@@ -1,0 +1,356 @@
+/* /chat 移动端 HUD（屏 1 列表 + 屏 2 沉浸对话）。只用语义 token，无字面色值。 */
+
+/* ---------------------------------------------------------------------------
+ * 屏 1：列表
+ * ------------------------------------------------------------------------ */
+.summary {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-faint);
+  white-space: nowrap;
+}
+
+.pin {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+/* 行内 provider 槽：品牌强调色由 providerAccentStyle 注入 --provider-accent */
+.providerSlot {
+  border-color: color-mix(in srgb, var(--provider-accent, var(--color-accent)) 45%, var(--color-border));
+}
+
+.rowActive {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent), 0 0 10px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent);
+}
+
+/* 工作区会话行：左侧缩进竖线，表明隶属上方项目 */
+.nest {
+  flex: none;
+  align-self: stretch;
+  width: 2px;
+  margin: -10px 0 -10px 4px;
+  background: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+}
+
+.projectSide {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.providerStack {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.providerMini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+}
+
+.providerMiniRunning {
+  border-color: var(--color-success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-success) 55%, transparent);
+}
+
+.chevron {
+  font-size: 12px;
+  color: var(--color-faint);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+  color: var(--color-accent);
+}
+
+.listNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px 0 24px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.listMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.listMore:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.errorLine {
+  --hud-cut: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  background: var(--color-surface-raised);
+  clip-path: polygon(0 var(--hud-cut), var(--hud-cut) 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.errorText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-prose);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted-strong);
+}
+
+.inlineAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 拇指区主操作：吸附在底部导航上方 */
+.dock {
+  position: sticky;
+  bottom: calc(var(--mhud-nav-h) + env(safe-area-inset-bottom) + 8px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 0 0;
+  background: linear-gradient(to bottom, transparent, var(--color-bg) 24px);
+}
+
+.dock > :global(.mhud-icon-btn) {
+  width: 100%;
+  height: 48px;
+  font-size: 14px;
+}
+
+.dockHint {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 屏 2：沉浸对话（固定全屏；离屏时右移 + visibility:hidden）
+ * ------------------------------------------------------------------------ */
+.convo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--color-bg);
+  transform: translate3d(100%, 0, 0);
+  visibility: hidden;
+  transition:
+    transform var(--motion-slow) var(--ease-emphasized),
+    visibility 0s linear var(--motion-slow);
+}
+
+.convoOpen {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--motion-slow) var(--ease-emphasized), visibility 0s;
+}
+
+.convoHead {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: calc(var(--mhud-topbar-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 6px 0;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, var(--provider-accent, var(--color-accent)) 35%, var(--color-border));
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.convoHead > :global(.mhud-icon-btn) {
+  flex: none;
+  border-color: transparent;
+  background: transparent;
+  clip-path: none;
+}
+
+.convoTitles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.convoTitle {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--color-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.convoMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.convoProvider {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-muted-strong);
+}
+
+.convoModel {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-accent);
+  text-overflow: ellipsis;
+}
+
+.convoBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* canonical 运行时的输入坞不含底部安全区（legacy 输入区自带），这里补齐 */
+.canonicalFrame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--color-bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * 详情抽屉
+ * ------------------------------------------------------------------------ */
+.sheetNote {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.sheetActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sheetActions:empty {
+  display: none;
+}
+
+.sheetActions > :global(.mhud-icon-btn) {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0 14px;
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+}
+
+.sheetActions > :global(.mhud-icon-btn--danger) {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+/* 抽屉底栏按钮：全局 .mhud-sheet .mhud-icon-btn 会抹掉描边/底色，这里恢复为实体按钮 */
+.sheetPrimary {
+  display: flex;
+}
+
+.sheetPrimary > :global(.mhud-icon-btn) {
+  flex: 1;
+  height: 48px;
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+  clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+}
+
+.sheetPrimary > :global(.mhud-icon-btn--primary) {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .convo,
+  .convoOpen,
+  .chevron {
+    transition: none;
+  }
+}

@@ -573,7 +573,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
 .mhud-sheet__body { padding: 12px var(--mhud-gutter) calc(env(safe-area-inset-bottom) + 16px); overflow-y: auto; max-height: calc(85dvh - 70px); }
 .mhud-sheet__footer { display: flex; gap: 8px; padding: 10px var(--mhud-gutter) calc(env(safe-area-inset-bottom) + 10px); }
 .mhud-sheet__footer > * { flex: 1; }
-.mhud-sheet .mhud-icon-btn { border-color: transparent; background: transparent; clip-path: none; }
+.mhud-sheet__head .mhud-icon-btn { border-color: transparent; background: transparent; clip-path: none; }
 
 /* 更多面板 */
 .mhud-more { display: flex; flex-direction: column; gap: 6px; }

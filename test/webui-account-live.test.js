@@ -916,6 +916,56 @@ test('emitAccountTokenConsumedEvent broadcasts token-consumed over SSE and WebSo
   assert.equal(frame.occurredAt, 12_345);
 });
 
+test('account token updates survive stale snapshots until a newer scan reconciles them', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-live-token-delta-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = 'acct_12000000000000000000';
+  const baseline = {
+    day: 100, week: 100, month: 100, total: 100,
+    models: [{
+      model: 'gpt-5', day: 100, week: 100, month: 100, total: 100,
+      dayCostUsd: 0.1, weekCostUsd: 0.1, monthCostUsd: 0.1, totalCostUsd: 0.1
+    }]
+  };
+  const frames = [];
+  const state = {
+    __webUiAccountsLive: {
+      records: new Map([[accountRef, { provider: 'codex', accountRef, tokenUsage: baseline }]]),
+      metadata: new Map(),
+      usageSnapshots: new Map(),
+      watchers: new Set(),
+      webSocketWatchers: new Set([{
+        client: { readyState: 1, send: (frame) => frames.push(JSON.parse(frame)) },
+        heartbeat: null
+      }]),
+      loadedFromDisk: false,
+      revision: 0
+    }
+  };
+  const ctx = { state, fs, aiHomeDir: root };
+  const occurredAt = Date.now();
+  updateCachedAccountTokenUsage(ctx, { [accountRef]: baseline }, { generatedAt: occurredAt - 1000 });
+  frames.length = 0;
+
+  emitAccountTokenConsumedEvent(state, {
+    provider: 'codex', accountRef, model: 'gpt-5',
+    usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 },
+    timestampMs: occurredAt
+  });
+
+  assert.deepEqual(frames.map((frame) => frame.type), ['token-consumed', 'account']);
+  assert.equal(frames[1].account.tokenUsage.day, 125);
+  assert.equal(frames[1].account.tokenUsage.models[0].day, 125);
+  assert.equal(frames[1].account.tokenUsage.models[0].dayCostUsd, null);
+  updateCachedAccountTokenUsage(ctx, { [accountRef]: baseline }, { generatedAt: occurredAt - 500 });
+  assert.equal(state.__webUiAccountsLive.records.get(accountRef).tokenUsage.day, 125);
+
+  const reconciled = { ...baseline, day: 125, week: 125, month: 125, total: 125 };
+  updateCachedAccountTokenUsage(ctx, { [accountRef]: reconciled }, { generatedAt: occurredAt + 1 });
+  assert.equal(state.__webUiAccountsLive.records.get(accountRef).tokenUsage.day, 125);
+  assert.equal(state.__webUiAccountsLive.pendingTokenUsage.size, 0);
+});
+
 test('emitAccountTokenConsumedEvent broadcasts anthropic cache/reasoning tokens as input+output', () => {
   const sseRes = {
     body: '',
@@ -1651,4 +1701,3 @@ test('family accounts surface in the fast snapshot even though the runtime pool 
 
   fs.rmSync(root, { recursive: true, force: true });
 });
-

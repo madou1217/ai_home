@@ -59,11 +59,11 @@
 推理切流（S8 `/v1/messages`、S9 其余协议）会把**生产实时流量**（包括正在使用的 Claude Code
 会话）交给 Go，只能在负责人确认后进行，且计划要求每步 canary 跑满一个额度周期。已知缺口：
 
-1. **模型别名**：Node 支持别名与运行时回落（生产中启用了 `claude-opus-4-8 → gemini-3.8-flash-high@agy`），
-   Go 没有别名存储与路由规则来源。别名请求切到 Go 后语义会变。需先实现 Node→Go 别名同步与
-   Go 路由规则装配，或在划转判定中把别名请求交还 Node。
+1. **模型别名**：已处理——命中启用 Node 别名的推理请求由转发前判定交还 Node（3d148724）。
+   Go 原生别名（Node→Go 同步 + 路由规则装配）仍是后续工作，届时可去掉这条交还。
 2. **钉选失效回落**：已由转发前判定交还 Node 保证语义；Go 自身仍是 503。
-3. **Go 推理响应缺 `x-aih-server-account-ref`**：WebUI 聊天读取该头（走 chat completions）。
+3. **`x-aih-server-account-ref`**：已处理——Go 推理响应按实际服务账号写入该头与 `x-aih-server-provider`。
 4. **账号覆盖**：Go 不承接 zcode / 失效 opencode 等 4 个账号，这些 Provider 的推理只能留在 Node。
+5. **生产切流**：由运维者执行 `scripts/go-core-canary.sh <entry-id>`（自动回滚看门狗）。
 
 回退：`aih server config set --no-go-core --clear-go-core-routes && aih server restart`。

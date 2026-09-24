@@ -29,9 +29,11 @@
   - 2026-09-25 已在生产（launchd 9527）启用：`go_core.state=ready`、首轮同步完成、`go_ready=true`、`forwarding=true`；`/v1/props` 与 `/v1/models/{id}` 经 Go 应答且与切换前 Node 基线逐字段一致，无 key 仍 401；Go 以 `AIH_SERVER_CREDENTIAL_REFRESH=delegated` 运行（Node 唯一刷新者）；切换后 `/v1/messages`、`/v1/responses` 真实流量 200。回退：`aih server config set --no-go-core --clear-go-core-routes && aih server restart`。
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据
   - 2026-09-25 前置已完成：Go 已支持 `x-account-ref` 独占路由；转发前由 Node 判定（可用钉选→Go，不可用/未知/非法钉选与 Fabric 在线时的未钉选推理→Node），去掉 501。真实 Claude 上游影子：非流式与 SSE 状态、结构、事件序列一致。
-  - 未完成：生产 canary（会把实时 Claude Code 流量交给 Go）需负责人确认；Go 缺模型别名（生产启用了 `claude-opus-4-8→agy`），切流前需补齐或把别名请求交还 Node。
+  - 2026-09-25 切流缺口已补（3d148724）：命中启用 Node 别名的推理请求由转发前判定交还 Node（Node 复用已缓冲请求体）；Go 推理响应带 `x-aih-server-account-ref` / `x-aih-server-provider`。
+  - 未完成：生产 canary 需运维者本人执行（自动化权限拒绝了生产切流）：`scripts/go-core-canary.sh gateway.anthropic.messages`（近 10 条 5xx≥3 或 Go 20s 不可转发即自动回滚）。
 - [ ] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
   - 2026-09-25 影子证据：chat completions / responses 200/200 且 Go 为结构超集；Gemini generateContent 修复 Go 思考模型 400 与 Node 信封泄漏后 200/200。切流同 S8 需确认。
+  - 切流方式同 S8：`scripts/go-core-canary.sh gateway.openai.chat_completions` → `gateway.openai.responses,gateway.openai.responses.websocket`（必须成对）→ `gateway.gemini.generate_content,gateway.gemini.stream_generate_content`；images/blobs 尚无影子证据（生图有真实成本）。
 - [x] S10 打包：postinstall 构建/下载 Go 构件 + 版本/sha 校验；Go 崩溃自动重启；Go stderr 落日志；基准测试（Node 直出 vs Node→Go vs Go 直连：TTFB、p50/p99、吞吐、RSS/CPU）
   - 2026-09-25 已完成：build stamp（版本 / manifest / 二进制 sha256）+ 启动前校验失败关闭；postinstall 本地构建或下载校验 sha256；`go-core-release` 工作流交叉编译 5 个目标；Go 崩溃指数退避自动重启；Go stdout/stderr 落 `logs/go-core.log`。
   - 基准 `node scripts/go-core-benchmark.js`（隔离 AIH_HOME，压测客户端独立进程，GET `/v1/models/{id}`，3000 请求 / 并发 50）：

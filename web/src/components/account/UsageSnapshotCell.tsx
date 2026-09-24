@@ -45,7 +45,7 @@ function getUsageBarTokenColor(value: number | null) {
 }
 
 // 状态语义（与进度条颜色同一阈值）：用于百分比读数的着色 / 辉光类名。
-function getUsageBarTone(value: number | null) {
+export function getUsageBarTone(value: number | null) {
   if (value == null) return 'none';
   if (value > 80) return 'ok';
   if (value > 30) return 'warn';

@@ -1566,15 +1566,33 @@ export default function Accounts() {
       return;
     }
     if (key === 'delete') {
-      Modal.confirm({
-        title: '确认删除？',
-        content: `将删除 ${getAccountPrimaryLabel(record)}`,
-        okText: '确认',
-        cancelText: '取消',
-        okButtonProps: { danger: true },
-        onOk: () => handleDelete(record.provider, record.accountRef)
-      });
+      confirmDeleteAccount(record);
     }
+  };
+
+  // 列表菜单与卡片视图共用的删除确认，保证两种视图删除行为一致。
+  const confirmDeleteAccount = (record: Account) => {
+    Modal.confirm({
+      title: '确认删除？',
+      content: `将删除 ${getAccountPrimaryLabel(record)}`,
+      okText: '确认',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => handleDelete(record.provider, record.accountRef)
+    });
+  };
+
+  // 卡片视图的 CLI / Desktop 入口与列表视图同一条路径（含重新登录 / 未配置的拦截）。
+  const guardAccountLaunch = (record: Account, kindLabel: string) => {
+    if (requiresAccountReauth(record)) {
+      message.warning(`需要重新登录后才能打开 ${kindLabel}`);
+      return false;
+    }
+    if (!record.configured) {
+      message.warning(`账号未配置，完成授权后可打开 ${kindLabel}`);
+      return false;
+    }
+    return true;
   };
 
   const columns = [
@@ -2091,7 +2109,7 @@ export default function Accounts() {
   ), [removingAccountRefs]);
 
   return (
-    <PageScaffold ghost
+    <PageScaffold ghost code="ACCOUNTS"
       title="账号管理"
       subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
       extra={isMobile ? (
@@ -2168,8 +2186,9 @@ export default function Accounts() {
           ]}
         />
       ) : (
-        <StatisticCard.Group className="accounts-stat-group" direction="row" style={{ marginBottom: 16 }}>
+        <StatisticCard.Group className="accounts-stat-group hos-kpi-strip" direction="row" style={{ marginBottom: 16 }}>
           <StatisticCard
+            className={hydratingDetails ? 'accounts-stat--accent' : 'accounts-stat--success'}
             statistic={{
               title: '账号状态',
               value: hydratingDetails ? '详情补全中' : '就绪',
@@ -2177,12 +2196,14 @@ export default function Accounts() {
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].healthy > 0 ? 'accounts-stat--success' : 'accounts-stat--accent'}
             statistic={{
               title: '正常可用',
               value: `${providerStats[activeProvider].healthy} / ${providerStats[activeProvider].total}`
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 ? 'accounts-stat--warning' : 'accounts-stat--accent'}
             statistic={{
               title: '待处理问题',
               value: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
@@ -2195,6 +2216,7 @@ export default function Accounts() {
             }}
           />
           <StatisticCard
+            className={providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 ? 'accounts-stat--danger' : 'accounts-stat--accent'}
             statistic={{
               title: '耗尽/停用',
               value: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
@@ -2370,19 +2392,24 @@ export default function Accounts() {
                 loading={loading}
                 onEdit={(acc) => {
                   const target = accounts.find(a => a.accountRef === acc.accountRef);
-                  if (target) handleOpenEdit(target);
+                  if (target && canEditAccountConfig(target)) handleEdit(target);
                 }}
                 onDelete={(acc) => {
                   const target = accounts.find(a => a.accountRef === acc.accountRef);
-                  if (target) handleDelete(target);
+                  if (target) confirmDeleteAccount(target);
                 }}
                 onOpenApp={(acc) => {
                   const target = accounts.find(a => a.accountRef === acc.accountRef);
-                  if (target) handleOpenDesktop(target);
+                  if (target && guardAccountLaunch(target, 'Desktop')) void handleOpenApp(target, 'desktop');
                 }}
                 onOpenCli={(acc) => {
                   const target = accounts.find(a => a.accountRef === acc.accountRef);
-                  if (target) handleOpenPty(target);
+                  if (!target || !guardAccountLaunch(target, 'CLI')) return;
+                  if (!appEntries?.[target.provider]?.cli) {
+                    void handleOpenApp(target, 'cli');
+                    return;
+                  }
+                  scheduleCliTerminalPicker(target);
                 }}
               />
             </div>

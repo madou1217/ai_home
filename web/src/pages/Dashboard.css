@@ -1,8 +1,9 @@
 /* ============================================================================
- * 网关仪表盘 —— Calm Operator Console（web/DESIGN.md §7.1）。
- * 信息架构以「系统是否健康」为核心：KPI 条 → 中性健康状态行 → Provider 卡片网格
+ * 网关仪表盘 —— Cyber HUD（web/DESIGN.md §7.1 / §HUD）。
+ * 信息架构以「系统是否健康」为核心：KPI 条 → 健康状态行 → Provider 卡片网格
  * → 错误 / 路由（有才显示）→ 运行参数（可折叠）。
- * 全部使用语义 token：不透明表面 + 1px 发丝线，无阴影 / 渐变 / 着色底板，深浅主题自动翻转。
+ * 面板材质复用 hud.css 的 .hud-panel / .hud-panel--sm（切角 + 角标 + 悬停青边），
+ * 这里只写布局与内部排版；全部使用语义 token，深浅主题自动翻转。
  * ==========================================================================*/
 .dash-page .unified-page-content,
 .dash-page.unified-page-wrapper { gap: var(--space-8, 16px); }
@@ -10,15 +11,13 @@
 /* KPI 条容器（样式见 components/dashboard/ServiceWidgetGrid.module.css） */
 .dash-kpi { min-width: 0; }
 
-/* ── 通用：扁平卡片表面 ── */
+/* ── 通用：HUD 面板（材质来自 .hud-panel，这里兜底圆角 / 阴影） ── */
 .dash-hero,
 .dash-pcard,
 .dash-error-item,
 .dash-route-list,
 .dash-params {
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg, 10px);
-  background: var(--color-surface);
+  border-radius: 0;
   box-shadow: none;
 }
 
@@ -39,25 +38,21 @@
   align-items: center;
   gap: var(--space-4, 8px);
   min-width: 0;
-  font-size: var(--hos-text-h3, 14px);
-  font-weight: var(--weight-semibold, 600);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.06em;
   color: var(--color-muted-strong);
 }
-.dash-hero--healthy .dash-hero-status { color: var(--color-success); }
-.dash-hero--degraded .dash-hero-status { color: var(--color-warning); }
-.dash-hero--critical .dash-hero-status { color: var(--color-danger); }
+.dash-hero--healthy .dash-hero-status { color: var(--color-success); text-shadow: var(--hud-text-glow-success); }
+.dash-hero--degraded .dash-hero-status { color: var(--color-warning); text-shadow: var(--hud-text-glow-warning); }
+.dash-hero--critical .dash-hero-status { color: var(--color-danger); text-shadow: var(--hud-text-glow-danger); }
 
-.dash-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--hos-radius-pill, 9999px);
-  flex: none;
-  background: var(--color-faint);
+/* 状态灯：全局 .hud-led（颜色 / 辉光 / 呼吸由 hud-led--* 决定），这里只放大一号 */
+.dash-dot.hud-led {
+  width: 7px;
+  height: 7px;
 }
-.dash-dot--ok { background: var(--color-success); }
-.dash-dot--warn { background: var(--color-warning); }
-.dash-dot--crit { background: var(--color-danger); }
-.dash-dot--idle { background: var(--color-faint); }
 
 .dash-hero-uptime {
   flex: none;
@@ -77,17 +72,12 @@
 }
 .dash-hero-metric { flex: none; min-width: 96px; }
 .dash-hero-value {
-  font-size: 22px;
-  font-weight: var(--weight-semibold, 600);
+  font-size: 26px;
   line-height: var(--leading-tight, 1.25);
-  color: var(--color-heading);
-  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
 }
 .dash-hero-cap {
-  margin-top: var(--space-1, 2px);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-regular, 400);
-  color: var(--color-muted);
+  margin-top: var(--space-2, 4px);
 }
 .dash-hero-side { flex: 1; min-width: 0; }
 .dash-hero-health-row {
@@ -96,25 +86,28 @@
   justify-content: space-between;
   gap: var(--space-6, 12px);
   margin-bottom: var(--space-3, 6px);
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: var(--weight-medium, 500);
+  letter-spacing: 0.04em;
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
 }
 .dash-hero-health-row b {
+  font-family: var(--font-mono);
   color: var(--color-heading);
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-semibold, 600);
+  font-weight: var(--weight-bold, 700);
 }
 /* 健康条填充色随整体健康度：健康 success / 降级 warning / 无健康 danger */
 .dash-hero .dash-bar-fill,
-.dash-hero .dash-bar-fill.warn { background: var(--color-success); }
+.dash-hero .dash-bar-fill.warn { background: var(--color-success); color: var(--color-success); }
 .dash-hero--degraded .dash-bar-fill,
-.dash-hero--degraded .dash-bar-fill.warn { background: var(--color-warning); }
+.dash-hero--degraded .dash-bar-fill.warn { background: var(--color-warning); color: var(--color-warning); }
 .dash-hero--critical .dash-bar-fill,
-.dash-hero--critical .dash-bar-fill.warn { background: var(--color-danger); }
+.dash-hero--critical .dash-bar-fill.warn { background: var(--color-danger); color: var(--color-danger); }
 .dash-hero--loading .dash-bar-fill,
-.dash-hero--loading .dash-bar-fill.warn { background: var(--color-faint); }
+.dash-hero--loading .dash-bar-fill.warn { background: var(--color-faint); color: transparent; }
 
 .dash-hero-chips {
   display: flex;
@@ -126,36 +119,44 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2, 4px);
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: var(--weight-regular, 400);
+  letter-spacing: 0.04em;
   line-height: 20px;
   color: var(--color-muted);
-  background: var(--tint-neutral);
-  border-radius: var(--hos-radius-2xs, 4px);
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
   padding: 0 var(--space-4, 8px);
   font-variant-numeric: tabular-nums;
 }
-.dash-chip b { color: var(--color-heading); font-weight: var(--weight-semibold, 600); }
+.dash-chip b { color: var(--color-accent); font-weight: var(--weight-bold, 700); }
 
-/* ── 通用进度条（4px 轨道）──
- * 轨道用 --color-overlay：浅色下≈ surface-muted，深色下仍与 surface 拉开层次
- * （深色 surface-muted 与 surface 几乎同值，轨道会消失）。 */
+/* ── HUD 细进度轨（3px，方头，填充带状态色辉光；同 hud.css .hud-track 语言）──
+ * 轨道用 --color-surface-sunken + 发丝描边，深浅主题下都与面板拉开层次。
+ * 填充的 color 与 background 同色，box-shadow 用 currentColor 得到同色辉光。 */
 .dash-bar {
-  height: 4px;
-  border-radius: var(--space-1, 2px);
-  background: var(--color-overlay);
-  overflow: hidden;
+  position: relative;
+  height: 3px;
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle, var(--color-border));
+  overflow: visible;
 }
-.dash-bar--slim { height: 4px; }
+.dash-bar--slim { height: 3px; }
 .dash-bar-fill {
   display: block;
   height: 100%;
-  border-radius: var(--space-1, 2px);
+  max-width: 100%;
+  border-radius: 0;
   background: var(--color-success);
+  color: var(--color-success);
+  box-shadow: 0 0 6px currentColor;
   transition: width var(--motion-slow, 240ms) var(--ease-standard);
 }
-.dash-bar-fill.warn { background: var(--color-warning); }
-.dash-bar-fill.acc { background: var(--color-accent); }
+.dash-bar-fill.warn { background: var(--color-warning); color: var(--color-warning); }
+.dash-bar-fill.acc { background: var(--color-accent); color: var(--color-accent); }
 
 /* ── 行内提示（取代大块 Alert） ── */
 .dash-inline-note {
@@ -174,26 +175,41 @@
   font-size: var(--hos-text-body-sm, 13px);
 }
 
-/* ── 区块标题 ── */
+/* ── 区块标题：与 hud.css 面板标题同语言（Orbitron 大写字距 + 柔和青色辉光 + 方块前缀） ── */
 .dash-block-title {
   display: flex;
   align-items: center;
   gap: var(--space-4, 8px);
   margin: var(--space-4, 8px) var(--space-1, 2px) 0;
-  font-size: var(--hos-text-h3, 14px);
-  font-weight: var(--weight-semibold, 600);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
   line-height: var(--leading-snug, 1.4);
-  color: var(--color-heading);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+.dash-block-title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
 }
 .dash-block-count {
   min-width: 20px;
   text-align: center;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-micro, 11px);
-  font-weight: var(--weight-medium, 500);
+  font-weight: var(--weight-bold, 700);
   line-height: 18px;
-  color: var(--color-muted-strong);
-  background: var(--tint-neutral);
-  border-radius: var(--hos-radius-pill, 9999px);
+  color: var(--color-danger);
+  text-shadow: none;
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+  border-radius: 2px;
   padding: 0 var(--space-3, 6px);
   font-variant-numeric: tabular-nums;
 }
@@ -206,9 +222,9 @@
 }
 .dash-pcard {
   padding: var(--space-7, 14px) var(--space-8, 16px);
-  transition: border-color var(--motion-fast, 120ms) var(--ease-standard);
 }
-.dash-pcard:hover { border-color: var(--color-border-strong); }
+/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色外辉光 */
+.dash-pcard:hover { box-shadow: var(--hud-glow-accent); }
 /* 离线：内容降权，表面保持不透明（深色下不出现半透明灰块） */
 .dash-pcard--offline > * { opacity: 0.6; }
 .dash-pcard-head {
@@ -220,8 +236,10 @@
 .dash-pcard-name {
   flex: 1;
   min-width: 0;
-  font-size: var(--hos-text-h3, 14px);
-  font-weight: var(--weight-semibold, 600);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.02em;
   color: var(--color-heading);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -229,20 +247,24 @@
 }
 .dash-pcard-ratio {
   flex: none;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-semibold, 600);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--color-success);
-  font-variant-numeric: tabular-nums;
+  text-shadow: var(--hud-text-glow-success);
+  font-variant-numeric: tabular-nums slashed-zero;
 }
-.dash-pcard-ratio.warn { color: var(--color-warning); }
-.dash-pcard--offline .dash-pcard-ratio { color: var(--color-muted); }
+.dash-pcard-ratio.warn { color: var(--color-warning); text-shadow: var(--hud-text-glow-warning); }
+.dash-pcard--offline .dash-pcard-ratio { color: var(--color-muted); text-shadow: none; }
 .dash-pcard-stats {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: var(--space-2, 4px) var(--space-6, 12px);
   margin-top: var(--space-6, 12px);
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: var(--weight-regular, 400);
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
@@ -257,8 +279,9 @@
   gap: var(--space-3, 6px);
   margin-top: var(--space-5, 10px);
   padding-top: var(--space-5, 10px);
-  border-top: 1px solid var(--color-border);
-  font-size: var(--hos-text-caption, 12px);
+  border-top: 1px dashed var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--color-muted-strong);
   font-variant-numeric: tabular-nums;
 }
@@ -271,9 +294,12 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4, 8px);
-  transition: border-color var(--motion-fast, 120ms) var(--ease-standard);
 }
-.dash-error-item:hover { border-color: var(--color-border-strong); }
+/* 错误卡：角标改为玫红，悬停描边玫红（选择器权重高于 .hud-panel） */
+.dash-error-item.hud-panel::before { border-color: var(--color-danger); }
+.dash-error-item.hud-panel:hover {
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border)) !important;
+}
 .dash-error-top {
   display: flex;
   align-items: center;
@@ -288,8 +314,9 @@
   flex: 1;
 }
 .dash-error-account-label {
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-semibold, 600);
+  font-weight: var(--weight-bold, 700);
   color: var(--color-heading);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -316,7 +343,7 @@
   padding: 0;
   background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 6px);
+  border-radius: 2px;
   color: var(--color-muted);
   cursor: pointer;
   font-size: var(--hos-text-caption, 12px);
@@ -326,9 +353,9 @@
     color var(--motion-fast, 120ms) var(--ease-standard);
 }
 .dash-error-copy-btn:hover {
-  background: var(--color-overlay);
-  color: var(--color-heading);
-  border-color: var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 /* 调用链路与别名条 (Pipeline / Alias) */
@@ -338,9 +365,11 @@
   align-items: center;
   gap: var(--space-4, 8px) var(--space-8, 16px);
   padding: var(--space-3, 6px) var(--space-5, 10px);
-  background: var(--color-surface-muted);
-  border-radius: var(--hos-radius-xs, 6px);
-  font-size: var(--hos-text-caption, 12px);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .dash-error-chain-step {
   display: inline-flex;
@@ -372,8 +401,9 @@
 .dash-alias-pill {
   padding: 0 var(--space-3, 6px);
   line-height: 18px;
-  border-radius: var(--hos-radius-2xs, 4px);
+  border-radius: 2px;
   background: var(--tint-neutral);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
 }
 .dash-alias-pill.req { color: var(--ink-neutral); }
 .dash-alias-pill.eff {
@@ -388,6 +418,7 @@
   align-items: center;
   gap: var(--space-3, 6px);
 }
+/* HUD 标签：2px 方角 + 同色 35% 描边（描边来自 hud.css 全局 .ant-tag），等宽数据字体 */
 .dash-page .dash-error-tag {
   display: inline-flex;
   align-items: center;
@@ -395,16 +426,13 @@
   margin: 0;
   padding: 0 var(--space-4, 8px);
   line-height: 20px;
-  border: 0;
-  border-radius: var(--hos-radius-2xs, 4px);
-  font-size: var(--hos-text-caption, 12px);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: var(--weight-medium, 500);
   background: var(--tint-neutral);
   color: var(--ink-neutral);
 }
-.dash-page .dash-error-tag--model,
-.dash-page .dash-error-tag--session,
-.dash-page .dash-error-tag--route { font-family: var(--font-mono); }
 .dash-page .dash-error-tag--project,
 .dash-page .dash-error-tag--session {
   background: var(--tint-info);
@@ -416,14 +444,18 @@
 }
 .dash-page .dash-error-tag.clickable:hover {
   background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .dash-error-msg {
-  font-size: var(--hos-text-body-sm, 13px);
+  font-family: var(--font-mono);
+  font-size: 12px;
   line-height: var(--leading-normal, 1.55);
-  color: var(--color-text);
-  background: var(--color-surface-muted);
-  border-radius: var(--hos-radius-xs, 6px);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface-sunken));
+  border: 1px solid color-mix(in srgb, var(--color-danger) 25%, transparent);
+  border-radius: 0;
   padding: var(--space-4, 8px) var(--space-5, 10px);
   word-break: break-word;
 }
@@ -443,7 +475,7 @@
   margin-bottom: var(--space-3, 6px);
 }
 .dash-route-name {
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: 12px;
   font-weight: var(--weight-regular, 400);
   color: var(--color-text);
   font-family: var(--font-mono);
@@ -453,9 +485,11 @@
 }
 .dash-route-count {
   flex: none;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-heading);
+  font-weight: 700;
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
   font-variant-numeric: tabular-nums;
 }
 
@@ -465,19 +499,32 @@
   list-style: none;
   cursor: pointer;
   padding: var(--space-6, 12px) 0;
-  font-size: var(--hos-text-h3, 14px);
-  font-weight: var(--weight-semibold, 600);
-  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
   display: flex;
   align-items: center;
   gap: var(--space-3, 6px);
   user-select: none;
 }
 .dash-params > summary::-webkit-details-marker { display: none; }
+.dash-params > summary::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
 .dash-params > summary::after {
   content: '▾';
   margin-left: auto;
   color: var(--color-muted);
+  text-shadow: none;
   transition: transform var(--motion-base, 160ms) var(--ease-standard);
 }
 .dash-params[open] > summary::after { transform: rotate(180deg); }
@@ -487,24 +534,27 @@
   gap: 1px;
   background: var(--color-border);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 8px);
+  border-radius: 0;
   overflow: hidden;
   margin-bottom: var(--space-8, 16px);
 }
 .dash-param {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1, 2px);
+  gap: var(--space-2, 4px);
   padding: var(--space-5, 10px) var(--space-6, 12px);
-  background: var(--color-surface);
+  background: var(--color-surface-sunken);
 }
 .dash-param-k {
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
-  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
 .dash-param-v {
-  font-size: var(--hos-text-body-sm, 13px);
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: var(--weight-medium, 500);
   color: var(--color-heading);
   word-break: break-word;

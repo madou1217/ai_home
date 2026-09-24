@@ -1,28 +1,26 @@
 /* =============================================================================
- * KPI 条（web/DESIGN.md §6「KPI 条」/ §7.1）
- * 一个带描边的表面容器 + 多个单元格，单元格之间用 1px 发丝线分隔：
- * 容器底色取 --color-border，单元格为 --color-surface，1px grid gap 即发丝线，
- * 无论 4 列 / 2x2 / 单列都自动得到正确的竖向或横向分隔。
+ * KPI 条（web/DESIGN.md §6「KPI 条」/ §7.1）—— Cyber HUD 版本
  * ========================================================================== */
+/* 容器本身挂全局 .hud-kpi-strip（hud.css：切角 + 青色角标 + 半透明底），
+ * 这里只负责网格布局与单元格发丝线：单元格用右 / 下 1px 内描影做分隔，
+ * 4 列 / 2x2 / 单列都自动正确（最外圈与容器描边重合）。 */
 .gridContainer {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
+  gap: 0;
   width: 100%;
-  background: var(--color-border);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg, 10px);
   overflow: hidden;
-  box-shadow: none;
 }
 
 .widgetCard {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-2, 4px);
   min-width: 0;
   padding: var(--space-7, 14px) var(--space-8, 16px);
-  background: var(--color-surface);
+  background: transparent;
+  box-shadow: 1px 0 0 var(--color-border), 0 1px 0 var(--color-border);
   transition: background-color var(--motion-fast, 120ms) var(--ease-standard);
 }
 
@@ -35,7 +33,7 @@
 }
 
 .clickable:hover {
-  background: var(--color-surface-muted);
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
 }
 
 .widgetHeader {
@@ -46,11 +44,9 @@
   min-width: 0;
 }
 
+/* 标签：全局 .hud-label（10px 大写字距、faint） */
 .widgetTitle {
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
   line-height: var(--leading-snug, 1.4);
-  color: var(--color-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -72,20 +68,35 @@
   min-width: 0;
 }
 
+/* 数值：全局 .hud-display（JetBrains Mono 粗体等宽数字）+ 按语义发光（.hud-glow-*） */
 .widgetValue {
-  font-family: var(--font-body);
-  font-size: 22px;
-  font-weight: var(--weight-semibold, 600);
+  font-size: 24px;
   line-height: var(--leading-tight, 1.25);
   color: var(--color-heading);
-  font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.valueSuccess {
+  color: var(--color-success);
+}
+
+.valueWarning {
+  color: var(--color-warning);
+}
+
+.valueDanger {
+  color: var(--color-danger);
+}
+
+.valueAccent {
+  color: var(--color-accent);
+}
+
 .widgetSubtitle {
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   line-height: var(--leading-snug, 1.4);
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
@@ -103,22 +114,17 @@
   margin-top: var(--space-2, 4px);
 }
 
+/* 状态：全局 .hud-led 指示灯 + 状态色等宽短标签 */
 .statusDotWrapper {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3, 6px);
   flex: none;
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: 0.04em;
   line-height: var(--leading-snug, 1.4);
-}
-
-.statusDot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: var(--hos-radius-pill, 9999px);
-  background: currentColor;
 }
 
 .statusHealthy {
@@ -136,13 +142,11 @@
 .statusNeutral {
   color: var(--color-muted);
 }
-.statusNeutral .statusDot {
-  background: var(--color-faint);
-}
 
 .trendText {
   min-width: 0;
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--color-muted);
   overflow: hidden;
   text-overflow: ellipsis;

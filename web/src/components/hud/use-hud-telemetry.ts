@@ -17,7 +17,8 @@ const POLL_INTERVAL_MS = 15000;
 export function deriveGatewayState(status: ManagementStatus | null, failed: boolean): HudGatewayState {
   if (failed) return 'offline';
   if (!status) return 'connecting';
-  if (!status.ok) return 'offline';
+  // 只有显式 ok:false 才判离线；请求本身成功但缺字段时不误报离线。
+  if (status.ok === false) return 'offline';
   if (!status.totalAccounts) return 'empty';
   if (status.activeAccounts > 0) return 'online';
   return 'degraded';

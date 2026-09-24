@@ -23,3 +23,33 @@
   color: var(--color-accent);
   font-weight: var(--weight-medium);
 }
+
+/* HUD：「当前 / 默认」标签补青色发丝框 */
+.ant-tag.settings-current-tag {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent) !important;
+  box-shadow: var(--hud-glow-accent);
+}
+
+/* HUD：Server 状态标签内的 LED 与标签文字对齐；Server 网关地址等宽 */
+.ant-tag.server-setup-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.server-setup-endpoint {
+  font-family: var(--font-mono);
+}
+
+/* 弹窗表单（添加 / 授权 Server）：标签用 HUD 小号大写字距，输入框等宽，帮助文字保持可读的正文字号 */
+.settings-form .ant-form-item-label > label {
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+}
+.settings-form .ant-input,
+.settings-form .ant-input-password input {
+  font-family: var(--font-mono);
+}
+.settings-form .ant-form-item-explain,
+.settings-form .ant-form-item-extra {
+  font-family: var(--font-prose);
+}

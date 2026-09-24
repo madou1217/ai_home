@@ -1,11 +1,9 @@
-/* KPI 条（DESIGN.md §6）：给 StatisticCard.Group 挂 .hos-kpi-strip，
- * 多个单元格共用一个描边容器，单元格之间 1px 发丝线（容器底色透出的缝），不用左侧竖条。
+/* KPI 条（DESIGN.md §6 / §HUD）：给 StatisticCard.Group 挂 .hos-kpi-strip，
+ * 外框由 hud.css 统一画成切角面板 + 角标；单元格之间 1px 发丝线（容器底色透出的缝），不用左侧竖条。
+ * 数值为等宽粗体（JetBrains Mono，带斜杠零）+ 青色辉光；标题为大写字距的 HUD 标签。
  * 使用方：Settings（Server 管理）、FabricServerSetup、Models、ProxyPoolPanel。 */
 .ant-pro-card.hos-kpi-strip {
   margin-bottom: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-border);
   overflow: hidden;
 }
 .ant-pro-card.hos-kpi-strip > .ant-pro-card-body {
@@ -15,7 +13,7 @@
 }
 .hos-kpi-strip .ant-pro-statistic-card,
 .hos-kpi-strip .ant-pro-card-divider {
-  background: var(--color-surface);
+  background: var(--hud-panel-bg);
 }
 /* 单元格本身不再画描边 / 圆角 / 阴影，分隔只来自容器的 1px 缝 */
 .hos-kpi-strip .ant-pro-card.ant-pro-statistic-card {
@@ -31,13 +29,32 @@
 }
 .hos-kpi-strip .ant-statistic-title {
   margin-bottom: var(--space-2);
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption);
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 .hos-kpi-strip .ant-statistic-content {
-  color: var(--color-heading);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-h1);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums slashed-zero;
   line-height: var(--leading-tight);
+  text-shadow: var(--hud-text-glow);
+}
+/* 深色 HUD：辉光跟随数值自身的状态色（valueStyle 设置的 success / danger 等） */
+[data-theme='dark'] .hos-kpi-strip .ant-statistic-content {
+  text-shadow: 0 0 10px color-mix(in srgb, currentColor 55%, transparent);
+}
+.hos-kpi-strip .ant-statistic-content-suffix,
+.hos-kpi-strip .ant-statistic-content-prefix {
+  color: var(--color-muted);
+  font-family: var(--font-body);
+  font-size: var(--hos-text-caption);
+  font-weight: 500;
+  text-shadow: none;
 }

@@ -172,12 +172,13 @@ export default function Toolkit() {
 
   return (
     <PageScaffold
+      code="TOOLKIT"
       title="开发工具"
       subTitle="管理应用、终端、运行环境与网络。"
       className="toolkit-scaffold"
       ghost
     >
-      <div className="toolkit-console">
+      <div className="toolkit-console hud-panel">
         <Tabs
           className="toolkit-primary-tabs"
           activeKey={activeSection}

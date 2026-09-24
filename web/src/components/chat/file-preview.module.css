@@ -73,8 +73,8 @@
   width: auto;
   max-width: min(100%, 360px);
   padding: var(--hos-space-0-5) var(--hos-space-1-5) var(--hos-space-0-5) var(--hos-space-0-5); /* 归级:原 3px */
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-muted);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
   border: 1px solid var(--color-border);
   vertical-align: text-bottom;
   transition: background var(--motion-fast) var(--ease-standard),
@@ -82,8 +82,8 @@
 }
 
 .fileReferenceButtonInline:hover {
-  background: var(--color-overlay);
-  border-color: var(--color-border-strong);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
 }
 
 .fileReferenceButtonTool {
@@ -99,6 +99,7 @@
 }
 
 .fileReferenceVerb {
+  font-family: var(--font-mono);
   color: var(--color-faint);
   font-size: var(--text-xs);
   line-height: 1.7;
@@ -107,6 +108,7 @@
 
 .fileReferenceLabel {
   min-width: 0;
+  font-family: var(--font-mono);
   color: var(--color-muted-strong);
   font-size: var(--text-base);
   line-height: 1.7;
@@ -122,8 +124,8 @@
 .fileReferenceButton:hover .fileReferenceLabel,
 .fileReferenceButton:focus-visible .fileReferenceLabel,
 .toolGroupItemInteractive:hover .fileReferenceLabel {
-  color: var(--color-heading);
-  text-decoration-color: var(--color-border-strong);
+  color: var(--color-accent);
+  text-decoration-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 .fileReferenceButton:focus-visible {
@@ -135,6 +137,7 @@
 
 .toolBody {
   padding: var(--hos-space-2) var(--hos-space-3);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
   max-height: 200px;
   overflow-y: auto;
@@ -292,7 +295,7 @@
   --chat-panel-bg: var(--color-surface);
   --chat-panel-muted-bg: var(--color-surface-muted);
   --chat-panel-border: var(--color-border);
-  --chat-panel-radius: var(--event-radius);
+  --chat-panel-radius: 2px; /* HUD：方角 */
   --chat-message-font-size: var(--hos-text-h3);
   --chat-message-line-height: 1.72;
   height: calc(100vh - 120px);
@@ -316,6 +319,7 @@
 .filePreviewMeta {
   min-width: 0;
   min-height: 18px;
+  font-family: var(--font-mono);
   color: var(--color-faint);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
   font-weight: 600;
@@ -341,10 +345,13 @@
   border-radius: var(--chat-panel-radius, 8px);
   display: inline-flex;
   align-items: center;
-  background: var(--color-surface);
-  color: var(--color-muted-strong);
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -506,8 +513,8 @@
   flex-direction: column;
   gap: var(--hos-space-4); /* 归级:原 18px */
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface);
+  border-radius: 2px;
+  background: var(--hud-panel-bg);
 }
 
 .fileTrustHeader {
@@ -684,7 +691,7 @@
   padding: var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
-  background: var(--color-surface-soft) !important;
+  background: var(--color-surface-sunken) !important;
   color: var(--color-text);
   font-size: var(--hos-text-body-sm);
   line-height: 1.65;
@@ -712,6 +719,7 @@
 
 .filePreviewMarkdown {
   max-width: 780px;
+  font-family: var(--font-prose);
 }
 
 .filePreviewMarkdown :global(h1),
@@ -739,7 +747,7 @@
   padding: var(--hos-space-3-5) var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
-  background: var(--color-surface-soft) !important;
+  background: var(--color-surface-sunken) !important;
   overflow: auto;
 }
 

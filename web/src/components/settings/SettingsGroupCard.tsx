@@ -40,7 +40,8 @@ export const SettingsItem = memo(function SettingsItem({
 });
 
 /**
- * 设置分组卡片：标题 + 说明 + 一组设置行（发丝线分隔），外观与设置页其他卡片一致。
+ * 设置分组卡片：标题 + 说明 + 一组设置行（发丝线分隔），外观与设置页其他卡片一致
+ * （全局 .hud-panel：切角 + 青色角标，标题 Orbitron 青色辉光）。
  */
 export const SettingsGroupCard = memo(function SettingsGroupCard({
   title,
@@ -48,7 +49,7 @@ export const SettingsGroupCard = memo(function SettingsGroupCard({
   children,
 }: SettingsGroupCardProps) {
   return (
-    <div className={styles.groupContainer}>
+    <div className={`${styles.groupContainer} hud-panel`}>
       {(title || description) && (
         <div className={styles.groupHeader}>
           {title && <h3 className={styles.groupTitle}>{title}</h3>}

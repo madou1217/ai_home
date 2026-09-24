@@ -1,4 +1,5 @@
-/* SSH 连接 / 工作空间卡片：扁平 surface + 1px 发丝线；强调色统一 --color-accent。 */
+/* SSH 连接 / 工作空间卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm）+ 1px 发丝线；
+ * 端点 / 路径为等宽胶囊；强调色统一 --color-accent。 */
 .ssh-card-list {
   --ssh-acc: var(--color-accent);
   --ssh-run: var(--color-success);
@@ -24,14 +25,7 @@
 
 .ssh-list-card.ant-card {
   min-width: 0;
-  border: 1px solid var(--ssh-line);
-  border-radius: var(--ssh-radius);
-  background: var(--ssh-surface);
   box-shadow: none;
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-.ssh-list-card.ant-card:hover {
-  border-color: var(--color-border-strong);
 }
 .ssh-list-card.ant-card > .ant-card-body {
   padding: var(--hos-space-4) var(--hos-space-5);
@@ -57,17 +51,27 @@
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--ssh-ink);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: var(--weight-semibold);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+.ssh-list-card-endpoint,
+.ssh-list-card-path {
+  align-self: flex-start;
+  padding: 1px var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--ssh-line));
+  border-radius: 0;
+  background: var(--color-surface-sunken);
 }
 .ssh-list-card-endpoint {
   display: inline-block;
   max-width: min(380px, 70vw);
   overflow: hidden;
-  color: var(--ssh-ink-2);
+  color: var(--color-accent);
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   text-overflow: ellipsis;
@@ -91,14 +95,16 @@
   font-size: var(--hos-text-caption);
 }
 
-/* 认证方式：圆角 4 的中性弱底标签（认证方式不是状态，不需要彩色区分）；
+/* 认证方式：HUD 中性标签（认证方式不是状态，不需要彩色区分）；
  * 密码认证用 warning 字色提示安全性较弱。 */
 .ssh-auth-pill {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   padding: 0 var(--space-3);
-  border-radius: var(--hos-radius-2xs);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 2px;
+  letter-spacing: 0.04em;
   background: var(--tint-neutral);
   color: var(--ink-neutral);
   font-size: var(--hos-text-caption);
@@ -115,8 +121,10 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
+  gap: var(--space-3);
   padding: 0 var(--space-3);
-  border-radius: var(--hos-radius-2xs);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 2px;
   background: var(--tint-info);
   color: var(--ink-info);
   font-size: var(--hos-text-caption);

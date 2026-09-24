@@ -38,7 +38,7 @@ export const HarmonyStudioGalleryCard = memo(function HarmonyStudioGalleryCard({
   onDelete,
 }: HarmonyStudioGalleryCardProps) {
   return (
-    <div className={styles.galleryCard}>
+    <div className={`${styles.galleryCard} hud-panel hud-panel--sm`}>
       <div className={styles.imageContainer} onClick={onPreview}>
         <img src={imageUrl} alt={title || prompt} className={styles.imagePreview} loading="lazy" />
         <div className={styles.imageOverlay}>

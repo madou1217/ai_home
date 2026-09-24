@@ -23,7 +23,7 @@ export interface FabricNodeMeshCardProps {
 }
 
 /**
- * Fabric Mesh 节点卡片：扁平 surface + 发丝线描边，状态用实心圆点表达
+ * Fabric Mesh 节点卡片：HUD 小切角面板 + 发丝线描边，状态用 LED 圆点表达
  */
 export const FabricNodeMeshCard = memo(function FabricNodeMeshCard({
   name,
@@ -43,7 +43,7 @@ export const FabricNodeMeshCard = memo(function FabricNodeMeshCard({
   const roleLabel = role === 'control_plane' ? '控制面中心' : role === 'relay' ? '中继代理' : '计算节点';
 
   return (
-    <div className={`${styles.meshCard} ${isOnline ? '' : isBusy ? styles.cardBusy : styles.cardOffline}`}>
+    <div className={`${styles.meshCard} hud-panel hud-panel--sm ${isOnline ? '' : isBusy ? styles.cardBusy : styles.cardOffline}`}>
       <div className={styles.cardHeader}>
         <div className={styles.avatarWrap}>
           <div className={styles.nodeIcon}>

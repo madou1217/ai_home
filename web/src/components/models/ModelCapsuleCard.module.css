@@ -1,17 +1,9 @@
-/* 模型卡片：扁平 surface + 1px 发丝线，悬停只加深描边（无位移 / 光晕 / 毛玻璃）。 */
+/* 模型卡片：HUD 小切角面板（组件挂 .hud-panel.hud-panel--sm），悬停描边转青。 */
 .cardContainer {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
-  transition: border-color var(--motion-fast) var(--ease-standard);
-}
-
-.cardContainer:hover {
-  border-color: var(--color-border-strong);
 }
 
 .cardDisabled {
@@ -58,7 +50,7 @@
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 0;
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
@@ -67,13 +59,14 @@
 
 .copyBtn:hover {
   background: var(--color-overlay);
-  color: var(--color-heading);
+  color: var(--color-accent);
 }
 
 .providerBadge {
-  color: var(--color-muted);
-  font-size: var(--hos-text-micro);
-  font-weight: var(--weight-medium);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
 }
 
 .defaultStar {
@@ -82,6 +75,7 @@
 
 .defaultStarActive {
   color: var(--color-warning);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-warning) 70%, transparent));
 }
 
 .cardBody {
@@ -97,13 +91,15 @@
   gap: var(--space-3);
 }
 
-/* 能力 / 价格标签：圆角 4 的中性弱底标签 */
+/* 能力 / 价格标签：HUD 中性标签（发丝框 + 等宽数值） */
 .metricCapsule {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-3);
-  border-radius: var(--hos-radius-2xs);
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 2px;
+  font-family: var(--font-mono);
   background: var(--tint-neutral);
   color: var(--ink-neutral);
   font-size: var(--hos-text-caption);

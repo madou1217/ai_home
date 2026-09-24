@@ -48,7 +48,7 @@ function createBaseOption(
     tooltip: {
       trigger: 'axis',
       ...buildChartTooltipStyle(palette),
-      axisPointer: { lineStyle: { color: palette.border } }
+      axisPointer: { lineStyle: { color: palette.brand, opacity: 0.6 } }
     },
     xAxis: {
       type: 'category',
@@ -56,11 +56,11 @@ function createBaseOption(
       data: labels,
       axisLine: { lineStyle: { color: palette.border } },
       axisTick: { show: false },
-      axisLabel: { color: palette.muted, hideOverlap: true, fontSize: 11 }
+      axisLabel: { color: palette.faint, hideOverlap: true, fontSize: 11 }
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: palette.muted, fontSize: 11 },
+      axisLabel: { color: palette.faint, fontSize: 11 },
       splitLine: { lineStyle: { color: palette.border, type: 'dashed' } }
     }
   };
@@ -79,15 +79,15 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
       return {
         ...base,
         tooltip: { ...base.tooltip, valueFormatter: (value: unknown) => formatCost(Number(value) || 0) },
-        yAxis: { ...base.yAxis, axisLabel: { color: palette.muted, formatter: (value: number) => formatCost(value) } },
+        yAxis: { ...base.yAxis, axisLabel: { color: palette.faint, formatter: (value: number) => formatCost(value) } },
         series: [{
           name: '估算成本',
           type: 'line',
           data: slots.map((point) => point?.costUsd ?? null),
           showSymbol: false,
           smooth: 0.18,
-          lineStyle: { width: 2.2, color: palette.teal },
-          areaStyle: { color: palette.teal, opacity: 0.14 },
+          lineStyle: { width: 2.2, color: palette.success, shadowBlur: palette.glow, shadowColor: palette.success },
+          areaStyle: { color: palette.success, opacity: 0.14 },
           connectNulls: false
         }]
       };
@@ -100,7 +100,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
           ...base.yAxis,
           min: 0,
           max: 100,
-          axisLabel: { color: palette.muted, formatter: '{value}%' }
+          axisLabel: { color: palette.faint, formatter: '{value}%' }
         },
         series: [{
           name: '缓存命中率',
@@ -108,7 +108,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
           data: slots.map((point) => point?.cacheHitRate == null ? null : point.cacheHitRate * 100),
           showSymbol: false,
           smooth: 0.18,
-          lineStyle: { width: 2.4, color: palette.amber },
+          lineStyle: { width: 2.4, color: palette.amber, shadowBlur: palette.glow, shadowColor: palette.amber },
           areaStyle: { color: palette.amber, opacity: 0.12 },
           connectNulls: false
         }]
@@ -116,7 +116,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
     }
     const tokenSeries = [
       ['输入', 'inputTokens', palette.blue],
-      ['缓存读取', 'cacheReadInputTokens', palette.teal],
+      ['缓存读取', 'cacheReadInputTokens', palette.success],
       ['缓存写入', 'cacheCreationInputTokens', palette.amber],
       ['输出', 'outputTokens', palette.brand],
       ['推理', 'reasoningOutputTokens', palette.violet]
@@ -124,7 +124,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
     return {
       ...base,
       tooltip: { ...base.tooltip, valueFormatter: (value: unknown) => formatTokens(Number(value) || 0) },
-      yAxis: { ...base.yAxis, axisLabel: { color: palette.muted, formatter: (value: number) => formatTokens(value) } },
+      yAxis: { ...base.yAxis, axisLabel: { color: palette.faint, formatter: (value: number) => formatTokens(value) } },
       series: tokenSeries.map(([name, field, color]) => ({
         name,
         type: 'line',
@@ -132,7 +132,7 @@ export default function UsageTrendChart({ trend }: UsageTrendChartProps) {
         data: slots.map((point) => point?.[field] ?? null),
         showSymbol: false,
         smooth: 0.16,
-        lineStyle: { width: 1.6, color },
+        lineStyle: { width: 1.6, color, shadowBlur: palette.glow, shadowColor: color },
         areaStyle: { color, opacity: 0.12 },
         connectNulls: false
       }))

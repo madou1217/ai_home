@@ -148,23 +148,18 @@
 
 
 /* =============================================================================
- * 顶部统计条（桌面 StatisticCard.Group）—— KPI 条语言（web/DESIGN.md §6）：
- * 一个描边表面容器，单元格之间 1px 发丝线；标签 12 muted、数值 20/600 等宽、说明 12 muted。
+ * 顶部统计条（桌面 StatisticCard.Group）—— HUD KPI 条（web/DESIGN.md §6 / §HUD）：
+ * 容器同时挂全局 .hos-kpi-strip（hud.css 切角面板 + 角标，kpi-strip.css 发丝缝 +
+ * 数值 + HUD 标签）。这里只补：单元格底色、数值字号、按语义的发光色
+ * （正常=success、待处理=warning、耗尽=danger、其余中性青），以及说明行的等宽数据字体。
  * ========================================================================== */
 .ant-pro-card.accounts-stat-group {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg, 10px);
   box-shadow: none;
   overflow: hidden;
 }
-.accounts-stat-group > .ant-pro-card-body {
-  gap: 1px;
-  background: var(--color-border);
-}
 .accounts-stat-group > .ant-pro-card-body > .ant-pro-card-col {
   min-width: 0;
-  background: var(--color-surface);
+  background: var(--hud-panel-bg);
 }
 .accounts-stat-group .ant-pro-statistic-card {
   background: transparent;
@@ -175,19 +170,24 @@
 .accounts-stat-group .ant-pro-statistic-card > .ant-pro-card-body {
   padding: var(--space-7, 14px) var(--space-8, 16px);
 }
-.accounts-stat-group .ant-statistic-title {
+/* 标签：HUD 小标签（同 .hud-label：10px 大写字距、faint） */
+.ant-pro-card.accounts-stat-group .ant-statistic-title {
   margin-bottom: var(--space-2, 4px);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   line-height: var(--leading-snug, 1.4);
-  color: var(--color-muted);
+  color: var(--color-faint);
 }
-.accounts-stat-group .ant-statistic-content {
-  font-size: 20px;
-  font-weight: var(--weight-semibold, 600);
+.ant-pro-card.accounts-stat-group .ant-statistic-content {
+  /* 数值用等宽粗体（Orbitron 的 0 在空状态下读成 ⊘，只留给标题） */
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: 22px;
   line-height: var(--leading-tight, 1.25);
-  color: var(--color-heading);
-  font-variant-numeric: tabular-nums;
 }
 .accounts-stat-group .ant-statistic-content-value,
 .accounts-stat-group .ant-statistic-content-value-int,
@@ -195,9 +195,27 @@
   font-size: inherit;
   font-weight: inherit;
 }
+/* 数值发光：颜色由 className 表达的语义决定（与原 valueStyle 的颜色一致） */
+.ant-pro-card.accounts-stat-group .accounts-stat--accent .ant-statistic-content {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
+}
+.ant-pro-card.accounts-stat-group .accounts-stat--success .ant-statistic-content {
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
+}
+.ant-pro-card.accounts-stat-group .accounts-stat--warning .ant-statistic-content {
+  color: var(--color-warning);
+  text-shadow: var(--hud-text-glow-warning);
+}
+.ant-pro-card.accounts-stat-group .accounts-stat--danger .ant-statistic-content {
+  color: var(--color-danger);
+  text-shadow: var(--hud-text-glow-danger);
+}
 .accounts-stat-group .ant-pro-card-statistic-description {
   margin-top: var(--space-2, 4px);
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: 11px;
   line-height: var(--leading-snug, 1.4);
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
@@ -235,7 +253,16 @@
   grid-row: 3;
 }
 .accounts-stat-group .ant-pro-card-statistic-status .ant-badge-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   top: 0;
+}
+/* 状态点 → HUD 指示灯辉光（同 .hud-led--ok / --info） */
+.accounts-stat-group .ant-badge-status-dot.ant-badge-status-success {
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
+.accounts-stat-group .ant-badge-status-dot.ant-badge-status-processing {
+  background: var(--color-accent);
+  box-shadow: 0 0 6px var(--color-accent);
 }

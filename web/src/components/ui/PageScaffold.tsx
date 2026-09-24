@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import '../../styles/unified.css';
+import './PageScaffold.css';
 
 export interface PageScaffoldProps {
   /** 页面主标题 */
@@ -20,6 +21,11 @@ export interface PageScaffoldProps {
    * 由页面自身的全高布局接管。普通文档页不要用。
    */
   fullBleed?: boolean;
+  /**
+   * 可选的 HUD 页面代号（与侧栏导航代号一致，如 `CONFIG` / `MODELS`），
+   * 在标题上方渲染一行小号青色等宽代号 `SYS // <code>`。纯展示，不影响标题语义。
+   */
+  code?: string;
 }
 
 /**
@@ -40,6 +46,7 @@ export default function PageScaffold({
   className = '',
   ghost,
   fullBleed,
+  code,
 }: PageScaffoldProps) {
   if (fullBleed) {
     return (
@@ -55,10 +62,23 @@ export default function PageScaffold({
     );
   }
   return (
-    <div className={['unified-page-wrapper', className].filter(Boolean).join(' ')}>
+    <div
+      className={['unified-page-wrapper', code ? 'unified-page-wrapper--coded' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <PageContainer
         className="unified-page-scaffold"
-        title={title}
+        title={
+          code ? (
+            <span className="hos-page-title">
+              <span className="hos-page-code" aria-hidden="true">SYS // {code}</span>
+              <span className="hos-page-title-text">{title}</span>
+            </span>
+          ) : (
+            title
+          )
+        }
         subTitle={subTitle}
         extra={extra}
         content={headerContent}

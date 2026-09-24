@@ -27,7 +27,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
     grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow', shadowStyle: { color: palette.border, opacity: 0.35 } },
+      axisPointer: { type: 'shadow', shadowStyle: { color: palette.brand, opacity: 0.08 } },
       ...buildChartTooltipStyle(palette),
       valueFormatter: (value: unknown) => (
         metric === 'cost' ? formatCost(Number(value) || 0) : formatTokens(Number(value) || 0)
@@ -37,7 +37,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       type: 'value',
       splitNumber: 3,
       axisLabel: {
-        color: palette.muted,
+        color: palette.faint,
         fontSize: 11,
         hideOverlap: true,
         formatter: (value: number) => formatModelMixAxisValue(value, metric)
@@ -63,8 +63,10 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       data: data.map((item) => ({
         value: item.value,
         itemStyle: {
-          color: item.isOther ? palette.neutral : metric === 'cost' ? palette.teal : palette.brand,
-          borderRadius: [0, 4, 4, 0]
+          color: item.isOther ? palette.neutral : metric === 'cost' ? palette.success : palette.brand,
+          borderRadius: 0,
+          shadowBlur: item.isOther ? 0 : palette.glow,
+          shadowColor: metric === 'cost' ? palette.success : palette.brand
         }
       })),
       barMaxWidth: 18

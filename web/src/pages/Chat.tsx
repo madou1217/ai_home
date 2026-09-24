@@ -320,10 +320,11 @@ export default function Chat() {
             justifyContent: 'space-between',
             gap: 8,
             padding: '6px 12px',
-            borderRadius: 'var(--hos-radius-sm)',
-            border: '1px solid var(--color-border)',
+            borderRadius: 2,
+            border: '1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border))',
             background: 'var(--color-surface-raised)',
             boxShadow: 'var(--elevation-3)',
+            fontFamily: 'var(--font-mono)',
             fontSize: 12,
             color: 'var(--color-muted-strong)',
           }}

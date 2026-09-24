@@ -1,4 +1,5 @@
-/* 账号卡片网格 —— 扁平表面 + 1px 描边，无阴影 / 毛玻璃 / 位移悬停（web/DESIGN.md §6）。 */
+/* 账号卡片网格 —— Cyber HUD：卡片挂全局 .hud-panel.hud-panel--sm（切角 + 左上角标 + 悬停青边），
+ * 这里只写布局与内部排版；全部语义 token，深浅主题自动翻转。 */
 .gridContainer {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -13,15 +14,13 @@
   justify-content: space-between;
   min-width: 0;
   padding: var(--space-7, 14px) var(--space-8, 16px);
-  border-radius: var(--hos-radius-lg, 10px);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border-radius: 0;
   box-shadow: none;
-  transition: border-color var(--motion-fast, 120ms) var(--ease-standard);
 }
 
+/* 悬停：青色描边（.hud-panel:hover）+ 轻微青色外辉光 */
 .accountCard:hover {
-  border-color: var(--color-border-strong);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .cardHeader {
@@ -38,8 +37,9 @@
   flex: none;
   width: 36px;
   height: 36px;
-  border-radius: var(--hos-radius-sm, 8px);
-  background: var(--color-surface-muted);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
 }
 
 .accountInfo {
@@ -50,8 +50,10 @@
 }
 
 .accountTitle {
-  font-size: var(--hos-text-h3, 14px);
-  font-weight: var(--weight-semibold, 600);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.02em;
   color: var(--color-heading);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -59,10 +61,52 @@
 }
 
 .accountSubtitle {
-  font-size: var(--hos-text-caption, 12px);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 6px);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: var(--weight-regular, 400);
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.accountSubtitleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* COPY 触发器：只复制卡片上已展示的账号 ID */
+.copyIdBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  height: 16px;
+  padding: 0 var(--space-2, 4px);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast, 120ms) var(--ease-standard),
+    box-shadow var(--motion-fast, 120ms) var(--ease-standard);
+}
+
+.copyIdBtn:hover,
+.copyIdBtn:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+  outline: none;
 }
 
 .moreBtn {
@@ -83,22 +127,16 @@
   gap: var(--space-4, 8px);
 }
 
-/* 状态：6px 点 + 12px 状态色文字（无胶囊着色底） */
+/* 状态：全局 .hud-led 指示灯 + 状态色等宽短标签（无胶囊着色底） */
 .statusPill {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3, 6px);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: var(--weight-medium, 500);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.06em;
   line-height: var(--leading-snug, 1.4);
-}
-
-.statusDot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: var(--hos-radius-pill, 9999px);
-  background: currentColor;
 }
 
 .statusHealthy {
@@ -113,14 +151,16 @@
   color: var(--color-danger);
 }
 
+/* 套餐：HUD 标签（方角 + 青色 35% 描边来自全局 .ant-tag，这里给青色字 + 淡青底） */
 .planTag {
   margin: 0;
-  border: none;
-  border-radius: var(--hos-radius-2xs, 4px);
-  font-size: var(--hos-text-micro, 11px);
-  font-weight: var(--weight-medium, 500);
-  background: var(--tint-neutral);
-  color: var(--ink-neutral);
+  border-radius: 2px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-accent);
 }
 
 .quotaTrack {
@@ -131,6 +171,7 @@
 
 .quotaLabels {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
   font-size: var(--hos-text-caption, 12px);
   color: var(--color-muted);
@@ -138,21 +179,24 @@
 }
 
 .quotaLabels strong {
+  font-size: var(--hos-text-body-sm, 13px);
   color: var(--color-heading);
-  font-weight: var(--weight-semibold, 600);
 }
 
+/* 配额：3px 方头细轨，填充色（行内 background/color 同值）带同色辉光 */
 .progressBar {
   width: 100%;
-  height: 4px;
-  border-radius: var(--space-1, 2px);
-  background: var(--color-overlay);
-  overflow: hidden;
+  height: 3px;
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle, var(--color-border));
 }
 
 .progressFill {
   height: 100%;
-  border-radius: var(--space-1, 2px);
+  max-width: 100%;
+  border-radius: 0;
+  box-shadow: 0 0 6px currentColor;
   transition: width var(--motion-slow, 240ms) var(--ease-standard);
 }
 
@@ -160,7 +204,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px dashed var(--color-border);
   padding-top: var(--space-6, 12px);
 }
 
@@ -169,8 +213,11 @@
   align-items: center;
   justify-content: center;
   min-height: 180px;
-  border-radius: var(--hos-radius-lg, 10px);
-  border: 1px dashed var(--color-border-strong);
+  border-radius: 0;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 3%, transparent);
   color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm, 13px);
+  letter-spacing: 0.04em;
 }

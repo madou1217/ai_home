@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { confirmAction } from '@/utils/confirm-action';
 import { Segmented, Select, Space, Spin, Tooltip, message } from 'antd';
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/ui/kpi-strip.css';
@@ -187,10 +188,15 @@ export default function ProxyPoolPanel() {
         message.error(planned.message || planned.error || '无法生成 Mihomo 安装计划');
         return;
       }
-      const accepted = window.confirm(
-        `将从官方 Mihomo 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n` +
-        `文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`
-      );
+      const accepted = await confirmAction({
+        title: `安装 Mihomo ${planned.plan.version}`,
+        content: (
+          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+            {`将从官方 Mihomo 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`}
+          </div>
+        ),
+        okText: '下载并安装',
+      });
       if (!accepted) return;
       const result = await proxyPoolAPI.executeCoreInstall(planned.plan.planId, true);
       if (!result.ok) {

@@ -1,6 +1,7 @@
 import { memo } from 'react';
-import { Button, Dropdown, Space, Tag, Tooltip } from 'antd';
+import { Button, Dropdown, Space, Tag, Tooltip, message } from 'antd';
 import {
+  CopyOutlined,
   MoreOutlined,
   DesktopOutlined,
   CodeOutlined,
@@ -21,9 +22,21 @@ interface AccountCardGridProps {
   onOpenCli?: (account: Account) => void;
 }
 
+/** 复制卡片上已展示的账号 ID（与 Accounts 页 copyAccountEmail 同一模式：clipboard + message 反馈）。 */
+async function copyAccountId(value: string) {
+  const text = String(value || '').trim();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success('账号 ID 已复制');
+  } catch (_error) {
+    message.error('复制失败');
+  }
+}
+
 /**
- * 账号卡片网格（Calm Operator Console）：扁平表面 + 1px 描边，状态用 6px 点 + 文字；
- * 操作按钮保持语义图标（CodeOutlined / DesktopOutlined），不使用 Provider Logo。
+ * 账号卡片网格（Cyber HUD）：.hud-panel--sm 切角小卡 + 角标，状态用 .hud-led 指示灯 + 等宽标签，
+ * 配额为 3px 发光细轨；操作按钮保持语义图标（CodeOutlined / DesktopOutlined），不使用 Provider Logo。
  */
 export const AccountCardGrid = memo(function AccountCardGrid({
   accounts,
@@ -50,6 +63,9 @@ export const AccountCardGrid = memo(function AccountCardGrid({
 
         const statusText = isHealthy ? '正常就绪' : isWarning ? '冷却中' : '不可用';
         const remainingPct = typeof acc.remainingPct === 'number' ? Math.round(acc.remainingPct) : null;
+        const quotaColor = remainingPct !== null && remainingPct > 20 ? 'var(--color-success)' : 'var(--color-danger)';
+        // 卡片上展示的 ID：有 CLI 账号号就显示它，否则显示 accountRef 的前 6 位；复制时给出完整原值。
+        const displayedIdValue = acc.cliAccountId || acc.accountRef;
 
         const actionMenuItems = [
           {
@@ -83,7 +99,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
         ];
 
         return (
-          <div key={acc.accountRef} className={styles.accountCard}>
+          <div key={acc.accountRef} className={`${styles.accountCard} hud-panel hud-panel--sm`}>
             {/* 卡片顶部：图标、标题与操作下拉 */}
             <div className={styles.cardHeader}>
               <div className={styles.avatarWrapper}>
@@ -94,7 +110,22 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                   {acc.email || acc.alias || acc.accountRef.slice(0, 12)}
                 </strong>
                 <span className={styles.accountSubtitle}>
-                  {acc.provider.toUpperCase()} · ID #{acc.cliAccountId || acc.accountRef.slice(0, 6)}
+                  <span className={styles.accountSubtitleText}>
+                    {acc.provider.toUpperCase()} · ID #{acc.cliAccountId || acc.accountRef.slice(0, 6)}
+                  </span>
+                  {displayedIdValue ? (
+                    <Tooltip title={`复制账号 ID：${displayedIdValue}`}>
+                      <button
+                        type="button"
+                        className={styles.copyIdBtn}
+                        aria-label="复制账号 ID"
+                        onClick={() => { void copyAccountId(String(displayedIdValue)); }}
+                      >
+                        <CopyOutlined />
+                        <span>COPY</span>
+                      </button>
+                    </Tooltip>
+                  ) : null}
                 </span>
               </div>
               <Dropdown menu={{ items: actionMenuItems }} trigger={['click']} placement="bottomRight">
@@ -106,7 +137,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
             <div className={styles.cardBody}>
               <div className={styles.statusRow}>
                 <div className={`${styles.statusPill} ${isHealthy ? styles.statusHealthy : isWarning ? styles.statusWarning : styles.statusError}`}>
-                  <span className={styles.statusDot} />
+                  <span className={`hud-led ${isHealthy ? 'hud-led--ok' : isWarning ? 'hud-led--warn' : 'hud-led--err'}`} />
                   <span>{statusText}</span>
                 </div>
                 {acc.planType && (
@@ -118,15 +149,16 @@ export const AccountCardGrid = memo(function AccountCardGrid({
               {remainingPct !== null ? (
                 <div className={styles.quotaTrack}>
                   <div className={styles.quotaLabels}>
-                    <span>配额水位</span>
-                    <strong>{remainingPct}%</strong>
+                    <span className="hud-label">配额水位</span>
+                    <strong className="hud-display" style={{ color: quotaColor }}>{remainingPct}%</strong>
                   </div>
                   <div className={styles.progressBar}>
                     <div
                       className={styles.progressFill}
                       style={{
                         width: `${Math.max(4, remainingPct)}%`,
-                        background: remainingPct > 20 ? 'var(--color-success)' : 'var(--color-danger)',
+                        background: quotaColor,
+                        color: quotaColor,
                       }}
                     />
                   </div>

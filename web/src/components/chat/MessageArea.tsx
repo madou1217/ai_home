@@ -1198,7 +1198,7 @@ const MessageArea = ({
           styles={{
             header: { padding: '14px 16px 10px', borderBottom: 'none' },
             body: { padding: '0 16px calc(16px + env(safe-area-inset-bottom))' },
-            content: { borderRadius: '24px 24px 0 0', overflow: 'hidden' }
+            content: { borderRadius: 'var(--hos-radius-md) var(--hos-radius-md) 0 0', overflow: 'hidden' }
           }}
         >
           <div className={styles.mobileSheetHandle} />

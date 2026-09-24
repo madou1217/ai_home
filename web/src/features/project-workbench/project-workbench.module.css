@@ -44,13 +44,16 @@
   color: var(--color-muted);
   cursor: pointer;
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
+  letter-spacing: 0.02em;
 }
 .tab:hover { background: var(--color-overlay); color: var(--color-text); }
 .tabActive {
   background: var(--hos-bg);
-  color: var(--color-heading);
+  color: var(--color-accent);
   font-weight: var(--weight-medium);
+  text-shadow: var(--hud-text-glow-soft);
 }
 .tabActive::after {
   position: absolute;
@@ -58,8 +61,9 @@
   bottom: 0;
   left: 10px;
   height: 2px;
-  border-radius: var(--hos-radius-2xs) var(--hos-radius-2xs) 0 0;
+  border-radius: 0;
   background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
   content: '';
 }
 .tabLabel {
@@ -218,6 +222,7 @@
   padding: var(--hos-space-2) var(--hos-space-3);
   overflow: auto;
   background: transparent;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
 }
 .filesCentered { display: flex; flex: 1; align-items: center; justify-content: center; }
@@ -243,6 +248,7 @@
 .filesPreviewName {
   min-width: 0;
   overflow: hidden;
+  font-family: var(--font-mono);
   color: var(--hos-muted);
   font-size: var(--hos-text-caption);
   font-weight: 500;
@@ -260,20 +266,21 @@
   padding: 0 var(--hos-space-2-5);
   border-bottom: 1px solid var(--hos-border);
 }
-.filesMobilePreviewTitle { min-width: 0; overflow: hidden; font-size: var(--hos-text-body-sm); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.filesMobilePreviewTitle { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: var(--hos-text-body-sm); font-weight: var(--weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
 
 .reviewPanel { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(230px, 30%) minmax(0, 1fr); overflow: hidden; }
 .reviewSidebar { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-right: 1px solid var(--hos-border); overflow: hidden; }
 /* 标签页/移动端宿主的兜底标题栏（三栏模式下不渲染，分支 chip 在栏工具行）。 */
 .reviewHeader { display: flex; height: 36px; flex: 0 0 36px; align-items: center; justify-content: space-between; padding: 0 var(--hos-space-2) 0 var(--hos-space-3); border-bottom: 1px solid var(--hos-border); }
 .reviewBranch { display: flex; min-width: 0; align-items: center; gap: var(--hos-space-2); /* 归级:原 7px */ }
-.reviewBranch strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reviewUpstream { padding: var(--hos-space-1-5) var(--hos-space-3); border-bottom: 1px solid var(--hos-border); color: var(--color-faint); font-size: var(--hos-text-caption); }
+.reviewBranch strong { overflow: hidden; font-family: var(--font-mono); color: var(--color-accent); text-overflow: ellipsis; white-space: nowrap; }
+.reviewUpstream { padding: var(--hos-space-1-5) var(--hos-space-3); border-bottom: 1px solid var(--hos-border); color: var(--color-faint); font-family: var(--font-mono); font-size: var(--hos-text-caption); }
 .reviewGroups { min-height: 0; flex: 1; overflow: auto; }
-.reviewGroupTitle { display: flex; align-items: center; justify-content: space-between; padding: var(--hos-space-2) var(--hos-space-3) var(--hos-space-1); color: var(--color-faint); font-size: var(--hos-text-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
+.reviewGroupTitle { display: flex; align-items: center; justify-content: space-between; padding: var(--hos-space-2) var(--hos-space-3) var(--hos-space-1); color: var(--color-faint); font-family: var(--font-mono); font-size: var(--hos-text-micro); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
 .reviewFile { display: flex; width: 100%; min-width: 0; align-items: center; gap: var(--hos-space-2); padding: var(--hos-space-1-5) var(--hos-space-2-5) var(--hos-space-1-5) var(--hos-space-3-5); /* 归级:原 9px */ border: 0; background: transparent; color: var(--color-muted); cursor: pointer; text-align: left; }
 .reviewFile:hover { background: var(--color-overlay); }
-.reviewFileActive { background: var(--color-accent-soft); color: var(--color-heading); }
+/* HUD 选中：accent 弱底 + 青色内发丝框（不用竖条） */
+.reviewFileActive { background: var(--color-accent-soft); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent); }
 .reviewFile > span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; font-family: var(--hos-mobile-mono); font-size: var(--hos-text-caption); text-overflow: ellipsis; white-space: nowrap; }
 .diffPane { display: flex; min-width: 0; min-height: 0; flex-direction: column; align-items: stretch; overflow: hidden; background: var(--color-surface-sunken); color: var(--color-text); }
 /* 未选文件的空态回到常规表面色。 */
@@ -335,6 +342,7 @@
 .columnDivider:hover::after,
 .columnDivider:active::after {
   background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
 }
 
 /* 栏工具行（36px）：左侧 segmented 胶囊 tab，右侧内联当前面板动作区。 */
@@ -354,8 +362,9 @@
   align-items: center;
   gap: var(--hos-space-0-5);
   padding: var(--hos-space-0-5);
-  border-radius: var(--hos-radius-xs);
-  background: var(--hos-surface-muted);
+  border: 1px solid var(--hos-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
 }
 .columnTab {
   display: inline-flex;
@@ -363,22 +372,27 @@
   align-items: center;
   padding: 0 var(--hos-space-2-5);
   border: 0;
-  border-radius: var(--hos-radius-2xs);
+  border-radius: 2px;
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
   font: inherit;
-  font-size: var(--hos-text-body-sm);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   white-space: nowrap;
   transition: color var(--motion-fast) var(--ease-standard),
     background var(--motion-fast) var(--ease-standard);
 }
-.columnTab:hover { color: var(--hos-text); }
+.columnTab:hover { color: var(--color-accent); }
+/* HUD 分段选中：青色描边 + 弱底 + 文字辉光 */
 .columnTabActive {
-  background: var(--color-surface);
-  color: var(--color-heading);
-  font-weight: var(--weight-medium);
-  box-shadow: var(--elevation-1);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 60%, transparent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 .columnToolbarActions {
   display: inline-flex;
@@ -395,9 +409,11 @@
   align-items: center;
   gap: var(--hos-space-1);
   padding: 0 var(--hos-space-2);
-  border-radius: var(--hos-radius-2xs);
-  background: var(--hos-surface-muted);
+  border: 1px solid var(--hos-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
   color: var(--hos-muted);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-weight: 500;
 }
@@ -521,12 +537,15 @@
   font-size: var(--hos-text-caption);
 }
 .columnRailButton:hover {
-  background: var(--color-overlay);
-  color: var(--hos-text);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 .columnRailLabel {
   overflow: hidden;
   color: var(--color-faint);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   font-size: var(--hos-text-caption);
   writing-mode: vertical-rl;
 }

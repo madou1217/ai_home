@@ -19,7 +19,7 @@ export default function ChatEmptyState({
   if (mode === 'chat') {
     return (
       <div className={styles.emptyContainerHarmony}>
-        <div className={styles.emptyCardHarmony}>
+        <div className={`hud-panel ${styles.emptyCardHarmony}`}>
           <div className={styles.emptyIconBadgeHarmony}>
             <RocketOutlined />
           </div>
@@ -55,7 +55,7 @@ export default function ChatEmptyState({
 
   return (
     <div className={styles.emptyContainerHarmony}>
-      <div className={styles.emptyCardHarmony}>
+      <div className={`hud-panel ${styles.emptyCardHarmony}`}>
         <div className={styles.emptyIconBadgeHarmony}>
           <FolderOpenOutlined />
         </div>

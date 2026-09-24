@@ -37,7 +37,7 @@ export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
   onManage,
 }: AppMarketItemProps) {
   return (
-    <div className={styles.marketCard}>
+    <div className={`${styles.marketCard} hud-panel hud-panel--sm`}>
       <div className={styles.cardTop}>
         <div className={styles.iconWrapper}>
           {icon || <AppstoreOutlined style={{ fontSize: 24, color: 'var(--color-muted-strong)' }} />}

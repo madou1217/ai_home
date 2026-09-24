@@ -1081,3 +1081,150 @@
     transition: none;
   }
 }
+
+/* ===========================================================================
+ * Cyber HUD 层：四个工作面板（会话栏 / 画布 / 修订条 / 控制台）= 小切角 HUD 面板 +
+ * 青色角标；选中态 = 青色描边 + 柔和辉光；状态读数按真实状态着色发光。
+ * 只引用语义 token，深浅主题差异在 design-tokens.css。
+ * ========================================================================= */
+.workspace {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--color-surface-muted) 70%, transparent);
+}
+
+.workspace :global(.ant-btn) {
+  border-radius: 0;
+}
+
+.sessionRail,
+.canvasPanel,
+.revisionStrip,
+.composerPanel {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
+  border-radius: 0;
+  background: var(--hud-panel-bg);
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+  transition: border-color var(--motion-base) var(--ease-standard);
+}
+
+.sessionRail:hover,
+.canvasPanel:hover,
+.revisionStrip:hover,
+.composerPanel:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+/* 角标：固定在不滚动的面板上（控制台自身滚动，角标挂在吸顶的头部上） */
+.sessionRail::before,
+.canvasPanel::before,
+.revisionStrip::before,
+.composerHeader::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  border-top: 2px solid var(--hud-tick-color);
+  border-inline-start: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
+.composerHeader {
+  background: var(--hud-panel-bg);
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+}
+
+.railHeader strong,
+.composerHeader strong,
+.revisionStripHeader strong,
+.canvasHeader strong {
+  color: var(--color-accent);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.eyebrow,
+.canvasPrompt > span {
+  text-transform: uppercase;
+}
+
+.workspaceMark {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
+}
+
+.workspaceIdentity h1 {
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.sessionItem,
+.revisionCard,
+.sessionFrame,
+.revisionThumb,
+.outputPicker button,
+.iconButton,
+.canvasProgress,
+.canvasHeaderMeta span {
+  border-radius: 0;
+}
+
+.canvasHeaderMeta span {
+  border-color: color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+  background: var(--color-surface-sunken);
+}
+
+.iconButton:hover,
+.iconButton:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.sessionItemActive,
+.revisionCardSelected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
+}
+
+.outputPickerSelected {
+  box-shadow: 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
+}
+
+.canvasProgress {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  font-family: var(--font-mono);
+  box-shadow: var(--elevation-2), var(--hud-glow-accent);
+}
+
+.canvasEmptyMark {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.canvasEmptyMarkError {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  box-shadow: none;
+}
+
+.canvasPrompt p,
+.revisionPrompt {
+  font-family: var(--font-prose);
+}
+
+.revisionStatus_succeeded { text-shadow: var(--hud-text-glow-success); }
+.revisionStatus_running { text-shadow: var(--hud-text-glow); }
+.revisionStatus_failed { text-shadow: var(--hud-text-glow-danger); }

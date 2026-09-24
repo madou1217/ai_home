@@ -44,7 +44,7 @@ export default function ProxyNodeCard({
 }: ProxyNodeCardProps) {
   return (
     <article
-      className={`toolkit-app-card ${activePort ? 'installed' : ''}`}
+      className={`toolkit-app-card hud-panel hud-panel--sm ${activePort ? 'installed' : ''}`}
       data-current-outbound={currentOutbound || undefined}
     >
       <div>

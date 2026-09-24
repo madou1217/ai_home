@@ -30,6 +30,16 @@
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据
 - [ ] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
 - [ ] S10 打包：postinstall 构建/下载 Go 构件 + 版本/sha 校验；Go 崩溃自动重启；Go stderr 落日志；基准测试（Node 直出 vs Node→Go vs Go 直连：TTFB、p50/p99、吞吐、RSS/CPU）
+  - 2026-09-25 已完成：build stamp（版本 / manifest / 二进制 sha256）+ 启动前校验失败关闭；postinstall 本地构建或下载校验 sha256；`go-core-release` 工作流交叉编译 5 个目标；Go 崩溃指数退避自动重启；Go stdout/stderr 落 `logs/go-core.log`。
+  - 基准 `node scripts/go-core-benchmark.js`（隔离 AIH_HOME，压测客户端独立进程，GET `/v1/models/{id}`，3000 请求 / 并发 50）：
+
+    | 拓扑 | rps | p50 ms | p99 ms | Node CPU | Go CPU / RSS |
+    | --- | ---: | ---: | ---: | ---: | ---: |
+    | node-direct | 1454 | 33.4 | 66.6 | 2.21s | - |
+    | node-to-go | 16713 | 2.7 | 7.3 | 0.36s | 0.11s / 28MB |
+    | go-direct | 31519 | 1.3 | 7.0 | - | 0.09s / 30MB |
+
+    经 Go 的 p99 ≤ Node 直出、Node CPU 下降 84%，满足 P4 门槛。推理端点基准需真实 token，随 S8/S9 划转后执行。
 - [ ] S11 收口报告：Node+Go 共存、能力对等、性能数据
 
 ## 已知差异 / 风险

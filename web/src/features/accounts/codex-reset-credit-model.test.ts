@@ -43,6 +43,13 @@ test('consumption stays disabled for incomplete details, active operations, or e
     selectableCount: 2,
     activeOperation: null
   }).reason, '重置卡明细不完整，无法安全选择最早过期卡');
+  assert.deepEqual(canConsumeCodexResetCredit({
+    supported: true,
+    detailsComplete: false,
+    selectionMode: 'upstream',
+    selectableCount: 1,
+    activeOperation: null
+  }), { allowed: true, reason: '' });
   assert.equal(canConsumeCodexResetCredit({
     supported: true,
     detailsComplete: true,
@@ -75,7 +82,8 @@ test('shows only available cards in reverse expiry order', () => {
 
   assert.deepEqual(credits.map((credit: any) => credit.creditId), [
     'later',
-    'earlier'
+    'earlier',
+    'no-expiry'
   ]);
 });
 

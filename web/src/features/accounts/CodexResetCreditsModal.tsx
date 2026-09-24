@@ -298,10 +298,12 @@ export function CodexResetCreditsModal({
   const recoveryNeedsQuery = recoveryStatus === 'checking'
     || recoveryStatus === 'blocked'
     || pendingWithoutActiveOperation;
+  const upstreamSelection = inventory?.selectionMode === 'upstream';
   const consumeAvailability = canConsumeCodexResetCredit({
     supported: Boolean(inventory?.supported),
     detailsComplete: Boolean(inventory?.detailsComplete),
-    selectableCount: availableCredits.length,
+    selectionMode: inventory?.selectionMode,
+    selectableCount: upstreamSelection ? Number(inventory?.selectableCount) || 0 : availableCredits.length,
     activeOperation,
     pendingOperation: recoveryNeedsQuery
   });
@@ -465,11 +467,13 @@ export function CodexResetCreditsModal({
           : activeOperation?.status === 'consuming'
             ? '重置处理中，请勿关闭窗口。'
             : inventory && (!inventory.supported || !inventory.detailsComplete)
-              ? consumeAvailability.reason
+              ? (upstreamSelection && consumeAvailability.allowed
+                ? '上游未返回完整卡片明细，将由上游自动选择下一张可用卡。'
+                : consumeAvailability.reason)
               : '';
   const statusType = recoveryStatus === 'blocked'
     || activeOperation?.status === 'unknown'
-    || Boolean(inventory && (!inventory.supported || !inventory.detailsComplete))
+    || Boolean(inventory && (!inventory.supported || !inventory.detailsComplete) && !upstreamSelection)
     ? 'warning'
     : 'secondary';
 
@@ -546,12 +550,17 @@ export function CodexResetCreditsModal({
                 {availableCredits.length > 0 ? availableCredits.map((credit: CodexResetCredit, index) => (
                   <tr key={credit.creditId}>
                     <td>{index + 1}</td>
-                    <td>{formatChinaDateTime(credit.expiresAt)}</td>
+                    <td>{credit.expiresAt === null ? '永不过期' : formatChinaDateTime(credit.expiresAt)}</td>
                   </tr>
                 )) : (
                   <tr>
                     <td colSpan={2} className="codex-reset-credits__empty">
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用重置额度" />
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={upstreamSelection
+                          ? `上游未返回卡片明细（可用 ${inventory.availableCount} 张）`
+                          : '暂无可用重置额度'}
+                      />
                     </td>
                   </tr>
                 )}

@@ -72,29 +72,39 @@ test('selects the earliest-expiring unexpired reset credit and excludes unsafe e
   assert.equal(selected.creditId, 'sooner');
 });
 
-test('fails closed when an available card omits a finite expiry timestamp', async (t) => {
+test('treats a missing or null expiry as never expiring, but an empty expiry as malformed', async (t) => {
   const cases = [
-    ['missing', {}],
-    ['null', { expiresAt: null }],
-    ['empty', { expiresAt: '' }]
+    ['missing', {}, true],
+    ['null', { expiresAt: null }, true],
+    ['empty', { expiresAt: '' }, false]
   ];
 
-  for (const [name, expiry] of cases) {
+  for (const [name, expiry, complete] of cases) {
     await t.test(name, () => {
       const inventory = normalizeResetCreditInventory({
         availableCount: 1,
         credits: [{
-          id: `unsafe-expiry-${name}`,
+          id: `expiry-${name}`,
           resetType: 'codexRateLimits',
           status: 'available',
           ...expiry
         }]
       });
 
-      assert.equal(inventory.detailsComplete, false);
-      assert.equal(selectNextResetCredit(inventory.credits, 100), null);
+      assert.equal(inventory.detailsComplete, complete);
+      assert.equal(inventory.credits[0].expiresAt, null);
     });
   }
+});
+
+test('selects a never-expiring card only after every expiring card', () => {
+  assert.equal(selectNextResetCredit([
+    { creditId: 'forever', status: 'available', grantedAt: 1, expiresAt: null }
+  ], 100).creditId, 'forever');
+  assert.equal(selectNextResetCredit([
+    { creditId: 'forever', status: 'available', grantedAt: 1, expiresAt: null },
+    { creditId: 'expiring', status: 'available', grantedAt: 2, expiresAt: 500 }
+  ], 100).creditId, 'expiring');
 });
 
 test('treats a confirmed zero count as complete even when detail rows are omitted', () => {

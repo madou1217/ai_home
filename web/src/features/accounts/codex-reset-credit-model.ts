@@ -2,7 +2,8 @@ import type {
   Account,
   CodexResetCredit,
   CodexResetOperation,
-  CodexResetOperationOutcome
+  CodexResetOperationOutcome,
+  CodexResetSelectionMode
 } from '@/types';
 
 const CHINA_TIME_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -33,6 +34,7 @@ export function isCodexOAuthResetEligible(
 export function canConsumeCodexResetCredit(input: {
   supported: boolean;
   detailsComplete: boolean;
+  selectionMode?: CodexResetSelectionMode;
   selectableCount: number;
   activeOperation?: Pick<CodexResetOperation, 'status'> | null;
   pendingOperation?: boolean;
@@ -49,7 +51,7 @@ export function canConsumeCodexResetCredit(input: {
   if (input.pendingOperation) {
     return { allowed: false, reason: '上一次重置操作尚未确认' };
   }
-  if (!input.detailsComplete) {
+  if (!input.detailsComplete && input.selectionMode !== 'upstream') {
     return { allowed: false, reason: '重置卡明细不完整，无法安全选择最早过期卡' };
   }
   if (input.selectableCount < 1) {
@@ -66,8 +68,8 @@ export function listAvailableCodexResetCredits(
   return (Array.isArray(credits) ? credits : [])
     .filter((credit) => (
       credit?.status === 'available'
-      && Number.isFinite(credit.expiresAt)
-      && Number(credit.expiresAt) > currentTime
+      // expiresAt 为 null 表示永不过期
+      && (credit.expiresAt === null || Number(credit.expiresAt) > currentTime)
     ))
     .slice()
     .sort((left, right) => {

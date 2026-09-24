@@ -243,7 +243,7 @@ test('rejects an operation id reused with a different inventory version', async 
   assert.equal(fixture.state.consumeCalls.length, 1);
 });
 
-test('treats capped detail rows as non-selectable instead of guessing which card expires first', async (t) => {
+test('lets upstream select the card when detail rows are capped', async (t) => {
   const fixture = createFixture(t);
   fixture.state.rateLimits = snapshot([
     credit('credit-known', 100, 1_000)
@@ -253,20 +253,68 @@ test('treats capped detail rows as non-selectable instead of guessing which card
 
   assert.equal(listed.availableCount, 2);
   assert.equal(listed.detailsComplete, false);
-  assert.equal(listed.selectableCount, 0);
+  assert.equal(listed.selectionMode, 'upstream');
+  assert.equal(listed.selectableCount, 2);
   assert.equal(listed.nextCreditId, '');
-  await assert.rejects(
-    fixture.service.consume({
-      accountRef: fixture.accountRef,
-      operationId: OPERATION_A,
-      inventoryVersion: listed.inventoryVersion
-    }),
-    (error) => error.code === 'codex_reset_credit_details_incomplete'
-  );
-  assert.equal(fixture.state.consumeCalls.length, 0);
+  const result = await fixture.service.consume({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A,
+    inventoryVersion: listed.inventoryVersion
+  });
+  assert.equal(result.operation.status, 'succeeded');
+  assert.equal(result.operation.creditId, '');
+  assert.deepEqual(fixture.state.consumeCalls, [
+    { accountRef: fixture.accountRef, idempotencyKey: OPERATION_A }
+  ]);
 });
 
-test('treats an available card without expiry as non-selectable', async (t) => {
+test('lets upstream select the card when only the available count is returned', async (t) => {
+  const fixture = createFixture(t);
+  fixture.state.rateLimits = snapshot(null, 1);
+
+  const listed = await fixture.service.list(fixture.accountRef);
+
+  assert.equal(listed.supported, true);
+  assert.equal(listed.detailsComplete, false);
+  assert.equal(listed.selectionMode, 'upstream');
+  assert.equal(listed.selectableCount, 1);
+  const result = await fixture.service.consume({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A,
+    inventoryVersion: listed.inventoryVersion
+  });
+  assert.equal(result.operation.status, 'succeeded');
+  assert.equal(Object.hasOwn(fixture.state.consumeCalls[0], 'creditId'), false);
+});
+
+test('reconciles an upstream-selected operation without inventing a credit id', async (t) => {
+  let attempts = 0;
+  const fixture = createFixture(t, {
+    consumeCredit: async () => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error('boom'), { code: 'codex_reset_result_unknown' });
+      return { outcome: 'alreadyRedeemed' };
+    }
+  });
+  fixture.state.rateLimits = snapshot(null, 1);
+  const listed = await fixture.service.list(fixture.accountRef);
+
+  const first = await fixture.service.consume({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A,
+    inventoryVersion: listed.inventoryVersion
+  });
+  assert.equal(first.operation.status, 'unknown');
+  const reconciled = await fixture.service.reconcile({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A
+  });
+  assert.equal(reconciled.operation.status, 'succeeded');
+  assert.equal(fixture.state.consumeCalls.length, 2);
+  assert.equal(fixture.state.consumeCalls.every((call) => !Object.hasOwn(call, 'creditId')), true);
+});
+
+test('selects a never-expiring card locally when details are complete', async (t) => {
   const fixture = createFixture(t);
   fixture.state.rateLimits = snapshot([{
     id: 'credit-without-expiry',
@@ -278,21 +326,13 @@ test('treats an available card without expiry as non-selectable', async (t) => {
   const listed = await fixture.service.list(fixture.accountRef);
 
   assert.equal(listed.availableCount, 1);
-  assert.equal(listed.detailsComplete, false);
-  assert.equal(listed.selectableCount, 0);
-  assert.equal(listed.nextCreditId, '');
-  await assert.rejects(
-    fixture.service.consume({
-      accountRef: fixture.accountRef,
-      operationId: OPERATION_A,
-      inventoryVersion: listed.inventoryVersion
-    }),
-    (error) => error.code === 'codex_reset_credit_details_incomplete'
-  );
-  assert.equal(fixture.state.consumeCalls.length, 0);
+  assert.equal(listed.detailsComplete, true);
+  assert.equal(listed.selectionMode, 'local');
+  assert.equal(listed.selectableCount, 1);
+  assert.equal(listed.nextCreditId, 'credit-without-expiry');
 });
 
-test('fails closed when an upstream-available card is already expired locally', async (t) => {
+test('defers to upstream when an upstream-available card is already expired locally', async (t) => {
   const currentTime = Date.parse('2026-08-22T00:00:00Z');
   const fixture = createFixture(t, { now: currentTime });
   fixture.state.rateLimits = snapshot([
@@ -312,17 +352,14 @@ test('fails closed when an upstream-available card is already expired locally', 
 
   assert.equal(listed.availableCount, 2);
   assert.equal(listed.detailsComplete, false);
-  assert.equal(listed.selectableCount, 0);
+  assert.equal(listed.selectionMode, 'upstream');
   assert.equal(listed.nextCreditId, '');
-  await assert.rejects(
-    fixture.service.consume({
-      accountRef: fixture.accountRef,
-      operationId: OPERATION_A,
-      inventoryVersion: listed.inventoryVersion
-    }),
-    (error) => error.code === 'codex_reset_credit_details_incomplete'
-  );
-  assert.equal(fixture.state.consumeCalls.length, 0);
+  await fixture.service.consume({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A,
+    inventoryVersion: listed.inventoryVersion
+  });
+  assert.equal(Object.hasOwn(fixture.state.consumeCalls[0], 'creditId'), false);
 });
 
 test('recovers an interrupted persisted consume as unknown after the timeout window', async (t) => {

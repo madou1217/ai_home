@@ -294,12 +294,16 @@ export interface CodexResetOperation {
   errorCode: string;
 }
 
+export type CodexResetSelectionMode = 'local' | 'upstream' | 'none';
+
 export interface CodexResetCreditsResponse {
   ok: boolean;
   accountRef: string;
   supported: boolean;
   availableCount: number;
   selectableCount: number;
+  /** local=本地挑最早过期卡；upstream=上游只给数量，由上游选卡；none=无可用卡 */
+  selectionMode?: CodexResetSelectionMode;
   detailsComplete: boolean;
   inventoryVersion: string;
   capturedAt: number;

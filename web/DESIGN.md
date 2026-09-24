@@ -93,14 +93,14 @@ Primitive  →  Semantic  →  Domain
 |---|---|
 | 页面头 `PageScaffold` | 标题 h1 20/600 + 同行副标题 13 muted；右侧操作：次要按钮在左、唯一主按钮在最右。移动端副标题换行、操作为 40px 图标按钮。 |
 | 卡片 `SectionCard` | surface 底、1px 描边、圆角 10、无阴影；头部 48px + 底部发丝线；内距 16。 |
-| 按钮 | 高 32（sm 24 / lg 40），圆角 6，字重 500。主按钮 = Ink；默认 = surface + 描边；文字按钮悬停出现 overlay 底；危险 = danger 字色。无渐变、无投影、无位移。 |
+| 按钮 | 高 32（sm 24 / lg 40），圆角 6，字重 500；全局关闭 antd 双汉字自动插空格（`AntdThemeProvider` 的 `button.autoInsertSpace=false`）。主按钮 = Ink；默认 = surface + 描边；文字按钮悬停出现 overlay 底；危险 = danger 字色。无渐变、无投影、无位移。 |
 | 输入 / 选择 | 高 32，圆角 6，1px 描边；悬停 border-strong；聚焦 accent 描边 + 3px accent 20% 光环。带前后缀的输入只有外框一层描边。 |
 | 表格 `ListTable` | 表头 surface-muted、12–13px muted-strong 500；行发丝线；悬停 overlay；数值列右对齐、等宽数字。 |
 | Tabs / Segmented | Tabs：accent 下划线指示；Segmented：muted 轨道 + surface 选中块 + elevation-1，圆角 6。 |
 | 标签 Tag | 圆角 4，tint 底无描边，12px。 |
 | 弹窗 / 抽屉 / 下拉 | 不透明 raised 表面 + 描边；弹窗圆角 12；抽屉贴边侧无圆角；遮罩 40%（深色 60%）。焦点环只画在可交互控件上，不画在对话框容器上。 |
-| KPI 条 | 一个容器内多个单元格，发丝线分隔；标签 12 muted、数值 20/600 等宽、说明 12 muted；状态用 6px 点 + 文字。 |
-| 行内提示 | 取代大块 Alert：图标 + 13px 文字，必要时一枚 tint 底小胶囊；不超过两行。 |
+| KPI 条 | `components/ui/kpi-strip.css`（`.hos-kpi-strip`）或 `ServiceWidgetGrid`：一个容器内多个单元格，发丝线分隔；标签 12 muted、数值 20/600 等宽、说明 12 muted；状态用 6px 点 + 文字。 |
+| 行内提示 | `components/ui/InlineNote`：取代大块 Alert，图标 + 13px 文字，只有图标带状态色；不超过两行。 |
 | 空态 | antd `PRESENTED_IMAGE_SIMPLE` + 13px muted 文案。 |
 | 焦点 | 所有可交互元素 `:focus-visible` 显示 2px accent 光环（`--ring-focus`）。 |
 
@@ -117,6 +117,13 @@ Primitive  →  Semantic  →  Domain
 - **设置 / Server / SSH / 工具 / 模型 / 用量 / 生图**：保持信息架构，只替换材质、颜色、圆角和提示样式。
 - **AI 会话**：保留三栏与移动端 iOS 导航栈，只替换材质与强调色。
 - 所有页面：业务行为、路由、数据、文案语义不变。
+
+## 7.2 已知保留项（本轮不改）
+
+- 设置页「基础设置」为两列网格，左列卡片随右列高卡片的行高下移；改为独立两列会改变阅读顺序，留作后续结构优化。
+- 模型用量页顶部为加载/错误状态预留 30px 状态槽（防止布局跳动，有测试守卫），空闲时表现为一段留白。
+- 终端 / xterm、Monaco 编辑器、分享卡导出图、HTML 预览窗口保持固定配色（无法读取 CSS 变量或需恒定深色）。
+- 分享卡导出页脚文案「HarmonyOS 6.1」属于产品文案，未改动。
 
 ## 8. 断点（Breakpoints）
 

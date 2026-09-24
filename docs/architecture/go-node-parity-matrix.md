@@ -424,10 +424,12 @@ Go    acct_4a6fd2d115fe1edacb4a   （personal）
 
 验证：`go test ./...` 全部通过（84 个包）。
 
-**仍未闭环**：Go 现为 `oauth:codex:<user_id>`，Node 仍为 `oauth:codex:<email>`。两端
-`accountRef` 依然不同，因此 Node 旧账号迁移仍必须按
-[`product-direction-node-go-2026-08-15.md` §8.1](./product-direction-node-go-2026-08-15.md)
-生成显式映射账本。把 Node 切到 `user_id` 会改写既有生产 `accountRef`，属于 §8.1 要求
+**已闭环（2026-09-18）**：Node 已统一到 `oauth:codex:<user_id>`，显式映射账本、
+事务迁移、恢复门禁及真实生产 rekey 均已执行。Codex 与同批 Grok 旧引用已迁移，重新规划为
+待迁移身份 0 / blocker 0；Go `aih.db` 当时账号数为 0，因此不存在需要伪造的 Go 数据迁移。
+完整生产证据见
+[`account-identity-production-acceptance-2026-09-18.md`](./account-identity-production-acceptance-2026-09-18.md)。
+把 Node 切到 `user_id` 曾经会改写既有生产 `accountRef`，所以当时属于 §8.1 要求
 「另写 ADR 和显式 rekey」的变更——**ADR 已于 2026-09-16 落地**
 （[`codex-oauth-identity-vector-adr.md`](./codex-oauth-identity-vector-adr.md)），
 决策为「统一到 `user_id`、Node 改」，但 rekey 本身**未执行**，需先补 §8.1 要求的映射账本。
@@ -447,20 +449,18 @@ Go 原先有两个键，都不等于规范键：
 | Go 策略 | 改前 | 改后 |
 | --- | --- | --- |
 | 账号 API Key 启动（`clilaunch/strategy.go`） | `aih_account` / `AIH Account` | `aih_server` / `AIH Server` |
-| Gateway profile 启动（`clilaunch/gateway_strategy.go`） | `aih_gateway` / `AIH Gateway` | 未改，见下 |
+| Gateway profile 启动（`clilaunch/gateway_strategy.go`） | `aih_gateway` / `AIH Gateway` | ✅ **已统一为 `aih_server` / `AIH Server`（2026-09-22）** |
 
-**已修**：账号启动策略改用规范键。其 provider 形状（`wire_api=responses` +
-`env_key=OPENAI_API_KEY` + 指向网关的 `base_url`）与 Node 沙箱侧 `aih_server` 定义一致。
-验证：`go test ./...` 全绿，`test/pty-launch.test.js`、`test/codex-provider-args.test.js`
-24 项通过。
+**已修**：账号启动策略与 Gateway profile 均使用规范键 `aih_server`。Gateway profile
+现在与 Node 沙箱连接契约使用同一形状：`wire_api=responses` +
+`env_key=OPENAI_API_KEY` + 指向 AIH Server 的 `base_url`；固定账号直接写
+`http_headers.X-Account-Ref=acct_…`，不再通过 Go 私有的 `env_http_headers` 间接取值。
 
-**仍未闭环**：`gateway_strategy.go` 仍用 `aih_gateway`，且其认证模型与 Node 的
-`aih_server` 不同——Go 用 `env_key=AIH_GATEWAY_CLIENT_KEY` +
-`env_http_headers={X-Account-Ref=AIH_GATEWAY_ACCOUNT_REF}`，Node 用宿主
-`[model_providers.aih_server.auth]` 命令表或沙箱 `env_key=OPENAI_API_KEY`，账号固定走
-`http_headers.X-Account-Ref` 字面值。只改键名会让同一个 `aih_server` 在两端出现两种
-认证定义，因此这一项需要先就认证模型（env 变量命名与 header 传递方式）达成一致，本轮
-不单方面改。
+旧 Go Preview 环境名 `AIH_GATEWAY_CLIENT_KEY` / `AIH_GATEWAY_ACCOUNT_REF`
+只作为子进程启动时的清理项保留，防止旧 shell 环境污染；新进程不再设置它们。
+宿主 config.toml 仍保持 Node 的 `[model_providers.aih_server.auth]` 命令表，
+而临时/沙箱进程使用 `env_key=OPENAI_API_KEY`——两者与 Codex 0.149 的互斥约束
+仍然成立，因为它们不会同时写进同一 provider 定义。
 
 ## 数据面路由补齐（2026-09-15 起，用户授权解除本阶段冻结）
 
@@ -526,8 +526,8 @@ Go 原先有两个键，都不等于规范键：
 | Codex OAuth 身份向量 | `oauth:codex:<user_id>` | `oauth:codex:<email>` | **已修**（2026-09-16）：Node 统一到 `user_id`，ADR + rekey 工具已落地 |
 | Claude OAuth 身份向量 | `oauth:claude:uuid:<uuid>`（小写、强制 UUID 形状） | 同前缀，但**保留大小写、不校验形状** | **已修**（2026-09-16）：同一份 UUID 曾在两端得到不同 `accountRef` |
 | AGY OAuth 身份向量 | `oauth:agy:<email>`（严格邮箱校验） | 同前缀，但原先接受任意非空串 | **已修**（2026-09-16）：校验强度对齐，19 条向量实测一致 |
-| 其余 Provider 身份向量 | **Go 未实现**（只有 codex/claude/agy 三个包） | 9 个 Provider 各自有向量 | 不是分歧而是缺口：Node 的向量已写成规格，见 [`oauth-identity-vector-spec.md`](./oauth-identity-vector-spec.md) |
-| Gateway provider 认证 | `env_key=AIH_GATEWAY_CLIENT_KEY` + `env_http_headers={X-Account-Ref=…}` | 命令行字面 `http_headers.X-Account-Ref=acct_…` | 差异存在但收益边际：accountRef 是非秘密哈希，改 Node 的 PTY 启动链风险大于收益，暂不改 |
+| 其余 Provider 身份向量 | 专用 typed 包仍集中在 codex/claude/agy；**统一原生账号域已由 `957ecc02` 覆盖全部 15 个具体 Provider 标识** | Node 各 Provider 的稳定主体策略 | **已闭环账号域**：共享 native strategy + SQLite 注册/读回/续期/篡改契约；这不等于 15 个 Provider 的推理/runtime 已切到 Go |
+| Gateway provider 认证 | `env_key=OPENAI_API_KEY` + 命令行字面 `http_headers.X-Account-Ref=acct_…` | 同左；宿主持久配置使用互斥的 `auth` 命令表 | **已修（2026-09-22）**：Go 改为 Node 正式契约；旧 Go 私有 env 名仅清理不再设置 |
 | 刷新被拒后的抑制 | `suppressesRefresh`（按 AccountRef + credential.updated_at 精确匹配） | `lib/server/kimi-token-refresh.js` 的 `reason:'suppressed'`、`lib/server/token-refresh-result.js` 的 `invalid_grant` 分类、`codex-auth-invalid-reconciler.js` 的 `refresh_rejected_access_token_still_valid` | **Node 已有等价能力**，不是缺口 |
 | `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |

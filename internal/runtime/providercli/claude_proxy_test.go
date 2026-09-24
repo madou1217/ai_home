@@ -750,9 +750,13 @@ func TestRunnerUsesClientProviderForCrossProviderRelay(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 	environment := environmentMap(processes.spec.env)
+	pinnedHeader := "model_providers.aih_server.http_headers.X-Account-Ref=" + account.Ref().String()
 	if processes.calls != 1 || processes.spec.path != "/official/codex" ||
 		!containsArgumentPair(processes.spec.args, "--model", "claude-opus-5") ||
-		environment["AIH_GATEWAY_ACCOUNT_REF"] != account.Ref().String() ||
+		!containsArgumentPair(processes.spec.args, "-c", pinnedHeader) ||
+		environment["OPENAI_API_KEY"] != testGatewayKey ||
+		environment["AIH_GATEWAY_ACCOUNT_REF"] != "" ||
+		environment["AIH_GATEWAY_CLIENT_KEY"] != "" ||
 		environment["CODEX_HOME"] != "/shared/codex" {
 		t.Fatalf("process path=%q args=%v envKeys=%v", processes.spec.path, processes.spec.args, environmentKeys(environment))
 	}

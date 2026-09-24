@@ -6,10 +6,12 @@
 > 历史分析保留在下文；当前可执行合同见 `test/grok-stable-identity.test.js`，
 > 全部交付状态见 [交付记录](../maintenance/provider-review-delivery-20260916.md)。
 
-> 这份文档存在的原因很具体：**Go 目前只为 `codex`、`claude`、`agy` 三个 Provider 实现了身份派生**
-> （`core/accounts/` 下只有这三个包）。其余 Provider 的向量**只存在于 Node**。
-> Go 以后实现它们时，必须逐字节照抄；否则就会重演「同一个上游账号在两端铸出两个 `accountRef`」——
-> 这正是 Codex 那条 ADR 要解决的病。
+> **2026-09-18 状态更新**：下段“只有三个 Provider”的描述是 2026-09-16 的历史前提。
+> 专用 typed 包仍主要是 `codex` / `claude` / `agy`，但 `957ecc02` 已新增统一
+> native account strategy，把本文规格落到全部 15 个具体 Provider 标识，并用共享 Node/Go
+> identity vectors、SQLite 注册/读回/续期/篡改测试钉住。生产状态见
+> [账号身份生产验收](./account-identity-production-acceptance-2026-09-18.md)。
+> 因此本文后面的“未实现”表应读作**历史实现清单/向量设计来源**，不再代表当前 Go 账号域缺口。
 >
 > 表里的每一行都是**实测**得到的（喂真实形状的凭据给 `resolveNativeAuthIdentitySeed` 打印结果），
 > 不是读源码推断。理由见 ADR「方法论」一节：读源码推断在本轮已经错过一次。
@@ -31,9 +33,9 @@
 | 任意 | `api_key:<provider>:<baseUrl>:<fingerprint>` | baseUrl + key 指纹 | — |
 | 任意 | `auth_token:<provider>:<baseUrl>:<hash>` | baseUrl + token 指纹 | — |
 
-## 未实现（只有 Node）
+## 历史待实现清单（2026-09-16；Go 原生账号域后续已覆盖）
 
-以下向量由 Node 定义。Go 实现时必须照抄前缀、取值链与哈希截断长度。
+以下向量记录当时由 Node 提供的设计来源。当前统一 native strategy 已覆盖这些具体 Provider 标识；新增或修改身份算法时仍必须保持前缀、取值链与哈希截断契约一致。
 
 | Provider | 向量 | 取值链 | §8.1 |
 | --- | --- | --- | --- |

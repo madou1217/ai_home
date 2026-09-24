@@ -67,7 +67,11 @@ export default function SwipeRow({ children, actions = [], onTap, ariaLabel }: P
       s.locked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
       if (s.locked === 'x') {
         setDragging(true);
-        (event.currentTarget as HTMLDivElement).setPointerCapture?.(event.pointerId);
+        try {
+          (event.currentTarget as HTMLDivElement).setPointerCapture?.(event.pointerId);
+        } catch {
+          // 指针已结束（或为合成事件）时浏览器会抛错；捕获只是增强，失败不影响滑动
+        }
       }
     }
     if (s.locked !== 'x') return;

@@ -19,7 +19,7 @@ interface Props {
 /**
  * Native-mobile segmented selector: a single horizontally-scrollable row of
  * pills (touch-friendly, no cramped desktop tab strip). The active pill uses the
- * terracotta accent of the sessions design language.
+ * unified accent (--color-accent-soft background + --color-accent text).
  */
 const MobilePills = ({ items, activeKey, onChange, trailing, wrap }: Props) => (
   <div className="mpills-wrap">

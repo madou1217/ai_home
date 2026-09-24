@@ -11,7 +11,6 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/.ai_home/logs/server.log"
-SERVICE="gui/$(id -u)/com.clawdcodex.ai_home"
 ADD="${1:?usage: go-core-canary.sh <entry-id>[,...] [seconds]}"
 DURATION="${2:-1800}"
 
@@ -44,13 +43,13 @@ AFTER="$(printf '%s,%s' "$BEFORE" "$ADD" | tr ',' '\n' | sed '/^$/d' | sort -u |
 WATCH_PATH="$(path_for "${ADD%%,*}")"
 echo "[canary] routes: ${BEFORE:-<none>} -> $AFTER"
 aih server config set --go-core --go-core-routes "$AFTER" >/dev/null
-launchctl kickstart -k "$SERVICE"
+aih server restart >/dev/null 2>&1
 
 rollback() {
   echo "[canary] $(date -u +%FT%TZ) ROLLBACK: $1"
   if [ -n "$BEFORE" ]; then aih server config set --go-core --go-core-routes "$BEFORE" >/dev/null
   else aih server config set --clear-go-core-routes >/dev/null; fi
-  launchctl kickstart -k "$SERVICE"
+  aih server restart >/dev/null 2>&1
   exit 1
 }
 

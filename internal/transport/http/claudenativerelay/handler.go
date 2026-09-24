@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"io"
 	"mime"
 	"net/http"
@@ -302,6 +303,9 @@ func (handler *Handler) ServeHTTP(
 			gatewaycontract.RetryAccountValue,
 		)
 	}
+	// 与 Node 宿主及 Canonical 推理路径一致：声明实际服务的账号（覆盖上游同名 Header）。
+	response.Header().Set(inferenceapi.ServedAccountRefHeader, route.AccountRef().String())
+	response.Header().Set(inferenceapi.ServedProviderHeader, "claude")
 	response.WriteHeader(upstreamResponse.StatusCode)
 	copyResult := responseCopyResult{}
 	streamObservation := nativeStreamObservation{}

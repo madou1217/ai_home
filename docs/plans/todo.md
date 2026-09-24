@@ -30,6 +30,7 @@
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据
   - 2026-09-25 前置已完成：Go 已支持 `x-account-ref` 独占路由；转发前由 Node 判定（可用钉选→Go，不可用/未知/非法钉选与 Fabric 在线时的未钉选推理→Node），去掉 501。真实 Claude 上游影子：非流式与 SSE 状态、结构、事件序列一致。
   - 2026-09-25 切流缺口已补（3d148724）：命中启用 Node 别名的推理请求由转发前判定交还 Node（Node 复用已缓冲请求体）；Go 推理响应带 `x-aih-server-account-ref` / `x-aih-server-provider`。
+  - 2026-09-25 隔离端到端（真实 Node 宿主 → 真实 Go → 真实 Claude 上游，aih.db 快照、委托刷新、临时目录用后即删）：非流式 200 `message`、SSE 完整事件序列、取消流后下一请求 200 且 Go 仍 ready、别名请求留在 Node、未知钉选 Node 404；响应头 `x-aih-server-account-ref` 为实际账号（修复 Claude 原生中继路径漏写）。
   - 未完成：生产 canary 需运维者本人执行（自动化权限拒绝了生产切流）：`scripts/go-core-canary.sh gateway.anthropic.messages`（近 10 条 5xx≥3 或 Go 20s 不可转发即自动回滚）。
 - [ ] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
   - 2026-09-25 影子证据：chat completions / responses 200/200 且 Go 为结构超集；Gemini generateContent 修复 Go 思考模型 400 与 Node 信封泄漏后 200/200。切流同 S8 需确认。

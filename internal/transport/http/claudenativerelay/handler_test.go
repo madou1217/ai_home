@@ -108,7 +108,9 @@ func TestHandlerPreservesNativeRequestAndReplacesOnlyCredential(
 		string(responseBody) !=
 			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n" ||
 		response.Header.Get("X-Upstream-Trace") != "trace-safe" ||
-		response.Header.Get("X-Upstream-Hop") != "" {
+		response.Header.Get("X-Upstream-Hop") != "" ||
+		response.Header.Get("x-aih-server-account-ref") != accountRef.String() ||
+		response.Header.Get("x-aih-server-provider") != "claude" {
 		t.Fatalf(
 			"relay response status=%d headers=%v body=%q",
 			response.StatusCode,

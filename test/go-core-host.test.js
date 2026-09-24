@@ -200,3 +200,13 @@ test('Go Core host delegates credential refresh while account sync runs', () => 
   createGoCoreHost({ settings: resolveGoCoreSettings({ goCoreEnabled: true }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }), createGoCoreSupervisor: factory, log: silentLog });
   assert.equal(calls.options.delegateCredentialRefresh, false);
 });
+
+test('credential refresh delegation can be forced on without account sync', () => {
+  const { factory, calls } = fakeSupervisorFactory();
+  createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true }, { AIH_GO_CORE_ACCOUNT_SYNC: '0', AIH_GO_CORE_DELEGATE_REFRESH: '1' }),
+    createGoCoreSupervisor: factory,
+    log: silentLog
+  });
+  assert.equal(calls.options.delegateCredentialRefresh, true);
+});

@@ -94,7 +94,8 @@ test('enabled supervisor starts once the private endpoint serves (not only once 
     assert.equal(started.endpoint, 'http://127.0.0.1:19550');
     assert.equal(spawned.length, 1);
     assert.deepEqual(spawned[0].args, ['--host', '127.0.0.1', '--port', '19550']);
-    assert.deepEqual(spawned[0].options.stdio, ['ignore', 'ignore', 'ignore']);
+    // stdout/stderr 接到 go-core.log，Go 启动失败不再无声无息。
+    assert.deepEqual(spawned[0].options.stdio, ['ignore', 'pipe', 'pipe']);
 
     const stopped = await supervisor.stop({ timeoutMs: 1 });
     assert.equal(stopped.state, 'stopped');
@@ -134,4 +135,129 @@ test('Go Core binary path follows the npm build layout and adds .exe on Windows'
     resolveGoServerBinary({ repositoryRoot: 'C:\\repo', platform: 'win32', arch: 'x64', path: path.win32 }),
     'C:\\repo\\bin\\native\\win32-x64\\aih-server.exe'
   );
+});
+
+function crashableChildFactory() {
+  const children = [];
+  const spawn = () => {
+    const child = new EventEmitter();
+    child.pid = 5000 + children.length;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => { setImmediate(() => child.emit('exit', 0, 'SIGTERM')); };
+    children.push(child);
+    return child;
+  };
+  return { children, spawn };
+}
+
+function fakeTimers() {
+  const pending = [];
+  return {
+    pending,
+    setTimeout: (callback, delay) => {
+      const timer = { callback, delay, unref() {} };
+      pending.push(timer);
+      return timer;
+    },
+    clearTimeout: (timer) => {
+      const index = pending.indexOf(timer);
+      if (index >= 0) pending.splice(index, 1);
+    },
+    async fire() {
+      const timer = pending.shift();
+      timer.callback();
+      await new Promise((resolve) => setImmediate(resolve));
+      return timer.delay;
+    }
+  };
+}
+
+test('supervisor restarts a crashed Go Core with exponential backoff and logs its output', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-restart-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const { children, spawn } = crashableChildFactory();
+  const timers = fakeTimers();
+  let clock = 1_000;
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      binaryPath,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn,
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      now: () => clock,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, service: 'aih-server' }) })
+    });
+
+    await supervisor.start();
+    children[0].stderr.emit('data', Buffer.from('listening on private endpoint\n'));
+    children[0].emit('exit', 2, null);
+
+    assert.equal(supervisor.status().state, 'failed');
+    assert.equal(supervisor.status().restartPending, true);
+    assert.equal(await timers.fire(), 1000);
+    assert.equal(supervisor.status().state, 'ready');
+    assert.equal(supervisor.status().restarts, 1);
+    assert.equal(children.length, 2);
+
+    // 起来即崩：退避翻倍，而不是每秒重启。
+    children[1].emit('exit', 2, null);
+    assert.equal(timers.pending[0].delay, 2000);
+    await timers.fire();
+    // 稳定服务超过门限后再崩，退避清零。
+    clock += 120_000;
+    children[2].emit('exit', 2, null);
+    assert.equal(timers.pending[0].delay, 1000);
+
+    const logText = fs.readFileSync(path.join(tempDir, 'logs', 'go-core.log'), 'utf8');
+    assert.match(logText, /\[stderr\] listening on private endpoint/);
+    assert.match(logText, /\[supervisor\] Go Core exited code=2/);
+    assert.equal(logText.includes('management-secret'), false);
+
+    // 显式 stop 取消待定的重启，也不会因子进程退出再排队。
+    await supervisor.stop({ timeoutMs: 50 });
+    assert.equal(timers.pending.length, 0);
+    assert.equal(supervisor.status().state, 'stopped');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('supervisor does not restart when auto restart is disabled', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-norestart-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const { children, spawn } = crashableChildFactory();
+  const timers = fakeTimers();
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      binaryPath,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn,
+      autoRestart: false,
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, service: 'aih-server' }) })
+    });
+    await supervisor.start();
+    children[0].emit('exit', 1, null);
+    assert.equal(timers.pending.length, 0);
+    assert.equal(supervisor.status().state, 'failed');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });

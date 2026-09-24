@@ -94,7 +94,7 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.ok(Array.isArray(body.data));
 });
 
-test('Node /readyz fails closed when Go-owned routes lose the Go process', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
+test('Node /readyz fails closed when the Go process dies and recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
   const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.models.list' });
   assert.equal(goHost.status().state, 'ready');
   process.kill(goHost.status().pid, 'SIGKILL');
@@ -108,4 +108,15 @@ test('Node /readyz fails closed when Go-owned routes lose the Go process', { ski
   assert.equal(readyz.go_core.ready, false);
   const models = await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
   assert.equal(models.status, 503);
+
+  // 监督器按退避自动拉起 Go，转发随之恢复；Go 的输出落在 logs/go-core.log。
+  const recoverBy = Date.now() + 15000;
+  while (Date.now() < recoverBy && goHost.status().state !== 'ready') {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(goHost.status().state, 'ready');
+  assert.equal(goHost.status().restarts, 1);
+  const recovered = await fetch(`${base}/v1/models`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
+  assert.equal(recovered.status, 200);
+  assert.equal(fs.existsSync(goHost.status().logFile), true);
 });

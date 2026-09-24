@@ -258,3 +258,31 @@ test('splices a Go-owned WebSocket upgrade with swapped credentials', async (t) 
   assert.equal(upgrade.headers['sec-websocket-key'], 'dGhlIHNhbXBsZSBub25jZQ==');
   assert.equal(upgrade.headers['x-aih-request-id'], 'req-ws');
 });
+
+test('with a host decision, usable pins reach Go and deferred requests stay with Node', async (t) => {
+  const go = await startFakeGo(t);
+  const decisions = [];
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: (input) => {
+      decisions.push(input);
+      return input.pinnedAccountRef === 'acct_ffffffffffffffffffff';
+    }
+  });
+  const headers = (pin) => ({ authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json', 'x-account-ref': pin });
+
+  const usable = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('acct_0123456789abcdef0123') }, '{}');
+  assert.equal(usable.status, 200);
+  assert.equal(go.seen.length, 1);
+  assert.equal(go.seen[0].headers['x-account-ref'], 'acct_0123456789abcdef0123', 'Go routes exclusively to the pinned account');
+
+  const deferred = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('acct_ffffffffffffffffffff') }, '{}');
+  assert.equal(deferred.status, 404);
+  assert.match(deferred.body, /handled_by_node/);
+  assert.equal(go.seen.length, 1);
+  assert.deepEqual(decisions.map((d) => [d.entryId, d.transport, d.pinnedAccountRef]), [
+    ['gateway.anthropic.messages', 'http', 'acct_0123456789abcdef0123'],
+    ['gateway.anthropic.messages', 'http', 'acct_ffffffffffffffffffff']
+  ]);
+});

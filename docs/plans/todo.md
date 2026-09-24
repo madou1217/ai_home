@@ -25,7 +25,8 @@
   - Go 改动：`aih_modalities` 默认输出；Codex 目录按 Node 规则剔除 `visibility` 非 list/default/public 与 `supported_in_api=false` 的项（真实比对抓到 `gpt-reserve`）。
   - 2026-09-25 真实影子（Node 生产 9527 vs Go 读 aih.db 快照，委托刷新）：结构一致、无 Go 独有 id，38 个共同 id 的顺序/owned_by/modalities 全部一致。
   - 剩余差异是**模型全集**：Node 396 / Go 38，差集是 Node 独有的中转/原生 Provider 模型。结论：目录描述「本网关能路由的模型」，Go 目录只能在推理全部划给 Go 后跟随。`go-core-route-ownership` 强制该约束（单独划转 `gateway.models.list` 整体拒绝）。
-- [ ] S7 切只读路由：按 S6 结论，`gateway.models.list` 随推理最后划转；本步只划与目录无关的 `gateway.props`、`gateway.models.detail`：`aih server config set --go-core --go-core-routes gateway.props,gateway.models.detail`
+- [x] S7 切只读路由：按 S6 结论，`gateway.models.list` 随推理最后划转；本步只划与目录无关的 `gateway.props`、`gateway.models.detail`：`aih server config set --go-core --go-core-routes gateway.props,gateway.models.detail`
+  - 2026-09-25 已在生产（launchd 9527）启用：`go_core.state=ready`、首轮同步完成、`go_ready=true`、`forwarding=true`；`/v1/props` 与 `/v1/models/{id}` 经 Go 应答且与切换前 Node 基线逐字段一致，无 key 仍 401；Go 以 `AIH_SERVER_CREDENTIAL_REFRESH=delegated` 运行（Node 唯一刷新者）；切换后 `/v1/messages`、`/v1/responses` 真实流量 200。回退：`aih server config set --no-go-core --clear-go-core-routes && aih server restart`。
 - [ ] S8 `/v1/messages`：前置——Go 支持 `x-account-ref` 钉选（现在转发层返回 501）、Fabric 远端网关语义；真实 Claude 上游 shadow + 流式/取消/attempt 审计证据
 - [ ] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
 - [ ] S10 打包：postinstall 构建/下载 Go 构件 + 版本/sha 校验；Go 崩溃自动重启；Go stderr 落日志；基准测试（Node 直出 vs Node→Go vs Go 直连：TTFB、p50/p99、吞吐、RSS/CPU）

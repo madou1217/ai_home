@@ -42,7 +42,9 @@ test('server config store persists and normalizes server config', (t) => {
     openNetwork: true,
     proxyUrl: 'http://127.0.0.1:6152',
     noProxy: 'localhost,127.0.0.1',
-    modelsProbeAccounts: 5
+    modelsProbeAccounts: 5,
+    goCoreEnabled: false,
+    goCoreRoutes: []
   });
 
   const loaded = readServerConfig({ fs, aiHomeDir });
@@ -92,7 +94,9 @@ test('server config store supports partial update semantics and empty string cle
     openNetwork: true,
     proxyUrl: '',
     noProxy: '',
-    modelsProbeAccounts: 4
+    modelsProbeAccounts: 4,
+    goCoreEnabled: false,
+    goCoreRoutes: []
   });
 });
 
@@ -123,7 +127,9 @@ test('server config store works when fs only exposes mkdirSync for directory cre
     openNetwork: true,
     proxyUrl: '',
     noProxy: '',
-    modelsProbeAccounts: 2
+    modelsProbeAccounts: 2,
+    goCoreEnabled: false,
+    goCoreRoutes: []
   });
 });
 
@@ -153,6 +159,27 @@ test('mergeServerConfigPatch ignores null updates and preserves explicit boolean
     openNetwork: false,
     proxyUrl: '',
     noProxy: 'localhost',
-    modelsProbeAccounts: 6
+    modelsProbeAccounts: 6,
+    goCoreEnabled: false,
+    goCoreRoutes: []
   });
+});
+
+test('server config store persists Go Core opt-in and normalizes route entry ids', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-config-go-core-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  const saved = writeServerConfig({
+    goCoreEnabled: true,
+    goCoreRoutes: ' gateway.models.list, gateway.models.list,gateway.props ,'
+  }, { fs, aiHomeDir });
+
+  assert.equal(saved.goCoreEnabled, true);
+  assert.deepEqual(saved.goCoreRoutes, ['gateway.models.list', 'gateway.props']);
+  assert.deepEqual(readServerConfig({ fs, aiHomeDir }), saved);
+  assert.equal(buildServerArgsFromConfig(saved).includes('--go-core'), false);
+
+  const disabled = writeServerConfig({ goCoreEnabled: false, goCoreRoutes: [] }, { fs, aiHomeDir });
+  assert.equal(disabled.goCoreEnabled, false);
+  assert.deepEqual(disabled.goCoreRoutes, []);
 });

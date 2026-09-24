@@ -10,6 +10,7 @@ const test = require('node:test');
 const {
   buildGoCoreInvocation,
   createGoCoreSupervisor,
+  resolveGoServerBinary,
   validatePrivateEndpoint
 } = require('../lib/cli/services/server/go-core-supervisor');
 
@@ -121,5 +122,16 @@ test('enabled supervisor fails closed when the Go server binary is absent', asyn
       clientKey: 'client-secret'
     }),
     (error) => error.code === 'go_core_binary_missing'
+  );
+});
+
+test('Go Core binary path follows the npm build layout and adds .exe on Windows', () => {
+  assert.equal(
+    resolveGoServerBinary({ repositoryRoot: '/repo', platform: 'linux', arch: 'x64', path: path.posix }),
+    '/repo/bin/native/linux-x64/aih-server'
+  );
+  assert.equal(
+    resolveGoServerBinary({ repositoryRoot: 'C:\\repo', platform: 'win32', arch: 'x64', path: path.win32 }),
+    'C:\\repo\\bin\\native\\win32-x64\\aih-server.exe'
   );
 });

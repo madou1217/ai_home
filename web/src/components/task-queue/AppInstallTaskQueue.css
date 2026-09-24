@@ -6,7 +6,7 @@
   width: 52px;
   height: 52px;
   pointer-events: none;
-  transition: width 220ms ease, height 220ms ease;
+  transition: width var(--motion-base) var(--ease-standard), height var(--motion-base) var(--ease-standard);
 }
 
 .webui-task-queue-trigger,
@@ -21,32 +21,30 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
   width: 52px;
   height: 52px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--color-brand) 46%, var(--color-border));
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--color-brand);
-  color: var(--color-on-brand, var(--hos-white, #fff));
-  box-shadow: 0 12px 28px rgb(16 24 40 / 18%);
+  /* 浮动入口是主操作：墨色底（DESIGN.md §2.2），浮层阴影 elevation-3，不做光环脉冲 */
+  border: 1px solid var(--color-ink);
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-ink);
+  color: var(--color-on-ink);
+  box-shadow: var(--elevation-3);
   font: inherit;
   cursor: pointer;
-  transition: width 220ms ease, height 220ms ease, inset 220ms ease, border-radius 220ms ease, background-color 180ms ease;
-}
-
-.webui-task-queue:not(.is-expanded) .webui-task-queue-trigger::after {
-  position: absolute;
-  inset: -5px;
-  border: 1px solid color-mix(in srgb, var(--color-brand) 35%, transparent);
-  border-radius: inherit;
-  content: '';
-  animation: webui-task-queue-pulse 1.8s ease-out infinite;
+  transition:
+    width var(--motion-base) var(--ease-standard),
+    height var(--motion-base) var(--ease-standard),
+    inset var(--motion-base) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .webui-task-queue-trigger:hover {
-  background: color-mix(in srgb, var(--color-brand) 86%, #000);
+  border-color: var(--color-ink-hover);
+  background: var(--color-ink-hover);
 }
 
 .webui-task-queue-trigger:focus-visible,
@@ -59,7 +57,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
+  font-size: var(--hos-text-h2);
 }
 
 .webui-task-queue-count {
@@ -68,18 +66,18 @@
   height: 20px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--hos-radius-pill, 999px);
-  background: rgb(255 255 255 / 22%);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 700;
+  border-radius: var(--hos-radius-pill);
+  background: color-mix(in srgb, var(--color-on-ink) 22%, transparent);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
   line-height: 1;
 }
 
 .webui-task-queue-trigger-label {
   display: none;
   white-space: nowrap;
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 650;
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
 }
 
 .webui-task-queue-panel {
@@ -87,18 +85,16 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-3, 12px);
-  padding: var(--hos-space-4, 16px);
+  gap: var(--hos-space-3);
+  padding: var(--hos-space-4);
   overflow: hidden;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-lg, 20px);
-  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
-  box-shadow: 0 18px 44px rgb(16 24 40 / 18%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xl);
+  background: var(--color-surface-raised);
+  box-shadow: var(--elevation-3);
   opacity: 0;
-  transform: scale(.82);
-  transform-origin: bottom right;
   pointer-events: none;
-  transition: opacity 180ms ease, transform 220ms ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 .webui-task-queue.is-expanded {
@@ -111,17 +107,17 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  border-color: var(--color-border);
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--color-surface-raised);
-  color: var(--color-heading);
+  border-color: transparent;
+  border-radius: var(--hos-radius-xs);
+  background: transparent;
+  color: var(--color-muted);
   box-shadow: none;
 }
 
 .webui-task-queue.is-expanded .webui-task-queue-trigger:hover {
-  border-color: color-mix(in srgb, var(--color-brand) 42%, var(--color-border));
-  background: color-mix(in srgb, var(--color-brand) 8%, var(--color-surface-raised));
-  color: var(--color-brand);
+  border-color: transparent;
+  background: var(--color-overlay);
+  color: var(--color-heading);
 }
 
 .webui-task-queue.is-expanded .webui-task-queue-trigger-icon {
@@ -135,7 +131,6 @@
 
 .webui-task-queue.is-expanded .webui-task-queue-panel {
   opacity: 1;
-  transform: scale(1);
   pointer-events: auto;
 }
 
@@ -143,63 +138,63 @@
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--hos-space-1-5, 6px);
-  padding-right: var(--hos-space-10, 40px);
+  gap: var(--hos-space-1-5);
+  padding-right: var(--hos-space-10);
 }
 
 .webui-task-queue-header > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--hos-space-1, 3px); /* 归级:原 3px */
+  gap: var(--hos-space-1);
 }
 
 .webui-task-queue-kicker {
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: var(--hos-text-micro, 9px); /* 归级:原 9px */
-  font-weight: 700;
-  letter-spacing: .12em;
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
 }
 
 .webui-task-queue-header strong {
   color: var(--color-heading);
-  font-size: var(--hos-text-h3, 15px);
+  font-size: var(--hos-text-h3);
 }
 
 .webui-task-queue-header > span {
   min-width: 0;
   color: var(--color-muted);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption);
 }
 
 .webui-task-queue-stream-status {
   display: inline-flex;
   align-items: center;
   justify-self: start;
-  gap: var(--hos-space-1-5, 5px); /* 归级:原 5px */
+  gap: var(--hos-space-1-5);
   overflow-wrap: anywhere;
 }
 
 .webui-task-queue-stream-status i {
   width: 6px;
   height: 6px;
-  border-radius: var(--hos-radius-pill, 50%);
+  border-radius: var(--hos-radius-pill);
   background: var(--color-muted);
 }
 
 .webui-task-queue-stream-status.is-connected i {
-  background: var(--color-success, var(--hos-green-600, #16a34a));
+  background: var(--color-success);
 }
 
 .webui-task-queue-stream-status.is-reconnecting i,
 .webui-task-queue-stream-status.is-connecting i {
-  background: var(--color-warning, var(--hos-orange-600, #d97706));
-  animation: webui-task-queue-pulse-dot 1.2s ease-in-out infinite;
+  background: var(--color-warning);
+  animation: webui-task-queue-pulse-dot 1.6s ease-in-out infinite;
 }
 
 .webui-task-queue-stream-status.is-offline i {
-  background: var(--color-danger, var(--hos-red-600, #dc2626));
+  background: var(--color-danger);
 }
 
 .webui-task-queue-list {
@@ -207,35 +202,26 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
   overflow: auto;
-  padding-right: var(--hos-space-0-5, 2px);
+  padding-right: var(--hos-space-0-5);
 }
 
+/* 任务项：中性描边卡片；成功 / 失败只着色状态文字，不做整块彩底 */
 .webui-task-queue-item {
   min-width: 0;
-  padding: var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-2-5);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 12px);
-  background: var(--color-surface-raised);
-}
-
-.webui-task-queue-item.is-success {
-  border-color: color-mix(in srgb, var(--color-success, var(--hos-green-600, #16a34a)) 34%, var(--color-border));
-  background: color-mix(in srgb, var(--color-success, var(--hos-green-600, #16a34a)) 5%, var(--color-surface-raised));
-}
-
-.webui-task-queue-item.is-error {
-  border-color: color-mix(in srgb, var(--color-danger, var(--hos-red-600, #dc2626)) 38%, var(--color-border));
-  background: color-mix(in srgb, var(--color-danger, var(--hos-red-600, #dc2626)) 5%, var(--color-surface-raised));
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
 }
 
 .webui-task-queue-item.is-success .webui-task-queue-item-heading > span {
-  color: var(--color-success, var(--hos-green-600, #16a34a));
+  color: var(--color-success);
 }
 
 .webui-task-queue-item.is-error .webui-task-queue-item-heading > span {
-  color: var(--color-danger, var(--hos-red-600, #dc2626));
+  color: var(--color-danger);
 }
 
 .webui-task-queue-item-heading,
@@ -244,7 +230,7 @@
   min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
 }
 
 .webui-task-queue-item-heading strong,
@@ -257,7 +243,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--color-heading);
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -269,7 +255,7 @@
 
 .webui-task-queue-item-detail {
   color: var(--color-muted);
-  font-size: var(--hos-text-micro, 10px);
+  font-size: var(--hos-text-micro);
 }
 
 .webui-task-queue-item-detail span:last-child {
@@ -280,10 +266,10 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--hos-space-1-5, 6px);
-  margin-top: var(--hos-space-1, 4px);
+  gap: var(--hos-space-1-5);
+  margin-top: var(--hos-space-1);
   color: var(--color-faint);
-  font-size: var(--hos-text-micro, 10px);
+  font-size: var(--hos-text-micro);
 }
 
 .webui-task-queue-item-meta span {
@@ -292,14 +278,14 @@
 }
 
 .webui-task-queue-item-meta span + span::before {
-  margin-right: var(--hos-space-1-5, 6px);
+  margin-right: var(--hos-space-1-5);
   color: var(--color-border-strong);
   content: '·';
 }
 
 .webui-task-queue-item .ant-progress {
   width: 100%;
-  margin: var(--hos-space-2, 7px) 0 var(--hos-space-0-5, 2px); /* 归级:原 7px */
+  margin: var(--hos-space-2) 0 var(--hos-space-0-5);
 }
 
 .webui-task-queue-item .ant-progress-outer {
@@ -307,26 +293,26 @@
 }
 
 .webui-task-queue-item .ant-progress-text {
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption);
 }
 
 .webui-task-queue-failure {
-  margin-top: var(--hos-space-2, 8px);
-  color: var(--color-body);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  margin-top: var(--hos-space-2);
+  color: var(--color-text);
+  font-size: var(--hos-text-caption);
 }
 
 .webui-task-queue-failure summary {
   width: fit-content;
-  color: var(--color-danger, var(--hos-red-600, #dc2626));
+  color: var(--color-danger);
   cursor: pointer;
 }
 
 .webui-task-queue-failure ul {
   display: grid;
-  gap: var(--hos-space-1, 4px);
-  margin: var(--hos-space-2, 7px) 0 0; /* 归级:原 7px */
-  padding-left: var(--hos-space-5, 18px); /* 归级:原 18px */
+  gap: var(--hos-space-1);
+  margin: var(--hos-space-2) 0 0;
+  padding-left: var(--hos-space-5);
 }
 
 .webui-task-queue-failure li {
@@ -338,35 +324,31 @@
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: var(--hos-space-1, 4px);
-  margin-top: var(--hos-space-2, 8px);
+  gap: var(--hos-space-1);
+  margin-top: var(--hos-space-2);
 }
 
 .webui-task-queue-item-actions .ant-btn {
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption);
 }
 
 .webui-task-queue-collapse-hint {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  gap: var(--hos-space-1, 4px);
+  gap: var(--hos-space-1);
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--color-muted);
   font: inherit;
-  font-size: var(--hos-text-micro, 10px);
+  font-size: var(--hos-text-micro);
   cursor: pointer;
 }
 
-@keyframes webui-task-queue-pulse {
-  0% { opacity: .72; transform: scale(.92); }
-  75%, 100% { opacity: 0; transform: scale(1.24); }
-}
-
+/* 仅「连接中」状态点缓慢呼吸（DESIGN.md §5 允许的唯一循环动画） */
 @keyframes webui-task-queue-pulse-dot {
-  50% { opacity: .35; transform: scale(.72); }
+  50% { opacity: .35; }
 }
 
 @media (max-width: 640px) {
@@ -382,7 +364,7 @@
 
   .webui-task-queue-item-detail {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--hos-space-0-5, 2px);
+    gap: var(--hos-space-0-5);
   }
 
   .webui-task-queue-item-detail span:last-child {
@@ -395,10 +377,6 @@
   .webui-task-queue-trigger,
   .webui-task-queue-panel {
     transition: none;
-  }
-
-  .webui-task-queue:not(.is-expanded) .webui-task-queue-trigger::after {
-    animation: none;
   }
 
   .webui-task-queue-stream-status.is-reconnecting i,

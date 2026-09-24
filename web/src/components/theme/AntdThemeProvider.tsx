@@ -16,6 +16,8 @@ export default function AntdThemeProvider({ children }: { children: ReactNode })
   const colors = buildAntdColorTheme(mode);
   return (
     <ConfigProvider
+      // antd 默认在两个汉字的按钮中插入空格（「授 权」「重 置」），控制台里读起来像错字。
+      button={{ autoInsertSpace: false }}
       theme={{
         algorithm: mode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: colors.token,

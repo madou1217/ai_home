@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Segmented, Select, Space, Spin, Tooltip, message } from 'antd';
+import { Segmented, Select, Space, Spin, Tooltip, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
+import '@/components/ui/kpi-strip.css';
 import {
   ExportOutlined,
   ForkOutlined,
@@ -290,39 +292,39 @@ export default function ProxyPoolPanel() {
       <ProxyNetworkIntegrationPanel status={networkStatus} core={coreStatus} onRefresh={fetchData} />
 
       {loadErrors.length > 0 && (
-        <Alert
+        <InlineNote
           className="toolkit-load-errors"
-          type="warning"
-          showIcon
-          message="部分状态读取失败"
+          tone="warning"
           description={loadErrors.join('；')}
-          action={<Button onClick={() => void fetchData()}>重试</Button>}
-        />
+          action={<Button size="small" onClick={() => void fetchData()}>重试</Button>}
+        >
+          部分状态读取失败
+        </InlineNote>
       )}
 
       <div className="toolkit-stat-row">
-        <StatisticCard.Group direction="row">
+        <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
           <StatisticCard statistic={{
             title: '代理节点',
             value: nodesData?.total || 0,
-            icon: <GlobalOutlined aria-hidden style={{ color: '#1677ff', fontSize: 24 }} />
+            icon: <GlobalOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
           }} />
           <StatisticCard statistic={{
             title: '订阅源（手动同步）',
             value: subscriptions.length,
-            icon: <LinkOutlined aria-hidden style={{ color: '#722ed1', fontSize: 24 }} />
+            icon: <LinkOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
           }} />
           <StatisticCard statistic={{
             title: '真实监听端口',
             value: `${activePortByNode.size} / ${portsData?.config.maxPorts || 32}`,
-            valueStyle: { color: activePortByNode.size > 0 ? '#237804' : '#595959' },
-            icon: <ForkOutlined aria-hidden style={{ color: '#389e0d', fontSize: 24 }} />
+            valueStyle: { color: activePortByNode.size > 0 ? 'var(--color-success)' : 'var(--color-muted-strong)' },
+            icon: <ForkOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
           }} />
           <StatisticCard statistic={{
             title: '数据面',
             value: dataPlaneReady ? 'READY' : 'OFFLINE',
-            valueStyle: { color: dataPlaneReady ? '#237804' : '#cf1322', fontSize: 20 },
-            icon: <SettingOutlined aria-hidden style={{ color: dataPlaneReady ? '#389e0d' : '#cf1322', fontSize: 24 }} />
+            valueStyle: { color: dataPlaneReady ? 'var(--color-success)' : 'var(--color-danger)', fontSize: 20 },
+            icon: <SettingOutlined aria-hidden style={{ color: dataPlaneReady ? 'var(--color-success)' : 'var(--color-danger)', fontSize: 20 }} />
           }} />
         </StatisticCard.Group>
       </div>
@@ -386,27 +388,27 @@ export default function ProxyPoolPanel() {
       </div>
 
       {(functionalGroup === 'ai' || functionalGroup === 'dev' || countryFilter) && (
-        <Alert
+        <InlineNote
           className="proxy-group-source"
-          type="info"
-          showIcon
-          message="分组来源说明"
+          tone="info"
           description={functionalGroup === 'ai' || functionalGroup === 'dev'
             ? 'AI / 开发分组来自节点名称与标签的启发式分类，不代表订阅商原生线路能力。'
             : '国家分组优先使用节点显式地区字段；缺失时可能来自名称或服务器域名推断。'}
-        />
+        >
+          分组来源说明
+        </InlineNote>
       )}
 
       {loading && !nodesData ? (
         <div className="toolkit-loading" role="status" aria-label="正在加载代理池"><Spin size="large" /></div>
       ) : filteredNodes.length === 0 ? (
-        <Alert
-          type="info"
-          showIcon
-          message="当前筛选条件下没有节点"
+        <InlineNote
+          tone="info"
           description="可以导入订阅 URL、节点配置文本或二维码图片，也可以手动添加节点。"
           action={<Button type="primary" onClick={() => setImportOpen(true)}>立即导入</Button>}
-        />
+        >
+          当前筛选条件下没有节点
+        </InlineNote>
       ) : (
         <div className="toolkit-grid proxy-node-grid">
           {filteredNodes.map((node) => (

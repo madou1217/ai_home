@@ -25,6 +25,10 @@ export interface UsageChartPalette {
   text: string;
   muted: string;
   border: string;
+  /** 浮层（tooltip）底色：随主题翻转的 raised 表面 */
+  surface: string;
+  /** 中性占位系列（例如「其他」条形） */
+  neutral: string;
   brand: string;
   teal: string;
   amber: string;
@@ -44,19 +48,36 @@ function readCssVariable(element: HTMLElement, name: string, fallback: string) {
   return value || fallback;
 }
 
+/**
+ * 渲染时从 CSS 变量读取图表配色（design-tokens.css），轴线 / 网格 / 文字随主题翻转；
+ * 第二个参数只是变量缺失（如测试环境）时的兜底值，取自同一套 token 的浅 / 深色取值。
+ */
 function readPalette(element: HTMLElement): UsageChartPalette {
   const isDark = document.body.classList.contains('dark') || document.documentElement.getAttribute('data-theme') === 'dark';
   return {
-    heading: readCssVariable(element, '--color-heading', isDark ? '#f8fafc' : '#0f172a'),
-    text: readCssVariable(element, '--color-text', isDark ? '#e2e8f0' : '#334155'),
-    muted: readCssVariable(element, '--color-muted', isDark ? '#94a3b8' : '#64748b'),
-    border: readCssVariable(element, '--color-border', isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'),
-    brand: readCssVariable(element, '--color-brand', '#0a59f7'),
-    teal: readCssVariable(element, '--c-teal-500', '#10b981'),
-    amber: readCssVariable(element, '--color-warning', '#f59e0b'),
-    blue: readCssVariable(element, '--color-info', '#3b82f6'),
-    violet: readCssVariable(element, '--c-violet-500', '#8b5cf6'),
-    danger: readCssVariable(element, '--color-danger', '#ef4444')
+    heading: readCssVariable(element, '--color-heading', isDark ? '#fafafa' : '#18181b'),
+    text: readCssVariable(element, '--color-text', isDark ? '#e4e4e7' : '#27272a'),
+    muted: readCssVariable(element, '--color-muted', isDark ? '#a1a1aa' : '#71717a'),
+    border: readCssVariable(element, '--color-border', isDark ? '#2b2b31' : '#e3e3e7'),
+    surface: readCssVariable(element, '--color-surface-raised', isDark ? '#1e1e22' : '#fcfcfc'),
+    neutral: readCssVariable(element, '--color-disabled', isDark ? '#5b5b63' : '#d1d1d6'),
+    brand: readCssVariable(element, '--color-accent', isDark ? '#7b9cff' : '#2f5bd3'),
+    teal: readCssVariable(element, '--c-teal-500', '#0d9488'),
+    amber: readCssVariable(element, '--color-warning', isDark ? '#e0a94a' : '#b45309'),
+    blue: readCssVariable(element, '--c-info-500', '#4a72e0'),
+    violet: readCssVariable(element, '--c-purple-500', '#8b5cf6'),
+    danger: readCssVariable(element, '--color-danger', isDark ? '#f07068' : '#c2322b')
+  };
+}
+
+/** 统一的 tooltip 外观：不透明 raised 表面 + 发丝线描边，文字随主题翻转。 */
+export function buildChartTooltipStyle(palette: UsageChartPalette) {
+  return {
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderWidth: 1,
+    textStyle: { color: palette.text, fontSize: 12 },
+    extraCssText: 'box-shadow: var(--elevation-3); border-radius: var(--hos-radius-sm);'
   };
 }
 
@@ -64,8 +85,10 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
   const hostRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const onDataClickRef = useRef(onDataClick);
+  const buildOptionRef = useRef(buildOption);
 
   onDataClickRef.current = onDataClick;
+  buildOptionRef.current = buildOption;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -82,8 +105,15 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
     chart.on('click', handleClick);
     const observer = new ResizeObserver(() => chart.resize());
     observer.observe(host);
+    // 主题切换（html[data-theme] / body.dark）后重新读取 CSS 变量并重绘，轴线与文字跟随主题。
+    const themeObserver = new MutationObserver(() => {
+      chart.setOption(buildOptionRef.current(readPalette(host)), { notMerge: true, lazyUpdate: true });
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     return () => {
       observer.disconnect();
+      themeObserver.disconnect();
       chart.off('click', handleClick);
       chart.dispose();
       chartRef.current = null;

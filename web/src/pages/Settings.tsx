@@ -1,9 +1,12 @@
 import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
+import InlineNote from '@/components/ui/InlineNote';
+import '@/components/settings/settings-shared.css';
+import '@/components/ui/kpi-strip.css';
 import { useState, useEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
-import { Form, InputNumber, Input, message, Space, Switch, Alert, Tabs, Select, Modal, Grid } from 'antd';
+import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal, Grid } from 'antd';
 import MobilePills from '@/components/mobile/MobilePills';
 import { LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { configAPI, managementAPI, serverProfilesAPI } from '@/services/api';
@@ -603,7 +606,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const basicSettingsContent = (
     <div className="settings-grid">
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>AIH Server</h2>
@@ -664,7 +667,7 @@ const Settings = ({ section }: SettingsProps) => {
         />
       </SettingsGroupCard>
 
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>账号调度</h2>
@@ -729,7 +732,7 @@ const Settings = ({ section }: SettingsProps) => {
         </Form>
       </ProCard>
 
-      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 18 }}>
+      <ProCard className="settings-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">
           <div>
             <h2>服务配置</h2>
@@ -749,19 +752,16 @@ const Settings = ({ section }: SettingsProps) => {
             openNetwork: false
           }}
         >
-          <Alert
-            type="info"
-            showIcon
-            className="settings-inline-alert"
-            message="开启开放网络后，Server 会监听 0.0.0.0。监听配置保存后，需要点击“一键重启服务”才会生效。"
-          />
+          <InlineNote tone="info" className="settings-inline-alert">
+            开启开放网络后，Server 会监听 0.0.0.0。监听配置保存后，需要点击“一键重启服务”才会生效。
+          </InlineNote>
           {restartAlert && (
-            <Alert
-              type={restartAlert.type}
-              showIcon
+            <InlineNote
+              tone={restartAlert.type}
               className="settings-inline-alert settings-restart-alert animate__animated animate__fadeIn animate__faster"
-              message={restartAlert.message}
-            />
+            >
+              {restartAlert.message}
+            </InlineNote>
           )}
 
           <Form.Item
@@ -860,7 +860,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const controlPlanesContent = (
     <div className="settings-control-plane-page">
-      <ProCard className="settings-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 18 }}>
+      <ProCard className="settings-panel settings-control-plane-shell" bordered bodyStyle={{ padding: 16 }}>
         <p className="settings-control-plane-scope-copy">
           默认 Server 用于无参数页面；点击“打开”会用显式 server 参数固定当前标签页，可同时操作多台 Server。
         </p>
@@ -896,7 +896,7 @@ const Settings = ({ section }: SettingsProps) => {
         </div>
 
         {/* 只保留运营指标，不展示内部协议和鉴权细节。 */}
-        <StatisticCard.Group direction="row" bordered={false} style={{ marginBottom: 12 }}>
+        <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
           <StatisticCard statistic={{ title: '服务器', value: controlPlaneOverview.total }} />
           <StatisticCard statistic={{ title: '可调度账号', value: controlPlaneOverview.schedulableAccounts }} />
           <StatisticCard statistic={{ title: '会话', value: controlPlaneOverview.sessions }} />
@@ -911,7 +911,7 @@ const Settings = ({ section }: SettingsProps) => {
               children: (
                 serverRouteRows.length === 0 ? (
                   <div className="settings-control-plane-empty">
-                    <Alert type="info" showIcon message="暂无已保存 Server" />
+                    <InlineNote tone="info">暂无已保存 Server</InlineNote>
                     <Button
                       type="primary"
                       icon={<PlusOutlined />}
@@ -951,6 +951,7 @@ const Settings = ({ section }: SettingsProps) => {
       >
         <Form
           form={controlPlaneForm}
+          className="settings-form"
           layout="vertical"
           onFinish={handleSaveControlPlane}
           initialValues={{

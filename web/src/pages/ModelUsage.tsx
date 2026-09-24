@@ -2,16 +2,12 @@ import './ModelUsage.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DatePicker,
-  Drawer,
-  Grid,
   Segmented,
   Select,
   Space,
   Tabs,
   Tooltip,
   Typography,
-  Empty,
-  Spin,
   message
 } from 'antd';
 import { ProColumns } from '@ant-design/pro-components';
@@ -19,8 +15,7 @@ import {
   CopyOutlined,
   EyeOutlined,
   ReloadOutlined,
-  SyncOutlined,
-  FilterOutlined
+  SyncOutlined
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { accountsAPI, modelUsageAPI } from '@/services/api';
@@ -42,8 +37,6 @@ import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
-import MobilePills from '@/components/mobile/MobilePills';
-import '@/components/mobile/mobile-cards.css';
 import UsageTrendChart from '@/features/model-usage/UsageTrendChart';
 import UsageModelMixChart from '@/features/model-usage/UsageModelMixChart';
 import RequestDetailsSection from '@/features/model-usage/RequestDetailsSection';
@@ -58,14 +51,28 @@ import {
   formatTokens,
   getCacheTokens
 } from '@/features/model-usage/model-usage-presentation';
+import {
+  EMPTY_USAGE_STATS,
+  EMPTY_USAGE_TREND,
+  USAGE_RANGE_OPTIONS,
+  USAGE_REQUEST_DETAIL_LIMIT,
+  buildUsageRangeByMode as buildRangeByMode,
+  formatUsageDate as formatDate,
+  formatUsageDateTime as formatDateTime,
+  formatUsageTime as formatTime,
+  isUsageDashboardQueryActive as isDashboardQueryActive,
+  isUsageScanJobActive as isScanJobActive,
+  type UsageProviderFilter,
+  type UsageRangeMode
+} from '@/features/model-usage/model-usage-query';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
-type ProviderFilter = Provider | '';
-type RangeMode = 'hour' | 'today' | '7d' | 'month' | 'custom';
+type ProviderFilter = UsageProviderFilter;
+type RangeMode = UsageRangeMode;
 
-const REQUEST_DETAIL_LIMIT = 80;
+const REQUEST_DETAIL_LIMIT = USAGE_REQUEST_DETAIL_LIMIT;
 
 // Segmented 无法分组，所以这里逐个 Provider 平铺，靠 providerNames 的站点后缀
 // （"WorkBuddy · 国际站" / "WorkBuddy · 国内站"）区分同族站点。用量是按真实
@@ -75,54 +82,11 @@ const PROVIDER_OPTIONS: Array<{ label: string; value: ProviderFilter }> = [
   ...providerIds.map((provider) => ({ label: providerNames[provider], value: provider }))
 ];
 
-const RANGE_OPTIONS: Array<{ label: string; value: RangeMode }> = [
-  { label: '1 小时', value: 'hour' },
-  { label: '今天', value: 'today' },
-  { label: '近 7 天', value: '7d' },
-  { label: '一个月', value: 'month' },
-  { label: '自定义', value: 'custom' }
-];
+const RANGE_OPTIONS = USAGE_RANGE_OPTIONS;
 
-const emptyStats: ModelUsageStats = {
-  totalCalls: 0,
-  totalSessions: 0,
-  totalPrompts: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheReadInputTokens: 0,
-  cacheCreationInputTokens: 0,
-  reasoningOutputTokens: 0,
-  totalTokens: 0,
-  totalCostUsd: 0
-};
+const emptyStats: ModelUsageStats = EMPTY_USAGE_STATS;
 
-const emptyTrend: ModelUsageTrend = {
-  fromMs: 0,
-  toMs: 0,
-  bucketMs: 0,
-  points: []
-};
-
-function formatDate(value: Dayjs) {
-  return value.format('YYYY-MM-DD');
-}
-
-function formatDateTime(value: Dayjs) {
-  return value.format('YYYY-MM-DDTHH:mm:ssZ');
-}
-
-function buildRangeByMode(mode: RangeMode): [Dayjs, Dayjs] {
-  const now = dayjs();
-  if (mode === 'hour') return [now.subtract(1, 'hour'), now];
-  if (mode === '7d') return [now.subtract(6, 'day').startOf('day'), now];
-  if (mode === 'month') return [now.subtract(1, 'month').startOf('day'), now];
-  return [now.startOf('day'), now];
-}
-
-function formatTime(value: number) {
-  if (!value) return '-';
-  return dayjs(value).format('MM-DD HH:mm');
-}
+const emptyTrend: ModelUsageTrend = EMPTY_USAGE_TREND;
 
 function formatProvider(provider: Provider) {
   return (
@@ -152,14 +116,6 @@ function renderCacheTokens(row: {
       <span>{formatTokens(getCacheTokens(row))}</span>
     </Tooltip>
   );
-}
-
-function isScanJobActive(job: ModelUsageScanJob | null) {
-  return Boolean(job && (job.status === 'queued' || job.status === 'running'));
-}
-
-function isDashboardQueryActive(job: ModelUsageDashboardQueryJob | null) {
-  return Boolean(job && ['queued', 'preparing', 'running'].includes(job.status));
 }
 
 function getSessionKey(row: ModelUsageSessionRow) {
@@ -195,12 +151,10 @@ function buildQuery(
   };
 }
 
+// 移动端（< 768px）由 web/src/mobile/pages/MobileUsage.tsx 独立渲染，本页只承担桌面布局。
 export default function ModelUsage() {
-  const screens = Grid.useBreakpoint();
-  const isMobile = !screens.md;
   const [rangeMode, setRangeMode] = useState<RangeMode>('today');
   const [usageTab, setUsageTab] = useState<'model' | 'session'>('model');
-  const [filterOpen, setFilterOpen] = useState(false);
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => buildRangeByMode('today'));
   const [provider, setProvider] = useState<ProviderFilter>('');
   const [model, setModel] = useState('');
@@ -718,77 +672,6 @@ export default function ModelUsage() {
     }
   ];
 
-  // 移动端把宽表降级为可点击卡片，同时保留完整审计指标。
-  const renderModelCard = (row: ModelUsageModelRow) => (
-    <div
-      className="mobile-card usage-mobile-card"
-      key={`${row.provider}:${row.model || 'unknown'}`}
-      role="button"
-      tabIndex={0}
-      aria-label={`查看 ${row.model || '未知模型'} 的账号分量`}
-      onClick={() => void openBreakdown({ kind: 'model', row })}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        void openBreakdown({ kind: 'model', row });
-      }}
-    >
-      <div className="mobile-card-head">
-        <span className="mobile-card-head-icon"><ProviderIcon provider={row.provider} size={20} /></span>
-        <div className="mobile-card-head-main">
-          <div className="mobile-card-title"><span className="mobile-card-title-text">{row.model || '未知模型'}</span></div>
-          <div className="mobile-card-subtitle">
-            {providerNames[row.provider] || row.provider} · {renderAccountScope(row.accountCount, row.unattributedCalls)} · {row.calls} 次调用
-          </div>
-        </div>
-        <span className="usage-mobile-card-action" aria-hidden><EyeOutlined /></span>
-      </div>
-      <div className="mobile-card-meta">
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Tokens</span><span className="mobile-card-meta-value">{formatTokens(row.totalTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Input</span><span className="mobile-card-meta-value">{formatTokens(row.inputTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value usage-meta-cost">{formatCost(row.costUsd)}</span></div>
-      </div>
-    </div>
-  );
-
-  const renderSessionCard = (row: ModelUsageSessionRow) => (
-    <div
-      className="mobile-card usage-mobile-card"
-      key={getSessionKey(row)}
-      role="button"
-      tabIndex={0}
-      aria-label={`查看会话 ${row.project || row.sessionId} 的账号与模型分量`}
-      onClick={() => void openBreakdown({ kind: 'session', row })}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        void openBreakdown({ kind: 'session', row });
-      }}
-    >
-      <div className="mobile-card-head">
-        <span className="mobile-card-head-icon"><ProviderIcon provider={row.provider} size={20} /></span>
-        <div className="mobile-card-head-main">
-          <div className="mobile-card-title"><span className="mobile-card-title-text">{row.project || row.sessionId}</span></div>
-          <div className="mobile-card-subtitle">
-            {providerNames[row.provider] || row.provider} · {renderAccountScope(row.accountCount, row.unattributedCalls)} · {formatTime(row.updatedAtMs)}
-          </div>
-        </div>
-        <span className="usage-mobile-card-action" aria-hidden><EyeOutlined /></span>
-      </div>
-      <div className="mobile-card-meta">
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Tokens</span><span className="mobile-card-meta-value">{formatTokens(row.totalTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Input</span><span className="mobile-card-meta-value">{formatTokens(row.inputTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value usage-meta-cost">{formatCost(row.costUsd)}</span></div>
-      </div>
-    </div>
-  );
-
   const modelSelectOptions = useMemo(() => {
     const grouped = new Map<string, Set<Provider>>();
     modelOptions.forEach((item) => {
@@ -835,12 +718,7 @@ export default function ModelUsage() {
       code="USAGE"
       title="模型用量统计"
       subTitle="监控 Tokens、会话、模型调用频次和估算成本。"
-      extra={isMobile ? (
-        <div className="m-header-actions">
-          <button className="m-icon-btn" aria-label="刷新" onClick={handleRefreshUsage} disabled={loading}><ReloadOutlined spin={loading} /></button>
-          <button className="m-icon-btn primary" aria-label="扫描" onClick={handleScan} disabled={scanning || isScanJobActive(scanJob)}><SyncOutlined spin={scanning || isScanJobActive(scanJob)} /></button>
-        </div>
-      ) : [
+      extra={[
         <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
           刷新
         </Button>,
@@ -897,59 +775,6 @@ export default function ModelUsage() {
         </div>
       </section>
 
-      {isMobile ? (
-        <>
-          {/* 原生:一个「筛选」按钮 → 底部抽屉,不在主屏平铺 pills */}
-          <div className="m-filterbar">
-            <button className="m-filter-btn" onClick={() => setFilterOpen(true)}>
-              <FilterOutlined />
-              <span>筛选</span>
-              <span className="m-filter-summary">
-                {(RANGE_OPTIONS.find((o) => o.value === rangeMode)?.label) as string}
-                {' · '}
-                {(PROVIDER_OPTIONS.find((o) => o.value === provider)?.label) as string}
-                {model ? ` · ${model}` : ''}
-              </span>
-            </button>
-          </div>
-          <Drawer
-            title="筛选" placement="bottom" height="auto" open={filterOpen}
-            onClose={() => setFilterOpen(false)} className="m-filter-drawer"
-          >
-            <div className="m-filter-group-label">时间范围</div>
-            <MobilePills
-              wrap
-              items={RANGE_OPTIONS.map((o) => ({ key: String(o.value), label: o.label }))}
-              activeKey={rangeMode}
-              onChange={(key) => handleRangeModeChange(key as RangeMode)}
-            />
-            {rangeMode === 'custom' ? (
-              <RangePicker
-                value={range}
-                onChange={handleRangeChange}
-                allowClear={false}
-                style={{ width: '100%', marginBottom: 13 }}
-                disabledDate={(current) => Boolean(current && current > dayjs().endOf('day'))}
-                showTime={{ format: 'HH:mm' }}
-                format="YYYY-MM-DD HH:mm"
-              />
-            ) : null}
-            <div className="m-filter-group-label">来源</div>
-            <MobilePills
-              wrap
-              items={PROVIDER_OPTIONS.map((o) => ({ key: String(o.value), label: o.label }))}
-              activeKey={provider}
-              onChange={(key) => handleProviderChange(key as ProviderFilter)}
-            />
-            <div className="m-filter-group-label">模型</div>
-            <Select
-              allowClear showSearch optionFilterProp="label" placeholder="全部模型"
-              value={model || undefined} onChange={handleModelChange}
-              style={{ width: '100%' }} options={modelSelectOptions}
-            />
-          </Drawer>
-        </>
-      ) : (
       <SectionCard bordered >
         <Space size={12} wrap className="usage-filter-space">
           <Segmented
@@ -989,7 +814,6 @@ export default function ModelUsage() {
           </Button>
         </Space>
       </SectionCard>
-      )}
 
       <SectionCard className="usage-insights-card" bodyStyle={{ padding: 0 }}>
         <div className="usage-insight-grid">
@@ -1001,32 +825,6 @@ export default function ModelUsage() {
         </div>
       </SectionCard>
 
-      {isMobile ? (
-        <div className="usage-results-mobile">
-          <MobilePills
-            items={[{ key: 'model', label: '按模型' }, { key: 'session', label: '按会话' }]}
-            activeKey={usageTab}
-            onChange={(key) => setUsageTab(key as 'model' | 'session')}
-          />
-          {usageTab === 'model' ? (
-            loading && models.length === 0 ? (
-              <div className="usage-mobile-loading"><Spin /></div>
-            ) : models.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" style={{ padding: '32px 0' }} />
-            ) : (
-              <div className="mobile-card-list">{models.map(renderModelCard)}</div>
-            )
-          ) : (
-            loading && sessions.length === 0 ? (
-              <div className="usage-mobile-loading"><Spin /></div>
-            ) : sessions.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" style={{ padding: '32px 0' }} />
-            ) : (
-              <div className="mobile-card-list">{sessions.map(renderSessionCard)}</div>
-            )
-          )}
-        </div>
-      ) : (
       <SectionCard className="usage-results-card">
         <Tabs
           activeKey={usageTab}
@@ -1061,7 +859,6 @@ export default function ModelUsage() {
           ]}
         />
       </SectionCard>
-      )}
 
       <RequestDetailsSection
         usage={requestUsage}
@@ -1077,7 +874,6 @@ export default function ModelUsage() {
         target={breakdownTarget}
         data={breakdown}
         loading={breakdownLoading}
-        isMobile={isMobile}
         accountsByRef={accountsByRef}
         onClose={closeBreakdown}
       />

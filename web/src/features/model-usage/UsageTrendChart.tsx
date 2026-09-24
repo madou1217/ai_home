@@ -1,31 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Empty, Segmented } from 'antd';
-import dayjs from 'dayjs';
 
-import type { ModelUsageTrend, ModelUsageTrendPoint } from '@/types';
+import type { ModelUsageTrend } from '@/types';
 import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
 import { formatCost, formatTokens } from './model-usage-presentation';
+import { buildTrendSlots as buildSlots, formatTrendAxisTime as formatAxisTime } from './model-usage-query';
 
 type TrendMode = 'tokens' | 'cost' | 'cache';
 
 interface UsageTrendChartProps {
   trend: ModelUsageTrend;
-}
-
-function buildSlots(trend: ModelUsageTrend) {
-  if (!trend.bucketMs || trend.toMs < trend.fromMs) return [];
-  const points = new Map(trend.points.map((point) => [point.bucketStartMs, point]));
-  const slots: Array<ModelUsageTrendPoint | null> = [];
-  for (let timestamp = trend.fromMs; timestamp <= trend.toMs; timestamp += trend.bucketMs) {
-    slots.push(points.get(timestamp) || null);
-    if (slots.length >= 120) break;
-  }
-  return slots;
-}
-
-function formatAxisTime(timestamp: number, bucketMs: number) {
-  if (bucketMs < 24 * 60 * 60 * 1000) return dayjs(timestamp).format('MM-DD HH:mm');
-  return dayjs(timestamp).format('MM-DD');
 }
 
 function createBaseOption(

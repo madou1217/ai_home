@@ -170,22 +170,19 @@
 
 .usage-kpi-rail,
 .usage-insights-card,
-.usage-results-card,
-.usage-results-mobile {
+.usage-results-card {
   transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 /* 刷新中：保留上一次快照，只降低不透明度（不做位移 / 滤镜） */
 .usage-dashboard-body--refreshing .usage-kpi-rail,
 .usage-dashboard-body--refreshing .usage-insights-card,
-.usage-dashboard-body--refreshing .usage-results-card,
-.usage-dashboard-body--refreshing .usage-results-mobile {
+.usage-dashboard-body--refreshing .usage-results-card {
   opacity: 0.56;
 }
 
 .usage-dashboard-body--refreshing .usage-insights-card,
-.usage-dashboard-body--refreshing .usage-results-card,
-.usage-dashboard-body--refreshing .usage-results-mobile {
+.usage-dashboard-body--refreshing .usage-results-card {
   pointer-events: none;
   user-select: none;
 }
@@ -418,17 +415,6 @@
   white-space: nowrap;
 }
 
-.usage-mobile-loading {
-  padding: 48px 0;
-  text-align: center;
-}
-
-.usage-mobile-card .mobile-card-title-text,
-.usage-mobile-card .mobile-card-meta-value {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
-}
-
 .usage-breakdown-loading {
   display: grid;
   min-height: 260px;
@@ -471,26 +457,6 @@
   color: var(--color-muted);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.usage-mobile-card {
-  cursor: pointer;
-}
-
-.usage-mobile-card:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus-info);
-}
-
-.usage-mobile-card-action {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 auto;
-  border: 1px solid var(--color-border);
-  border-radius: 0;
-  color: var(--color-accent);
-  place-items: center;
 }
 
 @media (max-width: 1180px) {
@@ -559,32 +525,13 @@
   .usage-breakdown-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .usage-mobile-card .mobile-card-meta {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--hos-space-3) var(--hos-space-2);
-  }
-
-  .usage-mobile-card .mobile-card-meta-item {
-    min-width: 0;
-  }
-
-  .usage-mobile-card .mobile-card-subtitle {
-    white-space: normal;
-  }
-
-  .usage-mobile-card-action {
-    margin-top: var(--hos-space-0-5);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .usage-query-progress,
   .usage-kpi-rail,
   .usage-insights-card,
-  .usage-results-card,
-  .usage-results-mobile {
+  .usage-results-card {
     transition: none;
   }
 

@@ -1,8 +1,7 @@
 import ServiceWidgetGrid from '@/components/dashboard/ServiceWidgetGrid';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Grid, message, Tag, Tooltip } from 'antd';
+import { useState } from 'react';
+import { message, Tag, Tooltip } from 'antd';
 import {
-  DisconnectOutlined,
   ReloadOutlined,
   FolderOutlined,
   MessageOutlined,
@@ -16,17 +15,30 @@ import {
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
-import { accountsAPI, managementAPI } from '@/services/api';
-import type { Account, ManagementAccount, ManagementMetrics, ManagementStatus, Provider } from '@/types';
-import { countHealthyAccounts } from '@/features/accounts/account-state';
-import ProviderIcon, { providerIds, providerNames } from '@/components/chat/ProviderIcon';
+import type { Provider } from '@/types';
+import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
-import { formatAccountIssueReason } from '@/utils/account-reasons';
+import { useGatewayDashboard } from '@/features/dashboard/use-gateway-dashboard';
+import {
+  buildChatJumpPath,
+  buildRuntimeParams,
+  describeErrorPipeline,
+  extractProjectBasename,
+  formatPercent,
+  formatRecentErrorMessage,
+  formatSessionShortId,
+  formatUptime,
+  getOverallHealth,
+  getOverallHealthMeta,
+  getRecentErrorProvider,
+  getSuccessTone,
+  normalizeQueueCount,
+  resolveFriendlyAccountDisplay,
+  sumRunningQueue,
+  type ProviderRow
+} from '@/features/dashboard/dashboard-presentation';
 import '../styles/unified.css';
-import '@/components/mobile/mobile-cards.css';
 import './Dashboard.css';
-
-const PROVIDERS: Provider[] = providerIds;
 
 // Hero 成功率数值的发光色调（纯展示映射，见 heroSuccessTone）
 const HERO_VALUE_GLOW: Record<'healthy' | 'warning' | 'error' | 'neutral', string> = {
@@ -36,231 +48,33 @@ const HERO_VALUE_GLOW: Record<'healthy' | 'warning' | 'error' | 'neutral', strin
   neutral: ''
 };
 
-// 账号口径数据（/v0/webui/accounts）的刷新节流：跟随管理快照节奏，但不至于每帧都打一次接口。
-const WEBUI_ACCOUNTS_MIN_INTERVAL_MS = 15000;
-
-const formatPercent = (value?: number) => `${(Number(value || 0) * 100).toFixed(1)}%`;
-
-function normalizeQueueCount(value: unknown, fallback = 0) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.max(0, Math.floor(numeric));
-}
-
-function formatRecentErrorMessage(item: ManagementMetrics['lastErrors'][number]) {
-  const raw = String(item?.message || item?.error || item?.detail || item?.reason || '').trim();
-  if (!raw) return '未提供错误详情';
-  const friendly = formatAccountIssueReason(raw);
-  return friendly || raw;
-}
-
-function getProtocolDisplayName(protocol?: string, family?: string): string {
-  if (protocol) {
-    switch (protocol) {
-      case 'anthropic_messages': return 'Claude (Messages)';
-      case 'openai_responses': return 'Codex (Responses)';
-      case 'openai_chat': return 'OpenAI (Chat)';
-      case 'gemini_generate_content':
-      case 'gemini_stream_generate_content': return 'Gemini (GenerateContent)';
-      case 'kimi_chat': return 'Kimi (Chat)';
-      default: break;
-    }
-  }
-  if (family) {
-    const p = family.toLowerCase();
-    return providerNames[p as keyof typeof providerNames] || family.toUpperCase();
-  }
-  return '';
-}
-
-function getProviderDisplayName(provider?: string): string {
-  if (!provider) return '';
-  const p = provider.toLowerCase();
-  return providerNames[p as keyof typeof providerNames] || provider.toUpperCase();
-}
-
-type ProviderRow = {
-  key: Provider;
-  provider: Provider;
-  total: number;
-  active: number;
-  statuses: Record<string, number>;
-  queue: any;
-  requests: number;
-  success: number;
-  failures: number;
+// HUD 指示灯：与 health.dot 一一对应（纯展示映射），连接中用呼吸的 info 灯。
+const HEALTH_LED_CLASS: Record<string, string> = {
+  idle: 'hud-led--info hud-led--live',
+  ok: 'hud-led--ok',
+  warn: 'hud-led--warn',
+  crit: 'hud-led--err'
 };
 
-function getRecentErrorProvider(item: ManagementMetrics['lastErrors'][number]) {
-  const provider = String(item.effectiveProvider || item.provider || '').trim().toLowerCase();
-  return PROVIDERS.includes(provider as Provider) ? (provider as Provider) : null;
-}
-
-function resolveFriendlyAccountDisplay(
-  item: ManagementMetrics['lastErrors'][number],
-  account?: ManagementAccount
-): string {
-  if (item.accountLabel && !item.accountLabel.startsWith('acct_')) {
-    return item.accountLabel;
-  }
-  if (account?.displayName) return account.displayName;
-  if (account?.email) return account.email;
-  const prov = item.effectiveProvider || item.provider || account?.provider || '';
-  const provName = prov ? (providerNames[prov as keyof typeof providerNames] || prov.toUpperCase()) : 'AI';
-  if (account?.apiKeyMode) {
-    return `${provName} 密钥账号`;
-  }
-  if (item.attemptedCount && item.attemptedCount > 1) {
-    return `尝试了 ${item.attemptedCount} 个账号`;
-  }
-  return `${provName} 账号`;
-}
-
-function extractProjectBasename(projectPath?: string, dirName?: string): string {
-  if (dirName && dirName.trim()) return dirName.trim();
-  if (!projectPath || !projectPath.trim()) return '';
-  const clean = projectPath.trim().replace(/[/\\]+$/, '');
-  const parts = clean.split(/[/\\]/);
-  return parts[parts.length - 1] || clean;
-}
-
-function formatSessionShortId(sessionId?: string): string {
-  if (!sessionId) return '';
-  const trimmed = sessionId.trim();
-  if (trimmed.length <= 16) return trimmed;
-  return `${trimmed.slice(0, 7)}…${trimmed.slice(-5)}`;
-}
-
+// 移动端（< 768px）由 web/src/mobile/pages/MobileDashboard.tsx 独立渲染，本页只承担桌面布局。
 export default function Dashboard() {
   const navigate = useNavigate();
-  const screens = Grid.useBreakpoint();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const isMobile = !screens.md;
-  const [status, setStatus] = useState<ManagementStatus | null>(null);
-  const [metrics, setMetrics] = useState<ManagementMetrics | null>(null);
-  const [accounts, setAccounts] = useState<ManagementAccount[]>([]);
-  // 账号健康口径与账号页一致：全部持久化账号（/v0/webui/accounts）+ getAccountDisplayState。
-  const [webuiAccounts, setWebuiAccounts] = useState<Account[]>([]);
-  const [webuiAccountsLoaded, setWebuiAccountsLoaded] = useState(false);
-  const webuiAccountsFetchedAtRef = useRef(0);
-  const [loading, setLoading] = useState(false);
-  const [cooldownClearing, setCooldownClearing] = useState(false);
-  const [liveState, setLiveState] = useState<'connecting' | 'live' | 'degraded'>('connecting');
-  const [statusReceivedAt, setStatusReceivedAt] = useState(0);
-  const [uptimeTickMs, setUptimeTickMs] = useState(() => Date.now());
-  const snapshotReceivedAtRef = useRef(0);
-  const refreshFallbackTimerRef = useRef<number | null>(null);
-
-  function clearRefreshFallbackTimer() {
-    if (refreshFallbackTimerRef.current === null) return;
-    window.clearTimeout(refreshFallbackTimerRef.current);
-    refreshFallbackTimerRef.current = null;
-  }
-
-  const refreshWebuiAccounts = useCallback(async (options: { force?: boolean } = {}) => {
-    const now = Date.now();
-    if (!options.force && now - webuiAccountsFetchedAtRef.current < WEBUI_ACCOUNTS_MIN_INTERVAL_MS) return;
-    webuiAccountsFetchedAtRef.current = now;
-    try {
-      const result = await accountsAPI.list();
-      setWebuiAccounts(Array.isArray(result.accounts) ? result.accounts : []);
-      setWebuiAccountsLoaded(true);
-    } catch (_error) {
-      // 静默失败：保留上一次账号口径，等待下一轮刷新。
-    }
-  }, []);
-
-  function applyDashboardSnapshot(
-    nextStatus: ManagementStatus,
-    nextMetrics: ManagementMetrics,
-    nextAccounts: ManagementAccount[]
-  ) {
-    const receivedAt = Date.now();
-    snapshotReceivedAtRef.current = receivedAt;
-    setStatus(nextStatus);
-    setMetrics(nextMetrics);
-    setAccounts(nextAccounts || []);
-    setStatusReceivedAt(receivedAt);
-    setLiveState('live');
-    setLoading(false);
-    clearRefreshFallbackTimer();
-    void refreshWebuiAccounts();
-  }
-
-  const loadDashboard = useCallback(async (options: { showLoading?: boolean; quietError?: boolean } = {}) => {
-    const showLoading = Boolean(options.showLoading);
-    const quietError = Boolean(options.quietError);
-    if (showLoading) {
-      setLoading(true);
-    }
-    try {
-      const [nextStatus, nextMetrics, nextAccounts] = await Promise.all([
-        managementAPI.status(),
-        managementAPI.metrics(),
-        managementAPI.accounts()
-      ]);
-      const receivedAt = Date.now();
-      snapshotReceivedAtRef.current = receivedAt;
-      setStatus(nextStatus);
-      setMetrics(nextMetrics);
-      setAccounts(nextAccounts.accounts || []);
-      setStatusReceivedAt(receivedAt);
-      setLiveState('degraded');
-      void refreshWebuiAccounts({ force: true });
-    } catch (error: any) {
-      if (!quietError) {
-        message.error(error?.response?.data?.message || error?.message || '加载管理面板失败');
-      }
-    } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
-    }
-  }, [refreshWebuiAccounts]);
-
-  useEffect(() => {
-    setLoading(true);
-    void refreshWebuiAccounts({ force: true });
-    const initialFallbackTimer = window.setTimeout(() => {
-      if (snapshotReceivedAtRef.current > 0) return;
-      setLiveState('degraded');
-      loadDashboard({ showLoading: true, quietError: true });
-    }, 2500);
-    const watcher = managementAPI.watch({
-      onConnected: () => {
-        setLiveState('connecting');
-      },
-      onSnapshot: ({ status: nextStatus, metrics: nextMetrics, accounts: nextAccounts }) => {
-        applyDashboardSnapshot(nextStatus, nextMetrics, nextAccounts || []);
-      },
-      onError: () => {
-        setLiveState('degraded');
-        if (snapshotReceivedAtRef.current === 0) {
-          loadDashboard({ showLoading: true, quietError: true });
-        } else {
-          setLoading(false);
-        }
-      }
-    });
-    return () => {
-      window.clearTimeout(initialFallbackTimer);
-      clearRefreshFallbackTimer();
-      watcher.close();
-    };
-  }, [loadDashboard, refreshWebuiAccounts]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setUptimeTickMs(Date.now());
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const displayedUptimeSec = useMemo(() => {
-    if (typeof status?.uptimeSec !== 'number') return null;
-    if (!statusReceivedAt) return status.uptimeSec;
-    return status.uptimeSec + Math.max(0, Math.floor((uptimeTickMs - statusReceivedAt) / 1000));
-  }, [status?.uptimeSec, statusReceivedAt, uptimeTickMs]);
+  const {
+    status,
+    metrics,
+    accountByRef,
+    webuiAccountsLoaded,
+    accountHealth,
+    loading,
+    cooldownClearing,
+    displayedUptimeSec,
+    providerRows,
+    routeRows,
+    recentErrors,
+    handleClearCooldown,
+    handleRefreshDashboard
+  } = useGatewayDashboard();
 
   const copyErrorText = async (text: string, key: string) => {
     try {
@@ -276,89 +90,8 @@ export default function Dashboard() {
   };
 
   const jumpToChat = (options: { projectPath?: string; sessionId?: string }) => {
-    const params = new URLSearchParams();
-    if (options.projectPath) params.set('projectPath', options.projectPath);
-    if (options.sessionId) params.set('sessionId', options.sessionId);
-    const search = params.toString();
-    navigate(search ? `/chat?${search}` : '/chat');
+    navigate(buildChatJumpPath(options));
   };
-
-  const handleClearCooldown = async () => {
-    setCooldownClearing(true);
-    try {
-      await managementAPI.clearCooldown();
-      message.success('已清空冷却状态');
-      if (liveState === 'degraded') {
-        await loadDashboard({ showLoading: true, quietError: true });
-      }
-    } catch (error: any) {
-      message.error(error?.response?.data?.message || error?.message || '清空冷却失败');
-    } finally {
-      setCooldownClearing(false);
-    }
-  };
-
-  const handleRefreshDashboard = async () => {
-    const previousSnapshotAt = snapshotReceivedAtRef.current;
-    setLoading(true);
-    clearRefreshFallbackTimer();
-    void refreshWebuiAccounts({ force: true });
-
-    if (liveState === 'live' || liveState === 'connecting') {
-      try {
-        await managementAPI.requestSnapshot();
-        refreshFallbackTimerRef.current = window.setTimeout(() => {
-          if (snapshotReceivedAtRef.current > previousSnapshotAt) return;
-          setLiveState('degraded');
-          loadDashboard({ showLoading: true, quietError: true });
-        }, 2000);
-        return;
-      } catch (_error) {
-        setLiveState('degraded');
-      }
-    }
-
-    await loadDashboard({ showLoading: true });
-  };
-
-  const providerRows = useMemo<ProviderRow[]>(() => {
-    return PROVIDERS.map((provider) => {
-      const providerStatus = status?.providers?.[provider];
-      const providerQueue = status?.queue?.[provider];
-      return {
-        key: provider,
-        provider,
-        total: providerStatus?.total || 0,
-        active: providerStatus?.active || 0,
-        statuses: providerStatus?.statuses || {},
-        queue: providerQueue,
-        requests: metrics?.providerCounts?.[provider] || 0,
-        success: metrics?.providerSuccess?.[provider] || 0,
-        failures: metrics?.providerFailures?.[provider] || 0
-      };
-    });
-  }, [metrics, status]);
-
-  const routeRows = useMemo(() => {
-    return Object.entries(metrics?.routeCounts || {})
-      .sort((left, right) => Number(right[1]) - Number(left[1]))
-      .slice(0, 8)
-      .map(([route, count]) => ({
-        key: route,
-        route,
-        count: Number(count || 0)
-      }));
-  }, [metrics]);
-
-  const accountHealth = useMemo(() => countHealthyAccounts(webuiAccounts), [webuiAccounts]);
-  const recentErrors = metrics?.lastErrors || [];
-  const accountByRef = useMemo(() => {
-    return new Map(
-      accounts
-        .filter((account) => account.accountRef)
-        .map((account) => [String(account.accountRef || ''), account])
-    );
-  }, [accounts]);
 
   const recentErrorRows = recentErrors.slice(0, 8).map((item, index) => ({ ...item, __key: `${item.at || 'unknown'}-${index}` }));
 
@@ -369,66 +102,22 @@ export default function Dashboard() {
   const healthyAccounts = accountHealth.healthy;
   const degradedCount = Math.max(0, totalAccounts - healthyAccounts);
   const healthPct = totalAccounts > 0 ? Math.round((healthyAccounts / totalAccounts) * 100) : 0;
-  const overallHealth = !status || !webuiAccountsLoaded
-    ? 'loading'
-    : totalAccounts > 0 && degradedCount === 0
-      ? 'healthy'
-      : (healthyAccounts === 0 ? 'critical' : 'degraded');
-  const healthMeta: Record<string, { label: string; dot: string }> = {
-    loading: { label: '连接中…', dot: 'idle' },
-    healthy: { label: '运行正常', dot: 'ok' },
-    degraded: { label: `${degradedCount} 个账号降级`, dot: 'warn' },
-    critical: { label: '无健康账号', dot: 'crit' }
-  };
-  const health = healthMeta[overallHealth];
-  // HUD 指示灯：与 health.dot 一一对应（纯展示映射），连接中用呼吸的 info 灯。
-  const healthLedClass: Record<string, string> = {
-    idle: 'hud-led--info hud-led--live',
-    ok: 'hud-led--ok',
-    warn: 'hud-led--warn',
-    crit: 'hud-led--err'
-  };
+  const overallHealth = getOverallHealth({
+    statusLoaded: Boolean(status),
+    accountsLoaded: webuiAccountsLoaded,
+    total: totalAccounts,
+    healthy: healthyAccounts
+  });
+  const health = getOverallHealthMeta(overallHealth, degradedCount);
+  const healthLedClass = HEALTH_LED_CLASS;
   // 成功率徽标阈值:无请求不评健康色;>=95% 健康,>=80% 告警,<80% 异常。
   const totalRequestsCount = Number(metrics?.totalRequests || 0);
-  const successRateValue = Number(metrics?.successRate || 0);
-  const successRateStatus: 'healthy' | 'warning' | 'error' | 'neutral' =
-    totalRequestsCount === 0
-      ? 'neutral'
-      : successRateValue >= 0.95
-        ? 'healthy'
-        : successRateValue >= 0.8
-          ? 'warning'
-          : 'error';
+  const successRateStatus = getSuccessTone(totalRequestsCount, metrics?.successRate);
   // Hero 成功率取自 status（与 KPI 条的 metrics 口径分开），色调按其自身数值、同一阈值映射
-  const heroSuccessRate = Number(status?.successRate || 0);
-  const heroSuccessTone: 'healthy' | 'warning' | 'error' | 'neutral' =
-    Number(status?.totalRequests || 0) === 0
-      ? 'neutral'
-      : heroSuccessRate >= 0.95
-        ? 'healthy'
-        : heroSuccessRate >= 0.8
-          ? 'warning'
-          : 'error';
-  const totalQueueRunning = PROVIDERS.reduce((sum, p) => sum + normalizeQueueCount(status?.queue?.[p]?.running), 0);
-  const formatUptime = (sec?: number | null) => {
-    if (typeof sec !== 'number' || !Number.isFinite(sec)) return '-';
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${sec % 60}s`;
-    return `${sec}s`;
-  };
+  const heroSuccessTone = getSuccessTone(status?.totalRequests, status?.successRate);
+  const totalQueueRunning = sumRunningQueue(status);
 
-  const runtimeParams: Array<[string, React.ReactNode]> = [
-    ['Backend', status?.backend || '-'],
-    ['调度策略', status?.strategy || '-'],
-    ['监听地址', status ? `${status.host}:${status.port}` : '-'],
-    ['Provider 模式', status?.providerMode || '-'],
-    ['API Key', status?.apiKeyConfigured ? '已配置' : '未配置'],
-    ['Sticky Session', status?.sessionAffinity?.total || 0],
-    ['缓存模型', status?.modelsCached || 0],
-    ['运行时长', formatUptime(displayedUptimeSec)]
-  ];
+  const runtimeParams = buildRuntimeParams(status, displayedUptimeSec);
 
   const renderProviderCard = (row: ProviderRow) => {
     const pct = row.total > 0 ? Math.round((row.active / row.total) * 100) : 0;
@@ -467,12 +156,7 @@ export default function Dashboard() {
       className="dash-page"
       title="网关仪表盘"
       subTitle="展示本地 Server 调度、熔断、恢复和队列的真实运行态。"
-      extra={isMobile ? (
-        <div className="m-header-actions">
-          <button className="m-icon-btn" aria-label="清空冷却" onClick={handleClearCooldown} disabled={cooldownClearing}><DisconnectOutlined /></button>
-          <button className="m-icon-btn primary" aria-label="刷新" onClick={handleRefreshDashboard} disabled={loading}><ReloadOutlined spin={loading} /></button>
-        </div>
-      ) : [
+      extra={[
         <Button key="clear" onClick={handleClearCooldown} loading={cooldownClearing}>
           清空冷却
         </Button>,
@@ -580,20 +264,15 @@ export default function Dashboard() {
               const errorText = formatRecentErrorMessage(item);
               const isCopied = copiedKey === item.__key;
 
-              const sourceProtocolLabel = getProtocolDisplayName(item.clientProtocol, item.familyProvider);
-              const targetProviderLabel = getProviderDisplayName(item.effectiveProvider || item.provider);
-              const isCrossRoute = Boolean(
-                item.familyProvider &&
-                (item.effectiveProvider || item.provider) &&
-                item.familyProvider.toLowerCase() !== String(item.effectiveProvider || item.provider).toLowerCase()
-              );
-              const displayRequestedModel = item.requestedModel || (item.aliasTarget ? item.model : '');
-              const displayEffectiveModel = item.effectiveModel || item.aliasTarget || '';
-              const isAlias = Boolean(
-                item.aliasMatched ||
-                (displayRequestedModel && displayEffectiveModel && displayRequestedModel !== displayEffectiveModel)
-              );
-              const showPipeline = isCrossRoute || isAlias;
+              const {
+                sourceProtocolLabel,
+                targetProviderLabel,
+                isCrossRoute,
+                displayRequestedModel,
+                displayEffectiveModel,
+                isAlias,
+                showPipeline
+              } = describeErrorPipeline(item);
 
               return (
                 <div className="dash-error-item hud-panel hud-panel--sm" key={item.__key}>

@@ -31,7 +31,6 @@ interface UsageBreakdownDrawerProps {
   target: UsageBreakdownTarget | null;
   data: ModelUsageBreakdownResponse | null;
   loading: boolean;
-  isMobile: boolean;
   accountsByRef: Map<string, Account>;
   onClose: () => void;
 }
@@ -49,7 +48,6 @@ export default function UsageBreakdownDrawer({
   target,
   data,
   loading,
-  isMobile,
   accountsByRef,
   onClose
 }: UsageBreakdownDrawerProps) {
@@ -223,7 +221,7 @@ export default function UsageBreakdownDrawer({
       title={title}
       open={Boolean(target)}
       onClose={onClose}
-      width={isMobile ? '100%' : 1040}
+      width={1040}
       destroyOnClose
     >
       {target?.kind === 'session' ? (

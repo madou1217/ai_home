@@ -1,4 +1,5 @@
-import { Alert, Divider, Form, Input, Modal, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import { Divider, Form, Input, Modal, Popconfirm, Space, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { DeleteOutlined, SyncOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import Button from '@/components/ui/AppButton';
@@ -96,12 +97,12 @@ export default function ProxySubscriptionsModal({
           <Form.Item><Button type="primary" htmlType="submit">保存</Button></Form.Item>
         </Space>
       </Form>
-      <Alert
-        type="info"
-        showIcon
-        message="当前为手动同步策略"
+      <InlineNote
+        tone="info"
         description="autoUpdate 与 intervalHours 不会伪装成已运行的调度器。订阅地址中的 token 会在界面中遮罩。"
-      />
+      >
+        当前为手动同步策略
+      </InlineNote>
       <Divider />
       <div className="proxy-subscription-list">
         {subscriptions.length === 0 ? (

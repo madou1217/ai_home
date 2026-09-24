@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Card, Input, Select, Space, Tag, message } from 'antd';
+import { Card, Input, Select, Space, Tag, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { GlobalOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { proxyPoolAPI } from '@/services/api';
@@ -69,23 +70,23 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
       extra={<Tag color={status?.effectiveRouteKnown ? 'green' : 'gold'}>{routeLabel(status)}</Tag>}
     >
       {externalTun && (
-        <Alert
-          type="warning"
-          showIcon
-          message={`检测到外部 TUN：${status?.tun.owner || '未知工具'}`}
+        <InlineNote
+          tone="warning"
           description="AIH 不会停止、修改或抢占现有代理工具。系统代理和 AIH TUN 接管按钮已保护性禁用。"
           style={{ marginBottom: 12 }}
-        />
+        >
+          {`检测到外部 TUN：${status?.tun.owner || '未知工具'}`}
+        </InlineNote>
       )}
-      {!status && <Alert type="info" showIcon message="正在读取系统代理、TUN 和路由状态" style={{ marginBottom: 12 }} />}
+      {!status && <InlineNote tone="info" style={{ marginBottom: 12 }}>正在读取系统代理、TUN 和路由状态</InlineNote>}
       {status && !status.effectiveRouteKnown && !externalTun && (
-        <Alert
-          type="info"
-          showIcon
-          message="当前没有可确认的显式代理路径"
+        <InlineNote
+          tone="info"
           description="direct-unknown 只表示没有读到系统 HTTP/SOCKS 开关，不代表没有透明代理或 VPN。"
           style={{ marginBottom: 12 }}
-        />
+        >
+          当前没有可确认的显式代理路径
+        </InlineNote>
       )}
 
       <div className="toolkit-network-integration-grid">

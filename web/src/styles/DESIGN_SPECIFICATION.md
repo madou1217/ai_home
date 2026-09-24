@@ -1,5 +1,7 @@
 # AIH WebUI & Tauri 桌面应用视觉及交互设计规范
 
+> **视觉规则已被 [`web/DESIGN.md`](../../DESIGN.md)（Calm Operator Console，2026-09）取代。** 本文保留作为历史参考；颜色、字体、圆角、阴影、材质、动效与组件外观一律以 `web/DESIGN.md` 与 `src/styles/design-tokens.css` 为准，两者冲突时以 DESIGN.md 为准。
+
 本规范是整个 AIH (AI Home) 桌面级混合应用的前端与产品交互设计的单一真相源。任何前端组件重构、界面升级及新页面设计，都必须强制性地以此规范为最高指导准则，确保视觉美感与交互深度与行业一流标准对齐。
 
 ---

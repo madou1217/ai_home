@@ -17,7 +17,7 @@ const routesPath = path.join(projectRoot, 'web/config/routes.ts');
 test('accounts page keeps every non-deleted account in the single management list', () => {
   const source = fs.readFileSync(accountsPath, 'utf8');
   const routes = fs.readFileSync(routesPath, 'utf8');
-  assert.match(source, /useTokenDropEvents\(accounts,/);
+  assert.match(source, /useTokenDropEvents\(accounts[,)]/);
   assert.match(source, /useModelCatalog\(accounts\)/);
   assert.match(source, /accounts\.forEach\(account =>/);
   assert.match(source, /let filtered = accounts;/);

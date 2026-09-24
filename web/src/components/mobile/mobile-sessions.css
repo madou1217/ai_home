@@ -1,26 +1,28 @@
-/* Mobile "Sessions · project-grouped" view.
- * Ported from the reference design (AI Home · 会话 · 项目分组): Plus Jakarta Sans
- * + JetBrains Mono, warm terracotta accent, soft cards, project accordions with
- * expandable session cards. All rules are scoped under `.msx` so this bespoke
+/* Mobile "Sessions · project-grouped" view (AI Home · 会话 · 项目分组).
+ * Calm Operator Console language (web/DESIGN.md): opaque surface cards with 1px
+ * hairline borders, no shadows, a single accent (--color-accent) for selection,
+ * ink primary action, project accordions with expandable session cards. All rules are scoped under `.msx` so this bespoke
  * mobile look can never leak into the desktop ProjectList render. */
 
 .msx {
-  /* design tokens — scoped, not global :root, so desktop is untouched */
-  --msx-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  --msx-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --msx-bg: #f1f1f7;
-  --msx-surface: var(--hos-white, #ffffff);
-  --msx-surface-2: #fafaff;
-  --msx-ink: var(--hos-surface-dark-900, #1b1b2b);
-  --msx-ink-2: var(--hos-gray-600, #5a5a72);
-  --msx-ink-3: var(--hos-gray-400, #8b8ba3);
-  --msx-ink-4: #b6b6c8;
-  --msx-line: var(--hos-ink-100, #ececf4);
-  --msx-line-2: #e2e2ee;
-  --msx-acc: var(--hos-orange-500, #d97757);
-  --msx-run: #13a65a;
-  --msx-sh-xs: 0 1px 2px rgba(27, 27, 43, .05);
-  --msx-sh-sm: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+  /* 本地别名 —— 全部指向全局语义 token,深浅主题自动翻转(DESIGN.md §2)。
+     作用域限定在 .msx,桌面 ProjectList 不受影响。 */
+  --msx-font: var(--font-body);
+  --msx-mono: var(--font-mono);
+  --msx-bg: var(--color-bg);
+  --msx-surface: var(--color-surface);
+  --msx-surface-2: var(--color-surface-muted);
+  --msx-ink: var(--color-heading);
+  --msx-ink-2: var(--color-muted-strong);
+  --msx-ink-3: var(--color-muted);
+  --msx-ink-4: var(--color-faint);
+  --msx-line: var(--color-border);
+  --msx-line-2: var(--color-border-strong);
+  --msx-acc: var(--color-accent);
+  --msx-run: var(--color-success);
+  --msx-sh-xs: none;
+  --msx-sh-sm: none;
+  --msx-ease: var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 
   /* fill the flex parent (.mobileScreenBody) rather than absolute-positioning,
      so the parent's tabbar-safe padding-bottom keeps the list clear of the TabBar */
@@ -34,35 +36,33 @@
   -webkit-font-smoothing: antialiased;
 }
 
-@keyframes msxSpin { to { transform: rotate(360deg); } }
+/* 仅「运行中」状态点缓慢呼吸(DESIGN.md §5),其他元素不做循环动画 */
 @keyframes msxPulse {
-  0% { box-shadow: 0 0 0 0 rgba(19, 166, 90, .5); }
-  70% { box-shadow: 0 0 0 5px rgba(19, 166, 90, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(19, 166, 90, 0); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
 }
-@keyframes msxUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* header */
 .msx-head {
   flex-shrink: 0;
-  padding: var(--hos-space-3, 12px) var(--hos-space-4, 15px); /* 归级:原 15px */
+  padding: var(--hos-space-3, 12px) var(--hos-space-4, 16px);
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2, 8px);
 }
 .msx-head h1 {
-  font-size: var(--hos-text-h1, 22px); /* 归级:原 22px */
-  font-weight: 800;
-  letter-spacing: -.02em;
+  font-size: var(--text-2xl, 22px);
+  font-weight: var(--weight-semibold, 600);
+  letter-spacing: var(--tracking-tight, -0.01em);
   color: var(--msx-ink);
   flex: 1;
   min-width: 0;
   margin: 0;
 }
 .msx-iconbtn {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
+  width: 40px;
+  height: 40px;
+  border-radius: var(--hos-radius-lg, 10px);
   background: var(--msx-surface);
   border: 1px solid var(--msx-line);
   display: flex;
@@ -71,47 +71,51 @@
   color: var(--msx-ink-2);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background .15s;
-  font-size: var(--hos-text-h3, 15px);
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--msx-ease),
+    border-color var(--motion-fast, 120ms) var(--msx-ease);
+  font-size: 17px;
   padding: 0;
 }
-.msx-iconbtn:hover { background: var(--msx-surface-2); }
+.msx-iconbtn:active { background: var(--msx-surface-2); border-color: var(--msx-line-2); }
 .msx-iconbtn:disabled { opacity: .45; cursor: default; }
-/* back arrow sits left of the title and reads darker, like the reference */
-.msx-iconbtn.back { color: var(--msx-ink); border-color: var(--msx-line-2); }
+/* back arrow sits left of the title and reads darker */
+.msx-iconbtn.back { color: var(--msx-ink); }
+/* primary action = ink (DESIGN.md §2.2), no glow */
 .msx-iconbtn.primary {
-  background: var(--msx-acc);
-  border-color: transparent;
-  color: var(--hos-white, #fff);
-  box-shadow: 0 3px 9px color-mix(in srgb, var(--msx-acc) 40%, transparent);
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-on-ink);
+  box-shadow: none;
 }
+.msx-iconbtn.primary:active { background: var(--color-ink-hover); border-color: var(--color-ink-hover); }
 
 /* scroll list */
 .msx-list {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--hos-space-2, 8px) var(--hos-space-3-5, 14px) var(--hos-space-7, 28px);
+  padding: var(--hos-space-2, 8px) var(--hos-space-4, 16px) var(--hos-space-7, 28px);
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-3-5, 14px);
+  gap: var(--hos-space-3, 12px);
   -webkit-overflow-scrolling: touch;
 }
 .msx-list::-webkit-scrollbar { width: 0; height: 0; }
 
 /* project header (accordion trigger) */
-.msx-proj { animation: msxUp .4s both; }
 .msx-phead {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-3-5, 13px); /* 归级:原 13px */
-  padding: var(--hos-space-5, 18px) var(--hos-space-4, 16px); /* 归级:原 18px */
+  gap: var(--hos-space-3, 12px);
+  min-height: 64px;
+  padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
   cursor: pointer;
   background: var(--msx-surface);
   border: 1px solid var(--msx-line);
-  border-radius: var(--hos-radius-lg, 18px); /* 归级:原 18px */
-  box-shadow: var(--msx-sh-xs);
-  transition: border-color .15s, box-shadow .15s;
+  border-radius: var(--hos-mobile-radius, 12px);
+  box-shadow: none;
+  transition: border-color var(--motion-fast, 120ms) var(--msx-ease);
   /* long-press must not trigger text selection / the iOS callout menu */
   user-select: none;
   -webkit-user-select: none;
@@ -122,54 +126,54 @@
 .msx-folder {
   width: 36px;
   height: 36px;
-  border-radius: var(--hos-radius-sm, 10px); /* 归级:原 10px */
-  background: color-mix(in srgb, var(--msx-acc) 12%, var(--hos-white, #fff));
-  color: var(--msx-acc);
+  border-radius: var(--hos-radius-sm, 8px);
+  background: var(--msx-surface-2);
+  color: var(--msx-ink-2);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: var(--hos-text-h2, 18px);
+  font-size: 18px;
 }
 .msx-pbody { flex: 1; min-width: 0; }
 .msx-pname {
   font-family: var(--msx-mono);
-  font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */
-  font-weight: 700;
+  font-size: var(--text-md, 15px);
+  font-weight: var(--weight-semibold, 600);
   color: var(--msx-ink);
-  letter-spacing: -.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .msx-pmeta {
   font-size: var(--hos-text-body-sm, 13px);
-  color: var(--msx-ink-2);
-  margin-top: var(--hos-space-1, 3px); /* 归级:原 3px */
-  font-weight: 600;
+  color: var(--msx-ink-3);
+  margin-top: var(--hos-space-0-5, 2px);
+  font-weight: var(--weight-regular, 400);
+  font-variant-numeric: tabular-nums;
 }
-.msx-pmeta .run { color: var(--msx-run); }
-.msx-avatars { display: flex; align-items: center; padding-left: var(--hos-space-2-5, 9px); /* 归级:原 9px */ flex-shrink: 0; }
+.msx-pmeta .run { color: var(--msx-run); font-weight: var(--weight-medium, 500); }
+.msx-avatars { display: flex; align-items: center; padding-left: var(--hos-space-2-5, 10px); flex-shrink: 0; }
 .msx-avatars .av {
-  width: 27px;
-  height: 27px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--hos-radius-pill, 50%);
-  border: 2px solid var(--hos-white, #fff);
+  border: 2px solid var(--msx-surface);
   margin-left: -10px;
   overflow: hidden;
-  box-shadow: var(--msx-sh-xs);
-  background: var(--hos-white, #fff);
+  background: var(--msx-surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.msx-avatars .av.spin { animation: msxSpin 2.8s linear infinite; }
+/* running provider: static success ring instead of a spinning avatar */
+.msx-avatars .av.spin { border-color: var(--msx-run); }
 .msx-chev {
-  transition: transform .28s cubic-bezier(.34, 1.56, .64, 1);
-  color: var(--msx-acc);
+  transition: transform var(--motion-base, 160ms) var(--msx-ease);
+  color: var(--msx-ink-3);
   display: flex;
   flex-shrink: 0;
-  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
+  font-size: 16px;
 }
 .msx-phead.open .msx-chev { transform: rotate(180deg); }
 
@@ -177,31 +181,36 @@
 .msx-drawer {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows .34s cubic-bezier(.16, .84, .44, 1);
+  transition: grid-template-rows var(--motion-slow, 240ms) var(--msx-ease);
 }
 .msx-drawer.open { grid-template-rows: 1fr; }
 .msx-drawer > div { overflow: hidden; }
-.msx-subs { display: flex; flex-direction: column; gap: var(--hos-space-2-5, 10px); padding-top: var(--hos-space-2-5, 10px); }
+.msx-subs { display: flex; flex-direction: column; gap: var(--hos-space-2, 8px); padding-top: var(--hos-space-2, 8px); }
 
 /* session card */
 .msx-sub {
   display: flex;
-  gap: var(--hos-space-3-5, 13px); /* 归级:原 13px */
+  gap: var(--hos-space-3, 12px);
   align-items: flex-start;
   background: var(--msx-surface);
   border: 1px solid var(--msx-line);
-  border-radius: var(--hos-radius-md, 16px);
-  padding: var(--hos-space-4, 15px); /* 归级:原 15px */
+  border-radius: var(--hos-radius-lg, 10px);
+  padding: var(--hos-space-3-5, 14px);
   cursor: pointer;
-  box-shadow: var(--msx-sh-xs);
-  transition: box-shadow .15s, transform .15s;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--motion-fast, 120ms) var(--msx-ease),
+    background var(--motion-fast, 120ms) var(--msx-ease);
 }
-.msx-sub:active { box-shadow: var(--msx-sh-sm); transform: translateY(-1px); }
-.msx-sub.active { border-color: color-mix(in srgb, var(--msx-acc) 55%, var(--msx-line)); }
+.msx-sub:active { border-color: var(--msx-line-2); }
+.msx-sub.active {
+  border-color: color-mix(in srgb, var(--msx-acc) 45%, var(--msx-line));
+  background: color-mix(in srgb, var(--msx-acc) 5%, var(--msx-surface));
+}
 .msx-avi {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--hos-radius-sm, 11px); /* 归级:原 11px */
+  width: 36px;
+  height: 36px;
+  border-radius: var(--hos-radius-sm, 8px);
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -209,12 +218,13 @@
   justify-content: center;
   background: var(--msx-surface-2);
 }
-.msx-avi.spin { animation: msxSpin 2.8s linear infinite; }
+/* running session: static success ring (the pulsing dot in .msx-time carries the live signal) */
+.msx-avi.spin { box-shadow: inset 0 0 0 1.5px var(--msx-run); }
 .msx-sbody { flex: 1; min-width: 0; }
 .msx-titrow { display: flex; align-items: flex-start; gap: var(--hos-space-2, 8px); }
 .msx-tit {
-  font-size: var(--hos-text-h2, 16px); /* 归级:原 16px */
-  font-weight: 700;
+  font-size: var(--text-md, 15px);
+  font-weight: var(--weight-semibold, 600);
   color: var(--msx-ink);
   flex: 1;
   min-width: 0;
@@ -231,11 +241,11 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-/* Real last-message preview (gray, two lines) — matches the reference card. */
+/* Real last-message preview (muted, two lines). */
 .msx-prev {
-  font-size: var(--hos-text-h3, 14.5px); /* 归级:原 14.5px */
-  color: var(--msx-ink-2);
-  margin-top: var(--hos-space-2-5, 9px); /* 归级:原 9px */
+  font-size: var(--hos-text-h3, 14px);
+  color: var(--msx-ink-3);
+  margin-top: var(--hos-space-2, 8px);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -246,6 +256,7 @@
   font-size: var(--hos-text-caption, 12px);
   color: var(--msx-ink-3);
   font-family: var(--msx-mono);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   padding-top: var(--hos-space-0-5, 2px);
 }
@@ -261,25 +272,30 @@
   height: 6px;
   border-radius: var(--hos-radius-pill, 50%);
   background: var(--msx-run);
-  animation: msxPulse 1.8s infinite;
+  animation: msxPulse 1.6s ease-in-out infinite;
 }
-.msx-metarow { display: flex; align-items: center; justify-content: space-between; gap: var(--hos-space-2, 8px); margin-top: var(--hos-space-2-5, 9px); /* 归级:原 9px */ }
+@media (prefers-reduced-motion: reduce) {
+  .msx-time.run::before { animation: none; }
+}
+.msx-metarow { display: flex; align-items: center; justify-content: space-between; gap: var(--hos-space-2, 8px); margin-top: var(--hos-space-2, 8px); }
 .msx-provtag {
   font-family: var(--msx-mono);
   font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
-  color: var(--msx-ink-3);
-  background: var(--msx-bg);
-  border-radius: var(--hos-radius-xs, 7px); /* 归级:原 7px */
-  padding: var(--hos-space-1, 3px) var(--hos-space-2-5, 10px); /* 归级:原 3px */
+  font-weight: var(--weight-medium, 500);
+  color: var(--msx-ink-2);
+  background: var(--msx-surface-2);
+  border-radius: var(--hos-radius-2xs, 4px);
+  padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px);
   white-space: nowrap;
   text-transform: lowercase;
 }
+/* small trailing action: 24px glyph box, 40px touch target via negative margin */
 .msx-subact {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--hos-radius-xs, 8px);
+  width: 40px;
+  height: 40px;
+  margin: -8px -8px -8px 0;
+  border-radius: var(--hos-radius-xs, 6px);
   border: none;
   background: transparent;
   color: var(--msx-ink-4);
@@ -287,9 +303,12 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background .15s, color .15s;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--motion-fast, 120ms) var(--msx-ease),
+    color var(--motion-fast, 120ms) var(--msx-ease);
 }
-.msx-subact:hover { background: var(--msx-bg); color: var(--msx-ink-2); }
+.msx-subact:hover,
+.msx-subact:active { background: var(--color-overlay); color: var(--msx-ink-2); }
 .msx-subact:disabled {
   color: var(--msx-ink-4);
   cursor: not-allowed;
@@ -298,37 +317,38 @@
 .msx-subact:disabled:hover { background: transparent; color: var(--msx-ink-4); }
 
 .msx-empty-subs {
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-body-sm, 13px);
   color: var(--msx-ink-3);
   padding: var(--hos-space-2-5, 10px) var(--hos-space-1, 4px) var(--hos-space-1, 4px);
 }
 .msx-more {
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
+  font-size: var(--hos-text-body-sm, 13px);
+  font-weight: var(--weight-medium, 500);
   color: var(--msx-acc);
   text-align: center;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: var(--hos-space-2, 8px);
   cursor: pointer;
 }
-/* Cards stay uniformly white like the reference; a running session is shown by
-   its spinning avatar + the green pulsing "进行中" time, not a card tint. */
+/* Cards stay uniformly surface-coloured; a running session is shown by its
+   success ring + the green breathing "进行中" dot, not a card tint. */
 
-/* loading / empty */
-.msx-skel { display: flex; flex-direction: column; gap: var(--hos-space-3, 11px); /* 归级:原 11px */ padding-top: var(--hos-space-1, 4px); }
+/* loading / empty — static skeleton (no shimmer loop) */
+.msx-skel { display: flex; flex-direction: column; gap: var(--hos-space-3, 12px); padding-top: var(--hos-space-1, 4px); }
 .msx-skel-row {
   height: 56px;
-  border-radius: var(--hos-radius-md, 15px); /* 归级:原 15px */
-  background: linear-gradient(100deg, var(--msx-surface) 30%, var(--msx-surface-2) 50%, var(--msx-surface) 70%);
-  background-size: 200% 100%;
-  animation: msxShimmer 1.3s infinite;
+  border-radius: var(--hos-mobile-radius, 12px);
+  background: var(--msx-surface-2);
   border: 1px solid var(--msx-line);
 }
-@keyframes msxShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .msx-empty {
-  margin-top: var(--hos-space-12, 60px); /* 归级:原 60px */
+  margin-top: var(--hos-space-12, 48px);
   text-align: center;
   color: var(--msx-ink-3);
   font-size: var(--hos-text-body-sm, 13px);
-  font-weight: 600;
+  font-weight: var(--weight-regular, 400);
 }
-.msx-empty .big { font-size: var(--hos-text-display, 30px); /* 归级:原 30px */ margin-bottom: var(--hos-space-2, 8px); opacity: .5; }
+.msx-empty .big { font-size: 30px; margin-bottom: var(--hos-space-2, 8px); opacity: .5; }

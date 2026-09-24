@@ -39,12 +39,12 @@ export const FileReferencePopover = memo(function FileReferencePopover({
           文件引用 @ {loading ? <LoadingOutlined style={{ marginLeft: 4 }} /> : `(${candidates.length})`}
         </span>
         <span className={styles.slashDropdownHint}>
-          {fetchError ? <span style={{ color: '#ef4444' }}>{fetchError}</span> : '↑↓ 切换 · Tab / Enter 选择'}
+          {fetchError ? <span style={{ color: 'var(--color-danger)' }}>{fetchError}</span> : '↑↓ 切换 · Tab / Enter 选择'}
         </span>
       </div>
       <div className={styles.slashDropdownViewport}>
         {candidates.length === 0 && !loading ? (
-          <div style={{ padding: '12px 14px', fontSize: 12, color: '#94a3b8' }}>
+          <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--color-muted)' }}>
             {hasProject ? (fetchError ? '无法读取项目目录' : '未找到匹配的工程文件') : '纯聊模式不支持 @ 文件引用'}
           </div>
         ) : (
@@ -65,7 +65,7 @@ export const FileReferencePopover = memo(function FileReferencePopover({
                 }}
               >
                 <div className={styles.slashItemIcon}>
-                  {item.type === 'folder' ? <FolderOutlined style={{ color: '#0d9488' }} /> : <FileOutlined />}
+                  {item.type === 'folder' ? <FolderOutlined style={{ color: 'var(--color-muted-strong)' }} /> : <FileOutlined />}
                 </div>
                 <div className={styles.slashItemContent}>
                   <div className={styles.slashItemMain}>

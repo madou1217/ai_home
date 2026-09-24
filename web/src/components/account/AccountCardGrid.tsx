@@ -22,8 +22,8 @@ interface AccountCardGridProps {
 }
 
 /**
- * HarmonyOS 6 风格超级终端分布式账号卡片网格 (ArkUI Super Device Matrix)
- * 采用 Squircle 20px 连续曲率、通透亚克力毛玻璃、呼吸水滴指示环与多维胶囊状态
+ * 账号卡片网格（Calm Operator Console）：扁平表面 + 1px 描边，状态用 6px 点 + 文字；
+ * 操作按钮保持语义图标（CodeOutlined / DesktopOutlined），不使用 Provider Logo。
  */
 export const AccountCardGrid = memo(function AccountCardGrid({
   accounts,
@@ -87,7 +87,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
             {/* 卡片顶部：图标、标题与操作下拉 */}
             <div className={styles.cardHeader}>
               <div className={styles.avatarWrapper}>
-                <ProviderIcon provider={provider} size={22} />
+                <ProviderIcon provider={acc.provider || provider} size={20} />
               </div>
               <div className={styles.accountInfo}>
                 <strong className={styles.accountTitle}>
@@ -126,7 +126,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                       className={styles.progressFill}
                       style={{
                         width: `${Math.max(4, remainingPct)}%`,
-                        background: remainingPct > 20 ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #ef4444, #dc2626)',
+                        background: remainingPct > 20 ? 'var(--color-success)' : 'var(--color-danger)',
                       }}
                     />
                   </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Empty, Input, message, Segmented, Select, Spin, Tag, Tooltip } from 'antd';
+import { Empty, Input, message, Segmented, Select, Spin, Tag, Tooltip } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -198,8 +199,8 @@ export default function ProxyDiagnosticsPanel() {
         </div>
       </header>
 
-      {proxyError && <Alert type="error" showIcon message="代理状态读取失败" description={proxyError} />}
-      {coreError && <Alert type="warning" showIcon message="代理池状态未加入诊断来源" description={coreError} />}
+      {proxyError && <InlineNote tone="error" description={proxyError}>代理状态读取失败</InlineNote>}
+      {coreError && <InlineNote tone="warning" description={coreError}>代理池状态未加入诊断来源</InlineNote>}
       {proxyLoading && !proxyData ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在读取代理配置" /></div>
       ) : proxyData ? (
@@ -237,7 +238,7 @@ export default function ProxyDiagnosticsPanel() {
                   <div><dt>绕过列表</dt><dd>{proxyData.system.bypassList?.join(', ') || '未返回'}</dd></div>
                 </dl>
               ) : (
-                <Alert type="warning" message="当前接口未返回系统代理探测能力" />
+                <InlineNote tone="warning">当前接口未返回系统代理探测能力</InlineNote>
               )}
             </article>
 
@@ -362,15 +363,15 @@ export default function ProxyDiagnosticsPanel() {
           {connectivityData?.proxyUsed ? ` · 显式代理 ${connectivityData.proxyUsed}` : ` · ${effectiveRouteLabel(connectivityData?.networkLayer)}`}。结果只表示收到 HTTP 响应，不代表 API 鉴权成功或下载吞吐量。
         </p>
         {connectivityData?.route === 'direct' && connectivityData.networkLayer?.effectiveRoute === 'tun' && (
-          <Alert
-            type="info"
-            showIcon
-            message="直连探测仍可能经过 TUN"
+          <InlineNote
+            tone="info"
             description="直连仅表示本次请求没有显式使用 AIH HTTP 代理；系统 TUN、VPN 或透明代理仍可能接管实际网络路径。"
             style={{ marginBottom: 12 }}
-          />
+          >
+            直连探测仍可能经过 TUN
+          </InlineNote>
         )}
-        {connectivityError && <Alert type="error" showIcon message="连通性测试失败" description={connectivityError} />}
+        {connectivityError && <InlineNote tone="error" description={connectivityError}>连通性测试失败</InlineNote>}
         {connectivityLoading && !connectivityData ? (
           <div className="toolkit-loading compact"><Spin tip="正在测试端点响应" /></div>
         ) : connectivityData?.results.length ? (

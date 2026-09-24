@@ -1,4 +1,5 @@
-import { Alert, Modal, QRCode, Typography } from 'antd';
+import { Modal, QRCode, Typography } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { CopyOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import type { ProxyNode } from '@/types';
@@ -29,7 +30,7 @@ export default function ProxyShareModal({ open, node, onClose }: ProxyShareModal
           </Button>
         </div>
       ) : (
-        <Alert type="warning" showIcon message="该节点没有可逆的原始分享链接，无法生成可信二维码" />
+        <InlineNote tone="warning">该节点没有可逆的原始分享链接，无法生成可信二维码</InlineNote>
       )}
     </Modal>
   );

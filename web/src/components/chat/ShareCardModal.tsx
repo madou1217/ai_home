@@ -51,34 +51,31 @@ export const ShareCardModal = memo(function ShareCardModal({
     canvas.height = height * 2;
     ctx.scale(2, 2);
 
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, '#f0f5ff');
-    grad.addColorStop(0.5, '#ffffff');
-    grad.addColorStop(1, '#e6f4ff');
-    ctx.fillStyle = grad;
+    // 导出的 PNG 是独立于主题的图片：固定使用浅色 token 的取值（surface / border / heading / muted / text / accent）。
+    ctx.fillStyle = '#ffffff';
     if (ctx.roundRect) {
-      ctx.roundRect(0, 0, width, height, 20);
+      ctx.roundRect(0, 0, width, height, 12);
     } else {
       ctx.rect(0, 0, width, height);
     }
     ctx.fill();
-    ctx.strokeStyle = 'rgba(10, 89, 247, 0.15)';
+    ctx.strokeStyle = '#e3e3e7';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = '#18181b';
     ctx.font = 'bold 16px sans-serif';
     ctx.fillText(role === 'assistant' ? (model || 'AI Assistant') : 'User', 24, 40);
 
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#71717a';
     ctx.font = '12px sans-serif';
     ctx.fillText(formattedTime, 24, 62);
 
-    ctx.fillStyle = '#334155';
+    ctx.fillStyle = '#27272a';
     ctx.font = '14px sans-serif';
     ctx.fillText(content.slice(0, 180) + (content.length > 180 ? '...' : ''), 24, 100);
 
-    ctx.fillStyle = '#0a59f7';
+    ctx.fillStyle = '#2f5bd3';
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText('⚡ AI Home Console · HarmonyOS 6.1', 24, height - 24);
 

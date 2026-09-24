@@ -32,7 +32,7 @@
 .filePreviewCode :global(pre)::-webkit-scrollbar-thumb,
 .filePreviewMarkdown :global(pre)::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: var(--hos-radius-pill, 999px);
+  border-radius: var(--hos-radius-pill);
   background: color-mix(in srgb, var(--color-faint) 12%, transparent);
   background-clip: content-box;
 }
@@ -51,18 +51,18 @@
 }
 
 .toolGroupItemInteractive:hover {
-  background: color-mix(in srgb, var(--c-accent-blue) 4%, transparent);
+  background: var(--color-overlay-subtle);
 }
 
 .fileReferenceButton {
   width: 100%;
   min-width: 0;
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-1, 4px);
+  padding: var(--hos-space-0-5) var(--hos-space-1);
   border: 0;
   background: transparent;
   display: flex;
   align-items: center;
-  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
   color: inherit;
   cursor: pointer;
   text-align: left;
@@ -72,18 +72,18 @@
   display: inline-flex;
   width: auto;
   max-width: min(100%, 360px);
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-1-5, 6px) var(--hos-space-0-5, 2px) var(--hos-space-0-5, 3px); /* 归级:原 3px */
-  border-radius: var(--hos-radius-xs, 8px);
+  padding: var(--hos-space-0-5) var(--hos-space-1-5) var(--hos-space-0-5) var(--hos-space-0-5); /* 归级:原 3px */
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface-muted);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border);
   vertical-align: text-bottom;
   transition: background var(--motion-fast) var(--ease-standard),
     border-color var(--motion-fast) var(--ease-standard);
 }
 
 .fileReferenceButtonInline:hover {
-  background: var(--provider-accent-soft, var(--color-surface-sunken));
-  border-color: var(--provider-accent, var(--color-border));
+  background: var(--color-overlay);
+  border-color: var(--color-border-strong);
 }
 
 .fileReferenceButtonTool {
@@ -127,14 +127,15 @@
 }
 
 .fileReferenceButton:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--c-accent-blue) 18%, transparent);
+  outline: none;
+  box-shadow: var(--ring-focus);
   outline-offset: 2px;
-  border-radius: var(--hos-radius-xs, 5px); /* 归级:原 5px */
+  border-radius: var(--hos-radius-xs); /* 归级:原 5px */
 }
 
 .toolBody {
-  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
-  font-size: var(--hos-text-body-sm, 13px);
+  padding: var(--hos-space-2) var(--hos-space-3);
+  font-size: var(--hos-text-body-sm);
   max-height: 200px;
   overflow-y: auto;
   background: var(--chat-panel-muted-bg);
@@ -145,8 +146,8 @@
 /* 图片预览 */
 .imagePreviewRow {
   display: flex;
-  gap: var(--hos-space-2, 8px);
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px) 0;
+  gap: var(--hos-space-2);
+  padding: var(--hos-space-2-5) var(--hos-space-3) 0;
   flex-wrap: wrap;
 }
 
@@ -154,7 +155,7 @@
   position: relative;
   width: 60px;
   height: 60px;
-  border-radius: var(--hos-radius-xs, 8px);
+  border-radius: var(--hos-radius-xs);
   overflow: hidden;
   border: 1px solid var(--color-border);
 }
@@ -171,9 +172,9 @@
   right: 2px;
   width: 16px;
   height: 16px;
-  border-radius: var(--hos-radius-pill, 50%);
-  background: color-mix(in srgb, var(--c-brand-900) 50%, transparent);
-  color: var(--color-on-brand);
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-ink);
+  color: var(--color-on-ink);
   border: none;
   cursor: pointer;
   display: flex;
@@ -188,12 +189,12 @@
 
 .fileDrawerTabs :global(.ant-tabs-nav) {
   /* 文件预览抽屉的标签栏贴边会压缩识别空间，这里只给该抽屉补局部内边距。 */
-  padding-inline: var(--hos-space-6, 24px) var(--hos-space-4, 16px);
+  padding-inline: var(--hos-space-6) var(--hos-space-4);
 }
 
 .fileDrawerTabs :global(.ant-tabs-tab-btn) {
   max-width: 220px;
-  padding-left: var(--hos-space-1, 4px);
+  padding-left: var(--hos-space-1);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -202,7 +203,7 @@
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
   max-width: 220px;
 }
 
@@ -217,12 +218,12 @@
    桌面是右侧 700 抽屉;手机改成底部 90% 大 sheet:圆角顶 + 抓手,靠 flex 链让预览
    面板撑满 sheet(不用桌面的固定 100vh-120px,避免双滚动),标签栏可横向滑动。 */
 .fileDrawerMobile :global(.ant-drawer-content) {
-  border-radius: var(--hos-radius-md, 18px) var(--hos-radius-md, 18px) 0 0; /* 归级:原 18px */
+  border-radius: var(--hos-radius-md) var(--hos-radius-md) 0 0; /* 归级:原 18px */
   overflow: hidden;
 }
 
 .fileDrawerMobile :global(.ant-drawer-header) {
-  padding: var(--hos-space-2, 9px) var(--hos-space-4, 16px) var(--hos-space-1-5, 7px); /* 归级:原 9px、7px */
+  padding: var(--hos-space-2) var(--hos-space-4) var(--hos-space-1-5); /* 归级:原 9px、7px */
   border-bottom: none;
   min-height: 0;
 }
@@ -234,8 +235,8 @@
 .fileDrawerGrabber {
   width: 40px;
   height: 5px;
-  border-radius: var(--hos-radius-xs, 3px); /* 归级:原 3px */
-  background: var(--color-border, #d9d9e3);
+  border-radius: var(--hos-radius-xs); /* 归级:原 3px */
+  background: var(--color-border);
 }
 
 /* flex 链:body → tabs → content-holder → tabpane → pane,层层 100%/flex 撑满 */
@@ -251,17 +252,17 @@
 }
 
 .fileDrawerTabsMobile :global(.ant-tabs-nav) {
-  padding-inline: var(--hos-space-3, 12px);
+  padding-inline: var(--hos-space-3);
   margin-bottom: 0;
 }
 
 .fileDrawerTabsMobile :global(.ant-tabs-tab) {
-  padding: var(--hos-space-2, 9px) var(--hos-space-0-5, 2px); /* 归级:原 9px */
+  padding: var(--hos-space-2) var(--hos-space-0-5); /* 归级:原 9px */
 }
 
 .fileDrawerTabsMobile :global(.ant-tabs-tab-btn) {
   max-width: 150px;
-  font-size: var(--hos-text-body, 14px);
+  font-size: var(--hos-text-body);
 }
 
 .fileDrawerTabsMobile :global(.ant-tabs-content-holder) {
@@ -281,7 +282,7 @@
 
 /* 手机上工具栏字号/触控更从容 */
 .fileDrawerMobile .filePreviewToolbar {
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3-5, 14px);
+  padding: var(--hos-space-2-5) var(--hos-space-3-5);
 }
 
 .filePreviewPane {
@@ -292,7 +293,7 @@
   --chat-panel-muted-bg: var(--color-surface-muted);
   --chat-panel-border: var(--color-border);
   --chat-panel-radius: var(--event-radius);
-  --chat-message-font-size: var(--hos-text-h3, 15px);
+  --chat-message-font-size: var(--hos-text-h3);
   --chat-message-line-height: 1.72;
   height: calc(100vh - 120px);
   min-height: 0;
@@ -303,12 +304,12 @@
 
 .filePreviewToolbar {
   min-height: 48px;
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-4, 16px);
+  padding: var(--hos-space-2-5) var(--hos-space-4);
   border-bottom: 1px solid var(--chat-panel-border, var(--color-border));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--hos-space-3, 12px);
+  gap: var(--hos-space-3);
   background: var(--color-surface-raised);
 }
 
@@ -316,7 +317,7 @@
   min-width: 0;
   min-height: 18px;
   color: var(--color-faint);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   font-weight: 600;
   line-height: 1.35;
   overflow: hidden;
@@ -329,21 +330,21 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
   flex-shrink: 0;
 }
 
 .filePreviewModePill {
   min-height: 24px;
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-0-5) var(--hos-space-2-5);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
   display: inline-flex;
   align-items: center;
   background: var(--color-surface);
   color: var(--color-muted-strong);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 700;
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
   line-height: 1.35;
   white-space: nowrap;
 }
@@ -359,21 +360,6 @@
   display: block;
   width: 100%;
   height: auto;
-  /* 纸张拟物：双层阴影 = 主阴影（纸张厚度感）+ 接触阴影（贴合感） */
-  filter:
-    drop-shadow(0 2px 5px color-mix(in srgb, var(--c-brand-900) 22%, transparent))
-    drop-shadow(0 1px 1.5px color-mix(in srgb, var(--c-brand-900) 12%, transparent));
-  transition: filter var(--motion-base) var(--ease-standard),
-              transform var(--motion-base) var(--ease-standard);
-}
-
-/* 悬停：轻微上浮 */
-.fileReferenceButton:hover .fileTypeIcon :global(svg),
-.toolGroupItemInteractive:hover .fileTypeIcon :global(svg) {
-  filter:
-    drop-shadow(0 5px 10px color-mix(in srgb, var(--c-brand-900) 22%, transparent))
-    drop-shadow(0 1px 2px color-mix(in srgb, var(--c-brand-900) 10%, transparent));
-  transform: translateY(-1px);
 }
 
 .fileTypeIconSmall {
@@ -395,14 +381,14 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--hos-space-4, 18px) var(--hos-space-5, 20px) var(--hos-space-6, 24px); /* 归级:原 18px */
+  padding: var(--hos-space-4) var(--hos-space-5) var(--hos-space-6); /* 归级:原 18px */
   background: var(--color-surface);
 }
 
 .filePreviewHtml {
   flex: 1;
   min-height: 0;
-  padding: var(--hos-space-4, 16px);
+  padding: var(--hos-space-4);
   display: flex;
   flex-direction: column;
   background: var(--color-surface-soft);
@@ -410,42 +396,41 @@
 
 .filePreviewHtmlStatus {
   min-height: 38px;
-  padding: var(--hos-space-2, 8px) var(--hos-space-3, 12px);
+  padding: var(--hos-space-2) var(--hos-space-3);
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-bottom: 0;
   border-radius: var(--chat-panel-radius, 8px) var(--chat-panel-radius, 8px) 0 0;
   background: var(--color-surface-raised);
   color: var(--color-muted);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   line-height: 1.45;
 }
 
 .filePreviewHtmlStatus strong {
   color: var(--color-text);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 760;
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-semibold);
 }
 
 .filePreviewHtmlStatusDot {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-pill, 50%);
-  background: var(--c-success-500);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-success-500) 16%, transparent);
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-success);
 }
 
 .filePreviewHtmlLauncher {
   flex: 1;
   min-height: 0;
-  padding: var(--hos-space-7, 28px);
+  padding: var(--hos-space-7);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--hos-space-8, 32px);
+  gap: var(--hos-space-8);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: 0 0 var(--chat-panel-radius, 8px) var(--chat-panel-radius, 8px);
   background: var(--color-surface);
@@ -455,26 +440,26 @@
   max-width: 360px;
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1-5, 7px); /* 归级:原 7px */
+  gap: var(--hos-space-1-5); /* 归级:原 7px */
 }
 
 .filePreviewHtmlLauncherCopy strong {
   color: var(--color-heading);
-  font-size: var(--hos-text-h2, 18px);
-  font-weight: 760;
+  font-size: var(--hos-text-h2);
+  font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
 
 .filePreviewHtmlLauncherCopy span {
   color: var(--color-muted);
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.65;
 }
 
 .filePreviewHtmlLauncherActions {
   display: flex;
   align-items: center;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
   flex: 0 0 auto;
 }
 
@@ -482,7 +467,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--hos-space-4, 18px); /* 归级:原 18px */
+  padding: var(--hos-space-4); /* 归级:原 18px */
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -502,13 +487,12 @@
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
   background: var(--color-surface);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--c-neutral-900) 12%, transparent);
 }
 
 .filePreviewState {
   flex: 1;
   min-height: 0;
-  padding: var(--hos-space-8, 32px) var(--hos-space-6, 24px);
+  padding: var(--hos-space-8) var(--hos-space-6);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -517,50 +501,49 @@
 
 .fileTrustCard {
   width: min(100%, 560px);
-  padding: var(--hos-space-5, 22px); /* 归级:原 22px */
+  padding: var(--hos-space-5); /* 归级:原 22px */
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-4, 18px); /* 归级:原 18px */
+  gap: var(--hos-space-4); /* 归级:原 18px */
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm, 12px);
-  background: var(--color-surface-raised);
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--c-neutral-900) 8%, transparent);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
 }
 
 .fileTrustHeader {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
 }
 
 .fileTrustTitle {
   color: var(--color-heading);
-  font-size: var(--hos-text-h2, 17px); /* 归级:原 17px */
-  font-weight: 760;
+  font-size: var(--hos-text-h2); /* 归级:原 17px */
+  font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
 
 .fileTrustDescription {
   color: var(--color-muted-strong);
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.6;
 }
 
 .fileTrustTarget {
   min-width: 0;
-  padding: var(--hos-space-2-5, 10px) var(--hos-space-3, 12px);
+  padding: var(--hos-space-2-5) var(--hos-space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-1, 5px); /* 归级:原 5px */
+  gap: var(--hos-space-1); /* 归级:原 5px */
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 8px);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface);
 }
 
 .fileTrustTarget > span,
 .fileTrustFooter > span {
   color: var(--color-muted);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
+  font-size: var(--hos-text-caption); /* 归级:原 11px */
   font-weight: 650;
   line-height: 1.5;
 }
@@ -568,8 +551,8 @@
 .fileTrustTarget code,
 .fileTrustOptionContent code {
   color: var(--color-text);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: var(--hos-text-caption, 12px);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -577,43 +560,46 @@
 .fileTrustOptions {
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
 }
 
 .fileTrustOption {
   width: 100%;
   margin: 0;
-  padding: var(--hos-space-3, 12px);
+  padding: var(--hos-space-3);
   align-items: flex-start;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs, 8px);
+  border-radius: var(--hos-radius-xs);
   background: var(--color-surface);
   transition: border-color var(--motion-base) var(--ease-standard),
               background var(--motion-base) var(--ease-standard);
 }
 
-.fileTrustOption:hover,
+.fileTrustOption:hover {
+  border-color: var(--color-border-strong);
+}
+
 .fileTrustOption:has(:global(input:checked)) {
-  border-color: var(--c-brand-500);
-  background: color-mix(in srgb, var(--c-brand-soft) 72%, var(--color-surface));
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .fileTrustOptionContent {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--hos-space-0-5, 3px); /* 归级:原 3px */
+  gap: var(--hos-space-0-5); /* 归级:原 3px */
 }
 
 .fileTrustOptionContent strong {
   color: var(--color-text);
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.45;
 }
 
 .fileTrustOptionContent > span {
   color: var(--color-muted);
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
   line-height: 1.5;
 }
 
@@ -621,7 +607,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--hos-space-4, 16px);
+  gap: var(--hos-space-4);
 }
 
 .fileTrustFooter > span {
@@ -629,26 +615,26 @@
 }
 
 @media (max-width: 767px) {.filePreviewState {
-    padding: var(--hos-space-5, 20px) var(--hos-space-3-5, 14px);
+    padding: var(--hos-space-5) var(--hos-space-3-5);
   }.filePreviewHtml {
-    padding: var(--hos-space-2-5, 10px);
+    padding: var(--hos-space-2-5);
   }.filePreviewHtmlStatus {
     align-items: flex-start;
     flex-wrap: wrap;
   }.filePreviewHtmlStatus > span:last-child {
     width: 100%;
-    padding-left: var(--hos-space-3-5, 15px); /* 归级:原 15px */
+    padding-left: var(--hos-space-3-5); /* 归级:原 15px */
   }.filePreviewHtmlLauncher {
-    padding: var(--hos-space-6, 24px) var(--hos-space-4, 18px); /* 归级:原 18px */
+    padding: var(--hos-space-6) var(--hos-space-4); /* 归级:原 18px */
     align-items: stretch;
     flex-direction: column;
     justify-content: center;
-    gap: var(--hos-space-5, 20px);
+    gap: var(--hos-space-5);
   }.filePreviewHtmlLauncherActions {
     align-items: stretch;
     flex-direction: column;
   }.fileTrustCard {
-    padding: var(--hos-space-4, 18px); /* 归级:原 18px */
+    padding: var(--hos-space-4); /* 归级:原 18px */
   }.fileTrustFooter {
     align-items: stretch;
     flex-direction: column;
@@ -663,7 +649,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
   border: 1px dashed var(--chat-panel-border, var(--color-border-strong));
   border-radius: var(--chat-panel-radius, 8px);
   background: var(--color-surface-raised);
@@ -673,15 +659,15 @@
 
 .filePreviewRawMediaTitle {
   color: var(--color-text);
-  font-size: var(--hos-text-body, 14px);
-  font-weight: 760;
+  font-size: var(--hos-text-body);
+  font-weight: var(--weight-semibold);
   line-height: 1.4;
 }
 
 .filePreviewRawMediaText {
   max-width: 320px;
   color: var(--ink-neutral);
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.6;
 }
 
@@ -695,12 +681,12 @@
 
 .filePreviewCode :global(pre) {
   margin: 0;
-  padding: var(--hos-space-4, 16px);
+  padding: var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
   background: var(--color-surface-soft) !important;
   color: var(--color-text);
-  font-size: var(--hos-text-body-sm, 13px);
+  font-size: var(--hos-text-body-sm);
   line-height: 1.65;
   overflow: auto;
 }
@@ -750,7 +736,7 @@
 }
 
 .filePreviewMarkdown :global(pre) {
-  padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
+  padding: var(--hos-space-3-5) var(--hos-space-4);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   border-radius: var(--chat-panel-radius, 8px);
   background: var(--color-surface-soft) !important;
@@ -758,40 +744,41 @@
 }
 
 .filePreviewMarkdown :global(blockquote) {
-  margin: var(--hos-space-3, 12px) 0;
-  padding: var(--hos-space-0-5, 2px) 0 var(--hos-space-0-5, 2px) var(--hos-space-3-5, 14px);
-  border-left: 3px solid var(--color-border-strong);
-  color: var(--ink-neutral);
+  margin: var(--hos-space-3) 0;
+  padding: var(--hos-space-2) var(--hos-space-3-5);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
 }
 
 .filePreviewMarkdown :global(table) {
   width: 100%;
   border-collapse: collapse;
-  margin: var(--hos-space-3, 12px) 0;
-  font-size: var(--hos-text-body-sm, 13px);
+  margin: var(--hos-space-3) 0;
+  font-size: var(--hos-text-body-sm);
 }
 
 .filePreviewMarkdown :global(th),
 .filePreviewMarkdown :global(td) {
-  padding: var(--hos-space-2, 8px) var(--hos-space-2-5, 10px);
+  padding: var(--hos-space-2) var(--hos-space-2-5);
   border: 1px solid var(--chat-panel-border, var(--color-border));
   text-align: left;
 }
 
 .mobileControlsSection {
-  margin-bottom: var(--hos-space-4, 16px);
+  margin-bottom: var(--hos-space-4);
 }
 
 .mobileControlsLabel {
-  margin-bottom: var(--hos-space-2, 8px);
-  font-size: var(--hos-text-body-sm, 13px);
+  margin-bottom: var(--hos-space-2);
+  font-size: var(--hos-text-body-sm);
   font-weight: 600;
   color: var(--color-muted-strong);
 }
 
 @media (max-width: 768px) {.toolBody {
-    font-size: var(--hos-text-body, 14px);
+    font-size: var(--hos-text-body);
   }.mobileControlsLabel {
-    font-size: var(--hos-text-body, 14px);
+    font-size: var(--hos-text-body);
   }
 }

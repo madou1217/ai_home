@@ -202,7 +202,7 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
         return (
           <span>
             {text}
-            {label ? <span style={{ color: '#999', marginLeft: 6 }}>({label})</span> : null}
+            {label ? <span style={{ color: 'var(--color-muted)', marginLeft: 6 }}>({label})</span> : null}
           </span>
         );
       },

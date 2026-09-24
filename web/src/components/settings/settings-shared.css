@@ -1,0 +1,25 @@
+/* Settings / Server 页共享样式：表单帮助文字间距、「当前 / 默认」标签。
+ * 由 Settings.tsx 与 FabricServerSetup.tsx 共同引入。 */
+
+/* 表单帮助文字占用 antd 的 item margin 区域；显式留出上 4 / 下 8 的间距，
+ * 避免与下一个字段标签相撞（弹窗表单不在 .settings-panel 内，单独挂 .settings-form）。 */
+.settings-form .ant-form-item-label > label {
+  color: var(--color-heading);
+  font-weight: var(--weight-medium);
+}
+.settings-form .ant-form-item-explain,
+.settings-form .ant-form-item-extra {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-4);
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-normal);
+}
+
+/* 「当前 / 默认」：强调色弱底小标签，不用橙色胶囊 */
+.ant-tag.settings-current-tag {
+  border-color: transparent;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}

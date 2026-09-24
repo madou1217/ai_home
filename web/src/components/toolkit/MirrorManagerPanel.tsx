@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Empty, message, Segmented, Spin, Tag, Tooltip } from 'antd';
+import { Empty, message, Segmented, Spin, Tag, Tooltip } from 'antd';
 import {
   CheckCircleOutlined,
+  CloseOutlined,
   ReloadOutlined,
   ThunderboltOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
 import { toolkitAPI } from '@/services/api';
 import type { MirrorGuide, MirrorPreset, MirrorsResponse } from '@/types';
 import GuidedCommandPanel, { type GuidedCommandTask } from './GuidedCommandPanel';
@@ -144,7 +146,16 @@ export default function MirrorManagerPanel() {
         <Button icon={<ReloadOutlined />} loading={loading} onClick={fetchMirrors}>重新读取</Button>
       </header>
 
-      {error && <Alert type="error" showIcon message="镜像操作未完成" description={error} closable onClose={() => setError('')} />}
+      {error && (
+        <InlineNote
+          tone="error"
+          description={error}
+          style={{ marginBottom: 12 }}
+          action={<Button type="text" size="small" icon={<CloseOutlined />} aria-label="关闭" onClick={() => setError('')} />}
+        >
+          镜像操作未完成
+        </InlineNote>
+      )}
       {loading && !data ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在读取 npm 与 pip 配置" /></div>
       ) : mirrorData ? (

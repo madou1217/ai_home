@@ -1,4 +1,6 @@
-# AIH Web Design System（单一真相源）
+# AIH Web Design System（组件契约）
+
+> 视觉方向与 token 的唯一来源是 [`web/DESIGN.md`](./DESIGN.md)（Calm Operator Console）。本文只约束组件用法。
 
 本目录下所有页面必须遵守以下规则。任何新页面、重构、补丁都不得绕过。
 
@@ -9,11 +11,11 @@
 - 必填：`title`。
 - 可选：`subTitle`（一句话说明）、`extra`（右上角 action）、`headerContent`（紧凑 Descriptions 健康条）、`children`。
 - 列表上方**禁止堆叠平铺的 `Statistic` 卡片**；统计/健康信息一律收敛进 `headerContent` 的 Descriptions 条。
-- 页面 padding 固定 **24px**（见 `src/styles/unified.css`），**禁止各页自定义 padding**。
+- 页面 padding 固定：桌面 **24px** / 移动 **16px**（见 `src/styles/unified.css`），**禁止各页自定义 padding**。
 
 ### 卡片：`SectionCard`（`src/components/ui/SectionCard.tsx`）
 - 唯一的 `ProCard` 包装：**禁止直接使用 `ProCard`**。
-- 默认 `bordered`、`headerBordered`，padding **16px**，圆角 12px。
+- 默认 `bordered`、`headerBordered`，padding **16px**，圆角 **10px**，无阴影（1px `--color-border` 描边分层）。
 - `extra` 只放右上角；与 `PageScaffold.extra` 的“右侧 action”语义保持一致。
 - 需要并排成组时用 `gutter`，禁止散点 `ProCard colSpan` 拼接 stat 条。
 
@@ -27,16 +29,26 @@
   - 空态统一 `Empty.PRESENTED_IMAGE_SIMPLE` + 文案 **“暂无数据”**
 
 ### 样式令牌：`src/styles/unified.css`
-- 定义 `--unified-page-padding`(24)、`--unified-card-padding`(16)、`--unified-card-border-radius`(12)、`--unified-pagination-margin`(12)、`--unified-section-gap`(16)。
+- 定义 `--unified-page-padding`(24)、`--unified-card-padding`(16)、`--unified-card-border-radius`(10)、`--unified-pagination-margin`(16)、`--unified-section-gap`(16)。
 - 应用目标：`.ant-pro-page-container-content`、`.ant-pro-card`、`.ant-pagination`、`.unified-empty`。
 - **禁止**任何 CSS 覆盖 `ant-table` 单元格背景与 `ant-layout` 的 `min-height`。
 
 ### Tab / 工具栏
 - 列表上方需要切换时统一用 `toolbar.menu type="tab"`（ProTable toolbar 内建 tab 模式），禁止各页自写 `Tabs` 套在表格外面后再叠 `SectionCard`。
 
+### 行内提示：`InlineNote`（`src/components/ui/InlineNote.tsx`）
+- 取代作为页面内容的 antd `Alert` 整块提示（AGENTS.md「UI Visual Constraints」）。
+- 结构：状态图标 + 13px 文字，可选描述与操作；**只有图标带状态色**，不做整块彩底。
+- 语义：`warning` / `error` 使用 `role="alert"`，其余 `role="note"`。
+
+### KPI 条：`kpi-strip.css`（`src/components/ui/kpi-strip.css`）
+- 给 `StatisticCard.Group` 加 `.hos-kpi-strip`：单个描边容器 + 1px 发丝线分隔；数值 20/600 等宽数字，标签 12 muted。
+- 仪表盘 `ServiceWidgetGrid`、账号页统计条遵循同一外观。
+
 ## 反模式（一律拒绝评审/合入）
 - 直接 `<PageContainer>` / `<ProCard>` / `<ProTable>` / `<Table>`。
-- 列表上方平铺 `Statistic` 卡片（应进 `headerContent` Descriptions 条）。
+- 列表上方平铺 `Statistic` 卡片（应进 `headerContent` Descriptions 条或 KPI 条）。
+- 页面内容里的整块 `Alert`（应改用 `InlineNote`）；毛玻璃、渐变按钮、光晕投影、左侧彩色竖条。
 - 各页自写 `padding` / `margin` 做布局（应走令牌）。
 - 自定义行 hover、自定义空态文案/图。
 - `Tabs` 包裹表格做切换（应走 `toolbar.menu type="tab"`）。

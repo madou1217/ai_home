@@ -245,7 +245,7 @@ export function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMo
       ) : null}
       {record.isMobile ? (
         <Tooltip title="当前 Codex App 账号">
-          <span style={{ ...accountRoleIconStyle, color: '#722ed1', background: '#f9f0ff' }}>
+          <span style={{ ...accountRoleIconStyle, color: 'var(--event-thinking)', background: 'var(--event-thinking-soft)' }}>
             <MobileOutlined />
           </span>
         </Tooltip>

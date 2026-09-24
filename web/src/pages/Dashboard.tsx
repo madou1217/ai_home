@@ -1,6 +1,6 @@
 import ServiceWidgetGrid from '@/components/dashboard/ServiceWidgetGrid';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Alert, Grid, message, Tag, Tooltip } from 'antd';
+import { Grid, message, Tag, Tooltip } from 'antd';
 import {
   DisconnectOutlined,
   ReloadOutlined,
@@ -10,7 +10,8 @@ import {
   CheckOutlined,
   CompassOutlined,
   ArrowRightOutlined,
-  SwapOutlined
+  SwapOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/AppButton';
@@ -414,7 +415,7 @@ export default function Dashboard() {
     return (
       <div className={`dash-pcard${offline ? ' dash-pcard--offline' : ''}`} key={row.key}>
         <div className="dash-pcard-head">
-          <ProviderIcon provider={row.provider} size={22} />
+          <ProviderIcon provider={row.provider} size={18} />
           <span className="dash-pcard-name">{providerNames[row.provider as keyof typeof providerNames] || row.provider}</span>
           <span className={`dash-pcard-ratio${pct < 100 && !offline ? ' warn' : ''}`}>{row.active}/{row.total}</span>
         </div>
@@ -461,7 +462,7 @@ export default function Dashboard() {
         </Button>
       ]}
     >
-      <div style={{ marginBottom: 16 }}>
+      <div className="dash-kpi">
         <ServiceWidgetGrid
           widgets={[
             {
@@ -526,12 +527,10 @@ export default function Dashboard() {
       </div>
 
       {status?.cooldownAccounts ? (
-        <Alert
-          type="warning"
-          showIcon
-          className="dash-alert"
-          message={`当前共有 ${status.cooldownAccounts} 个账号处于非健康态，已被调度层临时摘除。`}
-        />
+        <div className="dash-inline-note" role="status">
+          <WarningOutlined className="dash-inline-note-icon" aria-hidden />
+          <span>{`当前共有 ${status.cooldownAccounts} 个账号处于非健康态，已被调度层临时摘除。`}</span>
+        </div>
       ) : null}
 
       {/* ── Provider 运行状态:健康卡片(手机竖排、桌面网格) ── */}
@@ -590,7 +589,7 @@ export default function Dashboard() {
                         onClick={() => copyErrorText(errorText, item.__key)}
                         title="复制错误详情"
                       >
-                        {isCopied ? <CheckOutlined style={{ color: 'var(--d-run)' }} /> : <CopyOutlined />}
+                        {isCopied ? <CheckOutlined style={{ color: 'var(--color-success)' }} /> : <CopyOutlined />}
                       </button>
                     </div>
                   </div>

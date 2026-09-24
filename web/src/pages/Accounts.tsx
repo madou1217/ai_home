@@ -1506,7 +1506,7 @@ export default function Accounts() {
       label: record.isDefault
         ? '取消默认账号'
         : (!record.configured ? '未配置账号不能设为默认账号' : '设为默认账号'),
-      icon: record.isDefault ? <CheckCircleOutlined style={{ color: '#1677ff' }} /> : <CheckCircleOutlined />,
+      icon: record.isDefault ? <CheckCircleOutlined style={{ color: 'var(--color-accent)' }} /> : <CheckCircleOutlined />,
       disabled: Boolean(!record.isDefault && !record.configured)
     });
     if (record.provider === 'codex') {
@@ -1517,7 +1517,7 @@ export default function Accounts() {
           : (!record.configured
               ? '未配置账号不能设为 Codex App 账号'
               : (record.apiKeyMode ? '密钥账号不能设为 Codex App 账号' : '设为 Codex App 账号')),
-        icon: record.isMobile ? <MobileOutlined style={{ color: '#722ed1' }} /> : <MobileOutlined />,
+        icon: record.isMobile ? <MobileOutlined style={{ color: 'var(--color-accent)' }} /> : <MobileOutlined />,
         disabled: Boolean(!record.isMobile && (!record.configured || record.apiKeyMode))
       });
     }
@@ -1613,7 +1613,7 @@ export default function Accounts() {
                 {getAccountPrimaryLabel(record)}
                 {kimiPlanSubscription && formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? (
                   <Tooltip title={`套餐有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}${kimiPlanSubscription.status === 'canceled' ? ' · 已取消续费，到期后不再自动续订' : ' · 订阅生效中，到期自动续订'}`}>
-                    <span style={{ fontWeight: 400, fontSize: 12, color: kimiPlanSubscription.status === 'canceled' ? '#d48806' : '#8c8c8c', marginLeft: 6 }}>
+                    <span style={{ fontWeight: 400, fontSize: 12, color: kimiPlanSubscription.status === 'canceled' ? 'var(--color-warning)' : 'var(--color-muted)', marginLeft: 6 }}>
                       {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
                     </span>
                   </Tooltip>
@@ -1635,7 +1635,7 @@ export default function Accounts() {
               </div>
             </div>
             {getAccountSecondaryLabel(record) ? (
-              <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountSecondaryLabel(record)}
               </div>
             ) : null}
@@ -1874,7 +1874,7 @@ export default function Accounts() {
         return (
           <div>
             <div>{t.absolute}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{t.relative}</div>
           </div>
         );
       }
@@ -1895,7 +1895,7 @@ export default function Accounts() {
         return (
           <div>
             <div>{t.absolute}</div>
-            <div style={{ fontSize: '12px', color: '#999' }}>{t.relative}</div>
+            <div style={{ fontSize: '12px', color: 'var(--color-muted)' }}>{t.relative}</div>
           </div>
         );
       }
@@ -1973,7 +1973,7 @@ export default function Accounts() {
           <span className="account-mobile-status">{renderAccountDisplayBadge(record)}</span>
           {renderAccountRegionTag(record)}
           {kimiPlanSubscription ? (
-            <span style={{ fontSize: 11, color: '#8c8c8c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ fontSize: 11, color: 'var(--color-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {(kimiPlanSubscription.name || getPlanTagLabel(record))}
               {formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? ` · ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}` : ''}
             </span>
@@ -2163,7 +2163,7 @@ export default function Accounts() {
               value: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked,
               hint: `需登录 ${providerStats[activeProvider].reauthRequired} · 耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
               valueColor: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
-                ? 'var(--color-danger, #dc2626)' : undefined
+                ? 'var(--color-danger)' : undefined
             }
           ]}
         />
@@ -2189,7 +2189,7 @@ export default function Accounts() {
               description: `需登录 ${providerStats[activeProvider].reauthRequired} · 阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
               valueStyle: {
                 color: providerStats[activeProvider].reauthRequired + providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
-                  ? 'var(--color-warning, #d97706)'
+                  ? 'var(--color-warning)'
                   : undefined
               }
             }}
@@ -2201,7 +2201,7 @@ export default function Accounts() {
               description: `耗尽 ${providerStats[activeProvider].exhausted} · 停池 ${providerStats[activeProvider].policyBlocked}`,
               valueStyle: {
                 color: providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0
-                  ? 'var(--color-danger, #dc2626)'
+                  ? 'var(--color-danger)'
                   : undefined
               }
             }}

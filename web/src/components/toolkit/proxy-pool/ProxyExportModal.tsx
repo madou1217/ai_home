@@ -1,4 +1,5 @@
-import { Alert, Modal, Radio, Space, Spin, Tag, Typography, message } from 'antd';
+import { Modal, Radio, Space, Spin, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Button from '@/components/ui/AppButton';
@@ -93,15 +94,15 @@ export default function ProxyExportModal({ open, onClose }: ProxyExportModalProp
         </Space>
       )}
       {result?.warnings?.map((warning) => (
-        <Alert key={warning} type="warning" showIcon message={warning} />
+        <InlineNote tone="warning" key={warning}>{warning}</InlineNote>
       ))}
       {result?.skippedNodes && result.skippedNodes.length > 0 && (
-        <Alert
-          type="warning"
-          showIcon
-          message="以下节点未导出"
+        <InlineNote
+          tone="warning"
           description={result.skippedNodes.map((item) => `${item.name || item.nodeId || '未知节点'}：${item.reason}`).join('；')}
-        />
+        >
+          以下节点未导出
+        </InlineNote>
       )}
       <div className="toolkit-cmd-box proxy-export-content" aria-live="polite">
         {loading ? <Spin /> : <pre><code>{result?.content || '没有可导出的内容'}</code></pre>}

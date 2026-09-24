@@ -40,8 +40,7 @@ export const SettingsItem = memo(function SettingsItem({
 });
 
 /**
- * HarmonyOS 6 风格分组设置圆角岛 (ArkUI Grouped Settings Island)
- * 采用 24px Squircle 超级圆角、通透亚克力毛玻璃、左置灵动图标与内敛分割线
+ * 设置分组卡片：标题 + 说明 + 一组设置行（发丝线分隔），外观与设置页其他卡片一致。
  */
 export const SettingsGroupCard = memo(function SettingsGroupCard({
   title,

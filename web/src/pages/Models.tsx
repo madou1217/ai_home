@@ -2,6 +2,7 @@ import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
+import '@/components/ui/kpi-strip.css';
 import { Form, Input, Segmented, Select, Switch, Tag, Tooltip, Typography, message, Grid } from 'antd';
 import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -768,8 +769,8 @@ export default function Models() {
         </Button>
       ].filter(Boolean)}
     >
-      {/* 顶部统计 —— 框架 StatisticCard.Group */}
-      <StatisticCard.Group direction="row" style={{ marginBottom: 16 }}>
+      {/* 顶部统计 —— 一条 KPI 条（StatisticCard.Group + 发丝线分隔） */}
+      <StatisticCard.Group direction="row" bordered={false} className="hos-kpi-strip">
         <StatisticCard statistic={{ title: '账号模型', value: metricSource.length }} />
         <StatisticCard statistic={{ title: accountScoped ? '启用模型' : '可见模型', value: visibleUnionCount }} />
         <StatisticCard statistic={{ title: '手动补充', value: manualCount }} />
@@ -871,20 +872,22 @@ export default function Models() {
                   {/* Segmented 没有分组能力，所以这里保持"每个 Provider 一个 chip"，
                       靠 providerNames 的站点后缀（"Qoder · 国内站"）区分同族站点——
                       同族站点模型清单不同，筛选轴必须留在真实 Provider 上。 */}
-                  <Segmented
-                    value={providerFilter}
-                    onChange={(value) => {
-                      setProviderFilter(value as ProviderFilter);
-                      setAccountFilter('all');
-                    }}
-                    options={[
-                      { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
-                      ...PROVIDERS.map((provider) => ({
-                        label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
-                        value: provider
-                      }))
-                    ]}
-                  />
+                  <div className="models-provider-scroll">
+                    <Segmented
+                      value={providerFilter}
+                      onChange={(value) => {
+                        setProviderFilter(value as ProviderFilter);
+                        setAccountFilter('all');
+                      }}
+                      options={[
+                        { label: `全部 ${providerCounts.all || 0}`, value: 'all' },
+                        ...PROVIDERS.map((provider) => ({
+                          label: `${providerNames[provider]} ${providerCounts[provider] || 0}`,
+                          value: provider
+                        }))
+                      ]}
+                    />
+                  </div>
                   <Select
                     className="models-account-filter"
                     value={accountFilter}

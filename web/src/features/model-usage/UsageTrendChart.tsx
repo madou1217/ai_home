@@ -3,7 +3,7 @@ import { Empty, Segmented } from 'antd';
 import dayjs from 'dayjs';
 
 import type { ModelUsageTrend, ModelUsageTrendPoint } from '@/types';
-import EChartCanvas, { type UsageChartPalette } from './EChartCanvas';
+import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
 import { formatCost, formatTokens } from './model-usage-presentation';
 
 type TrendMode = 'tokens' | 'cost' | 'cache';
@@ -47,9 +47,7 @@ function createBaseOption(
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: palette.heading,
-      borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 12 },
+      ...buildChartTooltipStyle(palette),
       axisPointer: { lineStyle: { color: palette.border } }
     },
     xAxis: {
@@ -63,7 +61,7 @@ function createBaseOption(
     yAxis: {
       type: 'value',
       axisLabel: { color: palette.muted, fontSize: 11 },
-      splitLine: { lineStyle: { color: palette.border, opacity: 0.55, type: 'dashed' } }
+      splitLine: { lineStyle: { color: palette.border, type: 'dashed' } }
     }
   };
 }

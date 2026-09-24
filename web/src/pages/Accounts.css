@@ -3,7 +3,7 @@
 /* 行高亮动画 */
 .accounts-row-target td {
   background: var(--tint-info) !important;
-  transition: background-color 0.2s ease;
+  transition: background-color var(--motion-base, 160ms) var(--ease-standard);
 }
 .accounts-row-exiting {
   --animate-duration: 0.38s;
@@ -15,12 +15,14 @@
 }
 
 
-@media (prefers-reduced-motion: reduce) {.accounts-row-exiting {
+@media (prefers-reduced-motion: reduce) {
+  .accounts-row-exiting {
     animation: none !important;
     opacity: 0.42;
   }
+}
 
-}/* 导入粘贴区域 */
+/* 导入粘贴区域 */
 .accounts-import-paste {
   display: flex;
   flex-direction: column;
@@ -33,14 +35,15 @@
 }
 .accounts-import-template > div {
   font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
-  color: var(--hos-muted, #64748b);
+  font-weight: var(--weight-medium, 500);
+  color: var(--color-muted);
 }
 .accounts-import-template pre {
   padding: var(--hos-space-3, 12px);
-  border: 1px solid var(--hos-border, #e2e8f0);
-  border-radius: var(--hos-radius-xs, 8px);
-  background: var(--hos-surface-muted, #f1f5f9);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-xs, 6px);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
@@ -54,16 +57,17 @@
   gap: var(--hos-space-2, 8px);
   min-height: 32px;
   margin-bottom: var(--hos-space-4, 16px);
-  color: var(--hos-text, #1e293b);
+  color: var(--color-text);
   font-size: var(--hos-text-body-sm, 13px);
 }
 .accounts-import-running > span:last-child {
-  color: var(--hos-muted, #64748b);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
 }
 /* 导出弹窗 */
 .accounts-export-popover .ant-popover-inner {
   padding: var(--hos-space-1, 4px);
-  border-radius: var(--hos-radius-xs, 10px); /* 归级:原 10px */
+  border-radius: var(--hos-radius-sm, 8px);
 }
 .accounts-remote-control-plane-list .ant-list-item {
   padding: var(--hos-space-2, 8px) 0;
@@ -74,12 +78,12 @@
 
 /* 未安装客户端仍保留可点击入口：用低对比度表达缺失状态，不使用 disabled 阻断 Toolkit 安装引导。 */
 .account-client-entry-button--uninstalled {
-  color: var(--hos-muted, #64748b) !important;
+  color: var(--color-muted) !important;
   opacity: 0.58;
 }
 .account-client-entry-button--uninstalled:hover,
 .account-client-entry-button--uninstalled:focus-visible {
-  color: var(--color-primary) !important;
+  color: var(--color-accent) !important;
   opacity: 1;
 }
 .account-app-install-copy p {
@@ -87,7 +91,7 @@
 }
 .account-app-install-copy__hint {
   margin-top: var(--hos-space-2-5, 10px) !important;
-  color: var(--hos-muted, #64748b);
+  color: var(--color-muted);
   font-size: var(--hos-text-caption, 12px);
   line-height: 1.6;
 }
@@ -121,7 +125,7 @@
 .account-mobile-token-usage {
   margin-top: var(--hos-space-3-5, 14px);
   padding-top: var(--hos-space-3, 12px);
-  border-top: 1px solid var(--hos-ink-100, #ececf4);
+  border-top: 1px solid var(--color-border);
 }
 .account-mobile-token-usage-head {
   display: flex;
@@ -129,43 +133,109 @@
   justify-content: space-between;
   gap: var(--hos-space-2, 8px);
   margin-bottom: var(--hos-space-2, 8px);
-  color: var(--hos-gray-400, #8b8ba3);
+  color: var(--color-muted);
   font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
+  font-weight: var(--weight-medium, 500);
 }
 .account-mobile-token-usage .token-usage-cell {
   min-width: 156px !important;
 }
 /* 命中路由高亮的卡片 */
 .account-mobile-card.accounts-row-target {
-  border-color: var(--color-info, #1677ff);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info, #1677ff) 14%, transparent);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
+
 
 /* =============================================================================
- * HarmonyOS 6 风格 Accounts 账号卡片与进度环质感升级
+ * 顶部统计条（桌面 StatisticCard.Group）—— KPI 条语言（web/DESIGN.md §6）：
+ * 一个描边表面容器，单元格之间 1px 发丝线；标签 12 muted、数值 20/600 等宽、说明 12 muted。
  * ========================================================================== */
-.accounts-container,
-.account-group-card,
-.account-card {
-  border-radius: var(--hos-radius-lg, 20px) !important;
-  background: var(--hos-glass-bg-card, rgba(255, 255, 255, 0.85)) !important;
-  backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
-  -webkit-backdrop-filter: var(--hos-blur-card, blur(20px)) saturate(190%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.9) !important;
-  box-shadow: var(--hos-shadow-card, 0 4px 20px -2px rgba(0, 0, 0, 0.04)) !important;
-  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+.ant-pro-card.accounts-stat-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-lg, 10px);
+  box-shadow: none;
+  overflow: hidden;
 }
-
-.account-card:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: var(--hos-shadow-floating, 0 12px 36px -4px rgba(0, 0, 0, 0.08)) !important;
-  border-color: rgba(37, 99, 235, 0.3) !important;
+.accounts-stat-group > .ant-pro-card-body {
+  gap: 1px;
+  background: var(--color-border);
 }
-
-.account-badge-pill,
-.account-status-badge {
-  border-radius: var(--hos-radius-pill, 9999px) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
+.accounts-stat-group > .ant-pro-card-body > .ant-pro-card-col {
+  min-width: 0;
+  background: var(--color-surface);
+}
+.accounts-stat-group .ant-pro-statistic-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.accounts-stat-group .ant-pro-statistic-card > .ant-pro-card-body {
+  padding: var(--space-7, 14px) var(--space-8, 16px);
+}
+.accounts-stat-group .ant-statistic-title {
+  margin-bottom: var(--space-2, 4px);
+  font-size: var(--hos-text-caption, 12px);
+  font-weight: var(--weight-medium, 500);
+  line-height: var(--leading-snug, 1.4);
+  color: var(--color-muted);
+}
+.accounts-stat-group .ant-statistic-content {
+  font-size: 20px;
+  font-weight: var(--weight-semibold, 600);
+  line-height: var(--leading-tight, 1.25);
+  color: var(--color-heading);
+  font-variant-numeric: tabular-nums;
+}
+.accounts-stat-group .ant-statistic-content-value,
+.accounts-stat-group .ant-statistic-content-value-int,
+.accounts-stat-group .ant-statistic-content-value-decimal {
+  font-size: inherit;
+  font-weight: inherit;
+}
+.accounts-stat-group .ant-pro-card-statistic-description {
+  margin-top: var(--space-2, 4px);
+  font-size: var(--hos-text-caption, 12px);
+  line-height: var(--leading-snug, 1.4);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* 带状态点的单元格（「账号状态」）：pro-card 默认把状态点放在独立的 14px 列里，
+ * 标签与数值整体右移、和相邻单元格不对齐。改为网格：标签独占首行并与其他单元格左对齐，
+ * 状态点放到数值行开头（6px 点 + 数值，同 KPI 条状态语言）。 */
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-4, 8px);
+}
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) > .ant-pro-card-statistic-content,
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) .ant-statistic {
+  display: contents;
+}
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) .ant-statistic-title {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+.accounts-stat-group .ant-pro-card-statistic-wrapper > .ant-pro-card-statistic-status {
+  display: flex;
+  align-items: center;
+  width: auto;
+  grid-column: 1;
+  grid-row: 2;
+}
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) .ant-statistic-content {
+  grid-column: 2;
+  grid-row: 2;
+}
+.accounts-stat-group .ant-pro-card-statistic-wrapper:has(> .ant-pro-card-statistic-status) .ant-pro-card-statistic-description {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+.accounts-stat-group .ant-pro-card-statistic-status .ant-badge-status-dot {
+  width: 6px;
+  height: 6px;
+  top: 0;
 }

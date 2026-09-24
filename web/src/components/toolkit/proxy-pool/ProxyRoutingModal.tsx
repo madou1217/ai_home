@@ -1,4 +1,5 @@
-import { Alert, Divider, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
+import { Divider, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
 import { proxyPoolAPI } from '@/services/api';
 import type { ProxyNode, RoutingResponse } from '@/types';
 import { getErrorMessage } from './proxy-pool-utils';
@@ -41,12 +42,7 @@ export default function ProxyRoutingModal({
   return (
     <Modal title="分流与默认出口" open={open} onCancel={onClose} footer={null} width={700}>
       {!dataPlaneReady && (
-        <Alert
-          type="warning"
-          showIcon
-          message="代理数据面未就绪"
-          description="当前仅展示已保存配置；为避免误导，切换操作保持禁用。"
-        />
+        <InlineNote tone="warning" description="当前仅展示已保存配置；为避免误导，切换操作保持禁用。">代理数据面未就绪</InlineNote>
       )}
       <Title level={5}>出站模式</Title>
       <Radio.Group

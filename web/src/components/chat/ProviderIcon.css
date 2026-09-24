@@ -1,0 +1,18 @@
+/* ProviderIcon 深色主题可见性（浅色主题不受影响）。
+ * 标记由 ProviderIcon.tsx 的 DARK_THEME_ICON_TREATMENT 写在 <img data-provider-icon-dark> 上。 */
+
+/* 纯黑 / 低对比中性单色记号：深色下反相为浅色，贴近 --color-heading。 */
+:is([data-theme='dark'], .dark-theme, body.dark) img[data-provider-icon-dark='invert'] {
+  filter: invert(1);
+}
+
+/* 自带深色底板的记号：深色下用 1px 中性描边勾出底板轮廓，不改品牌图形本身。 */
+:is([data-theme='dark'], .dark-theme, body.dark) img[data-provider-icon-dark='tile'] {
+  border-radius: 22%;
+  box-shadow: 0 0 0 1px var(--color-border-strong);
+}
+
+:is([data-theme='dark'], .dark-theme, body.dark) img[data-provider-icon-dark='round'] {
+  border-radius: var(--hos-radius-pill, 9999px);
+  box-shadow: 0 0 0 1px var(--color-border-strong);
+}

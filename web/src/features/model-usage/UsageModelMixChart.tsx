@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Empty, Segmented } from 'antd';
 
 import type { ModelUsageModelRow } from '@/types';
-import EChartCanvas, { type UsageChartPalette } from './EChartCanvas';
+import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
 import {
   buildModelMixData,
   formatCost,
@@ -27,10 +27,8 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
     grid: { left: 8, right: 16, top: 8, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      backgroundColor: palette.heading,
-      borderWidth: 0,
-      textStyle: { color: '#fff', fontSize: 12 },
+      axisPointer: { type: 'shadow', shadowStyle: { color: palette.border, opacity: 0.35 } },
+      ...buildChartTooltipStyle(palette),
       valueFormatter: (value: unknown) => (
         metric === 'cost' ? formatCost(Number(value) || 0) : formatTokens(Number(value) || 0)
       )
@@ -44,7 +42,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
         hideOverlap: true,
         formatter: (value: number) => formatModelMixAxisValue(value, metric)
       },
-      splitLine: { lineStyle: { color: palette.border, opacity: 0.55, type: 'dashed' } }
+      splitLine: { lineStyle: { color: palette.border, type: 'dashed' } }
     },
     yAxis: {
       type: 'category',
@@ -65,8 +63,8 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       data: data.map((item) => ({
         value: item.value,
         itemStyle: {
-          color: item.isOther ? 'rgba(148, 163, 184, 0.3)' : metric === 'cost' ? '#10b981' : '#0a59f7',
-          borderRadius: [0, 8, 8, 0]
+          color: item.isOther ? palette.neutral : metric === 'cost' ? palette.teal : palette.brand,
+          borderRadius: [0, 4, 4, 0]
         }
       })),
       barMaxWidth: 18

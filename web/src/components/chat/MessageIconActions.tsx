@@ -76,7 +76,7 @@ export default function MessageIconActions({
             aria-label="复制"
           >
             {copied ? (
-              <CheckOutlined style={{ color: '#52c41a' }} />
+              <CheckOutlined style={{ color: 'var(--color-success)' }} />
             ) : (
               <CopyOutlined />
             )}

@@ -83,7 +83,7 @@ export default function ManagedAppAccountActions({
       key: `account:${account.accountRef}`,
       // 账号即使后来失效/取消配置，已运行实例仍必须保留可结束入口。
       disabled: !account.configured && !running,
-      ...(isDefault ? { icon: <StarFilled style={{ color: '#faad14' }} /> } : {}),
+      ...(isDefault ? { icon: <StarFilled style={{ color: 'var(--color-warning)' }} /> } : {}),
       label: (
         <span className={`managed-app-account-row${running ? ' is-running' : ''}`}>
           <span className="managed-app-account-name">

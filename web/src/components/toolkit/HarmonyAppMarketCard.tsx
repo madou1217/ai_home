@@ -23,8 +23,7 @@ export interface AppMarketItemProps {
 }
 
 /**
- * HarmonyOS 6 风格应用市场卡片 (ArkUI App Market Card)
- * 采用 20px Squircle 超级圆角、通透亚克力毛玻璃、应用图标微光质感与一键胶囊操作
+ * 应用市场卡片：扁平 surface + 发丝线描边，图标 / 名称 / 版本 / 安装状态与操作
  */
 export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
   name,
@@ -41,7 +40,7 @@ export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
     <div className={styles.marketCard}>
       <div className={styles.cardTop}>
         <div className={styles.iconWrapper}>
-          {icon || <AppstoreOutlined style={{ fontSize: 24, color: '#0a59f7' }} />}
+          {icon || <AppstoreOutlined style={{ fontSize: 24, color: 'var(--color-muted-strong)' }} />}
         </div>
         <div className={styles.titleInfo}>
           <div className={styles.nameLine}>
@@ -58,7 +57,7 @@ export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
         <div className={styles.installState}>
           {installed ? (
             <span className={styles.installedBadge}>
-              <CheckCircleFilled style={{ color: '#10b981' }} /> 已部署
+              <CheckCircleFilled style={{ color: 'var(--color-success)' }} /> 已部署
             </span>
           ) : (
             <span className={styles.uninstalledBadge}>未安装</span>

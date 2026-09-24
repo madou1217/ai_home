@@ -898,8 +898,8 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
     return (
       <div className={`${styles.messageRow} ${styles.messageRowAssistant} ${isFollowup ? styles.messageRowAssistantFollowup : ''}`} data-chat-anchor-key={`assistant-${message.timestamp || ""}`}>
         {showAssistantAvatar ? (
-          <Avatar size={32} className={styles.avatarAi} style={{ background: '#fff2f0', border: '1px solid #ffccc7' }}>
-            <WarningOutlined style={{ color: '#cf1322', fontSize: 16 }} />
+          <Avatar size={32} className={styles.avatarAi} style={{ background: 'var(--tint-danger)', border: '1px solid var(--bd-danger)' }}>
+            <WarningOutlined style={{ color: 'var(--color-danger)', fontSize: 16 }} />
           </Avatar>
         ) : null}
         <div className={`${styles.messageWrapper} ${styles.messageWrapperAssistant}`} onClick={handleMessageTap}>

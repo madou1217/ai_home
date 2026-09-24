@@ -1,22 +1,21 @@
+/* Server 列表卡片：扁平 surface + 1px 发丝线；「默认」用中性描边标签表达，不用彩色描边/光环。
+ * 强调色统一走 --color-accent（Claude 珊瑚色只代表 Claude）。 */
 .cp-server-list {
-  --cp-font: var(--hos-mobile-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif);
-  --cp-acc: var(--hos-orange-500, #d97757);
-  --cp-run: var(--hos-mobile-run, #13a65a);
-  --cp-warn: var(--hos-orange-600, #d97706);
-  --cp-crit: var(--hos-red-600, #dc2626);
-  --cp-ink: var(--hos-surface-dark-900, #1b1b2b);
-  --cp-ink-2: var(--hos-gray-600, #5a5a72);
-  --cp-ink-3: var(--hos-gray-400, #8b8ba3);
-  --cp-line: var(--hos-ink-100, #ececf4);
-  --cp-surface: var(--hos-white, #ffffff);
-  --cp-radius: 16px;
-  --cp-sh: 0 1px 3px rgba(27, 27, 43, .06), 0 1px 2px rgba(27, 27, 43, .04);
+  --cp-acc: var(--color-accent);
+  --cp-run: var(--color-success);
+  --cp-warn: var(--color-warning);
+  --cp-crit: var(--color-danger);
+  --cp-ink: var(--color-heading);
+  --cp-ink-2: var(--color-muted-strong);
+  --cp-ink-3: var(--color-muted);
+  --cp-line: var(--color-border);
+  --cp-surface: var(--color-surface);
+  --cp-radius: var(--hos-radius-lg);
 
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--hos-space-3, 12px);
-  font-family: var(--cp-font);
+  gap: var(--space-6);
 }
 
 .cp-server-card.ant-card {
@@ -24,14 +23,13 @@
   border: 1px solid var(--cp-line);
   border-radius: var(--cp-radius);
   background: var(--cp-surface);
-  box-shadow: var(--cp-sh);
+  box-shadow: none;
 }
 .cp-server-card.ant-card > .ant-card-body {
-  padding: var(--hos-space-4, 16px) var(--hos-space-5, 18px); /* 归级:原 18px */
+  padding: var(--hos-space-4) var(--hos-space-5);
 }
 .cp-server-card--active.ant-card {
-  border-color: color-mix(in srgb, var(--cp-acc) 42%, var(--cp-line));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cp-acc) 22%, transparent), var(--cp-sh);
+  border-color: var(--color-border-strong);
 }
 
 .cp-server-card-head {
@@ -40,22 +38,22 @@
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-2-5);
 }
 .cp-server-card-title {
   display: flex;
   min-width: 0;
   flex: 1 1 240px;
   flex-direction: column;
-  gap: var(--hos-space-1-5, 5px); /* 归级:原 5px */
+  gap: var(--hos-space-1-5);
 }
 .cp-server-card-name {
   display: inline-block;
   max-width: min(320px, 60vw);
   overflow: hidden;
   color: var(--cp-ink);
-  font-size: var(--hos-text-h3, 15px);
-  font-weight: 700;
+  font-size: var(--hos-text-h3);
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
@@ -65,9 +63,9 @@
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--hos-space-2, 8px);
+  gap: var(--hos-space-2);
   color: var(--cp-ink-3);
-  font-size: var(--hos-text-caption, 12px);
+  font-size: var(--hos-text-caption);
 }
 .cp-server-error {
   overflow-wrap: anywhere;
@@ -78,88 +76,88 @@
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--hos-space-1-5, 6px);
+  gap: var(--hos-space-1-5);
 }
 
-/* Status pills — one restrained palette, replaces AntD preset Tag colors */
+/* 状态标签：圆角 4 的 tint 底小标签（DESIGN.md §6 标签 Tag） */
 .cp-status-pill {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  gap: var(--hos-space-1, 4px);
-  padding: var(--hos-space-0-5, 2px) var(--hos-space-2-5, 9px); /* 归级:原 9px */
-  border-radius: var(--hos-radius-pill, 999px);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-  font-weight: 700;
-  line-height: 18px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--hos-radius-2xs);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 20px;
   white-space: nowrap;
 }
 .cp-status-pill--ready {
-  background: color-mix(in srgb, var(--cp-run) 14%, white);
-  color: var(--cp-run);
+  background: var(--tint-success);
+  color: var(--ink-success);
 }
 .cp-status-pill--degraded {
-  background: color-mix(in srgb, var(--cp-warn) 14%, white);
-  color: var(--cp-warn);
+  background: var(--tint-warning);
+  color: var(--ink-warning);
 }
 .cp-status-pill--offline {
-  background: var(--cp-line);
-  color: var(--cp-ink-3);
+  background: var(--tint-neutral);
+  color: var(--ink-neutral);
 }
 .cp-status-pill--pending {
-  background: color-mix(in srgb, var(--cp-acc) 16%, white);
-  color: var(--cp-acc);
+  background: var(--tint-info);
+  color: var(--ink-info);
 }
 .cp-key-configured {
   flex: 0 0 auto;
-  color: var(--cp-run);
-  font-size: var(--hos-text-caption, 12px);
-  font-weight: 600;
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
 }
 
-/* Current-server badge — solid accent, deliberately distinct from health pills */
+/* 「默认」标记：强调色弱底小标签（与 setup 页「当前」一致），高度与 small 按钮对齐 */
 .cp-current-badge {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  padding: var(--hos-space-1, 3px) var(--hos-space-2-5, 10px); /* 归级:原 3px */
-  border-radius: var(--hos-radius-pill, 999px);
-  background: var(--cp-acc);
-  color: var(--hos-white, #fff);
-  font-size: var(--hos-text-caption, 11px); /* 归级:原 11px */
-  font-weight: 700;
-  line-height: 16px;
+  height: 24px;
+  padding: 0 var(--space-4);
+  border-radius: var(--hos-radius-2xs);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--hos-text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 1;
 }
 
 .cp-route-row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--hos-space-1-5, 6px);
-  margin-top: var(--hos-space-3, 12px);
+  gap: var(--hos-space-1-5);
+  margin-top: var(--hos-space-3);
 }
 .cp-route-chip {
   display: inline-flex;
   min-width: 0;
   max-width: 100%;
   align-items: center;
-  gap: var(--hos-space-1-5, 6px);
-  padding: var(--hos-space-1, 3px) var(--hos-space-2-5, 10px) var(--hos-space-1, 3px) var(--hos-space-2, 8px); /* 归级:原 3px */
-  border-radius: var(--hos-radius-pill, 999px);
-  background: var(--cp-line);
+  gap: var(--hos-space-1-5);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-3);
+  border: 1px solid var(--cp-line);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-muted);
   color: var(--cp-ink-2);
-  font-size: var(--hos-text-caption, 11.5px); /* 归级:原 11.5px */
+  font-size: var(--hos-text-caption);
 }
-.cp-route-chip--health-green { background: color-mix(in srgb, var(--cp-run) 12%, white); }
-.cp-route-chip--health-orange { background: color-mix(in srgb, var(--cp-warn) 12%, white); }
-.cp-route-chip--health-red { background: color-mix(in srgb, var(--cp-crit) 10%, white); }
+/* 健康度只由圆点颜色表达；主路由用更强的完整描边 */
 .cp-route-chip--primary {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cp-acc) 45%, transparent);
+  border-color: var(--color-border-strong);
 }
 .cp-route-dot {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-pill, 50%);
+  border-radius: var(--hos-radius-pill);
   background: var(--cp-ink-3);
 }
 .cp-route-dot--green { background: var(--cp-run); }
@@ -168,7 +166,7 @@
 .cp-route-kind {
   flex: 0 0 auto;
   color: var(--cp-ink);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 .cp-route-endpoint {
   min-width: 0;
@@ -185,21 +183,22 @@
 .cp-server-card-footer {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--hos-space-1, 4px) var(--hos-space-3, 12px);
-  margin-top: var(--hos-space-3, 12px);
-  padding-top: var(--hos-space-2-5, 10px);
+  gap: var(--hos-space-1) var(--hos-space-3);
+  margin-top: var(--hos-space-3);
+  padding-top: var(--hos-space-2-5);
   border-top: 1px solid var(--cp-line);
   color: var(--cp-ink-2);
-  font-size: var(--hos-text-body-sm, 12.5px); /* 归级:原 12.5px */
-  font-weight: 600;
+  font-size: var(--hos-text-body-sm);
+  font-weight: var(--weight-regular);
 }
 .cp-server-card-footer b {
   color: var(--cp-ink);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
 .cp-footer-pending {
   color: var(--cp-ink-3);
-  font-weight: 500;
+  font-weight: var(--weight-regular);
 }
 
 /* control-planes 统计区（服务器/可调度账号/会话）：窄屏纵向堆叠，避免三列挤压折行错位 */

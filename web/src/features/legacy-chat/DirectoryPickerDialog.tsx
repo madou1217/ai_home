@@ -37,8 +37,8 @@ function DirectoryPath({
   return items.length ? (
     <Breadcrumb
       items={items}
-      separator={<RightOutlined style={{ fontSize: 10, color: '#bfbfbf' }} />}
-      style={{ marginBottom: 16, background: '#f5f5f5', padding: '8px 12px', borderRadius: 4 }}
+      separator={<RightOutlined style={{ fontSize: 10, color: 'var(--color-faint)' }} />}
+      style={{ marginBottom: 16, background: 'var(--color-surface-muted)', padding: '8px 12px', borderRadius: 'var(--hos-radius-xs)' }}
     />
   ) : null;
 }
@@ -59,12 +59,12 @@ function DirectoryRow({
       className="dir-item"
       style={{
         padding: '8px 16px', cursor: 'pointer', userSelect: 'none',
-        background: selected ? '#e6f7ff' : '#fff', borderBottom: '1px solid #f5f5f5',
+        background: selected ? 'var(--color-accent-soft)' : 'var(--color-surface)', borderBottom: '1px solid var(--color-border)',
       }}
       onClick={() => onSelect(directory.path)}
       onDoubleClick={() => onNavigate(directory.path)}
     >
-      <FolderOpenOutlined style={{ marginRight: 8, color: '#faad14' }} />
+      <FolderOpenOutlined style={{ marginRight: 8, color: 'var(--color-muted-strong)' }} />
       <span>{directory.name}</span>
     </div>
   );
@@ -90,7 +90,7 @@ function DirectoryList(props: DirectoryPickerDialogProps) {
         />
       ) : null}
       {props.directories.length === 0 ? (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: '#bfbfbf' }}>
+        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--color-faint)' }}>
           没有子目录。双击上级目录可返回。
         </div>
       ) : props.directories.map((directory) => (
@@ -122,13 +122,13 @@ export default function DirectoryPickerDialog(props: DirectoryPickerDialogProps)
         <DirectoryPath currentPath={props.currentPath} onNavigate={props.onNavigate} />
         <div
           className="directory-list-container"
-          style={{ border: '1px solid #d9d9d9', borderRadius: 4, height: 350, overflowY: 'auto', background: '#fff' }}
+          style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--hos-radius-xs)', height: 350, overflowY: 'auto', background: 'var(--color-surface)' }}
         >
           <DirectoryList {...props} />
         </div>
         <div style={{ marginTop: 16 }}>
-          <span style={{ marginRight: 8, fontWeight: 'bold' }}>当前选定路径:</span>
-          <code style={{ background: '#f5f5f5', padding: '4px 8px', borderRadius: 4, fontSize: 13 }}>
+          <span style={{ marginRight: 8, fontWeight: 600 }}>当前选定路径:</span>
+          <code style={{ background: 'var(--color-surface-muted)', padding: '4px 8px', borderRadius: 'var(--hos-radius-2xs)', fontSize: 13 }}>
             {props.selectedPath || '未选择'}
           </code>
         </div>

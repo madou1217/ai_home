@@ -839,8 +839,8 @@ const MessageArea = ({
                 <button
                   onClick={onLoadMore}
                   style={{
-                    background: '#fff', border: '1px solid #d9d9d9', borderRadius: 16,
-                    padding: mobile ? '6px 16px' : '4px 16px', cursor: 'pointer', fontSize: mobile ? 13 : 12, color: '#666'
+                    background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--hos-radius-xs)',
+                    padding: mobile ? '6px 16px' : '4px 16px', cursor: 'pointer', fontSize: mobile ? 13 : 12, color: 'var(--color-muted-strong)'
                   }}
                 >
                   加载更早的消息
@@ -982,7 +982,7 @@ const MessageArea = ({
             </div>
           ) : null}
           {isTerminated ? (
-            <div style={{ textAlign: 'center', padding: '24px 0', color: '#999', fontSize: 13, userSelect: 'none' }}>
+            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-muted)', fontSize: 13, userSelect: 'none' }}>
               此会话已归档，无法继续对话。
             </div>
           ) : (
@@ -1004,7 +1004,7 @@ const MessageArea = ({
             <div style={{
               padding: '0 12px 8px',
               fontSize: helperFontSize,
-              color: hasUnsupportedSlashCommand ? '#d48806' : '#2468d6'
+              color: hasUnsupportedSlashCommand ? 'var(--color-warning)' : 'var(--color-accent)'
             }}>
               {matchedSlashCommand ? (
                 <>
@@ -1042,7 +1042,7 @@ const MessageArea = ({
             visible={fileRefMenuOpen}
           />
           {embeddedSlashMatch && (
-            <div style={{ padding: '0 12px 8px', fontSize: helperFontSize, color: '#c25100' }}>
+            <div style={{ padding: '0 12px 8px', fontSize: helperFontSize, color: 'var(--color-warning)' }}>
               检测到命令 {embeddedSlashMatch.command}。Slash 命令必须单独发送，不能和普通文本混在同一条消息里。
             </div>
           )}
@@ -1072,7 +1072,7 @@ const MessageArea = ({
                   title={shellTerminalOpen ? '关闭终端' : '打开终端'}
                   aria-pressed={shellTerminalOpen}
                   onClick={() => setShellTerminalOpen((v) => !v)}
-                  style={shellTerminalOpen ? { color: '#2563eb' } : undefined}
+                  style={shellTerminalOpen ? { color: 'var(--color-accent)' } : undefined}
                 >
                   <CodeOutlined style={{ fontSize: 16 }} />
                 </button>
@@ -1227,7 +1227,7 @@ const MessageArea = ({
                     label: <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <ProviderIcon provider={provider} size={14} />
                       <span>{AIH_SERVER_ACCOUNT_LABEL}</span>
-                      <span title="网关" style={{ fontSize: 10, color: '#4f46e5' }}>网关</span>
+                      <span title="网关" style={{ fontSize: 10, color: 'var(--color-muted)' }}>网关</span>
                     </span>,
                     value: getGatewaySelectionScope(provider)
                   })),

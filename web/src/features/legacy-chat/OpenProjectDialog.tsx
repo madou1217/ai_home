@@ -38,7 +38,7 @@ export default function OpenProjectDialog({
           placeholder="不准手填，请点击选择文件夹按钮选择"
           value={projectPath}
           readOnly
-          style={{ background: '#f5f5f5', color: '#595959' }}
+          style={{ background: 'var(--color-surface-muted)', color: 'var(--color-muted-strong)' }}
         />
         <Input
           placeholder="项目名称（可选）"

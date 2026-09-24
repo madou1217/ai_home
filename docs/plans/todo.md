@@ -14,6 +14,10 @@
 ## 待办（按顺序）
 
 - [ ] **在真实机器上执行 P1**：`npm run go:build && npm run go:migrate-accounts -- plan`，检查账本里 `unsupported_in_go` / `rejected_by_go`，再 `apply`、`verify`（本容器无真实账号，只在夹具上验证过）
+  - 2026-09-25 真实机器 `plan` 已跑：33 个账号 → 29 可迁（same_ref 17 / rekeyed 11 / merged 1），留 Node 4 个
+    （zcode 3：无静态凭据或 artifact 无效；opencode 1：artifact 无效）。演练中发现并修复原生 `api-key`
+    auth_kind 违反列约束导致 OpenCode API Key 导入全部 `account_not_found`（4748d838）。
+  - 待办：`apply` 写真实 `aih.db` 需用户确认后再执行，随后 `verify`。
 - [ ] S5 就绪态：Node `/readyz` 汇合 Go 状态（进程、首轮同步、Go `/readyz.ready`、已划转路由）；补真实 `startLocalServer` + 真 Go 的端到端测试
 - [ ] S6 `/v1/models` 对齐：当前两端**不可能完全一致**——Node 合并别名/手动模型/上游探测、排除图片模型、`localeCompare` 排序、总是带 `aih_modalities`；Go 只读 `account_models`、字节序排序、`aih_modalities` 需 `?include=modalities`。需先决定以谁为准并改代码；`gateway:shadow` 只比状态码+键结构，需加 id/顺序/owned_by 比对
 - [ ] S7 切 `/v1/models`：`aih server config set --go-core --go-core-routes gateway.models.list,gateway.models.detail,gateway.props`（依赖 S6 结论）

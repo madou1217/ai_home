@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * 移动端模式判定：视口宽度 < 768px（与 antd `md` 断点、mobile-shell.css 的 767.98px 一致）。
- * 命中时整站切到独立的移动端 HUD 界面（见 web/MOBILE.md），不再复用桌面布局。
+ * 命中时整站切到独立的移动端 HUD 界面（见 docs/mobile-hud.md），不再复用桌面布局。
  */
 export const MOBILE_HUD_QUERY = '(max-width: 767.98px)';
 

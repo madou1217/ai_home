@@ -44,7 +44,7 @@ export default function ProxyRoutingModal({
       {!dataPlaneReady && (
         <InlineNote tone="warning" description="当前仅展示已保存配置；为避免误导，切换操作保持禁用。">代理数据面未就绪</InlineNote>
       )}
-      <Title level={5}>出站模式</Title>
+      <Title level={5} className="proxy-modal-section-title">出站模式</Title>
       <Radio.Group
         value={routing?.mode || 'rule'}
         disabled={!dataPlaneReady}
@@ -55,7 +55,7 @@ export default function ProxyRoutingModal({
         <Radio.Button value="direct">全局直连</Radio.Button>
       </Radio.Group>
       <div className="proxy-routing-section">
-        <Title level={5}>默认代理节点</Title>
+        <Title level={5} className="proxy-modal-section-title">默认代理节点</Title>
         <Select
           aria-label="默认代理节点"
           style={{ width: '100%' }}
@@ -66,8 +66,9 @@ export default function ProxyRoutingModal({
           options={nodes.map((node) => ({ label: node.name, value: node.id }))}
         />
       </div>
-      <Space wrap>
-        <Tag color={routingResponse?.applied ? 'success' : 'warning'}>
+      <Space wrap className="proxy-routing-status">
+        <Tag color={routingResponse?.applied ? 'success' : 'warning'} className="toolkit-status-tag">
+          <span className={`hud-led ${routingResponse?.applied ? 'hud-led--ok' : 'hud-led--warn'}`} aria-hidden="true" />
           {routingResponse?.applied ? '已应用到数据面' : '仅配置态'}
         </Tag>
         {(routingResponse?.message || routingResponse?.error || routingResponse?.reason) && (
@@ -75,20 +76,22 @@ export default function ProxyRoutingModal({
         )}
       </Space>
       <Divider />
-      <Title level={5}>当前规则</Title>
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Title level={5} className="proxy-modal-section-title">当前规则</Title>
+      <div className="proxy-routing-rules">
         {(routing?.rules || []).map((rule) => (
           <div key={rule.id} className="toolkit-mirror-row">
             <div>
-              <strong>{rule.name}</strong>
-              <Tag color={rule.outbound === 'proxy' ? 'blue' : rule.outbound === 'reject' ? 'red' : 'green'}>
-                {rule.outbound.toUpperCase()}
-              </Tag>
+              <span className="proxy-routing-rule-head">
+                <strong>{rule.name}</strong>
+                <Tag color={rule.outbound === 'proxy' ? 'blue' : rule.outbound === 'reject' ? 'red' : 'green'}>
+                  {rule.outbound.toUpperCase()}
+                </Tag>
+              </span>
               <div><Text type="secondary">{rule.domains?.slice(0, 4).join(', ') || rule.target}</Text></div>
             </div>
           </div>
         ))}
-      </Space>
+      </div>
     </Modal>
   );
 }

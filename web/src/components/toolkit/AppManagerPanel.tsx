@@ -388,6 +388,7 @@ export default function AppManagerPanel() {
 
       {error && (
         <div className="toolkit-inline-error" role="alert">
+          <span className="hud-led hud-led--err" aria-hidden="true" />
           <strong>应用清单读取失败</strong>
           <span>{error}</span>
         </div>

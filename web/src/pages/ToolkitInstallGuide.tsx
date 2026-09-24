@@ -97,6 +97,7 @@ export default function ToolkitInstallGuide() {
 
         {error ? (
           <div className="toolkit-inline-error" role="alert">
+            <span className="hud-led hud-led--err" aria-hidden="true" />
             <strong>指南读取失败</strong>
             <span>{error}</span>
           </div>

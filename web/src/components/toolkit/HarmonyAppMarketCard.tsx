@@ -3,7 +3,6 @@ import { Button, Tag } from 'antd';
 import {
   DownloadOutlined,
   SettingOutlined,
-  CheckCircleFilled,
   SyncOutlined,
   AppstoreOutlined,
 } from '@ant-design/icons';
@@ -23,7 +22,7 @@ export interface AppMarketItemProps {
 }
 
 /**
- * 应用市场卡片：扁平 surface + 发丝线描边，图标 / 名称 / 版本 / 安装状态与操作
+ * 应用市场卡片：HUD 小切角面板，图标 / 名称 / 版本 / 安装状态（LED）与操作
  */
 export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
   name,
@@ -40,7 +39,7 @@ export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
     <div className={`${styles.marketCard} hud-panel hud-panel--sm`}>
       <div className={styles.cardTop}>
         <div className={styles.iconWrapper}>
-          {icon || <AppstoreOutlined style={{ fontSize: 24, color: 'var(--color-muted-strong)' }} />}
+          {icon || <AppstoreOutlined className={styles.fallbackIcon} />}
         </div>
         <div className={styles.titleInfo}>
           <div className={styles.nameLine}>
@@ -57,10 +56,12 @@ export const HarmonyAppMarketCard = memo(function HarmonyAppMarketCard({
         <div className={styles.installState}>
           {installed ? (
             <span className={styles.installedBadge}>
-              <CheckCircleFilled style={{ color: 'var(--color-success)' }} /> 已部署
+              <span className="hud-led hud-led--ok" aria-hidden="true" /> 已部署
             </span>
           ) : (
-            <span className={styles.uninstalledBadge}>未安装</span>
+            <span className={styles.uninstalledBadge}>
+              <span className="hud-led" aria-hidden="true" /> 未安装
+            </span>
           )}
         </div>
 

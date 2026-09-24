@@ -366,7 +366,7 @@ export default function ProxyDiagnosticsPanel() {
           <InlineNote
             tone="info"
             description="直连仅表示本次请求没有显式使用 AIH HTTP 代理；系统 TUN、VPN 或透明代理仍可能接管实际网络路径。"
-            style={{ marginBottom: 12 }}
+            className="toolkit-note-spaced"
           >
             直连探测仍可能经过 TUN
           </InlineNote>
@@ -379,7 +379,10 @@ export default function ProxyDiagnosticsPanel() {
             {connectivityData.results.map((result) => (
               <article key={result.id} data-reachable={result.reachable || undefined}>
                 <div>
-                  <strong>{result.name}</strong>
+                  <span className="toolkit-connectivity-name">
+                    <span className={`hud-led ${result.reachable ? 'hud-led--ok' : 'hud-led--err'}`} aria-hidden="true" />
+                    <strong>{result.name}</strong>
+                  </span>
                   {result.reachable
                     ? <Tag color="success"><CheckCircleOutlined /> HTTP 可达</Tag>
                     : <Tag color="error"><CloseCircleOutlined /> 未收到响应</Tag>}

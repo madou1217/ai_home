@@ -72,6 +72,7 @@ export default function ProviderCliUpgradePanel() {
 
       {error ? (
         <div className="toolkit-inline-error" role="alert">
+          <span className="hud-led hud-led--err" aria-hidden="true" />
           <strong>升级状态读取失败</strong>
           <span>{error}</span>
         </div>

@@ -309,6 +309,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
 
       {error ? (
         <div className="toolkit-inline-error" role="alert">
+          <span className="hud-led hud-led--err" aria-hidden="true" />
           <strong>工具状态读取失败</strong>
           <span>{error}</span>
         </div>
@@ -354,7 +355,12 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                       <Tag color={tool.supported ? 'blue' : 'default'}>
                         {tool.supported ? '当前平台支持' : '当前平台不适用'}
                       </Tag>
-                      {tool.runtimeInspectable && tool.running ? <Tag color="processing">运行中</Tag> : null}
+                      {tool.runtimeInspectable && tool.running ? (
+                        <Tag color="processing" className="toolkit-status-tag">
+                          <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />
+                          运行中
+                        </Tag>
+                      ) : null}
                       {tool.managedBy ? <Tag>{MANAGEMENT_LABELS[tool.managedBy] || tool.managedBy}</Tag> : null}
                     </>
                   )}
@@ -379,7 +385,8 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                   actions={(
                     <Space size={6} wrap>
                       {activeTask ? (
-                        <Tag color="processing">
+                        <Tag color="processing" className="toolkit-status-tag">
+                          <span className="hud-led hud-led--info hud-led--live" aria-hidden="true" />
                           {ACTION_LABELS[(activeTask.action as ManagedToolLifecycleAction) || 'update'] || '操作'}中
                           {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
                         </Tag>

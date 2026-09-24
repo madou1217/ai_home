@@ -22,12 +22,28 @@ interface ProxyNodeCardProps {
   onShare: () => void;
 }
 
+type LatencyTone = 'idle' | 'ok' | 'warn' | 'err';
+
+/** 节点延迟读数：HUD LED + 等宽数值。阈值与文案沿用原实现，只改变呈现。 */
 function LatencyBadge({ latency }: { latency: number | null | undefined }) {
-  if (latency === undefined || latency === null) return <Tag>未实测</Tag>;
-  if (latency < 0) return <Tag color="error">不可达</Tag>;
-  if (latency < 180) return <Tag color="success">{latency} ms</Tag>;
-  if (latency < 400) return <Tag color="warning">{latency} ms</Tag>;
-  return <Tag color="error">{latency} ms</Tag>;
+  let tone: LatencyTone;
+  let label: string;
+  if (latency === undefined || latency === null) {
+    tone = 'idle';
+    label = '未实测';
+  } else if (latency < 0) {
+    tone = 'err';
+    label = '不可达';
+  } else {
+    tone = latency < 180 ? 'ok' : latency < 400 ? 'warn' : 'err';
+    label = `${latency} ms`;
+  }
+  return (
+    <span className="proxy-latency" data-tone={tone}>
+      <span className={`hud-led${tone === 'idle' ? '' : ` hud-led--${tone}`}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
 }
 
 export default function ProxyNodeCard({
@@ -84,7 +100,10 @@ export default function ProxyNodeCard({
           {activePort && (
             <div className="toolkit-detail-row">
               <span className="toolkit-detail-label">本地 mixed</span>
-              <Tag color="green" className="proxy-local-port">127.0.0.1:{activePort.port}</Tag>
+              <span className="toolkit-detail-value proxy-local-port">
+                <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />
+                127.0.0.1:{activePort.port}
+              </span>
             </div>
           )}
         </div>

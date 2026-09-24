@@ -113,6 +113,7 @@ export default function GuidedCommandPanel({
       {selectedTask.description && <p className="toolkit-command-description">{selectedTask.description}</p>}
       {selectedTask.danger && (
         <p className="toolkit-command-caution" role="note">
+          <span className="hud-led hud-led--warn" aria-hidden="true" />
           请先检查命令；当前页面只负责生成和复制，不会自动执行环境变更。
         </p>
       )}

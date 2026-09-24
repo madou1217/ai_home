@@ -106,7 +106,7 @@ export default function ProxySubscriptionsModal({
       <Divider />
       <div className="proxy-subscription-list">
         {subscriptions.length === 0 ? (
-          <Text type="secondary">尚未添加订阅源</Text>
+          <Text type="secondary" className="toolkit-empty-inline">尚未添加订阅源</Text>
         ) : subscriptions.map((subscription) => (
           <div key={subscription.id} className="toolkit-mirror-row">
             <div className="proxy-subscription-info">

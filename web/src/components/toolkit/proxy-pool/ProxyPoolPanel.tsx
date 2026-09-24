@@ -191,7 +191,7 @@ export default function ProxyPoolPanel() {
       const accepted = await confirmAction({
         title: `安装 Mihomo ${planned.plan.version}`,
         content: (
-          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          <div className="toolkit-confirm-detail" data-break="all">
             {`将从官方 Mihomo 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`}
           </div>
         ),
@@ -313,24 +313,24 @@ export default function ProxyPoolPanel() {
           <StatisticCard statistic={{
             title: '代理节点',
             value: nodesData?.total || 0,
-            icon: <GlobalOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
+            icon: <GlobalOutlined aria-hidden className="toolkit-kpi-icon" />
           }} />
           <StatisticCard statistic={{
             title: '订阅源（手动同步）',
             value: subscriptions.length,
-            icon: <LinkOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
+            icon: <LinkOutlined aria-hidden className="toolkit-kpi-icon" />
           }} />
           <StatisticCard statistic={{
             title: '真实监听端口',
             value: `${activePortByNode.size} / ${portsData?.config.maxPorts || 32}`,
             valueStyle: { color: activePortByNode.size > 0 ? 'var(--color-success)' : 'var(--color-muted-strong)' },
-            icon: <ForkOutlined aria-hidden style={{ color: 'var(--color-muted)', fontSize: 20 }} />
+            icon: <ForkOutlined aria-hidden className="toolkit-kpi-icon" />
           }} />
           <StatisticCard statistic={{
             title: '数据面',
             value: dataPlaneReady ? 'READY' : 'OFFLINE',
-            valueStyle: { color: dataPlaneReady ? 'var(--color-success)' : 'var(--color-danger)', fontSize: 20 },
-            icon: <SettingOutlined aria-hidden style={{ color: dataPlaneReady ? 'var(--color-success)' : 'var(--color-danger)', fontSize: 20 }} />
+            valueStyle: { color: dataPlaneReady ? 'var(--color-success)' : 'var(--color-danger)' },
+            icon: <SettingOutlined aria-hidden className="toolkit-kpi-icon" data-tone={dataPlaneReady ? 'ok' : 'err'} />
           }} />
         </StatisticCard.Group>
       </div>

@@ -150,7 +150,7 @@ export default function MirrorManagerPanel() {
         <InlineNote
           tone="error"
           description={error}
-          style={{ marginBottom: 12 }}
+          className="toolkit-note-spaced"
           action={<Button type="text" size="small" icon={<CloseOutlined />} aria-label="关闭" onClick={() => setError('')} />}
         >
           镜像操作未完成
@@ -217,7 +217,14 @@ export default function MirrorManagerPanel() {
                       <Tag>{`适用区域：${applicableRegion(preset)}`}</Tag>
                       {result?.state !== 'idle' && result && (
                         <Tooltip title={result.error}>
-                          <Tag color={result.state === 'success' ? 'success' : result.state === 'error' ? 'error' : 'processing'}>
+                          <Tag
+                            color={result.state === 'success' ? 'success' : result.state === 'error' ? 'error' : 'processing'}
+                            className="toolkit-status-tag"
+                          >
+                            <span
+                              className={`hud-led ${result.state === 'success' ? 'hud-led--ok' : result.state === 'error' ? 'hud-led--err' : 'hud-led--info hud-led--live'}`}
+                              aria-hidden="true"
+                            />
                             {latencyLabel(result)}
                           </Tag>
                         </Tooltip>

@@ -237,6 +237,7 @@ export default function EnvironmentPanel() {
 
       {error ? (
         <div className="toolkit-inline-error" role="alert">
+          <span className="hud-led hud-led--err" aria-hidden="true" />
           <strong>运行环境读取失败</strong>
           <span>{error}</span>
         </div>
@@ -318,7 +319,8 @@ export default function EnvironmentPanel() {
                     actions={(
                       <Space size={6} wrap>
                         {activeTask ? (
-                          <Tag color="processing">
+                          <Tag color="processing" className="toolkit-status-tag">
+                            <span className="hud-led hud-led--info hud-led--live" aria-hidden="true" />
                             {ACTION_LABELS[(activeTask.action as EnvironmentLifecycleAction) || 'update'] || '操作'}中
                             {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
                           </Tag>

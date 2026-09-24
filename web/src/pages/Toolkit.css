@@ -386,14 +386,64 @@
   white-space: nowrap;
 }
 
+/* HUD 子面板几何：小切角（左上 / 右下）+ 左上青色角标，与全局 .hud-panel--sm 同一套 token。
+ * 这些元素自身不使用 ::before 做其它用途，所以角标直接画在 ::before 上；
+ * 内边距 / 底色由各自规则决定。 */
+.toolkit-workbench,
+.toolkit-mirror-workbench,
+.toolkit-guide-controls,
+.toolkit-observation-card,
+.toolkit-tool-config-card,
+.toolkit-proxy-apply,
+.toolkit-connectivity,
+.toolkit-scoped-proxies,
+.toolkit-environment-action,
+.toolkit-action-plan,
+.toolkit-connectivity-grid article,
+.toolkit-status-rail,
+.toolkit-command {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
+  border-radius: 0;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+
+.toolkit-workbench::before,
+.toolkit-mirror-workbench::before,
+.toolkit-guide-controls::before,
+.toolkit-observation-card::before,
+.toolkit-tool-config-card::before,
+.toolkit-proxy-apply::before,
+.toolkit-connectivity::before,
+.toolkit-scoped-proxies::before,
+.toolkit-environment-action::before,
+.toolkit-action-plan::before,
+.toolkit-connectivity-grid article::before,
+.toolkit-status-rail::before,
+.toolkit-command::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
 .toolkit-workbench,
 .toolkit-mirror-workbench {
   display: grid;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface);
+  background: var(--hud-panel-bg);
 }
 
 .toolkit-workbench {
@@ -405,7 +455,7 @@
   min-width: 0;
   padding: var(--space-6);
   border-right: 1px solid var(--color-border);
-  background: var(--color-surface-soft);
+  background: color-mix(in srgb, var(--color-surface-sunken) 55%, transparent);
 }
 
 .toolkit-tool-group + .toolkit-tool-group {
@@ -417,20 +467,22 @@
 .toolkit-tool-group h3 {
   margin: 0 0 var(--space-4);
   padding: 0 var(--space-4);
-  color: var(--color-muted);
+  color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: 10px;
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
+/* 索引列表项：发丝线行，悬停青色细边，选中 = 青框 + 柔和辉光 + 左上角标 */
 .toolkit-tool-option,
 .toolkit-mirror-option {
+  position: relative;
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 0;
   background: transparent;
   color: var(--color-text);
   font: inherit;
@@ -438,7 +490,8 @@
   cursor: pointer;
   transition:
     border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .toolkit-tool-option {
@@ -452,8 +505,8 @@
 
 .toolkit-tool-option:hover,
 .toolkit-mirror-option:hover {
-  border-color: var(--color-border);
-  background: var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+  background: var(--color-overlay);
 }
 
 .toolkit-tool-option[data-active='true'],
@@ -461,6 +514,25 @@
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
   box-shadow: var(--hud-glow-accent);
+}
+
+.toolkit-tool-option[data-active='true']::before,
+.toolkit-mirror-option[data-active='true']::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
+.toolkit-tool-option[data-active='true'] strong,
+.toolkit-mirror-option[data-active='true'] .toolkit-mirror-option-main strong {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-tool-option > span:first-child {
@@ -507,12 +579,14 @@
   min-width: 0;
 }
 
-.toolkit-detail-heading span:not(.ant-tag) {
-  color: var(--color-muted);
+/* 详情区眉标（SELECTED SOURCE / VERIFIED SOURCE / 平台代号）：与 .toolkit-panel-kicker 同一语言 */
+.toolkit-detail-heading > div:first-child > span:not(.ant-tag) {
+  color: var(--color-accent);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-wide);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  opacity: 0.85;
 }
 
 .toolkit-detail-heading h3,
@@ -528,7 +602,20 @@
   font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
   line-height: var(--leading-tight);
+}
+
+/* 子面板标题：青色 Orbitron + 柔和辉光（面板头语义，与 unified-section-card 标题一致） */
+.toolkit-observation-card h3,
+.toolkit-tool-config-card h3,
+.toolkit-proxy-apply h3,
+.toolkit-connectivity h3,
+.toolkit-scoped-proxies h3,
+.toolkit-command-guide h3 {
+  color: var(--color-accent);
+  font-size: var(--hos-text-h3);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 /* 来源说明：中性描边小框（列出 registry / 命令来源），不做彩色弱底；
@@ -543,8 +630,8 @@
 
 .toolkit-source-note {
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-muted);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
 }
 
 .toolkit-source-note {
@@ -553,18 +640,27 @@
   padding: var(--space-5) var(--space-6);
 }
 
+/* 「当前选择」是字段标签：HUD 大写标签，不是标题 */
 .toolkit-source-note strong {
-  color: var(--color-heading);
-  font-family: var(--font-display);
-  font-size: var(--text-xs);
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .toolkit-source-note code {
   min-width: 0;
-  color: var(--color-text);
+  color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
+}
+
+.toolkit-source-note span {
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
 }
 
 .toolkit-command-guide {
@@ -588,9 +684,11 @@
 }
 
 .toolkit-command-controls label > span {
-  color: var(--color-muted-strong);
-  font-size: var(--text-xs);
+  color: var(--color-faint);
+  font-size: 10px;
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .toolkit-command-controls .ant-select,
@@ -609,17 +707,23 @@
 .toolkit-command-description {
   margin: var(--space-5) 0;
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
 }
 
 .toolkit-command-caution {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   margin-top: var(--space-6);
   color: var(--color-warning);
   font-size: var(--hos-text-body-sm);
   line-height: var(--leading-normal);
 }
 
+/* 命令块：HUD 终端读数 —— 凹槽底（--color-surface-sunken，DESIGN.md「输入槽、代码块」）+ 小切角 + 角标，
+ * 等宽正文；复制按钮是右侧发丝线分隔的独立槽位。两个主题都只用语义 token。 */
 .toolkit-command {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -627,13 +731,21 @@
   margin-top: var(--space-6);
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-xs);
-  /* 终端/日志控制台：两个主题下都是深色面，深色字面值为有意例外，不迁移。 */
-  background: var(--c-neutral-950);
+  background: var(--color-surface-sunken);
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.toolkit-command:hover,
+.toolkit-command:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border-strong));
 }
 
 .toolkit-command[data-danger='true'] {
-  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--c-neutral-950));
+  border-color: color-mix(in srgb, var(--color-warning) 55%, var(--color-border));
+}
+
+.toolkit-command[data-danger='true']::before {
+  border-color: var(--color-warning);
 }
 
 .toolkit-command pre {
@@ -641,16 +753,21 @@
   margin: 0;
   padding: var(--space-6) var(--space-8);
   overflow-x: auto;
-  color: var(--c-neutral-100);
+  color: var(--color-text);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums slashed-zero;
   line-height: var(--leading-normal);
   white-space: pre;
   scrollbar-width: thin;
 }
 
+.toolkit-command pre code {
+  font-family: inherit;
+}
+
 .toolkit-command pre:focus-visible {
-  outline: 2px solid var(--color-info);
+  outline: 1px solid var(--color-accent);
   outline-offset: -2px;
 }
 
@@ -658,7 +775,7 @@
 .toolkit-command > .ant-tooltip-disabled-compatible-wrapper,
 .toolkit-command > span {
   align-self: stretch;
-  border-left: 1px solid var(--c-neutral-700);
+  border-left: 1px solid var(--color-border);
   border-radius: 0;
 }
 
@@ -672,20 +789,22 @@
   width: 100%;
   height: 100%;
   border-radius: 0;
-  color: var(--c-neutral-200);
+  color: var(--color-muted-strong);
 }
 
-.toolkit-command .ant-btn:not(:disabled):hover {
-  background: var(--c-neutral-800);
-  color: var(--c-neutral-0);
+.toolkit-command .ant-btn:not(:disabled):not(.ant-btn-dangerous):hover {
+  background: var(--color-accent-soft) !important;
+  color: var(--color-accent) !important;
 }
 
 .toolkit-empty-inline {
+  display: block;
   padding: var(--space-10);
   border: 1px dashed var(--color-border-strong);
-  border-radius: var(--hos-radius-xs);
-  color: var(--color-muted);
-  font-size: var(--text-sm);
+  border-radius: 0;
+  color: var(--color-faint);
+  font-size: 11px;
+  letter-spacing: var(--tracking-wide);
   text-align: center;
 }
 
@@ -701,7 +820,8 @@
 .toolkit-faq .ant-collapse {
   overflow: hidden;
   border-color: var(--color-border);
-  background: var(--color-surface);
+  border-radius: 0;
+  background: var(--hud-panel-bg);
 }
 
 .toolkit-mirror-workbench {
@@ -778,14 +898,24 @@
   display: grid;
   grid-template-columns: minmax(92px, 0.28fr) minmax(0, 1fr);
   min-width: 0;
+  align-items: baseline;
   gap: var(--space-6);
   padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
+.toolkit-inspection-list > div:last-child {
+  border-bottom: 0;
+}
+
+/* 键：HUD 大写标签；值：等宽数据 */
 .toolkit-inspection-list dt {
-  color: var(--color-muted);
-  font-size: var(--text-xs);
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .toolkit-inspection-list dd {
@@ -797,10 +927,14 @@
   overflow-wrap: anywhere;
 }
 
+.toolkit-inspection-list dd code {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+}
+
 .toolkit-observation-empty {
-  color: var(--color-muted);
+  color: var(--color-faint);
   font-family: var(--font-body);
-  font-style: italic;
 }
 
 .toolkit-observation-grid,
@@ -816,43 +950,18 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* 诊断 / 配置面板：HUD 切角面板 + 左上青色角标（与全局 .hud-panel 同一套 token） */
+/* 诊断 / 配置面板：几何（小切角 + 左上角标）见上方「HUD 子面板几何」 */
 .toolkit-observation-card,
 .toolkit-tool-config-card,
 .toolkit-proxy-apply,
 .toolkit-connectivity,
 .toolkit-scoped-proxies,
 .toolkit-environment-action {
-  --hud-cut: var(--hud-chamfer-sm);
-  position: relative;
   min-width: 0;
   padding: var(--space-10);
   border: 1px solid var(--color-border);
-  border-radius: 0;
   background: var(--hud-panel-bg);
-  clip-path: polygon(
-    0 var(--hud-cut), var(--hud-cut) 0,
-    100% 0, 100% calc(100% - var(--hud-cut)),
-    calc(100% - var(--hud-cut)) 100%, 0 100%
-  );
   transition: border-color var(--motion-base) var(--ease-standard);
-}
-
-.toolkit-observation-card::before,
-.toolkit-tool-config-card::before,
-.toolkit-proxy-apply::before,
-.toolkit-connectivity::before,
-.toolkit-scoped-proxies::before,
-.toolkit-environment-action::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--hud-tick);
-  height: var(--hud-tick);
-  border-top: 2px solid var(--hud-tick-color);
-  border-left: 2px solid var(--hud-tick-color);
-  pointer-events: none;
 }
 
 .toolkit-observation-card:hover,
@@ -866,7 +975,7 @@
 }
 
 .toolkit-proxy-apply {
-  background: var(--color-surface-raised);
+  background: color-mix(in srgb, var(--color-accent) 3%, var(--hud-panel-bg));
 }
 
 .toolkit-proxy-source-actions {
@@ -888,6 +997,7 @@
 .toolkit-tool-config-card p {
   margin: var(--space-3) 0 0;
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
 }
@@ -905,7 +1015,11 @@
   grid-template-columns: minmax(128px, 0.36fr) minmax(0, 1fr);
   gap: var(--space-6);
   padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.toolkit-scoped-proxies > div:last-child {
+  border-bottom: 0;
 }
 
 .toolkit-scoped-proxies code,
@@ -921,19 +1035,13 @@
 }
 
 .toolkit-connectivity-grid article {
-  --hud-cut: var(--hud-chamfer-sm);
   display: grid;
   min-width: 0;
   gap: var(--space-4);
   padding: var(--space-6);
   border: 1px solid var(--color-border);
-  border-radius: 0;
-  background: var(--hud-panel-bg);
-  clip-path: polygon(
-    0 var(--hud-cut), var(--hud-cut) 0,
-    100% 0, 100% calc(100% - var(--hud-cut)),
-    calc(100% - var(--hud-cut)) 100%, 0 100%
-  );
+  background: var(--color-surface-sunken);
+  transition: border-color var(--motion-base) var(--ease-standard);
 }
 
 .toolkit-connectivity-grid article > div {
@@ -944,12 +1052,20 @@
   gap: var(--space-4);
 }
 
+.toolkit-connectivity-name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .toolkit-connectivity-grid article strong {
   min-width: 0;
   overflow: hidden;
   color: var(--color-heading);
   font-family: var(--font-display);
   font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1028,13 +1144,27 @@
   gap: var(--space-8);
 }
 
+/* 读取失败：错误 LED（.hud-led--err）+ 状态色读数行，发丝线描边，不做整块彩底 */
 .toolkit-inline-error {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--hos-space-2);
-  align-items: baseline;
+  align-items: center;
   margin: var(--hos-space-3) 0;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--color-danger) 4%, transparent);
   color: var(--color-danger);
   font-size: var(--hos-text-body-sm);
+}
+
+.toolkit-inline-error > span:last-child {
+  min-width: 0;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
 }
 
 .toolkit-inline-note {
@@ -1121,17 +1251,25 @@
   justify-content: center;
 }
 
-.toolkit-client-glyph {
+.toolkit-client-glyph,
+.toolkit-card-icon {
   display: grid;
   width: 28px;
   height: 28px;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-raised);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
   color: var(--color-muted-strong);
   font-size: var(--text-lg);
   line-height: 1;
+}
+
+.toolkit-app-card.installed .toolkit-client-glyph,
+.toolkit-app-card.installed .toolkit-card-icon {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border-strong));
+  color: var(--color-accent);
 }
 
 .toolkit-provider-badges {
@@ -1150,8 +1288,8 @@
   justify-content: center;
   margin-left: -3px;
   overflow: hidden;
-  border: 2px solid var(--color-surface);
-  border-radius: var(--hos-radius-pill);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--hos-radius-2xs);
   background: var(--color-surface);
 }
 
@@ -1172,9 +1310,9 @@
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-raised);
-  color: var(--color-brand);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-accent);
   font-family: var(--font-mono);
   font-size: var(--text-lg);
   line-height: 1;
@@ -1193,6 +1331,15 @@
 
 .toolkit-card-tags .ant-tag {
   margin: 0;
+}
+
+/* 状态标签内嵌 LED（.hud-led）：安装态 / 运行中 / 后台任务进行中 */
+.ant-tag.toolkit-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
 .toolkit-card-body {
@@ -1273,39 +1420,53 @@
   margin-left: auto;
 }
 
+/* 安装指南页：外框由 .hud-panel（hud.css）画切角 + 角标 + HUD 底色，这里只管布局 */
 .toolkit-guide-page {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--space-10);
   padding: clamp(var(--space-8), 2.2vw, var(--space-16));
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
   box-shadow: none;
 }
 
+/* 目标系统 / 工具链选择：两步 HUD 步骤轨（01 / 02），编号来自固定顺序，不是数据 */
 .toolkit-guide-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-8);
-  padding: var(--space-8);
+  gap: 0;
+  padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-10);
-  background: var(--color-surface-raised);
+  background: color-mix(in srgb, var(--color-surface-sunken) 55%, transparent);
+  counter-reset: toolkit-guide-step;
 }
 
 .toolkit-guide-controls > div {
   display: grid;
   min-width: 0;
   gap: var(--space-4);
+  padding: var(--space-8);
+  counter-increment: toolkit-guide-step;
+}
+
+.toolkit-guide-controls > div + div {
+  border-left: 1px solid var(--color-border);
+}
+
+.toolkit-guide-controls .toolkit-control-label::before {
+  content: counter(toolkit-guide-step, decimal-leading-zero);
+  margin-right: var(--space-4);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-control-label {
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
@@ -1329,30 +1490,65 @@
 .toolkit-env-card {
   min-width: 0;
   margin-bottom: var(--space-8);
-  border-radius: var(--hos-radius-10);
+  border-radius: 0;
 }
 
+/* 配置编辑器：HUD 工具条（凹槽底 + 大写标签）压在 Monaco 框上方；
+ * Monaco 本体只加载 github-light 主题，编辑区保持固定白底（DESIGN.md §7.2 有意例外）。 */
 .toolkit-code-editor {
+  --hud-cut: var(--hud-chamfer-sm);
   margin-top: var(--space-6);
 }
 
+.toolkit-code-editor-toolbar::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+  pointer-events: none;
+}
+
 .toolkit-code-editor-toolbar {
+  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
   border: 1px solid var(--color-border);
-  border-bottom: 0;
-  border-radius: var(--hos-radius-10) var(--hos-radius-10) 0 0;
-  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  clip-path: polygon(0 var(--hud-cut), var(--hud-cut) 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.toolkit-code-editor-toolbar > .ant-space:first-child .anticon {
+  color: var(--color-accent);
+}
+
+.toolkit-code-editor-toolbar > .ant-space:first-child .ant-typography {
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.toolkit-code-editor-toolbar .ant-typography {
+  font-size: var(--text-2xs);
 }
 
 .toolkit-code-editor-frame {
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: 0 0 var(--hos-radius-10) var(--hos-radius-10);
+  border-top: 0;
+  border-radius: 0;
   /* Monaco 编辑器只加载 github-light 主题，编辑区固定为白底（有意例外）。 */
   background: var(--hos-white);
 }
@@ -1361,12 +1557,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-muted);
+  background: var(--color-surface-sunken);
 }
 
 .toolkit-code-editor-hint {
   display: block;
   margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
   text-align: right;
 }
 
@@ -1377,7 +1576,12 @@
   margin-bottom: var(--space-4);
   color: var(--color-muted);
   font-size: var(--hos-text-caption);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
+}
+
+.toolkit-config-note strong {
+  color: var(--color-warning);
+  font-weight: var(--weight-semibold);
 }
 
 .toolkit-config-note > .anticon {
@@ -1401,33 +1605,52 @@
   margin-bottom: 0;
 }
 
+/* 弹窗内列表行（分流规则 / 订阅源）：发丝线分隔的行，悬停青色细轨 + 淡青底，
+ * 选中（.active）= 青框 + 柔和辉光。 */
 .toolkit-mirror-row {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-8);
-  margin-bottom: var(--space-4);
-  padding: var(--space-6) var(--space-8);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-xs);
-  background: var(--color-surface-soft);
+  margin: 0;
+  padding: var(--space-6) var(--space-6);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
   transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+.toolkit-mirror-row:first-child {
+  border-top: 1px solid var(--color-border);
 }
 
 .toolkit-mirror-row:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface);
+  background: var(--color-overlay);
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .toolkit-mirror-row.active {
-  border-color: var(--color-accent);
-  background: var(--color-info-soft);
-  box-shadow: var(--hud-glow-accent);
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
 }
 
+.toolkit-mirror-row strong {
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+}
+
+.toolkit-mirror-row .ant-typography-secondary {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+/* 等宽只读内容块（聚合导出）：凹槽底 + 发丝线，语义 token，两个主题通用 */
 .toolkit-cmd-box {
   display: flex;
   min-width: 0;
@@ -1437,16 +1660,23 @@
   margin-top: var(--space-3);
   padding: var(--space-4) var(--space-6);
   overflow-x: auto;
-  border-radius: var(--hos-radius-2xs);
-  background: var(--c-neutral-950);
-  color: var(--c-neutral-200);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-muted-strong);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
 
+.toolkit-cmd-box pre {
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+}
+
 .toolkit-cmd-box code {
   min-width: 0;
-  color: var(--c-neutral-100);
+  color: var(--color-text);
   font-family: inherit;
   overflow-wrap: anywhere;
 }
@@ -1476,9 +1706,11 @@
 
 .toolkit-environment-action > h3 {
   margin: var(--space-2) 0 var(--space-6);
-  color: var(--color-heading);
+  color: var(--color-accent);
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--hos-text-h3);
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .toolkit-environment-action-form {
@@ -1497,14 +1729,14 @@
   gap: var(--space-5);
   margin-top: var(--space-8);
   padding: var(--space-6);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  background: var(--hud-panel-bg);
 }
 
 .toolkit-action-plan p {
   margin: 0;
   color: var(--color-muted-strong);
+  font-family: var(--font-prose);
 }
 
 .toolkit-action-plan pre {
@@ -1512,9 +1744,10 @@
   margin: 0;
   padding: var(--space-6);
   overflow: auto;
-  border-radius: var(--hos-radius-2xs);
-  background: var(--c-neutral-950);
-  color: var(--c-neutral-100);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
@@ -1523,18 +1756,22 @@
   justify-self: start;
 }
 
-/* 代理核心状态行：中性描边的状态条（图标着色表达状态），不做整块彩底 */
+.toolkit-action-plan .ant-tag {
+  font-family: var(--font-mono);
+}
+
+/* 代理核心状态行：HUD 读数条（小切角 + 角标，几何见「HUD 子面板几何」），图标着色表达状态，不做整块彩底 */
 .toolkit-status-rail {
   margin-bottom: var(--space-8);
   padding: var(--space-6) var(--space-8);
   border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface);
+  background: var(--hud-panel-bg);
 }
 
 .toolkit-status-rail .hos-inline-note-text {
   color: var(--color-heading);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
 }
 
 .toolkit-status-rail.hos-inline-note--error .hos-inline-note-text {
@@ -1556,9 +1793,40 @@
   min-width: 0;
 }
 
+/* 网络层接管：antd Card 挂 .hud-panel.hud-panel--sm（切角 + 角标），标题为青色 Orbitron 面板头 */
 .toolkit-network-integration {
   margin-bottom: var(--space-8);
-  border-radius: var(--hos-radius-10);
+  border-radius: 0;
+}
+
+.toolkit-network-integration.ant-card > .ant-card-head {
+  min-height: 44px;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+}
+
+.toolkit-network-integration.ant-card > .ant-card-head .ant-card-head-title {
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: var(--hos-text-h3);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.toolkit-note-spaced {
+  margin-bottom: var(--space-6);
+}
+
+.toolkit-network-integration-grid > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.toolkit-network-integration-grid .ant-select {
+  min-width: 150px;
 }
 
 .toolkit-network-integration-grid {
@@ -1569,9 +1837,11 @@
 
 .toolkit-field-label {
   margin-bottom: var(--space-2);
-  color: var(--color-muted-strong);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-medium);
+  color: var(--color-faint);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 .proxy-pool-toolbar {
@@ -1597,15 +1867,49 @@
   box-shadow: var(--hud-glow-accent);
 }
 
+.proxy-node-grid > article[data-current-outbound='true'] .toolkit-card-title {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
 .proxy-country-flag {
   flex: 0 0 auto;
   font-size: var(--text-2xl);
   line-height: 1;
 }
 
+/* 节点实测延迟 / 可达性：LED + 等宽读数（数值与阈值均来自 node.latencyMs，未改变） */
+.proxy-latency {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-weight: var(--weight-semibold);
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.proxy-latency[data-tone='ok'] { color: var(--color-success); }
+.proxy-latency[data-tone='warn'] { color: var(--color-warning); }
+.proxy-latency[data-tone='err'] { color: var(--color-danger); }
+
+.proxy-latency:not([data-tone='idle']) {
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
 .proxy-local-port {
+  display: inline-flex;
   max-width: 100%;
+  align-items: center;
+  gap: var(--space-3);
+  justify-self: end;
   overflow: hidden;
+  color: var(--color-success);
   font-family: var(--font-mono);
   text-overflow: ellipsis;
 }
@@ -1614,6 +1918,33 @@
 .proxy-export-summary,
 .proxy-subscription-form {
   max-width: 100%;
+}
+
+.proxy-export-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.proxy-export-summary {
+  margin-bottom: var(--space-4);
+}
+
+.proxy-export-summary .ant-tag {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.proxy-export-intro,
+.proxy-import-intro {
+  font-family: var(--font-prose);
+}
+
+.proxy-import-intro--form.ant-typography {
+  margin-bottom: var(--space-8);
 }
 
 .proxy-export-content {
@@ -1628,8 +1959,43 @@
   min-width: 0;
 }
 
+
+.proxy-routing-status {
+  margin-top: var(--space-6);
+}
+
+.proxy-routing-rules {
+  width: 100%;
+}
+
+
+.proxy-routing-rule-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* 弹窗分区标题：HUD 大写标签（Title level 5 替换为分区眉标，内容不变） */
+.proxy-modal-section-title.ant-typography {
+  margin: var(--space-8) 0 var(--space-4) !important;
+  color: var(--color-faint);
+  font-family: var(--font-body);
+  font-size: 10px !important;
+  font-weight: var(--weight-semibold) !important;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
 .proxy-subscription-info {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
   overflow-wrap: anywhere;
+}
+
+.proxy-subscription-info .ant-typography code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
 }
 
 .proxy-share-content {
@@ -1638,6 +2004,51 @@
   place-items: center;
   gap: var(--space-8);
   text-align: center;
+}
+
+.proxy-share-content h4.ant-typography {
+  margin: 0;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-wide);
+}
+
+.proxy-share-content .ant-qrcode {
+  border-radius: 0;
+}
+
+.proxy-share-content .ant-typography code {
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.toolkit-confirm-detail {
+  font-family: var(--font-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toolkit-confirm-detail[data-break='all'] {
+  word-break: break-all;
+}
+
+/* 代理池 KPI 条的图标：状态色由真实 dataPlaneReady 决定 */
+.toolkit-kpi-icon {
+  color: var(--color-muted);
+  font-size: var(--text-2xl);
+}
+
+.toolkit-kpi-icon[data-tone='ok'] {
+  color: var(--color-success);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-success) 60%, transparent));
+}
+
+.toolkit-kpi-icon[data-tone='err'] {
+  color: var(--color-danger);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-danger) 60%, transparent));
 }
 
 @media (max-width: 1024px) {
@@ -1758,6 +2169,11 @@
 
   .toolkit-guide-controls {
     grid-template-columns: 1fr;
+  }
+
+  .toolkit-guide-controls > div + div {
+    border-top: 1px solid var(--color-border);
+    border-left: 0;
   }
 
   .toolkit-mirror-row {

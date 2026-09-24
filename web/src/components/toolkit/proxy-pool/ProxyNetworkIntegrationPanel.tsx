@@ -26,7 +26,7 @@ function confirmText(action: string, details: string) {
   return confirmAction({
     title: action,
     content: (
-      <div style={{ whiteSpace: 'pre-wrap' }}>
+      <div className="toolkit-confirm-detail">
         {`${details}\n\n这会修改当前用户的网络配置，是否继续？`}
       </div>
     ),
@@ -69,7 +69,7 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
 
   return (
     <Card
-      className="toolkit-network-integration"
+      className="toolkit-network-integration hud-panel hud-panel--sm"
       title={(
         <Space>
           <SafetyCertificateOutlined />
@@ -82,17 +82,17 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
         <InlineNote
           tone="warning"
           description="AIH 不会停止、修改或抢占现有代理工具。系统代理和 AIH TUN 接管按钮已保护性禁用。"
-          style={{ marginBottom: 12 }}
+          className="toolkit-note-spaced"
         >
           {`检测到外部 TUN：${status?.tun.owner || '未知工具'}`}
         </InlineNote>
       )}
-      {!status && <InlineNote tone="info" style={{ marginBottom: 12 }}>正在读取系统代理、TUN 和路由状态</InlineNote>}
+      {!status && <InlineNote tone="info" className="toolkit-note-spaced">正在读取系统代理、TUN 和路由状态</InlineNote>}
       {status && !status.effectiveRouteKnown && !externalTun && (
         <InlineNote
           tone="info"
           description="direct-unknown 只表示没有读到系统 HTTP/SOCKS 开关，不代表没有透明代理或 VPN。"
-          style={{ marginBottom: 12 }}
+          className="toolkit-note-spaced"
         >
           当前没有可确认的显式代理路径
         </InlineNote>
@@ -102,7 +102,7 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
         <div>
           <div className="toolkit-field-label">macOS 网络服务</div>
           <Input value={service} onChange={(event) => setService(event.target.value)} placeholder="例如 Wi-Fi" />
-          <Space wrap style={{ marginTop: 8 }}>
+          <Space wrap>
             <Button
               type="primary"
               icon={<GlobalOutlined />}
@@ -139,14 +139,13 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
           <Select
             value={tunStack}
             onChange={setTunStack}
-            style={{ minWidth: 150 }}
             options={[
               { label: 'mixed（兼容）', value: 'mixed' },
               { label: 'gvisor（隔离）', value: 'gvisor' },
               { label: 'system（系统栈）', value: 'system' }
             ]}
           />
-          <Space wrap style={{ marginTop: 8 }}>
+          <Space wrap>
             <Button
               type="primary"
               icon={<ThunderboltOutlined />}

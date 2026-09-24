@@ -83,7 +83,7 @@ export default function ManagedAppAccountActions({
       key: `account:${account.accountRef}`,
       // 账号即使后来失效/取消配置，已运行实例仍必须保留可结束入口。
       disabled: !account.configured && !running,
-      ...(isDefault ? { icon: <StarFilled style={{ color: 'var(--color-warning)' }} /> } : {}),
+      ...(isDefault ? { icon: <StarFilled className="managed-app-account-default-icon" /> } : {}),
       label: (
         <span className={`managed-app-account-row${running ? ' is-running' : ''}`}>
           <span className="managed-app-account-name">
@@ -96,7 +96,8 @@ export default function ManagedAppAccountActions({
           {running ? (
             <span className="managed-app-account-runtime">
               <span className="managed-app-account-running-label">
-                <Badge status="success" text="运行中" />
+                <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />
+                运行中
               </span>
               <span className="managed-app-account-runtime-actions">
                 <Button

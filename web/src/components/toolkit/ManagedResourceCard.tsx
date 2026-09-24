@@ -53,7 +53,10 @@ export default function ManagedResourceCard({
             <div>
               <h3 className="toolkit-card-title">{name}</h3>
               <div className="toolkit-card-tags">
-                <Tag color={installed ? 'success' : 'default'}>{installed ? '已安装' : '未安装'}</Tag>
+                <Tag color={installed ? 'success' : 'default'} className="toolkit-status-tag">
+                  <span className={`hud-led${installed ? ' hud-led--ok' : ''}`} aria-hidden="true" />
+                  {installed ? '已安装' : '未安装'}
+                </Tag>
                 {badges}
               </div>
             </div>

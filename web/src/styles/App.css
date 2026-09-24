@@ -356,3 +356,31 @@ samp {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 14. 全局提示（message / notification）：antd 静态方法渲染在 ConfigProvider 之外，
+ * 拿不到主题 token，这里直接绑定语义 token，保证深色主题下不出现白底浮层。 */
+.ant-message .ant-message-notice-content,
+.ant-notification .ant-notification-notice {
+  background: var(--color-surface-raised) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--elevation-3) !important;
+}
+
+.ant-message .ant-message-notice-content {
+  border-radius: var(--hos-radius-sm) !important;
+  padding: var(--space-4) var(--space-6) !important;
+}
+
+.ant-notification .ant-notification-notice {
+  border-radius: var(--hos-radius-md) !important;
+}
+
+.ant-notification .ant-notification-notice-message {
+  color: var(--color-heading) !important;
+}
+
+.ant-notification .ant-notification-notice-description,
+.ant-notification .ant-notification-notice-close {
+  color: var(--color-muted-strong) !important;
+}

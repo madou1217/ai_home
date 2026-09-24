@@ -21,14 +21,48 @@
 }
 
 .commandPaletteCard {
+  --hud-cut: var(--hud-chamfer);
+  position: relative;
   width: min(640px, 92vw);
-  border-radius: var(--hos-radius-xl);
+  border-radius: 0;
   background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--elevation-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  box-shadow: var(--elevation-4), var(--hud-glow-accent);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* HUD 切角：与全局 .ant-modal-content 一致 */
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
+  );
+}
+
+/* 左上 / 右下青色角标 */
+.commandPaletteCard::before,
+.commandPaletteCard::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+.commandPaletteCard::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+}
+
+.commandPaletteCard::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--hud-tick-color);
+  border-bottom: 2px solid var(--hud-tick-color);
 }
 
 .commandPaletteInputWrap,
@@ -42,7 +76,8 @@
 
 .commandPaletteSearchIcon {
   font-size: var(--hos-text-h2);
-  color: var(--color-muted);
+  color: var(--color-accent);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 60%, transparent));
 }
 
 .commandPaletteInput {
@@ -52,7 +87,8 @@
   font-size: var(--hos-text-h3);
   color: var(--color-heading);
   outline: none;
-  font-family: inherit;
+  font-family: var(--font-mono);
+  caret-color: var(--color-accent);
 }
 
 .commandPaletteInput::placeholder {
@@ -68,7 +104,8 @@
   background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   padding: var(--hos-space-0-5) var(--hos-space-1-5);
-  border-radius: var(--hos-radius-2xs);
+  border-radius: 2px;
+  letter-spacing: var(--tracking-wide);
 }
 
 .commandPaletteList {
@@ -85,18 +122,30 @@
   align-items: center;
   gap: var(--hos-space-3);
   padding: var(--hos-space-2-5) var(--hos-space-3-5);
-  border-radius: var(--hos-radius-xs);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-family: var(--font-mono);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .commandPaletteItem:hover {
   background: var(--color-overlay);
+  border-color: var(--color-border);
 }
 
 .commandPaletteItemActive,
 .commandPaletteItemSelected {
   background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.commandPaletteItemActive .commandItemTitle,
+.commandPaletteItemSelected .commandPaletteItemTitle {
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .commandItemIcon,
@@ -120,11 +169,15 @@
 
 .commandItemCategory,
 .commandPaletteItemCategory {
-  font-size: var(--hos-text-caption); /* 归级:原 11px */
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
   padding: var(--hos-space-0-5) var(--hos-space-2);
-  border-radius: var(--hos-radius-2xs);
-  background: var(--tint-neutral);
-  color: var(--ink-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+  color: var(--color-faint);
 }
 
 .commandItemShortcut,
@@ -140,14 +193,17 @@
   gap: var(--hos-space-4);
   padding: var(--hos-space-2) var(--hos-space-5);
   border-top: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
+  background: var(--color-surface-sunken);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
-  color: var(--color-muted);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint);
 }
 
 .commandPaletteEmpty {
   padding: var(--hos-space-8);
   text-align: center;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
   color: var(--color-muted);
 }
@@ -159,9 +215,12 @@
   display: flex;
   align-items: center;
   gap: var(--hos-space-2);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
   font-weight: var(--weight-semibold);
-  color: var(--color-heading);
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .shortcutsModalBody {
@@ -178,9 +237,10 @@
 }
 
 .shortcutsGroupTitle {
-  font-size: var(--hos-text-caption);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
   font-weight: var(--weight-semibold);
-  color: var(--color-muted);
+  color: var(--color-faint);
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
 }
@@ -189,7 +249,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--hos-space-1);
-  border-radius: var(--hos-radius-sm);
+  border-radius: 2px;
   background: var(--color-surface);
   padding: var(--hos-space-1-5);
   border: 1px solid var(--color-border);
@@ -200,7 +260,7 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--hos-space-1-5) var(--hos-space-2-5);
-  border-radius: var(--hos-radius-xs);
+  border-radius: 2px;
   transition: background var(--motion-fast) var(--ease-standard);
 }
 
@@ -220,9 +280,9 @@
   font-family: var(--font-mono);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
   font-weight: var(--weight-medium);
-  color: var(--color-heading);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--hos-radius-2xs);
+  color: var(--color-accent);
+  background: var(--color-surface-sunken);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  border-radius: 2px;
   box-shadow: none;
 }

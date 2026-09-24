@@ -32,6 +32,7 @@
 
 .recordingTimer {
   flex: 0 0 auto;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--hos-text-body-sm);
   color: var(--color-muted);
@@ -78,6 +79,7 @@
   height: 8px;
   border-radius: var(--hos-radius-pill);
   background: var(--color-danger);
+  box-shadow: 0 0 6px var(--color-danger);
   animation: hosLivePulse 1.6s var(--ease-in-out) infinite;
   flex: 0 0 8px;
 }

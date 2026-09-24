@@ -7,23 +7,26 @@
   min-width: 0;
   height: 32px;
   padding: 0 var(--hos-space-2-5);
-  border: 1px solid transparent;
-  border-radius: var(--hos-radius-xs);
+  /* HUD 标签：暗槽底 + 发丝框 + 等宽字 */
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
   color: var(--color-text);
-  background: transparent;
+  background: var(--color-surface-sunken);
   font: inherit;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard);
 }
 
 .controlButton:hover,
 .approvalButton:hover,
 .modelSummary:hover {
-  background: var(--color-overlay);
-  border-color: transparent;
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
 }
 
 .controlButton:focus-visible,
@@ -48,9 +51,11 @@
 }
 
 .controlProviderLabel {
-  color: var(--color-muted-strong);
+  color: var(--color-accent);
   font-size: var(--hos-text-caption);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -86,12 +91,23 @@
   padding-inline: var(--hos-space-3-5) var(--hos-space-3);
 }
 
+/* 分组（运行目标 = 账号 + 模型）时作为 HUD 分段项：容器已有描边，这里去掉自身框 */
 .controlButton[data-grouped='true'] {
-  border-radius: var(--hos-radius-xs) 4px 4px var(--hos-radius-xs);
+  border-radius: 2px;
+  border-color: transparent;
+  background: transparent;
 }
 
 .modelSummary[data-grouped='true'] {
-  border-radius: 4px var(--hos-radius-xs) var(--hos-radius-xs) 4px;
+  border-radius: 2px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.controlButton[data-grouped='true']:hover,
+.modelSummary[data-grouped='true']:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  background: var(--color-accent-soft);
 }
 
 .modelSummary small {
@@ -193,7 +209,13 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.accountMenuHeader strong { font-size: 14px; }
+.accountMenuHeader strong {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
 .accountMenuHeader span {
   color: var(--color-muted-strong);
   font-size: 11px;
@@ -237,6 +259,9 @@
 }
 .accountGroupHeading strong {
   overflow: hidden;
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
   font-size: 12px;
   font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
@@ -255,17 +280,20 @@
   gap: 10px;
   min-height: 42px;
   padding: 8px 10px;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 2px;
   text-align: left;
 }
 .accountOptionButton:hover { background: var(--color-overlay); }
-.accountOptionButton[aria-selected='true'] { background: var(--color-accent-soft); }
+.accountOptionButton[aria-selected='true'] {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
 .accountOptionButton:focus-visible {
   outline: none;
   box-shadow: var(--ring-focus) inset;
 }
 .accountOptionIdentity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.accountOptionButton small { color: var(--color-muted-strong); font-size: 11px; }
+.accountOptionButton small { color: var(--color-muted-strong); font-family: var(--font-mono); font-size: 11px; }
 .accountOptionCheck { visibility: hidden; color: var(--color-accent); }
 .accountOptionButton[aria-selected='true'] .accountOptionCheck { visibility: visible; }
 

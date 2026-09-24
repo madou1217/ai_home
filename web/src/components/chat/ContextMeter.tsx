@@ -56,6 +56,7 @@ export const ContextMeter = memo(function ContextMeter({
           style={{
             width: `${stats.percent}%`,
             background: strokeColor,
+            color: strokeColor,
           }}
         />
       </div> : null}

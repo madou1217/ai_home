@@ -1,7 +1,8 @@
 /* Mobile "Sessions · project-grouped" view (AI Home · 会话 · 项目分组).
- * Calm Operator Console language (web/DESIGN.md): opaque surface cards with 1px
- * hairline borders, no shadows, a single accent (--color-accent) for selection,
- * ink primary action, project accordions with expandable session cards. All rules are scoped under `.msx` so this bespoke
+ * Cyber HUD language (web/DESIGN.md §HUD): square translucent HUD rows with 1px
+ * hairline borders + cyan corner tick, cyan (--color-accent) edge + glow for the
+ * selected session, running = glowing success LED (breathing), cyan HUD primary
+ * action, project accordions with expandable session rows. All rules are scoped under `.msx` so this bespoke
  * mobile look can never leak into the desktop ProjectList render. */
 
 .msx {
@@ -36,11 +37,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* 仅「运行中」状态点缓慢呼吸(DESIGN.md §5),其他元素不做循环动画 */
-@keyframes msxPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .35; }
-}
+/* 仅「运行中」LED 缓慢呼吸(复用 hud.css 的 hud-led-breathe),其他元素不做循环动画 */
 
 /* header */
 .msx-head {
@@ -51,10 +48,12 @@
   gap: var(--hos-space-2, 8px);
 }
 .msx-head h1 {
-  font-size: var(--text-2xl, 22px);
-  font-weight: var(--weight-semibold, 600);
-  letter-spacing: var(--tracking-tight, -0.01em);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   color: var(--msx-ink);
+  text-shadow: var(--hud-text-glow);
   flex: 1;
   min-width: 0;
   margin: 0;
@@ -62,8 +61,8 @@
 .msx-iconbtn {
   width: 40px;
   height: 40px;
-  border-radius: var(--hos-radius-lg, 10px);
-  background: var(--msx-surface);
+  border-radius: var(--hos-radius-xs, 2px);
+  background: var(--color-surface-raised);
   border: 1px solid var(--msx-line);
   display: flex;
   align-items: center;
@@ -73,22 +72,30 @@
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   transition: background var(--motion-fast, 120ms) var(--msx-ease),
-    border-color var(--motion-fast, 120ms) var(--msx-ease);
+    border-color var(--motion-fast, 120ms) var(--msx-ease),
+    color var(--motion-fast, 120ms) var(--msx-ease);
   font-size: 17px;
   padding: 0;
 }
-.msx-iconbtn:active { background: var(--msx-surface-2); border-color: var(--msx-line-2); }
+.msx-iconbtn:active {
+  background: color-mix(in srgb, var(--msx-acc) 8%, var(--color-surface-raised));
+  border-color: var(--msx-acc);
+  color: var(--msx-acc);
+}
 .msx-iconbtn:disabled { opacity: .45; cursor: default; }
 /* back arrow sits left of the title and reads darker */
 .msx-iconbtn.back { color: var(--msx-ink); }
-/* primary action = ink (DESIGN.md §2.2), no glow */
+/* primary action = cyan HUD (translucent cyan fill + cyan border + glow) */
 .msx-iconbtn.primary {
-  background: var(--color-ink);
-  border-color: var(--color-ink);
-  color: var(--color-on-ink);
-  box-shadow: none;
+  background: color-mix(in srgb, var(--msx-acc) 16%, transparent);
+  border-color: var(--msx-acc);
+  color: var(--msx-acc);
+  box-shadow: var(--hud-glow-accent);
 }
-.msx-iconbtn.primary:active { background: var(--color-ink-hover); border-color: var(--color-ink-hover); }
+.msx-iconbtn.primary .anticon { filter: drop-shadow(var(--hud-text-glow)); }
+.msx-iconbtn.primary:active { background: var(--msx-acc); border-color: var(--msx-acc); color: var(--color-on-accent); }
+.msx-iconbtn.primary:active .anticon { filter: none; }
+.msx-iconbtn.primary:disabled { box-shadow: none; }
 
 /* scroll list */
 .msx-list {
@@ -105,35 +112,58 @@
 
 /* project header (accordion trigger) */
 .msx-phead {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--hos-space-3, 12px);
   min-height: 64px;
   padding: var(--hos-space-3-5, 14px) var(--hos-space-4, 16px);
   cursor: pointer;
-  background: var(--msx-surface);
+  background: var(--hud-panel-bg);
   border: 1px solid var(--msx-line);
-  border-radius: var(--hos-mobile-radius, 12px);
+  border-radius: 0;
   box-shadow: none;
-  transition: border-color var(--motion-fast, 120ms) var(--msx-ease);
+  transition: border-color var(--motion-fast, 120ms) var(--msx-ease),
+    box-shadow var(--motion-fast, 120ms) var(--msx-ease);
   /* long-press must not trigger text selection / the iOS callout menu */
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
-.msx-phead:active { border-color: var(--msx-line-2); }
+/* HUD 角标(左上) */
+.msx-phead::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: var(--hud-tick, 10px);
+  height: var(--hud-tick, 10px);
+  border-top: 2px solid var(--hud-tick-color, var(--msx-acc));
+  border-left: 2px solid var(--hud-tick-color, var(--msx-acc));
+  pointer-events: none;
+}
+.msx-phead:active { border-color: color-mix(in srgb, var(--msx-acc) 45%, var(--msx-line)); }
+.msx-phead.open { border-color: color-mix(in srgb, var(--msx-acc) 45%, var(--msx-line)); }
 .msx-folder {
   width: 36px;
   height: 36px;
-  border-radius: var(--hos-radius-sm, 8px);
-  background: var(--msx-surface-2);
+  border-radius: var(--hos-radius-xs, 2px);
+  border: 1px solid var(--msx-line);
+  background: var(--color-surface-sunken);
   color: var(--msx-ink-2);
+  transition: color var(--motion-fast, 120ms) var(--msx-ease),
+    border-color var(--motion-fast, 120ms) var(--msx-ease);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   font-size: 18px;
+}
+.msx-phead.open .msx-folder {
+  color: var(--msx-acc);
+  border-color: color-mix(in srgb, var(--msx-acc) 55%, transparent);
+  background: var(--color-accent-soft);
 }
 .msx-pbody { flex: 1; min-width: 0; }
 .msx-pname {
@@ -146,18 +176,19 @@
   text-overflow: ellipsis;
 }
 .msx-pmeta {
-  font-size: var(--hos-text-body-sm, 13px);
+  font-family: var(--msx-mono);
+  font-size: var(--hos-text-caption, 12px);
   color: var(--msx-ink-3);
   margin-top: var(--hos-space-0-5, 2px);
   font-weight: var(--weight-regular, 400);
   font-variant-numeric: tabular-nums;
 }
-.msx-pmeta .run { color: var(--msx-run); font-weight: var(--weight-medium, 500); }
+.msx-pmeta .run { color: var(--msx-run); font-weight: 600; text-shadow: var(--hud-text-glow-success); }
 .msx-avatars { display: flex; align-items: center; padding-left: var(--hos-space-2-5, 10px); flex-shrink: 0; }
 .msx-avatars .av {
   width: 26px;
   height: 26px;
-  border-radius: var(--hos-radius-pill, 50%);
+  border-radius: var(--hos-radius-xs, 2px);
   border: 2px solid var(--msx-surface);
   margin-left: -10px;
   overflow: hidden;
@@ -166,8 +197,11 @@
   align-items: center;
   justify-content: center;
 }
-/* running provider: static success ring instead of a spinning avatar */
-.msx-avatars .av.spin { border-color: var(--msx-run); }
+/* running provider: static success ring + soft glow instead of a spinning avatar */
+.msx-avatars .av.spin {
+  border-color: var(--msx-run);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--msx-run) 60%, transparent);
+}
 .msx-chev {
   transition: transform var(--motion-base, 160ms) var(--msx-ease);
   color: var(--msx-ink-3);
@@ -175,7 +209,7 @@
   flex-shrink: 0;
   font-size: 16px;
 }
-.msx-phead.open .msx-chev { transform: rotate(180deg); }
+.msx-phead.open .msx-chev { transform: rotate(180deg); color: var(--msx-acc); }
 
 /* expanding drawer */
 .msx-drawer {
@@ -187,39 +221,47 @@
 .msx-drawer > div { overflow: hidden; }
 .msx-subs { display: flex; flex-direction: column; gap: var(--hos-space-2, 8px); padding-top: var(--hos-space-2, 8px); }
 
-/* session card */
+/* session row: square HUD row, hairline border.
+ * selected = full cyan edge (border) + soft cyan glow/tint — not a left colour bar. */
 .msx-sub {
   display: flex;
   gap: var(--hos-space-3, 12px);
   align-items: flex-start;
-  background: var(--msx-surface);
+  background: var(--hud-panel-bg);
   border: 1px solid var(--msx-line);
-  border-radius: var(--hos-radius-lg, 10px);
+  border-radius: 0;
   padding: var(--hos-space-3-5, 14px);
   cursor: pointer;
   box-shadow: none;
   -webkit-tap-highlight-color: transparent;
   transition: border-color var(--motion-fast, 120ms) var(--msx-ease),
-    background var(--motion-fast, 120ms) var(--msx-ease);
+    background var(--motion-fast, 120ms) var(--msx-ease),
+    box-shadow var(--motion-fast, 120ms) var(--msx-ease);
 }
-.msx-sub:active { border-color: var(--msx-line-2); }
+.msx-sub:active { border-color: color-mix(in srgb, var(--msx-acc) 45%, var(--msx-line)); }
 .msx-sub.active {
-  border-color: color-mix(in srgb, var(--msx-acc) 45%, var(--msx-line));
-  background: color-mix(in srgb, var(--msx-acc) 5%, var(--msx-surface));
+  border-color: var(--msx-acc);
+  background: color-mix(in srgb, var(--msx-acc) 6%, var(--msx-surface));
+  box-shadow: var(--hud-glow-accent), inset 0 0 12px color-mix(in srgb, var(--msx-acc) 10%, transparent);
 }
+.msx-sub.active .msx-tit { color: var(--msx-acc); text-shadow: var(--hud-text-glow); }
 .msx-avi {
   width: 36px;
   height: 36px;
-  border-radius: var(--hos-radius-sm, 8px);
+  border-radius: var(--hos-radius-xs, 2px);
+  border: 1px solid var(--msx-line);
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--msx-surface-2);
+  background: var(--color-surface-sunken);
 }
-/* running session: static success ring (the pulsing dot in .msx-time carries the live signal) */
-.msx-avi.spin { box-shadow: inset 0 0 0 1.5px var(--msx-run); }
+/* running session: static success ring (the breathing LED in .msx-time carries the live signal) */
+.msx-avi.spin {
+  border-color: var(--msx-run);
+  box-shadow: inset 0 0 6px color-mix(in srgb, var(--msx-run) 35%, transparent);
+}
 .msx-sbody { flex: 1; min-width: 0; }
 .msx-titrow { display: flex; align-items: flex-start; gap: var(--hos-space-2, 8px); }
 .msx-tit {
@@ -243,6 +285,7 @@
 }
 /* Real last-message preview (muted, two lines). */
 .msx-prev {
+  font-family: var(--font-prose);
   font-size: var(--hos-text-h3, 14px);
   color: var(--msx-ink-3);
   margin-top: var(--hos-space-2, 8px);
@@ -260,19 +303,24 @@
   flex-shrink: 0;
   padding-top: var(--hos-space-0-5, 2px);
 }
+/* running = hud-led--ok --live:发光绿色 LED 呼吸 + 同色辉光文字 */
 .msx-time.run {
   color: var(--msx-run);
+  font-weight: 600;
+  text-shadow: var(--hud-text-glow-success);
   display: inline-flex;
   align-items: center;
-  gap: var(--hos-space-1, 4px);
+  gap: var(--hos-space-1-5, 6px);
 }
 .msx-time.run::before {
   content: '';
+  flex: none;
   width: 6px;
   height: 6px;
-  border-radius: var(--hos-radius-pill, 50%);
+  border-radius: 50%;
   background: var(--msx-run);
-  animation: msxPulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 6px var(--msx-run);
+  animation: hud-led-breathe 1.6s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .msx-time.run::before { animation: none; }
@@ -283,8 +331,9 @@
   font-size: var(--hos-text-caption, 12px);
   font-weight: var(--weight-medium, 500);
   color: var(--msx-ink-2);
-  background: var(--msx-surface-2);
-  border-radius: var(--hos-radius-2xs, 4px);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--msx-line);
+  border-radius: var(--hos-radius-2xs, 2px);
   padding: var(--hos-space-0-5, 2px) var(--hos-space-2, 8px);
   white-space: nowrap;
   text-transform: lowercase;
@@ -295,7 +344,7 @@
   width: 40px;
   height: 40px;
   margin: -8px -8px -8px 0;
-  border-radius: var(--hos-radius-xs, 6px);
+  border-radius: var(--hos-radius-xs, 2px);
   border: none;
   background: transparent;
   color: var(--msx-ink-4);
@@ -308,7 +357,7 @@
     color var(--motion-fast, 120ms) var(--msx-ease);
 }
 .msx-subact:hover,
-.msx-subact:active { background: var(--color-overlay); color: var(--msx-ink-2); }
+.msx-subact:active { background: var(--color-accent-soft); color: var(--msx-acc); }
 .msx-subact:disabled {
   color: var(--msx-ink-4);
   cursor: not-allowed;
@@ -322,9 +371,12 @@
   padding: var(--hos-space-2-5, 10px) var(--hos-space-1, 4px) var(--hos-space-1, 4px);
 }
 .msx-more {
-  font-size: var(--hos-text-body-sm, 13px);
-  font-weight: var(--weight-medium, 500);
+  font-family: var(--msx-mono);
+  font-size: var(--hos-text-caption, 12px);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps, 0.12em);
   color: var(--msx-acc);
+  text-shadow: var(--hud-text-glow);
   text-align: center;
   min-height: 40px;
   display: flex;
@@ -333,15 +385,15 @@
   padding: var(--hos-space-2, 8px);
   cursor: pointer;
 }
-/* Cards stay uniformly surface-coloured; a running session is shown by its
-   success ring + the green breathing "进行中" dot, not a card tint. */
+/* Rows stay uniformly panel-coloured; a running session is shown by its
+   success ring + the green breathing "进行中" LED, not a row tint. */
 
 /* loading / empty — static skeleton (no shimmer loop) */
 .msx-skel { display: flex; flex-direction: column; gap: var(--hos-space-3, 12px); padding-top: var(--hos-space-1, 4px); }
 .msx-skel-row {
   height: 56px;
-  border-radius: var(--hos-mobile-radius, 12px);
-  background: var(--msx-surface-2);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
   border: 1px solid var(--msx-line);
 }
 .msx-empty {

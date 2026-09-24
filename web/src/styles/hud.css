@@ -162,7 +162,8 @@ body {
   font-weight: 700 !important;
   letter-spacing: 0.06em !important;
   color: var(--color-heading) !important;
-  text-shadow: var(--hud-text-glow);
+  /* 大号中文标题用柔和光晕：强光晕在密集汉字后面会连成一块，叠加扫描线后读成矩形底 */
+  text-shadow: var(--hud-text-glow-soft);
 }
 
 .ant-page-header-heading-sub-title {
@@ -175,11 +176,20 @@ body {
   color: var(--color-faint);
 }
 
+/* 数据数值：等宽粗体（规范「数据用 JetBrains Mono，标题用 Orbitron」）。
+ * Orbitron 的「0」是带斜杠的方块字形，在 0 值 / 空状态下会读成「⊘」，因此不用于数字。 */
 .hud-display {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* 展示标题：Orbitron（面板标题、品牌、分区标题） */
+.hud-heading {
   font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
 }
 
 .hud-glow { text-shadow: var(--hud-text-glow); }

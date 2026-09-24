@@ -25,7 +25,6 @@ body {
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: 'cv11', 'ss01';
 }
 
 /* 桌面端由 ProLayout 容器接管滚动 */

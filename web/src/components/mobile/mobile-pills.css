@@ -1,4 +1,5 @@
-/* Native-mobile pill selector (horizontal scroll). Active = accent-soft chip. */
+/* Native-mobile pill selector (horizontal scroll) — Cyber HUD chips:
+ * square hairline chips; active = accent-soft fill + cyan border + cyan glowing text. */
 .mpills-wrap {
   display: flex;
   align-items: center;
@@ -26,15 +27,16 @@
 .mpill {
   flex: none;
   border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
   color: var(--color-muted-strong);
   font-family: var(--font-body);
   font-size: var(--text-sm, 13px);
-  font-weight: var(--weight-medium, 500);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide, 0.04em);
   line-height: 1;
   padding: 0 var(--hos-space-3-5, 14px);
-  /* 胶囊形只留给状态点 / 计数;可点选的 chip 用 8px 圆角(DESIGN.md §4) */
-  border-radius: var(--hos-radius-sm, 8px);
+  /* HUD 方角 chip(≤2px);胶囊形只留给状态点 / 计数 */
+  border-radius: var(--hos-radius-xs, 2px);
   cursor: pointer;
   white-space: nowrap;
   min-height: 40px;
@@ -44,14 +46,19 @@
     color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1)),
     border-color var(--motion-fast, 120ms) var(--ease-standard, cubic-bezier(0.2, 0, 0, 1));
 }
-.mpill:active { background: var(--color-surface-muted); }
-/* 选中:强调色弱底 + 强调色文字(与 TabBar / 更多面板选中态同一语言) */
+.mpill:active {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-raised));
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+/* 选中:强调色弱底 + 青框 + 青色辉光文字(与 TabBar / 更多面板选中态同一语言) */
 .mpill.active,
 .mpill.active:active {
   background: var(--color-accent-soft);
-  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  border-color: var(--color-accent);
   color: var(--color-accent);
-  box-shadow: none;
+  text-shadow: var(--hud-text-glow);
+  /* 内发光:横滑容器 overflow 会裁掉外扩辉光,改用 inset */
+  box-shadow: inset 0 0 10px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
 .mpills-trailing { flex: none; }

@@ -28,7 +28,7 @@ func (codec nativeCredentialCodec) Encode(credential accountapp.Credential) (enc
 		return encodedCredential{}, ErrInvalidCredential
 	}
 	payload, err := encodeCredentialJSON(nativeCredentialV1{NativeAuth: auth.Payload()})
-	return encodedCredential{authKind: auth.AuthKind(), authMode: "native_auth_json", json: payload}, err
+	return encodedCredential{authKind: nativeStoredAuthKind(auth.AuthKind()), authMode: "native_auth_json", json: payload}, err
 }
 
 func (codec nativeCredentialCodec) Decode(authKind, authMode string, payload []byte) (accountapp.Credential, error) {
@@ -43,10 +43,20 @@ func (codec nativeCredentialCodec) Decode(authKind, authMode string, payload []b
 	if err != nil || credential == nil || credential.ProviderID() != codec.providerID {
 		return nil, ErrInvalidCredential
 	}
-	if native, ok := credential.(*accountcore.NativeCredential); !ok || native.AuthKind() != authKind {
+	if native, ok := credential.(*accountcore.NativeCredential); !ok || nativeStoredAuthKind(native.AuthKind()) != authKind {
 		return nil, ErrInvalidCredential
 	}
 	return credential, nil
+}
+
+// nativeStoredAuthKind 把领域值映射到 account_credentials.auth_kind 的列约束
+// （仅 [a-z0-9_]）：原生身份用 "api-key"，直接写入会触发 CHECK，被当成账号冲突，
+// 导入端随后查不到账号而报 account_not_found。与 claude/codex 的 "api_key" 一致。
+func nativeStoredAuthKind(authKind string) string {
+	if authKind == "api-key" {
+		return "api_key"
+	}
+	return authKind
 }
 
 type nativeCredentialV1 struct {

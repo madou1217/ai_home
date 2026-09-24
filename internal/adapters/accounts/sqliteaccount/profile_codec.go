@@ -18,7 +18,9 @@ type encodedProfile struct {
 	email            string
 	subscriptionKind string
 	subscriptionRaw  string
-	json             []byte
+	// workspaceID 是 Codex 领域工作区（v6 公开列）；其余 Provider 为空。
+	workspaceID string
+	json        []byte
 }
 
 // profileCodec 是 Provider 专属公开资料序列化策略。

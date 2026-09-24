@@ -12,8 +12,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if ApplicationID != 0x41494831 {
 		t.Fatalf("ApplicationID = %#x, want %#x", ApplicationID, 0x41494831)
 	}
-	if SchemaVersion != 5 {
-		t.Fatalf("SchemaVersion = %d, want 5", SchemaVersion)
+	if SchemaVersion != 6 {
+		t.Fatalf("SchemaVersion = %d, want 6", SchemaVersion)
 	}
 	if !strings.Contains(SchemaV1, fmt.Sprintf("PRAGMA application_id = %d;", ApplicationID)) {
 		t.Fatal("SchemaV1 缺少规范 application_id")
@@ -27,8 +27,11 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if !strings.Contains(SchemaV4, "PRAGMA user_version = 4;") {
 		t.Fatal("SchemaV4 缺少固定 v4 user_version")
 	}
-	if !strings.Contains(SchemaV5, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
-		t.Fatal("SchemaV5 缺少规范 user_version")
+	if !strings.Contains(SchemaV5, "PRAGMA user_version = 5;") {
+		t.Fatal("SchemaV5 缺少固定 v5 user_version")
+	}
+	if !strings.Contains(SchemaV6, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
+		t.Fatal("SchemaV6 缺少规范 user_version")
 	}
 }
 

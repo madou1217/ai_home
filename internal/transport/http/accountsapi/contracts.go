@@ -80,6 +80,7 @@ type accountView struct {
 	Email            string                    `json:"email"`
 	SubscriptionKind string                    `json:"subscription_kind"`
 	SubscriptionRaw  string                    `json:"subscription_raw"`
+	WorkspaceID      string                    `json:"workspace_id,omitempty"`
 	ProfileUpdatedAt string                    `json:"profile_updated_at,omitempty"`
 	ModelSummary     *accountModelSummaryView  `json:"model_summary"`
 	UsageSnapshot    *accountUsageSnapshotView `json:"usage_snapshot"`
@@ -214,6 +215,7 @@ func newAccountView(overview accountapp.AccountOverview) accountView {
 		Email:            overview.Email(),
 		SubscriptionKind: overview.SubscriptionKind(),
 		SubscriptionRaw:  overview.SubscriptionRaw(),
+		WorkspaceID:      overview.WorkspaceID(),
 		ProfileUpdatedAt: formatOptionalTime(overview.ProfileUpdatedAt()),
 		CreatedAt:        formatTime(account.CreatedAt()),
 		UpdatedAt:        formatTime(account.UpdatedAt()),

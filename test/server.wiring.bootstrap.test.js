@@ -125,25 +125,14 @@ test('createServerWiring wires daemon and local runtime factories', () => {
   assert.equal(typeof calls.localRuntimeArg.startLocalServerDeps.resolveCliPath, 'function');
 });
 
-test('createServerWiring keeps Go Core opt-in and passes a dedicated supervisor to Node', () => {
-  let supervisorOptions;
+test('createServerWiring does not hand a Go Core supervisor to the short-lived CLI daemon', () => {
   let daemonOptions;
-  const supervisor = {
-    status: () => ({ enabled: true, state: 'stopped', pid: 0, endpoint: '', error: '' }),
-    start: async () => ({ enabled: true, state: 'ready' }),
-    stop: async () => ({ enabled: true, state: 'stopped' })
-  };
+  let supervisorBuilt = false;
 
-  createServerWiring({
-    goCoreEnabled: true,
-    goCoreHost: '127.0.0.1',
-    goCorePort: 19550,
-    goCoreManagementKey: () => 'management-secret',
-    goCoreClientKey: () => 'client-secret'
-  }, {
-    createGoCoreSupervisor: (options) => {
-      supervisorOptions = options;
-      return supervisor;
+  createServerWiring({ goCoreEnabled: true }, {
+    createGoCoreSupervisor: () => {
+      supervisorBuilt = true;
+      return {};
     },
     createServerDaemonService: (options) => {
       daemonOptions = options;
@@ -154,10 +143,7 @@ test('createServerWiring keeps Go Core opt-in and passes a dedicated supervisor 
     syncCodexAccountsToServerService: () => {}
   });
 
-  assert.equal(supervisorOptions.enabled, true);
-  assert.equal(supervisorOptions.host, '127.0.0.1');
-  assert.equal(supervisorOptions.port, 19550);
-  assert.equal(supervisorOptions.managementKey(), 'management-secret');
-  assert.equal(supervisorOptions.clientKey(), 'client-secret');
-  assert.equal(daemonOptions.goCoreSupervisor, supervisor);
+  // Go Core 由长驻 Server 进程监督；CLI 进程退出后不能留下无人监督的 Go 子进程。
+  assert.equal(supervisorBuilt, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(daemonOptions, 'goCoreSupervisor'), false);
 });

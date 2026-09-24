@@ -25,10 +25,12 @@ func (store *Store) UpsertProfile(
 	const statement = `
 		INSERT INTO account_profiles (
 			account_ref, display_name, email, subscription_kind,
-			subscription_raw, format_version, profile_json, updated_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			subscription_raw, format_version, profile_json, updated_at_ms,
+			workspace_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(account_ref) DO UPDATE SET
 			display_name = excluded.display_name,
+			workspace_id = excluded.workspace_id,
 			email = excluded.email,
 			subscription_kind = excluded.subscription_kind,
 			subscription_raw = excluded.subscription_raw,
@@ -44,6 +46,7 @@ func (store *Store) UpsertProfile(
 				AND excluded.subscription_raw = account_profiles.subscription_raw
 				AND excluded.format_version = account_profiles.format_version
 				AND excluded.profile_json = account_profiles.profile_json
+				AND excluded.workspace_id = account_profiles.workspace_id
 			)`
 	result, err := store.db.ExecContext(
 		ctx,
@@ -56,6 +59,7 @@ func (store *Store) UpsertProfile(
 		profileFormatVersion,
 		string(document.json),
 		snapshot.UpdatedAt().UnixMilli(),
+		document.workspaceID,
 	)
 	if isForeignKeyError(err) {
 		return accountapp.ErrAccountNotFound

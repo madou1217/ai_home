@@ -13,6 +13,8 @@
     "models:check": "node scripts/gen-models-dev-modalities.js --check",
     "gateway:routes": "node scripts/collect-gateway-routes.js",
     "gateway:shadow": "node scripts/gateway-shadow-compare.js",
+    "go:build": "node scripts/build-go-server.js",
+    "go:migrate-accounts": "node scripts/go-account-migration.js",
     "go-cli:preview": "node scripts/go-accounts-preview.js cli",
     "go-preview:help": "node scripts/go-accounts-preview.js help",
     "go-preview:server": "node scripts/go-accounts-preview.js server",

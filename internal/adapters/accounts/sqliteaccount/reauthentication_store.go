@@ -338,7 +338,7 @@ func replaceProfile(
 		UPDATE account_profiles
 		SET display_name = ?, email = ?, subscription_kind = ?,
 		    subscription_raw = ?, format_version = ?, profile_json = ?,
-		    updated_at_ms = ?
+		    updated_at_ms = ?, workspace_id = ?
 		WHERE account_ref = ? AND updated_at_ms = ?`
 	result, err := connection.ExecContext(
 		ctx,
@@ -350,6 +350,7 @@ func replaceProfile(
 		profileFormatVersion,
 		string(document.json),
 		updatedAtMS,
+		document.workspaceID,
 		accountRef.String(),
 		current.profileUpdatedAtMS.Int64,
 	)

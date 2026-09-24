@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "description": "Codex ChatGPT workspace resolution shared by Go (core/accounts/codex) and Node (lib/account/codex-workspace.js). claims is the id_token payload; id_token overrides it verbatim when present. explicit_account_id is auth.json tokens.account_id. expect.error is one of invalid_id_token | invalid_account_id | account_id_mismatch.",
+  "vectors": [
+    { "name": "workspace from id_token claim", "claims": { "sub": "u-1", "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws-team" } }, "expect": { "ok": true, "workspace_id": "ws-team", "upstream_account_id": "ws-team" } },
+    { "name": "missing claim is personal", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1" } }, "expect": { "ok": true, "workspace_id": "personal", "upstream_account_id": "" } },
+    { "name": "null auth namespace is personal", "claims": { "sub": "user-2", "https://api.openai.com/auth": null }, "expect": { "ok": true, "workspace_id": "personal", "upstream_account_id": "" } },
+    { "name": "explicit workspace fills a personal token", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1" } }, "explicit_account_id": "ws-explicit", "expect": { "ok": true, "workspace_id": "ws-explicit", "upstream_account_id": "ws-explicit" } },
+    { "name": "explicit equal to claim", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws-a" } }, "explicit_account_id": "ws-a", "expect": { "ok": true, "workspace_id": "ws-a", "upstream_account_id": "ws-a" } },
+    { "name": "explicit conflicting with claim is rejected", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws-a" } }, "explicit_account_id": "ws-b", "expect": { "ok": false, "error": "account_id_mismatch" } },
+    { "name": "literal personal claim is rejected", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "personal" } }, "expect": { "ok": false, "error": "invalid_account_id" } },
+    { "name": "literal personal explicit is rejected", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1" } }, "explicit_account_id": "personal", "expect": { "ok": false, "error": "invalid_account_id" } },
+    { "name": "claim containing a colon is rejected", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws:a" } }, "expect": { "ok": false, "error": "invalid_account_id" } },
+    { "name": "claim with control character is rejected", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws\u0001a" } }, "expect": { "ok": false, "error": "invalid_account_id" } },
+    { "name": "claim whitespace is trimmed", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "  ws-trim \t" } }, "expect": { "ok": true, "workspace_id": "ws-trim", "upstream_account_id": "ws-trim" } },
+    { "name": "blank explicit is ignored", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws-a" } }, "explicit_account_id": "   ", "expect": { "ok": true, "workspace_id": "ws-a", "upstream_account_id": "ws-a" } },
+    { "name": "explicit whitespace is trimmed", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1" } }, "explicit_account_id": " ws-x ", "expect": { "ok": true, "workspace_id": "ws-x", "upstream_account_id": "ws-x" } },
+    { "name": "non-string workspace claim invalidates the token", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": 42 } }, "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "non-object auth namespace invalidates the token", "claims": { "sub": "user-1", "https://api.openai.com/auth": "ws-a" }, "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "non-boolean fedramp invalidates the token", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_account_id": "ws-a", "chatgpt_account_is_fedramp": "yes" } }, "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "non-string plan type invalidates the token", "claims": { "https://api.openai.com/auth": { "chatgpt_user_id": "user-1", "chatgpt_plan_type": 7 } }, "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "non-string profile email invalidates the token", "claims": { "sub": "user-1", "https://api.openai.com/profile": { "email": 1 } }, "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "token without three segments is invalid", "id_token": "header.payload", "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "padded base64 payload is invalid", "id_token": "h.eyJzdWIiOiJ1LTEifQ==.s", "expect": { "ok": false, "error": "invalid_id_token" } },
+    { "name": "array payload is invalid", "id_token": "h.W10.s", "expect": { "ok": false, "error": "invalid_id_token" } }
+  ]
+}

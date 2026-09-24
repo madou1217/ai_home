@@ -54,6 +54,12 @@ Fuller layer map:
 - `npm run models:check`: offline-verify the committed Go index matches the installed
   SDK snapshot. CI runs it after `npm install` (the check reads the SDK from
   `node_modules`).
+- `npm run go:build`: build the Go Core server into `bin/native/<platform>-<arch>/aih-server`
+  (the path the Node supervisor resolves). The Go Core is supervised by the long-lived
+  Node server process, never by the CLI: `aih server config set --go-core` starts it
+  beside Node, and `--go-core-routes <entry-ids>` is the explicit operator canary that
+  forwards those `contracts/route-ownership/manifest.json` data-plane entries to Go
+  (fail closed, no Node fallback). Migration phases: `docs/plans/2026-09-24-go-migration-plan.md`.
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

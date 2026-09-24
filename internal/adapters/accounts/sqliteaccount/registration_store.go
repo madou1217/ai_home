@@ -164,8 +164,9 @@ func insertRegistrationProfile(
 	const statement = `
 		INSERT INTO account_profiles (
 			account_ref, display_name, email, subscription_kind,
-			subscription_raw, format_version, profile_json, updated_at_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+			subscription_raw, format_version, profile_json, updated_at_ms,
+			workspace_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := executor.ExecContext(
 		ctx,
 		statement,
@@ -177,6 +178,7 @@ func insertRegistrationProfile(
 		profileFormatVersion,
 		string(document.json),
 		updatedAtMS,
+		document.workspaceID,
 	)
 	if isConstraintError(err) {
 		return accountapp.ErrAccountConflict

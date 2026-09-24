@@ -58,10 +58,11 @@ func run(
 	managementKey := config.managementKey
 	clientKey := config.clientKey
 	server, err := aihserver.New(ctx, aihserver.Options{
-		AIHomeDir:        config.aiHomeDir,
-		ManagementKey:    func() string { return managementKey },
-		ClientKey:        func() string { return clientKey },
-		ModelDiscoverers: runtime.models,
+		AIHomeDir:                 config.aiHomeDir,
+		ManagementKey:             func() string { return managementKey },
+		ClientKey:                 func() string { return clientKey },
+		ModelDiscoverers:          runtime.models,
+		DelegateCredentialRefresh: config.delegateCredentialRefresh,
 		ErrorLog: log.New(
 			runtime.stderr,
 			"aih-server http: ",

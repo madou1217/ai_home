@@ -49,6 +49,8 @@ type Dependencies struct {
 	Routes inferencegateway.RouteResolver
 	// CredentialStrategies 注册当前 Provider 的凭据刷新策略。
 	CredentialStrategies []accountcredentials.RefreshStrategy
+	// DelegateCredentialRefresh 表示嵌入宿主独占 OAuth 刷新，解析器不自行刷新。
+	DelegateCredentialRefresh bool
 	// Upstreams 注册按真实线协议区分的上游 Adapter。
 	Upstreams []inferencegateway.UpstreamAdapter
 	// ModelRefreshes 接收模型不支持后的异步本地目录修复信号。
@@ -106,9 +108,10 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
-			Store:      dependencies.Store,
-			Strategies: dependencies.CredentialStrategies,
-			Clock:      dependencies.Clock,
+			Store:            dependencies.Store,
+			Strategies:       dependencies.CredentialStrategies,
+			Clock:            dependencies.Clock,
+			RefreshDelegated: dependencies.DelegateCredentialRefresh,
 		},
 	)
 	if err != nil {

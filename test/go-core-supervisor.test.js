@@ -317,3 +317,16 @@ test('supervisor refuses a Go Core binary without a matching build stamp', async
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('Go Core delegates OAuth refresh to Node only when asked', () => {
+  const base = {
+    binaryPath: '/tmp/aih-server',
+    aiHomeDir: '/tmp/aih-home',
+    managementKey: 'management-secret',
+    clientKey: 'client-secret',
+    baseEnv: { PATH: '/usr/bin', AIH_SERVER_CREDENTIAL_REFRESH: 'delegated' }
+  };
+  assert.equal(buildGoCoreInvocation({ ...base, delegateCredentialRefresh: true }).env.AIH_SERVER_CREDENTIAL_REFRESH, 'delegated');
+  // 继承的环境值不能让未开启同步的 Go 误以为有人替它刷新。
+  assert.equal('AIH_SERVER_CREDENTIAL_REFRESH' in buildGoCoreInvocation(base).env, false);
+});

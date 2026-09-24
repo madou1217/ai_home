@@ -192,3 +192,11 @@ test('readiness reports an unreachable Go /readyz without throwing', async () =>
   assert.equal(readiness.ready, false);
   assert.equal(readiness.go_readyz_error, 'go_core_readyz_unreachable');
 });
+
+test('Go Core host delegates credential refresh while account sync runs', () => {
+  const { factory, calls } = fakeSupervisorFactory();
+  createGoCoreHost({ settings: resolveGoCoreSettings({ goCoreEnabled: true }, {}), createGoCoreSupervisor: factory, log: silentLog });
+  assert.equal(calls.options.delegateCredentialRefresh, true);
+  createGoCoreHost({ settings: resolveGoCoreSettings({ goCoreEnabled: true }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }), createGoCoreSupervisor: factory, log: silentLog });
+  assert.equal(calls.options.delegateCredentialRefresh, false);
+});

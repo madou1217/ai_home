@@ -64,6 +64,9 @@ type Options struct {
 	// 透传与 Canonical 用各自的客户端：透传只允许打官方 Messages 端点并拒绝
 	// 重定向，这条安全属性不能因为共用客户端而被稀释。
 	RelayHTTPClient InferenceHTTPClient
+	// DelegateCredentialRefresh 表示由嵌入宿主（Node）独占 OAuth 刷新；Go 只使用
+	// 宿主同步进来的凭据，从不自行轮换 Refresh Token。
+	DelegateCredentialRefresh bool
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

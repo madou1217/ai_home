@@ -256,3 +256,37 @@ func newConfigTestRuntime(
 		stderr: io.Discard,
 	}
 }
+
+// TestLoadCommandConfigParsesCredentialRefreshOwnership 验证刷新所有权只接受 self/delegated。
+func TestLoadCommandConfigParsesCredentialRefreshOwnership(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		value     string
+		delegated bool
+		valid     bool
+	}{
+		{value: "", delegated: false, valid: true},
+		{value: "self", delegated: false, valid: true},
+		{value: "delegated", delegated: true, valid: true},
+		{value: "node", valid: false},
+	} {
+		env := map[string]string{
+			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
+			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
+		}
+		if testCase.value != "" {
+			env["AIH_SERVER_CREDENTIAL_REFRESH"] = testCase.value
+		}
+		config, err := loadCommandConfig(nil, newConfigTestRuntime(env, t.TempDir()))
+		if !testCase.valid {
+			if err == nil {
+				t.Fatalf("AIH_SERVER_CREDENTIAL_REFRESH=%q accepted", testCase.value)
+			}
+			continue
+		}
+		if err != nil || config.delegateCredentialRefresh != testCase.delegated {
+			t.Fatalf("AIH_SERVER_CREDENTIAL_REFRESH=%q -> delegated=%v err=%v", testCase.value, config.delegateCredentialRefresh, err)
+		}
+	}
+}

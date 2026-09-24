@@ -32,6 +32,9 @@ type commandConfig struct {
 	aiHomeDir     string
 	managementKey string
 	clientKey     string
+	// delegateCredentialRefresh 由 AIH_SERVER_CREDENTIAL_REFRESH=delegated 打开：
+	// Node 宿主监督 Go 时独占 OAuth 刷新，避免两个刷新者竞争会轮换的 Refresh Token。
+	delegateCredentialRefresh bool
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -79,13 +82,30 @@ func loadCommandConfig(
 	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
 		return commandConfig{}, err
 	}
+	delegate, err := envCredentialRefreshDelegated(runtime.lookupEnv)
+	if err != nil {
+		return commandConfig{}, err
+	}
 	return commandConfig{
-		host:          host,
-		port:          port,
-		aiHomeDir:     aiHomeDir,
-		managementKey: managementKey,
-		clientKey:     clientKey,
+		host:                      host,
+		port:                      port,
+		aiHomeDir:                 aiHomeDir,
+		managementKey:             managementKey,
+		clientKey:                 clientKey,
+		delegateCredentialRefresh: delegate,
 	}, nil
+}
+
+// envCredentialRefreshDelegated 严格解析刷新所有权：缺省/self 自行刷新，delegated 交给宿主。
+func envCredentialRefreshDelegated(lookupEnv func(string) (string, bool)) (bool, error) {
+	switch envValue(lookupEnv, "AIH_SERVER_CREDENTIAL_REFRESH", "") {
+	case "", "self":
+		return false, nil
+	case "delegated":
+		return true, nil
+	default:
+		return false, errInvalidCommandConfig
+	}
 }
 
 // envPort 严格解析环境端口，不把错误值静默回退到默认端口。
@@ -155,4 +175,5 @@ func writeUsage(output io.Writer, flags *flag.FlagSet) {
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_PORT")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填，不接受命令行传入）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CREDENTIAL_REFRESH（self|delegated，默认 self）")
 }

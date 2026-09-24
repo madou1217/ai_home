@@ -145,6 +145,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.ErrorLog,
 		newMessagesDecodeErrorObserver(options.ErrorLog),
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
+		options.DelegateCredentialRefresh,
 	)
 	if err != nil {
 		_ = store.Close()
@@ -176,6 +177,7 @@ func newHandlers(
 	errorLog *log.Logger,
 	decodeErrors func(error),
 	upstreamDecodeErrors func(error),
+	delegateCredentialRefresh bool,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -304,7 +306,8 @@ func newHandlers(
 				claudeProvider,
 				agyProvider,
 			},
-			Clock: time.Now,
+			Clock:            time.Now,
+			RefreshDelegated: delegateCredentialRefresh,
 		},
 	)
 	if err != nil {
@@ -504,12 +507,13 @@ func newHandlers(
 				claudeProvider,
 				agyProvider,
 			},
-			authorizer:           clientAuthorizer,
-			httpClient:           inferenceClient,
-			decodeErrors:         decodeErrors,
-			upstreamDecodeErrors: upstreamDecodeErrors,
-			clock:                time.Now,
-			requestRewriter:      visionGuard,
+			delegateCredentialRefresh: delegateCredentialRefresh,
+			authorizer:                clientAuthorizer,
+			httpClient:                inferenceClient,
+			decodeErrors:              decodeErrors,
+			upstreamDecodeErrors:      upstreamDecodeErrors,
+			clock:                     time.Now,
+			requestRewriter:           visionGuard,
 		},
 	)
 	if err != nil {

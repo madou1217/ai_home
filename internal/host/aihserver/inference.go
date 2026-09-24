@@ -46,17 +46,19 @@ type inferenceComposition struct {
 
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
 type inferenceCompositionDependencies struct {
-	catalog              *providers.Catalog
-	store                *sqliteaccount.Store
-	runtime              inferenceruntime.AccountRuntime
-	models               accountapp.AccountModelRefresher
-	modelRefreshes       inferencegateway.ModelRefreshScheduler
-	credentialRefresh    []accountcredentials.RefreshStrategy
-	authorizer           inferencehttp.Authorizer
-	httpClient           InferenceHTTPClient
-	decodeErrors         func(error)
-	upstreamDecodeErrors func(error)
-	clock                func() time.Time
+	catalog           *providers.Catalog
+	store             *sqliteaccount.Store
+	runtime           inferenceruntime.AccountRuntime
+	models            accountapp.AccountModelRefresher
+	modelRefreshes    inferencegateway.ModelRefreshScheduler
+	credentialRefresh []accountcredentials.RefreshStrategy
+	// delegateCredentialRefresh 与账号管理侧解析器保持同一刷新所有权。
+	delegateCredentialRefresh bool
+	authorizer                inferencehttp.Authorizer
+	httpClient                InferenceHTTPClient
+	decodeErrors              func(error)
+	upstreamDecodeErrors      func(error)
+	clock                     func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
 }
@@ -135,11 +137,12 @@ func newInferenceComposition(
 	}
 
 	runtimeComponents, err := inferenceruntime.NewComponents(inferenceruntime.Dependencies{
-		Catalog:              dependencies.catalog,
-		Store:                dependencies.store,
-		Runtime:              dependencies.runtime,
-		Routes:               activeCatalog,
-		CredentialStrategies: dependencies.credentialRefresh,
+		Catalog:                   dependencies.catalog,
+		Store:                     dependencies.store,
+		Runtime:                   dependencies.runtime,
+		Routes:                    activeCatalog,
+		CredentialStrategies:      dependencies.credentialRefresh,
+		DelegateCredentialRefresh: dependencies.delegateCredentialRefresh,
 		Upstreams: []inferencegateway.UpstreamAdapter{
 			codexAdapter,
 			claudeAdapter,

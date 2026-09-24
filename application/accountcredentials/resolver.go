@@ -66,6 +66,10 @@ type Dependencies struct {
 	Strategies []RefreshStrategy
 	// Clock 提供过期判断和凭据版本时间。
 	Clock accountapp.Clock
+	// RefreshDelegated 表示另一个进程（Node 宿主）是唯一刷新者：本解析器从不调用
+	// 官方刷新协议，只使用由宿主同步进来的当前凭据。两个刷新者竞争同一个会轮换的
+	// Refresh Token 时，后到者会让先到者的 Token 失效，所以只能有一个刷新者。
+	RefreshDelegated bool
 }
 
 // Result 返回当前可用凭据以及本次是否执行了真实刷新。
@@ -111,6 +115,7 @@ type Resolver struct {
 	flights           refreshFlightGroup
 	refreshSuppressMu sync.Mutex
 	refreshSuppress   map[string]refreshSuppression
+	refreshDelegated  bool
 }
 
 var _ accountapp.DeletionCleanup = (*Resolver)(nil)
@@ -144,10 +149,11 @@ func NewResolver(dependencies Dependencies) (*Resolver, error) {
 		strategies[providerID] = strategy
 	}
 	return &Resolver{
-		store:           dependencies.Store,
-		strategies:      strategies,
-		clock:           dependencies.Clock,
-		refreshSuppress: make(map[string]refreshSuppression),
+		store:            dependencies.Store,
+		strategies:       strategies,
+		clock:            dependencies.Clock,
+		refreshDelegated: dependencies.RefreshDelegated,
+		refreshSuppress:  make(map[string]refreshSuppression),
 		flights: refreshFlightGroup{
 			active: make(map[string]*refreshCall),
 		},
@@ -203,7 +209,7 @@ func (resolver *Resolver) resolve(
 	if err != nil {
 		return credentialResolution{}, err
 	}
-	if !due {
+	if !due || resolver.refreshDelegated {
 		return currentResolution(snapshot), nil
 	}
 	now, err := resolver.currentTime()
@@ -275,6 +281,10 @@ func (resolver *Resolver) ForceRefreshCredentialBinding(
 	}
 	if _, refreshable := strategy.ExpiresAt(snapshot.Credential()); !refreshable {
 		return accountapp.CredentialBinding{}, ErrCredentialNotRefreshable
+	}
+	if resolver.refreshDelegated {
+		// 宿主负责刷新：这里只能报告暂不可用，等待宿主把新凭据同步进来后重试。
+		return accountapp.CredentialBinding{}, ErrRefreshUnavailable
 	}
 	resolution, err := resolver.executeRefreshFlight(ctx, accountRef, func() (credentialResolution, error) {
 		return resolver.refreshCurrent(ctx, accountRef, strategy, true)

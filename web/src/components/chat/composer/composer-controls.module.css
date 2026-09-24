@@ -145,14 +145,21 @@
   min-width: 0;
 }
 
+.optionRow,
+.menuHeading {
+  font-family: var(--font-mono);
+}
+
 .optionMain small {
   color: var(--color-faint);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
 }
 
 .menuHeading > span:first-child {
-  color: var(--color-heading);
+  color: var(--color-accent);
   font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
 }
 
 .menuHeading > span:nth-child(2) {
@@ -183,6 +190,7 @@
 
 .approvalOption small {
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--hos-text-caption);
 }
 
@@ -234,7 +242,11 @@
   display: grid;
   gap: 2px;
   padding: 4px;
-  border-radius: var(--hos-radius-sm);
+  border-radius: 0;
+}
+
+.accountGroup + .accountGroup {
+  border-top: 1px solid var(--color-border);
 }
 
 .accountOptionButton {
@@ -270,6 +282,8 @@
 .accountGroupHeading span {
   margin-left: auto;
   color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
 }
 .accountOptionList { display: grid; align-content: start; gap: 2px; }
@@ -286,7 +300,11 @@
 .accountOptionButton:hover { background: var(--color-overlay); }
 .accountOptionButton[aria-selected='true'] {
   background: var(--color-accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent), var(--hud-glow-accent);
+}
+
+.accountOptionButton[aria-selected='true'] .accountOptionIdentity {
+  color: var(--color-accent);
 }
 .accountOptionButton:focus-visible {
   outline: none;

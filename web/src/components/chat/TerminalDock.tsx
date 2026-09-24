@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { DownOutlined, RightOutlined, CloseOutlined } from '@ant-design/icons';
 import styles from './composer/composer.module.css';
+import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
 
 export interface TerminalRunState {
   runId: string;
@@ -75,11 +76,15 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
     const term = new Terminal({
       convertEol: false,
       cursorBlink: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontFamily: TERMINAL_FONT_FAMILY,
       // 手机窄屏下 12px 等宽太挤、slash 命令输出几乎不可读,放大到 13.5;桌面保持 12。
       fontSize: (typeof window !== 'undefined' && window.innerWidth < 768) ? 13.5 : 12,
       scrollback: 5000,
-      theme: { background: '#1b1d22' }
+      // HUD 配色运行时读 CSS 变量，主题切换时同步更新。
+      theme: readTerminalTheme()
+    });
+    const unsubscribeTheme = subscribeTerminalTheme((theme) => {
+      term.options.theme = theme;
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -115,6 +120,7 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
 
     return () => {
       observer.disconnect();
+      unsubscribeTheme();
       onRegisterWriterRef.current(runId, null);
       term.dispose();
       termRef.current = null;
@@ -194,7 +200,8 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
             {command || 'terminal'}
           </span>
         </button>
-        <span className={styles.terminalDockStatus}>
+        <span className={styles.terminalDockStatus} data-active={active || undefined}>
+          <span className={`hud-led ${active ? 'hud-led--ok hud-led--live' : ''}`} aria-hidden />
           {active ? '运行中' : '已结束'}
         </span>
         <button

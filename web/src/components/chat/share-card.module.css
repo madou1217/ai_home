@@ -1,4 +1,4 @@
-/* 拆分自 chat.module.css（纯搬运，样式值零变化）。域: share-card */
+/* 拆分自 chat.module.css。域: share-card（HUD：切角面板 + 方形头像 + 等宽元信息；导出 PNG 保持固定配色） */
 
 /* =============================================================================
  * ShareCardModal (分享长图卡片)
@@ -7,9 +7,11 @@
   display: flex;
   align-items: center;
   gap: var(--hos-space-2);
+  font-family: var(--font-display);
   font-size: var(--hos-text-h3);
-  font-weight: 600;
-  color: var(--color-heading);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: inherit;
 }
 
 .shareModalBody {
@@ -23,10 +25,7 @@
 .harmonyShareCard {
   width: 100%;
   max-width: 460px;
-  border-radius: var(--hos-radius-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: none;
+  box-shadow: var(--hud-glow-accent);
   padding: var(--hos-space-5);
   display: flex;
   flex-direction: column;
@@ -48,9 +47,11 @@
 .shareCardAvatar {
   width: 36px;
   height: 36px;
-  border-radius: var(--hos-radius-pill);
-  background: var(--color-ink);
-  color: var(--color-on-ink);
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -64,8 +65,9 @@
 }
 
 .shareCardAuthorName {
+  font-family: var(--font-mono);
   font-size: var(--hos-text-body-sm);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-heading);
 }
 
@@ -73,18 +75,19 @@
   font-size: var(--hos-text-caption); /* 归级:原 11px */
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  color: var(--color-muted);
+  color: var(--color-faint);
 }
 
 .shareCardContent {
   padding: var(--hos-space-3) var(--hos-space-3-5);
-  background: var(--color-surface-muted);
-  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface-sunken);
+  border-radius: 2px;
   border: 1px solid var(--color-border);
 }
 
 .shareCardText {
   margin: 0;
+  font-family: var(--font-prose);
   font-size: var(--hos-text-body-sm);
   line-height: 1.6;
   color: var(--color-text);
@@ -97,7 +100,7 @@
   justify-content: flex-end;
   align-items: center;
   padding-top: var(--hos-space-2);
-  border-top: 1px dashed var(--color-border);
+  border-top: 1px solid var(--color-border);
 }
 
 .shareCardBrand {
@@ -110,6 +113,8 @@
 
 .shareCardLogo {
   font-size: var(--hos-text-caption);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
 }
 
 .shareModalActions {

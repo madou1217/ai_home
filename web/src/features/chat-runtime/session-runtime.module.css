@@ -282,6 +282,35 @@
   font-size: var(--hos-text-caption);
 }
 
+/* 自动继续状态：LED + 等宽遥测字，倒计时数字用 hud-display 琥珀辉光 */
+.autoResolutionStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-wide);
+}
+.autoResolutionStatus[data-phase='countdown'] :global(.hud-display) {
+  color: var(--color-warning);
+  text-shadow: var(--hud-text-glow-warning);
+}
+
+.unansweredLead { margin: 0 0 var(--hos-space-2); font-family: var(--font-prose); color: var(--color-muted-strong); }
+.unansweredList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-sunken);
+}
+.unansweredList li {
+  padding: var(--hos-space-1-5) var(--hos-space-2-5);
+  font-family: var(--font-prose);
+  color: var(--color-text);
+}
+.unansweredList li + li { border-top: 1px solid var(--color-border); }
+
 .questionField legend span { font-weight: 600; font-family: var(--font-prose); }
 .questionField > p { margin: 0; }
 
@@ -589,8 +618,19 @@
   .queueRow { grid-template-columns: auto minmax(0, 1fr); }
   .queueActions { grid-column: 2; flex-wrap: wrap; }
 }
+/* 会话设置弹窗：hud-label 字段标题 + prose 说明 */
 .chatSettingsFields { display: flex; flex-direction: column; gap: 10px; }
-.chatSettingsHint { color: var(--color-muted-strong); font-size: 12px; }
+.chatSettingsFields > label {
+  margin-top: var(--space-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.chatSettingsFields > label:first-child { margin-top: 0; }
+.chatSettingsHint { color: var(--color-muted); font-family: var(--font-prose); font-size: 12px; line-height: 1.55; }
+.chatSettingsHint[role='status'] { color: var(--color-warning); font-family: var(--font-mono); }
 .branchParent { font-family: var(--font-mono); font-size: 12px; margin: 0 20px 8px; color: var(--color-muted-strong); }
 
 @container (max-width: 620px) {

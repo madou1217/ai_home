@@ -329,7 +329,8 @@ export default function Chat() {
             color: 'var(--color-muted-strong)',
           }}
         >
-          <span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span className="hud-led hud-led--warn" aria-hidden="true" />
             {canonicalDirectory.offlineCached
               ? '服务端不可达，展示离线缓存的会话列表'
               : '会话目录同步失败，展示的是最近一次结果'}

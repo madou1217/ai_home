@@ -341,6 +341,8 @@
 }
 
 .usage-breakdown-summary {
+  --hud-cut: var(--hud-chamfer-sm);
+  position: relative;
   display: grid;
   grid-template-columns: 1.15fr repeat(6, minmax(0, 1fr));
   gap: 1px;
@@ -349,6 +351,26 @@
   border-radius: 0;
   background: var(--color-border);
   overflow: hidden;
+  /* 与 KPI 条同一 HUD 语言：小切角 + 左上角标 */
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+
+.usage-breakdown-summary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) top left / 100% 2px no-repeat,
+    linear-gradient(var(--hud-tick-color), var(--hud-tick-color)) top left / 2px 100% no-repeat;
 }
 
 .usage-breakdown-summary > div {
@@ -378,6 +400,33 @@
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 成本 = 金额读数：success 色 + 绿色辉光（与 KPI 条一致） */
+.usage-breakdown-summary > .usage-breakdown-summary-cost strong,
+.usage-meta-cost {
+  color: var(--color-success) !important;
+  text-shadow: var(--hud-text-glow-success);
+}
+
+.usage-breakdown-cwd {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-mobile-loading {
+  padding: 48px 0;
+  text-align: center;
+}
+
+.usage-mobile-card .mobile-card-title-text,
+.usage-mobile-card .mobile-card-meta-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
 }
 
 .usage-breakdown-loading {
@@ -438,8 +487,9 @@
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
-  border-radius: var(--hos-radius-xs);
-  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  color: var(--color-accent);
   place-items: center;
 }
 

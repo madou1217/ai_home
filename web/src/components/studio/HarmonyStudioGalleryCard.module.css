@@ -50,8 +50,9 @@
 .ratioTag {
   margin: 0;
   border: none;
-  border-radius: var(--hos-radius-2xs);
+  border-radius: 0;
   background: color-mix(in srgb, var(--c-neutral-950) 60%, transparent);
+  font-family: var(--font-mono);
   color: var(--hos-white);
   font-size: var(--hos-text-micro);
   font-weight: var(--weight-medium);
@@ -86,6 +87,7 @@
   border-radius: var(--hos-radius-2xs);
   background: var(--tint-info);
   color: var(--ink-info);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-micro);
   font-weight: var(--weight-medium);
 }
@@ -95,6 +97,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--color-muted);
+  font-family: var(--font-prose);
   font-size: var(--hos-text-caption);
   line-height: var(--leading-snug);
   -webkit-line-clamp: 2;
@@ -110,7 +113,8 @@
 }
 
 .timestamp {
-  color: var(--color-muted);
+  color: var(--color-faint);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-variant-numeric: tabular-nums;
 }

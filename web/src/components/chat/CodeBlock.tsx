@@ -45,12 +45,12 @@ export const CodeBlock = memo(function CodeBlock({
         >
           {copied ? (
             <>
-              <CheckOutlined style={{ color: 'var(--color-success)', marginRight: 4 }} />
+              <CheckOutlined className={`${styles.codeBlockCopyIcon} ${styles.codeBlockCopyIconDone}`} />
               <span>已复制</span>
             </>
           ) : (
             <>
-              <CopyOutlined style={{ marginRight: 4 }} />
+              <CopyOutlined className={styles.codeBlockCopyIcon} />
               <span>复制</span>
             </>
           )}

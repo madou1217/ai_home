@@ -36,15 +36,15 @@ export const FileReferencePopover = memo(function FileReferencePopover({
     <div className={styles.slashDropdownMenu} role="listbox" aria-label="File references">
       <div className={styles.slashDropdownHeader}>
         <span>
-          文件引用 @ {loading ? <LoadingOutlined style={{ marginLeft: 4 }} /> : `(${candidates.length})`}
+          文件引用 @ {loading ? <LoadingOutlined className={styles.slashDropdownSpinner} /> : `(${candidates.length})`}
         </span>
         <span className={styles.slashDropdownHint}>
-          {fetchError ? <span style={{ color: 'var(--color-danger)' }}>{fetchError}</span> : '↑↓ 切换 · Tab / Enter 选择'}
+          {fetchError ? <span className={styles.slashDropdownError}>{fetchError}</span> : '↑↓ 切换 · Tab / Enter 选择'}
         </span>
       </div>
       <div className={styles.slashDropdownViewport}>
         {candidates.length === 0 && !loading ? (
-          <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--color-muted)' }}>
+          <div className={styles.slashDropdownEmpty}>
             {hasProject ? (fetchError ? '无法读取项目目录' : '未找到匹配的工程文件') : '纯聊模式不支持 @ 文件引用'}
           </div>
         ) : (
@@ -65,13 +65,13 @@ export const FileReferencePopover = memo(function FileReferencePopover({
                 }}
               >
                 <div className={styles.slashItemIcon}>
-                  {item.type === 'folder' ? <FolderOutlined style={{ color: 'var(--color-muted-strong)' }} /> : <FileOutlined />}
+                  {item.type === 'folder' ? <FolderOutlined className={styles.slashItemFolderIcon} /> : <FileOutlined />}
                 </div>
                 <div className={styles.slashItemContent}>
                   <div className={styles.slashItemMain}>
                     <span className={styles.slashItemName}>{item.name}</span>
                   </div>
-                  <div className={styles.slashItemDesc}>
+                  <div className={`${styles.slashItemDesc} ${styles.slashItemPath}`}>
                     {item.path}
                   </div>
                 </div>

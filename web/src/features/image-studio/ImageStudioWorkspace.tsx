@@ -687,6 +687,10 @@ const ImageStudioWorkspace: React.FC = () => {
           </div>
           <div className={styles.workspaceActions}>
             <span className={styles.workspaceReadout}>
+              <span
+                className={`hud-led ${models.some((model) => model.availableAccountCount > 0) ? 'hud-led--ok' : 'hud-led--warn'}`}
+                aria-hidden
+              />
               {models.filter((model) => model.availableAccountCount > 0).length}/{models.length} MODELS ONLINE
             </span>
             <Tooltip title="重命名当前会话">

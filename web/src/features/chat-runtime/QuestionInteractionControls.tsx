@@ -12,16 +12,17 @@ export function AutoResolutionStatus({
 }) {
   if (phase === 'countdown') {
     return (
-      <p className={styles.autoResolutionStatus} role="status">
-        {remainingSeconds} 秒内无操作将自动继续
+      <p className={styles.autoResolutionStatus} role="status" data-phase="countdown">
+        <span className="hud-led hud-led--warn hud-led--live" aria-hidden />
+        <span className="hud-display">{remainingSeconds}</span> 秒内无操作将自动继续
       </p>
     );
   }
   if (phase === 'snoozed') {
-    return <p className={styles.autoResolutionStatus}>已暂停自动继续</p>;
+    return <p className={styles.autoResolutionStatus} data-phase="snoozed"><span className="hud-led" aria-hidden />已暂停自动继续</p>;
   }
   if (phase === 'expired') {
-    return <p className={styles.autoResolutionStatus}>正在按未回答状态自动继续…</p>;
+    return <p className={styles.autoResolutionStatus} data-phase="expired"><span className="hud-led hud-led--info hud-led--live" aria-hidden />正在按未回答状态自动继续…</p>;
   }
   return null;
 }
@@ -78,8 +79,8 @@ export function UnansweredConfirmation({
       onCancel={onCancel}
       onOk={onConfirm}
     >
-      <p>以下问题将以未回答状态提交：</p>
-      <ul>{fields.map((field) => <li key={field.id}>{field.label}</li>)}</ul>
+      <p className={styles.unansweredLead}>以下问题将以未回答状态提交：</p>
+      <ul className={styles.unansweredList}>{fields.map((field) => <li key={field.id}>{field.label}</li>)}</ul>
     </Modal>
   );
 }

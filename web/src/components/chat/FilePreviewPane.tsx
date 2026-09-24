@@ -134,7 +134,7 @@ function HtmlPreviewLauncher({ content, path }: { content: string; path: string 
   return (
     <section className={styles.filePreviewHtml} aria-label="HTML 独立预览">
       <header className={styles.filePreviewHtmlStatus}>
-        <span className={styles.filePreviewHtmlStatusDot} aria-hidden />
+        <span className={`hud-led hud-led--ok ${styles.filePreviewHtmlStatusDot}`} aria-hidden />
         <strong>独立安全预览</strong>
         <span>脚本和网络资源可用；预览无法访问 AI Home 数据</span>
       </header>
@@ -190,7 +190,7 @@ function RawMediaPreview({ mediaUrl }: { mediaUrl: string }) {
   const media = useAuthorizedMediaUrl(mediaUrl);
   return (
     <div className={styles.filePreviewRawMedia}>
-      <div className={styles.filePreviewRawMediaTitle}>原始图片文件</div>
+      <div className={`hud-label ${styles.filePreviewRawMediaTitle}`}>原始图片文件</div>
       <div className={styles.filePreviewRawMediaText}>
         二进制内容不进入源码视图，直接打开原文件更可靠。
       </div>
@@ -312,7 +312,7 @@ function FileTrustPrompt({
   }
 
   return (
-    <section className={styles.fileTrustCard} aria-label="文件夹信任授权">
+    <section className={`hud-panel ${styles.fileTrustCard}`} aria-label="文件夹信任授权">
       <div className={styles.fileTrustHeader}>
         <div className={styles.fileTrustTitle}>需要信任此文件位置</div>
         <div className={styles.fileTrustDescription}>
@@ -320,7 +320,7 @@ function FileTrustPrompt({
         </div>
       </div>
       <div className={styles.fileTrustTarget}>
-        <span>目标文件</span>
+        <span className="hud-label">目标文件</span>
         <code title={filePath}>{filePath}</code>
       </div>
       <Radio.Group

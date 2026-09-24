@@ -94,7 +94,8 @@ Primitive → Semantic → Domain → HUD
 
 - 设置页两列网格的左列随右列行高下移（改为独立两列会改变阅读顺序）。
 - 模型用量页顶部为加载状态预留 30px 状态槽（防跳动，有测试守卫）。
-- 终端 / xterm、Monaco、分享卡导出图、HTML 预览窗口保持固定配色。
+- 终端 / xterm 跟随主题：`components/chat/terminal-theme.ts` 在创建时读取 `--color-bg` / `--color-text` / `--color-accent` 等 token，并在 `data-theme` 切换时刷新所有已打开终端；字体栈以 JetBrains Mono 开头。
+- Monaco、分享卡导出图、HTML 预览窗口（独立 blob 页，读不到应用 CSS 变量，内联深色 HUD 值）保持固定配色。
 
 ## 8. 断点
 

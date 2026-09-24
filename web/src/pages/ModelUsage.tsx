@@ -749,7 +749,7 @@ export default function ModelUsage() {
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success)' }}>{formatCost(row.costUsd)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value usage-meta-cost">{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
   );
@@ -784,7 +784,7 @@ export default function ModelUsage() {
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Output</span><span className="mobile-card-meta-value">{formatTokens(row.outputTokens)}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">Cache</span><span className="mobile-card-meta-value">{formatTokens(getCacheTokens(row))}</span></div>
         <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">缓存率</span><span className="mobile-card-meta-value">{formatCacheRate(row.cacheHitRate)}</span></div>
-        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value" style={{ color: 'var(--color-success)' }}>{formatCost(row.costUsd)}</span></div>
+        <div className="mobile-card-meta-item"><span className="mobile-card-meta-label">成本</span><span className="mobile-card-meta-value usage-meta-cost">{formatCost(row.costUsd)}</span></div>
       </div>
     </div>
   );
@@ -1010,7 +1010,7 @@ export default function ModelUsage() {
           />
           {usageTab === 'model' ? (
             loading && models.length === 0 ? (
-              <div style={{ padding: '48px 0', textAlign: 'center' }}><Spin /></div>
+              <div className="usage-mobile-loading"><Spin /></div>
             ) : models.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" style={{ padding: '32px 0' }} />
             ) : (
@@ -1018,7 +1018,7 @@ export default function ModelUsage() {
             )
           ) : (
             loading && sessions.length === 0 ? (
-              <div style={{ padding: '48px 0', textAlign: 'center' }}><Spin /></div>
+              <div className="usage-mobile-loading"><Spin /></div>
             ) : sessions.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" style={{ padding: '32px 0' }} />
             ) : (

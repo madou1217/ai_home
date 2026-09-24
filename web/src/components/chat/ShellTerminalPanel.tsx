@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
+import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
 import styles from './composer/composer.module.css';
 
 interface ShellTerminalPanelProps {
@@ -79,10 +80,11 @@ function newTerm(): Terminal {
   return new Terminal({
     convertEol: false,
     cursorBlink: true,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontFamily: TERMINAL_FONT_FAMILY,
     fontSize: 12,
     scrollback: 8000,
-    theme: { background: '#1b1d22', foreground: '#d4d4d4', cursor: '#d4d4d4' }
+    // HUD 配色运行时读 CSS 变量（深色 = Void Black 底 + 青色光标），主题切换见下方订阅。
+    theme: readTerminalTheme()
   });
 }
 
@@ -244,6 +246,13 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
     });
   }, []);
 
+  // 主题（深色 HUD / 日光 HUD）切换时，所有已打开 tab 的 xterm 画布同步换色。
+  useEffect(() => subscribeTerminalTheme((theme) => {
+    for (const inst of instancesRef.current.values()) {
+      inst.term.options.theme = theme;
+    }
+  }), []);
+
   // 切换 tab / 改高度后，重新 fit + 聚焦当前 tab。
   useEffect(() => {
     if (!activeId) return;
@@ -382,7 +391,7 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
             <div className={styles.shellTerminalTitle}>
               <CodeOutlined />
               <span>终端</span>
-              <span className={styles.shellTerminalStatus}>{statusLabel(badgeStatus)}</span>
+              <span className={styles.shellTerminalStatus} data-status={badgeStatus}>{statusLabel(badgeStatus)}</span>
             </div>
           )}
           {tabs.map((t) => (

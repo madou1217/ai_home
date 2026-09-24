@@ -108,12 +108,19 @@
 }
 
 .terminalDock {
+  --hud-cut: var(--hud-chamfer-sm);
   position: relative;
-  border: 1px solid var(--chat-panel-border);
-  border-radius: var(--chat-panel-radius);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--chat-panel-border));
+  border-radius: 0;
   background: var(--chat-panel-bg);
   box-shadow: var(--chat-panel-shadow);
   overflow: hidden;
+  /* HUD 小切角（左上 / 右下） */
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
 }
 
 .terminalDockHeader {
@@ -122,6 +129,7 @@
   gap: var(--hos-space-2);
   padding: var(--hos-space-1-5) var(--hos-space-2-5); /* 归级:原 7px */
   border-bottom: 1px solid var(--chat-panel-border);
+  background: var(--term-bg-header);
 }
 
 .terminalDockToggle {
@@ -137,7 +145,7 @@
 }
 
 .terminalDockTitle {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   font-weight: var(--weight-semibold);
   color: var(--color-text);
@@ -149,12 +157,26 @@
 .terminalDockStatus {
   margin-left: auto;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1-5);
   padding: var(--hos-space-0-5) var(--hos-space-2); /* 归级:原 1px */
-  border-radius: var(--hos-radius-pill);
-  font-size: var(--hos-text-caption); /* 归级:原 11px */
-  line-height: 18px;
-  background: var(--tint-info);
-  color: var(--color-accent);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-micro);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  line-height: 16px;
+  background: var(--color-surface-sunken);
+  color: var(--color-muted);
+}
+
+.terminalDockStatus[data-active='true'] {
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  color: var(--color-success);
+  text-shadow: var(--hud-text-glow-success);
 }
 
 .terminalDockClose {
@@ -170,25 +192,26 @@
   color: var(--color-muted-strong); /* 归级:原 --c-neutral-700 */
 }
 
-/* 终端 chrome 为刻意的深色面，与主题无关（xterm 画布本身是深色）：
- * 以下 --term-* 深色字面值是有意例外，集中定义，不随主题翻转。 */
+/* 终端 chrome 跟随 HUD 主题：画布底 = --color-bg（深色 Void Black / 日光浅底），
+ * 与 xterm 画布（terminal-theme.ts 运行时读同一组 token）保持同色，深浅主题都成立。 */
+.terminalDock,
 .terminalDockBody,
 .shellTerminalPanel {
-  --term-bg: #1b1d22;
-  --term-bg-header: #23262d;
-  --term-border: #2a2d34;
-  --term-text: #d4d4d4;
-  --term-text-strong: #e8e8e8;
-  --term-text-muted: #9aa0ab;
-  --term-text-faint: #7c828d;
-  --term-hover: rgba(255, 255, 255, 0.06);
-  --term-hover-strong: rgba(255, 255, 255, 0.12);
-  --term-accent: #7aa5ff;
-  --term-accent-soft: rgba(122, 165, 255, 0.16);
-  --term-ok: #34d399;
-  --term-warn: #f0b429;
-  --term-off: #6b7280;
-  --term-error: #f87171;
+  --term-bg: var(--color-bg);
+  --term-bg-header: var(--color-surface);
+  --term-border: var(--color-border);
+  --term-text: var(--color-text);
+  --term-text-strong: var(--color-heading);
+  --term-text-muted: var(--color-muted);
+  --term-text-faint: var(--color-faint);
+  --term-hover: var(--color-overlay);
+  --term-hover-strong: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --term-accent: var(--color-accent);
+  --term-accent-soft: var(--color-accent-soft);
+  --term-ok: var(--color-success);
+  --term-warn: var(--color-warning);
+  --term-off: var(--color-faint);
+  --term-error: var(--color-danger);
 }
 .terminalDockBody {
   /* 高度由内联 style 驱动(可拖拽 + 持久化);此处仅兜底最小值,避免 TUI 挤成几行被截断 */
@@ -224,7 +247,7 @@
   position: relative;
   width: 100%;
   flex: 0 0 auto;
-  border-top: 1px solid var(--term-border);
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--term-border));
   background: var(--term-bg);
   overflow: hidden;
   display: flex;
@@ -276,9 +299,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--hos-space-1-5);
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
-  font-weight: 600;
-  color: var(--term-text);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--term-accent);
+  text-shadow: var(--hud-text-glow-soft);
   padding-right: var(--hos-space-1-5);
   flex: 0 0 auto;
 }
@@ -286,13 +313,22 @@
 .shellTerminalStatus {
   margin-left: var(--hos-space-0-5);
   padding: 0 var(--hos-space-1-5); /* 归级:原 7px */
-  border-radius: var(--hos-radius-pill);
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 2px;
   font-size: var(--hos-text-micro);
   line-height: 16px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-shadow: none;
   background: var(--term-accent-soft);
-  color: var(--term-accent);
+  color: var(--term-warn);
 }
+
+.shellTerminalStatus[data-status='ready'] { color: var(--term-ok); background: transparent; }
+
+.shellTerminalStatus[data-status='closed'] { color: var(--term-off); background: transparent; }
+
+.shellTerminalStatus[data-status='error'] { color: var(--term-error); background: transparent; }
 
 /* 单个 tab */
 .shellTerminalTab {
@@ -302,7 +338,8 @@
   flex: 0 0 auto;
   max-width: 160px;
   padding: var(--hos-space-0-5) var(--hos-space-2); /* 归级:原 3px */
-  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  border-radius: 0;
+  font-family: var(--font-mono);
   font-size: var(--hos-text-caption);
   color: var(--term-text-muted);
   background: transparent;
@@ -317,23 +354,35 @@
 
 .shellTerminalTabActive {
   background: var(--term-bg);
-  color: var(--term-text-strong);
-  border-color: var(--term-border);
+  color: var(--term-accent);
+  border-color: color-mix(in srgb, var(--term-accent) 55%, var(--term-border));
+  box-shadow: var(--hud-glow-accent);
 }
 
+/* 状态 LED：连接中琥珀呼吸（真实进行中）/ 已连接绿 / 已结束暗 / 异常玫红 */
 .shellTerminalTabDot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--hos-radius-pill);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   flex: 0 0 auto;
   background: var(--term-warn); /* connecting 默认 */
+  box-shadow: 0 0 6px var(--term-warn);
+  animation: shellTerminalLedBreathe 1.6s ease-in-out infinite;
 }
 
-.shellTerminalTabDot[data-status='ready'] { background: var(--term-ok); }
+.shellTerminalTabDot[data-status='ready'] { background: var(--term-ok); box-shadow: 0 0 6px var(--term-ok); animation: none; }
 
-.shellTerminalTabDot[data-status='closed'] { background: var(--term-off); }
+.shellTerminalTabDot[data-status='closed'] { background: var(--term-off); box-shadow: none; animation: none; }
 
-.shellTerminalTabDot[data-status='error'] { background: var(--term-error); }
+.shellTerminalTabDot[data-status='error'] { background: var(--term-error); box-shadow: 0 0 6px var(--term-error); animation: none; }
+
+@keyframes shellTerminalLedBreathe {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shellTerminalTabDot { animation: none; }
+}
 
 .shellTerminalTabLabel {
   white-space: nowrap;
@@ -347,7 +396,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--hos-radius-xs); /* 归级:原 4px */
+  border-radius: 0;
   font-size: var(--hos-text-micro);
   color: var(--term-text-faint);
   flex: 0 0 auto;
@@ -371,8 +420,8 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
-  border-radius: var(--hos-radius-xs); /* 归级:原 6px */
+  border: 1px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--term-text-muted);
   cursor: pointer;
@@ -381,8 +430,9 @@
 }
 
 .shellTerminalIconBtn:hover {
+  border-color: color-mix(in srgb, var(--term-accent) 45%, transparent);
   background: var(--term-hover-strong);
-  color: var(--term-text-strong);
+  color: var(--term-accent);
 }
 
 .shellTerminalBodies {
@@ -808,9 +858,20 @@
   text-overflow: ellipsis;
 }
 
+/* 压缩结果状态：失败 = 玫红、停止 = faint，等宽大写遥测字 */
+.compactStatus {
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint);
+  white-space: nowrap;
+}
+.compactStatus[data-state='failed'] { color: var(--color-danger); text-shadow: var(--hud-text-glow-danger); }
+
 .goalControl { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .goalControlButton { color: var(--color-muted-strong); }
 .goalEditor { display: grid; width: 280px; gap: 8px; }
+.goalEditor :global(.ant-input-number) { width: 100%; font-family: var(--font-mono); }
 .goalEditorActions { display: flex; justify-content: flex-end; gap: 4px; }
 
 /* =============================================================================
@@ -892,6 +953,7 @@
 .slashDropdownItemActive {
   background: var(--color-accent-soft);
   border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  box-shadow: var(--hud-glow-accent);
 }
 
 .slashDropdownItemActive .slashItemName {
@@ -942,6 +1004,32 @@
 .slashItemAliases {
   color: var(--color-faint);
   margin-left: var(--hos-space-1);
+}
+
+.slashItemPath {
+  font-family: var(--font-mono);
+  color: var(--color-muted);
+}
+
+.slashItemFolderIcon {
+  color: var(--color-muted-strong);
+}
+
+.slashDropdownSpinner {
+  margin-left: var(--hos-space-1);
+}
+
+.slashDropdownError {
+  color: var(--color-danger);
+  text-shadow: var(--hud-text-glow-danger);
+}
+
+.slashDropdownEmpty {
+  padding: var(--hos-space-3) var(--hos-space-3-5);
+  font-family: var(--font-mono);
+  font-size: var(--hos-text-caption);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint);
 }
 
 /* =============================================================================
@@ -1116,6 +1204,11 @@
   font-variant-numeric: tabular-nums slashed-zero;
 }
 
+/* 占用读数按真实压力等级着色 + 辉光 */
+.contextMeterPercent[data-level='ok'] { color: var(--color-accent); text-shadow: var(--hud-text-glow); }
+.contextMeterPercent[data-level='warning'] { color: var(--color-warning); text-shadow: var(--hud-text-glow-warning); }
+.contextMeterPercent[data-level='danger'] { color: var(--color-danger); text-shadow: var(--hud-text-glow-danger); }
+
 /* HUD 细进度轨：方头 + 状态色辉光（填充色由组件按压力等级内联给出） */
 .contextMeterBarBg {
   height: 4px;
@@ -1144,7 +1237,7 @@
 .contextMeterWarning {
   margin-top: var(--hos-space-2-5);
   padding-top: var(--hos-space-2);
-  border-top: 1px dashed var(--color-border-subtle);
+  border-top: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   gap: var(--hos-space-1-5);
@@ -1225,8 +1318,8 @@
   justify-content: center;
   width: 56px;
   height: 56px;
-  border-radius: var(--hos-radius-sm);
-  background: var(--color-surface-muted);
+  border-radius: 0;
+  background: var(--color-surface-sunken);
   border: 1px solid var(--color-border);
   overflow: hidden;
   flex-shrink: 0;
@@ -1263,10 +1356,10 @@
   width: 18px;
   height: 18px;
   padding: 0;
-  border-radius: var(--hos-radius-pill);
-  background: var(--color-ink);
-  color: var(--color-on-ink);
-  border: none;
+  border-radius: 0;
+  background: var(--color-surface-raised);
+  color: var(--color-muted-strong);
+  border: 1px solid var(--color-border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1328,7 +1421,7 @@
 }
 
 .pulseBadgeConnected .pulseDotCore {
-  background: var(--hos-green-500);
+  background: var(--color-success);
   box-shadow: 0 0 6px var(--color-success);
 }
 
@@ -1337,7 +1430,7 @@
 }
 
 .pulseBadgeReconnecting .pulseDotCore {
-  background: var(--hos-amber-500);
+  background: var(--color-warning);
   box-shadow: 0 0 6px var(--color-warning);
 }
 
@@ -1346,7 +1439,7 @@
 }
 
 .pulseBadgeDisconnected .pulseDotCore {
-  background: var(--hos-red-500);
+  background: var(--color-danger);
   box-shadow: 0 0 6px var(--color-danger);
 }
 
@@ -1437,15 +1530,17 @@
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 2px;
   color: var(--color-heading);
   font-size: var(--hos-text-caption); /* 归级:原 11px */
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .inSessionSearchBtn:hover:not(:disabled) {
-  background: var(--color-overlay);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .inSessionSearchBtn:disabled {
@@ -1479,7 +1574,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: var(--hos-radius-xs);
+  border-radius: 2px;
   color: var(--color-muted-strong);
   cursor: pointer;
   transition: color var(--motion-fast) var(--ease-standard),
@@ -1528,14 +1623,21 @@
 }
 
 .promptPresetCard {
+  --hud-cut: var(--hud-chamfer-sm);
   display: flex;
   align-items: center;
   gap: var(--hos-space-2-5);
   padding: var(--hos-space-2) var(--hos-space-2-5);
-  border-radius: var(--hos-radius-sm);
+  border-radius: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   cursor: pointer;
+  /* HUD 小切角（左上 / 右下） */
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    100% 0, 100% calc(100% - var(--hud-cut)),
+    calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
   transition: border-color var(--motion-fast) var(--ease-standard),
     background var(--motion-fast) var(--ease-standard);
 }
@@ -1550,6 +1652,11 @@
 .promptPresetCardIcon {
   font-size: var(--hos-text-h3); /* 归级:原 16px */
   color: var(--color-muted-strong);
+}
+
+.promptPresetCard:hover .promptPresetCardIcon,
+.promptPresetCard:hover .promptPresetCardTitle {
+  color: var(--color-accent);
 }
 
 .promptPresetCardText {

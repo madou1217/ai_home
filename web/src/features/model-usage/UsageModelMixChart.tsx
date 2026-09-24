@@ -39,6 +39,7 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       axisLabel: {
         color: palette.faint,
         fontSize: 11,
+        fontFamily: palette.fontMono,
         hideOverlap: true,
         formatter: (value: number) => formatModelMixAxisValue(value, metric)
       },
@@ -54,7 +55,8 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
         color: palette.text,
         width: 148,
         overflow: 'truncate',
-        fontSize: 11
+        fontSize: 11,
+        fontFamily: palette.fontMono
       }
     },
     series: [{

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { confirmAction } from '@/utils/confirm-action';
 import { Card, Input, Select, Space, Tag, message } from 'antd';
 import InlineNote from '@/components/ui/InlineNote';
 import { GlobalOutlined, SafetyCertificateOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -22,7 +23,15 @@ function routeLabel(status: NetworkLayerStatus | null) {
 }
 
 function confirmText(action: string, details: string) {
-  return window.confirm(`${action}\n\n${details}\n\n这会修改当前用户的网络配置，是否继续？`);
+  return confirmAction({
+    title: action,
+    content: (
+      <div style={{ whiteSpace: 'pre-wrap' }}>
+        {`${details}\n\n这会修改当前用户的网络配置，是否继续？`}
+      </div>
+    ),
+    danger: true,
+  });
 }
 
 export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }: ProxyNetworkIntegrationPanelProps) {
@@ -42,7 +51,7 @@ export default function ProxyNetworkIntegrationPanel({ status, core, onRefresh }
         message.warning(planned.message || planned.error || '网络配置计划未生成');
         return;
       }
-      const accepted = confirmText(action === 'enable' ? '准备启用网络接管' : '准备停用网络接管', details);
+      const accepted = await confirmText(action === 'enable' ? '准备启用网络接管' : '准备停用网络接管', details);
       if (!accepted) return;
       const applied = await proxyPoolAPI.applyNetwork(planned.plan.planId, planned.plan.snapshotHash, true);
       if (!applied.ok || applied.applied !== true) {

@@ -7,6 +7,17 @@ import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
 import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
 import MobileTabBar from "@/components/mobile/MobileTabBar";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
+import HudEffects from "@/components/hud/HudEffects";
+import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
+import { resolveHudNavCode } from "@/components/hud/hud-nav";
+// Cyber HUD 字体随包分发（不依赖外网 CDN）：JetBrains Mono 数据字体 + Orbitron 展示字体。
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@fontsource/orbitron/500.css";
+import "@fontsource/orbitron/700.css";
+import "@fontsource/orbitron/900.css";
 import {
   FABRIC_SERVER_SETUP_HREF,
   FABRIC_SERVER_SETUP_TARGET,
@@ -59,8 +70,11 @@ const LAYOUT_TOKEN = {
     colorBgCollapsedButton: "var(--color-surface)",
   },
   header: {
-    colorBgHeader: "var(--color-surface)",
+    heightLayoutHeader: 60,
+    colorBgHeader: "var(--hud-panel-bg)",
     colorHeaderTitle: "var(--color-heading)",
+    colorBgMenuItemHover: "var(--color-overlay)",
+    colorTextRightActionsItem: "var(--color-muted)",
   },
   pageContainer: {
     colorBgPageContainer: "transparent",
@@ -128,7 +142,9 @@ export async function getInitialState(): Promise<{
   if (savedWallpaper) DynamicWallpaperEngine.applyWallpaper(savedWallpaper);
   return {
     settings: {
-      layout: "side",
+      // mix：通栏 HUD 顶栏（品牌 / 实时遥测 / CRT·音效开关）+ 左侧编号导航。
+      layout: "mix",
+      splitMenus: false,
       navTheme: "light",
       // 不在这里定义强调色：ProLayout 会用它再包一层 ConfigProvider，
       // 盖掉 AntdThemeProvider 的主题化取值（深色下激活 Tab 会变成近黑压深底）。
@@ -136,7 +152,7 @@ export async function getInitialState(): Promise<{
       contentWidth: "Fluid",
       fixedHeader: true,
       fixSiderbar: true,
-      siderWidth: 232,
+      siderWidth: 248,
     },
     desktopInitializationError,
   };
@@ -145,7 +161,26 @@ export async function getInitialState(): Promise<{
 // antd 的 token 体系必须整体跟随 data-theme，否则深色模式下按钮描边、次级文字、
 // 下拉项等仍取构建期的浅色值。包在最外层，让所有路由与 Layout 共用同一主题上下文。
 export function rootContainer(container: ReactNode) {
-  return <AntdThemeProvider>{container}</AntdThemeProvider>;
+  return (
+    <AntdThemeProvider>
+      {container}
+      {/* CRT 扫描线 + Web Audio 微反馈：全局一次挂载，含 Server 配置页 */}
+      <HudEffects />
+    </AntdThemeProvider>
+  );
+}
+
+// 侧栏菜单项：保留 ProLayout 默认渲染（链接 / 图标 / 中文名），在前后补 HUD 编号与英文代号。
+function renderHudMenuLabel(item: { path?: string }, dom: ReactNode) {
+  const code = resolveHudNavCode(item.path);
+  if (!code) return dom;
+  return (
+    <span className="hud-nav-item">
+      {code.no ? <span className="hud-nav-no">{code.no}</span> : null}
+      <span className="hud-nav-dom">{dom}</span>
+      <span className="hud-nav-code">{code.code}</span>
+    </span>
+  );
 }
 
 export const layout = ({ initialState }: any) => {
@@ -162,6 +197,13 @@ export const layout = ({ initialState }: any) => {
     logo,
     title: "AI Home",
     token: LAYOUT_TOKEN,
+    headerTitleRender: () => <HudBrand logo={logo} />,
+    headerContentRender: () => (
+      <HudTelemetryBar enabled={!isGoAccountsPreview && resolveCurrentServerProfileGate().ready} />
+    ),
+    actionsRender: () => [<HudToggles key="hud-toggles" />],
+    menuItemRender: (item: { path?: string }, dom: ReactNode) => renderHudMenuLabel(item, dom),
+    subMenuItemRender: (item: { path?: string }, dom: ReactNode) => renderHudMenuLabel(item, dom),
     onPageChange: enforceServerProfileGate,
     menuDataRender: (menuData: any[]) => (
       // 与 workspace gate 同一判定：菜单只依赖 setup 完整性（configured），

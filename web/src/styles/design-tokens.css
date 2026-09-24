@@ -1,7 +1,8 @@
 /* =============================================================================
  * AI Home — Design Tokens (Single Source of Truth)
  * -----------------------------------------------------------------------------
- * 视觉方向：Calm Operator Console（冷静的运维控制台），规范见 web/DESIGN.md。
+ * 视觉方向：Cyber HUD（极客 / 赛博朋克控制台），规范见 web/DESIGN.md。
+ * 默认深色 HUD（index.html 头部脚本在首帧前写入 data-theme），浅色为「日光 HUD」变体。
  * 任何颜色 / 字号 / 间距 / 圆角 / 阴影 / 动效都应引用这里的 token，
  * 禁止在组件里写魔法数字与硬编码颜色。
  *
@@ -37,36 +38,36 @@
 
   /* Neutral (zinc) */
   --c-neutral-0:  #ffffff;
-  --c-neutral-25: #fcfcfc;
-  --c-neutral-50: #f7f7f8;
-  --c-neutral-100:#f1f1f3;
-  --c-neutral-150:#eaeaed;
-  --c-neutral-200:#e3e3e7;
-  --c-neutral-300:#d1d1d6;
-  --c-neutral-400:#a0a0a8;
-  --c-neutral-500:#71717a;
-  --c-neutral-600:#52525b;
-  --c-neutral-700:#3f3f46;
-  --c-neutral-800:#27272a;
-  --c-neutral-900:#18181b;
-  --c-neutral-950:#0c0c0e;
+  --c-neutral-25: #f7fafc;
+  --c-neutral-50: #eef3f7;
+  --c-neutral-100:#e6edf3;
+  --c-neutral-150:#dce5ed;
+  --c-neutral-200:#cbd8e3;
+  --c-neutral-300:#aabdcd;
+  --c-neutral-400:#7f96aa;
+  --c-neutral-500:#4f6a83;
+  --c-neutral-600:#34506b;
+  --c-neutral-700:#233a52;
+  --c-neutral-800:#13233a;
+  --c-neutral-900:#07121f;
+  --c-neutral-950:#03080f;
 
   /* Accent (restrained blue) — 历史名 brand */
-  --c-brand-soft:  rgba(47, 91, 211, 0.08);
-  --c-brand-500:   #4a72e0;
-  --c-brand-600:   #2f5bd3;
-  --c-brand-700:   #2449b8;
-  --c-brand-900:   #1c3a94;
+  --c-brand-soft:  rgba(0, 134, 160, 0.10);
+  --c-brand-500:   #00a3c2;
+  --c-brand-600:   #0086a0;
+  --c-brand-700:   #006d83;
+  --c-brand-900:   #004e5e;
 
   /* Status hues */
-  --c-info-500:    #4a72e0;
-  --c-info-600:    #2f5bd3;
-  --c-success-500: #16a34a;
-  --c-success-600: #15803d;
-  --c-warning-500: #b45309;
-  --c-warning-600: #92400e;
-  --c-danger-500:  #dc3b33;
-  --c-danger-600:  #c2322b;
+  --c-info-500:    #00a3c2;
+  --c-info-600:    #0086a0;
+  --c-success-500: #00a856;
+  --c-success-600: #00874a;
+  --c-warning-500: #b86e00;
+  --c-warning-600: #8f5500;
+  --c-danger-500:  #e0004c;
+  --c-danger-600:  #c20042;
   --c-purple-500:  #8b5cf6;
   --c-purple-600:  #7c3aed;
   --c-teal-500:    #0d9488;
@@ -90,11 +91,14 @@
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
-   * 单一系统字体栈，不从远程加载字体（桌面端 / 内网离线可用）。
+   * 字体随包分发（@fontsource），不从外网 CDN 加载（桌面端 / 内网离线可用）。
    * ------------------------------------------------------------------------ */
-  --font-body: 'Inter', 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-display: var(--font-body);
+  /* 数据与界面：JetBrains Mono（中文回落系统黑体）；展示标题：Orbitron；长文阅读：系统无衬线。
+   * 字体随包分发（@fontsource，见 app.tsx），不依赖外网 CDN。 */
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  --font-body: 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', ui-monospace, monospace;
+  --font-display: 'Orbitron', 'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-prose: 'Inter', 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 
   /* 旧字阶别名，逐档指向 8 级字阶 */
   --text-2xs: var(--hos-text-micro);   /* 11px */
@@ -122,8 +126,8 @@
 
   --tracking-tight: -0.01em;
   --tracking-normal: 0;
-  --tracking-wide: 0.02em;
-  --tracking-caps: 0.06em;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.12em;
 
   /* ---------------------------------------------------------------------------
    * 3. PRIMITIVES — Spacing scale (4px base)
@@ -149,12 +153,12 @@
    * 4. PRIMITIVES — Elevation / Motion
    * 卡片无阴影（靠描边分层）；阴影只给浮层。
    * ------------------------------------------------------------------------ */
-  --elevation-1: 0 1px 2px rgba(24, 24, 27, 0.05);
-  --elevation-2: 0 2px 6px rgba(24, 24, 27, 0.06);
-  --elevation-3: 0 8px 24px rgba(24, 24, 27, 0.08), 0 1px 3px rgba(24, 24, 27, 0.04);
-  --elevation-4: 0 16px 48px rgba(24, 24, 27, 0.14), 0 2px 6px rgba(24, 24, 27, 0.05);
-  --ring-focus: 0 0 0 3px rgba(47, 91, 211, 0.28);
-  --ring-focus-info: 0 0 0 3px rgba(47, 91, 211, 0.28);
+  --elevation-1: 0 1px 2px rgba(7, 18, 31, 0.06);
+  --elevation-2: 0 2px 8px rgba(7, 18, 31, 0.08);
+  --elevation-3: 0 10px 28px rgba(7, 18, 31, 0.12), 0 0 0 1px rgba(0, 134, 160, 0.08);
+  --elevation-4: 0 20px 56px rgba(7, 18, 31, 0.18), 0 0 0 1px rgba(0, 134, 160, 0.10);
+  --ring-focus: 0 0 0 1px var(--color-accent), 0 0 0 4px rgba(0, 134, 160, 0.18);
+  --ring-focus-info: var(--ring-focus);
 
   --motion-instant: 80ms;
   --motion-fast: 120ms;
@@ -190,18 +194,18 @@
 
   --color-border: var(--c-neutral-200);
   --color-border-strong: var(--c-neutral-300);
-  --color-border-subtle: rgba(24, 24, 27, 0.06);
+  --color-border-subtle: rgba(7, 18, 31, 0.07);
 
   /* 状态叠加层：悬浮高亮与进度/仪表轨道底。深浅色下反向。 */
-  --color-overlay-subtle: rgba(24, 24, 27, 0.025);
-  --color-overlay: rgba(24, 24, 27, 0.05);
-  --color-scrim: rgba(12, 12, 14, 0.4);
+  --color-overlay-subtle: rgba(0, 134, 160, 0.03);
+  --color-overlay: rgba(0, 134, 160, 0.07);
+  --color-scrim: rgba(3, 8, 15, 0.45);
 
   --color-text: var(--c-neutral-800);
   --color-heading: var(--c-neutral-900);
   --color-muted: var(--c-neutral-500);
   --color-muted-strong: var(--c-neutral-600);
-  --color-faint: #8a8a93;
+  --color-faint: #6f879c;
   --color-disabled: var(--c-neutral-300);
 
   /* 主操作：墨色（深色主题翻转为近白） */
@@ -225,13 +229,13 @@
   --color-info: var(--color-accent);
   --color-info-soft: var(--color-accent-soft);
   --color-success: var(--c-success-600);
-  --color-success-soft: rgba(21, 128, 61, 0.09);
+  --color-success-soft: rgba(0, 135, 74, 0.10);
   --color-warning: var(--c-warning-500);
-  --color-warning-soft: rgba(180, 83, 9, 0.09);
+  --color-warning-soft: rgba(184, 110, 0, 0.11);
   --color-danger: var(--c-danger-600);
-  --color-danger-soft: rgba(194, 50, 43, 0.08);
+  --color-danger-soft: rgba(194, 0, 66, 0.09);
   --color-attention: var(--c-warning-500);
-  --color-attention-soft: rgba(180, 83, 9, 0.09);
+  --color-attention-soft: rgba(184, 110, 0, 0.11);
 
   /* ---------------------------------------------------------------------------
    * 7. DOMAIN — Provider accents
@@ -289,13 +293,13 @@
   --event-thinking: var(--c-purple-600);
   --event-thinking-soft: rgba(124, 58, 237, 0.09);
   --event-plan: var(--c-info-600);
-  --event-plan-soft: rgba(47, 91, 211, 0.09);
+  --event-plan-soft: rgba(0, 134, 160, 0.09);
   --event-goal: var(--c-teal-500);
   --event-goal-soft: rgba(13, 148, 136, 0.09);
   --event-memory: var(--c-warning-500);
   --event-memory-soft: rgba(180, 83, 9, 0.09);
   --event-notify: var(--c-info-600);
-  --event-notify-soft: rgba(47, 91, 211, 0.09);
+  --event-notify-soft: rgba(0, 134, 160, 0.09);
   --event-ask: var(--c-purple-600);
   --event-ask-soft: rgba(124, 58, 237, 0.09);
 
@@ -306,11 +310,11 @@
   --c-accent-blue:  var(--color-accent);
   --c-accent-green: var(--color-success);
 
-  --tint-info:    #eef2fc;  --ink-info:    #2449b8;
-  --tint-success: #ecf7f0;  --ink-success: #166534;  --bd-success: #b7dfc4;
-  --tint-warning: #fdf4e7;  --ink-warning: #92400e;
-  --tint-danger:  #fcefee;  --ink-danger:  #a82a24;  --bd-danger:  #f1c6c3;
-  --tint-neutral: #f1f1f3;  --ink-neutral: #52525b;
+  --tint-info:    #e3f6fa;  --ink-info:    #006d83;
+  --tint-success: #e2f7ec;  --ink-success: #00703c;  --bd-success: #9fdcbc;
+  --tint-warning: #fdf1dc;  --ink-warning: #8f5500;
+  --tint-danger:  #fde6ee;  --ink-danger:  #a8003a;  --bd-danger:  #f3b3c8;
+  --tint-neutral: #e6edf3;  --ink-neutral: #34506b;
 
   /* ---------------------------------------------------------------------------
    * 9. LAYOUT — Shell dimensions
@@ -322,6 +326,24 @@
   --layout-page-max: 1560px;
   --layout-chat-max: 860px;
   --visual-viewport-height: 100dvh;
+
+  /* ---------------------------------------------------------------------------
+   * 10. HUD — 几何与光效（Cyber HUD 专属）
+   * ------------------------------------------------------------------------ */
+  --hud-chamfer: 10px;          /* 面板切角 */
+  --hud-chamfer-sm: 6px;        /* 小卡 / 按钮切角 */
+  --hud-tick: 10px;             /* 角标长度 */
+  --hud-tick-color: var(--color-accent);
+  --hud-panel-bg: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  --hud-panel-blur: blur(10px);
+  --hud-grid-size: 32px;
+  --hud-grid-line: rgba(0, 134, 160, 0.06);
+  --hud-glow-accent: 0 0 16px rgba(0, 134, 160, 0.18);
+  --hud-text-glow: none;
+  --hud-text-glow-success: none;
+  --hud-text-glow-warning: none;
+  --hud-text-glow-danger: none;
+  --hud-scanline: rgba(3, 8, 15, 0.10);
 }
 
 /* ===========================================================================
@@ -358,19 +380,20 @@
 }
 
 /* =============================================================================
- * 10. 历史 --hos-* 命名（值并入 Calm Operator Console）
+ * 10b. 历史 --hos-* 命名（值并入 Cyber HUD 语义层）
  * ========================================================================== */
 :root {
   /* 圆角：按钮 / 输入 6、下拉 8、卡片 10、弹窗 12 */
-  --hos-radius-2xs: 4px;
-  --hos-radius-xs: 6px;
-  --hos-radius-10: 6px;
-  --hos-radius-sm: 8px;
-  --hos-radius-14: 6px;
-  --hos-radius-md: 10px;
-  --hos-radius-lg: 10px;
-  --hos-radius-xl: 12px;
-  --hos-radius-2xl: 14px;
+  /* HUD 以切角代替圆角：基础圆角收敛为 2–4px，面板轮廓由 clip-path 切角表达 */
+  --hos-radius-2xs: 2px;
+  --hos-radius-xs: 2px;
+  --hos-radius-10: 2px;
+  --hos-radius-sm: 3px;
+  --hos-radius-14: 2px;
+  --hos-radius-md: 4px;
+  --hos-radius-lg: 4px;
+  --hos-radius-xl: 4px;
+  --hos-radius-2xl: 6px;
   --hos-radius-pill: 9999px;
 
   /* 间距阶梯(4pt 基准,含半档) */
@@ -447,7 +470,7 @@
   --hos-mobile-ink-4: var(--color-faint);
   --hos-mobile-line-2: var(--color-border);
   --hos-mobile-run: var(--color-success);
-  --hos-mobile-radius: 12px;
+  --hos-mobile-radius: 4px;
   --hos-mobile-shadow-xs: none;
   --hos-mobile-shadow-sm: none;
 
@@ -478,75 +501,90 @@
 body.dark {
   color-scheme: dark;
 
-  --color-bg: #0f0f11;
-  --color-bg-elevated: #1e1e22;
-  --color-surface: #17171a;
-  --color-surface-raised: #1e1e22;
-  --color-surface-muted: #1b1b1f;
-  --color-surface-soft: #131316;
-  --color-surface-sunken: #0b0b0d;
-  --color-border: #2b2b31;
-  --color-border-strong: #3b3b42;
-  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  /* Void Black 画布 + 深海军蓝面板 */
+  --color-bg: #05080e;
+  --color-bg-elevated: #0c1524;
+  --color-surface: #0a101a;
+  --color-surface-raised: #0c1524;
+  --color-surface-muted: #0e1a2a;
+  --color-surface-soft: #070c14;
+  --color-surface-sunken: #03060b;
+  --color-border: #15263d;
+  --color-border-strong: #23405f;
+  --color-border-subtle: rgba(0, 240, 255, 0.07);
 
-  /* 对比度（on #17171a）：heading 17.5 · text 14.6 · muted-strong 12.4 · muted 7.3 · faint 5.3 */
-  --color-heading: #fafafa;
-  --color-text: #e4e4e7;
-  --color-muted-strong: #d4d4d8;
-  --color-muted: #a1a1aa;
-  --color-faint: #8b8b94;
-  --color-disabled: #5b5b63;
+  /* Ice White/Blue 文本。规范 muted #5c7890 在 #0a101a 上仅 ~3.9:1，
+   * 因此它只用于 faint（标签 / 元信息）；正文次级色上调到 #7f9bb3（~6.3:1）。 */
+  --color-heading: #f2fbff;
+  --color-text: #e2f1f8;
+  --color-muted-strong: #a9c2d6;
+  --color-muted: #7f9bb3;
+  --color-faint: #5c7890;
+  --color-disabled: #3a5068;
 
-  --color-overlay-subtle: rgba(255, 255, 255, 0.03);
-  --color-overlay: rgba(255, 255, 255, 0.07);
-  --color-scrim: rgba(0, 0, 0, 0.6);
+  --color-overlay-subtle: rgba(0, 240, 255, 0.03);
+  --color-overlay: rgba(0, 240, 255, 0.07);
+  --color-scrim: rgba(2, 4, 8, 0.78);
 
-  --color-ink: #f4f4f5;
-  --color-ink-hover: #d4d4d8;
-  --color-on-ink: #18181b;
+  /* 主操作 = Electric Cyan 实底 + 虚空黑字 */
+  --color-ink: #00f0ff;
+  --color-ink-hover: #6ff7ff;
+  --color-on-ink: #05080e;
 
-  --color-accent: #7b9cff;
-  --color-accent-hover: #9bb4ff;
-  --color-accent-soft: rgba(123, 156, 255, 0.14);
-  --color-on-accent: #0f0f11;
+  --color-accent: #00f0ff;
+  --color-accent-hover: #6ff7ff;
+  --color-accent-soft: rgba(0, 240, 255, 0.12);
+  --color-on-accent: #05080e;
 
-  --color-success: #5cc389;
-  --color-success-soft: rgba(92, 195, 137, 0.14);
-  --color-warning: #e0a94a;
-  --color-warning-soft: rgba(224, 169, 74, 0.14);
-  --color-danger: #f07068;
-  --color-danger-soft: rgba(240, 112, 104, 0.14);
-  --color-attention: #e0a94a;
-  --color-attention-soft: rgba(224, 169, 74, 0.14);
+  /* 状态：Matrix Green / Amber / Rose */
+  --color-success: #00ff66;
+  --color-success-soft: rgba(0, 255, 102, 0.12);
+  --color-warning: #ffaa00;
+  --color-warning-soft: rgba(255, 170, 0, 0.13);
+  --color-danger: #ff0055;
+  --color-danger-soft: rgba(255, 0, 85, 0.14);
+  --color-attention: #ffaa00;
+  --color-attention-soft: rgba(255, 170, 0, 0.13);
 
-  --c-opencode: #a1a1aa;
-  --event-tool: #a1a1aa;
-  --event-thinking: #b79bf5;
-  --event-plan: #7b9cff;
-  --event-goal: #4fc4b6;
-  --event-memory: #e0a94a;
-  --event-notify: #7b9cff;
-  --event-ask: #b79bf5;
+  --c-opencode: #a9c2d6;
+  --event-tool: #7f9bb3;
+  --event-thinking: #c38bff;
+  --event-plan: #00f0ff;
+  --event-goal: #00ffc6;
+  --event-memory: #ffaa00;
+  --event-notify: #00f0ff;
+  --event-ask: #c38bff;
+  --event-plan-soft: rgba(0, 240, 255, 0.10);
+  --event-notify-soft: rgba(0, 240, 255, 0.10);
 
-  --tint-info: rgba(123, 156, 255, 0.14);
-  --ink-info: #a9bdff;
-  --tint-success: rgba(92, 195, 137, 0.14);
-  --ink-success: #8fdcae;
-  --bd-success: rgba(92, 195, 137, 0.32);
-  --tint-warning: rgba(224, 169, 74, 0.14);
-  --ink-warning: #f0c677;
-  --tint-danger: rgba(240, 112, 104, 0.14);
-  --ink-danger: #f7a19b;
-  --bd-danger: rgba(240, 112, 104, 0.32);
-  --tint-neutral: rgba(255, 255, 255, 0.06);
-  --ink-neutral: #a1a1aa;
+  --tint-info: rgba(0, 240, 255, 0.12);
+  --ink-info: #7ff8ff;
+  --tint-success: rgba(0, 255, 102, 0.12);
+  --ink-success: #7dffb0;
+  --bd-success: rgba(0, 255, 102, 0.35);
+  --tint-warning: rgba(255, 170, 0, 0.14);
+  --ink-warning: #ffc95c;
+  --tint-danger: rgba(255, 0, 85, 0.14);
+  --ink-danger: #ff6b9a;
+  --bd-danger: rgba(255, 0, 85, 0.40);
+  --tint-neutral: rgba(92, 120, 144, 0.16);
+  --ink-neutral: #a9c2d6;
 
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --elevation-3: 0 10px 28px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --elevation-4: 0 20px 56px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --ring-focus: 0 0 0 3px rgba(123, 156, 255, 0.35);
-  --ring-focus-info: 0 0 0 3px rgba(123, 156, 255, 0.35);
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --elevation-3: 0 0 0 1px rgba(0, 240, 255, 0.10), 0 12px 32px rgba(0, 0, 0, 0.65);
+  --elevation-4: 0 0 0 1px rgba(0, 240, 255, 0.22), 0 0 30px rgba(0, 240, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.75);
+  --ring-focus: 0 0 0 1px #00f0ff, 0 0 12px rgba(0, 240, 255, 0.45);
+  --ring-focus-info: var(--ring-focus);
+
+  --hud-panel-bg: rgba(10, 16, 26, 0.85);
+  --hud-grid-line: rgba(0, 240, 255, 0.035);
+  --hud-glow-accent: 0 0 18px rgba(0, 240, 255, 0.25);
+  --hud-text-glow: 0 0 10px rgba(0, 240, 255, 0.55);
+  --hud-text-glow-success: 0 0 10px rgba(0, 255, 102, 0.5);
+  --hud-text-glow-warning: 0 0 10px rgba(255, 170, 0, 0.5);
+  --hud-text-glow-danger: 0 0 10px rgba(255, 0, 85, 0.55);
+  --hud-scanline: rgba(0, 0, 0, 0.28);
 }
 
 /* =============================================================================

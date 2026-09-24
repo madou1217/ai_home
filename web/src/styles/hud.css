@@ -1,0 +1,527 @@
+/* =============================================================================
+ * Cyber HUD 材质层（见 web/DESIGN.md §HUD）
+ * -----------------------------------------------------------------------------
+ * 在 design-tokens（颜色）与 App.css（antd 基础材质）之上叠加 HUD 语言：
+ *   1. 切角面板（clip-path）+ 左上 / 右下青色角标
+ *   2. Orbitron 展示字体 + 发光数值，JetBrains Mono 数据字体
+ *   3. HUD 按钮 / 输入 / 表格 / 标签 / Tabs / 浮层 / 提示
+ *   4. CRT 扫描线覆盖层（开关见 HUD 顶栏与设置页）
+ * 只引用语义 token；深浅主题的取值差异全部在 design-tokens.css。
+ * ========================================================================== */
+
+/* -------------------------------------------------------------------------
+ * 0. 基础：数据字体、选区、滚动条
+ * ---------------------------------------------------------------------- */
+body {
+  font-family: var(--font-body);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+* {
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border: none;
+  border-radius: 1px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+/* 长文阅读区（会话消息正文、Markdown 预览）回到无衬线，等宽只留给代码与数据 */
+.hud-prose,
+.markdown-body {
+  font-family: var(--font-prose);
+  letter-spacing: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * 1. 切角面板 + 角标
+ * ---------------------------------------------------------------------- */
+.hud-panel,
+.ant-pro-card.unified-section-card,
+.surface-card,
+.ant-pro-card.hos-kpi-strip,
+.hud-kpi-strip {
+  --hud-cut: var(--hud-chamfer);
+  position: relative;
+  background: var(--hud-panel-bg) !important;
+  -webkit-backdrop-filter: var(--hud-panel-blur);
+  backdrop-filter: var(--hud-panel-blur);
+  border: 1px solid var(--color-border) !important;
+  border-radius: 0 !important;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
+  );
+  transition: border-color var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.hud-panel:hover,
+.ant-pro-card.unified-section-card:hover,
+.surface-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)) !important;
+}
+
+.hud-panel::before,
+.hud-panel::after,
+.ant-pro-card.unified-section-card::before,
+.ant-pro-card.unified-section-card::after,
+.surface-card::before,
+.surface-card::after,
+.ant-pro-card.hos-kpi-strip::before,
+.ant-pro-card.hos-kpi-strip::after,
+.hud-kpi-strip::before,
+.hud-kpi-strip::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+.hud-panel::before,
+.ant-pro-card.unified-section-card::before,
+.surface-card::before,
+.ant-pro-card.hos-kpi-strip::before,
+.hud-kpi-strip::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+}
+
+.hud-panel::after,
+.ant-pro-card.unified-section-card::after,
+.surface-card::after,
+.ant-pro-card.hos-kpi-strip::after,
+.hud-kpi-strip::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--hud-tick-color);
+  border-bottom: 2px solid var(--hud-tick-color);
+}
+
+/* 小卡片：切角更小，只保留左上角标 */
+.hud-panel--sm {
+  --hud-cut: var(--hud-chamfer-sm);
+}
+
+.hud-panel--sm::after {
+  display: none;
+}
+
+/* 卡片标题：Orbitron 风格的方块前缀 */
+.ant-pro-card.unified-section-card .ant-pro-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow);
+}
+
+.ant-pro-card.unified-section-card .ant-pro-card-title::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--color-accent);
+  box-shadow: var(--hud-glow-accent);
+}
+
+.ant-pro-card.unified-section-card > .ant-pro-card-header {
+  border-block-end-color: var(--color-border) !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 2. 页面标题 / 展示字体 / 发光数值
+ * ---------------------------------------------------------------------- */
+.ant-page-header-heading-title {
+  font-family: var(--font-display) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+  color: var(--color-heading) !important;
+  text-shadow: var(--hud-text-glow);
+}
+
+.ant-page-header-heading-sub-title {
+  font-family: var(--font-body) !important;
+  color: var(--color-muted) !important;
+}
+
+.ant-page-header-heading-sub-title::before {
+  content: '// ';
+  color: var(--color-faint);
+}
+
+.hud-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-glow { text-shadow: var(--hud-text-glow); }
+.hud-glow-success { text-shadow: var(--hud-text-glow-success); }
+.hud-glow-warning { text-shadow: var(--hud-text-glow-warning); }
+.hud-glow-danger { text-shadow: var(--hud-text-glow-danger); }
+
+.hud-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* LED 指示灯 */
+.hud-led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-faint);
+  flex: none;
+}
+.hud-led--ok { background: var(--color-success); box-shadow: 0 0 6px var(--color-success); }
+.hud-led--warn { background: var(--color-warning); box-shadow: 0 0 6px var(--color-warning); }
+.hud-led--err { background: var(--color-danger); box-shadow: 0 0 6px var(--color-danger); }
+.hud-led--info { background: var(--color-accent); box-shadow: 0 0 6px var(--color-accent); }
+
+.hud-led--live {
+  animation: hud-led-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes hud-led-breathe {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-led--live { animation: none; }
+}
+
+/* 细进度轨 */
+.hud-track {
+  position: relative;
+  height: 4px;
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+.hud-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. 按钮：半透明青底 + 青框 → 悬停实底；默认按钮暗底描边
+ * ---------------------------------------------------------------------- */
+.ant-btn {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ant-btn:not(.ant-btn-circle):not(.ant-btn-link):not(.ant-btn-text):not(.ant-btn-icon-only) {
+  --hud-cut: 5px;
+  border-radius: 0 !important;
+  clip-path: polygon(
+    var(--hud-cut) 0, 100% 0,
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    0 100%, 0 var(--hud-cut)
+  );
+}
+
+.ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):not(.ant-btn-background-ghost) {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent) !important;
+  border: 1px solid var(--color-accent) !important;
+  color: var(--color-accent) !important;
+  box-shadow: var(--hud-glow-accent) !important;
+}
+
+.ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):not(.ant-btn-background-ghost):hover {
+  background: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
+}
+
+.ant-btn-default:not(:disabled):not(.ant-btn-dangerous) {
+  background: var(--color-surface-raised);
+  border-color: var(--color-border);
+  color: var(--color-muted-strong);
+}
+
+.ant-btn-default:not(:disabled):not(.ant-btn-dangerous):hover {
+  border-color: var(--color-accent) !important;
+  color: var(--color-accent) !important;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-raised)) !important;
+}
+
+.ant-btn-dangerous:not(:disabled):not(.ant-btn-link):not(.ant-btn-text) {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent) !important;
+  color: var(--color-danger) !important;
+}
+
+.ant-btn-dangerous:not(:disabled):not(.ant-btn-link):not(.ant-btn-text):hover {
+  background: var(--color-danger) !important;
+  border-color: var(--color-danger) !important;
+  color: var(--hos-white) !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. 输入：暗色凹槽 + 聚焦青色辉光
+ * ---------------------------------------------------------------------- */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker,
+.ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border) !important;
+  font-family: var(--font-body);
+}
+
+.ant-input-affix-wrapper > input.ant-input,
+.ant-input-affix-wrapper > .ant-input {
+  background: transparent !important;
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-picker:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border)) !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-picker-focused,
+.ant-select-focused:not(.ant-select-disabled) .ant-select-selector {
+  border-color: var(--color-accent) !important;
+  box-shadow: var(--ring-focus) !important;
+}
+
+.ant-input::placeholder,
+.ant-select-selection-placeholder {
+  color: var(--color-faint) !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 5. 表格：等宽数据 + 大写字距表头
+ * ---------------------------------------------------------------------- */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-muted) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------------
+ * 6. 标签 / Tabs / 分段 / 菜单
+ * ---------------------------------------------------------------------- */
+.ant-tag {
+  border-radius: 2px !important;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent) !important;
+}
+
+.ant-tabs .ant-tabs-tab {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+  height: 2px !important;
+  box-shadow: 0 0 10px var(--color-accent);
+}
+
+.ant-segmented {
+  border: 1px solid var(--color-border);
+  border-radius: 2px !important;
+}
+
+.ant-segmented-item-selected {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent) !important;
+}
+
+.ant-switch.ant-switch-checked {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.ant-progress-bg {
+  box-shadow: 0 0 8px color-mix(in srgb, currentColor 60%, transparent);
+}
+
+/* -------------------------------------------------------------------------
+ * 7. 弹窗 / 抽屉 / 浮层 / 提示
+ * ---------------------------------------------------------------------- */
+.ant-modal .ant-modal-content {
+  --hud-cut: var(--hud-chamfer);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border)) !important;
+  border-radius: 0 !important;
+  background: var(--color-surface) !important;
+  box-shadow: var(--elevation-4) !important;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0,
+    calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut),
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%,
+    var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut))
+  );
+}
+
+.ant-modal .ant-modal-content::before,
+.ant-modal .ant-modal-content::after {
+  content: '';
+  position: absolute;
+  width: var(--hud-tick);
+  height: var(--hud-tick);
+  pointer-events: none;
+}
+
+.ant-modal .ant-modal-content::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid var(--hud-tick-color);
+  border-left: 2px solid var(--hud-tick-color);
+}
+
+.ant-modal .ant-modal-content::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid var(--hud-tick-color);
+  border-bottom: 2px solid var(--hud-tick-color);
+}
+
+.ant-modal .ant-modal-title,
+.ant-modal-confirm-title {
+  font-family: var(--font-display) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em;
+  color: var(--color-accent) !important;
+  text-shadow: var(--hud-text-glow);
+}
+
+.ant-modal-mask,
+.ant-drawer-mask {
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.ant-drawer-right .ant-drawer-content {
+  border-left: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+}
+
+.ant-drawer-title {
+  font-family: var(--font-display) !important;
+  letter-spacing: 0.05em;
+  color: var(--color-accent) !important;
+}
+
+.ant-select-dropdown,
+.ant-dropdown-menu,
+.ant-popover-inner,
+.ant-picker-dropdown .ant-picker-panel-container {
+  border-radius: 2px !important;
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border)) !important;
+}
+
+.ant-tooltip-inner {
+  border-radius: 2px !important;
+  background: var(--color-surface-raised) !important;
+  color: var(--color-text) !important;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  font-size: 12px;
+}
+
+.ant-tooltip-arrow::before {
+  background: var(--color-surface-raised) !important;
+}
+
+/* 全局提示：按类型描边 + 发光图标，时间戳式等宽 */
+.ant-message .ant-message-notice-content,
+.ant-notification .ant-notification-notice {
+  border-radius: 2px !important;
+  font-family: var(--font-body);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border)) !important;
+  box-shadow: var(--elevation-3), var(--hud-glow-accent) !important;
+}
+
+.ant-message .ant-message-success .anticon,
+.ant-notification .ant-notification-notice-icon-success { color: var(--color-success) !important; filter: drop-shadow(0 0 4px var(--color-success)); }
+.ant-message .ant-message-error .anticon,
+.ant-notification .ant-notification-notice-icon-error { color: var(--color-danger) !important; filter: drop-shadow(0 0 4px var(--color-danger)); }
+.ant-message .ant-message-warning .anticon,
+.ant-notification .ant-notification-notice-icon-warning { color: var(--color-warning) !important; filter: drop-shadow(0 0 4px var(--color-warning)); }
+.ant-message .ant-message-info .anticon,
+.ant-message .ant-message-loading .anticon,
+.ant-notification .ant-notification-notice-icon-info { color: var(--color-accent) !important; filter: drop-shadow(0 0 4px var(--color-accent)); }
+
+/* 行内提示与 Alert：细描边 + 状态色图标 */
+.ant-alert {
+  border-radius: 2px !important;
+}
+
+/* -------------------------------------------------------------------------
+ * 8. CRT 扫描线覆盖层（组件：components/hud/CrtOverlay）
+ * ---------------------------------------------------------------------- */
+.hud-crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  pointer-events: none;
+  background: linear-gradient(transparent 50%, var(--hud-scanline) 50%);
+  background-size: 100% 3px;
+  opacity: 0.55;
+  transition: opacity var(--motion-slow) var(--ease-standard);
+}
+
+.hud-crt-overlay[data-enabled='false'] {
+  opacity: 0;
+}
+
+[data-theme='light'] .hud-crt-overlay {
+  opacity: 0.35;
+}
+
+[data-theme='light'] .hud-crt-overlay[data-enabled='false'] {
+  opacity: 0;
+}
+
+@media print {
+  .hud-crt-overlay { display: none; }
+}

@@ -17,21 +17,21 @@ export default defineConfig({
   define: {
     "process.env.AIH_GO_ACCOUNTS_PREVIEW": JSON.stringify(process.env.AIH_GO_ACCOUNTS_PREVIEW || ""),
   },
-  // Calm Operator Console（见 web/DESIGN.md）：这里只放与主题无关的结构型 token
-  // （圆角、字体、控件高度）；会随深浅翻转的颜色在 src/theme/antd-theme.ts，
-  // 由 AntdThemeProvider 运行时注入。取值与 src/styles/design-tokens.css 对齐。
+  // Cyber HUD（见 web/DESIGN.md）：这里只放与主题无关的结构型 token（圆角、字体、控件高度）；
+  // 会随深浅翻转的颜色在 src/theme/antd-theme.ts，由 AntdThemeProvider 运行时注入。
+  // HUD 以切角代替圆角：基础圆角 2px，面板轮廓由全局 CSS 的 clip-path 表达。
   antd: {
     theme: {
       token: {
-        borderRadius: 6,
-        borderRadiusLG: 10,
-        borderRadiusSM: 4,
-        borderRadiusXS: 4,
+        borderRadius: 2,
+        borderRadiusLG: 4,
+        borderRadiusSM: 2,
+        borderRadiusXS: 2,
         controlHeight: 32,
         controlHeightLG: 40,
         controlHeightSM: 24,
-        fontSize: 14,
-        fontFamily: "Inter, 'HarmonyOS Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+        fontSize: 13,
+        fontFamily: "'JetBrains Mono', 'HarmonyOS Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', ui-monospace, monospace",
         fontFamilyCode: "'JetBrains Mono', 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace",
         motionDurationFast: "0.12s",
         motionDurationMid: "0.16s",
@@ -41,48 +41,48 @@ export default defineConfig({
       components: {
         Table: {
           headerSplitColor: "transparent",
-          borderRadius: 10,
-          cellPaddingBlock: 12,
+          borderRadius: 4,
+          cellPaddingBlock: 10,
           cellPaddingInline: 12,
         },
         Card: {
-          borderRadiusLG: 10,
+          borderRadiusLG: 4,
         },
         Button: {
-          borderRadius: 6,
-          borderRadiusLG: 8,
-          borderRadiusSM: 4,
-          fontWeight: 500,
+          borderRadius: 2,
+          borderRadiusLG: 2,
+          borderRadiusSM: 2,
+          fontWeight: 600,
           primaryShadow: "none",
           defaultShadow: "none",
           dangerShadow: "none",
         },
         Select: {
-          borderRadius: 6,
-          borderRadiusLG: 8,
-          borderRadiusSM: 4,
+          borderRadius: 2,
+          borderRadiusLG: 2,
+          borderRadiusSM: 2,
         },
         Input: {
-          borderRadius: 6,
-          borderRadiusLG: 8,
-          borderRadiusSM: 4,
+          borderRadius: 2,
+          borderRadiusLG: 2,
+          borderRadiusSM: 2,
         },
         Modal: {
-          borderRadiusLG: 12,
+          borderRadiusLG: 4,
           headerBg: "transparent",
         },
         Segmented: {
-          borderRadius: 6,
-          borderRadiusSM: 4,
+          borderRadius: 2,
+          borderRadiusSM: 2,
         },
         Tag: {
-          borderRadiusSM: 4,
+          borderRadiusSM: 2,
         },
         Menu: {
           itemHeight: 36,
-          itemBorderRadius: 6,
+          itemBorderRadius: 2,
           itemMarginInline: 8,
-          iconSize: 15,
+          iconSize: 14,
         },
       },
     },
@@ -157,6 +157,12 @@ export default defineConfig({
     locale: true,
   },
   favicons: [`${publicPath}ai-home-logo.png`],
+  // 首帧前写入主题，避免深色 HUD 默认主题出现浅色闪屏。键名与 src/services/theme-persistence.ts 一致。
+  headScripts: [
+    {
+      content: "(function(){var t='dark';try{var s=localStorage.getItem('aih.theme');if(s==='light'||s==='dark')t=s;}catch(e){}document.documentElement.setAttribute('data-theme',t);})();",
+    },
+  ],
   routes,
   npmClient: "npm",
   history: {

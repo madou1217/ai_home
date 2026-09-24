@@ -63,6 +63,8 @@ test('enabled supervisor starts once the private endpoint serves (not only once 
       enabled: true,
       fs,
       path,
+      // 占位二进制没有 build stamp；构件校验由专门的用例覆盖。
+      verifyBuild: false,
       processObj: {
         env: { PATH: '/usr/bin' },
         kill: (pid, signal) => killed.push({ pid, signal })
@@ -185,6 +187,8 @@ test('supervisor restarts a crashed Go Core with exponential backoff and logs it
       enabled: true,
       fs,
       path,
+      // 占位二进制没有 build stamp；构件校验由专门的用例覆盖。
+      verifyBuild: false,
       binaryPath,
       aiHomeDir: tempDir,
       managementKey: 'management-secret',
@@ -242,6 +246,8 @@ test('supervisor does not restart when auto restart is disabled', async () => {
       enabled: true,
       fs,
       path,
+      // 占位二进制没有 build stamp；构件校验由专门的用例覆盖。
+      verifyBuild: false,
       binaryPath,
       aiHomeDir: tempDir,
       managementKey: 'management-secret',
@@ -257,6 +263,56 @@ test('supervisor does not restart when auto restart is disabled', async () => {
     children[0].emit('exit', 1, null);
     assert.equal(timers.pending.length, 0);
     assert.equal(supervisor.status().state, 'failed');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('supervisor refuses a Go Core binary without a matching build stamp', async () => {
+  const { writeBuildStamp, computeRouteManifestHash, readPackageVersion } = require('../lib/cli/services/server/go-core-build-stamp');
+  const repositoryRoot = path.join(__dirname, '..');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-stamp-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'binary-v1');
+  const { spawn } = crashableChildFactory();
+  const make = () => createGoCoreSupervisor({
+    enabled: true,
+    fs,
+    path,
+    binaryPath,
+    repositoryRoot,
+    aiHomeDir: tempDir,
+    managementKey: 'management-secret',
+    clientKey: 'client-secret',
+    processObj: { env: {}, kill() {} },
+    spawn,
+    autoRestart: false,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, service: 'aih-server' }) })
+  });
+  const stampFor = (overrides = {}) => writeBuildStamp(fs, {
+    binaryPath,
+    version: readPackageVersion(fs, repositoryRoot),
+    routeManifestHash: computeRouteManifestHash(fs, repositoryRoot),
+    ...overrides
+  });
+  try {
+    await assert.rejects(() => make().start(), (error) => error.code === 'go_core_build_unverified');
+
+    stampFor({ version: '0.0.0-old' });
+    await assert.rejects(() => make().start(), (error) => error.code === 'go_core_build_mismatch');
+
+    stampFor({ routeManifestHash: 'stale' });
+    await assert.rejects(() => make().start(), (error) => error.code === 'go_core_build_mismatch');
+
+    stampFor();
+    fs.writeFileSync(binaryPath, 'binary-swapped');
+    const swapped = make();
+    await assert.rejects(() => swapped.start(), (error) => error.code === 'go_core_build_mismatch');
+    assert.equal(swapped.status().state, 'failed');
+
+    stampFor();
+    const verified = await make().start();
+    assert.equal(verified.state, 'ready');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

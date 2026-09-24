@@ -5,9 +5,15 @@
 // (`resolveGoServerBinary`): bin/native/<platform>-<arch>/aih-server[.exe].
 // Local-only: no network beyond Go module download, never commits.
 
+const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { resolveGoServerBinary } = require('../lib/cli/services/server/go-core-supervisor');
+const {
+  computeRouteManifestHash,
+  readPackageVersion,
+  writeBuildStamp
+} = require('../lib/cli/services/server/go-core-build-stamp');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..');
 
@@ -26,6 +32,7 @@ function buildGoServerPlan(options = {}) {
   const output = resolveGoServerBinary({ repositoryRoot: REPOSITORY_ROOT, platform, arch });
   return {
     output,
+    target: `${platform}-${arch}`,
     args: ['build', '-trimpath', '-o', output, './cmd/aih-server'],
     env: { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' }
   };
@@ -43,8 +50,20 @@ function main(argv = process.argv.slice(2)) {
     return 1;
   }
   if (result.status !== 0) return result.status || 1;
-  console.log(`[aih] Go Core built: ${path.relative(REPOSITORY_ROOT, plan.output)}`);
+  const stamp = writeBuildStamp(fs, {
+    binaryPath: plan.output,
+    version: readPackageVersion(fs, REPOSITORY_ROOT),
+    routeManifestHash: computeRouteManifestHash(fs, REPOSITORY_ROOT),
+    sourceSha: readSourceSha(),
+    target: plan.target
+  });
+  console.log(`[aih] Go Core built: ${path.relative(REPOSITORY_ROOT, plan.output)} (sha256 ${stamp.binary_sha256.slice(0, 12)})`);
   return 0;
+}
+
+function readSourceSha() {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPOSITORY_ROOT, encoding: 'utf8' });
+  return result.status === 0 ? String(result.stdout || '').trim() : '';
 }
 
 if (require.main === module) {

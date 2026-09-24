@@ -118,6 +118,14 @@ function main() {
 
   // 构建 Web UI
   buildWebUI(rootDir);
+
+  // Go Core 构件（显式 opt-in 功能；失败只提示，不影响安装）
+  require('./postinstall-go-core').prepareGoCore().then(
+    (result) => {
+      if (result.action !== 'up_to_date' && result.action !== 'skipped') console.log(`[aih] Go Core: ${result.action}`);
+    },
+    (error) => console.log(`ℹ️  Go Core preparation skipped: ${error.message}`)
+  );
 }
 
 main();

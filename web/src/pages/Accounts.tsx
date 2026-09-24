@@ -85,11 +85,10 @@ import TokenUsageCell from '@/components/account/TokenUsageCell';
 import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import AccountQuotaResetHistoryModal from '@/features/accounts/AccountQuotaResetHistoryModal';
 import {
-  appendLiveTokenEvent,
-  useTokenDropEvents,
-  type TokenDropEvent
+  useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
 import {
+  applyAccountTokenUsageDelta,
   canCopyAccountEmail,
   canEditAccountConfig,
   canReauthAccount,
@@ -328,8 +327,7 @@ export default function Accounts() {
     requestAccountsSnapshotUpdate,
     stageAccountRemoval
   } = useAccountsSnapshot(accountsHandlersRef);
-  const [liveTokenDrops, setLiveTokenDrops] = useState<TokenDropEvent[]>([]);
-  const tokenDrops = useTokenDropEvents(accounts, liveTokenDrops);
+  const tokenDrops = useTokenDropEvents(accounts);
   const {
     modelCatalog,
     refreshingModelAccountRefs,
@@ -834,17 +832,9 @@ export default function Accounts() {
       });
     },
     onTokenConsumed: (event: TokenConsumedEvent) => {
-      const total = Number(event.tokens && event.tokens.total) || 0;
-      if (total <= 0) return;
-      const drop: TokenDropEvent = {
-        id: `live-${event.accountRef}-${event.occurredAt}-${total}`,
-        provider: String(event.provider || ''),
-        accountRef: String(event.accountRef || ''),
-        deltaTokens: Math.max(1, Math.round(total)),
-        deltaCostUsd: null,
-        occurredAt: Number(event.occurredAt) || Date.now()
-      };
-      setLiveTokenDrops((current) => appendLiveTokenEvent(current, drop));
+      setAccounts((current) => current.map((account) => (
+        applyAccountTokenUsageDelta(account, event)
+      )));
     }
   };
 

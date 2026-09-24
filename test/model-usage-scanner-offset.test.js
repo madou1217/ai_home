@@ -590,6 +590,78 @@ test('ordinary Codex increments preserve logical prompts that have no event time
   }
 });
 
+test('Codex scanner rebuilds an existing transcript when registry ownership becomes exact', (t) => {
+  const DatabaseSync = requireDatabaseSync(t);
+  if (!DatabaseSync) return;
+  const accountRef = 'acct_0123456789abcdef0123';
+  const sessionId = '019f698a-a7b0-7041-b4a2-41cfb5f0de50';
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-usage-ownership-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const filePath = path.join(root, 'session.jsonl');
+  fs.writeFileSync(filePath, `${[
+    {
+      timestamp: '2026-07-16T06:08:42.998Z',
+      type: 'session_meta',
+      payload: { id: sessionId, cwd: '/work/owned' }
+    },
+    {
+      timestamp: '2026-07-16T06:08:43.706Z',
+      type: 'turn_context',
+      payload: { model: 'gpt-5.6-sol' }
+    },
+    {
+      timestamp: '2026-07-16T06:08:57.318Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 60,
+            cached_input_tokens: 10,
+            output_tokens: 7,
+            reasoning_output_tokens: 2
+          },
+          last_token_usage: {
+            input_tokens: 60,
+            cached_input_tokens: 10,
+            output_tokens: 7,
+            reasoning_output_tokens: 2
+          }
+        }
+      }
+    }
+  ].map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+
+  const store = openModelUsageStore({
+    fs,
+    path,
+    aiHomeDir: path.join(root, '.ai_home'),
+    DatabaseSync
+  });
+  assert.ok(store);
+  try {
+    scannerPrivate.scanCodexFile({ fs, path, store, filePath });
+    assert.equal(store.db.prepare(
+      'SELECT account_ref FROM model_usage_records WHERE session_id = ?'
+    ).get(sessionId).account_ref, '');
+
+    scannerPrivate.scanCodexFile({
+      fs,
+      path,
+      store,
+      filePath,
+      resolveAccountRef: (candidate) => candidate === sessionId ? accountRef : ''
+    });
+
+    assert.equal(store.db.prepare(
+      'SELECT account_ref FROM model_usage_records WHERE session_id = ?'
+    ).get(sessionId).account_ref, accountRef);
+    assert.equal(store.getFileState(filePath).scanContext.attributedAccountRef, accountRef);
+  } finally {
+    store.close();
+  }
+});
+
 test('file projection replacement rejects a valid hash belonging to another path', (t) => {
   const DatabaseSync = requireDatabaseSync(t);
   if (!DatabaseSync) return;

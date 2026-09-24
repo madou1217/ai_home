@@ -1,4 +1,4 @@
-import type { Account, AccountAuthMode } from '@/types';
+import type { Account, AccountAuthMode, AccountTokenUsage, AccountTokenUsageModel } from '@/types';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { isInternalAccountLabel } from '@/utils/account-labels';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
@@ -319,4 +319,89 @@ export function mergeSingleAccount(current: Account[], incoming: Account): Accou
   }
   next.push(incoming);
   return next;
+}
+
+export interface AccountTokenUsageDelta {
+  provider?: string;
+  accountRef?: string;
+  model?: string;
+  tokens?: {
+    input?: number;
+    output?: number;
+    total?: number;
+  };
+}
+
+function normalizeTokenDelta(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+}
+
+function createEmptyTokenUsageModel(model: string): AccountTokenUsageModel {
+  return {
+    model,
+    day: 0,
+    week: 0,
+    month: 0,
+    total: 0,
+    dayCostUsd: null,
+    weekCostUsd: null,
+    monthCostUsd: null,
+    totalCostUsd: null
+  };
+}
+
+/**
+ * 将一次已完成请求的 token 增量立即投影到账号卡片。
+ * 服务端周期扫描仍是最终校准来源，这里只做单调的前端乐观更新，避免等待扫描窗口。
+ */
+export function applyAccountTokenUsageDelta(
+  account: Account,
+  event: AccountTokenUsageDelta
+): Account {
+  if (
+    String(event.provider || '').trim().toLowerCase() !== String(account.provider || '').trim().toLowerCase()
+    || String(event.accountRef || '').trim() !== String(account.accountRef || '').trim()
+  ) {
+    return account;
+  }
+
+  const input = normalizeTokenDelta(event.tokens?.input);
+  const output = normalizeTokenDelta(event.tokens?.output);
+  const total = normalizeTokenDelta(event.tokens?.total) || input + output;
+  if (total <= 0) return account;
+
+  const current: AccountTokenUsage = account.tokenUsage || {
+    day: 0,
+    week: 0,
+    month: 0,
+    total: 0,
+    models: []
+  };
+  const modelName = String(event.model || '').trim();
+  const models = Array.isArray(current.models) ? current.models.map((model) => ({ ...model })) : [];
+  const model = modelName ? (models.find((item) => item.model === modelName) || null) : null;
+  const nextModel = model || (modelName ? createEmptyTokenUsageModel(modelName) : null);
+  if (nextModel) {
+    nextModel.day += total;
+    nextModel.week += total;
+    nextModel.month += total;
+    nextModel.total += total;
+    nextModel.dayCostUsd = null;
+    nextModel.weekCostUsd = null;
+    nextModel.monthCostUsd = null;
+    nextModel.totalCostUsd = null;
+    if (!model) models.push(nextModel);
+  }
+
+  return {
+    ...account,
+    tokenUsage: {
+      day: Number(current.day) + total,
+      week: Number(current.week) + total,
+      month: Number(current.month) + total,
+      total: Number(current.total) + total,
+      models
+    }
+  };
 }

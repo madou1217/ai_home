@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { Account } from '@/types';
 import {
+  applyAccountTokenUsageDelta,
   canCopyAccountEmail,
   canEditAccountConfig,
   canReauthAccount,
@@ -449,6 +450,79 @@ test('mergeSingleAccount appends when the account is unknown', () => {
   assert.equal(merged.length, 2);
   assert.equal(merged[1].accountRef, 'acct_new');
   assert.equal(current.length, 1);
+});
+
+test('applyAccountTokenUsageDelta updates account and model windows immediately', () => {
+  const account = makeAccount({
+    tokenUsage: {
+      day: 100,
+      week: 200,
+      month: 300,
+      total: 400,
+      models: [{
+        model: 'gpt-5',
+        day: 80,
+        week: 160,
+        month: 240,
+        total: 320,
+        dayCostUsd: 0.1,
+        weekCostUsd: 0.2,
+        monthCostUsd: 0.3,
+        totalCostUsd: 0.4
+      }]
+    }
+  });
+
+  const next = applyAccountTokenUsageDelta(account, {
+    provider: 'CODEX',
+    accountRef: account.accountRef,
+    model: 'gpt-5',
+    tokens: { input: 90, output: 10, total: 100 }
+  });
+
+  assert.deepEqual(next.tokenUsage, {
+    day: 200,
+    week: 300,
+    month: 400,
+    total: 500,
+    models: [{
+      model: 'gpt-5',
+      day: 180,
+      week: 260,
+      month: 340,
+      total: 420,
+      dayCostUsd: null,
+      weekCostUsd: null,
+      monthCostUsd: null,
+      totalCostUsd: null
+    }]
+  });
+});
+
+test('applyAccountTokenUsageDelta creates a model for an account with no prior usage', () => {
+  const account = makeAccount({ tokenUsage: null });
+  const next = applyAccountTokenUsageDelta(account, {
+    provider: account.provider,
+    accountRef: account.accountRef,
+    model: 'claude-sonnet',
+    tokens: { input: 20, output: 30 }
+  });
+
+  assert.equal(next.tokenUsage?.day, 50);
+  assert.equal(next.tokenUsage?.total, 50);
+  assert.equal(next.tokenUsage?.models[0]?.model, 'claude-sonnet');
+  assert.equal(next.tokenUsage?.models[0]?.total, 50);
+});
+
+test('applyAccountTokenUsageDelta ignores a different account or provider', () => {
+  const account = makeAccount({ tokenUsage: null });
+  const event = {
+    provider: 'gemini',
+    accountRef: account.accountRef,
+    model: 'gemini-3',
+    tokens: { total: 50 }
+  };
+  assert.equal(applyAccountTokenUsageDelta(account, event), account);
 });
 
 test('countHealthyAccounts counts only healthy accounts over the full persisted list', () => {

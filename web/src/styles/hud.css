@@ -520,6 +520,652 @@ body {
 }
 
 /* -------------------------------------------------------------------------
+ * 7b. 全量元素层：页面里用到的每一种 antd 组件都落到 HUD 语言
+ *     （只调外观；间距 / 交互 / 结构保持 antd 默认）
+ * ---------------------------------------------------------------------- */
+
+/* Alert：暗底 + 状态色细框 + 发光图标，等宽字 */
+.ant-alert {
+  border-width: 1px !important;
+  font-family: var(--font-body);
+}
+.ant-alert-info { background: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface)) !important; border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)) !important; }
+.ant-alert-success { background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface)) !important; border-color: color-mix(in srgb, var(--color-success) 40%, var(--color-border)) !important; }
+.ant-alert-warning { background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface)) !important; border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border)) !important; }
+.ant-alert-error { background: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface)) !important; border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border)) !important; }
+.ant-alert-info .ant-alert-icon { color: var(--color-accent) !important; filter: drop-shadow(0 0 4px var(--color-accent)); }
+.ant-alert-success .ant-alert-icon { color: var(--color-success) !important; filter: drop-shadow(0 0 4px var(--color-success)); }
+.ant-alert-warning .ant-alert-icon { color: var(--color-warning) !important; filter: drop-shadow(0 0 4px var(--color-warning)); }
+.ant-alert-error .ant-alert-icon { color: var(--color-danger) !important; filter: drop-shadow(0 0 4px var(--color-danger)); }
+.ant-alert .ant-alert-message { color: var(--color-text); font-weight: 600; }
+.ant-alert .ant-alert-description { color: var(--color-muted); }
+
+/* Badge：方角计数 + 状态点即 LED */
+.ant-badge .ant-badge-count,
+.ant-badge .ant-badge-count-sm {
+  border-radius: 2px !important;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  box-shadow: 0 0 0 1px var(--color-bg) !important;
+}
+.ant-badge .ant-badge-dot {
+  box-shadow: 0 0 0 1px var(--color-bg), 0 0 6px var(--color-danger) !important;
+}
+.ant-badge-status-dot { box-shadow: 0 0 6px currentColor; }
+.ant-badge-status-success .ant-badge-status-dot,
+.ant-badge-status-dot.ant-badge-status-success { background: var(--color-success) !important; color: var(--color-success); }
+.ant-badge-status-processing .ant-badge-status-dot,
+.ant-badge-status-dot.ant-badge-status-processing { background: var(--color-accent) !important; color: var(--color-accent); }
+.ant-badge-status-warning .ant-badge-status-dot,
+.ant-badge-status-dot.ant-badge-status-warning { background: var(--color-warning) !important; color: var(--color-warning); }
+.ant-badge-status-error .ant-badge-status-dot,
+.ant-badge-status-dot.ant-badge-status-error { background: var(--color-danger) !important; color: var(--color-danger); }
+.ant-badge-status-default .ant-badge-status-dot,
+.ant-badge-status-dot.ant-badge-status-default { background: var(--color-faint) !important; color: transparent; box-shadow: none; }
+.ant-badge-status-text { font-family: var(--font-body); color: var(--color-muted) !important; }
+
+/* Empty：去插画饱和度，改成 HUD「NO SIGNAL」式的淡线框 + 大写说明 */
+.ant-empty .ant-empty-image svg,
+.ant-empty .ant-empty-image img {
+  opacity: 0.55;
+  filter: grayscale(1) drop-shadow(0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent));
+}
+.ant-empty .ant-empty-description {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint) !important;
+}
+
+/* Spin：青色发光指示点；提示文字等宽大写 */
+.ant-spin .ant-spin-dot-item { background: var(--color-accent) !important; box-shadow: 0 0 6px var(--color-accent); border-radius: 1px !important; }
+.ant-spin .ant-spin-text,
+.ant-spin-nested-loading > div > .ant-spin .ant-spin-text {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent) !important;
+  text-shadow: none;
+}
+.ant-spin-container::after { background: var(--color-bg) !important; }
+
+/* Skeleton：方块 + 扫描式微光 */
+.ant-skeleton .ant-skeleton-title,
+.ant-skeleton .ant-skeleton-paragraph > li,
+.ant-skeleton .ant-skeleton-avatar,
+.ant-skeleton .ant-skeleton-button,
+.ant-skeleton .ant-skeleton-input,
+.ant-skeleton .ant-skeleton-image {
+  border-radius: 1px !important;
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-sunken)) !important;
+}
+.ant-skeleton.ant-skeleton-active .ant-skeleton-title,
+.ant-skeleton.ant-skeleton-active .ant-skeleton-paragraph > li,
+.ant-skeleton.ant-skeleton-active .ant-skeleton-avatar,
+.ant-skeleton.ant-skeleton-active .ant-skeleton-button,
+.ant-skeleton.ant-skeleton-active .ant-skeleton-input,
+.ant-skeleton.ant-skeleton-active .ant-skeleton-image {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-sunken)) 25%,
+    color-mix(in srgb, var(--color-accent) 16%, var(--color-surface-sunken)) 37%,
+    color-mix(in srgb, var(--color-accent) 5%, var(--color-surface-sunken)) 63%) !important;
+  background-size: 400% 100% !important;
+}
+
+/* Switch：方形轨道 + 方形滑块；开启 = 青色发光 */
+.ant-switch {
+  border-radius: 2px !important;
+  background: var(--color-surface-sunken) !important;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+.ant-switch .ant-switch-handle::before {
+  border-radius: 1px !important;
+  background: var(--color-muted) !important;
+  box-shadow: none !important;
+}
+.ant-switch.ant-switch-checked {
+  background: color-mix(in srgb, var(--color-accent) 22%, var(--color-surface-sunken)) !important;
+  box-shadow: inset 0 0 0 1px var(--color-accent), 0 0 10px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+.ant-switch.ant-switch-checked .ant-switch-handle::before {
+  background: var(--color-accent) !important;
+  box-shadow: 0 0 6px var(--color-accent) !important;
+}
+.ant-switch .ant-switch-inner { font-family: var(--font-body); font-weight: 700; letter-spacing: 0.06em; }
+.ant-switch.ant-switch-checked .ant-switch-inner { color: var(--color-accent); }
+.ant-switch.ant-switch-disabled { opacity: 0.45; }
+
+/* Checkbox / Radio：方框；选中 = 青色描边 + 内发光（Radio 保留圆形但加辉光） */
+.ant-checkbox .ant-checkbox-inner {
+  border-radius: 1px !important;
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border-strong) !important;
+}
+.ant-checkbox-checked .ant-checkbox-inner,
+.ant-checkbox-indeterminate .ant-checkbox-inner {
+  background: color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-sunken)) !important;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.ant-checkbox-checked .ant-checkbox-inner::after { border-color: var(--color-accent) !important; }
+.ant-checkbox-indeterminate .ant-checkbox-inner::after { background: var(--color-accent) !important; border-radius: 0; }
+.ant-radio .ant-radio-inner {
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border-strong) !important;
+}
+.ant-radio-checked .ant-radio-inner {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.ant-radio-checked .ant-radio-inner::after { background: var(--color-accent) !important; }
+.ant-checkbox-wrapper,
+.ant-radio-wrapper { color: var(--color-text); }
+
+/* Radio 按钮组：与 Segmented 一致的方块分段 */
+.ant-radio-button-wrapper {
+  border-radius: 0 !important;
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-muted) !important;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.ant-radio-button-wrapper::before { background-color: var(--color-border) !important; }
+.ant-radio-button-wrapper:hover { color: var(--color-accent) !important; }
+.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-sunken)) !important;
+  border-color: var(--color-accent) !important;
+  color: var(--color-accent) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 35%, transparent) !important;
+}
+
+/* InputNumber：步进按钮同凹槽 */
+.ant-input-number .ant-input-number-handler-wrap {
+  background: var(--color-surface-raised) !important;
+  border-radius: 0 !important;
+}
+.ant-input-number .ant-input-number-handler { border-color: var(--color-border) !important; }
+.ant-input-number .ant-input-number-handler:hover .ant-input-number-handler-up-inner,
+.ant-input-number .ant-input-number-handler:hover .ant-input-number-handler-down-inner { color: var(--color-accent) !important; }
+.ant-input-number .ant-input-number-input { font-variant-numeric: tabular-nums; }
+.ant-input-number-group-addon,
+.ant-input-group-addon {
+  background: var(--color-surface-raised) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-muted) !important;
+  border-radius: 0 !important;
+  font-family: var(--font-body);
+}
+textarea.ant-input { font-family: var(--font-body); }
+
+/* Form：标签大写字距 + 暗色说明；校验态用状态色辉光 */
+.ant-form-item .ant-form-item-label > label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted-strong);
+}
+.ant-form-item .ant-form-item-label > label.ant-form-item-required:not(.ant-form-item-required-mark-optional)::before {
+  color: var(--color-danger) !important;
+  text-shadow: 0 0 4px var(--color-danger);
+}
+.ant-form-item .ant-form-item-extra,
+.ant-form-item .ant-form-item-explain { font-size: 12px; }
+.ant-form-item .ant-form-item-extra { color: var(--color-faint) !important; }
+.ant-form-item-has-error .ant-input,
+.ant-form-item-has-error .ant-input-affix-wrapper,
+.ant-form-item-has-error .ant-select-selector,
+.ant-input-status-error,
+.ant-input-affix-wrapper-status-error,
+.ant-select-status-error .ant-select-selector {
+  border-color: var(--color-danger) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 25%, transparent) !important;
+}
+
+/* 下拉 / 气泡 / 确认气泡 / 选择器弹层：切角暗面板 + 青色细框 */
+.ant-select-dropdown,
+.ant-dropdown .ant-dropdown-menu,
+.ant-popover .ant-popover-inner,
+.ant-picker-dropdown .ant-picker-panel-container,
+.ant-cascader-dropdown,
+.ant-mentions-dropdown,
+.ant-tree-select-dropdown {
+  background: var(--color-surface-raised) !important;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border)) !important;
+  box-shadow: var(--elevation-3), 0 0 16px color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+}
+.ant-dropdown .ant-dropdown-menu,
+.ant-popover .ant-popover-inner {
+  --hud-cut: 6px;
+  clip-path: polygon(
+    0 var(--hud-cut), var(--hud-cut) 0, 100% 0,
+    100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%
+  );
+}
+.ant-popover .ant-popover-arrow::before,
+.ant-dropdown .ant-dropdown-arrow::before { background: var(--color-surface-raised) !important; }
+.ant-popover .ant-popover-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+  border-bottom-color: var(--color-border) !important;
+}
+.ant-popconfirm .ant-popconfirm-message-title { color: var(--color-text); font-weight: 600; }
+.ant-popconfirm .ant-popconfirm-message-icon .anticon { filter: drop-shadow(0 0 4px currentColor); }
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-submenu-title,
+.ant-select-dropdown .ant-select-item,
+.ant-cascader-dropdown .ant-cascader-menu-item {
+  border-radius: 0 !important;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  border-left: 2px solid transparent;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item:hover,
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-active,
+.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.ant-cascader-dropdown .ant-cascader-menu-item:hover {
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent) !important;
+  border-left-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled),
+.ant-cascader-dropdown .ant-cascader-menu-item-active:not(.ant-cascader-menu-item-disabled) {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent) !important;
+  border-left-color: var(--color-accent);
+  color: var(--color-accent) !important;
+  font-weight: 600;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:not(.ant-dropdown-menu-item-disabled) { color: var(--color-danger) !important; }
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-danger:not(.ant-dropdown-menu-item-disabled):hover {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent) !important;
+  border-left-color: var(--color-danger);
+  color: var(--color-danger) !important;
+}
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-divider,
+.ant-dropdown-menu-item-divider { background: var(--color-border) !important; }
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item-group-title,
+.ant-select-dropdown .ant-select-item-group {
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint) !important;
+}
+
+/* Select 已选多值标签：方角 */
+.ant-select-multiple .ant-select-selection-item {
+  border-radius: 1px !important;
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-raised)) !important;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent) !important;
+  color: var(--color-text);
+}
+
+/* DatePicker 面板：选中格青底 */
+.ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-selected .ant-picker-cell-inner,
+.ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-range-start .ant-picker-cell-inner,
+.ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-range-end .ant-picker-cell-inner {
+  border-radius: 1px !important;
+  background: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.ant-picker-dropdown .ant-picker-cell-inner { border-radius: 1px !important; }
+.ant-picker-dropdown .ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner::before { border-color: var(--color-accent) !important; border-radius: 1px !important; }
+
+/* Drawer：切角左上 + 顶部青色细线 + 等宽正文 */
+.ant-drawer .ant-drawer-content {
+  background: var(--color-surface) !important;
+}
+.ant-drawer .ant-drawer-header {
+  border-bottom: 1px solid var(--color-border) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent);
+}
+.ant-drawer .ant-drawer-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: var(--hud-text-glow);
+}
+.ant-drawer-left .ant-drawer-content { border-right: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
+.ant-drawer-bottom .ant-drawer-content,
+.ant-drawer-bottom .ant-drawer-content-wrapper { border-radius: 0 !important; }
+.ant-drawer-bottom .ant-drawer-content { border-top: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
+.ant-drawer-top .ant-drawer-content { border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
+.ant-drawer .ant-drawer-footer { border-top-color: var(--color-border) !important; }
+.ant-drawer .ant-drawer-close,
+.ant-modal .ant-modal-close {
+  border-radius: 1px !important;
+  color: var(--color-muted) !important;
+}
+.ant-drawer .ant-drawer-close:hover,
+.ant-modal .ant-modal-close:hover {
+  color: var(--color-accent) !important;
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+}
+
+/* Modal 页头 / 页脚分隔 + 确认框 */
+.ant-modal .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+.ant-modal .ant-modal-footer {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+.ant-modal-confirm .ant-modal-confirm-paragraph .ant-modal-confirm-content { color: var(--color-muted-strong); }
+.ant-modal-confirm .ant-modal-confirm-body > .anticon { filter: drop-shadow(0 0 5px currentColor); }
+.ant-modal-confirm-warning .ant-modal-confirm-body > .anticon { color: var(--color-warning) !important; }
+.ant-modal-confirm-error .ant-modal-confirm-body > .anticon { color: var(--color-danger) !important; }
+.ant-modal-confirm-success .ant-modal-confirm-body > .anticon { color: var(--color-success) !important; }
+.ant-modal-confirm-info .ant-modal-confirm-body > .anticon,
+.ant-modal-confirm-confirm .ant-modal-confirm-body > .anticon { color: var(--color-accent) !important; }
+
+/* Breadcrumb：`/` 分隔等宽 + 当前项青色 */
+.ant-breadcrumb { font-family: var(--font-body); font-size: 12px; }
+.ant-breadcrumb .ant-breadcrumb-separator { color: var(--color-faint) !important; }
+.ant-breadcrumb a,
+.ant-breadcrumb .ant-breadcrumb-link a { color: var(--color-muted) !important; border-radius: 0 !important; }
+.ant-breadcrumb a:hover { color: var(--color-accent) !important; background: transparent !important; }
+.ant-breadcrumb li:last-child .ant-breadcrumb-link { color: var(--color-accent); }
+
+/* Collapse：发丝分隔；展开标题青色 */
+.ant-collapse {
+  border-radius: 0 !important;
+  border-color: var(--color-border) !important;
+  background: transparent !important;
+}
+.ant-collapse > .ant-collapse-item { border-color: var(--color-border) !important; border-radius: 0 !important; }
+.ant-collapse > .ant-collapse-item > .ant-collapse-header {
+  border-radius: 0 !important;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--color-text);
+}
+.ant-collapse > .ant-collapse-item-active > .ant-collapse-header { color: var(--color-accent); }
+.ant-collapse .ant-collapse-content {
+  background: var(--color-surface-sunken) !important;
+  border-top-color: var(--color-border) !important;
+  border-radius: 0 !important;
+}
+.ant-collapse-borderless > .ant-collapse-item > .ant-collapse-content { background: transparent !important; }
+
+/* Progress：细轨方头；圆环数值等宽 */
+.ant-progress .ant-progress-inner,
+.ant-progress .ant-progress-bg,
+.ant-progress .ant-progress-success-bg {
+  border-radius: 0 !important;
+}
+.ant-progress-line .ant-progress-inner { background: var(--color-surface-sunken) !important; }
+.ant-progress .ant-progress-text {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-strong) !important;
+}
+.ant-progress-circle .ant-progress-circle-path { filter: drop-shadow(0 0 3px currentColor); }
+.ant-progress-circle .ant-progress-circle-trail { stroke: var(--color-surface-sunken) !important; }
+.ant-progress-steps .ant-progress-steps-item { border-radius: 0 !important; }
+
+/* Steps：方形节点 + 发丝连线；当前步骤青色辉光 */
+.ant-steps .ant-steps-item-icon {
+  border-radius: 1px !important;
+  font-family: var(--font-mono);
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border-strong) !important;
+}
+.ant-steps .ant-steps-item-process .ant-steps-item-icon {
+  background: color-mix(in srgb, var(--color-accent) 18%, var(--color-surface-sunken)) !important;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.ant-steps .ant-steps-item-process .ant-steps-item-icon > .ant-steps-icon { color: var(--color-accent) !important; }
+.ant-steps .ant-steps-item-finish .ant-steps-item-icon { border-color: var(--color-success) !important; }
+.ant-steps .ant-steps-item-finish .ant-steps-item-icon > .ant-steps-icon { color: var(--color-success) !important; }
+.ant-steps .ant-steps-item-error .ant-steps-item-icon { border-color: var(--color-danger) !important; }
+.ant-steps .ant-steps-item-title { font-weight: 600; letter-spacing: 0.03em; }
+.ant-steps .ant-steps-item-tail::after,
+.ant-steps .ant-steps-item-title::after { background-color: var(--color-border) !important; }
+.ant-steps .ant-steps-item-finish > .ant-steps-item-container > .ant-steps-item-tail::after,
+.ant-steps .ant-steps-item-finish .ant-steps-item-title::after { background-color: var(--color-success) !important; }
+
+/* Result：状态图标发光，标题 Orbitron */
+.ant-result .ant-result-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.05em;
+  color: var(--color-heading);
+}
+.ant-result .ant-result-subtitle { color: var(--color-muted); }
+.ant-result .ant-result-icon > .anticon { filter: drop-shadow(0 0 10px currentColor); }
+.ant-result-success .ant-result-icon > .anticon { color: var(--color-success) !important; }
+.ant-result-error .ant-result-icon > .anticon { color: var(--color-danger) !important; }
+.ant-result-warning .ant-result-icon > .anticon { color: var(--color-warning) !important; }
+.ant-result-info .ant-result-icon > .anticon { color: var(--color-accent) !important; }
+.ant-result .ant-result-extra { font-family: var(--font-body); }
+
+/* Timeline：LED 节点 + 发丝轴 */
+.ant-timeline .ant-timeline-item-tail { border-inline-start-color: var(--color-border) !important; }
+.ant-timeline .ant-timeline-item-head {
+  border-radius: 1px !important;
+  background: var(--color-surface) !important;
+  box-shadow: 0 0 6px currentColor;
+}
+.ant-timeline .ant-timeline-item-head-blue { color: var(--color-accent) !important; border-color: var(--color-accent) !important; }
+.ant-timeline .ant-timeline-item-head-green { color: var(--color-success) !important; border-color: var(--color-success) !important; }
+.ant-timeline .ant-timeline-item-head-red { color: var(--color-danger) !important; border-color: var(--color-danger) !important; }
+.ant-timeline .ant-timeline-item-head-gray { color: var(--color-faint) !important; border-color: var(--color-faint) !important; box-shadow: none; }
+.ant-timeline .ant-timeline-item-label { font-family: var(--font-mono); color: var(--color-faint); }
+
+/* Tree：选中行左侧青轨 */
+.ant-tree { background: transparent !important; font-family: var(--font-body); }
+.ant-tree .ant-tree-node-content-wrapper { border-radius: 0 !important; }
+.ant-tree .ant-tree-node-content-wrapper:hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent) !important; }
+.ant-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  color: var(--color-accent);
+}
+.ant-tree .ant-tree-switcher { color: var(--color-muted); }
+
+/* Pagination：方块页码，当前页青框辉光 */
+.ant-pagination { font-family: var(--font-mono); }
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+.ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  border-radius: 0 !important;
+  background: var(--color-surface-sunken) !important;
+  border: 1px solid var(--color-border) !important;
+}
+.ant-pagination .ant-pagination-item a { color: var(--color-muted) !important; }
+.ant-pagination .ant-pagination-item:hover { border-color: var(--color-accent) !important; }
+.ant-pagination .ant-pagination-item:hover a { color: var(--color-accent) !important; }
+.ant-pagination .ant-pagination-item-active {
+  border-color: var(--color-accent) !important;
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-sunken)) !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+.ant-pagination .ant-pagination-item-active a { color: var(--color-accent) !important; font-weight: 700; }
+
+/* Avatar：方形切角 */
+.ant-avatar {
+  border-radius: 2px !important;
+  background: var(--color-surface-raised);
+  color: var(--color-accent);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.ant-avatar.ant-avatar-circle { border-radius: 50% !important; }
+
+/* Divider：发丝线；带文字时文字做 HUD 标签 */
+.ant-divider { border-block-start-color: var(--color-border) !important; }
+.ant-divider-vertical { border-inline-start-color: var(--color-border) !important; }
+.ant-divider-with-text::before,
+.ant-divider-with-text::after { border-block-start-color: var(--color-border) !important; }
+.ant-divider-with-text .ant-divider-inner-text {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* List：发丝分隔行，悬停青色左轨 */
+.ant-list .ant-list-item { border-block-end-color: var(--color-border) !important; }
+.ant-list-bordered { border-radius: 0 !important; border-color: var(--color-border) !important; }
+.ant-list .ant-list-item-meta-title { color: var(--color-text); font-weight: 600; }
+.ant-list .ant-list-item-meta-description { color: var(--color-muted); }
+
+/* Descriptions：标签大写字距，值等宽 */
+.ant-descriptions .ant-descriptions-item-label {
+  font-size: 11px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-faint) !important;
+}
+.ant-descriptions .ant-descriptions-item-content { color: var(--color-text) !important; font-variant-numeric: tabular-nums; }
+.ant-descriptions-bordered .ant-descriptions-view,
+.ant-descriptions-bordered .ant-descriptions-row,
+.ant-descriptions-bordered .ant-descriptions-item-label,
+.ant-descriptions-bordered .ant-descriptions-item-content {
+  border-color: var(--color-border) !important;
+  border-radius: 0 !important;
+}
+.ant-descriptions-bordered .ant-descriptions-item-label { background: var(--color-surface-sunken) !important; }
+
+/* Statistic：数值等宽发光 */
+.ant-statistic .ant-statistic-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-faint) !important;
+}
+.ant-statistic .ant-statistic-content {
+  font-family: var(--font-mono) !important;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums slashed-zero;
+  color: var(--color-heading) !important;
+}
+
+/* Typography：链接青色发光悬停；代码 / 键帽 / 标记方角 */
+.ant-typography a,
+a.ant-typography { color: var(--color-accent) !important; }
+.ant-typography a:hover,
+a.ant-typography:hover { text-shadow: var(--hud-text-glow); }
+.ant-typography code,
+.ant-typography kbd {
+  border-radius: 1px !important;
+  font-family: var(--font-mono);
+  background: var(--color-surface-sunken) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-accent);
+}
+.ant-typography mark { background: color-mix(in srgb, var(--color-warning) 30%, transparent); color: var(--color-text); }
+.ant-typography.ant-typography-secondary { color: var(--color-muted) !important; }
+.ant-typography .ant-typography-copy { color: var(--color-muted) !important; }
+.ant-typography .ant-typography-copy:hover,
+.ant-typography .ant-typography-copy-success { color: var(--color-accent) !important; }
+
+/* QRCode：暗底白码需要足够对比，保留白底但加青色切角框 */
+.ant-qrcode {
+  border-radius: 0 !important;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border)) !important;
+  box-shadow: var(--hud-glow-accent);
+}
+
+/* Slider：细轨 + 方形滑块 */
+.ant-slider .ant-slider-rail { background: var(--color-surface-sunken) !important; border-radius: 0 !important; }
+.ant-slider .ant-slider-track { background: var(--color-accent) !important; border-radius: 0 !important; box-shadow: 0 0 6px var(--color-accent); }
+.ant-slider .ant-slider-handle::after { border-radius: 1px !important; box-shadow: 0 0 0 2px var(--color-accent) !important; background: var(--color-surface) !important; }
+
+/* Upload 拖拽区：虚线青框 */
+.ant-upload-wrapper .ant-upload-drag {
+  border-radius: 0 !important;
+  background: var(--color-surface-sunken) !important;
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-border)) !important;
+}
+.ant-upload-wrapper .ant-upload-drag:hover { border-color: var(--color-accent) !important; }
+.ant-upload-wrapper .ant-upload-list .ant-upload-list-item { border-radius: 0 !important; }
+
+/* Card（非 ProCard 的原生 antd Card）：切角小面板 */
+.ant-card:not(.ant-pro-card) {
+  border-radius: 0 !important;
+  background: var(--hud-panel-bg) !important;
+  border-color: var(--color-border) !important;
+}
+.ant-card:not(.ant-pro-card) .ant-card-head {
+  border-bottom-color: var(--color-border) !important;
+  min-height: 44px;
+}
+.ant-card:not(.ant-pro-card) .ant-card-head-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+}
+
+/* Segmented：选中项青色描边发光 + 等宽 */
+.ant-segmented { background: var(--color-surface-sunken) !important; padding: 2px; }
+.ant-segmented .ant-segmented-item { border-radius: 1px !important; color: var(--color-muted); }
+.ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected):not(.ant-segmented-item-disabled) { color: var(--color-accent); }
+.ant-segmented .ant-segmented-item-selected,
+.ant-segmented .ant-segmented-thumb {
+  border-radius: 1px !important;
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-raised)) !important;
+  color: var(--color-accent) !important;
+}
+.ant-segmented .ant-segmented-item-label { font-weight: 600; letter-spacing: 0.03em; }
+
+/* Tabs：卡片式页签方角 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  border-radius: 0 !important;
+  background: var(--color-surface-sunken) !important;
+  border-color: var(--color-border) !important;
+}
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
+  background: var(--color-surface) !important;
+  border-bottom-color: var(--color-surface) !important;
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+.ant-tabs > .ant-tabs-nav::before { border-bottom-color: var(--color-border) !important; }
+.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn { text-shadow: var(--hud-text-glow-soft); }
+
+/* Table 附件：选中行 / 悬停行 / 排序 / 展开 / 空行 */
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td { background: color-mix(in srgb, var(--color-accent) 5%, transparent) !important; }
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td { background: color-mix(in srgb, var(--color-accent) 10%, transparent) !important; }
+.ant-table-wrapper .ant-table-column-sorter-up.active,
+.ant-table-wrapper .ant-table-column-sorter-down.active { color: var(--color-accent) !important; }
+.ant-table-wrapper .ant-table-row-expand-icon { border-radius: 0 !important; }
+.ant-table-wrapper .ant-table-container { border-radius: 0 !important; }
+.ant-table-wrapper .ant-table-thead > tr > th::before { display: none; }
+
+/* Tag 语义色：状态色发光描边（覆盖 antd 预设色） */
+.ant-tag-success,
+.ant-tag-green { color: var(--color-success) !important; background: color-mix(in srgb, var(--color-success) 10%, transparent) !important; }
+.ant-tag-processing,
+.ant-tag-blue,
+.ant-tag-cyan,
+.ant-tag-geekblue { color: var(--color-accent) !important; background: color-mix(in srgb, var(--color-accent) 10%, transparent) !important; }
+.ant-tag-warning,
+.ant-tag-orange,
+.ant-tag-gold { color: var(--color-warning) !important; background: color-mix(in srgb, var(--color-warning) 10%, transparent) !important; }
+.ant-tag-error,
+.ant-tag-red,
+.ant-tag-volcano,
+.ant-tag-magenta { color: var(--color-danger) !important; background: color-mix(in srgb, var(--color-danger) 10%, transparent) !important; }
+.ant-tag-default { color: var(--color-muted-strong); background: var(--color-surface-sunken) !important; }
+
+/* FloatButton / BackTop：方块 */
+.ant-float-btn { border-radius: 2px !important; }
+.ant-float-btn .ant-float-btn-body { border-radius: 2px !important; }
+
+/* Tour / Notification 关闭按钮 / Image 预览遮罩 */
+.ant-image-preview-mask { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.ant-image-preview-operations { font-family: var(--font-body); }
+
+/* -------------------------------------------------------------------------
  * 8. CRT 扫描线覆盖层（组件：components/hud/CrtOverlay）
  * ---------------------------------------------------------------------- */
 .hud-crt-overlay {

@@ -33,11 +33,20 @@ function formatUsagePercent(value: number | null) {
   return value == null ? '-' : `${value.toFixed(1)}%`;
 }
 
+// 燃烧粒子（BurningParticles）要在 JS 里按 HSL 抖动色相，只能吃字面 hex；
+// 进度条本身用 getUsageBarTokenColor 的语义 token，随深浅主题翻转。
 export function getUsageBarColor(value: number | null) {
   if (value == null) return '#d9d9d9';
   if (value > 80) return '#52c41a';
   if (value > 30) return '#faad14';
   return '#ff4d4f';
+}
+
+function getUsageBarTokenColor(value: number | null) {
+  if (value == null) return 'var(--color-disabled)';
+  if (value > 80) return 'var(--color-success)';
+  if (value > 30) return 'var(--color-warning)';
+  return 'var(--color-danger)';
 }
 
 // CodeBuddy 家族四支共用同一份 `codebuddy_credit_balance` 快照（同地区 work/code 是同一个
@@ -114,7 +123,7 @@ function CopyableModelId({ modelId }: { modelId: string }) {
       onClick={handleCopy}
       title="点击复制模型 ID"
       style={{
-        color: 'rgba(255, 255, 255, 0.75)',
+        color: 'color-mix(in srgb, var(--hos-white) 75%, transparent)',
         cursor: 'pointer',
         fontSize: 11.5,
         fontFamily: 'var(--font-mono, monospace)',
@@ -124,11 +133,11 @@ function CopyableModelId({ modelId }: { modelId: string }) {
         textAlign: 'left'
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.color = '#91caff';
+        e.currentTarget.style.color = 'var(--hos-white)';
         e.currentTarget.style.textDecoration = 'underline';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.color = 'rgba(255, 255, 255, 0.75)';
+        e.currentTarget.style.color = 'color-mix(in srgb, var(--hos-white) 75%, transparent)';
         e.currentTarget.style.textDecoration = 'none';
       }}
     >
@@ -157,9 +166,9 @@ function AgyGroupModelsTooltip({
           gap: 16,
           paddingBottom: 5,
           marginBottom: 6,
-          borderBottom: '1px solid rgba(255, 255, 255, 0.18)',
+          borderBottom: '1px solid color-mix(in srgb, var(--hos-white) 18%, transparent)',
           fontSize: 11,
-          color: 'rgba(255, 255, 255, 0.65)'
+          color: 'color-mix(in srgb, var(--hos-white) 65%, transparent)'
         }}
       >
         <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>名称 ({members.length})</span>
@@ -187,7 +196,7 @@ function AgyGroupModelsTooltip({
           >
             <span
               style={{
-                color: '#fff',
+                color: 'var(--hos-white)',
                 textAlign: 'left',
                 fontWeight: 500,
                 fontSize: 11.5,
@@ -207,10 +216,10 @@ function AgyGroupModelsTooltip({
           style={{
             marginTop: 6,
             paddingTop: 4,
-            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+            borderTop: '1px solid color-mix(in srgb, var(--hos-white) 12%, transparent)',
             textAlign: 'center',
             cursor: 'pointer',
-            color: '#4096ff',
+            color: 'color-mix(in srgb, var(--hos-white) 85%, transparent)',
             fontSize: 11
           }}
           onClick={(e) => {
@@ -261,9 +270,9 @@ function UsageMetaLine({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ color: '#595959', fontSize: 'clamp(12.5px, 3.2vw, 13.5px)', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ color: 'var(--color-muted-strong)', fontSize: 'clamp(12.5px, 3.2vw, 13.5px)', whiteSpace: 'nowrap' }}>{label}</span>
         {resetInLabel ? (
-          <span style={{ textAlign: 'right', minWidth: 0, color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+          <span style={{ textAlign: 'right', minWidth: 0, color: 'var(--color-muted)', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
             {resetInLabel}
           </span>
         ) : null}
@@ -276,7 +285,7 @@ function UsageMetaLine({
         tooltip={progressTooltip}
       />
       {resetLabel ? (
-        <div style={{ color: '#8c8c8c', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
+        <div style={{ color: 'var(--color-muted)', fontSize: 'clamp(11.5px, 3vw, 12.5px)', whiteSpace: 'nowrap' }}>
           {resetLabel}
         </div>
       ) : null}
@@ -299,6 +308,7 @@ function UsageProgressBar({
 }) {
   const percent = Math.max(0, Math.min(100, Number(value || 0)));
   const color = getUsageBarColor(value);
+  const strokeColor = getUsageBarTokenColor(value);
 
   const line = (
     <div className="usage-progress-line" data-usage-progress-value={String(percent)}>
@@ -306,8 +316,8 @@ function UsageProgressBar({
         <Progress
           percent={percent}
           size="small"
-          strokeColor={color}
-          trailColor="#f0f0f0"
+          strokeColor={strokeColor}
+          trailColor="var(--color-overlay)"
           showInfo={false}
         />
         {running && value != null ? (
@@ -412,7 +422,7 @@ export default function UsageSnapshotCell({
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -472,7 +482,7 @@ export default function UsageSnapshotCell({
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -504,7 +514,7 @@ export default function UsageSnapshotCell({
             style={{
               fontWeight: 600,
               fontSize: 'clamp(12px, 3vw, 12.5px)',
-              color: '#334155',
+              color: 'var(--color-heading)',
               letterSpacing: '0.15px',
               marginBottom: 4
             }}
@@ -546,7 +556,7 @@ export default function UsageSnapshotCell({
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -586,13 +596,13 @@ export default function UsageSnapshotCell({
                   >
                     <span
                       style={{
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                        fontFamily: 'var(--font-body)',
                         fontWeight: 600,
                         fontSize: 'clamp(12px, 3vw, 12.5px)',
-                        color: '#334155',
+                        color: 'var(--color-heading)',
                         letterSpacing: '0.15px',
                         cursor: 'help',
-                        borderBottom: '1px dotted #94a3b8'
+                        borderBottom: '1px dotted var(--color-faint)'
                       }}
                     >
                       {group.title}
@@ -619,7 +629,7 @@ export default function UsageSnapshotCell({
           })}
         </div>
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -659,7 +669,7 @@ export default function UsageSnapshotCell({
           </Button>
         ) : null}
         {record.usageRefreshing ? (
-          <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Spin size="small" />
             <span>刷新中</span>
           </div>
@@ -685,7 +695,7 @@ export default function UsageSnapshotCell({
         effectKey={`${effectKeyPrefix}:remaining`}
       />
       {record.usageRefreshing ? (
-        <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ marginTop: 4, color: 'var(--color-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Spin size="small" />
           <span>刷新中</span>
         </div>

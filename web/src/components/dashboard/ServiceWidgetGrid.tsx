@@ -62,8 +62,8 @@ export const ServiceWidget = memo(function ServiceWidget({
 });
 
 /**
- * HarmonyOS 6 风格万象灵动小组件栅格 (ArkUI Service Widget Grid)
- * 采用 2x2 / 2x4 鸿蒙小组件排版、24px Squircle 超级圆角、高斯模糊与微重力悬浮质感
+ * KPI 条（web/DESIGN.md §6 / §7.1）：一个描边表面容器，单元格之间 1px 发丝线分隔；
+ * 桌面 4 列、<1024px 2x2、手机单列。数据契约（widgets）保持不变。
  */
 export const ServiceWidgetGrid = memo(function ServiceWidgetGrid({
   widgets,

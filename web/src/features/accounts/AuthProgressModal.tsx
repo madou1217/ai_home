@@ -296,7 +296,7 @@ export function AuthProgressModal({
                       wordBreak: 'break-word',
                       fontSize: 12,
                       lineHeight: 1.5,
-                      background: 'var(--hos-surface-muted, #f1f5f9)',
+                      background: 'var(--color-surface-sunken)',
                       borderRadius: 6
                     }}
                   >

@@ -1,4 +1,7 @@
 .burning-particles {
+  /* 刻意保留的「燃烧中」实时效果；白热核心取 --hos-white，暖色混入取 warning 与白的混色。 */
+  --burning-white: var(--hos-white);
+  --burning-hot: color-mix(in srgb, var(--color-warning) 45%, var(--hos-white));
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -18,8 +21,8 @@
   transform: translate(-50%, -50%);
   background: radial-gradient(
     circle,
-    rgba(255, 255, 255, 0.98) 0 13%,
-    color-mix(in srgb, var(--core-color) 68%, #ffd666) 28%,
+    color-mix(in srgb, var(--burning-white) 98%, transparent) 0 13%,
+    color-mix(in srgb, var(--core-color) 68%, var(--burning-hot)) 28%,
     color-mix(in srgb, var(--core-color) 78%, transparent) 48%,
     transparent 72%
   );
@@ -36,10 +39,10 @@
   height: 4px;
   border-radius: 45% 55% 50% 48%;
   transform: translate(-50%, -50%) rotate(18deg);
-  background: var(--hos-white, #fff);
+  background: var(--burning-white);
   box-shadow:
-    0 0 2px var(--hos-white, #fff),
-    0 0 5px color-mix(in srgb, var(--core-color) 58%, #ffd666),
+    0 0 2px var(--burning-white),
+    0 0 5px color-mix(in srgb, var(--core-color) 58%, var(--burning-hot)),
     0 0 9px var(--core-color);
   animation: burning-core-jolt var(--jolt-duration, 0.18s) steps(2, end) var(--jolt-delay, 0s) infinite alternate;
 }
@@ -55,8 +58,8 @@
   transform-origin: left center;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.98) 0 18%,
-    color-mix(in srgb, var(--pc) 72%, #ffd666) 42%,
+    color-mix(in srgb, var(--burning-white) 98%, transparent) 0 18%,
+    color-mix(in srgb, var(--pc) 72%, var(--burning-hot)) 42%,
     var(--pc) 68%,
     transparent 100%
   );
@@ -68,7 +71,7 @@
 
 .burning-particle--ember {
   border-radius: var(--hos-radius-pill, 50%);
-  background: radial-gradient(circle, var(--hos-white, #fff) 0 18%, var(--pc) 48%, transparent 78%);
+  background: radial-gradient(circle, var(--burning-white) 0 18%, var(--pc) 48%, transparent 78%);
 }
 
 @keyframes burning-spark-burst {
@@ -122,14 +125,3 @@
   }
 }
 
-/* =============================================================================
- * HarmonyOS 6 风格 燃烧火花与粒子流光增强
- * ========================================================================== */
-.burning-particles::before {
-  box-shadow: 0 0 12px var(--core-color), 0 0 4px var(--hos-white, #fff) !important;
-}
-
-.burning-particle {
-  border-radius: var(--hos-radius-pill, 9999px) !important;
-  filter: drop-shadow(0 0 4px var(--pc)) drop-shadow(0 0 8px rgba(255, 214, 102, 0.4)) !important;
-}

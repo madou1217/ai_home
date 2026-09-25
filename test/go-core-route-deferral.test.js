@@ -75,3 +75,23 @@ test('inference for models Go cannot route stays with Node', () => {
   assert.equal(decide('claude-haiku-4-5-20251001', null), true, 'catalog not loaded yet');
   assert.equal(decide('', goIds), false, 'no model: let Go answer the protocol error');
 });
+
+test('responses stay on Go only for codex: pinned non-codex accounts and non-openai models go to Node', () => {
+  const CODEX = 'acct_cccccccccccccccccccc';
+  const AGY = 'acct_dddddddddddddddddddd';
+  const mixedState = { accounts: { codex: [{ accountRef: CODEX }], agy: [{ accountRef: AGY }] } };
+  const index = { getAccountState: () => ({ status: 'up' }) };
+  const owners = { 'gpt-5.5': 'openai', 'claude-opus-4-6-thinking': 'anthropic' };
+  const decide = (entryId, pinnedAccountRef, model) => shouldDeferGoRouteToNode({
+    entryId, pinnedAccountRef, model, aliases: [], state: mixedState, accountStateIndex: index,
+    fabricGatewayReady: () => false,
+    goRoutableModelIds: () => new Set(Object.keys(owners)),
+    goModelOwner: (id) => owners[id] || ''
+  });
+  assert.equal(decide('gateway.openai.responses', CODEX, 'gpt-5.5'), false);
+  assert.equal(decide('gateway.openai.responses', AGY, 'claude-opus-4-6-thinking'), true);
+  assert.equal(decide('gateway.openai.responses.websocket', AGY, ''), true);
+  assert.equal(decide('gateway.openai.responses', '', 'claude-opus-4-6-thinking'), true);
+  assert.equal(decide('gateway.openai.responses', '', 'gpt-5.5'), false);
+  assert.equal(decide('gateway.anthropic.messages', AGY, 'claude-opus-4-6-thinking'), false, 'other protocols unaffected');
+});

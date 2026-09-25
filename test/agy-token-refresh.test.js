@@ -122,6 +122,9 @@ test('Agy token refresh uses CLI client defaults and persists refreshed auth to 
   assert.equal(saved.oauthToken.token.refresh_token, 'new-refresh-token');
   assert.equal(saved.oauthToken.token.token_type, 'Bearer');
   assert.equal(saved.oauthToken.token.expiry, new Date(1700003600000).toISOString());
+  // Go 按毫秒字段判断过期与凭据代际，必须与 expiry 同步更新。
+  assert.equal(saved.oauthToken.token.expires_at_ms, 1700003600000);
+  assert.equal(saved.oauthToken.token.refreshed_at_ms, 1700000000000);
   assert.equal(saved.email, 'test@example.com');
 });
 

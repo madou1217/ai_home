@@ -81,13 +81,13 @@ func decodeAGY(data []byte) (accountapp.Credential, accountapp.PublicProfile, er
 	if err := decodeStrictJSON(artifacts["native_auth_json"], &native); err != nil {
 		return nil, nil, invalidArtifacts("AGY OAuth artifact 无效")
 	}
-	expiresAtMS := native.OAuthToken.Token.ExpiresAtMS
-	if expiresAtMS == 0 {
-		expiresAtMS = parseAGYTime(native.OAuthToken.Token.Expiry)
-	}
-	if expiresAtMS == 0 {
-		expiresAtMS = parseAGYTime(native.OAuthToken.Token.ExpiryDate)
-	}
+	// 三种过期表示取最晚者：历史上 Node 刷新只更新 expiry、遗留陈旧的 expires_at_ms，
+	// 先取 expires_at_ms 会把刚刷新的 token 判成早已过期。
+	expiresAtMS := max(
+		native.OAuthToken.Token.ExpiresAtMS,
+		parseAGYTime(native.OAuthToken.Token.Expiry),
+		parseAGYTime(native.OAuthToken.Token.ExpiryDate),
+	)
 	refreshedAtMS := native.OAuthToken.Token.RefreshedAtMS
 	auth, err := agy.NewNativeOAuthAuth(agy.OAuthInput{
 		Email: native.Email, AccessToken: native.OAuthToken.Token.AccessToken,

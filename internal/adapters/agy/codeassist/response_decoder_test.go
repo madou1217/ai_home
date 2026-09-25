@@ -1,7 +1,6 @@
 package codeassist
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/madou1217/ai_home/core/inference"
@@ -85,15 +84,21 @@ func TestResponseDecoderDropsThoughtsWithoutLeakingThemAsText(t *testing.T) {
 	}
 }
 
-func TestResponseDecoderRejectsSignedFunctionCall(t *testing.T) {
+func TestResponseDecoderAcceptsSignedFunctionCall(t *testing.T) {
 	t.Parallel()
 
+	var names []string
 	decoder := newResponseDecoder(
-		"gemini-3-flash",
-		func(inference.StreamEvent) error { return nil },
+		"claude-opus-4-6-thinking",
+		func(event inference.StreamEvent) error {
+			if started, ok := event.(inference.ToolCallStartedEvent); ok {
+				names = append(names, started.Name())
+			}
+			return nil
+		},
 	)
-	err := decoder.Apply([]byte(`{"response":{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call_1","name":"lookup","args":{}},"thoughtSignature":"required-next-turn"}]},"finishReason":"STOP"}]}}`))
-	if !errors.Is(err, ErrInvalidUpstreamResponse) {
-		t.Fatalf("Apply() error = %v, want ErrInvalidUpstreamResponse", err)
+	err := decoder.Apply([]byte(`{"response":{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call_1","name":"lookup","args":{}},"thoughtSignature":"sig"}]},"finishReason":"STOP"}]}}`))
+	if err != nil || len(names) != 1 || names[0] != "lookup" {
+		t.Fatalf("Apply() err=%v names=%v", err, names)
 	}
 }

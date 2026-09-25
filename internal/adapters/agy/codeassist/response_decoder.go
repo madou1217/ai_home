@@ -19,12 +19,16 @@ type responseDecoder struct {
 	started     bool
 	messageOpen bool
 	textOpen    bool
-	terminal    bool
-	responseID  string
-	text        string
-	usage       inference.Usage
-	nextOutput  uint32
-	toolCalls   map[string]decodedToolCall
+	// messageIndex 是当前文本消息项的输出序号（工具调用之后的文本会开新消息项）。
+	messageIndex uint32
+	terminal     bool
+	responseID   string
+	text         string
+	usage        inference.Usage
+	nextOutput   uint32
+	toolCalls    map[string]decodedToolCall
+	// toolNames 把上游扁平函数名还原为完整（可能带 namespace 的）Canonical 身份。
+	toolNames toolNameMapper
 }
 
 type decodedToolCall struct {
@@ -74,8 +78,14 @@ type usageMetadata struct {
 func newResponseDecoder(
 	model string,
 	emit inferencegateway.EventSink,
+	mappers ...toolNameMapper,
 ) *responseDecoder {
+	var names toolNameMapper
+	if len(mappers) > 0 {
+		names = mappers[0]
+	}
 	return &responseDecoder{
+		toolNames:  names,
 		model:      model,
 		emit:       emit,
 		responseID: "agy_response",
@@ -107,11 +117,9 @@ func (decoder *responseDecoder) Apply(payload []byte) error {
 			if part.Thought {
 				continue
 			}
-			// 签名对文本部分是可选回传；对函数调用是下一轮的必需回传，丢了会让工具循环
-			// 在上游 400，所以函数调用带签名仍失败关闭，不静默降级。
-			if part.Signature != "" && part.FunctionCall != nil {
-				return fmt.Errorf("%w: unsupported function call signature", ErrInvalidUpstreamResponse)
-			}
+			// 签名不需要回传：编码器给历史函数调用统一带 skip_thought_signature_validator
+			// （与 Node AGY 策略一致），因此签名可以安全丢弃。Claude 经 agy 的函数调用总带签名，
+			// 拒绝它会让 Codex CLI 的每次工具调用都以 invalid upstream response 失败。
 			if part.Text != nil && *part.Text != "" {
 				if err := decoder.appendText(*part.Text); err != nil {
 					return err
@@ -166,32 +174,41 @@ func (decoder *responseDecoder) start() error {
 	return decoder.emitEvent(event)
 }
 
+func (decoder *responseDecoder) messageItemID() string {
+	if decoder.messageIndex == 0 {
+		return "agy_message"
+	}
+	return fmt.Sprintf("agy_message_%d", decoder.messageIndex)
+}
+
 func (decoder *responseDecoder) appendText(text string) error {
 	if !decoder.messageOpen {
+		decoder.messageIndex = decoder.nextOutput
 		item, err := inference.NewOutputItemStartedEvent(
 			decoder.sequence,
-			0,
-			"agy_message",
+			decoder.messageIndex,
+			decoder.messageItemID(),
 			inference.OutputItemMessage,
 		)
 		if err != nil {
 			return fmt.Errorf("%w: message item", ErrInvalidUpstreamResponse)
 		}
 		decoder.messageOpen = true
-		decoder.nextOutput = 1
+		decoder.nextOutput = decoder.messageIndex + 1
 		if err := decoder.emitEvent(item); err != nil {
 			return err
 		}
 	}
 	if !decoder.textOpen {
 		decoder.textOpen = true
+		decoder.text = ""
 		if err := decoder.emitEvent(inference.ContentBlockStartedEvent(
-			mustContentBlockStarted(decoder.sequence, 0, 0, inference.ContentText),
+			mustContentBlockStarted(decoder.sequence, decoder.messageIndex, 0, inference.ContentText),
 		)); err != nil {
 			return err
 		}
 	}
-	event, err := inference.NewTextDeltaEvent(decoder.sequence, 0, 0, text)
+	event, err := inference.NewTextDeltaEvent(decoder.sequence, decoder.messageIndex, 0, text)
 	if err != nil {
 		return fmt.Errorf("%w: tool start", ErrInvalidUpstreamResponse)
 	}
@@ -209,6 +226,33 @@ func mustContentBlockStarted(
 	return event
 }
 
+// closeMessage 结束当前文本块与消息项；输出项必须按序关闭后才能开始下一个（工具调用）。
+func (decoder *responseDecoder) closeMessage() error {
+	if decoder.textOpen {
+		if decoder.text == "" {
+			return fmt.Errorf("%w: empty text", ErrInvalidUpstreamResponse)
+		}
+		completed, err := inference.NewTextCompletedEvent(decoder.sequence, decoder.messageIndex, 0, decoder.text)
+		if err != nil {
+			return fmt.Errorf("%w: text complete", ErrInvalidUpstreamResponse)
+		}
+		if err := decoder.emitEvent(completed); err != nil {
+			return err
+		}
+		if err := decoder.emitEvent(inference.NewContentBlockCompletedEvent(decoder.sequence, decoder.messageIndex, 0)); err != nil {
+			return err
+		}
+		decoder.textOpen = false
+	}
+	if decoder.messageOpen {
+		if err := decoder.emitEvent(mustOutputCompleted(decoder.sequence, decoder.messageIndex, decoder.messageItemID())); err != nil {
+			return err
+		}
+		decoder.messageOpen = false
+	}
+	return nil
+}
+
 func (decoder *responseDecoder) appendToolCall(call streamFunctionCall) error {
 	if !validOpaque(call.ID) || !validOpaque(call.Name) ||
 		len(call.Args) == 0 || call.Args[0] != '{' ||
@@ -221,6 +265,9 @@ func (decoder *responseDecoder) appendToolCall(call streamFunctionCall) error {
 			return fmt.Errorf("%w: conflicting tool", ErrInvalidUpstreamResponse)
 		}
 		return nil
+	}
+	if err := decoder.closeMessage(); err != nil {
+		return err
 	}
 	outputIndex := decoder.nextOutput
 	decoder.nextOutput++
@@ -237,13 +284,11 @@ func (decoder *responseDecoder) appendToolCall(call streamFunctionCall) error {
 	if err := decoder.emitEvent(item); err != nil {
 		return err
 	}
-	started, err := inference.NewToolCallStartedEvent(
-		decoder.sequence,
-		outputIndex,
-		0,
-		call.ID,
-		call.Name,
-	)
+	identity, err := decoder.toolNames.decode(call.Name)
+	if err != nil {
+		return fmt.Errorf("%w: unknown tool", ErrInvalidUpstreamResponse)
+	}
+	started, err := newCanonicalToolCallStartedEvent(decoder.sequence, outputIndex, call.ID, identity)
 	if err != nil {
 		return fmt.Errorf("%w: tool complete", ErrInvalidUpstreamResponse)
 	}
@@ -263,27 +308,15 @@ func (decoder *responseDecoder) appendToolCall(call streamFunctionCall) error {
 	if err := decoder.emitEvent(delta); err != nil {
 		return err
 	}
-	completed, err := inference.NewToolCallCompletedEvent(
-		decoder.sequence,
-		outputIndex,
-		0,
-		call.ID,
-		call.Name,
-		arguments,
-	)
+	completed, err := newCanonicalToolCallCompletedEvent(decoder.sequence, outputIndex, call.ID, identity, arguments)
 	if err != nil {
 		return fmt.Errorf("%w: tool completed", ErrInvalidUpstreamResponse)
 	}
 	if err := decoder.emitEvent(completed); err != nil {
 		return err
 	}
-	if err := decoder.emitEvent(inference.NewContentBlockCompletedEvent(
-		decoder.sequence,
-		outputIndex,
-		0,
-	)); err != nil {
-		return err
-	}
+	// 工具调用输出项没有内容块（与其它适配器一致）：Canonical 客户端编码器拒绝工具项上的
+	// ContentBlockCompleted，Codex CLI 经 Responses 的每次工具调用都曾因此 invalid upstream response。
 	if err := decoder.emitEvent(mustOutputCompleted(
 		decoder.sequence,
 		outputIndex,
@@ -310,34 +343,8 @@ func mustOutputCompleted(
 }
 
 func (decoder *responseDecoder) complete(reason string) error {
-	if decoder.textOpen {
-		if decoder.text == "" {
-			return fmt.Errorf("%w: empty text", ErrInvalidUpstreamResponse)
-		}
-		completed, err := inference.NewTextCompletedEvent(
-			decoder.sequence,
-			0,
-			0,
-			decoder.text,
-		)
-		if err != nil {
-			return fmt.Errorf("%w: text complete", ErrInvalidUpstreamResponse)
-		}
-		if err := decoder.emitEvent(completed); err != nil {
-			return err
-		}
-		if err := decoder.emitEvent(inference.NewContentBlockCompletedEvent(
-			decoder.sequence, 0, 0,
-		)); err != nil {
-			return err
-		}
-	}
-	if decoder.messageOpen {
-		if err := decoder.emitEvent(mustOutputCompleted(
-			decoder.sequence, 0, "agy_message",
-		)); err != nil {
-			return err
-		}
+	if err := decoder.closeMessage(); err != nil {
+		return err
 	}
 	stopReason, err := mapFinishReason(reason, len(decoder.toolCalls) > 0)
 	if err != nil {
@@ -387,4 +394,31 @@ func (decoder *responseDecoder) emitEvent(event inference.StreamEvent) error {
 	}
 	decoder.sequence++
 	return nil
+}
+
+// newCanonicalToolCallStartedEvent 按完整身份选择普通或 namespaced 构造器。
+func newCanonicalToolCallStartedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+) (inference.ToolCallStartedEvent, error) {
+	if namespace, namespaced := identity.Namespace(); namespaced {
+		return inference.NewNamespacedToolCallStartedEvent(sequence, outputIndex, 0, callID, namespace, identity.Name())
+	}
+	return inference.NewToolCallStartedEvent(sequence, outputIndex, 0, callID, identity.Name())
+}
+
+// newCanonicalToolCallCompletedEvent 按完整身份创建工具完成事件。
+func newCanonicalToolCallCompletedEvent(
+	sequence uint64,
+	outputIndex uint32,
+	callID string,
+	identity inference.ToolIdentity,
+	arguments []byte,
+) (inference.ToolCallCompletedEvent, error) {
+	if namespace, namespaced := identity.Namespace(); namespaced {
+		return inference.NewNamespacedToolCallCompletedEvent(sequence, outputIndex, 0, callID, namespace, identity.Name(), arguments)
+	}
+	return inference.NewToolCallCompletedEvent(sequence, outputIndex, 0, callID, identity.Name(), arguments)
 }

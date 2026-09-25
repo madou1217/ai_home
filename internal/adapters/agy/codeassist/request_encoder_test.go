@@ -52,8 +52,24 @@ func TestEncodeRequestPreservesToolCallAndResultIdentity(t *testing.T) {
 	tools := inner["tools"].([]any)
 	declarations := tools[0].(map[string]any)["functionDeclarations"].([]any)
 	declaration := declarations[0].(map[string]any)
-	if declaration["name"] != "lookup_weather" || declaration["parametersJsonSchema"] == nil {
+	// Claude 目标用 parameters：parametersJsonSchema 会被上游拒为 input_schema 缺失。
+	if declaration["name"] != "lookup_weather" || declaration["parameters"] == nil || declaration["parametersJsonSchema"] != nil {
 		t.Fatalf("function declaration = %#v", declaration)
+	}
+}
+
+func TestEncodeRequestUsesJSONSchemaKeyForGeminiTargets(t *testing.T) {
+	encoded, err := encodeRequest(toolRoundTripRequest(t), "gemini-3-flash", "project-1", "session-1", "agent/1/abcd")
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(encoded, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	declaration := envelope["request"].(map[string]any)["tools"].([]any)[0].(map[string]any)["functionDeclarations"].([]any)[0].(map[string]any)
+	if declaration["parametersJsonSchema"] == nil || declaration["parameters"] != nil {
+		t.Fatalf("gemini declaration = %#v", declaration)
 	}
 }
 

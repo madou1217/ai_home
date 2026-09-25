@@ -76,7 +76,7 @@ test('inference for models Go cannot route stays with Node', () => {
   assert.equal(decide('', goIds), false, 'no model: let Go answer the protocol error');
 });
 
-test('responses stay on Go only for codex: pinned non-codex accounts and non-openai models go to Node', () => {
+test('responses to agy accounts and non-openai models are served by Go (codex CLI shape fixed)', () => {
   const CODEX = 'acct_cccccccccccccccccccc';
   const AGY = 'acct_dddddddddddddddddddd';
   const mixedState = { accounts: { codex: [{ accountRef: CODEX }], agy: [{ accountRef: AGY }] } };
@@ -89,9 +89,9 @@ test('responses stay on Go only for codex: pinned non-codex accounts and non-ope
     goModelOwner: (id) => owners[id] || ''
   });
   assert.equal(decide('gateway.openai.responses', CODEX, 'gpt-5.5'), false);
-  assert.equal(decide('gateway.openai.responses', AGY, 'claude-opus-4-6-thinking'), true);
-  assert.equal(decide('gateway.openai.responses.websocket', AGY, ''), true);
-  assert.equal(decide('gateway.openai.responses', '', 'claude-opus-4-6-thinking'), true);
+  assert.equal(decide('gateway.openai.responses', AGY, 'claude-opus-4-6-thinking'), false);
+  assert.equal(decide('gateway.openai.responses.websocket', AGY, ''), false);
+  assert.equal(decide('gateway.openai.responses', '', 'claude-opus-4-6-thinking'), false);
   assert.equal(decide('gateway.openai.responses', '', 'gpt-5.5'), false);
   assert.equal(decide('gateway.anthropic.messages', AGY, 'claude-opus-4-6-thinking'), false, 'other protocols unaffected');
 });

@@ -41,7 +41,7 @@ func TestEncodeMessagesDropsReasoningHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMessage() error = %v", err)
 	}
-	contents, _, _, err := encodeMessages([]inference.Message{assistant})
+	contents, _, _, err := encodeMessages([]inference.Message{assistant}, toolNameMapper{})
 	if err != nil {
 		t.Fatalf("encodeMessages() error = %v", err)
 	}

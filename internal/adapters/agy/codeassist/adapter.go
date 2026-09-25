@@ -122,7 +122,11 @@ func (adapter *Adapter) Execute(
 	if err != nil || mediaType != "text/event-stream" {
 		return malformedAttempt()
 	}
-	decoder := newResponseDecoder(invocation.Route().EffectiveModel(), emit)
+	names, err := newToolNameMapper(invocation.Request())
+	if err != nil {
+		return inferencegateway.AttemptResult{}, err
+	}
+	decoder := newResponseDecoder(invocation.Route().EffectiveModel(), emit, names)
 	reader, err := sharedsse.NewReader(response.Body)
 	if err != nil {
 		return malformedAttempt()

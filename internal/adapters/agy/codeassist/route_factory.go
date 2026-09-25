@@ -29,6 +29,9 @@ func (adapter *Adapter) BuildRoute(
 		inference.CapabilityTools,
 		inference.CapabilityStreaming,
 		inference.CapabilityReasoning,
+		// 与 Node 一致：Code Assist 线路只投递 function 工具，服务器侧搜索工具（codex CLI 总会带
+		// web_search）被忽略而不是让整条路由失败。
+		inference.CapabilityWebSearch,
 	)
 	if err != nil {
 		return inferencegateway.Route{}, err

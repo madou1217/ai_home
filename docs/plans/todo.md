@@ -55,7 +55,7 @@
 
 ## 已知差异 / 风险
 
-- Responses 在 Go 上只承接 Codex：经 Responses 驱动 agy/claude 账号（WebUI agy 会话底层是 codex CLI）由转发前判定留在 Node。2026-09-25 生产 503 的根因（agy 路由未声明 reasoning 能力，带 thinking/reasoning 的请求一律「路由能力不足」）已修；但 codex CLI 完整请求形状（store/include/tools 等）在 Go 的 agy 路径上仍判为 invalid_request，待补齐后再放开。
+- Responses 经 Go 驱动 agy（WebUI agy 会话 = codex CLI）：2026-09-25 修齐 Codex CLI 请求形状——agy 路由声明 reasoning/web_search 能力、工具 schema 按 Node 规则清洗（Claude 目标折叠 anyOf 并用 `parameters` 键）、namespace 工具可逆重命名、签名函数调用接受、工具项不再发内容块事件。真实 codex CLI 工具往返经 Go 通过，非 codex 的 Responses 不再交还 Node。
 
 - Go 不承接：Claude 以外 Provider 的 API Key 账号、Gemini Vertex、工作区冲突的 Codex 凭据 → 留在 Node（账本列出原因）
 - Codex API Key 的 `OPENAI_WIRE_API` / `AIH_UPSTREAM_HEADERS` / `AIH_IMAGE_API` Go 无法表示（账本 `lossy_fields`）

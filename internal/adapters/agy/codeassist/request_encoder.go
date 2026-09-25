@@ -74,9 +74,13 @@ type wireToolGroup struct {
 }
 
 type wireFunctionDeclaration struct {
-	Name                 string         `json:"name"`
-	Description          string         `json:"description,omitempty"`
-	ParametersJSONSchema map[string]any `json:"parametersJsonSchema"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Claude 家族目标走 `parameters`（Gemini Schema proto，上游再翻成 Anthropic input_schema）；
+	// 用 parametersJsonSchema 时上游报 `tools.0.custom.input_schema: Field required`（2026-09-25 实测）。
+	// Gemini 目标用 parametersJsonSchema。与 Node AGY 策略的两个 schema key 一致。
+	Parameters           map[string]any `json:"parameters,omitempty"`
+	ParametersJSONSchema map[string]any `json:"parametersJsonSchema,omitempty"`
 }
 
 type wireToolConfig struct {
@@ -114,11 +118,15 @@ func encodeRequest(
 	if model == "" || project == "" || sessionID == "" || requestID == "" {
 		return nil, ErrUnsupportedRequest
 	}
-	contents, system, toolNames, err := encodeMessages(request.Messages())
+	names, err := newToolNameMapper(request)
 	if err != nil {
 		return nil, err
 	}
-	tools, err := encodeTools(request.Tools())
+	contents, system, toolNames, err := encodeMessages(request.Messages(), names)
+	if err != nil {
+		return nil, err
+	}
+	tools, err := encodeTools(request.Tools(), model, names)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +167,7 @@ func encodeRequest(
 
 func encodeMessages(
 	messages []inference.Message,
+	names toolNameMapper,
 ) ([]wireContent, *wireContent, map[string]string, error) {
 	contents := make([]wireContent, 0, len(messages))
 	systemParts := make([]wirePart, 0)
@@ -180,10 +189,14 @@ func encodeMessages(
 				if err := json.Unmarshal(typed.Arguments(), &args); err != nil {
 					return nil, nil, nil, ErrUnsupportedRequest
 				}
-				toolNames[typed.CallID()] = typed.Name()
+				wireName, err := names.encode(typed.Identity())
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				toolNames[typed.CallID()] = wireName
 				parts = append(parts, wirePart{
 					FunctionCall: &wireFunctionCall{
-						ID: typed.CallID(), Name: typed.Name(), Args: args,
+						ID: typed.CallID(), Name: wireName, Args: args,
 					},
 					ThoughtSignature: skipThoughtSignature,
 				})
@@ -249,16 +262,26 @@ func encodeToolResult(content inference.ToolResultContent) (map[string]any, erro
 	}, nil
 }
 
-func encodeTools(tools []inference.ToolDefinition) ([]wireFunctionDeclaration, error) {
+func encodeTools(tools []inference.ToolDefinition, model string, names toolNameMapper) ([]wireFunctionDeclaration, error) {
 	declarations := make([]wireFunctionDeclaration, 0, len(tools))
+	// Claude 家族目标会被上游翻回 Anthropic input_schema，联合类型必须先折叠。
+	flattenUnions := isClaudeModel(model)
 	for _, tool := range tools {
 		var schema map[string]any
 		if err := json.Unmarshal(tool.InputSchema(), &schema); err != nil {
 			return nil, ErrUnsupportedRequest
 		}
-		declarations = append(declarations, wireFunctionDeclaration{
-			Name: tool.Name(), Description: tool.Description(), ParametersJSONSchema: schema,
-		})
+		wireName, err := names.encode(tool.Identity())
+		if err != nil {
+			return nil, err
+		}
+		declaration := wireFunctionDeclaration{Name: wireName, Description: tool.Description()}
+		if flattenUnions {
+			declaration.Parameters = normalizeToolSchema(schema, true)
+		} else {
+			declaration.ParametersJSONSchema = normalizeToolSchema(schema, false)
+		}
+		declarations = append(declarations, declaration)
 	}
 	return declarations, nil
 }

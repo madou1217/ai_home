@@ -63,3 +63,15 @@ test('blob fetches stay with Node only when the Node blob store holds the id', (
   assert.equal(decide('/v1/blobs/node-made', ['node-made']), true);
   assert.equal(decide('/v1/blobs/go-made', ['node-made']), false);
 });
+
+test('inference for models Go cannot route stays with Node', () => {
+  const goIds = new Set(['claude-haiku-4-5-20251001', 'gpt-5.5']);
+  const decide = (model, ids) => shouldDeferGoRouteToNode({
+    entryId: 'gateway.anthropic.messages', model, aliases: [], state, accountStateIndex,
+    fabricGatewayReady: () => false, goRoutableModelIds: () => ids
+  });
+  assert.equal(decide('claude-haiku-4-5-20251001', goIds), false);
+  assert.equal(decide('kimi-k2.6', goIds), true, 'Node-only provider model');
+  assert.equal(decide('claude-haiku-4-5-20251001', null), true, 'catalog not loaded yet');
+  assert.equal(decide('', goIds), false, 'no model: let Go answer the protocol error');
+});

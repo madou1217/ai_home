@@ -97,7 +97,7 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.match(rejected.errors.join('\n'), /moves only after every inference route/);
 });
 
-test('Node /readyz fails closed when the Go process dies and recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
+test('Node serves Go-owned routes while the Go process is down and Go recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
   const { base, goHost } = await startWithGoCore(t, { AIH_GO_CORE_ROUTES: 'gateway.props' });
   assert.equal(goHost.status().state, 'ready');
   process.kill(goHost.status().pid, 'SIGKILL');
@@ -109,8 +109,9 @@ test('Node /readyz fails closed when the Go process dies and recovers after auto
   const readyz = await (await fetch(`${base}/readyz`)).json();
   assert.equal(readyz.ready, false);
   assert.equal(readyz.go_core.ready, false);
+  // 共存期 Node 仍是完整实现：Go 不可用时请求交由 Node 应答，而不是 503；就绪态仍如实报告。
   const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
-  assert.equal(props.status, 503);
+  assert.equal(props.status, 200);
 
   // 监督器按退避自动拉起 Go，转发随之恢复；Go 的输出落在 logs/go-core.log。
   const recoverBy = Date.now() + 15000;

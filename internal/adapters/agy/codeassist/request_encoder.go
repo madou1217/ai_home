@@ -88,6 +88,22 @@ type wireFunctionCallingConfig struct {
 	AllowedFunctionNames []string `json:"allowedFunctionNames,omitempty"`
 }
 
+// Code Assist 上的 Gemini 模型默认开启思考，思考 token 计入 maxOutputTokens；客户端的上限
+// 只为答案预算，不预留就会出现「只有思考、答案为空」（finishReason=MAX_TOKENS）。
+// 与 Node code-assist-provider-strategy 一致：预留 min(max(上限, 8192), 32768)。
+const (
+	thinkingReserveMinTokens = 8192
+	thinkingReserveMaxTokens = 32768
+)
+
+func withThinkingReserve(model string, clientMax uint64) uint64 {
+	if clientMax == 0 || isClaudeModel(model) {
+		return clientMax
+	}
+	reserve := min(max(clientMax, thinkingReserveMinTokens), thinkingReserveMaxTokens)
+	return clientMax + reserve
+}
+
 func encodeRequest(
 	request inference.Request,
 	model string,
@@ -107,7 +123,7 @@ func encodeRequest(
 		return nil, err
 	}
 	config := wireGenerationConfig{
-		MaxOutputTokens: request.MaxOutputTokens(),
+		MaxOutputTokens: withThinkingReserve(model, request.MaxOutputTokens()),
 		StopSequences:   request.StopSequences(),
 	}
 	if value, found := request.Temperature(); found {

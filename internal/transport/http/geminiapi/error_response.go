@@ -79,8 +79,12 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 }
 
 // writeExecutionError 区分客户端取消与服务不可用。
-func writeExecutionError(response http.ResponseWriter, ctx context.Context) {
+func writeExecutionError(response http.ResponseWriter, ctx context.Context, err error) {
 	if errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	if inferenceapi.IsRequestNotRepresentable(err) {
+		writeError(response, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains a parameter the upstream protocol does not support")
 		return
 	}
 	writeError(response, http.StatusServiceUnavailable, "UNAVAILABLE", "Inference service is unavailable")

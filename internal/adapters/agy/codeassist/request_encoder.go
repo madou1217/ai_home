@@ -2,15 +2,15 @@ package codeassist
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
+	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
 const skipThoughtSignature = "skip_thought_signature_validator"
 
-var ErrUnsupportedRequest = errors.New("AGY Code Assist 请求语义不受支持")
+var ErrUnsupportedRequest = fmt.Errorf("AGY Code Assist 请求语义不受支持: %w", inferencegateway.ErrRequestNotRepresentable)
 
 type generateEnvelope struct {
 	Project            string               `json:"project"`

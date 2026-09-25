@@ -198,7 +198,7 @@ func (handler *Handler) executeNonStream(
 			"Invalid upstream response",
 		)
 	case executionErr != nil:
-		writeExecutionError(response, request.Context())
+		writeExecutionError(response, request.Context(), executionErr)
 	case failed:
 		writeCanonicalFailure(response, failure)
 	default:

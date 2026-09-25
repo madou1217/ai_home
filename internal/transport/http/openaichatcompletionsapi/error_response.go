@@ -87,8 +87,12 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 }
 
 // writeExecutionError 在请求仍可写时返回稳定的服务不可用错误。
-func writeExecutionError(response http.ResponseWriter, ctx context.Context) {
+func writeExecutionError(response http.ResponseWriter, ctx context.Context, err error) {
 	if errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	if inferenceapi.IsRequestNotRepresentable(err) {
+		writeAPIError(response, http.StatusBadRequest, "invalid_request_error", "unsupported_parameter", "Request contains a parameter the upstream protocol does not support")
 		return
 	}
 	writeAPIError(

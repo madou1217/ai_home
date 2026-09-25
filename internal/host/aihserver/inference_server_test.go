@@ -1600,3 +1600,28 @@ func claudeReasoningToolSyntheticStream(model string) string {
 }
 
 var _ aihserver.InferenceHTTPClient = (*syntheticInferenceHTTPClient)(nil)
+
+// TestServerRejectsUnrepresentableRequestWithClientError 防回归：同协议 Responses 请求带
+// Codex 线协议无法表达的 max_output_tokens 时，是客户端可修正的请求错误——返回 400，
+// 而不是把本地编码拒绝伪装成 503 服务不可用（生产 canary 中曾被误判为故障）。
+func TestServerRejectsUnrepresentableRequestWithClientError(t *testing.T) {
+	t.Parallel()
+
+	upstream := &syntheticInferenceHTTPClient{}
+	baseURL, client := startTestServerWithInferenceClient(t, upstream)
+	_ = registerAPIKeyAccount(t, client, baseURL, "codex", "sk-codex-unrepresentable")
+	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
+
+	exchange := performRequestWithHeaders(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openairesponsesapi.Path,
+		map[string]string{"Authorization": "Bearer " + testClientKey},
+		[]byte(`{"model":"gpt-5.6-sol","input":"hi","max_output_tokens":16}`),
+	)
+	assertStatus(t, exchange, http.StatusBadRequest)
+	if !strings.Contains(exchange.body, "unsupported_parameter") || upstream.CallCount() != 0 {
+		t.Fatalf("body=%s upstream calls=%d", exchange.body, upstream.CallCount())
+	}
+}

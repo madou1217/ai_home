@@ -1,7 +1,12 @@
 // Package messages 实现 Claude 原生 Messages 上游协议适配器。
 package messages
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/madou1217/ai_home/application/inferencegateway"
+)
 
 var (
 	// ErrInvalidDependencies 表示 Adapter 缺少 HTTP Client 或时钟。
@@ -9,7 +14,7 @@ var (
 	// ErrInvalidInvocation 表示调用不属于 Claude Messages 或凭据类型不受支持。
 	ErrInvalidInvocation = errors.New("Claude Messages 调用无效")
 	// ErrUnsupportedRequest 表示 Canonical 请求包含 Messages 无法无损表达的字段。
-	ErrUnsupportedRequest = errors.New("Claude Messages 不支持该 Canonical 请求")
+	ErrUnsupportedRequest = fmt.Errorf("Claude Messages 不支持该 Canonical 请求: %w", inferencegateway.ErrRequestNotRepresentable)
 	// ErrInvalidUpstreamResponse 表示成功状态响应违反 Messages 协议合同。
 	ErrInvalidUpstreamResponse = errors.New("Claude Messages 上游响应无效")
 	// ErrModelCatalogUnavailable 表示账号模型目录暂时无法取得可信结果。

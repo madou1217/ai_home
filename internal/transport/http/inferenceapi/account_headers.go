@@ -2,6 +2,7 @@ package inferenceapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -29,4 +30,10 @@ func ContextWithServedAccountHeaders(ctx context.Context, response http.Response
 			response.Header().Set(ServedProviderHeader, providerID)
 		}
 	})
+}
+
+// IsRequestNotRepresentable 判断执行错误是否是「目标协议无法表达该请求」的客户端错误，
+// 入站层据此返回 400 而不是 503（与 Node 把上游 400 原样返回的语义一致）。
+func IsRequestNotRepresentable(err error) bool {
+	return errors.Is(err, inferencegateway.ErrRequestNotRepresentable)
 }

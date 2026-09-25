@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"net/http"
 
 	"github.com/madou1217/ai_home/core/inference"
@@ -70,9 +71,13 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 func writeExecutionError(
 	response http.ResponseWriter,
 	ctx context.Context,
-	_ error,
+	err error,
 ) {
 	if errors.Is(ctx.Err(), context.Canceled) {
+		return
+	}
+	if inferenceapi.IsRequestNotRepresentable(err) {
+		writeAPIError(response, http.StatusBadRequest, "invalid_request_error", "Request contains a parameter the upstream protocol does not support")
 		return
 	}
 	writeAPIError(

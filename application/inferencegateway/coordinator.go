@@ -29,6 +29,9 @@ var (
 	ErrNoRoutableAccount = errors.New("没有可执行 Canonical 请求的账号")
 	// ErrInvalidUpstreamEventStream 表示 Adapter 事件序号或终态违反合同。
 	ErrInvalidUpstreamEventStream = errors.New("上游 Canonical 事件流无效")
+	// ErrRequestNotRepresentable 表示目标 Provider 协议无法无损表达该请求（客户端可修正的请求错误，
+	// 不是服务不可用）。各适配器的「不支持该请求」错误都包装它，入站层据此返回 400。
+	ErrRequestNotRepresentable = errors.New("请求无法由目标 Provider 协议无损表达")
 )
 
 // AccountRecruiter 是 Coordinator 使用的请求级账号征召端口。

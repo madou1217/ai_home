@@ -1,7 +1,12 @@
 // Package responses 实现 Codex 原生 Responses 上游协议适配器。
 package responses
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/madou1217/ai_home/application/inferencegateway"
+)
 
 var (
 	// ErrInvalidDependencies 表示 Adapter 或账号模型权限源缺少必要依赖。
@@ -9,7 +14,7 @@ var (
 	// ErrInvalidInvocation 表示调用不属于 Codex Responses 或凭据类型不受支持。
 	ErrInvalidInvocation = errors.New("Codex Responses 调用无效")
 	// ErrUnsupportedRequest 表示 Canonical 请求包含 Codex Responses 无法无损表达的字段。
-	ErrUnsupportedRequest = errors.New("Codex Responses 不支持该 Canonical 请求")
+	ErrUnsupportedRequest = fmt.Errorf("Codex Responses 不支持该 Canonical 请求: %w", inferencegateway.ErrRequestNotRepresentable)
 	// ErrInvalidUpstreamResponse 表示成功状态响应违反 Responses 协议合同。
 	ErrInvalidUpstreamResponse = errors.New("Codex Responses 上游响应无效")
 	// ErrModelCatalogUnavailable 表示账号模型目录暂时无法取得可信结果。

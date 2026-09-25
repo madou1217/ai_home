@@ -10,7 +10,8 @@
 - 账号：P1 已迁移（Go `aih.db` 28 个账号，`verify` 通过）；Node→Go 持续同步。
 - **单一刷新者**：Go 以 `AIH_SERVER_CREDENTIAL_REFRESH=delegated` 运行，从不轮换 OAuth
   Refresh Token；Node 刷新后经同步推给 Go。消除了双刷新者互相作废 Token 的风险。
-- 路由所有权：`gateway.props`、`gateway.models.detail` 由 Go 应答；其余数据面仍由 Node 应答。
+- 路由所有权（生产 server config）：messages、chat completions、responses（HTTP+WS）、Gemini、images、blobs、props、models.detail 由 Go 应答；`/v1/models` 留在 Node（见 §4）。
+- 转发前判定把以下请求留给 Node：命中 Node 别名、钉选不可用、Fabric 远端网关在线、模型不在 Go 可路由集合、Go 暂不可用（重启窗口）、Node 进程内已有的 blob。
 - Node `/readyz` 汇合 `go_core`（进程、首轮同步、Go ready、转发可用）；Go 路由不可用时失败关闭。
 
 ## 2. 能力对等（真实上游影子比对）
@@ -64,6 +65,7 @@
 2. **钉选失效回落**：已由转发前判定交还 Node 保证语义；Go 自身仍是 503。
 3. **`x-aih-server-account-ref`**：已处理——Go 推理响应按实际服务账号写入该头与 `x-aih-server-provider`。
 4. **账号覆盖**：Go 不承接 zcode / 失效 opencode 等 4 个账号，这些 Provider 的推理只能留在 Node。
-5. **生产切流**：由运维者执行 `scripts/go-core-canary.sh <entry-id>`（自动回滚看门狗）。
+5. **生产切流**：已完成（`scripts/go-core-canary.sh`，每步 30 分钟无回滚），修复见 todo S9。
+6. **模型目录**：`/v1/models` 留在 Node——共存期网关对外模型全集是 Node∪Go。
 
 回退：`aih server config set --no-go-core --clear-go-core-routes && aih server restart`。

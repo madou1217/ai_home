@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 // ErrNoRelayAccount 表示当前模型没有可用于透传的账号。
@@ -95,5 +97,36 @@ func (handler *Handler) resolveAccountSource(
 	if handler.accounts == nil {
 		return nil, false
 	}
+	// 客户端用 x-account-ref 钉选账号时，透传只能使用这个账号：调度器会按模型另挑
+	// claude 账号，钉到 agy 等其它 Provider 的请求因此被静默改派（2026-09-25 agy relay 实测）。
+	if values := request.Header.Values(inferenceapi.AccountRefHeader); len(values) > 0 {
+		accountRef, err := accountcore.ParseAccountRef(strings.TrimSpace(values[0]))
+		if err != nil || len(values) != 1 {
+			// 非法钉选交回 Canonical，由其按协议返回 400。
+			return pinnedAccountSource{}, false
+		}
+		return pinnedAccountSource{handler: handler, accountRef: accountRef}, false
+	}
 	return handler.accounts, false
+}
+
+// pinnedAccountSource 只在钉选账号本身是 claude 账号时透传；否则报告无可透传账号，
+// 让调用方交回 Canonical（Canonical 同样按钉选只用该账号）。
+type pinnedAccountSource struct {
+	handler    *Handler
+	accountRef accountcore.AccountRef
+}
+
+func (source pinnedAccountSource) Accounts(
+	ctx context.Context,
+	_ runtimecore.ModelID,
+) (AccountCursor, error) {
+	if source.handler == nil || source.handler.credentials == nil || !source.accountRef.IsValid() {
+		return nil, ErrNoRelayAccount
+	}
+	binding, _, err := source.handler.credentials.ResolveObservedCredentialBinding(ctx, source.accountRef)
+	if err != nil || !binding.IsValid() || binding.Credential().ProviderID() != "claude" {
+		return nil, ErrNoRelayAccount
+	}
+	return &singleAccountCursor{accountRef: source.accountRef}, nil
 }

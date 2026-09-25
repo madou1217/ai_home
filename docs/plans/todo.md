@@ -55,6 +55,8 @@
 
 ## 已知差异 / 风险
 
+- 2026-09-25 agy relay 两小时浸泡（钉选 agy 账号经 9527/Go，14 类用例 20 次：Messages 普通/思考流式/anyOf 工具/工具结果多轮/看图，Chat 普通/Pro 流式工具/长输出，Responses codex 形状，Gemini 原生/流式，真实 codex exec 与 claude -p，生图）。修复网关缺陷：Claude 原生中继无视钉选改派（5ac8b27a）、agy 不接受图片输入（dc76d6ef）、生图无视钉选、Claude Code 的 safeguards/advisor 工具/context_management 被拒（6118d9b7）。上游问题（非网关）：`gemini-3.1-pro-high` 在所有请求形态、多个账号上均被上游 INVALID_ARGUMENT 拒绝（-low 正常）；Claude Code 大请求（28 工具、~25k token）在 agy 上触发 429 RESOURCE_EXHAUSTED。
+
 - Responses 经 Go 驱动 agy（WebUI agy 会话 = codex CLI）：2026-09-25 修齐 Codex CLI 请求形状——agy 路由声明 reasoning/web_search 能力、工具 schema 按 Node 规则清洗（Claude 目标折叠 anyOf 并用 `parameters` 键）、namespace 工具可逆重命名、签名函数调用接受、工具项不再发内容块事件。真实 codex CLI 工具往返经 Go 通过，非 codex 的 Responses 不再交还 Node。
 
 - Go 不承接：Claude 以外 Provider 的 API Key 账号、Gemini Vertex、工作区冲突的 Codex 凭据 → 留在 Node（账本列出原因）

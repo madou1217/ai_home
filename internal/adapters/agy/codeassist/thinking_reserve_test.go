@@ -49,3 +49,30 @@ func TestEncodeMessagesDropsReasoningHistory(t *testing.T) {
 		t.Fatalf("contents = %#v", contents)
 	}
 }
+
+// TestEncodeMessagesSendsInlineImages 验证 base64 图片编码为 Gemini inlineData，URL 图片按请求错误拒绝。
+func TestEncodeMessagesSendsInlineImages(t *testing.T) {
+	t.Parallel()
+
+	source, err := inference.NewBase64MediaSource("image/png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/wD/AAf/AAAAAElFTkSuQmCC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := inference.NewImageContent(source, inference.ImageDetailAuto)
+	if err != nil {
+		t.Fatalf("NewImageContent() error = %v", err)
+	}
+	text, _ := inference.NewTextContent("what color?")
+	user, err := inference.NewMessage(inference.RoleUser, image, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, _, _, err := encodeMessages([]inference.Message{user}, toolNameMapper{})
+	if err != nil {
+		t.Fatalf("encodeMessages() error = %v", err)
+	}
+	parts := contents[0].Parts
+	if len(parts) != 2 || parts[0].InlineData == nil || parts[0].InlineData.MimeType != "image/png" || parts[1].Text != "what color?" {
+		t.Fatalf("parts = %#v", parts)
+	}
+}

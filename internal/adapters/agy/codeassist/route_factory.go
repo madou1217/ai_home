@@ -32,6 +32,8 @@ func (adapter *Adapter) BuildRoute(
 		// 与 Node 一致：Code Assist 线路只投递 function 工具，服务器侧搜索工具（codex CLI 总会带
 		// web_search）被忽略而不是让整条路由失败。
 		inference.CapabilityWebSearch,
+		// Code Assist 上的 Gemini 与 Claude 模型都接受内联图片（agy relay soak：看图请求曾 503）。
+		inference.CapabilityImageInput,
 	)
 	if err != nil {
 		return inferencegateway.Route{}, err

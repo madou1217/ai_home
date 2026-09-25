@@ -38,9 +38,16 @@ type wireContent struct {
 
 type wirePart struct {
 	Text             string                `json:"text,omitempty"`
+	InlineData       *wireInlineData       `json:"inlineData,omitempty"`
 	FunctionCall     *wireFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *wireFunctionResponse `json:"functionResponse,omitempty"`
 	ThoughtSignature string                `json:"thoughtSignature,omitempty"`
+}
+
+// wireInlineData 是 Gemini 内联媒体（图片 base64）。
+type wireInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
 }
 
 type wireFunctionCall struct {
@@ -212,6 +219,13 @@ func encodeMessages(
 				parts = append(parts, wirePart{FunctionResponse: &wireFunctionResponse{
 					ID: typed.CallID(), Name: name, Response: result,
 				}})
+			case inference.ImageContent:
+				// Code Assist 只接受内联图片；URL 图片无法由上游拉取，按客户端可修正的请求错误拒绝。
+				source := typed.Source()
+				if source.Kind() != inference.MediaSourceBase64 {
+					return nil, nil, nil, fmt.Errorf("%w: image source %s", ErrUnsupportedRequest, source.Kind())
+				}
+				parts = append(parts, wirePart{InlineData: &wireInlineData{MimeType: source.MediaType(), Data: source.Value()}})
 			case inference.ReasoningContent:
 				// 历史思考不回传：响应解码器本就丢弃思考部分，函数调用使用 skip 签名，无需连续性数据。
 				continue

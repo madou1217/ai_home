@@ -38,7 +38,7 @@ func TestAdapterBuildsAgyCodeAssistRouteWithToolIdentityCapability(t *testing.T)
 		!route.Capabilities().Has(inference.CapabilityTextGeneration) ||
 		!route.Capabilities().Has(inference.CapabilityTools) ||
 		!route.Capabilities().Has(inference.CapabilityStreaming) ||
-		route.Capabilities().Has(inference.CapabilityImageInput) ||
+		!route.Capabilities().Has(inference.CapabilityImageInput) ||
 		// 带 thinking/reasoning 的请求必须能路由到 agy（生产 WebUI agy 会话曾因此 503）。
 		!route.Capabilities().Has(inference.CapabilityReasoning) {
 		t.Fatalf("route = %#v", route)

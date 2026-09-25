@@ -21,10 +21,14 @@ func (adapter *Adapter) BuildRoute(
 	if adapter == nil || !modelID.IsValid() {
 		return inferencegateway.Route{}, ErrInvalidRouteModel
 	}
+	// Code Assist 上的模型默认思考：带 reasoning 配置或历史的请求（Claude Code thinking、
+	// Codex reasoning.effort）必须能路由到这里，否则整条路由因能力不足 503（生产 WebUI agy 会话）。
+	// 编码器不改写 thinkingConfig（模型按默认思考），并丢弃历史 reasoning 内容。
 	capabilities, err := inference.NewCapabilitySet(
 		inference.CapabilityTextGeneration,
 		inference.CapabilityTools,
 		inference.CapabilityStreaming,
+		inference.CapabilityReasoning,
 	)
 	if err != nil {
 		return inferencegateway.Route{}, err

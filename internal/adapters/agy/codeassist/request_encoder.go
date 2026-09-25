@@ -199,6 +199,9 @@ func encodeMessages(
 				parts = append(parts, wirePart{FunctionResponse: &wireFunctionResponse{
 					ID: typed.CallID(), Name: name, Response: result,
 				}})
+			case inference.ReasoningContent:
+				// 历史思考不回传：响应解码器本就丢弃思考部分，函数调用使用 skip 签名，无需连续性数据。
+				continue
 			default:
 				return nil, nil, nil, fmt.Errorf("%w: %s", ErrUnsupportedRequest, content.Kind())
 			}

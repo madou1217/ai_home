@@ -3,6 +3,7 @@ package anthropicmessages
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -20,6 +21,11 @@ func decodeTools(
 		header, err := decodeHeader[contentHeaderDTO](raw, field)
 		if err != nil {
 			return nil, nil, err
+		}
+		// advisor_* 是 Anthropic 服务端执行的顾问工具（Claude Code 总会声明），只有 Anthropic
+		// 能执行；Canonical 路径与 Node 一样只投递客户端函数工具，忽略它而不是拒绝整个请求。
+		if strings.HasPrefix(header.Type, "advisor_") {
+			continue
 		}
 		if header.Type != "" && header.Type != "custom" {
 			return nil, nil, unsupportedField(field + ".type")

@@ -428,3 +428,24 @@ type failingProviders struct{}
 func (failingProviders) ResolveProvider(context.Context, string, string) (string, error) {
 	return "", context.DeadlineExceeded
 }
+
+// TestHandlerRejectsInvalidAccountPin 验证生图入口与其它推理入口一样校验 x-account-ref。
+func TestHandlerRejectsInvalidAccountPin(t *testing.T) {
+	t.Parallel()
+
+	doer := &passthroughDoer{}
+	handler := newTestHandler(t, doer, nil)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		imagesapi.GenerationsPath,
+		strings.NewReader(`{"model":"dall-e-3","prompt":"a cat"}`),
+	)
+	request.Header.Set("x-api-key", testAPIKey)
+	request.Header.Set("X-Account-Ref", "not-a-ref")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_account_ref") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
+	}
+}

@@ -23,6 +23,10 @@ type requestDTO struct {
 	ContextManagement json.RawMessage   `json:"context_management"`
 	Container         json.RawMessage   `json:"container"`
 	InferenceGeo      json.RawMessage   `json:"inference_geo"`
+	// Safeguards 是 Claude Code 给 Anthropic 服务端安全分类器的配置（dangerous_tool_use 等）。
+	// 其它 Provider 无法表达，Canonical 路径接受并忽略（与 Node 一致）；Claude 原生透传不经过
+	// 这里，原文照发。严格解码曾因这个字段把 Claude Code 经 agy 的请求整体判为无效。
+	Safeguards json.RawMessage `json:"safeguards"`
 }
 
 // messageDTO 是 user 或 assistant 历史消息。

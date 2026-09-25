@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"io"
 	"net/http"
 	"strings"
@@ -147,6 +148,18 @@ func (handler *Handler) ServeHTTP(
 		})
 		return
 	}
+
+	// 与其它推理入口一致：x-account-ref 把请求钉到指定账号（agy relay soak：生图曾被改派）。
+	ctx, pinErr := inferenceapi.ContextWithPinnedAccount(request)
+	if pinErr != nil {
+		writeError(response, &images.Error{
+			StatusCode: http.StatusBadRequest,
+			Code:       "invalid_account_ref",
+			Detail:     "Invalid account reference",
+		})
+		return
+	}
+	request = request.WithContext(ctx)
 
 	body, err := handler.readBody(request)
 	if err != nil {

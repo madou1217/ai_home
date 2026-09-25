@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/application/inferencegateway"
 	"strings"
 
 	"github.com/madou1217/ai_home/application/accountrouting"
@@ -71,12 +72,24 @@ func (source imageAccountSource) Candidates(
 		}
 		excluded = append(excluded, accountRef)
 	}
-	request, err := accountrouting.NewRequestExcluding(
-		source.catalog,
-		provider,
-		model,
-		excluded,
-	)
+	var request accountrouting.Request
+	var err error
+	if pinned, ok := inferencegateway.PinnedAccount(ctx); ok {
+		// 钉选只用这一个账号：已尝试过就耗尽，绝不换号（与推理路径一致）。
+		for _, tried := range excluded {
+			if tried == pinned {
+				return nil, errImageAccountUnavailable
+			}
+		}
+		request, err = accountrouting.NewPinnedRequest(source.catalog, provider, model, pinned)
+	} else {
+		request, err = accountrouting.NewRequestExcluding(
+			source.catalog,
+			provider,
+			model,
+			excluded,
+		)
+	}
 	if err != nil {
 		return nil, errImageAccountUnavailable
 	}

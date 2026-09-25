@@ -34,6 +34,9 @@ func (adapter *Adapter) BuildRoute(
 		inference.CapabilityWebSearch,
 		// Code Assist 上的 Gemini 与 Claude 模型都接受内联图片（agy relay soak：看图请求曾 503）。
 		inference.CapabilityImageInput,
+		// Claude Code 总带 context_management（clear_thinking 等）。编码器本就丢弃全部历史思考，
+		// 清理思考的编辑天然满足，不需要上游执行（Claude Code 经 agy 曾因此 503）。
+		inference.CapabilityContextManagement,
 	)
 	if err != nil {
 		return inferencegateway.Route{}, err

@@ -432,3 +432,25 @@ func TestRequestDecoderErrorDoesNotLeakFieldValue(t *testing.T) {
 		t.Fatalf("Decode() error leaked secret: %v", err)
 	}
 }
+
+// TestDecodeAcceptsClaudeCodeSafeguardsAndAdvisorTool 防回归：Claude Code 经 agy 时每个请求
+// 都带顶层 safeguards 与 advisor_20260301 服务器工具，严格解码曾整体拒绝（400 Invalid request /
+// Request feature is not supported）。两者被忽略，客户端函数工具照常解码。
+func TestDecodeAcceptsClaudeCodeSafeguardsAndAdvisorTool(t *testing.T) {
+	request, err := NewRequestDecoder().Decode([]byte(`{
+		"model": "claude-sonnet-4-6",
+		"max_tokens": 1024,
+		"messages": [{"role": "user", "content": "hi"}],
+		"safeguards": [{"type": "dangerous_tool_use", "classifier_context": {"v": 1, "permission_mode": "auto"}}],
+		"tools": [
+			{"name": "Bash", "description": "run", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}}},
+			{"type": "advisor_20260301", "name": "advisor", "model": "claude-opus-5-5"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if tools := request.Tools(); len(tools) != 1 || tools[0].Name() != "Bash" {
+		t.Fatalf("tools = %#v", tools)
+	}
+}

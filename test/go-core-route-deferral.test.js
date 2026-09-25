@@ -54,3 +54,12 @@ test('inference whose model hits an enabled Node alias stays with Node', () => {
   // Node 对可用钉选不使用别名，这类请求照常交给 Go。
   assert.equal(decide('gateway.anthropic.messages', 'claude-opus-4-8', LIVE), false);
 });
+
+test('blob fetches stay with Node only when the Node blob store holds the id', () => {
+  const decide = (pathname, known) => shouldDeferGoRouteToNode({
+    entryId: 'gateway.vision.blobs', pathname, state, accountStateIndex,
+    getNodeBlob: (id) => (known.includes(id) ? { bytes: Buffer.alloc(1), mime: 'image/png' } : null)
+  });
+  assert.equal(decide('/v1/blobs/node-made', ['node-made']), true);
+  assert.equal(decide('/v1/blobs/go-made', ['node-made']), false);
+});

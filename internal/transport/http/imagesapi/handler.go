@@ -216,7 +216,12 @@ func (handler *Handler) ServeHTTP(
 // 优先复用客户端实际使用的 Host 头：网关可能被多个地址访问（127.0.0.1、局域网 IP、
 // 反向代理域名），写死监听地址会给出客户端取不到的 URL。没有 Host 时回退到配置值。
 func blobBaseURL(request *http.Request, fallback string) string {
-	host := strings.TrimSpace(request.Host)
+	// 经 Node 宿主转发时 Host 是 Go 的私有端点；宿主用 X-Forwarded-Host 告知客户端实际访问的地址
+	// （宿主总是覆盖客户端自带的值，Go 私有端点只接受宿主持有的 Client Key）。
+	host := strings.TrimSpace(request.Header.Get("X-Forwarded-Host"))
+	if host == "" || strings.ContainsAny(host, "/\\ \t\r\n,") {
+		host = strings.TrimSpace(request.Host)
+	}
 	if host == "" {
 		return strings.TrimRight(strings.TrimSpace(fallback), "/")
 	}

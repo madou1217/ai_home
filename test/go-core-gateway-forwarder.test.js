@@ -330,3 +330,14 @@ test('model-aware decisions buffer the body, hand it back to Node or forward it 
   await post('/v1beta/models/gemini-3-flash:generateContent', { contents: [] });
   assert.deepEqual(decisions, ['claude-opus-4-8', 'claude-haiku-4-5', 'gemini-3-flash'], 'Gemini model comes from the path');
 });
+
+test('the forwarder sets an authoritative X-Forwarded-Host and drops client-supplied ones', () => {
+  const { buildForwardRequestHeaders } = require('../lib/server/go-core-gateway-forwarder');
+  const headers = buildForwardRequestHeaders(
+    { host: 'gateway.example:9527', 'x-forwarded-host': 'evil.example', authorization: 'Bearer client' },
+    { host: '127.0.0.1', port: 19550, clientKey: 'go-key' },
+    'req-1'
+  );
+  assert.equal(headers['x-forwarded-host'], 'gateway.example:9527');
+  assert.equal(headers.host, '127.0.0.1:19550');
+});

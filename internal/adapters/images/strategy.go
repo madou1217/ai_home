@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	"github.com/madou1217/ai_home/internal/adapters/imagedata"
 	"github.com/madou1217/ai_home/internal/adapters/imagegeneration"
 )
@@ -265,20 +266,24 @@ func (strategy AgyStrategy) Generate(
 	if imageConfig != nil {
 		generationConfig["imageConfig"] = imageConfig
 	}
-	requestBody, err := json.Marshal(map[string]any{
-		"model":            input.Model,
-		"contents":         []map[string]any{{"role": "user", "parts": parts}},
-		"generationConfig": generationConfig,
-	})
-	if err != nil {
-		return Result{}, newError(500, "agy_transport_unavailable", "agy payload is not encodable")
+	// Code Assist 只接受 antigravity agent 信封（需先查询账号 project），与推理路径共用同一实现。
+	requestBody, applyHeaders, prepareErr := agycodeassist.PrepareImageGenerateContent(
+		ctx,
+		input.HTTP,
+		accessToken,
+		input.Model,
+		map[string]any{
+			"contents":         []map[string]any{{"role": "user", "parts": parts}},
+			"generationConfig": generationConfig,
+		},
+	)
+	if prepareErr != nil {
+		return Result{}, newError(502, "upstream_failed", "agy code assist project is unavailable")
 	}
 
 	// 同 codex：不要复用上面已声明为 error 的 err。
 	response, sendErr := sendUpstream(ctx, input.HTTP, strategy.Endpoint, func(request *http.Request) {
-		request.Header.Set("Authorization", "Bearer "+accessToken)
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Accept", "application/json")
+		applyHeaders(request)
 		if input.Account.AccountRef != "" {
 			request.Header.Set("x-aih-account-ref", input.Account.AccountRef)
 		}

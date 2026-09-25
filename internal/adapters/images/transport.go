@@ -114,6 +114,13 @@ func parseOpenAIImagesResponse(payload []byte) (Result, error) {
 
 // parseGeminiImageResponse 从 Code Assist generateContent 响应里提取内联图片。
 func parseGeminiImageResponse(payload []byte) (Result, error) {
+	// Code Assist 把标准 Gemini 响应包在 {"response": {...}} 里，先剥掉信封。
+	var envelope struct {
+		Response json.RawMessage `json:"response"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err == nil && len(envelope.Response) > 0 && envelope.Response[0] == '{' {
+		payload = envelope.Response
+	}
 	var document struct {
 		Candidates []struct {
 			Content struct {

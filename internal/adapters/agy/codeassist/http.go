@@ -31,6 +31,15 @@ func loadProject(
 	client HTTPClient,
 	auth *agy.OAuthAuth,
 ) (string, error) {
+	return loadProjectForToken(ctx, client, auth.AccessToken())
+}
+
+// loadProjectForToken 用裸 Access Token 查询账号的 Code Assist project（图片子系统只持有 token）。
+func loadProjectForToken(
+	ctx context.Context,
+	client HTTPClient,
+	accessToken string,
+) (string, error) {
 	payload, err := json.Marshal(map[string]any{
 		"metadata": map[string]string{
 			"ideType":    "ANTIGRAVITY",
@@ -50,7 +59,7 @@ func loadProject(
 	if err != nil {
 		return "", ErrInvalidDependencies
 	}
-	applyHeaders(request, auth, false)
+	applyTokenHeaders(request, accessToken, false)
 	response, err := client.Do(request)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -81,7 +90,11 @@ func loadProject(
 }
 
 func applyHeaders(request *http.Request, auth *agy.OAuthAuth, claudeModel bool) {
-	request.Header.Set("Authorization", "Bearer "+auth.AccessToken())
+	applyTokenHeaders(request, auth.AccessToken(), claudeModel)
+}
+
+func applyTokenHeaders(request *http.Request, accessToken string, claudeModel bool) {
+	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")

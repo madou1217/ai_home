@@ -90,10 +90,18 @@ test('the model catalog moves to Go only after every inference route', () => {
   const partial = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID, 'gateway.anthropic.messages']);
   assert.equal(partial.errors.length, 1);
 
-  const complete = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID, ...INFERENCE_ENTRY_IDS]);
+  const complete = resolveGoOwnedEntryIds(manifest, [CATALOG_ENTRY_ID, ...INFERENCE_ENTRY_IDS, 'gateway.vision.blobs']);
   assert.deepEqual(complete.errors, []);
   assert.equal(complete.entryIds.has(CATALOG_ENTRY_ID), true);
 
   // 目录无关的只读条目可以独立划转。
   assert.deepEqual(resolveGoOwnedEntryIds(manifest, ['gateway.props', 'gateway.models.detail']).errors, []);
+});
+
+test('image entry points and blob retrieval move to Go together', () => {
+  const manifest = loadRouteOwnershipManifest();
+  const partial = resolveGoOwnedEntryIds(manifest, ['gateway.images.generations', 'gateway.images.edits']);
+  assert.match(partial.errors.join('\n'), /must move together/);
+  const complete = resolveGoOwnedEntryIds(manifest, ['gateway.images.generations', 'gateway.images.edits', 'gateway.vision.blobs']);
+  assert.deepEqual(complete.errors, []);
 });

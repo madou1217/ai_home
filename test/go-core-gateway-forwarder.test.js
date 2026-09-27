@@ -341,3 +341,19 @@ test('the forwarder sets an authoritative X-Forwarded-Host and drops client-supp
   assert.equal(headers['x-forwarded-host'], 'gateway.example:9527');
   assert.equal(headers.host, '127.0.0.1:19550');
 });
+
+test('pinned Node account refs are rewritten to their Go refs when forwarding', async (t) => {
+  const go = await startFakeGo(t);
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: () => false,
+    mapPinnedAccountRef: (ref) => (ref === 'acct_0123456789abcdef0123' ? 'acct_fedcba9876543210fedc' : ref)
+  });
+  const response = await request(port, {
+    method: 'POST', path: '/v1/messages',
+    headers: { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json', 'x-account-ref': 'acct_0123456789abcdef0123' }
+  }, '{}');
+  assert.equal(response.status, 200);
+  assert.equal(go.seen[0].headers['x-account-ref'], 'acct_fedcba9876543210fedc');
+});

@@ -95,3 +95,16 @@ test('responses to agy accounts and non-openai models are served by Go (codex CL
   assert.equal(decide('gateway.openai.responses', '', 'gpt-5.5'), false);
   assert.equal(decide('gateway.anthropic.messages', AGY, 'claude-opus-4-6-thinking'), false, 'other protocols unaffected');
 });
+
+test('pins without a Go account mapping or with a model Go cannot route stay with Node', () => {
+  const decide = (model, goRef, ids) => shouldDeferGoRouteToNode({
+    entryId: 'gateway.openai.responses', pinnedAccountRef: LIVE, model, aliases: [], state, accountStateIndex,
+    fabricGatewayReady: () => false,
+    goAccountRefFor: () => goRef,
+    goRoutableModelIds: () => ids
+  });
+  const ids = new Set(['gpt-5.5']);
+  assert.equal(decide('gpt-5.5', 'acct_bbbbbbbbbbbbbbbbbbbb', ids), false, 'mapped (possibly rekeyed) pin goes to Go');
+  assert.equal(decide('gpt-5.5', '', ids), true, 'Go does not know this account');
+  assert.equal(decide('gpt-6-astra', 'acct_bbbbbbbbbbbbbbbbbbbb', ids), true, 'Go cannot route the model');
+});

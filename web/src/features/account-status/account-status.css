@@ -1,0 +1,171 @@
+/* 账号健康状态可视化 —— 共享视觉基元（状态条 / 立方体网格 / 图例）。
+ * 颜色只表达语义，除 4 档健康色外全部引用 design-tokens.css；
+ * 档位阈值 / 配色见 features/account-status/health.ts 与 design-tokens.css 的
+ * --color-success / --color-warning / --color-status-partial / --color-danger。
+ */
+
+.account-status-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+}
+
+.account-status-strip__bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  height: 26px;
+  border-radius: 1px;
+  background: var(--color-border);
+  cursor: default;
+}
+
+.account-status-strip--sm .account-status-strip__bar { height: 16px; }
+.account-status-strip--xs .account-status-strip__bar { height: 12px; border-radius: 0.5px; }
+.account-status-strip--fit { gap: 1px; }
+
+.account-status-strip__bar--operational { background: var(--color-success); }
+.account-status-strip__bar--degraded { background: var(--color-warning); }
+.account-status-strip__bar--partial { background: var(--color-status-partial); }
+.account-status-strip__bar--major { background: var(--color-danger); }
+.account-status-strip__bar--none { background: var(--color-border); }
+
+.account-status-strip-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-faint);
+}
+
+.account-status-uptime {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.account-status-uptime--operational { color: var(--color-success); }
+.account-status-uptime--degraded { color: var(--color-warning); }
+.account-status-uptime--partial { color: var(--color-status-partial); }
+.account-status-uptime--major { color: var(--color-danger); }
+.account-status-uptime--none { color: var(--color-faint); }
+
+/* GitHub 风格立方体网格：grid-auto-flow: column 按「列=周」铺列，行数固定 7（星期）。 */
+.account-status-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 10px);
+  gap: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.account-status-grid__cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.account-status-grid__cell--operational { background: var(--color-success); }
+.account-status-grid__cell--degraded { background: var(--color-warning); }
+.account-status-grid__cell--partial { background: var(--color-status-partial); }
+.account-status-grid__cell--major { background: var(--color-danger); }
+.account-status-grid__cell--none { background: var(--color-border); opacity: .55; }
+
+/* 档位图例 */
+.account-status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.account-status-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.account-status-legend__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.account-status-legend__swatch--operational { background: var(--color-success); }
+.account-status-legend__swatch--degraded { background: var(--color-warning); }
+.account-status-legend__swatch--partial { background: var(--color-status-partial); }
+.account-status-legend__swatch--major { background: var(--color-danger); }
+.account-status-legend__swatch--none { background: var(--color-border); }
+
+/* Popover 内的 24 小时条，独立一份尺寸，不影响表格列宽 */
+.account-status-popover { min-width: 260px; }
+.account-status-popover__title {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+/* 桌面全局状态区：三段（日条 / 时条 / 立方体网格）纵向排布，KPI 一行 */
+.account-status-global {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.account-status-global__kpi {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.account-status-global__kpi-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.account-status-global__kpi-label {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.account-status-global__block-title {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+  letter-spacing: var(--tracking-caps, 0.02em);
+  text-transform: uppercase;
+}
+
+.account-status-unavailable {
+  font-size: 12px;
+  color: var(--color-faint);
+}
+
+/* 表格 mini 条列：固定紧凑宽度，悬浮触发 Popover 展示 24 小时明细 */
+.account-status-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.account-status-mini__uptime {
+  font-size: 11px;
+}
+
+/* 移动端：整条自适应容器宽度，单元格随之收窄，禁止横向溢出 */
+.account-status-mobile-strip {
+  width: 100%;
+  overflow: hidden;
+}

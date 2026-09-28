@@ -236,6 +236,10 @@
   --color-danger-soft: rgba(194, 0, 66, 0.09);
   --color-attention: var(--c-warning-500);
   --color-attention-soft: rgba(184, 110, 0, 0.11);
+  /* 账号健康状态条第 4 档（部分异常，success/total ∈ [0.50, 0.90)）：
+     介于 warning 与 danger 之间，warning/danger 本身不够用（见 features/account-status/health.ts）。 */
+  --color-status-partial: #b8500e;
+  --color-status-partial-soft: rgba(184, 80, 14, 0.11);
 
   /* ---------------------------------------------------------------------------
    * 7. DOMAIN — Provider accents
@@ -546,6 +550,8 @@ body.dark {
   --color-danger-soft: rgba(255, 0, 85, 0.14);
   --color-attention: #ffaa00;
   --color-attention-soft: rgba(255, 170, 0, 0.13);
+  --color-status-partial: #ff6a00;
+  --color-status-partial-soft: rgba(255, 106, 0, 0.14);
 
   --c-opencode: #a9c2d6;
   --event-tool: #7f9bb3;

@@ -133,6 +133,9 @@ import {
 } from '@/features/accounts/AccountBadges';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
+import { useAccountOutcomes } from '@/features/account-status/useAccountOutcomes';
+import GlobalStatusPanel from '@/features/account-status/GlobalStatusPanel';
+import AccountHealthCell from '@/features/account-status/AccountHealthCell';
 
 // 桌面账号页（≥ 768px）。移动端由 web/src/mobile/pages/MobileAccounts 独立渲染，
 // 两端共用 features/accounts 下的数据 hook、业务动作（useAccountActions）与业务弹窗（AccountFlowModals）。
@@ -166,6 +169,7 @@ export default function Accounts() {
     refreshing
   } = accountsSnapshot;
   const tokenDrops = useTokenDropEvents(accounts);
+  const accountOutcomes = useAccountOutcomes();
   const {
     modelCatalog,
     refreshingModelAccountRefs,
@@ -563,6 +567,18 @@ export default function Accounts() {
       }
     },
     {
+      title: '健康状态',
+      key: 'healthStatus',
+      width: 160,
+      render: (_value: any, record: Account) => (
+        <AccountHealthCell
+          accountRef={getAccountRef(record)}
+          data={accountOutcomes.data}
+          unavailable={accountOutcomes.unavailable}
+        />
+      )
+    },
+    {
       title: '模型探测',
       key: 'modelProbe',
       width: 180,
@@ -855,6 +871,8 @@ export default function Accounts() {
         />
       </StatisticCard.Group>
 
+      <GlobalStatusPanel outcomes={accountOutcomes} />
+
       {hasActiveImportJob ? (
         <div className="accounts-import-running" role="status" aria-live="polite">
           <SyncOutlined spin aria-hidden="true" />
@@ -956,7 +974,7 @@ export default function Accounts() {
             } as React.HTMLAttributes<HTMLElement>)}
             loading={loading}
             toolbar={false as any}
-            scroll={{ x: 1200 }}
+            scroll={{ x: 1360 }}
           />
         )}
       </SectionCard>

@@ -72,6 +72,8 @@ import {
   resolveAddAccountDefaultProvider
 } from '@/features/accounts/account-view-model';
 import type { AccountFilterValue, AccountProviderFilter } from '@/features/accounts/account-view-model';
+import { useAccountOutcomes } from '@/features/account-status/useAccountOutcomes';
+import MobileGlobalStatusCard from '@/features/account-status/MobileGlobalStatusCard';
 import AccountRowContent from './accounts/AccountRowContent';
 import AccountDetailSheet from './accounts/AccountDetailSheet';
 import type { AccountModelProbeView } from './accounts/AccountDetailSheet';
@@ -89,6 +91,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const snapshot = useAccountsSnapshot(handlersRef);
   const { accounts, hydratingDetails, removingAccountRefs, loading, refreshing } = snapshot;
   const tokenDrops = useTokenDropEvents(accounts);
+  const accountOutcomes = useAccountOutcomes();
   const {
     modelCatalog,
     refreshingModelAccountRefs,
@@ -331,6 +334,8 @@ export default function MobileAccounts(_props: MobilePageProps) {
         />
       </TelemetryGrid>
 
+      <MobileGlobalStatusCard outcomes={accountOutcomes} />
+
       {actions.hasActiveImportJob ? (
         <HudCard code="IMPORT" title="账号导入正在后台运行" tone="info">
           <span className={styles.importProgress} role="status" aria-live="polite">
@@ -416,6 +421,9 @@ export default function MobileAccounts(_props: MobilePageProps) {
         drops={tokenDrops}
         modelProbe={selectedAccount ? getModelProbeView(selectedAccount) : null}
         onRefreshModels={(record) => { void refreshAccountModelCatalog(record); }}
+        accountOutcomesData={accountOutcomes.data}
+        accountOutcomesUnavailable={accountOutcomes.unavailable}
+        accountOutcomesLoading={accountOutcomes.loading}
       />
       <ExportAccountsSheet
         open={exportOpen}

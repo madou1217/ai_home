@@ -15,6 +15,8 @@ import {
 } from '@ant-design/icons';
 import { DetailSheet, HudIconButton, HudSection, KeyValue } from '@/mobile/ui';
 import type { SwipeAction } from '@/mobile/ui';
+import AccountDetailStatusSection from '@/features/account-status/AccountDetailStatusSection';
+import type { AccountOutcomesData } from '@/features/account-status/types';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { formatTokenAmount } from '@/components/account/usage-snapshot-format';
 import { TOKEN_USAGE_PERIODS } from '@/components/account/token-usage-periods';
@@ -74,6 +76,9 @@ interface Props {
   drops: TokenDropEvent[];
   modelProbe: AccountModelProbeView | null;
   onRefreshModels: (record: Account) => void;
+  accountOutcomesData: AccountOutcomesData | null;
+  accountOutcomesUnavailable: boolean;
+  accountOutcomesLoading: boolean;
 }
 
 interface SheetAction {
@@ -105,7 +110,10 @@ export default function AccountDetailSheet({
   activity,
   drops,
   modelProbe,
-  onRefreshModels
+  onRefreshModels,
+  accountOutcomesData,
+  accountOutcomesUnavailable,
+  accountOutcomesLoading
 }: Props) {
   const open = Boolean(record);
   if (!record) {
@@ -328,6 +336,13 @@ export default function AccountDetailSheet({
             <p className={styles.muted}>暂无统计</p>
           )}
         </HudSection>
+
+        <AccountDetailStatusSection
+          accountRef={accountRef}
+          data={accountOutcomesData}
+          unavailable={accountOutcomesUnavailable}
+          loading={accountOutcomesLoading}
+        />
 
         {modelProbe ? (
           <HudSection title="模型探测" code="MODELS">

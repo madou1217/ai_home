@@ -141,6 +141,7 @@ import type {
   SshHostTestResult,
   InteractivePrompt
 } from '@/types';
+import type { AccountOutcomesResponse } from '@/features/account-status/types';
 
 const api = axios.create({
   baseURL: '/v0',
@@ -618,6 +619,22 @@ export const accountsAPI = {
   getImportJob: async (jobId: string): Promise<AccountImportJob> => {
     const response = await api.get<{ ok: boolean; job: AccountImportJob }>(`/webui/accounts/import/jobs/${jobId}`);
     return response.data.job;
+  }
+};
+
+// 账号健康状态条（90 天 + 最近 24 小时结果桶）。Go 核心未就绪时后端回 503，
+// 这里吞掉那次 axios 错误、把响应体（{ok:false,error}）原样交给调用方，
+// 而不是抛出异常——状态区应静默隐藏，不该打断账号页其他数据的加载。
+export const accountOutcomesAPI = {
+  get: async (): Promise<AccountOutcomesResponse> => {
+    try {
+      const response = await api.get<AccountOutcomesResponse>('/webui/account-outcomes');
+      return response.data;
+    } catch (error) {
+      const axiosError = error as AxiosError<AccountOutcomesResponse>;
+      if (axiosError?.response?.data) return axiosError.response.data;
+      return { ok: false, error: 'account_outcomes_unavailable' };
+    }
   }
 };
 

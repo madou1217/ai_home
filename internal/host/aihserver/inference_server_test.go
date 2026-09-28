@@ -27,8 +27,10 @@ import (
 // 提交后异步发布误判为业务失败。
 const hostAsyncStateWaitTimeout = 3 * time.Second
 
-// TestServerPinnedAccountNeverFallsBack 验证真实 HTTP Header 固定账号且停用后不换号。
-func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
+// TestServerPinnedAccountFallsBackWhenUnavailable 验证真实 HTTP Header 固定账号优先命中；
+// 固定账号停用后回落普通账号池（钉选是亲和偏好，与 Node v1-router 语义一致），
+// 并如实声明实际服务的账号。
+func TestServerPinnedAccountFallsBackWhenUnavailable(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -38,7 +40,7 @@ func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
 	upstream := &syntheticInferenceHTTPClient{}
 	baseURL, client := startTestServerWithInferenceClient(t, upstream)
 	firstRef := registerAPIKeyAccount(t, client, baseURL, "codex", firstKey)
-	_ = registerAPIKeyAccount(t, client, baseURL, "codex", secondKey)
+	secondRef := registerAPIKeyAccount(t, client, baseURL, "codex", secondKey)
 	waitForServerModels(t, client, baseURL, []string{"gpt-5.6-sol"})
 	payload := `{"model":"gpt-5.6-sol","input":"pinned-host-smoke"}`
 	headers := map[string]string{
@@ -79,9 +81,16 @@ func TestServerPinnedAccountNeverFallsBack(t *testing.T) {
 		headers,
 		[]byte(payload),
 	)
-	assertStatus(t, exchange, http.StatusServiceUnavailable)
-	if upstream.CallCount() != 1 {
-		t.Fatalf("固定账号停用后错误换号: upstream calls=%d", upstream.CallCount())
+	assertStatus(t, exchange, http.StatusOK)
+	if upstream.CallCount() != 2 || upstream.LastAuthorization() != "Bearer "+secondKey {
+		t.Fatalf(
+			"固定账号停用后未回落常池: authorization=%q calls=%d",
+			upstream.LastAuthorization(),
+			upstream.CallCount(),
+		)
+	}
+	if got := exchange.header.Get(inferenceapi.ServedAccountRefHeader); got != secondRef {
+		t.Fatalf("served account header = %q, want fallback %q", got, secondRef)
 	}
 	t.Logf(
 		"POST %s\nheaders: %s=<account_ref>\npayload: %s\nstatus: %d\nresponse: %s",

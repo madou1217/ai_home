@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runServerCommand } = require('../lib/server/command-handler');
 const { runServerCommandRouter } = require('../lib/cli/commands/server-router');
+const { SHUTDOWN_GRACE_MS } = require('../lib/server/inference-drain');
 
 async function captureConsole(fn) {
   const originalLog = console.log;
@@ -318,7 +319,7 @@ test('runServerCommand restarts daemon in non-blocking mode after stop', async (
   assert.equal(code, 0);
   assert.deepEqual(calls, [{
     rawServeArgs: [],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
   }]);
 });
 
@@ -478,7 +479,7 @@ test('runServerCommand accepts sanitized serve options for an internal source re
       '--proxy-url',
       'http://127.0.0.1:6152'
     ],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
   }]);
 });
 
@@ -566,7 +567,7 @@ test('runServerCommand restarts daemon with stopped server entry path', async ()
   assert.equal(code, 0);
   assert.deepEqual(calls, [{
     rawServeArgs: [],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
   }]);
 });
 
@@ -760,7 +761,7 @@ test('runServerCommandRouter restarts daemon in non-blocking mode', () => {
       assert.equal(exitCode, 0);
       assert.deepEqual(calls, [{
         rawServeArgs: [],
-        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
       }]);
       resolve();
     }, 0);
@@ -875,7 +876,7 @@ test('runServerCommandRouter passes stopped server entry path into restart', () 
       assert.equal(exitCode, 0);
       assert.deepEqual(calls, [{
         rawServeArgs: [],
-        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
       }]);
       resolve();
     }, 0);

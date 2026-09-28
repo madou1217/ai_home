@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runServerCommandRouter } = require('../lib/cli/commands/server-router');
+const { SHUTDOWN_GRACE_MS } = require('../lib/server/inference-drain');
 
 function flushAsync() {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -69,7 +70,7 @@ test('server router restart delegates to daemon restart orchestration', async ()
   await flushAsync();
   assert.deepEqual(restartCalls, [{
     args: [],
-    options: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: 500 }
+    options: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
   }]);
   assert.equal(exitCode, 0);
 });

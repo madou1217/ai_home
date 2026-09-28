@@ -55,3 +55,26 @@ test('resolveCodexCommand prefers explicit path, env path, then resolver', () =>
     resolveCliPath: () => '/tmp/codex-c'
   }), '/tmp/codex-c');
 });
+
+test('codex client version never reports below the verified floor and is cached', () => {
+  const {
+    CODEX_CLIENT_VERSION_FLOOR,
+    atLeastCodexClientVersionFloor,
+    compareCodexClientVersions,
+    getCodexClientVersion,
+    resetCodexClientVersionCacheForTest
+  } = require('../lib/server/codex-client-version');
+  assert.equal(atLeastCodexClientVersionFloor('codex-cli 0.154.0-alpha.3'), CODEX_CLIENT_VERSION_FLOOR);
+  assert.equal(atLeastCodexClientVersionFloor(''), CODEX_CLIENT_VERSION_FLOOR);
+  assert.equal(atLeastCodexClientVersionFloor('codex-cli 0.170.2'), '0.170.2');
+  assert.equal(compareCodexClientVersions('1.10.0', '1.9.9'), 1);
+  resetCodexClientVersionCacheForTest();
+  let now = 0;
+  const first = getCodexClientVersion({ codexClientVersion: '0.171.0', now: () => now });
+  now += 1000;
+  const cachedValue = getCodexClientVersion({ codexClientVersion: '0.172.0', now: () => now });
+  now += 60 * 60 * 1000;
+  const refreshed = getCodexClientVersion({ codexClientVersion: '0.172.0', now: () => now });
+  assert.deepEqual([first, cachedValue, refreshed], ['0.171.0', '0.171.0', '0.172.0']);
+  resetCodexClientVersionCacheForTest();
+});

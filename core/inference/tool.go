@@ -36,6 +36,9 @@ type ToolDefinitionOptions struct {
 	EagerInputStreaming *bool
 	// InputExamples 是工具参数 JSON Object 示例。
 	InputExamples [][]byte
+	// Freeform 非空时工具输入是原始字符串，Schema 必须是 freeform 专用 Schema。
+	// 只经由 NewFreeformToolDefinition 设置，见 tool_freeform.go。
+	Freeform *FreeformFormat
 }
 
 // ToolDefinition 是不携带 Provider 私有字段的函数工具定义。
@@ -50,6 +53,7 @@ type ToolDefinition struct {
 	deferLoading         *bool
 	eagerInputStreaming  *bool
 	inputExamples        [][]byte
+	freeform             *FreeformFormat
 }
 
 // NewToolDefinition 创建名称稳定且 Schema 为 JSON Object 的工具定义。
@@ -142,6 +146,10 @@ func newToolDefinition(
 	if !areValidToolOptions(options) {
 		return ToolDefinition{}, ErrInvalidRequest
 	}
+	if options.Freeform != nil &&
+		(!options.Freeform.IsValid() || !isFreeformInputSchema(inputSchema)) {
+		return ToolDefinition{}, ErrInvalidRequest
+	}
 	definition := ToolDefinition{
 		identity:             identity,
 		namespaceDescription: namespaceDescription,
@@ -151,6 +159,7 @@ func newToolDefinition(
 		deferLoading:         cloneBool(options.DeferLoading),
 		eagerInputStreaming:  cloneBool(options.EagerInputStreaming),
 		inputExamples:        cloneByteSlices(options.InputExamples),
+		freeform:             cloneFreeformFormat(options.Freeform),
 	}
 	if options.Strict != nil {
 		definition.strict = *options.Strict
@@ -258,6 +267,7 @@ func (definition ToolDefinition) IsValid() bool {
 			DeferLoading:        definition.deferLoading,
 			EagerInputStreaming: definition.eagerInputStreaming,
 			InputExamples:       definition.inputExamples,
+			Freeform:            definition.freeform,
 		},
 	)
 	return err == nil && (definition.strictSpecified || !definition.strict)
@@ -276,6 +286,7 @@ func (definition ToolDefinition) clone() ToolDefinition {
 		deferLoading:         cloneBool(definition.deferLoading),
 		eagerInputStreaming:  cloneBool(definition.eagerInputStreaming),
 		inputExamples:        cloneByteSlices(definition.inputExamples),
+		freeform:             cloneFreeformFormat(definition.freeform),
 	}
 }
 

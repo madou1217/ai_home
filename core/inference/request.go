@@ -140,6 +140,11 @@ const (
 	ReasoningEffortXHigh ReasoningEffort = "xhigh"
 	// ReasoningEffortMax 表示模型允许的最大 reasoning 强度。
 	ReasoningEffortMax ReasoningEffort = "max"
+	// ReasoningEffortUltra 表示最大 reasoning 并允许模型自动委派子任务。
+	//
+	// 来源：Codex CLI 0.158.0-alpha.2.1 模型清单中 gpt-6-astra / gpt-6-sol 的
+	// supported_reasoning_levels（"Maximum reasoning with automatic task delegation"）。
+	ReasoningEffortUltra ReasoningEffort = "ultra"
 )
 
 // IsValid 判断 reasoning 强度是否已经注册。
@@ -151,7 +156,8 @@ func (effort ReasoningEffort) IsValid() bool {
 		ReasoningEffortMedium,
 		ReasoningEffortHigh,
 		ReasoningEffortXHigh,
-		ReasoningEffortMax:
+		ReasoningEffortMax,
+		ReasoningEffortUltra:
 		return true
 	default:
 		return false
@@ -547,6 +553,10 @@ type RequestInput struct {
 	IncludeEncryptedReasoning bool
 	// Truncation 是可选的上下文截断策略。
 	Truncation TruncationMode
+	// TextVerbosity 是可选的输出详略提示，见 request_hints.go。
+	TextVerbosity TextVerbosity
+	// ReasoningContext 是可选的 reasoning 连续性范围，见 request_hints.go。
+	ReasoningContext ReasoningContext
 	// Continuation 是可选的历史响应或 conversation 引用。
 	Continuation *Continuation
 	// ExternalToolCallIDs 是 continuation 上下文中明确已知的工具调用 ID。
@@ -581,6 +591,8 @@ type Request struct {
 	store             *bool
 	includeEncrypted  bool
 	truncation        TruncationMode
+	textVerbosity     TextVerbosity
+	reasoningContext  ReasoningContext
 	continuation      *Continuation
 	capabilities      CapabilitySet
 }
@@ -634,6 +646,8 @@ func NewRequest(input RequestInput) (Request, error) {
 		store:             cloneBool(input.Store),
 		includeEncrypted:  input.IncludeEncryptedReasoning,
 		truncation:        input.Truncation,
+		textVerbosity:     input.TextVerbosity,
+		reasoningContext:  input.ReasoningContext,
 		continuation:      cloneContinuation(input.Continuation),
 	}
 	request.capabilities = deriveRequiredCapabilities(request)
@@ -904,6 +918,10 @@ func validateRequestOptions(input RequestInput, tools []ToolDefinition) error {
 		return ErrInvalidRequest
 	}
 	if input.Truncation != "" && !input.Truncation.IsValid() {
+		return ErrInvalidRequest
+	}
+	if (input.TextVerbosity != "" && !input.TextVerbosity.IsValid()) ||
+		(input.ReasoningContext != "" && !input.ReasoningContext.IsValid()) {
 		return ErrInvalidRequest
 	}
 	if len(input.ExternalToolCallIDs) > 0 && input.Continuation == nil {

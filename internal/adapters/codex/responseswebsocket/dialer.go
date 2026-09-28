@@ -181,8 +181,8 @@ func websocketEndpoint(baseURL string) (string, error) {
 	return parsed.String(), nil
 }
 
-// projectHandshakeHeaders 只转发官方源码确认的低敏关联头，认证和协议身份由
-// Server 覆盖，避免客户端注入其它逐跳或上游权限头。
+// projectHandshakeHeaders 只转发官方源码确认的低敏关联头；认证由 Server 覆盖，
+// 客户端身份只在可信 Codex 客户端时跟随客户端，避免注入其它逐跳或上游权限头。
 func projectHandshakeHeaders(source http.Header) http.Header {
 	destination := make(http.Header)
 	for _, name := range []string{
@@ -199,9 +199,16 @@ func projectHandshakeHeaders(source http.Header) http.Header {
 		}
 	}
 	destination.Set("OpenAI-Beta", BetaHeaderValue)
-	destination.Set("Originator", codexOriginator)
-	destination.Set("User-Agent", codexUserAgent)
-	destination.Set("Version", codexProtocolVersion)
+	if identity, ok := codexClientIdentity(source); ok {
+		// 帧由真实 Codex 客户端生成，握手身份与会话元数据跟随它，见 client_identity.go。
+		for name, values := range identity {
+			destination[name] = values
+		}
+	} else {
+		destination.Set("Originator", codexOriginator)
+		destination.Set("User-Agent", codexUserAgent)
+		destination.Set("Version", codexProtocolVersion)
+	}
 	destination.Set(HopHeader, HopValue)
 	return destination
 }

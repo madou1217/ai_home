@@ -120,10 +120,6 @@ import {
 import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
-  getKimiPlanSubscription,
-  getCodexSubscription,
-  formatCodexSubscriptionTooltip,
-  formatPlanValidUntil,
   getPlanTagColor,
   getPlanTagLabel,
   renderAccountDisplayBadge,
@@ -132,10 +128,11 @@ import {
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
+import AccountSubscriptionLines from '@/features/accounts/AccountSubscriptionLines';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
 import { useAccountOutcomes } from '@/features/account-status/useAccountOutcomes';
 import GlobalStatusPanel from '@/features/account-status/GlobalStatusPanel';
-import AccountHealthCell from '@/features/account-status/AccountHealthCell';
+import AccountHealthIcon from '@/features/account-status/AccountHealthIcon';
 
 // 桌面账号页（≥ 768px）。移动端由 web/src/mobile/pages/MobileAccounts 独立渲染，
 // 两端共用 features/accounts 下的数据 hook、业务动作（useAccountActions）与业务弹窗（AccountFlowModals）。
@@ -382,8 +379,6 @@ export default function Accounts() {
         const cliEntryClassName = cliInstalled
           ? undefined
           : 'account-client-entry-button--uninstalled';
-        const kimiPlanSubscription = getKimiPlanSubscription(record);
-        const codexSubscription = getCodexSubscription(record);
 
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -394,22 +389,13 @@ export default function Accounts() {
             <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
               <div style={{ fontWeight: 600, minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountPrimaryLabel(record)}
-                {kimiPlanSubscription && formatPlanValidUntil(kimiPlanSubscription.validUntilMs) ? (
-                  <Tooltip title={`套餐有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}${kimiPlanSubscription.status === 'canceled' ? ' · 已取消续费，到期后不再自动续订' : ' · 订阅生效中，到期自动续订'}`}>
-                    <span style={{ fontWeight: 400, fontSize: 12, color: kimiPlanSubscription.status === 'canceled' ? 'var(--color-warning)' : 'var(--color-muted)', marginLeft: 6 }}>
-                      {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
-                    </span>
-                  </Tooltip>
-                ) : null}
-                {codexSubscription ? (
-                  <Tooltip title={formatCodexSubscriptionTooltip(codexSubscription)}>
-                    <span style={{ fontWeight: 400, fontSize: 12, color: codexSubscription.stale ? 'var(--color-warning)' : 'var(--color-muted)', marginLeft: 6 }}>
-                      {formatPlanValidUntil(codexSubscription.validUntilMs)}
-                    </span>
-                  </Tooltip>
-                ) : null}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <AccountHealthIcon
+                  accountRef={getAccountRef(record)}
+                  data={accountOutcomes.data}
+                  unavailable={accountOutcomes.unavailable}
+                />
                 {renderAccountRoleIcons(record)}
                 {canCopyAccountEmail(record) ? (
                   <Tooltip title="复制账号">
@@ -424,6 +410,7 @@ export default function Accounts() {
                 ) : null}
               </div>
             </div>
+            <AccountSubscriptionLines record={record} />
             {getAccountSecondaryLabel(record) ? (
               <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountSecondaryLabel(record)}
@@ -528,19 +515,6 @@ export default function Accounts() {
       }
     },
     {
-      title: '配置状态',
-      dataIndex: 'configured',
-      key: 'configured',
-      width: 120,
-      align: 'center' as const,
-      render: (configured: any) => (
-        <Badge
-          status={configured ? 'success' : 'default'}
-          text={configured ? '已配置' : '未配置'}
-        />
-      )
-    },
-    {
       title: '调度状态',
       dataIndex: 'quotaStatus',
       key: 'quotaStatus',
@@ -565,18 +539,6 @@ export default function Accounts() {
           </div>
         );
       }
-    },
-    {
-      title: '健康状态',
-      key: 'healthStatus',
-      width: 160,
-      render: (_value: any, record: Account) => (
-        <AccountHealthCell
-          accountRef={getAccountRef(record)}
-          data={accountOutcomes.data}
-          unavailable={accountOutcomes.unavailable}
-        />
-      )
     },
     {
       title: '模型探测',
@@ -923,29 +885,38 @@ export default function Accounts() {
         {viewMode === 'card' ? (
           <div style={{ marginBottom: 16 }}>
             <AccountCardGrid
-              accounts={filteredAccounts as any}
+              accounts={filteredAccounts}
               provider={activeProvider as any}
               loading={loading}
-              onEdit={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target && canEditAccountConfig(target)) handleEdit(target);
+              getActivity={getAccountActivity}
+              renderHealth={(record) => (
+                <AccountHealthIcon
+                  accountRef={getAccountRef(record)}
+                  data={accountOutcomes.data}
+                  unavailable={accountOutcomes.unavailable}
+                />
+              )}
+              renderUsage={(record) => (
+                <UsageProgressEffects
+                  record={record}
+                  activity={getAccountActivity(record)}
+                  drops={tokenDrops}
+                />
+              )}
+              getMenuItems={buildAccountMenuItems}
+              onMenuClick={handleAccountMenuClick}
+              onCopy={copyAccountEmail}
+              isDesktopSupported={(record) => Boolean(appEntries) && getAccountAppSupport(record, appEntries, appCapabilities).desktopSupported}
+              onOpenApp={(record) => {
+                if (guardAccountLaunch(record, 'Desktop')) void handleOpenApp(record, 'desktop');
               }}
-              onDelete={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target) confirmDeleteAccount(target);
-              }}
-              onOpenApp={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (target && guardAccountLaunch(target, 'Desktop')) void handleOpenApp(target, 'desktop');
-              }}
-              onOpenCli={(acc) => {
-                const target = accounts.find(a => a.accountRef === acc.accountRef);
-                if (!target || !guardAccountLaunch(target, 'CLI')) return;
-                if (!appEntries?.[target.provider]?.cli) {
-                  void handleOpenApp(target, 'cli');
+              onOpenCli={(record) => {
+                if (!guardAccountLaunch(record, 'CLI')) return;
+                if (!appEntries?.[record.provider]?.cli) {
+                  void handleOpenApp(record, 'cli');
                   return;
                 }
-                scheduleCliTerminalPicker(target);
+                scheduleCliTerminalPicker(record);
               }}
             />
           </div>
@@ -974,7 +945,7 @@ export default function Accounts() {
             } as React.HTMLAttributes<HTMLElement>)}
             loading={loading}
             toolbar={false as any}
-            scroll={{ x: 1360 }}
+            scroll={{ x: 1200 }}
           />
         )}
       </SectionCard>

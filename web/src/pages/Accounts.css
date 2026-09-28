@@ -313,3 +313,14 @@
   background: var(--color-accent);
   box-shadow: 0 0 6px var(--color-accent);
 }
+
+/* 账号名下方的订阅有效期行（kimi 套餐 / ChatGPT 订阅）。 */
+.account-subscription-line {
+  font-size: 12px;
+  line-height: 18px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}

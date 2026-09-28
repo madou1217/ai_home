@@ -75,7 +75,9 @@ test('status filter options cover every display state once', () => {
   const values = ACCOUNT_STATUS_FILTER_OPTIONS.map((option) => option.value);
   assert.equal(new Set(values).size, values.length);
   assert.equal(values[0], 'all');
-  assert.equal(values.length, 9);
+  // 「未配置」随配置状态列一起移除，不再作为筛选项。
+  assert.equal(values.includes('unconfigured'), false);
+  assert.equal(values.length, 8);
 });
 
 test('family helpers keep the tab axis on product families', () => {

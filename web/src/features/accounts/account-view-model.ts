@@ -91,8 +91,7 @@ export const ACCOUNT_STATUS_FILTER_OPTIONS: ReadonlyArray<{ label: string; value
   { label: '额度待确认', value: 'usage_attention' },
   { label: '已停池', value: 'policy_blocked' },
   { label: '已耗尽', value: 'exhausted' },
-  { label: '已关闭', value: 'disabled' },
-  { label: '未配置', value: 'unconfigured' }
+  { label: '已关闭', value: 'disabled' }
 ];
 
 export type ProviderStatsBucket = {

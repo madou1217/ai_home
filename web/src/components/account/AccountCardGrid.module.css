@@ -11,7 +11,6 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   min-width: 0;
   padding: var(--space-7, 14px) var(--space-8, 16px);
   border-radius: 0;
@@ -25,7 +24,7 @@
 
 .cardHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-6, 12px);
   margin-bottom: var(--space-6, 12px);
 }
@@ -55,68 +54,62 @@
   font-weight: var(--weight-bold, 700);
   letter-spacing: 0.02em;
   color: var(--color-heading);
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.accountSubtitle {
+.titleRow {
   display: flex;
   align-items: center;
   gap: var(--space-3, 6px);
   min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: var(--weight-regular, 400);
-  color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
 }
 
-.accountSubtitleText {
-  min-width: 0;
+.titleIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 4px);
+  flex: none;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.iconBtn:hover,
+.iconBtn:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
+.accountSubtitle {
+  font-size: 12px;
+  color: var(--color-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* COPY 触发器：只复制卡片上已展示的账号 ID */
-.copyIdBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex: none;
-  height: 16px;
-  padding: 0 var(--space-2, 4px);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: var(--color-surface-sunken);
-  color: var(--color-accent);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast, 120ms) var(--ease-standard),
-    box-shadow var(--motion-fast, 120ms) var(--ease-standard);
-}
-
-.copyIdBtn:hover,
-.copyIdBtn:focus-visible {
-  border-color: var(--color-accent);
-  box-shadow: var(--hud-glow-accent);
-  outline: none;
-}
-
 .moreBtn {
+  flex: none;
+  align-self: flex-start;
   color: var(--color-muted);
 }
 
 .cardBody {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6, 12px);
+  gap: var(--space-5, 10px);
   margin-bottom: var(--space-6, 12px);
 }
 
@@ -125,85 +118,53 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4, 8px);
+  min-width: 0;
 }
 
-/* 状态：全局 .hud-led 指示灯 + 状态色等宽短标签（无胶囊着色底） */
-.statusPill {
+.tagGroup {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3, 6px);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: var(--weight-bold, 700);
-  letter-spacing: 0.06em;
-  line-height: var(--leading-snug, 1.4);
+  gap: var(--space-2, 4px);
+  flex: none;
 }
 
-.statusHealthy {
-  color: var(--color-success);
-}
-
-.statusWarning {
-  color: var(--color-warning);
-}
-
-.statusError {
-  color: var(--color-danger);
-}
-
-/* 套餐：HUD 标签（方角 + 青色 35% 描边来自全局 .ant-tag，这里给青色字 + 淡青底） */
 .planTag {
   margin: 0;
-  border-radius: 2px;
-  font-family: var(--font-display);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-  color: var(--color-accent);
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 4px;
 }
 
-.quotaTrack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3, 6px);
+/* 额度 / Token 单元格按表格列宽设计，卡片里撑满卡宽 */
+.usageBlock,
+.metaRow {
+  min-width: 0;
 }
 
-.quotaLabels {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: var(--hos-text-caption, 12px);
-  color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.quotaLabels strong {
-  font-size: var(--hos-text-body-sm, 13px);
-  color: var(--color-heading);
-}
-
-/* 配额：3px 方头细轨，填充色（行内 background/color 同值）带同色辉光 */
-.progressBar {
+.usageBlock :global(.usage-progress-effects),
+.metaRow > * {
   width: 100%;
-  height: 3px;
-  border-radius: 0;
-  background: var(--color-surface-sunken);
-  box-shadow: inset 0 0 0 1px var(--color-border-subtle, var(--color-border));
+  max-width: 100%;
 }
 
-.progressFill {
-  height: 100%;
-  max-width: 100%;
-  border-radius: 0;
-  box-shadow: 0 0 6px currentColor;
-  transition: width var(--motion-slow, 240ms) var(--ease-standard);
+.lastUsed {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.footerActions {
+  display: inline-flex;
+  gap: var(--space-4, 8px);
 }
 
 .cardFooter {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  /* 同行卡片等高：内容贴顶，底栏贴底 */
+  margin-top: auto;
   border-top: 1px dashed var(--color-border);
   padding-top: var(--space-6, 12px);
 }

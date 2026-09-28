@@ -151,18 +151,22 @@
   color: var(--color-faint);
 }
 
-/* 表格 mini 条列：固定紧凑宽度，悬浮触发 Popover 展示 24 小时明细 */
-.account-status-mini {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
+/* 账号名一行的健康图标：按状态着色，悬停展开 90 天 + 24 小时明细 */
+.account-health-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
   cursor: pointer;
 }
 
-.account-status-mini__uptime {
-  font-size: 11px;
+.account-status-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 300px;
 }
+
+.account-status-hover .account-status-popover__title + * { margin-bottom: 8px; }
 
 /* 移动端：整条自适应容器宽度，单元格随之收窄，禁止横向溢出 */
 .account-status-mobile-strip {

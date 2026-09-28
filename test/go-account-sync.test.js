@@ -82,6 +82,27 @@ test('Node <-> Go account sync converges both stores and is quiet at steady stat
   assert.equal(nodeTeam.nativeAuth.auth.tokens.account_id, undefined, 'unrelated auth.json fields are preserved as-is');
   assert.equal((await sync.reconcile()).pulled, 0, 'a pulled credential is not pulled twice');
 
+  // Node 账号级模型开关 -> Go 人工策略：关闭即 force_disable（Go 尚未发现该模型也要预置），
+  // 重新启用只还原本同步写过的覆盖。
+  const { MODEL_CATALOG_SETTINGS_DB_KEY } = require('../lib/server/model-catalog-settings-store');
+  const { writeJsonValue } = require('../lib/server/app-state-store');
+  const policyOf = (modelId) => (readGoAccounts(aiHomeDir).modelPolicies
+    .find((row) => row.accountRef === refs.codexTeam && row.modelId === modelId) || {}).manualPolicy || 'inherit';
+  const writeModelSwitch = (enabled) => writeJsonValue(fs, aiHomeDir, MODEL_CATALOG_SETTINGS_DB_KEY, {
+    version: 5,
+    accountModels: [{ id: 'gpt-6-astra', provider: 'codex', accountRef: refs.codexTeam, enabled, manual: false }],
+    legacyModels: []
+  });
+  writeModelSwitch(false);
+  const disabled = await sync.reconcile();
+  assert.deepEqual(disabled.errors, []);
+  assert.equal(disabled.modelPoliciesChanged, 1);
+  assert.equal(policyOf('gpt-6-astra'), 'force_disable');
+  assert.equal((await sync.reconcile()).modelPoliciesChanged, 0, 'model policy sync is quiet at steady state');
+  writeModelSwitch(true);
+  assert.equal((await sync.reconcile()).modelPoliciesChanged, 1);
+  assert.equal(policyOf('gpt-6-astra'), 'inherit');
+
   // Node 停用账号 -> Go 同步停用。
   const { createAccountStateIndex } = require('../lib/account/state-index');
   const stateIndex = createAccountStateIndex({ fs, aiHomeDir });

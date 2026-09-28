@@ -15,6 +15,7 @@ import (
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
+	"github.com/madou1217/ai_home/application/accountusagefeed"
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
@@ -46,6 +47,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountusageeventsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
@@ -82,6 +84,8 @@ type serverHandlers struct {
 	accountOutcomes http.Handler
 	// accountRuntime 是账号当前运行态（阻塞 / cooldown / 最近结果）的只读管理接口。
 	accountRuntime http.Handler
+	// accountUsageEvents 是成功尝试 token 用量事件的增量只读管理接口。
+	accountUsageEvents http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -132,7 +136,11 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		return nil, fmt.Errorf("创建账号结果记录器失败: %w", err)
 	}
 	// 所有运行态记账入口都经过装饰器，为账号页状态条计数，见 account_outcomes.go。
-	accountRuntime := outcomeRecordingRuntime{serverAccountRuntime: inMemoryRuntime, outcomes: outcomeRecorder}
+	accountRuntime := outcomeRecordingRuntime{
+		serverAccountRuntime: inMemoryRuntime,
+		outcomes:             outcomeRecorder,
+		usage:                accountusagefeed.NewFeed(accountusagefeed.DefaultCapacity, time.Now()),
+	}
 	deletionGuard, err := persistentsessionguard.New(options.AIHomeDir)
 	if err != nil {
 		_ = store.Close()
@@ -455,6 +463,14 @@ func newHandlers(
 			return serverHandlers{}, nil, fmt.Errorf("创建账号运行态 Handler 失败: %w", err)
 		}
 		accountRuntimeHandler = handler
+	}
+	var accountUsageEventsHandler http.Handler
+	if source, ok := accountRuntime.(accountusageeventsapi.Source); ok {
+		handler, err := accountusageeventsapi.NewHandler(authorizer, source)
+		if err != nil {
+			return serverHandlers{}, nil, fmt.Errorf("创建账号用量事件 Handler 失败: %w", err)
+		}
+		accountUsageEventsHandler = handler
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
@@ -818,6 +834,7 @@ func newHandlers(
 		observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
 		accountOutcomes:    accountOutcomesHandler,
 		accountRuntime:     accountRuntimeHandler,
+		accountUsageEvents: accountUsageEventsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		catalogStatus: func() catalogReadiness {

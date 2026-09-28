@@ -8,6 +8,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
+	"github.com/madou1217/ai_home/application/accountusagefeed"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -23,6 +24,8 @@ const accountOutcomeFlushInterval = 30 * time.Second
 type outcomeRecordingRuntime struct {
 	serverAccountRuntime
 	outcomes *accountoutcomes.Recorder
+	// usage 收集成功尝试的 token 用量，Node 增量拉取后计入账号 Token 用量。
+	usage *accountusagefeed.Feed
 }
 
 // RecordSuccess 记账后计入 success。
@@ -33,6 +36,9 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 ) error {
 	err := runtime.serverAccountRuntime.RecordSuccess(ctx, route, success)
 	runtime.outcomes.Record(route.AccountRef(), accountoutcomes.OutcomeSuccess)
+	if usage, ok := success.Usage(); ok {
+		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
+	}
 	return err
 }
 
@@ -102,4 +108,14 @@ func newAccountOutcomeRecorder(
 	}
 	recorder.Start(ctx)
 	return recorder, nil
+}
+
+// UsageEventsSince 暴露用量事件环给管理接口（见 accountusageeventsapi）。
+func (runtime outcomeRecordingRuntime) UsageEventsSince(after uint64) ([]accountusagefeed.Event, uint64, bool) {
+	return runtime.usage.Since(after)
+}
+
+// UsageBootID 返回用量事件环的进程实例标识。
+func (runtime outcomeRecordingRuntime) UsageBootID() string {
+	return runtime.usage.BootID()
 }

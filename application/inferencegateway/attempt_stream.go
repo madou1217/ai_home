@@ -16,6 +16,8 @@ type attemptStream struct {
 	terminalAt   time.Time
 	clock        func() time.Time
 	err          error
+	usage        inference.Usage
+	hasUsage     bool
 }
 
 // newAttemptStream 创建同步传播背压的单次调用事件边界。
@@ -51,6 +53,10 @@ func (stream *attemptStream) Accept(
 		stream.terminalAt = stream.clock()
 		return nil
 	default:
+		if usageEvent, ok := event.(inference.UsageUpdatedEvent); ok {
+			stream.usage = usageEvent.Usage()
+			stream.hasUsage = true
+		}
 		if err := stream.emit(event); err != nil {
 			stream.err = err
 			return err
@@ -66,6 +72,11 @@ func (stream *attemptStream) TerminalAt() time.Time {
 		return time.Time{}
 	}
 	return stream.terminalAt
+}
+
+// Usage 返回本次尝试最后一个累计 token 快照。
+func (stream *attemptStream) Usage() (inference.Usage, bool) {
+	return stream.usage, stream.hasUsage
 }
 
 // Visible 表示至少一个非终态事件已经交给客户端。

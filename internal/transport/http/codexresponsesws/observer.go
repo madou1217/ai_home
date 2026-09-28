@@ -98,6 +98,9 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if successErr != nil {
 			return false, ErrInvalidObserverState
 		}
+		if usage, ok := decodeCompletedUsage(payload); ok {
+			success = success.WithUsage(usage)
+		}
 		_, successErr = observer.attempts.RecordSuccess(
 			context.Background(),
 			observer.route,

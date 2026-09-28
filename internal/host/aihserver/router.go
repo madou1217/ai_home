@@ -8,6 +8,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountusageeventsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
@@ -98,6 +99,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	if handlers.accountRuntime != nil {
 		mux.Handle(accountruntimeapi.Path, handlers.accountRuntime)
+	}
+	if handlers.accountUsageEvents != nil {
+		mux.Handle(accountusageeventsapi.Path, handlers.accountUsageEvents)
 	}
 	mux.Handle(modelsapi.Path, handlers.models)
 	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，

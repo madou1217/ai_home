@@ -9,9 +9,11 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountoutcomes"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
+	"github.com/madou1217/ai_home/application/accountusagefeed"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 // failingRuntime 只实现被装饰的两个方法；其余方法不应被调用。
@@ -132,5 +134,39 @@ func TestOutcomeRecordingRuntimeSnapshotMergesLastActivity(t *testing.T) {
 	if healthy.AccountRef != healthyRef || len(healthy.Blocks) != 0 ||
 		!healthy.LastSuccessAt.Equal(now) || !healthy.LastFailureAt.IsZero() {
 		t.Fatalf("healthy view = %+v", healthy)
+	}
+}
+
+// TestOutcomeRecordingRuntimeFeedsSuccessUsage 验证带 usage 的成功进入用量事件环，
+// 不带 usage 的成功不产生事件（账号 Token 用量不虚增）。
+func TestOutcomeRecordingRuntimeFeedsSuccessUsage(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	recorder, err := accountoutcomes.NewRecorder(accountoutcomes.RecorderOptions{
+		Store: &captureStore{}, Clock: func() time.Time { return now }, FlushInterval: time.Hour, Location: time.UTC,
+	})
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	ref, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	route, _ := runtimecore.NewModelRoute(ref, "gpt-5.5")
+	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: 100, OutputTokens: 20, CachedInputTokens: 40})
+	runtime := outcomeRecordingRuntime{
+		serverAccountRuntime: failingRuntime{},
+		outcomes:             recorder,
+		usage:                accountusagefeed.NewFeed(8, now),
+	}
+	plain, _ := inferencegateway.NewAttemptSuccess(now)
+	if err := runtime.RecordSuccess(context.Background(), route, plain); err != nil {
+		t.Fatalf("RecordSuccess(plain) error = %v", err)
+	}
+	if err := runtime.RecordSuccess(context.Background(), route, plain.WithUsage(usage)); err != nil {
+		t.Fatalf("RecordSuccess(usage) error = %v", err)
+	}
+	events, latest, _ := runtime.UsageEventsSince(0)
+	if latest != 1 || len(events) != 1 || events[0].AccountRef != ref || events[0].Model != "gpt-5.5" ||
+		events[0].Usage.TotalTokens() != 120 || !events[0].At.Equal(now) {
+		t.Fatalf("usage events = %+v latest=%d", events, latest)
 	}
 }

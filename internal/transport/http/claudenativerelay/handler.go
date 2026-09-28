@@ -328,7 +328,12 @@ func (handler *Handler) ServeHTTP(
 			handler.clock,
 		)
 	} else {
-		copyResult = copyResponseBody(response, upstreamResponse.Body)
+		// 非流式 JSON 响应：旁路保留有界前缀，只为读取顶层 usage，不影响透传。
+		capture := &boundedCapture{limit: nonStreamUsageCaptureLimit}
+		copyResult = copyResponseBody(response, io.TeeReader(upstreamResponse.Body, capture))
+		if !capture.truncated {
+			streamObservation.usage.observe(capture.buffer.Bytes())
+		}
 	}
 	handler.reportDisconnect(route, copyStartedAt, copyResult, streamObservation)
 	if upstreamResponse.StatusCode < http.StatusOK ||
@@ -359,6 +364,9 @@ func (handler *Handler) ServeHTTP(
 		happenedAt = streamObservation.completedAt
 	}
 	success, err := inferencegateway.NewAttemptSuccess(happenedAt)
+	if usage, ok := streamObservation.usage.canonical(); ok && err == nil {
+		success = success.WithUsage(usage)
+	}
 	if err == nil {
 		_, _ = handler.attempts.RecordSuccess(
 			request.Context(),

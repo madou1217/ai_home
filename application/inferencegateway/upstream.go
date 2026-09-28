@@ -31,6 +31,9 @@ var (
 // AttemptSuccess 是不含响应正文的成功发生事实。
 type AttemptSuccess struct {
 	happenedAt time.Time
+	// usage 是本次尝试最后一个累计 token 快照；上游未返回 usage 时 hasUsage 为 false。
+	usage    inference.Usage
+	hasUsage bool
 }
 
 // NewAttemptSuccess 创建 UTC 毫秒精度的成功事件。
@@ -48,6 +51,21 @@ func NewAttemptSuccess(happenedAt time.Time) (AttemptSuccess, error) {
 // HappenedAt 返回成功终态被观察到的 UTC 毫秒时间。
 func (success AttemptSuccess) HappenedAt() time.Time {
 	return success.happenedAt
+}
+
+// WithUsage 返回附带本次尝试累计 token 快照的成功事件；无效快照被忽略。
+func (success AttemptSuccess) WithUsage(usage inference.Usage) AttemptSuccess {
+	if !usage.IsValid() {
+		return success
+	}
+	success.usage = usage
+	success.hasUsage = true
+	return success
+}
+
+// Usage 返回本次尝试的累计 token 快照（账号页 Token 用量），没有时第二个返回值为 false。
+func (success AttemptSuccess) Usage() (inference.Usage, bool) {
+	return success.usage, success.hasUsage
 }
 
 // IsValid 重新检查跨边界传递后的成功时间不变量。

@@ -688,6 +688,9 @@ func (coordinator *Coordinator) executeAttempt(
 		if successErr != nil {
 			return outcome, successErr
 		}
+		if usage, ok := stream.Usage(); ok {
+			success = success.WithUsage(usage)
+		}
 		providerID := string(invocation.Route().ProviderID())
 		accountFailures.ForgetPending(providerID, route)
 		return outcome, coordinator.completeAttempt(

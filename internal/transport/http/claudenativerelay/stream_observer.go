@@ -24,6 +24,7 @@ type nativeStreamObservation struct {
 	failed      bool
 	completed   bool
 	completedAt time.Time
+	usage       nativeUsageState
 }
 
 // responseCopyResult 区分上游读取失败和下游客户端写入失败。
@@ -120,6 +121,7 @@ func observeNativeStream(
 			continue
 		}
 		eventAt := clock()
+		observed.usage.observe(event.Data())
 		classification, failed, observeErr := claudefailure.ObserveSSE(
 			sharedfailure.SSEInput{
 				EventType:  event.Type(),

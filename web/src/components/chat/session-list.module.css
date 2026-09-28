@@ -999,6 +999,8 @@
   display: flex;
   align-items: center;
   gap: var(--hos-space-1-5);
+  /* 操作按钮不参与收缩：窄侧栏里被挤掉的只能是模式切换的留白，不能是按钮本身。 */
+  flex-shrink: 0;
 }
 
 .sidebarActionBtn {

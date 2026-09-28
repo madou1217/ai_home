@@ -151,6 +151,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 2 {
@@ -166,6 +169,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 3 {
@@ -178,6 +184,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 4 {
@@ -187,11 +196,23 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
 		}
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID == ApplicationID && schemaVersion == 5 {
 		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
+		}
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+		}
+		return commitMigration(ctx, connection)
+	}
+	if applicationID == ApplicationID && schemaVersion == 6 {
+		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
 		}
 		return commitMigration(ctx, connection)
 	}
@@ -215,6 +236,9 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	}
 	if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
 		return fmt.Errorf("创建账号数据库 v6 失败: %w", err)
+	}
+	if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
+		return fmt.Errorf("创建账号数据库 v7 失败: %w", err)
 	}
 	return commitMigration(ctx, connection)
 }

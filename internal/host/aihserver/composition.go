@@ -1,7 +1,6 @@
 package aihserver
 
 import (
-	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -35,6 +34,7 @@ import (
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
@@ -42,6 +42,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
@@ -75,6 +76,8 @@ type serverHandlers struct {
 	catalogStatus     func() catalogReadiness
 	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
 	observeCodexClient func(*http.Request)
+	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
+	accountOutcomes http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -112,11 +115,20 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	accountRuntime, err := runtimeinmemory.New(time.Now)
+	inMemoryRuntime, err := runtimeinmemory.New(time.Now)
 	if err != nil {
+		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, fmt.Errorf("创建账号运行态失败: %w", err)
 	}
+	outcomeRecorder, err := newAccountOutcomeRecorder(ctx, store, options.ErrorLog)
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("创建账号结果记录器失败: %w", err)
+	}
+	// 所有运行态记账入口都经过装饰器，为账号页状态条计数，见 account_outcomes.go。
+	accountRuntime := outcomeRecordingRuntime{serverAccountRuntime: inMemoryRuntime, outcomes: outcomeRecorder}
 	deletionGuard, err := persistentsessionguard.New(options.AIHomeDir)
 	if err != nil {
 		_ = store.Close()
@@ -162,7 +174,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	resources = append(resources, codexVersions, store)
+	resources = append(resources, codexVersions, outcomeRecorder, store)
 	return newServer(
 		withManagementBrowserAccess(newRouter(handlers)),
 		resources,
@@ -427,6 +439,10 @@ func newHandlers(
 	decoder := nativeaccount.NewDecoder()
 	sub2APIDecoder := sub2api.NewDecoder()
 	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
+	accountOutcomesHandler, err := accountoutcomesapi.NewHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建账号结果 Handler 失败: %w", err)
+	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
 		Models:              recoveringModelManagement,
@@ -787,6 +803,7 @@ func newHandlers(
 			gemini:            inference.gemini,
 			codexResponsesWS:  webSocketHandler,
 			observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
+			accountOutcomes:    accountOutcomesHandler,
 			claudeRelayLeases: relayLeaseHandler,
 			claudeNativeRelay: nativeRelayHandler,
 			catalogStatus: func() catalogReadiness {

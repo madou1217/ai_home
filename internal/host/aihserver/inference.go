@@ -3,8 +3,6 @@ package aihserver
 import (
 	"context"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"time"
@@ -18,6 +16,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"

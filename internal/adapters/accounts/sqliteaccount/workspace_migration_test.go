@@ -65,7 +65,7 @@ func TestOpenMigratesV5AndBackfillsCodexWorkspace(t *testing.T) {
 		}
 	}
 	var version int
-	if err := store.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil || version != 6 {
-		t.Fatalf("user_version = %d (%v), want 6", version, err)
+	if err := store.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil || version != SchemaVersion {
+		t.Fatalf("user_version = %d (%v), want %d", version, err, SchemaVersion)
 	}
 }

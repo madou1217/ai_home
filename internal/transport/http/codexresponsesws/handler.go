@@ -66,6 +66,11 @@ type UpstreamDialer interface {
 	) (responseswebsocket.Connection, *http.Response, error)
 }
 
+// RouteMissReporter 接收精确路由未命中信号，用于异步修正过期的账号模型目录。
+type RouteMissReporter interface {
+	ReportRouteMiss(providerID string)
+}
+
 // Dependencies 声明原生 WS Handler 的稳定外部端口。
 type Dependencies struct {
 	Authorizer Authorizer
@@ -75,7 +80,10 @@ type Dependencies struct {
 	// CredentialObservations 在终态写运行态前复核连接所用凭据是否仍是当前快照。
 	CredentialObservations inferencegateway.CredentialObservationVerifier
 	ModelRefreshes         inferencegateway.ModelRefreshScheduler
-	Clock                  func() time.Time
+	// RouteMisses 在目录缺模型时触发 Provider 级重扫；此时请求尚未选中任何账号，
+	// 按账号的纠错刷新无从触发。
+	RouteMisses RouteMissReporter
+	Clock       func() time.Time
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -85,6 +93,7 @@ type Handler struct {
 	upstream       UpstreamDialer
 	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
+	routeMisses    RouteMissReporter
 	clock          func() time.Time
 	sessions       *sessionRegistry
 }
@@ -97,6 +106,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Attempts == nil ||
 		dependencies.CredentialObservations == nil ||
 		dependencies.ModelRefreshes == nil ||
+		dependencies.RouteMisses == nil ||
 		dependencies.Clock == nil {
 		return nil, ErrInvalidDependencies
 	}
@@ -113,6 +123,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		upstream:       dependencies.Upstream,
 		attempts:       attempts,
 		modelRefreshes: dependencies.ModelRefreshes,
+		routeMisses:    dependencies.RouteMisses,
 		clock:          dependencies.Clock,
 		sessions:       newSessionRegistry(),
 	}, nil
@@ -448,6 +459,7 @@ func (handler *Handler) writeSelectionError(
 		status = http.StatusNotFound
 		code = "model_not_found"
 		message = "当前没有对应的 Codex WebSocket 模型路由"
+		handler.routeMisses.ReportRouteMiss(string(inference.ProviderCodex))
 	}
 	writeWebSocketError(client, status, code, message)
 }

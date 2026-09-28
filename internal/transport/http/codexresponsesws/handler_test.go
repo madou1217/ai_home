@@ -400,6 +400,60 @@ func TestHandlerDoesNotRecordWarmupFailure(t *testing.T) {
 
 // TestHandlerRejectsUnauthorizedAndCrossOriginBeforeUpgrade 验证凭据与 Origin
 // 校验都发生在 101 和账号选择前。
+// TestHandlerReportsRouteMissForCatalogRepair 验证目录缺模型时返回 model_not_found
+// 并上报 Codex 路由未命中；其它选择失败不触发重扫。
+func TestHandlerReportsRouteMissForCatalogRepair(t *testing.T) {
+	t.Parallel()
+
+	routeMisses := &routeMissRecorder{}
+	handler := newTestHandlerWithRouteMisses(
+		t,
+		"http://127.0.0.1:1",
+		&attemptRecorder{},
+		modelRefreshStub{},
+		&observationVerifierStub{current: true},
+		routeMisses,
+	)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	client, _ := dialGateway(t, server.URL, nil)
+	writeClientText(t, client, []byte(`{"type":"response.create","model":"gpt-5.6-luna","input":[]}`))
+	_, _, _ = readClientMessage(t, client)
+	client.CloseNow()
+	if got := routeMisses.snapshot(); len(got) != 0 {
+		t.Fatalf("非路由未命中错误触发了重扫: %v", got)
+	}
+
+	client, _ = dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(`{"type":"response.create","model":"gpt-6-astra","input":[]}`))
+	_, payload, err := readClientMessage(t, client)
+	if err != nil || !strings.Contains(string(payload), `"model_not_found"`) {
+		t.Fatalf("route miss payload=%s error=%v", payload, err)
+	}
+	if got := routeMisses.snapshot(); len(got) != 1 || got[0] != "codex" {
+		t.Fatalf("路由未命中上报 = %v, want [codex]", got)
+	}
+}
+
+type routeMissRecorder struct {
+	mu        sync.Mutex
+	providers []string
+}
+
+func (recorder *routeMissRecorder) ReportRouteMiss(providerID string) {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	recorder.providers = append(recorder.providers, providerID)
+}
+
+func (recorder *routeMissRecorder) snapshot() []string {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return append([]string(nil), recorder.providers...)
+}
+
 func TestHandlerRejectsUnauthorizedAndCrossOriginBeforeUpgrade(t *testing.T) {
 	t.Parallel()
 
@@ -710,6 +764,25 @@ func newTestHandlerWithVerifier(
 	observations inferencegateway.CredentialObservationVerifier,
 ) *codexresponsesws.Handler {
 	t.Helper()
+	return newTestHandlerWithRouteMisses(
+		t,
+		upstreamBaseURL,
+		recorder,
+		modelRefreshes,
+		observations,
+		&routeMissRecorder{},
+	)
+}
+
+func newTestHandlerWithRouteMisses(
+	t *testing.T,
+	upstreamBaseURL string,
+	recorder *attemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+	observations inferencegateway.CredentialObservationVerifier,
+	routeMisses codexresponsesws.RouteMissReporter,
+) *codexresponsesws.Handler {
+	t.Helper()
 	credential, err := codexauth.NewAPIKeyAuth(codexauth.APIKeyInput{
 		APIKey:  "synthetic-upstream-key",
 		BaseURL: upstreamBaseURL,
@@ -774,6 +847,7 @@ func newTestHandlerWithVerifier(
 		Attempts:               recorder,
 		CredentialObservations: observations,
 		ModelRefreshes:         modelRefreshes,
+		RouteMisses:            routeMisses,
 		Clock: func() time.Time {
 			return time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
 		},
@@ -975,6 +1049,9 @@ func (stub selectionStub) Select(
 	_ context.Context,
 	request codexwebsocket.Request,
 ) (codexwebsocket.Selection, error) {
+	if request.Model == "gpt-6-astra" {
+		return codexwebsocket.Selection{}, inferencegateway.ErrRouteNotFound
+	}
 	if request.Model != "gpt-5.6-sol" ||
 		request.ClientProtocol != inference.ClientProtocolOpenAIResponses {
 		return codexwebsocket.Selection{}, codexwebsocket.ErrInvalidRequest

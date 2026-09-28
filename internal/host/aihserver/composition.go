@@ -630,6 +630,28 @@ func newHandlers(
 			err,
 		)
 	}
+	modelSweep, err := accountapp.NewModelRefreshSweep(catalog, store, modelRefresh)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建账号模型目录重扫用例失败: %w", err)
+	}
+	routeMissRefresh, err := accountapp.NewRouteMissModelRefresh(
+		accountapp.RouteMissModelRefreshOptions{
+			Sweeper:      modelSweep,
+			MinInterval:  routeMissRefreshMinInterval,
+			SweepTimeout: modelRefreshSweepTimeout,
+			Clock:        time.Now,
+			Observer: func(providerID string, err error) {
+				if errorLog != nil {
+					errorLog.Printf("路由未命中触发 %s 模型目录重扫失败: %v", providerID, err)
+				}
+			},
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建路由未命中模型刷新触发器失败: %w", err)
+	}
 	webSocketHandler, err := codexresponsesws.NewHandler(
 		codexresponsesws.Dependencies{
 			Authorizer:             clientAuthorizer,
@@ -638,10 +660,12 @@ func newHandlers(
 			Attempts:               accountRuntime,
 			CredentialObservations: credentials,
 			ModelRefreshes:         inference.modelRefreshes,
+			RouteMisses:            routeMissRefresh,
 			Clock:                  time.Now,
 		},
 	)
 	if err != nil {
+		_ = routeMissRefresh.Close()
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf(
 			"创建 Codex Responses WebSocket Handler 失败: %w",
@@ -706,6 +730,7 @@ func newHandlers(
 	)
 	if err != nil {
 		_ = webSocketHandler.Close()
+		_ = routeMissRefresh.Close()
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建首次模型刷新恢复用例失败: %w", err)
 	}
@@ -716,8 +741,23 @@ func newHandlers(
 	)
 	if err != nil {
 		_ = webSocketHandler.Close()
+		_ = routeMissRefresh.Close()
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动首次模型刷新恢复 worker 失败: %w", err)
+	}
+	modelSweepWorker, err := startModelRefreshSweepWorker(
+		ctx,
+		modelSweep,
+		modelRefreshSweepInitialDelay,
+		modelRefreshSweepInterval,
+		errorLog,
+	)
+	if err != nil {
+		_ = initialModelRecoveryWorker.Close()
+		_ = webSocketHandler.Close()
+		_ = routeMissRefresh.Close()
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
 	return serverHandlers{
 			accounts:          accountsHandler,
@@ -742,8 +782,10 @@ func newHandlers(
 				}
 			},
 		}, []io.Closer{
+			modelSweepWorker,
 			initialModelRecoveryWorker,
 			webSocketHandler,
+			routeMissRefresh,
 			inference,
 			usage,
 			modelRefresh,

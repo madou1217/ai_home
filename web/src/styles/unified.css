@@ -232,8 +232,12 @@
 /* =============================================================================
  * ProLayout 全局视口与自适应滚动容器规范
  * ========================================================================== */
+/* 只锁 ProLayout 根 Layout（直接子级）为视口高。不能用后代选择器：页面内嵌的
+ * antd <Layout>（如 AI 会话页 ChatWorkspaceLayout）也会被 !important 强制成 100vh，
+ * 而内容区 = 100vh − 顶栏占位（mix 布局 heightLayoutHeader 60px），溢出部分被
+ * overflow:hidden 裁掉 → 会话输入框底部工具栏被切。 */
 .ant-design-pro.ant-pro-layout,
-.ant-design-pro.ant-pro-layout .ant-layout {
+.ant-design-pro.ant-pro-layout > .ant-layout {
   height: 100vh !important;
   min-height: 100vh !important;
   overflow: hidden !important;

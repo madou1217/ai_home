@@ -1021,7 +1021,12 @@
     color var(--motion-fast) var(--ease-standard);
 }
 
-.sidebarActionBtn:hover {
+.sidebarActionBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sidebarActionBtn:not(:disabled):hover {
   background: var(--color-accent-soft);
   color: var(--color-accent);
   border-color: var(--color-accent);

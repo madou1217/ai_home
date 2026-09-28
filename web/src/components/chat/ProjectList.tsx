@@ -330,6 +330,8 @@ const ProjectList = ({
         {onModeChange && (
           <ModeSelector mode={mode} onChange={onModeChange} mobile={false} />
         )}
+        {/* 顶栏是桌面端唯一的操作区：WORK 模式的打开项目/新建/归档/刷新都在这里，
+            不再在列表上方重复一行同样的按钮（移动端保留自己的带标题操作行）。 */}
         <div className={styles.sidebarHeaderActions}>
           <button
             type="button"
@@ -340,6 +342,29 @@ const ProjectList = ({
           >
             {mode === 'chat' ? <PlusOutlined /> : <FolderOpenOutlined />}
           </button>
+          {mode === 'work' ? (
+            <>
+              <button
+                type="button"
+                className={styles.sidebarActionBtn}
+                onClick={onCreateSession}
+                disabled={!selectedProject}
+                title={selectedProject ? '新建工作区会话' : '先选择一个项目'}
+                aria-label="新建工作区会话"
+              >
+                <PlusOutlined />
+              </button>
+              <button
+                type="button"
+                className={styles.sidebarActionBtn}
+                onClick={() => setArchivedOpen(true)}
+                title="已归档的会话"
+                aria-label="已归档的会话"
+              >
+                <InboxOutlined />
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className={styles.sidebarActionBtn}
@@ -441,8 +466,9 @@ const ProjectList = ({
         </>
       ) : (
         <>
-          <div className={`${styles.refreshBar} ${mobile ? styles.refreshBarMobile : ''}`}>
-            {mobile ? <span className={styles.refreshBarTitle}>会话</span> : null}
+          {mobile ? (
+          <div className={`${styles.refreshBar} ${styles.refreshBarMobile}`}>
+            <span className={styles.refreshBarTitle}>会话</span>
             <Button
               type={mobile ? 'default' : 'text'}
               icon={<FolderOpenOutlined />}
@@ -473,6 +499,7 @@ const ProjectList = ({
               className={`${styles.refreshBtn} ${mobile ? styles.refreshBtnMobile : ''}`}
             />
           </div>
+          ) : null}
 
           {remoteSessionsPanel}
 

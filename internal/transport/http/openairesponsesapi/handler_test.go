@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const testBearerToken = "synthetic-responses-api-key"
@@ -571,8 +572,38 @@ func TestHandlerMapsDecoderAndExecutorErrors(t *testing.T) {
 		)
 		if response.status != http.StatusBadRequest ||
 			!strings.Contains(response.body, "Invalid request") ||
+			response.header.Get(inferenceapi.DecodeRejectedHeader) != "1" ||
 			executor.CallCount() != 0 {
 			t.Fatalf("decode failure response = %#v", response)
+		}
+	})
+
+	t.Run("Codex 桌面端输入形状被拒收时标记并记录字段路径", func(t *testing.T) {
+		executor := newScriptedExecutor(nil, errors.New("不应调用执行器"))
+		var observed []error
+		baseURL, client := startResponsesServerWithObserver(t, executor, 0, func(err error) {
+			observed = append(observed, err)
+		})
+		response := performResponsesRequest(
+			t,
+			client,
+			http.MethodPost,
+			baseURL+Path,
+			testBearerToken,
+			"application/json",
+			[]byte(`{
+				"model":"gpt-6-astra",
+				"input":[{"type":"custom_tool_call","call_id":"call_1","name":"apply_patch","input":"*** Begin Patch","internal_chat_message_metadata_passthrough":{}}]
+			}`),
+		)
+		if response.status != http.StatusBadRequest ||
+			response.header.Get(inferenceapi.DecodeRejectedHeader) != "1" ||
+			executor.CallCount() != 0 {
+			t.Fatalf("codex shape response = %#v", response)
+		}
+		if len(observed) != 1 || !strings.Contains(observed[0].Error(), "input[0]") ||
+			strings.Contains(observed[0].Error(), "Begin Patch") {
+			t.Fatalf("observed decode errors = %v", observed)
 		}
 	})
 
@@ -594,6 +625,7 @@ func TestHandlerMapsDecoderAndExecutorErrors(t *testing.T) {
 		)
 		if response.status != http.StatusBadRequest ||
 			!strings.Contains(response.body, "Invalid request body") ||
+			response.header.Get(inferenceapi.DecodeRejectedHeader) != "" ||
 			executor.CallCount() != 0 {
 			t.Fatalf("duplicate key response = %#v", response)
 		}
@@ -615,6 +647,7 @@ func TestHandlerMapsDecoderAndExecutorErrors(t *testing.T) {
 			minimalRequestBody(true),
 		)
 		if response.status != http.StatusServiceUnavailable ||
+			response.header.Get(inferenceapi.DecodeRejectedHeader) != "" ||
 			response.header.Get("Content-Type") != "application/json; charset=utf-8" ||
 			strings.Contains(response.body, "synthetic upstream") ||
 			!strings.Contains(response.body, "Inference service is unavailable") {
@@ -751,6 +784,16 @@ func startResponsesServer(
 	maxBodySize int64,
 ) (string, *http.Client) {
 	t.Helper()
+	return startResponsesServerWithObserver(t, executor, maxBodySize, nil)
+}
+
+func startResponsesServerWithObserver(
+	t *testing.T,
+	executor inferencegateway.Executor,
+	maxBodySize int64,
+	decodeErrors func(error),
+) (string, *http.Client) {
+	t.Helper()
 
 	responsesAdapter, err := openairesponses.NewAdapter(time.Now)
 	if err != nil {
@@ -761,10 +804,11 @@ func startResponsesServer(
 		t.Fatalf("clientprotocol.NewRegistry() error = %v", err)
 	}
 	handler, err := NewHandler(Dependencies{
-		Protocols:    registry,
-		Executor:     executor,
-		Authorizer:   bearerAuthorizer{},
-		MaxBodyBytes: maxBodySize,
+		Protocols:           registry,
+		Executor:            executor,
+		Authorizer:          bearerAuthorizer{},
+		MaxBodyBytes:        maxBodySize,
+		DecodeErrorObserver: decodeErrors,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

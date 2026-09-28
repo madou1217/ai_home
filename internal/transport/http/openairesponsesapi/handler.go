@@ -43,14 +43,17 @@ type Dependencies struct {
 	Authorizer Authorizer
 	// MaxBodyBytes 是单请求允许读取的最大字节数。
 	MaxBodyBytes int64
+	// DecodeErrorObserver 接收不含字段值的 Decoder 诊断；为空时不记录。
+	DecodeErrorObserver func(error)
 }
 
 // Handler 负责鉴权、请求解码、Canonical 执行和 Responses 输出渲染。
 type Handler struct {
-	adapter      clientprotocol.Adapter
-	executor     inferencegateway.Executor
-	authorizer   Authorizer
-	maxBodyBytes int64
+	adapter             clientprotocol.Adapter
+	executor            inferencegateway.Executor
+	authorizer          Authorizer
+	maxBodyBytes        int64
+	decodeErrorObserver func(error)
 }
 
 // NewHandler 解析一次协议注册并创建默认失败关闭的 Responses Handler。
@@ -72,10 +75,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		adapter:      adapter,
-		executor:     dependencies.Executor,
-		authorizer:   dependencies.Authorizer,
-		maxBodyBytes: maxBodyBytes,
+		adapter:             adapter,
+		executor:            dependencies.Executor,
+		authorizer:          dependencies.Authorizer,
+		maxBodyBytes:        maxBodyBytes,
+		decodeErrorObserver: dependencies.DecodeErrorObserver,
 	}, nil
 }
 
@@ -153,6 +157,10 @@ func (handler *Handler) ServeHTTP(
 	}
 	exchange, err := handler.adapter.Bind(body)
 	if err != nil {
+		if handler.decodeErrorObserver != nil {
+			handler.decodeErrorObserver(err)
+		}
+		inferenceapi.MarkDecodeRejected(response)
 		writeDecodeError(response, err)
 		return
 	}

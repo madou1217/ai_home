@@ -511,6 +511,7 @@ func newHandlers(
 			authorizer:                clientAuthorizer,
 			httpClient:                inferenceClient,
 			decodeErrors:              decodeErrors,
+			responsesDecodeErrors:     newResponsesDecodeErrorObserver(errorLog),
 			upstreamDecodeErrors:      upstreamDecodeErrors,
 			clock:                     time.Now,
 			requestRewriter:           visionGuard,
@@ -809,6 +810,18 @@ func newMessagesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 	return func(err error) {
 		logger.Printf("Anthropic Messages decode rejected: %v", err)
+	}
+}
+
+// newResponsesDecodeErrorObserver 只记录 Decoder 已脱敏的错误类别和字段路径。
+//
+// 被拒收的请求会由 Node 宿主接手，这条日志是 Go 协议覆盖缺口的唯一清单。
+func newResponsesDecodeErrorObserver(logger *log.Logger) func(error) {
+	if logger == nil {
+		return nil
+	}
+	return func(err error) {
+		logger.Printf("OpenAI Responses decode rejected: %v", err)
 	}
 }
 

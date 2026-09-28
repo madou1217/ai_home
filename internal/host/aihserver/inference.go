@@ -57,6 +57,7 @@ type inferenceCompositionDependencies struct {
 	authorizer                inferencehttp.Authorizer
 	httpClient                InferenceHTTPClient
 	decodeErrors              func(error)
+	responsesDecodeErrors     func(error)
 	upstreamDecodeErrors      func(error)
 	clock                     func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
@@ -160,7 +161,8 @@ func newInferenceComposition(
 		Executor:                    runtimeComponents.Executor(),
 		Authorizer:                  dependencies.authorizer,
 		Clock:                       dependencies.clock,
-		MessagesDecodeErrorObserver: dependencies.decodeErrors,
+		MessagesDecodeErrorObserver:  dependencies.decodeErrors,
+		ResponsesDecodeErrorObserver: dependencies.responsesDecodeErrors,
 	})
 	if err != nil {
 		return nil, err

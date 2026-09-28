@@ -36,6 +36,8 @@ type Dependencies struct {
 	Clock func() time.Time
 	// MessagesDecodeErrorObserver 接收不含字段值的 Anthropic Decoder 诊断。
 	MessagesDecodeErrorObserver func(error)
+	// ResponsesDecodeErrorObserver 接收不含字段值的 OpenAI Responses Decoder 诊断。
+	ResponsesDecodeErrorObserver func(error)
 	// MaxBodyBytes 为零时由各协议 Handler 使用安全默认值。
 	MaxBodyBytes int64
 }
@@ -68,10 +70,11 @@ func New(dependencies Dependencies) (Module, error) {
 	}
 	responses, err := openairesponsesapi.NewHandler(
 		openairesponsesapi.Dependencies{
-			Protocols:    protocols,
-			Executor:     dependencies.Executor,
-			Authorizer:   dependencies.Authorizer,
-			MaxBodyBytes: dependencies.MaxBodyBytes,
+			Protocols:           protocols,
+			Executor:            dependencies.Executor,
+			Authorizer:          dependencies.Authorizer,
+			MaxBodyBytes:        dependencies.MaxBodyBytes,
+			DecodeErrorObserver: dependencies.ResponsesDecodeErrorObserver,
 		},
 	)
 	if err != nil {

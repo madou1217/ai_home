@@ -357,3 +357,65 @@ test('pinned Node account refs are rewritten to their Go refs when forwarding', 
   assert.equal(response.status, 200);
   assert.equal(go.seen[0].headers['x-account-ref'], 'acct_fedcba9876543210fedc');
 });
+
+test('only a Go-marked decode rejection hands the buffered body back to Node; other 400s pass through', async (t) => {
+  const goSeen = [];
+  const goServer = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      goSeen.push(body);
+      const model = JSON.parse(body).model;
+      if (model === 'decode-rejected') {
+        res.writeHead(400, { 'content-type': 'application/json', 'x-aih-decode-rejected': '1' });
+        res.end('{"error":{"code":"invalid_request","message":"Invalid request"}}');
+        return;
+      }
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end('{"error":{"code":"upstream_bad_request"}}');
+    });
+  });
+  const goPort = await listen(goServer);
+  t.after(() => close(goServer));
+
+  const fallbacks = [];
+  const nodeBodies = [];
+  const forwarder = createGoCoreGatewayForwarder({
+    routeTable,
+    requiredClientKey: CLIENT_KEY,
+    writeJson,
+    agent: new http.Agent({ keepAlive: false }),
+    entryIds: new Set(['gateway.openai.responses']),
+    getTarget: () => ({ host: '127.0.0.1', port: goPort, clientKey: GO_KEY }),
+    needsRequestModel: () => true,
+    deferToNode: async () => false,
+    onDecodeFallback: (event) => fallbacks.push(event)
+  });
+  const { readRequestBody } = require('../lib/server/http-utils-utils');
+  const server = http.createServer(async (req, res) => {
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+    if (await forwarder.tryHandleHttp(req, res, { method: req.method, pathname, requestId: 'req-decode' })) return;
+    nodeBodies.push((await readRequestBody(req)).toString('utf8'));
+    writeJson(res, 200, { ok: true, handledBy: 'node' });
+  });
+  const port = await listen(server);
+  t.after(() => close(server));
+  const post = (payload) => request(port, {
+    method: 'POST', path: '/v1/responses', headers: { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json' }
+  }, JSON.stringify(payload));
+
+  const codexShape = { model: 'decode-rejected', input: [{ type: 'custom_tool_call', call_id: 'c1', name: 'apply_patch', input: 'x' }] };
+  const rejected = await post(codexShape);
+  assert.equal(rejected.status, 200);
+  assert.match(rejected.body, /handledBy/);
+  assert.deepEqual(nodeBodies, [JSON.stringify(codexShape)], 'Node replays the exact buffered body');
+  assert.deepEqual(fallbacks, [{ entryId: 'gateway.openai.responses', requestId: 'req-decode' }]);
+
+  const other = await post({ model: 'gpt-6-astra', input: 'hi' });
+  assert.equal(other.status, 400, 'unmarked 400 is never replayed');
+  assert.match(other.body, /upstream_bad_request/);
+  assert.equal(other.headers['x-aih-decode-rejected'], undefined);
+  assert.equal(nodeBodies.length, 1);
+  assert.equal(goSeen.length, 2);
+});

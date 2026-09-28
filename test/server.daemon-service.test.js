@@ -2231,7 +2231,7 @@ test('daemon service installs the branded macOS background supervisor', POSIX_ON
     /<key>AssociatedBundleIdentifiers<\/key>\s+<array>\s+<string>com\.aih\.background<\/string>\s+<\/array>/
   );
   assert.match(plist, /<key>KeepAlive<\/key>\s+<dict>\s+<key>SuccessfulExit<\/key>\s+<false\/>\s+<\/dict>/);
-  assert.match(plist, /<key>ExitTimeOut<\/key>\s+<integer>20<\/integer>/);
+  assert.match(plist, /<key>ExitTimeOut<\/key>\s+<integer>110<\/integer>/);
   assert.doesNotMatch(plist, /<string>server<\/string>\s+<string>serve<\/string>/);
   assert.equal(plist.includes('/usr/local/bin/node'), false);
   assert.equal(fs.existsSync(legacyLaunchdPlist), false);

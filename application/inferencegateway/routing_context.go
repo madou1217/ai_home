@@ -61,3 +61,28 @@ func PinnedAccount(ctx context.Context) (accountcore.AccountRef, bool) {
 	accountRef, ok := ctx.Value(pinnedAccountContextKey{}).(accountcore.AccountRef)
 	return accountRef, ok && accountRef.IsValid()
 }
+
+// fallbackAccountContextKey 保存钉选回落时必须排除的原钉选账号。
+type fallbackAccountContextKey struct{}
+
+// withoutPinnedAccount 返回摘掉固定账号的子 Context，供钉选回落普通账号池使用。
+//
+// 原钉选账号在本请求内已尝试失败（或不可调度），而请求级失败要到请求结束才结算
+// 冷却，因此回落征召显式排除它，避免同一请求再打一次刚失败的账号。
+func withoutPinnedAccount(ctx context.Context) context.Context {
+	accountRef, pinned := PinnedAccount(ctx)
+	if !pinned {
+		return ctx
+	}
+	ctx = context.WithValue(ctx, pinnedAccountContextKey{}, accountcore.AccountRef(""))
+	return context.WithValue(ctx, fallbackAccountContextKey{}, accountRef)
+}
+
+// excludedFallbackAccount 返回钉选回落时排除的账号。
+func excludedFallbackAccount(ctx context.Context) (accountcore.AccountRef, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	accountRef, ok := ctx.Value(fallbackAccountContextKey{}).(accountcore.AccountRef)
+	return accountRef, ok && accountRef.IsValid()
+}

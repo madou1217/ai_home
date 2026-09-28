@@ -255,6 +255,22 @@ func (coordinator *Coordinator) executePlan(
 			accountFailures,
 			poolRetryPermit,
 		)
+		if shouldFallBackFromPin(routeCtx, execution, err) {
+			// 钉选是账号亲和偏好而不是独占（与 Node v1-router 语义一致）：钉住的账号
+			// 不支持该模型、冷却/额度耗尽，或尝试失败且客户端尚未收到任何输出时，
+			// 摘掉钉选按普通账号池重新征召同一路由；已失败账号由运行态冷却自动跳过。
+			if execution.pendingFailure != nil {
+				pendingFailure = execution.pendingFailure
+			}
+			execution, err = coordinator.executeCandidate(
+				withoutPinnedAccount(routeCtx),
+				request,
+				route,
+				emit,
+				accountFailures,
+				poolRetryPermit,
+			)
+		}
 		if execution.pendingFailure != nil {
 			pendingFailure = execution.pendingFailure
 		}
@@ -281,6 +297,18 @@ func (coordinator *Coordinator) executePlan(
 		return fmt.Errorf("提交请求级上游失败状态失败: %w", err)
 	}
 	return finishExhaustedPlan(pendingFailure)
+}
+
+// shouldFallBackFromPin 判断钉选尝试是否可以安全回落普通账号池：只在没有终态、
+// 没有内部错误，且失败尚未对客户端可见（没有任何字节写出）时回落。
+func shouldFallBackFromPin(ctx context.Context, execution routeExecution, err error) bool {
+	if _, pinned := PinnedAccount(ctx); !pinned {
+		return false
+	}
+	if err != nil || execution.terminal {
+		return false
+	}
+	return execution.pendingFailure == nil || !execution.pendingFailure.Visible()
 }
 
 // orderRoutePlan 在不改变 alias chain 内部优先级的前提下，公平选择 alias
@@ -610,6 +638,14 @@ func (coordinator *Coordinator) newRecruitmentRequest(
 			string(route.ProviderID()),
 			route.EffectiveModel(),
 			accountRef,
+		)
+	}
+	if excluded, found := excludedFallbackAccount(ctx); found {
+		return accountrouting.NewRequestExcluding(
+			coordinator.catalog,
+			string(route.ProviderID()),
+			route.EffectiveModel(),
+			[]accountcore.AccountRef{excluded},
 		)
 	}
 	return accountrouting.NewRequest(

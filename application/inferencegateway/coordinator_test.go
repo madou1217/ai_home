@@ -1435,8 +1435,8 @@ func TestCoordinatorSharesAgyPoolRetryAcrossRouteCandidates(t *testing.T) {
 	}
 }
 
-// TestCoordinatorDoesNotRetryPinnedAgyDeferredFailure 验证固定账号请求不扩张授权范围。
-func TestCoordinatorDoesNotRetryPinnedAgyDeferredFailure(t *testing.T) {
+// TestCoordinatorFallsBackFromRateLimitedPinToPool 验证钉选只是亲和偏好：钉住账号限流时回落常池。
+func TestCoordinatorFallsBackFromRateLimitedPinToPool(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCoordinatorFixture(t, "agy", 2)
@@ -1479,7 +1479,13 @@ func TestCoordinatorDoesNotRetryPinnedAgyDeferredFailure(t *testing.T) {
 	); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if len(upstream.Invocations()) != 1 || sleeper.CallCount() != 0 {
+	// 钉选是亲和偏好：钉住账号被限流且客户端尚未收到输出时回落普通账号池，
+	// 同一请求改用另一个健康账号（不走第二轮等待重试）。
+	invocations := upstream.Invocations()
+	if len(invocations) != 2 ||
+		invocations[0].Account().Ref() != fixture.accounts[0].Ref() ||
+		invocations[1].Account().Ref() == fixture.accounts[0].Ref() ||
+		sleeper.CallCount() != 0 {
 		t.Fatalf(
 			"invocations=%d sleeps=%v",
 			len(upstream.Invocations()),

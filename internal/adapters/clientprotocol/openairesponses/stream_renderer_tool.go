@@ -14,6 +14,10 @@ func (renderer *StreamRenderer) renderToolArgumentsDelta(
 	event inference.ToolArgumentsDeltaEvent,
 	delta string,
 ) ([]RenderedEvent, error) {
+	if item, err := renderer.state.openItem(event.OutputIndex()); err == nil && item.freeform {
+		// freeform 输入在完成时一次性交付，见 renderCustomToolCallCompleted。
+		return nil, nil
+	}
 	return renderer.renderToolDelta(event.OutputIndex(), delta)
 }
 
@@ -22,6 +26,9 @@ func (renderer *StreamRenderer) renderToolCallCompleted(
 	event inference.ToolCallCompletedEvent,
 	suffix string,
 ) ([]RenderedEvent, error) {
+	if item, err := renderer.state.openItem(event.OutputIndex()); err == nil && item.freeform {
+		return renderer.renderCustomToolCallCompleted(event)
+	}
 	var frames []RenderedEvent
 	if suffix != "" {
 		delta, err := renderer.renderToolDelta(event.OutputIndex(), suffix)

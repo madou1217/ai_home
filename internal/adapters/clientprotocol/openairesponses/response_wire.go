@@ -215,12 +215,16 @@ type reasoningConfigWireDTO struct {
 	Effort string `json:"effort,omitempty"`
 	// Summary 是可选 reasoning 摘要模式。
 	Summary string `json:"summary,omitempty"`
+	// Context 是可选 reasoning 连续性范围（Responses Lite）。
+	Context string `json:"context,omitempty"`
 }
 
 // textConfigWireDTO 是 Responses 文本输出配置。
 type textConfigWireDTO struct {
 	// Format 是 text 或 json_schema 格式对象。
 	Format json.RawMessage `json:"format"`
+	// Verbosity 是可选输出详略提示（Responses Lite）。
+	Verbosity string `json:"verbosity,omitempty"`
 }
 
 // structuredTextFormatWireDTO 是 Responses JSON Schema 输出格式。
@@ -259,8 +263,8 @@ type namespaceToolWireDTO struct {
 	Name string `json:"name"`
 	// Description 是 namespace 的公共说明。
 	Description string `json:"description"`
-	// Tools 是 namespace 内按原始顺序排列的函数工具。
-	Tools []functionToolWireDTO `json:"tools"`
+	// Tools 是 namespace 内按原始顺序排列的函数或 freeform 工具。
+	Tools []any `json:"tools"`
 }
 
 // webSearchToolWireDTO 是 Responses 服务器侧网络搜索配置。
@@ -323,6 +327,8 @@ type streamEventWireDTO struct {
 	Refusal string `json:"refusal,omitempty"`
 	// Arguments 是工具参数完整终值。
 	Arguments string `json:"arguments,omitempty"`
+	// Input 是 custom_tool_call_input.done 携带的 freeform 原始输入（可为空串）。
+	Input *string `json:"input,omitempty"`
 	// Name 是 function_call_arguments.done 携带的工具名。
 	Name string `json:"name,omitempty"`
 	// Namespace 是函数工具所属的可选命名空间。
@@ -446,9 +452,13 @@ func (state *responseState) buildResponseWireWithOutputCount(
 func newReasoningConfigWire(
 	request inference.Request,
 ) (*reasoningConfigWireDTO, error) {
+	reasoningContext, _ := request.ReasoningContext()
 	config, found := request.Reasoning()
 	if !found {
-		return nil, nil
+		if reasoningContext == "" {
+			return nil, nil
+		}
+		return &reasoningConfigWireDTO{Context: string(reasoningContext)}, nil
 	}
 	if config.Mode() != inference.ReasoningModeEffort {
 		return nil, ErrUnsupportedResponseEvent
@@ -456,15 +466,18 @@ func newReasoningConfigWire(
 	return &reasoningConfigWireDTO{
 		Effort:  string(config.Effort()),
 		Summary: string(config.Summary()),
+		Context: string(reasoningContext),
 	}, nil
 }
 
 // newTextConfigWire 编码普通文本或 JSON Schema 输出配置。
 func newTextConfigWire(request inference.Request) (textConfigWireDTO, error) {
+	verbosity, _ := request.TextVerbosity()
 	output, found := request.StructuredOutput()
 	if !found {
 		return textConfigWireDTO{
-			Format: json.RawMessage(`{"type":"text"}`),
+			Format:    json.RawMessage(`{"type":"text"}`),
+			Verbosity: string(verbosity),
 		}, nil
 	}
 	format, err := json.Marshal(structuredTextFormatWireDTO{
@@ -477,7 +490,7 @@ func newTextConfigWire(request inference.Request) (textConfigWireDTO, error) {
 	if err != nil {
 		return textConfigWireDTO{}, err
 	}
-	return textConfigWireDTO{Format: format}, nil
+	return textConfigWireDTO{Format: format, Verbosity: string(verbosity)}, nil
 }
 
 // newToolChoiceWire 编码字符串模式或命名 function 工具选择。
@@ -507,12 +520,15 @@ func newToolsWire(request inference.Request) ([]json.RawMessage, error) {
 		if specified {
 			strictValue = &strict
 		}
-		wireFunction := functionToolWireDTO{
+		var wireFunction any = functionToolWireDTO{
 			Type:        "function",
 			Name:        definition.Name(),
 			Description: definition.Description(),
 			Parameters:  json.RawMessage(definition.InputSchema()),
 			Strict:      strictValue,
+		}
+		if format, freeform := definition.Freeform(); freeform {
+			wireFunction = newCustomToolWire(definition, format)
 		}
 		namespace, namespaced := definition.Namespace()
 		if !namespaced {
@@ -582,6 +598,9 @@ func marshalOutputItem(
 	case inference.OutputItemReasoning:
 		return marshalReasoningItem(item, status, includeEncryptedReasoning)
 	case inference.OutputItemToolCall:
+		if item.freeform {
+			return marshalCustomToolCallItem(item, status)
+		}
 		return marshalFunctionCallItem(item, status)
 	case inference.OutputItemWebSearch:
 		return marshalWebSearchCallItem(item, status)

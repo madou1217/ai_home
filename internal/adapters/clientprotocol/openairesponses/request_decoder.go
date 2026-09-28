@@ -43,11 +43,17 @@ func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
 		return decodedRequest{}, err
 	}
 
-	messages, decodedInput, err := decodeRequestMessages(wireRequest)
+	// 工具先于输入解码：Codex 0.158 把工具放在 additional_tools 输入项里，且
+	// custom_tool_call 需要已声明的 freeform 工具还原身份（见 freeform_decoder.go）。
+	additionalTools, err := collectAdditionalTools(wireRequest.Input)
 	if err != nil {
 		return decodedRequest{}, err
 	}
-	tools, webSearch, err := decodeTools(wireRequest.Tools)
+	tools, webSearch, err := decodeRequestTools(wireRequest.Tools, additionalTools)
+	if err != nil {
+		return decodedRequest{}, err
+	}
+	messages, decodedInput, err := decodeRequestMessages(wireRequest, newFreeformToolIndex(tools))
 	if err != nil {
 		return decodedRequest{}, err
 	}
@@ -55,11 +61,11 @@ func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
 	if err != nil {
 		return decodedRequest{}, err
 	}
-	reasoning, err := decodeReasoning(wireRequest.Reasoning)
+	reasoning, reasoningContext, err := decodeReasoning(wireRequest.Reasoning)
 	if err != nil {
 		return decodedRequest{}, err
 	}
-	structuredOutput, err := decodeTextConfig(wireRequest.Text)
+	structuredOutput, textVerbosity, err := decodeTextConfig(wireRequest.Text)
 	if err != nil {
 		return decodedRequest{}, err
 	}
@@ -96,6 +102,8 @@ func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
 		Store:                     wireRequest.Store,
 		IncludeEncryptedReasoning: includeEncryptedReasoning,
 		Truncation:                truncation,
+		TextVerbosity:             textVerbosity,
+		ReasoningContext:          reasoningContext,
 		Continuation:              continuation,
 		ExternalToolCallIDs:       externalCallIDs,
 	})
@@ -111,12 +119,13 @@ func (RequestDecoder) decode(body []byte) (decodedRequest, error) {
 // decodeRequestMessages 合并 instructions 和 input，同时保留输入工具配对证据。
 func decodeRequestMessages(
 	wireRequest requestDTO,
+	freeformTools freeformToolIndex,
 ) ([]inference.Message, decodedInput, error) {
 	instructions, err := decodeInstructions(wireRequest.Instructions)
 	if err != nil {
 		return nil, decodedInput{}, err
 	}
-	input, err := decodeInput(wireRequest.Input)
+	input, err := decodeInput(wireRequest.Input, freeformTools)
 	if err != nil {
 		return nil, decodedInput{}, err
 	}

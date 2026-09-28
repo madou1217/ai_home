@@ -13,10 +13,19 @@ import (
 func decodeTools(
 	rawTools []json.RawMessage,
 ) ([]inference.ToolDefinition, *inference.WebSearchTool, error) {
+	return decodeToolList(rawTools, "tools", nil)
+}
+
+// decodeToolList 解码一组工具定义；fieldPrefix 用于诊断路径，webSearch 为已解码的
+// 搜索工具（跨根 tools 与 additional_tools 只允许一个）。
+func decodeToolList(
+	rawTools []json.RawMessage,
+	fieldPrefix string,
+	webSearch *inference.WebSearchTool,
+) ([]inference.ToolDefinition, *inference.WebSearchTool, error) {
 	tools := make([]inference.ToolDefinition, 0, len(rawTools))
-	var webSearch *inference.WebSearchTool
 	for index, rawTool := range rawTools {
-		field := "tools[" + strconv.Itoa(index) + "]"
+		field := fieldPrefix + "[" + strconv.Itoa(index) + "]"
 		header, err := decodeHeader[contentHeaderDTO](rawTool, field)
 		if err != nil {
 			return nil, nil, err
@@ -53,20 +62,37 @@ func decodeTools(
 				if headerErr != nil {
 					return nil, nil, headerErr
 				}
-				if childHeader.Type != "function" {
+				var tool inference.ToolDefinition
+				var childErr error
+				switch childHeader.Type {
+				case "function":
+					tool, childErr = decodeFunctionTool(
+						rawChild,
+						childField,
+						wireNamespace.Name,
+						wireNamespace.Description,
+					)
+				case "custom":
+					tool, childErr = decodeCustomTool(
+						rawChild,
+						childField,
+						wireNamespace.Name,
+						wireNamespace.Description,
+					)
+				default:
 					return nil, nil, unsupportedField(decodediag.Discriminator(childField+".type", childHeader.Type))
 				}
-				tool, childErr := decodeFunctionTool(
-					rawChild,
-					childField,
-					wireNamespace.Name,
-					wireNamespace.Description,
-				)
 				if childErr != nil {
 					return nil, nil, childErr
 				}
 				tools = append(tools, tool)
 			}
+		case "custom":
+			tool, decodeErr := decodeCustomTool(rawTool, field, "", "")
+			if decodeErr != nil {
+				return nil, nil, decodeErr
+			}
+			tools = append(tools, tool)
 		case "web_search":
 			if webSearch != nil {
 				return nil, nil, invalidField(field)
@@ -248,51 +274,76 @@ func decodeToolChoice(raw json.RawMessage) (*inference.ToolChoice, error) {
 	return &choice, nil
 }
 
-// decodeReasoning 解析当前可无损表示的 effort 和 summary 字段。
-func decodeReasoning(raw json.RawMessage) (*inference.ReasoningConfig, error) {
+// decodeReasoning 解析当前可无损表示的 effort、summary 与 context 字段。
+//
+// reasoning.context（all_turns）来自 Responses Lite：Codex CLI 0.158.0-alpha.2.1 对
+// use_responses_lite 模型总会发送；只接受实测值，其余交还能透传的宿主。
+func decodeReasoning(
+	raw json.RawMessage,
+) (*inference.ReasoningConfig, inference.ReasoningContext, error) {
 	if !hasJSONValue(raw) {
-		return nil, nil
+		return nil, "", nil
 	}
 	wireReasoning, err := decodeStrict[reasoningConfigDTO](raw, "reasoning")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	reasoningContext := inference.ReasoningContext(wireReasoning.Context)
 	switch {
-	case wireReasoning.Context != "":
-		return nil, unsupportedField("reasoning.context")
+	case reasoningContext != "" && !reasoningContext.IsValid():
+		return nil, "", unsupportedField(decodediag.Discriminator("reasoning.context", wireReasoning.Context))
 	case wireReasoning.Mode != "":
-		return nil, unsupportedField("reasoning.mode")
+		return nil, "", unsupportedField("reasoning.mode")
 	case wireReasoning.Summary != "" &&
 		wireReasoning.GenerateSummary != "" &&
 		wireReasoning.Summary != wireReasoning.GenerateSummary:
-		return nil, invalidField("reasoning.generate_summary")
+		return nil, "", invalidField("reasoning.generate_summary")
 	}
 	summary := wireReasoning.Summary
 	if summary == "" {
 		summary = wireReasoning.GenerateSummary
+	}
+	if wireReasoning.Effort == "" && summary == "" {
+		return nil, reasoningContext, nil
 	}
 	config, configErr := inference.NewEffortReasoning(
 		inference.ReasoningEffort(wireReasoning.Effort),
 		inference.ReasoningSummaryMode(summary),
 	)
 	if configErr != nil {
-		return nil, invalidField("reasoning")
+		return nil, "", invalidField(decodediag.Discriminator("reasoning.effort", wireReasoning.Effort))
 	}
-	return &config, nil
+	return &config, reasoningContext, nil
 }
 
-// decodeTextConfig 解析默认文本或 JSON Schema 结构化输出。
-func decodeTextConfig(raw json.RawMessage) (*inference.StructuredOutput, error) {
+// decodeTextConfig 解析默认文本或 JSON Schema 结构化输出，以及 verbosity 提示。
+//
+// text.verbosity 来自 Responses Lite：Codex CLI 0.158.0-alpha.2.1 对 use_responses_lite
+// 模型总会发送（模型清单 default_verbosity=low）。
+func decodeTextConfig(
+	raw json.RawMessage,
+) (*inference.StructuredOutput, inference.TextVerbosity, error) {
 	if !hasJSONValue(raw) {
-		return nil, nil
+		return nil, "", nil
 	}
 	wireText, err := decodeStrict[textConfigDTO](raw, "text")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if wireText.Verbosity != "" {
-		return nil, unsupportedField("text.verbosity")
+	verbosity := inference.TextVerbosity(wireText.Verbosity)
+	if verbosity != "" && !verbosity.IsValid() {
+		return nil, "", unsupportedField(decodediag.Discriminator("text.verbosity", wireText.Verbosity))
 	}
+	output, err := decodeTextFormat(wireText.Format)
+	if err != nil {
+		return nil, "", err
+	}
+	return output, verbosity, nil
+}
+
+// decodeTextFormat 解析默认文本或 JSON Schema 结构化输出格式。
+func decodeTextFormat(format json.RawMessage) (*inference.StructuredOutput, error) {
+	wireText := textConfigDTO{Format: format}
 	if !hasJSONValue(wireText.Format) {
 		return nil, nil
 	}

@@ -522,8 +522,9 @@ func anthropicEffort(
 		inference.ReasoningEffortHigh,
 		inference.ReasoningEffortMax:
 		return string(effort), nil
-	case inference.ReasoningEffortXHigh:
-		// Codex xhigh 与 Claude max 都表示高于 high 的最高公开档位。
+	case inference.ReasoningEffortXHigh, inference.ReasoningEffortUltra:
+		// Codex xhigh 与 Claude max 都表示高于 high 的最高公开档位；ultra（Codex CLI
+		// 0.158 gpt-6-* 的"最大 reasoning + 自动委派"）在 Claude 没有委派语义，收敛到 max。
 		return string(inference.ReasoningEffortMax), nil
 	default:
 		return "", ErrUnsupportedRequest

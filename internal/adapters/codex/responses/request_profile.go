@@ -27,18 +27,21 @@ type requestProfile struct {
 	defaultVerbosity       string
 }
 
-// requestProfileForModel 返回与 Codex rust-v0.146.0 模型清单一致的请求策略。
+// requestProfileForModel 返回与 Codex 模型清单一致的请求策略。
 //
+// gpt-5.6-* 对齐 rust-v0.146.0；gpt-6-* 对齐 Codex CLI 0.158.0-alpha.2.1 的
+// models_cache（use_responses_lite=true、default_verbosity=low，astra 默认 low、
+// sol/luna 默认 medium），且该版本客户端对 astra 实测发送 Lite 形状与 Lite Header。
 // 未知模型保守使用标准 Responses；新增 Lite 模型只需更新这一处映射。
 func requestProfileForModel(model string) requestProfile {
 	switch model {
-	case "gpt-5.6-sol":
+	case "gpt-5.6-sol", "gpt-6-astra":
 		return requestProfile{
 			mode:                   responsesLiteMode,
 			defaultReasoningEffort: "low",
 			defaultVerbosity:       "low",
 		}
-	case "gpt-5.6-terra", "gpt-5.6-luna":
+	case "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-sol", "gpt-6-luna":
 		return requestProfile{
 			mode:                   responsesLiteMode,
 			defaultReasoningEffort: "medium",
@@ -87,7 +90,10 @@ func (profile requestProfile) projectRequest(
 	if reasoning.Effort == "" {
 		reasoning.Effort = profile.defaultReasoningEffort
 	}
-	reasoning.Context = reasoningContextAllTurns
+	if reasoning.Context == "" {
+		// 客户端显式给出的 context 优先；缺省时 Lite 模型需要整段会话的 reasoning 连续性。
+		reasoning.Context = reasoningContextAllTurns
+	}
 	include = appendUnique(include, "reasoning.encrypted_content")
 
 	return projectedInput, nil, false, reasoning, include
@@ -103,7 +109,10 @@ func (profile requestProfile) projectText(
 	if text == nil {
 		text = &textControlDTO{}
 	}
-	text.Verbosity = profile.defaultVerbosity
+	if text.Verbosity == "" {
+		// 客户端显式给出的 verbosity 优先，缺省才补模型清单默认值。
+		text.Verbosity = profile.defaultVerbosity
+	}
 	return text
 }
 

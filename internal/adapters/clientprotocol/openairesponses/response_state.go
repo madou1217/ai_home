@@ -43,6 +43,8 @@ type outputItemState struct {
 	toolArguments    string
 	toolCallStarted  bool
 	toolCallComplete bool
+	// freeform 表示调用指向请求中声明的 freeform 工具，渲染为 custom_tool_call。
+	freeform         bool
 	webSearchAction  *inference.WebSearchAction
 	encryptedContent string
 }
@@ -361,6 +363,7 @@ func (state *responseState) startToolCall(event inference.ToolCallStartedEvent) 
 	}
 	item.callID = event.CallID()
 	item.toolIdentity = event.Identity()
+	item.freeform = isFreeformToolCall(state.request, event.Identity())
 	item.toolCallStarted = true
 	return nil
 }

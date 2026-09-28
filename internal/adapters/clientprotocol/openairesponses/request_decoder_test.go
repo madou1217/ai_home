@@ -385,9 +385,10 @@ func TestRequestDecoderRejectsMalformedOrAmbiguousInput(t *testing.T) {
 	}
 }
 
-// TestRequestDecoderDiagnosesCodex0158WireShape 锁定 Codex 0.158 请求形状的低敏诊断：
-// 工具以 additional_tools 输入项下发、根对象出现未知字段时，错误能指出具体判别值或字段名。
-func TestRequestDecoderDiagnosesCodex0158WireShape(t *testing.T) {
+// TestRequestDecoderDiagnosesUnsupportedWireShape 锁定仍未支持形状的低敏诊断：
+// 未知输入项、namespace 内未知工具类型、根对象未知字段都能指出具体判别值或字段名，
+// 且不回显字段值（这些请求由 Node 宿主接手，诊断是 Go 协议缺口清单的来源）。
+func TestRequestDecoderDiagnosesUnsupportedWireShape(t *testing.T) {
 	t.Parallel()
 
 	for _, testCase := range []struct {
@@ -395,12 +396,16 @@ func TestRequestDecoderDiagnosesCodex0158WireShape(t *testing.T) {
 		want string
 	}{
 		{
-			body: `{"model":"gpt-6-astra","input":[{"type":"additional_tools","role":"developer","tools":[]}]}`,
-			want: "input[0].type=additional_tools",
+			body: `{"model":"gpt-6-astra","input":[{"type":"local_shell_call","call_id":"c1"}]}`,
+			want: "input[0].type=local_shell_call",
 		},
 		{
-			body: `{"model":"gpt-6-astra","input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec"}]}]}`,
-			want: "tools[0].tools[0].type=custom",
+			body: `{"model":"gpt-6-astra","input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"web_search"}]}]}`,
+			want: "tools[0].tools[0].type=web_search",
+		},
+		{
+			body: `{"model":"gpt-6-astra","input":"hi","text":{"verbosity":"extreme"}}`,
+			want: "text.verbosity=extreme",
 		},
 		{
 			body: `{"model":"gpt-6-astra","input":"hi","future_root_field":"secret-value"}`,

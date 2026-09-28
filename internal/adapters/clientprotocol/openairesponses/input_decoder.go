@@ -14,10 +14,12 @@ type decodedInput struct {
 	messages    []inference.Message
 	toolCalls   map[string]struct{}
 	toolResults []string
+	// freeformTools 还原不带 namespace 的 custom_tool_call 身份。
+	freeformTools freeformToolIndex
 }
 
 // decodeInput 解析 Responses 字符串简写或输入项数组。
-func decodeInput(raw json.RawMessage) (decodedInput, error) {
+func decodeInput(raw json.RawMessage, freeformTools freeformToolIndex) (decodedInput, error) {
 	if !hasJSONValue(raw) {
 		return decodedInput{}, invalidField("input")
 	}
@@ -30,8 +32,9 @@ func decodeInput(raw json.RawMessage) (decodedInput, error) {
 		return decodedInput{}, invalidField("input")
 	}
 	output := decodedInput{
-		messages:  make([]inference.Message, 0, len(items)),
-		toolCalls: make(map[string]struct{}),
+		messages:      make([]inference.Message, 0, len(items)),
+		toolCalls:     make(map[string]struct{}),
+		freeformTools: freeformTools,
 	}
 	for index, item := range items {
 		if err := output.appendItem(item, fmt.Sprintf("input[%d]", index)); err != nil {
@@ -99,6 +102,28 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		if decodeErr != nil {
 			return decodeErr
 		}
+		output.messages = append(output.messages, message)
+		return nil
+	case header.Type == "additional_tools":
+		// 已由 collectAdditionalTools 严格解码为工具定义，不产生 Canonical 消息。
+		return nil
+	case header.Type == "custom_tool_call":
+		message, callID, decodeErr := decodeCustomToolCall(raw, field, output.freeformTools)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if _, exists := output.toolCalls[callID]; exists {
+			return invalidField(field + ".call_id")
+		}
+		output.toolCalls[callID] = struct{}{}
+		output.messages = append(output.messages, message)
+		return nil
+	case header.Type == "custom_tool_call_output":
+		message, callID, decodeErr := decodeCustomToolCallOutput(raw, field)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		output.toolResults = append(output.toolResults, callID)
 		output.messages = append(output.messages, message)
 		return nil
 	default:

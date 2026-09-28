@@ -31,6 +31,7 @@ type inputItemDTO struct {
 	Namespace        string                `json:"namespace,omitempty"`
 	Arguments        string                `json:"arguments,omitempty"`
 	CallID           string                `json:"call_id,omitempty"`
+	Input            *string               `json:"input,omitempty"`
 	Output           any                   `json:"output,omitempty"`
 	Summary          []reasoningSummaryDTO `json:"summary,omitempty"`
 	EncryptedContent string                `json:"encrypted_content,omitempty"`
@@ -67,10 +68,11 @@ type toolDTO struct {
 
 // namespaceToolDTO 保留 namespace 与其局部函数列表的层级关系。
 type namespaceToolDTO struct {
-	Type        string    `json:"type"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Tools       []toolDTO `json:"tools"`
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Tools 是 toolDTO 或 customToolDTO（freeform）。
+	Tools []any `json:"tools"`
 }
 
 // webSearchToolDTO 是 Codex 服务器侧网络搜索配置。

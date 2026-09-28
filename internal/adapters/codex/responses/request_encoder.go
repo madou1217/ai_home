@@ -19,7 +19,7 @@ func encodeRequest(
 	if err := rejectUnsupportedRequest(request, authKind); err != nil {
 		return nil, err
 	}
-	input, err := encodeMessages(request.Messages())
+	input, err := encodeMessages(request.Messages(), freeformIdentities(request))
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +38,12 @@ func encodeRequest(
 	text, err := encodeStructuredOutput(request)
 	if err != nil {
 		return nil, err
+	}
+	if verbosity, found := request.TextVerbosity(); found {
+		if text == nil {
+			text = &textControlDTO{}
+		}
+		text.Verbosity = string(verbosity)
 	}
 	text = profile.projectText(text)
 	store, _ := request.Store()
@@ -159,10 +165,17 @@ func isCrossProtocolClient(protocol inference.ClientProtocolID) bool {
 }
 
 // encodeMessages 保持消息和内容块顺序，并在 Responses 顶层拆开工具与 reasoning 项。
-func encodeMessages(messages []inference.Message) ([]inputItemDTO, error) {
+//
+// freeform 是请求中声明为 freeform 的工具身份；它们的调用与结果还原为 custom 项。
+func encodeMessages(
+	messages []inference.Message,
+	freeform map[inference.ToolIdentity]struct{},
+) ([]inputItemDTO, error) {
 	items := make([]inputItemDTO, 0, len(messages))
+	// customCallIDs 记录已编码为 custom_tool_call 的调用，结果项据此选择输出类型。
+	customCallIDs := make(map[string]struct{})
 	for messageIndex, message := range messages {
-		encoded, err := encodeMessage(message)
+		encoded, err := encodeMessage(message, freeform, customCallIDs)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"%w: messages[%d]",
@@ -179,7 +192,11 @@ func encodeMessages(messages []inference.Message) ([]inputItemDTO, error) {
 }
 
 // encodeMessage 把一个 Canonical 消息按内容联合类型拆成一个或多个输入项。
-func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
+func encodeMessage(
+	message inference.Message,
+	freeform map[inference.ToolIdentity]struct{},
+	customCallIDs map[string]struct{},
+) ([]inputItemDTO, error) {
 	if !message.IsValid() {
 		return nil, ErrUnsupportedRequest
 	}
@@ -227,6 +244,15 @@ func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
 				return nil, unsupported("message.phase")
 			}
 			flushMessage()
+			if _, custom := freeform[content.Identity()]; custom {
+				call, err := encodeFreeformCall(content)
+				if err != nil {
+					return nil, err
+				}
+				customCallIDs[content.CallID()] = struct{}{}
+				items = append(items, call)
+				continue
+			}
 			items = append(items, inputItemDTO{
 				Type:      "function_call",
 				Name:      content.Name(),
@@ -240,8 +266,12 @@ func encodeMessage(message inference.Message) ([]inputItemDTO, error) {
 			if err != nil {
 				return nil, err
 			}
+			outputType := "function_call_output"
+			if _, custom := customCallIDs[content.CallID()]; custom {
+				outputType = "custom_tool_call_output"
+			}
 			items = append(items, inputItemDTO{
-				Type:   "function_call_output",
+				Type:   outputType,
 				CallID: content.CallID(),
 				Output: output,
 			})
@@ -428,7 +458,13 @@ func encodeTools(
 	items := make([]any, 0, len(definitions)+1)
 	namespaceIndexes := make(map[string]int)
 	for _, definition := range definitions {
-		wireTool, err := encodeFunctionTool(definition)
+		var wireTool any
+		var err error
+		if format, freeform := definition.Freeform(); freeform {
+			wireTool, err = encodeFreeformTool(definition, format)
+		} else {
+			wireTool, err = encodeFunctionTool(definition)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -555,12 +591,14 @@ func encodeReasoning(request inference.Request) (*reasoningDTO, error) {
 		return nil, nil
 	}
 	effort := projectReasoningEffort(config)
-	if effort == "" && config.Summary() == "" {
+	reasoningContext, _ := request.ReasoningContext()
+	if effort == "" && config.Summary() == "" && reasoningContext == "" {
 		return nil, nil
 	}
 	return &reasoningDTO{
 		Effort:  string(effort),
 		Summary: string(config.Summary()),
+		Context: string(reasoningContext),
 	}, nil
 }
 

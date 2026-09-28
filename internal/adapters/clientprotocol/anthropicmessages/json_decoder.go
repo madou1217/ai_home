@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/decodediag"
 )
 
 // decodeStrict 将单个 JSON 值解码到 DTO，并拒绝未知字段和尾随值。
@@ -13,7 +15,7 @@ func decodeStrict[T any](data []byte, field string) (T, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&output); err != nil {
-		return output, invalidField(field)
+		return output, invalidField(decodediag.StrictJSONField(field, err))
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); err != io.EOF {

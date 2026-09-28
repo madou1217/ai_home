@@ -150,6 +150,7 @@ func (handler *Handler) ServeHTTP(
 		if handler.decodeErrorObserver != nil {
 			handler.decodeErrorObserver(err)
 		}
+		inferenceapi.MarkDecodeRejected(response)
 		writeDecodeError(response, err)
 		return
 	}

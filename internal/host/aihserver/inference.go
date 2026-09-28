@@ -158,9 +158,9 @@ func newInferenceComposition(
 		return nil, err
 	}
 	module, err := inferencehttp.New(inferencehttp.Dependencies{
-		Executor:                    runtimeComponents.Executor(),
-		Authorizer:                  dependencies.authorizer,
-		Clock:                       dependencies.clock,
+		Executor:                     runtimeComponents.Executor(),
+		Authorizer:                   dependencies.authorizer,
+		Clock:                        dependencies.clock,
 		MessagesDecodeErrorObserver:  dependencies.decodeErrors,
 		ResponsesDecodeErrorObserver: dependencies.responsesDecodeErrors,
 	})

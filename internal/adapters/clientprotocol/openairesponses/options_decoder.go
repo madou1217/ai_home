@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/decodediag"
 )
 
 // decodeTools 把普通函数和 namespace 内函数展开为带稳定身份的 Canonical 工具。
@@ -53,7 +54,7 @@ func decodeTools(
 					return nil, nil, headerErr
 				}
 				if childHeader.Type != "function" {
-					return nil, nil, unsupportedField(childField + ".type")
+					return nil, nil, unsupportedField(decodediag.Discriminator(childField+".type", childHeader.Type))
 				}
 				tool, childErr := decodeFunctionTool(
 					rawChild,
@@ -76,7 +77,7 @@ func decodeTools(
 			}
 			webSearch = &decoded
 		default:
-			return nil, nil, unsupportedField(field + ".type")
+			return nil, nil, unsupportedField(decodediag.Discriminator(field+".type", header.Type))
 		}
 	}
 	return tools, webSearch, nil

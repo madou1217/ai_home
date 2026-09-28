@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/decodediag"
 )
 
 const anthropicStructuredOutputName = "anthropic_output"
@@ -28,7 +29,7 @@ func decodeTools(
 			continue
 		}
 		if header.Type != "" && header.Type != "custom" {
-			return nil, nil, unsupportedField(field + ".type")
+			return nil, nil, unsupportedField(decodediag.Discriminator(field+".type", header.Type))
 		}
 		wireTool, err := decodeStrict[toolDTO](raw, field)
 		if err != nil {

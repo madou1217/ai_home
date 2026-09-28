@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/decodediag"
 )
 
 // decodedInput 保存消息以及精确工具调用和结果 ID，用于 continuation 配对。
@@ -101,7 +102,7 @@ func (output *decodedInput) appendItem(raw json.RawMessage, field string) error 
 		output.messages = append(output.messages, message)
 		return nil
 	default:
-		return invalidField(field + ".type")
+		return invalidField(decodediag.Discriminator(field+".type", header.Type))
 	}
 }
 

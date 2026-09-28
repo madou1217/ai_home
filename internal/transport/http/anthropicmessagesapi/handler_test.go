@@ -18,6 +18,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const testAPIKey = "synthetic-inference-api-key"
@@ -700,7 +701,8 @@ func TestHandlerMapsDecoderErrorsWithoutCallingExecutor(t *testing.T) {
 				testCase.body,
 			)
 			if response.status != http.StatusBadRequest ||
-				!strings.Contains(response.body, testCase.message) {
+				!strings.Contains(response.body, testCase.message) ||
+				response.header.Get(inferenceapi.DecodeRejectedHeader) != "1" {
 				t.Fatalf("response = %#v", response)
 			}
 		})

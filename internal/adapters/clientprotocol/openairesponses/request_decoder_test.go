@@ -384,3 +384,32 @@ func TestRequestDecoderRejectsMalformedOrAmbiguousInput(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestDecoderDiagnosesCodex0158WireShape 锁定 Codex 0.158 请求形状的低敏诊断：
+// 工具以 additional_tools 输入项下发、根对象出现未知字段时，错误能指出具体判别值或字段名。
+func TestRequestDecoderDiagnosesCodex0158WireShape(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		body string
+		want string
+	}{
+		{
+			body: `{"model":"gpt-6-astra","input":[{"type":"additional_tools","role":"developer","tools":[]}]}`,
+			want: "input[0].type=additional_tools",
+		},
+		{
+			body: `{"model":"gpt-6-astra","input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec"}]}]}`,
+			want: "tools[0].tools[0].type=custom",
+		},
+		{
+			body: `{"model":"gpt-6-astra","input":"hi","future_root_field":"secret-value"}`,
+			want: "$.future_root_field(unknown)",
+		},
+	} {
+		_, err := NewRequestDecoder().Decode([]byte(testCase.body))
+		if err == nil || !strings.Contains(err.Error(), testCase.want) || strings.Contains(err.Error(), "secret-value") {
+			t.Fatalf("Decode(%s) error = %v, want %q", testCase.body, err, testCase.want)
+		}
+	}
+}

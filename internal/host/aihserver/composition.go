@@ -607,8 +607,9 @@ func newHandlers(
 			Credentials:    credentials,
 			Client:         relayClient,
 			Attempts:       accountRuntime,
-			ModelRefreshes: inference.modelRefreshes,
-			Clock:          time.Now,
+			ModelRefreshes:    inference.modelRefreshes,
+			Clock:             time.Now,
+			StreamDisconnects: newRelayDisconnectObserver(errorLog),
 		},
 	)
 	if err != nil {
@@ -826,6 +827,26 @@ func newMessagesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 	return func(err error) {
 		logger.Printf("Anthropic Messages decode rejected: %v", err)
+	}
+}
+
+// newRelayDisconnectObserver 记录 Claude relay 流中途断开（上游或客户端一侧）。
+//
+// 上游中途断开时访问日志仍是 200，客户端却报 "Connection lost mid-response"；
+// 这条日志是区分代理/网络链路断开与客户端断开的唯一线索。
+func newRelayDisconnectObserver(logger *log.Logger) func(claudenativerelay.StreamDisconnect) {
+	if logger == nil {
+		return nil
+	}
+	return func(event claudenativerelay.StreamDisconnect) {
+		logger.Printf(
+			"Claude relay stream disconnected mid-response: side=%s model=%s account=%s elapsed=%s error=%q",
+			event.Side,
+			event.Model,
+			event.AccountRef,
+			event.Elapsed.Round(time.Millisecond),
+			event.Error,
+		)
 	}
 }
 

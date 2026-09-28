@@ -94,6 +94,8 @@ type Dependencies struct {
 	Attempts       inferencegateway.AttemptRecorder
 	ModelRefreshes inferencegateway.ModelRefreshScheduler
 	Clock          func() time.Time
+	// StreamDisconnects 接收流中途断开的低敏诊断；可为空，见 stream_disconnect.go。
+	StreamDisconnects func(StreamDisconnect)
 }
 
 // Handler 编排可信账号绑定、原始请求透传和响应流回写。
@@ -106,6 +108,7 @@ type Handler struct {
 	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
+	disconnects    func(StreamDisconnect)
 }
 
 // NewHandler 创建默认失败关闭的 Claude Native Relay。
@@ -134,6 +137,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		attempts:       attempts,
 		modelRefreshes: dependencies.ModelRefreshes,
 		clock:          dependencies.Clock,
+		disconnects:    dependencies.StreamDisconnects,
 	}, nil
 }
 
@@ -307,6 +311,11 @@ func (handler *Handler) ServeHTTP(
 	response.Header().Set(inferenceapi.ServedAccountRefHeader, route.AccountRef().String())
 	response.Header().Set(inferenceapi.ServedProviderHeader, "claude")
 	response.WriteHeader(upstreamResponse.StatusCode)
+	var copyStartedAt time.Time
+	if handler.disconnects != nil {
+		// 只有需要诊断时才读时钟，不改变运行态记账使用的时钟序列。
+		copyStartedAt = handler.clock()
+	}
 	copyResult := responseCopyResult{}
 	streamObservation := nativeStreamObservation{}
 	if shouldObserveNativeStream(upstreamResponse.Header, stream) &&
@@ -321,6 +330,7 @@ func (handler *Handler) ServeHTTP(
 	} else {
 		copyResult = copyResponseBody(response, upstreamResponse.Body)
 	}
+	handler.reportDisconnect(route, copyStartedAt, copyResult, streamObservation)
 	if upstreamResponse.StatusCode < http.StatusOK ||
 		upstreamResponse.StatusCode >= http.StatusMultipleChoices ||
 		copyResult.downstreamErr != nil {
@@ -447,6 +457,34 @@ func (handler *Handler) recordIncompleteStreamFailure(
 	if classifyErr == nil {
 		handler.recordFailure(ctx, route, observation, failure)
 	}
+}
+
+// reportDisconnect 在流未完成而任一侧断开时通知诊断观察器。
+func (handler *Handler) reportDisconnect(
+	route runtimecore.ModelRoute,
+	startedAt time.Time,
+	result responseCopyResult,
+	observation nativeStreamObservation,
+) {
+	if handler.disconnects == nil || observation.completed {
+		return
+	}
+	event := StreamDisconnect{
+		Model:      route.ModelID().String(),
+		AccountRef: route.AccountRef().String(),
+		Elapsed:    handler.clock().Sub(startedAt),
+	}
+	switch {
+	case result.downstreamErr != nil:
+		event.Side = StreamDisconnectClient
+		event.Error = disconnectErrorText(result.downstreamErr)
+	case result.upstreamErr != nil:
+		event.Side = StreamDisconnectUpstream
+		event.Error = disconnectErrorText(result.upstreamErr)
+	default:
+		return
+	}
+	handler.disconnects(event)
 }
 
 // recordFailure 统一提交运行态，并在模型不支持时旁路刷新模型目录。

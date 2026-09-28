@@ -39,6 +39,8 @@ type Adapter struct {
 	client   HTTPClient
 	clock    Clock
 	versions clientversion.Source
+	// rejections 接收上游拒绝请求的低敏诊断，见 rejection_diagnostic.go。
+	rejections func(UpstreamRejection)
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
@@ -135,6 +137,7 @@ func (adapter *Adapter) Execute(
 
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
+		adapter.reportRejection(effectiveModel, response.StatusCode, bufferRejectionBody(response))
 		classification, observeErr := codexfailure.ObserveHTTP(
 			response,
 			observedAt,

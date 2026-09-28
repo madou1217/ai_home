@@ -529,6 +529,7 @@ func newHandlers(
 			clock:                     time.Now,
 			requestRewriter:           visionGuard,
 			codexVersions:             codexVersions,
+			codexRejections:           newCodexRejectionObserver(errorLog),
 		},
 	)
 	if err != nil {
@@ -825,6 +826,26 @@ func newMessagesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 	return func(err error) {
 		logger.Printf("Anthropic Messages decode rejected: %v", err)
+	}
+}
+
+// newCodexRejectionObserver 记录上游拒绝请求参数的低敏诊断（不含请求体与凭据）。
+//
+// 客户端只收到"上游拒绝当前请求参数"，这条日志是定位编码与上游合同差异的唯一线索。
+func newCodexRejectionObserver(logger *log.Logger) func(codexresponses.UpstreamRejection) {
+	if logger == nil {
+		return nil
+	}
+	return func(rejection codexresponses.UpstreamRejection) {
+		logger.Printf(
+			"Codex upstream rejected request: model=%s status=%d type=%q code=%q param=%q message=%q",
+			rejection.Model,
+			rejection.StatusCode,
+			rejection.Type,
+			rejection.Code,
+			rejection.Param,
+			rejection.Message,
+		)
 	}
 }
 

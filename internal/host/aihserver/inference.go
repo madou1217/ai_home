@@ -63,7 +63,9 @@ type inferenceCompositionDependencies struct {
 	upstreamDecodeErrors      func(error)
 	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
 	codexVersions clientversion.Source
-	clock         func() time.Time
+	// codexRejections 接收 Codex 上游拒绝请求的低敏诊断；可为空。
+	codexRejections func(codexresponses.UpstreamRejection)
+	clock           func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
 }
@@ -98,6 +100,7 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	codexAdapter.ObserveRejections(dependencies.codexRejections)
 	claudeAdapter, err := claudemessages.NewAdapter(
 		client,
 		dependencies.clock,

@@ -34,6 +34,7 @@ import {
   getAccountSecondaryLabel,
   getAccountStatusDetailLines,
   getKimiPlanSubscription,
+  getCodexSubscription,
   getPlanTagLabel
 } from '@/features/accounts/AccountBadges';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
@@ -120,6 +121,7 @@ export default function AccountDetailSheet({
   const region = getAccountRegionMeta(record);
   const kimiPlan = getKimiPlanSubscription(record);
   const kimiPlanUntil = kimiPlan ? formatPlanValidUntil(kimiPlan.validUntilMs) : '';
+  const codexSubscription = getCodexSubscription(record);
   const refreshingUsage = Boolean(actions.refreshingUsageAccountRefs[accountRef]);
   const updatingStatus = Boolean(actions.updatingStatusAccountRefs[accountRef]);
   const roles = [record.isDefault ? '默认账号' : '', record.isMobile ? 'Codex App 账号' : ''].filter(Boolean).join(' · ');
@@ -228,7 +230,9 @@ export default function AccountDetailSheet({
       label: '套餐',
       value: kimiPlan && kimiPlanUntil
         ? `${kimiPlan.name || getPlanTagLabel(record)} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
-        : getPlanTagLabel(record)
+        : codexSubscription
+          ? `${getPlanTagLabel(record)} · 至 ${formatPlanValidUntil(codexSubscription.validUntilMs)}${codexSubscription.stale ? ' · 待刷新确认' : ''}`
+          : getPlanTagLabel(record)
     },
     ...(region ? [{ key: 'region', label: '区域', value: region.endpoint ? `${region.label} · ${region.endpoint}` : region.label, mono: false }] : []),
     ...(roles ? [{ key: 'roles', label: '角色', value: roles, mono: false }] : []),

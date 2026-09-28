@@ -65,6 +65,15 @@ export type AccountUsageSnapshot =
   | {
       kind: 'codex_oauth_status';
       capturedAt: number;
+      account?: {
+        planType: string;
+        email: string;
+        upstreamAccountId: string;
+        organizationId: string;
+        // ChatGPT 订阅到期（OAuth id_token 声明快照）及其上次校验时间；0 表示未知。
+        subscriptionActiveUntilMs?: number;
+        subscriptionLastCheckedMs?: number;
+      } | null;
       entries: CodexUsageEntry[];
       resetCreditsAvailableCount?: number;
     }

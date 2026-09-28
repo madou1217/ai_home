@@ -121,6 +121,8 @@ import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
   getKimiPlanSubscription,
+  getCodexSubscription,
+  formatCodexSubscriptionTooltip,
   formatPlanValidUntil,
   getPlanTagColor,
   getPlanTagLabel,
@@ -377,6 +379,7 @@ export default function Accounts() {
           ? undefined
           : 'account-client-entry-button--uninstalled';
         const kimiPlanSubscription = getKimiPlanSubscription(record);
+        const codexSubscription = getCodexSubscription(record);
 
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -391,6 +394,13 @@ export default function Accounts() {
                   <Tooltip title={`套餐有效期至 ${formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}${kimiPlanSubscription.status === 'canceled' ? ' · 已取消续费，到期后不再自动续订' : ' · 订阅生效中，到期自动续订'}`}>
                     <span style={{ fontWeight: 400, fontSize: 12, color: kimiPlanSubscription.status === 'canceled' ? 'var(--color-warning)' : 'var(--color-muted)', marginLeft: 6 }}>
                       {formatPlanValidUntil(kimiPlanSubscription.validUntilMs)}
+                    </span>
+                  </Tooltip>
+                ) : null}
+                {codexSubscription ? (
+                  <Tooltip title={formatCodexSubscriptionTooltip(codexSubscription)}>
+                    <span style={{ fontWeight: 400, fontSize: 12, color: codexSubscription.stale ? 'var(--color-warning)' : 'var(--color-muted)', marginLeft: 6 }}>
+                      {formatPlanValidUntil(codexSubscription.validUntilMs)}
                     </span>
                   </Tooltip>
                 ) : null}

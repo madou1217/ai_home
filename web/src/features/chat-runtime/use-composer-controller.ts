@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { message as toast } from 'antd';
 import { useSessionSelector } from '@/chat-runtime';
@@ -8,7 +8,11 @@ import type { ComposerPolicy } from './composer-policy';
 import type { ComposerDelivery } from './session-runtime-actions';
 import type { ApprovalMode } from './session-surface-policy';
 import type { ComposerProps } from './Composer';
-import { resolveComposerModelSelection } from './composer-model-policy';
+import {
+  resolveComposerModelSelection,
+  resolveSessionDefaultModel,
+  selectLastAssistantModel,
+} from './composer-model-policy';
 import { useComposerAttachments } from './use-composer-attachments';
 import type { PendingComposerAttachment } from './use-composer-attachments';
 
@@ -71,7 +75,31 @@ function useComposerViewState(props: ComposerProps) {
     props.selectedModel,
     reasoningEffort,
   );
+  // 会话默认模型按「会话 × 账号」应用：selectedModel 是整页共享状态，切会话时不会重置，
+  // 不重新决定就会沿用上一个会话的模型。规则见 resolveSessionDefaultModel；历史异步到达、
+  // 最后使用的模型变化时会再应用一次；用户在当前会话手选后不再覆盖，切会话/账号后重新决定。
+  const lastUsedModel = useSessionSelector(props.store, selectLastAssistantModel);
+  const sessionModelKey = `${projection.sessionId}|${props.accountRef || ''}`;
+  const sessionDefaultModel = resolveSessionDefaultModel(props.catalog, lastUsedModel);
+  const pickedSessionModelKey = useRef('');
+  const appliedSessionModel = useRef('');
+  // 已发起、父组件尚未回传的会话默认模型：期间不能让下面的通用回落用旧值覆盖它。
+  const pendingSessionModel = useRef('');
   useEffect(() => {
+    if (!sessionDefaultModel || pickedSessionModelKey.current === sessionModelKey) return;
+    const applied = `${sessionModelKey}|${sessionDefaultModel}`;
+    if (appliedSessionModel.current === applied) return;
+    appliedSessionModel.current = applied;
+    if (sessionDefaultModel !== props.selectedModel) {
+      pendingSessionModel.current = sessionDefaultModel;
+      props.onModelChange(sessionDefaultModel);
+    }
+  }, [props.onModelChange, props.selectedModel, sessionDefaultModel, sessionModelKey]);
+  useEffect(() => {
+    if (pendingSessionModel.current) {
+      if (pendingSessionModel.current !== props.selectedModel) return;
+      pendingSessionModel.current = '';
+    }
     if (selection.model && selection.model !== props.selectedModel) {
       props.onModelChange(selection.model);
     }
@@ -79,9 +107,10 @@ function useComposerViewState(props: ComposerProps) {
   const selectModel = useCallback((model: string): void => {
     const next = resolveComposerModelSelection(props.catalog, model, reasoningEffort);
     if (!next.model) return;
+    pickedSessionModelKey.current = sessionModelKey;
     props.onModelChange(next.model);
     setReasoningEffort(next.effort);
-  }, [props.catalog, props.onModelChange, reasoningEffort, setReasoningEffort]);
+  }, [props.catalog, props.onModelChange, reasoningEffort, sessionModelKey, setReasoningEffort]);
   const canAttach = delivery === 'turn' && !policy.turnActive && !busy && !pendingSlash;
   const canSend = Boolean(selection.model)
     && !(pendingSlash && attachments.items.length > 0)

@@ -323,6 +323,8 @@ func encodeReasoningContents(
 	contents []inference.Content,
 ) (inputItemDTO, int, error) {
 	item := inputItemDTO{Type: "reasoning"}
+	summary := make([]reasoningSummaryDTO, 0)
+	item.Summary = &summary
 	consumed := 0
 	for _, candidate := range contents {
 		content, ok := candidate.(inference.ReasoningContent)
@@ -332,7 +334,7 @@ func encodeReasoningContents(
 		consumed++
 		switch content.ReasoningKind() {
 		case inference.ReasoningSummary:
-			item.Summary = append(item.Summary, reasoningSummaryDTO{
+			summary = append(summary, reasoningSummaryDTO{
 				Type: "summary_text",
 				Text: content.Text(),
 			})

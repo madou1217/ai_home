@@ -70,3 +70,40 @@ func TestEncodeRequestRoundTripsCodex0158ToolTurn(t *testing.T) {
 		}
 	}
 }
+
+// TestEncodeRequestKeepsEmptyReasoningSummary 锁定回归：gpt-6-* 默认不生成 reasoning 摘要，
+// 历史 reasoning 项只有 encrypted_content、summary 为空数组。省略 summary 会被上游以
+// "上游拒绝当前请求参数"（400）拒绝，导致该会话之后每一轮都失败。
+func TestEncodeRequestKeepsEmptyReasoningSummary(t *testing.T) {
+	t.Parallel()
+
+	request := decodeResponsesRequest(t, `{
+		"model": "gpt-6-astra",
+		"input": [
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},
+			{"type":"reasoning","id":"rs_1","summary":[],"content":null,"encrypted_content":"ENC"},
+			{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"done"}]}
+		],
+		"include": ["reasoning.encrypted_content"]
+	}`)
+	payload, err := encodeRequest(request, "gpt-6-astra", codexauth.AuthKindOAuth, requestProfileForModel("gpt-6-astra"))
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var encoded struct {
+		Input []map[string]json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(payload, &encoded); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	for _, item := range encoded.Input {
+		if string(item["type"]) != `"reasoning"` {
+			continue
+		}
+		if string(item["summary"]) != "[]" {
+			t.Fatalf("reasoning summary = %s, want []", item["summary"])
+		}
+		return
+	}
+	t.Fatalf("reasoning item missing: %s", payload)
+}

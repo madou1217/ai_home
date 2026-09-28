@@ -22,19 +22,21 @@ type requestDTO struct {
 
 // inputItemDTO 覆盖当前 Canonical Request 能产生的 Responses 输入项。
 type inputItemDTO struct {
-	Type             string                `json:"type"`
-	Role             string                `json:"role,omitempty"`
-	AdditionalTools  *[]json.RawMessage    `json:"tools,omitempty"`
-	Content          []contentItemDTO      `json:"content,omitempty"`
-	Phase            string                `json:"phase,omitempty"`
-	Name             string                `json:"name,omitempty"`
-	Namespace        string                `json:"namespace,omitempty"`
-	Arguments        string                `json:"arguments,omitempty"`
-	CallID           string                `json:"call_id,omitempty"`
-	Input            *string               `json:"input,omitempty"`
-	Output           any                   `json:"output,omitempty"`
-	Summary          []reasoningSummaryDTO `json:"summary,omitempty"`
-	EncryptedContent string                `json:"encrypted_content,omitempty"`
+	Type            string             `json:"type"`
+	Role            string             `json:"role,omitempty"`
+	AdditionalTools *[]json.RawMessage `json:"tools,omitempty"`
+	Content         []contentItemDTO   `json:"content,omitempty"`
+	Phase           string             `json:"phase,omitempty"`
+	Name            string             `json:"name,omitempty"`
+	Namespace       string             `json:"namespace,omitempty"`
+	Arguments       string             `json:"arguments,omitempty"`
+	CallID          string             `json:"call_id,omitempty"`
+	Input           *string            `json:"input,omitempty"`
+	Output          any                `json:"output,omitempty"`
+	// Summary 只用于 reasoning 项且必须始终出现：OpenAI 要求 reasoning 输入项带 summary，
+	// 无摘要时是空数组（gpt-6-* 默认 reasoning_summary=none）。省略它会被上游 400 拒绝。
+	Summary          *[]reasoningSummaryDTO `json:"summary,omitempty"`
+	EncryptedContent string                 `json:"encrypted_content,omitempty"`
 }
 
 // contentItemDTO 是消息或工具结果中的类型化内容块。

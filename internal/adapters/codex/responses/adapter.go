@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"mime"
 	"net/http"
@@ -34,8 +36,9 @@ type Clock func() time.Time
 
 // Adapter 实现 Codex 原生 Responses 上游协议。
 type Adapter struct {
-	client HTTPClient
-	clock  Clock
+	client   HTTPClient
+	clock    Clock
+	versions clientversion.Source
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
@@ -43,12 +46,22 @@ var _ inferencegateway.UpstreamAdapter = (*Adapter)(nil)
 
 // NewAdapter 创建显式注入 HTTP Client 和时钟的 Adapter。
 func NewAdapter(client HTTPClient, clock Clock) (*Adapter, error) {
-	if client == nil || clock == nil {
+	return NewAdapterWithClientVersion(client, clock, clientversion.Static(codexidentity.Floor))
+}
+
+// NewAdapterWithClientVersion 创建按版本来源自报 Codex 客户端版本的 Adapter。
+func NewAdapterWithClientVersion(
+	client HTTPClient,
+	clock Clock,
+	versions clientversion.Source,
+) (*Adapter, error) {
+	if client == nil || clock == nil || versions == nil {
 		return nil, ErrInvalidDependencies
 	}
 	return &Adapter{
-		client: client,
-		clock:  clock,
+		client:   client,
+		clock:    clock,
+		versions: versions,
 	}, nil
 }
 
@@ -86,6 +99,7 @@ func (adapter *Adapter) Execute(
 		return inferencegateway.AttemptResult{}, ErrInvalidDependencies
 	}
 	auth, err := projectAuth(invocation.Credential())
+	auth.clientVersion = adapter.versions.Current()
 	if err != nil {
 		return inferencegateway.AttemptResult{}, err
 	}

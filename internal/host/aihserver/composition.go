@@ -1,6 +1,7 @@
 package aihserver
 
 import (
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -72,6 +73,8 @@ type serverHandlers struct {
 	claudeRelayLeases http.Handler
 	claudeNativeRelay http.Handler
 	catalogStatus     func() catalogReadiness
+	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
+	observeCodexClient func(*http.Request)
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -98,8 +101,14 @@ func New(ctx context.Context, options Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开账号数据库失败: %w", err)
 	}
-	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers)
+	codexVersions, err := newCodexClientVersions(ctx, options.AIHomeDir)
 	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("创建 Codex 客户端版本解析器失败: %w", err)
+	}
+	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions)
+	if err != nil {
+		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, err
 	}
@@ -146,12 +155,14 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		newMessagesDecodeErrorObserver(options.ErrorLog),
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 		options.DelegateCredentialRefresh,
+		codexVersions,
 	)
 	if err != nil {
+		_ = codexVersions.Close()
 		_ = store.Close()
 		return nil, err
 	}
-	resources = append(resources, store)
+	resources = append(resources, codexVersions, store)
 	return newServer(
 		withManagementBrowserAccess(newRouter(handlers)),
 		resources,
@@ -178,6 +189,7 @@ func newHandlers(
 	decodeErrors func(error),
 	upstreamDecodeErrors func(error),
 	delegateCredentialRefresh bool,
+	codexVersions *clientversion.Resolver,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -323,6 +335,7 @@ func newHandlers(
 			runtime:     accountRuntime,
 			httpClient:  usageClient,
 			clock:       time.Now,
+			codexVersions: codexVersions,
 		},
 	)
 	if err != nil {
@@ -515,6 +528,7 @@ func newHandlers(
 			upstreamDecodeErrors:      upstreamDecodeErrors,
 			clock:                     time.Now,
 			requestRewriter:           visionGuard,
+			codexVersions:             codexVersions,
 		},
 	)
 	if err != nil {
@@ -608,7 +622,7 @@ func newHandlers(
 			CheckRedirect: rejectOAuthRedirect,
 		}
 	}
-	webSocketDialer, err := responseswebsocket.NewDialer(webSocketHTTPClient)
+	webSocketDialer, err := responseswebsocket.NewDialerWithClientVersion(webSocketHTTPClient, codexVersions)
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf(
@@ -770,6 +784,7 @@ func newHandlers(
 			inference:         inference.handler,
 			gemini:            inference.gemini,
 			codexResponsesWS:  webSocketHandler,
+			observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
 			claudeRelayLeases: relayLeaseHandler,
 			claudeNativeRelay: nativeRelayHandler,
 			catalogStatus: func() catalogReadiness {
@@ -829,6 +844,7 @@ func newResponsesDecodeErrorObserver(logger *log.Logger) func(error) {
 func newModelDiscovery(
 	catalog *providers.Catalog,
 	injected []accountapp.ProviderModelDiscoverer,
+	codexVersions clientversion.Source,
 ) (*accountapp.ModelDiscovery, error) {
 	strategies := injected
 	if len(strategies) == 0 {
@@ -836,7 +852,7 @@ func newModelDiscovery(
 			Timeout:       modelCatalogHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}
-		codexSource, err := codexresponses.NewModelCatalogSource(client)
+		codexSource, err := codexresponses.NewModelCatalogSourceWithClientVersion(client, codexVersions)
 		if err != nil {
 			return nil, fmt.Errorf("创建 Codex 模型目录源失败: %w", err)
 		}

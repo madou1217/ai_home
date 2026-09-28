@@ -1,6 +1,7 @@
 package responseswebsocket
 
 import (
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +21,7 @@ func TestProjectHandshakeHeadersFollowsGenuineCodexClient(t *testing.T) {
 	source.Set("x-codex-window-id", "window-1")
 	source.Set("thread-id", "thread-1")
 	source.Set("Authorization", "Bearer client-key")
-	header := projectHandshakeHeaders(source)
+	header := projectHandshakeHeaders(source, "0.170.0")
 
 	if header.Get("Originator") != "codex_exec" ||
 		!strings.HasPrefix(header.Get("User-Agent"), "codex_exec/0.158.0") ||
@@ -46,10 +47,10 @@ func TestProjectHandshakeHeadersFallsBackForNonCodexClients(t *testing.T) {
 		"bad originator": {"User-Agent": {"Codex Desktop/1"}, "Originator": {"Codex Desktop"}},
 		"control chars":  {"User-Agent": {"codex_exec/1\r\nX-Evil: 1"}, "Originator": {"codex_exec"}},
 	} {
-		header := projectHandshakeHeaders(source)
-		if header.Get("Originator") != codexOriginator ||
-			header.Get("User-Agent") != codexUserAgent ||
-			header.Get("Version") != codexProtocolVersion ||
+		header := projectHandshakeHeaders(source, "0.170.0")
+		if header.Get("Originator") != codexidentity.Originator ||
+			header.Get("User-Agent") != "codex_cli_rs/0.170.0" ||
+			header.Get("Version") != "0.170.0" ||
 			header.Get("x-codex-window-id") != "" {
 			t.Fatalf("%s: handshake headers = %#v", name, header)
 		}

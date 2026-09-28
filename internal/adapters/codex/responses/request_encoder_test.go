@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"strings"
 	"testing"
@@ -640,9 +641,9 @@ func TestBuildHTTPRequestUsesCredentialSpecificEndpointAndHeaders(t *testing.T) 
 			if request.Method != http.MethodPost ||
 				request.URL.String() != test.wantURL ||
 				request.Header.Get("Accept") != "text/event-stream" ||
-				request.Header.Get("Originator") != codexOriginator ||
-				request.Header.Get("User-Agent") != codexUserAgent ||
-				request.Header.Get("Version") != codexProtocolVersion ||
+				request.Header.Get("Originator") != codexidentity.Originator ||
+				request.Header.Get("User-Agent") != codexidentity.UserAgent(codexidentity.Floor) ||
+				request.Header.Get("Version") != codexidentity.Floor ||
 				request.Header.Get(responsesLiteHeader) != test.wantLite ||
 				request.Header.Get("ChatGPT-Account-ID") != test.wantAccountID ||
 				request.Header.Get("X-OpenAI-Fedramp") != test.wantFedRAMP {
@@ -666,12 +667,12 @@ func TestBuildHTTPRequestUsesCredentialSpecificEndpointAndHeaders(t *testing.T) 
 			}
 		})
 	}
-	if codexProtocolVersion != "0.146.0" ||
-		codexUserAgent != "codex_cli_rs/0.146.0" {
+	if codexidentity.Floor != "0.158.0" ||
+		codexidentity.UserAgent(codexidentity.Floor) != "codex_cli_rs/0.158.0" {
 		t.Fatalf(
 			"version=%s user_agent=%s",
-			codexProtocolVersion,
-			codexUserAgent,
+			codexidentity.Floor,
+			codexidentity.UserAgent(codexidentity.Floor),
 		)
 	}
 }

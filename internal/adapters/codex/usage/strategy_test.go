@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"strings"
@@ -75,7 +76,7 @@ func TestStrategyReadsDirectWhamUsageWithoutStdioWorker(t *testing.T) {
 		client.request.Method != http.MethodGet ||
 		client.request.Header.Get("Authorization") != "Bearer "+auth.AccessToken() ||
 		client.request.Header.Get("ChatGPT-Account-ID") != auth.UpstreamAccountID() ||
-		client.request.Header.Get("Originator") != codexClientIdentity {
+		client.request.Header.Get("Originator") != codexidentity.Originator {
 		t.Fatalf("request = %#v", client.request)
 	}
 }

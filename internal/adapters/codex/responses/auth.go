@@ -3,6 +3,7 @@ package responses
 import (
 	"bytes"
 	"context"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,12 +17,6 @@ const (
 	chatGPTCodexBaseURL = "https://chatgpt.com/backend-api/codex"
 	// responsesPath 是官方 ResponsesClient 使用的相对端点。
 	responsesPath = "responses"
-	// codexProtocolVersion 固定当前 Adapter 对照过的 Codex Responses 合同版本。
-	codexProtocolVersion = "0.146.0"
-	// codexOriginator 与官方 Codex HTTP Client 的默认调用来源一致。
-	codexOriginator = "codex_cli_rs"
-	// codexUserAgent 让上游能够按已验证的协议版本诊断兼容性。
-	codexUserAgent = codexOriginator + "/" + codexProtocolVersion
 )
 
 // authProjection 是一次请求所需的最小凭据投影。
@@ -33,6 +28,8 @@ type authProjection struct {
 	accountID string
 	fedRAMP   bool
 	kind      codexauth.AuthKind
+	// clientVersion 是本次请求自报的 Codex 客户端版本，来自版本解析器，见 codexidentity。
+	clientVersion string
 }
 
 // projectAuth 只接受领域层已经校验的 Codex OAuth 或 API Key。
@@ -103,9 +100,13 @@ func applyAuthenticationHeaders(
 		return ErrInvalidInvocation
 	}
 	request.Header.Set("Authorization", "Bearer "+auth.token)
-	request.Header.Set("Originator", codexOriginator)
-	request.Header.Set("User-Agent", codexUserAgent)
-	request.Header.Set("Version", codexProtocolVersion)
+	version := auth.clientVersion
+	if version == "" {
+		version = codexidentity.Floor
+	}
+	request.Header.Set("Originator", codexidentity.Originator)
+	request.Header.Set("User-Agent", codexidentity.UserAgent(version))
+	request.Header.Set("Version", version)
 	if auth.accountID != "" {
 		request.Header.Set("ChatGPT-Account-ID", auth.accountID)
 	}

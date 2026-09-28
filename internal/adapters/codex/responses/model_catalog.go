@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"mime"
 	"net/http"
@@ -176,7 +177,12 @@ func modelsEndpoint(auth authProjection) (string, error) {
 	parsed.RawPath = ""
 	if auth.kind == codexauth.AuthKindOAuth {
 		query := parsed.Query()
-		query.Set("client_version", codexProtocolVersion)
+		// OAuth 目录按 client_version 过滤模型：写死旧版本会让新模型（gpt-6-*）永远不可见。
+		version := auth.clientVersion
+		if version == "" {
+			version = codexidentity.Floor
+		}
+		query.Set("client_version", version)
 		parsed.RawQuery = query.Encode()
 	}
 	return parsed.String(), nil

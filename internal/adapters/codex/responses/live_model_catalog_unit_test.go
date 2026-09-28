@@ -3,6 +3,7 @@ package responses
 import (
 	"context"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"strings"
@@ -38,13 +39,13 @@ func TestBuildRealCodexModelsRequestProjectsOAuthContract(t *testing.T) {
 	}
 	if request.Method != http.MethodGet ||
 		request.URL.String() !=
-			"https://chatgpt.com/backend-api/codex/models?client_version=0.146.0" ||
+			"https://chatgpt.com/backend-api/codex/models?client_version="+codexidentity.Floor ||
 		request.Header.Get("Authorization") != "Bearer oauth-secret" ||
 		request.Header.Get("ChatGPT-Account-ID") != "workspace-1" ||
 		request.Header.Get("X-OpenAI-Fedramp") != "true" ||
-		request.Header.Get("Originator") != codexOriginator ||
-		request.Header.Get("User-Agent") != codexUserAgent ||
-		request.Header.Get("Version") != codexProtocolVersion ||
+		request.Header.Get("Originator") != codexidentity.Originator ||
+		request.Header.Get("User-Agent") != codexidentity.UserAgent(codexidentity.Floor) ||
+		request.Header.Get("Version") != codexidentity.Floor ||
 		request.Header.Get("Accept") != "application/json" {
 		t.Fatalf(
 			"模型目录请求合同不一致: method=%s url=%s headers=%v",

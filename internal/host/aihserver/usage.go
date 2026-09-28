@@ -3,6 +3,8 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"time"
 
@@ -59,6 +61,8 @@ type usageCompositionDependencies struct {
 	runtime     usageapp.RuntimeProjection
 	httpClient  UsageHTTPClient
 	clock       usageapp.Clock
+	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
+	codexVersions clientversion.Source
 }
 
 // newUsageComposition 创建双 Provider Strategy、服务和周期刷新协调器。
@@ -82,7 +86,11 @@ func newUsageComposition(
 			CheckRedirect: rejectOAuthRedirect,
 		}
 	}
-	codexStrategy, err := codexusage.New(client)
+	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
+	if dependencies.codexVersions != nil {
+		codexVersions = dependencies.codexVersions
+	}
+	codexStrategy, err := codexusage.NewWithClientVersion(client, codexVersions)
 	if err != nil {
 		return nil, err
 	}

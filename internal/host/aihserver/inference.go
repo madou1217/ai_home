@@ -3,6 +3,8 @@ package aihserver
 import (
 	"context"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"time"
@@ -59,7 +61,9 @@ type inferenceCompositionDependencies struct {
 	decodeErrors              func(error)
 	responsesDecodeErrors     func(error)
 	upstreamDecodeErrors      func(error)
-	clock                     func() time.Time
+	// codexVersions 提供模拟 Codex 客户端时自报的版本；为空时使用编译期最低版本。
+	codexVersions clientversion.Source
+	clock         func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
 }
@@ -86,7 +90,11 @@ func newInferenceComposition(
 			CheckRedirect: rejectOAuthRedirect,
 		}
 	}
-	codexAdapter, err := codexresponses.NewAdapter(client, dependencies.clock)
+	var codexVersions clientversion.Source = clientversion.Static(codexidentity.Floor)
+	if dependencies.codexVersions != nil {
+		codexVersions = dependencies.codexVersions
+	}
+	codexAdapter, err := codexresponses.NewAdapterWithClientVersion(client, dependencies.clock, codexVersions)
 	if err != nil {
 		return nil, err
 	}

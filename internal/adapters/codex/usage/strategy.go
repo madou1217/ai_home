@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"math"
 	"net/http"
@@ -20,11 +22,9 @@ import (
 )
 
 const (
-	usageEndpoint       = "https://chatgpt.com/backend-api/wham/usage"
-	sourceID            = "codex_wham_usage"
-	maxResponseBody     = 1 << 20
-	codexClientVersion  = "0.146.0"
-	codexClientIdentity = "codex_cli_rs"
+	usageEndpoint   = "https://chatgpt.com/backend-api/wham/usage"
+	sourceID        = "codex_wham_usage"
+	maxResponseBody = 1 << 20
 )
 
 var (
@@ -41,17 +41,23 @@ type HTTPClient interface {
 
 // Strategy 使用 Codex OAuth 直连低敏额度端点。
 type Strategy struct {
-	client HTTPClient
+	client   HTTPClient
+	versions clientversion.Source
 }
 
 var _ usageapp.ProviderStrategy = (*Strategy)(nil)
 
 // New 创建不启动 stdio worker 的 Codex 额度 Strategy。
 func New(client HTTPClient) (*Strategy, error) {
-	if client == nil {
+	return NewWithClientVersion(client, clientversion.Static(codexidentity.Floor))
+}
+
+// NewWithClientVersion 创建按版本来源自报 Codex 客户端版本的额度 Strategy。
+func NewWithClientVersion(client HTTPClient, versions clientversion.Source) (*Strategy, error) {
+	if client == nil || versions == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Strategy{client: client}, nil
+	return &Strategy{client: client, versions: versions}, nil
 }
 
 // ProviderID 返回当前 Strategy 唯一支持的 Provider。
@@ -84,7 +90,7 @@ func (strategy *Strategy) FetchUsage(
 	if !ok || auth == nil {
 		return usagecore.Snapshot{}, usageapp.ErrUsageUnsupported
 	}
-	request, err := newRequest(ctx, auth)
+	request, err := newRequest(ctx, auth, strategy.versions.Current())
 	if err != nil {
 		return usagecore.Snapshot{}, errors.Join(usageapp.ErrRefreshFailed, err)
 	}
@@ -136,6 +142,7 @@ func (strategy *Strategy) FetchUsage(
 func newRequest(
 	ctx context.Context,
 	auth *codexauth.OAuthAuth,
+	version string,
 ) (*http.Request, error) {
 	if auth == nil || auth.AccessToken() == "" {
 		return nil, ErrInvalidResponse
@@ -151,9 +158,12 @@ func newRequest(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+auth.AccessToken())
-	request.Header.Set("Originator", codexClientIdentity)
-	request.Header.Set("User-Agent", codexClientIdentity+"/"+codexClientVersion)
-	request.Header.Set("Version", codexClientVersion)
+	if version == "" {
+		version = codexidentity.Floor
+	}
+	request.Header.Set("Originator", codexidentity.Originator)
+	request.Header.Set("User-Agent", codexidentity.UserAgent(version))
+	request.Header.Set("Version", version)
 	if accountID := auth.UpstreamAccountID(); accountID != "" {
 		request.Header.Set("ChatGPT-Account-ID", accountID)
 	}

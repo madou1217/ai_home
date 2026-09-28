@@ -122,6 +122,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(openairesponsesapi.Path, responsesDispatcher{
 		canonical: handlers.inference,
 		websocket: handlers.codexResponsesWS,
+		observe:   handlers.observeCodexClient,
 	})
 	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
@@ -243,12 +244,17 @@ func (dispatcher modelsDispatcher) ServeHTTP(
 type responsesDispatcher struct {
 	canonical http.Handler
 	websocket http.Handler
+	// observe 从已鉴权的真实 Codex 客户端学习客户端版本；可为空。
+	observe func(*http.Request)
 }
 
 func (dispatcher responsesDispatcher) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	if dispatcher.observe != nil {
+		dispatcher.observe(request)
+	}
 	if codexresponsesws.IsUpgradeRequest(request) {
 		if dispatcher.websocket == nil {
 			handleRouteNotFound(response, request)

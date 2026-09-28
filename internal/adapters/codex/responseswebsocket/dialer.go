@@ -7,6 +7,8 @@ package responseswebsocket
 import (
 	"context"
 	"errors"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,12 +26,8 @@ const (
 	// HopHeader 防止 API Key 自定义端点经代理重新进入当前 Gateway。
 	HopHeader = "X-AIH-Codex-Responses-WebSocket-Hop"
 	// HopValue 是当前单跳代理唯一允许发送的值。
-	HopValue = "1"
-	// 当前 HTTP Responses Adapter 已按同一官方 Codex 客户端版本验收。
-	codexProtocolVersion = "0.146.0"
-	codexOriginator      = "codex_cli_rs"
-	codexUserAgent       = codexOriginator + "/" + codexProtocolVersion
-	responsesPath        = "responses"
+	HopValue      = "1"
+	responsesPath = "responses"
 )
 
 var (
@@ -54,15 +52,21 @@ type Connection interface {
 
 // Dialer 使用独立 HTTP Client 建立上游 WebSocket，连接期不设置总请求超时。
 type Dialer struct {
-	client *http.Client
+	client   *http.Client
+	versions clientversion.Source
 }
 
 // NewDialer 创建默认失败关闭的 Codex Responses WebSocket Dialer。
 func NewDialer(client *http.Client) (*Dialer, error) {
-	if client == nil {
+	return NewDialerWithClientVersion(client, clientversion.Static(codexidentity.Floor))
+}
+
+// NewDialerWithClientVersion 创建兜底身份按版本来源自报的 Dialer。
+func NewDialerWithClientVersion(client *http.Client, versions clientversion.Source) (*Dialer, error) {
+	if client == nil || versions == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Dialer{client: client}, nil
+	return &Dialer{client: client, versions: versions}, nil
 }
 
 // SupportsCredential 声明当前 WS 适配器可承载的 Codex 凭据集合。
@@ -103,7 +107,7 @@ func (dialer *Dialer) Connect(
 	) {
 		return nil, nil, ErrSelfLoop
 	}
-	header := projectHandshakeHeaders(clientHeader)
+	header := projectHandshakeHeaders(clientHeader, dialer.versions.Current())
 	for name, values := range authHeader {
 		header[name] = append([]string(nil), values...)
 	}
@@ -183,7 +187,9 @@ func websocketEndpoint(baseURL string) (string, error) {
 
 // projectHandshakeHeaders 只转发官方源码确认的低敏关联头；认证由 Server 覆盖，
 // 客户端身份只在可信 Codex 客户端时跟随客户端，避免注入其它逐跳或上游权限头。
-func projectHandshakeHeaders(source http.Header) http.Header {
+//
+// fallbackVersion 是无法识别真实 Codex 客户端时自报的版本（来自版本解析器）。
+func projectHandshakeHeaders(source http.Header, fallbackVersion string) http.Header {
 	destination := make(http.Header)
 	for _, name := range []string{
 		"x-client-request-id",
@@ -205,9 +211,12 @@ func projectHandshakeHeaders(source http.Header) http.Header {
 			destination[name] = values
 		}
 	} else {
-		destination.Set("Originator", codexOriginator)
-		destination.Set("User-Agent", codexUserAgent)
-		destination.Set("Version", codexProtocolVersion)
+		if fallbackVersion == "" {
+			fallbackVersion = codexidentity.Floor
+		}
+		destination.Set("Originator", codexidentity.Originator)
+		destination.Set("User-Agent", codexidentity.UserAgent(fallbackVersion))
+		destination.Set("Version", fallbackVersion)
 	}
 	destination.Set(HopHeader, HopValue)
 	return destination

@@ -583,6 +583,30 @@ test('accounts canonical signature includes DB-backed role changes', (t) => {
   assert.match(after, new RegExp(`roles:codex:${accountRef}`));
 });
 
+// 回归：页面开着几小时额度都不变——后台额度刷新只写额度快照，签名不含它时
+// 10 秒轮询永远认为「没变化」，SSE/WebSocket 不推送。
+test('accounts canonical signature changes when only the usage snapshot is refreshed', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-usage-signature-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const snapshot = (capturedAt, remainingPct) => ({
+    schemaVersion: 2,
+    kind: 'codex_oauth_status',
+    source: 'codex_app_server',
+    capturedAt,
+    entries: [{ bucket: 'primary', windowMinutes: 300, window: '5h', remainingPct }]
+  });
+  const accountRef = registerDbAccount(root, 'codex', '11', {
+    nativeAuth: { auth: { tokens: { access_token: 'at_11', refresh_token: 'rt_11' } } },
+    usageSnapshot: snapshot(1_790_000_000_000, 90)
+  });
+  const ctx = { fs, aiHomeDir: root };
+
+  const before = __private.buildCanonicalAccountsSignature(ctx);
+  assert.equal(__private.buildCanonicalAccountsSignature(ctx), before, 'stable while nothing changes');
+  writeAccountUsageSnapshot(fs, root, accountRef, snapshot(1_790_000_600_000, 40));
+  assert.notEqual(__private.buildCanonicalAccountsSignature(ctx), before);
+});
+
 test('accounts canonical poller can be stopped when all watchers disconnect', () => {
   const liveState = {
     canonicalPoller: setInterval(() => {}, 60_000),

@@ -638,9 +638,10 @@ func buildUpstreamRequest(
 	copyRequestHeaders(upstream.Header, incoming.Header)
 	upstream.Header.Set("Authorization", "Bearer "+accessToken)
 	ensureOAuthBeta(upstream.Header)
-	if upstream.Header.Get("Accept-Encoding") == "" {
-		upstream.Header.Set("Accept-Encoding", "identity")
-	}
+	// 上游一律返回未压缩字节：流观察器必须读明文 SSE 才能分类失败/完成。透传客户端
+	// 的 gzip/br 协商时，观察器面对压缩字节会误判 malformed（并给正常账号记失败），
+	// 旧实现还会因此截断下游，Claude Code 报 ZlibError。压缩对 SSE 收益也很小。
+	upstream.Header.Set("Accept-Encoding", "identity")
 	return upstream, nil
 }
 

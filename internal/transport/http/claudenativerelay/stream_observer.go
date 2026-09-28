@@ -57,13 +57,31 @@ func copyAndObserveNativeStream(
 		observed <- observeNativeStream(reader, header, clock)
 		_ = reader.Close()
 	}()
-	result := copyResponseBody(response, io.TeeReader(body, writer))
+	result := copyResponseBody(response, io.TeeReader(body, &observerTap{writer: writer}))
 	if result.upstreamErr != nil {
 		_ = writer.CloseWithError(result.upstreamErr)
 	} else {
 		_ = writer.Close()
 	}
 	return result, <-observed
+}
+
+// observerTap 把原始字节旁路给观察协程。观察协程可能提前退出（无法解析、已见终态），
+// 之后写管道会返回 ErrClosedPipe；旁路失败必须静默，绝不能让 TeeReader 把它当成
+// 上游读错误而截断客户端的透传字节流。
+type observerTap struct {
+	writer *io.PipeWriter
+	closed bool
+}
+
+// Write 总是报告全部写入成功；观察协程离开后停止旁路。
+func (tap *observerTap) Write(payload []byte) (int, error) {
+	if !tap.closed {
+		if _, err := tap.writer.Write(payload); err != nil {
+			tap.closed = true
+		}
+	}
+	return len(payload), nil
 }
 
 // observeNativeStream 复用统一 Claude 失败分类器，但不修改或重新编码事件。

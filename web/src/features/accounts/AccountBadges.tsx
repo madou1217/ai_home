@@ -11,6 +11,7 @@ import {
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import { getAccountIdentityLabel, getAccountSecondaryIdentity } from '@/utils/account-labels';
+import { getRuntimeModelLines } from './runtime-models';
 
 // 账号行展示徽章与角色标签 —— 纯渲染组件模块。
 // 从 Accounts.tsx 抽取：运行时状态 / 停池 / 额度 / 综合状态徽章、
@@ -167,6 +168,7 @@ export function getAccountDisplayBadgeMeta(record: Account): AccountBadgeMeta {
   if (state === 'policy_blocked') return getPolicyBlockedMeta(record) || { status: 'warning', label: '已停池' };
   if (state === 'usage_attention') return getQuotaStateMeta(record) || { status: 'warning', label: '额度待确认' };
   if (state === 'exhausted') return { status: 'error', label: '已耗尽' };
+  if (getRuntimeModelLines(record).length > 0) return { status: 'warning', label: '部分模型受限' };
   if (record.apiKeyMode) return { status: 'success', label: '可调度' };
   return { status: 'success', label: '正常' };
 }
@@ -189,6 +191,8 @@ export function getAccountStatusDetailLines(record: Account): string[] {
   } else if (state === 'usage_attention') {
     const reason = formatQuotaReason(record.quotaReason);
     if (reason) lines.push(reason);
+  } else if (state === 'healthy' && getRuntimeModelLines(record).length > 0) {
+    lines.push(...getRuntimeModelLines(record));
   } else if (state === 'healthy' && record.apiKeyMode) {
     lines.push('密钥已配置且当前没有运行时阻塞；网络和模型接口可达性请看模型探测。');
   }
@@ -216,6 +220,23 @@ export function renderAccountDisplayBadge(record: Account) {
         status="error"
         text="已耗尽"
       />
+    );
+  }
+  const runtimeModelLines = getRuntimeModelLines(record);
+  if (runtimeModelLines.length > 0) {
+    return (
+      <Tooltip
+        title={(
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 360 }}>
+            <div>账号仍可调度，以下模型暂时跳过：</div>
+            {runtimeModelLines.map((line) => <div key={line}>{line}</div>)}
+          </div>
+        )}
+      >
+        <span>
+          <Badge status="warning" text="部分模型受限" />
+        </span>
+      </Tooltip>
     );
   }
   if (record.apiKeyMode) {

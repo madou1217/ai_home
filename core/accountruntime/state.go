@@ -182,6 +182,14 @@ func (state ModelState) Succeed(
 	return ModelState{}, nil
 }
 
+// ActiveCooldown 返回 now 时仍生效的 cooldown 类型与解除时间；只读，不修改状态。
+func (state ModelState) ActiveCooldown(now time.Time) (FailureKind, time.Time, bool) {
+	if state.cooldownUntil.IsZero() || !state.cooldownUntil.After(now) {
+		return "", time.Time{}, false
+	}
+	return state.cooldownKind, state.cooldownUntil, true
+}
+
 // IsZero 判断该元组是否无需占用稀疏运行态索引。
 func (state ModelState) IsZero() bool {
 	return state == ModelState{}

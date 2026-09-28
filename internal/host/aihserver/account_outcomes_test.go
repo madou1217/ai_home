@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountoutcomes"
+	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -83,5 +84,53 @@ func TestOutcomeRecordingRuntimeNeverChangesTheResult(t *testing.T) {
 	}
 	if len(store.deltas) != 2 {
 		t.Fatalf("deltas = %d, want day + hour", len(store.deltas))
+	}
+}
+
+// snapshotRuntime 是支持运行态快照的替身。
+type snapshotRuntime struct {
+	failingRuntime
+	views []runtimeapp.AccountView
+}
+
+func (runtime snapshotRuntime) RuntimeSnapshot() []runtimeapp.AccountView { return runtime.views }
+
+// TestOutcomeRecordingRuntimeSnapshotMergesLastActivity 验证快照合并运行态阻塞与最近结果：
+// 有阻塞的账号带上最近失败，仅有活动的健康账号也出现（账号页「上次成功使用」）。
+func TestOutcomeRecordingRuntimeSnapshotMergesLastActivity(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
+	recorder, err := accountoutcomes.NewRecorder(accountoutcomes.RecorderOptions{
+		Store: &captureStore{}, Clock: func() time.Time { return now }, FlushInterval: time.Hour, Location: time.UTC,
+	})
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	blockedRef, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0001")
+	healthyRef, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0002")
+	recorder.Record(blockedRef, string(runtimecore.FailureCredentialRejected))
+	recorder.Record(healthyRef, accountoutcomes.OutcomeSuccess)
+
+	runtime := outcomeRecordingRuntime{
+		serverAccountRuntime: snapshotRuntime{views: []runtimeapp.AccountView{{
+			AccountRef: blockedRef,
+			Blocks:     []runtimecore.RecoveryTrigger{runtimecore.RecoveryCredentialsUpdated},
+		}}},
+		outcomes: recorder,
+	}
+	views := runtime.RuntimeSnapshot()
+	if len(views) != 2 {
+		t.Fatalf("views = %+v, want blocked + healthy", views)
+	}
+	blocked, healthy := views[0], views[1]
+	if blocked.AccountRef != blockedRef || len(blocked.Blocks) != 1 ||
+		!blocked.LastFailureAt.Equal(now) || blocked.LastFailureKind != string(runtimecore.FailureCredentialRejected) ||
+		!blocked.LastSuccessAt.IsZero() {
+		t.Fatalf("blocked view = %+v", blocked)
+	}
+	if healthy.AccountRef != healthyRef || len(healthy.Blocks) != 0 ||
+		!healthy.LastSuccessAt.Equal(now) || !healthy.LastFailureAt.IsZero() {
+		t.Fatalf("healthy view = %+v", healthy)
 	}
 }

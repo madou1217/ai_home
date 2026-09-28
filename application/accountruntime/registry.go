@@ -128,6 +128,30 @@ func (registry *Registry) Len() int {
 	return len(registry.states)
 }
 
+// ModelCooldown 是一个仍生效的账号模型 cooldown 的只读视图。
+type ModelCooldown struct {
+	Route runtimecore.ModelRoute
+	Kind  runtimecore.FailureKind
+	Until time.Time
+}
+
+// ActiveCooldowns 返回当前时钟下仍生效的全部 cooldown（供账号页展示）；不回收过期状态。
+func (registry *Registry) ActiveCooldowns() []ModelCooldown {
+	if registry == nil || registry.clock == nil {
+		return nil
+	}
+	now := registry.clock()
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	cooldowns := make([]ModelCooldown, 0, len(registry.states))
+	for route, state := range registry.states {
+		if kind, until, active := state.ActiveCooldown(now); active {
+			cooldowns = append(cooldowns, ModelCooldown{Route: route, Kind: kind, Until: until})
+		}
+	}
+	return cooldowns
+}
+
 // ForgetAccount 删除一个账号全部模型的稀疏 cooldown 状态。
 func (registry *Registry) ForgetAccount(
 	accountRef accountcore.AccountRef,

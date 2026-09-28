@@ -12,6 +12,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
 	"github.com/madou1217/ai_home/application/claudegateway"
@@ -43,6 +44,7 @@ import (
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/accountruntimeapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/anthropicmessagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/blobsapi"
@@ -78,6 +80,8 @@ type serverHandlers struct {
 	observeCodexClient func(*http.Request)
 	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
 	accountOutcomes http.Handler
+	// accountRuntime 是账号当前运行态（阻塞 / cooldown / 最近结果）的只读管理接口。
+	accountRuntime http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -340,13 +344,13 @@ func newHandlers(
 	usage, err = newUsageComposition(
 		ctx,
 		usageCompositionDependencies{
-			catalog:     catalog,
-			store:       store,
-			credentials: credentials,
-			models:      store,
-			runtime:     accountRuntime,
-			httpClient:  usageClient,
-			clock:       time.Now,
+			catalog:       catalog,
+			store:         store,
+			credentials:   credentials,
+			models:        store,
+			runtime:       accountRuntime,
+			httpClient:    usageClient,
+			clock:         time.Now,
 			codexVersions: codexVersions,
 		},
 	)
@@ -442,6 +446,15 @@ func newHandlers(
 	accountOutcomesHandler, err := accountoutcomesapi.NewHandler(authorizer, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号结果 Handler 失败: %w", err)
+	}
+	// 只有生产运行态（outcomeRecordingRuntime）支持快照；测试替身不挂该接口。
+	var accountRuntimeHandler http.Handler
+	if snapshotter, ok := accountRuntime.(runtimeapp.Snapshotter); ok {
+		handler, err := accountruntimeapi.NewHandler(authorizer, snapshotter)
+		if err != nil {
+			return serverHandlers{}, nil, fmt.Errorf("创建账号运行态 Handler 失败: %w", err)
+		}
+		accountRuntimeHandler = handler
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:          management,
@@ -617,12 +630,12 @@ func newHandlers(
 	}
 	nativeRelayHandler, err := claudenativerelay.NewHandler(
 		claudenativerelay.Dependencies{
-			Authorizer:     relayAuthorizer,
-			Accounts:       relayAccounts,
-			Fallback:       inference.handler,
-			Credentials:    credentials,
-			Client:         relayClient,
-			Attempts:       accountRuntime,
+			Authorizer:        relayAuthorizer,
+			Accounts:          relayAccounts,
+			Fallback:          inference.handler,
+			Credentials:       credentials,
+			Client:            relayClient,
+			Attempts:          accountRuntime,
 			ModelRefreshes:    inference.modelRefreshes,
 			Clock:             time.Now,
 			StreamDisconnects: newRelayDisconnectObserver(errorLog),
@@ -793,38 +806,39 @@ func newHandlers(
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
 	return serverHandlers{
-			accounts:          accountsHandler,
-			accountAuth:       accountAuthHandler,
-			models:            modelsHandler,
-			blobs:             blobsHandler,
-			images:            imageHandler,
-			tokenCount:        tokenCountHandler,
-			inference:         inference.handler,
-			gemini:            inference.gemini,
-			codexResponsesWS:  webSocketHandler,
-			observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
-			accountOutcomes:    accountOutcomesHandler,
-			claudeRelayLeases: relayLeaseHandler,
-			claudeNativeRelay: nativeRelayHandler,
-			catalogStatus: func() catalogReadiness {
-				status := inference.models.Status()
-				return catalogReadiness{
-					ready:      status.Ready,
-					stale:      status.Stale,
-					modelCount: status.ModelCount,
-					routeCount: status.RouteCount,
-					accounts:   accountCountsByProvider(catalog, store),
-				}
-			},
-		}, []io.Closer{
-			modelSweepWorker,
-			initialModelRecoveryWorker,
-			webSocketHandler,
-			routeMissRefresh,
-			inference,
-			usage,
-			modelRefresh,
-		}, nil
+		accounts:           accountsHandler,
+		accountAuth:        accountAuthHandler,
+		models:             modelsHandler,
+		blobs:              blobsHandler,
+		images:             imageHandler,
+		tokenCount:         tokenCountHandler,
+		inference:          inference.handler,
+		gemini:             inference.gemini,
+		codexResponsesWS:   webSocketHandler,
+		observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
+		accountOutcomes:    accountOutcomesHandler,
+		accountRuntime:     accountRuntimeHandler,
+		claudeRelayLeases:  relayLeaseHandler,
+		claudeNativeRelay:  nativeRelayHandler,
+		catalogStatus: func() catalogReadiness {
+			status := inference.models.Status()
+			return catalogReadiness{
+				ready:      status.Ready,
+				stale:      status.Stale,
+				modelCount: status.ModelCount,
+				routeCount: status.RouteCount,
+				accounts:   accountCountsByProvider(catalog, store),
+			}
+		},
+	}, []io.Closer{
+		modelSweepWorker,
+		initialModelRecoveryWorker,
+		webSocketHandler,
+		routeMissRefresh,
+		inference,
+		usage,
+		modelRefresh,
+	}, nil
 }
 
 // newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。

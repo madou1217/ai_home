@@ -1,4 +1,10 @@
 const KNOWN_REASON_MESSAGES: Record<string, string> = {
+  // Go Core 承接流量时记录的账号级硬阻塞（lib/server/go-runtime-overlay.js），外部真相源更新后自动解除。
+  go_runtime_credentials_rejected: '上游拒绝了账号凭据，需要重新登录或更新凭据后恢复调度。',
+  go_runtime_quota_exhausted: '上游报告账号额度耗尽，下一次额度快照确认恢复后自动解除。',
+  go_runtime_billing_blocked: '上游报告账单状态异常，账单状态恢复后自动解除。',
+  go_runtime_account_deactivated: '上游报告账号 / 工作区已停用，账号状态恢复后自动解除。',
+  go_runtime_policy_blocked: '上游策略拒绝该账号（地区 / 权限），策略更新后自动解除。',
   auth_metadata_only: '当前只有账号元信息，尚未采到真实额度快照。请刷新用量后再判断是否真的耗尽。',
   codex_free_plan_missing_rate_limits: '当前账号的 token claim 已经是 free，但 Codex 没返回任何可计算的额度窗口。这更像账号已降级到 free，或 free 额度已经耗尽；建议直接重新登录确认。',
   codex_team_plan_missing_rate_limits: '当前账号的 token claim 仍是 team，但 Codex 没返回任何可计算的额度窗口。这更像 team entitlement、workspace，或套餐状态异常；建议重新登录确认。',

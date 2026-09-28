@@ -101,8 +101,9 @@ type Recorder struct {
 	location *time.Location
 	onError  func(error)
 
-	mu      sync.Mutex
-	pending map[pendingKey]int64
+	mu       sync.Mutex
+	pending  map[pendingKey]int64
+	activity map[accountcore.AccountRef]Activity
 
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -125,7 +126,30 @@ func NewRecorder(options RecorderOptions) (*Recorder, error) {
 		location: location,
 		onError:  options.OnError,
 		pending:  make(map[pendingKey]int64),
+		activity: make(map[accountcore.AccountRef]Activity),
 	}, nil
+}
+
+// Activity 是账号最近一次上游尝试结果（本进程内存，重启后从空开始）。
+// 账号页「上次成功使用」据此实时更新，不必等时间桶落库。
+type Activity struct {
+	LastSuccessAt   time.Time
+	LastFailureAt   time.Time
+	LastFailureKind string
+}
+
+// LastActivity 返回每个账号最近一次成功 / 失败的副本。
+func (recorder *Recorder) LastActivity() map[accountcore.AccountRef]Activity {
+	if recorder == nil {
+		return nil
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	result := make(map[accountcore.AccountRef]Activity, len(recorder.activity))
+	for accountRef, activity := range recorder.activity {
+		result[accountRef] = activity
+	}
+	return result
 }
 
 // Record 在内存中为账号的日桶与小时桶各记一次结果；非法输入静默忽略。
@@ -143,6 +167,14 @@ func (recorder *Recorder) Record(accountRef accountcore.AccountRef, outcome stri
 			outcome:     outcome,
 		}]++
 	}
+	activity := recorder.activity[accountRef]
+	if outcome == OutcomeSuccess {
+		activity.LastSuccessAt = now
+	} else {
+		activity.LastFailureAt = now
+		activity.LastFailureKind = outcome
+	}
+	recorder.activity[accountRef] = activity
 	recorder.mu.Unlock()
 }
 

@@ -3,11 +3,14 @@ package aihserver
 import (
 	"context"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountoutcomes"
+	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 )
 
@@ -42,6 +45,39 @@ func (runtime outcomeRecordingRuntime) RecordFailure(
 	err := runtime.serverAccountRuntime.RecordFailure(ctx, route, failure)
 	runtime.outcomes.Record(route.AccountRef(), string(failure.RuntimeKind()))
 	return err
+}
+
+// RuntimeSnapshot 合并运行态的阻塞 / cooldown 与记录器的最近结果，供账号页调度状态展示。
+// 底层运行态不支持快照时（测试替身）只返回最近结果。
+func (runtime outcomeRecordingRuntime) RuntimeSnapshot() []runtimeapp.AccountView {
+	var views []runtimeapp.AccountView
+	if snapshotter, ok := runtime.serverAccountRuntime.(runtimeapp.Snapshotter); ok {
+		views = snapshotter.RuntimeSnapshot()
+	}
+	activity := runtime.outcomes.LastActivity()
+	seen := make(map[accountcore.AccountRef]bool, len(views))
+	for index := range views {
+		seen[views[index].AccountRef] = true
+		applyActivity(&views[index], activity[views[index].AccountRef])
+	}
+	for accountRef, entry := range activity {
+		if seen[accountRef] {
+			continue
+		}
+		view := runtimeapp.AccountView{AccountRef: accountRef}
+		applyActivity(&view, entry)
+		views = append(views, view)
+	}
+	sort.Slice(views, func(left, right int) bool {
+		return views[left].AccountRef.String() < views[right].AccountRef.String()
+	})
+	return views
+}
+
+func applyActivity(view *runtimeapp.AccountView, activity accountoutcomes.Activity) {
+	view.LastSuccessAt = activity.LastSuccessAt
+	view.LastFailureAt = activity.LastFailureAt
+	view.LastFailureKind = activity.LastFailureKind
 }
 
 // newAccountOutcomeRecorder 创建并启动结果记录器。

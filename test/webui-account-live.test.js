@@ -13,6 +13,7 @@ const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
 const { createAccountStateIndex } = require('../lib/account/state-index');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
+const { createGoRuntimeOverlay } = require('../lib/server/go-runtime-overlay');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const {
   ensureAccountsSnapshotLoaded,
@@ -605,6 +606,30 @@ test('accounts canonical signature changes when only the usage snapshot is refre
   assert.equal(__private.buildCanonicalAccountsSignature(ctx), before, 'stable while nothing changes');
   writeAccountUsageSnapshot(fs, root, accountRef, snapshot(1_790_000_600_000, 40));
   assert.notEqual(__private.buildCanonicalAccountsSignature(ctx), before);
+});
+
+// 回归：Go 承接的流量产生的冷却 / 熔断只在 Go 内存里，账号页调度状态一直显示「正常」。
+// Go 运行态叠加层变化必须进签名，10 秒轮询才会推送。
+test('accounts canonical signature changes when only the Go runtime overlay changes', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-go-runtime-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerDbAccount(root, 'codex', '12', {
+    nativeAuth: { auth: { tokens: { access_token: 'at_12', refresh_token: 'rt_12' } } }
+  });
+  let rows = [];
+  const overlay = createGoRuntimeOverlay({ listAccountRuntime: async () => rows });
+  const ctx = { fs, aiHomeDir: root, state: { goRuntimeOverlay: overlay } };
+
+  await overlay.refresh();
+  const before = __private.buildCanonicalAccountsSignature(ctx);
+  rows = [{ account_ref: accountRef, models: [{ model: 'gpt-5.5', cooldown_kind: 'rate_limited', cooldown_until_ms: 1_790_000_060_000 }] }];
+  await overlay.refresh();
+  const cooling = __private.buildCanonicalAccountsSignature(ctx);
+  assert.notEqual(cooling, before);
+  assert.equal(__private.buildCanonicalAccountsSignature(ctx), cooling, 'stable while Go state is unchanged');
+  rows = [];
+  await overlay.refresh();
+  assert.equal(__private.buildCanonicalAccountsSignature(ctx), before, 'expired cooldown restores the signature');
 });
 
 test('accounts canonical poller can be stopped when all watchers disconnect', () => {

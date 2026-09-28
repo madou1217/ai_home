@@ -176,6 +176,8 @@ export interface Account {
   runtimeStatus?: string;
   runtimeUntil?: number;
   runtimeReason?: string;
+  /** 只影响单个模型的运行态（Go 按账号+模型冷却 / 阻塞），账号整体仍可调度。 */
+  runtimeModels?: AccountRuntimeModel[];
   usageSnapshot?: AccountUsageSnapshot | null;
   modelSummary?: AccountModelSummary;
   tokenUsage?: AccountTokenUsage | null;
@@ -2351,6 +2353,14 @@ export interface ManagementAccount {
   runtimeStatus?: string;
   runtimeUntil?: number;
   runtimeReason?: string;
+}
+
+export interface AccountRuntimeModel {
+  model: string;
+  /** 等待的恢复事件：model_catalog / usage_snapshot / policy_snapshot。 */
+  blocks: string[];
+  cooldownKind?: string;
+  cooldownUntil?: number;
 }
 
 export interface ManagementAccountsResponse {

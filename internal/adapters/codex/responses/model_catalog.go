@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"mime"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 const (

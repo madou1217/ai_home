@@ -2,11 +2,11 @@ package responses
 
 import (
 	"context"
-	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // ModelCatalogSource 是 Codex 账号管理写路径使用的远端目录适配器。

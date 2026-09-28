@@ -3,13 +3,13 @@ package responses
 import (
 	"bytes"
 	"context"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"net/url"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 const (

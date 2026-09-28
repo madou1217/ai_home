@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // TestEncodeRequestProjectsAnthropicEnvelopeToCodexLite 验证 Messages 必填

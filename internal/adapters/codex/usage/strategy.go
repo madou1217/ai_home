@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"math"
 	"net/http"
@@ -19,6 +17,8 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 const (

@@ -3,13 +3,13 @@ package responses
 import (
 	"context"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // realModelsRoundTripFunc 让模型目录测试在内存中观察 HTTP 请求。

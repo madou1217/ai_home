@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"io"
 	"net/http"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // TestStrategyReadsDirectWhamUsageWithoutStdioWorker 验证直连端点、Header 和秒级窗口归一化。

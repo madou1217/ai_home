@@ -1,10 +1,11 @@
 package responseswebsocket
 
 import (
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 // TestProjectHandshakeHeadersFollowsGenuineCodexClient 使用 Codex CLI 0.158.0-alpha.2.1

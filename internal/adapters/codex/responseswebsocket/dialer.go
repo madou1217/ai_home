@@ -7,8 +7,6 @@ package responseswebsocket
 import (
 	"context"
 	"errors"
-	"github.com/madou1217/ai_home/internal/adapters/clientversion"
-	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +14,8 @@ import (
 	"github.com/coder/websocket"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 )
 
 const (

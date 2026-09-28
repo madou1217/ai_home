@@ -333,16 +333,17 @@ const ProjectList = ({
         )}
         {/* 顶栏是桌面端唯一的操作区（不再在列表上方重复一行同样的按钮；移动端保留自己的
             带标题操作行）。侧栏宽度下模式切换旁只放得下两个按钮，所以 WORK 模式把
-            新建/归档/刷新收进「更多」菜单，保证所有操作都可见、可达。 */}
+            新建会话（最常用）作为主按钮，打开项目/归档/刷新收进「更多」菜单。 */}
         <div className={styles.sidebarHeaderActions}>
           <button
             type="button"
             className={styles.sidebarActionBtn}
-            onClick={mode === 'chat' ? onCreateSession : onOpenProject}
-            title={mode === 'chat' ? '发起新对话' : '打开项目目录'}
-            aria-label={mode === 'chat' ? '新建会话' : '打开项目'}
+            onClick={onCreateSession}
+            disabled={mode === 'work' && !selectedProject}
+            title={mode === 'chat' ? '发起新对话' : (selectedProject ? '新建工作区会话' : '先选择一个项目')}
+            aria-label={mode === 'chat' ? '新建会话' : '新建工作区会话'}
           >
-            {mode === 'chat' ? <PlusOutlined /> : <FolderOpenOutlined />}
+            <PlusOutlined />
           </button>
           {mode === 'work' ? (
             <Dropdown
@@ -350,12 +351,12 @@ const ProjectList = ({
               placement="bottomRight"
               menu={{
                 items: [
-                  { key: 'new', icon: <PlusOutlined />, label: '新建工作区会话', disabled: !selectedProject },
+                  { key: 'open', icon: <FolderOpenOutlined />, label: '打开项目目录' },
                   { key: 'archived', icon: <InboxOutlined />, label: '已归档的会话' },
                   { key: 'refresh', icon: <ReloadOutlined spin={loading} />, label: '刷新列表' }
                 ],
                 onClick: ({ key }) => {
-                  if (key === 'new') onCreateSession?.();
+                  if (key === 'open') onOpenProject?.();
                   else if (key === 'archived') setArchivedOpen(true);
                   else if (key === 'refresh') onRefresh?.();
                 }
@@ -364,7 +365,7 @@ const ProjectList = ({
               <button
                 type="button"
                 className={styles.sidebarActionBtn}
-                title="更多操作：新建会话 / 已归档 / 刷新"
+                title="更多操作：打开项目 / 已归档 / 刷新"
                 aria-label="更多操作"
               >
                 <EllipsisOutlined />

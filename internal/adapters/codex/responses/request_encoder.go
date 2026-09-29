@@ -244,7 +244,8 @@ func encodeMessage(
 				return nil, unsupported("message.phase")
 			}
 			flushMessage()
-			if _, custom := freeform[content.Identity()]; custom {
+			// 调用自带 freeform 标记（历史工具可能已不在本次请求声明），或按本次声明推断。
+			if _, custom := freeform[content.Identity()]; custom || content.Freeform() {
 				call, err := encodeFreeformCall(content)
 				if err != nil {
 					return nil, err

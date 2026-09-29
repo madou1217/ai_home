@@ -304,6 +304,10 @@ type ToolCallContent struct {
 	callID    string
 	identity  ToolIdentity
 	arguments []byte
+	// freeform 表示客户端历史里这是 freeform（custom）调用，参数形状为 {"input":"<原始字符串>"}。
+	// 调用自带该标记，不依赖同一请求是否仍声明该工具：Codex 上下文压缩等请求会带着历史但
+	// 换一套工具，靠工具定义推断会把整段历史判成无效（input[N].name）。
+	freeform bool
 }
 
 // NewToolCallContent 创建拥有明确 call ID 和完整 JSON Object 参数的工具调用。
@@ -351,6 +355,21 @@ func newToolCallContent(
 	}, nil
 }
 
+// AsFreeform 返回标记为 freeform 调用的副本；参数必须是 FreeformToolArguments 形状。
+func (content ToolCallContent) AsFreeform() (ToolCallContent, error) {
+	if _, err := FreeformInputFromArguments(content.arguments); err != nil {
+		return ToolCallContent{}, err
+	}
+	content.arguments = cloneBytes(content.arguments)
+	content.freeform = true
+	return content, nil
+}
+
+// Freeform 表示该调用在客户端历史里是 freeform（custom）调用。
+func (content ToolCallContent) Freeform() bool {
+	return content.freeform
+}
+
 // Kind 返回工具调用内容类别。
 func (content ToolCallContent) Kind() ContentKind {
 	return ContentToolCall
@@ -393,6 +412,7 @@ func (content ToolCallContent) cloneContent() Content {
 		callID:    content.callID,
 		identity:  content.identity,
 		arguments: cloneBytes(content.arguments),
+		freeform:  content.freeform,
 	}
 }
 

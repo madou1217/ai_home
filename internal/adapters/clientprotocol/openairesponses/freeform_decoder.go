@@ -217,7 +217,12 @@ func decodeCustomToolCall(
 	}
 	identity, found := index.resolve(wireCall.Namespace, wireCall.Name)
 	if !found {
-		return inference.Message{}, "", invalidField(field + ".name")
+		// 历史调用的工具不在本次请求里（Codex 上下文压缩、切换工具集后续聊）：
+		// 调用本身已完成，按线上原名保留，freeform 身份由调用自带标记传递。
+		identity, err = historicalFreeformIdentity(wireCall.Namespace, wireCall.Name)
+		if err != nil {
+			return inference.Message{}, "", invalidField(field + ".name")
+		}
 	}
 	arguments, err := inference.FreeformToolArguments(*wireCall.Input)
 	if err != nil {
@@ -228,6 +233,9 @@ func decodeCustomToolCall(
 		call, err = inference.NewNamespacedToolCallContent(wireCall.CallID, namespace, identity.Name(), arguments)
 	} else {
 		call, err = inference.NewToolCallContent(wireCall.CallID, identity.Name(), arguments)
+	}
+	if err == nil {
+		call, err = call.AsFreeform()
 	}
 	if err != nil {
 		return inference.Message{}, "", invalidField(field)
@@ -265,4 +273,12 @@ func decodeCustomToolCallOutput(
 		return inference.Message{}, "", invalidField(field)
 	}
 	return message, wireOutput.CallID, nil
+}
+
+// historicalFreeformIdentity 为未在本次请求声明的历史 freeform 调用构造身份（名称仍须合法）。
+func historicalFreeformIdentity(namespace string, name string) (inference.ToolIdentity, error) {
+	if namespace != "" {
+		return inference.NewNamespacedToolIdentity(namespace, name)
+	}
+	return inference.NewToolIdentity(name)
 }

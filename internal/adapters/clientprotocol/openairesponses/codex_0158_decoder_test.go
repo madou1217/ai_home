@@ -99,24 +99,49 @@ func TestRequestDecoderAcceptsCodex0158ToolTurn(t *testing.T) {
 	}
 }
 
-// TestRequestDecoderRejectsUndeclaredOrAmbiguousCustomCall 验证 custom_tool_call 只能引用
-// 已声明且名称唯一的 freeform 工具，不猜测身份。
-func TestRequestDecoderRejectsUndeclaredOrAmbiguousCustomCall(t *testing.T) {
+// TestRequestDecoderKeepsHistoricalCustomCallsWithoutDeclaration 回归：Codex 上下文压缩
+// （"Optimizing the conversation"）等请求带着历史 custom_tool_call 却换了一套工具，旧实现
+// 按工具声明反查身份失败就把整段历史判成 input[N].name 无效，该会话每次都被拒、落到 Node。
+// 历史调用已完成：按线上原名保留（不猜 namespace），并由调用自带 freeform 标记。
+func TestRequestDecoderKeepsHistoricalCustomCallsWithoutDeclaration(t *testing.T) {
 	t.Parallel()
 
 	grammar := `{"type":"grammar","syntax":"lark","definition":"start: /.+/"}`
+	history := `"input":[{"type":"message","role":"user","content":"hi"},` +
+		`{"type":"custom_tool_call","call_id":"c1","name":"apply_patch","input":"*** Begin Patch"},` +
+		`{"type":"custom_tool_call_output","call_id":"c1","output":"ok"}]`
 	for name, body := range map[string]string{
-		"undeclared": `{"model":"m","input":[{"type":"custom_tool_call","call_id":"c1","name":"exec","input":"x"}]}`,
+		"undeclared": `{"model":"m",` + history + `}`,
 		"ambiguous": `{"model":"m","tools":[` +
-			`{"type":"namespace","name":"a","tools":[{"type":"custom","name":"exec","format":` + grammar + `}]},` +
-			`{"type":"namespace","name":"b","tools":[{"type":"custom","name":"exec","format":` + grammar + `}]}],` +
-			`"input":[{"type":"custom_tool_call","call_id":"c1","name":"exec","input":"x"}]}`,
-		"function tool": `{"model":"m","tools":[{"type":"function","name":"exec","parameters":{"type":"object"}}],` +
-			`"input":[{"type":"custom_tool_call","call_id":"c1","name":"exec","input":"x"}]}`,
+			`{"type":"namespace","name":"a","tools":[{"type":"custom","name":"apply_patch","format":` + grammar + `}]},` +
+			`{"type":"namespace","name":"b","tools":[{"type":"custom","name":"apply_patch","format":` + grammar + `}]}],` + history + `}`,
+		"function tool": `{"model":"m","tools":[{"type":"function","name":"apply_patch","parameters":{"type":"object"}}],` + history + `}`,
 	} {
-		if _, err := NewRequestDecoder().Decode([]byte(body)); err == nil {
-			t.Fatalf("%s custom call accepted", name)
+		request, err := NewRequestDecoder().Decode([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: Decode() error = %v", name, err)
 		}
+		var call inference.ToolCallContent
+		for _, message := range request.Messages() {
+			for _, content := range message.Contents() {
+				if typed, ok := content.(inference.ToolCallContent); ok {
+					call = typed
+				}
+			}
+		}
+		namespace, namespaced := call.Namespace()
+		input, inputErr := inference.FreeformInputFromArguments(call.Arguments())
+		if !call.Freeform() || call.Name() != "apply_patch" || namespaced || namespace != "" ||
+			inputErr != nil || input != "*** Begin Patch" {
+			t.Fatalf("%s: call = %q/%q freeform=%v input=%q", name, namespace, call.Name(), call.Freeform(), input)
+		}
+	}
+	// 名称本身非法时仍然失败关闭。
+	bad := `{"model":"m","input":[{"type":"message","role":"user","content":"hi"},` +
+		`{"type":"custom_tool_call","call_id":"c1","name":"","input":"x"},` +
+		`{"type":"custom_tool_call_output","call_id":"c1","output":"ok"}]}`
+	if _, err := NewRequestDecoder().Decode([]byte(bad)); err == nil {
+		t.Fatal("empty custom call name accepted")
 	}
 }
 

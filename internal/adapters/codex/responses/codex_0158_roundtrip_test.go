@@ -107,3 +107,48 @@ func TestEncodeRequestKeepsEmptyReasoningSummary(t *testing.T) {
 	}
 	t.Fatalf("reasoning item missing: %s", payload)
 }
+
+// TestEncodeRequestKeepsUndeclaredHistoricalCustomCall 回归：Codex 上下文压缩请求带着历史
+// custom_tool_call（如 apply_patch）但不再声明该工具。解码后调用自带 freeform 标记，编码回
+// 上游必须仍是 custom_tool_call / custom_tool_call_output，而不是改写成 function_call。
+func TestEncodeRequestKeepsUndeclaredHistoricalCustomCall(t *testing.T) {
+	t.Parallel()
+
+	request := decodeResponsesRequest(t, `{"model":"gpt-5.6-sol","input":[
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"summarize"}]},
+		{"type":"custom_tool_call","call_id":"call_patch","name":"apply_patch","input":"*** Begin Patch\n*** End Patch"},
+		{"type":"custom_tool_call_output","call_id":"call_patch","output":"Done"}
+	]}`)
+	payload, err := encodeRequest(
+		request,
+		"gpt-5.6-sol",
+		codexauth.AuthKindOAuth,
+		requestProfileForModel("gpt-5.6-sol"),
+	)
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	var got struct {
+		Input []map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	// Lite 形状会在最前面放 additional_tools 项；按类型定位历史调用与结果。
+	var call, output map[string]any
+	for _, item := range got.Input {
+		switch item["type"] {
+		case "custom_tool_call", "function_call":
+			call = item
+		case "custom_tool_call_output", "function_call_output":
+			output = item
+		}
+	}
+	if call["type"] != "custom_tool_call" || call["name"] != "apply_patch" ||
+		call["input"] != "*** Begin Patch\n*** End Patch" || call["call_id"] != "call_patch" {
+		t.Fatalf("call = %#v", call)
+	}
+	if output["type"] != "custom_tool_call_output" || output["call_id"] != "call_patch" {
+		t.Fatalf("output = %#v", output)
+	}
+}

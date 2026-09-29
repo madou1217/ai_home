@@ -23,6 +23,7 @@ func TestFailurePolicyMatrix(t *testing.T) {
 		{"连接重置", FailureConnectionReset, ActionModelCooldown, 2, 30 * time.Second},
 		{"流中断", FailureStreamDisconnected, ActionModelCooldown, 2, 30 * time.Second},
 		{"凭据被拒绝", FailureCredentialRejected, ActionCredentialBlock, 0, 0},
+		{"静态密钥被拒", FailureStaticCredentialRejected, ActionModelCooldown, 1, 30 * time.Minute},
 		{"需要重新认证", FailureReauthenticationRequired, ActionCredentialBlock, 0, 0},
 		{"额度耗尽", FailureQuotaExhausted, ActionQuotaBlock, 0, 0},
 		{"账单阻塞", FailureBillingBlocked, ActionQuotaBlock, 0, 0},

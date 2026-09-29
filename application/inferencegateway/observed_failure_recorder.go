@@ -81,6 +81,9 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 	if err != nil || !current {
 		return false, nil
 	}
+	if observation.IsStaticSecret() {
+		failure = failure.forStaticSecret()
+	}
 	if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
 		return false, err
 	}

@@ -14,6 +14,8 @@ const (
 	//
 	// 超过一天的限制必须进入 quota 或 policy 阻塞，不能伪装成长 cooldown。
 	MaxCooldownHint = 24 * time.Hour
+	// StaticCredentialRejectedCooldown 是静态密钥被拒后的复核间隔。
+	StaticCredentialRejectedCooldown = 30 * time.Minute
 )
 
 var (
@@ -39,6 +41,11 @@ const (
 	FailureStreamDisconnected FailureKind = "stream_disconnected"
 	// FailureCredentialRejected 表示上游拒绝当前账号凭据。
 	FailureCredentialRejected FailureKind = "credential_rejected"
+	// FailureStaticCredentialRejected 表示上游拒绝了不可刷新的静态密钥。
+	//
+	// 静态密钥没有 Refresh Token，也就没有「凭据更新」之外的自愈路径；按硬阻塞处理
+	// 会让一次偶发 401 把账号永久锁死，所以只做有限 cooldown，到期后由下一次请求复核。
+	FailureStaticCredentialRejected FailureKind = "static_credential_rejected"
 	// FailureReauthenticationRequired 表示 Refresh Token 已失效。
 	FailureReauthenticationRequired FailureKind = "reauthentication_required"
 	// FailureQuotaExhausted 表示明确的额度窗口或模型额度已经耗尽。
@@ -104,6 +111,8 @@ func PolicyFor(kind FailureKind) (FailurePolicy, error) {
 		FailureConnectionReset,
 		FailureStreamDisconnected:
 		return modelCooldownPolicy(2, 30*time.Second, time.Minute), nil
+	case FailureStaticCredentialRejected:
+		return modelCooldownPolicy(1, StaticCredentialRejectedCooldown, 0), nil
 	case FailureCredentialRejected, FailureReauthenticationRequired:
 		return blockingPolicy(ActionCredentialBlock), nil
 	case FailureQuotaExhausted, FailureBillingBlocked:

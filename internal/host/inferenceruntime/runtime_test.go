@@ -173,9 +173,11 @@ func TestRuntimeSchedulesModelRefreshAfterUnsupportedFailure(t *testing.T) {
 	)
 }
 
-// TestRuntimeAppliesCredentialBlockAtAccountScope 验证凭据失败会排除账号的
-// 所有模型，而不是只阻塞发生失败的模型元组。
-func TestRuntimeAppliesCredentialBlockAtAccountScope(t *testing.T) {
+// TestRuntimeCoolsDownRejectedStaticSecretPerModel 验证静态 API Key 被拒只冷却出错
+// 的模型:它没有刷新路径,账号级硬阻塞会把一次偶发 401 变成永久锁死;同账号其他模型
+// 照常服务(旧行为下它会因账号级阻塞得到 ErrNoRoutableAccount)。可刷新凭据的账号级
+// 阻塞见 inferencegateway 的 static_secret_failure_test。
+func TestRuntimeCoolsDownRejectedStaticSecretPerModel(t *testing.T) {
 	t.Parallel()
 
 	fixture := newRuntimeFixture(t)
@@ -198,23 +200,13 @@ func TestRuntimeAppliesCredentialBlockAtAccountScope(t *testing.T) {
 		runtime,
 		newTextRequest(t, siblingModel),
 	)
-	if !errors.Is(err, inferencegateway.ErrNoRoutableAccount) ||
-		len(siblingEvents) != 0 ||
-		fixture.store.CredentialReadCount() != 2 ||
-		fixture.upstream.CallCount() != 1 {
-		t.Fatalf(
-			"account block events=%#v error=%v upstream=%d credentials=%d",
-			siblingEvents,
-			err,
-			fixture.upstream.CallCount(),
-			fixture.store.CredentialReadCount(),
-		)
+	if err != nil || len(siblingEvents) == 0 ||
+		siblingEvents[len(siblingEvents)-1].Kind() != inference.EventResponseCompleted {
+		t.Fatalf("sibling events=%#v error=%v", siblingEvents, err)
 	}
-	t.Logf(
-		"凭据阻塞效果: %s 失败后 %s 在凭据读取前被排除",
-		overloadedModel,
-		siblingModel,
-	)
+	if fixture.upstream.CallCount() != 2 {
+		t.Fatalf("upstream calls = %d, want 2", fixture.upstream.CallCount())
+	}
 }
 
 // TestNewRejectsIncompleteDependencies 验证账号存储、完整运行态、路由、刷新

@@ -5,6 +5,7 @@ import type { Account, AccountRuntimeModel } from '@/types';
 
 const COOLDOWN_KIND_LABELS: Record<string, string> = {
   rate_limited: '限流冷却',
+  static_credential_rejected: '密钥被拒冷却',
   model_overloaded: '上游繁忙冷却',
   upstream_unavailable: '上游不可用冷却',
   request_timeout: '超时冷却',

@@ -201,3 +201,20 @@ test('codex adapter retries OAuth 401 on a healthy api-key account first', async
   assert.deepEqual(attemptedRefs, [oauthA.accountRef, apiKeyC.accountRef]);
   assert.equal(res.statusCode, 200);
 });
+
+test('API Key 账号 401 只短期冷却,OAuth 账号仍长期阻塞等待刷新', () => {
+  const apiKey = classifyUpstreamFailure({
+    provider: 'codex', statusCode: 401, body: '{}', detail: 'upstream_401',
+    account: { accountRef: 'acct_key', apiKeyMode: true, authType: 'api-key' }
+  });
+  assert.equal(apiKey.kind, 'auth_invalid');
+  assert.equal(apiKey.cooldownMs, 30 * 60 * 1000);
+  assert.equal(apiKey.failureReason, 'api_key_rejected');
+
+  const oauth = classifyUpstreamFailure({
+    provider: 'codex', statusCode: 401, body: '{}', detail: 'upstream_401',
+    account: { accountRef: 'acct_oauth', apiKeyMode: false, authType: 'oauth' }
+  });
+  assert.equal(oauth.failureReason, 'auth_invalid_reauth_required');
+  assert.ok(oauth.cooldownMs > 24 * 60 * 60 * 1000);
+});

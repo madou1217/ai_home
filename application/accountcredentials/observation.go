@@ -20,9 +20,10 @@ var (
 // 它不是数据库 schema 版本，也不进入账号业务 DTO；updated_at 仅用于终态写入前
 // 判断上游结果是否仍属于当前凭据。
 type CredentialObservation struct {
-	accountRef accountcore.AccountRef
-	providerID string
-	updatedAt  time.Time
+	accountRef   accountcore.AccountRef
+	providerID   string
+	updatedAt    time.Time
+	staticSecret bool
 }
 
 // NewCredentialObservation 从同一次持久化凭据快照创建请求级观察。
@@ -33,9 +34,10 @@ func NewCredentialObservation(
 		return CredentialObservation{}, ErrInvalidCredentialObservation
 	}
 	return CredentialObservation{
-		accountRef: snapshot.AccountRef(),
-		providerID: snapshot.ProviderID(),
-		updatedAt:  snapshot.UpdatedAt(),
+		accountRef:   snapshot.AccountRef(),
+		providerID:   snapshot.ProviderID(),
+		updatedAt:    snapshot.UpdatedAt(),
+		staticSecret: accountapp.IsStaticSecretCredential(snapshot.Credential()),
 	}, nil
 }
 
@@ -52,6 +54,11 @@ func (observation CredentialObservation) ProviderID() string {
 // UpdatedAt 返回读取凭据时看到的 UTC 毫秒时间。
 func (observation CredentialObservation) UpdatedAt() time.Time {
 	return observation.updatedAt
+}
+
+// IsStaticSecret 判断请求使用的是否为不可刷新的静态密钥。
+func (observation CredentialObservation) IsStaticSecret() bool {
+	return observation.staticSecret
 }
 
 // IsValid 重新检查跨应用边界传递后的低敏观察不变量。

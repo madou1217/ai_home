@@ -10,6 +10,7 @@ export const FAILURE_KIND_LABELS = {
   connection_reset: '连接重置',
   stream_disconnected: '流中途断开',
   credential_rejected: '凭据被拒',
+  static_credential_rejected: '密钥被拒',
   reauthentication_required: '需重新登录',
   quota_exhausted: '额度用完',
   billing_blocked: '账单受限',

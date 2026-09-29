@@ -234,6 +234,24 @@ func (failure AttemptFailure) IsValid() bool {
 	return err == nil && restored == failure
 }
 
+// forStaticSecret 把静态密钥上的凭据拒收改记为有限 cooldown。
+//
+// 公开给客户端的失败保持不变（仍是凭据被拒），只改变账号运行态的处置：静态密钥
+// 没有刷新路径，等待「凭据更新」的硬阻塞会把一次偶发 401 变成永久锁死。
+func (failure AttemptFailure) forStaticSecret() AttemptFailure {
+	if failure.runtimeKind != runtimecore.FailureCredentialRejected {
+		return failure
+	}
+	converted, err := NewAttemptFailure(AttemptFailureInput{
+		ResponseFailure: failure.responseFailure,
+		RuntimeKind:     runtimecore.FailureStaticCredentialRejected,
+	})
+	if err != nil {
+		return failure
+	}
+	return converted
+}
+
 // validAttemptBlockDirective 验证硬阻塞必须带指令，其他失败必须保持零值。
 func validAttemptBlockDirective(
 	policy runtimecore.FailurePolicy,

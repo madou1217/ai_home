@@ -173,7 +173,11 @@ test('codex auth invalid reconciler persists retained recovery state without rem
     displayName: 'persisted@example.com'
   });
   const accountStateService = createAccountStateService({ accountStateIndex });
-  const ctx = makeService(root, { accountStateService });
+  const ctx = makeService(root, {
+    accountStateService,
+    // 401 先尝试刷新;只有刷新被拒才停用。
+    refreshCodexAccessToken: async () => ({ ok: false, reason: 'invalid_refresh_token' })
+  });
 
   ctx.service.enqueueDirectHttpStatus401('codex', accountRef, 'direct_http_status_401');
   await ctx.runScheduled();
@@ -185,7 +189,7 @@ test('codex auth invalid reconciler persists retained recovery state without rem
   assert.equal(persisted.runtimeState.lastFailureKind, 'auth_invalid');
   assert.equal(
     persisted.runtimeState.lastFailureReason,
-    'account_recovery_required:direct_http_status_401'
+    'account_recovery_required:invalid_refresh_token'
   );
   assert.ok(persisted.runtimeState.authInvalidUntil > Date.now());
   assert.deepEqual(accountStateIndex.listConfiguredRefs('codex'), []);
@@ -299,7 +303,8 @@ test('codex auth invalid reconciler clears runtime when refresh succeeds', async
   assert.equal(ctx.clearedRuntime[0].options.evidence, 'token_refresh_success');
 });
 
-test('codex auth invalid reconciler retains normalized direct usage 401 without refreshing', async (t) => {
+test('codex auth invalid reconciler refreshes on a direct usage 401 instead of locking the account', async (t) => {
+  // plus -> pro 升级会作废旧 access token(401),但 refresh token 仍能换出带新套餐的 token。
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { accountRef, runtimeDir } = registerCodexAccount(root, '30', {
@@ -323,8 +328,29 @@ test('codex auth invalid reconciler retains normalized direct usage 401 without 
   await ctx.runScheduled();
 
   assert.equal(fs.existsSync(runtimeDir), true);
-  assert.equal(refreshCalls.length, 0);
-  assertRetained(ctx, root, accountRef, 'auth_invalid_reauth_required:direct_http_status_401');
+  assert.equal(refreshCalls.length, 1);
+  assert.equal(refreshCalls[0].options.force, true);
+  assert.deepEqual(ctx.retainedRuntime, []);
+  assert.deepEqual(ctx.statusUpdates, []);
+  assert.equal(ctx.clearedRuntime.length, 1);
+});
+
+test('codex auth invalid reconciler retains a direct 401 when the refresh is rejected, even before token expiry', async (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { accountRef } = registerCodexAccount(root, '31', {
+    access_token: makeJwt({ client_id: 'app_test', exp: Math.floor(Date.now() / 1000) + 3600 }),
+    refresh_token: 'rt_revoked',
+    account_id: 'acc_31'
+  });
+  const ctx = makeService(root, {
+    refreshCodexAccessToken: async () => ({ ok: false, reason: 'invalid_refresh_token' })
+  });
+
+  ctx.service.enqueueDirectHttpStatus401('codex', accountRef, 'direct_http_status_401');
+  await ctx.runScheduled();
+
+  assertRetained(ctx, root, accountRef, 'invalid_refresh_token');
   assert.equal(ctx.clearedRuntime.length, 0);
 });
 

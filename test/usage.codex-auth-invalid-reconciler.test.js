@@ -335,6 +335,41 @@ test('codex auth invalid reconciler refreshes on a direct usage 401 instead of l
   assert.equal(ctx.clearedRuntime.length, 1);
 });
 
+for (const [label, lastFailureReason, expectedStatus] of [
+  ['系统因失效停用的账号,刷新成功后自动恢复启用', 'account_recovery_required:direct_http_status_401', 'up'],
+  ['用户手动关闭的账号,刷新成功后仍保持关闭', 'auth_invalid_reauth_required', 'down']
+]) test(`codex auth invalid reconciler: ${label}`, async (t) => {
+  const root = mkTmpDir();
+  const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir: root });
+  t.after(() => {
+    accountStateIndex.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const { accountRef } = registerCodexAccount(root, '32', {
+    access_token: makeJwt({ client_id: 'app_test' }),
+    refresh_token: 'rt_upgrade',
+    account_id: 'acc_32'
+  });
+  accountStateIndex.upsertRuntimeState(accountRef, 'codex', {
+    authInvalidUntil: Date.now() + 86400000,
+    cooldownUntil: Date.now() + 86400000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason,
+    lastFailureAt: Date.now() - 1000
+  }, { configured: true, status: 'down', apiKeyMode: false, authMode: 'oauth-browser' });
+  const ctx = makeService(root, {
+    accountStateService: createAccountStateService({ accountStateIndex }),
+    refreshCodexAccessToken: async () => ({ ok: true, refreshed: true, reason: 'refreshed' })
+  });
+
+  ctx.service.enqueueDirectHttpStatus401('codex', accountRef, 'direct_http_status_401');
+  await ctx.runScheduled();
+
+  const state = accountStateIndex.getAccountState(accountRef);
+  assert.equal(state.status, expectedStatus);
+  assert.equal(Number(state.runtimeState && state.runtimeState.authInvalidUntil) || 0, 0);
+});
+
 test('codex auth invalid reconciler retains a direct 401 when the refresh is rejected, even before token expiry', async (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

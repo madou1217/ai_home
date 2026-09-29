@@ -52,7 +52,7 @@ function createProcessCapture() {
   return processObj;
 }
 
-test('钉住的账号停用后,请求回落到同 provider 的健康账号,且死账号凭据不出站', async (t) => {
+async function assertPinnedRequestFallsBack(t, retirePin) {
   const { registerAccountIdentity } = require('../lib/account/account-registration');
   const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
   const { createAccountStateIndex } = require('../lib/account/state-index');
@@ -143,8 +143,8 @@ test('钉住的账号停用后,请求回落到同 provider 的健康账号,且�
   const stateService = createAccountStateService({ accountStateIndex: index });
   stateService.recordRuntimeSuccess(deadRef, 'claude', { configured: true, authMode: 'oauth' });
   stateService.recordRuntimeSuccess(liveRef, 'claude', { configured: true, authMode: 'oauth' });
-  index.setStatus(deadRef, 'down');
   index.setStatus(liveRef, 'up');
+  retirePin({ index, aiHomeDir, deadRef });
   index.close();
 
   const res = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
@@ -162,6 +162,27 @@ test('钉住的账号停用后,请求回落到同 provider 的健康账号,且�
   assert.equal(body.content[0].text, 'served-by-fallback');
   // 死账号的陈旧凭据不得出站;上游只能看到活账号的 token
   assert.deepEqual(upstreamTokens, ['Bearer access-2']);
+}
+
+test('钉住的账号停用后,请求回落到同 provider 的健康账号,且死账号凭据不出站', async (t) => {
+  await assertPinnedRequestFallsBack(t, ({ index, deadRef }) => index.setStatus(deadRef, 'down'));
+});
+
+test('钉住的账号被删除后(持久化行全清),请求同样回落,而不是 404 unknown_account_ref', async (t) => {
+  const { deleteAccountRef } = require('../lib/server/account-ref-store');
+  await assertPinnedRequestFallsBack(t, ({ aiHomeDir, deadRef }) => {
+    assert.equal(deleteAccountRef(fs, aiHomeDir, deadRef), true);
+  });
+});
+
+test('从未存在过的 ref 没有退役记录(HTTP 404 契约见 server.v1-router / kimi-responses 测试)', async () => {
+  const { readRetiredAccountRef } = require('../lib/account/retired-account-refs');
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-pin-unknown-'));
+  try {
+    assert.equal(readRetiredAccountRef(fs, aiHomeDir, 'acct_ffffffffffffffffffff'), null);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
 });
 
 test('WS /v1/responses:钉的账号不在可调度池时回落全池,而不是把池过滤成零', async () => {

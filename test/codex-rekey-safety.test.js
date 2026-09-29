@@ -11,13 +11,16 @@ const { writeAccountNativeAuth, writeAccountCredentials, readAccountNativeAuth }
 const { writeDefaultAccountRef, readDefaultAccountRef } = require('../lib/account/default-account-store');
 const { openAppStateDatabase, writeJsonValue, readJsonValue } = require('../lib/server/app-state-store');
 const { planCodexIdentityRekey, applyCodexIdentityRekey, ledgerIsApplicable } = require('../lib/cli/services/account/codex-identity-rekey');
-function fixture(t) {
+function fixture(t, { canonicalFirst = null } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-rekey-safety-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   function account(email = 'fixture@example.invalid', userId = 'fixture-user', current = false) {
     const ref = registerAccountIdentity(fs, home, { provider: 'codex', identitySeed: `oauth:codex:${current ? userId : email}` }).accountRef;
     writeAccountNativeAuth(fs, home, ref, { auth: codexOAuthAuth({ email, userId }) }); return ref;
   }
+  // Registration now folds a canonical seed into an existing legacy account, so
+  // a pre-existing duplicate can only be seeded by creating the canonical one first.
+  if (canonicalFirst) account(canonicalFirst.email, canonicalFirst.userId, true);
   const ref = account();
   const plan = () => planCodexIdentityRekey({ fs, aiHomeDir: home }).ledger;
   const apply = ledger => applyCodexIdentityRekey({ fs, aiHomeDir: home, ledger });
@@ -33,7 +36,7 @@ test('read-only planning leaves database bytes, mode and schema untouched', t =>
 });
 
 test('an existing canonical target blocks old-to-new migration regardless of iteration order', t => {
-  const f = fixture(t); f.account('new-name@example.invalid', 'fixture-user', true);
+  const f = fixture(t, { canonicalFirst: { email: 'new-name@example.invalid', userId: 'fixture-user' } });
   const ledger = f.plan(); assert.equal(ledger.summary.conflict, 1);
   assert.equal(f.apply(ledger).applied, false); assert.ok(readAccountNativeAuth(fs, f.home, f.ref).auth);
 });

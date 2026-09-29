@@ -249,6 +249,28 @@ test('api-key identity uses a key hash to distinguish accounts at one endpoint',
   assert.equal(identitySeed, `api_key:codex:https://relay.example.com/v1:${identity.hashApiKeySecret(secret)}`);
 });
 
+test('registration reuses an account stored under an older seed rule instead of duplicating it', () => {
+  const sb = makeSandbox();
+  const config = { OPENAI_API_KEY: 'sk-relay-legacy', OPENAI_BASE_URL: 'https://relay.example.com/v1' };
+  // Simulate an account whose ref was minted by an older seed rule.
+  const legacy = registerAccountIdentity(fs, sb.root, { provider: 'codex', identitySeed: 'api_key:codex:old-rule-seed' });
+  writeAccountCredentials(fs, sb.root, legacy.accountRef, config);
+
+  const identitySeed = identity.normalizeIdentitySeed(buildApiKeyIdentity('codex', { config }));
+  const again = registerAccountIdentity(fs, sb.root, { provider: 'codex', identitySeed });
+
+  assert.equal(again.accountRef, legacy.accountRef);
+  assert.equal(again.cliAccountId, legacy.cliAccountId);
+  assert.equal(again.created, false);
+
+  const other = registerAccountIdentity(fs, sb.root, {
+    provider: 'codex',
+    identitySeed: identity.normalizeIdentitySeed(buildApiKeyIdentity('codex', { config: { ...config, OPENAI_API_KEY: 'sk-other' } }))
+  });
+  assert.notEqual(other.accountRef, legacy.accountRef);
+  assert.equal(other.created, true);
+});
+
 test('api-key identity hashes the complete secret when it contains colons', () => {
   const secret = 'tenant:private:key';
   const raw = buildApiKeyIdentity('codex', { config: {

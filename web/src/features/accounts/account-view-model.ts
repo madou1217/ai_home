@@ -285,18 +285,20 @@ export function getDefaultAccountActionMeta(record: Pick<Account, 'isDefault' | 
   };
 }
 
-/** Codex App 账号只对 codex 生效；其它 provider 返回 null（不展示该操作）。 */
+/**
+ * Codex App 账号只对 codex OAuth 账号生效；其它 provider 与密钥账号返回 null（不展示该操作，
+ * 永远做不了的事不摆一个禁用项）。已被设为 App 账号的仍保留「取消」入口。
+ */
 export function getCodexAppAccountActionMeta(
   record: Pick<Account, 'provider' | 'isMobile' | 'configured' | 'apiKeyMode'>
 ): AccountRoleActionMeta | null {
   if (record.provider !== 'codex') return null;
+  if (record.apiKeyMode && !record.isMobile) return null;
   return {
     label: record.isMobile
       ? '取消 Codex App 账号'
-      : (!record.configured
-          ? '未配置账号不能设为 Codex App 账号'
-          : (record.apiKeyMode ? '密钥账号不能设为 Codex App 账号' : '设为 Codex App 账号')),
-    disabled: Boolean(!record.isMobile && (!record.configured || record.apiKeyMode)),
+      : (!record.configured ? '未配置账号不能设为 Codex App 账号' : '设为 Codex App 账号'),
+    disabled: Boolean(!record.isMobile && !record.configured),
     active: Boolean(record.isMobile)
   };
 }

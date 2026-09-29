@@ -122,11 +122,7 @@ test('role action metas mirror the desktop menu labels and guards', () => {
   assert.deepEqual(getDefaultAccountActionMeta({ isDefault: true, configured: true }), { label: '取消默认账号', disabled: false, active: true });
   assert.deepEqual(getDefaultAccountActionMeta({ isDefault: false, configured: false }), { label: '未配置账号不能设为默认账号', disabled: true, active: false });
   assert.equal(getCodexAppAccountActionMeta(makeAccount({ provider: 'claude' })), null);
-  assert.deepEqual(getCodexAppAccountActionMeta(makeAccount({ apiKeyMode: true })), {
-    label: '密钥账号不能设为 Codex App 账号',
-    disabled: true,
-    active: false
-  });
+  assert.equal(getCodexAppAccountActionMeta(makeAccount({ apiKeyMode: true })), null);
   assert.equal(canViewQuotaResetHistory({ apiKeyMode: true }), false);
 });
 

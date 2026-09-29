@@ -10,6 +10,7 @@ const {
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const {
   readAccountNativeAuth,
+  writeAccountCredentials,
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { resolveAccountRef } = require('../lib/server/account-ref-store');
@@ -211,6 +212,23 @@ test('codex auth invalid reconciler retains auth-invalid account without refresh
 
   assert.equal(fs.existsSync(runtimeDir), true);
   assertRetained(ctx, root, accountRef, 'auth_invalid_missing_refresh_token');
+});
+
+test('codex auth invalid reconciler never retains an API-key account for a missing refresh token', async (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { accountRef } = registerCodexAccount(root, '7');
+  writeAccountCredentials(fs, root, accountRef, {
+    OPENAI_API_KEY: 'sk-relay-key',
+    OPENAI_BASE_URL: 'https://relay.example.com/v1'
+  });
+  const ctx = makeService(root);
+
+  ctx.service.enqueueAuthInvalidReauthRequired('codex', accountRef, 'auth_invalid_reauth_required');
+  await ctx.runScheduled();
+
+  assert.deepEqual(ctx.retainedRuntime, []);
+  assert.deepEqual(ctx.statusUpdates, []);
 });
 
 test('codex auth invalid reconciler retains account identity when runtime projection is already missing', async (t) => {

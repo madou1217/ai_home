@@ -38,3 +38,22 @@ test('别的站点签发的凭据不能算作本 provider 已登录', () => {
 test('没有凭据时未登录', () => {
   assert.equal(summarizeCodebuddyAuth('workbuddy', {}).configured, false);
 });
+
+// 回归:服务端规范化没有 codebuddy_credit_balance 这一支,快照被丢成空,
+// 账号页把额度当成 0 → 「已耗尽」并阻塞调度。
+test('the accounts page keeps the family credit snapshot and its account-level remaining', () => {
+  const { normalizeAccountUsageSnapshot } = require('../lib/server/account-usage-view');
+  const { getMinRemainingPctFromUsageSnapshot } = require('../lib/account/usage-remaining');
+  const view = normalizeAccountUsageSnapshot({
+    kind: 'codebuddy_credit_balance',
+    capturedAt: 1,
+    entries: [
+      { bucket: 'credits', remainingPct: 66.5, totalUnits: 2056, usedUnits: 687, remainingUnits: 1369, unitType: 'credits' },
+      { bucket: 'freeMon', remainingPct: 0, totalUnits: 500, usedUnits: 500, remainingUnits: 0, unitType: 'credits', category: 'detail' }
+    ]
+  });
+  assert.equal(view.kind, 'codebuddy_credit_balance');
+  assert.equal(view.entries.length, 2);
+  assert.equal(view.entries[1].category, 'detail');
+  assert.equal(getMinRemainingPctFromUsageSnapshot(view), 66.5);
+});

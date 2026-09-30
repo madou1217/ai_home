@@ -74,6 +74,23 @@ function parseChunks(text) {
     .map((line) => JSON.parse(line.slice(6)));
 }
 
+for (const status of [400, 401, 429, 503]) {
+  test(`native Responses retains upstream ${status} after account attempts end`, async (t) => {
+    const body = '{ "error":{"message":"original upstream failure","code":"fixture"},"opaque":9007199254740993 }';
+    const upstream = await listen(t, (_req, res) => {
+      res.writeHead(status, { 'content-type': 'application/json', 'retry-after': '7', 'x-request-id': 'req_failure' });
+      res.end(body);
+    });
+    const app = await gateway(t, upstream, { native: true, poolSize: 2, maxAttempts: 2 });
+    const response = await fetch(app.url, { signal: AbortSignal.timeout(3000) });
+    assert.equal(response.status, status);
+    assert.equal(await response.text(), body);
+    assert.equal(response.headers.get('retry-after'), '7');
+    assert.equal(response.headers.get('x-request-id'), 'req_failure');
+    assert.equal(app.state.metrics.totalFailures, 1);
+  });
+}
+
 for (const native of [false, true]) {
   test(`codex ${native ? 'responses' : 'chat'} forwards text before upstream completes`, async (t) => {
     let finish;

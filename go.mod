@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/klauspost/compress v1.20.1
 	modernc.org/sqlite v1.42.2
 )
 

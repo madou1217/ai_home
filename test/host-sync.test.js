@@ -532,7 +532,7 @@ test('syncGlobalConfigToHost removes only its managed codex stop hook by default
   ]);
 });
 
-test('syncGlobalConfigToHost writes the canonical codex API-key provider block from DB', (t) => {
+test('syncGlobalConfigToHost selects native API key and retains the optional gateway provider', (t) => {
   const fixture = createFixture(t);
   const accountRef = registerCodexAccount(fixture, '10', {
     auth: { OPENAI_API_KEY: 'upstream-metadata' },
@@ -547,7 +547,7 @@ test('syncGlobalConfigToHost writes the canonical codex API-key provider block f
   assert.match(hostConfig, /^preferred_auth_method = "apikey"$/m);
   assert.match(hostConfig, /^suppress_unstable_features_warning = true$/m);
   assert.match(hostConfig, /^check_for_update_on_startup = false$/m);
-  assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
+  assert.match(hostConfig, /^model_provider = "openai"$/m);
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
   assert.match(hostConfig, new RegExp(`^base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.match(hostConfig, /'--gateway'/);
@@ -590,10 +590,11 @@ test('host API-key sync pairs endpoints and removes only native override on OAut
   assert.equal(sync('codex', custom).ok, true);
   const configPath = path.join(fixture.hostCodexDir, 'config.toml');
   const config = fs.readFileSync(configPath, 'utf8');
-  assert.match(config, /^openai_base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
+  assert.match(config, /^openai_base_url = "https:\/\/custom.example\/v1"$/m);
   assert.match(config, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
   assert.ok(config.includes(custom));
   assert.doesNotMatch(config, /custom-test-key/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(fixture.hostCodexDir, 'auth.json'), 'utf8')).OPENAI_API_KEY, 'custom-test-key');
   sync('codex', custom);
   assert.equal(fs.readFileSync(configPath, 'utf8'), config);
   assert.equal(sync('codex', oauth).ok, true);
@@ -681,14 +682,14 @@ test('syncGlobalConfigToHost replaces the single provider block without encoding
   assert.equal(syncGlobalConfigToHost('codex', secondRef).ok, true);
   assert.deepEqual(
     JSON.parse(fs.readFileSync(path.join(fixture.hostCodexDir, 'auth.json'), 'utf8')),
-    { OPENAI_API_KEY: 'dummy', auth_mode: 'apikey', tokens: null, last_refresh: null }
+    { OPENAI_API_KEY: 'dummy-11', auth_mode: 'apikey', tokens: null, last_refresh: null }
   );
 
   const hostConfig = fs.readFileSync(path.join(fixture.hostCodexDir, 'config.toml'), 'utf8');
   const providerKey = getAihProviderKey();
   const providerHeaders = hostConfig.match(new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'gm')) || [];
   assert.equal(providerHeaders.length, 1);
-  assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
+  assert.match(hostConfig, /^model_provider = "openai"$/m);
   assert.match(hostConfig, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
   // codex 0.149：auth 命令表与 env_key 互斥；受管块走 auth 表（脚本三级取 key）
   assert.doesNotMatch(hostConfig, /env_key/);

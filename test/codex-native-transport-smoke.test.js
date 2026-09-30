@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const zlib = require('node:zlib');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
 const { parse } = require('smol-toml');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -19,7 +19,11 @@ const { writeDefaultAccountRef } = require('../lib/account/default-account-store
 const { writeServerConfig } = require('../lib/server/server-config-store');
 const { createHostConfigSyncer } = require('../lib/account/host-sync');
 const enabled = process.env.AIH_NATIVE_CODEX_TRANSPORT_SMOKE === '1';
-const binary = process.env.AIH_NATIVE_CODEX_BINARY || '/Applications/ChatGPT.app/Contents/Resources/codex.aih-original';
+const { resolveDesktopRuntimeLayout } = require('../lib/runtime/desktop-runtime-layout');
+const { CODEX_DESKTOP_LAYOUTS } = require('../lib/runtime/codex-desktop-layouts');
+const installed = resolveDesktopRuntimeLayout({ fs, root: '/Applications/ChatGPT.app', platform: process.platform, layouts: CODEX_DESKTOP_LAYOUTS });
+const executable = installed && installed.executablePath;
+const binary = process.env.AIH_NATIVE_CODEX_BINARY || (executable && fs.existsSync(`${executable}.aih-original`) ? `${executable}.aih-original` : executable);
 
 function connectRpc(child) {
   let sequence = 0, buffer = '', stderr = '';
@@ -65,19 +69,23 @@ function connectRpc(child) {
   };
 }
 
-test('installed App engine resumes the same relay thread with OAuth and never contacts the gateway', {
-  skip: !enabled || !fs.existsSync(binary) || process.platform !== 'darwin', timeout: 60000
+test('installed engine resumes the same thread through native OAuth, API key and explicit relay modes', {
+  skip: !enabled || !binary || !fs.existsSync(binary), timeout: 60000
 }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-mode-smoke-'));
   const home = path.join(root, 'home'), codexHome = path.join(home, '.codex'), aiHomeDir = path.join(home, '.ai_home');
-  const workspace = path.join(root, 'workspace'), stateFile = path.join(root, 'hook.json');
+  const workspace = path.join(home, 'workspace'), stateFile = path.join(root, 'hook.json');
   fs.mkdirSync(codexHome, { recursive: true }); fs.mkdirSync(workspace);
   const children = new Set(), servers = [], sockets = new Set(), requests = [];
+  function terminate(child) {
+    if (process.platform === 'win32') spawnSync('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+    else process.kill(-child.pid, 'SIGTERM');
+  }
   let gatewayDisabled = false;
   t.after(async () => {
     for (const child of children) {
       if (child.exitCode === null && child.signalCode === null) {
-        try { process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
+        try { terminate(child); } catch (_) {}
         await Promise.race([once(child, 'exit'), new Promise(resolve => setTimeout(resolve, 2000))]);
       }
     }
@@ -93,7 +101,8 @@ test('installed App engine resumes the same relay thread with OAuth and never co
         if (req.headers['content-encoding'] === 'zstd') bytes = zlib.zstdDecompressSync(bytes);
         if (req.headers['content-encoding'] === 'gzip') bytes = zlib.gunzipSync(bytes);
         const payload = JSON.parse(bytes);
-        requests.push({ kind, url: req.url, authIsNative: req.headers.authorization === `Bearer ${oauth.tokens.access_token}`, payload });
+        requests.push({ kind, url: req.url, authIsNative: req.headers.authorization === `Bearer ${oauth.tokens.access_token}`,
+          authIsApiKey: req.headers.authorization === 'Bearer fixture-native-api-key', payload });
         if (kind === 'gateway' && gatewayDisabled) {
           res.writeHead(503, { 'content-type': 'application/json' }); res.end('{"error":{"code":"no_available_account"}}'); return;
         }
@@ -110,14 +119,25 @@ test('installed App engine resumes the same relay thread with OAuth and never co
         ];
         res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')); return;
       }
-      res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"models":[],"data":[]}');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(req.url.startsWith('/v1/models')
+        ? '{"data":[{"id":"gpt-5.4","object":"model"}]}'
+        : '{"models":[{"slug":"gpt-5.4"}]}');
     });
     server.on('upgrade', (_req, socket) => socket.end('HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\n\r\n'));
     server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
     servers.push(server); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     return `http://127.0.0.1:${server.address().port}`;
   }
-  const nativeBase = await upstream('native'), gatewayBase = await upstream('gateway');
+  const nativeBase = await upstream('native');
+  let gatewayBase = await upstream('gateway');
+  let gatewayClientKey = 'fixture-client-key';
+  if (process.env.AIH_CODEX_HTTP_GO_BINARY) {
+    const { startGoGateway } = require('./helpers/codex-http-go-fixture');
+    const gateway = await startGoGateway(t, gatewayBase + '/v1', 'gpt-5.4');
+    gatewayBase = gateway.base;
+    gatewayClientKey = gateway.clientKey;
+  }
   const jwt = payload => `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.fixture`;
   const now = Math.floor(Date.now() / 1000);
   const oauth = { auth_mode: 'chatgpt', last_refresh: new Date().toISOString(), tokens: {
@@ -130,11 +150,16 @@ test('installed App engine resumes the same relay thread with OAuth and never co
   writeAccountNativeAuth(fs, aiHomeDir, nativeRef, { auth: oauth });
   const relayRef = registerAccountIdentity(fs, aiHomeDir, { provider: 'codex', cliAccountId: '1', identitySeed: 'api-key:codex:fixture-relay' }).accountRef;
   writeAccountCredentials(fs, aiHomeDir, relayRef, { OPENAI_API_KEY: 'fixture-relay-account', OPENAI_BASE_URL: gatewayBase + '/v1' });
-  writeServerConfig({ host: '127.0.0.1', port: Number(new URL(gatewayBase).port), apiKey: 'fixture-client-key' }, { fs, aiHomeDir });
+  const apiRef = registerAccountIdentity(fs, aiHomeDir, { provider: 'codex', cliAccountId: '2', identitySeed: 'api-key:codex:fixture-native' }).accountRef;
+  writeAccountCredentials(fs, aiHomeDir, apiRef, { OPENAI_API_KEY: 'fixture-native-api-key', OPENAI_BASE_URL: nativeBase + '/v1' });
+  writeServerConfig({ host: '127.0.0.1', port: Number(new URL(gatewayBase).port), apiKey: gatewayClientKey }, { fs, aiHomeDir });
   const configFile = path.join(codexHome, 'config.toml');
   fs.writeFileSync(configFile, `model="gpt-5.4"\nchatgpt_base_url="${nativeBase}/backend-api"\napproval_policy="never"\n[features]\nresponses_websockets_v2=false\n`);
   fs.writeFileSync(stateFile, JSON.stringify({ enabled: true, remoteControlProxy: false, traceResponses: false }));
   const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME: aiHomeDir,
+    NODE_PATH: process.env.NODE_PATH,
+    SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: root, TMP: root,
+    APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
     CODEX_HOME: codexHome, TERM: 'dumb', NO_PROXY: '127.0.0.1,localhost',
     CODEX_APP_SERVER_CHATGPT_BASE_URL: nativeBase + '/backend-api',
     CODEX_REFRESH_TOKEN_URL_OVERRIDE: nativeBase + '/reject-refresh' };
@@ -146,16 +171,23 @@ test('installed App engine resumes the same relay thread with OAuth and never co
     // Override only the built-in OpenAI test endpoint; its OAuth auth stays native.
     // OS-level network restriction makes unexpected public endpoints fail closed.
     const policy = '(version 1)(allow default)(deny network*)(allow network-outbound (remote ip "localhost:*"))';
-    const child = spawn('/usr/bin/sandbox-exec', ['-p', policy, process.execPath, path.resolve(__dirname, '../lib/server/codex-app-server-stdio-proxy.js'),
-      '--upstream', binary, '--state-file', stateFile, '--', 'app-server', '-c', `openai_base_url="${nativeBase}/codex"`], { cwd: workspace, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const proxyArgs = [path.resolve(__dirname, '../lib/server/codex-app-server-stdio-proxy.js'),
+      '--upstream', binary, '--state-file', stateFile, '--', 'app-server'];
+    if (parse(fs.readFileSync(configFile, 'utf8')).preferred_auth_method === 'oauth') {
+      proxyArgs.push('-c', `openai_base_url="${nativeBase}/codex"`);
+    }
+    const command = process.platform === 'darwin' ? '/usr/bin/sandbox-exec' : process.execPath;
+    const args = process.platform === 'darwin' ? ['-p', policy, process.execPath, ...proxyArgs] : proxyArgs;
+    const child = spawn(command, args, { cwd: workspace, env, detached: true, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     children.add(child); const rpc = connectRpc(child);
     await rpc.request('initialize', { clientInfo: { name: 'aih_native_transport_fixture', version: '1.0.0' }, capabilities: { experimentalApi: true } });
     rpc.notify('initialized');
     return { child, rpc };
   }
-  async function stop(session) { process.kill(-session.child.pid, 'SIGTERM'); await once(session.child, 'exit'); children.delete(session.child); }
+  async function stop(session) { const exited = once(session.child, 'exit'); terminate(session.child); await exited; children.delete(session.child); }
 
   select(relayRef);
+  assert.equal(sync('codex', '', { gateway: true }).ok, true);
   let session = await launch();
   const started = await session.rpc.request('thread/start', { model: 'gpt-5.4', cwd: workspace, approvalPolicy: 'never', sandbox: 'read-only' });
   const threadId = started.thread.id;
@@ -168,6 +200,17 @@ test('installed App engine resumes the same relay thread with OAuth and never co
   const config = parse(fs.readFileSync(configFile, 'utf8'));
   assert.equal(config.model_provider, 'openai'); assert.ok(config.model_providers.aih_server);
   const authBefore = fs.readFileSync(path.join(codexHome, 'auth.json'), 'utf8');
+  if (process.env.AIH_NATIVE_TRANSPORT_DIAGNOSTICS === '1') {
+    const { DatabaseSync } = require('node:sqlite');
+    const { listCodexStateDbPaths } = require('../lib/sessions/codex-state-db-discovery');
+    for (const statePath of listCodexStateDbPaths(fs, codexHome)) {
+      const database = new DatabaseSync(statePath, { readOnly: true });
+      try {
+        t.diagnostic(JSON.stringify({ database: path.basename(statePath), columns: database.prepare('PRAGMA table_info(threads)').all().map(column => column.name),
+          thread: database.prepare('SELECT id, model_provider, cwd FROM threads WHERE id = ?').get(threadId) }));
+      } finally { database.close(); }
+    }
+  }
   gatewayDisabled = true;
   env.OPENAI_API_KEY = 'fixture-inherited-relay-key';
   env.OPENAI_BASE_URL = gatewayBase + '/v1';
@@ -182,12 +225,25 @@ test('installed App engine resumes the same relay thread with OAuth and never co
   assert.equal(fs.readFileSync(path.join(codexHome, 'auth.json'), 'utf8'), authBefore);
   await stop(session);
 
+  select(apiRef);
+  session = await launch();
+  const apiResume = await session.rpc.request('thread/resume', { threadId, modelProvider: null, model: null });
+  assert.equal(apiResume.modelProvider, 'openai');
+  const apiTurn = await session.rpc.turn(threadId, 'native API key without gateway');
+  assert.equal(apiTurn.status, 'completed', JSON.stringify(apiTurn));
+  assert.deepEqual(requests.map(request => request.kind), ['gateway', 'native', 'native']);
+  assert.equal(requests[2].authIsApiKey, true);
+  assert.equal(requests[2].url, '/v1/responses');
+  await stop(session);
+
   delete env.OPENAI_API_KEY; delete env.OPENAI_BASE_URL; delete env.AIH_CODEX_GATEWAY_ACCOUNT_REF;
-  gatewayDisabled = false; select(relayRef); session = await launch();
+  gatewayDisabled = false; select(relayRef);
+  assert.equal(sync('codex', '', { gateway: true }).ok, true);
+  session = await launch();
   const relayResume = await session.rpc.request('thread/resume', { threadId, modelProvider: null, model: null });
   assert.equal(relayResume.modelProvider, 'aih_server');
   const third = await session.rpc.turn(threadId, 'back to relay'); assert.equal(third.status, 'completed', JSON.stringify(third));
-  assert.deepEqual(requests.map(x => x.kind), ['gateway', 'native', 'gateway']);
+  assert.deepEqual(requests.map(x => x.kind), ['gateway', 'native', 'native', 'gateway']);
   await stop(session);
-  t.diagnostic(JSON.stringify({ sameThread: true, routeSequence: requests.map(x => x.kind), nativeUsesOAuth: true, gatewayCallsDuringNative: 0 }));
+  t.diagnostic(JSON.stringify({ sameThread: true, routeSequence: requests.map(x => x.kind), nativeUsesOAuth: true, nativeUsesApiKey: true, gatewayCallsDuringNative: 0 }));
 });

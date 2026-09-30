@@ -18,6 +18,33 @@ test('extractMacAppBundlePath derives .app root from executable path', () => {
   );
 });
 
+test('nested Codex CLI processes and cached CLI bundles are not desktop launch targets', { skip: process.platform === 'win32' }, context => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-nested-desktop-cache-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const bundle = path.join(root, 'ChatGPT.app');
+  const executable = path.join(bundle, 'Contents', 'MacOS', 'ChatGPT');
+  const nested = path.join(bundle, 'Contents', 'Resources', 'codex-cli', 'CodexCLI.app', 'Contents', 'MacOS', 'codex');
+  fs.mkdirSync(path.dirname(executable), { recursive: true });
+  fs.writeFileSync(executable, 'fixture');
+  writeJsonValue(fs, aiHomeDir, DESKTOP_CLIENT_PATHS_KEY, {
+    codex: { macos: { executablePath: nested, bundlePath: extractMacAppBundlePath(nested) } }
+  });
+  const launches = [];
+  const service = createDesktopClientRestartService({
+    fs, aiHomeDir, hostHomeDir: root,
+    processObj: { platform: 'darwin', env: { HOME: root }, kill() { assert.fail('nested CLI must not be stopped as a desktop'); } },
+    cliConfigs: { codex: { desktopClient: { macos: { clientName: 'ChatGPT', execNames: ['ChatGPT', 'Codex'], installPaths: [bundle] } } } },
+    spawnSync: () => ({ status: 0, stdout: `123 ${nested} app-server\n` }),
+    spawn: (command, args) => { launches.push({ command, args }); return { unref() {} }; }
+  });
+  const result = service.restartDetectedDesktopClient('codex');
+  assert.equal(result.launched, true);
+  assert.equal(result.usedInstalledPath, true);
+  assert.deepEqual(launches[0].args, ['-a', bundle]);
+  assert.equal(readJsonValue(fs, aiHomeDir, DESKTOP_CLIENT_PATHS_KEY).codex.macos.executablePath, executable);
+});
+
 test('desktop client restart relaunches matching macOS app bundle executable', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-desktop-restart-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -40,9 +40,10 @@ test('host auth command pairs the gateway endpoint with its current key despite 
     assert.ok(config.includes('base_url = "' + connection.baseUrl + '"'));
     assert.ok(config.includes('"X-Account-Ref" = "' + ref + '"'));
     assert.match(config, /'--gateway', '--ai-home'/);
-    assert.doesNotMatch(config, /upstream-key|upstream[12]\.example|env_key/);
+    assert.doesNotMatch(config, /upstream-key|env_key/);
+    assert.match(config, /model_provider = "openai"/);
     const auth = JSON.parse(fs.readFileSync(path.join(hostHomeDir, '.codex/auth.json')));
-    assert.equal(auth.OPENAI_API_KEY, connection.apiKey);
+    assert.equal(auth.OPENAI_API_KEY, 'upstream-key-' + (refs.indexOf(ref) + 1));
     const actual = execFileSync(process.execPath, [script, '--gateway', '--ai-home', aiHomeDir], {
       encoding: 'utf8', env: { ...process.env, OPENAI_API_KEY: 'wrong-inherited-key',
         OPENAI_BASE_URL: 'https://wrong.example/v1', AIH_HOME: '/nonexistent-projection', HOME: root }

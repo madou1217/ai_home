@@ -2179,7 +2179,7 @@ test('codex adapter backs off and preserves upstream semantics after repeated EC
   assert.deepEqual(retryDelays, [250]);
   assert.equal(res.statusCode, 502);
   const body = JSON.parse(String(res.body));
-  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(body.error.code, 'upstream_temporarily_unavailable');
   assert.equal(getAccountModelCooldownUntil(account, 'gpt-5.6-sol'), 0);
   assert.equal(account.modelFailureStreaks && account.modelFailureStreaks['gpt-5.6-sol'], undefined);
 });
@@ -2263,7 +2263,7 @@ test('codex adapter does not turn the attachment ECONNREFUSED pool into no_avail
 
   assert.equal(res.statusCode, 502);
   const body = JSON.parse(String(res.body));
-  assert.equal(body.error, 'upstream_temporarily_unavailable');
+  assert.equal(body.error.code, 'upstream_temporarily_unavailable');
   assert.equal(String(res.body).includes('no_available_account'), false);
   assert.equal(attemptedAccountRefs.includes(quotaExhaustedAccount.accountRef), false);
   assert.deepEqual(new Set(attemptedAccountRefs), new Set(transportAccounts.map((item) => item.accountRef)));
@@ -2889,7 +2889,7 @@ test('codex adapter never dials an account whose catalog is known to lack the re
   );
   assert.equal(res.statusCode, 503);
   const body = JSON.parse(res.body);
-  assert.equal(body.error, 'no_available_account');
+  assert.equal(body.error.code, 'no_available_account');
 });
 
 // 反向不变量：目录未知（从未探测到）不等于不支持。排除只认「已知且不含」这一种强证据，

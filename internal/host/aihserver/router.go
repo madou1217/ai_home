@@ -132,9 +132,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 		handlers.claudeRelayLeases,
 	)
 	mux.Handle(openairesponsesapi.Path, responsesDispatcher{
-		canonical: handlers.inference,
-		websocket: handlers.codexResponsesWS,
-		observe:   handlers.observeCodexClient,
+		canonical:  handlers.inference,
+		nativeHTTP: handlers.codexResponsesHTTP,
+		websocket:  handlers.codexResponsesWS,
+		observe:    handlers.observeCodexClient,
 	})
 	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
@@ -251,11 +252,10 @@ func (dispatcher modelsDispatcher) ServeHTTP(
 }
 
 // responsesDispatcher 让同一个标准路径按 HTTP 或 WebSocket 传输分流。
-//
-// 普通 POST 继续进入 Canonical；只有明确的 RFC 6455 Upgrade 才进入原生 WS。
 type responsesDispatcher struct {
-	canonical http.Handler
-	websocket http.Handler
+	canonical  http.Handler
+	nativeHTTP http.Handler
+	websocket  http.Handler
 	// observe 从已鉴权的真实 Codex 客户端学习客户端版本；可为空。
 	observe func(*http.Request)
 }
@@ -273,6 +273,10 @@ func (dispatcher responsesDispatcher) ServeHTTP(
 			return
 		}
 		dispatcher.websocket.ServeHTTP(response, request)
+		return
+	}
+	if dispatcher.nativeHTTP != nil {
+		dispatcher.nativeHTTP.ServeHTTP(response, request)
 		return
 	}
 	if dispatcher.canonical == nil {

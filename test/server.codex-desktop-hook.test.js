@@ -12,6 +12,40 @@ const {
   createCodexDesktopHookService
 } = require('../lib/server/codex-desktop-hook');
 
+test('desktop hook follows an upgrade from resources binary to nested CLI bundle', { skip: process.platform === 'win32' }, (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-desktop-layout-upgrade-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bundlePath = path.join(root, 'Applications', 'ChatGPT.app');
+  const legacy = path.join(bundlePath, 'Contents', 'Resources', 'codex');
+  const current = path.join(bundlePath, 'Contents', 'Resources', 'codex-cli', 'CodexCLI.app', 'Contents', 'MacOS', 'codex');
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, '#!/bin/sh\nprintf legacy\n', { mode: 0o755 });
+  const service = createCodexDesktopHookService({
+    fs, hostHomeDir: root, aiHomeDir: path.join(root, '.ai_home'),
+    processObj: { platform: 'darwin', env: { HOME: root } },
+    readBundleMetadata: () => ({ appVersion: '26.928.20755' }),
+    readCodexVersion: () => '0.159.0'
+  });
+  assert.equal(service.activate().enabled, true);
+  assert.equal(service.readState().targetBinaryPath, legacy);
+  fs.mkdirSync(path.dirname(current), { recursive: true });
+  fs.writeFileSync(current, '#!/bin/sh\nprintf current\n', { mode: 0o755 });
+  const result = service.ensureInstalled();
+  assert.equal(result.enabled, true);
+  assert.equal(result.repaired, true);
+  assert.equal(service.readState().targetBinaryPath, path.join(root, '.ai_home', 'run', 'codex', 'desktop-cli'));
+  assert.equal(service.readState().upstreamBinaryPath, current);
+  assert.equal(fs.readFileSync(current, 'utf8'), '#!/bin/sh\nprintf current\n');
+  assert.equal(fs.existsSync(`${current}.aih-original`), false);
+  assert.equal(service.isWrapperInstalled(current), false);
+  assert.equal(service.isWrapperInstalled(service.readState().targetBinaryPath), true);
+  assert.equal(service.ensureInstalled().repaired, false);
+  service.setDesktopAccountRef('acct_0123456789abcdef0123');
+  assert.equal(service.readState().hookStrategy, 'external-launcher');
+  service.clearDesktopAccountRef('acct_0123456789abcdef0123');
+  assert.equal(service.readState().hookStrategy, 'external-launcher');
+});
+
 test('a projected HOME matching AIH_HOST_HOME cannot select the real system App bundle', () => {
   const probed = [];
   const service = createCodexDesktopHookService({

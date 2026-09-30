@@ -30,7 +30,7 @@ async function startFakeGo(t) {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
-      const record = { method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks).toString('utf8') };
+      const record = { method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks).toString('utf8'), rawBody: Buffer.concat(chunks) };
       seen.push(record);
       if (req.url.startsWith('/v1/messages')) {
         res.writeHead(200, { 'content-type': 'text/event-stream', connection: 'keep-alive', 'x-go-trace': 'yes' });
@@ -330,6 +330,34 @@ test('model-aware decisions buffer the body, hand it back to Node or forward it 
   await post('/v1beta/models/gemini-3-flash:generateContent', { contents: [] });
   assert.deepEqual(decisions, ['claude-opus-4-8', 'claude-haiku-4-5', 'gemini-3-flash'], 'Gemini model comes from the path');
 });
+
+for (const encoding of ['gzip', 'zstd']) {
+  test(`compressed Codex ${encoding} routing observes the model without rewriting forwarded bytes`, async context => {
+    const go = await startFakeGo(context);
+    const decisions = [];
+    const port = await startNodeHost(context, {
+      entryIds: new Set(['gateway.openai.responses']),
+      getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+      needsRequestModel: () => true,
+      deferToNode: input => { decisions.push(input.model); return input.model === 'alias'; }
+    });
+    const zlib = require('node:zlib');
+    const encode = encoding === 'gzip' ? zlib.gzipSync : zlib.zstdCompressSync;
+    const headers = { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json', 'content-encoding': encoding };
+    const body = encode(Buffer.from('{ "model":"gpt-native", "opaque":9007199254740993 }'));
+    const response = await request(port, { method: 'POST', path: '/v1/responses', headers }, body);
+    assert.equal(response.status, 200);
+    assert.deepEqual(go.seen[0].rawBody, body);
+    assert.equal(go.seen[0].headers['content-encoding'], encoding);
+    const deferred = await request(port, { method: 'POST', path: '/v1/responses', headers }, encode(Buffer.from('{"model":"alias"}')));
+    assert.equal(deferred.status, 404);
+    assert.deepEqual(decisions, ['gpt-native', 'alias']);
+    assert.equal(go.seen.length, 1);
+    const rejected = await request(port, { method: 'POST', path: '/v1/responses', headers: { ...headers, authorization: 'Bearer wrong' } }, body);
+    assert.equal(rejected.status, 401);
+    assert.deepEqual(decisions, ['gpt-native', 'alias']);
+  });
+}
 
 test('the forwarder sets an authoritative X-Forwarded-Host and drops client-supplied ones', () => {
   const { buildForwardRequestHeaders } = require('../lib/server/go-core-gateway-forwarder');

@@ -9,7 +9,7 @@ const { EventEmitter } = require('node:events');
 const { DatabaseSync } = require('node:sqlite');
 const { parse } = require('smol-toml');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
+const { writeAccountNativeAuth, writeAccountCredentials } = require('../lib/server/account-credential-store');
 const { writeDefaultAccountRef } = require('../lib/account/default-account-store');
 const { writeServerConfig } = require('../lib/server/server-config-store');
 const { createHostConfigSyncer } = require('../lib/account/host-sync');
@@ -59,6 +59,18 @@ test('OAuth default overrides legacy AIH resume without rewriting the SQLite rec
   const db = new DatabaseSync(path.join(f.codexHome, 'state_5.sqlite'), { readOnly: true });
   assert.equal(db.prepare('SELECT model_provider FROM threads').get().model_provider, 'aih_server'); db.close();
   assert.equal(fs.readFileSync(f.file, 'utf8'), native + registry);
+});
+
+test('native resume recognizes canonical and namespaced paths and stops at the selected home', t => {
+  const f = fixture(t);
+  fs.mkdirSync(path.join(f.root, '.codex'));
+  fs.writeFileSync(path.join(f.root, '.codex', 'config.toml'), 'model_provider="outer_provider"\n');
+  const directory = process.platform === 'win32' ? path.toNamespacedPath(f.cwd).toUpperCase() : fs.realpathSync(f.cwd);
+  const payload = thread({ ...f, cwd: directory });
+  assert.equal(reconcile(f, payload)?.currentProvider, 'openai');
+  fs.mkdirSync(path.join(f.cwd, '.codex'));
+  fs.writeFileSync(path.join(f.cwd, '.codex', 'config.toml'), 'model_provider="project_provider"\n');
+  assert.equal(reconcile(f, payload), null);
 });
 
 test('OAuth default supplies native resume even if the index already says openai but rollout differs', t => {
@@ -125,6 +137,44 @@ test('native runtime config keeps inactive registration and rejects injected gat
   assert.equal(doc.chatgpt_base_url, undefined); assert.ok(!content.includes('fake-key'));
 });
 
+test('native API-key App spawn and legacy resume keep the original endpoint without gateway access', context => {
+  const nativeApiKey = native.replace('"oauth"', '"apikey"') + 'openai_base_url = "https://original.example/v1"\n';
+  const setup = fixture(context, nativeApiKey + registry);
+  const payload = thread(setup);
+  const result = buildCodexAppServerSpawnEnv(fs, { enabled: true }, {
+    processObj: setup.processObj,
+    readServerConfig: () => assert.fail('native API key must not read gateway config')
+  });
+  assert.equal(result.transportMode, 'native_apikey');
+  assert.equal(result.runtime, null);
+  assert.equal(rewriteThreadResumeRuntimeConfig(payload, reconcile(setup, payload)).params.modelProvider, 'openai');
+  const content = buildCodexAppServerRuntimeConfig(fs, setup.codexHome, {
+    gatewayBaseUrl: 'http://127.0.0.1:9999/v1', gatewayApiKey: 'gateway-key'
+  });
+  assert.equal(parse(content).openai_base_url, 'https://original.example/v1');
+  assert.equal(parse(content).model_provider, 'openai');
+});
+
+test('native API-key CLI resume does not switch to an available AIH remote server', async context => {
+  const setup = fixture(context);
+  const accountRef = register(setup);
+  writeAccountCredentials(fs, setup.aiHomeDir, accountRef, {
+    OPENAI_API_KEY: 'original-key', OPENAI_BASE_URL: 'https://original.example/v1'
+  });
+  const spawns = [];
+  const child = new EventEmitter();
+  await runCodexCliResume(['--upstream', path.join(setup.root, 'native-codex.exe'), '--run-cli-resume', '--', 'resume'], {
+    fs, processObj: { ...setup.processObj, cwd: () => setup.cwd, stderr: { write() {} }, exit() {} },
+    spawn: (command, args, options) => { spawns.push({ command, args, options }); return child; },
+    canConnectToTcpEndpoint: () => assert.fail('native API key must not probe the gateway')
+  });
+  assert.equal(spawns.length, 1);
+  assert.ok(spawns[0].args.includes('model_provider=openai'));
+  assert.equal(spawns[0].options.env.OPENAI_API_KEY, 'original-key');
+  assert.equal(spawns[0].options.env.OPENAI_BASE_URL, 'https://original.example/v1');
+  child.emit('exit', 0);
+});
+
 test('real host synchronization switches native mode without removing relay registration', t => {
   const f = fixture(t, 'model_provider = "aih_server"\n' + registry), ref = register(f);
   const sync = createHostConfigSyncer({ fs, fse: { copySync: (source, target) => fs.copyFileSync(source, target) },
@@ -173,7 +223,7 @@ test('OAuth CLI resume never probes or auto-attaches to an available gateway', a
   const f = fixture(t); register(f);
   writeServerConfig({ host: '127.0.0.1', port: 9527, apiKey: 'fake-gateway' }, { fs, aiHomeDir: f.aiHomeDir });
   const spawns = [], child = new EventEmitter();
-  await runCodexCliResume(['--upstream', '/test/native-codex', '--run-cli-resume', '--', 'resume', '--all'], {
+  await runCodexCliResume(['--upstream', path.join(f.root, 'native-codex.exe'), '--run-cli-resume', '--', 'resume', '--all'], {
     fs, processObj: { ...f.processObj, cwd: () => f.cwd, stderr: { write() {} }, exit() {} },
     spawn: (command, args, options) => { spawns.push({ command, args, options }); return child; },
     canConnectToTcpEndpoint() { assert.fail('native OAuth must not probe the gateway'); }

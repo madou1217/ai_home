@@ -79,6 +79,32 @@ aih codex unset-mobile
 
 支持内置 AIH Server 的 Codex、Claude、OpenCode、Kimi 可用不带 ID 的 `set-default` 切换宿主 CLI 默认配置；带 ID 时切回指定账号。Claude、OpenCode、Kimi 的宿主配置在切回账号或执行 `unset-default` 时恢复原文；若配置期间被外部修改，会停止恢复以避免覆盖用户改动。OpenCode 的 `opencode.jsonc` 会保留原有注释与无关选项。Server 地址或 Key 变更后重新执行 `set-default` 可刷新宿主配置。独立的 `--restart-client` 未成功重启或启动客户端时返回非零退出码。
 
+Codex 的两种默认模式：
+
+- `aih codex set-default 31 --restart-client`：注入指定账号的原始登录。OAuth 使用原生 ChatGPT 认证；API Key 使用该账号原始 Key/Base URL，不经过 AIH Server。原始 Base URL 自身可以是用户配置的第三方 relay。
+- `aih codex set-default --restart-client`：显式选择 AIH Server relay，由 AIH 管理账号路由。配置中保留的非活动 `[model_providers.aih_server]` 只是历史线程需要的 provider 注册，不代表当前请求使用网关。
+- 已接入 AIH stdio hook 的客户端恢复旧 AIH/OpenAI 线程时跟随当前默认模式；显式请求、项目配置和第三方 provider 优先，不改写线程数据库或丢弃历史。Windows 长路径、大小写及 macOS 符号链接会先归一化，宿主配置不会被误认为项目覆盖。
+
+桌面引擎发现由 `lib/runtime/desktop-runtime-layout.js` 组合平台、相对路径及可选数值版本区间，规则位于 `codex-desktop-layouts.js`。macOS 同时探测 `ChatGPT.app`/`Codex.app` 的嵌套 CLI 与旧 Resources 布局；Windows Store 已记录实际 `app/resources/codex.exe` 布局。没有可靠版本边界时按文件存在性选择，不能凭猜测硬编码版本。Linux 可使用通用解析器，但尚无已验证桌面安装规则；Windows 布局发现和引擎测试也不等同于 Store App 自动 hook 安装支持。
+
+嵌套的 macOS CLI 属于签名 App 包，不能像旧 Resources 布局一样原地改成脚本。该布局组合包外启动器策略：保留原始签名二进制，启动器写在 AIH 的 `run/codex/desktop-cli`，通过 `aih codex --restart-client` 或 `set-default --restart-client` 的 `CODEX_CLI_PATH` 启动环境接入。直接从 Finder 启动不会注入该环境；需要接管历史线程时请通过 AIH 重启。
+
+Go 的同模型 Codex `/v1/responses` HTTP relay 保留原始请求与 JSON/SSE 响应字节，支持 gzip/zstd 请求；跨协议或模型重写继续交给 Canonical。Node/Go 在真实上游 HTTP 失败后保留其状态码、响应体、`Retry-After` 和请求 ID，不能把上游 429/503 替换为笼统的“无账号”。本地 Responses 错误文案共用 `contracts/codex-relay/errors.json`；结构化安全拒绝仍终止请求，不轮换账号绕过。
+
+HTTP 200 不代表生成成功：响应头提交前会识别 JSON/SSE 中的结构化安全拒绝，两端均返回同一 403 错误。Go 的 SSE 预读仅覆盖有界前导事件（64 KiB、16 个无输出生命周期事件），遇到首个输出即开始转发；探测过的原始字节会完整回放，不重新序列化或舍弃未知字段。
+
+Node 的 Responses 入口和 Node → Go 转发决策共用有界 gzip/zstd 解码器：模型别名与账号可路由性判断读取解压后的模型；实际转发 Go 时仍保留原压缩字节。交还 Node 处理时只解压一次，并移除已不再描述请求体的编码/长度头；鉴权在解压与路由判断之前完成。
+
+离线验收（临时目录、合成凭据、loopback 上游，不使用真实账号）：
+
+```bash
+go build -o /tmp/aih-codex-http ./cmd/aih-server
+AIH_CODEX_HTTP_GO_BINARY=/tmp/aih-codex-http node --test test/server.codex-http-parity.test.js
+AIH_NATIVE_CODEX_TRANSPORT_SMOKE=1 AIH_CODEX_HTTP_GO_BINARY=/tmp/aih-codex-http node --test test/codex-native-transport-smoke.test.js
+```
+
+真实引擎 smoke 需要已安装 Codex；可用 `AIH_NATIVE_CODEX_BINARY` 指定二进制。验证同一线程的 relay → OAuth → API Key → relay 切换，并断言原始模式没有网关请求。Windows 使用 PowerShell 环境变量和本机可执行路径运行相同测试。
+
 `set-mobile` 只接受 Codex ChatGPT OAuth 账号；API Key 账号不能设为 Codex App 账号。
 
 删除账号：

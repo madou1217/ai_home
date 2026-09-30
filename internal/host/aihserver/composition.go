@@ -53,6 +53,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
+	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
@@ -66,18 +67,19 @@ const (
 
 // serverHandlers 保存 Composition Root 创建的管理、目录、推理和 Relay 边界。
 type serverHandlers struct {
-	accounts          http.Handler
-	accountAuth       http.Handler
-	models            http.Handler
-	blobs             http.Handler
-	images            http.Handler
-	tokenCount        http.Handler
-	inference         http.Handler
-	gemini            http.Handler
-	codexResponsesWS  http.Handler
-	claudeRelayLeases http.Handler
-	claudeNativeRelay http.Handler
-	catalogStatus     func() catalogReadiness
+	accounts           http.Handler
+	accountAuth        http.Handler
+	models             http.Handler
+	blobs              http.Handler
+	images             http.Handler
+	tokenCount         http.Handler
+	inference          http.Handler
+	gemini             http.Handler
+	codexResponsesWS   http.Handler
+	codexResponsesHTTP http.Handler
+	claudeRelayLeases  http.Handler
+	claudeNativeRelay  http.Handler
+	catalogStatus      func() catalogReadiness
 	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
 	observeCodexClient func(*http.Request)
 	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
@@ -590,6 +592,20 @@ func newHandlers(
 			err,
 		)
 	}
+	codexHTTPHandler, err := codexresponseshttp.NewHandler(codexresponseshttp.Dependencies{
+		Authorizer:     clientAuthorizer,
+		Accounts:       codexHTTPAccountSource{catalog: catalog, routes: inference.models, recruiter: inference.recruiter, transport: inference.codexUpstream},
+		Upstream:       inference.codexUpstream,
+		Fallback:       inference.handler,
+		Attempts:       accountRuntime,
+		Credentials:    credentials,
+		ModelRefreshes: inference.modelRefreshes,
+		Clock:          time.Now,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 Codex Native HTTP Handler 失败: %w", err)
+	}
 	codexGatewayPolicy, err := claudegateway.NewCanonicalPolicy(
 		"codex",
 		inference.codexUpstream,
@@ -831,6 +847,7 @@ func newHandlers(
 		inference:          inference.handler,
 		gemini:             inference.gemini,
 		codexResponsesWS:   webSocketHandler,
+		codexResponsesHTTP: codexHTTPHandler,
 		observeCodexClient: observeCodexClientVersion(codexVersions, clientAuthorizer),
 		accountOutcomes:    accountOutcomesHandler,
 		accountRuntime:     accountRuntimeHandler,

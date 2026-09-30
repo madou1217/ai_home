@@ -1,0 +1,9 @@
+{
+  "unauthorized": { "status": 401, "message": "A valid client key is required", "type": "authentication_error" },
+  "infinite_loop_detected": { "status": 508, "message": "Gateway proxy loop detected", "type": "server_error" },
+  "invalid_account_ref": { "status": 400, "message": "Invalid account reference", "type": "invalid_request_error" },
+  "invalid_request_body": { "status": 400, "message": "Invalid request body", "type": "invalid_request_error" },
+  "no_available_account": { "status": 503, "message": "No available Codex account", "type": "server_error" },
+  "upstream_temporarily_unavailable": { "status": 502, "message": "Codex upstream is temporarily unavailable", "type": "server_error" },
+  "upstream_safety_rejected": { "status": 403, "message": "The configured upstream rejected this request under its safety policy", "type": "permission_error" }
+}

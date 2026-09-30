@@ -269,7 +269,7 @@ for (const expiry of ['2000-01-01T00:00:00Z', '2099-01-01T00:00:00Z']) {
     assert.equal(fs.readFileSync(f.configPath, 'utf8'), text);
     assert.equal(sync('codex', api.accountRef).ok, true);
     text = fs.readFileSync(f.configPath, 'utf8');
-    assert.equal(assertRegistration(text).model_provider, 'aih_server');
+    assert.equal(assertRegistration(text).model_provider, 'openai');
   });
 }
 

@@ -83,11 +83,11 @@ test('default Codex CLI switches API key and OAuth environments without credenti
   writeDefaultAccountRef(fs, aiHomeDir, 'codex', apiKeyAccountRef);
   writeServerConfig({ apiKey: 'gateway-test-key', port: 9541 }, { fs, aiHomeDir });
   const apiKeyRuntime = buildCodexDefaultCliEnv(fs, { aiHomeDir, processObj });
-  assert.equal(apiKeyRuntime.authMode, 'apikey');
+  assert.equal(apiKeyRuntime.authMode, 'native-apikey');
   assert.equal(apiKeyRuntime.accountRef, apiKeyAccountRef);
-  assert.equal(apiKeyRuntime.env.OPENAI_API_KEY, 'gateway-test-key');
-  assert.equal(apiKeyRuntime.env.OPENAI_BASE_URL, 'http://127.0.0.1:9541/v1');
-  assert.equal(apiKeyRuntime.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, apiKeyAccountRef);
+  assert.equal(apiKeyRuntime.env.OPENAI_API_KEY, apiKey);
+  assert.equal(apiKeyRuntime.env.OPENAI_BASE_URL, 'https://api.example.test/v1');
+  assert.equal(apiKeyRuntime.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, undefined);
   assert.equal(apiKeyRuntime.env.CODEX_HOME, codexHome);
 
   const secondAccountRef = registerCodexAccount(aiHomeDir, '3', 'api-key:codex:second-launcher-test');
@@ -99,9 +99,9 @@ test('default Codex CLI switches API key and OAuth environments without credenti
   const secondRuntime = buildCodexDefaultCliEnv(fs, { aiHomeDir, processObj: {
     ...processObj, env: apiKeyRuntime.env
   } });
-  assert.equal(secondRuntime.env.OPENAI_API_KEY, 'gateway-test-key');
-  assert.equal(secondRuntime.env.OPENAI_BASE_URL, 'http://127.0.0.1:9541/v1');
-  assert.equal(secondRuntime.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, secondAccountRef);
+  assert.equal(secondRuntime.env.OPENAI_API_KEY, 'second-test-key');
+  assert.equal(secondRuntime.env.OPENAI_BASE_URL, 'https://second.example.test/v1');
+  assert.equal(secondRuntime.env.AIH_CODEX_GATEWAY_ACCOUNT_REF, undefined);
 
   writeDefaultAccountRef(fs, aiHomeDir, 'codex', oauthAccountRef);
   const oauthRuntime = buildCodexDefaultCliEnv(fs, { aiHomeDir, processObj });
@@ -117,9 +117,9 @@ test('default Codex CLI switches API key and OAuth environments without credenti
 
   writeDefaultAccountRef(fs, aiHomeDir, 'codex', apiKeyAccountRef);
   const restoredApiKeyRuntime = buildCodexDefaultCliEnv(fs, { aiHomeDir, processObj });
-  assert.equal(restoredApiKeyRuntime.authMode, 'apikey');
-  assert.equal(restoredApiKeyRuntime.env.OPENAI_API_KEY, 'gateway-test-key');
-  assert.equal(restoredApiKeyRuntime.env.OPENAI_BASE_URL, 'http://127.0.0.1:9541/v1');
+  assert.equal(restoredApiKeyRuntime.authMode, 'native-apikey');
+  assert.equal(restoredApiKeyRuntime.env.OPENAI_API_KEY, apiKey);
+  assert.equal(restoredApiKeyRuntime.env.OPENAI_BASE_URL, 'https://api.example.test/v1');
   assert.equal(processObj.env.OPENAI_API_KEY, 'stale-shell-key');
 });
 
@@ -290,13 +290,11 @@ test('default Codex CLI passes the API key only through the child environment', 
     'exec',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'check_for_update_on_startup=false',
-    '-c', 'model_provider=aih_server',
-    '-c', 'model_providers.aih_server.base_url=http://127.0.0.1:9527/v1',
-    '-c', 'model_providers.aih_server.wire_api=responses',
-    '-c', `model_providers.aih_server.http_headers.X-Account-Ref=${accountRef}`,
+    '-c', 'model_provider=openai',
+    '-c', 'openai_base_url=https://api.openai.com/v1',
     'Reply with OK only.'
   ]);
-  assert.equal(spawns[0].options.env.OPENAI_API_KEY, 'dummy');
+  assert.equal(spawns[0].options.env.OPENAI_API_KEY, apiKey);
   assert.equal(JSON.stringify(spawns[0].args).includes(apiKey), false);
 });
 

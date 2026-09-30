@@ -10,6 +10,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 type countingUpstream struct{ calls int }
@@ -21,7 +22,7 @@ func (upstream *countingUpstream) RoundTripNative(context.Context, accountapp.Cr
 
 // ChatGPT 登录账号的上游只接受 codex CLI 形状的请求：stream=true、store 非 true、input 为列表、
 // 无 previous_response_id。其他形状原样发出必然 400（真实故障："Store must be set to false"、
-// "Input must be a list"、"Stream must be set to true"），必须交给 Node 归一化。
+// "Input must be a list"、"Stream must be set to true"），必须交回 Node 归一化。
 func TestChatGPTCredentialsOnlyPassThroughCodexShapedRequests(t *testing.T) {
 	claims := base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_user_id":"user-1","chatgpt_account_id":"account-1"}}`))
 	idToken := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`)) + "." + claims + ".signature"
@@ -51,8 +52,9 @@ func TestChatGPTCredentialsOnlyPassThroughCodexShapedRequests(t *testing.T) {
 			if tc.passthrough && upstream.calls != 1 {
 				t.Fatalf("codex-shaped request was not passed through: calls=%d status=%d", upstream.calls, response.Code)
 			}
-			if !tc.passthrough && (upstream.calls != 0 || response.Code != 418) {
-				t.Fatalf("request should fall back to Node: calls=%d status=%d", upstream.calls, response.Code)
+			// 交回 Node 的约定：带 X-AIH-Decode-Rejected 的 400，且未联系上游（Node 才能安全重放）。
+			if !tc.passthrough && (upstream.calls != 0 || response.Code != http.StatusBadRequest || response.Header().Get(inferenceapi.DecodeRejectedHeader) != "1") {
+				t.Fatalf("request should be handed to Node: calls=%d status=%d", upstream.calls, response.Code)
 			}
 		})
 	}

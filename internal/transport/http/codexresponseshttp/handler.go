@@ -124,11 +124,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			break
 		}
 		// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求（见 nativeRequest.passthroughSafe）。
-		// 尚未联系上游时交给 Node 归一化；已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
+		// 尚未联系上游时按「解码拒收」交回 Node 归一化（Go Canonical 编码器会直接拒收 store 等字段，
+		// 不能落到 Fallback）；已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
 		if isStatelessCredential(selection.Credential) && !metadata.passthroughSafe() {
 			if !contacted {
-				request.Body = io.NopCloser(bytes.NewReader(payload))
-				handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
+				inferenceapi.MarkDecodeRejected(response)
+				writeError(response, "invalid_request_body")
 				return
 			}
 			continue

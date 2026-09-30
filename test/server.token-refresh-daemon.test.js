@@ -841,6 +841,67 @@ describe('createTokenRefreshDaemon', () => {
     daemon.stop();
   });
 
+  it('persists invalid-grant suppression across daemon restarts', async (t) => {
+    const fixture = createAccountFixture(t, 'aih-token-refresh-suppression-persist-');
+    const expiresAt = Date.now() - 60_000;
+    const accountRef = fixture.register('claude', '6', {
+      credentials: {
+        claudeAiOauth: {
+          accessToken: 'sk-ant-oat01-live',
+          refreshToken: 'sk-ant-ort01-dead',
+          expiresAt
+        }
+      }
+    });
+
+    const makeAccount = (refreshToken = 'sk-ant-ort01-dead') => ({
+      accountRef,
+      provider: 'claude',
+      authType: 'oauth',
+      accessToken: 'sk-ant-oat01-live',
+      refreshToken,
+      tokenExpiresAt: expiresAt,
+      authInvalidUntil: 0
+    });
+
+    let refreshCalls = 0;
+    const fetchWithTimeout = async (url) => {
+      if (String(url).includes('oauth/token')) refreshCalls += 1;
+      return { ok: false, status: 400, text: async () => '{"error":"invalid_grant"}' };
+    };
+
+    const startDaemon = (account) => createTokenRefreshDaemon(
+      { accounts: { codex: [], gemini: [], claude: [account], agy: [] } },
+      { tokenStartupRefreshBeforeExpiryMs: 5 * 60 * 1000 },
+      {
+        fs,
+        aiHomeDir: fixture.aiHomeDir,
+        fetchWithTimeout,
+        logInfo: () => {},
+        logWarn: () => {},
+        logError: () => {}
+      }
+    );
+
+    const first = startDaemon(makeAccount());
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    first.stop();
+    assert.equal(refreshCalls, 1, 'the first boot probes the dead grant once');
+
+    // A "restart" is a brand-new daemon over the same aiHomeDir. The rejection is
+    // permanent until re-login, so it must not be probed again.
+    const second = startDaemon(makeAccount());
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    second.stop();
+    assert.equal(refreshCalls, 1, 'a restart must not re-probe a known-dead grant');
+
+    // A new login mints a different refresh token, which must lift the suppression.
+    const third = startDaemon(makeAccount('sk-ant-ort01-new'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    third.stop();
+    assert.equal(refreshCalls, 2, 'a rotated refresh token must be probed again');
+  });
+
   it('does NOT demote on a transient refresh failure (network error)', async (t) => {
     const fixture = createAccountFixture(t, 'aih-token-refresh-daemon-claude-transient-db-');
     const expiresAt = Date.now() - 60_000;

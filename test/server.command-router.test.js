@@ -33,7 +33,7 @@ test('server router start requests fast background launch without foreground rea
   await flushAsync();
   assert.deepEqual(startCalls, [{
     args: [],
-    options: { waitForReady: false, readyTimeoutMs: 7000 }
+    options: { waitForReady: false, readyTimeoutMs: 7000, backgroundLivenessGraceMs: 400 }
   }]);
   assert.equal(exitCode, 0);
 });
@@ -70,7 +70,7 @@ test('server router restart delegates to daemon restart orchestration', async ()
   await flushAsync();
   assert.deepEqual(restartCalls, [{
     args: [],
-    options: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+    options: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS, backgroundLivenessGraceMs: 400 }
   }]);
   assert.equal(exitCode, 0);
 });

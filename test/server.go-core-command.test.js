@@ -38,7 +38,7 @@ test('server start leaves Go Core supervision to the long-lived server process',
   const code = await runServerCommand(['server', 'start'], deps);
 
   assert.equal(code, 0);
-  assert.deepEqual(startOptions, { waitForReady: false, readyTimeoutMs: 7000 });
+  assert.deepEqual(startOptions, { waitForReady: false, readyTimeoutMs: 7000, backgroundLivenessGraceMs: 400 });
 });
 
 test('server stop only stops the Node host, which stops its own Go Core child', async () => {

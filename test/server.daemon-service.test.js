@@ -2619,3 +2619,86 @@ test('daemon restart elevates when tracked admin pid owns the configured port bu
   assert.equal(result.stoppedForRestart.pid, 3800);
   assert.equal(result.stoppedForRestart.port, 9527);
 });
+
+// The background start path used to report success purely because spawn() handed
+// back a pid, so a child that died instantly (missing module, bad entry, taken
+// port) looked like a clean start and the CLI exited 0.
+function makeBackgroundStartFixture(t, options = {}) {
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const pidFile = path.join(aiHomeDir, 'server.pid');
+  const logFile = path.join(aiHomeDir, 'server.log');
+  const spawnCalls = [];
+  const childPid = 4242;
+
+  const daemon = createServerDaemonService({
+    fs,
+    path,
+    spawn(cmd, args, opts) {
+      spawnCalls.push({ cmd, args, opts });
+      return { pid: childPid, unref() {} };
+    },
+    // Nothing is listening and no ai-home process is discoverable, so the spawned
+    // child is the only candidate.
+    spawnSync() { return { status: 1, stdout: '', stderr: '' }; },
+    fetchImpl: async () => { throw new Error('connect ECONNREFUSED'); },
+    processObj: {
+      execPath: '/usr/local/bin/node',
+      env: process.env,
+      platform: 'linux',
+      kill(pid) {
+        if (Number(pid) === childPid && options.childAlive) return;
+        throw new Error('ESRCH');
+      }
+    },
+    ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); },
+    parseServeArgs() { return { host: '127.0.0.1', port: 9527 }; },
+    readServerConfig() { return { host: '127.0.0.1', port: 9527 }; },
+    aiHomeDir,
+    hostHomeDir: root,
+    pidFile,
+    logFile,
+    launchdLabel: 'com.clawdcodex.ai_home',
+    launchdPlist: path.join(root, 'server.plist'),
+    entryFilePath: '/repo/lib/cli/app.js'
+  });
+
+  return { daemon, pidFile, spawnCalls, childPid };
+}
+
+test('daemon service reports failure when the background child dies immediately', async (t) => {
+  const fixture = makeBackgroundStartFixture(t);
+
+  const result = await fixture.daemon.start([], {
+    waitForReady: false,
+    backgroundLivenessGraceMs: 60
+  });
+
+  assert.equal(fixture.spawnCalls.length, 1);
+  assert.equal(result.started, false, 'a dead child must not be reported as started');
+  assert.equal(result.failed, true);
+  assert.equal(result.reason, 'process_exited_before_ready');
+  assert.equal(result.ready, false);
+  assert.equal(result.state, 'stopped');
+  assert.equal(result.pid, fixture.childPid);
+  assert.equal(result.logFile, path.join(path.dirname(fixture.pidFile), 'server.log'));
+  assert.equal(fs.existsSync(fixture.pidFile), false, 'the stale pid file must be cleared');
+});
+
+test('daemon service still reports a background start when the child survives', async (t) => {
+  const fixture = makeBackgroundStartFixture(t, { childAlive: true });
+
+  const result = await fixture.daemon.start([], {
+    waitForReady: false,
+    backgroundLivenessGraceMs: 60
+  });
+
+  assert.equal(result.started, true);
+  assert.equal(result.ready, false);
+  assert.equal(result.readyCheck, 'background');
+  assert.equal(result.state, 'starting');
+  assert.equal(result.failed, undefined);
+  assert.equal(fs.readFileSync(fixture.pidFile, 'utf8').trim(), String(fixture.childPid));
+});

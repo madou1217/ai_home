@@ -262,7 +262,7 @@ test('runServerCommand starts daemon in non-blocking mode', async () => {
   assert.equal(code, 0);
   assert.deepEqual(calls, [{
     rawServeArgs: [],
-    startOptions: { waitForReady: false, readyTimeoutMs: 7000 }
+    startOptions: { waitForReady: false, readyTimeoutMs: 7000, backgroundLivenessGraceMs: 400 }
   }]);
 });
 
@@ -319,7 +319,12 @@ test('runServerCommand restarts daemon in non-blocking mode after stop', async (
   assert.equal(code, 0);
   assert.deepEqual(calls, [{
     rawServeArgs: [],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+    restartOptions: {
+      waitForReady: false,
+      readyTimeoutMs: 7000,
+      gracefulStopWaitMs: SHUTDOWN_GRACE_MS,
+      backgroundLivenessGraceMs: 400
+    }
   }]);
 });
 
@@ -479,7 +484,12 @@ test('runServerCommand accepts sanitized serve options for an internal source re
       '--proxy-url',
       'http://127.0.0.1:6152'
     ],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+    restartOptions: {
+      waitForReady: false,
+      readyTimeoutMs: 7000,
+      gracefulStopWaitMs: SHUTDOWN_GRACE_MS,
+      backgroundLivenessGraceMs: 400
+    }
   }]);
 });
 
@@ -567,7 +577,12 @@ test('runServerCommand restarts daemon with stopped server entry path', async ()
   assert.equal(code, 0);
   assert.deepEqual(calls, [{
     rawServeArgs: [],
-    restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+    restartOptions: {
+      waitForReady: false,
+      readyTimeoutMs: 7000,
+      gracefulStopWaitMs: SHUTDOWN_GRACE_MS,
+      backgroundLivenessGraceMs: 400
+    }
   }]);
 });
 
@@ -663,7 +678,7 @@ test('runServerCommandRouter starts daemon in non-blocking mode', () => {
       assert.equal(exitCode, 0);
       assert.deepEqual(calls, [{
         rawServeArgs: [],
-        startOptions: { waitForReady: false, readyTimeoutMs: 7000 }
+        startOptions: { waitForReady: false, readyTimeoutMs: 7000, backgroundLivenessGraceMs: 400 }
       }]);
       resolve();
     }, 0);
@@ -761,7 +776,12 @@ test('runServerCommandRouter restarts daemon in non-blocking mode', () => {
       assert.equal(exitCode, 0);
       assert.deepEqual(calls, [{
         rawServeArgs: [],
-        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+        restartOptions: {
+          waitForReady: false,
+          readyTimeoutMs: 7000,
+          gracefulStopWaitMs: SHUTDOWN_GRACE_MS,
+          backgroundLivenessGraceMs: 400
+        }
       }]);
       resolve();
     }, 0);
@@ -876,7 +896,12 @@ test('runServerCommandRouter passes stopped server entry path into restart', () 
       assert.equal(exitCode, 0);
       assert.deepEqual(calls, [{
         rawServeArgs: [],
-        restartOptions: { waitForReady: false, readyTimeoutMs: 7000, gracefulStopWaitMs: SHUTDOWN_GRACE_MS }
+        restartOptions: {
+          waitForReady: false,
+          readyTimeoutMs: 7000,
+          gracefulStopWaitMs: SHUTDOWN_GRACE_MS,
+          backgroundLivenessGraceMs: 400
+        }
       }]);
       resolve();
     }, 0);
@@ -908,4 +933,68 @@ test('runServerCommand reports already starting daemon distinctly', async () => 
   } finally {
     console.log = originalLog;
   }
+});
+
+test('runServerCommand reports an honest failure when the spawned server died', async () => {
+  const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'start'], {
+    showServerUsage() {},
+    serverDaemon: {
+      start: async () => ({
+        alreadyRunning: false,
+        started: false,
+        ready: false,
+        state: 'stopped',
+        failed: true,
+        reason: 'process_exited_before_ready',
+        pid: 4242,
+        logFile: '/tmp/aih/server.log'
+      }),
+      stop: () => ({ stopped: false, reason: 'not_running' }),
+      status: () => ({ running: false }),
+      autostartStatus: () => ({ supported: false })
+    },
+    parseServerEnvArgs: () => ({}),
+    parseServerServeArgs: () => ({}),
+    parseServerSyncArgs: () => ({}),
+    startLocalServer: async () => ({}),
+    syncCodexAccountsToServer: async () => ({ dryRun: true, failed: 0 })
+  }));
+
+  assert.equal(code, 1, 'a dead server must not exit 0');
+  const stderr = errors.join('\n');
+  assert.match(stderr, /server start failed: process_exited_before_ready/);
+  assert.match(stderr, /pid=4242/);
+  assert.match(stderr, /\/tmp\/aih\/server\.log/);
+  assert.doesNotMatch(logs.join('\n'), /starting in background/);
+});
+
+test('runServerCommand reports an honest failure when the restarted server died', async () => {
+  const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'restart'], {
+    showServerUsage() {},
+    serverDaemon: {
+      restart: async () => ({
+        alreadyRunning: false,
+        started: false,
+        ready: false,
+        state: 'stopped',
+        failed: true,
+        reason: 'process_exited_before_ready',
+        pid: 4242,
+        logFile: '/tmp/aih/server.log',
+        stoppedForRestart: { stopped: true, pid: 1111 }
+      })
+    },
+    parseServerEnvArgs: () => ({}),
+    parseServerServeArgs: () => ({}),
+    parseServerSyncArgs: () => ({}),
+    startLocalServer: async () => ({}),
+    syncCodexAccountsToServer: async () => ({ dryRun: true, failed: 0 })
+  }));
+
+  assert.equal(code, 1, 'a dead server must not exit 0');
+  assert.match(logs.join('\n'), /server stopped for restart \(pid=1111\)/);
+  const stderr = errors.join('\n');
+  assert.match(stderr, /server restart failed: process_exited_before_ready/);
+  assert.match(stderr, /pid=4242/);
+  assert.match(stderr, /\/tmp\/aih\/server\.log/);
 });

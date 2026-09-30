@@ -1525,6 +1525,16 @@ export interface ProviderCliUpgradeStatusResponse {
   providers: ProviderCliUpgradeRecord[];
 }
 
+// POST /v0/webui/provider-cli-upgrade/:provider/clear-broken：验证当前 CLI 后解除熔断。
+export interface ProviderCliUpgradeClearBrokenResponse {
+  ok: boolean;
+  // cleared | not_broken | verify_failed | verify_inconclusive | installed_version_unknown | already_running ...
+  reason: string;
+  detail: string;
+  version: string;
+  status?: ProviderCliUpgradeStatusResponse;
+}
+
 export interface ManagedAppUpdateResponse {
   ok: boolean;
   appId: string;

@@ -1,14 +1,15 @@
-import { Spin, Tag } from 'antd';
-import { CloudDownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Popconfirm, Spin, Tag, message } from 'antd';
+import { CloudDownloadOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import ManagedResourceCard from './ManagedResourceCard';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
-import type { ProviderCliUpgradeTone } from './provider-cli-upgrade-presentation';
+import { describeClearBrokenResult, type ProviderCliUpgradeTone } from './provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
 
-// 只读面板：这里的「刷新」只是重新拉取服务端已有的状态，不会触发检查，更不会安装任何东西。
+// 状态面：「刷新」只是重新拉取服务端已有的状态，不会触发检查，更不会安装任何东西。
 // 真要手动跑一轮，那是一次分钟级的后台作业（要 spawn 真二进制 + 走 npm 网络），
 // 得走 app-install 那套任务队列，不属于这块状态面。
+// 唯一的写操作是熔断行上的「验证并解除」：熔断只能人工清除，服务端先验证当前 CLI 再解除。
 
 const TAG_COLORS: Record<ProviderCliUpgradeTone, string> = {
   success: 'success',
@@ -27,7 +28,14 @@ const TRACK_TONES: Record<ProviderCliUpgradeTone, 'neutral' | 'info' | 'success'
 };
 
 export default function ProviderCliUpgradePanel() {
-  const { data, loading, error, fetchStatus, rows, mode, updatable, attention } = useProviderCliUpgrade();
+  const { data, loading, error, fetchStatus, rows, mode, updatable, attention, clearBroken, clearingProvider } = useProviderCliUpgrade();
+
+  const handleClearBroken = async (provider: string) => {
+    const result = await clearBroken(provider);
+    const text = describeClearBrokenResult(result);
+    if (result.ok) message.success(`${provider}：${text}`);
+    else message.error(`${provider}：${text}`, 8);
+  };
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-provider-cli-upgrade">
@@ -94,7 +102,23 @@ export default function ProviderCliUpgradePanel() {
                       ? [{ label: '已拉黑版本', value: blocked.join('、'), tooltip: '验证失败过的版本，不会再被安装' }]
                       : [])
                   ]}
-                  actions={null}
+                  actions={row.canClearBroken ? (
+                    <Popconfirm
+                      title={`验证并解除 ${row.provider} 的熔断？`}
+                      description="会用升级同一套验证检查当前安装的版本（可能需要十几秒），通过才解除并恢复自动升级；不会安装任何东西。"
+                      okText="验证并解除"
+                      cancelText="取消"
+                      onConfirm={() => handleClearBroken(row.provider)}
+                    >
+                      <Button
+                        icon={<SafetyCertificateOutlined />}
+                        loading={clearingProvider === row.provider}
+                        disabled={Boolean(clearingProvider) && clearingProvider !== row.provider}
+                      >
+                        验证并解除熔断
+                      </Button>
+                    </Popconfirm>
+                  ) : null}
                 />
               );
             })}

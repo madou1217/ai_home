@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { CloudDownloadOutlined } from '@ant-design/icons';
-import type { ProviderCliUpgradeTone } from '@/components/toolkit/provider-cli-upgrade-presentation';
+import { CloudDownloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { describeClearBrokenResult, type ProviderCliUpgradeTone } from '@/components/toolkit/provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from '@/components/toolkit/use-provider-cli-upgrade';
 import MobileBoot from '@/mobile/MobileBoot';
 import { DetailSheet, EmptySignal, HudSection, KeyValue, MonoList, SwipeRow, TelemetryGrid, TelemetryTile } from '@/mobile/ui';
 import type { HudTone } from '@/mobile/ui';
-import { InlineError, PanelToolbar, StatusText } from './toolkit-parts';
+import { ActionButton, InlineError, PanelToolbar, StatusText } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
 
 const TONES: Record<ProviderCliUpgradeTone, HudTone> = {
@@ -16,10 +16,18 @@ const TONES: Record<ProviderCliUpgradeTone, HudTone> = {
   neutral: 'muted'
 };
 
-/** CLI 自动升级（只读）：调度模式 + 各 provider CLI 版本结论；刷新只重读服务端状态，不触发检查或安装。 */
+/**
+ * CLI 自动升级：调度模式 + 各 provider CLI 版本结论；刷新只重读服务端状态，不触发检查或安装。
+ * 熔断的 provider 可在详情里「验证并解除」：服务端先验证当前 CLI，通过才解除。
+ */
 export default function CliUpgradePanel() {
-  const { data, loading, error, fetchStatus, rows, mode, updatable, attention } = useProviderCliUpgrade();
+  const { data, loading, error, fetchStatus, rows, mode, updatable, attention, clearBroken, clearingProvider } = useProviderCliUpgrade();
   const [detailProvider, setDetailProvider] = useState('');
+  const [clearResult, setClearResult] = useState<{ provider: string; ok: boolean; text: string } | null>(null);
+  const handleClearBroken = async (provider: string) => {
+    const result = await clearBroken(provider);
+    setClearResult({ provider, ok: result.ok, text: describeClearBrokenResult(result) });
+  };
   const detailRow = rows.find((row) => row.provider === detailProvider) || null;
   const detailRecord = data?.providers.find((item) => item.provider === detailProvider) || null;
 
@@ -75,7 +83,22 @@ export default function CliUpgradePanel() {
         </>
       ) : null}
 
-      <DetailSheet open={Boolean(detailRow)} onClose={() => setDetailProvider('')} code="CLI UPGRADE" title={detailRow?.provider || 'CLI'}>
+      <DetailSheet
+        open={Boolean(detailRow)}
+        onClose={() => { setDetailProvider(''); setClearResult(null); }}
+        code="CLI UPGRADE"
+        title={detailRow?.provider || 'CLI'}
+        footer={detailRow?.canClearBroken ? (
+          <ActionButton
+            icon={<SafetyCertificateOutlined />}
+            label="验证并解除熔断"
+            tone="primary"
+            loading={clearingProvider === detailRow.provider}
+            disabled={Boolean(clearingProvider)}
+            onClick={() => void handleClearBroken(detailRow.provider)}
+          />
+        ) : undefined}
+      >
         {detailRow ? (
           <div className={styles.sheetStack}>
             <KeyValue
@@ -92,6 +115,12 @@ export default function CliUpgradePanel() {
               ]}
             />
             {detailRecord?.blockedVersions?.length ? <p className={styles.prose}>已拉黑版本为验证失败过的版本，不会再被安装。</p> : null}
+            {detailRow.canClearBroken ? (
+              <p className={styles.prose}>已熔断：自动升级对该 CLI 暂停。「验证并解除」会用升级同一套验证检查当前安装的版本（可能需要十几秒），通过才解除；不会安装任何东西。</p>
+            ) : null}
+            {clearResult && clearResult.provider === detailRow.provider ? (
+              <StatusText tone={clearResult.ok ? 'ok' : 'err'}>{clearResult.text}</StatusText>
+            ) : null}
           </div>
         ) : null}
       </DetailSheet>

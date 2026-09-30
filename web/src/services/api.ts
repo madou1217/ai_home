@@ -94,6 +94,7 @@ import type {
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
   ProviderCliUpgradeStatusResponse,
+  ProviderCliUpgradeClearBrokenResponse,
   AccountAppLaunchResponse,
   AccountEgressBindingInput,
   AccountEgressResponse,
@@ -1933,6 +1934,16 @@ export const toolkitAPI = {
   // 只读：这条接口不触发任何检查或安装，纯粹回放账本与调度器状态。
   getProviderCliUpgradeStatus: async (): Promise<ProviderCliUpgradeStatusResponse> => {
     const response = await api.get<ProviderCliUpgradeStatusResponse>('/webui/provider-cli-upgrade');
+    return response.data;
+  },
+  // 验证当前 CLI 后解除熔断：要真起一次 CLI（codex 十几秒），放宽超时；
+  // 验证不通过/正忙是业务结论（422/409），按结果对象返回而不是抛错。
+  clearProviderCliUpgradeBroken: async (provider: string): Promise<ProviderCliUpgradeClearBrokenResponse> => {
+    const response = await api.post<ProviderCliUpgradeClearBrokenResponse>(
+      `/webui/provider-cli-upgrade/${encodeURIComponent(provider)}/clear-broken`,
+      {},
+      { timeout: 120000, validateStatus: (status) => status === 200 || status === 409 || status === 422 }
+    );
     return response.data;
   },
   listApps: async (): Promise<ManagedAppsResponse> => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  describeClearBrokenResult,
   formatUpgradeInterval,
   formatUpgradeTimestamp,
   formatUpgradeVersions,
@@ -141,4 +142,25 @@ test('整份响应映射成行,空响应给空数组', () => {
     providers: [record({ lastCheckAt: 0 }), record({ provider: 'gemini', lastTickReason: 'up_to_date' })]
   }, NOW);
   assert.deepEqual(rows.map((row) => row.statusLabel), ['待首轮检查', '已是最新']);
+});
+
+// 熔断后每轮 tick 的结论都只是 provider_broken(「已熔断」),看不出真正的原因,也没有入口解除。
+test('熔断行显示最后一次失败的真实原因,并允许验证后解除', () => {
+  const row = getProviderCliUpgradeRow(
+    record({ state: 'broken', lastTickReason: 'provider_broken', lastApplyError: 'rollback_plan_unavailable' }),
+    AUTO_APPLY,
+    NOW
+  );
+  assert.equal(row.statusLabel, '异常');
+  assert.equal(row.reasonText, '没有可用的回滚方案');
+  assert.equal(row.canClearBroken, true);
+  assert.equal(getProviderCliUpgradeRow(record({ state: 'rolled_back' }), AUTO_APPLY, NOW).canClearBroken, false);
+});
+
+test('解除熔断的结果文案写清结论与原因', () => {
+  assert.match(describeClearBrokenResult({ ok: true, reason: 'cleared', version: '0.158.0' }), /已解除熔断.*0\.158\.0/);
+  assert.equal(
+    describeClearBrokenResult({ ok: false, reason: 'verify_failed', detail: 'version_mismatch:a!=b' }),
+    '当前版本验证不通过，保持熔断（version_mismatch:a!=b）'
+  );
 });

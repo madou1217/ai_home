@@ -148,3 +148,38 @@ test('history 只回最近 5 条', () => {
   assert.equal(status.providers.find((item) => item.provider === 'codex').history.length, 5);
   assert.equal(status.providers.find((item) => item.provider === 'codex').history[0].outcome, 'n7');
 });
+
+test('POST clear-broken 交给调度器验证后解除,并返回最新状态', async () => {
+  const aiHomeDir = tempHome();
+  seedLedger(aiHomeDir, { codex: { state: 'broken', channel: 'standalone_release', installedVersion: '0.158.0' } });
+  const calls = [];
+  const scheduler = {
+    getState: () => ({ providers: ['codex'] }),
+    clearBroken: async (provider) => { calls.push(provider); return { ok: true, reason: 'cleared', detail: 'app_server_listening', version: '0.158.0' }; }
+  };
+  const { ctx, written } = makeCtx({ method: 'POST', pathname: `${ROUTE_PATH}/codex/clear-broken`, aiHomeDir, providerCliUpgradeScheduler: scheduler });
+
+  assert.equal(await handleProviderCliUpgradeRoutes(ctx), true);
+  assert.deepEqual(calls, ['codex']);
+  assert.equal(written[0].status, 200);
+  assert.equal(written[0].payload.reason, 'cleared');
+  assert.ok(Array.isArray(written[0].payload.status.providers));
+});
+
+test('POST clear-broken 验证不通过返回 422 与原因;调度器正忙返回 409', async () => {
+  const aiHomeDir = tempHome();
+  const make = (result) => makeCtx({
+    method: 'POST',
+    pathname: `${ROUTE_PATH}/codex/clear-broken`,
+    aiHomeDir,
+    providerCliUpgradeScheduler: { getState: () => ({ providers: ['codex'] }), clearBroken: async () => result }
+  });
+  const failed = make({ ok: false, reason: 'verify_failed', detail: 'version_mismatch' });
+  await handleProviderCliUpgradeRoutes(failed.ctx);
+  assert.equal(failed.written[0].status, 422);
+  assert.equal(failed.written[0].payload.detail, 'version_mismatch');
+
+  const busy = make({ ok: false, reason: 'already_running' });
+  await handleProviderCliUpgradeRoutes(busy.ctx);
+  assert.equal(busy.written[0].status, 409);
+});

@@ -22,6 +22,8 @@ export interface ProviderCliUpgradeRowPresentation {
   lastCheckText: string;
   /** 需要人介入才会变好的状态：熔断、回滚、装/验失败。 */
   attention: boolean;
+  /** 已熔断：可在界面上「验证并解除」。 */
+  canClearBroken: boolean;
 }
 
 const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -65,6 +67,7 @@ const REASON_LABELS: Readonly<Record<string, string>> = Object.freeze({
   soaking: '新版本静置观察中',
   soak_pending_unknown_publish_time: '查不到发布时间，暂不跟进',
   soak_unknown: '发布时间长期查不到',
+  upgrade_soaked_release: '升级到已静置满的稳定版',
   missing_package_name: '该 CLI 没有 npm 包',
   npm_plan_unavailable: '生成 npm 安装方案失败',
   standalone_plan_unavailable: '生成官方安装方案失败',
@@ -154,7 +157,8 @@ export function getProviderCliUpgradeRow(
     versionText: formatUpgradeVersions(record),
     reasonText: getUpgradeReasonLabel(reason),
     channelLabel: getUpgradeChannelLabel(record.channel),
-    lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now)
+    lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now),
+    canClearBroken: false
   };
 
   if (record.enabled === false) {
@@ -172,11 +176,15 @@ export function getProviderCliUpgradeRow(
       rolled_back: '已回滚',
       baseline_unhealthy: '当前版本异常'
     };
+    const broken = record.state === 'broken';
     return {
       ...base,
       statusLabel: labels[String(record.state)] || '异常',
       statusTone: record.state === 'rolled_back' ? 'warning' : 'error',
-      attention: true
+      // 熔断后每轮 tick 的结论都只是 provider_broken，真正的原因在最后一次失败里。
+      reasonText: broken ? (getUpgradeReasonLabel(record.lastApplyError) || base.reasonText) : base.reasonText,
+      attention: true,
+      canClearBroken: broken
     };
   }
   if (!Number(record.lastCheckAt)) {
@@ -211,4 +219,23 @@ export function getProviderCliUpgradeRows(
 ): ProviderCliUpgradeRowPresentation[] {
   if (!status || !Array.isArray(status.providers)) return [];
   return status.providers.map((record) => getProviderCliUpgradeRow(record, status.scheduler, now));
+}
+
+// 「验证并解除熔断」的结果文案。
+const CLEAR_BROKEN_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  cleared: '已解除熔断',
+  not_broken: '当前没有熔断',
+  verify_failed: '当前版本验证不通过，保持熔断',
+  verify_inconclusive: '当前版本未能确证可用，保持熔断',
+  installed_version_unknown: '探测不到当前安装的版本，保持熔断',
+  already_running: '后台正在检查升级，请稍后再试',
+  unknown_provider: '该 CLI 不在自动升级范围内',
+  scheduler_unavailable: '升级调度器未运行',
+  deps_unavailable: '升级调度器未就绪'
+});
+
+export function describeClearBrokenResult(result: { ok: boolean; reason: string; detail?: string; version?: string }) {
+  const label = CLEAR_BROKEN_LABELS[result.reason] || result.reason || '解除失败';
+  if (result.ok) return `${label}：${result.version || ''} 验证通过，已恢复自动升级`;
+  return result.detail ? `${label}（${result.detail}）` : label;
 }

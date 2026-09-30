@@ -77,6 +77,8 @@ aih codex set-mobile 1
 aih codex unset-mobile
 ```
 
+默认账号只作用于宿主上直接运行的 `codex`/`claude` 等 CLI 与桌面 App；`aih <provider>` 不带账号 ID 时一律走 AIH Server（网关账号池），要用指定账号请写 `aih <provider> <id>`。
+
 支持内置 AIH Server 的 Codex、Claude、OpenCode、Kimi 可用不带 ID 的 `set-default` 切换宿主 CLI 默认配置；带 ID 时切回指定账号。Claude、OpenCode、Kimi 的宿主配置在切回账号或执行 `unset-default` 时恢复原文；若配置期间被外部修改，会停止恢复以避免覆盖用户改动。OpenCode 的 `opencode.jsonc` 会保留原有注释与无关选项。Server 地址或 Key 变更后重新执行 `set-default` 可刷新宿主配置。独立的 `--restart-client` 未成功重启或启动客户端时返回非零退出码。
 
 Codex 的两种默认模式：

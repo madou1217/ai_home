@@ -130,7 +130,7 @@ test('`aih claude .aih-server` explicitly targets built-in AIH server profile', 
   assert.deepEqual(runCalls, [{ cliName: 'claude', id: '', forwardArgs: ['--version'] }]);
 });
 
-test('a selected account and AIH Server profile each control the implicit provider launch', (t) => {
+test('bare `aih <provider>` always uses AIH Server; the default account is only for the host CLI/App', (t) => {
   const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'claude');
   const runCalls = [];
   const options = {
@@ -142,32 +142,15 @@ test('a selected account and AIH Server profile each control the implicit provid
     runCliPty: (provider, id, forwardArgs) => runCalls.push({ provider, id, forwardArgs })
   };
 
+  // set-default <id> 只决定宿主上直接运行的 CLI/App 用哪个账号，不劫持 aih 的裸启动。
   writeDefaultAccountRef(fs, aiHomeDir, 'claude', accountRef);
   runAiCliCommandRouter('claude', ['claude'], options);
   runAiCliCommandRouter('claude', ['claude', '--version'], options);
   assert.deepEqual(runCalls, [
-    { provider: 'claude', id: accountRef, forwardArgs: [] },
-    { provider: 'claude', id: accountRef, forwardArgs: ['--version'] }
-  ]);
-
-  runAiCliCommandRouter('claude', ['claude', 'set-default'], {
-    ...options,
-    syncGlobalConfigToHost: () => ({ ok: true, gateway: true })
-  });
-  runAiCliCommandRouter('claude', ['claude'], options);
-  runAiCliCommandRouter('claude', ['claude', '--version'], options);
-  assert.deepEqual(runCalls.slice(2), [
     { provider: 'claude', id: '', forwardArgs: [] },
     { provider: 'claude', id: '', forwardArgs: ['--version'] }
   ]);
-
-  runAiCliCommandRouter('claude', ['claude', 'set-default', '12'], {
-    ...options,
-    syncGlobalConfigToHost: () => ({ ok: true })
-  });
-  runAiCliCommandRouter('claude', ['claude'], options);
-  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'claude'), '');
-  assert.equal(runCalls.at(-1).id, accountRef);
+  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'claude'), accountRef);
 });
 
 test('`aih claude terminal-icon` is handled by ai-home instead of native passthrough', (t) => {

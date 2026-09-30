@@ -25,7 +25,8 @@ describe('codex subscription status', () => {
     expect(sub.status).toBe('renewed');
     const view = describeCodexSubscription(sub);
     expect(view.tone).toBe('success');
-    expect(view.label).toContain('订阅有效');
+    expect(view.label).toMatch(/^订阅有效 \d{4}-\d{2}-\d{2}$/);
+    expect(view.tooltip).toContain('plus');
     expect(view.needsConfirmation).toBe(false);
   });
 

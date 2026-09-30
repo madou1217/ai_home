@@ -33,13 +33,13 @@ function withEnv(patch, fn) {
   }
 }
 
-test('provider CLI 自动升级默认检查开、应用开、6 小时一轮', () => {
+test('provider CLI 自动升级默认检查开、应用开、5 分钟一轮', () => {
   withEnv({}, () => {
     const parsed = parseServerServeArgs([]);
     assert.equal(parsed.providerCliAutoUpgrade, true);
     assert.equal(parsed.providerCliAutoUpgradeApply, true);
     assert.equal(parsed.providerCliAutoUpgradeStartDelayMs, 5 * 60 * 1000);
-    assert.equal(parsed.providerCliAutoUpgradeIntervalMs, 6 * 60 * 60 * 1000);
+    assert.equal(parsed.providerCliAutoUpgradeIntervalMs, 5 * 60 * 1000);
   });
 });
 
@@ -78,10 +78,10 @@ test('整条关掉时应用开关不再有意义,但字段仍归一化成布尔'
   });
 });
 
-// 一轮要 spawn 真二进制（codex 的强判据还要起一次 app-server），不给调成秒级。
-test('间隔低于 30 分钟回落默认值', () => {
+// 不给调成秒级。
+test('间隔低于 5 分钟回落默认值', () => {
   withEnv({ AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_INTERVAL_MS: '1000' }, () => {
-    assert.equal(parseServerServeArgs([]).providerCliAutoUpgradeIntervalMs, 6 * 60 * 60 * 1000);
+    assert.equal(parseServerServeArgs([]).providerCliAutoUpgradeIntervalMs, 5 * 60 * 1000);
   });
   withEnv({ AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_INTERVAL_MS: String(45 * 60 * 1000) }, () => {
     assert.equal(parseServerServeArgs([]).providerCliAutoUpgradeIntervalMs, 45 * 60 * 1000);

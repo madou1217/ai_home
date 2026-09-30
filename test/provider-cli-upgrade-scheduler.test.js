@@ -41,16 +41,16 @@ function ledgerStore(initial = { schemaVersion: 1, global: { enabled: true }, pr
   };
 }
 
-test('默认配置：检查开、应用开、6 小时一轮', () => {
+test('默认配置：检查开、应用开、5 分钟一轮', () => {
   assert.deepEqual(normalizeProviderCliUpgradeConfig({}), {
     enabled: true,
     applyEnabled: true,
     startDelayMs: 5 * 60 * 1000,
-    intervalMs: 6 * 60 * 60 * 1000
+    intervalMs: 5 * 60 * 1000
   });
 
-  // 间隔低于 30 分钟一律回落默认值：一轮要 spawn 真二进制，不给调成秒级。
-  assert.equal(normalizeProviderCliUpgradeConfig({ intervalMs: 1000 }).intervalMs, 6 * 60 * 60 * 1000);
+  // 间隔低于 5 分钟一律回落默认值：不给调成秒级。
+  assert.equal(normalizeProviderCliUpgradeConfig({ intervalMs: 1000 }).intervalMs, 5 * 60 * 1000);
   // 退回只检查的路径必须钉死：默认翻开之后，这条才是唯一能关掉「动用户环境」的开关。
   assert.equal(normalizeProviderCliUpgradeConfig({ applyEnabled: false }).applyEnabled, false);
   assert.equal(normalizeProviderCliUpgradeConfig({ applyEnabled: true }).applyEnabled, true);

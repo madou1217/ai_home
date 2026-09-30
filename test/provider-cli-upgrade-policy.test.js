@@ -123,7 +123,7 @@ test('最新版还在 soak 时,升级到已静置满、比本机新的最新稳�
     latestVersion: '0.159.2',
     publishedAt: NOW - 7 * HOUR,
     releases
-  }));
+  }), { soakMs: 48 * HOUR });
   assert.equal(result.decision, DECISIONS.UPGRADE);
   assert.equal(result.targetVersion, '0.158.0');
   assert.equal(result.reason, 'upgrade_soaked_release');
@@ -135,10 +135,17 @@ test('已静置满的稳定版不比本机新或已被拉黑时,仍等最新版 
     { version: '0.158.0', publishedAt: NOW - 50 * HOUR },
     { version: '0.159.2', publishedAt: NOW - 7 * HOUR }
   ];
-  const notNewer = decide(base({ installedVersion: '0.158.0', latestVersion: '0.159.2', publishedAt: NOW - 7 * HOUR, releases }));
+  const notNewer = decide(base({ installedVersion: '0.158.0', latestVersion: '0.159.2', publishedAt: NOW - 7 * HOUR, releases }), { soakMs: 48 * HOUR });
   assert.equal(notNewer.reason, 'soaking');
   const blocked = decide(base({
     installedVersion: '0.154.0', latestVersion: '0.159.2', publishedAt: NOW - 7 * HOUR, releases, blockedVersions: ['0.158.0']
-  }));
+  }), { soakMs: 48 * HOUR });
   assert.equal(blocked.reason, 'soaking');
+});
+
+// 用户要求:新版本发布后 10 分钟内开始升级(5 分钟一轮 + 5 分钟 soak)。
+test('默认 soak 5 分钟:发布 6 分钟的新版本直接升级,刚发布 1 分钟的等一下', () => {
+  assert.equal(DEFAULT_SOAK_MS, 5 * 60 * 1000);
+  assert.equal(decide(base({ publishedAt: NOW - 6 * 60 * 1000 })).decision, DECISIONS.UPGRADE);
+  assert.equal(decide(base({ publishedAt: NOW - 60 * 1000 })).reason, 'soaking');
 });

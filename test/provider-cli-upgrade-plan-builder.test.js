@@ -130,3 +130,19 @@ test('standalone plan 标记了升级后必须重装 aih 的 codex hook', () => 
 
   assert.deepEqual(plan.postInstall, ['reinstall_codex_cli_hook']);
 });
+
+// 用户要求所有 provider CLI 都自动跟进:claude / opencode 用官方自更新命令装到指定版本,
+// 能钉版本就能回滚。版本号作为独立参数传给 CLI 本身,不经 shell。
+test('厂商自更新渠道用官方命令钉版本安装(claude install / opencode upgrade)', () => {
+  const claude = buildPinnedPlans({ channel: CHANNELS.VENDOR_SELFUPDATE, provider: 'claude', cliPath: '/home/u/.local/bin/claude', version: '2.1.285' });
+  assert.equal(claude.ok, true);
+  assert.equal(claude.plans[0].command, '/home/u/.local/bin/claude');
+  assert.deepEqual(claude.plans[0].args, ['install', '2.1.285']);
+
+  const opencode = buildPinnedPlans({ channel: CHANNELS.VENDOR_SELFUPDATE, provider: 'opencode', cliPath: '/home/u/.opencode/bin/opencode', version: '1.18.33' });
+  assert.deepEqual(opencode.plans[0].args, ['upgrade', '1.18.33']);
+
+  assert.equal(buildPinnedPlans({ channel: CHANNELS.VENDOR_SELFUPDATE, provider: 'unknown', cliPath: '/x', version: '1.0.0' }).reason, 'channel_not_pinnable');
+  assert.equal(buildPinnedPlans({ channel: CHANNELS.VENDOR_SELFUPDATE, provider: 'claude', version: '1.0.0' }).reason, 'channel_not_pinnable');
+  assert.equal(buildPinnedPlans({ channel: CHANNELS.VENDOR_SELFUPDATE, provider: 'claude', cliPath: '/x', version: '1; rm -rf /' }).reason, 'invalid_version');
+});

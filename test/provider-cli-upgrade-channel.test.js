@@ -415,3 +415,13 @@ test('Windows: hook 的 UPSTREAM 不存在时也不会漂到 node.exe 上', () =
   assert.equal(result.channel, CHANNELS.UNKNOWN);
   assert.ok(!result.evidence.includes('resolved_through_aih_shim'));
 });
+
+test('厂商渠道按 provider 细分:claude 并排安装免等空闲,opencode 原地替换要等', () => {
+  const { resolveChannelCapabilities, requiresQuiescence } = require('../lib/server/provider-cli-upgrade/upgrade-channel');
+  assert.equal(resolveChannelCapabilities(CHANNELS.VENDOR_SELFUPDATE, 'claude').pinnable, true);
+  assert.equal(resolveChannelCapabilities(CHANNELS.VENDOR_SELFUPDATE, 'opencode').pinnable, true);
+  assert.equal(resolveChannelCapabilities(CHANNELS.VENDOR_SELFUPDATE, 'someone').pinnable, false);
+  assert.equal(requiresQuiescence(CHANNELS.VENDOR_SELFUPDATE, 'darwin', 'claude'), false);
+  assert.equal(requiresQuiescence(CHANNELS.VENDOR_SELFUPDATE, 'darwin', 'opencode'), true);
+  assert.equal(requiresQuiescence(CHANNELS.VENDOR_SELFUPDATE, 'win32', 'claude'), true);
+});

@@ -107,18 +107,21 @@ type Result struct {
 
 // Capabilities 描述一个策略在某个模型上支持的请求语义。
 type Capabilities struct {
-	Generation        bool
-	Edit              bool
-	Mask              bool
-	Multiple          bool
-	Size              bool
-	Quality           bool
-	ResponseFormat    bool
-	MaxInputImages    int
-	Background        bool
-	OutputFormat      bool
-	OutputCompression bool
-	Moderation        bool
+	Generation     bool
+	Edit           bool
+	Mask           bool
+	Multiple       bool
+	Size           bool
+	Quality        bool
+	ResponseFormat bool
+	MaxInputImages int
+	Background     bool
+	OutputFormat   bool
+	// DefaultOutputFormat 是不带格式参数时上游的实际输出格式；请求恰好要这个格式
+	// 不算格式控制，不因 OutputFormat=false 被拒。
+	DefaultOutputFormat string
+	OutputCompression   bool
+	Moderation          bool
 }
 
 // Strategy 是一种上游图片线协议的实现。
@@ -183,12 +186,16 @@ var nativeCapabilities = map[string]Capabilities{
 		ResponseFormat: true,
 		MaxInputImages: 5,
 		Background:     true,
+		// 历史出图实测 image/png，与 Node 的 NATIVE_IMAGE_CAPABILITIES 对齐。
+		DefaultOutputFormat: "png",
 	},
 	"agy": {
 		Generation:     true,
 		Edit:           true,
 		ResponseFormat: true,
 		MaxInputImages: 1,
+		// 历史出图实测 image/jpeg。
+		DefaultOutputFormat: "jpeg",
 	},
 	"passthrough": {
 		Generation:        true,
@@ -362,14 +369,16 @@ func CheckCapabilities(
 			)
 		}
 	}
-	if request.Background != "" && !capabilities.Background {
+	// auto / 默认格式等于「没指定」：客户端会把默认值显式带上，不能因此判为不支持。
+	if request.Background != "" && request.Background != "auto" && !capabilities.Background {
 		return newError(
 			400,
 			"unsupported_image_background",
 			fmt.Sprintf("%s does not support image background controls", providerName),
 		)
 	}
-	if request.OutputFormat != "" && !capabilities.OutputFormat {
+	if request.OutputFormat != "" && !capabilities.OutputFormat &&
+		request.OutputFormat != capabilities.DefaultOutputFormat {
 		return newError(
 			400,
 			"unsupported_image_output_format",
@@ -383,7 +392,7 @@ func CheckCapabilities(
 			fmt.Sprintf("%s does not support image output compression controls", providerName),
 		)
 	}
-	if request.Moderation != "" && !capabilities.Moderation {
+	if request.Moderation != "" && request.Moderation != "auto" && !capabilities.Moderation {
 		return newError(
 			400,
 			"unsupported_image_moderation",

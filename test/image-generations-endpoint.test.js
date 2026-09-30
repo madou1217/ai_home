@@ -263,6 +263,10 @@ test('native image capabilities reject controls that would otherwise be silently
   assert.equal(resolveImageCapabilityError(strategy, { ...base, size: '1024x1024' }), null);
   assert.equal(resolveImageCapabilityError(strategy, { ...base, quality: 'high' }), null);
   assert.equal(resolveImageCapabilityError(strategy, { ...base, outputFormat: 'webp' }).code, 'unsupported_image_output_format');
+  // 回归:灵感工坊把默认值显式带上(outputFormat png、background/moderation auto),
+  // 所有 codex 账号因此被判不合格,报 "codex does not support image output format controls"。
+  // png 是 codex 原生的实际输出格式,auto 等于没指定,都不算控制项。
+  assert.equal(resolveImageCapabilityError(strategy, { ...base, outputFormat: 'png', background: 'auto', moderation: 'auto' }), null);
   assert.equal(resolveImageCapabilityError(strategy, { ...base, outputCompression: 80 }).code, 'unsupported_image_output_compression');
   assert.equal(resolveImageCapabilityError(strategy, { ...base, moderation: 'low' }).code, 'unsupported_image_moderation');
 
@@ -919,4 +923,20 @@ test('writeImageGenerationError emits the OpenAI error envelope', () => {
 
 test('IMAGE_PATHNAMES covers generations and edits', () => {
   assert.deepEqual([...IMAGE_PATHNAMES].sort(), ['/v1/images/edits', '/v1/images/generations']);
+});
+
+test('default-valued image controls do not disqualify an API-key image profile', () => {
+  const registry = buildImageGenerationRegistry({});
+  const llmApi = registry.resolve('codex', {
+    accountRef: 'acct_relay',
+    provider: 'codex',
+    apiKeyMode: true,
+    authType: 'api-key',
+    accessToken: 'sk-relay',
+    openaiBaseUrl: 'https://relay.example.com/v1',
+    upstreamImageApi: 'llm-api'
+  });
+  const request = { mode: 'generation', model: 'gpt-image-2', prompt: 'p', n: 1, responseFormat: 'b64_json' };
+  assert.equal(resolveImageCapabilityError(llmApi, { ...request, background: 'auto', outputFormat: 'png' }), null);
+  assert.equal(resolveImageCapabilityError(llmApi, { ...request, background: 'transparent' }).code, 'unsupported_image_background');
 });

@@ -46,6 +46,7 @@ test('native capability specs expose provider-specific controls', () => {
     maxInputImages: 5,
     background: true,
     outputFormat: false,
+    defaultOutputFormat: 'png',
     outputCompression: false,
     moderation: false
   });

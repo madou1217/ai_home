@@ -124,6 +124,20 @@ func TestCheckCapabilitiesMatchesNodeGate(t *testing.T) {
 			code: "unsupported_image_output_format",
 		},
 		{
+			// 回归:客户端显式带上默认值(png、auto)时,不能把 codex 判为不支持格式控制。
+			name: "default output format and auto controls are not controls",
+			request: imagegeneration.Request{
+				Mode:         imagegeneration.ModeGeneration,
+				Model:        "gpt-image-2",
+				Prompt:       "p",
+				N:            1,
+				OutputFormat: "png",
+				Background:   "auto",
+				Moderation:   "auto",
+			},
+			code: "",
+		},
+		{
 			name: "quality value must be declared",
 			request: imagegeneration.Request{
 				Mode:    imagegeneration.ModeGeneration,

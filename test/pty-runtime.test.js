@@ -1352,6 +1352,10 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
+  // 新 session 必须带上本次启动自己的临时凭据目录，不能继承 tmux 服务器里第一个会话的。
+  const codexHomeEnvArg = spawns[0].args.find((arg) => String(arg).startsWith('CODEX_HOME='));
+  assert.match(codexHomeEnvArg, /aih-auth-codex-acct_[0-9a-f]{20}-[^/]+\/\.codex$/);
+  const codexSqliteHomeEnvArg = spawns[0].args.find((arg) => String(arg).startsWith('CODEX_SQLITE_HOME='));
   assert.deepEqual(
     spawns[0].args.filter((arg, index, args) => args[index - 1] === '-e'),
     [
@@ -1362,6 +1366,8 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
+      codexHomeEnvArg,
+      codexSqliteHomeEnvArg,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
     ]
   );
@@ -1554,6 +1560,10 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
   );
+  // 新 session 必须带上本次启动自己的临时凭据目录，不能继承 tmux 服务器里第一个会话的。
+  const codexHomeEnvArg = spawns[0].args.find((arg) => String(arg).startsWith('CODEX_HOME='));
+  assert.match(codexHomeEnvArg, /aih-auth-codex-acct_[0-9a-f]{20}-[^/]+\/\.codex$/);
+  const codexSqliteHomeEnvArg = spawns[0].args.find((arg) => String(arg).startsWith('CODEX_SQLITE_HOME='));
   assert.deepEqual(
     spawns[0].args.filter((arg, index, args) => args[index - 1] === '-e'),
     [
@@ -1564,6 +1574,8 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
       `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
+      codexHomeEnvArg,
+      codexSqliteHomeEnvArg,
       `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
     ]
   );

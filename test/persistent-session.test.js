@@ -1489,3 +1489,21 @@ test('mirror mode (-M / share): attach shared, never detach the other client', (
   assert.equal(shared.args.includes('-d'), false);
   assert.equal(exclusive.args.includes('-d'), true);
 });
+
+test('new sessions carry their own provider home even when the tmux server already runs', () => {
+  // POSIX 上新 session 的环境来自长驻 tmux 服务器(第一个会话启动时的环境)。不显式注入时,
+  // 第二个会话会拿到第一个会话的临时 CODEX_HOME;第一个会话退出删掉它,其余会话随之丢凭据。
+  const launch = persistentSession.buildTmuxLaunch({ command: 'codex', args: [] }, {
+    cliName: 'codex',
+    runtimeScope: 'acct_00000000000000000001',
+    sessionName: 'p-demo',
+    tmuxCommand: 'tmux',
+    env: {
+      CODEX_HOME: '/tmp/aih-auth-codex-second/.codex',
+      OPENAI_API_KEY: 'sk-secret'
+    }
+  });
+  assert.ok(launch.args.includes('CODEX_HOME=/tmp/aih-auth-codex-second/.codex'));
+  // 密钥只走进程 env,不进 tmux argv。
+  assert.ok(!launch.args.some((arg) => String(arg).includes('sk-secret')));
+});

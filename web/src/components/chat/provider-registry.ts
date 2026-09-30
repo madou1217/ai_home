@@ -13,6 +13,7 @@ import zcodeIcon from '@/assets/icons/zcode.svg';
 import codebuddyIcon from '@/assets/icons/codebuddy.svg';
 import codebuddycnIcon from '@/assets/icons/codebuddycn.svg';
 import workbuddyIcon from '@/assets/icons/workbuddy.svg';
+import workbuddycnIcon from '@/assets/icons/workbuddycn.svg';
 import qoderIcon from '@/assets/icons/qoder.png';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
@@ -26,6 +27,7 @@ import zcodeTerminalIcon from '../../../../assets/provider-icons/zcode.png';
 import codebuddyTerminalIcon from '../../../../assets/provider-icons/codebuddy.png';
 import codebuddycnTerminalIcon from '../../../../assets/provider-icons/codebuddycn.png';
 import workbuddyTerminalIcon from '../../../../assets/provider-icons/workbuddy.png';
+import workbuddycnTerminalIcon from '../../../../assets/provider-icons/workbuddycn.png';
 import {
   PROVIDER_CATALOG,
   PROVIDER_FALLBACK,
@@ -76,11 +78,11 @@ const ICONS: Partial<Record<Provider, string>> = {
   kimi: kimiIcon,
   kiro: kiroIcon,
   zcode: zcodeIcon,
-  // CodeBuddy 家族：自绘品牌记号（同目录 codebuddy*.svg / workbuddy.svg），
-  // 三个站点/产品各自独立图形，见各文件头部的素材来源说明。
+  // CodeBuddy / WorkBuddy 家族：同一官方图形，只以颜色区分（见各 SVG 头注释）。
   codebuddy: codebuddyIcon,
   codebuddycn: codebuddycnIcon,
-  workbuddy: workbuddyIcon
+  workbuddy: workbuddyIcon,
+  workbuddycn: workbuddycnIcon
 };
 
 const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
@@ -99,7 +101,8 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   // （生成脚本 scripts/gen-provider-icons.js，路径与 Provider 合同声明一致）。
   codebuddy: codebuddyTerminalIcon,
   codebuddycn: codebuddycnTerminalIcon,
-  workbuddy: workbuddyTerminalIcon
+  workbuddy: workbuddyTerminalIcon,
+  workbuddycn: workbuddycnTerminalIcon
 };
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(

@@ -470,7 +470,7 @@ export const PROVIDER_DEFINITIONS = [
     "terminalIconAsset": "assets/provider-icons/workbuddy.png",
     "accentVar": "var(--provider-workbuddy)",
     "softVar": "var(--provider-workbuddy-soft)",
-    "tagColor": "blue",
+    "tagColor": "green",
     "capabilities": [
       "api_key_account",
       "session_history",
@@ -503,7 +503,7 @@ export const PROVIDER_DEFINITIONS = [
     "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
     "accentVar": "var(--provider-workbuddycn)",
     "softVar": "var(--provider-workbuddycn-soft)",
-    "tagColor": "purple",
+    "tagColor": "gold",
     "capabilities": [
       "api_key_account",
       "session_history",

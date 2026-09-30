@@ -164,7 +164,7 @@
       "terminalIconAsset": "assets/provider-icons/workbuddy.png",
       "accentVar": "var(--provider-workbuddy)",
       "softVar": "var(--provider-workbuddy-soft)",
-      "tagColor": "blue",
+      "tagColor": "green",
       "family": "workbuddy",
       "site": "global"
     },
@@ -176,7 +176,7 @@
       "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
       "accentVar": "var(--provider-workbuddycn)",
       "softVar": "var(--provider-workbuddycn-soft)",
-      "tagColor": "purple",
+      "tagColor": "gold",
       "family": "workbuddy",
       "site": "cn"
     }

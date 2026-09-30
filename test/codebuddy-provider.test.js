@@ -48,7 +48,7 @@ test('codebuddy presentation matches the declared brand surface', () => {
   assert.equal(meta.id, 'codebuddy');
   assert.equal(meta.label, 'CodeBuddy');
   assert.equal(meta.short, 'CB');
-  // 终端文本图标与 web/src/assets/icons/codebuddy.svg 的菱形记号同形。
+  // 终端文本图标（❖）只用于纯文本场景；图形图标见 web/src/assets/icons/codebuddy.svg。
   assert.equal(meta.terminalIcon, '❖');
   // 该路径必须与 scripts/gen-codebuddy-icon.js 的输出路径一致。
   assert.equal(meta.terminalIconAsset, 'assets/provider-icons/codebuddy.png');
@@ -821,9 +821,24 @@ test('every declared terminal icon asset exists on disk with a matching brand ic
     assert.ok(fs.existsSync(svgPath), `${provider}: missing web icon ${svgPath}`);
   }
   const generator = fs.readFileSync(path.join(repoRoot, 'scripts', 'gen-provider-icons.js'), 'utf8');
+  const { parseSingleColorSvg, pathToPolygons } = require('../scripts/svg-path-raster');
   for (const provider of FAMILY_PROVIDERS) {
-    assert.ok(generator.includes(`${provider}:`), `generator must cover ${provider}`);
+    assert.ok(generator.includes(`'${provider}'`), `generator must cover ${provider}`);
+    // PNG 由 SVG 栅格化生成：SVG 必须是生成器能解析的单色单路径图标。
+    const svg = parseSingleColorSvg(fs.readFileSync(path.join(repoRoot, 'web', 'src', 'assets', 'icons', `${provider}.svg`), 'utf8'));
+    assert.ok(pathToPolygons(svg.d).length > 0, `${provider}: svg path must rasterize`);
   }
+});
+
+// 用户要求:CodeBuddy / WorkBuddy 四个 Provider 用同一官方图形,只以颜色区分。
+test('buddy family icons share one shape and differ only in colour', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const { parseSingleColorSvg } = require('../scripts/svg-path-raster');
+  const svgs = FAMILY_PROVIDERS.map((provider) => parseSingleColorSvg(
+    fs.readFileSync(path.join(repoRoot, 'web', 'src', 'assets', 'icons', `${provider}.svg`), 'utf8')
+  ));
+  assert.equal(new Set(svgs.map((svg) => svg.d)).size, 1);
+  assert.equal(new Set(svgs.map((svg) => svg.rgb.join(','))).size, FAMILY_PROVIDERS.length);
 });
 
 // --- 共享 fixture ---

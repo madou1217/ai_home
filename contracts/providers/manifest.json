@@ -1511,7 +1511,7 @@
         "terminalIconAsset": "assets/provider-icons/workbuddy.png",
         "accentVar": "var(--provider-workbuddy)",
         "softVar": "var(--provider-workbuddy-soft)",
-        "tagColor": "blue"
+        "tagColor": "green"
       },
       "gateway": "active",
       "capabilities": [
@@ -1583,7 +1583,7 @@
         "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
         "accentVar": "var(--provider-workbuddycn)",
         "softVar": "var(--provider-workbuddycn-soft)",
-        "tagColor": "purple"
+        "tagColor": "gold"
       },
       "gateway": "active",
       "capabilities": [

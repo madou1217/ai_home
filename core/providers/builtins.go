@@ -724,7 +724,7 @@ func builtinWorkbuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:           "workbuddy",
-		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "blue"),
+		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
@@ -804,7 +804,7 @@ func builtinWorkbuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:           "workbuddycn",
-		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "purple"),
+		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。

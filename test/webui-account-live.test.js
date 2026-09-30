@@ -1750,3 +1750,42 @@ test('family accounts surface in the fast snapshot even though the runtime pool 
 
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// 回归:终端标题(直接读库)已变,网页刷新却一直是旧额度。刷新页面走快速快照,
+// 它此前优先用内存里上一轮记录的快照,新值只能等后台重建 + 推送;重建对单个账号
+// 的失败又被静默吞掉,于是该账号刷新多少次都停在旧值。快速快照必须以库为准。
+test('fast account snapshot serves the stored usage snapshot over a stale in-memory record', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-fast-usage-'));
+  const staleSnapshot = { ...buildCodexUsageSnapshot('same@example.com', 88), capturedAt: Date.now() - 3_600_000 };
+  const freshSnapshot = buildCodexUsageSnapshot('same@example.com', 71);
+  const accountRef = registerDbAccount(root, 'codex', '9', {
+    nativeAuth: { auth: { auth_mode: 'chatgpt', tokens: { refresh_token: 'rt_9', access_token: 'at_9' } } },
+    usageSnapshot: freshSnapshot
+  });
+  const ctx = buildRefreshContext({
+    aiHomeDir: root,
+    provider: 'codex',
+    accountRef,
+    stateInfo: { status: 'up', configured: true, apiKeyMode: false },
+    status: { configured: true, accountName: 'same@example.com' }
+  });
+  const liveState = __private.getAccountsLiveState(ctx.state);
+  liveState.records.set(accountRef, {
+    provider: 'codex',
+    accountRef,
+    configured: true,
+    apiKeyMode: false,
+    remainingPct: 88,
+    usageSnapshot: staleSnapshot
+  });
+  // 模拟后台重建一直没有产出新记录(失败被吞或尚未完成)
+  liveState.hydrating = true;
+  liveState.lastHydratedAt = Date.now();
+
+  const record = readAccountsFastSnapshot(ctx).accounts.find((item) => item.accountRef === accountRef);
+
+  assert.equal(record.usageSnapshot.capturedAt, freshSnapshot.capturedAt);
+  assert.equal(record.usageSnapshot.entries[0].remainingPct, 71);
+  assert.equal(record.remainingPct, 71);
+  fs.rmSync(root, { recursive: true, force: true });
+});

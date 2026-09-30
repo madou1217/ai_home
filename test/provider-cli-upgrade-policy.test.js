@@ -106,3 +106,39 @@ test('配置归一化夹住非法值', () => {
     soakUnknownLimit: 2
   });
 });
+
+// 回归:codex 几乎每天发一个稳定版,最新版永远等不满 48h soak,自动升级被饿死,
+// 本机停在 0.154,上游据 client_version 不下发新模型。最新版还在 soak 时,选已静置满的稳定版。
+test('最新版还在 soak 时,升级到已静置满、比本机新的最新稳定版', () => {
+  const HOUR = 60 * 60 * 1000;
+  const releases = [
+    { version: '0.157.1', publishedAt: NOW - 100 * HOUR },
+    { version: '0.158.0', publishedAt: NOW - 50 * HOUR },
+    { version: '0.159.0-alpha.1', publishedAt: NOW - 60 * HOUR },
+    { version: '0.159.0', publishedAt: NOW - 24 * HOUR },
+    { version: '0.159.2', publishedAt: NOW - 7 * HOUR }
+  ];
+  const result = decide(base({
+    installedVersion: '0.154.0-alpha.3',
+    latestVersion: '0.159.2',
+    publishedAt: NOW - 7 * HOUR,
+    releases
+  }));
+  assert.equal(result.decision, DECISIONS.UPGRADE);
+  assert.equal(result.targetVersion, '0.158.0');
+  assert.equal(result.reason, 'upgrade_soaked_release');
+});
+
+test('已静置满的稳定版不比本机新或已被拉黑时,仍等最新版 soak', () => {
+  const HOUR = 60 * 60 * 1000;
+  const releases = [
+    { version: '0.158.0', publishedAt: NOW - 50 * HOUR },
+    { version: '0.159.2', publishedAt: NOW - 7 * HOUR }
+  ];
+  const notNewer = decide(base({ installedVersion: '0.158.0', latestVersion: '0.159.2', publishedAt: NOW - 7 * HOUR, releases }));
+  assert.equal(notNewer.reason, 'soaking');
+  const blocked = decide(base({
+    installedVersion: '0.154.0', latestVersion: '0.159.2', publishedAt: NOW - 7 * HOUR, releases, blockedVersions: ['0.158.0']
+  }));
+  assert.equal(blocked.reason, 'soaking');
+});

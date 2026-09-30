@@ -17,7 +17,10 @@ function brokenLedger() {
     channel: 'standalone_release',
     installedVersion: 'codex-cli 0.154.0-alpha.3',
     knownGoodVersion: 'codex-cli 0.154.0-alpha.3',
-    lastApplyError: 'rollback_plan_unavailable'
+    lastApplyError: 'rollback_plan_unavailable',
+    enabled: false,
+    disabledReason: 'rollback_plan_unavailable',
+    blockedVersions: ['0.158.0', '0.157.0']
   });
 }
 
@@ -43,6 +46,18 @@ test('验证通过才解除熔断,并把当前版本记为回退锚点', async (
   assert.equal(record.knownGoodRollbackable, true);
   assert.equal(record.lastApplyError, '');
   assert.equal(record.history.at(-1).outcome, 'cleared');
+  // 熔断落的三处都要恢复,否则自动升级仍停着
+  assert.equal(record.enabled, true);
+  assert.equal(record.disabledReason, '');
+  assert.deepEqual(record.blockedVersions, ['0.157.0']);
+});
+
+// 回归:此前手工解除只改回了 state,enabled 仍为 false、0.158.0 仍在黑名单,自动升级实际停着。
+test('state 已改回但 enabled 仍为 false 的半解除账本也能解除', async () => {
+  const half = writeProviderRecord(brokenLedger(), 'codex', { state: 'healthy' });
+  const result = await clearBrokenProvider('codex', half, deps({ verdict: VERDICTS.PASS }));
+  assert.equal(result.ok, true);
+  assert.equal(readProviderRecord(result.ledger, 'codex').enabled, true);
 });
 
 test('验证失败或未能确证时保持熔断,并给出原因', async () => {

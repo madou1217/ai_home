@@ -167,7 +167,8 @@ export function getProviderCliUpgradeRow(
       statusLabel: '已熔断',
       statusTone: 'error',
       reasonText: getUpgradeReasonLabel(record.disabledReason) || base.reasonText,
-      attention: true
+      attention: true,
+      canClearBroken: true
     };
   }
   if (ATTENTION_STATES.includes(String(record.state || ''))) {

@@ -164,3 +164,9 @@ test('解除熔断的结果文案写清结论与原因', () => {
     '当前版本验证不通过，保持熔断（version_mismatch:a!=b）'
   );
 });
+
+test('被停用(enabled=false)的熔断行同样可以验证后解除', () => {
+  const row = getProviderCliUpgradeRow(record({ enabled: false, disabledReason: 'rollback_plan_unavailable' }), AUTO_APPLY, NOW);
+  assert.equal(row.statusLabel, '已熔断');
+  assert.equal(row.canClearBroken, true);
+});

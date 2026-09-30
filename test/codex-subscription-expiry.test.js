@@ -51,3 +51,15 @@ test('live plan confirmation time reaches the WebUI snapshot', () => {
   const legacy = normalizeAccountUsageSnapshot({ kind: 'codex_oauth_status', capturedAt: 1, account: { planType: 'plus' }, entries: [] });
   assert.equal(legacy.account.planConfirmedAtMs, 0);
 });
+
+// 回归:账号页重建快照 account 时只保留固定字段,把实时确认时间丢了,并用 id_token 里的
+// 旧套餐覆盖了额度接口实时确认的套餐(plus -> pro 后 token 未刷新时仍显示 plus)。
+test('a live-confirmed plan survives the snapshot account rebuild', () => {
+  const auth = { tokens: { id_token: jwt({ email: 'u@example.com', 'https://api.openai.com/auth': { chatgpt_plan_type: 'plus' } }) } };
+  const confirmed = buildCodexSnapshotAccount({ planType: 'pro', planConfirmedAtMs: 5_000 }, auth);
+  assert.equal(confirmed.planType, 'pro');
+  assert.equal(confirmed.planConfirmedAtMs, 5_000);
+  const unconfirmed = buildCodexSnapshotAccount({ planType: 'pro' }, auth);
+  assert.equal(unconfirmed.planType, 'plus');
+  assert.equal(unconfirmed.planConfirmedAtMs, undefined);
+});

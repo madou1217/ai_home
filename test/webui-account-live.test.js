@@ -1789,3 +1789,19 @@ test('fast account snapshot serves the stored usage snapshot over a stale in-mem
   assert.equal(record.remainingPct, 71);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('family OAuth accounts with valid credentials show as signed in with their nickname', (t) => {
+  const { credential } = require('./helpers/codebuddy-credential');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-family-oauth-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const accountRef = registerDbAccount(root, 'workbuddy', '1', {
+    identitySeed: 'oauth:workbuddy:fixture-user',
+    nativeAuth: { credentials: credential('workbuddy') }
+  });
+  const ctx = buildRefreshContext({ aiHomeDir: root, provider: 'workbuddy', accountRef });
+  const record = readAccountsFastSnapshot(ctx).accounts.find((item) => item.accountRef === accountRef);
+
+  assert.equal(record.configured, true);
+  assert.equal(record.displayName, 'fixture');
+  assert.equal(record.apiKeyMode, false);
+});

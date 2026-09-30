@@ -57,6 +57,31 @@ test('没有 pid 的旧状态文件保守判定为忙', (t) => {
   assert.equal(checkProviderQuiescence('codex', { aiHomeDir: home }).busy, true);
 });
 
+// tmux 托管的 app-server 状态只记 socket、没有 pid。此前一律当作忙,残留文件让 codex
+// 永远「在忙」,自动升级被无限推迟。按 socket 查会话是否仍在。
+test('tmux 托管的 app-server 按会话是否存在判定', (t) => {
+  const home = makeHome(t);
+  writeState(home, ['codex-app-server'], 'chat-acct_live.json', { multiplexer: 'tmux', socket: 'aih-codexapp-live', port: 1 });
+  writeState(home, ['codex-app-server'], 'chat-acct_gone.json', { multiplexer: 'tmux', socket: 'aih-codexapp-gone', port: 2 });
+  const probed = [];
+  const result = checkProviderQuiescence('codex', {
+    aiHomeDir: home,
+    platform: 'darwin',
+    hasRunSession: (socket) => { probed.push(socket); return socket === 'aih-codexapp-live'; }
+  });
+
+  assert.deepEqual(result.evidence, ['app_server:chat-acct_live']);
+  assert.deepEqual(probed.sort(), ['aih-codexapp-gone', 'aih-codexapp-live']);
+});
+
+test('win32 上 tmux 托管状态仍保守判定为忙(pane 跟踪不可信)', (t) => {
+  const home = makeHome(t);
+  writeState(home, ['codex-app-server'], 'chat-acct_gone.json', { multiplexer: 'tmux', socket: 'aih-codexapp-gone', port: 2 });
+  const result = checkProviderQuiescence('codex', { aiHomeDir: home, platform: 'win32', hasRunSession: () => false });
+
+  assert.equal(result.busy, true);
+});
+
 test('PTY 常驻会话判定为忙,且只认本 provider 的', (t) => {
   const home = makeHome(t);
   writeState(home, ['persistent-sessions'], 'aih-kimi-acct_y--p-x.json', {});

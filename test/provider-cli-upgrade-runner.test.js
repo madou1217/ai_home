@@ -43,12 +43,19 @@ function makeDeps(overrides = {}) {
   return { deps, calls };
 }
 
+// 下面的闸门用例描述「需要等空闲」的渠道；standalone 在 POSIX 上并排安装、不走闸门，
+// 所以固定在 win32 上跑（那里 standalone 也保守地等空闲）。并排安装的行为见文件末尾。
+const GATED_PLATFORM = 'win32';
+function runGated(provider, ledger, deps, config = {}) {
+  return runProviderUpgradeCycle(provider, ledger, deps, { platform: GATED_PLATFORM, ...config });
+}
+
 // 静默闸门要求连续两次观测到闲，所以 happy path 需要跑两轮。
 async function runTwice(ledger, deps, config) {
   let state = ledger;
   let last = null;
   for (let i = 0; i < 2; i += 1) {
-    const result = await runProviderUpgradeCycle('codex', state, deps, config);
+    const result = await runGated('codex', state, deps, config);
     state = result.ledger;
     last = result;
   }
@@ -69,7 +76,7 @@ test('happy path：连续两次静默后升级并推进 knownGood', async () => 
 
 test('第一次观测到静默还不动手,只记 tick', async () => {
   const { deps, calls } = makeDeps();
-  const result = await runProviderUpgradeCycle('codex', emptyLedger(), deps);
+  const result = await runGated('codex', emptyLedger(), deps);
 
   assert.equal(result.state, STATES.DEFERRED);
   assert.equal(result.reason, 'awaiting_quiescence');
@@ -155,7 +162,7 @@ test('回滚装上了但验证仍失败 → 同样 broken', async () => {
 test('已熔断的 provider 不再做任何动作', async () => {
   const { deps } = makeDeps({ verify: verifyOnlyBaselineOnce() });
   const broken = await runTwice(emptyLedger(), deps);
-  const after = await runProviderUpgradeCycle('codex', broken.ledger, deps);
+  const after = await runGated('codex', broken.ledger, deps);
 
   assert.equal(after.reason, 'provider_broken');
 });
@@ -178,7 +185,7 @@ test('验证 inconclusive 时放行,但 knownGood 不前进', async () => {
 
 test('基线本身就验证不过时拒绝升级', async () => {
   const { deps, calls } = makeDeps({ verify: async () => ({ verdict: VERDICTS.FAIL, detail: 'already broken' }) });
-  const result = await runProviderUpgradeCycle('codex', emptyLedger(), deps);
+  const result = await runGated('codex', emptyLedger(), deps);
 
   assert.equal(result.state, STATES.BASELINE_UNHEALTHY);
   assert.deepEqual(calls.plans, []);
@@ -224,7 +231,7 @@ test('不可钉版本的渠道一律不动手', async () => {
 test('全局熔断后一切停摆', async () => {
   const { deps, calls } = makeDeps();
   const ledger = { ...emptyLedger(), global: { enabled: false, disabledReason: 'manual' } };
-  const result = await runProviderUpgradeCycle('codex', ledger, deps);
+  const result = await runGated('codex', ledger, deps);
 
   assert.equal(result.reason, 'global_disabled');
   assert.deepEqual(calls.plans, []);
@@ -232,7 +239,7 @@ test('全局熔断后一切停摆', async () => {
 
 test('检查失败不改状态、不计熔断', async () => {
   const { deps, calls } = makeDeps({ checkUpdate: async () => { throw new Error('offline'); } });
-  const result = await runProviderUpgradeCycle('codex', emptyLedger(), deps);
+  const result = await runGated('codex', emptyLedger(), deps);
 
   assert.equal(result.reason, 'check_failed');
   assert.deepEqual(calls.plans, []);
@@ -289,7 +296,7 @@ test('applyEnabled=false 时只检查不动手,且静默计数不累积', async 
 
 test('applyEnabled=false 时忙闲照实记录', async () => {
   const { deps } = makeDeps({ checkQuiescence: async () => ({ busy: true, evidence: ['pty:aih-codex-1'] }) });
-  const { ledger, result } = await runProviderUpgradeCycle('codex', emptyLedger(), deps, { applyEnabled: false })
+  const { ledger, result } = await runGated('codex', emptyLedger(), deps, { applyEnabled: false })
     .then((r) => ({ ledger: r.ledger, result: r }));
 
   assert.equal(result.reason, 'apply_disabled');
@@ -312,4 +319,41 @@ test('hook 能装回去时升级正常通过', async () => {
 
   assert.equal(result.reason, 'verified_pass');
   assert.equal(hookCalls, 1);
+});
+
+// 回归:codex 常驻 app-server 永远在跑,闸门让 standalone 升级连续推迟了十几轮(几天)从未
+// 执行,本机 CLI 停在旧版,上游据 client_version 不下发新模型。standalone 是并排安装 +
+// 原子切换 current 链接,不打断在跑进程,POSIX 上不必等空闲。
+test('standalone 在 POSIX 上即使 provider 在跑也直接升级(并排安装不打断在跑进程)', async () => {
+  let quiescenceChecks = 0;
+  const { deps, calls } = makeDeps({
+    checkQuiescence: async () => {
+      quiescenceChecks += 1;
+      return { busy: true, evidence: ['app_server:chat-acct_x'] };
+    }
+  });
+  const result = await runProviderUpgradeCycle('codex', emptyLedger(), deps, { platform: 'darwin' });
+
+  assert.equal(result.reason, 'verified_pass');
+  assert.deepEqual(calls.plans, [{ phase: 'upgrade', version: '0.154.0' }]);
+  assert.equal(quiescenceChecks, 0);
+  assert.equal(readProviderRecord(result.ledger, 'codex').installedVersion, '0.154.0');
+});
+
+test('原地替换的渠道(npm 全局)在 POSIX 上仍要等空闲', async () => {
+  const { deps, calls } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.NPM_GLOBAL,
+      pinnable: true,
+      packageName: '@openai/codex',
+      ownerPath: '/usr/lib/node_modules/@openai/codex/bin/codex.js',
+      resolvedPath: '/usr/bin/codex',
+      shadowedNpmInstall: false
+    }),
+    checkQuiescence: async () => ({ busy: true, evidence: ['app_server:chat-acct_x'] })
+  });
+  const result = await runProviderUpgradeCycle('codex', emptyLedger(), deps, { platform: 'darwin' });
+
+  assert.equal(result.reason, 'deferred_busy');
+  assert.deepEqual(calls.plans, []);
 });

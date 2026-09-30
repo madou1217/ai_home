@@ -136,6 +136,10 @@ func (resolver *Resolver) Probe(ctx context.Context) {
 	resolver.mu.Lock()
 	resolver.detected = best
 	resolver.mu.Unlock()
+	// 探测结果同样记入已学习版本：下次启动在探测完成前也从最近一次已知版本起步。
+	if resolver.learnedStore != nil {
+		resolver.learnedStore.Raise(resolver.provider, best)
+	}
 }
 
 // Start 异步执行首次探测，并按间隔重新探测，直到 Close。
@@ -146,9 +150,12 @@ func (resolver *Resolver) Start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	resolver.cancel = cancel
 	resolver.done = make(chan struct{})
+	// 首次探测同步完成再开始服务：探测前 Current 只有最低版本，按版本下发的新模型
+	// （如 gpt-6.1-sol 需 >= 0.159）在这几秒内会被上游拒成「ChatGPT 账号不支持该模型」，
+	// 进而把所有账号对该模型长时间冷却。每条命令有 3 秒上限。
+	resolver.Probe(ctx)
 	go func() {
 		defer close(resolver.done)
-		resolver.Probe(ctx)
 		if resolver.probeInterval <= 0 {
 			return
 		}

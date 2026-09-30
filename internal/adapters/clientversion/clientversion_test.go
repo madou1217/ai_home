@@ -120,3 +120,37 @@ func TestResolverProbesLocalCLI(t *testing.T) {
 		t.Fatal("invalid floor accepted")
 	}
 }
+
+// 服务一启动就可能有请求进来：探测完成前只报最低版本会让按版本下发的新模型被上游拒绝，
+// 并把所有账号对该模型长时间冷却。Start 返回时必须已知本机版本，且结果留给下次启动。
+func TestStartKnowsLocalVersionBeforeServingAndRemembersIt(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake-cli")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 0.2\necho 'codex-cli 0.159.2'\n"), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	storePath := filepath.Join(dir, "client-versions.json")
+	resolver, err := NewResolver(ResolverOptions{
+		Provider:      "codex",
+		Floor:         "0.158.0",
+		ProbeCommands: []string{script},
+		Learned:       NewLearnedStore(storePath),
+	})
+	if err != nil {
+		t.Fatalf("NewResolver() error = %v", err)
+	}
+	resolver.Start(context.Background())
+	defer resolver.Close()
+	if resolver.Current() != "0.159.2" {
+		t.Fatalf("current right after Start = %q", resolver.Current())
+	}
+	restarted, err := NewResolver(ResolverOptions{Provider: "codex", Floor: "0.158.0", Learned: NewLearnedStore(storePath)})
+	if err != nil {
+		t.Fatalf("NewResolver() error = %v", err)
+	}
+	if restarted.Current() != "0.159.2" {
+		t.Fatalf("current after restart before probing = %q", restarted.Current())
+	}
+}

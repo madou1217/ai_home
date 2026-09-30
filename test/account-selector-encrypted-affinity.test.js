@@ -140,6 +140,8 @@ test('codex adapter prefers session-bound account for encrypted reasoning reques
     requestJson: {
       model: 'gpt-5.4',
       stream: true,
+      // ChatGPT 登录账号的上游不存储 response，codex 以 store:false + 全量内联历史续接。
+      store: false,
       previous_response_id: 'resp_chain',
       input: [
         { type: 'reasoning', id: 'rs_1', encrypted_content: 'enc_blob', summary: [] },
@@ -181,9 +183,10 @@ test('codex adapter prefers session-bound account for encrypted reasoning reques
     }
   });
 
-  // 绑定账号仅软冷却仍被硬性优先（能不解密就不换号）；store 未关时链式引用正常透传。
+  // 绑定账号仅软冷却仍被硬性优先（能不解密就不换号）；无存储上游不接受链式引用，出站前剥离。
   assert.equal(seenUpstreamAccount, boundAccount.accountRef);
-  assert.equal(seenBody.previous_response_id, 'resp_chain');
+  assert.equal(Object.hasOwn(seenBody, 'previous_response_id'), false);
+  assert.equal(seenBody.store, false);
   assert.equal(Object.hasOwn(seenBody.input[0], 'encrypted_content'), false);
   assert.equal(res.statusCode, 200);
 });

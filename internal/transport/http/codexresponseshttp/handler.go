@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/contracts/codex-relay"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
@@ -122,6 +123,16 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		if err != nil || selection.Credential == nil || selection.Credential.ProviderID() != "codex" || !selection.Observation.IsValid() || selection.Observation.AccountRef() != selection.AccountRef || selection.Observation.ProviderID() != "codex" {
 			break
 		}
+		// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求（见 nativeRequest.passthroughSafe）。
+		// 尚未联系上游时交给 Node 归一化；已有账号试过就跳过这个账号，不把注定 400 的请求发出去。
+		if isStatelessCredential(selection.Credential) && !metadata.passthroughSafe() {
+			if !contacted {
+				request.Body = io.NopCloser(bytes.NewReader(payload))
+				handler.Fallback.ServeHTTP(response, request.WithContext(ctx))
+				return
+			}
+			continue
+		}
 		contacted = true
 		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
 		if err != nil || upstream == nil || upstream.Body == nil {
@@ -219,4 +230,10 @@ func writeError(response http.ResponseWriter, code string) {
 
 func writeSafetyError(response http.ResponseWriter) {
 	writeError(response, "upstream_safety_rejected")
+}
+
+// isStatelessCredential 报告凭据是否指向不存储 response 的 ChatGPT Codex 上游。
+func isStatelessCredential(credential accountapp.Credential) bool {
+	_, oauth := credential.(*codexauth.OAuthAuth)
+	return oauth
 }

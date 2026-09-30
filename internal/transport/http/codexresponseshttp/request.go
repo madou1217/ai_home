@@ -17,8 +17,26 @@ const MaxRequestBytes int64 = 16 * 1024 * 1024
 var errInvalidRequest = errors.New("invalid native Responses request")
 
 type nativeRequest struct {
-	Model  string `json:"model"`
-	Stream bool   `json:"stream"`
+	Model              string          `json:"model"`
+	Stream             bool            `json:"stream"`
+	Store              *bool           `json:"store"`
+	Input              json.RawMessage `json:"input"`
+	PreviousResponseID string          `json:"previous_response_id"`
+}
+
+// passthroughSafe 报告请求能否原样转发给 Codex 上游。原样转发只适用于 codex CLI 形状的请求：
+// ChatGPT 登录账号的上游要求 stream=true、store=false、input 为列表，且不存储 response
+// （previous_response_id 无从解析）。其他形状（OpenAI SDK 的同步请求、store 默认 true、
+// 字符串 input、链式续接）原样发出只会得到 400，交给 Node 按上游能力归一化或明确拒绝。
+func (request nativeRequest) passthroughSafe() bool {
+	if !request.Stream || request.PreviousResponseID != "" {
+		return false
+	}
+	if request.Store != nil && *request.Store {
+		return false
+	}
+	input := bytes.TrimSpace(request.Input)
+	return len(input) > 0 && input[0] == '['
 }
 
 func readRequest(request *http.Request) ([]byte, nativeRequest, error) {

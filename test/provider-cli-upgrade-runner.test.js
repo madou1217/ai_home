@@ -379,3 +379,18 @@ test('原地替换的渠道(npm 全局)在 POSIX 上仍要等空闲', async () =
   assert.equal(result.reason, 'deferred_busy');
   assert.deepEqual(calls.plans, []);
 });
+
+// 回归:claude/opencode 的 knownGood 是在厂商渠道还不能钉版本时记下的(不可回滚),渠道支持
+// 钉版本后仍沿用旧值,每轮都 known_good_not_rollbackable,永远不升级。
+test('渠道后来支持钉版本时,旧的不可回滚标记不再阻止升级', async () => {
+  const { deps, calls } = makeDeps();
+  const legacyLedger = writeProviderRecord(emptyLedger(), 'codex', {
+    knownGoodVersion: '0.153.4',
+    baselineHealthy: true,
+    knownGoodRollbackable: false
+  });
+  const result = await runProviderUpgradeCycle('codex', legacyLedger, deps, { platform: 'darwin' });
+
+  assert.equal(result.reason, 'verified_pass');
+  assert.deepEqual(calls.plans, [{ phase: 'upgrade', version: '0.154.0' }]);
+});

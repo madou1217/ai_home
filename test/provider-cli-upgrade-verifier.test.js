@@ -31,6 +31,15 @@ test('版本与路径都对上时判 pass', async () => {
   assert.equal(result.verdict, VERDICTS.PASS);
 });
 
+// 回归:codex 自报 `codex-cli 0.158.0`,与预期 `0.158.0` 做字符串精确比较永远不等,
+// 装成功的升级被判 version_mismatch 并触发回滚。
+test('CLI 自报带名字的整行时按版本号比较', async () => {
+  const result = await verifyByIdentity('codex', '0.158.0', identityDeps({ probeVersion: async () => 'codex-cli 0.158.0' }));
+  assert.equal(result.verdict, VERDICTS.PASS);
+  const mismatch = await verifyByIdentity('codex', '0.159.0', identityDeps({ probeVersion: async () => 'codex-cli 0.158.0' }));
+  assert.equal(mismatch.verdict, VERDICTS.FAIL);
+});
+
 // 这是防影子二进制的那一环：装成功了，但会被启动的是另一份。
 test('装完解析到的是别人 → 判 fail(影子二进制)', async () => {
   const result = await verifyByIdentity('codex', '0.154.0', identityDeps({

@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { CHANNELS } = require('../lib/server/provider-cli-upgrade/upgrade-channel');
-const { emptyLedger, readProviderRecord } = require('../lib/server/provider-cli-upgrade/upgrade-ledger');
+const { emptyLedger, readProviderRecord, writeProviderRecord } = require('../lib/server/provider-cli-upgrade/upgrade-ledger');
 const {
   STATES,
   VERDICTS,
@@ -113,6 +113,28 @@ test('验证失败 → 回滚到 knownGood → 该版本永久拉黑', async () 
   assert.equal(record.installedVersion, '0.153.4');
   assert.ok(record.blockedVersions.includes('0.154.0'));
   assert.equal(record.history.at(-1).outcome, 'rolled_back');
+});
+
+// 回归:旧账本存的 knownGood 是 CLI 自报的整行(`codex-cli 0.153.4`),钉版本回滚时过不了
+// 版本号格式校验 → rollback_plan_unavailable → 熔断。回滚前先取版本号。
+test('旧账本里带名字的 knownGood 仍能用于回滚', async () => {
+  const { deps, calls } = makeDeps({
+    verify: async (_provider, version) => (
+      version === '0.154.0' ? { verdict: VERDICTS.FAIL, detail: 'broken build' } : { verdict: VERDICTS.PASS }
+    )
+  });
+  const legacyLedger = writeProviderRecord(emptyLedger(), 'codex', {
+    knownGoodVersion: 'codex-cli 0.153.4',
+    baselineHealthy: true,
+    knownGoodRollbackable: true
+  });
+  const result = await runProviderUpgradeCycle('codex', legacyLedger, deps, { platform: 'darwin' });
+
+  assert.equal(result.state, STATES.ROLLED_BACK);
+  assert.deepEqual(calls.plans, [
+    { phase: 'upgrade', version: '0.154.0' },
+    { phase: 'rollback', version: '0.153.4' }
+  ]);
 });
 
 test('拉黑后的版本不再被尝试', async () => {

@@ -36,9 +36,9 @@ import {
   getAccountSecondaryLabel,
   getAccountStatusDetailLines,
   getKimiPlanSubscription,
-  getCodexSubscription,
   getPlanTagLabel
 } from '@/features/accounts/AccountBadges';
+import { describeCodexSubscription, getCodexSubscription } from '@/features/accounts/codex-subscription';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
 import {
   canViewQuotaResetHistory,
@@ -239,7 +239,7 @@ export default function AccountDetailSheet({
       value: kimiPlan && kimiPlanUntil
         ? `${kimiPlan.name || getPlanTagLabel(record)} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
         : codexSubscription
-          ? `${getPlanTagLabel(record)} · 至 ${formatPlanValidUntil(codexSubscription.validUntilMs)}${codexSubscription.stale ? ' · 待刷新确认' : ''}`
+          ? `${getPlanTagLabel(record)} · ${describeCodexSubscription(codexSubscription).label}`
           : getPlanTagLabel(record)
     },
     ...(region ? [{ key: 'region', label: '区域', value: region.endpoint ? `${region.label} · ${region.endpoint}` : region.label, mono: false }] : []),

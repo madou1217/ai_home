@@ -40,6 +40,9 @@ interface AccountCardGridProps {
   isDesktopSupported: (account: Account) => boolean;
   onOpenApp: (account: Account) => void;
   onOpenCli: (account: Account) => void;
+  /** 订阅到期待确认时的「确认」动作（刷新额度），与列表同源。 */
+  onConfirmSubscription?: (account: Account) => void;
+  isConfirmingSubscription?: (account: Account) => boolean;
 }
 
 /**
@@ -57,6 +60,8 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   getMenuItems,
   onMenuClick,
   onCopy,
+  onConfirmSubscription,
+  isConfirmingSubscription,
   isDesktopSupported,
   onOpenApp,
   onOpenCli,
@@ -105,7 +110,11 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                   </span>
                 </div>
                 {secondaryLabel ? <span className={styles.accountSubtitle}>{secondaryLabel}</span> : null}
-                <AccountSubscriptionLines record={acc} />
+                <AccountSubscriptionLines
+                  record={acc}
+                  onConfirm={onConfirmSubscription}
+                  confirming={Boolean(isConfirmingSubscription && isConfirmingSubscription(acc))}
+                />
               </div>
               <Dropdown
                 menu={{ items: getMenuItems(acc), onClick: ({ key }) => onMenuClick(acc, String(key)) }}

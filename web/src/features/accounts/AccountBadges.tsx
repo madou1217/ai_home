@@ -374,26 +374,6 @@ export function getKimiPlanSubscription(record: Pick<Account, 'provider' | 'usag
   return subscription;
 }
 
-// Codex OAuth 账号的 ChatGPT 订阅到期（来自 id_token 声明，签发时的快照）。
-// 到期日已过但仍在服务时多半是已续费、token 尚未刷新，因此标记 stale 而不是直接判定过期。
-export function getCodexSubscription(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
-  if (record.provider !== 'codex') return null;
-  const snapshot = record.usageSnapshot;
-  if (!snapshot || snapshot.kind !== 'codex_oauth_status' || !snapshot.account) return null;
-  const validUntilMs = Number(snapshot.account.subscriptionActiveUntilMs) || 0;
-  if (validUntilMs <= 0) return null;
-  const lastCheckedMs = Number(snapshot.account.subscriptionLastCheckedMs) || 0;
-  return { validUntilMs, lastCheckedMs, stale: validUntilMs < Date.now() };
-}
-
-export function formatCodexSubscriptionTooltip(subscription: { validUntilMs: number; lastCheckedMs: number; stale: boolean }) {
-  const until = formatPlanValidUntil(subscription.validUntilMs);
-  const checked = subscription.lastCheckedMs > 0 ? ` · 上次校验 ${formatPlanValidUntil(subscription.lastCheckedMs)}` : '';
-  return subscription.stale
-    ? `订阅有效期至 ${until}（已过该日期，可能已续费，以下次登录态刷新为准）${checked}`
-    : `订阅有效期至 ${until}${checked}`;
-}
-
 export function formatPlanValidUntil(validUntilMs: number | null | undefined) {
   const value = Number(validUntilMs);
   if (!Number.isFinite(value) || value <= 0) return '';

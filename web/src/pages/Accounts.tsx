@@ -410,7 +410,11 @@ export default function Accounts() {
                 ) : null}
               </div>
             </div>
-            <AccountSubscriptionLines record={record} />
+            <AccountSubscriptionLines
+              record={record}
+              onConfirm={handleRefreshUsage}
+              confirming={Boolean(refreshingUsageAccountRefs[getAccountRef(record)])}
+            />
             {getAccountSecondaryLabel(record) ? (
               <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {getAccountSecondaryLabel(record)}
@@ -905,6 +909,8 @@ export default function Accounts() {
               )}
               getMenuItems={buildAccountMenuItems}
               onMenuClick={handleAccountMenuClick}
+              onConfirmSubscription={handleRefreshUsage}
+              isConfirmingSubscription={(record) => Boolean(refreshingUsageAccountRefs[getAccountRef(record)])}
               onCopy={copyAccountEmail}
               isDesktopSupported={(record) => Boolean(appEntries) && getAccountAppSupport(record, appEntries, appCapabilities).desktopSupported}
               onOpenApp={(record) => {

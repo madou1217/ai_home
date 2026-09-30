@@ -1337,7 +1337,9 @@ test('codex usage snapshot async uses direct HTTP rate-limits by default', async
       planType: 'free',
       email: 'direct@example.com',
       upstreamAccountId: 'acc_1',
-      organizationId: ''
+      organizationId: '',
+      // 额度接口实时返回的套餐带上确认时间，页面据此判断订阅到期后是否已续费
+      planConfirmedAtMs: snapshot.capturedAt
     });
     assert.deepEqual(snapshot.rateLimitResetCredits, { availableCount: 4 });
     assert.deepEqual(

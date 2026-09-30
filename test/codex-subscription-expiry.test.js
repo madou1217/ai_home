@@ -37,3 +37,17 @@ test('codex subscription expiry flows from the id_token to the WebUI snapshot', 
   const withoutClaims = buildCodexSnapshotAccount(null, { tokens: { id_token: jwt({ email: 'a@b.c' }) } });
   assert.equal(withoutClaims.subscriptionActiveUntilMs, undefined);
 });
+
+// 订阅到期只是 OpenAI 上次校验的快照；额度接口实时确认套餐的时间要一并传到 WebUI，
+// 页面据此判断到期日之后是否已续费（付费套餐）或已失效（free），而不是一直「待刷新确认」。
+test('live plan confirmation time reaches the WebUI snapshot', () => {
+  const view = normalizeAccountUsageSnapshot({
+    kind: 'codex_oauth_status',
+    capturedAt: 1_790_000_000_000,
+    account: { planType: 'plus', subscriptionActiveUntilMs: 1_789_000_000_000, planConfirmedAtMs: 1_790_000_000_000 },
+    entries: []
+  });
+  assert.equal(view.account.planConfirmedAtMs, 1_790_000_000_000);
+  const legacy = normalizeAccountUsageSnapshot({ kind: 'codex_oauth_status', capturedAt: 1, account: { planType: 'plus' }, entries: [] });
+  assert.equal(legacy.account.planConfirmedAtMs, 0);
+});

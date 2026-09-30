@@ -73,6 +73,8 @@ export type AccountUsageSnapshot =
         // ChatGPT 订阅到期（OAuth id_token 声明快照）及其上次校验时间；0 表示未知。
         subscriptionActiveUntilMs?: number;
         subscriptionLastCheckedMs?: number;
+        // 额度接口实时确认 planType 的时间；0 表示本快照的套餐不是实时确认的。
+        planConfirmedAtMs?: number;
       } | null;
       entries: CodexUsageEntry[];
       resetCreditsAvailableCount?: number;

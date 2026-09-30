@@ -473,6 +473,7 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "green",
     "capabilities": [
       "api_key_account",
+      "model_catalog",
       "session_history",
       "quota_usage"
     ],
@@ -506,6 +507,7 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "gold",
     "capabilities": [
       "api_key_account",
+      "model_catalog",
       "session_history",
       "quota_usage"
     ],

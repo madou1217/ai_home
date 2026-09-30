@@ -1516,6 +1516,7 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
+        "model_catalog",
         "session_history",
         "quota_usage"
       ],
@@ -1588,6 +1589,7 @@
       "gateway": "active",
       "capabilities": [
         "api_key_account",
+        "model_catalog",
         "session_history",
         "quota_usage"
       ],

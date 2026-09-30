@@ -734,7 +734,10 @@ func builtinWorkbuddy() Definition {
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
 		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
+		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
+		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
+		// lib/server/workbuddy-model-discovery.js。codebuddy / codebuddycn 未接入，不声明。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -812,7 +815,10 @@ func builtinWorkbuddyCN() Definition {
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
 		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilitySessionHistory, CapabilityQuotaUsage},
+		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
+		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
+		// lib/server/workbuddy-model-discovery.js。codebuddy / codebuddycn 未接入，不声明。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,

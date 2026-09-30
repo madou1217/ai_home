@@ -72,3 +72,17 @@ test('the background model refresh schedules signed-in WorkBuddy accounts', (t) 
   const candidates = listProbeCandidates({ accounts: {} }, Date.now(), { fs, aiHomeDir });
   assert.deepEqual(candidates.map((item) => `${item.provider}:${item.account.accountRef}`), [`workbuddycn:${accountRef}`]);
 });
+
+test('the accounts page projection returns probed models for WorkBuddy accounts', (t) => {
+  const { buildModelAccountRefProjection } = require('../lib/server/webui-model-account-ref-projection');
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-workbuddy-projection-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, { provider: 'workbuddy', identitySeed: 'oauth:workbuddy:fixture-user' });
+  writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: credential('workbuddy') });
+
+  const projection = buildModelAccountRefProjection({ fs, aiHomeDir }, { accounts: {} }, {
+    byAccount: { [accountRef]: ['fast-model', 'deep-model'] },
+    errorsByAccount: {}
+  });
+  assert.deepEqual(projection.byAccountRef[accountRef], ['deep-model', 'fast-model']);
+});

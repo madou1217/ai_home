@@ -129,3 +129,44 @@ test('Codex CLI observer clears a prompt after it is absent for consecutive term
   assert.equal(cleared.promptId, detected.prompt.promptId);
   assert.equal(posts.some((payload) => payload.clearedPromptId === detected.prompt.promptId), true);
 });
+
+test('an uncorrelated terminal session backs off instead of polling every 300ms', async () => {
+  // 直接在终端跑、没关联 WebUI 会话的 aih codex 停在交互提示上时,服务端一直回 409;
+  // 此前按 300ms 重试,把服务端日志刷到每分钟约 200 条。
+  let clock = 0;
+  let tick = null;
+  const posts = [];
+  const observer = createCodexInteractionObserver({
+    correlationId: 'correlation-1',
+    receiverUrl: 'http://127.0.0.1/hook',
+    now: () => clock,
+    setInterval: (fn) => { tick = fn; return 1; },
+    clearInterval: () => {},
+    postJson: async (_url, payload) => {
+      posts.push(payload);
+      return { ok: false, statusCode: 409, json: { ok: false, error: 'session_correlation_not_ready' } };
+    }
+  });
+  observer.start();
+  observer.observe('Additional safety checks\r\n› 1. Continue safely\r\n  2. Cancel\r\n');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(posts.length, 1);
+
+  // 退避窗口(1s)内的定时轮询不再发请求。
+  for (let index = 0; index < 3; index += 1) {
+    clock += 300;
+    await tick();
+  }
+  assert.equal(posts.length, 1);
+
+  clock += 200;
+  await tick();
+  assert.equal(posts.length, 2);
+  // 第二次拒绝后窗口翻倍为 2s。
+  clock += 1500;
+  await tick();
+  assert.equal(posts.length, 2);
+  clock += 600;
+  await tick();
+  assert.equal(posts.length, 3);
+});

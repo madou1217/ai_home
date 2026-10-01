@@ -3030,7 +3030,9 @@ test('runtime routes Claude gateway through the shared host config without an in
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime injects codex remote proxy for built-in AIH server resume by default', () => {
+test('built-in AIH server resume no longer forces the gateway app-server remote', () => {
+  // 网关 app-server 按宿主默认账号运行，会把恢复的会话跑到默认账号上；resume 改由 codex 包装层的
+  // 本地 app-server 接管（codex-tui-local-app-server.js），这里不再注入 --remote。
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({}, {
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '0.0.0.0', port: 9527, apiKey: 'secret-key' })
@@ -3040,10 +3042,6 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
 
   assert.equal(spawns.length, 1);
   assert.deepEqual(spawns[0].args, [
-    '--remote-auth-token-env',
-    'AIH_CODEX_REMOTE_AUTH_TOKEN',
-    '--remote',
-    'ws://127.0.0.1:9527',
     'resume',
     '-c', 'suppress_unstable_features_warning=true',
     '-c', 'check_for_update_on_startup=false',
@@ -3053,7 +3051,7 @@ test('runtime injects codex remote proxy for built-in AIH server resume by defau
     'thread-id'
   ]);
   assert.doesNotMatch(spawns[0].args.join(' '), /secret-key/);
-  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, 'secret-key');
+  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, undefined);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
@@ -3159,7 +3157,10 @@ test('runtime restarts stale local aih server only with source auto restart opt-
 });
 
 test('runtime reuses a ready stale gateway without restarting other clients by default', () => {
-  for (const env of [{}, { AIH_SERVER_SOURCE_AUTO_RESTART: '1', AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' }]) {
+  for (const env of [
+    { AIH_CODEX_ENABLE_REMOTE_PROXY: '1' },
+    { AIH_CODEX_ENABLE_REMOTE_PROXY: '1', AIH_SERVER_SOURCE_AUTO_RESTART: '1', AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' }
+  ]) {
     let restartCalls = 0;
     const { runtime, proc, spawns, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness(env, {
       serverDaemon: {
@@ -3194,7 +3195,7 @@ test('runtime does not inject codex remote proxy by default even when local serv
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime injects codex remote proxy for explicit resume even when remote proxy is not globally enabled', () => {
+test('explicit resume stays local unless the gateway remote proxy is enabled', () => {
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({}, {
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: 'secret-key' })
@@ -3203,15 +3204,8 @@ test('runtime injects codex remote proxy for explicit resume even when remote pr
 
   runtime.runCliPtyTracked('codex', '10086', ['resume', 'thread-id'], false);
   assert.equal(spawns.length, 1);
-  assert.deepEqual(spawns[0].args, [
-    '--remote-auth-token-env',
-    'AIH_CODEX_REMOTE_AUTH_TOKEN',
-    '--remote',
-    'ws://127.0.0.1:9527',
-    'resume',
-    'thread-id'
-  ]);
-  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, 'secret-key');
+  assert.deepEqual(spawns[0].args, ['resume', 'thread-id']);
+  assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, undefined);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);

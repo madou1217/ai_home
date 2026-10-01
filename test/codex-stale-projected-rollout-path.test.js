@@ -59,3 +59,14 @@ test('a single thread can be repaired right before it is resumed', (t) => {
   const result = repairStaleProjectedRolloutPaths({ fs, codexHome, DatabaseSync, threadId: id });
   assert.equal(result.repaired, 1);
 });
+
+test('codex desktop runtime layouts (no .codex segment) are repointed too', (t) => {
+  const { root, codexHome, sessions, db } = setup(t);
+  const id = '01a00de4-eeee-7723-9ea2-1815c71291a7';
+  const fileName = `rollout-2026-09-30T12-05-02-${id}.jsonl`;
+  fs.writeFileSync(path.join(sessions, fileName), '{}\n');
+  db.prepare('INSERT INTO threads VALUES (?, ?)').run(id, path.join(root, '.ai_home', 'run', 'codex-desktop', 'acct_a336311cae816e12b741', 'sessions', '2026', '09', '30', fileName));
+  db.close();
+  const result = repairStaleProjectedRolloutPaths({ fs, codexHome, DatabaseSync });
+  assert.equal(result.repaired, 1);
+});

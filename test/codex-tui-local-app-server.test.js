@@ -34,9 +34,9 @@ test('only interactive TUI launches take the local app-server', () => {
   assert.equal(isLocalAppServerEnabled({}, tty), true);
   assert.equal(isLocalAppServerEnabled({ AIH_CODEX_TUI_LOCAL_REMOTE: '0' }, tty), false);
   assert.equal(isLocalAppServerEnabled({}, { ...tty, stdin: { isTTY: false } }), false);
-  // Windows（psmux）真机验证前需显式开启。
-  assert.equal(isLocalAppServerEnabled({}, { ...tty, platform: 'win32' }), false);
-  assert.equal(isLocalAppServerEnabled({ AIH_CODEX_TUI_LOCAL_REMOTE: '1' }, { ...tty, platform: 'win32' }), true);
+  // Windows（psmux）已真机验证，默认开启；紧急开关同样生效。
+  assert.equal(isLocalAppServerEnabled({}, { ...tty, platform: 'win32' }), true);
+  assert.equal(isLocalAppServerEnabled({ AIH_CODEX_TUI_LOCAL_REMOTE: '0' }, { ...tty, platform: 'win32' }), false);
 });
 
 test('on Windows the app-server process tree is closed with taskkill', async () => {

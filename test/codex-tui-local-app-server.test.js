@@ -78,6 +78,7 @@ test('the listener requires the per-launch token and shares sessions across prov
     env: { OPENAI_API_KEY: 'k' },
     args: ['-c', 'model_provider=aih_server'],
     cwd: '/work/project',
+    platform: 'linux',
     spawn: (command, args, options) => {
       const child = fakeChild();
       children.push({ command, args, options, child });

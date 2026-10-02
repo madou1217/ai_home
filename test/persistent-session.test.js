@@ -1507,3 +1507,22 @@ test('new sessions carry their own provider home even when the tmux server alrea
   // 密钥只走进程 env,不进 tmux argv。
   assert.ok(!launch.args.some((arg) => String(arg).includes('sk-secret')));
 });
+
+test('native Windows psmux sessions can receive account auth variables via -e', () => {
+  // psmux 的 pane 继承常驻 server 的环境，spawn env 被忽略：网关 client key 进不了 pane → 401。
+  const launch = persistentSession.buildTmuxLaunch({ command: 'codex', args: [] }, {
+    cliName: 'codex',
+    runtimeScope: 'gateway',
+    sessionName: 'p-demo',
+    tmuxCommand: 'psmux',
+    env: { OPENAI_API_KEY: 'client-key', OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1' },
+    extraEnvKeys: ['OPENAI_API_KEY', 'OPENAI_BASE_URL']
+  });
+  assert.ok(launch.args.includes('OPENAI_API_KEY=client-key'));
+  assert.ok(launch.args.includes('OPENAI_BASE_URL=http://127.0.0.1:9527/v1'));
+  const posix = persistentSession.buildTmuxLaunch({ command: 'codex', args: [] }, {
+    cliName: 'codex', runtimeScope: 'gateway', sessionName: 'p-demo', tmuxCommand: 'tmux',
+    env: { OPENAI_API_KEY: 'client-key' }
+  });
+  assert.ok(!posix.args.some((arg) => String(arg).includes('client-key')));
+});

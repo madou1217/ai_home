@@ -18,6 +18,8 @@ type managedSession struct {
 	client   responseswebsocket.Connection
 	upstream responseswebsocket.Connection
 	closed   bool
+	// stripForeignReasoning：本会话上次由另一个账号服务，完整上下文里的加密推理需剥离。
+	stripForeignReasoning bool
 }
 
 func newManagedSession(
@@ -186,6 +188,9 @@ func pumpClientToUpstream(
 			}
 			return
 		}
+		if session.stripForeignReasoning {
+			payload = stripForeignReasoning(payload)
+		}
 		if err := writeMessage(
 			session.Context(),
 			upstream,
@@ -206,6 +211,7 @@ func pumpUpstreamToClient(
 ) {
 	client := session.Client()
 	upstream := session.Upstream()
+	var held [][]byte
 	for {
 		messageType, payload, err := upstream.Read(session.Context())
 		if err != nil {
@@ -232,6 +238,30 @@ func pumpUpstreamToClient(
 			}
 			return
 		}
+		// 本轮尚未交出输出时的额度耗尽：不转发错误，以 1011 关闭让 Codex 新开连接重选账号
+		// （见 failover.go）。已扣留的预备帧一并丢弃。
+		if terminal && observer.TakeQuotaFailover() && !observer.Committed() {
+			held = nil
+			results <- pumpResult{
+				source:      pumpSourceUpstream,
+				closeCode:   websocket.StatusInternalError,
+				closeReason: quotaFailoverCloseReason,
+			}
+			return
+		}
+		if !terminal && !observer.Committed() && isPreambleEvent(payload) &&
+			len(held) < maxHeldPreambleFrames {
+			held = append(held, payload)
+			continue
+		}
+		for _, frame := range held {
+			if err := writeMessage(session.Context(), client, websocket.MessageText, frame); err != nil {
+				results <- resultFromRead(pumpSourceClient, err, false)
+				return
+			}
+		}
+		held = nil
+		observer.MarkCommitted()
 		if err := writeMessage(
 			session.Context(),
 			client,

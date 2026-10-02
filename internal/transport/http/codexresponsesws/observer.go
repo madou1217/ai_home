@@ -32,6 +32,10 @@ type turnObserver struct {
 	clock          func() time.Time
 	active         bool
 	generate       bool
+	// committed 表示本轮已有非预备帧交给客户端；之后的失败绝不能换号重放。
+	committed bool
+	// quotaFailover 表示本轮终态是已记入运行态的额度耗尽，可让客户端换号重连。
+	quotaFailover bool
 }
 
 // newTurnObserver 创建连接级串行状态机。
@@ -66,7 +70,32 @@ func (observer *turnObserver) Begin(payload []byte) error {
 	}
 	observer.active = true
 	observer.generate = request.Generate == nil || *request.Generate
+	observer.committed = false
+	observer.quotaFailover = false
 	return nil
+}
+
+// MarkCommitted 记录本轮已有非预备帧交给客户端。
+func (observer *turnObserver) MarkCommitted() {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	observer.committed = true
+}
+
+// Committed 报告本轮是否已有非预备帧交给客户端。
+func (observer *turnObserver) Committed() bool {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	return observer.committed
+}
+
+// TakeQuotaFailover 读取并清除「本轮因额度耗尽结束」标记。
+func (observer *turnObserver) TakeQuotaFailover() bool {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	failover := observer.quotaFailover
+	observer.quotaFailover = false
+	return failover
 }
 
 // ObserveUpstream 在终态转发给客户端前提交低敏运行态，并返回是否应结束
@@ -144,6 +173,11 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 			failure,
 		); err != nil {
 			return true, err
+		}
+		if failure.RuntimeKind() == runtimecore.FailureQuotaExhausted {
+			observer.mu.Lock()
+			observer.quotaFailover = true
+			observer.mu.Unlock()
 		}
 		return true, nil
 	case "response.incomplete":

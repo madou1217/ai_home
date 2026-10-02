@@ -59,10 +59,20 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 func codexQuotaScope(
 	response sharedfailure.Response,
 ) runtimecore.BlockScope {
-	if response.ErrorCode() == "insufficient_quota" {
+	if response.ErrorCode() == "insufficient_quota" || isUsageLimitReached(response) {
 		return runtimecore.BlockScopeAccount
 	}
 	return runtimecore.BlockScopeAccountModel
+}
+
+// isUsageLimitReached 识别 ChatGPT 套餐额度用尽（5 小时 / 每周窗口）。
+//
+// 真实错误帧形如 {"type":"error","status":429,"error":{"type":"usage_limit_reached",
+// "resets_at":...}}，不带 Retry-After 头；按普通 429 处理只会短暂冷却，冷却一过会话
+// 又被派回这个已耗尽的账号。额度是整个账号的，按账号阻塞到用量快照显示恢复。
+func isUsageLimitReached(response sharedfailure.Response) bool {
+	return response.ErrorType() == "usage_limit_reached" ||
+		response.ErrorCode() == "usage_limit_reached"
 }
 
 // classifyResponse 先处理明确业务代码，再使用 HTTP 状态作为保守兜底。
@@ -73,7 +83,7 @@ func classifyResponse(
 	errorCode := response.ErrorCode()
 
 	switch {
-	case errorCode == "insufficient_quota":
+	case errorCode == "insufficient_quota", isUsageLimitReached(response):
 		return runtimecore.FailureQuotaExhausted, false
 	case errorCode == "billing_not_active":
 		return runtimecore.FailureBillingBlocked, false

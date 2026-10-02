@@ -96,6 +96,8 @@ type Handler struct {
 	routeMisses    RouteMissReporter
 	clock          func() time.Time
 	sessions       *sessionRegistry
+	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
+	sessionAccounts *sessionAccounts
 }
 
 // NewHandler 创建支持并发连接且可显式关闭的 Handler。
@@ -118,14 +120,15 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		authorizer:     dependencies.Authorizer,
-		selector:       dependencies.Selector,
-		upstream:       dependencies.Upstream,
-		attempts:       attempts,
-		modelRefreshes: dependencies.ModelRefreshes,
-		routeMisses:    dependencies.RouteMisses,
-		clock:          dependencies.Clock,
-		sessions:       newSessionRegistry(),
+		authorizer:      dependencies.Authorizer,
+		selector:        dependencies.Selector,
+		upstream:        dependencies.Upstream,
+		attempts:        attempts,
+		modelRefreshes:  dependencies.ModelRefreshes,
+		routeMisses:     dependencies.RouteMisses,
+		clock:           dependencies.Clock,
+		sessions:        newSessionRegistry(),
+		sessionAccounts: newSessionAccounts(),
 	}, nil
 }
 
@@ -247,6 +250,14 @@ func (handler *Handler) ServeHTTP(
 			"账号运行态路由无效",
 		)
 		return
+	}
+	if previous, found := handler.sessionAccounts.Swap(
+		strings.TrimSpace(request.Header.Get("Session-Id")),
+		selection.AccountRef(),
+		handler.clock(),
+	); found && previous != selection.AccountRef() {
+		session.stripForeignReasoning = true
+		firstFrame = stripForeignReasoning(firstFrame)
 	}
 	observer := newTurnObserver(
 		firstRequest.Model,

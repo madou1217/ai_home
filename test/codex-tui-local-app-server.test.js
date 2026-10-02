@@ -10,7 +10,8 @@ const { PassThrough } = require('node:stream');
 const WebSocket = require('ws');
 const {
   extractAppServerConfigArgs,
-  startCodexTuiLocalAppServer
+  startCodexTuiLocalAppServer,
+  usesProfile
 } = require('../lib/server/codex-tui-local-app-server');
 const { isInteractiveTuiLaunch, isLocalAppServerEnabled } = require('../lib/server/codex-default-cli-launcher');
 
@@ -65,10 +66,15 @@ test('on Windows the app-server process tree is closed with taskkill', async () 
 });
 
 test('config flags go to the app-server, everything else stays with the TUI', () => {
+  // codex app-server 不接受 -m/-p（unexpected argument，TUI 报 closed during initialize），改写成配置项。
   assert.deepEqual(
-    extractAppServerConfigArgs(['-c', 'model_provider=aih_server', '--model', 'gpt-6.1-sol', '--dangerously-bypass-approvals-and-sandbox', 'resume', '--profile=x', 'abc']),
-    ['-c', 'model_provider=aih_server', '--model', 'gpt-6.1-sol', '--profile=x']
+    extractAppServerConfigArgs(['-c', 'model_provider=aih_server', '--model', 'gpt-6.1-sol', '--dangerously-bypass-approvals-and-sandbox', 'resume', '-m', 'gpt-5.5', '--enable', 'f', 'abc']),
+    ['-c', 'model_provider=aih_server', '-c', 'model="gpt-6.1-sol"', '-c', 'model="gpt-5.5"', '--enable', 'f']
   );
+  // profile 无法交给 app-server（既非参数也不能写成配置项），这类启动走原生进程内 TUI。
+  assert.equal(usesProfile(['-p', 'work']), true);
+  assert.equal(usesProfile(['--profile=work', 'resume']), true);
+  assert.equal(usesProfile(['-c', 'x=1', '--', '-p']), false);
 });
 
 test('the listener requires the per-launch token and shares sessions across providers within the project', async (t) => {

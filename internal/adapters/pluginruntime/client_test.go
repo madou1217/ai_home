@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,9 @@ func startHost(t testing.TB) *hostFixture {
 	if runtime.GOOS == "windows" {
 		address = `\\.\pipe\aih-plugin-gotest-` + filepath.Base(dir)
 	}
-	cmd := exec.Command(node, "--import", filepath.Join(root, "lib", "plugins", "host", "register-hooks.mjs"),
+	// --import 只接受 URL；Windows 上裸的 C:\ 路径会被当成 c: 协议拒绝。
+	hooks := (&url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(root, "lib", "plugins", "host", "register-hooks.mjs")), "/")}).String()
+	cmd := exec.Command(node, "--import", hooks,
 		filepath.Join(root, "lib", "plugins", "host", "host-entry.mjs"))
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "SystemRoot=" + os.Getenv("SystemRoot"), "AIH_PLUGIN_SOCKET=" + address, "AIH_PLUGIN_TOKEN=" + testToken}
 	stdout, err := cmd.StdoutPipe()

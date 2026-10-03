@@ -27,10 +27,9 @@ export default function ProxyDiagnosticsPanel() {
     connectivityData,
     connectivityLoading,
     connectivityError,
-    gitInput,
-    setGitInput,
-    npmInput,
-    setNpmInput,
+    toolTargets,
+    proxyInputs,
+    setProxyInput,
     selectedSource,
     setSelectedSource,
     savingTarget,
@@ -144,53 +143,46 @@ export default function ProxyDiagnosticsPanel() {
               </div>
             )}
             <div className="toolkit-proxy-source-actions">
-              <Button
-                icon={<LinkOutlined />}
-                disabled={!selectedSource}
-                loading={savingTarget === 'git'}
-                onClick={() => saveProxy('git', selectedSource, '已应用真实探测值')}
-              >
-                应用到 Git
-              </Button>
-              <Button
-                icon={<LinkOutlined />}
-                disabled={!selectedSource}
-                loading={savingTarget === 'npm'}
-                onClick={() => saveProxy('npm', selectedSource, '已应用真实探测值')}
-              >
-                应用到 npm
-              </Button>
+              {toolTargets.map((target) => (
+                <Button
+                  key={target.id}
+                  icon={<LinkOutlined />}
+                  disabled={!selectedSource}
+                  loading={savingTarget === target.id}
+                  onClick={() => saveProxy(target.id, selectedSource, '已应用真实探测值')}
+                >
+                  应用到 {target.name}
+                </Button>
+              ))}
             </div>
           </section>
 
           <div className="toolkit-tool-config-grid">
-            <article className="toolkit-tool-config-card">
-              <div>
-                <span className="toolkit-panel-kicker">GIT GLOBAL</span>
-                <h3>Git 代理</h3>
-                <p>手动值是用户明确输入，不会自动回退到本地默认端口。</p>
-              </div>
-              <Input value={gitInput} placeholder="例如 http://proxy.example:8080" onChange={(event) => setGitInput(event.target.value)} aria-label="Git 全局代理地址" />
-              <div className="toolkit-card-button-row">
-                <Button type="primary" disabled={!gitInput.trim()} loading={savingTarget === 'git'} onClick={() => saveProxy('git', gitInput, '代理已保存')}>保存</Button>
-                <Button loading={savingTarget === 'git'} onClick={() => saveProxy('git', '', '代理已清除')}>清除</Button>
-              </div>
-            </article>
-            <article className="toolkit-tool-config-card">
-              <div>
-                <span className="toolkit-panel-kicker">NPM GLOBAL</span>
-                <h3>npm 代理</h3>
-                <p>保存后会重新读取接口；只有接口返回成功才显示完成反馈。</p>
-              </div>
-              <Input value={npmInput} placeholder="例如 http://proxy.example:8080" onChange={(event) => setNpmInput(event.target.value)} aria-label="npm 全局代理地址" />
-              <div className="toolkit-card-button-row">
-                <Button type="primary" disabled={!npmInput.trim()} loading={savingTarget === 'npm'} onClick={() => saveProxy('npm', npmInput, '代理已保存')}>保存</Button>
-                <Button loading={savingTarget === 'npm'} onClick={() => saveProxy('npm', '', '代理已清除')}>清除</Button>
-              </div>
-            </article>
+            {toolTargets.map((target) => {
+              const value = proxyInputs[target.id] || '';
+              return (
+                <article className="toolkit-tool-config-card" key={target.id}>
+                  <div>
+                    <span className="toolkit-panel-kicker">{target.scopeLabel}</span>
+                    <h3>{target.name} 代理</h3>
+                    <p>手动值是用户明确输入，不会自动回退到本地默认端口；保存后重新读取实际配置。</p>
+                  </div>
+                  <Input
+                    value={value}
+                    placeholder="例如 http://proxy.example:8080"
+                    onChange={(event) => setProxyInput(target.id, event.target.value)}
+                    aria-label={`${target.name} 代理地址`}
+                  />
+                  <div className="toolkit-card-button-row">
+                    <Button type="primary" disabled={!value.trim()} loading={savingTarget === target.id} onClick={() => saveProxy(target.id, value, '代理已保存')}>保存</Button>
+                    <Button loading={savingTarget === target.id} onClick={() => saveProxy(target.id, '', '代理已清除')}>清除</Button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
-          {proxyData.tools.git.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 && (
+          {proxyData.tools.git?.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 && (
             <section className="toolkit-scoped-proxies" aria-labelledby="toolkit-scoped-proxies-title">
               <h3 id="toolkit-scoped-proxies-title">Git 特定作用域配置</h3>
               {proxyData.tools.git.scopedProxies.map((proxy) => (

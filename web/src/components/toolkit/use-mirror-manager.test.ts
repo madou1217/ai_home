@@ -1,19 +1,19 @@
-import { describe, expect, it } from 'bun:test';
-import { mirrorKindsOf, mirrorStatusOf } from './use-mirror-manager';
+import assert from 'node:assert/strict';
+import test from 'node:test';
 
-describe('mirror plugin kinds', () => {
-  it('uses the server plugin list when present', () => {
-    const data = {
-      ok: true,
-      kinds: [{ id: 'cargo', name: 'cargo', label: 'Rust cargo', settingLabel: 'crates source' }],
-      cargo: { current: 'https://rsproxy.cn', presets: [] }
-    };
-    expect(mirrorKindsOf(data).map((kind) => kind.id)).toEqual(['cargo']);
-    expect(mirrorStatusOf(data, 'cargo')?.current).toBe('https://rsproxy.cn');
-    expect(mirrorStatusOf(data, 'kinds')).toBeUndefined();
-  });
+import { mirrorKindsOf, mirrorStatusOf } from './use-mirror-manager.ts';
 
-  it('falls back to npm/pip for older servers', () => {
-    expect(mirrorKindsOf({ ok: true }).map((kind) => kind.id)).toEqual(['npm', 'pip']);
-  });
+test('uses the server plugin list when present', () => {
+  const data = {
+    ok: true,
+    kinds: [{ id: 'cargo', name: 'cargo', label: 'Rust cargo', settingLabel: 'crates source' }],
+    cargo: { current: 'https://rsproxy.cn', presets: [] }
+  };
+  assert.deepEqual(mirrorKindsOf(data).map((kind) => kind.id), ['cargo']);
+  assert.equal(mirrorStatusOf(data, 'cargo')?.current, 'https://rsproxy.cn');
+  assert.equal(mirrorStatusOf(data, 'kinds'), undefined);
+});
+
+test('falls back to npm/pip for older servers', () => {
+  assert.deepEqual(mirrorKindsOf({ ok: true }).map((kind) => kind.id), ['npm', 'pip']);
 });

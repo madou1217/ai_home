@@ -2131,23 +2131,24 @@ export interface ProxyStatusResponse {
     noProxy: string;
   };
   system?: SystemProxyInfo;
-  tools: {
-    git: {
-      scope?: string;
-      source?: string;
-      probeStatus?: 'available' | 'unset' | 'error';
-      httpProxy: string;
-      httpsProxy: string;
-      scopedProxies?: Array<{ key: string; value: string }>;
-    };
-    npm: {
-      scope?: string;
-      source?: string;
-      probeStatus?: 'available' | 'unset' | 'error';
-      httpProxy: string;
-      httpsProxy: string;
-    };
-  };
+  /** 代理目标插件清单（Git、npm…），顺序即界面顺序。 */
+  toolTargets?: ProxyToolTarget[];
+  tools: Record<string, ToolProxyInfo | undefined>;
+}
+
+export interface ProxyToolTarget {
+  id: string;
+  name: string;
+  scopeLabel: string;
+}
+
+export interface ToolProxyInfo {
+  scope?: string;
+  source?: string;
+  probeStatus?: 'available' | 'unset' | 'error';
+  httpProxy: string;
+  httpsProxy: string;
+  scopedProxies?: Array<{ key: string; value: string }>;
 }
 
 export interface ConnectivityTargetResult {

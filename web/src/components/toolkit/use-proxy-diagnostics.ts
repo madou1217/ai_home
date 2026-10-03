@@ -1,9 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { message } from 'antd';
 import { proxyPoolAPI, toolkitAPI } from '@/services/api';
-import type { ConnectivityResponse, NetworkLayerStatus, ProxyCoreStatus, ProxyStatusResponse } from '@/types';
+import type { ConnectivityResponse, NetworkLayerStatus, ProxyCoreStatus, ProxyStatusResponse, ProxyToolTarget } from '@/types';
 
-export type ProxyTarget = 'git' | 'npm';
+export type ProxyTarget = string;
+
+// 旧服务端没有 toolTargets 清单时的兜底；新服务端由代理目标插件注册表下发。
+const FALLBACK_TOOL_TARGETS: ProxyToolTarget[] = [
+  { id: 'git', name: 'Git', scopeLabel: '全局 http.proxy / https.proxy' },
+  { id: 'npm', name: 'npm', scopeLabel: '用户级 proxy / https-proxy' }
+];
+
+export function proxyToolTargetsOf(data: ProxyStatusResponse | null): ProxyToolTarget[] {
+  return data?.toolTargets?.length ? data.toolTargets : FALLBACK_TOOL_TARGETS;
+}
+
+function initialProxyInputs(data: ProxyStatusResponse): Record<string, string> {
+  return Object.fromEntries(proxyToolTargetsOf(data).map((target) => {
+    const info = data.tools[target.id];
+    return [target.id, info?.httpProxy || info?.httpsProxy || ''];
+  }));
+}
 export type ProbeRoute = 'direct' | 'proxy';
 
 export interface DetectedProxySource {
@@ -75,7 +92,7 @@ function apiError(error: unknown, fallback: string) {
 
 /**
  * 网络与代理诊断的数据层（桌面面板与移动端共用）：系统 / 进程代理探测、
- * 真实来源应用到 Git / npm、手动写入与清除，以及直连 / 代理池两种路由的端点响应测试。
+ * 真实来源应用到各代理目标插件（Git、npm…）、手动写入与清除，以及直连 / 代理池两种路由的端点响应测试。
  */
 export function useProxyDiagnostics() {
   const [proxyData, setProxyData] = useState<ProxyStatusResponse | null>(null);
@@ -86,8 +103,7 @@ export function useProxyDiagnostics() {
   const [connectivityData, setConnectivityData] = useState<ConnectivityResponse | null>(null);
   const [connectivityLoading, setConnectivityLoading] = useState(true);
   const [connectivityError, setConnectivityError] = useState('');
-  const [gitInput, setGitInput] = useState('');
-  const [npmInput, setNpmInput] = useState('');
+  const [proxyInputs, setProxyInputs] = useState<Record<string, string>>({});
   const [selectedSource, setSelectedSource] = useState('');
   const [savingTarget, setSavingTarget] = useState<ProxyTarget | ''>('');
   const [probeRoute, setProbeRoute] = useState<ProbeRoute>('direct');
@@ -109,14 +125,12 @@ export function useProxyDiagnostics() {
       }
       if (proxyResult.status === 'rejected' || !proxyResult.value.ok) {
         setProxyData(null);
-        setGitInput('');
-        setNpmInput('');
+        setProxyInputs({});
         throw proxyResult.status === 'rejected' ? proxyResult.reason : new Error('代理状态接口未返回可用结果');
       }
       const response = proxyResult.value;
       setProxyData(response);
-      setGitInput(response.tools.git.httpProxy || response.tools.git.httpsProxy || '');
-      setNpmInput(response.tools.npm.httpProxy || response.tools.npm.httpsProxy || '');
+      setProxyInputs(initialProxyInputs(response));
     } catch (requestError: unknown) {
       setProxyError(apiError(requestError, '读取代理状态失败'));
     } finally {
@@ -166,7 +180,8 @@ export function useProxyDiagnostics() {
       const response = await toolkitAPI.setProxy(target, value.trim());
       if (!response.ok) throw new Error(response.message || response.error || '代理写入接口返回失败');
       await fetchProxy();
-      message.success(`${target === 'git' ? 'Git' : 'npm'} ${action}`);
+      const targetName = proxyToolTargetsOf(proxyData).find((item) => item.id === target)?.name || target;
+      message.success(`${targetName} ${action}`);
     } catch (requestError: unknown) {
       const detail = apiError(requestError, '写入代理失败');
       message.error(detail);
@@ -184,10 +199,9 @@ export function useProxyDiagnostics() {
     connectivityData,
     connectivityLoading,
     connectivityError,
-    gitInput,
-    setGitInput,
-    npmInput,
-    setNpmInput,
+    toolTargets: proxyToolTargetsOf(proxyData),
+    proxyInputs,
+    setProxyInput: (target: string, value: string) => setProxyInputs((current) => ({ ...current, [target]: value })),
     selectedSource,
     setSelectedSource,
     savingTarget,

@@ -916,3 +916,18 @@ test('toolkit short-lived cache reuses results within the TTL and clears on dema
   cache.clear();
   assert.deepEqual(cache.get(load), { n: 3 });
 });
+
+test('代理目标以插件注册，状态附带有序 toolTargets，未知目标被拒绝', () => {
+  const { PROXY_TARGET_PLUGINS } = require('../lib/cli/services/toolkit/proxy-target-plugins');
+  const { setToolProxy } = require('../lib/cli/services/toolkit/proxy-manager');
+  for (const plugin of PROXY_TARGET_PLUGINS) {
+    assert.equal(plugin.capability, 'toolkit.proxy-target');
+    assert.equal(typeof plugin.read, 'function');
+    assert.equal(typeof plugin.write, 'function');
+  }
+  const spawnSync = () => ({ status: 0, stdout: '' });
+  const status = getProxyStatus({ platform: 'linux', processObj: { platform: 'linux', env: {} }, env: {}, spawnSync });
+  assert.deepEqual(status.toolTargets.map((target) => target.id), ['git', 'npm']);
+  assert.deepEqual(Object.keys(status.tools), ['git', 'npm']);
+  assert.equal(setToolProxy('cargo', 'http://127.0.0.1:1', { spawnSync }).error, 'unsupported_proxy_target');
+});

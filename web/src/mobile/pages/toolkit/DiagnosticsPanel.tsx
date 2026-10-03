@@ -39,7 +39,7 @@ function proxyValue(value: string | undefined) {
   return value || EMPTY_VALUE;
 }
 
-/** 网络与代理诊断：系统 / 进程代理探测、真实来源应用到 Git / npm、手动代理与外部端点响应测试。 */
+/** 网络与代理诊断：系统 / 进程代理探测、真实来源应用到各代理目标插件（Git、npm…）、手动代理与外部端点响应测试。 */
 export default function DiagnosticsPanel() {
   const {
     proxyData,
@@ -50,10 +50,9 @@ export default function DiagnosticsPanel() {
     connectivityData,
     connectivityLoading,
     connectivityError,
-    gitInput,
-    setGitInput,
-    npmInput,
-    setNpmInput,
+    toolTargets,
+    proxyInputs,
+    setProxyInput,
     selectedSource,
     setSelectedSource,
     savingTarget,
@@ -116,33 +115,27 @@ export default function DiagnosticsPanel() {
             </HudField>
             {selectedSource && selectedOrigin ? <span className={styles.hint}>{selectedOrigin}</span> : null}
             <div className={styles.buttonRow}>
-              <ActionButton icon={<LinkOutlined />} label="应用到 Git" disabled={!selectedSource} loading={savingTarget === 'git'} onClick={() => void saveProxy('git', selectedSource, '已应用真实探测值')} />
-              <ActionButton icon={<LinkOutlined />} label="应用到 npm" disabled={!selectedSource} loading={savingTarget === 'npm'} onClick={() => void saveProxy('npm', selectedSource, '已应用真实探测值')} />
+              {toolTargets.map((target) => (
+                <ActionButton key={target.id} icon={<LinkOutlined />} label={`应用到 ${target.name}`} disabled={!selectedSource} loading={savingTarget === target.id} onClick={() => void saveProxy(target.id, selectedSource, '已应用真实探测值')} />
+              ))}
             </div>
           </HudCard>
 
-          <ManualProxyCard
-            code="GIT GLOBAL"
-            title="Git 代理"
-            target="git"
-            value={gitInput}
-            onChange={setGitInput}
-            saving={savingTarget === 'git'}
-            onSave={saveProxy}
-            hint="手动值是用户明确输入，不会自动回退到本地默认端口。"
-          />
-          <ManualProxyCard
-            code="NPM GLOBAL"
-            title="npm 代理"
-            target="npm"
-            value={npmInput}
-            onChange={setNpmInput}
-            saving={savingTarget === 'npm'}
-            onSave={saveProxy}
-            hint="保存后会重新读取接口；只有接口返回成功才显示完成反馈。"
-          />
+          {toolTargets.map((target) => (
+            <ManualProxyCard
+              key={target.id}
+              code={target.scopeLabel}
+              title={`${target.name} 代理`}
+              target={target.id}
+              value={proxyInputs[target.id] || ''}
+              onChange={(value) => setProxyInput(target.id, value)}
+              saving={savingTarget === target.id}
+              onSave={saveProxy}
+              hint="手动值是用户明确输入，不会自动回退到本地默认端口；保存后重新读取实际配置。"
+            />
+          ))}
 
-          {proxyData.tools.git.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 ? (
+          {proxyData.tools.git?.scopedProxies && proxyData.tools.git.scopedProxies.length > 0 ? (
             <HudCard code="GIT SCOPED" title="Git 特定作用域配置">
               <KeyValue rows={proxyData.tools.git.scopedProxies.map((proxy) => ({ key: `${proxy.key}-${proxy.value}`, label: proxy.key, value: proxy.value }))} />
             </HudCard>
@@ -255,7 +248,7 @@ function ManualProxyCard({ code, title, target, value, onChange, saving, onSave,
 }) {
   return (
     <HudCard code={code} title={title}>
-      <HudField label="全局代理地址" hint={hint}>
+      <HudField label="代理地址" hint={hint}>
         <Input
           value={value}
           placeholder="例如 http://proxy.example:8080"

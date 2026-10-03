@@ -2175,7 +2175,7 @@ export const toolkitAPI = {
     const response = await api.get<ProxyStatusResponse>('/webui/toolkit/proxy');
     return response.data;
   },
-  setProxy: async (target: 'git' | 'npm', proxyUrl: string): Promise<{ ok: boolean; error?: string | null; message?: string; operations?: Array<{ key: string; ok: boolean; exitCode: number | null; stderr: string }> }> => {
+  setProxy: async (target: string, proxyUrl: string): Promise<{ ok: boolean; error?: string | null; message?: string; operations?: Array<{ key: string; ok: boolean; exitCode: number | null; stderr: string }> }> => {
     const response = await api.post<{ ok: boolean }>('/webui/toolkit/proxy/set', { target, proxyUrl });
     return response.data;
   },

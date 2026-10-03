@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-home.local/contracts/plugins/manifest-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifestVersion", "protocolVersion", "pluginId", "version", "engines", "runtime", "entry", "contributes"],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "protocolVersion": { "const": 1 },
+    "pluginId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "version": { "type": "string", "maxLength": 128 },
+    "engines": {
+      "type": "object", "additionalProperties": false, "required": ["aih"],
+      "properties": { "aih": { "type": "string", "maxLength": 128 }, "node": { "type": "string", "maxLength": 128 } }
+    },
+    "runtime": { "const": "node" },
+    "entry": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "targets": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "pattern": "^(any|[a-z0-9]+-[a-z0-9]+)$" } },
+    "configSchema": { "type": "object" },
+    "secretsSchema": { "type": "object" },
+    "stateSchemaVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "requires": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/requirement" } },
+    "provides": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/service" } },
+    "contributes": {
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "capability", "version"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+          "capability": { "type": "string", "maxLength": 64 },
+          "version": { "type": "integer", "minimum": 1 },
+          "order": { "type": "integer", "minimum": -1000000, "maximum": 1000000 },
+          "failurePolicy": { "enum": ["deny", "delegate"] }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "service": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+        "version": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "requirement": {
+      "type": "object", "additionalProperties": false, "required": ["name", "versionRange"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+        "versionRange": { "type": "string", "maxLength": 128 }
+      }
+    }
+  }
+}

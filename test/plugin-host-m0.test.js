@@ -1,0 +1,301 @@
+'use strict';
+
+// 插件架构 M0 的验收测试：合同不漂移、制品版本固定、分帧上限、静态依赖诊断，
+// 以及真实 Plugin Host 子进程上的加载/卸载、取消、超时、版本不兼容、有界大 payload、崩溃诊断。
+// 外部插件放在仓库外的临时目录，只依赖 SDK。
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const contract = require('../lib/plugins/sdk/contract.generated.json');
+const { run: runContractGenerator } = require('../scripts/generate-plugin-contract');
+const { encodeFrame, FrameDecoder } = require('../lib/plugins/transport/frame');
+const { createRpcClient } = require('../lib/plugins/transport/rpc-client');
+const { planGeneration } = require('../lib/plugins/host/dependency-graph');
+const { createPluginHostSupervisor, buildHostEnvironment } = require('../lib/plugins/host/supervisor');
+
+const ROOT = path.resolve(__dirname, '..');
+const SAMPLE_DIR = path.join(ROOT, 'examples', 'plugins', 'echo');
+
+// macOS 的 os.tmpdir() 很长，Unix socket 路径上限 104 字节；POSIX 上用 /tmp。
+function shortTempDir(prefix) {
+  const base = process.platform === 'win32' ? os.tmpdir() : '/tmp';
+  return fs.mkdtempSync(path.join(base, prefix));
+}
+
+function socketFor(dir) {
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\aih-plugin-test-${path.basename(dir)}`
+    : path.join(dir, 'h.sock');
+}
+
+function manifest(pluginId, extra = {}) {
+  return {
+    manifestVersion: 1,
+    protocolVersion: 1,
+    pluginId,
+    version: '0.1.0',
+    engines: { aih: '>=1.0.0' },
+    runtime: 'node',
+    entry: 'index.mjs',
+    contributes: [],
+    ...extra
+  };
+}
+
+function writePlugin(dir, name, pluginManifest, source) {
+  const pluginDir = path.join(dir, name);
+  fs.mkdirSync(pluginDir, { recursive: true });
+  fs.writeFileSync(path.join(pluginDir, 'plugin.json'), JSON.stringify(pluginManifest));
+  fs.writeFileSync(path.join(pluginDir, 'index.mjs'), source);
+  return { instanceId: name, manifest: pluginManifest, entryPath: path.join(pluginDir, 'index.mjs') };
+}
+
+function copySample(dir) {
+  const target = path.join(dir, 'echo');
+  fs.cpSync(SAMPLE_DIR, target, { recursive: true });
+  return {
+    instanceId: 'echo',
+    manifest: JSON.parse(fs.readFileSync(path.join(target, 'plugin.json'), 'utf8')),
+    entryPath: path.join(target, 'index.mjs')
+  };
+}
+
+async function withHost(fn, options = {}) {
+  const dir = shortTempDir('aihp-');
+  const supervisor = createPluginHostSupervisor({ aiHomeDir: dir, socketPath: socketFor(dir), ...options });
+  try {
+    await supervisor.start();
+    await fn({ dir, supervisor });
+  } finally {
+    await supervisor.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const call = async (supervisor, method, value, options) => (await supervisor.call(method, value, options)).value;
+
+// ---- 合同与制品 ----
+
+test('plugin contract generated artifacts are current', () => {
+  assert.deepEqual(runContractGenerator({ check: true }), []);
+});
+
+test('pinned plugin runtime dependencies match what is installed', () => {
+  for (const dependency of contract.runtimeDependencies) {
+    const installed = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', dependency.name, 'package.json'), 'utf8'));
+    assert.equal(installed.version, dependency.version, dependency.name);
+  }
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(pkg.dependencies['@deepseek-ai/cordis'], '4.0.4');
+  assert.equal(pkg.overrides['@deepseek-ai/cosmokit'], '1.8.5');
+});
+
+// ---- 分帧 ----
+
+test('frames round-trip JSON metadata and binary payload; the payload limit is exact', () => {
+  const frames = [];
+  const decoder = new FrameDecoder((frame) => frames.push(frame));
+  const atLimit = Buffer.alloc(contract.limits.payloadBytes, 1);
+  decoder.push(encodeFrame({ kind: 'call', protocolVersion: 1, id: 'a', method: 'm', value: { x: 1 } }, atLimit));
+  assert.equal(frames.length, 1);
+  assert.deepEqual(frames[0].message.value, { x: 1 });
+  assert.equal(frames[0].payload.length, contract.limits.payloadBytes);
+  assert.throws(() => encodeFrame({ kind: 'call', protocolVersion: 1, id: 'b' }, Buffer.alloc(contract.limits.payloadBytes + 1)),
+    { code: 'plugin_rpc_payload_limit' });
+});
+
+test('decoder rejects oversized headers before buffering their bodies', () => {
+  const decoder = new FrameDecoder(() => {});
+  const header = Buffer.alloc(12);
+  header.writeUInt32BE(16);
+  header.writeBigUInt64BE(BigInt(contract.limits.payloadBytes + 1), 4);
+  assert.throws(() => decoder.push(header), { code: 'plugin_rpc_payload_limit' });
+  const metadataHeader = Buffer.alloc(12);
+  metadataHeader.writeUInt32BE(contract.limits.metadataBytes + 1);
+  assert.throws(() => new FrameDecoder(() => {}).push(metadataHeader), { code: 'plugin_rpc_metadata_limit' });
+});
+
+// ---- 静态依赖诊断 ----
+
+test('dependency plan orders providers first and diagnoses missing, mismatched and cyclic services', () => {
+  const ok = planGeneration([
+    { instanceId: 'consumer', manifest: manifest('c', { requires: [{ name: 'svc.a', versionRange: '^1.0.0' }] }) },
+    { instanceId: 'provider', manifest: manifest('p', { provides: [{ name: 'svc.a', version: '1.2.0' }] }) }
+  ]);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.order, ['provider', 'consumer']);
+
+  const missing = planGeneration([{ instanceId: 'consumer', manifest: manifest('c', { requires: [{ name: 'svc.a', versionRange: '^1.0.0' }] }) }]);
+  assert.equal(missing.diagnostics[0].code, 'plugin_service_missing');
+
+  const mismatch = planGeneration([
+    { instanceId: 'consumer', manifest: manifest('c', { requires: [{ name: 'svc.a', versionRange: '^2.0.0' }] }) },
+    { instanceId: 'provider', manifest: manifest('p', { provides: [{ name: 'svc.a', version: '1.2.0' }] }) }
+  ]);
+  assert.equal(mismatch.diagnostics[0].code, 'plugin_service_version_mismatch');
+
+  const cycle = planGeneration([
+    { instanceId: 'a', manifest: manifest('a', { provides: [{ name: 'svc.x', version: '1.0.0' }], requires: [{ name: 'svc.y', versionRange: '*' }] }) },
+    { instanceId: 'b', manifest: manifest('b', { provides: [{ name: 'svc.y', version: '1.0.0' }], requires: [{ name: 'svc.x', versionRange: '*' }] }) }
+  ]);
+  assert.equal(cycle.diagnostics[0].code, 'plugin_dependency_cycle');
+  assert.deepEqual(cycle.diagnostics[0].cycle, ['a', 'b', 'a']);
+
+  const duplicate = planGeneration([
+    { instanceId: 'one', manifest: manifest('same') },
+    { instanceId: 'two', manifest: manifest('same') }
+  ]);
+  assert.equal(duplicate.diagnostics[0].code, 'plugin_id_duplicate');
+});
+
+// ---- 宿主进程 ----
+
+test('plugin host environment is built from an allowlist without gateway secrets', () => {
+  const env = buildHostEnvironment({ PATH: '/bin', AIH_SERVER_MANAGEMENT_KEY: 'secret', OPENAI_API_KEY: 'k' }, { AIH_PLUGIN_TOKEN: 't' });
+  assert.deepEqual(env, { PATH: '/bin', AIH_PLUGIN_TOKEN: 't' });
+});
+
+test('external sample loads, round-trips a bounded large payload, and unloads after its async disposer', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const sample = copySample(dir);
+    const prepared = await call(supervisor, 'prepare', { generation: 1, plugins: [sample] });
+    assert.equal(prepared.state, 'prepared', JSON.stringify(prepared));
+    assert.deepEqual(prepared.contributions, ['sample.echo.call', 'sample.echo.stats', 'sample.echo.wait']);
+    await call(supervisor, 'activate', { generation: 1 });
+
+    const big = Buffer.alloc(contract.limits.payloadBytes, 0xab);
+    const echoed = await supervisor.call('invoke', { contributionId: 'sample.echo.call', value: { n: 1 } }, { payload: big });
+    assert.equal(echoed.value.bytes, big.length);
+    assert.equal(echoed.payload.equals(big), true);
+    await assert.rejects(supervisor.call('invoke', { contributionId: 'sample.echo.call' }, { payload: Buffer.alloc(big.length + 1) }),
+      { code: 'plugin_rpc_payload_limit' });
+
+    const started = Date.now();
+    const disposed = await call(supervisor, 'dispose', { generation: 1 });
+    assert.equal(disposed.state, 'disposed');
+    assert.ok(Date.now() - started >= 20, '卸载应等待样例 20ms 的异步 disposer');
+    await assert.rejects(supervisor.call('invoke', { contributionId: 'sample.echo.call' }), { code: 'plugin_generation_unknown' });
+  });
+});
+
+test('cancellation and deadlines reach the plugin handler', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    await call(supervisor, 'prepare', { generation: 1, plugins: [copySample(dir)] });
+    await call(supervisor, 'activate', { generation: 1 });
+
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 30);
+    await assert.rejects(supervisor.call('invoke', { contributionId: 'sample.echo.wait' }, { signal: controller.signal }),
+      { code: 'plugin_rpc_cancelled' });
+    await assert.rejects(supervisor.call('invoke', { contributionId: 'sample.echo.wait' }, { timeoutMs: 60 }),
+      { code: 'plugin_rpc_timeout' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const stats = await call(supervisor, 'invoke', { contributionId: 'sample.echo.stats' });
+    assert.equal(stats.aborts, 2);
+  });
+});
+
+test('incompatible protocol versions get an explicit error with the supported range; a bad token gets nothing', async () => {
+  const token = 'f'.repeat(64);
+  await withHost(async ({ supervisor }) => {
+    const { socketPath } = supervisor.status();
+    const future = createRpcClient({ socketPath, token, protocolVersion: 2 });
+    await assert.rejects(future.connect(), (error) => {
+      assert.equal(error.code, 'plugin_rpc_incompatible');
+      assert.deepEqual(error.supported, contract.supportedProtocolVersions);
+      return true;
+    });
+    future.close();
+    const intruder = createRpcClient({ socketPath, token: 'e'.repeat(64) });
+    await assert.rejects(intruder.connect(), { code: 'plugin_rpc_closed' });
+    intruder.close();
+  }, { token });
+});
+
+test('missing services are diagnosed before load and recover once a provider is enabled', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const consumer = writePlugin(dir, 'consumer', manifest('aih.test.consumer', {
+      requires: [{ name: 'svc.greeting', versionRange: '^1.0.0' }],
+      contributes: [{ id: 'consumer.greet', capability: 'command', version: 1 }]
+    }), `export default { apply(ctx) {
+      ctx.aih.register('consumer.greet', () => ctx.get('svc.greeting').greet());
+    } };`);
+    const provider = writePlugin(dir, 'provider', manifest('aih.test.provider', {
+      provides: [{ name: 'svc.greeting', version: '1.1.0' }]
+    }), `export default { apply(ctx) { ctx.aih.provide('svc.greeting', { greet: () => 'hello' }); } };`);
+
+    const rejected = await call(supervisor, 'prepare', { generation: 1, plugins: [consumer] });
+    assert.equal(rejected.state, 'rejected');
+    assert.equal(rejected.diagnostics[0].code, 'plugin_service_missing');
+
+    const recovered = await call(supervisor, 'prepare', { generation: 2, plugins: [consumer, provider] });
+    assert.equal(recovered.state, 'prepared', JSON.stringify(recovered));
+    assert.deepEqual(recovered.order, ['provider', 'consumer']);
+    await call(supervisor, 'activate', { generation: 2 });
+    assert.equal(await call(supervisor, 'invoke', { contributionId: 'consumer.greet' }), 'hello');
+  });
+});
+
+test('dependency cycles, failing plugins and undeclared contributions are rejected with diagnostics', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const a = writePlugin(dir, 'a', manifest('aih.test.a', {
+      provides: [{ name: 'svc.x', version: '1.0.0' }], requires: [{ name: 'svc.y', versionRange: '*' }]
+    }), 'export default { apply() {} };');
+    const b = writePlugin(dir, 'b', manifest('aih.test.b', {
+      provides: [{ name: 'svc.y', version: '1.0.0' }], requires: [{ name: 'svc.x', versionRange: '*' }]
+    }), 'export default { apply() {} };');
+    const cycle = await call(supervisor, 'prepare', { generation: 1, plugins: [a, b] });
+    assert.equal(cycle.diagnostics[0].code, 'plugin_dependency_cycle');
+
+    const broken = writePlugin(dir, 'broken', manifest('aih.test.broken'), `export default { apply() { throw new Error('boom at apply'); } };`);
+    const failed = await call(supervisor, 'prepare', { generation: 2, plugins: [broken] });
+    assert.equal(failed.diagnostics[0].code, 'plugin_apply_failed');
+    assert.match(failed.diagnostics[0].detail, /boom at apply/);
+
+    const sneaky = writePlugin(dir, 'sneaky', manifest('aih.test.sneaky'),
+      `export default { apply(ctx) { ctx.aih.register('not.declared', () => 1); } };`);
+    const undeclared = await call(supervisor, 'prepare', { generation: 3, plugins: [sneaky] });
+    assert.equal(undeclared.diagnostics[0].code, 'plugin_apply_failed');
+    assert.match(undeclared.diagnostics[0].detail, /not\.declared/);
+    assert.deepEqual((await call(supervisor, 'status')).generations, []);
+  });
+});
+
+test('a throwing disposer does not block unload and is attributed to its instance', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const plugin = writePlugin(dir, 'leaky', manifest('aih.test.leaky'),
+      `export default { apply(ctx) { ctx.effect(() => () => { throw new Error('disposer exploded'); }, 'bad'); } };`);
+    await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
+    const disposed = await call(supervisor, 'dispose', { generation: 1 });
+    assert.equal(disposed.state, 'disposed');
+    assert.ok(disposed.errors.some((item) => item.instanceId === 'leaky' && /disposer exploded/.test(item.message)), JSON.stringify(disposed.errors));
+  });
+});
+
+test('plugins cannot read gateway secrets from the host environment', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const plugin = writePlugin(dir, 'snoop', manifest('aih.test.snoop', {
+      contributes: [{ id: 'snoop.env', capability: 'command', version: 1 }]
+    }), `export default { apply(ctx) { ctx.aih.register('snoop.env', () => ({ key: process.env.AIH_TEST_GATEWAY_SECRET || null })); } };`);
+    await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
+    await call(supervisor, 'activate', { generation: 1 });
+    assert.deepEqual(await call(supervisor, 'invoke', { contributionId: 'snoop.env' }), { key: null });
+  }, { env: { ...process.env, AIH_TEST_GATEWAY_SECRET: 'must-not-leak' } });
+});
+
+test('a crashed host fails in-flight calls with plugin_rpc_closed and records the exit', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const plugin = writePlugin(dir, 'crasher', manifest('aih.test.crasher', {
+      contributes: [{ id: 'crash.now', capability: 'command', version: 1 }]
+    }), `export default { apply(ctx) { ctx.aih.register('crash.now', () => { setTimeout(() => process.exit(7), 10); return new Promise(() => {}); }); } };`);
+    await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
+    await call(supervisor, 'activate', { generation: 1 });
+    await assert.rejects(supervisor.call('invoke', { contributionId: 'crash.now' }, { timeoutMs: 5000 }), { code: 'plugin_rpc_closed' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(supervisor.status().lastExit.code, 7);
+  });
+});

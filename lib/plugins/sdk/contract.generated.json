@@ -1,0 +1,165 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "supportedProtocolVersions": {
+    "min": 1,
+    "max": 1
+  },
+  "sdkVersion": "0.1.0",
+  "limits": {
+    "metadataBytes": 65536,
+    "payloadBytes": 4194304,
+    "bufferedBytes": 8454144,
+    "inflightCalls": 64,
+    "invokeTimeoutMs": 10000,
+    "handshakeTimeoutMs": 2000,
+    "drainTimeoutMs": 10000,
+    "packageBytes": 134217728,
+    "packageMetadataBytes": 1048576,
+    "packageFiles": 1024
+  },
+  "runtimeDependencies": [
+    {
+      "name": "@deepseek-ai/cordis",
+      "version": "4.0.4",
+      "integrity": "sha512-obgyxqWAmFn3Re8kvsuUnyW+ihrz6eJCnJO4fh1cQzDtmPYz/zzVeUkH9R94I0OwSVOocK67Kgakm04j/oQXzg=="
+    },
+    {
+      "name": "@deepseek-ai/cosmokit",
+      "version": "1.8.5",
+      "integrity": "sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A=="
+    },
+    {
+      "name": "@standard-schema/spec",
+      "version": "1.1.0",
+      "integrity": "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="
+    },
+    {
+      "name": "ajv",
+      "version": "8.20.0",
+      "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="
+    },
+    {
+      "name": "semver",
+      "version": "7.8.5",
+      "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="
+    }
+  ],
+  "messageKinds": [
+    "hello",
+    "hello.result",
+    "call",
+    "result",
+    "error",
+    "cancel"
+  ],
+  "errorCodes": [
+    "plugin_rpc_invalid",
+    "plugin_rpc_incompatible",
+    "plugin_rpc_unauthorized",
+    "plugin_rpc_metadata_limit",
+    "plugin_rpc_payload_limit",
+    "plugin_rpc_buffer_limit",
+    "plugin_rpc_inflight_limit",
+    "plugin_rpc_timeout",
+    "plugin_rpc_cancelled",
+    "plugin_rpc_closed",
+    "plugin_rpc_method_unknown",
+    "plugin_contribution_unknown",
+    "plugin_contribution_unavailable",
+    "plugin_generation_unknown"
+  ],
+  "capabilities": [
+    {
+      "id": "observe",
+      "version": 1,
+      "mode": "observer"
+    },
+    {
+      "id": "command",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "gateway.request",
+      "version": 1,
+      "mode": "waterfall"
+    },
+    {
+      "id": "gateway.route",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "gateway.account",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "gateway.attempt",
+      "version": 1,
+      "mode": "middleware"
+    },
+    {
+      "id": "model.catalog",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "chat.prepare",
+      "version": 1,
+      "mode": "waterfall"
+    },
+    {
+      "id": "chat.beforeCommand",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "tool",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "approval",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "ui",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "provider",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "upstream",
+      "version": 1,
+      "mode": "terminal"
+    }
+  ],
+  "wireTypes": {
+    "Fault": {
+      "code": "string",
+      "message": "string"
+    },
+    "ProtocolRange": {
+      "min": "uint32",
+      "max": "uint32"
+    },
+    "Message": {
+      "kind": "string",
+      "protocolVersion": "uint32",
+      "id": "string",
+      "method?": "string",
+      "token?": "string",
+      "deadline?": "int64",
+      "value?": "json",
+      "supported?": "ProtocolRange",
+      "error?": "Fault"
+    }
+  }
+}

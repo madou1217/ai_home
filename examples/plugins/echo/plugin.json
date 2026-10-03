@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "aih.sample.echo",
+  "version": "0.1.0",
+  "engines": { "aih": ">=1.0.0", "node": ">=22" },
+  "runtime": "node",
+  "entry": "index.mjs",
+  "targets": ["any"],
+  "provides": [{ "name": "sample.echo", "version": "1.0.0" }],
+  "contributes": [
+    { "id": "sample.echo.call", "capability": "command", "version": 1 },
+    { "id": "sample.echo.wait", "capability": "command", "version": 1 },
+    { "id": "sample.echo.stats", "capability": "command", "version": 1 }
+  ]
+}

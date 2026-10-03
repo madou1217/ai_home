@@ -1,0 +1,13 @@
+{
+  "name": "@ai-home/plugin-sdk",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } },
+  "files": ["*.js", "*.json", "*.d.ts"],
+  "engines": { "node": ">=22 <23" },
+  "license": "ISC",
+  "dependencies": { "ajv": "8.20.0", "semver": "7.8.5" },
+  "peerDependencies": { "@deepseek-ai/cordis": "4.0.4" }
+}

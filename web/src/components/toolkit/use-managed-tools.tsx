@@ -18,6 +18,12 @@ import {
 } from './lifecycle-presentation';
 import { toolkitRequestError as requestError } from './request-error';
 
+// 与服务端 TOOLKIT_TOOL_CATEGORIES 的 label 一致，只在接口返回前兜底。
+const TOOL_CATEGORY_LABELS: Readonly<Record<ToolkitToolCategoryId, string>> = Object.freeze({
+  'session-runtimes': '会话运行时',
+  'network-access': '网络接入与隧道'
+});
+
 export const MANAGED_TOOL_DISCOVERY_SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   'running-process': '运行进程参数',
   systemd: 'systemd 服务',
@@ -147,7 +153,9 @@ export function useManagedTools(category: ToolkitToolCategoryId, lifecycleApi: M
     () => (data?.tools || []).filter((tool) => tool.category === category),
     [category, data]
   );
-  const categoryInfo = data?.categories.find((item) => item.id === category);
+  // 首次加载（Windows 上要几秒）期间接口还没回分类名，先用本地名称，别把内部 id 露成标题。
+  const categoryInfo = data?.categories.find((item) => item.id === category)
+    || { id: category, label: TOOL_CATEGORY_LABELS[category], description: '' };
   const installedCount = tools.filter((tool) => tool.installed).length;
   const editableCount = tools.filter((tool) => tool.configEditable).length;
   const lifecycleCount = tools.filter((tool) => tool.canInstall || tool.canUpdate || tool.canUninstall).length;

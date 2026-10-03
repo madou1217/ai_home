@@ -857,3 +857,27 @@ test('proxy-manager default direct probe uses an Undici-compatible redirect poli
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+// Windows 上一次进程枚举 ~0.6s、一次 Get-ScheduledTask ~2.5s：列表只许各扫一次，
+// 之前 frpc 无配置时 inspectConfig 会整套重扫、守护后端又单独枚举进程，面板要等 6~8 秒。
+test('managed tool listing scans processes and startup entries once', () => {
+  const commands = [];
+  const result = managedToolManager.listManagedTools({
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: { LOCALAPPDATA: 'C:\\Users\\tester\\AppData\\Local', PATH: '' },
+    fs: { existsSync: () => false, statSync: () => { throw new Error('missing'); }, readdirSync: () => [], accessSync: () => { throw new Error('denied'); } },
+    resolveCommandPath: () => '',
+    spawnSync(command, args) {
+      commands.push([command, ...(args || [])].join(' '));
+      return { status: 0, stdout: '[]', stderr: '' };
+    }
+  });
+  assert.equal(result.ok, true);
+  const processScans = commands.filter((line) => line.includes('Win32_Process'));
+  const startupScans = commands.filter((line) => line.includes('Get-ScheduledTask'));
+  assert.equal(processScans.length, 1, commands.join('\n'));
+  assert.equal(startupScans.length, 1, commands.join('\n'));
+  // 原生 Windows 只列 psmux，tmux.exe 是它的别名。
+  assert.deepEqual(result.tools.filter((tool) => tool.category === 'session-runtimes').map((tool) => tool.id), ['psmux', 'herdr']);
+});

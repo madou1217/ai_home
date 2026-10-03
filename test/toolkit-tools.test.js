@@ -97,8 +97,8 @@ test('tool-manager accepts Node platform aliases and returns the public platform
       resolveCommandPath() { return ''; }
     });
     assert.equal(result.platform, expected);
-    assert.equal(result.tools.find((tool) => tool.id === 'tmux').supported, true);
-    // 不适用当前平台的插件不出现在清单里，避免界面误导。
+    // 不适用当前平台的插件不出现在清单里，避免界面误导：原生 Windows 用 psmux（tmux.exe 只是它的别名）。
+    assert.equal(result.tools.some((tool) => tool.id === 'tmux'), expected !== 'windows');
     assert.equal(result.tools.some((tool) => tool.id === 'psmux'), expected === 'windows');
   }
 });

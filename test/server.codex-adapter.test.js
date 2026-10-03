@@ -356,6 +356,44 @@ test('codex adapter serves the native ModelInfo contract to Codex clients', asyn
   assert.deepEqual(state.modelsCache.catalogByAccount[accountRef('catalog')], [metadata]);
 });
 
+// 重启后缓存为空：排在前面的号（作废/失联）探测失败时不能直接 503，要接着探后面的号。
+test('codex native models keep probing past failing leading accounts on a cold cache', async () => {
+  const metadata = createCodexModelMetadata();
+  const res = createResCapture();
+  const probed = [];
+  await handleCodexModels({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      codexClientVersion: 'codex-cli 0.160.0',
+      modelsProbeAccounts: 2,
+      modelsCacheTtlMs: 300000
+    },
+    state: {
+      accounts: {
+        codex: ['dead-1', 'dead-2', 'alive'].map((name) => ({ accountRef: accountRef(name), accessToken: `token-${name}` }))
+      },
+      modelsCache: { updatedAt: 0, ids: [], byAccount: {}, catalogByAccount: {} }
+    },
+    res,
+    responseFormat: 'codex',
+    deps: {
+      buildOpenAIModelsList() {
+        throw new Error('native catalog must not be flattened');
+      },
+      fetchWithTimeout: async (_url, init) => {
+        const token = String(init.headers.authorization || init.headers.Authorization || '');
+        probed.push(token);
+        if (!token.includes('alive')) return { ok: false, status: 401, text: async () => '{"error":"refresh_token_invalidated"}' };
+        return { ok: true, status: 200, text: async () => JSON.stringify({ models: [metadata] }) };
+      }
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { models: [metadata] });
+  assert.equal(probed.length, 3);
+});
+
 test('codex adapter never returns an OpenAI data list to a native catalog request', async () => {
   const res = createResCapture();
   await handleCodexModels({

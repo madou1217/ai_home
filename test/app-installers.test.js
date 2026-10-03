@@ -246,3 +246,18 @@ test('Desktop 安装器只在官方资料声明的架构上提供计划', () => 
   const x64Windows = { platform: 'windows', processObj: { platform: 'win32', arch: 'x64', env: {} } };
   assert.equal(getAppInstaller('kimi').resolveDesktopInstallPlans(x64Windows).length, 1);
 });
+
+test('IDE 应用插件同时声明宿主描述与安装方式，IDE 注册表从插件聚合', () => {
+  const { INSTALLERS } = require('../lib/server/app-installers');
+  const { listIdeClients, getIdeClient } = require('../lib/cli/services/toolkit/ide-client-registry');
+  const declared = Object.values(INSTALLERS).filter((installer) => installer.ideClient).map((installer) => installer.provider);
+  assert.deepEqual([...listIdeClients()].sort(), [...declared].sort());
+  assert.deepEqual(listIdeClients(), ['vscode', 'cursor', 'windsurf']);
+  for (const id of listIdeClients()) {
+    const client = getIdeClient(id);
+    assert.equal(client, INSTALLERS[id].ideClient);
+    assert.equal(typeof INSTALLERS[id].resolveDesktopInstallPlans, 'function');
+    assert.ok(client.configDirectoryName);
+  }
+  assert.equal(typeof INSTALLERS.claude.desktopConfigPath, 'function');
+});

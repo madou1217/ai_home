@@ -4,7 +4,6 @@ import {
   mirrorApplicableRegion,
   mirrorLatencyLabel,
   useMirrorManager,
-  type MirrorKind,
   type MirrorLatencyResult
 } from '@/components/toolkit/use-mirror-manager';
 import MobileBoot from '@/mobile/MobileBoot';
@@ -15,10 +14,6 @@ import GuidedCommand from './GuidedCommand';
 import { ActionButton, InlineError, PanelToolbar, StatusText } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
 
-const KIND_ITEMS: Array<{ key: MirrorKind; label: string }> = [
-  { key: 'npm', label: 'npm / pnpm / yarn' },
-  { key: 'pip', label: 'Python pip' }
-];
 
 function latencyTone(result: MirrorLatencyResult | undefined): HudTone {
   if (!result || result.state === 'idle') return 'muted';
@@ -26,11 +21,13 @@ function latencyTone(result: MirrorLatencyResult | undefined): HudTone {
   return result.state === 'success' ? 'ok' : 'err';
 }
 
-/** 软件源与镜像：npm / pip 当前配置、镜像预设、HTTP TTFB 实测、写入配置与平台命令指南。 */
+/** 软件源与镜像（插件化：npm、pip…）：当前配置、镜像预设、HTTP TTFB 实测、写入配置与平台命令指南。 */
 export default function MirrorsPanel() {
   const {
     data,
     kind,
+    kinds,
+    kindInfo,
     setKind,
     setSelectedId,
     loading,
@@ -64,7 +61,7 @@ export default function MirrorsPanel() {
 
       {mirrorData ? (
         <>
-          <HudChips ariaLabel="包管理器" value={kind} onChange={(value) => setKind(value as MirrorKind)} items={KIND_ITEMS} />
+          <HudChips ariaLabel="包管理器" value={kind} onChange={(value) => setKind(String(value))} items={kinds.map((item) => ({ key: item.id, label: item.label }))} />
 
           <TelemetryGrid>
             <TelemetryTile
@@ -73,7 +70,7 @@ export default function MirrorsPanel() {
               value={<span className={styles.tileMono}>{currentValue}</span>}
               tone={mirrorData.current ? 'info' : 'warn'}
               led
-              sub={`${kind === 'npm' ? 'npm registry' : 'pip global.index-url'} 当前读取值`}
+              sub={`${kindInfo?.settingLabel || kind} 当前读取值`}
             />
           </TelemetryGrid>
 

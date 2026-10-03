@@ -12,14 +12,15 @@ import ToolkitStatusTrack from './ToolkitStatusTrack';
 import {
   mirrorApplicableRegion as applicableRegion,
   mirrorLatencyLabel as latencyLabel,
-  useMirrorManager,
-  type MirrorKind
+  useMirrorManager
 } from './use-mirror-manager';
 
 export default function MirrorManagerPanel() {
   const {
     data,
     kind,
+    kinds,
+    kindInfo,
     setKind,
     setSelectedId,
     loading,
@@ -60,7 +61,7 @@ export default function MirrorManagerPanel() {
         </InlineNote>
       )}
       {loading && !data ? (
-        <div className="toolkit-loading"><Spin size="large" tip="正在读取 npm 与 pip 配置" /></div>
+        <div className="toolkit-loading"><Spin size="large" tip="正在读取软件源配置" /></div>
       ) : mirrorData ? (
         <>
           <ToolkitStatusTrack
@@ -75,13 +76,13 @@ export default function MirrorManagerPanel() {
               {
                 label: '配置',
                 value: currentValue,
-                detail: `${kind === 'npm' ? 'npm registry' : 'pip global.index-url'} 当前读取值`,
+                detail: `${kindInfo?.settingLabel || kind} 当前读取值`,
                 tone: mirrorData.current ? 'info' : 'warning'
               },
               {
                 label: '指南',
-                value: `${selectedPreset?.guides?.commands.length || 0} 条跨平台命令`,
-                detail: '服务端按所选镜像填充 URL 与主机名；缺失时不生成可复制命令',
+                value: `${selectedPreset?.guides?.commands.length || 0} 条当前系统命令`,
+                detail: '服务端按所选镜像填充 URL 与主机名，只给出当前系统适用的命令',
                 tone: 'neutral'
               }
             ]}
@@ -90,11 +91,8 @@ export default function MirrorManagerPanel() {
           <div className="toolkit-runtime-switch">
             <Segmented
               value={kind}
-              onChange={(value) => setKind(value as MirrorKind)}
-              options={[
-                { label: 'npm / pnpm / yarn', value: 'npm' },
-                { label: 'Python pip', value: 'pip' }
-              ]}
+              onChange={(value) => setKind(String(value))}
+              options={kinds.map((item) => ({ label: item.label, value: item.id }))}
             />
           </div>
 

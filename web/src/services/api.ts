@@ -2163,7 +2163,7 @@ export const toolkitAPI = {
     const response = await api.get<MirrorsResponse>('/webui/toolkit/mirrors');
     return response.data;
   },
-  setMirror: async (type: 'npm' | 'pip', url: string): Promise<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }> => {
+  setMirror: async (type: string, url: string): Promise<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }> => {
     const response = await api.post<{ ok: boolean; registry?: string; indexUrl?: string; error?: string }>('/webui/toolkit/mirrors/set', { type, url });
     return response.data;
   },

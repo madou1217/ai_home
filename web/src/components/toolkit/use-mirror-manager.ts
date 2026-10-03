@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { message } from 'antd';
 import { toolkitAPI } from '@/services/api';
-import type { MirrorGuide, MirrorPreset, MirrorsResponse } from '@/types';
+import type { MirrorGuide, MirrorKindInfo, MirrorKindStatus, MirrorPreset, MirrorsResponse } from '@/types';
 import type { GuidedCommandTask } from './guided-command';
 
-export type MirrorKind = 'npm' | 'pip';
+export type MirrorKind = string;
+
+// 旧服务端没有 kinds 清单时的兜底；新服务端由软件源插件注册表下发。
+const FALLBACK_KINDS: MirrorKindInfo[] = [
+  { id: 'npm', name: 'npm', label: 'npm / pnpm / yarn', settingLabel: 'npm registry' },
+  { id: 'pip', name: 'pip', label: 'Python pip', settingLabel: 'pip global.index-url' }
+];
+
+export function mirrorKindsOf(data: MirrorsResponse | null): MirrorKindInfo[] {
+  return data?.kinds?.length ? data.kinds : FALLBACK_KINDS;
+}
+
+export function mirrorStatusOf(data: MirrorsResponse | null, kind: string): MirrorKindStatus | undefined {
+  const value = data?.[kind];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as MirrorKindStatus : undefined;
+}
 
 export interface MirrorLatencyResult {
   state: 'idle' | 'loading' | 'success' | 'error';
@@ -45,7 +60,7 @@ export function mirrorApplicableRegion(preset: MirrorPreset) {
 }
 
 /**
- * 软件源与镜像的数据层（桌面面板与移动端共用）：读取 npm / pip 当前配置与预设，
+ * 软件源与镜像的数据层（桌面面板与移动端共用）：读取各软件源插件（npm、pip…）的当前配置与预设，
  * 单次 HTTP HEAD 延迟实测，以及把所选镜像写入配置。
  */
 export function useMirrorManager() {
@@ -75,8 +90,15 @@ export function useMirrorManager() {
     void fetchMirrors();
   }, [fetchMirrors]);
 
-  const mirrorData = data?.[kind];
-  const presets = mirrorData?.presets || [];
+  const kinds = useMemo(() => mirrorKindsOf(data), [data]);
+  const kindInfo = kinds.find((item) => item.id === kind) || kinds[0];
+
+  useEffect(() => {
+    if (kinds.length && !kinds.some((item) => item.id === kind)) setKind(kinds[0].id);
+  }, [kind, kinds]);
+
+  const mirrorData = mirrorStatusOf(data, kind);
+  const presets = useMemo(() => mirrorData?.presets || [], [mirrorData]);
 
   useEffect(() => {
     setSelectedId((current) => {
@@ -133,6 +155,8 @@ export function useMirrorManager() {
   return {
     data,
     kind,
+    kinds,
+    kindInfo,
     setKind,
     selectedId,
     setSelectedId,

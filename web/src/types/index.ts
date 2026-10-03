@@ -2077,18 +2077,25 @@ export interface MirrorGuide {
   }>;
 }
 
+export interface MirrorKindInfo {
+  id: string;
+  name: string;
+  label: string;
+  settingLabel: string;
+}
+
+export interface MirrorKindStatus {
+  current: string;
+  presets: MirrorPreset[];
+  guides?: MirrorGuide;
+}
+
+/** 软件源由服务端插件提供：kinds 为有序清单，每个 kind 的状态以其 id 为键。 */
 export interface MirrorsResponse {
   ok: boolean;
-  npm: {
-    current: string;
-    presets: MirrorPreset[];
-    guides?: MirrorGuide;
-  };
-  pip: {
-    current: string;
-    presets: MirrorPreset[];
-    guides?: MirrorGuide;
-  };
+  platform?: string;
+  kinds?: MirrorKindInfo[];
+  [kind: string]: MirrorKindStatus | MirrorKindInfo[] | string | boolean | undefined;
 }
 
 export interface SystemProxyInfo {

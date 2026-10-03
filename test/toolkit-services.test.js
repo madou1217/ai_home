@@ -881,3 +881,22 @@ test('managed tool listing scans processes and startup entries once', () => {
   // 原生 Windows 只列 psmux，tmux.exe 是它的别名。
   assert.deepEqual(result.tools.filter((tool) => tool.category === 'session-runtimes').map((tool) => tool.id), ['psmux', 'herdr']);
 });
+
+test('软件源以插件注册，指南只返回当前平台适用的命令', async () => {
+  const { MIRROR_PLUGINS } = require('../lib/cli/services/toolkit/mirror-plugins');
+  for (const plugin of MIRROR_PLUGINS) {
+    assert.equal(plugin.capability, 'toolkit.mirror');
+    assert.ok(plugin.platforms.length > 0);
+    assert.equal(typeof plugin.read, 'function');
+    assert.equal(typeof plugin.write, 'function');
+  }
+  const spawnSync = () => ({ status: 0, stdout: 'https://registry.npmjs.org/\n' });
+  const mac = await getMirrorsStatus({ platform: 'darwin', spawnSync });
+  assert.deepEqual(mac.kinds.map((kind) => kind.id), ['npm', 'pip']);
+  const macLabels = mac.npm.guides.commands.map((command) => command.label);
+  assert.ok(macLabels.includes('配置文件直接写入'));
+  assert.equal(macLabels.some((label) => /PowerShell/.test(label)), false);
+  const win = await getMirrorsStatus({ platform: 'win32', spawnSync });
+  assert.equal(win.pip.guides.commands.some((command) => command.label === '写入 pip.conf'), false);
+  assert.equal(win.pip.guides.commands.some((command) => Object.prototype.hasOwnProperty.call(command, 'platforms')), false);
+});

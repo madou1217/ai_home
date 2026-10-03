@@ -409,7 +409,8 @@ test('codex auth invalid reconciler retains account when refresh reports termina
   await ctx.runScheduled();
 
   assert.equal(fs.existsSync(runtimeDir), true);
-  assertRetained(ctx, root, accountRef, 'refresh_http_400');
+  // 失败原因带上 OpenAI 的错误码，账号页能看出是会话被终止。
+  assertRetained(ctx, root, accountRef, 'refresh_http_400:app_session_terminated');
 });
 
 test('codex auth invalid reconciler keeps a still-valid access token when refresh is rejected', async (t) => {
@@ -489,4 +490,12 @@ test('codex auth invalid reconciler deduplicates pending account work', async (t
 
   assert.equal(refreshCount, 1);
   assert.equal(ctx.clearedRuntime.length, 1);
+});
+
+test('a rejected refresh records the upstream error code next to the HTTP status', () => {
+  // 此前只记 refresh_http_401，账号页只显示「需要重新登录」，看不出是 token 被别处用掉、会话终止还是过期。
+  const { describeRefreshFailure } = require('../lib/cli/services/usage/codex-auth-invalid-reconciler').__private;
+  assert.equal(describeRefreshFailure({ reason: 'refresh_http_401', detail: '{"error":{"message":"x","type":"invalid_request_error","code":"refresh_token_reused"}}' }), 'refresh_http_401:refresh_token_reused');
+  assert.equal(describeRefreshFailure({ reason: 'refresh_http_400', detail: '{"error":"invalid_grant","error_description":"expired"}' }), 'refresh_http_400:invalid_grant');
+  assert.equal(describeRefreshFailure({ reason: 'refresh_http_401', detail: '<html>gateway</html>' }), 'refresh_http_401');
 });

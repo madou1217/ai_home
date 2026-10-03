@@ -394,3 +394,53 @@ test('渠道后来支持钉版本时,旧的不可回滚标记不再阻止升级'
   assert.equal(result.reason, 'verified_pass');
   assert.deepEqual(calls.plans, [{ phase: 'upgrade', version: '0.154.0' }]);
 });
+
+// qoder 曾被解析成 Qoder IDE 自带的 qoder.cmd，记下了 IDE 的版本当回退锚点；换成真正的
+// qodercli 后锚点仍是 1.17.3。PATH 上的命令换了，旧基线属于另一个程序，必须重建。
+test('会被启动的命令换了：作废旧基线与回退锚点并按新程序重建', async () => {
+  const seeded = writeProviderRecord(emptyLedger(), 'qoder', {
+    state: STATES.HEALTHY,
+    resolvedPath: 'C:\\Program Files\\Qoder\\bin\\qoder.cmd',
+    installedVersion: '1.17.3',
+    knownGoodVersion: '1.17.3',
+    baselineHealthy: true
+  });
+  const verified = [];
+  const { deps, calls } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.UNKNOWN,
+      pinnable: false,
+      ownerPath: 'C:\\Users\\u\\.qoder\\bin\\qodercli\\qodercli.exe',
+      resolvedPath: 'C:\\Users\\u\\.qoder\\bin\\qodercli\\qodercli.exe'
+    }),
+    checkUpdate: async () => ({ installedVersion: '1.1.34', latestVersion: '1.1.65', publishedAt: LONG_AGO }),
+    verify: async (_provider, version) => { verified.push(version); return { verdict: VERDICTS.PASS }; }
+  });
+
+  const { ledger } = await runGated('qoder', seeded, deps);
+  const record = readProviderRecord(ledger, 'qoder');
+  assert.deepEqual(verified, ['1.1.34']);
+  assert.equal(record.knownGoodVersion, '1.1.34');
+  assert.ok(calls.logs.some((entry) => entry.event === 'cli_identity_changed'));
+});
+
+test('同一命令路径（Windows 大小写不同）不算换了程序，回退锚点保留', async () => {
+  const seeded = writeProviderRecord(emptyLedger(), 'codex', {
+    state: STATES.HEALTHY,
+    resolvedPath: 'D:\\nvm4w\\nodejs\\codex.cmd',
+    installedVersion: '0.153.4',
+    knownGoodVersion: '0.153.0',
+    baselineHealthy: true
+  });
+  const { deps, calls } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.NPM_GLOBAL,
+      pinnable: true,
+      ownerPath: 'C:\\nvm\\node_modules\\@openai\\codex\\bin\\codex.js',
+      resolvedPath: 'd:\\nvm4w\\nodejs\\codex.cmd'
+    })
+  });
+  const { ledger } = await runGated('codex', seeded, deps);
+  assert.equal(readProviderRecord(ledger, 'codex').knownGoodVersion, '0.153.0');
+  assert.equal(calls.logs.some((entry) => entry.event === 'cli_identity_changed'), false);
+});

@@ -9,7 +9,7 @@ const { EventEmitter } = require('node:events');
 
 const { createDetachedProcessSupervisor } = require('../lib/cli/services/toolkit/service-control/detached-process-supervisor');
 const { createServiceStateStore } = require('../lib/cli/services/toolkit/service-control/service-state-store');
-const { createHomebrewServicesBackend } = require('../lib/cli/services/toolkit/service-control/homebrew-services-backend');
+const { clearHomebrewStatusCache, createHomebrewServicesBackend } = require('../lib/cli/services/toolkit/service-control/homebrew-services-backend');
 const { resolveServiceBackend } = require('../lib/cli/services/toolkit/service-control');
 const { createAihSupervisorBackend, resetSupervisorsForTest } = require('../lib/cli/services/toolkit/service-control/aih-supervisor-backend');
 const { parseServicePath } = require('../lib/server/webui-tool-service-routes');
@@ -141,7 +141,33 @@ test('detached supervisor 关闭自动重启后崩溃即停止；AIH 重启后�
   assert.notEqual(restored.pid, again.pid);
 });
 
+test('detached supervisor 不接管、不终止被系统复用给其它程序的 PID', async () => {
+  const home = tempHome();
+  const world = createFakeProcessWorld();
+  const timers = createManualTimers();
+  const store = createServiceStateStore({ aiHomeDir: home, serviceId: 'frpc' });
+  store.write({ desired: 'running', autoStart: false, pid: 4242, configPath: '/cfg/frpc.toml', launch: { command: '/bin/frpc', args: [] } });
+  world.alive.add(4242);
+  const killed = [];
+  const supervisor = createDetachedProcessSupervisor({
+    stateStore: store,
+    spawn: world.spawn.bind(world),
+    isAlive: world.isAlive,
+    isOwnedProcess: () => false,
+    kill: (pid) => { killed.push(pid); return true; },
+    ...timers
+  });
+  const adopted = supervisor.adopt();
+  assert.equal(adopted.adopted, false);
+  assert.equal(store.read().pid, 0);
+  store.write({ pid: 4242 });
+  await supervisor.stop();
+  assert.deepEqual(killed, []);
+  assert.equal(world.alive.has(4242), true);
+});
+
 test('Homebrew 后端读取 brew services 状态并通过 brew services 控制', async () => {
+  clearHomebrewStatusCache();
   const calls = [];
   const backend = createHomebrewServicesBackend({ formula: 'frpc', label: 'frpc' }, {
     brewPath: '/opt/homebrew/bin/brew',
@@ -169,6 +195,22 @@ test('Homebrew 后端读取 brew services 状态并通过 brew services 控制',
   assert.deepEqual(backend.logFiles(), ['/var/log/frpc.log']);
 });
 
+test('Homebrew 状态缓存跨后端实例共享，避免每次清单刷新都同步调用 brew', () => {
+  clearHomebrewStatusCache();
+  let infoCalls = 0;
+  const make = () => createHomebrewServicesBackend({ formula: 'frpc', label: 'frpc' }, {
+    brewPath: '/opt/homebrew/bin/brew',
+    spawnSync() {
+      infoCalls += 1;
+      return { status: 0, stdout: '[{"name":"frpc","running":false,"loaded":false}]' };
+    }
+  });
+  make().describe();
+  make().describe();
+  assert.equal(infoCalls, 1);
+  clearHomebrewStatusCache();
+});
+
 test('后端选择：Homebrew 安装走 brew services，其余走 AIH 守护', () => {
   const home = tempHome();
   const brewBackend = resolveServiceBackend(frpcPlugin, { managedBy: 'homebrew' }, { brewPath: '/opt/homebrew/bin/brew', aiHomeDir: home });
@@ -186,7 +228,10 @@ test('AIH 守护后端：新建配置、冲突守卫拒绝与外部进程共用�
   const backend = createAihSupervisorBackend({ ...frpcPlugin.service, id: 'frpc', name: 'frpc' }, {
     aiHomeDir: path.join(home, '.ai_home'),
     hostHomeDir: home,
-    processEntries: [{ pid: 77, name: 'frpc', executablePath: '/usr/local/bin/frpc', commandLine: `/usr/local/bin/frpc -c ${configPath}` }]
+    processEntries: [
+      { pid: 76, name: 'zsh', executablePath: '/bin/zsh', commandLine: `/bin/zsh -c "frpc -c ${configPath}"` },
+      { pid: 77, name: 'frpc', executablePath: '/usr/local/bin/frpc', commandLine: `/usr/local/bin/frpc -c ${configPath}` }
+    ]
   });
 
   const before = backend.describe(tool);

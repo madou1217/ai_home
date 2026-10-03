@@ -22,6 +22,9 @@
     { "name": "ajv", "version": "8.20.0", "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==" },
     { "name": "semver", "version": "7.8.5", "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==" }
   ],
+  "hostServices": [
+    { "name": "aih", "version": "1.0.0" }
+  ],
   "messageKinds": ["hello", "hello.result", "call", "result", "error", "cancel"],
   "errorCodes": [
     "plugin_rpc_invalid",

@@ -150,6 +150,12 @@ test('dependency plan orders providers first and diagnoses missing, mismatched a
   assert.equal(cycle.diagnostics[0].code, 'plugin_dependency_cycle');
   assert.deepEqual(cycle.diagnostics[0].cycle, ['a', 'b', 'a']);
 
+  const hostOk = planGeneration([{ instanceId: 'h', manifest: manifest('h', { requires: [{ name: 'aih', versionRange: '^1.0.0' }] }) }]);
+  assert.equal(hostOk.ok, true);
+  const hostTooNew = planGeneration([{ instanceId: 'h', manifest: manifest('h', { requires: [{ name: 'aih', versionRange: '^2.0.0' }] }) }]);
+  assert.equal(hostTooNew.diagnostics[0].code, 'plugin_service_version_mismatch');
+  assert.match(hostTooNew.diagnostics[0].detail, /aih@\^2\.0\.0/);
+
   const duplicate = planGeneration([
     { instanceId: 'one', manifest: manifest('same') },
     { instanceId: 'two', manifest: manifest('same') }
@@ -160,8 +166,8 @@ test('dependency plan orders providers first and diagnoses missing, mismatched a
 // ---- 宿主进程 ----
 
 test('plugin host environment is built from an allowlist without gateway secrets', () => {
-  const env = buildHostEnvironment({ PATH: '/bin', AIH_SERVER_MANAGEMENT_KEY: 'secret', OPENAI_API_KEY: 'k' }, { AIH_PLUGIN_TOKEN: 't' });
-  assert.deepEqual(env, { PATH: '/bin', AIH_PLUGIN_TOKEN: 't' });
+  const env = buildHostEnvironment({ PATH: '/bin', AIH_SERVER_MANAGEMENT_KEY: 'secret', OPENAI_API_KEY: 'k' }, { AIH_PLUGIN_SOCKET: 's' });
+  assert.deepEqual(env, { PATH: '/bin', AIH_PLUGIN_SOCKET: 's' });
 });
 
 test('external sample loads, round-trips a bounded large payload, and unloads after its async disposer', async () => {

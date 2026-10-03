@@ -10,11 +10,11 @@
 | ESM/CJS 接缝 | `lib/plugins/host/register-hooks.mjs`、`resolve-hooks.mjs` | 宿主以 `node --import <hooks 的 file URL> host-entry.mjs` 启动；`module.register()` 把插件里的 `@ai-home/plugin-sdk` 与 `@deepseek-ai/cordis` 解析到宿主自带的那一份（全宿主一个 Cordis）；并把代次参数传给插件解析出的每个本地 ESM 模块，同一代次的整棵模块树独立 |
 | 跨平台传输 | `lib/plugins/transport/*`、`internal/adapters/pluginruntime` | POSIX 私有 Unix socket（0700 目录、0600 文件）；Windows named pipe（Go 侧 go-winio 重叠 I/O，同步句柄并发读写会死锁）。一套线合同 |
 | 帧格式与上限 | `contract.json` `limits` | 12 字节头 + JSON 元数据（≤64 KiB）+ 二进制 payload（≤4 MiB）；缓冲 8.06 MiB；在途 64；握手 2 s；默认调用 10 s。超限在读头时拒绝，不先缓冲正文 |
-| 公共服务与能力版本 | `contract.json` `capabilities`；`ctx.aih` | 14 个能力各带版本与模式；M0 宿主只开放 `register` / `provide` / `instance`，按清单校验归属；返回值是普通 JSON 或显式 `withPayload(value, bytes)`，不猜测信封 |
+| 公共服务与能力版本 | `contract.json` `capabilities`、`hostServices`；`ctx.aih` | 14 个能力各带版本与模式；宿主公共服务 `aih` 版本 1.0.0，插件 `requires` 它时按 semver 校验；M0 只开放 `register` / `provide` / `instance`，按清单校验归属；返回值是普通 JSON 或显式 `withPayload(value, bytes)`，不猜测信封 |
 | DTO 生成 | `scripts/generate-plugin-contract.js` | 生成 Go 常量与 DTO（gofmt 对齐）、TS 类型、SDK 用 JSON；`--check` 进测试 |
 | 最小 sample | `examples/plugins/echo` | 外部插件，只 import SDK |
 | 空链快路径 | `lib/plugins/host/dispatcher.js` | 能力没有已发布贡献项时直接返回原值，不启动宿主、不建连接 |
-| 宿主边界 | `supervisor.js`、`host-entry.mjs` | 环境变量白名单（无网关凭据）；宿主读完 RPC 令牌即从环境删除；父进程退出（stdin EOF）宿主随之退出 |
+| 宿主边界 | `supervisor.js`、`host-entry.mjs` | 环境变量白名单（不传网关凭据）；RPC 令牌经 stdin 第一行交付，不进环境块；父进程退出（stdin EOF）宿主随之退出 |
 
 ## 2. 验收证据
 
@@ -25,7 +25,7 @@
 | Node 22 加载/卸载 | 外部临时目录的 sample 经真实宿主准备、发布、调用、卸载；卸载后调用返回 `plugin_generation_unknown` |
 | 依赖缺失/恢复 | 只启用消费方 → `plugin_service_missing`；加入提供方的新代次 → 先提供方后消费方，调用拿到服务返回值 |
 | 循环诊断 | `plugin_dependency_cycle`，诊断给出环路 `a → b → a`。Cordis 对成环/缺失依赖只会让 fiber 静默停在 PENDING（M0 实测），所以在加载任何插件代码前做静态诊断，加载后再检查 fiber 状态 |
-| 其他准备期拒绝 | 插件 ID / 贡献项重复、服务版本不满足、宿主版本不兼容、能力版本不支持、注册未声明的贡献项、apply 抛错（带原始信息）；被拒绝的候选不留半加载代次 |
+| 其他准备期拒绝 | 插件 ID / 贡献项重复、服务版本不满足（含宿主服务 `aih@^2`）、宿主版本不兼容、能力版本不支持、注册未声明的贡献项、apply 抛错（带原始信息）；被拒绝的候选不留半加载代次 |
 | 异步 disposer 完成 | sample 的 20 ms 异步 disposer：卸载 ≥ 20 ms 才返回；disposer 抛错不阻塞卸载并归属到具体实例 |
 | 代次隔离 | 双文件插件：helper 的模块级计数在 gen1 递增到 2，gen2 重新从 1 开始（修复前为 3） |
 | Go↔Node 往返 | 4 MiB（恰好上限）payload 原样往返；32 路并发 |
@@ -34,7 +34,7 @@
 | 版本不兼容 | 以协议版本 2 握手 → `plugin_rpc_incompatible` + 支持范围 `{min:1,max:1}`；错误令牌只断开、不泄露信息 |
 | 有界大 payload | 恰好上限通过；超 1 字节在客户端拒绝；手工超限帧头 → 宿主先回 `plugin_rpc_payload_limit` 再断开 |
 | 崩溃与孤儿 | 插件 `process.exit(7)` → 在途调用 `plugin_rpc_closed`，记录退出码与 stderr；父进程被 SIGKILL 后宿主几秒内自行退出 |
-| 凭据隔离 | 插件读不到网关注入的密钥，也读不到宿主 RPC 令牌 |
+| 环境暴露 | `process.env` 里没有网关注入的密钥，也没有宿主 RPC 令牌。**这不是安全边界**：插件与网关同一用户，仍可读 `~/.ai_home` 下的文件；按 ADR-P2，可执行插件只来自明确接受的可信制品 |
 | 空链与启用插件基线 | 见 §3 |
 
 变异检验：分别放宽握手版本检查、去掉 disposer 错误归属、去掉代次参数传播、去掉令牌删除、关闭父进程退出检测、去掉写期限，对应测试均失败；恢复后通过。
@@ -52,7 +52,7 @@
 
 帧解码最初每收到一个 socket 块就整体拼接，大帧拷贝量随帧大小平方增长；改为整帧拼接一次后，1 MiB 往返 p50 从 6.2 ms 降到约 1.7 ms（macOS）。
 
-**冻结门槛**（后续阶段沿同一脚本比较，超出即视为回归，需要解释或修复）：
+**冻结门槛**（后续阶段沿同一脚本比较，超出即视为回归，需要解释或修复）。测量条件：开发机日常负载（网关、编辑器在运行），取连续 3 次中位数那次；单次 p99 受负载尖峰影响（M0 期间 macOS 小 JSON 出现过一次 695 µs），超门槛时先在空闲条件下复测再判定：
 
 | 指标 | macOS | Windows |
 | --- | --- | --- |

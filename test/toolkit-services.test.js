@@ -900,3 +900,19 @@ test('软件源以插件注册，指南只返回当前平台适用的命令', as
   assert.equal(win.pip.guides.commands.some((command) => command.label === '写入 pip.conf'), false);
   assert.equal(win.pip.guides.commands.some((command) => Object.prototype.hasOwnProperty.call(command, 'platforms')), false);
 });
+
+// 工具清单短缓存：TTL 内复用、过期重算、写操作清空。
+test('toolkit short-lived cache reuses results within the TTL and clears on demand', () => {
+  const { createShortLivedCache } = require('../lib/server/webui-toolkit-routes');
+  let clock = 1000;
+  let loads = 0;
+  const cache = createShortLivedCache(3000, () => clock);
+  const load = () => { loads += 1; return { n: loads }; };
+  assert.deepEqual(cache.get(load), { n: 1 });
+  clock += 2000;
+  assert.deepEqual(cache.get(load), { n: 1 });
+  clock += 1500;
+  assert.deepEqual(cache.get(load), { n: 2 });
+  cache.clear();
+  assert.deepEqual(cache.get(load), { n: 3 });
+});

@@ -44,7 +44,7 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
     { id: 'session-runtimes', label: '会话运行时', icon: <ToolOutlined /> }
   ],
   runtime: [
-    { id: 'environment', label: 'Node / Python', icon: <CodeOutlined /> },
+    { id: 'environment', label: '语言运行时', icon: <CodeOutlined /> },
     { id: 'mirrors', label: '软件源与镜像', icon: <CloudSyncOutlined /> }
   ],
   network: [

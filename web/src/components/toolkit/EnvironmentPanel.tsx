@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react';
 import { Empty, Segmented, Space, Spin, Tag } from 'antd';
 import {
   BookOutlined,
-  CodeOutlined,
-  ExperimentOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
@@ -16,19 +14,17 @@ import {
   LIFECYCLE_ACTION_LABELS as ACTION_LABELS
 } from './lifecycle-presentation';
 import ManagedResourceCard from './ManagedResourceCard';
+import { resolveRuntimePlugins, runtimePluginIcon, runtimePluginName } from './runtime-plugin-presentation';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import { useEnvironmentResources } from './use-environment-resources';
 
-type RuntimeId = 'node' | 'python';
-
-const RUNTIME_LABELS: Record<RuntimeId, string> = {
-  node: 'Node.js',
-  python: 'Python'
-};
-
 export default function EnvironmentPanel() {
-  const [runtime, setRuntime] = useState<RuntimeId>('node');
+  const [runtime, setRuntime] = useState('node');
   const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources();
+  const runtimePlugins = useMemo(
+    () => resolveRuntimePlugins(data?.runtimePlugins, data?.resources),
+    [data]
+  );
 
   const resources = useMemo(
     () => (data?.resources || []).filter((resource) => resource.runtime === runtime),
@@ -76,7 +72,7 @@ export default function EnvironmentPanel() {
                 tone: 'info'
               },
               {
-                label: RUNTIME_LABELS[runtime],
+                label: runtimePluginName(runtimePlugins, runtime),
                 value: runtimeSummary?.currentVersion || '未检测到',
                 detail: runtimeSummary?.activePath || '当前 PATH 未发现运行时',
                 tone: runtimeSummary?.currentVersion ? 'success' : 'warning'
@@ -95,11 +91,12 @@ export default function EnvironmentPanel() {
               <Segmented
                 aria-label="运行环境类型"
                 value={runtime}
-                onChange={(value) => setRuntime(value as RuntimeId)}
-                options={[
-                  { label: 'Node.js', value: 'node', icon: <CodeOutlined /> },
-                  { label: 'Python', value: 'python', icon: <ExperimentOutlined /> }
-                ]}
+                onChange={(value) => setRuntime(String(value))}
+                options={runtimePlugins.map((plugin) => ({
+                  label: plugin.name,
+                  value: plugin.id,
+                  icon: runtimePluginIcon(plugin.id)
+                }))}
               />
             </div>
             <span className="toolkit-result-count">当前显示 {resources.length} 项</span>
@@ -119,7 +116,7 @@ export default function EnvironmentPanel() {
                     installed={resource.installed}
                     icon={(
                       <span className="toolkit-client-glyph" aria-hidden="true">
-                        {resource.runtime === 'node' ? <CodeOutlined /> : <ExperimentOutlined />}
+                        {runtimePluginIcon(resource.runtime)}
                       </span>
                     )}
                     badges={<Tag>{getEnvironmentCategoryLabel(resource.category)}</Tag>}

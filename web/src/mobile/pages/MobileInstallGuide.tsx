@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { history } from '@umijs/max';
-import { ArrowLeftOutlined, CodeOutlined, ExperimentOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getEnvironmentCategoryLabel } from '@/components/toolkit/environment-presentation';
 import type { GuidedCommandTask } from '@/components/toolkit/guided-command';
+import { resolveRuntimePlugins, runtimePluginIcon } from '@/components/toolkit/runtime-plugin-presentation';
 import { toolkitRequestError } from '@/components/toolkit/request-error';
 import MobileBoot from '@/mobile/MobileBoot';
 import {
@@ -22,13 +23,6 @@ import type { MobilePageProps } from '../mobile-routes';
 import GuidedCommand from './toolkit/GuidedCommand';
 import { InlineError, StatusText } from './toolkit/toolkit-parts';
 import styles from './MobileToolkit.module.css';
-
-type RuntimeId = 'node' | 'python';
-
-const RUNTIME_ITEMS = [
-  { key: 'node', label: 'Node.js', icon: <CodeOutlined /> },
-  { key: 'python', label: 'Python', icon: <ExperimentOutlined /> }
-];
 
 function guideTasks(tool: EnvironmentGuideTool): GuidedCommandTask[] {
   return tool.tasks.map((task) => ({
@@ -51,7 +45,7 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
-  const [runtime, setRuntime] = useState<RuntimeId>('node');
+  const [runtime, setRuntime] = useState('node');
   const [openToolId, setOpenToolId] = useState('');
 
   const load = useCallback(async (requestedPlatform?: ClientPlatform) => {
@@ -73,6 +67,11 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
     void load();
   }, [load]);
 
+  const runtimeItems = useMemo(
+    () => resolveRuntimePlugins(undefined, data?.tools)
+      .map((plugin) => ({ key: plugin.id, label: plugin.name, icon: runtimePluginIcon(plugin.id) })),
+    [data]
+  );
   const tools = useMemo(
     () => (data?.tools || []).filter((tool) => tool.runtime === runtime),
     [data, runtime]
@@ -112,7 +111,7 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
           </div>
           <div className={styles.step}>
             <span className={styles.stepLabel}><span className={styles.stepCode}>02</span>工具链</span>
-            <HudChips ariaLabel="工具链" value={runtime} onChange={(value) => setRuntime(value as RuntimeId)} items={RUNTIME_ITEMS} />
+            <HudChips ariaLabel="工具链" value={runtime} onChange={(value) => setRuntime(String(value))} items={runtimeItems} />
           </div>
 
           <HudSection title="运行环境工具" code={`${platform.toUpperCase()} / ${runtime.toUpperCase()}`} count={tools.length}>
@@ -120,7 +119,7 @@ export default function MobileInstallGuide(_props: MobilePageProps) {
               <MonoList ariaLabel="运行环境工具">
                 {tools.map((tool) => (
                   <SwipeRow key={tool.id} onTap={() => setOpenToolId(tool.id)} ariaLabel={`${tool.name} 命令生成器`}>
-                    <span className="mhud-row__icon">{runtime === 'node' ? <CodeOutlined /> : <ExperimentOutlined />}</span>
+                    <span className="mhud-row__icon">{runtimePluginIcon(runtime)}</span>
                     <span className="mhud-row__main">
                       <span className="mhud-row__title">{tool.name}</span>
                       <span className="mhud-row__meta">{tool.description}</span>

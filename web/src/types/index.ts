@@ -1918,7 +1918,7 @@ export interface EnvironmentRuntimeSummary {
 export interface EnvironmentResourceItem {
   id: string;
   name: string;
-  runtime: 'node' | 'python';
+  runtime: string;
   category: string;
   description: string;
   platform: ClientPlatform;
@@ -1976,7 +1976,7 @@ export interface EnvironmentGuideTask {
 export interface EnvironmentGuideTool {
   id: string;
   name: string;
-  runtime: 'node' | 'python';
+  runtime: string;
   category: string;
   description: string;
   tasks: EnvironmentGuideTask[];
@@ -1990,13 +1990,17 @@ export interface EnvironmentGuideResponse {
   tools: EnvironmentGuideTool[];
 }
 
+export interface EnvironmentRuntimePlugin {
+  id: string;
+  name: string;
+  icon: string;
+}
+
 export interface EnvironmentsResponse {
   ok: boolean;
   platform: ClientPlatform;
-  runtimes: {
-    node: EnvironmentRuntimeSummary;
-    python: EnvironmentRuntimeSummary;
-  };
+  runtimePlugins?: EnvironmentRuntimePlugin[];
+  runtimes: Record<string, EnvironmentRuntimeSummary | undefined>;
   resources: EnvironmentResourceItem[];
   installedCount: number;
   total: number;

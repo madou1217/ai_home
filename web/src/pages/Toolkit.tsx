@@ -59,8 +59,8 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
   runtime: [
     {
       id: 'environment',
-      label: 'Node / Python',
-      description: '安装、更新与卸载',
+      label: '语言运行时',
+      description: 'Node · Python · Rust · Go',
       icon: <CodeOutlined />
     },
     {

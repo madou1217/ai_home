@@ -1,17 +1,19 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { history } from '@umijs/max';
 import {
   BookOutlined,
-  CodeOutlined,
   DeleteOutlined,
   DownloadOutlined,
-  ExperimentOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
 import { getEnvironmentCategoryLabel } from '@/components/toolkit/environment-presentation';
 import { CLIENT_PLATFORM_LABELS } from '@/components/toolkit/lifecycle-presentation';
 import { useEnvironmentResources } from '@/components/toolkit/use-environment-resources';
+import {
+  resolveRuntimePlugins,
+  runtimePluginIcon,
+  runtimePluginName
+} from '@/components/toolkit/runtime-plugin-presentation';
 import MobileBoot from '@/mobile/MobileBoot';
 import {
   DetailSheet,
@@ -30,23 +32,16 @@ import type { EnvironmentLifecycleAction, EnvironmentResourceItem } from '@/type
 import { ActionButton, InlineError, PanelToolbar, StatusText, TaskStatus } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
 
-type RuntimeId = 'node' | 'python';
-
-const RUNTIME_LABELS: Record<RuntimeId, string> = {
-  node: 'Node.js',
-  python: 'Python'
-};
-
-const RUNTIME_ICONS: Record<RuntimeId, ReactNode> = {
-  node: <CodeOutlined />,
-  python: <ExperimentOutlined />
-};
-
-/** 运行环境：Node / Python 工具链探测 + 生命周期（计划确认 → 后台任务队列），并链接安装指南。 */
+/** 运行环境：Node / Python / Rust / Go（插件化）工具链探测 + 生命周期（计划确认 → 后台任务队列），并链接安装指南。 */
 export default function EnvironmentPanel() {
-  const [runtime, setRuntime] = useState<RuntimeId>('node');
+  const [runtime, setRuntime] = useState('node');
   const [detailId, setDetailId] = useState('');
   const { data, loading, error, load, activeTaskFor, busyActionFor, runAction } = useEnvironmentResources();
+  const runtimePlugins = useMemo(
+    () => resolveRuntimePlugins(data?.runtimePlugins, data?.resources),
+    [data]
+  );
+  const runtimeLabel = runtimePluginName(runtimePlugins, runtime);
 
   const resources = useMemo(
     () => (data?.resources || []).filter((resource) => resource.runtime === runtime),
@@ -91,14 +86,14 @@ export default function EnvironmentPanel() {
           <HudChips
             ariaLabel="运行环境类型"
             value={runtime}
-            onChange={(value) => setRuntime(value as RuntimeId)}
-            items={(['node', 'python'] as RuntimeId[]).map((id) => ({ key: id, label: RUNTIME_LABELS[id], icon: RUNTIME_ICONS[id] }))}
+            onChange={(value) => setRuntime(String(value))}
+            items={runtimePlugins.map((plugin) => ({ key: plugin.id, label: plugin.name, icon: runtimePluginIcon(plugin.id) }))}
           />
 
           <TelemetryGrid>
             <TelemetryTile
               wide
-              label={RUNTIME_LABELS[runtime]}
+              label={runtimeLabel}
               value={runtimeSummary?.currentVersion || '未检测到'}
               tone={runtimeSummary?.currentVersion ? 'ok' : 'warn'}
               led
@@ -114,12 +109,12 @@ export default function EnvironmentPanel() {
             />
           </TelemetryGrid>
 
-          <HudSection title={`${RUNTIME_LABELS[runtime]} 工具`} code="RUNTIME" count={resources.length}>
+          <HudSection title={`${runtimeLabel} 工具`} code="RUNTIME" count={resources.length}>
             {resources.length ? (
-              <MonoList ariaLabel={`${RUNTIME_LABELS[runtime]} 工具`}>
+              <MonoList ariaLabel={`${runtimeLabel} 工具`}>
                 {resources.map((resource) => (
                   <SwipeRow key={resource.id} actions={actionsFor(resource)} onTap={() => setDetailId(resource.id)} ariaLabel={`${resource.name} 详情`}>
-                    <span className="mhud-row__icon">{RUNTIME_ICONS[resource.runtime]}</span>
+                    <span className="mhud-row__icon">{runtimePluginIcon(resource.runtime)}</span>
                     <span className="mhud-row__main">
                       <span className="mhud-row__title">{resource.name}</span>
                       <span className="mhud-row__meta">

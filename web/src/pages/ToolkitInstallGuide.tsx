@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Empty, Segmented, Spin, Tag } from 'antd';
-import { ArrowLeftOutlined, CodeOutlined, ExperimentOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import PageScaffold from '@/components/ui/PageScaffold';
 import Button from '@/components/ui/AppButton';
 import GuidedCommandPanel, {
   type GuidedCommandTask
 } from '@/components/toolkit/GuidedCommandPanel';
 import { getEnvironmentCategoryLabel } from '@/components/toolkit/environment-presentation';
+import { resolveRuntimePlugins, runtimePluginIcon } from '@/components/toolkit/runtime-plugin-presentation';
 import { buildAppHref } from '@/services/app-navigation';
 import { toolkitAPI } from '@/services/api';
 import type {
@@ -15,8 +16,6 @@ import type {
   EnvironmentGuideTool
 } from '@/types';
 import './Toolkit.css';
-
-type RuntimeId = 'node' | 'python';
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -43,7 +42,7 @@ export default function ToolkitInstallGuide() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [platform, setPlatform] = useState<ClientPlatform | ''>('');
-  const [runtime, setRuntime] = useState<RuntimeId>('node');
+  const [runtime, setRuntime] = useState('node');
   const [selectedToolId, setSelectedToolId] = useState('');
 
   const load = useCallback(async (requestedPlatform?: ClientPlatform) => {
@@ -65,6 +64,7 @@ export default function ToolkitInstallGuide() {
     void load();
   }, [load]);
 
+  const runtimePlugins = useMemo(() => resolveRuntimePlugins(undefined, data?.tools), [data]);
   const tools = useMemo(
     () => (data?.tools || []).filter((tool) => tool.runtime === runtime),
     [data, runtime]
@@ -125,11 +125,12 @@ export default function ToolkitInstallGuide() {
                 <Segmented
                   aria-label="工具链"
                   value={runtime}
-                  options={[
-                    { label: 'Node.js', value: 'node', icon: <CodeOutlined /> },
-                    { label: 'Python', value: 'python', icon: <ExperimentOutlined /> }
-                  ]}
-                  onChange={(value) => setRuntime(value as RuntimeId)}
+                  options={runtimePlugins.map((plugin) => ({
+                    label: plugin.name,
+                    value: plugin.id,
+                    icon: runtimePluginIcon(plugin.id)
+                  }))}
+                  onChange={(value) => setRuntime(String(value))}
                 />
               </div>
             </div>

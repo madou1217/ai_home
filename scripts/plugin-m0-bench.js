@@ -35,7 +35,8 @@ async function main() {
   fs.cpSync(path.join(ROOT, 'examples', 'plugins', 'echo'), sample, { recursive: true });
   const manifest = JSON.parse(fs.readFileSync(path.join(sample, 'plugin.json'), 'utf8'));
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\aih-plugin-bench-${path.basename(base)}` : path.join(base, 'h.sock');
-  const supervisor = createPluginHostSupervisor({ aiHomeDir: base, socketPath });
+  // --expose-gc：代次轮换的内存读数先 GC 再取，量的是真正回收不掉的部分。
+  const supervisor = createPluginHostSupervisor({ aiHomeDir: base, socketPath, nodeArgs: ['--expose-gc'] });
   const results = {};
   try {
     const idle = createPluginDispatcher({ supervisor });

@@ -299,3 +299,18 @@ test('a crashed host fails in-flight calls with plugin_rpc_closed and records th
     assert.equal(supervisor.status().lastExit.code, 7);
   });
 });
+
+// ---- 空链快路径 ----
+
+test('an empty chain returns immediately without starting the plugin host', async () => {
+  const { createPluginDispatcher } = require('../lib/plugins/host/dispatcher');
+  let calls = 0;
+  const dispatcher = createPluginDispatcher({ supervisor: { call: async () => { calls += 1; return { value: null }; } } });
+  const input = { model: 'gpt-x' };
+  assert.deepEqual(await dispatcher.dispatch('gateway.request', input), { value: input, invoked: 0 });
+  dispatcher.publish(1, [{ id: 'only.observe', capability: 'observe', instanceId: 'a' }]);
+  assert.deepEqual(await dispatcher.dispatch('gateway.request', input), { value: input, invoked: 0 });
+  assert.equal(calls, 0);
+  await dispatcher.dispatch('observe', input);
+  assert.equal(calls, 1);
+});

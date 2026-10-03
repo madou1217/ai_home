@@ -29,7 +29,7 @@ type hostFixture struct {
 	cmd     *exec.Cmd
 }
 
-func repoRoot(t *testing.T) string {
+func repoRoot(t testing.TB) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
@@ -38,7 +38,7 @@ func repoRoot(t *testing.T) string {
 	return root
 }
 
-func startHost(t *testing.T) *hostFixture {
+func startHost(t testing.TB) *hostFixture {
 	t.Helper()
 	shim, err := exec.LookPath("node")
 	if err != nil {
@@ -104,7 +104,7 @@ func startHost(t *testing.T) *hostFixture {
 	return fixture
 }
 
-func copySample(t *testing.T, fixture *hostFixture) map[string]any {
+func copySample(t testing.TB, fixture *hostFixture) map[string]any {
 	t.Helper()
 	source := filepath.Join(repoRoot(t), "examples", "plugins", "echo")
 	target := filepath.Join(fixture.dir, "echo")
@@ -128,7 +128,7 @@ func copySample(t *testing.T, fixture *hostFixture) map[string]any {
 	return map[string]any{"instanceId": "echo", "manifest": manifest, "entryPath": filepath.Join(target, "index.mjs")}
 }
 
-func dialReady(t *testing.T, fixture *hostFixture) *Client {
+func dialReady(t testing.TB, fixture *hostFixture) *Client {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -140,7 +140,7 @@ func dialReady(t *testing.T, fixture *hostFixture) *Client {
 	return client
 }
 
-func activateSample(t *testing.T, fixture *hostFixture, client *Client) {
+func activateSample(t testing.TB, fixture *hostFixture, client *Client) {
 	t.Helper()
 	ctx := context.Background()
 	prepared, err := client.Call(ctx, "prepare", map[string]any{"generation": 1, "plugins": []any{copySample(t, fixture)}}, nil)
@@ -278,4 +278,27 @@ func asError(err error, target **Error) bool {
 		*target = value
 	}
 	return ok
+}
+
+// Go 数据面 → Node Plugin Host 的往返开销（单连接串行调用，含 JSON 编解码与插件 handler）。
+func BenchmarkCallSmall(b *testing.B) {
+	benchmarkCall(b, nil)
+}
+
+func BenchmarkCall1MiBPayload(b *testing.B) {
+	benchmarkCall(b, bytes.Repeat([]byte{7}, 1<<20))
+}
+
+func benchmarkCall(b *testing.B, payload []byte) {
+	fixture := startHost(b)
+	client := dialReady(b, fixture)
+	activateSample(b, fixture, client)
+	request := map[string]any{"contributionId": "sample.echo.call", "value": map[string]any{"model": "gpt-x"}}
+	b.SetBytes(int64(len(payload)) * 2)
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := client.Call(context.Background(), "invoke", request, payload); err != nil {
+			b.Fatal(err)
+		}
+	}
 }

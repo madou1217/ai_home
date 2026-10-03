@@ -18,7 +18,7 @@
 
 ## 2. 验收证据
 
-测试：`node --test test/plugin-host-m0.test.js`（19 项）、`go test ./internal/adapters/pluginruntime`（6 项，拉起真实 Node 宿主）。两台机器均全部通过：macOS（Apple M4，Node 22.16，Go 测试含 `-race`）与 Windows（i5-12600KF，Node 22.23，named pipe）。
+测试：`node --test test/plugin-host-m0.test.js`（19 项）、`go test ./internal/adapters/pluginruntime`（6 项，拉起真实 Node 宿主）。三个平台均全部通过：macOS（Apple M4，Node 22.16，Go 测试含 `-race`）、Windows（i5-12600KF，Node 22.23，named pipe）、Linux（GitHub Actions ubuntu-latest，CI 运行 37153563604，提交 74216002）。该次 CI 整体为失败，唯一失败项是与插件无关、早于本工作存在的 `aih codex set-default` 测试。
 
 | 规划要求的证据 | 证据 |
 | --- | --- |

@@ -217,7 +217,8 @@ export function getProviderCliUpgradeRow(
   if (record.updateAvailable) {
     return {
       ...base,
-      statusLabel: scheduler && scheduler.applyEnabled ? '待升级' : '有新版',
+      // 渠道钉不了版本就永远不会自动装，不能说「待升级」。
+      statusLabel: scheduler && scheduler.applyEnabled && reason !== 'channel_not_pinnable' ? '待升级' : '有新版',
       statusTone: 'warning',
       attention: false
     };

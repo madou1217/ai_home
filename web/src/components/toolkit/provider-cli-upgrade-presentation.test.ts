@@ -84,6 +84,8 @@ test('有新版时按是否自动应用给不同措辞', () => {
   assert.equal(getProviderCliUpgradeRow(base, AUTO_APPLY, NOW).statusLabel, '待升级');
   assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).versionText, '0.153.4 → 0.154.0');
   assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).reasonText, '仅检查，未安装');
+  const unpinnable = { ...base, lastTickReason: 'channel_not_pinnable' };
+  assert.equal(getProviderCliUpgradeRow(unpinnable, AUTO_APPLY, NOW).statusLabel, '有新版');
 });
 
 test('忙时显示已推迟,且不算需要人管', () => {

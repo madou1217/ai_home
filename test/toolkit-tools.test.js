@@ -98,7 +98,8 @@ test('tool-manager accepts Node platform aliases and returns the public platform
     });
     assert.equal(result.platform, expected);
     assert.equal(result.tools.find((tool) => tool.id === 'tmux').supported, true);
-    assert.equal(result.tools.find((tool) => tool.id === 'psmux').supported, expected === 'windows');
+    // 不适用当前平台的插件不出现在清单里，避免界面误导。
+    assert.equal(result.tools.some((tool) => tool.id === 'psmux'), expected === 'windows');
   }
 });
 

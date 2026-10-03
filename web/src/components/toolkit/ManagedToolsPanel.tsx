@@ -156,9 +156,6 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                   )}
                   badges={(
                     <>
-                      <Tag color={tool.supported ? 'blue' : 'default'}>
-                        {tool.supported ? '当前平台支持' : '当前平台不适用'}
-                      </Tag>
                       {tool.runtimeInspectable && tool.running ? (
                         <Tag color="processing" className="toolkit-status-tag">
                           <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />

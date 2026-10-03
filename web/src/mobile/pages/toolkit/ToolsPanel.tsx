@@ -61,7 +61,6 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
     if (task) return <TaskStatus task={task} />;
     if (tool.runtimeInspectable && tool.running) return <StatusText tone="ok" live>运行中</StatusText>;
     if (tool.installed) return <StatusText tone="ok">已检测</StatusText>;
-    if (!tool.supported) return <StatusText tone="muted">不适用</StatusText>;
     return <StatusText tone="muted">未安装</StatusText>;
   };
 
@@ -135,7 +134,6 @@ function ToolDetail({ tool, status }: { tool: ManagedToolItem; status: ReactNode
         rows={[
           { key: 'status', label: '状态', value: status },
           { key: 'role', label: '作用', value: tool.role, mono: false },
-          { key: 'support', label: '平台', value: tool.supported ? '当前平台支持' : '当前平台不适用', mono: false, tone: tool.supported ? undefined : 'muted' },
           ...(tool.managedBy ? [{ key: 'managed', label: '管理方式', value: MANAGED_TOOL_MANAGEMENT_LABELS[tool.managedBy] || tool.managedBy, mono: false }] : []),
           { key: 'version', label: '当前版本', value: tool.installed ? tool.version : '未安装', tone: tool.installed ? undefined : 'muted' },
           { key: 'exe', label: '程序', value: tool.executablePath || tool.binaryName, tone: tool.installed ? undefined : 'muted' },

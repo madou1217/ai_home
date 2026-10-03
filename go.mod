@@ -3,6 +3,7 @@ module github.com/madou1217/ai_home
 go 1.26
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/coder/websocket v1.8.15
 	github.com/klauspost/compress v1.20.1
 	modernc.org/sqlite v1.42.2

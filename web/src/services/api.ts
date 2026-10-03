@@ -89,6 +89,9 @@ import type {
   ToolkitAppConfigResponse,
   ManagedToolsResponse,
   ManagedToolActionResponse,
+  ManagedToolServiceAction,
+  ManagedToolServiceLogsResponse,
+  ManagedToolServiceResponse,
   ManagedToolLifecycleAction,
   ToolkitToolConfigResponse,
   ManagedAppsResponse,
@@ -2050,6 +2053,38 @@ export const toolkitAPI = {
       revision,
       targetRevision
     });
+    return response.data;
+  },
+  getToolService: async (toolId: string): Promise<ManagedToolServiceResponse> => {
+    const response = await api.get<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service`);
+    return response.data;
+  },
+  controlToolService: async (toolId: string, action: ManagedToolServiceAction): Promise<ManagedToolServiceResponse> => {
+    const response = await api.post<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service`, {
+      action,
+      confirmed: true
+    });
+    return response.data;
+  },
+  updateToolServiceSettings: async (
+    toolId: string,
+    settings: { autoStart?: boolean; autoRestart?: boolean }
+  ): Promise<ManagedToolServiceResponse> => {
+    const response = await api.put<ManagedToolServiceResponse>(
+      `/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/settings`,
+      settings
+    );
+    return response.data;
+  },
+  createToolServiceConfig: async (toolId: string): Promise<ManagedToolServiceResponse> => {
+    const response = await api.post<ManagedToolServiceResponse>(`/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/config`, {});
+    return response.data;
+  },
+  getToolServiceLogs: async (toolId: string, lines = 200): Promise<ManagedToolServiceLogsResponse> => {
+    const response = await api.get<ManagedToolServiceLogsResponse>(
+      `/webui/toolkit/tools/${encodeURIComponent(toolId)}/service/logs`,
+      { params: { lines } }
+    );
     return response.data;
   },
   planManagedToolAction: async (

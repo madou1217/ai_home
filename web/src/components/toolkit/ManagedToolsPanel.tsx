@@ -18,6 +18,9 @@ import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedResourceCard from './ManagedResourceCard';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
 import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
+import { ToolServiceActions, ToolServicePolicy } from './ToolServiceControls';
+import { serviceSummary } from './tool-service-presentation';
+import { useToolService } from './use-tool-service';
 import { LIFECYCLE_ACTION_LABELS as ACTION_LABELS } from './lifecycle-presentation';
 import { toolkitRequestError as requestError } from './request-error';
 import {
@@ -61,6 +64,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
   const [configContent, setConfigContent] = useState('');
   const [configLoading, setConfigLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const toolService = useToolService(fetchTools);
 
   const openConfig = async (tool: ManagedToolItem) => {
     setEditingTool(tool);
@@ -80,7 +84,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
     }
   };
 
-  const saveConfig = async () => {
+  const saveConfig = async (restartAfter = false) => {
     if (!editingTool || !configData) return;
     setSavingConfig(true);
     try {
@@ -93,6 +97,11 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
       if (!result.ok) throw new Error('工具配置保存接口返回失败');
       setConfigData(result);
       message.success(result.elevated ? '配置已通过系统授权保存' : '配置已保存');
+      if (restartAfter) {
+        const restarted = await toolkitAPI.controlToolService(editingTool.id, 'restart');
+        if (!restarted.ok) throw new Error(restarted.message || '配置已保存，但重启失败');
+        message.success(`${editingTool.name} 已按新配置重启`);
+      }
       await fetchTools();
     } catch (error: unknown) {
       message.error(requestError(error, '保存工具配置失败'));
@@ -181,6 +190,20 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                     ...(tool.configState !== 'none' || tool.runtimeInspectable ? [{
                       label: '配置',
                       value: configSummary(tool)
+                    }] : []),
+                    ...(tool.service ? [{
+                      label: '服务',
+                      value: `${serviceSummary(tool.service)}${tool.service.message ? `；${tool.service.message}` : ''}`,
+                      tooltip: tool.service.lastError || tool.service.message || undefined
+                    }, {
+                      label: '守护策略',
+                      value: (
+                        <ToolServicePolicy
+                          service={tool.service}
+                          busy={toolService.busyFor(tool)}
+                          onChange={(settings) => void toolService.updateSettings(tool, settings)}
+                        />
+                      )
                     }] : [])
                   ]}
                   actions={(
@@ -191,6 +214,16 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                           {ACTION_LABELS[(activeTask.action as ManagedToolLifecycleAction) || 'update'] || '操作'}中
                           {` ${Math.round(Number(activeTask.progress?.percent || 0))}%`}
                         </Tag>
+                      ) : null}
+                      {tool.service ? (
+                        <ToolServiceActions
+                          tool={tool}
+                          service={tool.service}
+                          busy={toolService.busyFor(tool)}
+                          onControl={(action) => toolService.control(tool, action)}
+                          onCreateConfig={() => void toolService.createConfig(tool)}
+                          onOpenLogs={() => void toolService.openLogs(tool)}
+                        />
                       ) : null}
                       {!tool.installed && tool.canInstall ? (
                         <InstallLifecycleAction
@@ -257,10 +290,17 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
         open={Boolean(editingTool)}
         title={editingTool ? `编辑 ${editingTool.name} 配置` : '编辑配置'}
         width={1000}
-        confirmLoading={savingConfig}
-        okText="保存配置"
-        cancelText="取消"
-        onOk={saveConfig}
+        footer={[
+          <Button key="cancel" disabled={savingConfig} onClick={() => {
+            setEditingTool(null);
+            setConfigData(null);
+            setConfigContent('');
+          }}>取消</Button>,
+          ...(editingTool?.service?.canRestart ? [
+            <Button key="save-restart" loading={savingConfig} disabled={!configData} onClick={() => void saveConfig(true)}>保存并重启</Button>
+          ] : []),
+          <Button key="save" type="primary" loading={savingConfig} disabled={!configData} onClick={() => void saveConfig()}>保存配置</Button>
+        ]}
         onCancel={() => {
           if (!savingConfig) {
             setEditingTool(null);
@@ -292,6 +332,30 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
               onSave={savingConfig ? undefined : () => void saveConfig()}
             />
           </>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(toolService.logs)}
+        title={toolService.logs ? `${toolService.logs.tool.name} 最近日志` : '日志'}
+        width={1000}
+        footer={[
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={() => toolService.logs && void toolService.openLogs(toolService.logs.tool)}
+          >刷新</Button>,
+          <Button key="close" type="primary" onClick={toolService.closeLogs}>关闭</Button>
+        ]}
+        onCancel={toolService.closeLogs}
+        destroyOnClose
+      >
+        {toolService.logs?.loading ? (
+          <div className="toolkit-loading compact"><Spin /></div>
+        ) : (
+          <pre className="toolkit-service-log" aria-label="服务日志">
+            {toolService.logs?.lines.length ? toolService.logs.lines.join('\n') : '暂无日志输出'}
+          </pre>
         )}
       </Modal>
     </section>

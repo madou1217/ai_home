@@ -35,7 +35,8 @@ export const MANAGED_TOOL_CAPABILITY_LABELS: Readonly<Record<string, string>> = 
   version: '版本读取',
   sessions: '会话支持',
   'config-edit': '配置编辑',
-  'config-validate': '配置校验'
+  'config-validate': '配置校验',
+  service: '启停与自动重启'
 });
 
 export const MANAGED_TOOL_MANAGEMENT_LABELS: Readonly<Record<string, string>> = Object.freeze({

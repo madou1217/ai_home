@@ -60,7 +60,7 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     {
       id: 'environment',
       label: '语言运行时',
-      description: 'Node · Python · Rust · Go',
+      description: '插件化多语言工具链',
       icon: <CodeOutlined />
     },
     {

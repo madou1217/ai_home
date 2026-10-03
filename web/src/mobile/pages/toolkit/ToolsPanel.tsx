@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { DeleteOutlined, DownloadOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+  ToolOutlined
+} from '@ant-design/icons';
+import { servicePolicySummary, serviceSummary } from '@/components/toolkit/tool-service-presentation';
+import { useToolService } from '@/components/toolkit/use-tool-service';
 import { toolkitAPI } from '@/services/api';
 import {
   MANAGED_TOOL_CAPABILITY_LABELS,
@@ -40,6 +50,7 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
   } = useManagedTools(category, LIFECYCLE_API);
   const [detailId, setDetailId] = useState('');
   const detail = tools.find((tool) => tool.id === detailId) || null;
+  const toolService = useToolService(fetchTools);
 
   const actionsFor = (tool: ManagedToolItem): SwipeAction[] => {
     const busy = Boolean(busyActionFor(tool));
@@ -52,6 +63,17 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
     }
     if (tool.installed && tool.canUninstall) {
       actions.push({ key: 'uninstall', label: '卸载', icon: <DeleteOutlined />, tone: 'danger', disabled: busy, onAction: () => void runAction(tool, 'uninstall') });
+    }
+    const service = tool.service;
+    const serviceBusy = Boolean(toolService.busyFor(tool)) || !service?.controllable;
+    if (service?.canStart) {
+      actions.unshift({ key: 'service-start', label: '启动', icon: <PlayCircleOutlined />, tone: 'primary', disabled: serviceBusy, onAction: () => toolService.control(tool, 'start') });
+    }
+    if (service?.canRestart) {
+      actions.unshift({ key: 'service-restart', label: '重启', icon: <SyncOutlined />, disabled: serviceBusy, onAction: () => toolService.control(tool, 'restart') });
+    }
+    if (service?.canStop) {
+      actions.push({ key: 'service-stop', label: '停止', icon: <PauseCircleOutlined />, tone: 'danger', disabled: serviceBusy, onAction: () => toolService.control(tool, 'stop') });
     }
     return actions;
   };
@@ -147,6 +169,17 @@ function ToolDetail({ tool, status }: { tool: ManagedToolItem; status: ReactNode
             key: 'config',
             label: '配置',
             value: managedToolConfigSummary(tool),
+            mono: false
+          }] : []),
+          ...(tool.service ? [{
+            key: 'service',
+            label: '服务',
+            value: `${serviceSummary(tool.service)}${tool.service.message ? `；${tool.service.message}` : ''}`,
+            mono: false
+          }, {
+            key: 'policy',
+            label: '守护策略',
+            value: servicePolicySummary(tool.service),
             mono: false
           }] : []),
           { key: 'caps', label: '能力', value: tool.capabilities.map((capability) => MANAGED_TOOL_CAPABILITY_LABELS[capability] || capability).join(' · ') || '—', mono: false }

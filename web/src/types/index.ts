@@ -1764,6 +1764,49 @@ export interface ManagedToolItem {
   canUpdate: boolean;
   canUninstall: boolean;
   lifecycle: Record<ToolkitLifecycleAction, boolean>;
+  service?: ManagedToolService | null;
+}
+
+export type ManagedToolServiceAction = 'start' | 'stop' | 'restart';
+
+export interface ManagedToolService {
+  backend: 'homebrew' | 'aih' | string;
+  backendLabel?: string;
+  controllable: boolean;
+  state: 'running' | 'stopped' | 'backoff' | 'external' | 'error' | 'unknown' | string;
+  pid?: number;
+  startedAt?: number;
+  restarts?: number;
+  consecutiveFailures?: number;
+  nextRestartAt?: number;
+  exitCode?: number | null;
+  lastExit?: { code: number | null; signal: string | null; reason: string; at: number; uptimeMs: number } | null;
+  lastError?: string;
+  autoStart?: boolean;
+  autoRestart?: boolean;
+  settingsEditable?: boolean;
+  settingsNote?: string;
+  configReady?: boolean;
+  canCreateConfig?: boolean;
+  logAvailable?: boolean;
+  message?: string;
+  canStart?: boolean;
+  canStop?: boolean;
+  canRestart?: boolean;
+}
+
+export interface ManagedToolServiceResponse {
+  ok: boolean;
+  toolId?: string;
+  error?: string;
+  message?: string;
+  service?: ManagedToolService | null;
+}
+
+export interface ManagedToolServiceLogsResponse {
+  ok: boolean;
+  backend?: string;
+  lines: string[];
 }
 
 export interface ManagedToolsResponse {

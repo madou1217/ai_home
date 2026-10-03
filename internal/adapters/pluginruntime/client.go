@@ -126,7 +126,7 @@ func (c *Client) Call(ctx context.Context, method string, value any, payload []b
 	}
 	if err != nil {
 		c.forget(id)
-		if errors.Is(err, os.ErrDeadlineExceeded) {
+		if isTimeout(err) {
 			return Result{}, &Error{Code: plugincontract.CodeRpcTimeout, Message: "宿主未在期限内读取请求，连接已关闭"}
 		}
 		return Result{}, wrapTransport(err)
@@ -174,7 +174,7 @@ func (c *Client) writeBefore(data []byte, deadline time.Time) error {
 	defer c.writeMu.Unlock()
 	_ = c.conn.SetWriteDeadline(deadline)
 	_, err := c.conn.Write(data)
-	if err != nil && errors.Is(err, os.ErrDeadlineExceeded) {
+	if err != nil && isTimeout(err) {
 		c.shutdown(&Error{Code: plugincontract.CodeRpcClosed, Message: "写入超时，连接已关闭"})
 	}
 	return err
@@ -234,4 +234,14 @@ func newID() string {
 	var raw [16]byte
 	_, _ = rand.Read(raw[:])
 	return hex.EncodeToString(raw[:])
+}
+
+// 写超时的错误形态因平台而异：POSIX 是 os.ErrDeadlineExceeded，Windows named pipe（go-winio）
+// 是它自己的 i/o timeout；两者都实现 net.Error.Timeout()。
+func isTimeout(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }

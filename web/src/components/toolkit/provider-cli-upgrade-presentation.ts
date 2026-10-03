@@ -203,6 +203,10 @@ export function getProviderCliUpgradeRow(
   if (reason === 'deferred_busy') {
     return { ...base, statusLabel: '已推迟（忙）', statusTone: 'active', attention: false };
   }
+  // 查过却没有本地版本 = 这台机器没装：既谈不上「已是最新」，渠道结论（如不支持钉版本）也无从说起。
+  if (!String(record.installedVersion || '').trim()) {
+    return { ...base, statusLabel: '未安装', statusTone: 'neutral', reasonText: '', channelLabel: '—', attention: false };
+  }
   if (record.updateAvailable) {
     return {
       ...base,

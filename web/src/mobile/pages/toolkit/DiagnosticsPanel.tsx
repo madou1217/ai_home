@@ -223,9 +223,11 @@ export default function DiagnosticsPanel() {
                 <Note tone="warn">当前接口未返回系统代理探测能力</Note>
               )}
             </HudSection>
-            <HudSection title="服务进程环境变量" code="AIH PROCESS">
+            <HudSection title="服务进程代理" code="AIH PROCESS">
               <KeyValue
                 rows={[
+                  { key: 'gateway', label: '网关上游', value: proxyValue(proxyData.gateway?.proxyUrl || ''), tone: proxyData.gateway?.proxyUrl ? undefined : 'muted' },
+                  { key: 'gateway-no', label: '网关绕过', value: proxyValue(proxyData.gateway?.noProxy || ''), tone: proxyData.gateway?.noProxy ? undefined : 'muted' },
                   { key: 'http', label: 'HTTP_PROXY', value: proxyValue(proxyData.env.httpProxy), tone: proxyData.env.httpProxy ? undefined : 'muted' },
                   { key: 'https', label: 'HTTPS_PROXY', value: proxyValue(proxyData.env.httpsProxy), tone: proxyData.env.httpsProxy ? undefined : 'muted' },
                   { key: 'all', label: 'ALL_PROXY', value: proxyValue(proxyData.env.allProxy), tone: proxyData.env.allProxy ? undefined : 'muted' },

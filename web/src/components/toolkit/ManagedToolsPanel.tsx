@@ -136,7 +136,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
             ariaLabel={`${categoryInfo?.label || category} 状态轨道`}
             items={[
               { label: '实测', value: `${tools.length} 个工具记录`, detail: '来自当前主机与平台探测结果', tone: tools.length ? 'info' : 'neutral' },
-              { label: '配置', value: `${installedCount} 个已检测`, detail: `${editableCount} 个工具提供配置编辑入口`, tone: installedCount ? 'success' : 'warning' },
+              { label: '配置', value: `${installedCount} 个已安装`, detail: editableCount ? `${editableCount} 个可编辑配置` : '暂无可编辑配置', tone: installedCount ? 'success' : 'warning' },
               {
                 label: '生命周期',
                 value: lifecycleCount ? `${lifecycleCount} 个可管理` : '仅探测',

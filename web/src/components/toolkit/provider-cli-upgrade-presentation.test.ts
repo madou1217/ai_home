@@ -121,6 +121,19 @@ test('检查失败照实显示原始错误', () => {
   assert.equal(row.reasonText, 'getaddrinfo ENOTFOUND');
 });
 
+test('查过但本地没有版本 = 未安装,不显示已是最新与渠道结论', () => {
+  const row = getProviderCliUpgradeRow(
+    record({ installedVersion: '', latestVersion: '1.1.65', channel: 'unknown', lastTickReason: 'channel_not_pinnable', state: 'healthy' }),
+    CHECK_ONLY,
+    NOW
+  );
+  assert.equal(row.statusLabel, '未安装');
+  assert.equal(row.statusTone, 'neutral');
+  assert.equal(row.reasonText, '');
+  assert.equal(row.channelLabel, '—');
+  assert.equal(row.attention, false);
+});
+
 test('已是最新的常态', () => {
   const row = getProviderCliUpgradeRow(
     record({ installedVersion: '1.0.0', latestVersion: '1.0.0', lastTickReason: 'up_to_date', channel: 'npm_global' }),
@@ -139,7 +152,7 @@ test('整份响应映射成行,空响应给空数组', () => {
     ok: true,
     scheduler: CHECK_ONLY,
     global: { enabled: true, disabledReason: '' },
-    providers: [record({ lastCheckAt: 0 }), record({ provider: 'gemini', lastTickReason: 'up_to_date' })]
+    providers: [record({ lastCheckAt: 0 }), record({ provider: 'gemini', installedVersion: '0.9.0', lastTickReason: 'up_to_date' })]
   }, NOW);
   assert.deepEqual(rows.map((row) => row.statusLabel), ['待首轮检查', '已是最新']);
 });

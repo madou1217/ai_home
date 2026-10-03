@@ -103,8 +103,10 @@ export default function ProxyDiagnosticsPanel() {
 
             <article className="toolkit-observation-card">
               <span className="toolkit-panel-kicker">AIH PROCESS</span>
-              <h3>服务进程环境变量</h3>
+              <h3>服务进程代理</h3>
               <dl className="toolkit-inspection-list">
+                <div><dt>网关上游</dt><dd>{proxyValue(proxyData.gateway?.proxyUrl || '')}</dd></div>
+                <div><dt>网关绕过</dt><dd>{proxyValue(proxyData.gateway?.noProxy || '')}</dd></div>
                 <div><dt>HTTP_PROXY</dt><dd>{proxyValue(proxyData.env.httpProxy)}</dd></div>
                 <div><dt>HTTPS_PROXY</dt><dd>{proxyValue(proxyData.env.httpsProxy)}</dd></div>
                 <div><dt>ALL_PROXY</dt><dd>{proxyValue(proxyData.env.allProxy)}</dd></div>

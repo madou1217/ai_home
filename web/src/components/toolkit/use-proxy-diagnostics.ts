@@ -15,6 +15,8 @@ export interface DetectedProxySource {
 export function uniqueProxySources(data: ProxyStatusResponse | null, core: ProxyCoreStatus | null) {
   if (!data) return [];
   const candidates: DetectedProxySource[] = [
+    // 打码的地址不能拿去写进 Git / npm。
+    { label: '网关上游代理', value: data.gateway?.redacted ? '' : data.gateway?.proxyUrl || '', origin: 'AIH 服务端配置' },
     { label: 'AIH 代理池 mixed', value: core?.mixedProxyUrl || '', origin: 'Mihomo 数据面就绪状态' },
     { label: '系统 HTTP', value: data.system?.httpProxy || '', origin: '操作系统代理探测' },
     { label: '系统 HTTPS', value: data.system?.httpsProxy || '', origin: '操作系统代理探测' },

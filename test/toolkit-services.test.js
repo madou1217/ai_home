@@ -532,6 +532,32 @@ test('proxy-manager returns proxy status and connectivity targets', () => {
   assert.ok(status.tools.npm);
 });
 
+test('proxy-manager reports the gateway upstream proxy from server config and masks credentials', () => {
+  const quietSpawn = () => ({ status: 1, stdout: '', stderr: '' });
+  const plain = getProxyStatus({
+    spawnSync: quietSpawn,
+    processObj: { env: {}, platform: 'linux' },
+    serverOptions: { proxyUrl: 'http://127.0.0.1:6152', noProxy: 'localhost,127.0.0.1' }
+  });
+  assert.equal(plain.gateway.probeStatus, 'available');
+  assert.equal(plain.gateway.proxyUrl, 'http://127.0.0.1:6152');
+  assert.equal(plain.gateway.redacted, false);
+  assert.equal(plain.gateway.noProxy, 'localhost,127.0.0.1');
+
+  const withAuth = getProxyStatus({
+    spawnSync: quietSpawn,
+    processObj: { env: {}, platform: 'linux' },
+    serverOptions: { proxyUrl: 'http://user:secret@proxy.example:8080' }
+  });
+  assert.equal(withAuth.gateway.redacted, true);
+  assert.ok(!withAuth.gateway.proxyUrl.includes('secret'));
+  assert.ok(!withAuth.gateway.proxyUrl.includes('user'));
+
+  const unset = getProxyStatus({ spawnSync: quietSpawn, processObj: { env: {}, platform: 'linux' } });
+  assert.equal(unset.gateway.probeStatus, 'unset');
+  assert.equal(unset.gateway.proxyUrl, '');
+});
+
 test('env-manager reports command probes from the AIH server PATH instead of process.version', () => {
   const calls = [];
   const values = new Map([

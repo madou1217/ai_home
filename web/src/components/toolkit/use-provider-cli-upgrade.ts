@@ -53,6 +53,7 @@ export function useProviderCliUpgrade() {
   const mode = useMemo(() => getUpgradeModeSummary(data?.scheduler || null, data?.global), [data]);
   const updatable = rows.filter((row) => row.statusLabel === '有新版' || row.statusLabel === '待升级').length;
   const attention = rows.filter((row) => row.attention).length;
+  const installed = rows.filter((row) => row.statusLabel !== '未安装').length;
 
-  return { data, loading, error, fetchStatus, rows, mode, updatable, attention, clearBroken, clearingProvider };
+  return { data, loading, error, fetchStatus, rows, mode, updatable, attention, installed, clearBroken, clearingProvider };
 }

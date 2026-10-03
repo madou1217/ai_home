@@ -28,7 +28,7 @@ const TRACK_TONES: Record<ProviderCliUpgradeTone, 'neutral' | 'info' | 'success'
 };
 
 export default function ProviderCliUpgradePanel() {
-  const { data, loading, error, fetchStatus, rows, mode, updatable, attention, clearBroken, clearingProvider } = useProviderCliUpgrade();
+  const { data, loading, error, fetchStatus, rows, mode, updatable, attention, installed, clearBroken, clearingProvider } = useProviderCliUpgrade();
 
   const handleClearBroken = async (provider: string) => {
     const result = await clearBroken(provider);
@@ -66,8 +66,10 @@ export default function ProviderCliUpgradePanel() {
               { label: '模式', value: mode.label, detail: mode.detail, tone: TRACK_TONES[mode.tone] },
               {
                 label: '版本',
-                value: updatable ? `${updatable} 个有新版` : '全部为最新',
-                detail: `共 ${rows.length} 个可管理 CLI`,
+                value: updatable ? `${updatable} 个有新版` : installed ? '全部为最新' : '均未安装',
+                detail: installed < rows.length
+                  ? `已安装 ${installed} / 共 ${rows.length} 个 CLI`
+                  : `共 ${rows.length} 个可管理 CLI`,
                 tone: updatable ? 'warning' : 'success'
               },
               {
@@ -89,7 +91,7 @@ export default function ProviderCliUpgradePanel() {
                   name={row.provider}
                   installed={Boolean(record?.installedVersion)}
                   icon={<CloudDownloadOutlined className="toolkit-card-icon" />}
-                  badges={<Tag color={TAG_COLORS[row.statusTone]}>{row.statusLabel}</Tag>}
+                  badges={record?.installedVersion ? <Tag color={TAG_COLORS[row.statusTone]}>{row.statusLabel}</Tag> : null}
                   details={[
                     { label: '版本', value: row.versionText },
                     { label: '最近结论', value: row.reasonText || '—', muted: !row.reasonText },

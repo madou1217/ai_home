@@ -2103,6 +2103,15 @@ export interface SystemProxyInfo {
 
 export interface ProxyStatusResponse {
   ok: boolean;
+  /** 网关转发上游实际使用的代理（服务端配置）；带凭据时 proxyUrl 为打码值。 */
+  gateway?: {
+    scope?: string;
+    source?: string;
+    probeStatus?: 'available' | 'unset';
+    proxyUrl: string;
+    redacted?: boolean;
+    noProxy: string;
+  };
   env: {
     scope?: string;
     source?: string;

@@ -78,3 +78,20 @@ test('codex client version never reports below the verified floor and is cached'
   assert.deepEqual([first, cachedValue, refreshed], ['0.171.0', '0.171.0', '0.172.0']);
   resetCodexClientVersionCacheForTest();
 });
+
+test('Windows resolves the codex .cmd shim before probing the version', () => {
+  // execFileSync 直接执行 .cmd 在 Windows 上 EINVAL，探测永远失败 → 自报最低版本，新模型被上游拒。
+  const calls = [];
+  const version = detectCodexClientVersion({
+    platform: 'win32',
+    processObj: { env: {} },
+    resolveCliPath: () => 'C:\\nvm\\codex.cmd',
+    execFileSync: (command, args, options) => {
+      calls.push({ command, args, options });
+      return 'codex-cli 0.159.2\n';
+    }
+  });
+  assert.equal(version, '0.159.2');
+  assert.notEqual(calls[0].command, 'C:\\nvm\\codex.cmd');
+  assert.equal(calls[0].options.timeout, 5000);
+});

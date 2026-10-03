@@ -166,6 +166,43 @@ test('codex 强判据:spawn 失败 → inconclusive', async () => {
   assert.match(result.detail, /spawn_failed/);
 });
 
+// Windows 上 cliPath 是 .cmd：直接 spawn 必 EINVAL（验证恒为 inconclusive）。必须解析成 node + codex.js 再起，结束时 taskkill 整棵树。
+test('codex 强判据:Windows 上把 .cmd 解析成 node + 脚本启动,并用 taskkill 收树', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-verify-win-'));
+  const script = path.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  fs.mkdirSync(path.dirname(script), { recursive: true });
+  fs.writeFileSync(script, '');
+  fs.writeFileSync(path.join(dir, 'node.exe'), '');
+  const shim = path.join(dir, 'codex.cmd');
+  fs.writeFileSync(shim, '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+  const spawned = [];
+  const killed = [];
+  try {
+    const result = await verifyCodexAppServerBoot({
+      platform: 'win32',
+      cliPath: shim,
+      spawn: (command, args, options) => {
+        spawned.push({ command, args, options });
+        return fakeSpawn((child) => {
+          child.stdout.emit('data', 'listening on: ws://127.0.0.1:9635\n');
+        })();
+      },
+      spawnSync: (command, args) => { killed.push([command, ...args].join(' ')); return { status: 0 }; },
+      verifyTimeoutMs: 2000
+    });
+    assert.equal(result.verdict, VERDICTS.PASS);
+    assert.notEqual(path.extname(spawned[0].command).toLowerCase(), '.cmd');
+    assert.ok(spawned[0].args.some((arg) => arg.endsWith('codex.js')));
+    assert.equal(spawned[0].args.includes('app-server'), true);
+    assert.equal(spawned[0].options.detached, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- 善后动作 ----
 
 test('plan 声明的善后动作会被收集并去重', () => {

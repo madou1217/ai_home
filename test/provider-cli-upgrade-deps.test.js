@@ -23,3 +23,31 @@ test('upgrade deps resolve the provider by its declared binary name, not its id'
 
   assert.deepEqual(asked, ['qodercli', 'codex']);
 });
+
+// 版本读空多半是偶发（机器忙、CLI 正被使用）：再试一次，别把已知版本覆盖成空。
+test('upgrade deps retry an empty version probe once', async () => {
+  const { EventEmitter } = require('node:events');
+  let calls = 0;
+  const deps = createProviderUpgradeDeps({
+    processObj: { platform: 'linux', env: {}, execPath: '/usr/bin/node' },
+    aiHomeDir: '/tmp/aih-upgrade-deps-test',
+    fs: { readFileSync: () => '#!/bin/sh\n', realpathSync: (p) => p, existsSync: () => true },
+    resolveCliPath: () => '/usr/local/bin/codex',
+    spawn() {
+      calls += 1;
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      const ok = calls > 1;
+      setImmediate(() => {
+        if (ok) child.stdout.emit('data', 'codex-cli 0.160.0\n');
+        child.emit('close', ok ? 0 : 1, null);
+      });
+      return child;
+    }
+  });
+
+  assert.equal(await deps.probeInstalledVersion('codex'), '0.160.0');
+  assert.equal(calls, 2);
+});

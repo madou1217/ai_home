@@ -318,6 +318,28 @@ test('resolver uses platform launchers for cmd, PowerShell, and JavaScript scrip
   }
 });
 
+// npm .cmd 垫片能解析出 node + 脚本时直接起 node，不经 cmd.exe（也绕开 aih hook 包装层的启动开销）。
+test('version probe launches a resolvable Windows npm shim through node directly', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const nodePath = require('node:path');
+  const { versionInvocation } = require('../lib/runtime/provider-runtime-version');
+  const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'aih-version-shim-'));
+  try {
+    const script = nodePath.join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    fs.mkdirSync(nodePath.dirname(script), { recursive: true });
+    fs.writeFileSync(script, '');
+    const shim = nodePath.join(dir, 'codex.cmd');
+    fs.writeFileSync(shim, '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+    const invocation = versionInvocation(shim, '', { platform: 'win32', env: {}, nodeExecutable: 'node.exe' });
+    assert.notEqual(nodePath.basename(invocation.command).toLowerCase(), 'cmd.exe');
+    assert.ok(invocation.args[0].endsWith('codex.js'));
+    assert.equal(invocation.args[invocation.args.length - 1], '--version');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('resolver honors a Unix shebang when a PATH hook has a JavaScript suffix', async () => {
   const state = createRuntimeState({
     content: '#!/bin/sh\nexec /opt/codex --version\n'

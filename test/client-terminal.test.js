@@ -608,3 +608,18 @@ test('launchClientTerminal 按规格透传 windowsHide（wt 显窗、其余缺�
   assert.equal(cmd.ok, true);
   assert.equal(calls[1].options.windowsHide, true);
 });
+
+test('终端以插件注册：每个插件声明数据化 platforms，注册表按平台过滤', () => {
+  const { TERMINAL_PLUGINS } = require('../lib/runtime/client-terminals');
+  const ids = TERMINAL_PLUGINS.map((plugin) => plugin.id);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const plugin of TERMINAL_PLUGINS) {
+    assert.equal(plugin.capability, 'toolkit.terminal');
+    assert.ok(Array.isArray(plugin.platforms) && plugin.platforms.length > 0, `${plugin.id} platforms`);
+    for (const platform of Object.keys(plugin.lifecycle || {})) {
+      assert.ok(plugin.platforms.includes(platform), `${plugin.id} lifecycle.${platform} 必须是声明支持的平台`);
+    }
+  }
+  const macos = listClientTerminals({ platform: 'macos', path: nodePath.posix, env: { PATH: '' }, fs: fakeFs([]) });
+  assert.equal(macos.some((item) => item.id === 'windows-terminal' || item.id === 'cmd'), false);
+});

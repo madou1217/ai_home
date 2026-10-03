@@ -44,6 +44,8 @@ const REASON_LABELS: Readonly<Record<string, string>> = Object.freeze({
   apply_disabled: '仅检查，未安装',
   awaiting_quiescence: '等待空闲确认',
   deferred_busy: '该 CLI 正在使用，本轮推迟',
+  // lastDeferReason 的取值（tick 结论为空时显示它）。
+  busy: '该 CLI 正在使用，本轮推迟',
   verified_pass: '升级完成并通过验证',
   verified_inconclusive: '升级完成，验证未能确证',
   verify_failed: '升级后验证失败',
@@ -217,8 +219,10 @@ export function getProviderCliUpgradeRow(
   if (record.updateAvailable) {
     return {
       ...base,
-      // 渠道钉不了版本就永远不会自动装，不能说「待升级」。
-      statusLabel: scheduler && scheduler.applyEnabled && reason !== 'channel_not_pinnable' ? '待升级' : '有新版',
+      // 渠道钉不了版本就永远不会自动装，不能说「待升级」（重启后还没跑过 tick 时 reason 为空，以渠道能力为准）。
+      statusLabel: scheduler && scheduler.applyEnabled && record.pinnable !== false && reason !== 'channel_not_pinnable'
+        ? '待升级'
+        : '有新版',
       statusTone: 'warning',
       attention: false
     };

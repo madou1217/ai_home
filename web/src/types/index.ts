@@ -1485,6 +1485,8 @@ export interface ProviderCliUpgradeRecord {
   blockedVersions?: string[];
   shadowedNpmInstall?: boolean;
   resolvedPath?: string;
+  /** 当前渠道能否钉版本安装；不能则闭环只检查、从不自动升级。 */
+  pinnable?: boolean;
   lastCheckAt?: number;
   lastCheckError?: string;
   lastApplyAt?: number;

@@ -73,6 +73,9 @@ test('GET 返回账本与调度器状态', async () => {
   assert.equal(codex.installedVersion, '0.153.4');
   assert.equal(codex.updateAvailable, true);
   assert.equal(codex.lastTickReason, 'apply_disabled');
+  assert.equal(codex.pinnable, true);
+  // 渠道未识别（或还没查过）= 不能钉版本，闭环不会自动升级。
+  assert.equal(payload.providers[1].pinnable, false);
   // 账本里没有的 provider 也要出现，字段取默认值（页面据此显示「待首轮检查」）。
   assert.equal(payload.providers[1].state, 'unknown');
   assert.equal(payload.providers[1].lastCheckAt, 0);

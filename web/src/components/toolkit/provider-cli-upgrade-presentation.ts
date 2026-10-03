@@ -24,6 +24,8 @@ export interface ProviderCliUpgradeRowPresentation {
   attention: boolean;
   /** 已熔断：可在界面上「验证并解除」。 */
   canClearBroken: boolean;
+  /** 只有「查过且找不到命令」才是 false；没查过、读不到版本都不算未安装。 */
+  installed: boolean;
 }
 
 const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -158,6 +160,7 @@ export function getProviderCliUpgradeRow(
     reasonText: getUpgradeReasonLabel(reason),
     channelLabel: getUpgradeChannelLabel(record.channel),
     lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now),
+    installed: true,
     canClearBroken: false
   };
 
@@ -203,9 +206,13 @@ export function getProviderCliUpgradeRow(
   if (reason === 'deferred_busy') {
     return { ...base, statusLabel: '已推迟（忙）', statusTone: 'active', attention: false };
   }
-  // 查过却没有本地版本 = 这台机器没装：既谈不上「已是最新」，渠道结论（如不支持钉版本）也无从说起。
+  // 查过却连命令都找不到 = 这台机器没装：既谈不上「已是最新」，渠道结论（如不支持钉版本）也无从说起。
+  // 找得到命令但读不到版本是探测问题，不能说成「未安装」，更不能说成「已是最新」。
   if (!String(record.installedVersion || '').trim()) {
-    return { ...base, statusLabel: '未安装', statusTone: 'neutral', reasonText: '', channelLabel: '—', attention: false };
+    if (!String(record.resolvedPath || '').trim()) {
+      return { ...base, installed: false, statusLabel: '未安装', statusTone: 'neutral', reasonText: '', channelLabel: '—', attention: false };
+    }
+    return { ...base, statusLabel: '版本未知', statusTone: 'warning', reasonText: '探测不到当前安装的版本', attention: false };
   }
   if (record.updateAvailable) {
     return {

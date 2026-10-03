@@ -89,9 +89,9 @@ export default function ProviderCliUpgradePanel() {
                   key={row.provider}
                   resourceId={row.provider}
                   name={row.provider}
-                  installed={Boolean(record?.installedVersion)}
+                  installed={row.installed}
                   icon={<CloudDownloadOutlined className="toolkit-card-icon" />}
-                  badges={record?.installedVersion ? <Tag color={TAG_COLORS[row.statusTone]}>{row.statusLabel}</Tag> : null}
+                  badges={row.installed ? <Tag color={TAG_COLORS[row.statusTone]}>{row.statusLabel}</Tag> : null}
                   details={[
                     { label: '版本', value: row.versionText },
                     { label: '最近结论', value: row.reasonText || '—', muted: !row.reasonText },

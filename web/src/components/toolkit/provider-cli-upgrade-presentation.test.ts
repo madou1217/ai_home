@@ -121,12 +121,24 @@ test('检查失败照实显示原始错误', () => {
   assert.equal(row.reasonText, 'getaddrinfo ENOTFOUND');
 });
 
-test('查过但本地没有版本 = 未安装,不显示已是最新与渠道结论', () => {
+test('找得到命令却读不到版本 = 版本未知,不是未安装也不是已是最新', () => {
+  const row = getProviderCliUpgradeRow(
+    record({ installedVersion: '', resolvedPath: 'd:\\nvm4w\\nodejs\\codex.cmd', lastTickReason: 'installed_version_unknown' }),
+    CHECK_ONLY,
+    NOW
+  );
+  assert.equal(row.statusLabel, '版本未知');
+  assert.equal(row.statusTone, 'warning');
+  assert.equal(row.installed, true);
+});
+
+test('查过但找不到命令 = 未安装,不显示已是最新与渠道结论', () => {
   const row = getProviderCliUpgradeRow(
     record({ installedVersion: '', latestVersion: '1.1.65', channel: 'unknown', lastTickReason: 'channel_not_pinnable', state: 'healthy' }),
     CHECK_ONLY,
     NOW
   );
+  assert.equal(row.installed, false);
   assert.equal(row.statusLabel, '未安装');
   assert.equal(row.statusTone, 'neutral');
   assert.equal(row.reasonText, '');

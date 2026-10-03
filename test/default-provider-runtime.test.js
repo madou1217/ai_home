@@ -277,7 +277,9 @@ test('resolver uses platform launchers for cmd, PowerShell, and JavaScript scrip
     {
       executablePath: 'C:\\Tools\\codex.cmd',
       expectedCommand: 'C:\\Windows\\System32\\cmd.exe',
-      expectedArgs: ['/d', '/s', '/c', '"C:\\Tools\\codex.cmd" --version']
+      // cmd /s /c 只剥首尾引号；整段原样交给 cmd，关闭 libuv 转义（否则内层引号变 \" 探测必败）。
+      expectedArgs: ['/d', '/s', '/c', '""C:\\Tools\\codex.cmd" --version"'],
+      expectedVerbatim: true
     },
     {
       executablePath: 'C:\\Tools\\codex.ps1',
@@ -302,8 +304,8 @@ test('resolver uses platform launchers for cmd, PowerShell, and JavaScript scrip
       env: { COMSPEC: 'C:\\Windows\\System32\\cmd.exe' },
       nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
       powershellExecutable: 'pwsh.exe',
-      spawn(command, args) {
-        calls.push({ command, args });
+      spawn(command, args, spawnOptions) {
+        calls.push({ command, args, verbatim: spawnOptions && spawnOptions.windowsVerbatimArguments });
         return successfulChild('codex-cli 1.2.3\n');
       }
     });
@@ -312,6 +314,7 @@ test('resolver uses platform launchers for cmd, PowerShell, and JavaScript scrip
 
     assert.equal(calls[0].command, item.expectedCommand);
     assert.deepEqual(calls[0].args, item.expectedArgs);
+    assert.equal(calls[0].verbatim, item.expectedVerbatim === true);
   }
 });
 

@@ -286,6 +286,46 @@ test('unsupported capability versions and incompatible hosts are rejected before
   });
 });
 
+// 返回值不靠猜：带 value 字段的普通对象原样透传，只有 withPayload 才附带二进制。
+test('handler results are passed through verbatim unless wrapped with withPayload', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const plugin = writePlugin(dir, 'shape', manifest('aih.test.shape', {
+      contributes: [
+        { id: 'shape.plain', capability: 'command', version: 1 },
+        { id: 'shape.bytes', capability: 'command', version: 1 }
+      ]
+    }), `import { withPayload } from '@ai-home/plugin-sdk';
+      export default { apply(ctx) {
+        ctx.aih.register('shape.plain', () => ({ value: 1, extra: 2 }));
+        ctx.aih.register('shape.bytes', () => withPayload({ ok: true }, new Uint8Array([1, 2, 3])));
+      } };`);
+    await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
+    await call(supervisor, 'activate', { generation: 1 });
+    assert.deepEqual(await call(supervisor, 'invoke', { contributionId: 'shape.plain' }), { value: 1, extra: 2 });
+    const bytes = await supervisor.call('invoke', { contributionId: 'shape.bytes' });
+    assert.deepEqual(bytes.value, { ok: true });
+    assert.deepEqual([...bytes.payload], [1, 2, 3]);
+  });
+});
+
+// 入口里的相对 import 不带代次参数时，helper 的模块级状态会被新旧代次共享。
+test('module state in helper files is isolated per generation', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const plugin = writePlugin(dir, 'counter', manifest('aih.test.counter', {
+      contributes: [{ id: 'counter.next', capability: 'command', version: 1 }]
+    }), `import { next } from './counter.mjs';
+      export default { apply(ctx) { ctx.aih.register('counter.next', () => next()); } };`);
+    fs.writeFileSync(path.join(dir, 'counter', 'counter.mjs'), 'let count = 0; export function next() { count += 1; return count; }');
+    await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
+    await call(supervisor, 'activate', { generation: 1 });
+    assert.equal(await call(supervisor, 'invoke', { contributionId: 'counter.next' }), 1);
+    assert.equal(await call(supervisor, 'invoke', { contributionId: 'counter.next' }), 2);
+    await call(supervisor, 'prepare', { generation: 2, plugins: [plugin] });
+    await call(supervisor, 'activate', { generation: 2 });
+    assert.equal(await call(supervisor, 'invoke', { contributionId: 'counter.next' }), 1);
+  });
+});
+
 test('a throwing disposer does not block unload and is attributed to its instance', async () => {
   await withHost(async ({ dir, supervisor }) => {
     const plugin = writePlugin(dir, 'leaky', manifest('aih.test.leaky'),
@@ -297,15 +337,48 @@ test('a throwing disposer does not block unload and is attributed to its instanc
   });
 });
 
-test('plugins cannot read gateway secrets from the host environment', async () => {
+test('plugins cannot read gateway secrets or the host RPC token from the environment', async () => {
   await withHost(async ({ dir, supervisor }) => {
     const plugin = writePlugin(dir, 'snoop', manifest('aih.test.snoop', {
       contributes: [{ id: 'snoop.env', capability: 'command', version: 1 }]
-    }), `export default { apply(ctx) { ctx.aih.register('snoop.env', () => ({ key: process.env.AIH_TEST_GATEWAY_SECRET || null })); } };`);
+    }), `export default { apply(ctx) { ctx.aih.register('snoop.env', () => ({
+      key: process.env.AIH_TEST_GATEWAY_SECRET || null,
+      hostToken: process.env.AIH_PLUGIN_TOKEN || null
+    })); } };`);
     await call(supervisor, 'prepare', { generation: 1, plugins: [plugin] });
     await call(supervisor, 'activate', { generation: 1 });
-    assert.deepEqual(await call(supervisor, 'invoke', { contributionId: 'snoop.env' }), { key: null });
+    assert.deepEqual(await call(supervisor, 'invoke', { contributionId: 'snoop.env' }), { key: null, hostToken: null });
   }, { env: { ...process.env, AIH_TEST_GATEWAY_SECRET: 'must-not-leak' } });
+});
+
+test('the plugin host exits when its parent goes away instead of lingering as an orphan', async () => {
+  const { spawn } = require('node:child_process');
+  const dir = shortTempDir('aihp-');
+  const socketPath = socketFor(dir);
+  const script = `
+    const { createPluginHostSupervisor } = require(${JSON.stringify(path.join(ROOT, 'lib/plugins/host/supervisor'))});
+    const supervisor = createPluginHostSupervisor({ aiHomeDir: ${JSON.stringify(dir)}, socketPath: ${JSON.stringify(socketPath)} });
+    supervisor.start().then(() => { process.stdout.write(String(supervisor.status().pid) + '\\n'); });
+    setInterval(() => {}, 1000);`;
+  const parent = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    const hostPid = await new Promise((resolve, reject) => {
+      parent.stdout.once('data', (chunk) => resolve(Number(String(chunk).trim())));
+      parent.once('exit', () => reject(new Error('parent exited early')));
+    });
+    assert.ok(hostPid > 0);
+    parent.kill('SIGKILL');
+    const deadline = Date.now() + 5000;
+    let alive = true;
+    while (alive && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      try { process.kill(hostPid, 0); } catch (_error) { alive = false; }
+    }
+    assert.equal(alive, false, '父进程被杀后插件宿主应在几秒内退出');
+  } finally {
+    try { parent.kill('SIGKILL'); } catch (_error) {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a crashed host fails in-flight calls with plugin_rpc_closed and records the exit', async () => {

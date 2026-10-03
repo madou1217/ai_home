@@ -8,11 +8,15 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
 	plugincontract "github.com/madou1217/ai_home/contracts/plugins"
 )
+
+// cancel 帧很小，宿主正常时立即写完；宿主卡住时最多等这么久，避免取消路径本身挂住。
+const cancelWriteGrace = 100 * time.Millisecond
 
 // Result 是一次调用的返回：JSON 值 + 可选二进制 payload。
 type Result struct {
@@ -118,10 +122,13 @@ func (c *Client) Call(ctx context.Context, method string, value any, payload []b
 		Method: method, Deadline: deadline.UnixMilli(), Value: encodedValue,
 	}, payload)
 	if err == nil {
-		err = c.write(request)
+		err = c.writeBefore(request, deadline)
 	}
 	if err != nil {
 		c.forget(id)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return Result{}, &Error{Code: plugincontract.CodeRpcTimeout, Message: "宿主未在期限内读取请求，连接已关闭"}
+		}
 		return Result{}, wrapTransport(err)
 	}
 
@@ -138,7 +145,7 @@ func (c *Client) Call(ctx context.Context, method string, value any, payload []b
 	case <-ctx.Done():
 		c.forget(id)
 		if cancel, err := encodeFrame(plugincontract.Message{Kind: plugincontract.KindCancel, ProtocolVersion: plugincontract.ProtocolVersion, ID: id}, nil); err == nil {
-			_ = c.write(cancel)
+			_ = c.writeBefore(cancel, time.Now().Add(cancelWriteGrace))
 		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return Result{}, &Error{Code: plugincontract.CodeRpcTimeout}
@@ -156,9 +163,20 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) write(data []byte) error {
+	return c.writeBefore(data, time.Time{})
+}
+
+// writeBefore 在期限内把整帧写完。宿主卡住（例如插件占满 CPU）时它不读 socket，发送缓冲一满
+// Write 就会阻塞且无视 ctx；所以写入必须带期限。期限到了帧可能只写了一半，字节流已无法对齐，
+// 只能关闭整条连接（在途调用以 plugin_rpc_closed 结束）。
+func (c *Client) writeBefore(data []byte, deadline time.Time) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	_ = c.conn.SetWriteDeadline(deadline)
 	_, err := c.conn.Write(data)
+	if err != nil && errors.Is(err, os.ErrDeadlineExceeded) {
+		c.shutdown(&Error{Code: plugincontract.CodeRpcClosed, Message: "写入超时，连接已关闭"})
+	}
 	return err
 }
 

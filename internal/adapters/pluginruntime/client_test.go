@@ -283,6 +283,52 @@ func asError(err error, target **Error) bool {
 	return ok
 }
 
+// 插件同步占满 CPU 时宿主不读 socket：大 payload 的写入会阻塞在发送缓冲上。
+// 调用必须在自己的期限附近返回超时，不能被卡住的宿主拖住。
+func TestStalledHostCannotHoldAWritePastTheDeadline(t *testing.T) {
+	fixture := startHost(t)
+	client := dialReady(t, fixture)
+	busyDir := filepath.Join(fixture.dir, "busy")
+	if err := os.MkdirAll(busyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"manifestVersion":1,"protocolVersion":1,"pluginId":"aih.test.busy","version":"0.1.0","engines":{"aih":">=1.0.0"},"runtime":"node","entry":"index.mjs","contributes":[{"id":"busy.spin","capability":"command","version":1}]}`
+	source := "export default { apply(ctx) { ctx.aih.register('busy.spin', () => { const end = Date.now() + 1500; while (Date.now() < end) {} return 'done'; }); } };"
+	if err := os.WriteFile(filepath.Join(busyDir, "plugin.json"), []byte(manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(busyDir, "index.mjs"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	_ = json.Unmarshal([]byte(manifest), &parsed)
+	ctx := context.Background()
+	if _, err := client.Call(ctx, "prepare", map[string]any{"generation": 1, "plugins": []any{
+		map[string]any{"instanceId": "busy", "manifest": parsed, "entryPath": filepath.Join(busyDir, "index.mjs")},
+	}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Call(ctx, "activate", map[string]any{"generation": 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		_, _ = client.Call(context.Background(), "invoke", map[string]any{"contributionId": "busy.spin"}, nil)
+	}()
+	time.Sleep(100 * time.Millisecond)
+
+	deadlineCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := client.Call(deadlineCtx, "invoke", map[string]any{"contributionId": "busy.spin"}, bytes.Repeat([]byte{1}, plugincontract.MaxPayloadBytes))
+	elapsed := time.Since(started)
+	if Code(err) != plugincontract.CodeRpcTimeout {
+		t.Fatalf("expected timeout from a stalled host, got %v after %s", err, elapsed)
+	}
+	if elapsed > 700*time.Millisecond {
+		t.Fatalf("call outlived its 200ms deadline by too much: %s", elapsed)
+	}
+}
+
 // Go 数据面 → Node Plugin Host 的往返开销（单连接串行调用，含 JSON 编解码与插件 handler）。
 func BenchmarkCallSmall(b *testing.B) {
 	benchmarkCall(b, nil)

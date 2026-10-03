@@ -13,7 +13,7 @@ export interface InvocationContext {
   invocationId: string; instanceId: string; generation: number; deadline: number; signal: AbortSignal;
   payload: Uint8Array;
 }
-/** handler 可直接返回 JSON 值，或返回 { value, payload } 以附带二进制数据。 */
+/** handler 返回 JSON 值；要附带二进制数据时返回 withPayload(value, bytes)。 */
 export type ContributionHandler = (value: unknown, context: InvocationContext) => unknown | Promise<unknown>;
 export interface PluginHostService {
   /** 为清单中声明的贡献项注册 handler；随插件卸载自动注销。 */
@@ -23,6 +23,7 @@ export interface PluginHostService {
   instance(): Readonly<{ instanceId: string; pluginId: string; generation: number }>;
 }
 declare module '@deepseek-ai/cordis' { interface Context { aih: PluginHostService; } }
+export function withPayload<T>(value: T, payload: Uint8Array): Readonly<{ value: T; payload: Uint8Array }>;
 export function definePlugin<T extends { apply(ctx: Context, config: any): unknown }>(plugin: T): Readonly<T>;
 export function validateManifest(input: unknown, options?: { hostVersion?: string; nodeVersion?: string; target?: string }): Readonly<Manifest>;
 export function validateConfiguration(manifest: Manifest, configuration?: object, secrets?: object): Readonly<{ configuration: object; secrets: object }>;

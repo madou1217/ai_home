@@ -89,6 +89,11 @@ test('pinned plugin runtime dependencies match what is installed', () => {
     const installed = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', dependency.name, 'package.json'), 'utf8'));
     assert.equal(installed.version, dependency.version, dependency.name);
   }
+  // npm 安装时校验过 tarball 并把 integrity 记在 node_modules/.package-lock.json：与合同记录逐一比对。
+  const installedLock = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', '.package-lock.json'), 'utf8'));
+  for (const dependency of contract.runtimeDependencies) {
+    assert.equal(installedLock.packages[`node_modules/${dependency.name}`]?.integrity, dependency.integrity, `${dependency.name} integrity`);
+  }
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   assert.equal(pkg.dependencies['@deepseek-ai/cordis'], '4.0.4');
   assert.equal(pkg.overrides['@deepseek-ai/cosmokit'], '1.8.5');
@@ -262,6 +267,22 @@ test('dependency cycles, failing plugins and undeclared contributions are reject
     assert.equal(undeclared.diagnostics[0].code, 'plugin_apply_failed');
     assert.match(undeclared.diagnostics[0].detail, /not\.declared/);
     assert.deepEqual((await call(supervisor, 'status')).generations, []);
+  });
+});
+
+test('unsupported capability versions and incompatible hosts are rejected before any code loads', async () => {
+  await withHost(async ({ dir, supervisor }) => {
+    const future = writePlugin(dir, 'future', manifest('aih.test.future', {
+      contributes: [{ id: 'future.cmd', capability: 'command', version: 2 }]
+    }), 'throw new Error("must not be imported");');
+    const rejected = await call(supervisor, 'prepare', { generation: 1, plugins: [future] });
+    assert.equal(rejected.state, 'rejected');
+    assert.equal(rejected.diagnostics[0].code, 'plugin_capability_incompatible');
+
+    const tooNew = writePlugin(dir, 'too-new', manifest('aih.test.too-new', { engines: { aih: '>=99.0.0' } }),
+      'throw new Error("must not be imported");');
+    const host = await call(supervisor, 'prepare', { generation: 2, plugins: [tooNew] });
+    assert.equal(host.diagnostics[0].code, 'plugin_host_incompatible');
   });
 });
 

@@ -51,6 +51,19 @@ async function main() {
     results.onePluginSmall = await measure(3000, 300, () => enabled.dispatch('command', request));
     const oneMiB = Buffer.alloc(1024 * 1024, 7);
     results.onePlugin1MiBPayload = await measure(300, 30, () => supervisor.call('invoke', { contributionId: 'sample.echo.call', value: null }, { payload: oneMiB }));
+    // 代次轮换：每代用带 generation 查询参数的 URL 重新 import 插件模块，ESM 模块记录不会被回收。
+    // 这里量化它：连续准备并卸载 50 代后宿主内存的增长。
+    const before = (await supervisor.call('status')).value.memory;
+    for (let generation = 2; generation <= 51; generation += 1) {
+      await supervisor.call('prepare', { generation, plugins: [{ instanceId: 'echo', manifest, entryPath: path.join(sample, 'index.mjs') }] });
+      await supervisor.call('activate', { generation });
+    }
+    const after = (await supervisor.call('status')).value.memory;
+    results.generationChurn = {
+      generations: 50,
+      rssGrowthKiB: Math.round((after.rss - before.rss) / 1024),
+      heapGrowthKiB: Math.round((after.heapUsed - before.heapUsed) / 1024)
+    };
     results.hostPid = supervisor.status().pid;
   } finally {
     await supervisor.stop();
@@ -69,6 +82,7 @@ async function main() {
   console.log(`  host started by empty chain: ${results.hostStartedByEmptyChain}`);
   console.log(row('1 plugin, small JSON', results.onePluginSmall));
   console.log(row('1 plugin, 1 MiB payload', results.onePlugin1MiBPayload));
+  console.log(`generation churn         ${JSON.stringify(results.generationChurn)}`);
   console.log(JSON.stringify(results.environment));
 }
 

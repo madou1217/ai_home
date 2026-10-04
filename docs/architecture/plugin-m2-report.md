@@ -101,5 +101,5 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 4. **route policy 只能对账号排序。** 规划里「提议模型选择」没有实现；改模型目前只能经 gateway.request 改写 `model` 字段。
 5. **observe 事件不含 token 用量。** 只有尝试级摘要，用量仍以网关自己的用量库为准。
 6. **Windows 偶发一次失败。** `through aih server: a catalog plugin alias routes to its target…` 在 Windows 全套运行中失败过一次，当时没有采集到细节；随后 5 次重跑（单文件和全套）全部通过。暂按偶发记录。
-8. **插件启用前已由 Go 接管的 WebSocket 会话不受插件约束。** Go 只在升级时调用 `deferToNode`；之后同一连接上的 `response.create` 一直由 Go 处理，直到 codex 重连（换连接、出错或会话结束）。Node 接管的连接没有这个问题。
 7. **其他。** M1 报告中的秘密配置、插件私有状态、Web 管理界面等限制不变。
+8. **插件启用前已由 Go 接管的 WebSocket 会话不受插件约束。** Go 只在升级时调用 `deferToNode`；之后同一连接上的 `response.create` 一直由 Go 处理，直到 codex 重连（换连接、出错或会话结束）。Node 接管的连接没有这个问题。

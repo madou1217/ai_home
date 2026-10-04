@@ -351,3 +351,49 @@ func benchmarkCall(b *testing.B, payload []byte) {
 		}
 	}
 }
+
+// Go 网关还不提供 gateway.next：中间件在 Go 发起的调用里调用 next() 必须立刻得到 method_unknown，
+// 而不是让宿主空等到 deadline。
+func TestReverseCallsFromTheHostAreRefusedImmediately(t *testing.T) {
+	fixture := startHost(t)
+	client := dialReady(t, fixture)
+	target := filepath.Join(fixture.dir, "attempt")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{
+		"manifestVersion": 1, "protocolVersion": 1, "pluginId": "aih.test.go-attempt", "version": "0.1.0",
+		"engines": map[string]any{"aih": ">=1.0.0"}, "runtime": "node", "entry": "index.mjs",
+		"contributes": []any{map[string]any{"id": "attempt.go", "capability": "gateway.attempt", "version": 1}},
+	}
+	encoded, _ := json.Marshal(manifest)
+	source := `export default { apply(ctx) { ctx.aih.register('attempt.go', async (value, context) => {
+  try { await context.next(); return 'unexpected'; } catch (error) { return error.code; }
+}); } };`
+	for name, data := range map[string][]byte{"plugin.json": encoded, "index.mjs": []byte(source), "package.json": []byte(`{"type":"module"}`)} {
+		if err := os.WriteFile(filepath.Join(target, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	prepared, err := client.Call(ctx, "prepare", map[string]any{"generation": 1, "plugins": []any{map[string]any{"instanceId": "go-attempt", "manifest": manifest, "entryPath": filepath.Join(target, "index.mjs")}}}, nil)
+	if err != nil || !strings.Contains(string(prepared.Value), `"prepared"`) {
+		t.Fatalf("prepare: %v %s", err, prepared.Value)
+	}
+	if _, err := client.Call(ctx, "activate", map[string]any{"generation": 1}, nil); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	started := time.Now()
+	result, err := client.Call(callCtx, "invoke", map[string]any{"contributionId": "attempt.go", "value": map[string]any{}}, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if string(result.Value) != `"`+plugincontract.CodeRpcMethodUnknown+`"` {
+		t.Fatalf("next() under a Go invoke should fail with method_unknown, got %s", result.Value)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("refusal should be immediate, took %s", elapsed)
+	}
+}

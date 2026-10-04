@@ -12,6 +12,12 @@ export interface Manifest {
 export interface InvocationContext {
   invocationId: string; instanceId: string; generation: number; deadline: number; signal: AbortSignal;
   payload: Uint8Array;
+  /** 仅 gateway.attempt：让网关执行本次尝试（或内层中间件），在提交点返回摘要；至多调用一次。 */
+  next?: (value?: unknown) => Promise<AttemptSummary>;
+}
+export interface AttemptSummary {
+  committed: boolean; outcome: string; status?: number; error?: string;
+  stopped?: boolean; rejected?: { status: number; message: string };
 }
 /** handler 返回 JSON 值；要附带二进制数据时返回 withPayload(value, bytes)。 */
 export type ContributionHandler = (value: unknown, context: InvocationContext) => unknown | Promise<unknown>;
@@ -28,4 +34,4 @@ export function definePlugin<T extends { apply(ctx: Context, config: any): unkno
 export function validateManifest(input: unknown, options?: { hostVersion?: string; nodeVersion?: string; target?: string }): Readonly<Manifest>;
 export function validateConfiguration(manifest: Manifest, configuration?: object, secrets?: object): Readonly<{ configuration: object; secrets: object }>;
 export class PluginError extends Error { readonly code: string; constructor(code: string, message?: string); }
-export const contract: { manifestVersion: 1; protocolVersion: 1; sdkVersion: string; limits: Record<string, number> };
+export const contract: { manifestVersion: 1; protocolVersion: number; sdkVersion: string; limits: Record<string, number> };

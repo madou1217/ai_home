@@ -10,6 +10,7 @@ const MaxMetadataBytes = 65536
 const MaxPayloadBytes = 4194304
 const MaxBufferedBytes = 8454144
 const MaxInflightCalls = 64
+const MaxParkedCalls = 1024
 const MaxInvokeTimeoutMs = 10000
 const MaxHandshakeTimeoutMs = 2000
 const MaxDrainTimeoutMs = 10000

@@ -11,6 +11,7 @@
     "payloadBytes": 4194304,
     "bufferedBytes": 8454144,
     "inflightCalls": 64,
+    "parkedCalls": 1024,
     "invokeTimeoutMs": 10000,
     "handshakeTimeoutMs": 2000,
     "drainTimeoutMs": 10000,

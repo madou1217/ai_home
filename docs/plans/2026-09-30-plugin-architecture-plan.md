@@ -1,6 +1,6 @@
 # AIH 插件化规划：DSH / Cordis 主线与网关发布治理
 
-日期：2026-09-30。状态：M0 已交付（2026-10-04，证据与已知限制见 [M0 报告](../architecture/plugin-m0-report.md)）；M1–M5 未实现。范围来自用户要求的插件化规划及新增 DSH 参考要求。
+日期：2026-09-30。状态：M0、M1 已交付（2026-10-04，证据与已知限制见 [M0 报告](../architecture/plugin-m0-report.md)、[M1 报告](../architecture/plugin-m1-report.md)）；M2–M5 未实现。范围来自用户要求的插件化规划及新增 DSH 参考要求。
 
 源码基线、比较依据和吸收优先级见 [三方比较](../architecture/codex-proxy-rs-dsh-comparison.md)。本规划记录新增扩展需求下的设计取舍；历史文档中“当时不引入动态插件”的范围结论仍保留，不代表本次新需求被拒绝。
 

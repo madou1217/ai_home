@@ -31,7 +31,7 @@
 | Go↔Node 往返 | 4 MiB（恰好上限）payload 原样往返；32 路并发 |
 | 取消 | ctx 取消 / AbortSignal / deadline 都让插件 handler 的 signal 真的 abort（sample 计数 = 2）；已取消的调用不回发结果 |
 | 宿主卡住 | 插件同步占满 CPU 1.5 s 时，Go 带 4 MiB payload、200 ms 期限的调用在约 200 ms 返回 `plugin_rpc_timeout`（修复前被拖到 1.4 s）；写超时会关闭连接，避免半帧错位 |
-| 版本不兼容 | 以协议版本 2 握手 → `plugin_rpc_incompatible` + 支持范围 `{min:1,max:1}`；错误令牌只断开、不泄露信息 |
+| 版本不兼容 | 以高于支持上限的协议版本握手 → `plugin_rpc_incompatible` + 支持范围（M2 起为 `{min:2,max:2}`，v2 增加反向调用）；错误令牌只断开、不泄露信息 |
 | 有界大 payload | 恰好上限通过；超 1 字节在客户端拒绝；手工超限帧头 → 宿主先回 `plugin_rpc_payload_limit` 再断开 |
 | 崩溃与孤儿 | 插件 `process.exit(7)` → 在途调用 `plugin_rpc_closed`，记录退出码与 stderr；父进程被 SIGKILL 后宿主几秒内自行退出 |
 | 环境暴露 | `process.env` 里没有网关注入的密钥，也没有宿主 RPC 令牌。**这不是安全边界**：插件与网关同一用户，仍可读 `~/.ai_home` 下的文件；按 ADR-P2，可执行插件只来自明确接受的可信制品 |

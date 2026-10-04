@@ -3,9 +3,9 @@ package plugincontract
 
 import "encoding/json"
 
-const ProtocolVersion uint32 = 1
-const MinProtocolVersion uint32 = 1
-const MaxProtocolVersion uint32 = 1
+const ProtocolVersion uint32 = 2
+const MinProtocolVersion uint32 = 2
+const MaxProtocolVersion uint32 = 2
 const MaxMetadataBytes = 65536
 const MaxPayloadBytes = 4194304
 const MaxBufferedBytes = 8454144
@@ -38,6 +38,8 @@ const (
 	CodeRpcCancelled            = "plugin_rpc_cancelled"
 	CodeRpcClosed               = "plugin_rpc_closed"
 	CodeRpcMethodUnknown        = "plugin_rpc_method_unknown"
+	CodeRpcParentUnknown        = "plugin_rpc_parent_unknown"
+	CodeNextCalledTwice         = "plugin_next_called_twice"
 	CodeContributionUnknown     = "plugin_contribution_unknown"
 	CodeContributionUnavailable = "plugin_contribution_unavailable"
 	CodeGenerationUnknown       = "plugin_generation_unknown"
@@ -59,6 +61,7 @@ type Message struct {
 	ID              string          `json:"id"`
 	Method          string          `json:"method,omitempty"`
 	Token           string          `json:"token,omitempty"`
+	Parent          string          `json:"parent,omitempty"`
 	Deadline        int64           `json:"deadline,omitempty"`
 	Value           json.RawMessage `json:"value,omitempty"`
 	Supported       *ProtocolRange  `json:"supported,omitempty"`

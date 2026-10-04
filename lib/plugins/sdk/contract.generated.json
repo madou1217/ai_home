@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "supportedProtocolVersions": {
-    "min": 1,
-    "max": 1
+    "min": 2,
+    "max": 2
   },
   "sdkVersion": "0.1.0",
   "limits": {
@@ -71,6 +71,8 @@
     "plugin_rpc_cancelled",
     "plugin_rpc_closed",
     "plugin_rpc_method_unknown",
+    "plugin_rpc_parent_unknown",
+    "plugin_next_called_twice",
     "plugin_contribution_unknown",
     "plugin_contribution_unavailable",
     "plugin_generation_unknown"
@@ -162,6 +164,7 @@
       "id": "string",
       "method?": "string",
       "token?": "string",
+      "parent?": "string",
       "deadline?": "int64",
       "value?": "json",
       "supported?": "ProtocolRange",

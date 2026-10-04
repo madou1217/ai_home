@@ -214,7 +214,7 @@ test('incompatible protocol versions get an explicit error with the supported ra
   const token = 'f'.repeat(64);
   await withHost(async ({ supervisor }) => {
     const { socketPath } = supervisor.status();
-    const future = createRpcClient({ socketPath, token, protocolVersion: 2 });
+    const future = createRpcClient({ socketPath, token, protocolVersion: contract.supportedProtocolVersions.max + 1 });
     await assert.rejects(future.connect(), (error) => {
       assert.equal(error.code, 'plugin_rpc_incompatible');
       assert.deepEqual(error.supported, contract.supportedProtocolVersions);

@@ -202,6 +202,15 @@ func (c *Client) readLoop() {
 			c.shutdown(&Error{Code: incoming.message.Error.Code, Message: incoming.message.Error.Message})
 			return
 		}
+		// 宿主的反向调用（协议 v2）：Go 侧目前不提供任何网关方法，立即回 method_unknown，
+		// 让宿主侧的父调用按插件失败处理，而不是空等到超时。写回放到独立 goroutine，不阻塞读循环。
+		if incoming.message.Kind == plugincontract.KindCall {
+			go c.rejectInbound(incoming.message.ID)
+			continue
+		}
+		if incoming.message.Kind == plugincontract.KindCancel {
+			continue
+		}
 		c.mu.Lock()
 		replies, ok := c.pending[incoming.message.ID]
 		delete(c.pending, incoming.message.ID)
@@ -209,6 +218,16 @@ func (c *Client) readLoop() {
 		if ok {
 			replies <- incoming
 		}
+	}
+}
+
+func (c *Client) rejectInbound(id string) {
+	reply, err := encodeFrame(plugincontract.Message{
+		Kind: plugincontract.KindError, ProtocolVersion: plugincontract.ProtocolVersion, ID: id,
+		Error: &plugincontract.Fault{Code: plugincontract.CodeRpcMethodUnknown, Message: "Go 网关不接受宿主反向调用"},
+	}, nil)
+	if err == nil {
+		_ = c.writeBefore(reply, time.Now().Add(cancelWriteGrace))
 	}
 }
 

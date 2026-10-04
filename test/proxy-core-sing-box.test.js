@@ -169,3 +169,29 @@ test('sing-box 程序探测：受管目录与 ZCode 的 bin/sing-box 共用，�
   assert.equal(old.error, 'core_version_unsupported');
   assert.equal(old.reusable, false);
 });
+
+test('代理池切换内核：持久化选择、运行中拒绝切换、端口管理器同步新内核', async () => {
+  const { ProxyPoolService } = require('../lib/cli/services/toolkit/proxy-pool/proxy-pool-service');
+  const aiHomeDir = tempDir();
+  const filePath = path.join(aiHomeDir, 'proxy-pool.json');
+  const runtimeOptions = { aiHomeDir, env: { PATH: '' } };
+  const service = new ProxyPoolService({ storeOptions: { filePath }, coreRuntimeOptions: runtimeOptions, platform: 'darwin' });
+  assert.equal(service.core.id, 'mihomo');
+  assert.deepEqual(service.listCores().map((core) => [core.id, core.active]), [['mihomo', true], ['sing-box', false]]);
+
+  const selected = await service.selectCore('sing-box');
+  assert.equal(selected.ok, true);
+  assert.equal(service.core.id, 'sing-box');
+  assert.equal(service.getCoreStatus().engine, 'sing-box');
+  assert.equal(service.portManager.core.id, 'sing-box');
+  assert.equal(service.portManager.coreRuntime, service.coreRuntime);
+
+  const reopened = new ProxyPoolService({ storeOptions: { filePath }, coreRuntimeOptions: runtimeOptions, platform: 'darwin' });
+  assert.equal(reopened.core.id, 'sing-box', '内核选择持久化');
+
+  assert.equal((await service.selectCore('nope')).error, 'unsupported_proxy_core');
+  service.coreRuntime = { getStatus: () => ({ running: true }) };
+  const blocked = await service.selectCore('mihomo');
+  assert.equal(blocked.error, 'proxy_core_switch_requires_stop');
+  assert.equal(service.core.id, 'sing-box');
+});

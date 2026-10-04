@@ -271,11 +271,19 @@ async function startClaudeServer(t) {
 
   const upstreamBodies = [];
   const upstreamTokens = [];
+  const failures = { remaining: 0 };
   const upstream = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
       if (req.url !== '/v1/messages') { res.writeHead(404); res.end('{}'); return; }
+      if (failures.remaining > 0) {
+        failures.remaining -= 1;
+        upstreamTokens.push(req.headers.authorization);
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'upstream exploded' } }));
+        return;
+      }
       upstreamBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       upstreamTokens.push(req.headers.authorization);
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -327,7 +335,7 @@ async function startClaudeServer(t) {
     body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: text }] }),
     signal: AbortSignal.timeout(10000)
   });
-  return { dir, upstreamBodies, upstreamTokens, accountRefs, management, message };
+  return { dir, upstreamBodies, upstreamTokens, accountRefs, management, message, failures };
 }
 
 test('through aih server: no plugin means an untouched request; an enabled plugin rewrites and rejects', async (t) => {
@@ -543,6 +551,76 @@ test('the auto-mode model list includes catalog plugin aliases and refreshes whe
     assert.equal(disabled.ids.includes('team-default'), false, '代次变化后缓存失效，别名消失');
   } finally {
     if (runtime) await runtime.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- 尝试观察 ----
+
+const OBSERVER_MANIFEST = manifest('aih.test.observer', {
+  configSchema: { type: 'object', additionalProperties: false, properties: { delayMs: { type: 'integer', minimum: 0 } } },
+  contributes: [
+    { id: 'observer.events', capability: 'observe', version: 1 },
+    { id: 'observer.dump', capability: 'command', version: 1 }
+  ]
+});
+const OBSERVER_SOURCE = `const seen = [];
+export default { apply(ctx, config) {
+  ctx.aih.register('observer.events', async (event) => {
+    if (config.delayMs) await new Promise((resolve) => setTimeout(resolve, config.delayMs));
+    seen.push(event);
+  });
+  ctx.aih.register('observer.dump', () => seen.slice());
+} };`;
+
+test('through aih server: observers get a low-sensitivity summary of every attempt, including failed ones', async (t) => {
+  const { dir, management, message, failures, accountRefs } = await startClaudeServer(t);
+  assert.equal((await management('/install', { file: packPlugin(dir, 'observer', OBSERVER_MANIFEST, OBSERVER_SOURCE) })).ok, true);
+  assert.equal((await management('/enable', { pluginId: 'aih.test.observer' })).ok, true);
+  failures.remaining = 1;
+  const response = await message('claude-opus-5', 'observe me');
+  assert.equal(response.status, 200, await response.text());
+  let events = [];
+  assert.ok(await waitFor(async () => {
+    events = (await management('/invoke', { contributionId: 'observer.dump' })).value || [];
+    return events.length >= 2;
+  }), JSON.stringify(events));
+  assert.deepEqual(events.map((event) => event.outcome), ['retry_next', 'return']);
+  assert.notEqual(events[0].accountRef, events[1].accountRef, '失败后换号');
+  assert.ok(accountRefs.includes(events[0].accountRef) && accountRefs.includes(events[1].accountRef));
+  assert.equal(events[1].committed, true);
+  for (const event of events) {
+    assert.deepEqual(Object.keys(event).sort(), ['accountRef', 'attempt', 'committed', 'durationMs', 'error', 'generation', 'model', 'outcome', 'provider', 'type']);
+    assert.equal(JSON.stringify(event).includes('observe me'), false, '事件不带请求正文');
+    assert.equal(JSON.stringify(event).includes('access-'), false, '事件不带凭据');
+  }
+  assert.equal((await management('')).runtime.observations.dropped, 0);
+});
+
+test('the observation queue is bounded, never blocks the caller and outlives a publish on its own lease', async () => {
+  const dir = tempDir('aihm2o-');
+  const aiHomeDir = path.join(dir, 'home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const { control, runtime } = createPluginSystem({ aiHomeDir, socketPath: socketFor(dir), observeQueueLimit: 3 });
+  try {
+    control.install(packPlugin(dir, 'observer', OBSERVER_MANIFEST, OBSERVER_SOURCE));
+    await control.enable({ pluginId: 'aih.test.observer', configuration: { delayMs: 100 } });
+    const lease = runtime.acquire();
+    const firstGeneration = lease.generation;
+    const started = Date.now();
+    const accepted = Array.from({ length: 10 }, (_, index) => runtime.observe(lease, { type: 'test', index }));
+    assert.ok(Date.now() - started < 50, 'observe() 立即返回');
+    assert.deepEqual(accepted, [true, true, true, false, false, false, false, false, false, false]);
+    assert.equal(runtime.status().observations.dropped, 7);
+    lease.release();
+    // 新代次发布后，排队中的事件仍在原代次上投递（每个事件持有自己的租约）。
+    await control.enable({ pluginId: 'aih.test.observer', configuration: { delayMs: 0 } });
+    assert.ok(await waitFor(() => runtime.status().observations.delivered === 3, 3000), JSON.stringify(runtime.status().observations));
+    const oldEvents = (await runtime.invoke('observer.dump', null, { generation: firstGeneration }).catch(() => ({ value: null }))).value;
+    assert.ok(oldEvents === null || oldEvents.length === 3, '旧代次收到全部 3 个事件（或已在排空后退役）');
+    assert.ok(await waitFor(() => runtime.status().retiringGenerations.length === 0, 3000), '投递完释放租约后旧代次退役');
+  } finally {
+    await runtime.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

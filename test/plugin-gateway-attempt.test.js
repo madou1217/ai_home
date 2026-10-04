@@ -343,6 +343,58 @@ test('no attempt contribution means no middleware at all', async () => {
   assert.equal(createAttemptMiddleware({ requestMeta: { pluginLease: lease }, provider: 'claude', model: 'x', res }), null);
 });
 
+test('the middleware seam reports rejections to observers and counts plugin failures in the runtime status', async () => {
+  const { EventEmitter } = require('node:events');
+  const { runWithAccountAttempts } = require('../lib/server/request-orchestrator');
+  function fakeRes() {
+    const res = new EventEmitter();
+    res.headersSent = false;
+    res.writableFinished = false;
+    res.statusCode = 200;
+    res.writeHead = function writeHead(status) { this.statusCode = status; this.headersSent = true; return this; };
+    res.end = function end(body) { this.body = body; this.writableFinished = true; };
+    return res;
+  }
+  const writeJson = (res, status, payload) => { res.writeHead(status); res.end(JSON.stringify(payload)); };
+  const pool = [{ accountRef: 'acct_00000000000000000001' }];
+
+  await withAttemptSystem(async ({ control, runtime }) => {
+    await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'reject' } });
+    const lease = runtime.acquire();
+    const res = fakeRes();
+    const observed = [];
+    let hits = 0;
+    const result = await runWithAccountAttempts({
+      pool, maxAttempts: 2, provider: 'claude', model: 'claude-opus-5',
+      chooseServerAccount: (candidates, _state, _key, options) => candidates.find((item) => !options.excludeAccountRefs.has(item.accountRef)) || null,
+      wrapAttempt: createAttemptMiddleware({ requestMeta: { pluginLease: lease, pluginRuntime: runtime }, provider: 'claude', model: 'claude-opus-5', res, writeJson }),
+      observeAttempt: (summary) => observed.push(summary.outcome),
+      onAttempt: async () => { hits += 1; return { action: 'return' }; }
+    });
+    lease.release();
+    assert.equal(result.kind, 'returned');
+    assert.equal(hits, 0);
+    assert.equal(res.statusCode, 451);
+    assert.deepEqual(observed, ['rejected']);
+  });
+
+  await withAttemptSystem(async ({ control, runtime }) => {
+    await control.enable({ pluginId: 'aih.test.attempt-d', configuration: { name: 'D', mode: 'noop' } });
+    const lease = runtime.acquire();
+    const res = fakeRes();
+    let hits = 0;
+    const middleware = createAttemptMiddleware({ requestMeta: { pluginLease: lease, pluginRuntime: runtime }, provider: 'claude', model: 'claude-opus-5', res, writeJson });
+    const outcome = await middleware(pool[0], { attempt: 0, lastError: () => '' }, async () => { hits += 1; return { action: 'return' }; });
+    lease.release();
+    assert.deepEqual(outcome, { action: 'return' });
+    assert.equal(hits, 1, 'delegate：插件返回无效时网关替它调用 next');
+    const failures = runtime.status().contributionFailures;
+    assert.equal(failures.total, 1);
+    assert.equal(failures.recent[0].code, 'plugin_result_invalid');
+    assert.equal(failures.recent[0].capability, 'gateway.attempt');
+  }, [{ pluginId: 'aih.test.attempt-d', prefix: 'd', contribution: { failurePolicy: 'delegate' } }]);
+});
+
 // ---- 经真实 aih server ----
 
 async function enableAttempt(server, configuration) {
@@ -397,4 +449,130 @@ test('through aih server: slow upstream headers beyond the plugin budget still s
   const response = await server.message('claude-opus-5', 'slow');
   assert.equal(response.status, 200, await response.text());
   assert.equal(server.upstreamTokens.length, 1);
+});
+
+// ---- codex 选号循环（native Responses 流式）----
+
+const http = require('node:http');
+const { handleCodexChatCompletions } = require('../lib/server/codex-adapter');
+
+const sseFrame = (payload) => `data: ${JSON.stringify(payload)}\n\n`;
+const CODEX_STREAM = [
+  sseFrame({ type: 'response.created', response: { id: 'resp_attempt', model: 'gpt-6-astra' } }),
+  sseFrame({ type: 'response.output_text.delta', delta: 'served' }),
+  sseFrame({ type: 'response.completed', response: { id: 'resp_attempt', model: 'gpt-6-astra', usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } })
+].join('');
+
+async function listenOn(t, handler) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    return new Promise((resolve) => server.close(resolve));
+  });
+  return `http://127.0.0.1:${server.address().port}`;
+}
+
+// 假 codex 上游：failures.remaining 次回 500，其余回一段 SSE；hits 记录命中的账号令牌。
+async function codexGateway(t, runtime) {
+  const hits = [];
+  const failures = { remaining: 0 };
+  const upstream = await listenOn(t, (req, res) => {
+    req.resume();
+    req.on('end', () => {
+      hits.push(req.headers.authorization);
+      if (failures.remaining > 0) {
+        failures.remaining -= 1;
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'upstream exploded', type: 'server_error' } }));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(CODEX_STREAM);
+    });
+  });
+  const state = {
+    accounts: { codex: [0, 1].map((n) => ({
+      accountRef: `acct_attempt_codex_${n}`, accessToken: `local-test-${n}`, apiKeyMode: true, openaiBaseUrl: upstream
+    })) },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  const leases = [];
+  const url = await listenOn(t, (req, res) => {
+    const lease = req.headers['x-test-plugins'] === '1' ? runtime.acquire() : null;
+    if (lease) {
+      leases.push(lease);
+      res.once('close', () => lease.release());
+    }
+    handleCodexChatCompletions({
+      options: { codexBaseUrl: upstream, upstreamTimeoutMs: 5000, maxAttempts: 2, failureThreshold: 1 },
+      state, req, res,
+      requestJson: { model: 'gpt-6-astra', stream: true, input: 'local test' },
+      routeKey: 'POST /v1/responses',
+      requestStartedAt: Date.now(), cooldownMs: 1000,
+      requestMeta: { requestId: 'attempt-codex', clientProtocol: 'openai_responses', ...(lease ? { pluginLease: lease, pluginRuntime: runtime } : {}) },
+      deps: {
+        chooseServerAccount: require('../lib/server/router').chooseServerAccount,
+        pushMetricError: () => {},
+        writeJson: (r, status, payload) => { r.writeHead(status, { 'content-type': 'application/json' }); r.end(JSON.stringify(payload)); },
+        fetchWithTimeout: (target, init) => fetch(target, init),
+        markProxyAccountFailure: () => {},
+        markProxyAccountSuccess: () => {},
+        appendProxyRequestLog: () => {},
+        recordModelUsage: () => {},
+        waitForTransientRetry: async () => {}
+      }
+    }).catch((error) => res.destroy(error));
+  });
+  const send = (withPlugins) => fetch(`${url}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(withPlugins ? { 'x-test-plugins': '1' } : {}) },
+    body: '{}',
+    signal: AbortSignal.timeout(10000)
+  });
+  return { hits, failures, send, leases };
+}
+
+test('codex: streaming passthrough is byte-identical and next() sees the commit after the upstream answered', async (t) => {
+  await withAttemptSystem(async ({ control, runtime }) => {
+    await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'pass' } });
+    const codex = await codexGateway(t, runtime);
+    const plain = await codex.send(false);
+    assert.equal(plain.status, 200);
+    const plainBody = await plain.text();
+    const wrapped = await codex.send(true);
+    assert.equal(wrapped.status, 200);
+    assert.equal(await wrapped.text(), plainBody);
+    assert.equal(codex.hits.length, 2);
+    const [entry] = await dump(runtime);
+    assert.deepEqual(entry.summary, { committed: true, outcome: 'committed', status: 200, stopped: false });
+    assert.equal(entry.value.provider, 'codex');
+    assert.equal(entry.value.authType, 'api-key');
+  });
+});
+
+test('codex: reject never reaches upstream; stop ends failover after one upstream hit', async (t) => {
+  await withAttemptSystem(async ({ control, runtime }) => {
+    await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'reject' } });
+    const codex = await codexGateway(t, runtime);
+    const rejected = await codex.send(true);
+    assert.equal(rejected.status, 451);
+    assert.equal((await rejected.json()).error.code, 'plugin_rejected');
+    assert.equal(codex.hits.length, 0);
+
+    await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'stop' } });
+    codex.failures.remaining = 1;
+    const stopped = await codex.send(true);
+    assert.notEqual(stopped.status, 200, await stopped.clone().text());
+    assert.equal(codex.hits.length, 1, '停止换号：第二个账号没有被打到');
+    const [entry] = await dump(runtime);
+    assert.equal(entry.summary.committed, false);
+
+    await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'pass' } });
+    codex.failures.remaining = 1;
+    const recovered = await codex.send(true);
+    assert.equal(recovered.status, 200, await recovered.clone().text());
+    assert.equal(codex.hits.length, 3, '不停止时照常换号');
+  });
 });

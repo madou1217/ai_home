@@ -137,7 +137,7 @@ async function startClaudeServer(t) {
     body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: text }] }),
     signal: AbortSignal.timeout(10000)
   });
-  return { dir, upstreamBodies, upstreamTokens, accountRefs, management, message, failures };
+  return { dir, base, upstreamBodies, upstreamTokens, accountRefs, management, message, failures };
 }
 
 module.exports = { MANAGEMENT_KEY, tempDir, socketFor, manifest, packPlugin, waitFor, startClaudeServer };

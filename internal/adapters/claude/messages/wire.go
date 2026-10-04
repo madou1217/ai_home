@@ -26,6 +26,8 @@ type requestDTO struct {
 type messageDTO struct {
 	Role    string       `json:"role"`
 	Content []contentDTO `json:"content"`
+	// OutputConfig 只出现在对话中途的 system 消息上，携带按轮推理强度（per-turn-control beta）。
+	OutputConfig *outputConfigDTO `json:"output_config,omitempty"`
 }
 
 // contentDTO 是当前 Canonical Content 可映射到的 Messages 内容块联合结构。

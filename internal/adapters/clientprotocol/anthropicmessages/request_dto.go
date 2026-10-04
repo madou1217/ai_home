@@ -29,10 +29,12 @@ type requestDTO struct {
 	Safeguards json.RawMessage `json:"safeguards"`
 }
 
-// messageDTO 是 user 或 assistant 历史消息。
+// messageDTO 是 user、assistant 或对话中途的 system 历史消息。
 type messageDTO struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
+	// OutputConfig 是 system 消息的按轮控制（per-turn-control beta），见 turn_output_config_decoder.go。
+	OutputConfig json.RawMessage `json:"output_config"`
 }
 
 // contentHeaderDTO 是内容块联合类型的判别头。

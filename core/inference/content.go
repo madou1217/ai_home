@@ -437,6 +437,8 @@ type Message struct {
 	role     Role
 	phase    MessagePhase
 	contents []Content
+	// turnEffort 是 system 消息携带的按轮推理强度（见 message_turn_effort.go）。
+	turnEffort ReasoningEffort
 }
 
 // NewMessage 创建角色与内容组合，并持有内容的防御性副本。
@@ -488,15 +490,16 @@ func (message Message) Contents() []Content {
 // IsValid 判断消息角色、内容和组合仍满足构造不变量。
 func (message Message) IsValid() bool {
 	_, err := newMessage(message.role, message.phase, message.contents)
-	return err == nil
+	return err == nil && validTurnEffort(message.role, message.turnEffort)
 }
 
 // clone 返回消息及其所有嵌套内容的独立快照。
 func (message Message) clone() Message {
 	return Message{
-		role:     message.role,
-		phase:    message.phase,
-		contents: cloneContents(message.contents),
+		role:       message.role,
+		phase:      message.phase,
+		contents:   cloneContents(message.contents),
+		turnEffort: message.turnEffort,
 	}
 }
 

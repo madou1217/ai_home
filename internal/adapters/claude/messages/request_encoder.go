@@ -18,6 +18,7 @@ const (
 	betaRedactThinking      = "redact-thinking-2026-02-12"
 	betaWebSearch           = "web-search-2025-03-05"
 	betaContextManagement   = "context-management-2025-06-27"
+	betaPerTurnControl      = "per-turn-control-2026-07-01"
 )
 
 // encodedRequest 保存 JSON 正文及其功能所需的 beta Header。
@@ -220,9 +221,13 @@ func (encoder *requestEncoder) encodeMessages() (
 			if role != inference.RoleSystem {
 				return nil, nil, ErrUnsupportedRequest
 			}
+			outputConfig, err := encoder.encodeTurnEffort(message.TurnEffort())
+			if err != nil {
+				return nil, nil, err
+			}
 			conversation = appendClaudeConversationMessage(
 				conversation,
-				messageDTO{Role: "system", Content: contents},
+				messageDTO{Role: "system", Content: contents, OutputConfig: outputConfig},
 			)
 			encoder.addBeta(betaClaudeCode)
 			continue
@@ -259,8 +264,11 @@ func appendClaudeConversationMessage(
 	if len(message.Content) == 0 {
 		return conversation
 	}
+	// 带按轮控制的 system 消息各自标记一轮，不能与相邻消息合并。
 	if len(conversation) == 0 ||
-		conversation[len(conversation)-1].Role != message.Role {
+		conversation[len(conversation)-1].Role != message.Role ||
+		conversation[len(conversation)-1].OutputConfig != nil ||
+		message.OutputConfig != nil {
 		return append(conversation, message)
 	}
 	last := &conversation[len(conversation)-1]

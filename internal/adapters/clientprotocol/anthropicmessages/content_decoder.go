@@ -108,6 +108,10 @@ func decodeMessages(
 		if messageErr != nil {
 			return nil, nil, invalidField(field)
 		}
+		message, err = applyTurnOutputConfig(message, wireMessage.OutputConfig, field+".output_config")
+		if err != nil {
+			return nil, nil, err
+		}
 		messages = append(messages, message)
 		breakpoints = append(breakpoints, contentBreakpoints...)
 	}

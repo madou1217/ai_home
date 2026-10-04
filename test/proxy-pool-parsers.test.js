@@ -215,6 +215,7 @@ test('代理协议与内核以插件注册：协议插件覆盖全部受支持�
     assert.equal(typeof plugin.parse, 'function');
     assert.equal(typeof plugin.encode, 'function');
     assert.equal(typeof plugin.compile[core.id], 'function', `${plugin.id} 需要提供 compile.${core.id}`);
+    assert.equal(typeof plugin.compile['sing-box'], 'function', `${plugin.id} 需要提供 compile['sing-box']（ZCode 出口）`);
     assert.ok(plugin.editor.fields.length > 0);
     plugin.protocols.forEach((protocol) => covered.add(protocol));
   }

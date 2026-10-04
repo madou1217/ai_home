@@ -340,7 +340,7 @@ test('编译器拒绝端口冲突、空候选和不支持的节点协议', () =>
   }), /unsupported_proxy_protocol_tuic/);
 });
 
-test('每个受支持的代理协议都编译为各自的 sing-box outbound，未覆盖的协议显式报错', () => {
+test('每个受支持的代理协议都由协议插件编译为各自的 sing-box outbound，未覆盖的协议显式报错', () => {
   const { compileZcodeSingBoxOutbound } = loadCompiler();
   const { SUPPORTED_PROTOCOLS } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
   const expectedType = {

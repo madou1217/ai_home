@@ -259,21 +259,25 @@ async function startClaudeServer(t) {
   const dir = tempDir('aihm2e-');
   const aiHomeDir = path.join(dir, 'home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
-  const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
-    provider: 'claude', cliAccountId: '1', identitySeed: 'oauth:claude:uuid:33333333-3333-4333-8333-333333333333'
+  const accountRefs = ['1', '2'].map((cliId) => {
+    const uuid = `${cliId.repeat(8)}-${cliId.repeat(4)}-4${cliId.repeat(3)}-8${cliId.repeat(3)}-${cliId.repeat(12)}`;
+    const { accountRef } = registerAccountIdentity(fs, aiHomeDir, { provider: 'claude', cliAccountId: cliId, identitySeed: `oauth:claude:uuid:${uuid}` });
+    writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: { claudeAiOauth: {
+      accessToken: `access-${cliId}`, refreshToken: `refresh-${cliId}`, expiresAt: Date.now() + 7200_000,
+      account: { uuid, emailAddress: `m2-${cliId}@example.com` }
+    } } });
+    return accountRef;
   });
-  writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: { claudeAiOauth: {
-    accessToken: 'access-1', refreshToken: 'refresh-1', expiresAt: Date.now() + 7200_000,
-    account: { uuid: '33333333-3333-4333-8333-333333333333', emailAddress: 'm2@example.com' }
-  } } });
 
   const upstreamBodies = [];
+  const upstreamTokens = [];
   const upstream = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
       if (req.url !== '/v1/messages') { res.writeHead(404); res.end('{}'); return; }
       upstreamBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      upstreamTokens.push(req.headers.authorization);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({
         id: 'msg_m2', type: 'message', role: 'assistant', model: 'claude-opus-5',
@@ -292,12 +296,15 @@ async function startClaudeServer(t) {
   }), createServerDeps(aiHomeDir, createProcessCapture(), lifecycle, {
     loadServerRuntimeAccounts,
     applyReloadState,
-    checkStatus: () => ({ configured: true, accountName: 'm2@example.com' }),
+    checkStatus: () => ({ configured: true, accountName: 'm2-1@example.com' }),
     accountRuntimeEvents: new EventEmitter()
   }));
   const index = createAccountStateIndex({ fs, aiHomeDir });
-  createAccountStateService({ accountStateIndex: index }).recordRuntimeSuccess(accountRef, 'claude', { configured: true, authMode: 'oauth' });
-  index.setStatus(accountRef, 'up');
+  const stateService = createAccountStateService({ accountStateIndex: index });
+  for (const accountRef of accountRefs) {
+    stateService.recordRuntimeSuccess(accountRef, 'claude', { configured: true, authMode: 'oauth' });
+    index.setStatus(accountRef, 'up');
+  }
   index.close();
 
   t.after(async () => {
@@ -320,7 +327,7 @@ async function startClaudeServer(t) {
     body: JSON.stringify({ model, max_tokens: 8, messages: [{ role: 'user', content: text }] }),
     signal: AbortSignal.timeout(10000)
   });
-  return { dir, upstreamBodies, management, message };
+  return { dir, upstreamBodies, upstreamTokens, accountRefs, management, message };
 }
 
 test('through aih server: no plugin means an untouched request; an enabled plugin rewrites and rejects', async (t) => {
@@ -350,4 +357,77 @@ test('through aih server: no plugin means an untouched request; an enabled plugi
   assert.equal(upstreamBodies.length, 2, '被拒绝的请求不出站');
 
   assert.ok(await waitFor(async () => Object.keys((await management('')).runtime.leases).length === 0), '请求结束后租约全部释放');
+});
+
+// ---- gateway.account ----
+
+const { runAccountStage } = require('../lib/plugins/gateway/account-stage');
+const { chooseServerAccount } = require('../lib/server/account-selector');
+
+function accountLease(chain, generation = 9) {
+  return { generation, snapshot: { generation, byCapability: new Map([['gateway.account', chain]]) } };
+}
+const accountStep = (id, extra = {}) => ({ id, capability: 'gateway.account', order: 0, failurePolicy: 'deny', instanceId: id.split('.')[0], ...extra });
+
+test('account plugins only reorder the host candidates and see no credentials', async () => {
+  const pool = [
+    { accountRef: 'acct_a', authType: 'oauth', accessToken: 'secret-a', email: 'a@example.com' },
+    { accountRef: 'acct_b', apiKeyMode: true, openaiApiKey: 'sk-b' },
+    { accountRef: 'acct_c', authType: 'oauth' }
+  ];
+  const seen = [];
+  const runtime = fakeRuntime({
+    'p.first': (input) => { seen.push(input); return { prefer: ['acct_c'] }; },
+    'q.second': (input) => { seen.push(input); return { prefer: ['acct_b'] }; }
+  });
+  const order = await runAccountStage(runtime, accountLease([accountStep('p.first'), accountStep('q.second')]), { provider: 'codex', model: 'gpt-x', candidates: pool });
+  assert.deepEqual(order, ['acct_b', 'acct_c']);
+  assert.deepEqual(seen[0].candidates, [
+    { accountRef: 'acct_a', authType: 'oauth' }, { accountRef: 'acct_b', authType: 'api-key' }, { accountRef: 'acct_c', authType: 'oauth' }
+  ], '候选只暴露 accountRef 与认证类型');
+  assert.deepEqual(seen[1].candidates.map((item) => item.accountRef), ['acct_c', 'acct_a', 'acct_b'], '后一个插件看到前一个调整后的顺序');
+
+  await assert.rejects(runAccountStage(fakeRuntime({ 'x.bad': () => ({ prefer: ['acct_outside'] }) }), accountLease([accountStep('x.bad')]),
+    { provider: 'codex', model: 'gpt-x', candidates: pool }), { code: 'plugin_scope_violation' });
+  assert.deepEqual(await runAccountStage(fakeRuntime({ 'x.bad': () => ({ prefer: ['acct_outside'] }) }), accountLease([accountStep('x.bad', { failurePolicy: 'delegate' })]),
+    { provider: 'codex', model: 'gpt-x', candidates: pool }), [], 'delegate 忽略越界插件的偏好');
+});
+
+test('plugin account preference ranks after session affinity and before the default account', () => {
+  const accounts = ['acct_1', 'acct_2', 'acct_3'].map((accountRef) => ({ accountRef, provider: 'claude', authType: 'oauth' }));
+  const state = { strategy: 'round_robin' };
+  assert.equal(chooseServerAccount(accounts, state, 'claude', { provider: 'claude', preferredAccountRefs: ['acct_3'], preferredAccountRef: 'acct_2' }).accountRef, 'acct_3');
+  assert.equal(chooseServerAccount(accounts, state, 'claude', { provider: 'claude', preferredAccountRefs: ['acct_9', 'acct_2'] }).accountRef, 'acct_2', '偏好不可用时取下一个');
+  // 会话亲和先绑定 acct_1，之后插件偏好也不能把同一会话挪走。
+  assert.equal(chooseServerAccount(accounts, state, 'claude', { provider: 'claude', sessionKey: 's1', preferredAccountRefs: ['acct_1'] }).accountRef, 'acct_1');
+  assert.equal(chooseServerAccount(accounts, state, 'claude', { provider: 'claude', sessionKey: 's1', preferredAccountRefs: ['acct_3'] }).accountRef, 'acct_1');
+  assert.equal(chooseServerAccount(accounts, state, 'claude', { provider: 'claude', preferredAccountRefs: ['acct_2'], excludeAccountRefs: ['acct_2'] }).accountRef !== 'acct_2', true, '已试过的账号不因偏好被重选');
+});
+
+const ACCOUNT_POLICY_MANIFEST = manifest('aih.test.account-policy', {
+  configSchema: { type: 'object', additionalProperties: false, required: ['prefer'], properties: { prefer: { type: 'string' } } },
+  contributes: [{ id: 'policy.account', capability: 'gateway.account', version: 1 }]
+});
+const ACCOUNT_POLICY_SOURCE = `export default { apply(ctx, config) {
+  ctx.aih.register('policy.account', (input) => ({ prefer: [config.prefer] }));
+} };`;
+
+test('through aih server: an account policy plugin steers selection within the authorized pool only', async (t) => {
+  const { dir, upstreamTokens, accountRefs, management, message } = await startClaudeServer(t);
+  assert.equal((await management('/install', { file: packPlugin(dir, 'account-policy', ACCOUNT_POLICY_MANIFEST, ACCOUNT_POLICY_SOURCE) })).ok, true);
+  const enabled = await management('/enable', { pluginId: 'aih.test.account-policy', configuration: { prefer: accountRefs[1] } });
+  assert.equal(enabled.ok, true, JSON.stringify(enabled));
+  for (let index = 0; index < 3; index += 1) {
+    const response = await message('claude-opus-5', `turn ${index}`);
+    assert.equal(response.status, 200, await response.text());
+  }
+  assert.deepEqual(upstreamTokens, ['Bearer access-2', 'Bearer access-2', 'Bearer access-2'], '每次都选插件偏好的账号');
+
+  const scoped = await management('/enable', { pluginId: 'aih.test.account-policy', configuration: { prefer: 'acct_not_in_pool' } });
+  assert.equal(scoped.ok, true);
+  const violated = await message('claude-opus-5', 'outside');
+  const body = await violated.json();
+  assert.equal(violated.status, 502);
+  assert.equal(body.error.code, 'plugin_scope_violation');
+  assert.equal(upstreamTokens.length, 3, '越界的插件偏好不会让请求出站');
 });

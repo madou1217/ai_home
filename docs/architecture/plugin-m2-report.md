@@ -19,7 +19,7 @@
 
 ## 2. 路由 × 能力覆盖
 
-Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（request / account / attempt / observe），Go 承接的路由（含 WebSocket 升级）一律交回 Node（`shouldDeferToNodeForPlugins`）。下表是 Node 侧的实际覆盖情况。
+Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（request / account / attempt / observe），Go 承接的路由（含 WebSocket 升级）一律交回 Node（`shouldDeferToNodeForPlugins`）。HTTP 与 upgrade 入口 `go-core-gateway-forwarder.js` 都同步调用 `deferToNode`，插件活跃时它在第一行返回 true。下表是 Node 侧的实际覆盖情况。
 
 | 路由 / 处理器 | request | account | attempt | observe | catalog |
 | --- | --- | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 ## 3. gateway.attempt 语义
 
 - **插件收到的输入。** 插件 handler 收到 `{ provider, model, attempt, accountRef, authType }`，上下文多一个 `next()`。`next()` 经反向调用 `gateway.next` 执行内层（下一个中间件；最内层是真实的上游尝试），**在提交点返回**摘要：`{ committed, outcome, status?, error?, stopped?, rejected? }`。
-  - 提交点指响应头已写给客户端。流式请求是第一帧回答输出写出时（codex 路径会扣住 `created` / `in_progress` 前导帧，等首个回答帧通过提交闸门才写头，因此提交前的额度拒绝仍能换号；已由端到端测试确认摘要的 `committed` 只在上游应答后出现）；非流式请求是整个响应结束。
+  - 提交点指响应头已写给客户端。流式请求是第一帧回答输出写出时（codex 路径会扣住 `created` / `in_progress` 前导帧，等首个回答帧通过提交闸门才写头，因此提交前的额度拒绝仍能换号；见 `codex-response-stream.js` 的提交闸门；codex stop 测试里，上游回 500 的那次尝试摘要为 `committed: false`）；非流式请求是整个响应结束。
   - 提交点的检测方式：每个响应包一次 `res.writeHead`。`write`、`end`、`flushHeaders` 隐式写头时也会经过 `writeHead`。
 - **插件只能收窄宿主行为。**
   - 不调用 `next()` 时，可以返回 `{ reject: { status, message } }`（4xx/5xx），上游零命中。
@@ -63,7 +63,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 
 测试环境与结果：
 
-- **macOS**（Node 22.16）：插件全套（M0 + M1 + M2 + attempt + 反向 RPC，共 73 项）全部通过。另外，引用了选号循环和两个调用方的 33 个网关测试文件（599 项）跑出 596 通过、0 失败。
+- **macOS**（Node 22.16）：插件全套（M0 + M1 + M2 + attempt + 反向 RPC，共 73 项）全部通过。另外，在 `b70f64dd` 的干净 worktree 里跑了引用选号循环、两个调用方和 WS 处理器的 33 个网关测试文件：593 项通过、3 项跳过、0 失败；其中 2 个文件因 worktree 缺 `web/node_modules` 无法加载，补上链接后 42/42 通过。
 - **Windows**（Node 22.23，`b70f64dd`）：插件全套 72 项通过、0 失败、1 项跳过（符号链接权限）。
 - 所有测试都在 `/tmp` 临时 aiHomeDir、随机端口上运行，不触碰用户的 `~/.ai_home` 与 9527。
 

@@ -2,7 +2,7 @@
 
 日期：2026-10-04。对应 [插件化规划](../plans/2026-09-30-plugin-architecture-plan.md) §7 的 M2，建立在 [M0](plugin-m0-report.md)、[M1](plugin-m1-report.md) 之上。只记录有运行证据的结论；没有证据的条目标为「未完成」。
 
-结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。以下几项没有完成：Go 原生插件端口、Responses WebSocket 按 `response.create` 接入、真实协议 shadow 验证，以及部分路由的 account / attempt / observe 覆盖。这些场景目前的处理方式见 §2 和 §5：Go 把请求交回 Node，WebSocket 以 426 让客户端回落 HTTPS。都不是静默绕过插件。
+结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。Responses WebSocket 已按 `response.create` 接入 request 与 observe。以下几项没有完成：Go 原生插件端口、WebSocket 上的 account / attempt、真实协议 shadow 验证，以及部分路由的 account / attempt / observe 覆盖。这些场景目前的处理方式见 §2 和 §5：Go 把请求交回 Node；account / attempt 插件活跃时，WebSocket 以 426 让客户端回落 HTTPS。都不是静默绕过插件。
 
 ## 1. 交付物
 
@@ -16,6 +16,7 @@
 | 反向 RPC（协议 v2） | `9841075a` | 宿主可以在某个调用名下回调网关（`parent` 指向仍在进行中的调用）。父调用一结束（结果、错误、取消、超时、断开），挂在下面的反向调用两端都会取消。Go 客户端对反向调用立即回 `method_unknown` |
 | gateway.attempt | `454339bc`、`9b0bc0c3` | 单次 next 的洋葱中间件，详见 §3 |
 | WebSocket 明确拒绝 | `b70f64dd` | 见 §2 |
+| WebSocket 按 response.create 接入 | `46210ac2` | 包装交给桥接的客户端 socket（桥接状态机不改）。每个 `response.create` 取到达时的代次租约并跑 gateway.request；被拒绝的 create 不出站，回带状态码的 `error` 事件。上游事件按 response id 归属，终止或断开时投递 observe 并释放租约 |
 
 ## 2. 路由 × 能力覆盖
 
@@ -28,7 +29,9 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 | `/v1/images/generations`（独立选号循环） | ✓ | ✗ | ✗ | ✗ | ✓ |
 | Fabric 远端节点转发（`tryFabricGatewayRoute`） | ✓ | ✗（由远端节点选号） | ✗ | ✗ | ✓ |
 | `/v1/models` | — | — | — | — | ✓ |
-| codex Responses WebSocket | 有 request / account / attempt 插件时回 **426**（`plugin_websocket_unsupported`）。codex 遇到 426 会在本会话内回落 HTTPS（见 codex-rs `core/src/client.rs`，只有 `UPGRADE_REQUIRED` 触发 `FallbackToHttp`）。只有 observe 插件时不拒绝，但 WS 尝试没有观察事件 | | | | |
+| codex Responses WebSocket（每个 `response.create`） | ✓ | 426 | 426 | ✓（每个 response 一条，只覆盖首次尝试，不含桥内换号恢复） | ✓ |
+
+表中 426 指：account 或 attempt 插件活跃时，`/v1/responses` 升级回 **426**（`plugin_websocket_unsupported`）。codex 遇到 426 会在本会话内回落 HTTPS（见 codex-rs `core/src/client.rs`，只有 `UPGRADE_REQUIRED` 触发 `FallbackToHttp`），HTTPS 上插件阶段齐全。
 
 上表中 ✗ 表示该路由不经过对应阶段，属于已知缺口（§5），不是由插件明确拒绝。
 
@@ -76,7 +79,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 | 发送后拒绝重放 | ✓ 已提交的尝试上，`stop` 被忽略；网关原有的「已暴露的回答不重放」规则不变 |
 | 背压 | 插件不在字节路径上：中间件只拿到提交点摘要，响应字节仍由原有转发器直接写给客户端，背压语义不变。没有单独的插件背压测试 |
 | 连续 SSE 跨升级保持合法归属 | ✓ 尝试停在 `next()` 时发布新代次：该尝试仍走旧代次，旧代次排空后卸载 |
-| WS 跨升级保持合法归属 | **未完成**：网关插件活跃时 WS 以 426 让客户端回落 HTTPS（端到端测试覆盖 426 与停用后恢复） |
+| WS 跨升级保持合法归属 | ✓（request / observe）：同一连接上，回答进行中发布新代次，该回答仍走旧代次，结束后旧代次卸载；下一个 `response.create` 拿新代次（`test/plugin-gateway-websocket.test.js`，macOS 与 Windows 均通过）。account / attempt 仍以 426 回落 |
 | Node/Go 命中同一 instance/generation | 以「Go 交回 Node」满足：插件活跃时 Go 不处理任何网关请求。**Go 原生插件端口未完成** |
 | shadow 验证真实协议 | **未完成**：只用假上游验证过 claude 透传与 codex native Responses 流式。按约束，测试插件不装到用户的真实网关上 |
 
@@ -91,7 +94,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 ## 5. 已知限制
 
 1. **Go 没有插件端口。** 插件活跃时所有网关流量走 Node，Go 承接的性能优势在此期间不生效。
-2. **Responses WebSocket 未接入插件阶段。** 要按 `response.create` 取租约、在 WS 桥里重新选号并重放上下文，需要改造 `codex-responses-session.js` 的状态机，目前以 426 回落 HTTPS 代替。
+2. **Responses WebSocket 上的 account / attempt 未接入。** 两者需要进入桥接的初始选路与换号恢复（`codex-responses-session.js`）。这部分正在被另一项改动重写（按模型初始选路、通用失败分类，尚未提交），等它落地后再加钩子。规则已定：账号偏好只用于连接的首个 create（可能重新选路）和恢复候选；之后的 create 留在连接的账号上，因为该账号持有续写。在那之前，两者活跃时以 426 回落 HTTPS。另外，WS 上 response id 以外的增量事件按先到先得归属；在流水线（多个 create 同时进行）时，观察摘要的归属是近似的。
 3. **images 与 Fabric 远端路由只经过 request 阶段。** 它们有各自的选号逻辑，或者由远端节点选号。
 4. **route policy 只能对账号排序。** 规划里「提议模型选择」没有实现；改模型目前只能经 gateway.request 改写 `model` 字段。
 5. **observe 事件不含 token 用量。** 只有尝试级摘要，用量仍以网关自己的用量库为准。

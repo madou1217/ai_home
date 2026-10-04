@@ -245,7 +245,16 @@ function main(argv = process.argv.slice(2)) {
   const archive = buildLocalArchive(options, sha);
   try {
     console.log(`[local] uploading ${(fs.statSync(archive).size / 1024 / 1024).toFixed(1)} MB`);
-    run('scp', ['-q', ...sshArgs(options), archive, `${options.ssh}:${remoteArchive}`]);
+    // 上传可安全重试（覆盖同名临时文件）；远端执行不重试，失败由预检/回报决定。
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        run('scp', ['-q', ...sshArgs(options), archive, `${options.ssh}:${remoteArchive}`]);
+        break;
+      } catch (error) {
+        if (attempt >= 3) throw error;
+        console.log(`[local] upload failed (${error.message}), retrying ${attempt + 1}/3 …`);
+      }
+    }
     run('ssh', [...sshArgs(options), options.ssh, 'bash', '-s', '--', remoteArchive, sha], { input: remoteScript });
   } finally {
     fs.rmSync(archive, { force: true });

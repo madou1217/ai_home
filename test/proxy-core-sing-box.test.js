@@ -195,3 +195,21 @@ test('代理池切换内核：持久化选择、运行中拒绝切换、端口�
   assert.equal(blocked.error, 'proxy_core_switch_requires_stop');
   assert.equal(service.core.id, 'sing-box');
 });
+
+test('代理池数据目录遵循 AIH_HOST_HOME：存储、运行时与托管内核安装落在同一处', () => {
+  const { resolveProxyPoolAiHome } = require('../lib/cli/services/toolkit/proxy-pool/aih-home');
+  const { ProxyNodeStore } = require('../lib/cli/services/toolkit/proxy-pool/proxy-node-store');
+  const hostHome = tempDir();
+  const env = { AIH_HOST_HOME: hostHome, HOME: '/should/not/be/used', PATH: '' };
+  const expected = path.join(hostHome, '.ai_home');
+  assert.equal(resolveProxyPoolAiHome({ env }), expected);
+  assert.equal(resolveProxyPoolAiHome({ env: { ...env, AIH_HOME: '/explicit' } }), '/explicit');
+  assert.equal(resolveProxyPoolAiHome({ env, aiHomeDir: '/injected' }), '/injected');
+  assert.equal(new ProxyNodeStore({ env }).filePath, path.join(expected, 'proxy-pool.json'));
+  assert.equal(getProxyCore('sing-box').createRuntime({ env }).runtimeDir, path.join(expected, 'run', 'proxy-pool', 'sing-box'));
+  const managed = discoverSingBoxCore({ env, platform: 'linux' });
+  assert.equal(managed.installed, false);
+  fs.mkdirSync(path.join(expected, 'tools', 'sing-box', 'current'), { recursive: true });
+  writeFakeBinary(path.join(expected, 'tools', 'sing-box', 'current'), 'sing-box version 1.14.2');
+  assert.equal(discoverSingBoxCore({ env, platform: 'linux' }).binaryPath, path.join(expected, 'tools', 'sing-box', 'current', 'sing-box'));
+});

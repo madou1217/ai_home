@@ -431,3 +431,118 @@ test('through aih server: an account policy plugin steers selection within the a
   assert.equal(body.error.code, 'plugin_scope_violation');
   assert.equal(upstreamTokens.length, 3, '越界的插件偏好不会让请求出站');
 });
+
+// ---- model.catalog ----
+
+const { collectCatalogAliases, mergePluginAliases } = require('../lib/plugins/gateway/catalog');
+
+function catalogSnapshot(items) {
+  return { generation: 3, byCapability: new Map([['model.catalog', items.map((id) => ({ id, capability: 'model.catalog', instanceId: id.split('.')[0], failurePolicy: 'deny', order: 0 }))]]) };
+}
+
+test('catalog aliases are validated, conflicts reject the candidate, and user aliases win', async () => {
+  const invokeWith = (table) => async (id) => ({ value: table[id] });
+  const ok = await collectCatalogAliases(invokeWith({ 'a.cat': { aliases: [{ alias: 'team-fast', target: 'gpt-x' }] } }), catalogSnapshot(['a.cat']));
+  assert.deepEqual(ok.map((item) => [item.alias, item.target, item.instanceId]), [['team-fast', 'gpt-x', 'a']]);
+  await assert.rejects(collectCatalogAliases(invokeWith({
+    'a.cat': { aliases: [{ alias: 'shared', target: 'x' }] }, 'b.cat': { aliases: [{ alias: 'SHARED', target: 'y' }] }
+  }), catalogSnapshot(['a.cat', 'b.cat'])), { code: 'plugin_catalog_conflict' });
+  for (const bad of [{ aliases: 'nope' }, { aliases: [{ alias: '../x', target: 'y' }] }, { aliases: [{ alias: 'same', target: 'same' }] }]) {
+    await assert.rejects(collectCatalogAliases(invokeWith({ 'a.cat': bad }), catalogSnapshot(['a.cat'])), { code: 'plugin_catalog_invalid' });
+  }
+  const merged = mergePluginAliases([{ id: 'u1', alias: 'Team-Fast', target: 'user-target' }],
+    { catalogAliases: [{ alias: 'team-fast', target: 'plugin-target', instanceId: 'a' }, { alias: 'other', target: 't', instanceId: 'a' }] });
+  assert.deepEqual(merged.map((item) => [item.alias, item.target]), [['Team-Fast', 'user-target'], ['other', 't']], '同名时用户别名优先');
+  const shadowing = mergePluginAliases([{ id: 'u2', alias: 'mine', target: 'real-model' }],
+    { catalogAliases: [{ alias: 'real-model', target: 'elsewhere', instanceId: 'a' }] }, { isRealModel: (id) => id === 'real-model' });
+  assert.deepEqual(shadowing.map((item) => item.alias), ['mine'], '与真实模型同名的插件别名被丢弃，不会让用户别名失效');
+});
+
+const CATALOG_MANIFEST = manifest('aih.test.catalog', {
+  contributes: [{ id: 'catalog.aliases', capability: 'model.catalog', version: 1 }]
+});
+const CATALOG_SOURCE = `export default { apply(ctx) {
+  ctx.aih.register('catalog.aliases', () => ({ aliases: [{ alias: 'team-default', target: 'claude-opus-5', description: 'team default' }] }));
+} };`;
+
+test('through aih server: a catalog plugin alias routes to its target and disappears when disabled', async (t) => {
+  const { dir, upstreamBodies, management, message } = await startClaudeServer(t);
+  assert.equal((await management('/install', { file: packPlugin(dir, 'catalog', CATALOG_MANIFEST, CATALOG_SOURCE) })).ok, true);
+  const enabled = await management('/enable', { pluginId: 'aih.test.catalog' });
+  assert.equal(enabled.ok, true, JSON.stringify(enabled));
+  assert.deepEqual((await management('')).runtime.catalogAliases, [{ alias: 'team-default', target: 'claude-opus-5', instanceId: 'aih.test.catalog' }]);
+
+  const aliased = await message('team-default', 'via alias');
+  assert.equal(aliased.status, 200, await aliased.text());
+  assert.equal(upstreamBodies.at(-1).model, 'claude-opus-5', '上游收到的是目标模型');
+
+  await management('/disable', { instanceId: 'aih.test.catalog' });
+  assert.deepEqual((await management('')).runtime.catalogAliases, []);
+  await message('team-default', 'alias gone');
+  assert.equal(upstreamBodies.at(-1).model, 'team-default', '停用后别名不再改写，透传模式原样转发');
+});
+
+test('the auto-mode model list includes catalog plugin aliases and refreshes when the generation changes', async () => {
+  const { handleV1Request } = require('../lib/server/v1-router');
+  const { buildOpenAIModelsList } = require('../lib/server/models');
+  const { handleUpstreamModels } = require('../lib/server/upstream-endpoints');
+  const dir = tempDir('aihm2l-');
+  const aiHomeDir = path.join(dir, 'home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const state = {
+    metrics: { totalRequests: 0, routeCounts: {}, totalSuccess: 0 },
+    accounts: { codex: [], gemini: [{ id: '1', accountRef: 'acct_0123456789abcdef0123', provider: 'gemini', accessToken: 't', availableModels: ['gemini-x'] }], claude: [] },
+    modelRegistry: { providers: { codex: new Set(), gemini: new Set(), claude: new Set() } },
+    modelsCache: { ids: [], updatedAt: 0, byAccount: {}, sourceCount: 0 }
+  };
+  let control = null;
+  let runtime = null;
+  const listIds = async () => {
+    const res = { statusCode: 0, headers: {}, body: '', setHeader(k, v) { this.headers[k] = v; }, write(c = '') { this.body += String(c); }, end(c = '') { this.body += String(c); } };
+    await handleV1Request({
+      req: { headers: {}, url: '/v1/models' }, res, method: 'GET', pathname: '/v1/models',
+      options: { backend: 'codex-adapter', provider: 'auto', upstreamTimeoutMs: 500, modelsProbeAccounts: 1 },
+      state, requiredClientKey: '', cooldownMs: 1000, maxRequestBodyBytes: 1024 * 1024, localExecOpts: {},
+      deps: {
+        parseAuthorizationBearer: () => '',
+        writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+        readRequestBody: async () => Buffer.from(''),
+        loadAliases: async () => ({ aliases: [] }), fs, aiHomeDir,
+        buildOpenAIModelsList,
+        handleCodexModels: async ({ res: routeRes }) => {
+          routeRes.statusCode = 200;
+          routeRes.end(JSON.stringify({ object: 'list', data: [{ id: 'gemini-x', object: 'model' }] }));
+        },
+        handleUpstreamModels: async ({ res: routeRes }) => {
+          routeRes.statusCode = 200;
+          routeRes.end(JSON.stringify({ object: 'list', data: [] }));
+        },
+        fetchModelsForAccount: async () => ['gemini-x'],
+        FALLBACK_MODELS: []
+      }
+    });
+    if (!res.body) throw new Error('empty body status=' + res.statusCode + ' headers=' + JSON.stringify(res.headers));
+    return { status: res.statusCode, ids: JSON.parse(res.body).data.map((item) => item.id) };
+  };
+  try {
+    const before = await listIds();
+    assert.equal(before.status, 200, JSON.stringify(before));
+    assert.equal(before.ids.includes('team-default'), false);
+    ({ control, runtime } = getPluginSystem(state, { aiHomeDir, socketPath: socketFor(dir) }));
+    control.install(packPlugin(dir, 'catalog', manifest('aih.test.catalog', {
+      contributes: [{ id: 'catalog.aliases', capability: 'model.catalog', version: 1 }]
+    }), `export default { apply(ctx) { ctx.aih.register('catalog.aliases', () => ({ aliases: [
+      { alias: 'team-default', target: 'gemini-x' }, { alias: 'gemini-x', target: 'something-else' }
+    ] })); } };`));
+    await control.enable({ pluginId: 'aih.test.catalog' });
+    const enabled = await listIds();
+    assert.equal(enabled.ids.includes('team-default'), true, `插件别名进入列表：${enabled.ids}`);
+    assert.equal(enabled.ids.filter((id) => id === 'gemini-x').length, 1, '与真实模型同名的插件别名不覆盖真实条目');
+    await control.disable({ instanceId: 'aih.test.catalog' });
+    const disabled = await listIds();
+    assert.equal(disabled.ids.includes('team-default'), false, '代次变化后缓存失效，别名消失');
+  } finally {
+    if (runtime) await runtime.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -51,6 +52,8 @@ type Dependencies struct {
 	Credentials    inferencegateway.CredentialObservationVerifier
 	ModelRefreshes inferencegateway.ModelRefreshScheduler
 	Clock          func() time.Time
+	// FailureLog 可选：请求以失败结束时收到一份低敏摘要（见 FailureReport）。
+	FailureLog func(FailureReport)
 }
 
 type Handler struct {
@@ -94,6 +97,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "invalid_request_body")
 		return
 	}
+	trail := handler.newFailureTrail(metadata.Model)
 	cursor, err := handler.Accounts.Open(ctx, metadata.Model)
 	if errors.Is(err, ErrNotNativeRoute) {
 		request.Body = io.NopCloser(bytes.NewReader(payload))
@@ -101,7 +105,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if err != nil || cursor == nil {
-		writeError(response, "no_available_account")
+		handler.fail(response, trail, "no_available_account")
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -135,6 +139,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			continue
 		}
 		contacted = true
+		attemptStarted := trail.now()
 		upstream, err := handler.Upstream.RoundTripNative(ctx, selection.Credential, payload, request.Header, request.Host)
 		if err != nil || upstream == nil || upstream.Body == nil {
 			if upstream != nil && upstream.Body != nil {
@@ -146,9 +151,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			if err == nil {
 				err = io.ErrUnexpectedEOF
 			}
-			if failure, classifyErr := attemptfailure.NewTransport(err); classifyErr == nil {
+			failure, classifyErr := attemptfailure.NewTransport(err)
+			if classifyErr == nil {
 				handler.recordFailure(ctx, route, selection, failure)
 			}
+			trail.attempt(selection.AccountRef, "transport", failure, err.Error(), attemptStarted)
 			continue
 		}
 		if last != nil {
@@ -164,7 +171,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			if failure.IsValid() && failure.RuntimeKind() == runtimecore.FailureSafetyRejected {
 				handler.recordFailure(ctx, route, selection, failure)
 				_ = upstream.Body.Close()
-				writeSafetyError(response)
+				trail.attempt(selection.AccountRef, "safety_rejected", failure, "", attemptStarted)
+				handler.fail(response, trail, "upstream_safety_rejected")
 				return
 			}
 			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream)
@@ -177,11 +185,12 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		classification, classifyErr := codexfailure.ObserveHTTP(&observedResponse, handler.Clock())
 		failure, failureErr := attemptfailure.New(classification)
 		retry := false
+		trail.attempt(selection.AccountRef, fmt.Sprintf("http_%d", upstream.StatusCode), failure, "", attemptStarted)
 		if classifyErr == nil && failureErr == nil {
 			handler.recordFailure(ctx, route, selection, failure)
 			if failure.RuntimeKind() == runtimecore.FailureSafetyRejected {
 				_ = upstream.Body.Close()
-				writeSafetyError(response)
+				handler.fail(response, trail, "upstream_safety_rejected")
 				return
 			}
 			retry = failure.ResponseFailure().Retryable()
@@ -192,6 +201,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			response.WriteHeader(upstream.StatusCode)
 			copyBody(response, io.MultiReader(bytes.NewReader(prefix), upstream.Body))
 			_ = upstream.Body.Close()
+			trail.finish(upstream.StatusCode, "upstream_status")
 			return
 		}
 		_ = upstream.Body.Close()
@@ -206,13 +216,20 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		setAccountHeaders(response, lastRef)
 		response.WriteHeader(last.StatusCode)
 		copyBody(response, last.Body)
+		trail.finish(last.StatusCode, "upstream_status")
 		return
 	}
 	if !contacted {
-		writeError(response, "no_available_account")
+		handler.fail(response, trail, "no_available_account")
 		return
 	}
-	writeError(response, "upstream_temporarily_unavailable")
+	handler.fail(response, trail, "upstream_temporarily_unavailable")
+}
+
+// fail 写出网关错误并汇报失败摘要。
+func (handler *Handler) fail(response http.ResponseWriter, trail *failureTrail, code string) {
+	writeError(response, code)
+	trail.finish(codexrelay.Error(code).Status, code)
 }
 
 func (handler *Handler) recordFailure(ctx context.Context, route runtimecore.ModelRoute, selection Selection, failure inferencegateway.AttemptFailure) {
@@ -227,10 +244,6 @@ func writeError(response http.ResponseWriter, code string) {
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	response.WriteHeader(definition.Status)
 	_ = json.NewEncoder(response).Encode(map[string]any{"error": map[string]any{"code": code, "message": definition.Message, "type": definition.Type, "param": nil}})
-}
-
-func writeSafetyError(response http.ResponseWriter) {
-	writeError(response, "upstream_safety_rejected")
 }
 
 // isStatelessCredential 报告凭据是否指向不存储 response 的 ChatGPT Codex 上游。

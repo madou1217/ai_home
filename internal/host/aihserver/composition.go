@@ -601,6 +601,7 @@ func newHandlers(
 		Credentials:    credentials,
 		ModelRefreshes: inference.modelRefreshes,
 		Clock:          time.Now,
+		FailureLog:     newCodexResponsesFailureLogger(errorLog),
 	})
 	if err != nil {
 		_ = inference.Close()

@@ -23,6 +23,7 @@ export interface ProxyProtocolField {
   label: string;
   type: 'text' | 'password' | 'number' | 'switch' | 'select';
   required?: boolean;
+  requiredMessage?: string;
   placeholder?: string;
   row?: string;
   options?: ProxyProtocolFieldOption[];

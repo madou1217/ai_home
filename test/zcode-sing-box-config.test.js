@@ -339,3 +339,45 @@ test('编译器拒绝端口冲突、空候选和不支持的节点协议', () =>
     node: { id: 'unsupported', protocol: 'tuic', server: 'edge.example', port: 443 }
   }), /unsupported_proxy_protocol_tuic/);
 });
+
+test('每个受支持的代理协议都编译为各自的 sing-box outbound，未覆盖的协议显式报错', () => {
+  const { compileZcodeSingBoxOutbound } = loadCompiler();
+  const { SUPPORTED_PROTOCOLS } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
+  const expectedType = {
+    shadowsocks: 'shadowsocks',
+    vmess: 'vmess',
+    vless: 'vless',
+    trojan: 'trojan',
+    hysteria2: 'hysteria2',
+    socks5: 'socks',
+    http: 'http',
+    https: 'http'
+  };
+  for (const protocol of SUPPORTED_PROTOCOLS) {
+    assert.ok(expectedType[protocol], `sing-box 编译器尚未覆盖协议 ${protocol}`);
+    const { outbound } = compileZcodeSingBoxOutbound({
+      kind: 'node',
+      node: {
+        id: `node-${protocol}`,
+        protocol,
+        server: 'proxy.example',
+        port: 443,
+        cipher: 'aes-256-gcm',
+        password: 'secret',
+        uuid: '00000000-0000-4000-8000-000000000001'
+      }
+    });
+    assert.equal(outbound.type, expectedType[protocol], protocol);
+  }
+
+  const protocols = require('../lib/cli/services/toolkit/proxy-pool/protocols');
+  protocols.SUPPORTED_PROTOCOLS.add('tuic');
+  try {
+    assert.throws(() => compileZcodeSingBoxOutbound({
+      kind: 'node',
+      node: { id: 'node-tuic', protocol: 'tuic', server: 'proxy.example', port: 443 }
+    }), /unsupported_proxy_protocol_tuic/);
+  } finally {
+    protocols.SUPPORTED_PROTOCOLS.delete('tuic');
+  }
+});

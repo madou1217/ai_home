@@ -204,5 +204,5 @@ test('ZCode target resolver 与节点存储不依赖 Mihomo 运行时模块', ()
   );
 
   assert.doesNotMatch(resolverSource, /mihomo|ProxyPoolService|startDedicatedPort/i);
-  assert.doesNotMatch(storeSource, /mihomo-config-compiler/);
+  assert.doesNotMatch(storeSource, /cores\/mihomo|mihomo-config-compiler/);
 });

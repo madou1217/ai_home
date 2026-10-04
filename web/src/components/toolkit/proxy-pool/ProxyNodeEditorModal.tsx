@@ -33,7 +33,7 @@ function ProtocolField({ field }: { field: ProxyProtocolField }) {
       name={field.key}
       valuePropName={field.type === 'switch' ? 'checked' : undefined}
       rules={field.required
-        ? [{ required: true, ...(field.type === 'switch' ? {} : { whitespace: true }), message: `请输入${field.label}` }]
+        ? [{ required: true, ...(field.type === 'switch' ? {} : { whitespace: true }), message: field.requiredMessage || `请输入${field.label}` }]
         : undefined}
     >
       {renderFieldControl(field)}

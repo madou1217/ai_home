@@ -13,11 +13,11 @@ const TRANSPORT_OPTIONS = [
 ];
 
 const FIELD: Record<string, ProxyProtocolField> = {
-  uuid: { key: 'uuid', label: 'UUID', type: 'text', required: true, placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
-  password: { key: 'password', label: '密码 / 密钥', type: 'password', required: true },
+  uuid: { key: 'uuid', label: 'UUID', type: 'text', required: true, requiredMessage: '请输入 UUID', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
+  password: { key: 'password', label: '密码 / 密钥', type: 'password', required: true, requiredMessage: '请输入密码或密钥' },
   optionalPassword: { key: 'password', label: '密码（可选）', type: 'password' },
   optionalUsername: { key: 'username', label: '用户名（可选）', type: 'text' },
-  cipher: { key: 'cipher', label: '加密方式', type: 'text', required: true, placeholder: 'aes-256-gcm / chacha20-ietf-poly1305' },
+  cipher: { key: 'cipher', label: '加密方式', type: 'text', required: true, requiredMessage: '请输入 Shadowsocks 加密方式', placeholder: 'aes-256-gcm / chacha20-ietf-poly1305' },
   network: { key: 'network', label: '传输网络', type: 'select', row: 'transport', options: TRANSPORT_OPTIONS },
   tls: { key: 'tls', label: 'TLS', type: 'switch', row: 'transport' },
   sni: { key: 'sni', label: 'SNI / Server name', type: 'text', row: 'tls', placeholder: '可选' },

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 let compileMihomoConfig;
 let buildStableProxyName;
 try {
-  ({ compileMihomoConfig, buildStableProxyName } = require('../lib/cli/services/toolkit/proxy-pool/mihomo-config-compiler'));
+  ({ compileMihomoConfig, buildStableProxyName } = require('../lib/cli/services/toolkit/proxy-pool/cores/mihomo/config-compiler'));
 } catch (_error) {
   // RED: the compiler is introduced by this change.
 }

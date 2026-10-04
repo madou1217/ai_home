@@ -5,8 +5,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-const RUNTIME_MODULE = '../lib/cli/services/toolkit/proxy-pool/mihomo-runtime';
-const COMPILER_MODULE = '../lib/cli/services/toolkit/proxy-pool/mihomo-config-compiler';
+const RUNTIME_MODULE = '../lib/cli/services/toolkit/proxy-pool/cores/mihomo/runtime';
+const COMPILER_MODULE = '../lib/cli/services/toolkit/proxy-pool/cores/mihomo/config-compiler';
 
 function loadRuntimeModule() {
   return require(RUNTIME_MODULE);

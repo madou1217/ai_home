@@ -1,8 +1,45 @@
 import { Form, Input, InputNumber, Modal, Select, Space, Switch, message } from 'antd';
 import { useEffect } from 'react';
 import { proxyPoolAPI } from '@/services/api';
-import type { ProxyNode, ProxyProtocol } from '@/types';
-import { buildProxyNodePayload, getErrorMessage, PROTOCOL_OPTIONS } from './proxy-pool-utils';
+import type { ProxyNode, ProxyProtocolField } from '@/types';
+import { getErrorMessage } from './proxy-pool-utils';
+import {
+  buildProxyNodePayload,
+  findProtocolPlugin,
+  groupProtocolFields
+} from './proxy-protocol-schema';
+import { useProxyProtocols } from './use-proxy-protocols';
+
+function renderFieldControl(field: ProxyProtocolField) {
+  switch (field.type) {
+    case 'password':
+      return <Input.Password autoComplete="new-password" placeholder={field.placeholder} />;
+    case 'number':
+      return <InputNumber placeholder={field.placeholder} />;
+    case 'select':
+      return <Select options={field.options || []} placeholder={field.placeholder} />;
+    case 'switch':
+      return <Switch />;
+    default:
+      return <Input autoComplete="off" placeholder={field.placeholder} />;
+  }
+}
+
+// 协议相关字段由服务端协议插件声明（editor.fields），这里按描述渲染。
+function ProtocolField({ field }: { field: ProxyProtocolField }) {
+  return (
+    <Form.Item
+      label={field.label}
+      name={field.key}
+      valuePropName={field.type === 'switch' ? 'checked' : undefined}
+      rules={field.required
+        ? [{ required: true, ...(field.type === 'switch' ? {} : { whitespace: true }), message: `请输入${field.label}` }]
+        : undefined}
+    >
+      {renderFieldControl(field)}
+    </Form.Item>
+  );
+}
 
 interface ProxyNodeEditorModalProps {
   open: boolean;
@@ -18,7 +55,9 @@ export default function ProxyNodeEditorModal({
   onSaved
 }: ProxyNodeEditorModalProps) {
   const [form] = Form.useForm();
-  const protocol = Form.useWatch('protocol', form) as ProxyProtocol | undefined;
+  const protocol = Form.useWatch('protocol', form) as string | undefined;
+  const { plugins, selectOptions } = useProxyProtocols();
+  const fieldGroups = groupProtocolFields(findProtocolPlugin(plugins, protocol)?.editor.fields || []);
 
   useEffect(() => {
     if (!open) return;
@@ -29,7 +68,7 @@ export default function ProxyNodeEditorModal({
   const save = async () => {
     try {
       const values = await form.validateFields();
-      const result = await proxyPoolAPI.upsertNode(buildProxyNodePayload(node || {}, values));
+      const result = await proxyPoolAPI.upsertNode(buildProxyNodePayload(plugins, node || {}, values));
       if (!result.ok) return;
       message.success('节点已保存；启动或重载核心后进入数据面');
       onClose();
@@ -54,7 +93,7 @@ export default function ProxyNodeEditorModal({
           <Input placeholder="例如：香港 BGP 01" />
         </Form.Item>
         <Form.Item label="协议" name="protocol" rules={[{ required: true, message: '请选择协议' }]}>
-          <Select options={PROTOCOL_OPTIONS.filter((item) => item.value !== 'all')} />
+          <Select options={selectOptions} />
         </Form.Item>
         <Space className="toolkit-form-row" size={12} align="start">
           <Form.Item
@@ -69,58 +108,13 @@ export default function ProxyNodeEditorModal({
           </Form.Item>
         </Space>
 
-        {(protocol === 'vmess' || protocol === 'vless') && (
-          <Form.Item label="UUID" name="uuid" rules={[{ required: true, whitespace: true, message: '请输入 UUID' }]}>
-            <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-          </Form.Item>
-        )}
-        {protocol !== 'vmess' && protocol !== 'vless' && (
-          <Form.Item
-            label={protocol === 'socks5' || protocol === 'http' ? '密码（可选）' : '密码 / 密钥'}
-            name="password"
-            rules={protocol === 'socks5' || protocol === 'http'
-              ? undefined
-              : [{ required: true, message: '请输入密码或密钥' }]}
-          >
-            <Input.Password autoComplete="new-password" />
-          </Form.Item>
-        )}
-        {(protocol === 'socks5' || protocol === 'http') && (
-          <Form.Item label="用户名（可选）" name="username">
-            <Input autoComplete="off" />
-          </Form.Item>
-        )}
-        {protocol === 'shadowsocks' && (
-          <Form.Item label="加密方式" name="cipher" rules={[{ required: true, message: '请输入 Shadowsocks 加密方式' }]}>
-            <Input placeholder="aes-256-gcm / chacha20-ietf-poly1305" />
-          </Form.Item>
-        )}
-        {(protocol === 'vmess' || protocol === 'vless') && (
-          <Space className="toolkit-form-row" size={12} align="start">
-            <Form.Item label="传输网络" name="network">
-              <Select options={[
-                { label: 'TCP', value: 'tcp' },
-                { label: 'WebSocket', value: 'ws' },
-                { label: 'gRPC', value: 'grpc' }
-              ]} />
-            </Form.Item>
-            <Form.Item label="TLS" name="tls" valuePropName="checked">
-              <Switch />
-            </Form.Item>
+        {fieldGroups.map((group) => (group.length > 1 ? (
+          <Space key={group.map((field) => field.key).join('-')} className="toolkit-form-row" size={12} align="start">
+            {group.map((field) => <ProtocolField key={field.key} field={field} />)}
           </Space>
-        )}
-        {(protocol === 'vmess' || protocol === 'vless' || protocol === 'trojan' || protocol === 'hysteria2') && (
-          <Space className="toolkit-form-row" size={12} align="start">
-            <Form.Item label="SNI / Server name" name="sni">
-              <Input placeholder="可选" />
-            </Form.Item>
-            {(protocol === 'vmess' || protocol === 'vless' || protocol === 'trojan') && (
-              <Form.Item label="路径" name="path">
-                <Input placeholder="/ws（可选）" />
-              </Form.Item>
-            )}
-          </Space>
-        )}
+        ) : (
+          <ProtocolField key={group[0].key} field={group[0]} />
+        )))}
       </Form>
     </Modal>
   );

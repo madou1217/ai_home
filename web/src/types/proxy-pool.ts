@@ -12,6 +12,36 @@ export type ProxyProtocol =
   | 'https'
   | 'wireguard';
 
+export interface ProxyProtocolFieldOption {
+  label: string;
+  value: string;
+}
+
+/** 协议插件声明的节点编辑字段（服务端 protocols/<id>.js 的 editor.fields）。 */
+export interface ProxyProtocolField {
+  key: string;
+  label: string;
+  type: 'text' | 'password' | 'number' | 'switch' | 'select';
+  required?: boolean;
+  placeholder?: string;
+  row?: string;
+  options?: ProxyProtocolFieldOption[];
+}
+
+export interface ProxyProtocolPlugin {
+  id: string;
+  name: string;
+  protocols: string[];
+  editor: { fields: ProxyProtocolField[] };
+  nodeFields: string[];
+}
+
+export interface ProxyProtocolsResponse {
+  ok: boolean;
+  core?: { id: string; name: string };
+  protocols: ProxyProtocolPlugin[];
+}
+
 export interface ProxyNode {
   id: string;
   name: string;

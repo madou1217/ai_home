@@ -25,9 +25,9 @@ import ProxySubscriptionsModal from '@/components/toolkit/proxy-pool/ProxySubscr
 import {
   copyText,
   coreStatusPresentation,
-  FUNCTIONAL_GROUP_OPTIONS,
-  PROTOCOL_OPTIONS
+  FUNCTIONAL_GROUP_OPTIONS
 } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
+import { useProxyProtocols } from '@/components/toolkit/proxy-pool/use-proxy-protocols';
 import {
   networkRouteLabel,
   TUN_STACK_OPTIONS,
@@ -71,6 +71,7 @@ function latencyStatus(latency: number | null | undefined) {
 
 /** 代理池与分流：Mihomo 核心、网络层接管、节点清单（实测 / 独立端口 / 分享 / 编辑 / 删除）与订阅、分流、导入导出弹窗。 */
 export default function ProxyPoolPanel() {
+  const { filterOptions: protocolFilterOptions } = useProxyProtocols();
   const {
     loading,
     loadErrors,
@@ -217,7 +218,7 @@ export default function ProxyPoolPanel() {
             value: group.id
           }))}
         />
-        <Select aria-label="代理协议筛选" value={protocolFilter} onChange={setProtocolFilter} options={PROTOCOL_OPTIONS} />
+        <Select aria-label="代理协议筛选" value={protocolFilter} onChange={setProtocolFilter} options={protocolFilterOptions} />
       </div>
 
       {(functionalGroup === 'ai' || functionalGroup === 'dev' || countryFilter) ? (

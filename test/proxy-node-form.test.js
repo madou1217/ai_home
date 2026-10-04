@@ -24,13 +24,15 @@ function loadTypeScriptModule(filePath) {
 }
 
 test('proxy node form submits only fields accepted by the selected protocol', () => {
+  // 协议字段白名单由协议插件声明（服务端下发，旧服务端用 FALLBACK_PROXY_PROTOCOLS 兜底）。
   const modulePath = path.resolve(
     __dirname,
-    '../web/src/components/toolkit/proxy-pool/proxy-pool-utils.ts'
+    '../web/src/components/toolkit/proxy-pool/proxy-protocol-schema.ts'
   );
-  const { buildProxyNodePayload } = loadTypeScriptModule(modulePath);
+  const { buildProxyNodePayload, FALLBACK_PROXY_PROTOCOLS } = loadTypeScriptModule(modulePath);
 
   assert.deepEqual(buildProxyNodePayload?.(
+    FALLBACK_PROXY_PROTOCOLS,
     { id: 'node-1', protocol: 'vmess', uuid: 'old-uuid', network: 'ws', tls: true },
     {
       name: 'SS node',

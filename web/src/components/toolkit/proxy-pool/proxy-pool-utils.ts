@@ -1,22 +1,5 @@
 import { message } from 'antd';
-import type { ProxyCoreStatus, ProxyNode, ProxyProtocol } from '@/types';
-
-const PROXY_NODE_COMMON_FIELDS = [
-  'id', 'name', 'protocol', 'server', 'port', 'group', 'tags',
-  'countryCode', 'countryName', 'countryFlag', 'subscriptionId',
-  'latencyMs', 'lastChecked'
-] as const;
-
-const PROXY_NODE_PROTOCOL_FIELDS: Partial<Record<ProxyProtocol, readonly string[]>> = {
-  shadowsocks: ['password', 'cipher', 'plugin', 'pluginOpts'],
-  vmess: ['uuid', 'cipher', 'alterId', 'network', 'tls', 'sni', 'path', 'host', 'type', 'alpn', 'serviceName', 'allowInsecure'],
-  vless: ['uuid', 'network', 'tls', 'sni', 'path', 'host', 'alpn', 'flow', 'security', 'publicKey', 'shortId', 'fingerprint', 'serviceName', 'allowInsecure'],
-  trojan: ['password', 'network', 'tls', 'sni', 'path', 'host', 'alpn', 'serviceName', 'allowInsecure'],
-  hysteria2: ['password', 'tls', 'sni', 'insecure', 'allowInsecure', 'obfs', 'obfsPassword', 'upMbps', 'downMbps'],
-  socks5: ['username', 'password'],
-  http: ['username', 'password', 'tls', 'sni', 'allowInsecure'],
-  https: ['username', 'password', 'tls', 'sni', 'allowInsecure']
-};
+import type { ProxyCoreStatus } from '@/types';
 
 export const FUNCTIONAL_GROUP_OPTIONS = [
   { label: '全部', value: 'all' },
@@ -24,35 +7,6 @@ export const FUNCTIONAL_GROUP_OPTIONS = [
   { label: '开发标签', value: 'dev' },
   { label: '独立端口', value: 'dedicated' }
 ];
-
-export const PROTOCOL_OPTIONS: Array<{ label: string; value: ProxyProtocol | 'all' }> = [
-  { label: '全部协议', value: 'all' },
-  { label: 'Shadowsocks', value: 'shadowsocks' },
-  { label: 'VMess', value: 'vmess' },
-  { label: 'VLESS', value: 'vless' },
-  { label: 'Trojan', value: 'trojan' },
-  { label: 'Hysteria 2', value: 'hysteria2' },
-  { label: 'SOCKS5', value: 'socks5' },
-  { label: 'HTTP', value: 'http' }
-];
-
-export function buildProxyNodePayload(
-  existing: Partial<ProxyNode> = {},
-  values: Partial<ProxyNode> = {}
-): Partial<ProxyNode> {
-  const source = { ...existing, ...values } as Record<string, unknown>;
-  const protocol = source.protocol as ProxyProtocol | undefined;
-  const allowedFields = [
-    ...PROXY_NODE_COMMON_FIELDS,
-    ...(protocol ? (PROXY_NODE_PROTOCOL_FIELDS[protocol] || []) : [])
-  ];
-  const payload: Record<string, unknown> = {};
-  for (const field of allowedFields) {
-    const value = source[field];
-    if (value !== undefined && value !== '') payload[field] = value;
-  }
-  return payload as Partial<ProxyNode>;
-}
 
 export function getErrorMessage(error: unknown, fallback: string) {
   const candidate = error as {

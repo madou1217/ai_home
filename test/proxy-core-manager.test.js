@@ -13,7 +13,7 @@ const {
   executeMihomoInstall,
   planMihomoInstall,
   removeManagedMihomo
-} = require('../lib/cli/services/toolkit/proxy-pool/mihomo-core-manager');
+} = require('../lib/cli/services/toolkit/proxy-pool/cores/mihomo/core-manager');
 
 function response(body, statusCode = 200) {
   return {

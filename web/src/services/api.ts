@@ -130,6 +130,7 @@ import type {
   DedicatedPortMutationResponse,
   AggregateExportResponse,
   ProxyCoreStatusResponse,
+  ProxyProtocolsResponse,
   ProxyCoreActionResponse,
   NetworkStatusResponse,
   NetworkPlanResponse,
@@ -2284,6 +2285,10 @@ export const proxyPoolAPI = {
   },
   exportAggregate: async (params: { format?: 'mihomo' | 'base64'; group?: string; raw?: boolean } = {}): Promise<AggregateExportResponse> => {
     const response = await api.get<AggregateExportResponse>('/webui/toolkit/proxy-pool/export', { params });
+    return response.data;
+  },
+  getProtocols: async (): Promise<ProxyProtocolsResponse> => {
+    const response = await api.get<ProxyProtocolsResponse>('/webui/toolkit/proxy-pool/protocols');
     return response.data;
   },
   getCoreStatus: async (): Promise<ProxyCoreStatusResponse> => {

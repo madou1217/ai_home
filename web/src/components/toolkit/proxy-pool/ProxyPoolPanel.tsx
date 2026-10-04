@@ -24,10 +24,12 @@ import ProxyNodeEditorModal from './ProxyNodeEditorModal';
 import ProxyRoutingModal from './ProxyRoutingModal';
 import ProxyShareModal from './ProxyShareModal';
 import ProxySubscriptionsModal from './ProxySubscriptionsModal';
-import { FUNCTIONAL_GROUP_OPTIONS, PROTOCOL_OPTIONS } from './proxy-pool-utils';
+import { FUNCTIONAL_GROUP_OPTIONS } from './proxy-pool-utils';
+import { useProxyProtocols } from './use-proxy-protocols';
 import { NEW_PROXY_NODE as NEW_NODE, useProxyPool } from './use-proxy-pool';
 
 export default function ProxyPoolPanel() {
+  const { filterOptions: protocolFilterOptions } = useProxyProtocols();
   const {
     loading,
     loadErrors,
@@ -145,7 +147,7 @@ export default function ProxyPoolPanel() {
             value={protocolFilter}
             onChange={setProtocolFilter}
             style={{ minWidth: 150 }}
-            options={PROTOCOL_OPTIONS}
+            options={protocolFilterOptions}
           />
         </Space>
         <Space size={8} wrap>

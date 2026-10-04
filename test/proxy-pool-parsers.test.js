@@ -8,7 +8,7 @@ const {
   encodeProxyNode,
   parseSubscriptionContent
 } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
-const { compileMihomoConfig } = require('../lib/cli/services/toolkit/proxy-pool/mihomo-config-compiler');
+const { compileMihomoConfig } = require('../lib/cli/services/toolkit/proxy-pool/cores/mihomo/config-compiler');
 
 test('parseProxyNode parses Shadowsocks SIP002 link', () => {
   const link = 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTIz@198.51.100.1:8388#HongKong-01';
@@ -200,4 +200,26 @@ test('clash YAML import keeps nodes that carry benign transport flags', () => {
   // 忽略的字段不应泄漏进节点模型，编译期只认我们自己拼的字段。
   assert.equal(reality.udp, undefined);
   assert.equal(ss.tfo, undefined);
+});
+
+test('代理协议与内核以插件注册：协议插件覆盖全部受支持协议并为默认内核提供编译', () => {
+  const { PROTOCOL_PLUGINS, SUPPORTED_PROTOCOLS, describeProtocolPlugins } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
+  const { getProxyCore, DEFAULT_PROXY_CORE_ID } = require('../lib/cli/services/toolkit/proxy-pool/cores');
+  const core = getProxyCore();
+  assert.equal(core.id, DEFAULT_PROXY_CORE_ID);
+  assert.equal(core.capability, 'proxy-pool.core');
+  for (const method of ['plan', 'execute', 'remove', 'discover']) assert.equal(typeof core.manager[method], 'function');
+  const covered = new Set();
+  for (const plugin of PROTOCOL_PLUGINS) {
+    assert.equal(plugin.capability, 'proxy-pool.protocol');
+    assert.equal(typeof plugin.parse, 'function');
+    assert.equal(typeof plugin.encode, 'function');
+    assert.equal(typeof plugin.compile[core.id], 'function', `${plugin.id} 需要提供 compile.${core.id}`);
+    assert.ok(plugin.editor.fields.length > 0);
+    plugin.protocols.forEach((protocol) => covered.add(protocol));
+  }
+  assert.deepEqual([...covered].sort(), [...SUPPORTED_PROTOCOLS].sort());
+  const described = describeProtocolPlugins();
+  assert.equal(JSON.parse(JSON.stringify(described)).length, PROTOCOL_PLUGINS.length);
+  assert.equal(described.some((item) => typeof item.parse === 'function'), false);
 });

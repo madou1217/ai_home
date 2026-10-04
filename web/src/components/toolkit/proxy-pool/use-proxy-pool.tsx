@@ -4,6 +4,7 @@ import { confirmAction } from '@/utils/confirm-action';
 import { proxyPoolAPI } from '@/services/api';
 import type {
   DedicatedPortsResponse,
+  OutboundSuggestResponse,
   NetworkLayerStatus,
   ProxyCoreActionResponse,
   ProxyCoreInfo,
@@ -15,7 +16,13 @@ import type {
   RoutingResponse
 } from '@/types';
 import type { CoreAction } from './ProxyCoreStatusRail';
-import { coreDisplayName, getErrorMessage, getMutationMessage, isMutationApplied } from './proxy-pool-utils';
+import {
+  coreDisplayName,
+  getErrorMessage,
+  getMutationMessage,
+  isMutationApplied,
+  outboundIssue
+} from './proxy-pool-utils';
 
 /** 新建节点的默认值（桌面与移动端「添加节点」共用）。 */
 export const NEW_PROXY_NODE: Partial<ProxyNode> = {
@@ -45,6 +52,9 @@ export function useProxyPool() {
   const [coreAction, setCoreAction] = useState<CoreAction | null>(null);
   const [installPending, setInstallPending] = useState(false);
   const [cores, setCores] = useState<ProxyCoreInfo[]>([]);
+  const [outboundSuggestion, setOutboundSuggestion] = useState<OutboundSuggestResponse | null>(null);
+  const [suggestPending, setSuggestPending] = useState(false);
+  const [applyingOutbound, setApplyingOutbound] = useState(false);
   const [corePending, setCorePending] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -129,6 +139,10 @@ export function useProxyPool() {
 
   const dataPlaneReady = coreStatus?.dataPlaneReady === true;
   const routing = routingResponse?.routing;
+  const currentOutboundIssue = useMemo(
+    () => outboundIssue(routing, nodesData?.nodes),
+    [routing, nodesData]
+  );
 
   const runCoreAction = async (action: CoreAction) => {
     setCoreAction(action);
@@ -175,6 +189,53 @@ export function useProxyPool() {
       message.error(getErrorMessage(error, '切换代理核心失败'));
     } finally {
       setCorePending(false);
+    }
+  };
+
+  /** 测速并推荐最快的默认出口：只给候选，用户在弹窗里确认后才写入分流配置。 */
+  const suggestOutbound = async () => {
+    if (suggestPending) return;
+    if (!dataPlaneReady) {
+      message.warning('请先启动代理核心，测速需要真实数据面');
+      return;
+    }
+    setSuggestPending(true);
+    try {
+      const result = await proxyPoolAPI.suggestOutbound({}, 5);
+      if (!result.ok) {
+        message.error(result.error || '测速失败');
+        return;
+      }
+      await fetchData();
+      if (!result.candidates.length) {
+        message.warning(`实测 ${result.testedCount || 0} 个节点均不可达，未找到可用出口`);
+        return;
+      }
+      setOutboundSuggestion(result);
+    } catch (error) {
+      message.error(getErrorMessage(error, '测速失败'));
+    } finally {
+      setSuggestPending(false);
+    }
+  };
+
+  const applyOutbound = async (nodeId: string) => {
+    if (applyingOutbound) return;
+    setApplyingOutbound(true);
+    try {
+      const result = await proxyPoolAPI.setRouting({ mode: routing?.mode || 'rule', activeOutboundNodeId: nodeId });
+      setRoutingResponse(result);
+      if (result.ok && result.applied) {
+        message.success('默认出口已设置并在数据面生效');
+      } else {
+        message.warning(result.message || result.error || result.warnings?.join('；') || '默认出口已保存，但尚未应用到数据面');
+      }
+      setOutboundSuggestion(null);
+      await fetchData();
+    } catch (error) {
+      message.error(getErrorMessage(error, '设置默认出口失败'));
+    } finally {
+      setApplyingOutbound(false);
     }
   };
 
@@ -316,6 +377,13 @@ export function useProxyPool() {
     corePending,
     coreName,
     selectCore,
+    currentOutboundIssue,
+    outboundSuggestion,
+    suggestPending,
+    applyingOutbound,
+    suggestOutbound,
+    applyOutbound,
+    dismissOutboundSuggestion: () => setOutboundSuggestion(null),
     pingNode,
     pingAll,
     togglePort,

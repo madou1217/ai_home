@@ -10,6 +10,7 @@ import {
   GlobalOutlined,
   ImportOutlined,
   LinkOutlined,
+  NodeIndexOutlined,
   PlusOutlined,
   PoweroffOutlined,
   QrcodeOutlined,
@@ -19,6 +20,7 @@ import {
 import ProxyExportModal from '@/components/toolkit/proxy-pool/ProxyExportModal';
 import ProxyImportModal from '@/components/toolkit/proxy-pool/ProxyImportModal';
 import ProxyNodeEditorModal from '@/components/toolkit/proxy-pool/ProxyNodeEditorModal';
+import ProxyOutboundSuggestModal from '@/components/toolkit/proxy-pool/ProxyOutboundSuggestModal';
 import ProxyRoutingModal from '@/components/toolkit/proxy-pool/ProxyRoutingModal';
 import ProxyShareModal from '@/components/toolkit/proxy-pool/ProxyShareModal';
 import ProxySubscriptionsModal from '@/components/toolkit/proxy-pool/ProxySubscriptionsModal';
@@ -26,6 +28,7 @@ import {
   copyText,
   coreDisplayName,
   coreStatusPresentation,
+  outboundIssueText,
   FUNCTIONAL_GROUP_OPTIONS
 } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { useProxyProtocols } from '@/components/toolkit/proxy-pool/use-proxy-protocols';
@@ -104,6 +107,13 @@ export default function ProxyPoolPanel() {
     cores,
     corePending,
     selectCore,
+    currentOutboundIssue,
+    outboundSuggestion,
+    suggestPending,
+    applyingOutbound,
+    suggestOutbound,
+    applyOutbound,
+    dismissOutboundSuggestion,
     pingNode,
     pingAll,
     togglePort,
@@ -183,6 +193,25 @@ export default function ProxyPoolPanel() {
         corePending={corePending}
         onSelectCore={(coreId) => void selectCore(coreId)}
       />
+
+      {currentOutboundIssue ? (
+        <>
+          <Note tone="warn" title={outboundIssueText(currentOutboundIssue).title}>
+            {outboundIssueText(currentOutboundIssue).description}
+          </Note>
+          <div className={styles.buttonRow}>
+            <ActionButton
+              icon={<ThunderboltOutlined />}
+              label="测速并选最快"
+              tone="primary"
+              loading={suggestPending}
+              disabled={!dataPlaneReady}
+              onClick={() => void suggestOutbound()}
+            />
+            <ActionButton icon={<NodeIndexOutlined />} label="手动选择" onClick={() => setRoutingOpen(true)} />
+          </div>
+        </>
+      ) : null}
 
       <NetworkTakeoverCard status={networkStatus} core={coreStatus} onRefresh={fetchData} />
 
@@ -329,6 +358,12 @@ export default function ProxyPoolPanel() {
         routingResponse={routingResponse}
         onClose={() => setRoutingOpen(false)}
         onChanged={setRoutingResponse}
+      />
+      <ProxyOutboundSuggestModal
+        suggestion={outboundSuggestion}
+        applying={applyingOutbound}
+        onApply={(nodeId) => void applyOutbound(nodeId)}
+        onClose={dismissOutboundSuggestion}
       />
       <ProxyShareModal open={Boolean(shareNode)} node={shareNode} onClose={() => setShareNode(null)} />
     </>

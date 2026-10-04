@@ -95,3 +95,32 @@ test('服务端启动时只在同一数据目录下恢复默认代理池内核',
   const other = await restoreDefaultProxyPoolCore({ aiHomeDir: tempDir() });
   assert.equal(other.reason, 'different_data_dir');
 });
+
+test('批量测速并发执行；推荐出口按延迟排序且不修改分流配置', async () => {
+  const filePath = path.join(tempDir(), 'proxy-pool.json');
+  let inFlight = 0;
+  let peak = 0;
+  const latency = { a: 300, b: 80, c: -1, d: 120 };
+  const runtime = {
+    getStatus: () => ({ running: true, dataPlaneReady: true, installed: true, activeListeners: [] }),
+    pingNode: async (node) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight -= 1;
+      return latency[node.name] >= 0 ? { ok: true, latencyMs: latency[node.name] } : { ok: false, error: 'timeout' };
+    }
+  };
+  const service = new ProxyPoolService({ storeOptions: { filePath }, coreRuntime: runtime, platform: 'linux' });
+  for (const name of Object.keys(latency)) {
+    service.store.upsertNode({ name, protocol: 'socks5', server: `${name}.example`, port: 1080 });
+  }
+  const before = JSON.stringify(service.store.getRoutingConfig());
+  const suggested = await service.suggestOutbound({}, { limit: 2, concurrency: 4 });
+  assert.equal(suggested.ok, true);
+  assert.equal(suggested.testedCount, 4);
+  assert.equal(suggested.reachableCount, 3);
+  assert.deepEqual(suggested.candidates.map((item) => [item.name, item.latencyMs]), [['b', 80], ['d', 120]]);
+  assert.ok(peak > 1, '测速应并发进行');
+  assert.equal(JSON.stringify(service.store.getRoutingConfig()), before, '推荐不改分流配置');
+});

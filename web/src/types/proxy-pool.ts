@@ -174,6 +174,22 @@ export interface RoutingResponse {
   warnings?: string[];
 }
 
+export interface OutboundCandidate {
+  nodeId: string;
+  name: string;
+  protocol: string;
+  latencyMs: number;
+}
+
+/** 推荐默认出口：只测速排序，不修改分流配置。 */
+export interface OutboundSuggestResponse {
+  ok: boolean;
+  error?: string;
+  testedCount?: number;
+  reachableCount?: number;
+  candidates: OutboundCandidate[];
+}
+
 export interface DedicatedPortsConfig {
   enabled: boolean;
   maxPorts: number;

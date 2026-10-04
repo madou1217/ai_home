@@ -23,6 +23,8 @@ import ProxyNodeCard from './ProxyNodeCard';
 import ProxyNodeEditorModal from './ProxyNodeEditorModal';
 import ProxyRoutingModal from './ProxyRoutingModal';
 import ProxyShareModal from './ProxyShareModal';
+import ProxyOutboundNotice from './ProxyOutboundNotice';
+import ProxyOutboundSuggestModal from './ProxyOutboundSuggestModal';
 import ProxySubscriptionsModal from './ProxySubscriptionsModal';
 import { FUNCTIONAL_GROUP_OPTIONS } from './proxy-pool-utils';
 import { useProxyProtocols } from './use-proxy-protocols';
@@ -65,7 +67,14 @@ export default function ProxyPoolPanel() {
     cores,
     corePending,
     coreName,
-    selectCore
+    selectCore,
+    currentOutboundIssue,
+    outboundSuggestion,
+    suggestPending,
+    applyingOutbound,
+    suggestOutbound,
+    applyOutbound,
+    dismissOutboundSuggestion
   } = useProxyPool();
 
   const [editingNode, setEditingNode] = useState<Partial<ProxyNode> | null>(null);
@@ -87,6 +96,14 @@ export default function ProxyPoolPanel() {
         cores={cores}
         corePending={corePending}
         onSelectCore={(coreId) => void selectCore(coreId)}
+      />
+
+      <ProxyOutboundNotice
+        issue={currentOutboundIssue}
+        dataPlaneReady={dataPlaneReady}
+        suggestPending={suggestPending}
+        onSuggest={() => void suggestOutbound()}
+        onManual={() => setRoutingOpen(true)}
       />
 
       <ProxyNetworkIntegrationPanel status={networkStatus} core={coreStatus} onRefresh={fetchData} />
@@ -255,6 +272,12 @@ export default function ProxyPoolPanel() {
         onChanged={setRoutingResponse}
       />
       <ProxyShareModal open={Boolean(shareNode)} node={shareNode} onClose={() => setShareNode(null)} />
+      <ProxyOutboundSuggestModal
+        suggestion={outboundSuggestion}
+        applying={applyingOutbound}
+        onApply={(nodeId) => void applyOutbound(nodeId)}
+        onClose={dismissOutboundSuggestion}
+      />
     </div>
   );
 }

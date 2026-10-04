@@ -88,3 +88,24 @@ test('core status presentation names the active proxy core plugin', () => {
   const ready = coreStatusPresentation({ engine: 'sing-box', engineName: 'sing-box', installed: true, running: true, dataPlaneReady: true, version: '1.14.2', mixedPort: 10800, activeListeners: [] });
   assert.equal(ready.title, 'sing-box 数据面已就绪');
 });
+
+test('outbound issue: rule/global modes without a usable default outbound fall back to direct', () => {
+  const modulePath = path.resolve(
+    __dirname,
+    '../web/src/components/toolkit/proxy-pool/proxy-pool-utils.ts'
+  );
+  const { outboundIssue, outboundIssueText } = loadTypeScriptModule(modulePath);
+  const nodes = [{ id: 'n1' }, { id: 'n2' }];
+  const rules = [
+    { id: 'r1', name: 'OpenAI 规则', outbound: 'proxy', domains: ['openai.com'] },
+    { id: 'r2', name: '专用节点规则', outbound: 'proxy', nodeId: 'n2' },
+    { id: 'r3', name: '中国大陆直连', outbound: 'direct' }
+  ];
+  assert.equal(outboundIssue({ mode: 'direct', activeOutboundNodeId: null, rules }, nodes), null);
+  assert.equal(outboundIssue({ mode: 'rule', activeOutboundNodeId: 'n1', rules }, nodes), null);
+  const missing = outboundIssue({ mode: 'rule', activeOutboundNodeId: null, rules }, nodes);
+  assert.deepEqual(missing, { kind: 'missing', mode: 'rule', affectedRules: ['OpenAI 规则'] });
+  assert.equal(outboundIssueText(missing).title, '未选择默认出口节点');
+  assert.equal(outboundIssue({ mode: 'global', activeOutboundNodeId: 'gone', rules }, nodes).kind, 'deleted');
+  assert.equal(outboundIssue({ mode: 'rule', activeOutboundNodeId: null, rules: [rules[1], rules[2]] }, nodes), null);
+});

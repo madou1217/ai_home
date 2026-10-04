@@ -1,5 +1,5 @@
 import { message } from 'antd';
-import type { ProxyCoreStatus } from '@/types';
+import type { ProxyCoreStatus, ProxyNode, RoutingConfig } from '@/types';
 
 export const FUNCTIONAL_GROUP_OPTIONS = [
   { label: '全部', value: 'all' },
@@ -110,3 +110,38 @@ export function coreStatusPresentation(core: ProxyCoreStatus | null) {
     description: `${core.version || core.binaryName || core.engine}；mixed 端口 127.0.0.1:${core.mixedPort || 10800}；测速、分流与独立 mixed 端口均由真实代理核心执行。`
   };
 }
+
+export interface OutboundIssue {
+  /** missing：从未选择出口；deleted：选过的出口节点已不存在。 */
+  kind: 'missing' | 'deleted';
+  mode: 'global' | 'rule';
+  /** 受影响、当前退化为直连的规则名（规则分流模式）。 */
+  affectedRules: string[];
+}
+
+/**
+ * 规则/全局模式下没有可用的默认出口时，走代理的流量会退化为直连（内核侧告警
+ * routing_*_outbound_unavailable）。返回需要提示的情况；直连模式或出口正常时返回 null。
+ */
+export function outboundIssue(routing: RoutingConfig | null | undefined, nodes: ProxyNode[] | null | undefined): OutboundIssue | null {
+  if (!routing || routing.mode === 'direct') return null;
+  const nodeIds = new Set((nodes || []).map((node) => node.id));
+  const activeId = routing.activeOutboundNodeId;
+  if (activeId && nodeIds.has(activeId)) return null;
+  const affectedRules = routing.mode === 'rule'
+    ? (routing.rules || [])
+      .filter((rule) => rule.outbound === 'proxy' && !(rule.nodeId && nodeIds.has(rule.nodeId)))
+      .map((rule) => rule.name || rule.id)
+    : [];
+  if (routing.mode === 'rule' && affectedRules.length === 0) return null;
+  return { kind: activeId ? 'deleted' : 'missing', mode: routing.mode, affectedRules };
+}
+
+export function outboundIssueText(issue: OutboundIssue) {
+  const head = issue.kind === 'deleted' ? '默认出口节点已被删除' : '未选择默认出口节点';
+  const effect = issue.mode === 'global'
+    ? '全局代理模式下所有流量当前按直连处理'
+    : `${issue.affectedRules.join('、')} 当前按直连处理`;
+  return { title: head, description: effect };
+}
+

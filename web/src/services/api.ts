@@ -131,6 +131,7 @@ import type {
   AggregateExportResponse,
   ProxyCoreStatusResponse,
   ProxyCoresResponse,
+  OutboundSuggestResponse,
   ProxyProtocolsResponse,
   ProxyCoreActionResponse,
   NetworkStatusResponse,
@@ -2266,6 +2267,10 @@ export const proxyPoolAPI = {
   },
   pingAllNodes: async (filter: { group?: string; protocol?: string } = {}): Promise<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }> => {
     const response = await api.post<{ ok: boolean; testedCount: number; results: Record<string, { ok: boolean; latencyMs: number }> }>('/webui/toolkit/proxy-pool/ping', { filter });
+    return response.data;
+  },
+  suggestOutbound: async (filter: { group?: string; protocol?: string } = {}, limit = 5): Promise<OutboundSuggestResponse> => {
+    const response = await api.post<OutboundSuggestResponse>('/webui/toolkit/proxy-pool/outbound/suggest', { filter, limit });
     return response.data;
   },
   getRouting: async (): Promise<RoutingResponse> => {

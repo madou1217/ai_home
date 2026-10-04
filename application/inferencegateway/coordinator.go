@@ -202,6 +202,7 @@ func NewCoordinator(
 		clock:                dependencies.Clock,
 		upstreamAttemptLimit: attemptLimit,
 		poolRetries:          dependencies.PoolRetries,
+		requestRewriter:      dependencies.RequestRewriter,
 	}, nil
 }
 

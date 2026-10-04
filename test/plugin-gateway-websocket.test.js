@@ -16,6 +16,7 @@ const { tempDir, socketFor, manifest, packPlugin, waitFor, startClaudeServer } =
 const { getPluginSystem } = require('../lib/plugins/control/plugin-system');
 const { handleCodexResponsesWebSocket } = require('../lib/server/codex-responses-websocket');
 const { createResponsesWebSocketPlugins } = require('../lib/server/codex-responses-ws-plugins');
+const { rejectWebSocketForGatewayPlugins } = require('../lib/server/gateway-plugin-stage');
 
 const REQUEST_MANIFEST = manifest('aih.test.ws-request', {
   configSchema: { type: 'object', additionalProperties: false, properties: { mode: { type: 'string' }, tag: { type: 'string' } } },
@@ -53,6 +54,7 @@ async function wsFixture(t, { plugins = [] } = {}) {
   fs.mkdirSync(aiHomeDir, { recursive: true });
 
   const received = [];
+  const raw = [];
   const held = [];
   const control = { hold: false };
   let counter = 0;
@@ -60,6 +62,7 @@ async function wsFixture(t, { plugins = [] } = {}) {
   const wss = new WebSocket.Server({ noServer: true });
   upstream.on('upgrade', (req, socket, head) => wss.handleUpgrade(req, socket, head, (ws) => {
     ws.on('message', (data) => {
+      raw.push(data.toString());
       const event = JSON.parse(data.toString());
       received.push(event);
       if (event.type !== 'response.create') return;
@@ -86,9 +89,13 @@ async function wsFixture(t, { plugins = [] } = {}) {
   const gateway = http.createServer();
   const sockets = new Set();
   gateway.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
-  gateway.on('upgrade', (req, socket, head) => handleCodexResponsesWebSocket({ req, socket, head, state, options: {} }, {
-    chooseAccount: (pool) => pool[0], isLoopbackUrl: () => false, handshakeTimeoutMs: 1000
-  }));
+  // 与 server.js 的 /v1/responses 升级分支相同：先判 426，再交给 WS 处理器。
+  gateway.on('upgrade', (req, socket, head) => {
+    if (rejectWebSocketForGatewayPlugins(state, socket)) return;
+    handleCodexResponsesWebSocket({ req, socket, head, state, options: {} }, {
+      chooseAccount: (pool) => pool[0], isLoopbackUrl: () => false, handshakeTimeoutMs: 1000
+    });
+  });
   const gatewayUrl = (await listen(gateway)).replace('http:', 'ws:') + '/v1/responses';
 
   t.after(async () => {
@@ -111,20 +118,60 @@ async function wsFixture(t, { plugins = [] } = {}) {
     const create = (extra = {}) => client.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', input: [], ...extra }));
     return { client, events, create };
   }
-  return { state, system, received, held, control, connect };
+  async function upgradeStatus() {
+    return new Promise((resolve) => {
+      const socket = new WebSocket(gatewayUrl);
+      socket.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode); });
+      socket.on('open', () => { socket.close(); resolve(101); });
+      socket.on('error', () => {});
+    });
+  }
+  return { state, system, received, raw, held, control, connect, upgradeStatus };
 }
 
 const REQUEST_PLUGIN = { name: 'wsreq', manifest: REQUEST_MANIFEST, source: REQUEST_SOURCE };
+const ATTEMPT_PLUGIN = {
+  name: 'wsatt',
+  manifest: manifest('aih.test.ws-attempt', { contributes: [{ id: 'wsatt.attempt', capability: 'gateway.attempt', version: 1 }] }),
+  source: `export default { apply(ctx) { ctx.aih.register('wsatt.attempt', async (value, context) => { await context.next(); return null; }); } };`
+};
 const OBSERVER_PLUGIN = { name: 'wsobs', manifest: OBSERVER_MANIFEST, source: OBSERVER_SOURCE };
 
-test('without gateway plugins the raw client socket goes to the bridge', async (t) => {
-  assert.equal(createResponsesWebSocketPlugins({ state: {} }), null, '没有插件系统');
-  const f = await wsFixture(t);
-  assert.equal(createResponsesWebSocketPlugins({ state: f.state }), null, '插件系统存在但没有网关类贡献');
-  const { events, create } = await f.connect();
+test('without gateway contributions frames reach upstream byte-identical; plugins enabled mid-session apply to the next create', async (t) => {
+  assert.equal(createResponsesWebSocketPlugins({ state: {} }), null, '没有插件系统时原始 socket 直接交给桥接');
+  const f = await wsFixture(t, { plugins: [REQUEST_PLUGIN] });
+  const { client, events } = await f.connect();
+  const original = '{ "type":"response.create",  "model":"gpt-6-astra", "input":[], "n":9007199254740993 }';
+  client.send(original);
+  assert.ok(await waitFor(() => events.some((event) => event.type === 'response.completed')));
+  assert.equal(f.raw[0], original, '没有网关类贡献时逐字节直通');
+
+  await f.system.control.enable({ pluginId: 'aih.test.ws-request', configuration: { tag: 'late' } });
+  client.send(original);
+  assert.ok(await waitFor(() => events.filter((event) => event.type === 'response.completed').length === 2));
+  assert.equal(f.received[1].instructions, 'tag:late', '连接建立后才启用的插件对下一个 create 生效');
+});
+
+test('an attempt plugin enabled mid-session sends the next create back over HTTPS instead of bypassing it', async (t) => {
+  const f = await wsFixture(t, { plugins: [REQUEST_PLUGIN, ATTEMPT_PLUGIN] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-request', configuration: { tag: 'v1' } });
+  const { client, events, create } = await f.connect();
   create();
   assert.ok(await waitFor(() => events.some((event) => event.type === 'response.completed')));
-  assert.equal(f.received[0].instructions, undefined);
+
+  await f.system.control.enable({ pluginId: 'aih.test.ws-attempt' });
+  const closed = once(client, 'close');
+  create();
+  const [code, reason] = await closed;
+  assert.equal(code, 1000);
+  assert.equal(reason.toString(), 'plugin_websocket_unsupported');
+  const failure = events[events.length - 1];
+  assert.equal(failure.type, 'error');
+  assert.equal(failure.status, 500, 'codex 把 500 当作可重试错误并丢弃这条 socket 重连');
+  assert.equal(failure.error.code, 'plugin_websocket_unsupported');
+  assert.equal(f.received.length, 1, '这个 create 没有出站');
+  assert.equal(await f.upgradeStatus(), 426, '重连拿到 426，整会话回落 HTTPS');
+  assert.deepEqual(f.system.runtime.status().leases, {});
 });
 
 test('each response.create is rewritten by gateway.request and observed once', async (t) => {

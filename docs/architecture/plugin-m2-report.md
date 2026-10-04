@@ -2,7 +2,7 @@
 
 日期：2026-10-04。对应 [插件化规划](../plans/2026-09-30-plugin-architecture-plan.md) §7 的 M2，建立在 [M0](plugin-m0-report.md)、[M1](plugin-m1-report.md) 之上。只记录有运行证据的结论；没有证据的条目标为「未完成」。
 
-结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。Responses WebSocket 已按 `response.create` 接入 request 与 observe。以下几项没有完成：Go 原生插件端口、WebSocket 上的 account / attempt、真实协议 shadow 验证，以及部分路由的 account / attempt / observe 覆盖。这些场景目前的处理方式见 §2 和 §5：Go 把请求交回 Node；account / attempt 插件活跃时，WebSocket 以 426 让客户端回落 HTTPS。都不是静默绕过插件。
+结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。Responses WebSocket 已按 `response.create` 接入 request 与 observe。以下几项没有完成：Go 原生插件端口、WebSocket 上的 account / attempt、真实协议 shadow 验证，以及部分路由的 account / attempt / observe 覆盖。这些场景目前的处理方式见 §2 和 §5：Go 把请求交回 Node；account / attempt 插件活跃时，WebSocket 以 426 让客户端回落 HTTPS。唯一的例外：插件启用前已由 Go 接管的 WebSocket 会话，在 codex 重连之前不经过插件（§5 第 8 条）。
 
 ## 1. 交付物
 
@@ -29,7 +29,9 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 | `/v1/images/generations`（独立选号循环） | ✓ | ✗ | ✗ | ✗ | ✓ |
 | Fabric 远端节点转发（`tryFabricGatewayRoute`） | ✓ | ✗（由远端节点选号） | ✗ | ✗ | ✓ |
 | `/v1/models` | — | — | — | — | ✓ |
-| codex Responses WebSocket（每个 `response.create`） | ✓ | 426 | 426 | ✓（每个 response 一条，只覆盖首次尝试，不含桥内换号恢复） | ✓ |
+| codex Responses WebSocket（每个 `response.create`） | ✓ | 426 | 426 | ✓（每个 response 一条摘要；桥内换号恢复中失败的尝试不单独上报，`accountRef` 取回答结束时连接的账号） | ✓ |
+
+插件可以在 WS 连接存续期间启用或停用，是否参与按帧判断：没有网关类贡献时帧逐字节直通，不做解析。连接建立后才启用的 account / attempt 插件：下一个 create 不出站，回 500 `error` 事件并关闭连接。codex 把 500 当作可重试错误（`InternalServerError`），丢弃 socket 重连，重连拿到 426 后回落；重试用尽时 codex 也会切换到 HTTPS。
 
 表中 426 指：account 或 attempt 插件活跃时，`/v1/responses` 升级回 **426**（`plugin_websocket_unsupported`）。codex 遇到 426 会在本会话内回落 HTTPS（见 codex-rs `core/src/client.rs`，只有 `UPGRADE_REQUIRED` 触发 `FallbackToHttp`），HTTPS 上插件阶段齐全。
 
@@ -99,4 +101,5 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 4. **route policy 只能对账号排序。** 规划里「提议模型选择」没有实现；改模型目前只能经 gateway.request 改写 `model` 字段。
 5. **observe 事件不含 token 用量。** 只有尝试级摘要，用量仍以网关自己的用量库为准。
 6. **Windows 偶发一次失败。** `through aih server: a catalog plugin alias routes to its target…` 在 Windows 全套运行中失败过一次，当时没有采集到细节；随后 5 次重跑（单文件和全套）全部通过。暂按偶发记录。
+8. **插件启用前已由 Go 接管的 WebSocket 会话不受插件约束。** Go 只在升级时调用 `deferToNode`；之后同一连接上的 `response.create` 一直由 Go 处理，直到 codex 重连（换连接、出错或会话结束）。Node 接管的连接没有这个问题。
 7. **其他。** M1 报告中的秘密配置、插件私有状态、Web 管理界面等限制不变。

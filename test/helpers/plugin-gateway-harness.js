@@ -71,12 +71,20 @@ async function startClaudeServer(t) {
   const upstreamBodies = [];
   const upstreamTokens = [];
   // failures.remaining：接下来几次上游回 500；failures.headerDelayMs：成功响应写头前的等待（模拟首字节慢）。
-  const failures = { remaining: 0, headerDelayMs: 0 };
+  // edgeBlocks：接下来几次上游回 Cloudflare 风格的 403 HTML 拦截页。
+  const failures = { remaining: 0, headerDelayMs: 0, edgeBlocks: 0 };
   const upstream = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
       if (req.url !== '/v1/messages') { res.writeHead(404); res.end('{}'); return; }
+      if (failures.edgeBlocks > 0) {
+        failures.edgeBlocks -= 1;
+        upstreamTokens.push(req.headers.authorization);
+        res.writeHead(403, { 'content-type': 'text/html; charset=UTF-8', 'cf-ray': 'test-NRT' });
+        res.end('<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>blocked</body></html>');
+        return;
+      }
       if (failures.remaining > 0) {
         failures.remaining -= 1;
         upstreamTokens.push(req.headers.authorization);

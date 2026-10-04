@@ -1044,12 +1044,19 @@
   transition: border-color var(--motion-base) var(--ease-standard);
 }
 
+/* 名称放不下时状态标签整体换到下一行，名称按词完整显示，不截断也不拆词。 */
 .toolkit-connectivity-grid article > div {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-4);
+}
+
+.toolkit-connectivity-grid article > div > .ant-tag {
+  flex: none;
+  margin-inline-end: 0;
 }
 
 .toolkit-connectivity-name {
@@ -1061,13 +1068,12 @@
 
 .toolkit-connectivity-grid article strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--color-heading);
   font-family: var(--font-display);
   font-size: var(--text-sm);
   letter-spacing: var(--tracking-wide);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--leading-tight);
+  overflow-wrap: break-word;
 }
 
 .toolkit-connectivity-grid article code,
@@ -1083,8 +1089,9 @@
   padding: 0;
 }
 
+/* 宽屏最多每行 4 张、每张至少 220px：名称、状态标签、地址都要完整可读，不能挤成一排截断的小卡片。 */
 .toolkit-connectivity-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(220px, calc((100% - 3 * var(--space-8)) / 4))), 1fr));
   margin-top: var(--space-8);
 }
 

@@ -34,7 +34,7 @@ export function uniqueProxySources(data: ProxyStatusResponse | null, core: Proxy
   const candidates: DetectedProxySource[] = [
     // 打码的地址不能拿去写进 Git / npm。
     { label: '网关上游代理', value: data.gateway?.redacted ? '' : data.gateway?.proxyUrl || '', origin: 'AIH 服务端配置' },
-    { label: 'AIH 代理池 mixed', value: core?.mixedProxyUrl || '', origin: 'Mihomo 数据面就绪状态' },
+    { label: 'AIH 代理池 mixed', value: core?.mixedProxyUrl || '', origin: 'AIH 代理池数据面就绪状态' },
     { label: '系统 HTTP', value: data.system?.httpProxy || '', origin: '操作系统代理探测' },
     { label: '系统 HTTPS', value: data.system?.httpsProxy || '', origin: '操作系统代理探测' },
     { label: '系统 SOCKS', value: data.system?.socksProxy || '', origin: '操作系统代理探测' },
@@ -144,7 +144,7 @@ export function useProxyDiagnostics() {
     setConnectivityData(null);
     try {
       const proxyUrl = route === 'proxy' ? coreStatus?.mixedProxyUrl || '' : undefined;
-      if (route === 'proxy' && !proxyUrl) throw new Error('Mihomo 数据面未就绪，不能执行代理路由测试');
+      if (route === 'proxy' && !proxyUrl) throw new Error('代理池数据面未就绪，不能执行代理路由测试');
       const response = await toolkitAPI.testConnectivity({ route, proxyUrl });
       if (!response.ok) throw new Error('连通性接口未返回可用结果');
       setConnectivityData(response);

@@ -24,6 +24,7 @@ import ProxyShareModal from '@/components/toolkit/proxy-pool/ProxyShareModal';
 import ProxySubscriptionsModal from '@/components/toolkit/proxy-pool/ProxySubscriptionsModal';
 import {
   copyText,
+  coreDisplayName,
   coreStatusPresentation,
   FUNCTIONAL_GROUP_OPTIONS
 } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
@@ -49,7 +50,7 @@ import {
   TelemetryTile
 } from '@/mobile/ui';
 import type { HudTone, SwipeAction } from '@/mobile/ui';
-import type { DedicatedPortsActiveServer, NetworkLayerStatus, ProxyCoreStatus, ProxyNode } from '@/types';
+import type { DedicatedPortsActiveServer, NetworkLayerStatus, ProxyCoreInfo, ProxyCoreStatus, ProxyNode } from '@/types';
 import { confirmAction } from '@/utils/confirm-action';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import styles from '../MobileToolkit.module.css';
@@ -69,7 +70,7 @@ function latencyStatus(latency: number | null | undefined) {
   return <StatusText tone={tone}>{`${latency} ms`}</StatusText>;
 }
 
-/** 代理池与分流：Mihomo 核心、网络层接管、节点清单（实测 / 独立端口 / 分享 / 编辑 / 删除）与订阅、分流、导入导出弹窗。 */
+/** 代理池与分流：代理核心（Mihomo / sing-box 插件）、网络层接管、节点清单（实测 / 独立端口 / 分享 / 编辑 / 删除）与订阅、分流、导入导出弹窗。 */
 export default function ProxyPoolPanel() {
   const { filterOptions: protocolFilterOptions } = useProxyProtocols();
   const {
@@ -100,6 +101,9 @@ export default function ProxyPoolPanel() {
     routing,
     runCoreAction,
     installCore,
+    cores,
+    corePending,
+    selectCore,
     pingNode,
     pingAll,
     togglePort,
@@ -175,6 +179,9 @@ export default function ProxyPoolPanel() {
         installPending={installPending}
         onAction={(action) => void runCoreAction(action)}
         onInstall={() => void installCore()}
+        cores={cores}
+        corePending={corePending}
+        onSelectCore={(coreId) => void selectCore(coreId)}
       />
 
       <NetworkTakeoverCard status={networkStatus} core={coreStatus} onRefresh={fetchData} />
@@ -349,7 +356,7 @@ function NodeDetail({ node, activePort, currentOutbound, dataPlaneReady, onShare
         ]}
       />
       <p className={styles.hint}>
-        {dataPlaneReady ? '实测由 Mihomo 执行；独立端口同时接受 HTTP 与 SOCKS5 客户端。' : '代理核心未就绪：实测与独立端口不可用。'}
+        {dataPlaneReady ? '实测由代理核心执行；独立端口同时接受 HTTP 与 SOCKS5 客户端。' : '代理核心未就绪：实测与独立端口不可用。'}
       </p>
       <div className={styles.buttonRow}>
         <ActionButton icon={<QrcodeOutlined />} label="分享" disabled={!node.rawUri} onClick={onShare} />
@@ -359,27 +366,40 @@ function NodeDetail({ node, activePort, currentOutbound, dataPlaneReady, onShare
   );
 }
 
-function CoreStatusCard({ core, pendingAction, installPending, onAction, onInstall }: {
+function CoreStatusCard({ core, pendingAction, installPending, onAction, onInstall, cores, corePending, onSelectCore }: {
   core: ProxyCoreStatus | null;
   pendingAction: 'start' | 'stop' | 'reload' | null;
   installPending: boolean;
   onAction: (action: 'start' | 'stop' | 'reload') => void;
   onInstall: () => void;
+  cores: ProxyCoreInfo[];
+  corePending: boolean;
+  onSelectCore: (coreId: string) => void;
 }) {
   const presentation = coreStatusPresentation(core);
+  const name = coreDisplayName(core);
+  const switchLocked = Boolean(core?.running) || corePending;
   const tone = CORE_TONES[presentation.type];
   return (
     <HudCard
-      code="MIHOMO CORE"
+      code={`${name.toUpperCase()} CORE`}
       title={presentation.title}
       tone={tone}
       extra={<StatusText tone={tone} live={Boolean(core?.running && core.dataPlaneReady)}>{core?.running ? 'RUNNING' : core?.installed ? 'STOPPED' : core ? 'MISSING' : 'READING'}</StatusText>}
     >
-      <p className={styles.prose}>{presentation.description}</p>
+      {cores.length > 1 ? (
+        <HudChips
+          ariaLabel="代理核心"
+          value={core?.engine || ''}
+          onChange={(value) => onSelectCore(String(value))}
+          items={cores.map((item) => ({ key: item.id, label: item.name, disabled: switchLocked && item.id !== core?.engine }))}
+        />
+      ) : null}
+      <p className={styles.prose}>{presentation.description}{core?.running && cores.length > 1 ? '（停止核心后可切换内核）' : ''}</p>
       {core && !core.installed ? (
         <div className={styles.buttonRow}>
-          <ActionButton icon={<CloudDownloadOutlined />} label="自动安装 Mihomo" tone="primary" loading={installPending} onClick={onInstall} />
-          <ActionButton icon={<LinkOutlined />} label="官方发布页" href="https://github.com/MetaCubeX/mihomo/releases" />
+          <ActionButton icon={<CloudDownloadOutlined />} label={`自动安装 ${name}`} tone="primary" loading={installPending} onClick={onInstall} />
+          <ActionButton icon={<LinkOutlined />} label="官方发布页" href={core.releaseUrl || 'https://github.com/MetaCubeX/mihomo/releases'} />
         </div>
       ) : null}
       {core?.installed && !core.running ? (

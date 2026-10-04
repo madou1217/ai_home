@@ -130,6 +130,7 @@ import type {
   DedicatedPortMutationResponse,
   AggregateExportResponse,
   ProxyCoreStatusResponse,
+  ProxyCoresResponse,
   ProxyProtocolsResponse,
   ProxyCoreActionResponse,
   NetworkStatusResponse,
@@ -2289,6 +2290,14 @@ export const proxyPoolAPI = {
   },
   getProtocols: async (): Promise<ProxyProtocolsResponse> => {
     const response = await api.get<ProxyProtocolsResponse>('/webui/toolkit/proxy-pool/protocols');
+    return response.data;
+  },
+  listCores: async (): Promise<ProxyCoresResponse> => {
+    const response = await api.get<ProxyCoresResponse>('/webui/toolkit/proxy-pool/cores');
+    return response.data;
+  },
+  selectCore: async (coreId: string): Promise<ProxyCoreActionResponse> => {
+    const response = await api.post<ProxyCoreActionResponse>('/webui/toolkit/proxy-pool/core/select', { coreId });
     return response.data;
   },
   getCoreStatus: async (): Promise<ProxyCoreStatusResponse> => {

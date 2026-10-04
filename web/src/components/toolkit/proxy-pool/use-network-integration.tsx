@@ -87,14 +87,14 @@ export function useNetworkIntegration(core: ProxyCoreStatus | null, status: Netw
   const enableTun = () => applyPlan(
     'tun',
     'enable',
-    `启用 AIH Mihomo TUN（${tunStack}）。系统可能要求管理员权限；现有外部 TUN 不会被关闭。`,
+    `启用 AIH 代理核心 TUN（${tunStack}）。系统可能要求管理员权限；现有外部 TUN 不会被关闭。`,
     'tun-enable',
     { tun: { enabled: true, stack: tunStack } }
   );
   const disableTun = () => applyPlan(
     'tun',
     'disable',
-    '停用 AIH 自己的 TUN 配置并重载 Mihomo；不会操作外部代理工具。',
+    '停用 AIH 自己的 TUN 配置并重载代理核心；不会操作外部代理工具。',
     'tun-disable'
   );
 

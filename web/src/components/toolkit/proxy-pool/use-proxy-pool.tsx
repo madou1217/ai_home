@@ -6,6 +6,7 @@ import type {
   DedicatedPortsResponse,
   NetworkLayerStatus,
   ProxyCoreActionResponse,
+  ProxyCoreInfo,
   ProxyCoreStatus,
   ProxyNode,
   ProxyNodesResponse,
@@ -14,7 +15,7 @@ import type {
   RoutingResponse
 } from '@/types';
 import type { CoreAction } from './ProxyCoreStatusRail';
-import { getErrorMessage, getMutationMessage, isMutationApplied } from './proxy-pool-utils';
+import { coreDisplayName, getErrorMessage, getMutationMessage, isMutationApplied } from './proxy-pool-utils';
 
 /** 新建节点的默认值（桌面与移动端「添加节点」共用）。 */
 export const NEW_PROXY_NODE: Partial<ProxyNode> = {
@@ -43,6 +44,8 @@ export function useProxyPool() {
   const [batchPinging, setBatchPinging] = useState(false);
   const [coreAction, setCoreAction] = useState<CoreAction | null>(null);
   const [installPending, setInstallPending] = useState(false);
+  const [cores, setCores] = useState<ProxyCoreInfo[]>([]);
+  const [corePending, setCorePending] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -55,6 +58,10 @@ export function useProxyPool() {
       proxyPoolAPI.getCoreStatus(),
       proxyPoolAPI.getNetworkStatus()
     ] as const);
+    // 内核清单（旧服务端没有该接口时只显示当前内核，不影响其余数据）。
+    proxyPoolAPI.listCores()
+      .then((response) => setCores(response.ok ? response.cores : []))
+      .catch(() => setCores([]));
 
     const errors: string[] = [];
     const [nodesResult, subsResult, routingResult, portsResult, coreResult, networkResult] = results;
@@ -148,20 +155,43 @@ export function useProxyPool() {
     }
   };
 
+  const coreName = coreDisplayName(coreStatus);
+
+  /** 切换代理内核：只在内核停止时允许（服务端同样校验），成功后重新读取全部状态。 */
+  const selectCore = async (coreId: string) => {
+    if (corePending || coreId === coreStatus?.engine) return;
+    setCorePending(true);
+    try {
+      const result = await proxyPoolAPI.selectCore(coreId);
+      if (!result.ok) {
+        message.error(result.message || (result.error === 'proxy_core_switch_requires_stop'
+          ? '请先停止当前代理核心再切换'
+          : result.error) || '切换代理核心失败');
+        return;
+      }
+      message.success(`已切换到 ${cores.find((core) => core.id === coreId)?.name || coreId}`);
+      await fetchData();
+    } catch (error) {
+      message.error(getErrorMessage(error, '切换代理核心失败'));
+    } finally {
+      setCorePending(false);
+    }
+  };
+
   const installCore = async () => {
     if (installPending) return;
     setInstallPending(true);
     try {
       const planned = await proxyPoolAPI.planCoreInstall();
       if (!planned.ok || !planned.plan) {
-        message.error(planned.message || planned.error || '无法生成 Mihomo 安装计划');
+        message.error(planned.message || planned.error || `无法生成 ${coreName} 安装计划`);
         return;
       }
       const accepted = await confirmAction({
-        title: `安装 Mihomo ${planned.plan.version}`,
+        title: `安装 ${coreName} ${planned.plan.version}`,
         content: (
           <div className="toolkit-confirm-detail" data-break="all">
-            {`将从官方 Mihomo 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`}
+            {`将从官方 ${coreName} 发布源下载并校验 ${planned.plan.version}（${planned.plan.assetName}）。\n\n文件摘要：${planned.plan.digest}\n安装到 AIH 托管目录。是否继续？`}
           </div>
         ),
         okText: '下载并安装',
@@ -169,13 +199,13 @@ export function useProxyPool() {
       if (!accepted) return;
       const result = await proxyPoolAPI.executeCoreInstall(planned.plan.planId, true);
       if (!result.ok) {
-        message.error(result.message || result.error || 'Mihomo 安装失败');
+        message.error(result.message || result.error || `${coreName} 安装失败`);
         return;
       }
-      message.success(`Mihomo ${result.version || planned.plan.version} 已安装，可启动核心`);
+      message.success(`${coreName} ${result.version || planned.plan.version} 已安装，可启动核心`);
       await fetchData();
     } catch (error) {
-      message.error(getErrorMessage(error, 'Mihomo 安装失败'));
+      message.error(getErrorMessage(error, `${coreName} 安装失败`));
     } finally {
       setInstallPending(false);
     }
@@ -282,6 +312,10 @@ export function useProxyPool() {
     routing,
     runCoreAction,
     installCore,
+    cores,
+    corePending,
+    coreName,
+    selectCore,
     pingNode,
     pingAll,
     togglePort,

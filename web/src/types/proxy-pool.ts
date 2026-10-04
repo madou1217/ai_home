@@ -227,8 +227,34 @@ export interface ProxyCoreListener {
   listening: boolean;
 }
 
+export interface ProxyCoreCapabilities {
+  hotReload?: boolean;
+  dedicatedPorts?: boolean;
+  tun?: boolean;
+}
+
+/** 代理内核插件（服务端 proxy-pool/cores 注册表下发）。 */
+export interface ProxyCoreInfo {
+  id: string;
+  name: string;
+  configFormat?: string;
+  releaseUrl?: string;
+  capabilities?: ProxyCoreCapabilities;
+  active: boolean;
+}
+
+export interface ProxyCoresResponse {
+  ok: boolean;
+  cores: ProxyCoreInfo[];
+}
+
 export interface ProxyCoreStatus {
-  engine: 'mihomo';
+  /** 当前代理内核插件 id（mihomo / sing-box …）。 */
+  engine: string;
+  engineName?: string;
+  releaseUrl?: string;
+  binaryEnvVar?: string;
+  capabilities?: ProxyCoreCapabilities;
   installed: boolean;
   binaryName?: string | null;
   binarySource?: 'env' | 'path' | 'known-app' | 'managed' | null;

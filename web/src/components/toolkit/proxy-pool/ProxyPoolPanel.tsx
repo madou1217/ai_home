@@ -61,7 +61,11 @@ export default function ProxyPoolPanel() {
     pingNode,
     pingAll,
     togglePort,
-    deleteNode
+    deleteNode,
+    cores,
+    corePending,
+    coreName,
+    selectCore
   } = useProxyPool();
 
   const [editingNode, setEditingNode] = useState<Partial<ProxyNode> | null>(null);
@@ -80,6 +84,9 @@ export default function ProxyPoolPanel() {
         onAction={(action) => void runCoreAction(action)}
         onInstall={() => void installCore()}
         installPending={installPending}
+        cores={cores}
+        corePending={corePending}
+        onSelectCore={(coreId) => void selectCore(coreId)}
       />
 
       <ProxyNetworkIntegrationPanel status={networkStatus} core={coreStatus} onRefresh={fetchData} />
@@ -151,7 +158,7 @@ export default function ProxyPoolPanel() {
           />
         </Space>
         <Space size={8} wrap>
-          <Tooltip title={dataPlaneReady ? '通过 Mihomo API 测量真实代理延迟' : '代理核心未就绪'}>
+          <Tooltip title={dataPlaneReady ? `通过 ${coreName} API 测量真实代理延迟` : '代理核心未就绪'}>
             <Button
               icon={<ThunderboltOutlined />}
               loading={batchPinging}

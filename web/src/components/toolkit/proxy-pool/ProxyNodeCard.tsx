@@ -111,7 +111,7 @@ export default function ProxyNodeCard({
 
       <div className="toolkit-card-actions">
         <Space size={6} wrap>
-          <Tooltip title={dataPlaneReady ? '由 Mihomo 实测' : '代理核心未就绪'}>
+          <Tooltip title={dataPlaneReady ? '由代理核心实测' : '代理核心未就绪'}>
             <Button
               size="small"
               loading={pinging}

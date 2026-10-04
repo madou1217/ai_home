@@ -1,4 +1,4 @@
-import { Space } from 'antd';
+import { Segmented, Space, Tooltip } from 'antd';
 import InlineNote from '@/components/ui/InlineNote';
 import {
   CopyOutlined,
@@ -8,8 +8,8 @@ import {
   SafetyCertificateOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import type { ProxyCoreStatus } from '@/types';
-import { copyText, coreStatusPresentation } from './proxy-pool-utils';
+import type { ProxyCoreInfo, ProxyCoreStatus } from '@/types';
+import { copyText, coreDisplayName, coreStatusPresentation } from './proxy-pool-utils';
 
 export type CoreAction = 'start' | 'stop' | 'reload';
 
@@ -19,6 +19,10 @@ interface ProxyCoreStatusRailProps {
   onAction: (action: CoreAction) => void;
   onInstall: () => void;
   installPending: boolean;
+  /** 当前平台可用的内核插件；只有一个时不显示选择器。 */
+  cores?: ProxyCoreInfo[];
+  corePending?: boolean;
+  onSelectCore?: (coreId: string) => void;
 }
 
 export default function ProxyCoreStatusRail({
@@ -26,9 +30,14 @@ export default function ProxyCoreStatusRail({
   pendingAction,
   onAction,
   onInstall,
-  installPending
+  installPending,
+  cores = [],
+  corePending = false,
+  onSelectCore
 }: ProxyCoreStatusRailProps) {
   const presentation = coreStatusPresentation(core);
+  const name = coreDisplayName(core);
+  const switchLocked = Boolean(core?.running);
 
   return (
     <InlineNote
@@ -38,6 +47,18 @@ export default function ProxyCoreStatusRail({
       description={presentation.description}
       action={(
         <Space wrap>
+          {cores.length > 1 && onSelectCore && (
+            <Tooltip title={switchLocked ? '停止当前代理核心后才能切换' : '选择代理池使用的代理核心'}>
+              <Segmented
+                aria-label="代理核心"
+                size="small"
+                value={core?.engine}
+                disabled={switchLocked || corePending}
+                options={cores.map((item) => ({ label: item.name, value: item.id }))}
+                onChange={(value) => onSelectCore(String(value))}
+              />
+            </Tooltip>
+          )}
           {core && !core.installed && (
             <>
               <Button
@@ -46,10 +67,10 @@ export default function ProxyCoreStatusRail({
                 loading={installPending}
                 onClick={onInstall}
               >
-                自动安装 Mihomo
+                自动安装 {name}
               </Button>
               <Button
-                href="https://github.com/MetaCubeX/mihomo/releases"
+                href={core.releaseUrl || 'https://github.com/MetaCubeX/mihomo/releases'}
                 target="_blank"
                 rel="noreferrer"
               >

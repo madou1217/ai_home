@@ -73,3 +73,18 @@ test('proxy mutations report success only after the backend confirms application
     'proxy_core_reload_failed'
   );
 });
+
+test('core status presentation names the active proxy core plugin', () => {
+  const modulePath = path.resolve(
+    __dirname,
+    '../web/src/components/toolkit/proxy-pool/proxy-pool-utils.ts'
+  );
+  const { coreDisplayName, coreStatusPresentation } = loadTypeScriptModule(modulePath);
+  assert.equal(coreDisplayName({ engine: 'sing-box', engineName: 'sing-box' }), 'sing-box');
+  assert.equal(coreDisplayName({ engine: 'mihomo' }), 'Mihomo');
+  const missing = coreStatusPresentation({ engine: 'sing-box', engineName: 'sing-box', binaryEnvVar: 'AIH_SING_BOX_BIN', installed: false, running: false, dataPlaneReady: false, activeListeners: [] });
+  assert.equal(missing.title, 'sing-box 代理核心未安装');
+  assert.match(missing.description, /AIH_SING_BOX_BIN/);
+  const ready = coreStatusPresentation({ engine: 'sing-box', engineName: 'sing-box', installed: true, running: true, dataPlaneReady: true, version: '1.14.2', mixedPort: 10800, activeListeners: [] });
+  assert.equal(ready.title, 'sing-box 数据面已就绪');
+});

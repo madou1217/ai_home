@@ -45,6 +45,11 @@ Options:
   --dry-run               Print steps without executing them.
   -h, --help              Show this help.
 
+Routine code updates of an existing server: use scripts/deploy-server.js
+(npm run deploy:server), which deploys a pushed commit in place into one
+directory. This script packs the local working tree and is only meant for
+first-time provisioning with an account import.
+
 This script is intentionally conservative: it does not install systemd units,
 does not edit firewall rules, does not install system packages, and does not
 delete remote directories.

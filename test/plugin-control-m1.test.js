@@ -305,6 +305,14 @@ async function startServer(aiHomeDir, port) {
   return handle;
 }
 
+// Windows 上 aih server 停止后 app-state.db 仍有句柄未关（服务端既有问题，server-lifecycle 测试同样
+// EBUSY），临时目录只能尽力清理；断言不受影响。
+function removeServerTempDir(dir) {
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (error) {
+    if (!(process.platform === 'win32' && error.code === 'EBUSY')) throw error;
+  }
+}
+
 async function cli(args, context) {
   const lines = [];
   const consoleImpl = { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) };
@@ -351,7 +359,7 @@ test('closed loop through aih server and the CLI survives a server restart', asy
     assert.equal(doctor.result.healthy, true, JSON.stringify(doctor.result));
   } finally {
     await server.stop();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeServerTempDir(dir);
   }
 });
 

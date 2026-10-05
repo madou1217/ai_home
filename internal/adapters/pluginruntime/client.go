@@ -156,6 +156,16 @@ func (c *Client) Call(ctx context.Context, method string, value any, payload []b
 	}
 }
 
+// Closed 报告连接是否已经关闭（宿主退出、写超时或主动关闭）；关闭后的客户端不能再用。
+func (c *Client) Closed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Close 关闭连接，所有在途调用以 plugin_rpc_closed 结束。
 func (c *Client) Close() error {
 	c.shutdown(&Error{Code: plugincontract.CodeRpcClosed, Message: "client closed"})

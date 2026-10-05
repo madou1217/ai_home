@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -100,6 +101,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	if handlers.accountRuntime != nil {
 		mux.Handle(accountruntimeapi.Path, handlers.accountRuntime)
 	}
+	if handlers.plugins.projection != nil {
+		mux.Handle(pluginapi.ProjectionPath, handlers.plugins.projection)
+	}
 	if handlers.accountUsageEvents != nil {
 		mux.Handle(accountusageeventsapi.Path, handlers.accountUsageEvents)
 	}
@@ -131,13 +135,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 		clauderelayleaseapi.Path,
 		handlers.claudeRelayLeases,
 	)
-	mux.Handle(openairesponsesapi.Path, responsesDispatcher{
+	// 推理入口先过插件 gateway.request 闸门（只对 Node 带代次头的请求生效；WebSocket 升级直通）。
+	mux.Handle(openairesponsesapi.Path, handlers.plugins.wrap("openai_responses", responsesDispatcher{
 		canonical:  handlers.inference,
 		nativeHTTP: handlers.codexResponsesHTTP,
 		websocket:  handlers.codexResponsesWS,
 		observe:    handlers.observeCodexClient,
-	})
-	mux.Handle(openaichatcompletionsapi.Path, handlers.inference)
+	}))
+	mux.Handle(openaichatcompletionsapi.Path, handlers.plugins.wrap("openai_chat", handlers.inference))
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
 	//
@@ -145,7 +150,7 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 客户端即使上游就是 claude 账号也被迫走 Canonical 重建——那是丢字段
 	// （stop_details / service_tier / inference_geo / cache_creation）与错状态
 	// 的来源，且同协议下这些信息本来是 1:1 的。
-	mux.Handle(anthropicmessagesapi.Path, handlers.claudeNativeRelay)
+	mux.Handle(anthropicmessagesapi.Path, handlers.plugins.wrap("anthropic_messages", handlers.claudeNativeRelay))
 	mux.HandleFunc("/", handleRouteNotFound)
 	return mux
 }

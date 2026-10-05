@@ -46,6 +46,9 @@ const (
 	CodeGenerationUnknown       = "plugin_generation_unknown"
 )
 
+var GatewayRequestFrozenTopLevel = []string{"session_id", "sessionId", "session", "conversation_id", "thread_id", "previous_response_id", "response_id", "store", "prompt_cache_key"}
+var GatewayRequestFrozenMetadata = []string{"session_id", "conversation_id", "thread_id"}
+
 type Fault struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

@@ -1,0 +1,116 @@
+package pluginapi
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+
+	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+)
+
+// GenerationHeader 是 Node 公开入口给内部转发打上的插件代次。
+//
+// 只有带内部客户端密钥的请求才信任它；闸门读取后立即删除，不向下游传播。
+// 公开客户端不能直接访问 Go，Node 的转发器也会剥掉客户端自带的同名头。
+const GenerationHeader = "X-Aih-Plugin-Generation"
+
+// RequestGate 在推理入口（选号、协议解码之前）运行 gateway.request，语义与 Node v1-router 一致。
+//
+// 没有代次头时零开销直通（不读正文）。代次投影不存在（例如 Go 刚重启、Node 尚未重新推送）
+// 或正文被压缩时，按「解码拒收」交回 Node：此时还没有任何副作用，Node 用它缓冲的原文重新处理。
+type RequestGate struct {
+	registry   *appplugins.Registry
+	invoker    appplugins.Invoker
+	authorizer Authorizer
+	maxBody    int64
+}
+
+// NewRequestGate 创建 gateway.request 闸门。
+func NewRequestGate(registry *appplugins.Registry, invoker appplugins.Invoker, authorizer Authorizer, maxBody int64) (*RequestGate, error) {
+	if registry == nil || invoker == nil || authorizer == nil || maxBody <= 0 {
+		return nil, ErrInvalidDependencies
+	}
+	return &RequestGate{registry: registry, invoker: invoker, authorizer: authorizer, maxBody: maxBody}, nil
+}
+
+// Wrap 返回带闸门的入口；protocol 是该入口的客户端协议名（与 Node detectClientProtocol 一致）。
+func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		raw := request.Header.Get(GenerationHeader)
+		request.Header.Del(GenerationHeader)
+		if raw == "" || !gate.authorizer.Authorized(request) || isUpgrade(request) || request.Method != http.MethodPost {
+			next.ServeHTTP(response, request)
+			return
+		}
+		generation, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || generation <= 0 {
+			next.ServeHTTP(response, request)
+			return
+		}
+		projection, ok := gate.registry.Get(generation)
+		if !ok {
+			handBack(response, "plugin_generation_unavailable")
+			return
+		}
+		if !projection.Has(appplugins.CapabilityGatewayRequest) {
+			next.ServeHTTP(response, request)
+			return
+		}
+		if encoding := strings.TrimSpace(request.Header.Get("Content-Encoding")); encoding != "" && !strings.EqualFold(encoding, "identity") {
+			handBack(response, "plugin_compressed_body")
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(request.Body, gate.maxBody+1))
+		_ = request.Body.Close()
+		if err != nil || int64(len(body)) > gate.maxBody {
+			writeError(response, http.StatusRequestEntityTooLarge, "request_body_too_large", "请求体过大")
+			return
+		}
+		trimmed := bytes.TrimSpace(body)
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			restoreBody(request, body)
+			next.ServeHTTP(response, request)
+			return
+		}
+		outcome, err := appplugins.RunRequestStage(request.Context(), gate.invoker, projection, appplugins.RequestInput{
+			Protocol: protocol,
+			Path:     request.URL.Path,
+			Body:     body,
+		})
+		if err != nil {
+			code := "plugin_failed"
+			var stageErr *appplugins.StageError
+			if errors.As(err, &stageErr) && stageErr.Code != "" {
+				code = stageErr.Code
+			}
+			writeError(response, http.StatusBadGateway, code, err.Error())
+			return
+		}
+		if outcome.Reject != nil {
+			writeError(response, outcome.Reject.Status, "plugin_rejected", outcome.Reject.Message)
+			return
+		}
+		restoreBody(request, outcome.Body)
+		next.ServeHTTP(response, request)
+	})
+}
+
+func restoreBody(request *http.Request, body []byte) {
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	request.ContentLength = int64(len(body))
+	request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+}
+
+func isUpgrade(request *http.Request) bool {
+	return strings.EqualFold(request.Header.Get("Upgrade"), "websocket")
+}
+
+// handBack 让 Node 用它缓冲的原文重新处理同一请求（还没有任何副作用）。
+func handBack(response http.ResponseWriter, code string) {
+	inferenceapi.MarkDecodeRejected(response)
+	writeError(response, http.StatusBadRequest, code, "插件代次需由 Node 处理")
+}

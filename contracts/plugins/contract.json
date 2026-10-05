@@ -3,6 +3,10 @@
   "protocolVersion": 2,
   "supportedProtocolVersions": { "min": 2, "max": 2 },
   "sdkVersion": "0.1.0",
+  "gatewayRequest": {
+    "frozenTopLevel": ["session_id", "sessionId", "session", "conversation_id", "thread_id", "previous_response_id", "response_id", "store", "prompt_cache_key"],
+    "frozenMetadata": ["session_id", "conversation_id", "thread_id"]
+  },
   "limits": {
     "metadataBytes": 65536,
     "payloadBytes": 4194304,

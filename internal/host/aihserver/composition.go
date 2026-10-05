@@ -88,6 +88,8 @@ type serverHandlers struct {
 	accountRuntime http.Handler
 	// accountUsageEvents 是成功尝试 token 用量事件的增量只读管理接口。
 	accountUsageEvents http.Handler
+	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
+	plugins pluginHandlers
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -838,7 +840,9 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("启动账号模型目录周期重扫 worker 失败: %w", err)
 	}
+	plugins := newPluginHandlers(authorizer, clientAuthorizer)
 	return serverHandlers{
+		plugins:            plugins,
 		accounts:           accountsHandler,
 		accountAuth:        accountAuthHandler,
 		models:             modelsHandler,
@@ -866,6 +870,7 @@ func newHandlers(
 			}
 		},
 	}, []io.Closer{
+		plugins,
 		modelSweepWorker,
 		initialModelRecoveryWorker,
 		webSocketHandler,

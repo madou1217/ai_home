@@ -32,6 +32,10 @@ function renderGo() {
   }
   go += '\nconst (\n' + alignedBlock(contract.messageKinds.map((kind) => ['Kind' + goIdentifier(kind), '= "' + kind + '"'])) + ')\n';
   go += '\nconst (\n' + alignedBlock(contract.errorCodes.map((code) => ['Code' + goIdentifier(code.replace(/^plugin_/, '')), '= "' + code + '"'])) + ')\n';
+  // gateway.request 的身份字段：Node 与 Go 共用同一份清单，插件不能改动。
+  const quoted = (values) => values.map((value) => JSON.stringify(value)).join(', ');
+  go += '\nvar GatewayRequestFrozenTopLevel = []string{' + quoted(contract.gatewayRequest.frozenTopLevel) + '}\n';
+  go += 'var GatewayRequestFrozenMetadata = []string{' + quoted(contract.gatewayRequest.frozenMetadata) + '}\n';
   for (const [name, fields] of Object.entries(contract.wireTypes)) {
     const rows = Object.entries(fields).map(([raw, type]) => {
       const optional = raw.endsWith('?');

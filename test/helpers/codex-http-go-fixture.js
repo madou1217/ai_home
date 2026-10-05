@@ -53,7 +53,7 @@ async function startGoGateway(context, upstreamBase, model, options = {}) {
     const response = await fetch(base + '/v1/models', { headers: { authorization: `Bearer ${clientKey}` } });
     const document = await response.json();
     catalog = { status: response.status, document };
-    if (document.data?.some(entry => entry.id === model)) return { base, accountRef, clientKey, register };
+    if (document.data?.some(entry => entry.id === model)) return { base, accountRef, clientKey, managementKey, register };
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   throw new Error('Go fixture model catalog not ready: ' + JSON.stringify(catalog) + '\n' + stderr);

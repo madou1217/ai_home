@@ -74,7 +74,7 @@
 - 收敛两处含义完全一致的写死逻辑：sub2api 导出的 `platform` 映射（`standard-transfer.js`）、按 API 密钥环境变量判定账号类型的整张表（`account-identity.js`，15 家）。黄金比对：12 家 × 14 种环境变量的账号类型判定 210 种组合全部一致；`platform` 映射仅对未规范化输入（如 `'CODEX'`）有差异，调用方实际只传规范化 id。
 - 刻意保留 `cli.envKeys`（无类型的混合列表，含 `GROK_HOME`、`KIRO_TEST_DB_PATH` 等），不改其含义。
 
-**待用户决定（换成查表会扩大行为，未改）：**
+**扩大行为的三处（用户 2026-10-05 同意后已改，统一经 `lib/account/provider-credential-env.js` 读取）：**
 
 | 位置 | 现状覆盖 | 换成查表后新增 |
 |---|---|---|

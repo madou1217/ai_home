@@ -41,6 +41,7 @@ import {
 } from '@/features/accounts/account-import-export';
 import type { ImportMode, ImportUploadKind, PasteTemplate } from '@/features/accounts/account-import-export';
 import { getAccountLaunchBlockReason } from '@/features/accounts/account-view-model';
+import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import type {
   UseAccountsSnapshotHandlers,
   UseAccountsSnapshotResult
@@ -1020,12 +1021,10 @@ export function useAccountActions({
         message.warning('账号认证已失效，请重新登录后再打开');
         return false;
       }
-      if (kind === 'desktop' && record.provider === 'kimi'
-        && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
+      const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(error) : null;
+      if (loginAction) {
         setKimiDesktopLoginRequest({ account: record, openAfterLogin: true });
-        if (code === 'kimi_desktop_session_seed_failed') {
-          message.warning(error?.response?.data?.message || 'Kimi Desktop 登录态需要重新托管');
-        }
+        if (loginAction.warn) message.warning(loginAction.message || '登录态需要重新托管');
         return false;
       }
       if (code === 'agy_desktop_restart_required') {

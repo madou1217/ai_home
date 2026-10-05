@@ -25,6 +25,7 @@ import {
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
+import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import { renderAccountRegionTag } from '@/features/accounts/AccountBadges';
 import MobileBoot from '@/mobile/MobileBoot';
 import {
@@ -111,15 +112,10 @@ export default function AppsPanel() {
       }
       await refreshRunningApps();
     } catch (requestFailure: unknown) {
-      const code = typeof requestFailure === 'object' && requestFailure
-        ? String((requestFailure as { response?: { data?: { error?: string } } }).response?.data?.error || '')
-        : '';
-      if (kind === 'desktop' && app.provider === 'kimi' && accountRef
-        && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
+      const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(requestFailure) : null;
+      if (loginAction && accountRef) {
         setKimiDesktopLoginTarget({ app, accountRef });
-        if (code === 'kimi_desktop_session_seed_failed') {
-          message.warning(requestError(requestFailure, 'Kimi Desktop 登录态需要重新托管'));
-        }
+        if (loginAction.warn) message.warning(loginAction.message || `${app.name} 登录态需要重新托管`);
         return;
       }
       message.error(requestError(requestFailure, `${app.name} 启动失败`));

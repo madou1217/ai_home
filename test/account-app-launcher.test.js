@@ -1735,6 +1735,7 @@ test('kimi desktop 无托管 desktopSession 且 profile 未登录时要求先扫
   const result = launcher.launchAccountApp({ provider: 'kimi', accountRef, kind: 'desktop' });
   assert.equal(result.ok, false);
   assert.equal(result.error, 'kimi_desktop_session_required');
+  assert.deepEqual(result.requiredAction, { kind: 'desktop-login', flow: 'kimi-desktop-session' });
   assert.equal(fakeSpawn.calls.length, 0);
   assert.equal(seeds.length, 0);
 });

@@ -236,7 +236,11 @@ test('kimi 策略无可用 session 且无既有 token 仓时关闭启动', () =>
       seedKimiDesktopTokenStore: () => ({ seeded: false })
     }
   }));
-  assert.deepEqual(result, { ready: false, error: 'kimi_desktop_session_required' });
+  assert.deepEqual(result, {
+    ready: false,
+    error: 'kimi_desktop_session_required',
+    requiredAction: { kind: 'desktop-login', flow: 'kimi-desktop-session' }
+  });
 });
 
 test('kimi 策略：注入实现抛错时降级为可诊断的失败，不冒泡到启动器', () => {
@@ -249,6 +253,7 @@ test('kimi 策略：注入实现抛错时降级为可诊断的失败，不冒泡
   }));
   assert.equal(result.ready, false);
   assert.equal(result.error, 'kimi_desktop_session_seed_failed');
+  assert.deepEqual(result.requiredAction, { kind: 'desktop-login', flow: 'kimi-desktop-session', warn: true });
   assert.match(result.reason, /profile locked/);
 });
 

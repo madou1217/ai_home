@@ -13,6 +13,7 @@ import ManagedAppAccountActions, {
   type ManagedAppLaunchTarget
 } from '@/components/toolkit/ManagedAppAccountActions';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
+import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import { accountsAPI, toolkitAPI } from '@/services/api';
 import { useWebUiTaskQueue, type WebUiTaskStreamStatus } from '@/services/webui-task-queue';
 import {
@@ -181,13 +182,10 @@ export default function AppInstallTaskQueue() {
       const responseData = typeof error === 'object' && error
         ? (error as { response?: { data?: { error?: string; message?: string } } }).response?.data
         : undefined;
-      const code = String(responseData?.error || '');
-      if (kind === 'desktop' && app.provider === 'kimi' && accountRef
-        && (code === 'kimi_desktop_session_required' || code === 'kimi_desktop_session_seed_failed')) {
+      const loginAction = kind === 'desktop' ? desktopLoginRequiredAction(error) : null;
+      if (loginAction && accountRef) {
         setKimiDesktopLoginTarget({ app, accountRef });
-        if (code === 'kimi_desktop_session_seed_failed') {
-          message.warning(responseData?.message || 'Kimi Desktop 登录态需要重新托管');
-        }
+        if (loginAction.warn) message.warning(loginAction.message || `${app.name} 登录态需要重新托管`);
         return;
       }
       message.error(responseData?.message || (error instanceof Error ? error.message : `${app.name} 启动失败`));

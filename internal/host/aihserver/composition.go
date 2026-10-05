@@ -536,6 +536,7 @@ func newHandlers(
 	}
 	// 生产默认使用拒绝重定向的独立客户端；仅测试可注入替身。
 	var relayClient claudenativerelay.HTTPClient = &http.Client{
+		Transport:     newUpstreamTransport(),
 		Timeout:       claudeRelayHTTPTimeout,
 		CheckRedirect: rejectOAuthRedirect,
 	}

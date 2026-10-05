@@ -87,7 +87,10 @@ func newInferenceComposition(
 
 	client := dependencies.httpClient
 	if client == nil {
+		transport := newUpstreamTransport()
+		composition.closers = append(composition.closers, idleConnectionCloser{transport: transport})
 		client = &http.Client{
+			Transport:     transport,
 			Timeout:       inferenceHTTPTimeout,
 			CheckRedirect: rejectOAuthRedirect,
 		}

@@ -33,8 +33,8 @@ import (
 type systemStatusResponse struct {
 	OK      bool   `json:"ok"`
 	Service string `json:"service"`
-	Ready   bool   `json:"ready,omitempty"`
-	// Accounts 是按 Provider 分组的账号数量；与 Node 一样覆盖**全部**受支持 Provider，
+	Ready   *bool  `json:"ready,omitempty"`
+	// Accounts 是按 Provider 分组的启用账号数量；与 Node 一样覆盖**全部**受支持 Provider，
 	// 没有账号的 Provider 记 0 而不是省略。
 	Accounts map[string]int `json:"accounts,omitempty"`
 	// Gateway 与 Node 的 `buildFabricGatewayReadiness` 同形状。Go 没有 Fabric 数据面，
@@ -63,7 +63,7 @@ type catalogReadiness struct {
 	stale      bool
 	modelCount int
 	routeCount int
-	// accounts 是按 Provider 分组的账号数量，已由 Composition Root 补齐全部 Provider。
+	// accounts 是按 Provider 分组的启用账号数量，已由 Composition Root 补齐全部 Provider。
 	accounts map[string]int
 }
 
@@ -173,7 +173,7 @@ func handleHealth(response http.ResponseWriter, request *http.Request) {
 //   - **状态码恒为 200**。Node 那边「HTTP 200 但 `ready=false`」是被文档依赖的诊断信号
 //     （`docs/fabric/08-current-status.md`：节点活着、缺的是 provider 账号）。若这里改成
 //     503，同一条诊断会被读成「节点挂了」——结论反向。
-//   - `ready` = 至少一个 Provider 有账号（Node：`accounts.some(count>0) || gateway.ready`）。
+//   - `ready` = 至少一个 Provider 有启用账号（Node：`accounts.some(count>0) || gateway.ready`）。
 //     「目录是否就绪」仍然可读，但走 `inference_catalog_ready` 这个追加字段。
 //   - `accounts` 与 `gateway` 是 Node 的契约字段，不能缺：Fabric 的 `--runtime-diagnostics`
 //     会从 `accounts` 推导 `missing_provider_account:<provider>`。
@@ -192,10 +192,11 @@ func handleReadiness(
 		status = statusReader()
 	}
 	gateway := gatewayReadinessView{}
+	ready := hasEnabledProviderAccount(status.accounts) || gateway.Ready
 	writeSystemJSON(response, http.StatusOK, systemStatusResponse{
 		OK:       true,
 		Service:  "aih-server",
-		Ready:    hasEnabledProviderAccount(status.accounts) || gateway.Ready,
+		Ready:    &ready,
 		Accounts: status.accounts,
 		Gateway:  &gateway,
 		Capabilities: []string{
@@ -215,7 +216,7 @@ func handleReadiness(
 	})
 }
 
-// hasEnabledProviderAccount 判断是否至少有一个 Provider 有账号。
+// hasEnabledProviderAccount 判断是否至少有一个 Provider 有启用账号。
 //
 // 与 Node 的 `Object.values(accounts).some((count) => count > 0)` 同构。
 func hasEnabledProviderAccount(accounts map[string]int) bool {

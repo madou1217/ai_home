@@ -461,14 +461,12 @@ func (index *routingIndex) listModels(
 	return models, nil
 }
 
-// countByProvider 统计每个 Provider 下的已登记账号数量。
+// countByProvider 统计每个 Provider 下的启用账号数量。
 //
-// 与 Node 的 `state.accounts[provider].length`（`lib/server/server.js` 的 `/readyz`）同构：
-// 读的是同一份进程内正排，**不访问 SQLite**。这条性质决定了它可以安全地挂在未鉴权端点
+// 读的是进程内正排，**不访问 SQLite**。这条性质决定了它可以安全地挂在未鉴权端点
 // 上——没有数据库读、没有额外缓存、没有可失败路径，因此也不需要 ctx 或 error。
 //
-// 口径是「全部已登记账号」，不按启用状态过滤：Node 那边同样不过滤，而且运维在
-// `/readyz` 上要看的是「这台机器有没有账号」，停用账号仍然占一个席位。
+// 停用账号仍在正排中保存，但不具备服务能力，不能让 `/readyz` 误报就绪。
 func (index *routingIndex) countByProvider() map[string]int {
 	if index == nil {
 		return map[string]int{}
@@ -477,6 +475,9 @@ func (index *routingIndex) countByProvider() map[string]int {
 	defer index.mu.RUnlock()
 	counts := make(map[string]int, len(index.accounts))
 	for _, indexed := range index.accounts {
+		if !indexed.enabled {
+			continue
+		}
 		counts[indexed.account.ProviderID()]++
 	}
 	return counts

@@ -5,7 +5,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 )
 
-// accountCountsByProvider 返回每个受支持 Provider 的账号数量，缺席者记 0。
+// accountCountsByProvider 返回每个受支持 Provider 的启用账号数量，缺席者记 0。
 //
 // 与 Node 的 `/readyz` 口径一致：Node 用 `SUPPORTED_SERVER_PROVIDERS.reduce(...)` 把
 // **全部** Provider 都写进 `accounts`，没有账号的记 0 而不是省略键。这不只是风格问题——

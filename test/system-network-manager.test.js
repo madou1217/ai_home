@@ -6,13 +6,16 @@ const test = require('node:test');
 const {
   detectNetworkLayer,
   executeSystemProxyPlan,
-  parseNetworksetupPac,
-  parseNetworksetupProxy,
-  planSystemProxy,
-  readLinuxProxySnapshot,
-  readWindowsProxySnapshot,
-  readMacProxySnapshot
+  planSystemProxy
 } = require('../lib/cli/services/toolkit/system-network-manager');
+const macosSystemProxy = require('../lib/cli/services/toolkit/system-proxy-plugins/macos');
+const linuxSystemProxy = require('../lib/cli/services/toolkit/system-proxy-plugins/linux');
+const windowsSystemProxy = require('../lib/cli/services/toolkit/system-proxy-plugins/windows');
+
+const { parseNetworksetupPac, parseNetworksetupProxy } = macosSystemProxy;
+const readMacProxySnapshot = macosSystemProxy.readSnapshot;
+const readLinuxProxySnapshot = (options) => linuxSystemProxy.readSnapshot('', options);
+const readWindowsProxySnapshot = (options) => windowsSystemProxy.readSnapshot('', options);
 
 function commandResult(stdout = '', status = 0) {
   return { status, stdout, stderr: status === 0 ? '' : 'command failed' };

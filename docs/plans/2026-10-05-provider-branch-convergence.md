@@ -82,6 +82,18 @@
 
 保留的缺口（测试固定，待用户按需补齐，即方案 B）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。仍留在原处、未搬的 provider 特例：`inferImportProvider` 的载荷形状启发式（跨 provider 的识别顺序）、`buildFlatAccountExportFileName` 的 opencode/kimi/codex 文件名、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包。
 
+### 批 3 进展（2026-10-05，服务端部分完成）
+
+用量端口落在 `lib/usage/provider-usage/`（codex、claude、gemini、agy、kimi；快照 kind 引用现有的 `USAGE_SNAPSHOT_KINDS`，不另立注册表）。按位置计数（非行数），用量相关约 90 处分支：静态事实约 25、服务端行为约 35、前端展示约 20、确属单家流程约 12（kimi 扫码登录、codex 重置卡、claude 凭据模式等，保留）。
+
+已完成、行为不变：
+1. 套餐展示名表（codex、claude）→ 模块 `planLabel`；两份含义不同的「用量托管」名单 → `accountSnapshotRefresh`（codex/claude/gemini/agy/kimi）与 `ptyUsageStatus`（codex/claude/gemini）；删掉未使用的 `PROVIDER_GLOBAL_DIR`。2058 种组合一致。
+2. 令牌刷新守护进程 → `lib/server/token-refresh-strategies.js` 策略表（grok 强制自愈、kimi 自行处理失效抑制写成字段）。用假刷新器跑两轮 tick，调用日志与守护日志前后一致。
+3. 异步配额探测 → 与同步表并列的 `asyncUsageProbeHandlers`；codex 恢复阶梯原样移入 `probeCodexUsageAsyncWithCachePolicy`。`cache.js` 的可信快照校验依赖注入的来源常量，改表收益小，暂留。
+4. 账号页邮箱/套餐/主标识的取法 → 模块 `cachedAccountMetadata` / `liveAccountIdentity`。与旧代码逐字抄录版在 9264 种输入上比对一致。
+
+前端（`UsageSnapshotCell` 改为按快照 kind 的渲染器表、剩余额度计算、`AccountsGoPreview` 的重复副本）待用户对以下差异做决定后再做：前端自算的最低剩余不认 codebuddy、预览页副本还漏了 zcode；前端优先快照最低值而服务端 `remainingPct` 可能优先状态值；`ptyUsageStatus` 不含 agy、kimi。
+
 ### 批 1 实施结果（2026-10-05）
 
 普查后发现「纯静态事实」比估计的少：大部分 `cliName !== 'codex'` 是厂商专属模块开头的防卫判断，属于批 2–4 的行为端口。批 1 实际做法：

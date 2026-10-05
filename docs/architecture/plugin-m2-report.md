@@ -94,7 +94,8 @@ Go 插件端口第一阶段（`4cbc81f0`）：Node 把存活代次的投影（�
 
 ## 5. 已知限制
 
-1. **Go 插件端口只完成 gateway.request。** 有 account / attempt / observe 贡献时请求仍交回 Node（Go 承接的性能优势在此期间不生效）；Go 的 WebSocket 与其它入口（Gemini、图片、count_tokens）同样交回。后续阶段：observe（Go 的尝试终态记录器统一接入）、account（Go 三条选号循环）、attempt（Go 客户端处理反向调用）。Node+Go 端到端测试在 Windows 上跳过：Go 测试夹具在 Windows 上打不开账号库（既有问题），Go 侧插件代码在 Windows 上由 Go 单元测试覆盖。
+1. **Go 插件端口只完成 gateway.request。** 有 account / attempt / observe 贡献时请求仍交回 Node（Go 承接的性能优势在此期间不生效）；Go 的 WebSocket 与其它入口（Gemini、图片、count_tokens）同样交回。后续阶段：observe（Go 的尝试终态记录器统一接入）、account（Go 三条选号循环）、attempt（Go 客户端处理反向调用）。Go 确认投影前会用推送的地址和令牌 ping 宿主，连不上就一个代次都不确认；执行中连不上宿主、请求体超限时，Go 把请求交还 Node 而不是报错。Node+Go 端到端测试在 Windows 上跳过：Go 测试夹具在 Windows 上打不开账号库（`SQL logic error: out of memory`），原有的 `server.codex-http-parity.test.js` 在 Windows 上同样失败，与插件端口无关；Go 侧插件代码（含命名管道上的真实宿主调用、重连与 ping）在 Windows 上由 Go 单元测试覆盖。
+9. **gateway.request 可能被调用两次。** Go 执行完 gateway.request 后，如果之后的 Go 协议解码拒收了请求，Node 会用原文再执行一次插件阶段。改写只生效一次（Node 用的是原文），但有副作用的插件会看到两次调用。
 2. **WebSocket 上的账号偏好主要作用于换号恢复。** 首个 create 时桥接优先沿用升级时选中的账号（会话亲和），之后的 create 留在连接的账号上（它持有续写），所以偏好真正改变选号的是换号恢复。桥接钩子位于 `codex-responses-session.js` 的 `recover()`，该文件另有一项未提交的改动；若 `recover()` 再被重写，`test/plugin-gateway-websocket.test.js` 的恢复测试会发现钩子丢失。另外，WS 上 response id 以外的增量事件按先到先得归属；在流水线（多个 create 同时进行）时，观察摘要的归属是近似的，桥接此时也不再换号恢复。
 3. **images 与 Fabric 远端路由只经过 request 阶段。** 它们有各自的选号逻辑，或者由远端节点选号。
 4. **route policy 只能对账号排序。** 规划里「提议模型选择」没有实现；改模型目前只能经 gateway.request 改写 `model` 字段。

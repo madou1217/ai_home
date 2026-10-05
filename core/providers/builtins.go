@@ -49,6 +49,7 @@ func builtinCodex() Definition {
 		Presentation: presentation("codex", "ChatGPT", "GPT", "◎", "green"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{VendorID: "openai", APIKeyEnv: []string{"OPENAI_API_KEY"}, BaseURLEnv: []string{"OPENAI_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
@@ -101,6 +102,7 @@ func builtinGemini() Definition {
 		Presentation: presentation("gemini", "Gemini", "GM", "✦", "blue"),
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
+		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
@@ -138,6 +140,7 @@ func builtinClaude() Definition {
 		Presentation: presentation("claude", "Claude", "CL", "◇", "orange"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{VendorID: "anthropic", APIKeyEnv: []string{"ANTHROPIC_API_KEY"}, AuthTokenEnv: []string{"ANTHROPIC_AUTH_TOKEN"}, BaseURLEnv: []string{"ANTHROPIC_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
@@ -188,6 +191,7 @@ func builtinAntigravity() Definition {
 		Presentation: presentation("agy", "Antigravity", "AGY", "▲", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{VendorID: "antigravity"},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Antigravity 登录", "使用 Antigravity CLI 原生 Google 登录流程。"),
@@ -233,6 +237,7 @@ func builtinOpenCode() Definition {
 		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
@@ -271,6 +276,7 @@ func builtinGrok() Definition {
 		Presentation: presentation("grok", "Grok", "GK", "⚡", "cyan"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
+		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
@@ -303,6 +309,7 @@ func builtinQoder() Definition {
 		Presentation: presentation("qoder", "Qoder", "QD", "◆", "blue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder 登录", "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"),
@@ -341,6 +348,7 @@ func builtinQoderCN() Definition {
 		Presentation: presentation("qodercn", "Qoder CN", "QCN", "◇", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder CN 登录", "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"),
@@ -385,6 +393,7 @@ func builtinKimi() Definition {
 		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
@@ -419,6 +428,7 @@ func builtinKiro() Definition {
 		Presentation: presentation("kiro", "Kiro", "KR", "⬡", "volcano"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{VendorID: "kiro"},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"),
@@ -455,6 +465,7 @@ func builtinZcode() Definition {
 		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
@@ -527,6 +538,7 @@ func builtinCodebuddy() Definition {
 		Presentation: presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// session_history：会话读取适配器已落地
 		// （lib/sessions/session-reader-codebuddy.js）。**刻意不声明 account_session_store**：
 		// 会话读的是宿主地区目录而不是账号沙箱（见 SessionSync 的说明）。
@@ -639,6 +651,7 @@ func builtinCodebuddyCN() Definition {
 		Presentation: presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// 与 codebuddy 同口径：会话历史已接入，账号隔离存储不声明（读的是宿主地区目录）。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
@@ -727,6 +740,7 @@ func builtinWorkbuddy() Definition {
 		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
 		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
 		// 客户端能力仍是 desktop-only（没有可安装的独立 CLI），因此可读历史、不可自行启动。
@@ -810,6 +824,7 @@ func builtinWorkbuddyCN() Definition {
 		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、

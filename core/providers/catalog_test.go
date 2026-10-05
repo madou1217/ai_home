@@ -144,3 +144,20 @@ func TestValidateManifestRejectsInvalidSessionSync(t *testing.T) {
 		t.Fatal("矛盾的会话同步声明应被拒绝")
 	}
 }
+
+func TestValidateManifestRejectsInvalidCredentialFacts(t *testing.T) {
+	// 凭据事实被多处当作查表依据：环境变量名写错或厂商标识大小写不规范都应在生成期失败。
+	cases := map[string]CredentialFacts{
+		"小写环境变量": {APIKeyEnv: []string{"openai_api_key"}},
+		"重复环境变量": {BaseURLEnv: []string{"OPENAI_BASE_URL", "OPENAI_BASE_URL"}},
+		"大写厂商标识": {VendorID: "OpenAI"},
+	}
+	for name, facts := range cases {
+		manifest := BuiltinManifest()
+		invalid := facts
+		manifest.Providers[0].Credentials = &invalid
+		if err := ValidateManifest(manifest); err == nil {
+			t.Fatalf("%s 应被拒绝", name)
+		}
+	}
+}

@@ -9,6 +9,9 @@ import (
 
 var providerIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
+// envKeyPattern 约束凭据环境变量名为常规的大写形式。
+var envKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+
 // ValidateManifest 校验 Provider 合同是否可以安全生成给其他语言使用。
 func ValidateManifest(manifest Manifest) error {
 	if manifest.SchemaVersion != SchemaVersion {
@@ -84,6 +87,9 @@ func validateDefinition(definition Definition) error {
 	if definition.Clients.Desktop && (definition.CLI == nil || definition.CLI.DesktopClient == nil) {
 		return errors.New("clients.desktop=true 必须声明 desktopClient 配置")
 	}
+	if err := validateCredentialFacts(definition.Credentials); err != nil {
+		return err
+	}
 	// API-only Provider 可以没有 CLI；只有声明了 CLI 才校验运行时投影字段。
 	if definition.CLI != nil {
 		if strings.TrimSpace(definition.CLI.GlobalDir) == "" {
@@ -91,6 +97,33 @@ func validateDefinition(definition Definition) error {
 		}
 		if definition.CLI.Order < 1 {
 			return errors.New("cli.order 必须为正整数")
+		}
+	}
+	return nil
+}
+
+// validateCredentialFacts 校验凭据事实：厂商标识小写，环境变量名合法且同一列表内不重复。
+func validateCredentialFacts(facts *CredentialFacts) error {
+	if facts == nil {
+		return nil
+	}
+	if facts.VendorID != "" && !providerIDPattern.MatchString(facts.VendorID) {
+		return errors.New("credentials.vendorId 只能使用小写字母、数字和连字符")
+	}
+	for name, keys := range map[string][]string{
+		"apiKeyEnv":    facts.APIKeyEnv,
+		"authTokenEnv": facts.AuthTokenEnv,
+		"baseUrlEnv":   facts.BaseURLEnv,
+	} {
+		seen := map[string]bool{}
+		for _, key := range keys {
+			if !envKeyPattern.MatchString(key) {
+				return fmt.Errorf("credentials.%s 环境变量名不合法: %s", name, key)
+			}
+			if seen[key] {
+				return fmt.Errorf("credentials.%s 重复: %s", name, key)
+			}
+			seen[key] = true
 		}
 	}
 	return nil

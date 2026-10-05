@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
   PROVIDER_IDS,
   ProviderCatalog,
+  getProviderCredentialFacts,
   listProvidersByCapability,
   providerCatalog,
   providerSupports
@@ -93,4 +94,19 @@ test('core account modules do not duplicate the complete provider list', () => {
       relativePath + ' must query provider-catalog instead of copying all provider ids'
     );
   }
+});
+
+test('凭据事实：按优先级保留环境变量顺序，返回防御性副本，未知 Provider 为空', () => {
+  assert.deepEqual(getProviderCredentialFacts('claude'), {
+    vendorId: 'anthropic',
+    apiKeyEnv: ['ANTHROPIC_API_KEY'],
+    authTokenEnv: ['ANTHROPIC_AUTH_TOKEN'],
+    baseUrlEnv: ['ANTHROPIC_BASE_URL']
+  });
+  assert.deepEqual(getProviderCredentialFacts(' GEMINI ').baseUrlEnv, ['GEMINI_BASE_URL', 'GOOGLE_BASE_URL']);
+  assert.deepEqual(getProviderCredentialFacts('agy').apiKeyEnv, [], 'agy 没有 API 密钥凭据');
+  const copy = getProviderCredentialFacts('codex');
+  copy.apiKeyEnv.push('MUTATED');
+  assert.deepEqual(getProviderCredentialFacts('codex').apiKeyEnv, ['OPENAI_API_KEY']);
+  assert.deepEqual(getProviderCredentialFacts('nope'), { vendorId: '', apiKeyEnv: [], authTokenEnv: [], baseUrlEnv: [] });
 });

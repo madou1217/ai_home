@@ -58,13 +58,31 @@
 
 | 批次 | 内容 | 预计收敛 | 风险 | 验收 |
 |---|---|---|---|---|
-| 1 | 静态事实入 manifest：厂商标识、基址环境变量、各类能力名单 | 约 80–100 处 | 低：纯查表替换 | golden 一致；manifest 生成/校验测试；全量单测 |
+| 1 | 静态事实入 manifest：厂商标识、凭据环境变量（已完成，见下） | 实际 2 处写死逻辑 + 1 张 15 家的表；另有 3 处待决 | 低：纯查表替换 | golden 一致；manifest 生成/校验测试；全量单测 |
 | 2 | 凭据端口：身份提取、凭据投影、导入导出格式 | 约 120 处 | 中：涉及账号身份唯一键（见 `account-identity.js` 单一来源约定） | golden 覆盖 12 家导入/导出往返；真实账号导入导出各 1 次；账号页对比 |
 | 3 | 用量端口 + 前端展示声明 | 约 100 处 | 中：额度显示与刷新时机 | golden；账号页 1440/390 两种宽度真浏览器；各家用量快照逐一核对 |
 | 4 | 会话端口：会话读取、原生会话驱动特例、hook | 约 160 处 | 高：原生会话最易回归；chat-runtime 有其它会话在改 | 先与 chat-runtime 负责会话对齐；每家真实发消息/续写/列表可见各 1 次（Playwright） |
 | 5 | 上游端口：路径、模型探测、失败分类 | 约 80 处 | 高：与 Go Core 数据面、插件 M2 网关接线重叠 | 与插件主线会话确认边界后再做；真账号打真上游 |
 
 批 1–3 可独立推进；批 4、5 需要先和对应主线会话确认边界。
+
+### 批 1 实施结果（2026-10-05）
+
+普查后发现「纯静态事实」比估计的少：大部分 `cliName !== 'codex'` 是厂商专属模块开头的防卫判断，属于批 2–4 的行为端口。批 1 实际做法：
+
+- Go 合同新增可选的 `credentials`（`vendorId`、`apiKeyEnv`、`authTokenEnv`、`baseUrlEnv`，列表按优先级），生成期校验环境变量名与厂商标识；Node 经 `getProviderCredentialFacts` 读取。
+- 收敛两处含义完全一致的写死逻辑：sub2api 导出的 `platform` 映射（`standard-transfer.js`）、按 API 密钥环境变量判定账号类型的整张表（`account-identity.js`，15 家）。黄金比对：12 家 × 14 种环境变量的账号类型判定 210 种组合全部一致；`platform` 映射仅对未规范化输入（如 `'CODEX'`）有差异，调用方实际只传规范化 id。
+- 刻意保留 `cli.envKeys`（无类型的混合列表，含 `GROK_HOME`、`KIRO_TEST_DB_PATH` 等），不改其含义。
+
+**待用户决定（换成查表会扩大行为，未改）：**
+
+| 位置 | 现状覆盖 | 换成查表后新增 |
+|---|---|---|
+| `cli/services/usage/presenter.js` `isApiKeyAccount` | codex、claude（含 AUTH_TOKEN）、gemini、kimi | opencode、grok、qoder、zcode、codebuddy 家族被识别为 API 密钥账号 |
+| `server/webui-account-live.js` `resolveApiKeyBaseUrl` | codex、claude、gemini | opencode、grok、kimi、zcode、codebuddy 显示环境变量里的基础地址 |
+| `cli/services/account/selection.js` `readApiKeyInfo` | codex、claude、gemini（gemini 基础地址漏了 `GOOGLE_BASE_URL`） | 同上，并补上 `GOOGLE_BASE_URL` |
+
+`cli/services/ai-cli/provider-runtime-env.js` 的 `ENV_AUTH_KEYS_BY_PROVIDER` 含义不同（「只靠环境变量即可鉴权、不需凭据文件投影」，故意不含 opencode/grok），归入批 2 凭据端口。kiro 的 `KIRO_API_KEY` 目前不参与账号类型判定，合同里暂不列入 `apiKeyEnv`，待批 2 确认。
 
 ## 5. 与其它工作的边界
 

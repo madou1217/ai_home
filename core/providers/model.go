@@ -114,6 +114,22 @@ type Definition struct {
 	Clients        ClientSupport     `json:"clients"`
 	CLI            *CLIConfig        `json:"cli,omitempty"`
 	NativeBoundary *NativeCapability `json:"nativeBoundary,omitempty"`
+	// Credentials 是凭据相关的静态事实（厂商标识与各类凭据的环境变量名），
+	// 让调用方查表而不是按 provider 名写分支。未声明的字段表示该 Provider 没有这类凭据。
+	Credentials *CredentialFacts `json:"credentials,omitempty"`
+}
+
+// CredentialFacts 记录与凭据有关的静态事实。环境变量列表按优先级排列：
+// 调用方取第一个非空值，因此顺序本身就是合同的一部分。
+type CredentialFacts struct {
+	// VendorID 是上游厂商在外部账号交换格式（如 sub2api 的 platform）中的标识。
+	VendorID string `json:"vendorId,omitempty"`
+	// APIKeyEnv 是 API 密钥的环境变量；任一非空即判定为 API 密钥账号。
+	APIKeyEnv []string `json:"apiKeyEnv,omitempty"`
+	// AuthTokenEnv 是 Bearer 鉴权令牌（第三方协议兼容端点）的环境变量。
+	AuthTokenEnv []string `json:"authTokenEnv,omitempty"`
+	// BaseURLEnv 是 API 基础地址的环境变量。
+	BaseURLEnv []string `json:"baseUrlEnv,omitempty"`
 }
 
 // ClientSupport 是 Provider 面向用户的客户端形态合同。

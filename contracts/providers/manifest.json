@@ -156,6 +156,15 @@
             "danger-full-access"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "openai",
+        "apiKeyEnv": [
+          "OPENAI_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "OPENAI_BASE_URL"
+        ]
       }
     },
     {
@@ -281,6 +290,17 @@
             "plan"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "gemini",
+        "apiKeyEnv": [
+          "GEMINI_API_KEY",
+          "GOOGLE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "GEMINI_BASE_URL",
+          "GOOGLE_BASE_URL"
+        ]
       }
     },
     {
@@ -447,6 +467,18 @@
             "bypassPermissions"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "anthropic",
+        "apiKeyEnv": [
+          "ANTHROPIC_API_KEY"
+        ],
+        "authTokenEnv": [
+          "ANTHROPIC_AUTH_TOKEN"
+        ],
+        "baseUrlEnv": [
+          "ANTHROPIC_BASE_URL"
+        ]
       }
     },
     {
@@ -594,6 +626,9 @@
             "deny"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "antigravity"
       }
     },
     {
@@ -686,6 +721,14 @@
             "run"
           ]
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "OPENCODE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "OPENCODE_BASE_URL"
+        ]
       }
     },
     {
@@ -810,6 +853,15 @@
             "plan"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "xai",
+        "apiKeyEnv": [
+          "XAI_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "XAI_BASE_URL"
+        ]
       }
     },
     {
@@ -904,6 +956,11 @@
             "--print"
           ]
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ]
       }
     },
     {
@@ -1000,6 +1057,11 @@
             "--print"
           ]
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "QODER_PERSONAL_ACCESS_TOKEN"
+        ]
       }
     },
     {
@@ -1122,6 +1184,15 @@
             "plan"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "moonshot",
+        "apiKeyEnv": [
+          "MOONSHOT_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "KIMI_BASE_URL"
+        ]
       }
     },
     {
@@ -1249,6 +1320,9 @@
             "default"
           ]
         }
+      },
+      "credentials": {
+        "vendorId": "kiro"
       }
     },
     {
@@ -1336,6 +1410,14 @@
             ]
           }
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "ZCODE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "ZCODE_BASE_URL"
+        ]
       }
     },
     {
@@ -1416,6 +1498,14 @@
             "--print"
           ]
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
       }
     },
     {
@@ -1497,6 +1587,14 @@
             "--print"
           ]
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
+        ]
       }
     },
     {
@@ -1570,6 +1668,11 @@
             ]
           }
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ]
       }
     },
     {
@@ -1643,6 +1746,11 @@
             ]
           }
         }
+      },
+      "credentials": {
+        "apiKeyEnv": [
+          "CODEBUDDY_API_KEY"
+        ]
       }
     }
   ],

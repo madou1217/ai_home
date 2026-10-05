@@ -3,10 +3,12 @@
 package pluginapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 )
@@ -19,8 +21,15 @@ const ProjectionPath = "/v1/management/plugins/projection"
 
 const maxProjectionBytes = 1 << 20
 
+const hostProbeTimeout = 2 * time.Second
+
 // ErrInvalidDependencies 表示 Handler 缺少注册表或鉴权。
 var ErrInvalidDependencies = errors.New("插件投影 Handler 依赖无效")
+
+// HostProbe 在确认投影前验证 Plugin Host 可调用（规划 §5.4「Go 确认可调用」）。
+type HostProbe interface {
+	Probe(ctx context.Context, host appplugins.HostAccess) error
+}
 
 // Authorizer 是管理密钥鉴权端口。
 type Authorizer interface {
@@ -31,14 +40,15 @@ type Authorizer interface {
 type ProjectionHandler struct {
 	authorizer Authorizer
 	registry   *appplugins.Registry
+	probe      HostProbe
 }
 
 // NewProjectionHandler 创建投影管理接口。
-func NewProjectionHandler(authorizer Authorizer, registry *appplugins.Registry) (*ProjectionHandler, error) {
-	if authorizer == nil || registry == nil {
+func NewProjectionHandler(authorizer Authorizer, registry *appplugins.Registry, probe HostProbe) (*ProjectionHandler, error) {
+	if authorizer == nil || registry == nil || probe == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &ProjectionHandler{authorizer: authorizer, registry: registry}, nil
+	return &ProjectionHandler{authorizer: authorizer, registry: registry, probe: probe}, nil
 }
 
 type projectionPush struct {
@@ -65,7 +75,19 @@ func (handler *ProjectionHandler) ServeHTTP(response http.ResponseWriter, reques
 			writeError(response, http.StatusBadRequest, "invalid_projection", "投影格式无效")
 			return
 		}
-		accepted, err := handler.registry.Replace(appplugins.HostAccess{Address: push.Host.Address, Token: push.Host.Token}, push.Generations)
+		host := appplugins.HostAccess{Address: push.Host.Address, Token: push.Host.Token}
+		if len(push.Generations) > 0 {
+			// 确认前先验证宿主可调用；连不上就清空投影、一个代次都不确认，请求全部留在 Node。
+			probeCtx, cancel := context.WithTimeout(request.Context(), hostProbeTimeout)
+			err := handler.probe.Probe(probeCtx, host)
+			cancel()
+			if err != nil {
+				_, _ = handler.registry.Replace(appplugins.HostAccess{}, nil)
+				writeGenerations(response, nil)
+				return
+			}
+		}
+		accepted, err := handler.registry.Replace(host, push.Generations)
 		if err != nil {
 			writeError(response, http.StatusBadRequest, "invalid_projection", err.Error())
 			return

@@ -76,6 +76,20 @@ func (invoker *HostInvoker) Invoke(
 	return result.Value, nil
 }
 
+// Probe 用给定的接入信息拨号并 ping 一次宿主（不复用、不缓存这条连接），用于确认投影前的可调用检查。
+func (invoker *HostInvoker) Probe(ctx context.Context, host appplugins.HostAccess) error {
+	if host.Address == "" || host.Token == "" {
+		return &Error{Code: "plugin_runtime_inactive", Message: "没有可用的插件宿主"}
+	}
+	client, err := Dial(ctx, host.Address, DialOptions{Token: host.Token})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	_, err = client.Call(ctx, "ping", map[string]any{}, nil)
+	return err
+}
+
 // Close 关闭当前连接。
 func (invoker *HostInvoker) Close() error {
 	invoker.mu.Lock()

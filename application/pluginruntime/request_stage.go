@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -16,6 +17,16 @@ import (
 const CapabilityGatewayRequest = "gateway.request"
 
 const defaultRequestStepTimeout = 2 * time.Second
+
+// CodeHostUnavailable 表示连不上 Plugin Host（不是插件本身的失败）：调用方应把请求交还 Node，
+// 而不是按 failurePolicy 处理——Node 能连上同一个宿主，交还不会丢掉插件阶段。
+const CodeHostUnavailable = "plugin_host_unavailable"
+
+var hostUnavailableCodes = map[string]bool{
+	"plugin_runtime_inactive": true,
+	"plugin_rpc_closed":       true,
+	"plugin_rpc_incompatible": true,
+}
 
 // Invoker 调用某代次的一个贡献项；实现负责连接 Plugin Host、超时与取消。
 type Invoker interface {
@@ -83,6 +94,10 @@ func RunRequestStage(ctx context.Context, invoker Invoker, projection Projection
 			}
 		}
 		if stepErr != nil {
+			var stageErr *StageError
+			if errors.As(stepErr, &stageErr) && hostUnavailableCodes[stageErr.Code] {
+				return RequestOutcome{}, &StageError{Code: CodeHostUnavailable, Message: stageErr.Message, InstanceID: item.InstanceID, ContributionID: item.ID}
+			}
 			if item.FailurePolicy == "delegate" {
 				continue
 			}

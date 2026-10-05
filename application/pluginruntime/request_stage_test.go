@@ -125,3 +125,17 @@ func TestRegistryReplacesTheLiveSetAtomically(t *testing.T) {
 		t.Fatal("an empty push clears every generation")
 	}
 }
+
+type codedFailure struct{ code string }
+
+func (failure codedFailure) Error() string     { return failure.code }
+func (failure codedFailure) ErrorCode() string { return failure.code }
+
+func TestAnUnreachableHostIsReportedAsSuchEvenForDelegatePlugins(t *testing.T) {
+	invoker := &fakeInvoker{errs: map[string]error{"a": codedFailure{code: "plugin_rpc_closed"}}}
+	_, err := RunRequestStage(context.Background(), invoker, projectionOf(request("a", 0, "delegate")), RequestInput{Body: json.RawMessage(sampleBody)})
+	var stageErr *StageError
+	if !errors.As(err, &stageErr) || stageErr.Code != CodeHostUnavailable {
+		t.Fatalf("err=%v", err)
+	}
+}

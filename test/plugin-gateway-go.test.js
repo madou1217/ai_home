@@ -30,7 +30,8 @@ let goBinary;
 function testGoBinary() {
   if (goBinary !== undefined) return goBinary;
   if (process.env.AIH_CODEX_HTTP_GO_BINARY) return (goBinary = process.env.AIH_CODEX_HTTP_GO_BINARY);
-  const output = path.join(os.tmpdir(), `aih-server-plugin-test-${process.pid}${process.platform === 'win32' ? '.exe' : ''}`);
+  // 固定文件名：每次运行覆盖同一个文件，不在临时目录里堆积二进制。
+  const output = path.join(os.tmpdir(), `aih-server-plugin-test${process.platform === 'win32' ? '.exe' : ''}`);
   const build = spawnSync('go', ['build', '-o', output, './cmd/aih-server'], { cwd: ROOT, encoding: 'utf8' });
   goBinary = build.status === 0 ? output : null;
   return goBinary;
@@ -157,6 +158,13 @@ test('a generation Go lost (restart) is handed back to Node, and unsupported sta
   const f = await goPluginFixture(t);
   await f.system.control.enable({ pluginId: 'aih.test.go-request', configuration: { mode: 'rewrite' } });
   assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+
+  // 宿主不可调用时 Go 不确认任何代次（确认前先 ping 宿主）。
+  const unreachable = await f.management.pushPluginProjection({
+    host: { address: path.join(os.tmpdir(), 'aih-no-such-plugin-host.sock'), token: 'x'.repeat(64) },
+    generations: [{ generation: 1, contributions: [{ id: 'goreq.rewrite', capability: 'gateway.request', order: 0, failurePolicy: 'deny', instanceId: 'aih.test.go-request' }] }]
+  });
+  assert.deepEqual(unreachable.data.generations, [], '宿主不可调用时不确认');
 
   // 模拟 Go 重启：Go 的投影被清空，而 Node 仍认为已确认。Go 交还，Node 用原文处理。
   const cleared = await f.management.pushPluginProjection({ host: { address: '', token: '' }, generations: [] });

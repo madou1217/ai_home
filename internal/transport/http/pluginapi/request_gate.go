@@ -67,7 +67,8 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 		body, err := io.ReadAll(io.LimitReader(request.Body, gate.maxBody+1))
 		_ = request.Body.Close()
 		if err != nil || int64(len(body)) > gate.maxBody {
-			writeError(response, http.StatusRequestEntityTooLarge, "request_body_too_large", "请求体过大")
+			// Node 已缓冲原文并按自己的上限处理，交还而不是在 Go 侧拒绝。
+			handBack(response, "plugin_body_too_large")
 			return
 		}
 		trimmed := bytes.TrimSpace(body)
@@ -86,6 +87,11 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 			var stageErr *appplugins.StageError
 			if errors.As(err, &stageErr) && stageErr.Code != "" {
 				code = stageErr.Code
+			}
+			// 连不上 Plugin Host 不是插件失败：交还 Node（它能连上同一个宿主），不让请求以 502 结束。
+			if code == appplugins.CodeHostUnavailable {
+				handBack(response, code)
+				return
 			}
 			writeError(response, http.StatusBadGateway, code, err.Error())
 			return

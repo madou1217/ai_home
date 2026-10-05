@@ -17,7 +17,7 @@ func TestHostInvokerCallsThroughTheRegistryAndRedials(t *testing.T) {
 
 	registry := appplugins.NewRegistry()
 	if _, err := registry.Replace(appplugins.HostAccess{Address: fixture.address, Token: testToken}, []appplugins.Projection{{
-		Generation: 1,
+		Generation:    1,
 		Contributions: []appplugins.Contribution{{ID: "sample.echo.call", Capability: "command", FailurePolicy: "deny", InstanceID: "echo"}},
 	}}); err != nil {
 		t.Fatal(err)
@@ -42,5 +42,22 @@ func TestHostInvokerCallsThroughTheRegistryAndRedials(t *testing.T) {
 	}
 	if _, err := invoker.Invoke(context.Background(), 1, "sample.echo.call", nil, time.Second); Code(err) != "plugin_runtime_inactive" {
 		t.Fatalf("no host: %v", err)
+	}
+}
+
+// Probe 在确认投影前验证宿主可调用：令牌正确时成功，错误令牌或地址时失败。
+func TestHostInvokerProbeChecksTheHostIsCallable(t *testing.T) {
+	fixture := startHost(t)
+	invoker := NewHostInvoker(appplugins.NewRegistry())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := invoker.Probe(ctx, appplugins.HostAccess{Address: fixture.address, Token: testToken}); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if err := invoker.Probe(ctx, appplugins.HostAccess{Address: fixture.address, Token: strings.Repeat("e", len(testToken))}); err == nil {
+		t.Fatal("a wrong token must fail the probe")
+	}
+	if err := invoker.Probe(ctx, appplugins.HostAccess{Address: fixture.address + "-missing", Token: testToken}); err == nil {
+		t.Fatal("a wrong address must fail the probe")
 	}
 }

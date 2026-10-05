@@ -22,13 +22,26 @@ func (authorizer keyAuthorizer) Authorized(request *http.Request) bool {
 
 type scriptedInvoker struct {
 	result string
+	err    error
 	calls  int
 }
 
 func (invoker *scriptedInvoker) Invoke(context.Context, int64, string, any, time.Duration) (json.RawMessage, error) {
 	invoker.calls++
+	if invoker.err != nil {
+		return nil, invoker.err
+	}
 	return json.RawMessage(invoker.result), nil
 }
+
+type codedError struct{ code string }
+
+func (err codedError) Error() string     { return err.code }
+func (err codedError) ErrorCode() string { return err.code }
+
+type fakeProbe struct{ err error }
+
+func (probe *fakeProbe) Probe(context.Context, appplugins.HostAccess) error { return probe.err }
 
 type recordedRequest struct {
 	called bool
@@ -44,7 +57,7 @@ func gateFixture(t *testing.T, result string, generations ...appplugins.Projecti
 		t.Fatal(err)
 	}
 	invoker := &scriptedInvoker{result: result}
-	gate, err := NewRequestGate(registry, invoker, keyAuthorizer{key: "internal"}, 1<<20)
+	gate, err := NewRequestGate(registry, invoker, keyAuthorizer{key: "internal"}, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +142,21 @@ func TestGateHandsBackWhatGoCannotServe(t *testing.T) {
 	}
 }
 
+func TestGateHandsBackWhenTheHostIsUnreachableOrTheBodyIsTooLarge(t *testing.T) {
+	gate, invoker, _ := gateFixture(t, `null`, requestProjection(3))
+	invoker.err = codedError{code: "plugin_rpc_closed"}
+	recorder, seen := serve(gate, post(chatBody, "3", "internal"))
+	if recorder.Code != 400 || recorder.Header().Get("X-AIH-Decode-Rejected") != "1" || seen.called {
+		t.Fatalf("unreachable host must hand back, not 502: code=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	invoker.err = nil
+	large := `{"model":"gpt-6","input":"` + strings.Repeat("x", 5000) + `"}`
+	recorder, seen = serve(gate, post(large, "3", "internal"))
+	if recorder.Code != 400 || recorder.Header().Get("X-AIH-Decode-Rejected") != "1" || seen.called {
+		t.Fatalf("oversized body must hand back: code=%d", recorder.Code)
+	}
+}
+
 func TestGateIgnoresTheHeaderWithoutTheInternalKeyAndForGenerationsWithoutRequestPlugins(t *testing.T) {
 	gate, invoker, _ := gateFixture(t, `{"reject":{"status":451}}`, requestProjection(3), appplugins.Projection{Generation: 5, Contributions: []appplugins.Contribution{
 		{ID: "obs", Capability: "observe", FailurePolicy: "deny", InstanceID: "p"},
@@ -145,7 +173,8 @@ func TestGateIgnoresTheHeaderWithoutTheInternalKeyAndForGenerationsWithoutReques
 
 func TestProjectionEndpointRequiresTheManagementKeyAndReplacesTheLiveSet(t *testing.T) {
 	registry := appplugins.NewRegistry()
-	handler, err := NewProjectionHandler(keyAuthorizer{key: "management"}, registry)
+	probe := &fakeProbe{}
+	handler, err := NewProjectionHandler(keyAuthorizer{key: "management"}, registry, probe)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +196,15 @@ func TestProjectionEndpointRequiresTheManagementKeyAndReplacesTheLiveSet(t *test
 	if recorder := push("management", `{"host":{},"generations":[{"generation":0}]}`); recorder.Code != 400 {
 		t.Fatalf("invalid push: %d", recorder.Code)
 	}
+	probe.err = codedError{code: "plugin_rpc_closed"}
+	if recorder := push("management", valid); recorder.Code != 200 || !strings.Contains(recorder.Body.String(), `"generations":[]`) {
+		t.Fatalf("an unreachable host must acknowledge nothing: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if _, ok := registry.Get(3); ok {
+		t.Fatal("an unreachable host clears the projection")
+	}
+	probe.err = nil
+	push("management", valid)
 	get := httptest.NewRequest(http.MethodGet, ProjectionPath, nil)
 	get.Header.Set("Authorization", "Bearer management")
 	listing := httptest.NewRecorder()

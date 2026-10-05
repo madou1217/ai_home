@@ -27,7 +27,7 @@ func newPluginHandlers(managementAuthorizer pluginapi.Authorizer, clientAuthoriz
 	if err != nil {
 		return pluginHandlers{}
 	}
-	projection, err := pluginapi.NewProjectionHandler(managementAuthorizer, registry)
+	projection, err := pluginapi.NewProjectionHandler(managementAuthorizer, registry, invoker)
 	if err != nil {
 		return pluginHandlers{}
 	}

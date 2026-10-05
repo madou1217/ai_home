@@ -120,6 +120,16 @@ async function dump(runtime, prefix = 'a') {
   return (await runtime.invoke(`${prefix}.dump`, null)).value;
 }
 
+// 经 HTTP 的测试：next() 在提交点返回，插件之后才写日志——响应结束时日志可能还没写入。
+async function dumpEventually(runtime, prefix = 'a') {
+  let entries = [];
+  assert.ok(await waitFor(async () => {
+    entries = entries.concat(await dump(runtime, prefix));
+    return entries.length > 0;
+  }), '插件日志');
+  return entries;
+}
+
 test('next() returns at the commit point, before the attempt finishes, and the attempt runs exactly once', async () => {
   await withAttemptSystem(async ({ control, runtime }) => {
     await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'pass' } });
@@ -415,7 +425,11 @@ test('through aih server: a pass-through middleware leaves the response byte-ide
   assert.equal(wrapped.status, 200);
   assert.equal(await wrapped.text(), plainBody);
   assert.equal(server.upstreamTokens.length, 2);
-  const [seen] = (await server.management('/invoke', { contributionId: 'a.dump' })).value;
+  let seen;
+  assert.ok(await waitFor(async () => {
+    [seen] = (await server.management('/invoke', { contributionId: 'a.dump' })).value || [];
+    return Boolean(seen);
+  }), '插件在 next() 返回后才记录；响应结束不代表日志已写入');
   assert.equal(seen.summary.committed, true);
   assert.equal(seen.summary.status, 200);
 
@@ -545,7 +559,7 @@ test('codex: streaming passthrough is byte-identical and next() sees the commit 
     assert.equal(wrapped.status, 200);
     assert.equal(await wrapped.text(), plainBody);
     assert.equal(codex.hits.length, 2);
-    const [entry] = await dump(runtime);
+    const [entry] = await dumpEventually(runtime);
     assert.deepEqual(entry.summary, { committed: true, outcome: 'committed', status: 200, stopped: false });
     assert.equal(entry.value.provider, 'codex');
     assert.equal(entry.value.authType, 'api-key');
@@ -566,7 +580,7 @@ test('codex: reject never reaches upstream; stop ends failover after one upstrea
     const stopped = await codex.send(true);
     assert.notEqual(stopped.status, 200, await stopped.clone().text());
     assert.equal(codex.hits.length, 1, '停止换号：第二个账号没有被打到');
-    const [entry] = await dump(runtime);
+    const [entry] = await dumpEventually(runtime);
     assert.equal(entry.summary.committed, false);
 
     await control.enable({ pluginId: 'aih.test.attempt-a', configuration: { name: 'A', mode: 'pass' } });

@@ -80,7 +80,21 @@
 
 第 5 步（导入导出编解码，用户选方案 A：只搬结构、缺口原样保留）已完成：`transfer-core.js` 与 `standard-transfer.js` 不再按 provider 名分支——导入别名、邮箱位置、导入导出身份种子、导入时的专属凭据变量、导出记录、可否导出、sub2api 凭据形状、API 密钥导入写哪些变量、导入载荷 → 原生布局、标准格式 OAuth 规范化，都由模块声明（gemini、agy、kimi 的规范化函数整体移入各自模块）。黄金比对全部一致：纯函数 4058 组（录制的测试输入 × 全部 provider，codex 的 last_refresh 时间戳已屏蔽）、导出记录 2400 组 + 本机 32 个真实账号（同一时刻比对）、标准格式内部函数 8528 组。
 
-保留的缺口（测试固定，待用户按需补齐，即方案 B）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。后续收尾（2026-10-05）：`buildFlatAccountExportFileName` 的 opencode/kimi 命名（codex 分支与默认分支相同，已删）、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包，已移入模块（`flatExportFileStem` / `legacyNativeIdentityLookup` / `isImportableOAuth` / `standardIdentitySeed`），3825 组用例前后一致；`cache.js` 可信快照校验改为规则表（20594 组一致）。刻意保留：`inferImportProvider` 是跨 provider 的有序形状识别，顺序即规则，不拆；agy 专属的 Antigravity Manager 导出格式本身属于 agy。
+方案 B（2026-10-06，用户要求在 AWS / Windows 上测试）已补齐：
+
+| provider | 导出 | 导入 | 真实账号验证 |
+|---|---|---|---|
+| zcode | OAuth（本机密钥加密的值先解密成明文）、API 密钥 | OAuth（用目标机密钥重新加密）、API 密钥 | 本机 3 个（1 密钥 + 2 OAuth）：同机快照、空目录、AWS、Windows 全部一致 |
+| CodeBuddy 家族 | OAuth（只带可移植 credentials，不带本机绑定字段） | OAuth；API 密钥明确拒绝 | 本机 codebuddy、workbuddy、workbuddycn 各 1：同机、空目录、AWS、Windows 全部一致 |
+| grok | OAuth（登录档案表原样） | OAuth；API 密钥明确拒绝 | 本机 2 个：同机、空目录、AWS、Windows 全部一致 |
+| qoder / qodercn | OAuth（随记录保存 salt 的旧格式：解密成明文，导入换新 salt） | 同左 | 仅单元测试：Windows 上的两个真实账号是新版 CLI 用 WASM + machineId 加密的格式，aih 解不开、算不出身份，导出时安全跳过 |
+| kiro | OAuth + 身份证据（identityEvidence），不带本机 database 路径 | 同左 | 仅单元测试：Windows 上的真实账号没有身份证据，导出时安全跳过 |
+
+测试方式：导出本机（或 Windows）真实账号 → 在目标机的临时空数据目录里导入两次（不进在线账号池、不发任何上游请求，避免令牌被另一台机器刷新而作废本机网关里的副本）；只比对身份种子、解密后凭据、env 的哈希与 accountRef。另修复：未声明 `importApiKeyEnv` 的 provider 导入 API 密钥账号改为拒绝（此前会建出没有凭据变量的空账号）。
+
+仍未支持：qoder 新版 machineId 加密格式；CodeBuddy 家族、grok 的 API 密钥账号导入（注册身份与导出身份的一致性缺真实账号验证）。
+
+原先保留的缺口（批 2 时的记录）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。后续收尾（2026-10-05）：`buildFlatAccountExportFileName` 的 opencode/kimi 命名（codex 分支与默认分支相同，已删）、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包，已移入模块（`flatExportFileStem` / `legacyNativeIdentityLookup` / `isImportableOAuth` / `standardIdentitySeed`），3825 组用例前后一致；`cache.js` 可信快照校验改为规则表（20594 组一致）。刻意保留：`inferImportProvider` 是跨 provider 的有序形状识别，顺序即规则，不拆；agy 专属的 Antigravity Manager 导出格式本身属于 agy。
 
 ### 批 3 进展（2026-10-05，服务端部分完成）
 

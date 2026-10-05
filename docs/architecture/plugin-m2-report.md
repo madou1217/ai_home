@@ -2,7 +2,7 @@
 
 日期：2026-10-04。对应 [插件化规划](../plans/2026-09-30-plugin-architecture-plan.md) §7 的 M2，建立在 [M0](plugin-m0-report.md)、[M1](plugin-m1-report.md) 之上。只记录有运行证据的结论；没有证据的条目标为「未完成」。
 
-结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。Responses WebSocket 已按 `response.create` 接入全部五个扩展点（account 对首个 create 受会话亲和约束，见 §2）。以下几项没有完成：Go 原生插件端口、真实协议 shadow 验证，以及 images / Fabric 路由的 account / attempt / observe 覆盖。Go 把请求交回 Node 处理；插件启用前已由 Go 接管的 WebSocket 会话在 codex 重连之前不经过插件（§5 第 8 条）。
+结论：M2 的五个扩展点在 Node 网关的两个选号循环上已接通，并有测试证据。Responses WebSocket 已按 `response.create` 接入全部五个扩展点（account 对首个 create 受会话亲和约束，见 §2）。以下几项没有完成：Go 插件端口的 account / attempt / observe（gateway.request 已由 Go 执行，见 §2）、真实协议 shadow 验证，以及 images / Fabric 路由的 account / attempt / observe 覆盖。Go 把请求交回 Node 处理；插件启用前已由 Go 接管的 WebSocket 会话在 codex 重连之前不经过插件（§5 第 8 条）。
 
 ## 1. 交付物
 
@@ -21,7 +21,7 @@
 
 ## 2. 路由 × 能力覆盖
 
-Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（request / account / attempt / observe），Go 承接的路由（含 WebSocket 升级）一律交回 Node（`shouldDeferToNodeForPlugins`）。HTTP 与 upgrade 入口 `go-core-gateway-forwarder.js` 都同步调用 `deferToNode`，插件活跃时它在第一行返回 true。下表是 Node 侧的实际覆盖情况。
+Go 插件端口第一阶段（`4cbc81f0`）：Node 把存活代次的投影（含宿主地址与令牌）推给 Go 管理接口 `/v1/management/plugins/projection`，记下 Go 确认的代次；转发器固定代次（Node 持有租约到响应结束）并带内部代次头，客户端自带的同名头被剥掉。Go 在 `/v1/responses`、`/v1/chat/completions`、`/v1/messages` 入口执行 gateway.request（语义与 Node 一致，身份字段清单来自插件合同）。其余情况仍交回 Node：account / attempt / observe 贡献、WebSocket 升级、其它 Go 入口、Go 尚未确认的代次。Go 丢失投影（例如重启）或请求体被压缩时，Go 按「解码拒收」把请求交还 Node（此时尚无副作用），下一轮推送（10 秒内）恢复。HTTP 与 upgrade 入口 `go-core-gateway-forwarder.js` 都同步调用 `deferToNode`。下表是 Node 侧的实际覆盖情况。
 
 | 路由 / 处理器 | request | account | attempt | observe | catalog |
 | --- | --- | --- | --- | --- | --- |
@@ -81,7 +81,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 | 背压 | 插件不在字节路径上：中间件只拿到提交点摘要，响应字节仍由原有转发器直接写给客户端，背压语义不变。没有单独的插件背压测试 |
 | 连续 SSE 跨升级保持合法归属 | ✓ 尝试停在 `next()` 时发布新代次：该尝试仍走旧代次，旧代次排空后卸载 |
 | WS 跨升级保持合法归属 | ✓：同一连接上，回答进行中发布新代次，该回答仍走旧代次，结束后旧代次卸载；下一个 `response.create` 拿新代次（`test/plugin-gateway-websocket.test.js`，macOS 与 Windows 均通过）。account / attempt 经桥接钩子接入，测试覆盖换号恢复中的停止、拒绝、账号偏好与挂起钩子时断开 |
-| Node/Go 命中同一 instance/generation | 以「Go 交回 Node」满足：插件活跃时 Go 不处理任何网关请求。**Go 原生插件端口未完成** |
+| Node/Go 命中同一 instance/generation | ✓（gateway.request）：请求携带 Node 固定的代次，Go 只用该代次的投影调用同一个 Plugin Host；发布新代次时在途请求保持旧代次直到响应结束（`test/plugin-gateway-go.test.js`，真实 Go + 真实宿主）。account / attempt / observe 仍由 Node 执行 |
 | shadow 验证真实协议 | **未完成**：只用假上游验证过 claude 透传与 codex native Responses 流式。按约束，测试插件不装到用户的真实网关上 |
 
 变异检验：
@@ -94,7 +94,7 @@ Go 侧没有插件端口。活跃代次里只要有任何网关类贡献（reque
 
 ## 5. 已知限制
 
-1. **Go 没有插件端口。** 插件活跃时所有网关流量走 Node，Go 承接的性能优势在此期间不生效。
+1. **Go 插件端口只完成 gateway.request。** 有 account / attempt / observe 贡献时请求仍交回 Node（Go 承接的性能优势在此期间不生效）；Go 的 WebSocket 与其它入口（Gemini、图片、count_tokens）同样交回。后续阶段：observe（Go 的尝试终态记录器统一接入）、account（Go 三条选号循环）、attempt（Go 客户端处理反向调用）。Node+Go 端到端测试在 Windows 上跳过：Go 测试夹具在 Windows 上打不开账号库（既有问题），Go 侧插件代码在 Windows 上由 Go 单元测试覆盖。
 2. **WebSocket 上的账号偏好主要作用于换号恢复。** 首个 create 时桥接优先沿用升级时选中的账号（会话亲和），之后的 create 留在连接的账号上（它持有续写），所以偏好真正改变选号的是换号恢复。桥接钩子位于 `codex-responses-session.js` 的 `recover()`，该文件另有一项未提交的改动；若 `recover()` 再被重写，`test/plugin-gateway-websocket.test.js` 的恢复测试会发现钩子丢失。另外，WS 上 response id 以外的增量事件按先到先得归属；在流水线（多个 create 同时进行）时，观察摘要的归属是近似的，桥接此时也不再换号恢复。
 3. **images 与 Fabric 远端路由只经过 request 阶段。** 它们有各自的选号逻辑，或者由远端节点选号。
 4. **route policy 只能对账号排序。** 规划里「提议模型选择」没有实现；改模型目前只能经 gateway.request 改写 `model` 字段。

@@ -37,14 +37,14 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
   assert.deepEqual(importable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
-  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
 });
 
 test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
   const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
-  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi', 'zcode']);
   assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
     MOONSHOT_API_KEY: 'k',
@@ -91,4 +91,15 @@ test('没有声明 API 密钥写法的 provider：导入 API 密钥账号被拒�
   assert.equal(result.imported, 0);
   assert.equal(result.accounts[0].reason, 'unsupported_api_key_provider');
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('grok 导入导出：登录档案表原样往返，身份种子不变', () => {
+  const grok = getProviderCredentialStrategy('grok');
+  const auth = { 'https://auth.x.ai::client-1': { user_id: 'grok-user-1', principal_id: 'p-1', key: 'k', refresh_token: 'rt' } };
+  const exported = grok.exportRecord({ auth });
+  assert.equal(grok.exportOAuthKind(exported.auth), 'oauth');
+  const normalized = grok.normalizeImportedOAuth({ credentials: grok.sub2apiCredentials(exported.auth) });
+  assert.deepEqual(grok.importNativeAuth(normalized), { auth });
+  assert.equal(grok.transferIdentitySeed(exported.auth), grok.nativeIdentitySeed(auth));
+  assert.equal(grok.normalizeImportedOAuth({ credentials: {} }), null);
 });

@@ -28,3 +28,14 @@ test('凭据端口：原生身份去重与邮箱身份只对声明的 provider �
   assert.equal(fallback.nativeIdentitySeed({}), '');
   assert.equal(getProviderCredentialStrategy(' KIMI ').id, 'kimi');
 });
+
+test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 集合与现状一致（缺口见方案文档批 2）', () => {
+  const { normalizeImportProviderAlias } = require('../lib/account/transfer-core');
+  assert.equal(normalizeImportProviderAlias(' OpenAI '), 'codex');
+  assert.equal(normalizeImportProviderAlias('moonshot-ai'), 'kimi');
+  assert.equal(normalizeImportProviderAlias('qoder_cn'), 'qodercn');
+  const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
+  assert.deepEqual(importable, ['agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn']);
+  const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode']);
+});

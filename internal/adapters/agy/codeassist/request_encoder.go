@@ -125,6 +125,8 @@ func encodeRequest(
 	if model == "" || project == "" || sessionID == "" || requestID == "" {
 		return nil, ErrUnsupportedRequest
 	}
+	// Code Assist 没有对话中途的工具增删：新增的工具并入请求级 tools，见 inference.FoldToolChanges。
+	request = request.FoldToolChanges()
 	names, err := newToolNameMapper(request)
 	if err != nil {
 		return nil, err

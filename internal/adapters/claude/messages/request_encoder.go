@@ -19,6 +19,7 @@ const (
 	betaWebSearch           = "web-search-2025-03-05"
 	betaContextManagement   = "context-management-2025-06-27"
 	betaPerTurnControl      = "per-turn-control-2026-07-01"
+	betaMidConvToolChanges  = "mid-conversation-tool-changes-2026-07-01"
 )
 
 // encodedRequest 保存 JSON 正文及其功能所需的 beta Header。
@@ -276,59 +277,70 @@ func appendClaudeConversationMessage(
 	return conversation
 }
 
+// encodeToolDefinition 编码一个 custom tool（顶层 tools 与对话中途的 tool_addition 共用），
+// 工具名经名称映射登记，回答里的 tool_use 才能映射回 Canonical 身份。
+func (encoder *requestEncoder) encodeToolDefinition(
+	tool inference.ToolDefinition,
+	cacheControl *inference.PromptCacheControl,
+) (json.RawMessage, error) {
+	wireName, err := encoder.toolNames.encode(tool.Identity())
+	if err != nil {
+		return nil, err
+	}
+	wire := toolDTO{
+		Type:         "custom",
+		Name:         wireName,
+		Description:  claudeToolDescription(tool),
+		InputSchema:  json.RawMessage(tool.InputSchema()),
+		CacheControl: encodeCacheControl(cacheControl),
+	}
+	if strict, specified := tool.Strict(); specified {
+		wire.Strict = &strict
+		encoder.addBeta(betaStructuredOutputs)
+	}
+	for _, caller := range tool.AllowedCallers() {
+		wire.AllowedCallers = append(
+			wire.AllowedCallers,
+			string(caller),
+		)
+	}
+	if value, specified := tool.DeferLoading(); specified {
+		wire.DeferLoading = &value
+	}
+	if value, specified := tool.EagerInputStreaming(); specified {
+		wire.EagerInputStreaming = &value
+	}
+	for _, example := range tool.InputExamples() {
+		wire.InputExamples = append(
+			wire.InputExamples,
+			json.RawMessage(example),
+		)
+	}
+	if len(wire.AllowedCallers) > 0 ||
+		wire.DeferLoading != nil ||
+		wire.EagerInputStreaming != nil ||
+		len(wire.InputExamples) > 0 {
+		encoder.addBeta(betaClaudeCode)
+		encoder.addBeta(betaAdvancedToolUse)
+	}
+	if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
+		encoder.addBeta(betaPromptCachingScope)
+	}
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		return nil, ErrUnsupportedRequest
+	}
+	return encoded, nil
+}
+
 // encodeTools 编码工具定义及工具级缓存断点。
 func (encoder *requestEncoder) encodeTools() ([]json.RawMessage, error) {
 	tools := encoder.request.Tools()
 	wireTools := make([]json.RawMessage, 0, len(tools)+1)
 	for index, tool := range tools {
-		wireName, err := encoder.toolNames.encode(tool.Identity())
+		encoded, err := encoder.encodeToolDefinition(tool, encoder.cache.toolCacheControlAt(uint32(index)))
 		if err != nil {
 			return nil, err
-		}
-		wire := toolDTO{
-			Type:        "custom",
-			Name:        wireName,
-			Description: claudeToolDescription(tool),
-			InputSchema: json.RawMessage(tool.InputSchema()),
-			CacheControl: encodeCacheControl(
-				encoder.cache.toolCacheControlAt(uint32(index)),
-			),
-		}
-		if strict, specified := tool.Strict(); specified {
-			wire.Strict = &strict
-			encoder.addBeta(betaStructuredOutputs)
-		}
-		for _, caller := range tool.AllowedCallers() {
-			wire.AllowedCallers = append(
-				wire.AllowedCallers,
-				string(caller),
-			)
-		}
-		if value, specified := tool.DeferLoading(); specified {
-			wire.DeferLoading = &value
-		}
-		if value, specified := tool.EagerInputStreaming(); specified {
-			wire.EagerInputStreaming = &value
-		}
-		for _, example := range tool.InputExamples() {
-			wire.InputExamples = append(
-				wire.InputExamples,
-				json.RawMessage(example),
-			)
-		}
-		if len(wire.AllowedCallers) > 0 ||
-			wire.DeferLoading != nil ||
-			wire.EagerInputStreaming != nil ||
-			len(wire.InputExamples) > 0 {
-			encoder.addBeta(betaClaudeCode)
-			encoder.addBeta(betaAdvancedToolUse)
-		}
-		if wire.CacheControl != nil && wire.CacheControl.Scope != "" {
-			encoder.addBeta(betaPromptCachingScope)
-		}
-		encoded, err := json.Marshal(wire)
-		if err != nil {
-			return nil, ErrUnsupportedRequest
 		}
 		wireTools = append(wireTools, encoded)
 	}

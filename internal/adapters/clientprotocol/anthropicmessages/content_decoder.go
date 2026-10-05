@@ -234,6 +234,8 @@ func decodeContentBlock(
 			return decodedContent{}, invalidField(field)
 		}
 		return decodeToolResultContent(raw, field)
+	case "tool_addition", "tool_removal":
+		return decodeToolChangeContent(raw, role, field)
 	default:
 		// 带上判别值（已清洗），go-core.log 的拒收诊断才能指出是哪种新内容块。
 		return decodedContent{}, unsupportedField(decodediag.Discriminator(field+".type", header.Type))

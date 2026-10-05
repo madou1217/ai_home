@@ -77,6 +77,12 @@ func requestToolIdentities(request inference.Request) []inference.ToolIdentity {
 			if toolCall, ok := content.(inference.ToolCallContent); ok {
 				appendIdentity(toolCall.Identity())
 			}
+			// 对话中途新增的工具同样要登记，回答里的 tool_use 才能映射回来。
+			if change, ok := content.(inference.ToolChangeContent); ok {
+				if definition, added := change.Definition(); added {
+					appendIdentity(definition.Identity())
+				}
+			}
 		}
 	}
 	return identities

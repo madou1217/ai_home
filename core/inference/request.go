@@ -1070,6 +1070,11 @@ func addContentCapabilities(required CapabilitySet, content Content) CapabilityS
 		return required
 	case ReasoningContent:
 		return required.with(CapabilityReasoning)
+	case ToolChangeContent:
+		if typed.change == ToolChangeAddition {
+			return required.with(CapabilityTools)
+		}
+		return required
 	default:
 		return required
 	}

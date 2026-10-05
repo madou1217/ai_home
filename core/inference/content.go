@@ -534,6 +534,8 @@ func isContentAllowedForRole(role Role, content Content) bool {
 		return role == RoleUser && typed.IsValid()
 	case ReasoningContent:
 		return role == RoleAssistant && typed.IsValid()
+	case ToolChangeContent:
+		return role == RoleSystem && typed.IsValid()
 	default:
 		return false
 	}

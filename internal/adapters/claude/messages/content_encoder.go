@@ -93,6 +93,8 @@ func (encoder *requestEncoder) encodeContent(
 ) (contentDTO, error) {
 	wireCache := encodeCacheControl(cacheControl)
 	switch typed := content.(type) {
+	case inference.ToolChangeContent:
+		return encoder.encodeToolChange(typed, wireCache)
 	case inference.TextContent:
 		return contentDTO{
 			Type:         "text",

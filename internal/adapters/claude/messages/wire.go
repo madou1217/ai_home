@@ -32,19 +32,21 @@ type messageDTO struct {
 
 // contentDTO 是当前 Canonical Content 可映射到的 Messages 内容块联合结构。
 type contentDTO struct {
-	Type         string           `json:"type"`
-	Text         string           `json:"text,omitempty"`
-	Source       *sourceDTO       `json:"source,omitempty"`
-	Title        string           `json:"title,omitempty"`
-	Thinking     *string          `json:"thinking,omitempty"`
-	Signature    string           `json:"signature,omitempty"`
-	Data         string           `json:"data,omitempty"`
-	ID           string           `json:"id,omitempty"`
-	Name         string           `json:"name,omitempty"`
-	Input        json.RawMessage  `json:"input,omitempty"`
-	ToolUseID    string           `json:"tool_use_id,omitempty"`
-	Content      any              `json:"content,omitempty"`
-	IsError      *bool            `json:"is_error,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Source    *sourceDTO      `json:"source,omitempty"`
+	Title     string          `json:"title,omitempty"`
+	Thinking  *string         `json:"thinking,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+	Data      string          `json:"data,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	Content   any             `json:"content,omitempty"`
+	IsError   *bool           `json:"is_error,omitempty"`
+	// Tool 是对话中途 tool_addition / tool_removal 的工具载荷，见 tool_change_encoder.go。
+	Tool         json.RawMessage  `json:"tool,omitempty"`
 	CacheControl *cacheControlDTO `json:"cache_control,omitempty"`
 }
 

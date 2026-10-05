@@ -16,6 +16,8 @@ func encodeRequest(
 	authKind codexauth.AuthKind,
 	profile requestProfile,
 ) ([]byte, error) {
+	// Codex 没有对话中途的工具增删：新增的工具并入请求级 tools，见 inference.FoldToolChanges。
+	request = request.FoldToolChanges()
 	if err := rejectUnsupportedRequest(request, authKind); err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/madou1217/ai_home/application/accountrouting"
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
@@ -60,16 +61,26 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 			return
 		}
 		observing := projection.Has(appplugins.CapabilityObserve) && gate.observer != nil
-		if !projection.Has(appplugins.CapabilityGatewayRequest) && !observing {
+		preferring := projection.Has(appplugins.CapabilityGatewayAccount) && gate.observer != nil
+		if !projection.Has(appplugins.CapabilityGatewayRequest) && !observing && !preferring {
 			next.ServeHTTP(response, request)
 			return
 		}
-		if observing {
-			// 只在有观察插件时包装 ResponseWriter（记录失败时响应头是否已写出）。
-			tracker := &commitTracker{ResponseWriter: response}
-			response = tracker
-			pin := appplugins.NewPin(generation, projection, gate.observer, time.Now(), tracker.Committed)
-			request = request.WithContext(appplugins.WithPin(request.Context(), pin))
+		if observing || preferring {
+			var committed func() bool
+			if observing {
+				// 只在有观察插件时包装 ResponseWriter（记录失败时响应头是否已写出）。
+				tracker := &commitTracker{ResponseWriter: response}
+				response = tracker
+				committed = tracker.Committed
+			}
+			pin := appplugins.NewPin(generation, projection, gate.observer, time.Now(), committed)
+			ctx := appplugins.WithPin(request.Context(), pin)
+			if preferring {
+				// gateway.account：选号器在首次选号前向它要偏好顺序（见 application/accountrouting/preference.go）。
+				ctx = accountrouting.WithPreferenceProvider(ctx, pin)
+			}
+			request = request.WithContext(ctx)
 		}
 		if !projection.Has(appplugins.CapabilityGatewayRequest) {
 			next.ServeHTTP(response, request)

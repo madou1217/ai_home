@@ -157,6 +157,18 @@ func (registry *Registry) NodeAccountRef(goRef string) string {
 	return goRef
 }
 
+// GoAccountRef 把 Node 账号引用翻译回 Go 账号引用；没有映射时原样返回。
+func (registry *Registry) GoAccountRef(nodeRef string) string {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	for goRef, mapped := range registry.accountRefs {
+		if mapped == nodeRef {
+			return goRef
+		}
+	}
+	return nodeRef
+}
+
 // Host 返回当前 Plugin Host 地址与令牌。
 func (registry *Registry) Host() HostAccess {
 	registry.mu.RLock()

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
 type fakeInvoker struct {
@@ -137,5 +139,68 @@ func TestAnUnreachableHostIsReportedAsSuchEvenForDelegatePlugins(t *testing.T) {
 	var stageErr *StageError
 	if !errors.As(err, &stageErr) || stageErr.Code != CodeHostUnavailable {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func accountProjection(policy string) Projection {
+	return Projection{Generation: 4, Contributions: []Contribution{{ID: "pref", Capability: CapabilityGatewayAccount, FailurePolicy: policy, InstanceID: "p"}}}
+}
+
+func accountPin(t *testing.T, invoker Invoker, projection Projection, refs map[string]string) *Pin {
+	t.Helper()
+	registry := NewRegistry()
+	if _, err := registry.Replace(HostAccess{Address: "a", Token: "t"}, []Projection{projection}, refs); err != nil {
+		t.Fatal(err)
+	}
+	observer := NewObserver(invoker, registry, func(_ context.Context, ref string) AccountDescription {
+		if ref == "acct_00000000000000000002" {
+			return AccountDescription{Provider: "codex", AuthType: "api-key"}
+		}
+		return AccountDescription{Provider: "codex", AuthType: "oauth"}
+	}, 4)
+	t.Cleanup(observer.Close)
+	return NewPin(4, projection, observer, time.Now(), nil)
+}
+
+func goRefs(t *testing.T, values ...string) []accountcore.AccountRef {
+	t.Helper()
+	refs := make([]accountcore.AccountRef, 0, len(values))
+	for _, value := range values {
+		ref, err := accountcore.ParseAccountRef(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func TestAccountStageTranslatesRefsAndKeepsPreferenceInsideTheCandidates(t *testing.T) {
+	first, second := "acct_00000000000000000001", "acct_00000000000000000002"
+	nodeSecond := "acct_00000000000000000099"
+	invoker := &fakeInvoker{results: map[string]string{"pref": `{"prefer":["` + nodeSecond + `"]}`}}
+	pin := accountPin(t, invoker, accountProjection("deny"), map[string]string{second: nodeSecond})
+	preferred, err := pin.Prefer(context.Background(), "codex", "gpt-5.4", goRefs(t, first, second))
+	if err != nil || len(preferred) != 1 || preferred[0].String() != second {
+		t.Fatalf("preferred=%v err=%v", preferred, err)
+	}
+	if !strings.Contains(invoker.bodies[0], `"accountRef":"`+nodeSecond+`","authType":"api-key"`) || strings.Contains(invoker.bodies[0], second) {
+		t.Fatalf("plugin must see Node refs and auth types only: %s", invoker.bodies[0])
+	}
+
+	outside := &fakeInvoker{results: map[string]string{"pref": `{"prefer":["acct_not_in_pool"]}`}}
+	_, err = accountPin(t, outside, accountProjection("deny"), nil).Prefer(context.Background(), "codex", "m", goRefs(t, first, second))
+	var stageErr *StageError
+	if !errors.As(err, &stageErr) || stageErr.Code != "plugin_scope_violation" {
+		t.Fatalf("scope violation: %v", err)
+	}
+	delegated, err := accountPin(t, outside, accountProjection("delegate"), nil).Prefer(context.Background(), "codex", "m", goRefs(t, first, second))
+	if err != nil || len(delegated) != 0 {
+		t.Fatalf("delegate skips the plugin: %v %v", delegated, err)
+	}
+	unreachable := &fakeInvoker{errs: map[string]error{"pref": codedFailure{code: "plugin_rpc_closed"}}}
+	none, err := accountPin(t, unreachable, accountProjection("deny"), nil).Prefer(context.Background(), "codex", "m", goRefs(t, first, second))
+	if err != nil || len(none) != 0 {
+		t.Fatalf("an unreachable host must not fail selection: %v %v", none, err)
 	}
 }

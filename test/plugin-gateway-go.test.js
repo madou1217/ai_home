@@ -60,6 +60,13 @@ export default { apply(ctx) {
   ctx.aih.register('goobs.observe', (event) => { events.push(event); return null; });
   ctx.aih.register('goobs.dump', () => events.splice(0));
 } };`;
+const ACCOUNT_MANIFEST = manifest('aih.test.go-account', {
+  configSchema: { type: 'object', additionalProperties: false, properties: { prefer: { type: 'string' } } },
+  contributes: [{ id: 'goacct.prefer', capability: 'gateway.account', version: 1 }]
+});
+const ACCOUNT_SOURCE = `export default { apply(ctx, config) {
+  ctx.aih.register('goacct.prefer', () => ({ prefer: [config.prefer] }));
+} };`;
 const NODE_EVENT_KEYS = ['accountRef', 'attempt', 'committed', 'durationMs', 'error', 'generation', 'model', 'outcome', 'provider', 'type'];
 
 async function listen(t, handler) {
@@ -73,6 +80,7 @@ async function goPluginFixture(t) {
   const upstreamBodies = [];
   const hold = { next: null };
   const failing = { next: 0 };
+  const upstreamKeys = [];
   const upstream = await listen(t, async (request, response) => {
     response.setHeader('content-type', 'application/json');
     if (request.method === 'GET') {
@@ -83,6 +91,7 @@ async function goPluginFixture(t) {
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     upstreamBodies.push(body);
+    upstreamKeys.push(String(request.headers.authorization || ''));
     if (failing.next > 0) {
       failing.next -= 1;
       response.writeHead(400);
@@ -117,6 +126,7 @@ async function goPluginFixture(t) {
   const system = getPluginSystem(state, { aiHomeDir, socketPath: socketFor(dir), backoffMs: [50] });
   system.control.install(packPlugin(dir, 'goreq', REQUEST_MANIFEST, REQUEST_SOURCE));
   system.control.install(packPlugin(dir, 'goobs', OBSERVER_MANIFEST, OBSERVER_SOURCE));
+  system.control.install(packPlugin(dir, 'goacct', ACCOUNT_MANIFEST, ACCOUNT_SOURCE));
   const management = createGoManagementClient({ baseUrl: go.base, managementKey: go.managementKey });
   const sync = attachGoProjection(system, (payload) => management.pushPluginProjection(payload), { intervalMs: 200 });
   t.after(async () => {
@@ -150,7 +160,7 @@ async function goPluginFixture(t) {
     headers: { authorization: 'Bearer public-key', 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body)
   });
-  return { go, system, sync, management, upstreamBodies, nodeServed, send, hold, failing };
+  return { go, system, sync, management, upstreamBodies, upstreamKeys, nodeServed, send, hold, failing };
 }
 
 const BODY = { model: 'gpt-5.4', input: 'hello', stream: false };
@@ -281,4 +291,25 @@ test('Go delivers one observe event per attempt on each Go entry, in the Node ev
   assert.notEqual(failure.error, '');
   const listing = await f.management.send({ method: 'GET', path: '/v1/management/plugins/projection' });
   assert.ok(listing.data.observations.delivered >= 4, JSON.stringify(listing.data));
+});
+
+test('Go applies gateway.account preference within the pool; a preference outside it fails the request in Go', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  const secondRef = await f.go.register('second-upstream-key');
+  await f.system.control.enable({ pluginId: 'aih.test.go-account', configuration: { prefer: secondRef } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+  for (let index = 0; index < 4; index += 1) {
+    const response = await f.send(BODY);
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.headers.get('x-served-by'), null, '由 Go 服务');
+  }
+  assert.deepEqual(f.upstreamKeys.slice(-4), Array(4).fill('Bearer second-upstream-key'), '每次都选插件偏好的账号');
+
+  await f.system.control.enable({ pluginId: 'aih.test.go-account', configuration: { prefer: 'acct_00000000000000000999' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+  const hits = f.upstreamKeys.length;
+  const violated = await f.send(BODY);
+  assert.notEqual(violated.status, 200);
+  assert.equal(violated.headers.get('x-served-by'), null, '越界偏好由 Go 拒绝，不交回 Node');
+  assert.equal(f.upstreamKeys.length, hits, '越界的偏好不会让请求出站');
 });

@@ -27,11 +27,11 @@ type pluginHandlers struct {
 func newPluginHandlers(
 	managementAuthorizer pluginapi.Authorizer,
 	clientAuthorizer pluginapi.Authorizer,
-	providerOf appplugins.ProviderResolver,
+	describe appplugins.AccountDescriber,
 ) pluginHandlers {
 	registry := appplugins.NewRegistry()
 	invoker := adapterplugins.NewHostInvoker(registry)
-	observer := appplugins.NewObserver(invoker, registry, providerOf, 0)
+	observer := appplugins.NewObserver(invoker, registry, describe, 0)
 	gate, err := pluginapi.NewRequestGate(registry, invoker, clientAuthorizer, claudenativerelay.MaxRequestBodyBytes, observer)
 	if err != nil {
 		observer.Close()
@@ -45,21 +45,25 @@ func newPluginHandlers(
 	return pluginHandlers{gate: gate, projection: projection, invoker: invoker, observer: observer}
 }
 
-// accountProviderResolver 用无敏感的账号管理投影查 Provider（观察事件的 provider 字段）。
-func accountProviderResolver(store *sqliteaccount.Store) appplugins.ProviderResolver {
+// accountProviderResolver 用无敏感的账号管理投影描述账号：Provider（观察事件）与认证形态（账号偏好候选）。
+func accountProviderResolver(store *sqliteaccount.Store) appplugins.AccountDescriber {
 	if store == nil {
 		return nil
 	}
-	return func(ctx context.Context, accountRef string) string {
+	return func(ctx context.Context, accountRef string) appplugins.AccountDescription {
 		ref, err := accountcore.ParseAccountRef(accountRef)
 		if err != nil {
-			return ""
+			return appplugins.AccountDescription{}
 		}
 		overview, err := store.GetAccountOverview(ctx, ref)
 		if err != nil {
-			return ""
+			return appplugins.AccountDescription{}
 		}
-		return overview.Account().ProviderID()
+		authType := "oauth"
+		if kind := overview.AuthKind(); kind == "api_key" || kind == "api-key" {
+			authType = "api-key"
+		}
+		return appplugins.AccountDescription{Provider: overview.Account().ProviderID(), AuthType: authType}
 	}
 }
 

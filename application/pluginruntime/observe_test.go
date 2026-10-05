@@ -60,7 +60,9 @@ func TestObservedAttemptsMatchTheNodeEventShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	invoker := &recordingInvoker{}
-	observer := NewObserver(invoker, registry, func(context.Context, string) string { return "codex" }, 4)
+	observer := NewObserver(invoker, registry, func(context.Context, string) AccountDescription {
+		return AccountDescription{Provider: "codex", AuthType: "oauth"}
+	}, 4)
 	defer observer.Close()
 	committed := false
 	ctx := WithPin(context.Background(), NewPin(4, observeProjection(), observer, time.Now(), func() bool { return committed }))

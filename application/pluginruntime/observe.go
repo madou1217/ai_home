@@ -98,9 +98,6 @@ type observation struct {
 	event      map[string]any
 }
 
-// ProviderResolver 按 Go 账号引用查 Provider（只读无敏感投影）。
-type ProviderResolver func(ctx context.Context, accountRef string) string
-
 // ObserverStats 是观察投递计数。
 type ObserverStats struct {
 	Queued    int   `json:"queued"`
@@ -112,26 +109,25 @@ type ObserverStats struct {
 // Observer 用一个有界队列和一个 worker 异步投递观察事件：队列满时丢弃并计数，
 // 代次已卸载（Node 释放了租约）时也计为丢弃；永远不阻塞记录点。
 type Observer struct {
-	invoker    Invoker
-	registry   *Registry
-	providerOf ProviderResolver
-	queue      chan observation
-	providers  sync.Map
-	delivered  atomic.Int64
-	dropped    atomic.Int64
-	failed     atomic.Int64
-	stop       chan struct{}
-	done       chan struct{}
-	closeOnce  sync.Once
+	invoker   Invoker
+	registry  *Registry
+	accounts  *accountDescriptions
+	queue     chan observation
+	delivered atomic.Int64
+	dropped   atomic.Int64
+	failed    atomic.Int64
+	stop      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // NewObserver 创建并启动投递 worker；capacity<=0 时用默认 256。
-func NewObserver(invoker Invoker, registry *Registry, providerOf ProviderResolver, capacity int) *Observer {
+func NewObserver(invoker Invoker, registry *Registry, describe AccountDescriber, capacity int) *Observer {
 	if capacity <= 0 {
 		capacity = defaultObserveCapacity
 	}
 	observer := &Observer{
-		invoker: invoker, registry: registry, providerOf: providerOf,
+		invoker: invoker, registry: registry, accounts: newAccountDescriptions(describe),
 		queue: make(chan observation, capacity), stop: make(chan struct{}), done: make(chan struct{}),
 	}
 	go observer.run()
@@ -163,7 +159,7 @@ func (observer *Observer) deliver(item observation) {
 	for key, value := range item.event {
 		event[key] = value
 	}
-	event["provider"] = observer.provider(item.accountRef)
+	event["provider"] = observer.accounts.get(item.accountRef).Provider
 	event["accountRef"] = observer.registry.NodeAccountRef(item.accountRef)
 	for _, contribution := range item.projection.ByCapability(CapabilityObserve) {
 		ctx, cancel := context.WithTimeout(context.Background(), observeInvokeTimeout)
@@ -179,22 +175,6 @@ func (observer *Observer) deliver(item observation) {
 			observer.failed.Add(1)
 		}
 	}
-}
-
-func (observer *Observer) provider(accountRef string) string {
-	if cached, ok := observer.providers.Load(accountRef); ok {
-		return cached.(string)
-	}
-	if observer.providerOf == nil {
-		return ""
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	provider := observer.providerOf(ctx, accountRef)
-	if provider != "" {
-		observer.providers.Store(accountRef, provider)
-	}
-	return provider
 }
 
 // Stats 返回投递计数。

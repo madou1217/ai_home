@@ -288,6 +288,8 @@ type RecruitmentSession struct {
 	start           int
 	offset          int
 	softCooldown    softCooldownFallback
+	// order 是账号偏好重排后的扫描顺序（见 preference.go）；为 nil 时按环形起点扫描。
+	order []int
 }
 
 // NewRecruiter 创建不缓存凭据、共享公平票号的账号征召器。
@@ -354,6 +356,9 @@ func (recruiter *Recruiter) Begin(
 		request.ModelID(),
 		candidates.Len(),
 	)
+	if err := session.preferredOrder(ctx); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -463,6 +468,12 @@ func (session *RecruitmentSession) candidateCount() int {
 func (session *RecruitmentSession) candidateAt(offset int) (accountapp.RoutingAccount, bool) {
 	if session.pinned {
 		return session.pinnedCandidate, session.pinnedFound && offset == 0
+	}
+	if session.order != nil {
+		if offset < 0 || offset >= len(session.order) {
+			return accountapp.RoutingAccount{}, false
+		}
+		return session.candidates.At(session.order[offset])
 	}
 	index := (session.start + offset) % session.candidates.Len()
 	return session.candidates.At(index)

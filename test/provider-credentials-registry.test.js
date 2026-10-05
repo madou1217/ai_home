@@ -37,14 +37,14 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
   assert.deepEqual(importable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
-  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
 });
 
 test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
   const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
-  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi', 'zcode']);
   assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
     MOONSHOT_API_KEY: 'k',
@@ -119,4 +119,20 @@ test('qoder 导入导出：导出解密成明文用户信息，导入用新 salt
   assert.notEqual(reimported.keychainSalt, salt, '导入使用新的 salt');
   assert.equal(qoder.nativeIdentitySeed(qoder.extractNativeAuth(reimported)), qoder.nativeIdentitySeed(qoder.extractNativeAuth(native)));
   assert.equal(qoder.normalizeImportedOAuth({ credentials: { uid: 'x' } }), null, '没有令牌不导入');
+});
+
+test('kiro 导入导出：授权与身份证据一起往返；没有身份证据的账号不导出', () => {
+  const kiro = getProviderCredentialStrategy('kiro');
+  const { createKiroIdentityEvidence } = require('../lib/account/kiro-identity');
+  const auth = { access_token: 'at', refresh_token: 'rt', region: 'us-east-1' };
+  const identityEvidence = createKiroIdentityEvidence(auth, { userInfo: { userId: 'kiro-user-1' } }, 1000);
+  const native = { auth, identityEvidence, database: 'C:/host/specific.sqlite' };
+  const exported = kiro.exportRecord(native);
+  assert.deepEqual(exported.auth, { auth, identityEvidence }, '不带本机 database 路径');
+  assert.equal(kiro.exportOAuthKind(exported.auth), 'oauth');
+  const normalized = kiro.normalizeImportedOAuth({ credentials: kiro.sub2apiCredentials(exported.auth) });
+  const reimported = kiro.importNativeAuth(normalized);
+  assert.deepEqual(reimported, { auth, identityEvidence });
+  assert.equal(kiro.nativeIdentitySeed(null, { source: reimported }), kiro.nativeIdentitySeed(null, { source: native }));
+  assert.equal(kiro.exportOAuthKind(kiro.exportRecord({ auth }).auth), '', '没有身份证据不导出');
 });

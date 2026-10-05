@@ -577,30 +577,19 @@ test('codex: reject never reaches upstream; stop ends failover after one upstrea
   });
 });
 
-test('through aih server: Responses WebSocket upgrades are refused with 426 while gateway plugins are active', async (t) => {
+test('through aih server: an active attempt plugin no longer refuses Responses WebSocket upgrades', async (t) => {
   const WebSocket = require('ws');
   const server = await startClaudeServer(t);
   const upgrade = () => new Promise((resolve) => {
     const socket = new WebSocket(`${server.base.replace('http', 'ws')}/v1/responses`, { headers: { authorization: 'Bearer test-client-key' } });
-    socket.on('unexpected-response', (_req, res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
-    });
-    socket.on('open', () => { socket.close(); resolve({ status: 101, body: '' }); });
+    socket.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode); });
+    socket.on('open', () => { socket.close(); resolve(101); });
     socket.on('error', () => {});
   });
-
   const before = await upgrade();
-  assert.notEqual(before.status, 426, '没有插件时不拒绝 WebSocket');
-
   await enableAttempt(server, { name: 'A', mode: 'pass' });
-  const refused = await upgrade();
-  assert.equal(refused.status, 426, 'codex 只在 426 时立即回落 HTTPS');
-  assert.equal(JSON.parse(refused.body).error, 'plugin_websocket_unsupported');
-
-  const disabled = await server.management('/disable', { instanceId: 'aih.test.attempt-a' });
-  assert.equal(disabled.ok, true, JSON.stringify(disabled));
-  const after = await upgrade();
-  assert.notEqual(after.status, 426, '插件停用后恢复');
+  const during = await upgrade();
+  // 这个服务端没有 codex 账号，两次都由 WS 处理器按「无可用账号」回答；关键是插件启用后不再走 426 回落。
+  assert.notEqual(during, 426);
+  assert.equal(during, before);
 });

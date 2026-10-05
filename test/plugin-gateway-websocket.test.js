@@ -16,7 +16,6 @@ const { tempDir, socketFor, manifest, packPlugin, waitFor, startClaudeServer } =
 const { getPluginSystem } = require('../lib/plugins/control/plugin-system');
 const { handleCodexResponsesWebSocket } = require('../lib/server/codex-responses-websocket');
 const { createResponsesWebSocketPlugins } = require('../lib/server/codex-responses-ws-plugins');
-const { rejectWebSocketForGatewayPlugins } = require('../lib/server/gateway-plugin-stage');
 
 const REQUEST_MANIFEST = manifest('aih.test.ws-request', {
   configSchema: { type: 'object', additionalProperties: false, properties: { mode: { type: 'string' }, tag: { type: 'string' } } },
@@ -48,12 +47,16 @@ async function listen(server) {
 }
 
 // 假上游：每个 response.create 回 created → delta → completed；hold=true 时 completed 留到 release() 再发。
-async function wsFixture(t, { plugins = [] } = {}) {
+// failAccounts 里的账号在任何输出之前回 codex 额度错误（桥接据此换号恢复）。
+// handshakes / receivedBy 记录每条上游连接与每个上游帧来自哪个账号。
+async function wsFixture(t, { plugins = [], accounts = ['first'], failAccounts = [] } = {}) {
   const dir = tempDir('aihws-');
   const aiHomeDir = path.join(dir, 'home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
 
   const received = [];
+  const receivedBy = [];
+  const handshakes = [];
   const raw = [];
   const held = [];
   const control = { hold: false };
@@ -61,11 +64,18 @@ async function wsFixture(t, { plugins = [] } = {}) {
   const upstream = http.createServer();
   const wss = new WebSocket.Server({ noServer: true });
   upstream.on('upgrade', (req, socket, head) => wss.handleUpgrade(req, socket, head, (ws) => {
+    const key = String(req.headers.authorization || '').replace('Bearer ', '').replace('-key', '');
+    handshakes.push(key);
     ws.on('message', (data) => {
       raw.push(data.toString());
       const event = JSON.parse(data.toString());
       received.push(event);
+      receivedBy.push(key);
       if (event.type !== 'response.create') return;
+      if (failAccounts.includes(key)) {
+        ws.send(JSON.stringify({ type: 'error', status: 429, error: { type: 'usage_limit_reached', code: 'usage_limit_reached', message: 'quota exhausted' } }));
+        return;
+      }
       counter += 1;
       const id = `resp_${counter}`;
       ws.send(JSON.stringify({ type: 'response.created', response: { id, model: event.model } }));
@@ -78,7 +88,7 @@ async function wsFixture(t, { plugins = [] } = {}) {
   const baseUrl = await listen(upstream);
 
   const state = {
-    accounts: { codex: [{ accountRef: 'acct_ws_first', accessToken: 'first-key', openaiBaseUrl: `${baseUrl}/v1` }] },
+    accounts: { codex: accounts.map((name) => ({ accountRef: `acct_ws_${name}`, accessToken: `${name}-key`, openaiBaseUrl: `${baseUrl}/v1` })) },
     cursors: {}
   };
   const system = getPluginSystem(state, { aiHomeDir, socketPath: socketFor(dir), backoffMs: [50] });
@@ -89,11 +99,14 @@ async function wsFixture(t, { plugins = [] } = {}) {
   const gateway = http.createServer();
   const sockets = new Set();
   gateway.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
-  // 与 server.js 的 /v1/responses 升级分支相同：先判 426，再交给 WS 处理器。
+  // 选号替身：有插件偏好时取偏好里第一个在候选中的账号，否则取第一个（真实选择器的偏好排序另有测试）。
+  const chooseAccount = (pool, _cursors, _key, selection = {}) => {
+    const preferred = Array.isArray(selection.preferredAccountRefs) ? selection.preferredAccountRefs : [];
+    return pool.find((account) => preferred.includes(account.accountRef)) || pool[0];
+  };
   gateway.on('upgrade', (req, socket, head) => {
-    if (rejectWebSocketForGatewayPlugins(state, socket)) return;
     handleCodexResponsesWebSocket({ req, socket, head, state, options: {} }, {
-      chooseAccount: (pool) => pool[0], isLoopbackUrl: () => false, handshakeTimeoutMs: 1000
+      chooseAccount, isLoopbackUrl: () => false, handshakeTimeoutMs: 1000
     });
   });
   const gatewayUrl = (await listen(gateway)).replace('http:', 'ws:') + '/v1/responses';
@@ -115,7 +128,10 @@ async function wsFixture(t, { plugins = [] } = {}) {
     client.on('message', (data) => events.push(JSON.parse(data.toString())));
     t.after(() => client.terminate());
     await once(client, 'open');
-    const create = (extra = {}) => client.send(JSON.stringify({ type: 'response.create', model: 'gpt-6-astra', input: [], ...extra }));
+    const create = (extra = {}) => client.send(JSON.stringify({
+      type: 'response.create', model: 'gpt-6-astra',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] }], ...extra
+    }));
     return { client, events, create };
   }
   async function upgradeStatus() {
@@ -126,15 +142,10 @@ async function wsFixture(t, { plugins = [] } = {}) {
       socket.on('error', () => {});
     });
   }
-  return { state, system, received, raw, held, control, connect, upgradeStatus };
+  return { state, system, received, receivedBy, handshakes, raw, held, control, connect, upgradeStatus };
 }
 
 const REQUEST_PLUGIN = { name: 'wsreq', manifest: REQUEST_MANIFEST, source: REQUEST_SOURCE };
-const ATTEMPT_PLUGIN = {
-  name: 'wsatt',
-  manifest: manifest('aih.test.ws-attempt', { contributes: [{ id: 'wsatt.attempt', capability: 'gateway.attempt', version: 1 }] }),
-  source: `export default { apply(ctx) { ctx.aih.register('wsatt.attempt', async (value, context) => { await context.next(); return null; }); } };`
-};
 const OBSERVER_PLUGIN = { name: 'wsobs', manifest: OBSERVER_MANIFEST, source: OBSERVER_SOURCE };
 
 test('without gateway contributions frames reach upstream byte-identical; plugins enabled mid-session apply to the next create', async (t) => {
@@ -152,26 +163,114 @@ test('without gateway contributions frames reach upstream byte-identical; plugin
   assert.equal(f.received[1].instructions, 'tag:late', '连接建立后才启用的插件对下一个 create 生效');
 });
 
-test('an attempt plugin enabled mid-session sends the next create back over HTTPS instead of bypassing it', async (t) => {
-  const f = await wsFixture(t, { plugins: [REQUEST_PLUGIN, ATTEMPT_PLUGIN] });
-  await f.system.control.enable({ pluginId: 'aih.test.ws-request', configuration: { tag: 'v1' } });
-  const { client, events, create } = await f.connect();
-  create();
-  assert.ok(await waitFor(() => events.some((event) => event.type === 'response.completed')));
+// ---- gateway.attempt / gateway.account 经桥接换号恢复 ----
 
-  await f.system.control.enable({ pluginId: 'aih.test.ws-attempt' });
+const RECOVERY_ATTEMPT_PLUGIN = {
+  name: 'wsrec',
+  manifest: manifest('aih.test.ws-recovery', {
+    configSchema: { type: 'object', additionalProperties: false, properties: { mode: { type: 'string' } } },
+    contributes: [
+      { id: 'wsrec.attempt', capability: 'gateway.attempt', version: 1 },
+      { id: 'wsrec.dump', capability: 'command', version: 1 }
+    ]
+  }),
+  source: `const log = [];
+export default { apply(ctx, config) {
+  ctx.aih.register('wsrec.dump', () => log.splice(0));
+  ctx.aih.register('wsrec.attempt', async (value, context) => {
+    if (config.mode === 'reject-recovery' && value.attempt > 0) return { reject: { status: 451, message: 'no failover for you' } };
+    if (config.mode === 'slow-recovery' && value.attempt > 0) await new Promise((resolve) => setTimeout(resolve, 600));
+    const summary = await context.next();
+    log.push({ attempt: value.attempt, accountRef: value.accountRef, summary });
+    if (config.mode === 'stop') return { recovery: 'stop' };
+    return null;
+  });
+} };`
+};
+
+const PREFER_ACCOUNT_PLUGIN = {
+  name: 'wspref',
+  manifest: manifest('aih.test.ws-prefer', {
+    configSchema: { type: 'object', additionalProperties: false, properties: { prefer: { type: 'string' } } },
+    contributes: [{ id: 'wspref.account', capability: 'gateway.account', version: 1 }]
+  }),
+  source: `export default { apply(ctx, config) {
+  ctx.aih.register('wspref.account', (value) => (value.candidates.some((item) => item.accountRef === config.prefer) ? { prefer: [config.prefer] } : null));
+} };`
+};
+
+async function dumpRecovery(runtime) {
+  return (await runtime.invoke('wsrec.dump', null)).value;
+}
+
+test('attempt middleware wraps the first attempt and the in-bridge failover attempt', { timeout: 30000 }, async (t) => {
+  const f = await wsFixture(t, { plugins: [RECOVERY_ATTEMPT_PLUGIN], accounts: ['first', 'second'], failAccounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-recovery', configuration: { mode: 'pass' } });
+  const { events, create } = await f.connect();
+  create();
+  assert.ok(await waitFor(() => events.some((event) => event.type === 'response.completed')), JSON.stringify(events));
+  const log = await dumpRecovery(f.system.runtime);
+  assert.equal(log.length, 2, JSON.stringify(log));
+  assert.deepEqual([log[0].attempt, log[0].accountRef], [0, 'acct_ws_first']);
+  assert.equal(log[0].summary.committed, false);
+  assert.equal(log[0].summary.outcome, 'retry_next');
+  assert.deepEqual([log[1].attempt, log[1].accountRef], [1, 'acct_ws_second']);
+  assert.equal(log[1].summary.committed, true);
+  assert.deepEqual(f.system.runtime.status().leases, {});
+});
+
+test('stop after an uncommitted failure ends failover: no handshake to another account, the client gets the original failure', { timeout: 30000 }, async (t) => {
+  const f = await wsFixture(t, { plugins: [RECOVERY_ATTEMPT_PLUGIN], accounts: ['first', 'second'], failAccounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-recovery', configuration: { mode: 'stop' } });
+  const { client, events, create } = await f.connect();
   const closed = once(client, 'close');
   create();
-  const [code, reason] = await closed;
-  assert.equal(code, 1000);
-  assert.equal(reason.toString(), 'plugin_websocket_unsupported');
-  const failure = events[events.length - 1];
-  assert.equal(failure.type, 'error');
-  assert.equal(failure.status, 500, 'codex 把 500 当作可重试错误并丢弃这条 socket 重连');
-  assert.equal(failure.error.code, 'plugin_websocket_unsupported');
-  assert.equal(f.received.length, 1, '这个 create 没有出站');
-  assert.equal(await f.upgradeStatus(), 426, '重连拿到 426，整会话回落 HTTPS');
-  assert.deepEqual(f.system.runtime.status().leases, {});
+  await closed;
+  assert.deepEqual(f.handshakes, ['first'], '没有连向第二个账号');
+  const failure = events.find((event) => event.type === 'error');
+  assert.equal(failure && failure.error.code, 'usage_limit_reached', '客户端收到原始失败帧');
+  assert.ok(await waitFor(() => Object.keys(f.system.runtime.status().leases).length === 0));
+});
+
+test('a middleware rejection on the failover attempt keeps the replay from going upstream', { timeout: 30000 }, async (t) => {
+  const f = await wsFixture(t, { plugins: [RECOVERY_ATTEMPT_PLUGIN], accounts: ['first', 'second'], failAccounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-recovery', configuration: { mode: 'reject-recovery' } });
+  const { client, events, create } = await f.connect();
+  const closed = once(client, 'close');
+  create();
+  await closed;
+  assert.equal(f.receivedBy.filter((key) => key === 'second').length, 0, '重放没有发往第二个账号');
+  const rejection = events.find((event) => event.type === 'error' && event.status === 451);
+  assert.equal(rejection && rejection.error.message, 'no failover for you');
+  assert.ok(await waitFor(() => Object.keys(f.system.runtime.status().leases).length === 0));
+});
+
+test('an account plugin steers the failover choice within the pool', { timeout: 30000 }, async (t) => {
+  const f = await wsFixture(t, { plugins: [PREFER_ACCOUNT_PLUGIN], accounts: ['first', 'second', 'third'], failAccounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-prefer', configuration: { prefer: 'acct_ws_third' } });
+  const { events, create } = await f.connect();
+  create();
+  assert.ok(await waitFor(() => events.some((event) => event.type === 'response.completed')), JSON.stringify(events));
+  assert.equal(f.handshakes.includes('second'), false, JSON.stringify(f.handshakes));
+  assert.equal(f.handshakes[f.handshakes.length - 1], 'third');
+});
+
+test('a client disconnect while a failover hook is pending releases every lease without hanging', { timeout: 30000 }, async (t) => {
+  const f = await wsFixture(t, { plugins: [RECOVERY_ATTEMPT_PLUGIN], accounts: ['first', 'second'], failAccounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-recovery', configuration: { mode: 'slow-recovery' } });
+  const { client, create } = await f.connect();
+  create();
+  assert.ok(await waitFor(() => f.handshakes.includes('second')), '恢复已开始，新尝试的中间件在等待');
+  client.terminate();
+  assert.ok(await waitFor(() => Object.keys(f.system.runtime.status().leases).length === 0), JSON.stringify(f.system.runtime.status().leases));
+  assert.equal(f.receivedBy.filter((key) => key === 'second').length, 0);
+});
+
+test('Responses WebSocket upgrades are accepted while attempt and account plugins are active', async (t) => {
+  const f = await wsFixture(t, { plugins: [RECOVERY_ATTEMPT_PLUGIN, PREFER_ACCOUNT_PLUGIN], accounts: ['first'] });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-recovery', configuration: { mode: 'pass' } });
+  await f.system.control.enable({ pluginId: 'aih.test.ws-prefer', configuration: { prefer: 'acct_ws_first' } });
+  assert.equal(await f.upgradeStatus(), 101);
 });
 
 test('each response.create is rewritten by gateway.request and observed once', async (t) => {

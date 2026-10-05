@@ -35,16 +35,16 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   assert.equal(normalizeImportProviderAlias('moonshot-ai'), 'kimi');
   assert.equal(normalizeImportProviderAlias('qoder_cn'), 'qodercn');
   const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
-  assert.deepEqual(importable, ['agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'zcode']);
+  assert.deepEqual(importable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
-  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode', 'zcode']);
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
 });
 
 test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
   const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
-  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode', 'zcode']);
-  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode', 'zcode']);
-  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode', 'qoder', 'qodercn', 'zcode']);
+  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi', 'zcode']);
   assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
     MOONSHOT_API_KEY: 'k',
@@ -69,4 +69,26 @@ test('zcode 导入导出：导出解密成明文，导入用目标机密钥重�
   assert.equal(zcode.transferIdentitySeed(exported.auth), zcode.nativeIdentitySeed(native.credentials));
   assert.equal(zcode.normalizeImportedOAuth({ credentials: { 'oauth:active_provider': 'zai' } }), null, '没有令牌不导入');
   assert.deepEqual(zcode.importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://z' }), { ZCODE_API_KEY: 'k', ZCODE_BASE_URL: 'https://z' });
+});
+
+test('CodeBuddy 家族导入导出：只搬可移植的 credentials，不带本机绑定字段', () => {
+  const workbuddy = getProviderCredentialStrategy('workbuddy');
+  const credentials = { account: { uid: 'wb-uid-1' }, auth: { accessToken: 'at', refreshToken: 'rt', uid: 'wb-uid-1' } };
+  const exported = workbuddy.exportRecord({ credentials, codebuddyCredentialHostId: 'host-1', codebuddyNativeObservation: { at: 1 } });
+  assert.deepEqual(exported.auth, credentials);
+  assert.deepEqual(workbuddy.importNativeAuth(workbuddy.normalizeImportedOAuth({ credentials: exported.auth })), { credentials });
+  assert.equal(workbuddy.transferIdentitySeed(exported.auth), workbuddy.nativeIdentitySeed(credentials));
+  assert.equal(workbuddy.normalizeImportedOAuth({ credentials: { account: {} } }), null);
+});
+
+test('没有声明 API 密钥写法的 provider：导入 API 密钥账号被拒绝，而不是建出空账号', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { importStandardAccountRecords } = require('../lib/account/standard-transfer');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-apikey-reject-'));
+  const result = importStandardAccountRecords({ fs, path, aiHomeDir: home, records: [{ provider: 'workbuddy', api_key: 'k' }] });
+  assert.equal(result.imported, 0);
+  assert.equal(result.accounts[0].reason, 'unsupported_api_key_provider');
+  fs.rmSync(home, { recursive: true, force: true });
 });

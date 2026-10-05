@@ -548,3 +548,16 @@ test('countHealthyAccounts matches getAccountDisplayState semantics for api-key 
 test('countHealthyAccounts handles an empty list', () => {
   assert.deepEqual(countHealthyAccounts([]), { total: 0, healthy: 0 });
 });
+
+test('getUsageSnapshotRemainingPct 按快照 kind 计算：覆盖 zcode、CodeBuddy 家族，并忽略赠送与明细条目', () => {
+  const entry = (remainingPct: number, category?: string) => ({ window: '1d', remainingPct, ...(category ? { category } : {}) });
+  assert.equal(getUsageSnapshotRemainingPct({
+    usageSnapshot: { kind: 'zcode_plan_balance', capturedAt: 1, entries: [entry(40), entry(70)] }
+  } as never), 40);
+  assert.equal(getUsageSnapshotRemainingPct({
+    usageSnapshot: { kind: 'codebuddy_credit_balance', capturedAt: 1, entries: [entry(60), entry(0, 'detail')] }
+  } as never), 60, 'CodeBuddy 的每包明细不拖低账号级剩余');
+  assert.equal(getUsageSnapshotRemainingPct({
+    usageSnapshot: { kind: 'kimi_oauth_usage', capturedAt: 1, entries: [entry(80), entry(0, 'gift')] }
+  } as never), 80);
+});

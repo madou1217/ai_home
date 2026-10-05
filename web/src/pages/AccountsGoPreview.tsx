@@ -82,6 +82,13 @@ import {
   isInternalAccountLabel
 } from '@/utils/account-labels';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
+import {
+  getClaudeCredentialMode,
+  getEffectiveRemainingPct,
+  getUsageSortValue,
+  hasKnownUsage
+} from '@/features/accounts/account-state';
+import { getPlanTagColor, getPlanTagLabel } from '@/features/accounts/AccountBadges';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -156,17 +163,6 @@ function getAccountSecondaryLabel(record: Account) {
 }
 
 
-
-function isClaudeAuthTokenMode(value?: string) {
-  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
-  return normalized === 'auth-token' || normalized === 'claude-code-token';
-}
-
-function getClaudeCredentialMode(record?: Pick<Account, 'authMode' | 'authType' | 'credentialType'> | null): AccountAuthMode {
-  return isClaudeAuthTokenMode(record?.credentialType || record?.authType || record?.authMode)
-    ? 'auth-token'
-    : 'api-key';
-}
 
 function getSupportedAuthOptions(provider: SupportedAccountProvider) {
   return (PROVIDER_AUTH_OPTIONS[provider] || []).filter((option) => (
@@ -318,50 +314,6 @@ function getReauthActionLabel(record: Pick<Account, 'configured' | 'authPending'
 
 function canEditAccountConfig(record: Pick<Account, 'apiKeyMode'>) {
   return Boolean(record.apiKeyMode);
-}
-
-function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct' | 'provider' | 'usageSnapshot'>) {
-  if (record.apiKeyMode) return false;
-  return getEffectiveRemainingPct(record) != null;
-}
-
-function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
-  const snapshot = record.usageSnapshot;
-  if (!snapshot) return null;
-  let values: number[] = [];
-  if (
-    (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status')
-    || (record.provider === 'claude' && snapshot.kind === 'claude_oauth_usage')
-    || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
-  ) {
-    values = (snapshot.entries || [])
-      // 与 account-state.ts 口径一致：kimi 的 gift 条目不参与账号级 min 剩余。
-      .filter((entry) => entry.category !== 'gift')
-      .map((entry) => Number(entry.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  } else if (
-    (record.provider === 'gemini' && snapshot.kind === 'gemini_oauth_stats')
-    || (record.provider === 'agy' && snapshot.kind === 'agy_code_assist_quota')
-  ) {
-    values = (snapshot.models || [])
-      .map((model) => Number(model.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  }
-  if (values.length === 0) return null;
-  return Math.max(0, Math.min(100, Math.min(...values)));
-}
-
-function getEffectiveRemainingPct(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
-  const snapshotRemaining = getUsageSnapshotRemainingPct(record);
-  if (snapshotRemaining != null) return snapshotRemaining;
-  if (record.remainingPct == null) return null;
-  const numeric = Number(record.remainingPct);
-  if (!Number.isFinite(numeric)) return null;
-  return Math.max(0, Math.min(100, numeric));
-}
-
-function getUsageSortValue(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
-  return getEffectiveRemainingPct(record) ?? -1;
 }
 
 function formatQuotaReason(reason?: string) {
@@ -569,30 +521,6 @@ function renderAccountRoleIcons(record: Pick<Account, 'isDefault'>) {
       ) : null}
     </Space>
   );
-}
-
-function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
-  // 认证方式只展示一次，避免密钥模式在账号行里重复出现。
-  if (record.apiKeyMode) return '密钥';
-  // kimi 等 provider 有订阅页品牌档（Allegretto 等），优先于 LEVEL_* 枚举值。
-  return record.planName || record.planType || 'free';
-}
-
-function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
-  if (record.apiKeyMode) return 'cyan';
-  // kimi 订阅档位（按速度术语递增）：Andante < Moderato < Allegretto < Allegro
-  const planName = String(record.planName || '').toLowerCase();
-  if (planName === 'andante') return 'default';
-  if (planName === 'moderato') return 'green';
-  if (planName === 'allegretto') return 'geekblue';
-  if (planName === 'allegro') return 'gold';
-  if (record.planType === 'free') return 'default';
-  if (record.planType === 'pro') return 'green';
-  if (record.planType === 'ultra') return 'purple';
-  if (record.planType === 'team') return 'blue';
-  if (record.planType === 'plus') return 'green';
-  if (record.planType === 'business') return 'gold';
-  return 'default';
 }
 
 function getAccountRef(record: Pick<Account, 'accountRef'>) {

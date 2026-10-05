@@ -111,26 +111,28 @@ export function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct
   return getEffectiveRemainingPct(record) != null;
 }
 
-export function getUsageSnapshotRemainingPct(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
+// 按快照 kind 取剩余额度，kind 集合与服务端 lib/account/usage-remaining.js 保持一致（不再按 provider 名判断）。
+const ENTRY_WINDOW_SNAPSHOT_KINDS = new Set([
+  'codex_oauth_status',
+  'claude_oauth_usage',
+  'kimi_oauth_usage',
+  'zcode_plan_balance',
+  'codebuddy_credit_balance'
+]);
+const MODEL_LIST_SNAPSHOT_KINDS = new Set(['gemini_oauth_stats', 'agy_code_assist_quota']);
+
+export function getUsageSnapshotRemainingPct(record: Pick<Account, 'usageSnapshot'>) {
   const snapshot = record.usageSnapshot;
   if (!snapshot) return null;
   let values: number[] = [];
-  if (
-    (record.provider === 'codex' && snapshot.kind === 'codex_oauth_status')
-    || (record.provider === 'claude' && snapshot.kind === 'claude_oauth_usage')
-    || (record.provider === 'kimi' && snapshot.kind === 'kimi_oauth_usage')
-    || (record.provider === 'zcode' && snapshot.kind === 'zcode_plan_balance')
-  ) {
+  if (ENTRY_WINDOW_SNAPSHOT_KINDS.has(snapshot.kind) && 'entries' in snapshot) {
     values = (snapshot.entries || [])
-      // category='gift'（kimi 赠送额度）是旁路信息，不能拖低账号级 min 剩余，
-      // 否则 Gift 用尽会把健康账号误显示成「已耗尽」；与服务端 lib/account/usage-remaining.js 口径一致。
-      .filter((entry) => entry.category !== 'gift')
+      // category='gift'（kimi 赠送额度）与 'detail'（CodeBuddy 每包明细）是旁路信息，不能拖低账号级 min 剩余，
+      // 否则赠送包用尽会把健康账号误显示成「已耗尽」；与服务端口径一致。
+      .filter((entry) => entry.category !== 'gift' && entry.category !== 'detail')
       .map((entry) => Number(entry.remainingPct))
       .filter((value) => Number.isFinite(value));
-  } else if (
-    (record.provider === 'gemini' && snapshot.kind === 'gemini_oauth_stats')
-    || (record.provider === 'agy' && snapshot.kind === 'agy_code_assist_quota')
-  ) {
+  } else if (MODEL_LIST_SNAPSHOT_KINDS.has(snapshot.kind) && 'models' in snapshot) {
     values = (snapshot.models || [])
       .map((model) => Number(model.remainingPct))
       .filter((value) => Number.isFinite(value));

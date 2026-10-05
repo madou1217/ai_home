@@ -92,7 +92,11 @@
 3. 异步配额探测 → 与同步表并列的 `asyncUsageProbeHandlers`；codex 恢复阶梯原样移入 `probeCodexUsageAsyncWithCachePolicy`。`cache.js` 的可信快照校验依赖注入的来源常量，改表收益小，暂留。
 4. 账号页邮箱/套餐/主标识的取法 → 模块 `cachedAccountMetadata` / `liveAccountIdentity`。与旧代码逐字抄录版在 9264 种输入上比对一致。
 
-前端（`UsageSnapshotCell` 改为按快照 kind 的渲染器表、剩余额度计算、`AccountsGoPreview` 的重复副本）待用户对以下差异做决定后再做：前端自算的最低剩余不认 codebuddy、预览页副本还漏了 zcode；前端优先快照最低值而服务端 `remainingPct` 可能优先状态值；`ptyUsageStatus` 不含 agy、kimi。
+前端（用户 2026-10-05 按建议决定后已完成）：
+5. `UsageSnapshotCell` 改为按快照 kind 的渲染器表（时间窗、CodeBuddy 额度包、zcode 套餐、agy 模型分组、gemini 模型列表各一个渲染组件），不再按 provider 名分支；kimi 的排序与标签、agy 分组留在对应渲染组件里。
+6. 前端自算最低剩余改为按 kind（与服务端 `usage-remaining.js` 同一组 kind，并忽略 gift/detail 条目），因此覆盖 zcode 与 CodeBuddy 家族；仍保持「快照最低值优先、其次记录值」的现有显示口径。
+7. `AccountsGoPreview` 删掉 8 个与公共版本相同（或只差 zcode）的副本，改为引用 `account-state` / `AccountBadges`；两处与重新登录判断有关、确有差异的函数保留。
+`ptyUsageStatus` 保持不含 agy、kimi。验证：录制一次真实账号接口响应（HAR，含 codex、claude、agy、kimi、zcode、CodeBuddy 家族快照）后让新旧两个构建回放同一份数据，1440 与 390 两种宽度下页面文字除一处相对时间外完全一致，无横向溢出（实时数据本身在两次请求间会变化，直接比对不可靠）。
 
 ### 批 1 实施结果（2026-10-05）
 

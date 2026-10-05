@@ -101,12 +101,17 @@ test('凭据事实：按优先级保留环境变量顺序，返回防御性副�
     vendorId: 'anthropic',
     apiKeyEnv: ['ANTHROPIC_API_KEY'],
     authTokenEnv: ['ANTHROPIC_AUTH_TOKEN'],
-    baseUrlEnv: ['ANTHROPIC_BASE_URL']
+    baseUrlEnv: ['ANTHROPIC_BASE_URL'],
+    cliRequiresAuthFile: false
   });
   assert.deepEqual(getProviderCredentialFacts(' GEMINI ').baseUrlEnv, ['GEMINI_BASE_URL', 'GOOGLE_BASE_URL']);
   assert.deepEqual(getProviderCredentialFacts('agy').apiKeyEnv, [], 'agy 没有 API 密钥凭据');
   const copy = getProviderCredentialFacts('codex');
   copy.apiKeyEnv.push('MUTATED');
   assert.deepEqual(getProviderCredentialFacts('codex').apiKeyEnv, ['OPENAI_API_KEY']);
-  assert.deepEqual(getProviderCredentialFacts('nope'), { vendorId: '', apiKeyEnv: [], authTokenEnv: [], baseUrlEnv: [] });
+  assert.deepEqual(getProviderCredentialFacts('nope'), {
+    vendorId: '', apiKeyEnv: [], authTokenEnv: [], baseUrlEnv: [], cliRequiresAuthFile: false
+  });
+  assert.deepEqual(PROVIDER_IDS.filter((id) => getProviderCredentialFacts(id).cliRequiresAuthFile), ['opencode', 'grok'],
+    '只有原生 CLI 只认凭据文件的 provider 声明 cliRequiresAuthFile');
 });

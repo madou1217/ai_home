@@ -66,6 +66,18 @@
 
 批 1–3 可独立推进；批 4、5 需要先和对应主线会话确认边界。
 
+### 批 2 进展（2026-10-05）
+
+凭据端口落在 `lib/account/provider-credentials/`（每家一个模块，qoder、codebuddy 家族用工厂；无模块的 provider 走中性默认）。已完成、行为不变的三步：
+
+1. 「按原生身份去重」名单（`native-auth-projection.js` 两处、`unified-import.js` 一处，三份成员一致）→ 模块标记 `dedupeByNativeIdentity`。
+2. 「只靠环境变量即可鉴权」表（`provider-runtime-env.js`）→ 由合同 `apiKeyEnv ∪ authTokenEnv` 推出；opencode、grok 的例外改为合同事实 `credentials.cliRequiresAuthFile`。988 组输入黄金比对一致。
+3. `resolveNativeAuthIdentitySeed` 的取载荷与出种子 → 模块的 `extractNativeAuth` / `nativeIdentitySeed` / `fallbackIdentity`（qoder PAT）；账号描述对象的邮箱身份白名单 → `emailIsIdentity`。黄金比对：测试夹具 586 组输入、本机 32 个真实账号（仅比对哈希）全部一致。
+
+第 4 步（注册身份 vs 导入导出身份）结论：同一份载荷下 14 家三条路径种子一致；kiro 例外——它的种子需要完整原生凭据，导入导出路径只拿到 `auth`，因此算不出（kiro 本来也不支持导出）。拆包差异只影响包了一层的导入文件格式。
+
+`native-auth-projection.js` 的运行时特例（kiro CAS 写入、codebuddy 收编、claude 钥匙串）与会话端口耦合，移到批 4 一起做。
+
 ### 批 1 实施结果（2026-10-05）
 
 普查后发现「纯静态事实」比估计的少：大部分 `cliName !== 'codex'` 是厂商专属模块开头的防卫判断，属于批 2–4 的行为端口。批 1 实际做法：

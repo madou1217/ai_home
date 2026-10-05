@@ -91,7 +91,8 @@ test('readZcodeApiProviderConfig finds the first api-key provider entry', () => 
 });
 
 // --- Account Identity ---
-const { buildZcodeIdentitySeed, detectIdentityKind } = require('../lib/account/account-identity');
+const { detectIdentityKind } = require('../lib/account/account-identity');
+const { buildZcodeIdentitySeed } = require('../lib/account/subject-oauth-identity');
 
 test('buildZcodeIdentitySeed prefers decrypted user_info id and stays stable', () => {
   const nativeAuth = {

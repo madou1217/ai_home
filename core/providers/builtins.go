@@ -237,7 +237,7 @@ func builtinOpenCode() Definition {
 		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}},
+		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
@@ -276,7 +276,7 @@ func builtinGrok() Definition {
 		Presentation: presentation("grok", "Grok", "GK", "⚡", "cyan"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
-		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}},
+		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),

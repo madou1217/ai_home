@@ -728,7 +728,8 @@
         ],
         "baseUrlEnv": [
           "OPENCODE_BASE_URL"
-        ]
+        ],
+        "cliRequiresAuthFile": true
       }
     },
     {
@@ -861,7 +862,8 @@
         ],
         "baseUrlEnv": [
           "XAI_BASE_URL"
-        ]
+        ],
+        "cliRequiresAuthFile": true
       }
     },
     {

@@ -20,11 +20,8 @@ const {
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const {
-  buildOpenCodeIdentitySeed,
-  hashApiKeySecret,
-  normalizeIdentitySeed
-} = require('../lib/account/account-identity');
+const { hashApiKeySecret, normalizeIdentitySeed } = require('../lib/account/account-identity');
+const { buildOpenCodeIdentitySeed } = require('../lib/account/opencode-identity');
 const {
   buildApiKeyIdentity,
   readAccountExportRecord

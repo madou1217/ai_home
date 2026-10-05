@@ -130,6 +130,9 @@ type CredentialFacts struct {
 	AuthTokenEnv []string `json:"authTokenEnv,omitempty"`
 	// BaseURLEnv 是 API 基础地址的环境变量。
 	BaseURLEnv []string `json:"baseUrlEnv,omitempty"`
+	// CLIRequiresAuthFile 表示原生 CLI 只从凭据文件读凭据、不认环境变量里的密钥：
+	// 即使账号的密钥在 env 里，启动沙箱也必须投影原生凭据文件（如 opencode 的 auth.json）。
+	CLIRequiresAuthFile bool `json:"cliRequiresAuthFile,omitempty"`
 }
 
 // ClientSupport 是 Provider 面向用户的客户端形态合同。

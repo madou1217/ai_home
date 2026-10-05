@@ -20,7 +20,7 @@ func (upstream *countingUpstream) RoundTripNative(context.Context, accountapp.Cr
 	return nil, errors.New("synthetic upstream")
 }
 
-// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求：stream=true、store 非 true、input 为列表、
+// ChatGPT 登录账号的上游只接受 codex CLI 形状的请求：stream=true、显式 store=false、input 为列表、
 // 无 previous_response_id。其他形状原样发出必然 400（真实故障："Store must be set to false"、
 // "Input must be a list"、"Stream must be set to true"），必须交回 Node 归一化。
 func TestChatGPTCredentialsOnlyPassThroughCodexShapedRequests(t *testing.T) {
@@ -36,6 +36,8 @@ func TestChatGPTCredentialsOnlyPassThroughCodexShapedRequests(t *testing.T) {
 		passthrough bool
 	}{
 		{"codex shaped", `{"model":"gpt-native","stream":true,"store":false,"input":[]}`, true},
+		{"store omitted", `{"model":"gpt-native","stream":true,"input":[]}`, false},
+		{"store null", `{"model":"gpt-native","stream":true,"store":null,"input":[]}`, false},
 		{"store true", `{"model":"gpt-native","stream":true,"store":true,"input":[]}`, false},
 		{"string input", `{"model":"gpt-native","stream":true,"input":"hi"}`, false},
 		{"not streaming", `{"model":"gpt-native","input":[]}`, false},

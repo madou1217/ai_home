@@ -13,7 +13,8 @@ const httpUtils = require('../lib/server/http-utils');
 const sessionReader = require('../lib/sessions/session-reader');
 const { getPublicAccountRef } = require('../lib/account/public-account-ref');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const { writeAccountCredentials } = require('../lib/server/account-credential-store');
+const { writeAccountCredentials, writeAccountNativeAuth } = require('../lib/server/account-credential-store');
+const { credential: codebuddyCredential } = require('./helpers/codebuddy-credential');
 const { addOpenedProject } = require('../lib/server/webui-project-store');
 const {
   createCliInstallConfirmationRegistry
@@ -668,6 +669,53 @@ test('web ui non-stream chat never installs a missing CLI without interactive co
     nativeSessionChat.runNativeSessionPrompt = originalRun;
   }
 });
+
+for (const stream of [false, true]) {
+  test(`family chat rejects unusable credentials before CLI readiness (stream=${stream})`, async (t) => {
+    const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-family-chat-preflight-'));
+    t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+    const accountRef = registerAccountIdentity(fs, aiHomeDir, {
+      provider: 'codebuddy', cliAccountId: '1', identitySeed: 'oauth:codebuddy:preflight'
+    }).accountRef;
+    writeAccountCredentials(fs, aiHomeDir, accountRef, { CODEBUDDY_BASE_URL: 'https://www.codebuddy.ai' });
+    const expired = codebuddyCredential('codebuddy');
+    expired.auth.refreshExpiresAt = Date.now() - 1000;
+    const nativeAuths = [
+      { settings: { theme: 'dark' } },
+      { credentials: codebuddyCredential('workbuddy') },
+      { credentials: expired }
+    ];
+    const originalEnsureReady = nativeSessionChat.ensureNativeCliReadyForChat;
+    nativeSessionChat.ensureNativeCliReadyForChat = async () => {
+      assert.fail('unconfigured accounts must not request CLI installation');
+    };
+    try {
+      for (const nativeAuth of nativeAuths) {
+        writeAccountNativeAuth(fs, aiHomeDir, accountRef, nativeAuth);
+        const res = createStreamResCapture();
+        const handled = await handleWebUIRequest({
+          method: 'POST', pathname: '/v0/webui/chat',
+          url: new URL('http://localhost/v0/webui/chat'),
+          req: { headers: {} }, res, options: {}, state: {},
+          deps: createBaseDeps({
+            aiHomeDir,
+            readRequestBody: async () => Buffer.from(JSON.stringify({
+              provider: 'codebuddy', accountRef, stream, mode: 'work',
+              createSession: true, projectPath: sandboxRealHome, prompt: 'hello',
+              messages: [{ role: 'user', content: 'hello' }]
+            }))
+          })
+        });
+        assert.equal(handled, true);
+        assert.equal(res.statusCode, 400, res.body);
+        assert.equal(JSON.parse(res.body).code, 'account_not_configured');
+        assert.match(JSON.parse(res.body).message, /重新登录/);
+      }
+    } finally {
+      nativeSessionChat.ensureNativeCliReadyForChat = originalEnsureReady;
+    }
+  });
+}
 
 test('web ui native session chat publishes updates to session event bus', async (t) => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;

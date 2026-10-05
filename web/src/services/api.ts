@@ -1697,7 +1697,7 @@ export const managementAPI = {
     onConnected?: () => void;
     onError?: () => void;
   }) => {
-    const eventSource = guardedWebUiEventSource('/v0/webui/management/watch');
+    const eventSource = openSharedWebUiEventSource('/v0/webui/management/watch');
     eventSource.onopen = () => {
       handlers.onConnected?.();
     };

@@ -1,4 +1,5 @@
 const KNOWN_REASON_MESSAGES: Record<string, string> = {
+  zcode_oauth_management_only: '当前 AIH 的 ZCode OAuth 接入用于账号管理、桌面启动和用量查询；网关推理需使用 Coding Plan API Key 账号。',
   // Go Core 承接流量时记录的账号级硬阻塞（lib/server/go-runtime-overlay.js），外部真相源更新后自动解除。
   go_runtime_credentials_rejected: '上游拒绝了账号凭据，需要重新登录或更新凭据后恢复调度。',
   go_runtime_quota_exhausted: '上游报告账号额度耗尽，下一次额度快照确认恢复后自动解除。',
@@ -65,6 +66,10 @@ export function formatAccountIssueReason(reason?: string) {
       return `账号认证已失效，${httpStatus.source}返回 HTTP ${httpStatus.status}。请重新登录或重新授权后再使用。`;
     }
     return '账号认证已失效，需要重新登录或重新授权后再使用。';
+  }
+
+  if (lower.includes('zcode_balance_parameter_error')) {
+    return 'ZCode 余额接口返回参数错误（业务码 3001），不是登录失效；请等待上游接口修复或刷新探测。';
   }
 
   if (Object.prototype.hasOwnProperty.call(KNOWN_REASON_MESSAGES, text)) {

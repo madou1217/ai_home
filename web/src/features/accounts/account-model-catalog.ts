@@ -69,6 +69,9 @@ export function formatModelProbeErrorLabel(error: string) {
   if (normalized.includes('zcode_jwt_missing_relogin') || normalized.includes('zcode_oauth_access_token_missing')) {
     return '需重新登录';
   }
+  if (normalized.includes('zcode_balance_parameter_error')) {
+    return '参数错误';
+  }
   const httpMatch = normalized.match(/HTTP\s+(\d{3})/i);
   if (httpMatch) return `${httpMatch[1]} 失败`;
   if (normalized.includes('PERMISSION_DENIED')) return '权限拒绝';

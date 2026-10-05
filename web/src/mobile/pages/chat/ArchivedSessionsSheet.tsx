@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { message } from 'antd';
 import { ReloadOutlined, UndoOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import SessionRelativeTime from '@/components/chat/SessionRelativeTime';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { getSessionRunKey, isSameSession } from '@/components/chat/project-runtime-state.js';
 import { getProviderLabel, providerAccentStyle } from '@/components/chat/provider-registry';
@@ -110,7 +110,7 @@ export default function ArchivedSessionsSheet({ open, onClose, onRestored }: Pro
                 </span>
               </div>
               <div className="mhud-row__side">
-                <span className={styles.time}>{dayjs(archivedSessionTime(session)).fromNow()}</span>
+                <span className={styles.time}><SessionRelativeTime timestamp={archivedSessionTime(session)} /></span>
                 {restorable ? (
                   <button type="button" className={styles.inlineAction} onClick={(event) => { event.stopPropagation(); void restore(session); }}>
                     <UndoOutlined /> 还原

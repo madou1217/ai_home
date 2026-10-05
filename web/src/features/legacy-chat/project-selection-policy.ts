@@ -4,6 +4,7 @@ import type {
   Session,
 } from '@/types';
 import { isAbsoluteProjectPath } from '@/services/project-path-policy.js';
+import { isSessionAccountProviderCompatible } from '@/components/chat/session-provider-policy.js';
 import type { PersistedChatSelection } from './runtime-types';
 
 function projectLastActivityAt(project: AggregatedProject): number {
@@ -92,7 +93,7 @@ export function findProjectBySessionId(
 
 function matchesSelection(session: Session, selection: PersistedChatSelection): boolean {
   return session.id === selection.sessionId
-    && (!selection.provider || session.provider === selection.provider)
+    && (!selection.provider || isSessionAccountProviderCompatible(session, selection.provider))
     && (!selection.projectDirName || session.projectDirName === selection.projectDirName);
 }
 export function preserveCanonicalSessionIdentity(current: Session | null, incoming: Session): Session {

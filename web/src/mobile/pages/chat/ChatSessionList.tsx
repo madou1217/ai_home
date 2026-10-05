@@ -14,7 +14,7 @@ import {
   PushpinOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import SessionRelativeTime from '@/components/chat/SessionRelativeTime';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import {
   getRunningProviders,
@@ -162,7 +162,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
           </span>
         </div>
         <div className="mhud-row__side">
-          <span className={styles.time}>{dayjs(session.updatedAt).fromNow()}</span>
+          <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>
           {active ? <span className="mhud-status mhud-tone--info"><span className="hud-led hud-led--info" aria-hidden="true" />OPEN</span> : null}
         </div>
       </SwipeRow>
@@ -204,7 +204,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
           {running ? (
             <span className="mhud-status mhud-tone--ok"><span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />RUN</span>
           ) : (
-            <span className={styles.time}>{dayjs(session.updatedAt).fromNow()}</span>
+            <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>
           )}
         </div>
       </SwipeRow>

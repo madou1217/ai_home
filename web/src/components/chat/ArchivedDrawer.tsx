@@ -12,7 +12,7 @@ import {
 } from './session-lifecycle-policy.js';
 import { lifecycleErrorMessage } from './useSessionLifecycle';
 import Button from '@/components/ui/AppButton';
-import dayjs from 'dayjs';
+import SessionRelativeTime from './SessionRelativeTime';
 import styles from './chat-overlays.module.css';
 
 interface Props {
@@ -137,7 +137,7 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
                     >
                       {session.origin === 'native' ? '原生归档' : '历史归档'}
                     </Tag>
-                    <span className={styles.archivedTime}>最后更新 {dayjs(archivedSessionTime(session)).fromNow()}</span>
+                    <span className={styles.archivedTime}>最后更新 <SessionRelativeTime timestamp={archivedSessionTime(session)} /></span>
                   </div>
                 }
               />

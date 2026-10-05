@@ -3,6 +3,7 @@ import { message } from 'antd';
 import type { WorkspaceMode } from '@/components/chat/ModeSelector';
 import ChatEmptyState from '@/components/chat/ChatEmptyState';
 import { isSessionRunning } from '@/components/chat/project-runtime-state.js';
+import { isSharedNativeSession } from '@/components/chat/session-provider-policy.js';
 import type { AggregatedProject, Session } from '@/types';
 import { sessionsAPI } from '@/services/api';
 import {
@@ -74,6 +75,7 @@ export function useChatPageState(mobile: boolean) {
   const accountCatalog = useChatAccountCatalog(
     projectCatalog.selectedSession?.provider,
     projectCatalog.selectedSession?.accountRef,
+    isSharedNativeSession(projectCatalog.selectedSession),
   );
   const [selectedModel, setSelectedModel] = useState('');
   const [legacyRunningSessionKeys, setLegacyRunningSessionKeys] = useState<Set<string>>(new Set());

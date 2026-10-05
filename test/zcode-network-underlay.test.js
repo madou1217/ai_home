@@ -123,3 +123,42 @@ test('字面 IP 节点只要求物理接口，不把 DNS 缺失误判为不可�
     dnsServer: ''
   });
 });
+
+test('TUN 默认路由下核实物理 scoped 默认路由，再使用同接口 DNS', () => {
+  const { resolveZcodeNetworkUnderlay } = loadUnderlay();
+  const commands = [];
+  const result = resolveZcodeNetworkUnderlay({
+    platform: 'darwin',
+    spawnSync(command, args) {
+      commands.push([command, args]);
+      if (command === 'route') {
+        return { status: 0, stdout: `interface: ${args.includes('-ifscope') ? 'en1' : 'utun4'}\n` };
+      }
+      if (command === 'netstat') {
+        return { status: 0, stdout: 'default link#24 UCSg utun4\ndefault 192.168.3.1 UGScIg en1\n' };
+      }
+      return { status: 0, stdout: 'resolver #1\n nameserver[0] : 192.168.3.1\n if_index : 15 (en1)\n' };
+    }
+  });
+  assert.deepEqual(result, { ok: true, platform: 'macos', interfaceName: 'en1', dnsServer: '192.168.3.1' });
+  assert.deepEqual(commands, [
+    ['route', ['-n', 'get', 'default']],
+    ['netstat', ['-rn', '-f', 'inet']],
+    ['route', ['-n', 'get', '-ifscope', 'en1', 'default']],
+    ['scutil', ['--dns']]
+  ]);
+});
+
+test('TUN 下不能核实的 scoped 路由继续 fail-closed', () => {
+  const { resolveZcodeNetworkUnderlay, parseMacPhysicalDefaultInterfaces } = loadUnderlay();
+  assert.deepEqual(parseMacPhysicalDefaultInterfaces('default link#24 UCSg utun4\ndefault 1.1.1.1 UG en1\ndefault 1.1.1.1 UG en1\n'), ['en1']);
+  const result = resolveZcodeNetworkUnderlay({
+    platform: 'darwin',
+    spawnSync(command, args) {
+      if (command === 'netstat') return { status: 0, stdout: 'default 1.1.1.1 UG en1\n' };
+      assert.notEqual(command, 'scutil', '未核实路由时不得使用 DNS');
+      return { status: 0, stdout: `interface: ${args.includes('-ifscope') ? 'en2' : 'utun4'}\n` };
+    }
+  });
+  assert.deepEqual(result, { ok: false, error: 'zcode_underlay_interface_unavailable' });
+});

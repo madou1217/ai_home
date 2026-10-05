@@ -39,6 +39,7 @@ const {
 } = require('../lib/account/default-account-store');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const { createSessionStoreService } = require('../lib/cli/services/session-store');
+const { refreshLiveAccountRecord } = require('../lib/server/webui-account-live');
 
 function createResCapture() {
   return {
@@ -478,6 +479,54 @@ test('web ui accounts list derives zcode OAuth presence from native credentials'
   assert.ok(zcodeAccounts.every((account) => account.accountRef !== undecryptableRef || account.configured === true));
 });
 
+test('fast and hydrated account views retain the runtime relay policy without hiding credentials or quota', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('zcode', '10012', {
+    nativeAuth: { credentials: { zcodejwttoken: encryptZcodeCredentialValue('zcode-jwt') } },
+    state: { status: 'up', configured: true, remainingPct: 87 }
+  });
+  const state = { accounts: { zcode: [{
+    accountRef, apiKeyMode: false, schedulableStatus: 'relay_disabled',
+    schedulableReason: 'zcode_oauth_management_only'
+  }] } };
+  const fast = await requestAccounts(fixture, { state });
+  const deps = createBaseDeps(fixture);
+  const hydrated = await refreshLiveAccountRecord({ ...deps, deps, state, options: {} }, 'zcode', accountRef, {
+    skipUsageRefresh: true, skipRuntimeReload: true
+  });
+  for (const account of [fast.body.accounts[0], hydrated]) {
+    assert.equal(account.configured, true);
+    assert.equal(account.quotaStatus, 'available');
+    assert.equal(account.remainingPct, 87);
+    assert.equal(account.schedulableStatus, 'blocked_by_policy');
+    assert.equal(account.schedulableReason, 'zcode_oauth_management_only');
+  }
+});
+
+test('fast and hydrated account views recompute quota instead of copying a stale pool block', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('codex', '10013', {
+    state: { status: 'up', configured: true, remainingPct: 87 },
+    usageSnapshot: {
+      schemaVersion: 2, source: 'codex_app_server',
+      kind: 'codex_oauth_status', capturedAt: Date.now(),
+      account: { planType: 'plus' }, entries: [{ window: '5h', remainingPct: 87 }]
+    }
+  });
+  const state = { accounts: { codex: [{
+    accountRef, apiKeyMode: false, schedulableStatus: 'blocked_by_quota', schedulableReason: 'usage_exhausted'
+  }] } };
+  const fast = await requestAccounts(fixture, { state });
+  const deps = createBaseDeps(fixture);
+  const hydrated = await refreshLiveAccountRecord({ ...deps, deps, state, options: {} }, 'codex', accountRef, {
+    skipUsageRefresh: true, skipRuntimeReload: true
+  });
+  for (const account of [fast.body.accounts[0], hydrated]) {
+    assert.equal(account.schedulableStatus, 'schedulable');
+    assert.equal(account.quotaStatus, 'available');
+  }
+});
+
 test('web ui accounts list marks stale oauth pending accounts as retryable', async (t) => {
   const fixture = createAccountFixture(t);
   fixture.register('codex', '7', {
@@ -840,86 +889,92 @@ test('web ui accounts list exposes probe_failed quota status when latest usage p
   assert.equal(body.accounts[0].quotaReason, 'direct_http_status_401');
 });
 
-test('web ui refresh usage accepts accountRef job and streams refreshed account record', async (t) => {
-  const fixture = createAccountFixture(t);
-  const accountRef = fixture.register('codex', '9', {
-    configured: false,
-    state: { configured: true, apiKeyMode: false, updatedAt: 111 }
-  });
-  let probeState = null;
-  const liveFrames = [];
-  const wsClient = {
-    readyState: 1,
-    send(frame) {
-      liveFrames.push(JSON.parse(String(frame)));
-    }
-  };
-  const state = {
-    accounts: {
-      codex: [{ accountRef, email: 'refresh@example.com', apiKeyMode: false }],
-      agy: [], claude: [], gemini: [], opencode: []
-    },
-    __webUiAccountsLive: {
-      records: new Map(),
-      metadata: new Map(),
-      usageSnapshots: new Map(),
-      watchers: new Set(),
-      webSocketWatchers: new Set([{ client: wsClient, heartbeat: null }]),
-      webSocketServer: null,
-      loadedFromDisk: true,
-      hydrating: false,
-      queued: false,
-      lastHydratedAt: 0,
-      revision: 0,
-      roleSignature: '',
-      fastSnapshot: null,
-      fastSnapshotAt: 0
-    }
-  };
-  const res = createResCapture();
-  const pathname = `/v0/webui/accounts/codex/${accountRef}/refresh-usage`;
-  const handled = await handleWebUIRequest({
-    method: 'POST',
-    pathname,
-    url: new URL(`http://localhost${pathname}`),
-    req: { headers: {} },
-    res,
-    options: {},
-    state,
-    deps: createBaseDeps(fixture, {
-      ensureUsageSnapshotAsync: async () => {
-        probeState = { error: 'timeout', checkedAt: Date.now() };
-        return null;
+for (const probeError of ['timeout', '']) {
+  test(`web ui refresh usage streams the account and reports ${probeError ? 'probe failure' : 'probe success'}`, async (t) => {
+    const fixture = createAccountFixture(t);
+    const accountRef = fixture.register('codex', '9', {
+      configured: false,
+      state: { configured: true, apiKeyMode: false, updatedAt: 111 }
+    });
+    let probeState = null;
+    const liveFrames = [];
+    const wsClient = {
+      readyState: 1,
+      send(frame) {
+        liveFrames.push(JSON.parse(String(frame)));
+      }
+    };
+    const state = {
+      accounts: {
+        codex: [{ accountRef, email: 'refresh@example.com', apiKeyMode: false }],
+        agy: [], claude: [], gemini: [], opencode: []
       },
-      getLastUsageProbeState: () => probeState,
-      loadServerRuntimeAccounts: () => state.accounts,
-      applyReloadState(nextState, runtimeAccounts) {
-        nextState.accounts = runtimeAccounts;
-      },
-      checkStatus: () => ({ configured: true, accountName: 'refresh@example.com' })
-    })
-  });
+      __webUiAccountsLive: {
+        records: new Map(),
+        metadata: new Map(),
+        usageSnapshots: new Map(),
+        watchers: new Set(),
+        webSocketWatchers: new Set([{ client: wsClient, heartbeat: null }]),
+        webSocketServer: null,
+        loadedFromDisk: true,
+        hydrating: false,
+        queued: false,
+        lastHydratedAt: 0,
+        revision: 0,
+        roleSignature: '',
+        fastSnapshot: null,
+        fastSnapshotAt: 0
+      }
+    };
+    const res = createResCapture();
+    const pathname = `/v0/webui/accounts/codex/${accountRef}/refresh-usage`;
+    const handled = await handleWebUIRequest({
+      method: 'POST',
+      pathname,
+      url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} },
+      res,
+      options: {},
+      state,
+      deps: createBaseDeps(fixture, {
+        ensureUsageSnapshotAsync: async () => {
+          probeState = { error: probeError, checkedAt: Date.now() };
+          return null;
+        },
+        getLastUsageProbeState: () => probeState,
+        loadServerRuntimeAccounts: () => state.accounts,
+        applyReloadState(nextState, runtimeAccounts) {
+          nextState.accounts = runtimeAccounts;
+        },
+        checkStatus: () => ({ configured: true, accountName: 'refresh@example.com' })
+      })
+    });
 
-  assert.equal(handled, true);
-  assert.equal(res.statusCode, 202);
-  const body = JSON.parse(res.body);
-  assert.equal(body.job.accountRef, accountRef);
-  assert.equal(body.job.status, 'queued');
-  assert.equal(probeState, null);
-  assert.equal(
-    await waitFor(
-      () => liveFrames.some((frame) => frame.type === 'account-refresh-job' && frame.job.status === 'succeeded'),
-      // 并行运行完整测试时 SQLite/账号快照 I/O 可能让后台作业跨过一个秒级调度片段；
-      // 这里验证最终状态，不把机器瞬时负载误判成刷新失败。
-      10000
-    ),
-    true
-  );
-  const accountFrame = liveFrames.find((frame) => frame.type === 'account');
-  assert.equal(accountFrame.account.accountRef, accountRef);
-  assert.equal(accountFrame.account.updatedAt, probeState.checkedAt);
-  assert.equal(accountFrame.account.quotaStatus, 'probe_failed');
-});
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 202);
+    const body = JSON.parse(res.body);
+    assert.equal(body.job.accountRef, accountRef);
+    assert.equal(body.job.status, 'queued');
+    assert.equal(probeState, null);
+    assert.equal(
+      await waitFor(
+        () => liveFrames.some((frame) => frame.type === 'account-refresh-job'
+          && frame.job.status === (probeError ? 'failed' : 'succeeded')),
+        // 并行运行完整测试时 SQLite/账号快照 I/O 可能让后台作业跨过一个秒级调度片段；
+        // 这里验证最终状态，不把机器瞬时负载误判成刷新失败。
+        10000
+      ),
+      true
+    );
+    const accountFrame = liveFrames.find((frame) => frame.type === 'account');
+    assert.equal(accountFrame.account.accountRef, accountRef);
+    assert.equal(accountFrame.account.updatedAt, probeState.checkedAt);
+    if (probeError) assert.equal(accountFrame.account.quotaStatus, 'probe_failed');
+    const finalJob = liveFrames.find((frame) => frame.type === 'account-refresh-job'
+      && frame.job.status === (probeError ? 'failed' : 'succeeded'));
+    assert.equal(finalJob.job.error, probeError);
+  });
+}
 
 test('web ui refresh usage rejects DB api key accounts and reconciles by accountRef', async (t) => {
   const fixture = createAccountFixture(t);

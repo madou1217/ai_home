@@ -138,7 +138,14 @@ export interface ChatRuntimeApi {
 
 export type ReconnectScheduler = (callback: () => void) => () => void;
 
+export interface SessionVisibilitySource {
+  readonly visibilityState: string;
+  addEventListener(type: 'visibilitychange', listener: EventListener): void;
+  removeEventListener(type: 'visibilitychange', listener: EventListener): void;
+}
+
 export interface SessionRuntimeControllerOptions {
+  readonly visibilitySource?: SessionVisibilitySource;
   readonly frameScheduler?: FrameScheduler;
   readonly reconnectScheduler?: ReconnectScheduler;
 }

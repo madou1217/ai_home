@@ -321,6 +321,7 @@ test('formatSchedulableReason maps known codes to human copy and falls back', ()
   assert.match(formatSchedulableReason('codex_free_plan_missing_rate_limits'), /Free/);
   assert.match(formatSchedulableReason('codex_team_plan_missing_rate_limits'), /Team/);
   assert.match(formatSchedulableReason('agy_access_token_required'), /AGY_ACCESS_TOKEN/);
+  assert.match(formatSchedulableReason('zcode_oauth_management_only'), /当前 AIH.*Coding Plan API Key/);
   assert.equal(formatSchedulableReason(''), '');
   assert.equal(formatSchedulableReason(undefined), '');
 });

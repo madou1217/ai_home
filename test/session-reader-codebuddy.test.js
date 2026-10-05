@@ -17,6 +17,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
 
 const {
   readProjectsFromHostByProviders,
@@ -162,6 +163,32 @@ function createFixture() {
   };
 }
 
+function writeCodebuddySessionDatabase(root, rows) {
+  const db = new DatabaseSync(path.join(root, 'workbuddy.db'));
+  db.exec(`CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    cwd TEXT NOT NULL,
+    title TEXT,
+    custom_title TEXT,
+    updated_at INTEGER NOT NULL,
+    last_activity_at INTEGER
+  )`);
+  const insert = db.prepare(
+    'INSERT INTO sessions (id, cwd, title, custom_title, updated_at, last_activity_at) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  for (const row of rows) {
+    insert.run(
+      row.id,
+      row.cwd,
+      row.title || null,
+      row.customTitle || null,
+      row.updatedAt,
+      row.lastActivityAt || null
+    );
+  }
+  db.close();
+}
+
 function collectSessionIds(projects) {
   return projects.flatMap((project) => project.sessions.map((session) => session.id)).sort();
 }
@@ -270,6 +297,203 @@ test('the session title prefers ai-title and falls back to the first user messag
   assert.equal(titles['cn-codebuddy-session'], 'cn codebuddy question');
 });
 
+test('native WorkBuddy metadata overrides JSONL title and activity time', () => {
+  const fixture = createFixture();
+  writeCodebuddySessionDatabase(path.join(fixture.hostHomeDir, '.workbuddy'), [{
+    id: 'cn-workbuddy-session',
+    cwd: WORKSPACE.cnApp,
+    title: 'database title',
+    customTitle: 'renamed from WorkBuddy',
+    updatedAt: 1789364430999,
+    lastActivityAt: 1789364430888
+  }]);
+
+  const session = readProjectsFromHostByProviders(['workbuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions)
+    .find((item) => item.id === 'cn-workbuddy-session');
+
+  assert.equal(session.title, 'renamed from WorkBuddy');
+  assert.equal(session.updatedAt, 1789364430888);
+});
+
+test('database title falls back from custom_title to title and JSONL remains the no-database fallback', () => {
+  const fixture = createFixture();
+  writeCodebuddySessionDatabase(path.join(fixture.hostHomeDir, '.workbuddy'), [{
+    id: 'cn-workbuddy-session',
+    cwd: WORKSPACE.cnApp,
+    title: 'database generated title',
+    updatedAt: 1789364431999,
+    lastActivityAt: 1789364431888
+  }]);
+
+  const projects = readProjectsFromHostByProviders(['workbuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  });
+  const sessions = Object.fromEntries(
+    projects.flatMap((project) => project.sessions).map((session) => [session.id, session])
+  );
+  assert.equal(sessions['cn-workbuddy-session'].title, 'database generated title');
+  assert.equal(sessions['cn-workbuddy-session'].updatedAt, 1789364431888);
+  // 该数据根没有数据库，JSONL 标题继续作为兼容回退。
+  assert.equal(sessions['cn-codebuddy-session'].title, 'cn codebuddy question');
+});
+
+test('new JSONL activity remains visible when the desktop database has not caught up', () => {
+  const fixture = createFixture();
+  writeCodebuddySessionDatabase(path.join(fixture.hostHomeDir, '.workbuddy'), [{
+    id: 'cn-workbuddy-session', cwd: WORKSPACE.cnApp, title: 'database title',
+    updatedAt: 1789369999999, lastActivityAt: 1789364428000
+  }]);
+  const session = readProjectsFromHostByProviders(['workbuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions).find((item) => item.id === 'cn-workbuddy-session');
+  assert.equal(session.updatedAt, 1789364428181);
+});
+
+test('a dated task uses database title and cwd even without JSONL project metadata', () => {
+  const fixture = createFixture();
+  const cwd = path.join(fixture.hostHomeDir, 'WorkBuddy AI', '2026-09-15-18-52-42');
+  fs.writeFileSync(fixture.paths.intlWorkbuddy, JSON.stringify({
+    type: 'message', role: 'user', timestamp: 1789364428000,
+    content: [{ type: 'input_text', text: 'initial prompt' }]
+  }));
+  writeCodebuddySessionDatabase(path.join(fixture.hostHomeDir, '.workbuddy-ai'), [{
+    id: 'intl-workbuddy-session', cwd, title: 'generated title', customTitle: '我的任务',
+    updatedAt: 1789364430000, lastActivityAt: 1789364429000
+  }]);
+  const project = readProjectsFromHostByProviders(['codebuddy'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).find((item) => item.sessions.some((session) => session.id === 'intl-workbuddy-session'));
+  assert.equal(project.name, '我的任务');
+  assert.equal(project.path, cwd);
+  assert.equal(project.sessions[0].updatedAt, 1789364429000);
+});
+
+test('unreadable and older native databases preserve JSONL compatibility', () => {
+  const fixture = createFixture();
+  fs.writeFileSync(path.join(fixture.hostHomeDir, '.workbuddy', 'workbuddy.db'), 'invalid sqlite');
+  const db = new DatabaseSync(path.join(fixture.hostHomeDir, '.workbuddy-ai', 'workbuddy.db'));
+  try {
+    db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT)');
+    db.prepare('INSERT INTO sessions (id, title) VALUES (?, ?)')
+      .run('intl-workbuddy-session', 'older native title');
+  } finally {
+    db.close();
+  }
+  const sessions = readProjectsFromHostByProviders(['workbuddycn', 'workbuddy'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions);
+  assert.equal(sessions.find((session) => session.id === 'cn-workbuddy-session').title, 'CN WorkBuddy session');
+  assert.equal(sessions.find((session) => session.id === 'intl-workbuddy-session').title, 'older native title');
+  assert.equal(sessions.find((session) => session.id === 'intl-workbuddy-session').updatedAt, 1789364428181);
+});
+
+test('CLI titles track later renames, incomplete append and transcript replacement', () => {
+  const fixture = createFixture();
+  const sessionPath = fixture.paths.cnWorkbuddy;
+  const read = () => readProjectsFromHostByProviders(['codebuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions).find((item) => item.id === 'cn-workbuddy-session');
+  assert.equal(read().title, 'CN WorkBuddy session');
+  fs.appendFileSync(sessionPath, `\n${JSON.stringify({ type: 'custom-title', customTitle: '第一次改名' })}\n`);
+  // 改名后还有大段工具输出，标题不一定在头部或 64KB 的尾部。
+  fs.appendFileSync(sessionPath, `${JSON.stringify({ type: 'function_call_result', output: 'x'.repeat(128 * 1024) })}\n`);
+  assert.equal(read().title, '第一次改名');
+  fs.appendFileSync(sessionPath, '{"type":"custom-title","customTitle":"第二次');
+  assert.equal(read().title, '第一次改名');
+  fs.appendFileSync(sessionPath, '改名"}\n');
+  assert.equal(read().title, '第二次改名');
+  fs.writeFileSync(sessionPath, JSON.stringify({ type: 'ai-title', aiTitle: '替换后的会话标题', cwd: WORKSPACE.cnApp }));
+  assert.equal(read().title, '替换后的会话标题');
+});
+
+test('session ordering uses the last native JSONL timestamp before file mtime', () => {
+  const fixture = createFixture();
+  const sessionPath = fixture.paths.cnWorkbuddy;
+  // 恢复/复制后的 mtime 不再反映对话时间，原生记录仍是真值。
+  const staleMtime = new Date(1700000000000);
+  fs.utimesSync(sessionPath, staleMtime, staleMtime);
+
+  const projects = readProjectsFromHostByProviders(['workbuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  });
+  const session = projects
+    .flatMap((project) => project.sessions)
+    .find((item) => item.id === 'cn-workbuddy-session');
+
+  assert.equal(session.updatedAt, 1789364428181);
+});
+
+test('native activity survives long tool records and an unfinished trailing JSONL line', () => {
+  const fixture = createFixture();
+  const sessionPath = fixture.paths.cnWorkbuddy;
+  const timestamp = '2026-09-16T08:30:00.123Z';
+  fs.appendFileSync(sessionPath, `\n${JSON.stringify({
+    type: 'function_call_result', timestamp,
+    output: { type: 'text', text: 'x'.repeat(256 * 1024) }
+  })}\n{"type":"message","timestamp":`);
+  const session = readProjectsFromHostByProviders(['codebuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions).find((item) => item.id === 'cn-workbuddy-session');
+
+  assert.equal(session.updatedAt, Date.parse(timestamp));
+});
+
+test('native numeric-string timestamps take precedence and invalid records use mtime as a fallback', () => {
+  const fixture = createFixture();
+  fs.writeFileSync(fixture.paths.cnWorkbuddy, JSON.stringify({
+    type: 'message', role: 'user', timestamp: '1789364429000',
+    cwd: WORKSPACE.cnApp, content: [{ type: 'input_text', text: 'valid native time' }]
+  }));
+  fs.writeFileSync(fixture.paths.cnCodebuddy, JSON.stringify({
+    type: 'message', role: 'user', timestamp: 'not-a-date',
+    cwd: WORKSPACE.cnCli, content: [{ type: 'input_text', text: 'missing native time' }]
+  }));
+  const fallbackTime = new Date(1789364428000);
+  fs.utimesSync(fixture.paths.cnCodebuddy, fallbackTime, fallbackTime);
+  const sessions = Object.fromEntries(readProjectsFromHostByProviders(['workbuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).flatMap((project) => project.sessions).map((session) => [session.id, session]));
+
+  assert.equal(sessions['cn-workbuddy-session'].updatedAt, 1789364429000);
+  assert.equal(sessions['cn-codebuddy-session'].updatedAt, fallbackTime.getTime());
+});
+
+test('a WorkBuddy dated task is displayed by its clean session title while retaining its path', () => {
+  const fixture = createFixture();
+  const cwd = path.join(fixture.hostHomeDir, 'WorkBuddy', '2026-09-15-16-08-49');
+  const projectDirName = 'Users-model-WorkBuddy-2026-09-15-16-08-49';
+  writeSession(path.join(fixture.hostHomeDir, '.workbuddy'), projectDirName, 'dated-task', {
+    cwd, userText: '<user_query>整理今日工作\n和项目进度</user_query>', includeAiTitle: false
+  });
+  const project = readProjectsFromHostByProviders(['codebuddycn'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).find((item) => item.id === projectDirName);
+
+  assert.equal(project.path, cwd);
+  assert.equal(project.name, '整理今日工作 和项目进度');
+  assert.equal(project.sessions[0].title, '整理今日工作 和项目进度');
+  const messages = readSessionMessages('workbuddycn', { sessionId: 'dated-task', projectDirName }, {
+    hostHomeDir: fixture.hostHomeDir
+  });
+  assert.equal(messages[0].content, '整理今日工作\n和项目进度');
+});
+
+test('an ordinary project retains its directory name even when it looks like a date', () => {
+  const fixture = createFixture();
+  const cwd = path.join(fixture.hostHomeDir, 'repo', '2026-09-15-16-08-49');
+  writeSession(path.join(fixture.hostHomeDir, '.workbuddy-ai'), 'ordinary-dated-project', 'ordinary-task', {
+    cwd, userText: '普通工程', aiTitle: '独立会话标题'
+  });
+  const project = readProjectsFromHostByProviders(['workbuddy'], {
+    hostHomeDir: fixture.hostHomeDir
+  }).find((item) => item.id === 'ordinary-dated-project');
+
+  assert.equal(project.name, path.basename(cwd));
+  assert.equal(project.sessions[0].title, '独立会话标题');
+});
+
 // --- 6. 展示层去重 --------------------------------------------------------
 
 test('the project snapshot reports a shared region store exactly once', () => {
@@ -293,8 +517,32 @@ test('the project snapshot reports a shared region store exactly once', () => {
   const snapshot = buildProjectsSnapshot(hostProjects, { fs, aiHomeDir }, {});
   assert.equal(snapshot.length, 1);
   assert.deepEqual(snapshot[0].providers.slice().sort(), ['codebuddycn', 'workbuddycn']);
-  // 会话只出现一次，且保留的是先到的（自带 CLI、可续聊的）那个 Provider。
+  // 会话只出现一次，目录 Provider 身份保持稳定，续聊可选择同地区的运行账号。
   assert.equal(snapshot[0].sessions.length, 1);
   assert.equal(snapshot[0].sessions[0].id, 'shared-session');
   assert.equal(snapshot[0].sessions[0].provider, 'codebuddycn');
+});
+
+test('a refreshed shared session updates activity without changing its directory identity', () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codebuddy-snapshot-'));
+  const projectPath = path.join(aiHomeDir, 'workspace');
+  fs.mkdirSync(projectPath, { recursive: true });
+  const previous = { id: 'shared-session', title: 'older title', updatedAt: 1789364428121 };
+  const latest = { ...previous, title: 'renamed after resume', updatedAt: 1789364528121 };
+  const projects = [
+    { id: 'cli-dir', name: 'workspace', path: projectPath, provider: 'codebuddycn', sessions: [previous] },
+    { id: 'app-dir', name: 'workspace', path: projectPath, provider: 'workbuddycn', sessions: [latest] }
+  ];
+  const [snapshot] = buildProjectsSnapshot(projects, { fs, aiHomeDir });
+  assert.deepEqual(snapshot.sessions, [{
+    ...latest,
+    provider: 'codebuddycn',
+    projectDirName: 'cli-dir',
+    projectPath
+  }]);
+  assert.equal(snapshot.sessionTotal, 1);
+  const [reversed] = buildProjectsSnapshot([...projects].reverse(), { fs, aiHomeDir });
+  assert.equal(reversed.sessions[0].updatedAt, latest.updatedAt);
+  assert.equal(reversed.sessions[0].title, latest.title);
+  assert.equal(reversed.sessions[0].provider, 'workbuddycn');
 });

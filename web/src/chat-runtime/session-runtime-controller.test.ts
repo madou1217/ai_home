@@ -7,6 +7,7 @@ import type {
   ChatRuntimeApi,
   ChatRuntimeEventStream,
   ReconnectScheduler,
+  SessionRuntimeControllerOptions,
   TimelinePage,
   TimelineQuery,
 } from './api-types';
@@ -29,6 +30,7 @@ class FakeStream implements ChatRuntimeEventStream {
 function createFixture(
   snapshots: Array<SessionSnapshot | Error>,
   timelinePages: TimelinePage[] = [],
+  options: SessionRuntimeControllerOptions = {},
 ) {
   const streams: Array<{ sessionId: string; after: number; stream: FakeStream }> = [];
   const commands: ChatRuntimeCommand[] = [];
@@ -76,12 +78,73 @@ function createFixture(
   const controller = new SessionRuntimeController('session-1', api, {
     frameScheduler,
     reconnectScheduler,
+    ...options,
   });
   return {
     commands, controller, reconnects, streams, timelineReads,
     snapshotReads: () => snapshotReads,
   };
 }
+
+class FakeVisibility extends EventTarget {
+  constructor(public visibilityState = 'visible') { super(); }
+  change(visibilityState: string): void {
+    this.visibilityState = visibilityState;
+    this.dispatchEvent(new Event('visibilitychange'));
+  }
+}
+
+test('hidden sessions release their stream without interrupting the server turn and resync on return', async () => {
+  const visibility = new FakeVisibility();
+  const fixture = createFixture([snapshot(4), snapshot(9)], [], { visibilitySource: visibility });
+  await fixture.controller.start();
+  fixture.streams[0].stream.open();
+
+  visibility.change('hidden');
+  assert.equal(fixture.streams[0].stream.closed, true);
+  assert.equal(fixture.reconnects.length, 0);
+  assert.deepEqual(fixture.commands, []);
+  assert.equal(connectionState(fixture.controller), 'reconnecting');
+
+  visibility.change('visible');
+  await settle();
+  assert.equal(fixture.snapshotReads(), 2);
+  assert.equal(fixture.streams[1].after, 9);
+  fixture.streams[1].stream.open();
+  assert.equal(connectionState(fixture.controller), 'connected');
+  fixture.controller.dispose();
+
+  visibility.change('hidden');
+  visibility.change('visible');
+  await settle();
+  assert.equal(fixture.snapshotReads(), 2);
+});
+
+test('an initially hidden session opens no event connection until it becomes visible', async () => {
+  const visibility = new FakeVisibility('hidden');
+  const fixture = createFixture([snapshot(2), snapshot(8)], [], { visibilitySource: visibility });
+  await fixture.controller.start();
+  assert.equal(fixture.streams.length, 0);
+
+  visibility.change('visible');
+  await settle();
+  assert.equal(fixture.streams.length, 1);
+  assert.equal(fixture.streams[0].after, 8);
+  fixture.controller.dispose();
+});
+
+test('hiding a disconnected session cancels reconnect rather than occupying a background connection', async () => {
+  const visibility = new FakeVisibility();
+  const fixture = createFixture([snapshot(2), snapshot(8)], [], { visibilitySource: visibility });
+  await fixture.controller.start();
+  fixture.streams[0].stream.error();
+  assert.equal(fixture.reconnects.length, 1);
+
+  visibility.change('hidden');
+  assert.equal(fixture.reconnects.length, 0);
+  assert.equal(fixture.streams.length, 1);
+  fixture.controller.dispose();
+});
 
 test('controller bootstraps snapshot before opening an event cursor', async () => {
   const fixture = createFixture([snapshot(4)]);

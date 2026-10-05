@@ -82,6 +82,37 @@ test('account policy selects a canonical session owner before another account of
   );
 });
 
+test('shared native account selection stays within the region and keeps explicit choices', () => {
+  const codebuddycn = account({ provider: 'codebuddycn', accountRef: 'codebuddy-cn' });
+  const workbuddycn = account({ provider: 'workbuddycn', accountRef: 'workbuddy-cn' });
+  const workbuddy = account({ provider: 'workbuddy', accountRef: 'workbuddy-global' });
+  const accounts = [workbuddy, workbuddycn, codebuddycn];
+
+  assert.equal(pickChatAccount(null, accounts, 'codebuddycn', undefined, true), codebuddycn);
+  assert.equal(pickChatAccount(null, [workbuddy, workbuddycn], 'codebuddycn', undefined, true), workbuddycn);
+  assert.equal(pickChatAccount(workbuddycn, accounts, 'codebuddycn', undefined, true), workbuddycn);
+  assert.equal(pickChatAccount(workbuddy, [workbuddy], 'codebuddycn', undefined, true), null);
+  assert.equal(pickChatAccount(null, [workbuddycn], 'codebuddycn'), null);
+  assert.equal(pickChatAccount(null, [workbuddycn], 'codebuddycn', 'workbuddy-cn', true), null);
+});
+
+test('shared native deep links resolve the same ID across products but never across regions', () => {
+  const native: Session = {
+    id: 'native-id', provider: 'codebuddycn', projectPath: '/repo',
+    projectDirName: 'repo-dir', title: 'Native history', updatedAt: 1,
+  };
+  const projects: AggregatedProject[] = [{
+    id: 'repo', name: 'repo', path: '/repo', providers: ['codebuddycn', 'workbuddycn'], sessions: [native],
+  }];
+  assert.equal(findProjectBySessionId(projects, {
+    sessionId: native.id, provider: 'workbuddycn', projectDirName: native.projectDirName,
+  })?.session, native);
+  assert.equal(findProjectBySessionId(projects, { sessionId: native.id, provider: 'workbuddy' }), null);
+  assert.equal(findProjectBySessionId(projects, {
+    sessionId: native.id, provider: 'workbuddycn', projectDirName: 'other-project',
+  }), null);
+});
+
 test('message history policy merges only adjacent duplicate user messages', () => {
   const messages: ChatMessage[] = [
     { role: 'user', content: ' hello ', images: ['a.png', 'a.png'], timestamp: 1_000 },

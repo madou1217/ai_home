@@ -9,7 +9,7 @@ import {
   PushpinOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import SessionRelativeTime from '@/components/chat/SessionRelativeTime';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from '@/components/chat/chat-global-shortcuts';
 import { getProviderLabel, providerAccentStyle } from '@/components/chat/provider-registry';
@@ -76,7 +76,7 @@ export default function ChatConversationScreen({ state, sessions }: Props) {
       value: project ? project.path : (session.projectPath || projectLabel),
     }] : []),
     ...(persisted ? [
-      { key: 'updated', label: '更新', value: dayjs(session.updatedAt).fromNow() },
+      { key: 'updated', label: '更新', value: <SessionRelativeTime timestamp={session.updatedAt} /> },
       { key: 'id', label: '会话 ID', value: session.id },
     ] : []),
     ...(archive?.visible && archive.disabled ? [{

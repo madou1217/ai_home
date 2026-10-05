@@ -22,6 +22,7 @@ import {
   applyProjectSessionHydrationResponse,
   canApplyProjectSessionHydration,
   isProjectSessionSnapshotComplete,
+  isHydratedProjectSessionsStale,
   preserveHydratedProjectSessions,
   shouldHydrateProjectSessions,
 } from '@/services/project-session-hydration.js';
@@ -91,7 +92,6 @@ export function useProjectCatalog(
   const hydratedProjectsRef = useRef<Map<string, AggregatedProject>>(initialHydratedProjects);
   const hydrationServerKeyRef = useRef(initialServerKey);
   const staleHydratedPathsRef = useRef<Set<string>>(new Set());
-  const snapshotGenerationRef = useRef(0);
   const hydrationSequenceRef = useRef(0);
   const latestHydrationRef = useRef<Map<string, number>>(new Map());
   const inflightHydrationRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -133,10 +133,8 @@ export function useProjectCatalog(
     const currentProjects = projectsRef.current;
     const project = currentProjects.find((candidate) => candidate.path === projectPath);
     if (!project) return;
-    if (!force && !shouldHydrateProjectSessions(
-      project,
-      staleHydratedPathsRef.current.has(projectPath),
-    )) {
+    if (!force && !staleHydratedPathsRef.current.has(projectPath)
+      && !shouldHydrateProjectSessions(project, selection)) {
       return;
     }
 
@@ -146,7 +144,7 @@ export function useProjectCatalog(
     const inflight = inflightHydrationRef.current.get(projectPath);
     if (inflight) return inflight;
 
-    const requestGeneration = snapshotGenerationRef.current;
+    const serverKey = projectHydrationServerKey();
     const hydrationId = ++hydrationSequenceRef.current;
     latestHydrationRef.current.set(projectPath, hydrationId);
     setHydratingProjectPaths((current) => new Set([...current, projectPath]));
@@ -156,7 +154,15 @@ export function useProjectCatalog(
         const hydratedProject = await sessionsAPI.getProjectSessions(projectPath);
         if (!activeRef.current) return;
         if (latestHydrationRef.current.get(projectPath) !== hydrationId) return;
-        if (!canApplyProjectSessionHydration(requestGeneration, snapshotGenerationRef.current)) {
+        if (!canApplyProjectSessionHydration({
+          requestId: hydrationId,
+          latestRequestId: latestHydrationRef.current.get(projectPath),
+          serverKey,
+          currentServerKey: projectHydrationServerKey(),
+          projectPath,
+          responseProjectPath: hydratedProject.path,
+          currentProjectPaths: new Set(projectsRef.current.map((candidate) => candidate.path)),
+        })) {
           staleHydratedPathsRef.current.add(projectPath);
           return;
         }
@@ -164,7 +170,9 @@ export function useProjectCatalog(
         staleHydratedPathsRef.current.delete(projectPath);
         hydratedProjectsRef.current.set(projectPath, hydratedProject);
         setProjects((latest) => {
-          const applied = applyProjectSessionHydrationResponse(latest, hydratedProject);
+          const applied = latest.map((candidate) => candidate.path === projectPath
+            ? applyProjectSessionHydrationResponse(candidate, hydratedProject)
+            : candidate);
           const normalized = normalizeProjectCatalog(applied);
           projectsRef.current = normalized;
           writeCachedProjects(normalized);
@@ -221,7 +229,6 @@ export function useProjectCatalog(
     incomingProjects: AggregatedProject[],
     selection: PersistedChatSelection = {},
   ): AggregatedProject[] => {
-    snapshotGenerationRef.current += 1;
     const activeServerKey = projectHydrationServerKey();
     if (hydrationServerKeyRef.current !== activeServerKey) {
       resetHydration(activeServerKey);
@@ -229,6 +236,12 @@ export function useProjectCatalog(
 
     const currentHydrated = hydratedProjectsRef.current;
     const normalizedIncoming = normalizeProjectCatalog(incomingProjects);
+    normalizedIncoming.forEach((project) => {
+      const hydrated = currentHydrated.get(project.path);
+      if (hydrated && isHydratedProjectSessionsStale(project, hydrated)) {
+        staleHydratedPathsRef.current.add(project.path);
+      }
+    });
     const mergedProjects = normalizeProjectCatalog(
       preserveHydratedProjectSessions(normalizedIncoming, currentHydrated),
     );

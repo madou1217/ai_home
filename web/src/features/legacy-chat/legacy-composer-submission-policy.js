@@ -1,3 +1,5 @@
+import { isSessionAccountProviderCompatible } from '../../components/chat/session-provider-policy.js';
+
 export function resolveLegacyComposerSubmission(input = {}) {
   const content = String(input.content || '').trim();
   const documents = Array.isArray(input.documents) ? input.documents.slice() : [];
@@ -9,7 +11,7 @@ export function resolveLegacyComposerSubmission(input = {}) {
 
   const session = input.session || null;
   if (!session) return { ok: false, reason: 'session_required' };
-  if (!session.draft && account.provider !== session.provider) {
+  if (!session.draft && !isSessionAccountProviderCompatible(session, account.provider)) {
     return {
       ok: false,
       reason: 'provider_mismatch',

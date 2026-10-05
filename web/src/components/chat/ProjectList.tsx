@@ -40,7 +40,7 @@ import {
 } from './project-runtime-state.js';
 import folderIcon from '@/assets/icons/folder.svg';
 import expandIcon from '@/assets/icons/expand.svg';
-import dayjs from 'dayjs';
+import SessionRelativeTime from './SessionRelativeTime';
 import styles from './session-list.module.css';
 
 interface Props {
@@ -275,7 +275,7 @@ const ProjectList = ({
                       />
                     </div>
                     <span className={styles.sessionTime}>
-                      {dayjs(session.updatedAt).fromNow()}
+                      <SessionRelativeTime timestamp={session.updatedAt} />
                     </span>
                   </div>
                 ))}
@@ -464,7 +464,7 @@ const ProjectList = ({
                       </Popconfirm>
                     </div>
                     <span className={styles.sessionTime}>
-                      {dayjs(session.updatedAt).fromNow()}
+                      <SessionRelativeTime timestamp={session.updatedAt} />
                     </span>
                   </div>
                 ))}
@@ -680,7 +680,7 @@ const ProjectList = ({
                                 </div>
                                 <span className={styles.sessionTime}>
                                   {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}
-                                  {isRunning ? '进行中' : dayjs(session.updatedAt).fromNow()}
+                                  {isRunning ? '进行中' : <SessionRelativeTime timestamp={session.updatedAt} />}
                                 </span>
                               </div>
                             );

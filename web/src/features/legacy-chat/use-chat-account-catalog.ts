@@ -30,15 +30,18 @@ export interface ChatAccountCatalog {
 export function useChatAccountCatalog(
   preferredProvider?: Provider,
   preferredAccountRef?: string,
+  allowSharedNativeSession = false,
 ): ChatAccountCatalog {
   const [accounts, setAccounts] = useState<Account[]>(readInitialAccounts);
   const [loadFailed, setLoadFailed] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<ChatAccount | null>(null);
   const accountsRef = useRef<Account[]>(accounts);
   const preferredProviderRef = useRef(preferredProvider);
+  const sharedNativeSessionRef = useRef(allowSharedNativeSession);
   const snapshotReceivedAtRef = useRef(0);
   const httpRequestRef = useRef(0);
   preferredProviderRef.current = preferredProvider;
+  sharedNativeSessionRef.current = allowSharedNativeSession;
 
   const applyAccounts = useCallback((incoming: Account[]) => {
     const usable = incoming.filter(isChatSelectableAccount);
@@ -48,6 +51,8 @@ export function useChatAccountCatalog(
       current,
       usable,
       preferredProviderRef.current,
+      undefined,
+      sharedNativeSessionRef.current,
     ));
   }, []);
   const loadAccounts = useAccountCatalogLoader({
@@ -64,16 +69,16 @@ export function useChatAccountCatalog(
     snapshotReceivedAtRef,
   });
   const selectAccountForProvider = useCallback((provider: Provider) => {
-    setSelectedAccount((current) => {
-      if (current?.provider === provider) return current;
-      return accountsRef.current.find((account) => account.provider === provider) || current;
-    });
+    setSelectedAccount((current) => pickChatAccount(
+      current, accountsRef.current, provider, undefined, sharedNativeSessionRef.current,
+    ));
   }, []);
   const resolvedSelectedAccount = pickChatAccount(
     selectedAccount,
     accounts,
     preferredProvider,
     preferredAccountRef,
+    allowSharedNativeSession,
   );
 
   return {

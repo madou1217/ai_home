@@ -420,3 +420,151 @@ test('zcode session store reads projects, hides subagents, and parses messages',
   ]);
   assert.equal(readZcodeSessionModel(dbPath, 'sess_main'), 'GLM-5.3');
 });
+
+test('zcode session store merges tasks index titles and timestamps, includes index-only tasks, and hides deleted tasks', (t) => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-task-index-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dbDir = path.join(root, '.zcode', 'cli', 'db');
+  const v2Dir = path.join(root, '.zcode', 'v2');
+  fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(v2Dir, { recursive: true });
+  const dbPath = createZcodeSessionDb(dbDir);
+  const sessionDb = new DatabaseSync(dbPath);
+  for (const id of ['sess_deleted_main', 'sess_archived_main']) {
+    sessionDb.prepare(
+      'INSERT INTO session (id, directory, path, title, time_created, time_updated) '
+      + 'VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(id, dbDir, dbDir, id, 1000, 2000);
+  }
+  sessionDb.close();
+  const tasksDb = new DatabaseSync(path.join(v2Dir, 'tasks-index.sqlite'));
+  tasksDb.exec(
+    'CREATE TABLE tasks (task_id TEXT PRIMARY KEY, workspace_path TEXT, title TEXT, '
+    + 'created_at INTEGER, updated_at INTEGER, archived INTEGER, deleted INTEGER);'
+  );
+  tasksDb.prepare(
+    'INSERT INTO tasks (task_id, workspace_path, title, created_at, updated_at, archived, deleted) '
+    + 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run('sess_main', path.join(root, 'workspace'), '任务索引标题', 900, 3000, 0, 0);
+  tasksDb.prepare(
+    'INSERT INTO tasks (task_id, workspace_path, title, created_at, updated_at, archived, deleted) '
+    + 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run('sess_index_only', path.join(root, 'workspace'), '只有索引的会话', 2500, 2600, 0, 0);
+  tasksDb.prepare(
+    'INSERT INTO tasks (task_id, workspace_path, title, created_at, updated_at, archived, deleted) '
+    + 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run('sess_deleted_main', path.join(root, 'workspace'), '已删除的主会话', 1500, 3500, 0, 1);
+  tasksDb.prepare(
+    'INSERT INTO tasks (task_id, workspace_path, title, created_at, updated_at, archived, deleted) '
+    + 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run('sess_archived_main', path.join(root, 'workspace'), '已归档的主会话', 1500, 3500, 1, 0);
+  tasksDb.prepare(
+    'INSERT INTO tasks (task_id, workspace_path, title, created_at, updated_at, archived, deleted) '
+    + 'VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run('sess_child', path.join(root, 'workspace'), '索引中的子会话', 1500, 3500, 0, 0);
+  tasksDb.close();
+
+  const projects = readZcodeProjects(dbPath);
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].path, path.join(root, 'workspace'));
+  assert.deepEqual(projects[0].sessions.map((session) => ({
+    id: session.id,
+    title: session.title,
+    updatedAt: session.updatedAt,
+    createdAt: session.createdAt
+  })), [
+    {
+      id: 'sess_main',
+      title: '任务索引标题',
+      updatedAt: 3000,
+      createdAt: 900
+    },
+    {
+      id: 'sess_index_only',
+      title: '只有索引的会话',
+      updatedAt: 2600,
+      createdAt: 2500
+    }
+  ]);
+  assert.equal(projects[0].sessions.some((session) => session.id === 'sess_child'), false);
+});
+
+test('zcode tasks index cannot roll back a newer CLI activity timestamp and projection workspaces resolve to the shared host path', (t) => {
+  const { DatabaseSync } = require('node:sqlite');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-task-activity-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dbDir = path.join(root, '.zcode', 'cli', 'db');
+  const v2Dir = path.join(root, '.zcode', 'v2');
+  fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(v2Dir, { recursive: true });
+  const dbPath = createZcodeSessionDb(dbDir);
+  const tasksDb = new DatabaseSync(path.join(v2Dir, 'tasks-index.sqlite'));
+  // 旧索引缺少可选状态列仍可读；记录的 projection 路径属于共享目录别名。
+  tasksDb.exec('CREATE TABLE tasks (task_id TEXT PRIMARY KEY, workspace_path TEXT, updated_at INTEGER);');
+  tasksDb.prepare('INSERT INTO tasks VALUES (?, ?, ?)').run(
+    'sess_main',
+    path.join(root, '.ai_home', 'run', 'auth-projections', 'zcode', 'acct_old', '.zcode', 'workspace', 'default'),
+    1800
+  );
+  tasksDb.close();
+
+  const projects = readZcodeProjects(dbPath);
+  assert.equal(projects[0].path, path.join(root, '.zcode', 'workspace', 'default'));
+  assert.equal(projects[0].sessions[0].updatedAt, 2000);
+  assert.equal(projects[0].sessions[0].title, '主会话');
+});
+
+test('zcode session store normalizes object and split-field model metadata', (t) => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = require('node:sqlite'));
+  } catch (_error) {
+    return;
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-model-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dbPath = path.join(root, 'db.sqlite');
+  const db = new DatabaseSync(dbPath);
+  db.exec(
+    'CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT, path TEXT, '
+    + 'title TEXT, time_created INTEGER, time_updated INTEGER, task_type TEXT);'
+    + 'CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, '
+    + 'sequence INTEGER, data TEXT);'
+    + 'CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, '
+    + 'sequence INTEGER, data TEXT);'
+  );
+  db.prepare(
+    'INSERT INTO session (id, directory, path, title, time_created, time_updated) '
+    + 'VALUES (?, ?, ?, ?, ?, ?)'
+  ).run('sess_model', root, root, '模型会话', 1000, 2000);
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, sequence, data) VALUES (?, ?, ?, ?, ?)'
+  ).run('msg-user', 'sess_model', 1100, 0, JSON.stringify({
+    role: 'user',
+    model: { providerID: 'builtin:zai-start-plan', modelID: 'GLM-5.3' }
+  }));
+  db.prepare(
+    'INSERT INTO message (id, session_id, time_created, sequence, data) VALUES (?, ?, ?, ?, ?)'
+  ).run('msg-assistant', 'sess_model', 1200, 1, JSON.stringify({
+    role: 'assistant',
+    providerID: 'builtin:zai-start-plan',
+    modelID: 'GLM-5.3'
+  }));
+  db.prepare('INSERT INTO part (id, message_id, session_id, sequence, data) VALUES (?, ?, ?, ?, ?)')
+    .run('part-user', 'msg-user', 'sess_model', 0, JSON.stringify({ type: 'text', text: '你好' }));
+  db.prepare('INSERT INTO part (id, message_id, session_id, sequence, data) VALUES (?, ?, ?, ?, ?)')
+    .run('part-assistant', 'msg-assistant', 'sess_model', 0, JSON.stringify({ type: 'text', text: '世界' }));
+  db.close();
+
+  assert.equal(readZcodeSessionModel(dbPath, 'sess_model'), 'builtin:zai-start-plan/GLM-5.3');
+  assert.deepEqual(readZcodeSessionMessages(dbPath, 'sess_model').map((message) => message.model), [
+    'builtin:zai-start-plan/GLM-5.3',
+    'builtin:zai-start-plan/GLM-5.3'
+  ]);
+});

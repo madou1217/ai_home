@@ -3,8 +3,7 @@ import { history } from '@umijs/max';
 import {
   PlusOutlined, FolderOpenOutlined, InboxOutlined, ReloadOutlined, FolderOutlined, LoadingOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
+import SessionRelativeTime from '../chat/SessionRelativeTime';
 import type {
   AggregatedProject,
   Provider,
@@ -24,8 +23,6 @@ import {
 import { getProviderLabel } from '../chat/provider-registry';
 import { resolveArchiveAction } from '../chat/session-lifecycle-policy.js';
 import './mobile-sessions.css';
-
-dayjs.extend(relativeTime);
 
 interface Props {
   projects: AggregatedProject[];
@@ -266,7 +263,7 @@ const MobileSessions = ({
                               <div className="msx-titrow">
                                 <span className={`msx-tit${preview ? '' : ' twoline'}`}>{session.title}</span>
                                 <span className={`msx-time${running ? ' run' : ''}`}>
-                                  {running ? '进行中' : dayjs(session.updatedAt).fromNow()}
+                                  {running ? '进行中' : <SessionRelativeTime timestamp={session.updatedAt} />}
                                 </span>
                               </div>
                               <div className="msx-metarow">

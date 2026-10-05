@@ -35,6 +35,7 @@ import { filterRenderableChatMessages } from './message-display-policy.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
 import { getAccountDefaultModel, getSessionModelKey, listAccountEnabledModels, listAihServerModels, recallSessionModel, rememberSessionModel, resolveEffectiveSelectedModel } from './account-model-selection.js';
+import { isSessionAccountProviderCompatible } from './session-provider-policy.js';
 import {
   AIH_SERVER_ACCOUNT_LABEL,
   getGatewaySelectionScope,
@@ -243,7 +244,8 @@ const MessageArea = ({
     dictation.start(input, onInputChange);
   }, [dictation, input, onInputChange]);
   const activeProvider = session
-    ? (session.draft ? (selectedAccount?.provider || session.provider) : session.provider)
+    ? (selectedAccount && (session.draft || isSessionAccountProviderCompatible(session, selectedAccount.provider))
+        ? selectedAccount.provider : session.provider)
     : '';
 
   // 拖拽多模态图片/文件进入 Composer
@@ -470,7 +472,7 @@ const MessageArea = ({
   }, [input]);
 
   const filteredAccounts = (session && !session.draft
-    ? accounts.filter((account) => account.provider === session.provider)
+    ? accounts.filter((account) => isSessionAccountProviderCompatible(session, account.provider))
     : accounts
   ).filter(isChatSelectableAccount);
 
@@ -646,16 +648,19 @@ const MessageArea = ({
   const pickedSessionKeyRef = useRef('');
 
   // 拉取该会话在服务端记录的最近用模（跟随当前 server）。draft / 无 id 不拉。
+  const persistedSessionProvider = session?.provider || '';
+  const persistedSessionId = session && !session.draft ? session.id : '';
   const [serverSessionModel, setServerSessionModel] = useState('');
   useEffect(() => {
     setServerSessionModel('');
-    if (!session || session.draft || !session.id) return;
+    if (!persistedSessionProvider || !persistedSessionId) return;
     let cancelled = false;
-    sessionsAPI.getLastModel(session.provider, session.id)
+    sessionsAPI.getLastModel(persistedSessionProvider, persistedSessionId)
       .then((model) => { if (!cancelled) setServerSessionModel(String(model || '')); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [session, sessionModelKey]);
+    // 目录快照会刷新标题和时间；同一会话的元数据更新不应重发模型请求。
+  }, [persistedSessionProvider, persistedSessionId]);
 
   useEffect(() => {
     if (!session) return;

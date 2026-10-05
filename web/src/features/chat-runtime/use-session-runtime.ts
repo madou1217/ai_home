@@ -89,7 +89,9 @@ export async function openSessionRuntime(
   const session = target.nativeSessionId || target.sessionId
     ? (await api.resolveSession(target)).session
     : await api.createSession(target);
-  const controller = new SessionRuntimeController(session.sessionId, api);
+  const controller = new SessionRuntimeController(session.sessionId, api, {
+    visibilitySource: typeof document === 'undefined' ? undefined : document,
+  });
   try {
     await controller.start();
     onSessionResolved?.(session);

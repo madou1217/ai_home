@@ -11,7 +11,9 @@ const NO_ACCOUNT = JSON.stringify({
 
 test('zcode 的 no_available_account 不再引导补凭据，改指 API Key 账号或其他 provider', () => {
   const msg = humanizeUpstreamError(NO_ACCOUNT, { status: 400, model: 'glm-5.3', provider: 'zcode' });
-  assert.match(msg, /zcode OAuth 账号不支持推理调用/);
+  assert.match(msg, /当前 AIH 没有可用于该模型的 ZCode 推理账号/);
+  assert.match(msg, /ZCode OAuth 账号在 AIH 中用于账号管理/);
+  assert.doesNotMatch(msg, /OAuth 账号不支持推理/);
   assert.match(msg, /API Key/);
   // OAuth 计划账号本就不做 relay，「补全凭据」是误导
   assert.doesNotMatch(msg, /补全/);

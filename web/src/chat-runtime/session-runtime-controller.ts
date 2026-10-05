@@ -27,6 +27,8 @@ export class SessionRuntimeController {
   private loadEarlierTask?: Promise<TimelinePage>;
   private throughSeq = 0;
   private disposed = false;
+  private visible = true;
+  private removeVisibilityListener?: () => void;
 
   constructor(
     readonly sessionId: string,
@@ -35,6 +37,13 @@ export class SessionRuntimeController {
   ) {
     this.store = new SessionProjectionStore(sessionId, options.frameScheduler);
     this.scheduleReconnect = options.reconnectScheduler ?? browserReconnectScheduler;
+    const visibility = options.visibilitySource;
+    if (visibility) {
+      this.visible = visibility.visibilityState !== 'hidden';
+      const changed = () => this.setVisible(visibility.visibilityState !== 'hidden');
+      visibility.addEventListener('visibilitychange', changed);
+      this.removeVisibilityListener = () => visibility.removeEventListener('visibilitychange', changed);
+    }
   }
 
   start(): Promise<void> {
@@ -96,6 +105,8 @@ export class SessionRuntimeController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.removeVisibilityListener?.();
+    this.removeVisibilityListener = undefined;
     this.cancelScheduledReconnect();
     this.closeEventStream();
     this.store.dispose();
@@ -123,7 +134,7 @@ export class SessionRuntimeController {
   }
 
   private openEventStream(): void {
-    if (this.disposed) return;
+    if (this.disposed || !this.visible) return;
     this.cancelScheduledReconnect();
     this.closeEventStream();
     const stream = this.api.openEvents(this.sessionId, this.throughSeq);
@@ -161,7 +172,7 @@ export class SessionRuntimeController {
   }
 
   private requestSnapshotResync(): void {
-    if (this.disposed || this.resyncTask) return;
+    if (this.disposed || !this.visible || this.resyncTask) return;
     this.store.setConnectionState('resyncing');
     this.closeEventStream();
     this.cancelScheduledReconnect();
@@ -190,7 +201,7 @@ export class SessionRuntimeController {
   }
 
   private queueReconnect(callback: () => void): void {
-    if (this.disposed || this.cancelReconnect) return;
+    if (this.disposed || !this.visible || this.cancelReconnect) return;
     this.cancelReconnect = this.scheduleReconnect(() => {
       this.cancelReconnect = undefined;
       callback();
@@ -210,6 +221,19 @@ export class SessionRuntimeController {
     stream.onmessage = null;
     stream.onerror = null;
     stream.close();
+  }
+
+  private setVisible(visible: boolean): void {
+    if (this.disposed || this.visible === visible) return;
+    this.visible = visible;
+    if (visible) {
+      this.requestSnapshotResync();
+      return;
+    }
+    // 隐藏页只暂停事件观察，服务端继续生成；返回时由快照补齐后台进度。
+    this.cancelScheduledReconnect();
+    this.closeEventStream();
+    this.store.setConnectionState('reconnecting');
   }
 }
 

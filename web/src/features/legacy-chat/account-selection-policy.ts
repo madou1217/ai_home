@@ -8,6 +8,7 @@ import {
   makeAihServerAccount,
 } from '@/components/chat/aih-server-account';
 import type { QueuedSessionMessage } from './runtime-types';
+import { areNativeSessionProvidersCompatible } from '@/components/chat/session-provider-policy.js';
 
 export function resolveQueuedAccount(
   queued: QueuedSessionMessage,
@@ -17,8 +18,14 @@ export function resolveQueuedAccount(
   return accounts.find((account) => account.accountRef === queued.accountRef) || null;
 }
 
-function keepsCurrentAccount(current: ChatAccount, preferredProvider?: Provider): boolean {
-  return !preferredProvider || current.provider === preferredProvider;
+function keepsCurrentAccount(
+  current: ChatAccount,
+  preferredProvider?: Provider,
+  allowSharedNativeSession = false,
+): boolean {
+  return !preferredProvider || current.provider === preferredProvider
+    || (allowSharedNativeSession && !isAihServerAccount(current)
+      && areNativeSessionProvidersCompatible(current.provider, preferredProvider));
 }
 
 export function pickChatAccount(
@@ -26,6 +33,7 @@ export function pickChatAccount(
   accounts: Account[],
   preferredProvider?: Provider,
   preferredAccountRef?: string,
+  allowSharedNativeSession = false,
 ): ChatAccount | null {
   if (preferredAccountRef) {
     return accounts.find((account) => account.accountRef === preferredAccountRef
@@ -34,13 +42,19 @@ export function pickChatAccount(
   if (current && isAihServerAccount(current) && keepsCurrentAccount(current, preferredProvider)) {
     return current;
   }
-  if (current && !isAihServerAccount(current) && keepsCurrentAccount(current, preferredProvider)) {
+  if (current && !isAihServerAccount(current)
+    && keepsCurrentAccount(current, preferredProvider, allowSharedNativeSession)) {
     const refreshedCurrent = accounts.find((account) => account.accountRef === current.accountRef);
     if (refreshedCurrent) return refreshedCurrent;
   }
   if (preferredProvider) {
     const providerMatch = accounts.find((account) => account.provider === preferredProvider);
     if (providerMatch) return providerMatch;
+    return allowSharedNativeSession
+      ? accounts.find((account) => areNativeSessionProvidersCompatible(
+          account.provider, preferredProvider,
+        )) || null
+      : null;
   }
   return accounts[0] || null;
 }

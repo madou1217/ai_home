@@ -242,6 +242,64 @@ test('an empty leftover projects directory is dropped and linked (no data to los
 
 // --- 5. 读的仍是同一份宿主地区存储（与账号无关） ---------------------------
 
+test('vendor diagnostics stay private without hiding undeclared fallback sessions', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const projection = projectionDir(root, provider);
+      const diagnostics = path.join(projection, '.codebuddy', 'diagnostics');
+      nodeFs.mkdirSync(diagnostics, { recursive: true });
+      nodeFs.writeFileSync(path.join(diagnostics, 'runtime.log'), 'PRIVATE-DIAGNOSTICS');
+
+      const summary = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(summary.unresolved || [], [], provider);
+      assert.equal(nodeFs.readFileSync(path.join(diagnostics, 'runtime.log'), 'utf8'), 'PRIVATE-DIAGNOSTICS');
+      assert.ok(!nodeFs.existsSync(path.join(hostHomeDir, '.codebuddy', 'diagnostics')), provider);
+
+      if (provider !== 'codebuddy') {
+        const fallbackProjects = path.join(projection, '.codebuddy', 'projects');
+        nodeFs.mkdirSync(fallbackProjects, { recursive: true });
+        nodeFs.writeFileSync(path.join(fallbackProjects, 'legacy.jsonl'), 'LEGACY-SESSION');
+        const blocked = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+        assert.deepEqual(blocked.unresolved, [path.join('.codebuddy', 'projects')], provider);
+        assert.equal(nodeFs.readFileSync(path.join(fallbackProjects, 'legacy.jsonl'), 'utf8'), 'LEGACY-SESSION');
+      }
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('toolchain state does not block family sessions or hide unrelated cache data', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const projection = projectionDir(root, provider);
+      const volta = path.join(projection, '.volta', 'bin');
+      const brew = path.join(projection, 'Library', 'Caches', 'Homebrew');
+      nodeFs.mkdirSync(volta, { recursive: true });
+      nodeFs.symlinkSync('/host/toolchain/volta-shim', path.join(volta, 'node'));
+      nodeFs.mkdirSync(brew, { recursive: true });
+      nodeFs.writeFileSync(path.join(brew, 'formula_names.txt'), 'TOOLCHAIN-CACHE');
+
+      const summary = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(summary.unresolved || [], [], provider);
+      assert.equal(nodeFs.readlinkSync(path.join(volta, 'node')), '/host/toolchain/volta-shim');
+      assert.equal(nodeFs.readFileSync(path.join(brew, 'formula_names.txt'), 'utf8'), 'TOOLCHAIN-CACHE');
+      assert.equal(nodeFs.existsSync(path.join(hostHomeDir, CONFIG_DIR_BY_PROVIDER[provider], '.aih-runtime-home', '.volta')), false);
+
+      const unknown = path.join(projection, 'Library', 'Caches', 'unknown-session-cache');
+      nodeFs.mkdirSync(unknown, { recursive: true });
+      nodeFs.writeFileSync(path.join(unknown, 'session.jsonl'), 'UNKNOWN-SESSION');
+      const blocked = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(blocked.unresolved, [path.join('Library', 'Caches', 'unknown-session-cache')], provider);
+      assert.equal(nodeFs.readFileSync(path.join(unknown, 'session.jsonl'), 'utf8'), 'UNKNOWN-SESSION');
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
 test('the sandbox link resolves to the same physical store every account shares', () => {
   const { root, hostHomeDir, service } = createTree();
   try {

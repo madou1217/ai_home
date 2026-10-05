@@ -1,6 +1,7 @@
 import type { MutableRefObject } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
-import { guardedWebUiEventSource, sessionsAPI } from '@/services/api';
+import { sessionsAPI } from '@/services/api';
+import { openSharedWebUiEventSource } from '@/services/shared-watch';
 import { supportsBackgroundRunWatch } from '@/components/chat/provider-capabilities.js';
 import type { Session } from '@/types';
 import type { ActiveSessionRun } from './runtime-types';
@@ -45,7 +46,7 @@ export function useLegacyBackgroundRunWatch({
     const params = new URLSearchParams({ sessionId: session.id, provider: session.provider });
     if (session.projectDirName) params.set('projectDirName', session.projectDirName);
     const watcher: RunWatcher = {
-      eventSource: guardedWebUiEventSource(`/v0/webui/sessions/watch?${params.toString()}`),
+      eventSource: openSharedWebUiEventSource(`/v0/webui/sessions/watch?${params.toString()}`),
       cursor: 0,
       reconnectTimer: null,
     };

@@ -92,3 +92,40 @@ test('legacy composer allows chat mode session without projectPath', async () =>
     mode: 'chat',
   });
 });
+
+test('shared native history resumes with the chosen same-region account and keeps its identity', async () => {
+  const { resolveLegacyComposerSubmission } = await loadPolicy();
+  for (const [provider, accountProvider] of [
+    ['codebuddycn', 'workbuddycn'], ['workbuddycn', 'codebuddycn'],
+    ['codebuddy', 'workbuddy'], ['workbuddy', 'codebuddy'],
+  ]) {
+    const input = fixture({
+      account: { accountRef: 'real-execution-account', provider: accountProvider },
+      session: { id: 'native-id', provider, projectPath: '/repo', projectDirName: 'repo' },
+    });
+    const result = resolveLegacyComposerSubmission(input);
+    assert.equal(result.ok, true);
+    assert.equal(result.account, input.account);
+    assert.equal(result.session, input.session);
+    assert.equal(result.session.id, 'native-id');
+    assert.equal(result.session.provider, provider);
+  }
+});
+
+test('shared native composer rejects cross-region and canonical account substitutions', async () => {
+  const { resolveLegacyComposerSubmission } = await loadPolicy();
+  const input = fixture({
+    account: { accountRef: 'execution-account', provider: 'workbuddycn' },
+    session: { id: 'native-id', provider: 'codebuddycn', projectPath: '/repo' },
+  });
+  for (const overrides of [
+    { provider: 'codebuddy' }, { mode: 'chat' },
+    { accountRef: 'session-owner' }, { runtimeSessionId: 'canonical-id' },
+  ]) {
+    const result = resolveLegacyComposerSubmission({
+      ...input, session: { ...input.session, ...overrides },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'provider_mismatch');
+  }
+});

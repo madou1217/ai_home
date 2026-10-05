@@ -148,6 +148,50 @@ test('derived state keeps Kimi OAuth quota pending until a usage snapshot exists
   assert.equal(schedulableState.status, 'schedulable');
 });
 
+test('a failed quota refresh remains visible while preserving historical balances', () => {
+  for (const provider of ['zcode', 'workbuddy', 'workbuddycn', 'codex']) {
+    const options = { provider, configured: true, remainingPct: 82, probeError: 'upstream_timeout' };
+    const state = deriveQuotaState(options);
+    assert.equal(state.status, 'probe_failed', provider);
+    assert.equal(state.reason, 'upstream_timeout', provider);
+    assert.equal(state.remainingPct, 82, provider);
+    assert.equal(deriveSchedulableState({ ...options, quotaState: state }).status, 'schedulable', provider);
+    assert.equal(deriveQuotaState({ ...options, probeError: '' }).status, 'available', provider);
+  }
+});
+
+test('a failed quota refresh never reopens an account with a known exhausted balance', () => {
+  const options = { provider: 'codex', configured: true, remainingPct: 0, probeError: 'upstream_timeout' };
+  const state = deriveQuotaState(options);
+  assert.equal(state.status, 'exhausted');
+  assert.equal(state.remainingPct, 0);
+  assert.equal(deriveSchedulableState({ ...options, quotaState: state }).status, 'blocked_by_quota');
+});
+
+test('relay policy stays blocked even with available quota or an API key', () => {
+  const options = {
+    provider: 'zcode', configured: true, remainingPct: 90,
+    relayDisabled: true, relayDisabledReason: 'zcode_oauth_management_only'
+  };
+  for (const apiKeyMode of [false, true]) {
+    assert.deepEqual(deriveSchedulableState({ ...options, apiKeyMode }), {
+      status: 'blocked_by_policy', reason: 'zcode_oauth_management_only'
+    });
+  }
+  assert.equal(deriveSchedulableState({ ...options, relayDisabled: false }).status, 'schedulable');
+});
+
+test('account and runtime failures keep precedence over relay policy', () => {
+  const options = { configured: true, relayDisabled: true, relayDisabledReason: 'relay_disabled' };
+  for (const [override, reason] of [
+    [{ configured: false }, 'account_unconfigured'],
+    [{ accountStatus: 'down' }, 'account_disabled'],
+    [{ runtimeStatus: 'auth_invalid' }, 'auth_invalid']
+  ]) {
+    assert.equal(deriveSchedulableState({ ...options, ...override }).reason, reason);
+  }
+});
+
 test('derived state blocks a non-exhausted Codex Free account at the configured switch threshold', () => {
   const state = deriveSchedulableState({
     provider: 'codex',

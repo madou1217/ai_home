@@ -1,5 +1,5 @@
 import { Empty } from 'antd';
-import dayjs from 'dayjs';
+import SessionRelativeTime from '@/components/chat/SessionRelativeTime';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { providerAccentStyle } from '@/components/chat/provider-registry';
 import {
@@ -49,7 +49,7 @@ export default function SessionsPanel({ sessions, selectedSession, runningSessio
             </div>
             <span className={chatStyles.sessionTime}>
               {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}
-              {isRunning ? '进行中' : dayjs(session.updatedAt).fromNow()}
+              {isRunning ? '进行中' : <SessionRelativeTime timestamp={session.updatedAt} />}
             </span>
           </div>
         );

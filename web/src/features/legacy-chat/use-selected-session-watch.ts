@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
-import { guardedWebUiEventSource } from '@/services/api';
+import { openSharedWebUiEventSource } from '@/services/shared-watch';
 import {
   getGeneratingStatusText,
   getThinkingStatusText,
@@ -100,7 +100,7 @@ export function useSelectedSessionWatch({
     });
     if (session.projectDirName) params.set('projectDirName', session.projectDirName);
 
-    const eventSource = guardedWebUiEventSource(`/v0/webui/sessions/watch?${params.toString()}`);
+    const eventSource = openSharedWebUiEventSource(`/v0/webui/sessions/watch?${params.toString()}`);
     sessionWatchRef.current = eventSource;
     eventSource.onmessage = (event) => {
       try {

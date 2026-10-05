@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('fs-extra');
+const { DatabaseSync } = require('node:sqlite');
 
 const {
   getProjectsSnapshot,
@@ -721,4 +722,163 @@ test('account-scoped session stores trigger provider-only WebUI refreshes', asyn
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
     fs.rmSync(hostHomeDir, { recursive: true, force: true });
   }
+});
+
+test('WorkBuddy database and JSONL changes refresh both products of the matching region', async () => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-workbuddy-db-watch-'));
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-workbuddy-db-host-'));
+  const initialProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-workbuddy-db-initial-'));
+  const updatedProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-workbuddy-db-updated-'));
+  const originalRealHome = process.env.REAL_HOME;
+  const originalReadAllProjectsFromHost = sessionReader.readAllProjectsFromHost;
+  const originalReadProjectsFromHostByProviders = sessionReader.readProjectsFromHostByProviders;
+  const originalWatch = fs.watch;
+  let ctx = null;
+  process.env.REAL_HOME = hostHomeDir;
+
+  try {
+    const workbuddyRoot = path.join(hostHomeDir, '.workbuddy');
+    fs.ensureDirSync(path.join(workbuddyRoot, 'projects'));
+    for (const dirName of ['.workbuddy-ai', '.codebuddy', '.codebuddy-cn']) {
+      fs.ensureDirSync(path.join(hostHomeDir, dirName, 'projects', 'project'));
+    }
+    fs.ensureDirSync(path.join(hostHomeDir, '.zcode', 'cli', 'db'));
+    fs.ensureDirSync(path.join(hostHomeDir, '.zcode', 'v2'));
+    for (const fileName of ['tasks-index.sqlite', 'tasks-index.sqlite-wal', 'tasks-index.sqlite-shm']) {
+      fs.writeFileSync(path.join(hostHomeDir, '.zcode', 'v2', fileName), '');
+    }
+    const watcherCallbacks = new Map();
+    fs.watch = (targetPath, listener) => {
+      watcherCallbacks.set(String(targetPath), listener);
+      return { close() {}, on() { return this; }, unref() {} };
+    };
+
+    let phase = 0;
+    let lastProviders = [];
+    sessionReader.readAllProjectsFromHost = () => [{
+      id: 'workbuddy-initial', name: 'initial', path: initialProjectDir, provider: 'workbuddycn',
+      sessions: [{ id: 'initial-session', title: 'initial', updatedAt: 100, provider: 'workbuddycn' }]
+    }];
+    sessionReader.readProjectsFromHostByProviders = (providers) => {
+      lastProviders = providers;
+      return providers.map((provider) => ({
+        id: 'workbuddy-updated', name: 'updated', path: updatedProjectDir,
+        provider,
+        sessions: [{ id: `${provider}-session`, title: `renamed-${phase}`, updatedAt: 200 + phase, provider }]
+      }));
+    };
+
+    ctx = createContext(aiHomeDir);
+    await refreshProjectsSnapshot(ctx, { forceRefresh: true });
+    ensureProjectsSnapshotScheduler(ctx);
+    const specs = [
+      { target: workbuddyRoot, file: 'workbuddy.db-wal', providers: ['codebuddycn', 'workbuddycn'] },
+      { target: path.join(hostHomeDir, '.workbuddy-ai'), file: 'workbuddy.db', providers: ['codebuddy', 'workbuddy'] },
+      { target: path.join(hostHomeDir, '.codebuddy', 'projects', 'project'), file: 'session.jsonl', providers: ['codebuddy', 'workbuddy'] },
+      { target: path.join(hostHomeDir, '.codebuddy-cn', 'projects', 'project'), file: 'session.jsonl', providers: ['codebuddycn', 'workbuddycn'] },
+      { target: path.join(hostHomeDir, '.zcode', 'cli', 'db'), file: 'db.sqlite-wal', providers: ['zcode'] },
+      { target: path.join(hostHomeDir, '.zcode', 'v2'), file: 'tasks-index.sqlite-wal', providers: ['zcode'] }
+    ];
+    for (const spec of specs) {
+      const watcher = watcherCallbacks.get(spec.target);
+      assert.equal(typeof watcher, 'function');
+      phase += 1;
+      watcher('change', spec.file);
+      await waitFor(async () => {
+        const snapshot = await getProjectsSnapshot(ctx);
+        assert.deepEqual(lastProviders, spec.providers);
+        const project = snapshot.projects.find((item) => item.path === updatedProjectDir);
+        assert.ok(project);
+        for (const provider of spec.providers) {
+          const session = project.sessions.find((item) => item.provider === provider);
+          assert.equal(session && session.title, `renamed-${phase}`);
+          assert.equal(session && session.updatedAt, 200 + phase);
+        }
+      });
+    }
+  } finally {
+    if (ctx) closeProjectsSnapshotScheduler(ctx);
+    fs.watch = originalWatch;
+    sessionReader.readAllProjectsFromHost = originalReadAllProjectsFromHost;
+    sessionReader.readProjectsFromHostByProviders = originalReadProjectsFromHostByProviders;
+    if (originalRealHome === undefined) delete process.env.REAL_HOME;
+    else process.env.REAL_HOME = originalRealHome;
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+    fs.rmSync(initialProjectDir, { recursive: true, force: true });
+    fs.rmSync(updatedProjectDir, { recursive: true, force: true });
+  }
+});
+
+test('native SQLite WAL updates and new project JSONL appends refresh the snapshot through real fs watchers', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-workbuddy-metadata-watch-'));
+  const hostHomeDir = path.join(root, 'host');
+  const configRoot = path.join(hostHomeDir, '.workbuddy');
+  const projectPath = path.join(hostHomeDir, 'WorkBuddy', '2026-09-15-16-08-49');
+  const projectDir = path.join(configRoot, 'projects', 'workbuddy-project');
+  fs.ensureDirSync(projectPath);
+  fs.ensureDirSync(projectDir);
+  const sessionPath = path.join(projectDir, 'native-session.jsonl');
+  const append = (target, cwd, timestamp) => fs.appendFileSync(target, `${JSON.stringify({
+    type: 'message', role: 'user', cwd, timestamp,
+    content: [{ type: 'input_text', text: 'first task' }]
+  })}\n`);
+  append(sessionPath, projectPath, 1789364428000);
+  const db = new DatabaseSync(path.join(configRoot, 'workbuddy.db'));
+  db.exec(`PRAGMA journal_mode = WAL;
+    CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, title TEXT, custom_title TEXT,
+      updated_at INTEGER, last_activity_at INTEGER)`);
+  db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)')
+    .run('native-session', projectPath, 'initial title', null, 1789364428000, 1789364428000);
+  const { readCodebuddyProjects } = require('../lib/sessions/session-reader-codebuddy');
+  const providers = ['codebuddycn', 'workbuddycn'];
+  const ctx = {
+    ...createContext(path.join(root, 'aih')),
+    hostHomeDir,
+    readAllProjectsFromHost: () => providers.flatMap((provider) => readCodebuddyProjects(provider, { hostHomeDir })),
+    readProjectsFromHostByProviders: (requested) => requested
+      .flatMap((provider) => readCodebuddyProjects(provider, { hostHomeDir }))
+  };
+  t.after(() => {
+    closeProjectsSnapshotScheduler(ctx);
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  await refreshProjectsSnapshot(ctx, { forceRefresh: true });
+  ensureProjectsSnapshotScheduler(ctx);
+  // 关掉周期兜底，测试只接受文件监听触发的刷新。
+  clearTimeout(ctx.state.__webUiProjectsCache.warmupTimer);
+  ctx.state.__webUiProjectsCache.warmupTimer = null;
+  clearInterval(ctx.state.__webUiProjectsCache.refreshTimer);
+  ctx.state.__webUiProjectsCache.refreshTimer = null;
+  assert.equal((await getProjectsSnapshot(ctx)).projects[0].name, 'initial title');
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  db.prepare('UPDATE sessions SET custom_title = ?, last_activity_at = ? WHERE id = ?')
+    .run('renamed task', 1789364429000, 'native-session');
+  await waitFor(async () => {
+    const snapshot = await getProjectsSnapshot(ctx);
+    assert.equal(snapshot.projects[0].name, 'renamed task');
+    assert.equal(snapshot.projects[0].sessions[0].updatedAt, 1789364429000);
+  });
+
+  const nextPath = path.join(hostHomeDir, 'WorkBuddy', '2026-09-15-18-52-42');
+  const nextDir = path.join(configRoot, 'projects', 'new-project');
+  const nextFile = path.join(nextDir, 'new-session.jsonl');
+  fs.ensureDirSync(nextPath);
+  fs.ensureDirSync(nextDir);
+  append(nextFile, nextPath, 1789364430000);
+  await waitFor(async () => {
+    const snapshot = await getProjectsSnapshot(ctx);
+    assert.equal(snapshot.projects[0].path, nextPath);
+    assert.equal(snapshot.projects[0].sessions.length, 1);
+  });
+  assert.equal(ctx.state.__webUiHostProjectsWatch.handlesByPath.has(nextDir), true);
+
+  append(nextFile, nextPath, 1789364431000);
+  await waitFor(async () => {
+    const snapshot = await getProjectsSnapshot(ctx);
+    assert.equal(snapshot.projects[0].sessions[0].updatedAt, 1789364431000);
+  });
 });

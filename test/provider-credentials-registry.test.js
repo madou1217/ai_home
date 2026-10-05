@@ -37,13 +37,13 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
   assert.deepEqual(importable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
-  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
 });
 
 test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
   const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
-  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi', 'zcode']);
   assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
@@ -102,4 +102,21 @@ test('grok 导入导出：登录档案表原样往返，身份种子不变', () 
   assert.deepEqual(grok.importNativeAuth(normalized), { auth });
   assert.equal(grok.transferIdentitySeed(exported.auth), grok.nativeIdentitySeed(auth));
   assert.equal(grok.normalizeImportedOAuth({ credentials: {} }), null);
+});
+
+test('qoder 导入导出：导出解密成明文用户信息，导入用新 salt 重新加密，身份种子不变', () => {
+  const qoder = getProviderCredentialStrategy('qoder');
+  const { getQoderVariant, encryptQoderCredentials } = require('../lib/account/qoder-auth-metadata');
+  const payload = { uid: 'qoder-uid-1', token: 'tok', email: 'q@x.io' };
+  const salt = Buffer.alloc(32, 7).toString('base64');
+  const native = { credentials: encryptQoderCredentials(payload, salt, getQoderVariant('qoder').credentialPrefix), keychainSalt: salt, userInfo: payload };
+  const exported = qoder.exportRecord(native);
+  assert.deepEqual(exported.auth, payload);
+  assert.equal(qoder.exportOAuthKind(exported.auth), 'oauth');
+  const normalized = qoder.normalizeImportedOAuth({ credentials: qoder.sub2apiCredentials(exported.auth) });
+  assert.deepEqual(normalized, payload);
+  const reimported = qoder.importNativeAuth(normalized);
+  assert.notEqual(reimported.keychainSalt, salt, '导入使用新的 salt');
+  assert.equal(qoder.nativeIdentitySeed(qoder.extractNativeAuth(reimported)), qoder.nativeIdentitySeed(qoder.extractNativeAuth(native)));
+  assert.equal(qoder.normalizeImportedOAuth({ credentials: { uid: 'x' } }), null, '没有令牌不导入');
 });

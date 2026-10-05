@@ -80,7 +80,7 @@
 
 第 5 步（导入导出编解码，用户选方案 A：只搬结构、缺口原样保留）已完成：`transfer-core.js` 与 `standard-transfer.js` 不再按 provider 名分支——导入别名、邮箱位置、导入导出身份种子、导入时的专属凭据变量、导出记录、可否导出、sub2api 凭据形状、API 密钥导入写哪些变量、导入载荷 → 原生布局、标准格式 OAuth 规范化，都由模块声明（gemini、agy、kimi 的规范化函数整体移入各自模块）。黄金比对全部一致：纯函数 4058 组（录制的测试输入 × 全部 provider，codex 的 last_refresh 时间戳已屏蔽）、导出记录 2400 组 + 本机 32 个真实账号（同一时刻比对）、标准格式内部函数 8528 组。
 
-保留的缺口（测试固定，待用户按需补齐，即方案 B）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。仍留在原处、未搬的 provider 特例：`inferImportProvider` 的载荷形状启发式（跨 provider 的识别顺序）、`buildFlatAccountExportFileName` 的 opencode/kimi/codex 文件名、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包。
+保留的缺口（测试固定，待用户按需补齐，即方案 B）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。后续收尾（2026-10-05）：`buildFlatAccountExportFileName` 的 opencode/kimi 命名（codex 分支与默认分支相同，已删）、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包，已移入模块（`flatExportFileStem` / `legacyNativeIdentityLookup` / `isImportableOAuth` / `standardIdentitySeed`），3825 组用例前后一致；`cache.js` 可信快照校验改为规则表（20594 组一致）。刻意保留：`inferImportProvider` 是跨 provider 的有序形状识别，顺序即规则，不拆；agy 专属的 Antigravity Manager 导出格式本身属于 agy。
 
 ### 批 3 进展（2026-10-05，服务端部分完成）
 

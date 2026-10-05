@@ -39,3 +39,15 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
   assert.deepEqual(oauthExportable, ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode']);
 });
+
+test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
+  const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
+  assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode']);
+  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codex', 'gemini', 'kimi', 'opencode', 'qoder', 'qodercn']);
+  assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi']);
+  assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
+    MOONSHOT_API_KEY: 'k',
+    KIMI_BASE_URL: 'https://b'
+  });
+});

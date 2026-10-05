@@ -78,6 +78,10 @@
 
 `native-auth-projection.js` 的运行时特例（kiro CAS 写入、codebuddy 收编、claude 钥匙串）与会话端口耦合，移到批 4 一起做。
 
+第 5 步（导入导出编解码，用户选方案 A：只搬结构、缺口原样保留）已完成：`transfer-core.js` 与 `standard-transfer.js` 不再按 provider 名分支——导入别名、邮箱位置、导入导出身份种子、导入时的专属凭据变量、导出记录、可否导出、sub2api 凭据形状、API 密钥导入写哪些变量、导入载荷 → 原生布局、标准格式 OAuth 规范化，都由模块声明（gemini、agy、kimi 的规范化函数整体移入各自模块）。黄金比对全部一致：纯函数 4058 组（录制的测试输入 × 全部 provider，codex 的 last_refresh 时间戳已屏蔽）、导出记录 2400 组 + 本机 32 个真实账号（同一时刻比对）、标准格式内部函数 8528 组。
+
+保留的缺口（测试固定，待用户按需补齐，即方案 B）：zcode 与 CodeBuddy 家族不可导入；grok、kiro、zcode、CodeBuddy 家族、qoder 不可按 OAuth 导出；qoder 的标准格式 OAuth 导入判无效。仍留在原处、未搬的 provider 特例：`inferImportProvider` 的载荷形状启发式（跨 provider 的识别顺序）、`buildFlatAccountExportFileName` 的 opencode/kimi/codex 文件名、kimi 的旧身份兼容与可用性门槛、`buildStandardOAuthIdentity` 的 opencode/kimi 不拆包。
+
 ### 批 1 实施结果（2026-10-05）
 
 普查后发现「纯静态事实」比估计的少：大部分 `cliName !== 'codex'` 是厂商专属模块开头的防卫判断，属于批 2–4 的行为端口。批 1 实际做法：

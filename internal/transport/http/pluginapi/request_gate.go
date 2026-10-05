@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
@@ -27,14 +29,15 @@ type RequestGate struct {
 	invoker    appplugins.Invoker
 	authorizer Authorizer
 	maxBody    int64
+	observer   *appplugins.Observer
 }
 
-// NewRequestGate 创建 gateway.request 闸门。
-func NewRequestGate(registry *appplugins.Registry, invoker appplugins.Invoker, authorizer Authorizer, maxBody int64) (*RequestGate, error) {
+// NewRequestGate 创建入口闸门；observer 为 nil 时不投递观察事件。
+func NewRequestGate(registry *appplugins.Registry, invoker appplugins.Invoker, authorizer Authorizer, maxBody int64, observer *appplugins.Observer) (*RequestGate, error) {
 	if registry == nil || invoker == nil || authorizer == nil || maxBody <= 0 {
 		return nil, ErrInvalidDependencies
 	}
-	return &RequestGate{registry: registry, invoker: invoker, authorizer: authorizer, maxBody: maxBody}, nil
+	return &RequestGate{registry: registry, invoker: invoker, authorizer: authorizer, maxBody: maxBody, observer: observer}, nil
 }
 
 // Wrap 返回带闸门的入口；protocol 是该入口的客户端协议名（与 Node detectClientProtocol 一致）。
@@ -55,6 +58,18 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 		if !ok {
 			handBack(response, "plugin_generation_unavailable")
 			return
+		}
+		observing := projection.Has(appplugins.CapabilityObserve) && gate.observer != nil
+		if !projection.Has(appplugins.CapabilityGatewayRequest) && !observing {
+			next.ServeHTTP(response, request)
+			return
+		}
+		if observing {
+			// 只在有观察插件时包装 ResponseWriter（记录失败时响应头是否已写出）。
+			tracker := &commitTracker{ResponseWriter: response}
+			response = tracker
+			pin := appplugins.NewPin(generation, projection, gate.observer, time.Now(), tracker.Committed)
+			request = request.WithContext(appplugins.WithPin(request.Context(), pin))
 		}
 		if !projection.Has(appplugins.CapabilityGatewayRequest) {
 			next.ServeHTTP(response, request)
@@ -104,6 +119,34 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 		next.ServeHTTP(response, request)
 	})
 }
+
+// commitTracker 记录响应头是否已写出；保留 Flush（SSE 逐帧下发）与 Unwrap（http.ResponseController）。
+type commitTracker struct {
+	http.ResponseWriter
+	committed atomic.Bool
+}
+
+func (tracker *commitTracker) WriteHeader(status int) {
+	tracker.committed.Store(true)
+	tracker.ResponseWriter.WriteHeader(status)
+}
+
+func (tracker *commitTracker) Write(data []byte) (int, error) {
+	tracker.committed.Store(true)
+	return tracker.ResponseWriter.Write(data)
+}
+
+func (tracker *commitTracker) Flush() {
+	if flusher, ok := tracker.ResponseWriter.(http.Flusher); ok {
+		tracker.committed.Store(true)
+		flusher.Flush()
+	}
+}
+
+func (tracker *commitTracker) Unwrap() http.ResponseWriter { return tracker.ResponseWriter }
+
+// Committed 报告响应头是否已经写给客户端。
+func (tracker *commitTracker) Committed() bool { return tracker.committed.Load() }
 
 func restoreBody(request *http.Request, body []byte) {
 	request.Body = io.NopCloser(bytes.NewReader(body))

@@ -53,11 +53,11 @@ type recordedRequest struct {
 func gateFixture(t *testing.T, result string, generations ...appplugins.Projection) (*RequestGate, *scriptedInvoker, *appplugins.Registry) {
 	t.Helper()
 	registry := appplugins.NewRegistry()
-	if _, err := registry.Replace(appplugins.HostAccess{Address: "/tmp/h.sock", Token: "t"}, generations); err != nil {
+	if _, err := registry.Replace(appplugins.HostAccess{Address: "/tmp/h.sock", Token: "t"}, generations, nil); err != nil {
 		t.Fatal(err)
 	}
 	invoker := &scriptedInvoker{result: result}
-	gate, err := NewRequestGate(registry, invoker, keyAuthorizer{key: "internal"}, 4096)
+	gate, err := NewRequestGate(registry, invoker, keyAuthorizer{key: "internal"}, 4096, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestGateIgnoresTheHeaderWithoutTheInternalKeyAndForGenerationsWithoutReques
 func TestProjectionEndpointRequiresTheManagementKeyAndReplacesTheLiveSet(t *testing.T) {
 	registry := appplugins.NewRegistry()
 	probe := &fakeProbe{}
-	handler, err := NewProjectionHandler(keyAuthorizer{key: "management"}, registry, probe)
+	handler, err := NewProjectionHandler(keyAuthorizer{key: "management"}, registry, probe, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,5 +211,91 @@ func TestProjectionEndpointRequiresTheManagementKeyAndReplacesTheLiveSet(t *test
 	handler.ServeHTTP(listing, get)
 	if !strings.Contains(listing.Body.String(), `"generations":[3]`) || strings.Contains(listing.Body.String(), "secret-token") {
 		t.Fatalf("listing: %s", listing.Body.String())
+	}
+}
+
+func TestGateAttachesAPinAndTrackerOnlyForObservingGenerations(t *testing.T) {
+	registry := appplugins.NewRegistry()
+	observing := appplugins.Projection{Generation: 6, Contributions: []appplugins.Contribution{{ID: "obs", Capability: appplugins.CapabilityObserve, FailurePolicy: "deny", InstanceID: "p"}}}
+	if _, err := registry.Replace(appplugins.HostAccess{Address: "/tmp/h.sock", Token: "t"}, []appplugins.Projection{observing}, nil); err != nil {
+		t.Fatal(err)
+	}
+	observer := appplugins.NewObserver(&scriptedInvoker{result: "null"}, registry, nil, 4)
+	defer observer.Close()
+	gate, err := NewRequestGate(registry, &scriptedInvoker{result: "null"}, keyAuthorizer{key: "internal"}, 4096, observer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawPin bool
+	var sawWriter http.ResponseWriter
+	next := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		sawPin = appplugins.PinFrom(request.Context()) != nil
+		sawWriter = response
+		response.WriteHeader(200)
+		_, _ = response.Write([]byte("data: 1\n\n"))
+		if flusher, ok := response.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	})
+	recorder := httptest.NewRecorder()
+	gate.Wrap("openai_chat", next).ServeHTTP(recorder, post(chatBody, "6", "internal"))
+	if !sawPin || !recorder.Flushed {
+		t.Fatalf("pin=%v flushed=%v", sawPin, recorder.Flushed)
+	}
+	if _, ok := sawWriter.(interface{ Unwrap() http.ResponseWriter }); !ok {
+		t.Fatal("the tracker must expose Unwrap for http.ResponseController")
+	}
+
+	plain := httptest.NewRecorder()
+	gate.Wrap("openai_chat", next).ServeHTTP(plain, post(chatBody, "", "internal"))
+	if sawPin || sawWriter != plain {
+		t.Fatal("no header: no pin and the raw writer")
+	}
+}
+
+// 包装后的 writer 不能把流式响应憋到结束：首帧要在 handler 结束之前到达客户端。
+func TestGateWithObserverStreamsTheFirstByteBeforeTheHandlerFinishes(t *testing.T) {
+	registry := appplugins.NewRegistry()
+	observing := appplugins.Projection{Generation: 6, Contributions: []appplugins.Contribution{{ID: "obs", Capability: appplugins.CapabilityObserve, FailurePolicy: "deny", InstanceID: "p"}}}
+	if _, err := registry.Replace(appplugins.HostAccess{Address: "/tmp/h.sock", Token: "t"}, []appplugins.Projection{observing}, nil); err != nil {
+		t.Fatal(err)
+	}
+	observer := appplugins.NewObserver(&scriptedInvoker{result: "null"}, registry, nil, 4)
+	defer observer.Close()
+	gate, err := NewRequestGate(registry, &scriptedInvoker{result: "null"}, keyAuthorizer{key: "internal"}, 4096, observer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	server := httptest.NewServer(gate.Wrap("openai_responses", http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(response, "data: first\n\n")
+		if err := http.NewResponseController(response).Flush(); err != nil {
+			t.Errorf("flush through the tracker: %v", err)
+		}
+		<-release
+		_, _ = io.WriteString(response, "data: last\n\n")
+	})))
+	defer server.Close()
+	defer close(release)
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/responses", strings.NewReader(chatBody))
+	request.Header.Set("Authorization", "Bearer internal")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(GenerationHeader, "6")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	buffer := make([]byte, len("data: first\n\n"))
+	done := make(chan error, 1)
+	go func() { _, err := io.ReadFull(response.Body, buffer); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil || string(buffer) != "data: first\n\n" {
+			t.Fatalf("first frame: %q %v", buffer, err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the first frame was held back until the handler finished")
 	}
 }

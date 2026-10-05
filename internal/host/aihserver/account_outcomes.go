@@ -10,6 +10,7 @@ import (
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	"github.com/madou1217/ai_home/application/accountusagefeed"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	appplugins "github.com/madou1217/ai_home/application/pluginruntime"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
@@ -36,6 +37,8 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 ) error {
 	err := runtime.serverAccountRuntime.RecordSuccess(ctx, route, success)
 	runtime.outcomes.Record(route.AccountRef(), accountoutcomes.OutcomeSuccess)
+	// 插件观察：请求固定了含 observe 的代次时排队一条摘要（异步、有界，见 application/pluginruntime）。
+	appplugins.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), true, "")
 	if usage, ok := success.Usage(); ok {
 		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
 	}
@@ -50,6 +53,7 @@ func (runtime outcomeRecordingRuntime) RecordFailure(
 ) error {
 	err := runtime.serverAccountRuntime.RecordFailure(ctx, route, failure)
 	runtime.outcomes.Record(route.AccountRef(), string(failure.RuntimeKind()))
+	appplugins.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), false, string(failure.RuntimeKind()))
 	return err
 }
 

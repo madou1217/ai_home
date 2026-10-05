@@ -108,17 +108,17 @@ func TestFailuresDenyByDefaultAndDelegateSkipsOnlyThatPlugin(t *testing.T) {
 
 func TestRegistryReplacesTheLiveSetAtomically(t *testing.T) {
 	registry := NewRegistry()
-	accepted, err := registry.Replace(HostAccess{Address: "/tmp/h.sock", Token: "t"}, []Projection{projectionOf(request("a", 0, "deny"))})
+	accepted, err := registry.Replace(HostAccess{Address: "/tmp/h.sock", Token: "t"}, []Projection{projectionOf(request("a", 0, "deny"))}, nil)
 	if err != nil || len(accepted) != 1 || accepted[0] != 7 {
 		t.Fatalf("accepted=%v err=%v", accepted, err)
 	}
-	if _, err := registry.Replace(HostAccess{Address: "/tmp/h.sock", Token: "t"}, []Projection{{Generation: 9, Contributions: []Contribution{{ID: "x", Capability: "c", InstanceID: "i", FailurePolicy: "bogus"}}}}); err == nil {
+	if _, err := registry.Replace(HostAccess{Address: "/tmp/h.sock", Token: "t"}, []Projection{{Generation: 9, Contributions: []Contribution{{ID: "x", Capability: "c", InstanceID: "i", FailurePolicy: "bogus"}}}}, nil); err == nil {
 		t.Fatal("invalid projection must be refused")
 	}
 	if _, ok := registry.Get(7); !ok {
 		t.Fatal("a refused replace must keep the previous set")
 	}
-	if _, err := registry.Replace(HostAccess{}, nil); err != nil {
+	if _, err := registry.Replace(HostAccess{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := registry.Get(7); ok {

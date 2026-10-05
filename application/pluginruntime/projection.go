@@ -84,6 +84,9 @@ type Registry struct {
 	mu          sync.RWMutex
 	host        HostAccess
 	generations map[int64]Projection
+	// accountRefs 把 Go 账号引用翻译成 Node 的账号引用（同步 rekey / 身份合并后两边可能不同），
+	// 让观察事件里的 accountRef 与 Node 路径一致。只含两边不同的条目。
+	accountRefs map[string]string
 }
 
 // NewRegistry 创建空注册表（没有任何代次时所有请求都不经过插件）。
@@ -93,7 +96,7 @@ func NewRegistry() *Registry {
 
 // Replace 用 Node 推送的完整存活集合替换当前内容，返回已接受的代次。
 // 任一投影无效时整体拒绝，保留原内容。
-func (registry *Registry) Replace(host HostAccess, projections []Projection) ([]int64, error) {
+func (registry *Registry) Replace(host HostAccess, projections []Projection, accountRefs map[string]string) ([]int64, error) {
 	next := make(map[int64]Projection, len(projections))
 	for _, projection := range projections {
 		if !projection.valid() {
@@ -105,9 +108,16 @@ func (registry *Registry) Replace(host HostAccess, projections []Projection) ([]
 	if len(next) > 0 && (host.Address == "" || host.Token == "") {
 		return nil, ErrInvalidProjection
 	}
+	refs := make(map[string]string, len(accountRefs))
+	for goRef, nodeRef := range accountRefs {
+		if goRef != "" && nodeRef != "" {
+			refs[goRef] = nodeRef
+		}
+	}
 	registry.mu.Lock()
 	registry.host = host
 	registry.generations = next
+	registry.accountRefs = refs
 	registry.mu.Unlock()
 	accepted := make([]int64, 0, len(next))
 	for generation := range next {
@@ -135,6 +145,16 @@ func (registry *Registry) Generations() []int64 {
 	}
 	sort.Slice(generations, func(left, right int) bool { return generations[left] < generations[right] })
 	return generations
+}
+
+// NodeAccountRef 把 Go 账号引用翻译成 Node 的账号引用；没有映射时原样返回。
+func (registry *Registry) NodeAccountRef(goRef string) string {
+	registry.mu.RLock()
+	defer registry.mu.RUnlock()
+	if nodeRef, ok := registry.accountRefs[goRef]; ok {
+		return nodeRef
+	}
+	return goRef
 }
 
 // Host 返回当前 Plugin Host 地址与令牌。

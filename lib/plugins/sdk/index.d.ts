@@ -15,6 +15,16 @@ export interface InvocationContext {
   /** 仅 gateway.attempt：让网关执行本次尝试（或内层中间件），在提交点返回摘要；至多调用一次。 */
   next?: (value?: unknown) => Promise<AttemptSummary>;
 }
+/**
+ * observe 贡献项收到的尝试摘要（每次上游尝试一条，best-effort、可能丢弃）。
+ * Node 与 Go 数据面的键集合相同；取值差异：Go 记录失败时不知道之后是否换号，
+ * 失败一律是 outcome "error"（error 为运行态失败分类），不会出现 Node 的 "retry_next" 等动作值。
+ * 不要靠 "retry_next" 判断失败，否则会漏掉 Go 承接的流量。
+ */
+export interface AttemptObservation {
+  type: 'gateway.attempt'; generation: number; provider: string; model: string; attempt: number;
+  accountRef: string; outcome: string; error: string; durationMs: number; committed: boolean;
+}
 export interface AttemptSummary {
   committed: boolean; outcome: string; status?: number; error?: string;
   stopped?: boolean; rejected?: { status: number; message: string };

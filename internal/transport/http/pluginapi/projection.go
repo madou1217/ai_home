@@ -41,14 +41,15 @@ type ProjectionHandler struct {
 	authorizer Authorizer
 	registry   *appplugins.Registry
 	probe      HostProbe
+	stats      ObservationStats
 }
 
-// NewProjectionHandler 创建投影管理接口。
-func NewProjectionHandler(authorizer Authorizer, registry *appplugins.Registry, probe HostProbe) (*ProjectionHandler, error) {
+// NewProjectionHandler 创建投影管理接口；stats 可为 nil。
+func NewProjectionHandler(authorizer Authorizer, registry *appplugins.Registry, probe HostProbe, stats ObservationStats) (*ProjectionHandler, error) {
 	if authorizer == nil || registry == nil || probe == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &ProjectionHandler{authorizer: authorizer, registry: registry, probe: probe}, nil
+	return &ProjectionHandler{authorizer: authorizer, registry: registry, probe: probe, stats: stats}, nil
 }
 
 type projectionPush struct {
@@ -57,6 +58,13 @@ type projectionPush struct {
 		Token   string `json:"token"`
 	} `json:"host"`
 	Generations []appplugins.Projection `json:"generations"`
+	// AccountRefs 是 Go 账号引用 → Node 账号引用（只含两边不同的条目），用于观察事件。
+	AccountRefs map[string]string `json:"accountRefs"`
+}
+
+// ObservationStats 提供观察投递计数（GET 诊断用）。
+type ObservationStats interface {
+	Stats() appplugins.ObserverStats
 }
 
 func (handler *ProjectionHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -66,7 +74,12 @@ func (handler *ProjectionHandler) ServeHTTP(response http.ResponseWriter, reques
 	}
 	switch request.Method {
 	case http.MethodGet:
-		writeGenerations(response, handler.liveGenerations())
+		var stats appplugins.ObserverStats
+		if handler.stats != nil {
+			stats = handler.stats.Stats()
+		}
+		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(response).Encode(map[string]any{"data": map[string]any{"generations": nonNil(handler.liveGenerations()), "observations": stats}})
 	case http.MethodPut:
 		var push projectionPush
 		decoder := json.NewDecoder(io.LimitReader(request.Body, maxProjectionBytes))
@@ -82,12 +95,12 @@ func (handler *ProjectionHandler) ServeHTTP(response http.ResponseWriter, reques
 			err := handler.probe.Probe(probeCtx, host)
 			cancel()
 			if err != nil {
-				_, _ = handler.registry.Replace(appplugins.HostAccess{}, nil)
+				_, _ = handler.registry.Replace(appplugins.HostAccess{}, nil, nil)
 				writeGenerations(response, nil)
 				return
 			}
 		}
-		accepted, err := handler.registry.Replace(host, push.Generations)
+		accepted, err := handler.registry.Replace(host, push.Generations, push.AccountRefs)
 		if err != nil {
 			writeError(response, http.StatusBadRequest, "invalid_projection", err.Error())
 			return
@@ -103,10 +116,15 @@ func (handler *ProjectionHandler) liveGenerations() []int64 {
 	return handler.registry.Generations()
 }
 
-func writeGenerations(response http.ResponseWriter, generations []int64) {
+func nonNil(generations []int64) []int64 {
 	if generations == nil {
-		generations = []int64{}
+		return []int64{}
 	}
+	return generations
+}
+
+func writeGenerations(response http.ResponseWriter, generations []int64) {
+	generations = nonNil(generations)
 	response.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(response).Encode(map[string]any{"data": map[string]any{"generations": generations}})
 }

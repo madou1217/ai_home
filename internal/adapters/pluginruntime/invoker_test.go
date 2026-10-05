@@ -19,7 +19,7 @@ func TestHostInvokerCallsThroughTheRegistryAndRedials(t *testing.T) {
 	if _, err := registry.Replace(appplugins.HostAccess{Address: fixture.address, Token: testToken}, []appplugins.Projection{{
 		Generation:    1,
 		Contributions: []appplugins.Contribution{{ID: "sample.echo.call", Capability: "command", FailurePolicy: "deny", InstanceID: "echo"}},
-	}}); err != nil {
+	}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	invoker := NewHostInvoker(registry)
@@ -37,7 +37,7 @@ func TestHostInvokerCallsThroughTheRegistryAndRedials(t *testing.T) {
 		t.Fatalf("redial invoke: %v %s", err, value)
 	}
 
-	if _, err := registry.Replace(appplugins.HostAccess{}, nil); err != nil {
+	if _, err := registry.Replace(appplugins.HostAccess{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := invoker.Invoke(context.Background(), 1, "sample.echo.call", nil, time.Second); Code(err) != "plugin_runtime_inactive" {

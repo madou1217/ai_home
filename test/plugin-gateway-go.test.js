@@ -44,13 +44,23 @@ const REQUEST_MANIFEST = manifest('aih.test.go-request', {
 const REQUEST_SOURCE = `export default { apply(ctx, config) {
   ctx.aih.register('goreq.rewrite', async (value) => {
     if (config.mode === 'reject') return { reject: { status: 451, message: 'blocked in go' } };
+    // instructions 只是 Responses 的字段；其它协议不改，避免把无效字段送进严格解码。
+    if (value.protocol !== 'openai_responses') return null;
     return { body: { ...value.body, instructions: 'rewritten by plugin via ' + value.protocol } };
   });
 } };`;
 const OBSERVER_MANIFEST = manifest('aih.test.go-observer', {
-  contributes: [{ id: 'goobs.observe', capability: 'observe', version: 1 }]
+  contributes: [
+    { id: 'goobs.observe', capability: 'observe', version: 1 },
+    { id: 'goobs.dump', capability: 'command', version: 1 }
+  ]
 });
-const OBSERVER_SOURCE = `export default { apply(ctx) { ctx.aih.register('goobs.observe', () => null); } };`;
+const OBSERVER_SOURCE = `const events = [];
+export default { apply(ctx) {
+  ctx.aih.register('goobs.observe', (event) => { events.push(event); return null; });
+  ctx.aih.register('goobs.dump', () => events.splice(0));
+} };`;
+const NODE_EVENT_KEYS = ['accountRef', 'attempt', 'committed', 'durationMs', 'error', 'generation', 'model', 'outcome', 'provider', 'type'];
 
 async function listen(t, handler) {
   const server = http.createServer(handler);
@@ -62,6 +72,7 @@ async function listen(t, handler) {
 async function goPluginFixture(t) {
   const upstreamBodies = [];
   const hold = { next: null };
+  const failing = { next: 0 };
   const upstream = await listen(t, async (request, response) => {
     response.setHeader('content-type', 'application/json');
     if (request.method === 'GET') {
@@ -70,8 +81,27 @@ async function goPluginFixture(t) {
     }
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
-    upstreamBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-    const finish = () => response.end('{"id":"resp_go","object":"response","status":"completed","model":"gpt-5.4","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}');
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    upstreamBodies.push(body);
+    if (failing.next > 0) {
+      failing.next -= 1;
+      response.writeHead(400);
+      response.end('{"error":{"message":"rejected by fixture","type":"invalid_request_error","code":"fixture_rejected"}}');
+      return;
+    }
+    const completed = { id: 'resp_go', object: 'response', status: 'completed', model: 'gpt-5.4', output: [{ type: 'message', id: 'msg_go', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'served', annotations: [] }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } };
+    // Go 的 Canonical 路径（chat completions / 非 claude 模型的 messages）以流式请求上游。
+    const finish = body.stream
+      ? () => {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        const frame = (event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+        response.write(frame({ type: 'response.created', response: { ...completed, status: 'in_progress', output: [] } }));
+        response.write(frame({ type: 'response.output_item.added', output_index: 0, item: { ...completed.output[0], content: [] } }));
+        response.write(frame({ type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: 'msg_go', delta: 'served' }));
+        response.write(frame({ type: 'response.output_item.done', output_index: 0, item: completed.output[0] }));
+        response.end(frame({ type: 'response.completed', response: completed }));
+      }
+      : () => response.end(JSON.stringify(completed));
     if (hold.next) {
       const release = hold.next;
       hold.next = null;
@@ -97,7 +127,7 @@ async function goPluginFixture(t) {
 
   const forwarder = createGoCoreGatewayForwarder({
     routeTable: compileRouteTable(loadRouteOwnershipManifest()),
-    entryIds: new Set(['gateway.openai.responses']),
+    entryIds: new Set(['gateway.openai.responses', 'gateway.openai.chat_completions', 'gateway.anthropic.messages']),
     requiredClientKey: 'public-key',
     getTarget: () => ({ host: '127.0.0.1', port: Number(new URL(go.base).port), clientKey: go.clientKey }),
     needsRequestModel: () => true,
@@ -115,12 +145,12 @@ async function goPluginFixture(t) {
     response.writeHead(200, { 'content-type': 'application/json', 'x-served-by': 'node' });
     response.end('{"servedBy":"node"}');
   });
-  const send = (body, headers = {}) => fetch(`${node}/v1/responses`, {
+  const send = (body, headers = {}, route = '/v1/responses') => fetch(`${node}${route}`, {
     method: 'POST',
     headers: { authorization: 'Bearer public-key', 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body)
   });
-  return { go, system, sync, management, upstreamBodies, nodeServed, send, hold };
+  return { go, system, sync, management, upstreamBodies, nodeServed, send, hold, failing };
 }
 
 const BODY = { model: 'gpt-5.4', input: 'hello', stream: false };
@@ -181,8 +211,9 @@ test('a generation Go lost (restart) is handed back to Node, and unsupported sta
   assert.equal(recovered.headers.get('x-served-by'), null);
 
   await f.system.control.enable({ pluginId: 'aih.test.go-observer' });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
   const observed = await f.send(BODY);
-  assert.equal(observed.headers.get('x-served-by'), 'node', 'observe 还没有 Go 端口：留在 Node');
+  assert.equal(observed.headers.get('x-served-by'), null, 'observe 由 Go 执行');
 });
 
 test('a request keeps the generation it was forwarded with across a publish', { skip: skip(), timeout: 120000 }, async (t) => {
@@ -200,4 +231,54 @@ test('a request keeps the generation it was forwarded with across a publish', { 
   const response = await inFlight;
   assert.equal(response.status, 200);
   assert.ok(await waitFor(() => f.system.runtime.status().retiringGenerations.length === 0), '响应结束后旧代次卸载');
+});
+
+async function dumpObservations(system, count) {
+  let events = [];
+  assert.ok(await waitFor(async () => {
+    events = events.concat((await system.runtime.invoke('goobs.dump', null)).value || []);
+    return events.length >= count;
+  }), JSON.stringify(events));
+  return events;
+}
+
+test('Go delivers one observe event per attempt on each Go entry, in the Node event shape', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  await f.system.control.enable({ pluginId: 'aih.test.go-observer' });
+  await f.system.control.enable({ pluginId: 'aih.test.go-request', configuration: { mode: 'rewrite' } });
+  const generation = f.system.runtime.snapshot().generation;
+  assert.ok(await waitFor(() => f.sync.isAcked(generation)));
+
+  const routes = [
+    ['/v1/responses', BODY],
+    ['/v1/chat/completions', { model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'hi' }] }],
+    ['/v1/messages', { model: 'gpt-5.4', max_tokens: 32, messages: [{ role: 'user', content: 'hi' }] }]
+  ];
+  for (const [route, body] of routes) {
+    const response = await f.send(body, {}, route);
+    assert.equal(response.status, 200, `${route}: ${await response.clone().text()}`);
+    assert.equal(response.headers.get('x-served-by'), null, `${route} 由 Go 服务`);
+    const [event] = await dumpObservations(f.system, 1);
+    assert.deepEqual(Object.keys(event).sort(), NODE_EVENT_KEYS, route);
+    assert.equal(event.type, 'gateway.attempt');
+    assert.equal(event.generation, generation);
+    assert.equal(event.provider, 'codex', route);
+    assert.equal(event.accountRef, f.go.accountRef, route);
+    assert.equal(event.model, 'gpt-5.4');
+    assert.equal(event.outcome, 'return');
+    assert.equal(event.committed, true);
+    assert.equal(event.attempt, 0);
+    assert.equal(f.upstreamBodies.at(-1).instructions !== undefined || route !== '/v1/responses', true, 'request 与 observe 在同一代次里都由 Go 执行');
+  }
+  assert.equal(f.nodeServed.length, 0);
+
+  f.failing.next = 4;
+  const failed = await f.send(BODY);
+  assert.notEqual(failed.status, 200);
+  const [failure] = await dumpObservations(f.system, 1);
+  assert.equal(failure.outcome, 'error');
+  assert.equal(failure.committed, false, '失败的尝试在输出前结束');
+  assert.notEqual(failure.error, '');
+  const listing = await f.management.send({ method: 'GET', path: '/v1/management/plugins/projection' });
+  assert.ok(listing.data.observations.delivered >= 4, JSON.stringify(listing.data));
 });

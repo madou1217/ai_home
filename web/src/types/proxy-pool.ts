@@ -190,6 +190,42 @@ export interface OutboundSuggestResponse {
   candidates: OutboundCandidate[];
 }
 
+export interface OutboundFailoverConfig {
+  enabled: boolean;
+  intervalSec: number;
+  failureThreshold: number;
+}
+
+export interface OutboundFailoverEvent {
+  at: number;
+  reason: 'unreachable' | 'node_missing' | string;
+  failures: number;
+  from: { nodeId: string; name: string };
+  to: { nodeId: string; name: string; latencyMs: number };
+  applied: boolean;
+}
+
+export interface OutboundFailoverCheck {
+  at: number;
+  action: 'healthy' | 'degraded' | 'switched' | 'no_candidate' | 'skipped' | 'failed' | string;
+  reason?: string;
+  nodeId?: string;
+  latencyMs?: number;
+  failures?: number;
+  event?: OutboundFailoverEvent;
+}
+
+export interface OutboundFailoverStatus {
+  ok: boolean;
+  error?: string;
+  config: OutboundFailoverConfig;
+  scheduled: boolean;
+  consecutiveFailures: number;
+  lastCheck: OutboundFailoverCheck | null;
+  /** 最近的切换记录，新的在前 */
+  events: OutboundFailoverEvent[];
+}
+
 export interface DedicatedPortsConfig {
   enabled: boolean;
   maxPorts: number;

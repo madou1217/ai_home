@@ -3,6 +3,7 @@ import InlineNote from '@/components/ui/InlineNote';
 import { proxyPoolAPI } from '@/services/api';
 import type { ProxyNode, RoutingResponse } from '@/types';
 import { getErrorMessage } from './proxy-pool-utils';
+import ProxyOutboundFailoverSection from './ProxyOutboundFailoverSection';
 
 const { Text, Title } = Typography;
 
@@ -75,6 +76,7 @@ export default function ProxyRoutingModal({
           <Text type="secondary">{routingResponse.message || routingResponse.error || routingResponse.reason}</Text>
         )}
       </Space>
+      <ProxyOutboundFailoverSection open={open} dataPlaneReady={dataPlaneReady} onRoutingChanged={onChanged} />
       <Divider />
       <Title level={5} className="proxy-modal-section-title">当前规则</Title>
       <div className="proxy-routing-rules">

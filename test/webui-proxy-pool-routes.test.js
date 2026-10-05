@@ -409,3 +409,28 @@ test('proxy-pool core install routes keep the official digest plan and require e
   assert.equal(execute.res.statusCode, 200);
   assert.equal(JSON.parse(execute.res.body).ok, true);
 });
+
+test('默认出口自动切换路由：读取状态、更新配置（越界 422）、立即检测', async () => {
+  const calls = [];
+  const proxyPoolService = {
+    getOutboundFailover: () => ({ ok: true, config: { enabled: false, intervalSec: 60, failureThreshold: 3 }, events: [] }),
+    updateOutboundFailover: (body) => {
+      calls.push(['update', body]);
+      return body.intervalSec === 5
+        ? { ok: false, error: 'invalid_outbound_failover_interval' }
+        : { ok: true, config: { enabled: true, intervalSec: 60, failureThreshold: 3 }, events: [] };
+    },
+    checkOutboundFailover: async () => { calls.push(['check']); return { ok: true, action: 'healthy' }; }
+  };
+  const route = async (method, pathname, body) => {
+    const { req, res } = createMockReqRes(method, pathname, body);
+    assert.equal(await handleWebUiProxyPoolRoutes(req, res, method, pathname, { proxyPoolService }), true);
+    return { status: res.statusCode, data: JSON.parse(res.body) };
+  };
+  const prefix = '/v0/webui/toolkit/proxy-pool/outbound/failover';
+  assert.equal((await route('GET', prefix)).data.config.intervalSec, 60);
+  assert.equal((await route('POST', prefix, { enabled: true })).data.config.enabled, true);
+  assert.equal((await route('POST', prefix, { intervalSec: 5 })).status, 422);
+  assert.equal((await route('POST', `${prefix}/check`)).data.action, 'healthy');
+  assert.deepEqual(calls.map((call) => call[0]), ['update', 'update', 'check']);
+});

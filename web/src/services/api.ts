@@ -131,6 +131,9 @@ import type {
   AggregateExportResponse,
   ProxyCoreStatusResponse,
   ProxyCoresResponse,
+  OutboundFailoverCheck,
+  OutboundFailoverConfig,
+  OutboundFailoverStatus,
   OutboundSuggestResponse,
   ProxyProtocolsResponse,
   ProxyCoreActionResponse,
@@ -2271,6 +2274,18 @@ export const proxyPoolAPI = {
   },
   suggestOutbound: async (filter: { group?: string; protocol?: string } = {}, limit = 5): Promise<OutboundSuggestResponse> => {
     const response = await api.post<OutboundSuggestResponse>('/webui/toolkit/proxy-pool/outbound/suggest', { filter, limit });
+    return response.data;
+  },
+  getOutboundFailover: async (): Promise<OutboundFailoverStatus> => {
+    const response = await api.get<OutboundFailoverStatus>('/webui/toolkit/proxy-pool/outbound/failover');
+    return response.data;
+  },
+  updateOutboundFailover: async (config: Partial<OutboundFailoverConfig>): Promise<OutboundFailoverStatus> => {
+    const response = await api.post<OutboundFailoverStatus>('/webui/toolkit/proxy-pool/outbound/failover', config);
+    return response.data;
+  },
+  checkOutboundFailover: async (): Promise<OutboundFailoverCheck & { ok: boolean; error?: string }> => {
+    const response = await api.post<OutboundFailoverCheck & { ok: boolean; error?: string }>('/webui/toolkit/proxy-pool/outbound/failover/check');
     return response.data;
   },
   getRouting: async (): Promise<RoutingResponse> => {

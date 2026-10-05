@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/madou1217/ai_home/core/inference"
+	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/decodediag"
 )
 
 // decodedContent 保存内容值对象及其可选缓存断点。
@@ -45,7 +46,7 @@ func decodeSystem(
 			return nil, nil, err
 		}
 		if header.Type != "text" {
-			return nil, nil, unsupportedField(field + ".type")
+			return nil, nil, unsupportedField(decodediag.Discriminator(field+".type", header.Type))
 		}
 		decoded, err := decodeTextContent(block, field)
 		if err != nil {
@@ -234,7 +235,8 @@ func decodeContentBlock(
 		}
 		return decodeToolResultContent(raw, field)
 	default:
-		return decodedContent{}, unsupportedField(field + ".type")
+		// 带上判别值（已清洗），go-core.log 的拒收诊断才能指出是哪种新内容块。
+		return decodedContent{}, unsupportedField(decodediag.Discriminator(field+".type", header.Type))
 	}
 }
 
@@ -410,7 +412,7 @@ func decodeToolResultPayload(
 		case "document":
 			decoded, err = decodeDocumentContent(block, blockField)
 		default:
-			return nil, unsupportedField(blockField + ".type")
+			return nil, unsupportedField(decodediag.Discriminator(blockField+".type", header.Type))
 		}
 		if err != nil {
 			return nil, err

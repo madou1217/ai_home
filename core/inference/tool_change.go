@@ -1,11 +1,13 @@
 package inference
 
 // 对话中途的工具增删（Anthropic beta mid-conversation-tool-changes）：Claude Code 在对话中途的
-// system 消息里放 tool_addition（携带工具定义）与 tool_removal（按名移除）。它们只能出现在
+// system 消息里放 tool_addition 与 tool_removal（按名移除）。新增有两种写法：携带完整定义，
+// 或按名引用顶层 tools 里 defer_loading 的工具（工具搜索命中后启用）。它们只能出现在
 // system 消息里，表示「从这里起」可用工具的变化。
 //
 // Claude 编码器把它们原样写回；不认识这一概念的 Provider（Codex、Code Assist）先调用
-// FoldToolChanges：新增的工具并入请求级工具列表、移除忽略、这些内容块从消息里去掉——
+// FoldToolChanges：新增的定义并入请求级工具列表（按名引用的工具本来就在列表里）、移除忽略、
+// 这些内容块从消息里去掉——
 // 模型照样能调用新增工具，只是失去「从这里起」的位置语义。
 
 // ContentToolChange 是对话中途工具增删的内容类别。
@@ -22,6 +24,7 @@ const (
 )
 
 // ToolChangeContent 是一次对话中途的工具增删。
+// 携带定义的新增只有 definition；按名引用的新增与移除只有 name。
 type ToolChangeContent struct {
 	change     ToolChangeKind
 	definition ToolDefinition
@@ -34,6 +37,14 @@ func NewToolAddition(definition ToolDefinition) (ToolChangeContent, error) {
 		return ToolChangeContent{}, ErrInvalidMessage
 	}
 	return ToolChangeContent{change: ToolChangeAddition, definition: definition.clone()}, nil
+}
+
+// NewToolAdditionByReference 创建按名启用顶层工具（通常是 defer_loading 的工具）的内容块。
+func NewToolAdditionByReference(name string) (ToolChangeContent, error) {
+	if !isNonBlankText(name) {
+		return ToolChangeContent{}, ErrInvalidMessage
+	}
+	return ToolChangeContent{change: ToolChangeAddition, name: name}, nil
 }
 
 // NewToolRemoval 创建按名移除工具的内容块。
@@ -50,21 +61,33 @@ func (content ToolChangeContent) Kind() ContentKind { return ContentToolChange }
 // Change 返回新增或移除。
 func (content ToolChangeContent) Change() ToolChangeKind { return content.change }
 
-// Definition 返回新增的工具定义；移除时第二个返回值为 false。
+// Definition 返回新增的工具定义；移除与按名引用的新增时第二个返回值为 false。
 func (content ToolChangeContent) Definition() (ToolDefinition, bool) {
-	if content.change != ToolChangeAddition {
+	if content.change != ToolChangeAddition || content.name != "" {
 		return ToolDefinition{}, false
 	}
 	return content.definition.clone(), true
 }
 
 // RemovedName 返回被移除工具的名字；新增时为空。
-func (content ToolChangeContent) RemovedName() string { return content.name }
+func (content ToolChangeContent) RemovedName() string {
+	if content.change != ToolChangeRemoval {
+		return ""
+	}
+	return content.name
+}
+
+// ReferencedName 返回按名引用的工具名：移除时是被移除的工具，按名引用的新增时是被启用的工具；
+// 携带定义的新增为空。
+func (content ToolChangeContent) ReferencedName() string { return content.name }
 
 // IsValid 判断内容满足构造不变量。
 func (content ToolChangeContent) IsValid() bool {
 	switch content.change {
 	case ToolChangeAddition:
+		if content.name != "" {
+			return isNonBlankText(content.name)
+		}
 		return content.definition.IsValid()
 	case ToolChangeRemoval:
 		return isNonBlankText(content.name)
@@ -91,8 +114,8 @@ func (request Request) HasToolChanges() bool {
 	return false
 }
 
-// FoldToolChanges 为不认识对话中途工具增删的 Provider 投影请求：新增的工具并入请求级工具
-// （同身份已存在时不重复）、移除忽略、这些内容块从消息里去掉（只剩它们的消息整条去掉）。
+// FoldToolChanges 为不认识对话中途工具增删的 Provider 投影请求：新增的定义并入请求级工具
+// （同身份已存在时不重复；按名引用的新增不需要合并）、移除忽略、这些内容块从消息里去掉（只剩它们的消息整条去掉）。
 // 提示缓存断点按位置记录，内容移动后不再成立，一并清空（这些 Provider 不使用 Anthropic 缓存断点）。
 func (request Request) FoldToolChanges() Request {
 	if !request.HasToolChanges() {

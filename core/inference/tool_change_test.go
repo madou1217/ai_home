@@ -77,3 +77,36 @@ func TestFoldToolChangesMergesAdditionsAndDropsTheBlocks(t *testing.T) {
 		t.Fatal("folding twice is a no-op")
 	}
 }
+
+func TestToolAdditionByReferenceFoldsAwayWithoutTouchingTools(t *testing.T) {
+	if _, err := NewToolAdditionByReference(" "); err == nil {
+		t.Fatal("a reference addition needs a name")
+	}
+	addition, err := NewToolAdditionByReference("WebFetch")
+	if err != nil || !addition.IsValid() || addition.Change() != ToolChangeAddition {
+		t.Fatalf("addition = %+v, err = %v", addition, err)
+	}
+	if _, byValue := addition.Definition(); byValue || addition.ReferencedName() != "WebFetch" || addition.RemovedName() != "" {
+		t.Fatal("a reference addition carries only the referenced name")
+	}
+	deferred := true
+	tool, _ := NewToolDefinitionWithOptions("WebFetch", "fetch", []byte(`{"type":"object"}`), ToolDefinitionOptions{DeferLoading: &deferred})
+	text, _ := NewTextContent("hi")
+	user, _ := NewMessage(RoleUser, text)
+	system, err := NewMessage(RoleSystem, addition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(RequestInput{
+		ClientProtocol: ClientProtocolAnthropicMessages, Model: "m",
+		Messages: []Message{user, system, user},
+		Tools:    []ToolDefinition{tool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folded := request.FoldToolChanges()
+	if folded.HasToolChanges() || len(folded.Tools()) != 1 || len(folded.Messages()) != 2 {
+		t.Fatalf("folded: changes=%v tools=%d messages=%d", folded.HasToolChanges(), len(folded.Tools()), len(folded.Messages()))
+	}
+}

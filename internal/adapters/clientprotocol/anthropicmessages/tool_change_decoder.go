@@ -9,6 +9,7 @@ import (
 // 对话中途的工具增删（beta mid-conversation-tool-changes-2026-07-01），只出现在 system 消息里：
 //
 //	{"type":"tool_addition","tool":{"type":"tool_definition","definition":{…custom tool…}}}
+//	{"type":"tool_addition","tool":{"type":"tool_reference","name":"…"}}   // 启用顶层 defer_loading 的工具
 //	{"type":"tool_removal","tool":{"type":"tool_reference","name":"…"}}
 //
 // 定义按顶层 tools 的同一规则解码；Canonical 无法表达的工具（例如 Anthropic 服务端工具）
@@ -30,6 +31,10 @@ type toolReferenceDTO struct {
 	Name string `json:"name"`
 }
 
+type toolRefTypeDTO struct {
+	Type string `json:"type"`
+}
+
 func decodeToolChangeContent(raw json.RawMessage, role inference.Role, field string) (decodedContent, error) {
 	if role != inference.RoleSystem {
 		return decodedContent{}, invalidField(field)
@@ -45,6 +50,14 @@ func decodeToolChangeContent(raw json.RawMessage, role inference.Role, field str
 	var content inference.ToolChangeContent
 	switch wire.Type {
 	case "tool_addition":
+		if refType, typeErr := decodeHeader[toolRefTypeDTO](wire.Tool, field+".tool"); typeErr == nil && refType.Type == "tool_reference" {
+			reference, refErr := decodeStrict[toolReferenceDTO](wire.Tool, field+".tool")
+			if refErr != nil {
+				return decodedContent{}, refErr
+			}
+			content, err = inference.NewToolAdditionByReference(reference.Name)
+			break
+		}
 		reference, refErr := decodeStrict[toolDefinitionRefDTO](wire.Tool, field+".tool")
 		if refErr != nil {
 			return decodedContent{}, refErr

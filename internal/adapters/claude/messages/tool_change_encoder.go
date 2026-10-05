@@ -9,6 +9,7 @@ import (
 // encodeToolChange 把对话中途的工具增删写回 Messages 线协议（只出现在 system 消息里）：
 //
 //	{"type":"tool_addition","tool":{"type":"tool_definition","definition":{…}}}
+//	{"type":"tool_addition","tool":{"type":"tool_reference","name":"…"}}
 //	{"type":"tool_removal","tool":{"type":"tool_reference","name":"…"}}
 //
 // 并声明 Claude Code 同样声明的 mid-conversation-tool-changes beta。
@@ -19,7 +20,11 @@ func (encoder *requestEncoder) encodeToolChange(
 	var payload any
 	switch change.Change() {
 	case inference.ToolChangeAddition:
-		definition, _ := change.Definition()
+		definition, byValue := change.Definition()
+		if !byValue {
+			payload = map[string]any{"type": "tool_reference", "name": change.ReferencedName()}
+			break
+		}
 		encoded, err := encoder.encodeToolDefinition(definition, nil)
 		if err != nil {
 			return contentDTO{}, err

@@ -83,3 +83,49 @@ func TestToolChangeDecodingRejectsWhatCanonicalCannotCarry(t *testing.T) {
 		})
 	}
 }
+
+// 工具搜索开启时 Claude Code 先在顶层 tools 里声明 defer_loading 的工具，命中后用 tool_reference
+// 按名启用（线上 Go 曾以 tool.name(unknown) 拒收、交回 Node）。
+func TestToolAdditionByReferenceSurvivesTheCanonicalRoundTripToClaude(t *testing.T) {
+	t.Parallel()
+	body := `{
+		"model":"claude-opus-5-5","max_tokens":1024,
+		"tools":[
+			{"name":"Read","description":"read","input_schema":{"type":"object"}},
+			{"name":"WebFetch","description":"fetch","input_schema":{"type":"object"},"defer_loading":true}
+		],
+		"messages":[
+			{"role":"user","content":"hi"},
+			{"role":"system","content":[{"type":"tool_addition","tool":{"type":"tool_reference","name":"WebFetch"}}]},
+			{"role":"user","content":"go"}
+		]
+	}`
+	request, err := anthropicmessages.NewRequestDecoder().Decode([]byte(body))
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	encoded, err := encodeRequest(request, "claude-opus-5-5", false)
+	if err != nil {
+		t.Fatalf("encodeRequest() error = %v", err)
+	}
+	if !containsBeta(encoded.betaHeaders, betaMidConvToolChanges) {
+		t.Fatalf("betas = %v", encoded.betaHeaders)
+	}
+	var payload struct {
+		Tools    []map[string]any `json:"tools"`
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(encoded.payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Tools) != 2 || payload.Tools[1]["defer_loading"] != true {
+		t.Fatalf("deferred tool must stay declared: %v", payload.Tools)
+	}
+	addition := payload.Messages[1].Content[0]
+	reference, _ := addition["tool"].(map[string]any)
+	if addition["type"] != "tool_addition" || reference["type"] != "tool_reference" || reference["name"] != "WebFetch" || len(reference) != 2 {
+		t.Fatalf("addition = %v", addition)
+	}
+}

@@ -10,7 +10,7 @@
  * 范围边界：会话历史**已接入**（session_history + polling；适配器在
  * lib/sessions/session-reader-codebuddy.js，其行为断言在
  * test/session-reader-codebuddy.test.js），codebuddy/codebuddycn 同时具备原生续聊能力。
- * 仍未接入的是网关路由与用量探测，因此这里没有相关断言——一旦将来接入，应先补实现
+ * 仍未接入的是网关路由与本地用量扫描，因此这里没有相关断言——一旦将来接入，应先补实现
  * 再补这里的断言。
  */
 
@@ -67,8 +67,12 @@ test('codebuddy auth options cover browser login and API key', () => {
 
 // 能力面是刻意收敛的：只有已实现适配器的能力才允许声明。声明未实现的能力会让
 // WebUI/gateway 认为该 provider 支持对应功能，进而产生空轮询或 404。
-test('codebuddy declares api_key_account, session_history and quota_usage', () => {
+test('codebuddy declares api_key_account, model_catalog, session_history and quota_usage', () => {
   assert.equal(providerSupports('codebuddy', 'api_key_account'), true);
+  // 家族模型探测与原生会话共用 CLI 和账号环境。
+  for (const provider of FAMILY_PROVIDERS) {
+    assert.equal(providerSupports(provider, 'model_catalog'), true, provider);
+  }
   // 会话读取适配器已落地，因此允许声明 session_history。
   assert.equal(providerSupports('codebuddy', 'session_history'), true);
   // 余额/积分接口已接入（POST {endpoint}/billing/meter/get-user-resource-summary，
@@ -78,7 +82,6 @@ test('codebuddy declares api_key_account, session_history and quota_usage', () =
   // 声明它会把列表判成"按账号隔离"，而"切换账号不变历史"正是本轮要保证的行为。
   assert.equal(providerSupports('codebuddy', 'account_session_store'), false);
   for (const capability of [
-    'model_catalog',
     'session_runtime',
     'fabric_runtime',
     'gateway_profile',

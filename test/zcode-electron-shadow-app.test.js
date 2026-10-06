@@ -15,6 +15,8 @@ try {
 const FUSE_SENTINEL = Buffer.from('dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX', 'ascii');
 const ORIGINAL_MAIN_PATH = 'out/main/index.js';
 const BOOTSTRAP_ENTRY_PATH = 'node_modules/yaml/bin.mjs';
+const AGENT_RUNTIME_ENTRY_PATH = 'out/host/chunk-MZDDONWW.js';
+const AGENT_RUNTIME_MARKER = 'cwd:process.env.ZCODE_AGENT_SERVER_CWD?.trim()||r.workspacePath';
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -120,6 +122,7 @@ function createFixture(t, fuseWire = '101100011') {
   Buffer.from('#!/usr/bin/env node\nconsole.log("yaml cli");\n').copy(yamlBin);
   writeAsar(asarPath, {
     [ORIGINAL_MAIN_PATH]: 'globalThis.__zcodeOriginalMainLoaded = true;\n',
+    [AGENT_RUNTIME_ENTRY_PATH]: `function xn(r){let e=process.env.ZCODE_AGENT_SERVER_COMMAND?.trim();if(e)return Nn({command:e,args:Oi(process.env.ZCODE_AGENT_SERVER_ARGS_JSON)??["app-server","--stdio"],${AGENT_RUNTIME_MARKER}},r.presentationSurface);return Nn(r,r.presentationSurface);}`,
     'package.json': packageJson,
     'node_modules/yaml/package.json': yamlPackageJson,
     [BOOTSTRAP_ENTRY_PATH]: yamlBin,
@@ -190,6 +193,10 @@ test('ZCode 影子 App 只固定长度改写 ASAR 数据区，原包与 ASAR 头
   const bootstrapSource = bootstrapEntry.content.toString('utf8');
   assert.match(bootstrapSource, /AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH/);
   assert.match(bootstrapSource, /await import\("\.\.\/\.\.\/out\/main\/index\.js"\)/);
+  const patchedRuntime = shadowParsed.readEntry(AGENT_RUNTIME_ENTRY_PATH).content.toString('utf8');
+  assert.match(patchedRuntime, /supportsStorageStartup:!0,storagePreparationEntry:e/);
+  assert.match(patchedRuntime, /args:Oi\(process\.env\.ZCODE_AGENT_SERVER_ARGS_JSON\)\?\?\["app-server","--stdio"\],/);
+  assert.equal(patchedRuntime.includes(AGENT_RUNTIME_MARKER), false);
   assert.deepEqual(calls, { clone: 1, sign: 1, verify: 1 });
 
   const second = shadowApp.prepareZcodeElectronShadowApp(options);

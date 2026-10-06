@@ -7,12 +7,14 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { Worker } = require('node:worker_threads');
 
 const {
   AIH_ZCODE_SESSION_SCOPE_ENV,
   patchZcodeAgentSource,
   scopeZcodeSessionId
 } = require('../lib/runtime/zcode-session-attribution-hook');
+const { buildZcodeAgentLauncherSource } = require('../lib/server/desktop-launch/zcode-strategy');
 const { getDesktopLaunchStrategy } = require('../lib/server/desktop-launch');
 const { buildZcodeDesktopApplicationName } = require('../lib/runtime/account-app-process-marker');
 
@@ -110,6 +112,58 @@ test('显式 agent runner 能在真实 CJS 入口加载前应用账号作用域 
   }
 });
 
+test('zcode agent launcher 在普通进程和 storage Worker 中转发参数、流和退出码', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zcode-agent-launcher-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const launcherPath = path.join(root, 'launcher.cjs');
+  const runnerPath = path.join(root, 'runner.cjs');
+  const entryPath = path.join(root, 'entry.cjs');
+  fs.writeFileSync(launcherPath, buildZcodeAgentLauncherSource(), { mode: 0o700 });
+  fs.writeFileSync(entryPath, 'module.exports = {}\n');
+  fs.writeFileSync(runnerPath, [
+    "if (process.env.AIH_LAUNCHER_TEST_MODE === 'direct') {",
+    '  process.stdout.write(JSON.stringify(process.argv.slice(2)));',
+    '  process.exit(7);',
+    '}',
+    'const chunks = [];',
+    "process.stdin.on('data', chunk => chunks.push(chunk));",
+    "process.stdin.on('end', () => { process.stdout.write(Buffer.concat(chunks)); process.exit(7); });"
+  ].join('\n'));
+  const env = {
+    ...process.env,
+    AIH_ZCODE_AGENT_NODE: process.execPath,
+    AIH_ZCODE_AGENT_RUNNER: runnerPath,
+    AIH_ZCODE_AGENT_ENTRY: entryPath,
+    AIH_LAUNCHER_TEST_MODE: 'direct'
+  };
+  const direct = spawnSync(process.execPath, [launcherPath, 'direct-arg'], {
+    env,
+    encoding: 'utf8'
+  });
+  assert.equal(direct.status, 7, direct.stderr);
+  assert.deepEqual(JSON.parse(direct.stdout), [entryPath, 'direct-arg']);
+
+  const worker = new Worker(launcherPath, {
+    argv: ['worker-arg'],
+    env: { ...env, AIH_LAUNCHER_TEST_MODE: 'worker' },
+    stdin: true,
+    stdout: true,
+    stderr: true
+  });
+  const output = [];
+  const errors = [];
+  worker.stdout.on('data', chunk => output.push(chunk));
+  worker.stderr.on('data', chunk => errors.push(chunk));
+  const exit = new Promise((resolve, reject) => {
+    worker.once('error', reject);
+    worker.once('exit', resolve);
+  });
+  worker.stdin.end('storage-input');
+  const exitCode = await exit;
+  assert.equal(exitCode, 7, Buffer.concat(errors).toString('utf8'));
+  assert.equal(Buffer.concat(output).toString('utf8'), 'storage-input');
+});
+
 test('zcode desktop 仅在 macOS 注入 agent runner 与账号作用域', () => {
   const strategy = getDesktopLaunchStrategy('zcode');
   const macEnv = {};
@@ -124,11 +178,11 @@ test('zcode desktop 仅在 macOS 注入 agent runner 与账号作用域', () => 
   }, macContext);
 
   assert.equal(macEnv[AIH_ZCODE_SESSION_SCOPE_ENV], ACCOUNT_REF);
-  assert.equal(macEnv.ZCODE_AGENT_SERVER_COMMAND, '/opt/node/bin/node');
+  assert.match(macEnv.ZCODE_AGENT_SERVER_COMMAND, /\.aih-runtime\/zcode-agent-launcher\.cjs$/);
   const args = JSON.parse(macEnv.ZCODE_AGENT_SERVER_ARGS_JSON);
-  assert.match(args[0], /zcode-session-attribution-runner\.js$/);
-  assert.equal(args[1], '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs');
-  assert.deepEqual(args.slice(2), ['app-server', '--stdio']);
+  assert.deepEqual(args, ['app-server', '--stdio']);
+  assert.match(macEnv.AIH_ZCODE_AGENT_RUNNER, /zcode-session-attribution-runner\.js$/);
+  assert.equal(macEnv.AIH_ZCODE_AGENT_ENTRY, '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs');
 
   const windowsEnv = {};
   const windowsContext = buildContext({ platformKey: 'windows' });

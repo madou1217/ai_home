@@ -22,8 +22,16 @@ function setup(t, resolveImpl) {
   const aiHomeDir = path.join(root, '.ai_home');
   const calls = { scan: 0, full: 0 };
   let clock = 1_000_000;
+  const stateWrites = [];
+  const trackedFs = {
+    ...fs,
+    writeFileSync(filePath, ...rest) {
+      if (String(filePath).endsWith('cli-hook-state.json')) stateWrites.push(String(rest[0]));
+      return fs.writeFileSync(filePath, ...rest);
+    }
+  };
   const service = createCodexCliHookService({
-    fs,
+    fs: trackedFs,
     path,
     processObj: { platform: 'darwin' },
     aiHomeDir,
@@ -39,7 +47,7 @@ function setup(t, resolveImpl) {
       return resolveImpl.full(name);
     }
   });
-  return { root, service, calls, advance: (ms) => { clock += ms; } };
+  return { root, service, calls, stateWrites, advance: (ms) => { clock += ms; } };
 }
 
 function writeFakeCodex(filePath) {
@@ -108,4 +116,23 @@ test('found only via the login shell: the path is reused while it exists', (t) =
   fs.rmSync(path.join(root, 'nvm'), { recursive: true, force: true });
   service.ensureInstalled({ background: true });
   assert.equal(calls.full, 2, 'a vanished path is re-resolved on the next tick');
+});
+
+test('the state file is rewritten only when the hook state changes', (t) => {
+  const box = { codex: '' };
+  const { root, service, stateWrites } = setup(t, { scan: () => box.codex, full: () => box.codex });
+
+  for (let i = 0; i < 5; i += 1) service.ensureInstalled({ background: true });
+  assert.equal(stateWrites.length, 1, 'repeated identical not-found ticks write once');
+  assert.equal(JSON.parse(stateWrites[0]).reason, 'codex_cli_not_found');
+
+  box.codex = path.join(root, 'bin', 'codex');
+  writeFakeCodex(box.codex);
+  service.ensureInstalled({ background: true });
+  assert.equal(stateWrites.length, 2, 'installing codex changes the state and is persisted');
+  assert.equal(JSON.parse(stateWrites[1]).enabled, true);
+  const after = stateWrites.length;
+  service.ensureInstalled({ background: true });
+  service.ensureInstalled({ background: true });
+  assert.equal(stateWrites.length, after, 'a healthy unchanged hook is not rewritten');
 });

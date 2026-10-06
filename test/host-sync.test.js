@@ -339,14 +339,19 @@ test('syncGlobalConfigToHost writes the reconciled Claude credentials snapshot',
     })
   });
 
+  const hostClaudeDir = path.join(fixture.hostHomeDir, '.claude');
+  fs.mkdirSync(hostClaudeDir, { recursive: true });
+  fs.writeFileSync(path.join(hostClaudeDir, '.credentials.json'), '{"previous":true}\n');
+
   const result = sync('claude', accountRef);
 
   assert.equal(result.ok, true);
   assert.equal(result.authSync.source, 'keychain');
   assert.deepEqual(
-    JSON.parse(fs.readFileSync(path.join(fixture.hostHomeDir, '.claude', '.credentials.json'), 'utf8')),
+    JSON.parse(fs.readFileSync(path.join(hostClaudeDir, '.credentials.json'), 'utf8')),
     reconciledCredentials
   );
+  assert.deepEqual(fs.readdirSync(hostClaudeDir).filter((name) => /\.aih[.-](bak|tmp)/.test(name)), []);
 });
 
 test('syncGlobalConfigToHost does not write Claude files when keychain reconciliation fails', (t) => {
@@ -385,6 +390,8 @@ test('syncGlobalConfigToHost writes codex auth from DB as an independent global 
   assert.match(hostConfig, /^preferred_auth_method = "oauth"$/m);
   assert.match(hostConfig, /^model_provider = "openai"$/m);
   assert.equal(fs.existsSync(path.join(fixture.hostCodexDir, 'hooks.json')), false);
+  // 宿主凭据只是账号库的投影：覆盖已有登录不留副本，也不留临时文件。
+  assert.deepEqual(fs.readdirSync(fixture.hostCodexDir).filter((name) => /\.aih[.-](bak|tmp)/.test(name)), []);
 });
 
 test('syncGlobalConfigToHost replaces a host auth symlink without writing through it', (t) => {

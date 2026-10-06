@@ -117,7 +117,7 @@ test('healCodexMcpServers 清理死条目时连同子表一起移除', () => {
   assert.match(result.config, /mcp_servers\.node_repl/);
 });
 
-test('healCodexMcpServersConfigFile 备份后写回且幂等', (t) => {
+test('healCodexMcpServersConfigFile 原子写回不留副本且幂等', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-mcp-heal-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const configPath = path.join(dir, 'config.toml');
@@ -136,8 +136,7 @@ test('healCodexMcpServersConfigFile 备份后写回且幂等', (t) => {
   });
   assert.equal(once.changed, true);
   assert.equal(once.converted.length, 1);
-  assert.notEqual(once.backupPath, '');
-  assert.equal(fs.existsSync(once.backupPath), true);
+  assert.deepEqual(fs.readdirSync(dir).filter((name) => /\.aih-(bak|tmp)/.test(name)), []);
   assert.match(fs.readFileSync(configPath, 'utf8'), /command = 'C:.*uvx\.exe'/);
   assert.equal(logs.length, 1);
 

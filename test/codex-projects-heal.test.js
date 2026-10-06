@@ -120,7 +120,7 @@ test('verbatim 前缀与裸键 projects 条目不属跨端混杂，存在的原�
   assert.ok(result.config.includes('projects.tiny'));
 });
 
-test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
+test('healCodexConfigFile 组合自愈一次原子写回不留副本', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-config-heal-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const configPath = path.join(dir, 'config.toml');
@@ -152,7 +152,7 @@ test('healCodexConfigFile 组合自愈一次备份一次写回', (t) => {
   assert.deepEqual(result.mcp.converted[0].to, winUvx);
   assert.equal(result.projects.removed.length, 1);
   assert.equal(result.projects.removed[0].reason, 'duplicate');
-  assert.equal(fs.existsSync(result.backupPath), true);
+  assert.deepEqual(fs.readdirSync(dir).filter((name) => /\.aih-(bak|tmp)/.test(name)), []);
   const text = fs.readFileSync(configPath, 'utf8');
   assert.equal(text.includes('/mnt/c'), false);
   assert.ok(logs.some((line) => line.includes('projects')));

@@ -22,7 +22,7 @@ function fixture(t, content) {
 }
 
 for (const nameLine of ['', 'name = ""\n', "name = '  '\n", 'name = "\\t" # broken name\n']) {
-  test(`managed provider name is repaired with backup: ${JSON.stringify(nameLine)}`, (t) => {
+  test(`managed provider name is repaired in place: ${JSON.stringify(nameLine)}`, (t) => {
     const original = 'model_provider = "aih_server"\n[model_providers.aih_server]\n'
       + nameLine + 'base_url = "http://127.0.0.1:9999/v1"\nwire_api = "responses"\n'
       + '[model_providers.aih_server.auth]\ncommand = "existing-helper"\nargs = ["unchanged"]\n';
@@ -34,7 +34,7 @@ for (const nameLine of ['', 'name = ""\n', "name = '  '\n", 'name = "\\t" # brok
     assert.match(healed, /base_url = "http:\/\/127.0.0.1:9999\/v1"/);
     assert.match(healed, /command = "existing-helper"\nargs = \["unchanged"\]/);
     assert.equal(healed.includes('env_key'), false, 'auth command must never be mixed with env_key');
-    assert.equal(fs.readFileSync(result.backupPath, 'utf8'), original);
+    assert.deepEqual(fs.readdirSync(path.dirname(f.configPath)).filter((name) => /\.aih-(bak|tmp)/.test(name)), []);
     assert.equal(healCodexConfigFile(f.configPath).changed, false);
   });
 }
@@ -147,5 +147,5 @@ test('installed Codex rejects the broken config and the real CLI helper repairs 
   assert.equal(again.status, 0, again.stderr);
   assert.doesNotMatch(again.stderr, /repaired managed provider/);
   assert.equal(fs.readFileSync(f.configPath, 'utf8'), config);
-  assert.equal(fs.readdirSync(f.codexHome).filter((name) => name.includes('.aih-bak-')).length, 1);
+  assert.equal(fs.readdirSync(f.codexHome).filter((name) => /\.aih-(bak|tmp)/.test(name)).length, 0);
 });

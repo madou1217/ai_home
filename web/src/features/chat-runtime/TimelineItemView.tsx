@@ -145,7 +145,7 @@ function eventBody(item: TimelineItem): ReactNode {
     case 'tool':
       return <CodeDetail primary={formatUnknown(item.detail.input)} secondary={formatUnknown(item.detail.result)} />;
     case 'diff': return <CodeDetail primary={item.detail.patch || item.content || ''} />;
-    case 'file_change': return <CodeDetail primary={item.detail.diff || item.content || formatUnknown(item.detail.changes)} />;
+    case 'file_change': return <CodeDetail primary={item.detail.diff || item.content || formatFileChanges(item.detail.changes)} />;
     case 'artifact': return <div>{item.detail.name} · {item.detail.mimeType}</div>;
     case 'attachment': return <div>{item.detail.name} · {item.detail.mimeType}</div>;
     case 'terminal': return <pre className={styles.codeBlock}>{item.content || item.detail.stream}</pre>;
@@ -173,6 +173,18 @@ function statusPresentation(item: TimelineItem): EventStatus {
     failed: 'failed', cancelled: 'cancelled', unknown: 'attention',
   } as const;
   return { label: labels[item.status], tone: tones[item.status], dot: item.status === 'running' };
+}
+
+// 新记录只在 changes[].diff 里存每个文件的 diff（旧记录另有合并后的 detail.diff / content）。
+function formatFileChanges(changes: unknown[]): string {
+  const sections = changes.map((change) => {
+    if (!change || typeof change !== 'object') return formatUnknown(change);
+    const { path, diff } = change as { path?: unknown; diff?: unknown };
+    const header = typeof path === 'string' && path ? `--- ${path}` : '';
+    const body = typeof diff === 'string' ? diff : '';
+    return [header, body].filter(Boolean).join('\n');
+  }).filter(Boolean);
+  return sections.length > 0 ? sections.join('\n\n') : formatUnknown(changes);
 }
 
 function formatUnknown(value: unknown): string {

@@ -36,6 +36,35 @@ test('timeline import is transactional, idempotent, and replaces an updated nati
   assert.equal(store.getSession(sessionId).lastEventSeq, 3);
 });
 
+test('a history re-import that only moved updatedAt is not stored again', (t) => {
+  // 回合进行中先导入一次（updatedAt=开始时间），回合结束后再导入只有 updatedAt 变化：
+  // 不再追加整行副本。
+  const { store, imports, sessionId } = createFixture(t);
+  const during = event('history-during-turn', 'native-item-1', 'same content');
+  const after = event('history-after-turn', 'native-item-1', 'same content');
+  after.payload.item.updatedAt = 99;
+
+  imports.import(sessionId, [during]);
+  const repeat = imports.import(sessionId, [after]);
+
+  assert.equal(repeat.events.length, 0);
+  assert.equal(repeat.skipped, 1);
+  assert.equal(store.getSession(sessionId).lastEventSeq, 2);
+  assert.equal(store.getSnapshot(sessionId).timeline[0].content, 'same content');
+});
+
+test('a history re-import behind a newer live row is still appended', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  imports.import(sessionId, [event('history-first', 'native-item-1', 'same content')]);
+  store.appendEvent(sessionId, { ...event('live-update', 'native-item-1', 'live content'), eventId: undefined });
+  const after = event('history-after-turn', 'native-item-1', 'same content');
+  after.payload.item.updatedAt = 99;
+
+  const repeat = imports.import(sessionId, [after]);
+
+  assert.equal(repeat.events.length, 1, 'the latest row is live, so the import is not a stale repeat');
+});
+
 test('timeline import rolls the complete batch back when one event is invalid', (t) => {
   const { store, imports, sessionId } = createFixture(t);
 
@@ -379,3 +408,28 @@ function toolEvent(eventId, itemId, callId, status) {
     }
   };
 }
+
+test('prewarm events outside the replay window are pruned when a new one is written', (t) => {
+  const { store, sessionId } = createFixture(t);
+  const { PREWARM_RETAINED_EVENT_WINDOW } = require('../lib/server/chat-runtime/event-repository');
+  const prewarm = () => store.appendEvent(sessionId, {
+    type: 'runtime.prewarm.started',
+    source: { provider: 'codex', runtimeId: 'codex:account-1' },
+    payload: { runtimeBinding: {}, capabilitySnapshot: {} }
+  });
+  const first = prewarm();
+  for (let index = 0; index < PREWARM_RETAINED_EVENT_WINDOW; index += 1) {
+    store.appendEvent(sessionId, { ...event(`history-${index}`, `item-${index}`, 'x') });
+  }
+  const latest = prewarm();
+
+  const kept = store.context.db.prepare(`
+    SELECT seq FROM chat_runtime_events WHERE session_id = ? AND type LIKE 'runtime.prewarm.%' ORDER BY seq
+  `).all(sessionId).map((row) => row.seq);
+  assert.deepEqual(kept, [latest.seq], 'the prewarm event now outside the window is gone');
+  assert.ok(first.seq <= latest.seq - PREWARM_RETAINED_EVENT_WINDOW);
+  const timelineRows = store.context.db.prepare(`
+    SELECT COUNT(*) AS count FROM chat_runtime_events WHERE session_id = ? AND type LIKE 'timeline.item.%'
+  `).get(sessionId).count;
+  assert.equal(timelineRows, PREWARM_RETAINED_EVENT_WINDOW, 'timeline rows untouched');
+});

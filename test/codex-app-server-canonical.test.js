@@ -237,7 +237,9 @@ test('maps completed messages, shell commands, file changes and generic tools to
   })).payload.item;
   assert.equal(shell.detail.command, 'npm test');
   assert.equal(shell.detail.cwd, '/repo');
-  assert.equal(shell.detail.output, 'ok');
+  // 输出只存一份：在 content 里（timeline-item-compaction.js）。
+  assert.equal(shell.content, 'ok');
+  assert.equal(Object.hasOwn(shell.detail, 'output'), false);
   assert.equal(shell.detail.exitCode, 0);
   assert.equal(shell.detail.callId, 'cmd-1');
   assert.equal(Object.hasOwn(shell.detail, 'processId'), false);
@@ -246,7 +248,10 @@ test('maps completed messages, shell commands, file changes and generic tools to
     turnId: 'turn-1', completedAtMs: 123,
     item: fixtures[2][0]
   })).payload.item;
-  assert.equal(file.detail.diff, '@@ -1 +1 @@');
+  // 每个文件的 diff 只存一份：在 changes[].diff 里（带路径对应关系）。
+  assert.equal(file.detail.changes[0].diff, '@@ -1 +1 @@');
+  assert.equal(Object.hasOwn(file.detail, 'diff'), false);
+  assert.equal(Object.hasOwn(file, 'content'), false);
 
   const tool = mapCodexAppServerMessage(message('item/completed', {
     turnId: 'turn-1', completedAtMs: 123,

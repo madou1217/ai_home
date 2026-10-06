@@ -87,8 +87,10 @@ test('scanner candidates seek each proxy window instead of scanning every usage 
       cost_usd, timestamp_ms, project, cwd, git_branch
     ) VALUES
       (1, 'near', 'codex', 'one', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 9000, '', '', ''),
-      (2, 'far', 'codex', 'two', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 12000, '', '', ''),
-      (3, 'late', 'codex', 'three', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 10000, '', '', ''),
+      -- 网关先记账、codex 后写转写：扫描记录晚 9s 仍是同一请求。
+      (2, 'lagging', 'codex', 'two', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 19000, '', '', ''),
+      (3, 'far', 'codex', 'three', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 410000, '', '', ''),
+      (5, 'late', 'codex', 'five', 'session_jsonl', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 10000, '', '', ''),
       (4, 'proxy', 'codex', 'one', 'server_codex_proxy', 'gpt-5', 10, 5, 2, 3, 1, 21, 0, 10000, '', '', '');
   `);
   let candidateSql = '';
@@ -109,9 +111,9 @@ test('scanner candidates seek each proxy window instead of scanning every usage 
   }];
 
   const candidates = modelUsageReadProjectionPrivate.readScannerCandidates(
-    observedDatabase, proxies, { recordHighWaterId: 2 }
+    observedDatabase, proxies, { recordHighWaterId: 3 }
   );
-  assert.deepEqual(candidates.map(({ id, proxy_id }) => [id, proxy_id]), [[1, 4]]);
+  assert.deepEqual(candidates.map(({ id, proxy_id }) => [id, proxy_id]), [[1, 4], [2, 4]]);
 
   const plan = database.prepare(`EXPLAIN QUERY PLAN ${candidateSql}`).all(
     JSON.stringify([{

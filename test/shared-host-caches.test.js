@@ -23,31 +23,49 @@ function setup(t) {
   return { hostHomeDir, projectionRoot, link };
 }
 
-test('declared caches become links to the host and per-account copies are discarded, never merged', (t) => {
+test('a per-account copy is discarded when the host already has the cache, never merged', (t) => {
   const f = setup(t);
+  fs.mkdirSync(path.join(f.hostHomeDir, 'go', 'pkg', 'mod'), { recursive: true });
   const copy = path.join(f.projectionRoot, 'go', 'pkg', 'mod', 'account-download.zip');
   fs.mkdirSync(path.dirname(copy), { recursive: true });
   fs.writeFileSync(copy, 'PER-ACCOUNT');
 
   const first = f.link();
 
-  const declared = getProviderSharedHostCaches('zcode', 'darwin').map((entry) => path.join(...entry.projection));
-  assert.deepEqual([...first.linked, ...first.replaced].sort(), declared.sort());
   assert.deepEqual(first.replaced, ['go']);
   assert.deepEqual(first.failed, []);
-  for (const relative of declared) {
-    const projected = path.join(f.projectionRoot, relative);
-    assert.equal(fs.lstatSync(projected).isSymbolicLink(), true, relative);
-    assert.equal(fs.realpathSync(projected), fs.realpathSync(path.join(f.hostHomeDir, relative)));
-  }
+  assert.equal(fs.lstatSync(path.join(f.projectionRoot, 'go')).isSymbolicLink(), true);
+  assert.equal(fs.realpathSync(path.join(f.projectionRoot, 'go')), fs.realpathSync(path.join(f.hostHomeDir, 'go')));
   assert.equal(fs.existsSync(path.join(f.hostHomeDir, 'go', 'pkg', 'mod', 'account-download.zip')), false);
 
   const second = f.link();
-  assert.deepEqual([second.linked, second.replaced, second.failed], [[], [], []], 'idempotent');
+  assert.deepEqual([second.linked, second.replaced, second.adopted, second.failed], [[], [], [], []], 'idempotent');
+});
+
+test('a cache the host does not have yet is moved to the host instead of re-downloaded', (t) => {
+  const f = setup(t);
+  const copy = path.join(f.projectionRoot, '.bun', 'install', 'cache', 'pkg.tgz');
+  fs.mkdirSync(path.dirname(copy), { recursive: true });
+  fs.writeFileSync(copy, 'DOWNLOADED-ONCE');
+
+  const result = f.link();
+
+  assert.deepEqual(result.adopted, ['.bun']);
+  assert.equal(fs.readFileSync(path.join(f.hostHomeDir, '.bun', 'install', 'cache', 'pkg.tgz'), 'utf8'), 'DOWNLOADED-ONCE');
+  assert.equal(fs.lstatSync(path.join(f.projectionRoot, '.bun')).isSymbolicLink(), true);
+});
+
+test('nothing is created on the host when neither side has the cache', (t) => {
+  const f = setup(t);
+  const result = f.link();
+  assert.deepEqual([result.linked, result.replaced, result.adopted, result.failed], [[], [], [], []]);
+  assert.deepEqual(fs.readdirSync(f.hostHomeDir), [], 'no empty directories on the host');
+  assert.deepEqual(fs.readdirSync(f.projectionRoot), []);
 });
 
 test('a link pointing elsewhere is re-pointed at the host path', (t) => {
   const f = setup(t);
+  fs.mkdirSync(path.join(f.hostHomeDir, '.npm'));
   const elsewhere = path.join(f.hostHomeDir, 'unrelated');
   fs.mkdirSync(elsewhere);
   fs.symlinkSync(elsewhere, path.join(f.projectionRoot, '.npm'));
@@ -63,12 +81,14 @@ test('removing an account projection never deletes through a cache link', (t) =>
   // account-removal / runtime-projection-pruner / transient-auth-projection 都用
   // fs.rmSync(dir, { recursive: true, force: true }) 删除整个投影。
   const f = setup(t);
-  f.link('workbuddy');
   const sentinels = getProviderSharedHostCaches('workbuddy', 'darwin').map((entry) => {
     const file = path.join(f.hostHomeDir, ...entry.host, 'HOST-SENTINEL');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, 'host data');
     return file;
   });
+  const linked = f.link('workbuddy');
+  assert.equal(linked.linked.length, sentinels.length);
 
   fs.rmSync(f.projectionRoot, { recursive: true, force: true });
 

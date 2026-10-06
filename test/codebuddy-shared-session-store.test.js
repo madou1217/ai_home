@@ -285,6 +285,7 @@ test('desktop-linked toolchain caches never block family sessions', () => {
     for (const provider of FAMILY_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const caches = [['.volta'], ['go']];
+      for (const segments of caches) nodeFs.mkdirSync(path.join(hostHomeDir, ...segments), { recursive: true });
       for (const segments of caches) {
         const copy = path.join(projection, ...segments, 'account-copy');
         nodeFs.mkdirSync(path.dirname(copy), { recursive: true });

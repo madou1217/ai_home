@@ -111,3 +111,24 @@ test('fetchZcodePlanBalanceModels uses the account telemetry device mid and desk
   assert.equal(seenHeaders['X-Device-Mid'], 'mid-model-probe');
   assert.equal(seenHeaders['X-ZCode-App-Version'], '3.14.4');
 });
+
+test('fetchZcodePaasModels surfaces business codes carried without success field', async () => {
+  // {code:1005,msg} 不带 success：旧实现只查 success，业务码被丢成「缺 data」。
+  const fetchWithTimeout = async () => jsonResponse({ code: 1005, msg: 'exceed quota limit' });
+  await assert.rejects(
+    fetchZcodePaasModels({ fetchWithTimeout }, { accessToken: 'zai-token' }, 1000),
+    /models_business_error: 1005 exceed quota limit/
+  );
+});
+
+test('fetchZcodePaasModels keeps the plain data shape and missing-data fallback', async () => {
+  const fetchWithTimeout = async () => jsonResponse({ data: [{ id: 'glm-5.3' }] });
+  const models = await fetchZcodePaasModels({ fetchWithTimeout }, { accessToken: 'zai-token' }, 1000);
+  assert.deepEqual(models, ['glm-5.3'], '无 code/success 的裸 data 信封仍是成功');
+
+  const noData = async () => jsonResponse({ data: null });
+  await assert.rejects(
+    Promise.resolve().then(() => fetchZcodePaasModels({ fetchWithTimeout: noData }, { accessToken: 'zai-token' }, 1000)),
+    /models_response_missing_data/
+  );
+});

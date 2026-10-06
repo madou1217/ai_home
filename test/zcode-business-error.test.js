@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const {
   ZCODE_QUOTA_BUSINESS_CODE,
   parseZcodeBusinessError,
-  detectUpstreamBusinessFailure
+  detectUpstreamBusinessFailure,
+  isZcodeBalanceEnvelopeOk,
+  describeZcodeBalanceEnvelope,
+  isZcodeBalanceParameterErrorCode
 } = require('../lib/server/zcode-business-error');
 
 // 2026-08-22 12:37:52Z 实际抓到的上游响应体（responseStatus=200，content-length=40）。
@@ -95,4 +98,36 @@ test('detect never fires for other providers', () => {
       body: CAPTURED_QUOTA_BODY
     }), null, `provider=${provider}`);
   }
+});
+
+test('isZcodeBalanceEnvelopeOk settles the code:200 conflict for the balance domain', () => {
+  // balance 域：code:200 是防御性接受的历史成功码（带不带 msg 均可）。
+  assert.equal(isZcodeBalanceEnvelopeOk({ code: 0, msg: '', data: {} }), true);
+  assert.equal(isZcodeBalanceEnvelopeOk({ code: 200, msg: 'x', data: {} }), true);
+  assert.equal(isZcodeBalanceEnvelopeOk({ code: '200', data: {} }), true);
+  assert.equal(isZcodeBalanceEnvelopeOk({ data: {} }), true, 'code 缺省视为成功');
+  assert.equal(isZcodeBalanceEnvelopeOk({ success: true, code: 0, data: {} }), true);
+  // 推理域的 parseZcodeBusinessError 对同一信封判失败（无载荷键 + code≠0）——
+  // 两域差异由「两域判错规则」注释固化，此处锁住双方行为不漂移。
+  assert.deepEqual(parseZcodeBusinessError({ code: 200, msg: 'x' }), { code: 200, message: 'x' });
+  // balance 域的失败面。
+  assert.equal(isZcodeBalanceEnvelopeOk({ success: false, code: 0 }), false);
+  assert.equal(isZcodeBalanceEnvelopeOk({ code: 1005, msg: 'exceed quota limit' }), false);
+  assert.equal(isZcodeBalanceEnvelopeOk({ code: 3001, msg: 'bad parameter' }), false);
+  assert.equal(isZcodeBalanceEnvelopeOk(null), false);
+  assert.equal(isZcodeBalanceEnvelopeOk('nope'), false);
+});
+
+test('describeZcodeBalanceEnvelope keeps the verbatim code-msg detail format', () => {
+  assert.equal(describeZcodeBalanceEnvelope({ code: 1005, msg: 'exceed quota limit' }), '1005 exceed quota limit');
+  assert.equal(describeZcodeBalanceEnvelope({ code: '3001', message: 'bad param' }), '3001 bad param');
+  assert.equal(describeZcodeBalanceEnvelope({ code: 0 }), '0');
+  assert.equal(describeZcodeBalanceEnvelope(null), '');
+});
+
+test('isZcodeBalanceParameterErrorCode singles out 3001 across numeric and string forms', () => {
+  assert.equal(isZcodeBalanceParameterErrorCode('3001'), true);
+  assert.equal(isZcodeBalanceParameterErrorCode(3001), true);
+  assert.equal(isZcodeBalanceParameterErrorCode('1005'), false);
+  assert.equal(isZcodeBalanceParameterErrorCode(undefined), false);
 });

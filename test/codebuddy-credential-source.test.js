@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
+const { DatabaseSync } = require('node:sqlite');
 const { credential } = require('./helpers/codebuddy-credential');
 const { inspectCodebuddyCredential, compareCodebuddyCredentials, codebuddyCredentialPaths,
   readCodebuddyCredentialFile, selectCodebuddyCredential } = require('../lib/account/codebuddy-credential-source');
@@ -25,6 +27,95 @@ function fixture(t) {
   return { home, aiHomeDir, write, adopt };
 }
 const now = Math.floor(Date.now() / 1000), older = now - 120, newer = now - 30;
+
+function writeDesktopCredential(home, provider, value, scoped = false) {
+  const userDataDir = scoped ? path.join(home, 'electron-user-data')
+    : path.join(home, 'Library', 'Application Support', provider === 'codebuddycn' ? 'CodeBuddy CN' : 'CodeBuddy');
+  const file = path.join(userDataDir, 'User', 'globalStorage', 'state.vscdb');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT)');
+  const key = crypto.pbkdf2Sync('fixture-safe-storage', 'saltysalt', 1003, 16, 'sha1');
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20));
+  const encrypted = Buffer.concat([Buffer.from('v10'), cipher.update(JSON.stringify(value)), cipher.final()]);
+  db.prepare('INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)').run(
+    'secret://{"extensionId":"tencent-cloud.coding-copilot","key":"planning-genie.new.accessToken"}',
+    JSON.stringify(encrypted)
+  );
+  db.close();
+  return file;
+}
+
+function desktopOptions(onRead = () => {}) {
+  return {
+    platform: 'darwin',
+    execFileSync: (command, args) => {
+      assert.equal(command, '/usr/bin/security');
+      assert.deepEqual(args, ['find-generic-password', '-w', '-s', 'CodeBuddy Safe Storage']);
+      onRead();
+      return Buffer.from('fixture-safe-storage\n');
+    }
+  };
+}
+
+test('a fresh CodeBuddy IDE login supersedes its expired shared CLI file without rewriting it', t => {
+  const f = fixture(t), stale = credential('codebuddy', { iat: now - 7200 });
+  const sharedFile = f.write('codebuddy', stale), fresh = credential('codebuddy', { iat: newer });
+  writeDesktopCredential(f.home, 'codebuddy', fresh);
+  const read = selectCodebuddyCredential(fs, f.home, 'codebuddy', desktopOptions());
+  assert.equal(read.ok, true);
+  assert.deepEqual(read.credential, fresh);
+  assert.deepEqual(JSON.parse(fs.readFileSync(sharedFile)), stale);
+});
+
+test('native IDE observation renews the existing accountRef and is idempotent', t => {
+  const f = fixture(t), old = credential('codebuddy', { iat: older }), fresh = credential('codebuddy', { iat: newer });
+  const account = f.adopt('codebuddy', old);
+  f.write('codebuddy', old);
+  writeDesktopCredential(f.home, 'codebuddy', fresh);
+  let reads = 0;
+  const sync = createCodebuddyNativeCredentialSync({
+    fs, aiHomeDir: f.aiHomeDir, hostHomeDir: f.home, ...desktopOptions(() => { reads += 1; })
+  });
+  const result = sync.scan();
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.updated[0].accountRef, account.accountRef);
+  assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, account.accountRef).credentials, fresh);
+  assert.equal(sync.scan().updated.length, 0);
+  assert.equal(reads, 1, 'unchanged ciphertext must not re-read the Keychain');
+  writeDesktopCredential(f.home, 'codebuddy', credential('codebuddy', { iat: newer + 1 }));
+  assert.equal(sync.scan().updated.length, 1);
+  assert.equal(reads, 2);
+  assert.equal(store.listAccountCredentialRecords(fs, f.aiHomeDir, 'codebuddy').length, 1);
+});
+
+test('the IDE source cannot inject another realm or replace a scoped account with another user', t => {
+  const f = fixture(t), existing = credential('codebuddy', { iat: older });
+  writeDesktopCredential(f.home, 'codebuddy', credential('workbuddy', { iat: newer }));
+  assert.equal(selectCodebuddyCredential(fs, f.home, 'codebuddy', desktopOptions()).ok, false);
+  writeDesktopCredential(f.home, 'codebuddy', credential('codebuddy', { iat: newer, uid: 'other-user' }));
+  assert.equal(selectCodebuddyCredential(fs, f.home, 'codebuddy', { ...desktopOptions(), expected: existing }).ok, false);
+});
+
+test('scoped desktop authentication is captured from its own Electron profile', t => {
+  const f = fixture(t), old = credential('codebuddy', { iat: older }), fresh = credential('codebuddy', { iat: newer });
+  const account = f.adopt('codebuddy', old), runtime = resolveAccountRuntimeDir(f.aiHomeDir, 'codebuddy', account.accountRef);
+  writeDesktopCredential(runtime, 'codebuddy', fresh, true);
+  const captured = captureProviderAuth(fs, runtime, 'codebuddy', {
+    ...desktopOptions(), aiHomeDir: f.aiHomeDir, accountRef: account.accountRef
+  });
+  assert.equal(captured.captured, true);
+  assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, account.accountRef).credentials, fresh);
+});
+
+test('unsupported platforms and unavailable desktop secrets retain the shared-file source', t => {
+  const f = fixture(t), existing = credential('codebuddy');
+  f.write('codebuddy', existing);
+  writeDesktopCredential(f.home, 'codebuddy', credential('codebuddy', { iat: newer }));
+  const denied = () => { throw new Error('Keychain unavailable'); };
+  assert.deepEqual(selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform: 'darwin', execFileSync: denied }).credential, existing);
+  assert.deepEqual(selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform: 'linux', execFileSync: denied }).credential, existing);
+});
 
 test('a standalone CN filename is discovered only when its issuer proves CN', t => {
   const f = fixture(t); f.write('codebuddycn', credential('codebuddycn'), f.home, 1);

@@ -156,3 +156,38 @@ test('resolveCommandPathDetailed exposes actionable diagnostics when unresolved'
   assert.ok(detail.attempts.some((item) => item.step === 'path_scan' && item.status === 'skip'));
   assert.ok(detail.attempts.some((item) => item.step === 'command_v_probe'));
 });
+
+test('loginShellFallback=false skips the spawned probe on every platform', () => {
+  for (const platform of ['linux', 'darwin', 'win32']) {
+    const calls = [];
+    const result = resolveCommandPathDetailed('codex', {
+      env: { PATH: '', Path: '' },
+      platform,
+      loginShellFallback: false,
+      spawnSyncImpl: (cmd) => {
+        calls.push(cmd);
+        return { status: 0, stdout: '/usr/local/bin/codex\n' };
+      }
+    });
+    assert.equal(result.path, '', platform);
+    assert.equal(result.errorCode, 'COMMAND_NOT_FOUND', platform);
+    assert.deepEqual(calls, [], platform);
+  }
+});
+
+test('loginShellFallback=false still resolves through the PATH scan', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-command-path-scan-'));
+  try {
+    const bin = path.join(dir, 'codex');
+    fs.writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+    const out = resolveCommandPath('codex', {
+      env: { PATH: dir },
+      platform: 'linux',
+      loginShellFallback: false,
+      spawnSyncImpl: () => { throw new Error('probe must not run'); }
+    });
+    assert.equal(out, bin);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

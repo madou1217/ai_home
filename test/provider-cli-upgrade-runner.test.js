@@ -74,6 +74,51 @@ test('happy path：连续两次静默后升级并推进 knownGood', async () => 
   assert.deepEqual(calls.plans, [{ phase: 'upgrade', version: '0.154.0' }]);
 });
 
+test('PATH 上没有 CLI 时不做远端查询，保留上次的 latestVersion', async () => {
+  let checkUpdateCalls = 0;
+  const { deps, calls } = makeDeps({
+    detectChannel: async () => ({
+      channel: CHANNELS.UNKNOWN,
+      pinnable: false,
+      ownerPath: '',
+      resolvedPath: '',
+      shadowedNpmInstall: false
+    }),
+    checkUpdate: async () => {
+      checkUpdateCalls += 1;
+      throw new Error('remote query must be skipped');
+    }
+  });
+  const seeded = writeProviderRecord(emptyLedger(), 'codex', { latestVersion: '0.160.1', lastCheckAt: LONG_AGO });
+
+  const result = await runGated('codex', seeded, deps);
+
+  assert.equal(result.reason, 'not_installed');
+  assert.equal(checkUpdateCalls, 0);
+  assert.deepEqual(calls.plans, []);
+  const record = readProviderRecord(result.ledger, 'codex');
+  assert.equal(record.latestVersion, '0.160.1');
+  assert.equal(record.lastCheckAt, NOW);
+  assert.equal(record.installedVersion, '');
+  assert.equal(record.lastCheckError, '');
+});
+
+test('装了但版本探测失败仍走完整检查（不被当成未安装）', async () => {
+  let checkUpdateCalls = 0;
+  const { deps } = makeDeps({
+    checkUpdate: async () => {
+      checkUpdateCalls += 1;
+      return { installedVersion: '', latestVersion: '0.154.0', publishedAt: LONG_AGO };
+    }
+  });
+
+  const result = await runGated('codex', emptyLedger(), deps);
+
+  assert.equal(checkUpdateCalls, 1);
+  assert.equal(result.reason, 'installed_version_unknown');
+  assert.equal(readProviderRecord(result.ledger, 'codex').latestVersion, '0.154.0');
+});
+
 test('第一次观测到静默还不动手,只记 tick', async () => {
   const { deps, calls } = makeDeps();
   const result = await runGated('codex', emptyLedger(), deps);
@@ -242,7 +287,7 @@ test('版本不存在时拉黑该版本,不计熔断', async () => {
 
 test('不可钉版本的渠道一律不动手', async () => {
   const { deps, calls } = makeDeps({
-    detectChannel: async () => ({ channel: CHANNELS.VENDOR_SELFUPDATE, pinnable: false, ownerPath: '', resolvedPath: '' })
+    detectChannel: async () => ({ channel: CHANNELS.VENDOR_SELFUPDATE, pinnable: false, ownerPath: '', resolvedPath: '/usr/local/bin/codex' })
   });
   const { result } = await runTwice(emptyLedger(), deps);
 

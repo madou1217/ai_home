@@ -34,6 +34,7 @@ const {
   getProviderSharedEntries,
   getProviderStoragePolicy
 } = require('../lib/runtime/provider-storage-policy');
+const { linkSharedHostCaches } = require('../lib/runtime/shared-host-caches');
 
 // provider -> 宿主/投影下的配置目录名（= CLIConfig.globalDir）
 const CONFIG_DIR_BY_PROVIDER = Object.freeze({
@@ -276,23 +277,29 @@ test('vendor diagnostics stay private without hiding undeclared fallback session
   }
 });
 
-test('toolchain state does not block family sessions or hide unrelated cache data', () => {
+test('desktop-linked toolchain caches never block family sessions', () => {
+  // 桌面启动把工具链缓存链接到宿主（linkSharedHostCaches，旧副本丢弃、不合并进宿主）；
+  // 之后的会话对账必须放行这些链接、不改动它们；未声明的会话类数据仍然拦下。
   const { root, hostHomeDir, service } = createTree();
   try {
     for (const provider of FAMILY_PROVIDERS) {
       const projection = projectionDir(root, provider);
-      const volta = path.join(projection, '.volta', 'bin');
-      const brew = path.join(projection, 'Library', 'Caches', 'Homebrew');
-      nodeFs.mkdirSync(volta, { recursive: true });
-      nodeFs.symlinkSync('/host/toolchain/volta-shim', path.join(volta, 'node'));
-      nodeFs.mkdirSync(brew, { recursive: true });
-      nodeFs.writeFileSync(path.join(brew, 'formula_names.txt'), 'TOOLCHAIN-CACHE');
+      const caches = [['.volta'], ['go']];
+      for (const segments of caches) {
+        const copy = path.join(projection, ...segments, 'account-copy');
+        nodeFs.mkdirSync(path.dirname(copy), { recursive: true });
+        nodeFs.writeFileSync(copy, 'PER-ACCOUNT-DOWNLOAD');
+      }
 
+      linkSharedHostCaches({ fs: nodeFs, path, provider, projectionRoot: projection, hostHomeDir });
       const summary = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
       assert.deepEqual(summary.unresolved || [], [], provider);
-      assert.equal(nodeFs.readlinkSync(path.join(volta, 'node')), '/host/toolchain/volta-shim');
-      assert.equal(nodeFs.readFileSync(path.join(brew, 'formula_names.txt'), 'utf8'), 'TOOLCHAIN-CACHE');
-      assert.equal(nodeFs.existsSync(path.join(hostHomeDir, CONFIG_DIR_BY_PROVIDER[provider], '.aih-runtime-home', '.volta')), false);
+      for (const segments of caches) {
+        const projected = path.join(projection, ...segments);
+        assert.equal(isLink(projected), true, `${provider} ${segments.join('/')}`);
+        assert.equal(nodeFs.realpathSync(projected), nodeFs.realpathSync(path.join(hostHomeDir, ...segments)));
+        assert.equal(nodeFs.existsSync(path.join(hostHomeDir, ...segments, 'account-copy')), false, 'never merged into the host');
+      }
 
       const unknown = path.join(projection, 'Library', 'Caches', 'unknown-session-cache');
       nodeFs.mkdirSync(unknown, { recursive: true });
@@ -317,8 +324,6 @@ test('desktop encryption references and connector state stay private after first
         ['Library', 'Application Support', 'CodeBuddyExtension', 'Cache', 'cache.json'],
         ['Library', 'Application Support', 'CodeBuddyExtension', 'Logs', 'runtime.log']
       ];
-      const bundleId = { workbuddy: 'com.workbuddy.workbuddy-ai', workbuddycn: 'com.tencent.workbuddy.mac' }[provider];
-      if (bundleId) files.push(['Library', 'Caches', `${bundleId}.BundleMigration`, 'migration.flag']);
       for (const segments of files) {
         const file = path.join(projection, ...segments);
         nodeFs.mkdirSync(path.dirname(file), { recursive: true });

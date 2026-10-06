@@ -255,3 +255,48 @@ test('ad-hoc 签名只重签外层 App，保留内部 Electron Framework 的原�
   assert.ok(verifyCall);
   assert.equal(verifyCall.args.includes('--deep'), true, '最终仍需深度验证整包嵌套签名');
 });
+
+test('影子 App 全机按指纹共享一份：不同账号复用同一份，账号内旧影子与久未使用的旧指纹被清理', (t) => {
+  const fixture = createFixture(t);
+  const shadowRoot = path.join(path.dirname(fixture.profileDir), 'shared-zcode-shadow');
+  const calls = { clone: 0 };
+  const prepare = (profileDir) => shadowApp.prepareZcodeElectronShadowApp({
+    fs,
+    path,
+    sourceBundlePath: fixture.sourceBundlePath,
+    profileDir,
+    shadowRoot,
+    hookModulePath: fixture.hookModulePath,
+    cloneBundle(source, target) {
+      calls.clone += 1;
+      fs.cpSync(source, target, { recursive: true, preserveTimestamps: true });
+    },
+    signBundle() {},
+    verifyBundle() { return true; }
+  });
+  // 旧版本留在账号投影里的影子、一个久未使用的旧指纹、一个最近用过的旧指纹。
+  const legacy = path.join(fixture.profileDir, '.aih-runtime', 'zcode-shadow', 'old', 'ZCode.app');
+  fs.mkdirSync(legacy, { recursive: true });
+  const staleManifest = path.join(shadowRoot, 'stalefingerprint', 'manifest.json');
+  const recentManifest = path.join(shadowRoot, 'recentfingerprint', 'manifest.json');
+  for (const manifest of [staleManifest, recentManifest]) {
+    fs.mkdirSync(path.dirname(manifest), { recursive: true });
+    fs.writeFileSync(manifest, '{}');
+  }
+  const longAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(staleManifest, longAgo, longAgo);
+
+  const first = prepare(fixture.profileDir);
+  const otherAccount = path.join(path.dirname(fixture.profileDir), 'other-account');
+  fs.mkdirSync(otherAccount, { recursive: true });
+  const second = prepare(otherAccount);
+
+  assert.equal(first.ready, true);
+  assert.equal(second.status, 'reused');
+  assert.equal(second.resolved.bundlePath, first.resolved.bundlePath, '所有账号复用同一份影子');
+  assert.ok(first.resolved.bundlePath.startsWith(`${shadowRoot}${path.sep}`));
+  assert.equal(calls.clone, 1);
+  assert.equal(fs.existsSync(path.join(fixture.profileDir, '.aih-runtime', 'zcode-shadow')), false, '账号内旧影子已删除');
+  assert.equal(fs.existsSync(path.dirname(staleManifest)), false, '久未使用的旧指纹已清理');
+  assert.equal(fs.existsSync(path.dirname(recentManifest)), true, '最近用过的旧指纹保留（可能仍有实例在用）');
+});

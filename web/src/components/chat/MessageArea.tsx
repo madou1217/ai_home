@@ -26,6 +26,7 @@ import InSessionSearchBar from './InSessionSearchBar';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
+import { resolveNativeSessionWriteBlock } from '@/features/legacy-chat/native-session-write-policy';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -549,13 +550,16 @@ const MessageArea = ({
     }
   }, [input]);
   const isTerminated = isTerminatedProp || session?.status === 'stopped' || session?.status === 'archived';
+  // 非 draft 的不可续写原生会话（如 zcode/kimi/kiro）：禁用输入框，防止消息落到
+  // 无状态推理端点，产生 OAuth 报错或「刷新即消失」的幽灵轮次。
+  const nativeWriteBlock = resolveNativeSessionWriteBlock(session);
   const accountDefaultModel = accountModelState.targetKey === selectedTargetKey ? accountModelState.defaultModel : '';
   const models = accountModelIds.map(m => ({ label: m, value: m }));
   const modelsLoading = accountModelState.targetKey === selectedTargetKey && accountModelState.loading;
   // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
   const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
   const hasAccountModel = Boolean(effectiveSelectedModel);
-  const canSend = !isTerminated && hasAccountModel && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
+  const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
     && !embeddedSlashMatch;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -989,6 +993,10 @@ const MessageArea = ({
           {isTerminated ? (
             <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--color-muted)', fontSize: 13, userSelect: 'none' }}>
               此会话已归档，无法继续对话。
+            </div>
+          ) : nativeWriteBlock ? (
+            <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--color-muted)', fontSize: 13, userSelect: 'none' }}>
+              {nativeWriteBlock}
             </div>
           ) : (
             <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>

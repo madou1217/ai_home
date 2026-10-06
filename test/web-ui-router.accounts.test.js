@@ -40,6 +40,8 @@ const {
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const { createSessionStoreService } = require('../lib/cli/services/session-store');
 const { refreshLiveAccountRecord } = require('../lib/server/webui-account-live');
+const { createAccountStatusChecker } = require('../lib/cli/services/account/status');
+const { credential: codebuddyCredential } = require('./helpers/codebuddy-credential');
 
 function createResCapture() {
   return {
@@ -368,6 +370,37 @@ test('account sessions route reads the canonical provider session catalog', asyn
   assert.deepEqual(providerReads, [['codex']]);
   assert.deepEqual(body, { ok: true, projects: expectedProjects });
 });
+
+for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']) {
+  test(`web ui ${provider} publishes recovery from expired native auth without a runtime pool account`, async (t) => {
+    const fixture = createAccountFixture(t);
+    const expired = codebuddyCredential(provider);
+    expired.auth.refreshExpiresAt = Date.now() - 1000;
+    const accountRef = fixture.register(provider, '1', { nativeAuth: { credentials: expired } });
+    const state = { accounts: {} };
+    const checkStatus = createAccountStatusChecker({ fs, BufferImpl: Buffer, aiHomeDir: fixture.aiHomeDir });
+    const before = await requestAccounts(fixture, { state, deps: { checkStatus } });
+    const previous = before.body.accounts.find(account => account.accountRef === accountRef);
+    assert.equal(previous.runtimeStatus, 'auth_invalid');
+    assert.equal(previous.runtimeReason, 'refresh_token_expired');
+
+    writeAccountNativeAuth(fs, fixture.aiHomeDir, accountRef, { credentials: codebuddyCredential(provider) });
+    const hydrated = await refreshLiveAccountRecord({
+      ...createBaseDeps(fixture, { checkStatus }), state, options: {}
+    }, provider, accountRef, { skipUsageRefresh: true, skipRuntimeReload: true });
+    const wireRecord = JSON.parse(JSON.stringify(hydrated));
+    assert.equal(wireRecord.configured, true);
+    assert.equal(wireRecord.runtimeStatus, 'healthy');
+    assert.equal(wireRecord.runtimeUntil, 0);
+    assert.equal(wireRecord.runtimeReason, '');
+    assert.equal({ ...previous, ...wireRecord }.runtimeStatus, 'healthy');
+
+    const after = await requestAccounts(fixture, { state, deps: { checkStatus } });
+    const fastRecord = after.body.accounts.find(account => account.accountRef === accountRef);
+    assert.equal(fastRecord.runtimeStatus, 'healthy');
+    assert.equal(fastRecord.runtimeReason, '');
+  });
+}
 
 test('web ui accounts list returns fast DB snapshot without synchronously depending on checkStatus', async (t) => {
   const fixture = createAccountFixture(t);
@@ -1016,6 +1049,37 @@ test('web ui refresh usage rejects DB api key accounts and reconciles by account
     reason: 'auth_invalid_reauth_required'
   }]);
 });
+
+for (const [provider, key] of [
+  ['zcode', 'ZCODE_API_KEY'],
+  ['codebuddy', 'CODEBUDDY_API_KEY'],
+  ['codebuddycn', 'CODEBUDDY_API_KEY'],
+  ['workbuddy', 'CODEBUDDY_API_KEY'],
+  ['workbuddycn', 'CODEBUDDY_API_KEY']
+]) {
+  test(`web ui ${provider} rejects API key quota refresh despite a stale OAuth state row`, async (t) => {
+    const fixture = createAccountFixture(t);
+    const accountRef = fixture.register(provider, '1', {
+      env: { [key]: 'fixture-api-key' },
+      state: { configured: true, apiKeyMode: false }
+    });
+    let probes = 0;
+    const res = createResCapture();
+    const pathname = `/v0/webui/accounts/${provider}/${accountRef}/refresh-usage`;
+    await handleWebUIRequest({
+      method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} }, res, options: {}, state: { accounts: {} },
+      deps: createBaseDeps(fixture, {
+        ensureUsageSnapshotAsync: async () => { probes += 1; return null; }
+      })
+    });
+    const body = JSON.parse(res.body);
+    assert.equal(res.statusCode, 400);
+    assert.equal(body.code, 'api_key_usage_refresh_unsupported');
+    assert.equal(body.job, undefined);
+    assert.equal(probes, 0);
+  });
+}
 
 test('web ui refresh usage reads auth-invalid state from accountRef runtime account', async (t) => {
   const fixture = createAccountFixture(t);

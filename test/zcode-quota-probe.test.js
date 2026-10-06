@@ -24,6 +24,7 @@ const {
   ZCODE_PLAN_BALANCE_URL,
   __private: probePrivate
 } = require('../lib/cli/services/usage/zcode-quota-probe');
+const { buildZcodeClientRequestMetadata } = require('../lib/account/zcode-client-metadata');
 
 function makeOkResponse(payload, status = 200) {
   return {
@@ -273,6 +274,83 @@ test('zcode quota probe fetches the plan balance endpoint with the jwt token', a
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
+});
+
+test('zcode quota probe sends the desktop client identity headers and device mid', async () => {
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: { zcodejwttoken: 'zcode-jwt-token' }
+  });
+  const runtime = path.join(aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef, '.zcode', 'v2');
+  fs.mkdirSync(runtime, { recursive: true });
+  fs.writeFileSync(path.join(runtime, 'telemetry-state.json'), JSON.stringify({ deviceMid: 'device-fixture' }));
+  const calls = [];
+  const probe = createZcodeQuotaProbe({
+    fs,
+    aiHomeDir,
+    appVersion: '3.14.4',
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async (url, init) => {
+      calls.push({ url, init });
+      return makeOkResponse(makeBalancePayload());
+    }
+  });
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.ok(result.snapshot);
+    assert.equal(calls[0].url, `${ZCODE_PLAN_BALANCE_URL}?app_version=3.14.4`);
+    assert.equal(calls[0].init.headers['X-ZCode-App-Version'], '3.14.4');
+    assert.equal(calls[0].init.headers['X-Device-Mid'], 'device-fixture');
+    assert.equal(calls[0].init.headers['X-Platform'], `${process.platform}-${process.arch}`);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('zcode client metadata is account-scoped, does not invent a device id, and reads the installed version deterministically', (t) => {
+  const first = setupZcodeAccount({ cliAccountId: '11', credentials: { zcodejwttoken: 'jwt-11' } });
+  const second = setupZcodeAccount({ cliAccountId: '12', credentials: { zcodejwttoken: 'jwt-12' } });
+  const appHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-app-'));
+  const plist = path.join(appHome, 'Applications', 'ZCode.app', 'Contents');
+  const firstTelemetry = path.join(first.aiHomeDir, 'run', 'auth-projections', 'zcode', first.accountRef, '.zcode', 'v2');
+  fs.mkdirSync(plist, { recursive: true });
+  fs.mkdirSync(firstTelemetry, { recursive: true });
+  fs.writeFileSync(path.join(plist, 'Info.plist'), '<plist><dict><key>CFBundleShortVersionString</key><string>3.14.4</string></dict></plist>');
+  fs.writeFileSync(path.join(firstTelemetry, 'telemetry-state.json'), JSON.stringify({ deviceMid: 'mid-first' }));
+  const processObj = {
+    platform: 'darwin',
+    arch: 'arm64',
+    env: { HOME: appHome }
+  };
+  t.after(() => {
+    fs.rmSync(first.aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(second.aiHomeDir, { recursive: true, force: true });
+    fs.rmSync(appHome, { recursive: true, force: true });
+  });
+
+  const firstMetadata = buildZcodeClientRequestMetadata(fs, {
+    processObj,
+    aiHomeDir: first.aiHomeDir,
+    accountRef: first.accountRef,
+    appVersion: undefined
+  });
+  const firstRepeat = buildZcodeClientRequestMetadata(fs, {
+    processObj,
+    aiHomeDir: first.aiHomeDir,
+    accountRef: first.accountRef
+  });
+  const secondMetadata = buildZcodeClientRequestMetadata(fs, {
+    processObj,
+    aiHomeDir: second.aiHomeDir,
+    accountRef: second.accountRef
+  });
+
+  assert.equal(firstMetadata.appVersion, '3.14.4');
+  assert.equal(firstMetadata.deviceMid, 'mid-first');
+  assert.equal(firstMetadata.headers['X-Device-Mid'], 'mid-first');
+  assert.equal(firstMetadata.headers['X-Platform'], 'darwin-arm64');
+  assert.deepEqual(firstRepeat, firstMetadata, '同一账号重复读取保持幂等');
+  assert.equal(secondMetadata.deviceMid, '');
+  assert.equal(secondMetadata.headers['X-Device-Mid'], undefined, '没有 telemetry 时不得伪造或借用设备身份');
 });
 
 test('zcode quota probe 使用账号绑定出口而不是 Server 全局代理', async () => {

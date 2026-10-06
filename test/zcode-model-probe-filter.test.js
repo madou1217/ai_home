@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   fetchZcodePlanBalanceModels,
@@ -80,4 +83,31 @@ test('fetchZcodePlanBalanceModels still returns an empty list when the plan has 
   });
   const models = await fetchZcodePlanBalanceModels({ fetchWithTimeout }, { zcodeJwtToken: 'jwt-token' }, 1000);
   assert.deepEqual(models, [], '全被过滤仍是有效的空结果，不回退 paas（原语义保留）');
+});
+
+test('fetchZcodePlanBalanceModels uses the account telemetry device mid and desktop app version', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-model-metadata-'));
+  const accountRef = 'acct_01000000000000000004';
+  const telemetryDir = path.join(aiHomeDir, 'run', 'auth-projections', 'zcode', accountRef, '.zcode', 'v2');
+  fs.mkdirSync(telemetryDir, { recursive: true });
+  fs.writeFileSync(path.join(telemetryDir, 'telemetry-state.json'), JSON.stringify({ deviceMid: 'mid-model-probe' }));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  let seenUrl = '';
+  let seenHeaders = null;
+  const models = await fetchZcodePlanBalanceModels({
+    fs,
+    aiHomeDir,
+    appVersion: '3.14.4',
+    fetchWithTimeout: async (url, init) => {
+      seenUrl = String(url);
+      seenHeaders = init.headers;
+      return jsonResponse({ code: 0, data: { balances: [{ capabilities: ['model:glm-5.3'] }] } });
+    }
+  }, { accountRef, zcodeJwtToken: 'jwt-model' }, 1000);
+
+  assert.deepEqual(models, ['glm-5.3']);
+  assert.equal(seenUrl, 'https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.14.4');
+  assert.equal(seenHeaders.authorization, 'Bearer jwt-model');
+  assert.equal(seenHeaders['X-Device-Mid'], 'mid-model-probe');
+  assert.equal(seenHeaders['X-ZCode-App-Version'], '3.14.4');
 });

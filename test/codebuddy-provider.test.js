@@ -430,9 +430,9 @@ test('buildProviderRuntimeEnv drops host API key for an OAuth codebuddy account'
 const { getDesktopLaunchStrategy } = require('../lib/server/desktop-launch');
 const { resolveElectronSpawnPlan } = require('../lib/server/desktop-launch/default-strategy');
 
-test('codebuddy Desktop inherits the default Electron user-data-dir isolation', () => {
+test('codebuddy Desktop preserves Electron user-data-dir isolation with native keychain preparation', () => {
   const strategy = getDesktopLaunchStrategy('codebuddy');
-  assert.equal(strategy.name, 'default', 'no provider-specific desktop strategy is needed');
+  assert.equal(strategy.name, 'codebuddy-keychain');
   const plan = resolveElectronSpawnPlan(
     { executablePath: '/Applications/CodeBuddy.app/Contents/MacOS/CodeBuddy' },
     { userDataDir: '/sandbox/cb-5/electron-user-data' }
@@ -804,9 +804,9 @@ test('workbuddy storage policies keep separate roots and separate login files', 
   }
 });
 
-test('all four family providers keep the default desktop isolation strategy', () => {
+test('all four family providers share the desktop keychain preparation strategy', () => {
   for (const provider of FAMILY_PROVIDERS) {
-    assert.equal(getDesktopLaunchStrategy(provider).name, 'default', provider);
+    assert.equal(getDesktopLaunchStrategy(provider).name, 'codebuddy-keychain', provider);
   }
 });
 

@@ -749,6 +749,32 @@ test('runtime blocks a projected provider launch when resources remain unreconci
   assert.equal(spawns.length, 0);
 });
 
+test('runtime reconciles a persistent CodeBuddy projection by session links only', () => {
+  // 账号 HOME 与桌面端共用，启动/退出都不删目录，只需校验声明的会话链接；
+  // 桌面端写入的 Library/.zshrc 等应用数据不能挡住 CLI 启动。
+  const calls = [];
+  const { runtime, spawns } = createRuntimeHarness({
+    AIH_RUNTIME_SHOW_USAGE: '0'
+  }, {
+    ensureSessionStoreLinks(provider, accountRef, options) {
+      calls.push({ provider, options });
+      return options.sessionLinksOnly === true
+        ? { migrated: 0, linked: 0 }
+        : { unresolved: ['Library/Application Support/CodeBuddy'] };
+    }
+  });
+
+  runtime.runCliPtyTracked('codebuddy', '1', [], false);
+
+  assert.equal(spawns.length, 1);
+  assert.equal(calls.length >= 1, true);
+  assert.equal(calls.every((call) => call.options.sessionLinksOnly === true), true);
+  const launchCalls = calls.length;
+  assert.throws(() => spawns[0].proc._onExit({ exitCode: 0 }), /EXIT:0/);
+  assert.equal(calls.length > launchCalls, true);
+  assert.equal(calls.every((call) => call.options.sessionLinksOnly === true), true);
+});
+
 test('runtime keeps codex account auth isolated while sharing host sqlite state', () => {
   const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0'

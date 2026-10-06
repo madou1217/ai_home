@@ -468,7 +468,7 @@ test('production supervisor dependencies use the explicit host/projection roots'
       calls.push(['capture', runtimeDir, provider, options.accountRef]);
     },
     reconcileProviderResources(reconcile, provider, accountRef, options) {
-      calls.push(['reconcile', reconcile, provider, accountRef, options.projectionRoot]);
+      calls.push(['reconcile', reconcile, provider, accountRef, options.projectionRoot, options.sessionLinksOnly]);
     },
     persistentSessionRegistry: {
       removeEntry(aiHomeDir, socket, session) {
@@ -485,7 +485,8 @@ test('production supervisor dependencies use the explicit host/projection roots'
   assert.deepEqual(calls, [
     ['create-store', context.aiHomeDir, context.hostHomeDir],
     ['capture', context.runtimeDir, context.provider, context.accountRef],
-    ['reconcile', ensureSessionStoreLinks, context.provider, context.accountRef, context.runtimeDir],
+    // 常驻投影随后不会被删除，只需校验会话链接。
+    ['reconcile', ensureSessionStoreLinks, context.provider, context.accountRef, context.runtimeDir, true],
     ['remove', context.aiHomeDir, context.socket, context.session]
   ]);
 });
@@ -527,6 +528,7 @@ test('production supervisor removes a transient projection after every terminal 
       });
       const child = createChildDouble();
       const processObj = createProcessDouble();
+      const reconcileOptions = [];
       const dependencies = createPersistentProviderSupervisorDependencies(context, {
         fs,
         path,
@@ -537,7 +539,9 @@ test('production supervisor removes a transient projection after every terminal 
         }),
         writeError() {},
         captureProviderAuth() {},
-        reconcileProviderResources() {},
+        reconcileProviderResources(_reconcile, _provider, _accountRef, options) {
+          reconcileOptions.push(options);
+        },
         persistentSessionRegistry: {
           removeEntry() { return true; }
         }
@@ -548,6 +552,8 @@ test('production supervisor removes a transient projection after every terminal 
       const result = await completed;
 
       assert.equal(result.exitCode, scenario.expectedExitCode);
+      // 随后要整目录删除的临时投影必须走全资源检查。
+      assert.deepEqual(reconcileOptions.map((options) => options.sessionLinksOnly), [false]);
       assert.equal(fs.existsSync(runtimeDir), false);
     });
   }

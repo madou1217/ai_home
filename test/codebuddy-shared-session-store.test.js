@@ -43,6 +43,12 @@ const CONFIG_DIR_BY_PROVIDER = Object.freeze({
   workbuddycn: '.workbuddy'
 });
 const FAMILY_PROVIDERS = Object.freeze(Object.keys(CONFIG_DIR_BY_PROVIDER));
+const DESKTOP_NAME_BY_PROVIDER = Object.freeze({
+  codebuddy: 'CodeBuddy',
+  codebuddycn: 'CodeBuddy CN',
+  workbuddy: 'WorkBuddy AI',
+  workbuddycn: 'WorkBuddy'
+});
 
 const CLI_CONFIGS = Object.fromEntries(
   FAMILY_PROVIDERS.map((provider) => [provider, { globalDir: CONFIG_DIR_BY_PROVIDER[provider] }])
@@ -294,6 +300,136 @@ test('toolchain state does not block family sessions or hide unrelated cache dat
       const blocked = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
       assert.deepEqual(blocked.unresolved, [path.join('Library', 'Caches', 'unknown-session-cache')], provider);
       assert.equal(nodeFs.readFileSync(path.join(unknown, 'session.jsonl'), 'utf8'), 'UNKNOWN-SESSION');
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('desktop encryption references and connector state stay private after first launch', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const projection = projectionDir(root, provider);
+      const files = [
+        ['Library', 'Preferences', 'com.apple.security.plist'],
+        ['.workbuddy-key-fallback', 'connector-keys', 'metadata'],
+        ['Library', 'Application Support', 'CodeBuddyExtension', 'Cache', 'cache.json'],
+        ['Library', 'Application Support', 'CodeBuddyExtension', 'Logs', 'runtime.log']
+      ];
+      const bundleId = { workbuddy: 'com.workbuddy.workbuddy-ai', workbuddycn: 'com.tencent.workbuddy.mac' }[provider];
+      if (bundleId) files.push(['Library', 'Caches', `${bundleId}.BundleMigration`, 'migration.flag']);
+      for (const segments of files) {
+        const file = path.join(projection, ...segments);
+        nodeFs.mkdirSync(path.dirname(file), { recursive: true });
+        nodeFs.writeFileSync(file, 'ACCOUNT-PRIVATE');
+      }
+
+      for (let iteration = 0; iteration < 2; iteration += 1) {
+        const result = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+        assert.deepEqual(result.unresolved || [], [], provider);
+        assert.equal(result.migrated, 0, provider);
+      }
+      for (const segments of files) {
+        const file = path.join(projection, ...segments);
+        assert.equal(nodeFs.readFileSync(file, 'utf8'), 'ACCOUNT-PRIVATE');
+        assert.equal(isLink(file), false);
+        assert.equal(nodeFs.existsSync(path.join(hostHomeDir, ...segments)), false);
+      }
+
+      const unknown = path.join(projection, 'Library', 'Preferences', 'unknown-session.jsonl');
+      nodeFs.writeFileSync(unknown, 'UNDECLARED-SESSION');
+      const blocked = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(blocked.unresolved, [path.join('Library', 'Preferences', 'unknown-session.jsonl')]);
+      assert.equal(nodeFs.readFileSync(unknown, 'utf8'), 'UNDECLARED-SESSION');
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('empty desktop workspaces link to one durable host directory without copying', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const appName = DESKTOP_NAME_BY_PROVIDER[provider];
+      const hostWorkspace = path.join(hostHomeDir, appName, 'Claw');
+      for (const accountRef of ['acct_a', 'acct_b']) {
+        const projection = projectionDir(root, provider, accountRef);
+        const workspace = path.join(projection, appName, 'Claw');
+        nodeFs.mkdirSync(workspace, { recursive: true });
+        const result = service.ensureSessionStoreLinks(provider, accountRef, { projectionRoot: projection });
+        assert.deepEqual(result.unresolved || [], [], provider);
+        assert.equal(isLink(workspace), true);
+        assert.equal(nodeFs.realpathSync(workspace), nodeFs.realpathSync(hostWorkspace));
+        nodeFs.writeFileSync(path.join(workspace, 'artifact.html'), 'DURABLE-ARTIFACT');
+        assert.equal(nodeFs.readFileSync(path.join(hostWorkspace, 'artifact.html'), 'utf8'), 'DURABLE-ARTIFACT');
+      }
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('desktop workspaces with user files are never migrated or replaced', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const appName = DESKTOP_NAME_BY_PROVIDER[provider];
+      const projection = projectionDir(root, provider);
+      const workspace = path.join(projection, appName, 'Claw');
+      const hostWorkspace = path.join(hostHomeDir, appName, 'Claw');
+      nodeFs.mkdirSync(workspace, { recursive: true });
+      nodeFs.mkdirSync(hostWorkspace, { recursive: true });
+      nodeFs.writeFileSync(path.join(workspace, 'account.html'), 'ACCOUNT-ARTIFACT');
+      nodeFs.writeFileSync(path.join(hostWorkspace, 'host.html'), 'HOST-ARTIFACT');
+      const result = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(result.unresolved, [path.join(appName, 'Claw')]);
+      assert.equal(result.migrated, 0);
+      assert.equal(isLink(workspace), false);
+      assert.deepEqual(readDirNames(workspace), ['account.html']);
+      assert.deepEqual(readDirNames(hostWorkspace), ['host.html']);
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('launch keeps unrelated HOME files while full cleanup still blocks on them', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const projection = projectionDir(root, provider);
+      const unknown = path.join(projection, 'local-tool-install', 'user-artifact.html');
+      nodeFs.mkdirSync(path.dirname(unknown), { recursive: true });
+      nodeFs.writeFileSync(unknown, 'USER-ARTIFACT');
+      const started = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection, sessionLinksOnly: true });
+      assert.deepEqual(started.unresolved || [], [], provider);
+      assert.equal(isLink(path.join(configDirOf(projection, provider), 'projects')), true);
+      assert.equal(nodeFs.readFileSync(unknown, 'utf8'), 'USER-ARTIFACT');
+
+      const cleanup = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
+      assert.deepEqual(cleanup.unresolved, ['local-tool-install'], provider);
+      assert.equal(nodeFs.readFileSync(unknown, 'utf8'), 'USER-ARTIFACT');
+      assert.equal(nodeFs.existsSync(path.join(hostHomeDir, 'local-tool-install')), false);
+    }
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('launch still refuses family projects containing unlinked session data', () => {
+  const { root, service } = createTree();
+  try {
+    for (const provider of FAMILY_PROVIDERS) {
+      const projection = projectionDir(root, provider);
+      const projects = path.join(configDirOf(projection, provider), 'projects');
+      nodeFs.mkdirSync(projects, { recursive: true });
+      nodeFs.writeFileSync(path.join(projects, 'existing.jsonl'), 'SESSION-DATA');
+      const result = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection, sessionLinksOnly: true });
+      assert.deepEqual(result.unresolved, ['projects']);
+      assert.equal(isLink(projects), false);
+      assert.equal(nodeFs.readFileSync(path.join(projects, 'existing.jsonl'), 'utf8'), 'SESSION-DATA');
     }
   } finally {
     fse.removeSync(root);

@@ -60,7 +60,8 @@ if(text==='delayed'){
     env: { ...process.env, HOME: home, AIH_HOST_HOME: home, REAL_HOME: home },
     getProfileDir: () => runtime,
     resolveNativeCliLaunch: () => ({ command: process.execPath, prefixArgs: [fixture] }),
-    ensureSessionStoreLinks: () => {
+    ensureSessionStoreLinks: (_provider, _ref, scope) => {
+      assert.equal(scope.sessionLinksOnly, true, 'native launch only reconciles declared family session links');
       const target = path.join(runtime, config, 'projects'); fs.mkdirSync(path.dirname(target), { recursive: true });
       if (!fs.existsSync(target)) fs.symlinkSync(projects, target); return { migrated: 0, linked: 1, unresolved: [] };
     }, onEvent: event => events.push(event)

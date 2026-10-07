@@ -393,8 +393,7 @@ test('server fabric descriptor advertises Management Key and removed client cred
   const controlEndpoint = `http://127.0.0.1:${port}`;
   const processObj = createProcessCapture();
   const relaySessionRegistry = { closeAll() {} };
-  const discoveryCalls = [];
-  let discoveryStops = 0;
+  const identityCalls = [];
   const outboundStarts = [];
   let outboundStops = 0;
   t.after(async () => {
@@ -414,13 +413,9 @@ test('server fabric descriptor advertises Management Key and removed client cred
     providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
-    startServerMdnsDiscovery: async (input) => {
-      discoveryCalls.push(input);
-      return {
-        identity: { id: 'server-stable-fabric', name: 'Stable Fabric' },
-        status: { ok: true },
-        stop() { discoveryStops += 1; }
-      };
+    loadOrCreateServerIdentity: (input) => {
+      identityCalls.push(input);
+      return { id: 'server-stable-fabric', name: 'Stable Fabric' };
     },
     readOutboundRelayConfig: () => ({ version: 1, relays: [] }),
     createOutboundRelayManager: (input) => ({
@@ -439,8 +434,8 @@ test('server fabric descriptor advertises Management Key and removed client cred
   assert.equal(descriptor.result.server.id, 'server-stable-fabric');
   assert.equal(descriptor.result.server.name, 'Stable Fabric');
   assert.equal(descriptor.result.server.endpoint, controlEndpoint);
-  assert.equal(discoveryCalls.length, 1);
-  assert.equal(discoveryCalls[0].port, port);
+  assert.equal(identityCalls.length, 1);
+  assert.equal(identityCalls[0].aiHomeDir, aiHomeDir);
   assert.equal(outboundStarts.length, 1);
   assert.equal(outboundStarts[0].input.stableServerId, 'server-stable-fabric');
   assert.equal(outboundStarts[0].input.localUrl, `http://127.0.0.1:${port}`);
@@ -466,7 +461,6 @@ test('server fabric descriptor advertises Management Key and removed client cred
   assert.equal((await removedResponse.json()).error, 'fabric_route_not_found');
 
   await processObj.stop();
-  assert.equal(discoveryStops, 1);
   assert.equal(outboundStops, 1);
 });
 
@@ -496,10 +490,7 @@ test('running Server exposes authenticated relay and FRP configuration APIs end 
     providerCliAutoUpgrade: false,
     logRequests: false
   }, createServerDeps(aiHomeDir, processObj, relaySessionRegistry, {
-    startServerMdnsDiscovery: async () => ({
-      identity: { id: 'server-route-config', name: 'Route Config' },
-      stop() {}
-    }),
+    loadOrCreateServerIdentity: () => ({ id: 'server-route-config', name: 'Route Config' }),
     createOutboundRelayManager: () => ({
       start: async () => {},
       update: async (config) => {

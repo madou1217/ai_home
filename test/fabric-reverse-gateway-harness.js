@@ -62,7 +62,6 @@ function isolatedServerEnvironment(homeDir) {
     HOME: homeDir,
     AIH_SERVER_ALLOW_MULTI: '1',
     AIH_SERVER_STRICT_PORT: '1',
-    AIH_SERVER_DISABLE_MDNS: '1',
     AIH_SERVER_SOURCE_AUTO_RESTART: '0',
     AIH_SERVER_CODEX_DESKTOP_HOOK: '0',
     AIH_SERVER_CODEX_CLI_HOOK: '0',

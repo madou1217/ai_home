@@ -87,10 +87,7 @@ function createServerDeps(aiHomeDir, processObj, lifecycle, overrides = {}) {
     fabricBrokerSessionRegistry: {
       closeAll() { lifecycle.fabricClosed += 1; }
     },
-    startServerMdnsDiscovery: async () => ({
-      identity: { id: 'server-lifecycle-test', name: 'Lifecycle Test' },
-      stop() { lifecycle.mdnsStopped += 1; }
-    }),
+    loadOrCreateServerIdentity: () => ({ id: 'server-lifecycle-test', name: 'Lifecycle Test' }),
     readOutboundRelayConfig: () => ({ version: 1, relays: [] }),
     createOutboundRelayManager: () => ({
       async start() {},

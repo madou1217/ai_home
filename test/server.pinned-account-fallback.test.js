@@ -63,7 +63,7 @@ async function assertPinnedRequestFallsBack(t, retirePin) {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-pin-fallback-'));
   const processObj = createProcessCapture();
   const lifecycle = {
-    relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, mdnsStopped: 0,
+    relayClosed: 0, webrtcClosed: 0, fabricClosed: 0,
     outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0
   };
   const mkAccount = (cliId, uuid, email) => {

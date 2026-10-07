@@ -28,7 +28,7 @@ function lifecycleCounters() {
     relayClosed: 0,
     webrtcClosed: 0,
     fabricClosed: 0,
-    mdnsStopped: 0,
+   
     outboundStopped: 0,
     frpStopped: 0,
     logTimers: new Set(),

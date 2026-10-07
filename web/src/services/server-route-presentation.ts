@@ -40,7 +40,6 @@ function routeKindLabel(
   viaServerId: string,
   serverNames: Map<string, string>
 ) {
-  if (kind === 'direct-lan') return '局域网直连';
   if (kind === 'direct') {
     const scope = classifyDirectServerEndpoint(endpoint);
     if (scope === 'loopback') return '本机直连';

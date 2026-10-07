@@ -40,7 +40,7 @@ function loadPresentationModule() {
 function createRoute(overrides = {}) {
   return {
     id: 'lan-home',
-    kind: 'direct-lan',
+    kind: 'direct',
     endpoint: 'http://192.168.1.20:9527',
     viaServerId: '',
     health: 'healthy',

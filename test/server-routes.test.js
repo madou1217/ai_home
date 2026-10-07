@@ -71,7 +71,7 @@ test('stable Server ids enforce the canonical 2 to 64 character contract without
   );
 });
 
-test('route normalization separates configured addresses from verified LAN routes', () => {
+test('route normalization folds legacy LAN routes into direct and classifies endpoints', () => {
   const routes = loadServerRoutes();
   const aws = routes.normalizeServerRoute({
     kind: 'direct-lan',
@@ -87,8 +87,9 @@ test('route normalization separates configured addresses from verified LAN route
   });
 
   assert.equal(aws.kind, 'direct');
-  assert.equal(lan.kind, 'direct-lan');
+  assert.equal(lan.kind, 'direct');
   assert.equal(configured.kind, 'direct');
+  assert.equal(routes.normalizeServerRoute({ kind: 'frp', endpoint: 'http://127.0.0.1:19527' }), null);
   assert.equal(routes.classifyDirectServerEndpoint('http://127.0.0.1:9527'), 'loopback');
   assert.equal(routes.classifyDirectServerEndpoint('http://192.168.1.20:9527'), 'lan');
   assert.equal(routes.classifyDirectServerEndpoint('https://ec2.example.com:9527'), 'other');
@@ -181,7 +182,7 @@ test('saving a second route for the same stable server merges routes and keeps o
     managementKey: 'local-management-key',
     routes: [{
       id: 'local-lan',
-      kind: 'direct-lan',
+      kind: 'direct',
       endpoint: 'http://192.168.1.20:9527',
       health: 'healthy',
       rttMs: 8
@@ -209,7 +210,7 @@ test('saving a second route for the same stable server merges routes and keeps o
   assert.equal(listed[0].routes.length, 2);
   assert.deepEqual(
     listed[0].routes.map((route) => route.kind).sort(),
-    ['direct-lan', 'relay-via-server']
+    ['direct', 'relay-via-server']
   );
   assert.equal(listed[0].endpoint, listed[0].routes.find((route) => route.id === 'relay-tokyo').endpoint);
   delete global.window;
@@ -219,7 +220,7 @@ test('route selection uses health RTT and failure rate with hysteresis and debou
   const routes = loadServerRoutes();
   const direct = {
     id: 'lan',
-    kind: 'direct-lan',
+    kind: 'direct',
     endpoint: 'http://192.168.1.20:9527',
     health: 'healthy',
     rttMs: 12,
@@ -279,7 +280,7 @@ test('automatic failover is safe for reads and gated for writes and streams', ()
   const routes = loadServerRoutes();
   const offline = {
     id: 'lan',
-    kind: 'direct-lan',
+    kind: 'direct',
     endpoint: 'http://192.168.1.20:9527',
     health: 'offline'
   };

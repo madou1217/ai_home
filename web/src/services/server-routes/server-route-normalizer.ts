@@ -1,7 +1,7 @@
 import type { ServerRoute, ServerRouteHealth, ServerRouteKind } from '@/types';
 import { normalizeControlPlaneEndpoint } from '../control-plane-api-client';
 
-const ROUTE_KINDS: ServerRouteKind[] = ['direct', 'direct-lan', 'relay-via-server'];
+const ROUTE_KINDS: ServerRouteKind[] = ['direct', 'relay-via-server'];
 const ROUTE_HEALTH_STATES: ServerRouteHealth[] = ['healthy', 'degraded', 'offline', 'unknown'];
 
 function normalizeText(value: unknown, maxLength = 512) {
@@ -63,9 +63,12 @@ export function normalizeStableServerId(value: unknown, fallbackSeed = ''): stri
 
 function normalizeRouteKind(value: unknown): ServerRouteKind | '' {
   const raw = normalizeText(value, 32).toLowerCase();
+  // 'direct-lan' came from the removed desktop LAN discovery; the LAN label
+  // is now derived from the endpoint, so stored routes fold into 'direct'.
   const kind = (
     raw === 'relay' ? 'relay-via-server'
-      : raw
+      : raw === 'direct-lan' ? 'direct'
+        : raw
   ) as ServerRouteKind;
   return ROUTE_KINDS.includes(kind) ? kind : '';
 }
@@ -96,11 +99,7 @@ export function normalizeServerRoute(
     : null;
   if (!source) return null;
   const endpoint = normalizeControlPlaneEndpoint(String(source.endpoint || ''));
-  const requestedKind = normalizeRouteKind(source.kind || defaults.kind);
-  const kind = requestedKind === 'direct-lan'
-    && classifyDirectServerEndpoint(endpoint) !== 'lan'
-    ? 'direct'
-    : requestedKind;
+  const kind = normalizeRouteKind(source.kind || defaults.kind);
   if (!endpoint || !kind) return null;
   const viaServerId = normalizeStableServerId(source.viaServerId || defaults.viaServerId);
   const identity = `${kind}|${endpoint}|${viaServerId}`;

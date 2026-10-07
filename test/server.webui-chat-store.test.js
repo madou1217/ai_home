@@ -55,3 +55,19 @@ test('webui-chat-store CRUD operations', () => {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
+
+test('chat sessions live under ~/.ai_home and listing never creates directories', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-chat-store-home-'));
+  try {
+    assert.deepEqual(listChatSessions(home), []);
+    assert.equal(readChatSession('chat-missing', home), null);
+    assert.deepEqual(fs.readdirSync(home), [], 'reads must not create directories');
+
+    saveChatSession({ id: 'chat-1', messages: [] }, home);
+
+    assert.deepEqual(fs.readdirSync(home), ['.ai_home']);
+    assert.deepEqual(fs.readdirSync(path.join(home, '.ai_home', 'chat-sessions')), ['chat-1.json']);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

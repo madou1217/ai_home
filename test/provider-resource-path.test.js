@@ -385,3 +385,11 @@ test('chat attachment resolution rejects symlinks escaping provider roots', (t) 
     aiHomeDir: path.join(temporaryHome, '.ai_home')
   }), /chat_attachment_not_found/);
 });
+
+test('providers without a native directory never get a runtime home at the host home root', () => {
+  const { resolveProviderRuntimeHomeRoot } = require('../lib/runtime/provider-storage-policy');
+  for (const provider of ['kiro', 'qoder', 'qodercn']) {
+    assert.equal(resolveProviderRuntimeHomeRoot('/Users/u', provider), '', provider);
+  }
+  assert.equal(resolveProviderRuntimeHomeRoot('/Users/u', 'codex'), '/Users/u/.codex/.aih-runtime-home');
+});

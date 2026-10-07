@@ -23,12 +23,6 @@ function loadControlPlaneSelectionModule() {
     if (request === './webui-auth-transport') {
       return { resolveWebUiManagementKey: () => '' };
     }
-    if (request === './native-server-profile-repository') {
-      return {
-        isNativeDesktopRuntime: () => false,
-        setActiveNativeServerProfile: async () => ({ activeProfileId: '', profile: null })
-      };
-    }
     if (request === './server-selection-scope') {
       const dependencyFilename = path.join(__dirname, '../web/src/services/server-selection-scope.ts');
       const dependency = new Module(dependencyFilename, mod);

@@ -1,4 +1,4 @@
-# AIH WebUI & Tauri 桌面应用视觉及交互设计规范
+# AIH WebUI 视觉及交互设计规范
 
 > **视觉规则已被 [`web/DESIGN.md`](../../DESIGN.md)（Calm Operator Console，2026-09）取代。** 本文保留作为历史参考；颜色、字体、圆角、阴影、材质、动效与组件外观一律以 `web/DESIGN.md` 与 `src/styles/design-tokens.css` 为准，两者冲突时以 DESIGN.md 为准。
 

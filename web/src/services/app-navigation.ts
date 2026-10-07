@@ -1,4 +1,3 @@
-import { isNativeDesktopRuntime } from './native-server-profile-repository';
 import {
   buildServerScopedHref,
   buildServerScopedSearch,
@@ -24,9 +23,7 @@ export function buildAppHref(pathname: string, search = '') {
   const query = explicitProfileId
     ? buildServerScopedSearch(rawQuery, explicitProfileId)
     : rawQuery;
-  return isNativeDesktopRuntime()
-    ? `#${path}${query || ''}`
-    : `${BROWSER_APP_BASE_PATH}${path}${query || ''}`;
+  return `${BROWSER_APP_BASE_PATH}${path}${query || ''}`;
 }
 
 export function buildServerScopedAppHref(pathname: string, profileId: string, search = '') {

@@ -1,14 +1,6 @@
 import type { ControlPlaneProfile } from '@/types';
 import { configAPI } from './api';
-import {
-  initializeNativeControlPlaneProfiles,
-  listControlPlaneProfiles,
-  saveControlPlaneProfileSecure
-} from './control-plane-profiles';
-import {
-  isNativeDesktopRuntime,
-  rotateNativeServerManagementKey
-} from './native-server-profile-repository';
+import { saveControlPlaneProfile } from './control-plane-profiles';
 
 export const MIN_MANAGEMENT_KEY_LENGTH = 32;
 export const MAX_MANAGEMENT_KEY_LENGTH = 8192;
@@ -86,7 +78,7 @@ export async function updateSavedManagementKey(
   value: unknown
 ) {
   const managementKey = normalizeSavedManagementKey(value);
-  return saveControlPlaneProfileSecure(profileWithManagementKey(profile, managementKey));
+  return saveControlPlaneProfile(profileWithManagementKey(profile, managementKey));
 }
 
 export async function rotateManagementKey(
@@ -98,19 +90,6 @@ export async function rotateManagementKey(
     throw createRotationError('missing_active_server_profile', '请先选择要轮换的 Server。');
   }
 
-  if (isNativeDesktopRuntime()) {
-    await rotateNativeServerManagementKey(profile.id, managementKey);
-    await initializeNativeControlPlaneProfiles();
-    const saved = listControlPlaneProfiles().find((item) => item.id === profile.id) || null;
-    if (!saved) {
-      throw createRotationError(
-        'rotated_profile_refresh_failed',
-        'Management Key 已轮换，但当前客户端未能刷新 Server Profile。'
-      );
-    }
-    return saved;
-  }
-
   const previousManagementKey = String(profile.managementKey || '').trim();
   if (!previousManagementKey) {
     throw createRotationError('missing_management_key', '当前客户端没有保存该 Server 的 Management Key。');
@@ -118,7 +97,7 @@ export async function rotateManagementKey(
 
   await configAPI.rotateManagementKey(managementKey);
   try {
-    return await saveControlPlaneProfileSecure(
+    return await saveControlPlaneProfile(
       profileWithManagementKey(profile, managementKey)
     );
   } catch (saveError) {

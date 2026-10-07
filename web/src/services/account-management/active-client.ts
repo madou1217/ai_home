@@ -1,6 +1,6 @@
 import { resolveCurrentControlPlaneProfile } from '../control-plane-selection.ts';
 import { listControlPlaneProfiles } from '../control-plane-profiles.ts';
-import { createServerTransport } from '../server-transport/index.ts';
+import { BrowserServerTransport } from '../server-transport/index.ts';
 import {
   AccountManagementClient,
   type AccountManagementClientOptions
@@ -15,16 +15,14 @@ export async function createActiveAccountManagementClient(
   const profileId = overrides.profileId
     || resolveCurrentControlPlaneProfile(profiles).profileId;
   if (!profileId) throw new AccountManagementError('active_server_profile_missing');
-  const transport = overrides.transport || await createServerTransport({
-    browser: {
-      resolveProfile(requestedProfileId) {
-        const profile = profiles.find(({ id }) => id === requestedProfileId);
-        if (!profile) throw new AccountManagementError('server_profile_not_found');
-        return {
-          endpoint: profile.endpoint,
-          managementKey: profile.managementKey
-        };
-      }
+  const transport = overrides.transport || new BrowserServerTransport({
+    resolveProfile(requestedProfileId) {
+      const profile = profiles.find(({ id }) => id === requestedProfileId);
+      if (!profile) throw new AccountManagementError('server_profile_not_found');
+      return {
+        endpoint: profile.endpoint,
+        managementKey: profile.managementKey
+      };
     }
   });
   return new AccountManagementClient({

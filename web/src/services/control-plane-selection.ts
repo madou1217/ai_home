@@ -1,10 +1,6 @@
 import type { ControlPlaneProfile } from '@/types';
 import { resolveWebUiManagementKey } from './webui-auth-transport';
 import {
-  isNativeDesktopRuntime,
-  setActiveNativeServerProfile
-} from './native-server-profile-repository';
-import {
   getExplicitServerProfileId,
   hasExplicitServerSelection,
   setExplicitServerProfileId
@@ -43,7 +39,7 @@ function getEventTarget(): EventTarget | null {
 }
 
 function getSharedProfileFetch(): typeof fetch | null {
-  if (typeof window === 'undefined' || isNativeDesktopRuntime()) return null;
+  if (typeof window === 'undefined') return null;
   const fetcher = (window as Window & { fetch?: typeof fetch }).fetch;
   return typeof fetcher === 'function' ? fetcher.bind(window) : null;
 }
@@ -120,18 +116,6 @@ export function setActiveControlPlaneProfileId(
   emitActiveControlPlaneProfileChange({ profileId: id, previousProfileId }, eventTarget);
   persistSharedActiveControlPlaneProfileId(id);
   return id;
-}
-
-export async function setActiveControlPlaneProfileIdSecure(
-  profileId: string,
-  storage = getStorage(),
-  eventTarget = getEventTarget()
-) {
-  const id = normalizeProfileId(profileId);
-  if (isNativeDesktopRuntime()) {
-    await setActiveNativeServerProfile(id);
-  }
-  return setActiveControlPlaneProfileId(id, storage, eventTarget);
 }
 
 export function clearActiveControlPlaneProfileId(storage = getStorage(), eventTarget = getEventTarget()) {
@@ -271,23 +255,14 @@ export function selectActiveControlPlaneProfile(
   return resolveActiveControlPlaneProfile(profiles, id);
 }
 
-export async function selectActiveControlPlaneProfileSecure(
-  profiles: ControlPlaneProfile[],
-  profileId: string,
-  storage = getStorage()
-) {
-  const id = await setActiveControlPlaneProfileIdSecure(profileId, storage);
-  return resolveActiveControlPlaneProfile(profiles, id);
-}
-
-export async function selectCurrentControlPlaneProfileSecure(
+export function selectCurrentControlPlaneProfile(
   profiles: ControlPlaneProfile[],
   profileId: string,
   storage = getStorage(),
   eventTarget = getEventTarget()
 ) {
   if (!hasExplicitServerSelection()) {
-    return selectActiveControlPlaneProfileSecure(profiles, profileId, storage);
+    return selectActiveControlPlaneProfile(profiles, profileId, storage);
   }
   const previousProfileId = getCurrentControlPlaneProfileId(storage);
   const id = setExplicitServerProfileId(profileId);

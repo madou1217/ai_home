@@ -15,7 +15,7 @@ function compileTypeScript(filename) {
   }).outputText;
 }
 
-function loadConnectionService() {
+function loadConnectionService(saveProfile) {
   const filename = path.join(__dirname, '../web/src/services/control-plane-profile-connection.ts');
   const mod = new Module(filename, module);
   mod.filename = filename;
@@ -26,17 +26,7 @@ function loadConnectionService() {
       return {
         isControlPlaneManagementKeyConfigured: (profile) => Boolean(profile?.managementKeyConfigured),
         normalizeControlPlaneEndpoint: (value) => String(value || '').replace(/\/+$/u, ''),
-        saveControlPlaneProfileSecure: async () => {
-          throw new Error('unexpected_default_save');
-        }
-      };
-    }
-    if (request === './native-server-profile-repository') {
-      return {
-        authorizeNativeLanProfile: async () => {
-          throw new Error('unexpected_default_lan_authorization');
-        },
-        isNativeDesktopRuntime: () => false
+        saveControlPlaneProfile: saveProfile
       };
     }
     return originalRequire(request);
@@ -60,9 +50,12 @@ function createProfile(overrides = {}) {
   };
 }
 
-test('authorizing an AWS Server saves its own endpoint and never runs LAN proof', async () => {
-  const service = loadConnectionService();
+test('authorizing an AWS Server saves its own endpoint and Management Key', async () => {
   const calls = [];
+  const service = loadConnectionService((input) => {
+    calls.push(input);
+    return input;
+  });
   const aws = createProfile();
   await service.connectControlPlaneProfile({
     profiles: [aws],
@@ -70,62 +63,22 @@ test('authorizing an AWS Server saves its own endpoint and never runs LAN proof'
     endpoint: 'https://aws.example.com',
     name: 'AWS Tokyo',
     managementKey: 'management-key'
-  }, {
-    isNativeRuntime: () => true,
-    authorizeLanProfile: async () => calls.push('lan'),
-    saveProfile: async (input) => {
-      calls.push(input);
-      return input;
-    }
   });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].endpoint, 'https://aws.example.com');
   assert.equal(calls[0].managementKey, 'management-key');
+  assert.equal(calls[0].managementKeyConfigured, true);
   assert.equal(calls[0].stableServerId, 'server-aws');
 });
 
-test('native LAN authorization verifies the discovered route before saving metadata', async () => {
-  const service = loadConnectionService();
-  const calls = [];
-  const lan = createProfile({
-    id: 'lan',
-    stableServerId: 'server-lan',
-    endpoint: 'http://192.168.1.20:9527',
-    routes: [{ id: 'lan-route', kind: 'direct-lan', endpoint: 'http://192.168.1.20:9527' }]
-  });
-  await service.connectControlPlaneProfile({
-    profiles: [lan],
-    profileId: 'lan',
-    endpoint: lan.endpoint,
-    managementKey: 'm'.repeat(32)
-  }, {
-    isNativeRuntime: () => true,
-    authorizeLanProfile: async (profileId, managementKey) => {
-      calls.push({ type: 'proof', profileId, managementKey });
-    },
-    saveProfile: async (input) => {
-      calls.push({ type: 'save', input });
-      return input;
-    }
-  });
-
-  assert.deepEqual(calls.map((call) => call.type), ['proof', 'save']);
-  assert.equal(calls[1].input.managementKey, '');
-  assert.equal(calls[1].input.managementKeyConfigured, true);
-});
-
 test('a pending Server cannot connect without a Management Key', async () => {
-  const service = loadConnectionService();
+  const service = loadConnectionService(() => ({}));
   await assert.rejects(
     service.connectControlPlaneProfile({
       profiles: [createProfile()],
       profileId: 'aws',
       endpoint: 'https://aws.example.com'
-    }, {
-      isNativeRuntime: () => false,
-      authorizeLanProfile: async () => {},
-      saveProfile: async () => ({})
     }),
     /请输入 Management Key/u
   );

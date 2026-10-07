@@ -34,7 +34,7 @@ function splitField(line: string) {
 
 /**
  * Incremental SSE parser. Raw bytes are decoded with a streaming TextDecoder,
- * so a multi-byte UTF-8 code point may safely span browser or Tauri chunks.
+ * so a multi-byte UTF-8 code point may safely span network chunks.
  */
 export function createServerSseParser(
   onEvent: (event: ServerSseEvent) => void

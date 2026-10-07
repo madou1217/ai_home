@@ -5,7 +5,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('../web/node_modules/typescript');
 
-function loadModule(options = {}) {
+function loadModule() {
   const filename = path.join(__dirname, '../web/src/services/open-external-url.ts');
   const source = fs.readFileSync(filename, 'utf8');
   const compiled = ts.transpileModule(source, {
@@ -18,16 +18,6 @@ function loadModule(options = {}) {
   const mod = new Module(filename, module);
   mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const originalRequire = mod.require.bind(mod);
-  mod.require = (request) => {
-    if (request === './native-server-profile-repository') {
-      return { isNativeDesktopRuntime: () => options.native === true };
-    }
-    if (request === '@tauri-apps/api/shell' && options.openImpl) {
-      return { open: options.openImpl };
-    }
-    return originalRequire(request);
-  };
   mod._compile(compiled.outputText, filename);
   return mod.exports;
 }
@@ -57,20 +47,4 @@ test('external URL adapter opens only credential-free HTTP(S) URLs', async (t) =
   assert.equal(external.isExternalHttpUrl('javascript:alert(1)'), false);
   await assert.rejects(external.openExternalUrl('file:///tmp/secret'), /invalid_external_url/);
   await assert.rejects(external.openExternalUrl('https://user:pass@example.com'), /invalid_external_url/);
-});
-
-test('external URL adapter delegates native HTTP(S) URLs to the Tauri shell bridge', async () => {
-  const calls = [];
-  const external = loadModule({
-    native: true,
-    openImpl: async (url) => calls.push(url)
-  });
-
-  await external.openExternalUrl('https://auth.example.com/oauth?state=abc');
-
-  assert.deepEqual(calls, ['https://auth.example.com/oauth?state=abc']);
-  await assert.rejects(
-    external.openExternalUrl('https://user:secret@auth.example.com'),
-    /invalid_external_url/
-  );
 });

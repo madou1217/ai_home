@@ -1,8 +1,7 @@
 import type { ControlPlaneEndpointHint } from '@/types';
-import { isNativeDesktopRuntime } from './native-server-profile-repository';
 
 export function getBrowserControlEndpoint(): string {
-  if (typeof window === 'undefined' || isNativeDesktopRuntime()) return '';
+  if (typeof window === 'undefined') return '';
   return window.location.origin;
 }
 

@@ -2,10 +2,6 @@ import type { ControlPlaneProfile } from '@/types';
 import { providerIdsByCapability } from '../providers/catalog';
 import { createControlPlaneApiClient } from './control-plane-api-client';
 import {
-  isNativeServerTransportAvailable,
-  requestNativeServerJson
-} from './native-server-transport';
-import {
   markActiveControlPlaneProfileDegraded,
   requireActiveControlPlaneProfile,
   resolveStoredActiveControlPlaneContext
@@ -742,27 +738,12 @@ export function buildFabricRegistryRelayViews(registry: FabricRegistryResult): F
 }
 
 export async function fetchFabricRegistry(
-  profile: Pick<ControlPlaneProfile, 'endpoint' | 'managementKey'>
-    & Partial<Pick<ControlPlaneProfile, 'id'>>,
+  profile: Pick<ControlPlaneProfile, 'endpoint' | 'managementKey'>,
   options: {
     timeoutMs?: number;
     fetchImpl?: typeof fetch;
   } = {}
 ): Promise<FabricRegistryResult> {
-  if (isNativeServerTransportAvailable()) {
-    const profileId = String(profile.id || '').trim();
-    if (!profileId) throw new Error('missing_native_server_profile_id');
-    const response = await requestNativeServerJson({
-      profileId,
-      method: 'GET',
-      path: '/v0/fabric/registry',
-      timeoutMs: options.timeoutMs
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`fabric_registry_http_${response.status}`);
-    }
-    return normalizeFabricRegistryResult(response.data);
-  }
   const client = createControlPlaneApiClient({
     endpoint: profile.endpoint,
     managementKey: profile.managementKey,

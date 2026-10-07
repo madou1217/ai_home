@@ -1,11 +1,9 @@
 import type {
   ControlPlaneProfile,
-  ServerAuthorizationState,
   ServerRoute,
   ServerRouteHealth,
   ServerRouteKind
 } from '@/types';
-import type { ControlPlaneProfileSaveInput } from './control-plane-profiles';
 import { mergeServerRoutes, scoreServerRoute } from './server-routes/server-route-service';
 import { classifyDirectServerEndpoint } from './server-routes/server-route-normalizer';
 
@@ -34,15 +32,6 @@ export interface ServerRouteRow {
   authorizationPending: boolean;
   authorizationLabel: '已授权' | '已发现，待授权';
   routes: ServerRouteView[];
-}
-
-interface DiscoveredServerInput {
-  stableServerId: string;
-  name: string;
-  credentialRef?: string;
-  managementKeyConfigured?: boolean;
-  authorizationState?: ServerAuthorizationState;
-  routes: ServerRoute[];
 }
 
 function routeKindLabel(
@@ -151,42 +140,4 @@ export function buildServerRouteRows(profiles: ControlPlaneProfile[]): ServerRou
       left.profile.name.localeCompare(right.profile.name)
         || left.stableServerId.localeCompare(right.stableServerId)
     ));
-}
-
-export function buildLanDiscoveryProfileInputs(
-  existingProfiles: ControlPlaneProfile[],
-  discoveredServers: DiscoveredServerInput[],
-  discoveredStableServerIds: string[]
-): ControlPlaneProfileSaveInput[] {
-  const discoveredIds = new Set(discoveredStableServerIds.map((value) => String(value || '').trim()).filter(Boolean));
-  const existingByStableId = new Map(
-    existingProfiles.map((profile) => [profile.stableServerId, profile])
-  );
-
-  return discoveredServers
-    .filter((server) => discoveredIds.has(server.stableServerId))
-    .map((server) => {
-      const existing = existingByStableId.get(server.stableServerId) || null;
-      const routes = mergeServerRoutes(existing?.routes, server.routes);
-      const activeRoute = routes.find((route) => route.id === existing?.activeRouteId)
-        || routes.find((route) => route.endpoint === existing?.endpoint)
-        || [...routes].sort((left, right) => scoreServerRoute(right) - scoreServerRoute(left))[0]
-        || null;
-      const managementKeyConfigured = Boolean(
-        existing?.managementKeyConfigured || server.managementKeyConfigured
-      );
-      return {
-        stableServerId: server.stableServerId,
-        name: server.name || existing?.name || server.stableServerId,
-        // Discovery metadata must never silently replace the credential-bound
-        // primary endpoint. Native verifies and promotes LAN routes separately.
-        endpoint: existing?.endpoint || activeRoute?.endpoint || '',
-        routes,
-        activeRouteId: activeRoute?.id || '',
-        authorizationState: managementKeyConfigured ? 'authorized' : 'discovered-pending-auth',
-        state: existing?.state || (managementKeyConfigured ? 'ready' : 'offline'),
-        credentialRef: existing?.credentialRef || server.credentialRef || '',
-        managementKeyConfigured
-      };
-    });
 }

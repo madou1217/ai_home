@@ -5,14 +5,6 @@
  * as well, so neither value is copied into URLs or DOM resource attributes.
  */
 
-import { isNativeDesktopRuntime } from './native-server-profile-repository';
-import {
-  isNativeServerTransportAvailable,
-  openNativeServerSse,
-  requestNativeServerBlob,
-  requestNativeServerJson
-} from './native-server-transport';
-import type { ServerStreamHandle } from './server-transport';
 import {
   getEffectiveServerProfileId,
   getExplicitServerProfileId
@@ -49,7 +41,7 @@ export function isSameServerOrigin(left: string | URL, right: string | URL) {
 
 export function resolveWebUiManagementKey(): string {
   try {
-    if (typeof window === 'undefined' || isNativeDesktopRuntime()) return '';
+    if (typeof window === 'undefined') return '';
     const origin = new URL(window.location.origin);
     const raw = window.localStorage.getItem(SERVER_PROFILE_STORAGE_KEY);
     const profiles = raw ? JSON.parse(raw) : [];
@@ -104,57 +96,7 @@ export function buildAuthorizedWebUiHeaders(input?: HeadersInit) {
   return headers;
 }
 
-function nativeResourcePath(input: RequestInfo | URL) {
-  const raw = input instanceof Request ? input.url : String(input);
-  const parsed = new URL(raw, 'https://aih-native.invalid');
-  return `${parsed.pathname}${parsed.search}`;
-}
-
-function nativeActiveProfileId() {
-  if (typeof window === 'undefined') return '';
-  return getEffectiveServerProfileId(
-    String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim()
-  );
-}
-
-function parseNativeRequestBody(body: BodyInit | null | undefined) {
-  if (body === undefined || body === null || body === '') return undefined;
-  if (typeof body !== 'string') throw new Error('native_request_body_must_be_json');
-  return JSON.parse(body);
-}
-
 export async function fetchAuthorizedWebUiResource(input: RequestInfo | URL, init: RequestInit = {}) {
-  if (isNativeServerTransportAvailable()) {
-    const profileId = nativeActiveProfileId();
-    if (!profileId) throw new Error('missing_active_server_profile');
-    try {
-      const response = await requestNativeServerJson({
-        profileId,
-        method: String(init.method || 'GET').toUpperCase() as 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT',
-        path: nativeResourcePath(input),
-        body: parseNativeRequestBody(init.body),
-        accept: new Headers(init.headers || {}).get('accept') || 'application/json',
-        contentType: new Headers(init.headers || {}).get('content-type') || undefined,
-        signal: init.signal || undefined
-      });
-      return new Response(JSON.stringify(response.data), {
-        status: response.status,
-        headers: {
-          'content-type': response.headers.contentType || 'application/json'
-        }
-      });
-    } catch (error) {
-      const source = error as { code?: unknown; status?: unknown };
-      const status = Number(source?.status);
-      if (Number.isInteger(status) && status >= 400 && status <= 599) {
-        return new Response(JSON.stringify({ error: String(source?.code || 'native_server_error') }), {
-          status,
-          headers: { 'content-type': 'application/json' }
-        });
-      }
-      throw error;
-    }
-  }
   return fetch(input, {
     ...init,
     headers: buildAuthorizedWebUiHeaders(init.headers),
@@ -166,23 +108,9 @@ export async function fetchAuthorizedWebUiBlob(
   input: RequestInfo | URL,
   init: RequestInit = {}
 ) {
-  if (!isNativeServerTransportAvailable()) {
-    const response = await fetchAuthorizedWebUiResource(input, init);
-    if (!response.ok) throw new Error(`authorized_media_http_${response.status}`);
-    return response.blob();
-  }
-  const profileId = nativeActiveProfileId();
-  if (!profileId) throw new Error('missing_active_server_profile');
-  const result = await requestNativeServerBlob({
-    profileId,
-    method: String(init.method || 'GET').toUpperCase() as 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT',
-    path: nativeResourcePath(input),
-    body: parseNativeRequestBody(init.body),
-    accept: new Headers(init.headers || {}).get('accept') || '*/*',
-    contentType: new Headers(init.headers || {}).get('content-type') || undefined,
-    signal: init.signal || undefined
-  });
-  return result.data;
+  const response = await fetchAuthorizedWebUiResource(input, init);
+  if (!response.ok) throw new Error(`authorized_media_http_${response.status}`);
+  return response.blob();
 }
 
 function findSseBoundary(buffer: string) {
@@ -304,108 +232,6 @@ class AuthorizedWebUiEventSource extends EventTarget {
   }
 }
 
-class NativeAuthorizedWebUiEventSource extends EventTarget {
-  readonly url: string;
-  readonly withCredentials = false;
-  readonly CONNECTING = 0;
-  readonly OPEN = 1;
-  readonly CLOSED = 2;
-  readyState: number = 0;
-  onopen: ((this: EventSource, ev: Event) => unknown) | null = null;
-  onmessage: ((this: EventSource, ev: MessageEvent) => unknown) | null = null;
-  onerror: ((this: EventSource, ev: Event) => unknown) | null = null;
-
-  private handle: ServerStreamHandle | null = null;
-  private reconnectTimer: number | null = null;
-  private closed = false;
-
-  constructor(url: string) {
-    super();
-    this.url = url;
-    queueMicrotask(() => this.connect());
-  }
-
-  close() {
-    this.closed = true;
-    this.readyState = this.CLOSED;
-    if (this.reconnectTimer !== null) {
-      window.clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    const handle = this.handle;
-    this.handle = null;
-    if (handle) void handle.cancel();
-  }
-
-  private emitOpen() {
-    const event = new Event('open');
-    this.onopen?.call(this as unknown as EventSource, event);
-    this.dispatchEvent(event);
-  }
-
-  private emitMessage(data: string) {
-    const event = new MessageEvent('message', { data });
-    this.onmessage?.call(this as unknown as EventSource, event);
-    this.dispatchEvent(event);
-  }
-
-  private emitError() {
-    const event = new Event('error');
-    this.onerror?.call(this as unknown as EventSource, event);
-    this.dispatchEvent(event);
-  }
-
-  private scheduleReconnect() {
-    if (this.closed || this.reconnectTimer !== null) return;
-    this.readyState = this.CONNECTING;
-    this.reconnectTimer = window.setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, 1000);
-  }
-
-  private async connect() {
-    if (this.closed) return;
-    const profileId = String(window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || '').trim();
-    if (!profileId) {
-      this.emitError();
-      this.scheduleReconnect();
-      return;
-    }
-    try {
-      const handle = await openNativeServerSse({
-        profileId,
-        method: 'GET',
-        path: this.url,
-        accept: 'text/event-stream'
-      }, {
-        onOpen: () => {
-          if (this.closed) return;
-          this.readyState = this.OPEN;
-          this.emitOpen();
-        },
-        onEvent: (event) => this.emitMessage(event.data)
-      });
-      if (this.closed) {
-        await handle.cancel();
-        return;
-      }
-      this.handle = handle;
-      await handle.done;
-      if (this.handle === handle) this.handle = null;
-      if (!this.closed) this.emitError();
-    } catch (_error) {
-      if (!this.closed) this.emitError();
-    } finally {
-      this.scheduleReconnect();
-    }
-  }
-}
-
 export function guardedWebUiEventSource(path: string): EventSource {
-  return (
-    isNativeServerTransportAvailable()
-      ? new NativeAuthorizedWebUiEventSource(path)
-      : new AuthorizedWebUiEventSource(path)
-  ) as unknown as EventSource;
+  return new AuthorizedWebUiEventSource(path) as unknown as EventSource;
 }

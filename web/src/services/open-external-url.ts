@@ -1,5 +1,3 @@
-import { isNativeDesktopRuntime } from './native-server-profile-repository';
-
 function normalizeExternalUrl(value: string) {
   let url: URL;
   try {
@@ -24,11 +22,6 @@ export function isExternalHttpUrl(value?: string) {
 
 export async function openExternalUrl(value: string) {
   const url = normalizeExternalUrl(value);
-  if (isNativeDesktopRuntime()) {
-    const { open } = await import('@tauri-apps/api/shell');
-    await open(url);
-    return;
-  }
   const opened = window.open(url, '_blank', 'noopener,noreferrer');
   if (!opened) throw new Error('external_url_open_blocked');
   opened.opener = null;

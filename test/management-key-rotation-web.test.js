@@ -74,17 +74,9 @@ test('browser management key rotation updates Server before the saved profile', 
       }
     },
     './control-plane-profiles': {
-      initializeNativeControlPlaneProfiles: async () => {},
-      listControlPlaneProfiles: () => [],
-      saveControlPlaneProfileSecure: async (input) => {
+      saveControlPlaneProfile: async (input) => {
         savedInputs.push(input);
         return createProfile({ managementKey: input.managementKey, updatedAt: 2 });
-      }
-    },
-    './native-server-profile-repository': {
-      isNativeDesktopRuntime: () => false,
-      rotateNativeServerManagementKey: async () => {
-        throw new Error('unexpected_native_rotation');
       }
     }
   });
@@ -111,16 +103,8 @@ test('browser management key rotation compensates Server when local persistence 
       }
     },
     './control-plane-profiles': {
-      initializeNativeControlPlaneProfiles: async () => {},
-      listControlPlaneProfiles: () => [],
-      saveControlPlaneProfileSecure: async () => {
+      saveControlPlaneProfile: async () => {
         throw new Error('storage_unavailable');
-      }
-    },
-    './native-server-profile-repository': {
-      isNativeDesktopRuntime: () => false,
-      rotateNativeServerManagementKey: async () => {
-        throw new Error('unexpected_native_rotation');
       }
     }
   });
@@ -135,48 +119,10 @@ test('browser management key rotation compensates Server when local persistence 
   ]);
 });
 
-test('native management key rotation uses only the dedicated Rust command', async () => {
-  const profile = createProfile({ managementKey: '' });
-  const replacement = 'new-management-key-that-is-long-enough';
-  const rotatedProfile = createProfile({ managementKey: '', updatedAt: 2 });
-  const nativeCalls = [];
-  let initialized = false;
-  const service = loadRotationService({
-    './api': {
-      configAPI: {
-        rotateManagementKey: async () => {
-          throw new Error('generic_transport_must_not_receive_credentials');
-        }
-      }
-    },
-    './control-plane-profiles': {
-      initializeNativeControlPlaneProfiles: async () => { initialized = true; },
-      listControlPlaneProfiles: () => initialized ? [rotatedProfile] : [profile],
-      saveControlPlaneProfileSecure: async () => {
-        throw new Error('unexpected_renderer_profile_write');
-      }
-    },
-    './native-server-profile-repository': {
-      isNativeDesktopRuntime: () => true,
-      rotateNativeServerManagementKey: async (profileId, managementKey) => {
-        nativeCalls.push({ profileId, managementKey });
-        return { rotated: true, profile: {} };
-      }
-    }
-  });
-
-  const saved = await service.rotateManagementKey(profile, replacement);
-
-  assert.deepEqual(nativeCalls, [{ profileId: profile.id, managementKey: replacement }]);
-  assert.equal(initialized, true);
-  assert.equal(saved.managementKey, '');
-});
-
 test('management key generator produces a 32-byte base64url credential', () => {
   const service = loadRotationService({
     './api': { configAPI: {} },
-    './control-plane-profiles': {},
-    './native-server-profile-repository': {}
+    './control-plane-profiles': {}
   });
   const generated = service.generateManagementKey({
     getRandomValues(bytes) {

@@ -6,10 +6,6 @@ import {
 } from './control-plane-api-client';
 
 import {
-  isNativeDesktopRuntime,
-} from './native-server-profile-repository';
-
-import {
   migrateLegacyServerRoutes,
   normalizeStableServerId,
 } from './server-routes/server-route-service';
@@ -830,9 +826,7 @@ export function normalizeProfile(value: unknown): ControlPlaneProfile | null {
   const now = Date.now();
   const descriptor = normalizeAnyDescriptor(source.descriptor);
   const id = normalizeText(source.id, 96) || stableProfileId(legacyEndpoint);
-  const managementKey = isNativeDesktopRuntime()
-    ? ''
-    : normalizeText(source.managementKey, 4096);
+  const managementKey = normalizeText(source.managementKey, 4096);
   const credentialRef = normalizeText(source.credentialRef, 256);
   const managementKeyConfigured = Boolean(
     source.managementKeyConfigured === true || managementKey

@@ -5,15 +5,14 @@ import {
   isControlPlaneProfileReady,
   listControlPlaneProfiles,
   refreshControlPlaneDeviceState,
-  removeControlPlaneProfileSecure,
-  saveControlPlaneProfileSecure,
+  removeControlPlaneProfile,
+  saveControlPlaneProfile,
   syncSharedControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import {
   getActiveControlPlaneProfileId,
   resolveStoredActiveControlPlaneProfile,
   selectActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
 import { connectControlPlaneProfile } from '@/services/control-plane-profile-connection';
@@ -114,7 +113,7 @@ export function useServerSetupProfiles() {
       try {
         await refreshControlPlaneDeviceState(profile);
       } catch (error) {
-        await saveControlPlaneProfileSecure({
+        await saveControlPlaneProfile({
           name: profile.name,
           stableServerId: profile.stableServerId,
           endpoint: profile.endpoint,
@@ -127,11 +126,11 @@ export function useServerSetupProfiles() {
           managementKeyConfigured: profile.managementKeyConfigured,
           lastError: normalizeServerSetupError(error)
         });
-        await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+        await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
         syncProfiles();
         throw error;
       }
-      await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+      await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
       syncProfiles();
       message.success('Server 已保存并设为当前');
       return true;
@@ -151,7 +150,7 @@ export function useServerSetupProfiles() {
       message.success('Server 已同步');
       syncProfiles();
     } catch (error) {
-      await saveControlPlaneProfileSecure({
+      await saveControlPlaneProfile({
         name: profile.name,
         endpoint: profile.endpoint,
         descriptor: profile.descriptor,
@@ -170,7 +169,7 @@ export function useServerSetupProfiles() {
 
   const removeProfile = async (profileId: string) => {
     try {
-      await removeControlPlaneProfileSecure(profileId);
+      await removeControlPlaneProfile(profileId);
       syncProfiles();
     } catch (error) {
       message.error(normalizeServerSetupError(error));
@@ -179,7 +178,7 @@ export function useServerSetupProfiles() {
 
   const selectProfile = async (profileId: string) => {
     try {
-      const resolution = await selectActiveControlPlaneProfileSecure(profiles, profileId);
+      const resolution = await selectActiveControlPlaneProfile(profiles, profileId);
       setActiveProfileId(resolution.profileId);
     } catch (error) {
       message.error(normalizeServerSetupError(error));

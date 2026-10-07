@@ -7,17 +7,17 @@ import type { ComponentProps, ReactNode } from 'react';
 import './Settings.css';
 import { ProCard, StatisticCard } from '@ant-design/pro-components';
 import { Form, InputNumber, Input, message, Space, Switch, Tabs, Select, Modal } from 'antd';
-import { CopyOutlined, LinkOutlined, PlusOutlined, RadarChartOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CopyOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { configAPI, serverProfilesAPI } from '@/services/api';
 import {
   addControlPlaneProfilesChangeListener,
   isControlPlaneManagementKeyConfigured,
   isControlPlaneProfileRefreshable,
   listControlPlaneProfiles,
-  removeControlPlaneProfileSecure,
+  removeControlPlaneProfile,
   refreshControlPlaneProfileStates,
   refreshControlPlaneDeviceState,
-  saveControlPlaneProfileSecure,
+  saveControlPlaneProfile,
   summarizeControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import {
@@ -30,7 +30,6 @@ import {
   getActiveControlPlaneProfileId,
   resolveStoredActiveControlPlaneProfile,
   selectActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
 import type {
@@ -44,18 +43,8 @@ import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import ModelAliases from './ModelAliases';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
-import PublicServerEntryCard from '@/components/settings/PublicServerEntryCard';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
-import {
-  discoverNativeServers,
-  isNativeDesktopRuntime,
-  refreshNativeLanRoutes
-} from '@/services/native-server-profile-repository';
-import { discoverServersOnLan } from '@/services/server-routes/server-route-service';
-import {
-  buildLanDiscoveryProfileInputs,
-  buildServerRouteRows
-} from '@/services/server-route-presentation';
+import { buildServerRouteRows } from '@/services/server-route-presentation';
 import { buildAppHref } from '@/services/app-navigation';
 import {
   SERVER_FORM_DEFAULTS,
@@ -192,7 +181,6 @@ const Settings = ({ section }: SettingsProps) => {
   const [checkingControlPlaneId, setCheckingControlPlaneId] = useState('');
   const [controlPlaneProfiles, setControlPlaneProfiles] = useState<ControlPlaneProfile[]>(getInitialControlPlaneProfiles);
   const [refreshingControlPlanes, setRefreshingControlPlanes] = useState(false);
-  const [discoveringLanServers, setDiscoveringLanServers] = useState(false);
   const [activeControlPlaneId, setActiveControlPlaneId] = useState(getInitialActiveControlPlaneId);
   const [controlPlaneAddModalOpen, setControlPlaneAddModalOpen] = useState(false);
   const [authorizingControlPlaneId, setAuthorizingControlPlaneId] = useState('');
@@ -334,52 +322,6 @@ const Settings = ({ section }: SettingsProps) => {
     setAuthorizingControlPlaneId('');
   };
 
-  const handleDiscoverLanServers = async () => {
-    setDiscoveringLanServers(true);
-    try {
-      const nativeDiscovery = await discoverNativeServers();
-      const discovery = await discoverServersOnLan({
-        existingServers: controlPlaneProfiles,
-        discover: async () => nativeDiscovery
-      });
-      if (discovery.error) throw new Error(discovery.error);
-      const discoveredStableServerIds = Array.from(new Set(
-        nativeDiscovery.servers.map((server) => server.stableServerId).filter(Boolean)
-      ));
-      const inputs = buildLanDiscoveryProfileInputs(
-        controlPlaneProfiles,
-        discovery.servers,
-        discoveredStableServerIds
-      );
-      if (inputs.length === 0) {
-        message.info('局域网内未发现 AIH Server');
-        return;
-      }
-      const savedProfiles: ControlPlaneProfile[] = [];
-      for (const input of inputs) {
-        savedProfiles.push(await saveControlPlaneProfileSecure(input));
-      }
-      const authorizedProfileIds = savedProfiles
-        .filter((profile) => profile.managementKeyConfigured)
-        .map((profile) => profile.id);
-      if (authorizedProfileIds.length > 0) {
-        await refreshNativeLanRoutes(authorizedProfileIds);
-      }
-      syncSavedControlPlaneProfiles(activeControlPlaneId);
-      const pendingCount = savedProfiles.filter((profile) => !profile.managementKeyConfigured).length;
-      message.success(
-        pendingCount > 0
-          ? `发现 ${savedProfiles.length} 个 Server，其中 ${pendingCount} 个待授权`
-          : `已合并 ${savedProfiles.length} 个局域网 Server`
-      );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : '';
-      message.error(reason && reason !== 'server_discovery_failed' ? reason : '局域网 Server 发现失败');
-    } finally {
-      setDiscoveringLanServers(false);
-    }
-  };
-
   const handleSaveControlPlane = async (values: { endpoint?: string; name?: string; managementKey?: string }) => {
     setControlPlaneSaving(true);
     try {
@@ -393,7 +335,7 @@ const Settings = ({ section }: SettingsProps) => {
       try {
         await refreshControlPlaneDeviceState(profile);
       } catch (error) {
-        await saveControlPlaneProfileSecure({
+        await saveControlPlaneProfile({
           name: profile.name,
           endpoint: profile.endpoint,
           descriptor: profile.descriptor,
@@ -403,11 +345,11 @@ const Settings = ({ section }: SettingsProps) => {
           managementKeyConfigured: profile.managementKeyConfigured,
           lastError: error instanceof Error ? error.message : 'server_refresh_failed'
         });
-        await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+        await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
         syncSavedControlPlaneProfiles();
         throw error;
       }
-      await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+      await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
       syncSavedControlPlaneProfiles();
       controlPlaneForm.setFieldsValue({
         endpoint: profile.endpoint,
@@ -431,7 +373,7 @@ const Settings = ({ section }: SettingsProps) => {
       syncSavedControlPlaneProfiles();
       message.success('Server 已同步');
     } catch (error: any) {
-      await saveControlPlaneProfileSecure({
+      await saveControlPlaneProfile({
         name: profile.name,
         endpoint: profile.endpoint,
         descriptor: profile.descriptor,
@@ -469,7 +411,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const handleRemoveControlPlane = async (profileId: string) => {
     try {
-      syncControlPlaneProfiles(await removeControlPlaneProfileSecure(profileId));
+      syncControlPlaneProfiles(await removeControlPlaneProfile(profileId));
       message.success('已移除 Server');
     } catch (error: any) {
       message.error(error?.message || '移除 Server 失败');
@@ -478,7 +420,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   const handleSelectControlPlane = async (profileId: string) => {
     try {
-      const resolution = await selectActiveControlPlaneProfileSecure(controlPlaneProfiles, profileId);
+      const resolution = await selectActiveControlPlaneProfile(controlPlaneProfiles, profileId);
       setActiveControlPlaneId(resolution.profileId);
       message.success('已设置默认 Server');
     } catch (error: any) {
@@ -743,13 +685,6 @@ const Settings = ({ section }: SettingsProps) => {
   const controlPlanesActions = (
     <PageHeaderActions
       actions={[
-        ...(isNativeDesktopRuntime() ? [{
-          key: 'discover',
-          label: '发现局域网 Server',
-          icon: <RadarChartOutlined />,
-          loading: discoveringLanServers,
-          onClick: handleDiscoverLanServers,
-        }] : []),
         {
           key: 'refresh-all',
           label: '同步全部',
@@ -861,10 +796,6 @@ const Settings = ({ section }: SettingsProps) => {
           ]}
         />
       </ProCard>
-
-      {isNativeDesktopRuntime() && (
-        <PublicServerEntryCard profiles={logicalControlPlaneProfiles} />
-      )}
 
       <Modal
         title={authorizingControlPlaneId ? '授权 Server' : '添加 Server'}

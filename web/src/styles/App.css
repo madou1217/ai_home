@@ -3,7 +3,7 @@
 @import '../components/ui/data-display.css';
 
 /* 字体使用系统字体栈（design-tokens.css --font-body），不再从 Google Fonts 远程加载：
- * 桌面端（Tauri）与内网环境离线可用，也避免首屏字体闪烁。 */
+ * 内网环境离线可用，也避免首屏字体闪烁。 */
 
 html,
 body,

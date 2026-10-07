@@ -5,7 +5,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('../web/node_modules/typescript');
 
-function loadControlPlaneEndpointsModule(options = {}) {
+function loadControlPlaneEndpointsModule() {
   const filename = path.join(__dirname, '../web/src/services/control-plane-endpoints.ts');
   const source = fs.readFileSync(filename, 'utf8');
   const compiled = ts.transpileModule(source, {
@@ -18,24 +18,20 @@ function loadControlPlaneEndpointsModule(options = {}) {
   const mod = new Module(filename, module);
   mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const originalRequire = mod.require.bind(mod);
-  mod.require = (request) => request === './native-server-profile-repository'
-    ? { isNativeDesktopRuntime: () => options.native === true }
-    : originalRequire(request);
   mod._compile(compiled.outputText, filename);
   return mod.exports;
 }
 
-test('native desktop never treats the WebView origin as a Server URL', (t) => {
+test('browser control endpoint is the page origin', (t) => {
   const previousWindow = global.window;
-  global.window = { location: { origin: 'tauri://localhost' } };
+  global.window = { location: { origin: 'https://aih.example.com' } };
   t.after(() => {
     global.window = previousWindow;
   });
 
-  const endpoints = loadControlPlaneEndpointsModule({ native: true });
+  const endpoints = loadControlPlaneEndpointsModule();
 
-  assert.equal(endpoints.getBrowserControlEndpoint(), '');
+  assert.equal(endpoints.getBrowserControlEndpoint(), 'https://aih.example.com');
 });
 
 test('resolveDefaultControlEndpoint prefers recommended non-loopback hints', () => {

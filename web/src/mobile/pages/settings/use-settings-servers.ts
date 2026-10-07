@@ -11,7 +11,7 @@ import {
   getActiveControlPlaneProfileId,
   resolveCurrentControlPlaneProfile,
   resolveStoredActiveControlPlaneProfile,
-  selectCurrentControlPlaneProfileSecure,
+  selectCurrentControlPlaneProfile,
   syncCurrentControlPlaneProfile,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
@@ -95,7 +95,7 @@ export function useSettingsServers() {
   const selectCurrent = useCallback(async (profileId: string) => {
     setSwitchingId(profileId);
     try {
-      const resolution = await selectCurrentControlPlaneProfileSecure(profiles, profileId);
+      const resolution = await selectCurrentControlPlaneProfile(profiles, profileId);
       setCurrentProfileId(resolution.profileId);
       return true;
     } catch (error) {

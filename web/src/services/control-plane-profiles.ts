@@ -21,19 +21,6 @@ import {
   normalizeControlPlaneEndpoint
 } from './control-plane-api-client';
 import {
-  isNativeDesktopRuntime,
-  listNativeServerProfiles,
-  removeNativeServerProfile,
-  setActiveNativeServerProfile,
-  upsertNativeServerProfile,
-  type NativeServerProfileSummary
-} from './native-server-profile-repository';
-import {
-  isNativeServerTransportAvailable,
-  openNativeServerSse,
-  requestNativeServerJson
-} from './native-server-transport';
-import {
   mergeServerRoutes,
   migrateLegacyServerRoutes,
   normalizeStableServerId
@@ -87,16 +74,6 @@ const STORAGE_KEY = 'aih:control-plane-profiles:v1';
 export const CONTROL_PLANE_PROFILES_CHANGED_EVENT = 'aih:control-plane-profiles-changed';
 const SHARED_PROFILE_API_PATH = '/v0/webui/control-plane/profiles';
 
-// native 运行时下 profile 的权威来源是原生仓/Keychain，经异步 IPC 加载。
-// 加载完成前本地簿处于「未初始化」状态，禁止把「当前 Server 不在簿内」
-// 抢先落盘成 keyless 的 offline 自动 profile（冷启动竞态根因）。
-// 浏览器运行时的 localStorage 是同步的，天然不存在该窗口。
-let nativeProfileStoreInitialized = false;
-
-function isProfileStoreInitializationPending() {
-  return isNativeDesktopRuntime() && !nativeProfileStoreInitialized;
-}
-
 // 共享 profile 同步是裸 fetch，必须显式携带当前 Server 的 Management Key。
 function sharedProfileAuthHeaders(): Record<string, string> {
   const managementKey = resolveWebUiManagementKey();
@@ -138,7 +115,7 @@ function getEventTarget(): EventTarget | null {
 }
 
 function getSharedProfileFetch(): typeof fetch | null {
-  if (typeof window === 'undefined' || isNativeDesktopRuntime()) return null;
+  if (typeof window === 'undefined') return null;
   const fetcher = (window as Window & { fetch?: typeof fetch }).fetch;
   return typeof fetcher === 'function' ? fetcher.bind(window) : null;
 }
@@ -434,7 +411,6 @@ export function listControlPlaneProfiles(): ControlPlaneProfile[] {
 }
 
 export function ensureCurrentControlPlaneProfile(): ControlPlaneProfile | null {
-  if (isProfileStoreInitializationPending()) return null;
   const endpoint = getCurrentWebUiControlPlaneEndpoint();
   if (!endpoint) return null;
   const profiles = readProfiles();
@@ -678,111 +654,6 @@ export interface ControlPlaneProfileSaveInput {
   lastError?: string;
 }
 
-function createNativeProfileMetadata(profile: ControlPlaneProfile): Record<string, unknown> {
-  return {
-    stableServerId: profile.stableServerId,
-    routes: profile.routes,
-    activeRouteId: profile.activeRouteId,
-    authorizationState: profile.authorizationState,
-    connectionMode: profile.connectionMode,
-    broker: profile.broker,
-    state: profile.state,
-    nodeCount: profile.nodeCount,
-    accountCount: profile.accountCount,
-    activeAccountCount: profile.activeAccountCount,
-    schedulableAccountCount: profile.schedulableAccountCount,
-    sessionCount: profile.sessionCount,
-    lastNodeSyncAt: profile.lastNodeSyncAt,
-    lastStatusSyncAt: profile.lastStatusSyncAt,
-    lastAccountsSyncAt: profile.lastAccountsSyncAt,
-    lastSessionsSyncAt: profile.lastSessionsSyncAt,
-    descriptor: profile.descriptor,
-    lastCheckedAt: profile.lastCheckedAt,
-    lastError: profile.lastError
-  };
-}
-
-function mapNativeServerProfile(summary: NativeServerProfileSummary): ControlPlaneProfile | null {
-  return normalizeProfile({
-    ...summary.metadata,
-    id: summary.id,
-    name: summary.name,
-    endpoint: summary.endpoint,
-    managementKey: '',
-    credentialRef: summary.credentialRef,
-    managementKeyConfigured: summary.managementKeyConfigured,
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt
-  });
-}
-
-export async function initializeNativeControlPlaneProfiles() {
-  if (!isNativeDesktopRuntime()) {
-    return {
-      profiles: listControlPlaneProfiles(),
-      activeProfileId: ''
-    };
-  }
-  try {
-    const native = await listNativeServerProfiles();
-    const profiles = native.profiles
-      .map(mapNativeServerProfile)
-      .filter((profile): profile is ControlPlaneProfile => Boolean(profile));
-    writeProfiles(profiles);
-    const activeProfileId = native.activeProfileId
-      || profiles.find(isReadyProfileCandidate)?.id
-      || profiles[0]?.id
-      || '';
-    if (activeProfileId && activeProfileId !== native.activeProfileId) {
-      await setActiveNativeServerProfile(activeProfileId);
-    }
-    return {
-      profiles,
-      activeProfileId
-    };
-  } finally {
-    // 无论成败都标记初始化已结束：失败时本地簿维持原样，
-    // 之后的读取不再被视为「加载中」，恢复正常的自动补登记行为。
-    nativeProfileStoreInitialized = true;
-  }
-}
-
-export async function saveControlPlaneProfileSecure(
-  input: ControlPlaneProfileSaveInput
-): Promise<ControlPlaneProfile> {
-  if (!isNativeDesktopRuntime()) return saveControlPlaneProfile(input);
-  const previous = readProfiles();
-  const profile = saveControlPlaneProfile({
-    ...input,
-    managementKey: '',
-    managementKeyConfigured: Boolean(
-      normalizeText(input.managementKey, 4096)
-        || input.managementKeyConfigured
-        || previous.find((item) => (
-          item.stableServerId === normalizeStableServerId(input.stableServerId)
-            || item.endpoint === normalizeControlPlaneEndpoint(String(input.endpoint || ''))
-        ))
-          ?.managementKeyConfigured
-    )
-  });
-  try {
-    const native = await upsertNativeServerProfile({
-      id: profile.id,
-      name: profile.name,
-      endpoint: profile.endpoint,
-      managementKey: normalizeText(input.managementKey, 4096) || undefined,
-      metadata: createNativeProfileMetadata(profile)
-    });
-    const saved = mapNativeServerProfile(native);
-    if (!saved) throw new Error('invalid_native_server_profile');
-    writeProfiles([saved, ...readProfiles().filter((item) => item.id !== saved.id)]);
-    return saved;
-  } catch (error) {
-    writeProfiles(previous);
-    throw error;
-  }
-}
-
 export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): ControlPlaneProfile {
   const requestedRoutes = mergeServerRoutes(input.routes);
   const requestedRoute = selectProfileRoute(
@@ -839,9 +710,7 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
     ? normalizeProfileBroker(input.broker || endpointResolution.broker || existing?.broker, endpoint)
     : null;
   const suppliedManagementKey = normalizeText(input.managementKey, 4096);
-  const managementKey = isNativeDesktopRuntime()
-    ? ''
-    : suppliedManagementKey || existing?.managementKey || '';
+  const managementKey = suppliedManagementKey || existing?.managementKey || '';
   const credentialRef = normalizeText(input.credentialRef || existing?.credentialRef || '', 256);
   const managementKeyConfigured = Boolean(
     input.managementKeyConfigured === true
@@ -894,14 +763,6 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
   next.unshift(profile);
   writeProfiles(next);
   persistSharedControlPlaneProfile(profile);
-  if (isNativeDesktopRuntime() && existing?.managementKeyConfigured) {
-    upsertNativeServerProfile({
-      id: profile.id,
-      name: profile.name,
-      endpoint: profile.endpoint,
-      metadata: createNativeProfileMetadata(profile)
-    }).catch(() => {});
-  }
   return profile;
 }
 
@@ -920,29 +781,10 @@ function createProfileApiClient(profile: Pick<ControlPlaneProfile, 'endpoint' | 
 type ControlPlaneRequestProfile = Pick<ControlPlaneProfile, 'endpoint' | 'managementKey'>
   & Partial<Pick<ControlPlaneProfile, 'id' | 'managementKeyConfigured'>>;
 
-function requireNativeProfileId(profile: ControlPlaneRequestProfile) {
-  const profileId = normalizeText(profile.id, 96);
-  if (!profileId) throw new Error('missing_native_server_profile_id');
-  if (!hasConfiguredManagementKey(profile)) throw new Error('missing_management_key');
-  return profileId;
-}
-
 async function fetchDeviceJson(profile: ControlPlaneRequestProfile, path: string, options: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 } = {}) {
-  if (isNativeServerTransportAvailable()) {
-    const response = await requestNativeServerJson({
-      profileId: requireNativeProfileId(profile),
-      method: 'GET',
-      path,
-      timeoutMs: options.timeoutMs
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`control_plane_device_http_${response.status}`);
-    }
-    return response.data;
-  }
   return createProfileApiClient(profile, options).getJson(path, {
     requireManagementKey: true,
     httpErrorPrefix: 'control_plane_device_http'
@@ -953,19 +795,6 @@ async function postDeviceJson(profile: ControlPlaneRequestProfile, path: string,
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 } = {}) {
-  if (isNativeServerTransportAvailable()) {
-    const response = await requestNativeServerJson({
-      profileId: requireNativeProfileId(profile),
-      method: 'POST',
-      path,
-      body,
-      timeoutMs: options.timeoutMs
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`control_plane_device_http_${response.status}`);
-    }
-    return response.data;
-  }
   return createProfileApiClient(profile, options).postJson(path, body, {
     requireManagementKey: true,
     httpErrorPrefix: 'control_plane_device_http'
@@ -1234,28 +1063,6 @@ function buildDeviceNodeSessionStreamPath(
   return `/v0/node-rpc/device-node-session-stream?${params.toString()}`;
 }
 
-async function consumeNativeControlPlaneEventStream(
-  profile: ControlPlaneRequestProfile,
-  path: string,
-  onFrame: (frame: unknown) => void,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {}
-) {
-  const handle = await openNativeServerSse({
-    profileId: requireNativeProfileId(profile),
-    method: 'GET',
-    path,
-    timeoutMs: options.timeoutMs,
-    signal: options.signal
-  }, {
-    onEvent: (event) => {
-      const data = String(event.data || '').trim();
-      if (!data || data === '[DONE]') return;
-      onFrame(JSON.parse(data));
-    }
-  });
-  await handle.done;
-}
-
 export function buildControlPlaneDeviceSessionStreamRequest(
   profile: Pick<ControlPlaneProfile, 'endpoint' | 'managementKey'>,
   sessionRef: string,
@@ -1287,18 +1094,6 @@ export function streamControlPlaneDeviceSessionEvents(
     fetchImpl?: ControlPlaneEventStreamFetch;
   } = {}
 ) {
-  if (isNativeServerTransportAvailable()) {
-    return consumeNativeControlPlaneEventStream(
-      profile,
-      buildDeviceSessionStreamPath(sessionRef, options),
-      (frame) => {
-        const normalized = normalizeDeviceSessionStreamFrame(frame);
-        if (!normalized) throw new Error('invalid_control_plane_device_session_stream_frame');
-        handlers.onFrame(normalized);
-      },
-      options
-    );
-  }
   const request = buildControlPlaneDeviceSessionStreamRequest(profile, sessionRef, options);
   return consumeControlPlaneEventStream(request, {
     onFrame: (frame) => {
@@ -1348,20 +1143,6 @@ export function streamControlPlaneDeviceNodeSessionEvents(
     fetchImpl?: ControlPlaneEventStreamFetch;
   } = {}
 ) {
-  if (isNativeServerTransportAvailable()) {
-    return consumeNativeControlPlaneEventStream(
-      profile,
-      buildDeviceNodeSessionStreamPath(nodeId, sessionRef, options),
-      (frame) => {
-        const normalized = normalizeDeviceNodeSessionStreamFrame(frame);
-        if (!normalized) {
-          throw new Error('invalid_control_plane_device_node_session_stream_frame');
-        }
-        handlers.onFrame(normalized);
-      },
-      options
-    );
-  }
   const request = buildControlPlaneDeviceNodeSessionStreamRequest(profile, nodeId, sessionRef, options);
   return consumeControlPlaneEventStream(request, {
     onFrame: (frame) => {
@@ -1378,37 +1159,12 @@ export function streamControlPlaneDeviceNodeSessionEvents(
   });
 }
 
-export async function fetchControlPlaneDescriptorForProfile(
-  profile: ControlPlaneProfile,
-  options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}
-): Promise<ControlPlaneDescriptor> {
-  if (!isNativeServerTransportAvailable()) {
-    return fetchControlPlaneDescriptor(profile.endpoint, options);
-  }
-  const response = await requestNativeServerJson<ControlPlaneDescriptorResponse | ControlPlaneDescriptor>({
-    profileId: requireNativeProfileId(profile),
-    method: 'GET',
-    path: '/v0/fabric/descriptor',
-    timeoutMs: options.timeoutMs
-  });
-  if (response.status < 200 || response.status >= 300) {
-    throw new Error(`fabric_descriptor_http_${response.status}`);
-  }
-  const payload = response.data;
-  const descriptor = normalizeAnyDescriptor('result' in payload ? payload.result : payload);
-  if (!descriptor) throw new Error('invalid_fabric_descriptor');
-  return {
-    ...descriptor,
-    endpoint: descriptor.endpoint || profile.endpoint
-  };
-}
-
 export async function refreshControlPlaneDeviceState(profile: ControlPlaneProfile, options: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 } = {}) {
   const [descriptor, nodes, status, accounts, sessions] = await Promise.all([
-    fetchControlPlaneDescriptorForProfile(profile, options),
+    fetchControlPlaneDescriptor(profile.endpoint, options),
     fetchControlPlaneDeviceNodes(profile, options),
     fetchControlPlaneDeviceStatus(profile, options),
     fetchControlPlaneDeviceAccounts(profile, options),
@@ -1416,7 +1172,7 @@ export async function refreshControlPlaneDeviceState(profile: ControlPlaneProfil
   ]);
   const schedulableCount = Number(accounts.summary.bySchedulableStatus.schedulable) || 0;
   const now = Date.now();
-  const nextProfile = await saveControlPlaneProfileSecure({
+  const nextProfile = saveControlPlaneProfile({
     name: profile.name,
     endpoint: profile.endpoint,
     descriptor,
@@ -1476,7 +1232,7 @@ export async function refreshControlPlaneProfileStates(profiles: ControlPlanePro
         profile: refreshed.profile
       };
     } catch (error) {
-      const failedProfile = await saveControlPlaneProfileSecure({
+      const failedProfile = saveControlPlaneProfile({
         name: profile.name,
         endpoint: profile.endpoint,
         descriptor: profile.descriptor,
@@ -1511,21 +1267,6 @@ export function removeControlPlaneProfile(profileId: string): ControlPlaneProfil
   writeProfiles(next);
   removeSharedControlPlaneProfile(id);
   return next;
-}
-
-export async function removeControlPlaneProfileSecure(profileId: string) {
-  const id = normalizeText(profileId, 96);
-  let nativeActiveProfileId = '';
-  if (isNativeDesktopRuntime() && id) {
-    const result = await removeNativeServerProfile(id);
-    nativeActiveProfileId = result.activeProfileId;
-  }
-  const profiles = removeControlPlaneProfile(id);
-  if (isNativeDesktopRuntime() && !nativeActiveProfileId && profiles.length > 0) {
-    nativeActiveProfileId = profiles.find(isReadyProfileCandidate)?.id || profiles[0].id;
-    await setActiveNativeServerProfile(nativeActiveProfileId);
-  }
-  return profiles;
 }
 
 export async function fetchControlPlaneDescriptor(endpoint: string, options: {

@@ -8,7 +8,6 @@ import {
   KeyOutlined,
   LinkOutlined,
   PlusOutlined,
-  RadarChartOutlined,
   ReloadOutlined,
   StarOutlined
 } from '@ant-design/icons';
@@ -183,14 +182,6 @@ export default function MobileServers(_props: MobilePageProps) {
     <MobileToolbar
       start={<span className={`${fabric.mono} ${styles.toolbarCount}`}>{serverRouteRows.length} SERVER</span>}
     >
-      {servers.canDiscoverLan ? (
-        <HudIconButton
-          icon={<RadarChartOutlined />}
-          label="发现局域网 Server"
-          loading={servers.discoveringLanServers}
-          onClick={servers.discoverLanServers}
-        />
-      ) : null}
       <HudIconButton
         icon={<ReloadOutlined />}
         label="同步全部"

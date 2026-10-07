@@ -8,8 +8,8 @@ import {
   listControlPlaneProfiles,
   refreshControlPlaneDeviceState,
   refreshControlPlaneProfileStates,
-  removeControlPlaneProfileSecure,
-  saveControlPlaneProfileSecure,
+  removeControlPlaneProfile,
+  saveControlPlaneProfile,
   summarizeControlPlaneProfiles
 } from '@/services/control-plane-profiles';
 import {
@@ -21,19 +21,9 @@ import {
   getActiveControlPlaneProfileId,
   resolveStoredActiveControlPlaneProfile,
   selectActiveControlPlaneProfile,
-  selectActiveControlPlaneProfileSecure,
   syncStoredActiveControlPlaneProfile
 } from '@/services/control-plane-selection';
-import {
-  discoverNativeServers,
-  isNativeDesktopRuntime,
-  refreshNativeLanRoutes
-} from '@/services/native-server-profile-repository';
-import { discoverServersOnLan } from '@/services/server-routes/server-route-service';
-import {
-  buildLanDiscoveryProfileInputs,
-  buildServerRouteRows
-} from '@/services/server-route-presentation';
+import { buildServerRouteRows } from '@/services/server-route-presentation';
 import type { ControlPlaneEndpointHint, ControlPlaneProfile } from '@/types';
 
 export type ControlPlaneServerFormValues = { endpoint?: string; name?: string; managementKey?: string };
@@ -43,7 +33,7 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 /**
  * Server 管理（/fabric/servers）的数据与操作，语义与桌面 Settings「Server 管理」分区一致：
  * 本地已保存 Server（按 stableServerId 聚合为逻辑 Server 行）、默认 Server、端点提示，
- * 以及 探测并保存 / 授权、同步、同步全部、移除、设为默认、局域网发现（仅原生桌面运行时）。
+ * 以及 探测并保存 / 授权、同步、同步全部、移除、设为默认。
  */
 export function useControlPlaneServers() {
   const [profiles, setProfiles] = useState<ControlPlaneProfile[]>(() => listControlPlaneProfiles());
@@ -52,7 +42,6 @@ export function useControlPlaneServers() {
   ));
   const [checkingControlPlaneId, setCheckingControlPlaneId] = useState('');
   const [refreshingAll, setRefreshingAll] = useState(false);
-  const [discoveringLanServers, setDiscoveringLanServers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [endpointHints, setEndpointHints] = useState<ControlPlaneEndpointHint[]>([]);
   const [endpointWarnings, setEndpointWarnings] = useState<string[]>([]);
@@ -104,7 +93,7 @@ export function useControlPlaneServers() {
       try {
         await refreshControlPlaneDeviceState(profile);
       } catch (error) {
-        await saveControlPlaneProfileSecure({
+        await saveControlPlaneProfile({
           name: profile.name,
           endpoint: profile.endpoint,
           descriptor: profile.descriptor,
@@ -114,11 +103,11 @@ export function useControlPlaneServers() {
           managementKeyConfigured: profile.managementKeyConfigured,
           lastError: error instanceof Error ? error.message : 'server_refresh_failed'
         });
-        await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+        await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
         syncSavedControlPlaneProfiles();
         throw error;
       }
-      await selectActiveControlPlaneProfileSecure(listControlPlaneProfiles(), profile.id);
+      await selectActiveControlPlaneProfile(listControlPlaneProfiles(), profile.id);
       syncSavedControlPlaneProfiles();
       message.success('Server 已保存');
       return true;
@@ -138,7 +127,7 @@ export function useControlPlaneServers() {
       syncSavedControlPlaneProfiles();
       message.success('Server 已同步');
     } catch (error) {
-      await saveControlPlaneProfileSecure({
+      await saveControlPlaneProfile({
         name: profile.name,
         endpoint: profile.endpoint,
         descriptor: profile.descriptor,
@@ -176,7 +165,7 @@ export function useControlPlaneServers() {
 
   const removeControlPlane = async (profileId: string) => {
     try {
-      syncControlPlaneProfiles(await removeControlPlaneProfileSecure(profileId));
+      syncControlPlaneProfiles(await removeControlPlaneProfile(profileId));
       message.success('已移除 Server');
     } catch (error) {
       message.error(errorMessage(error) || '移除 Server 失败');
@@ -185,53 +174,11 @@ export function useControlPlaneServers() {
 
   const selectControlPlane = async (profileId: string) => {
     try {
-      const resolution = await selectActiveControlPlaneProfileSecure(profiles, profileId);
+      const resolution = await selectActiveControlPlaneProfile(profiles, profileId);
       setActiveControlPlaneId(resolution.profileId);
       message.success('已设置默认 Server');
     } catch (error) {
       message.error(errorMessage(error) || '切换 Server 失败');
-    }
-  };
-
-  const discoverLanServers = async () => {
-    setDiscoveringLanServers(true);
-    try {
-      const nativeDiscovery = await discoverNativeServers();
-      const discovery = await discoverServersOnLan({
-        existingServers: profiles,
-        discover: async () => nativeDiscovery
-      });
-      if (discovery.error) throw new Error(discovery.error);
-      const discoveredStableServerIds = Array.from(new Set(
-        nativeDiscovery.servers.map((server) => server.stableServerId).filter(Boolean)
-      ));
-      const inputs = buildLanDiscoveryProfileInputs(profiles, discovery.servers, discoveredStableServerIds);
-      if (inputs.length === 0) {
-        message.info('局域网内未发现 AIH Server');
-        return;
-      }
-      const savedProfiles: ControlPlaneProfile[] = [];
-      for (const input of inputs) {
-        savedProfiles.push(await saveControlPlaneProfileSecure(input));
-      }
-      const authorizedProfileIds = savedProfiles
-        .filter((profile) => profile.managementKeyConfigured)
-        .map((profile) => profile.id);
-      if (authorizedProfileIds.length > 0) {
-        await refreshNativeLanRoutes(authorizedProfileIds);
-      }
-      syncSavedControlPlaneProfiles(activeControlPlaneId);
-      const pendingCount = savedProfiles.filter((profile) => !profile.managementKeyConfigured).length;
-      message.success(
-        pendingCount > 0
-          ? `发现 ${savedProfiles.length} 个 Server，其中 ${pendingCount} 个待授权`
-          : `已合并 ${savedProfiles.length} 个局域网 Server`
-      );
-    } catch (error) {
-      const reason = errorMessage(error);
-      message.error(reason && reason !== 'server_discovery_failed' ? reason : '局域网 Server 发现失败');
-    } finally {
-      setDiscoveringLanServers(false);
     }
   };
 
@@ -262,8 +209,6 @@ export function useControlPlaneServers() {
     activeProfile,
     checkingControlPlaneId,
     refreshingAll,
-    discoveringLanServers,
-    canDiscoverLan: isNativeDesktopRuntime(),
     saving,
     endpointHints,
     endpointWarnings,
@@ -273,7 +218,6 @@ export function useControlPlaneServers() {
     refreshAllControlPlanes,
     removeControlPlane,
     selectControlPlane,
-    discoverLanServers,
     copyEndpoint
   };
 }

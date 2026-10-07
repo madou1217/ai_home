@@ -1,7 +1,6 @@
 import type { Settings as LayoutSettings } from "@ant-design/pro-components";
 import type { ReactNode } from "react";
 import { history, Link } from "@umijs/max";
-import { Alert } from "antd";
 import ControlPlaneProfileSelect from "@/components/control-plane/ControlPlaneProfileSelect";
 import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
 import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
@@ -25,22 +24,13 @@ import {
   resolveFabricProfileGateState,
   shouldRedirectToFabricServerSetup,
 } from "@/services/fabric-profile-gate";
-import {
-  initializeNativeControlPlaneProfiles,
-  listControlPlaneProfiles,
-} from "@/services/control-plane-profiles";
-import {
-  getActiveControlPlaneProfileId,
-  setActiveControlPlaneProfileId,
-} from "@/services/control-plane-selection";
+import { listControlPlaneProfiles } from "@/services/control-plane-profiles";
+import { getActiveControlPlaneProfileId } from "@/services/control-plane-selection";
 import {
   buildServerScopedSearch,
   getExplicitServerProfileId,
 } from "@/services/server-selection-scope";
 import { resolveAppRoutePathname } from "@/services/app-navigation";
-import { isNativeDesktopRuntime } from "@/services/native-server-profile-repository";
-import { startNativeRelayDiscovery } from "@/services/server-routes/native-relay-discovery";
-import { startNativeLanRouteRefresh } from "@/services/server-routes/native-lan-route-refresh";
 import { DynamicWallpaperEngine } from "@/services/dynamic-wallpaper-engine";
 import logo from "../../assets/brand/ai-home-app-icon.png";
 
@@ -116,22 +106,7 @@ function enforceServerProfileGate() {
 
 export async function getInitialState(): Promise<{
   settings?: Partial<LayoutSettings>;
-  desktopInitializationError?: string;
 }> {
-  let desktopInitializationError = "";
-  if (isNativeDesktopRuntime()) {
-    try {
-      const native = await initializeNativeControlPlaneProfiles();
-      setActiveControlPlaneProfileId(native.activeProfileId);
-      startNativeRelayDiscovery({ profiles: native.profiles });
-      startNativeLanRouteRefresh();
-    } catch (error) {
-      const source = error as { code?: unknown; message?: unknown };
-      desktopInitializationError = String(
-        source?.code || source?.message || "native_profile_initialization_failed"
-      );
-    }
-  }
   if (typeof window !== 'undefined' && 'serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/ui/sw.js').catch(() => {});
@@ -154,7 +129,6 @@ export async function getInitialState(): Promise<{
       fixSiderbar: true,
       siderWidth: 248,
     },
-    desktopInitializationError,
   };
 }
 
@@ -253,15 +227,6 @@ export const layout = ({ initialState }: any) => {
       const canRenderDataPlane = isGoAccountsPreview || profileGate.ready;
       return (
         <>
-          {initialState?.desktopInitializationError && (
-            <Alert
-              type="error"
-              showIcon
-              message="系统凭据存储不可用"
-              description={`原生客户端无法访问系统 Keyring：${initialState.desktopInitializationError}`}
-              style={{ margin: "12px 16px 0" }}
-            />
-          )}
           {/* 页面级渲染兜底：单页 render 抛错不再整树卸载成白屏 */}
           <AppErrorBoundary>
             {/* 手机视口：MobileApp 按路由渲染独立的移动端 HUD 页面（web/src/mobile），桌面页不挂载 */}

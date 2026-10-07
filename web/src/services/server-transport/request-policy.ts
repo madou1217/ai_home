@@ -24,11 +24,6 @@ const FORBIDDEN_HEADER_NAMES = new Set([
   'x-management-key'
 ]);
 
-const NATIVE_CREDENTIAL_FIELD_NAMES = new Set([
-  'authorization',
-  'managementkey'
-]);
-
 const MIN_TIMEOUT_MS = 1000;
 const MAX_TIMEOUT_MS = 120 * 1000;
 
@@ -44,10 +39,6 @@ export interface SafeRequestHeaders {
 
 function hasInvalidHeaderCharacters(value: string) {
   return /[\r\n\0]/.test(value);
-}
-
-function normalizeCredentialFieldName(value: string) {
-  return value.replace(/[-_\s]/g, '').toLowerCase();
 }
 
 function isAllowedServerPath(pathname: string) {
@@ -146,39 +137,6 @@ export function validateRequest<TBody>(request: ServerRequest<TBody>) {
     path: normalizeServerPath(request.path),
     timeoutMs: normalizeTimeoutMs(request.timeoutMs)
   };
-}
-
-/** Native HTTP auth is resolved by Rust from the profile and OS Keyring. */
-export function assertNativeBodyIsCredentialFree(body: unknown): void {
-  if (body === undefined || body === null || typeof body !== 'object') return;
-
-  const pending: Array<{ value: object; path: string[] }> = [{ value: body, path: [] }];
-  const visited = new WeakSet<object>();
-
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (!current || visited.has(current.value)) continue;
-    visited.add(current.value);
-
-    if (Array.isArray(current.value)) {
-      for (const item of current.value) {
-        if (item !== null && typeof item === 'object') {
-          pending.push({ value: item, path: current.path });
-        }
-      }
-      continue;
-    }
-
-    for (const [key, value] of Object.entries(current.value)) {
-      const fieldPath = [...current.path, key];
-      if (NATIVE_CREDENTIAL_FIELD_NAMES.has(normalizeCredentialFieldName(key))) {
-        throw new ServerTransportError('native_request_contains_management_credential');
-      }
-      if (value !== null && typeof value === 'object') {
-        pending.push({ value, path: fieldPath });
-      }
-    }
-  }
 }
 
 export function assertRequestNotAborted(signal?: AbortSignal): void {

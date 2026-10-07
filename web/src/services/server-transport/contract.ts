@@ -8,8 +8,8 @@ export type ServerJsonValue =
 export type ServerHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
 /**
- * Only `accept` and `content-type` cross the native IPC boundary. Adapters
- * reject credential-bearing headers and ignore other entries.
+ * Only `accept` and `content-type` are forwarded. The transport rejects
+ * credential-bearing headers and ignores other entries.
  */
 export type ServerRequestHeaders = Readonly<Record<string, string>>;
 

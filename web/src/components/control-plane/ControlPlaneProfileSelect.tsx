@@ -5,7 +5,7 @@ import {
   addActiveControlPlaneProfileChangeListener,
   resolveActiveControlPlaneProfile,
   resolveCurrentControlPlaneProfile,
-  selectCurrentControlPlaneProfileSecure,
+  selectCurrentControlPlaneProfile,
   syncCurrentControlPlaneProfile
 } from '@/services/control-plane-selection';
 import {
@@ -192,7 +192,7 @@ function ControlPlaneProfileSelectBody({
 
   const handleSelect = async (nextId: string) => {
     try {
-      const resolution = await selectCurrentControlPlaneProfileSecure(profiles, nextId);
+      const resolution = await selectCurrentControlPlaneProfile(profiles, nextId);
       setSelectedProfileId(resolution.profileId);
       onChange?.(resolution.profile, resolution.profileId);
     } catch (error) {

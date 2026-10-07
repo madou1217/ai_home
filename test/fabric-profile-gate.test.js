@@ -49,13 +49,6 @@ function loadAppNavigationModule() {
   const mod = new Module(filename, module);
   mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const originalRequire = mod.require.bind(mod);
-  mod.require = (request) => {
-    if (request === './native-server-profile-repository') {
-      return { isNativeDesktopRuntime: () => false };
-    }
-    return originalRequire(request);
-  };
   mod._compile(compileTypeScript(filename), filename);
   return mod.exports;
 }
@@ -193,10 +186,9 @@ test('client profile gate does not kick configured clients on a stale persisted 
   assert.equal(gate.shouldRedirectToFabricServerSetup(keylessState, '/chat', ''), true);
 });
 
-test('app applies the profile gate to browser and native clients before mounting workspace pages', () => {
+test('app applies the profile gate before mounting workspace pages', () => {
   const source = fs.readFileSync(path.join(__dirname, '../web/src/app.tsx'), 'utf8');
   assert.match(source, /function enforceServerProfileGate\(\)/u);
-  assert.doesNotMatch(source, /function enforceNativeServerProfileGate/u);
   assert.match(source, /menuDataRender:[\s\S]*resolveCurrentServerProfileGate\(\)\.configured/u);
   assert.match(source, /canRenderWorkspace\s*\?\s*children\s*:\s*null/u);
   assert.match(source, /const canRenderDataPlane = isGoAccountsPreview \|\| profileGate\.ready/u);

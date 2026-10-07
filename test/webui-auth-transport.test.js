@@ -20,12 +20,6 @@ function loadTransportModule() {
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const originalRequire = mod.require.bind(mod);
   mod.require = (request) => {
-    if (request === './native-server-profile-repository') {
-      return { isNativeDesktopRuntime: () => false };
-    }
-    if (request === './native-server-transport') {
-      return { isNativeServerTransportAvailable: () => false };
-    }
     if (request === './server-selection-scope') {
       const dependencyFilename = path.join(__dirname, '../web/src/services/server-selection-scope.ts');
       const dependency = new Module(dependencyFilename, mod);

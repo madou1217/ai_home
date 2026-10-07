@@ -1,10 +1,4 @@
 import axios, { AxiosError } from 'axios';
-import { createNativeAxiosAdapter } from './native-axios-adapter';
-import {
-  isNativeServerTransportAvailable,
-  openNativeServerSse
-} from './native-server-transport';
-import { getCurrentControlPlaneProfileId } from './control-plane-selection';
 import { buildAppHref } from './app-navigation';
 import { collectAllSessionHistoryMessages } from './session-history-window.js';
 import { SessionRequestCoordinator } from './session-request-coordinator.js';
@@ -155,8 +149,7 @@ import type { AccountOutcomesResponse } from '@/features/account-status/types';
 
 const api = axios.create({
   baseURL: '/v0',
-  timeout: 30000,
-  ...(isNativeServerTransportAvailable() ? { adapter: createNativeAxiosAdapter() } : {})
+  timeout: 30000
 });
 
 function redirectToWebUiGate() {
@@ -1386,31 +1379,6 @@ export const chatAPI = {
       onEvent?: (event: ChatStreamEvent) => void;
     } = {}
   ): Promise<void> => {
-    if (isNativeServerTransportAvailable()) {
-      const profileId = getCurrentControlPlaneProfileId();
-      if (!profileId) throw new Error('missing_active_server_profile');
-      const handle = await openNativeServerSse({
-        profileId,
-        method: 'POST',
-        path: '/v0/webui/chat',
-        body: request,
-        accept: 'text/event-stream',
-        contentType: 'application/json',
-        signal: options.signal
-      }, {
-        onEvent: (event) => {
-          const payload = String(event.data || '').trim();
-          if (!payload || payload === '[DONE]') return;
-          const parsed = JSON.parse(payload) as ChatStreamEvent;
-          options.onEvent?.(parsed);
-          if (parsed.type === 'error') {
-            throw new Error(parsed.message || parsed.code || 'chat_stream_failed');
-          }
-        }
-      });
-      await handle.done;
-      return;
-    }
     // 关键：聊天流必须跟随当前激活 server——裸 fetch 不走 axios 拦截器,需自带 x-aih-server-id,
     // 否则远端视图里发消息会打到本地 server，拿远端 accountRef 去配本地账号会直接失败。
     const activeServer = resolveActiveServer();

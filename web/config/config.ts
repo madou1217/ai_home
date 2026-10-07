@@ -2,11 +2,9 @@ import { defineConfig } from "@umijs/max";
 import MonacoEditorWebpackPlugin from "monaco-editor-webpack-plugin";
 import routes from "./routes";
 
-const isDesktopBuild = process.env.AIH_DESKTOP_BUILD === "1";
-const isDesktopProductionBuild = isDesktopBuild && process.env.NODE_ENV === "production";
 const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
 const goAccountsPreviewManagementKey = process.env.AIH_GO_ACCOUNTS_PREVIEW_MANAGEMENT_KEY;
-const publicPath = isDesktopProductionBuild ? "./" : (isDesktopBuild ? "/" : "/ui/");
+const publicPath = "/ui/";
 
 if (isGoAccountsPreview && !goAccountsPreviewManagementKey) {
   throw new Error("Go 账号 preview 缺少独立 Management Key");
@@ -108,9 +106,6 @@ export default defineConfig({
           ws: true
         }
       },
-  // Desktop dev 会导入 web/ 外部的共享 CommonJS provider catalog；React Refresh
-  // 会把它改写成 ESM，随后又按 CommonJS 解析，因此桌面开发态只关闭 Fast Refresh。
-  fastRefresh: !isDesktopBuild,
   esbuildMinifyIIFE: true,
   // 依赖产物(monaco worker、各 async chunk)带 ES2018 的对象 rest 解构,而 umi 给
   // esbuild 压缩阶段注入的目标基线含 es2015,esbuild 明确「无法把解构降级到该目标」,
@@ -166,11 +161,10 @@ export default defineConfig({
   routes,
   npmClient: "npm",
   history: {
-    // Packaged Tauri apps cannot rely on an HTTP server to resolve deep links.
-    type: isDesktopBuild ? "hash" : "browser",
+    type: "browser",
   },
   publicPath,
-  base: isDesktopBuild ? "/" : "/ui",
+  base: "/ui",
   outputPath: "dist",
   hash: true,
   targets: {

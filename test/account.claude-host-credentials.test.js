@@ -29,6 +29,17 @@ function credentialsWithIdentity({ email, uuid, accessToken, refreshToken = `${a
   };
 }
 
+// 这些用例只关心 aih 自己的哈希槽；裸槽（插件、终端 claude 读的那个）在文件末尾单独测。
+function createManagedSlotReconciler(deps) {
+  const read = deps.readClaudeKeychainCredentialRecord;
+  const write = deps.writeClaudeKeychainCredentials;
+  return createClaudeHostCredentialReconciler({
+    ...deps,
+    readClaudeKeychainCredentialRecord: (options = {}) => (options.configDir ? read(options) : null),
+    writeClaudeKeychainCredentials: (value, options = {}) => (options.configDir ? write(value, options) : { ok: true })
+  });
+}
+
 function credentialRecord(value, updatedAt) {
   return {
     provider: 'claude',
@@ -43,7 +54,7 @@ test('newer keychain credentials update the same DB account identity', () => {
   const keychainCredentials = credentials('same@example.com', 'keychain-token');
   const databaseWrites = [];
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => ({
@@ -80,7 +91,7 @@ test('selected DB account projects over an unrelated shared keychain identity', 
   const keychainCredentials = credentials('other@example.com', 'other-token');
   const databaseWrites = [];
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => ({
@@ -107,7 +118,7 @@ test('incomplete keychain OAuth data cannot replace usable DB credentials', () =
   const databaseCredentials = credentials('same@example.com', 'db-token');
   const keychainCredentials = credentials('same@example.com', 'keychain-token', '');
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => ({
@@ -136,7 +147,7 @@ test('incomplete keychain credentials from another account are replaced by the s
     accessToken: 'selected-token'
   });
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     fs: {
       readFileSync: () => JSON.stringify({
@@ -168,7 +179,7 @@ test('incomplete keychain credentials from another account are replaced by the s
 
 test('keychain projection failure fails closed on macOS', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => null,
@@ -186,7 +197,7 @@ test('host projection targets the hashed keychain service used by AIH Claude', (
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
   const readOptions = [];
   const writeOptions = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: (options) => {
@@ -214,7 +225,7 @@ test('host projection targets the hashed keychain service used by AIH Claude', (
 
 test('non-macOS hosts keep the DB credentials without touching keychain', () => {
   const databaseCredentials = credentials('selected@example.com', 'selected-token');
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'linux' },
     hostHomeDir: '/home/model',
     readClaudeKeychainCredentialRecord: () => assert.fail('must not read keychain'),
@@ -236,7 +247,7 @@ test('keychain envelope without account identity is accepted when host OAuth ide
   });
   const keychainCredentials = credentials('same@example.com', 'keychain-token');
   const databaseWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     fs: {
       readFileSync: () => JSON.stringify({
@@ -270,7 +281,7 @@ test('host identity mismatch does not block an explicitly selected DB account', 
     accessToken: 'selected-token'
   });
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     fs: {
       readFileSync: () => JSON.stringify({
@@ -307,7 +318,7 @@ test('unknown identities never write the database snapshot back to shared keycha
     }
   };
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => ({
@@ -334,7 +345,7 @@ test('unknown keychain timestamp cannot retain a conflicting account', () => {
     accessToken: 'selected-token'
   });
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     fs: {
       readFileSync: () => JSON.stringify({
@@ -371,7 +382,7 @@ test('a newer host credentials file wins over the stale database snapshot', () =
   const hostFileCredentials = credentials('same@example.com', 'fresh-host-token');
   const databaseWrites = [];
   const keychainWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => ({
@@ -409,7 +420,7 @@ test('an older host credentials file never displaces the database snapshot', () 
   const databaseCredentials = credentials('same@example.com', 'db-token');
   const keychainWrites = [];
   const databaseWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => null,
@@ -438,7 +449,7 @@ test('an older host credentials file never displaces the database snapshot', () 
 test('a host credentials file for another account is not adopted', () => {
   const databaseCredentials = credentials('selected@example.com', 'db-token');
   const databaseWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => null,
@@ -463,7 +474,7 @@ test('a host credentials file for another account is not adopted', () => {
 test('a host credentials file without a usable timestamp is ignored', () => {
   const databaseCredentials = credentials('same@example.com', 'db-token');
   const databaseWrites = [];
-  const reconcile = createClaudeHostCredentialReconciler({
+  const reconcile = createManagedSlotReconciler({
     processObj: { platform: 'darwin' },
     hostHomeDir: '/Users/model',
     readClaudeKeychainCredentialRecord: () => null,
@@ -480,4 +491,124 @@ test('a host credentials file without a usable timestamp is ignored', () => {
 
   assert.equal(reconcile(credentialRecord(databaseCredentials, 100)).source, 'database');
   assert.deepEqual(databaseWrites, []);
+});
+
+// 裸槽 `Claude Code-credentials`：VSCode 插件和终端里直接敲的 claude 读它。
+function createTwoSlotReconciler(slots, extra = {}) {
+  const writes = [];
+  const databaseWrites = [];
+  const slotOf = (options = {}) => (options.configDir ? 'managed' : 'default');
+  const reconcile = createClaudeHostCredentialReconciler({
+    processObj: { platform: 'darwin' },
+    hostHomeDir: '/Users/model',
+    readClaudeHostIdentity: () => new Set(extra.hostIdentities || []),
+    readClaudeHostCredentialFileRecord: () => null,
+    readClaudeKeychainCredentialRecord: (options) => slots[slotOf(options)] || null,
+    writeClaudeKeychainCredentials: (value, options) => {
+      writes.push({ slot: slotOf(options), value });
+      slots[slotOf(options)] = { credentials: value, modifiedAtMs: 900 };
+      return { ok: true };
+    },
+    writeAccountNativeAuth: (_fs, _aiHomeDir, accountRef, nativeAuth) => {
+      databaseWrites.push({ accountRef, nativeAuth });
+      return true;
+    }
+  });
+  return { reconcile, writes, databaseWrites };
+}
+
+test('an envelope Claude Code cannot read in the default slot is replaced by the selected login', () => {
+  const selected = credentials('same@example.com', 'db-token');
+  // Claude Code 清空了驼峰 token，aih 早先写入的下划线别名仍留着旧值。
+  const poisoned = {
+    claudeAiOauth: {
+      accessToken: '',
+      refreshToken: '',
+      access_token: 'stale-token',
+      refresh_token: 'stale-refresh',
+      account: { emailAddress: 'same@example.com' }
+    }
+  };
+  const { reconcile, writes } = createTwoSlotReconciler({
+    managed: { credentials: selected, modifiedAtMs: 100 },
+    default: { credentials: poisoned, modifiedAtMs: 500 }
+  });
+
+  const result = reconcile(credentialRecord(selected, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.source, 'database');
+  assert.equal(result.defaultSlotUpdated, true);
+  assert.equal(result.defaultSlotReason, 'default_slot_unreadable');
+  assert.deepEqual(writes, [{ slot: 'default', value: selected }]);
+});
+
+test('automatic refresh keeps another account the user logged into outside AIH', () => {
+  const selected = credentials('selected@example.com', 'db-token');
+  const other = credentials('other@example.com', 'other-token');
+  const slots = {
+    managed: { credentials: selected, modifiedAtMs: 100 },
+    default: { credentials: other, modifiedAtMs: 50 }
+  };
+
+  const automatic = createTwoSlotReconciler(slots).reconcile(credentialRecord(selected, 100));
+  assert.equal(automatic.defaultSlotUpdated, false);
+  assert.equal(automatic.defaultSlotReason, 'default_slot_other_login_preserved');
+  assert.deepEqual(slots.default.credentials, other);
+
+  const explicit = createTwoSlotReconciler(slots).reconcile(credentialRecord(selected, 100), { selectedExplicitly: true });
+  assert.equal(explicit.defaultSlotUpdated, true);
+  assert.equal(explicit.defaultSlotReason, 'default_slot_selected_account');
+  assert.deepEqual(slots.default.credentials, selected);
+});
+
+test('a token the extension refreshed in the default slot is adopted instead of overwritten', () => {
+  const stored = credentialsWithIdentity({ email: 'same@example.com', uuid: 'uuid-1', accessToken: 'db-token' });
+  // Claude Code 自己写的信封不带 account；身份由官方 ~/.claude/.claude.json 证明。
+  const refreshed = credentials(undefined, 'extension-token');
+  const { reconcile, writes, databaseWrites } = createTwoSlotReconciler({
+    managed: { credentials: stored, modifiedAtMs: 100 },
+    default: { credentials: refreshed, modifiedAtMs: 300 }
+  }, { hostIdentities: ['oauth:claude:uuid:uuid-1'] });
+
+  const result = reconcile(credentialRecord(stored, 100));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.source, 'default_keychain');
+  assert.equal(result.reason, 'default_keychain_newer');
+  assert.equal(result.credentials.claudeAiOauth.accessToken, 'extension-token');
+  assert.equal(result.credentials.claudeAiOauth.refreshToken, 'extension-token-refresh');
+  assert.equal(databaseWrites.length, 1);
+  assert.equal(databaseWrites[0].nativeAuth.credentials.claudeAiOauth.refreshToken, 'extension-token-refresh');
+  assert.deepEqual(writes.map((write) => write.slot), ['managed', 'default']);
+  assert.ok(writes.every((write) => write.value.claudeAiOauth.refreshToken === 'extension-token-refresh'));
+});
+
+test('a default-slot token from a different account is never adopted', () => {
+  const stored = credentialsWithIdentity({ email: 'same@example.com', uuid: 'uuid-1', accessToken: 'db-token' });
+  const other = credentialsWithIdentity({ email: 'other@example.com', uuid: 'uuid-2', accessToken: 'other-token' });
+  const { reconcile, databaseWrites } = createTwoSlotReconciler({
+    managed: { credentials: stored, modifiedAtMs: 100 },
+    default: { credentials: other, modifiedAtMs: 300 }
+  });
+
+  const result = reconcile(credentialRecord(stored, 100));
+
+  assert.equal(result.source, 'database');
+  assert.deepEqual(databaseWrites, []);
+  assert.equal(result.defaultSlotReason, 'default_slot_other_login_preserved');
+});
+
+test('an older default-slot token of the same account is rotated to the current one', () => {
+  const current = credentials('same@example.com', 'new-token');
+  const rotatedAway = credentials('same@example.com', 'old-token');
+  const { reconcile, writes } = createTwoSlotReconciler({
+    managed: { credentials: current, modifiedAtMs: 400 },
+    default: { credentials: rotatedAway, modifiedAtMs: 50 }
+  });
+
+  const result = reconcile(credentialRecord(current, 400));
+
+  assert.equal(result.defaultSlotReason, 'default_slot_rotated');
+  assert.deepEqual(writes, [{ slot: 'default', value: current }]);
 });

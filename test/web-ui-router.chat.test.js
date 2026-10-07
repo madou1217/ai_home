@@ -2968,7 +2968,7 @@ test('web ui chat keeps claude created session after reload even when done is th
 test('web ui chat routes codex api key sessions through native session using DB credentials', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
   let seenOptions = null;
-  let syncedAccountRef = '';
+  const hostSyncCalls = [];
 
   nativeSessionChat.spawnNativeSessionStream = (options = {}) => {
     seenOptions = options;
@@ -3020,8 +3020,8 @@ test('web ui chat routes codex api key sessions through native session using DB 
         ...createBaseDeps({ aiHomeDir }),
         fs: require('fs-extra'),
         getProfileDir: () => projectionDir,
-        syncGlobalConfigToHost(_provider, accountRef) {
-          syncedAccountRef = accountRef;
+        syncGlobalConfigToHost(provider, accountRef, syncOptions) {
+          hostSyncCalls.push({ provider, accountRef, syncOptions });
         },
         readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
       }
@@ -3032,7 +3032,8 @@ test('web ui chat routes codex api key sessions through native session using DB 
     assert.equal(seenOptions.provider, 'codex');
     assert.equal(seenOptions.accountRef, ACCOUNT_REFS.codexTenThousand);
     assert.equal(seenOptions.interactiveCli, false);
-    assert.equal(syncedAccountRef, ACCOUNT_REFS.codexTenThousand);
+    // 会话账号不是宿主默认登录：只注册受管 provider 段，不改写宿主 auth.json。
+    assert.deepEqual(hostSyncCalls, [{ provider: 'codex', accountRef: '', syncOptions: { registerProviderOnly: true } }]);
     assert.equal(seenOptions.imagePaths.length, 1);
     assert.match(res.body, /"type":"ready","mode":"native-session"/);
     assert.match(res.body, /"type":"delta","delta":"图片已收到"/);
@@ -3044,9 +3045,9 @@ test('web ui chat routes codex api key sessions through native session using DB 
   }
 });
 
-test('web ui chat syncs codex OAuth host config before native session', async () => {
+test('web ui chat leaves the host codex login alone for OAuth native sessions', async () => {
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
-  let syncedAccountRef = '';
+  const hostSyncCalls = [];
   nativeSessionChat.spawnNativeSessionStream = (options = {}) => ({
     runId: 'native-run-codex-oauth',
     abort() {},
@@ -3084,8 +3085,8 @@ test('web ui chat syncs codex OAuth host config before native session', async ()
         ...createBaseDeps({ aiHomeDir }),
         fs: require('fs-extra'),
         getProfileDir: () => projectionDir,
-        syncGlobalConfigToHost(_provider, accountRef) {
-          syncedAccountRef = accountRef;
+        syncGlobalConfigToHost(provider, accountRef, syncOptions) {
+          hostSyncCalls.push({ provider, accountRef, syncOptions });
         },
         readRequestBody: async () => Buffer.from(JSON.stringify(payload), 'utf8')
       }
@@ -3093,7 +3094,7 @@ test('web ui chat syncs codex OAuth host config before native session', async ()
 
     await waitForStreamEnd(res);
     assert.equal(handled, true);
-    assert.equal(syncedAccountRef, ACCOUNT_REFS.codexOne);
+    assert.deepEqual(hostSyncCalls, [], 'OAuth sessions run in their own projection and never touch the host login');
     assert.match(res.body, /"type":"done","mode":"native-session"/);
     req.emit('close');
   } finally {

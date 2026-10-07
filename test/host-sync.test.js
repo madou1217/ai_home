@@ -585,6 +585,35 @@ test('syncGlobalConfigToHost selects the unpinned AIH Server profile without rew
   assert.doesNotMatch(hostConfig, /X-Account-Ref/);
 });
 
+test('provider registration adds the managed codex provider without touching the host login', (t) => {
+  const fixture = createFixture(t);
+  const authPath = path.join(fixture.hostCodexDir, 'auth.json');
+  const configPath = path.join(fixture.hostCodexDir, 'config.toml');
+  const hostAuth = JSON.stringify({ auth_mode: 'chatgpt', tokens: { access_token: 'default-login' } });
+  fs.writeFileSync(authPath, hostAuth, 'utf8');
+  fs.writeFileSync(configPath, 'model_provider = "openai"\npreferred_auth_method = "oauth"\nmodel = "gpt-5.5"\n', 'utf8');
+  const sync = createCodexSyncer(fixture, {
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9543, apiKey: 'gateway-key' })
+  });
+
+  const first = sync('codex', '', { registerProviderOnly: true });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.registered, true);
+  assert.equal(fs.readFileSync(authPath, 'utf8'), hostAuth);
+  const config = fs.readFileSync(configPath, 'utf8');
+  assert.match(config, /^model_provider = "openai"$/m);
+  assert.match(config, /^preferred_auth_method = "oauth"$/m);
+  assert.match(config, /^model = "gpt-5\.5"$/m);
+  assert.doesNotMatch(config, /openai_base_url/);
+  assert.match(config, new RegExp(`^\\[model_providers\\.${getAihProviderKey()}\\]$`, 'm'));
+  assert.match(config, /'--gateway'/);
+
+  const second = sync('codex', '', { registerProviderOnly: true });
+  assert.deepEqual({ ok: second.ok, registered: second.registered }, { ok: true, registered: false });
+  assert.equal(fs.readFileSync(configPath, 'utf8'), config, 'an existing registration is left as is');
+});
+
 test('host API-key sync pairs endpoints and removes only native override on OAuth switch', (t) => {
   const fixture = createFixture(t);
   const custom = registerCodexAccount(fixture, '31', {

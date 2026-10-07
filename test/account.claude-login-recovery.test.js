@@ -96,12 +96,30 @@ test('a normal username-scoped Keychain login recovers without the legacy entry'
   const f = fixture(t);
   const recover = createClaudeLoginRecovery({ ...f.deps,
     readClaudeKeychainCredentialRecord: (options) => {
+      if (!options.configDir) return null; // 裸槽
       assert.equal(options.configDir, path.join(f.deps.hostHomeDir, '.claude'));
       assert.equal(options.includeDefaultService, false);
       return options.account === 'unknown' ? null : f.candidate;
     } });
   assert.deepEqual(recover(f.account), { recovered: true, source: 'keychain' });
   assert.equal(f.account.accessToken, 'new-access');
+});
+
+test('a token refreshed by the IDE extension in the default keychain slot recovers the account', (t) => {
+  const f = fixture(t);
+  const recover = createClaudeLoginRecovery({ ...f.deps,
+    readClaudeKeychainCredentialRecord: (options) => (options.configDir ? null : f.candidate) });
+  assert.deepEqual(recover(f.account), { recovered: true, source: 'default_keychain' });
+  assert.equal(f.account.accessToken, 'new-access');
+});
+
+test('an envelope Claude Code cannot read in the default slot never recovers the account', (t) => {
+  const f = fixture(t);
+  const oauth = f.candidate.credentials.claudeAiOauth;
+  const unreadable = { claudeAiOauth: { ...oauth, accessToken: '', access_token: oauth.accessToken } };
+  const recover = createClaudeLoginRecovery({ ...f.deps,
+    readClaudeKeychainCredentialRecord: (options) => (options.configDir ? null : { ...f.candidate, credentials: unreadable }) });
+  assert.equal(recover(f.account).recovered, false);
 });
 
 test('a disabled account cannot adopt host credentials or clear its runtime block', (t) => {

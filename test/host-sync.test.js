@@ -611,7 +611,37 @@ test('provider registration adds the managed codex provider without touching the
 
   const second = sync('codex', '', { registerProviderOnly: true });
   assert.deepEqual({ ok: second.ok, registered: second.registered }, { ok: true, registered: false });
-  assert.equal(fs.readFileSync(configPath, 'utf8'), config, 'an existing registration is left as is');
+  assert.equal(fs.readFileSync(configPath, 'utf8'), config, 'an unchanged registration is not rewritten');
+
+  // 网关端口变了：受管段要跟着重写，登录态仍不动。
+  const moved = createCodexSyncer(fixture, {
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9600, apiKey: 'gateway-key' })
+  })('codex', '', { registerProviderOnly: true });
+  assert.equal(moved.registered, true);
+  const movedConfig = fs.readFileSync(configPath, 'utf8');
+  assert.match(movedConfig, /^base_url = "http:\/\/127\.0\.0\.1:9600\/v1"$/m);
+  assert.doesNotMatch(movedConfig, /127\.0\.0\.1:9543/);
+  assert.match(movedConfig, /^model_provider = "openai"$/m);
+  assert.equal(fs.readFileSync(authPath, 'utf8'), hostAuth);
+});
+
+test('provider registration keeps the default account pin written by set-default', (t) => {
+  const fixture = createFixture(t);
+  const accountRef = registerCodexAccount(fixture, '40', {
+    auth: { auth_mode: 'chatgpt', tokens: { access_token: 'default-login', refresh_token: 'r' } }
+  });
+  const sync = createCodexSyncer(fixture, {
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9543, apiKey: 'gateway-key' })
+  });
+  assert.equal(sync('codex', accountRef).ok, true);
+  const configPath = path.join(fixture.hostCodexDir, 'config.toml');
+  const pinned = fs.readFileSync(configPath, 'utf8');
+  assert.match(pinned, new RegExp(`"X-Account-Ref" = "${accountRef}"`));
+
+  const result = sync('codex', '', { registerProviderOnly: true });
+
+  assert.equal(result.registered, false);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), pinned);
 });
 
 test('host API-key sync pairs endpoints and removes only native override on OAuth switch', (t) => {

@@ -25,7 +25,7 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
     fabricClosed: 0,
    
     outboundStopped: 0,
-    frpStopped: 0,
+   
     logTimers: new Set(),
     logTimersCleared: 0
   };
@@ -65,7 +65,6 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
   assert.equal(lifecycle.webrtcClosed, 1);
   assert.equal(lifecycle.fabricClosed, 1);
   assert.equal(lifecycle.outboundStopped, 1);
-  assert.equal(lifecycle.frpStopped, 1);
   assert.equal(lifecycle.logTimersCleared, 1);
   assert.equal(processObj.listenerCount('exit'), 0);
   assert.equal(fs.existsSync(path.join(aiHomeDir, 'run', 'server.pid')), false);
@@ -83,7 +82,7 @@ for (const pinned of [true, false]) {
     const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-claude-relogin-'));
     const processObj = createProcessCapture();
     const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0,
-      outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
+      outboundStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
     const uuid = '11111111-1111-4111-8111-111111111111';
     const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {
       provider: 'claude', cliAccountId: '9', identitySeed: `oauth:claude:uuid:${uuid}`
@@ -185,7 +184,7 @@ test('server 启动异步恢复持久化的 ZCode 出口 runtime', async (t) => 
     fabricClosed: 0,
    
     outboundStopped: 0,
-    frpStopped: 0,
+   
     logTimers: new Set(),
     logTimersCleared: 0
   };
@@ -303,7 +302,7 @@ test('foreground local server keeps signal-driven process exit behavior', async 
     fabricClosed: 0,
    
     outboundStopped: 0,
-    frpStopped: 0,
+   
     logTimers: new Set(),
     logTimersCleared: 0
   };
@@ -338,7 +337,7 @@ function createLifecycleCapture() {
     fabricClosed: 0,
    
     outboundStopped: 0,
-    frpStopped: 0,
+   
     logTimers: new Set(),
     logTimersCleared: 0
   };

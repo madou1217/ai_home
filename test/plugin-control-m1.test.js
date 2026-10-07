@@ -298,7 +298,7 @@ const { createProcessCapture, createServeOptions, createServerDeps, getFreePort 
 const MANAGEMENT_KEY = 'management-key-that-is-long-enough';
 
 async function startServer(aiHomeDir, port) {
-  const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
+  const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, outboundStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
   const processObj = createProcessCapture();
   const handle = await startLocalServer(createServeOptions(port, { manageProcessLifecycle: false, managementKey: MANAGEMENT_KEY }),
     createServerDeps(aiHomeDir, processObj, lifecycle));

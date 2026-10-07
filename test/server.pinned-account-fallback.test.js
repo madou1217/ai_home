@@ -64,7 +64,7 @@ async function assertPinnedRequestFallsBack(t, retirePin) {
   const processObj = createProcessCapture();
   const lifecycle = {
     relayClosed: 0, webrtcClosed: 0, fabricClosed: 0,
-    outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0
+    outboundStopped: 0, logTimers: new Set(), logTimersCleared: 0
   };
   const mkAccount = (cliId, uuid, email) => {
     const { accountRef } = registerAccountIdentity(fs, aiHomeDir, {

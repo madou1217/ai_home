@@ -66,10 +66,6 @@ test('createServerWiring wires daemon and local runtime factories', () => {
     getToolAccountIds: () => [],
     getToolConfigDir: () => '',
     getProfileDir: () => '',
-    applyAihFrpConfig: async () => ({ ok: true }),
-    discoverFrpcConfigPath: () => '/tmp/frpc.toml',
-    reconcileAihFrpConfig: async () => ({ ok: true }),
-    removeAihFrpConfig: async () => ({ ok: true }),
     connectFabricBroker: async () => ({}),
     checkStatus: () => ({})
   };
@@ -117,10 +113,6 @@ test('createServerWiring wires daemon and local runtime factories', () => {
   assert.equal(calls.localRuntimeArg.startLocalServerDeps.logFile, '/tmp/log');
   assert.equal(calls.localRuntimeArg.startLocalServerDeps.hostHomeDir, '/tmp');
   assert.equal(calls.localRuntimeArg.startLocalServerDeps.fetchImpl, deps.fetchImpl);
-  assert.equal(calls.localRuntimeArg.startLocalServerDeps.applyAihFrpConfig, deps.applyAihFrpConfig);
-  assert.equal(calls.localRuntimeArg.startLocalServerDeps.discoverFrpcConfigPath, deps.discoverFrpcConfigPath);
-  assert.equal(calls.localRuntimeArg.startLocalServerDeps.reconcileAihFrpConfig, deps.reconcileAihFrpConfig);
-  assert.equal(calls.localRuntimeArg.startLocalServerDeps.removeAihFrpConfig, deps.removeAihFrpConfig);
   assert.equal(calls.localRuntimeArg.startLocalServerDeps.connectFabricBroker, deps.connectFabricBroker);
   assert.equal(typeof calls.localRuntimeArg.startLocalServerDeps.resolveCliPath, 'function');
 });

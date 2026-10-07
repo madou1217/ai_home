@@ -106,7 +106,7 @@ async function startClaudeServer(t) {
   await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
 
   const port = await getFreePort();
-  const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, outboundStopped: 0, frpStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
+  const lifecycle = { relayClosed: 0, webrtcClosed: 0, fabricClosed: 0, outboundStopped: 0, logTimers: new Set(), logTimersCleared: 0 };
   const handle = await startLocalServer(createServeOptions(port, {
     provider: 'claude', backend: 'passthrough', manageProcessLifecycle: false, managementKey: MANAGEMENT_KEY,
     clientKey: 'test-client-key', noProxy: true, upstreamTimeoutMs: 5000,

@@ -1,7 +1,7 @@
 import type { ServerRoute, ServerRouteHealth, ServerRouteKind } from '@/types';
 import { normalizeControlPlaneEndpoint } from '../control-plane-api-client';
 
-const ROUTE_KINDS: ServerRouteKind[] = ['direct', 'direct-lan', 'relay-via-server', 'frp'];
+const ROUTE_KINDS: ServerRouteKind[] = ['direct', 'direct-lan', 'relay-via-server'];
 const ROUTE_HEALTH_STATES: ServerRouteHealth[] = ['healthy', 'degraded', 'offline', 'unknown'];
 
 function normalizeText(value: unknown, maxLength = 512) {

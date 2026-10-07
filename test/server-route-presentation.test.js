@@ -99,10 +99,9 @@ test('server route rows merge duplicate stable server ids and mark the configure
     viaServerId: 'aws-tokyo',
     rttMs: 42
   });
-  const frp = createRoute({
-    id: 'frp-home',
-    kind: 'frp',
-    endpoint: 'http://127.0.0.1:19527',
+  const lanAlias = createRoute({
+    id: 'lan-home-alias',
+    endpoint: 'http://192.168.3.181:9528',
     health: 'degraded',
     rttMs: 66
   });
@@ -111,7 +110,7 @@ test('server route rows merge duplicate stable server ids and mark the configure
     createProfile({ routes: [lan, relay], activeRouteId: lan.id }),
     createProfile({
       id: 'legacy-duplicate',
-      routes: [lan, frp],
+      routes: [lan, lanAlias],
       activeRouteId: lan.id,
       updatedAt: 90
     })
@@ -132,7 +131,7 @@ test('server route rows merge duplicate stable server ids and mark the configure
   assert.equal(rows[0].routes.find((route) => route.id === 'relay-tokyo').kindLabel, '经 Server 中转');
   assert.equal(rows[0].routes.find((route) => route.id === 'relay-tokyo').endpointLabel, 'https://tokyo.example.com');
   assert.doesNotMatch(rows[0].routes.find((route) => route.id === 'relay-tokyo').endpointLabel, /broker/iu);
-  assert.equal(rows[0].routes.find((route) => route.id === 'frp-home').kindLabel, 'FRP 隧道');
+  assert.equal(rows[0].routes.find((route) => route.id === 'lan-home-alias').kindLabel, '局域网直连');
 });
 
 test('public and loopback Server addresses are never mislabeled as LAN routes', () => {

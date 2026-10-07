@@ -97,9 +97,6 @@ function createServerDeps(aiHomeDir, processObj, lifecycle, overrides = {}) {
       },
       getSnapshot: () => ({ running: true, relays: [] })
     }),
-    startFrpConfigReconcileLoop: () => ({
-      stop() { lifecycle.frpStopped += 1; }
-    }),
     restorePersistentSessions: () => ({ restored: 0 }),
     restorePersistedZcodeEgress: async () => ({ restored: 0 }),
     setInterval(callback, delay) {

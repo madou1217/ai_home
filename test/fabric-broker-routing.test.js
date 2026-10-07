@@ -10,7 +10,10 @@ const {
   isFabricBrokerRouteAllowed,
   parseBrokerProxyPath
 } = require('../lib/server/fabric-broker-router');
-const { createFabricBrokerSessionRegistry } = require('../lib/server/fabric-broker-session-registry');
+const {
+  createFabricBrokerSessionRegistry,
+  normalizeFabricServerId
+} = require('../lib/server/fabric-broker-session-registry');
 const {
   buildLocalRequestUrl,
   connectFabricBroker,
@@ -107,6 +110,13 @@ test('parseFabricBrokerConnectArgs normalizes broker and local endpoints', () =>
   assert.equal(options.maxAttempts, 3);
   assert.equal(options.once, true);
   assert.equal(options.json, true);
+});
+
+test('broker rejects non-canonical or oversized stable Server IDs without truncation', () => {
+  const maxLengthId = `s${'a'.repeat(63)}`;
+  assert.equal(normalizeFabricServerId(`s${'a'.repeat(62)}`), `s${'a'.repeat(62)}`);
+  assert.equal(normalizeFabricServerId(maxLengthId), maxLengthId);
+  assert.equal(normalizeFabricServerId(`${maxLengthId}b`), '');
 });
 
 test('broker session registry keeps last disconnect diagnostics', () => {

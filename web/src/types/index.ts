@@ -915,7 +915,7 @@ export interface ControlPlaneProfileBroker {
 
 export type ServerAuthorizationState = 'authorized' | 'discovered-pending-auth';
 
-export type ServerRouteKind = 'direct' | 'direct-lan' | 'relay-via-server' | 'frp';
+export type ServerRouteKind = 'direct' | 'direct-lan' | 'relay-via-server';
 
 export type ServerRouteHealth = 'healthy' | 'degraded' | 'offline' | 'unknown';
 

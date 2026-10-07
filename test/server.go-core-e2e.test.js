@@ -30,7 +30,7 @@ function lifecycleCounters() {
     fabricClosed: 0,
    
     outboundStopped: 0,
-    frpStopped: 0,
+   
     logTimers: new Set(),
     logTimersCleared: 0
   };

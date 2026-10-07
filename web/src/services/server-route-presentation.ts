@@ -47,7 +47,6 @@ function routeKindLabel(
     if (scope === 'lan') return '局域网直连';
     return '直接连接';
   }
-  if (kind === 'frp') return 'FRP 隧道';
   const serverName = serverNames.get(viaServerId) || '';
   return serverName ? `经 ${serverName} 中转` : '经 Server 中转';
 }

@@ -119,44 +119,6 @@ function seedRemoteNode(aiHomeDir) {
   return { managementKey: SERVER_MANAGEMENT_KEY };
 }
 
-test('running Server starts and stops the FRP desired-state reconcile loop', async (t) => {
-  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-frp-reconcile-'));
-  const port = await getFreePort();
-  const processObj = createProcessCapture();
-  let started = null;
-  let stopped = false;
-  t.after(async () => {
-    await processObj.stop();
-    fs.rmSync(aiHomeDir, { recursive: true, force: true });
-  });
-
-  const reconcileAihFrpConfig = async () => ({ ok: true });
-  await startLocalServer({
-    host: '127.0.0.1',
-    port,
-    provider: 'codex',
-    backend: 'openai',
-    strategy: 'round_robin',
-    codexClientVersion: '0.0.0-test',
-    managementKey: 'management-key-that-is-long-enough',
-    modelUsageScan: false,
-    providerCliAutoUpgrade: false,
-    logRequests: false,
-    frpReconcileIntervalMs: 45_000
-  }, createServerDeps(aiHomeDir, processObj, { closeAll() {} }, {
-    reconcileAihFrpConfig,
-    startFrpConfigReconcileLoop(options, deps) {
-      started = { options, deps };
-      return { stop() { stopped = true; } };
-    }
-  }));
-
-  assert.deepEqual(started.options, { aiHomeDir, intervalMs: 45_000 });
-  assert.equal(started.deps.reconcileAihFrpConfig, reconcileAihFrpConfig);
-  await processObj.stop();
-  assert.equal(stopped, true);
-});
-
 test('running Server rotates Management Key without loopback bypass or restart', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-key-rotation-'));
   const port = await getFreePort();
@@ -464,14 +426,13 @@ test('server fabric descriptor advertises Management Key and removed client cred
   assert.equal(outboundStops, 1);
 });
 
-test('running Server exposes authenticated relay and FRP configuration APIs end to end', async (t) => {
+test('running Server exposes the authenticated outbound relay configuration API end to end', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-route-config-'));
   const port = await getFreePort();
   const endpoint = `http://127.0.0.1:${port}`;
   const processObj = createProcessCapture();
   const relaySessionRegistry = { closeAll() {} };
   const relayUpdates = [];
-  const frpApplies = [];
 
   t.after(async () => {
     await processObj.stop();
@@ -505,19 +466,10 @@ test('running Server exposes authenticated relay and FRP configuration APIs end 
       },
       getSnapshot: () => ({ running: true, relays: [] }),
       stop: async () => {}
-    }),
-    applyAihFrpConfig: async (input) => {
-      frpApplies.push(input);
-      return {
-        ok: true,
-        action: 'reload',
-        changes: { main: false, fragment: true, permissions: false }
-      };
-    },
-    discoverFrpcConfigPath: () => '/fixture/frpc.toml'
+    })
   }));
 
-  const unauthenticated = await fetch(`${endpoint}/v0/webui/server-routes/frp`);
+  const unauthenticated = await fetch(`${endpoint}/v0/webui/server-routes/relays`);
   assert.equal(unauthenticated.status, 401);
 
   const relayKey = 'aws-management-key-must-never-be-returned';
@@ -542,26 +494,6 @@ test('running Server exposes authenticated relay and FRP configuration APIs end 
   assert.equal(relayUpdates[0].relays[0].managementKey, relayKey);
   assert.equal(relayText.includes(relayKey), false);
   assert.equal(JSON.parse(relayText).config.relays[0].managementKeyConfigured, true);
-
-  const frpSecret = 'internal-frp-secret-must-never-be-returned';
-  const frpResponse = await fetch(`${endpoint}/v0/webui/server-routes/frp/apply`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${SERVER_MANAGEMENT_KEY}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      role: 'provider',
-      stableServerId: 'server-route-config',
-      secretKey: frpSecret
-    })
-  });
-  const frpText = await frpResponse.text();
-  assert.equal(frpResponse.status, 200, frpText);
-  assert.equal(frpApplies.length, 1);
-  assert.equal(frpApplies[0].localPort, port);
-  assert.equal(frpApplies[0].secretKey, frpSecret);
-  assert.equal(frpText.includes(frpSecret), false);
 });
 
 test('server fabric transport echo endpoint runs on the existing server listener', async (t) => {

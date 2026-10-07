@@ -370,7 +370,7 @@ node --test test/go-route-ownership-manifest.test.js
 | SRV-014 | 同步 Codex 账号 | `aih server sync-codex` | 显式同步 Codex 账号到 Server 索引 | 兼容/高级 | `command-handler.js`、`server.sync` tests |
 | SRV-015 | Remote Server profile 添加 | `aih server add`、Web | 保存 URL + Management Key，并可设为当前 | 稳定 | `profile-command.js`、`control-plane-profiles.ts` |
 | SRV-016 | Server profile 列表/选择/删除 | `ls/use/remove`、Web | secret 不回显；切换 active profile 改变 Web 请求目标 | 稳定 | `control-plane-profiles`、`active-control-plane` |
-| SRV-017 | LAN/mDNS Server 发现 | — | 仅由已删除的桌面客户端实现，随之移除 | 废弃 | — |
+| SRV-017 | LAN/mDNS Server 发现 | — | 仅由已删除的桌面客户端使用；Server 端 mDNS 广播与 LAN route proof 已一并删除，Server identity 由 `server-identity.js` 直接加载 | 废弃 | — |
 | SRV-018 | LAN profile 授权与 route refresh | — | 仅由已删除的桌面客户端实现，随之移除 | 废弃 | — |
 | SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale；默认由用户显式重启，仅 `AIH_SERVER_SOURCE_AUTO_RESTART=1` 允许开发自动重启；CLI 复用 ready 服务 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
 | SRV-020 | 自更新检查 | `aih update --check` | 检查 npm/source install 更新，不改代码 | 稳定 | `lib/cli/services/update/self-update.js` |
@@ -415,8 +415,8 @@ node --test test/go-route-ownership-manifest.test.js
 | WEB-026 | 基础 Usage 设置 | 自动切换阈值、活跃刷新间隔、后台刷新间隔、保存/重置 | 稳定 | `web/src/pages/Settings.tsx` |
 | WEB-027 | Server 设置 | open network、host、port、API Key、Management Key、保存与一键重启 | 稳定 | `Settings.tsx` |
 | WEB-028 | Server profile 管理 | 添加、授权、设为当前、单个刷新、全部刷新、删除 | 稳定 | `Settings.tsx`、`ControlPlaneServerList.tsx` |
-| WEB-029 | 公网 outbound relay | 配置界面只存在于已删除的桌面客户端；Server 端 `/v0/webui/server-routes/relays` 接口保留，WebUI 无入口 | 废弃（UI） | `webui-outbound-relay-routes.js` |
-| WEB-030 | 无新增端口 FRP 入口 | 配置界面只存在于已删除的桌面客户端；Server 端 FRP 配置接口保留，WebUI 无入口 | 废弃（UI） | `webui-frp-config-routes.js` |
+| WEB-029 | 公网 outbound relay | 配置界面只存在于已删除的桌面客户端；Server 端 `/v0/webui/server-routes/relays` 接口保留，作为反向账号网关（FAB-022）的配置入口，WebUI 无入口 | 废弃（UI） | `webui-outbound-relay-routes.js` |
+| WEB-030 | 无新增端口 FRP 入口 | 仅由已删除的桌面客户端使用；Server 端 FRP 配置接口与 FRP Visitor 代理已一并删除 | 废弃 | — |
 | WEB-031 | 会话实时同步设置 | 展示 hook/轮询/不可用，支持一键启用/修复 hook | 稳定/受限 | `RealtimeSyncCard.tsx` |
 
 ### 8.2 页面路由与历史入口
@@ -574,7 +574,7 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 | FAB-018 | WebTransport | 浏览器 H3/WebTransport probe 与 blocker 报告 | 实验 | `transport-webtransport.js` |
 | FAB-019 | Relay durability | 多轮 echo 稳定性 gate | 实验 | `transport-relay-durability.js` |
 | FAB-020 | Transport config | `show/set/clear` 保存外部 probe 输入，不因保存而宣称 ready | 实验/高级 | `transport-config.js` |
-| FAB-021 | FRP reconcile/route proof | 公网 route 配置、状态、移除与真实性证明 | 实验/高级 | `webui-frp-config-routes.js`、`fabric-route-proof.js` |
+| FAB-021 | FRP reconcile/route proof | 仅服务已删除的桌面客户端，已删除；工具箱 frpc 安装与配置（`toolkit/tool-plugins/frpc*`）不受影响 | 废弃 | — |
 | FAB-022 | Reverse gateway | WebSocket gateway session、hop/concurrency guard、fallback | 实验 | `fabric-gateway-*` |
 | FAB-023 | WebRTC signaling/datachannel | 房间、消息、node connect、DataChannel management RPC | 实验 | `fabric-router.js`、`node-webrtc-client.js` |
 

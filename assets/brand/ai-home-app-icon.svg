@@ -4,9 +4,9 @@
      width="1024"
      height="1024"
      viewBox="0 0 1024 1024">
-  <title>AI Home desktop app icon</title>
+  <title>AI Home app icon</title>
   <defs>
-    <!-- Legacy Tauri/macOS .icns compatibility mask. The 100 px optical
+    <!-- macOS .icns compatibility mask. The 100 px optical
          margin and continuous corner curve match the modern macOS icon grid. -->
     <path id="app-icon-mask"
           d="M512 92

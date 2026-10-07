@@ -34,11 +34,10 @@ tmp/
 /workspace-root-drop-handler-*.js
 /workspace-root-drop-handler-*.js.map
 
-# Rust / Tauri / TUI build artifacts
+# Rust / TUI build artifacts
 **/target/
 **/*.pdb
 **/*.dSYM/
-desktop/src-tauri/gen/
 **/dist/
 **/build/
 **/coverage/

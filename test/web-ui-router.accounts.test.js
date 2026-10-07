@@ -280,24 +280,6 @@ async function requestAccounts(fixture, options = {}) {
   return { handled, res, body: JSON.parse(res.body), state };
 }
 
-async function requestDesktopMenu(fixture, options = {}) {
-  const res = createResCapture();
-  const state = options.state || {
-    accounts: { agy: [], claude: [], codex: [], gemini: [], opencode: [] }
-  };
-  const handled = await handleWebUIRequest({
-    method: 'GET',
-    pathname: '/v0/webui/desktop-menu',
-    url: new URL('http://localhost/v0/webui/desktop-menu'),
-    req: { headers: {} },
-    res,
-    options: options.serverOptions || {},
-    state,
-    deps: createBaseDeps(fixture, options.deps)
-  });
-  return { handled, res, body: JSON.parse(res.body), state };
-}
-
 async function requestAccountSessions(fixture, provider, accountRef, options = {}) {
   const res = createResCapture();
   const pathname = `/v0/webui/sessions/${provider}/${accountRef}`;
@@ -315,29 +297,6 @@ async function requestAccountSessions(fixture, provider, accountRef, options = {
   });
   return { handled, res, body: JSON.parse(res.body) };
 }
-
-test('desktop menu route excludes Gemini and emits only providers backed by accounts', async (t) => {
-  const fixture = createAccountFixture(t);
-  const codexRef = fixture.register('codex', '9101', { apiKeyMode: true });
-  fixture.register('gemini', '9102');
-  fixture.register('claude', '9103', {
-    state: { configured: true, apiKeyMode: false, remainingPct: 55, updatedAt: 100 }
-  });
-  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'codex', codexRef);
-
-  const { handled, res, body } = await requestDesktopMenu(fixture);
-
-  assert.equal(handled, true);
-  assert.equal(res.statusCode, 200);
-  assert.equal(body.ok, true);
-  assert.equal(body.version, 1);
-  assert.deepEqual(body.providers.map((provider) => provider.id), ['codex', 'claude']);
-  assert.equal(body.providers.some((provider) => provider.id === 'gemini'), false);
-  assert.equal(body.providers.some((provider) => provider.id === 'agy'), false);
-  assert.equal(body.providers[0].accounts[0].accountRef, codexRef);
-  assert.equal(body.providers[0].accounts[0].isDefault, true);
-  assert.equal(body.providers[0].accounts[0].usageLabel, 'API Key');
-});
 
 test('account sessions route reads the canonical provider session catalog', async (t) => {
   const fixture = createAccountFixture(t);

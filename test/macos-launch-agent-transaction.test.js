@@ -14,19 +14,11 @@ function makeFixture(spawnSync, buildLegacyServices = () => [], runtimeDeps = {}
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-macos-launch-agent-'));
   const aiHomeDir = path.join(root, '.ai_home');
   const launchdPlist = path.join(root, 'Library', 'LaunchAgents', 'com.clawdcodex.ai_home.plist');
-  const appPath = path.join(root, 'AI Home.app');
-  const iconSourcePath = path.join(root, 'AIHome.icns');
-  const launchServicesPath = path.join(root, 'lsregister');
-  fs.writeFileSync(iconSourcePath, 'test-icon');
-  fs.writeFileSync(launchServicesPath, 'test-launch-services');
   const legacyServices = buildLegacyServices(root);
   const agent = createMacosLaunchAgent({
     aiHomeDir,
     hostHomeDir: root,
     launchdPlist,
-    appPath,
-    iconSourcePath,
-    launchServicesPath,
     resolveAihCommandPath: () => '/opt/homebrew/bin/aih',
     legacyServices
   }, {
@@ -42,7 +34,7 @@ function makeFixture(spawnSync, buildLegacyServices = () => [], runtimeDeps = {}
       fs.mkdirSync(directory, { recursive: true });
     }
   });
-  return { root, launchdPlist, appPath, agent };
+  return { root, launchdPlist, agent };
 }
 
 function launchctlResult(status, stderr = '') {
@@ -105,7 +97,7 @@ test('macOS launch agent stages an installed but unloaded plist without requirin
   )), false);
 });
 
-test('macOS launch agent identifies the job through the AI Home app without adding a resident process', (t) => {
+test('macOS launch agent runs aih directly without an app bundle wrapper', (t) => {
   const fixture = makeFixture((command, args) => {
     if (command !== 'launchctl') return launchctlResult(0);
     if (args[0] === 'print' || args[0] === 'list') {
@@ -117,19 +109,13 @@ test('macOS launch agent identifies the job through the AI Home app without addi
 
   fixture.agent.install();
 
-  const executable = path.join(
-    fixture.appPath,
-    'Contents',
-    'MacOS',
-    'AIHomeBackground'
-  );
   const plist = fs.readFileSync(fixture.launchdPlist, 'utf8');
   assert.match(
     plist,
-    new RegExp(`${executable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>\\s+<string>\\/opt\\/homebrew\\/bin\\/aih`)
+    /<key>ProgramArguments<\/key>\s+<array>\s+<string>\/opt\/homebrew\/bin\/aih<\/string>\s+<string>__background<\/string>/
   );
-  assert.equal(fs.readFileSync(executable, 'utf8'), '#!/bin/sh\nexec "$@"\n');
-  assert.equal(fs.statSync(executable).mode & 0o777, 0o755);
+  assert.doesNotMatch(plist, /AIHomeBackground|AssociatedBundleIdentifiers|\.app\//);
+  assert.equal(fs.existsSync(path.join(fixture.root, 'Library', 'Application Support')), false);
 });
 
 test('macOS launch agent waits for an old job to finish bootout before bootstrapping its replacement', (t) => {
@@ -271,34 +257,6 @@ test('macOS launch agent refuses to treat launchctl status errors as an unloaded
     () => fixture.agent.getStatus(),
     { code: 'background_launchd_status_failed' }
   );
-  assert.equal(fs.readFileSync(fixture.launchdPlist, 'utf8'), 'existing-supervisor-plist');
-});
-
-test('macOS launch agent treats icon registration failure as an install failure', (t) => {
-  const fixture = makeFixture((command, args) => {
-    if (command === path.join(fixture.root, 'lsregister')) {
-      return launchctlResult(1, 'LaunchServices registration failed');
-    }
-    if (command === 'launchctl' && (args[0] === 'print' || args[0] === 'list')) {
-      return launchctlResult(0);
-    }
-    return launchctlResult(0);
-  });
-  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
-  fs.mkdirSync(path.dirname(fixture.launchdPlist), { recursive: true });
-  fs.writeFileSync(fixture.launchdPlist, 'existing-supervisor-plist');
-  let restoredState = 0;
-
-  assert.throws(
-    () => fixture.agent.install({
-      restoreState() {
-        restoredState += 1;
-      }
-    }),
-    { code: 'background_supervisor_app_registration_failed' }
-  );
-
-  assert.equal(restoredState, 1);
   assert.equal(fs.readFileSync(fixture.launchdPlist, 'utf8'), 'existing-supervisor-plist');
 });
 

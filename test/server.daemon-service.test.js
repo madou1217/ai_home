@@ -2223,13 +2223,9 @@ test('daemon service installs the branded macOS background supervisor', POSIX_ON
   assert.equal(status.type, 'launchd');
   assert.equal(status.installed, true);
   assert.equal(status.loaded, true);
-  assert.match(plist, /AI Home\.app\/Contents\/MacOS\/AIHomeBackground<\/string>\s+<string>\/opt\/homebrew\/bin\/aih/);
+  assert.doesNotMatch(plist, /AIHomeBackground|AssociatedBundleIdentifiers/);
   assert.match(plist, /<string>\/opt\/homebrew\/bin\/aih<\/string>/);
   assert.match(plist, /<string>__background<\/string>\s+<string>run<\/string>/);
-  assert.match(
-    plist,
-    /<key>AssociatedBundleIdentifiers<\/key>\s+<array>\s+<string>com\.aih\.background<\/string>\s+<\/array>/
-  );
   assert.match(plist, /<key>KeepAlive<\/key>\s+<dict>\s+<key>SuccessfulExit<\/key>\s+<false\/>\s+<\/dict>/);
   assert.match(plist, /<key>ExitTimeOut<\/key>\s+<integer>110<\/integer>/);
   assert.doesNotMatch(plist, /<string>server<\/string>\s+<string>serve<\/string>/);
@@ -2247,19 +2243,7 @@ test('daemon service installs the branded macOS background supervisor', POSIX_ON
   )), false);
   assert.equal(calls.some((call) => call.cmd === 'launchctl' && call.args[0] === 'bootstrap'), true);
 
-  const appPath = path.join(
-    root,
-    'Library',
-    'Application Support',
-    'AI Home',
-    'AI Home.app'
-  );
-  const infoPlist = fs.readFileSync(path.join(appPath, 'Contents', 'Info.plist'), 'utf8');
-  const appExecutable = path.join(appPath, 'Contents', 'MacOS', 'AIHomeBackground');
-  assert.match(infoPlist, /<key>CFBundleDisplayName<\/key>\s+<string>AI Home<\/string>/);
-  assert.match(infoPlist, /<key>CFBundleIdentifier<\/key>\s+<string>com\.aih\.background<\/string>/);
-  assert.equal(fs.readFileSync(appExecutable, 'utf8'), '#!/bin/sh\nexec "$@"\n');
-  assert.equal(fs.existsSync(path.join(appPath, 'Contents', 'Resources', 'AIHome.icns')), true);
+  assert.equal(fs.existsSync(path.join(root, 'Library', 'Application Support', 'AI Home')), false);
 });
 
 test('daemon service start reloads an installed macOS supervisor instead of spawning server-only', async (t) => {

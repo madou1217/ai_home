@@ -82,7 +82,7 @@ test('parseNodeRelayServiceArgs rejects secret-bearing service installs', () => 
   );
 });
 
-test('node relay service joins one branded macOS background supervisor', (t) => {
+test('node relay service joins the one macOS background supervisor', (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const calls = [];
@@ -129,10 +129,7 @@ test('node relay service joins one branded macOS background supervisor', (t) => 
   assert.match(plist, /<string>__background<\/string>\s+<string>run<\/string>/);
   assert.doesNotMatch(plist, /<string>node<\/string>\s+<string>relay<\/string>/);
   assert.doesNotMatch(plist, /https:\/\/control\.example\.com/);
-  assert.match(
-    plist,
-    /<key>AssociatedBundleIdentifiers<\/key>\s+<array>\s+<string>com\.aih\.background<\/string>\s+<\/array>/
-  );
+  assert.doesNotMatch(plist, /AssociatedBundleIdentifiers|AIHomeBackground/);
   assert.equal(plist.includes('node-secret'), false);
   assert.equal(
     calls.filter((call) => call.cmd === 'launchctl' && call.args[0] === 'bootstrap').length,
@@ -156,17 +153,7 @@ test('node relay service joins one branded macOS background supervisor', (t) => 
   ]);
   assert.equal(JSON.stringify(desiredState).includes('node-secret'), false);
 
-  const appPath = path.join(
-    root,
-    'Library',
-    'Application Support',
-    'AI Home',
-    'AI Home.app'
-  );
-  const infoPlist = fs.readFileSync(path.join(appPath, 'Contents', 'Info.plist'), 'utf8');
-  assert.match(infoPlist, /<key>CFBundleDisplayName<\/key>\s+<string>AI Home<\/string>/);
-  assert.match(infoPlist, /<key>CFBundleIdentifier<\/key>\s+<string>com\.aih\.background<\/string>/);
-  assert.equal(fs.existsSync(path.join(appPath, 'Contents', 'Resources', 'AIHome.icns')), true);
+  assert.equal(fs.existsSync(path.join(root, 'Library', 'Application Support', 'AI Home')), false);
 });
 
 test('node relay service restores desired state before restarting the previous macOS supervisor', (t) => {

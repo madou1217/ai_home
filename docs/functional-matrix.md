@@ -12,11 +12,11 @@
 
 ## 1. 盘点口径
 
-本矩阵以当前仓库的 CLI 路由、HTTP 路由、WebUI 页面与服务、Tauri 命令、后台服务、测试文件和发布脚本为依据。入口包括：
+本矩阵以当前仓库的 CLI 路由、HTTP 路由、WebUI 页面与服务、后台服务、测试文件和发布脚本为依据。入口包括：
 
 - `aih` CLI 与 provider 原生 CLI 启动链。
 - OpenAI/Anthropic/Gemini 兼容网关、Management API、WebUI API、Fabric/Node RPC。
-- React WebUI、响应式移动端视图、PWA manifest 和 Tauri 桌面壳。
+- React WebUI、响应式移动端视图和 PWA manifest。
 - tmux/PTY、会话读取、账号隔离、后台刷新、诊断及发布工具。
 - 同级 `../clawdcodex` 只做只读可复用性核对，不计入 AI Home 已交付功能。
 
@@ -47,7 +47,6 @@
 | 统一 API 网关 | OpenAI Chat/Responses、Anthropic Messages、Gemini generateContent、模型目录与 Codex app-server | 稳定/受限混合 | `lib/server/server.js`、`lib/server/v1-router.js` |
 | WebUI | 仪表盘、账号、AI 会话、用量、模型、Server、SSH、设置 | 稳定/实验混合 | `web/config/routes.ts`、`web/src/pages/` |
 | 移动端/PWA | 响应式卡片/抽屉/底部导航与 standalone manifest；未发现离线 service worker | 受限 | `web/src/components/mobile/`、`web/public/manifest.json` |
-| Tauri 桌面端 | Server profile、系统 Keyring、原生 HTTP/SSE/blob、LAN 发现、托盘与打包 | 受限 | `src-tauri/src/`、`scripts/desktop/` |
 | 后台服务 | Server daemon、自启、账号/用量/模型刷新、会话恢复、hook、自愈与日志 | 稳定/内部混合 | `lib/cli/services/server/`、`lib/server/` |
 
 ## 2. Provider 覆盖矩阵
@@ -56,7 +55,7 @@
 
 合同里另有一条**产品族 / 站点**轴：`family` + `site`（`global` | `cn`）。国内站与国际站
 账号体系不互通，因此始终是两个独立 Provider（身份、凭据、默认账号各归各的），但**展示层
-按产品族收敛**——账号页 tab、添加账号/模型下拉、聊天账号菜单与桌面托盘都只给一个产品入口，
+按产品族收敛**——账号页 tab、添加账号/模型下拉、聊天账号菜单都只给一个产品入口，
 站点降为二级标记。无后缀 = 国际站。详见
 `docs/architecture/codebuddy-family-credential-model.md` §12。
 
@@ -364,15 +363,15 @@ node --test test/go-route-ownership-manifest.test.js
 | SRV-007 | Server config 查看/取值/设置 | `aih server config show\|get\|set` | 单一配置存储；secret 默认脱敏，显式选项才显示 | 稳定 | `server-config-command.js`、`server-config-store.js` |
 | SRV-008 | 监听配置 | CLI/Settings | host、port、`open-network`/`local-only`；开放网络映射 `0.0.0.0` | 稳定 | `lib/server/args.js`、`web/src/pages/Settings.tsx` |
 | SRV-009 | Client API Key | CLI/Settings | 保护 `/v1` 客户端入口；支持设置/清除/生成 | 稳定 | `server-config-command.js` |
-| SRV-010 | Management Key | CLI/Settings/Tauri | 保护 Management/WebUI/Fabric；支持生成、清除和旋转 | 稳定 | `management-key-auth.js`、`management-key-rotation.js` |
+| SRV-010 | Management Key | CLI/Settings | 保护 Management/WebUI/Fabric；支持生成、清除和旋转 | 稳定 | `management-key-auth.js`、`management-key-rotation.js` |
 | SRV-011 | Proxy/no-proxy | CLI config/serve | 配置上游代理与 bypass | 稳定 | `lib/server/args.js`、`http-utils.js` |
 | SRV-012 | 模型探测账号数 | CLI config | 配置 catalog probe 的账号范围 | 高级 | `models-probe-accounts` config |
 | SRV-013 | 输出客户端环境变量 | `aih server env` | 输出 OpenAI-compatible base URL/key 环境设置 | 稳定 | `command-handler.js` |
 | SRV-014 | 同步 Codex 账号 | `aih server sync-codex` | 显式同步 Codex 账号到 Server 索引 | 兼容/高级 | `command-handler.js`、`server.sync` tests |
-| SRV-015 | Remote Server profile 添加 | `aih server add`、Web/桌面 | 保存 URL + Management Key，并可设为当前 | 稳定/受限 | `profile-command.js`、`server-profile-repository.ts` |
-| SRV-016 | Server profile 列表/选择/删除 | `ls/use/remove`、Web | secret 不回显；切换 active profile 改变 Web/desktop 请求目标 | 稳定 | `control-plane-profiles`、`active-control-plane` |
-| SRV-017 | LAN/mDNS Server 发现 | Settings/Tauri | 搜索 `_ai-home._tcp`，发现 route 不自动获得凭据 | 受限 | `src-tauri/src/server_discovery.rs` |
-| SRV-018 | LAN profile 授权与 route refresh | Tauri | Management Key proof 后提交可信 route；支持刷新与健康排序 | 受限 | `commands.rs`、`server_route_runtime.rs` |
+| SRV-015 | Remote Server profile 添加 | `aih server add`、Web | 保存 URL + Management Key，并可设为当前 | 稳定 | `profile-command.js`、`control-plane-profiles.ts` |
+| SRV-016 | Server profile 列表/选择/删除 | `ls/use/remove`、Web | secret 不回显；切换 active profile 改变 Web 请求目标 | 稳定 | `control-plane-profiles`、`active-control-plane` |
+| SRV-017 | LAN/mDNS Server 发现 | — | 仅由已删除的桌面客户端实现，随之移除 | 废弃 | — |
+| SRV-018 | LAN profile 授权与 route refresh | — | 仅由已删除的桌面客户端实现，随之移除 | 废弃 | — |
 | SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale；默认由用户显式重启，仅 `AIH_SERVER_SOURCE_AUTO_RESTART=1` 允许开发自动重启；CLI 复用 ready 服务 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
 | SRV-020 | 自更新检查 | `aih update --check` | 检查 npm/source install 更新，不改代码 | 稳定 | `lib/cli/services/update/self-update.js` |
 | SRV-021 | Dry-run/强制更新 | `aih update --dry-run\|--force` | npm 安装可自动更新；source-linked 安装只给安全的手工提示 | 稳定/受限 | `self-update.js` |
@@ -415,9 +414,9 @@ node --test test/go-route-ownership-manifest.test.js
 | WEB-025 | Alias 规则字段 | alias、target、provider scope、target provider、priority、备注、enabled | 稳定 | `ModelAliases.tsx` |
 | WEB-026 | 基础 Usage 设置 | 自动切换阈值、活跃刷新间隔、后台刷新间隔、保存/重置 | 稳定 | `web/src/pages/Settings.tsx` |
 | WEB-027 | Server 设置 | open network、host、port、API Key、Management Key、保存与一键重启 | 稳定 | `Settings.tsx` |
-| WEB-028 | Server profile 管理 | 添加、授权、设为当前、单个刷新、全部刷新、删除、LAN 发现 | 稳定/受限 | `Settings.tsx`、`ControlPlaneServerList.tsx` |
-| WEB-029 | 公网 outbound relay | 选择 1 个本地 Server + 1–5 个公网 Server，让本地主动建立入口 | 实验/高级 | `PublicServerEntryCard.tsx` |
-| WEB-030 | 无新增端口 FRP 入口 | 选择连接同一 FRPS 的 Server，配置并逐一验证 visitor | 实验/高级 | `PublicServerEntryCard.tsx`、`webui-frp-config-routes.js` |
+| WEB-028 | Server profile 管理 | 添加、授权、设为当前、单个刷新、全部刷新、删除 | 稳定 | `Settings.tsx`、`ControlPlaneServerList.tsx` |
+| WEB-029 | 公网 outbound relay | 配置界面只存在于已删除的桌面客户端；Server 端 `/v0/webui/server-routes/relays` 接口保留，WebUI 无入口 | 废弃（UI） | `webui-outbound-relay-routes.js` |
+| WEB-030 | 无新增端口 FRP 入口 | 配置界面只存在于已删除的桌面客户端；Server 端 FRP 配置接口保留，WebUI 无入口 | 废弃（UI） | `webui-frp-config-routes.js` |
 | WEB-031 | 会话实时同步设置 | 展示 hook/轮询/不可用，支持一键启用/修复 hook | 稳定/受限 | `RealtimeSyncCard.tsx` |
 
 ### 8.2 页面路由与历史入口
@@ -448,7 +447,7 @@ node --test test/go-route-ownership-manifest.test.js
 
 | 编号 | 功能点 | 当前行为/边界 | 状态 | 主要证据 |
 |---|---|---|---|---|
-| WEB-046 | Go Preview 独立传输 | Preview 页面固定访问同源 `/v1/management`，由 19528 开发代理转发到 19527；不读取 active Server Profile，不修改正式 Browser/Tauri 账号路由 | 已实现（隔离 Preview） | `web/src/services/account-management/preview.ts`、`web/config/config.ts`、`scripts/go-accounts-preview.js` |
+| WEB-046 | Go Preview 独立传输 | Preview 页面固定访问同源 `/v1/management`，由 19528 开发代理转发到 19527；不读取 active Server Profile，不修改正式 Browser 账号路由 | 已实现（隔离 Preview） | `web/src/services/account-management/preview.ts`、`web/config/config.ts`、`scripts/go-accounts-preview.js` |
 | WEB-047 | Codex/Claude Preview 单账号操作 | 静态添加、browser OAuth/callback/取消、reauth、启停、静态轮换、默认、删除、usage refresh、单账号模型查看/刷新、inherit/force_enable/force_disable 策略维护、单份 sub2api 导入与单账号导出 | 已实现（自动化 + 独立 Preview 临时账号闭环；Codex/Claude 真实 Provider 与迁移验收已通过） | `web/src/services/account-management/facade.ts`、`client.ts`、`web/src/pages/AccountsGoPreview.tsx`、`internal/host/aihserver/live_*test.go` |
 | WEB-048 | 未知状态诚实投影 | Go 未返回 runtime/quota/schedulable 时统一显示未知；只有 Preview 页面真实发起模型刷新才显示“探测中”，成功空结果显示“未发现模型”，初始空状态不猜测 | 已实现（Go Preview） | `web/src/services/account-management/projection.ts`、`web/src/pages/AccountsGoPreview.tsx` |
 | WEB-049 | Go Preview 明确不支持项 | Device auth、Codex App/mobile role、原生 CLI 安装、全局导出、后台批量导入 Job、目录/ZIP/JSONL 导入均不进入 Go Preview；正式 Node 页面保持原能力，不用双写兜底 | 暂不支持（明确边界） | `web/src/services/account-management/facade.ts`、`web/src/pages/AccountsGoPreview.tsx` |
@@ -541,28 +540,9 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | SSH-007 | 远端目录浏览 | 在选定连接上浏览目录和 parent/children | 高级 | `/v0/webui/ssh-hosts/browse` |
 | SSH-008 | 项目与连接绑定 | workspace 记录项目逻辑与物理 SSH connection | 高级 | `FabricSshHosts.tsx` |
 
-### 10.2 Tauri 桌面端
+### 10.2 Tauri 桌面端（已删除）
 
-| 编号 | 功能点 | 当前行为/边界 | 状态 | 主要证据 |
-|---|---|---|---|---|
-| DESK-001 | Profile list/upsert/remove | 桌面原生 profile store；endpoint 改变时要求重新授权 | 受限 | `src-tauri/src/profile_store.rs` |
-| DESK-002 | Active profile get/set | 桌面启动与请求统一跟随 active Server | 受限 | `commands.rs` |
-| DESK-003 | Secret Keyring | Management Key 只在系统 Keyring，profile JSON 不保存原值 | 受限/安全关键 | `secret_store.rs` |
-| DESK-004 | Browser profile secret store | 浏览器版使用受信浏览器 storage；与桌面 Keyring 是两种实现 | 稳定/受限 | `server-profile-repository.ts` |
-| DESK-005 | 原生 JSON HTTP adapter | Web renderer 经 Rust 发请求，统一注入 profile credential | 受限 | `server_http.rs`、`tauri-adapter.ts` |
-| DESK-006 | HTTPS 边界 | 远程 endpoint 必须 HTTPS；HTTP 只允许 loopback | 稳定/受限 | `src-tauri/src/endpoint.rs` |
-| DESK-007 | Blob 下载与 `aihblob` | 原生下载到 blob store，以本地协议读取并显式 release | 受限 | `blob_store.rs`、blob commands |
-| DESK-008 | Native SSE/stream | open/cancel registry，Web renderer 接收原生 stream event | 受限 | `stream_registry.rs`、stream commands |
-| DESK-009 | mDNS 发现/授权/route refresh | 发现 LAN Server，proof 后保存可信 route | 受限 | `server_discovery.rs`、`commands.rs` |
-| DESK-010 | Route 健康排序 | health、RTT、sticky hysteresis、失败惩罚，避免 route 抖动 | 受限 | `server_route_runtime.rs` |
-| DESK-011 | Outbound relay 配置 | 为本地 profile 配置多个公网 Server relay | 实验/高级 | `desktop_outbound_relays_configure` |
-| DESK-012 | FRP route 配置 | 配置无新增端口 visitor 并验证 | 实验/高级 | `desktop_frp_route_configure` |
-| DESK-013 | Relay route trust | 将验证通过的 route 纳入可信请求候选 | 实验/高级 | `desktop_relay_route_trust` |
-| DESK-014 | Management Key rotate | 原生安全替换 Keyring secret 并刷新 profile/tray | 受限 | `desktop_management_key_rotate` |
-| DESK-015 | 系统托盘 | 打开、刷新、退出；macOS/Windows 关闭窗口隐藏到托盘 | 受限 | `tray.rs`、`main.rs` |
-| DESK-016 | 托盘账号切换 | 显示 Codex/Claude 等允许 provider 的账号、default 与 usage，点击设默认；同族国内/国际站合并为一个入口，账号行带站点标记 | 受限 | `tray.rs`、`desktop-menu-model.js` |
-| DESK-017 | 托盘刷新 | 启动立即加载并约 20 秒刷新；profile 变化主动刷新 | 受限 | `tray.rs` |
-| DESK-018 | 多平台打包/smoke/evidence | 构建 Web/Tauri、安装包、packaged smoke、manifest 和 release evidence | 开发/发布 | `scripts/desktop/`、`docs/release/` |
+Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输、mDNS 发现与多平台打包）已整体删除。DESK-001 至 DESK-018 标为废弃，编号不复用。
 
 ## 11. Fabric、Remote Worker 与网络实验面
 
@@ -634,8 +614,8 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | OPS-008 | Chat runtime smoke | real Codex、interaction、secret probe、evidence | 开发/验收 | `scripts/chat-runtime-*` |
 | OPS-009 | Fabric real smoke | broker/relay/mobile PWA/profile switch/recovery/readiness/VPS/WebRTC/WebTransport | 开发/验收 | `scripts/fabric-real-*` |
 | OPS-010 | Fabric preflight/gates | cloud edge、UDP、daemon、M6 prerequisite/promotion/durability、multipath | 开发/验收 | `scripts/fabric-*preflight*`、`*gate*` |
-| OPS-011 | Desktop build/package/smoke | Web desktop build/dev、package install、fixture server、packaged smoke | 发布 | `scripts/desktop/` |
-| OPS-012 | Desktop release evidence | prepare/collect/validate manifest 与 evidence | 发布 | `scripts/desktop/*release*`、`docs/release/` |
+| OPS-011 | Desktop build/package/smoke | 随桌面客户端删除 | 废弃 | — |
+| OPS-012 | Desktop release evidence | 随桌面客户端删除 | 废弃 | — |
 | OPS-013 | Codex session provider 对齐 | 修复/核对 session provider metadata | 运维/兼容 | `scripts/align-codex-session-providers.js` |
 | OPS-014 | UI delegation | 启动/协调 UI delegate 流程 | 开发/实验 | `scripts/ai-ui-delegate.js` |
 | OPS-015 | Provider hook sender | provider 官方 hook 调用的低依赖 sender | 内部 | `scripts/aih-provider-session-hook-sender.js` |
@@ -672,11 +652,11 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 | Canonical chat 与 legacy chat 并存 | 两套 state、queue、run、projection、composer 和 HTTP 面同时存在 | 先按 provider/session capability 建契约测试，再逐条切流；不能直接删 legacy |
 | 账号状态有多个投影视图 | DB identity、runtime state、quota、Web live、CLI badge、Management view 分层派生 | `accountRef` 必须继续是唯一身份；不得恢复 profile-directory/数字 ID 真值 |
 | Provider 能力分散 | catalog、native capability、session reader、hook、model capability、protocol route 各有 registry | 迁移时先建立单一 capability contract，不能仅凭“provider 在列表里”判断所有能力 |
-| Server profile 有浏览器与 Tauri 两套存储 | 浏览器 trusted storage；桌面 profile JSON + Keyring | 新实现要保持 credential 不进 URL、DOM、普通 JSON/日志 |
+| Server profile 存在浏览器 storage | 浏览器 trusted storage 保存 profile 与 Management Key | 新实现要保持 credential 不进 URL、DOM、普通 JSON/日志 |
 | 会话系统同时含 native store、tmux registry、chat-runtime DB | 三者身份和生命周期不同 | 不得把“CLI 持久会话”“原生对话历史”“Web canonical session”合并成一个模糊 ID |
 | 网关协议路径多 | OpenAI、Anthropic、Gemini、Codex app-server、direct passthrough、bridge 并存 | 固定 client→canonical→adapter→canonical→renderer 方向；避免 provider if/else 再扩散 |
 | Fabric 面积大但一级 UI 收缩 | CLI/RPC/测试仍多，旧 Web Node 页面已重定向 | 先区分“产品稳定面”和“实验控制面”，迁移顺序不能由文件数量决定 |
-| JavaScript 与 TypeScript 混用 | 主体 `lib/` 为 CommonJS JS，Web 同时有 TS/TSX 与 legacy JS/d.ts，Tauri 已是 Rust | 未来保留 JS 的部分转 TS 时要按模块边界逐个完成，不做一次性机械全仓改名 |
+| JavaScript 与 TypeScript 混用 | 主体 `lib/` 为 CommonJS JS，Web 同时有 TS/TSX 与 legacy JS/d.ts | 未来保留 JS 的部分转 TS 时要按模块边界逐个完成，不做一次性机械全仓改名 |
 
 ### 14.1 Node 缺陷经验转成 G1 回归守卫
 
@@ -699,7 +679,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 
 `../clawdcodex` 是 Rust workspace，不是只有研究文档。当前 workspace 包含 `accounts`、`providers`、`config-sync`、`context`、`hooks`、`policy`、`sessions`、`runtime`、`terminal`、`storage`、`node`、`server`、`cli`，另有 TypeScript Web。它已具备账号维护、ai_home 导入、SQLite repository、Codex/Claude session discovery/sync/snapshot，以及 OpenAI Chat、OpenAI Responses、Claude Messages 的 API Key relay 最小闭环。
 
-但它当前明确没有覆盖 AI Home 的完整能力：10 provider 全链、tmux 精确会话语义、完整 Web 会话工作台、桌面托盘/route、Fabric 大量控制面、完整 usage/billing，以及多种 OAuth/协议 bridge。其验收文档还明确列出 OAuth bridge streaming、完整 typed event timeline、Gemini Native、native session usage、完整 billing 与多 agent 等未完成项。
+但它当前明确没有覆盖 AI Home 的完整能力：10 provider 全链、tmux 精确会话语义、完整 Web 会话工作台、Fabric 大量控制面、完整 usage/billing，以及多种 OAuth/协议 bridge。其验收文档还明确列出 OAuth bridge streaming、完整 typed event timeline、Gemini Native、native session usage、完整 billing 与多 agent 等未完成项。
 
 ### 15.2 候选复用矩阵
 
@@ -722,7 +702,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 2. 先写现有 Node/TS 行为的黑盒契约测试，再让 Rust/Go 新实现通过同一组测试。
 3. 优先旁路/Strangler：同一输入可 shadow 到新实现，比较 canonical 输出、状态变更和性能，再切换单项流量。
 4. 数据层先做只读/双读验证；任何写路径切换都必须有明确回滚和旧版本可读性。
-5. Go 更适合独立 daemon、网络/并发运维组件；Rust 更适合本地核心、协议、存储、runtime 与 Tauri 共享库。具体归属要在下一阶段逐能力评估，不能先按语言偏好硬拆。
+5. Go 更适合独立 daemon、网络/并发运维组件；Rust 更适合本地核心、协议、存储与 runtime。具体归属要在下一阶段逐能力评估，不能先按语言偏好硬拆。
 6. 保留 WebUI 的部分统一为 TypeScript，但先消除 canonical/legacy 重复职责，再做语言迁移；机械 `.js → .ts` 不等于重构完成。
 
 证据：`../clawdcodex/Cargo.toml`、`../clawdcodex/docs/planning/current-acceptance.md`。核对时该仓库已有用户未提交文档修改，本次未修改、未清理这些内容。
@@ -736,7 +716,7 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 3. 新 provider 必须同时回答：认证、账号状态、模型目录、额度、session、hook、protocol、failure policy、导入导出九个维度。
 4. 新入口必须区分普通用户、运维高级、内部和开发工具，避免再次把实验实现当产品承诺。
 5. 技术栈迁移报告至少记录：旧实现、目标实现、数据兼容、回滚、性能对比、测试命令和真实运行证据。
-6. 根路由、Web 路由、Tauri commands、provider catalog、test 文件发生变化时，应进行一次矩阵防漏回扫。
+6. 根路由、Web 路由、provider catalog、test 文件发生变化时，应进行一次矩阵防漏回扫。
 
 ## 17. 本次盘点的核心证据索引
 
@@ -745,6 +725,5 @@ Canonical chat HTTP 面包括：`/v0/webui/chat/sessions`、session resolve/snap
 - 网关：`lib/server/server.js`、`lib/server/v1-router.js`、`lib/server/router.js`、`lib/server/capability-router.js`、`lib/server/protocol-*.js`。
 - Web API：`lib/server/web-ui-router.js`、`lib/server/webui-*-routes.js`、`lib/server/management-router.js`、`lib/server/node-rpc-router.js`。
 - WebUI：`web/config/routes.ts`、`web/src/pages/`、`web/src/features/`、`web/src/components/`、`web/src/services/api.ts`。
-- 桌面：`src-tauri/src/commands.rs`、`profile_store.rs`、`secret_store.rs`、`server_http.rs`、`server_discovery.rs`、`server_route_runtime.rs`、`tray.rs`。
 - 会话：`lib/sessions/session-reader.js`、`lib/server/session-lifecycle/`、`lib/server/chat-runtime/`。
-- 验证面：`test/*.test.js`、`web/src/**/*.test.ts`、`scripts/desktop/`、`scripts/fabric-*`、`scripts/chat-runtime-*`。
+- 验证面：`test/*.test.js`、`web/src/**/*.test.ts`、`scripts/fabric-*`、`scripts/chat-runtime-*`。

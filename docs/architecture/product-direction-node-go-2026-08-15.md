@@ -23,7 +23,6 @@
 - **Node Host** 保留公开产品入口、Web/Fabric BFF、原生 CLI、PTY、tmux、Session、文件、
   Git、SSH 和平台编排；不再维护第二套账号或 Relay 决策。
 - **WebUI** 只消费稳定 Read Contract，不根据接口来自 Node 或 Go 自行推断业务事实。
-- **Tauri** 只负责桌面传输、系统能力和安全凭据注入，不成为第三套业务核心。
 - **`aih.db`** 是账号领域唯一持久化真相；`app-state.db` 只保留非账号的 UI、Native 和
   本地宿主状态。
 
@@ -79,7 +78,7 @@ Relay 能力进入 Go Core，再由 Node 的透明 BFF 替换旧路径；Provide
 ## 6. 目标运行拓扑
 
 ```text
-Browser / Tauri / CLI / Provider Client
+Browser / CLI / Provider Client
                     |
                     v
           Node Public Host :9527
@@ -119,7 +118,7 @@ Browser / Tauri / CLI / Provider Client
 - Node 向 Go 传播 `request_id`、取消和 deadline；Response Header 或任何 Body/SSE 字节
   已向客户端 commit 后，任何一层都不得静默换账号或重放请求。
 - Browser 不持有内部 Management Key。迁移期只有 Node daemon 持有并注入私有 Go 鉴权；
-  Tauri、CLI 和 Browser 均只连接 Node 公开合同。DOM、URL、argv、日志和错误中不得出现
+  CLI 和 Browser 均只连接 Node 公开合同。DOM、URL、argv、日志和错误中不得出现
   内部密钥。
 - BFF 只做认证、同源、传输和必要的 Client DTO 适配；不得重新选号、重试、协议重编码、
   cooldown 或错误分类。
@@ -143,7 +142,7 @@ Core。
 - Go 上线门禁完成前，生产公开 `127.0.0.1:9527` 必须继续由 Node Host 持有。
 - Go 只能绑定 supervisor 分配并登记的私有 endpoint。开发或测试可以显式直接启动 Go，
   但必须使用隔离端口/临时目录，不能占用或冒充当前正式 AIH Server。
-- Web、Tauri、CLI 和 Provider Client 在迁移期仍只连接 Node 公开入口，不得各自探测或
+- Web、CLI 和 Provider Client 在迁移期仍只连接 Node 公开入口，不得各自探测或
   绕过 Node 直连某个 Go 端口。
 - “Go 上线”至少要求：正式安装包包含并校验 Go 构件；Node 能监督启动/停止/升级；
   账号只写 `aih.db`；目标协议通过真实 Composition Root、shadow 和真实 Provider 验收；
@@ -192,7 +191,6 @@ node_owned -> write_frozen -> migrated_and_verified -> go_owned
 | 原生 CLI、PTY、tmux、Session | Node Native Host | 通过 lease 使用账号，不读 Go SQLite |
 | Web/Fabric、文件、Git、SSH | Node BFF | 不拥有账号或 Relay 真相 |
 | 浏览器状态与展示 | Web Read Model | 不从缺失字段猜健康或可调度性 |
-| 桌面安全存储和系统调用 | Tauri Adapter | 不实现账号业务规则 |
 
 静态 Provider Registry 只声明 `declared` 身份与理论能力；`account_manageable`、`relay_ready`
 由 Go 当前 Composition Root 的真实装配产生，`native_runtime_ready` 由 Node 当前主机探测
@@ -532,7 +530,6 @@ Server 未声明相应 capability 时，路由展示带原因的 unavailable 状
 
 - Node BFF 成为经测量的吞吐、内存或发布瓶颈，且 Go 已覆盖对应平台能力；
 - 单进程产品部署成为明确硬约束；
-- Tauri 需要直接托管 Go Core，且能保持相同监督、密钥和 Read Contract；
 - 团队规模与独立扩缩容需求真实增长到值得引入服务拆分。
 
 在这些条件出现前，不新增第三套账号存储、第二套路由器、动态插件容器或 Rust 业务核心。

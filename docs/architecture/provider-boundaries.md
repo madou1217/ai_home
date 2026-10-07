@@ -27,7 +27,7 @@
 | Integration Adapters（集成适配器） | `lib/server/`、`lib/cli/services/`、`lib/account/` 中的 Provider 专属模块 | OAuth、API Key、CLI、Hook、上游协议、会话存储等外部系统细节 | Application 定义的稳定输入；不能反向定义 Provider 身份 |
 | Delivery（交付入口） | `bin/`、HTTP/SSE/WebSocket 路由 | CLI 和网络请求接入、参数校验、响应渲染 | Application；不放 Provider 业务规则 |
 | Client（客户端） | `web/src/providers/`、React 页面 | 消费最小 TypeScript 投影并展示 | 只依赖生成的 Client 合同，不导入 Node Server 模块 |
-| Native Platform（原生平台） | `src-tauri/`、PTY/runtime 边界 | 进程、终端、桌面系统能力 | Rust 适配器；不成为 Provider 定义源 |
+| Native Platform（原生平台） | PTY/runtime 边界 | 进程、终端等系统能力 | 平台适配器；不成为 Provider 定义源 |
 | Compatibility Adapter（兼容适配） | `lib/provider-catalog.js`、`lib/provider-catalog-data.json` | 为现有 CommonJS 调用方维持旧 API 和旧数据形状 | 只读生成合同；迁移完成后可删除 |
 
 这里的 `Server` 应理解为一个部署容器，内部仍要区分 Delivery、Application 和 Integration Adapter；不能继续把所有后端代码统称为 Server 层。
@@ -58,7 +58,7 @@ cmd/provider-manifest (校验 + 生成)
 ### 决策
 
 - Go：Provider 领域核心、合同校验和跨语言生成器，优先级 1。
-- Rust：Tauri、PTY、进程控制等原生平台边界，优先级 2。
+- Rust：PTY、进程控制等原生平台边界，优先级 2。
 - TypeScript：Web Client 与浏览器交互。
 - Node.js：保留现有 Server 兼容适配和主链，按后续里程碑逐步收缩。
 

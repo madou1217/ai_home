@@ -5,7 +5,7 @@
 ## Product concepts
 
 - **Server** runs the AIH gateway and management APIs and owns accounts, sessions, models, SSH connections, and optional worker state.
-- **Client** means the Browser/installable Web shell, CLI, or Tauri-based macOS/Windows/Linux native desktop application that connects to a Server.
+- **Client** means the Browser/installable Web shell or CLI that connects to a Server.
 - **SSH development machine** is a Server-managed SSH target and workspace source. It is not a client identity.
 - **Worker** is an advanced internal execution target. A normal client does not need to create or join a worker before connecting to a Server.
 
@@ -33,8 +33,6 @@ The one-time worker join invite remains because it bootstraps a machine into the
 - Browser/installable Web uses the shared React UI and TypeScript API client. JSON, SSE, media, and attachment requests send the Management Key only in the Authorization header; it is not placed in URLs. There is no offline service worker today.
 - When Server A hosts the WebUI for a profile targeting Server B, Server A stores B's Management Key and acts as the trusted credential proxy. An untrusted Server must not host that browser session.
 - CLI uses `aih server add/ls/use/remove` and never prints the raw key in normal list or diagnostic output.
-- Tauri native desktop reuses the shared React UI. Rust owns Server Profiles, system Keyring access, JSON/SSE/Blob requests, and the native stream bridge. The Management Key remains in macOS Keychain, Windows Credential Manager, or Linux Secret Service; React receives only `credentialRef` and `managementKeyConfigured` metadata. Remote endpoints require HTTPS, while HTTP is allowed only for loopback.
-- The repository contains macOS, Windows, and Linux package-and-smoke workflows. A platform is release-validated only after its real packaged application passes install, launch, Keyring, JSON, SSE, and Blob smoke and produces complete evidence; this document does not claim unverified packages as delivered.
 
 ## Canonical profile schema
 
@@ -42,7 +40,7 @@ The one-time worker join invite remains because it bootstraps a machine into the
 id
 name
 endpoint
-managementKey (browser/CLI store) or credentialRef + managementKeyConfigured (native desktop metadata)
+managementKey (browser/CLI store)
 state: ready | degraded | offline
 ```
 

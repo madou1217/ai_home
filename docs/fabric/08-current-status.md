@@ -7,7 +7,7 @@
 - Client 统一使用 Server URL + Management Key。
 - 客户端 pairing、device token、scope/revoke 状态机已删除。
 - 一次性 invite 只保留给高级 worker join，不属于客户端授权。
-- macOS/Windows/Linux 桌面客户端已实现 Tauri 原生层、系统 Keyring、Rust transport 与三平台发布工作流；真实发布状态以每个平台的 packaged smoke evidence 为准。
+- Tauri 桌面客户端已删除；客户端只保留 Browser/可安装 Web 壳与 CLI。
 
 ## 2026-06-27 Current VPS Target Set
 

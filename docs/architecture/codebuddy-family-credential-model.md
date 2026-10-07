@@ -521,7 +521,6 @@ SchemaVersion `1` → `2`（`core/providers/model.go`）：
 | 模型页 Provider 下拉 | `web/src/pages/Models.tsx` | 复用 `buildProviderSelectOptions()` |
 | 聊天账号菜单 | `web/src/components/chat/composer/` | `buildComposerAccountGroups` 按族分组，账号行带站点 |
 | 终端文本名 / 各处列表 | `web/src/providers/catalog.ts` | `providerNames` 取 `getProviderMenuLabel()`（多站点带"· 国际站"/"· 国内站"） |
-| 桌面托盘 | `lib/server/desktop-menu-model.js` + `src-tauri/src/tray.rs` | 按族合并子菜单，站点作为行内前缀 |
 
 刻意**不**合并的两处（有注释说明）：
 
@@ -529,24 +528,15 @@ SchemaVersion `1` → `2`（`core/providers/model.go`）：
   能力，保持"每个 Provider 一个 chip"，靠站点后缀区分——筛选轴必须留在真实 Provider
   上，因为同族两个站点的模型清单、用量结算都不同。
 
-### 12.4 托盘协议：附加字段，版本不动
+### 12.4 托盘协议（已删除）
 
-托盘快照仍是 `version: 1`。新增的 `family` / `familyLabel` / `site` / `siteLabel` /
-`multiSite` 是**纯附加字段**：
-
-- 新托盘按 `family` 合并同族条目，行内加站点前缀，子菜单标题用族名。
-- **旧托盘忽略这些字段**，看到的就是今天的行为（同族两个子菜单、按 Provider 切换，
-  结果仍然正确）；`family` 缺省时 Rust 侧回退为 Provider 自身 id。
-
-这样避免了"改了协议就让旧托盘弹版本不兼容"的静默降级。
+桌面托盘及其快照接口 `/v0/webui/desktop-menu` 已随 Tauri 客户端一起删除，本节不再适用。
 
 ### 12.5 验证
 
 - `npm run providers:generate` / `providers:check`：通过（4 份投影一致）。
 - `go test ./core/providers ./cmd/provider-manifest`：通过（含 `(family, site)` 唯一性）。
-- `cargo test --bin ai-home tray::`：8 pass（含"同族两站点合并成一个入口且切换目标
-  仍是各自 Provider"、"旧 Server 无 family 时行为不变"）。
-- `node --test test/desktop-menu-model.test.js`：13 pass。
+- 桌面托盘的合并验证（`tray::`、`desktop-menu-model`）已随 Tauri 客户端一起删除，不再适用。
 - web `npm run build`（含 tsc）+ ESLint：通过。
 
 ## 13. 会话打通：同地区 work/code 共用一份历史（2026-09-15 实现）
@@ -838,7 +828,7 @@ cliName，家族没有对应 loader，因此不经过它们。）
 **账号从哪来（与运行时账号池无关）**：家族四支在 **Node runtime pool** 里**没有槽位**——
 `lib/server/accounts.js` 的 `loadServerRuntimeAccounts()` 只枚举 11 个 provider
 （codex/gemini/claude/agy/opencode/qoder/qodercn/grok/kimi/kiro/zcode），实测（注册家族账号后
-调用它）返回的 pool 里四支全部缺失。**但这不影响账号可见性**：WebUI/托盘的账号列表由
+调用它）返回的 pool 里四支全部缺失。**但这不影响账号可见性**：WebUI 的账号列表由
 `webui-account-live.js` 的 `buildFastAccountsSnapshot()` 产出，它按 `SUPPORTED_SERVER_PROVIDERS`
 （= 合同全量 provider）逐支调 `listAccountCredentialRecords()` 读 **DB 凭据记录**，
 runtime pool 只用于**补充**运行态（`runtimeAccountMap` 查不到就是 `null`）。

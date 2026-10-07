@@ -473,7 +473,7 @@ aih server serve --host=0.0.0.0 --port=9527 --api-key=my-key
 AIH 当前主流程只保留三个用户概念：
 
 - **Server**：运行 AIH 网关与管理 API，持有账号、模型、会话、SSH 配置和可选 worker 状态。
-- **Client**：包括浏览器、可安装 Web/PWA 壳、CLI，以及基于 Tauri 的 macOS/Windows/Linux 原生桌面客户端。客户端可保存多个 Server，并切换当前 Server。
+- **Client**：包括浏览器、可安装 Web/PWA 壳与 CLI。客户端可保存多个 Server，并切换当前 Server。
 - **SSH 开发机**：由 Server 保存 SSH 连接与工作区，用于远程开发；它不是客户端授权身份。
 
 源码中的 `node` 仅表示高级的内部远程 worker/运行目标。普通客户端连接 AWS 或其他 Server 时不需要创建 node，也不需要先在本机运行 Server。
@@ -483,7 +483,7 @@ AIH 当前主流程只保留三个用户概念：
 - **Server URL**：例如 `http://192.168.3.181:9527`。
 - **Management Key**：Server 的管理密钥，作为 Bearer 凭据访问账号、节点、会话和 Fabric API。
 
-客户端无需额外授权流程。Browser/PWA、CLI 与原生桌面客户端都使用同一个 `Server URL + Management Key` 契约。Management Key 具有完整管理能力；跨不可信网络使用时，应优先通过 HTTPS、VPN 或受控隧道暴露 Server URL。
+客户端无需额外授权流程。Browser/PWA 与 CLI 都使用同一个 `Server URL + Management Key` 契约。Management Key 具有完整管理能力；跨不可信网络使用时，应优先通过 HTTPS、VPN 或受控隧道暴露 Server URL。
 
 Dashboard、账号、会话和配置等 WebUI 数据接口即使来自同机 loopback，也必须携带 Management Key；Server 未配置 Key 时统一 fail-closed。只有 Provider 会话 Hook 与 Claude 审批桥两个不返回管理数据的内部 POST 入口保留窄 loopback capability，不能用于访问 WebUI 数据面。
 
@@ -510,16 +510,13 @@ aih server ls
 aih server use home
 ```
 
-`aih server ls` 只显示 Management Key 是否已配置，不输出原始密钥。浏览器/Web 壳与原生桌面客户端都在 `Server 管理` 中填写相同的 URL 和 Management Key；原生客户端由 Rust `SecretStore` 将凭据保存到系统 Keyring。
+`aih server ls` 只显示 Management Key 是否已配置，不输出原始密钥。浏览器/Web 壳在 `Server 管理` 中填写相同的 URL 和 Management Key。
 
 > `aih claude` / `aih codex` 使用的内置 `.aih-server` 是 provider CLI 启动 profile，不是这里保存的远程 Server profile。
 
 #### 无公网入口的 Server 作为账号网关
 
-当公网 Server 1 没有账号，而本机 Server 2 持有账号但无法被公网主动访问时，可在原生桌面的 `设置 → 公网入口` 中：
-
-1. 将“需要外网访问的 Server”选为本机 Server 2。
-2. 将“公网 Server”选为 Server 1，并保存公网入口。
+当公网 Server 1 没有账号，而本机 Server 2 持有账号但无法被公网主动访问时，可在 Server 2 上通过 `/v0/webui/server-routes/relays` 管理接口登记 Server 1 的 URL 与 Management Key。WebUI 目前不提供该配置入口。
 
 Server 2 会使用已保存的 Management Key 主动建立并维持到 Server 1 的 WebSocket 连接；Server 1 不需要、也不会尝试直连 Server 2。连接建立后，Server 2 周期性公告不含账号标识或凭据的 provider / 模型可用性。Server 1 仅在自身账号总数为零时，自动把 `/v1/*`、`/v1beta/*` 和 `/v1/responses` WebSocket 请求经这条反向连接交给兼容的 Server 2；一旦 Server 1 拥有本地账号，仍使用原有本地调度。
 
@@ -527,38 +524,25 @@ Server 2 会使用已保存的 Management Key 主动建立并维持到 Server 1 
 
 #### 高级：内部远程 worker（实验能力）
 
-普通 Browser、PWA、CLI 或原生桌面客户端都不需要 worker；远程开发的当前稳定入口是 `SSH 开发机`。
+普通 Browser、PWA 或 CLI 客户端都不需要 worker；远程开发的当前稳定入口是 `SSH 开发机`。
 
 Server 后端仍保留一次性 worker join invite，以及 `aih node ...` 这组内部部署/诊断命令，用于实验性的多机执行拓扑。当前 WebUI 不暴露 worker 接入或节点管理入口；join invite 由 Server 管理 API 创建，具体低层命令可查看 `aih node --help`。这条内部 worker 启动链路与客户端连接无关；worker 加入后，管理操作仍统一使用 Management Key。
 
-#### 跨平台客户端架构
+#### 客户端架构
 
-macOS、Windows 和 Linux 共用同一套 React UI 与 TypeScript Server API Client，不为每个平台复制业务逻辑：
+浏览器、可安装 Web 壳与 CLI 共用同一 Server Profile 契约，不为每个平台复制业务逻辑：
 
 ```text
-Shared React UI（Browser / Tauri 共用）
+React WebUI（Browser / 可安装 Web 壳）
     ↓
-TypeScript Server API Client
-    ├─ Browser Adapter → fetch / fetch-SSE / Blob media
-    └─ Tauri Adapter   → Rust commands / native stream bridge
+TypeScript Server API Client → fetch / fetch-SSE / Blob media
 
 CLI → 同一 Server Profile 契约（URL + Management Key）
 ```
 
-- **Browser / 可安装 Web 壳**：当前把 Server Profile 保存在浏览器存储中，包括 Management Key。这是浏览器版的明确信任边界：只应在受信任的浏览器配置中使用，不把 Web Storage 视为桌面凭据保险库。JSON、实时流、媒体和附件统一通过 `Authorization` header 发送密钥，不把完整密钥拼入 URL。当前没有离线 service worker，因此不宣称离线 PWA 能力。
+- **Browser / 可安装 Web 壳**：当前把 Server Profile 保存在浏览器存储中，包括 Management Key。这是浏览器版的明确信任边界：只应在受信任的浏览器配置中使用，不把 Web Storage 视为凭据保险库。JSON、实时流、媒体和附件统一通过 `Authorization` header 发送密钥，不把完整密钥拼入 URL。当前没有离线 service worker，因此不宣称离线 PWA 能力。
 - **跨 Server 信任边界**：在 Server A 托管的 WebUI 中保存 Server B 时，A 会保存 B 的 Management Key 并作为受信任代理转发请求；不要通过不受信任的 Server A 管理其他 Server。
-- **Tauri Desktop**：复用同一套 React UI；Rust 层负责 Server Profile、系统 Keyring、JSON/SSE/Blob 请求和原生 stream bridge。Profile 元数据只保存 `id` / `name` / `endpoint` / `credentialRef` / `managementKeyConfigured`，Management Key 由 `SecretStore` 按 `credentialRef` 读写，不返回 React，也不进入 `localStorage`、URL query、日志、进程参数或 Tauri event payload。原生请求适配器从 Keyring 取出密钥并添加 `Authorization` header；轮换通过专用 Rust 命令协调 Server 与 Keyring，通用原生 HTTP transport 仍拒绝凭据字段。远程 Server 必须使用 HTTPS，HTTP 只允许 loopback。
 - **CLI**：`aih server add/ls/use/remove` 管理同一种 Server Profile；列表和普通诊断只暴露 `managementKeyConfigured`，不输出原始密钥。
-
-Tauri `SecretStore` 的三平台后端：
-
-| 平台 | 凭据后端 |
-|---|---|
-| macOS | Keychain |
-| Windows | Credential Manager |
-| Linux | Secret Service（不可用时明确报错，不降级为明文文件） |
-
-仓库已实现原生客户端链路、收紧的 allowlist/CSP，以及 macOS、Windows、Linux 构建与 packaged smoke 工作流。某个平台只有在真实安装包完成安装、启动、Keyring、JSON、SSE、Blob smoke 并产出 evidence 后，才视为该平台发布验证通过；本文不把尚未取得 evidence 的安装包标记为已验证交付。
 
 ### 持久会话（tmux 保活，显式续接）
 

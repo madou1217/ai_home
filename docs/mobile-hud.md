@@ -399,15 +399,15 @@ The page makes the same `imageStudioAPI` calls, with the same validation, messag
 **Mobile page summary.** Manages the saved AIH Servers (grouped by stableServerId) and the default Server. It uses the same services as the desktop Server section, through `useControlPlaneServers()`:
 
 - **Loading and sync:** `listControlPlaneProfiles`, `buildServerRouteRows`, `summarizeControlPlaneProfiles`, `serverProfilesAPI.listEndpointHints`
-- **Connect:** `connectControlPlaneProfile`, then `refreshControlPlaneDeviceState` and `selectActiveControlPlaneProfileSecure`
-- **Maintenance:** `refreshControlPlaneProfileStates`, `removeControlPlaneProfileSecure`, `discoverServersOnLan` / `refreshNativeLanRoutes`
+- **Connect:** `connectControlPlaneProfile`, then `refreshControlPlaneDeviceState` and `selectActiveControlPlaneProfile`
+- **Maintenance:** `refreshControlPlaneProfileStates`, `removeControlPlaneProfile`
 
-Actions: 添加 Server, 授权, 同步, 同步全部, 同步当前, 设为默认, 移除, 打开 (opens the server-scoped dashboard in a new tab), and 发现局域网 Server (native desktop runtime only).
+Actions: 添加 Server, 授权, 同步, 同步全部, 同步当前, 设为默认, 移除, and 打开 (opens the server-scoped dashboard in a new tab).
 
 **Component tree**
 ```
 MobilePage (lead = desktop scope copy)
-├─ MobileToolbar: count · [发现局域网 Server (native)] [同步全部] [添加 Server (primary)]
+├─ MobileToolbar: count · [同步全部] [添加 Server (primary)]
 ├─ HudCard DEFAULT「默认 Server」: LED · name · endpoint (mono) + COPY · lastError · [同步当前]
 ├─ TelemetryGrid: 服务器 · 可调度账号 · 会话 (wide)
 ├─ HudSection NODES › MonoList › SwipeRow (icon · name / endpoint / metrics · status + 默认)
@@ -431,7 +431,7 @@ MobilePage (lead = desktop scope copy)
   - A Server without a key raises `missing_management_key`.
   - Profiles are marked degraded or offline on failure.
 - **Mobile only:** 移除 asks for confirmation (`confirmAction`). On desktop it sits behind a dropdown, so a swipe needs its own second step.
-- **Omitted:** the default-Server Select (per-row 设为默认 covers it) and `PublicServerEntryCard` (native-desktop FRP configuration).
+- **Omitted:** the default-Server Select (per-row 设为默认 covers it).
 ## /fabric/ssh-hosts — SSH 开发机 (`MobileSshHosts`)
 
 **Mobile page summary.** Manages SSH connections and project workspaces through `useSshHosts()` and `useSshDirectoryBrowser()`. It makes the same `sshHostsAPI` calls as the desktop `SshHostsPanel`:
@@ -515,14 +515,13 @@ MobilePage
   - server switching needs 2 or more profiles
 - **Mobile only:** 一键重启服务 asks for confirmation first. Desktop has none; the guard stops a mis-tap from dropping the connection, and the API call is the same.
 - **Server switcher:** a DetailSheet list instead of the desktop footer dropdown.
-- **Out of scope:** `PublicServerEntryCard` renders only in the `/fabric/servers` section on desktop, so it isn't part of `/settings`.
 ## /server-setup — 连接 Server (`MobileServerSetup`)
 
 **Mobile page summary.** The first-run gate. The shell hides the bottom nav on this route. It uses `useServerSetupProfiles()`, which the desktop `FabricServerSetup` now uses too:
 
 - `syncSharedControlPlaneProfiles`
-- `connectControlPlaneProfile`, `refreshControlPlaneDeviceState`, `selectActiveControlPlaneProfileSecure`
-- `removeControlPlaneProfileSecure`
+- `connectControlPlaneProfile`, `refreshControlPlaneDeviceState`, `selectActiveControlPlaneProfile`
+- `removeControlPlaneProfile`
 - `resolveRequiredServerSetupDialog` / `resolveServerSetupFormDefaults`
 
 When a connection is required, the page is a full HUD boot screen with:

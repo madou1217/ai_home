@@ -121,8 +121,8 @@ function eventPresentation(item: TimelineItem): {
     case 'plan': return { title: '计划', preview: item.content, tone: 'plan', icon: <OrderedListOutlined /> };
     case 'shell': return { title: '命令', preview: item.detail.command, tone: 'tool', icon: <CodeOutlined /> };
     case 'tool': return { title: item.detail.name, preview: item.content, tone: 'tool', icon: <ToolOutlined /> };
-    case 'diff':
-    case 'file_change': return { title: '文件变更', preview: item.content, tone: 'tool', icon: <FileTextOutlined /> };
+    case 'diff': return { title: '文件变更', preview: item.content, tone: 'tool', icon: <FileTextOutlined /> };
+    case 'file_change': return { title: '文件变更', preview: item.content || fileChangePaths(item.detail.changes), tone: 'tool', icon: <FileTextOutlined /> };
     case 'question': return { title: '等待回答', preview: item.content, tone: 'ask', icon: <QuestionCircleOutlined /> };
     case 'approval': return { title: '等待审批', preview: item.content, tone: 'ask', icon: <WarningOutlined /> };
     case 'subagent': return { title: '子代理', preview: item.content, tone: 'tool', icon: <RobotOutlined /> };
@@ -175,8 +175,16 @@ function statusPresentation(item: TimelineItem): EventStatus {
   return { label: labels[item.status], tone: tones[item.status], dot: item.status === 'running' };
 }
 
+// 收起时的预览：新记录没有合并后的 content，列出涉及的文件。
+function fileChangePaths(changes: readonly unknown[]): string {
+  return changes
+    .map((change) => (change && typeof change === 'object' ? (change as { path?: unknown }).path : undefined))
+    .filter((path): path is string => typeof path === 'string' && path.length > 0)
+    .join('  ');
+}
+
 // 新记录只在 changes[].diff 里存每个文件的 diff（旧记录另有合并后的 detail.diff / content）。
-function formatFileChanges(changes: unknown[]): string {
+function formatFileChanges(changes: readonly unknown[]): string {
   const sections = changes.map((change) => {
     if (!change || typeof change !== 'object') return formatUnknown(change);
     const { path, diff } = change as { path?: unknown; diff?: unknown };

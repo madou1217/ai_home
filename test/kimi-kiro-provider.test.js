@@ -674,3 +674,24 @@ describe('loadServerRuntimeAccounts includes kimi and kiro buckets', () => {
     assert.ok(keys.includes('kiro'), 'kiro key present');
   });
 });
+
+test('Kiro CLI keeps sessions in the native ~/.kiro: only the credential database is per account', () => {
+  const { kiroStrategy } = require('../lib/cli/services/ai-cli/launch-profile/kiro-strategy');
+  const {
+    getProviderProjectionMappings,
+    resolveProviderNativeRoot,
+    resolveProviderRuntimeHomeRoot
+  } = require('../lib/runtime/provider-storage-policy');
+  const nodePath = require('node:path');
+  const { set, unset } = kiroStrategy.buildEnvPatch({
+    path: nodePath, sandboxDir: '/aih/run/auth-projections/kiro/acct_1', hostHomeDir: '/Users/u'
+  });
+
+  assert.equal(set.HOME, '/Users/u');
+  assert.equal(set.KIRO_TEST_DB_PATH, '/aih/run/auth-projections/kiro/acct_1/data.sqlite3');
+  assert.equal(Object.hasOwn(set, 'KIRO_HOME'), false);
+  assert.ok(unset.includes('KIRO_HOME'));
+  assert.deepEqual(getProviderProjectionMappings('kiro'), []);
+  assert.equal(resolveProviderNativeRoot('/Users/u', 'kiro'), '/Users/u/.kiro');
+  assert.equal(resolveProviderRuntimeHomeRoot('/Users/u', 'kiro'), '');
+});

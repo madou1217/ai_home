@@ -324,14 +324,9 @@ test('broker connect proxies real HTTP requests over real WebSocket sockets', as
     const servers = registry.listBrokerServers();
     return servers.length === 1 && servers[0].name === 'Home Mac';
   });
-  const discovery = await fetch(`http://127.0.0.1:${brokerAddress.port}/v0/fabric/broker/servers`, {
-    headers: { authorization: 'Bearer broker-token' }
-  });
-  assert.equal(discovery.status, 200);
-  const discoveredServers = (await discovery.json()).result.servers;
-  assert.equal(discoveredServers[0].stableServerId, 'home-server');
-  assert.equal(discoveredServers[0].name, 'Home Mac');
-  assert.equal(discoveredServers[0].routes.at(-1).kind, 'relay');
+  const connectedServers = registry.listBrokerServers();
+  assert.equal(connectedServers[0].stableServerId, 'home-server');
+  assert.equal(connectedServers[0].name, 'Home Mac');
 
   const ready = await fetch(`http://127.0.0.1:${brokerAddress.port}/v0/fabric/broker/servers/home-server/proxy/readyz`);
   assert.equal(ready.status, 200);

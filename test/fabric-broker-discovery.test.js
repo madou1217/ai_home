@@ -118,7 +118,7 @@ test('broker registry exposes a secret-free connected Server descriptor', () => 
   assert.equal(JSON.stringify(registry.listBrokerServers()).includes('must-not-leak'), false);
 });
 
-test('connected Server discovery requires Management Key and adds the current AWS relay route', async () => {
+test('broker no longer serves a connected Server directory', async () => {
   const registry = createFabricBrokerSessionRegistry({
     nowMs: () => 1234,
     createSessionId: () => 'session-1'
@@ -126,43 +126,12 @@ test('connected Server discovery requires Management Key and adds the current AW
   registry.registerBrokerSession({
     serverId: 'local-home',
     socket: { readyState: 1 },
-    descriptor: {
-      name: 'Home Mac',
-      capabilities: { clientApi: true },
-      routes: []
-    }
+    descriptor: { name: 'Home Mac', capabilities: { clientApi: true }, routes: [] }
   });
 
-  const denied = createJsonContext('/v0/fabric/broker/servers', 'wrong-key', registry);
-  assert.equal(await handleFabricBrokerProxyRequest(denied.context), true);
-  assert.deepEqual(denied.writes, [{
-    statusCode: 401,
-    payload: { ok: false, error: 'unauthorized_management' }
-  }]);
-
-  const allowed = createJsonContext('/v0/fabric/broker/servers', 'aws-management-key', registry);
-  assert.equal(await handleFabricBrokerProxyRequest(allowed.context), true);
-  assert.deepEqual(allowed.writes, [{
-    statusCode: 200,
-    payload: {
-      ok: true,
-      rpc: 'fabric.broker.servers.list',
-      result: {
-        servers: [{
-          stableServerId: 'local-home',
-          name: 'Home Mac',
-          capabilities: { clientApi: true },
-          routes: [{
-            kind: 'relay',
-            path: '/v0/fabric/broker/servers/local-home/proxy'
-          }],
-          online: true,
-          connectedAt: 1234,
-          lastSeenAt: 1234
-        }]
-      }
-    }
-  }]);
+  const request = createJsonContext('/v0/fabric/broker/servers', 'aws-management-key', registry);
+  assert.equal(await handleFabricBrokerProxyRequest(request.context), false);
+  assert.deepEqual(request.writes, []);
 });
 
 test('broker connector derives the registration descriptor from the Local Server descriptor', async () => {

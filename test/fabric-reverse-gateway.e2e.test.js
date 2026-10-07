@@ -152,12 +152,10 @@ test('two real AIH Servers use the local Server outbound link as an automatic pr
   assert.equal(ready.gateway.connectedServers, 1);
   assert.equal(ready.gateway.availableAccounts, 1);
 
-  const directory = await readJson(`http://127.0.0.1:${publicPort}/v0/fabric/broker/servers`, {
-    headers: { authorization: `Bearer ${publicManagementKey}` }
-  });
-  assert.equal(directory.response.status, 200);
-  assert.equal(directory.payload.result.servers.length, 1);
-  const localServerId = directory.payload.result.servers[0].stableServerId;
+  const localDescriptor = await readJson(`http://127.0.0.1:${localPort}/v0/fabric/descriptor`);
+  assert.equal(localDescriptor.response.status, 200);
+  const localServerId = localDescriptor.payload.result.server.id;
+  assert.match(localServerId, /^server-/);
 
   const models = await readJson(`http://127.0.0.1:${publicPort}/v1/models`, {
     headers: { authorization: `Bearer ${publicClientKey}` }
@@ -165,8 +163,8 @@ test('two real AIH Servers use the local Server outbound link as an automatic pr
   assert.equal(models.response.status, 200, JSON.stringify(models.payload));
   assert.equal(models.response.headers.get('x-aih-fabric-broker-server-id'), localServerId);
   assert.equal(models.payload.data.some((model) => model.id === 'gpt-fabric-e2e'), true);
-  assert.equal(JSON.stringify(directory.payload).includes(localClientKey), false);
-  assert.equal(JSON.stringify(directory.payload).includes(publicClientKey), false);
+  assert.equal(JSON.stringify(ready).includes(localClientKey), false);
+  assert.equal(JSON.stringify(ready).includes(publicClientKey), false);
 
   const streamed = await fetch(`http://127.0.0.1:${publicPort}/v1/responses`, {
     method: 'POST',

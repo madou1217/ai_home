@@ -819,7 +819,7 @@ const Settings = ({ section }: SettingsProps) => {
                   <Form.Item
                     name="endpoint"
                     label="Server URL"
-                    help="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址；原生客户端仅允许回环地址使用 HTTP。"
+                    help="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址。"
                     rules={[{ required: true, message: '请输入 Server URL' }]}
                   >
                     <Input placeholder="https://aih.example.com" />

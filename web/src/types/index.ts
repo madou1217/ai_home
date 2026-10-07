@@ -950,7 +950,7 @@ export interface ControlPlaneProfile {
   connectionMode: ControlPlaneProfileConnectionMode;
   broker: ControlPlaneProfileBroker | null;
   state: ControlPlaneProfileState;
-  /** Browser/PWA only. Native desktop profiles keep this value empty. */
+  /** Kept in browser storage for Browser/PWA clients. */
   managementKey: string;
   credentialRef: string;
   managementKeyConfigured: boolean;

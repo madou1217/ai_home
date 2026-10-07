@@ -357,7 +357,7 @@ export default function MobileServers(_props: MobilePageProps) {
               name="endpoint"
               label="Server URL"
               required
-              hint="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址；原生客户端仅允许回环地址使用 HTTP。"
+              hint="支持 HTTPS、Tailscale/ZeroTier/WireGuard IP、Cloudflare Tunnel 或局域网地址。"
               rules={[{ required: true, message: '请输入 Server URL' }]}
             >
               <Input placeholder="https://aih.example.com" inputMode="url" autoCapitalize="off" autoCorrect="off" aria-label="Server URL" />

@@ -295,7 +295,7 @@ export default function FabricServerSetup() {
             <Form.Item
               name="endpoint"
               label="Server 网关地址"
-              help="原生客户端要求远程 Server 使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost。其他连接路径会在保存后自动发现。"
+              help="跨不可信网络访问时，建议使用 HTTPS、VPN 或受控隧道。"
               rules={[{ required: true, message: '请输入 Server 网关地址' }]}
             >
               <Input

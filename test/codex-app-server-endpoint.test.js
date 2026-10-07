@@ -545,3 +545,39 @@ test('app-server win32 rebuild kills the stale port owner that psmux cannot reap
   assert.ok(taskkill, 'stale port owner must be taskkilled on win32 rebuild');
   assert.deepEqual(taskkill[1], ['/PID', '4242', '/T', '/F']);
 });
+
+test('OAuth app-server runtimes link their sessions to the host ~/.codex before launch', (t) => {
+  const { ensureSharedCodexSessions } = require('../lib/server/codex-app-server-endpoint');
+  const { registerAccountIdentity } = require('../lib/account/account-registration');
+  const { writeAccountNativeAuth, writeAccountCredentials } = require('../lib/server/account-credential-store');
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-app-session-links-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const oauth = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex', cliAccountId: '1', identitySeed: 'test:app-server-links:oauth'
+  }).accountRef;
+  writeAccountNativeAuth(fs, aiHomeDir, oauth, { auth: { tokens: { access_token: 'a', refresh_token: 'r' } } });
+  const apiKey = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex', cliAccountId: '2', identitySeed: 'test:app-server-links:apikey'
+  }).accountRef;
+  writeAccountCredentials(fs, aiHomeDir, apiKey, { OPENAI_API_KEY: 'sk-test' });
+  const calls = [];
+  const ensureSessionStoreLinks = (provider, accountRef, options) => {
+    calls.push({ provider, accountRef, projectionRoot: options.projectionRoot });
+    return { migrated: 0, linked: 3 };
+  };
+  const runtimeDir = path.join(aiHomeDir, 'run', 'auth-projections', 'codex', oauth);
+
+  ensureSharedCodexSessions({ aiHomeDir, env: {}, ensureSessionStoreLinks }, { accountRef: oauth, gateway: false, runtimeDir });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].accountRef, oauth);
+
+  ensureSharedCodexSessions({ aiHomeDir, env: {}, ensureSessionStoreLinks }, { accountRef: apiKey, gateway: false, runtimeDir });
+  ensureSharedCodexSessions({ aiHomeDir, env: {}, ensureSessionStoreLinks }, { accountRef: '', gateway: true, runtimeDir });
+  assert.equal(calls.length, 1, 'API-key accounts and the gateway already use the host ~/.codex');
+
+  assert.throws(
+    () => ensureSharedCodexSessions({ aiHomeDir, env: {} }, { accountRef: oauth, gateway: false, runtimeDir }),
+    (error) => error.code === 'provider_resource_reconcile_unavailable',
+    'an OAuth runtime must never start without its sessions linked'
+  );
+});

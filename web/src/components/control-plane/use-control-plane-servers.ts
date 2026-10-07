@@ -99,7 +99,6 @@ export function useControlPlaneServers() {
           descriptor: profile.descriptor,
           state: 'degraded',
           managementKey: profile.managementKey,
-          credentialRef: profile.credentialRef,
           managementKeyConfigured: profile.managementKeyConfigured,
           lastError: error instanceof Error ? error.message : 'server_refresh_failed'
         });
@@ -133,7 +132,6 @@ export function useControlPlaneServers() {
         descriptor: profile.descriptor,
         state: isControlPlaneManagementKeyConfigured(profile) ? 'degraded' : 'offline',
         managementKey: profile.managementKey,
-        credentialRef: profile.credentialRef,
         managementKeyConfigured: profile.managementKeyConfigured,
         lastError: errorMessage(error) || 'descriptor_failed'
       });

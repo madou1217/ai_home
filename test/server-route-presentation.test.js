@@ -69,7 +69,6 @@ function createProfile(overrides = {}) {
     broker: null,
     state: 'ready',
     managementKey: '',
-    credentialRef: 'keychain://local-home',
     managementKeyConfigured: true,
     nodes: [],
     nodeCount: 0,
@@ -180,7 +179,6 @@ test('pending authorization and unknown route health use explicit user-facing la
   const profile = createProfile({
     stableServerId: 'local-lab',
     managementKeyConfigured: false,
-    credentialRef: '',
     authorizationState: 'discovered-pending-auth',
     state: 'offline',
     routes: [createRoute({ health: 'unknown', rttMs: 0 })]

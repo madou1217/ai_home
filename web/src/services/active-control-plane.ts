@@ -113,7 +113,6 @@ function saveActiveControlPlaneProfileSuccess(
     descriptor: profile.descriptor,
     state: 'ready',
     managementKey: profile.managementKey,
-    credentialRef: profile.credentialRef,
     managementKeyConfigured: profile.managementKeyConfigured,
     lastError: '',
     ...patch
@@ -203,7 +202,6 @@ export function markActiveControlPlaneProfileDegraded(
     descriptor: profile.descriptor,
     state: 'degraded',
     managementKey: profile.managementKey,
-    credentialRef: profile.credentialRef,
     managementKeyConfigured: profile.managementKeyConfigured,
     lastError: normalizeSyncError(error)
   });

@@ -827,7 +827,6 @@ export function normalizeProfile(value: unknown): ControlPlaneProfile | null {
   const descriptor = normalizeAnyDescriptor(source.descriptor);
   const id = normalizeText(source.id, 96) || stableProfileId(legacyEndpoint);
   const managementKey = normalizeText(source.managementKey, 4096);
-  const credentialRef = normalizeText(source.credentialRef, 256);
   const managementKeyConfigured = Boolean(
     source.managementKeyConfigured === true || managementKey
   );
@@ -868,7 +867,6 @@ export function normalizeProfile(value: unknown): ControlPlaneProfile | null {
     broker,
     state,
     managementKey,
-    credentialRef,
     managementKeyConfigured,
     nodes,
     nodeCount: Math.max(nodes.length, Number(source.nodeCount) || 0),

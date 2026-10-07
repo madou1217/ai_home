@@ -47,7 +47,6 @@ export async function connectControlPlaneProfile(input: ConnectControlPlaneProfi
     authorizationState: existing?.authorizationState,
     state: 'offline',
     managementKey,
-    credentialRef: existing?.credentialRef,
     managementKeyConfigured: Boolean(managementKey) || existing?.managementKeyConfigured
   };
   return saveControlPlaneProfile(saveInput);

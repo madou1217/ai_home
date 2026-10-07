@@ -45,7 +45,6 @@ function createProfile(overrides = {}) {
     activeRouteId: 'direct-aws',
     authorizationState: 'discovered-pending-auth',
     managementKeyConfigured: false,
-    credentialRef: 'profile:aws',
     ...overrides
   };
 }

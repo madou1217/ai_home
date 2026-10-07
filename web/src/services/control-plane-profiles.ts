@@ -149,7 +149,6 @@ function mergeLogicalServerProfiles(
     routes,
     activeRouteId: activeRoute?.id || '',
     managementKey,
-    credentialRef: preferred.credentialRef || secondary.credentialRef,
     managementKeyConfigured,
     authorizationState: resolveServerAuthorizationState(managementKeyConfigured)
   };
@@ -639,7 +638,6 @@ export interface ControlPlaneProfileSaveInput {
   descriptor?: ControlPlaneDescriptor | null;
   state?: ControlPlaneProfileState;
   managementKey?: string;
-  credentialRef?: string;
   managementKeyConfigured?: boolean;
   nodes?: ControlPlaneNodeSummary[];
   nodeCount?: number;
@@ -711,7 +709,6 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
     : null;
   const suppliedManagementKey = normalizeText(input.managementKey, 4096);
   const managementKey = suppliedManagementKey || existing?.managementKey || '';
-  const credentialRef = normalizeText(input.credentialRef || existing?.credentialRef || '', 256);
   const managementKeyConfigured = Boolean(
     input.managementKeyConfigured === true
       || suppliedManagementKey
@@ -737,7 +734,6 @@ export function saveControlPlaneProfile(input: ControlPlaneProfileSaveInput): Co
     broker,
     state,
     managementKey,
-    credentialRef,
     managementKeyConfigured,
     nodes,
     nodeCount: Math.max(nodes.length, Number(input.nodeCount === undefined ? existing?.nodeCount : input.nodeCount) || 0),
@@ -1178,7 +1174,6 @@ export async function refreshControlPlaneDeviceState(profile: ControlPlaneProfil
     descriptor,
     state: 'ready',
     managementKey: profile.managementKey,
-    credentialRef: profile.credentialRef,
     managementKeyConfigured: profile.managementKeyConfigured,
     nodes,
     nodeCount: nodes.length,
@@ -1238,7 +1233,6 @@ export async function refreshControlPlaneProfileStates(profiles: ControlPlanePro
         descriptor: profile.descriptor,
         state: 'degraded',
         managementKey: profile.managementKey,
-        credentialRef: profile.credentialRef,
         managementKeyConfigured: profile.managementKeyConfigured,
         lastError: normalizeRefreshError(error)
       });

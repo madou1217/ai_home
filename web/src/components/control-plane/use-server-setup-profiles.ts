@@ -122,7 +122,6 @@ export function useServerSetupProfiles() {
           descriptor: profile.descriptor,
           state: 'degraded',
           managementKey: profile.managementKey,
-          credentialRef: profile.credentialRef,
           managementKeyConfigured: profile.managementKeyConfigured,
           lastError: normalizeServerSetupError(error)
         });
@@ -156,7 +155,6 @@ export function useServerSetupProfiles() {
         descriptor: profile.descriptor,
         state: isControlPlaneManagementKeyConfigured(profile) ? 'degraded' : 'offline',
         managementKey: profile.managementKey,
-        credentialRef: profile.credentialRef,
         managementKeyConfigured: profile.managementKeyConfigured,
         lastError: normalizeServerSetupError(error)
       });

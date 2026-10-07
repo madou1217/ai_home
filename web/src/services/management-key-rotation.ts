@@ -57,7 +57,6 @@ function profileWithManagementKey(profile: ControlPlaneProfile, managementKey: s
     descriptor: profile.descriptor,
     state: profile.state,
     managementKey,
-    credentialRef: profile.credentialRef,
     managementKeyConfigured: true,
     nodes: profile.nodes,
     nodeCount: profile.nodeCount,

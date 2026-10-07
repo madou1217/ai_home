@@ -38,7 +38,6 @@ function createProfile(overrides = {}) {
     broker: null,
     state: 'ready',
     managementKey: 'old-management-key-that-is-long-enough',
-    credentialRef: 'profile:server-home',
     managementKeyConfigured: true,
     nodes: [],
     nodeCount: 0,

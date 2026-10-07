@@ -952,7 +952,6 @@ export interface ControlPlaneProfile {
   state: ControlPlaneProfileState;
   /** Kept in browser storage for Browser/PWA clients. */
   managementKey: string;
-  credentialRef: string;
   managementKeyConfigured: boolean;
   nodes: ControlPlaneNodeSummary[];
   nodeCount: number;

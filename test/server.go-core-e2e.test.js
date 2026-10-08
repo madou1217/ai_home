@@ -36,7 +36,7 @@ function lifecycleCounters() {
   };
 }
 
-async function startWithGoCore(t, env) {
+async function startWithGoCore(t, env, serveExtra = {}) {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-e2e-'));
   seedNodeAccounts(aiHomeDir);
   const processObj = createProcessCapture();
@@ -51,7 +51,7 @@ async function startWithGoCore(t, env) {
   const port = await getFreePort();
   let goHost = null;
   const handle = await startLocalServer(
-    createServeOptions(port, { manageProcessLifecycle: false, clientKey: CLIENT_KEY }),
+    createServeOptions(port, { manageProcessLifecycle: false, clientKey: CLIENT_KEY, ...serveExtra }),
     createServerDeps(aiHomeDir, processObj, lifecycleCounters(), {
       // 其余依赖保持替身；只有 Go Core 使用真实子进程与真实 HTTP。
       createGoCoreHost: (options) => {
@@ -97,6 +97,26 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   const { resolveGoOwnedEntryIds, loadRouteOwnershipManifest } = require('../lib/server/go-core-route-ownership');
   const rejected = resolveGoOwnedEntryIds(loadRouteOwnershipManifest(), ['gateway.models.list']);
   assert.match(rejected.errors.join('\n'), /moves only after every inference route/);
+});
+
+test('a proxy only Node can see hands Go-owned routes back to Node', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
+  // 代理只来自 server config（环境里没有标准代理变量），Go 的 ProxyFromEnvironment 读不到，
+  // 会绕过代理直连。P1 因此在交还判定里失败关闭：路由仍由 Node 承接，并如实计数。
+  const { base, goHost } = await startWithGoCore(
+    t,
+    { AIH_GO_CORE_ROUTES: 'gateway.props' },
+    { proxyUrl: 'http://proxy.invalid:3128' }
+  );
+  assert.equal(goHost.status().state, 'ready');
+  assert.equal(goHost.status().accountsSynced, true);
+
+  const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
+  assert.equal(props.status, 200, 'Node 用自己的代理配置应答，而不是让 Go 绕过代理直连');
+  assert.equal(typeof (await props.json()), 'object');
+
+  const readyz = await (await fetch(`${base}/readyz`)).json();
+  assert.equal(readyz.go_core.node_fallbacks.by_reason.proxy_not_go_visible, 1);
+  assert.equal(readyz.go_core.node_fallbacks.total, 1);
 });
 
 test('Node serves Go-owned routes while the Go process is down and Go recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {

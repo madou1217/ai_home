@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 let shadowApp = null;
 try {
@@ -191,7 +192,13 @@ test('ZCode 影子 App 只固定长度改写 ASAR 数据区，原包与 ASAR 头
     '数据区 entry 必须固定长度，不能移动后续文件 offset'
   );
   const bootstrapSource = bootstrapEntry.content.toString('utf8');
-  assert.match(bootstrapSource, /AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH/);
+  assert.match(bootstrapSource, /\.\.\/\.\.\/\.\.\/aih-zcode-captcha-hook\.cjs/);
+  assert.equal(bootstrapSource.includes('process.env'), false);
+  assert.deepEqual(
+    fs.readFileSync(path.join(first.resolved.bundlePath, 'Contents', 'Resources', 'aih-zcode-captcha-hook.cjs')),
+    fs.readFileSync(fixture.hookModulePath),
+    'hook 随影子 App 发布，不依赖仓库的运行时位置'
+  );
   assert.match(bootstrapSource, /await import\("\.\.\/\.\.\/out\/main\/index\.js"\)/);
   const patchedRuntime = shadowParsed.readEntry(AGENT_RUNTIME_ENTRY_PATH).content.toString('utf8');
   assert.match(patchedRuntime, /supportsStorageStartup:!0,storagePreparationEntry:e/);
@@ -225,6 +232,77 @@ test('Electron 启用 embedded ASAR integrity 时失败关闭，不制作不可�
   assert.equal(result.ready, false);
   assert.equal(result.error, 'zcode_captcha_shadow_integrity_enabled');
   assert.equal(cloneCalls, 0);
+});
+
+test('影子 App 从自身资源加载 hook，缺失或过期的启动环境不阻断原生主进程', (t) => {
+  const fixture = createFixture(t);
+  fs.writeFileSync(fixture.hookModulePath, 'globalThis.__aihBundledHookLoaded = true;\n');
+  const prepared = shadowApp.prepareZcodeElectronShadowApp({
+    fs,
+    path,
+    sourceBundlePath: fixture.sourceBundlePath,
+    profileDir: fixture.profileDir,
+    hookModulePath: fixture.hookModulePath,
+    cloneBundle(source, target) { fs.cpSync(source, target, { recursive: true }); },
+    signBundle() {},
+    verifyBundle() { return true; }
+  });
+  assert.equal(prepared.ready, true);
+  const resourcesPath = path.join(prepared.resolved.bundlePath, 'Contents', 'Resources');
+  const archive = readAsar(path.join(resourcesPath, 'app.asar'));
+  // Node 不读取 ASAR，将相同相对布局解包后执行真正的 ESM 入口。
+  const extractedResources = path.join(fixture.root, 'extracted', 'Resources');
+  const entryPath = path.join(extractedResources, 'app.asar', BOOTSTRAP_ENTRY_PATH);
+  const mainPath = path.join(extractedResources, 'app.asar', ORIGINAL_MAIN_PATH);
+  fs.mkdirSync(path.dirname(entryPath), { recursive: true });
+  fs.mkdirSync(path.dirname(mainPath), { recursive: true });
+  fs.writeFileSync(entryPath, archive.readEntry(BOOTSTRAP_ENTRY_PATH).content);
+  fs.writeFileSync(mainPath, 'if (!globalThis.__aihBundledHookLoaded) throw new Error("hook_not_loaded");\nconsole.log("zcode_main_loaded");\n');
+  const bundledHookPath = path.join(resourcesPath, 'aih-zcode-captcha-hook.cjs');
+  if (fs.existsSync(bundledHookPath)) {
+    fs.copyFileSync(bundledHookPath, path.join(extractedResources, 'aih-zcode-captcha-hook.cjs'));
+  }
+  fs.writeFileSync(fixture.hookModulePath, 'throw new Error("external_hook_must_not_be_loaded");\n');
+  for (const hookPath of [undefined, path.join(fixture.root, 'removed-repo', 'hook.js'), fixture.hookModulePath]) {
+    const env = { ...process.env };
+    delete env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH;
+    if (hookPath) env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH = hookPath;
+    const result = spawnSync(process.execPath, [entryPath], { env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), 'zcode_main_loaded');
+  }
+});
+
+test('影子 App 缓存中的 hook 丢失或内容变化时重新准备并校验', (t) => {
+  const fixture = createFixture(t);
+  let clones = 0;
+  const prepare = () => shadowApp.prepareZcodeElectronShadowApp({
+    fs,
+    path,
+    sourceBundlePath: fixture.sourceBundlePath,
+    profileDir: fixture.profileDir,
+    hookModulePath: fixture.hookModulePath,
+    cloneBundle(source, target) {
+      clones += 1;
+      fs.cpSync(source, target, { recursive: true });
+    },
+    signBundle() {},
+    verifyBundle() { return true; }
+  });
+  const first = prepare();
+  assert.equal(first.ready, true);
+  const hookPath = path.join(first.resolved.bundlePath, 'Contents', 'Resources', 'aih-zcode-captcha-hook.cjs');
+  for (const corrupt of [() => fs.unlinkSync(hookPath), () => fs.writeFileSync(hookPath, 'corrupted')]) {
+    corrupt();
+    const repaired = prepare();
+    assert.equal(repaired.ready, true);
+    assert.equal(repaired.status, 'prepared');
+    assert.equal(repaired.resolved.bundlePath, first.resolved.bundlePath);
+    assert.deepEqual(fs.readFileSync(hookPath), fs.readFileSync(fixture.hookModulePath));
+  }
+  assert.equal(clones, 3);
+  assert.equal(prepare().status, 'reused');
+  assert.equal(clones, 3);
 });
 
 test('ad-hoc 签名只重签外层 App，保留内部 Electron Framework 的原始有效签名', (t) => {

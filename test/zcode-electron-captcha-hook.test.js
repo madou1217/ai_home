@@ -35,9 +35,12 @@ function buildContext(overrides = {}) {
   };
 }
 
-test('zcode macOS 启动保留现有 NODE_OPTIONS，并把影子入口所需 hook 路径放进账号 env', () => {
+test('zcode macOS 启动保留现有 NODE_OPTIONS，并清理不再需要的外部 hook 路径', () => {
   const strategy = getDesktopLaunchStrategy('zcode');
-  const env = { NODE_OPTIONS: '--trace-warnings' };
+  const env = {
+    NODE_OPTIONS: '--trace-warnings',
+    AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH: '/removed-checkout/zcode-electron-captcha-hook.js'
+  };
   const ctx = buildContext();
 
   strategy.decorateResolvedLaunchEnv(env, {
@@ -46,7 +49,7 @@ test('zcode macOS 启动保留现有 NODE_OPTIONS，并把影子入口所需 hoo
   }, ctx);
 
   assert.equal(env.NODE_OPTIONS, '--trace-warnings');
-  assert.match(env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH, /zcode-electron-captcha-hook\.js/);
+  assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
   assert.equal(env.AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE, '1');
   assert.equal(
     env[CAPTCHA_HOOK_STATE_ENV],

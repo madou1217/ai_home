@@ -19,6 +19,45 @@ const {
   }
 } = require('../lib/usage/model-usage-scanner');
 const { resolveZcodeUsageAttribution } = require('../lib/usage/zcode-session-ownership');
+const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
+const { installZcodeUsageOwnerRecorder } = require('../lib/runtime/zcode-usage-attribution-hook');
+
+function recordWriter(aiHomeDir, accountRef, usage) {
+  const logPath = path.join(resolveAccountRuntimeDir(aiHomeDir, 'zcode', accountRef), '.aih-runtime', 'zcode-model-usage-owners.jsonl');
+  const recorder = {};
+  installZcodeUsageOwnerRecorder({ accountRef, logPath, globalObject: recorder });
+  recorder.__aihRecordZcodeUsageOwner(usage);
+  return logPath;
+}
+
+test('shared ZCode sessions attribute each native usage ID to its writer and reconcile late evidence without DB changes', (t) => {
+  const { root, aiHomeDir } = makeRoot();
+  const hostHomeDir = root;
+  const store = openModelUsageStore({ fs, path, aiHomeDir });
+  t.after(() => { store.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const first = setupZcodeAccount(aiHomeDir, { cliAccountId: '1', seed: 'first' });
+  const second = setupZcodeAccount(aiHomeDir, { cliAccountId: '2', seed: 'second' });
+  const at = 1_790_000_000_000;
+  const dbPath = zcodeDbPath(hostHomeDir);
+  createZcodeTestDb(dbPath, { sessions: [{ id: 'shared', directory: '/project', timeCreated: at }], usage: [
+    { id: 'usage_first', sessionId: 'shared', modelId: 'glm-test', startedAt: at, completedAt: at + 100, inputTokens: 10 },
+    { id: 'usage_second', sessionId: 'shared', modelId: 'glm-test', startedAt: at + 200, completedAt: at + 300, inputTokens: 20 }
+  ] });
+  recordWriter(aiHomeDir, first, { id: 'usage_first', sessionID: 'shared', startedAt: at, completedAt: at + 100 });
+  const scan = () => scanModelUsageSources({ fs, path, store, aiHomeDir, hostHomeDir, providers: ['zcode'] });
+  const rows = () => store.db.prepare("SELECT account_ref,total_tokens FROM model_usage_records WHERE provider='zcode' ORDER BY timestamp_ms").all();
+  scan();
+  assert.deepEqual(rows().map(row => row.account_ref), [first, '']);
+  const stat = fs.statSync(dbPath);
+  recordWriter(aiHomeDir, second, { id: 'usage_second', sessionID: 'shared', startedAt: at + 200, completedAt: at + 300 });
+  assert.equal(scan().records, 1);
+  assert.equal(fs.statSync(dbPath).mtimeMs, stat.mtimeMs);
+  assert.deepEqual(rows().map(row => [row.account_ref, row.total_tokens]), [[first, 10], [second, 20]]);
+  recordWriter(aiHomeDir, first, { id: 'usage_second', sessionID: 'shared', startedAt: at + 200, completedAt: at + 300 });
+  assert.equal(scan().records, 0);
+  assert.equal(rows().length, 2);
+  assert.deepEqual(rows().map(row => row.account_ref), [first, second]);
+});
 
 function zcodeDbPath(root) {
   return path.join(root, '.zcode', 'cli', 'db', 'db.sqlite');

@@ -112,6 +112,29 @@ test('显式 agent runner 能在真实 CJS 入口加载前应用账号作用域 
   }
 });
 
+test('storage preparation ignores inherited Desktop bridge environment', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zcode-storage-bridge-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const entryPath = path.join(root, 'zcode.cjs');
+  const mailboxDir = path.join(root, 'desktop-bridge');
+  fs.writeFileSync(entryPath, [
+    'const Wgo="sess_",Hgo="subagent_agent_";',
+    'function zlr(e,t){let r=e;for(const n of t)r.startsWith(n)&&(r=r.slice(n.length));return r||e}',
+    'function xXe(e){if(e)return zlr(e,[Wgo,Hgo])}',
+    'function s(){}',
+    's(xXe,"normalizeModelSessionIdForAttribution");',
+    'process.stdout.write(JSON.stringify(process.argv.slice(2)));'
+  ].join(''));
+  const result = spawnSync(process.execPath, [require.resolve('../lib/runtime/zcode-session-attribution-runner'),
+    entryPath, 'app-server', '--stdio', '--prepare-storage'], {
+    encoding: 'utf8', env: { ...process.env, [AIH_ZCODE_SESSION_SCOPE_ENV]: ACCOUNT_REF,
+      AIH_ZCODE_DESKTOP_BRIDGE_DIR: mailboxDir, AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY: 'fixture-identity' }
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), ['app-server', '--stdio', '--prepare-storage']);
+  assert.equal(fs.existsSync(mailboxDir), false, 'storage workers cannot publish a Desktop bridge host');
+});
+
 test('zcode agent launcher 在普通进程和 storage Worker 中转发参数、流和退出码', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zcode-agent-launcher-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

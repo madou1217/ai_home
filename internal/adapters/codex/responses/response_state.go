@@ -298,6 +298,7 @@ func decodeUsage(wire *usageDTO) (inference.Usage, error) {
 		input.OutputTokens = wire.OutputTokens
 		if wire.InputTokenDetails != nil {
 			input.CachedInputTokens = wire.InputTokenDetails.CachedTokens
+			input.CacheWriteInputTokens = wire.InputTokenDetails.CacheWriteTokens
 		}
 		if wire.OutputTokenDetails != nil {
 			input.ReasoningTokens = wire.OutputTokenDetails.ReasoningTokens

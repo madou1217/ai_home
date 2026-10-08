@@ -238,7 +238,7 @@ func (state *responseState) applyUsage(usage inference.Usage) {
 	state.usage.PromptTokenCount = maxUint64(state.usage.PromptTokenCount, usage.InputTokens())
 	state.usage.CandidatesTokenCount = maxUint64(
 		state.usage.CandidatesTokenCount,
-		usage.OutputTokens(),
+		usage.OutputTokens()-usage.ReasoningTokens(),
 	)
 	state.usage.TotalTokenCount = maxUint64(state.usage.TotalTokenCount, usage.TotalTokens())
 	state.usage.ThoughtsTokenCount = maxUint64(

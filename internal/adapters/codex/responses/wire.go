@@ -215,9 +215,10 @@ type usageDTO struct {
 	TotalTokens        *uint64                `json:"total_tokens"`
 }
 
-// inputTokenDetailsDTO 保存缓存命中的输入 token。
+// inputTokenDetailsDTO 保存缓存命中与写入的输入 token 子集。
 type inputTokenDetailsDTO struct {
-	CachedTokens uint64 `json:"cached_tokens"`
+	CachedTokens     uint64 `json:"cached_tokens"`
+	CacheWriteTokens uint64 `json:"cache_write_tokens"`
 }
 
 // outputTokenDetailsDTO 保存 reasoning 输出 token。

@@ -339,10 +339,23 @@ func TestHandlerClosesAfterUpstreamTerminalFailure(t *testing.T) {
 func TestHandlerRefreshesModelAfterUnsupportedFailure(t *testing.T) {
 	t.Parallel()
 
+	for _, frame := range []string{
+		`{"type":"response.failed","response":{"id":"resp_missing_model","error":{"code":"model_not_found"}}}`,
+		`{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}}`,
+	} {
+		t.Run(frame, func(t *testing.T) {
+			testHandlerRefreshesUnsupportedModel(t, frame)
+		})
+	}
+}
+
+func testHandlerRefreshesUnsupportedModel(t *testing.T, frame string) {
+	t.Helper()
+
 	refreshes := &modelRefreshRecorder{}
 	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
 		readOneUpstreamRequest(t, connection)
-		writeUpstreamText(t, connection, `{"type":"response.failed","response":{"id":"resp_missing_model","error":{"code":"model_not_found"}}}`)
+		writeUpstreamText(t, connection, frame)
 	})
 	recorder := &attemptRecorder{}
 	handler := newTestHandlerWithRefresh(t, upstream.URL, recorder, refreshes)
@@ -354,7 +367,7 @@ func TestHandlerRefreshesModelAfterUnsupportedFailure(t *testing.T) {
 		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
 	))
 	_, payload, err := readClientMessage(t, client)
-	if err != nil || string(payload) != `{"type":"response.failed","response":{"id":"resp_missing_model","error":{"code":"model_not_found"}}}` {
+	if err != nil || string(payload) != frame {
 		t.Fatalf("unsupported model terminal payload=%s error=%v", payload, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

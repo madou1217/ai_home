@@ -12,7 +12,8 @@ type completedUsageDTO struct {
 		Usage *struct {
 			InputTokens        uint64 `json:"input_tokens"`
 			InputTokensDetails *struct {
-				CachedTokens uint64 `json:"cached_tokens"`
+				CachedTokens     uint64 `json:"cached_tokens"`
+				CacheWriteTokens uint64 `json:"cache_write_tokens"`
 			} `json:"input_tokens_details"`
 			OutputTokens        uint64 `json:"output_tokens"`
 			OutputTokensDetails *struct {
@@ -33,6 +34,7 @@ func decodeCompletedUsage(payload []byte) (inference.Usage, bool) {
 	input := inference.UsageInput{InputTokens: raw.InputTokens, OutputTokens: raw.OutputTokens}
 	if raw.InputTokensDetails != nil {
 		input.CachedInputTokens = raw.InputTokensDetails.CachedTokens
+		input.CacheWriteInputTokens = raw.InputTokensDetails.CacheWriteTokens
 	}
 	if raw.OutputTokensDetails != nil {
 		input.ReasoningTokens = raw.OutputTokensDetails.ReasoningTokens

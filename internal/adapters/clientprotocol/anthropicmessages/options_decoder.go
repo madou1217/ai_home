@@ -313,9 +313,11 @@ func decodeReasoning(
 	return &config, nil
 }
 
-// decodeThinkingDisplay 保留 summarized 与 omitted 的输出意图。
+// decodeThinkingDisplay 将 Claude Code 的 updates 进度显示意图映射到
+// Canonical 允许上游决定摘要粒度的 auto；updates 是 Messages 线协议的
+// 传输显示选项，不应扩散成 Provider 私有枚举。
 func decodeThinkingDisplay(display *string) (inference.ReasoningSummaryMode, error) {
-	if display == nil || *display == "summarized" {
+	if display == nil || *display == "summarized" || *display == "updates" {
 		return inference.ReasoningSummaryAuto, nil
 	}
 	if *display == "omitted" {

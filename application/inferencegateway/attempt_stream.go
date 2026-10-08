@@ -49,6 +49,10 @@ func (stream *attemptStream) Accept(
 			stream.err = ErrInvalidUpstreamEventStream
 			return stream.err
 		}
+		if completed, ok := event.(inference.ResponseCompletedEvent); ok {
+			stream.usage = completed.Usage()
+			stream.hasUsage = true
+		}
 		stream.terminal = event
 		stream.terminalAt = stream.clock()
 		return nil

@@ -287,6 +287,41 @@ func TestRequestDecoderAcceptsClaudeCodeXHighEffort(t *testing.T) {
 	}
 }
 
+// TestRequestDecoderAcceptsClaudeCodeThinkingUpdates 验证 Claude Code 的增量进度
+// 显示意图在跨 Provider 路径映射到自动摘要，同时保留 thinking 模式、预算与强度。
+func TestRequestDecoderAcceptsClaudeCodeThinkingUpdates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		thinking string
+		mode     inference.ReasoningMode
+		budget   uint64
+	}{
+		{name: "adaptive", thinking: `{"type":"adaptive","display":"updates"}`, mode: inference.ReasoningModeAdaptive},
+		{name: "budget", thinking: `{"type":"enabled","budget_tokens":2048,"display":"updates"}`, mode: inference.ReasoningModeBudget, budget: 2048},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := NewRequestDecoder().Decode([]byte(`{
+				"model":"claude-sonnet-4-6",
+				"max_tokens":4096,
+				"messages":[{"role":"user","content":"只返回固定标记。"}],
+				"thinking":` + test.thinking + `,
+				"output_config":{"effort":"high"},
+				"stream":true
+			}`))
+			if err != nil {
+				t.Fatalf("Decode() error = %v", err)
+			}
+			reasoning, found := request.Reasoning()
+			if !found || reasoning.Mode() != test.mode || reasoning.BudgetTokens() != test.budget ||
+				reasoning.Effort() != inference.ReasoningEffortHigh || reasoning.Summary() != inference.ReasoningSummaryAuto {
+				t.Fatalf("Reasoning() = (%#v, %t), want original thinking with auto summary", reasoning, found)
+			}
+		})
+	}
+}
+
 // TestRequestDecoderAcceptsEmptyToolResult 验证 Messages 合法的缺省 content
 // 不会被适配器伪造成占位字符串。
 func TestRequestDecoderAcceptsEmptyToolResult(t *testing.T) {

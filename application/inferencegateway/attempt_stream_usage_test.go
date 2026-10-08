@@ -44,3 +44,65 @@ func TestAttemptStreamKeepsLastCumulativeUsage(t *testing.T) {
 		t.Fatalf("WithUsage = %+v ok=%v", carried, ok)
 	}
 }
+
+// TestAttemptStreamUsesCompletedUsage 验证没有中间 usage 事件时，成功终态携带的
+// 最终累计快照仍会进入账号用量记账；终态快照也必须覆盖中间快照。
+func TestAttemptStreamUsesCompletedUsage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		intermediate bool
+	}{
+		{name: "terminal_only"},
+		{name: "terminal_overrides_interim", intermediate: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stream := newAttemptStream(func(inference.StreamEvent) error { return nil }, time.Now)
+			sequence := uint64(0)
+			if test.intermediate {
+				interim, err := inference.NewUsage(inference.UsageInput{InputTokens: 8, OutputTokens: 1})
+				if err != nil {
+					t.Fatalf("NewUsage() interim error = %v", err)
+				}
+				event, err := inference.NewUsageUpdatedEvent(sequence, interim)
+				if err != nil {
+					t.Fatalf("NewUsageUpdatedEvent() error = %v", err)
+				}
+				if err := stream.Accept(event); err != nil {
+					t.Fatalf("Accept(interim) error = %v", err)
+				}
+				sequence++
+			}
+
+			final, err := inference.NewUsage(inference.UsageInput{
+				InputTokens:           8,
+				OutputTokens:          5,
+				CachedInputTokens:     3,
+				CacheWriteInputTokens: 2,
+				ReasoningTokens:       2,
+			})
+			if err != nil {
+				t.Fatalf("NewUsage() final error = %v", err)
+			}
+			completed, err := inference.NewResponseCompletedEvent(
+				sequence,
+				inference.StopReasonEndTurn,
+				"",
+				final,
+			)
+			if err != nil {
+				t.Fatalf("NewResponseCompletedEvent() error = %v", err)
+			}
+			if err := stream.Accept(completed); err != nil {
+				t.Fatalf("Accept(completed) error = %v", err)
+			}
+			usage, ok := stream.Usage()
+			if !ok || usage != final {
+				t.Fatalf("stream usage = %+v ok=%v, want %+v", usage, ok, final)
+			}
+		})
+	}
+}

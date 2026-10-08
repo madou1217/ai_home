@@ -3,6 +3,7 @@ package gemini_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -426,6 +427,64 @@ func TestAggregatorPreservesReasoningAsThoughtPart(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"thought":true`) {
 		t.Fatalf("encoded = %s", encoded)
+	}
+}
+
+// TestResponsesSeparateThinkingUsage 验证 Gemini 的候选输出不包含单列的思考 token，
+// 流式和非流式响应的输入、输出、思考分项之和必须等于总量。
+func TestResponsesSeparateThinkingUsage(t *testing.T) {
+	t.Parallel()
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			adapter := newTestAdapter(t)
+			request, err := adapter.DecodeWithModel("m", []byte(`{"contents":[{"parts":[{"text":"x"}]}]}`), stream)
+			if err != nil {
+				t.Fatalf("DecodeWithModel() error = %v", err)
+			}
+			usage, err := inference.NewUsage(inference.UsageInput{
+				InputTokens: 15, OutputTokens: 111, ReasoningTokens: 101, CachedInputTokens: 3,
+			})
+			if err != nil {
+				t.Fatalf("NewUsage() error = %v", err)
+			}
+			completed, err := inference.NewResponseCompletedEvent(0, inference.StopReasonEndTurn, "", usage)
+			if err != nil {
+				t.Fatalf("NewResponseCompletedEvent() error = %v", err)
+			}
+			var encoded []byte
+			if stream {
+				frames, err := adapter.NewStreamRenderer(request).Render(completed)
+				if err != nil || len(frames) != 1 {
+					t.Fatalf("Render() frames=%v error=%v", frames, err)
+				}
+				encoded = frames[0].Data()
+			} else {
+				aggregator := adapter.NewResponseAggregator(request)
+				if err := aggregator.Add(completed); err != nil {
+					t.Fatalf("Add() error = %v", err)
+				}
+				encoded, err = aggregator.Marshal()
+				if err != nil {
+					t.Fatalf("Marshal() error = %v", err)
+				}
+			}
+			var document struct {
+				Usage struct {
+					Prompt   uint64 `json:"promptTokenCount"`
+					Output   uint64 `json:"candidatesTokenCount"`
+					Thinking uint64 `json:"thoughtsTokenCount"`
+					Cached   uint64 `json:"cachedContentTokenCount"`
+					Total    uint64 `json:"totalTokenCount"`
+				} `json:"usageMetadata"`
+			}
+			if err := json.Unmarshal(encoded, &document); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if document.Usage.Output != 10 || document.Usage.Thinking != 101 || document.Usage.Cached != 3 ||
+				document.Usage.Prompt+document.Usage.Output+document.Usage.Thinking != document.Usage.Total {
+				t.Fatalf("usage = %+v, want disjoint output and thinking counts", document.Usage)
+			}
+		})
 	}
 }
 

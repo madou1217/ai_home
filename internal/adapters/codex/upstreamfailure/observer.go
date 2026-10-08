@@ -177,7 +177,7 @@ func ObserveWebSocket(
 		fields = *envelope.Error
 	}
 	errorType, _ := sharedfailure.NormalizeErrorToken(fields.Type)
-	errorCode, _ := sharedfailure.NormalizeErrorToken(fields.Code)
+	errorCode := codexErrorCode(statusCode, fields)
 	// 这两个错误只描述当前 WS 连接或 previous_response_id 连续性，不能把
 	// 健康账号写入 cooldown 或策略阻塞。
 	if errorCode == websocketConnectionLimitCode ||

@@ -32,11 +32,15 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 	if response.Header().Get("Cache-Control") == "" {
 		response.Header().Set("Cache-Control", "no-store")
 	}
-	response.WriteHeader(upstream.StatusCode)
 	mediaType, _, _ := mime.ParseMediaType(upstream.Header.Get("Content-Type"))
+	streaming := mediaType == "text/event-stream" || (mediaType == "" && stream)
+	if streaming && response.Header().Get("Content-Type") == "" {
+		response.Header().Set("Content-Type", "text/event-stream")
+	}
+	response.WriteHeader(upstream.StatusCode)
 	var observed outcome
 	var upstreamErr, downstreamErr error
-	if mediaType == "text/event-stream" || (mediaType == "" && stream) {
+	if streaming {
 		reader, writer := io.Pipe()
 		result := make(chan outcome, 1)
 		go func() {
@@ -128,7 +132,8 @@ func decodeUsage(payload []byte) inference.Usage {
 		Input        uint64 `json:"input_tokens"`
 		Output       uint64 `json:"output_tokens"`
 		InputDetails struct {
-			Cached uint64 `json:"cached_tokens"`
+			Cached     uint64 `json:"cached_tokens"`
+			CacheWrite uint64 `json:"cache_write_tokens"`
 		} `json:"input_tokens_details"`
 		OutputDetails struct {
 			Reasoning uint64 `json:"reasoning_tokens"`
@@ -137,7 +142,7 @@ func decodeUsage(payload []byte) inference.Usage {
 	if json.Unmarshal(payload, &raw) != nil {
 		return inference.Usage{}
 	}
-	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: raw.Input, OutputTokens: raw.Output, CachedInputTokens: raw.InputDetails.Cached, ReasoningTokens: raw.OutputDetails.Reasoning})
+	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: raw.Input, OutputTokens: raw.Output, CachedInputTokens: raw.InputDetails.Cached, CacheWriteInputTokens: raw.InputDetails.CacheWrite, ReasoningTokens: raw.OutputDetails.Reasoning})
 	return usage
 }
 

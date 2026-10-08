@@ -357,6 +357,60 @@ func TestObserveWebSocketUsesWrappedStatusAndRetryAfter(t *testing.T) {
 	}
 }
 
+func TestObserveWebSocketModelErrorsUseSharedClassification(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name  string
+		frame string
+		want  runtimecore.FailureKind
+	}{
+		{
+			name:  "ChatGPT unsupported model",
+			frame: `{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}`,
+			want:  runtimecore.FailureModelUnsupported,
+		},
+		{
+			name:  "status_code alias",
+			frame: `{"type":"error","status_code":400,"error":{"code":"400","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}`,
+			want:  runtimecore.FailureModelUnsupported,
+		},
+		{
+			name:  "stable business code takes precedence",
+			frame: `{"type":"error","status":400,"error":{"code":"invalid_api_key","message":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}}`,
+			want:  runtimecore.FailureCredentialRejected,
+		},
+		{
+			name:  "ordinary invalid request",
+			frame: `{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"Missing required parameter: 'input'."}}`,
+			want:  runtimecore.FailureInvalidRequest,
+		},
+		{
+			name:  "incomplete model signature",
+			frame: `{"type":"error","status":400,"error":{"message":"The model is not supported when using Codex with a ChatGPT account."}}`,
+			want:  runtimecore.FailureInvalidRequest,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			classification, observed, err := ObserveWebSocket(sharedfailure.SSEInput{
+				EventType:  "error",
+				Data:       strings.NewReader(testCase.frame),
+				ObservedAt: time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC),
+			})
+			if err != nil || !observed || classification.Kind() != testCase.want {
+				t.Fatalf("classification=%#v observed=%v error=%v", classification, observed, err)
+			}
+			if testCase.want == runtimecore.FailureModelUnsupported {
+				directive := classification.BlockDirective()
+				if directive.Scope() != runtimecore.BlockScopeAccountModel ||
+					directive.RecoveryTrigger() != runtimecore.RecoveryModelCatalog {
+					t.Fatalf("model block directive=%#v", directive)
+				}
+			}
+		})
+	}
+}
+
 // TestObserveWebSocketConnectionStateErrorsDoNotBlockAccount 验证连接寿命和
 // previous_response_id 错误不会污染账号与模型运行态。
 func TestObserveWebSocketConnectionStateErrorsDoNotBlockAccount(t *testing.T) {

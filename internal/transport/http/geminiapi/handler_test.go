@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/gemini"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 // testAPIKey 是本文件独立使用的客户端密钥。
@@ -225,6 +226,26 @@ func TestHandlerReportsDecodeFailureAsInvalidArgument(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"status":"INVALID_ARGUMENT"`) {
 		t.Fatalf("body = %s", response.Body)
+	}
+	// Decoder 拒收发生在解码阶段，必须标记交还前置宿主重放。
+	if got := response.Header().Get(inferenceapi.DecodeRejectedHeader); got != "1" {
+		t.Fatalf("decode rejected header = %q", got)
+	}
+
+	unsupportedMediaType := httptest.NewRecorder()
+	unsupportedRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/models/m:generateContent",
+		strings.NewReader(`{"contents":[{"role":"user","parts":[{"text":"x"}]}]}`),
+	)
+	unsupportedRequest.Header.Set("Content-Type", "text/plain")
+	unsupportedRequest.Header.Set("x-api-key", testAPIKey)
+	handler.ServeHTTP(unsupportedMediaType, unsupportedRequest)
+	if unsupportedMediaType.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status=%d body=%s", unsupportedMediaType.Code, unsupportedMediaType.Body)
+	}
+	if got := unsupportedMediaType.Header().Get(inferenceapi.DecodeRejectedHeader); got != "1" {
+		t.Fatalf("unsupported media type decode rejected header = %q", got)
 	}
 }
 

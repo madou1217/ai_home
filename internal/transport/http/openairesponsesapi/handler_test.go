@@ -482,13 +482,14 @@ func TestHandlerRejectsUnauthorizedInvalidAndOversizedRequests(t *testing.T) {
 	executor := newScriptedExecutor(nil, errors.New("不应调用执行器"))
 	baseURL, client := startResponsesServer(t, executor, 32)
 	testCases := []struct {
-		name        string
-		method      string
-		token       string
-		contentType string
-		body        []byte
-		status      int
-		errorType   string
+		name           string
+		method         string
+		token          string
+		contentType    string
+		body           []byte
+		status         int
+		errorType      string
+		decodeRejected bool
 	}{
 		{
 			name:        "未授权",
@@ -514,6 +515,8 @@ func TestHandlerRejectsUnauthorizedInvalidAndOversizedRequests(t *testing.T) {
 			body:        minimalRequestBody(false),
 			status:      http.StatusUnsupportedMediaType,
 			errorType:   "invalid_request_error",
+			// 媒体类型/内容编码不受支持发生在解码阶段，必须标记交还前置宿主重放。
+			decodeRejected: true,
 		},
 		{
 			name:        "请求体过大",
@@ -542,6 +545,9 @@ func TestHandlerRejectsUnauthorizedInvalidAndOversizedRequests(t *testing.T) {
 					`"type":"`+testCase.errorType+`"`,
 				) {
 				t.Fatalf("response = %#v", response)
+			}
+			if rejected := response.header.Get(inferenceapi.DecodeRejectedHeader); (rejected == "1") != testCase.decodeRejected {
+				t.Fatalf("decode rejected header = %q, want %t", rejected, testCase.decodeRejected)
 			}
 		})
 	}

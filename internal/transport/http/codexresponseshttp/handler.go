@@ -94,6 +94,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	payload, metadata, err := readRequest(request)
 	if err != nil {
+		// 读取/解压/解析都发生在选账号和联系上游之前，属于解码阶段失败，
+		// 交还前置宿主重放（例如压缩体由 Node 归一化后再进来）。
+		inferenceapi.MarkDecodeRejected(response)
 		writeError(response, "invalid_request_body")
 		return
 	}

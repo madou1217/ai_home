@@ -36,8 +36,8 @@ func writeRequestError(response http.ResponseWriter, err error) {
 			"request_too_large",
 			"Request body is too large",
 		)
-	case errors.Is(err, inferenceapi.ErrInvalidContentType),
-		errors.Is(err, inferenceapi.ErrUnsupportedContentEncoding):
+	case inferenceapi.IsUnsupportedRequestBodyShape(err):
+		inferenceapi.MarkDecodeRejected(response)
 		writeAPIError(
 			response,
 			http.StatusUnsupportedMediaType,
@@ -60,6 +60,7 @@ func writeRequestError(response http.ResponseWriter, err error) {
 func writeDecodeError(response http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, openaichatcompletions.ErrUnsupportedFeature):
+		inferenceapi.MarkDecodeRejected(response)
 		writeAPIError(
 			response,
 			http.StatusBadRequest,
@@ -68,6 +69,7 @@ func writeDecodeError(response http.ResponseWriter, err error) {
 			"Request feature is not supported",
 		)
 	case errors.Is(err, openaichatcompletions.ErrInvalidChatCompletionsRequest):
+		inferenceapi.MarkDecodeRejected(response)
 		writeAPIError(
 			response,
 			http.StatusBadRequest,

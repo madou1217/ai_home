@@ -1,6 +1,9 @@
 package inferenceapi
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+)
 
 // DecodeRejectedHeader 标记协议解码拒收的 4xx 响应。
 //
@@ -11,4 +14,14 @@ const DecodeRejectedHeader = "X-AIH-Decode-Rejected"
 // MarkDecodeRejected 在写出错误响应前标记本次拒收只发生在协议解码阶段。
 func MarkDecodeRejected(response http.ResponseWriter) {
 	response.Header().Set(DecodeRejectedHeader, "1")
+}
+
+// IsUnsupportedRequestBodyShape 报告请求体边界错误是否属于「Go 不支持这种请求形状」。
+//
+// 媒体类型或内容编码不受支持时，请求体尚未解码，也没有联系上游或选账号，因此这类
+// 失败可以带上 DecodeRejectedHeader 交还前置宿主重放（例如 Node 支持 /v1/responses
+// 的 gzip/zstd，而 Go 的 Canonical 路径不支持）。
+func IsUnsupportedRequestBodyShape(err error) bool {
+	return errors.Is(err, ErrInvalidContentType) ||
+		errors.Is(err, ErrUnsupportedContentEncoding)
 }

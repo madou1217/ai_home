@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openaichatcompletions"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/openairesponses"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const testBearerToken = "synthetic-chat-api-key"
@@ -533,15 +534,16 @@ func TestHandlerRejectsInvalidHTTPRequests(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name        string
-		method      string
-		path        string
-		token       string
-		contentType string
-		body        []byte
-		maxBodySize int64
-		wantStatus  int
-		wantCode    string
+		name           string
+		method         string
+		path           string
+		token          string
+		contentType    string
+		body           []byte
+		maxBodySize    int64
+		wantStatus     int
+		wantCode       string
+		decodeRejected bool
 	}{
 		{
 			name:        "未授权",
@@ -591,6 +593,8 @@ func TestHandlerRejectsInvalidHTTPRequests(t *testing.T) {
 			body:        minimalChatRequestBody(false),
 			wantStatus:  http.StatusUnsupportedMediaType,
 			wantCode:    "unsupported_media_type",
+			// 媒体类型/内容编码不受支持发生在解码阶段，必须标记交还前置宿主重放。
+			decodeRejected: true,
 		},
 		{
 			name:        "请求体过大",
@@ -630,6 +634,8 @@ func TestHandlerRejectsInvalidHTTPRequests(t *testing.T) {
 			}`),
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "invalid_request",
+			// Chat Decoder 的拒收此前完全没有标记，Node 无法接手。
+			decodeRejected: true,
 		},
 		{
 			name:        "不支持的特性",
@@ -642,8 +648,9 @@ func TestHandlerRejectsInvalidHTTPRequests(t *testing.T) {
 				"messages":[{"role":"user","content":"hello"}],
 				"n":2
 			}`),
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "unsupported_feature",
+			wantStatus:     http.StatusBadRequest,
+			wantCode:       "unsupported_feature",
+			decodeRejected: true,
 		},
 	}
 	for _, testCase := range testCases {
@@ -673,6 +680,9 @@ func TestHandlerRejectsInvalidHTTPRequests(t *testing.T) {
 				) ||
 				executor.CallCount() != 0 {
 				t.Fatalf("response = %#v calls=%d", response, executor.CallCount())
+			}
+			if rejected := response.header.Get(inferenceapi.DecodeRejectedHeader); (rejected == "1") != testCase.decodeRejected {
+				t.Fatalf("decode rejected header = %q, want %t", rejected, testCase.decodeRejected)
 			}
 		})
 	}

@@ -36,8 +36,8 @@ func writeRequestError(response http.ResponseWriter, err error) {
 			"request_too_large",
 			"Request body is too large",
 		)
-	case errors.Is(err, inferenceapi.ErrInvalidContentType),
-		errors.Is(err, inferenceapi.ErrUnsupportedContentEncoding):
+	case inferenceapi.IsUnsupportedRequestBodyShape(err):
+		inferenceapi.MarkDecodeRejected(response)
 		writeAPIError(
 			response,
 			http.StatusUnsupportedMediaType,

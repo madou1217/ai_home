@@ -484,6 +484,18 @@ test('only a Go-marked decode rejection hands the buffered body back to Node; ot
         res.end('{"error":{"code":"invalid_request","message":"Invalid request"}}');
         return;
       }
+      if (model === 'unsupported-encoding') {
+        // 415（媒体类型/内容编码不受支持）同样是解码阶段失败，必须能被重放。
+        res.writeHead(415, { 'content-type': 'application/json', 'x-aih-decode-rejected': '1' });
+        res.end('{"error":{"code":"unsupported_media_type","message":"Content type is not supported"}}');
+        return;
+      }
+      if (model === 'server-error-with-marker') {
+        // 5xx 永远不是解码阶段失败，即使误带标记也不得重放。
+        res.writeHead(503, { 'content-type': 'application/json', 'x-aih-decode-rejected': '1' });
+        res.end('{"error":{"code":"inference_unavailable"}}');
+        return;
+      }
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end('{"error":{"code":"upstream_bad_request"}}');
     });
@@ -530,4 +542,15 @@ test('only a Go-marked decode rejection hands the buffered body back to Node; ot
   assert.equal(other.headers['x-aih-decode-rejected'], undefined);
   assert.equal(nodeBodies.length, 1);
   assert.equal(goSeen.length, 2);
+
+  const compressedShape = { model: 'unsupported-encoding', input: 'hi' };
+  const compressed = await post(compressedShape);
+  assert.equal(compressed.status, 200, 'a marked 415 is replayed to Node');
+  assert.match(compressed.body, /handledBy/);
+  assert.deepEqual(nodeBodies, [JSON.stringify(codexShape), JSON.stringify(compressedShape)]);
+  assert.equal(fallbacks.length, 2);
+
+  const serverError = await post({ model: 'server-error-with-marker', input: 'hi' });
+  assert.equal(serverError.status, 503, 'a 5xx is never replayed even with the marker');
+  assert.equal(nodeBodies.length, 2);
 });

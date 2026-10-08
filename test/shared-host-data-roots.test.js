@@ -92,3 +92,49 @@ test('cache linking never deletes host data reached through a link to the host',
   assert.equal(fs.readFileSync(path.join(hostCache, 'entry'), 'utf8'), 'host-cache');
   assert.equal(fs.lstatSync(hostCache).isDirectory(), true);
 });
+
+test('CodeBuddy IDE shares only its session stores, including the session index database file', (t) => {
+  const f = fixture(t);
+  const hostData = path.join(f.hostHomeDir, 'Library', 'Application Support', 'CodeBuddy');
+  fs.mkdirSync(path.join(hostData, 'User', 'globalStorage', 'tencent-cloud.coding-copilot', 'genie-history'), { recursive: true });
+  fs.writeFileSync(path.join(hostData, 'codebuddy-sessions.vscdb'), 'host-index');
+  fs.mkdirSync(path.join(f.projectionRoot, 'electron-user-data', 'User'), { recursive: true });
+  fs.writeFileSync(path.join(f.projectionRoot, 'electron-user-data', 'state.vscdb'), 'account-login');
+
+  const result = linkSharedHostDataRoots({
+    provider: 'codebuddy', projectionRoot: f.projectionRoot, hostHomeDir: f.hostHomeDir, platform: 'darwin'
+  });
+
+  assert.equal(result.linked.length, 2, JSON.stringify(result));
+  const index = path.join(f.projectionRoot, 'electron-user-data', 'codebuddy-sessions.vscdb');
+  assert.equal(fs.lstatSync(index).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(index, 'utf8'), 'host-index');
+  assert.equal(
+    fs.realpathSync(path.join(f.projectionRoot, 'electron-user-data', 'User', 'globalStorage', 'tencent-cloud.coding-copilot')),
+    fs.realpathSync(path.join(hostData, 'User', 'globalStorage', 'tencent-cloud.coding-copilot'))
+  );
+  assert.equal(fs.readFileSync(path.join(f.projectionRoot, 'electron-user-data', 'state.vscdb'), 'utf8'), 'account-login',
+    'the login store stays private to the account');
+  assert.deepEqual(
+    linkSharedHostDataRoots({ provider: 'codebuddy', projectionRoot: f.projectionRoot, hostHomeDir: f.hostHomeDir, platform: 'linux' }).linked,
+    [], 'the IDE layout is declared for macOS only'
+  );
+});
+
+test('an account database file that conflicts with the host one is reported, not overwritten', (t) => {
+  const f = fixture(t);
+  const hostData = path.join(f.hostHomeDir, 'Library', 'Application Support', 'CodeBuddy CN');
+  fs.mkdirSync(hostData, { recursive: true });
+  fs.writeFileSync(path.join(hostData, 'codebuddy-sessions.vscdb'), 'host-index');
+  const accountIndex = path.join(f.projectionRoot, 'electron-user-data', 'codebuddy-sessions.vscdb');
+  fs.mkdirSync(path.dirname(accountIndex), { recursive: true });
+  fs.writeFileSync(accountIndex, 'account-index');
+
+  const result = linkSharedHostDataRoots({
+    provider: 'codebuddycn', projectionRoot: f.projectionRoot, hostHomeDir: f.hostHomeDir, platform: 'darwin'
+  });
+
+  assert.deepEqual(result.unresolved, [path.join('electron-user-data', 'codebuddy-sessions.vscdb')]);
+  assert.equal(fs.readFileSync(accountIndex, 'utf8'), 'account-index');
+  assert.equal(fs.readFileSync(path.join(hostData, 'codebuddy-sessions.vscdb'), 'utf8'), 'host-index');
+});

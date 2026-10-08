@@ -44,6 +44,9 @@ const CONFIG_DIR_BY_PROVIDER = Object.freeze({
   workbuddycn: '.workbuddy'
 });
 const FAMILY_PROVIDERS = Object.freeze(Object.keys(CONFIG_DIR_BY_PROVIDER));
+// WorkBuddy 两站的数据根整体链接到宿主（见 shared-host-data-roots.test.js），
+// 只有 CodeBuddy 两站仍按"只链接 projects、其余账号私有"的规则对账。
+const PROJECTS_LINKED_PROVIDERS = Object.freeze(['codebuddy', 'codebuddycn']);
 const DESKTOP_NAME_BY_PROVIDER = Object.freeze({
   codebuddy: 'CodeBuddy',
   codebuddycn: 'CodeBuddy CN',
@@ -129,8 +132,8 @@ test('the family shares exactly its declared sharedEntries, not everything detec
 
 // --- 2. 家族私有条目（修掉 WorkBuddy 的账号间共享） -----------------------
 
-test('all four family providers keep settings.json, .mcp.json and sessions account-private', () => {
-  for (const provider of FAMILY_PROVIDERS) {
+test('both CodeBuddy providers keep settings.json, .mcp.json and sessions account-private', () => {
+  for (const provider of PROJECTS_LINKED_PROVIDERS) {
     const privateNames = getProviderPrivateEntryNames(provider);
     for (const entry of ['settings.json', '.mcp.json', 'sessions']) {
       assert.ok(
@@ -149,7 +152,7 @@ test('all four family providers keep settings.json, .mcp.json and sessions accou
 test('a fresh projection links projects into the host region store without copying', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const configDir = configDirOf(projection, provider);
       nodeFs.mkdirSync(configDir, { recursive: true });
@@ -197,7 +200,7 @@ test('linking is idempotent and never duplicates the store', () => {
 test('pre-existing projection sessions are never moved into the host store', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const configDir = configDirOf(projection, provider);
       const projectionProjects = path.join(configDir, 'projects');
@@ -226,7 +229,7 @@ test('pre-existing projection sessions are never moved into the host store', () 
 test('an empty leftover projects directory is dropped and linked (no data to lose)', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    const provider = 'workbuddycn';
+    const provider = 'codebuddycn';
     const projection = projectionDir(root, provider);
     const configDir = configDirOf(projection, provider);
     const projectionProjects = path.join(configDir, 'projects');
@@ -252,7 +255,7 @@ test('an empty leftover projects directory is dropped and linked (no data to los
 test('vendor diagnostics stay private without hiding undeclared fallback sessions', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const diagnostics = path.join(projection, '.codebuddy', 'diagnostics');
       nodeFs.mkdirSync(diagnostics, { recursive: true });
@@ -282,7 +285,7 @@ test('desktop-linked toolchain caches never block family sessions', () => {
   // 之后的会话对账必须放行这些链接、不改动它们；未声明的会话类数据仍然拦下。
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const caches = [['.volta'], ['go']];
       for (const segments of caches) nodeFs.mkdirSync(path.join(hostHomeDir, ...segments), { recursive: true });
@@ -317,7 +320,7 @@ test('desktop-linked toolchain caches never block family sessions', () => {
 test('desktop encryption references and connector state stay private after first launch', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const files = [
         ['Library', 'Preferences', 'com.apple.security.plist'],
@@ -357,7 +360,7 @@ test('desktop encryption references and connector state stay private after first
 test('empty desktop workspaces link to one durable host directory without copying', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const appName = DESKTOP_NAME_BY_PROVIDER[provider];
       const hostWorkspace = path.join(hostHomeDir, appName, 'Claw');
       for (const accountRef of ['acct_a', 'acct_b']) {
@@ -380,7 +383,7 @@ test('empty desktop workspaces link to one durable host directory without copyin
 test('desktop workspaces with user files are never migrated or replaced', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const appName = DESKTOP_NAME_BY_PROVIDER[provider];
       const projection = projectionDir(root, provider);
       const workspace = path.join(projection, appName, 'Claw');
@@ -404,7 +407,7 @@ test('desktop workspaces with user files are never migrated or replaced', () => 
 test('launch keeps unrelated HOME files while full cleanup still blocks on them', () => {
   const { root, hostHomeDir, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const unknown = path.join(projection, 'local-tool-install', 'user-artifact.html');
       nodeFs.mkdirSync(path.dirname(unknown), { recursive: true });
@@ -427,7 +430,7 @@ test('launch keeps unrelated HOME files while full cleanup still blocks on them'
 test('launch still refuses family projects containing unlinked session data', () => {
   const { root, service } = createTree();
   try {
-    for (const provider of FAMILY_PROVIDERS) {
+    for (const provider of PROJECTS_LINKED_PROVIDERS) {
       const projection = projectionDir(root, provider);
       const projects = path.join(configDirOf(projection, provider), 'projects');
       nodeFs.mkdirSync(projects, { recursive: true });
@@ -462,6 +465,35 @@ test('the sandbox link resolves to the same physical store every account shares'
     assert.equal(targets[0], nodeFs.realpathSync(hostProjects));
     // 通过任一账号的链接读到的都是地区存储的内容。
     assert.deepEqual(readDirNames(path.join(projectionDir(root, provider, 'acct_b'), CONFIG_DIR_BY_PROVIDER[provider], 'projects')), ['region-session.jsonl']);
+  } finally {
+    fse.removeSync(root);
+  }
+});
+
+test('WorkBuddy links its whole data roots to the host and refuses to fork real data', () => {
+  const { root, hostHomeDir, service } = createTree();
+  try {
+    for (const provider of ['workbuddy', 'workbuddycn']) {
+      const configName = CONFIG_DIR_BY_PROVIDER[provider];
+      const hostRoot = path.join(hostHomeDir, configName);
+      nodeFs.mkdirSync(path.join(hostRoot, 'projects'), { recursive: true });
+      nodeFs.writeFileSync(path.join(hostRoot, 'workbuddy.db'), 'HOST-DB');
+
+      const fresh = projectionDir(root, provider, 'acct_fresh');
+      nodeFs.mkdirSync(fresh, { recursive: true });
+      const linked = service.ensureSessionStoreLinks(provider, 'acct_fresh', { projectionRoot: fresh });
+      assert.deepEqual(linked.unresolved, [], provider);
+      assert.equal(isLink(path.join(fresh, configName)), true, provider);
+      assert.equal(nodeFs.readFileSync(path.join(fresh, configName, 'workbuddy.db'), 'utf8'), 'HOST-DB');
+
+      const forked = projectionDir(root, provider, 'acct_forked');
+      nodeFs.mkdirSync(path.join(forked, configName), { recursive: true });
+      nodeFs.writeFileSync(path.join(forked, configName, 'workbuddy.db'), 'ACCOUNT-DB');
+      const refused = service.ensureSessionStoreLinks(provider, 'acct_forked', { projectionRoot: forked });
+      assert.deepEqual(refused.unresolved, [configName], provider);
+      assert.equal(nodeFs.readFileSync(path.join(forked, configName, 'workbuddy.db'), 'utf8'), 'ACCOUNT-DB');
+      assert.equal(nodeFs.readFileSync(path.join(hostRoot, 'workbuddy.db'), 'utf8'), 'HOST-DB');
+    }
   } finally {
     fse.removeSync(root);
   }

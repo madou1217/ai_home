@@ -218,6 +218,40 @@ test('credential refresh delegation can be forced on without account sync', () =
   assert.equal(calls.options.delegateCredentialRefresh, true);
 });
 
+test('a failed first account sync stops blocking Go once a later sync succeeds', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-host-sync-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const fetchImpl = async (url) => (url.endsWith('/v1/models')
+    ? { ok: true, status: 200, json: async () => ({ data: [] }) }
+    : { ok: true, status: 200, json: async () => ({ ready: true }) });
+  let last = null;
+  const accountSync = {
+    reconcile: async () => { last = { at: new Date().toISOString(), failed: true, error: 'database is locked' }; return last; },
+    start() {},
+    stop: async () => {},
+    status: () => last
+  };
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
+    createGoCoreSupervisor: factory,
+    createGoAccountSync: () => accountSync,
+    aiHomeDir,
+    fetchImpl,
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal((await host.readiness()).forwarding, false, 'Go may still have an empty account store');
+
+  // 账号同步自己的周期对账成功了一轮：不必等 Go 重启才恢复转发。
+  last = { at: new Date().toISOString(), pushed: 3, pulled: 0, adopted: 0, errors: [] };
+  const readiness = await host.readiness();
+  assert.equal(readiness.accounts_synced, true);
+  assert.equal(readiness.forwarding, true);
+  await host.stop();
+});
+
 test('a Go Core that comes back after a failed start resumes forwarding', async () => {
   const fetched = [];
   const fetchImpl = async (url) => {

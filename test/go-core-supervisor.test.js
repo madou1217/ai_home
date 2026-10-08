@@ -377,6 +377,51 @@ test('a start that misses the ready deadline is retried and the host is told whe
   }
 });
 
+test('a Go Core slower than the first ready gate gets more time on each retry', async (t) => {
+  let clock = 1_000;
+  t.mock.method(Date, 'now', () => clock);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-slow-start-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const { children, spawn } = crashableChildFactory();
+  const timers = fakeTimers();
+  const restarted = [];
+  let spawnedAt = 0;
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      verifyBuild: false,
+      binaryPath,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn: (...args) => { spawnedAt = clock; return spawn(...args); },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      now: () => clock,
+      sleep: async () => { clock += 500; },
+      onRestarted: (status) => restarted.push(status.state),
+      // 这台机器上 Go 要 10 秒才开始监听（先同步探测 codex 版本），超过首启的 7 秒门限。
+      fetchImpl: async () => (clock - spawnedAt >= 10_000
+        ? { ok: true, json: async () => ({ ok: true, service: 'aih-server' }) }
+        : { ok: false, json: async () => ({}) })
+    });
+
+    await assert.rejects(() => supervisor.start({ stopTimeoutMs: 50 }), (error) => error.code === 'go_core_not_ready');
+    await timers.fire();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(supervisor.status().state, 'ready', 'the retry waits long enough instead of killing Go at the same gate');
+    assert.equal(children.length, 2);
+    assert.deepEqual(restarted, ['ready']);
+    await supervisor.stop({ timeoutMs: 50 });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('a stale build keeps retrying and is picked up once the binary is rebuilt', async () => {
   const { writeBuildStamp, computeRouteManifestHash, readPackageVersion } = require('../lib/cli/services/server/go-core-build-stamp');
   const repositoryRoot = path.join(__dirname, '..');

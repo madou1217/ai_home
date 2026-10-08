@@ -408,6 +408,10 @@ export const accountsAPI = {
     return response.data;
   },
 
+  refresh: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
+    const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh`);
+    return response.data;
+  },
   refreshUsage: async (provider: string, accountRef: string): Promise<AccountRefreshUsageResponse> => {
     const response = await api.post<AccountRefreshUsageResponse>(`/webui/accounts/${provider}/${accountRef}/refresh-usage`);
     return response.data;

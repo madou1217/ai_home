@@ -1,0 +1,43 @@
+.account-refresh-logo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.account-refresh-logo:hover,
+.account-refresh-logo:focus-visible {
+  border-color: var(--color-accent);
+  background: var(--color-surface-sunken);
+  outline: 2px solid transparent;
+}
+
+.account-refresh-logo[aria-busy="true"] {
+  cursor: wait;
+}
+
+.account-refresh-logo[aria-busy="true"]::after {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: aih-account-activity-spin 0.9s linear infinite;
+  content: '';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-refresh-logo[aria-busy="true"]::after {
+    animation: none;
+    border-color: var(--color-accent);
+  }
+}

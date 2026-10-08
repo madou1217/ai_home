@@ -126,6 +126,8 @@ export function useAccountActions({
 
   const [updatingStatusAccountRefs, setUpdatingStatusAccountRefs] = React.useState<Record<string, boolean>>({});
   const [refreshingUsageAccountRefs, setRefreshingUsageAccountRefs] = React.useState<Record<string, boolean>>({});
+  const [refreshingAccountRefs, setRefreshingAccountRefs] = React.useState<Record<string, boolean>>({});
+  const accountRefreshJobsRef = React.useRef<Map<string, AccountRefreshJob>>(new Map());
   const [modalVisible, setModalVisible] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [addJobId, setAddJobId] = React.useState<string | null>(null);
@@ -480,6 +482,24 @@ export function useAccountActions({
     const jobId = String(job?.id || '').trim();
     if (!jobId) return;
     const accountRef = getAccountRef(job);
+    if (job.scope === 'account') {
+      const previous = accountRefreshJobsRef.current.get(accountRef);
+      // 接受响应和推送可能乱序到达；同一作业终态不会被 queued/running 覆盖。
+      if (previous?.id === jobId && (previous.status === 'succeeded' || previous.status === 'failed')) return;
+      accountRefreshJobsRef.current.set(accountRef, job);
+      const active = job.status === 'queued' || job.status === 'running';
+      setRefreshingAccountRefs((current) => {
+        const next = { ...current };
+        if (active) next[accountRef] = true;
+        else delete next[accountRef];
+        return next;
+      });
+      if (!active) {
+        if (job.status === 'failed') message.warning(job.error || '账号部分刷新失败');
+        else message.success('账号已刷新');
+      }
+      return;
+    }
     if (job.status === 'queued' || job.status === 'running') {
       trackAccountUsageRefresh(accountRef);
       return;
@@ -545,6 +565,12 @@ export function useAccountActions({
     },
     onRemovalCleanup: (accountRef) => {
       clearAccountUsageRefresh(accountRef);
+      accountRefreshJobsRef.current.delete(accountRef);
+      setRefreshingAccountRefs((current) => {
+        const next = { ...current };
+        delete next[accountRef];
+        return next;
+      });
       setUpdatingStatusAccountRefs((current) => {
         if (!current[accountRef]) return current;
         const next = { ...current };
@@ -948,6 +974,28 @@ export function useAccountActions({
     }
   };
 
+  const handleRefreshAccount = async (record: Account) => {
+    const accountRef = getAccountRef(record);
+    if (refreshingAccountRefs[accountRef]) return;
+    setRefreshingAccountRefs((current) => ({ ...current, [accountRef]: true }));
+    try {
+      const result = await accountsAPI.refresh(record.provider, accountRef);
+      handleAccountRefreshJobUpdate(result.job);
+    } catch (error: any) {
+      setRefreshingAccountRefs((current) => {
+        const next = { ...current };
+        delete next[accountRef];
+        return next;
+      });
+      if (error?.response?.status === 404) {
+        stageAccountRemoval(record);
+        message.warning('账号已不存在，已从列表移除');
+      } else {
+        message.error(error?.response?.data?.message || '刷新账号失败');
+      }
+    }
+  };
+
   const handleRefreshUsage = async (record: Account) => {
     const accountRef = getAccountRef(record);
     trackAccountUsageRefresh(accountRef);
@@ -1193,6 +1241,7 @@ export function useAccountActions({
     // 行级状态
     updatingStatusAccountRefs,
     refreshingUsageAccountRefs,
+    refreshingAccountRefs,
     // 行级操作
     copyAccountEmail,
     handleEdit,
@@ -1203,6 +1252,7 @@ export function useAccountActions({
     handleSetDefault,
     handleSetMobile,
     handleRefreshUsage,
+    handleRefreshAccount,
     handleOpenApp,
     chooseCliTerminal,
     scheduleCliTerminalPicker,

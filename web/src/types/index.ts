@@ -249,6 +249,11 @@ export interface AccountRefreshJob {
   updatedAt: number;
   finishedAt?: number | null;
   error?: string;
+  scope?: 'account';
+  branches?: Partial<Record<'status' | 'models' | 'usage', {
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+    error?: string;
+  }>>;
 }
 
 export interface AccountRefreshUsageResponse {

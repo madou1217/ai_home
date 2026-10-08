@@ -882,6 +882,141 @@ test('web ui accounts list exposes probe_failed quota status when latest usage p
 });
 
 for (const probeError of ['timeout', '']) {
+  test(`web ui unified refresh runs all branches concurrently and ${probeError ? 'isolates quota failure' : 'finishes successfully'}`, async (t) => {
+    const fixture = createAccountFixture(t);
+    const accountRef = fixture.register('gemini', '91', {
+      state: { configured: true, apiKeyMode: false }
+    });
+    let releaseUsage;
+    let releaseModels;
+    const usageGate = new Promise((resolve) => { releaseUsage = resolve; });
+    const modelGate = new Promise((resolve) => { releaseModels = resolve; });
+    t.after(() => { releaseUsage(); releaseModels(); });
+    const calls = { status: 0, usage: 0, models: 0 };
+    const state = { accounts: { gemini: [{ provider: 'gemini', accountRef, accessToken: 'fixture-token' }] } };
+    const deps = createBaseDeps(fixture, {
+      loadServerRuntimeAccounts: () => { calls.status += 1; return state.accounts; },
+      applyReloadState(nextState, accounts) { nextState.accounts = accounts; },
+      ensureUsageSnapshotAsync: async (_provider, ref, _cached, options) => {
+        assert.equal(ref, accountRef);
+        assert.equal(options.forceRefresh, true);
+        calls.usage += 1;
+        await usageGate;
+      },
+      getLastUsageProbeState: () => ({ checkedAt: Date.now(), error: probeError }),
+      fetchModelsForAccount: async () => {
+        calls.models += 1;
+        await modelGate;
+        return ['gemini-refresh-test'];
+      }
+    });
+    const pathname = `/v0/webui/accounts/gemini/${accountRef}/refresh`;
+    const request = async () => {
+      const res = createResCapture();
+      await handleWebUIRequest({ method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+        req: { headers: {} }, res, options: {}, state, deps });
+      assert.equal(res.statusCode, 202);
+      return JSON.parse(res.body);
+    };
+    const accepted = await request();
+    assert.equal(accepted.job.status, 'queued');
+    assert.deepEqual(calls, { status: 0, usage: 0, models: 0 });
+    assert.deepEqual(Object.keys(accepted.job.branches), ['status', 'models', 'usage']);
+    const { accountRefreshJobs } = require('../lib/server/webui-account-routes-refresh');
+    const job = accountRefreshJobs.get(accepted.job.id);
+    assert.equal(await waitFor(() => calls.status > 0 && calls.usage > 0 && calls.models > 0, 10000), true);
+    assert.equal(job.branches.status.status, 'succeeded');
+    assert.equal(job.branches.usage.status, 'running');
+    assert.equal(job.branches.models.status, 'running');
+    const duplicate = await request();
+    assert.equal(duplicate.alreadyRunning, true);
+    assert.equal(duplicate.job.id, job.id);
+    assert.deepEqual(calls, { status: 1, usage: 1, models: 1 });
+    releaseUsage();
+    assert.equal(await waitFor(() => job.branches.usage.status !== 'running', 10000), true);
+    assert.equal(job.branches.usage.status, probeError ? 'failed' : 'succeeded');
+    assert.equal(job.status, 'running');
+    releaseModels();
+    assert.equal(await waitFor(() => job.status !== 'running', 10000), true);
+    assert.equal(job.status, probeError ? 'failed' : 'succeeded');
+    assert.equal(job.branches.models.status, 'succeeded');
+    assert.equal(job.error, probeError ? '额度：timeout' : '');
+    assert.deepEqual(state.webUiModelsCache.byAccount[accountRef], ['gemini-refresh-test']);
+  });
+}
+
+for (const failedBranch of ['status', 'models']) {
+  test(`web ui unified refresh isolates ${failedBranch} failure from the other branches`, async (t) => {
+    const fixture = createAccountFixture(t);
+    const accountRef = fixture.register('gemini', failedBranch === 'status' ? '94' : '95');
+    let quotaCalls = 0;
+    const state = { accounts: { gemini: [{ provider: 'gemini', accountRef, accessToken: 'fixture-token' }] } };
+    const pathname = `/v0/webui/accounts/gemini/${accountRef}/refresh`;
+    const res = createResCapture();
+    await handleWebUIRequest({ method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} }, res, options: {}, state,
+      deps: createBaseDeps(fixture, {
+        loadServerRuntimeAccounts: () => {
+          if (failedBranch === 'status') throw new Error('status_reload_failed');
+          return state.accounts;
+        },
+        ensureUsageSnapshotAsync: async () => { quotaCalls += 1; },
+        fetchModelsForAccount: async () => {
+          if (failedBranch === 'models') throw new Error('models_upstream_failed');
+          return ['gemini-refresh-test'];
+        }
+      }) });
+    assert.equal(res.statusCode, 202);
+    const { accountRefreshJobs } = require('../lib/server/webui-account-routes-refresh');
+    const job = accountRefreshJobs.get(JSON.parse(res.body).job.id);
+    assert.equal(await waitFor(() => job.status === 'failed', 10000), true);
+    assert.equal(job.branches[failedBranch].status, 'failed');
+    assert.equal(job.branches[failedBranch === 'status' ? 'models' : 'status'].status, 'succeeded');
+    assert.equal(job.branches.usage.status, 'succeeded');
+    assert.match(job.error, new RegExp(failedBranch === 'status' ? 'status_reload_failed' : 'models_upstream_failed'));
+    assert.equal(quotaCalls, 1);
+  });
+}
+
+test('web ui unified refresh allows API key model and status refresh without probing quota', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('codex', '92', { apiKeyMode: true });
+  let quotaCalls = 0;
+  const state = { accounts: { codex: [{ provider: 'codex', accountRef, apiKeyMode: true, apiKey: 'fixture-key' }] } };
+  const pathname = `/v0/webui/accounts/codex/${accountRef}/refresh`;
+  const res = createResCapture();
+  await handleWebUIRequest({ method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} }, res, options: {}, state,
+    deps: createBaseDeps(fixture, {
+      loadServerRuntimeAccounts: () => state.accounts,
+      ensureUsageSnapshotAsync: async () => { quotaCalls += 1; },
+      fetchModelsForAccount: async () => ['gpt-refresh-test']
+    }) });
+  assert.equal(res.statusCode, 202);
+  const { accountRefreshJobs } = require('../lib/server/webui-account-routes-refresh');
+  const job = accountRefreshJobs.get(JSON.parse(res.body).job.id);
+  assert.equal(await waitFor(() => job.status === 'succeeded', 10000), true);
+  assert.equal(job.branches.status.status, 'succeeded');
+  assert.equal(job.branches.models.status, 'succeeded');
+  assert.equal(job.branches.usage.status, 'skipped');
+  assert.equal(quotaCalls, 0);
+});
+
+test('web ui unified refresh rejects missing accounts and provider mismatches before scheduling', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('gemini', '93');
+  for (const [provider, ref] of [['codex', accountRef], ['gemini', 'acct_00000000000000000000']]) {
+    const pathname = `/v0/webui/accounts/${provider}/${ref}/refresh`;
+    const res = createResCapture();
+    await handleWebUIRequest({ method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} }, res, options: {}, state: { accounts: {} }, deps: createBaseDeps(fixture) });
+    assert.equal(res.statusCode, 404);
+    assert.equal(JSON.parse(res.body).error, 'account_not_found');
+    assert.equal(JSON.parse(res.body).job, undefined);
+  }
+});
+
+for (const probeError of ['timeout', '']) {
   test(`web ui refresh usage streams the account and reports ${probeError ? 'probe failure' : 'probe success'}`, async (t) => {
     const fixture = createAccountFixture(t);
     const accountRef = fixture.register('codex', '9', {

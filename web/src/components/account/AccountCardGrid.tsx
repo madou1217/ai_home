@@ -8,7 +8,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import type { Account, ManagementAccountActivity, Provider } from '@/types';
-import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
+import AccountRefreshLogo from '@/features/accounts/AccountRefreshLogo';
 import AccountSubscriptionLines from '@/features/accounts/AccountSubscriptionLines';
 import {
   getAccountPrimaryLabel,
@@ -29,6 +29,8 @@ interface AccountCardGridProps {
   provider: Provider;
   loading?: boolean;
   getActivity: (account: Account) => ManagementAccountActivity | null;
+  onRefresh: (account: Account) => void;
+  isRefreshing: (account: Account) => boolean;
   /** 健康红绿图标（悬停看 90 天 / 24 小时明细），与列表账号列同一组件。 */
   renderHealth: (account: Account) => ReactNode;
   /** 剩余额度（全部窗口 + 消耗动效），与列表「剩余额度」列同一组件。 */
@@ -55,6 +57,8 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   provider,
   loading = false,
   getActivity,
+  onRefresh,
+  isRefreshing,
   renderHealth,
   renderUsage,
   getMenuItems,
@@ -90,7 +94,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
           >
             <div className={styles.cardHeader}>
               <div className={styles.avatarWrapper}>
-                <AccountActivityIcon provider={acc.provider} activity={getActivity(acc)} size={20} />
+                <AccountRefreshLogo account={acc} activity={getActivity(acc)} size={20} refreshing={isRefreshing(acc)} onRefresh={onRefresh} />
               </div>
               <div className={styles.accountInfo}>
                 <div className={styles.titleRow}>

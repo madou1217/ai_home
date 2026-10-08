@@ -29,7 +29,6 @@ import {
   DeleteOutlined,
   CheckCircleOutlined,
   CopyOutlined,
-  ReloadOutlined,
   FilterOutlined,
   MoreOutlined,
   SyncOutlined,
@@ -59,7 +58,6 @@ import {
   canCopyAccountEmail,
   canEditAccountConfig,
   canReauthAccount,
-  canRefreshUsageAccount,
   getAccountDisplayState,
   getReauthActionLabel,
   getUsageSortValue,
@@ -127,6 +125,7 @@ import {
   renderAccountRoleIcons,
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
+import AccountRefreshLogo from '@/features/accounts/AccountRefreshLogo';
 import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import AccountSubscriptionLines from '@/features/accounts/AccountSubscriptionLines';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
@@ -162,15 +161,13 @@ export default function Accounts() {
     accounts,
     hydratingDetails,
     removingAccountRefs,
-    loading,
-    refreshing
+    loading
   } = accountsSnapshot;
   const tokenDrops = useTokenDropEvents(accounts);
   const accountOutcomes = useAccountOutcomes();
   const {
     modelCatalog,
     refreshingModelAccountRefs,
-    refreshAccountModelCatalog,
     clearModelAccountRefreshing,
     loadModelCatalog
   } = useModelCatalog(accounts);
@@ -212,15 +209,16 @@ export default function Accounts() {
   const {
     updatingStatusAccountRefs,
     refreshingUsageAccountRefs,
+    refreshingAccountRefs,
     copyAccountEmail,
     handleEdit,
     handleReauth,
     confirmDeleteAccount,
-    handleReload,
     handleToggleStatus,
     handleSetDefault,
     handleSetMobile,
     handleRefreshUsage,
+    handleRefreshAccount,
     handleOpenApp,
     scheduleCliTerminalPicker,
     openCliWithDefaultTerminal,
@@ -364,7 +362,7 @@ export default function Accounts() {
       title: '账号',
       dataIndex: 'displayName',
       key: 'displayName',
-      width: 280,
+      // 唯一弹性列承接大屏留白，其他列保持紧凑宽度。
       render: (_text: any, record: Account) => {
         const requiresReauth = requiresAccountReauth(record);
         const {
@@ -382,8 +380,13 @@ export default function Accounts() {
 
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <div style={{ paddingTop: 3, flexShrink: 0 }}>
-            <AccountActivityIcon provider={record.provider} activity={getAccountActivity(record)} size={18} />
+          <div style={{ flexShrink: 0 }}>
+            <AccountRefreshLogo
+              account={record}
+              activity={getAccountActivity(record)}
+              refreshing={Boolean(refreshingAccountRefs[getAccountRef(record)])}
+              onRefresh={handleRefreshAccount}
+            />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="account-email-row" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 24 }}>
@@ -498,7 +501,7 @@ export default function Accounts() {
       title: '开关',
       dataIndex: 'status',
       key: 'status',
-      width: 88,
+      width: 80,
       align: 'center' as const,
       render: (_status: any, record: Account) => {
         const accountRef = getAccountRef(record);
@@ -522,32 +525,13 @@ export default function Accounts() {
       title: '调度状态',
       dataIndex: 'quotaStatus',
       key: 'quotaStatus',
-      width: 180,
-      render: (_quotaStatus: any, record: Account) => {
-        const refreshable = canRefreshUsageAccount(record);
-        const refreshingUsage = Boolean(refreshingUsageAccountRefs[getAccountRef(record)]);
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {renderAccountDisplayBadge(record)}
-            {refreshable ? (
-              <Tooltip title="刷新当前账号状态">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  loading={refreshingUsage}
-                  onClick={() => handleRefreshUsage(record)}
-                />
-              </Tooltip>
-            ) : null}
-          </div>
-        );
-      }
+      width: 152,
+      render: (_status: any, record: Account) => renderAccountDisplayBadge(record)
     },
     {
       title: '模型探测',
       key: 'modelProbe',
-      width: 180,
+      width: 136,
       render: (_value: any, record: Account) => {
         const requiresReauth = requiresAccountReauth(record);
         const probe = getAccountModelProbe(record, modelCatalog);
@@ -579,16 +563,6 @@ export default function Accounts() {
                 text={tagLabel}
               />
             </span>
-            <Tooltip title="刷新该账号模型目录">
-              <Button
-                type="text"
-                size="small"
-                icon={<ReloadOutlined />}
-                loading={modelRefreshing}
-                disabled={requiresReauth}
-                onClick={() => refreshAccountModelCatalog(record)}
-              />
-            </Tooltip>
           </div>
         );
       }
@@ -597,7 +571,7 @@ export default function Accounts() {
       title: '剩余额度',
       dataIndex: 'remainingPct',
       key: 'remainingPct',
-      width: 260,
+      width: 208,
       sorter: (a: Account, b: Account, sortOrder?: 'ascend' | 'descend' | null) => {
         const aKnown = hasKnownUsage(a);
         const bKnown = hasKnownUsage(b);
@@ -612,11 +586,9 @@ export default function Accounts() {
         return String(getAccountRef(a)).localeCompare(String(getAccountRef(b)));
       },
       render: (_pct: any, record: Account) => (
-        <UsageProgressEffects
-          record={record}
-          activity={getAccountActivity(record)}
-          drops={tokenDrops}
-        />
+        <div className="accounts-remaining-cell">
+          <UsageProgressEffects record={record} activity={getAccountActivity(record)} drops={tokenDrops} />
+        </div>
       )
     },
     {
@@ -634,7 +606,7 @@ export default function Accounts() {
       title: '额度更新时间',
       dataIndex: 'updatedAt',
       key: 'updatedAt',
-      width: 150,
+      width: 136,
       sorter: (a: Account, b: Account) => (a.updatedAt || 0) - (b.updatedAt || 0),
       render: (timestamp: any) => {
         const t = formatTimeCell(timestamp);
@@ -655,7 +627,7 @@ export default function Accounts() {
       ),
       dataIndex: 'lastUsedAt',
       key: 'lastUsedAt',
-      width: 160,
+      width: 144,
       sorter: (a: Account, b: Account) => (a.lastUsedAt || 0) - (b.lastUsedAt || 0),
       render: (timestamp?: any) => {
         const t = formatTimeCell(timestamp);
@@ -750,7 +722,7 @@ export default function Accounts() {
   const unavailableCount = countUnavailable(activeStats);
 
   return (
-    <PageScaffold ghost code="ACCOUNTS"
+    <PageScaffold ghost code="ACCOUNTS" className="accounts-page"
       title="账号管理"
       subTitle="统一管理 OAuth 和密钥账号；密钥账号的网络可达性以模型探测为准。"
       extra={(
@@ -849,8 +821,7 @@ export default function Accounts() {
 
       <SectionCard
         title="账号列表"
-        // 面板级操作(怎么显示 / 刷新)归标题行右侧;筛选维度(provider / 状态)
-        // 归下一行——按语义分组,而不是把控件散在三行里。
+        // 列表自动订阅快照；账号刷新统一由行首 Logo 触发。
         extra={
           <Space size={8}>
             <Select
@@ -868,18 +839,10 @@ export default function Accounts() {
                 { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
               ]}
             />
-            <Button icon={<SyncOutlined />} onClick={handleReload} loading={refreshing}>
-              刷新
-            </Button>
           </Space>
         }
       >
-        {/* 这三个控件此前都挂在列表模式的表格 toolbar 里,切到卡片模式整条消失。
-          * 提出来两种模式共用,并按语义分两行:上一行是面板级操作(视图切换/刷新),
-          * 控件统一聚在标题行成一组(状态筛选 / 视图切换 / 刷新),这一行整宽只做
-          * provider 导航。曾把筛选器放进 Tabs 的 extra,省下一行却把 9 个 provider
-          * 标签挤到截断("Grok"只剩"G"、溢出 ⋯ 贴着筛选器)——标签是主导航,
-          * 不该为次级控件让路。 */}
+        {/* 卡片与列表共用筛选、视图切换；Provider 导航独占一行。 */}
         <Tabs
           className="accounts-provider-tabs"
           activeKey={activeProvider}
@@ -893,6 +856,8 @@ export default function Accounts() {
               provider={activeProvider as any}
               loading={loading}
               getActivity={getAccountActivity}
+              onRefresh={handleRefreshAccount}
+              isRefreshing={(record) => Boolean(refreshingAccountRefs[getAccountRef(record)])}
               renderHealth={(record) => (
                 <AccountHealthIcon
                   accountRef={getAccountRef(record)}
@@ -951,7 +916,8 @@ export default function Accounts() {
             } as React.HTMLAttributes<HTMLElement>)}
             loading={loading}
             toolbar={false as any}
-            scroll={{ x: 1200 }}
+            tableLayout="fixed"
+            scroll={{ x: 1462 }}
           />
         )}
       </SectionCard>

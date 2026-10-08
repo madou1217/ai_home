@@ -1,5 +1,23 @@
 /* ===== Accounts Page — Umi ProLayout Compatible ===== */
 
+.accounts-page {
+  width: 100%;
+  max-width: 1560px;
+  margin-inline: auto;
+}
+
+/* 额度列缩窄后，取消内部各快照渲染器的旧最小宽度。 */
+.accounts-remaining-cell,
+.accounts-remaining-cell .usage-progress-effects,
+.accounts-remaining-cell .usage-progress-effects > div {
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+.accounts-remaining-cell .usage-meta-list > div {
+  min-width: 0 !important;
+}
+
 /* 行高亮动画 */
 .accounts-row-target td {
   background: var(--tint-info) !important;

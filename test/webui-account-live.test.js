@@ -1544,7 +1544,7 @@ test('refreshLiveAccountRecord treats OpenCode as schedulable without usage coll
   assert.equal(record.usageSnapshot, null);
 });
 
-test('refreshLiveAccountRecord treats Grok as schedulable without usage collection', async (t) => {
+test('refreshLiveAccountRecord keeps Grok usage pending until its billing snapshot is available', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-grok-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const accountRef = registerDbAccount(root, 'grok', '1', { nativeAuth: { auth: {
@@ -1582,7 +1582,7 @@ test('refreshLiveAccountRecord treats Grok as schedulable without usage collecti
     skipRuntimeReload: true
   });
 
-  assert.equal(record.quotaStatus, 'not_applicable');
+  assert.equal(record.quotaStatus, 'pending');
   assert.equal(record.schedulableStatus, 'schedulable');
   assert.equal(record.remainingPct, null);
   assert.equal(record.usageSnapshot, null);

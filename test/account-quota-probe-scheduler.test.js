@@ -72,3 +72,27 @@ test('scheduler probes every provider that declares quotaUsage, including the Co
   await scheduler.tick();
   assert.deepEqual(probed.sort(), ['workbuddy:acct_workbuddy_1', 'workbuddycn:acct_workbuddycn_1']);
 });
+
+test('scheduler refreshes stale Grok billing periods with an unknown percentage and skips API keys', async () => {
+  const now = Date.now();
+  const probed = [];
+  const scheduler = createAccountQuotaProbeScheduler({
+    listAccounts: () => [
+      { provider: 'grok', accountRef: 'acct_grok_1', apiKeyMode: false, usageSnapshot: {
+        kind: 'grok_credit_usage',
+        capturedAt: now - 20 * 60 * 1000,
+        entries: [{ remainingPct: null, resetAtMs: now + 24 * 60 * 60 * 1000 }]
+      } },
+      { provider: 'grok', accountRef: 'acct_grok_2', apiKeyMode: true },
+      { provider: 'grok', accountRef: 'acct_grok_3', apiKeyMode: false, usageSnapshot: {
+        kind: 'grok_credit_usage',
+        capturedAt: now,
+        entries: [{ remainingPct: null, resetAtMs: now + 24 * 60 * 60 * 1000 }]
+      } }
+    ],
+    ensureUsageSnapshotAsync: async (provider, ref) => { probed.push(`${provider}:${ref}`); return {}; }
+  });
+
+  await scheduler.tick();
+  assert.deepEqual(probed, ['grok:acct_grok_1']);
+});

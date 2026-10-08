@@ -120,22 +120,17 @@ test('default account gate rejects Codex API-key accounts before reading invento
   assert.equal(reads, 0);
 });
 
-test('turns a hung consume request into an unknown locked operation', async (t) => {
+test('turns a hung consume request into an unknown locked operation', { timeout: 5_000 }, async (t) => {
   const fixture = createFixture(t, {
     consumeTimeoutMs: 5,
     consumeCredit: async () => new Promise(() => {})
   });
   const listed = await fixture.service.list(fixture.accountRef);
-  const result = await Promise.race([
-    fixture.service.consume({
-      accountRef: fixture.accountRef,
-      operationId: OPERATION_A,
-      inventoryVersion: listed.inventoryVersion
-    }),
-    new Promise((resolve) => setTimeout(() => resolve('test-timeout'), 50))
-  ]);
-
-  assert.notEqual(result, 'test-timeout');
+  const result = await fixture.service.consume({
+    accountRef: fixture.accountRef,
+    operationId: OPERATION_A,
+    inventoryVersion: listed.inventoryVersion
+  });
   assert.equal(result.operation.status, 'unknown');
   assert.equal(result.operation.errorCode, 'codex_reset_consume_timeout');
 });

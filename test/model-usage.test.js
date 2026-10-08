@@ -209,6 +209,65 @@ function seedLegacyDuplicatedKimiProjection({ root, accountRef, sessionId, hostW
   }
 }
 
+test('model usage provider filters include providers without a local usage scanner', (t) => {
+  const fixture = makeService(t);
+  if (!fixture) return;
+  const { root, service } = fixture;
+  const timestampMs = Date.parse('2026-10-06T12:00:00.000Z');
+  try {
+    service.recordUsageBatch([
+      {
+        eventKey: 'api:workbuddy:filter:1',
+        provider: 'workbuddy',
+        sessionId: 'workbuddy-session',
+        sourceKind: 'server_proxy',
+        model: 'workbuddy-model',
+        inputTokens: 10,
+        outputTokens: 2,
+        timestampMs
+      },
+      {
+        eventKey: 'api:workbuddycn:filter:1',
+        provider: 'workbuddycn',
+        sessionId: 'workbuddycn-session',
+        sourceKind: 'server_proxy',
+        model: 'workbuddycn-model',
+        inputTokens: 20,
+        outputTokens: 3,
+        timestampMs
+      },
+      {
+        eventKey: 'api:claude:filter:1',
+        provider: 'claude',
+        sessionId: 'claude-session',
+        sourceKind: 'server_proxy',
+        model: 'claude-model',
+        inputTokens: 30,
+        outputTokens: 4,
+        timestampMs
+      }
+    ]);
+
+    const query = {
+      fromMs: timestampMs - 1,
+      toMs: timestampMs + 1,
+      provider: 'workbuddy'
+    };
+    assert.deepEqual(
+      service.getCostByModel(query).map((row) => row.provider),
+      ['workbuddy']
+    );
+    assert.equal(service.getStats(query).totalCalls, 1);
+    assert.deepEqual(
+      service.getSessions({ ...query, limit: 10 }).map((row) => row.provider),
+      ['workbuddy']
+    );
+  } finally {
+    service.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function readKimiSessionAccountRefs(root, sessionId) {
   const DatabaseSync = require('node:sqlite').DatabaseSync;
   const db = new DatabaseSync(path.join(root, '.ai_home', 'app-state.db'));

@@ -95,6 +95,23 @@ test('normalizeAnthropicUsage maps all token fields and totals cache tokens', ()
   });
 });
 
+test('normalizeAnthropicUsage separates thinking tokens without counting them twice', () => {
+  assert.deepEqual(normalizeAnthropicUsage({
+    input_tokens: 10,
+    output_tokens: 25,
+    cache_creation_input_tokens: 3,
+    cache_read_input_tokens: 2,
+    output_tokens_details: { thinking_tokens: 20 }
+  }), {
+    inputTokens: 10,
+    outputTokens: 5,
+    cacheCreationInputTokens: 3,
+    cacheReadInputTokens: 2,
+    reasoningOutputTokens: 20,
+    totalTokens: 40
+  });
+});
+
 test('normalizeGeminiUsage handles camelCase, snake_case, cache deduction, and thoughts', () => {
   assert.deepEqual(normalizeGeminiUsage({
     promptTokenCount: 100,

@@ -109,7 +109,7 @@ test('derived state treats OpenCode auth as not requiring quota collection', () 
 });
 
 test('derived state treats providers without quota usage as schedulable', () => {
-  for (const provider of ['opencode', 'grok', 'qoder', 'qodercn', 'kiro']) {
+  for (const provider of ['opencode', 'qoder', 'qodercn']) {
     const quotaState = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
     const schedulableState = deriveSchedulableState({
       provider,
@@ -120,6 +120,36 @@ test('derived state treats providers without quota usage as schedulable', () => 
     assert.equal(quotaState.status, 'not_applicable');
     assert.equal(schedulableState.status, 'schedulable');
   }
+});
+
+test('Kiro quota uses official credits independently of account scheduling status', () => {
+  const state = deriveQuotaState({ provider: 'kiro', configured: true, apiKeyMode: false,
+    usageSnapshot: { kind: 'kiro_credit_usage', entries: [{ remainingPct: 99.74 }] } });
+  assert.equal(state.status, 'available');
+  assert.equal(state.remainingPct, 99.74);
+  assert.equal(deriveQuotaState({ provider: 'kiro', configured: true }).status, 'pending');
+});
+
+test('derived state treats Grok as quota-capable while its billing snapshot is pending', () => {
+  const quotaState = deriveQuotaState({ provider: 'grok', configured: true, apiKeyMode: false });
+  const schedulableState = deriveSchedulableState({
+    provider: 'grok',
+    configured: true,
+    apiKeyMode: false,
+    quotaState
+  });
+
+  assert.equal(quotaState.status, 'pending');
+  assert.equal(schedulableState.status, 'schedulable');
+
+  const unknownBilling = deriveQuotaState({
+    provider: 'grok', configured: true, apiKeyMode: false,
+    usageSnapshot: { kind: 'grok_credit_usage', entries: [{ remainingPct: null, windowMinutes: 10_080 }] }
+  });
+  assert.equal(unknownBilling.status, 'pending');
+  assert.equal(unknownBilling.reason, 'provider_returned_no_numeric_usage');
+  assert.equal(unknownBilling.remainingPct, null);
+  assert.equal(deriveSchedulableState({ provider: 'grok', configured: true, quotaState: unknownBilling }).status, 'schedulable');
 });
 
 test('derived state treats kimi as quota-capable (OAuth 配额探测已接入)', () => {
@@ -166,6 +196,32 @@ test('a failed quota refresh never reopens an account with a known exhausted bal
   assert.equal(state.status, 'exhausted');
   assert.equal(state.remainingPct, 0);
   assert.equal(deriveSchedulableState({ ...options, quotaState: state }).status, 'blocked_by_quota');
+});
+
+test('a current unknown quota snapshot cannot inherit a legacy exhausted balance or switch threshold', () => {
+  for (const [provider, kind, field] of [
+    ['grok', 'grok_credit_usage', 'entries'], ['codex', 'codex_oauth_status', 'entries'],
+    ['workbuddy', 'codebuddy_credit_balance', 'entries'], ['zcode', 'zcode_plan_balance', 'entries'],
+    ['agy', 'agy_code_assist_quota', 'models']
+  ]) {
+    for (const remainingPct of [0, 10]) {
+      const options = { provider, configured: true, remainingPct, usageThresholdPct: 80,
+        usageSnapshot: { kind, [field]: [{ remainingPct: null, windowMinutes: 10080 }] } };
+      const quotaState = deriveQuotaState(options);
+      assert.equal(quotaState.status, 'pending', provider);
+      assert.equal(quotaState.remainingPct, null, provider);
+      assert.equal(deriveSchedulableState({ ...options, quotaState }).status, 'schedulable', provider);
+    }
+  }
+});
+
+test('legacy missing-rate-limit diagnostics do not block a configured Codex account', () => {
+  for (const planType of ['team', 'free']) {
+    const state = deriveSchedulableState({ provider: 'codex', configured: true, planType,
+      usageSnapshot: { kind: 'codex_oauth_status', fallbackSource: 'account_read', entries: [] },
+      quotaState: { status: 'provider_unavailable', reason: `codex_${planType}_plan_missing_rate_limits`, remainingPct: null } });
+    assert.equal(state.status, 'schedulable', planType);
+  }
 });
 
 test('relay policy stays blocked even with available quota or an API key', () => {

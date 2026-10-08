@@ -7,6 +7,7 @@ const { once } = require('node:events');
 const WebSocket = require('ws');
 const { handleCodexResponsesWebSocket } = require('../lib/server/codex-responses-websocket');
 const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
+const { buildModelAccountIndex } = require('../lib/server/model-account-index');
 
 const MODEL = 'fixture-model';
 const quota = (code = 'usage_limit_reached') => ({
@@ -44,7 +45,8 @@ async function fixture(t, onMessage, options = {}) {
   });
   await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${upstream.address().port}/v1`;
-  const accounts = ['first', 'second', 'third'].slice(0, options.accounts || 2).map(ref => ({
+  const accountRefs = options.accountRefs || ['first', 'second', 'third'].slice(0, options.accounts || 2);
+  const accounts = accountRefs.map(ref => ({
     accountRef: ref, accessToken: `test-${ref}`, upstreamAccountId: `test-user-${ref}`,
     openaiBaseUrl: base, remainingPct: 50
   }));
@@ -63,7 +65,7 @@ async function fixture(t, onMessage, options = {}) {
   });
   await new Promise(resolve => gateway.listen(0, '127.0.0.1', resolve));
   const client = new WebSocket(`ws://127.0.0.1:${gateway.address().port}/v1/responses`, {
-    headers: { 'x-account-ref': 'first', 'x-codex-turn-state': 'first-account-opaque-state' }
+    headers: { 'x-account-ref': accounts[0].accountRef, 'x-codex-turn-state': 'first-account-opaque-state' }
   });
   client.on('error', () => {});
   const received = [];
@@ -155,6 +157,150 @@ test('quota in the first response is retried without exposing its lifecycle meta
   });
   assert.equal((await round(f.client, request())).type, 'response.completed');
   assert.equal(f.received.some(x => x.data.includes('"id":"first"')), false);
+});
+
+const unsupportedModel = () => ({
+  type: 'error', status: 400, error: {
+    type: 'invalid_request_error',
+    message: "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."
+  }
+});
+
+for (const statusField of ['status', 'status_code']) {
+  test(`unsupported ChatGPT model via ${statusField} retries the same model on another account`, async t => {
+    const failure = unsupportedModel();
+    delete failure.status;
+    failure[statusField] = 400;
+    const model = 'gpt-6.1-sol';
+    const fixtureState = await fixture(t, (socket, _payload, ref) => {
+      send(socket, created(ref));
+      send(socket, ref === 'first' ? failure : completed('supported'));
+    });
+    const terminal = await round(fixtureState.client, request({ model }));
+    assert.equal(terminal.type, 'response.completed');
+    assert.deepEqual(fixtureState.inputs.map(input => input.ref), ['first', 'second']);
+    assert.ok(fixtureState.inputs.every(input => input.payload.model === model));
+    assert.ok(fixtureState.accounts[0].modelCooldowns[model] > Date.now());
+    assert.equal(fixtureState.accounts[0].authInvalidUntil || 0, 0);
+    assert.equal(fixtureState.accounts[0].cooldownUntil || 0, 0);
+    assert.equal(fixtureState.received.some(frame => frame.data.includes('invalid_request_error')), false);
+    assert.equal(fixtureState.retries[0].reason, 'model_not_available_on_endpoint');
+  });
+}
+
+test('unsupported model after visible output records model failure without replay', async t => {
+  const fixtureState = await fixture(t, socket => {
+    send(socket, { type: 'response.output_text.delta', delta: 'already visible' });
+    send(socket, unsupportedModel());
+  });
+  assert.deepEqual(await round(fixtureState.client, request({ model: 'gpt-6.1-sol' })), unsupportedModel());
+  assert.equal(fixtureState.attempts.length, 1);
+  assert.equal(fixtureState.stopped[0]?.reason, 'output_already_committed');
+  assert.ok(fixtureState.accounts[0].modelCooldowns['gpt-6.1-sol'] > Date.now());
+});
+
+test('unsupported model with no compatible account returns the original upstream error once', async t => {
+  const fixtureState = await fixture(t, socket => send(socket, unsupportedModel()), {
+    configureAccounts: accounts => { accounts[1].modelCooldowns = { 'gpt-6.1-sol': Date.now() + 60000 }; }
+  });
+  assert.deepEqual(await round(fixtureState.client, request({ model: 'gpt-6.1-sol' })), unsupportedModel());
+  assert.equal(fixtureState.attempts.length, 1);
+  assert.equal(fixtureState.stopped[0]?.reason, 'no_eligible_account');
+  assert.equal(fixtureState.received.filter(frame => frame.data.includes('invalid_request_error')).length, 1);
+});
+
+test('the first model request skips an account with a known incompatible catalog', async t => {
+  const accountRefs = ['acct_1111111111111111aaaa', 'acct_2222222222222222bbbb'];
+  const fixtureState = await fixture(t, (socket, _payload, ref) => {
+    send(socket, ref === accountRefs[0] ? unsupportedModel() : completed('supported'));
+  }, {
+    accountRefs,
+    configureAccounts: accounts => {
+      accounts[0].availableModels = ['older-model'];
+      accounts[1].availableModels = ['gpt-6.1-sol'];
+    }
+  });
+  fixtureState.state.modelAccountIndex = buildModelAccountIndex(fixtureState.state, {});
+  const terminal = await round(fixtureState.client, request({ model: 'gpt-6.1-sol' }));
+  assert.equal(terminal.type, 'response.completed');
+  assert.deepEqual(fixtureState.inputs.map(input => input.ref), [accountRefs[1]]);
+  assert.equal(fixtureState.accounts[0].failCount || 0, 0);
+  assert.equal(fixtureState.retries.length, 0);
+});
+
+for (const restriction of ['disabled', 'cooldown']) {
+  test(`initial model selection honors ${restriction} before sending inference`, async t => {
+    const accountRefs = ['acct_1111111111111111aaaa', 'acct_2222222222222222bbbb'];
+    const fixtureState = await fixture(t, socket => send(socket, completed('supported')), { accountRefs });
+    if (restriction === 'disabled') {
+      fixtureState.state.modelCatalogSettings = { accountModels: [
+        { id: 'gpt-6.1-sol', provider: 'codex', accountRef: accountRefs[0], enabled: false }
+      ] };
+    } else {
+      fixtureState.accounts[0].modelCooldowns = { 'gpt-6.1-sol': Date.now() + 60000 };
+    }
+    assert.equal((await round(fixtureState.client, request({ model: 'gpt-6.1-sol' }))).type, 'response.completed');
+    assert.deepEqual(fixtureState.inputs.map(input => input.ref), [accountRefs[1]]);
+    assert.equal(fixtureState.retries.length, 0);
+    assert.equal(fixtureState.attempts[1].headers['x-codex-turn-state'], undefined);
+    await close(fixtureState.client);
+    await settleActivity(fixtureState);
+  });
+}
+
+test('initial selection rejects a model unsupported by every known account without sending inference', async t => {
+  const fixtureState = await fixture(t, socket => send(socket, unsupportedModel()), {
+    accountRefs: ['acct_1111111111111111aaaa', 'acct_2222222222222222bbbb'],
+    configureAccounts: accounts => accounts.forEach(account => { account.availableModels = ['older-model']; })
+  });
+  fixtureState.state.modelAccountIndex = buildModelAccountIndex(fixtureState.state, {});
+  const terminal = await round(fixtureState.client, request({ model: 'gpt-6.1-sol' }));
+  assert.equal(terminal.status, 503);
+  assert.equal(terminal.error.code, 'no_available_account');
+  assert.equal(fixtureState.inputs.length, 0);
+  assert.ok(fixtureState.accounts.every(account => !(account.failCount > 0)));
+  await close(fixtureState.client);
+  await settleActivity(fixtureState);
+});
+
+test('initial model routing preserves raw frames and queues subsequent frames in order', async t => {
+  const fixtureState = await fixture(t, (socket, _payload, _ref, _inputs, data, binary) => socket.send(data, { binary }));
+  fixtureState.accounts[0].modelCooldowns = { 'gpt-6.1-sol': Date.now() + 60000 };
+  const first = '{ "type": "response.create", "model": "gpt-6.1-sol", "input": [], "future": {"opaque":true} }';
+  const second = '{ "type": "future.client.event", "value": 123 }';
+  const received = [];
+  const echoed = new Promise(resolve => fixtureState.client.on('message', data => {
+    received.push(data.toString());
+    if (received.length === 2) resolve();
+  }));
+  fixtureState.client.send(first);
+  fixtureState.client.send(second);
+  await echoed;
+  assert.deepEqual(received, [first, second]);
+  assert.deepEqual(fixtureState.inputs.map(input => input.ref), ['second', 'second']);
+  assert.equal(fixtureState.retries.length, 0);
+});
+
+test('cancelling an initial model reroute never sends inference to either account', { timeout: 3000 }, async t => {
+  let replacementStarted;
+  const started = new Promise(resolve => { replacementStarted = resolve; });
+  const fixtureState = await fixture(t, socket => send(socket, completed('unexpected')), {
+    onUpgrade: (ref, socket) => {
+      if (ref !== 'second') return;
+      socket.resume();
+      replacementStarted();
+      return false;
+    }
+  });
+  fixtureState.accounts[0].modelCooldowns = { 'gpt-6.1-sol': Date.now() + 60000 };
+  fixtureState.client.send(JSON.stringify(request({ model: 'gpt-6.1-sol' })));
+  await started;
+  const closed = once(fixtureState.client, 'close');
+  fixtureState.client.send(JSON.stringify({ type: 'response.cancel' }));
+  await closed;
+  await settleActivity(fixtureState);
+  assert.equal(fixtureState.inputs.length, 0);
+  assert.equal(fixtureState.retries.length, 0);
 });
 
 test('quota visits each usable account at most once and surfaces one real error on exhaustion', async t => {

@@ -60,10 +60,10 @@
       "fallback_records": 0
     },
     "go": {
-      "route_records": 30,
-      "endpoint_records": 29,
-      "unique_endpoint_patterns": 28,
-      "unique_http_endpoint_patterns": 28,
+      "route_records": 32,
+      "endpoint_records": 31,
+      "unique_endpoint_patterns": 30,
+      "unique_http_endpoint_patterns": 30,
       "unique_websocket_endpoint_patterns": 1,
       "guard_records": 0,
       "fallback_records": 1

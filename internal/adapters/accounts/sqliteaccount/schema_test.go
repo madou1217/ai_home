@@ -12,8 +12,8 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if ApplicationID != 0x41494831 {
 		t.Fatalf("ApplicationID = %#x, want %#x", ApplicationID, 0x41494831)
 	}
-	if SchemaVersion != 7 {
-		t.Fatalf("SchemaVersion = %d, want 7", SchemaVersion)
+	if SchemaVersion != 8 {
+		t.Fatalf("SchemaVersion = %d, want 8", SchemaVersion)
 	}
 	if !strings.Contains(SchemaV1, fmt.Sprintf("PRAGMA application_id = %d;", ApplicationID)) {
 		t.Fatal("SchemaV1 缺少规范 application_id")
@@ -33,8 +33,11 @@ func TestSchemaV1DeclaresExpectedDatabaseIdentity(t *testing.T) {
 	if !strings.Contains(SchemaV6, "PRAGMA user_version = 6;") {
 		t.Fatal("SchemaV6 缺少固定 v6 user_version")
 	}
-	if !strings.Contains(SchemaV7, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
-		t.Fatal("SchemaV7 缺少规范 user_version")
+	if !strings.Contains(SchemaV7, "PRAGMA user_version = 7;") {
+		t.Fatal("SchemaV7 缺少固定 v7 user_version")
+	}
+	if !strings.Contains(SchemaV8, fmt.Sprintf("PRAGMA user_version = %d;", SchemaVersion)) {
+		t.Fatal("SchemaV8 缺少规范 user_version")
 	}
 }
 
@@ -91,6 +94,44 @@ func TestSchemaV1KeepsMinimalAccountBoundary(t *testing.T) {
 	} {
 		if strings.Contains(SchemaV1, forbidden) {
 			t.Fatalf("SchemaV1 不应包含未获当前需求支持的结构 %q", forbidden)
+		}
+	}
+}
+
+// TestSchemaV8AddsOnlyCrossRestartModelCooldownState 验证冷却表只承载分类与时间。
+func TestSchemaV8AddsOnlyCrossRestartModelCooldownState(t *testing.T) {
+	t.Parallel()
+
+	if strings.Count(SchemaV8, "CREATE TABLE account_runtime_state ") != 1 {
+		t.Fatal("SchemaV8 应且只应声明一次 account_runtime_state")
+	}
+	for _, required := range []string{
+		"PRIMARY KEY (account_ref, model_id)",
+		"REFERENCES accounts(account_ref) ON DELETE CASCADE",
+		"streak_kind TEXT NOT NULL DEFAULT ''",
+		"streak_count INTEGER NOT NULL DEFAULT 0",
+		"streak_expires_at_ms INTEGER NOT NULL DEFAULT 0",
+		"cooldown_kind TEXT NOT NULL DEFAULT ''",
+		"cooldown_until_ms INTEGER NOT NULL DEFAULT 0",
+		"last_failure_at_ms INTEGER NOT NULL DEFAULT 0",
+		"streak_kind <> '' OR (streak_count = 0 AND streak_expires_at_ms = 0)",
+		"cooldown_kind <> '' OR cooldown_until_ms = 0",
+		"CREATE INDEX idx_account_runtime_state_cooldown",
+		"ON account_runtime_state (cooldown_until_ms)",
+	} {
+		if !strings.Contains(SchemaV8, required) {
+			t.Fatalf("SchemaV8 缺少冷却状态合同 %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"credential",
+		"request_body",
+		"last_error",
+		"provider_id",
+		"account_runtime_state_history",
+	} {
+		if strings.Contains(SchemaV8, forbidden) {
+			t.Fatalf("SchemaV8 不应包含冷却之外的字段 %q", forbidden)
 		}
 	}
 }

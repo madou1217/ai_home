@@ -38,9 +38,37 @@ var (
 	_ inferencegateway.AttemptRecorder        = (*Runtime)(nil)
 )
 
-// New 创建不预载账号池的纯内存运行态分发器。
+// New 创建不预载账号池、也不持久化 cooldown 的纯内存运行态分发器。
 func New(clock runtimeapp.Clock) (*Runtime, error) {
-	cooldowns, err := runtimeapp.NewRegistry(clock)
+	return NewWithStore(nil, clock, nil, nil)
+}
+
+// NewWithStore 创建预载持久化 cooldown 的运行态分发器。
+//
+// store 为 nil 时退化为纯内存实现（测试与不需要跨重启保留 cooldown 的宿主）。
+// onPersistError 是持久化失败的观测出口，可为 nil；失败不会让请求失败。
+func NewWithStore(
+	ctx context.Context,
+	clock runtimeapp.Clock,
+	store runtimeapp.StateStore,
+	onPersistError func(error),
+) (*Runtime, error) {
+	var options []runtimeapp.RegistryOption
+	if onPersistError != nil {
+		options = append(options, runtimeapp.WithPersistErrorObserver(onPersistError))
+	}
+	var (
+		cooldowns *runtimeapp.Registry
+		err       error
+	)
+	if store == nil {
+		cooldowns, err = runtimeapp.NewRegistry(clock, options...)
+	} else {
+		if ctx == nil {
+			return nil, errors.Join(ErrInvalidDependencies, runtimeapp.ErrInvalidRequest)
+		}
+		cooldowns, err = runtimeapp.NewRegistryWithStore(ctx, clock, store, options...)
+	}
 	if err != nil {
 		return nil, errors.Join(ErrInvalidDependencies, err)
 	}
@@ -49,6 +77,14 @@ func New(clock runtimeapp.Clock) (*Runtime, error) {
 		accountBlocks: make(map[accountcore.AccountRef]blockSet),
 		modelBlocks:   make(map[runtimecore.ModelRoute]blockSet),
 	}, nil
+}
+
+// PersistError 返回最近一次 cooldown 持久化失败；成功后自动清零。
+func (runtime *Runtime) PersistError() error {
+	if runtime == nil {
+		return nil
+	}
+	return runtime.cooldowns.PersistError()
 }
 
 // CheckEligibility 先合并账号级和模型级硬阻塞，再读取模型 cooldown。

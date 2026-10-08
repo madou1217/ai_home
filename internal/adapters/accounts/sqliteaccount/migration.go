@@ -71,6 +71,16 @@ var expectedSchemaColumns = map[string][]string{
 		"account_ref",
 		"updated_at_ms",
 	},
+	"account_runtime_state": {
+		"account_ref",
+		"model_id",
+		"streak_kind",
+		"streak_count",
+		"streak_expires_at_ms",
+		"cooldown_kind",
+		"cooldown_until_ms",
+		"last_failure_at_ms",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -117,6 +127,20 @@ func inspectDatabase(ctx context.Context, connection *sql.Conn) (int, int, int, 
 	return applicationID, schemaVersion, objectCount, nil
 }
 
+// forwardMigrations 按「起始版本 - 1」索引前向 migration 脚本。
+//
+// 索引 i 的脚本把 v(i+1) 迁移到 v(i+2)；全新数据库按顺序执行全部脚本。
+var forwardMigrations = []string{
+	SchemaV1,
+	SchemaV2,
+	SchemaV3,
+	SchemaV4,
+	SchemaV5,
+	SchemaV6,
+	SchemaV7,
+	SchemaV8,
+}
+
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。
 func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr error) {
 	if _, err := connection.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
@@ -132,113 +156,30 @@ func migrateConnection(ctx context.Context, connection *sql.Conn) (resultErr err
 	if err != nil {
 		return err
 	}
-	if applicationID == ApplicationID && schemaVersion == SchemaVersion {
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 1 {
-		if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v2 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
-		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 2 {
-		if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v3 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
-		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 3 {
-		if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v4 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
-		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 4 {
-		if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v5 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
-		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 5 {
-		if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v6 失败: %w", err)
-		}
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
-		}
-		return commitMigration(ctx, connection)
-	}
-	if applicationID == ApplicationID && schemaVersion == 6 {
-		if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-			return fmt.Errorf("迁移账号数据库到 v7 失败: %w", err)
+	if applicationID == ApplicationID &&
+		schemaVersion >= 1 &&
+		schemaVersion <= SchemaVersion {
+		for version := schemaVersion; version < SchemaVersion; version++ {
+			if _, err := connection.ExecContext(
+				ctx,
+				forwardMigrations[version],
+			); err != nil {
+				return fmt.Errorf(
+					"迁移账号数据库到 v%d 失败: %w",
+					version+1,
+					err,
+				)
+			}
 		}
 		return commitMigration(ctx, connection)
 	}
 	if applicationID != 0 || schemaVersion != 0 || objectCount != 0 {
 		return ErrIncompatibleDatabase
 	}
-	if _, err := connection.ExecContext(ctx, SchemaV1); err != nil {
-		return fmt.Errorf("创建账号数据库 v1 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV2); err != nil {
-		return fmt.Errorf("创建账号数据库 v2 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV3); err != nil {
-		return fmt.Errorf("创建账号数据库 v3 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV4); err != nil {
-		return fmt.Errorf("创建账号数据库 v4 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV5); err != nil {
-		return fmt.Errorf("创建账号数据库 v5 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV6); err != nil {
-		return fmt.Errorf("创建账号数据库 v6 失败: %w", err)
-	}
-	if _, err := connection.ExecContext(ctx, SchemaV7); err != nil {
-		return fmt.Errorf("创建账号数据库 v7 失败: %w", err)
+	for version, migration := range forwardMigrations {
+		if _, err := connection.ExecContext(ctx, migration); err != nil {
+			return fmt.Errorf("创建账号数据库 v%d 失败: %w", version+1, err)
+		}
 	}
 	return commitMigration(ctx, connection)
 }
@@ -332,6 +273,7 @@ func validateConnection(ctx context.Context, connection *sql.Conn) error {
 		"idx_accounts_routing",
 		"idx_account_credentials_credential_ref",
 		"idx_account_models_effective",
+		"idx_account_runtime_state_cooldown",
 	} {
 		var indexCount int
 		const indexSQL = `

@@ -137,7 +137,12 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
-	inMemoryRuntime, err := runtimeinmemory.New(time.Now)
+	inMemoryRuntime, err := runtimeinmemory.NewWithStore(
+		ctx,
+		time.Now,
+		store,
+		persistErrorObserver(options.ErrorLog),
+	)
 	if err != nil {
 		_ = codexVersions.Close()
 		_ = store.Close()
@@ -941,6 +946,19 @@ func newMessagesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 	return func(err error) {
 		logger.Printf("Anthropic Messages decode rejected: %v", err)
+	}
+}
+
+// persistErrorObserver 把账号模型 cooldown 的持久化失败写进 ErrorLog。
+//
+// 写失败不会让请求失败（cooldown 在本进程内已生效），所以这条日志是唯一能看见
+// 「重启后会丢掉冷却」的线索，必须显式落盘而不是静默吞掉。
+func persistErrorObserver(logger *log.Logger) func(error) {
+	if logger == nil {
+		return nil
+	}
+	return func(err error) {
+		logger.Printf("账号模型冷却持久化失败: %v", err)
 	}
 }
 

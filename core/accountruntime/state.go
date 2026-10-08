@@ -93,6 +93,95 @@ type ModelState struct {
 	lastFailureAt   time.Time
 }
 
+// ModelStateSnapshot 是 ModelState 的可持久化投影，用于跨进程恢复 cooldown。
+//
+// 该值只承载失败分类与时间，不含账号凭据、请求内容或 Provider 原文。字段全部导出
+// 是因为它要经过持久化边界；从存储读回时必须经 RestoreModelState 重新校验，不能直接
+// 构造 ModelState。
+type ModelStateSnapshot struct {
+	StreakKind      FailureKind
+	StreakCount     uint8
+	StreakExpiresAt time.Time
+	CooldownKind    FailureKind
+	CooldownUntil   time.Time
+	LastFailureAt   time.Time
+}
+
+// Snapshot 返回当前状态的持久化投影。
+func (state ModelState) Snapshot() ModelStateSnapshot {
+	return ModelStateSnapshot{
+		StreakKind:      state.streakKind,
+		StreakCount:     state.streakCount,
+		StreakExpiresAt: state.streakExpiresAt,
+		CooldownKind:    state.cooldownKind,
+		CooldownUntil:   state.cooldownUntil,
+		LastFailureAt:   state.lastFailureAt,
+	}
+}
+
+// RestoreModelState 校验持久化投影后重建不可变状态。
+//
+// streak 与 cooldown 都没有时返回零状态：这与 prune 的语义一致，只留下 lastFailureAt
+// 的状态本来就会在下一次 Evaluate 被清空，不需要单独保留，也不算损坏。
+func RestoreModelState(
+	snapshot ModelStateSnapshot,
+) (ModelState, error) {
+	if !validPersistedStreak(snapshot) ||
+		!validPersistedCooldown(snapshot) ||
+		!validPersistedFailureTime(snapshot.LastFailureAt) {
+		return ModelState{}, ErrInvalidFailure
+	}
+	state := ModelState{
+		streakKind:    snapshot.StreakKind,
+		streakCount:   snapshot.StreakCount,
+		cooldownKind:  snapshot.CooldownKind,
+		cooldownUntil: normalizeOptionalRuntimeTime(snapshot.CooldownUntil),
+		streakExpiresAt: normalizeOptionalRuntimeTime(
+			snapshot.StreakExpiresAt,
+		),
+		lastFailureAt: normalizeOptionalRuntimeTime(snapshot.LastFailureAt),
+	}
+	if state.streakExpiresAt.IsZero() && state.cooldownUntil.IsZero() {
+		return ModelState{}, nil
+	}
+	if state.lastFailureAt.IsZero() {
+		// lastFailureAt 只在 prune 的「streak 与 cooldown 都到期」分支被清零，因此
+		// 有 streak 或 cooldown 却没有 lastFailureAt 的行不是本实现写出的。
+		return ModelState{}, ErrInvalidFailure
+	}
+	return state, nil
+}
+
+// validPersistedStreak 要求 streak 的分类、计数和到期时间三者同时存在或同时缺席。
+func validPersistedStreak(snapshot ModelStateSnapshot) bool {
+	if snapshot.StreakKind == "" {
+		return snapshot.StreakCount == 0 && snapshot.StreakExpiresAt.IsZero()
+	}
+	return isCooldownKind(snapshot.StreakKind) &&
+		snapshot.StreakCount >= 1 &&
+		isRuntimeTime(snapshot.StreakExpiresAt)
+}
+
+// validPersistedCooldown 要求 cooldown 的分类与解除时间同时存在或同时缺席。
+func validPersistedCooldown(snapshot ModelStateSnapshot) bool {
+	if snapshot.CooldownKind == "" {
+		return snapshot.CooldownUntil.IsZero()
+	}
+	return isCooldownKind(snapshot.CooldownKind) &&
+		isRuntimeTime(snapshot.CooldownUntil)
+}
+
+// validPersistedFailureTime 接受零值，否则要求可跨进程比较的毫秒时间。
+func validPersistedFailureTime(value time.Time) bool {
+	return value.IsZero() || isRuntimeTime(value)
+}
+
+// isCooldownKind 只接受会写入模型 cooldown 的失败分类。
+func isCooldownKind(kind FailureKind) bool {
+	policy, err := PolicyFor(kind)
+	return err == nil && policy.EntersCooldown()
+}
+
 // Apply 按固定策略计算一个失败事件的新不可变状态。
 func (state ModelState) Apply(
 	failure Failure,
@@ -235,4 +324,15 @@ func isRuntimeTime(value time.Time) bool {
 // normalizeRuntimeTime 把运行态时间统一为 UTC 毫秒精度。
 func normalizeRuntimeTime(value time.Time) time.Time {
 	return time.UnixMilli(value.UnixMilli()).UTC()
+}
+
+// normalizeOptionalRuntimeTime 保留零值语义，只对非零时间做毫秒归一。
+//
+// 不能直接对零值调用 normalizeRuntimeTime：零值会被换算成 1970 年附近的时间，
+// 破坏 ModelState.IsZero 与 prune 的稀疏不变量。
+func normalizeOptionalRuntimeTime(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+	return normalizeRuntimeTime(value)
 }

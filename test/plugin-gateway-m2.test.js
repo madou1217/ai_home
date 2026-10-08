@@ -13,7 +13,7 @@ const path = require('node:path');
 const { tempDir, socketFor, manifest, packPlugin, waitFor, startClaudeServer } = require('./helpers/plugin-gateway-harness');
 const { createPluginSystem, getPluginSystem } = require('../lib/plugins/control/plugin-system');
 const { runRequestStage, identityFingerprint } = require('../lib/plugins/gateway/request-stage');
-const { applyGatewayRequestPlugins, shouldDeferToNodeForPlugins } = require('../lib/server/gateway-plugin-stage');
+const { applyGatewayRequestPlugins, explainPluginDeferral, shouldDeferToNodeForPlugins } = require('../lib/server/gateway-plugin-stage');
 
 const TAG_MANIFEST = manifest('aih.test.tag', {
   configSchema: { type: 'object', additionalProperties: false, required: ['tag'], properties: { tag: { type: 'string' } } },
@@ -493,6 +493,43 @@ test('the observation queue is bounded, never blocks the caller and outlives a p
     assert.ok(await waitFor(() => runtime.status().retiringGenerations.length === 0, 3000), '投递完释放租约后旧代次退役');
   } finally {
     await runtime.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- G5：插件阶段的交还原因必须可区分（入口/能力/代次是三种不同的下线阻塞项） ----
+
+const ATTEMPT_MANIFEST = manifest('aih.test.attempt', {
+  configSchema: { type: 'object', additionalProperties: false, properties: {} },
+  contributes: [{ id: 'attempt.record', capability: 'gateway.attempt', version: 1 }]
+});
+const ATTEMPT_SOURCE = `export default { apply(ctx) { ctx.aih.register('attempt.record', () => null); } };`;
+
+test('plugin deferrals report which of the three blockers applies', async () => {
+  const dir = tempDir('aihm2r-');
+  const aiHomeDir = path.join(dir, 'home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const state = {};
+  try {
+    const { control, runtime } = getPluginSystem(state, { aiHomeDir, socketPath: socketFor(dir) });
+    // 没有活跃的网关贡献项：不交回，也不产生原因（正常转发不该被记成一次回落）。
+    assert.deepEqual(explainPluginDeferral(state, { entryId: 'gateway.openai.responses' }), { defer: false, reason: '' });
+
+    control.install(packPlugin(dir, 'rewriter', REWRITER_MANIFEST, REWRITER_SOURCE));
+    await control.enable({ pluginId: 'aih.test.rewriter', configuration: { target: 'claude-opus-5' } });
+    // Go 只执行三个推理入口，也不执行 WebSocket 升级。
+    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.props' }).reason, 'plugin_unsupported_entry');
+    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.openai.responses', transport: 'websocket' }).reason, 'plugin_unsupported_entry');
+    // 入口与传输都支持，剩下的唯一阻塞项是这一代插件还没被 Go 确认。
+    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.openai.responses' }).reason, 'plugin_generation_unacked');
+
+    control.install(packPlugin(dir, 'attempt', ATTEMPT_MANIFEST, ATTEMPT_SOURCE));
+    await control.enable({ pluginId: 'aih.test.attempt', configuration: {} });
+    // gateway.attempt 目前只有 Node 执行：这类请求必须先补 Go 才能下线。
+    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.openai.responses' }).reason, 'plugin_unsupported_capability');
+    assert.equal(shouldDeferToNodeForPlugins(state, { entryId: 'gateway.openai.responses' }), true);
+    await runtime.stop();
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

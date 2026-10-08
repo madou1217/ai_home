@@ -281,3 +281,62 @@ test('a Go Core that comes back after a failed start resumes forwarding', async 
   assert.equal(readiness.forwarding, true);
   assert.equal(readiness.ready, true);
 });
+
+test('readiness reports Node hand-offs by reason so the Go cutover gate is measurable', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
+    createGoCoreSupervisor: factory,
+    log: silentLog
+  });
+
+  const idle = await host.readiness();
+  assert.equal(idle.node_fallbacks.total, 0);
+  assert.equal(idle.node_fallbacks.by_reason.model_alias, 0);
+  assert.ok(
+    Object.keys(idle.node_fallbacks.by_reason).includes('decode_rejected'),
+    'every registered reason is visible even at zero'
+  );
+
+  // 宿主的 deferToNode 在每次交还时登记原因；Go 未就绪也是其中一种。
+  host.recordNodeFallback('go_not_forwarding');
+  host.recordNodeFallback('model_alias');
+  host.recordNodeFallback('model_alias');
+
+  const after = await host.readiness();
+  assert.equal(after.node_fallbacks.total, 3);
+  assert.equal(after.node_fallbacks.by_reason.go_not_forwarding, 1);
+  assert.equal(after.node_fallbacks.by_reason.model_alias, 2);
+  // 计数随重启清零：它是当前运行态，不是历史账本。
+  assert.equal(after.node_fallbacks.by_reason.decode_rejected, 0);
+});
+
+test('the forwarder hooks count decode rejections and unreachable Go hand-offs', async () => {
+  const { factory } = fakeSupervisorFactory();
+  let captured = null;
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
+    createGoCoreSupervisor: factory,
+    createGoCoreGatewayForwarder: (deps) => {
+      captured = deps;
+      return { tryHandleHttp: async () => false, tryHandleUpgrade: () => false };
+    },
+    // 插件代次未被 Go 确认时转发器放弃转发；宿主必须把这种交还也计入。
+    pluginForwarding: () => ({ defer: true }),
+    log: silentLog
+  });
+
+  assert.equal(typeof captured.onDecodeFallback, 'function');
+  assert.equal(typeof captured.onUnavailableFallback, 'function');
+  captured.onDecodeFallback({ entryId: 'gateway.openai.responses', requestId: 'req-1' });
+  captured.onUnavailableFallback({ entryId: 'gateway.openai.responses', requestId: 'req-2', code: 'ECONNREFUSED' });
+  // 插件代次未确认：转发器会放弃转发，这同样是一次 Node 接手。
+  captured.pluginForwarding({ entryId: 'gateway.openai.responses' });
+  captured.pluginForwarding({ entryId: 'gateway.openai.responses' });
+
+  const readiness = await host.readiness();
+  assert.equal(readiness.node_fallbacks.by_reason.decode_rejected, 1);
+  assert.equal(readiness.node_fallbacks.by_reason.go_unavailable, 1);
+  assert.equal(readiness.node_fallbacks.by_reason.plugin_generation_unconfirmed, 2);
+  assert.equal(readiness.node_fallbacks.total, 4);
+});

@@ -83,6 +83,8 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.equal(readyz.go_core.forwarding, true);
   assert.deepEqual(readyz.go_core.routes, ['gateway.props']);
   assert.equal(readyz.go_core.ready, readyz.go_core.go_ready);
+  // G5：Go 健康且请求都转出去时不应有任何回落——这是下线门槛的基线。
+  assert.equal(readyz.go_core.node_fallbacks.total, 0);
 
   const unauthorized = await fetch(`${base}/v1/props`);
   assert.equal(unauthorized.status, 401, 'Node still enforces its client key before forwarding');
@@ -112,6 +114,10 @@ test('Node serves Go-owned routes while the Go process is down and Go recovers a
   // 共存期 Node 仍是完整实现：Go 不可用时请求交由 Node 应答，而不是 503；就绪态仍如实报告。
   const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
   assert.equal(props.status, 200);
+  // G5：Go 停摆期间由 Node 承接的请求必须按原因计数，否则下线门槛无法度量。
+  const afterFallback = await (await fetch(`${base}/readyz`)).json();
+  assert.equal(afterFallback.go_core.node_fallbacks.by_reason.go_not_forwarding, 1);
+  assert.equal(afterFallback.go_core.node_fallbacks.total, 1);
 
   // 监督器按退避自动拉起 Go，转发随之恢复；Go 的输出落在 logs/go-core.log。
   const recoverBy = Date.now() + 15000;

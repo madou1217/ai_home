@@ -108,3 +108,39 @@ test('pins without a Go account mapping or with a model Go cannot route stay wit
   assert.equal(decide('gpt-5.5', '', ids), true, 'Go does not know this account');
   assert.equal(decide('gpt-6-astra', 'acct_bbbbbbbbbbbbbbbbbbbb', ids), true, 'Go cannot route the model');
 });
+
+test('every Node hand-off reports a reason so /readyz can break it down', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const base = { state, accountStateIndex, fabricGatewayReady: () => false };
+  const cases = [
+    ['node_blob', { ...base, entryId: 'gateway.vision.blobs', pathname: '/v1/blobs/node-made', getNodeBlob: () => ({ bytes: Buffer.alloc(1) }) }],
+    ['pinned_account_unusable', { ...base, entryId: 'gateway.anthropic.messages', pinnedAccountRef: DOWN }],
+    ['pinned_account_unmapped', { ...base, entryId: 'gateway.anthropic.messages', pinnedAccountRef: LIVE, model: 'gpt-5.5', goAccountRefFor: () => '' }],
+    ['pinned_model_not_routable', { ...base, entryId: 'gateway.anthropic.messages', pinnedAccountRef: LIVE, model: 'gpt-6-astra', goAccountRefFor: () => 'acct_ffffffffffffffffffff', goRoutableModelIds: () => new Set(['gpt-5.5']) }],
+    ['fabric_gateway_online', { ...base, entryId: 'gateway.anthropic.messages', fabricGatewayReady: () => true }],
+    ['model_alias', { ...base, entryId: 'gateway.anthropic.messages', model: 'claude-opus-4-8', aliases: [{ alias: 'claude-opus-4-8', enabled: true }] }],
+    ['model_not_routable', { ...base, entryId: 'gateway.anthropic.messages', model: 'kimi-k2.6', aliases: [], goRoutableModelIds: () => new Set(['gpt-5.5']) }]
+  ];
+  for (const [reason, input] of cases) {
+    const decision = explainGoRouteDeferral(input);
+    assert.equal(decision.defer, true, reason);
+    assert.equal(decision.reason, reason);
+    // 布尔包装与原因判定必须永远一致，否则 /readyz 的计数会和实际转发行为对不上。
+    assert.equal(shouldDeferGoRouteToNode(input), true, reason);
+  }
+});
+
+test('a forwarded request carries no reason, so normal routing is never counted as a fallback', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const decision = explainGoRouteDeferral({
+    entryId: 'gateway.anthropic.messages',
+    model: 'gpt-5.5',
+    aliases: [],
+    state,
+    accountStateIndex,
+    fabricGatewayReady: () => false,
+    goRoutableModelIds: () => new Set(['gpt-5.5'])
+  });
+  assert.equal(decision.defer, false);
+  assert.equal(decision.reason, '');
+});

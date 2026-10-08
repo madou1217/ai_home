@@ -18,6 +18,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/core/inference"
 	agyfailure "github.com/madou1217/ai_home/internal/adapters/agy/upstreamfailure"
@@ -34,20 +35,25 @@ type HTTPClient interface {
 
 type Clock func() time.Time
 
-// Adapter 保存无账号共享状态的 Code Assist 传输依赖。
+// Adapter 持有 Code Assist 传输依赖与只读的账号模型转发表。
 type Adapter struct {
 	client HTTPClient
 	clock  Clock
 	random io.Reader
+	wires  ModelWireReader
 }
 
 var _ inferencegateway.UpstreamAdapter = (*Adapter)(nil)
 
 func NewAdapter(client HTTPClient, clock Clock) (*Adapter, error) {
+	return NewAdapterWithWireModels(client, clock, nil)
+}
+
+func NewAdapterWithWireModels(client HTTPClient, clock Clock, wires ModelWireReader) (*Adapter, error) {
 	if client == nil || clock == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &Adapter{client: client, clock: clock, random: rand.Reader}, nil
+	return &Adapter{client: client, clock: clock, random: rand.Reader, wires: wires}, nil
 }
 
 func (*Adapter) ProtocolID() inference.ProtocolID {
@@ -82,9 +88,19 @@ func (adapter *Adapter) Execute(
 	if err != nil {
 		return inferencegateway.AttemptResult{}, ErrInvalidDependencies
 	}
+	// 征召、冷却与记账使用公开模型 ID；只在 AGY 线协议边界应用该账号的转发表。
+	model := invocation.Route().EffectiveModel()
+	wireModel := model
+	if adapter.wires != nil {
+		credentialRef, identityErr := accountcore.DeriveAccountRef(auth)
+		if identityErr != nil {
+			return inferencegateway.AttemptResult{}, ErrInvalidDependencies
+		}
+		wireModel = adapter.wires.Resolve(credentialRef, model)
+	}
 	payload, err := encodeRequest(
 		invocation.Request(),
-		invocation.Route().EffectiveModel(),
+		wireModel,
 		project,
 		sessionID,
 		requestID,
@@ -101,7 +117,7 @@ func (adapter *Adapter) Execute(
 	if err != nil {
 		return inferencegateway.AttemptResult{}, ErrInvalidDependencies
 	}
-	applyHeaders(request, auth, isClaudeModel(invocation.Route().EffectiveModel()))
+	applyHeaders(request, auth, isClaudeModel(wireModel))
 	response, err := adapter.client.Do(request)
 	if err != nil {
 		failure, classifyErr := attemptfailure.NewTransport(err)

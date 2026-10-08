@@ -3,6 +3,7 @@ package codeassist
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -87,6 +88,73 @@ func TestAdapterExecutesLoadGenerateDecodeThroughCoordinator(t *testing.T) {
 	}
 }
 
+// 完整征召仍按公开 ID，只有发送到 Code Assist 的 model 被目录改写。
+func TestAdapterUsesDiscoveredWireModelAndPreservesPublicResponseModel(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct{ model, wire string }{
+		{"gemini-3.1-pro-high", "gemini-pro-agent"},
+		{"gemini-pro-agent", "gemini-pro-agent"},
+		{"gemini-3.1-pro-low", "gemini-3.1-pro-low"},
+	} {
+		t.Run(test.model, func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			client := recordingClient{do: func(request *http.Request) (*http.Response, error) {
+				calls++
+				switch {
+				case strings.Contains(request.URL.String(), ":loadCodeAssist"):
+					return jsonResponse(http.StatusOK, `{"cloudaicompanionProject":"project-123"}`), nil
+				case strings.Contains(request.URL.String(), ":fetchAvailableModels"):
+					return jsonResponse(http.StatusOK, `{
+						"models":{"gemini-3.1-pro-high":{},"gemini-pro-agent":{},"gemini-3.1-pro-low":{}},
+						"deprecatedModelIds":{"gemini-3.1-pro-high":{"newModelId":"gemini-pro-agent"}}
+					}`), nil
+				case strings.Contains(request.URL.String(), ":streamGenerateContent"):
+					var payload generateEnvelope
+					if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+						t.Fatal(err)
+					}
+					if payload.Model != test.wire {
+						t.Fatalf("upstream model = %q, want %q", payload.Model, test.wire)
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": {"text/event-stream"}},
+						Body:       io.NopCloser(strings.NewReader("data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"GO_AGY_OK\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":4,\"candidatesTokenCount\":3}}}\n\n")),
+					}, nil
+				default:
+					t.Fatalf("unexpected request %s", request.URL)
+					return nil, nil
+				}
+			}}
+			wires := NewModelWireStore("")
+			source, err := NewModelCatalogSourceWithWireModels(client, wires)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := source.DiscoverModels(context.Background(), testAgyAuth(t)); err != nil {
+				t.Fatal(err)
+			}
+			fixture := newAgyCoordinatorFixtureWithWireModels(t, client, testAgyAuth(t), test.model, wires)
+			var responseModel string
+			if err := fixture.coordinator.Execute(fixture.context, fixture.request, func(event inference.StreamEvent) error {
+				if started, ok := event.(inference.ResponseStartedEvent); ok {
+					responseModel = started.Model()
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			usage, hasUsage := fixture.recorder.lastSuccess.Usage()
+			if calls != 4 || fixture.recorder.successes != 1 || responseModel != test.model ||
+				fixture.recorder.lastRoute.ModelID().String() != test.model || !hasUsage || usage.TotalTokens() != 7 {
+				t.Fatalf("calls=%d successes=%d response model=%q route=%v usage=%v, want public model %q", calls, fixture.recorder.successes, responseModel, fixture.recorder.lastRoute, usage, test.model)
+			}
+		})
+	}
+}
+
 func TestAdapterDefersNoHintResourceExhaustedAccountFailure(t *testing.T) {
 	t.Parallel()
 
@@ -128,6 +196,16 @@ func newAgyCoordinatorFixture(
 	client HTTPClient,
 	credential *agy.OAuthAuth,
 ) agyCoordinatorFixture {
+	return newAgyCoordinatorFixtureWithWireModels(t, client, credential, "claude-opus-4-6-thinking", nil)
+}
+
+func newAgyCoordinatorFixtureWithWireModels(
+	t *testing.T,
+	client HTTPClient,
+	credential *agy.OAuthAuth,
+	model string,
+	wires ModelWireReader,
+) agyCoordinatorFixture {
 	t.Helper()
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
@@ -153,11 +231,11 @@ func newAgyCoordinatorFixture(
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)
 	}
-	adapter, err := NewAdapter(client, fixedClock)
+	adapter, err := NewAdapterWithWireModels(client, fixedClock, wires)
 	if err != nil {
 		t.Fatalf("NewAdapter() error = %v", err)
 	}
-	modelID, _ := runtimecore.NewModelID("claude-opus-4-6-thinking")
+	modelID, _ := runtimecore.NewModelID(model)
 	route, err := adapter.BuildRoute(modelID)
 	if err != nil {
 		t.Fatalf("BuildRoute() error = %v", err)
@@ -268,16 +346,20 @@ func (resolver agyRouteResolver) Resolve(
 }
 
 type agyAttemptRecorder struct {
-	successes int
-	failures  []inferencegateway.AttemptFailure
+	successes   int
+	failures    []inferencegateway.AttemptFailure
+	lastRoute   runtimecore.ModelRoute
+	lastSuccess inferencegateway.AttemptSuccess
 }
 
 func (recorder *agyAttemptRecorder) RecordSuccess(
-	context.Context,
-	runtimecore.ModelRoute,
-	inferencegateway.AttemptSuccess,
+	_ context.Context,
+	route runtimecore.ModelRoute,
+	success inferencegateway.AttemptSuccess,
 ) error {
 	recorder.successes++
+	recorder.lastRoute = route
+	recorder.lastSuccess = success
 	return nil
 }
 

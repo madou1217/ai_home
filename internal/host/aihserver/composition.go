@@ -121,7 +121,8 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建 Codex 客户端版本解析器失败: %w", err)
 	}
-	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions)
+	agyModelWires := newAgyModelWires(options.AIHomeDir)
+	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires)
 	if err != nil {
 		_ = codexVersions.Close()
 		_ = store.Close()
@@ -184,6 +185,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 		options.DelegateCredentialRefresh,
 		codexVersions,
+		agyModelWires,
 	)
 	if err != nil {
 		_ = codexVersions.Close()
@@ -218,6 +220,7 @@ func newHandlers(
 	upstreamDecodeErrors func(error),
 	delegateCredentialRefresh bool,
 	codexVersions *clientversion.Resolver,
+	agyModelWires *agycodeassist.ModelWireStore,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -580,6 +583,7 @@ func newHandlers(
 			requestRewriter:           visionGuard,
 			codexVersions:             codexVersions,
 			codexRejections:           newCodexRejectionObserver(errorLog),
+			agyModelWires:             agyModelWires,
 		},
 	)
 	if err != nil {
@@ -959,6 +963,7 @@ func newModelDiscovery(
 	catalog *providers.Catalog,
 	injected []accountapp.ProviderModelDiscoverer,
 	codexVersions clientversion.Source,
+	agyModelWires agycodeassist.ModelWireWriter,
 ) (*accountapp.ModelDiscovery, error) {
 	strategies := injected
 	if len(strategies) == 0 {
@@ -974,7 +979,7 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 Claude 模型目录源失败: %w", err)
 		}
-		agySource, err := agycodeassist.NewModelCatalogSource(client)
+		agySource, err := agycodeassist.NewModelCatalogSourceWithWireModels(client, agyModelWires)
 		if err != nil {
 			return nil, fmt.Errorf("创建 AGY 模型目录源失败: %w", err)
 		}

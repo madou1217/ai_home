@@ -11,21 +11,35 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/accounts/agy"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/oauthutil"
 )
 
 const maxModelCatalogBytes = 8 * 1024 * 1024
 
-type ModelCatalogSource struct{ client HTTPClient }
+// ModelWireWriter 只接收公开 ID 的转发表，不接收凭据或上游目录正文。
+type ModelWireWriter interface {
+	Replace(accountRef accountcore.AccountRef, models map[string]string) error
+}
+
+type ModelCatalogSource struct {
+	client HTTPClient
+	wires  ModelWireWriter
+}
 
 var _ accountapp.ProviderModelDiscoverer = (*ModelCatalogSource)(nil)
 
 func NewModelCatalogSource(client HTTPClient) (*ModelCatalogSource, error) {
+	return NewModelCatalogSourceWithWireModels(client, nil)
+}
+
+func NewModelCatalogSourceWithWireModels(client HTTPClient, wires ModelWireWriter) (*ModelCatalogSource, error) {
 	if client == nil {
 		return nil, ErrInvalidDependencies
 	}
-	return &ModelCatalogSource{client: client}, nil
+	return &ModelCatalogSource{client: client, wires: wires}, nil
 }
 
 func (*ModelCatalogSource) ProviderID() string { return agy.ProviderID }
@@ -72,20 +86,38 @@ func (source *ModelCatalogSource) DiscoverModels(
 	if err != nil || len(payload) > maxModelCatalogBytes {
 		return nil, ErrInvalidUpstreamResponse
 	}
-	return decodeModelIDs(payload)
+	models, wires, err := decodeModelCatalog(payload)
+	if err != nil {
+		return nil, err
+	}
+	if source.wires != nil {
+		accountRef, identityErr := accountcore.DeriveAccountRef(auth)
+		if identityErr != nil {
+			return nil, ErrInvalidDependencies
+		}
+		if err := source.wires.Replace(accountRef, wires); err != nil {
+			return nil, err
+		}
+	}
+	return models, nil
 }
 
 func decodeModelIDs(payload []byte) ([]string, error) {
+	models, _, err := decodeModelCatalog(payload)
+	return models, err
+}
+
+func decodeModelCatalog(payload []byte) ([]string, map[string]string, error) {
 	var document modelCatalogDocument
 	if err := oauthutil.DecodeJSONResponse(
 		bytes.NewReader(payload),
 		maxModelCatalogBytes,
 		&document,
 	); err != nil {
-		return nil, ErrInvalidUpstreamResponse
+		return nil, nil, ErrInvalidUpstreamResponse
 	}
 	if len(document.Models) == 0 {
-		return nil, ErrInvalidUpstreamResponse
+		return nil, nil, ErrInvalidUpstreamResponse
 	}
 	seen := make(map[string]struct{}, len(document.Models))
 	for modelID, rawDetail := range document.Models {
@@ -96,40 +128,49 @@ func decodeModelIDs(payload []byte) ([]string, error) {
 		}
 		detail, err := decodeModelCatalogDetail(rawDetail)
 		if err != nil {
-			return nil, ErrInvalidUpstreamResponse
+			return nil, nil, ErrInvalidUpstreamResponse
 		}
 		seen[modelID] = struct{}{}
 		tieredRaw := detail.TieredModelIDs
 		if len(detail.TieredModelIDsSnake) > 0 {
 			if len(tieredRaw) > 0 {
-				return nil, ErrInvalidUpstreamResponse
+				return nil, nil, ErrInvalidUpstreamResponse
 			}
 			tieredRaw = detail.TieredModelIDsSnake
 		}
 		tiered, err := decodeTieredModelIDs(tieredRaw)
 		if err != nil {
-			return nil, ErrInvalidUpstreamResponse
+			return nil, nil, ErrInvalidUpstreamResponse
 		}
 		for _, tieredID := range tiered {
 			if !validCatalogModelID(tieredID) {
-				return nil, ErrInvalidUpstreamResponse
+				return nil, nil, ErrInvalidUpstreamResponse
 			}
 			seen[tieredID] = struct{}{}
 		}
+	}
+	wires, err := decodeDeprecatedModelWires(document, seen)
+	if err != nil {
+		return nil, nil, err
+	}
+	for publicID := range wires {
+		seen[publicID] = struct{}{}
 	}
 	models := make([]string, 0, len(seen))
 	for modelID := range seen {
 		models = append(models, modelID)
 	}
 	if len(models) == 0 || len(models) > accountapp.MaxDiscoveredModelsPerAccount {
-		return nil, errors.New("AGY 模型目录无效")
+		return nil, nil, errors.New("AGY 模型目录无效")
 	}
 	sort.Strings(models)
-	return models, nil
+	return models, wires, nil
 }
 
 type modelCatalogDocument struct {
-	Models map[string]json.RawMessage `json:"models"`
+	Models             map[string]json.RawMessage `json:"models"`
+	DeprecatedIDs      json.RawMessage            `json:"deprecatedModelIds"`
+	DeprecatedIDsSnake json.RawMessage            `json:"deprecated_model_ids"`
 }
 
 // modelCatalogDetail 只建模参与路由的 tiered ids。模型描述、能力标记等上游
@@ -178,7 +219,7 @@ func decodeTieredModelIDs(raw json.RawMessage) ([]string, error) {
 }
 
 func validCatalogModelID(value string) bool {
-	if !validOpaque(value) || strings.Contains(value, "*") {
+	if _, err := runtimecore.NewModelID(value); err != nil || strings.Contains(value, "*") {
 		return false
 	}
 	normalized := strings.ToLower(value)

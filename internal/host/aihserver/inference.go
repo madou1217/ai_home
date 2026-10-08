@@ -68,6 +68,7 @@ type inferenceCompositionDependencies struct {
 	clock           func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
+	agyModelWires   agycodeassist.ModelWireReader
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -112,7 +113,7 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
-	agyAdapter, err := agycodeassist.NewAdapter(client, dependencies.clock)
+	agyAdapter, err := agycodeassist.NewAdapterWithWireModels(client, dependencies.clock, dependencies.agyModelWires)
 	if err != nil {
 		return nil, err
 	}

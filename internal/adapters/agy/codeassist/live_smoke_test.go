@@ -148,6 +148,7 @@ func TestLiveAgyCanonicalSmoke(t *testing.T) {
 		Candidates:  store,
 		Runtime:     runtime,
 		Credentials: credentials,
+		Strategy:    accountrouting.StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("accountrouting.NewRecruiter() error = %v", err)

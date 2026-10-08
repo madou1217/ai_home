@@ -425,6 +425,7 @@ func (fixture *runtimeFixture) dependencies() Dependencies {
 		ModelRefreshes: fixture.refreshes,
 		Clock:          func() time.Time { return fixture.clock },
 		PoolRetries:    poolRetries,
+		Strategy:       accountrouting.StrategyRoundRobin,
 	}
 }
 

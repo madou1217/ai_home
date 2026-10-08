@@ -291,6 +291,7 @@ func TestCoordinatorDistributesSameModelAcrossProviderRoutesFairly(t *testing.T)
 			Candidates:  &candidateSource{accounts: accounts},
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -395,6 +396,7 @@ func TestCoordinatorDistributesAliasAndNativeRouteSourcesFairly(t *testing.T) {
 			Candidates:  &candidateSource{accounts: accounts},
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -524,6 +526,7 @@ func TestCoordinatorPreservesProviderRouteCursorAcrossCatalogPublish(t *testing.
 			Candidates:  &candidateSource{accounts: accounts},
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -1255,6 +1258,7 @@ func TestCoordinatorFallsBackToClaudeWhenAgyRetryBudgetExpires(t *testing.T) {
 			Candidates:  &candidateSource{accounts: accounts},
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -2478,6 +2482,7 @@ func TestCoordinatorScansTenThousandBlockedAccountsWithoutCredentialOrUpstream(
 			Candidates:  fixture.source,
 			Runtime:     runtimeSource,
 			Credentials: credentials,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -2886,6 +2891,7 @@ func newCoordinatorFixture(
 			Candidates:  source,
 			Runtime:     availableRuntime{},
 			Credentials: credentialResolver{credentials: credentials},
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {
@@ -2944,6 +2950,7 @@ func (fixture *coordinatorFixture) newCoordinatorWithCredentials(
 			Candidates:  fixture.source,
 			Runtime:     availableRuntime{},
 			Credentials: credentials,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

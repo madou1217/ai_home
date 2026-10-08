@@ -73,13 +73,18 @@ type AccountModelReader interface {
 	) ([]accountapp.AccountModel, error)
 }
 
-// RuntimeProjection 原子替换一个账号由 usage 真相源拥有的阻塞集合。
+// RuntimeProjection 原子替换一个账号由 usage 真相源拥有的全部运行态事实。
 type RuntimeProjection interface {
+	// ReplaceUsageProjection 在一个调用内替换额度阻塞集合与剩余额度权重。
+	//
+	// remaining 是快照推导出的账号级剩余额度；未知时表示该账号没有额度权重信息，
+	// 运行态必须按「无权重」而不是「额度为零」处理。
 	ReplaceUsageProjection(
 		ctx context.Context,
 		accountRef accountcore.AccountRef,
 		accountBlocked bool,
 		modelIDs []runtimecore.ModelID,
+		remaining usagecore.Remaining,
 	) error
 }
 
@@ -279,6 +284,7 @@ func (service *Service) ForgetAccount(
 			accountRef,
 			false,
 			nil,
+			usagecore.UnknownRemaining(),
 		)
 	})
 }
@@ -400,6 +406,7 @@ func (service *Service) projectRuntime(
 		snapshot.AccountRef(),
 		accountBlocked,
 		blockedModels,
+		snapshot.MinRemaining(),
 	)
 }
 

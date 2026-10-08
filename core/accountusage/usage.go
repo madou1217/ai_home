@@ -309,6 +309,38 @@ func (snapshot Snapshot) Entries() []Entry {
 	return append([]Entry(nil), snapshot.entries...)
 }
 
+// Remaining 是一个账号由额度快照推导出的剩余额度，供选号权重使用。
+//
+// Known 为 false 表示快照里没有任何可用的剩余比例：账号仍然可路由，只是没有额度权重
+// 信息。该值只承载比例，不区分窗口作用域，与 Node 的账号级 remainingPct 同构。
+type Remaining struct {
+	Known       bool
+	BasisPoints uint16
+}
+
+// UnknownRemaining 返回没有额度信息的剩余额度。
+func UnknownRemaining() Remaining {
+	return Remaining{}
+}
+
+// MinRemaining 返回快照中已知剩余比例的最小值。
+//
+// 取最小值与 Node 的账号级 remainingPct 一致：账号只要有一个额度窗口接近耗尽，就该
+// 在选号时被降权。没有任何已知剩余比例时返回未知值，由调用方按最小权重处理。
+func (snapshot Snapshot) MinRemaining() Remaining {
+	remaining := Remaining{}
+	for _, entry := range snapshot.entries {
+		basisPoints, known := entry.RemainingBasisPoints()
+		if !known {
+			continue
+		}
+		if !remaining.Known || basisPoints < remaining.BasisPoints {
+			remaining = Remaining{Known: true, BasisPoints: basisPoints}
+		}
+	}
+	return remaining
+}
+
 // IsValid 重新检查快照身份、排序和条目不变量。
 func (snapshot Snapshot) IsValid() bool {
 	inputs := make([]EntryInput, 0, len(snapshot.entries))

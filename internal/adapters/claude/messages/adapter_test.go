@@ -555,6 +555,7 @@ func newClaudeFairCoordinator(
 		Candidates:  claudeCandidatePoolSource{accounts: accounts},
 		Runtime:     claudeAvailableRuntime{},
 		Credentials: credentialResolver,
+		Strategy:    accountrouting.StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("accountrouting.NewRecruiter() error = %v", err)
@@ -744,6 +745,7 @@ func newClaudeAdapterFixtureWithCredential(
 			Candidates:  claudeCandidateSource{account: account},
 			Runtime:     claudeAvailableRuntime{},
 			Credentials: credentialResolver,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

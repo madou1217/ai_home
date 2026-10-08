@@ -537,6 +537,7 @@ func newAdapterCoordinatorFixture(
 			Candidates:  adapterCandidateSource{account: account},
 			Runtime:     adapterAvailableRuntime{},
 			Credentials: credentials,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

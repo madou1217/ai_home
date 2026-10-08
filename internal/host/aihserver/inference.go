@@ -59,6 +59,8 @@ type inferenceCompositionDependencies struct {
 	catalog           *providers.Catalog
 	store             *sqliteaccount.Store
 	runtime           inferenceruntime.AccountRuntime
+	weights           accountrouting.AccountWeightSource
+	strategy          accountrouting.SelectionStrategy
 	models            accountapp.AccountModelRefresher
 	modelRefreshes    inferencegateway.ModelRefreshScheduler
 	credentialRefresh []accountcredentials.RefreshStrategy
@@ -169,6 +171,8 @@ func newInferenceComposition(
 		Catalog:                   dependencies.catalog,
 		Store:                     dependencies.store,
 		Runtime:                   dependencies.runtime,
+		Weights:                   dependencies.weights,
+		Strategy:                  dependencies.strategy,
 		Routes:                    activeCatalog,
 		CredentialStrategies:      dependencies.credentialRefresh,
 		DelegateCredentialRefresh: dependencies.delegateCredentialRefresh,

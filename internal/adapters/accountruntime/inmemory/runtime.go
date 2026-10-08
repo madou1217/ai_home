@@ -14,6 +14,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 )
 
 var (
@@ -31,10 +32,13 @@ type Runtime struct {
 	cooldowns     *runtimeapp.Registry
 	accountBlocks map[accountcore.AccountRef]blockSet
 	modelBlocks   map[runtimecore.ModelRoute]blockSet
+	// remaining 保存账号由最新额度快照推导出的剩余额度基点；无额度信息的账号不占条目。
+	remaining map[accountcore.AccountRef]uint16
 }
 
 var (
 	_ accountrouting.RuntimeEligibilitySource = (*Runtime)(nil)
+	_ accountrouting.AccountWeightSource      = (*Runtime)(nil)
 	_ inferencegateway.AttemptRecorder        = (*Runtime)(nil)
 )
 
@@ -76,6 +80,7 @@ func NewWithStore(
 		cooldowns:     cooldowns,
 		accountBlocks: make(map[accountcore.AccountRef]blockSet),
 		modelBlocks:   make(map[runtimecore.ModelRoute]blockSet),
+		remaining:     make(map[accountcore.AccountRef]uint16),
 	}, nil
 }
 
@@ -233,14 +238,16 @@ func (runtime *Runtime) ClearModelBlocks(
 	return nil
 }
 
-// ReplaceUsageProjection 原子替换一个账号由最新额度快照拥有的全部阻塞位。
+// ReplaceUsageProjection 原子替换一个账号由最新额度快照拥有的全部运行态事实。
 //
-// 该操作只修改 blockUsageSnapshot，不会清除凭据、账单、策略或 cooldown 状态。
+// 该操作只修改 blockUsageSnapshot 与剩余额度权重，不会清除凭据、账单、策略或
+// cooldown 状态。
 func (runtime *Runtime) ReplaceUsageProjection(
 	ctx context.Context,
 	accountRef accountcore.AccountRef,
 	accountBlocked bool,
 	modelIDs []runtimecore.ModelID,
+	remaining usagecore.Remaining,
 ) error {
 	if err := runtime.validateUsageProjection(
 		ctx,
@@ -257,6 +264,12 @@ func (runtime *Runtime) ReplaceUsageProjection(
 		accountBlocks = accountBlocks.add(blockUsageSnapshot)
 	}
 	runtime.replaceAccountBlocks(accountRef, accountBlocks)
+	// 剩余额度与阻塞位同源：同一次快照刷新必须同时替换，避免两者互相矛盾。
+	if remaining.Known {
+		runtime.remaining[accountRef] = remaining.BasisPoints
+	} else {
+		delete(runtime.remaining, accountRef)
+	}
 
 	for route, blocks := range runtime.modelBlocks {
 		if route.AccountRef() != accountRef {
@@ -272,7 +285,26 @@ func (runtime *Runtime) ReplaceUsageProjection(
 	return nil
 }
 
-// ForgetAccount 原子清理账号级阻塞、模型级阻塞和全部模型 cooldown。
+// AccountRemaining 返回账号由最新额度快照推导出的剩余额度。
+//
+// 无额度信息（未采集、账号不存在或快照没有可用比例）时返回未知值，调用方必须按
+// 「没有权重信息」处理，不能当成额度为零。
+func (runtime *Runtime) AccountRemaining(
+	accountRef accountcore.AccountRef,
+) usagecore.Remaining {
+	if runtime == nil || runtime.remaining == nil || !accountRef.IsValid() {
+		return usagecore.UnknownRemaining()
+	}
+	runtime.mu.RLock()
+	defer runtime.mu.RUnlock()
+	basisPoints, found := runtime.remaining[accountRef]
+	if !found {
+		return usagecore.UnknownRemaining()
+	}
+	return usagecore.Remaining{Known: true, BasisPoints: basisPoints}
+}
+
+// ForgetAccount 原子清理账号级阻塞、模型级阻塞、剩余额度和全部模型 cooldown。
 func (runtime *Runtime) ForgetAccount(
 	accountRef accountcore.AccountRef,
 ) {
@@ -286,6 +318,7 @@ func (runtime *Runtime) ForgetAccount(
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
 	delete(runtime.accountBlocks, accountRef)
+	delete(runtime.remaining, accountRef)
 	for route := range runtime.modelBlocks {
 		if route.AccountRef() == accountRef {
 			delete(runtime.modelBlocks, route)

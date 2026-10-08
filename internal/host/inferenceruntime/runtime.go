@@ -45,6 +45,10 @@ type Dependencies struct {
 	Store AccountStore
 	// Runtime 同时负责征召资格读取和完整失败状态记录。
 	Runtime AccountRuntime
+	// Weights 提供账号剩余额度，用于加权随机选号；为空时按等概率随机。
+	Weights accountrouting.AccountWeightSource
+	// Strategy 是选号策略；零值非法，必须由调用方显式解析后传入。
+	Strategy accountrouting.SelectionStrategy
 	// Routes 负责客户端模型到真实上游路由计划的解析。
 	Routes inferencegateway.RouteResolver
 	// CredentialStrategies 注册当前 Provider 的凭据刷新策略。
@@ -122,6 +126,8 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 			Candidates:  dependencies.Store,
 			Runtime:     dependencies.Runtime,
 			Credentials: credentials,
+			Weights:     dependencies.Weights,
+			Strategy:    dependencies.Strategy,
 		},
 	)
 	if err != nil {

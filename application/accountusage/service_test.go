@@ -738,6 +738,7 @@ type runtimeProjectionStub struct {
 	calls          int
 	accountBlocked bool
 	modelIDs       []runtimecore.ModelID
+	remaining      usagecore.Remaining
 }
 
 // orderedRuntimeProjection 允许测试精确控制旧清理和新投影的交错顺序。
@@ -755,6 +756,7 @@ func (runtime *orderedRuntimeProjection) ReplaceUsageProjection(
 	_ accountcore.AccountRef,
 	accountBlocked bool,
 	modelIDs []runtimecore.ModelID,
+	_ usagecore.Remaining,
 ) error {
 	if !accountBlocked && len(modelIDs) == 0 {
 		close(runtime.clearStarted)
@@ -774,12 +776,14 @@ func (stub *runtimeProjectionStub) ReplaceUsageProjection(
 	_ accountcore.AccountRef,
 	accountBlocked bool,
 	modelIDs []runtimecore.ModelID,
+	remaining usagecore.Remaining,
 ) error {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.calls++
 	stub.accountBlocked = accountBlocked
 	stub.modelIDs = append([]runtimecore.ModelID(nil), modelIDs...)
+	stub.remaining = remaining
 	return nil
 }
 

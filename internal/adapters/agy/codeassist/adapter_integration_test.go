@@ -227,6 +227,7 @@ func newAgyCoordinatorFixtureWithWireModels(
 		Candidates:  agyCandidateSource{account: account},
 		Runtime:     agyAvailableRuntime{},
 		Credentials: credentials,
+		Strategy:    accountrouting.StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)

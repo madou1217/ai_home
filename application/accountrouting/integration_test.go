@@ -132,6 +132,7 @@ func TestRecruiterUsesSQLiteAndProductionCredentialResolver(t *testing.T) {
 			Candidates:  store,
 			Runtime:     runtimeRegistry,
 			Credentials: credentialResolver,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

@@ -370,6 +370,7 @@ func newRealCodexCoordinatorComponents(
 			Candidates:  adapterCandidateSource{account: account},
 			Runtime:     runtime,
 			Credentials: credentialResolver,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

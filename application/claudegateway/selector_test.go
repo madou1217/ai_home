@@ -169,6 +169,7 @@ func newSelectorFixture(t *testing.T) selectorFixture {
 		},
 		Runtime:     selectorRuntime{},
 		Credentials: selectorCredentials{bindings: bindings},
+		Strategy:    accountrouting.StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("accountrouting.NewRecruiter() error = %v", err)

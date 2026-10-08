@@ -918,6 +918,7 @@ func newRealClaudeCoordinatorComponents(
 			Candidates:  claudeCandidateSource{account: account},
 			Runtime:     runtime,
 			Credentials: credentialResolver,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

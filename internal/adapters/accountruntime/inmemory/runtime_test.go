@@ -11,6 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 )
@@ -425,6 +426,7 @@ func TestRuntimeReplacesAuthoritativeUsageProjection(t *testing.T) {
 		accountRef,
 		true,
 		[]runtimecore.ModelID{opus},
+		usagecore.UnknownRemaining(),
 	); err != nil {
 		t.Fatalf("ReplaceUsageProjection(block) error = %v", err)
 	}
@@ -446,6 +448,7 @@ func TestRuntimeReplacesAuthoritativeUsageProjection(t *testing.T) {
 		accountRef,
 		false,
 		[]runtimecore.ModelID{sonnet},
+		usagecore.UnknownRemaining(),
 	); err != nil {
 		t.Fatalf("ReplaceUsageProjection(replace) error = %v", err)
 	}
@@ -467,6 +470,7 @@ func TestRuntimeReplacesAuthoritativeUsageProjection(t *testing.T) {
 		accountRef,
 		false,
 		nil,
+		usagecore.UnknownRemaining(),
 	); err != nil {
 		t.Fatalf("ReplaceUsageProjection(clear) error = %v", err)
 	}
@@ -495,6 +499,7 @@ func TestRuntimeUsageProjectionPreservesOtherBlocks(t *testing.T) {
 		route.AccountRef(),
 		true,
 		nil,
+		usagecore.UnknownRemaining(),
 	); err != nil {
 		t.Fatalf("ReplaceUsageProjection(block) error = %v", err)
 	}
@@ -503,6 +508,7 @@ func TestRuntimeUsageProjectionPreservesOtherBlocks(t *testing.T) {
 		route.AccountRef(),
 		false,
 		nil,
+		usagecore.UnknownRemaining(),
 	); err != nil {
 		t.Fatalf("ReplaceUsageProjection(clear) error = %v", err)
 	}
@@ -522,6 +528,74 @@ func mustUsageModelID(t *testing.T, value string) runtimecore.ModelID {
 		t.Fatalf("NewModelID(%q) error = %v", value, err)
 	}
 	return modelID
+}
+
+// TestRuntimeTracksRemainingQuotaForSelection 验证剩余额度随额度快照投影并可被清除。
+func TestRuntimeTracksRemainingQuotaForSelection(t *testing.T) {
+	t.Parallel()
+
+	runtime := newTestRuntime(t, runtimeTestTime)
+	accountRef := newTestRoute(t, 9, "claude-opus-5").AccountRef()
+
+	// 未采集额度时必须是「未知」，不能被当成额度为零。
+	if remaining := runtime.AccountRemaining(accountRef); remaining.Known {
+		t.Fatalf("AccountRemaining(before snapshot) = %#v, want unknown", remaining)
+	}
+
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		false,
+		nil,
+		usagecore.Remaining{Known: true, BasisPoints: 4200},
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(known) error = %v", err)
+	}
+	remaining := runtime.AccountRemaining(accountRef)
+	if !remaining.Known || remaining.BasisPoints != 4200 {
+		t.Fatalf("AccountRemaining(known) = %#v, want 4200 bps", remaining)
+	}
+
+	// 新快照没有可用比例时，条目必须被删除而不是保留旧值。
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		false,
+		nil,
+		usagecore.UnknownRemaining(),
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(unknown) error = %v", err)
+	}
+	if remaining := runtime.AccountRemaining(accountRef); remaining.Known {
+		t.Fatalf("AccountRemaining(after unknown) = %#v, want unknown", remaining)
+	}
+
+	if err := runtime.ReplaceUsageProjection(
+		context.Background(),
+		accountRef,
+		false,
+		nil,
+		usagecore.Remaining{Known: true, BasisPoints: 10000},
+	); err != nil {
+		t.Fatalf("ReplaceUsageProjection(re-seed) error = %v", err)
+	}
+	runtime.ForgetAccount(accountRef)
+	if remaining := runtime.AccountRemaining(accountRef); remaining.Known {
+		t.Fatalf("AccountRemaining(after forget) = %#v, want unknown", remaining)
+	}
+}
+
+// TestRuntimeRemainingQuotaRejectsInvalidAccount 验证非法账号与零值运行态返回未知额度。
+func TestRuntimeRemainingQuotaRejectsInvalidAccount(t *testing.T) {
+	t.Parallel()
+
+	if remaining := (*Runtime)(nil).AccountRemaining("codex:deadbeef"); remaining.Known {
+		t.Fatalf("AccountRemaining(nil runtime) = %#v, want unknown", remaining)
+	}
+	runtime := newTestRuntime(t, runtimeTestTime)
+	if remaining := runtime.AccountRemaining(""); remaining.Known {
+		t.Fatalf("AccountRemaining(invalid ref) = %#v, want unknown", remaining)
+	}
 }
 
 // TestRuntimeRejectsInvalidAttemptFailure 验证零值或跨层损坏的失败

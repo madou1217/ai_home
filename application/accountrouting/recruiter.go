@@ -78,7 +78,7 @@ type RuntimeEligibilitySource interface {
 	) (runtimecore.Eligibility, error)
 }
 
-// Dependencies 声明征召器所需的三个最小应用端口。
+// Dependencies 声明征召器所需的四个最小应用端口。
 type Dependencies struct {
 	// Candidates 负责从本地模型倒排读取启用账号的不可变紧凑快照。
 	Candidates CandidateSource
@@ -86,6 +86,10 @@ type Dependencies struct {
 	Runtime RuntimeEligibilitySource
 	// Credentials 负责单账号凭据读取和必要刷新。
 	Credentials CredentialResolver
+	// Weights 提供账号剩余额度；为空时所有账号按等概率参与随机选号。
+	Weights AccountWeightSource
+	// Strategy 是选号策略；零值非法，必须由调用方显式解析。
+	Strategy SelectionStrategy
 }
 
 // Request 是经过 Provider 注册表校验的征召请求。
@@ -270,7 +274,11 @@ type Recruiter struct {
 	candidates  CandidateSource
 	runtime     RuntimeEligibilitySource
 	credentials CredentialResolver
+	weights     AccountWeightSource
+	strategy    SelectionStrategy
 	scheduler   *FairRoundRobinScheduler
+	// randomIntN 是加权随机的可注入随机源；生产使用全局随机源。
+	randomIntN func(int) int
 }
 
 // RecruitmentSession 固定一次请求的候选快照、轮转起点和扫描位置。
@@ -292,19 +300,41 @@ type RecruitmentSession struct {
 	order []int
 }
 
-// NewRecruiter 创建不缓存凭据、共享公平票号的账号征召器。
+// NewRecruiter 创建不缓存凭据、按已解析策略选号的账号征召器。
+//
+// Strategy 必须由调用方通过 ParseSelectionStrategy 显式解析后传入：空值与未知值都
+// 直接失败，绝不静默取默认值。这样「默认策略改变」会变成构造期错误，而不是让调用方
+// 在毫不知情的情况下换一套选号行为。
 func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 	if dependencies.Candidates == nil ||
 		dependencies.Runtime == nil ||
 		dependencies.Credentials == nil {
 		return nil, ErrInvalidDependencies
 	}
+	strategy := dependencies.Strategy
+	if !strategy.IsValid() {
+		return nil, errors.Join(
+			ErrInvalidDependencies,
+			ErrUnknownSelectionStrategy,
+		)
+	}
 	return &Recruiter{
 		candidates:  dependencies.Candidates,
 		runtime:     dependencies.Runtime,
 		credentials: dependencies.Credentials,
+		weights:     dependencies.Weights,
+		strategy:    strategy,
 		scheduler:   &FairRoundRobinScheduler{},
+		randomIntN:  defaultRandomIntN,
 	}, nil
+}
+
+// Strategy 返回当前生效的选号策略。
+func (recruiter *Recruiter) Strategy() SelectionStrategy {
+	if recruiter == nil {
+		return ""
+	}
+	return recruiter.strategy
 }
 
 // Begin 固定当前路由快照并为本请求分配公平的环形扫描起点。
@@ -351,15 +381,29 @@ func (recruiter *Recruiter) Begin(
 		session.pinnedCandidate, session.pinnedFound = candidates.FindByRef(accountRef)
 		return session, nil
 	}
-	session.start = recruiter.scheduler.NextStart(
-		request.ProviderID(),
-		request.ModelID(),
-		candidates.Len(),
-	)
+	session.start = recruiter.startPosition(request, candidates)
 	if err := session.preferredOrder(ctx); err != nil {
 		return nil, err
 	}
 	return session, nil
+}
+
+// startPosition 按当前策略返回环形扫描起点。
+//
+// round-robin 使用 Provider、模型的公平票号；random 使用剩余额度加权随机。两者都只
+// 决定起点，候选快照与资格判定完全一致。
+func (recruiter *Recruiter) startPosition(
+	request Request,
+	candidates *accountapp.RoutingCandidates,
+) int {
+	if recruiter.strategy == StrategyRandom {
+		return weightedStart(candidates, recruiter.weights, recruiter.randomIntN)
+	}
+	return recruiter.scheduler.NextStart(
+		request.ProviderID(),
+		request.ModelID(),
+		candidates.Len(),
+	)
 }
 
 // Recruit 从新建会话中返回首个当前可用账号。

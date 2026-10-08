@@ -412,6 +412,7 @@ func prepareRecruitmentBenchmark(
 			Candidates:  store,
 			Runtime:     runtimeRegistry,
 			Credentials: resolver,
+			Strategy:    accountrouting.StrategyRoundRobin,
 		},
 	)
 	if err != nil {

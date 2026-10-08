@@ -219,6 +219,7 @@ func newRecruitmentResult(
 			accountRef: account.Ref(),
 			credential: credential,
 		},
+		Strategy: accountrouting.StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)

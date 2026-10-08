@@ -764,6 +764,9 @@ func newTestRecruiter(
 }
 
 // newTestRecruiterWithRuntime 创建可注入运行态资格端口的征召器。
+//
+// 测试固定使用 round-robin：这些用例断言的是确定性的公平轮转，而生产默认策略是
+// Node 同构的 random（见 ParseSelectionStrategy），两者必须分开。
 func newTestRecruiterWithRuntime(
 	t *testing.T,
 	source CandidateSource,
@@ -776,6 +779,7 @@ func newTestRecruiterWithRuntime(
 		Candidates:  source,
 		Runtime:     runtimeSource,
 		Credentials: resolver,
+		Strategy:    StrategyRoundRobin,
 	})
 	if err != nil {
 		t.Fatalf("NewRecruiter() error = %v", err)

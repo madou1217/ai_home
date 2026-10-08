@@ -12,6 +12,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountauth"
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	"github.com/madou1217/ai_home/application/accountrouting"
 	runtimeapp "github.com/madou1217/ai_home/application/accountruntime"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	usageapp "github.com/madou1217/ai_home/application/accountusage"
@@ -107,6 +108,8 @@ type serverAccountRuntime interface {
 	accountrecovery.Runtime
 	inferenceruntime.AccountRuntime
 	usageapp.RuntimeProjection
+	// accountrouting.AccountWeightSource 提供加权随机选号所需的剩余额度。
+	accountrouting.AccountWeightSource
 }
 
 // New 装配 Provider Catalog、aih.db、账号用例、OAuth Strategy 和 HTTP 入站适配器。
@@ -590,12 +593,22 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 vision guard 失败: %w", err)
 	}
+	// 选号策略与 Node 共用同一个环境变量；留空取 Node 同构的默认值，无法识别的取值
+	// 直接失败，避免两端静默使用不同策略。
+	selectionStrategy, err := accountrouting.ParseSelectionStrategy(
+		os.Getenv("AIH_SERVER_STRATEGY"),
+	)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("解析账号选号策略失败: %w", err)
+	}
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
 			catalog:        catalog,
 			store:          store,
 			runtime:        accountRuntime,
+			weights:        accountRuntime,
+			strategy:       selectionStrategy,
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,
 			credentialRefresh: []accountcredentials.RefreshStrategy{

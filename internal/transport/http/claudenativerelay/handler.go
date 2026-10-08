@@ -39,8 +39,6 @@ const (
 	oauthBeta = "oauth-2025-04-20"
 	// nativeBetaQuery 是当前官方 Claude Code/SDK 的原生 Messages 查询合同。
 	nativeBetaQuery = "beta=true"
-	// maxRelayDuration 与官方 Claude Client 的长请求上限保持同一量级。
-	maxRelayDuration = 10 * time.Minute
 	// maxRelayAttempts 与 Canonical 编排的上游尝试上限保持一致。
 	//
 	// 账号池很大时不设上限会让单个请求长时间打转，客户端只观察到超时。
@@ -285,10 +283,10 @@ func (handler *Handler) ServeHTTP(
 	defer upstreamResponse.Body.Close()
 	retryAccount := outcome.retryAccount
 
-	// Native SSE 可能跨越 Host 默认写超时；只为当前已鉴权 Relay 请求延长。
-	_ = http.NewResponseController(response).SetWriteDeadline(
-		time.Now().Add(maxRelayDuration),
-	)
+	// Native SSE 会跨越 Host 的绝对写超时。这里不设一次性延长，而是把整条透传流
+	// 交给「空闲刷新 + 总时长兜底」策略：只要上游持续产出事件就保持连接（见 G3）。
+	deadline := inferenceapi.NewStreamDeadline(response)
+	deadline.Refresh()
 	copyResponseHeaders(response.Header(), upstreamResponse.Header)
 	if shouldObserveNativeStream(upstreamResponse.Header, stream) {
 		// Native SSE 字节保持透传，但代理控制属于网关出站边界：必须允许逐事件
@@ -326,11 +324,16 @@ func (handler *Handler) ServeHTTP(
 			upstreamResponse.Body,
 			upstreamResponse.Header,
 			handler.clock,
+			deadline,
 		)
 	} else {
 		// 非流式 JSON 响应：旁路保留有界前缀，只为读取顶层 usage，不影响透传。
 		capture := &boundedCapture{limit: nonStreamUsageCaptureLimit}
-		copyResult = copyResponseBody(response, io.TeeReader(upstreamResponse.Body, capture))
+		copyResult = copyResponseBody(
+			response,
+			io.TeeReader(upstreamResponse.Body, capture),
+			deadline,
+		)
 		if !capture.truncated {
 			streamObservation.usage.observe(capture.buffer.Bytes())
 		}

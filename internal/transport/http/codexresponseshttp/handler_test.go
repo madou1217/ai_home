@@ -22,6 +22,7 @@ import (
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const completedEvent = "event: response.completed\r\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":2}},\"future\":9007199254740993}\r\n\r\n"
@@ -370,4 +371,90 @@ func nativeRequestFor(payload []byte) *http.Request {
 	request.Header.Set("Authorization", "Bearer synthetic-client")
 	request.Header.Set("Content-Type", "application/json")
 	return request
+}
+
+// deadlineTrackingWriter 记录每次写截止时间的取值，模拟支持 SetWriteDeadline 的连接。
+type deadlineTrackingWriter struct {
+	header    http.Header
+	body      bytes.Buffer
+	deadlines []time.Time
+}
+
+func (writer *deadlineTrackingWriter) Header() http.Header {
+	if writer.header == nil {
+		writer.header = http.Header{}
+	}
+	return writer.header
+}
+
+func (writer *deadlineTrackingWriter) WriteHeader(int) {}
+
+func (writer *deadlineTrackingWriter) Write(payload []byte) (int, error) {
+	return writer.body.Write(payload)
+}
+
+func (writer *deadlineTrackingWriter) Flush() {}
+
+func (writer *deadlineTrackingWriter) SetWriteDeadline(deadline time.Time) error {
+	writer.deadlines = append(writer.deadlines, deadline)
+	return nil
+}
+
+// chunkReader 每次只交付一块，确保复制循环真的走了多轮。
+type chunkReader struct {
+	chunks [][]byte
+	index  int
+}
+
+func (reader *chunkReader) Read(target []byte) (int, error) {
+	if reader.index >= len(reader.chunks) {
+		return 0, io.EOF
+	}
+	count := copy(target, reader.chunks[reader.index])
+	reader.index++
+	return count, nil
+}
+
+// TestCopyBodyRefreshesWriteDeadlinePerChunk 锁定 G3：长推理流的断开判据必须是
+// 「持续没有数据」，而不是请求开始时定下的绝对截止时间。旧实现只在 Server 配置里
+// 设一次 10 分钟 WriteTimeout，第 10 分钟必被硬切断。
+func TestCopyBodyRefreshesWriteDeadlinePerChunk(t *testing.T) {
+	t.Parallel()
+
+	writer := &deadlineTrackingWriter{}
+	source := &chunkReader{chunks: [][]byte{[]byte("a"), []byte("b"), []byte("c")}}
+	startedBefore := time.Now()
+	upstreamErr, downstreamErr := copyBody(writer, source)
+	if upstreamErr != nil || downstreamErr != nil {
+		t.Fatalf("copyBody() = %v, %v", upstreamErr, downstreamErr)
+	}
+	if writer.body.String() != "abc" {
+		t.Fatalf("body = %q, want %q", writer.body.String(), "abc")
+	}
+	if len(writer.deadlines) != len(source.chunks) {
+		t.Fatalf("write deadlines = %d, want one per chunk (%d)", len(writer.deadlines), len(source.chunks))
+	}
+	// 每次交付都要把 deadline 推到「当前时刻 + 空闲窗口」，且必须基于真实时间：
+	// 早于起始时刻的值说明 deadline 没有随交付推进。
+	earliest := startedBefore.Add(inferenceapi.StreamIdleTimeout / 2)
+	for index, deadline := range writer.deadlines {
+		if deadline.Before(earliest) {
+			t.Fatalf("deadline[%d] = %v, want at least %v", index, deadline, earliest)
+		}
+	}
+}
+
+// TestCopyBodyToleratesConnectionsWithoutWriteDeadline 验证不支持写 deadline 的
+// ResponseWriter 不会让交付失败（httptest.ResponseRecorder 即此类）。
+func TestCopyBodyToleratesConnectionsWithoutWriteDeadline(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	upstreamErr, downstreamErr := copyBody(recorder, strings.NewReader("payload"))
+	if upstreamErr != nil || downstreamErr != nil {
+		t.Fatalf("copyBody() = %v, %v", upstreamErr, downstreamErr)
+	}
+	if recorder.Body.String() != "payload" {
+		t.Fatalf("body = %q", recorder.Body.String())
+	}
 }

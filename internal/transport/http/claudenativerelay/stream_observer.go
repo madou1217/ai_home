@@ -16,6 +16,7 @@ import (
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 // nativeStreamObservation 是旁路 SSE 观察器生成的唯一运行态终态。
@@ -51,6 +52,7 @@ func copyAndObserveNativeStream(
 	body io.Reader,
 	header http.Header,
 	clock func() time.Time,
+	deadline *inferenceapi.StreamDeadline,
 ) (responseCopyResult, nativeStreamObservation) {
 	reader, writer := io.Pipe()
 	observed := make(chan nativeStreamObservation, 1)
@@ -58,7 +60,11 @@ func copyAndObserveNativeStream(
 		observed <- observeNativeStream(reader, header, clock)
 		_ = reader.Close()
 	}()
-	result := copyResponseBody(response, io.TeeReader(body, &observerTap{writer: writer}))
+	result := copyResponseBody(
+		response,
+		io.TeeReader(body, &observerTap{writer: writer}),
+		deadline,
+	)
 	if result.upstreamErr != nil {
 		_ = writer.CloseWithError(result.upstreamErr)
 	} else {
@@ -195,9 +201,12 @@ func isNativeMessageStop(event sharedsse.Event) bool {
 }
 
 // copyResponseBody 逐块刷新 SSE，也兼容普通 JSON 错误响应。
+//
+// 每次交付后重置写截止时间，把 Host 的绝对超时换成「持续没有数据才断开」（见 G3）。
 func copyResponseBody(
 	response http.ResponseWriter,
 	body io.Reader,
+	deadline *inferenceapi.StreamDeadline,
 ) responseCopyResult {
 	buffer := make([]byte, 32*1024)
 	flusher, canFlush := response.(http.Flusher)
@@ -210,6 +219,7 @@ func copyResponseBody(
 			if canFlush {
 				flusher.Flush()
 			}
+			deadline.Refresh()
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {

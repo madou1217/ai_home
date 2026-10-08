@@ -17,6 +17,7 @@ import (
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 type outcome struct {
@@ -172,9 +173,17 @@ func (capture *boundedCapture) Write(payload []byte) (int, error) {
 	return len(payload), nil
 }
 
-func copyBody(response http.ResponseWriter, source io.Reader) (error, error) {
+// copyBody 逐块把上游字节交付给客户端，并在每次交付后重置空闲窗口。
+//
+// Server 的 WriteTimeout 是绝对截止时间，会把长推理流硬切断；这里用
+// StreamDeadline 把「断开」重新定义为「持续没有数据」（见 G3）。
+func copyBody(
+	response http.ResponseWriter,
+	source io.Reader,
+) (error, error) {
 	buffer := make([]byte, 32*1024)
 	controller := http.NewResponseController(response)
+	deadline := inferenceapi.NewStreamDeadline(response)
 	for {
 		count, readErr := source.Read(buffer)
 		if count > 0 {
@@ -184,6 +193,7 @@ func copyBody(response http.ResponseWriter, source io.Reader) (error, error) {
 			if err := controller.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 				return nil, err
 			}
+			deadline.Refresh()
 		}
 		if errors.Is(readErr, io.EOF) {
 			return nil, nil

@@ -21,12 +21,15 @@ import (
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 var errInvalidInferenceComposition = errors.New("生产推理组合依赖无效")
 
 const (
-	inferenceHTTPTimeout    = 10 * time.Minute
+	// inferenceHTTPTimeout 是上游推理客户端的超时。http.Client.Timeout 覆盖到响应
+	// 正文读完，所以它同时是流式推理的绝对上限，必须与流总时长兜底同量级（见 G3）。
+	inferenceHTTPTimeout    = inferenceapi.StreamTotalTimeout
 	modelRefreshTimeout     = 20 * time.Second
 	modelRefreshBaseBackoff = time.Second
 	modelRefreshMaxBackoff  = time.Minute

@@ -111,7 +111,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.fail(response, trail, "no_available_account")
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	// 整个请求（含流式交付）的总预算。10 分钟的旧上限会切断长推理流，
+	// 现在与流空闲策略共享同一个放宽后的总时长（见 G3）。
+	ctx, cancel := context.WithTimeout(ctx, inferenceapi.StreamTotalTimeout)
 	defer cancel()
 	var last *http.Response
 	var lastRef accountcore.AccountRef

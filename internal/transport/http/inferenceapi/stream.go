@@ -15,11 +15,20 @@ var ErrStreamingUnsupported = errors.New("HTTP ResponseWriter 不支持流式刷
 type SSEStream struct {
 	response  http.ResponseWriter
 	flusher   http.Flusher
+	deadline  *StreamDeadline
 	committed bool
 }
 
 // NewSSEStream 要求底层连接支持即时刷新。
 func NewSSEStream(response http.ResponseWriter) (*SSEStream, error) {
+	return newSSEStream(response, NewStreamDeadline(response))
+}
+
+// newSSEStream 允许注入截止时间控制器，供测试固定时间基准。
+func newSSEStream(
+	response http.ResponseWriter,
+	deadline *StreamDeadline,
+) (*SSEStream, error) {
 	if response == nil {
 		return nil, ErrStreamingUnsupported
 	}
@@ -30,6 +39,7 @@ func NewSSEStream(response http.ResponseWriter) (*SSEStream, error) {
 	return &SSEStream{
 		response: response,
 		flusher:  flusher,
+		deadline: deadline,
 	}, nil
 }
 
@@ -62,6 +72,8 @@ func (stream *SSEStream) Write(
 		}
 	}
 	stream.flusher.Flush()
+	// 每批事件交付后重置空闲窗口：长推理流只有在真正静默时才该被断开。
+	stream.deadline.Refresh()
 	return nil
 }
 

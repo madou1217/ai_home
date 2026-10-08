@@ -56,12 +56,15 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
 
 const (
-	oauthHTTPTimeout        = 10 * time.Second
-	claudeRelayHTTPTimeout  = 10 * time.Minute
+	oauthHTTPTimeout = 10 * time.Second
+	// claudeRelayHTTPTimeout 同样覆盖到响应正文读完，是 Relay 透传流的绝对上限，
+	// 必须与流总时长兜底同量级（见 G3）。
+	claudeRelayHTTPTimeout  = inferenceapi.StreamTotalTimeout
 	modelCatalogHTTPTimeout = 15 * time.Second
 )
 

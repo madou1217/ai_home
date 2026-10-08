@@ -7,14 +7,19 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 30 * time.Second
-	writeTimeout      = 10 * time.Minute
-	idleTimeout       = 60 * time.Second
-	maxHeaderBytes    = 64 * 1024
+	// writeTimeout 只是标准库层面的写兜底，且是「读完请求头起算」的绝对截止时间。
+	// 长推理流的真实边界由 inferenceapi.StreamDeadline 的空闲刷新 + 总时长策略施加
+	// （见 G3），因此这里必须不小于该总时长，否则流仍会被 Server 先切断。
+	writeTimeout   = inferenceapi.StreamTotalTimeout
+	idleTimeout    = 60 * time.Second
+	maxHeaderBytes = 64 * 1024
 )
 
 // Server 持有 HTTP、后台 worker 和唯一账号数据库生命周期。

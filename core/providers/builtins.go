@@ -277,7 +277,7 @@ func builtinGrok() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Grok 登录", "使用 Grok Build CLI 原生 auth login 流程（需 SuperGrok 订阅）。"),
@@ -429,7 +429,7 @@ func builtinKiro() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"),
 		},
@@ -444,9 +444,9 @@ func builtinKiro() Definition {
 			EnvKeys:    []string{"KIRO_HOME", "KIRO_TEST_DB_PATH", "KIRO_API_KEY"},
 			DesktopClient: desktopClient(
 				"Kiro",
-				[]string{"Kiro"},
-				[]string{"/Kiro.app/Contents/MacOS/"},
-				[]string{"/Applications/Kiro.app", "{hostHomeDir}/Applications/Kiro.app"},
+				[]string{"kiro_cli_desktop", "Kiro"},
+				[]string{"/Kiro CLI.app/Contents/MacOS/", "/Kiro.app/Contents/MacOS/"},
+				[]string{"/Applications/Kiro CLI.app", "{hostHomeDir}/Applications/Kiro CLI.app", "/Applications/Kiro.app", "{hostHomeDir}/Applications/Kiro.app"},
 				[]string{"Kiro.exe"},
 				[]string{"Kiro.exe"},
 				[]string{"kiro", "Kiro"},
@@ -512,7 +512,6 @@ func builtinZcode() Definition {
 //
 // 本次刻意不声明的能力（能力 = 已落地适配器的声明，未实现就不声明，避免出现
 // "声称支持但无实现"的链路）：
-//   - usage_scan：本地用量扫描未接入。
 //   - account_session_store：见 session_history 的说明——会话读的是宿主地区目录，
 //     不是账号隔离沙箱，所以不能声明这个能力。
 //   - session_runtime / fabric_runtime / gateway_profile：Fabric runtime 与内置
@@ -547,7 +546,7 @@ func builtinCodebuddy() Definition {
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
 		// model_catalog：从会话使用的 CLI `--help` 读取该账号支持的模型，家族四支共用
 		// lib/server/workbuddy-model-discovery.js，运行时与账号环境保持一致。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -659,7 +658,7 @@ func builtinCodebuddyCN() Definition {
 		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
 		// model_catalog：与 codebuddy 同一适配器，CLI 与凭据严格取本地区、本账号。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -753,7 +752,7 @@ func builtinWorkbuddy() Definition {
 		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
 		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
 		// lib/server/workbuddy-model-discovery.js，家族四支共用。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -835,7 +834,7 @@ func builtinWorkbuddyCN() Definition {
 		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
 		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
 		// lib/server/workbuddy-model-discovery.js，家族四支共用。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,

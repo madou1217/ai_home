@@ -39,7 +39,7 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('quotaUsage'),
-    ['codex', 'gemini', 'claude', 'agy', 'kimi', 'zcode',
+    ['codex', 'gemini', 'claude', 'agy', 'grok', 'kimi', 'kiro', 'zcode',
       'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
   );
   assert.deepEqual(
@@ -65,7 +65,8 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('usageScan'),
-    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'kimi', 'zcode']
+    ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'kimi', 'zcode',
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
   );
 });
 

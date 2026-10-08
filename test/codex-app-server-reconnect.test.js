@@ -158,6 +158,23 @@ test('replaced bindings never receive buffered events from the previous turn', a
   assert.deepEqual(events, []);
 });
 
+test('writer release receives native closure after the turn binding has been removed', async (t) => {
+  let acknowledged = false;
+  const f = await fixture(t, (ws, message) => {
+    assert.equal(message.method, 'thread/unsubscribe');
+    assert.deepEqual(message.params, { threadId: 'thread-1' });
+    reply(ws, message, { status: 'unsubscribed' });
+    acknowledged = true;
+  });
+  f.client.bindTurn('thread-1', {});
+  assert.throws(() => f.client.releaseThread('thread-1'), /codex_thread_release_not_idle/);
+  f.client.unbindTurn('thread-1');
+  const release = f.client.releaseThread('thread-1');
+  await waitFor(() => acknowledged);
+  f.sockets[0].send(JSON.stringify({ method: 'thread/closed', params: { threadId: 'thread-1' } }));
+  assert.deepEqual(await release, { released: true, status: 'unsubscribed' });
+});
+
 async function fixture(t, handle) {
   const server = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
   await new Promise((resolve) => server.once('listening', resolve));

@@ -99,6 +99,38 @@ test('Codex native catalog exposes the verified provider catalog for composer re
   ]);
 });
 
+test('Codex native catalog applies current model policy after the shared native list is cached', async () => {
+  const fixture = createFixture();
+  const disabled = new Set(['gpt-account-default']);
+  const catalog = new CodexNativeModelCatalog({
+    client: fixture.client,
+    isModelEnabled: (model) => !disabled.has(model)
+  });
+
+  assert.deepEqual((await catalog.list()).map((entry) => entry.model), ['gpt-first']);
+  assert.deepEqual(await catalog.resolveTurnSettings(), { model: 'gpt-first', reasoningEffort: 'low' });
+  await assert.rejects(catalog.resolveTurnSettings({ model: 'gpt-account-default' }),
+    (error) => error.code === 'codex_native_model_unavailable' && error.statusCode === 422);
+
+  disabled.clear();
+  assert.equal((await catalog.list()).length, 2);
+  disabled.add('gpt-first');
+  disabled.add('gpt-account-default');
+  await assert.rejects(catalog.resolveTurnSettings(),
+    (error) => error.code === 'codex_native_model_unavailable' && error.statusCode === 422);
+  assert.equal(fixture.requests.length, 1);
+});
+
+test('Codex native catalogs keep account policy separate when they share one resident client', async () => {
+  const fixture = createFixture();
+  const first = new CodexNativeModelCatalog({ client: fixture.client, isModelEnabled: () => false });
+  const second = new CodexNativeModelCatalog({ client: fixture.client });
+
+  assert.deepEqual(await first.list(), []);
+  assert.equal((await second.list()).length, 2);
+  assert.equal(fixture.requests.length, 1);
+});
+
 test('Codex native catalog accepts a verified API-key execution credential', async () => {
   const fixture = createFixture({
     identity: {

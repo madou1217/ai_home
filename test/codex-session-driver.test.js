@@ -934,6 +934,31 @@ test('Codex recovery preserves replay failure when native interrupt also fails',
   assert.deepEqual(fixture.client.methods(), ['thread/resume', 'turn/interrupt']);
 });
 
+test('completed native turns release their writer before the next turn can begin', async () => {
+  const gate = deferred();
+  const fixture = createFixture({ releaseThread: () => gate.promise });
+  const turn = fixture.entry.driver.startTurn(turnContext());
+  await nextTask();
+  assert.deepEqual(fixture.client.releaseCalls, []);
+  fixture.client.notify('turn/completed', { threadId: NATIVE_THREAD_ID,
+    turn: { id: 'native-turn-1', status: 'completed' } });
+  await nextTask();
+  assert.deepEqual(fixture.client.releaseCalls, [NATIVE_THREAD_ID]);
+  assert.throws(() => fixture.entry.driver.startTurn(turnContext()), /chat_turn_already_active/);
+  const cleanup = fixture.entry.driver.cleanup(fixture.entry.driver.active);
+  gate.resolve({ released: true });
+  assert.equal((await turn).status, 'completed');
+  await cleanup;
+  assert.equal(fixture.entry.driver.active, null);
+  assert.deepEqual(fixture.client.releaseCalls, [NATIVE_THREAD_ID]);
+});
+
+test('unconfirmed submission failures do not release a possibly running native writer', async () => {
+  const fixture = createFixture({ turnStartError: new Error('unknown submission') });
+  await assert.rejects(fixture.entry.driver.startTurn(turnContext()), /unknown submission/);
+  assert.deepEqual(fixture.client.releaseCalls, []);
+});
+
 function createFixture(overrides = {}) {
   const decisionOrder = [];
   const client = createFakeClient(decisionOrder, overrides);
@@ -1007,7 +1032,7 @@ function createFakeClient(decisionOrder, overrides) {
   const calls = [];
   const bindings = new Map();
   return {
-    calls, bindings, unbindCalls: [], responses: [], responseAttempts: [], errors: [], connected: 0,
+    calls, bindings, unbindCalls: [], releaseCalls: [], responses: [], responseAttempts: [], errors: [], connected: 0,
     async ensureConnected() { this.connected += 1; return {}; },
     ...(overrides.waitForReconnect ? { waitForReconnect: overrides.waitForReconnect } : {}),
     getVerifiedAccountIdentity() {
@@ -1088,6 +1113,10 @@ function createFakeClient(decisionOrder, overrides) {
     unbindTurn(threadId) {
       this.unbindCalls.push(threadId); bindings.delete(threadId);
       this._binding = null;
+    },
+    async releaseThread(threadId) {
+      this.releaseCalls.push(threadId);
+      return overrides.releaseThread ? overrides.releaseThread(threadId) : { released: true };
     },
     respond(id, result) {
       decisionOrder.push(`native:${id}`);

@@ -71,6 +71,46 @@ test('app-server auth invalidation stops only the matching account runtime', (t)
   assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, otherRef)), true);
 });
 
+test('chat app-server invalidation uses the chat runtime scope', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-chat-invalidate-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = 'acct_33333333333333333333';
+  const chatScope = `chat-${accountRef}`;
+  writeAppServerState(aiHomeDir, chatScope, {
+    accountRef,
+    runtimeScope: chatScope,
+    multiplexer: 'tmux',
+    port: 43125,
+    socket: appServerSocketName(chatScope)
+  });
+  const calls = [];
+
+  const result = invalidateCodexAppServerEndpoint({
+    aiHomeDir,
+    accountRef,
+    runtimeNamespace: 'chat',
+    spawnSyncImpl(command, args) {
+      calls.push({ command, args });
+      if (args[0] === '-V') return { status: 0 };
+      if (args.includes('has-session')) return { status: 1 };
+      return { status: 0 };
+    }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    invalidated: true,
+    accountRef,
+    runtimeScope: chatScope
+  });
+  assert.ok(calls.some(({ args }) => (
+    args.includes('-L')
+    && args.includes(appServerSocketName(chatScope))
+    && args.includes('kill-server')
+  )));
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, chatScope)), false);
+});
+
 test('app-server readiness returns as soon as readyz succeeds', async () => {
   let livenessChecks = 0;
 
@@ -478,12 +518,28 @@ test('app-server reuse requires a matching env signature, stale-key panes are re
   assert.ok(calls.some(([, args]) => args.includes('kill-server')), 'stale socket cleaned up');
   assert.ok(calls.some(([, args]) => args.includes('new-session')), 'fresh pane spawned');
   assert.equal(readAppServerState(aiHomeDir, 'gateway').envSignature, envSignature);
+  assert.equal(readAppServerState(aiHomeDir, 'gateway').threadUnloadDelaySecs, 0);
+  assert.ok(calls.some(([, args]) => args.some((arg) => String(arg).includes('thread_unload_delay_secs=0'))));
 
   // 签名匹配的常驻 pane 才允许复用。
   calls.length = 0;
   const reused = await ensureCodexAppServerEndpoint(baseOptions);
   assert.deepEqual(reused, { port: 43127, reused: true });
+  assert.equal(calls.length, 0);
   assert.equal(calls.some(([, args]) => args.includes('new-session')), false);
+
+  const legacyState = readAppServerState(aiHomeDir, 'gateway');
+  delete legacyState.threadUnloadDelaySecs;
+  writeAppServerState(aiHomeDir, 'gateway', legacyState);
+  const busy = await ensureCodexAppServerEndpoint({ ...baseOptions, isAppServerIdleImpl: async () => false });
+  assert.deepEqual(busy, { port: 43127, reused: true });
+  assert.equal(calls.length, 0, 'a native active writer keeps its existing process');
+
+  const upgraded = await ensureCodexAppServerEndpoint({ ...baseOptions, isAppServerIdleImpl: async () => true });
+  assert.deepEqual(upgraded, { port: 43127, reused: false });
+  assert.equal(readAppServerState(aiHomeDir, 'gateway').threadUnloadDelaySecs, 0);
+  assert.ok(calls.some(([, args]) => args.includes('kill-server')));
+  assert.ok(calls.some(([, args]) => args.includes('new-session')));
 });
 
 test('app-server readiness on win32 ignores pane liveness and waits for readyz', async () => {

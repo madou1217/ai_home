@@ -24,8 +24,10 @@
      | `/v1/chat/completions` | 93% |
      | `/v1/images` | 90% |
 
-   - 在此之前的 25 小时里，Node 承接了约 35%，几乎全部来自一次约 13 小时的 Go 停摆。
-   - 停摆的原因是：构件校验失败后，Go 再也没有重试。这个问题已在本轮修复，见附录。
+   - 在此之前的 25 小时里，Node 承接了 21%–35%（因端点而异），来自两段停摆：
+     - 10-07 06:40Z 起约 2.5 小时，正值流量高峰。Go 多次因 `go_core_not_ready`（7 秒就绪门限）启动失败，约 2500 个请求里有六成回落到 Node。
+     - 10-07 11Z 至 10-08 01:36Z 约 14 小时，原因是 `go_core_build_mismatch`。这段在夜里，只有约 90 个请求。
+   - 两类停摆的共同问题是：启动失败后 Go 再也不重试。这个问题已在本轮修复，见附录。
 2. **AWS 和 Windows 没有运行 Go。** 部署流程不带 Go 二进制，这两台机器上的推理全部由 Node 处理。
 3. **目前没有一项 Node 能力可以直接删除。**
    - 以下能力只有 Node 实现：
@@ -38,7 +40,7 @@
    - 即使是 Go 已经接管的路由，Node 也还在兜底：Go 解码拒收的请求、Go 停摆期间的请求，都由 Node 处理。
    - 因此近期各阶段的工作是让 Go 追平 Node，而不是关掉 Node。
 4. **在 Go 已接管的路由上，有 3 处确认比 Node 差，需要先修（§4 P0）：**
-   - codex 请求带 `temperature` 或 `top_p` 时，Go 返回 503。已实测。
+   - codex 请求带 `temperature` 或 `top_p` 时，Go 不会发往上游：流式请求返回 503（客户端 SDK 会自动重试），非流式返回 400。已实测。
    - 压缩过的 `/v1/responses` 发往非 codex 模型时，Go 返回 415。已实测。
    - Go 的所有 HTTP 流到 10 分钟会被硬切断。已从代码确认；近 25 小时内没有请求触发。
 
@@ -66,7 +68,8 @@
 
 **统计方法：**
 - 数据来自 `~/.ai_home/logs/server.log` 的访问日志。
-- Node 自己处理推理请求时，会多写一条 `model_usage_request_context`。用 requestId 对得上的，计为 Node 承接。
+- Node 自己处理推理请求时，会多写一条 `model_usage_request_context`。用 requestId 对得上的，计为 Node 承接，其余计为 Go。
+- 口径校验：Go 确定停摆的几个小时（10-07 12Z、16Z、20Z，10-08 00Z），按这个口径统计出的 Node 占比都是 100%。说明这个口径没有把 Node 处理的请求算到 Go 头上。
 
 | 端点 | 25 小时（10-07 04:48Z 起） | 其中 Node | 修复后约 1 小时（10-08 04:45Z 起） | 其中 Node |
 |---|---|---|---|---|
@@ -168,7 +171,7 @@
 
 | # | 问题 | 证据 | 修法 |
 |---|---|---|---|
-| G1 | codex 的跨协议请求（chat、messages 客户端）带 `temperature`、`top_p`、`top_k` 或 `stop` 时，Go 返回 503 "Inference service is unavailable"；日志没有记录，也不交还 Node | 实测 gpt-6.1-sol、gpt-6-sol：去掉 `temperature` 返回 200，带上返回 503。代码在 `internal/adapters/codex/responses/request_encoder.go:110-127`，有单测覆盖拒收行为 | 跨协议入口改为静默丢弃，与现在处理 `max_tokens`、`user_id` 的策略一致，也和 Node 行为一致；同协议的 codex 客户端仍然拒绝。需要你确认，见 §6 D1 |
+| G1 | codex 的跨协议请求（chat、messages 客户端）带 `temperature`、`top_p`、`top_k` 或 `stop` 时，Go 不发往上游，也不交还 Node，日志里没有记录。流式请求返回 503 "Inference service is unavailable"（`openaichatcompletionsapi/handler.go:263-268` 把所有执行错误都映射为 503），非流式返回 400。这类拒收不会记为账号失败，所以不会让账号进入冷却（`coordinator.go:674-676`） | 实测 gpt-6.1-sol、gpt-6-sol：去掉 `temperature` 返回 200，带上返回 503。拒收逻辑在 `internal/adapters/codex/responses/request_encoder.go:110-127`，有单测覆盖 | 跨协议入口改为静默丢弃，与现在处理 `max_tokens`、`user_id` 的策略一致，也和 Node 行为一致；同协议的 codex 客户端仍然拒绝。需要你确认，见 §6 D1 |
 | G2 | Go 处理不了的请求返回 415 或 503，而不是交还 Node | 压缩的 `/v1/responses` 发往 claude 返回 415（实测）；chat 和 gemini 的编码拒收没有标记 | 凡是"Go 不支持这种请求形状"导致的失败，都打上 `X-AIH-Decode-Rejected`，由 Node 重放 |
 | G3 | 所有 HTTP 流有 10 分钟绝对上限 | `internal/host/aihserver/server.go:15`、`claudenativerelay/handler.go:43,289`、`codexresponseshttp/handler.go:111` | 改为空闲超时，持续没有数据才断开；总时长上限保留，但放宽 |
 | G4 | agy 的用量不入账 | `application/inferencegateway/attempt_stream.go:45-59` | 工作区里有其他会话未提交的修复，等它落地 |

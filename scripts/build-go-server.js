@@ -30,10 +30,14 @@ function buildGoServerPlan(options = {}) {
     throw new Error(`unsupported Go Core target: ${platform}-${arch}`);
   }
   const output = resolveGoServerBinary({ repositoryRoot: REPOSITORY_ROOT, platform, arch });
+  // 先编译到同目录临时文件再原子改名：正在运行的 Go Core 仍持有旧文件，
+  // 直接覆写可执行文件在 macOS 上会让运行中的进程被系统杀掉。
+  const temporaryOutput = `${output}.build-${process.pid}${platform === 'win32' ? '.exe' : ''}`;
   return {
     output,
+    temporaryOutput,
     target: `${platform}-${arch}`,
-    args: ['build', '-trimpath', '-o', output, './cmd/aih-server'],
+    args: ['build', '-trimpath', '-o', temporaryOutput, './cmd/aih-server'],
     env: { ...(options.baseEnv || process.env), GOOS: goos, GOARCH: goarch, CGO_ENABLED: '0' }
   };
 }
@@ -45,11 +49,12 @@ function main(argv = process.argv.slice(2)) {
   };
   const plan = buildGoServerPlan({ platform: readValue('--platform'), arch: readValue('--arch') });
   const result = spawnSync('go', plan.args, { cwd: REPOSITORY_ROOT, env: plan.env, stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[aih] go build failed to start: ${result.error.message}`);
-    return 1;
+  if (result.error || result.status !== 0) {
+    fs.rmSync(plan.temporaryOutput, { force: true });
+    if (result.error) console.error(`[aih] go build failed to start: ${result.error.message}`);
+    return result.error ? 1 : (result.status || 1);
   }
-  if (result.status !== 0) return result.status || 1;
+  fs.renameSync(plan.temporaryOutput, plan.output);
   const stamp = writeBuildStamp(fs, {
     binaryPath: plan.output,
     version: readPackageVersion(fs, REPOSITORY_ROOT),

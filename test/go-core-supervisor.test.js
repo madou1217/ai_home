@@ -330,3 +330,161 @@ test('Go Core delegates OAuth refresh to Node only when asked', () => {
   // 继承的环境值不能让未开启同步的 Go 误以为有人替它刷新。
   assert.equal('AIH_SERVER_CREDENTIAL_REFRESH' in buildGoCoreInvocation(base).env, false);
 });
+
+test('a start that misses the ready deadline is retried and the host is told when Go is back', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-start-retry-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const { children, spawn } = crashableChildFactory();
+  const timers = fakeTimers();
+  const restarted = [];
+  let serving = false;
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      verifyBuild: false,
+      binaryPath,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn,
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      sleep: () => new Promise((resolve) => setImmediate(resolve)),
+      onRestarted: (status) => restarted.push(status.state),
+      fetchImpl: async () => (serving
+        ? { ok: true, json: async () => ({ ok: true, service: 'aih-server' }) }
+        : { ok: false, json: async () => ({}) })
+    });
+
+    await assert.rejects(() => supervisor.start({ readyTimeoutMs: 20, stopTimeoutMs: 50 }),
+      (error) => error.code === 'go_core_not_ready');
+    assert.equal(supervisor.status().restartPending, true, 'a failed first start is retried, not abandoned');
+
+    serving = true;
+    assert.equal(await timers.fire(), 1000);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(supervisor.status().state, 'ready');
+    assert.equal(children.length, 2);
+    assert.deepEqual(restarted, ['ready']);
+
+    await supervisor.stop({ timeoutMs: 50 });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('a stale build keeps retrying and is picked up once the binary is rebuilt', async () => {
+  const { writeBuildStamp, computeRouteManifestHash, readPackageVersion } = require('../lib/cli/services/server/go-core-build-stamp');
+  const repositoryRoot = path.join(__dirname, '..');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-stale-retry-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'binary-old');
+  const { spawn } = crashableChildFactory();
+  const timers = fakeTimers();
+  const restarted = [];
+  const stamp = (routeManifestHash) => writeBuildStamp(fs, {
+    binaryPath,
+    version: readPackageVersion(fs, repositoryRoot),
+    routeManifestHash
+  });
+  try {
+    stamp('stale');
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      binaryPath,
+      repositoryRoot,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn,
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      onRestarted: (status) => restarted.push(status.state),
+      fetchImpl: async () => ({ ok: true, json: async () => ({ ok: true, service: 'aih-server' }) })
+    });
+
+    await assert.rejects(() => supervisor.start(), (error) => error.code === 'go_core_build_mismatch');
+    await timers.fire();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(supervisor.status().state, 'failed', 'still stale: no restart yet');
+    assert.equal(supervisor.status().restartPending, true);
+
+    stamp(computeRouteManifestHash(fs, repositoryRoot));
+    await timers.fire();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(supervisor.status().state, 'ready');
+    assert.deepEqual(restarted, ['ready']);
+
+    const logText = fs.readFileSync(path.join(tempDir, 'logs', 'go-core.log'), 'utf8');
+    assert.equal(logText.match(/Go Core start failed: go_core_build_mismatch/g).length, 1, 'repeated failures are logged once');
+    assert.match(logText, /npm run go:build/);
+    await supervisor.stop({ timeoutMs: 50 });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('stopping the supervisor cancels pending retries for good', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-stop-retry-'));
+  const timers = fakeTimers();
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      verifyBuild: false,
+      binaryPath: path.join(tempDir, 'missing-aih-server'),
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn: () => { throw new Error('must not spawn a missing binary'); },
+      setTimeout: timers.setTimeout,
+      clearTimeout: timers.clearTimeout,
+      fetchImpl: async () => ({ ok: false, json: async () => ({}) })
+    });
+
+    await assert.rejects(() => supervisor.start(), (error) => error.code === 'go_core_binary_missing');
+    assert.equal(timers.pending.length, 1);
+    await supervisor.stop({ timeoutMs: 50 });
+    assert.equal(timers.pending.length, 0, 'shutdown cancels the pending retry');
+    assert.equal(supervisor.status().restartPending, false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('the build stamp follows the Node-Go routing contract, not manifest bookkeeping', () => {
+  const { computeRouteManifestHash } = require('../lib/cli/services/server/go-core-build-stamp');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-contract-'));
+  const manifestPath = path.join(root, 'contracts', 'route-ownership', 'manifest.json');
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  const write = (manifest) => fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  const base = {
+    route_baseline: { node: { endpoint_records: 324 } },
+    entries: [
+      { id: 'gateway.openai.responses', node_routes: [{ path: '/v1/responses', methods: ['POST'] }], go_routes: [{ path: '/v1/responses' }], blockers: ['a'] },
+      { id: 'gateway.anthropic.messages', node_routes: [{ path: '/v1/messages', methods: ['POST'] }], go_routes: [{ path: '/v1/messages' }] }
+    ]
+  };
+  try {
+    write(base);
+    const original = computeRouteManifestHash(fs, root);
+
+    write({ ...base, route_baseline: { node: { endpoint_records: 320 } }, evidence: ['new'],
+      entries: [{ ...base.entries[1], migration_state: 'go_owned' }, { ...base.entries[0], blockers: [] }] });
+    assert.equal(computeRouteManifestHash(fs, root), original, 'counts, states, evidence and order do not invalidate the binary');
+
+    write({ ...base, entries: [base.entries[0], { ...base.entries[1], node_routes: [{ path: '/v1/messages/count_tokens' }] }] });
+    assert.notEqual(computeRouteManifestHash(fs, root), original, 'a routing change does');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

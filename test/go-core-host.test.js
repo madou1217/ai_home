@@ -39,6 +39,7 @@ function fakeSupervisorFactory(behaviour = {}) {
     };
   };
   factory.lastStatus = () => ({ state, endpoint: 'http://127.0.0.1:19550', pid: 77 });
+  factory.forceReady = async () => { state = 'ready'; };
   return { factory, calls };
 }
 
@@ -209,4 +210,34 @@ test('credential refresh delegation can be forced on without account sync', () =
     log: silentLog
   });
   assert.equal(calls.options.delegateCredentialRefresh, true);
+});
+
+test('a Go Core that comes back after a failed start resumes forwarding', async () => {
+  const fetched = [];
+  const fetchImpl = async (url) => {
+    fetched.push(url);
+    if (url.endsWith('/v1/models')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-5.5', owned_by: 'codex' }] }) };
+    return { ok: true, status: 200, json: async () => ({ ready: true }) };
+  };
+  const { factory, calls } = fakeSupervisorFactory({ failStart: true });
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, { AIH_GO_CORE_ACCOUNT_SYNC: '0' }),
+    createGoCoreSupervisor: factory,
+    fetchImpl,
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal(fetched.some((url) => url.endsWith('/v1/models')), false, 'nothing to refresh while Go is down');
+  assert.equal(typeof calls.options.onRestarted, 'function', 'the supervisor reports restarts back to the host');
+
+  // 监督器按退避重试成功后回调宿主：宿主必须重做首启后的步骤，转发才恢复。
+  await factory.forceReady();
+  calls.options.onRestarted(factory.lastStatus());
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(fetched.some((url) => url.endsWith('/v1/models')), true, 'routable models are refreshed after the restart');
+  const readiness = await host.readiness();
+  assert.equal(readiness.forwarding, true);
+  assert.equal(readiness.ready, true);
 });

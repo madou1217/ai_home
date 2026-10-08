@@ -250,6 +250,25 @@ test('failure policy keeps OpenCode RegionError model-scoped instead of marking 
   assert.notEqual(policy.failureReason, 'auth_invalid_reauth_required');
 });
 
+test('failure policy treats OpenCode Go subscription refusal as model entitlement', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 403,
+    body: JSON.stringify({
+      error: {
+        type: 'server_error',
+        message: 'Upstream request failed: An active OpenCode Go subscription is required to use Go models.'
+      }
+    }),
+    detail: 'HTTP 403 server_error',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'model_entitlement_required');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.failureReason, 'model_requires_subscription');
+  assert.equal(policy.cooldownMs, 24 * 60 * 60 * 1000);
+});
+
 test('failure policy treats selected model capacity 400 as model-scoped retry', () => {
   const policy = classifyUpstreamFailure({
     provider: 'claude',

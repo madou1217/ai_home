@@ -10,6 +10,14 @@ test('extractRequestSessionKey prefers explicit session headers', () => {
   assert.equal(key, 'session-abc');
 });
 
+test('extractRequestSessionKey recognizes the OpenCode session header', () => {
+  const key = extractRequestSessionKey(
+    { 'x-opencode-session': 'opencode-session-abc', 'x-session-id': 'session-abc' },
+    { session_id: 'body-session' }
+  );
+  assert.equal(key, 'opencode-session-abc');
+});
+
 test('extractRequestSessionKey falls back to previous_response_id', () => {
   const key = extractRequestSessionKey({}, { previous_response_id: 'resp_123' });
   assert.equal(key, 'resp_123');

@@ -196,6 +196,32 @@ test('fetchOpenCodeChatCompletion posts OpenAI chat to the official OpenCode Go 
   assert.equal(result.choices[0].message.content, 'done');
 });
 
+test('fetchOpenCodeChatCompletion sends the session metadata as the OpenCode session header', async () => {
+  const calls = [];
+  await fetchOpenCodeChatCompletion({
+    opencodeGoBaseUrl: 'https://opencode.test/zen/go/v1',
+    opencodeGoApiKey: 'sk-test',
+    opencodeSessionId: 'ses_header_only'
+  }, {
+    provider: 'opencode'
+  }, {
+    model: 'opencode-go/glm-5.2',
+    messages: [{ role: 'user', content: 'hi' }]
+  }, 500, {
+    fetchWithTimeout: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return jsonResponse({
+        id: 'chatcmpl-session-header',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }]
+      });
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.headers['x-opencode-session'], 'ses_header_only');
+  assert.equal(Object.prototype.hasOwnProperty.call(JSON.parse(calls[0].init.body), 'session_id'), false);
+});
+
 test('fetchOpenCodeChatCompletion only trusts request session_id', async () => {
   const withSession = await fetchOpenCodeChatCompletion({
     opencodeGoBaseUrl: 'https://opencode.test/zen/go/v1',

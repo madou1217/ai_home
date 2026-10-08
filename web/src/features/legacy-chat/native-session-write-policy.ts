@@ -12,6 +12,7 @@ const NATIVE_SESSION_WRITABLE_PROVIDERS: ReadonlySet<string> = new Set([
   'agy',
   'opencode',
   'grok',
+  'zcode',
   'qoder',
   'qodercn',
   'codebuddy',
@@ -24,7 +25,7 @@ const NATIVE_SESSION_WRITABLE_PROVIDERS: ReadonlySet<string> = new Set([
  * 判定一个已有原生会话能否从 WebUI 续写。返回 null 表示可写；
  * 返回字符串为禁用原因（直接展示给用户）。
  *
- * 背景：不在可续写集合里的 provider（如 zcode/kimi/kiro），其会话在 WebUI
+ * 背景：不在可续写集合里的 provider（如 kimi/kiro），其会话在 WebUI
  * 里只是只读历史视图。此时输入框发的消息会落到无状态推理端点——OAuth 账号
  * 直接报错，密钥账号会得到一轮「刷新即消失」的幽灵回复（不会被写回原生
  * 会话库）。因此禁用输入框并给出明确原因，而不是让用户误以为续聊成功。

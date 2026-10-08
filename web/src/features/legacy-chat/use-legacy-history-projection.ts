@@ -110,6 +110,8 @@ export function useLegacyHistoryProjection({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const historyStateRef = useRef<LegacySessionHistoryState | null>(null);
+  const historyTargetRef = useRef(selectedSession);
+  const onHistoryHydratedRef = useRef(onHistoryHydrated);
   const selectionRevisionRef = useRef(0);
   const reloadTimersRef = useRef<Map<string, number>>(new Map());
   const reloadSessionHistoryRef = useRef<(session: Session) => Promise<void>>(async () => {});
@@ -416,17 +418,25 @@ export function useLegacyHistoryProjection({
   const selectedSessionKey = legacySessionEffectKey(selectedSession);
 
   useLayoutEffect(() => {
+    historyTargetRef.current = selectedSession;
+    onHistoryHydratedRef.current = onHistoryHydrated;
+  }, [selectedSession, onHistoryHydrated]);
+
+  useLayoutEffect(() => {
     selectionRevisionRef.current += 1;
   }, [
     selectedSession?.provider,
     selectedSession?.id,
     selectedSession?.projectDirName,
+    selectedSession?.accountRef,
     selectedSession?.draft,
   ]);
 
   useEffect(() => {
-    const session = selectedSessionRef.current;
-    if (!session || legacySessionEffectKey(session) !== selectedSessionKey) return;
+    // 本 hook 在 layout 阶段保存加载目标，不依赖父级共享 ref 的同步顺序。
+    // 列表刷新只更新元数据和回调；只有会话身份变化才重新加载历史。
+    const session = historyTargetRef.current;
+    if (!session) return;
     if (!enabled) {
       clearVisibleHistory();
       return;
@@ -451,7 +461,7 @@ export function useLegacyHistoryProjection({
       }
       try {
         await reloadSessionHistory(session);
-        if (!disposed) onHistoryHydrated(session);
+        if (!disposed) onHistoryHydratedRef.current(session);
       } catch (error) {
         if (!disposed && !isSessionRequestCancelled(error)) {
           // 离线回退：内存没有该会话的旧数据时，读磁盘缓存只读展示并标注来源。
@@ -485,10 +495,10 @@ export function useLegacyHistoryProjection({
     clearVisibleHistory,
     enabled,
     historyState,
-    onHistoryHydrated,
     reloadSessionHistory,
     selectedSessionKey,
-    selectedSessionRef,
+    selectedSession?.accountRef,
+    selectedSession?.projectPath,
   ]);
 
   useEffect(() => () => {

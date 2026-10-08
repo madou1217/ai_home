@@ -77,7 +77,6 @@ export type AccountDisplayStateKind =
   | 'reauth_required'
   | 'exhausted'
   | 'policy_blocked'
-  | 'usage_attention'
   | 'runtime_blocked'
   | 'disabled'
   | 'unconfigured';
@@ -116,6 +115,8 @@ const ENTRY_WINDOW_SNAPSHOT_KINDS = new Set([
   'codex_oauth_status',
   'claude_oauth_usage',
   'kimi_oauth_usage',
+  'grok_credit_usage',
+  'kiro_credit_usage',
   'zcode_plan_balance',
   'codebuddy_credit_balance'
 ]);
@@ -130,10 +131,12 @@ export function getUsageSnapshotRemainingPct(record: Pick<Account, 'usageSnapsho
       // category='gift'（kimi 赠送额度）与 'detail'（CodeBuddy 每包明细）是旁路信息，不能拖低账号级 min 剩余，
       // 否则赠送包用尽会把健康账号误显示成「已耗尽」；与服务端口径一致。
       .filter((entry) => entry.category !== 'gift' && entry.category !== 'detail')
+      .filter((entry) => entry.remainingPct != null)
       .map((entry) => Number(entry.remainingPct))
       .filter((value) => Number.isFinite(value));
   } else if (MODEL_LIST_SNAPSHOT_KINDS.has(snapshot.kind) && 'models' in snapshot) {
     values = (snapshot.models || [])
+      .filter((model) => model.remainingPct != null)
       .map((model) => Number(model.remainingPct))
       .filter((value) => Number.isFinite(value));
   }
@@ -144,6 +147,8 @@ export function getUsageSnapshotRemainingPct(record: Pick<Account, 'usageSnapsho
 export function getEffectiveRemainingPct(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
   const snapshotRemaining = getUsageSnapshotRemainingPct(record);
   if (snapshotRemaining != null) return snapshotRemaining;
+  if (record.usageSnapshot && (ENTRY_WINDOW_SNAPSHOT_KINDS.has(record.usageSnapshot.kind)
+    || MODEL_LIST_SNAPSHOT_KINDS.has(record.usageSnapshot.kind))) return null;
   if (record.remainingPct == null) return null;
   const numeric = Number(record.remainingPct);
   if (!Number.isFinite(numeric)) return null;
@@ -164,12 +169,6 @@ export function formatSchedulableReason(reason?: string) {
   if (text === 'codex_free_plan_below_server_min_remaining') {
     return 'Free 账号剩余额度已低于当前账号切换阈值（按配置计算），已从 aih server 账号池排除，避免接近上限时继续使用导致会话中断。';
   }
-  if (text === 'codex_free_plan_missing_rate_limits') {
-    return '当前账号已被判定为 Free，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
-  if (text === 'codex_team_plan_missing_rate_limits') {
-    return '当前账号 token claim 仍是 Team，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
   if (text === 'agy_access_token_required') {
     return 'Antigravity OAuth token 在系统 keyring 中，aih server 不能安全读取；需要在账号环境中显式配置 AGY_ACCESS_TOKEN 后才会进入聊天/转发池。';
   }
@@ -189,14 +188,8 @@ export function getAccountDisplayState(record: Pick<Account,
   if (!record.apiKeyMode && effectiveRemainingPct != null && effectiveRemainingPct <= 0) return 'exhausted';
   if (String(record.quotaStatus || '').trim() === 'exhausted') return 'exhausted';
   if (String(record.schedulableStatus || '').trim() === 'blocked_by_policy') return 'policy_blocked';
-  if (
-    String(record.quotaStatus || '').trim()
-    && !['available', 'not_applicable', 'exhausted'].includes(String(record.quotaStatus || '').trim())
-  ) {
-    return 'usage_attention';
-  }
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return 'healthy';
-  if (!record.apiKeyMode && !hasKnownUsage(record)) return 'usage_attention';
+  // 只有已确认耗尽才影响调度；额度缺失、采集超时与解析失败在额度组件中独立展示。
+  // 增量记录暂未带 schedulableStatus 时，也不能把遥测缺失推断成账号异常。
   return 'healthy';
 }
 

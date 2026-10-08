@@ -109,6 +109,18 @@ export type AccountUsageSnapshot =
       entries: CodexUsageEntry[];
     }
   | {
+      kind: 'grok_credit_usage';
+      capturedAt: number;
+      account?: { email: string; planType: string; planName: string } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
+      kind: 'kiro_credit_usage';
+      capturedAt: number;
+      account?: { email: string; planType: string; planName: string } | null;
+      entries: CodexUsageEntry[];
+    }
+  | {
       kind: 'zcode_plan_balance';
       capturedAt: number;
       account?: {

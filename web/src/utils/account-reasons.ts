@@ -1,3 +1,6 @@
+const CODEX_FREE_QUOTA_PENDING_MESSAGE = '当前 Free 账号未返回可计算的额度窗口，剩余额度未知。';
+const CODEX_TEAM_QUOTA_PENDING_MESSAGE = '当前 Team 账号未返回可计算的额度窗口，剩余额度未知。';
+
 const KNOWN_REASON_MESSAGES: Record<string, string> = {
   zcode_oauth_management_only: '当前 AIH 的 ZCode OAuth 接入用于账号管理、桌面启动和用量查询；网关推理需使用 Coding Plan API Key 账号。',
   // Go Core 承接流量时记录的账号级硬阻塞（lib/server/go-runtime-overlay.js），外部真相源更新后自动解除。
@@ -7,9 +10,11 @@ const KNOWN_REASON_MESSAGES: Record<string, string> = {
   go_runtime_account_deactivated: '上游报告账号 / 工作区已停用，账号状态恢复后自动解除。',
   go_runtime_policy_blocked: '上游策略拒绝该账号（地区 / 权限），策略更新后自动解除。',
   auth_metadata_only: '当前只有账号元信息，尚未采到真实额度快照。请刷新用量后再判断是否真的耗尽。',
-  codex_free_plan_missing_rate_limits: '当前账号的 token claim 已经是 free，但 Codex 没返回任何可计算的额度窗口。这更像账号已降级到 free，或 free 额度已经耗尽；建议直接重新登录确认。',
-  codex_team_plan_missing_rate_limits: '当前账号的 token claim 仍是 team，但 Codex 没返回任何可计算的额度窗口。这更像 team entitlement、workspace，或套餐状态异常；建议重新登录确认。',
-  provider_returned_no_numeric_usage: '已拿到 usage 快照，但上游没有返回可计算的 remaining 数值。',
+  codex_free_plan_missing_rate_limits: CODEX_FREE_QUOTA_PENDING_MESSAGE,
+  codex_team_plan_missing_rate_limits: CODEX_TEAM_QUOTA_PENDING_MESSAGE,
+  codex_free_plan_pending_rate_limits: CODEX_FREE_QUOTA_PENDING_MESSAGE,
+  codex_team_plan_pending_rate_limits: CODEX_TEAM_QUOTA_PENDING_MESSAGE,
+  provider_returned_no_numeric_usage: '额度已查询，当前响应缺少可计算的剩余额度。',
   timeout: '额度查询超时。',
   probe_exception: '额度查询过程中发生异常。',
   probe_failed: '额度查询失败。',

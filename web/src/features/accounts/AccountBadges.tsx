@@ -125,7 +125,7 @@ export function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReaso
 
 export function getQuotaStateMeta(record: Pick<Account, 'quotaStatus' | 'quotaReason'>): AccountBadgeMeta | null {
   const status = String(record.quotaStatus || '').trim();
-  if (!status) return null;
+  if (!status || ['available', 'not_applicable', 'exhausted'].includes(status)) return null;
   const rawReason = String(record.quotaReason || '').trim();
   return (
     status === 'probe_failed' ? { status: 'error', label: '采集失败' }
@@ -134,6 +134,8 @@ export function getQuotaStateMeta(record: Pick<Account, 'quotaStatus' | 'quotaRe
         : status === 'provider_unavailable' && rawReason === 'codex_free_plan_missing_rate_limits'
           ? { status: 'warning', label: 'Free 待确认' }
         : status === 'provider_unavailable' ? { status: 'warning', label: '上游未返回' }
+        : status === 'pending' && rawReason === 'provider_returned_no_numeric_usage'
+          ? { status: 'default', label: '额度未知' }
         : status === 'pending' ? { status: 'processing', label: '等待采集' }
           : { status: 'default', label: '额度未知' }
   );
@@ -166,7 +168,6 @@ export function getAccountDisplayBadgeMeta(record: Account): AccountBadgeMeta {
   if (state === 'unconfigured') return { status: 'default', label: '未配置' };
   if (state === 'runtime_blocked') return getRuntimeStatusMeta(record);
   if (state === 'policy_blocked') return getPolicyBlockedMeta(record) || { status: 'warning', label: '已停池' };
-  if (state === 'usage_attention') return getQuotaStateMeta(record) || { status: 'warning', label: '额度待确认' };
   if (state === 'exhausted') return { status: 'error', label: '已耗尽' };
   if (getRuntimeModelLines(record).length > 0) return { status: 'warning', label: '部分模型受限' };
   if (record.apiKeyMode) return { status: 'success', label: '可调度' };
@@ -175,7 +176,7 @@ export function getAccountDisplayBadgeMeta(record: Account): AccountBadgeMeta {
 
 /**
  * 综合状态的补充说明（桌面在徽章 Tooltip 里展示的同一批原因文本），按行返回。
- * 只读取账号记录上的真实字段：运行时原因 / 恢复时间、停池原因、额度原因。
+ * 只读取调度相关的真实字段：运行时原因 / 恢复时间、停池原因；额度采集单独展示。
  */
 export function getAccountStatusDetailLines(record: Account): string[] {
   const lines: string[] = [];
@@ -187,9 +188,6 @@ export function getAccountStatusDetailLines(record: Account): string[] {
     if (until) lines.push(`恢复时间: ${formatRuntimeUntil(until)}`);
   } else if (state === 'policy_blocked') {
     const reason = formatSchedulableReason(record.schedulableReason);
-    if (reason) lines.push(reason);
-  } else if (state === 'usage_attention') {
-    const reason = formatQuotaReason(record.quotaReason);
     if (reason) lines.push(reason);
   } else if (state === 'healthy' && getRuntimeModelLines(record).length > 0) {
     lines.push(...getRuntimeModelLines(record));
@@ -210,9 +208,6 @@ export function renderAccountDisplayBadge(record: Account) {
   }
   if (state === 'policy_blocked') {
     return renderPolicyBlockedBadge(record) || <Badge status="warning" text="已停池" />;
-  }
-  if (state === 'usage_attention') {
-    return renderQuotaStateBadge(record) || <Badge status="warning" text="额度待确认" />;
   }
   if (state === 'exhausted') {
     return (

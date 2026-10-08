@@ -23,15 +23,15 @@ test('draft and empty-provider sessions stay writable', () => {
 
 test('backend OFFICIAL_NATIVE_SESSION_PROVIDERS members stay writable', () => {
   for (const provider of [
-    'codex', 'claude', 'gemini', 'agy', 'opencode', 'grok',
+    'codex', 'claude', 'gemini', 'agy', 'opencode', 'grok', 'zcode',
     'qoder', 'qodercn', 'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn'
   ]) {
     assert.equal(resolveNativeSessionWriteBlock(nativeSession(provider)), null, provider);
   }
 });
 
-test('zcode and other non-writable native sessions are blocked with dedicated copy', () => {
-  for (const provider of ['zcode', 'kimi', 'kiro']) {
+test('non-writable native sessions are blocked with dedicated copy', () => {
+  for (const provider of ['kimi', 'kiro']) {
     const block = resolveNativeSessionWriteBlock(nativeSession(provider));
     assert.ok(block && block.length > 0, provider);
     assert.match(block as string, /原生客户端/);

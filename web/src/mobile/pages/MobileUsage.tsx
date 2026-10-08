@@ -76,7 +76,8 @@ export default function MobileUsage(_props: MobilePageProps) {
     modelSelectOptions,
     totalCacheTokens,
     overallCacheHitRate,
-    scanActive
+    scanActive,
+    canScan
   } = usage;
 
   const copySessionId = async (sessionId: string) => {
@@ -129,7 +130,8 @@ export default function MobileUsage(_props: MobilePageProps) {
       )}
     >
       <HudIconButton icon={<ReloadOutlined />} label="刷新" onClick={usage.handleRefreshUsage} loading={loading} />
-      <HudIconButton icon={<SyncOutlined />} label="扫描" tone="primary" onClick={() => void usage.handleScan()} loading={scanActive} />
+      <HudIconButton icon={<SyncOutlined />} label={canScan ? '扫描' : '用量随请求自动记录，点击刷新查看'}
+        tone="primary" onClick={() => void usage.handleScan()} disabled={!canScan} loading={scanActive} />
     </MobileToolbar>
   );
 
@@ -240,8 +242,10 @@ export default function MobileUsage(_props: MobilePageProps) {
             <div className={styles.listLoading}><Spin /></div>
           ) : listRows.length === 0 ? (
             <EmptySignal
-              description="当前范围内暂无用量记录，可执行扫描同步本地用量。"
-              action={<Button icon={<SyncOutlined />} loading={scanActive} onClick={() => void usage.handleScan()}>扫描</Button>}
+              description={canScan ? '当前范围内暂无用量记录，可执行扫描同步本地用量。' : '当前范围内暂无用量记录，用量随请求自动记录。'}
+              action={canScan
+                ? <Button icon={<SyncOutlined />} loading={scanActive} onClick={() => void usage.handleScan()}>扫描</Button>
+                : <Button icon={<ReloadOutlined />} onClick={usage.handleRefreshUsage}>刷新</Button>}
             />
           ) : view === 'model' ? (
             <MonoList ariaLabel="按模型用量">

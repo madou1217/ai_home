@@ -201,22 +201,42 @@ test('getAccountDisplayState maps each blocking condition to its kind', () => {
     getAccountDisplayState(makeAccount({ schedulableStatus: 'blocked_by_policy' })),
     'policy_blocked'
   );
-  assert.equal(getAccountDisplayState(makeAccount({ quotaStatus: 'probe_failed' })), 'usage_attention');
+  assert.equal(getAccountDisplayState(makeAccount({ quotaStatus: 'probe_failed' })), 'healthy');
 });
 
-test('getAccountDisplayState treats unknown quota for oauth without usage as attention', () => {
+test('quota telemetry never determines scheduling when the routing field has not arrived yet', () => {
   assert.equal(getAccountDisplayState(makeAccount({ quotaStatus: 'not_applicable' })), 'healthy');
   assert.equal(
     getAccountDisplayState(makeAccount({ quotaStatus: 'available', remainingPct: 50 })),
     'healthy'
   );
-  // OAuth 账号完全没有用量信息 → 需要关注
-  assert.equal(getAccountDisplayState(makeAccount({ remainingPct: null })), 'usage_attention');
+  for (const quotaStatus of ['pending', 'unknown', 'probe_failed', 'provider_unavailable', undefined]) {
+    assert.equal(getAccountDisplayState(makeAccount({ remainingPct: null, quotaStatus })), 'healthy', quotaStatus);
+  }
   // API Key 账号不需要用量信息
   assert.equal(
     getAccountDisplayState(makeAccount({ apiKeyMode: true, remainingPct: null })),
     'healthy'
   );
+});
+
+test('schedulable accounts stay healthy when quota telemetry is unknown or its probe fails', () => {
+  for (const quotaStatus of ['pending', 'unknown', 'probe_failed', 'provider_unavailable']) {
+    const account = makeAccount({ provider: 'grok', schedulableStatus: 'schedulable', quotaStatus });
+    assert.equal(getAccountDisplayState(account), 'healthy', quotaStatus);
+    assert.equal(countHealthyAccounts([account]).healthy, 1, quotaStatus);
+  }
+});
+
+test('schedulable metadata cannot override disabled, invalid, exhausted or policy-blocked accounts', () => {
+  const account = makeAccount({ provider: 'grok', schedulableStatus: 'schedulable', quotaStatus: 'pending' });
+  assert.equal(getAccountDisplayState({ ...account, status: 'down' }), 'disabled');
+  assert.equal(getAccountDisplayState({ ...account, configured: false }), 'unconfigured');
+  assert.equal(getAccountDisplayState({ ...account, runtimeStatus: 'auth_invalid' }), 'reauth_required');
+  assert.equal(getAccountDisplayState({ ...account, runtimeStatus: 'rate_limited' }), 'runtime_blocked');
+  assert.equal(getAccountDisplayState({ ...account, remainingPct: 0 }), 'exhausted');
+  assert.equal(getAccountDisplayState({ ...account, quotaStatus: 'exhausted' }), 'exhausted');
+  assert.equal(getAccountDisplayState({ ...account, schedulableStatus: 'blocked_by_policy' }), 'policy_blocked');
 });
 
 test('usage refresh gate: configured oauth accounts only, not_applicable excluded', () => {
@@ -318,8 +338,16 @@ test('hasKnownUsage and getUsageSortValue follow effective remaining pct', () =>
 
 test('formatSchedulableReason maps known codes to human copy and falls back', () => {
   assert.match(formatSchedulableReason('codex_free_plan_below_server_min_remaining'), /Free 账号剩余额度/);
-  assert.match(formatSchedulableReason('codex_free_plan_missing_rate_limits'), /Free/);
-  assert.match(formatSchedulableReason('codex_team_plan_missing_rate_limits'), /Team/);
+  for (const plan of ['free', 'team']) {
+    for (const kind of ['missing', 'pending']) {
+      const reason = `codex_${plan}_plan_${kind}_rate_limits`;
+      const text = formatSchedulableReason(reason);
+      assert.match(text, /额度窗口/);
+      assert.match(text, /额度未知/);
+      assert.doesNotMatch(text, /重新登录|耗尽|降级|异常|账号池/);
+      assert.equal(formatQuotaReason(reason), text);
+    }
+  }
   assert.match(formatSchedulableReason('agy_access_token_required'), /AGY_ACCESS_TOKEN/);
   assert.match(formatSchedulableReason('zcode_oauth_management_only'), /当前 AIH.*Coding Plan API Key/);
   assert.equal(formatSchedulableReason(''), '');
@@ -537,6 +565,12 @@ test('countHealthyAccounts counts only healthy accounts over the full persisted 
   assert.deepEqual(countHealthyAccounts(accounts), { total: 5, healthy: 1 });
 });
 
+test('quota collection failures do not reduce the healthy account count', () => {
+  const accounts = ['pending', 'probe_failed', 'provider_unavailable'].map((quotaStatus) =>
+    makeAccount({ quotaStatus, remainingPct: null }));
+  assert.deepEqual(countHealthyAccounts(accounts), { total: 3, healthy: 3 });
+});
+
 test('countHealthyAccounts matches getAccountDisplayState semantics for api-key accounts', () => {
   const accounts = [
     makeAccount({ accountRef: 'acct_key', apiKeyMode: true, remainingPct: null }),
@@ -560,4 +594,28 @@ test('getUsageSnapshotRemainingPct 按快照 kind 计算：覆盖 zcode、CodeBu
   assert.equal(getUsageSnapshotRemainingPct({
     usageSnapshot: { kind: 'kimi_oauth_usage', capturedAt: 1, entries: [entry(80), entry(0, 'gift')] }
   } as never), 80);
+});
+
+test('Kiro quota is calculated from its own official credit snapshot', () => {
+  assert.equal(getUsageSnapshotRemainingPct({ usageSnapshot: {
+    kind: 'kiro_credit_usage', capturedAt: 1000, entries: [{
+      bucket: 'credits', remainingPct: 99.74, resetAtMs: 0, resetIn: '', window: '', windowMinutes: 0
+    }]
+  } }), 99.74);
+});
+
+test('Grok snapshots keep an unknown upstream percentage unknown', () => {
+  const account = makeAccount({
+    provider: 'grok',
+    remainingPct: 42,
+    usageSnapshot: {
+      kind: 'grok_credit_usage',
+      capturedAt: 1,
+      entries: [{ bucket: 'credits', windowMinutes: 10080, window: '7days', remainingPct: null, resetIn: '', resetAtMs: 2 }]
+    }
+  });
+
+  assert.equal(getUsageSnapshotRemainingPct(account), null);
+  assert.equal(getEffectiveRemainingPct(account), null);
+  assert.equal(hasKnownUsage(account), false);
 });

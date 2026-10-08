@@ -7,6 +7,7 @@ import type {
 } from '@/types';
 import Button from '@/components/ui/AppButton';
 import BurningParticles from '@/features/accounts/BurningParticles';
+import { getQuotaStateMeta, renderQuotaStateBadge } from '@/features/accounts/AccountBadges';
 import {
   buildCodebuddyCreditRows,
   buildUsageUnitsTooltipLines,
@@ -27,6 +28,16 @@ interface UsageRecordLike {
   remainingPct?: number | null;
   usageSnapshot?: AccountUsageSnapshot | null;
   usageRefreshing?: boolean;
+  quotaStatus?: string;
+  quotaReason?: string;
+}
+
+interface UsageSnapshotCellProps {
+  record: UsageRecordLike;
+  hideModels?: boolean;
+  running?: boolean;
+  activityRate?: number;
+  activeModels?: string[];
 }
 
 function formatUsagePercent(value: number | null) {
@@ -208,7 +219,8 @@ function UsageMetaLine({
   running,
   activityRate,
   effectKey,
-  progressTooltip
+  progressTooltip,
+  unknownLabel
 }: {
   label: string;
   value: number | null;
@@ -218,6 +230,7 @@ function UsageMetaLine({
   activityRate: number;
   effectKey: string;
   progressTooltip?: React.ReactNode;
+  unknownLabel?: string;
 }) {
   const resetInLabel = formatResetIn(resetIn, resetAtMs);
   const resetLabel = formatResetAt(resetAtMs);
@@ -232,13 +245,13 @@ function UsageMetaLine({
           </span>
         ) : null}
       </div>
-      <UsageProgressBar
+      {value == null ? <span className="usage-empty-state">{unknownLabel || '额度未知'}</span> : <UsageProgressBar
         value={value}
         running={running}
         activityRate={activityRate}
         effectKey={effectKey}
         tooltip={progressTooltip}
-      />
+      />}
       {resetLabel ? (
         <div className="usage-meta-line-reset-at">
           {resetLabel}
@@ -310,14 +323,16 @@ interface UsageRendererProps {
 
 function EntryWindowUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
   // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'codex_oauth_status' | 'claude_oauth_usage' | 'kimi_oauth_usage'>;
+  const snapshot = rawSnapshot as SnapshotOf<'codex_oauth_status' | 'claude_oauth_usage' | 'kimi_oauth_usage' | 'grok_credit_usage'>;
   const [expanded, setExpanded] = useState(false);
   const isKimiSnapshot = snapshot.kind === 'kimi_oauth_usage';
+  const isGrokSnapshot = snapshot.kind === 'grok_credit_usage';
   const entries = (isKimiSnapshot ? orderKimiEntries : orderCodexEntries)(
     // The upstream snapshot is the source of truth: any window with a
     // numeric remaining value is renderable, including provider-specific
     // windows such as Codex Free's 30-day quota.
-    (snapshot.entries || []).filter((entry) => typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
+    (snapshot.entries || []).filter((entry) => (typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
+      || (isGrokSnapshot && (entry.windowMinutes > 0 || entry.resetAtMs > 0)))
   );
   if (entries.length === 0) {
     return record.usageRefreshing ? (
@@ -338,6 +353,7 @@ function EntryWindowUsage({ record, snapshot: rawSnapshot, hideModels, running, 
               ? formatKimiEntryLabel(entry)
               : (formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage')}
             value={entry.remainingPct}
+            unknownLabel={getQuotaStateMeta(record) ? '—' : '额度未知'}
             resetIn={entry.resetIn}
             resetAtMs={entry.resetAtMs}
             running={running}
@@ -371,9 +387,9 @@ function EntryWindowUsage({ record, snapshot: rawSnapshot, hideModels, running, 
 // （activity / proTrialMon / freeMon …）。两者都渲染——聚合行给总量，明细行给每个额度包
 // 的剩余；hover 展示「总/剩余/已用」（unitType=credits）。
 // 放在通用兜底分支之前，否则就只剩一条账号级进度条，明细永远看不到。
-function CodebuddyCreditUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
+function CreditBalanceUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
   // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'codebuddy_credit_balance'>;
+  const snapshot = rawSnapshot as SnapshotOf<'codebuddy_credit_balance' | 'kiro_credit_usage'>;
   const [expanded, setExpanded] = useState(false);
   const rows = buildCodebuddyCreditRows(snapshot.entries);
   if (rows.length === 0) {
@@ -394,7 +410,7 @@ function CodebuddyCreditUsage({ record, snapshot: rawSnapshot, hideModels, runni
           return (
             <UsageMetaLine
               key={row.key}
-              label={row.label}
+              label={snapshot.kind === 'kiro_credit_usage' && unitsLines ? unitsLines.title.replace(/^总 /, '') : row.label}
               value={row.value}
               resetIn={rawEntry.resetIn}
               resetAtMs={rawEntry.resetAtMs}
@@ -609,25 +625,21 @@ const USAGE_SNAPSHOT_RENDERERS: Partial<Record<UsageSnapshotKind, (props: UsageR
   codex_oauth_status: EntryWindowUsage,
   claude_oauth_usage: EntryWindowUsage,
   kimi_oauth_usage: EntryWindowUsage,
-  codebuddy_credit_balance: CodebuddyCreditUsage,
+  grok_credit_usage: EntryWindowUsage,
+  kiro_credit_usage: CreditBalanceUsage,
+  codebuddy_credit_balance: CreditBalanceUsage,
   zcode_plan_balance: ZcodePlanUsage,
   agy_code_assist_quota: AgyQuotaUsage,
   gemini_oauth_stats: GeminiModelUsage
 };
 
-export default function UsageSnapshotCell({
+function UsageSnapshotBody({
   record,
   hideModels = false,
   running = false,
   activityRate = 0,
   activeModels
-}: {
-  record: UsageRecordLike;
-  hideModels?: boolean;
-  running?: boolean;
-  activityRate?: number;
-  activeModels?: string[];
-}) {
+}: UsageSnapshotCellProps) {
   const effectKeyPrefix = `${String(record.provider || 'provider')}:${String(record.accountRef || 'account')}`;
 
   if (!record.configured) return <>-</>;
@@ -682,6 +694,19 @@ export default function UsageSnapshotCell({
           <span>刷新中</span>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
+  const { record } = props;
+  const hasCollectionNotice = record.configured && !record.apiKeyMode && getQuotaStateMeta(record);
+  if (!hasCollectionNotice) return <UsageSnapshotBody {...props} />;
+  return (
+    <div className="usage-meta-list" data-quota-status={record.quotaStatus}>
+      {renderQuotaStateBadge(record)}
+      {record.usageSnapshot || record.remainingPct != null || record.usageRefreshing
+        ? <UsageSnapshotBody {...props} /> : null}
     </div>
   );
 }

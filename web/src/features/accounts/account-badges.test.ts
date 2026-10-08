@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { Account } from '@/types';
 import {
   getAccountRegionMeta,
+  getQuotaStateMeta,
   getPlanTagColor,
   getPlanTagLabel
 } from './AccountBadges.tsx';
@@ -78,7 +79,24 @@ test('getAccountDisplayBadgeMeta mirrors renderAccountDisplayBadge branch order'
   assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 0 })), { status: 'error', label: '已耗尽' });
   assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ apiKeyMode: true })), { status: 'success', label: '可调度' });
   assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 50, quotaStatus: 'available' })), { status: 'success', label: '正常' });
-  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 50, quotaStatus: 'pending' })), { status: 'processing', label: '等待采集' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(makeAccount({ remainingPct: 50, quotaStatus: 'pending' })), { status: 'success', label: '正常' });
+  const schedulableGrok = makeAccount({ provider: 'grok', schedulableStatus: 'schedulable', quotaStatus: 'pending' });
+  assert.deepEqual(getAccountDisplayBadgeMeta(schedulableGrok), { status: 'success', label: '正常' });
+  assert.deepEqual(getAccountStatusDetailLines(schedulableGrok), []);
   assert.equal(getAccountStatusDetailLines(makeAccount({ runtimeStatus: 'rate_limited', runtimeReason: 'boom' })).length, 1);
   assert.equal(getAccountStatusDetailLines(makeAccount({ remainingPct: 50, quotaStatus: 'available' })).length, 0);
+});
+
+test('quota diagnostics are independent from scheduling badges and their detail lines', async () => {
+  const { getAccountDisplayBadgeMeta, getAccountStatusDetailLines } = await import('./AccountBadges.tsx');
+  const unknown = makeAccount({ quotaStatus: 'pending', quotaReason: 'provider_returned_no_numeric_usage' });
+  const failed = makeAccount({ quotaStatus: 'probe_failed', quotaReason: 'timeout' });
+  for (const record of [unknown, failed]) {
+    assert.deepEqual(getAccountDisplayBadgeMeta(record), { status: 'success', label: '正常' });
+    assert.deepEqual(getAccountStatusDetailLines(record), []);
+  }
+  assert.deepEqual(getQuotaStateMeta(unknown), { status: 'default', label: '额度未知' });
+  assert.deepEqual(getQuotaStateMeta(failed), { status: 'error', label: '采集失败' });
+  assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'available' })), null);
+  assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'not_applicable' })), null);
 });

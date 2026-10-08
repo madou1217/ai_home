@@ -9,6 +9,8 @@ import {
   createBrowserChatRuntimeApiClient,
   type ChatRuntimeApi,
 } from '@/chat-runtime';
+import { addControlPlaneProfilesChangeListener } from '@/services/control-plane-profiles';
+import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import {
   readCachedSessionDirectory,
@@ -55,6 +57,20 @@ export function useCanonicalSessionDirectory(
   api: Pick<ChatRuntimeApi, 'listSessions'> = browserApi,
   options: UseCanonicalSessionDirectoryOptions = {},
 ): CanonicalSessionDirectory {
+  const [authRevision, setAuthRevision] = useState(0);
+  useEffect(() => {
+    // Profile synchronization and active-server changes can happen after the
+    // first render. They may add the Management Key needed by /v0/webui/*;
+    // include a revision in the refresh dependencies so an initial 401 is retried
+    // without changing the offline-cache identity.
+    const refreshRequestKey = () => setAuthRevision((revision) => revision + 1);
+    const offProfiles = addControlPlaneProfilesChangeListener(refreshRequestKey);
+    const offActive = addActiveControlPlaneProfileChangeListener(refreshRequestKey);
+    return () => {
+      offProfiles();
+      offActive();
+    };
+  }, []);
   const providers = chatRuntimeProviders.providers();
   const providerKey = providers.join(',');
   const serverKey = activeServerKey();
@@ -84,12 +100,21 @@ export function useCanonicalSessionDirectory(
   );
   const focusKey = focusQuery ? focusDescriptorKey : '';
   // 仅基础目录接入离线缓存：focus 是单会话覆盖查询，缓存价值低，不为它增加条目。
-  const base = useDirectoryRequest(baseKey, baseQueries, api, Boolean(options.catalogLoading), serverKey);
+  const base = useDirectoryRequest(
+    baseKey,
+    baseQueries,
+    api,
+    Boolean(options.catalogLoading),
+    serverKey,
+    authRevision,
+  );
   const focused = useDirectoryRequest(
     focusKey,
     focusQueries,
     api,
     false,
+    undefined,
+    authRevision,
   );
   const directory = useMemo(() => {
     if (focusQuery && focused.status === 'ready') {
@@ -123,6 +148,7 @@ function useDirectoryRequest(
   api: Pick<ChatRuntimeApi, 'listSessions'>,
   catalogPending: boolean,
   cacheScope?: string,
+  refreshRevision = 0,
 ) {
   const enabled = Boolean(key && queries.length > 0);
   // Loading state only controls the empty-directory placeholder. Once a
@@ -172,7 +198,7 @@ function useDirectoryRequest(
         );
       });
     }
-  }, [api, cacheScope, enabled, key, queries, waitingForCatalog]);
+  }, [api, cacheScope, enabled, key, queries, refreshRevision, waitingForCatalog]);
 
   useEffect(() => {
     mountedRef.current = true;

@@ -1,14 +1,16 @@
 /*
  * Browser/PWA transport for authenticated WebUI resources.
  * Management Key is read from the same-origin Server Profile and is only sent
- * through Authorization headers. Remote Server selection travels in a header
- * as well, so neither value is copied into URLs or DOM resource attributes.
+ * through Authorization headers, or the dedicated session WebSocket's first
+ * frame. Remote Server selection travels in a header, so neither value is
+ * copied into URLs or DOM resource attributes.
  */
 
 import {
   getEffectiveServerProfileId,
   getExplicitServerProfileId
 } from './server-selection-scope';
+import { readSessionWatchTarget, SessionWatchWebSocketSource } from './session-watch-websocket';
 
 const SERVER_PROFILE_STORAGE_KEY = 'aih:control-plane-profiles:v1';
 const ACTIVE_PROFILE_STORAGE_KEY = 'aih:active-control-plane-profile:v1';
@@ -233,5 +235,14 @@ class AuthorizedWebUiEventSource extends EventTarget {
 }
 
 export function guardedWebUiEventSource(path: string): EventSource {
+  const target = readSessionWatchTarget(path);
+  if (target && typeof window !== 'undefined' && typeof WebSocket !== 'undefined'
+    && !resolveActiveServer().isRemote) {
+    return new SessionWatchWebSocketSource({
+      origin: window.location.origin,
+      target,
+      readManagementKey: resolveWebUiManagementKey
+    }) as unknown as EventSource;
+  }
   return new AuthorizedWebUiEventSource(path) as unknown as EventSource;
 }

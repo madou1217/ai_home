@@ -57,6 +57,7 @@ import {
   USAGE_RANGE_OPTIONS,
   USAGE_REQUEST_DETAIL_LIMIT,
   buildUsageRangeByMode as buildRangeByMode,
+  canScanUsageProvider,
   formatUsageDate as formatDate,
   formatUsageDateTime as formatDateTime,
   formatUsageTime as formatTime,
@@ -421,6 +422,7 @@ export default function ModelUsage() {
   }, [handleScanJobUpdate]);
 
   const handleScan = async () => {
+    if (!canScanUsageProvider(provider)) return;
     setScanning(true);
     try {
       const response = await modelUsageAPI.scan(provider);
@@ -722,9 +724,10 @@ export default function ModelUsage() {
         <Button key="refresh" icon={<ReloadOutlined />} onClick={handleRefreshUsage} loading={loading}>
           刷新
         </Button>,
-        <Button key="scan" type="primary" icon={<SyncOutlined />} onClick={handleScan} loading={scanning || isScanJobActive(scanJob)}>
-          扫描
-        </Button>
+        <Tooltip key="scan" title={canScanUsageProvider(provider) ? '同步本地用量' : '用量随请求自动记录，点击刷新查看'}>
+          <span><Button type="primary" icon={<SyncOutlined />} onClick={handleScan}
+            disabled={!canScanUsageProvider(provider)} loading={scanning || isScanJobActive(scanJob)}>扫描</Button></span>
+        </Tooltip>
       ]}
     >
       <div className={dashboardBodyClassName} aria-busy={loading}>

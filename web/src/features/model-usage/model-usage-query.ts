@@ -1,4 +1,5 @@
 import dayjs, { type Dayjs } from 'dayjs';
+import { getProviderMeta } from '../../providers/catalog';
 import type {
   ModelUsageDashboardQueryJob,
   ModelUsageQuery,
@@ -16,6 +17,10 @@ import type {
 
 export type UsageProviderFilter = Provider | '';
 export type UsageRangeMode = 'hour' | 'today' | '7d' | 'month' | 'custom';
+
+export function canScanUsageProvider(provider: UsageProviderFilter) {
+  return !provider || getProviderMeta(provider).capabilities.includes('usage_scan');
+}
 
 export const USAGE_REQUEST_DETAIL_LIMIT = 80;
 

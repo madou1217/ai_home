@@ -60,6 +60,15 @@ test('provider stats count each account into all + its product family bucket', (
   assert.equal(countUnavailable(stats.all), 1);
 });
 
+test('quota-only diagnostics do not populate scheduling issue counts or filters', () => {
+  const accounts = ['pending', 'probe_failed', 'provider_unavailable'].map((quotaStatus, index) =>
+    makeAccount({ accountRef: `acct_quota_${index}`, remainingPct: null, quotaStatus }));
+  const stats = buildProviderStats(accounts);
+  assert.equal(stats.all.healthy, 3);
+  assert.equal(countPendingIssues(stats.all), 0);
+  assert.equal(filterAccountsByView(accounts, 'all', 'healthy').length, 3);
+});
+
 test('filterAccountsByView filters by family and display state', () => {
   const accounts = [
     makeAccount({ accountRef: 'acct_1' }),
@@ -77,7 +86,7 @@ test('status filter options cover every display state once', () => {
   assert.equal(values[0], 'all');
   // 「未配置」随配置状态列一起移除，不再作为筛选项。
   assert.equal(values.includes('unconfigured'), false);
-  assert.equal(values.length, 8);
+  assert.equal(values.some((value) => String(value) === 'usage_attention'), false);
 });
 
 test('family helpers keep the tab axis on product families', () => {

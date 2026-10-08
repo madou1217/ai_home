@@ -24,6 +24,7 @@ import {
   USAGE_REQUEST_DETAIL_LIMIT,
   buildUsageQuery,
   buildUsageRangeByMode,
+  canScanUsageProvider,
   isUsageDashboardQueryActive,
   isUsageScanJobActive,
   type UsageProviderFilter,
@@ -313,6 +314,7 @@ export function useModelUsageDashboard() {
   }, [handleScanJobUpdate]);
 
   const handleScan = async () => {
+    if (!canScanUsageProvider(provider)) return;
     setScanning(true);
     try {
       const response = await modelUsageAPI.scan(provider);
@@ -411,6 +413,7 @@ export function useModelUsageDashboard() {
     totalCacheTokens: getCacheTokens(stats),
     overallCacheHitRate: calculateCacheHitRate(stats),
     scanning,
+    canScan: canScanUsageProvider(provider),
     scanActive: scanning || isUsageScanJobActive(scanJob),
     breakdownTarget,
     breakdown,

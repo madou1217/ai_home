@@ -210,8 +210,10 @@ export const PROVIDER_DEFINITIONS = [
     "capabilities": [
       "api_key_account",
       "model_catalog",
+      "quota_usage",
       "session_history",
-      "account_session_store"
+      "account_session_store",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -345,7 +347,8 @@ export const PROVIDER_DEFINITIONS = [
     "capabilities": [
       "model_catalog",
       "session_history",
-      "account_session_store"
+      "account_session_store",
+      "quota_usage"
     ],
     "authOptions": [
       {
@@ -409,7 +412,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "session_history",
-      "quota_usage"
+      "quota_usage",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -443,7 +447,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "session_history",
-      "quota_usage"
+      "quota_usage",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -477,7 +482,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "session_history",
-      "quota_usage"
+      "quota_usage",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -511,7 +517,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "session_history",
-      "quota_usage"
+      "quota_usage",
+      "usage_scan"
     ],
     "authOptions": [
       {

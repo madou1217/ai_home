@@ -135,12 +135,15 @@ export function buildUsageUnitsTooltipLines(
   if (!hasTotal && !hasRemaining) return null;
 
   const parts: string[] = [];
-  if (hasTotal) parts.push(`总 ${formatTokenAmount(Number(entry.totalUnits))}`);
-  if (hasRemaining) parts.push(`剩余 ${formatTokenAmount(Number(entry.remainingUnits))}`);
+  const unitLabel = resolveUsageUnitLabel(entry.unitType);
+  const formatUnits = (value: number) => unitLabel === 'credits'
+    ? value.toFixed(2).replace(/\.?0+$/, '') : formatTokenAmount(value);
+  if (hasTotal) parts.push(`总 ${formatUnits(Number(entry.totalUnits))}`);
+  if (hasRemaining) parts.push(`剩余 ${formatUnits(Number(entry.remainingUnits))}`);
   const title = `${parts.join(' / ')} ${resolveUsageUnitLabel(entry.unitType)}`;
 
   const detail = isCountable(entry.usedUnits)
-    ? `已用 ${formatTokenAmount(Number(entry.usedUnits))}`
+    ? `已用 ${formatUnits(Number(entry.usedUnits))}`
     : '';
 
   return { title, detail };

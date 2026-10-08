@@ -7,9 +7,20 @@ import {
   buildTrendSlots,
   buildUsageQuery,
   buildUsageRangeByMode,
+  canScanUsageProvider,
   isUsageDashboardQueryActive,
   isUsageScanJobActive
 } from './model-usage-query.ts';
+
+test('provider query selection stays independent from local scan support', () => {
+  assert.equal(canScanUsageProvider(''), true);
+  assert.equal(canScanUsageProvider('grok'), true);
+  for (const provider of ['workbuddy', 'workbuddycn', 'codebuddy', 'codebuddycn'] as const) {
+    assert.equal(canScanUsageProvider(provider), true);
+    const range: [dayjs.Dayjs, dayjs.Dayjs] = [dayjs('2026-10-01'), dayjs('2026-10-06')];
+    assert.equal(buildUsageQuery(range, '7d', provider, '').provider, provider);
+  }
+});
 
 function point(bucketStartMs: number): ModelUsageTrendPoint {
   return {

@@ -323,7 +323,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
           value={pendingIssues}
           tone={pendingIssues > 0 ? 'warn' : 'muted'}
           led={pendingIssues > 0}
-          sub={`需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked} · 待校准 ${activeStats.usageAttention}`}
+          sub={`需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked}`}
         />
         <TelemetryTile
           label="耗尽/停用"

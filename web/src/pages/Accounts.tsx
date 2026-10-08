@@ -523,8 +523,8 @@ export default function Accounts() {
     },
     {
       title: '调度状态',
-      dataIndex: 'quotaStatus',
-      key: 'quotaStatus',
+      dataIndex: 'schedulableStatus',
+      key: 'schedulableStatus',
       width: 152,
       render: (_status: any, record: Account) => renderAccountDisplayBadge(record)
     },
@@ -786,7 +786,7 @@ export default function Accounts() {
           statistic={{
             title: '待处理问题',
             value: pendingIssueCount,
-            description: `需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked} · 待校准 ${activeStats.usageAttention}`,
+            description: `需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked}`,
             valueStyle: {
               color: pendingIssueCount > 0
                 ? 'var(--color-warning)'

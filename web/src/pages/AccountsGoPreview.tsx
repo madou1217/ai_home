@@ -83,8 +83,9 @@ import {
 } from '@/utils/account-labels';
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import {
+  formatSchedulableReason,
+  getAccountDisplayState,
   getClaudeCredentialMode,
-  getEffectiveRemainingPct,
   getUsageSortValue,
   hasKnownUsage
 } from '@/features/accounts/account-state';
@@ -191,30 +192,15 @@ function canCopyAccountEmail(record: Pick<Account, 'apiKeyMode' | 'email' | 'bas
   return Boolean(String(record.email || '').trim());
 }
 
-function hasBlockingRuntimeStatus(record: Pick<Account, 'runtimeStatus'>) {
-  const status = String(record.runtimeStatus || '').trim();
-  return Boolean(status && status !== 'healthy');
-}
-
 function isAccountEnabled(record: Pick<Account, 'status'>) {
   return String(record.status || 'up').trim().toLowerCase() !== 'down';
 }
-
-type AccountDisplayStateKind =
-  | 'healthy'
-  | 'exhausted'
-  | 'policy_blocked'
-  | 'usage_attention'
-  | 'runtime_blocked'
-  | 'disabled'
-  | 'unconfigured';
 
 type AccountFilterValue =
   | 'all'
   | 'healthy'
   | 'exhausted'
   | 'policy_blocked'
-  | 'usage_attention'
   | 'runtime_blocked'
   | 'disabled'
   | 'unconfigured';
@@ -226,7 +212,6 @@ type ProviderStatsBucket = {
   healthy: number;
   exhausted: number;
   policyBlocked: number;
-  usageAttention: number;
   runtimeBlocked: number;
   disabled: number;
   unconfigured: number;
@@ -240,7 +225,6 @@ function createProviderStatsBucket(): ProviderStatsBucket {
     healthy: 0,
     exhausted: 0,
     policyBlocked: 0,
-    usageAttention: 0,
     runtimeBlocked: 0,
     disabled: 0,
     unconfigured: 0
@@ -277,25 +261,6 @@ function persistActiveProviderTab(provider: AccountProviderFilter): void {
   try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
 }
 
-function getAccountDisplayState(record: Pick<Account, 'status' | 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus' | 'remainingPct' | 'provider' | 'usageSnapshot'>): AccountDisplayStateKind {
-  if (!isAccountEnabled(record)) return 'disabled';
-  if (!record.configured) return 'unconfigured';
-  if (hasBlockingRuntimeStatus(record)) return 'runtime_blocked';
-  const effectiveRemainingPct = getEffectiveRemainingPct(record);
-  if (!record.apiKeyMode && effectiveRemainingPct != null && effectiveRemainingPct <= 0) return 'exhausted';
-  if (String(record.quotaStatus || '').trim() === 'exhausted') return 'exhausted';
-  if (String(record.schedulableStatus || '').trim() === 'blocked_by_policy') return 'policy_blocked';
-  if (
-    String(record.quotaStatus || '').trim()
-    && !['available', 'not_applicable', 'exhausted'].includes(String(record.quotaStatus || '').trim())
-  ) {
-    return 'usage_attention';
-  }
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return 'healthy';
-  if (!record.apiKeyMode && !hasKnownUsage(record)) return 'usage_attention';
-  return 'healthy';
-}
-
 function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus'>) {
   // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
   if (String(record.quotaStatus || '').trim() === 'not_applicable') return false;
@@ -314,25 +279,6 @@ function getReauthActionLabel(record: Pick<Account, 'configured' | 'authPending'
 
 function canEditAccountConfig(record: Pick<Account, 'apiKeyMode'>) {
   return Boolean(record.apiKeyMode);
-}
-
-function formatQuotaReason(reason?: string) {
-  return formatAccountIssueReason(reason);
-}
-
-function formatSchedulableReason(reason?: string) {
-  const text = String(reason || '').trim();
-  if (!text) return '';
-  if (text === 'codex_free_plan_missing_rate_limits') {
-    return '当前账号已被判定为 Free，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
-  if (text === 'codex_team_plan_missing_rate_limits') {
-    return '当前账号 token claim 仍是 Team，但 Codex 没返回可计算额度窗口；server 暂不把它放进账号池，建议重新登录确认。';
-  }
-  if (text === 'agy_access_token_required') {
-    return 'Antigravity OAuth token 在系统 keyring 中，aih server 不能安全读取；需要在账号环境中显式配置 AGY_ACCESS_TOKEN 后才会进入聊天/转发池。';
-  }
-  return formatAccountIssueReason(text);
 }
 
 function renderRuntimeStatusBadge(record: Pick<Account, 'runtimeStatus' | 'runtimeReason' | 'runtimeUntil'>) {
@@ -404,32 +350,6 @@ function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReason'>) {
   );
 }
 
-function renderQuotaStateBadge(record: Pick<Account, 'quotaStatus' | 'quotaReason'>) {
-  const status = String(record.quotaStatus || '').trim();
-  if (!status) return null;
-  const rawReason = String(record.quotaReason || '').trim();
-  const reason = formatQuotaReason(record.quotaReason);
-  const meta = (
-    status === 'probe_failed' ? { status: 'error' as const, label: '采集失败' }
-      : status === 'provider_unavailable' && rawReason === 'codex_team_plan_missing_rate_limits'
-        ? { status: 'warning' as const, label: 'Team 待确认' }
-        : status === 'provider_unavailable' && rawReason === 'codex_free_plan_missing_rate_limits'
-          ? { status: 'warning' as const, label: 'Free 待确认' }
-        : status === 'provider_unavailable' ? { status: 'warning' as const, label: '上游未返回' }
-        : status === 'pending' ? { status: 'processing' as const, label: '等待采集' }
-          : { status: 'default' as const, label: '额度未知' }
-  );
-  const badge = <Badge status={meta.status} text={meta.label} />;
-  if (!reason) return badge;
-  return (
-    <Tooltip title={reason}>
-      <span>
-        {badge}
-      </span>
-    </Tooltip>
-  );
-}
-
 function renderAccountDisplayBadge(record: Account) {
   if (!record.configured && record.authPendingStale) return <Badge status="warning" text="授权超时" />;
   const state = getAccountDisplayState(record);
@@ -440,9 +360,6 @@ function renderAccountDisplayBadge(record: Account) {
   }
   if (state === 'policy_blocked') {
     return renderPolicyBlockedBadge(record) || <Badge status="warning" text="已停池" />;
-  }
-  if (state === 'usage_attention') {
-    return renderQuotaStateBadge(record) || <Badge status="warning" text="额度待确认" />;
   }
   if (state === 'exhausted') {
     return (
@@ -1860,9 +1777,6 @@ export default function Accounts() {
       } else if (state === 'policy_blocked') {
         stats.all.policyBlocked++;
         providerBucket.policyBlocked++;
-      } else if (state === 'usage_attention') {
-        stats.all.usageAttention++;
-        providerBucket.usageAttention++;
       } else if (state === 'runtime_blocked') {
         stats.all.runtimeBlocked++;
         providerBucket.runtimeBlocked++;
@@ -2041,29 +1955,10 @@ export default function Accounts() {
     },
     {
       title: '调度状态',
-      dataIndex: 'quotaStatus',
-      key: 'quotaStatus',
+      dataIndex: 'schedulableStatus',
+      key: 'schedulableStatus',
       width: 180,
-      render: (_quotaStatus: any, record: Account) => {
-        const refreshable = canRefreshUsageAccount(record);
-        const refreshingUsage = Boolean(refreshingUsageAccountRefs[getAccountRef(record)]);
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {renderAccountDisplayBadge(record)}
-            {refreshable ? (
-              <Tooltip title="刷新当前账号状态">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  loading={refreshingUsage}
-                  onClick={() => handleRefreshUsage(record)}
-                />
-              </Tooltip>
-            ) : null}
-          </div>
-        );
-      }
+      render: (_status: any, record: Account) => renderAccountDisplayBadge(record)
     },
     {
       title: '模型探测',
@@ -2130,7 +2025,16 @@ export default function Accounts() {
         return String(getAccountRef(a)).localeCompare(String(getAccountRef(b)));
       },
       render: (_pct: any, record: Account) => (
-        <UsageSnapshotCell record={record} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <UsageSnapshotCell record={record} />
+          {canRefreshUsageAccount(record) ? (
+            <Tooltip title="刷新账号额度">
+              <Button type="text" size="small" icon={<ReloadOutlined />}
+                loading={Boolean(refreshingUsageAccountRefs[getAccountRef(record)])}
+                onClick={() => handleRefreshUsage(record)} />
+            </Tooltip>
+          ) : null}
+        </div>
       )
     },
     {
@@ -2406,13 +2310,13 @@ export default function Accounts() {
             }}
           />
           <StatisticCard
-            className={providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 ? 'accounts-stat--warning' : 'accounts-stat--accent'}
+            className={providerStats[activeProvider].runtimeBlocked > 0 ? 'accounts-stat--warning' : 'accounts-stat--accent'}
             statistic={{
               title: '待处理问题',
-              value: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention,
-              description: `阻塞 ${providerStats[activeProvider].runtimeBlocked} · 待校准 ${providerStats[activeProvider].usageAttention}`,
+              value: providerStats[activeProvider].runtimeBlocked,
+              description: `阻塞 ${providerStats[activeProvider].runtimeBlocked}`,
               valueStyle: {
-                color: providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0
+                color: providerStats[activeProvider].runtimeBlocked > 0
                   ? 'var(--color-warning)'
                   : undefined
               }
@@ -2534,7 +2438,6 @@ export default function Accounts() {
                   { key: 'all', label: '全部状态' },
                   { key: 'healthy', label: '正常可用' },
                   { key: 'runtime_blocked', label: '运行阻塞' },
-                  { key: 'usage_attention', label: '额度待确认' },
                   { key: 'policy_blocked', label: '已停池' },
                   { key: 'exhausted', label: '已耗尽' },
                   { key: 'disabled', label: '已关闭' },
@@ -2584,8 +2487,8 @@ export default function Accounts() {
             headerTitle={
               <Space size={12}>
                 <Badge status="success" text={`可用 ${providerStats[activeProvider].healthy}`} />
-                {providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention > 0 && (
-                  <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked + providerStats[activeProvider].usageAttention}`} />
+                {providerStats[activeProvider].runtimeBlocked > 0 && (
+                  <Badge status="warning" text={`待处理 ${providerStats[activeProvider].runtimeBlocked}`} />
                 )}
                 {providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked > 0 && (
                   <Badge status="error" text={`不可用 ${providerStats[activeProvider].exhausted + providerStats[activeProvider].policyBlocked}`} />
@@ -2620,7 +2523,6 @@ export default function Accounts() {
                     { label: '全部状态', value: 'all' },
                     { label: '正常可用', value: 'healthy' },
                     { label: '运行阻塞', value: 'runtime_blocked' },
-                    { label: '额度待确认', value: 'usage_attention' },
                     { label: '已停池', value: 'policy_blocked' },
                     { label: '已耗尽', value: 'exhausted' },
                     { label: '已关闭', value: 'disabled' },

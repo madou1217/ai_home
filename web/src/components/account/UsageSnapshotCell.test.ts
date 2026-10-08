@@ -93,6 +93,13 @@ test('buildUsageUnitsTooltipLines handles partial and missing unit fields', () =
   assert.equal(buildUsageUnitsTooltipLines(null), null);
 });
 
+test('credit amounts preserve fractional remaining and consumed values', () => {
+  assert.deepEqual(buildUsageUnitsTooltipLines({ totalUnits: 50, remainingUnits: 49.87,
+    usedUnits: 0.13, unitType: 'credits' }), { title: '总 50 / 剩余 49.87 credits', detail: '已用 0.13' });
+  assert.deepEqual(buildUsageUnitsTooltipLines({ totalUnits: 100, remainingUnits: 0,
+    usedUnits: 100, unitType: 'credits' }), { title: '总 100 / 剩余 0 credits', detail: '已用 100' });
+});
+
 test('groupAgyQuotaModels groups models into Gemini Models and Claude & GPT Models with dynamic limits', () => {
   const nowMs = Date.UTC(2026, 7, 12, 10, 0, 0, 0);
   const models = [

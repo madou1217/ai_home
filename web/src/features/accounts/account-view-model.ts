@@ -88,7 +88,6 @@ export const ACCOUNT_STATUS_FILTER_OPTIONS: ReadonlyArray<{ label: string; value
   { label: '正常可用', value: 'healthy' },
   { label: '需要重新登录', value: 'reauth_required' },
   { label: '运行阻塞', value: 'runtime_blocked' },
-  { label: '额度待确认', value: 'usage_attention' },
   { label: '已停池', value: 'policy_blocked' },
   { label: '已耗尽', value: 'exhausted' },
   { label: '已关闭', value: 'disabled' }
@@ -100,7 +99,6 @@ export type ProviderStatsBucket = {
   exhausted: number;
   policyBlocked: number;
   reauthRequired: number;
-  usageAttention: number;
   runtimeBlocked: number;
   disabled: number;
   unconfigured: number;
@@ -113,7 +111,6 @@ const STATE_BUCKET_KEYS: Record<AccountDisplayStateKind, keyof ProviderStatsBuck
   reauth_required: 'reauthRequired',
   exhausted: 'exhausted',
   policy_blocked: 'policyBlocked',
-  usage_attention: 'usageAttention',
   runtime_blocked: 'runtimeBlocked',
   disabled: 'disabled',
   unconfigured: 'unconfigured'
@@ -126,7 +123,6 @@ export function createProviderStatsBucket(): ProviderStatsBucket {
     exhausted: 0,
     policyBlocked: 0,
     reauthRequired: 0,
-    usageAttention: 0,
     runtimeBlocked: 0,
     disabled: 0,
     unconfigured: 0
@@ -168,9 +164,9 @@ export function getStatusFilterCount(bucket: ProviderStatsBucket, status: Accoun
   return bucket[STATE_BUCKET_KEYS[status]] || 0;
 }
 
-/** 待处理问题 = 需登录 + 运行阻塞 + 待校准（桌面 KPI 口径）。 */
+/** 待处理问题只计真实的账号认证与运行阻塞，不计额度采集状态。 */
 export function countPendingIssues(bucket: ProviderStatsBucket): number {
-  return bucket.reauthRequired + bucket.runtimeBlocked + bucket.usageAttention;
+  return bucket.reauthRequired + bucket.runtimeBlocked;
 }
 
 /** 耗尽/停用 = 已耗尽 + 已停池（桌面 KPI 口径）。 */

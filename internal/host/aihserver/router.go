@@ -16,6 +16,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -136,6 +137,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
 	if handlers.shutdown != nil {
 		mux.Handle(shutdownapi.Path, handlers.shutdown)
+	}
+	// 模型别名投影：Node 在启动与别名变更后推送，Go 只读并编译进路由目录。
+	if handlers.modelAliases != nil {
+		mux.Handle(modelaliasapi.Path, handlers.modelAliases)
 	}
 	mux.Handle(
 		clauderelayleaseapi.Path,

@@ -11,6 +11,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/modelalias"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -42,6 +43,8 @@ type ProviderRouteFactory interface {
 type Builder struct {
 	models    accountapp.RoutableModelReader
 	factories map[inference.ProviderID]ProviderRouteFactory
+	// aliases 是 Node 推送的模型别名投影；为空表示 Go 不做别名改写（全部交还 Node）。
+	aliases *modelalias.Store
 }
 
 // NewBuilder 注册互不重复的 Provider RouteFactory。
@@ -88,21 +91,36 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 		return nil, err
 	}
 	if len(models) == 0 {
-		return newSnapshot(nil, nil, 0), nil
+		// 没有本地可路由模型时仍要记录别名投影的编译结果，管理接口才能如实回报
+		// 「哪些别名 Go 接不了」，而不是静默丢失。
+		return newSnapshot(nil, nil, 0, builder.compileAliases(models, nil)), nil
 	}
 	rules := make([]inferencegateway.RouteRule, 0, len(models))
+	identities := make(map[ruleIdentity]struct{}, len(models))
 	for _, model := range models {
 		rule, buildErr := builder.buildRule(model)
 		if buildErr != nil {
 			return nil, buildErr
 		}
 		rules = append(rules, rule)
+		identities[identityOf(rule)] = struct{}{}
 	}
+	compilation := builder.compileAliases(models, identities)
+	rules = append(rules, compilation.Rules...)
 	routes, err := inferencegateway.NewRouteCatalog(rules...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
 	}
-	return newSnapshot(routes, uniqueModels(models), len(rules)), nil
+	return newSnapshot(routes, uniqueModels(models), len(rules), compilation), nil
+}
+
+// WithAliasStore 让 Builder 在编译目录时并入 Node 的模型别名投影；store 可为 nil，
+// 表示 Go 不做别名改写（命中别名的请求继续由 Node 承接）。
+func (builder *Builder) WithAliasStore(store *modelalias.Store) *Builder {
+	if builder != nil {
+		builder.aliases = store
+	}
+	return builder
 }
 
 // buildRule 让 Provider Factory 决定上游协议和能力，Builder 只维护精确匹配。

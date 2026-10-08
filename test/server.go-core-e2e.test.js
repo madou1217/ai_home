@@ -85,6 +85,13 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.equal(readyz.go_core.ready, readyz.go_core.go_ready);
   // G5：Go 健康且请求都转出去时不应有任何回落——这是下线门槛的基线。
   assert.equal(readyz.go_core.node_fallbacks.total, 0);
+  // P2.1：启动后 Node 必须把别名表推给真实 Go，并拿到 applied_generation 追平的回执，
+  // 否则 Go 的别名语义与 Node 分叉，命中别名的请求只能永远交还 Node。
+  assert.ok(goHost.status().modelAliases, 'Node 未完成别名投影握手');
+  assert.equal(
+    goHost.status().modelAliases.appliedGeneration,
+    goHost.status().modelAliases.generation
+  );
 
   const unauthorized = await fetch(`${base}/v1/props`);
   assert.equal(unauthorized.status, 401, 'Node still enforces its client key before forwarding');

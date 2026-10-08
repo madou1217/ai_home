@@ -12,6 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
@@ -46,6 +47,10 @@ type inferenceComposition struct {
 	claudeUpstream *claudemessages.Adapter
 	agyUpstream    *agycodeassist.Adapter
 	modelRefreshes inferencegateway.ModelRefreshScheduler
+	// modelAliases 是 Node 推送的模型别名投影；随管理接口写入，随目录刷新编译。
+	modelAliases *modelalias.Store
+	// catalogRefresh 在别名投影变更后触发重建，让新别名立即生效。
+	catalogRefresh *inferencecatalog.RefreshCoordinator
 	closers        []io.Closer
 }
 
@@ -124,6 +129,8 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	// 别名投影由 Node 通过 /v1/management/model-aliases 推送；Go 只读，编译进同一个目录。
+	modelAliases := modelalias.NewStore()
 	builder, err := inferencecatalog.NewBuilder(
 		dependencies.store,
 		codexAdapter,
@@ -133,6 +140,7 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	builder.WithAliasStore(modelAliases)
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{
 			Builder: builder,
@@ -142,6 +150,8 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	composition.modelAliases = modelAliases
+	composition.catalogRefresh = catalogRefresh
 	composition.closers = append(composition.closers, catalogRefresh)
 	if err := dependencies.store.SetRoutableModelObserver(
 		catalogRefresh,

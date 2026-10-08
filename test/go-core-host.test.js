@@ -340,3 +340,70 @@ test('the forwarder hooks count decode rejections and unreachable Go hand-offs',
   assert.equal(readiness.node_fallbacks.by_reason.plugin_generation_unconfirmed, 2);
   assert.equal(readiness.node_fallbacks.total, 4);
 });
+
+test('the host pushes the alias table to Go and only forwards aliases Go confirmed', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const pushed = [];
+  const aliases = [
+    { id: 'a1', alias: 'best', target: 'gpt-5.6-sol', provider: 'all', targetProvider: 'auto', priority: 0, enabled: true },
+    { id: 'a2', alias: 'gemini-best', target: 'gpt-5.6-sol', provider: 'gemini', enabled: true }
+  ];
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: factory,
+    createGoManagementClient: () => ({
+      pushModelAliases: async (records) => {
+        pushed.push(records);
+        // Go 只接受作用域可表达的那条；另一条按 scope_unsupported 丢弃。
+        return {
+          ok: true,
+          data: { generation: 1, applied_generation: 1, accepted_ids: ['a1'], dropped: [{ id: 'a2', reason: 'scope_unsupported' }] }
+        };
+      }
+    }),
+    loadAliases: async () => ({ aliases }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal(pushed.length, 1, '启动后必须推送一次别名表');
+  assert.deepEqual(pushed[0], [
+    { id: 'a1', alias: 'best', target: 'gpt-5.6-sol', provider: 'all', targetProvider: 'auto', priority: 0, enabled: true, description: '' },
+    { id: 'a2', alias: 'gemini-best', target: 'gpt-5.6-sol', provider: 'gemini', targetProvider: '', priority: 0, enabled: true, description: '' }
+  ]);
+  assert.deepEqual([...host.acceptedAliasIds()], ['a1']);
+
+  // 内容未变化时不重复 PUT。
+  await host.pushModelAliases();
+  assert.equal(pushed.length, 1);
+  await host.stop();
+});
+
+test('an unconfirmed alias push keeps every alias on Node', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: factory,
+    createGoManagementClient: () => ({
+      // applied_generation 落后：Go 的目录还没反映这份别名，不能当作已接受。
+      pushModelAliases: async () => ({
+        ok: true,
+        data: { generation: 2, applied_generation: 1, accepted_ids: ['a1'], dropped: [] }
+      })
+    }),
+    loadAliases: async () => ({ aliases: [{ id: 'a1', alias: 'best', target: 'gpt-5.6-sol', enabled: true }] }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal(host.acceptedAliasIds().size, 0, '未追平的推送不得被当作已接受');
+  await host.stop();
+});

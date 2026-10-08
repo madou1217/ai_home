@@ -28,7 +28,9 @@ type Snapshot struct {
 	routes     *inferencegateway.RouteCatalog
 	models     []accountapp.RoutableModel
 	routeCount int
-	built      bool
+	// aliases 记录本次构建接受的别名 id 与丢弃原因，供管理接口如实回报给 Node。
+	aliases AliasCompilation
+	built   bool
 }
 
 // newSnapshot 只供完整 Builder 创建模型与路由一致的快照。
@@ -36,12 +38,27 @@ func newSnapshot(
 	routes *inferencegateway.RouteCatalog,
 	models []accountapp.RoutableModel,
 	routeCount int,
+	aliases AliasCompilation,
 ) *Snapshot {
 	return &Snapshot{
 		routes:     routes,
 		models:     append([]accountapp.RoutableModel(nil), models...),
 		routeCount: routeCount,
+		aliases:    aliases,
 		built:      true,
+	}
+}
+
+// AliasCompilation 返回本次构建的别名编译结果。
+func (snapshot *Snapshot) AliasCompilation() AliasCompilation {
+	if snapshot == nil || !snapshot.isValid() {
+		return AliasCompilation{}
+	}
+	return AliasCompilation{
+		Generation:  snapshot.aliases.Generation,
+		Rules:       append([]inferencegateway.RouteRule(nil), snapshot.aliases.Rules...),
+		AcceptedIDs: append([]string(nil), snapshot.aliases.AcceptedIDs...),
+		Dropped:     append([]AliasDrop(nil), snapshot.aliases.Dropped...),
 	}
 }
 
@@ -224,6 +241,18 @@ func (catalog *AtomicCatalog) ListRoutableModels(
 		return nil, ErrRouteCatalogUnavailable
 	}
 	return snapshot.Models(), nil
+}
+
+// AliasCompilation 返回当前已发布快照的别名编译结果；尚未发布时返回零值。
+func (catalog *AtomicCatalog) AliasCompilation() AliasCompilation {
+	if catalog == nil {
+		return AliasCompilation{}
+	}
+	snapshot := catalog.current.Load()
+	if snapshot == nil {
+		return AliasCompilation{}
+	}
+	return snapshot.AliasCompilation()
 }
 
 // Status 返回不会与内部状态共享可变内存的健康快照。

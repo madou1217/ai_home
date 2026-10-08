@@ -57,6 +57,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 )
@@ -96,6 +97,8 @@ type serverHandlers struct {
 	plugins pluginHandlers
 	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
 	shutdown http.Handler
+	// modelAliases 接收 Node 推送的模型别名投影（/v1/management/model-aliases）。
+	modelAliases http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -611,6 +614,17 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建生产推理组合失败: %w", err)
 	}
+	// 别名投影管理接口：Node 推送后立即重建目录，让 applied_generation 追平。
+	modelAliasesHandler, err := modelaliasapi.NewHandler(modelaliasapi.Dependencies{
+		Authorizer:  authorizer,
+		Store:       inference.modelAliases,
+		Refresh:     inference.catalogRefresh.Refresh,
+		Compilation: inference.models.AliasCompilation,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建模型别名投影接口失败: %w", err)
+	}
 	claudeGatewayPolicy, err := transportpolicy.NewGatewayPolicy(
 		inference.claudeUpstream,
 	)
@@ -887,6 +901,7 @@ func newHandlers(
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		shutdown:           shutdownHandler,
+		modelAliases:       modelAliasesHandler,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{

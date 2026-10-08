@@ -55,6 +55,36 @@ test('inference whose model hits an enabled Node alias stays with Node', () => {
   assert.equal(decide('gateway.anthropic.messages', 'claude-opus-4-8', LIVE), false);
 });
 
+test('aliases Go has confirmed it can resolve are forwarded, the rest stay with Node', () => {
+  const { modelMatchesUnacceptedAlias } = require('../lib/server/go-core-route-deferral');
+  const aliases = [
+    { id: 'a1', alias: 'claude-opus-4-8', target: 'gemini-3.8-flash-high', enabled: true },
+    { id: 'a2', alias: 'claude-opus-5*', target: 'gpt-6-sol', enabled: true },
+    // 插件别名不在 Go 的投影里，永远没有接受记录。
+    { id: 'plugin:inst:claude-fast', alias: 'claude-fast', target: 'gpt-6-mini', enabled: true }
+  ];
+  const accepted = new Set(['a1', 'a2']);
+  assert.equal(modelMatchesUnacceptedAlias(aliases, 'claude-opus-4-8', accepted), false);
+  assert.equal(modelMatchesUnacceptedAlias(aliases, 'claude-opus-5-5', accepted), false);
+  assert.equal(modelMatchesUnacceptedAlias(aliases, 'claude-fast', accepted), true, 'plugin aliases are never Go-accepted');
+  // 没有接受集合（Go 未确认别名表）时全部保守交还。
+  assert.equal(modelMatchesUnacceptedAlias(aliases, 'claude-opus-4-8', null), true);
+  assert.equal(modelMatchesUnacceptedAlias(aliases, 'claude-opus-4-8', new Set()), true);
+
+  const decide = (model, ids) => shouldDeferGoRouteToNode({
+    entryId: 'gateway.anthropic.messages', model, pinnedAccountRef: '', aliases,
+    goAcceptedAliasIds: () => ids, state, accountStateIndex, fabricGatewayReady: () => false
+  });
+  assert.equal(decide('claude-opus-4-8', accepted), false);
+  assert.equal(decide('claude-fast', accepted), true);
+  assert.equal(decide('claude-opus-4-8', null), true);
+  // 宿主没有注入访问器时同样保守交还。
+  assert.equal(shouldDeferGoRouteToNode({
+    entryId: 'gateway.anthropic.messages', model: 'claude-opus-4-8', aliases,
+    state, accountStateIndex, fabricGatewayReady: () => false
+  }), true);
+});
+
 test('blob fetches stay with Node only when the Node blob store holds the id', () => {
   const decide = (pathname, known) => shouldDeferGoRouteToNode({
     entryId: 'gateway.vision.blobs', pathname, state, accountStateIndex,

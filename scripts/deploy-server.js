@@ -23,6 +23,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { buildGoServer } = require('./build-go-server');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULTS = Object.freeze({
@@ -32,6 +33,10 @@ const DEFAULTS = Object.freeze({
   port: 9527,
   readyTimeoutSec: 60
 });
+// 远端 uname 到 Go 构建目标的映射。部署到错平台的二进制会让 Go Core 永远起不来，
+// 因此默认按远端真实平台交叉编译，而不是假定 linux-x64。
+const GOOS_BY_UNAME = Object.freeze({ linux: 'linux', darwin: 'darwin' });
+const GOARCH_BY_UNAME = Object.freeze({ x86_64: 'x64', amd64: 'x64', aarch64: 'arm64', arm64: 'arm64' });
 const TAR_EXCLUDES = Object.freeze([
   './.git',
   './node_modules',
@@ -43,6 +48,31 @@ const TAR_EXCLUDES = Object.freeze([
 ]);
 // 远端保留、不随代码同步的路径（相对 remote-dir）。
 const REMOTE_PRESERVED = Object.freeze(['node_modules', '.node-runtime', 'data', 'DEPLOYED_GIT_HEAD']);
+// 跳过 Go 构建时必须一并保留远端 bin/native：`rsync --delete` 会在归档里没有该目录时
+// 删掉远端正在运行的 Go 二进制，服务随后起不来。
+const REMOTE_PRESERVED_WITHOUT_GO = Object.freeze([...REMOTE_PRESERVED, 'bin/native']);
+
+/** 按本次运行是否携带 Go 构件，决定 rsync 的保留名单。 */
+function remotePreserved(options = {}) {
+  return options.skipGoBuild ? REMOTE_PRESERVED_WITHOUT_GO : REMOTE_PRESERVED;
+}
+
+/**
+ * 把远端 `uname -s -m` 的输出解析成 Go 构建目标。
+ *
+ * 认不出来（含 Windows 的 MINGW/MSYS/CYGWIN 与未知架构）时返回 null，由调用方失败关闭：
+ * 宁可不部署，也不能把一个错平台的二进制推上去。
+ */
+function parseRemoteGoTarget(output) {
+  const fields = String(output || '').trim().split(/\s+/);
+  if (fields.length < 2) return null;
+  const osName = fields[0].toLowerCase();
+  const goos = osName.startsWith('mingw') || osName.startsWith('msys') || osName.startsWith('cygwin')
+    ? 'windows'
+    : GOOS_BY_UNAME[osName];
+  const goarch = GOARCH_BY_UNAME[fields[1].toLowerCase()];
+  return goos && goarch ? { platform: goos === 'windows' ? 'win32' : goos, arch: goarch } : null;
+}
 
 function showHelp() {
   console.log(`AIH server deploy (single directory, in place)
@@ -57,7 +87,10 @@ Options:
   --remote-dir <path>    Remote code directory, default ${DEFAULTS.remoteDir}
   --unit <name>          systemd user unit, default ${DEFAULTS.unit}
   --port <n>             Server port for the readiness check, default ${DEFAULTS.port}
+  --go-target <t>        Go Core build target <platform>-<arch>, default: probe the remote
+                         (linux-x64 / linux-arm64 / win32-x64 / darwin-arm64)
   --skip-web-build       Reuse the web/dist committed state (no local web build)
+  --skip-go-build        Do not cross-compile Go Core; keep the remote bin/native as is
   --no-restart           Update files only
   --dry-run              Print the steps without changing anything
   -h, --help             Show this help`);
@@ -68,7 +101,9 @@ function parseArgs(argv, env = process.env) {
     ssh: String(env.AIH_DEPLOY_SSH || '').trim(),
     sshKey: String(env.AIH_DEPLOY_SSH_KEY || '').trim(),
     ...DEFAULTS,
+    goTarget: String(env.AIH_DEPLOY_GO_TARGET || '').trim(),
     skipWebBuild: false,
+    skipGoBuild: false,
     restart: true,
     dryRun: false,
     help: false
@@ -88,7 +123,9 @@ function parseArgs(argv, env = process.env) {
     else if (arg === '--remote-dir') options.remoteDir = next();
     else if (arg === '--unit') options.unit = next();
     else if (arg === '--port') options.port = Number(next());
+    else if (arg === '--go-target') options.goTarget = next();
     else if (arg === '--skip-web-build') options.skipWebBuild = true;
+    else if (arg === '--skip-go-build') options.skipGoBuild = true;
     else if (arg === '--no-restart') options.restart = false;
     else if (arg === '--dry-run') options.dryRun = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -98,6 +135,8 @@ function parseArgs(argv, env = process.env) {
     if (!/^[A-Za-z0-9._-]+$/.test(options.unit)) throw new Error('invalid --unit');
     if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) throw new Error('invalid --port');
     if (!/^[~A-Za-z0-9._/-]+$/.test(options.remoteDir)) throw new Error('invalid --remote-dir');
+    if (options.goTarget && !/^[a-z0-9]+-[a-z0-9]+$/.test(options.goTarget)) throw new Error('invalid --go-target');
+    if (options.goTarget && options.skipGoBuild) throw new Error('--go-target and --skip-go-build are mutually exclusive');
   }
   return options;
 }
@@ -138,7 +177,7 @@ function sshArgs(options) {
  * 不使用 pkill -f / pgrep -f：它们会匹配到 ssh 会话自己的命令行而把会话杀掉。
  */
 function buildRemoteScript(options) {
-  const preserved = REMOTE_PRESERVED.map((item) => `--exclude ${shQuote(`/${item}`)}`).join(' ');
+  const preserved = remotePreserved(options).map((item) => `--exclude ${shQuote(`/${item}`)}`).join(' ');
   return `set -euo pipefail
 ARCHIVE="$1"; SHA="$2"
 DIR=${remotePath(options.remoteDir)}
@@ -197,6 +236,30 @@ echo "[remote] deployed: $SHA"
 `;
 }
 
+/**
+ * 解析本次部署要交叉编译的 Go 目标。
+ *
+ * 显式 `--go-target` 优先；否则探测远端真实平台。探测失败一律失败关闭——猜一个平台
+ * 会把起不来的二进制推上去，而带上一个空 bin/native 的归档会顺带删掉远端现有的那个。
+ */
+function resolveGoTarget(options) {
+  if (options.goTarget) {
+    const [platform, arch] = options.goTarget.split('-');
+    return { platform, arch };
+  }
+  let output = '';
+  try {
+    output = run('ssh', [...sshArgs(options), options.ssh, 'uname -s -m'], { capture: true });
+  } catch (error) {
+    throw new Error(`cannot probe the remote Go target (${error.message}); pass --go-target <platform>-<arch> or --skip-go-build`);
+  }
+  const target = parseRemoteGoTarget(output);
+  if (!target) {
+    throw new Error(`unsupported remote Go target ${JSON.stringify(output.trim())}; pass --go-target <platform>-<arch> or --skip-go-build`);
+  }
+  return target;
+}
+
 function buildLocalArchive(options, sha) {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-deploy-worktree-'));
   const archive = path.join(os.tmpdir(), `aih-deploy-${sha.slice(0, 8)}-${process.pid}.tgz`);
@@ -208,6 +271,16 @@ function buildLocalArchive(options, sha) {
       fs.symlinkSync(path.join(REPO_ROOT, 'web', 'node_modules'), path.join(worktree, 'web', 'node_modules'));
       console.log('[local] building web …');
       run('npx', ['max', 'build'], { cwd: path.join(worktree, 'web'), capture: true });
+    }
+    if (!options.skipGoBuild) {
+      // bin/native 是 gitignore 的，worktree 里本来就没有：必须在这里产出远端平台的
+      // 二进制，否则归档不带 Go Core，远端只能继续跑旧的（或什么都没有）。
+      const target = resolveGoTarget(options);
+      console.log(`[local] building Go Core for ${target.platform}-${target.arch} …`);
+      const built = buildGoServer({ repositoryRoot: worktree, platform: target.platform, arch: target.arch });
+      console.log(`[local] Go Core: ${path.relative(worktree, built.output)} (sha256 ${built.stamp.binary_sha256.slice(0, 12)})`);
+    } else {
+      console.log('[local] Go Core build skipped; the remote bin/native is preserved');
     }
     run('tar', [
       '--format', 'ustar', '--no-xattrs',
@@ -238,7 +311,10 @@ function main(argv = process.argv.slice(2)) {
   const remoteScript = buildRemoteScript(options);
   const remoteArchive = `/tmp/aih-deploy-${sha.slice(0, 8)}.tgz`;
   if (options.dryRun) {
-    console.log(`[dry-run] would build ${options.skipWebBuild ? 'without' : 'with'} web build, upload to ${remoteArchive} and run:\n${remoteScript}`);
+    const go = options.skipGoBuild
+      ? 'keeping the remote bin/native'
+      : `cross-compiling Go Core for ${options.goTarget || 'the probed remote target'}`;
+    console.log(`[dry-run] would build ${options.skipWebBuild ? 'without' : 'with'} web build, ${go}, upload to ${remoteArchive} and run:\n${remoteScript}`);
     return;
   }
 
@@ -273,9 +349,12 @@ if (require.main === module) {
 module.exports = {
   DEFAULTS,
   REMOTE_PRESERVED,
+  REMOTE_PRESERVED_WITHOUT_GO,
   TAR_EXCLUDES,
   buildRemoteScript,
   parseArgs,
+  parseRemoteGoTarget,
   remotePath,
+  remotePreserved,
   shQuote
 };

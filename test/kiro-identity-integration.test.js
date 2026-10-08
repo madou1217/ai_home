@@ -10,6 +10,8 @@ const { DatabaseSync } = require('node:sqlite');
 const { createUnifiedImportService } = require('../lib/cli/services/import/unified-import');
 const { listAccountCredentialRecords, readAccountNativeAuth } = require('../lib/server/account-credential-store');
 const { registerKiroNativeLogin, captureKiroNativeLogin } = require('../lib/account/kiro-native-login');
+const { materializeProviderAuth } = require('../lib/account/native-auth-projection');
+const { readKiroTokenFromDatabase } = require('../lib/account/kiro-auth-metadata');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kiro-enroll-'));
@@ -81,6 +83,74 @@ test('Kiro failure and cancellation leave no half-registered account', async t =
   });
   assert.equal(cancelled.reason, 'kiro_identity_cancelled');
   assert.equal(listAccountCredentialRecords(fs, f.aiHomeDir, 'kiro').length, 0);
+});
+
+test('Kiro enrollment persists the authorized token committed in WAL, even while the native database remains open', async t => {
+  const f = fixture(t);
+  const writer = new DatabaseSync(f.file);
+  t.after(() => writer.close());
+  writer.exec('PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0');
+  writer.prepare('UPDATE auth_kv SET value = ? WHERE key = ?').run(
+    JSON.stringify({ access_token: 'wal-access', refresh_token: 'wal-refresh', region: 'us-east-1' }),
+    'kirocli:odic:token'
+  );
+  const mainBefore = fs.readFileSync(f.file);
+  const registered = await registerKiroNativeLogin(fs, f.source, {
+    aiHomeDir: f.aiHomeDir, request: requestFor('aws-wal-user')
+  });
+  assert.equal(registered.registered, true, registered.reason);
+  const restored = path.join(f.root, 'restored');
+  materializeProviderAuth(fs, restored, 'kiro', { aiHomeDir: f.aiHomeDir, accountRef: registered.accountRef });
+  assert.equal(readKiroTokenFromDatabase(path.join(restored, 'data.sqlite3')).access_token, 'wal-access');
+  assert.deepEqual(fs.readFileSync(f.file), mainBefore, 'snapshotting must not rewrite the active native database');
+});
+
+test('Kiro credential reprojection preserves live account sessions and updates only auth records', async t => {
+  const f = fixture(t);
+  const registered = await registerKiroNativeLogin(fs, f.source, { aiHomeDir: f.aiHomeDir, request: requestFor('aws-session-user') });
+  const runtimeDir = path.join(f.root, 'account-runtime');
+  const options = { aiHomeDir: f.aiHomeDir, accountRef: registered.accountRef };
+  materializeProviderAuth(fs, runtimeDir, 'kiro', options);
+  const runtime = new DatabaseSync(path.join(runtimeDir, 'data.sqlite3'));
+  t.after(() => runtime.close());
+  runtime.exec("CREATE TABLE conversations_v2(id TEXT PRIMARY KEY, value TEXT); INSERT INTO conversations_v2 VALUES('live-session', 'keep-me')");
+  f.write('renewed-access', 'renewed-refresh');
+  await captureKiroNativeLogin(fs, f.source, {
+    aiHomeDir: f.aiHomeDir, accountRef: registered.accountRef, request: requestFor('aws-session-user')
+  });
+  materializeProviderAuth(fs, runtimeDir, 'kiro', options);
+  const reread = new DatabaseSync(path.join(runtimeDir, 'data.sqlite3'));
+  t.after(() => reread.close());
+  assert.equal(reread.prepare('SELECT value FROM conversations_v2 WHERE id = ?').get('live-session').value, 'keep-me');
+  assert.equal(readKiroTokenFromDatabase(path.join(runtimeDir, 'data.sqlite3')).access_token, 'renewed-access');
+});
+
+test('a second Kiro launch preserves native token renewal until a new stored grant is explicitly applied', async t => {
+  const f = fixture(t);
+  const registered = await registerKiroNativeLogin(fs, f.source, { aiHomeDir: f.aiHomeDir, request: requestFor('aws-native-renewal-user') });
+  const runtimeDir = path.join(f.root, 'runtime');
+  const options = { aiHomeDir: f.aiHomeDir, accountRef: registered.accountRef };
+  materializeProviderAuth(fs, runtimeDir, 'kiro', options);
+  const file = path.join(runtimeDir, 'data.sqlite3');
+  const db = new DatabaseSync(file);
+  db.prepare('UPDATE auth_kv SET value = ? WHERE key = ?').run(
+    JSON.stringify({ access_token: 'native-renewed-access', refresh_token: 'native-renewed-refresh', region: 'us-east-1' }),
+    'kirocli:odic:token'
+  );
+  db.close();
+  materializeProviderAuth(fs, runtimeDir, 'kiro', options);
+  assert.equal(readKiroTokenFromDatabase(file).access_token, 'native-renewed-access');
+});
+
+test('Kiro projection fails closed for unknown existing database content without replacing it', async t => {
+  const f = fixture(t);
+  const registered = await registerKiroNativeLogin(fs, f.source, { aiHomeDir: f.aiHomeDir, request: requestFor('aws-projection-user') });
+  const runtimeDir = path.join(f.root, 'runtime');
+  fs.mkdirSync(runtimeDir);
+  const file = path.join(runtimeDir, 'data.sqlite3');
+  fs.writeFileSync(file, 'unrecognized-content');
+  assert.throws(() => materializeProviderAuth(fs, runtimeDir, 'kiro', { aiHomeDir: f.aiHomeDir, accountRef: registered.accountRef }), /kiro_database_credential_projection_failed/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'unrecognized-content');
 });
 
 test('a late Kiro identity response cannot replace a newer DB credential generation', async t => {

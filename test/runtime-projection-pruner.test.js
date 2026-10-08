@@ -13,6 +13,9 @@ const {
   resolveAihRunPath,
   resolveCodexDesktopRuntimeDir
 } = require('../lib/runtime/aih-storage-layout');
+const { appServerStatePath, writeAppServerState } = require('../lib/server/codex-app-server-endpoint');
+const { pruneStaleCodexAppServerStates } = require('../lib/server/codex-app-server-state-pruner');
+const { createAccountStateIndex } = require('../lib/account/state-index');
 
 function makeDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -90,6 +93,107 @@ test('runtime projection pruner keeps stale resources when reconciliation is inc
 
   assert.deepEqual(result, { removed: 0, kept: 0, failed: 1 });
   assert.equal(fs.existsSync(staleDir), true);
+});
+
+test('Codex app-server pruner invalidates states for deleted accounts in every namespace', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-state-prune-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const registered = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    identitySeed: 'oauth:codex:state-prune@example.com'
+  });
+  const stale = 'acct_ffffffffffffffffffff';
+  const staleChatScope = `chat-${stale}`;
+  writeAppServerState(aiHomeDir, registered.accountRef, {
+    accountRef: registered.accountRef,
+    runtimeScope: registered.accountRef,
+    multiplexer: 'tmux',
+    port: 43131,
+    socket: `aih-codexapp-${registered.accountRef.slice(5)}`
+  });
+  writeAppServerState(aiHomeDir, stale, {
+    accountRef: stale,
+    runtimeScope: stale,
+    multiplexer: 'tmux',
+    port: 43132,
+    socket: `aih-codexapp-${stale.slice(5)}`
+  });
+  writeAppServerState(aiHomeDir, staleChatScope, {
+    accountRef: stale,
+    runtimeScope: staleChatScope,
+    multiplexer: 'tmux',
+    port: 43133,
+    socket: `aih-codexchat-${stale.slice(5)}`
+  });
+  const calls = [];
+  const result = pruneStaleCodexAppServerStates({
+    fs,
+    path,
+    aiHomeDir,
+    invalidateCodexAppServerEndpoint(options) {
+      calls.push(options);
+      fs.unlinkSync(appServerStatePath(aiHomeDir, options.runtimeNamespace === 'chat'
+        ? `chat-${options.accountRef}`
+        : options.accountRef));
+      return { invalidated: true };
+    }
+  });
+
+  assert.deepEqual(result, { removed: 2, kept: 1, failed: 0 });
+  assert.deepEqual(calls.map((entry) => entry.runtimeNamespace), [undefined, 'chat']);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, registered.accountRef)), true);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, stale)), false);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, staleChatScope)), false);
+});
+
+test('Codex app-server pruner invalidates resident states for disabled accounts', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-codex-disabled-state-prune-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const account = registerAccountIdentity(fs, aiHomeDir, {
+    provider: 'codex',
+    identitySeed: 'oauth:codex:disabled-state-prune@example.com'
+  });
+  const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir });
+  t.after(() => accountStateIndex.close());
+  accountStateIndex.upsertAccountState(account.accountRef, 'codex', {
+    status: 'down',
+    configured: true,
+    authMode: 'oauth'
+  });
+  const chatScope = `chat-${account.accountRef}`;
+  writeAppServerState(aiHomeDir, account.accountRef, {
+    accountRef: account.accountRef,
+    runtimeScope: account.accountRef,
+    multiplexer: 'tmux',
+    port: 43141,
+    socket: `aih-codexapp-${account.accountRef.slice(5)}`
+  });
+  writeAppServerState(aiHomeDir, chatScope, {
+    accountRef: account.accountRef,
+    runtimeScope: chatScope,
+    multiplexer: 'tmux',
+    port: 43142,
+    socket: `aih-codexchat-${account.accountRef.slice(5)}`
+  });
+  const calls = [];
+  const result = pruneStaleCodexAppServerStates({
+    fs,
+    path,
+    aiHomeDir,
+    accountStateIndex,
+    invalidateCodexAppServerEndpoint(options) {
+      calls.push(options);
+      fs.unlinkSync(appServerStatePath(aiHomeDir, options.runtimeNamespace === 'chat'
+        ? `chat-${options.accountRef}`
+        : options.accountRef));
+      return { invalidated: true };
+    }
+  });
+
+  assert.deepEqual(result, { removed: 2, kept: 0, failed: 0 });
+  assert.deepEqual(calls.map((entry) => entry.runtimeNamespace), [undefined, 'chat']);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, account.accountRef)), false);
+  assert.equal(fs.existsSync(appServerStatePath(aiHomeDir, chatScope)), false);
 });
 
 test('runtime projection pruner aborts before deletion when account schema is invalid', (t) => {

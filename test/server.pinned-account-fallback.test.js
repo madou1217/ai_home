@@ -175,6 +175,19 @@ test('钉住的账号被删除后(持久化行全清),请求同样回落,而不�
   });
 });
 
+test('旧版仅有 account:deleted 标记的 Codex/Provider 会话也回落,而不是 404', async (t) => {
+  const { deleteAccountRef } = require('../lib/server/account-ref-store');
+  const { deleteJsonValue, writeJsonValue } = require('../lib/server/app-state-store');
+  await assertPinnedRequestFallsBack(t, ({ aiHomeDir, deadRef }) => {
+    // Remove the durable account/state rows so the router must consult the
+    // historical marker. The current retirement marker is deliberately
+    // removed to model a database written before that marker existed.
+    assert.equal(deleteAccountRef(fs, aiHomeDir, deadRef), true);
+    assert.equal(deleteJsonValue(fs, aiHomeDir, `account:retired:${deadRef}`), true);
+    writeJsonValue(fs, aiHomeDir, `account:deleted:${deadRef}`, { deletedAt: Date.now() });
+  });
+});
+
 test('从未存在过的 ref 没有退役记录(HTTP 404 契约见 server.v1-router / kimi-responses 测试)', async () => {
   const { readRetiredAccountRef } = require('../lib/account/retired-account-refs');
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-pin-unknown-'));

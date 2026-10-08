@@ -675,7 +675,7 @@ test('zcode desktop 在 macOS 用账号影子 App 装载验证码 hook 后再 sp
   assert.equal(prepareCalls.length, 1);
   assert.equal(fakeSpawn.calls[0].file, shadowExe);
   const env = fakeSpawn.calls[0].options.env;
-  assert.match(env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH, /zcode-electron-captcha-hook\.js$/);
+  assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
   assert.deepEqual(JSON.parse(env.ZCODE_AGENT_SERVER_ARGS_JSON), ['app-server', '--stdio']);
   assert.equal(env.AIH_ZCODE_AGENT_ENTRY, `${shadowBundlePath}/Contents/Resources/glm/zcode.cjs`);
 });
@@ -1525,6 +1525,94 @@ test('listRunningDesktopInstances 在 macOS 识别改名后的 ZCode 主进程',
 
   assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), [
     { pid: 9251, applicationName }
+  ]);
+});
+
+test('macOS Desktop 自行重启丢失 argv 后仍通过官方 user-data 环境变量识别账号', () => {
+  const userDataDir = `/aih-home/run/auth-projections/workbuddycn/${ACCOUNT_REF}/electron-user-data`;
+  const command = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    if (args[0] === 'eww') {
+      assert.deepEqual(args.slice(0, 3), ['eww', '-p', '9254']);
+      return `9254 ${command} HOME=/aih-home WORKBUDDY_USER_DATA_DIR=${userDataDir} OTHER_SECRET=not-an-identity\n`;
+    }
+    return [`9254 ${command}`, `9255 ${command} /Applications/WorkBuddy.app/Contents/Resources/app.asar/main/daemon-app-server-entry.js --stdio`,
+      `9256 ${command} --type=renderer`].join('\n');
+  };
+  assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), [{ pid: 9254, userDataDir }]);
+  assert.deepEqual(findRunningDesktopPids(userDataDir, { execNames: ['WorkBuddy'] }, 'macos', { execFileSync }), [9254]);
+  assert.deepEqual(findRunningDesktopPids('/aih-home/other/electron-user-data', { execNames: ['WorkBuddy'] }, 'macos', { execFileSync }), []);
+});
+
+test('macOS Desktop 环境身份探测失败或未声明时不猜测账号', () => {
+  const command = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  for (const output of ['9254 ' + command + ' HOME=/aih-home UNKNOWN_USER_DATA_DIR=/other', null]) {
+    const execFileSync = (file, args) => {
+      if (args[0] !== 'eww') return `9254 ${command}`;
+      if (output == null) throw new Error('process exited');
+      return output;
+    };
+    assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), []);
+  }
+});
+
+test('macOS Desktop 批量环境身份支持路径空格并保持中外账号隔离', () => {
+  const cnCommand = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  const globalCommand = '/Applications/WorkBuddy AI.app/Contents/MacOS/Electron';
+  const cnProfile = '/Users/Account A/aih/cn/electron-user-data';
+  const globalProfile = '/Users/Account B/aih/global/electron-user-data';
+  const execFileSync = (file, args, options) => {
+    assert.equal(file, 'ps');
+    if (args[0] !== 'eww') return `9254 ${cnCommand}\n9257 ${globalCommand}`;
+    assert.deepEqual(args, ['eww', '-p', '9254,9257', '-o', 'pid=,command=']);
+    assert.equal(options.timeout, 2000);
+    return `9254 ${cnCommand} WORKBUDDY_USER_DATA_DIR=${cnProfile} PATH=/bin\n`
+      + `9257 ${globalCommand} WORKBUDDY_USER_DATA_DIR=${globalProfile} PATH=/bin\n`;
+  };
+  assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), [
+    { pid: 9254, userDataDir: cnProfile }, { pid: 9257, userDataDir: globalProfile }
+  ]);
+  assert.deepEqual(findRunningDesktopPids(cnProfile, { execNames: ['Electron'] }, 'macos', { execFileSync }), [9254]);
+  assert.deepEqual(findRunningDesktopPids(globalProfile, { execNames: ['Electron'] }, 'macos', { execFileSync }), [9257]);
+});
+
+test('macOS Desktop 环境 fallback 不探测未知应用或带脚本与预热参数的子进程', () => {
+  const command = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    assert.deepEqual(args, ['-ax', '-o', 'pid=,command=']);
+    return [
+      '9254 /Applications/Other.app/Contents/MacOS/Electron',
+      `9255 ${command} /Applications/WorkBuddy.app/Contents/Resources/app.asar/main/daemon-app-server-entry.js --stdio`,
+      `9256 ${command} --prewarm`,
+      `9257 ${command} --type=renderer`
+    ].join('\n');
+  };
+  assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), []);
+});
+
+test('macOS Desktop 环境探测拒绝已变化的进程命令和歧义身份', () => {
+  const command = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  for (const environmentOutput of [
+    `9254 /usr/bin/other WORKBUDDY_USER_DATA_DIR=/other`,
+    `9254 ${command} /app/daemon.js --stdio WORKBUDDY_USER_DATA_DIR=/other`,
+    `9254 ${command} WORKBUDDY_USER_DATA_DIR=/first WORKBUDDY_USER_DATA_DIR=/second`
+  ]) {
+    const execFileSync = (_file, args) => args[0] === 'eww'
+      ? environmentOutput : `9254 ${command}`;
+    assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), []);
+  }
+});
+
+test('macOS Desktop 环境探测失败仍保留其他实例的显式参数身份', () => {
+  const command = '/Applications/WorkBuddy.app/Contents/MacOS/Electron';
+  const execFileSync = (_file, args) => {
+    if (args[0] === 'eww') throw new Error('process exited');
+    return `9254 ${command}\n9257 ${command} --user-data-dir=/aih/explicit/electron-user-data`;
+  };
+  assert.deepEqual(listRunningDesktopInstances('macos', { execFileSync }), [
+    { pid: 9257, userDataDir: '/aih/explicit/electron-user-data' }
   ]);
 });
 

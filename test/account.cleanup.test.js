@@ -119,10 +119,14 @@ test('deleteAccountByRef invalidates resident Codex app-servers before removing 
   const result = service.deleteAccountByRef('codex', accountRef);
 
   assert.equal(result.deleted, true);
-  assert.equal(invalidated.length, 1);
+  assert.equal(invalidated.length, 2);
   assert.equal(invalidated[0].aiHomeDir, root);
   assert.equal(invalidated[0].accountRef, accountRef);
   assert.equal(typeof invalidated[0].spawnSyncImpl, 'function');
+  assert.equal(invalidated[0].runtimeNamespace, undefined);
+  assert.equal(invalidated[1].aiHomeDir, root);
+  assert.equal(invalidated[1].accountRef, accountRef);
+  assert.equal(invalidated[1].runtimeNamespace, 'chat');
   assert.equal(resolveAccountRef(fs, root, accountRef), null);
 });
 

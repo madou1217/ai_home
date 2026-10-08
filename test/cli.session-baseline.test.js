@@ -8,7 +8,11 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { registerAccountIdentity } = require('../lib/account/account-registration');
-const { readDefaultAccountRef } = require('../lib/account/default-account-store');
+const {
+  AIH_SERVER_PROFILE_ID,
+  readDefaultAccountRef,
+  readDefaultProviderProfile
+} = require('../lib/account/default-account-store');
 const { createAccountStateIndex } = require('../lib/account/state-index');
 const {
   writeAccountCredentials,
@@ -151,10 +155,10 @@ test('`aih ls` lists registered accounts and ignores runtime-only entries', (t) 
   assert.equal(result.stdout.includes('Account ID: \x1b[36m1\x1b[0m'), true);
 });
 
-test('`aih codex set-default` writes canonical API-key provider config', (t) => {
+test('`aih codex set-default <id>` selects the native API-key account and retains the gateway provider', (t) => {
   const homeDir = mkTmpDir();
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
-  registerTestAccount(homeDir, 'codex', '10', {
+  const account = registerTestAccount(homeDir, 'codex', '10', {
     env: { OPENAI_API_KEY: 'dummy' }
   });
 
@@ -163,10 +167,35 @@ test('`aih codex set-default` writes canonical API-key provider config', (t) => 
   const hostConfig = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
   const providerKey = getAihProviderKey();
   assert.match(hostConfig, /^preferred_auth_method = "apikey"/m);
-  assert.match(hostConfig, new RegExp(`^model_provider = "${providerKey}"$`, 'm'));
+  assert.match(hostConfig, /^model_provider = "openai"$/m);
+  assert.match(hostConfig, /^openai_base_url = "https:\/\/api\.openai\.com\/v1"$/m);
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'm'));
   assert.match(hostConfig, new RegExp(`^base_url = "${AIH_CODEX_PROVIDER_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"$`, 'm'));
   assert.match(hostConfig, /'--gateway'/);
+  assert.equal(readDefaultAccountRef(fs, account.aiHomeDir, 'codex'), account.accountRef);
+  assert.equal(readDefaultProviderProfile(fs, account.aiHomeDir, 'codex'), '');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(homeDir, '.codex', 'auth.json'), 'utf8')).OPENAI_API_KEY, 'dummy');
+});
+
+test('`aih codex set-default` selects the gateway without requiring an account API key', (t) => {
+  const homeDir = mkTmpDir();
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+  const account = registerTestAccount(homeDir, 'codex', '1', {
+    nativeAuth: { auth: { sandbox: 'oauth' } }
+  });
+
+  const accountResult = runCli(['codex', 'set-default', '1'], homeDir);
+  assert.equal(accountResult.status, 0, `stdout=${accountResult.stdout}\nstderr=${accountResult.stderr}`);
+  const result = runCli(['codex', 'set-default'], homeDir);
+  assert.equal(result.status, 0, `stdout=${result.stdout}\nstderr=${result.stderr}`);
+
+  const hostConfig = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
+  assert.match(hostConfig, new RegExp(`^model_provider = "${getAihProviderKey()}"$`, 'm'));
+  assert.match(hostConfig, /'--gateway'/);
+  assert.doesNotMatch(hostConfig, /X-Account-Ref/);
+  assert.equal(readDefaultProviderProfile(fs, account.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+  assert.equal(readDefaultAccountRef(fs, account.aiHomeDir, 'codex'), '');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(homeDir, '.codex', 'auth.json'), 'utf8')), { sandbox: 'oauth' });
 });
 
 test('switching API-key defaults updates one canonical provider block', (t) => {
@@ -189,6 +218,8 @@ test('switching API-key defaults updates one canonical provider block', (t) => {
 
   const hostConfig = fs.readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8');
   const providerKey = getAihProviderKey();
+  assert.match(hostConfig, /^model_provider = "openai"$/m);
+  assert.match(hostConfig, /^openai_base_url = "https:\/\/b\.example\.com\/v1"$/m);
   assert.equal((hostConfig.match(new RegExp(`^\\[model_providers\\.${providerKey}\\]$`, 'gm')) || []).length, 1);
   assert.match(hostConfig, /^base_url = "http:\/\/127.0.0.1:9527\/v1"$/m);
   assert.match(hostConfig, new RegExp(`^\\[model_providers\\.${providerKey}\\.auth\\]$`, 'm'));

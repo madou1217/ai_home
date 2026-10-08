@@ -151,6 +151,8 @@ func (handler *Handler) ServeHTTP(
 		writeRequestError(response, err)
 		return
 	}
+	ctx = inferenceapi.ContextWithRequestSessionKey(ctx, request.Header, body)
+	request = request.WithContext(ctx)
 	exchange, err := handler.adapter.Bind(body)
 	if err != nil {
 		writeDecodeError(response, err)

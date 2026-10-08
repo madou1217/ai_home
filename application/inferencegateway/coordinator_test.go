@@ -259,6 +259,50 @@ func TestCoordinatorDistributesHealthyRequestsFairly(t *testing.T) {
 	t.Logf("requests=%d accounts=%d distribution=%v", requestCount, len(counts), counts)
 }
 
+// TestCoordinatorKeepsSessionAffinityAcrossRequests 验证带同一会话键的请求固定落在同一账号。
+func TestCoordinatorKeepsSessionAffinityAcrossRequests(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCoordinatorFixture(t, "codex", 3)
+	upstream := newScriptedUpstream(
+		inference.ProtocolCodexResponses,
+		func(
+			_ context.Context,
+			_ inferencegateway.Invocation,
+			emit inferencegateway.EventSink,
+		) (inferencegateway.AttemptResult, error) {
+			for _, event := range successfulEvents(t, "resp_affinity") {
+				if err := emit(event); err != nil {
+					return inferencegateway.AttemptResult{}, err
+				}
+			}
+			return inferencegateway.CompletedAttempt(), nil
+		},
+	)
+	coordinator := fixture.newCoordinator(t, upstream, &attemptRecorder{})
+	request := newTextRequest(t, "gpt-5.6-sol", true)
+	ctx := inferencegateway.WithRequestSessionKey(
+		context.Background(),
+		"coordinator-session",
+	)
+	for range 4 {
+		if err := coordinator.Execute(
+			ctx,
+			request,
+			func(inference.StreamEvent) error { return nil },
+		); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+	}
+	served := map[accountcore.AccountRef]int{}
+	for _, invocation := range upstream.Invocations() {
+		served[invocation.Account().Ref()]++
+	}
+	if len(served) != 1 {
+		t.Fatalf("会话亲和被打破：distribution=%v", served)
+	}
+}
+
 // TestCoordinatorDistributesSameModelAcrossProviderRoutesFairly 验证同一模型
 // 同时由 AGY 与 Claude 提供时，连续健康请求不会永远被目录中的首个 Provider 抢占。
 func TestCoordinatorDistributesSameModelAcrossProviderRoutesFairly(t *testing.T) {

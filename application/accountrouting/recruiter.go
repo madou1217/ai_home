@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -99,6 +100,11 @@ type Request struct {
 	pinnedAccount accountcore.AccountRef
 	excluded      [MaxExcludedAccounts]accountcore.AccountRef
 	excludedCount uint8
+	// sessionKey 是客户端会话标识；非空时启用会话亲和。
+	sessionKey string
+	// preserveAffinity 表示该请求携带必须同账号续接的加密推理链，绑定账号即使仅被
+	// （账号,模型）软冷却挡住也要硬性优先（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
+	preserveAffinity bool
 }
 
 // NewRequest 规范化 Provider，并校验别名解析后的真实模型。
@@ -194,6 +200,21 @@ func (request Request) PinnedAccount() (accountcore.AccountRef, bool) {
 	return request.pinnedAccount, request.pinnedAccount.IsValid()
 }
 
+// WithSessionAffinity 返回附带会话亲和信息的请求副本。
+//
+// sessionKey 为空时不改变请求；preserve 只对携带加密推理链的续接请求为真。
+func (request Request) WithSessionAffinity(
+	sessionKey string,
+	preserve bool,
+) Request {
+	if sessionKey == "" {
+		return request
+	}
+	request.sessionKey = sessionKey
+	request.preserveAffinity = preserve
+	return request
+}
+
 // isValid 防止零值或跨层篡改请求进入候选端口。
 func (request Request) isValid() bool {
 	if request.ProviderID() == "" ||
@@ -277,8 +298,12 @@ type Recruiter struct {
 	weights     AccountWeightSource
 	strategy    SelectionStrategy
 	scheduler   *FairRoundRobinScheduler
+	// affinity 保存 (Provider, 会话键) -> 账号的粘性绑定。
+	affinity *SessionAffinity
 	// randomIntN 是加权随机的可注入随机源；生产使用全局随机源。
 	randomIntN func(int) int
+	// now 是会话亲和 TTL 的时钟；生产使用 time.Now。
+	now func() time.Time
 }
 
 // RecruitmentSession 固定一次请求的候选快照、轮转起点和扫描位置。
@@ -296,6 +321,8 @@ type RecruitmentSession struct {
 	start           int
 	offset          int
 	softCooldown    softCooldownFallback
+	// affinityAccount 是本次会话命中的绑定账号；无效表示未命中会话亲和。
+	affinityAccount accountcore.AccountRef
 	// order 是账号偏好重排后的扫描顺序（见 preference.go）；为 nil 时按环形起点扫描。
 	order []int
 }
@@ -325,7 +352,9 @@ func NewRecruiter(dependencies Dependencies) (*Recruiter, error) {
 		weights:     dependencies.Weights,
 		strategy:    strategy,
 		scheduler:   &FairRoundRobinScheduler{},
+		affinity:    NewSessionAffinity(),
 		randomIntN:  defaultRandomIntN,
+		now:         time.Now,
 	}, nil
 }
 
@@ -382,10 +411,43 @@ func (recruiter *Recruiter) Begin(
 		return session, nil
 	}
 	session.start = recruiter.startPosition(request, candidates)
-	if err := session.preferredOrder(ctx); err != nil {
+	affinityOffset, affinityAccount, hasAffinity := recruiter.affinityLookup(
+		request,
+		candidates,
+	)
+	session.affinityAccount = affinityAccount
+	if err := session.preferredOrder(ctx, affinityOffset, hasAffinity); err != nil {
 		return nil, err
 	}
 	return session, nil
+}
+
+// affinityLookup 返回会话键绑定账号在当前候选中的下标与账号引用。
+//
+// 绑定账号已不在候选（账号被删除/禁用/换池）或没有绑定时返回未命中，调用方照常按
+// 策略起点扫描并重新绑定。
+func (recruiter *Recruiter) affinityLookup(
+	request Request,
+	candidates *accountapp.RoutingCandidates,
+) (int, accountcore.AccountRef, bool) {
+	if recruiter.affinity == nil || request.sessionKey == "" {
+		return 0, "", false
+	}
+	bound, found := recruiter.affinity.Lookup(
+		request.ProviderID(),
+		request.sessionKey,
+		recruiter.now(),
+	)
+	if !found {
+		return 0, "", false
+	}
+	for index := 0; index < candidates.Len(); index++ {
+		candidate, ok := candidates.At(index)
+		if ok && candidate.Ref() == bound {
+			return index, bound, true
+		}
+	}
+	return 0, "", false
 }
 
 // startPosition 按当前策略返回环形扫描起点。
@@ -462,7 +524,7 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		if eligibilityErr != nil {
 			return progress, eligibilityErr
 		}
-		if !session.admits(eligibility, offset) {
+		if !session.admits(eligibility, offset, candidate) {
 			continue
 		}
 		binding, observation, resolveErr := session.recruiter.credentials.ResolveObservedCredentialBinding(
@@ -491,10 +553,26 @@ func (session *RecruitmentSession) Next(ctx context.Context) (Result, error) {
 		progress.account = candidate
 		progress.binding = binding
 		progress.observation = observation
+		session.bindAffinity(candidate.Ref())
 		return progress, nil
 	}
 	progress.sourceExhausted = true
 	return progress, ErrNoRoutableAccount
+}
+
+// bindAffinity 把本次选中的账号记为该会话键的绑定。
+//
+// 绑定发生在选号成功、上游调用之前（与 Node 一致）；同会话的后续请求据此续接同一账号。
+func (session *RecruitmentSession) bindAffinity(accountRef accountcore.AccountRef) {
+	if session.pinned || session.request.sessionKey == "" {
+		return
+	}
+	session.recruiter.affinity.Bind(
+		session.request.ProviderID(),
+		session.request.sessionKey,
+		accountRef,
+		session.recruiter.now(),
+	)
 }
 
 // candidateCount 返回当前会话可检查的候选数量；固定账号最多为一。
@@ -547,9 +625,12 @@ func (recruiter *Recruiter) runtimeEligibility(
 // admits 判定该候选能否继续解析凭据。
 //
 // 仅因软冷却被拦下的候选会被记入逃生阀，等整轮扫描落空后重放；硬阻塞直接跳过。
+// 携带加密推理链的续接请求会硬性优先其绑定账号：该账号只要不是硬阻塞，即使仅被
+// （账号,模型）软冷却挡住也放行（与 Node 的 preserveEncryptedReasoningAffinity 同构）。
 func (session *RecruitmentSession) admits(
 	eligibility runtimecore.Eligibility,
 	offset int,
+	candidate accountapp.RoutingAccount,
 ) bool {
 	if eligibility.Eligible() {
 		return true
@@ -558,6 +639,11 @@ func (session *RecruitmentSession) admits(
 		return false
 	}
 	if session.softCooldown.bypassesCooldown() {
+		return true
+	}
+	if session.request.preserveAffinity &&
+		session.affinityAccount.IsValid() &&
+		candidate.Ref() == session.affinityAccount {
 		return true
 	}
 	session.softCooldown.deferCandidate(offset)

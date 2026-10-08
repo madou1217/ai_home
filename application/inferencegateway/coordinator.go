@@ -519,7 +519,7 @@ func (coordinator *Coordinator) executeRouteRound(
 	var pendingFailure *attemptStream
 	onlyDeferred := true
 	attempted := 0
-	session, err := coordinator.beginRecruitment(ctx, route, upstream)
+	session, err := coordinator.beginRecruitment(ctx, request, route, upstream)
 	if err != nil {
 		return routeExecution{}, err
 	}
@@ -617,19 +617,21 @@ func (coordinator *Coordinator) claimPoolRetry(
 // beginRecruitment 创建真实模型征召请求并固定当前不可变候选快照。
 func (coordinator *Coordinator) beginRecruitment(
 	ctx context.Context,
+	request inference.Request,
 	route Route,
 	transport accountrouting.CredentialTransportPolicy,
 ) (*accountrouting.RecruitmentSession, error) {
-	request, err := coordinator.newRecruitmentRequest(ctx, route)
+	recruitment, err := coordinator.newRecruitmentRequest(ctx, request, route)
 	if err != nil {
 		return nil, err
 	}
-	return coordinator.recruiter.Begin(ctx, request, transport)
+	return coordinator.recruiter.Begin(ctx, recruitment, transport)
 }
 
 // newRecruitmentRequest 把 HTTP/CLI Gateway 的请求级账号约束下沉到征召边界。
 func (coordinator *Coordinator) newRecruitmentRequest(
 	ctx context.Context,
+	request inference.Request,
 	route Route,
 ) (accountrouting.Request, error) {
 	accountRef, pinned := PinnedAccount(ctx)
@@ -641,19 +643,31 @@ func (coordinator *Coordinator) newRecruitmentRequest(
 			accountRef,
 		)
 	}
+	var recruitment accountrouting.Request
+	var err error
 	if excluded, found := excludedFallbackAccount(ctx); found {
-		return accountrouting.NewRequestExcluding(
+		recruitment, err = accountrouting.NewRequestExcluding(
 			coordinator.catalog,
 			string(route.ProviderID()),
 			route.EffectiveModel(),
 			[]accountcore.AccountRef{excluded},
 		)
+	} else {
+		recruitment, err = accountrouting.NewRequest(
+			coordinator.catalog,
+			string(route.ProviderID()),
+			route.EffectiveModel(),
+		)
 	}
-	return accountrouting.NewRequest(
-		coordinator.catalog,
-		string(route.ProviderID()),
-		route.EffectiveModel(),
-	)
+	if err != nil {
+		return accountrouting.Request{}, err
+	}
+	// 会话亲和键来自客户端请求（请求头/请求体）；携带加密推理链的续接请求要求
+	// 绑定账号硬性优先，避免换号导致上游拒绝同账号续接。
+	return recruitment.WithSessionAffinity(
+		RequestSessionKey(ctx),
+		request.IncludeEncryptedReasoning(),
+	), nil
 }
 
 // executeAttempt 执行单账号调用并返回尚未对客户端可见的可重试失败。

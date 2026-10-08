@@ -86,3 +86,23 @@ func excludedFallbackAccount(ctx context.Context) (accountcore.AccountRef, bool)
 	accountRef, ok := ctx.Value(fallbackAccountContextKey{}).(accountcore.AccountRef)
 	return accountRef, ok && accountRef.IsValid()
 }
+
+// requestSessionKeyContextKey 隔离请求级会话标识，用于账号会话亲和。
+type requestSessionKeyContextKey struct{}
+
+// WithRequestSessionKey 返回携带请求会话标识的子 Context；空标识原样返回。
+func WithRequestSessionKey(ctx context.Context, sessionKey string) context.Context {
+	if ctx == nil || sessionKey == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, requestSessionKeyContextKey{}, sessionKey)
+}
+
+// RequestSessionKey 返回请求会话标识；未设置时返回空字符串。
+func RequestSessionKey(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	sessionKey, _ := ctx.Value(requestSessionKeyContextKey{}).(string)
+	return sessionKey
+}

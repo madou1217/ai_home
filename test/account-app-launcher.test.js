@@ -1312,6 +1312,9 @@ test('posix cli close 只结束目标账号的 Toolkit CLI 进程，不影响其
   const otherAccountRef = 'acct_other000000000000000';
   const execFileSync = (file, args) => {
     assert.equal(file, 'ps');
+    if (args.join(' ') === '-axo pid=,ppid=') {
+      return ['9601 1', '9602 9601', '9603 9602', '9701 1', '9702 9701'].join('\n');
+    }
     assert.deepEqual(args, ['-ax', '-o', 'pid=,ppid=,command=']);
     return [
       `9601 1 AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF='${ACCOUNT_REF}' /bin/zsh -lc \"/repo/bin/ai-home.js codex 3\"`,
@@ -1350,9 +1353,8 @@ test('posix cli close 只结束目标账号的 Toolkit CLI 进程，不影响其
   assert.equal(result.status, 'closed');
   assert.deepEqual(result.pids, [9603, 9602, 9601]);
   assert.deepEqual(signals, [
-    [9603, 'SIGTERM'], [9603, 0],
-    [9602, 'SIGTERM'], [9602, 0],
-    [9601, 'SIGTERM'], [9601, 0]
+    [9603, 'SIGTERM'], [9602, 'SIGTERM'], [9601, 'SIGTERM'],
+    [9603, 0], [9602, 0], [9601, 0]
   ]);
   assert.equal(alive.has(9701), true);
   assert.equal(alive.has(9702), true);
@@ -1974,4 +1976,47 @@ test('zcode desktop close 的凭据捕获失败不影响关闭结果', () => {
   const result = launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'desktop', action: 'close' });
   assert.equal(result.ok, true);
   assert.equal(result.status, 'not_running');
+});
+
+test('posix desktop close also ends sidecars before they can be orphaned', () => {
+  const signals = [];
+  const alive = new Set([8001, 8002, 8003, 8004, 8100]);
+  const userDataDir = nodePath.posix.join('/aih/run/auth-projections/workbuddycn', ACCOUNT_REF, 'electron-user-data');
+  const execFileSync = (file, args) => {
+    assert.equal(file, 'ps');
+    if (args.join(' ') === '-axo pid=,ppid=') {
+      // 8001 主进程 → 8002 sidecar → 8003 文档引擎；8004 是主进程直接拉起的 helper；
+      // 8100 是另一个账号的实例，不能被波及。
+      return ['8001 1', '8002 8001', '8003 8002', '8004 8001', '8100 1'].join('\n');
+    }
+    return `  8001 /Applications/WorkBuddy.app/Contents/MacOS/Electron --user-data-dir=${userDataDir}\n`
+      + '  8100 /Applications/WorkBuddy.app/Contents/MacOS/Electron --user-data-dir=/other/electron-user-data\n';
+  };
+  const { launcher } = createLauncher({
+    path: nodePath.posix,
+    getProfileDir: () => nodePath.posix.dirname(userDataDir),
+    processObj: {
+      platform: 'darwin',
+      execPath: '/usr/bin/node',
+      env: {},
+      kill(pid, signal) {
+        signals.push([pid, signal]);
+        if (signal === 'SIGTERM' || signal === 'SIGKILL') alive.delete(pid);
+        if (signal === 0 && !alive.has(pid)) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+      }
+    },
+    execFileSync,
+    stopGraceMs: 0,
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'workbuddycn', cliAccountId: '1' })
+  });
+
+  const result = launcher.launchAccountApp({ provider: 'workbuddycn', accountRef: ACCOUNT_REF, kind: 'desktop', action: 'close' });
+
+  assert.equal(result.status, 'closed', JSON.stringify(result));
+  assert.deepEqual(result.pids, [8001]);
+  assert.deepEqual(
+    signals.filter(([, signal]) => signal === 'SIGTERM').map(([pid]) => pid).sort(),
+    [8001, 8002, 8003, 8004]
+  );
+  assert.equal(alive.has(8100), true, 'another account is untouched');
 });

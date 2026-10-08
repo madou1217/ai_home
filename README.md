@@ -4,712 +4,281 @@
 
 # ai-home
 
-`ai-home` (`aih`) 用来管理 Codex / Claude / Gemini / Antigravity(agy) / OpenCode / Grok / Kimi / Kiro 的多账号、多沙箱运行，并把它们统一成一个内置的 OpenAI / Anthropic 兼容网关——一个端点对外，背后自动在多账号、多 provider 间按额度路由、按 (账号,模型) 粒度熔断、按别名优先级降级。每个 CLI 会话默认跑在持久 tmux 里，关终端 / 断 SSH 都不丢。
+`ai-home`（命令 `aih`）在一台机器上管理多个 AI CLI 的多账号，并内置一个 OpenAI / Anthropic / Gemini 兼容网关（**AIH Server**）：对外一个端点，背后在多账号、多 provider 之间按额度路由，按（账号, 模型）熔断，按模型别名的优先级降级。CLI 会话默认跑在持久 tmux 里，关终端、断 SSH 都不会丢。
+
+支持的 CLI：`codex`、`claude`、`gemini`、`agy`（Antigravity）、`opencode`、`grok`、`kimi`、`kiro`、`qoder`、`qodercn`、`codebuddy`、`codebuddycn`。上游 Gemini CLI 已停止服务，Google 账号请改用 `agy`。
+
+部分 provider 还可以在 WebUI 的账号页里按账号打开桌面 App（例如 Codex、Claude、Kimi、ZCode、WorkBuddy、CodeBuddy），具体以账号页实际显示为准。
+
+## 设计原则
+
+- **账号之间只隔离凭据。** 每个账号的目录（`~/.ai_home/run/auth-projections/<provider>/<accountRef>/`）里只放该账号的凭据。
+- **会话在原生位置，所有账号共用一份。** 会话、历史、设置和工具缓存都留在各工具自己的目录里（如 `~/.codex/sessions`、`~/.claude/projects`、`~/.kiro/sessions`），宿主和各账号看到的是同一份，换账号不会让会话"消失"。
+  - agy 是唯一例外：它固定从 `$HOME` 读凭据，所以启动时 HOME 指向账号目录，会话仍共享 `~/.gemini/antigravity-cli`。
+  - 桌面 App 中，WorkBuddy 的数据目录整体共享宿主；CodeBuddy IDE 和 ZCode 只共享会话存储，因为登录态和会话在同一个目录里。
+- **aih 自己的数据只放在 `~/.ai_home`**（可用 `AIH_HOME_DIR` 改到别处），不在宿主 home 另建目录，也不留备份文件。
 
 ## 安装
 
+需要 Node.js 22。macOS / Linux 建议安装 `tmux`；Windows 会自动使用 `psmux` 或 MSYS2 / Cygwin 的 `tmux.exe`。
+
 ```bash
-npm install
+cd ai_home
+npm install       # 同时安装并构建 WebUI
+npm link          # 把 aih 命令装到 PATH，指向这份源码
 ```
 
-## 常用命令
+更新：在仓库目录执行 `git pull --ff-only`；如果 WebUI 有变化，再执行 `npm run build`；最后 `aih server restart`。`aih update --check` 会显示当前的安装来源。
 
-### 账号
+## 账号
 
-未设置默认账号时，支持 AIH Server profile 的客户端会使用内置网关启动：
+### 启动用哪个账号
 
-```bash
-aih gemini
-aih claude
-aih codex
-aih opencode
-aih grok
-aih kimi
-aih kiro
-```
+| 命令 | 使用的账号 |
+|---|---|
+| `aih codex`、`aih claude`、`aih opencode`、`aih kimi`（可带原生参数） | **AIH Server**：请求走网关账号池，不锁定某个账号 |
+| `aih <cli> .aih-server [args]` | 显式指定 AIH Server（仅限上面 4 个 provider） |
+| `aih <cli> <id> [args]` | 指定的账号 |
+| `aih agy`、`aih grok`、`aih kiro`、`aih qoder`、`aih codebuddy` 等其他 provider（不带 ID） | 默认账号；没有设置默认账号时用 1 号账号 |
 
-新增账号：
+**默认账号**（`set-default <id>`）：
 
-```bash
-aih gemini add
-aih claude add
-aih codex add
-aih opencode add
-aih grok add
-aih kimi add
-aih kiro add
-```
+- 对 codex、claude、opencode、kimi：只决定**不经 aih** 直接运行的原生 CLI（终端里的 `codex`、`claude`，IDE 插件等）和桌面 App 用哪个账号，不影响 `aih <cli>` 的裸启动。
+- 对其他 provider：除上面的作用外，也决定 `aih <cli>` 裸启动用哪个账号。
+- `aih codex|claude|opencode|kimi set-default`（不带 ID）：让宿主上的原生 CLI 也改走 AIH Server。
 
-指定账号运行：
+### 常用命令
 
 ```bash
-aih gemini 1
-aih claude 2
-aih codex 3
-aih opencode 4
-aih grok 5
-aih kimi 1
-aih kiro 1
-```
+aih ls                                # 所有工具的账号与状态
+aih codex ls                          # 某个工具的账号
 
-查看账号：
+aih codex login                       # 新增账号并登录（浏览器）
+aih codex login --no-browser          # 无浏览器 / 设备码登录
+aih codex login api_key               # 新增 API Key 账号（交互输入 Key 与可选 Base URL）
 
-```bash
-aih ls
-aih gemini ls
-aih claude ls
-aih codex ls
-aih opencode ls
-aih grok ls
-aih kimi ls
-aih kiro ls
-```
+aih codex 3                           # 用 3 号账号启动
+aih codex 3 exec "fix the tests"      # 原生参数照常透传
+aih codex 3 home                      # 查看该账号实际使用的 HOME / 配置路径
 
-切换默认账号 / Codex App 账号：
+aih codex usage 3 --refresh           # 查询并刷新单个账号额度
+aih codex usage                       # 扫描全部账号（-j N 控制并发）
 
-```bash
-aih codex set-default 1
-aih codex set-default                 # 将内置 AIH Server 设为默认 provider
-aih claude set-default                # 同样适用于 Claude、OpenCode、Kimi
-aih codex --restart-client            # 重启/启动已识别的桌面客户端
+aih codex set-default 3               # 设置默认账号（作用见上）
+aih codex set-default                 # 宿主原生 CLI 改走 AIH Server
 aih codex unset-default
-aih codex set-mobile 1
+aih codex --restart-client            # 重启 / 启动已识别的桌面 App
+aih codex set-mobile 3                # 设置 Codex App 账号（仅 ChatGPT OAuth 账号）
 aih codex unset-mobile
-```
+aih claude set-default 2 --desktop-mode web --restart-client   # Claude Desktop：web 或 api 模式
+aih codex policy set workspace-write  # codex exec 沙箱策略（read-only / workspace-write / danger-full-access）
 
-默认账号只作用于宿主上直接运行的 `codex`/`claude` 等 CLI 与桌面 App；`aih <provider>` 不带账号 ID 时一律走 AIH Server（网关账号池），要用指定账号请写 `aih <provider> <id>`。
-
-支持内置 AIH Server 的 Codex、Claude、OpenCode、Kimi 可用不带 ID 的 `set-default` 切换宿主 CLI 默认配置；带 ID 时切回指定账号。Claude、OpenCode、Kimi 的宿主配置在切回账号或执行 `unset-default` 时恢复原文；若配置期间被外部修改，会停止恢复以避免覆盖用户改动。OpenCode 的 `opencode.jsonc` 会保留原有注释与无关选项。Server 地址或 Key 变更后重新执行 `set-default` 可刷新宿主配置。独立的 `--restart-client` 未成功重启或启动客户端时返回非零退出码。
-
-Codex 的两种默认模式：
-
-- `aih codex set-default 31 --restart-client`：注入指定账号的原始登录。OAuth 使用原生 ChatGPT 认证；API Key 使用该账号原始 Key/Base URL，不经过 AIH Server。原始 Base URL 自身可以是用户配置的第三方 relay。
-- `aih codex set-default --restart-client`：显式选择 AIH Server relay，由 AIH 管理账号路由。配置中保留的非活动 `[model_providers.aih_server]` 只是历史线程需要的 provider 注册，不代表当前请求使用网关。
-- 已接入 AIH stdio hook 的客户端恢复旧 AIH/OpenAI 线程时跟随当前默认模式；显式请求、项目配置和第三方 provider 优先，不改写线程数据库或丢弃历史。Windows 长路径、大小写及 macOS 符号链接会先归一化，宿主配置不会被误认为项目覆盖。
-
-桌面引擎发现由 `lib/runtime/desktop-runtime-layout.js` 组合平台、相对路径及可选数值版本区间，规则位于 `codex-desktop-layouts.js`。macOS 同时探测 `ChatGPT.app`/`Codex.app` 的嵌套 CLI 与旧 Resources 布局；Windows Store 已记录实际 `app/resources/codex.exe` 布局。没有可靠版本边界时按文件存在性选择，不能凭猜测硬编码版本。Linux 可使用通用解析器，但尚无已验证桌面安装规则；Windows 布局发现和引擎测试也不等同于 Store App 自动 hook 安装支持。
-
-嵌套的 macOS CLI 属于签名 App 包，不能像旧 Resources 布局一样原地改成脚本。该布局组合包外启动器策略：保留原始签名二进制，启动器写在 AIH 的 `run/codex/desktop-cli`，通过 `aih codex --restart-client` 或 `set-default --restart-client` 的 `CODEX_CLI_PATH` 启动环境接入。直接从 Finder 启动不会注入该环境；需要接管历史线程时请通过 AIH 重启。
-
-Go 的同模型 Codex `/v1/responses` HTTP relay 保留原始请求与 JSON/SSE 响应字节，支持 gzip/zstd 请求；跨协议或模型重写继续交给 Canonical。Node/Go 在真实上游 HTTP 失败后保留其状态码、响应体、`Retry-After` 和请求 ID，不能把上游 429/503 替换为笼统的“无账号”。本地 Responses 错误文案共用 `contracts/codex-relay/errors.json`；结构化安全拒绝仍终止请求，不轮换账号绕过。
-
-HTTP 200 不代表生成成功：响应头提交前会识别 JSON/SSE 中的结构化安全拒绝，两端均返回同一 403 错误。Go 的 SSE 预读仅覆盖有界前导事件（64 KiB、16 个无输出生命周期事件），遇到首个输出即开始转发；探测过的原始字节会完整回放，不重新序列化或舍弃未知字段。
-
-Node 的 Responses 入口和 Node → Go 转发决策共用有界 gzip/zstd 解码器：模型别名与账号可路由性判断读取解压后的模型；实际转发 Go 时仍保留原压缩字节。交还 Node 处理时只解压一次，并移除已不再描述请求体的编码/长度头；鉴权在解压与路由判断之前完成。
-
-离线验收（临时目录、合成凭据、loopback 上游，不使用真实账号）：
-
-```bash
-go build -o /tmp/aih-codex-http ./cmd/aih-server
-AIH_CODEX_HTTP_GO_BINARY=/tmp/aih-codex-http node --test test/server.codex-http-parity.test.js
-AIH_NATIVE_CODEX_TRANSPORT_SMOKE=1 AIH_CODEX_HTTP_GO_BINARY=/tmp/aih-codex-http node --test test/codex-native-transport-smoke.test.js
-```
-
-真实引擎 smoke 需要已安装 Codex；可用 `AIH_NATIVE_CODEX_BINARY` 指定二进制。验证同一线程的 relay → OAuth → API Key → relay 切换，并断言原始模式没有网关请求。Windows 使用 PowerShell 环境变量和本机可执行路径运行相同测试。
-
-`set-mobile` 只接受 Codex ChatGPT OAuth 账号；API Key 账号不能设为 Codex App 账号。
-
-删除账号：
-
-```bash
-aih codex delete 1,2,3
-aih codex delete 1-9
+aih codex delete 1,2,3                # 也支持 1-9 这样的范围
 aih codex deleteall
+aih codex terminal-icon --install     # 为当前终端安装 provider 图标
 ```
 
-查看 usage：
+## 导入导出
 
 ```bash
-aih gemini usage 1
-aih claude usage 1
-aih codex usage 1
-```
-
-刷新账号额度状态：
-
-```bash
-aih codex usage 4 --no-cache
-```
-
-### 导入导出
-
-#### 命令速查
-
-```bash
+aih export accounts.zip                       # 全部账号
+aih export accounts.zip codex claude:1,2      # 选择器：provider 或 provider:ID 列表
 aih export cliproxyapi [all|codex|gemini|claude] [file.json]
 aih export sub2api [provider] [file.json]
-aih export antigravity [file.json]
-aih import [provider] [sources...] [-j N] [-f <folder>] [--dry-run]
-```
+aih export antigravity [file.json]            # 只导出 agy OAuth 账号
 
-- `cliproxyapi` 生成 `cliproxyapi-data` JSON；只导出数据文件，不写入本机 CLIProxyAPI 配置。
-- `sub2api` 生成 `sub2api-data` JSON；`provider` 可选，支持 `codex`、`claude`、`gemini`、`agy`、`grok`、`kimi`。
-- `antigravity` 只导出 `agy` OAuth 账号，生成 Antigravity Manager JSON。
-- `import` 可混合读取目录、zip、JSON、JSONL、`cliproxyapi`；这些目录只作为显式输入，不参与运行时账号发现。
-- `-j N` 控制并发预算；`-f <folder>` 从 zip 内指定子目录开始导入；`--dry-run` 只解析和统计，不写入数据库。
-
-#### 普通账号压缩包
-
-```bash
-aih export accounts.zip
-aih codex export accounts.zip
-```
-
-普通压缩包在 zip 根目录写入单账号标准 JSON；不会创建 provider 子目录，也不会把本机
-CLI 数字别名写进路径或迁移 payload。
-
-OAuth 账号文件名为 `provider_email.json`；API key 账号文件名为
-`provider_url_xxx.json`，其中 `xxx` 是 account-ref 风格的公开 hash 后缀（不带
-`acct_`），用于避免同一个上游 URL 配多把 key 时互相覆盖。
-
-```text
-codex_user@example.com.json
-codex_api.openai.com_v1_2f4c0f6fb7fd9b2e58ac.json
-claude_team@example.com.json
-gemini_user@example.com.json
-agy_user@example.com.json
-```
-
-#### 标准格式导出
-
-导出为 CLIProxyAPI 数据 JSON：
-
-```bash
-aih export cliproxyapi ./cliproxyapi-data.json
-aih export cliproxyapi codex ./cliproxyapi-data.json
-aih export cliproxyapi gemini ./cliproxyapi-data.json
-aih export cliproxyapi claude ./cliproxyapi-data.json
-```
-
-`cliproxyapi` 导出只生成 JSON 数据文件，不会同步或写入 server 机器的 `~/.cli-proxy-api` 配置。
-
-导出为 sub2api 标准 JSON：
-
-```bash
-aih export sub2api
-aih export sub2api codex ./sub2api-data.json
-aih export sub2api claude ./sub2api-data.json
-aih export sub2api gemini ./sub2api-data.json
-aih export sub2api agy ./sub2api-data.json
-```
-
-`provider` 可选；省略时导出 `codex`、`claude`、`gemini`、`agy`、`grok`、`kimi` 的所有可迁移账号。
-
-sub2api 导出结构示例：
-
-```json
-{
-  "type": "sub2api-data",
-  "version": 1,
-  "exported_at": "2026-06-08T00:00:00.000Z",
-  "proxies": [
-    {
-      "proxy_key": "proxy-main",
-      "name": "Main proxy",
-      "protocol": "http",
-      "host": "127.0.0.1",
-      "port": 7890,
-      "status": "active",
-      "fallback_mode": "none",
-      "expiry_warn_days": 0
-    }
-  ],
-  "accounts": [
-    {
-      "name": "codex-user@example.com",
-      "notes": "optional note",
-      "platform": "openai",
-      "type": "oauth",
-      "credentials": {
-        "email": "user@example.com",
-        "access_token": "access-token",
-        "refresh_token": "refresh-token",
-        "id_token": "id-token",
-        "chatgpt_account_id": "chatgpt-account-id",
-        "plan_type": "plus"
-      },
-      "proxy_key": "proxy-main",
-      "concurrency": 0,
-      "priority": 0,
-      "rate_multiplier": 1,
-      "expires_at": 1893456000,
-      "auto_pause_on_expired": false
-    },
-    {
-      "name": "codex-api-key",
-      "platform": "openai",
-      "type": "apikey",
-      "credentials": {
-        "api_key": "sk-openai",
-        "base_url": "https://api.openai.com/v1"
-      },
-      "concurrency": 0,
-      "priority": 0
-    }
-  ]
-}
-```
-
-WebUI 的迁移 JSON 也使用 `sub2api-data` 结构。历史 `format=aih` 下载参数只作为
-`sub2api` 别名保留，下载文件名为 `sub2api-data.json`，不再提供单独的 AIH 私有包。它不会导出
-本机 CLI 数字别名；导入到另一台机器或另一个 AIH 目录时会按
-`provider + email` 或 `provider + normalizedUrl + key` 去重，并为 CLI 重新分配数字别名。
-Codex 凭据里的 `chatgpt_account_id` 属于上游 OAuth 元数据，会保留在 `credentials` 中。
-
-导出为 Antigravity-Manager JSON：
-
-```bash
-aih export antigravity ./antigravity-accounts.json
-```
-
-`antigravity` 只导出 `agy` OAuth 账号。普通 UI 格式示例：
-
-```json
-{
-  "accounts": [
-    {
-      "email": "agy@example.com",
-      "refresh_token": "refresh-token"
-    }
-  ]
-}
-```
-
-#### 标准格式导入
-
-```bash
 aih import accounts.zip
-aih import ./accounts
-aih import ./sub2api-data.json
-aih import ./antigravity-accounts.json
-aih import cliproxyapi
-aih import codex ./sub2api-data.json
-aih import gemini cliproxyapi
-aih codex import ./some-folder
-aih import ./many-zips -j 8
-aih import ./backup.zip -f nested/folder
-aih import ./sub2api-data.json --dry-run
+aih import ./sub2api-data.json --dry-run      # 只解析统计，不写入
+aih import codex ./some-folder                # 限定 provider
+aih import cliproxyapi                        # 读本机 CLIProxyAPI 的配置与 auth-dir
+aih import ./many-zips -j 8 -f nested/folder  # 并发预算；从 zip 内指定子目录开始
 ```
 
-支持的导入来源：
+- **导入来源**：目录、zip（含嵌套 zip）、单账号 JSON、JSONL、手动粘贴的 JSON、CLIProxyAPI 配置与 auth-dir（仅 codex / gemini / claude）、sub2api 的 `sub2api-data` / `sub2api-bundle`、Antigravity-Manager 的 JSON。
+- **去重**：同一身份已存在时跳过，不覆盖已有凭据。
+  - OAuth 账号按各 provider 稳定的账号标识判断，例如 codex 的用户 ID、claude 的账号 UUID；gemini 和 agy 按邮箱。
+  - API Key 账号按 provider + 规范化后的 URL + Key 判断。
+- **sub2api 元数据**：`notes`、`proxy_key`、`priority`、`concurrency` 等字段会保存下来，再次导出 sub2api 时原样带回。
+- **账号编号**：aih 内部用 `accountRef` 唯一标识账号，CLI 里的数字 ID 只是别名。导入到另一台机器时会重新分配数字。
 
-- 目录
-- zip 压缩包
-- provider 凭据目录（仅作为显式导入输入）
-- 单账号 JSON
-- 多行 JSONL
-- 手动粘贴 JSON / JSONL
-- CLIProxyAPI 本地配置和 auth-dir
-- sub2api `sub2api-data` / `sub2api-bundle` JSON
-- Antigravity-Manager UI JSON
-
-账号注册后，`accountRef` 是持久化、Server、WebUI、事件、用量和运行时寻址使用的唯一账号键。
-CLI 命令中的数字只是 `cliAccountId` 别名；CLI 在入口处把它解析成 `accountRef`，后续链路不再携带数字 ID。
-Codex 凭据中的 `account_id` 是上游协议字段，进入内部模型后统一命名为 `upstreamAccountId`，不会参与本地账号寻址。
-
-持久化结构：
-
-```text
-$AIH_HOME/app-state.db
-  account_refs              # accountRef PRIMARY KEY，业务与运行时账号真相
-  account_cli_aliases       # accountRef -> CLI 数字别名，仅 CLI 使用
-  cli_account_id_sequences  # 各 provider 的 CLI 别名分配序列
-  account_credentials       # accountRef -> env/native auth 凭据
-  account_state             # accountRef -> 启停、额度与运行状态
-  model_aliases             # 模型别名
-  model_usage_*             # 模型用量、会话、价格与扫描状态
-  image_studio_sessions     # Image Studio 会话、修订与资产元数据
-  image_studio_assets       # Image Studio 原始图像、蒙版与生成结果 BLOB
-  app_kv                    # Server/usage 配置、默认账号、缓存与 Server 状态
-```
-
-`$AIH_HOME` 根目录只保留数据库及两个职责明确的目录：
-
-```text
-$AIH_HOME/
-  app-state.db              # 唯一持久化状态库
-  app-state.db-wal          # SQLite 运行时伴生文件
-  app-state.db-shm          # SQLite 运行时伴生文件
-  run/                      # PID、锁、tmux 注册表和 provider 临时投影
-    accounts/<provider>/<accountRef>/
-    login/<provider>/<sessionId>/
-    codex-desktop/<accountRef>/
-    persistent-sessions/
-    tmux/
-    fabric/
-  logs/                     # Server、provider 与诊断日志
-```
-
-`run/accounts/...` 下的 `auth.json`、`.credentials.json`、OAuth 文件等只是在启动 provider
-前由 `app-state.db` 物化的临时投影，可随时重建，不是凭据真相源。目录和 zip 只是一次性
-显式导入来源；运行时不会扫描、发现或恢复任何旧账号目录，也不会双读或双写。
-Server 启动时会按数据库中的 `accountRef` 清理已经失去账号记录的 `run/accounts` 与
-`run/codex-desktop` 投影；数据库 schema 异常时清理会直接跳过，不会把异常误判为空账号。
-
-`logs/` 内的 `.log`/`.jsonl` 默认每个文件最多保留最近 10 MiB，并删除 30 天未更新的日志。
-巡检在 Server 启动时和之后每小时执行，采用原地裁剪，避免 launchd 持有旧文件描述符后
-继续向已轮转文件写入。可通过 `AIH_LOG_MAX_BYTES` 和 `AIH_LOG_MAX_AGE_DAYS` 调整限制。
-
-导入接口和 CLI 把来源数据注册为 `accountRef` 并写入数据库，不保留来源包里的本地账号 ID。
-如果目标环境已经存在同一身份，会按下面的去重规则跳过，不覆盖现有凭据。
-
-`aih import [provider] ...` 中的 `provider` 可选，用来限制导入范围。当前支持：
-
-- `codex`
-- `claude`
-- `gemini`
-- `agy`
-- `opencode`
-
-导入行为等价于新增账号：成功写入凭据后会触发账号凭据维护 hook；如果是默认账号，相关客户端配置会通过解耦 hook 同步。
-
-导入 / 导出去重规则只有一套：
-
-- OAuth 账号只按 `provider + email` 判断身份；缺少 email 的 OAuth 数据无效。
-- 相同 OAuth 身份已存在时跳过，不覆盖旧账号；不会因为导入数据里的过期时间、refresh token 或 `account_id` 更新旧账号。
-- 不读取 provider `account_id`、`chatgpt_account_id` 或 refresh token hash 作为本地 `accountRef` 身份。
-- API Key 账号只按 `provider + normalizedUrl + key` 判断身份。
-- 相同 API Key 身份已存在时跳过，不覆盖旧账号。
-- `normalizedUrl` 会 trim 并移除尾部 `/` 后参与比较。
-- sub2api 的 `notes`、`extra`、`proxy_key`、`concurrency`、`priority`、`rate_multiplier`、`expires_at`、`auto_pause_on_expired`、`proxies` 会按 `accountRef` 保存到 `app-state.db`；再次导出 sub2api 时会恢复这些字段，避免丢失上游迁移信息。
-
-### 内置代理服务
-
-启动默认 AIH provider 服务：
+## AIH Server（内置网关）
 
 ```bash
-aih server start
-```
-
-默认监听：
-
-- `base_url`: `http://127.0.0.1:9527/v1`
-- `api_key`: 未配置时可使用 `dummy`
-
-`aih claude`、`aih codex`、`aih opencode`、`aih kimi` 不带账号 ID 时使用当前默认选择；未设置默认账号时使用内置 AIH Server profile，不需要把 `127.0.0.1:9527` 手动添加成 provider 账号。
-
-启动后台服务：
-
-```bash
-aih server start
-```
-
-前台运行：
-
-```bash
-aih server serve
-```
-
-查看状态 / 重启 / 停止：
-
-```bash
+aih server start                  # 后台启动（不带参数的 aih serve 与之相同）
 aih server status
 aih server restart
 aih server stop
+aih server serve --port 9527      # 前台运行
+aih daemon status                 # aih daemon 是 aih server 的别名
+
+aih server autostart install      # 开机自启；还有 status / uninstall
+aih server config show            # 加 --show-secrets 才显示真实密钥
+aih server config set --client-key <key>
 ```
 
-源码变更会在 `aih server status` 中显示为 `stale`，默认不会中断正在进行的请求；准备应用新代码时显式执行 `aih server restart`。CLI 启动同样复用已经 ready 的服务。仅开发环境需要自动重载时设置 `AIH_SERVER_SOURCE_AUTO_RESTART=1`，该模式可能中断 HTTP/WebSocket 会话；`AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1` 始终优先禁止自动重启。
+- **默认监听**：`http://127.0.0.1:9527`。
+- **兼容端点**：OpenAI（`/v1/chat/completions`、`/v1/responses`、`/v1/models`）、Anthropic（`/v1/messages`）、Gemini（`/v1beta/...`）。外部工具把 `base_url` 设为 `http://127.0.0.1:9527/v1` 即可。
+- **Client Key**：没有配置时，任意 key 都能调用；配置后，请求必须带这个 key。
+- **代码更新**：源码有变化时，`aih server status` 会显示 `stale`，执行 `aih server restart` 生效。运行中的请求不会被自动打断。
+- **生命周期命令**：`start` / `restart` / `stop` / `status` 管理单实例，不接收端口参数，使用已保存的 Server 配置。
+- **自启位置**：
+  - macOS：`~/Library/LaunchAgents/com.clawdcodex.ai_home.plist`（launchd 直接运行 `aih`）
+  - Linux：`~/.config/systemd/user/com.clawdcodex.ai_home.service`（用户级 systemd；无人登录时也要运行，需要启用 linger）
+  - Windows：启动文件夹里的 `com.clawdcodex.ai_home.vbs`
 
-`aih daemon` 是同一组后台服务命令的别名：
+### 模型别名与调度
 
-```bash
-aih daemon status
-aih daemon restart
-```
+- **模型别名**（WebUI 设置页）：把对外的模型名映射到真实模型，支持通配（如 `claude-*`）和优先级。同名的多条规则按优先级组成 fallback 链。通配规则不会出现在 `/v1/models` 列表里，但请求时照常解析。
+- **选号**：按各账号的剩余额度加权。
+- **熔断**：429 和额度耗尽按（账号, 模型）熔断。某账号的一个模型被限流，它的其他模型照常可用。
+- **降级**：某个别名目标在所有账号上都不可用时，自动降级到下一条优先级的别名。
 
-开机自启：
+### 图片生成与编辑
 
-```bash
-aih server autostart install
-aih server autostart status
-aih server autostart uninstall
-```
+- **接口**：`POST /v1/images/generations`（文生图）和 `POST /v1/images/edits`（图生图）。
+  - 请求字段兼容 OpenAI：`model`、`prompt`、`n`（1–10）、`size`、`quality`、`response_format`。
+  - 编辑接口接受 multipart 上传或 JSON data URL，支持 png / jpeg / webp，单张不超过 4 MiB，最多 16 张，可带 `mask`。
+  - `response_format=url` 时，图片存入本机 blob 存储，返回 `/v1/blobs/<id>`。
+- **按账号类型选择实现**：
+  - API Key 账号：直通上游的 Images API。
+  - codex OAuth 账号：使用 ChatGPT Codex Images（`gpt-image-2`，最多 5 张参考图）。
+  - agy / gemini OAuth 账号：`gemini-*-image` 系列模型。
+  - grok OAuth 账号：xAI Images（最多 3 张参考图）。
+- **报错**：某个 provider 或模型不支持的参数会明确报错，不会被静默丢弃。
 
-自启实现按平台落到系统原生位置：
+## Web UI
 
-- macOS: `~/Library/LaunchAgents/com.clawdcodex.ai_home.plist`
-- Linux: `~/.config/systemd/user/com.clawdcodex.ai_home.service`
-- Windows: Startup 文件夹里的 `com.clawdcodex.ai_home.cmd`
+服务启动后打开 `http://127.0.0.1:9527/ui/`。WebUI 和管理接口即使从本机访问，也需要 Management Key（见下文）。
 
-自启项统一使用 `aih` 命令入口；如果当前环境无法解析 `aih`，安装会失败并提示设置 `AIH_CLI_PATH` 或先安装 CLI。
-安装新自启项时会清理历史旧自启项，避免重复启动。
+页面：
 
-Linux 使用 user systemd service，不自动提权；无登录的服务器级启动需要部署层启用 linger 或改成系统级 service。
+- 仪表盘
+- 账号管理：登录、额度、导入导出、按账号打开桌面 App 或终端
+- AI 会话：网关会话，以及各 provider 的原生会话续写
+- 模型用量
+- 模型目录
+- 开发工具
+- AI 生图
+- Server 管理、SSH 开发机
+- 设置：Server 配置、模型别名等
 
-自定义监听地址、端口、API Key：
+手机上有单独的移动端布局，也可以作为 Web App 安装。
 
-```bash
-aih server serve --host=0.0.0.0 --port=9527 --api-key=my-key
-```
+## 远程 Server 与 SSH 开发机
 
-后台服务的 `start` / `restart` / `stop` / `status` 是单实例生命周期命令，不接收端口参数；后台服务会读取已保存的 Server 配置。
+只有三个概念：
 
-外部调用方配置：
+- **Server**：运行网关和管理接口，持有账号、模型、会话、SSH 配置。
+- **Client**：浏览器 / Web App 和 CLI，可以保存多个 Server 并随时切换。
+- **SSH 开发机**：由 Server 保存的 SSH 连接与工作区，用于远程开发。
 
-- `base_url`: `http://127.0.0.1:9527/v1`
-- `api_key`: 你配置的 `--api-key`，未配置时默认可用 `dummy`
+客户端连接 Server 只需要 **Server URL + Management Key**。
 
-### Web UI
+- Management Key 具有完整管理权限，所有可信客户端共用同一把。
+- 跨不可信网络时，请通过 HTTPS、VPN 或受控隧道暴露 Server。
+- 浏览器会把 Server URL 和 Management Key 存在浏览器存储里，只应在受信任的浏览器里使用。
 
-启动服务后打开：
-
-- `http://127.0.0.1:9527/ui/`
-
-当前 Web UI 支持：
-
-- 账号管理
-- 账号导入 / 导出
-- 模型别名管理
-- 手动打开项目
-- 选择文件夹打开项目
-- 新建会话
-- 原生会话续写
-- 图片粘贴发送
-- 运行中交互输入回写（`y` / `n` / 文本）
-- Server 配置与一键重启
-
-### Server、客户端与 SSH 开发机
-
-AIH 当前主流程只保留三个用户概念：
-
-- **Server**：运行 AIH 网关与管理 API，持有账号、模型、会话、SSH 配置和可选 worker 状态。
-- **Client**：包括浏览器、可安装 Web/PWA 壳与 CLI。客户端可保存多个 Server，并切换当前 Server。
-- **SSH 开发机**：由 Server 保存 SSH 连接与工作区，用于远程开发；它不是客户端授权身份。
-
-源码中的 `node` 仅表示高级的内部远程 worker/运行目标。普通客户端连接 AWS 或其他 Server 时不需要创建 node，也不需要先在本机运行 Server。
-
-客户端访问 Server 只需两项配置：
-
-- **Server URL**：例如 `http://192.168.3.181:9527`。
-- **Management Key**：Server 的管理密钥，作为 Bearer 凭据访问账号、节点、会话和 Fabric API。
-
-客户端无需额外授权流程。Browser/PWA 与 CLI 都使用同一个 `Server URL + Management Key` 契约。Management Key 具有完整管理能力；跨不可信网络使用时，应优先通过 HTTPS、VPN 或受控隧道暴露 Server URL。
-
-Dashboard、账号、会话和配置等 WebUI 数据接口即使来自同机 loopback，也必须携带 Management Key；Server 未配置 Key 时统一 fail-closed。只有 Provider 会话 Hook 与 Claude 审批桥两个不返回管理数据的内部 POST 入口保留窄 loopback capability，不能用于访问 WebUI 数据面。
-
-所有可信客户端共享这把 Management Key。已认证客户端可在 `Server 管理` 中轮换 Key，当前客户端会同步更新；其他客户端随后使用“更新本客户端 Key”保存同一新 Key。也可以在 Server 机器使用 `aih server config set --generate-management-key` 轮换。轮换不会引入 pairing、device token 或权限 scope。
-
-#### 配置 Server 与客户端
-
-在 Server 上开放局域网访问并生成 Management Key：
+在 Server 上开放局域网访问：
 
 ```bash
 aih server config set --open-network --generate-management-key
 aih server restart
-aih server config show --show-secrets
-aih node doctor
+aih server config show --show-secrets   # 查看密钥（只在受信任的终端里用）
+aih node doctor                         # 打印其他机器应使用的 endpoint candidate
 ```
 
-`--show-secrets` 会显示真实密钥，只应在受信任的终端中显式使用。`aih node doctor` 会打印 `endpoint candidate`，例如 `http://192.168.3.181:9527`；其他机器必须使用这个局域网/Tailscale/FRP/公网入口，不能使用 `127.0.0.1`。
-
-在另一个 CLI 客户端上保存并切换 Server：
+在另一台机器的 CLI 上保存并切换 Server：
 
 ```bash
 aih server add home --url http://192.168.3.181:9527 --management-key "<management-key>"
-aih server ls
+aih server ls          # 只显示是否已配置密钥，不输出原文
 aih server use home
+aih server remove home
 ```
 
-`aih server ls` 只显示 Management Key 是否已配置，不输出原始密钥。浏览器/Web 壳在 `Server 管理` 中填写相同的 URL 和 Management Key。
+浏览器里在「Server 管理」页填写同样的 URL 和 Management Key。已认证的客户端可以在该页轮换密钥，也可以在 Server 上执行 `aih server config set --generate-management-key`。
 
-> `aih claude` / `aih codex` 使用的内置 `.aih-server` 是 provider CLI 启动 profile，不是这里保存的远程 Server profile。
+> `aih codex` 等使用的内置 `.aih-server` 是 provider 的启动 profile，和这里保存的远程 Server 是两回事。
 
-#### 无公网入口的 Server 作为账号网关
+**无公网入口的 Server 作为账号网关**
 
-当公网 Server 1 没有账号，而本机 Server 2 持有账号但无法被公网主动访问时，可在 Server 2 上通过 `/v0/webui/server-routes/relays` 管理接口登记 Server 1 的 URL 与 Management Key。WebUI 目前不提供该配置入口。
+场景：公网上的 Server 1 没有账号，本地的 Server 2 有账号，但公网访问不到它。
 
-Server 2 会使用已保存的 Management Key 主动建立并维持到 Server 1 的 WebSocket 连接；Server 1 不需要、也不会尝试直连 Server 2。连接建立后，Server 2 周期性公告不含账号标识或凭据的 provider / 模型可用性。Server 1 仅在自身账号总数为零时，自动把 `/v1/*`、`/v1beta/*` 和 `/v1/responses` WebSocket 请求经这条反向连接交给兼容的 Server 2；一旦 Server 1 拥有本地账号，仍使用原有本地调度。
+- **配置**：在 Server 2 上通过管理接口 `/v0/webui/server-routes/relays`（需要 Management Key）登记 Server 1 的 URL 和 Management Key。目前没有界面入口。
+- **连接方向**：Server 2 主动建立并维持到 Server 1 的连接，Server 1 不会直连 Server 2。
+- **转发条件**：Server 1 只在自己一个账号都没有时，才把 `/v1/*`、`/v1beta/*`（含 Responses WebSocket）请求经这条连接交给 Server 2 处理。
+- **凭据**：公网客户端的凭据不会传到 Server 2。
+- **状态**：Server 1 的 `/readyz` 返回里有 `gateway` 字段，可以确认网关是否可用。
 
-公网客户端凭据不会穿透到 Server 2。反向连接在 Server 2 侧改用它自己的本地 Client Key，并用协议版本、provider / 模型能力、单跳限制、并发上限和消息大小上限约束转发。`/readyz` 的 `gateway` 字段可用于确认 Server 1 是否已发现可用的反向账号网关。
+`aih node ...` 和 `aih fabric ...` 是实验性的多机执行与诊断命令，普通使用不需要，详见 `aih node --help`。
 
-#### 高级：内部远程 worker（实验能力）
+## 持久会话
 
-普通 Browser、PWA 或 CLI 客户端都不需要 worker；远程开发的当前稳定入口是 `SSH 开发机`。
+`aih` 用 tmux 把每个 CLI 会话放在后台持久进程里，关终端、SSH 断线、合盖睡眠都不会丢。直接运行总是**新建**会话；要回到已有会话，用 `sessions` 选择器。
 
-Server 后端仍保留一次性 worker join invite，以及 `aih node ...` 这组内部部署/诊断命令，用于实验性的多机执行拓扑。当前 WebUI 不暴露 worker 接入或节点管理入口；join invite 由 Server 管理 API 创建，具体低层命令可查看 `aih node --help`。这条内部 worker 启动链路与客户端连接无关；worker 加入后，管理操作仍统一使用 Management Key。
-
-#### 客户端架构
-
-浏览器、可安装 Web 壳与 CLI 共用同一 Server Profile 契约，不为每个平台复制业务逻辑：
-
-```text
-React WebUI（Browser / 可安装 Web 壳）
-    ↓
-TypeScript Server API Client → fetch / fetch-SSE / Blob media
-
-CLI → 同一 Server Profile 契约（URL + Management Key）
+```bash
+cd ~/projA && aih claude     # 新建会话（AIH Server）
+aih claude sessions          # 列出 claude 所有账号和 AIH Server 的会话，选中后按 Enter 进入
+aih claude 1                 # 用 1 号账号新建会话
+aih claude sessions 1        # 只看 1 号账号的会话
+aih claude 1 -S debug        # 具名会话：不存在就新建，已存在就进入
+aih claude 1 -R              # 接管本项目最近的会话（原来的终端被挤下线）
+aih claude 1 -M              # 镜像本项目最近的会话（两边同屏，谁都不挤掉谁）
+aih ss                       # 所有工具的会话总览（--list 只预览）
 ```
 
-- **Browser / 可安装 Web 壳**：当前把 Server Profile 保存在浏览器存储中，包括 Management Key。这是浏览器版的明确信任边界：只应在受信任的浏览器配置中使用，不把 Web Storage 视为凭据保险库。JSON、实时流、媒体和附件统一通过 `Authorization` header 发送密钥，不把完整密钥拼入 URL。当前没有离线 service worker，因此不宣称离线 PWA 能力。
-- **跨 Server 信任边界**：在 Server A 托管的 WebUI 中保存 Server B 时，A 会保存 B 的 Management Key 并作为受信任代理转发请求；不要通过不受信任的 Server A 管理其他 Server。
-- **CLI**：`aih server add/ls/use/remove` 管理同一种 Server Profile；列表和普通诊断只暴露 `managementKeyConfigured`，不输出原始密钥。
+- **选择器标记**：`●` 表示正被别处占用，`○` 表示空闲。
+- **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。
+- **socket 命名**：每个账号一个 tmux server，socket 为 `aih-<provider>-<accountRef>`；AIH Server 的会话用 `aih-<provider>-gateway`。
 
-### 持久会话（tmux 保活，显式续接）
+tmux 常用操作（指挥键 `Ctrl-b`：先按 `Ctrl-b` 松开，再按下一个键）：
 
-`aih` 用 **tmux** 把每个 CLI 会话跑在后台持久进程里：**关终端、SSH 断线、合盖睡眠都不丢**。裸命令（例如 `aih claude 1`）始终新建会话，不会因为目录相同而进入旧会话；需要继续旧会话时，通过 `sessions` 选择器显式进入。tmux 平时是隐形的（隐藏状态栏、零延迟），你几乎感觉不到它——但记住下面几个键就能掌控它。
-
-> tmux 的「指挥键」是 **`Ctrl-b`**：先按住 `Ctrl-b` 松开，**再**按下一个键。它本身不输入任何东西，只是告诉 tmux「下一个键是给你的命令」。
-
-**日常只需要这 4 件事：**
-
-| 你想做什么 | 怎么做 |
+| 想做什么 | 怎么做 |
 |---|---|
-| **暂时离开、但让它继续在后台跑** | `Ctrl-b` 然后 `d`（detach）。终端回到普通 shell，会话不中断。 |
-| **回到刚才的会话**（续接） | 运行 `aih claude sessions 1`。兼容目标会按精确 tmux 名称进入；旧运行时或已结束的目标会保留原会话并新建兼容替代会话。裸跑 `aih claude 1` 只会新建。 |
-| **往回翻屏 / 看刷过去的历史** | `Ctrl-b` 然后 `[` 进入滚动模式 → 用 `↑/↓`、`PageUp/PageDown` 翻（保留 5 万行）→ 按 `q` 退出滚动。（鼠标滚轮默认**不**接管，用这个方式翻。） |
-| **彻底结束会话** | 在 AI 工具里用它自己的退出命令正常退出，会话随之销毁。 |
+| 暂时离开、让它在后台继续跑 | `Ctrl-b` 然后 `d` |
+| 往回翻历史 | 鼠标滚轮，或 `Ctrl-b` 然后 `[`，按 `q` 退出（保留 5 万行） |
+| 彻底结束会话 | 在工具里用它自己的退出命令正常退出 |
+| 强制结束卡死的会话 | `tmux -L aih-claude-<accountRef> kill-session -t <会话名>` |
 
-**同一个账号可以同时开多个项目 / 多个窗口**（这是按目录 + 具名寻址的好处）：
+不想用 tmux：`AIH_NO_PERSIST=1 aih claude 1`，直接前台运行，断线即丢。
 
-```bash
-cd ~/projA && aih claude 1            # 项目 A：新建会话 1
-cd ~/projA && aih claude 1            # 同目录再次运行：仍然新建会话 2，旧会话不受影响
-cd ~/projA && aih claude 1 -S debug   # 具名 upsert：不存在则创建，兼容的已有目标则进入
-cd ~/projB && aih claude 1            # 项目 B（同账号、并发、互不干扰）
-```
+在另一台电脑接着干：`ssh` 回到这台机器，进入项目目录，运行 `aih claude sessions` 选中原来的会话即可。
 
-**① 查看并进入已有会话** —— 在项目目录里运行 `sessions`，选择器会自动把本项目和其他项目分开。选中兼容目标后按 `Enter`，AIH 会用该会话的精确 tmux 名称进入，不会再按 cwd 猜测；若该行来自旧运行时或 pane 已结束，AIH 不会强行 attach，而是在对应项目中 fresh launch 一个兼容替代会话：
+## 用量统计
 
 ```bash
-cd ~/projA && aih claude sessions 1
-# [aih] claude #1 持久会话（socket aih-claude-<accountRef>）：
-# 本项目（/Users/you/projA）：
-#   ● 在用   项目 A 会话 1
-# > ○ 空闲   项目 A 会话 2             ← 选中后按 Enter 精确进入
-#   ○ 空闲   debug
-# 其他项目：
-#   ○ 空闲   项目 B 会话 1
+aih usage                                   # 按 provider / 模型统计 token 与费用
+aih usage models --from 2026-10-01 --to 2026-10-07
+aih usage sessions
+aih usage scan                              # 重新扫描本地会话日志
+aih usage recalculate-costs                 # 用当前价格表重算历史费用
 ```
 
-**② 同一目录再次运行会发生什么**：
+## SSH 图片粘贴
 
-- 无论旧会话是 **attached** 还是 **detached**，裸命令都新建一个独立会话，旧会话不受影响。
-- 想继续兼容的旧会话 → 运行 `aih claude sessions 1`，选中后按 `Enter` 精确进入；旧运行时或已结束的行会 fresh launch 兼容替代会话。
-- 想接管本项目**最近创建**的会话 → 显式加 `-R`；想和最近会话镜像同屏 → 显式加 `-M`。两者都必须先成功探测 latest：探测异常时会 fail closed，不 attach、也不 create；探测正常但本项目没有会话时，才会创建基础会话。
-- `-S <名字>` 是具名 upsert：目标不存在时创建；兼容目标存在时进入（已被占用时接管）；目标不兼容时保留原会话并创建具名替代 sibling。
+通过普通 SSH 在远端运行 `aih <cli> <id>` 时，如果本地终端支持 OSC 5522，或者能通过 OSC 52 读回图片，直接粘贴（或按 `Alt+V`）就能把剪贴板图片发过去。
 
-寻址规则：**每个账号一个独立 tmux**（socket `aih-<provider>-<accountRef>`，CLI 数字别名只在入口解析，凭据只走环境变量，`ps` 里看不到密钥）。cwd 只用于启动目录、项目分组和会话名前缀，不负责选择旧会话；每次裸启动都会分配新的唯一会话名。`sessions` picker / `AIH_SESSION_TARGET` 表达 exact selection，`-S` 表达 named upsert，`-R` / `-M` 表达 current-project latest selection。
+- 诊断：`aih ssh-clipboard probe --json`。
+- 终端不支持时，可以改用 `aih ssh user@host -- aih claude`，或 `aih clip-agent start` 配合 SSH RemoteForward。
 
-兼容性与生命周期同样 fail-safe：探测已确认 exact target 不存在或不兼容时直接失败，不创建替代 sibling；只有 picker 预先识别出的旧运行时 / 已结束行，以及 named upsert，才会走 fresh replacement。launcher 永远不会自动执行 `kill-server`，旧会话和同账号的其他会话保持原样；README 下方的 kill 命令仅供用户显式手工操作。
-
-底层约束同样严格：fresh launch 使用 `tmux new-session -s <unique-session>`，不带 `-A` / `-D`；兼容的 exact target 使用 `tmux attach-session -t <exact-session>`。只有重启恢复引擎可以使用 `new-session -A -d`，以幂等恢复 registry 中的精确目标。
-
-### 跨机器 / SSH：在另一台电脑接着干
-
-持久会话最大的用处就是这个：在**电脑 A** 的项目里开着 `aih claude 1`，人走到**电脑 B**，`ssh` 回电脑 A 想接着干。两种情况：
+## 插件
 
 ```bash
-# 在电脑 B 上：
-ssh you@电脑A
-cd ~/projA
-
-# 继续兼容的已有会话（无论它当前是 detached 还是 attached）
-aih claude sessions 1   # → 选中后按 Enter；旧运行时 / 已结束行会 fresh replacement
-
-# 或明确选择其他行为：
-aih claude 1            # → 始终新建会话，各干各的，互不打扰
-aih claude 1 -R         # → 「接管」本项目最近会话：电脑 A 那个窗口被挤下线
-aih claude 1 -M         # → 「镜像」本项目最近会话：A 和 B 实时同屏，谁都不被挤
+aih plugin validate <dir>
+aih plugin pack <dir>
+aih plugin install <file.aih-plugin>
+aih plugin list
+aih plugin enable <pluginId>
+aih plugin disable <instanceId>
+aih plugin doctor
 ```
-
-**四种模式一句话区分**：
-
-| 你想要 | 用什么 | 效果 |
-|---|---|---|
-| 各干各的 | 直接跑（默认） | 新开一个独立并发会话，原会话不受影响 |
-| 精确继续兼容旧会话 | `sessions` 选择器 + `Enter` | exact attach 选中的兼容会话；旧运行时 / 已结束行改为 fresh replacement |
-| 把最近会话抢过来 | `-R` | 接管本项目 latest，会挤下原客户端；latest probe 异常则拒绝执行 |
-| **和最近会话同屏** | `-M` | 镜像本项目 latest，**谁都不挤掉谁**；latest probe 异常则拒绝执行 |
-
-> 不确定先 `aih claude sessions 1` 看一眼：`●` = 正被别处占用，`○` = 空闲。兼容行会显式进入；旧运行时 / 已结束行会 fresh replacement。
-> `-M` 的底层就是 tmux 的共享 attach（多个 client 连同一 session），和结对编程/屏幕共享是同一个机制。
-> 注意 `-R` / `-M` 是 aih 自己的开关（不是 claude 的 `--resume`）；要把 `--resume` 传给 claude 照常用，不会被吞。
-
-**会话卡死要强杀**（很少用到——先用 `sessions` 看到准确名字，再杀）：
-
-```bash
-aih claude sessions 1                              # 看名字（具名会话显示成 s-<名字>）
-tmux -L aih-claude-<accountRef> kill-session -t s-debug  # 杀指定一个
-tmux -L aih-claude-<accountRef> kill-server              # 杀该账号下全部会话
-```
-
-**完全不想要 tmux**：`AIH_NO_PERSIST=1 aih claude 1`，直接前台运行、不进 tmux（断线即丢）。
-
-跨平台：
-
-- macOS / Linux / WSL：用系统 `tmux`（没装就 `brew install tmux` / `apt install tmux`）；
-- **原生 Windows**：自动探测 tmux 兼容引擎——优先 [`psmux`](https://github.com/psmux/psmux)（原生 ConPTY、兼容 tmux 命令），其次 MSYS2 / Cygwin 的 `tmux.exe` 或 PATH 上的 `tmux`；都没有则降级为直接启动（Windows 路径需在 Windows 机器上实测验证）。
-
-### 模型别名与网关调度
-
-内置网关（`http://127.0.0.1:9527/v1`）对外是**一个**统一端点，背后自动在多账号、多 provider 间路由。
-
-**模型别名**（WebUI「模型别名管理」里配置）——把一个对外模型名映射到真实模型，支持通配和优先级：
-
-- 例：`claude-*` → `claude-opus-4-6-thinking`（agy）；再加一条 `claude-*` → `gemini-3.5-flash-low`（agy）当**降级**。
-- **优先级高的先用**；同名多条规则自动形成 **fallback 链**。
-- 通配 pattern（`claude-*`）**不会出现在 `/v1/models` 列表**里（客户端没法把通配名当模型发），但请求时照常解析。
-
-**调度与熔断**（自动，无需配置）：
-
-- 选号按各账号剩余额度加权。
-- **429 / 配额耗尽是按 (账号, 模型) 粒度熔断的**：某账号的 claude 模型被限流，它的 gemini 模型**照常可用**，不会整号被锁。
-- 当某个别名目标（如 claude-opus）在**所有账号上都被限流**时，自动**降级到下一条优先级的别名**（如 gemini-3.5-flash-low）顶上。
-- `/v1/models` 带 stale-while-revalidate 缓存，稳态响应 <5ms。
-
-### 图片生成与编辑接口
-
-内置网关同时暴露 OpenAI 兼容的出图/修图端点：
-
-- `POST /v1/images/generations` — 文生图
-- `POST /v1/images/edits` — 图生图（支持 OpenAI multipart 文件上传，也兼容 JSON data URL；png/jpeg/webp、单图 ≤4 MiB、最多 16 张，可选 PNG `mask`）
-
-请求体兼容 OpenAI 字段：`model`、`prompt`、`n`（1-10）、`size`、`quality`、`response_format`（`b64_json` 默认 / `url`）；编辑接口还支持有序 `image` / `image[]`、`mask`、`background`、`output_format`、`output_compression`、`moderation`。响应为 `{ created, data: [{ b64_json | url, revised_prompt? }] }`；`response_format=url` 时图片字节存入本机 blob 存储，返回 `http://<host>/v1/blobs/<id>`（与聊天图片剥离共用同一存储，受同样的客户端 key 保护）。具体控件按所选 provider/model 的真实能力过滤，不支持的参数会显式报错而不会静默丢失。
-
-后端路由对外透明，按账号类型自动选择实现：
-
-- **api-key 账号**：直通上游 OpenAI 兼容的 `/images/*` 端点（generations 用 JSON，edits 用 multipart；入站 multipart 先由 v1 路由规范化，再由策略重新编码给上游）。
-- **agy / gemini OAuth 账号**：原生 Code Assist 出图，适用于 `gemini-*-image` 系列模型。
-- **codex OAuth 账号**：直接调用 ChatGPT Codex Images API：`/backend-api/codex/images/generations` / `/backend-api/codex/images/edits`。原生合同固定为 `gpt-image-2`；编辑请求用 JSON `images: [{ image_url }]`，最多 5 张有序参考图，并支持 `n`、`size`、`quality`、`background`。该合同不支持 `mask`、`output_format`、`output_compression`、`moderation`，传入时会显式报错而不会静默丢弃；`gpt-image-1` 等模型仍可由具有对应 Images API 的 api-key 账号走 passthrough。
-- **grok OAuth 账号**：xAI OAuth token 可直接调用官方 `api.x.ai/v1/images/generations` 与 `/v1/images/edits`。原生目录列出 `grok-imagine-image-2.0`、`grok-imagine-image-quality` 和仍可用的旧版 `grok-imagine-image`；策略默认选择 2.0，也可用 `grokImageUpstreamModel` 覆盖，并转发 `n` / `quality` / `response_format`。编辑请求按 xAI JSON 合同内嵌 1-3 张 data URL 参考图，不使用 multipart，也不会把 OpenAI `size` 有损映射成 xAI 的 aspect ratio / resolution。
-- 其余 provider 返回 `400 unsupported_image_provider`；模型不在出图名单返回 `400 unsupported_model_for_images`。
-
-错误统一为 OpenAI 信封 `{ error: { message, type, code } }`。账号出图成功/失败与聊天请求走同一套用量记账、请求日志与 (账号, 模型) 熔断；出图超时默认 120s（`options.upstreamTimeoutMs` 可调）。
 
 ## 开发
 
-运行测试：
-
 ```bash
-npm test
+npm test             # Node 测试
+npm run test:web     # WebUI 单元测试（bun）
+npm run build        # 构建 WebUI
 ```
 
-构建前端：
-
-```bash
-npm run build
-```
-
-AI 前端设计委托：
-
-```bash
-npm run ui:delegate -- --provider claude --scope "Accounts mobile redesign"
-npm run ui:delegate -- --provider agy --agy-account 1 --scope "H5 interaction audit"
-npm run ui:delegate -- --provider agy --agy-account 1 --agy-continue --scope "Continue design review"
-npm run ui:delegate -- --provider agy --agy-account 1 --agy-conversation <id> --scope "Resume design review"
-```
-
-`ui:delegate` 直接封装 `aih claude` / `aih agy <id> -p`。Agy 支持 `--agy-continue` 保持最近会话，也支持 `--agy-conversation <id>` 恢复指定会话。Claude 委托沿用当前运行时配置和模型 alias，不在脚本里固定模型；输出会写入 `tmp/ai-ui-delegation/` 供前端重构审计。
-
-Web UI 规范：
-
-- 设计规范入口：`/ui/design-system`。
-- 样式基础：Tailwind CSS v4 + AntD theme token + 少量页面级 CSS 变量。
-- 动效基础：`animate.css` 只用于页面入场、Sheet 上滑和短强调；业务状态动效优先使用 CSS transition。
-- PC/H5 必须按两套交互结构开发，移动端不允许用隐藏表格列来伪装响应式。
-
-## 说明
-
-- 关于 agy (Antigravity CLI) 用量刷新：当前走 Antigravity Code Assist 的 `loadCodeAssist` / `fetchAvailableModels` 链路，从真实返回的模型 `quotaInfo` 生成用量快照；实现会刷新过期 OAuth token，并在 `project` 请求 403 时去掉 `project` 重试。用量刷新会向上游发送 AGY OAuth access token，排障时不要打印 token 或 refresh token。
-- 文档只保留当前可用用法
-- 具体实现细节以代码和测试为准
+贡献者与 agent 的工作约定见 [AGENTS.md](./AGENTS.md)。

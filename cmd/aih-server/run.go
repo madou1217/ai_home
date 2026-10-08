@@ -25,17 +25,20 @@ type commandRuntime struct {
 	stdout      io.Writer
 	stderr      io.Writer
 	models      []accountapp.ProviderModelDiscoverer
+	// requestShutdown 由管理端点调用，触发与收到信号相同的优雅关闭；可为空。
+	requestShutdown func()
 }
 
 // defaultCommandRuntime 返回生产命令使用的操作系统适配器。
-func defaultCommandRuntime() commandRuntime {
+func defaultCommandRuntime(requestShutdown func()) commandRuntime {
 	listenConfig := &net.ListenConfig{}
 	return commandRuntime{
-		lookupEnv:   os.LookupEnv,
-		userHomeDir: os.UserHomeDir,
-		listen:      listenConfig.Listen,
-		stdout:      os.Stdout,
-		stderr:      os.Stderr,
+		lookupEnv:       os.LookupEnv,
+		userHomeDir:     os.UserHomeDir,
+		listen:          listenConfig.Listen,
+		stdout:          os.Stdout,
+		stderr:          os.Stderr,
+		requestShutdown: requestShutdown,
 	}
 }
 
@@ -63,6 +66,7 @@ func run(
 		ClientKey:                 func() string { return clientKey },
 		ModelDiscoverers:          runtime.models,
 		DelegateCredentialRefresh: config.delegateCredentialRefresh,
+		RequestShutdown:           runtime.requestShutdown,
 		ErrorLog: log.New(
 			runtime.stderr,
 			"aih-server http: ",

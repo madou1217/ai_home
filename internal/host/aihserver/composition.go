@@ -58,6 +58,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 )
 
 const (
@@ -93,6 +94,8 @@ type serverHandlers struct {
 	accountUsageEvents http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
 	plugins pluginHandlers
+	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
+	shutdown http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -179,6 +182,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		deletionPreparation,
 		options.ManagementKey,
 		options.ClientKey,
+		options.RequestShutdown,
 		options.InferenceHTTPClient,
 		options.WebSocketHTTPClient,
 		options.UsageHTTPClient,
@@ -214,6 +218,8 @@ func newHandlers(
 	deletionPreparation accountapp.DeletionPreparation,
 	managementKey func() string,
 	clientKey func() string,
+	// requestShutdown 为空时不装配关闭端点，见 Options.RequestShutdown。
+	requestShutdown func(),
 	inferenceClient InferenceHTTPClient,
 	webSocketHTTPClient *http.Client,
 	usageClient UsageHTTPClient,
@@ -453,6 +459,19 @@ func newHandlers(
 	authorizer, err := accountsapi.NewBearerAuthorizer(managementKey)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号管理鉴权失败: %w", err)
+	}
+	// 优雅退出端点只在嵌入方提供退出回调时装配：没有接收方的端点等于没有，
+	// 而 Windows 上信号路径根本不执行（见 shutdownapi）。
+	var shutdownHandler http.Handler
+	if requestShutdown != nil {
+		shutdown, shutdownErr := shutdownapi.NewHandler(shutdownapi.Dependencies{
+			Authorizer:      authorizer,
+			RequestShutdown: requestShutdown,
+		})
+		if shutdownErr != nil {
+			return serverHandlers{}, nil, fmt.Errorf("创建关闭端点失败: %w", shutdownErr)
+		}
+		shutdownHandler = shutdown
 	}
 	clientAuthorizer, err := clientauth.NewAuthorizer(clientKey)
 	if err != nil {
@@ -867,6 +886,7 @@ func newHandlers(
 		accountUsageEvents: accountUsageEventsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
+		shutdown:           shutdownHandler,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{

@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
+	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -131,6 +132,11 @@ func newRouter(handlers serverHandlers) http.Handler {
 	mux.Handle(clientpropsapi.Path, clientpropsapi.NewHandler())
 	mux.Handle(accountauthapi.CollectionPath, handlers.accountAuth)
 	mux.Handle(accountauthapi.CollectionPath+"/", handlers.accountAuth)
+	// 优雅退出端点：嵌入方（Node 宿主）在停机时显式请求，而不是依赖进程信号——
+	// Windows 上 SIGTERM 实际是 TerminateProcess，进程内的关闭路径不会执行。
+	if handlers.shutdown != nil {
+		mux.Handle(shutdownapi.Path, handlers.shutdown)
+	}
 	mux.Handle(
 		clauderelayleaseapi.Path,
 		handlers.claudeRelayLeases,

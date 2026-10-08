@@ -67,6 +67,12 @@ type Options struct {
 	// DelegateCredentialRefresh 表示由嵌入宿主（Node）独占 OAuth 刷新；Go 只使用
 	// 宿主同步进来的凭据，从不自行轮换 Refresh Token。
 	DelegateCredentialRefresh bool
+	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
+	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
+	//
+	// Windows 上必须走这条路径：`child.kill('SIGTERM')` 在那里实际是
+	// TerminateProcess，进程内的信号处理不会运行。
+	RequestShutdown func()
 }
 
 // ValidateManagementKey 校验 Bearer 请求头可安全表达的 Management Key。

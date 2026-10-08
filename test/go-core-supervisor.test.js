@@ -110,6 +110,86 @@ test('enabled supervisor starts once the private endpoint serves (not only once 
   }
 });
 
+test('stopping a serving Go Core asks it to shut down in-process before signalling', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-shutdown-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const child = new EventEmitter();
+  child.pid = 4242;
+  child.kill = () => { setImmediate(() => child.emit('exit', 0, 'SIGTERM')); };
+  const requests = [];
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      // 占位二进制没有 build stamp；构件校验由专门的用例覆盖。
+      verifyBuild: false,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn: () => child,
+      sleep: () => new Promise((resolve) => setImmediate(resolve)),
+      fetchImpl: async (url, init = {}) => {
+        requests.push({ url, method: init.method, authorization: init.headers && init.headers.authorization });
+        if (String(url).endsWith('/healthz')) {
+          return { ok: true, json: async () => ({ ok: true, service: 'aih-server' }) };
+        }
+        return { ok: true, json: async () => ({ ok: true }) };
+      }
+    });
+
+    await supervisor.start({ binaryPath, aiHomeDir: tempDir });
+    const stopped = await supervisor.stop({ timeoutMs: 50 });
+
+    assert.equal(stopped.state, 'stopped');
+    const shutdown = requests.find((request) => String(request.url).endsWith('/v0/management/shutdown'));
+    assert.ok(shutdown, 'Windows 上 SIGTERM 是 TerminateProcess，必须走进程内关闭路径');
+    assert.equal(shutdown.method, 'POST');
+    assert.equal(shutdown.authorization, 'Bearer management-secret');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('a Go Core that never became ready is not asked to shut down', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-noshutdown-'));
+  const binaryPath = path.join(tempDir, 'aih-server');
+  fs.writeFileSync(binaryPath, 'placeholder');
+  const { spawn } = crashableChildFactory();
+  const requests = [];
+  try {
+    const supervisor = createGoCoreSupervisor({
+      enabled: true,
+      fs,
+      path,
+      // 占位二进制没有 build stamp；构件校验由专门的用例覆盖。
+      verifyBuild: false,
+      binaryPath,
+      aiHomeDir: tempDir,
+      managementKey: 'management-secret',
+      clientKey: 'client-secret',
+      processObj: { env: {}, kill() {} },
+      spawn,
+      autoRestart: false,
+      sleep: () => new Promise((resolve) => setImmediate(resolve)),
+      fetchImpl: async (url) => {
+        requests.push(String(url));
+        return { ok: false, json: async () => ({}) };
+      }
+    });
+
+    await assert.rejects(
+      () => supervisor.start({ readyTimeoutMs: 20, stopTimeoutMs: 50 }),
+      (error) => error.code === 'go_core_not_ready'
+    );
+    // 启动失败的进程连端口都没监听，发请求只会白等 1.5 秒。
+    assert.equal(requests.some((url) => url.endsWith('/v0/management/shutdown')), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('enabled supervisor fails closed when the Go server binary is absent', async () => {
   const supervisor = createGoCoreSupervisor({
     enabled: true,

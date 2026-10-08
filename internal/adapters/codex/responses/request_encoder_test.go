@@ -500,6 +500,30 @@ func TestEncodeRequestRejectsUnsupportedFieldsBeforeTransport(t *testing.T) {
 			field:    "temperature",
 		},
 		{
+			name: "top p",
+			input: minimalRequestInput(t, func(input *inference.RequestInput) {
+				input.TopP = &floatValue
+			}),
+			authKind: codexauth.AuthKindAPIKey,
+			field:    "top_p",
+		},
+		{
+			name: "top k",
+			input: minimalRequestInput(t, func(input *inference.RequestInput) {
+				input.TopK = &uintValue
+			}),
+			authKind: codexauth.AuthKindAPIKey,
+			field:    "top_k",
+		},
+		{
+			name: "stop sequences",
+			input: minimalRequestInput(t, func(input *inference.RequestInput) {
+				input.StopSequences = []string{"STOP"}
+			}),
+			authKind: codexauth.AuthKindAPIKey,
+			field:    "stop_sequences",
+		},
+		{
 			name: "oauth store",
 			input: minimalRequestInput(t, func(input *inference.RequestInput) {
 				input.Store = &store
@@ -526,6 +550,53 @@ func TestEncodeRequestRejectsUnsupportedFieldsBeforeTransport(t *testing.T) {
 			if !errors.Is(err, ErrUnsupportedRequest) ||
 				!strings.Contains(err.Error(), test.field) {
 				t.Fatalf("encodeRequest() error = %v", err)
+			}
+		})
+	}
+}
+
+// TestEncodeRequestDropsSamplingParametersForCrossProtocolClients 固化跨协议客户端
+// 携带的采样参数与停止序列必须静默丢弃，而不是让整个请求失败。Claude、Chat、
+// Gemini 客户端经常默认带上这些字段，拒绝它们等于这些客户端无法使用 codex 账号。
+func TestEncodeRequestDropsSamplingParametersForCrossProtocolClients(t *testing.T) {
+	t.Parallel()
+
+	temperature := 0.5
+	topP := 0.9
+	topK := uint64(40)
+	protocols := []inference.ClientProtocolID{
+		inference.ClientProtocolAnthropicMessages,
+		inference.ClientProtocolOpenAIChatCompletions,
+		inference.ClientProtocolGeminiGenerateContent,
+	}
+	for _, protocol := range protocols {
+		protocol := protocol
+		t.Run(string(protocol), func(t *testing.T) {
+			t.Parallel()
+
+			request, err := inference.NewRequest(minimalRequestInput(t, func(input *inference.RequestInput) {
+				input.ClientProtocol = protocol
+				input.Temperature = &temperature
+				input.TopP = &topP
+				input.TopK = &topK
+				input.StopSequences = []string{"STOP"}
+			}))
+			if err != nil {
+				t.Fatalf("NewRequest() error = %v", err)
+			}
+			payload, err := encodeRequest(
+				request,
+				"gpt-5.6-sol",
+				codexauth.AuthKindAPIKey,
+				requestProfileForModel("gpt-5.6-sol"),
+			)
+			if err != nil {
+				t.Fatalf("encodeRequest() error = %v, want silent drop", err)
+			}
+			for _, field := range []string{"temperature", "top_p", "top_k", "stop"} {
+				if strings.Contains(string(payload), `"`+field+`"`) {
+					t.Fatalf("payload leaked %q: %s", field, payload)
+				}
 			}
 		})
 	}

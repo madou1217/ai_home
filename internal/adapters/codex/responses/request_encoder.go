@@ -107,23 +107,27 @@ func rejectUnsupportedRequest(
 	if request.MaxOutputTokens() != 0 && !allowCrossProtocolProjection {
 		return unsupported("max_output_tokens")
 	}
-	if _, found := request.Temperature(); found {
+	// Codex Responses 线协议没有采样参数和停止序列，无法无损表达。Claude、Chat、
+	// Gemini 客户端经常默认携带 temperature/top_p/top_k/stop，继续按不支持拒绝
+	// 等于这些客户端无法使用 codex 账号；与 Node 一致，跨协议时静默丢弃，同协议
+	// codex 客户端仍然拒绝——它本可以不发。
+	if _, found := request.Temperature(); found && !allowCrossProtocolProjection {
 		return unsupported("temperature")
 	}
-	if _, found := request.TopP(); found {
+	if _, found := request.TopP(); found && !allowCrossProtocolProjection {
 		return unsupported("top_p")
 	}
-	if _, found := request.TopK(); found {
+	if _, found := request.TopK(); found && !allowCrossProtocolProjection {
 		return unsupported("top_k")
+	}
+	if len(request.StopSequences()) != 0 && !allowCrossProtocolProjection {
+		return unsupported("stop_sequences")
 	}
 	// user_id 只用于客户端侧会话/计费关联，Codex Responses 没有等价字段。
 	// Claude、Chat 两个跨协议入口明确允许丢弃；未知或 Codex 同协议入口拒绝，
 	// 防止未来新增客户端协议未经审查就获得有损投影。
 	if _, found := request.UserID(); found && !allowCrossProtocolProjection {
 		return unsupported("user_id")
-	}
-	if len(request.StopSequences()) != 0 {
-		return unsupported("stop_sequences")
 	}
 	// Claude cache_control 只影响 Anthropic 的提示缓存布局，Codex Responses
 	// 没有等价断点；跨协议时保留正文、丢弃控制标记。

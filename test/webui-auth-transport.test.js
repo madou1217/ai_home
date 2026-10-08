@@ -5,7 +5,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('../web/node_modules/typescript');
 
-function loadTransportModule() {
+function loadTransportModule(options = {}) {
   const filename = path.join(__dirname, '../web/src/services/webui-auth-transport.ts');
   const source = fs.readFileSync(filename, 'utf8');
   const compiled = ts.transpileModule(source, {
@@ -20,8 +20,8 @@ function loadTransportModule() {
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const originalRequire = mod.require.bind(mod);
   mod.require = (request) => {
-    if (request === './server-selection-scope') {
-      const dependencyFilename = path.join(__dirname, '../web/src/services/server-selection-scope.ts');
+    if (['./server-selection-scope', './session-watch-websocket'].includes(request)) {
+      const dependencyFilename = path.join(__dirname, '../web/src/services', `${request.slice(2)}.ts`);
       const dependency = new Module(dependencyFilename, mod);
       dependency.filename = dependencyFilename;
       dependency.paths = Module._nodeModulePaths(path.dirname(dependencyFilename));
@@ -45,6 +45,7 @@ function installBrowserFixture(t, options = {}) {
   const previousWindow = global.window;
   const previousFetch = global.fetch;
   const previousEventSource = global.EventSource;
+  const previousWebSocket = global.WebSocket;
   const storage = new Map();
   const profilePayload = JSON.stringify([
     {
@@ -83,11 +84,13 @@ function installBrowserFixture(t, options = {}) {
     clearTimeout
   };
   global.EventSource = { CONNECTING: 0, OPEN: 1, CLOSED: 2 };
+  if (options.WebSocket) global.WebSocket = options.WebSocket;
   global.fetch = options.fetchImpl || previousFetch;
   t.after(() => {
     global.window = previousWindow;
     global.fetch = previousFetch;
     global.EventSource = previousEventSource;
+    global.WebSocket = previousWebSocket;
   });
 }
 
@@ -180,4 +183,46 @@ test('webui fetch event stream authenticates by header and exposes EventSource-c
   assert.equal(calls[0].init.headers.get('authorization'), 'Bearer local-management-key');
   assert.equal(calls[0].init.headers.get('x-aih-server-id'), 'aws-server');
   assert.equal(calls[0].input.includes('access_token'), false);
+});
+
+test('local native-session watch uses a WebSocket while directory watches retain fetch SSE', async (t) => {
+  const sockets = [];
+  const fetchCalls = [];
+  installBrowserFixture(t, {
+    search: '?server=local-server',
+    WebSocket: class {
+      constructor(url) { sockets.push(String(url)); }
+      close() {}
+    },
+    fetchImpl: async (input) => {
+      fetchCalls.push(String(input));
+      return { ok: true, body: new ReadableStream() };
+    }
+  });
+  const transport = loadTransportModule();
+  const session = transport.guardedWebUiEventSource('/v0/webui/sessions/watch?provider=workbuddy&sessionId=native-id');
+  const directory = transport.guardedWebUiEventSource('/v0/webui/projects/watch');
+  await new Promise((resolve) => setImmediate(resolve));
+  session.close();
+  directory.close();
+  assert.deepEqual(sockets, ['ws://localhost:9527/v0/webui/sessions/watch/ws']);
+  assert.deepEqual(fetchCalls, ['/v0/webui/projects/watch']);
+});
+
+test('remote native-session watch retains the Server selection and Management Key headers', async (t) => {
+  const calls = [];
+  installBrowserFixture(t, {
+    fetchImpl: async (input, init) => {
+      calls.push({ input: String(input), headers: init.headers });
+      return { ok: true, body: new ReadableStream() };
+    }
+  });
+  const transport = loadTransportModule();
+  const stream = transport.guardedWebUiEventSource('/v0/webui/sessions/watch?provider=workbuddy&sessionId=native-id');
+  await new Promise((resolve) => setImmediate(resolve));
+  stream.close();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input, '/v0/webui/sessions/watch?provider=workbuddy&sessionId=native-id');
+  assert.equal(calls[0].headers.get('authorization'), 'Bearer local-management-key');
+  assert.equal(calls[0].headers.get('x-aih-server-id'), 'aws-server');
 });

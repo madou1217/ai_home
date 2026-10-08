@@ -657,8 +657,9 @@ test('account-scoped session stores trigger provider-only WebUI refreshes', asyn
     const kiroAccountRef = 'acct_22222222222222222222';
     const qoderProjectsDir = path.join(aiHomeDir, 'run', 'auth-projections', 'qoder', qoderAccountRef, 'projects');
     const kiroRuntimeDir = path.join(aiHomeDir, 'run', 'auth-projections', 'kiro', kiroAccountRef);
+    const kiroSessionsDir = path.join(kiroRuntimeDir, '.kiro', 'sessions', 'cli');
     fs.ensureDirSync(qoderProjectsDir);
-    fs.ensureDirSync(kiroRuntimeDir);
+    fs.ensureDirSync(kiroSessionsDir);
 
     const watcherCallbacks = new Map();
     fs.watch = (targetPath, listener) => {
@@ -707,6 +708,16 @@ test('account-scoped session stores trigger provider-only WebUI refreshes', asyn
     const kiroWatcher = watcherCallbacks.get(kiroRuntimeDir);
     assert.equal(typeof kiroWatcher, 'function');
     kiroWatcher('change', 'data.sqlite3-wal');
+    await waitFor(async () => {
+      await getProjectsSnapshot(ctx);
+      assert.ok(providerReads.some((entry) => entry.provider === 'kiro' && entry.accountRef === kiroAccountRef));
+      assert.equal(providerReads.some((entry) => entry.provider === 'qoder'), false);
+    });
+
+    providerReads.length = 0;
+    const kiroJsonlWatcher = watcherCallbacks.get(kiroSessionsDir);
+    assert.equal(typeof kiroJsonlWatcher, 'function');
+    kiroJsonlWatcher('change', '81048851-2e98-4946-bf42-92d65689519c.jsonl');
     await waitFor(async () => {
       await getProjectsSnapshot(ctx);
       assert.ok(providerReads.some((entry) => entry.provider === 'kiro' && entry.accountRef === kiroAccountRef));

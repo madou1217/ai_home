@@ -444,7 +444,8 @@ test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命�
   assert.equal(typeof body.entries.zcode.cli, 'boolean');
   assert.equal(body.capabilities.zcode.desktop, true);
   assert.equal(body.capabilities.zcode.cli, false);
-  assert.equal(body.entries.kiro.desktop, false);
+  assert.equal(typeof body.entries.kiro.desktop, 'boolean');
+  assert.equal(body.capabilities.kiro.desktop, true);
   assert.ok(Array.isArray(body.runningAccounts), '响应必须带 runningAccounts 数组');
 });
 

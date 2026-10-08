@@ -625,6 +625,7 @@ function createFixture(t, options = {}) {
     spawnSync,
     getProfileDir,
     accountArtifactHooks: options.accountArtifactHooks,
+    chatGateway: options.chatGateway,
     resolveNativeCliPath: options.resolveNativeCliPath || (() => runtimeExecutablePath),
     runtimeResolver,
     codexClientFactory(input) {
@@ -648,6 +649,30 @@ function createFixture(t, options = {}) {
     spawn,
     spawnSync
   };
+}
+
+for (const workspaceMode of ['chat', 'work']) {
+  test(`composition wires live account model policy into the ${workspaceMode} native composer`, async (t) => {
+    const checks = [];
+    let enabled = false;
+    const fixture = createFixture(t, { chatGateway: {
+      port: 9527,
+      isModelEnabled(provider, accountRef, model) {
+        checks.push({ provider, accountRef, model });
+        return enabled;
+      }
+    } });
+    const session = await fixture.service.createSession({
+      sessionId: `policy-${workspaceMode}`, provider: 'codex', executionAccountRef: 'account-1',
+      projectPath: workspaceMode === 'work' ? '/repo' : '', policy: { workspaceMode }
+    });
+
+    assert.deepEqual((await fixture.service.readComposerCatalog(session.sessionId)).models, []);
+    enabled = true;
+    assert.equal((await fixture.service.readComposerCatalog(session.sessionId)).models[0].id, 'gpt-5.3-codex');
+    assert.deepEqual(checks, Array(2).fill({ provider: 'codex', accountRef: 'account-1', model: 'gpt-5.3-codex' }));
+    assert.equal(fixture.client.calls.filter((call) => call.method === 'model/list').length, 1);
+  });
 }
 
 test('Chat imports legacy history once, resumes the native thread and keeps account ownership', async (t) => {

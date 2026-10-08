@@ -94,3 +94,21 @@ test('invalid account or provider scope cannot trigger a global Chat catalog pro
   }
   assert.equal(probes, 0);
 });
+
+test('Chat excludes disabled account models and observes policy updates without reprobes', async () => {
+  const state = createState();
+  state.modelCatalogSettings = { accountModels: [
+    { id: firstModel, provider: 'agy', accountRef: FIRST, enabled: false }
+  ] };
+  let probes = 0;
+  const readModels = createChatHarnessModelReader({
+    getState: () => state,
+    fetchModelsForAccount: async () => { probes += 1; return [firstModel, secondModel]; }
+  });
+
+  assert.deepEqual(await readModels('agy', FIRST), [secondModel]);
+  assert.deepEqual(await readModels('agy', SECOND), [firstModel, secondModel]);
+  state.modelCatalogSettings = { accountModels: [] };
+  assert.deepEqual(await readModels('agy', FIRST), [firstModel, secondModel]);
+  assert.equal(probes, 2);
+});

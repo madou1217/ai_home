@@ -78,14 +78,14 @@ test('codebuddy declares api_key_account, model_catalog, session_history and quo
   // 余额/积分接口已接入（POST {endpoint}/billing/meter/get-user-resource-summary，
   // 适配器 lib/cli/services/usage/codebuddy-quota-probe.js），因此允许声明 quota_usage。
   assert.equal(providerSupports('codebuddy', 'quota_usage'), true);
+  assert.equal(providerSupports('codebuddy', 'usage_scan'), true);
   // account_session_store 刻意保持不声明：会话读的是宿主地区目录而不是账号沙箱，
   // 声明它会把列表判成"按账号隔离"，而"切换账号不变历史"正是本轮要保证的行为。
   assert.equal(providerSupports('codebuddy', 'account_session_store'), false);
   for (const capability of [
     'session_runtime',
     'fabric_runtime',
-    'gateway_profile',
-    'usage_scan'
+    'gateway_profile'
   ]) {
     assert.equal(
       providerSupports('codebuddy', capability),

@@ -30,9 +30,18 @@ test('Canonical Go usage converts to Anthropic parts without changing the total'
     input_tokens: 200,
     cache_creation_input_tokens: 100,
     cache_read_input_tokens: 700,
-    output_tokens: 50
+    output_tokens: 50,
+    output_tokens_details: { thinking_tokens: 20 }
   });
-  assert.equal(normalizeApiUsageByFormat('anthropic', 'codex', usage).totalTokens, 1050);
+  const normalized = normalizeApiUsageByFormat('anthropic', 'codex', usage);
+  assert.equal(normalized.totalTokens, 1050);
+  assert.equal(normalized.outputTokens, 30);
+  assert.equal(normalized.reasoningOutputTokens, 20);
+  assert.equal(
+    normalized.inputTokens + normalized.cacheCreationInputTokens + normalized.cacheReadInputTokens
+      + normalized.outputTokens + normalized.reasoningOutputTokens,
+    normalized.totalTokens
+  );
 });
 
 test('feed records each Go event once through the shared usage entry, resuming by cursor', async () => {

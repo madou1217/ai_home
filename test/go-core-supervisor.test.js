@@ -128,6 +128,68 @@ test('enabled supervisor fails closed when the Go server binary is absent', asyn
   );
 });
 
+test('a delayed host event loop checks the live child before declaring startup timeout', async (t) => {
+  let clock = 1000;
+  t.mock.method(Date, 'now', () => clock);
+  const child = new EventEmitter();
+  child.pid = 4242;
+  const killed = [];
+  child.kill = signal => { killed.push(signal); child.emit('exit', 0, signal); };
+  let probes = 0;
+  const supervisor = createGoCoreSupervisor({
+    enabled: true,
+    verifyBuild: false,
+    fs: { existsSync: () => true },
+    spawn: () => child,
+    processObj: { env: {} },
+    fetchImpl: async (_url, init) => {
+      assert.ok(init.signal instanceof AbortSignal);
+      probes += 1;
+      if (probes === 1) throw new Error('not_listening_yet');
+      return { ok: true, json: async () => ({ ok: true, service: 'aih-server' }) };
+    },
+    sleep: async () => { clock += 10000; }
+  });
+  const result = await supervisor.start({ binaryPath: '/tmp/aih-server', aiHomeDir: '/tmp/aih-home',
+    managementKey: 'management-secret', clientKey: 'client-secret', readyTimeoutMs: 7000 });
+  assert.equal(result.state, 'ready');
+  assert.equal(probes, 2);
+  assert.deepEqual(killed, []);
+  await supervisor.stop();
+});
+
+test('a health probe aborted during host initialization is retried once after the startup deadline', async (t) => {
+  let clock = 1000;
+  t.mock.method(Date, 'now', () => clock);
+  const child = new EventEmitter();
+  child.pid = 4242;
+  const killed = [];
+  child.kill = signal => { killed.push(signal); child.emit('exit', 0, signal); };
+  let probes = 0;
+  const supervisor = createGoCoreSupervisor({
+    enabled: true,
+    verifyBuild: false,
+    fs: { existsSync: () => true },
+    spawn: () => child,
+    processObj: { env: {} },
+    fetchImpl: async () => {
+      probes += 1;
+      if (probes === 1) {
+        clock += 10000;
+        throw new DOMException('Host initialization delayed the request', 'TimeoutError');
+      }
+      return { ok: true, json: async () => ({ ok: true, service: 'aih-server' }) };
+    },
+    sleep: async () => {}
+  });
+  const result = await supervisor.start({ binaryPath: '/tmp/aih-server', aiHomeDir: '/tmp/aih-home',
+    managementKey: 'management-secret', clientKey: 'client-secret', readyTimeoutMs: 7000 });
+  assert.equal(result.state, 'ready');
+  assert.equal(probes, 2);
+  assert.deepEqual(killed, []);
+  await supervisor.stop();
+});
+
 test('Go Core binary path follows the npm build layout and adds .exe on Windows', () => {
   assert.equal(
     resolveGoServerBinary({ repositoryRoot: '/repo', platform: 'linux', arch: 'x64', path: path.posix }),

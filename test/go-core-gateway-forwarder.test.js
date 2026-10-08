@@ -131,6 +131,90 @@ test('forwards a Go-owned streaming route with swapped credentials and without h
   assert.equal(forwarded.headers['x-aih-request-id'], 'req-123');
 });
 
+test('retries one buffered Claude request after Node completes OAuth recovery', async (t) => {
+  const seen = [];
+  const go = http.createServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      seen.push({ body: Buffer.concat(chunks).toString('utf8') });
+      if (seen.length === 1) {
+        res.writeHead(403, {
+          'content-type': 'application/json',
+          'x-aih-server-account-ref': 'acct_abcdef0123456789abcd'
+        });
+        res.end('{"type":"error","error":{"type":"permission_error","message":"Request not allowed"}}');
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"type":"message","content":[]}');
+    });
+  });
+  const goPort = await listen(go);
+  t.after(() => close(go));
+  const recoveryCalls = [];
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: goPort, clientKey: GO_KEY }),
+    needsRequestModel: () => true,
+    deferToNode: async () => false,
+    recoverClaudeAuth: async (input) => {
+      recoveryCalls.push(input);
+      return true;
+    }
+  });
+
+  const body = JSON.stringify({ model: 'claude-opus-5-5', messages: [{ role: 'user', content: 'retry' }] });
+  const response = await request(port, {
+    method: 'POST',
+    path: '/v1/messages',
+    headers: {
+      authorization: `Bearer ${CLIENT_KEY}`,
+      'content-type': 'application/json',
+      'x-account-ref': 'acct_1234567890abcdef1234'
+    }
+  }, body);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body, '{"type":"message","content":[]}');
+  assert.deepEqual(seen.map((item) => item.body), [body, body]);
+  assert.deepEqual(recoveryCalls, [{
+    entryId: 'gateway.anthropic.messages',
+    statusCode: 403,
+    accountRef: 'acct_1234567890abcdef1234',
+    servedAccountRef: 'acct_abcdef0123456789abcd',
+    requestId: 'req-123'
+  }]);
+});
+
+test('passes a Claude 403 through when OAuth recovery declines', async (t) => {
+  const go = http.createServer((req, res) => {
+    req.resume();
+    req.once('end', () => {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end('{"type":"error","error":{"type":"permission_error"}}');
+    });
+  });
+  const goPort = await listen(go);
+  t.after(() => close(go));
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: goPort, clientKey: GO_KEY }),
+    needsRequestModel: () => true,
+    deferToNode: async () => false,
+    recoverClaudeAuth: async () => false
+  });
+
+  const response = await request(port, {
+    method: 'POST',
+    path: '/v1/messages',
+    headers: { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json' }
+  }, '{"model":"claude-opus-5-5"}');
+
+  assert.equal(response.status, 403);
+  assert.match(response.body, /permission_error/);
+});
+
 test('routes that are not Go-owned stay with Node', async (t) => {
   const go = await startFakeGo(t);
   const port = await startNodeHost(t, {

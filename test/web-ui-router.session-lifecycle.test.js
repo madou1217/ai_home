@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 const { SessionLifecycleError } = require('../lib/server/session-lifecycle');
@@ -13,10 +16,14 @@ function createResCapture() {
   };
 }
 
+// 路由会在 aiHomeDir 里建 app-state.db 等文件：用临时目录，结束即删。
+const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-session-lifecycle-route-'));
+test.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
 function createBaseDeps(sessionLifecycleService, body = null) {
   return {
     fs: require('fs-extra'),
-    aiHomeDir: '/tmp/aih-session-lifecycle-route',
+    aiHomeDir,
     hostHomeDir: '/tmp/aih-session-lifecycle-host',
     sessionLifecycleService,
     writeJson(response, code, payload) {

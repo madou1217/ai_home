@@ -379,14 +379,19 @@ test('the CLI reports an unreachable server instead of starting its own host', a
 test('plugin routes require a configured management key even from loopback', async () => {
   const { handlePluginManagementRequest } = require('../lib/server/plugin-management-routes');
   const written = [];
-  const handled = await handlePluginManagementRequest({
-    method: 'GET', pathname: '/v0/plugins',
-    req: { headers: {}, socket: { remoteAddress: '127.0.0.1' } },
-    res: {}, requiredManagementKey: '', state: {},
-    deps: { writeJson: (_res, status, body) => written.push({ status, body }), aiHomeDir: tempDir('aihm1r-') }
-  });
-  assert.equal(handled, true);
-  assert.equal(written[0].status, 503);
-  assert.equal(written[0].body.error, 'management_key_not_configured');
-  assert.equal(await handlePluginManagementRequest({ method: 'GET', pathname: '/v0/pluginsx', req: {}, res: {}, deps: {} }), false);
+  const dir = tempDir('aihm1r-');
+  try {
+    const handled = await handlePluginManagementRequest({
+      method: 'GET', pathname: '/v0/plugins',
+      req: { headers: {}, socket: { remoteAddress: '127.0.0.1' } },
+      res: {}, requiredManagementKey: '', state: {},
+      deps: { writeJson: (_res, status, body) => written.push({ status, body }), aiHomeDir: dir }
+    });
+    assert.equal(handled, true);
+    assert.equal(written[0].status, 503);
+    assert.equal(written[0].body.error, 'management_key_not_configured');
+    assert.equal(await handlePluginManagementRequest({ method: 'GET', pathname: '/v0/pluginsx', req: {}, res: {}, deps: {} }), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

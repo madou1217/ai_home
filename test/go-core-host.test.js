@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
 const { createGoCoreHost, resolveGoCoreSettings } = require('../lib/server/go-core-host');
@@ -72,12 +75,15 @@ test('a disabled Go Core never spawns and claims no routes by default', async ()
   assert.equal(await host.tryHandleHttp({ method: 'GET', headers: {} }, {}, { method: 'GET', pathname: '/v1/models' }), false);
 });
 
-test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the host', async () => {
+test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the host', async (t) => {
   const { factory, calls } = fakeSupervisorFactory();
+  // 启动后的账号对账会在 aiHomeDir 里建 app-state.db 等文件：用临时目录，结束即删。
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-host-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
   const host = createGoCoreHost({
     settings: resolveGoCoreSettings({ goCoreEnabled: true, goCoreRoutes: ['gateway.props'] }, {}),
     createGoCoreSupervisor: factory,
-    aiHomeDir: '/tmp/aih-home',
+    aiHomeDir,
     publicPort: 9527,
     log: silentLog
   });
@@ -88,7 +94,7 @@ test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the 
   assert.equal(calls.start, 1);
   assert.equal(calls.stop, 1);
   assert.equal(calls.options.enabled, true);
-  assert.equal(calls.options.aiHomeDir, '/tmp/aih-home');
+  assert.equal(calls.options.aiHomeDir, aiHomeDir);
   assert.equal(calls.options.publicPort, 9527);
   const managementKey = calls.options.managementKey();
   const clientKey = calls.options.clientKey();

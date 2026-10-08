@@ -14,13 +14,13 @@ const { createRpcClient } = require('../lib/plugins/transport/rpc-client');
 
 const TOKEN = 'a'.repeat(64);
 
-function socketPath() {
-  const dir = fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'aihr-'));
+function socketPath(dir) {
   return process.platform === 'win32' ? `\\\\.\\pipe\\aih-plugin-reverse-${path.basename(dir)}` : path.join(dir, 'r.sock');
 }
 
 async function pair(serverOnCall, clientOnCall) {
-  const address = socketPath();
+  const dir = fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'aihr-'));
+  const address = socketPath(dir);
   const server = createRpcServer({ socketPath: address, token: TOKEN, onCall: serverOnCall });
   await server.listen();
   const client = createRpcClient({ socketPath: address, token: TOKEN, onCall: clientOnCall });
@@ -30,6 +30,7 @@ async function pair(serverOnCall, clientOnCall) {
     async close() {
       client.close();
       await server.close();
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   };
 }

@@ -1,7 +1,7 @@
 /* KPI 条（DESIGN.md §6 / §HUD）：给 StatisticCard.Group 挂 .hos-kpi-strip，
  * 外框由 hud.css 统一画成切角面板 + 角标；单元格之间 1px 发丝线（容器底色透出的缝），不用左侧竖条。
  * 数值为等宽粗体（JetBrains Mono，带斜杠零）+ 青色辉光；标题为大写字距的 HUD 标签。
- * 使用方：Settings（Server 管理）、FabricServerSetup、Models、ProxyPoolPanel。 */
+ * 使用方：Settings（Server 管理）、FabricServerSetup、Models、SubscriptionAggregatorPanel。 */
 .ant-pro-card.hos-kpi-strip {
   margin-bottom: var(--space-8);
   overflow: hidden;

@@ -336,8 +336,8 @@ MobilePage
 ├─ ToolsPanel (session runtimes / network access): tiles + SwipeRow lifecycle + DetailSheet
 ├─ EnvironmentPanel: node/python chips, runtime tiles, SwipeRow lifecycle, DetailSheet, install-guide link
 ├─ MirrorsPanel: npm/pip chips, current config tile, SwipeRow (测速/写入), DetailSheet (KeyValue + GuidedCommand)
-├─ ProxyPoolPanel: core status, network takeover, KPI tiles, action grid, filters,
-│                  SwipeRow (实测/独立端口/删除) + DetailSheet, the existing proxy modals
+├─ SubscriptionAggregatorPanel: KPI tiles, aggregated links (SwipeRow 预览/编辑 + DetailSheet with
+│                  link/format picker), sources (SwipeRow 同步/删除), shared editor drawer & preview modal
 └─ DiagnosticsPanel: observation tiles (tap → sheet), apply-source card, Git/npm manual cards, endpoint probe
 ```
 

@@ -400,7 +400,6 @@
 .toolkit-environment-action,
 .toolkit-action-plan,
 .toolkit-connectivity-grid article,
-.toolkit-status-rail,
 .toolkit-command {
   --hud-cut: var(--hud-chamfer-sm);
   position: relative;
@@ -423,7 +422,6 @@
 .toolkit-environment-action::before,
 .toolkit-action-plan::before,
 .toolkit-connectivity-grid article::before,
-.toolkit-status-rail::before,
 .toolkit-command::before {
   content: '';
   position: absolute;
@@ -1596,7 +1594,7 @@
   color: var(--color-warning);
 }
 
-/* Compatibility primitives retained for the proxy-pool leaf panel. */
+/* Shared primitives for toolkit leaf panels (KPI row, read-only code box, action plans). */
 .toolkit-stat-row {
   min-width: 0;
   margin-bottom: var(--space-8);
@@ -1610,51 +1608,6 @@
 
 .toolkit-stat-row > .ant-pro-card.hos-kpi-strip {
   margin-bottom: 0;
-}
-
-/* 弹窗内列表行（分流规则 / 订阅源）：发丝线分隔的行，悬停青色细轨 + 淡青底，
- * 选中（.active）= 青框 + 柔和辉光。 */
-.toolkit-mirror-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8);
-  margin: 0;
-  padding: var(--space-6) var(--space-6);
-  border: 0;
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-  background: transparent;
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
-}
-
-.toolkit-mirror-row:first-child {
-  border-top: 1px solid var(--color-border);
-}
-
-.toolkit-mirror-row:hover {
-  background: var(--color-overlay);
-  box-shadow: inset 2px 0 0 var(--color-accent);
-}
-
-.toolkit-mirror-row.active {
-  background: var(--color-accent-soft);
-  box-shadow: inset 0 0 0 1px var(--color-accent), var(--hud-glow-accent);
-}
-
-.toolkit-mirror-row strong {
-  color: var(--color-heading);
-  font-family: var(--font-display);
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-wide);
-}
-
-.toolkit-mirror-row .ant-typography-secondary {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
 }
 
 /* 等宽只读内容块（聚合导出）：凹槽底 + 发丝线，语义 token，两个主题通用 */
@@ -1694,16 +1647,6 @@
   gap: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.toolkit-form-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-}
-
-.toolkit-load-errors {
-  margin-bottom: var(--space-8);
 }
 
 .toolkit-environment-action {
@@ -1767,185 +1710,10 @@
   font-family: var(--font-mono);
 }
 
-/* 代理核心状态行：HUD 读数条（小切角 + 角标，几何见「HUD 子面板几何」），图标着色表达状态，不做整块彩底 */
-.toolkit-status-rail {
-  margin-bottom: var(--space-8);
-  padding: var(--space-6) var(--space-8);
-  border: 1px solid var(--color-border);
-  background: var(--hud-panel-bg);
-}
-
-.toolkit-status-rail .hos-inline-note-text {
-  color: var(--color-heading);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wide);
-}
-
-.toolkit-status-rail.hos-inline-note--error .hos-inline-note-text {
-  color: var(--color-danger);
-}
-
-@media (max-width: 767.98px) {
-  .toolkit-status-rail {
-    flex-wrap: wrap;
-  }
-
-  .toolkit-status-rail .hos-inline-note-action {
-    flex-basis: 100%;
-    margin-inline-start: 0;
-  }
-}
-
-.proxy-pool-panel {
-  min-width: 0;
-}
-
-/* 网络层接管：antd Card 挂 .hud-panel.hud-panel--sm（切角 + 角标），标题为青色 Orbitron 面板头 */
-.toolkit-network-integration {
-  margin-bottom: var(--space-8);
-  border-radius: 0;
-}
-
-.toolkit-network-integration.ant-card > .ant-card-head {
-  min-height: 44px;
-  border-bottom: 1px solid var(--color-border);
-  border-radius: 0;
-}
-
-.toolkit-network-integration.ant-card > .ant-card-head .ant-card-head-title {
-  color: var(--color-accent);
-  font-family: var(--font-display);
-  font-size: var(--hos-text-h3);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-wide);
-  text-shadow: var(--hud-text-glow-soft);
-}
-
 .toolkit-note-spaced {
   margin-bottom: var(--space-6);
 }
 
-.toolkit-network-integration-grid > div {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  gap: var(--space-4);
-}
-
-.toolkit-network-integration-grid .ant-select {
-  min-width: 150px;
-}
-
-.toolkit-network-integration-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-8);
-}
-
-.toolkit-field-label {
-  margin-bottom: var(--space-2);
-  color: var(--color-faint);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.proxy-pool-toolbar {
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.proxy-pool-toolbar > * {
-  max-width: 100%;
-}
-
-.proxy-group-source {
-  margin: calc(-1 * var(--space-4)) 0 var(--space-8);
-}
-
-.proxy-node-heading,
-.proxy-subscription-info {
-  min-width: 0;
-}
-
-.proxy-node-grid > article[data-current-outbound='true'] {
-  border-color: var(--color-accent) !important;
-  box-shadow: var(--hud-glow-accent);
-}
-
-.proxy-node-grid > article[data-current-outbound='true'] .toolkit-card-title {
-  color: var(--color-accent);
-  text-shadow: var(--hud-text-glow-soft);
-}
-
-.proxy-country-flag {
-  flex: 0 0 auto;
-  font-size: var(--text-2xl);
-  line-height: 1;
-}
-
-/* 节点实测延迟 / 可达性：LED + 等宽读数（数值与阈值均来自 node.latencyMs，未改变） */
-.proxy-latency {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-weight: var(--weight-semibold);
-  line-height: 20px;
-  white-space: nowrap;
-}
-
-.proxy-latency[data-tone='ok'] { color: var(--color-success); }
-.proxy-latency[data-tone='warn'] { color: var(--color-warning); }
-.proxy-latency[data-tone='err'] { color: var(--color-danger); }
-
-.proxy-latency:not([data-tone='idle']) {
-  border-color: color-mix(in srgb, currentColor 35%, transparent);
-}
-
-.proxy-local-port {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: var(--space-3);
-  justify-self: end;
-  overflow: hidden;
-  color: var(--color-success);
-  font-family: var(--font-mono);
-  text-overflow: ellipsis;
-}
-
-.proxy-export-toolbar,
-.proxy-export-summary,
-.proxy-subscription-form {
-  max-width: 100%;
-}
-
-.proxy-export-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-  margin-bottom: var(--space-6);
-}
-
-.proxy-export-summary {
-  margin-bottom: var(--space-4);
-}
-
-.proxy-export-summary .ant-tag {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
-}
-
-.proxy-export-intro,
 .proxy-import-intro {
   font-family: var(--font-prose);
 }
@@ -1954,95 +1722,7 @@
   margin-bottom: var(--space-8);
 }
 
-.proxy-export-content {
-  align-items: flex-start;
-  max-height: 360px;
-  overflow: auto;
-  white-space: pre;
-}
-
-.proxy-subscription-list,
-.proxy-routing-section {
-  min-width: 0;
-}
-
-
-.proxy-routing-status {
-  margin-top: var(--space-6);
-}
-
-.proxy-routing-rules {
-  width: 100%;
-}
-
-
-.proxy-routing-rule-head {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-/* 弹窗分区标题：HUD 大写标签（Title level 5 替换为分区眉标，内容不变） */
-.proxy-modal-section-title.ant-typography {
-  margin: var(--space-8) 0 var(--space-4) !important;
-  color: var(--color-faint);
-  font-family: var(--font-body);
-  font-size: 10px !important;
-  font-weight: var(--weight-semibold) !important;
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.proxy-subscription-info {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-2);
-  overflow-wrap: anywhere;
-}
-
-.proxy-subscription-info .ant-typography code {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-}
-
-.proxy-share-content {
-  display: grid;
-  min-width: 0;
-  place-items: center;
-  gap: var(--space-8);
-  text-align: center;
-}
-
-.proxy-share-content h4.ant-typography {
-  margin: 0;
-  color: var(--color-heading);
-  font-family: var(--font-display);
-  letter-spacing: var(--tracking-wide);
-}
-
-.proxy-share-content .ant-qrcode {
-  border-radius: 0;
-}
-
-.proxy-share-content .ant-typography code {
-  max-width: 100%;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  overflow-wrap: anywhere;
-  word-break: break-all;
-}
-
-.toolkit-confirm-detail {
-  font-family: var(--font-body);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.toolkit-confirm-detail[data-break='all'] {
-  word-break: break-all;
-}
-
-/* 代理池 KPI 条的图标：状态色由真实 dataPlaneReady 决定 */
+/* KPI 条图标：可用 data-tone 表达真实状态 */
 .toolkit-kpi-icon {
   color: var(--color-muted);
   font-size: var(--text-2xl);
@@ -2183,16 +1863,6 @@
     border-left: 0;
   }
 
-  .toolkit-mirror-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .toolkit-form-row {
-    align-items: stretch !important;
-    flex-direction: column;
-  }
-
   .toolkit-environment-action-form {
     display: grid;
     grid-template-columns: 1fr;
@@ -2204,10 +1874,6 @@
   .toolkit-environment-action-form .ant-select,
   .toolkit-environment-action-form .ant-input {
     width: 100%;
-  }
-
-  .toolkit-form-row > * {
-    width: 100% !important;
   }
 }
 
@@ -2286,10 +1952,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .toolkit-network-integration-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .toolkit-app-card {
     min-height: 0;
   }
@@ -2301,10 +1963,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .toolkit-secondary-nav-item,
-  .toolkit-tool-option,
-  .toolkit-mirror-option,
-  .toolkit-app-card,
-  .toolkit-mirror-row {
+.toolkit-tool-option,
+.toolkit-mirror-option,
+.toolkit-app-card {
     transition: none;
   }
 

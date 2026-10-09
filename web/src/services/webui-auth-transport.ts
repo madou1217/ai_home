@@ -89,6 +89,21 @@ export function resolveActiveServer(): { serverId: string; isRemote: boolean } {
   }
 }
 
+/** 当前 WebUI 所连 server 的对外地址：远端 profile 取其 endpoint，本机取页面 origin。 */
+export function resolveActiveServerOrigin(): string {
+  if (typeof window === 'undefined') return '';
+  const active = resolveActiveServer();
+  if (!active.isRemote || !active.serverId) return window.location.origin;
+  try {
+    const raw = window.localStorage.getItem(SERVER_PROFILE_STORAGE_KEY);
+    const profiles = raw ? JSON.parse(raw) : [];
+    const profile = Array.isArray(profiles) ? profiles.find((item) => item && item.id === active.serverId) : null;
+    return profile?.endpoint ? new URL(String(profile.endpoint)).origin : window.location.origin;
+  } catch (_error) {
+    return window.location.origin;
+  }
+}
+
 export function buildAuthorizedWebUiHeaders(input?: HeadersInit) {
   const headers = new Headers(input || {});
   const managementKey = resolveWebUiManagementKey();

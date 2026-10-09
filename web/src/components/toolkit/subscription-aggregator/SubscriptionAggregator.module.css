@@ -1,0 +1,135 @@
+.section {
+  margin-top: 16px;
+}
+
+.sourceMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sourceUrl {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileItem {
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 10px;
+}
+
+.profileHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 12px;
+}
+
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.renameRow,
+.ruleRow {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.renameRow {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.ruleRow {
+  grid-template-columns: 150px 1fr 200px auto;
+}
+
+.sectionHint {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.presetList {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 20px;
+}
+
+.presetRow {
+  display: grid;
+  grid-template-columns: auto 1fr 200px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border, rgba(127, 127, 127, 0.18));
+}
+
+.presetText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.presetText small {
+  color: var(--color-muted, rgba(127, 127, 127, 0.9));
+}
+
+.policySelect {
+  width: 100%;
+}
+
+.previewToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.previewStats {
+  margin-bottom: 8px;
+}
+
+.previewWarning {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.previewContent {
+  max-height: 55vh;
+  overflow: auto;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .ruleRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .ruleRow > :nth-child(2),
+  .ruleRow > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .presetRow {
+    grid-template-columns: auto 1fr;
+  }
+
+  .presetRow > :last-child {
+    grid-column: 1 / -1;
+  }
+}

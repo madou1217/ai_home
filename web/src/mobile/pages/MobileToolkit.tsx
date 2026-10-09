@@ -16,7 +16,7 @@ import CliUpgradePanel from './toolkit/CliUpgradePanel';
 import DiagnosticsPanel from './toolkit/DiagnosticsPanel';
 import EnvironmentPanel from './toolkit/EnvironmentPanel';
 import MirrorsPanel from './toolkit/MirrorsPanel';
-import ProxyPoolPanel from './toolkit/ProxyPoolPanel';
+import SubscriptionAggregatorPanel from './toolkit/SubscriptionAggregatorPanel';
 import TerminalsPanel from './toolkit/TerminalsPanel';
 import ToolsPanel from './toolkit/ToolsPanel';
 import styles from './MobileToolkit.module.css';
@@ -49,7 +49,7 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
   ],
   network: [
     { id: 'network-access', label: '接入与隧道', icon: <ApiOutlined /> },
-    { id: 'proxy-pool', label: '代理池与分流', icon: <ForkOutlined /> },
+    { id: 'subscription-aggregator', label: '订阅聚合与分流', icon: <ForkOutlined /> },
     { id: 'proxy-diagnostics', label: '网络诊断', icon: <GlobalOutlined /> }
   ]
 };
@@ -76,8 +76,8 @@ function renderPanel(panelId: string) {
       return <MirrorsPanel />;
     case 'network-access':
       return <ToolsPanel category="network-access" />;
-    case 'proxy-pool':
-      return <ProxyPoolPanel />;
+    case 'subscription-aggregator':
+      return <SubscriptionAggregatorPanel />;
     case 'proxy-diagnostics':
       return <DiagnosticsPanel />;
     default:

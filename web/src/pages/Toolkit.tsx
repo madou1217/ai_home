@@ -16,8 +16,8 @@ import EnvironmentPanel from '@/components/toolkit/EnvironmentPanel';
 import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
-import ProxyPoolPanel from '@/components/toolkit/proxy-pool/ProxyPoolPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
+import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -78,9 +78,9 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ApiOutlined />
     },
     {
-      id: 'proxy-pool',
-      label: '代理池与分流',
-      description: '节点、订阅与出口',
+      id: 'subscription-aggregator',
+      label: '订阅聚合与分流',
+      description: '多订阅合一与分流规则',
       icon: <ForkOutlined />
     },
     {
@@ -120,8 +120,8 @@ function renderPanel(panelId: string) {
       return <MirrorManagerPanel />;
     case 'network-access':
       return <ManagedToolsPanel category="network-access" />;
-    case 'proxy-pool':
-      return <ProxyPoolPanel />;
+    case 'subscription-aggregator':
+      return <SubscriptionAggregatorPanel />;
     case 'proxy-diagnostics':
       return <ProxyDiagnosticsPanel />;
     default:

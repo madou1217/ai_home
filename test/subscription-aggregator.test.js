@@ -96,6 +96,18 @@ test('normalizeProfile fills defaults and keeps catalog preset order', () => {
   assert.equal(profile.token, 'tok_'.padEnd(43, 'x'));
 });
 
+test('getOverview exposes the catalog with a server-normalized default profile', () => {
+  const { service, dir } = createService(createSourcePort());
+  const overview = service.getOverview();
+  assert.equal(overview.manualNodeCount, 1);
+  assert.equal(overview.catalog.defaultProfile.name, '聚合订阅');
+  assert.equal(overview.catalog.defaultProfile.token, undefined);
+  assert.match(overview.catalog.defaultProfile.filter.exclude, /到期/);
+  assert.ok(overview.catalog.presets.every((preset) => preset.ruleSets === undefined));
+  assert.ok(overview.catalog.regions.every((region) => region.pattern === undefined));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('normalizeProfile rejects invalid regex, policies and rule values', () => {
   assert.throws(() => makeProfile({ filter: { include: '(' } }), { code: 'invalid_aggregator_pattern' });
   assert.throws(() => makeProfile({ rules: { finalPolicy: 'region:mars' } }), { code: 'invalid_aggregator_policy' });

@@ -316,7 +316,7 @@ test('syncGlobalConfigToHost selects a Claude API key account through settings e
   fs.writeFileSync(settingsPath, original);
   const apiRef = registerClaudeApiAccount(fixture, '16', {
     ANTHROPIC_API_KEY: 'sk-ant-test',
-    ANTHROPIC_BASE_URL: 'https://relay.example'
+    ANTHROPIC_BASE_URL: 'https://relay.example/llm/api/v1/'
   });
   const oauthRef = registerClaudeAccount(fixture, '1', { claudeAiOauth: { accessToken: 'database' } });
   const sync = createClaudeSyncer(fixture, {
@@ -330,7 +330,7 @@ test('syncGlobalConfigToHost selects a Claude API key account through settings e
     env: {
       CUSTOM_SETTING: 'keep',
       ANTHROPIC_API_KEY: 'sk-ant-test',
-      ANTHROPIC_BASE_URL: 'https://relay.example'
+      ANTHROPIC_BASE_URL: 'https://relay.example/llm/api'
     }
   });
   assert.equal(fs.statSync(settingsPath).mode & 0o777, 0o600);
@@ -344,14 +344,18 @@ test('syncGlobalConfigToHost projects a Claude auth token account without leakin
   const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
   const accountRef = registerClaudeApiAccount(fixture, '17', {
     AIH_CLAUDE_CREDENTIAL_TYPE: 'auth-token',
-    ANTHROPIC_AUTH_TOKEN: 'token-test'
+    ANTHROPIC_AUTH_TOKEN: 'token-test',
+    ANTHROPIC_BASE_URL: 'https://token-relay.example/anthropic/v1'
   });
 
   const result = createClaudeSyncer(fixture)('claude', accountRef, { restoreGateway: true });
 
   assert.equal(result.ok, true);
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
-    env: { ANTHROPIC_AUTH_TOKEN: 'token-test' }
+    env: {
+      ANTHROPIC_AUTH_TOKEN: 'token-test',
+      ANTHROPIC_BASE_URL: 'https://token-relay.example/anthropic'
+    }
   });
 });
 

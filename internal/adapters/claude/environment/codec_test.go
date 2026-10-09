@@ -139,7 +139,7 @@ func TestEncodeWritesOnlySelectedCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编码 Auth Token 失败: %v", err)
 	}
-	if len(tokenEnv) != 2 || tokenEnv["ANTHROPIC_AUTH_TOKEN"] != testAuthToken || tokenEnv["ANTHROPIC_BASE_URL"] != "https://relay.example.com/v1" {
+	if len(tokenEnv) != 2 || tokenEnv["ANTHROPIC_AUTH_TOKEN"] != testAuthToken || tokenEnv["ANTHROPIC_BASE_URL"] != "https://relay.example.com" {
 		t.Fatalf("Auth Token 环境不精确: %v", safeKeys(tokenEnv))
 	}
 

@@ -98,7 +98,7 @@ func TestGatewayStrategyBuildsPoolAndPinnedMessagesEnvironment(t *testing.T) {
 func TestStrategyBuildsAllClaudeCredentialModes(t *testing.T) {
 	apiKey, err := claude.NewAPIKeyAuth(claude.APIKeyInput{
 		APIKey:  claudeAPIKeySecret,
-		BaseURL: "https://api.example.test/anthropic",
+		BaseURL: "https://api.example.test/anthropic/v1/",
 	})
 	if err != nil {
 		t.Fatalf("NewAPIKeyAuth() error = %v", err)

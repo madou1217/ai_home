@@ -7,6 +7,7 @@ package environment
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/madou1217/ai_home/core/accounts/claude"
@@ -124,10 +125,21 @@ func readCredential(values map[string]string, name string) (string, bool, error)
 // encodeStatic 省略官方默认 Base URL，避免制造无意义环境差异。
 func encodeStatic(name string, secret string, baseURL string) map[string]string {
 	values := map[string]string{name: secret}
+	baseURL = normalizeSDKBaseURL(baseURL)
 	if baseURL != claude.DefaultAPIBaseURL {
 		values[baseURLName] = baseURL
 	}
 	return values
+}
+
+// normalizeSDKBaseURL 只在 CLI 环境投影中去除末尾 /v1；Claude SDK 会自行追加
+// /v1/messages。领域凭据保留原始规范端点，账号身份和网关寻址不受影响。
+func normalizeSDKBaseURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || !strings.HasSuffix(strings.ToLower(parsed.EscapedPath()), "/v1") {
+		return baseURL
+	}
+	return baseURL[:len(baseURL)-len("/v1")]
 }
 
 // invalidEnvironment 用固定原因包装错误，禁止回显任何环境值。

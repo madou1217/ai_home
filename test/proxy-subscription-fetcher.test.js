@@ -42,6 +42,41 @@ test('SubscriptionFetcher blocks loopback and private network targets before iss
   }
 });
 
+test('SubscriptionFetcher accepts fake-ip DNS answers for domains and pins only the fake IPv4 addresses', async () => {
+  const pinned = [];
+  const fetcher = new SubscriptionFetcher({
+    resolveHost: async () => ['198.18.1.142', 'fd12:1:1:1:898:0:184:f'],
+    dispatcherFactory(addresses) {
+      pinned.push(addresses);
+      return { async close() {} };
+    },
+    requestImpl: async () => ({ statusCode: 200, headers: {}, body: Readable.from(['ok']) })
+  });
+
+  const result = await fetcher.fetch('https://subscription.example/proxies');
+
+  assert.equal(result.content, 'ok');
+  assert.deepEqual(pinned, [['198.18.1.142']]);
+});
+
+test('SubscriptionFetcher still blocks fake-ip literals and fake-ip answers mixed with private addresses', async () => {
+  for (const [url, addresses] of [
+    ['https://198.18.0.5/proxies', ['198.18.0.5']],
+    ['https://subscription.example/proxies', ['198.18.0.5', '10.0.0.8']]
+  ]) {
+    let requestCalls = 0;
+    const fetcher = new SubscriptionFetcher({
+      resolveHost: async () => addresses,
+      requestImpl: async () => {
+        requestCalls += 1;
+        throw new Error('must not request a blocked address');
+      }
+    });
+    await assert.rejects(fetcher.fetch(url), (error) => error.code === 'subscription_url_blocked');
+    assert.equal(requestCalls, 0, url);
+  }
+});
+
 test('SubscriptionFetcher pins requests to the public addresses that passed URL policy', async () => {
   const dispatcher = { async close() {} };
   const calls = [];

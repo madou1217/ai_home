@@ -27,14 +27,16 @@ test('Claude native OAuth accounts relay through the gateway by accountRef', () 
   });
 });
 
-test('Claude relay is disabled for gateway, login, and direct token modes', () => {
+test('Claude relay is disabled for gateway and login modes', () => {
   const base = { provider: 'claude', accountRef: ACCOUNT_REF, accountEnv: {} };
   assert.equal(shouldRelayClaudeAccount({ ...base, gateway: true }), false);
   assert.equal(shouldRelayClaudeAccount({ ...base, isLogin: true }), false);
-  assert.equal(shouldRelayClaudeAccount({
-    ...base,
-    accountEnv: { ANTHROPIC_AUTH_TOKEN: 'direct-token' }
-  }), false);
+});
+
+test('Claude API key and auth token accounts relay through the gateway by accountRef', () => {
+  const base = { provider: 'claude', accountRef: ACCOUNT_REF };
+  assert.equal(shouldRelayClaudeAccount({ ...base, accountEnv: { ANTHROPIC_API_KEY: 'sk-ant-test' } }), true);
+  assert.equal(shouldRelayClaudeAccount({ ...base, accountEnv: { ANTHROPIC_AUTH_TOKEN: 'direct-token' } }), true);
 });
 
 test('Claude relay rejects mutable CLI ids and accepts only accountRef', () => {

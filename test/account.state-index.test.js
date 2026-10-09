@@ -71,6 +71,43 @@ test('account state index excludes runtime-blocked candidates before CLI switchi
   assert.equal(index.getNextCandidateRef('codex'), availableRef);
 });
 
+test('account state index caps a legacy year-long auth lock on an API key account', (t) => {
+  const { index, register } = createFixture(t);
+  const apiKeyRef = register('codex', '18');
+  const oauthRef = register('codex', '4');
+  const lastFailureAt = Date.now() - 40 * 24 * 60 * 60 * 1000;
+  const yearLock = {
+    cooldownUntil: lastFailureAt + 365 * 24 * 60 * 60 * 1000,
+    authInvalidUntil: lastFailureAt + 365 * 24 * 60 * 60 * 1000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'auth_invalid_reauth_required',
+    lastFailureAt
+  };
+  index.upsertRuntimeState(apiKeyRef, 'codex', yearLock, { configured: true, apiKeyMode: true });
+  index.upsertRuntimeState(oauthRef, 'codex', yearLock, { configured: true, apiKeyMode: false });
+
+  const apiKeyState = index.getAccountState(apiKeyRef);
+  assert.equal(apiKeyState.runtimeState.authInvalidUntil, lastFailureAt + 30 * 60 * 1000);
+  assert.equal(apiKeyState.runtimeState.cooldownUntil, lastFailureAt + 30 * 60 * 1000);
+  assert.equal(index.getAccountState(oauthRef).runtimeState.authInvalidUntil, yearLock.authInvalidUntil);
+});
+
+test('account state index keeps a fresh API key rejection cooldown intact', (t) => {
+  const { index, register } = createFixture(t);
+  const apiKeyRef = register('codex', '17');
+  const lastFailureAt = Date.now();
+  const runtime = {
+    cooldownUntil: lastFailureAt + 30 * 60 * 1000,
+    authInvalidUntil: lastFailureAt + 30 * 60 * 1000,
+    lastFailureKind: 'auth_invalid',
+    lastFailureReason: 'api_key_rejected',
+    lastFailureAt
+  };
+  index.upsertRuntimeState(apiKeyRef, 'codex', runtime, { configured: true, apiKeyMode: true });
+
+  assert.equal(index.getAccountState(apiKeyRef).runtimeState.authInvalidUntil, runtime.authInvalidUntil);
+});
+
 test('account state index exposes usage, configured, and stale ref selectors', (t) => {
   const { index, register } = createFixture(t);
   const configuredRef = register('gemini', '1');

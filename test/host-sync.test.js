@@ -298,6 +298,63 @@ test('syncGlobalConfigToHost selects AIH Server in Claude settings without repla
   assert.equal(fs.statSync(settingsPath).mode & 0o777, 0o600);
 });
 
+function registerClaudeApiAccount(fixture, cliAccountId, env) {
+  const registration = registerAccountIdentity(fs, fixture.aiHomeDir, {
+    provider: 'claude',
+    cliAccountId: String(cliAccountId),
+    identitySeed: `test:host-sync:claude-api:${cliAccountId}`
+  });
+  writeAccountCredentials(fs, fixture.aiHomeDir, registration.accountRef, env);
+  return registration.accountRef;
+}
+
+test('syncGlobalConfigToHost selects a Claude API key account through settings env and restores on OAuth switch', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  const original = '{"env":{"CUSTOM_SETTING":"keep","ANTHROPIC_BASE_URL":"https://stale.example"}}\n';
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, original);
+  const apiRef = registerClaudeApiAccount(fixture, '16', {
+    ANTHROPIC_API_KEY: 'sk-ant-test',
+    ANTHROPIC_BASE_URL: 'https://relay.example'
+  });
+  const oauthRef = registerClaudeAccount(fixture, '1', { claudeAiOauth: { accessToken: 'database' } });
+  const sync = createClaudeSyncer(fixture, {
+    reconcileClaudeHostCredentials: (record) => ({ ok: true, credentials: record.nativeAuth.credentials })
+  });
+
+  const result = sync('claude', apiRef, { restoreGateway: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+    env: {
+      CUSTOM_SETTING: 'keep',
+      ANTHROPIC_API_KEY: 'sk-ant-test',
+      ANTHROPIC_BASE_URL: 'https://relay.example'
+    }
+  });
+  assert.equal(fs.statSync(settingsPath).mode & 0o777, 0o600);
+
+  assert.equal(sync('claude', oauthRef, { restoreGateway: true }).ok, true);
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), original);
+});
+
+test('syncGlobalConfigToHost projects a Claude auth token account without leaking the type marker', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  const accountRef = registerClaudeApiAccount(fixture, '17', {
+    AIH_CLAUDE_CREDENTIAL_TYPE: 'auth-token',
+    ANTHROPIC_AUTH_TOKEN: 'token-test'
+  });
+
+  const result = createClaudeSyncer(fixture)('claude', accountRef, { restoreGateway: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsPath, 'utf8')), {
+    env: { ANTHROPIC_AUTH_TOKEN: 'token-test' }
+  });
+});
+
 test('syncGlobalConfigToHost does not overwrite invalid Claude settings for AIH Server', (t) => {
   const fixture = createFixture(t);
   const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');

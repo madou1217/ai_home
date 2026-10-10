@@ -154,3 +154,11 @@ test('cross-protocol non-stream conversion declares the canonical response pipel
   ]);
   assert.equal(converted.payload.output[1].call_id, TOOL_ID);
 });
+
+test('Anthropic canonical usage counts prompt-cache reads and writes as input context', () => {
+  const canonical = parseProtocolResponseToCanonical('anthropic_messages', {
+    ...sourceFixtures.anthropic_messages,
+    usage: { input_tokens: 4, cache_read_input_tokens: 2000, cache_creation_input_tokens: 96, output_tokens: 9 }
+  });
+  assert.deepEqual(canonical.usage, { inputTokens: 2100, outputTokens: 9, totalTokens: 2109 });
+});

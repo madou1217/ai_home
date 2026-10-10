@@ -100,6 +100,50 @@ test('webui model cache is persisted and reused without a fresh probe', async ()
   }
 });
 
+test('webui model cache persists probed context windows and restores them after a restart without probing', async () => {
+  const {
+    registerProbedModelLimits,
+    resetProbedModelLimits,
+    resolveProbedContextLength
+  } = require('../lib/server/probed-model-limits');
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-model-limits-'));
+  const createState = () => ({
+    accounts: { gemini: [{ id: 'g1', accountRef: GEMINI_ACCOUNT_REF, provider: 'gemini', accessToken: 'token' }] },
+    modelRegistry: { providers: { gemini: new Set() } }
+  });
+  resetProbedModelLimits();
+
+  try {
+    await getWebUiModelsCache(createState(), { provider: 'auto' }, {
+      forceRefresh: true,
+      accountLimit: 0,
+      fs,
+      aiHomeDir,
+      fetchModelsForAccount: async (_options, target) => {
+        // 与 http-utils 探测一致：上游 /models 声明的窗口登记到当前账号。
+        registerProbedModelLimits(target.accountRef, [{ id: 'qwen3.8-27b', context_length: 262144 }], ['qwen3.8-27b']);
+        return ['qwen3.8-27b'];
+      }
+    });
+
+    resetProbedModelLimits();
+    const cached = await getWebUiModelsCache(createState(), { provider: 'auto' }, {
+      accountLimit: 0,
+      fs,
+      aiHomeDir,
+      fetchModelsForAccount: async () => {
+        throw new Error('restoring the window must not probe upstream');
+      }
+    });
+
+    assert.equal(cached.cached, true);
+    assert.equal(resolveProbedContextLength(GEMINI_ACCOUNT_REF, 'qwen3.8-27b'), 262144);
+  } finally {
+    resetProbedModelLimits();
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('webui model cache keeps stale models when a forced probe fails', async () => {
   const account = {
     id: 'g1',

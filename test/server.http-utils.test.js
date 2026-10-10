@@ -392,6 +392,35 @@ test('fetchModelsForAccount uses codex api-key account base url without double v
   assert.deepEqual(models, ['qwen3.6-plus', 'gpt-5.4']);
 });
 
+test('fetchModelsForAccount registers context windows that self-hosted /models responses declare', async (t) => {
+  const { resetProbedModelLimits, resolveProbedContextLength } = require('../lib/server/probed-model-limits');
+  resetProbedModelLimits();
+  t.after(() => resetProbedModelLimits());
+  t.mock.method(global, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: [
+        { id: 'qwen3.8-27b', object: 'model', context_length: 262144, max_model_len: 262144 },
+        { id: 'gpt-5.4', object: 'model' }
+      ]
+    })
+  }));
+
+  const models = await fetchModelsForAccount({}, {
+    provider: 'codex',
+    accountRef: 'acct_local_qwen',
+    accessToken: 'sk-local',
+    apiKeyMode: true,
+    authType: 'api-key',
+    openaiBaseUrl: 'http://192.168.31.57:8000/v1'
+  }, 500);
+
+  assert.deepEqual(models, ['qwen3.8-27b', 'gpt-5.4']);
+  assert.equal(resolveProbedContextLength('acct_local_qwen', 'qwen3.8-27b'), 262144);
+  assert.equal(resolveProbedContextLength('acct_local_qwen', 'gpt-5.4'), 0);
+});
+
 test('fetchModelsForAccount sends anthropic-version (+ oauth beta) for claude', async (t) => {
   let seenUrl = '';
   let seenHeaders = null;

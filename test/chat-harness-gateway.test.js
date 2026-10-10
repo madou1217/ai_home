@@ -60,7 +60,29 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.equal(model.shell_type, 'disabled');
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v4');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v5');
+});
+
+test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {
+  const { registerProbedModelLimits, resetProbedModelLimits } = require('../lib/server/probed-model-limits');
+  resetProbedModelLimits();
+  t.after(() => resetProbedModelLimits());
+  registerProbedModelLimits('acct_local_lab', [{ id: 'local-lab-model-27b', context_length: 131072 }], ['local-lab-model-27b']);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-harness-probed-window-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const options = createChatGatewayOptions({ provider: 'claude', executionAccountRef: 'acct_local_lab' }, {
+    aiHomeDir: root, env: {}, readAccountCredentialRecord: () => ({ provider: 'claude' }),
+    chatGateway: { port: 9999, readModels: async () => ['local-lab-model-27b'] }
+  });
+
+  const env = await options.buildProviderEnvImpl();
+  const config = fs.readFileSync(path.join(env.CODEX_HOME, 'config.toml'), 'utf8');
+  const file = JSON.parse(config.match(/^model_catalog_json = (.+)$/m)[1]);
+  const { models: [model] } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(model.context_window, 131072);
+  assert.equal(model.max_context_window, 131072);
+  const settings = await options.modelCatalog.resolveTurnSettings({ model: 'local-lab-model-27b' });
+  assert.deepEqual(settings.threadConfig, { model_context_window: 131072 });
 });
 
 test('empty account catalogs fail explicitly instead of using another account or provider model', async () => {

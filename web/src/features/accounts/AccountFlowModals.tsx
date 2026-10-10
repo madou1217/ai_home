@@ -9,6 +9,7 @@ import { AuthProgressModal } from '@/features/accounts/AuthProgressModal';
 import { CliPickerModal } from '@/features/accounts/CliPickerModal';
 import { CodexResetCreditsModal } from '@/features/accounts/CodexResetCreditsModal';
 import { EditAccountModal } from '@/features/accounts/EditAccountModal';
+import { AccountRoutingRulesModal } from '@/features/accounts/AccountRoutingRulesModal';
 import { ImportAccountsModal } from '@/features/accounts/ImportAccountsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
@@ -30,6 +31,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
   const {
     add,
     edit,
+    routingRules,
     authProgress,
     import: importFlow,
     appInstall,
@@ -89,10 +91,19 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         open={edit.open}
         form={edit.form}
         isClaudeCredential={edit.isClaudeCredential}
+        provider={edit.provider}
         effectiveAuthMode={edit.effectiveAuthMode}
         credentialModeChanged={edit.credentialModeChanged}
         onClose={edit.onClose}
         onSubmit={edit.onSubmit}
+      />
+
+      <AccountRoutingRulesModal
+        account={routingRules.account}
+        form={routingRules.form}
+        submitting={routingRules.submitting}
+        onClose={routingRules.onClose}
+        onSubmit={routingRules.onSubmit}
       />
 
       <AddAccountModal

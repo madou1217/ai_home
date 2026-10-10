@@ -79,3 +79,34 @@ test('loadCodeAssist decodes a gzip JSON project response', async (t) => {
   assert.equal(project, 'projects/gzip-project');
   assert.equal(account.codeAssistProject, 'projects/gzip-project');
 });
+
+test('loadCodeAssist keeps the decoded error envelope for provider rule matching', async (t) => {
+  const body = JSON.stringify({
+    error: {
+      type: 'new_api_error',
+      code: 'insufficient_user_quota',
+      message: '余额不足'
+    }
+  });
+  t.mock.method(global, 'fetch', async () => ({
+    ok: false,
+    status: 403,
+    headers: new Map([['content-type', 'application/json']]),
+    arrayBuffer: async () => Buffer.from(body)
+  }));
+
+  const account = {
+    provider: 'agy',
+    accessToken: 'agy-token'
+  };
+  await assert.rejects(
+    () => httpPrivate.fetchGeminiCodeAssistProject({
+      agyBaseUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal'
+    }, account, 500),
+    (error) => {
+      assert.equal(error.code, 'HTTP_403');
+      assert.equal(error.upstreamBody, body);
+      return true;
+    }
+  );
+});

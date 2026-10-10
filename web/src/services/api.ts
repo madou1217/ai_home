@@ -16,6 +16,8 @@ export {
 } from './webui-auth-transport';
 import type {
   Account,
+  UpstreamErrorRule,
+  UpstreamErrorMappingGroup,
   AccountRefreshJob,
   AccountRefreshUsageResponse,
   CodexResetCreditsResponse,
@@ -532,8 +534,12 @@ export const accountsAPI = {
     return response.data.account;
   },
 
-  updateAccount: async (provider: string, accountRef: string, data: { apiKey?: string; baseUrl?: string; authMode?: string; credentialType?: string }): Promise<{ ok: boolean; account: Account }> => {
+  updateAccount: async (provider: string, accountRef: string, data: { apiKey?: string; baseUrl?: string; authMode?: string; credentialType?: string; upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/update`, data);
+    return response.data;
+  },
+  updateAccountRoutingRules: async (provider: string, accountRef: string, data: { upstreamErrorRules?: UpstreamErrorRule[]; upstreamErrorGroupIds?: string[]; clearErrorBlock?: boolean }): Promise<{ ok: boolean; account: Account }> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/routing-rules`, data);
     return response.data;
   },
 
@@ -588,6 +594,28 @@ export const accountsAPI = {
   getImportJob: async (jobId: string): Promise<AccountImportJob> => {
     const response = await api.get<{ ok: boolean; job: AccountImportJob }>(`/webui/accounts/import/jobs/${jobId}`);
     return response.data.job;
+  }
+};
+
+export const upstreamErrorMappingsAPI = {
+  getAll: async (): Promise<UpstreamErrorMappingGroup[]> => {
+    const response = await api.get<{ ok: boolean; groups: UpstreamErrorMappingGroup[] }>('/webui/upstream-error-mappings');
+    return response.data.groups || [];
+  },
+  create: async (group: Partial<UpstreamErrorMappingGroup>): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.post<{ ok: boolean; group: UpstreamErrorMappingGroup }>('/webui/upstream-error-mappings', group);
+    return response.data.group;
+  },
+  update: async (id: string, group: Partial<UpstreamErrorMappingGroup>): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.put<{ ok: boolean; group: UpstreamErrorMappingGroup }>(`/webui/upstream-error-mappings/${id}`, group);
+    return response.data.group;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/webui/upstream-error-mappings/${id}`);
+  },
+  toggle: async (id: string): Promise<UpstreamErrorMappingGroup> => {
+    const response = await api.post<{ ok: boolean; group: UpstreamErrorMappingGroup }>(`/webui/upstream-error-mappings/${id}/toggle`);
+    return response.data.group;
   }
 };
 

@@ -141,6 +141,12 @@ export default function AccountDetailSheet({
   };
 
   const sheetActions: SheetAction[] = [];
+  sheetActions.push({
+    key: 'routing-rules',
+    label: '编辑调度规则',
+    icon: <ApiOutlined />,
+    onClick: closeThen(() => actions.handleRoutingRules(record))
+  });
   if (!requiresReauth) {
     if (appEntriesLoaded && appSupport?.desktopSupported) {
       sheetActions.push({

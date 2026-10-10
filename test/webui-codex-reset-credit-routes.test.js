@@ -149,3 +149,32 @@ test('reconciles an unknown operation through an explicit route and maps conflic
     }
   }]);
 });
+
+for (const action of ['consume', 'reconcile']) {
+  test(`confirmed ${action} refreshes the authoritative quota and pool, while uncertain or no-credit results do not`, async () => {
+    const pathname = action === 'consume'
+      ? `/v0/webui/accounts/codex/${ACCOUNT_REF}/reset-credits/consume`
+      : `/v0/webui/accounts/codex/${ACCOUNT_REF}/reset-operations/${OPERATION_ID}/reconcile`;
+    for (const [status, outcome, expected] of [
+      ['succeeded', 'reset', 1], ['succeeded', 'nothingToReset', 1],
+      ['succeeded', 'alreadyRedeemed', 1], ['rejected', 'noCredit', 0], ['unknown', '', 0]
+    ]) {
+      const request = createContext('POST', pathname,
+        { operationId: OPERATION_ID, inventoryVersion: 'version' }, {
+          [action]: async () => ({ operation: { status, outcome }, reconciliationRequired: status === 'unknown' })
+        });
+      let refreshed = 0;
+      request.context.deps.refreshLiveAccountRecord = async (ctx, provider, ref) => {
+        assert.equal(ctx, request.context);
+        assert.equal(provider, 'codex');
+        assert.equal(ref, ACCOUNT_REF);
+        refreshed++;
+        throw new Error('probe_unavailable');
+      };
+      await handleWebUiCodexResetCreditRoutes(request.context);
+      assert.equal(refreshed, expected);
+      assert.equal(request.writes[0].statusCode, status === 'unknown' ? 202 : 200);
+      assert.equal(request.writes[0].body.operation.outcome, outcome);
+    }
+  });
+}

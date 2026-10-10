@@ -56,3 +56,14 @@ test('ZCode bridge rejects failed decryption before sending partial credentials'
   assert.equal(plan.reason, 'zcode_credentials_decryption_failed');
   assert.equal(plan.request, undefined);
 });
+
+test('Go migration reports account error rules as lossy for every provider strategy', () => {
+  for (const provider of ['codex', 'claude', 'zcode']) {
+    const record = provider === 'zcode' ? zcodeRecord(zcodeCredentials()) : {
+      accountRef: 'acct-fixture', provider, cliAccountId: '1', nativeAuth: {},
+      env: provider === 'codex' ? { OPENAI_API_KEY: 'fixture-key' } : { ANTHROPIC_API_KEY: 'fixture-key' }
+    };
+    record.env.AIH_UPSTREAM_ERROR_RULES = '[{"kind":"billing_blocked"}]';
+    assert.deepEqual(translateNodeAccount(record).lossy, ['AIH_UPSTREAM_ERROR_RULES']);
+  }
+});

@@ -184,6 +184,8 @@ export interface Account {
   email: string;
   baseUrl?: string;
   quotaStatus?: string;
+  upstreamErrorRules?: UpstreamErrorRule[];
+  upstreamErrorGroupIds?: string[];
   quotaReason?: string;
   schedulableStatus?: string;
   schedulableReason?: string;
@@ -195,6 +197,28 @@ export interface Account {
   usageSnapshot?: AccountUsageSnapshot | null;
   modelSummary?: AccountModelSummary;
   tokenUsage?: AccountTokenUsage | null;
+}
+
+export type UpstreamErrorKind = 'billing_blocked' | 'quota_exhausted' | 'auth_invalid' | 'permission_denied' | 'rate_limited' | 'service_unavailable';
+
+export interface UpstreamErrorRule {
+  name: string;
+  enabled: boolean;
+  statuses: number[];
+  matchers: Array<
+    | { field: 'code' | 'type' | 'message' | 'body'; pattern: string }
+    | { source: 'http_code' | 'body' | 'json'; operator: 'regex' | 'contains' | 'equals'; path?: string; value: string | number | boolean | null }
+  >;
+  kind: UpstreamErrorKind;
+}
+
+export interface UpstreamErrorMappingGroup {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  enabled: boolean;
+  rules: UpstreamErrorRule[];
 }
 
 export type GatewayAccount = Omit<Account, 'accountRef' | 'gateway'> & {

@@ -27,6 +27,8 @@ const {
 } = require('../lib/server/account-credential-store');
 const { setUsageConfig } = require('../lib/usage/config-store');
 const { getMinRemainingPctFromUsageSnapshot } = require('../lib/account/usage-remaining');
+const { chooseServerAccount } = require('../lib/server/router');
+const { __private: accountLive } = require('../lib/server/webui-account-live');
 
 function makeJwt(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -165,6 +167,34 @@ function createFixture(t) {
     register
   };
 }
+
+test('canonical usage watcher restores a depleted Codex account and persists only contradicted quota cooldowns', async t => {
+  const fixture = createFixture(t);
+  const now = Date.now();
+  const accountRef = fixture.register('codex', '47', {
+    nativeAuth: { auth: createCodexAuth('47') },
+    usage: { ...codexUsage(0), capturedAt: now - 2000 }
+  });
+  fixture.accountStateIndex.upsertRuntimeState(accountRef, 'codex', {
+    lastFailureAt: now - 1000, lastFailureKind: 'rate_limited', lastFailureReason: 'usage_limit_reached',
+    modelCooldowns: { 'gpt-6.1-sol': now + 5 * 86400000, 'network-model': now + 60000 },
+    modelFailureStreaks: {
+      'gpt-6.1-sol': { kind: 'rate_limited', reason: 'usage_limit_reached', count: 1, expiresAt: now + 5 * 86400000 },
+      'network-model': { kind: 'network_error', reason: 'ECONNRESET', count: 1, expiresAt: now + 60000 }
+    }
+  });
+  const state = { accounts: loadServerRuntimeAccounts(fixture.deps()) };
+  const ctx = { ...fixture.deps(), state, loadServerRuntimeAccounts,
+    applyReloadState: (target, accounts) => { target.accounts = accounts; } };
+  accountLive.getAccountsLiveState(state).canonicalSignature = accountLive.buildCanonicalAccountsSignature(ctx);
+  assert.equal(chooseServerAccount(state.accounts.codex, {}, 'codex', { model: 'gpt-6.1-sol' }), null);
+  writeAccountUsageSnapshot(fs, fixture.aiHomeDir, accountRef, { ...codexUsage(100), capturedAt: now });
+  assert.equal(await accountLive.pollCanonicalAccountsOnce(ctx), true);
+  assert.equal(chooseServerAccount(state.accounts.codex, {}, 'codex', { model: 'gpt-6.1-sol' }).accountRef, accountRef);
+  const stored = fixture.accountStateIndex.getAccountState(accountRef).runtimeState;
+  assert.equal(stored.modelCooldowns['gpt-6.1-sol'], undefined);
+  assert.equal(stored.modelCooldowns['network-model'], now + 60000);
+});
 
 test('Codex DB accounts remain visible while usage policy controls scheduling', (t) => {
   const fixture = createFixture(t);

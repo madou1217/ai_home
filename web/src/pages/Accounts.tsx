@@ -212,6 +212,7 @@ export default function Accounts() {
     refreshingAccountRefs,
     copyAccountEmail,
     handleEdit,
+    handleRoutingRules,
     handleReauth,
     confirmDeleteAccount,
     handleToggleStatus,
@@ -289,7 +290,10 @@ export default function Accounts() {
   // 账号操作菜单（⋮）—— 列表列与卡片视图共用同一套 items + 点击分发，避免逻辑分叉。
   const buildAccountMenuItems = (record: Account): MenuProps['items'] => {
     if (requiresAccountReauth(record)) {
-      return [{ key: 'reauth', label: '重新登录', icon: <SyncOutlined /> }];
+      return [
+        { key: 'reauth', label: '重新登录', icon: <SyncOutlined /> },
+        { key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> }
+      ];
     }
     const menuItems: MenuProps['items'] = [];
     const defaultAction = getDefaultAccountActionMeta(record);
@@ -328,6 +332,7 @@ export default function Accounts() {
     if (canEditAccountConfig(record)) {
       menuItems.push({ key: 'edit', label: '编辑配置', icon: <EditOutlined /> });
     }
+    menuItems.push({ key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> });
     menuItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
@@ -335,7 +340,7 @@ export default function Accounts() {
   };
 
   const handleAccountMenuClick = (record: Account, key: string) => {
-    if (requiresAccountReauth(record) && key !== 'reauth') return;
+    if (requiresAccountReauth(record) && key !== 'reauth' && key !== 'routing-rules') return;
     if (key === 'set-default') { handleSetDefault(record); return; }
     if (key === 'set-mobile') { handleSetMobile(record); return; }
     if (key === 'codex-reset-credits' && isCodexOAuthResetEligible(record)) {
@@ -348,6 +353,7 @@ export default function Accounts() {
     }
     if (key === 'reauth') { handleReauth(record); return; }
     if (key === 'edit' && canEditAccountConfig(record)) { handleEdit(record); return; }
+    if (key === 'routing-rules') { handleRoutingRules(record); return; }
     if (key === 'account-egress') {
       setAccountEgressAccount(record);
       return;

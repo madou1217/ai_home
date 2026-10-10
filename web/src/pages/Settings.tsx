@@ -41,6 +41,7 @@ import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import PageHeaderActions from '@/components/ui/PageHeaderActions';
 import ModelAliases from './ModelAliases';
+import UpstreamErrorMappings from './UpstreamErrorMappings';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
@@ -100,7 +101,7 @@ const renderControlEndpointHints = (
   );
 };
 
-export type SettingsSectionKey = 'basic' | 'aliases' | 'control-planes' | 'ssh-hosts';
+export type SettingsSectionKey = 'basic' | 'aliases' | 'upstream-errors' | 'control-planes' | 'ssh-hosts';
 
 interface SettingsProps {
   section?: SettingsSectionKey;
@@ -133,6 +134,12 @@ const SETTINGS_PAGE_META = {
     eyebrow: '配置',
     description: '管理模型展示、路由和别名配置。'
   },
+  'upstream-errors': {
+    code: 'ROUTE',
+    title: '上游异常映射',
+    eyebrow: '配置',
+    description: '将 Provider 的错误响应转换为标准账号运行状态。'
+  },
   'control-planes': {
     code: 'NODES',
     title: 'Server 管理',
@@ -151,7 +158,7 @@ const getInitialSettingsTab = () => {
   if (typeof window === 'undefined') return 'basic';
   const params = new URLSearchParams(window.location.search);
   const tab = String(params.get('tab') || '').trim();
-  return tab === 'aliases' ? 'aliases' : 'basic';
+  return tab === 'aliases' || tab === 'upstream-errors' ? tab : 'basic';
 };
 
 const formatActiveControlPlaneLabel = (profile: ControlPlaneProfile | null) => {
@@ -171,6 +178,7 @@ const getInitialActiveControlPlaneId = () => (
 );
 
 const Settings = ({ section }: SettingsProps) => {
+  const effectiveSection = section;
   const [usageForm] = Form.useForm();
   const [serverForm] = Form.useForm();
   const [controlPlaneForm] = Form.useForm();
@@ -242,7 +250,7 @@ const Settings = ({ section }: SettingsProps) => {
       setControlPlaneEndpointWarnings(normalizeEndpointHintWarnings(endpointHints, endpointHintsPayload.warnings));
       usageForm.setFieldsValue(toUsageFormValues(config));
       serverForm.setFieldsValue(serverConfig);
-      if (section === 'control-planes') {
+      if (effectiveSection === 'control-planes') {
         controlPlaneForm.setFieldsValue({
           endpoint: defaultControlEndpoint,
           name: '当前 Server'
@@ -259,7 +267,7 @@ const Settings = ({ section }: SettingsProps) => {
 
   useEffect(() => {
     loadConfig();
-  }, []);
+  }, [effectiveSection]);
 
   useEffect(() => addControlPlaneProfilesChangeListener(() => {
     syncSavedControlPlaneProfiles(activeControlPlaneId);
@@ -680,6 +688,8 @@ const Settings = ({ section }: SettingsProps) => {
     </div>
   );
 
+  const upstreamErrorMappingsContent = <UpstreamErrorMappings setActions={setExtraActions} />;
+
   const controlPlanesActions = (
     <PageHeaderActions
       actions={[
@@ -866,6 +876,12 @@ const Settings = ({ section }: SettingsProps) => {
       actions: extraActions,
     },
     {
+      key: 'upstream-errors',
+      label: '上游异常映射',
+      children: upstreamErrorMappingsContent,
+      actions: extraActions,
+    },
+    {
       key: 'control-planes',
       label: 'Server',
       forceRender: true,
@@ -879,7 +895,7 @@ const Settings = ({ section }: SettingsProps) => {
       actions: extraActions,
     },
   ];
-  const standaloneSection = section ? sectionItems.find((item) => item.key === section) : null;
+  const standaloneSection = effectiveSection ? sectionItems.find((item) => item.key === effectiveSection) : null;
 
   if (standaloneSection) {
     const meta = SETTINGS_PAGE_META[standaloneSection.key];
@@ -912,7 +928,7 @@ const Settings = ({ section }: SettingsProps) => {
       <Tabs
         className="settings-tabs"
         defaultActiveKey={getInitialSettingsTab()}
-        items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases')}
+        items={sectionItems.filter((item) => item.key === 'basic' || item.key === 'aliases' || item.key === 'upstream-errors')}
       />
     </PageScaffold>
   );

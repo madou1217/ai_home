@@ -4,23 +4,27 @@ import type { MobilePageProps } from '@/mobile/mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
 import AliasesPanel from './settings/AliasesPanel';
 import BasicSettingsPanel from './settings/BasicSettingsPanel';
+import UpstreamErrorMappingsPanel from './settings/UpstreamErrorMappingsPanel';
 import styles from './settings/MobileSettings.module.css';
 
-type SettingsTab = 'basic' | 'aliases';
+type SettingsTab = 'basic' | 'aliases' | 'upstream-errors';
 
 const TABS = [
   { key: 'basic', label: '基础设置' },
-  { key: 'aliases', label: '模型别名' }
+  { key: 'aliases', label: '模型别名' },
+  { key: 'upstream-errors', label: '上游异常映射' }
 ];
 
 /**
- * 移动端设置（/settings）：与桌面同样的两个分区——基础设置 / 模型别名（?tab=aliases 直达）。
+ * 移动端设置（/settings）：与桌面同样的配置分区（?tab=aliases/upstream-errors 直达）。
  * Server 管理与 SSH 开发机有独立路由（/fabric/servers、/fabric/ssh-hosts），经「更多」面板进入。
  */
 export default function MobileSettings(_props: MobilePageProps) {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<SettingsTab>(() => (
-    String(searchParams.get('tab') || '').trim() === 'aliases' ? 'aliases' : 'basic'
+    (['aliases', 'upstream-errors'] as const).includes(String(searchParams.get('tab') || '').trim() as 'aliases' | 'upstream-errors')
+      ? String(searchParams.get('tab')).trim() as SettingsTab
+      : 'basic'
   ));
 
   return (
@@ -33,6 +37,11 @@ export default function MobileSettings(_props: MobilePageProps) {
       {tab === 'aliases' ? (
         <div role="tabpanel" aria-label="模型别名" className={styles.panel}>
           <AliasesPanel />
+        </div>
+      ) : null}
+      {tab === 'upstream-errors' ? (
+        <div role="tabpanel" aria-label="上游异常映射" className={styles.panel}>
+          <UpstreamErrorMappingsPanel />
         </div>
       ) : null}
     </MobilePage>

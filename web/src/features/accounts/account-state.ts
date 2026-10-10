@@ -218,15 +218,15 @@ export function mergeAccountRecord(
   };
 
   if (merged.apiKeyMode) {
-    merged.runtimeStatus = undefined;
-    merged.runtimeUntil = undefined;
-    merged.runtimeReason = undefined;
+    // API Key 没有 OAuth 用量，但网关返回的运行态与调度阻塞仍是权威事实。
+    // 切换认证类型时只接受新记录的状态，避免继承旧 OAuth 状态。
+    for (const key of ['runtimeStatus', 'runtimeUntil', 'runtimeReason', 'schedulableStatus', 'schedulableReason'] as const) {
+      if (!current.apiKeyMode && !Object.prototype.hasOwnProperty.call(incoming, key)) delete merged[key];
+    }
     merged.usageSnapshot = null;
     merged.remainingPct = null;
     merged.quotaStatus = undefined;
     merged.quotaReason = undefined;
-    merged.schedulableStatus = undefined;
-    merged.schedulableReason = undefined;
     return merged;
   }
 

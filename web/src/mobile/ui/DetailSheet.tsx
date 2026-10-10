@@ -38,7 +38,7 @@ export default function DetailSheet({
       closable={false}
       destroyOnHidden={destroyOnClose}
       rootClassName="mhud-sheet"
-      styles={{ wrapper: { maxHeight }, body: { padding: 0 } }}
+      styles={{ wrapper: { maxHeight }, content: { maxHeight }, body: { padding: 0 } }}
       title={null}
       footer={footer ? <div className="mhud-sheet__footer">{footer}</div> : null}
     >

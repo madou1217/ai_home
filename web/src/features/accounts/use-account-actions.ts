@@ -50,6 +50,7 @@ import type { UseModelCatalogResult } from '@/features/accounts/useModelCatalog'
 import { getAuthJobIdentity, getCallbackUiCopy } from '@/features/accounts/AuthProgressModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
+import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-presets';
 
 // 账号页全部业务动作 —— 从 Accounts.tsx 抽取的状态与处理函数（添加 / 授权进度 / 重新认证 /
 // 编辑凭据 / 导入导出 / 启停 / 默认账号 / 用量刷新 / 删除 / 打开 Desktop·CLI / 应用安装 …）。
@@ -146,6 +147,9 @@ export function useAccountActions({
   const [editForm] = Form.useForm();
   const [editModalVisible, setEditModalVisible] = React.useState(false);
   const [editingAccount, setEditingAccount] = React.useState<Account | null>(null);
+  const [routingRulesForm] = Form.useForm();
+  const [routingRulesAccount, setRoutingRulesAccount] = React.useState<Account | null>(null);
+  const [routingRulesSubmitting, setRoutingRulesSubmitting] = React.useState(false);
   const [importModalVisible, setImportModalVisible] = React.useState(false);
   const [importMode, setImportMode] = React.useState<ImportMode>('file');
   const [pasteTemplate, setPasteTemplate] = React.useState<PasteTemplate>('sub2api');
@@ -364,7 +368,10 @@ export function useAccountActions({
     editForm.setFieldsValue({
       authMode: record.provider === 'claude' ? getClaudeCredentialMode(record) : 'api-key',
       apiKey: '',
-      baseUrl: record.baseUrl || ''
+      baseUrl: record.baseUrl || '',
+      upstreamErrorRules: normalizeUpstreamErrorRulesForForm(record.upstreamErrorRules),
+      upstreamErrorGroupIds: record.upstreamErrorGroupIds || [],
+      clearErrorBlock: false
     });
     setEditModalVisible(true);
   };
@@ -377,6 +384,9 @@ export function useAccountActions({
       const res = await accountsAPI.updateAccount(editingAccount.provider, editingAccount.accountRef, {
         apiKey: values.apiKey,
         baseUrl: values.baseUrl,
+        upstreamErrorRules: values.upstreamErrorRules || [],
+        upstreamErrorGroupIds: values.upstreamErrorGroupIds || [],
+        clearErrorBlock: values.clearErrorBlock === true,
         ...(editingAccount.provider === 'claude'
           ? {
               authMode: values.authMode,
@@ -397,6 +407,39 @@ export function useAccountActions({
       return false;
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRoutingRules = (record: Account) => {
+    setRoutingRulesAccount(record);
+    routingRulesForm.setFieldsValue({
+      upstreamErrorRules: normalizeUpstreamErrorRulesForForm(record.upstreamErrorRules),
+      upstreamErrorGroupIds: record.upstreamErrorGroupIds || [],
+      clearErrorBlock: false
+    });
+  };
+
+  const handleRoutingRulesSubmit = async (): Promise<boolean> => {
+    try {
+      const values = await routingRulesForm.validateFields();
+      if (!routingRulesAccount) return false;
+      setRoutingRulesSubmitting(true);
+      const res = await accountsAPI.updateAccountRoutingRules(routingRulesAccount.provider, routingRulesAccount.accountRef, {
+        upstreamErrorRules: values.upstreamErrorRules || [],
+        upstreamErrorGroupIds: values.upstreamErrorGroupIds || [],
+        clearErrorBlock: values.clearErrorBlock === true
+      });
+      if (!res.ok) return false;
+      message.success('调度规则已更新');
+      setAccounts((prev) => mergeSingleAccount(prev, res.account));
+      setRoutingRulesAccount(null);
+      return true;
+    } catch (error: any) {
+      if (error?.errorFields) return false;
+      message.error(error?.response?.data?.message || '调度规则更新失败');
+      return false;
+    } finally {
+      setRoutingRulesSubmitting(false);
     }
   };
 
@@ -1245,6 +1288,7 @@ export function useAccountActions({
     // 行级操作
     copyAccountEmail,
     handleEdit,
+    handleRoutingRules,
     handleReauth,
     confirmDeleteAccount,
     handleReload,
@@ -1285,10 +1329,18 @@ export function useAccountActions({
         open: editModalVisible,
         form: editForm,
         isClaudeCredential: isEditingClaudeCredential,
+        provider: editingAccount?.provider,
         effectiveAuthMode: effectiveEditAuthMode,
         credentialModeChanged: isEditCredentialModeChanged,
         onClose: () => setEditModalVisible(false),
         onSubmit: handleEditSubmit
+      },
+      routingRules: {
+        account: routingRulesAccount,
+        form: routingRulesForm,
+        submitting: routingRulesSubmitting,
+        onClose: () => setRoutingRulesAccount(null),
+        onSubmit: handleRoutingRulesSubmit
       },
       authProgress: {
         open: authProgressVisible,

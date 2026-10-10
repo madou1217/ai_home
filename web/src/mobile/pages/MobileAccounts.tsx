@@ -209,13 +209,21 @@ export default function MobileAccounts(_props: MobilePageProps) {
   // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」（与桌面一致）。
   const buildPrimaryActions = (record: Account): SwipeAction[] => {
     if (requiresAccountReauth(record)) {
-      return [{
-        key: 'reauth',
-        label: '重新登录',
-        icon: <SyncOutlined />,
-        tone: 'primary',
-        onAction: () => { void actions.handleReauth(record); }
-      }];
+      return [
+        {
+          key: 'reauth',
+          label: '重新登录',
+          icon: <SyncOutlined />,
+          tone: 'primary',
+          onAction: () => { void actions.handleReauth(record); }
+        },
+        {
+          key: 'routing-rules',
+          label: '调度规则',
+          icon: <CodeOutlined />,
+          onAction: () => actions.handleRoutingRules(record)
+        }
+      ];
     }
     const list: SwipeAction[] = [];
     const support = getAccountAppSupport(record, appEntries, appCapabilities);
@@ -238,6 +246,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
         onAction: () => { void actions.handleReauth(record); }
       });
     }
+    list.push({ key: 'routing-rules', label: '调度规则', icon: <CodeOutlined />, onAction: () => actions.handleRoutingRules(record) });
     list.push({
       key: 'delete',
       label: '删除',

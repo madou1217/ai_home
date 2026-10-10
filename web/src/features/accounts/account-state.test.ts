@@ -360,7 +360,7 @@ test('formatQuotaReason delegates to account issue reason formatting', () => {
   assert.equal(typeof formatQuotaReason('some_reason'), 'string');
 });
 
-test('mergeAccountRecord clears live fields for api key mode accounts', () => {
+test('mergeAccountRecord clears inherited OAuth telemetry when switching to API key mode', () => {
   const current = makeAccount({
     apiKeyMode: false,
     runtimeStatus: 'running',
@@ -388,6 +388,19 @@ test('mergeAccountRecord clears live fields for api key mode accounts', () => {
   assert.equal(merged.quotaReason, undefined);
   assert.equal(merged.schedulableStatus, undefined);
   assert.equal(merged.schedulableReason, undefined);
+});
+
+test('API key snapshots and patches preserve real billing blocks and can explicitly recover them', () => {
+  const blocked = makeAccount({ apiKeyMode: true, runtimeStatus: 'billing_blocked', runtimeReason: 'billing_blocked',
+    schedulableStatus: 'blocked_by_runtime_status', schedulableReason: 'billing_blocked' });
+  const fresh = mergeAccountRecord(makeAccount({ apiKeyMode: true }), blocked);
+  const patch = mergeAccountRecord(fresh, makeAccount({ apiKeyMode: true, displayName: 'updated' }));
+  assert.equal(getAccountDisplayState(fresh), 'runtime_blocked');
+  assert.equal(getAccountDisplayState(patch), 'runtime_blocked');
+  assert.deepEqual(countHealthyAccounts([patch]), { total: 1, healthy: 0 });
+  const recovered = mergeAccountRecord(patch, makeAccount({ apiKeyMode: true, runtimeStatus: 'healthy',
+    runtimeUntil: 0, runtimeReason: '', schedulableStatus: 'schedulable', schedulableReason: '' }));
+  assert.equal(getAccountDisplayState(recovered), 'healthy');
 });
 
 test('mergeAccountRecord keeps email, planType and displayName when incoming omits them', () => {

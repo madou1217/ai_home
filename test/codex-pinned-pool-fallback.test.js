@@ -47,6 +47,20 @@ test('pinned account whose catalog lacks the model falls back to the pool', () =
   assert.equal(pool.length, 2);
 });
 
+test('pinned account with a durable billing block falls back before model narrowing', () => {
+  const pinned = account('acct_d62c5c4961277f9403c8');
+  const healthy = account('acct_55865084c85f0c4b34d3');
+  const accountStateIndex = {
+    getAccountState: (ref) => ref === pinned.accountRef
+      ? { status: 'up', runtimeState: { routingBlock: { kind: 'billing_blocked', observedAt: Date.now() } } }
+      : { status: 'up', runtimeState: null }
+  };
+  const pool = resolvePinnedCodexPool(
+    [pinned, healthy], pinned.accountRef, 'gpt-5.6-sol', {}, {}, accountStateIndex
+  );
+  assert.deepEqual(pool.map((item) => item.accountRef), [pinned.accountRef, healthy.accountRef]);
+});
+
 test('unpinned requests and unknown pins keep existing behavior', () => {
   const accounts = [account('acct_d62c5c4961277f9403c8'), account('acct_55865084c85f0c4b34d3')];
   assert.equal(resolvePinnedCodexPool(accounts, '', 'gpt-5.6-sol', {}, {}), accounts);

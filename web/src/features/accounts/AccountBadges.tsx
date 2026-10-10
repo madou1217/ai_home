@@ -45,6 +45,9 @@ export interface AccountBadgeMeta {
 
 const RUNTIME_STATUS_META: Record<string, AccountBadgeMeta> = {
   healthy: { status: 'success', label: '正常' },
+  billing_blocked: { status: 'error', label: '余额不足 / 账单受限' },
+  quota_exhausted: { status: 'warning', label: '额度耗尽' },
+  permission_denied: { status: 'error', label: '权限受限' },
   rate_limited: { status: 'warning', label: '限流中' },
   auth_invalid: { status: 'error', label: '认证失效' },
   overloaded: { status: 'warning', label: '上游繁忙' },

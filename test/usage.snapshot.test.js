@@ -1942,9 +1942,9 @@ test('codex usage snapshot success clears stale persisted runtime state', async 
       getToolConfigDir,
       accountStateService: {
         clearRuntimeBlock(actualRef, provider, options) {
-          const { evidence: _evidence, ...baseState } = options;
+          const { evidence, usageSnapshot, ...baseState } = options;
           const runtimeState = null;
-          runtimeWrites.push({ accountRef: actualRef, provider, runtimeState, baseState });
+          runtimeWrites.push({ accountRef: actualRef, provider, runtimeState, baseState, evidence, usageSnapshot });
           return true;
         }
       },
@@ -1960,6 +1960,8 @@ test('codex usage snapshot success clears stale persisted runtime state', async 
       accountRef,
       provider: 'codex',
       runtimeState: null,
+      evidence: 'verified_usage_success',
+      usageSnapshot: snapshot,
       baseState: {
         configured: true,
         apiKeyMode: false,

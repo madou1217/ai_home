@@ -17,6 +17,7 @@ const {
   handleDeleteAccountRequest,
   handleReauthAccountRequest,
   handleUpdateAccountRequest,
+  handleUpdateAccountRoutingRulesRequest,
   handleUpdateAccountStatusRequest
 } = require('../lib/server/webui-account-routes');
 const { OAUTH_PENDING_FALLBACK_STALE_MS } = require('../lib/server/oauth-pending-state');
@@ -24,6 +25,7 @@ const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 const { buildAuthInvalidRuntimeState } = require('../lib/account/runtime-state-builders');
 const {
   listAccountCredentialRecords,
+  readAccountCredentialRecord,
   readAccountCredentials,
   writeAccountCredentials,
   writeAccountNativeAuth
@@ -684,7 +686,7 @@ test('web ui accounts list keeps api key accounts out of usage percentage render
   assert.equal(body.accounts[0].apiKeyMode, true);
   assert.equal(body.accounts[0].displayName, 'api.openai.com');
   assert.equal(body.accounts[0].remainingPct, null);
-  assert.equal(body.accounts[0].runtimeStatus, undefined);
+  assert.equal(body.accounts[0].runtimeStatus, 'healthy');
 });
 
 test('web ui accounts list prefers DB usage snapshot capturedAt for updatedAt', async (t) => {
@@ -2839,6 +2841,97 @@ test('web ui account update rejects OAuth accountRef', async (t) => {
   assert.equal(body.ok, false);
   assert.equal(body.code, 'oauth_config_edit_unsupported');
   assert.deepEqual(readAccountCredentials(fs, fixture.aiHomeDir, accountRef), before);
+});
+
+test('routing rule metadata can be updated for an OAuth account without touching credentials', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-oauth-routing-rules-');
+  const accountRef = fixture.register('codex', '43', {
+    state: { configured: true, apiKeyMode: false, authMode: 'oauth-browser' }
+  });
+  const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  const state = { accounts: { codex: [{ accountRef, apiKeyMode: false, accessToken: 'oauth-access' }] } };
+  const rules = [{ name: 'New API 余额不足', enabled: true, statuses: [403], kind: 'billing_blocked',
+    matchers: [{ source: 'json', path: 'error.code', operator: 'equals', value: 'insufficient_user_quota' }] }];
+  const res = createResCapture();
+  const handled = await handleUpdateAccountRoutingRulesRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/routing-rules`,
+    req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+    readRequestBody: async () => Buffer.from(JSON.stringify({ upstreamErrorRules: rules })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: { clearRuntimeBlock() {} },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    loadServerRuntimeAccounts: () => state.accounts,
+    applyReloadState() {},
+    checkStatus: () => ({ configured: true, apiKeyMode: false }),
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.account.upstreamErrorRules, rules);
+  const persisted = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  assert.deepEqual(JSON.parse(persisted.env.AIH_UPSTREAM_ERROR_RULES), body.account.upstreamErrorRules);
+  assert.equal(persisted.envUpdatedAt, before.envUpdatedAt);
+});
+
+test('account error rule edits round-trip without pretending credentials changed and reject invalid rules atomically', async t => {
+  const fixture = createAccountFixture(t, 'aih-webui-error-rules-');
+  const accountRef = fixture.register('codex', '90', { apiKeyMode: true,
+    state: { configured: true, apiKeyMode: true, runtimeState: {
+      routingBlock: { kind: 'billing_blocked', reason: 'billing_blocked', observedAt: Date.now() - 1000 }
+    } } });
+  const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  const state = { accounts: { codex: [{ accountRef, apiKeyMode: true, accessToken: 'fixture-key' }] } };
+  const clears = [];
+  const rules = [{ name: '余额不足', enabled: true, statuses: [403], kind: 'billing_blocked',
+    matchers: [{ field: 'code', pattern: '^insufficient_user_quota$' }] }];
+  const run = async payload => {
+    const res = createResCapture();
+    await handleUpdateAccountRequest({ pathname: `/v0/webui/accounts/codex/${accountRef}/update`,
+      req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+      readRequestBody: async () => Buffer.from(JSON.stringify(payload)),
+      accountStateIndex: fixture.accountStateIndex,
+      accountStateService: { syncAccountBaseState() {}, clearRuntimeBlock: (...args) => clears.push(args) },
+      getProfileDir: fixture.getProfileDir, getToolConfigDir: fixture.getToolConfigDir,
+      loadServerRuntimeAccounts: () => state.accounts, applyReloadState() {},
+      checkStatus: () => ({ configured: true, apiKeyMode: true }),
+      deps: { aiHomeDir: fixture.aiHomeDir, accountArtifactHooks: {
+        snapshotAccountAuthArtifacts: () => ({}),
+        notifyDefaultAccountAuthUpdatedIfChanged: () => assert.fail('rule metadata is not a credential update')
+      } },
+      writeJson: (response, code, data) => { response.statusCode = code; response.end(JSON.stringify(data)); }
+    });
+    return { res, body: JSON.parse(res.body) };
+  };
+  const saved = await run({ upstreamErrorRules: rules });
+  assert.equal(saved.res.statusCode, 200);
+  assert.deepEqual(saved.body.account.upstreamErrorRules, rules);
+  assert.equal(saved.body.account.runtimeStatus, 'billing_blocked');
+  assert.equal(saved.body.account.schedulableReason, 'billing_blocked');
+  const record = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  assert.equal(record.envUpdatedAt, before.envUpdatedAt);
+  assert.equal(record.env.OPENAI_API_KEY, before.env.OPENAI_API_KEY);
+  assert.deepEqual(JSON.parse(record.env.AIH_UPSTREAM_ERROR_RULES), rules);
+  const { body: listed } = await requestAccounts(fixture, { state });
+  assert.deepEqual(listed.accounts[0].upstreamErrorRules, rules);
+  assert.equal(listed.accounts[0].runtimeStatus, 'billing_blocked');
+  const invalid = await run({ apiKey: 'must-not-write', upstreamErrorRules: [{ ...rules[0],
+    matchers: [{ field: 'body', pattern: '(a+)+$' }] }] });
+  assert.equal(invalid.res.statusCode, 400);
+  assert.equal(invalid.body.error, 'invalid_upstream_error_rules');
+  assert.deepEqual(readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef), record);
+  assert.equal(clears.length, 0);
+  const removed = await run({ upstreamErrorRules: [], clearErrorBlock: true });
+  assert.equal(removed.res.statusCode, 200);
+  assert.equal(readAccountCredentials(fs, fixture.aiHomeDir, accountRef).AIH_UPSTREAM_ERROR_RULES, undefined);
+  assert.deepEqual(clears, [[accountRef, 'codex', { evidence: 'manual_admin_clear', scope: 'routing_block' }]]);
 });
 
 test('web ui account update switches Claude DB api key account to auth-token credentials', async (t) => {

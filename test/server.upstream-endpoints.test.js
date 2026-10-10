@@ -16,6 +16,7 @@ const { refreshKimiAccessToken } = require('../lib/server/kimi-token-refresh');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { writeAccountNativeAuth } = require('../lib/server/account-credential-store');
 const { getAccountModelCooldownUntil } = require('../lib/server/account-runtime-state');
+const { validateUpstreamErrorRules } = require('../lib/account/upstream-error-rules');
 const { buildModelAccountIndex } = require('../lib/server/model-account-index');
 const {
   createProviderProtocolRouteMeta,
@@ -422,7 +423,8 @@ async function runAgyCodeAssistAuthScenario(options = {}) {
     apiKeyMode: false,
     accessToken: 'rejected-token',
     refreshToken: 'refresh-token',
-    tokenExpiresAt: Date.now() + 3600_000
+    tokenExpiresAt: Date.now() + 3600_000,
+    ...(options.upstreamErrorRules ? { upstreamErrorRules: options.upstreamErrorRules } : {})
   };
   const state = {
     accounts: { agy: [account] },
@@ -441,8 +443,10 @@ async function runAgyCodeAssistAuthScenario(options = {}) {
   const runAdapter = async () => {
     adapterCalls += 1;
     if (options.succeedAfterRefresh && adapterCalls > 1) return transportConfig.successPayload;
-    const error = new Error('HTTP 401 invalid OAuth credentials');
-    error.code = 'HTTP_401';
+    const errorCode = String(options.errorCode || 'HTTP_401');
+    const error = new Error(options.errorMessage || `HTTP ${errorCode.replace(/^HTTP_/, '')} invalid OAuth credentials`);
+    error.code = errorCode;
+    if (options.errorBody !== undefined) error.upstreamBody = options.errorBody;
     throw error;
   };
   const adapterDeps = {
@@ -3033,6 +3037,25 @@ test('AGY Code Assist retries only once when the refreshed token also returns 40
   assert.equal(result.payload.error, 'auth_invalid_reauth_required');
   assert.equal(result.account.lastFailureKind, 'auth_invalid');
   assert.equal(result.account.lastFailureReason, 'auth_invalid_reauth_required');
+});
+
+test('configured Code Assist billing mapping sees the upstream body before OAuth refresh', async () => {
+  const rules = validateUpstreamErrorRules([{
+    name: '余额不足',
+    kind: 'billing_blocked',
+    statuses: [403],
+    matchers: [{ source: 'json', path: 'error.code', operator: 'equals', value: 'insufficient_user_quota' }]
+  }]);
+  const result = await runAgyCodeAssistAuthScenario({
+    errorCode: 'HTTP_403',
+    errorMessage: 'HTTP 403 provider response',
+    errorBody: JSON.stringify({ error: { code: 'insufficient_user_quota', message: '余额不足' } }),
+    upstreamErrorRules: rules
+  });
+  assert.equal(result.forcedRefreshCalls, 0);
+  assert.equal(result.adapterCalls, 1);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.account.routingBlock.kind, 'billing_blocked');
 });
 
 test('upstream passthrough uses native Gemini generateContent for Code Assist providers', async () => {

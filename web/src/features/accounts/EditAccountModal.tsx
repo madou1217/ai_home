@@ -1,11 +1,13 @@
-import { Form, Input, Radio, Space } from 'antd';
+import { Checkbox, Form, Input, Radio, Space } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
 import './account-overlays.css';
+import { UpstreamErrorRulesEditor } from './UpstreamErrorRulesEditor';
 
 interface EditAccountModalProps {
   open: boolean;
   form: ReturnType<typeof Form.useForm>[0];
   isClaudeCredential: boolean;
+  provider?: string;
   effectiveAuthMode: string;
   credentialModeChanged: boolean;
   onClose: () => void;
@@ -16,6 +18,7 @@ export function EditAccountModal({
   open,
   form,
   isClaudeCredential,
+  provider,
   effectiveAuthMode,
   credentialModeChanged,
   onClose,
@@ -71,6 +74,10 @@ export function EditAccountModal({
         extra="自定义反代或网关地址。如不修改请留空。"
       >
         <Input placeholder="https://api.openai.com/v1" className="aih-mono-input" />
+      </Form.Item>
+      <UpstreamErrorRulesEditor provider={provider} />
+      <Form.Item name="clearErrorBlock" valuePropName="checked" style={{ marginTop: 16 }}>
+        <Checkbox>余额或权限已恢复，手动清除账号异常阻塞</Checkbox>
       </Form.Item>
     </ModalForm>
   );

@@ -8,6 +8,8 @@ const WebSocket = require('ws');
 const { handleCodexResponsesWebSocket } = require('../lib/server/codex-responses-websocket');
 const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
 const { buildModelAccountIndex } = require('../lib/server/model-account-index');
+const { validateUpstreamErrorRules } = require('../lib/account/upstream-error-rules');
+const { deriveAccountRuntimeStatus } = require('../lib/server/account-runtime-state');
 
 const MODEL = 'fixture-model';
 const quota = (code = 'usage_limit_reached') => ({
@@ -20,6 +22,9 @@ const completed = (id, output = []) => ({ type: 'response.completed', response: 
 const request = (extra = {}) => ({ type: 'response.create', model: MODEL,
   input: [{ role: 'user', content: 'continue the test task' }], ...extra });
 const send = (ws, event) => ws.send(JSON.stringify(event));
+const billingError = { error: { code: 'insufficient_user_quota', type: 'new_api_error', message: '用户额度不足, 剩余额度: ＄-0.028880' } };
+const billingRules = () => validateUpstreamErrorRules([{ name: '余额不足', kind: 'billing_blocked', statuses: [403],
+  matchers: [{ field: 'code', pattern: '^insufficient_user_quota$' }] }]);
 
 async function fixture(t, onMessage, options = {}) {
   const upstream = http.createServer();
@@ -94,6 +99,45 @@ function round(client, payload) {
     client.send(JSON.stringify(payload));
   });
 }
+
+test('configured billing failure switches the upstream once and the same client keeps using a healthy account', async t => {
+  const f = await fixture(t, (ws, _payload, ref) => {
+    if (ref === 'first') send(ws, { type: 'error', status: 403, ...billingError });
+    else send(ws, completed('healthy'));
+  }, { configureAccounts: accounts => { accounts[0].upstreamErrorRules = billingRules(); } });
+  assert.equal((await round(f.client, request())).type, 'response.completed');
+  assert.equal((await round(f.client, request())).type, 'response.completed');
+  assert.deepEqual(f.inputs.map(item => item.ref), ['first', 'second', 'second']);
+  assert.equal(deriveAccountRuntimeStatus(f.accounts[0]).status, 'billing_blocked');
+  assert.equal(f.retries.length, 1);
+});
+
+test('configured billing failure during websocket handshake is recorded before selecting a sibling', async t => {
+  const f = await fixture(t, ws => send(ws, completed('healthy')), {
+    configureAccounts: accounts => { accounts[0].upstreamErrorRules = billingRules(); },
+    onUpgrade: (ref, socket) => {
+      if (ref !== 'first') return true;
+      const body = JSON.stringify(billingError);
+      socket.end(`HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      return false;
+    }
+  });
+  assert.equal((await round(f.client, request())).type, 'response.completed');
+  assert.deepEqual(f.attempts.map(item => item.ref), ['first', 'second']);
+  assert.deepEqual(f.inputs.map(item => item.ref), ['second']);
+  assert.equal(deriveAccountRuntimeStatus(f.accounts[0]).status, 'billing_blocked');
+});
+
+test('configured billing failure after visible output marks the account without replaying output', async t => {
+  const f = await fixture(t, ws => {
+    send(ws, { type: 'response.output_text.delta', delta: 'visible output' });
+    send(ws, { type: 'error', status: 403, ...billingError });
+  }, { configureAccounts: accounts => { accounts[0].upstreamErrorRules = billingRules(); } });
+  assert.equal((await round(f.client, request())).type, 'error');
+  assert.equal(f.inputs.length, 1);
+  assert.equal(f.retries.length, 0);
+  assert.equal(deriveAccountRuntimeStatus(f.accounts[0]).status, 'billing_blocked');
+});
 
 async function settleActivity(fixture) {
   const deadline = Date.now() + 1000;

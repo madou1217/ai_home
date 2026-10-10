@@ -168,6 +168,20 @@ test('钉住的账号停用后,请求回落到同 provider 的健康账号,且�
   await assertPinnedRequestFallsBack(t, ({ index, deadRef }) => index.setStatus(deadRef, 'down'));
 });
 
+test('钉住的账号余额阻塞但生命周期仍为 up 时,请求回落到健康账号', async (t) => {
+  await assertPinnedRequestFallsBack(t, ({ index, deadRef }) => {
+    assert.equal(index.upsertRuntimeState(deadRef, 'claude', {
+      routingBlock: {
+        kind: 'billing_blocked',
+        reason: 'billing_blocked',
+        observedAt: Date.now()
+      }
+    }, {
+      status: 'up', configured: true, authMode: 'oauth'
+    }), true);
+  });
+});
+
 test('钉住的账号被删除后(持久化行全清),请求同样回落,而不是 404 unknown_account_ref', async (t) => {
   const { deleteAccountRef } = require('../lib/server/account-ref-store');
   await assertPinnedRequestFallsBack(t, ({ aiHomeDir, deadRef }) => {

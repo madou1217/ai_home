@@ -12,6 +12,18 @@ const accountStateIndex = {
   getAccountState: (ref) => ({ [LIVE]: { status: 'up' }, [DOWN]: { status: 'down' } }[ref] || null)
 };
 
+test('custom account error rules remain with their Node executor, including pins that may fall back', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const stateWithRules = { accounts: { claude: [{ accountRef: LIVE }, {
+    accountRef: DOWN, upstreamErrorRules: [{ enabled: true }]
+  }] } };
+  for (const pinnedAccountRef of ['', LIVE, DOWN]) {
+    assert.deepEqual(explainGoRouteDeferral({ entryId: 'gateway.anthropic.messages', pinnedAccountRef,
+      state: stateWithRules, accountStateIndex }), { defer: true, reason: 'account_error_rules' });
+  }
+  assert.equal(shouldDeferGoRouteToNode({ entryId: 'gateway.props', state: stateWithRules }), false);
+});
+
 test('usable pins are forwarded; unusable, unknown or malformed pins stay with Node', () => {
   const decide = (pinnedAccountRef) => shouldDeferGoRouteToNode({
     entryId: 'gateway.anthropic.messages', pinnedAccountRef, state, accountStateIndex, fabricGatewayReady: () => false
@@ -20,6 +32,28 @@ test('usable pins are forwarded; unusable, unknown or malformed pins stay with N
   assert.equal(decide(DOWN), true, 'Node owns fallback / 403 pinned_account_unavailable');
   assert.equal(decide('acct_bbbbbbbbbbbbbbbbbbbb'), true, 'Node owns 404 unknown_account_ref');
   assert.equal(decide('not-a-ref'), true, 'Node owns 400 invalid_account_ref');
+});
+
+test('a persisted billing block makes a pin unusable even while its lifecycle is up', () => {
+  const blocked = 'acct_bbbbbbbbbbbbbbbbbbbb';
+  const blockedState = {
+    accounts: { claude: [{ accountRef: LIVE }, { accountRef: blocked }] }
+  };
+  const blockedIndex = {
+    getAccountState: (ref) => ({
+      [LIVE]: { status: 'up' },
+      [blocked]: {
+        status: 'up',
+        runtimeState: {
+          routingBlock: { kind: 'billing_blocked', reason: 'billing_blocked', observedAt: Date.now() }
+        }
+      }
+    }[ref] || null)
+  };
+  assert.equal(shouldDeferGoRouteToNode({
+    entryId: 'gateway.anthropic.messages', pinnedAccountRef: blocked,
+    state: blockedState, accountStateIndex: blockedIndex, fabricGatewayReady: () => false
+  }), true);
 });
 
 test('an online Fabric gateway keeps unpinned inference with Node but not read-only routes', () => {

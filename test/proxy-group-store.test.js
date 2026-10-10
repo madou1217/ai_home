@@ -17,7 +17,7 @@ function createStore(t) {
 }
 
 function addNode(store, input) {
-  return store.upsertNode({
+  return store.bulkUpsertNodes([{
     protocol: 'vless',
     server: input.server,
     port: 443,
@@ -35,7 +35,7 @@ function addNode(store, input) {
     countryCode: input.countryCode,
     countryName: input.countryName,
     countryFlag: input.countryFlag
-  });
+  }])[0];
 }
 
 test('ProxyNodeStore 同时列出系统、国家、订阅自动组和持久化手动组', (t) => {
@@ -128,7 +128,7 @@ test('ProxyNodeStore 手动组支持更新成员和策略，并拒绝不存在�
   assert.deepEqual(store.getGroup(group.id).nodeIds, [first.id, second.id]);
 });
 
-test('ProxyNodeStore 删除节点时清理手动组成员，删除手动组不影响节点', (t) => {
+test('ProxyNodeStore 删除手动组不影响节点', (t) => {
   const store = createStore(t);
   const node = addNode(store, {
     server: 'cleanup.example.com',
@@ -140,21 +140,9 @@ test('ProxyNodeStore 删除节点时清理手动组成员，删除手动组不�
   });
   const group = store.upsertGroup({ name: '待清理', nodeIds: [node.id] });
 
-  store.deleteNode(node.id);
-  assert.deepEqual(store.getGroup(group.id).nodeIds, []);
-
-  const replacement = addNode(store, {
-    server: 'replacement.example.com',
-    uuid: '66666666-6666-4666-8666-666666666666',
-    name: 'Replacement',
-    countryCode: 'DE',
-    countryName: '德国',
-    countryFlag: '🇩🇪'
-  });
-  store.upsertGroup({ id: group.id, name: '待清理', nodeIds: [replacement.id] });
   assert.equal(store.deleteGroup(group.id), true);
   assert.equal(store.getGroup(group.id), null);
-  assert.equal(store.getNode(replacement.id).id, replacement.id);
+  assert.equal(store.getNode(node.id).id, node.id);
 });
 
 test('ProxyNodeStore 手动组拒绝保留名和未知策略', (t) => {
@@ -236,7 +224,7 @@ test('ProxyNodeStore 手动组接受 sticky，更新时未提交的策略保持�
   assert.equal(renamed.failoverStrategy, 'random');
 });
 
-test('订阅节点仅重命名时保留稳定 ID、延迟、端口和手动组成员', (t) => {
+test('订阅节点仅重命名时保留稳定 ID、延迟和手动组成员', (t) => {
   const store = createStore(t);
   const subscription = store.upsertSubscription({
     name: 'Rename Subscription',
@@ -255,9 +243,8 @@ test('订阅节点仅重命名时保留稳定 ID、延迟、端口和手动组�
   store.updateNodeLatency(original.id, 42);
   const checkedAt = store.getNode(original.id).lastChecked;
   const group = store.upsertGroup({ name: 'Pinned', nodeIds: [original.id] });
-  store.assignDedicatedPort(original.id, 10888);
 
-  const replacement = store.replaceSubscriptionNodesWithSnapshot(subscription.id, [{
+  const [renamed] = store.replaceSubscriptionNodes(subscription.id, [{
     protocol: 'vless',
     server: 'rename.example.com',
     port: 443,
@@ -274,13 +261,11 @@ test('订阅节点仅重命名时保留稳定 ID、延迟、端口和手动组�
     countryName: '香港',
     countryFlag: '🇭🇰'
   }]);
-  const renamed = replacement.nodes[0];
 
   assert.equal(renamed.id, original.id);
   assert.equal(renamed.name, 'New Name');
   assert.equal(renamed.latencyMs, 42);
   assert.equal(renamed.lastChecked, checkedAt);
-  assert.equal(store.getNode(original.id).dedicatedPort, 10888);
   assert.deepEqual(store.getGroup(group.id).nodeIds, [original.id]);
   assert.deepEqual(store.listNodes({ group: group.id }).map((node) => node.name), ['New Name']);
 });

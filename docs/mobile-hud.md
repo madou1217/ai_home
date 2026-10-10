@@ -323,7 +323,7 @@ MobilePage (toolbar: LED 缓存/实时 · 更新时间 | 添加模型 | 刷新�
 **Mobile page summary.**
 - **Navigation:** chips for the three real tabs (应用与集成 / 运行环境 / 网络), with a second chip row for each tab's real sub-panels. Defaults are the desktop ones.
 - **Loading:** one panel is mounted at a time, as on desktop, so only its data loads.
-- **Actions:** every panel makes the same `toolkitAPI` / `proxyPoolAPI` calls through shared hooks under `components/toolkit/use-*` and `proxy-pool/use-*`, which the desktop panels now use too. Actions also keep desktop's `Modal.confirm` + `AppActionConfirmContent` plan confirmations and task-queue tracking.
+- **Actions:** every panel makes the same `toolkitAPI` / `subscriptionAggregatorAPI` calls through shared hooks under `components/toolkit/use-*` and `subscription-aggregator/use-*`, which the desktop panels now use too. Actions also keep desktop's `Modal.confirm` + `AppActionConfirmContent` plan confirmations and task-queue tracking.
 
 **Component tree**
 ```

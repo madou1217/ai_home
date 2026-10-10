@@ -8,7 +8,8 @@ const {
   encodeProxyNode,
   parseSubscriptionContent
 } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
-const { compileMihomoConfig } = require('../lib/cli/services/toolkit/proxy-pool/cores/mihomo/config-compiler');
+const { compileMihomoProxy, emitYaml } = require('../lib/cli/services/toolkit/proxy-pool/cores/mihomo/proxy-compiler');
+const { compileSingBoxNodeOutbound } = require('../lib/cli/services/toolkit/proxy-pool/cores/sing-box/node-outbound');
 
 test('parseProxyNode parses Shadowsocks SIP002 link', () => {
   const link = 'ss://YWVzLTI1Ni1nY206cGFzc3dvcmRAMTIz@198.51.100.1:8388#HongKong-01';
@@ -115,11 +116,7 @@ test('proxy URI parsers store IPv6 hosts without brackets and restore brackets o
     assert.equal(node.server, '2001:4860:4860::8888');
     assert.match(encodeProxyNode(node), /@\[2001:4860:4860::8888\]:/);
   }
-  const compiled = compileMihomoConfig({
-    nodes,
-    routing: { mode: 'direct', activeOutboundNodeId: null, rules: [] }
-  });
-  assert.deepEqual(compiled.config.proxies.map((proxy) => proxy.server), [
+  assert.deepEqual(nodes.map((node) => compileMihomoProxy(node, node.id).server), [
     '2001:4860:4860::8888',
     '2001:4860:4860::8888',
     '2001:4860:4860::8888'
@@ -202,25 +199,37 @@ test('clash YAML import keeps nodes that carry benign transport flags', () => {
   assert.equal(ss.tfo, undefined);
 });
 
-test('代理协议与内核以插件注册：协议插件覆盖全部受支持协议并为默认内核提供编译', () => {
-  const { PROTOCOL_PLUGINS, SUPPORTED_PROTOCOLS, describeProtocolPlugins } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
-  const { getProxyCore, DEFAULT_PROXY_CORE_ID } = require('../lib/cli/services/toolkit/proxy-pool/cores');
-  const core = getProxyCore();
-  assert.equal(core.id, DEFAULT_PROXY_CORE_ID);
-  assert.equal(core.capability, 'proxy-pool.core');
-  for (const method of ['plan', 'execute', 'remove', 'discover']) assert.equal(typeof core.manager[method], 'function');
+test('协议插件覆盖全部受支持协议，并同时提供 mihomo 与 sing-box 出站编译', () => {
+  const { PROTOCOL_PLUGINS, SUPPORTED_PROTOCOLS } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
   const covered = new Set();
   for (const plugin of PROTOCOL_PLUGINS) {
     assert.equal(plugin.capability, 'proxy-pool.protocol');
     assert.equal(typeof plugin.parse, 'function');
     assert.equal(typeof plugin.encode, 'function');
-    assert.equal(typeof plugin.compile[core.id], 'function', `${plugin.id} 需要提供 compile.${core.id}`);
-    assert.equal(typeof plugin.compile['sing-box'], 'function', `${plugin.id} 需要提供 compile['sing-box']（ZCode 出口）`);
-    assert.ok(plugin.editor.fields.length > 0);
+    assert.equal(typeof plugin.compile.mihomo, 'function', `${plugin.id} 需要提供 compile.mihomo（订阅聚合与节点校验）`);
+    assert.equal(typeof plugin.compile['sing-box'], 'function', `${plugin.id} 需要提供 compile['sing-box']（订阅聚合与 ZCode 出口）`);
+    assert.equal(plugin.editor, undefined);
     plugin.protocols.forEach((protocol) => covered.add(protocol));
   }
   assert.deepEqual([...covered].sort(), [...SUPPORTED_PROTOCOLS].sort());
-  const described = describeProtocolPlugins();
-  assert.equal(JSON.parse(JSON.stringify(described)).length, PROTOCOL_PLUGINS.length);
-  assert.equal(described.some((item) => typeof item.parse === 'function'), false);
+});
+
+test('mihomo 出站编译保留结构化 SS 插件参数，YAML 输出不出现对象字面量', () => {
+  const node = {
+    id: 'node_plugin',
+    name: 'plugin',
+    protocol: 'shadowsocks',
+    server: '198.51.100.5',
+    port: 8388,
+    cipher: 'aes-256-gcm',
+    password: 'secret',
+    plugin: 'v2ray-plugin',
+    pluginOpts: { mode: 'websocket', tls: true, host: 'edge.example.com' }
+  };
+  const proxy = compileMihomoProxy(node, 'plugin');
+  assert.deepEqual(proxy['plugin-opts'], { mode: 'websocket', tls: true, host: 'edge.example.com' });
+  assert.doesNotMatch(emitYaml({ proxies: [proxy] }), /\[object Object\]/);
+  assert.equal(compileSingBoxNodeOutbound(node, 'plugin').plugin, 'v2ray-plugin');
+  assert.throws(() => compileMihomoProxy({ ...node, protocol: 'wireguard' }, 'x'), /unsupported_proxy_protocol_wireguard/);
+  assert.throws(() => compileMihomoProxy({ ...node, port: 0 }, 'x'), /invalid_proxy_port/);
 });

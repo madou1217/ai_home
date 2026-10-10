@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { message } from 'antd';
-import { proxyPoolAPI, toolkitAPI } from '@/services/api';
-import type { ConnectivityResponse, NetworkLayerStatus, ProxyCoreStatus, ProxyStatusResponse, ProxyToolTarget } from '@/types';
+import { toolkitAPI } from '@/services/api';
+import type { ConnectivityResponse, NetworkLayerStatus, ProxyStatusResponse, ProxyToolTarget } from '@/types';
 
 export type ProxyTarget = string;
 
@@ -29,12 +29,11 @@ export interface DetectedProxySource {
   origin: string;
 }
 
-export function uniqueProxySources(data: ProxyStatusResponse | null, core: ProxyCoreStatus | null) {
+export function uniqueProxySources(data: ProxyStatusResponse | null) {
   if (!data) return [];
   const candidates: DetectedProxySource[] = [
     // 打码的地址不能拿去写进 Git / npm。
     { label: '网关上游代理', value: data.gateway?.redacted ? '' : data.gateway?.proxyUrl || '', origin: 'AIH 服务端配置' },
-    { label: 'AIH 代理池 mixed', value: core?.mixedProxyUrl || '', origin: 'AIH 代理池数据面就绪状态' },
     { label: '系统 HTTP', value: data.system?.httpProxy || '', origin: '操作系统代理探测' },
     { label: '系统 HTTPS', value: data.system?.httpsProxy || '', origin: '操作系统代理探测' },
     { label: '系统 SOCKS', value: data.system?.socksProxy || '', origin: '操作系统代理探测' },
@@ -85,6 +84,17 @@ export function effectiveRouteLabel(networkLayer?: NetworkLayerStatus) {
   return '实际网络层：未知';
 }
 
+/** 代理路由探测只接受本机 HTTP 代理：网关上游代理在本机（如 127.0.0.1:6152）时才可用。 */
+export function localGatewayProxyUrl(data: ProxyStatusResponse | null) {
+  const value = data?.gateway?.redacted ? '' : String(data?.gateway?.proxyUrl || '').trim();
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ? value : '';
+  } catch (_error) {
+    return '';
+  }
+}
+
 function apiError(error: unknown, fallback: string) {
   const candidate = error as { message?: string; response?: { data?: { message?: string; error?: string } } };
   return candidate.response?.data?.message || candidate.response?.data?.error || candidate.message || fallback;
@@ -92,14 +102,12 @@ function apiError(error: unknown, fallback: string) {
 
 /**
  * 网络与代理诊断的数据层（桌面面板与移动端共用）：系统 / 进程代理探测、
- * 真实来源应用到各代理目标插件（Git、npm…）、手动写入与清除，以及直连 / 代理池两种路由的端点响应测试。
+ * 真实来源应用到各代理目标插件（Git、npm…）、手动写入与清除，以及直连 / 网关上游代理两种路由的端点响应测试。
  */
 export function useProxyDiagnostics() {
   const [proxyData, setProxyData] = useState<ProxyStatusResponse | null>(null);
   const [proxyLoading, setProxyLoading] = useState(true);
   const [proxyError, setProxyError] = useState('');
-  const [coreStatus, setCoreStatus] = useState<ProxyCoreStatus | null>(null);
-  const [coreError, setCoreError] = useState('');
   const [connectivityData, setConnectivityData] = useState<ConnectivityResponse | null>(null);
   const [connectivityLoading, setConnectivityLoading] = useState(true);
   const [connectivityError, setConnectivityError] = useState('');
@@ -112,23 +120,12 @@ export function useProxyDiagnostics() {
     setProxyLoading(true);
     setProxyError('');
     try {
-      setCoreError('');
-      const [proxyResult, coreResult] = await Promise.allSettled([
-        toolkitAPI.getProxy(),
-        proxyPoolAPI.getCoreStatus()
-      ]);
-      if (coreResult.status === 'fulfilled' && coreResult.value.ok) {
-        setCoreStatus(coreResult.value.core);
-      } else {
-        setCoreStatus(null);
-        setCoreError(coreResult.status === 'rejected' ? apiError(coreResult.reason, '代理池状态读取失败') : '代理池状态不可用');
-      }
-      if (proxyResult.status === 'rejected' || !proxyResult.value.ok) {
+      const response = await toolkitAPI.getProxy();
+      if (!response.ok) {
         setProxyData(null);
         setProxyInputs({});
-        throw proxyResult.status === 'rejected' ? proxyResult.reason : new Error('代理状态接口未返回可用结果');
+        throw new Error('代理状态接口未返回可用结果');
       }
-      const response = proxyResult.value;
       setProxyData(response);
       setProxyInputs(initialProxyInputs(response));
     } catch (requestError: unknown) {
@@ -138,13 +135,15 @@ export function useProxyDiagnostics() {
     }
   }, []);
 
+  const gatewayProxyUrl = localGatewayProxyUrl(proxyData);
+
   const testConnectivity = useCallback(async (route: ProbeRoute) => {
     setConnectivityLoading(true);
     setConnectivityError('');
     setConnectivityData(null);
     try {
-      const proxyUrl = route === 'proxy' ? coreStatus?.mixedProxyUrl || '' : undefined;
-      if (route === 'proxy' && !proxyUrl) throw new Error('代理池数据面未就绪，不能执行代理路由测试');
+      const proxyUrl = route === 'proxy' ? gatewayProxyUrl : undefined;
+      if (route === 'proxy' && !proxyUrl) throw new Error('网关没有配置本机 HTTP 上游代理，不能执行代理路由测试');
       const response = await toolkitAPI.testConnectivity({ route, proxyUrl });
       if (!response.ok) throw new Error('连通性接口未返回可用结果');
       setConnectivityData(response);
@@ -153,7 +152,7 @@ export function useProxyDiagnostics() {
     } finally {
       setConnectivityLoading(false);
     }
-  }, [coreStatus?.mixedProxyUrl]);
+  }, [gatewayProxyUrl]);
 
   useEffect(() => {
     void fetchProxy();
@@ -163,7 +162,7 @@ export function useProxyDiagnostics() {
     void testConnectivity(probeRoute);
   }, [probeRoute, testConnectivity]);
 
-  const detectedSources = useMemo(() => uniqueProxySources(proxyData, coreStatus), [coreStatus, proxyData]);
+  const detectedSources = useMemo(() => uniqueProxySources(proxyData), [proxyData]);
 
   useEffect(() => {
     setSelectedSource((current) => detectedSources.some((source) => source.value === current)
@@ -194,8 +193,7 @@ export function useProxyDiagnostics() {
     proxyData,
     proxyLoading,
     proxyError,
-    coreStatus,
-    coreError,
+    gatewayProxyUrl,
     connectivityData,
     connectivityLoading,
     connectivityError,

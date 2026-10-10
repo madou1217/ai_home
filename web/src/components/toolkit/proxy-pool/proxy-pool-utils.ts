@@ -11,17 +11,6 @@ export function getErrorMessage(error: unknown, fallback: string) {
     || fallback;
 }
 
-export function isMutationApplied(result: { ok: boolean; applied?: boolean }) {
-  return result.ok && result.applied === true;
-}
-
-export function getMutationMessage(
-  result: { error?: string; message?: string; warnings?: string[] },
-  fallback: string
-) {
-  return result.message || result.error || result.warnings?.join('；') || fallback;
-}
-
 export function isHttpUrl(value: string) {
   try {
     const url = new URL(value);

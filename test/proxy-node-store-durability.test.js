@@ -13,12 +13,12 @@ test('ProxyNodeStore uses AIH_HOME and keeps its directory and file private', (t
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
   const store = new ProxyNodeStore({ aiHomeDir, env: { AIH_HOME: aiHomeDir } });
-  store.upsertNode({
+  store.bulkUpsertNodes([{
     name: 'private node',
     protocol: 'http',
     server: '127.0.0.1',
     port: 8080
-  });
+  }]);
 
   assert.equal(store.filePath, path.join(aiHomeDir, 'proxy-pool.json'));
   assert.equal(fs.statSync(aiHomeDir).mode & 0o777, 0o700);
@@ -32,15 +32,15 @@ test('ProxyNodeStore rejects unusable nodes and non-http subscription URLs expli
   const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
 
   assert.throws(
-    () => store.upsertNode({ protocol: 'wireguard', server: 'example.com', port: 443 }),
+    () => store.bulkUpsertNodes([{ protocol: 'wireguard', server: 'example.com', port: 443 }]),
     (error) => error.code === 'unsupported_proxy_protocol'
   );
   assert.throws(
-    () => store.upsertNode({ protocol: 'http', server: '', port: 8080 }),
+    () => store.bulkUpsertNodes([{ protocol: 'http', server: '', port: 8080 }]),
     (error) => error.code === 'invalid_proxy_server'
   );
   assert.throws(
-    () => store.upsertNode({ protocol: 'http', server: 'example.com', port: 70000 }),
+    () => store.bulkUpsertNodes([{ protocol: 'http', server: 'example.com', port: 70000 }]),
     (error) => error.code === 'invalid_proxy_port'
   );
   assert.throws(
@@ -65,64 +65,42 @@ test('ProxyNodeStore exposes subscriptions as manual sync only', (t) => {
   assert.equal(store.listSubscriptions()[0].manualSyncOnly, true);
 });
 
-test('ProxyNodeStore persists explicit TUN intent without enabling it by default', (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-store-tun-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
-  assert.equal(store.getNetworkConfig().tun.enabled, false);
-  const updated = store.setNetworkConfig({ tun: { enabled: true, stack: 'gvisor', strictRoute: true } });
-  assert.equal(updated.tun.enabled, true);
-  assert.equal(updated.tun.stack, 'gvisor');
-  assert.equal(updated.tun.strictRoute, true);
-  assert.equal(new ProxyNodeStore(path.join(directory, 'pool.json')).getNetworkConfig().tun.enabled, true);
-});
-
-test('ProxyNodeStore removes dedicated mappings owned by a deleted subscription', (t) => {
+test('ProxyNodeStore deletes a subscription with its nodes and reports how many were removed', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-store-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
-  const subscription = store.upsertSubscription({
-    name: 'manual',
-    url: 'https://example.com/subscription'
-  });
-  const [node] = store.bulkUpsertNodes([{
-    name: 'subscription node',
-    protocol: 'http',
-    server: 'proxy.example.com',
-    port: 8080
-  }], subscription.id);
-  store.assignDedicatedPort(node.id, 10801);
+  const subscription = store.upsertSubscription({ name: 'manual', url: 'https://example.com/subscription' });
+  store.bulkUpsertNodes([{ name: 'subscription node', protocol: 'http', server: 'proxy.example.com', port: 8080 }], subscription.id);
 
-  store.deleteSubscription(subscription.id);
-
+  assert.equal(store.deleteSubscription(subscription.id), 1);
   assert.equal(store.listNodes().length, 0);
-  assert.deepEqual(store.getDedicatedPortsConfig().mappings, {});
+  assert.equal(store.deleteSubscription(subscription.id), null);
 });
 
-test('ProxyNodeStore removes stale dedicated mappings when subscription nodes are replaced', (t) => {
+test('ProxyNodeStore drops fields retired with the local proxy core on the next write', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-store-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
-  const subscription = store.upsertSubscription({
-    name: 'manual',
-    url: 'https://example.com/subscription'
-  });
-  const [oldNode] = store.bulkUpsertNodes([{
-    name: 'old node',
-    protocol: 'http',
-    server: 'old.example.com',
-    port: 8080
-  }], subscription.id);
-  store.assignDedicatedPort(oldNode.id, 10801);
+  const filePath = path.join(directory, 'pool.json');
+  fs.writeFileSync(filePath, JSON.stringify({
+    version: 1,
+    nodes: [],
+    subscriptions: [],
+    manualGroups: [],
+    groupPolicies: {},
+    groups: [{ id: 'all' }],
+    routing: { mode: 'rule', rules: [] },
+    dedicatedPorts: { mappings: { a: 10801 } },
+    network: { tun: { enabled: false } },
+    core: { id: 'mihomo', desired: 'running' },
+    outboundFailover: { config: {} }
+  }), { mode: 0o600 });
+  const store = new ProxyNodeStore(filePath);
 
-  store.replaceSubscriptionNodes(subscription.id, [{
-    name: 'new node',
-    protocol: 'http',
-    server: 'new.example.com',
-    port: 8080
-  }]);
+  store.upsertSubscription({ name: 'sub', url: 'https://example.com/subscription' });
 
-  assert.deepEqual(store.getDedicatedPortsConfig().mappings, {});
+  const persisted = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  assert.deepEqual(Object.keys(persisted).sort(), ['groupPolicies', 'manualGroups', 'nodes', 'subscriptions', 'version']);
+  assert.equal(store.listGroups().some((group) => group.id === 'dedicated'), false);
 });
 
 test('ProxyNodeStore propagates atomic persistence failures', (t) => {
@@ -139,7 +117,7 @@ test('ProxyNodeStore propagates atomic persistence failures', (t) => {
   };
 
   assert.throws(
-    () => store.upsertNode({ protocol: 'http', server: '127.0.0.1', port: 8080 }),
+    () => store.bulkUpsertNodes([{ protocol: 'http', server: '127.0.0.1', port: 8080 }]),
     (error) => error.code === 'proxy_store_write_failed'
   );
 });

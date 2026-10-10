@@ -45,8 +45,7 @@ export default function DiagnosticsPanel() {
     proxyData,
     proxyLoading,
     proxyError,
-    coreStatus,
-    coreError,
+    gatewayProxyUrl,
     connectivityData,
     connectivityLoading,
     connectivityError,
@@ -78,7 +77,6 @@ export default function DiagnosticsPanel() {
       </PanelToolbar>
 
       {proxyError ? <InlineError title="代理状态读取失败" detail={proxyError} onRetry={() => void fetchProxy()} retrying={proxyLoading} /> : null}
-      {coreError ? <Note tone="warn" title="代理池状态未加入诊断来源">{coreError}</Note> : null}
 
       {proxyData ? (
         <>
@@ -145,7 +143,7 @@ export default function DiagnosticsPanel() {
 
       <HudSection
         title="外部端点响应测试"
-        code={probeRoute === 'proxy' ? 'MIHOMO PROBE' : 'DIRECT PROBE'}
+        code={probeRoute === 'proxy' ? 'GATEWAY PROXY PROBE' : 'DIRECT PROBE'}
         extra={connectivityData ? (
           <StatusText tone={reachableCount === connectivityData.results.length ? 'ok' : 'warn'}>
             {`${reachableCount} / ${connectivityData.results.length} 可达`}
@@ -158,7 +156,7 @@ export default function DiagnosticsPanel() {
           onChange={(value) => setProbeRoute(value as ProbeRoute)}
           items={[
             { key: 'direct', label: '直连' },
-            { key: 'proxy', label: 'AIH 代理池', disabled: !coreStatus?.dataPlaneReady }
+            { key: 'proxy', label: '网关上游代理', disabled: !gatewayProxyUrl }
           ]}
         />
         <p className={styles.prose}>

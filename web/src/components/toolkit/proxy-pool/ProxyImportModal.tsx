@@ -2,12 +2,9 @@ import { Form, Input, Modal, Tabs, Typography, Upload, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { proxyPoolAPI } from '@/services/api';
-import {
-  getErrorMessage,
-  getMutationMessage,
-  isHttpUrl,
-  isMutationApplied
-} from './proxy-pool-utils';
+import { aggregatorErrorText } from '../subscription-aggregator/aggregator-presentation';
+import { subscriptionAggregatorAPI } from '../subscription-aggregator/subscription-aggregator-api';
+import { getErrorMessage, isHttpUrl } from './proxy-pool-utils';
 import ConfigCodeEditor from '../config-editor/ConfigCodeEditor';
 
 const { Paragraph } = Typography;
@@ -31,14 +28,12 @@ interface ProxyImportModalProps {
   open: boolean;
   onClose: () => void;
   onImported: () => Promise<void> | void;
-  storageOnly?: boolean;
 }
 
 export default function ProxyImportModal({
   open,
   onClose,
-  onImported,
-  storageOnly = false
+  onImported
 }: ProxyImportModalProps) {
   const [mode, setMode] = useState<ImportMode>('text');
   const [content, setContent] = useState('');
@@ -76,13 +71,13 @@ export default function ProxyImportModal({
     setImporting(true);
     try {
       const values = await subscriptionForm.validateFields();
-      const saved = await proxyPoolAPI.upsertSubscription(values);
-      if (!saved.ok) throw new Error('订阅源保存失败');
-      const synced = await proxyPoolAPI.syncSubscription(saved.subscription.id, { storageOnly });
-      if (!isMutationApplied(synced)) {
-        message.warning(getMutationMessage(synced, '订阅已保存，但首次同步未应用'));
+      // 订阅源与订阅聚合共用一份：保存即首次同步，节点写入节点库。
+      const saved = await subscriptionAggregatorAPI.saveSource(values);
+      if (!saved.ok) throw new Error(aggregatorErrorText(saved.error, '订阅源保存失败'));
+      if (saved.sync && !saved.sync.ok) {
+        message.warning(`订阅已保存，但首次同步失败：${aggregatorErrorText(saved.sync.error, '同步失败')}`);
       } else {
-        message.success(`订阅已保存并同步 ${synced.count || 0} 个节点`);
+        message.success(`订阅已保存并同步 ${saved.sync?.count || 0} 个节点`);
       }
       subscriptionForm.resetFields();
       onClose();
@@ -165,11 +160,8 @@ export default function ProxyImportModal({
             children: (
               <Form form={subscriptionForm} layout="vertical">
                 <Paragraph type="secondary" className="proxy-import-intro proxy-import-intro--form">
-                  首次导入会立即发起一次受限同步；当前版本只承诺手动同步，不会显示并不存在的后台定时任务。
-                  服务端会校验协议、响应大小和内网目标。
-                  {storageOnly
-                    ? ' 当前入口只更新中立节点仓，不启动、重载或停止其它代理核心，也不更改系统代理或 TUN。'
-                    : ''}
+                  保存后立即同步一次，节点写入节点库；订阅同时出现在「订阅聚合与分流」的订阅源里。
+                  服务端会校验协议、响应大小和内网目标，不会更改系统代理或 TUN。
                 </Paragraph>
                 <Form.Item
                   label="订阅名称"

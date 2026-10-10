@@ -22,8 +22,7 @@ export default function ProxyDiagnosticsPanel() {
     proxyData,
     proxyLoading,
     proxyError,
-    coreStatus,
-    coreError,
+    gatewayProxyUrl,
     connectivityData,
     connectivityLoading,
     connectivityError,
@@ -58,7 +57,6 @@ export default function ProxyDiagnosticsPanel() {
       </header>
 
       {proxyError && <InlineNote tone="error" description={proxyError}>代理状态读取失败</InlineNote>}
-      {coreError && <InlineNote tone="warning" description={coreError}>代理池状态未加入诊断来源</InlineNote>}
       {proxyLoading && !proxyData ? (
         <div className="toolkit-loading"><Spin size="large" tip="正在读取代理配置" /></div>
       ) : proxyData ? (
@@ -196,7 +194,7 @@ export default function ProxyDiagnosticsPanel() {
       <section className="toolkit-connectivity" aria-labelledby="toolkit-connectivity-title">
         <div className="toolkit-detail-heading">
           <div>
-            <span>{probeRoute === 'proxy' ? 'MIHOMO HTTP PROBE' : 'DIRECT HTTP PROBE'}</span>
+            <span>{probeRoute === 'proxy' ? 'GATEWAY PROXY HTTP PROBE' : 'DIRECT HTTP PROBE'}</span>
             <h3 id="toolkit-connectivity-title">外部端点响应测试</h3>
           </div>
           <div className="toolkit-header-actions">
@@ -205,7 +203,7 @@ export default function ProxyDiagnosticsPanel() {
               onChange={(value) => setProbeRoute(value as ProbeRoute)}
               options={[
                 { label: '直连', value: 'direct' },
-                { label: 'AIH 代理池', value: 'proxy', disabled: !coreStatus?.dataPlaneReady }
+                { label: '网关上游代理', value: 'proxy', disabled: !gatewayProxyUrl }
               ]}
             />
             {connectivityData && <Tag color={reachableCount === connectivityData.results.length ? 'success' : 'warning'}>{reachableCount} / {connectivityData.results.length} 可达</Tag>}

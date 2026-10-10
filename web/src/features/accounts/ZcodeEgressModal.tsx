@@ -467,7 +467,6 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
       </Modal>
       <ProxyImportModal
         open={importOpen && Boolean(account)}
-        storageOnly
         onClose={() => setImportOpen(false)}
         onImported={refreshNodeLibrary}
       />

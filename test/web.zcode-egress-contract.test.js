@@ -69,7 +69,7 @@ test('账号出口弹窗支持五种来源并复用节点库管理面', () => {
   assert.doesNotMatch(modalSource, /\bAlert\b|borderLeft|border-left/);
 });
 
-test('账号出口从导入弹窗写入中立节点仓且不触碰其它代理核心或系统网络', () => {
+test('账号出口从导入弹窗写入中立节点仓，订阅经订阅聚合器保存并同步', () => {
   const modalSource = fs.readFileSync(modalPath, 'utf8');
   const importModalSource = fs.readFileSync(importModalPath, 'utf8');
   const apiSource = fs.readFileSync(apiPath, 'utf8');
@@ -77,21 +77,13 @@ test('账号出口从导入弹窗写入中立节点仓且不触碰其它代理�
   assert.match(modalSource, /import ProxyImportModal from '@\/components\/toolkit\/proxy-pool\/ProxyImportModal'/);
   assert.match(modalSource, /导入节点或订阅/);
   assert.match(modalSource, /const refreshNodeLibrary = useCallback\([\s\S]*proxyPoolAPI\.listNodes\(\)/);
-  assert.match(
-    modalSource,
-    /<ProxyImportModal[\s\S]*storageOnly[\s\S]*onImported=\{refreshNodeLibrary\}/
-  );
-  assert.match(importModalSource, /storageOnly\?: boolean/);
-  assert.match(
-    importModalSource,
-    /proxyPoolAPI\.syncSubscription\(saved\.subscription\.id,\s*\{\s*storageOnly\s*\}\)/
-  );
-  assert.doesNotMatch(importModalSource, /\bAlert\b|borderLeft|border-left/);
-  assert.match(
-    apiSource,
-    /syncSubscription:\s*async\s*\(\s*id: string,\s*options: \{ storageOnly\?: boolean \} = \{\}\s*\)/
-  );
-  assert.match(apiSource, /\{\s*id,\s*storageOnly:\s*options\.storageOnly === true\s*\}/);
+  assert.match(modalSource, /<ProxyImportModal[\s\S]*onImported=\{refreshNodeLibrary\}/);
+  assert.doesNotMatch(modalSource, /storageOnly/);
+  assert.match(importModalSource, /proxyPoolAPI\.importNodes\(content\)/);
+  assert.match(importModalSource, /subscriptionAggregatorAPI\.saveSource\(values\)/);
+  assert.doesNotMatch(importModalSource, /storageOnly|syncSubscription|\bAlert\b|borderLeft|border-left/);
+  // 本地代理内核已下线：前端不再有内核、分流、专用端口或系统网络接管的调用。
+  assert.doesNotMatch(apiSource, /proxy-pool\/(core|routing|dedicated-ports|network|outbound|subscriptions)/);
 });
 
 test('ZCode 出口弹窗提供手动分组 CRUD 与自动组策略调整', () => {

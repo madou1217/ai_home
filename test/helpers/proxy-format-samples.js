@@ -39,6 +39,24 @@ const SAMPLE_NODES = Object.freeze([
     protocol: 'hysteria2', name: 'hy2', server: 'hy.example', port: 443, password: 'p', tls: true, sni: 'hy.example',
     obfs: 'salamander', obfsPassword: 'o', upMbps: 50, downMbps: 200
   },
+  {
+    protocol: 'shadowsocksr', name: 'ssr', server: 'ssr.example', port: 8443, cipher: 'aes-256-cfb', password: 'p',
+    ssrProtocol: 'auth_aes128_md5', ssrProtocolParam: '1234:abcd', ssrObfs: 'tls1.2_ticket_auth', ssrObfsParam: 'cdn.example'
+  },
+  {
+    protocol: 'hysteria', name: 'hy1', server: 'h1.example', port: 443, authStr: 'p', tls: true, sni: 'h1.example',
+    alpn: ['h3'], obfs: 'o', upMbps: 50, downMbps: 200
+  },
+  {
+    protocol: 'tuic', name: 'tuic', server: 'tu.example', port: 443, uuid: UUID, password: 'p', tls: true, sni: 'tu.example',
+    alpn: ['h3'], congestionControl: 'bbr', udpRelayMode: 'native'
+  },
+  { protocol: 'anytls', name: 'anytls', server: 'at.example', port: 443, password: 'p', tls: true, sni: 'at.example' },
+  {
+    protocol: 'wireguard', name: 'wg', server: 'wg.example', port: 51820, privateKey: 'PRIV', publicKey: 'PUB',
+    ip: '10.0.0.2', ipv6: 'fd00::2', mtu: 1280, reserved: '1,2,3'
+  },
+  { protocol: 'snell', name: 'snell', server: 'sn.example', port: 8000, psk: 'p', version: 3, obfs: 'http', obfsHost: 'cdn.example' },
   { protocol: 'socks5', name: 'socks', server: 'so.example', port: 1080, username: 'u', password: 'p' },
   { protocol: 'http', name: 'http', server: 'ht.example', port: 8080, username: 'u', password: 'p' },
   { protocol: 'https', name: 'https', server: 'hs.example', port: 443, username: 'u', password: 'p', tls: true, sni: 'hs.example' }

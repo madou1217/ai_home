@@ -28,8 +28,15 @@ test('Quantumult X server lines round-trip every protocol QX can express', () =>
   }
   assert.deepEqual(skipped, [
     ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
-    ['hy2', 'unsupported_proxy_protocol_hysteria2']
+    ['hy2', 'unsupported_proxy_protocol_hysteria2'],
+    ['hy1', 'unsupported_proxy_protocol_hysteria'],
+    ['tuic', 'unsupported_proxy_protocol_tuic'],
+    ['anytls', 'unsupported_proxy_protocol_anytls'],
+    ['wg', 'unsupported_proxy_protocol_wireguard'],
+    ['snell', 'unsupported_proxy_protocol_snell']
   ]);
+  // SSR 写成带 ssr-protocol 的 shadowsocks 行，导入时据此认回 SSR。
+  assert.ok(lines.includes('shadowsocks=ssr.example:8443, method=aes-256-cfb, password=p, ssr-protocol=auth_aes128_md5, ssr-protocol-param=1234:abcd, obfs=tls1.2_ticket_auth, obfs-host=cdn.example, fast-open=false, udp-relay=false, tag=ssr'), lines.join('\n'));
   assert.ok(lines.includes('vmess=vm.example:443, method=chacha20-poly1305, password=11111111-2222-3333-4444-555555555555, obfs=wss, obfs-host=cdn.example, obfs-uri=/ws, fast-open=false, udp-relay=false, tag=vmess-ws'), lines.join('\n'));
   assert.ok(lines.includes('trojan=tj.example:443, password=p, over-tls=true, tls-host=tj.example, tls-verification=false, fast-open=false, udp-relay=false, tag=trojan'));
   assert.match(lines.find((line) => line.startsWith('vless=')), /reality-base64-pubkey=PUBKEY, reality-hex-shortid=ab12, vless-flow=xtls-rprx-vision/);

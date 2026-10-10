@@ -7,7 +7,6 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { compileSurgeFamilyLine } = require('../lib/cli/services/toolkit/proxy-pool/cores/surge/proxy-line');
-const { parseSubscriptionContentDetailed } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
 const { buildRenderContext, requestOrigin } = require('../lib/cli/services/toolkit/subscription-aggregator/render-context');
@@ -18,7 +17,7 @@ const {
   parseRuleList
 } = require('../lib/cli/services/toolkit/subscription-aggregator/rule-set-converter');
 const { handleAggregatedSubscriptionRequest } = require('../lib/server/subscription-aggregator-public-route');
-const { SAMPLE_NODES, assertRoundTrip } = require('./helpers/proxy-format-samples');
+const { SAMPLE_NODES, UUID, assertRoundTrip } = require('./helpers/proxy-format-samples');
 
 const TOKEN = 'tok_'.padEnd(43, 'x');
 const ORIGIN = 'https://aih.example:9527';
@@ -94,8 +93,14 @@ test('Surge proxy lines round-trip every protocol Surge can express', () => {
   assert.deepEqual(skipped, [
     ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
     ['vless-reality', 'unsupported_proxy_protocol_vless'],
-    ['hy2', 'unsupported_hysteria2_obfs']
+    ['hy2', 'unsupported_hysteria2_obfs'],
+    ['ssr', 'unsupported_proxy_protocol_shadowsocksr'],
+    ['hy1', 'unsupported_proxy_protocol_hysteria'],
+    ['anytls', 'unsupported_proxy_protocol_anytls'],
+    ['wg', 'unsupported_proxy_protocol_wireguard']
   ]);
+  assert.ok(lines.includes(`tuic = tuic-v5, tu.example, 443, uuid=${UUID}, password=p, alpn=h3, sni=tu.example`), lines.join('\n'));
+  assert.ok(lines.includes('snell = snell, sn.example, 8000, psk=p, version=3, obfs=http, obfs-host=cdn.example'), lines.join('\n'));
   assertRoundTrip('surge', `[Proxy]\n${lines.join('\n')}\n`, supported);
   assert.match(compileSurgeFamilyLine('surge', SAMPLE_NODES[0], 'a,b'), /^a,b = ss, ss\.example, 8388, encrypt-method=aes-256-gcm/);
 });

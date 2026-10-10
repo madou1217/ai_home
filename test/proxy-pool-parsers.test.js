@@ -199,19 +199,22 @@ test('clash YAML import keeps nodes that carry benign transport flags', () => {
   assert.equal(ss.tfo, undefined);
 });
 
-test('协议插件覆盖全部受支持协议，并同时提供 mihomo 与 sing-box 出站编译', () => {
+test('协议插件覆盖全部受支持协议，都提供 mihomo 出站编译', () => {
   const { PROTOCOL_PLUGINS, SUPPORTED_PROTOCOLS } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
   const covered = new Set();
+  const withoutSingBox = [];
   for (const plugin of PROTOCOL_PLUGINS) {
     assert.equal(plugin.capability, 'proxy-pool.protocol');
     assert.equal(typeof plugin.parse, 'function');
     assert.equal(typeof plugin.encode, 'function');
-    assert.equal(typeof plugin.compile.mihomo, 'function', `${plugin.id} 需要提供 compile.mihomo（订阅聚合与节点校验）`);
-    assert.equal(typeof plugin.compile['sing-box'], 'function', `${plugin.id} 需要提供 compile['sing-box']（订阅聚合与 ZCode 出口）`);
+    assert.equal(typeof plugin.compile.mihomo, 'function', `${plugin.id} 需要提供 compile.mihomo（订阅聚合的默认输出）`);
+    if (typeof plugin.compile['sing-box'] !== 'function') withoutSingBox.push(plugin.id);
     assert.equal(plugin.editor, undefined);
     plugin.protocols.forEach((protocol) => covered.add(protocol));
   }
   assert.deepEqual([...covered].sort(), [...SUPPORTED_PROTOCOLS].sort());
+  // sing-box 没有实现 SSR（已移除）与 Snell，这两种节点在 sing-box 输出里跳过。
+  assert.deepEqual(withoutSingBox, ['shadowsocksr', 'snell']);
 });
 
 test('mihomo 出站编译保留结构化 SS 插件参数，YAML 输出不出现对象字面量', () => {
@@ -230,6 +233,6 @@ test('mihomo 出站编译保留结构化 SS 插件参数，YAML 输出不出现�
   assert.deepEqual(proxy['plugin-opts'], { mode: 'websocket', tls: true, host: 'edge.example.com' });
   assert.doesNotMatch(emitYaml({ proxies: [proxy] }), /\[object Object\]/);
   assert.equal(compileSingBoxNodeOutbound(node, 'plugin').plugin, 'v2ray-plugin');
-  assert.throws(() => compileMihomoProxy({ ...node, protocol: 'wireguard' }, 'x'), /unsupported_proxy_protocol_wireguard/);
+  assert.throws(() => compileMihomoProxy({ ...node, protocol: 'naive' }, 'x'), /unsupported_proxy_protocol_naive/);
   assert.throws(() => compileMihomoProxy({ ...node, port: 0 }, 'x'), /invalid_proxy_port/);
 });

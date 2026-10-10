@@ -124,3 +124,37 @@ test('link lists report unknown schemes and malformed known links instead of dro
     'unsupported_proxy_protocol_mystery'
   ]);
 });
+
+test('full Surge and QX configs with URLs inside are still read by their sections', () => {
+  const surge = [
+    '#!MANAGED-CONFIG https://sub.example/surge interval=86400 strict=false',
+    '[General]',
+    'proxy-test-url = http://www.gstatic.com/generate_204',
+    '[Proxy]',
+    'tj = trojan, tj.example, 443, password=p, sni=tj.example',
+    '[Proxy Group]',
+    'Proxy = select, tj',
+    '[Rule]',
+    'RULE-SET,https://rules.example/ai.list,Proxy',
+    'FINAL,DIRECT'
+  ].join('\n');
+  assert.deepEqual(parseSubscriptionContentDetailed(surge).nodes.map((node) => `${node.protocol}:${node.name}`), ['trojan:tj']);
+
+  // [server_remote] / [filter_remote] 的资源链接不是 HTTPS 代理。
+  const quantumultX = [
+    '[server_remote]',
+    'https://sub.example/qx, tag=机场',
+    '[filter_remote]',
+    'https://rules.example/ai.list, tag=AI, force-policy=proxy, enabled=true',
+    '[server_local]',
+    'trojan=tj.example:443, password=p, over-tls=true, tls-host=tj.example, tag=tj'
+  ].join('\n');
+  const parsed = parseSubscriptionContentDetailed(quantumultX);
+  assert.deepEqual(parsed.nodes.map((node) => `${node.protocol}:${node.name}`), ['trojan:tj']);
+  assert.deepEqual(parsed.skippedNodes, []);
+
+  // 逐行链接里混进订阅地址：报为无效链接，不当成代理。
+  const list = parseSubscriptionContentDetailed('trojan://p@tj.example:443#tj\nhttps://sub.example/link?token=x\nhttps://u:p@hs.example:443#hs');
+  assert.deepEqual(list.nodes.map((node) => `${node.protocol}:${node.name}`), ['trojan:tj', 'https:hs']);
+  assert.deepEqual(list.skippedNodes.map((item) => item.reason), ['invalid_proxy_link_https']);
+});

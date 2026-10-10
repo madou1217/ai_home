@@ -60,15 +60,23 @@ test('mihomo, Clash classic and Stash share Clash YAML but differ in protocols a
     });
     assert.deepEqual(classic.skippedNodes.map((item) => [item.name, item.reason]), [
       ['vless-reality', 'unsupported_proxy_protocol_vless'],
-      ['hy2', 'unsupported_proxy_protocol_hysteria2']
+      ['hy2', 'unsupported_proxy_protocol_hysteria2'],
+      ['hy1', 'unsupported_proxy_protocol_hysteria'],
+      ['tuic', 'unsupported_proxy_protocol_tuic'],
+      ['anytls', 'unsupported_proxy_protocol_anytls'],
+      ['wg', 'unsupported_proxy_protocol_wireguard']
     ]);
-    assert.deepEqual(stash.skippedNodes, []);
+    assert.deepEqual(stash.skippedNodes.map((item) => [item.name, item.reason]), [['anytls', 'unsupported_proxy_protocol_anytls']]);
     assert.match(YAML.parse(stash.content)['rule-providers']['geosite-private'].url, /\.yaml$/);
 
     // 三种输出都能被 Clash 导入器读回同样的连接参数。
+    const rendered = (result) => {
+      const skipped = new Set(result.skippedNodes.map((item) => item.name));
+      return SAMPLE_NODES.filter((node) => !skipped.has(node.name));
+    };
     assertRoundTrip('mihomo', mihomo.content);
-    assertRoundTrip('stash', stash.content);
-    assertRoundTrip('clash-classic', classic.content, SAMPLE_NODES.filter((node) => !['vless-reality', 'hy2'].includes(node.name)));
+    assertRoundTrip('stash', stash.content, rendered(stash));
+    assertRoundTrip('clash-classic', classic.content, rendered(classic));
   });
 });
 

@@ -62,7 +62,8 @@ test('ProxyPoolService syncs URI, Base64 and Clash YAML subscription content int
 test('ProxyPoolService reports unsupported schemes and nodes clients cannot use as skipped', async (t) => {
   const { service, subscription } = serviceWithContent(t, [
     SS_URI,
-    'wireguard://key@198.51.100.2:51820#wg',
+    'juicity://uuid:pass@198.51.100.2:443#juicity',
+    'wireguard://key@198.51.100.2:51820#wg-without-peer-key',
     'vless://e39b9866-51cf-4a41-b0e6-7ec9cf7bcfca@198.51.100.3:443?security=reality#reality-without-key'
   ].join('\n'));
 
@@ -71,7 +72,8 @@ test('ProxyPoolService reports unsupported schemes and nodes clients cannot use 
   assert.equal(result.ok, true);
   assert.equal(result.count, 1);
   const reasons = result.skippedNodes.map((item) => item.reason);
-  assert.ok(reasons.includes('unsupported_proxy_protocol_wireguard'));
+  assert.ok(reasons.includes('unsupported_proxy_protocol_juicity'), JSON.stringify(reasons));
+  assert.ok(reasons.includes('invalid_proxy_link_wireguard'), JSON.stringify(reasons));
   assert.ok(reasons.includes('missing_required_proxy_field_publicKey'), JSON.stringify(reasons));
 });
 

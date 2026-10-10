@@ -31,7 +31,15 @@ function compileAll(rendererId) {
 
 test('Loon proxy lines round-trip every protocol Loon can express', () => {
   const { lines, supported, skipped } = compileAll('loon');
-  assert.deepEqual(skipped, [['vmess-grpc', 'unsupported_proxy_transport_grpc']]);
+  assert.deepEqual(skipped, [
+    ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
+    ['hy1', 'unsupported_proxy_protocol_hysteria'],
+    ['tuic', 'unsupported_proxy_protocol_tuic'],
+    ['anytls', 'unsupported_proxy_protocol_anytls'],
+    ['wg', 'unsupported_proxy_protocol_wireguard'],
+    ['snell', 'unsupported_proxy_protocol_snell']
+  ]);
+  assert.ok(lines.includes('ssr = ShadowsocksR, ssr.example, 8443, aes-256-cfb, "p", protocol=auth_aes128_md5, protocol-param=1234:abcd, obfs=tls1.2_ticket_auth, obfs-param=cdn.example, fast-open=false, udp=true'), lines.join('\n'));
   // 凭据作为带引号的位置参数写出。
   assert.ok(lines.includes('trojan = trojan, tj.example, 443, "p", transport=tcp, sni=tj.example, skip-cert-verify=true'), lines.join('\n'));
   assert.match(lines.find((line) => line.startsWith('vless-reality')), /= VLESS, vl\.example, 443, "11111111-2222-3333-4444-555555555555", transport=tcp, flow=xtls-rprx-vision, public-key="PUBKEY", short-id=ab12, over-tls=true, sni=www\.example\.com/);

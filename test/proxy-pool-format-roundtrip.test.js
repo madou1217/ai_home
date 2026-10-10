@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { parseSubscriptionContentDetailed } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
-const { compileSingBoxNodeOutbound } = require('../lib/cli/services/toolkit/proxy-pool/cores/sing-box/node-outbound');
+const {
+  compileSingBoxNodeOutbound,
+  singBoxSectionOf
+} = require('../lib/cli/services/toolkit/proxy-pool/cores/sing-box/node-outbound');
 const { validateProxyNodeInput } = require('../lib/cli/services/toolkit/proxy-pool/proxy-node-store');
 const { SAMPLE_NODES, assertRoundTrip } = require('./helpers/proxy-format-samples');
 
@@ -12,18 +15,28 @@ test('sample nodes are valid node-store input', () => {
   for (const node of SAMPLE_NODES) validateProxyNodeInput(node);
 });
 
-test('sing-box configs round-trip every protocol and skip non-proxy outbounds', () => {
-  const outbounds = SAMPLE_NODES.map((node) => compileSingBoxNodeOutbound(node, node.name));
+test('sing-box configs round-trip every protocol sing-box implements and skip non-proxy outbounds', () => {
+  const supported = SAMPLE_NODES.filter((node) => !['shadowsocksr', 'snell'].includes(node.protocol));
+  for (const node of SAMPLE_NODES.filter((item) => !supported.includes(item))) {
+    assert.throws(() => compileSingBoxNodeOutbound(node, node.name), { code: `unsupported_proxy_protocol_${node.protocol}` });
+  }
+  const compiled = supported.map((node) => compileSingBoxNodeOutbound(node, node.name));
+  const outbounds = compiled.filter((item) => singBoxSectionOf(item) === 'outbounds');
+  // WireGuard 是 endpoint，写在 endpoints 段（读回时排在出站之后）。
+  const endpoints = compiled.filter((item) => singBoxSectionOf(item) === 'endpoints');
+  assert.deepEqual(endpoints.map((item) => item.tag), ['wg']);
   const config = {
     log: { level: 'info' },
     outbounds: [
-      { type: 'selector', tag: 'proxy', outbounds: outbounds.map((item) => item.tag) },
+      { type: 'selector', tag: 'proxy', outbounds: compiled.map((item) => item.tag) },
       ...outbounds,
       { type: 'direct', tag: 'direct' },
       { type: 'block', tag: 'block' }
-    ]
+    ],
+    endpoints
   };
-  assertRoundTrip('sing-box', JSON.stringify(config, null, 2));
+  const sectionOrder = [...supported.filter((node) => node.protocol !== 'wireguard'), ...supported.filter((node) => node.protocol === 'wireguard')];
+  assertRoundTrip('sing-box', JSON.stringify(config, null, 2), sectionOrder);
 });
 
 test('sing-box import tolerates comments and reports unsupported outbounds', () => {

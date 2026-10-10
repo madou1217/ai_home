@@ -129,7 +129,8 @@ test('public subscription route serves rendered content by token without WebUI a
   assert.equal(handled, true);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body, 'proxies: []');
-  assert.deepEqual(seen, [[token, { target: 'sing-box', userAgent: 'clash-verge' }]]);
+  // 请求没有 Host 头时拿不到 origin，渲染里依赖绝对地址的部分（托管配置、转换规则集）留空。
+  assert.deepEqual(seen, [[token, { target: 'sing-box', userAgent: 'clash-verge', origin: '' }]]);
 });
 
 test('public subscription route hides unknown or malformed tokens behind 404', async () => {

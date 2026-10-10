@@ -246,7 +246,7 @@ test('serveSubscription refreshes stale sources once, aggregates userinfo and se
 
   const missing = await service.serveSubscription('nope'.padEnd(43, 'y'), {});
   assert.equal(missing.status, 404);
-  const bad = await service.serveSubscription(profile.token, { target: 'surge' });
+  const bad = await service.serveSubscription(profile.token, { target: 'not-a-client' });
   assert.equal(bad.status, 400);
   fs.rmSync(dir, { recursive: true, force: true });
 });

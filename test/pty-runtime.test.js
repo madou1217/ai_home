@@ -443,7 +443,13 @@ test('runtime uses headless direct spawn for claude print prompts', () => {
   assert.equal(spawns.length, 0);
   assert.equal(directSpawns.length, 1);
   assert.equal(directSpawns[0].command, '/usr/local/bin/claude');
-  assert.deepEqual(directSpawns[0].args, ['-p', '只输出 ok']);
+  // 网关地址与钉选头经 --settings 交付，压过宿主 ~/.claude/settings.json 的 env。
+  assert.equal(directSpawns[0].args[0], '--settings');
+  assert.equal(
+    JSON.parse(directSpawns[0].args[1]).env.ANTHROPIC_BASE_URL,
+    directSpawns[0].options.env.ANTHROPIC_BASE_URL
+  );
+  assert.deepEqual(directSpawns[0].args.slice(2), ['-p', '只输出 ok']);
   assert.match(
     directSpawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID,
     /^[0-9a-f-]{36}$/
@@ -3523,7 +3529,14 @@ test('runtime relays native Claude OAuth by accountRef while keeping host sessio
   runtime.runCliPtyTracked('claude', '4', ['auth', 'status', '--json'], false);
   const accountRef = resolveHarnessAccountRef('claude', '4');
   assert.equal(spawns.length, 1);
-  assert.deepEqual(spawns[0].args, ['auth', 'status', '--json']);
+  assert.deepEqual(spawns[0].args.slice(0, 1), ['--settings']);
+  assert.deepEqual(JSON.parse(spawns[0].args[1]), {
+    env: {
+      ANTHROPIC_BASE_URL: 'http://127.0.0.1:9527',
+      ANTHROPIC_CUSTOM_HEADERS: `x-account-ref: ${accountRef}`
+    }
+  });
+  assert.deepEqual(spawns[0].args.slice(2), ['auth', 'status', '--json']);
   assert.equal(spawns[0].options.env.USER, 'model');
   assert.equal(spawns[0].options.env.CLAUDE_CONFIG_DIR, path.join(hostHomeDir, '.claude'));
   assert.equal(spawns[0].options.env.ANTHROPIC_API_KEY, 'dummy');

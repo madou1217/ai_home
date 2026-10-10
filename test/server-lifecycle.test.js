@@ -175,44 +175,6 @@ for (const pinned of [true, false]) {
   });
 }
 
-test('server 启动异步恢复持久化的 ZCode 出口 runtime', async (t) => {
-  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-zcode-egress-restore-'));
-  const processObj = createProcessCapture();
-  const lifecycle = {
-    relayClosed: 0,
-    webrtcClosed: 0,
-    fabricClosed: 0,
-   
-    outboundStopped: 0,
-   
-    logTimers: new Set(),
-    logTimersCleared: 0
-  };
-  const port = await getFreePort();
-  const calls = [];
-  let handle = null;
-
-  t.after(async () => {
-    if (handle) await handle.stop('test-cleanup');
-    fs.rmSync(aiHomeDir, { recursive: true, force: true });
-  });
-
-  handle = await startLocalServer(
-    createServeOptions(port, { manageProcessLifecycle: false }),
-    createServerDeps(aiHomeDir, processObj, lifecycle, {
-      async restorePersistedZcodeEgress(input) {
-        calls.push(input);
-        return { ok: true, discovered: 1, restored: 1, failed: 0, results: [] };
-      }
-    })
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].aiHomeDir, aiHomeDir);
-  assert.equal(calls[0].reason, 'server-start');
-});
-
 test('server creates one chat runtime, injects it into WebUI, and closes it on stop', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-chat-runtime-'));
   const processObj = createProcessCapture();

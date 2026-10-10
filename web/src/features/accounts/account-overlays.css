@@ -535,7 +535,7 @@
 .quota-reset-dot--natural { color: var(--color-success); }
 
 /* -----------------------------------------------------------------------------
- * 9. 出口设置（ZcodeEgressModal / ZcodeProxyGroupManagerModal）
+ * 9. 出口设置（ZcodeEgressModal）
  * -------------------------------------------------------------------------- */
 .egress-intro.ant-typography {
   margin-bottom: var(--space-6);
@@ -545,14 +545,6 @@
 }
 
 .egress-intro--last.ant-typography {
-  margin-bottom: var(--space-8);
-}
-
-.egress-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
   margin-bottom: var(--space-8);
 }
 
@@ -582,16 +574,16 @@
   color: var(--color-muted);
 }
 
+.egress-runtime-state--error {
+  color: var(--color-danger);
+}
+
 .egress-runtime-endpoint.ant-typography code {
   border: 1px solid var(--color-border);
   border-radius: 0;
   background: var(--color-surface-sunken);
   color: var(--color-accent);
   font-family: var(--font-mono);
-}
-
-.egress-runtime-rotate {
-  margin-inline-start: auto;
 }
 
 .egress-message.ant-typography {
@@ -604,36 +596,6 @@
   align-items: center;
   gap: var(--space-4);
   margin-bottom: var(--space-8);
-}
-
-.egress-group-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-8);
-}
-
-.egress-group-picker {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-  margin-bottom: var(--space-8);
-}
-
-.egress-group-picker > .ant-select {
-  min-width: min(360px, 100%);
-  flex: 1 1 360px;
-}
-
-.egress-group-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
 }
 
 /* -----------------------------------------------------------------------------
@@ -691,9 +653,5 @@
 
   .aih-step-track {
     grid-auto-flow: row;
-  }
-
-  .egress-runtime-rotate {
-    margin-inline-start: 0;
   }
 }

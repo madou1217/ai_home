@@ -4,25 +4,83 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  EGRESS_MODE_GROUP,
-  EGRESS_MODE_NODE,
   EGRESS_MODE_SYSTEM,
   EGRESS_MODE_TUN,
   EGRESS_MODE_URL
 } = require('../lib/account/zcode-egress-binding-store');
 const resolver = require('../lib/server/zcode-egress-resolver');
 
-test('resolver 暴露协议无关的 ZCode target 解析入口', () => {
-  assert.equal(typeof resolver.resolveZcodeEgressTarget, 'function');
+test('resolver 同步解析出口，只暴露外部代理目标', () => {
+  assert.equal(typeof resolver.resolveEgressTarget, 'function');
+  assert.equal(resolver.resolveZcodeEgressTarget, undefined);
+  const result = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'http://127.0.0.1:6152' },
+    platform: 'darwin'
+  });
+  assert.equal(typeof result.then, 'undefined');
+  assert.deepEqual(result, {
+    ok: true,
+    source: EGRESS_MODE_URL,
+    target: { kind: 'proxy-url', proxyUrl: 'http://127.0.0.1:6152' }
+  });
 });
 
-test('system 模式只读系统代理并按 HTTPS、HTTP、SOCKS 优先级选择', async () => {
+test('proxyUrlIssue 只接受不带凭据与路径的 HTTP(S) 代理', () => {
+  for (const value of ['http://127.0.0.1:6152', 'https://proxy.example:8443', '127.0.0.1:6152', 'proxy.example:8080']) {
+    assert.equal(resolver.proxyUrlIssue(value), '', value);
+  }
+  for (const value of ['socks5://127.0.0.1:6153', 'socks4a://proxy.example:1080', 'ss://proxy.example:8388']) {
+    assert.equal(resolver.proxyUrlIssue(value), 'proxy_scheme_unsupported', value);
+  }
+  for (const value of [
+    '',
+    'proxy.example',
+    'http://user:pass@proxy.example:8080',
+    'http://proxy.example:8080/path',
+    'http://proxy.example:8080/?q=1',
+    'not a url:80'
+  ]) {
+    assert.equal(resolver.proxyUrlIssue(value), 'invalid_proxy_url', value);
+  }
+});
+
+test('normalizeProxyUrl 把简写补成 http://host:port，非法地址返回空串', () => {
+  assert.equal(resolver.normalizeProxyUrl('127.0.0.1:6152'), 'http://127.0.0.1:6152');
+  assert.equal(resolver.normalizeProxyUrl(' https://proxy.example:8443/ '), 'https://proxy.example:8443');
+  assert.equal(resolver.normalizeProxyUrl('HTTP://Proxy.Example:80'), 'http://proxy.example');
+  assert.equal(resolver.normalizeProxyUrl('socks5://127.0.0.1:6153'), '');
+  assert.equal(resolver.normalizeProxyUrl(''), '');
+});
+
+test('url 模式按 HTTP(S) 校验，socks 与带凭据地址 fail-closed', () => {
+  const shorthand = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'proxy.example:8080' },
+    platform: 'darwin'
+  });
+  assert.deepEqual(shorthand.target, { kind: 'proxy-url', proxyUrl: 'http://proxy.example:8080' });
+
+  const socks = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
+    platform: 'darwin'
+  });
+  assert.equal(socks.ok, false);
+  assert.equal(socks.error, 'proxy_scheme_unsupported');
+  assert.equal(socks.target, null);
+
+  const credentials = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'http://user:pass@proxy.example:8080' },
+    platform: 'darwin'
+  });
+  assert.equal(credentials.error, 'invalid_proxy_url');
+});
+
+test('system 模式优先 HTTPS 再 HTTP，只有 SOCKS 时报 system_proxy_http_unavailable', () => {
   const calls = [];
-  const result = await resolver.resolveZcodeEgressTarget({
+  const preferred = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_SYSTEM },
     platform: 'darwin',
-    detectSystemProxy: () => {
-      calls.push('detect');
+    detectSystemProxy: (options) => {
+      calls.push(options.platform);
       return {
         enabled: true,
         probeStatus: 'available',
@@ -32,47 +90,76 @@ test('system 模式只读系统代理并按 HTTPS、HTTP、SOCKS 优先级选择
       };
     }
   });
-
-  assert.deepEqual(calls, ['detect']);
-  assert.deepEqual(result, {
+  assert.deepEqual(calls, ['darwin']);
+  assert.deepEqual(preferred, {
     ok: true,
     source: EGRESS_MODE_SYSTEM,
-    target: {
-      kind: 'proxy-url',
-      proxyUrl: 'http://127.0.0.1:9443'
-    }
+    target: { kind: 'proxy-url', proxyUrl: 'http://127.0.0.1:9443' }
   });
+
+  const httpOnly = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_SYSTEM },
+    platform: 'darwin',
+    detectSystemProxy: () => ({ enabled: true, httpProxy: 'http://127.0.0.1:9080' })
+  });
+  assert.equal(httpOnly.target.proxyUrl, 'http://127.0.0.1:9080');
+
+  const socksOnly = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_SYSTEM },
+    platform: 'darwin',
+    detectSystemProxy: () => ({ enabled: true, probeStatus: 'available', socksProxy: 'socks5://127.0.0.1:1080' })
+  });
+  assert.equal(socksOnly.ok, false);
+  assert.equal(socksOnly.error, 'system_proxy_http_unavailable');
 });
 
-test('system 模式在系统代理未配置或探测失败时拒绝静默直连', async () => {
+test('system 模式在系统代理未配置或探测失败时拒绝静默直连', () => {
   for (const status of [
     { enabled: false, probeStatus: 'unset' },
-    { enabled: false, probeStatus: 'error' }
+    { enabled: false, probeStatus: 'error' },
+    null
   ]) {
-    const result = await resolver.resolveZcodeEgressTarget({
+    const result = resolver.resolveEgressTarget({
       binding: { mode: EGRESS_MODE_SYSTEM },
       platform: 'darwin',
       detectSystemProxy: () => status
     });
-
     assert.equal(result.ok, false);
     assert.equal(result.error, 'system_proxy_unavailable');
   }
+
+  const thrown = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_SYSTEM },
+    platform: 'darwin',
+    detectSystemProxy: () => {
+      throw new Error('scutil timed out');
+    }
+  });
+  assert.equal(thrown.error, 'system_proxy_unavailable');
+  assert.equal(thrown.reason, 'scutil timed out');
 });
 
-test('tun 模式只接受已激活的外部 TUN，inactive 与 unknown 均 fail-closed', async () => {
+test('tun 模式只接受已激活的外部 TUN，inactive 与 unknown 均 fail-closed', () => {
   for (const state of ['inactive', 'unknown']) {
-    const result = await resolver.resolveZcodeEgressTarget({
+    const result = resolver.resolveEgressTarget({
       binding: { mode: EGRESS_MODE_TUN },
       platform: 'darwin',
       detectTun: () => ({ state })
     });
-
     assert.equal(result.ok, false, state);
     assert.equal(result.error, state === 'unknown' ? 'tun_state_unknown' : 'tun_inactive');
   }
 
-  const active = await resolver.resolveZcodeEgressTarget({
+  const thrown = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_TUN },
+    platform: 'darwin',
+    detectTun: () => {
+      throw new Error('netstat failed');
+    }
+  });
+  assert.equal(thrown.error, 'tun_state_unknown');
+
+  const active = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_TUN },
     platform: 'darwin',
     detectTun: () => ({ state: 'active', owner: 'clash-verge' })
@@ -85,115 +172,83 @@ test('tun 模式只接受已激活的外部 TUN，inactive 与 unknown 均 fail-
   });
 });
 
-test('url 模式生成中立 proxy-url target，不直接交给 ZCode 远端地址', async () => {
-  const result = await resolver.resolveZcodeEgressTarget({
-    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks4a://proxy.example:1080' },
+test('已下线的 node/group/pool 绑定、未绑定与未知模式都返回稳定错误', () => {
+  assert.equal(resolver.resolveEgressTarget({ platform: 'darwin' }).error, 'not_bound');
+
+  const retired = resolver.resolveEgressTarget({
+    binding: { mode: 'group', retired: true, groupId: 'subscription:sub_a' },
     platform: 'darwin'
   });
+  assert.equal(retired.ok, false);
+  assert.equal(retired.error, 'account_egress_mode_retired');
+  assert.equal(retired.mode, 'group');
 
-  assert.deepEqual(result, {
-    ok: true,
-    source: EGRESS_MODE_URL,
-    target: {
-      kind: 'proxy-url',
-      proxyUrl: 'socks4a://proxy.example:1080'
-    }
-  });
+  assert.equal(
+    resolver.resolveEgressTarget({ binding: { mode: 'mystery' }, platform: 'darwin' }).error,
+    'unknown_egress_mode'
+  );
 });
 
-test('node 模式从协议无关节点仓读取节点，不调用 Mihomo 专用端口', async () => {
-  const node = {
-    id: 'node-a',
-    protocol: 'vless',
-    server: 'edge.example',
-    port: 443,
-    uuid: '00000000-0000-4000-8000-000000000001'
+test('非 macOS 平台不支持账号出口，且不触发探测', () => {
+  const result = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_SYSTEM },
+    platform: 'linux',
+    detectSystemProxy: () => {
+      throw new Error('must not probe');
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'not_supported');
+  assert.equal(result.platform, 'linux');
+});
+
+test('探测缓存只在显式开启时生效，按探测函数隔离并在 15s 后过期', () => {
+  resolver.clearEgressDetectionCache();
+  let now = 1_000;
+  let calls = 0;
+  const detectTun = () => {
+    calls += 1;
+    return { state: 'active' };
   };
-  const result = await resolver.resolveZcodeEgressTarget({
-    binding: { mode: EGRESS_MODE_NODE, nodeId: node.id },
+  const resolveTun = (extra = {}) => resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_TUN },
     platform: 'darwin',
-    nodeStore: {
-      getNode(nodeId) {
-        assert.equal(nodeId, node.id);
-        return node;
-      }
-    }
+    detectTun,
+    now: () => now,
+    ...extra
   });
 
-  assert.equal(result.ok, true);
-  assert.equal(result.source, EGRESS_MODE_NODE);
-  assert.deepEqual(result.target, { kind: 'node', node });
-  assert.deepEqual(result.candidateNodes, [node]);
-});
+  resolveTun();
+  resolveTun();
+  assert.equal(calls, 2, '默认不缓存');
 
-test('group 模式复用调度器并避开其他 ZCode 实例已租用节点', async () => {
-  const nodes = [
-    { id: 'node-a', latencyMs: 20 },
-    { id: 'node-b', latencyMs: 40 }
-  ];
-  const result = await resolver.resolveZcodeEgressTarget({
-    binding: { mode: EGRESS_MODE_GROUP, groupId: 'group-fast' },
+  resolveTun({ useDetectionCache: true });
+  resolveTun({ useDetectionCache: true });
+  assert.equal(calls, 3, '显式开启后复用');
+
+  now += resolver.DETECTION_CACHE_TTL_MS;
+  resolveTun({ useDetectionCache: true });
+  assert.equal(calls, 4, '过期后重新探测');
+
+  let otherCalls = 0;
+  resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_TUN },
     platform: 'darwin',
-    ownerId: 'desktop:acct_current',
-    nodeStore: {
-      getGroup(groupId) {
-        assert.equal(groupId, 'group-fast');
-        return {
-          id: groupId,
-          strategy: 'lowest_latency',
-          failoverStrategy: 'lowest_latency'
-        };
-      },
-      listNodes(filter) {
-        assert.deepEqual(filter, { group: 'group-fast' });
-        return nodes;
-      }
+    detectTun: () => {
+      otherCalls += 1;
+      return { state: 'inactive' };
     },
-    leaseStore: {
-      listActive() {
-        return [{ ownerId: 'desktop:acct_other', nodeId: 'node-a', releasedAt: null }];
-      },
-      getLastSelectedNodeId() {
-        return '';
-      }
-    }
+    now: () => now,
+    useDetectionCache: true
   });
+  assert.equal(otherCalls, 1, '其他探测函数不共享缓存');
 
-  assert.equal(result.ok, true);
-  assert.equal(result.source, EGRESS_MODE_GROUP);
-  assert.equal(result.selectedNodeId, 'node-b');
-  assert.deepEqual(result.target, { kind: 'node', node: nodes[1] });
-  assert.deepEqual(result.candidateNodes, nodes);
-  assert.equal(result.selection.reused, false);
+  resolver.clearEgressDetectionCache();
+  resolveTun({ useDetectionCache: true });
+  assert.equal(calls, 5, '清空后重新探测');
 });
 
-test('group 模式在分组不存在或没有健康节点时返回稳定错误', async () => {
-  const missing = await resolver.resolveZcodeEgressTarget({
-    binding: { mode: EGRESS_MODE_GROUP, groupId: 'missing' },
-    platform: 'darwin',
-    nodeStore: {
-      getGroup: () => null,
-      listNodes: () => []
-    }
-  });
-  assert.equal(missing.error, 'proxy_group_not_found');
-
-  const empty = await resolver.resolveZcodeEgressTarget({
-    binding: { mode: EGRESS_MODE_GROUP, groupId: 'empty' },
-    platform: 'darwin',
-    nodeStore: {
-      getGroup: () => ({ id: 'empty' }),
-      listNodes: () => []
-    },
-    leaseStore: {
-      listActive: () => [],
-      getLastSelectedNodeId: () => ''
-    }
-  });
-  assert.equal(empty.error, 'no_available_proxy_node');
-});
-
-test('ZCode target resolver 与节点存储不依赖 Mihomo 运行时模块', () => {
+test('出口解析器与节点存储不依赖任何代理内核', () => {
   const fs = require('node:fs');
   const path = require('node:path');
   const root = path.resolve(__dirname, '..');
@@ -203,6 +258,6 @@ test('ZCode target resolver 与节点存储不依赖 Mihomo 运行时模块', ()
     'utf8'
   );
 
-  assert.doesNotMatch(resolverSource, /mihomo|ProxyPoolService|startDedicatedPort/i);
-  assert.doesNotMatch(storeSource, /cores\/mihomo|mihomo-config-compiler/);
+  assert.doesNotMatch(resolverSource, /mihomo|sing-box|ProxyPoolService|startDedicatedPort|lease/i);
+  assert.doesNotMatch(storeSource, /cores\/mihomo|mihomo-config-compiler|zcode-sing-box/);
 });

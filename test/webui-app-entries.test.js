@@ -187,7 +187,7 @@ test('open-app 端点复用已运行实例时不探测尚不能应用的出口',
   assert.equal(probeCalls, 0);
   assert.equal(ctx.res.statusCode, 200);
   assert.equal(ctx.res.json().status, 'already_running');
-  assert.match(ctx.res.json().egressWarning, /实例已运行.*出口设置.*实时应用/);
+  assert.match(ctx.res.json().egressWarning, /实例已运行.*出口设置.*应用/);
 });
 
 test('open-app 已绑定代理不可达时返回 503 且不启动 ZCode', async (t) => {
@@ -226,18 +226,11 @@ test('open-app 已绑定代理不可达时返回 503 且不启动 ZCode', async 
   ctx.deps = {
     ...ctx.deps,
     hostHomeDir,
-    zcodeSingBoxRuntime: {
-      ensureAccountEndpoint: async () => ({
-        ok: true,
-        action: 'started',
-        proxyServer: '127.0.0.1:23100'
-      }),
-      releaseAccount: async () => ({ ok: true, action: 'stopped' })
-    },
     probeProxyServer: async (proxyServer) => ({
       ok: false,
       error: 'proxy_probe_failed',
-      reason: proxyServer === '127.0.0.1:23100' ? 'curl_exit_7' : 'unexpected_proxy'
+      // 直接探测绑定的外部代理，不再经过 AIH 本地端口。
+      reason: proxyServer === 'http://127.0.0.1:10801' ? 'curl_exit_7' : 'unexpected_proxy'
     })
   };
 

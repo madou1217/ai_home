@@ -77,7 +77,7 @@ test('ProxyNodeStore deletes a subscription with its nodes and reports how many 
   assert.equal(store.deleteSubscription(subscription.id), null);
 });
 
-test('ProxyNodeStore drops fields retired with the local proxy core on the next write', (t) => {
+test('ProxyNodeStore drops fields retired with the local proxy core and node/group egress on the next write', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-store-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, 'pool.json');
@@ -99,8 +99,7 @@ test('ProxyNodeStore drops fields retired with the local proxy core on the next 
   store.upsertSubscription({ name: 'sub', url: 'https://example.com/subscription' });
 
   const persisted = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  assert.deepEqual(Object.keys(persisted).sort(), ['groupPolicies', 'manualGroups', 'nodes', 'subscriptions', 'version']);
-  assert.equal(store.listGroups().some((group) => group.id === 'dedicated'), false);
+  assert.deepEqual(Object.keys(persisted).sort(), ['nodes', 'subscriptions', 'version']);
 });
 
 test('ProxyNodeStore propagates atomic persistence failures', (t) => {

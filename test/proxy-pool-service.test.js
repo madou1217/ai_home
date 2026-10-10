@@ -23,18 +23,17 @@ function createDeferred() {
   return { promise, resolve };
 }
 
-test('ProxyPoolService rejects a subscription URL instead of importing it as an HTTP proxy node', async (t) => {
+function serviceWithContent(t, content) {
   const store = createStore(t);
-  const service = new ProxyPoolService({ store });
+  const subscription = store.upsertSubscription({ name: 'airport', url: 'https://sub.example.com/link' });
+  const service = new ProxyPoolService({
+    store,
+    subscriptionFetcher: { async fetch() { return { content, url: 'https://sub.example.com/link' }; } }
+  });
+  return { store, subscription, service };
+}
 
-  const result = await service.importNodes('https://example.com/sub');
-
-  assert.equal(result.ok, false);
-  assert.equal(result.error, 'subscription_url_requires_subscription_flow');
-  assert.equal(store.listNodes().length, 0);
-});
-
-test('ProxyPoolService imports URI, Base64 and Clash YAML content straight into the node store', async (t) => {
+test('ProxyPoolService syncs URI, Base64 and Clash YAML subscription content into the node store', async (t) => {
   const cases = [
     ['URI', SS_URI],
     ['Base64', Buffer.from(SS_URI).toString('base64')],
@@ -48,10 +47,9 @@ test('ProxyPoolService imports URI, Base64 and Clash YAML content straight into 
   ];
   for (const [format, content] of cases) {
     await t.test(format, async (subtest) => {
-      const store = createStore(subtest);
-      const service = new ProxyPoolService({ store });
+      const { store, subscription, service } = serviceWithContent(subtest, content);
 
-      const result = await service.importNodes(content);
+      const result = await service.syncSubscription(subscription.id);
 
       assert.equal(result.ok, true);
       assert.equal(result.applied, true);
@@ -62,14 +60,13 @@ test('ProxyPoolService imports URI, Base64 and Clash YAML content straight into 
 });
 
 test('ProxyPoolService reports unsupported schemes and nodes clients cannot use as skipped', async (t) => {
-  const store = createStore(t);
-  const service = new ProxyPoolService({ store });
-
-  const result = await service.importNodes([
+  const { service, subscription } = serviceWithContent(t, [
     SS_URI,
     'wireguard://key@198.51.100.2:51820#wg',
     'vless://e39b9866-51cf-4a41-b0e6-7ec9cf7bcfca@198.51.100.3:443?security=reality#reality-without-key'
   ].join('\n'));
+
+  const result = await service.syncSubscription(subscription.id);
 
   assert.equal(result.ok, true);
   assert.equal(result.count, 1);
@@ -154,46 +151,16 @@ test('ProxyPoolService discards fetched nodes when the subscription changes befo
 });
 
 test('ProxyPoolService deletes a subscription together with its nodes', async (t) => {
-  const store = createStore(t);
-  const subscription = store.upsertSubscription({ name: 'airport', url: 'https://sub.example.com/link' });
-  const service = new ProxyPoolService({ store });
-  await service.importNodes(SS_URI, subscription.id);
-  await service.importNodes(SS_URI.replace('198.51.100.1', '198.51.100.9').replace('#storage-only', '#manual'));
+  const { store, subscription, service } = serviceWithContent(t, SS_URI);
+  await service.syncSubscription(subscription.id);
+  const other = store.upsertSubscription({ name: 'other', url: 'https://other.example.com/link' });
+  store.replaceSubscriptionNodes(other.id, [{
+    name: 'kept', protocol: 'http', server: 'kept.example.com', port: 8080
+  }]);
 
   const removed = await service.deleteSubscription(subscription.id);
 
   assert.deepEqual(removed, { ok: true, applied: true, removedNodeCount: 1 });
-  assert.deepEqual(store.listNodes().map((node) => node.name), ['manual']);
+  assert.deepEqual(store.listNodes().map((node) => node.name), ['kept']);
   assert.equal((await service.deleteSubscription(subscription.id)).error, 'subscription_not_found');
-});
-
-test('ProxyPoolService exposes manual-group CRUD and automatic-group policy updates', async (t) => {
-  const store = createStore(t);
-  const [node] = store.bulkUpsertNodes([{
-    name: 'US group node',
-    protocol: 'http',
-    server: 'group.example.com',
-    port: 8080,
-    countryCode: 'US',
-    countryName: '美国',
-    countryFlag: '🇺🇸'
-  }]);
-  const service = new ProxyPoolService({ store });
-
-  const created = await service.upsertGroup({
-    name: '手动代理组',
-    nodeIds: [node.id],
-    strategy: 'sticky',
-    failoverStrategy: 'lowest_latency'
-  });
-  assert.equal(created.ok, true);
-  assert.equal(created.applied, true);
-
-  const policy = await service.updateGroupPolicy('US', { strategy: 'round_robin', failoverStrategy: 'random' });
-  assert.equal(policy.group.strategy, 'round_robin');
-  assert.equal(service.listGroups().groups.find((group) => group.id === 'US').failoverStrategy, 'random');
-
-  const removed = await service.deleteGroup(created.group.id);
-  assert.deepEqual(removed, { ok: true, applied: true });
-  assert.equal((await service.deleteGroup(created.group.id)).error, 'proxy_group_not_found');
 });

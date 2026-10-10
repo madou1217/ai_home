@@ -95,7 +95,6 @@ import type {
   AccountAppLaunchResponse,
   AccountEgressBindingInput,
   AccountEgressResponse,
-  AccountEgressRotateResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -108,11 +107,6 @@ import type {
   MirrorsResponse,
   ProxyStatusResponse,
   ConnectivityResponse,
-  ProxyNodesResponse,
-  ProxyNode,
-  ProxyGroupsResponse,
-  ProxyGroupMutationResponse,
-  ProxyGroupStrategy,
   AggregatedProject,
   ArchivedSession,
   ArchivedSessionsResponse,
@@ -308,9 +302,6 @@ const buildAccountScopedPath = (provider: string, accountRef: string) => (
 const buildAccountEgressPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/egress`
 );
-const buildAccountEgressRotatePath = (provider: string, accountRef: string) => (
-  `${buildAccountScopedPath(provider, accountRef)}/egress/rotate`
-);
 
 export const accountsAPI = {
   // 获取所有账号
@@ -476,13 +467,6 @@ export const accountsAPI = {
     const query = limit ? `?limit=${encodeURIComponent(limit)}` : '';
     const response = await api.get<{ ok: boolean; provider: string; accountRef: string; events: any[] }>(
       `/webui/accounts/${encodeURIComponent(provider)}/${encodeURIComponent(accountRef)}/quota-reset-events${query}`
-    );
-    return response.data;
-  },
-
-  rotateAccountEgress: async (provider: string, accountRef: string): Promise<AccountEgressRotateResponse> => {
-    const response = await api.post<AccountEgressRotateResponse>(
-      buildAccountEgressRotatePath(provider, accountRef)
     );
     return response.data;
   },
@@ -2137,51 +2121,6 @@ export const toolkitAPI = {
   },
   testConnectivity: async (params: { route?: 'direct' | 'proxy'; proxyUrl?: string } = {}): Promise<ConnectivityResponse> => {
     const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity', { params });
-    return response.data;
-  }
-};
-
-export const proxyPoolAPI = {
-  listNodes: async (params: { group?: string; protocol?: string } = {}): Promise<ProxyNodesResponse> => {
-    const response = await api.get<ProxyNodesResponse>('/webui/toolkit/proxy-pool/nodes', { params });
-    return response.data;
-  },
-  listGroups: async (): Promise<ProxyGroupsResponse> => {
-    const response = await api.get<ProxyGroupsResponse>('/webui/toolkit/proxy-pool/groups');
-    return response.data;
-  },
-  upsertGroup: async (group: {
-    id?: string;
-    name: string;
-    icon?: string;
-    nodeIds: string[];
-    strategy?: ProxyGroupStrategy;
-    failoverStrategy?: ProxyGroupStrategy;
-  }): Promise<ProxyGroupMutationResponse> => {
-    const response = await api.post<ProxyGroupMutationResponse>(
-      '/webui/toolkit/proxy-pool/groups',
-      group
-    );
-    return response.data;
-  },
-  updateGroupPolicy: async (
-    id: string,
-    policy: { strategy: ProxyGroupStrategy; failoverStrategy: ProxyGroupStrategy }
-  ): Promise<ProxyGroupMutationResponse> => {
-    const response = await api.post<ProxyGroupMutationResponse>(
-      '/webui/toolkit/proxy-pool/groups/policy',
-      { id, ...policy }
-    );
-    return response.data;
-  },
-  deleteGroup: async (groupId: string): Promise<ProxyGroupMutationResponse> => {
-    const response = await api.delete<ProxyGroupMutationResponse>(
-      `/webui/toolkit/proxy-pool/groups/${encodeURIComponent(groupId)}`
-    );
-    return response.data;
-  },
-  importNodes: async (content: string, subscriptionId?: string): Promise<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }> => {
-    const response = await api.post<{ ok: boolean; count: number; nodes: ProxyNode[]; error?: string }>('/webui/toolkit/proxy-pool/import', { content, subscriptionId });
     return response.data;
   }
 };

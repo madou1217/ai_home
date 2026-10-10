@@ -91,58 +91,6 @@ async function runToolkitRequest(pathname, { method = 'GET', body, deps = {} } =
   return { handled, res, data: res.body ? JSON.parse(res.body) : null };
 }
 
-test('webui proxy-pool groups routes expose manual CRUD and automatic policy updates', async () => {
-  const calls = [];
-  const proxyPoolService = {
-    listGroups() {
-      return { ok: true, groups: [{ id: 'US', kind: 'country', count: 2 }] };
-    },
-    upsertGroup(input) {
-      calls.push(['upsert', input]);
-      return Promise.resolve({ ok: true, applied: true, group: { id: 'group_a', ...input } });
-    },
-    updateGroupPolicy(id, input) {
-      calls.push(['policy', id, input]);
-      return Promise.resolve({ ok: true, applied: true, group: { id, ...input } });
-    },
-    deleteGroup(id) {
-      calls.push(['delete', id]);
-      return Promise.resolve({ ok: true, applied: true });
-    }
-  };
-
-  const listed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
-    deps: { proxyPoolService }
-  });
-  assert.equal(listed.res.statusCode, 200);
-  assert.equal(listed.data.groups[0].id, 'US');
-
-  const created = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups', {
-    method: 'POST',
-    body: { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' },
-    deps: { proxyPoolService }
-  });
-  assert.equal(created.res.statusCode, 200);
-
-  const policy = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/policy', {
-    method: 'POST',
-    body: { id: 'US', strategy: 'round_robin', failoverStrategy: 'lowest_latency' },
-    deps: { proxyPoolService }
-  });
-  assert.equal(policy.res.statusCode, 200);
-
-  const removed = await runToolkitRequest('/v0/webui/toolkit/proxy-pool/groups/group_a', {
-    method: 'DELETE',
-    deps: { proxyPoolService }
-  });
-  assert.equal(removed.res.statusCode, 200);
-  assert.deepEqual(calls, [
-    ['upsert', { name: 'A', nodeIds: ['node-a'], strategy: 'sticky' }],
-    ['policy', 'US', { strategy: 'round_robin', failoverStrategy: 'lowest_latency' }],
-    ['delete', 'group_a']
-  ]);
-});
-
 test('webui toolkit routes GET /v0/webui/toolkit/apps returns app list', async () => {
   const req = { method: 'GET', url: '/v0/webui/toolkit/apps', headers: {} };
   const res = createResCapture();
@@ -370,7 +318,7 @@ test('webui toolkit 复用已运行 ZCode Desktop 时不探测尚不能应用的
   assert.equal(probeCalls, 0);
   assert.equal(result.res.statusCode, 200);
   assert.equal(result.data.status, 'already_running');
-  assert.match(result.data.egressWarning, /实例已运行.*出口设置.*实时应用/);
+  assert.match(result.data.egressWarning, /实例已运行.*出口设置.*应用/);
 });
 
 test('webui toolkit 已绑定代理不可达时返回 503 且不启动 ZCode', async (t) => {
@@ -419,18 +367,11 @@ test('webui toolkit 已绑定代理不可达时返回 503 且不启动 ZCode', a
         spawnCalls.push(args);
         return { pid: 9980, unref() {} };
       },
-      zcodeSingBoxRuntime: {
-        ensureAccountEndpoint: async () => ({
-          ok: true,
-          action: 'started',
-          proxyServer: '127.0.0.1:23100'
-        }),
-        releaseAccount: async () => ({ ok: true, action: 'stopped' })
-      },
       probeProxyServer: async (proxyServer) => ({
         ok: false,
         error: 'proxy_probe_failed',
-        reason: proxyServer === '127.0.0.1:23100' ? 'curl_exit_7' : 'unexpected_proxy'
+        // 直接探测绑定的外部代理，不再经过 AIH 本地端口。
+        reason: proxyServer === 'http://127.0.0.1:10801' ? 'curl_exit_7' : 'unexpected_proxy'
       })
     }
   });

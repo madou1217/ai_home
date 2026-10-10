@@ -7,9 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
-  EGRESS_MODE_GROUP,
-  EGRESS_MODE_NODE,
-  EGRESS_MODE_POOL,
+  EGRESS_MODES,
   EGRESS_MODE_SYSTEM,
   EGRESS_MODE_TUN,
   EGRESS_MODE_URL,
@@ -23,14 +21,15 @@ const { listProviderIds } = require('../lib/provider-catalog');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const {
   SUPPORTED_PLATFORM,
-  normalizeProxyUrl,
-  resolveZcodeEgress
+  normalizeProxyUrl
 } = require('../lib/server/zcode-egress-resolver');
 const {
   DEFAULT_NO_PROXY
 } = require('../lib/server/zcode-native-proxy-values');
 const {
+  applyStoredAccountEgress,
   describeEgressWarning,
+  getAccountEgressRuntimeStatus,
   isEgressSupportedProvider,
   launchAccountAppWithEgress,
   prepareAccountAppEgress,
@@ -52,61 +51,59 @@ test('buildEgressBindingKey 只接受合法 accountRef', () => {
 
 test('normalizeEgressBinding 按有值的一侧推断 mode', () => {
   assert.equal(normalizeEgressBinding({ proxyUrl: '127.0.0.1:10801' }).mode, EGRESS_MODE_URL);
-  assert.equal(normalizeEgressBinding({ nodeId: 'node-a' }).mode, EGRESS_MODE_NODE);
 });
 
-test('normalizeEgressBinding 支持 system、tun、url、node、group 五种正式模式', () => {
+test('normalizeEgressBinding 只支持 system、tun、url 三种模式', () => {
+  assert.deepEqual([...EGRESS_MODES].sort(), [EGRESS_MODE_SYSTEM, EGRESS_MODE_TUN, EGRESS_MODE_URL].sort());
   assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_SYSTEM }), {
     mode: EGRESS_MODE_SYSTEM,
     proxyUrl: '',
-    nodeId: '',
-    groupId: '',
     updatedAt: 0
   });
-  assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_TUN }), {
+  assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_TUN, updatedAt: 42 }), {
     mode: EGRESS_MODE_TUN,
     proxyUrl: '',
-    nodeId: '',
-    groupId: '',
+    updatedAt: 42
+  });
+  assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_URL, proxyUrl: ' 127.0.0.1:10801 ' }), {
+    mode: EGRESS_MODE_URL,
+    proxyUrl: '127.0.0.1:10801',
     updatedAt: 0
   });
-  assert.equal(normalizeEgressBinding({ mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:10801' }).mode, EGRESS_MODE_URL);
-  assert.equal(normalizeEgressBinding({ mode: EGRESS_MODE_NODE, nodeId: 'node-a' }).mode, EGRESS_MODE_NODE);
-  assert.equal(normalizeEgressBinding({ mode: EGRESS_MODE_GROUP, groupId: 'group-a' }).mode, EGRESS_MODE_GROUP);
 });
 
-test('normalizeEgressBinding 把旧 pool 记录迁移成 node 模式并保留兼容常量', () => {
-  const binding = normalizeEgressBinding({ mode: EGRESS_MODE_POOL, nodeId: 'node-a' });
-
-  assert.equal(EGRESS_MODE_POOL, 'pool');
-  assert.equal(binding.mode, EGRESS_MODE_NODE);
-  assert.equal(binding.nodeId, 'node-a');
+test('normalizeEgressBinding 把历史 node/group/pool 记录标记为已下线并保留原字段', () => {
+  assert.deepEqual(normalizeEgressBinding({ mode: 'pool', nodeId: 'node-a', updatedAt: 7 }), {
+    mode: 'pool',
+    retired: true,
+    proxyUrl: '',
+    nodeId: 'node-a',
+    groupId: '',
+    updatedAt: 7
+  });
+  assert.equal(normalizeEgressBinding({ mode: 'group' }).retired, true, '缺目标的历史记录也按已下线处理，不能当成未绑定');
+  const inferredNode = normalizeEgressBinding({ nodeId: 'node-a' });
+  assert.equal(inferredNode.mode, 'node');
+  assert.equal(inferredNode.retired, true);
+  assert.equal(normalizeEgressBinding({ groupId: 'subscription:sub_a' }).mode, 'group');
 });
 
-test('normalizeEgressBinding 把半条记录退化成未绑定', () => {
+test('normalizeEgressBinding 把半条或未知记录退化成 null', () => {
   assert.equal(normalizeEgressBinding({ mode: 'url' }), null, '声明 url 却没填 URL');
-  assert.equal(normalizeEgressBinding({ mode: 'pool' }), null, '声明 pool 却没选节点');
-  assert.equal(normalizeEgressBinding({ mode: 'node' }), null, '声明 node 却没选节点');
-  assert.equal(normalizeEgressBinding({ mode: 'group' }), null, '声明 group 却没选分组');
   assert.equal(
-    normalizeEgressBinding({ mode: 'typo', nodeId: 'node-a' }),
+    normalizeEgressBinding({ mode: 'typo', proxyUrl: '127.0.0.1:10801' }),
     null,
     '只有 mode 缺失时才允许推断，显式未知模式属于损坏记录'
   );
+  assert.equal(normalizeEgressBinding({}), null);
   assert.equal(normalizeEgressBinding(null), null);
   assert.equal(normalizeEgressBinding([]), null);
 });
 
-test('normalizeEgressBinding 保留另一侧的值，便于 UI 切换时不丢输入', () => {
-  const binding = normalizeEgressBinding({
-    mode: 'node',
-    nodeId: 'node-a',
-    groupId: 'group-a',
-    proxyUrl: '1.2.3.4:8080'
-  });
-  assert.equal(binding.mode, EGRESS_MODE_NODE);
+test('normalizeEgressBinding 切到 system/tun 时保留 proxyUrl，便于 UI 切换时不丢输入', () => {
+  const binding = normalizeEgressBinding({ mode: EGRESS_MODE_SYSTEM, proxyUrl: '1.2.3.4:8080' });
+  assert.equal(binding.mode, EGRESS_MODE_SYSTEM);
   assert.equal(binding.proxyUrl, '1.2.3.4:8080');
-  assert.equal(binding.groupId, 'group-a');
 });
 
 test('readAccountEgressBinding 区分未绑定与损坏的持久化记录', (t) => {
@@ -177,6 +174,47 @@ test('writeAccountEgressBinding 允许所有真实 provider 账号写入绑定',
       provider
     );
   }
+});
+
+test('历史节点/分组绑定可读出 retired 形状，但不能再写入', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-retired-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '1',
+    identitySeed: 'oauth:zcode:retired-binding@example.com'
+  });
+  writeJsonValue(fs, aiHomeDir, buildEgressBindingKey(accountRef), {
+    mode: 'group',
+    groupId: 'subscription:sub_a',
+    updatedAt: 5
+  });
+
+  assert.deepEqual(readAccountEgressBinding(fs, aiHomeDir, accountRef), {
+    mode: 'group',
+    retired: true,
+    proxyUrl: '',
+    nodeId: '',
+    groupId: 'subscription:sub_a',
+    updatedAt: 5
+  });
+  for (const binding of [
+    { mode: 'node', nodeId: 'node-a' },
+    { mode: 'group', groupId: 'group-a' },
+    { mode: 'pool', nodeId: 'node-a' },
+    { nodeId: 'node-a' }
+  ]) {
+    assert.throws(
+      () => writeAccountEgressBinding(fs, aiHomeDir, accountRef, binding),
+      /invalid_account_egress_binding/,
+      JSON.stringify(binding)
+    );
+  }
+  assert.equal(
+    readAccountEgressBinding(fs, aiHomeDir, accountRef).groupId,
+    'subscription:sub_a',
+    '拒绝写入不会删除旧记录'
+  );
 });
 
 // ── ZCode 原生 setting.json ────────────────────────────────────────────────
@@ -522,13 +560,14 @@ test('切换托管出口时设置写入失败，marker 仍保留旧托管值用�
 
 // ── proxy url 校验 ──────────────────────────────────────────────────────────
 
-test('normalizeProxyUrl 接受 host:port 简写与受支持的 scheme', () => {
-  assert.equal(normalizeProxyUrl('127.0.0.1:10801'), '127.0.0.1:10801');
-  assert.equal(normalizeProxyUrl('socks5://1.2.3.4:1080'), 'socks5://1.2.3.4:1080');
+test('normalizeProxyUrl 把 host:port 简写补成 http，并保留 https', () => {
+  assert.equal(normalizeProxyUrl('127.0.0.1:10801'), 'http://127.0.0.1:10801');
   assert.equal(normalizeProxyUrl('http://proxy.local:3128'), 'http://proxy.local:3128');
+  assert.equal(normalizeProxyUrl('https://proxy.local:8443'), 'https://proxy.local:8443');
 });
 
-test('normalizeProxyUrl 拒绝不合法输入', () => {
+test('normalizeProxyUrl 拒绝不合法输入与非 HTTP(S) 代理', () => {
+  assert.equal(normalizeProxyUrl('socks5://1.2.3.4:1080'), '', 'socks 在网关请求路径上会被静默直连，必须拒绝');
   assert.equal(normalizeProxyUrl('ftp://1.2.3.4:21'), '', '不支持的 scheme');
   assert.equal(normalizeProxyUrl('1.2.3.4'), '', '缺端口');
   assert.equal(normalizeProxyUrl('1.2.3.4:99999'), '', '端口越界');
@@ -539,45 +578,101 @@ test('normalizeProxyUrl 拒绝不合法输入', () => {
   assert.equal(normalizeProxyUrl(''), '');
 });
 
-// ── resolver ────────────────────────────────────────────────────────────────
+// ── 解析 + 探测 ────────────────────────────────────────────────────────────
 
-test('resolveZcodeEgress 未绑定时回 not_bound 而非报错', async () => {
-  const result = await resolveZcodeEgress({ binding: null, platform: 'darwin' });
-  assert.equal(result.ok, false);
-  assert.equal(result.error, 'not_bound');
+function egressResolveInput(binding, overrides = {}) {
+  return {
+    fs: {},
+    aiHomeDir: '/tmp/aih-egress-resolve',
+    provider: 'zcode',
+    accountRef: 'acct_91aa805bdd051b40fa47',
+    binding,
+    processObj: { platform: 'darwin' },
+    ...overrides
+  };
+}
+
+test('resolveAccountEgress 未绑定时回 null 而非报错', async () => {
+  assert.equal(await resolveAccountEgress(egressResolveInput(null)), null);
 });
 
-test('resolveZcodeEgress 在 macOS 上解析显式 URL', async () => {
-  const result = await resolveZcodeEgress({
-    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://1.2.3.4:1080', nodeId: '' },
-    platform: 'darwin'
-  });
-  assert.deepEqual(result, { ok: true, proxyServer: 'socks5://1.2.3.4:1080', source: EGRESS_MODE_URL });
-});
-
-test('resolveZcodeEgress 探测到代理出口不可用时返回结构化失败', async () => {
-  const calls = [];
-  const result = await resolveZcodeEgress({
-    binding: { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:10801', nodeId: '' },
-    platform: 'darwin',
-    probeProxyServer: async (proxyServer) => {
-      calls.push(proxyServer);
-      return { ok: false, error: 'proxy_probe_failed', reason: 'curl_exit_7' };
+test('resolveAccountEgress 直接探测外部代理，不经过任何本地端口', async () => {
+  const probes = [];
+  const result = await resolveAccountEgress(egressResolveInput(
+    { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:6152' },
+    {
+      deps: {
+        probeProxyServer: async (proxyServer) => {
+          probes.push(proxyServer);
+          return { ok: true };
+        }
+      }
     }
-  });
-
-  assert.deepEqual(calls, ['127.0.0.1:10801']);
-  assert.equal(result.ok, false);
-  assert.equal(result.error, 'proxy_unreachable');
-  assert.equal(result.reason, 'curl_exit_7');
+  ));
+  assert.deepEqual(probes, ['http://127.0.0.1:6152']);
+  assert.deepEqual(result, { ok: true, source: EGRESS_MODE_URL, proxyServer: 'http://127.0.0.1:6152' });
 });
 
-test('resolveZcodeEgress 在非 macOS 平台返回结构化 not_supported，不静默放行', async () => {
+test('resolveAccountEgress 探测到代理出口不可用时返回结构化失败', async () => {
+  const result = await resolveAccountEgress(egressResolveInput(
+    { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:10801' },
+    {
+      deps: {
+        probeProxyServer: async () => ({ ok: false, error: 'proxy_probe_failed', reason: 'curl_exit_7' })
+      }
+    }
+  ));
+  assert.deepEqual(result, {
+    ok: false,
+    proxyServer: '',
+    source: '',
+    error: 'proxy_unreachable',
+    reason: 'curl_exit_7'
+  });
+});
+
+test('resolveAccountEgress 在 TUN 激活时返回直连目标且不探测代理', async () => {
+  const result = await resolveAccountEgress(egressResolveInput(
+    { mode: EGRESS_MODE_TUN },
+    {
+      deps: {
+        detectTun: () => ({ state: 'active', owner: 'clash-verge' }),
+        probeProxyServer: async () => {
+          throw new Error('TUN 模式没有代理地址可探测');
+        }
+      }
+    }
+  ));
+  assert.deepEqual(result, { ok: true, source: EGRESS_MODE_TUN, proxyServer: '', direct: true });
+});
+
+test('resolveAccountEgress 对 socks 地址、已下线模式与非 macOS 平台 fail-closed 且不探测', async () => {
+  const deps = {
+    probeProxyServer: async () => {
+      throw new Error('fail-closed 前不得探测');
+    }
+  };
+  const socks = await resolveAccountEgress(egressResolveInput(
+    { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
+    { deps }
+  ));
+  assert.equal(socks.ok, false);
+  assert.equal(socks.error, 'proxy_scheme_unsupported');
+  assert.equal(socks.proxyServer, '');
+
+  const retired = await resolveAccountEgress(egressResolveInput(
+    { mode: 'node', retired: true, nodeId: 'node-a', proxyUrl: '', groupId: '' },
+    { deps }
+  ));
+  assert.equal(retired.ok, false);
+  assert.equal(retired.error, 'account_egress_mode_retired');
+  assert.equal(retired.mode, 'node');
+
   for (const [platform, expected] of [['win32', 'windows'], ['linux', 'linux']]) {
-    const result = await resolveZcodeEgress({
-      binding: { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:10801', nodeId: '' },
-      platform
-    });
+    const result = await resolveAccountEgress(egressResolveInput(
+      { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:10801' },
+      { deps, processObj: { platform } }
+    ));
     assert.equal(result.ok, false, `${platform} 当前不支持`);
     assert.equal(result.error, 'not_supported');
     assert.equal(result.platform, expected);
@@ -613,30 +708,6 @@ test('zcode 策略对未绑定或解析失败同样不追加启动代理参数',
 
 // ── service ─────────────────────────────────────────────────────────────────
 
-function createStableSidecarDeps(overrides = {}) {
-  return {
-    leaseStore: {
-      getByOwner: () => null,
-      listActive: () => [],
-      getLastSelectedNodeId: () => '',
-      acquire: (input) => input,
-      attachProcess: (ownerId, pid) => ({ ownerId, pid }),
-      release: () => true,
-      releaseByAccount: () => 0
-    },
-    zcodeSingBoxRuntime: {
-      ensureAccountEndpoint: async () => ({
-        ok: true,
-        action: 'started',
-        port: 23100,
-        proxyServer: '127.0.0.1:23100'
-      }),
-      releaseAccount: async () => ({ ok: true, action: 'stopped' })
-    },
-    ...overrides
-  };
-}
-
 test('isEgressSupportedProvider 接受合同中所有 provider', () => {
   for (const provider of listProviderIds()) {
     assert.equal(isEgressSupportedProvider(provider), true, provider);
@@ -652,7 +723,7 @@ test('resolveAccountEgress 对不支持的 provider 直接回 null', async () =>
   assert.equal(result, null);
 });
 
-test('resolveAccountEgress 的显式 URL 模式不初始化节点仓或 Mihomo 数据面', async (t) => {
+test('resolveAccountEgress 从持久化绑定读取代理地址并归一化', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-service-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
@@ -664,8 +735,7 @@ test('resolveAccountEgress 的显式 URL 模式不初始化节点仓或 Mihomo �
     mode: EGRESS_MODE_URL,
     proxyUrl: '127.0.0.1:10801'
   });
-  let nodeStoreCalls = 0;
-  const sidecarTargets = [];
+  const probes = [];
 
   const result = await resolveAccountEgress({
     fs,
@@ -673,76 +743,19 @@ test('resolveAccountEgress 的显式 URL 模式不初始化节点仓或 Mihomo �
     provider: 'zcode',
     accountRef,
     processObj: { platform: 'darwin' },
-    deps: createStableSidecarDeps({
-      probeProxyServer: async () => ({ ok: true }),
-      getProxyNodeStore() {
-        nodeStoreCalls += 1;
-        throw new Error('URL mode must not initialize node store');
-      },
-      zcodeSingBoxRuntime: {
-        async ensureAccountEndpoint(input) {
-          sidecarTargets.push(input.resolvedTarget.target);
-          return {
-            ok: true,
-            action: 'started',
-            port: 23100,
-            proxyServer: '127.0.0.1:23100'
-          };
-        },
-        releaseAccount: async () => ({ ok: true, action: 'stopped' })
-      }
-    })
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.proxyServer, '127.0.0.1:23100');
-  assert.deepEqual(sidecarTargets, [{ kind: 'proxy-url', proxyUrl: '127.0.0.1:10801' }]);
-  assert.equal(nodeStoreCalls, 0);
-});
-
-test('resolveAccountEgress 在非 macOS 上返回 not_supported 前不初始化节点仓或 sidecar', async (t) => {
-  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-platform-pool-'));
-  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
-  const accountRef = upsertAccountRef(fs, aiHomeDir, {
-    provider: 'zcode',
-    cliAccountId: '1',
-    identitySeed: 'oauth:zcode:egress-platform-pool@example.com'
-  });
-  writeAccountEgressBinding(fs, aiHomeDir, accountRef, {
-    mode: EGRESS_MODE_POOL,
-    nodeId: 'node-a'
-  });
-  const calls = [];
-
-  const result = await resolveAccountEgress({
-    fs,
-    aiHomeDir,
-    provider: 'zcode',
-    accountRef,
-    processObj: { platform: 'win32' },
     deps: {
-      getProxyNodeStore() {
-        calls.push('node-store');
-        throw new Error('unsupported platform must not initialize node store');
-      },
-      getZcodeEgressLeaseStore() {
-        calls.push('lease-store');
-        throw new Error('unsupported platform must not initialize lease store');
-      },
-      getZcodeSingBoxRuntime() {
-        calls.push('sidecar');
-        throw new Error('unsupported platform must not initialize sidecar');
+      probeProxyServer: async (proxyServer) => {
+        probes.push(proxyServer);
+        return { ok: true };
       }
     }
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.error, 'not_supported');
-  assert.equal(result.platform, 'windows');
-  assert.deepEqual(calls, []);
+  assert.deepEqual(result, { ok: true, source: EGRESS_MODE_URL, proxyServer: 'http://127.0.0.1:10801' });
+  assert.deepEqual(probes, ['http://127.0.0.1:10801']);
 });
 
-test('resolveAccountEgress 默认探测真实代理出口，失败时返回结构化结果', async (t) => {
+test('resolveAccountEgress 默认用 curl 经外部代理探测，失败时返回结构化结果', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-probe-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
   const accountRef = upsertAccountRef(fs, aiHomeDir, {
@@ -762,14 +775,14 @@ test('resolveAccountEgress 默认探测真实代理出口，失败时返回结�
     provider: 'zcode',
     accountRef,
     processObj: { platform: 'darwin' },
-    deps: createStableSidecarDeps({
+    deps: {
       execFile(file, args, options, callback) {
         calls.push({ file, args, options });
         const error = new Error('curl failed');
         error.code = 7;
         callback(error, '', '');
       }
-    })
+    }
   });
 
   assert.equal(calls.length, 1);
@@ -777,7 +790,7 @@ test('resolveAccountEgress 默认探测真实代理出口，失败时返回结�
   assert.equal(calls[0].args[0], '--disable', '探测不得受用户 ~/.curlrc 改写');
   assert.ok(calls[0].args.includes('--fail'), 'HTTP 4xx/5xx 必须让 curl 返回非零，不能误判为可用出口');
   assert.ok(calls[0].args.includes('--proxy'));
-  assert.ok(calls[0].args.includes('http://127.0.0.1:23100'));
+  assert.ok(calls[0].args.includes('http://127.0.0.1:10801'), '直接探测外部代理');
   assert.ok(calls[0].args.includes('https://www.gstatic.com/generate_204'));
   assert.equal(calls[0].args.some((arg) => /zcode/i.test(arg)), false, '不得调用或模拟 ZCode API');
   assert.equal(result.ok, false);
@@ -898,6 +911,42 @@ test('非 ZCode provider 读取绑定失败时保留通用客户端设置语义'
   assert.doesNotMatch(result.warning, /ZCode/);
 });
 
+test('历史节点/分组绑定阻止 Desktop 启动并提示改绑', async (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-retired-launch-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '1',
+    identitySeed: 'oauth:zcode:retired-launch@example.com'
+  });
+  writeJsonValue(fs, aiHomeDir, buildEgressBindingKey(accountRef), {
+    mode: 'group',
+    groupId: 'subscription:sub_a'
+  });
+
+  const result = await prepareAccountAppEgress({
+    action: 'open',
+    kind: 'desktop',
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    processObj: { platform: 'darwin' },
+    deps: {
+      probeProxyServer: async () => {
+        throw new Error('已下线模式不得探测');
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'zcode_egress_unavailable');
+  assert.equal(result.egressPrepared, false);
+  assert.equal(result.egressError, 'account_egress_mode_retired');
+  assert.match(result.warning, /已下线.*改为代理地址、系统代理或外部 TUN/);
+  assert.match(result.warning, /阻止启动/);
+});
+
 test('prepareAccountAppEgress 遇到损坏绑定时不得把它当成已确认未绑定', async (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-corrupt-service-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
@@ -907,8 +956,8 @@ test('prepareAccountAppEgress 遇到损坏绑定时不得把它当成已确认�
     identitySeed: 'oauth:zcode:corrupt-service@example.com'
   });
   writeJsonValue(fs, aiHomeDir, buildEgressBindingKey(accountRef), {
-    mode: EGRESS_MODE_POOL,
-    nodeId: ''
+    mode: EGRESS_MODE_URL,
+    proxyUrl: ''
   });
 
   const result = await prepareAccountAppEgress({
@@ -964,13 +1013,13 @@ test('已绑定代理不可达时只执行同步预检，不调用真实 launche
       fs,
       aiHomeDir,
       processObj: { platform: 'darwin' },
-      deps: createStableSidecarDeps({
+      deps: {
         probeProxyServer: async () => ({
           ok: false,
           error: 'proxy_probe_failed',
           reason: 'curl_exit_7'
         })
-      })
+      }
     }
   });
 
@@ -991,8 +1040,8 @@ test('损坏绑定记录时只执行同步预检，不允许直连启动', async
     identitySeed: 'oauth:zcode:corrupt-launch@example.com'
   });
   writeJsonValue(fs, aiHomeDir, buildEgressBindingKey(accountRef), {
-    mode: EGRESS_MODE_POOL,
-    nodeId: ''
+    mode: EGRESS_MODE_URL,
+    proxyUrl: ''
   });
   const calls = [];
   const launcher = {
@@ -1016,7 +1065,7 @@ test('损坏绑定记录时只执行同步预检，不允许直连启动', async
       fs,
       aiHomeDir,
       processObj: { platform: 'darwin' },
-      deps: createStableSidecarDeps()
+      deps: {}
     }
   });
 
@@ -1056,7 +1105,7 @@ test('未绑定出口时显式传入 egress:null，让 fresh launch 释放旧托
       fs,
       aiHomeDir,
       processObj: { platform: 'darwin' },
-      deps: createStableSidecarDeps()
+      deps: {}
     }
   });
 
@@ -1066,7 +1115,7 @@ test('未绑定出口时显式传入 egress:null，让 fresh launch 释放旧托
   assert.equal(calls[1].egress, null);
 });
 
-test('同步预检发现 ZCode 已运行时不探测出口并提示可实时应用', async () => {
+test('同步预检发现 ZCode 已运行时不探测出口，并提示去出口设置应用（会重启实例）', async () => {
   let probeCalls = 0;
   const calls = [];
   const launcher = {
@@ -1097,7 +1146,7 @@ test('同步预检发现 ZCode 已运行时不探测出口并提示可实时应�
   assert.equal(calls.length, 1);
   assert.equal(probeCalls, 0);
   assert.equal(launch.result.status, 'already_running');
-  assert.match(launch.egressWarning, /当前实例已运行.*出口设置.*实时应用/);
+  assert.match(launch.egressWarning, /ZCode 当前实例已运行.*出口设置中应用.*重启/);
 });
 
 test('非 ZCode Desktop 已运行时使用通用出口提示，不泄漏 ZCode 专属语义', async () => {
@@ -1116,7 +1165,7 @@ test('非 ZCode Desktop 已运行时使用通用出口提示，不泄漏 ZCode �
   });
 
   assert.equal(launch.result.status, 'already_running');
-  assert.match(launch.egressWarning, /客户端当前实例已运行.*出口设置.*实时应用/);
+  assert.match(launch.egressWarning, /客户端当前实例已运行.*出口设置中应用/);
   assert.doesNotMatch(launch.egressWarning, /ZCode/);
 });
 
@@ -1155,13 +1204,13 @@ test('异步出口预检后若已有实例抢先运行，必须明确告警本�
       fs,
       aiHomeDir,
       processObj: { platform: 'darwin' },
-      deps: createStableSidecarDeps({ probeProxyServer: async () => ({ ok: true }) })
+      deps: { probeProxyServer: async () => ({ ok: true }) }
     }
   });
 
   assert.equal(calls.length, 2);
   assert.equal(launch.result.status, 'already_running');
-  assert.match(launch.egressWarning, /已有实例.*出口.*未被.*加载.*实时应用/);
+  assert.match(launch.egressWarning, /已有实例抢先运行.*出口设置未被该实例加载.*重新应用/);
 });
 
 test('同一 ZCode 账号的并发 Desktop 打开请求只执行一次出口探测和真实启动', async (t) => {
@@ -1205,12 +1254,12 @@ test('同一 ZCode 账号的并发 Desktop 打开请求只执行一次出口探�
       fs,
       aiHomeDir,
       processObj: { platform: 'darwin' },
-      deps: createStableSidecarDeps({
+      deps: {
         probeProxyServer: async () => {
           probeCalls += 1;
           return probeResult;
         }
-      })
+      }
     }
   };
 
@@ -1264,12 +1313,12 @@ test('同一 ZCode 账号在出口探测期间收到关闭请求时按调用顺�
       return { ok: true, status: 'launched', pid: 9456 };
     }
   };
-  const egressDeps = createStableSidecarDeps({
+  const egressDeps = {
     probeProxyServer: async () => {
       probeCalls += 1;
       return probeResult;
     }
-  });
+  };
   const openInput = {
     launcher,
     launchInput: {
@@ -1338,5 +1387,181 @@ test('zcode 策略不直接注入会被 Desktop host 清理的代理环境变量
 
 test('describeEgressWarning 说明平台限制与 fail-closed 事实', () => {
   assert.match(describeEgressWarning({ ok: false, error: 'not_supported', platform: 'windows' }), /仅支持 macOS/);
-  assert.match(describeEgressWarning({ ok: false, error: 'sing_box_unavailable' }), /sing-box 不可用.*阻止启动/);
+  assert.match(describeEgressWarning({ ok: false, error: 'proxy_scheme_unsupported' }), /只支持 HTTP\(S\).*阻止启动/);
+  assert.match(describeEgressWarning({ ok: false, error: 'system_proxy_http_unavailable' }), /只配置了 SOCKS/);
+  assert.match(describeEgressWarning({ ok: false, error: 'account_egress_mode_retired' }), /已下线.*阻止启动/);
+  assert.match(
+    describeEgressWarning({ ok: false, error: 'proxy_unreachable', reason: 'curl_exit_7' }),
+    /连通性探测失败（curl_exit_7）/
+  );
+});
+
+// ── 应用与运行态 ────────────────────────────────────────────────────────────
+
+function createDesktopLauncher(running) {
+  const calls = [];
+  return {
+    calls,
+    launchAccountApp(input) {
+      if (input.inspectDesktopRunning === true) {
+        calls.push({ step: 'inspect' });
+        return running
+          ? { ok: true, status: 'already_running', pids: [4321] }
+          : { ok: true, status: 'launch_ready' };
+      }
+      calls.push({ step: input.action, egress: input.egress });
+      if (input.action === 'close') return { ok: true, status: 'closed' };
+      return { ok: true, status: 'launched', pid: 5678 };
+    }
+  };
+}
+
+function createBoundZcodeAccount(t, binding) {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-apply-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '1',
+    identitySeed: 'oauth:zcode:egress-apply@example.com'
+  });
+  if (binding) writeAccountEgressBinding(fs, aiHomeDir, accountRef, binding);
+  return { aiHomeDir, accountRef };
+}
+
+test('applyStoredAccountEgress 在 Desktop 运行时关闭并带新出口重启', async (t) => {
+  const { aiHomeDir, accountRef } = createBoundZcodeAccount(t, { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:6152' });
+  const launcher = createDesktopLauncher(true);
+
+  const result = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher,
+    processObj: { platform: 'darwin' },
+    deps: { probeProxyServer: async () => ({ ok: true }) }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    applied: true,
+    status: 'restarted',
+    restarted: true,
+    pid: 5678,
+    previousPids: [4321],
+    source: EGRESS_MODE_URL,
+    proxyServer: 'http://127.0.0.1:6152'
+  });
+  assert.deepEqual(launcher.calls.map((call) => call.step), ['inspect', 'close', 'open']);
+  assert.deepEqual(launcher.calls[2].egress, {
+    ok: true,
+    source: EGRESS_MODE_URL,
+    proxyServer: 'http://127.0.0.1:6152'
+  });
+});
+
+test('applyStoredAccountEgress 没有运行实例时只确认绑定可用', async (t) => {
+  const { aiHomeDir, accountRef } = createBoundZcodeAccount(t, { mode: EGRESS_MODE_TUN });
+  const launcher = createDesktopLauncher(false);
+
+  const result = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher,
+    processObj: { platform: 'darwin' },
+    deps: { detectTun: () => ({ state: 'active' }) }
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    applied: true,
+    status: 'applied',
+    source: EGRESS_MODE_TUN,
+    proxyServer: '',
+    direct: true
+  });
+  assert.deepEqual(launcher.calls.map((call) => call.step), ['inspect']);
+});
+
+test('applyStoredAccountEgress 解绑后返回 cleared，并让运行中的实例以无出口重启', async (t) => {
+  const { aiHomeDir, accountRef } = createBoundZcodeAccount(t, null);
+  const idle = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher: createDesktopLauncher(false),
+    processObj: { platform: 'darwin' }
+  });
+  assert.deepEqual(idle, { ok: true, applied: true, status: 'cleared' });
+
+  const launcher = createDesktopLauncher(true);
+  const restarted = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher,
+    processObj: { platform: 'darwin' }
+  });
+  assert.equal(restarted.status, 'restarted');
+  assert.equal(launcher.calls[2].egress, null, 'fresh launch 用 egress:null 释放旧托管值');
+});
+
+test('applyStoredAccountEgress 出口不可用时不碰运行中的 Desktop', async (t) => {
+  const { aiHomeDir, accountRef } = createBoundZcodeAccount(t, { mode: EGRESS_MODE_URL, proxyUrl: '127.0.0.1:1' });
+  const launcher = createDesktopLauncher(true);
+
+  const result = await applyStoredAccountEgress({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher,
+    processObj: { platform: 'darwin' },
+    deps: { probeProxyServer: async () => ({ ok: false, reason: 'curl_exit_7' }) }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.applied, false);
+  assert.equal(result.error, 'proxy_unreachable');
+  assert.deepEqual(launcher.calls, []);
+});
+
+test('getAccountEgressRuntimeStatus 展示解析结果而不探测连通性，已下线绑定给出错误码', async (t) => {
+  const { aiHomeDir, accountRef } = createBoundZcodeAccount(t, { mode: EGRESS_MODE_SYSTEM });
+  const status = getAccountEgressRuntimeStatus({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    launcher: createDesktopLauncher(true),
+    processObj: { platform: 'darwin' },
+    deps: {
+      detectSystemProxy: () => ({ enabled: true, httpProxy: 'http://127.0.0.1:6152' }),
+      probeProxyServer: async () => {
+        throw new Error('运行态展示不得探测');
+      }
+    }
+  });
+  assert.equal(status.ok, true);
+  assert.equal(status.binding.mode, EGRESS_MODE_SYSTEM);
+  assert.deepEqual(status.runtime, {
+    resolved: { ok: true, source: EGRESS_MODE_SYSTEM, proxyServer: 'http://127.0.0.1:6152', direct: false },
+    desktopRunning: true,
+    desktopPid: 4321
+  });
+
+  writeJsonValue(fs, aiHomeDir, buildEgressBindingKey(accountRef), { mode: 'node', nodeId: 'node-a' });
+  const retired = getAccountEgressRuntimeStatus({
+    fs,
+    aiHomeDir,
+    provider: 'zcode',
+    accountRef,
+    processObj: { platform: 'darwin' }
+  });
+  assert.equal(retired.binding.retired, true);
+  assert.deepEqual(retired.runtime.resolved, { ok: false, error: 'account_egress_mode_retired' });
 });

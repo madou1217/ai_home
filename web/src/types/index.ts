@@ -1582,73 +1582,53 @@ export interface AccountAppLaunchResponse {
   egressWarning?: string;
 }
 
-export type AccountEgressMode = 'system' | 'tun' | 'url' | 'node' | 'group';
+export type AccountEgressMode = 'system' | 'tun' | 'url';
+/** 已下线的历史出口模式（节点 / 分组 / 代理池）：只读展示，提示改绑。 */
+export type RetiredAccountEgressMode = 'node' | 'group' | 'pool';
 
 export interface AccountEgressBinding {
-  mode: AccountEgressMode;
+  mode: AccountEgressMode | RetiredAccountEgressMode;
   proxyUrl: string;
-  nodeId: string;
-  groupId: string;
   updatedAt: number;
+  retired?: boolean;
+  nodeId?: string;
+  groupId?: string;
 }
 
 export interface AccountEgressBindingInput {
   mode: AccountEgressMode;
   proxyUrl?: string;
-  nodeId?: string;
-  groupId?: string;
 }
 
 export interface AccountEgressApplyResult {
   ok: boolean;
   applied: boolean;
-  status?: 'pending_launch' | 'selected' | 'started' | 'restarted' | 'unchanged' | 'applied';
-  rotated?: boolean;
+  status?: 'applied' | 'cleared' | 'restarted';
   restarted?: boolean;
   pid?: number | null;
   previousPids?: number[];
   proxyServer?: string;
   source?: string;
-  previousNodeId?: string | null;
-  selectedNodeId?: string | null;
-  groupId?: string | null;
-  attemptedNodeCount?: number;
+  direct?: boolean;
   rolledBack?: boolean;
+  rollbackError?: string;
   error?: string;
   reason?: string;
 }
 
-export interface AccountEgressHealthStatus {
-  monitoring: boolean;
-  intervalMs?: number;
-  failureThreshold?: number;
-  consecutiveFailures?: number;
-  lastCheckedAt?: number | null;
-  lastHealthyAt?: number | null;
-  lastSwitchAt?: number | null;
-  lastError?: string | null;
-  checking?: boolean;
+/** 绑定当前实际解析到的出口（不含连通性探测）。 */
+export interface AccountEgressResolvedTarget {
+  ok: boolean;
+  source?: string;
+  proxyServer?: string;
+  direct?: boolean;
+  error?: string;
 }
 
 export interface AccountEgressRuntimeStatus {
-  running: boolean;
-  dataPlaneReady: boolean;
-  proxyServer: string | null;
-  source: string | null;
-  selectedNodeId: string | null;
-  groupId: string | null;
-  ownerPid?: number | null;
-  zcodePid: number | null;
-  canRotate: boolean;
-  sidecar: {
-    engine: string;
-    installed: boolean;
-    running: boolean;
-    dataPlaneReady: boolean;
-    pid: number | null;
-    lastError: string | null;
-  };
-  health: AccountEgressHealthStatus;
+  resolved: AccountEgressResolvedTarget | null;
+  desktopRunning: boolean;
+  desktopPid: number | null;
 }
 
 export interface AccountEgressResponse {
@@ -1659,21 +1639,13 @@ export interface AccountEgressResponse {
   runtimeError?: string;
 }
 
-export interface AccountEgressRotateResponse extends AccountEgressApplyResult {
-  binding?: AccountEgressBinding | null;
-  runtime?: AccountEgressRuntimeStatus | null;
-  runtimeError?: string;
-}
-
 // 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。
 export type ZcodeEgressMode = AccountEgressMode;
 export type ZcodeEgressBinding = AccountEgressBinding;
 export type ZcodeEgressBindingInput = AccountEgressBindingInput;
 export type ZcodeEgressApplyResult = AccountEgressApplyResult;
-export type ZcodeEgressHealthStatus = AccountEgressHealthStatus;
 export type ZcodeEgressRuntimeStatus = AccountEgressRuntimeStatus;
 export type ZcodeEgressResponse = AccountEgressResponse;
-export type ZcodeEgressRotateResponse = AccountEgressRotateResponse;
 
 export interface AppInstallJob {
   id: string;

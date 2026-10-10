@@ -98,7 +98,6 @@ function createServerDeps(aiHomeDir, processObj, lifecycle, overrides = {}) {
       getSnapshot: () => ({ running: true, relays: [] })
     }),
     restorePersistentSessions: () => ({ restored: 0 }),
-    restorePersistedZcodeEgress: async () => ({ restored: 0 }),
     setInterval(callback, delay) {
       const timer = { callback, delay, unref() {} };
       lifecycle.logTimers.add(timer);

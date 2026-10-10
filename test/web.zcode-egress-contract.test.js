@@ -28,77 +28,46 @@ test('所有 provider 账号菜单都用语义化出口图标打开独立弹窗'
   assert.doesNotMatch(accountsSource, /record\.provider\s*===\s*['"]zcode['"][\s\S]{0,160}account-egress/);
 });
 
-test('账号出口弹窗支持五种来源并复用节点库管理面', () => {
+test('账号出口弹窗只提供外部代理地址、系统代理、外部 TUN 三种来源', () => {
   assert.equal(fs.existsSync(modalPath), true, '出口设置弹窗尚未实现');
   const modalSource = fs.readFileSync(modalPath, 'utf8');
 
   assert.match(modalSource, /accountsAPI\.getAccountEgress\(account\.provider, account\.accountRef\)/);
   assert.match(modalSource, /accountsAPI\.saveAccountEgress\(account\.provider, account\.accountRef/);
-  assert.match(modalSource, /proxyPoolAPI\.listNodes\(\)/);
-  assert.match(modalSource, /proxyUrl:\s*String\(values\.proxyUrl/);
-  assert.match(modalSource, /nodeId:\s*String\(values\.nodeId/);
-  assert.match(modalSource, /groupId:\s*String\(values\.groupId/);
-  for (const mode of ['system', 'tun', 'url', 'node', 'group']) {
+  assert.match(modalSource, /proxyUrl:\s*values\.mode === 'url' \? String\(values\.proxyUrl/);
+  for (const mode of ['system', 'tun', 'url']) {
     assert.match(modalSource, new RegExp(`value=["']${mode}["']`), mode);
   }
+  assert.doesNotMatch(modalSource, /value=["'](node|group|pool)["']/, '节点 / 分组 / 代理池出口已下线');
+  assert.match(modalSource, /不运行代理内核、不开本地端口/);
+  assert.match(modalSource, /不支持 SOCKS/);
   assert.match(modalSource, /setting\.json/);
-  assert.match(modalSource, /ZCode 原生/);
-  assert.match(modalSource, /sing-box/);
-  assert.match(modalSource, /127\.0\.0\.1/);
+  assert.match(modalSource, /模型.*MCP.*命令工具.*内置浏览器.*setting\.json/s);
   assert.match(modalSource, /中性连通性地址/);
   assert.match(modalSource, /不调用 ZCode 接口/);
-  assert.match(modalSource, /模型.*MCP.*命令工具.*内置浏览器.*setting\.json/s);
-  assert.match(modalSource, /不会改写系统.*代理/s);
-  assert.match(modalSource, /不会创建.*TUN/s);
-  assert.match(modalSource, /订阅.*YAML.*单节点/s);
-  assert.match(modalSource, /实时应用/);
-  assert.match(modalSource, /下次启动/);
-  assert.match(modalSource, /response\.apply/);
-  assert.match(modalSource, /accountsAPI\.rotateAccountEgress\(account\.provider, account\.accountRef\)/);
-  assert.match(modalSource, /立即换一个节点/);
-  assert.match(modalSource, /runtime\.health/);
-  assert.doesNotMatch(modalSource, /Electron\/Chromium.*启动参数/s);
-  assert.match(modalSource, /绑定.*无法解析.*连通性探测.*阻止启动.*保留现有设置/s);
-  assert.match(modalSource, /绑定记录无法读取.*阻止启动.*保留现有设置/s);
-  assert.match(modalSource, /marker 无法识别.*阻止启动.*保留现有设置/s);
-  assert.doesNotMatch(modalSource, /释放 AIH 上次托管值|回到直连|fail-open/i);
-  assert.doesNotMatch(modalSource, /关闭后从 AIH 重新打开|Proxy Pool 节点/);
+  assert.match(modalSource, /不会改写系统代理/);
+  assert.match(modalSource, /不会创建或接管 TUN/);
+  assert.match(modalSource, /出口不可用时阻止启动与请求并保留现有设置/);
+  assert.match(modalSource, /绑定记录无法读取或 marker 无法识别时同样阻止启动/);
   assert.match(modalSource, /用户手工设置不变/);
+  assert.match(modalSource, /以新出口重启该实例/);
+  assert.match(modalSource, /response\.apply/);
+  // 已下线绑定：提示改绑，不把它当成可选模式。
+  assert.match(modalSource, /isRetiredEgressBinding\(binding\)/);
+  assert.match(modalSource, /已随 AIH 本地代理端口一起下线/);
+  assert.doesNotMatch(modalSource, /sing-box|sidecar|proxyPoolAPI|rotateAccountEgress|ProxyImportModal|ZcodeProxyGroupManagerModal/);
+  assert.doesNotMatch(modalSource, /释放 AIH 上次托管值|回到直连|fail-open/i);
   assert.doesNotMatch(modalSource, /Anthropic/i);
   assert.doesNotMatch(modalSource, /Mihomo/i);
   assert.doesNotMatch(modalSource, /\bAlert\b|borderLeft|border-left/);
 });
 
-test('账号出口从导入弹窗写入中立节点仓，订阅经订阅聚合器保存并同步', () => {
-  const modalSource = fs.readFileSync(modalPath, 'utf8');
-  const importModalSource = fs.readFileSync(importModalPath, 'utf8');
+test('账号出口不再依赖节点库：导入弹窗、分组管理与代理池前端 API 均已删除', () => {
   const apiSource = fs.readFileSync(apiPath, 'utf8');
 
-  assert.match(modalSource, /import ProxyImportModal from '@\/components\/toolkit\/proxy-pool\/ProxyImportModal'/);
-  assert.match(modalSource, /导入节点或订阅/);
-  assert.match(modalSource, /const refreshNodeLibrary = useCallback\([\s\S]*proxyPoolAPI\.listNodes\(\)/);
-  assert.match(modalSource, /<ProxyImportModal[\s\S]*onImported=\{refreshNodeLibrary\}/);
-  assert.doesNotMatch(modalSource, /storageOnly/);
-  assert.match(importModalSource, /proxyPoolAPI\.importNodes\(content\)/);
-  assert.match(importModalSource, /subscriptionAggregatorAPI\.saveSource\(values\)/);
-  assert.doesNotMatch(importModalSource, /storageOnly|syncSubscription|\bAlert\b|borderLeft|border-left/);
-  // 本地代理内核已下线：前端不再有内核、分流、专用端口或系统网络接管的调用。
-  assert.doesNotMatch(apiSource, /proxy-pool\/(core|routing|dedicated-ports|network|outbound|subscriptions)/);
-});
-
-test('ZCode 出口弹窗提供手动分组 CRUD 与自动组策略调整', () => {
-  assert.equal(fs.existsSync(groupManagerPath), true, '代理分组管理组件尚未实现');
-  const modalSource = fs.readFileSync(modalPath, 'utf8');
-  const managerSource = fs.readFileSync(groupManagerPath, 'utf8');
-
-  assert.match(modalSource, /<ZcodeProxyGroupManagerModal/);
-  assert.match(managerSource, /proxyPoolAPI\.listGroups\(\)/);
-  assert.match(managerSource, /proxyPoolAPI\.upsertGroup\(/);
-  assert.match(managerSource, /proxyPoolAPI\.updateGroupPolicy\(/);
-  assert.match(managerSource, /proxyPoolAPI\.deleteGroup\(/);
-  assert.match(managerSource, /新建手动组/);
-  assert.match(managerSource, /自动组成员.*只调整调度策略/s);
-  assert.doesNotMatch(managerSource, /\bAlert\b|borderLeft|border-left|Mihomo/i);
+  assert.equal(fs.existsSync(importModalPath), false);
+  assert.equal(fs.existsSync(groupManagerPath), false);
+  assert.doesNotMatch(apiSource, /proxyPoolAPI|\/webui\/toolkit\/proxy-pool\//);
 });
 
 test('ZCode 出口弹窗捕获表单校验拒绝，不留下未处理 Promise', () => {
@@ -112,25 +81,22 @@ test('账号出口 API 使用 provider 与账号双重作用域并编码路径�
 
   assert.match(apiSource, /getAccountEgress:\s*async\s*\(provider: string, accountRef: string\)/);
   assert.match(apiSource, /saveAccountEgress:\s*async\s*\(/);
-  assert.match(apiSource, /rotateAccountEgress:\s*async\s*\(provider: string, accountRef: string\)/);
   assert.match(apiSource, /encodeURIComponent\(provider\).*encodeURIComponent\(accountRef\).*\/egress/s);
-  assert.match(apiSource, /\/egress\/rotate/);
-  assert.match(apiSource, /listGroups:\s*async\s*\(\)/);
-  assert.match(apiSource, /upsertGroup:\s*async\s*\(/);
-  assert.match(apiSource, /updateGroupPolicy:\s*async\s*\(/);
-  assert.match(apiSource, /deleteGroup:\s*async\s*\(/);
+  assert.doesNotMatch(apiSource, /rotateAccountEgress|\/egress\/rotate/);
+  assert.doesNotMatch(apiSource, /listGroups:|upsertGroup:|updateGroupPolicy:|deleteGroup:/);
 });
 
-test('账号出口类型包含五种模式、分组和实时应用结果', () => {
+test('账号出口类型只含三种模式，并能表达已下线绑定与解析后的运行态', () => {
   const typesSource = fs.readFileSync(path.join(projectRoot, 'web/src/types/index.ts'), 'utf8');
 
-  assert.match(typesSource, /AccountEgressMode\s*=\s*'system'\s*\|\s*'tun'\s*\|\s*'url'\s*\|\s*'node'\s*\|\s*'group'/);
-  assert.match(typesSource, /groupId:\s*string/);
+  assert.match(typesSource, /AccountEgressMode\s*=\s*'system'\s*\|\s*'tun'\s*\|\s*'url';/);
+  assert.match(typesSource, /RetiredAccountEgressMode\s*=\s*'node'\s*\|\s*'group'\s*\|\s*'pool'/);
+  assert.match(typesSource, /retired\?:\s*boolean/);
   assert.match(typesSource, /apply\?:\s*AccountEgressApplyResult/);
   assert.match(typesSource, /runtime\?:\s*AccountEgressRuntimeStatus/);
-  assert.match(typesSource, /canRotate:\s*boolean/);
-  assert.match(typesSource, /health:\s*AccountEgressHealthStatus/);
-  assert.match(typesSource, /status\?:\s*'pending_launch'\s*\|\s*'selected'\s*\|\s*'started'\s*\|\s*'restarted'/);
+  assert.match(typesSource, /resolved:\s*AccountEgressResolvedTarget \| null/);
+  assert.match(typesSource, /status\?:\s*'applied'\s*\|\s*'cleared'\s*\|\s*'restarted'/);
+  assert.doesNotMatch(typesSource, /canRotate|AccountEgressHealthStatus|AccountEgressRotateResponse/);
 });
 
 test('账号打开 ZCode Desktop 时展示出口未生效警告', () => {

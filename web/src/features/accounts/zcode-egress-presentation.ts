@@ -1,80 +1,62 @@
 import type {
-  ProxyGroup,
-  ProxyGroupStrategy,
-  ProxyNode,
   AccountEgressApplyResult,
+  AccountEgressBinding,
+  AccountEgressMode,
   AccountEgressRuntimeStatus
 } from '@/types';
 
-export const ZCODE_SIDECAR_PROTOCOLS = new Set([
-  'shadowsocks',
-  'vmess',
-  'vless',
-  'trojan',
-  'hysteria2',
-  'socks5',
-  'http',
-  'https'
-]);
+export const ACCOUNT_EGRESS_SOURCE_LABELS: Record<AccountEgressMode, string> = {
+  url: '代理地址',
+  system: '系统代理',
+  tun: '外部 TUN'
+};
 
-export const PROXY_GROUP_STRATEGY_OPTIONS: Array<{
-  value: ProxyGroupStrategy;
-  label: string;
-}> = [
-  { value: 'sticky', label: '固定节点，失效后再切换' },
-  { value: 'lowest_latency', label: '优先最低延迟' },
-  { value: 'round_robin', label: '顺序轮换' },
-  { value: 'random', label: '随机选择' }
-];
+const EGRESS_ERROR_LABELS: Record<string, string> = {
+  invalid_proxy_url: '代理地址无效',
+  proxy_scheme_unsupported: '只支持 HTTP(S) 代理地址',
+  system_proxy_unavailable: '未检测到可用的系统代理',
+  system_proxy_http_unavailable: '系统代理只配置了 SOCKS，账号出口只支持 HTTP(S)',
+  tun_inactive: '未检测到已激活的外部 TUN',
+  tun_state_unknown: '无法确认外部 TUN 状态',
+  account_egress_mode_retired: '节点 / 分组出口已下线，请改绑',
+  proxy_unreachable: '代理出口连通性探测失败',
+  not_supported: '当前平台不支持账号出口',
+  unknown_egress_mode: '出口绑定模式无效',
+  invalid_egress_mode: '出口模式无效',
+  egress_apply_failed: '出口应用失败'
+};
 
-export function formatProxyNodeLabel(node: ProxyNode) {
-  const location = [node.countryFlag, node.name].filter(Boolean).join(' ');
-  return `${location || node.id} · ${node.protocol.toUpperCase()} · ${node.server}:${node.port}`;
+export function describeEgressError(code?: string | null) {
+  const key = String(code || '').trim();
+  return EGRESS_ERROR_LABELS[key] || key || '未知错误';
 }
 
-export function formatProxyGroupLabel(group: ProxyGroup) {
-  return `${group.icon || '◉'} ${group.name} · ${group.count} 个节点`;
-}
-
-export function describeProxyGroupKind(group?: ProxyGroup | null) {
-  const labels: Record<string, string> = {
-    manual: '手动组',
-    subscription: '订阅自动组',
-    country: '国家自动组',
-    system: '系统自动组',
-    tag: '标签自动组',
-    custom: '自定义组'
-  };
-  return labels[String(group?.kind || '')] || '自动组';
+export function isRetiredEgressBinding(binding?: AccountEgressBinding | null) {
+  return Boolean(binding?.retired);
 }
 
 export function describeApplyResult(apply: AccountEgressApplyResult | null) {
   if (!apply) return null;
   if (!apply.ok) {
-    const detail = apply.reason || apply.error || 'unknown';
-    if (apply.rolledBack) {
-      return { color: 'warning', text: `切换失败，已恢复原节点：${detail}` };
-    }
-    return { color: 'error', text: `运行时应用失败：${detail}` };
+    const detail = [describeEgressError(apply.error), apply.reason].filter(Boolean).join('：');
+    return apply.rolledBack
+      ? { color: 'warning', label: '已回退', text: `新出口不可用，已恢复原绑定（${detail}）` }
+      : { color: 'error', label: '失败', text: `应用失败：${detail}` };
   }
-  if (!apply.applied || apply.status === 'pending_launch') {
-    return { color: 'default', text: '绑定已保存；当前账号将在下次启动时应用。' };
+  if (apply.status === 'restarted') {
+    return { color: 'success', label: '已重启', text: '已用新出口重启运行中的桌面实例。' };
   }
-  const action = apply.restarted
-    ? '已接管并重启当前桌面实例'
-    : apply.rotated
-      ? '已切换到新的分组节点'
-      : apply.status === 'selected'
-        ? '已热切换节点'
-        : apply.status === 'restarted'
-          ? 'sidecar 已重载'
-          : '已实时应用';
-  return { color: 'success', text: `${action}；账号固定本地端口保持不变。` };
+  if (apply.status === 'cleared') {
+    return { color: 'success', label: '已解除', text: '网关请求立即恢复默认网络；桌面端与 CLI 下次启动生效。' };
+  }
+  return { color: 'success', label: '已应用', text: '出口可用：网关请求立即生效；桌面端与 CLI 下次启动生效。' };
 }
 
 export function describeRuntimeStatus(runtime?: AccountEgressRuntimeStatus | null) {
-  if (!runtime?.running) return '账号出口尚未运行';
-  if (!runtime.dataPlaneReady) return '账号出口进程存在，但数据面尚未就绪';
-  if (runtime.selectedNodeId) return '账号出口正在通过分组节点运行';
-  return '账号固定出口正在运行';
+  const resolved = runtime?.resolved;
+  if (!resolved) return { state: 'idle' as const, text: '未绑定出口' };
+  if (!resolved.ok) return { state: 'error' as const, text: `出口不可用：${describeEgressError(resolved.error)}` };
+  if (resolved.direct) return { state: 'ready' as const, text: '外部 TUN 已激活，账号流量由 TUN 接管' };
+  const label = ACCOUNT_EGRESS_SOURCE_LABELS[resolved.source as AccountEgressMode] || '外部代理';
+  return { state: 'ready' as const, text: `经${label}出口` };
 }

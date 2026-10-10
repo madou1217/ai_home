@@ -12,11 +12,12 @@ const {
   readAccountEgressBinding,
   writeAccountEgressBinding
 } = require('../lib/account/zcode-egress-binding-store');
+const { writeJsonValue } = require('../lib/server/app-state-store');
+const { buildEgressBindingKey } = require('../lib/account/zcode-egress-binding-store');
 const {
   handleZcodeEgressRequest,
   matchEgressRoute,
-  parseEgressRoute,
-  parseEgressRotateRoute
+  parseEgressRoute
 } = require('../lib/server/webui-zcode-egress-routes');
 
 function createResponse() {
@@ -54,7 +55,7 @@ function createContext(fixture, method, payload, pathname) {
   };
 }
 
-test('egress 路由只匹配 GET/POST，并安全解析账号路径', () => {
+test('egress 路由只匹配 GET/POST，并安全解析账号路径；轮换接口已下线', () => {
   const pathname = '/v0/webui/accounts/zcode/acct_91aa805bdd051b40fa47/egress';
   assert.equal(matchEgressRoute('GET', pathname), true);
   assert.equal(matchEgressRoute('POST', pathname), true);
@@ -64,23 +65,23 @@ test('egress 路由只匹配 GET/POST，并安全解析账号路径', () => {
     accountRef: 'acct_91aa805bdd051b40fa47'
   });
   assert.equal(parseEgressRoute('/v0/webui/accounts/zcode/%E0%A4%A/egress'), null);
-  const rotatePath = `${pathname}/rotate`;
-  assert.equal(matchEgressRoute('POST', rotatePath), true);
-  assert.equal(matchEgressRoute('GET', rotatePath), false);
-  assert.deepEqual(parseEgressRotateRoute(rotatePath), {
-    provider: 'zcode',
-    accountRef: 'acct_91aa805bdd051b40fa47'
-  });
+  assert.equal(matchEgressRoute('POST', `${pathname}/rotate`), false);
 });
 
 test('egress POST 写入后 GET 返回同一账号绑定', async (t) => {
   const fixture = createFixture(t);
+  const probes = [];
   const post = createContext(
     fixture,
     'POST',
     Buffer.from(JSON.stringify({ mode: 'url', proxyUrl: '127.0.0.1:10801' }))
   );
+  post.processObj = { platform: 'darwin', env: {} };
   post.deps = {
+    probeProxyServer: async (proxyServer) => {
+      probes.push(proxyServer);
+      return { ok: true };
+    },
     createWebUiAccountAppLauncher() {
       return {
         launchAccountApp(input) {
@@ -93,13 +94,16 @@ test('egress POST 写入后 GET 返回同一账号绑定', async (t) => {
   await handleZcodeEgressRequest(post);
   assert.equal(post.res.statusCode, 200);
   assert.equal(post.res.payload.binding.proxyUrl, '127.0.0.1:10801');
-  assert.equal(post.res.payload.apply.status, 'pending_launch');
+  assert.equal(post.res.payload.apply.status, 'applied');
+  assert.equal(post.res.payload.apply.proxyServer, 'http://127.0.0.1:10801');
+  assert.deepEqual(probes, ['http://127.0.0.1:10801']);
 
   const get = createContext(fixture, 'GET', null);
+  get.processObj = { platform: 'darwin', env: {} };
   await handleZcodeEgressRequest(get);
   assert.equal(get.res.statusCode, 200);
   assert.equal(get.res.payload.binding.proxyUrl, '127.0.0.1:10801');
-  assert.ok(Object.prototype.hasOwnProperty.call(get.res.payload, 'runtime'));
+  assert.equal(get.res.payload.runtime.resolved.proxyServer, 'http://127.0.0.1:10801');
 });
 
 test('egress 路由允许任意真实 provider 账号按自身路径绑定', async (t) => {
@@ -147,12 +151,9 @@ test('egress 路由允许任意真实 provider 账号按自身路径绑定', asy
   }
 });
 
-test('egress GET 返回当前节点、分组、sidecar 与健康运行态', async (t) => {
+test('egress GET 返回绑定实际解析到的出口与 Desktop 运行态', async (t) => {
   const fixture = createFixture(t);
-  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
-    mode: 'group',
-    groupId: 'group-fast'
-  });
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, { mode: 'system' });
   const ctx = createContext(fixture, 'GET', null);
   const launcher = { launchAccountApp() {} };
   ctx.deps = {
@@ -169,15 +170,9 @@ test('egress GET 返回当前节点、分组、sidecar 与健康运行态', asyn
       return {
         ok: true,
         runtime: {
-          running: true,
-          dataPlaneReady: true,
-          proxyServer: '127.0.0.1:23100',
-          selectedNodeId: 'node-a',
-          groupId: 'group-fast',
-          zcodePid: 8123,
-          canRotate: true,
-          sidecar: { engine: 'sing-box', running: true, dataPlaneReady: true },
-          health: { monitoring: true, consecutiveFailures: 0 }
+          resolved: { ok: true, source: 'system', proxyServer: 'http://127.0.0.1:6152', direct: false },
+          desktopRunning: true,
+          desktopPid: 8123
         }
       };
     }
@@ -186,71 +181,17 @@ test('egress GET 返回当前节点、分组、sidecar 与健康运行态', asyn
   await handleZcodeEgressRequest(ctx);
 
   assert.equal(ctx.res.statusCode, 200);
-  assert.equal(ctx.res.payload.runtime.selectedNodeId, 'node-a');
-  assert.equal(ctx.res.payload.runtime.groupId, 'group-fast');
-  assert.equal(ctx.res.payload.runtime.canRotate, true);
-  assert.equal(ctx.res.payload.runtime.health.monitoring, true);
+  assert.equal(ctx.res.payload.binding.mode, 'system');
+  assert.equal(ctx.res.payload.runtime.resolved.proxyServer, 'http://127.0.0.1:6152');
+  assert.equal(ctx.res.payload.runtime.desktopRunning, true);
 });
 
-test('egress rotate 路由只调用运行态轮换服务并返回更新后的状态', async (t) => {
-  const fixture = createFixture(t);
-  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
-    mode: 'group',
-    groupId: 'group-fast'
-  });
-  const calls = [];
-  const ctx = createContext(
-    fixture,
-    'POST',
-    null,
-    `/v0/webui/accounts/zcode/${fixture.accountRef}/egress/rotate`
-  );
-  ctx.deps = {
-    async rotateStoredAccountEgress(input) {
-      calls.push(input.accountRef);
-      return {
-        ok: true,
-        applied: true,
-        rotated: true,
-        status: 'selected',
-        previousNodeId: 'node-a',
-        selectedNodeId: 'node-b',
-        groupId: 'group-fast'
-      };
-    },
-    getAccountEgressRuntimeStatus() {
-      return {
-        ok: true,
-        runtime: {
-          running: true,
-          dataPlaneReady: true,
-          selectedNodeId: 'node-b',
-          groupId: 'group-fast',
-          canRotate: true,
-          sidecar: { engine: 'sing-box', running: true, dataPlaneReady: true },
-          health: { monitoring: true }
-        }
-      };
-    }
-  };
-
-  await handleZcodeEgressRequest(ctx);
-
-  assert.equal(ctx.res.statusCode, 200);
-  assert.deepEqual(calls, [fixture.accountRef]);
-  assert.equal(ctx.res.payload.rotated, true);
-  assert.equal(ctx.res.payload.previousNodeId, 'node-a');
-  assert.equal(ctx.res.payload.runtime.selectedNodeId, 'node-b');
-});
-
-test('egress POST 接受 system、tun、url、node、group 五种模式并实时应用', async (t) => {
+test('egress POST 接受 system、tun、url 三种模式并立即应用', async (t) => {
   const fixture = createFixture(t);
   const cases = [
-    [{ mode: 'system' }, { mode: 'system', proxyUrl: '', nodeId: '', groupId: '' }],
-    [{ mode: 'tun' }, { mode: 'tun', proxyUrl: '', nodeId: '', groupId: '' }],
-    [{ mode: 'url', proxyUrl: 'socks4a://proxy.example:1080' }, { mode: 'url', proxyUrl: 'socks4a://proxy.example:1080' }],
-    [{ mode: 'node', nodeId: 'node-a' }, { mode: 'node', nodeId: 'node-a' }],
-    [{ mode: 'group', groupId: 'group-fast' }, { mode: 'group', groupId: 'group-fast' }]
+    [{ mode: 'system' }, { mode: 'system', proxyUrl: '' }],
+    [{ mode: 'tun' }, { mode: 'tun', proxyUrl: '' }],
+    [{ mode: 'url', proxyUrl: 'https://proxy.example:8443' }, { mode: 'url', proxyUrl: 'https://proxy.example:8443' }]
   ];
 
   for (const [payload, expected] of cases) {
@@ -259,21 +200,43 @@ test('egress POST 接受 system、tun、url、node、group 五种模式并实时
     ctx.deps = {
       applyStoredAccountEgress(input) {
         calls.push(input);
-        return Promise.resolve({ ok: true, applied: true, status: 'selected' });
+        return Promise.resolve({ ok: true, applied: true, status: 'applied' });
       }
     };
 
     await handleZcodeEgressRequest(ctx);
 
     assert.equal(ctx.res.statusCode, 200, payload.mode);
-    assert.equal(ctx.res.payload.binding.mode, expected.mode, payload.mode);
     for (const [key, value] of Object.entries(expected)) {
       assert.equal(ctx.res.payload.binding[key], value, `${payload.mode}:${key}`);
     }
-    assert.deepEqual(ctx.res.payload.apply, { ok: true, applied: true, status: 'selected' });
+    assert.deepEqual(ctx.res.payload.apply, { ok: true, applied: true, status: 'applied' });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].accountRef, fixture.accountRef);
   }
+});
+
+test('egress POST 拒绝已下线的 node/group/pool 模式与 socks 代理地址', async (t) => {
+  const fixture = createFixture(t);
+  const cases = [
+    [{ mode: 'node', nodeId: 'node-a' }, 'invalid_egress_mode'],
+    [{ mode: 'group', groupId: 'group-fast' }, 'invalid_egress_mode'],
+    [{ mode: 'pool', nodeId: 'node-a' }, 'invalid_egress_mode'],
+    [{ mode: 'url', proxyUrl: 'socks5://127.0.0.1:6153' }, 'proxy_scheme_unsupported'],
+    [{ mode: 'url', proxyUrl: 'http://user:pass@proxy.example:8080' }, 'invalid_proxy_url']
+  ];
+  for (const [payload, error] of cases) {
+    const ctx = createContext(fixture, 'POST', Buffer.from(JSON.stringify(payload)));
+    ctx.deps = {
+      applyStoredAccountEgress() {
+        throw new Error('must not apply a rejected binding');
+      }
+    };
+    await handleZcodeEgressRequest(ctx);
+    assert.equal(ctx.res.statusCode, 400, JSON.stringify(payload));
+    assert.equal(ctx.res.payload.error, error, JSON.stringify(payload));
+  }
+  assert.equal(readAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef), null);
 });
 
 test('egress POST 把账号级 Desktop launcher 注入首次运行态接管流程', async (t) => {
@@ -304,23 +267,21 @@ test('egress POST 把账号级 Desktop launcher 注入首次运行态接管流�
   assert.equal(ctx.res.payload.apply.status, 'restarted');
 });
 
-test('egress POST 实时应用失败时恢复旧绑定并重新应用旧 endpoint', async (t) => {
+test('egress POST 应用失败时恢复旧绑定并重新应用', async (t) => {
   const fixture = createFixture(t);
-  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, {
-    mode: 'tun'
-  });
+  writeAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef, { mode: 'tun' });
   const calls = [];
   const ctx = createContext(
     fixture,
     'POST',
-    Buffer.from(JSON.stringify({ mode: 'node', nodeId: 'node-bad' }))
+    Buffer.from(JSON.stringify({ mode: 'url', proxyUrl: 'http://127.0.0.1:1' }))
   );
   ctx.deps = {
     applyStoredAccountEgress(input) {
       calls.push(input);
       return Promise.resolve(calls.length === 1
-        ? { ok: false, applied: false, error: 'proxy_unreachable', reason: 'curl_exit_28' }
-        : { ok: true, applied: true, status: 'selected', source: 'tun' });
+        ? { ok: false, applied: false, error: 'proxy_unreachable', reason: 'curl_exit_7' }
+        : { ok: true, applied: true, status: 'applied', source: 'tun' });
     }
   };
 
@@ -328,36 +289,37 @@ test('egress POST 实时应用失败时恢复旧绑定并重新应用旧 endpoin
 
   assert.equal(ctx.res.statusCode, 200);
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].preserveAccountEndpointOnFailure, true);
-  assert.equal(calls[1].preserveAccountEndpointOnFailure, true);
   assert.equal(ctx.res.payload.binding.mode, 'tun');
   assert.equal(ctx.res.payload.apply.error, 'proxy_unreachable');
   assert.equal(ctx.res.payload.apply.rolledBack, true);
   assert.equal(readAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef).mode, 'tun');
 });
 
-test('egress POST 拒绝旧 pool 模式', async (t) => {
+test('egress POST 应用失败且旧绑定是已下线模式时保留新绑定，不写回旧记录', async (t) => {
   const fixture = createFixture(t);
+  writeJsonValue(fs, fixture.aiHomeDir, buildEgressBindingKey(fixture.accountRef), {
+    mode: 'group',
+    groupId: 'subscription:sub_deleted'
+  });
+  const calls = [];
   const ctx = createContext(
     fixture,
     'POST',
-    Buffer.from(JSON.stringify({ mode: 'pool', nodeId: 'node-a' }))
+    Buffer.from(JSON.stringify({ mode: 'system' }))
   );
+  ctx.deps = {
+    applyStoredAccountEgress(input) {
+      calls.push(input);
+      return Promise.resolve({ ok: false, applied: false, error: 'system_proxy_unavailable' });
+    }
+  };
 
   await handleZcodeEgressRequest(ctx);
 
-  assert.equal(ctx.res.statusCode, 400);
-  assert.equal(ctx.res.payload.error, 'invalid_egress_mode');
-});
-
-test('egress POST 拒绝缺少目标的 node/group', async (t) => {
-  const fixture = createFixture(t);
-  for (const payload of [{ mode: 'node' }, { mode: 'group' }]) {
-    const ctx = createContext(fixture, 'POST', Buffer.from(JSON.stringify(payload)));
-    await handleZcodeEgressRequest(ctx);
-    assert.equal(ctx.res.statusCode, 400, payload.mode);
-    assert.equal(ctx.res.payload.error, 'invalid_egress_binding');
-  }
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(ctx.res.payload.apply.error, 'system_proxy_unavailable');
+  assert.equal(readAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef).mode, 'system');
 });
 
 test('egress POST 模式对应字段为空时显式解绑', async (t) => {

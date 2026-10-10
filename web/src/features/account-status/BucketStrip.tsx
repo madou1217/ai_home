@@ -1,5 +1,5 @@
 import { Tooltip } from 'antd';
-import { tierForBucket } from './health';
+import { healthColorForBucket } from './health';
 import { buildBucketTooltip } from './tooltip';
 import type { BucketGranularity, OutcomeBucket } from './types';
 import './account-status.css';
@@ -18,7 +18,7 @@ interface Props {
 }
 
 /**
- * 状态条：一排等高细条，颜色 = 该桶健康档位。用于 90 天日条 / 24 小时时条，
+ * 状态条：一排等高细条，颜色 = 该桶成功率在健康色阶上的位置（绿 → 红连续过渡）。用于 90 天日条 / 24 小时时条，
  * 桌面全局区与表格 mini 列、移动端卡片共用同一份实现（尺寸靠 size/fit 调）。
  */
 export default function BucketStrip({ starts, buckets, granularity, size = 'md', fit, className, ariaLabel }: Props) {
@@ -31,7 +31,7 @@ export default function BucketStrip({ starts, buckets, granularity, size = 'md',
     >
       {starts.map((startMs, index) => {
         const bucket = buckets[index] || null;
-        const tier = tierForBucket(bucket);
+        const color = healthColorForBucket(bucket);
         const tooltip = buildBucketTooltip(startMs, bucket, granularity);
         return (
           <Tooltip
@@ -44,7 +44,10 @@ export default function BucketStrip({ starts, buckets, granularity, size = 'md',
               </div>
             )}
           >
-            <span className={`account-status-strip__bar account-status-strip__bar--${tier}`} />
+            <span
+              className={`account-status-strip__bar${color ? '' : ' account-status-strip__bar--none'}`}
+              style={color ? { background: color } : undefined}
+            />
           </Tooltip>
         );
       })}

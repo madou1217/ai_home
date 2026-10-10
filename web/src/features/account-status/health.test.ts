@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  HEALTH_SCALE_STOPS,
   alignBuckets,
   buildGlobalBuckets,
   countBucket,
   dedupeAccountsForGlobal,
+  healthColorForBucket,
+  healthColorForRate,
+  healthColorForUptime,
   indexBucketsByStart,
   summarizeUptime,
   tierForBucket,
@@ -95,4 +99,34 @@ test('buildGlobalBuckets 对去重后的账号按时间轴逐桶求和，某桶�
   assert.equal(merged[1].success, 0);
   assert.deepEqual(merged[1].failures, {});
   assert.equal(tierForBucket(merged[1]), 'none');
+});
+
+test('healthColorForRate 在相邻色标间连续插值：满分纯绿、色标处取色标本色、区间内按比例混色', () => {
+  assert.equal(healthColorForRate(1), 'var(--health-scale-100)');
+  assert.equal(healthColorForRate(0.95), 'var(--health-scale-95)');
+  assert.equal(healthColorForRate(0.5), 'var(--health-scale-50)');
+  assert.equal(healthColorForRate(0), 'var(--health-scale-0)');
+  // 99% 仍以绿为主，只掺一点黄绿；而不是像旧四档那样一掉出 99% 就变橙。
+  assert.equal(healthColorForRate(0.99), 'color-mix(in oklab, var(--health-scale-100) 67%, var(--health-scale-97))');
+  assert.equal(healthColorForRate(0.925), 'color-mix(in oklab, var(--health-scale-95) 50%, var(--health-scale-90))');
+  assert.equal(healthColorForRate(0.25), 'color-mix(in oklab, var(--health-scale-50) 50%, var(--health-scale-0))');
+});
+
+test('healthColorForRate 越界与非数字收敛到两端，色标按成功率严格降序', () => {
+  assert.equal(healthColorForRate(1.5), 'var(--health-scale-100)');
+  assert.equal(healthColorForRate(-1), 'var(--health-scale-0)');
+  assert.equal(healthColorForRate(Number.NaN), 'var(--health-scale-0)');
+  for (let index = 1; index < HEALTH_SCALE_STOPS.length; index += 1) {
+    assert.ok(HEALTH_SCALE_STOPS[index].rate < HEALTH_SCALE_STOPS[index - 1].rate);
+  }
+  assert.equal(HEALTH_SCALE_STOPS[0].rate, 1);
+  assert.equal(HEALTH_SCALE_STOPS[HEALTH_SCALE_STOPS.length - 1].rate, 0);
+});
+
+test('healthColorForBucket / healthColorForUptime 无可计数请求时不着色', () => {
+  assert.equal(healthColorForBucket(null), undefined);
+  assert.equal(healthColorForBucket(bucket(1, 0, { request_cancelled: 3 })), undefined);
+  assert.equal(healthColorForBucket(bucket(1, 97, { rate_limited: 3 })), 'var(--health-scale-97)');
+  assert.equal(healthColorForUptime(summarizeUptime([null])), undefined);
+  assert.equal(healthColorForUptime(summarizeUptime([bucket(1, 90, { request_timeout: 10 })])), 'var(--health-scale-90)');
 });

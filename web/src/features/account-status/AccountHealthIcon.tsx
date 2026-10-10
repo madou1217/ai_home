@@ -1,6 +1,6 @@
 import { CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled, MinusCircleOutlined } from '@ant-design/icons';
 import { Popover } from 'antd';
-import { alignBuckets, summarizeUptime } from './health';
+import { alignBuckets, healthColorForUptime, summarizeUptime } from './health';
 import StripWithFooter from './StripWithFooter';
 import type { AccountOutcomesData, HealthTier } from './types';
 import './account-status.css';
@@ -20,7 +20,7 @@ const TIER_ICON: Record<HealthTier, { icon: JSX.Element; label: string }> = {
 };
 
 /**
- * 账号健康状态图标：按最近 90 天可用率着色（绿=正常、橙=有异常、红=严重、灰=无数据），
+ * 账号健康状态图标：按可用率在健康色阶上着色（绿 → 黄 → 橙 → 红连续过渡，灰=无数据），
  * 悬停展开 90 天日条 + 最近 24 小时条。放在账号名一行，不单独占表格列（卡片模式共用）。
  */
 export default function AccountHealthIcon({ accountRef, data, unavailable }: Props) {
@@ -31,8 +31,8 @@ export default function AccountHealthIcon({ accountRef, data, unavailable }: Pro
   const uptime = summarizeUptime(dayBuckets);
   const today = summarizeUptime(hourBuckets);
   // 最近 24 小时有数据时以它为准着色：状态图标要反映「现在」而不是 90 天均值。
-  const tier = today.hasData ? today.tier : uptime.tier;
-  const meta = TIER_ICON[tier];
+  const current = today.hasData ? today : uptime;
+  const meta = TIER_ICON[current.tier];
 
   return (
     <Popover
@@ -53,7 +53,8 @@ export default function AccountHealthIcon({ accountRef, data, unavailable }: Pro
       )}
     >
       <span
-        className={`account-health-icon account-status-uptime--${tier}`}
+        className={`account-health-icon${current.hasData ? '' : ' account-status-uptime--none'}`}
+        style={{ color: healthColorForUptime(current) }}
         role="img"
         aria-label={`健康状态：${meta.label}`}
       >

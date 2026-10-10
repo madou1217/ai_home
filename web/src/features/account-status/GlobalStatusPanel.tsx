@@ -2,7 +2,7 @@ import React from 'react';
 import { UpOutlined, DownOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import SectionCard from '@/components/ui/SectionCard';
-import { buildGlobalBuckets, summarizeUptime } from './health';
+import { buildGlobalBuckets, healthColorForUptime, summarizeUptime } from './health';
 import BucketStrip from './BucketStrip';
 import StripWithFooter from './StripWithFooter';
 import ContributionGrid from './ContributionGrid';
@@ -87,7 +87,10 @@ export default function GlobalStatusPanel({ outcomes }: { outcomes: UseAccountOu
       ) : (
         <div className="account-status-global">
           <div className="account-status-global__kpi">
-            <span className={`account-status-global__kpi-value account-status-uptime--${overallUptime.tier}`}>
+            <span
+              className={`account-status-global__kpi-value${overallUptime.hasData ? '' : ' account-status-uptime--none'}`}
+              style={{ color: healthColorForUptime(overallUptime) }}
+            >
               {overallUptime.hasData ? `${overallUptime.rate?.toFixed(2)}%` : '—'}
             </span>
             <span className="account-status-global__kpi-label">

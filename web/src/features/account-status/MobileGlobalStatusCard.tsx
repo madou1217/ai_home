@@ -1,6 +1,6 @@
 import React from 'react';
 import { HudSection } from '@/mobile/ui';
-import { buildGlobalBuckets, summarizeUptime } from './health';
+import { buildGlobalBuckets, healthColorForUptime, summarizeUptime } from './health';
 import StripWithFooter from './StripWithFooter';
 import type { UseAccountOutcomesResult } from './useAccountOutcomes';
 import './account-status.css';
@@ -33,7 +33,10 @@ export default function MobileGlobalStatusCard({ outcomes }: { outcomes: UseAcco
       ) : (
         <>
           <div className="account-status-global__kpi">
-            <span className={`account-status-global__kpi-value account-status-uptime--${overallUptime.tier}`}>
+            <span
+              className={`account-status-global__kpi-value${overallUptime.hasData ? '' : ' account-status-uptime--none'}`}
+              style={{ color: healthColorForUptime(overallUptime) }}
+            >
               {overallUptime.hasData ? `${overallUptime.rate?.toFixed(2)}%` : '—'}
             </span>
             <span className="account-status-global__kpi-label">

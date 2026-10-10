@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import { Tooltip } from 'antd';
-import { tierForBucket } from './health';
+import { healthColorForBucket } from './health';
 import { buildBucketTooltip } from './tooltip';
 import type { OutcomeBucket } from './types';
 import './account-status.css';
@@ -46,7 +46,7 @@ export default function ContributionGrid({ dayStarts, buckets, className }: Prop
       aria-label="90 天健康状态立方体网格"
     >
       {cells.map((cell) => {
-        const tier = tierForBucket(cell.bucket);
+        const color = healthColorForBucket(cell.bucket);
         const tooltip = buildBucketTooltip(cell.startMs, cell.bucket, 'day');
         return (
           <Tooltip
@@ -60,8 +60,8 @@ export default function ContributionGrid({ dayStarts, buckets, className }: Prop
             )}
           >
             <span
-              className={`account-status-grid__cell account-status-grid__cell--${tier}`}
-              style={{ gridColumn: cell.column + 1, gridRow: cell.row + 1 }}
+              className={`account-status-grid__cell${color ? '' : ' account-status-grid__cell--none'}`}
+              style={{ gridColumn: cell.column + 1, gridRow: cell.row + 1, ...(color ? { background: color } : {}) }}
             />
           </Tooltip>
         );

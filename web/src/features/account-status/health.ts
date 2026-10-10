@@ -37,12 +37,52 @@ export function tierForBucket(bucket?: OutcomeBucket | null): HealthTier {
   return tierForRate(success, total);
 }
 
+/**
+ * 健康色阶的色标（成功率降序）。颜色来自主题 token（design-tokens.css 的 --health-scale-*，
+ * 深浅两套）；色标集中在 90%~100%，因为绝大多数时间桶落在这一段。
+ */
+export const HEALTH_SCALE_STOPS: ReadonlyArray<{ rate: number; token: string }> = [
+  { rate: 1, token: '--health-scale-100' },
+  { rate: 0.97, token: '--health-scale-97' },
+  { rate: 0.95, token: '--health-scale-95' },
+  { rate: 0.9, token: '--health-scale-90' },
+  { rate: 0.75, token: '--health-scale-75' },
+  { rate: 0.5, token: '--health-scale-50' },
+  { rate: 0, token: '--health-scale-0' }
+];
+
+/** 成功率（0~1）→ CSS 颜色：在相邻色标间用 color-mix 连续插值，绿 → 黄 → 橙 → 红。 */
+export function healthColorForRate(rate: number): string {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(rate) ? rate : 0));
+  for (let index = 0; index < HEALTH_SCALE_STOPS.length - 1; index += 1) {
+    const upper = HEALTH_SCALE_STOPS[index];
+    const lower = HEALTH_SCALE_STOPS[index + 1];
+    if (clamped < lower.rate) continue;
+    const upperWeight = Math.round(((clamped - lower.rate) / (upper.rate - lower.rate)) * 100);
+    if (upperWeight >= 100) return `var(${upper.token})`;
+    if (upperWeight <= 0) return `var(${lower.token})`;
+    return `color-mix(in oklab, var(${upper.token}) ${upperWeight}%, var(${lower.token}))`;
+  }
+  return `var(${HEALTH_SCALE_STOPS[HEALTH_SCALE_STOPS.length - 1].token})`;
+}
+
+/** 桶颜色；无（可计数）请求时返回 undefined，由调用方渲染「无数据」底色。 */
+export function healthColorForBucket(bucket?: OutcomeBucket | null): string | undefined {
+  const { success, total } = countBucket(bucket);
+  return total > 0 ? healthColorForRate(success / total) : undefined;
+}
+
 export interface UptimeSummary {
   /** 0-100，两位小数；无数据时为 null（不要渲染成 0% 或 100%） */
   rate: number | null;
   tier: HealthTier;
   totalRequests: number;
   hasData: boolean;
+}
+
+/** 可用率摘要的着色；无数据时返回 undefined（沿用中性文字色）。 */
+export function healthColorForUptime(summary: UptimeSummary): string | undefined {
+  return summary.hasData && summary.rate !== null ? healthColorForRate(summary.rate / 100) : undefined;
 }
 
 /** 一段范围内的可用率 = Σsuccess / Σtotal（跨非空桶），两位小数。 */

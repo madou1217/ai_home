@@ -236,10 +236,15 @@
   --color-danger-soft: rgba(194, 0, 66, 0.09);
   --color-attention: var(--c-warning-500);
   --color-attention-soft: rgba(184, 110, 0, 0.11);
-  /* 账号健康状态条第 4 档（部分异常，success/total ∈ [0.50, 0.90)）：
-     介于 warning 与 danger 之间，warning/danger 本身不够用（见 features/account-status/health.ts）。 */
-  --color-status-partial: #b8500e;
-  --color-status-partial-soft: rgba(184, 80, 14, 0.11);
+  /* 账号健康色阶：成功率由高到低 绿 → 黄绿 → 黄 → 橙 → 红。色标集中在 90%~100%
+     （绝大多数时间桶落在这段），桶颜色在相邻色标间连续插值（features/account-status/health.ts）。 */
+  --health-scale-100: #00874a;
+  --health-scale-97: #3f9a1c;
+  --health-scale-95: #74a000;
+  --health-scale-90: #b08f00;
+  --health-scale-75: #c46a00;
+  --health-scale-50: #c4400c;
+  --health-scale-0: #c20042;
 
   /* ---------------------------------------------------------------------------
    * 7. DOMAIN — Provider accents
@@ -550,8 +555,13 @@ body.dark {
   --color-danger-soft: rgba(255, 0, 85, 0.14);
   --color-attention: #ffaa00;
   --color-attention-soft: rgba(255, 170, 0, 0.13);
-  --color-status-partial: #ff6a00;
-  --color-status-partial-soft: rgba(255, 106, 0, 0.14);
+  --health-scale-100: #00ff66;
+  --health-scale-97: #7aff3d;
+  --health-scale-95: #c8ff1f;
+  --health-scale-90: #ffe100;
+  --health-scale-75: #ffaa00;
+  --health-scale-50: #ff6a00;
+  --health-scale-0: #ff0055;
 
   --c-opencode: #a9c2d6;
   --event-tool: #7f9bb3;

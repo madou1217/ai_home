@@ -1,7 +1,6 @@
 /* 账号健康状态可视化 —— 共享视觉基元（状态条 / 立方体网格 / 图例）。
- * 颜色只表达语义，除 4 档健康色外全部引用 design-tokens.css；
- * 档位阈值 / 配色见 features/account-status/health.ts 与 design-tokens.css 的
- * --color-success / --color-warning / --color-status-partial / --color-danger。
+ * 有数据的桶、可用率文字按成功率在健康色阶上连续着色（health.ts 的 healthColorForRate，
+ * 色标是 design-tokens.css 的 --health-scale-*）；这里只定义「无数据」的中性底色。
  */
 
 .account-status-strip {
@@ -24,10 +23,6 @@
 .account-status-strip--xs .account-status-strip__bar { height: 12px; border-radius: 0.5px; }
 .account-status-strip--fit { gap: 1px; }
 
-.account-status-strip__bar--operational { background: var(--color-success); }
-.account-status-strip__bar--degraded { background: var(--color-warning); }
-.account-status-strip__bar--partial { background: var(--color-status-partial); }
-.account-status-strip__bar--major { background: var(--color-danger); }
 .account-status-strip__bar--none { background: var(--color-border); }
 
 .account-status-strip-footer {
@@ -45,10 +40,6 @@
   white-space: nowrap;
 }
 
-.account-status-uptime--operational { color: var(--color-success); }
-.account-status-uptime--degraded { color: var(--color-warning); }
-.account-status-uptime--partial { color: var(--color-status-partial); }
-.account-status-uptime--major { color: var(--color-danger); }
 .account-status-uptime--none { color: var(--color-faint); }
 
 /* GitHub 风格立方体网格：grid-auto-flow: column 按「列=周」铺列，行数固定 7（星期）。 */
@@ -69,13 +60,9 @@
   background: var(--color-border);
 }
 
-.account-status-grid__cell--operational { background: var(--color-success); }
-.account-status-grid__cell--degraded { background: var(--color-warning); }
-.account-status-grid__cell--partial { background: var(--color-status-partial); }
-.account-status-grid__cell--major { background: var(--color-danger); }
 .account-status-grid__cell--none { background: var(--color-border); opacity: .55; }
 
-/* 档位图例 */
+/* 色阶图例 */
 .account-status-legend {
   display: flex;
   flex-wrap: wrap;
@@ -99,10 +86,6 @@
   flex-shrink: 0;
 }
 
-.account-status-legend__swatch--operational { background: var(--color-success); }
-.account-status-legend__swatch--degraded { background: var(--color-warning); }
-.account-status-legend__swatch--partial { background: var(--color-status-partial); }
-.account-status-legend__swatch--major { background: var(--color-danger); }
 .account-status-legend__swatch--none { background: var(--color-border); }
 
 /* Popover 内的 24 小时条，独立一份尺寸，不影响表格列宽 */

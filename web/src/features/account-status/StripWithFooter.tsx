@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import BucketStrip from './BucketStrip';
-import { summarizeUptime } from './health';
+import { healthColorForUptime, summarizeUptime } from './health';
 import type { BucketGranularity, OutcomeBucket } from './types';
 import './account-status.css';
 
@@ -37,7 +37,10 @@ export default function StripWithFooter({ starts, buckets, granularity, size = '
       />
       <div className="account-status-strip-footer">
         <span>{startLabel}</span>
-        <span className={`account-status-uptime account-status-uptime--${summary.tier}`}>
+        <span
+          className={`account-status-uptime${summary.hasData ? '' : ' account-status-uptime--none'}`}
+          style={{ color: healthColorForUptime(summary) }}
+        >
           {formatUptimeText(summary.rate, summary.hasData)}
         </span>
         <span>{endLabel}</span>

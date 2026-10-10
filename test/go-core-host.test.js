@@ -64,6 +64,18 @@ test('resolveGoCoreSettings reads persisted config and lets AIH_GO_CORE_* overri
   assert.equal(resolveGoCoreSettings({}, {}).enabled, false);
 });
 
+test('the host hands its child environment overrides to the supervisor', () => {
+  const { factory, calls } = fakeSupervisorFactory();
+  const childEnvironment = { HTTPS_PROXY: 'http://127.0.0.1:6152', NO_PROXY: null };
+  createGoCoreHost({
+    settings: resolveGoCoreSettings({}, {}),
+    createGoCoreSupervisor: factory,
+    childEnvironment,
+    log: silentLog
+  });
+  assert.equal(calls.options.env, childEnvironment);
+});
+
 test('a disabled Go Core never spawns and claims no routes by default', async () => {
   const { factory, calls } = fakeSupervisorFactory();
   const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog });

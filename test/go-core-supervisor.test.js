@@ -473,6 +473,20 @@ test('Go Core delegates OAuth refresh to Node only when asked', () => {
   assert.equal('AIH_SERVER_CREDENTIAL_REFRESH' in buildGoCoreInvocation(base).env, false);
 });
 
+test('Go Core env overrides set values and delete inherited variables given as null', () => {
+  const invocation = buildGoCoreInvocation({
+    binaryPath: '/tmp/aih-server',
+    aiHomeDir: '/tmp/aih-home',
+    managementKey: 'management-secret',
+    clientKey: 'client-secret',
+    baseEnv: { PATH: '/usr/bin', HTTPS_PROXY: 'http://host.local:1', NO_PROXY: 'host.corp' },
+    env: { HTTPS_PROXY: 'http://127.0.0.1:6152', NO_PROXY: null }
+  });
+  assert.equal(invocation.env.PATH, '/usr/bin');
+  assert.equal(invocation.env.HTTPS_PROXY, 'http://127.0.0.1:6152');
+  assert.equal('NO_PROXY' in invocation.env, false);
+});
+
 test('a start that misses the ready deadline is retried and the host is told when Go is back', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-go-core-start-retry-'));
   const binaryPath = path.join(tempDir, 'aih-server');

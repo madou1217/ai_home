@@ -50,12 +50,20 @@ async function startWithGoCore(t, env, serveExtra = {}) {
   });
   const port = await getFreePort();
   let goHost = null;
+  const spawnedEnvs = [];
   const handle = await startLocalServer(
     createServeOptions(port, { manageProcessLifecycle: false, clientKey: CLIENT_KEY, ...serveExtra }),
     createServerDeps(aiHomeDir, processObj, lifecycleCounters(), {
       // 其余依赖保持替身；只有 Go Core 使用真实子进程与真实 HTTP。
       createGoCoreHost: (options) => {
-        goHost = createGoCoreHost({ ...options, spawn: childProcess.spawn, fetchImpl: fetch });
+        goHost = createGoCoreHost({
+          ...options,
+          spawn: (command, args, spawnOptions) => {
+            spawnedEnvs.push(spawnOptions && spawnOptions.env);
+            return childProcess.spawn(command, args, spawnOptions);
+          },
+          fetchImpl: fetch
+        });
         return goHost;
       }
     })
@@ -68,7 +76,7 @@ async function startWithGoCore(t, env, serveExtra = {}) {
   while (Date.now() < deadline && !(goHost.status().state === 'ready' && goHost.status().accountsSynced)) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  return { base: `http://127.0.0.1:${port}`, goHost };
+  return { base: `http://127.0.0.1:${port}`, goHost, spawnedEnvs };
 }
 
 test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
@@ -106,24 +114,28 @@ test('Node /readyz merges a real Go Core and forwards Go-owned routes', { skip: 
   assert.match(rejected.errors.join('\n'), /moves only after every inference route/);
 });
 
-test('a proxy only Node can see hands Go-owned routes back to Node', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
-  // 代理只来自 server config（环境里没有标准代理变量），Go 的 ProxyFromEnvironment 读不到，
-  // 会绕过代理直连。P1 因此在交还判定里失败关闭：路由仍由 Node 承接，并如实计数。
-  const { base, goHost } = await startWithGoCore(
+test('a proxy from server config is handed to Go, so Go-owned routes stay on Go', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {
+  // 代理只来自 server config（环境里没有标准代理变量）。Node 启动 Go 时把它写进 Go 的标准代理
+  // 变量，两边走同一个出口：路由继续由 Go 承接，不再整体交还 Node。
+  const { base, goHost, spawnedEnvs } = await startWithGoCore(
     t,
     { AIH_GO_CORE_ROUTES: 'gateway.props' },
-    { proxyUrl: 'http://proxy.invalid:3128' }
+    { proxyUrl: 'http://proxy.invalid:3128', noProxy: 'localhost,127.0.0.1' }
   );
   assert.equal(goHost.status().state, 'ready');
   assert.equal(goHost.status().accountsSynced, true);
+  assert.ok(spawnedEnvs.length >= 1);
+  assert.equal(spawnedEnvs[0].HTTPS_PROXY, 'http://proxy.invalid:3128');
+  assert.equal(spawnedEnvs[0].HTTP_PROXY, 'http://proxy.invalid:3128');
+  assert.equal(spawnedEnvs[0].NO_PROXY, 'localhost,127.0.0.1');
 
   const props = await fetch(`${base}/v1/props`, { headers: { authorization: `Bearer ${CLIENT_KEY}` } });
-  assert.equal(props.status, 200, 'Node 用自己的代理配置应答，而不是让 Go 绕过代理直连');
+  assert.equal(props.status, 200);
   assert.equal(typeof (await props.json()), 'object');
 
   const readyz = await (await fetch(`${base}/readyz`)).json();
-  assert.equal(readyz.go_core.node_fallbacks.by_reason.proxy_not_go_visible, 1);
-  assert.equal(readyz.go_core.node_fallbacks.total, 1);
+  assert.equal(readyz.go_core.node_fallbacks.by_reason.proxy_not_go_visible, 0);
+  assert.equal(readyz.go_core.node_fallbacks.total, 0);
 });
 
 test('Node serves Go-owned routes while the Go process is down and Go recovers after auto restart', { skip: !goBinary && 'Go toolchain/binary unavailable' }, async (t) => {

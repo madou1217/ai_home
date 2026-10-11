@@ -206,7 +206,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
     void actions.chooseCliTerminal(record);
   };
 
-  // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」（与桌面一致）。
+  // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」与「调度规则」（与桌面一致）。
   const buildPrimaryActions = (record: Account): SwipeAction[] => {
     if (requiresAccountReauth(record)) {
       return [

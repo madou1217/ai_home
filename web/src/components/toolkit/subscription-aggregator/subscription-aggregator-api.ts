@@ -5,6 +5,7 @@ import type {
   AggregatorPreview,
   AggregatorProfile,
   AggregatorProfileInput,
+  AggregatorSourceInput,
   AggregatorSourceSaveResult,
   AggregatorSyncResult
 } from './types';
@@ -27,7 +28,7 @@ export const subscriptionAggregatorAPI = {
   async preview(profileId: string, format: AggregatorFormat) {
     return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params: { format } })).data;
   },
-  async saveSource(source: { id?: string; name: string; url: string }) {
+  async saveSource(source: AggregatorSourceInput) {
     // 新增订阅会立即同步一次，给足上游抓取时间。
     return (await api.post<AggregatorSourceSaveResult>(`${BASE}/sources`, source, { timeout: 60000 })).data;
   },

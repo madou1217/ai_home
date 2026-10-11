@@ -5,7 +5,8 @@ export type AggregatorPolicy = string;
 
 export type AggregatorRuleType = 'DOMAIN' | 'DOMAIN-SUFFIX' | 'DOMAIN-KEYWORD' | 'IP-CIDR' | 'GEOSITE' | 'GEOIP';
 
-export type AggregatorFormat = 'mihomo' | 'sing-box' | 'base64';
+/** 输出格式 id（mihomo、sing-box、surge…），可选值由服务端 catalog.formats 提供。 */
+export type AggregatorFormat = string;
 
 export interface AggregatorUserInfo {
   upload?: number;
@@ -15,10 +16,19 @@ export interface AggregatorUserInfo {
   expire?: number;
 }
 
+/** remote：订阅地址；local：粘贴的节点内容（保存即解析，不联网）。 */
+export type AggregatorSourceKind = 'remote' | 'local';
+
 export interface AggregatorSource {
   id: string;
   name: string;
-  url: string;
+  kind: AggregatorSourceKind;
+  /** 本地订阅为 null */
+  url: string | null;
+  /** 远程订阅自定义的 User-Agent；为空时用 catalog.defaultUserAgent */
+  userAgent?: string | null;
+  /** 本地订阅的节点内容 */
+  content?: string;
   nodeCount: number;
   lastSyncedAt: number | null;
   userInfo: AggregatorUserInfo | null;
@@ -45,6 +55,16 @@ export interface AggregatorProfile {
   updatedAt: number;
 }
 
+/** 保存订阅源：远程带 url（可选 userAgent），本地带 content；id 只在更新时带上。 */
+export interface AggregatorSourceInput {
+  id?: string;
+  name: string;
+  kind: AggregatorSourceKind;
+  url?: string;
+  userAgent?: string;
+  content?: string;
+}
+
 /** 可编辑字段（id 只在更新时带上，token/时间戳由服务端维护）。 */
 export type AggregatorProfileInput = Omit<AggregatorProfile, 'token' | 'subscriptionPath' | 'nodeCount' | 'createdAt' | 'updatedAt' | 'id'> & {
   id?: string;
@@ -65,10 +85,22 @@ export interface AggregatorRegionInfo {
   flag: string;
 }
 
+export interface AggregatorFormatInfo {
+  id: AggregatorFormat;
+  name: string;
+  extension: string;
+  /** 是否输出策略组与分流规则（Base64 / 链接列表 / JSON 只有节点） */
+  groups: boolean;
+}
+
 export interface AggregatorCatalog {
   presets: AggregatorPresetInfo[];
   regions: AggregatorRegionInfo[];
-  formats: Array<{ id: AggregatorFormat; name: string; extension: string; groups: boolean }>;
+  formats: AggregatorFormatInfo[];
+  /** 节点库支持的全部协议（协议过滤的可选值） */
+  protocols: string[];
+  /** 远程订阅默认的 User-Agent */
+  defaultUserAgent: string;
   ruleTypes: AggregatorRuleType[];
   /** 服务端规范化后的新建初始值 */
   defaultProfile: AggregatorProfileInput;

@@ -20,11 +20,11 @@ import '@/components/ui/kpi-strip.css';
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
   countEnabledPresets,
+  describeSourceOrigin,
   describeSourceScope,
   formatBytes,
   formatExpire,
-  formatTraffic,
-  maskSourceUrl
+  formatTraffic
 } from './aggregator-presentation';
 import ProfileEditorDrawer from './ProfileEditorDrawer';
 import ProfilePreviewModal from './ProfilePreviewModal';
@@ -67,7 +67,7 @@ export default function SubscriptionAggregatorPanel() {
         <div>
           <div className="toolkit-panel-kicker">SUBSCRIPTION AGGREGATOR</div>
           <h2 id="toolkit-aggregator-title">订阅聚合与分流</h2>
-          <p>把多个机场订阅合并成一个订阅链接：统一过滤、改名、按地区编组，并带上分流规则。Clash、sing-box、Shadowrocket 直接订阅即可。</p>
+          <p>把多个机场订阅和自建节点合并成一个订阅链接：统一过滤、改名、按地区编组，并带上分流规则。Clash、Stash、sing-box、Surge、Loon、Quantumult X、Shadowrocket 等直接订阅即可。</p>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void state.reload()}>重新读取</Button>
       </header>
@@ -110,13 +110,13 @@ export default function SubscriptionAggregatorPanel() {
           >
             <List
               dataSource={sources}
-              locale={{ emptyText: <Empty description="还没有订阅源，先添加机场订阅地址（可批量粘贴）" /> }}
+              locale={{ emptyText: <Empty description="还没有订阅源：添加机场订阅地址（可批量粘贴），或粘贴自建节点" /> }}
               renderItem={(source) => {
                 const traffic = formatTraffic(source.userInfo);
                 return (
                   <List.Item
                     actions={[
-                      <Tooltip key="sync" title="立即拉取订阅">
+                      <Tooltip key="sync" title={source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
                         <Button
                           size="small"
                           icon={<SyncOutlined />}
@@ -129,7 +129,7 @@ export default function SubscriptionAggregatorPanel() {
                       <Popconfirm
                         key="delete"
                         title={`删除订阅源「${source.name}」？`}
-                        description="它的节点会从节点库移除，绑定这些节点的 zcode 出口也会失效。"
+                        description="它的节点会从节点库移除，聚合订阅里也不再包含这些节点。"
                         okButtonProps={{ danger: true }}
                         onConfirm={() => void state.deleteSource(source.id)}
                       >
@@ -148,7 +148,9 @@ export default function SubscriptionAggregatorPanel() {
                       )}
                       description={(
                         <span className={styles.sourceMeta}>
-                          <Text type="secondary" code className={styles.sourceUrl} title="订阅参数已隐藏">{maskSourceUrl(source.url)}</Text>
+                          <Text type="secondary" code className={styles.sourceUrl} title={source.kind === 'local' ? undefined : '订阅参数已隐藏'}>
+                            {describeSourceOrigin(source)}
+                          </Text>
                           <Text type="secondary">上次同步：{formatLastSynced(source.lastSyncedAt)}</Text>
                         </span>
                       )}
@@ -204,7 +206,7 @@ export default function SubscriptionAggregatorPanel() {
                       </Popconfirm>
                     </Space>
                   </div>
-                  <SubscriptionLinkField path={profile.subscriptionPath} name={profile.name} />
+                  <SubscriptionLinkField path={profile.subscriptionPath} name={profile.name} formats={overview.catalog.formats} />
                 </List.Item>
               )}
             />
@@ -213,6 +215,7 @@ export default function SubscriptionAggregatorPanel() {
           <SourceEditorModal
             open={Boolean(sourceEditor)}
             source={sourceEditor?.source || null}
+            defaultUserAgent={overview.catalog.defaultUserAgent}
             onClose={() => setSourceEditor(null)}
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
@@ -226,7 +229,7 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setEditingProfile(null)}
             onSave={async (input) => Boolean(await state.saveProfile(input))}
           />
-          <ProfilePreviewModal profile={previewProfile} onClose={() => setPreviewProfile(null)} />
+          <ProfilePreviewModal profile={previewProfile} formats={overview.catalog.formats} onClose={() => setPreviewProfile(null)} />
         </>
       ) : null}
     </section>

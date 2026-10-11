@@ -4,26 +4,31 @@ import { CopyOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { resolveActiveServerOrigin } from '@/services/webui-auth-transport';
-import { buildSubscriptionUrl, LINK_FORMAT_OPTIONS, type SubscriptionLinkFormat } from './aggregator-presentation';
+import { buildSubscriptionUrl, linkFormatOptions, type SubscriptionLinkFormat } from './aggregator-presentation';
+import type { AggregatorFormatInfo } from './types';
 
 interface SubscriptionLinkFieldProps {
   path: string;
   name: string;
+  /** 服务端 catalog.formats */
+  formats: AggregatorFormatInfo[];
   /** 窄屏把格式选择放到链接上方，链接独占一行 */
   stacked?: boolean;
 }
 
 /** 订阅链接 + 格式选择 + 复制。「自动识别」让服务端按客户端 User-Agent 选择格式。 */
-export default function SubscriptionLinkField({ path, name, stacked = false }: SubscriptionLinkFieldProps) {
+export default function SubscriptionLinkField({ path, name, formats, stacked = false }: SubscriptionLinkFieldProps) {
   const [format, setFormat] = useState<SubscriptionLinkFormat>('auto');
   const url = useMemo(() => buildSubscriptionUrl(resolveActiveServerOrigin(), path, format), [format, path]);
+  const options = useMemo(() => linkFormatOptions(formats), [formats]);
   const formatSelect = (
     <Select
       aria-label={`${name} 订阅格式`}
       value={format}
       onChange={setFormat}
-      options={LINK_FORMAT_OPTIONS}
-      style={stacked ? { width: '100%' } : { width: 150, flex: 'none' }}
+      options={options}
+      popupMatchSelectWidth={false}
+      style={stacked ? { width: '100%' } : { width: 170, flex: 'none' }}
     />
   );
   const linkRow = (

@@ -1,6 +1,7 @@
 import type {
   AggregatorCatalog,
   AggregatorFormat,
+  AggregatorFormatInfo,
   AggregatorPolicy,
   AggregatorProfile,
   AggregatorSource,
@@ -9,15 +10,21 @@ import type {
 
 export type SubscriptionLinkFormat = 'auto' | AggregatorFormat;
 
-export const LINK_FORMAT_OPTIONS: Array<{ label: string; value: SubscriptionLinkFormat }> = [
-  { label: '自动识别', value: 'auto' },
-  { label: 'Clash / mihomo', value: 'mihomo' },
-  { label: 'sing-box', value: 'sing-box' },
-  { label: 'Base64', value: 'base64' }
-];
+/** 本地订阅内容的上限（与服务端节点库一致）。 */
+export const LOCAL_SOURCE_MAX_BYTES = 2 * 1024 * 1024;
 
-export const PROTOCOL_OPTIONS = ['vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria2', 'socks5', 'http']
-  .map((value) => ({ label: value, value }));
+/** 输出格式选项（服务端 catalog.formats 的顺序）；订阅链接额外有「自动识别」。 */
+export function formatOptions(formats: Array<Pick<AggregatorFormatInfo, 'id' | 'name'>>) {
+  return formats.map((format) => ({ label: format.name, value: format.id }));
+}
+
+export function linkFormatOptions(formats: Array<Pick<AggregatorFormatInfo, 'id' | 'name'>>) {
+  return [{ label: '自动识别', value: 'auto' }, ...formatOptions(formats)];
+}
+
+export function protocolOptions(protocols: string[]) {
+  return protocols.map((value) => ({ label: value, value }));
+}
 
 const BUILTIN_POLICY_LABELS: Record<string, string> = {
   proxy: '🚀 节点选择',
@@ -114,6 +121,20 @@ export function maskSourceUrl(url: string) {
   }
 }
 
+/** 列表里的来源说明：远程显示脱敏地址（自定义了 User-Agent 时附上），本地显示内容行数。 */
+export function describeSourceOrigin(source: Pick<AggregatorSource, 'kind' | 'url' | 'userAgent' | 'content'>) {
+  if (source.kind === 'local') {
+    const lines = String(source.content || '').split(/\r?\n/).filter((line) => line.trim()).length;
+    return `本地内容 · ${lines} 行`;
+  }
+  const url = maskSourceUrl(source.url || '');
+  return source.userAgent ? `${url} · UA ${source.userAgent}` : url;
+}
+
+export function utf8ByteLength(text: string) {
+  return new TextEncoder().encode(text).length;
+}
+
 function nameFromUrl(url: string) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -152,12 +173,35 @@ const ERROR_TEXT: Record<string, string> = {
   aggregator_profile_not_found: '聚合订阅不存在，可能已被删除',
   subscription_not_found: '订阅源不存在，可能已被删除',
   invalid_subscription_url: '订阅地址必须是 http(s) URL',
+  invalid_subscription_user_agent: 'User-Agent 只能是可见 ASCII 字符（最多 200 个）',
+  invalid_subscription_content: '本地内容不能为空',
+  subscription_content_too_large: '本地内容超过 2 MB',
+  unsupported_aggregator_format: '不支持的输出格式',
   subscription_url_blocked: '订阅地址指向内网或保留地址，已拦截',
   subscription_fetch_timeout: '拉取订阅超时',
   subscription_fetch_failed: '拉取订阅失败',
   subscription_http_error: '订阅服务器返回错误状态',
   no_valid_proxy_nodes_found: '订阅里没有可用节点'
 };
+
+// 预览里「未输出」节点的原因（服务端返回错误码）。
+const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
+  [/^unsupported_proxy_protocol_(.+)$/, (value) => `不支持 ${value}`],
+  [/^unsupported_proxy_transport_(.+)$/, (value) => `不支持 ${value} 传输`],
+  [/^unsupported_shadowsocks_plugin_(.+)$/, (value) => `不支持 SS 插件 ${value}`],
+  [/^unsupported_snell_version_(.+)$/, (value) => `不支持 Snell v${value}`],
+  [/^unsupported_hysteria_protocol_(.+)$/, (value) => `不支持 Hysteria 的 ${value} 传输`],
+  [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`]
+];
+
+export function skipReasonText(reason: string) {
+  if (reason === 'unsupported_hysteria2_obfs') return '不支持 Hysteria2 混淆';
+  for (const [pattern, describe] of SKIP_REASON_PATTERNS) {
+    const match = reason.match(pattern);
+    if (match) return describe(match[1]);
+  }
+  return reason;
+}
 
 export function aggregatorErrorText(code: string | undefined, fallback: string) {
   if (!code) return fallback;

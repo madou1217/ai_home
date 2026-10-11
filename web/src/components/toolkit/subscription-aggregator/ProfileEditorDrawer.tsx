@@ -14,7 +14,7 @@ import {
 } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
-import { buildPolicyOptions, PROTOCOL_OPTIONS } from './aggregator-presentation';
+import { buildPolicyOptions, protocolOptions } from './aggregator-presentation';
 import type { AggregatorCatalog, AggregatorProfileInput, AggregatorSource } from './types';
 import styles from './SubscriptionAggregator.module.css';
 
@@ -93,13 +93,16 @@ export default function ProfileEditorDrawer({
           />
         </Form.Item>
       )}
-      <Form.Item
-        label={`包含手动导入的节点（${manualNodeCount} 个）`}
-        name={['sources', 'includeManualNodes']}
-        valuePropName="checked"
-      >
-        <Switch />
-      </Form.Item>
+      {/* 旧版导入的手动节点（现在用「本地节点」订阅源代替），只在还有存量时显示。 */}
+      {manualNodeCount > 0 && (
+        <Form.Item
+          label={`包含手动导入的节点（${manualNodeCount} 个）`}
+          name={['sources', 'includeManualNodes']}
+          valuePropName="checked"
+        >
+          <Switch />
+        </Form.Item>
+      )}
       <Form.Item
         label="客户端拉取时自动刷新"
         name="refreshHours"
@@ -119,7 +122,7 @@ export default function ProfileEditorDrawer({
         <Input allowClear />
       </Form.Item>
       <Form.Item label="协议" name={['filter', 'protocols']}>
-        <Select mode="multiple" allowClear placeholder="全部协议" options={PROTOCOL_OPTIONS} />
+        <Select mode="multiple" allowClear placeholder="全部协议" options={protocolOptions(catalog.protocols)} />
       </Form.Item>
       <Space size={32} wrap>
         <Form.Item label="去除重复节点" name="dedupe" valuePropName="checked" tooltip="服务器、端口与凭据都相同的节点只保留第一个">

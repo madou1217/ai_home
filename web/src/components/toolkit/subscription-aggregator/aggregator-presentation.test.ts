@@ -4,12 +4,17 @@ import test from 'node:test';
 import {
   buildPolicyOptions,
   buildSubscriptionUrl,
+  describeSourceOrigin,
   describeSourceScope,
   formatBytes,
   formatTraffic,
+  linkFormatOptions,
   maskSourceUrl,
   parseBatchSources,
-  policyLabel
+  policyLabel,
+  protocolOptions,
+  skipReasonText,
+  utf8ByteLength
 } from './aggregator-presentation.ts';
 
 const context = {
@@ -75,4 +80,26 @@ test('订阅源范围描述', () => {
 test('订阅地址只显示域名与路径，查询串整体隐藏', () => {
   assert.equal(maskSourceUrl('https://sub.example.com/api/v1/client?OuO=abc&name=x'), 'https://sub.example.com/api/v1/client?…');
   assert.equal(maskSourceUrl('https://sub.example.com/link/abc'), 'https://sub.example.com/link/abc');
+});
+
+test('格式与协议选项来自服务端 catalog，订阅链接额外有「自动识别」', () => {
+  const formats = [{ id: 'mihomo', name: 'Clash Meta（mihomo）' }, { id: 'surge', name: 'Surge' }];
+  assert.deepEqual(linkFormatOptions(formats).map((option) => option.value), ['auto', 'mihomo', 'surge']);
+  assert.deepEqual(protocolOptions(['tuic', 'snell']), [{ label: 'tuic', value: 'tuic' }, { label: 'snell', value: 'snell' }]);
+});
+
+test('订阅源来源说明：远程脱敏地址（附自定义 UA），本地显示内容行数', () => {
+  assert.equal(describeSourceOrigin({ kind: 'remote', url: 'https://a.example/sub?token=x', userAgent: null }), 'https://a.example/sub?…');
+  assert.equal(describeSourceOrigin({ kind: 'remote', url: 'https://a.example/sub', userAgent: 'v2rayN/6.42' }), 'https://a.example/sub · UA v2rayN/6.42');
+  assert.equal(describeSourceOrigin({ kind: 'local', url: null, content: 'trojan://a\n\n  \nvless://b\n' }), '本地内容 · 2 行');
+  assert.equal(utf8ByteLength('香港'), 6);
+});
+
+test('预览里未输出节点的原因译成可读文本，未知码原样显示', () => {
+  assert.equal(skipReasonText('unsupported_proxy_protocol_wireguard'), '不支持 wireguard');
+  assert.equal(skipReasonText('unsupported_proxy_transport_grpc'), '不支持 grpc 传输');
+  assert.equal(skipReasonText('unsupported_snell_version_4'), '不支持 Snell v4');
+  assert.equal(skipReasonText('unsupported_hysteria2_obfs'), '不支持 Hysteria2 混淆');
+  assert.equal(skipReasonText('missing_required_proxy_field_upMbps'), '缺少字段 upMbps');
+  assert.equal(skipReasonText('something_else'), 'something_else');
 });

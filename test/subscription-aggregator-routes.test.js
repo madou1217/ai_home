@@ -51,7 +51,7 @@ function createService(overrides = {}) {
 
 const PREFIX = '/v0/webui/toolkit/subscription-aggregator';
 
-async function call(method, pathname, { body, service = createService(), url } = {}) {
+async function call(method, pathname, { body, service = createService(), url, bodyLimits = [] } = {}) {
   const recorder = createRecorder();
   const handled = await handleWebUiSubscriptionAggregatorRoutes(
     { url: url || pathname },
@@ -61,7 +61,10 @@ async function call(method, pathname, { body, service = createService(), url } =
     {
       subscriptionAggregatorService: service,
       writeJson: recorder.writeJson,
-      readRequestBody: async () => Buffer.from(body === undefined ? '' : JSON.stringify(body))
+      readRequestBody: async (_req, options) => {
+        bodyLimits.push(options.maxBytes);
+        return Buffer.from(body === undefined ? '' : JSON.stringify(body));
+      }
     }
   );
   return { handled, service, ...(recorder.writes[0] || {}) };
@@ -91,8 +94,17 @@ test('aggregator routes dispatch source operations and map upstream failures', a
   assert.deepEqual(all.service.calls[0], ['syncSources', []]);
   const removed = await call('DELETE', `${PREFIX}/sources/sub_a`);
   assert.deepEqual(removed.service.calls[0], ['deleteSource', 'sub_a']);
-  const created = await call('POST', `${PREFIX}/sources`, { body: { name: 'x', url: 'https://x.example' } });
+  // 保存订阅源的请求可以带本地订阅内容，读取上限比其它接口大。
+  const bodyLimits = [];
+  const created = await call('POST', `${PREFIX}/sources`, { body: { name: 'x', url: 'https://x.example' }, bodyLimits });
   assert.deepEqual(created.service.calls[0], ['saveSource', { name: 'x', url: 'https://x.example' }]);
+  await call('POST', `${PREFIX}/profiles`, { body: { name: 'p' }, bodyLimits });
+  assert.deepEqual(bodyLimits, [3 * 1024 * 1024, 256 * 1024]);
+  const tooLarge = await call('POST', `${PREFIX}/sources`, {
+    body: { name: 'x', kind: 'local', content: 'x' },
+    service: createService({ saveSource: async () => { const error = new Error('too large'); error.code = 'subscription_content_too_large'; throw error; } })
+  });
+  assert.equal(tooLarge.status, 422);
 });
 
 test('aggregator routes turn validation exceptions into 422', async () => {

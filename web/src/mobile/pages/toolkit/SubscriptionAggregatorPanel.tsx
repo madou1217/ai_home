@@ -10,6 +10,7 @@ import {
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
   countEnabledPresets,
+  describeSourceOrigin,
   describeSourceScope,
   formatExpire,
   formatTraffic
@@ -54,7 +55,7 @@ export default function SubscriptionAggregatorPanel() {
   const confirmDeleteSource = async (source: AggregatorSource) => {
     const accepted = await confirmAction({
       title: `删除订阅源「${source.name}」？`,
-      content: '它的节点会从节点库移除，绑定这些节点的 zcode 出口也会失效。',
+      content: '它的节点会从节点库移除，聚合订阅里也不再包含这些节点。',
       okText: '删除',
       cancelText: '取消',
       danger: true
@@ -158,7 +159,11 @@ export default function SubscriptionAggregatorPanel() {
                     >
                       <span className="mhud-row__main">
                         <span className="mhud-row__title">{source.name}</span>
-                        <span className="mhud-row__meta">{traffic ? `${traffic} · 到期 ${formatExpire(source.userInfo?.expire)}` : `上次同步 ${formatLastSynced(source.lastSyncedAt)}`}</span>
+                        <span className="mhud-row__meta">
+                          {source.kind === 'local'
+                            ? describeSourceOrigin(source)
+                            : traffic ? `${traffic} · 到期 ${formatExpire(source.userInfo?.expire)}` : `上次同步 ${formatLastSynced(source.lastSyncedAt)}`}
+                        </span>
                       </span>
                       <span className="mhud-row__side">
                         {state.syncingIds.has(source.id)
@@ -170,7 +175,7 @@ export default function SubscriptionAggregatorPanel() {
                 })}
               </MonoList>
             ) : (
-              <EmptySignal description="还没有订阅源，点「添加」可批量粘贴多个订阅地址" />
+              <EmptySignal description="还没有订阅源，点「添加」填订阅地址（可批量）或粘贴自建节点" />
             )}
           </HudSection>
 
@@ -190,7 +195,7 @@ export default function SubscriptionAggregatorPanel() {
           >
             {detail ? (
               <>
-                <SubscriptionLinkField path={detail.subscriptionPath} name={detail.name} stacked />
+                <SubscriptionLinkField path={detail.subscriptionPath} name={detail.name} formats={overview.catalog.formats} stacked />
                 <KeyValue
                   rows={[
                     { key: 'nodes', label: '节点', value: `${detail.nodeCount ?? 0} 个` },
@@ -207,6 +212,7 @@ export default function SubscriptionAggregatorPanel() {
           <SourceEditorModal
             open={Boolean(sourceEditor)}
             source={sourceEditor?.source || null}
+            defaultUserAgent={overview.catalog.defaultUserAgent}
             onClose={() => setSourceEditor(null)}
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
@@ -221,7 +227,7 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setEditingProfile(null)}
             onSave={async (input) => Boolean(await state.saveProfile(input))}
           />
-          <ProfilePreviewModal profile={previewProfile} width="100%" onClose={() => setPreviewProfile(null)} />
+          <ProfilePreviewModal profile={previewProfile} formats={overview.catalog.formats} width="100%" onClose={() => setPreviewProfile(null)} />
         </>
       ) : null}
     </>

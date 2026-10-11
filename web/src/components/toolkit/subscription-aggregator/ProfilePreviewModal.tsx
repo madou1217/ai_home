@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Segmented, Space, Spin, Tag, Typography } from 'antd';
+import { Modal, Select, Space, Spin, Tag, Typography } from 'antd';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
-import { aggregatorErrorText } from './aggregator-presentation';
+import { aggregatorErrorText, formatOptions, skipReasonText } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
-import type { AggregatorFormat, AggregatorPreview, AggregatorProfile } from './types';
+import type { AggregatorFormat, AggregatorFormatInfo, AggregatorPreview, AggregatorProfile } from './types';
 import styles from './SubscriptionAggregator.module.css';
 
 const { Text } = Typography;
 
-const FORMAT_OPTIONS: Array<{ label: string; value: AggregatorFormat }> = [
-  { label: 'Clash / mihomo', value: 'mihomo' },
-  { label: 'sing-box', value: 'sing-box' },
-  { label: 'Base64', value: 'base64' }
-];
-
-const EXTENSIONS: Record<AggregatorFormat, string> = { mihomo: 'yaml', 'sing-box': 'json', base64: 'txt' };
+const DEFAULT_FORMAT = 'mihomo';
 
 function warningText(warning: string) {
   if (warning === 'aggregator_no_nodes') return '没有节点被选中，检查订阅源范围与过滤条件';
@@ -27,13 +21,15 @@ function warningText(warning: string) {
 
 interface ProfilePreviewModalProps {
   profile: AggregatorProfile | null;
+  /** 服务端 catalog.formats */
+  formats: AggregatorFormatInfo[];
   onClose: () => void;
   width?: number | string;
 }
 
 /** 预览聚合结果：只渲染库里现有节点，不触发订阅源刷新。 */
-export default function ProfilePreviewModal({ profile, onClose, width = 860 }: ProfilePreviewModalProps) {
-  const [format, setFormat] = useState<AggregatorFormat>('mihomo');
+export default function ProfilePreviewModal({ profile, formats, onClose, width = 860 }: ProfilePreviewModalProps) {
+  const [format, setFormat] = useState<AggregatorFormat>(DEFAULT_FORMAT);
   const [preview, setPreview] = useState<AggregatorPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +53,7 @@ export default function ProfilePreviewModal({ profile, onClose, width = 860 }: P
 
   useEffect(() => {
     setPreview(null);
-    if (profile) void load(profile.id, 'mihomo');
+    if (profile) void load(profile.id, DEFAULT_FORMAT);
   }, [load, profile]);
 
   const download = () => {
@@ -66,7 +62,8 @@ export default function ProfilePreviewModal({ profile, onClose, width = 860 }: P
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${profile.name}.${EXTENSIONS[format]}`;
+    const extension = formats.find((item) => item.id === format)?.extension || 'txt';
+    anchor.download = `${profile.name}.${extension}`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -84,10 +81,13 @@ export default function ProfilePreviewModal({ profile, onClose, width = 860 }: P
       destroyOnHidden
     >
       <div className={styles.previewToolbar}>
-        <Segmented
+        <Select
+          aria-label="预览格式"
           value={format}
-          options={FORMAT_OPTIONS}
-          onChange={(value) => profile && void load(profile.id, value as AggregatorFormat)}
+          options={formatOptions(formats)}
+          onChange={(value) => profile && void load(profile.id, value)}
+          popupMatchSelectWidth={false}
+          style={{ minWidth: 200 }}
         />
         <Space wrap>
           <Button icon={<CopyOutlined />} disabled={loading || !preview?.content} onClick={() => preview && void copyText(preview.content, '配置已复制')}>
@@ -115,7 +115,7 @@ export default function ProfilePreviewModal({ profile, onClose, width = 860 }: P
       ))}
       {preview && preview.skippedNodes.length > 0 && (
         <Text type="secondary" className={styles.previewWarning}>
-          未输出：{preview.skippedNodes.slice(0, 8).map((item) => `${item.name}（${item.reason}）`).join('；')}
+          未输出：{preview.skippedNodes.slice(0, 8).map((item) => `${item.name}（${skipReasonText(item.reason)}）`).join('；')}
           {preview.skippedNodes.length > 8 ? ` 等 ${preview.skippedNodes.length} 个` : ''}
         </Text>
       )}

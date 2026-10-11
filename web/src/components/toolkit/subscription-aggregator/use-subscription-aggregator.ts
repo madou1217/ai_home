@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
 import { aggregatorErrorText } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
-import type { AggregatorOverview, AggregatorProfile, AggregatorProfileInput, AggregatorSyncResult } from './types';
+import type {
+  AggregatorOverview,
+  AggregatorProfile,
+  AggregatorProfileInput,
+  AggregatorSourceInput,
+  AggregatorSyncResult
+} from './types';
 
 function errorCode(error: unknown) {
   const candidate = error as { response?: { data?: { error?: string } }; message?: string };
@@ -63,11 +69,12 @@ export function useSubscriptionAggregator() {
     }
   }, []);
 
-  const saveSource = useCallback(async (source: { id?: string; name: string; url: string }) => {
+  const saveSource = useCallback(async (source: AggregatorSourceInput) => {
     const result = await run(() => subscriptionAggregatorAPI.saveSource(source), '保存订阅源失败');
     if (!result?.ok) return false;
-    if (result.sync && !result.sync.ok) message.warning(`${source.name} 已保存，但首次同步失败：${syncSummary(result.sync)}`);
-    else message.success(result.sync ? `${source.name} 已添加：${syncSummary(result.sync)}` : `${source.name} 已保存`);
+    const action = source.kind === 'local' ? '解析' : '同步';
+    if (result.sync && !result.sync.ok) message.warning(`${source.name} 已保存，但${action}失败：${syncSummary(result.sync)}`);
+    else message.success(result.sync ? `${source.name} 已保存：${syncSummary(result.sync)}` : `${source.name} 已保存`);
     await reload();
     return true;
   }, [reload, run]);
@@ -78,7 +85,7 @@ export function useSubscriptionAggregator() {
     let saved = 0;
     for (const source of sources) {
       try {
-        const result = await subscriptionAggregatorAPI.saveSource(source);
+        const result = await subscriptionAggregatorAPI.saveSource({ ...source, kind: 'remote' });
         if (!result.ok) failed.push(`${source.name}：${aggregatorErrorText(result.error, '保存失败')}`);
         else if (result.sync && !result.sync.ok) failed.push(`${source.name}：已保存，同步失败（${syncSummary(result.sync)}）`);
         if (result.ok) saved += 1;

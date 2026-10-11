@@ -337,7 +337,8 @@ MobilePage
 ├─ EnvironmentPanel: node/python chips, runtime tiles, SwipeRow lifecycle, DetailSheet, install-guide link
 ├─ MirrorsPanel: npm/pip chips, current config tile, SwipeRow (测速/写入), DetailSheet (KeyValue + GuidedCommand)
 ├─ SubscriptionAggregatorPanel: KPI tiles, aggregated links (SwipeRow 预览/编辑 + DetailSheet with
-│                  link/format picker), sources (SwipeRow 同步/删除), shared editor drawer & preview modal
+│                  link/format picker), sources (SwipeRow 同步/删除, tap → 订阅地址 / 本地节点 editor),
+│                  shared editor drawer & preview modal
 └─ DiagnosticsPanel: observation tiles (tap → sheet), apply-source card, Git/npm manual cards, endpoint probe
 ```
 
@@ -347,8 +348,8 @@ MobilePage
 
 **Mobile UX notes (based on real code)**
 - **Swipe actions:** offered only when the item's real state allows them. The same actions sit in each detail sheet footer.
-- **Node delete:** uses `confirmAction` with the desktop Popconfirm text.
-- **Proxy modals:** the existing ones are reused, with layout rules scoped to `html[data-mobile-hud]`.
+- **Source / profile delete:** uses `confirmAction` with the desktop Popconfirm text.
+- **Aggregator dialogs:** the desktop source editor (订阅地址 / 批量粘贴地址 / 本地节点), profile drawer and preview modal are reused full-width; format and protocol lists come from the server catalog.
 - **Omitted:** the Monaco config editors, which aren't usable on touch. The managed-tool sheet says config editing is on desktop.
 
 ## /toolkit/install-guide — 安装指南 (`MobileInstallGuide`)

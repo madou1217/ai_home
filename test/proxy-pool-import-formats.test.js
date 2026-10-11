@@ -158,3 +158,32 @@ test('full Surge and QX configs with URLs inside are still read by their section
   assert.deepEqual(list.nodes.map((node) => `${node.protocol}:${node.name}`), ['trojan:tj', 'https:hs']);
   assert.deepEqual(list.skippedNodes.map((item) => item.reason), ['invalid_proxy_link_https']);
 });
+
+test('SIP008 online configs import Shadowsocks servers with their SIP003 plugins', () => {
+  const sip008 = JSON.stringify({
+    version: 1,
+    servers: [
+      {
+        id: '27b8a625-4f4b-4428-9f0f-8a2317db7c79', remarks: '🇭🇰 香港 01', server: 'hk.example', server_port: 8388,
+        password: 'p', method: 'chacha20-ietf-poly1305', plugin: 'obfs-local', plugin_opts: 'obfs=http;obfs-host=cdn.example'
+      },
+      { server: 'jp.example', server_port: 443, password: 'q', method: '2022-blake3-aes-128-gcm' },
+      'not-a-server'
+    ],
+    bytes_used: 1024,
+    bytes_remaining: 4096
+  });
+  const { nodes, skippedNodes } = parseSubscriptionContentDetailed(sip008);
+  assert.deepEqual(
+    nodes.map((node) => [node.protocol, node.name, node.server, node.port, node.cipher, node.plugin || null, node.countryCode]),
+    [
+      ['shadowsocks', '🇭🇰 香港 01', 'hk.example', 8388, 'chacha20-ietf-poly1305', 'obfs-local', 'HK'],
+      ['shadowsocks', 'jp.example:443', 'jp.example', 443, '2022-blake3-aes-128-gcm', null, 'JP']
+    ]
+  );
+  nodes.forEach((node) => validateProxyNodeInput(node));
+  assert.deepEqual(skippedNodes.map((item) => item.reason), ['invalid_sip008_server']);
+  assert.deepEqual(compileMihomoProxy(nodes[0], 'hk')['plugin-opts'], { mode: 'http', host: 'cdn.example' });
+  // 只有 servers 而不是 SIP008 条目的 JSON 不当成 SIP008。
+  assert.deepEqual(parseSubscriptionContentDetailed('{"servers":[{"name":"x"}]}').nodes, []);
+});

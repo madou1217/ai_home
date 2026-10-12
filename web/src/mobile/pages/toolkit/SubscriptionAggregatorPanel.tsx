@@ -16,7 +16,8 @@ import {
   describeSourceScope,
   formatExpire,
   formatPullTime,
-  formatTraffic
+  formatTraffic,
+  policyLabel
 } from '@/components/toolkit/subscription-aggregator/aggregator-presentation';
 import ImportProfileModal from '@/components/toolkit/subscription-aggregator/ImportProfileModal';
 import ProfileEditorDrawer from '@/components/toolkit/subscription-aggregator/ProfileEditorDrawer';
@@ -250,6 +251,7 @@ export default function SubscriptionAggregatorPanel() {
             profile={previewProfile}
             formats={overview.catalog.formats}
             clients={overview.catalog.clients}
+            describePolicy={(policy) => policyLabel(policy, { catalog: overview.catalog, sources, groups: previewProfile?.groups.custom })}
             width="100%"
             onClose={() => setPreviewProfile(null)}
           />

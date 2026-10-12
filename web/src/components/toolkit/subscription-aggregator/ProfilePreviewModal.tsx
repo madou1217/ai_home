@@ -3,7 +3,7 @@ import { Modal, Select, Space, Spin, Tag, Typography } from 'antd';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
-import { aggregatorErrorText, formatOptions, skipReasonText } from './aggregator-presentation';
+import { aggregatorErrorText, formatOptions, previewWarningText, skipReasonText } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
 import type {
   AggregatorClientInfo,
@@ -18,25 +18,20 @@ const { Text } = Typography;
 
 const DEFAULT_FORMAT = 'mihomo';
 
-function warningText(warning: string) {
-  if (warning === 'aggregator_no_nodes') return '没有节点被选中，检查订阅源范围与过滤条件';
-  const match = warning.match(/^aggregator_policy_fallback:(.+):([^:]+:[^:]+|[^:]+)$/);
-  if (match) return `「${match[1]}」引用的 ${match[2]} 没有对应策略组，已改用节点选择`;
-  return warning;
-}
-
 interface ProfilePreviewModalProps {
   profile: AggregatorProfile | null;
   /** 服务端 catalog.formats */
   formats: AggregatorFormatInfo[];
   /** 服务端 catalog.clients：选一个客户端，预览就是它实际拿到的内容 */
   clients: AggregatorClientInfo[];
+  /** 把 region:jp 之类的策略引用换成组名（提示里用） */
+  describePolicy?: (policy: string) => string;
   onClose: () => void;
   width?: number | string;
 }
 
 /** 预览聚合结果：只渲染库里现有节点，不触发订阅源刷新。可以模拟某个客户端。 */
-export default function ProfilePreviewModal({ profile, formats, clients, onClose, width = 860 }: ProfilePreviewModalProps) {
+export default function ProfilePreviewModal({ profile, formats, clients, describePolicy, onClose, width = 860 }: ProfilePreviewModalProps) {
   const [format, setFormat] = useState<AggregatorFormat>(DEFAULT_FORMAT);
   const [client, setClient] = useState('');
   const [preview, setPreview] = useState<AggregatorPreview | null>(null);
@@ -142,7 +137,7 @@ export default function ProfilePreviewModal({ profile, formats, clients, onClose
       )}
       {error && <Text type="danger">{error}</Text>}
       {preview?.warnings.map((warning) => (
-        <Text key={warning} type="warning" className={styles.previewWarning}>{warningText(warning)}</Text>
+        <Text key={warning} type="warning" className={styles.previewWarning}>{previewWarningText(warning, describePolicy)}</Text>
       ))}
       {preview && preview.skippedNodes.length > 0 && (
         <Text type="secondary" className={styles.previewWarning}>

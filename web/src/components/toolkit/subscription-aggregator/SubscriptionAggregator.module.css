@@ -115,7 +115,43 @@
   margin: 0;
 }
 
+.groupSectionTitle {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.groupHeader {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.groupTestUrl {
+  width: 280px;
+  max-width: 100%;
+}
+
+.pairRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+
+.groupMatch {
+  margin: -8px 0 16px;
+}
+
+.quickRuleInput {
+  width: 100%;
+}
+
 @media (max-width: 640px) {
+  .pairRow {
+    grid-template-columns: 1fr;
+  }
+
   .ruleRow {
     grid-template-columns: 1fr auto;
   }

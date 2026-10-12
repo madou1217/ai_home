@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
-import { aggregatorErrorText } from './aggregator-presentation';
+import { aggregatorErrorText, responseErrorCode } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
 import type {
   AggregatorOverview,
@@ -9,11 +9,6 @@ import type {
   AggregatorSourceInput,
   AggregatorSyncResult
 } from './types';
-
-function errorCode(error: unknown) {
-  const candidate = error as { response?: { data?: { error?: string } }; message?: string };
-  return candidate?.response?.data?.error || candidate?.message;
-}
 
 function syncSummary(result: AggregatorSyncResult) {
   return result.ok ? `${result.count ?? 0} 个节点` : aggregatorErrorText(result.error, '同步失败');
@@ -39,7 +34,7 @@ export function useSubscriptionAggregator() {
       setOverview(next);
       setError('');
     } catch (loadError) {
-      if (mounted.current) setError(aggregatorErrorText(errorCode(loadError), '读取订阅聚合配置失败'));
+      if (mounted.current) setError(aggregatorErrorText(responseErrorCode(loadError), '读取订阅聚合配置失败'));
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -64,7 +59,7 @@ export function useSubscriptionAggregator() {
     try {
       return await operation();
     } catch (operationError) {
-      message.error(aggregatorErrorText(errorCode(operationError), failure));
+      message.error(aggregatorErrorText(responseErrorCode(operationError), failure));
       return null;
     }
   }, []);
@@ -90,7 +85,7 @@ export function useSubscriptionAggregator() {
         else if (result.sync && !result.sync.ok) failed.push(`${source.name}：已保存，同步失败（${syncSummary(result.sync)}）`);
         if (result.ok) saved += 1;
       } catch (saveError) {
-        failed.push(`${source.name}：${aggregatorErrorText(errorCode(saveError), '保存失败')}`);
+        failed.push(`${source.name}：${aggregatorErrorText(responseErrorCode(saveError), '保存失败')}`);
       }
     }
     if (failed.length) message.warning(`已添加 ${saved}/${sources.length} 个订阅源`);

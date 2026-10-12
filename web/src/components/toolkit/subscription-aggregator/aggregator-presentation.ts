@@ -1,6 +1,7 @@
 import type {
   AggregatorCatalog,
   AggregatorClientInfo,
+  AggregatorCustomGroup,
   AggregatorFormat,
   AggregatorFormatInfo,
   AggregatorImportClient,
@@ -64,9 +65,11 @@ export function buildSubscriptionUrl(origin: string, path: string, format: Subsc
   return format === 'auto' ? base : `${base}?target=${encodeURIComponent(format)}`;
 }
 
-interface PolicyContext {
+export interface PolicyContext {
   catalog: Pick<AggregatorCatalog, 'regions' | 'presets'>;
   sources: Array<Pick<AggregatorSource, 'id' | 'name'>>;
+  /** 自建组（编辑中取表单里的当前值） */
+  groups?: Array<Pick<AggregatorCustomGroup, 'id' | 'name'>>;
 }
 
 export function policyLabel(policy: AggregatorPolicy, context: PolicyContext) {
@@ -81,6 +84,10 @@ export function policyLabel(policy: AggregatorPolicy, context: PolicyContext) {
     return source ? `📦 ${source.name}` : id === 'manual' ? '📦 手动节点' : policy;
   }
   if (kind === 'preset') return context.catalog.presets.find((item) => item.id === id)?.name || policy;
+  if (kind === 'group') {
+    const group = context.groups?.find((item) => item.id === id);
+    return group ? group.name.trim() || '未命名策略组' : '已删除的策略组';
+  }
   return policy;
 }
 
@@ -90,10 +97,11 @@ export function policyLabel(policy: AggregatorPolicy, context: PolicyContext) {
  */
 export function buildPolicyOptions(context: PolicyContext & { includePresets?: boolean; includeSources?: boolean }) {
   const option = (value: string) => ({ label: policyLabel(value, context), value });
-  const groups = [
-    { label: '内置', options: ['proxy', 'auto', 'direct', 'reject'].map(option) },
-    { label: '地区', options: context.catalog.regions.map((region) => option(`region:${region.id}`)) }
-  ];
+  const groups = [{ label: '内置', options: ['proxy', 'auto', 'direct', 'reject'].map(option) }];
+  if (context.groups?.length) {
+    groups.push({ label: '自建组', options: context.groups.filter((group) => group.id).map((group) => option(`group:${group.id}`)) });
+  }
+  groups.push({ label: '地区', options: context.catalog.regions.map((region) => option(`region:${region.id}`)) });
   if (context.includeSources && context.sources.length) {
     groups.push({ label: '订阅源', options: context.sources.map((source) => option(`source:${source.id}`)) });
   }
@@ -173,6 +181,12 @@ const ERROR_TEXT: Record<string, string> = {
   invalid_aggregator_rule: '分流规则格式不正确',
   invalid_aggregator_test_url: '测速地址必须是 http(s) URL',
   too_many_aggregator_rules: '自定义规则过多（最多 500 条）',
+  invalid_aggregator_group_name: '策略组名称不能包含逗号、等号或换行',
+  duplicate_aggregator_group_name: '策略组重名（也不能和自动生成的组同名）',
+  invalid_aggregator_group_cycle: '策略组互相套用成了环',
+  invalid_aggregator_group_member: '策略组套用了不存在的组',
+  too_many_aggregator_groups: '自建策略组过多（最多 50 个）',
+  too_many_aggregator_group_members: '策略组成员过多（最多套用 100 个、勾选 500 个节点）',
   aggregator_profile_not_found: '聚合订阅不存在，可能已被删除',
   subscription_not_found: '订阅源不存在，可能已被删除',
   invalid_subscription_url: '订阅地址必须是 http(s) URL',
@@ -199,6 +213,21 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
   [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`],
   [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`]
 ];
+
+const GROUP_TYPE_NAMES: Record<string, string> = { fallback: '故障转移', 'load-balance': '负载均衡' };
+
+/** 预览里的提示（服务端警告码 → 说明）。describePolicy 把 region:jp 之类的引用换成组名。 */
+export function previewWarningText(warning: string, describePolicy: (policy: string) => string = (policy) => policy) {
+  if (warning === 'aggregator_no_nodes') return '没有节点被选中，检查订阅源范围与过滤条件';
+  // 上下文本身可能带冒号（rule:DOMAIN,x.com），策略引用只认已知前缀，否则会从错误的位置切开。
+  const fallback = warning.match(/^aggregator_policy_fallback:(.+):((?:region|source|preset|group):[^:]+)$/);
+  if (fallback) return `「${fallback[1]}」引用的 ${describePolicy(fallback[2])} 没有对应策略组，已改用节点选择`;
+  const missing = warning.match(/^aggregator_group_member_missing:(.+):((?:region|source|group):[^:]+)$/);
+  if (missing) return `「${missing[1]}」套用的 ${describePolicy(missing[2])} 没有生成（分组没开启或没有节点），已从组里去掉`;
+  const degraded = warning.match(/^aggregator_group_type_degraded:(.+):(fallback|load-balance)$/);
+  if (degraded) return `这个格式不支持${GROUP_TYPE_NAMES[degraded[2]]}，「${degraded[1]}」改成了延迟最低`;
+  return warning;
+}
 
 export function skipReasonText(reason: string) {
   if (reason === 'unsupported_hysteria2_obfs') return '不支持 Hysteria2 混淆';
@@ -252,6 +281,12 @@ export function formatPullTime(at: number, now = Date.now()) {
 export function describePull(pull: Pick<AggregatorPull, 'clientName' | 'format' | 'view' | 'nodes'>, formats: Array<Pick<AggregatorFormatInfo, 'id' | 'name'>>) {
   const format = formats.find((item) => item.id === pull.format)?.name || pull.format;
   return `${pull.clientName} · ${format}${pull.view === 'nodes' ? '（仅节点）' : ''} · ${pull.nodes} 个节点`;
+}
+
+/** 接口错误里的错误码（服务端 { error }），没有时取异常消息。 */
+export function responseErrorCode(error: unknown) {
+  const candidate = error as { response?: { data?: { error?: string } }; message?: string };
+  return candidate?.response?.data?.error || candidate?.message;
 }
 
 export function aggregatorErrorText(code: string | undefined, fallback: string) {

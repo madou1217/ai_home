@@ -7,7 +7,7 @@ import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { serverProfilesAPI } from '@/services/api';
 import { resolveActiveServerOrigin } from '@/services/webui-auth-transport';
 import type { ControlPlaneEndpointHint } from '@/types';
-import { aggregatorErrorText, isLoopbackOrigin, sortImportClients } from './aggregator-presentation';
+import { aggregatorErrorText, isLoopbackOrigin, responseErrorCode, sortImportClients } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
 import type {
   AggregatorFormatInfo,
@@ -35,10 +35,6 @@ interface OriginOption {
   label: string;
   warning: string;
   recommended: boolean;
-}
-
-function errorCode(error: unknown) {
-  return (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
 }
 
 /** 可选的服务地址：当前浏览器地址 + 服务端给出的局域网候选（去重）。 */
@@ -104,7 +100,7 @@ export default function ImportProfileModal({ profile, formats, onClose, width = 
     try {
       setLinks(await subscriptionAggregatorAPI.importLinks(profileId, nextOrigin));
     } catch (loadError) {
-      setError(aggregatorErrorText(errorCode(loadError), '生成导入链接失败'));
+      setError(aggregatorErrorText(responseErrorCode(loadError), '生成导入链接失败'));
     } finally {
       setLoading(false);
     }

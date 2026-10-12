@@ -1,7 +1,27 @@
 /** 订阅聚合器的前端类型，与 lib/cli/services/toolkit/subscription-aggregator 的接口同构。 */
 
-/** 策略引用：proxy / auto / direct / reject，或 region:<id> / source:<subscriptionId> / preset:<id>。 */
+/** 策略引用：proxy / auto / direct / reject，或 region:<id> / source:<subscriptionId> / preset:<id> / group:<自建组 id>。 */
 export type AggregatorPolicy = string;
+
+/** 策略组的策略：手动选择 / 延迟最低 / 故障转移 / 负载均衡。 */
+export type AggregatorGroupType = 'select' | 'url-test' | 'fallback' | 'load-balance';
+
+export type AggregatorLoadBalanceStrategy = 'consistent-hashing' | 'round-robin';
+
+/** 自建策略组：套用的组（内置策略 / 地区 / 订阅源 / 其它自建组）在前，再加按名称规则或勾选选入的节点。 */
+export interface AggregatorCustomGroup {
+  id: string;
+  name: string;
+  type: AggregatorGroupType;
+  members: AggregatorPolicy[];
+  nodes: { include: string; exclude: string; names: string[] };
+  /** 会测速的组：空串 / 0 表示沿用这份配置的测速地址与间隔 */
+  testUrl?: string;
+  interval?: number | null;
+  /** 延迟最低：比当前成员快超过这么多毫秒才切换 */
+  tolerance?: number | null;
+  strategy?: AggregatorLoadBalanceStrategy;
+}
 
 export type AggregatorRuleType = 'DOMAIN' | 'DOMAIN-SUFFIX' | 'DOMAIN-KEYWORD' | 'IP-CIDR' | 'GEOSITE' | 'GEOIP';
 
@@ -55,7 +75,7 @@ export interface AggregatorProfile {
   filter: { include: string; exclude: string; protocols: string[] };
   naming: { sourcePrefix: boolean; renames: Array<{ pattern: string; replace: string }> };
   dedupe: boolean;
-  groups: { regions: string[]; perSource: boolean; testUrl: string; testIntervalSec: number };
+  groups: { regions: string[]; perSource: boolean; testUrl: string; testIntervalSec: number; custom: AggregatorCustomGroup[] };
   rules: {
     presets: Array<{ id: string; enabled: boolean; policy: AggregatorPolicy }>;
     custom: Array<{ type: AggregatorRuleType; value: string; policy: AggregatorPolicy }>;
@@ -149,6 +169,26 @@ export interface AggregatorClientInfo {
   format: AggregatorFormat;
 }
 
+export interface AggregatorGroupTypeInfo {
+  id: AggregatorGroupType;
+  name: string;
+  description: string;
+}
+
+export interface AggregatorLoadBalanceStrategyInfo {
+  id: AggregatorLoadBalanceStrategy;
+  name: string;
+}
+
+/** 编辑中（未保存）的配置会选中的节点：名称是改名、去重之后的最终名称。 */
+export interface AggregatorDraftNode {
+  name: string;
+  protocol: string;
+  /** 识别出的地区 id；空串表示没识别出 */
+  region: string;
+  source: string;
+}
+
 export interface AggregatorCatalog {
   presets: AggregatorPresetInfo[];
   regions: AggregatorRegionInfo[];
@@ -160,6 +200,10 @@ export interface AggregatorCatalog {
   /** 远程订阅默认的 User-Agent */
   defaultUserAgent: string;
   ruleTypes: AggregatorRuleType[];
+  groupTypes: AggregatorGroupTypeInfo[];
+  loadBalanceStrategies: AggregatorLoadBalanceStrategyInfo[];
+  /** 自动生成的组名，自建组不能用 */
+  reservedGroupNames: string[];
   /** 服务端规范化后的新建初始值 */
   defaultProfile: AggregatorProfileInput;
 }

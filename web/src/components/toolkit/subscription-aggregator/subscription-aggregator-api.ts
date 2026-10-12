@@ -1,5 +1,6 @@
 import api from '@/services/api';
 import type {
+  AggregatorDraftNode,
   AggregatorFormat,
   AggregatorImportLinks,
   AggregatorLocalClients,
@@ -31,6 +32,10 @@ export const subscriptionAggregatorAPI = {
   async preview(profileId: string, format: AggregatorFormat, client = '') {
     const params = client ? { format, client } : { format };
     return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params })).data;
+  },
+  /** 编辑中（未保存）的配置会选中哪些节点：自建组勾选节点、实时匹配名称规则用。 */
+  async previewNodes(draft: Pick<AggregatorProfileInput, 'sources' | 'filter' | 'naming' | 'dedupe'>) {
+    return (await api.post<{ ok: boolean; nodes: AggregatorDraftNode[] }>(`${BASE}/profiles/nodes`, draft)).data;
   },
   /** origin：订阅地址用的服务地址（扫码时选局域网地址）。 */
   async importLinks(profileId: string, origin: string) {

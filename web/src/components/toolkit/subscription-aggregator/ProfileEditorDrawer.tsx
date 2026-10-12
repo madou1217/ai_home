@@ -15,10 +15,22 @@ import {
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { buildPolicyOptions, protocolOptions } from './aggregator-presentation';
-import type { AggregatorCatalog, AggregatorProfileInput, AggregatorSource } from './types';
+import CustomGroupsEditor from './CustomGroupsEditor';
+import type { AggregatorCatalog, AggregatorCustomGroup, AggregatorProfileInput, AggregatorSource } from './types';
+import { useDraftNodes } from './use-draft-nodes';
 import styles from './SubscriptionAggregator.module.css';
 
 const { Text } = Typography;
+
+type EditorTab = 'sources' | 'nodes' | 'groups' | 'rules';
+
+/** 校验出错的字段在哪个页签（出错时切过去，否则错误提示在看不见的页签里）。 */
+function tabOfField(name: Array<string | number>): EditorTab {
+  if (name[0] === 'filter' || name[0] === 'naming' || name[0] === 'dedupe') return 'nodes';
+  if (name[0] === 'groups') return 'groups';
+  if (name[0] === 'rules') return 'rules';
+  return 'sources';
+}
 
 interface ProfileEditorDrawerProps {
   open: boolean;
@@ -45,10 +57,14 @@ export default function ProfileEditorDrawer({
 }: ProfileEditorDrawerProps) {
   const [form] = Form.useForm<AggregatorProfileInput>();
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<EditorTab>('sources');
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const allSources = Form.useWatch(['sources', 'all'], form);
   const perSource = Form.useWatch(['groups', 'perSource'], form);
+  const customGroups = Form.useWatch(['groups', 'custom'], form) as AggregatorCustomGroup[] | undefined;
+  const draftNodes = useDraftNodes(form, open && activeTab === 'groups');
   const presetById = useMemo(() => new Map(catalog.presets.map((preset) => [preset.id, preset])), [catalog.presets]);
-  const policyContext = { catalog, sources };
+  const policyContext = { catalog, sources, groups: customGroups || [] };
   const groupPolicyOptions = buildPolicyOptions({ ...policyContext, includeSources: Boolean(perSource) });
   const rulePolicyOptions = buildPolicyOptions({ ...policyContext, includeSources: Boolean(perSource), includePresets: true });
 
@@ -56,6 +72,8 @@ export default function ProfileEditorDrawer({
     if (open && profile) {
       form.resetFields();
       form.setFieldsValue(profile);
+      setActiveTab('sources');
+      setExpandedGroups([]);
     }
   }, [form, open, profile]);
 
@@ -64,8 +82,14 @@ export default function ProfileEditorDrawer({
       const values = await form.validateFields();
       setSaving(true);
       if (await onSave({ ...profile, ...values, id: profile?.id })) onClose();
-    } catch (_validationError) {
-      // 校验错误就地显示在对应字段。
+    } catch (validationError) {
+      // 校验错误就地显示在对应字段：先切到出错的页签，自建组出错时展开那个组。
+      const name = (validationError as { errorFields?: Array<{ name: Array<string | number> }> })?.errorFields?.[0]?.name;
+      if (name) {
+        setActiveTab(tabOfField(name));
+        const groupId = name[0] === 'groups' && name[1] === 'custom' ? customGroups?.[Number(name[2])]?.id : '';
+        if (groupId) setExpandedGroups((current) => (current.includes(groupId) ? current : [...current, groupId]));
+      }
     } finally {
       setSaving(false);
     }
@@ -157,6 +181,20 @@ export default function ProfileEditorDrawer({
 
   const groupsTab = (
     <>
+      <Text strong className={styles.groupSectionTitle}>自建策略组</Text>
+      <Text type="secondary" className={styles.sectionHint}>
+        例如建一个「YouTube」组：套用日本、香港节点组或勾选节点，选「延迟最低」，再在「用于」里勾上 YouTube，客户端访问 YouTube 时就自动用它。
+      </Text>
+      <CustomGroupsEditor
+        form={form}
+        catalog={catalog}
+        sources={sources}
+        nodes={draftNodes.nodes}
+        nodesError={draftNodes.error}
+        expanded={expandedGroups}
+        onExpandedChange={setExpandedGroups}
+      />
+      <Text strong className={`${styles.groupSectionTitle} ${styles.section}`}>自动生成的组</Text>
       <Form.Item label="地区分组" name={['groups', 'regions']} extra="按国旗或名称关键字归类，组内自动测速选最快；没有节点的地区不生成。">
         <Checkbox.Group
           className={styles.checkGrid}
@@ -260,6 +298,8 @@ export default function ProfileEditorDrawer({
     >
       <Form form={form} layout="vertical" requiredMark={false} scrollToFirstError>
         <Tabs
+          activeKey={activeTab}
+          onChange={(key) => setActiveTab(key as EditorTab)}
           items={[
             { key: 'sources', label: '订阅源', forceRender: true, children: sourcesTab },
             { key: 'nodes', label: '节点处理', forceRender: true, children: nodesTab },

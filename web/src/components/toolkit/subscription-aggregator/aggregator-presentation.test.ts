@@ -12,6 +12,7 @@ import {
   maskSourceUrl,
   parseBatchSources,
   policyLabel,
+  previewWarningText,
   describePull,
   formatPullTime,
   groupClientsByFormat,
@@ -57,6 +58,31 @@ test('策略选项只在需要时包含订阅源组与规则组', () => {
     buildPolicyOptions({ ...context, includeSources: true, includePresets: true }).map((group) => group.label),
     ['内置', '地区', '订阅源', '规则组']
   );
+});
+
+test('自建组出现在策略选项里，标签取当前名称', () => {
+  const withGroups = { ...context, groups: [{ id: 'grp_1', name: 'YouTube' }, { id: 'grp_2', name: '  ' }] };
+  assert.deepEqual(buildPolicyOptions(withGroups).map((group) => group.label), ['内置', '自建组', '地区']);
+  assert.deepEqual(buildPolicyOptions(withGroups)[1].options, [
+    { label: 'YouTube', value: 'group:grp_1' },
+    { label: '未命名策略组', value: 'group:grp_2' }
+  ]);
+  assert.equal(policyLabel('group:gone', withGroups), '已删除的策略组');
+});
+
+test('预览提示把警告码换成说明', () => {
+  const describe = (policy: string) => policyLabel(policy, context);
+  assert.equal(previewWarningText('aggregator_no_nodes'), '没有节点被选中，检查订阅源范围与过滤条件');
+  assert.equal(
+    previewWarningText('aggregator_group_member_missing:韩国:专用:region:hk', describe),
+    '「韩国:专用」套用的 🇭🇰 香港节点 没有生成（分组没开启或没有节点），已从组里去掉'
+  );
+  assert.equal(previewWarningText('aggregator_group_type_degraded:AI:fallback'), '这个格式不支持故障转移，「AI」改成了延迟最低');
+  assert.equal(
+    previewWarningText('aggregator_policy_fallback:preset:ai:region:hk', describe),
+    '「preset:ai」引用的 🇭🇰 香港节点 没有对应策略组，已改用节点选择'
+  );
+  assert.equal(previewWarningText('something_new'), 'something_new');
 });
 
 test('批量粘贴识别名称与地址，非法行单独返回', () => {

@@ -9,6 +9,7 @@ import type {
   AggregatorProfile,
   AggregatorPull,
   AggregatorSource,
+  AggregatorSourcePreview,
   AggregatorUserInfo
 } from './types';
 
@@ -211,7 +212,8 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
   [/^unsupported_snell_version_(.+)$/, (value) => `不支持 Snell v${value}`],
   [/^unsupported_hysteria_protocol_(.+)$/, (value) => `不支持 Hysteria 的 ${value} 传输`],
   [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`],
-  [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`]
+  [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`],
+  [/^invalid_proxy_link_(.+)$/, (value) => `${value} 链接格式不对`]
 ];
 
 const GROUP_TYPE_NAMES: Record<string, string> = { fallback: '故障转移', 'load-balance': '负载均衡' };
@@ -229,8 +231,52 @@ export function previewWarningText(warning: string, describePolicy: (policy: str
   return warning;
 }
 
+const IMPORT_FORMAT_LABELS: Record<string, string> = {
+  clash: 'Clash / mihomo 配置',
+  'sing-box': 'sing-box 配置',
+  xray: 'Xray / V2Ray 配置（v2rayN 等导出）',
+  egern: 'Egern 配置',
+  wireguard: 'WireGuard 配置文件',
+  'aih-json': 'AI Home 节点 JSON',
+  sip008: 'SIP008（Shadowsocks 在线配置）',
+  surge: 'Surge / Surfboard / Loon 代理行',
+  'quantumult-x': 'Quantumult X 节点',
+  uri: '分享链接'
+};
+
+/** 节点名前补上推断出的国旗：名称里已经有国旗、或推断不出（🌐）时不加，免得重复或互相矛盾。 */
+export function nameWithFlag(name: string, flag: string) {
+  if (!flag || flag === '🌐' || /\p{Regional_Indicator}{2}/u.test(name)) return name;
+  return `${flag} ${name}`;
+}
+
+/** 解析预览识别出的格式名；base64 包裹的写成「Base64 包裹的…」。 */
+export function importFormatLabel(format: string): string {
+  if (!format) return '未识别的内容';
+  if (format.startsWith('base64+')) return `Base64 包裹的${importFormatLabel(format.slice('base64+'.length))}`;
+  return IMPORT_FORMAT_LABELS[format] || format;
+}
+
+/** 解析预览的一句话：识别为什么、导入几个、跳过几个。 */
+export function describeSourcePreview(preview: Pick<AggregatorSourcePreview, 'format' | 'nodes' | 'skippedNodes'>) {
+  if (!preview.nodes.length && !preview.skippedNodes.length) return '没有识别出节点';
+  const skipped = preview.skippedNodes.length ? `，跳过 ${preview.skippedNodes.length} 个` : '';
+  return `识别为${importFormatLabel(preview.format)}：${preview.nodes.length} 个节点${skipped}`;
+}
+
+/** 跳过原因按说明文字合并计数（同一原因常常成批出现），出现多的排前面。 */
+export function summarizeSkipReasons(skipped: Array<{ reason: string }>) {
+  const counts = new Map<string, number>();
+  for (const item of skipped) {
+    const text = skipReasonText(item.reason);
+    counts.set(text, (counts.get(text) || 0) + 1);
+  }
+  return [...counts].map(([text, count]) => ({ text, count })).sort((a, b) => b.count - a.count);
+}
+
 export function skipReasonText(reason: string) {
   if (reason === 'unsupported_hysteria2_obfs') return '不支持 Hysteria2 混淆';
+  if (reason === 'invalid_wireguard_endpoint') return 'WireGuard 端点格式不对';
   for (const [pattern, describe] of SKIP_REASON_PATTERNS) {
     const match = reason.match(pattern);
     if (match) return describe(match[1]);

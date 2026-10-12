@@ -137,3 +137,15 @@ test('SubscriptionFetcher sends clash.meta unless the source overrides the User-
   await fetcher.fetch('https://subscription.example/sub', { userAgent: 'Shadowrocket/2070' });
   assert.deepEqual(userAgents, ['clash.meta', 'Shadowrocket/2070']);
 });
+
+test('previewing local content reports the nodes and skips without saving anything', (t) => {
+  const { service, nodeStore } = setup(t);
+  const result = service.previewSource({ content: `${TROJAN}\n${VLESS}\nfoo://bar@x:1#unknown\nvless://broken` });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nodes.map((node) => [node.name, node.protocol, node.server, node.port]), [['tj', 'trojan', 'tj.example', 443], ['vl', 'vless', 'vl.example', 443]]);
+  assert.deepEqual(result.skippedNodes.map((item) => item.reason), ['unsupported_proxy_protocol_foo', 'invalid_proxy_link_vless']);
+  assert.equal(nodeStore.listSubscriptions().length, 0);
+  assert.equal(nodeStore.listNodes().length, 0);
+  assert.deepEqual(service.previewSource({ content: '   ' }), { ok: false, error: 'invalid_subscription_content' });
+  assert.equal(service.previewSource({ content: 'x'.repeat(2 * 1024 * 1024 + 1) }).error, 'subscription_content_too_large');
+});

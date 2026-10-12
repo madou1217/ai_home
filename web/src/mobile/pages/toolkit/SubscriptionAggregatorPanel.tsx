@@ -3,10 +3,12 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  FormOutlined,
   ImportOutlined,
   PlusOutlined,
   RetweetOutlined,
-  SyncOutlined
+  SyncOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons';
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
@@ -20,6 +22,9 @@ import {
   policyLabel
 } from '@/components/toolkit/subscription-aggregator/aggregator-presentation';
 import ImportProfileModal from '@/components/toolkit/subscription-aggregator/ImportProfileModal';
+import ManualNodeModal from '@/components/toolkit/subscription-aggregator/ManualNodeModal';
+import { manualNodeSaveInput } from '@/components/toolkit/subscription-aggregator/manual-nodes';
+import SourceNodesDrawer from '@/components/toolkit/subscription-aggregator/SourceNodesDrawer';
 import ProfileEditorDrawer from '@/components/toolkit/subscription-aggregator/ProfileEditorDrawer';
 import ProfilePreviewModal from '@/components/toolkit/subscription-aggregator/ProfilePreviewModal';
 import SourceEditorModal from '@/components/toolkit/subscription-aggregator/SourceEditorModal';
@@ -44,6 +49,8 @@ export default function SubscriptionAggregatorPanel() {
   const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
   const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
   const [detailId, setDetailId] = useState('');
+  const [nodesSourceId, setNodesSourceId] = useState('');
+  const [addingNode, setAddingNode] = useState(false);
 
   if (loading && !overview) return <MobileBoot label="READING SUBSCRIPTIONS" />;
 
@@ -145,6 +152,7 @@ export default function SubscriptionAggregatorPanel() {
             extra={(
               <>
                 <ActionButton icon={<SyncOutlined />} label="全部同步" loading={state.syncingAll} disabled={!sources.length} onClick={() => void state.syncAllSources()} />
+                <ActionButton icon={<FormOutlined />} label="加节点" onClick={() => setAddingNode(true)} />
                 <ActionButton icon={<PlusOutlined />} label="添加" tone="primary" onClick={() => setSourceEditor({ source: null })} />
               </>
             )}
@@ -159,6 +167,7 @@ export default function SubscriptionAggregatorPanel() {
                       ariaLabel={`${source.name} 操作`}
                       onTap={() => setSourceEditor({ source })}
                       actions={[
+                        { key: 'nodes', label: '节点', icon: <UnorderedListOutlined />, onAction: () => setNodesSourceId(source.id) },
                         { key: 'sync', label: '同步', icon: <SyncOutlined />, disabled: state.syncingIds.has(source.id), onAction: () => void state.syncSource(source.id) },
                         { key: 'delete', label: '删除', icon: <DeleteOutlined />, tone: 'danger', onAction: () => void confirmDeleteSource(source) }
                       ]}
@@ -261,6 +270,22 @@ export default function SubscriptionAggregatorPanel() {
             width="100%"
             defaultTab="mobile"
             onClose={() => setImportProfile(null)}
+          />
+          <SourceNodesDrawer
+            source={sources.find((source) => source.id === nodesSourceId) || null}
+            forms={overview.catalog.protocolForms || []}
+            width="100%"
+            onClose={() => setNodesSourceId('')}
+            onSaveSource={state.saveSource}
+          />
+          <ManualNodeModal
+            open={addingNode}
+            title="手动添加节点"
+            forms={overview.catalog.protocolForms || []}
+            initial={null}
+            width="100%"
+            onClose={() => setAddingNode(false)}
+            onSubmit={(node) => state.saveSource(manualNodeSaveInput(sources, node))}
           />
         </>
       ) : null}

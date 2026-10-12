@@ -126,6 +126,45 @@ test('aggregator routes dispatch source operations and map upstream failures', a
   assert.equal(tooLarge.status, 422);
 });
 
+test('aggregator routes preview local content with the large body limit', async () => {
+  const service = createService({
+    previewSource: (input) => {
+      service.calls.push(['previewSource', input]);
+      return input.content ? { ok: true, format: 'uri', nodes: [] } : { ok: false, error: 'invalid_subscription_content' };
+    }
+  });
+  const bodyLimits = [];
+  const preview = await call('POST', `${PREFIX}/sources/preview`, { body: { content: 'trojan://x' }, service, bodyLimits });
+  assert.deepEqual([preview.status, service.calls.at(-1)], [200, ['previewSource', { content: 'trojan://x' }]]);
+  assert.deepEqual(bodyLimits, [3 * 1024 * 1024]);
+  assert.equal((await call('POST', `${PREFIX}/sources/preview`, { body: {}, service })).status, 422);
+});
+
+test('aggregator routes serve the node tools', async () => {
+  const calls = [];
+  const nodeTools = {
+    sourceNodes: (id) => { calls.push(['sourceNodes', id]); return id === 'sub_a' ? { ok: true, nodes: [] } : { ok: false, error: 'subscription_not_found' }; },
+    measureLatency: async (id, options) => { calls.push(['measureLatency', id, options]); return { ok: true, results: {} }; },
+    probe: async (input) => {
+      calls.push(['probe', input]);
+      if (input.host === '169.254.169.254') throw Object.assign(new Error('blocked'), { code: 'probe_address_blocked' });
+      return { ok: true, ports: [] };
+    },
+    parseNodes: (input) => { calls.push(['parseNodes', input]); return { ok: true, nodes: [] }; }
+  };
+  const service = createService({ nodeTools });
+  assert.equal((await call('GET', `${PREFIX}/sources/sub_a/nodes`, { service })).status, 200);
+  assert.equal((await call('GET', `${PREFIX}/sources/sub_x/nodes`, { service })).status, 404);
+  await call('POST', `${PREFIX}/sources/sub_a/latency`, { body: { fresh: true }, service });
+  assert.deepEqual(calls.at(-1), ['measureLatency', 'sub_a', { fresh: true }]);
+  await call('POST', `${PREFIX}/probe`, { body: { host: 'a.example', ports: [443] }, service });
+  assert.deepEqual(calls.at(-1), ['probe', { host: 'a.example', ports: [443] }]);
+  assert.equal((await call('POST', `${PREFIX}/probe`, { body: { host: '169.254.169.254' }, service })).status, 422);
+  const bodyLimits = [];
+  await call('POST', `${PREFIX}/nodes/parse`, { body: { content: 'trojan://x' }, service, bodyLimits });
+  assert.deepEqual([calls.at(-1), bodyLimits], [['parseNodes', { content: 'trojan://x' }], [3 * 1024 * 1024]]);
+});
+
 test('aggregator routes turn validation exceptions into 422', async () => {
   const service = createService({
     saveProfile: () => {

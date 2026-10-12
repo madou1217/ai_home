@@ -164,9 +164,29 @@
   width: 100%;
 }
 
+.nodeFormGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0 12px;
+}
+
+.probeRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
 @media (max-width: 640px) {
   .pairRow {
     grid-template-columns: 1fr;
+  }
+
+  .probeRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .probeRow > :first-child {
+    grid-column: 1 / -1;
   }
 
   .quickAddRow {

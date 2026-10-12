@@ -86,6 +86,74 @@ export interface AggregatorProfile {
   updatedAt: number;
 }
 
+/** 解析预览：本地内容识别成的格式、会导入的节点与跳过的条目（不保存）。 */
+export interface AggregatorSourcePreview {
+  ok: boolean;
+  /** clash / sing-box / xray / egern / wireguard / aih-json / sip008 / surge / quantumult-x / uri；base64 包裹时前缀 base64+ */
+  format: string;
+  nodes: Array<{ name: string; protocol: string; server: string; port: number; flag: string }>;
+  skippedNodes: Array<{ name: string; reason: string }>;
+  warnings: string[];
+}
+
+/** 手动填写节点的表单描述（服务端由协议插件的字段声明推出）。 */
+export interface AggregatorProtocolForm {
+  protocol: string;
+  name: string;
+  defaults: Record<string, unknown>;
+  fields: Array<{
+    key: string;
+    label: string;
+    /** suggest：可选也可手填；select：只能选 */
+    control: 'text' | 'secret' | 'switch' | 'number' | 'tags' | 'select' | 'suggest';
+    section: 'basic' | 'transport' | 'tls' | 'advanced';
+    required: boolean;
+    options?: Array<{ value: string | number; label: string }>;
+  }>;
+}
+
+/** 订阅源里的一个节点（节点表格用；link 是分享链接，含凭据）。 */
+export interface AggregatorSourceNode {
+  id: string;
+  name: string;
+  protocol: string;
+  server: string;
+  port: number;
+  flag: string;
+  link: string;
+}
+
+/** 从服务器到节点地址的 TCP 建连耗时；fakeIp=true 时连到的是本机代理，结果不代表节点。 */
+export interface AggregatorLatency {
+  ms: number | null;
+  error?: string;
+  fakeIp: boolean;
+  measuredAt: number;
+}
+
+export interface AggregatorProbePort {
+  port: number;
+  open: boolean;
+  error?: string;
+  latencyMs?: number;
+  banner?: string;
+  tls?: { alpn: string; names: string[]; issuer: string; selfSigned: boolean; validTo: string; sniMatch: boolean | null; proxyStatus: number };
+  socks5?: 'none' | 'userpass' | 'rejected';
+  httpStatus?: number;
+  /** 可能的协议，按可能性排序 */
+  candidates: string[];
+  note: string;
+}
+
+export interface AggregatorProbeResult {
+  ok: boolean;
+  host: string;
+  addresses: string[];
+  dnsError?: string;
+  fakeIp: boolean;
+  ports: AggregatorProbePort[];
+}
+
 /** 保存订阅源：远程带 url（可选 userAgent），本地带 content；id 只在更新时带上。 */
 export interface AggregatorSourceInput {
   id?: string;
@@ -204,6 +272,8 @@ export interface AggregatorCatalog {
   loadBalanceStrategies: AggregatorLoadBalanceStrategyInfo[];
   /** 自动生成的组名，自建组不能用 */
   reservedGroupNames: string[];
+  /** 手动填写节点的表单（每个协议一份） */
+  protocolForms?: AggregatorProtocolForm[];
   /** 服务端规范化后的新建初始值 */
   defaultProfile: AggregatorProfileInput;
 }

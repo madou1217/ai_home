@@ -13,6 +13,10 @@ import {
   parseBatchSources,
   policyLabel,
   previewWarningText,
+  describeSourcePreview,
+  importFormatLabel,
+  nameWithFlag,
+  summarizeSkipReasons,
   describePull,
   formatPullTime,
   groupClientsByFormat,
@@ -166,4 +170,30 @@ test('导入：本机地址判断与已安装客户端排前面', () => {
   assert.equal(isLoopbackOrigin('not a url'), false);
   const clients = [{ id: 'stash', scheme: 'stash' }, { id: 'v2rayn', scheme: '' }, { id: 'clash', scheme: 'clash' }];
   assert.deepEqual(sortImportClients(clients, { clash: 'Clash Verge', stash: null }).map((client) => client.id), ['clash', 'stash', 'v2rayn']);
+});
+
+test('解析预览说明识别出的格式、节点数与跳过原因', () => {
+  assert.equal(importFormatLabel('xray'), 'Xray / V2Ray 配置（v2rayN 等导出）');
+  assert.equal(importFormatLabel('base64+uri'), 'Base64 包裹的分享链接');
+  assert.equal(importFormatLabel(''), '未识别的内容');
+  assert.equal(
+    describeSourcePreview({ format: 'clash', nodes: [{ name: 'a', protocol: 'vless', server: 'x', port: 1, flag: '' }], skippedNodes: [{ name: 'b', reason: 'x' }] }),
+    '识别为Clash / mihomo 配置：1 个节点，跳过 1 个'
+  );
+  assert.equal(describeSourcePreview({ format: '', nodes: [], skippedNodes: [] }), '没有识别出节点');
+  assert.deepEqual(
+    summarizeSkipReasons([
+      { reason: 'unsupported_proxy_transport_kcp' },
+      { reason: 'invalid_proxy_link_vless' },
+      { reason: 'unsupported_proxy_transport_kcp' }
+    ]),
+    [{ text: '不支持 kcp 传输', count: 2 }, { text: 'vless 链接格式不对', count: 1 }]
+  );
+});
+
+test('国旗只在名称里没有时补上', () => {
+  assert.equal(nameWithFlag('香港 01', '🇭🇰'), '🇭🇰 香港 01');
+  assert.equal(nameWithFlag('🇹🇼 台湾 Egern', '🇨🇳'), '🇹🇼 台湾 Egern');
+  assert.equal(nameWithFlag('WireGuard 203.0.113.10', '🌐'), 'WireGuard 203.0.113.10');
+  assert.equal(nameWithFlag('x', ''), 'x');
 });

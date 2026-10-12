@@ -6,12 +6,14 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  FormOutlined,
   ImportOutlined,
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
   RetweetOutlined,
-  SyncOutlined
+  SyncOutlined,
+  UnorderedListOutlined
 } from '@ant-design/icons';
 import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
@@ -29,6 +31,9 @@ import {
   policyLabel
 } from './aggregator-presentation';
 import ImportProfileModal from './ImportProfileModal';
+import ManualNodeModal from './ManualNodeModal';
+import { manualNodeSaveInput } from './manual-nodes';
+import SourceNodesDrawer from './SourceNodesDrawer';
 import ProfileEditorDrawer from './ProfileEditorDrawer';
 import ProfilePreviewModal from './ProfilePreviewModal';
 import RecentPulls from './RecentPulls';
@@ -56,6 +61,8 @@ export default function SubscriptionAggregatorPanel() {
   const [editingProfile, setEditingProfile] = useState<AggregatorProfileInput | null>(null);
   const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
   const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
+  const [nodesSourceId, setNodesSourceId] = useState('');
+  const [addingNode, setAddingNode] = useState(false);
   const sources = overview?.sources || [];
   const profiles = overview?.profiles || [];
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
@@ -109,6 +116,7 @@ export default function SubscriptionAggregatorPanel() {
                 <Button icon={<SyncOutlined />} loading={state.syncingAll} disabled={!sources.length} onClick={() => void state.syncAllSources()}>
                   全部同步
                 </Button>
+                <Button icon={<FormOutlined />} onClick={() => setAddingNode(true)}>手动添加节点</Button>
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setSourceEditor({ source: null })}>添加订阅</Button>
               </Space>
             )}
@@ -129,6 +137,9 @@ export default function SubscriptionAggregatorPanel() {
                           aria-label={`同步 ${source.name}`}
                           onClick={() => void state.syncSource(source.id)}
                         />
+                      </Tooltip>,
+                      <Tooltip key="nodes" title="节点与延迟">
+                        <Button size="small" icon={<UnorderedListOutlined />} aria-label={`查看 ${source.name} 的节点`} onClick={() => setNodesSourceId(source.id)} />
                       </Tooltip>,
                       <Button key="edit" size="small" icon={<EditOutlined />} aria-label={`编辑 ${source.name}`} onClick={() => setSourceEditor({ source })} />,
                       <Popconfirm
@@ -249,6 +260,20 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setPreviewProfile(null)}
           />
           <ImportProfileModal profile={importProfile} formats={overview.catalog.formats} onClose={() => setImportProfile(null)} />
+          <SourceNodesDrawer
+            source={sources.find((source) => source.id === nodesSourceId) || null}
+            forms={overview.catalog.protocolForms || []}
+            onClose={() => setNodesSourceId('')}
+            onSaveSource={state.saveSource}
+          />
+          <ManualNodeModal
+            open={addingNode}
+            title="手动添加节点"
+            forms={overview.catalog.protocolForms || []}
+            initial={null}
+            onClose={() => setAddingNode(false)}
+            onSubmit={(node) => state.saveSource(manualNodeSaveInput(sources, node))}
+          />
         </>
       ) : null}
     </section>

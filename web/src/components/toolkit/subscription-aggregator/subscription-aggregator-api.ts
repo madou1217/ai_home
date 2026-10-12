@@ -1,6 +1,9 @@
 import api from '@/services/api';
 import type {
   AggregatorDraftNode,
+  AggregatorLatency,
+  AggregatorProbeResult,
+  AggregatorSourceNode,
   AggregatorFormat,
   AggregatorImportLinks,
   AggregatorLocalClients,
@@ -10,6 +13,7 @@ import type {
   AggregatorProfileInput,
   AggregatorRouteTrace,
   AggregatorSourceInput,
+  AggregatorSourcePreview,
   AggregatorSourceSaveResult,
   AggregatorSyncResult
 } from './types';
@@ -52,6 +56,30 @@ export const subscriptionAggregatorAPI = {
   async saveSource(source: AggregatorSourceInput) {
     // 新增订阅会立即同步一次，给足上游抓取时间。
     return (await api.post<AggregatorSourceSaveResult>(`${BASE}/sources`, source, { timeout: 60000 })).data;
+  },
+  /** 解析预览：粘贴或拖入的本地内容会识别成什么、导入哪些节点（不保存）。 */
+  async previewSource(content: string) {
+    return (await api.post<AggregatorSourcePreview>(`${BASE}/sources/preview`, { content }, { timeout: 30000 })).data;
+  },
+  /** 订阅源里的节点（节点表格）。 */
+  async sourceNodes(subscriptionId: string) {
+    return (await api.get<{ ok: boolean; nodes: AggregatorSourceNode[] }>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}/nodes`)).data;
+  },
+  /** 从服务器测 TCP 建连耗时；fresh 忽略几分钟内的缓存结果。 */
+  async measureLatency(subscriptionId: string, fresh = false) {
+    return (await api.post<{ ok: boolean; results: Record<string, AggregatorLatency> }>(
+      `${BASE}/sources/${encodeURIComponent(subscriptionId)}/latency`, { fresh }, { timeout: 120000 }
+    )).data;
+  },
+  /** 探针：只知道地址时猜协议（DNS、TCP、TLS、SOCKS5、HTTP CONNECT、SSH）。 */
+  async probe(host: string, ports: number[]) {
+    return (await api.post<AggregatorProbeResult>(`${BASE}/probe`, { host, ports }, { timeout: 120000 })).data;
+  },
+  /** 解析分享链接或配置，返回带全部字段的节点（填进手动节点表单）。 */
+  async parseNodes(content: string) {
+    return (await api.post<{ ok: boolean; format: string; nodes: Array<Record<string, unknown>>; skippedNodes: Array<{ name: string; reason: string }> }>(
+      `${BASE}/nodes/parse`, { content }
+    )).data;
   },
   async deleteSource(subscriptionId: string) {
     return (await api.delete<{ ok: boolean; error?: string }>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}`)).data;

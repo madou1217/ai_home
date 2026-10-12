@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Form, Input, Modal, Segmented, Typography } from 'antd';
 import { isHttpUrl } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { LOCAL_SOURCE_MAX_BYTES, parseBatchSources, utf8ByteLength } from './aggregator-presentation';
+import LocalFileImport, { importableFiles, type ImportFileEntry } from './LocalFileImport';
+import SourcePreviewSummary from './SourcePreviewSummary';
 import type { AggregatorSource, AggregatorSourceInput } from './types';
+import { useSourcePreview } from './use-source-preview';
 
 const { Text } = Typography;
 
-type EditorMode = 'remote' | 'batch' | 'local';
+type EditorMode = 'remote' | 'batch' | 'local' | 'files';
 
 interface SourceFormValues {
   name: string;
@@ -23,10 +26,10 @@ interface SourceEditorModalProps {
   defaultUserAgent: string;
   onClose: () => void;
   onSave: (source: AggregatorSourceInput) => Promise<boolean>;
-  onSaveBatch: (sources: Array<{ name: string; url: string }>) => Promise<{ saved: number; failed: string[] }>;
+  onSaveBatch: (sources: AggregatorSourceInput[]) => Promise<{ saved: number; failed: string[] }>;
 }
 
-const LOCAL_PLACEHOLDER = '每行一个分享链接（vless:// trojan:// ss:// hy2:// tuic:// …），\n或整段 Clash / sing-box / Surge / Loon / Quantumult X 配置、Base64 订阅内容';
+const LOCAL_PLACEHOLDER = '每行一个分享链接（vless:// trojan:// ss:// hy2:// tuic:// …），\n或整段 Clash / sing-box / v2rayN（Xray）/ Egern / Surge / Loon / Quantumult X 配置、WireGuard .conf、Base64 订阅内容';
 
 /**
  * 添加/编辑订阅源：远程订阅地址（可批量粘贴，可按源指定 User-Agent），或本地内容
@@ -38,13 +41,18 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
   const [batchText, setBatchText] = useState('');
   const [failures, setFailures] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [files, setFiles] = useState<ImportFileEntry[]>([]);
   const batch = useMemo(() => parseBatchSources(batchText), [batchText]);
+  const content = (Form.useWatch('content', form) as string | undefined) || '';
+  const contentPreview = useSourcePreview(content, open && mode === 'local');
+  const readyFiles = importableFiles(files);
 
   useEffect(() => {
     if (!open) return;
     setMode(source?.kind === 'local' ? 'local' : 'remote');
     setBatchText('');
     setFailures([]);
+    setFiles([]);
     form.setFieldsValue({
       name: source?.name || '',
       url: source?.url || '',
@@ -56,9 +64,12 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
   const submit = async () => {
     setSaving(true);
     try {
-      if (mode === 'batch') {
-        if (!batch.sources.length) return;
-        const result = await onSaveBatch(batch.sources);
+      if (mode === 'batch' || mode === 'files') {
+        const inputs: AggregatorSourceInput[] = mode === 'batch'
+          ? batch.sources.map((item) => ({ ...item, kind: 'remote' }))
+          : readyFiles.map((file) => ({ name: file.name.trim() || file.fileName, kind: 'local', content: file.content }));
+        if (!inputs.length) return;
+        const result = await onSaveBatch(inputs);
         setFailures(result.failed);
         if (!result.failed.length) onClose();
         return;
@@ -77,7 +88,15 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
 
   const modeOptions = source
     ? [{ label: '订阅地址', value: 'remote' }, { label: '本地节点', value: 'local' }]
-    : [{ label: '订阅地址', value: 'remote' }, { label: '批量粘贴地址', value: 'batch' }, { label: '本地节点', value: 'local' }];
+    : [
+      { label: '订阅地址', value: 'remote' },
+      { label: '批量地址', value: 'batch' },
+      { label: '本地节点', value: 'local' },
+      { label: '导入文件', value: 'files' }
+    ];
+  const okText = mode === 'batch'
+    ? `添加 ${batch.sources.length} 个`
+    : mode === 'files' ? `导入 ${readyFiles.length} 个文件` : mode === 'local' ? '保存并解析' : '保存并同步';
 
   return (
     <Modal
@@ -85,8 +104,8 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
       open={open}
       onCancel={onClose}
       onOk={() => void submit()}
-      okText={mode === 'batch' ? `添加 ${batch.sources.length} 个` : mode === 'local' ? '保存并解析' : '保存并同步'}
-      okButtonProps={{ disabled: mode === 'batch' && !batch.sources.length }}
+      okText={okText}
+      okButtonProps={{ disabled: (mode === 'batch' && !batch.sources.length) || (mode === 'files' && !readyFiles.length) }}
       confirmLoading={saving}
       destroyOnHidden
       width={640}
@@ -98,7 +117,16 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
         options={modeOptions}
         style={{ marginBottom: 16 }}
       />
-      {mode === 'batch' ? (
+      {mode === 'files' ? (
+        <>
+          <LocalFileImport files={files} onChange={setFiles} />
+          {failures.length > 0 && (
+            <Text type="danger" style={{ display: 'block', marginTop: 8 }}>
+              {failures.join('；')}
+            </Text>
+          )}
+        </>
+      ) : mode === 'batch' ? (
         <>
           <Input.TextArea
             aria-label="批量订阅地址"
@@ -165,6 +193,7 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
               />
             </Form.Item>
           )}
+          {mode === 'local' && <SourcePreviewSummary {...contentPreview} />}
         </Form>
       )}
     </Modal>

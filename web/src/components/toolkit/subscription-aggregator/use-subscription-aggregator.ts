@@ -74,15 +74,16 @@ export function useSubscriptionAggregator() {
     return true;
   }, [reload, run]);
 
-  /** 批量添加：逐个保存（每个都会首次同步），全部结束后只重读一次。 */
-  const saveSources = useCallback(async (sources: Array<{ name: string; url: string }>) => {
+  /** 批量添加（多个订阅地址或多个文件）：逐个保存（每个都会首次同步 / 解析），全部结束后只重读一次。 */
+  const saveSources = useCallback(async (sources: AggregatorSourceInput[]) => {
     const failed: string[] = [];
     let saved = 0;
     for (const source of sources) {
       try {
-        const result = await subscriptionAggregatorAPI.saveSource({ ...source, kind: 'remote' });
+        const result = await subscriptionAggregatorAPI.saveSource(source);
+        const action = source.kind === 'local' ? '解析' : '同步';
         if (!result.ok) failed.push(`${source.name}：${aggregatorErrorText(result.error, '保存失败')}`);
-        else if (result.sync && !result.sync.ok) failed.push(`${source.name}：已保存，同步失败（${syncSummary(result.sync)}）`);
+        else if (result.sync && !result.sync.ok) failed.push(`${source.name}：已保存，${action}失败（${syncSummary(result.sync)}）`);
         if (result.ok) saved += 1;
       } catch (saveError) {
         failed.push(`${source.name}：${aggregatorErrorText(responseErrorCode(saveError), '保存失败')}`);

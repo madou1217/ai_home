@@ -87,6 +87,25 @@ test('aggregator routes dispatch profile operations', async () => {
   assert.equal((await call('DELETE', `${PREFIX}/profiles/agg_x`)).status, 404);
 });
 
+test('aggregator routes serve draft node lists and rule tests', async () => {
+  const service = createService({
+    previewNodes: (input) => { service.calls.push(['previewNodes', input]); return { ok: true, nodes: [] }; },
+    testRoute: async (input) => {
+      service.calls.push(['testRoute', input]);
+      if (input.target === 'bad host') throw Object.assign(new Error('invalid_route_target'), { code: 'invalid_route_target' });
+      return { ok: true, rule: { origin: { kind: 'final' } } };
+    }
+  });
+  const nodes = await call('POST', `${PREFIX}/profiles/nodes`, { body: { filter: { include: '日本' } }, service });
+  assert.equal(nodes.status, 200);
+  assert.deepEqual(service.calls.at(-1), ['previewNodes', { filter: { include: '日本' } }]);
+  const traced = await call('POST', `${PREFIX}/profiles/test-route`, { body: { profile: { name: 'p' }, target: 'x.com' }, service });
+  assert.equal(traced.status, 200);
+  assert.deepEqual(service.calls.at(-1), ['testRoute', { profile: { name: 'p' }, target: 'x.com' }]);
+  const invalid = await call('POST', `${PREFIX}/profiles/test-route`, { body: { target: 'bad host' }, service });
+  assert.deepEqual([invalid.status, invalid.payload.error], [422, 'invalid_route_target']);
+});
+
 test('aggregator routes dispatch source operations and map upstream failures', async () => {
   const sync = await call('POST', `${PREFIX}/sources/sub_a/sync`);
   assert.equal(sync.status, 502);

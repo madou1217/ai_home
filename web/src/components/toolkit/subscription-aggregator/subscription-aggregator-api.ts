@@ -8,6 +8,7 @@ import type {
   AggregatorPreview,
   AggregatorProfile,
   AggregatorProfileInput,
+  AggregatorRouteTrace,
   AggregatorSourceInput,
   AggregatorSourceSaveResult,
   AggregatorSyncResult
@@ -36,6 +37,10 @@ export const subscriptionAggregatorAPI = {
   /** 编辑中（未保存）的配置会选中哪些节点：自建组勾选节点、实时匹配名称规则用。 */
   async previewNodes(draft: Pick<AggregatorProfileInput, 'sources' | 'filter' | 'naming' | 'dedupe'>) {
     return (await api.post<{ ok: boolean; nodes: AggregatorDraftNode[] }>(`${BASE}/profiles/nodes`, draft)).data;
+  },
+  /** 规则测试：编辑中的配置下，一个网址 / 域名 / IP 会命中哪条规则、走哪个组（第一次要下载规则集）。 */
+  async testRoute(profile: AggregatorProfileInput, target: string) {
+    return (await api.post<AggregatorRouteTrace>(`${BASE}/profiles/test-route`, { profile, target }, { timeout: 60000 })).data;
   },
   /** origin：订阅地址用的服务地址（扫码时选局域网地址）。 */
   async importLinks(profileId: string, origin: string) {

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  addRuleForGroup,
   assignPresetsToGroup,
   buildMemberOptions,
   buildNodeOptions,
@@ -14,7 +13,7 @@ import {
   memberCandidateGroups,
   removeGroupReferences
 } from './custom-groups.ts';
-import { formatQuickRule, parseQuickRule } from './rule-input.ts';
+import { formatQuickRule, parseQuickRule, upsertCustomRule } from './rule-input.ts';
 import type { AggregatorCustomGroup, AggregatorDraftNode, AggregatorProfileInput } from './types.ts';
 
 function group(id: string, members: string[] = [], name = id): AggregatorCustomGroup {
@@ -119,9 +118,9 @@ test('usage edits: presets switch to the group and back, site rules are not dupl
     { id: 'ads', enabled: true, policy: 'reject' }
   ]);
 
-  const added = addRuleForGroup(rules().custom, { type: 'DOMAIN-SUFFIX', value: 'openai.com' }, 'b');
-  assert.deepEqual(added.at(-1), { type: 'DOMAIN-SUFFIX', value: 'openai.com', policy: 'group:b' });
-  const moved = addRuleForGroup(rules().custom, { type: 'DOMAIN-SUFFIX', value: 'x.com' }, 'b');
+  const added = upsertCustomRule(rules().custom, { type: 'DOMAIN-SUFFIX', value: 'openai.com', policy: 'group:b' });
+  assert.deepEqual(added[added.length - 1], { type: 'DOMAIN-SUFFIX', value: 'openai.com', policy: 'group:b' });
+  const moved = upsertCustomRule(rules().custom, { type: 'DOMAIN-SUFFIX', value: 'x.com', policy: 'group:b' });
   assert.equal(moved.length, 2);
   assert.equal(moved[1].policy, 'group:b');
 });

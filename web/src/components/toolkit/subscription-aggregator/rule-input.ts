@@ -82,6 +82,57 @@ export function parseQuickRule(input: string): QuickRule | null {
   return null;
 }
 
+/** 添加一条自定义规则：同一类型与匹配值的规则已存在就只改它的策略，不重复添加。 */
+export function upsertCustomRule<T extends QuickRule & { policy: string }>(custom: T[], rule: T): T[] {
+  const index = custom.findIndex((item) => item.type === rule.type && item.value === rule.value);
+  if (index < 0) return [...custom, rule];
+  return custom.map((item, position) => (position === index ? { ...item, policy: rule.policy } : item));
+}
+
+/** GEOSITE / GEOIP 的常用规则集名（MetaCubeX meta-rules-dat），填写时作为候选。 */
+export const RULE_SET_SUGGESTIONS: Partial<Record<AggregatorRuleType, Array<{ value: string; note: string }>>> = {
+  GEOSITE: [
+    { value: 'openai', note: 'OpenAI / ChatGPT' },
+    { value: 'anthropic', note: 'Claude' },
+    { value: 'category-ai-!cn', note: '海外 AI 服务合集' },
+    { value: 'google', note: 'Google（含 YouTube）' },
+    { value: 'youtube', note: 'YouTube' },
+    { value: 'netflix', note: 'Netflix' },
+    { value: 'disney', note: 'Disney+' },
+    { value: 'spotify', note: 'Spotify' },
+    { value: 'tiktok', note: 'TikTok' },
+    { value: 'telegram', note: 'Telegram' },
+    { value: 'twitter', note: 'X / Twitter' },
+    { value: 'facebook', note: 'Facebook' },
+    { value: 'instagram', note: 'Instagram' },
+    { value: 'github', note: 'GitHub' },
+    { value: 'microsoft', note: '微软' },
+    { value: 'onedrive', note: 'OneDrive' },
+    { value: 'apple', note: '苹果' },
+    { value: 'amazon', note: 'Amazon' },
+    { value: 'cloudflare', note: 'Cloudflare' },
+    { value: 'steam', note: 'Steam' },
+    { value: 'bilibili', note: '哔哩哔哩' },
+    { value: 'cn', note: '中国大陆域名' },
+    { value: 'geolocation-!cn', note: '非中国大陆域名' },
+    { value: 'gfw', note: '常见被墙域名' },
+    { value: 'category-ads-all', note: '广告' }
+  ],
+  GEOIP: [
+    { value: 'cn', note: '中国大陆' },
+    { value: 'hk', note: '香港' },
+    { value: 'tw', note: '台湾' },
+    { value: 'jp', note: '日本' },
+    { value: 'sg', note: '新加坡' },
+    { value: 'us', note: '美国' },
+    { value: 'telegram', note: 'Telegram' },
+    { value: 'netflix', note: 'Netflix' },
+    { value: 'google', note: 'Google' },
+    { value: 'cloudflare', note: 'Cloudflare' },
+    { value: 'private', note: '局域网与保留地址' }
+  ]
+};
+
 /** 规则的简短写法（与 parseQuickRule 的输入互通），用于标签展示。 */
 export function formatQuickRule(rule: QuickRule) {
   switch (rule.type) {

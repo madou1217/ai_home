@@ -1,5 +1,4 @@
 import { policyLabel, type PolicyContext } from './aggregator-presentation.ts';
-import type { QuickRule } from './rule-input';
 import type {
   AggregatorCustomGroup,
   AggregatorDraftNode,
@@ -209,10 +208,3 @@ export function assignPresetsToGroup(
   });
 }
 
-/** 「用于」里添加网站：同一条规则已存在就改成走这个组，不重复添加。 */
-export function addRuleForGroup(custom: Rules['custom'], rule: QuickRule, groupId: string): Rules['custom'] {
-  const policy = groupPolicy(groupId);
-  const index = custom.findIndex((item) => item.type === rule.type && item.value === rule.value);
-  if (index < 0) return [...custom, { ...rule, policy }];
-  return custom.map((item, position) => (position === index ? { ...item, policy } : item));
-}

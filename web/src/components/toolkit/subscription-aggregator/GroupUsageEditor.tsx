@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Checkbox, Form, Input, Select, Space, Tag, Typography } from 'antd';
 import type { FormInstance } from 'antd';
 import Button from '@/components/ui/AppButton';
-import { addRuleForGroup, assignPresetsToGroup, groupPolicy } from './custom-groups';
-import { formatQuickRule, parseQuickRule, RULE_TYPE_LABELS } from './rule-input';
+import { assignPresetsToGroup, groupPolicy } from './custom-groups';
+import { formatQuickRule, parseQuickRule, RULE_TYPE_LABELS, upsertCustomRule } from './rule-input';
 import type { AggregatorCatalog, AggregatorProfileInput } from './types';
 import styles from './SubscriptionAggregator.module.css';
 
@@ -38,7 +38,7 @@ export default function GroupUsageEditor({ form, groupId, catalog }: GroupUsageE
       setDraftError('认不出来：填域名、网址、IP 段，或 geosite:名称 / geoip:国家代码 / keyword:关键字');
       return;
     }
-    form.setFieldValue(['rules', 'custom'], addRuleForGroup(rules.custom, parsed, groupId));
+    form.setFieldValue(['rules', 'custom'], upsertCustomRule(rules.custom, { ...parsed, policy }));
     setDraft('');
     setDraftError('');
   };

@@ -16,6 +16,8 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { buildPolicyOptions, protocolOptions } from './aggregator-presentation';
 import CustomGroupsEditor from './CustomGroupsEditor';
+import CustomRulesEditor from './CustomRulesEditor';
+import RouteTester from './RouteTester';
 import type { AggregatorCatalog, AggregatorCustomGroup, AggregatorProfileInput, AggregatorSource } from './types';
 import { useDraftNodes } from './use-draft-nodes';
 import styles from './SubscriptionAggregator.module.css';
@@ -217,8 +219,15 @@ export default function ProfileEditorDrawer({
 
   const rulesTab = (
     <>
+      {/* 页面顺序就是匹配顺序：自定义规则 → 规则组（按列表顺序）→ 漏网之鱼。 */}
+      <Text strong className={styles.groupSectionTitle}>测试分流</Text>
+      <RouteTester form={form} catalog={catalog} policyOptions={rulePolicyOptions} />
+      <div className={styles.section}>
+        <CustomRulesEditor form={form} ruleTypes={catalog.ruleTypes} policyOptions={rulePolicyOptions} />
+      </div>
+      <Text strong className={styles.groupSectionTitle}>规则组</Text>
       <Text type="secondary" className={styles.sectionHint}>
-        规则组在客户端里是可切换的策略组，这里设的是默认选项。规则集来自 MetaCubeX/meta-rules-dat，由客户端自行下载更新。
+        在自定义规则之后按列表顺序匹配。规则组在客户端里是可切换的策略组，这里设的是默认选项。规则集来自 MetaCubeX/meta-rules-dat，由客户端自行下载更新。
       </Text>
       <Form.List name={['rules', 'presets']}>
         {(fields) => (
@@ -237,7 +246,13 @@ export default function ProfileEditorDrawer({
                     <small>{info?.description}</small>
                   </span>
                   <Form.Item name={[field.name, 'policy']} noStyle>
-                    <Select className={styles.policySelect} options={groupPolicyOptions} aria-label={`${info?.name || presetId} 默认策略`} />
+                    <Select
+                      className={styles.policySelect}
+                      options={groupPolicyOptions}
+                      showSearch
+                      optionFilterProp="label"
+                      aria-label={`${info?.name || presetId} 默认策略`}
+                    />
                   </Form.Item>
                 </div>
               );
@@ -246,38 +261,8 @@ export default function ProfileEditorDrawer({
         )}
       </Form.List>
 
-      <Form.Item label="自定义规则" extra="排在内置规则之前，先匹配先生效。GEOSITE / GEOIP 填规则集名，例如 bilibili、cn。">
-        <Form.List name={['rules', 'custom']}>
-          {(fields, { add, remove }) => (
-            <div className={styles.rowList}>
-              {fields.map((field) => (
-                <div key={field.key} className={styles.ruleRow}>
-                  <Form.Item name={[field.name, 'type']} noStyle>
-                    <Select options={catalog.ruleTypes.map((type) => ({ label: type, value: type }))} aria-label="规则类型" />
-                  </Form.Item>
-                  <Form.Item name={[field.name, 'value']} rules={[{ required: true, whitespace: true, message: '填写匹配值' }]} noStyle>
-                    <Input placeholder="google.com / 1.1.1.0/24 / openai" aria-label="匹配值" />
-                  </Form.Item>
-                  <Form.Item name={[field.name, 'policy']} noStyle>
-                    <Select options={rulePolicyOptions} aria-label="目标策略" />
-                  </Form.Item>
-                  <Button type="text" icon={<DeleteOutlined />} aria-label="删除规则" onClick={() => remove(field.name)} />
-                </div>
-              ))}
-              <Button
-                type="dashed"
-                icon={<PlusOutlined />}
-                onClick={() => add({ type: 'DOMAIN-SUFFIX', value: '', policy: 'proxy' })}
-              >
-                添加规则
-              </Button>
-            </div>
-          )}
-        </Form.List>
-      </Form.Item>
-
       <Form.Item label="其余流量（漏网之鱼）默认走" name={['rules', 'finalPolicy']}>
-        <Select options={groupPolicyOptions} style={{ maxWidth: 320 }} />
+        <Select options={groupPolicyOptions} showSearch optionFilterProp="label" style={{ maxWidth: 320 }} aria-label="漏网之鱼默认策略" />
       </Form.Item>
     </>
   );

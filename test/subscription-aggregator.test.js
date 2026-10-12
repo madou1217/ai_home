@@ -164,7 +164,12 @@ test('buildAggregationPlan emits region, source, preset and final groups with ru
   assert.ok(groupNames.includes('🤖 AI 服务'));
   assert.ok(!groupNames.includes('🇸🇬 新加坡节点'), 'empty regions are omitted');
   assert.equal(plan.rules[0].match.value, 'geosite-private');
-  assert.deepEqual(plan.rules[2], { match: { type: 'domain-suffix', value: 'example.com' }, target: { kind: 'group', name: '🇯🇵 日本节点' }, noResolve: false });
+  assert.deepEqual(plan.rules[2], {
+    match: { type: 'domain-suffix', value: 'example.com' },
+    target: { kind: 'group', name: '🇯🇵 日本节点' },
+    noResolve: false,
+    origin: { kind: 'custom', index: 0 }
+  });
   assert.deepEqual(plan.rules[3].target, { kind: 'group', name: '🚀 节点选择' });
   assert.ok(plan.warnings.includes('aggregator_policy_fallback:rule:DOMAIN,x.test:region:sg'));
   assert.deepEqual(plan.rules[4].target, { kind: 'group', name: '🎯 国内直连' });

@@ -239,6 +239,27 @@ export interface AggregatorPreview {
   view?: 'full' | 'nodes';
 }
 
+/** 规则测试：命中的规则来自哪里（内置私有地址 / 第几条自定义规则 / 哪个预设 / 漏网之鱼）。 */
+export type AggregatorRuleOrigin =
+  | { kind: 'private' }
+  | { kind: 'custom'; index: number }
+  | { kind: 'preset'; id: string }
+  | { kind: 'final' };
+
+/** 规则测试结果：命中的规则，以及顺着「手动选择」组默认成员走过的组。 */
+export interface AggregatorRouteTrace {
+  ok: boolean;
+  target: { kind: 'domain' | 'ip'; value: string };
+  /** type：domain / domain-suffix / domain-keyword / ip-cidr / geosite / geoip / final */
+  rule: { origin: AggregatorRuleOrigin | null; type: string; value: string };
+  groups: Array<{ name: string; type: AggregatorGroupType; members: string[]; memberCount: number }>;
+  /** 走到底是直连 / 拒绝 / 某个节点；停在会自动选择的组时为 null */
+  end: { kind: 'direct' | 'reject' | 'node'; name: string } | null;
+  /** 下载失败、没参与判断的规则集（geosite:xxx） */
+  unavailable: string[];
+  checked: number;
+}
+
 export interface AggregatorSyncResult {
   ok: boolean;
   count?: number;

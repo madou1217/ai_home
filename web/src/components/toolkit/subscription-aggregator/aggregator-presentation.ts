@@ -1,9 +1,11 @@
 import type {
   AggregatorCatalog,
+  AggregatorClientInfo,
   AggregatorFormat,
   AggregatorFormatInfo,
   AggregatorPolicy,
   AggregatorProfile,
+  AggregatorPull,
   AggregatorSource,
   AggregatorUserInfo
 } from './types';
@@ -177,6 +179,7 @@ const ERROR_TEXT: Record<string, string> = {
   invalid_subscription_content: '本地内容不能为空',
   subscription_content_too_large: '本地内容超过 2 MB',
   unsupported_aggregator_format: '不支持的输出格式',
+  unsupported_aggregator_client: '不认识的客户端',
   subscription_url_blocked: '订阅地址指向内网或保留地址，已拦截',
   subscription_fetch_timeout: '拉取订阅超时',
   subscription_fetch_failed: '拉取订阅失败',
@@ -191,7 +194,8 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
   [/^unsupported_shadowsocks_plugin_(.+)$/, (value) => `不支持 SS 插件 ${value}`],
   [/^unsupported_snell_version_(.+)$/, (value) => `不支持 Snell v${value}`],
   [/^unsupported_hysteria_protocol_(.+)$/, (value) => `不支持 Hysteria 的 ${value} 传输`],
-  [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`]
+  [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`],
+  [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`]
 ];
 
 export function skipReasonText(reason: string) {
@@ -201,6 +205,35 @@ export function skipReasonText(reason: string) {
     if (match) return describe(match[1]);
   }
   return reason;
+}
+
+/** 自动识别的客户端按拿到的格式分组（格式按 catalog.formats 的顺序）。 */
+export function groupClientsByFormat(
+  clients: Array<Pick<AggregatorClientInfo, 'name' | 'format'>>,
+  formats: Array<Pick<AggregatorFormatInfo, 'id' | 'name'>>
+) {
+  return formats
+    .map((format) => ({
+      format: format.id,
+      formatName: format.name,
+      clientNames: clients.filter((client) => client.format === format.id).map((client) => client.name)
+    }))
+    .filter((group) => group.clientNames.length > 0);
+}
+
+/** 拉取时间：一小时内显示「N 分钟前」，一天内「N 小时前」，更早显示日期时间。 */
+export function formatPullTime(at: number, now = Date.now()) {
+  const minutes = Math.floor(Math.max(0, now - at) / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 小时前`;
+  return new Date(at).toLocaleString();
+}
+
+/** 一次拉取的说明：客户端 · 格式（节点视图）· 节点数。 */
+export function describePull(pull: Pick<AggregatorPull, 'clientName' | 'format' | 'view' | 'nodes'>, formats: Array<Pick<AggregatorFormatInfo, 'id' | 'name'>>) {
+  const format = formats.find((item) => item.id === pull.format)?.name || pull.format;
+  return `${pull.clientName} · ${format}${pull.view === 'nodes' ? '（仅节点）' : ''} · ${pull.nodes} 个节点`;
 }
 
 export function aggregatorErrorText(code: string | undefined, fallback: string) {

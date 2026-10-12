@@ -25,8 +25,10 @@ export const subscriptionAggregatorAPI = {
   async rotateToken(profileId: string) {
     return (await api.post<{ ok: boolean; profile: AggregatorProfile }>(`${BASE}/profiles/${encodeURIComponent(profileId)}/token`)).data;
   },
-  async preview(profileId: string, format: AggregatorFormat) {
-    return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params: { format } })).data;
+  /** client：模拟某个客户端（它的内核版本、视图等），预览结果就是它实际拿到的内容。 */
+  async preview(profileId: string, format: AggregatorFormat, client = '') {
+    const params = client ? { format, client } : { format };
+    return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params })).data;
   },
   async saveSource(source: AggregatorSourceInput) {
     // 新增订阅会立即同步一次，给足上游抓取时间。

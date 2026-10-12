@@ -10,9 +10,11 @@ import {
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
   countEnabledPresets,
+  describePull,
   describeSourceOrigin,
   describeSourceScope,
   formatExpire,
+  formatPullTime,
   formatTraffic
 } from '@/components/toolkit/subscription-aggregator/aggregator-presentation';
 import ProfileEditorDrawer from '@/components/toolkit/subscription-aggregator/ProfileEditorDrawer';
@@ -195,14 +197,27 @@ export default function SubscriptionAggregatorPanel() {
           >
             {detail ? (
               <>
-                <SubscriptionLinkField path={detail.subscriptionPath} name={detail.name} formats={overview.catalog.formats} stacked />
+                <SubscriptionLinkField
+                  path={detail.subscriptionPath}
+                  name={detail.name}
+                  formats={overview.catalog.formats}
+                  clients={overview.catalog.clients}
+                  stacked
+                />
                 <KeyValue
                   rows={[
                     { key: 'nodes', label: '节点', value: `${detail.nodeCount ?? 0} 个` },
                     { key: 'scope', label: '订阅源', value: describeSourceScope(detail, sources.length) },
                     { key: 'presets', label: '规则组', value: `${countEnabledPresets(detail)} 个启用` },
                     { key: 'custom', label: '自定义规则', value: `${detail.rules.custom.length} 条` },
-                    { key: 'refresh', label: '自动刷新', value: detail.refreshHours ? `每 ${detail.refreshHours} 小时` : '仅手动同步' }
+                    { key: 'refresh', label: '自动刷新', value: detail.refreshHours ? `每 ${detail.refreshHours} 小时` : '仅手动同步' },
+                    {
+                      key: 'pulls',
+                      label: '最近拉取',
+                      value: detail.recentPulls?.length
+                        ? `${describePull(detail.recentPulls[0], overview.catalog.formats)} · ${formatPullTime(detail.recentPulls[0].at)}`
+                        : '还没有客户端拉取过'
+                    }
                   ]}
                 />
               </>
@@ -227,7 +242,13 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setEditingProfile(null)}
             onSave={async (input) => Boolean(await state.saveProfile(input))}
           />
-          <ProfilePreviewModal profile={previewProfile} formats={overview.catalog.formats} width="100%" onClose={() => setPreviewProfile(null)} />
+          <ProfilePreviewModal
+            profile={previewProfile}
+            formats={overview.catalog.formats}
+            clients={overview.catalog.clients}
+            width="100%"
+            onClose={() => setPreviewProfile(null)}
+          />
         </>
       ) : null}
     </>

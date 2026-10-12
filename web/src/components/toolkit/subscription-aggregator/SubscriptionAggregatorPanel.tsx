@@ -28,6 +28,7 @@ import {
 } from './aggregator-presentation';
 import ProfileEditorDrawer from './ProfileEditorDrawer';
 import ProfilePreviewModal from './ProfilePreviewModal';
+import RecentPulls from './RecentPulls';
 import SourceEditorModal from './SourceEditorModal';
 import SubscriptionLinkField from './SubscriptionLinkField';
 import type { AggregatorProfile, AggregatorProfileInput, AggregatorSource } from './types';
@@ -206,7 +207,13 @@ export default function SubscriptionAggregatorPanel() {
                       </Popconfirm>
                     </Space>
                   </div>
-                  <SubscriptionLinkField path={profile.subscriptionPath} name={profile.name} formats={overview.catalog.formats} />
+                  <SubscriptionLinkField
+                    path={profile.subscriptionPath}
+                    name={profile.name}
+                    formats={overview.catalog.formats}
+                    clients={overview.catalog.clients}
+                  />
+                  <RecentPulls pulls={profile.recentPulls} formats={overview.catalog.formats} />
                 </List.Item>
               )}
             />
@@ -229,7 +236,12 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setEditingProfile(null)}
             onSave={async (input) => Boolean(await state.saveProfile(input))}
           />
-          <ProfilePreviewModal profile={previewProfile} formats={overview.catalog.formats} onClose={() => setPreviewProfile(null)} />
+          <ProfilePreviewModal
+            profile={previewProfile}
+            formats={overview.catalog.formats}
+            clients={overview.catalog.clients}
+            onClose={() => setPreviewProfile(null)}
+          />
         </>
       ) : null}
     </section>

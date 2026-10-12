@@ -34,12 +34,23 @@ export interface AggregatorSource {
   userInfo: AggregatorUserInfo | null;
 }
 
+/** 客户端拉取一次订阅的记录（服务端内存里保留最近 20 次）。 */
+export interface AggregatorPull {
+  at: number;
+  clientId: string;
+  clientName: string;
+  format: AggregatorFormat;
+  view: 'full' | 'nodes';
+  nodes: number;
+}
+
 export interface AggregatorProfile {
   id: string;
   name: string;
   token: string;
   subscriptionPath: string;
   nodeCount?: number;
+  recentPulls?: AggregatorPull[];
   sources: { all: boolean; subscriptionIds: string[]; includeManualNodes: boolean };
   filter: { include: string; exclude: string; protocols: string[] };
   naming: { sourcePrefix: boolean; renames: Array<{ pattern: string; replace: string }> };
@@ -93,10 +104,19 @@ export interface AggregatorFormatInfo {
   groups: boolean;
 }
 
+/** 服务端识别表里的客户端与它默认拿到的格式。 */
+export interface AggregatorClientInfo {
+  id: string;
+  name: string;
+  format: AggregatorFormat;
+}
+
 export interface AggregatorCatalog {
   presets: AggregatorPresetInfo[];
   regions: AggregatorRegionInfo[];
   formats: AggregatorFormatInfo[];
+  /** 按 User-Agent 自动识别的客户端 */
+  clients: AggregatorClientInfo[];
   /** 节点库支持的全部协议（协议过滤的可选值） */
   protocols: string[];
   /** 远程订阅默认的 User-Agent */
@@ -132,6 +152,9 @@ export interface AggregatorPreview {
   skippedNodes: Array<{ name: string; reason: string }>;
   warnings: string[];
   userInfo: AggregatorUserInfo | null;
+  /** 模拟的客户端（预览时选了客户端才有） */
+  client?: { id: string; name: string } | null;
+  view?: 'full' | 'nodes';
 }
 
 export interface AggregatorSyncResult {

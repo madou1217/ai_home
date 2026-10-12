@@ -12,6 +12,9 @@ import {
   maskSourceUrl,
   parseBatchSources,
   policyLabel,
+  describePull,
+  formatPullTime,
+  groupClientsByFormat,
   protocolOptions,
   skipReasonText,
   utf8ByteLength
@@ -102,4 +105,27 @@ test('预览里未输出节点的原因译成可读文本，未知码原样显�
   assert.equal(skipReasonText('unsupported_hysteria2_obfs'), '不支持 Hysteria2 混淆');
   assert.equal(skipReasonText('missing_required_proxy_field_upMbps'), '缺少字段 upMbps');
   assert.equal(skipReasonText('something_else'), 'something_else');
+});
+
+test('拉取记录：相对时间与客户端 / 格式 / 视图 / 节点数说明', () => {
+  const now = 10 * 60 * 60 * 1000;
+  assert.equal(formatPullTime(now - 20 * 1000, now), '刚刚');
+  assert.equal(formatPullTime(now - 5 * 60 * 1000, now), '5 分钟前');
+  assert.equal(formatPullTime(now - 3 * 60 * 60 * 1000, now), '3 小时前');
+  const formats = [{ id: 'sing-box', name: 'sing-box' }];
+  assert.equal(describePull({ clientName: 'Hiddify', format: 'sing-box', view: 'nodes', nodes: 12 }, formats), 'Hiddify · sing-box（仅节点） · 12 个节点');
+  assert.equal(skipReasonText('requires_sing_box_1.12.0'), '需要 sing-box ≥ 1.12.0');
+});
+
+test('自动识别的客户端按格式分组，格式顺序跟服务端一致，没有客户端的格式不列', () => {
+  const formats = [{ id: 'mihomo', name: 'mihomo' }, { id: 'stash', name: 'Stash' }, { id: 'base64', name: 'Base64' }];
+  const clients = [
+    { name: 'Clash Verge Rev', format: 'mihomo' },
+    { name: 'v2rayN', format: 'base64' },
+    { name: 'FlClash', format: 'mihomo' }
+  ];
+  assert.deepEqual(groupClientsByFormat(clients, formats), [
+    { format: 'mihomo', formatName: 'mihomo', clientNames: ['Clash Verge Rev', 'FlClash'] },
+    { format: 'base64', formatName: 'Base64', clientNames: ['v2rayN'] }
+  ]);
 });

@@ -5,7 +5,13 @@ import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { aggregatorErrorText, formatOptions, skipReasonText } from './aggregator-presentation';
 import { subscriptionAggregatorAPI } from './subscription-aggregator-api';
-import type { AggregatorFormat, AggregatorFormatInfo, AggregatorPreview, AggregatorProfile } from './types';
+import type {
+  AggregatorClientInfo,
+  AggregatorFormat,
+  AggregatorFormatInfo,
+  AggregatorPreview,
+  AggregatorProfile
+} from './types';
 import styles from './SubscriptionAggregator.module.css';
 
 const { Text } = Typography;
@@ -23,25 +29,29 @@ interface ProfilePreviewModalProps {
   profile: AggregatorProfile | null;
   /** 服务端 catalog.formats */
   formats: AggregatorFormatInfo[];
+  /** 服务端 catalog.clients：选一个客户端，预览就是它实际拿到的内容 */
+  clients: AggregatorClientInfo[];
   onClose: () => void;
   width?: number | string;
 }
 
-/** 预览聚合结果：只渲染库里现有节点，不触发订阅源刷新。 */
-export default function ProfilePreviewModal({ profile, formats, onClose, width = 860 }: ProfilePreviewModalProps) {
+/** 预览聚合结果：只渲染库里现有节点，不触发订阅源刷新。可以模拟某个客户端。 */
+export default function ProfilePreviewModal({ profile, formats, clients, onClose, width = 860 }: ProfilePreviewModalProps) {
   const [format, setFormat] = useState<AggregatorFormat>(DEFAULT_FORMAT);
+  const [client, setClient] = useState('');
   const [preview, setPreview] = useState<AggregatorPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const requestRef = useRef(0);
 
-  const load = useCallback(async (profileId: string, nextFormat: AggregatorFormat) => {
+  const load = useCallback(async (profileId: string, nextFormat: AggregatorFormat, nextClient: string) => {
     const requestId = ++requestRef.current;
     setFormat(nextFormat);
+    setClient(nextClient);
     setLoading(true);
     setError('');
     try {
-      const result = await subscriptionAggregatorAPI.preview(profileId, nextFormat);
+      const result = await subscriptionAggregatorAPI.preview(profileId, nextFormat, nextClient);
       if (requestId === requestRef.current) setPreview(result);
     } catch (loadError) {
       const code = (loadError as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -53,8 +63,15 @@ export default function ProfilePreviewModal({ profile, formats, onClose, width =
 
   useEffect(() => {
     setPreview(null);
-    if (profile) void load(profile.id, DEFAULT_FORMAT);
+    if (profile) void load(profile.id, DEFAULT_FORMAT, '');
   }, [load, profile]);
+
+  // 选客户端时格式跟着换成它默认拿到的格式（之后仍可手动改格式）。
+  const changeClient = (nextClient: string) => {
+    if (!profile) return;
+    const clientFormat = clients.find((item) => item.id === nextClient)?.format;
+    void load(profile.id, clientFormat || format, nextClient);
+  };
 
   const download = () => {
     if (!preview?.content || !profile) return;
@@ -81,14 +98,26 @@ export default function ProfilePreviewModal({ profile, formats, onClose, width =
       destroyOnHidden
     >
       <div className={styles.previewToolbar}>
-        <Select
-          aria-label="预览格式"
-          value={format}
-          options={formatOptions(formats)}
-          onChange={(value) => profile && void load(profile.id, value)}
-          popupMatchSelectWidth={false}
-          style={{ minWidth: 200 }}
-        />
+        <Space wrap>
+          <Select
+            aria-label="预览格式"
+            value={format}
+            options={formatOptions(formats)}
+            onChange={(value) => profile && void load(profile.id, value, client)}
+            popupMatchSelectWidth={false}
+            style={{ minWidth: 200 }}
+          />
+          <Select
+            aria-label="模拟客户端"
+            value={client}
+            options={[{ label: '不模拟客户端', value: '' }, ...clients.map((item) => ({ label: item.name, value: item.id }))]}
+            onChange={changeClient}
+            popupMatchSelectWidth={false}
+            showSearch
+            optionFilterProp="label"
+            style={{ minWidth: 180 }}
+          />
+        </Space>
         <Space wrap>
           <Button icon={<CopyOutlined />} disabled={loading || !preview?.content} onClick={() => preview && void copyText(preview.content, '配置已复制')}>
             复制
@@ -106,7 +135,9 @@ export default function ProfilePreviewModal({ profile, formats, onClose, width =
           <Tag>规则 {preview.stats.rules}</Tag>
           <Tag>过滤 {preview.stats.filtered}</Tag>
           <Tag>去重 {preview.stats.duplicates}</Tag>
-          {preview.stats.skipped > 0 && <Tag color="warning">格式不支持 {preview.stats.skipped}</Tag>}
+          {preview.stats.skipped > 0 && <Tag color="warning">未输出 {preview.stats.skipped}</Tag>}
+          {preview.client && <Tag color="purple">按 {preview.client.name} 输出</Tag>}
+          {preview.view === 'nodes' && <Tag>仅节点</Tag>}
         </Space>
       )}
       {error && <Text type="danger">{error}</Text>}

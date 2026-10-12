@@ -85,12 +85,15 @@ html[data-mobile-hud] .ant-modal {
 }
 html[data-mobile-hud] .ant-modal-wrap {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   padding: 12px 12px calc(env(safe-area-inset-bottom) + 12px);
 }
+/* 用 margin-top: auto 贴底：比屏幕高的弹窗从顶部开始排、能滚动到顶。
+   （align-items: flex-end 会让超高弹窗的顶部溢出到滚动不到的地方。） */
 html[data-mobile-hud] .ant-modal-wrap > .ant-modal {
   width: 100% !important;
   top: 0;
+  margin-top: auto;
 }
 html[data-mobile-hud] .ant-modal .ant-modal-footer .ant-btn {
   min-height: var(--mhud-hit);

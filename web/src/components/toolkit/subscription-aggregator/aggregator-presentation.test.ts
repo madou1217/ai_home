@@ -15,8 +15,10 @@ import {
   describePull,
   formatPullTime,
   groupClientsByFormat,
+  isLoopbackOrigin,
   protocolOptions,
   skipReasonText,
+  sortImportClients,
   utf8ByteLength
 } from './aggregator-presentation.ts';
 
@@ -128,4 +130,14 @@ test('自动识别的客户端按格式分组，格式顺序跟服务端一致�
     { format: 'mihomo', formatName: 'mihomo', clientNames: ['Clash Verge Rev', 'FlClash'] },
     { format: 'base64', formatName: 'Base64', clientNames: ['v2rayN'] }
   ]);
+});
+
+test('导入：本机地址判断与已安装客户端排前面', () => {
+  assert.equal(isLoopbackOrigin('http://127.0.0.1:9527'), true);
+  assert.equal(isLoopbackOrigin('http://localhost:9527'), true);
+  assert.equal(isLoopbackOrigin('http://[::1]:9527'), true);
+  assert.equal(isLoopbackOrigin('http://192.168.31.10:9527'), false);
+  assert.equal(isLoopbackOrigin('not a url'), false);
+  const clients = [{ id: 'stash', scheme: 'stash' }, { id: 'v2rayn', scheme: '' }, { id: 'clash', scheme: 'clash' }];
+  assert.deepEqual(sortImportClients(clients, { clash: 'Clash Verge', stash: null }).map((client) => client.id), ['clash', 'stash', 'v2rayn']);
 });

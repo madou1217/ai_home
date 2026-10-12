@@ -3,6 +3,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  ImportOutlined,
   PlusOutlined,
   RetweetOutlined,
   SyncOutlined
@@ -17,6 +18,7 @@ import {
   formatPullTime,
   formatTraffic
 } from '@/components/toolkit/subscription-aggregator/aggregator-presentation';
+import ImportProfileModal from '@/components/toolkit/subscription-aggregator/ImportProfileModal';
 import ProfileEditorDrawer from '@/components/toolkit/subscription-aggregator/ProfileEditorDrawer';
 import ProfilePreviewModal from '@/components/toolkit/subscription-aggregator/ProfilePreviewModal';
 import SourceEditorModal from '@/components/toolkit/subscription-aggregator/SourceEditorModal';
@@ -39,6 +41,7 @@ export default function SubscriptionAggregatorPanel() {
   const [sourceEditor, setSourceEditor] = useState<{ source: AggregatorSource | null } | null>(null);
   const [editingProfile, setEditingProfile] = useState<AggregatorProfileInput | null>(null);
   const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
+  const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
   const [detailId, setDetailId] = useState('');
 
   if (loading && !overview) return <MobileBoot label="READING SUBSCRIPTIONS" />;
@@ -204,6 +207,7 @@ export default function SubscriptionAggregatorPanel() {
                   clients={overview.catalog.clients}
                   stacked
                 />
+                <ActionButton icon={<ImportOutlined />} label="导入到客户端 / 扫码" tone="primary" onClick={() => setImportProfile(detail)} />
                 <KeyValue
                   rows={[
                     { key: 'nodes', label: '节点', value: `${detail.nodeCount ?? 0} 个` },
@@ -248,6 +252,13 @@ export default function SubscriptionAggregatorPanel() {
             clients={overview.catalog.clients}
             width="100%"
             onClose={() => setPreviewProfile(null)}
+          />
+          <ImportProfileModal
+            profile={importProfile}
+            formats={overview.catalog.formats}
+            width="100%"
+            defaultTab="mobile"
+            onClose={() => setImportProfile(null)}
           />
         </>
       ) : null}

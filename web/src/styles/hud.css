@@ -1183,6 +1183,11 @@ a.ant-typography:hover { text-shadow: var(--hud-text-glow); }
   opacity: 0;
 }
 
+/* 页面上显示二维码时（例如订阅扫码导入）暂时去掉扫描线，免得手机扫屏读不出 */
+html[data-qr-visible] .hud-crt-overlay {
+  opacity: 0 !important;
+}
+
 [data-theme='light'] .hud-crt-overlay {
   opacity: 0.35;
 }

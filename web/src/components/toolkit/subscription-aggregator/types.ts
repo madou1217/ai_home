@@ -104,6 +104,44 @@ export interface AggregatorFormatInfo {
   groups: boolean;
 }
 
+/** 一键导入：某个客户端的导入方式（深链接 / 下载配置 / 复制地址）。 */
+export interface AggregatorImportClient {
+  id: string;
+  name: string;
+  /** 同一个链接覆盖的具体 App（例如 Clash 系） */
+  apps: string;
+  /** 深链接的 URL Scheme；空表示没有导入链接 */
+  scheme: string;
+  /** 空表示由服务端按客户端 UA 选格式 */
+  format: AggregatorFormat;
+  view: '' | 'nodes';
+  devices: Array<'desktop' | 'mobile'>;
+  /** false：写法只见于第三方面板，待实测 */
+  verified: boolean;
+  /** 没有导入链接，下载托管配置后用客户端打开 */
+  download: boolean;
+  note: string;
+  /** 这个客户端用的订阅地址 */
+  url: string;
+  /** 深链接；空表示复制地址或下载配置 */
+  link: string;
+}
+
+export interface AggregatorImportLinks {
+  ok: boolean;
+  origin: string;
+  /** 通用订阅地址（按 User-Agent 自动选格式） */
+  url: string;
+  clients: AggregatorImportClient[];
+}
+
+/** 本机安装检测：URL Scheme → 处理它的应用名；local=false 表示 WebUI 不在服务器这台机器上。 */
+export interface AggregatorLocalClients {
+  ok: boolean;
+  local: boolean;
+  handlers: Record<string, string | null>;
+}
+
 /** 服务端识别表里的客户端与它默认拿到的格式。 */
 export interface AggregatorClientInfo {
   id: string;

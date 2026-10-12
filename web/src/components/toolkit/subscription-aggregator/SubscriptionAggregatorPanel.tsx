@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  ImportOutlined,
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -26,6 +27,7 @@ import {
   formatExpire,
   formatTraffic
 } from './aggregator-presentation';
+import ImportProfileModal from './ImportProfileModal';
 import ProfileEditorDrawer from './ProfileEditorDrawer';
 import ProfilePreviewModal from './ProfilePreviewModal';
 import RecentPulls from './RecentPulls';
@@ -52,6 +54,7 @@ export default function SubscriptionAggregatorPanel() {
   const [sourceEditor, setSourceEditor] = useState<{ source: AggregatorSource | null } | null>(null);
   const [editingProfile, setEditingProfile] = useState<AggregatorProfileInput | null>(null);
   const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
+  const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
   const sources = overview?.sources || [];
   const profiles = overview?.profiles || [];
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
@@ -188,6 +191,7 @@ export default function SubscriptionAggregatorPanel() {
                       <Tag>{profile.refreshHours ? `每 ${profile.refreshHours} 小时自动刷新` : '仅手动同步'}</Tag>
                     </Space>
                     <Space size={4} wrap>
+                      <Button size="small" type="primary" icon={<ImportOutlined />} onClick={() => setImportProfile(profile)}>导入</Button>
                       <Button size="small" icon={<EyeOutlined />} onClick={() => setPreviewProfile(profile)}>预览</Button>
                       <Button size="small" icon={<EditOutlined />} onClick={() => setEditingProfile(profile)}>编辑</Button>
                       <Popconfirm
@@ -242,6 +246,7 @@ export default function SubscriptionAggregatorPanel() {
             clients={overview.catalog.clients}
             onClose={() => setPreviewProfile(null)}
           />
+          <ImportProfileModal profile={importProfile} formats={overview.catalog.formats} onClose={() => setImportProfile(null)} />
         </>
       ) : null}
     </section>

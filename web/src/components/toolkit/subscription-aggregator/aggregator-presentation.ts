@@ -3,6 +3,7 @@ import type {
   AggregatorClientInfo,
   AggregatorFormat,
   AggregatorFormatInfo,
+  AggregatorImportClient,
   AggregatorPolicy,
   AggregatorProfile,
   AggregatorPull,
@@ -180,6 +181,7 @@ const ERROR_TEXT: Record<string, string> = {
   subscription_content_too_large: '本地内容超过 2 MB',
   unsupported_aggregator_format: '不支持的输出格式',
   unsupported_aggregator_client: '不认识的客户端',
+  invalid_aggregator_origin: '服务地址必须是 http(s)://主机[:端口]',
   subscription_url_blocked: '订阅地址指向内网或保留地址，已拦截',
   subscription_fetch_timeout: '拉取订阅超时',
   subscription_fetch_failed: '拉取订阅失败',
@@ -219,6 +221,22 @@ export function groupClientsByFormat(
       clientNames: clients.filter((client) => client.format === format.id).map((client) => client.name)
     }))
     .filter((group) => group.clientNames.length > 0);
+}
+
+/** 服务地址是不是只有本机能访问（手机扫不了）。 */
+export function isLoopbackOrigin(origin: string) {
+  try {
+    const host = new URL(origin).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    return host === 'localhost' || host === '::1' || /^127\./.test(host);
+  } catch (_error) {
+    return false;
+  }
+}
+
+/** 本机已安装（URL Scheme 有处理程序）的客户端排前面，其余保持服务端给的顺序。 */
+export function sortImportClients<T extends Pick<AggregatorImportClient, 'scheme'>>(clients: T[], handlers: Record<string, string | null>) {
+  const installed = (client: T) => Boolean(client.scheme && handlers[client.scheme]);
+  return [...clients.filter(installed), ...clients.filter((client) => !installed(client))];
 }
 
 /** 拉取时间：一小时内显示「N 分钟前」，一天内「N 小时前」，更早显示日期时间。 */

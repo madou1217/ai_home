@@ -1,6 +1,8 @@
 import api from '@/services/api';
 import type {
   AggregatorFormat,
+  AggregatorImportLinks,
+  AggregatorLocalClients,
   AggregatorOverview,
   AggregatorPreview,
   AggregatorProfile,
@@ -29,6 +31,13 @@ export const subscriptionAggregatorAPI = {
   async preview(profileId: string, format: AggregatorFormat, client = '') {
     const params = client ? { format, client } : { format };
     return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params })).data;
+  },
+  /** origin：订阅地址用的服务地址（扫码时选局域网地址）。 */
+  async importLinks(profileId: string, origin: string) {
+    return (await api.get<AggregatorImportLinks>(`${BASE}/profiles/${encodeURIComponent(profileId)}/import-links`, { params: { origin } })).data;
+  },
+  async localClients() {
+    return (await api.get<AggregatorLocalClients>(`${BASE}/local-clients`)).data;
   },
   async saveSource(source: AggregatorSourceInput) {
     // 新增订阅会立即同步一次，给足上游抓取时间。

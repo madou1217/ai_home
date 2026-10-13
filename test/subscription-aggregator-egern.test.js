@@ -61,7 +61,8 @@ test('Egern proxy entries use the documented keys for TLS, Reality and transport
   assert.deepEqual(compile({ ...sample('trojan'), network: 'ws', path: '/t', host: 'cdn.example' }).trojan.websocket, { path: '/t', host: 'cdn.example' });
   assert.throws(() => compile({ ...sample('trojan'), network: 'grpc' }), { code: 'unsupported_proxy_transport_grpc' });
   assert.deepEqual(compile(sample('hy2')).hysteria2, {
-    name: 'hy2', server: 'hy.example', port: 443, auth: 'p', sni: 'hy.example', skip_tls_verify: undefined, obfs: 'salamander', obfs_password: 'o'
+    name: 'hy2', server: 'hy.example', port: 443, auth: 'p', sni: 'hy.example', skip_tls_verify: undefined,
+    obfs: 'salamander', obfs_password: 'o', port_hopping: undefined
   });
   assert.deepEqual(compile(sample('tuic')).tuic.alpn, ['h3']);
   // AnyTLS 不写 skip_tls_verify 时 Egern 会跳过校验，所以总是显式写出。

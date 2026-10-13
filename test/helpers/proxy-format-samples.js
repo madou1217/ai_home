@@ -62,6 +62,20 @@ const SAMPLE_NODES = Object.freeze([
   { protocol: 'https', name: 'https', server: 'hs.example', port: 443, username: 'u', password: 'p', tls: true, sni: 'hs.example' }
 ]);
 
+// 端口跳跃的 Hysteria2 节点：port 取端口列表里的第一个端口（sing-box 有 server_ports 时
+// 不能写 server_port，只能靠这个约定让往返后的连接指纹保持一致）。hopInterval 是客户端调优项，
+// 不参与连接指纹，所以只有声明了该字段的格式才写得出来。
+const HY2_PORT_HOPPING_NODE = Object.freeze({
+  protocol: 'hysteria2', name: 'hy2-hop', server: 'hy.example', port: 1000, password: 'p',
+  tls: true, sni: 'hy.example', ports: '1000-2000,3000', hopInterval: 30
+});
+
+// XHTTP 传输的 VLESS 节点（旧名 splithttp）：mihomo / Stash 与分享链接能表达，其余格式跳过。
+const VLESS_XHTTP_NODE = Object.freeze({
+  protocol: 'vless', name: 'vless-xhttp', server: 'xh.example', port: 443, uuid: UUID,
+  network: 'xhttp', path: '/xh', host: 'cdn.example', mode: 'packet-up', tls: true, sni: 'cdn.example'
+});
+
 function assertRoundTrip(format, rendered, originals = SAMPLE_NODES) {
   const parsed = parseSubscriptionContentDetailed(rendered);
   assert.deepEqual(parsed.skippedNodes, [], `${format} 导入不应跳过节点`);
@@ -76,4 +90,4 @@ function assertRoundTrip(format, rendered, originals = SAMPLE_NODES) {
   });
 }
 
-module.exports = { SAMPLE_NODES, UUID, assertRoundTrip };
+module.exports = { HY2_PORT_HOPPING_NODE, SAMPLE_NODES, UUID, VLESS_XHTTP_NODE, assertRoundTrip };

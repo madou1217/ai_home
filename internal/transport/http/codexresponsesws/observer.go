@@ -34,8 +34,8 @@ type turnObserver struct {
 	generate       bool
 	// committed 表示本轮已有非预备帧交给客户端；之后的失败绝不能换号重放。
 	committed bool
-	// quotaFailover 表示本轮终态是已记入运行态的额度耗尽，可让客户端换号重连。
-	quotaFailover bool
+	// retryableFailover 表示本轮终态是已记入运行态的可重试失败，可让客户端换号重连。
+	retryableFailover bool
 }
 
 // newTurnObserver 创建连接级串行状态机。
@@ -71,7 +71,7 @@ func (observer *turnObserver) Begin(payload []byte) error {
 	observer.active = true
 	observer.generate = request.Generate == nil || *request.Generate
 	observer.committed = false
-	observer.quotaFailover = false
+	observer.retryableFailover = false
 	return nil
 }
 
@@ -89,12 +89,12 @@ func (observer *turnObserver) Committed() bool {
 	return observer.committed
 }
 
-// TakeQuotaFailover 读取并清除「本轮因额度耗尽结束」标记。
-func (observer *turnObserver) TakeQuotaFailover() bool {
+// TakeRetryableFailover 读取并清除「本轮因可重试失败结束」标记。
+func (observer *turnObserver) TakeRetryableFailover() bool {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
-	failover := observer.quotaFailover
-	observer.quotaFailover = false
+	failover := observer.retryableFailover
+	observer.retryableFailover = false
 	return failover
 }
 
@@ -164,19 +164,20 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if err != nil {
 			return true, ErrInvalidObserverState
 		}
-		if err := recordCodexFailure(
+		recorded, err := recordCodexFailure(
 			context.Background(),
 			observer.attempts,
 			observer.modelRefreshes,
 			observer.route,
 			observer.observation,
 			failure,
-		); err != nil {
+		)
+		if err != nil {
 			return true, err
 		}
-		if failure.RuntimeKind() == runtimecore.FailureQuotaExhausted {
+		if recorded && isRetryableFailoverKind(failure.RuntimeKind()) && !observer.Committed() {
 			observer.mu.Lock()
-			observer.quotaFailover = true
+			observer.retryableFailover = true
 			observer.mu.Unlock()
 		}
 		return true, nil
@@ -203,7 +204,7 @@ func (observer *turnObserver) RecordMalformedUpstream() error {
 	if err != nil {
 		return ErrInvalidObserverState
 	}
-	return recordCodexFailure(
+	_, err = recordCodexFailure(
 		context.Background(),
 		observer.attempts,
 		observer.modelRefreshes,
@@ -211,6 +212,7 @@ func (observer *turnObserver) RecordMalformedUpstream() error {
 		observer.observation,
 		failure,
 	)
+	return err
 }
 
 // recordCodexFailure 统一保护 WS 握手、转发与终态观察产生的运行态写入。
@@ -221,13 +223,13 @@ func recordCodexFailure(
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
 	failure inferencegateway.AttemptFailure,
-) error {
+) (bool, error) {
 	if attempts == nil || modelRefreshes == nil {
-		return ErrInvalidObserverState
+		return false, ErrInvalidObserverState
 	}
 	recorded, err := attempts.RecordFailure(ctx, route, observation, failure)
 	if err != nil || !recorded {
-		return err
+		return recorded, err
 	}
 	if failure.RuntimeKind() == runtimecore.FailureModelUnsupported {
 		_ = modelRefreshes.ScheduleModelRefresh(
@@ -236,7 +238,7 @@ func recordCodexFailure(
 			"codex",
 		)
 	}
-	return nil
+	return true, nil
 }
 
 // ActiveGenerating 判断连接断开时是否存在应归属到账号的真实生成请求。

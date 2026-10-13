@@ -180,6 +180,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				handler.fail(response, trail, "upstream_safety_rejected")
 				return
 			}
+			// HTTP 200 也可能在尚未输出内容时返回容量/额度错误。
+			// probeResponse 已限定可重放边界，沿用同模型选号与尝试预算；
+			// 保留最后一次原始响应，账号池耗尽时只交付它，不伪造成功。
+			if failure.IsValid() && failure.ResponseFailure().Retryable() {
+				handler.recordFailure(ctx, route, selection, failure)
+				trail.attempt(selection.AccountRef, "precommit_failure", failure, "", attemptStarted)
+				last, lastRef = upstream, selection.AccountRef
+				continue
+			}
 			handler.deliver(response, request.WithContext(ctx), upstream, route, selection, metadata.Stream)
 			_ = upstream.Body.Close()
 			return

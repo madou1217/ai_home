@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,4 +109,99 @@ func TestServerRoutesCodexResponsesWebSocketThroughDatabaseAccount(t *testing.T)
 		headers.Get(responseswebsocket.HopHeader) != responseswebsocket.HopValue {
 		t.Fatalf("upstream headers = %#v", headers)
 	}
+}
+
+// 两个账号共享模型时，钉选头必须沿 Host -> Selector -> Recruiter 选中同一账号。
+func TestServerHonorsCodexWebSocketPinnedAccount(t *testing.T) {
+	t.Parallel()
+
+	upstreamHeaders := make(chan http.Header, 2)
+	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		upstreamHeaders <- request.Header.Clone()
+		connection, err := websocket.Accept(response, request, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, _, err := connection.Read(ctx); err == nil {
+			_ = connection.Write(ctx, websocket.MessageText, []byte(`{"type":"response.completed","response":{"id":"pinned"}}`))
+		}
+	}))
+	defer upstream.Close()
+	baseURL, client := startTestServer(t)
+	accountRefs := make(map[string]string)
+	for _, key := range []string{"synthetic-ws-first", "synthetic-ws-second"} {
+		payload, err := json.Marshal(map[string]any{
+			"provider_id": "codex",
+			"auth":        map[string]string{"kind": "api_key", "api_key": key, "base_url": upstream.URL},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		created := performRequest(t, client, http.MethodPost, baseURL+accountsapi.CollectionPath, testManagementKey, payload)
+		assertStatus(t, created, http.StatusCreated)
+		var document struct {
+			Data struct {
+				AccountRef string `json:"account_ref"`
+			} `json:"data"`
+		}
+		decodeJSON(t, created.body, &document)
+		accountRefs[key] = document.Data.AccountRef
+		waitForAccountModels(t, client, baseURL, document.Data.AccountRef, []string{"gpt-5.6-sol"})
+	}
+	for _, key := range []string{"synthetic-ws-second", "synthetic-ws-first"} {
+		t.Run(key, func(t *testing.T) {
+			header := http.Header{}
+			header.Set("Authorization", "Bearer "+testClientKey)
+			header.Set("X-Account-Ref", accountRefs[key])
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			connection, _, err := websocket.Dial(ctx, baseURL+"/v1/responses", &websocket.DialOptions{HTTPHeader: header})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.CloseNow()
+			if err := connection.Write(ctx, websocket.MessageText, []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`)); err != nil {
+				t.Fatal(err)
+			}
+			if _, payload, err := connection.Read(ctx); err != nil || !strings.Contains(string(payload), "response.completed") {
+				t.Fatalf("pinned response=%s err=%v", payload, err)
+			}
+			if headers := <-upstreamHeaders; headers.Get("Authorization") != "Bearer "+key {
+				t.Fatalf("pinned account used another credential")
+			}
+		})
+	}
+	t.Run("invalid pin", func(t *testing.T) {
+		header := http.Header{}
+		header.Set("Authorization", "Bearer "+testClientKey)
+		header.Set("X-Account-Ref", "invalid")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		connection, _, err := websocket.Dial(ctx, baseURL+"/v1/responses", &websocket.DialOptions{HTTPHeader: header})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer connection.CloseNow()
+		if err := connection.Write(ctx, websocket.MessageText, []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`)); err != nil {
+			t.Fatal(err)
+		}
+		_, payload, err := connection.Read(ctx)
+		var failure struct {
+			Status int `json:"status"`
+			Error  struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err != nil || json.Unmarshal(payload, &failure) != nil || failure.Status != 400 || failure.Error.Code != "invalid_account_ref" {
+			t.Fatalf("invalid pin response=%s err=%v", payload, err)
+		}
+		select {
+		case <-upstreamHeaders:
+			t.Fatal("invalid pin reached upstream")
+		default:
+		}
+	})
 }

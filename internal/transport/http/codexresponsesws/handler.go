@@ -230,8 +230,9 @@ func (handler *Handler) ServeHTTP(
 	selection, err := handler.selector.Select(
 		session.Context(),
 		codexwebsocket.Request{
-			ClientProtocol: inference.ClientProtocolOpenAIResponses,
-			Model:          firstRequest.Model,
+			ClientProtocol:   inference.ClientProtocolOpenAIResponses,
+			Model:            firstRequest.Model,
+			PinnedAccountRef: strings.TrimSpace(request.Header.Get("X-Account-Ref")),
 		},
 	)
 	if err != nil {
@@ -354,7 +355,7 @@ func (handler *Handler) proxy(
 		observer.ActiveGenerating() {
 		failure, err := attemptfailure.NewIncompleteStream(result.err)
 		if err == nil {
-			_ = recordCodexFailure(
+			recorded, recordErr := recordCodexFailure(
 				context.Background(),
 				handler.attempts,
 				handler.modelRefreshes,
@@ -362,6 +363,10 @@ func (handler *Handler) proxy(
 				observer.CredentialObservation(),
 				failure,
 			)
+			if recordErr == nil && recorded && !observer.Committed() && isRetryableFailoverKind(failure.RuntimeKind()) {
+				result.closeCode = websocket.StatusInternalError
+				result.closeReason = retryableFailoverCloseReason
+			}
 		}
 	}
 	propagateClose(result, session.Other(result.source))
@@ -403,7 +408,7 @@ func (handler *Handler) handleDialFailure(
 		failure, err = attemptfailure.NewTransport(dialErr)
 	}
 	if err == nil && failure.IsValid() {
-		_ = recordCodexFailure(
+		_, _ = recordCodexFailure(
 			context.Background(),
 			handler.attempts,
 			handler.modelRefreshes,
@@ -442,7 +447,7 @@ func (handler *Handler) recordTransportFailure(
 ) {
 	failure, classifyErr := attemptfailure.NewTransport(err)
 	if classifyErr == nil {
-		_ = recordCodexFailure(
+		_, _ = recordCodexFailure(
 			context.Background(),
 			handler.attempts,
 			handler.modelRefreshes,
@@ -461,7 +466,11 @@ func (handler *Handler) writeSelectionError(
 	status := http.StatusServiceUnavailable
 	code := "no_available_account"
 	message := "当前没有可用的 Codex 账号"
-	if errors.Is(err, codexwebsocket.ErrInvalidRequest) ||
+	if errors.Is(err, codexwebsocket.ErrInvalidPinnedAccount) {
+		status = http.StatusBadRequest
+		code = "invalid_account_ref"
+		message = "Codex WebSocket 钉选账号引用无效"
+	} else if errors.Is(err, codexwebsocket.ErrInvalidRequest) ||
 		errors.Is(err, codexwebsocket.ErrModelRewriteRequired) {
 		status = http.StatusBadRequest
 		code = "native_model_not_exact"

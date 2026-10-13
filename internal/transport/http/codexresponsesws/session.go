@@ -238,14 +238,14 @@ func pumpUpstreamToClient(
 			}
 			return
 		}
-		// 本轮尚未交出输出时的额度耗尽：不转发错误，以 1011 关闭让 Codex 新开连接重选账号
+		// 本轮尚未交出输出时的可重试失败：不转发错误，以 1011 关闭让 Codex 新开连接重选账号
 		// （见 failover.go）。已扣留的预备帧一并丢弃。
-		if terminal && observer.TakeQuotaFailover() && !observer.Committed() {
+		if terminal && observer.TakeRetryableFailover() && !observer.Committed() {
 			held = nil
 			results <- pumpResult{
 				source:      pumpSourceUpstream,
 				closeCode:   websocket.StatusInternalError,
-				closeReason: quotaFailoverCloseReason,
+				closeReason: retryableFailoverCloseReason,
 			}
 			return
 		}
@@ -300,7 +300,9 @@ func resultFromRead(
 	if errors.As(err, &closeError) {
 		result.closeCode = closeError.Code
 		result.closeReason = closeError.Reason
-		if closeError.Code == websocket.StatusNormalClosure {
+		// 上游即便使用 1000 关闭，在真实生成请求尚未完成时仍是断流；
+		// proxy 依据 observer.ActiveGenerating 区分完成后关闭与提前关闭。
+		if source == pumpSourceClient && closeError.Code == websocket.StatusNormalClosure {
 			result.recordIncomplete = false
 		}
 		return result

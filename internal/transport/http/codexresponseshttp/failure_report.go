@@ -26,7 +26,8 @@ type FailureReport struct {
 // AttemptReport 描述一次失败的上游尝试。
 type AttemptReport struct {
 	AccountRef string
-	// Outcome 是 "transport"（没拿到上游响应）、"http_<status>" 或 "safety_rejected"。
+	// Outcome 是 "transport"（没拿到上游响应）、"http_<status>"、
+	// "precommit_failure"（尚未输出内容的流内/JSON 错误）或 "safety_rejected"。
 	Outcome string
 	// Kind 是账号运行态的失败分类；Code 是上游失败分类代码。分类失败时为空。
 	Kind    string

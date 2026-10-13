@@ -7,6 +7,7 @@ package codexwebsocket
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
@@ -23,6 +24,8 @@ var (
 	ErrInvalidDependencies = errors.New("Codex WebSocket 选择器依赖无效")
 	// ErrInvalidRequest 表示客户端协议或模型不满足原生传输合同。
 	ErrInvalidRequest = errors.New("Codex WebSocket 选择请求无效")
+	// ErrInvalidPinnedAccount 表示客户端携带的钉选账号引用格式无效。
+	ErrInvalidPinnedAccount = errors.New("Codex WebSocket 钉选账号引用无效")
 	// ErrModelRewriteRequired 表示别名必须改写模型，不能继续原始帧透传。
 	ErrModelRewriteRequired = errors.New("Codex WebSocket 原生传输要求精确模型")
 	// ErrInvalidSelection 表示路由、账号或凭据的 Provider 身份不一致。
@@ -46,10 +49,11 @@ type Dependencies struct {
 	Transports accountrouting.CredentialTransportPolicy
 }
 
-// Request 只包含决定路由所需的客户端协议和模型。
+// Request 包含决定路由和账号亲和所需的客户端协议、模型和可选钉选账号。
 type Request struct {
-	ClientProtocol inference.ClientProtocolID
-	Model          string
+	ClientProtocol   inference.ClientProtocolID
+	Model            string
+	PinnedAccountRef string
 }
 
 // Selection 保存一个连接固定使用的路由、账号和临时凭据。
@@ -171,11 +175,26 @@ func (selector *Selector) Select(
 	if route.EffectiveModel() != request.Model {
 		return Selection{}, ErrModelRewriteRequired
 	}
-	recruitment, err := accountrouting.NewRequest(
-		selector.catalog,
-		codexauth.ProviderID,
-		route.EffectiveModel(),
-	)
+	var recruitment accountrouting.Request
+	pinnedAccountRef := strings.TrimSpace(request.PinnedAccountRef)
+	if pinnedAccountRef != "" {
+		accountRef, parseErr := accountcore.ParseAccountRef(pinnedAccountRef)
+		if parseErr != nil {
+			return Selection{}, errors.Join(ErrInvalidPinnedAccount, parseErr)
+		}
+		recruitment, err = accountrouting.NewPinnedRequest(
+			selector.catalog,
+			codexauth.ProviderID,
+			route.EffectiveModel(),
+			accountRef,
+		)
+	} else {
+		recruitment, err = accountrouting.NewRequest(
+			selector.catalog,
+			codexauth.ProviderID,
+			route.EffectiveModel(),
+		)
+	}
 	if err != nil {
 		return Selection{}, errors.Join(ErrInvalidRequest, err)
 	}

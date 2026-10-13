@@ -89,6 +89,62 @@ func TestSelectorRejectsAliasRewrite(t *testing.T) {
 	}
 }
 
+func TestSelectorHonorsPinnedAccount(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	account := newRoutingAccount(t)
+	credential := newCodexCredential(t)
+	routes := &routeResolverStub{route: newCodexRoute(t, "gpt-5.6-sol")}
+	recruiter := &recruiterStub{
+		result: newRecruitmentResult(t, catalog, account, credential),
+	}
+	selector, err := codexwebsocket.NewSelector(codexwebsocket.Dependencies{
+		Catalog:    catalog,
+		Routes:     routes,
+		Recruiter:  recruiter,
+		Transports: credentialPolicyStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewSelector() error = %v", err)
+	}
+
+	selection, err := selector.Select(context.Background(), codexwebsocket.Request{
+		ClientProtocol:   inference.ClientProtocolOpenAIResponses,
+		Model:            "gpt-5.6-sol",
+		PinnedAccountRef: account.Ref().String(),
+	})
+	if err != nil {
+		t.Fatalf("Select(pinned) error = %v", err)
+	}
+	if !recruiter.pinned || recruiter.pinnedAccount != account.Ref() || selection.AccountRef() != account.Ref() {
+		t.Fatalf("pinned request=%v pinned_account=%s selection=%s", recruiter.pinned, recruiter.pinnedAccount, selection.AccountRef())
+	}
+}
+
+func TestSelectorRejectsInvalidPinnedAccount(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	selector, err := codexwebsocket.NewSelector(codexwebsocket.Dependencies{
+		Catalog:    catalog,
+		Routes:     &routeResolverStub{route: newCodexRoute(t, "gpt-5.6-sol")},
+		Recruiter:  &recruiterStub{},
+		Transports: credentialPolicyStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewSelector() error = %v", err)
+	}
+	_, err = selector.Select(context.Background(), codexwebsocket.Request{
+		ClientProtocol:   inference.ClientProtocolOpenAIResponses,
+		Model:            "gpt-5.6-sol",
+		PinnedAccountRef: "not-an-account-ref",
+	})
+	if !errors.Is(err, codexwebsocket.ErrInvalidPinnedAccount) {
+		t.Fatalf("Select(invalid pinned) error = %v", err)
+	}
+}
+
 type routeResolverStub struct {
 	route    inferencegateway.Route
 	model    string
@@ -110,8 +166,10 @@ func (resolver *routeResolverStub) ResolveProtocolRoute(
 }
 
 type recruiterStub struct {
-	result accountrouting.Result
-	model  string
+	result        accountrouting.Result
+	model         string
+	pinned        bool
+	pinnedAccount accountcore.AccountRef
 }
 
 func (recruiter *recruiterStub) Recruit(
@@ -120,6 +178,7 @@ func (recruiter *recruiterStub) Recruit(
 	_ accountrouting.CredentialTransportPolicy,
 ) (accountrouting.Result, error) {
 	recruiter.model = request.ModelID().String()
+	recruiter.pinnedAccount, recruiter.pinned = request.PinnedAccount()
 	return recruiter.result, nil
 }
 

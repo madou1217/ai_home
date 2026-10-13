@@ -165,9 +165,9 @@ func TestHandlerRelaysToolCallAndFunctionCallOutput(t *testing.T) {
 	waitForAttempts(t, recorder, 2, 0)
 }
 
-// TestHandlerClassifiesWrapped429BeforeRelaying 验证真实 WS error 帧在客户端
-// 可见前写入账号模型级限流状态，正文仍保持原样。
-func TestHandlerClassifiesWrapped429BeforeRelaying(t *testing.T) {
+// TestHandlerClosesBeforeRelayingWrapped429 验证尚未产生输出的可重试 WS error
+// 帧会记录账号模型级限流状态，并以 1011 让 Codex 换号重连。
+func TestHandlerClosesBeforeRelayingWrapped429(t *testing.T) {
 	t.Parallel()
 
 	errorFrame := `{"type":"error","status":429,"error":{"code":"rate_limit_exceeded","message":"upstream-private"},"headers":{"retry-after":"3"}}`
@@ -184,9 +184,9 @@ func TestHandlerClassifiesWrapped429BeforeRelaying(t *testing.T) {
 	writeClientText(t, client, []byte(
 		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
 	))
-	messageType, payload, err := readClientMessage(t, client)
-	if err != nil || messageType != websocket.MessageText || string(payload) != errorFrame {
-		t.Fatalf("error relay type=%v payload=%s error=%v", messageType, payload, err)
+	_, _, err := readClientMessage(t, client)
+	if websocket.CloseStatus(err) != websocket.StatusInternalError {
+		t.Fatalf("retryable error close = %v status=%v", err, websocket.CloseStatus(err))
 	}
 	waitForAttempts(t, recorder, 0, 1)
 	failure := recorder.Failures()[0]
@@ -273,29 +273,40 @@ func TestHandlerRelaysStaleCredentialSuccessWithoutRuntimeClear(t *testing.T) {
 	}
 }
 
-// TestHandlerClosesAfterUpstreamTerminalFailure 验证失败终态先透传给客户端，
-// 再关闭当前连接，避免把已失败的 Responses 会话当作可复用连接。
+// TestHandlerClosesAfterUpstreamTerminalFailure 验证可重试失败在输出前触发换号重连，
+// 其它终态仍先透传，再关闭当前连接。
 func TestHandlerClosesAfterUpstreamTerminalFailure(t *testing.T) {
 	for _, testCase := range []struct {
 		name         string
 		frame        string
+		wantRelay    bool
 		wantFailures int
 		wantFailure  runtimecore.FailureKind
 	}{
 		{
 			name:         "response.failed",
 			frame:        `{"type":"response.failed","response":{"id":"resp_failed","error":{"code":"rate_limit_exceeded"}}}`,
+			wantRelay:    false,
 			wantFailures: 1,
 			wantFailure:  runtimecore.FailureRateLimited,
 		},
 		{
+			name:         "model capacity",
+			frame:        `{"type":"response.failed","response":{"id":"resp_capacity","error":{"code":"model_at_capacity"}}}`,
+			wantRelay:    false,
+			wantFailures: 1,
+			wantFailure:  runtimecore.FailureModelOverloaded,
+		},
+		{
 			name:         "response.incomplete",
 			frame:        `{"type":"response.incomplete","response":{"id":"resp_incomplete","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`,
+			wantRelay:    true,
 			wantFailures: 0,
 		},
 		{
 			name:         "connection error",
 			frame:        `{"type":"error","status":429,"error":{"code":"rate_limit_exceeded"}}`,
+			wantRelay:    false,
 			wantFailures: 1,
 			wantFailure:  runtimecore.FailureRateLimited,
 		},
@@ -314,10 +325,12 @@ func TestHandlerClosesAfterUpstreamTerminalFailure(t *testing.T) {
 			writeClientText(t, client, []byte(
 				`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
 			))
-			messageType, payload, err := readClientMessage(t, client)
-			if err != nil || messageType != websocket.MessageText ||
-				string(payload) != testCase.frame {
-				t.Fatalf("terminal relay type=%v payload=%s error=%v", messageType, payload, err)
+			var err error
+			if testCase.wantRelay {
+				messageType, payload, err := readClientMessage(t, client)
+				if err != nil || messageType != websocket.MessageText || string(payload) != testCase.frame {
+					t.Fatalf("terminal relay type=%v payload=%s error=%v", messageType, payload, err)
+				}
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -535,8 +548,8 @@ func TestHandlerRejectsBinaryAndOversizedFirstFrames(t *testing.T) {
 	})
 }
 
-// TestHandlerPropagatesUpstreamCloseAndRecordsIncomplete 验证上游关闭码/原因对称
-// 传播，未完成真实请求按断流提交而不是伪造成功。
+// TestHandlerPropagatesUpstreamCloseAndRecordsIncomplete 验证未完成真实请求按断流
+// 提交而不是伪造成功，并以可重试关闭码通知 Codex 换号重连。
 func TestHandlerPropagatesUpstreamCloseAndRecordsIncomplete(t *testing.T) {
 	t.Parallel()
 
@@ -558,8 +571,8 @@ func TestHandlerPropagatesUpstreamCloseAndRecordsIncomplete(t *testing.T) {
 	_, _, err := client.Read(ctx)
 	var closeError websocket.CloseError
 	if !errors.As(err, &closeError) ||
-		closeError.Code != websocket.StatusGoingAway ||
-		closeError.Reason != "rotate connection" {
+		closeError.Code != websocket.StatusInternalError ||
+		closeError.Reason != "retryable upstream failure" {
 		t.Fatalf("client close error = %v", err)
 	}
 	waitForAttempts(t, recorder, 0, 1)
@@ -675,9 +688,8 @@ func TestHandlerRejectsBinaryUpstreamAsMalformedWithoutCooldown(t *testing.T) {
 	}
 }
 
-// TestHandlerDoesNotRecordNormalUpstreamClose 验证没有完成事件的 1000 仍是正常
-// 连接关闭语义，不把健康账号误记为断流失败。
-func TestHandlerDoesNotRecordNormalUpstreamClose(t *testing.T) {
+// TestHandlerDoesNotRecordNormalWarmupClose 验证非生成预热的正常关闭不记为账号失败。
+func TestHandlerDoesNotRecordNormalWarmupClose(t *testing.T) {
 	t.Parallel()
 
 	upstream := newWebSocketUpstream(t, func(connection *websocket.Conn) {
@@ -691,7 +703,7 @@ func TestHandlerDoesNotRecordNormalUpstreamClose(t *testing.T) {
 	client, _ := dialGateway(t, server.URL, nil)
 	defer client.CloseNow()
 	writeClientText(t, client, []byte(
-		`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`,
+		`{"type":"response.create","model":"gpt-5.6-sol","generate":false,"input":[]}`,
 	))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -5,26 +5,25 @@ import (
 	"sync"
 	"time"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
 
-// 额度耗尽时的换号：Go 在首帧选定账号后对整条连接原样透传，账号中途耗尽时上游错误
-// 被转给 Codex，Codex 报 "You've hit your usage limit" 并停下，连接仍绑在耗尽的账号上。
-//
-// 实测 Codex 0.159：连接以 1011 关闭（或 response.failed server_error）时会静默新开连接，
-// 不带 previous_response_id、带完整上下文重发；只有额度错误帧会让它直接报错。因此本轮尚未
-// 向客户端交出任何非预备帧时，额度耗尽（已记入运行态，重新选号会跳过该账号）不转发，改以
-// 1011 关闭，让 Codex 自己在新连接上重试。已交出输出后照旧透传，绝不重放。
+// 可重试上游终态的换号：Go 在首帧选定账号后对整条连接原样透传，账号中途容量不足、
+// 限流或额度耗尽时，若把错误帧交给 Codex，客户端会把本轮当成最终失败，连接仍绑在
+// 失败账号上。实测 Codex 0.159 在 1011 关闭后会静默新开连接并带完整上下文重发。
+// 因此本轮尚未向客户端交出任何非预备帧时，已记入运行态的可重试失败不转发，改以 1011
+// 关闭，让 Codex 自己在新连接上重新选号。已交出输出后照旧透传，绝不重放。
 //
 // 换号后完整上下文里的 reasoning.encrypted_content 只能被原账号解密，新账号会 400
 // invalid_encrypted_content；按 Codex 的 session-id 记住上次服务的账号，账号变了就在
 // 完整上下文请求（无 previous_response_id）里剥掉它。
 
 const (
-	maxHeldPreambleFrames    = 16
-	sessionAccountTTL        = 12 * time.Hour
-	maxSessionAccountEntries = 4096
-	quotaFailoverCloseReason = "account quota exhausted"
+	maxHeldPreambleFrames        = 16
+	sessionAccountTTL            = 12 * time.Hour
+	maxSessionAccountEntries     = 4096
+	retryableFailoverCloseReason = "retryable upstream failure"
 )
 
 var preambleEventTypes = map[string]struct{}{
@@ -33,19 +32,36 @@ var preambleEventTypes = map[string]struct{}{
 	"response.queued":      {},
 }
 
-func upstreamEventType(payload []byte) string {
-	var event struct {
-		Type string `json:"type"`
+// isRetryableFailoverKind 限定可以在尚未输出内容时安全交给 Codex 重连的失败。
+// 账号凭据、模型目录和策略错误需要把真实终态交给客户端，不能把重连当作修复。
+func isRetryableFailoverKind(kind runtimecore.FailureKind) bool {
+	switch kind {
+	case runtimecore.FailureRateLimited,
+		runtimecore.FailureModelOverloaded,
+		runtimecore.FailureUpstreamUnavailable,
+		runtimecore.FailureRequestTimeout,
+		runtimecore.FailureConnectionReset,
+		runtimecore.FailureStreamDisconnected,
+		runtimecore.FailureQuotaExhausted:
+		return true
+	default:
+		return false
 	}
-	if json.Unmarshal(payload, &event) != nil {
-		return ""
-	}
-	return event.Type
 }
 
+// isPreambleEvent 只扣留没有输出项的预备帧，内嵌文字或工具调用必须立即交付。
 func isPreambleEvent(payload []byte) bool {
-	_, ok := preambleEventTypes[upstreamEventType(payload)]
-	return ok
+	var event struct {
+		Type     string `json:"type"`
+		Response struct {
+			Output []json.RawMessage `json:"output"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(payload, &event) != nil {
+		return false
+	}
+	_, ok := preambleEventTypes[event.Type]
+	return ok && len(event.Response.Output) == 0
 }
 
 // stripForeignReasoning 去掉完整上下文请求里 reasoning 项的 encrypted_content；

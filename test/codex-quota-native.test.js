@@ -16,10 +16,16 @@ const { chooseServerAccount, markProxyAccountFailure, markProxyAccountSuccess } 
 
 const enabled = process.env.AIH_NATIVE_CODEX_QUOTA_SMOKE === '1';
 const codexCli = path.resolve(__dirname, '../node_modules/@openai/codex/bin/codex.js');
+const nativeBinary = process.env.AIH_NATIVE_CODEX_BINARY;
+const goBinary = process.env.AIH_CODEX_HTTP_GO_BINARY;
 
-test('native Codex executes a tool once and finishes across a pooled quota failure', {
-  skip: !enabled || !fs.existsSync(codexCli), timeout: 45000
-}, async t => {
+for (const failure of goBinary ? ['quota', 'capacity'] : ['quota']) {
+  test(`native Codex executes a tool once across a pooled ${failure} failure (${goBinary ? 'Go' : 'Node'})`, {
+    skip: !enabled || !fs.existsSync(nativeBinary || codexCli), timeout: 45000
+  }, t => runPooledFailure(t, failure));
+}
+
+async function runPooledFailure(t, failure) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-quota-native-'));
   const home = path.join(root, 'home'), workspace = path.join(root, 'workspace');
   const codexHome = path.join(home, '.codex');
@@ -27,7 +33,7 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
   const countFile = path.join(workspace, 'executions.txt');
   const sockets = new Set(), servers = [], requests = [], transports = [];
   const wss = new WebSocket.Server({ noServer: true });
-  let child, output = '', errors = '', tools = [];
+  let child, output = '', errors = '', tools = [], primaryKey = '';
   t.after(async () => {
     child?.kill('SIGTERM');
     for (const socket of sockets) socket.destroy();
@@ -45,9 +51,12 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
   const response = (id, items) => ({ id, object: 'response', created_at: 1700000000,
     model: 'gpt-5.4', status: 'completed', output: items,
     usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 } });
-  function events(payload, ref) {
+  function events(payload, credential, transport) {
     if (payload.generate === false) return [{ type: 'response.completed', response: response('resp_warmup', []) }];
+    primaryKey ||= credential;
+    const ref = credential === primaryKey ? 'first' : 'second';
     requests.push({ ref, payload });
+    transports.push(transport);
     tools = (payload.tools || []).map(tool => tool.name);
     if (requests.length === 1) {
       const name = ['exec_command', 'shell_command', 'shell'].find(item => tools.includes(item));
@@ -69,7 +78,9 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
     if (ref === 'first') return [
       { type: 'response.created', response: { ...response('resp_rejected', []), status: 'in_progress' } },
       { type: 'response.failed', response: { ...response('resp_rejected', []), status: 'failed',
-        error: { code: 'usage_limit_reached', message: 'Synthetic local quota rejection', resets_in_seconds: 300 } } }
+        error: failure === 'capacity'
+          ? { code: 'model_at_capacity', message: 'Selected model is at capacity. Please try a different model.' }
+          : { code: 'usage_limit_reached', message: 'Synthetic local quota rejection', resets_in_seconds: 300 } } }
     ];
     const item = { type: 'message', id: 'msg_fixture', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'quota-failover-finished', annotations: [] }] };
@@ -83,18 +94,21 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
     ];
   }
   const upstream = http.createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"data":[{"id":"gpt-5.4","object":"model"}]}');
+      return;
+    }
     try {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks));
-      const ref = req.headers.authorization === 'Bearer fixture-first' ? 'first' : 'second';
       res.writeHead(200, { 'content-type': 'text/event-stream' });
-      res.end(events(payload, ref).map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
+      res.end(events(payload, req.headers.authorization, 'http').map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
     } catch (error) { res.writeHead(500); res.end(error.message); }
   });
   upstream.on('upgrade', (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => {
-    const ref = req.headers.authorization === 'Bearer fixture-first' ? 'first' : 'second';
     ws.on('message', data => {
-      try { for (const event of events(JSON.parse(data), ref)) ws.send(JSON.stringify(event)); }
+      try { for (const event of events(JSON.parse(data), req.headers.authorization, 'ws')) ws.send(JSON.stringify(event)); }
       catch (error) { errors += error.message; ws.close(); }
     });
   }));
@@ -105,7 +119,6 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
   const options = { codexBaseUrl: base, maxAttempts: 3, upstreamTimeoutMs: 5000, logRequests: false };
   const gateway = http.createServer(async (req, res) => {
     if (req.method !== 'POST') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"models":[],"data":[]}'); return; }
-    transports.push('http');
     try {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
       const requestJson = JSON.parse(Buffer.concat(chunks));
@@ -119,18 +132,36 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
     } catch (error) { errors += error.message; res.destroy(); }
   });
   gateway.on('upgrade', (req, socket, head) => {
-    transports.push('ws');
     handleCodexResponsesWebSocket({ req, socket, head, state, options }, {
       chooseAccount: chooseServerAccount, isLoopbackUrl: () => false,
       markProxyAccountFailure, markProxyAccountSuccess
     }).catch(error => { errors += error.message; socket.destroy(); });
   });
-  const gatewayUrl = await listen(gateway);
+  let gatewayUrl = await listen(gateway);
+  let clientKey = 'local-fixture-key';
+  if (goBinary) {
+    const { startGoGateway } = require('./helpers/codex-http-go-fixture');
+    const go = await startGoGateway(t, base, 'gpt-5.4', { binary: goBinary });
+    const secondRef = await go.register('synthetic-second-key');
+    let secondReady = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const models = await fetch(`${go.base}/v1/management/accounts/${secondRef}/models`, {
+        headers: { authorization: `Bearer ${go.managementKey}` }
+      });
+      if (models.ok && (await models.text()).includes('"model_id":"gpt-5.4"')) { secondReady = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.ok(secondReady, 'second Go account catalog was not published');
+    gatewayUrl = go.base + '/v1';
+    clientKey = go.clientKey;
+  }
   fs.writeFileSync(path.join(codexHome, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "fixture"\napproval_policy = "never"\n[features]\nresponses_websockets_v2 = true\n[model_providers.fixture]\nname = "Local fixture"\nbase_url = "${gatewayUrl}"\nwire_api = "responses"\nenv_key = "AIH_TEST_KEY"\nsupports_websockets = true\n`);
-  child = spawn(process.execPath, [codexCli, 'exec', '--skip-git-repo-check', '--sandbox', 'workspace-write', '--json',
-    'In this disposable workspace append exactly one line once to executions.txt using a shell command, then report finished.'], {
+  const cliArgs = ['exec', '--skip-git-repo-check', '--sandbox', 'workspace-write', '--json',
+    '-c', 'features.code_mode=false',
+    'In this disposable workspace append exactly one line once to executions.txt using a shell command, then report finished.'];
+  child = spawn(nativeBinary || process.execPath, nativeBinary ? cliArgs : [codexCli, ...cliArgs], {
     cwd: workspace, env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CODEX_HOME: codexHome,
-      AIH_TEST_KEY: 'local-fixture-key', NO_PROXY: 'localhost,127.0.0.1', TERM: 'dumb' }, stdio: ['ignore', 'pipe', 'pipe']
+      AIH_TEST_KEY: clientKey, NO_PROXY: 'localhost,127.0.0.1', TERM: 'dumb' }, stdio: ['ignore', 'pipe', 'pipe']
   });
   child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { errors += data; });
   const timer = setTimeout(() => child.kill('SIGTERM'), 30000);
@@ -141,5 +172,6 @@ test('native Codex executes a tool once and finishes across a pooled quota failu
   assert.deepEqual(requests.map(x => x.ref), ['first', 'first', 'second']);
   assert.equal(fs.readFileSync(countFile, 'utf8'), 'once\n');
   assert.ok(requests[2].payload.input.some(item => item.type === 'function_call_output' && item.call_id === 'call_fixture'));
+  if (goBinary) assert.deepEqual(transports, ['ws', 'ws', 'ws'], 'native client fell back to HTTP');
   t.diagnostic(JSON.stringify({ transport: transports, attempts: requests.map(x => x.ref), toolExecutions: 1 }));
-});
+}

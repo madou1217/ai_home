@@ -306,11 +306,12 @@ test('non-proxy outbounds are skipped silently and unsupported transports are re
     warnings: [],
     format: 'xray'
   });
-  for (const network of ['quic', 'xhttp', 'splithttp']) {
+  // XHTTP 只有 VLESS 能用；旧的 splithttp 与 xhttp 是同一种传输，按同一个名字拒绝。
+  for (const [network, reason] of [['quic', 'quic'], ['xhttp', 'xhttp'], ['splithttp', 'xhttp']]) {
     const other = structuredClone(KCP);
     other.outbounds[0].streamSettings = { network, security: 'tls' };
     assert.deepEqual(parseSubscriptionContentDetailed(JSON.stringify(other)).skippedNodes.map((item) => item.reason), [
-      `unsupported_proxy_transport_${network}`
+      `unsupported_proxy_transport_${reason}`
     ]);
   }
   const hysteria = { outbounds: [{ tag: 'hy', protocol: 'hysteria', settings: { address: 'hy.example', port: 443 } }] };
@@ -361,13 +362,45 @@ test('node names fall back to a meaningful tag, then address:port; shared config
     .map((node) => node.name), ['Balancer a.example:443', 'Balancer de-fra']);
 });
 
+test('VLESS XHTTP and VLESS Encryption are read instead of dropped', () => {
+  const xhttp = {
+    outbounds: [{
+      tag: 'x', protocol: 'vless',
+      settings: { vnext: [{ address: 'x.example', port: 443, users: [{ id: UUID, encryption: 'none' }] }] },
+      streamSettings: {
+        network: 'splithttp', security: 'tls',
+        splithttpSettings: { path: '/sp', host: 'sp.example', mode: 'packet-up' }
+      }
+    }, DIRECT]
+  };
+  assert.deepEqual(importXray(xhttp), [{
+    protocol: 'vless', name: 'x', server: 'x.example', port: 443, uuid: UUID,
+    network: 'xhttp', path: '/sp', host: 'sp.example', mode: 'packet-up', tls: true
+  }]);
+  // 新版写 xhttpSettings，name 与 mode 一并读回。
+  const renamed = structuredClone(xhttp);
+  renamed.outbounds[0].streamSettings = {
+    network: 'xhttp', security: 'tls', xhttpSettings: { path: '/n', host: 'n.example', mode: 'stream-up' }
+  };
+  assert.deepEqual(importXray(renamed).map((node) => [node.network, node.path, node.host, node.mode]),
+    [['xhttp', '/n', 'n.example', 'stream-up']]);
+
+  const encrypted = {
+    outbounds: [{
+      tag: 'e', protocol: 'vless',
+      settings: { vnext: [{ address: 'e.example', port: 443, users: [{ id: UUID, encryption: 'mlkem768x25519plus.native.0rtt.key' }] }] },
+      streamSettings: { network: 'tcp', security: 'none' }
+    }, DIRECT]
+  };
+  assert.deepEqual(importXray(encrypted), [{
+    protocol: 'vless', name: 'e', server: 'e.example', port: 443, uuid: UUID,
+    network: 'tcp', encryption: 'mlkem768x25519plus.native.0rtt.key'
+  }]);
+});
+
 test('settings the node model cannot express are reported instead of imported wrongly', () => {
   const reasons = (outbound) => parseSubscriptionContentDetailed(JSON.stringify({ outbounds: [{ tag: 'x', ...outbound }] }))
     .skippedNodes.map((item) => item.reason);
-  // VLESS Encryption（ML-KEM）。
-  assert.deepEqual(reasons({
-    protocol: 'vless', settings: { vnext: [{ address: 'e.example', port: 443, users: [{ id: UUID, encryption: 'mlkem768x25519plus.native.0rtt.key' }] }] }
-  }), ['unsupported_vless_encryption']);
   // Shadowsocks / SOCKS 节点没有传输层与 TLS 字段。
   assert.deepEqual(reasons({
     protocol: 'shadowsocks', settings: { servers: [{ address: 's.example', port: 443, method: 'aes-128-gcm', password: 'p' }] },

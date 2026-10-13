@@ -210,6 +210,8 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
   [/^unsupported_proxy_transport_(.+)$/, (value) => `不支持 ${value} 传输`],
   [/^unsupported_shadowsocks_plugin_(.+)$/, (value) => `不支持 SS 插件 ${value}`],
   [/^unsupported_snell_version_(.+)$/, (value) => `不支持 Snell v${value}`],
+  // sing-box 1.14 的 Snell 出站只实现 v4 / v6，与 mihomo 支持到 v3 是两回事。
+  [/^unsupported_sing_box_snell_version_(.+)$/, (value) => `sing-box 不支持 Snell v${value}`],
   [/^unsupported_hysteria_protocol_(.+)$/, (value) => `不支持 Hysteria 的 ${value} 传输`],
   [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`],
   [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`],
@@ -277,6 +279,11 @@ export function summarizeSkipReasons(skipped: Array<{ reason: string }>) {
 export function skipReasonText(reason: string) {
   if (reason === 'unsupported_hysteria2_obfs') return '不支持 Hysteria2 混淆';
   if (reason === 'invalid_wireguard_endpoint') return 'WireGuard 端点格式不对';
+  // 这两条不能落到下面的通用前缀匹配上（会译成「需要 sing-box ≥ official_app」这种看不懂的话）。
+  if (reason === 'requires_sing_box_official_app') return '需要 sing-box 官方 App（自带 libcronet）';
+  if (reason === 'unsupported_sing_box_snell_obfs_tls') return 'sing-box 不支持 Snell 的 tls 混淆';
+  if (reason === 'unsupported_surge_snell_shadow_tls') return 'Surge 的 Snell 不支持 ShadowTLS';
+  if (reason === 'unsupported_proxy_protocol_tuic-v4') return '不支持 TUIC v4';
   for (const [pattern, describe] of SKIP_REASON_PATTERNS) {
     const match = reason.match(pattern);
     if (match) return describe(match[1]);

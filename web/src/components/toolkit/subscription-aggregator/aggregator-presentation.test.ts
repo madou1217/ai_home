@@ -132,8 +132,15 @@ test('订阅源来源说明：远程脱敏地址（附自定义 UA），本地�
 
 test('预览里未输出节点的原因译成可读文本，未知码原样显示', () => {
   assert.equal(skipReasonText('unsupported_proxy_protocol_wireguard'), '不支持 wireguard');
+  assert.equal(skipReasonText('unsupported_proxy_protocol_tuic-v4'), '不支持 TUIC v4');
   assert.equal(skipReasonText('unsupported_proxy_transport_grpc'), '不支持 grpc 传输');
   assert.equal(skipReasonText('unsupported_snell_version_4'), '不支持 Snell v4');
+  assert.equal(skipReasonText('unsupported_sing_box_snell_version_3'), 'sing-box 不支持 Snell v3');
+  assert.equal(skipReasonText('unsupported_sing_box_snell_obfs_tls'), 'sing-box 不支持 Snell 的 tls 混淆');
+  assert.equal(skipReasonText('unsupported_surge_snell_shadow_tls'), 'Surge 的 Snell 不支持 ShadowTLS');
+  assert.equal(skipReasonText('unsupported_shadowsocks_plugin_shadow-tls'), '不支持 SS 插件 shadow-tls');
+  assert.equal(skipReasonText('requires_sing_box_1.14.0'), '需要 sing-box ≥ 1.14.0');
+  assert.equal(skipReasonText('requires_sing_box_official_app'), '需要 sing-box 官方 App（自带 libcronet）');
   assert.equal(skipReasonText('unsupported_hysteria2_obfs'), '不支持 Hysteria2 混淆');
   assert.equal(skipReasonText('missing_required_proxy_field_upMbps'), '缺少字段 upMbps');
   assert.equal(skipReasonText('something_else'), 'something_else');

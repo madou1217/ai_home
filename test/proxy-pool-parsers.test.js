@@ -213,8 +213,8 @@ test('协议插件覆盖全部受支持协议，都提供 mihomo 出站编译', 
     plugin.protocols.forEach((protocol) => covered.add(protocol));
   }
   assert.deepEqual([...covered].sort(), [...SUPPORTED_PROTOCOLS].sort());
-  // sing-box 没有实现 SSR（已移除）与 Snell，这两种节点在 sing-box 输出里跳过。
-  assert.deepEqual(withoutSingBox, ['shadowsocksr', 'snell']);
+  // sing-box 没有实现 SSR（已移除）与 Mieru；Snell 是 1.14 才有的出站，低版本客户端由 singBoxSince 跳过。
+  assert.deepEqual(withoutSingBox, ['shadowsocksr', 'mieru']);
 });
 
 test('mihomo 出站编译保留结构化 SS 插件参数，YAML 输出不出现对象字面量', () => {

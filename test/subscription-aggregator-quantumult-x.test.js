@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+const { compiledLine } = require('../lib/cli/services/toolkit/proxy-pool/compile-result');
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
 const { getRenderer } = require('../lib/cli/services/toolkit/subscription-aggregator/renderers');
@@ -15,23 +16,23 @@ const ORIGIN = 'https://aih.example';
 
 test('Quantumult X server lines round-trip every protocol QX can express', () => {
   const renderer = getRenderer('quantumult-x');
-  const lines = [];
+  const compiled = [];
   const supported = [];
   const skipped = [];
   for (const node of SAMPLE_NODES) {
     try {
-      lines.push(renderer.compileNode({ node, name: node.name }));
+      compiled.push(renderer.compileNode({ node, name: node.name }));
       supported.push(node);
     } catch (error) {
       skipped.push([node.name, error.code]);
     }
   }
+  const lines = compiled.map(compiledLine);
   assert.deepEqual(skipped, [
     ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
     ['hy2', 'unsupported_proxy_protocol_hysteria2'],
     ['hy1', 'unsupported_proxy_protocol_hysteria'],
     ['tuic', 'unsupported_proxy_protocol_tuic'],
-    ['anytls', 'unsupported_proxy_protocol_anytls'],
     ['wg', 'unsupported_proxy_protocol_wireguard'],
     ['snell', 'unsupported_proxy_protocol_snell']
   ]);
@@ -40,7 +41,9 @@ test('Quantumult X server lines round-trip every protocol QX can express', () =>
   assert.ok(lines.includes('vmess=vm.example:443, method=chacha20-poly1305, password=11111111-2222-3333-4444-555555555555, obfs=wss, obfs-host=cdn.example, obfs-uri=/ws, fast-open=false, udp-relay=false, tag=vmess-ws'), lines.join('\n'));
   assert.ok(lines.includes('trojan=tj.example:443, password=p, over-tls=true, tls-host=tj.example, tls-verification=false, fast-open=false, udp-relay=false, tag=trojan'));
   assert.match(lines.find((line) => line.startsWith('vless=')), /reality-base64-pubkey=PUBKEY, reality-hex-shortid=ab12, vless-flow=xtls-rprx-vision/);
-  assertRoundTrip('quantumult-x', `[server_local]\n${lines.join('\n')}\n`, supported);
+  // AnyTLS 在 QX 里恒走 TLS：证书校验开启时不写 tls-verification，只写 SNI。
+  assert.ok(lines.includes('anytls=at.example:443, password=p, sni=at.example, tag=anytls'), lines.join('\n'));
+  assertRoundTrip('quantumult-x', renderer.render(null, compiled, { view: 'nodes' }), supported);
 });
 
 test('the Quantumult X renderer writes policies, remote filters and a final rule', () => {

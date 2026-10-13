@@ -32,7 +32,7 @@ test('ProxyNodeStore rejects unusable nodes and non-http subscription URLs expli
   const store = new ProxyNodeStore(path.join(directory, 'pool.json'));
 
   assert.throws(
-    () => store.bulkUpsertNodes([{ protocol: 'naive', server: 'example.com', port: 443 }]),
+    () => store.bulkUpsertNodes([{ protocol: 'tor', server: 'example.com', port: 443 }]),
     (error) => error.code === 'unsupported_proxy_protocol'
   );
   assert.throws(

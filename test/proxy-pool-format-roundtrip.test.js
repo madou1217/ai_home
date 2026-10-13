@@ -16,11 +16,31 @@ test('sample nodes are valid node-store input', () => {
 });
 
 test('sing-box configs round-trip every protocol sing-box implements and skip non-proxy outbounds', () => {
-  const supported = SAMPLE_NODES.filter((node) => !['shadowsocksr', 'snell'].includes(node.protocol));
-  for (const node of SAMPLE_NODES.filter((item) => !supported.includes(item))) {
-    assert.throws(() => compileSingBoxNodeOutbound(node, node.name), { code: `unsupported_proxy_protocol_${node.protocol}` });
-  }
-  const compiled = supported.map((node) => compileSingBoxNodeOutbound(node, node.name));
+  const ssr = SAMPLE_NODES.find((node) => node.protocol === 'shadowsocksr');
+  assert.throws(() => compileSingBoxNodeOutbound(ssr, 'ssr'), { code: 'unsupported_proxy_protocol_shadowsocksr' });
+  // Snell 出站是 1.14 才有的：基线内核整类跳过，1.14 也只收 v4 / v6（v5 的 QUIC 模式没实现）。
+  const snell = SAMPLE_NODES.find((node) => node.protocol === 'snell');
+  assert.throws(() => compileSingBoxNodeOutbound(snell, 'snell'), { code: 'requires_sing_box_1.14.0' });
+  assert.throws(
+    () => compileSingBoxNodeOutbound(snell, 'snell', { version: '1.14.0' }),
+    { code: 'unsupported_sing_box_snell_version_3' }
+  );
+  const snellV4 = { ...snell, version: 4 };
+  assert.deepEqual(
+    compileSingBoxNodeOutbound(snellV4, 'snell', { version: '1.14.0' }),
+    { type: 'snell', tag: 'snell', server: 'sn.example', server_port: 8000, version: 4, psk: 'p', obfs_mode: 'http', obfs_host: 'cdn.example' }
+  );
+  assert.throws(
+    () => compileSingBoxNodeOutbound({ ...snellV4, obfs: 'tls' }, 'snell', { version: '1.14.0' }),
+    { code: 'unsupported_sing_box_snell_obfs_tls' }
+  );
+  assert.deepEqual(
+    compileSingBoxNodeOutbound({ ...snellV4, version: 6, obfs: undefined, obfsHost: undefined, mode: 'unshaped' }, 'snell', { version: '1.14.0' }),
+    { type: 'snell', tag: 'snell', server: 'sn.example', server_port: 8000, version: 6, psk: 'p', mode: 'unshaped' }
+  );
+
+  const supported = [...SAMPLE_NODES.filter((node) => !['shadowsocksr', 'snell'].includes(node.protocol)), snellV4];
+  const compiled = supported.map((node) => compileSingBoxNodeOutbound(node, node.name, { version: '1.14.0' }));
   const outbounds = compiled.filter((item) => singBoxSectionOf(item) === 'outbounds');
   // WireGuard 是 endpoint，写在 endpoints 段（读回时排在出站之后）。
   const endpoints = compiled.filter((item) => singBoxSectionOf(item) === 'endpoints');

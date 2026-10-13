@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+const { compiledLine } = require('../lib/cli/services/toolkit/proxy-pool/compile-result');
 const { compileSurgeFamilyLine } = require('../lib/cli/services/toolkit/proxy-pool/cores/surge/proxy-line');
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
@@ -79,30 +80,80 @@ test('the rule-set converter caches each list and merges concurrent fetches', as
 
 test('Surge proxy lines round-trip every protocol Surge can express', () => {
   const surge = getRenderer('surge');
-  const lines = [];
+  const compiled = [];
   const supported = [];
   const skipped = [];
   for (const node of SAMPLE_NODES) {
     try {
-      lines.push(surge.compileNode({ node, name: node.name }));
+      compiled.push(surge.compileNode({ node, name: node.name }));
       supported.push(node);
     } catch (error) {
       skipped.push([node.name, error.code]);
     }
   }
+  const lines = compiled.map(compiledLine);
   assert.deepEqual(skipped, [
     ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
     ['vless-reality', 'unsupported_proxy_protocol_vless'],
     ['hy2', 'unsupported_hysteria2_obfs'],
     ['ssr', 'unsupported_proxy_protocol_shadowsocksr'],
-    ['hy1', 'unsupported_proxy_protocol_hysteria'],
-    ['anytls', 'unsupported_proxy_protocol_anytls'],
-    ['wg', 'unsupported_proxy_protocol_wireguard']
+    ['hy1', 'unsupported_proxy_protocol_hysteria']
   ]);
   assert.ok(lines.includes(`tuic = tuic-v5, tu.example, 443, uuid=${UUID}, password=p, alpn=h3, sni=tu.example`), lines.join('\n'));
   assert.ok(lines.includes('snell = snell, sn.example, 8000, psk=p, version=3, obfs=http, obfs-host=cdn.example'), lines.join('\n'));
-  assertRoundTrip('surge', `[Proxy]\n${lines.join('\n')}\n`, supported);
+  assert.ok(lines.includes('anytls = anytls, at.example, 443, password=p, sni=at.example'), lines.join('\n'));
+  // WireGuard 的代理行只引用段名，密钥与地址在同名 [WireGuard x] 段里；段名由渲染时按顺序编号。
+  const nodes = surge.render(null, compiled, { view: 'nodes' });
+  assert.ok(nodes.includes('wg = wireguard, section-name=wg1'), nodes);
+  assertRoundTrip('surge', nodes, supported);
   assert.match(compileSurgeFamilyLine('surge', SAMPLE_NODES[0], 'a,b'), /^a,b = ss, ss\.example, 8388, encrypt-method=aes-256-gcm/);
+});
+
+test('Surfboard proxy lines round-trip every protocol Surfboard can express', () => {
+  const surfboard = getRenderer('surfboard');
+  const compiled = [];
+  const supported = [];
+  const skipped = [];
+  for (const node of SAMPLE_NODES) {
+    try {
+      compiled.push(surfboard.compileNode({ node, name: node.name }));
+      supported.push(node);
+    } catch (error) {
+      skipped.push([node.name, error.code]);
+    }
+  }
+  const lines = compiled.map(compiledLine);
+  assert.deepEqual(skipped, [
+    ['vmess-grpc', 'unsupported_proxy_transport_grpc'],
+    ['vless-reality', 'unsupported_proxy_protocol_vless'],
+    ['hy2', 'unsupported_hysteria2_obfs'],
+    ['ssr', 'unsupported_proxy_protocol_shadowsocksr'],
+    ['hy1', 'unsupported_proxy_protocol_hysteria']
+  ]);
+  assert.ok(lines.includes('anytls = anytls, at.example, 443, password=p, sni=at.example'), lines.join('\n'));
+  assert.ok(lines.includes('snell = snell, sn.example, 8000, psk=p, version=3, obfs=http, obfs-host=cdn.example'), lines.join('\n'));
+  // Surfboard 与 Surge 同源：WireGuard 也走独立的 [WireGuard x] 段。
+  const nodes = surfboard.render(null, compiled, { view: 'nodes' });
+  assert.ok(nodes.includes('wg = wireguard, section-name=wg1'), nodes);
+  assert.match(nodes, /^\[WireGuard wg1\]$/m);
+  assertRoundTrip('surfboard', nodes, supported);
+});
+
+test('the Surge renderer puts WireGuard in its own section and never in the proxy line', () => {
+  const surge = getRenderer('surge');
+  const wireguard = SAMPLE_NODES.find((node) => node.protocol === 'wireguard');
+  const compiled = [surge.compileNode({ node: wireguard, name: 'wg' })];
+  const text = surge.render(null, compiled, { view: 'nodes' });
+  assert.match(text, /^wg = wireguard, section-name=wg1$/m);
+  assert.match(text, /^\[WireGuard wg1\]$/m);
+  assert.match(text, /^private-key = PRIV$/m);
+  assert.match(text, /^self-ip = 10\.0\.0\.2$/m);
+  assert.match(text, /^self-ip-v6 = fd00::2$/m);
+  assert.match(text, /^mtu = 1280$/m);
+  assert.match(text, /^peer = \(public-key = PUB, allowed-ips = "0\.0\.0\.0\/0, ::\/0", endpoint = wg\.example:51820, client-id = 1\/2\/3\)$/m);
+  // 段名带序号，节点名里的方括号不会进段头。
+  const flagged = [surge.compileNode({ node: wireguard, name: '[JP] wg' })];
+  assert.match(surge.render(null, flagged, { view: 'nodes' }), /^\[WireGuard wg1\]$/m);
 });
 
 test('the Surge renderer writes a managed config with converted rule sets', () => {

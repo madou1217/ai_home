@@ -143,7 +143,9 @@ test('every format has a nodes view for adding the nodes into an existing client
   assert.deepEqual(Object.keys(JSON.parse(view('sing-box'))), ['outbounds', 'endpoints']);
   for (const format of ['surge', 'loon', 'quantumult-x']) {
     const text = view(format);
-    assert.doesNotMatch(text, /^\[|MANAGED-CONFIG|FINAL/m, format);
+    // 节点视图只有节点行。Surge / Surfboard 的 WireGuard 按语法必须另起 [WireGuard x] 段，
+    // 其余分段标记（[Proxy] / [Proxy Group] / [Rule]…）与托管头不该出现。
+    assert.doesNotMatch(text, /^\[(?!WireGuard )|MANAGED-CONFIG|FINAL/m, format);
     assert.ok(text.trim().split('\n').length >= 2, format);
   }
   // 完整视图不受影响。

@@ -14,6 +14,7 @@ const { clientById, describeClients, detectClient } = require('../lib/cli/servic
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
 const { compileSingBoxNodeOutbound } = require('../lib/cli/services/toolkit/proxy-pool/cores/sing-box/node-outbound');
+const { extrasOf } = require('../lib/cli/services/toolkit/proxy-pool/compile-result');
 const { SAMPLE_NODES } = require('./helpers/proxy-format-samples');
 
 const UA_SAMPLES = [
@@ -134,11 +135,24 @@ test('preview can play a client so the WebUI shows exactly what that client rece
   assert.deepEqual(service.getOverview().profiles[0].recentPulls, []);
 });
 
-test('sing-box skips Shadowsocks plugins it does not implement instead of breaking the whole config', () => {
+test('sing-box turns a Shadowsocks ShadowTLS plugin into a detour plus a hidden shadowtls outbound', () => {
   const node = {
     protocol: 'shadowsocks', name: 'st', server: 'st.example', port: 443, cipher: 'aes-128-gcm', password: 'p',
     plugin: 'shadow-tls', pluginOpts: { host: 'cloud.tencent.com', password: 'x', version: 3 }
   };
-  assert.throws(() => compileSingBoxNodeOutbound(node, 'st'), { code: 'unsupported_shadowsocks_plugin_shadow-tls' });
+  const outbound = compileSingBoxNodeOutbound(node, 'st');
+  assert.equal(outbound.type, 'shadowsocks');
+  assert.equal(outbound.detour, 'st§hide§');
+  assert.deepEqual(extrasOf(outbound), [{
+    type: 'shadowtls',
+    tag: 'st§hide§',
+    server: 'st.example',
+    server_port: 443,
+    version: 3,
+    password: 'x',
+    tls: { enabled: true, server_name: 'cloud.tencent.com' }
+  }]);
+  // 没实现的插件仍然跳过，不让整份配置被拒。
+  assert.throws(() => compileSingBoxNodeOutbound({ ...node, plugin: 'kcptun' }, 'st'), { code: 'unsupported_shadowsocks_plugin_kcptun' });
   assert.equal(compileSingBoxNodeOutbound({ ...node, plugin: 'obfs-local', pluginOpts: 'obfs=http' }, 'st').plugin, 'obfs-local');
 });

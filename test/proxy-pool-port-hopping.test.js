@@ -17,6 +17,7 @@ const {
   validateProxyNodeInput
 } = require('../lib/cli/services/toolkit/proxy-pool/proxy-node-store');
 const { compileSingBoxNodeOutbound } = require('../lib/cli/services/toolkit/proxy-pool/cores/sing-box/node-outbound');
+const { compiledLine } = require('../lib/cli/services/toolkit/proxy-pool/compile-result');
 const { getRenderer } = require('../lib/cli/services/toolkit/subscription-aggregator/renderers');
 const { HY2_PORT_HOPPING_NODE, assertRoundTrip } = require('./helpers/proxy-format-samples');
 
@@ -95,13 +96,14 @@ test('mihomo, Stash, Surge, Loon, Egern, sing-box and JSON all keep the port lis
   }
 
   const surge = getRenderer('surge');
-  const surgeLine = surge.compileNode({ node: HY2_PORT_HOPPING_NODE, name: NAME });
+  const surgeLine = compiledLine(surge.compileNode({ node: HY2_PORT_HOPPING_NODE, name: NAME }));
   assert.match(surgeLine, /port-hopping=1000-2000;3000/);
   assertRoundTrip('surge', `[Proxy]\n${surgeLine}\n`, [HY2_PORT_HOPPING_NODE]);
 
   const loon = getRenderer('loon');
-  const loonLine = loon.compileNode({ node: HY2_PORT_HOPPING_NODE, name: NAME });
-  assert.match(loonLine, /server-ports="1000-2000,3000"/);
+  const loonLine = compiledLine(loon.compileNode({ node: HY2_PORT_HOPPING_NODE, name: NAME }));
+  // Loon 的区间用冒号（官方文档：server-ports="20000:20100"）。
+  assert.match(loonLine, /server-ports="1000:2000,3000"/);
   assertRoundTrip('loon', `[Proxy]\n${loonLine}\n`, [HY2_PORT_HOPPING_NODE]);
 
   const egern = getRenderer('egern');

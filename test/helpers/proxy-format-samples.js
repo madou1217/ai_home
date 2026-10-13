@@ -76,6 +76,14 @@ const VLESS_XHTTP_NODE = Object.freeze({
   network: 'xhttp', path: '/xh', host: 'cdn.example', mode: 'packet-up', tls: true, sni: 'cdn.example'
 });
 
+// 套了 ShadowTLS 的 Shadowsocks 节点：中立键沿用 SIP003 的 host / password / version。
+// mihomo / Stash / Clash 经典、sing-box（detour + 辅助出站）与 Loon 能表达；Surge 系与 QX 跳过。
+const SHADOW_TLS_NODE = Object.freeze({
+  protocol: 'shadowsocks', name: 'ss-shadowtls', server: 'st.example', port: 443,
+  cipher: 'aes-256-gcm', password: 'ss-pw',
+  plugin: 'shadow-tls', pluginOpts: 'host=www.example.com;password=st-pw;version=3'
+});
+
 function assertRoundTrip(format, rendered, originals = SAMPLE_NODES) {
   const parsed = parseSubscriptionContentDetailed(rendered);
   assert.deepEqual(parsed.skippedNodes, [], `${format} 导入不应跳过节点`);
@@ -90,4 +98,4 @@ function assertRoundTrip(format, rendered, originals = SAMPLE_NODES) {
   });
 }
 
-module.exports = { HY2_PORT_HOPPING_NODE, SAMPLE_NODES, UUID, VLESS_XHTTP_NODE, assertRoundTrip };
+module.exports = { HY2_PORT_HOPPING_NODE, SAMPLE_NODES, SHADOW_TLS_NODE, UUID, VLESS_XHTTP_NODE, assertRoundTrip };

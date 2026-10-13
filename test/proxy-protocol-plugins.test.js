@@ -14,6 +14,7 @@ const {
   parseProxyNode,
   parseSubscriptionContentDetailed
 } = require('../lib/cli/services/toolkit/proxy-pool/protocol-parsers');
+const { compiledLine } = require('../lib/cli/services/toolkit/proxy-pool/compile-result');
 const { normalizeProtocol, supportsUdpRelay } = require('../lib/cli/services/toolkit/proxy-pool/protocols');
 const {
   buildProxyNodeConnectionKey,
@@ -108,9 +109,18 @@ test('Clash entries of the added protocols import, including peers lists and Sta
   - { name: snell, type: snell, server: n.example, port: 8000, psk: k, version: 2, obfs-opts: { mode: tls, host: cdn.example } }
 `;
   const { nodes, skippedNodes } = parseSubscriptionContentDetailed(yaml);
-  assert.deepEqual(skippedNodes.map((item) => [item.name, item.reason]), [['tuic-v4', 'unsupported_proxy_protocol_tuic-v4']]);
+  assert.deepEqual(skippedNodes, []);
   nodes.forEach((node) => validateProxyNodeInput(node));
   const byName = Object.fromEntries(nodes.map((node) => [node.name, fields(node)]));
+  // TUIC v4 用 token 认证：能导入，但 mihomo / sing-box / Surge / Egern 都只实现 v5，只有 Stash 编得出来。
+  const tuicV4 = nodes.find((node) => node.name === 'tuic-v4');
+  assert.deepEqual([byName['tuic-v4'].token, byName['tuic-v4'].uuid], ['tok', undefined]);
+  assert.throws(() => getRenderer('mihomo').compileNode({ node: tuicV4, name: 'tuic-v4' }), { code: 'unsupported_proxy_protocol_tuic-v4' });
+  assert.throws(() => getRenderer('surge').compileNode({ node: tuicV4, name: 'tuic-v4' }), { code: 'unsupported_proxy_protocol_tuic-v4' });
+  const stashV4 = getRenderer('stash').compileNode({ node: tuicV4, name: 'tuic-v4' });
+  assert.deepEqual([stashV4.type, stashV4.token, stashV4.version], ['tuic', 'tok', undefined]);
+  // v5 在 Stash 上才写 version: 5（缺省按 v4 处理）。
+  assert.equal(getRenderer('stash').compileNode({ node: nodes.find((node) => node.name === 'tuic'), name: 'tuic' }).version, 5);
   assert.deepEqual(
     [byName.ssr.ssrProtocol, byName.ssr.ssrProtocolParam, byName.ssr.ssrObfs, byName.ssr.ssrObfsParam],
     ['auth_aes128_sha1', '1:x', 'http_simple', 'cdn.example']
@@ -138,7 +148,7 @@ test('Snell v1/v2 never get UDP and versions beyond 3 only reach Surge', () => {
   assert.equal(mihomo.compileNode({ node: v2, name: 'snell' }).udp, undefined);
   assert.equal(mihomo.compileNode({ node: sample('snell'), name: 'snell' }).udp, true);
   assert.throws(() => mihomo.compileNode({ node: v4, name: 'snell-v4' }), { code: 'unsupported_snell_version_4' });
-  assert.equal(getRenderer('surge').compileNode({ node: v4, name: 'snell-v4' }), 'snell-v4 = snell, sn.example, 8000, psk=p, version=4, obfs=http, obfs-host=cdn.example');
+  assert.equal(compiledLine(getRenderer('surge').compileNode({ node: v4, name: 'snell-v4' })), 'snell-v4 = snell, sn.example, 8000, psk=p, version=4, obfs=http, obfs-host=cdn.example');
 });
 
 test('Hysteria v1 needs declared bandwidth and Stash also gets its own key spellings', () => {

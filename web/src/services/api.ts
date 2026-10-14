@@ -97,6 +97,8 @@ import type {
   AccountAppLaunchResponse,
   AccountEgressBindingInput,
   AccountEgressResponse,
+  AccountWindowActivationSettingInput,
+  AccountWindowActivationResponse,
   AppInstallJob,
   WebUiTask,
   ClientTerminalsResponse,
@@ -304,6 +306,9 @@ const buildAccountScopedPath = (provider: string, accountRef: string) => (
 const buildAccountEgressPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/egress`
 );
+const buildAccountWindowActivationPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/window-activation`
+);
 
 export const accountsAPI = {
   // 获取所有账号
@@ -470,6 +475,28 @@ export const accountsAPI = {
     const response = await api.post<AccountEgressResponse>(
       buildAccountEgressPath(provider, accountRef),
       binding || {}
+    );
+    return response.data;
+  },
+
+  getAccountWindowActivation: async (
+    provider: string,
+    accountRef: string
+  ): Promise<AccountWindowActivationResponse> => {
+    const response = await api.get<AccountWindowActivationResponse>(
+      buildAccountWindowActivationPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  saveAccountWindowActivation: async (
+    provider: string,
+    accountRef: string,
+    setting: AccountWindowActivationSettingInput
+  ): Promise<AccountWindowActivationResponse> => {
+    const response = await api.post<AccountWindowActivationResponse>(
+      buildAccountWindowActivationPath(provider, accountRef),
+      setting
     );
     return response.data;
   },

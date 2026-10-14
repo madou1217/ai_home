@@ -1663,6 +1663,25 @@ export interface AccountEgressResponse {
   runtimeError?: string;
 }
 
+/** 账号「窗口激活」设置：对 5h 滚动限额类账号定期发极小探测以推进窗口。 */
+export interface AccountWindowActivationSetting {
+  enabled: boolean;
+  /** null 表示跟随全局默认间隔。 */
+  intervalMs: number | null;
+}
+
+export interface AccountWindowActivationSettingInput {
+  enabled: boolean;
+  intervalMs?: number | null;
+}
+
+export interface AccountWindowActivationResponse {
+  ok: boolean;
+  provider: string;
+  accountRef: string;
+  setting: AccountWindowActivationSetting;
+}
+
 // 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。
 export type ZcodeEgressMode = AccountEgressMode;
 export type ZcodeEgressBinding = AccountEgressBinding;

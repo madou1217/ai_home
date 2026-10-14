@@ -165,6 +165,7 @@ export function useAccountActions({
   const [codexResetAccount, setCodexResetAccount] = React.useState<Account | null>(null);
   const [quotaResetHistoryAccount, setQuotaResetHistoryAccount] = React.useState<Account | null>(null);
   const [accountEgressAccount, setAccountEgressAccount] = React.useState<Account | null>(null);
+  const [accountWindowActivationAccount, setAccountWindowActivationAccount] = React.useState<Account | null>(null);
   const [cliTerminals, setCliTerminals] = React.useState<ClientTerminalItem[]>([]);
   const [selectedCliTerminalId, setSelectedCliTerminalId] = React.useState('system-default');
   const [cliTerminalsLoading, setCliTerminalsLoading] = React.useState(false);
@@ -1316,6 +1317,8 @@ export function useAccountActions({
     setQuotaResetHistoryAccount,
     accountEgressAccount,
     setAccountEgressAccount,
+    accountWindowActivationAccount,
+    setAccountWindowActivationAccount,
     // AccountFlowModals 使用的弹窗状态与回调
     modals: {
       add: {

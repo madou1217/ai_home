@@ -42,6 +42,7 @@ import {
   QrcodeOutlined,
   UndoOutlined,
   HistoryOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
@@ -111,6 +112,7 @@ import { useAccountAppEntries } from '@/features/accounts/use-account-app-entrie
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
+import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
 import {
   formatCodexResetMenuLabel,
   isCodexOAuthResetEligible
@@ -150,6 +152,12 @@ function readStoredAccountsViewMode(): 'card' | 'list' {
 function persistAccountsViewMode(mode: 'card' | 'list'): void {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(ACCOUNTS_VIEW_MODE_STORAGE_KEY, mode); } catch (_error) {}
+}
+
+// 只有注册了探测规格的 provider 才支持窗口激活；当前后端仅 codex。
+// 后端新增 spec 后，这里同步放开即可。
+function canConfigureWindowActivation(record: Pick<Account, 'provider'>): boolean {
+  return record.provider === 'codex';
 }
 
 export default function Accounts() {
@@ -237,7 +245,9 @@ export default function Accounts() {
     setCodexResetAccount,
     setQuotaResetHistoryAccount,
     accountEgressAccount,
-    setAccountEgressAccount
+    setAccountEgressAccount,
+    accountWindowActivationAccount,
+    setAccountWindowActivationAccount
   } = accountActions;
 
   useEffect(() => {
@@ -336,6 +346,9 @@ export default function Accounts() {
     }
     menuItems.push({ key: 'routing-rules', label: '编辑调度规则', icon: <CodeOutlined /> });
     menuItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
+    if (canConfigureWindowActivation(record)) {
+      menuItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
+    }
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
     return menuItems;
@@ -358,6 +371,10 @@ export default function Accounts() {
     if (key === 'routing-rules') { handleRoutingRules(record); return; }
     if (key === 'account-egress') {
       setAccountEgressAccount(record);
+      return;
+    }
+    if (key === 'window-activation') {
+      setAccountWindowActivationAccount(record);
       return;
     }
     if (key === 'delete') {
@@ -966,6 +983,10 @@ export default function Accounts() {
       <AccountEgressModal
         account={accountEgressAccount}
         onClose={() => setAccountEgressAccount(null)}
+      />
+      <AccountWindowActivationModal
+        account={accountWindowActivationAccount}
+        onClose={() => setAccountWindowActivationAccount(null)}
       />
     </PageScaffold>
   );

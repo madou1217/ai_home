@@ -11,7 +11,7 @@ const { inspectCodebuddyCredential, compareCodebuddyCredentials, codebuddyCreden
   readCodebuddyCredentialFile, selectCodebuddyCredential } = require('../lib/account/codebuddy-credential-source');
 const { readProviderAuthProjection, registerProviderAuthProjection, captureProviderAuth,
   materializeProviderAuth } = require('../lib/account/native-auth-projection');
-const { adoptCodebuddyCredential, createCodebuddyNativeCredentialSync } = require('../lib/account/codebuddy-credential-sync');
+const { adoptCodebuddyCredential, createCodebuddyNativeCredentialSync, detectHostFamilyAccounts } = require('../lib/account/codebuddy-credential-sync');
 const store = require('../lib/server/account-credential-store');
 const { deleteAccountRef } = require('../lib/server/account-ref-store');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
@@ -248,6 +248,22 @@ test('deleted accounts are not recreated from persistent App files, including af
   assert.equal(sync.scan().skipped[0].reason, 'account_deleted_by_user');
   assert.equal(store.listAccountCredentialRecords(fs, f.aiHomeDir, 'codebuddy').length, 0);
   assert.equal(f.adopt('codebuddy', c).registered, true);
+});
+
+test('on-demand detection scans the host once and reports what it registered', t => {
+  const f = fixture(t);
+  f.write('workbuddycn', credential('workbuddycn'));
+  const first = detectHostFamilyAccounts({ fs, aiHomeDir: f.aiHomeDir, hostHomeDir: f.home });
+  assert.equal(first.ok, true);
+  assert.equal(first.updated, 1);
+  assert.equal(first.accounts.workbuddycn, 1);
+  assert.deepEqual(first.registered.map((item) => item.created), [true]);
+  // 第二次：已经在库里，不再重复登记（幂等，界面按钮可以放心连点）。
+  const second = detectHostFamilyAccounts({ fs, aiHomeDir: f.aiHomeDir, hostHomeDir: f.home });
+  assert.equal(second.updated, 0);
+  assert.equal(second.accounts.workbuddycn, 1);
+  // 参数不全时明确失败，而不是静默当作「没扫到」。
+  assert.equal(detectHostFamilyAccounts({ fs }).ok, false);
 });
 
 test('observer retries failed runtime notifications and stops its timer', t => {

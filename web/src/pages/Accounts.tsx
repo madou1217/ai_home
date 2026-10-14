@@ -173,6 +173,8 @@ export default function Accounts() {
   } = useModelCatalog(accounts);
   const [activeProvider, setActiveProvider] = useState<AccountProviderFilter>(() => readStoredActiveProviderTab());
   const [filterStatus, setFilterStatus] = useState<AccountFilterValue>('all');
+  // 按需扫描本机已登录账号（CodeBuddy / WorkBuddy 家族）：不等待后台 5s 轮询，结果当场可见。
+  const [detectingHostAccounts, setDetectingHostAccounts] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const accountRouteTarget = useMemo(() => parseAccountRouteTarget(location.search), [location.search]);
 
@@ -718,6 +720,29 @@ export default function Accounts() {
     />
   );
 
+  const detectHostAccounts = async () => {
+    setDetectingHostAccounts(true);
+    try {
+      const result = await accountsAPI.detectHostAccounts();
+      const registered = result.updated || 0;
+      const inventory = Object.entries(result.accounts || {})
+        .filter(([, count]) => count > 0)
+        .map(([provider, count]) => `${provider} ${count}`)
+        .join('、');
+      const summary = inventory ? `本机已入库：${inventory}` : '本机暂无可识别的家族账号';
+      if (registered > 0) {
+        message.success(`扫描完成：新登记 ${registered} 个账号（${summary}）`);
+        accountsSnapshot.requestAccountsSnapshotUpdate();
+      } else {
+        message.info(`扫描完成：没有新账号（${summary}）`);
+      }
+    } catch {
+      message.error('扫描本机账号失败');
+    } finally {
+      setDetectingHostAccounts(false);
+    }
+  };
+
   const getAccountExitClassName = React.useCallback((record: Account) => (
     removingAccountRefs[getAccountRef(record)]
       ? 'accounts-row-exiting animate__animated animate__fadeOutLeft animate__faster'
@@ -751,6 +776,15 @@ export default function Accounts() {
               导出
             </Button>
           </Popover>
+          <Button
+            key="detect"
+            icon={<SyncOutlined />}
+            loading={detectingHostAccounts}
+            disabled={detectingHostAccounts}
+            onClick={() => void detectHostAccounts()}
+          >
+            扫描本机账号
+          </Button>
           <Button
             key="import"
             icon={<ImportOutlined />}

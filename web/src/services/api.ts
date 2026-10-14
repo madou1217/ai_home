@@ -388,6 +388,19 @@ export const accountsAPI = {
     return response.data;
   },
 
+  /** 按需扫描本机已登录、尚未入库的 CodeBuddy / WorkBuddy 家族账号并登记（同步循环的同一份逻辑）。 */
+  detectHostAccounts: async (): Promise<{
+    ok: boolean;
+    scanned: number;
+    updated: number;
+    registered: Array<{ accountRef: string; cliAccountId: string; created: boolean }>;
+    skipped: Array<{ reason: string }>;
+    accounts: Record<string, number>;
+  }> => {
+    const response = await api.post('/webui/accounts/detect');
+    return response.data;
+  },
+
   listCodexResetCredits: async (accountRef: string): Promise<CodexResetCreditsResponse> => {
     const response = await api.get<CodexResetCreditsResponse>(
       `/webui/accounts/codex/${encodeURIComponent(accountRef)}/reset-credits`

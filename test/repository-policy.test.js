@@ -18,7 +18,12 @@ const IGNORED_DIR_NAMES = new Set([
   'coverage',
   'third_party',
   'tmp',
-  'logs'
+  'logs',
+  // output/ is the gitignored scratch dir for agent deliverables and Playwright
+  // evidence (`.gitignore:53`; the docs call these files 运行产物，不提交). Nothing
+  // under it can ever be committed, so the root-markdown allowlist must not police
+  // it — same rationale as the .ahr/ and .workbuddy/ exemptions below.
+  'output'
 ]);
 
 const ALLOWED_MARKDOWN = new Set([
@@ -120,6 +125,23 @@ test('repository policy keeps only root AGENTS and README markdown files (docs/ 
     !ALLOWED_MARKDOWN.has(relativePath)
   ));
   assert.deepEqual(unexpectedMarkdown, []);
+});
+
+// IGNORED_DIR_NAMES 里的 scratch 目录豁免只有在「这些目录确实被 gitignore」时才成立：
+// 一旦某条 gitignore 规则被删掉，豁免就会掩盖一个其实可以被提交的文件。
+test('repository policy scratch-dir exemptions stay gitignored', () => {
+  const gitignoreEntries = new Set(fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#')));
+
+  for (const dirName of ['output']) {
+    assert.equal(
+      gitignoreEntries.has(`${dirName}/`),
+      true,
+      `${dirName}/ 必须在 .gitignore 中，否则不能列入 IGNORED_DIR_NAMES`,
+    );
+  }
 });
 
 test('repository policy rejects generated Codex/Electron root bundles', () => {

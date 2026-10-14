@@ -22,6 +22,7 @@ import (
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 )
 
@@ -808,6 +809,46 @@ func newTestHandlerWithRouteMisses(
 	routeMisses codexresponsesws.RouteMissReporter,
 ) *codexresponsesws.Handler {
 	t.Helper()
+	return newTestHandlerWithOptions(
+		t,
+		upstreamBaseURL,
+		recorder,
+		modelRefreshes,
+		observations,
+		routeMisses,
+		nil,
+	)
+}
+
+// newTestHandlerWithRules 在标准 WS 夹具上注入账号自定义上游错误规则求值端口。
+func newTestHandlerWithRules(
+	t *testing.T,
+	upstreamBaseURL string,
+	recorder *attemptRecorder,
+	rules configured.Rules,
+) *codexresponsesws.Handler {
+	t.Helper()
+	return newTestHandlerWithOptions(
+		t,
+		upstreamBaseURL,
+		recorder,
+		modelRefreshStub{},
+		&observationVerifierStub{current: true},
+		&routeMissRecorder{},
+		rules,
+	)
+}
+
+func newTestHandlerWithOptions(
+	t *testing.T,
+	upstreamBaseURL string,
+	recorder *attemptRecorder,
+	modelRefreshes inferencegateway.ModelRefreshScheduler,
+	observations inferencegateway.CredentialObservationVerifier,
+	routeMisses codexresponsesws.RouteMissReporter,
+	rules configured.Rules,
+) *codexresponsesws.Handler {
+	t.Helper()
 	credential, err := codexauth.NewAPIKeyAuth(codexauth.APIKeyInput{
 		APIKey:  "synthetic-upstream-key",
 		BaseURL: upstreamBaseURL,
@@ -876,6 +917,7 @@ func newTestHandlerWithRouteMisses(
 		Clock: func() time.Time {
 			return time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
 		},
+		Rules: rules,
 	})
 	if err != nil {
 		t.Fatalf("NewHandler() error = %v", err)

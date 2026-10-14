@@ -19,6 +19,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 const (
@@ -39,6 +40,8 @@ type Adapter struct {
 	client   HTTPClient
 	clock    Clock
 	versions clientversion.Source
+	// rules 可选：账号自定义上游错误规则求值端口，见 ObserveUpstreamRules。
+	rules configured.Rules
 	// rejections 接收上游拒绝请求的低敏诊断，见 rejection_diagnostic.go。
 	rejections func(UpstreamRejection)
 }
@@ -70,6 +73,17 @@ func NewAdapterWithClientVersion(
 // ProtocolID 返回 Codex Responses 的精确线协议身份。
 func (*Adapter) ProtocolID() inference.ProtocolID {
 	return inference.ProtocolCodexResponses
+}
+
+// ObserveUpstreamRules 注入账号自定义上游错误规则求值端口。
+//
+// nil 表示 Go 未承接该能力：分类完全由内置 Observer 决定，行为与不注入时一致。
+// 注入后命中规则的账号，其上游错误按规则映射的状态、作用域和冷却记账。
+func (adapter *Adapter) ObserveUpstreamRules(rules configured.Rules) {
+	if adapter == nil {
+		return
+	}
+	adapter.rules = rules
 }
 
 // SupportsCredential 接受 Responses Adapter 已实现的 Codex OAuth 和 API Key。
@@ -137,10 +151,16 @@ func (adapter *Adapter) Execute(
 
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		adapter.reportRejection(effectiveModel, response.StatusCode, bufferRejectionBody(response))
-		classification, observeErr := codexfailure.ObserveHTTP(
-			response,
-			observedAt,
+		rejectionBody := bufferRejectionBody(response)
+		adapter.reportRejection(effectiveModel, response.StatusCode, rejectionBody)
+		classification, observeErr := configured.ClassifyWithRules(
+			adapter.rules,
+			string(invocation.Account().Ref()),
+			response.StatusCode,
+			rejectionBody,
+			func() (sharedfailure.Classification, error) {
+				return codexfailure.ObserveHTTP(response, observedAt)
+			},
 		)
 		if observeErr != nil {
 			return malformedAttempt()
@@ -161,6 +181,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			string(invocation.Account().Ref()),
 		)
 	}
 	mediaType, _, err := mime.ParseMediaType(rawMediaType)
@@ -174,6 +195,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			string(invocation.Account().Ref()),
 		)
 	case "application/json":
 		return adapter.executeJSONResponse(
@@ -181,6 +203,7 @@ func (adapter *Adapter) Execute(
 			observedAt,
 			effectiveModel,
 			emit,
+			string(invocation.Account().Ref()),
 		)
 	default:
 		if isJSONMediaType(mediaType) {
@@ -189,6 +212,7 @@ func (adapter *Adapter) Execute(
 				observedAt,
 				effectiveModel,
 				emit,
+				string(invocation.Account().Ref()),
 			)
 		}
 		return malformedAttempt()
@@ -224,6 +248,7 @@ func (adapter *Adapter) executeEventStream(
 	observedAt time.Time,
 	effectiveModel string,
 	emit inferencegateway.EventSink,
+	accountRef string,
 ) (inferencegateway.AttemptResult, error) {
 	decoder, err := newResponseDecoder(effectiveModel, emit)
 	if err != nil {
@@ -257,10 +282,11 @@ func (adapter *Adapter) executeEventStream(
 		}
 		if wireEvent.Type == "response.failed" ||
 			wireEvent.Type == "error" {
-			return observeSSEFailure(
+			return adapter.observeSSEFailure(
 				event,
 				response.Header,
 				observedAt,
+				accountRef,
 			)
 		}
 		if err := decoder.Apply(wireEvent); err != nil {
@@ -286,18 +312,25 @@ func (adapter *Adapter) executeJSONResponse(
 	observedAt time.Time,
 	effectiveModel string,
 	emit inferencegateway.EventSink,
+	accountRef string,
 ) (inferencegateway.AttemptResult, error) {
 	payload, err := readBoundedJSON(response.Body)
 	if err != nil {
 		return malformedAttempt()
 	}
-	classification, observeErr := codexfailure.ObserveHTTP(
-		&http.Response{
-			StatusCode: response.StatusCode,
-			Header:     response.Header.Clone(),
-			Body:       io.NopCloser(bytes.NewReader(payload)),
+	observedResponse := http.Response{
+		StatusCode: response.StatusCode,
+		Header:     response.Header.Clone(),
+		Body:       io.NopCloser(bytes.NewReader(payload)),
+	}
+	classification, observeErr := configured.ClassifyWithRules(
+		adapter.rules,
+		accountRef,
+		observedResponse.StatusCode,
+		payload,
+		func() (sharedfailure.Classification, error) {
+			return codexfailure.ObserveHTTP(&observedResponse, observedAt)
 		},
-		observedAt,
 	)
 	if observeErr == nil {
 		failure, classifyErr := newAttemptFailure(classification)
@@ -312,10 +345,11 @@ func (adapter *Adapter) executeJSONResponse(
 	var envelope streamEventDTO
 	if json.Unmarshal(payload, &envelope) == nil && envelope.Type != "" {
 		if envelope.Type == "response.failed" || envelope.Type == "error" {
-			return observeSSEFailure(
+			return adapter.observeSSEFailure(
 				sseEvent{eventType: envelope.Type, data: payload},
 				response.Header,
 				observedAt,
+				accountRef,
 			)
 		}
 		return adapter.decodeSingleEvent(
@@ -363,13 +397,14 @@ func (adapter *Adapter) executeJSONResponse(
 		if marshalErr != nil {
 			return malformedAttempt()
 		}
-		return observeSSEFailure(
+		return adapter.observeSSEFailure(
 			sseEvent{
 				eventType: "response.failed",
 				data:      synthetic,
 			},
 			response.Header,
 			observedAt,
+			accountRef,
 		)
 	default:
 		return malformedAttempt()
@@ -400,17 +435,29 @@ func (adapter *Adapter) decodeSingleEvent(
 }
 
 // observeSSEFailure 复用 Codex 低敏 Observer 生成失败结果。
-func observeSSEFailure(
+//
+// 账号自定义规则优先：命中规则的失败事件按规则映射的状态与作用域记账，
+// 未命中或未注入规则时逐字节等价于只调用内置 Observer。
+func (adapter *Adapter) observeSSEFailure(
 	event sseEvent,
 	header http.Header,
 	observedAt time.Time,
+	accountRef string,
 ) (inferencegateway.AttemptResult, error) {
-	classification, observed, err := codexfailure.ObserveSSE(
-		sharedfailure.SSEInput{
-			EventType:  event.eventType,
-			Data:       bytes.NewReader(event.data),
-			Header:     header,
-			ObservedAt: observedAt,
+	classification, observed, err := configured.ClassifySSEWithRules(
+		adapter.rules,
+		accountRef,
+		http.StatusOK,
+		event.data,
+		func() (sharedfailure.Classification, bool, error) {
+			return codexfailure.ObserveSSE(
+				sharedfailure.SSEInput{
+					EventType:  event.eventType,
+					Data:       bytes.NewReader(event.data),
+					Header:     header,
+					ObservedAt: observedAt,
+				},
+			)
 		},
 	)
 	if err != nil || !observed {

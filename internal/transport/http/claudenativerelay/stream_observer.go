@@ -16,6 +16,7 @@ import (
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -53,11 +54,13 @@ func copyAndObserveNativeStream(
 	header http.Header,
 	clock func() time.Time,
 	deadline *inferenceapi.StreamDeadline,
+	rules configured.Rules,
+	accountRef string,
 ) (responseCopyResult, nativeStreamObservation) {
 	reader, writer := io.Pipe()
 	observed := make(chan nativeStreamObservation, 1)
 	go func() {
-		observed <- observeNativeStream(reader, header, clock)
+		observed <- observeNativeStream(reader, header, clock, rules, accountRef)
 		_ = reader.Close()
 	}()
 	result := copyResponseBody(
@@ -96,6 +99,8 @@ func observeNativeStream(
 	source io.Reader,
 	header http.Header,
 	clock func() time.Time,
+	rules configured.Rules,
+	accountRef string,
 ) nativeStreamObservation {
 	if clock == nil {
 		return malformedNativeStreamObservation()
@@ -128,12 +133,20 @@ func observeNativeStream(
 		}
 		eventAt := clock()
 		observed.usage.observe(event.Data())
-		classification, failed, observeErr := claudefailure.ObserveSSE(
-			sharedfailure.SSEInput{
-				EventType:  event.Type(),
-				Data:       bytes.NewReader(event.Data()),
-				Header:     header,
-				ObservedAt: eventAt,
+		classification, failed, observeErr := configured.ClassifySSEWithRules(
+			rules,
+			accountRef,
+			http.StatusOK,
+			event.Data(),
+			func() (sharedfailure.Classification, bool, error) {
+				return claudefailure.ObserveSSE(
+					sharedfailure.SSEInput{
+						EventType:  event.Type(),
+						Data:       bytes.NewReader(event.Data()),
+						Header:     header,
+						ObservedAt: eventAt,
+					},
+				)
 			},
 		)
 		if observeErr != nil && !observed.failed {

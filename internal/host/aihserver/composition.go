@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/application/accountauth"
@@ -20,7 +21,9 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
+	accountcore "github.com/madou1217/ai_home/core/accounts"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
@@ -43,6 +46,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountoutcomesapi"
@@ -61,6 +65,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
+	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 )
 
 const (
@@ -69,6 +74,8 @@ const (
 	// 必须与流总时长兜底同量级（见 G3）。
 	claudeRelayHTTPTimeout  = inferenceapi.StreamTotalTimeout
 	modelCatalogHTTPTimeout = 15 * time.Second
+	// modelRefreshFailureLogInterval 限制同一账号连续刷新失败的日志频率。
+	modelRefreshFailureLogInterval = 5 * time.Minute
 )
 
 // serverHandlers 保存 Composition Root 创建的管理、目录、推理和 Relay 边界。
@@ -100,6 +107,9 @@ type serverHandlers struct {
 	shutdown http.Handler
 	// modelAliases 接收 Node 推送的模型别名投影（/v1/management/model-aliases）。
 	modelAliases http.Handler
+	// upstreamRules 接收 Node 推送的账号自定义上游错误规则投影
+	// （/v1/management/upstream-error-rules）。
+	upstreamRules http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -202,6 +212,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		newMessagesDecodeErrorObserver(options.ErrorLog),
 		newClaudeUpstreamDecodeErrorObserver(options.ErrorLog),
 		options.DelegateCredentialRefresh,
+		options.UpstreamErrorRuleProviders,
 		codexVersions,
 		agyModelWires,
 	)
@@ -239,6 +250,8 @@ func newHandlers(
 	decodeErrors func(error),
 	upstreamDecodeErrors func(error),
 	delegateCredentialRefresh bool,
+	// upstreamErrorRuleProviders 声明 Go 已接入规则求值的 Provider；空表示能力关闭。
+	upstreamErrorRuleProviders []string,
 	codexVersions *clientversion.Resolver,
 	agyModelWires *agycodeassist.ModelWireStore,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
@@ -340,6 +353,7 @@ func newHandlers(
 			MaxBackoff:     modelRefreshMaxBackoff,
 			Clock:          time.Now,
 			Random:         rand.Reader,
+			Observer:       newModelRefreshObserver(errorLog),
 		},
 	)
 	if err != nil {
@@ -601,6 +615,18 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("解析账号选号策略失败: %w", err)
 	}
+	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只持有可求值的规则集合。
+	// 能力集合为空时 Go 不承接任何账号，投影全部被丢弃、Node 继续自己执行规则。
+	//
+	// 必须在推理组合之前创建：分类点（Canonical Adapter 与原生传输 Handler）在
+	// 装配时就注入同一个求值端口，避免出现「投影已接收但没有任何分类点使用它」。
+	upstreamRulesStore, err := upstreamrules.NewStore(upstreamrules.Options{
+		SupportedProviders: upstreamErrorRuleProviders,
+	})
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则投影失败: %w", err)
+	}
+	upstreamRuleEvaluator := configured.NewEvaluator(upstreamRulesStore)
 	inference, err := newInferenceComposition(
 		ctx,
 		inferenceCompositionDependencies{
@@ -627,6 +653,7 @@ func newHandlers(
 			codexVersions:             codexVersions,
 			codexRejections:           newCodexRejectionObserver(errorLog),
 			agyModelWires:             agyModelWires,
+			upstreamRules:             upstreamRuleEvaluator,
 		},
 	)
 	if err != nil {
@@ -642,6 +669,14 @@ func newHandlers(
 	if err != nil {
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名投影接口失败: %w", err)
+	}
+	upstreamRulesHandler, err := upstreamrulesapi.NewHandler(upstreamrulesapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      upstreamRulesStore,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建上游错误规则投影接口失败: %w", err)
 	}
 	claudeGatewayPolicy, err := transportpolicy.NewGatewayPolicy(
 		inference.claudeUpstream,
@@ -662,6 +697,7 @@ func newHandlers(
 		Credentials:    credentials,
 		ModelRefreshes: inference.modelRefreshes,
 		Clock:          time.Now,
+		Rules:          upstreamRuleEvaluator,
 		FailureLog:     newCodexResponsesFailureLogger(errorLog),
 	})
 	if err != nil {
@@ -732,6 +768,7 @@ func newHandlers(
 			Attempts:          accountRuntime,
 			ModelRefreshes:    inference.modelRefreshes,
 			Clock:             time.Now,
+			Rules:             upstreamRuleEvaluator,
 			StreamDisconnects: newRelayDisconnectObserver(errorLog),
 		},
 	)
@@ -802,6 +839,7 @@ func newHandlers(
 			ModelRefreshes:         inference.modelRefreshes,
 			RouteMisses:            routeMissRefresh,
 			Clock:                  time.Now,
+			Rules:                  upstreamRuleEvaluator,
 		},
 	)
 	if err != nil {
@@ -920,6 +958,7 @@ func newHandlers(
 		claudeNativeRelay:  nativeRelayHandler,
 		shutdown:           shutdownHandler,
 		modelAliases:       modelAliasesHandler,
+		upstreamRules:      upstreamRulesHandler,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{
@@ -940,6 +979,45 @@ func newHandlers(
 		usage,
 		modelRefresh,
 	}, nil
+}
+
+// newModelRefreshObserver 记录账号模型异步刷新失败的低敏事实。
+//
+// 单账号刷新失败会保留旧目录并按退避静默重试，路由目录因此可能长期冻结：上游新增
+// 模型后该账号仍然不可路由，而请求在选号阶段就失败、不会触发按账号的纠错刷新。这条
+// 日志是唯一能看见「哪个账号、因为什么刷新不上去」的线索，必须显式落盘。
+//
+// 协调器对失败账号按不超过 1 分钟的退避持续重试，未节流时单个坏账号每天会写出上千
+// 行日志；这里按账号节流，首次失败立即可见，成功后清除节流使下次失败重新可见。
+func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver {
+	if logger == nil {
+		return nil
+	}
+	var mu sync.Mutex
+	lastLogged := make(map[accountcore.AccountRef]time.Time)
+	return func(result accountapp.ModelRefreshResult) {
+		if result.Err == nil {
+			mu.Lock()
+			delete(lastLogged, result.AccountRef)
+			mu.Unlock()
+			return
+		}
+		now := time.Now()
+		mu.Lock()
+		previous, seen := lastLogged[result.AccountRef]
+		if seen && now.Sub(previous) < modelRefreshFailureLogInterval {
+			mu.Unlock()
+			return
+		}
+		lastLogged[result.AccountRef] = now
+		mu.Unlock()
+		logger.Printf(
+			"账号模型刷新失败: provider=%s account=%s err=%v",
+			result.ProviderID,
+			result.AccountRef,
+			result.Err,
+		)
+	}
 }
 
 // newClaudeUpstreamDecodeErrorObserver 只记录上游事件类型、字段形状和状态机位置。

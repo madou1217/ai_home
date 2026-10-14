@@ -25,6 +25,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	gatewaycontract "github.com/madou1217/ai_home/internal/contracts/claudegateway"
 )
 
@@ -92,6 +94,9 @@ type Dependencies struct {
 	Attempts       inferencegateway.AttemptRecorder
 	ModelRefreshes inferencegateway.ModelRefreshScheduler
 	Clock          func() time.Time
+	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
+	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
+	Rules configured.Rules
 	// StreamDisconnects 接收流中途断开的低敏诊断；可为空，见 stream_disconnect.go。
 	StreamDisconnects func(StreamDisconnect)
 }
@@ -106,6 +111,7 @@ type Handler struct {
 	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
+	rules          configured.Rules
 	disconnects    func(StreamDisconnect)
 }
 
@@ -135,6 +141,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		attempts:       attempts,
 		modelRefreshes: dependencies.ModelRefreshes,
 		clock:          dependencies.Clock,
+		rules:          dependencies.Rules,
 		disconnects:    dependencies.StreamDisconnects,
 	}, nil
 }
@@ -325,6 +332,8 @@ func (handler *Handler) ServeHTTP(
 			upstreamResponse.Header,
 			handler.clock,
 			deadline,
+			handler.rules,
+			string(route.AccountRef()),
 		)
 	} else {
 		// 非流式 JSON 响应：旁路保留有界前缀，只为读取顶层 usage，不影响透传。
@@ -422,17 +431,27 @@ func (handler *Handler) recordHTTPFailure(
 		return false
 	}
 	originalBody := response.Body
-	var captured bytes.Buffer
+	// 账号自定义规则与内置观察器必须看到同一份原始正文：按观察器的同一上限预读
+	// 一次，再把它同时交给分类器和调用方（MultiReader 保证交付字节不变）。
+	prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
+	if readErr != nil {
+		return false
+	}
 	observation := *response
-	observation.Body = io.NopCloser(io.TeeReader(originalBody, &captured))
-	classification, err := claudefailure.ObserveHTTP(
-		&observation,
-		handler.clock(),
-	)
+	observation.Body = io.NopCloser(bytes.NewReader(prefix))
 	response.Body = &replayReadCloser{
-		Reader: io.MultiReader(bytes.NewReader(captured.Bytes()), originalBody),
+		Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
 		Closer: originalBody,
 	}
+	classification, err := configured.ClassifyWithRules(
+		handler.rules,
+		string(route.AccountRef()),
+		response.StatusCode,
+		prefix,
+		func() (sharedfailure.Classification, error) {
+			return claudefailure.ObserveHTTP(&observation, handler.clock())
+		},
+	)
 	if err != nil {
 		return false
 	}

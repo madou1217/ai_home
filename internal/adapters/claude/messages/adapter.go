@@ -17,6 +17,7 @@ import (
 	claudefailure "github.com/madou1217/ai_home/internal/adapters/claude/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 const (
@@ -37,6 +38,8 @@ type Adapter struct {
 	client       HTTPClient
 	clock        Clock
 	decodeErrors func(error)
+	// rules 可选：账号自定义上游错误规则求值端口，见 ObserveUpstreamRules。
+	rules configured.Rules
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
@@ -65,6 +68,17 @@ func NewAdapter(
 // ProtocolID 返回 Claude Messages 的精确线协议身份。
 func (*Adapter) ProtocolID() inference.ProtocolID {
 	return inference.ProtocolClaudeMessages
+}
+
+// ObserveUpstreamRules 注入账号自定义上游错误规则求值端口。
+//
+// nil 表示 Go 未承接该能力：分类完全由内置 Observer 决定，行为与不注入时一致。
+// 注入后命中规则的账号，其上游错误按规则映射的状态、作用域和冷却记账。
+func (adapter *Adapter) ObserveUpstreamRules(rules configured.Rules) {
+	if adapter == nil {
+		return
+	}
+	adapter.rules = rules
 }
 
 // SupportsCredential 只接受能够由 Go Messages Adapter 精确承载的 Claude 凭据。
@@ -131,9 +145,23 @@ func (adapter *Adapter) Execute(
 
 	if response.StatusCode < http.StatusOK ||
 		response.StatusCode >= http.StatusMultipleChoices {
-		classification, observeErr := claudefailure.ObserveHTTP(
-			response,
-			observedAt,
+		// 规则求值需要原始正文；按观察器的同一上限预读一次，再把它交回观察器。
+		rejectionBody, readErr := io.ReadAll(io.LimitReader(response.Body, sharedfailure.MaxErrorPayloadBytes+1))
+		if readErr != nil {
+			return malformedAttempt()
+		}
+		response.Body = io.NopCloser(bytes.NewReader(rejectionBody))
+		classification, observeErr := configured.ClassifyWithRules(
+			adapter.rules,
+			string(invocation.Account().Ref()),
+			response.StatusCode,
+			rejectionBody,
+			func() (sharedfailure.Classification, error) {
+				return claudefailure.ObserveHTTP(
+					response,
+					observedAt,
+				)
+			},
 		)
 		if observeErr != nil {
 			return malformedAttempt()
@@ -154,6 +182,7 @@ func (adapter *Adapter) Execute(
 			effectiveModel,
 			emit,
 			encoded.toolNames,
+			string(invocation.Account().Ref()),
 		)
 	}
 	mediaType, _, err := mime.ParseMediaType(rawMediaType)
@@ -168,6 +197,7 @@ func (adapter *Adapter) Execute(
 			effectiveModel,
 			emit,
 			encoded.toolNames,
+			string(invocation.Account().Ref()),
 		)
 	case "application/json":
 		return adapter.executeJSONResponse(
@@ -176,6 +206,7 @@ func (adapter *Adapter) Execute(
 			effectiveModel,
 			emit,
 			encoded.toolNames,
+			string(invocation.Account().Ref()),
 		)
 	default:
 		if isJSONMediaType(mediaType) {
@@ -185,6 +216,7 @@ func (adapter *Adapter) Execute(
 				effectiveModel,
 				emit,
 				encoded.toolNames,
+				string(invocation.Account().Ref()),
 			)
 		}
 		return malformedAttempt()
@@ -222,6 +254,7 @@ func (adapter *Adapter) executeEventStream(
 	effectiveModel string,
 	emit inferencegateway.EventSink,
 	toolNames toolNameMapper,
+	accountRef string,
 ) (inferencegateway.AttemptResult, error) {
 	decoder, err := newResponseDecoder(effectiveModel, emit, toolNames)
 	if err != nil {
@@ -253,10 +286,11 @@ func (adapter *Adapter) executeEventStream(
 		if bytes.Equal(bytes.TrimSpace(event.Data()), []byte("[DONE]")) {
 			return incompleteStreamAttempt(io.EOF)
 		}
-		if result, observed, observeErr := observeSSEFailure(
+		if result, observed, observeErr := adapter.observeSSEFailure(
 			event,
 			response.Header,
 			observedAt,
+			accountRef,
 		); observeErr != nil {
 			return inferencegateway.AttemptResult{}, observeErr
 		} else if observed {
@@ -289,18 +323,25 @@ func (adapter *Adapter) executeJSONResponse(
 	effectiveModel string,
 	emit inferencegateway.EventSink,
 	toolNames toolNameMapper,
+	accountRef string,
 ) (inferencegateway.AttemptResult, error) {
 	payload, err := readBoundedJSON(response.Body)
 	if err != nil {
 		return malformedAttempt()
 	}
-	classification, observeErr := claudefailure.ObserveHTTP(
-		&http.Response{
-			StatusCode: response.StatusCode,
-			Header:     response.Header.Clone(),
-			Body:       io.NopCloser(bytes.NewReader(payload)),
+	observedResponse := http.Response{
+		StatusCode: response.StatusCode,
+		Header:     response.Header.Clone(),
+		Body:       io.NopCloser(bytes.NewReader(payload)),
+	}
+	classification, observeErr := configured.ClassifyWithRules(
+		adapter.rules,
+		accountRef,
+		observedResponse.StatusCode,
+		payload,
+		func() (sharedfailure.Classification, error) {
+			return claudefailure.ObserveHTTP(&observedResponse, observedAt)
 		},
-		observedAt,
 	)
 	if observeErr == nil {
 		failure, classifyErr := newAttemptFailure(classification)
@@ -343,17 +384,29 @@ func (adapter *Adapter) observeDecodeError(err error) {
 }
 
 // observeSSEFailure 复用 Claude 低敏 Observer，普通内容事件不产生结果。
-func observeSSEFailure(
+//
+// 账号自定义规则优先：命中规则的失败事件按规则映射的状态与作用域记账，
+// 未命中或未注入规则时逐字节等价于只调用内置 Observer。
+func (adapter *Adapter) observeSSEFailure(
 	event sharedsse.Event,
 	header http.Header,
 	observedAt time.Time,
+	accountRef string,
 ) (inferencegateway.AttemptResult, bool, error) {
-	classification, observed, err := claudefailure.ObserveSSE(
-		sharedfailure.SSEInput{
-			EventType:  event.Type(),
-			Data:       bytes.NewReader(event.Data()),
-			Header:     header,
-			ObservedAt: observedAt,
+	classification, observed, err := configured.ClassifySSEWithRules(
+		adapter.rules,
+		accountRef,
+		http.StatusOK,
+		event.Data(),
+		func() (sharedfailure.Classification, bool, error) {
+			return claudefailure.ObserveSSE(
+				sharedfailure.SSEInput{
+					EventType:  event.Type(),
+					Data:       bytes.NewReader(event.Data()),
+					Header:     header,
+					ObservedAt: observedAt,
+				},
+			)
 		},
 	)
 	if err != nil {

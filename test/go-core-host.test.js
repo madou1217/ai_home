@@ -64,6 +64,30 @@ test('resolveGoCoreSettings reads persisted config and lets AIH_GO_CORE_* overri
   assert.equal(resolveGoCoreSettings({}, {}).enabled, false);
 });
 
+test('resolveGoCoreSettings takes the upstream error rule providers from config unless the host declares them', () => {
+  assert.deepEqual(
+    resolveGoCoreSettings({ upstreamErrorRuleProviders: ['codex', 'claude'] }, {}).upstreamErrorRuleProviders,
+    ['codex', 'claude']
+  );
+  assert.deepEqual(resolveGoCoreSettings({}, {}).upstreamErrorRuleProviders, []);
+  // 宿主显式声明时以宿主为准，并且同样归一化（大小写/空白/重复）。
+  assert.deepEqual(
+    resolveGoCoreSettings(
+      { upstreamErrorRuleProviders: ['codex'] },
+      { AIH_SERVER_UPSTREAM_ERROR_RULES: ' Claude ,codex,CLAUDE' }
+    ).upstreamErrorRuleProviders,
+    ['claude', 'codex']
+  );
+  // 显式声明为空 = 关闭：不能回落到 config，否则 Node 会以为 Go 承接而 Go 实际是关闭态。
+  assert.deepEqual(
+    resolveGoCoreSettings(
+      { upstreamErrorRuleProviders: ['codex'] },
+      { AIH_SERVER_UPSTREAM_ERROR_RULES: '   ' }
+    ).upstreamErrorRuleProviders,
+    []
+  );
+});
+
 test('the host hands its child environment overrides to the supervisor', () => {
   const { factory, calls } = fakeSupervisorFactory();
   const childEnvironment = { HTTPS_PROXY: 'http://127.0.0.1:6152', NO_PROXY: null };
@@ -74,6 +98,40 @@ test('the host hands its child environment overrides to the supervisor', () => {
     log: silentLog
   });
   assert.equal(calls.options.env, childEnvironment);
+});
+
+test('the host hands the resolved upstream error rule providers to the supervisor', () => {
+  const { factory, calls } = fakeSupervisorFactory();
+  createGoCoreHost({
+    settings: resolveGoCoreSettings({ upstreamErrorRuleProviders: ['codex', 'claude'] }, {}),
+    createGoCoreSupervisor: factory,
+    log: silentLog
+  });
+  assert.deepEqual(calls.options.upstreamErrorRuleProviders, ['codex', 'claude']);
+});
+
+test('the host reports the upstream error rule takeover state on startup', async () => {
+  const lines = [];
+  const { factory } = fakeSupervisorFactory();
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings({ upstreamErrorRuleProviders: ['codex'] }, {}),
+    createGoCoreSupervisor: factory,
+    log: { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) }
+  });
+  await host.start();
+  assert.equal(lines.some((line) => line.includes('upstream error rules: Go executes for codex')), true);
+
+  const disabledLines = [];
+  const disabledHost = createGoCoreHost({
+    settings: resolveGoCoreSettings({}, {}),
+    createGoCoreSupervisor: factory,
+    log: { log: (line) => disabledLines.push(String(line)), error: (line) => disabledLines.push(String(line)) }
+  });
+  await disabledHost.start();
+  assert.equal(
+    disabledLines.some((line) => line.includes('upstream error rules: disabled (Node executes every account rule)')),
+    true
+  );
 });
 
 test('a disabled Go Core never spawns and claims no routes by default', async () => {
@@ -418,4 +476,119 @@ test('an unconfirmed alias push keeps every alias on Node', async () => {
   await host.start();
   assert.equal(host.acceptedAliasIds().size, 0, '未追平的推送不得被当作已接受');
   await host.stop();
+});
+
+test('the host pushes account error rules and only forwards accounts Go confirmed', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const pushed = [];
+  const pools = {
+    codex: [
+      { accountRef: 'acct_rules', provider: 'codex', upstreamErrorRules: [{ name: '额度耗尽', kind: 'quota_exhausted', enabled: true, statuses: [429], matchers: [{ source: 'body', operator: 'contains', value: 'INSUFFICIENT_BALANCE' }] }] },
+      { accountRef: 'acct_plain', provider: 'codex' }
+    ]
+  };
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: factory,
+    createGoManagementClient: () => ({
+      // 别名推送在规则推送之前跑；缺少这个方法会让启动链路整体失败，规则永远不会推送。
+      pushModelAliases: async () => ({ ok: true, data: { generation: 1, applied_generation: 1, accepted_ids: [], dropped: [] } }),
+      pushUpstreamErrorRules: async (accounts) => {
+        pushed.push(accounts);
+        return {
+          ok: true,
+          data: {
+            generation: 1,
+            accepted_account_refs: ['acct_rules'],
+            dropped: [{ account_ref: 'acct_other', reason: 'provider_not_supported' }],
+            supported_providers: ['codex']
+          }
+        };
+      }
+    }),
+    accountPools: () => pools,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal(pushed.length, 1, '启动后必须推送一次规则投影');
+  // 只有带生效规则的账号进投影，且字段形状与 Go 的解码器一致。
+  assert.deepEqual(pushed[0], [{
+    account_ref: 'acct_rules',
+    provider: 'codex',
+    rules: [{ name: '额度耗尽', kind: 'quota_exhausted', enabled: true, statuses: [429], matchers: [{ source: 'body', operator: 'contains', value: 'INSUFFICIENT_BALANCE' }] }]
+  }]);
+  assert.deepEqual([...host.acceptedUpstreamErrorRuleRefs()], ['acct_rules']);
+  const readiness = await host.readiness();
+  assert.deepEqual(readiness.upstream_error_rules, {
+    generation: 1,
+    accepted: 1,
+    dropped: 1,
+    droppedReasons: ['provider_not_supported'],
+    supportedProviders: ['codex']
+  });
+
+  // 内容未变化时不重复 PUT。
+  await host.pushUpstreamErrorRules();
+  assert.equal(pushed.length, 1);
+  await host.stop();
+});
+
+test('an unconfirmed or failed rules push keeps every rule account on Node', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const pools = {
+    codex: [{ accountRef: 'acct_rules', provider: 'codex', upstreamErrorRules: [{ kind: 'rate_limited', enabled: true, statuses: [429], matchers: [{ source: 'body', operator: 'contains', value: 'slow down' }] }] }]
+  };
+  let unconfirmedPushes = 0;
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: factory,
+    createGoManagementClient: () => ({
+      pushModelAliases: async () => ({ ok: true, data: { generation: 1, applied_generation: 1, accepted_ids: [], dropped: [] } }),
+      // Go 未接入任何 Provider：它一个账号都不承接。
+      pushUpstreamErrorRules: async () => {
+        unconfirmedPushes += 1;
+        return { ok: true, data: { generation: 1, accepted_account_refs: [], dropped: [], supported_providers: [] } };
+      }
+    }),
+    accountPools: () => pools,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: silentLog
+  });
+
+  await host.start();
+  assert.equal(unconfirmedPushes, 1, '启动后必须推送一次规则投影');
+  assert.equal(host.acceptedUpstreamErrorRuleRefs().size, 0, 'Go 未承接任何账号时接受集合必须为空');
+  await host.stop();
+
+  // 推送失败（响应不可用）时保持上一份集合，不得把账号当成已承接。
+  let failedPushes = 0;
+  const failing = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: fakeSupervisorFactory().factory,
+    createGoManagementClient: () => ({
+      pushModelAliases: async () => ({ ok: true, data: { generation: 1, applied_generation: 1, accepted_ids: [], dropped: [] } }),
+      pushUpstreamErrorRules: async () => {
+        failedPushes += 1;
+        return { ok: false, status: 503, data: null, errorCode: 'http_503' };
+      }
+    }),
+    accountPools: () => pools,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: silentLog
+  });
+  await failing.start();
+  assert.equal(failedPushes, 1, '推送确实发出过，只是没被确认');
+  assert.equal(failing.acceptedUpstreamErrorRuleRefs().size, 0);
+  await failing.stop();
 });

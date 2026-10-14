@@ -207,4 +207,32 @@ test('a forwarded request carries no reason, so normal routing is never counted 
   });
   assert.equal(decision.defer, false);
   assert.equal(decision.reason, '');
+
+test('account error rules leave Node only once Go confirms it took the account over', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const RULES = 'acct_eeeeeeeeeeeeeeeeeeee';
+  const stateWithRules = {
+    accounts: { claude: [{ accountRef: LIVE }, { accountRef: RULES, upstreamErrorRules: [{ enabled: true }] }] }
+  };
+  const decide = (acceptedRefs, mapRef) => explainGoRouteDeferral({
+    entryId: 'gateway.anthropic.messages', pinnedAccountRef: '', model: 'gpt-5.5',
+    aliases: [], state: stateWithRules, accountStateIndex, fabricGatewayReady: () => false,
+    goRoutableModelIds: () => new Set(['gpt-5.5']),
+    goAcceptedErrorRuleRefs: () => acceptedRefs,
+    goAccountRefFor: mapRef
+  });
+  // 未确认（Go 还没就绪 / 推送失败 / 被 Provider 能力丢弃）继续交还 Node。
+  assert.deepEqual(decide(new Set(), null), { defer: true, reason: 'account_error_rules' });
+  assert.deepEqual(decide(null, null), { defer: true, reason: 'account_error_rules' });
+  assert.deepEqual(decide(new Set(['acct_other']), (ref) => (ref === LIVE ? 'acct_other' : '')), { defer: true, reason: 'account_error_rules' });
+  // Go 已承接该账号（含同步 rekey 后的 Go 引用）时不再交还。
+  assert.deepEqual(decide(new Set([RULES]), null), { defer: false, reason: '' });
+  assert.deepEqual(decide(new Set(['go_ref']), (ref) => (ref === RULES ? 'go_ref' : '')), { defer: false, reason: '' });
+  // 宿主没注入访问器（旧装配）时保持接入前的保守行为。
+  assert.equal(shouldDeferGoRouteToNode({
+    entryId: 'gateway.anthropic.messages', model: 'gpt-5.5', aliases: [], state: stateWithRules,
+    accountStateIndex, fabricGatewayReady: () => false, goRoutableModelIds: () => new Set(['gpt-5.5'])
+  }), true);
+});
+
 });

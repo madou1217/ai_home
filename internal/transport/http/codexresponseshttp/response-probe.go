@@ -12,6 +12,7 @@ import (
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 type replayBody struct {
@@ -19,7 +20,7 @@ type replayBody struct {
 	io.Closer
 }
 
-func (handler *Handler) probeResponse(upstream *http.Response, stream bool) inferencegateway.AttemptFailure {
+func (handler *Handler) probeResponse(upstream *http.Response, stream bool, accountRef string) inferencegateway.AttemptFailure {
 	mediaType, _, _ := mime.ParseMediaType(upstream.Header.Get("Content-Type"))
 	streaming := mediaType == "text/event-stream" || (mediaType == "" && stream)
 	limit := int64(1024 * 1024)
@@ -39,7 +40,15 @@ func (handler *Handler) probeResponse(upstream *http.Response, stream bool) infe
 		}
 		observed := *upstream
 		observed.Body = io.NopCloser(bytes.NewReader(payload))
-		classification, err := codexfailure.ObserveHTTP(&observed, handler.Clock())
+		classification, err := configured.ClassifyWithRules(
+			handler.Rules,
+			accountRef,
+			observed.StatusCode,
+			payload,
+			func() (sharedfailure.Classification, error) {
+				return codexfailure.ObserveHTTP(&observed, handler.Clock())
+			},
+		)
 		if err != nil {
 			return inferencegateway.AttemptFailure{}
 		}
@@ -55,9 +64,17 @@ func (handler *Handler) probeResponse(upstream *http.Response, stream bool) infe
 		if err != nil || int64(prefix.Len()) > limit {
 			return inferencegateway.AttemptFailure{}
 		}
-		classification, failed, err := codexfailure.ObserveSSE(sharedfailure.SSEInput{
-			EventType: event.Type(), Data: bytes.NewReader(event.Data()), Header: upstream.Header, ObservedAt: handler.Clock(),
-		})
+		classification, failed, err := configured.ClassifySSEWithRules(
+			handler.Rules,
+			accountRef,
+			http.StatusOK,
+			event.Data(),
+			func() (sharedfailure.Classification, bool, error) {
+				return codexfailure.ObserveSSE(sharedfailure.SSEInput{
+					EventType: event.Type(), Data: bytes.NewReader(event.Data()), Header: upstream.Header, ObservedAt: handler.Clock(),
+				})
+			},
+		)
 		if failed && err == nil {
 			failure, _ := attemptfailure.New(classification)
 			return failure

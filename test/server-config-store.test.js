@@ -44,7 +44,8 @@ test('server config store persists and normalizes server config', (t) => {
     noProxy: 'localhost,127.0.0.1',
     modelsProbeAccounts: 5,
     goCoreEnabled: false,
-    goCoreRoutes: []
+    goCoreRoutes: [],
+    upstreamErrorRuleProviders: []
   });
 
   const loaded = readServerConfig({ fs, aiHomeDir });
@@ -96,7 +97,8 @@ test('server config store supports partial update semantics and empty string cle
     noProxy: '',
     modelsProbeAccounts: 4,
     goCoreEnabled: false,
-    goCoreRoutes: []
+    goCoreRoutes: [],
+    upstreamErrorRuleProviders: []
   });
 });
 
@@ -129,7 +131,8 @@ test('server config store works when fs only exposes mkdirSync for directory cre
     noProxy: '',
     modelsProbeAccounts: 2,
     goCoreEnabled: false,
-    goCoreRoutes: []
+    goCoreRoutes: [],
+    upstreamErrorRuleProviders: []
   });
 });
 
@@ -161,7 +164,8 @@ test('mergeServerConfigPatch ignores null updates and preserves explicit boolean
     noProxy: 'localhost',
     modelsProbeAccounts: 6,
     goCoreEnabled: false,
-    goCoreRoutes: []
+    goCoreRoutes: [],
+    upstreamErrorRuleProviders: []
   });
 });
 
@@ -182,4 +186,23 @@ test('server config store persists Go Core opt-in and normalizes route entry ids
   const disabled = writeServerConfig({ goCoreEnabled: false, goCoreRoutes: [] }, { fs, aiHomeDir });
   assert.equal(disabled.goCoreEnabled, false);
   assert.deepEqual(disabled.goCoreRoutes, []);
+});
+
+test('server config store normalizes the Go upstream error rule provider list', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-config-rules-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  // Go 侧把空项与重复项当硬错误（声明写错会让 Go 拒绝启动），因此写入门必须归一化。
+  const saved = writeServerConfig({
+    upstreamErrorRuleProviders: ' Codex , claude ,Codex,  '
+  }, { fs, aiHomeDir });
+
+  assert.deepEqual(saved.upstreamErrorRuleProviders, ['codex', 'claude']);
+  assert.deepEqual(readServerConfig({ fs, aiHomeDir }).upstreamErrorRuleProviders, ['codex', 'claude']);
+
+  // 未声明（默认）表示 Go 不承接任何账号，Node 继续自己执行规则。
+  assert.deepEqual(DEFAULT_SERVER_CONFIG.upstreamErrorRuleProviders, []);
+  const cleared = writeServerConfig({ upstreamErrorRuleProviders: [] }, { fs, aiHomeDir });
+  assert.deepEqual(cleared.upstreamErrorRuleProviders, []);
+  assert.equal(buildServerArgsFromConfig(cleared).includes('--upstream-error-rules'), false);
 });

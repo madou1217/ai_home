@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
+	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -141,6 +142,10 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 模型别名投影：Node 在启动与别名变更后推送，Go 只读并编译进路由目录。
 	if handlers.modelAliases != nil {
 		mux.Handle(modelaliasapi.Path, handlers.modelAliases)
+	}
+	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
+	if handlers.upstreamRules != nil {
+		mux.Handle(upstreamrulesapi.Path, handlers.upstreamRules)
 	}
 	mux.Handle(
 		clauderelayleaseapi.Path,

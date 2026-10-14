@@ -67,6 +67,12 @@ type Options struct {
 	// DelegateCredentialRefresh 表示由嵌入宿主（Node）独占 OAuth 刷新；Go 只使用
 	// 宿主同步进来的凭据，从不自行轮换 Refresh Token。
 	DelegateCredentialRefresh bool
+	// UpstreamErrorRuleProviders 声明 Go 已接入账号自定义上游错误规则求值的 Provider。
+	//
+	// 空集合（缺省）表示 Go 一个都不承接：管理接口照常可用，但所有账号投影都会被
+	// 丢弃，Node 继续自己执行规则——接入前后行为完全一致。只有在失败分类点也接好了
+	// 该 Provider 的规则求值后，才可以把 Provider 加进来。
+	UpstreamErrorRuleProviders []string
 	// RequestShutdown 在管理端点被调用时触发优雅退出。为空则不装配该端点——
 	// 关闭是不可逆操作，宁可没有也不能没有鉴权或没有接收方。
 	//

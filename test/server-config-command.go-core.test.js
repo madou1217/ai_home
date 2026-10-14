@@ -23,3 +23,30 @@ test('public server config exposes the Go Core settings', () => {
   assert.equal(view.goCoreEnabled, true);
   assert.deepEqual(view.goCoreRoutes, ['gateway.props']);
 });
+
+test('server config accepts the Go upstream error rule provider flags', () => {
+  assert.deepEqual(
+    parseServerConfigArgs(['set', '--upstream-error-rules', ' Codex , claude,Codex']).patch,
+    { upstreamErrorRuleProviders: ['codex', 'claude'] }
+  );
+  assert.deepEqual(
+    parseServerConfigArgs(['set', '--upstream-error-rules=codex,claude']).patch,
+    { upstreamErrorRuleProviders: ['codex', 'claude'] }
+  );
+  assert.deepEqual(
+    parseServerConfigArgs(['set', '--clear-upstream-error-rules']).patch,
+    { upstreamErrorRuleProviders: [] }
+  );
+  assert.throws(
+    () => parseServerConfigArgs(['set', '--upstream-error-rules']),
+    /Invalid --upstream-error-rules value/
+  );
+});
+
+test('public server config exposes the Go upstream error rule providers', () => {
+  assert.deepEqual(
+    toPublicServerConfig({ upstreamErrorRuleProviders: ['codex'] }).upstreamErrorRuleProviders,
+    ['codex']
+  );
+  assert.deepEqual(toPublicServerConfig({}).upstreamErrorRuleProviders, []);
+});

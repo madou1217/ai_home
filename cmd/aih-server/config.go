@@ -35,6 +35,9 @@ type commandConfig struct {
 	// delegateCredentialRefresh 由 AIH_SERVER_CREDENTIAL_REFRESH=delegated 打开：
 	// Node 宿主监督 Go 时独占 OAuth 刷新，避免两个刷新者竞争会轮换的 Refresh Token。
 	delegateCredentialRefresh bool
+	// upstreamErrorRuleProviders 由 AIH_SERVER_UPSTREAM_ERROR_RULES 声明（逗号分隔）。
+	// 缺省为空：Go 不承接任何账号的自定义错误规则，Node 继续自己执行规则。
+	upstreamErrorRuleProviders []string
 }
 
 // listenAddress 返回 IPv4、IPv6 都可安全使用的监听地址。
@@ -86,14 +89,44 @@ func loadCommandConfig(
 	if err != nil {
 		return commandConfig{}, err
 	}
+	ruleProviders, err := envUpstreamErrorRuleProviders(runtime.lookupEnv)
+	if err != nil {
+		return commandConfig{}, err
+	}
 	return commandConfig{
-		host:                      host,
-		port:                      port,
-		aiHomeDir:                 aiHomeDir,
-		managementKey:             managementKey,
-		clientKey:                 clientKey,
-		delegateCredentialRefresh: delegate,
+		host:                       host,
+		port:                       port,
+		aiHomeDir:                  aiHomeDir,
+		managementKey:              managementKey,
+		clientKey:                  clientKey,
+		delegateCredentialRefresh:  delegate,
+		upstreamErrorRuleProviders: ruleProviders,
 	}, nil
+}
+
+// envUpstreamErrorRuleProviders 严格解析已接入规则求值的 Provider 列表。
+//
+// 缺省为空表示能力关闭（Go 不承接任何账号的规则）；出现空项或重复项即报错，
+// 而不是静默忽略——能力声明写错会让 Go 悄悄接管或悄悄放弃一批账号。
+func envUpstreamErrorRuleProviders(lookupEnv func(string) (string, bool)) ([]string, error) {
+	raw, found := lookupEnv("AIH_SERVER_UPSTREAM_ERROR_RULES")
+	if !found || strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	providers := []string{}
+	seen := map[string]struct{}{}
+	for _, item := range strings.Split(raw, ",") {
+		provider := strings.ToLower(strings.TrimSpace(item))
+		if provider == "" {
+			return nil, errInvalidCommandConfig
+		}
+		if _, duplicate := seen[provider]; duplicate {
+			return nil, errInvalidCommandConfig
+		}
+		seen[provider] = struct{}{}
+		providers = append(providers, provider)
+	}
+	return providers, nil
 }
 
 // envCredentialRefreshDelegated 严格解析刷新所有权：缺省/self 自行刷新，delegated 交给宿主。

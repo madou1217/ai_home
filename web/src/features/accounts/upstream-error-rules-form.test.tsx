@@ -14,7 +14,15 @@ test('New API form preset identifies the captured billing error and rejects anot
   const group = createUpstreamErrorMappingGroup();
   const rules = validateUpstreamErrorRules(group.rules);
   assert.equal(matchUpstreamErrorRule(rules, 403, { error: { type: 'new_api_error', code: 'insufficient_user_quota' } }).kind, 'billing_blocked');
+  // 2026-10-14 4router 事故：New API 部署会把 error.type 改写成自己的名字
+  // （4router 实测返回 4router_error），规则必须只按稳定的 error.code 命中，
+  // 否则改了 type 的中转欠费永远识别不出。
+  assert.equal(matchUpstreamErrorRule(rules, 403, { error: { type: '4router_error', code: 'insufficient_user_quota' } }).kind, 'billing_blocked');
+  // jiji 走 one-api 信封：余额不足是顶层 code，没有 error 包裹。
+  assert.equal(matchUpstreamErrorRule(rules, 403, { code: 'INSUFFICIENT_BALANCE', message: 'Insufficient account balance' }).kind, 'billing_blocked');
   assert.equal(matchUpstreamErrorRule(rules, 403, { error: { type: 'new_api_error', code: 'permission_denied' } }), null);
+  assert.equal(matchUpstreamErrorRule(rules, 403, { error: { type: '4router_error', code: 'permission_denied' } }), null);
+  assert.equal(matchUpstreamErrorRule(rules, 403, { code: 'INSUFFICIENT_BALANCE_OTHER' }), null);
 });
 
 test('editing legacy rules preserves top-level and response.error matches and isolates cancelled changes', () => {

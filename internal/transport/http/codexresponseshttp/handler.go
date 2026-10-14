@@ -21,6 +21,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -52,6 +54,9 @@ type Dependencies struct {
 	Credentials    inferencegateway.CredentialObservationVerifier
 	ModelRefreshes inferencegateway.ModelRefreshScheduler
 	Clock          func() time.Time
+	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
+	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
+	Rules configured.Rules
 	// FailureLog 可选：请求以失败结束时收到一份低敏摘要（见 FailureReport）。
 	FailureLog func(FailureReport)
 }
@@ -168,7 +173,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			last = nil
 		}
 		if upstream.StatusCode >= 200 && upstream.StatusCode < 300 {
-			failure := handler.probeResponse(upstream, metadata.Stream)
+			failure := handler.probeResponse(upstream, metadata.Stream, string(selection.AccountRef))
 			if request.Context().Err() != nil {
 				_ = upstream.Body.Close()
 				return
@@ -196,7 +201,15 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		prefix, readErr := io.ReadAll(io.LimitReader(upstream.Body, 1024*1024+1))
 		observedResponse := *upstream
 		observedResponse.Body = io.NopCloser(bytes.NewReader(prefix))
-		classification, classifyErr := codexfailure.ObserveHTTP(&observedResponse, handler.Clock())
+		classification, classifyErr := configured.ClassifyWithRules(
+			handler.Rules,
+			string(selection.AccountRef),
+			upstream.StatusCode,
+			prefix,
+			func() (sharedfailure.Classification, error) {
+				return codexfailure.ObserveHTTP(&observedResponse, handler.Clock())
+			},
+		)
 		failure, failureErr := attemptfailure.New(classification)
 		retry := false
 		trail.attempt(selection.AccountRef, fmt.Sprintf("http_%d", upstream.StatusCode), failure, "", attemptStarted)

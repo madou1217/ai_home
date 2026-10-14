@@ -17,6 +17,7 @@ import (
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedsse "github.com/madou1217/ai_home/internal/adapters/sse"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -45,7 +46,7 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 		reader, writer := io.Pipe()
 		result := make(chan outcome, 1)
 		go func() {
-			result <- handler.observeStream(reader, upstream.Header)
+			result <- handler.observeStream(reader, upstream.Header, string(selection.AccountRef))
 			_ = reader.Close()
 		}()
 		upstreamErr, downstreamErr = copyBody(response, io.TeeReader(upstream.Body, &observationTap{writer: writer}))
@@ -62,7 +63,16 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 			observed.completed = envelope.Status == "completed"
 			observed.incomplete = envelope.Status == "incomplete"
 			observed.usage = decodeUsage(envelope.Usage)
-			classification, err := codexfailure.ObserveHTTP(&http.Response{StatusCode: upstream.StatusCode, Header: upstream.Header, Body: io.NopCloser(bytes.NewReader(captured.Bytes()))}, handler.Clock())
+			observedResponse := http.Response{StatusCode: upstream.StatusCode, Header: upstream.Header, Body: io.NopCloser(bytes.NewReader(captured.Bytes()))}
+			classification, err := configured.ClassifyWithRules(
+				handler.Rules,
+				string(selection.AccountRef),
+				observedResponse.StatusCode,
+				captured.Bytes(),
+				func() (sharedfailure.Classification, error) {
+					return codexfailure.ObserveHTTP(&observedResponse, handler.Clock())
+				},
+			)
 			if err == nil {
 				observed.failure, _ = attemptfailure.New(classification)
 			}
@@ -92,7 +102,7 @@ func (handler *Handler) deliver(response http.ResponseWriter, request *http.Requ
 	}
 }
 
-func (handler *Handler) observeStream(source io.Reader, header http.Header) outcome {
+func (handler *Handler) observeStream(source io.Reader, header http.Header, accountRef string) outcome {
 	reader, err := sharedsse.NewReader(source)
 	if err != nil {
 		return outcome{}
@@ -120,7 +130,15 @@ func (handler *Handler) observeStream(source io.Reader, header http.Header) outc
 		if envelope.Type == "response.incomplete" {
 			return outcome{incomplete: true}
 		}
-		classification, failed, err := codexfailure.ObserveSSE(sharedfailure.SSEInput{EventType: envelope.Type, Data: bytes.NewReader(event.Data()), Header: header, ObservedAt: handler.Clock()})
+		classification, failed, err := configured.ClassifySSEWithRules(
+			handler.Rules,
+			accountRef,
+			http.StatusOK,
+			event.Data(),
+			func() (sharedfailure.Classification, bool, error) {
+				return codexfailure.ObserveSSE(sharedfailure.SSEInput{EventType: envelope.Type, Data: bytes.NewReader(event.Data()), Header: header, ObservedAt: handler.Clock()})
+			},
+		)
 		if failed && err == nil {
 			failure, _ := attemptfailure.New(classification)
 			return outcome{failure: failure}

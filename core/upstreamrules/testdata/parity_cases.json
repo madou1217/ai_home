@@ -1,0 +1,221 @@
+{
+  "description": "账号自定义上游错误规则的跨实现一致性样例：Go（core/upstreamrules）与 Node（lib/account/upstream-error-rules.js）必须给出同一结论。任何一侧语义漂移都会让另一侧测试失败。",
+  "cases": [
+    {
+      "name": "http_code equals 命中限流",
+      "statusCode": 429,
+      "body": "{\"error\":{\"message\":\"Too many requests\"}}",
+      "rules": [
+        { "name": "429", "kind": "rate_limited", "statuses": [], "matchers": [{ "source": "http_code", "operator": "equals", "value": 429 }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "rate_limited"
+    },
+    {
+      "name": "正文包含余额不足关键字",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"INSUFFICIENT_BALANCE\",\"message\":\"insufficient balance\"}}",
+      "rules": [
+        { "name": "余额不足", "kind": "billing_blocked", "statuses": [403], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "billing_blocked"
+    },
+    {
+      "name": "JSON 路径 equals 命中额度耗尽",
+      "statusCode": 400,
+      "body": "{\"error\":{\"code\":\"insufficient_quota\"}}",
+      "rules": [
+        { "name": "额度", "kind": "quota_exhausted", "statuses": [], "matchers": [{ "source": "json", "operator": "equals", "path": "error.code", "value": "insufficient_quota" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "quota_exhausted"
+    },
+    {
+      "name": "JSON 路径带数组下标",
+      "statusCode": 429,
+      "body": "{\"errors\":[{\"code\":\"rate_limit_exceeded\"}]}",
+      "rules": [
+        { "name": "数组下标", "kind": "rate_limited", "statuses": [], "matchers": [{ "source": "json", "operator": "equals", "path": "errors[0].code", "value": "rate_limit_exceeded" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "rate_limited"
+    },
+    {
+      "name": "旧版 field/pattern 正则忽略大小写",
+      "statusCode": 500,
+      "body": "{\"error\":{\"type\":\"server_error\",\"message\":\"Service Temporarily Unavailable\"}}",
+      "rules": [
+        { "name": "旧版正则", "kind": "service_unavailable", "statuses": [], "matchers": [{ "field": "message", "pattern": "temporarily unavailable" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "service_unavailable"
+    },
+    {
+      "name": "旧版 field/pattern 锚定正则",
+      "statusCode": 503,
+      "body": "{\"error\":{\"message\":\"Selected model is at capacity. Please try a different model.\"}}",
+      "rules": [
+        { "name": "锚定", "kind": "service_unavailable", "statuses": [], "matchers": [{ "field": "message", "pattern": "^Selected model is at capacity" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "service_unavailable"
+    },
+    {
+      "name": "正则候选分支",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"PERMISSION_DENIED\"}}",
+      "rules": [
+        { "name": "分支", "kind": "permission_denied", "statuses": [], "matchers": [{ "source": "body", "operator": "regex", "value": "insufficient_balance|permission_denied" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "permission_denied"
+    },
+    {
+      "name": "多个匹配条件必须全部成立",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"PERMISSION_DENIED\"}}",
+      "rules": [
+        {
+          "name": "全部成立",
+          "kind": "permission_denied",
+          "statuses": [403],
+          "matchers": [
+            { "source": "http_code", "operator": "equals", "value": 403 },
+            { "source": "json", "operator": "regex", "path": "error.code", "value": "^permission_denied$" }
+          ]
+        }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "permission_denied"
+    },
+    {
+      "name": "状态码白名单不包含当前状态",
+      "statusCode": 401,
+      "body": "{\"error\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "只认 403", "kind": "billing_blocked", "statuses": [403], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] }
+      ],
+      "expectMatchedIndex": -1
+    },
+    {
+      "name": "停用规则不参与匹配",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "停用", "kind": "billing_blocked", "enabled": false, "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] }
+      ],
+      "expectMatchedIndex": -1
+    },
+    {
+      "name": "顺序取第一条命中规则",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "先声明", "kind": "quota_exhausted", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] },
+        { "name": "后声明", "kind": "billing_blocked", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "quota_exhausted"
+    },
+    {
+      "name": "HTTP 200 的 error 信封仍然可匹配",
+      "statusCode": 200,
+      "body": "{\"type\":\"error\",\"error\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "流内错误", "kind": "billing_blocked", "statuses": [], "matchers": [{ "source": "json", "operator": "regex", "path": "error.code", "value": "^insufficient_balance$" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "billing_blocked"
+    },
+    {
+      "name": "HTTP 200 的 response.failed 信封取嵌套 message",
+      "statusCode": 200,
+      "body": "{\"type\":\"response.failed\",\"response\":{\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"You have hit your usage limit\"}}}",
+      "rules": [
+        { "name": "嵌套 message", "kind": "quota_exhausted", "statuses": [], "matchers": [{ "source": "json", "operator": "contains", "path": "response.error.message", "value": "usage limit" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "quota_exhausted"
+    },
+    {
+      "name": "HTTP 200 且无失败证据时不匹配",
+      "statusCode": 200,
+      "body": "{\"error\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "余额不足", "kind": "billing_blocked", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] }
+      ],
+      "expectMatchedIndex": -1
+    },
+    {
+      "name": "非 JSON 正文也能被 body 包含匹配",
+      "statusCode": 502,
+      "body": "upstream gateway timeout",
+      "rules": [
+        { "name": "网关超时", "kind": "service_unavailable", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "gateway timeout" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "service_unavailable"
+    },
+    {
+      "name": "JSON 路径缺失时不匹配",
+      "statusCode": 403,
+      "body": "{\"detail\":\"forbidden\"}",
+      "rules": [
+        { "name": "缺失路径", "kind": "permission_denied", "statuses": [], "matchers": [{ "source": "json", "operator": "equals", "path": "error.code", "value": "permission_denied" }] }
+      ],
+      "expectMatchedIndex": -1
+    },
+    {
+      "name": "http_code equals 的数值字符串在保存时被规范化为数字",
+      "statusCode": 429,
+      "body": "{}",
+      "rules": [
+        { "name": "字符串状态码", "kind": "rate_limited", "statuses": [], "matchers": [{ "source": "http_code", "operator": "equals", "value": "429" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "rate_limited"
+    },
+    {
+      "name": "code 字段旧版正则",
+      "statusCode": 401,
+      "body": "{\"error\":{\"code\":\"invalid_api_key\",\"type\":\"invalid_request_error\"}}",
+      "rules": [
+        { "name": "密钥失效", "kind": "auth_invalid", "statuses": [401], "matchers": [{ "field": "code", "pattern": "^invalid_api_key$" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "auth_invalid"
+    },
+    {
+      "name": "中文文案包含匹配",
+      "statusCode": 403,
+      "body": "{\"error\":{\"message\":\"当前账号已被禁止访问该模型\"}}",
+      "rules": [
+        { "name": "中文", "kind": "permission_denied", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "禁止访问" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "permission_denied"
+    },
+    {
+      "name": "detail 字段作为结构化错误回退",
+      "statusCode": 400,
+      "body": "{\"detail\":{\"code\":\"INSUFFICIENT_BALANCE\"}}",
+      "rules": [
+        { "name": "detail 回退", "kind": "billing_blocked", "statuses": [], "matchers": [{ "source": "json", "operator": "regex", "path": "detail.code", "value": "^insufficient_balance$" }] }
+      ],
+      "expectMatchedIndex": 0,
+      "expectKind": "billing_blocked"
+    },
+    {
+      "name": "matchers 条件不成立时回退到下一条规则",
+      "statusCode": 403,
+      "body": "{\"error\":{\"code\":\"PERMISSION_DENIED\"}}",
+      "rules": [
+        { "name": "条件不符", "kind": "billing_blocked", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "INSUFFICIENT_BALANCE" }] },
+        { "name": "命中", "kind": "permission_denied", "statuses": [], "matchers": [{ "source": "body", "operator": "contains", "value": "PERMISSION_DENIED" }] }
+      ],
+      "expectMatchedIndex": 1,
+      "expectKind": "permission_denied"
+    }
+  ]
+}

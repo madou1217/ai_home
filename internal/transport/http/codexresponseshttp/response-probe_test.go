@@ -57,7 +57,7 @@ func TestResponseProbePreservesBytesAndBoundsLookahead(testContext *testing.T) {
 			handler, _, _ := fixture(testCase, "http://127.0.0.1:1/v1", 1)
 			upstream := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{sample.mediaType}}, Body: io.NopCloser(strings.NewReader(sample.body))}
 			defer upstream.Body.Close()
-			if failure := handler.probeResponse(upstream, true); failure.IsValid() {
+			if failure := handler.probeResponse(upstream, true, "acct_test"); failure.IsValid() {
 				testCase.Fatal("probe crossed its commit boundary")
 			}
 			body, err := io.ReadAll(upstream.Body)

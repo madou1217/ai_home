@@ -258,6 +258,66 @@ func newConfigTestRuntime(
 }
 
 // TestLoadCommandConfigParsesCredentialRefreshOwnership 验证刷新所有权只接受 self/delegated。
+// TestEnvUpstreamErrorRuleProviders 验证规则能力声明的严格解析。
+//
+// 能力集合决定 Go 是否承接账号的自定义错误规则：缺省必须是关闭（Node 继续自己执行），
+// 写坏的声明必须报错而不是被静默忽略。
+func TestEnvUpstreamErrorRuleProviders(t *testing.T) {
+	t.Parallel()
+
+	lookup := func(values map[string]string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			value, ok := values[name]
+			return value, ok
+		}
+	}
+	providers, err := envUpstreamErrorRuleProviders(lookup(nil))
+	if err != nil || providers != nil {
+		t.Fatalf("缺省应关闭能力: providers=%#v err=%v", providers, err)
+	}
+	providers, err = envUpstreamErrorRuleProviders(lookup(map[string]string{
+		"AIH_SERVER_UPSTREAM_ERROR_RULES": " Codex , claude ",
+	}))
+	if err != nil || len(providers) != 2 || providers[0] != "codex" || providers[1] != "claude" {
+		t.Fatalf("providers=%#v err=%v", providers, err)
+	}
+	providers, err = envUpstreamErrorRuleProviders(lookup(map[string]string{
+		"AIH_SERVER_UPSTREAM_ERROR_RULES": "   ",
+	}))
+	if err != nil || providers != nil {
+		t.Fatalf("空白应视为关闭: providers=%#v err=%v", providers, err)
+	}
+	for _, raw := range []string{"codex,", ",codex", "codex,,claude", "codex,Codex"} {
+		if _, err := envUpstreamErrorRuleProviders(lookup(map[string]string{
+			"AIH_SERVER_UPSTREAM_ERROR_RULES": raw,
+		})); err == nil {
+			t.Fatalf("非法声明 %q 应报错", raw)
+		}
+	}
+}
+
+// TestLoadCommandConfigCarriesUpstreamErrorRuleProviders 验证能力声明进入启动配置。
+func TestLoadCommandConfigCarriesUpstreamErrorRuleProviders(t *testing.T) {
+	t.Parallel()
+
+	runtime := newConfigTestRuntime(
+		map[string]string{
+			"AIH_HOME":                        t.TempDir(),
+			"AIH_SERVER_MANAGEMENT_KEY":       configTestManagementKey,
+			"AIH_SERVER_CLIENT_KEY":           configTestClientKey,
+			"AIH_SERVER_UPSTREAM_ERROR_RULES": "codex",
+		},
+		t.TempDir(),
+	)
+	config, err := loadCommandConfig(nil, runtime)
+	if err != nil {
+		t.Fatalf("loadCommandConfig() error = %v", err)
+	}
+	if len(config.upstreamErrorRuleProviders) != 1 || config.upstreamErrorRuleProviders[0] != "codex" {
+		t.Fatalf("providers = %#v", config.upstreamErrorRuleProviders)
+	}
+}
+
 func TestLoadCommandConfigParsesCredentialRefreshOwnership(t *testing.T) {
 	t.Parallel()
 

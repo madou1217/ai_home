@@ -473,6 +473,39 @@ test('Go Core delegates OAuth refresh to Node only when asked', () => {
   assert.equal('AIH_SERVER_CREDENTIAL_REFRESH' in buildGoCoreInvocation(base).env, false);
 });
 
+test('Go Core receives the configured upstream error rule providers through its environment', () => {
+  const base = {
+    binaryPath: '/tmp/aih-server',
+    aiHomeDir: '/tmp/aih-home',
+    managementKey: 'management-secret',
+    clientKey: 'client-secret',
+    baseEnv: { PATH: '/usr/bin' }
+  };
+  assert.equal(
+    buildGoCoreInvocation({ ...base, upstreamErrorRuleProviders: ['codex', 'claude'] }).env.AIH_SERVER_UPSTREAM_ERROR_RULES,
+    'codex,claude'
+  );
+  // 未声明 = 不注入：Go 读不到这个变量就等于关闭，Node 继续自己执行全部规则。
+  assert.equal('AIH_SERVER_UPSTREAM_ERROR_RULES' in buildGoCoreInvocation(base).env, false);
+  // 宿主显式声明时优先于持久化配置（含显式空值 = 关闭），与 resolveGoCoreSettings 同语义。
+  assert.equal(
+    buildGoCoreInvocation({
+      ...base,
+      baseEnv: { PATH: '/usr/bin', AIH_SERVER_UPSTREAM_ERROR_RULES: 'gemini' },
+      upstreamErrorRuleProviders: ['codex']
+    }).env.AIH_SERVER_UPSTREAM_ERROR_RULES,
+    'gemini'
+  );
+  assert.equal(
+    buildGoCoreInvocation({
+      ...base,
+      baseEnv: { PATH: '/usr/bin', AIH_SERVER_UPSTREAM_ERROR_RULES: '' },
+      upstreamErrorRuleProviders: ['codex']
+    }).env.AIH_SERVER_UPSTREAM_ERROR_RULES,
+    ''
+  );
+});
+
 test('Go Core env overrides set values and delete inherited variables given as null', () => {
   const invocation = buildGoCoreInvocation({
     binaryPath: '/tmp/aih-server',

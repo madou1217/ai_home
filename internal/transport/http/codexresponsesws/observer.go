@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 var (
@@ -30,6 +32,7 @@ type turnObserver struct {
 	attempts       *inferencegateway.ObservedAttemptRecorder
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	clock          func() time.Time
+	rules          configured.Rules
 	active         bool
 	generate       bool
 	// committed 表示本轮已有非预备帧交给客户端；之后的失败绝不能换号重放。
@@ -46,6 +49,7 @@ func newTurnObserver(
 	attempts *inferencegateway.ObservedAttemptRecorder,
 	modelRefreshes inferencegateway.ModelRefreshScheduler,
 	clock func() time.Time,
+	rules configured.Rules,
 ) *turnObserver {
 	return &turnObserver{
 		model:          model,
@@ -54,6 +58,7 @@ func newTurnObserver(
 		attempts:       attempts,
 		modelRefreshes: modelRefreshes,
 		clock:          clock,
+		rules:          rules,
 	}
 }
 
@@ -150,11 +155,19 @@ func (observer *turnObserver) ObserveUpstream(payload []byte) (bool, error) {
 		if !generate {
 			return true, nil
 		}
-		classification, observed, err := codexfailure.ObserveWebSocket(
-			sharedfailure.SSEInput{
-				EventType:  event.Type,
-				Data:       bytes.NewReader(payload),
-				ObservedAt: observer.clock(),
+		classification, observed, err := configured.ClassifySSEWithRules(
+			observer.rules,
+			string(observer.route.AccountRef()),
+			http.StatusOK,
+			payload,
+			func() (sharedfailure.Classification, bool, error) {
+				return codexfailure.ObserveWebSocket(
+					sharedfailure.SSEInput{
+						EventType:  event.Type,
+						Data:       bytes.NewReader(payload),
+						ObservedAt: observer.clock(),
+					},
+				)
 			},
 		)
 		if err != nil || !observed {

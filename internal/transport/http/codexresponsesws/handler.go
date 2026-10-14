@@ -5,9 +5,11 @@
 package codexresponsesws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +24,8 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/attemptfailure"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	codexfailure "github.com/madou1217/ai_home/internal/adapters/codex/upstreamfailure"
+	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 const (
@@ -84,6 +88,9 @@ type Dependencies struct {
 	// 按账号的纠错刷新无从触发。
 	RouteMisses RouteMissReporter
 	Clock       func() time.Time
+	// Rules 可选：账号自定义上游错误规则求值端口。为 nil 表示 Go 未承接该能力，
+	// 分类完全由内置观察器决定（与不接入规则时逐字节一致）。
+	Rules configured.Rules
 }
 
 // Handler 管理 Upgrade、连接注册、双向帧代理和终态观察。
@@ -95,6 +102,7 @@ type Handler struct {
 	modelRefreshes inferencegateway.ModelRefreshScheduler
 	routeMisses    RouteMissReporter
 	clock          func() time.Time
+	rules          configured.Rules
 	sessions       *sessionRegistry
 	// sessionAccounts 记住每个 Codex 会话上次由哪个账号服务，换号时剥离旧账号的加密推理。
 	sessionAccounts *sessionAccounts
@@ -127,6 +135,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		modelRefreshes:  dependencies.ModelRefreshes,
 		routeMisses:     dependencies.RouteMisses,
 		clock:           dependencies.Clock,
+		rules:           dependencies.Rules,
 		sessions:        newSessionRegistry(),
 		sessionAccounts: newSessionAccounts(),
 	}, nil
@@ -267,6 +276,7 @@ func (handler *Handler) ServeHTTP(
 		handler.attempts,
 		handler.modelRefreshes,
 		handler.clock,
+		handler.rules,
 	)
 	if err := observer.Begin(firstFrame); err != nil {
 		writeWebSocketError(
@@ -396,12 +406,22 @@ func (handler *Handler) handleDialFailure(
 	var failure inferencegateway.AttemptFailure
 	var err error
 	if response != nil && response.Body != nil {
-		classification, observeErr := codexfailure.ObserveHTTP(
-			response,
-			handler.clock(),
-		)
-		if observeErr == nil {
-			failure, err = attemptfailure.New(classification)
+		prefix, readErr := io.ReadAll(io.LimitReader(response.Body, sharedfailure.MaxErrorPayloadBytes+1))
+		if readErr == nil {
+			response.Body = io.NopCloser(bytes.NewReader(prefix))
+			observed := *response
+			classification, observeErr := configured.ClassifyWithRules(
+				handler.rules,
+				string(route.AccountRef()),
+				response.StatusCode,
+				prefix,
+				func() (sharedfailure.Classification, error) {
+					return codexfailure.ObserveHTTP(&observed, handler.clock())
+				},
+			)
+			if observeErr == nil {
+				failure, err = attemptfailure.New(classification)
+			}
 		}
 	}
 	if !failure.IsValid() {

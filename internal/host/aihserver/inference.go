@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
@@ -79,6 +80,8 @@ type inferenceCompositionDependencies struct {
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
 	agyModelWires   agycodeassist.ModelWireReader
+	// upstreamRules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
+	upstreamRules configured.Rules
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -115,6 +118,7 @@ func newInferenceComposition(
 		return nil, err
 	}
 	codexAdapter.ObserveRejections(dependencies.codexRejections)
+	codexAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
 	claudeAdapter, err := claudemessages.NewAdapter(
 		client,
 		dependencies.clock,
@@ -123,6 +127,7 @@ func newInferenceComposition(
 	if err != nil {
 		return nil, err
 	}
+	claudeAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
 	agyAdapter, err := agycodeassist.NewAdapterWithWireModels(client, dependencies.clock, dependencies.agyModelWires)
 	if err != nil {
 		return nil, err

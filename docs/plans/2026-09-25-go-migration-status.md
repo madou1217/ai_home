@@ -67,5 +67,14 @@
 4. **账号覆盖**：Go 不承接 zcode / 失效 opencode 等 4 个账号，这些 Provider 的推理只能留在 Node。
 5. **生产切流**：已完成（`scripts/go-core-canary.sh`，每步 30 分钟无回滚），修复见 todo S9。
 6. **模型目录**：`/v1/models` 留在 Node——共存期网关对外模型全集是 Node∪Go。
+7. **账号自定义上游错误规则（`account_error_rules`）的 Go 承接**：Go 侧投影存储/校验、规则编译与失败分类映射已落地
+   （`application/upstreamrules`、`core/upstreamrules`、`internal/adapters/upstreamfailure/configured`，4 个分类点按
+   「账号自定义规则优先于内置启发式」求值）。**默认关闭**：激活开关是 `AIH_SERVER_UPSTREAM_ERROR_RULES=<provider 列表>`，
+   现有一等公民的持久化入口 `aih server config set --upstream-error-rules <providers>`（`--clear-upstream-error-rules` 关闭），
+   由 `go-core-supervisor.js` 在宿主未声明同名环境变量时注入 Go 子进程；`aih server config show` 与 Go Core 启动日志
+   （`upstream error rules: Go executes for … | disabled`）都能看到实际生效状态。未承接的账号由
+   `lib/server/go-core-route-deferral.js` 交还 Node，因此「配置生效但从不命中」不可能静默发生。
+   真实机器激活步骤：`aih server config set --upstream-error-rules codex && aih server restart`，观察启动日志的
+   `accepted=<n>` 与 Go 侧账号运行态。
 
 回退：`aih server config set --no-go-core --clear-go-core-routes && aih server restart`。

@@ -20,6 +20,7 @@ import (
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 // TestAdapterExecutesThroughCoordinator 验证 Route、Recruiter、Registry、
@@ -533,6 +534,8 @@ func TestCoordinatorFairlyRotatesMixedCredentialPool(t *testing.T) {
 type claudeAdapterFixture struct {
 	coordinator *inferencegateway.Coordinator
 	recorder    *claudeAttemptRecorder
+	// accountRef 是夹具唯一账号的引用，供规则投影按账号隔离的测试使用。
+	accountRef string
 }
 
 // newClaudeFairCoordinator 装配两个 OAuth 与两个 API Key 的真实征召链。
@@ -713,6 +716,24 @@ func newClaudeAdapterFixtureWithCredential(
 ) claudeAdapterFixture {
 	t.Helper()
 
+	return newClaudeAdapterFixtureWithOptions(t, client, credential, claudeAdapterFixtureOptions{})
+}
+
+// claudeAdapterFixtureOptions 声明测试装配的可选替换点。
+type claudeAdapterFixtureOptions struct {
+	// rules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
+	rules configured.Rules
+}
+
+// newClaudeAdapterFixtureWithOptions 使用指定凭据与可选规则端口装配真实 Coordinator。
+func newClaudeAdapterFixtureWithOptions(
+	t *testing.T,
+	client HTTPClient,
+	credential accountapp.Credential,
+	options claudeAdapterFixtureOptions,
+) claudeAdapterFixture {
+	t.Helper()
+
 	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
 	if err != nil {
 		t.Fatalf("providers.NewCatalog() error = %v", err)
@@ -776,6 +797,7 @@ func newClaudeAdapterFixtureWithCredential(
 	if err != nil {
 		t.Fatalf("messages.NewAdapter() error = %v", err)
 	}
+	adapter.ObserveUpstreamRules(options.rules)
 	registry, err := inferencegateway.NewUpstreamRegistry(adapter)
 	if err != nil {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
@@ -799,6 +821,7 @@ func newClaudeAdapterFixtureWithCredential(
 	return claudeAdapterFixture{
 		coordinator: coordinator,
 		recorder:    recorder,
+		accountRef:  accountRef.String(),
 	}
 }
 

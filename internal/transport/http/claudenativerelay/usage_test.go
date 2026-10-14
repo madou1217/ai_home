@@ -25,7 +25,7 @@ func TestObserveNativeStreamAccumulatesUsage(t *testing.T) {
 	}, "\n")
 	observed := observeNativeStream(strings.NewReader(stream), nil, func() time.Time {
 		return time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
-	})
+	}, nil, "")
 	if !observed.completed || observed.failed {
 		t.Fatalf("observation = %+v", observed)
 	}

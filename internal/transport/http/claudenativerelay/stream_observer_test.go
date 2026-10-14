@@ -28,6 +28,8 @@ func TestCopyAndObserveNativeStreamNeverTruncatesWhenObserverStops(t *testing.T)
 		header,
 		time.Now,
 		inferenceapi.NewStreamDeadline(recorder),
+		nil,
+		"",
 	)
 	if result.upstreamErr != nil || result.downstreamErr != nil {
 		t.Fatalf("copy result = %#v", result)

@@ -20,6 +20,7 @@ import (
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/codex/codexidentity"
+	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 )
 
 // TestAdapterExecutesThroughCoordinator 验证真实 Coordinator 只向 Adapter
@@ -489,12 +490,25 @@ func TestNewAdapterRejectsMissingDependencies(t *testing.T) {
 type adapterCoordinatorFixture struct {
 	coordinator *inferencegateway.Coordinator
 	recorder    *adapterAttemptRecorder
+	// accountRef 是夹具唯一账号的引用，供规则投影按账号隔离的测试使用。
+	accountRef string
 }
 
 // newAdapterCoordinatorFixture 使用真实 Recruiter 绑定合成 API Key 账号。
 func newAdapterCoordinatorFixture(
 	t *testing.T,
 	client HTTPClient,
+) adapterCoordinatorFixture {
+	t.Helper()
+
+	return newAdapterCoordinatorFixtureWithRules(t, client, nil)
+}
+
+// newAdapterCoordinatorFixtureWithRules 在同一夹具上注入账号自定义规则求值端口。
+func newAdapterCoordinatorFixtureWithRules(
+	t *testing.T,
+	client HTTPClient,
+	rules configured.Rules,
 ) adapterCoordinatorFixture {
 	t.Helper()
 
@@ -568,6 +582,7 @@ func newAdapterCoordinatorFixture(
 	if err != nil {
 		t.Fatalf("responses.NewAdapter() error = %v", err)
 	}
+	adapter.ObserveUpstreamRules(rules)
 	registry, err := inferencegateway.NewUpstreamRegistry(adapter)
 	if err != nil {
 		t.Fatalf("NewUpstreamRegistry() error = %v", err)
@@ -591,6 +606,7 @@ func newAdapterCoordinatorFixture(
 	return adapterCoordinatorFixture{
 		coordinator: coordinator,
 		recorder:    recorder,
+		accountRef:  accountRef.String(),
 	}
 }
 

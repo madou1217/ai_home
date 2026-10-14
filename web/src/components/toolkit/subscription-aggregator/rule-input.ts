@@ -121,7 +121,7 @@ export const RULE_SET_SUGGESTIONS: Partial<Record<AggregatorRuleType, Array<{ va
   GEOIP: [
     { value: 'cn', note: '中国大陆' },
     { value: 'hk', note: '香港' },
-    { value: 'tw', note: '台湾' },
+    { value: 'tw', note: '中国台湾' },
     { value: 'jp', note: '日本' },
     { value: 'sg', note: '新加坡' },
     { value: 'us', note: '美国' },

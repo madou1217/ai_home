@@ -200,7 +200,7 @@ test('解析预览说明识别出的格式、节点数与跳过原因', () => {
 
 test('国旗只在名称里没有时补上', () => {
   assert.equal(nameWithFlag('香港 01', '🇭🇰'), '🇭🇰 香港 01');
-  assert.equal(nameWithFlag('🇹🇼 台湾 Egern', '🇨🇳'), '🇹🇼 台湾 Egern');
+  assert.equal(nameWithFlag('🇨🇳 中国台湾 Egern', '🇨🇳'), '🇨🇳 中国台湾 Egern');
   assert.equal(nameWithFlag('WireGuard 203.0.113.10', '🌐'), 'WireGuard 203.0.113.10');
   assert.equal(nameWithFlag('x', ''), 'x');
 });

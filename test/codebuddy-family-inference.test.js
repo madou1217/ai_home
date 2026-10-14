@@ -121,16 +121,73 @@ test('adaptCodebuddyFamilyChatRequest tolerates a body without messages', () => 
 // 2026-10-14 实测：上游 Go 结构体把 tool_choice 声明成 string，
 // 发 object 直接 400「cannot unmarshal object into Go struct field Request.tool_choice of type string」，
 // 而 OpenAI 规范与 Cline 等客户端强制工具时发的正是 object。
-test('adaptCodebuddyFamilyChatRequest maps an object tool_choice to the string form', () => {
+const FAMILY_TEST_TOOLS = [
+  { type: 'function', function: { name: 'get_weather', description: 'w', parameters: {} } },
+  { type: 'function', function: { name: 'read_file', description: 'r', parameters: {} } }
+];
+
+test('adaptCodebuddyFamilyChatRequest keeps a pinned tool exact by narrowing the tool list', () => {
   const forced = adaptCodebuddyFamilyChatRequest({
     messages: [{ role: 'system', content: 's' }],
+    tools: FAMILY_TEST_TOOLS,
     tool_choice: { type: 'function', function: { name: 'get_weather' } }
   });
-  // 上游没有「指定单个函数」的形态：降级成强制一次工具调用，并留痕。
+  // 上游只认字符串，但「钉住某个函数」不能退化成裸 required（那样模型可以改用别的工具甚至改用
+  // 散文回答）：把 tools 收窄到被钉的那一个再发 required，此时 required 与「必须调用 get_weather」等价。
   assert.equal(forced.body.tool_choice, 'required');
+  assert.equal(forced.body.tools.length, 1);
+  assert.equal(forced.body.tools[0].function.name, 'get_weather');
   assert.equal(forced.toolChoiceNormalized, true);
-  assert.equal(forced.toolChoiceDowngraded, true);
+  assert.equal(forced.toolChoicePin, 'get_weather');
+  assert.equal(forced.toolChoicePinPreserved, true);
+  assert.equal(forced.toolChoicePinMissing, false);
+  assert.equal(forced.toolChoiceDowngraded, false);
+  // 客户端的工具数组不被就地改写（调用方还要拿原值做日志）。
+  assert.equal(FAMILY_TEST_TOOLS.length, 2);
+});
 
+test('adaptCodebuddyFamilyChatRequest accepts the Responses flat pin form', () => {
+  const forced = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tools: FAMILY_TEST_TOOLS,
+    tool_choice: { type: 'function', name: 'read_file' }
+  });
+  assert.equal(forced.body.tool_choice, 'required');
+  assert.equal(forced.body.tools.length, 1);
+  assert.equal(forced.body.tools[0].function.name, 'read_file');
+  assert.equal(forced.toolChoicePinPreserved, true);
+});
+
+test('adaptCodebuddyFamilyChatRequest degrades a pin that is not in tools without touching tools', () => {
+  const forced = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tools: FAMILY_TEST_TOOLS,
+    tool_choice: { type: 'function', function: { name: 'nope' } }
+  });
+  // 目标不在工具集里，只能退化成裸 required —— 但绝不伪造出那个函数。
+  assert.equal(forced.body.tool_choice, 'required');
+  assert.deepEqual(forced.body.tools, FAMILY_TEST_TOOLS);
+  assert.equal(forced.toolChoicePin, 'nope');
+  assert.equal(forced.toolChoicePinPreserved, false);
+  assert.equal(forced.toolChoicePinMissing, true);
+  assert.equal(forced.toolChoiceDowngraded, true);
+});
+
+test('adaptCodebuddyFamilyChatRequest drops an unfulfillable pin when there are no tools', () => {
+  // 没有工具时发 required 会被上游按「required 却无工具」拒绝，此时只能不约束。
+  for (const tools of [undefined, []]) {
+    const forced = adaptCodebuddyFamilyChatRequest({
+      messages: [{ role: 'system', content: 's' }],
+      tools,
+      tool_choice: { type: 'function', function: { name: 'get_weather' } }
+    });
+    assert.equal(Object.hasOwn(forced.body, 'tool_choice'), false, JSON.stringify(tools));
+    assert.equal(forced.toolChoicePinMissing, true, JSON.stringify(tools));
+    assert.equal(forced.toolChoiceDowngraded, true, JSON.stringify(tools));
+  }
+});
+
+test('adaptCodebuddyFamilyChatRequest maps the plain object tool_choice forms', () => {
   for (const type of ['auto', 'none', 'required']) {
     const plain = adaptCodebuddyFamilyChatRequest({
       messages: [{ role: 'system', content: 's' }],
@@ -140,6 +197,16 @@ test('adaptCodebuddyFamilyChatRequest maps an object tool_choice to the string f
     assert.equal(plain.toolChoiceNormalized, true, type);
     assert.equal(plain.toolChoiceDowngraded, false, type);
   }
+  // 没有名字的 function 形态：只能强制一次工具调用，并留痕原始形态。
+  const nameless = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tools: FAMILY_TEST_TOOLS,
+    tool_choice: { type: 'function' }
+  });
+  assert.equal(nameless.body.tool_choice, 'required');
+  assert.equal(nameless.body.tools, FAMILY_TEST_TOOLS);
+  assert.equal(nameless.toolChoiceUnsupportedForm, 'function_without_name');
+  assert.equal(nameless.toolChoiceDowngraded, true);
 });
 
 test('adaptCodebuddyFamilyChatRequest leaves a string tool_choice untouched', () => {
@@ -157,7 +224,21 @@ test('adaptCodebuddyFamilyChatRequest leaves a string tool_choice untouched', ()
   assert.equal(absent.toolChoiceNormalized, false);
 });
 
-test('adaptCodebuddyFamilyChatRequest drops an unrecognized object tool_choice instead of forwarding it', () => {
+test('adaptCodebuddyFamilyChatRequest relaxes an unrecognized tool_choice instead of forwarding it', () => {
+  // 带工具集：放宽成 auto（而不是把 object 原样发上去换一个 400），并记录原始形态。
+  for (const [value, form] of [[{ type: 'mystery' }, 'mystery'], [{}, 'unknown'], [[1, 2], 'array'], [42, 'number']]) {
+    const result = adaptCodebuddyFamilyChatRequest({
+      messages: [{ role: 'system', content: 's' }],
+      tools: FAMILY_TEST_TOOLS,
+      tool_choice: value
+    });
+    assert.equal(result.body.tool_choice, 'auto', JSON.stringify(value));
+    assert.equal(result.body.tools, FAMILY_TEST_TOOLS, JSON.stringify(value));
+    assert.equal(result.toolChoiceNormalized, true, JSON.stringify(value));
+    assert.equal(result.toolChoiceDowngraded, true, JSON.stringify(value));
+    assert.equal(result.toolChoiceUnsupportedForm, form, JSON.stringify(value));
+  }
+  // 没有工具集：auto 也没有意义，直接去掉该字段（上游默认即 auto）。
   for (const value of [{ type: 'mystery' }, {}, [1, 2], 42]) {
     const result = adaptCodebuddyFamilyChatRequest({
       messages: [{ role: 'system', content: 's' }],
@@ -167,6 +248,31 @@ test('adaptCodebuddyFamilyChatRequest drops an unrecognized object tool_choice i
     assert.equal(result.toolChoiceNormalized, true, JSON.stringify(value));
     assert.equal(result.toolChoiceDowngraded, true, JSON.stringify(value));
   }
+});
+
+test('adaptCodebuddyFamilyChatRequest normalizes the accepted string aliases', () => {
+  // Mistral 系的 any 与上游 required 严格等价。
+  const alias = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tool_choice: 'any'
+  });
+  assert.equal(alias.body.tool_choice, 'required');
+  assert.equal(alias.toolChoiceDowngraded, false);
+  // 大小写/空白也一并规范，避免上游按未知枚举拒绝。
+  const padded = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tool_choice: '  AUTO '
+  });
+  assert.equal(padded.body.tool_choice, 'auto');
+  // 认不出的字符串同样是 fail-open，不是 400。
+  const unknown = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tools: FAMILY_TEST_TOOLS,
+    tool_choice: 'sometimes'
+  });
+  assert.equal(unknown.body.tool_choice, 'auto');
+  assert.equal(unknown.toolChoiceUnsupportedForm, 'sometimes');
+  assert.equal(unknown.toolChoiceDowngraded, true);
 });
 
 test('normalizeCodebuddyFamilyToolChoice keeps the caller body intact', () => {

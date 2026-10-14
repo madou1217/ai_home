@@ -15,6 +15,7 @@ const { createAccountStateIndex } = require('../lib/account/state-index');
 const { writeAccountUsageSnapshot } = require('../lib/account/usage-snapshot-store');
 const { createGoRuntimeOverlay } = require('../lib/server/go-runtime-overlay');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
+const { clineAuth, providersDocument } = require('./helpers/cline-credential');
 const {
   ensureAccountsSnapshotLoaded,
   persistAccountsSnapshot
@@ -151,6 +152,53 @@ test('fast account snapshot recognizes kimi OAuth credentials under $.credential
     configured: false,
     apiKeyMode: false
   });
+});
+
+test('fast account snapshot keeps a configured Cline account out of the pending plan placeholder', (t) => {
+  // 回归：cline 凭据已被识别为可用（configured=true）后，套餐列仍显示 pending——
+  // `pending` 是「未配置」时的派生占位值，却被快速快照当成真实套餐从上一轮缓存里继承了。
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-webui-account-live-cline-plan-'));
+  const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir: root });
+  t.after(() => {
+    accountStateIndex.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const accountRef = registerDbAccount(root, 'cline', '1', {
+    nativeAuth: { auth: providersDocument('cline-pass', clineAuth('cline-user-1', 1)) }
+  });
+  const state = { accounts: {} };
+  const ctx = {
+    state,
+    fs,
+    aiHomeDir: root,
+    options: {},
+    accountStateIndex,
+    checkStatus() {
+      return { configured: true, accountName: 'User cline-user-1' };
+    },
+    getLastUsageProbeState() {
+      return null;
+    },
+    getLastUsageProbeError() {
+      return '';
+    }
+  };
+  const liveState = __private.getAccountsLiveState(state);
+  // 上一轮（凭据还没判出来时）留下的记录，planType 是占位值 pending。
+  liveState.records.set(accountRef, {
+    accountRef,
+    provider: 'cline',
+    configured: false,
+    planType: 'pending'
+  });
+  // 让后台 hydration 在本轮跳过，确保断言的是快速快照的继承行为。
+  liveState.lastHydratedAt = Date.now();
+
+  const snapshot = readAccountsFastSnapshot(ctx);
+  const record = snapshot.accounts.find((item) => item.accountRef === accountRef);
+
+  assert.equal(record.configured, true);
+  assert.equal(record.planType, 'oauth');
 });
 
 function buildRefreshContext(options) {

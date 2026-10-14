@@ -80,6 +80,8 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
     URL.revokeObjectURL(url);
   };
 
+  const formatName = formats.find((item) => item.id === (preview?.format ?? format))?.name || '';
+
   return (
     <Modal
       title={profile ? `预览 · ${profile.name}` : '预览'}
@@ -137,7 +139,7 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
       )}
       {error && <Text type="danger">{error}</Text>}
       {preview?.warnings.map((warning) => (
-        <Text key={warning} type="warning" className={styles.previewWarning}>{previewWarningText(warning, describePolicy)}</Text>
+        <Text key={warning} type="warning" className={styles.previewWarning}>{previewWarningText(warning, describePolicy, formatName)}</Text>
       ))}
       {preview && preview.skippedNodes.length > 0 && (
         <Text type="secondary" className={styles.previewWarning}>

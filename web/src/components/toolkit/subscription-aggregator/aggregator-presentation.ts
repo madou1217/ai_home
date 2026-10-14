@@ -221,8 +221,12 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
 const GROUP_TYPE_NAMES: Record<string, string> = { fallback: '故障转移', 'load-balance': '负载均衡' };
 
 /** 预览里的提示（服务端警告码 → 说明）。describePolicy 把 region:jp 之类的引用换成组名。 */
-export function previewWarningText(warning: string, describePolicy: (policy: string) => string = (policy) => policy) {
+export function previewWarningText(warning: string, describePolicy: (policy: string) => string = (policy) => policy, targetName = '') {
   if (warning === 'aggregator_no_nodes') return '没有节点被选中，检查订阅源范围与过滤条件';
+  // 选中的节点都被目标格式丢了（不是筛选/订阅源的问题）：说清是格式不支持，并指向可用的替代。
+  if (warning === 'aggregator_nodes_unsupported_by_target') {
+    return `选中的节点都不被${targetName ? `「${targetName}」` : '当前输出格式'}支持，换个支持这些协议的格式或客户端`;
+  }
   // 上下文本身可能带冒号（rule:DOMAIN,x.com），策略引用只认已知前缀，否则会从错误的位置切开。
   const fallback = warning.match(/^aggregator_policy_fallback:(.+):((?:region|source|preset|group):[^:]+)$/);
   if (fallback) return `「${fallback[1]}」引用的 ${describePolicy(fallback[2])} 没有对应策略组，已改用节点选择`;

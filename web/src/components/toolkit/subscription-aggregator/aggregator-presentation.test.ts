@@ -78,6 +78,15 @@ test('预览提示把警告码换成说明', () => {
   const describe = (policy: string) => policyLabel(policy, context);
   assert.equal(previewWarningText('aggregator_no_nodes'), '没有节点被选中，检查订阅源范围与过滤条件');
   assert.equal(
+    previewWarningText('aggregator_nodes_unsupported_by_target', describe, 'Clash（经典 / Premium）'),
+    '选中的节点都不被「Clash（经典 / Premium）」支持，换个支持这些协议的格式或客户端'
+  );
+  // 拿不到格式名时用兜底说法，不能出现空的「」。
+  assert.equal(
+    previewWarningText('aggregator_nodes_unsupported_by_target'),
+    '选中的节点都不被当前输出格式支持，换个支持这些协议的格式或客户端'
+  );
+  assert.equal(
     previewWarningText('aggregator_group_member_missing:韩国:专用:region:hk', describe),
     '「韩国:专用」套用的 🇭🇰 香港节点 没有生成（分组没开启或没有节点），已从组里去掉'
   );

@@ -80,6 +80,32 @@ test('mihomo, Clash classic and Stash share Clash YAML but differ in protocols a
   });
 });
 
+test('when every selected node is dropped by the target, the warning blames the format, not the filters', () => {
+  const vlessOnly = SAMPLE_NODES.filter((node) => node.protocol === 'vless');
+  withService(vlessOnly, (service, profile) => {
+    const classic = service.preview(profile.id, 'clash-classic');
+    // 节点确实被选中了（不是「没有节点被选中」），只是 Clash 经典版表达不了 VLESS。
+    assert.equal(classic.stats.selected, vlessOnly.length);
+    assert.equal(classic.stats.nodes, 0);
+    assert.deepEqual(classic.warnings, ['aggregator_nodes_unsupported_by_target']);
+    assert.deepEqual(classic.skippedNodes.map((item) => item.reason), vlessOnly.map(() => 'unsupported_proxy_protocol_vless'));
+
+    // mihomo 能表达 VLESS：正常输出，且不该出现这条警告。
+    const mihomo = service.preview(profile.id, 'mihomo');
+    assert.equal(mihomo.stats.nodes, vlessOnly.length);
+    assert.deepEqual(mihomo.warnings, []);
+  });
+});
+
+test('a genuinely empty selection still reports aggregator_no_nodes', () => {
+  withService([], (service, profile) => {
+    const result = service.preview(profile.id, 'clash-classic');
+    assert.equal(result.stats.selected, 0);
+    assert.equal(result.stats.skipped, 0);
+    assert.deepEqual(result.warnings, ['aggregator_no_nodes']);
+  });
+});
+
 test('URI and JSON outputs list the nodes without groups or rules', () => {
   withService(SAMPLE_NODES.slice(0, 2), (service, profile) => {
     const uri = service.preview(profile.id, 'uri').content;

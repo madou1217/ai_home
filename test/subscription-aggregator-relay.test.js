@@ -31,37 +31,39 @@ function fakeFs(existing) {
 }
 
 test('sing-box binary lookup prefers explicit → managed → PATH → system directories', () => {
-  const pathImpl = path.posix;
+  // 平台必须与 path 实现成对：这条断言 POSIX 形态，就在 Windows 上也按 darwin 跑
+  // （Windows 的 .exe 形态另有下面那条用例）。
+  const posixOptions = { path: path.posix, platform: 'darwin', aiHomeDir: '/home/u/.ai_home' };
   const env = { PATH: '/path/bin:/other/bin' };
   const managed = '/home/u/.ai_home/bin/sing-box';
 
   // 显式注入优先于一切。
   assert.deepEqual(
-    resolveSingBoxBinary({ fs: fakeFs(['/custom/sing-box', managed, '/path/bin/sing-box']), path: pathImpl, env, binaryPath: '/custom/sing-box', aiHomeDir: '/home/u/.ai_home' }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/custom/sing-box', managed, '/path/bin/sing-box']), env, binaryPath: '/custom/sing-box' }),
     { path: '/custom/sing-box', source: 'explicit' }
   );
   // 显式路径不可执行时不再回退 —— 用户明确点名了一个内核，替他换别的才是意外。
-  assert.equal(resolveSingBoxBinary({ fs: fakeFs([managed]), path: pathImpl, env, binaryPath: '/custom/sing-box', aiHomeDir: '/home/u/.ai_home' }), null);
+  assert.equal(resolveSingBoxBinary({ ...posixOptions, fs: fakeFs([managed]), env, binaryPath: '/custom/sing-box' }), null);
   // 托管位置（AIH 自己的 bin/）。
   assert.deepEqual(
-    resolveSingBoxBinary({ fs: fakeFs([managed, '/path/bin/sing-box']), path: pathImpl, env, aiHomeDir: '/home/u/.ai_home' }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs([managed, '/path/bin/sing-box']), env }),
     { path: managed, source: 'managed' }
   );
   // PATH。
   assert.deepEqual(
-    resolveSingBoxBinary({ fs: fakeFs(['/other/bin/sing-box']), path: pathImpl, env, aiHomeDir: '/home/u/.ai_home' }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/other/bin/sing-box']), env }),
     { path: '/other/bin/sing-box', source: 'path' }
   );
   // 常见系统目录。
   assert.deepEqual(
-    resolveSingBoxBinary({ fs: fakeFs(['/opt/homebrew/bin/sing-box']), path: pathImpl, env: { PATH: '' }, aiHomeDir: '/home/u/.ai_home' }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/opt/homebrew/bin/sing-box']), env: { PATH: '' } }),
     { path: '/opt/homebrew/bin/sing-box', source: 'system' }
   );
   // 全都没有：null（调用方 fail-closed，不输出本地端口）。
-  assert.equal(resolveSingBoxBinary({ fs: fakeFs([]), path: pathImpl, env: { PATH: '' }, aiHomeDir: '/home/u/.ai_home' }), null);
+  assert.equal(resolveSingBoxBinary({ ...posixOptions, fs: fakeFs([]), env: { PATH: '' } }), null);
   // 环境变量也是「显式」的一种（部署脚本用）。
   assert.deepEqual(
-    resolveSingBoxBinary({ fs: fakeFs(['/env/sing-box']), path: pathImpl, env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/env/sing-box' }, aiHomeDir: '/home/u/.ai_home' }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/env/sing-box']), env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/env/sing-box' } }),
     { path: '/env/sing-box', source: 'explicit' }
   );
 });

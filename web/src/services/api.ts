@@ -388,7 +388,7 @@ export const accountsAPI = {
     return response.data;
   },
 
-  /** 按需扫描本机已登录、尚未入库的 CodeBuddy / WorkBuddy 家族账号并登记（同步循环的同一份逻辑）。 */
+  /** 按需扫描本机已登录、尚未入库的账号并登记（CodeBuddy / WorkBuddy 家族与 Cline；同步循环的同一份逻辑）。 */
   detectHostAccounts: async (): Promise<{
     ok: boolean;
     scanned: number;

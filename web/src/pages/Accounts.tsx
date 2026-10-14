@@ -173,7 +173,7 @@ export default function Accounts() {
   } = useModelCatalog(accounts);
   const [activeProvider, setActiveProvider] = useState<AccountProviderFilter>(() => readStoredActiveProviderTab());
   const [filterStatus, setFilterStatus] = useState<AccountFilterValue>('all');
-  // 按需扫描本机已登录账号（CodeBuddy / WorkBuddy 家族）：不等待后台 5s 轮询，结果当场可见。
+  // 按需扫描本机已登录账号（CodeBuddy / WorkBuddy 家族与 Cline）：不等待后台轮询，结果当场可见。
   const [detectingHostAccounts, setDetectingHostAccounts] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const accountRouteTarget = useMemo(() => parseAccountRouteTarget(location.search), [location.search]);
@@ -729,12 +729,12 @@ export default function Accounts() {
         .filter(([, count]) => count > 0)
         .map(([provider, count]) => `${provider} ${count}`)
         .join('、');
-      const summary = inventory ? `本机已入库：${inventory}` : '本机暂无可识别的家族账号';
+      const summary = inventory ? `本机已入库：${inventory}` : '本机暂无可识别的已登录账号';
       if (registered > 0) {
-        message.success(`扫描完成：新登记 ${registered} 个账号（${summary}）`);
+        message.success(`扫描完成：新增/更新 ${registered} 个账号（${summary}）`);
         accountsSnapshot.requestAccountsSnapshotUpdate();
       } else {
-        message.info(`扫描完成：没有新账号（${summary}）`);
+        message.info(`扫描完成：没有新增账号（${summary}）`);
       }
     } catch {
       message.error('扫描本机账号失败');

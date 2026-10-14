@@ -14,7 +14,7 @@ const {
   inboundTag,
   outboundTag
 } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/relay-config');
-const { parseSingBoxVersion, resolveSingBoxBinary } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary');
+const { parseSingBoxVersion, resolveSingBoxBinary, binaryNameCandidates } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary');
 const { SAMPLE_NODES, UUID } = require('./helpers/proxy-format-samples');
 
 // ============================================================
@@ -64,6 +64,30 @@ test('sing-box binary lookup prefers explicit → managed → PATH → system di
     resolveSingBoxBinary({ fs: fakeFs(['/env/sing-box']), path: pathImpl, env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/env/sing-box' }, aiHomeDir: '/home/u/.ai_home' }),
     { path: '/env/sing-box', source: 'explicit' }
   );
+});
+
+test('windows looks for sing-box.exe in the managed directory and on PATH', () => {
+  const winPath = path.win32;
+  const aiHomeDir = 'C:\\Users\\u\\.ai_home';
+  // 托管位置：%USERPROFILE%\.ai_home\bin\sing-box.exe
+  assert.deepEqual(
+    resolveSingBoxBinary({ fs: fakeFs([`${aiHomeDir}\\bin\\sing-box.exe`]), path: winPath, env: { PATH: '' }, platform: 'win32', aiHomeDir }),
+    { path: `${aiHomeDir}\\bin\\sing-box.exe`, source: 'managed' }
+  );
+  // PATH（Windows 用分号分隔）。
+  assert.deepEqual(
+    resolveSingBoxBinary({ fs: fakeFs(['C:\\tools\\sing-box.exe']), path: winPath, env: { PATH: 'C:\\tools;D:\\bin' }, platform: 'win32', aiHomeDir }),
+    { path: 'C:\\tools\\sing-box.exe', source: 'path' }
+  );
+  // PATHEXT 里额外的后缀也认。
+  assert.deepEqual(
+    resolveSingBoxBinary({ fs: fakeFs(['C:\\tools\\sing-box.bat']), path: winPath, env: { PATH: 'C:\\tools', PATHEXT: '.COM;.BAT' }, platform: 'win32', aiHomeDir }),
+    { path: 'C:\\tools\\sing-box.bat', source: 'path' }
+  );
+  // 裸名在 Windows 上不算内核（发布包带 .exe）。
+  assert.equal(resolveSingBoxBinary({ fs: fakeFs(['C:\\tools\\sing-box']), path: winPath, env: { PATH: 'C:\\tools' }, platform: 'win32', aiHomeDir }), null);
+  assert.deepEqual(binaryNameCandidates({}, 'win32'), ['sing-box.exe']);
+  assert.deepEqual(binaryNameCandidates({}, 'darwin'), ['sing-box']);
 });
 
 test('sing-box version parsing tolerates the shapes the CLI prints', () => {

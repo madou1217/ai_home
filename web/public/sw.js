@@ -1,5 +1,7 @@
 // HarmonyOS 6 + dsh 极速高刷离线缓存 ServiceWorker
-const CACHE_NAME = 'aih-hos6-pwa-v2';
+// CACHE_NAME 由构建脚本 web/scripts/stamp-sw-cache.js 用产物 hash 改写：文件名 hash 变了缓存名就变，
+// 客户端不会继续吃旧缓存（改前端却忘记 bump 缓存版本，曾导致「服务端已更新但页面还是旧文案」）。
+const CACHE_NAME = 'aih-hos6-pwa-dev';
 const PRECACHE_URLS = [
   '/ui/',
   '/ui/manifest.json',

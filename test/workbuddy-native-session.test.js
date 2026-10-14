@@ -17,13 +17,27 @@ for (const provider of ['workbuddy', 'workbuddycn']) {
     const cli = path.join(root, 'Contents/Resources/app.asar.unpacked/cli'); fs.mkdirSync(path.join(cli, 'bin'), { recursive: true });
     fs.writeFileSync(path.join(cli, 'bin/codebuddy'), '// fixture');
     const getProviderCLIConfig = () => ({ desktopClient: { macos: { installPaths: [root] } } });
-    const options = { platform: 'darwin', getProviderCLIConfig };
+    const options = { platform: 'darwin', getProviderCLIConfig, volumeRoots: [] };
     const expected = provider === 'workbuddy' ? 'workbuddy-desktop-ai' : 'workbuddy-desktop';
     fs.writeFileSync(path.join(cli, 'product.json'), JSON.stringify({ authentication: { id: expected } }));
     assert.deepEqual(resolveWorkbuddyNativeCli(provider, options).prefixArgs, [path.join(cli, 'bin/codebuddy')]);
     fs.writeFileSync(path.join(cli, 'product.json'), JSON.stringify({ authentication: { id: 'wrong-edition' } }));
     assert.throws(() => resolveWorkbuddyNativeCli(provider, options), { code: 'workbuddy_native_runtime_missing' });
     assert.throws(() => resolveWorkbuddyNativeCli(provider, { ...options, platform: 'linux' }), { code: 'workbuddy_native_runtime_missing' });
+
+    // DMG 直跑：安装镜像挂载后，运行时在 <卷>/<App>.app 里也要能找到（不再只认 /Applications）。
+    const volume = path.join(root, 'mounted-volume');
+    const bundle = path.join(volume, provider === 'workbuddy' ? 'WorkBuddy AI.app' : 'WorkBuddy.app');
+    const volumeCli = path.join(bundle, 'Contents/Resources/app.asar.unpacked/cli');
+    fs.mkdirSync(path.join(volumeCli, 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(volumeCli, 'bin/codebuddy'), '// fixture');
+    fs.writeFileSync(path.join(volumeCli, 'product.json'), JSON.stringify({ authentication: { id: expected } }));
+    const fromVolume = resolveWorkbuddyNativeCli(provider, {
+      ...options,
+      getProviderCLIConfig: () => ({ desktopClient: { macos: { installPaths: [] } } }),
+      volumeRoots: [volume]
+    });
+    assert.deepEqual(fromVolume.prefixArgs, [path.join(volumeCli, 'bin/codebuddy')]);
   });
 
   test(`${provider} supports new and exact resumed native sessions without pretending to distribute a CLI`, () => {

@@ -266,6 +266,17 @@ test('on-demand detection scans the host once and reports what it registered', t
   assert.equal(detectHostFamilyAccounts({ fs }).ok, false);
 });
 
+test('a family account registered by another process triggers a pool reload on the next scan', t => {
+  const f = fixture(t);
+  f.write('codebuddy', credential('codebuddy'));
+  const sync = createCodebuddyNativeCredentialSync({ fs, aiHomeDir: f.aiHomeDir, hostHomeDir: f.home });
+  assert.equal(sync.scan().reloaded, false, '第一次扫描只建立基线');
+  // 模拟别的进程（CLI / WebUI 按钮）刚登记了一支家族账号：下一次扫描必须让调用方换池。
+  adoptCodebuddyCredential(fs, f.aiHomeDir, 'workbuddycn', credential('workbuddycn'), { automatic: true });
+  assert.equal(sync.scan().reloaded, true);
+  assert.equal(sync.scan().reloaded, false, '集合稳定后不再重复换池');
+});
+
 test('observer retries failed runtime notifications and stops its timer', t => {
   const f = fixture(t); f.write('codebuddy', credential('codebuddy'));
   let tick, cleared = false, calls = 0;

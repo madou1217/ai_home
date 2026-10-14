@@ -51,7 +51,13 @@ test('WorkBuddy field encryption preserves public metadata and all token fields'
   const original = structuredClone(value);
   const encrypted = encode(value);
   assert.deepEqual(value, original, 'input credential must not be mutated');
-  assert.deepEqual(encrypted.account, value.account);
+  // account 里的公开字段原样保留；只有 nickname 也走同一个 sym-v1 信封 ——
+  // 实测宿主 .info 的 account.nickname 就是 $wbEncrypted 信封（2026-10-14 真机取证）。
+  const { nickname: _plainNickname, ...publicAccount } = value.account;
+  const { nickname: encryptedNickname, ...encryptedPublicAccount } = encrypted.account;
+  assert.deepEqual(encryptedPublicAccount, publicAccount);
+  assert.equal(encryptedNickname.$wbEncrypted, 1);
+  assert.ok(!JSON.stringify(encrypted.account.nickname).includes(value.account.nickname), '明文不能留在信封里');
   assert.equal(encrypted.auth.domain, value.auth.domain);
   for (const field of ['accessToken', 'refreshToken', 'idToken']) {
     assert.equal(encrypted.auth[field].$wbEncrypted, 1);

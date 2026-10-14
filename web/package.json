@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "PORT=5180 max dev",
-    "build": "max build",
+    "build": "max build && node scripts/stamp-sw-cache.cjs",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "postinstall": "max setup"

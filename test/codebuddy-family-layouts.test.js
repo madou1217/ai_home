@@ -13,7 +13,9 @@ const {
   familyAuthPaths,
   familyAuthRelativeSegments,
   familyProjectionAuthPath,
+  familyMountedVolumeRoots,
   familyVendorElectronCandidates,
+  familyVolumeAppRoots,
   isCodebuddyFamilyProvider,
   normalizeFamilyProvider,
   resolveFamilyAuthPath,
@@ -210,3 +212,40 @@ test('the declared userData env keys and App names mirror the provider contract'
       `${provider} macOS clientName must equal the declared desktop userData directory name`);
   }
 });
+
+test('a mounted install image is a first-class runtime root, and never a guess', () => {
+  const volumes = ['/Volumes/WorkBuddy AI 5.7.6', '/Volumes/Backup'];
+  // DMG 直跑：App bundle 就在镜像卷里，契约声明的安装位置覆盖不到。
+  assert.deepEqual(
+    familyVolumeAppRoots('workbuddy', volumes, { platform: 'darwin', path: posix }),
+    ['/Volumes/WorkBuddy AI 5.7.6/WorkBuddy AI.app', '/Volumes/Backup/WorkBuddy AI.app']
+  );
+  assert.deepEqual(
+    familyVendorElectronCandidates('workbuddy', HOME, { platform: 'darwin', path: posix, volumeRoots: volumes }),
+    [
+      posix.join('/Applications/WorkBuddy AI.app', 'Contents', 'MacOS', 'Electron'),
+      posix.join(HOME, 'Applications', 'WorkBuddy AI.app', 'Contents', 'MacOS', 'Electron'),
+      posix.join('/Volumes/WorkBuddy AI 5.7.6/WorkBuddy AI.app', 'Contents', 'MacOS', 'Electron'),
+      posix.join('/Volumes/Backup/WorkBuddy AI.app', 'Contents', 'MacOS', 'Electron')
+    ]
+  );
+  // 非 darwin 没有安装镜像这回事；未知 provider 也不猜 App 名。
+  assert.deepEqual(familyVolumeAppRoots('workbuddy', volumes, { platform: 'linux' }), []);
+  assert.deepEqual(familyVolumeAppRoots('unknown', volumes, { platform: 'darwin' }), []);
+});
+
+test('mounted volume enumeration lists one level, skipping the boot and system mounts', () => {
+  const entries = [
+    { name: 'Macintosh HD', isDirectory: () => true },
+    { name: 'com.apple.TimeMachine.localsnapshots', isDirectory: () => true },
+    { name: 'WorkBuddy AI 5.7.6', isDirectory: () => true },
+    { name: 'some-file', isDirectory: () => false }
+  ];
+  const fakeFs = { readdirSync: () => entries };
+  assert.deepEqual(familyMountedVolumeRoots(fakeFs, { platform: 'darwin' }), ['/Volumes/WorkBuddy AI 5.7.6']);
+  assert.deepEqual(familyMountedVolumeRoots(fakeFs, { platform: 'win32' }), []);
+  // 读不到（非 macOS 或没有权限）一律空表，调用方据此 fail-closed。
+  assert.deepEqual(familyMountedVolumeRoots({}, { platform: 'darwin' }), []);
+  assert.deepEqual(familyMountedVolumeRoots({ readdirSync: () => { throw new Error('EACCES'); } }, { platform: 'darwin' }), []);
+});
+

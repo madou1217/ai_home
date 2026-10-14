@@ -118,7 +118,9 @@ const ENTRY_WINDOW_SNAPSHOT_KINDS = new Set([
   'grok_credit_usage',
   'kiro_credit_usage',
   'zcode_plan_balance',
-  'codebuddy_credit_balance'
+  'codebuddy_credit_balance',
+  // Cline Pass 的滚动窗口额度（额度插件 lib/usage/quota/plugins/cline.js 产出）。
+  'cline_pass_usage'
 ]);
 const MODEL_LIST_SNAPSHOT_KINDS = new Set(['gemini_oauth_stats', 'agy_code_assist_quota']);
 

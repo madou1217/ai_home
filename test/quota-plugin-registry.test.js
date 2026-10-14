@@ -173,6 +173,30 @@ test('条目语义（entryShape）由额度源声明：展示层据此取时间�
   );
 });
 
+test('派生额度状态认插件 provider：注册表登记即视为有额度能力', () => {
+  const { deriveQuotaState } = require('../lib/account/derived-state');
+  const snapshot = {
+    kind: 'cline_pass_usage',
+    capturedAt: 1,
+    entries: [{ bucket: '5h', windowMinutes: 300, remainingPct: 75 }]
+  };
+  assert.deepEqual(
+    deriveQuotaState({ provider: 'cline', configured: true, apiKeyMode: false, usageSnapshot: snapshot }),
+    { status: 'available', reason: '', remainingPct: 75, hasNumericRemaining: true }
+  );
+  assert.equal(
+    deriveQuotaState({
+      provider: 'cline',
+      configured: true,
+      apiKeyMode: false,
+      usageSnapshot: { kind: 'cline_pass_usage', capturedAt: 1, entries: [{ remainingPct: 0 }] }
+    }).status,
+    'exhausted'
+  );
+  // 没有额度源的 provider 仍然是 not_applicable（不因为注册表存在就滥发额度）。
+  assert.equal(deriveQuotaState({ provider: 'qoder', configured: true, apiKeyMode: false }).status, 'not_applicable');
+});
+
 test('createQuotaRegistry 只给插件型 provider 造探针，原生 provider 返回 null', () => {
   const { registry } = createQuotaRegistry({ aiHomeDir: '/nonexistent-aih-home' });
   const probe = registry.createProbe('cline', {});

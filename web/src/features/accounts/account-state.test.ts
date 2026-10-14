@@ -607,6 +607,10 @@ test('getUsageSnapshotRemainingPct 按快照 kind 计算：覆盖 zcode、CodeBu
   assert.equal(getUsageSnapshotRemainingPct({
     usageSnapshot: { kind: 'kimi_oauth_usage', capturedAt: 1, entries: [entry(80), entry(0, 'gift')] }
   } as never), 80);
+  // Cline Pass 插件快照：5h / 7days / 30days 三个窗口取最小剩余。
+  assert.equal(getUsageSnapshotRemainingPct({
+    usageSnapshot: { kind: 'cline_pass_usage', capturedAt: 1, entries: [entry(75), entry(79), entry(90)] }
+  } as never), 75);
 });
 
 test('Kiro quota is calculated from its own official credit snapshot', () => {

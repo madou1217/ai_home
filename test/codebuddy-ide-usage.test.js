@@ -201,10 +201,15 @@ test('a symlinked IDE index cannot introduce foreign billing or conversations', 
 for (const [platform, parts] of [['win32', ['AppData', 'Local']], ['linux', ['.local', 'share']]]) {
   test(`IDE history follows the official ${platform} FilePathService root`, t => {
     const h = harness(t), s = h.source();
-    const original = path.join(s.home, 'Library', 'Application Support', 'CodeBuddyExtension');
+    // 宿主夹具落在**当前平台**的官方根上（与 scanner 同源），再按用例声明的目标平台搬迁。
+    const original = path.join(s.home, ...userDataParentSegments(), 'CodeBuddyExtension');
     const destination = path.join(s.home, ...parts, 'CodeBuddyExtension');
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.renameSync(original, destination);
+    // 宿主平台与目标平台一致时原地不动（win32 宿主跑 win32 用例），否则 win32 的
+    // renameSync 会把「自己搬到自己」当错误。
+    if (original !== destination) {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.renameSync(original, destination);
+    }
     const sessions = discoverCodebuddyIdeSessions({ fs, path, aiHomeDir: h.aiHomeDir, hostHomeDir: h.hostHomeDir, platform });
     assert.equal(sessions.length, 1);
     assert.ok(sessions[0].indexPath.startsWith(destination + path.sep));

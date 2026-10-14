@@ -785,8 +785,9 @@ test('the two WorkBuddy providers are desktop-only and each owns a distinct app'
     const cleanup = lifecycle.find(plan => plan.args.includes('--aih-managed-path-cleanup'));
     assert.ok(cleanup, `${provider}: declared user-installed application cleanup`);
     const cleanupPayload = JSON.parse(Buffer.from(cleanup.args.at(-1), 'base64').toString('utf8'));
-    // 清理目标 = 声明的 darwin 安装位置展开到宿主 HOME，按宿主路径实现拼接。
-    assert.deepEqual(cleanupPayload.trees, [path.join('/h', 'Applications',
+    // 清理目标 = 声明的 darwin 安装位置展开到宿主 HOME，再由 managed-path-cleaner
+    // 的 path.resolve 归一化成绝对路径（win32 宿主会补上盘符，如 C:\h\...）。
+    assert.deepEqual(cleanupPayload.trees, [path.resolve('/h', 'Applications',
       provider === 'workbuddy' ? 'WorkBuddy AI.app' : 'WorkBuddy.app')]);
     // 不声明 CLI：WorkBuddy 不对独立分发 CLI（把 CodeBuddy runtime 内嵌在 App 内）。
     assert.equal(typeof installer.listCliBinaryNames, 'undefined', provider);

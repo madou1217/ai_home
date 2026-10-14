@@ -165,7 +165,7 @@ export default defineConfig({
   },
   publicPath,
   base: "/ui",
-  outputPath: "dist",
+  outputPath: process.env.AIH_WEB_OUT_DIR || "dist",
   hash: true,
   targets: {
     chrome: 80,

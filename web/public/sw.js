@@ -1,5 +1,5 @@
 // HarmonyOS 6 + dsh 极速高刷离线缓存 ServiceWorker
-const CACHE_NAME = 'aih-hos6-pwa-v1';
+const CACHE_NAME = 'aih-hos6-pwa-v2';
 const PRECACHE_URLS = [
   '/ui/',
   '/ui/manifest.json',

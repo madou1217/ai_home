@@ -37,6 +37,9 @@ for (const provider of FAMILY_PROVIDERS) {
       aiHomeDir: '/tmp/aih',
       hostHomeDir: '/home/u',
       env: { PATH: '/bin' },
+      // 这个用例断言的是「环境隔离」的 POSIX 形态：平台必须钉死，否则在 Windows 上会被
+      // resolveWindowsUpstreamSpawn 包成 cmd.exe（win32 包装另有 pty-launch 的用例覆盖）。
+      platform: 'darwin',
       resolveNativeCliLaunch: (resolvedProvider, options) => {
         assert.equal(resolvedProvider, provider);
         assert.equal(options.hostHomeDir, '/home/u');

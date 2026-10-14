@@ -5,6 +5,7 @@ import type {
   AggregatorFormat,
   AggregatorFormatInfo,
   AggregatorImportClient,
+  AggregatorNodeOption,
   AggregatorPolicy,
   AggregatorProfile,
   AggregatorPull,
@@ -190,6 +191,16 @@ const ERROR_TEXT: Record<string, string> = {
   too_many_aggregator_group_members: '策略组成员过多（最多套用 100 个、勾选 500 个节点）',
   aggregator_profile_not_found: '聚合订阅不存在，可能已被删除',
   subscription_not_found: '订阅源不存在，可能已被删除',
+  proxy_node_not_found: '节点不存在，可能已被删除',
+  invalid_proxy_node: '节点不存在，可能已被删除',
+  invalid_proxy_chain: '前置节点格式不对',
+  invalid_proxy_chain_self: '前置节点不能是自己',
+  invalid_proxy_chain_target: '前置节点不存在，可能已被删除',
+  invalid_proxy_chain_missing: '前置节点不存在，可能已被删除',
+  invalid_proxy_chain_cycle: '链式代理成环了（A → B → A）',
+  invalid_proxy_chain_too_deep: '链式代理最多 8 级',
+  unsupported_proxy_chain: '这个版本不支持链式代理',
+  proxy_store_busy: '节点库正在被占用，请稍后重试',
   invalid_subscription_url: '订阅地址必须是 http(s) URL',
   invalid_subscription_user_agent: 'User-Agent 只能是可见 ASCII 字符（最多 200 个）',
   invalid_subscription_content: '本地内容不能为空',
@@ -215,10 +226,22 @@ const SKIP_REASON_PATTERNS: Array<[RegExp, (value: string) => string]> = [
   [/^unsupported_hysteria_protocol_(.+)$/, (value) => `不支持 Hysteria 的 ${value} 传输`],
   [/^missing_required_proxy_field_(.+)$/, (value) => `缺少字段 ${value}`],
   [/^requires_sing_box_(.+)$/, (value) => `需要 sing-box ≥ ${value}`],
+  // 链式代理：前缀带输出格式 id（unsupported_proxy_chain_clash-classic），对用户只说「这个格式不支持」。
+  [/^unsupported_proxy_chain_(.+)$/, () => '这个格式不支持链式代理'],
   [/^invalid_proxy_link_(.+)$/, (value) => `${value} 链接格式不对`]
 ];
 
 const GROUP_TYPE_NAMES: Record<string, string> = { fallback: '故障转移', 'load-balance': '负载均衡' };
+
+/** 本机中转的失败码 → 用户能照做的说明（预览里的 aggregator_relay_unavailable:<码>）。 */
+export function relayWarningText(code: string) {
+  if (code === 'relay_not_running') return '本机中转没有在运行：点「启动本机中转」后，这些节点会改成本地 socks5 入口';
+  if (code === 'relay_binary_not_found') return '没找到 sing-box 内核，本机中转用不了：装一个 sing-box（或放进 ~/.ai_home/bin）再试';
+  if (code === 'relay_local_only') return '本机中转只对本机生效：这份配置是从别的机器拉的，节点按原样输出';
+  if (code === 'relay_config_rejected') return 'sing-box 拒绝了本机中转配置，节点按原样输出（原因见服务端日志）';
+  if (code === 'relay_port_unavailable') return '没有空闲端口可用，本机中转起不来：腾出 23100 起的端口再试';
+  return `本机中转启动失败（${code}）：节点按原样输出`;
+}
 
 /** 预览里的提示（服务端警告码 → 说明）。describePolicy 把 region:jp 之类的引用换成组名。 */
 export function previewWarningText(warning: string, describePolicy: (policy: string) => string = (policy) => policy, targetName = '') {
@@ -227,13 +250,26 @@ export function previewWarningText(warning: string, describePolicy: (policy: str
   if (warning === 'aggregator_nodes_unsupported_by_target') {
     return `选中的节点都不被${targetName ? `「${targetName}」` : '当前输出格式'}支持，换个支持这些协议的格式或客户端`;
   }
+  // 全被链式代理挡掉（成环、前置缺失、前置没选中、格式不支持链式）：指向前置配置，别让人去换格式。
+  if (warning === 'aggregator_nodes_chain_blocked') {
+    return '选中的节点都因链式代理被跳过：检查前置节点是否还存在、有没有成环，或换个支持链式代理的输出格式';
+  }
   // 上下文本身可能带冒号（rule:DOMAIN,x.com），策略引用只认已知前缀，否则会从错误的位置切开。
   const fallback = warning.match(/^aggregator_policy_fallback:(.+):((?:region|source|preset|group):[^:]+)$/);
   if (fallback) return `「${fallback[1]}」引用的 ${describePolicy(fallback[2])} 没有对应策略组，已改用节点选择`;
+  // 输出格式是全协议，但模拟的这个客户端内核只认一部分（Clash Premium）：这份配置它可能加载不了。
+  const core = warning.match(/^aggregator_client_core_protocols:(.+)$/);
+  if (core) {
+    const protocols = core[1].split(',').filter(Boolean).join('、');
+    return `这个客户端的内核不认 ${protocols}，配置可能加载失败：换 Meta 系内核（Clash Verge Rev、mihomo、FlClash），或改选别的输出格式`;
+  }
   const missing = warning.match(/^aggregator_group_member_missing:(.+):((?:region|source|group):[^:]+)$/);
   if (missing) return `「${missing[1]}」套用的 ${describePolicy(missing[2])} 没有生成（分组没开启或没有节点），已从组里去掉`;
   const degraded = warning.match(/^aggregator_group_type_degraded:(.+):(fallback|load-balance)$/);
   if (degraded) return `这个格式不支持${GROUP_TYPE_NAMES[degraded[2]]}，「${degraded[1]}」改成了延迟最低`;
+  // 本机中转没起来（内核缺失 / 边车没跑 / 请求不是本机来的）：给出可照做的下一步。
+  const relay = warning.match(/^aggregator_relay_unavailable:(.+)$/);
+  if (relay) return relayWarningText(relay[1]);
   return warning;
 }
 
@@ -288,11 +324,82 @@ export function skipReasonText(reason: string) {
   if (reason === 'unsupported_sing_box_snell_obfs_tls') return 'sing-box 不支持 Snell 的 tls 混淆';
   if (reason === 'unsupported_surge_snell_shadow_tls') return 'Surge 的 Snell 不支持 ShadowTLS';
   if (reason === 'unsupported_proxy_protocol_tuic-v4') return '不支持 TUIC v4';
+  // 链式代理（前置节点）：这几条要写在通用前缀匹配之前，
+  // 否则 unsupported_proxy_chain_upstream_skipped 会被下面那条当成「格式不支持」。
+  if (reason === 'unsupported_proxy_chain') return '这个格式不支持链式代理';
+  if (reason === 'unsupported_proxy_chain_upstream_skipped') return '前置节点没能输出，这个节点也一起跳过了';
+  // 本机中转：要中转的节点超出端口上限时，多出来的节点不给本地入口（按原样输出）。
+  if (reason === 'too_many_relay_nodes') return '本机中转端口不够，这个节点没走中转';
+  if (reason === 'invalid_proxy_chain_cycle') return '链式代理成环了';
+  if (reason === 'invalid_proxy_chain_missing') return '前置节点不存在，可能已被删除';
+  if (reason === 'invalid_proxy_chain_too_deep') return '链式代理超过 8 级';
+  if (reason === 'invalid_proxy_chain_self') return '前置节点不能是自己';
   for (const [pattern, describe] of SKIP_REASON_PATTERNS) {
     const match = reason.match(pattern);
     if (match) return describe(match[1]);
   }
   return reason;
+}
+
+/** 链式代理最多几跳（与服务端 proxy-chain.js 的 MAX_CHAIN_DEPTH 一致）。 */
+export const MAX_CHAIN_DEPTH = 8;
+
+/** 链路计算只关心这三列；泛型让调用方拿到自己那份节点类型（带 protocol 等额外字段）。 */
+type ChainNode = Pick<AggregatorNodeOption, 'id' | 'name' | 'chain'>;
+
+/**
+ * 从某个节点沿前置往上收集整条链（含本节点）：[本节点, 前置, 前置的前置…]。
+ * 成环或前置不存在时提前停下，不会死循环。
+ */
+export function chainPath<T extends ChainNode>(nodeId: string, nodes: T[]): Array<Pick<T, 'id' | 'name'>> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const path: Array<Pick<T, 'id' | 'name'>> = [];
+  const seen = new Set<string>();
+  let cursor = String(nodeId || '');
+  while (cursor && !seen.has(cursor) && path.length <= MAX_CHAIN_DEPTH) {
+    const node = byId.get(cursor);
+    if (!node) break;
+    seen.add(cursor);
+    path.push({ id: node.id, name: node.name });
+    cursor = node.chain || '';
+  }
+  return path;
+}
+
+/** 链路文字：本节点之外的整条前置链（`A → B`），直连返回空串。 */
+export function describeChain(nodeId: string, nodes: ChainNode[]) {
+  return chainPath(nodeId, nodes).slice(1).map((node) => node.name).join(' → ');
+}
+
+/**
+ * 当前配置有什么问题（成环 / 前置不存在 / 链太长），没问题返回空串。
+ * 与服务端 proxy-chain.js 的 validateChainRef 同一套判断，这里只用于界面提示。
+ */
+export function chainIssue(nodeId: string, nodes: ChainNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const ref = String(byId.get(String(nodeId || ''))?.chain || '').trim();
+  if (!ref) return '';
+  if (ref === nodeId) return 'invalid_proxy_chain_cycle';
+  if (!byId.has(ref)) return 'invalid_proxy_chain_missing';
+  const seen = new Set([String(nodeId)]);
+  let cursor = byId.get(ref);
+  let depth = 0;
+  while (cursor) {
+    depth += 1;
+    if (depth > MAX_CHAIN_DEPTH) return 'invalid_proxy_chain_too_deep';
+    if (seen.has(cursor.id)) return 'invalid_proxy_chain_cycle';
+    seen.add(cursor.id);
+    cursor = cursor.chain ? byId.get(cursor.chain) : undefined;
+  }
+  return '';
+}
+
+/**
+ * 选前置的候选：不能选自己，也不能选自己链上的下游（选了就会成环）。
+ * 其余节点保持传入顺序。
+ */
+export function chainCandidateNodes<T extends ChainNode>(nodeId: string, nodes: T[]): T[] {
+  return nodes.filter((node) => node.id !== nodeId && !chainPath(node.id, nodes).some((item) => item.id === nodeId));
 }
 
 /** 自动识别的客户端按拿到的格式分组（格式按 catalog.formats 的顺序）。 */

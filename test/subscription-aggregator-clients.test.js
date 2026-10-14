@@ -117,7 +117,11 @@ test('client pulls render per client: Hiddify gets sing-box nodes, old sing-box 
   assert.equal(YAML.parse(clash.body).proxies.length, 4);
 
   const [latest, , oldest] = service.getOverview().profiles[0].recentPulls;
-  assert.deepEqual(latest, { at: 1000, clientId: 'flclash', clientName: 'FlClash', format: 'mihomo', view: 'full', nodes: 4 });
+  // 拉取记录同时带上本机中转状态：mihomo 目标不需要中转，所以是 0 个中转节点、无错误。
+  assert.deepEqual(latest, {
+    at: 1000, clientId: 'flclash', clientName: 'FlClash', format: 'mihomo', view: 'full', nodes: 4,
+    relayNodes: 0, relayError: ''
+  });
   assert.deepEqual([oldest.clientId, oldest.format, oldest.view, oldest.nodes], ['sing-box', 'sing-box', 'full', 3]);
   assert.equal(service.getOverview().profiles[0].recentPulls.length, 4);
   assert.ok(service.getOverview().catalog.clients.some((client) => client.id === 'hiddify'));

@@ -183,6 +183,6 @@ test('the draft node preview lists what the unsaved profile would select', (t) =
   const { service } = serviceWith(t, {});
   const result = service.previewNodes({ filter: { include: '日本' }, groups: { custom: [{ id: 'x', name: 'X', members: ['group:gone'] }] } });
   assert.deepEqual(result.nodes.map((node) => node.name), ['🇯🇵 日本 01', '🇯🇵 日本 02 IPLC']);
-  assert.deepEqual(result.nodes[0], { name: '🇯🇵 日本 01', protocol: 'shadowsocks', region: 'jp', source: '机场 A' });
+  assert.deepEqual(result.nodes[0], { id: 'jp1', name: '🇯🇵 日本 01', protocol: 'shadowsocks', region: 'jp', source: '机场 A', chain: '' });
   assert.throws(() => service.previewNodes({ filter: { include: '(' } }), { code: 'invalid_aggregator_pattern' });
 });

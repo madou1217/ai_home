@@ -2,6 +2,7 @@ import api from '@/services/api';
 import type {
   AggregatorDraftNode,
   AggregatorLatency,
+  AggregatorNodeOption,
   AggregatorProbeResult,
   AggregatorSourceNode,
   AggregatorFormat,
@@ -11,6 +12,7 @@ import type {
   AggregatorPreview,
   AggregatorProfile,
   AggregatorProfileInput,
+  AggregatorRelayStatus,
   AggregatorRouteTrace,
   AggregatorSourceInput,
   AggregatorSourcePreview,
@@ -33,10 +35,20 @@ export const subscriptionAggregatorAPI = {
   async rotateToken(profileId: string) {
     return (await api.post<{ ok: boolean; profile: AggregatorProfile }>(`${BASE}/profiles/${encodeURIComponent(profileId)}/token`)).data;
   },
-  /** client：模拟某个客户端（它的内核版本、视图等），预览结果就是它实际拿到的内容。 */
-  async preview(profileId: string, format: AggregatorFormat, client = '') {
-    const params = client ? { format, client } : { format };
+  /**
+   * client：模拟某个客户端（它的内核版本、视图等），预览结果就是它实际拿到的内容。
+   * relay：本机中转 —— 明确要求时服务端会先把 sing-box 边车拉起来，再把内核认不出的协议
+   * 改写成指向本地端口的 socks5 入口。
+   */
+  async preview(profileId: string, format: AggregatorFormat, client = '', options: { relay?: boolean } = {}) {
+    const params: Record<string, string> = { format };
+    if (client) params.client = client;
+    if (options.relay) params.relay = '1';
     return (await api.get<AggregatorPreview>(`${BASE}/profiles/${encodeURIComponent(profileId)}/preview`, { params })).data;
+  },
+  /** 本机中转能不能用（内核在哪、版本、有没有在跑）；不启动任何进程。 */
+  async relay() {
+    return (await api.get<AggregatorRelayStatus & { ok: boolean; local: boolean }>(`${BASE}/relay`)).data;
   },
   /** 编辑中（未保存）的配置会选中哪些节点：自建组勾选节点、实时匹配名称规则用。 */
   async previewNodes(draft: Pick<AggregatorProfileInput, 'sources' | 'filter' | 'naming' | 'dedupe'>) {
@@ -79,6 +91,16 @@ export const subscriptionAggregatorAPI = {
   async parseNodes(content: string) {
     return (await api.post<{ ok: boolean; format: string; nodes: Array<Record<string, unknown>>; skippedNodes: Array<{ name: string; reason: string }> }>(
       `${BASE}/nodes/parse`, { content }
+    )).data;
+  },
+  /** 全部节点（含手动节点），只给「前置节点」选择器用；不含凭据。 */
+  async nodes() {
+    return (await api.get<{ ok: boolean; nodes: AggregatorNodeOption[] }>(`${BASE}/nodes`)).data;
+  },
+  /** 设置 / 清除某个节点的链式前置（chain 传空串即清除）。 */
+  async setNodeChain(nodeId: string, chain: string) {
+    return (await api.post<{ ok: boolean; node?: { id: string; name: string; chain: string }; error?: string }>(
+      `${BASE}/nodes/chain`, { nodeId, chain }
     )).data;
   },
   async deleteSource(subscriptionId: string) {

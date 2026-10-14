@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  aggregatorErrorText,
   buildPolicyOptions,
   buildSubscriptionUrl,
+  chainCandidateNodes,
+  chainIssue,
+  chainPath,
+  describeChain,
   describeSourceOrigin,
   describeSourceScope,
   formatBytes,
@@ -13,6 +18,7 @@ import {
   parseBatchSources,
   policyLabel,
   previewWarningText,
+  relayWarningText,
   describeSourcePreview,
   importFormatLabel,
   nameWithFlag,
@@ -95,6 +101,21 @@ test('预览提示把警告码换成说明', () => {
     previewWarningText('aggregator_policy_fallback:preset:ai:region:hk', describe),
     '「preset:ai」引用的 🇭🇰 香港节点 没有对应策略组，已改用节点选择'
   );
+  // 本机中转的失败码要给出可照做的说明，不能把裸码丢给用户。
+  assert.equal(
+    previewWarningText('aggregator_relay_unavailable:relay_not_running'),
+    '本机中转没有在运行：点「启动本机中转」后，这些节点会改成本地 socks5 入口'
+  );
+  assert.equal(
+    previewWarningText('aggregator_relay_unavailable:relay_binary_not_found'),
+    '没找到 sing-box 内核，本机中转用不了：装一个 sing-box（或放进 ~/.ai_home/bin）再试'
+  );
+  assert.equal(
+    previewWarningText('aggregator_relay_unavailable:relay_port_mismatch'),
+    '本机中转启动失败（relay_port_mismatch）：节点按原样输出'
+  );
+  assert.equal(relayWarningText('relay_local_only'), '本机中转只对本机生效：这份配置是从别的机器拉的，节点按原样输出');
+  assert.equal(skipReasonText('too_many_relay_nodes'), '本机中转端口不够，这个节点没走中转');
   assert.equal(previewWarningText('something_new'), 'something_new');
 });
 
@@ -212,4 +233,49 @@ test('国旗只在名称里没有时补上', () => {
   assert.equal(nameWithFlag('🇨🇳 中国台湾 Egern', '🇨🇳'), '🇨🇳 中国台湾 Egern');
   assert.equal(nameWithFlag('WireGuard 203.0.113.10', '🌐'), 'WireGuard 203.0.113.10');
   assert.equal(nameWithFlag('x', ''), 'x');
+});
+
+test('链式代理：整条链按前置展开，成环 / 前置缺失当场看得出来', () => {
+  const nodes = [
+    { id: 'a', name: 'A', chain: '' },
+    { id: 'b', name: 'B', chain: 'a' },
+    { id: 'c', name: 'C', chain: 'b' }
+  ];
+  assert.deepEqual(chainPath('c', nodes).map((node) => node.name), ['C', 'B', 'A']);
+  assert.equal(describeChain('c', nodes), 'B → A');
+  assert.equal(describeChain('a', nodes), '');
+  assert.equal(chainIssue('c', nodes), '');
+  // 成环：链走到自己就停下，不会转不出来。
+  const cyclic = [{ id: 'a', name: 'A', chain: 'b' }, { id: 'b', name: 'B', chain: 'a' }];
+  assert.equal(chainIssue('a', cyclic), 'invalid_proxy_chain_cycle');
+  assert.deepEqual(chainPath('a', cyclic).map((node) => node.name), ['A', 'B']);
+  assert.equal(chainIssue('b', [{ id: 'b', name: 'B', chain: 'gone' }]), 'invalid_proxy_chain_missing');
+});
+
+test('链式代理：候选前置排除自己与自己的下游，避免配出环', () => {
+  const nodes = [
+    { id: 'a', name: 'A', chain: '' },
+    { id: 'b', name: 'B', chain: 'a' },
+    { id: 'c', name: 'C', chain: '' },
+    { id: 'd', name: 'D', chain: 'c' }
+  ];
+  // B 已经经由 A：给 A 选前置时 B 不能出现在候选里（选了就成环），C / D 可以。
+  assert.deepEqual(chainCandidateNodes('a', nodes).map((node) => node.id), ['c', 'd']);
+  assert.deepEqual(chainCandidateNodes('d', nodes).map((node) => node.id), ['a', 'b', 'c']);
+});
+
+test('链式代理：警告、跳过原因与错误码都有中文说法', () => {
+  assert.equal(
+    previewWarningText('aggregator_nodes_chain_blocked'),
+    '选中的节点都因链式代理被跳过：检查前置节点是否还存在、有没有成环，或换个支持链式代理的输出格式'
+  );
+  assert.equal(
+    previewWarningText('aggregator_client_core_protocols:vless,hysteria2'),
+    '这个客户端的内核不认 vless、hysteria2，配置可能加载失败：换 Meta 系内核（Clash Verge Rev、mihomo、FlClash），或改选别的输出格式'
+  );
+  assert.equal(skipReasonText('unsupported_proxy_chain_clash-classic'), '这个格式不支持链式代理');
+  assert.equal(skipReasonText('unsupported_proxy_chain_upstream_skipped'), '前置节点没能输出，这个节点也一起跳过了');
+  assert.equal(skipReasonText('invalid_proxy_chain_cycle'), '链式代理成环了');
+  assert.equal(aggregatorErrorText('invalid_proxy_chain_cycle', '保存失败'), '链式代理成环了（A → B → A）');
+  assert.equal(aggregatorErrorText('proxy_node_not_found', '保存失败'), '节点不存在，可能已被删除');
 });

@@ -37,16 +37,19 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
   const [preview, setPreview] = useState<AggregatorPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // 本机中转：默认关（不替用户起进程），点「启动本机中转」才请求服务端拉起边车。
+  const [relayOn, setRelayOn] = useState(false);
   const requestRef = useRef(0);
 
-  const load = useCallback(async (profileId: string, nextFormat: AggregatorFormat, nextClient: string) => {
+  const load = useCallback(async (profileId: string, nextFormat: AggregatorFormat, nextClient: string, nextRelay = false) => {
     const requestId = ++requestRef.current;
     setFormat(nextFormat);
     setClient(nextClient);
+    setRelayOn(nextRelay);
     setLoading(true);
     setError('');
     try {
-      const result = await subscriptionAggregatorAPI.preview(profileId, nextFormat, nextClient);
+      const result = await subscriptionAggregatorAPI.preview(profileId, nextFormat, nextClient, { relay: nextRelay });
       if (requestId === requestRef.current) setPreview(result);
     } catch (loadError) {
       const code = (loadError as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -65,7 +68,7 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
   const changeClient = (nextClient: string) => {
     if (!profile) return;
     const clientFormat = clients.find((item) => item.id === nextClient)?.format;
-    void load(profile.id, clientFormat || format, nextClient);
+    void load(profile.id, clientFormat || format, nextClient, relayOn);
   };
 
   const download = () => {
@@ -80,7 +83,8 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
     URL.revokeObjectURL(url);
   };
 
-  const formatName = formats.find((item) => item.id === (preview?.format ?? format))?.name || '';
+  const currentFormat = formats.find((item) => item.id === (preview?.format ?? format));
+  const formatName = currentFormat?.name || '';
 
   return (
     <Modal
@@ -100,7 +104,7 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
             aria-label="预览格式"
             value={format}
             options={formatOptions(formats)}
-            onChange={(value) => profile && void load(profile.id, value, client)}
+            onChange={(value) => profile && void load(profile.id, value, client, relayOn)}
             popupMatchSelectWidth={false}
             style={{ minWidth: 200 }}
           />
@@ -124,6 +128,8 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
           </Button>
         </Space>
       </div>
+      {/* 格式自身的限制（例如 Clash 全协议需要 Meta 系内核）：选格式时就摆出来，别等客户端加载失败。 */}
+      {currentFormat?.note ? <Text type="secondary" className={styles.previewWarning}>{currentFormat.note}</Text> : null}
       {preview && (
         <Space wrap className={styles.previewStats}>
           <Tag color="blue">节点 {preview.stats.nodes}</Tag>
@@ -135,6 +141,33 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
           {preview.stats.skipped > 0 && <Tag color="warning">未输出 {preview.stats.skipped}</Tag>}
           {preview.client && <Tag color="purple">按 {preview.client.name} 输出</Tag>}
           {preview.view === 'nodes' && <Tag>仅节点</Tag>}
+        </Space>
+      )}
+      {/* 本机中转：只有「内核认不出的协议」存在时才出现（后端 relay.candidates > 0）。
+          同机的 ClashX 之类老内核靠它用上 VLESS / Hysteria2 等节点。 */}
+      {preview?.relay && (preview.relay.candidates || 0) > 0 && (
+        <Space wrap className={styles.previewStats}>
+          <Text type="secondary">
+            本机中转：
+            {preview.relay.active
+              ? `已运行，${preview.relay.nodes} 个节点走本地入口`
+              : preview.relay.available === false ? '内核缺失，无法启动' : '未运行'}
+          </Text>
+          {!preview.relay.active && preview.relay.available !== false && (
+            <Button
+              appVariant="quiet"
+              disabled={loading || !profile}
+              onClick={() => profile && void load(profile.id, format, client, true)}
+            >
+              启动本机中转
+            </Button>
+          )}
+          {preview.relay.version ? <Tag>sing-box {preview.relay.version}</Tag> : null}
+          {preview.relay.skipped && preview.relay.skipped.length > 0 && (
+            <Text type="secondary">
+              中转跳过 {preview.relay.skipped.length} 个节点（{skipReasonText(preview.relay.skipped[0].reason)}）
+            </Text>
+          )}
         </Space>
       )}
       {error && <Text type="danger">{error}</Text>}

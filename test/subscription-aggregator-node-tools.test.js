@@ -67,3 +67,34 @@ test('share links parse into full form fields and every protocol has a form', as
   assert.deepEqual(wireguard.fields.filter((field) => field.required).map((field) => field.key), ['privateKey', 'publicKey']);
   assert.equal(wireguard.fields.find((field) => field.key === 'privateKey').control, 'secret');
 });
+
+test('chain upstreams are set per node and validated before they are written', async (t) => {
+  const { tools, sourceId } = await setup(t);
+  const [trojanNode, vlessNode] = tools.sourceNodes(sourceId).nodes;
+  // 全部节点（含手动节点）只给选前置用：不带凭据与分享链接。
+  assert.deepEqual(tools.allNodes().nodes.map((node) => [node.id, node.name, node.chain]), [
+    [trojanNode.id, '🇯🇵 日本 TJ', ''],
+    [vlessNode.id, 'vl', '']
+  ]);
+
+  // 让 vless 经由 trojan 出去，再让 trojan 经由 vless —— 后者会成环，保存时就该被拦下。
+  assert.deepEqual(tools.setNodeChain(vlessNode.id, trojanNode.id), {
+    ok: true,
+    node: { id: vlessNode.id, name: 'vl', chain: trojanNode.id }
+  });
+  assert.equal(tools.setNodeChain(trojanNode.id, vlessNode.id).error, 'invalid_proxy_chain_cycle');
+  assert.equal(tools.setNodeChain(trojanNode.id, trojanNode.id).error, 'invalid_proxy_chain_cycle');
+  assert.equal(tools.setNodeChain(trojanNode.id, 'n_missing').error, 'invalid_proxy_chain_missing');
+  assert.equal(tools.setNodeChain('n_missing', trojanNode.id).error, 'proxy_node_not_found');
+
+  // 清空前置 = 恢复直连；同步订阅不会把用户配的前置冲掉。
+  assert.deepEqual(tools.setNodeChain(vlessNode.id, ''), {
+    ok: true,
+    node: { id: vlessNode.id, name: 'vl', chain: '' }
+  });
+  tools.setNodeChain(vlessNode.id, trojanNode.id);
+  await tools.sources.syncSource(sourceId);
+  const listed = tools.sourceNodes(sourceId).nodes;
+  assert.equal(listed.find((node) => node.id === vlessNode.id).chain, trojanNode.id);
+  assert.equal(listed.find((node) => node.id === trojanNode.id).chain, '');
+});

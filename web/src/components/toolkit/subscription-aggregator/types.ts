@@ -121,6 +121,18 @@ export interface AggregatorSourceNode {
   port: number;
   flag: string;
   link: string;
+  /** 链式代理的前置节点 id；空串表示直连 */
+  chain: string;
+}
+
+/** 选「前置节点」用的节点条目：不含凭据与分享链接。 */
+export interface AggregatorNodeOption {
+  id: string;
+  name: string;
+  protocol: string;
+  sourceId: string;
+  /** 这个节点自己配的前置节点 id；空串表示直连 */
+  chain: string;
 }
 
 /** 从服务器到节点地址的 TCP 建连耗时；fakeIp=true 时连到的是本机代理，结果不代表节点。 */
@@ -190,6 +202,8 @@ export interface AggregatorFormatInfo {
   extension: string;
   /** 是否输出策略组与分流规则（Base64 / 链接列表 / JSON 只有节点） */
   groups: boolean;
+  /** 这个格式的限制说明（例如「VLESS 等需要 Meta 系内核」），没有就不显示 */
+  note?: string;
 }
 
 /** 一键导入：某个客户端的导入方式（深链接 / 下载配置 / 复制地址）。 */
@@ -250,11 +264,15 @@ export interface AggregatorLoadBalanceStrategyInfo {
 
 /** 编辑中（未保存）的配置会选中的节点：名称是改名、去重之后的最终名称。 */
 export interface AggregatorDraftNode {
+  /** 节点库里的 id（链式代理按它引用前置节点） */
+  id: string;
   name: string;
   protocol: string;
   /** 识别出的地区 id；空串表示没识别出 */
   region: string;
   source: string;
+  /** 链式代理的前置节点 id；空串表示直连 */
+  chain: string;
 }
 
 export interface AggregatorCatalog {
@@ -286,6 +304,29 @@ export interface AggregatorOverview {
   catalog: AggregatorCatalog;
 }
 
+/**
+ * 本机中转（sing-box 边车）的状态：能不能用、有没有在跑、这次要中转几个节点。
+ * 只有声明了 relayFallback 的输出格式（Clash 经典 / Premium）才可能有内容。
+ */
+export interface AggregatorRelayStatus {
+  /** 这次请求明确要求了中转（链接 ?relay=1 或界面按钮）。 */
+  requested?: boolean;
+  /** 请求是不是来自本机（中转端口只监听 127.0.0.1，只有本机客户端用得上）。 */
+  local?: boolean;
+  available: boolean;
+  active: boolean;
+  /** 这次需要中转的节点数（内核认不出的协议）。0 表示这个格式不需要中转。 */
+  candidates?: number;
+  /** 已经在跑的本地入口数量。 */
+  nodes: number;
+  binary?: string;
+  source?: string;
+  version?: string;
+  error?: string;
+  detail?: string;
+  skipped?: Array<{ nodeId: string; reason: string }>;
+}
+
 export interface AggregatorPreview {
   ok: boolean;
   content: string;
@@ -307,6 +348,8 @@ export interface AggregatorPreview {
   /** 模拟的客户端（预览时选了客户端才有） */
   client?: { id: string; name: string } | null;
   view?: 'full' | 'nodes';
+  /** 本机中转这次的状态（见 AggregatorRelayStatus）。 */
+  relay?: AggregatorRelayStatus;
 }
 
 /** 规则测试：命中的规则来自哪里（内置私有地址 / 第几条自定义规则 / 哪个预设 / 漏网之鱼）。 */

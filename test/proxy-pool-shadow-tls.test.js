@@ -106,13 +106,18 @@ test('辅助出站与真实节点重名时改名，渲染结果里不会出现�
 });
 
 test('表达不了 ShadowTLS 的格式跳过节点并给出原因', () => {
-  // Surge 系与 QX / Egern 的 ss 插件只到 obfs；Clash 经典版（Premium）的插件表里也没有 shadow-tls。
-  for (const id of ['surge', 'surfboard', 'quantumult-x', 'egern', 'clash-classic']) {
+  // Surge 系与 QX / Egern 的 ss 插件只到 obfs。
+  // Clash 目标现在输出全部协议（Meta 系内核能读 shadow-tls 插件），不再跳过。
+  for (const id of ['surge', 'surfboard', 'quantumult-x', 'egern']) {
     assert.throws(
       () => getRenderer(id).compileNode({ node: SHADOW_TLS_NODE, name: SHADOW_TLS_NODE.name }),
       { code: 'unsupported_shadowsocks_plugin_shadow-tls' },
       id
     );
+  }
+  for (const id of ['mihomo', 'clash-classic']) {
+    const compiled = getRenderer(id).compileNode({ node: SHADOW_TLS_NODE, name: SHADOW_TLS_NODE.name });
+    assert.equal(compiled.plugin, 'shadow-tls', id);
   }
 });
 

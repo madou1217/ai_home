@@ -21,9 +21,9 @@ function group(id: string, members: string[] = [], name = id): AggregatorCustomG
 }
 
 const NODES: AggregatorDraftNode[] = [
-  { name: '🇭🇰 香港 01', protocol: 'vless', region: 'hk', source: '机场 A' },
-  { name: '🇯🇵 日本 01', protocol: 'vless', region: 'jp', source: '机场 A' },
-  { name: '🇯🇵 日本 02 IPLC', protocol: 'trojan', region: 'jp', source: '机场 B' }
+  { id: 'hk1', name: '🇭🇰 香港 01', protocol: 'vless', region: 'hk', source: '机场 A', chain: '' },
+  { id: 'jp1', name: '🇯🇵 日本 01', protocol: 'vless', region: 'jp', source: '机场 A', chain: '' },
+  { id: 'jp2', name: '🇯🇵 日本 02 IPLC', protocol: 'trojan', region: 'jp', source: '机场 B', chain: '' }
 ];
 
 const CATALOG_PRESETS = [

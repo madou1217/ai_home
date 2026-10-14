@@ -58,14 +58,11 @@ test('mihomo, Clash classic and Stash share Clash YAML but differ in protocols a
       path: './rule-providers/geoip-private.yaml',
       interval: 86400
     });
-    assert.deepEqual(classic.skippedNodes.map((item) => [item.name, item.reason]), [
-      ['vless-reality', 'unsupported_proxy_protocol_vless'],
-      ['hy2', 'unsupported_proxy_protocol_hysteria2'],
-      ['hy1', 'unsupported_proxy_protocol_hysteria'],
-      ['tuic', 'unsupported_proxy_protocol_tuic'],
-      ['anytls', 'unsupported_proxy_protocol_anytls'],
-      ['wg', 'unsupported_proxy_protocol_wireguard']
-    ]);
+    // Clash 目标不再按协议挑节点：全部协议都输出（全协议需要 Meta 系内核，见渲染器的 note）。
+    assert.deepEqual(classic.skippedNodes, []);
+    assert.equal(classic.stats.nodes, SAMPLE_NODES.length);
+    assert.deepEqual(classicConfig.proxies.map((proxy) => proxy.name).sort(), SAMPLE_NODES.map((node) => node.name).sort());
+    // 唯一还按协议挑节点的 Clash 系目标是 Stash（没有 AnyTLS 出站）。
     assert.deepEqual(stash.skippedNodes.map((item) => [item.name, item.reason]), [['anytls', 'unsupported_proxy_protocol_anytls']]);
     assert.match(YAML.parse(stash.content)['rule-providers']['geosite-private'].url, /\.yaml$/);
 
@@ -83,12 +80,17 @@ test('mihomo, Clash classic and Stash share Clash YAML but differ in protocols a
 test('when every selected node is dropped by the target, the warning blames the format, not the filters', () => {
   const vlessOnly = SAMPLE_NODES.filter((node) => node.protocol === 'vless');
   withService(vlessOnly, (service, profile) => {
+    // Surfboard 没有 VLESS 出站：这是「目标格式表达不了」的典型场景。
+    const surfboard = service.preview(profile.id, 'surfboard');
+    assert.equal(surfboard.stats.selected, vlessOnly.length);
+    assert.equal(surfboard.stats.nodes, 0);
+    assert.deepEqual(surfboard.warnings, ['aggregator_nodes_unsupported_by_target']);
+    assert.deepEqual(surfboard.skippedNodes.map((item) => item.reason), vlessOnly.map(() => 'unsupported_proxy_protocol_vless'));
+
+    // Clash 目标输出全部协议，不再丢 VLESS。
     const classic = service.preview(profile.id, 'clash-classic');
-    // 节点确实被选中了（不是「没有节点被选中」），只是 Clash 经典版表达不了 VLESS。
-    assert.equal(classic.stats.selected, vlessOnly.length);
-    assert.equal(classic.stats.nodes, 0);
-    assert.deepEqual(classic.warnings, ['aggregator_nodes_unsupported_by_target']);
-    assert.deepEqual(classic.skippedNodes.map((item) => item.reason), vlessOnly.map(() => 'unsupported_proxy_protocol_vless'));
+    assert.equal(classic.stats.nodes, vlessOnly.length);
+    assert.deepEqual(classic.warnings, []);
 
     // mihomo 能表达 VLESS：正常输出，且不该出现这条警告。
     const mihomo = service.preview(profile.id, 'mihomo');

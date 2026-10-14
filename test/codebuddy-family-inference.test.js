@@ -118,6 +118,71 @@ test('adaptCodebuddyFamilyChatRequest tolerates a body without messages', () => 
   assert.equal(result.body.messages[0].role, 'system');
 });
 
+// 2026-10-14 实测：上游 Go 结构体把 tool_choice 声明成 string，
+// 发 object 直接 400「cannot unmarshal object into Go struct field Request.tool_choice of type string」，
+// 而 OpenAI 规范与 Cline 等客户端强制工具时发的正是 object。
+test('adaptCodebuddyFamilyChatRequest maps an object tool_choice to the string form', () => {
+  const forced = adaptCodebuddyFamilyChatRequest({
+    messages: [{ role: 'system', content: 's' }],
+    tool_choice: { type: 'function', function: { name: 'get_weather' } }
+  });
+  // 上游没有「指定单个函数」的形态：降级成强制一次工具调用，并留痕。
+  assert.equal(forced.body.tool_choice, 'required');
+  assert.equal(forced.toolChoiceNormalized, true);
+  assert.equal(forced.toolChoiceDowngraded, true);
+
+  for (const type of ['auto', 'none', 'required']) {
+    const plain = adaptCodebuddyFamilyChatRequest({
+      messages: [{ role: 'system', content: 's' }],
+      tool_choice: { type }
+    });
+    assert.equal(plain.body.tool_choice, type, type);
+    assert.equal(plain.toolChoiceNormalized, true, type);
+    assert.equal(plain.toolChoiceDowngraded, false, type);
+  }
+});
+
+test('adaptCodebuddyFamilyChatRequest leaves a string tool_choice untouched', () => {
+  for (const value of ['auto', 'required', 'none']) {
+    const result = adaptCodebuddyFamilyChatRequest({
+      messages: [{ role: 'system', content: 's' }],
+      tool_choice: value
+    });
+    assert.equal(result.body.tool_choice, value, value);
+    assert.equal(result.toolChoiceNormalized, false, value);
+  }
+  // 没有 tool_choice 时不得凭空造出字段。
+  const absent = adaptCodebuddyFamilyChatRequest({ messages: [{ role: 'system', content: 's' }] });
+  assert.equal(Object.hasOwn(absent.body, 'tool_choice'), false);
+  assert.equal(absent.toolChoiceNormalized, false);
+});
+
+test('adaptCodebuddyFamilyChatRequest drops an unrecognized object tool_choice instead of forwarding it', () => {
+  for (const value of [{ type: 'mystery' }, {}, [1, 2], 42]) {
+    const result = adaptCodebuddyFamilyChatRequest({
+      messages: [{ role: 'system', content: 's' }],
+      tool_choice: value
+    });
+    assert.equal(Object.hasOwn(result.body, 'tool_choice'), false, JSON.stringify(value));
+    assert.equal(result.toolChoiceNormalized, true, JSON.stringify(value));
+    assert.equal(result.toolChoiceDowngraded, true, JSON.stringify(value));
+  }
+});
+
+test('normalizeCodebuddyFamilyToolChoice keeps the caller body intact', () => {
+  const source = {
+    messages: [{ role: 'system', content: 's' }],
+    tool_choice: { type: 'function', function: { name: 'get_weather' } },
+    stream: false
+  };
+  const result = adaptCodebuddyFamilyChatRequest(source);
+  assert.equal(result.body.stream, true);
+  // 入参不被改写：调用方还要拿原值做日志。
+  assert.deepEqual(source.tool_choice, { type: 'function', function: { name: 'get_weather' } });
+  assert.equal(source.stream, false);
+  assert.notEqual(result.body, source);
+});
+
 test('aggregateCodebuddyFamilySse folds upstream chunks into one chat.completion', () => {
   const sse = [
     'data: {"id":"cmb-1","model":"glm-5.2","object":"chat.completion.chunk","created":1791952010,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":""}],"usage":null}',
@@ -146,6 +211,84 @@ test('aggregateCodebuddyFamilySse reports an empty result rather than inventing 
 test('aggregateCodebuddyFamilySse ignores malformed lines', () => {
   const { payload } = aggregateCodebuddyFamilySse('data: not-json\n\ndata: {"choices":[{"delta":{"content":"ok"}}]}\n');
   assert.equal(payload.choices[0].message.content, 'ok');
+});
+
+// 夹具逐字取自 2026-10-14 的真实上游流（tool_choice=auto + 一个 get_weather 工具）：
+// 工具调用走标准 `delta.tool_calls[]`，首帧给 id/name、随后帧给 arguments 分片，
+// 同一帧里的 `function_call:{name:'',arguments:''}` 是空占位，末帧 finish_reason=tool_calls。
+// 丢掉 tool_calls 会让非流式客户端拿到 finish_reason=tool_calls 却无工具可执行（表现为空回答）。
+const REAL_TOOL_CALL_STREAM = [
+  'data: {"id":"cmb-tc","model":"hy4-preview","object":"chat.completion.chunk","created":1791992412,"choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning_content":"","function_call":null,"refusal":"","tool_calls":[],"extra_fields":null},"logprobs":null,"finish_reason":""}],"usage":null}',
+  'data: {"id":"cmb-tc","model":"hy4-preview","object":"chat.completion.chunk","created":1791992412,"choices":[{"index":0,"delta":{"content":"","reasoning_content":"The user wants me to call get_weather for Paris.","function_call":null,"refusal":"","tool_calls":[],"extra_fields":null},"logprobs":null,"finish_reason":""}],"usage":null}',
+  'data: {"id":"cmb-tc","model":"hy4-preview","object":"chat.completion.chunk","created":1791992412,"choices":[{"index":0,"delta":{"content":"","tool_calls":[{"id":"chatcmpl-tool-9fc73d84c4849848","type":"function","function":{"name":"get_weather","arguments":""},"index":0}]},"logprobs":null,"finish_reason":""}],"usage":null}',
+  'data: {"id":"cmb-tc","model":"hy4-preview","object":"chat.completion.chunk","created":1791992412,"choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"name":"","arguments":"{\\"city\\": \\"Paris\\"}"},"index":0}]},"logprobs":null,"finish_reason":""}],"usage":null}',
+  'data: {"id":"cmb-tc","model":"hy4-preview","object":"chat.completion.chunk","created":1791992412,"choices":[{"index":0,"delta":{"role":"assistant","content":"","reasoning_content":"","function_call":{"name":"","arguments":""},"refusal":"","tool_calls":[],"extra_fields":null},"logprobs":null,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":245,"completion_tokens":78,"total_tokens":323}}',
+  'data: [DONE]',
+  ''
+].join('\n');
+
+test('aggregateCodebuddyFamilySse folds streamed tool_calls into message.tool_calls', () => {
+  const { payload } = aggregateCodebuddyFamilySse(REAL_TOOL_CALL_STREAM);
+  const message = payload.choices[0].message;
+  assert.equal(payload.choices[0].finish_reason, 'tool_calls');
+  assert.equal(message.content, '');
+  assert.equal(message.tool_calls.length, 1);
+  assert.equal(message.tool_calls[0].id, 'chatcmpl-tool-9fc73d84c4849848');
+  assert.equal(message.tool_calls[0].type, 'function');
+  assert.equal(message.tool_calls[0].function.name, 'get_weather');
+  assert.equal(message.tool_calls[0].function.arguments, '{"city": "Paris"}');
+  // 非流式 message.tool_calls 不带流式分片序号；空 function_call 占位不得变成字段。
+  assert.equal(Object.hasOwn(message.tool_calls[0], 'index'), false);
+  assert.equal(message.function_call, undefined);
+});
+
+test('aggregateCodebuddyFamilySse keeps parallel tool calls separate and ordered by index', () => {
+  const sse = [
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"get_time","arguments":""}}]},"finish_reason":""}]}',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\""}}]},"finish_reason":""}]}',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"tz\\":\\"UTC\\"}"}}]},"finish_reason":""}]}',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"Paris\\"}"}}]},"finish_reason":"tool_calls"}]}',
+    'data: [DONE]',
+    ''
+  ].join('\n');
+  const calls = aggregateCodebuddyFamilySse(sse).payload.choices[0].message.tool_calls;
+  assert.deepEqual(calls.map((call) => call.id), ['call_a', 'call_b']);
+  assert.deepEqual(calls.map((call) => call.function.name), ['get_weather', 'get_time']);
+  assert.deepEqual(calls.map((call) => call.function.arguments), ['{"city":"Paris"}', '{"tz":"UTC"}']);
+});
+
+test('aggregateCodebuddyFamilySse surfaces a non-empty legacy function_call only', () => {
+  const legacy = aggregateCodebuddyFamilySse([
+    'data: {"choices":[{"delta":{"function_call":{"name":"get_weather","arguments":""}},"finish_reason":""}]}',
+    'data: {"choices":[{"delta":{"function_call":{"name":"","arguments":"{\\"city\\":\\"Paris\\"}"}},"finish_reason":"tool_calls"}]}',
+    'data: [DONE]',
+    ''
+  ].join('\n'));
+  assert.deepEqual(legacy.payload.choices[0].message.function_call, {
+    name: 'get_weather',
+    arguments: '{"city":"Paris"}'
+  });
+  assert.equal(legacy.payload.choices[0].message.tool_calls, undefined);
+
+  const placeholderOnly = aggregateCodebuddyFamilySse([
+    'data: {"choices":[{"delta":{"content":"hi","function_call":{"name":"","arguments":""}},"finish_reason":"stop"}]}',
+    'data: [DONE]',
+    ''
+  ].join('\n'));
+  assert.equal(placeholderOnly.payload.choices[0].message.function_call, undefined);
+  assert.equal(placeholderOnly.payload.choices[0].message.content, 'hi');
+});
+
+test('aggregateCodebuddyFamilySse keeps content alongside tool calls', () => {
+  const sse = [
+    'data: {"choices":[{"delta":{"content":"Let me check. "},"finish_reason":""}]}',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"get_weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}',
+    'data: [DONE]',
+    ''
+  ].join('\n');
+  const message = aggregateCodebuddyFamilySse(sse).payload.choices[0].message;
+  assert.equal(message.content, 'Let me check. ');
+  assert.equal(message.tool_calls[0].function.name, 'get_weather');
 });
 
 test('parseCodebuddyFamilyError surfaces the Chinese display message from the Tencent envelope', () => {

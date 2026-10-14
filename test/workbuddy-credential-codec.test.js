@@ -64,6 +64,10 @@ test('WorkBuddy field encryption preserves public metadata and all token fields'
     assert.ok(!JSON.stringify(encrypted).includes(value.auth[field]));
   }
   assert.deepEqual(transformWorkbuddyCredentials(encrypted, 'decode', key), value);
+  // 编码幂等：已经是信封的字段原样保留（投影物化会把手上的凭据再走一次 encode）。
+  const twice = transformWorkbuddyCredentials(encrypted, 'encode', key);
+  assert.deepEqual(twice.auth.accessToken, encrypted.auth.accessToken);
+  assert.deepEqual(twice.account.nickname, encrypted.account.nickname);
   assert.notEqual(encode(value).auth.accessToken.envelope, encrypted.auth.accessToken.envelope, 'fresh nonces are required');
 });
 

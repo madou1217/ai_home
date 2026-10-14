@@ -36,6 +36,10 @@ const (
 	modelRefreshBaseBackoff = time.Second
 	modelRefreshMaxBackoff  = time.Minute
 	modelRefreshConcurrency = 1
+	// modelRefreshMaxAttempts 限制单账号刷新代次在协调器内的重试次数。按 1s 起步、
+	// 封顶 1min 的退避，8 次约 3 分钟；达到后放弃，交由周期重扫（6h）/路由未命中/
+	// 按需触发重新入队，避免对确定性失败账号无限重试。
+	modelRefreshMaxAttempts = 8
 )
 
 // inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。

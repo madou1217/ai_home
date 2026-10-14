@@ -232,6 +232,7 @@ func TestModelRefreshCoordinatorFreshWorkBypassesRetryBackoff(t *testing.T) {
 			RefreshTimeout:      time.Second,
 			BaseBackoff:         time.Hour,
 			MaxBackoff:          time.Hour,
+			MaxAttempts:         8,
 			Clock: func() time.Time {
 				return fixedNow
 			},
@@ -444,6 +445,79 @@ func TestModelRefreshCoordinatorRetriesFailedAccountAfterBackoff(t *testing.T) {
 	}
 }
 
+// TestModelRefreshCoordinatorStopsRetryingAfterMaxAttempts 验证持续失败的账号在达到
+// 最大尝试次数后放弃内部重试，而不是无限重试。
+func TestModelRefreshCoordinatorStopsRetryingAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
+
+	const maxAttempts = 3
+	accountRef := testRefreshAccountRef(t, 31)
+	started := make(chan refreshInvocation, maxAttempts+1)
+	results := make(chan accountapp.ModelRefreshResult, maxAttempts+1)
+	refresher := &refreshCoordinatorStub{
+		execute: func(
+			_ context.Context,
+			actualRef accountcore.AccountRef,
+		) error {
+			started <- refreshInvocation{
+				accountRef: actualRef,
+				startedAt:  time.Now(),
+			}
+			return errors.New("synthetic permanent model refresh failure")
+		},
+	}
+	coordinator, err := accountapp.NewModelRefreshCoordinator(
+		accountapp.ModelRefreshCoordinatorOptions{
+			Catalog:             testCatalog(t),
+			Refresher:           refresher,
+			ProviderConcurrency: map[string]int{"codex": 1},
+			RefreshTimeout:      time.Second,
+			BaseBackoff:         5 * time.Millisecond,
+			MaxBackoff:          10 * time.Millisecond,
+			MaxAttempts:         maxAttempts,
+			Clock:               time.Now,
+			Random:              bytes.NewReader(make([]byte, 32)),
+			Observer: func(result accountapp.ModelRefreshResult) {
+				results <- result
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewModelRefreshCoordinator() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = coordinator.Close()
+	})
+	if err := coordinator.ScheduleModelRefresh(
+		context.Background(),
+		accountRef,
+		"codex",
+	); err != nil {
+		t.Fatalf("ScheduleModelRefresh() error = %v", err)
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		invocation := receiveRefreshInvocation(t, started)
+		result := receiveRefreshResult(t, results)
+		if invocation.accountRef != accountRef ||
+			result.AccountRef != accountRef ||
+			result.Err == nil ||
+			result.Attempts != uint32(attempt) ||
+			result.Exhausted != (attempt == maxAttempts) {
+			t.Fatalf(
+				"attempt %d invocation=%#v result=%#v",
+				attempt,
+				invocation,
+				result,
+			)
+		}
+	}
+	select {
+	case invocation := <-started:
+		t.Fatalf("达到最大尝试次数后仍在重试: %#v", invocation)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
 // TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose 验证单任务超时和关闭边界。
 func TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose(t *testing.T) {
 	t.Parallel()
@@ -468,6 +542,7 @@ func TestModelRefreshCoordinatorTimesOutAndRejectsAfterClose(t *testing.T) {
 			RefreshTimeout:      30 * time.Millisecond,
 			BaseBackoff:         time.Millisecond,
 			MaxBackoff:          time.Second,
+			MaxAttempts:         8,
 			Clock:               time.Now,
 			Random:              bytes.NewReader(make([]byte, 32)),
 			Observer: func(result accountapp.ModelRefreshResult) {
@@ -660,6 +735,7 @@ func newTestRefreshCoordinator(
 			RefreshTimeout:      time.Second,
 			BaseBackoff:         baseBackoff,
 			MaxBackoff:          time.Second,
+			MaxAttempts:         8,
 			Clock:               time.Now,
 			Random:              bytes.NewReader(make([]byte, 1024)),
 			Observer:            observer,

@@ -351,6 +351,7 @@ func newHandlers(
 			RefreshTimeout: modelRefreshTimeout,
 			BaseBackoff:    modelRefreshBaseBackoff,
 			MaxBackoff:     modelRefreshMaxBackoff,
+			MaxAttempts:    modelRefreshMaxAttempts,
 			Clock:          time.Now,
 			Random:         rand.Reader,
 			Observer:       newModelRefreshObserver(errorLog),
@@ -987,8 +988,9 @@ func newHandlers(
 // 模型后该账号仍然不可路由，而请求在选号阶段就失败、不会触发按账号的纠错刷新。这条
 // 日志是唯一能看见「哪个账号、因为什么刷新不上去」的线索，必须显式落盘。
 //
-// 协调器对失败账号按不超过 1 分钟的退避持续重试，未节流时单个坏账号每天会写出上千
-// 行日志；这里按账号节流，首次失败立即可见，成功后清除节流使下次失败重新可见。
+// 协调器对失败账号按不超过 1 分钟的退避重试，最多 modelRefreshMaxAttempts 次后放弃；
+// 未节流时单个坏账号仍会写出大量日志，这里按账号节流，首次失败立即可见，成功后清除
+// 节流使下次失败重新可见。放弃是终态，单独记录并清掉节流，避免「静默放弃」。
 func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver {
 	if logger == nil {
 		return nil
@@ -1004,13 +1006,27 @@ func newModelRefreshObserver(logger *log.Logger) accountapp.ModelRefreshObserver
 		}
 		now := time.Now()
 		mu.Lock()
-		previous, seen := lastLogged[result.AccountRef]
-		if seen && now.Sub(previous) < modelRefreshFailureLogInterval {
-			mu.Unlock()
+		if result.Exhausted {
+			delete(lastLogged, result.AccountRef)
+		} else {
+			previous, seen := lastLogged[result.AccountRef]
+			if seen && now.Sub(previous) < modelRefreshFailureLogInterval {
+				mu.Unlock()
+				return
+			}
+			lastLogged[result.AccountRef] = now
+		}
+		mu.Unlock()
+		if result.Exhausted {
+			logger.Printf(
+				"账号模型刷新放弃: provider=%s account=%s attempts=%d err=%v（等待下次周期重扫）",
+				result.ProviderID,
+				result.AccountRef,
+				result.Attempts,
+				result.Err,
+			)
 			return
 		}
-		lastLogged[result.AccountRef] = now
-		mu.Unlock()
 		logger.Printf(
 			"账号模型刷新失败: provider=%s account=%s err=%v",
 			result.ProviderID,

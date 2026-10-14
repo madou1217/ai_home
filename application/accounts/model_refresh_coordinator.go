@@ -37,6 +37,11 @@ type ModelRefreshResult struct {
 	ProviderID string
 	// Err 是刷新失败；成功时为空。
 	Err error
+	// Attempts 是本代次已经执行的刷新尝试次数。
+	Attempts uint32
+	// Exhausted 表示本代次已达最大尝试次数并放弃内部重试；账号需要外部调度器
+	// （周期重扫、路由未命中、按需触发）重新入队才会再次刷新。
+	Exhausted bool
 }
 
 // ModelRefreshObserver 接收异步任务结果，不参与刷新正确性。
@@ -56,6 +61,10 @@ type ModelRefreshCoordinatorOptions struct {
 	BaseBackoff time.Duration
 	// MaxBackoff 是同 Provider 连续失败的退避上限。
 	MaxBackoff time.Duration
+	// MaxAttempts 是单账号刷新代次在协调器内的最大连续尝试次数。达到后放弃内部
+	// 重试，由外部调度器（周期重扫、路由未命中、按需触发）重新入队，避免对确定性
+	// 失败账号无限重试。
+	MaxAttempts uint32
 	// Clock 提供退避截止时间。
 	Clock Clock
 	// Random 提供不超过退避四分之一的抖动随机数。
@@ -72,6 +81,7 @@ type ModelRefreshCoordinator struct {
 	timeout     time.Duration
 	baseBackoff time.Duration
 	maxBackoff  time.Duration
+	maxAttempts uint32
 	clock       Clock
 	random      io.Reader
 	observer    ModelRefreshObserver
@@ -102,6 +112,7 @@ type modelRefreshTask struct {
 	accountRef accountcore.AccountRef
 	providerID string
 	cancel     context.CancelFunc
+	attempts   uint32
 }
 
 // NewModelRefreshCoordinator 创建立即启动 Provider worker 的异步协调器。
@@ -118,6 +129,7 @@ func NewModelRefreshCoordinator(
 		timeout:     options.RefreshTimeout,
 		baseBackoff: options.BaseBackoff,
 		maxBackoff:  options.MaxBackoff,
+		maxAttempts: options.MaxAttempts,
 		clock:       options.Clock,
 		random:      options.Random,
 		observer:    options.Observer,
@@ -321,18 +333,27 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 		}
 		return
 	}
+	exhausted := false
 	if refreshErr == nil {
 		delete(coordinator.pending, task.accountRef)
 		queue.failures = 0
 		queue.nextRetryAt = time.Time{}
 	} else {
 		queue.failures++
-		delay := coordinator.modelRefreshBackoff(queue.failures)
-		queue.nextRetryAt = coordinator.clock().Add(delay)
-		queue.retries.push(task)
+		task.attempts++
+		if task.attempts >= coordinator.maxAttempts {
+			// 已达上限：放弃内部重试并释放合并标记，让外部调度器重新入队。
+			delete(coordinator.pending, task.accountRef)
+			exhausted = true
+		} else {
+			delay := coordinator.modelRefreshBackoff(queue.failures)
+			queue.nextRetryAt = coordinator.clock().Add(delay)
+			queue.retries.push(task)
+		}
 	}
 	signalModelRefreshQueue(queue)
 	observer := coordinator.observer
+	attempts := task.attempts
 	coordinator.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -342,6 +363,8 @@ func (coordinator *ModelRefreshCoordinator) finishModelRefresh(
 			AccountRef: task.accountRef,
 			ProviderID: providerID,
 			Err:        refreshErr,
+			Attempts:   attempts,
+			Exhausted:  exhausted,
 		})
 	}
 }
@@ -442,6 +465,7 @@ func validModelRefreshOptions(options ModelRefreshCoordinatorOptions) bool {
 		options.RefreshTimeout <= 0 ||
 		options.BaseBackoff <= 0 ||
 		options.MaxBackoff < options.BaseBackoff ||
+		options.MaxAttempts < 1 ||
 		options.Clock == nil ||
 		options.Random == nil ||
 		len(options.ProviderConcurrency) == 0 {

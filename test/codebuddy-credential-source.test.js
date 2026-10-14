@@ -277,6 +277,27 @@ test('a family account registered by another process triggers a pool reload on t
   assert.equal(sync.scan().reloaded, false, '集合稳定后不再重复换池');
 });
 
+test('an encrypted nickname left over from an earlier adoption is rewritten once', t => {
+  const f = fixture(t);
+  const value = credential('codebuddy');
+  const adopted = adoptCodebuddyCredential(fs, f.aiHomeDir, 'codebuddy', value, { automatic: true });
+  assert.equal(adopted.registered, true);
+  // 模拟早期采纳留下的加密昵称（那时还没解 account.nickname）。
+  const store = require('../lib/server/account-credential-store');
+  const record = store.readAccountCredentialRecord(fs, f.aiHomeDir, adopted.accountRef);
+  store.writeAccountNativeAuth(fs, f.aiHomeDir, adopted.accountRef, {
+    ...record.nativeAuth,
+    credentials: { ...record.nativeAuth.credentials, account: { ...record.nativeAuth.credentials.account, nickname: { $wbEncrypted: 1, envelope: 'x' } } }
+  });
+  const rewritten = adoptCodebuddyCredential(fs, f.aiHomeDir, 'codebuddy', value, { automatic: true });
+  assert.equal(rewritten.updated, true);
+  assert.equal(rewritten.reason, 'nickname_upgrade');
+  const after = store.readAccountCredentialRecord(fs, f.aiHomeDir, adopted.accountRef);
+  assert.equal(after.nativeAuth.credentials.account.nickname, value.account.nickname);
+  // 补齐之后不再反复重写。
+  assert.equal(adoptCodebuddyCredential(fs, f.aiHomeDir, 'codebuddy', value, { automatic: true }).updated, false);
+});
+
 test('observer retries failed runtime notifications and stops its timer', t => {
   const f = fixture(t); f.write('codebuddy', credential('codebuddy'));
   let tick, cleared = false, calls = 0;

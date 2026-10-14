@@ -15,12 +15,27 @@ const {
   registerAccountRuntimeEventListeners
 } = require('../lib/server/account-runtime-events');
 
+// 响应体按字节累积、最后一次性解码：上游可以把一个 UTF-8 字符拆到两个 chunk
+// （sse_partial 用例故意从 '用' 中间切开），如果这里对每个 chunk 单独 String(data)，
+// 拆开的字符就会变成 U+FFFD，断言随 fetch 的 chunk 边界（=机器负载）随机变红。
 function captureResponse() {
-  return { statusCode: 0, headers: {}, body: '', headersSent: false, writableEnded: false,
+  const chunks = [];
+  return { statusCode: 0, headers: {}, headersSent: false, writableEnded: false,
+    get body() { return Buffer.concat(chunks).toString('utf8'); },
     setHeader(key, value) { this.headers[key] = value; },
     flushHeaders() { this.headersSent = true; },
-    write(data) { this.headersSent = true; this.body += String(data); },
-    end(data = '') { this.headersSent = true; this.writableEnded = true; this.body += String(data); } };
+    write(data) { this.headersSent = true; chunks.push(toChunkBuffer(data)); },
+    end(data = '') {
+      this.headersSent = true;
+      this.writableEnded = true;
+      if (data !== '' && data !== undefined && data !== null) chunks.push(toChunkBuffer(data));
+    } };
+}
+
+function toChunkBuffer(data) {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof Uint8Array) return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return Buffer.from(String(data));
 }
 
 for (const failureTransport of ['http', 'sse', 'sse_partial', 'sse_untyped']) {

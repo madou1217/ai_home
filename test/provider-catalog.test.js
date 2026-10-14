@@ -29,13 +29,13 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   assert.deepEqual(
     listProvidersByCapability('apiKeyAccount'),
     ['codex', 'gemini', 'claude', 'opencode', 'grok', 'kimi', 'zcode',
-      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']
   );
   assert.deepEqual(listProvidersByCapability('unknownCapability'), []);
   assert.deepEqual(
     listProvidersByCapability('modelCatalog'),
     ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'kiro', 'zcode',
-      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']
   );
   assert.deepEqual(
     listProvidersByCapability('quotaUsage'),
@@ -113,6 +113,6 @@ test('凭据事实：按优先级保留环境变量顺序，返回防御性副�
   assert.deepEqual(getProviderCredentialFacts('nope'), {
     vendorId: '', apiKeyEnv: [], authTokenEnv: [], baseUrlEnv: [], cliRequiresAuthFile: false
   });
-  assert.deepEqual(PROVIDER_IDS.filter((id) => getProviderCredentialFacts(id).cliRequiresAuthFile), ['opencode', 'grok'],
-    '只有原生 CLI 只认凭据文件的 provider 声明 cliRequiresAuthFile');
+  assert.deepEqual(PROVIDER_IDS.filter((id) => getProviderCredentialFacts(id).cliRequiresAuthFile), ['opencode', 'grok', 'cline'],
+    '只有原生 CLI 只认凭据文件的 provider 声明 cliRequiresAuthFile（cline CLI 只认 ~/.cline/data/settings/providers.json）');
 });

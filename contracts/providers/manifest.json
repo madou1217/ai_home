@@ -1767,6 +1767,71 @@
           "CODEBUDDY_API_KEY"
         ]
       }
+    },
+    {
+      "id": "cline",
+      "family": "cline",
+      "site": "global",
+      "presentation": {
+        "id": "cline",
+        "label": "Cline",
+        "short": "CLN",
+        "terminalIcon": "⟡",
+        "terminalIconAsset": "assets/provider-icons/cline.png",
+        "accentVar": "var(--provider-cline)",
+        "softVar": "var(--provider-cline-soft)",
+        "tagColor": "magenta"
+      },
+      "gateway": "active",
+      "capabilities": [
+        "api_key_account",
+        "model_catalog"
+      ],
+      "authOptions": [
+        {
+          "value": "api-key",
+          "label": "Cline API Key",
+          "description": "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"
+        },
+        {
+          "value": "oauth-browser",
+          "label": "Cline Pass 登录",
+          "description": "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"
+        }
+      ],
+      "sessionSync": {
+        "mode": "unavailable",
+        "events": []
+      },
+      "clients": {
+        "cli": true,
+        "desktop": false
+      },
+      "cli": {
+        "order": 16,
+        "globalDir": ".cline",
+        "loginArgs": [
+          "auth"
+        ],
+        "binaryName": "cline",
+        "pkg": "cline",
+        "envKeys": [
+          "CLINE_DIR",
+          "CLINE_DATA_DIR",
+          "CLINE_API_KEY",
+          "CLINE_API_BASE_URL"
+        ]
+      },
+      "credentials": {
+        "vendorId": "cline",
+        "apiKeyEnv": [
+          "CLINE_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CLINE_API_BASE_URL"
+        ],
+        "cliRequiresAuthFile": true
+      }
     }
   ],
   "fallback": {

@@ -15,6 +15,7 @@ import codebuddycnIcon from '@/assets/icons/codebuddycn.svg';
 import workbuddyIcon from '@/assets/icons/workbuddy.svg';
 import workbuddycnIcon from '@/assets/icons/workbuddycn.svg';
 import qoderIcon from '@/assets/icons/qoder.png';
+import clineIcon from '@/assets/icons/cline.svg';
 import aiHomeMark from '@/assets/brand/ai-home-mark.png';
 import agyTerminalIcon from '../../../../assets/provider-icons/agy.png';
 import claudeTerminalIcon from '../../../../assets/provider-icons/claude.png';
@@ -28,6 +29,7 @@ import codebuddyTerminalIcon from '../../../../assets/provider-icons/codebuddy.p
 import codebuddycnTerminalIcon from '../../../../assets/provider-icons/codebuddycn.png';
 import workbuddyTerminalIcon from '../../../../assets/provider-icons/workbuddy.png';
 import workbuddycnTerminalIcon from '../../../../assets/provider-icons/workbuddycn.png';
+import clineTerminalIcon from '../../../../assets/provider-icons/cline.png';
 import {
   PROVIDER_CATALOG,
   PROVIDER_FALLBACK,
@@ -82,7 +84,8 @@ const ICONS: Partial<Record<Provider, string>> = {
   codebuddy: codebuddyIcon,
   codebuddycn: codebuddycnIcon,
   workbuddy: workbuddyIcon,
-  workbuddycn: workbuddycnIcon
+  workbuddycn: workbuddycnIcon,
+  cline: clineIcon
 };
 
 const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
@@ -102,7 +105,8 @@ const TERMINAL_ICON_ASSETS: Partial<Record<Provider, string>> = {
   codebuddy: codebuddyTerminalIcon,
   codebuddycn: codebuddycnTerminalIcon,
   workbuddy: workbuddyTerminalIcon,
-  workbuddycn: workbuddycnTerminalIcon
+  workbuddycn: workbuddycnTerminalIcon,
+  cline: clineTerminalIcon
 };
 
 export const PROVIDERS: Record<Provider, ProviderMeta> = Object.fromEntries(

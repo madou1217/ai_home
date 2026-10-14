@@ -28,6 +28,7 @@ func BuiltinManifest() Manifest {
 			family(builtinCodebuddyCN(), "codebuddy", SiteCN),
 			family(builtinWorkbuddy(), "workbuddy", SiteGlobal),
 			family(builtinWorkbuddyCN(), "workbuddy", SiteCN),
+			builtinCline(),
 		}),
 		Fallback: Presentation{
 			ID:                "codex",
@@ -881,6 +882,40 @@ func builtinWorkbuddyCN() Definition {
 					},
 				},
 			},
+		},
+	}
+}
+
+// builtinCline 定义 Cline 的 API Key 与 Cline Pass 订阅两种账号模式。
+//
+// 推理面是 api.cline.bot 的 OpenAI 兼容 REST（/api/v1/chat/completions），
+// 成功路径就是标准 OpenAI SSE，因此网关侧按 openai_chat 直通。
+// 账号凭据两种：API Key（providers.cline.apiKey）与 Cline Pass OAuth
+// （providers["cline-pass"].auth 的 accessToken/refreshToken）。
+// 原生 CLI 只有一个可执行文件（npm 包 cline），隔离根是 CLINE_DIR——
+// CLINE_DATA_DIR 只是它下面 <CLINE_DIR>/data 的覆盖点，不是第二个根。
+// 它没有「打印后退出」的非交互入口（-p 是 plan mode），Headless 留空，
+// 一次性调用只能走 PTY 交互路径。
+func builtinCline() Definition {
+	return Definition{
+		ID:           "cline",
+		Presentation: presentation("cline", "Cline", "CLN", "⟡", "magenta"),
+		Gateway:      GatewayActive,
+		Clients:      clientSupport(true, false),
+		Credentials:  &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		AuthOptions: []AuthOption{
+			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
+			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),
+		},
+		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},
+		CLI: &CLIConfig{
+			Order:      16,
+			GlobalDir:  ".cline",
+			LoginArgs:  []string{"auth"},
+			BinaryName: "cline",
+			Package:    "cline",
+			EnvKeys:    []string{"CLINE_DIR", "CLINE_DATA_DIR", "CLINE_API_KEY", "CLINE_API_BASE_URL"},
 		},
 	}
 }

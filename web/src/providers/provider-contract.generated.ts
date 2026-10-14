@@ -536,6 +536,38 @@ export const PROVIDER_DEFINITIONS = [
       "cli": false,
       "desktop": true
     }
+  },
+  {
+    "id": "cline",
+    "family": "cline",
+    "site": "global",
+    "label": "Cline",
+    "short": "CLN",
+    "terminalIcon": "⟡",
+    "terminalIconAsset": "assets/provider-icons/cline.png",
+    "accentVar": "var(--provider-cline)",
+    "softVar": "var(--provider-cline-soft)",
+    "tagColor": "magenta",
+    "capabilities": [
+      "api_key_account",
+      "model_catalog"
+    ],
+    "authOptions": [
+      {
+        "value": "api-key",
+        "label": "Cline API Key",
+        "description": "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"
+      },
+      {
+        "value": "oauth-browser",
+        "label": "Cline Pass 登录",
+        "description": "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"
+      }
+    ],
+    "clients": {
+      "cli": true,
+      "desktop": false
+    }
   }
 ] as const;
 

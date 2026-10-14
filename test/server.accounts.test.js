@@ -735,6 +735,7 @@ test('runtime buckets expose accountRef without CLI identity fields', (t) => {
   assert.deepEqual(Object.keys(accounts).sort(), [
     'agy',
     'claude',
+    'cline',
     'codebuddy',
     'codebuddycn',
     'codex',

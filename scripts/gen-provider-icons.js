@@ -22,8 +22,9 @@ const { insidePolygons, parseSingleColorSvg, pathToPolygons } = require('./svg-p
 const SIZE = 64;
 const SS = 4; // 每像素的超采样倍数（SS x SS）
 
-// CodeBuddy / WorkBuddy 家族共用同一官方图形，只以颜色区分（见各 SVG 头注释）。
-const PROVIDERS = Object.freeze(['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']);
+// CodeBuddy / WorkBuddy 家族共用同一官方图形，只以颜色区分（见各 SVG 头注释）；
+// cline 是官方 mark（app.cline.bot 的 favicon，见 web/src/assets/icons/cline.svg 头注释）。
+const PROVIDERS = Object.freeze(['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']);
 
 function render(svg) {
   const polygons = pathToPolygons(svg.d);

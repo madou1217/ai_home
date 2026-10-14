@@ -30,6 +30,31 @@ test('detects the envelope around a model list payload', () => {
   assert.deepEqual(unwrapOpenAIResponseEnvelope({ data: list, success: true }), list);
 });
 
+test('unwraps the live Cline non-streaming envelope and leaves its error body alone', () => {
+  // 2026-10-14 实测：cline-pass 的非流式 chat/completions 就是这个信封形态，
+  // 流式 SSE 帧与错误体都不带信封（错误体是 {success:false, error:{...}}）。
+  const clineCompletion = {
+    id: 'chatcmpl-cline-1',
+    object: 'chat.completion',
+    created: 1791963322,
+    model: 'cline-pass/glm-5.3',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 }
+  };
+
+  assert.equal(isOpenAIResponseEnvelope({ data: clineCompletion, success: true }), true);
+  assert.deepEqual(unwrapOpenAIResponseEnvelope({ data: clineCompletion, success: true }), clineCompletion);
+
+  const wrapped = Buffer.from(JSON.stringify({ data: clineCompletion, success: true }), 'utf8');
+  const rewritten = unwrapUpstreamEnvelopeBody(wrapped, '');
+  assert.ok(Buffer.isBuffer(rewritten));
+  assert.deepEqual(JSON.parse(rewritten.toString('utf8')), clineCompletion);
+
+  const errorBody = { success: false, error: { message: 'Unauthorized', code: 401 } };
+  assert.equal(isOpenAIResponseEnvelope(errorBody), false);
+  assert.equal(unwrapUpstreamEnvelopeBody(Buffer.from(JSON.stringify(errorBody), 'utf8'), ''), null);
+});
+
 test('leaves a canonical OpenAI completion untouched', () => {
   assert.equal(isOpenAIResponseEnvelope(COMPLETION), false);
   assert.equal(unwrapOpenAIResponseEnvelope(COMPLETION), COMPLETION);

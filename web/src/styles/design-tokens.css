@@ -88,6 +88,7 @@
   --c-codebuddycn: #7a3ff2; /* Tencent CodeBuddy CN violet */
   --c-workbuddy: #12b76a;   /* WorkBuddy (workbuddy.ai) green */
   --c-workbuddycn: #f79009; /* WorkBuddy CN (workbuddy.cn) amber */
+  --c-cline:   #1c1c24;  /* Cline "Black Russian"（官方 favicon cline-outline.svg 的填充色） */
 
   /* ---------------------------------------------------------------------------
    * 2. PRIMITIVES — Typography
@@ -279,6 +280,8 @@
   --provider-workbuddy-soft: rgba(18, 183, 106, 0.12);
   --provider-workbuddycn: var(--c-workbuddycn);
   --provider-workbuddycn-soft: rgba(247, 144, 9, 0.12);
+  --provider-cline: var(--c-cline);
+  --provider-cline-soft: rgba(28, 28, 36, 0.12);
 
   /* 当前会话的强调色：组件层用 data-provider 覆盖（见 DESIGN.md） */
   --provider-accent: var(--color-accent);
@@ -564,6 +567,8 @@ body.dark {
   --health-scale-0: #ff0055;
 
   --c-opencode: #a9c2d6;
+  /* Cline 记号近黑（#1C1C24），在深色画布上不可见；官方 favicon 的深色变体即 #f4f4f5。 */
+  --c-cline: #f4f4f5;
   --event-tool: #7f9bb3;
   --event-thinking: #c38bff;
   --event-plan: #00f0ff;

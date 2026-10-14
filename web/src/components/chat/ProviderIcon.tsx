@@ -15,13 +15,15 @@ interface Props {
 
 /**
  * 深色主题下的品牌图可见性处理（浅色主题完全不变，见 ProviderIcon.css）：
- * - invert：纯黑单色记号（Grok）与低对比中性记号（OpenCode）在深色表面上会消失，深色下反相；
+ * - invert：纯黑单色记号（Grok、Cline）与低对比中性记号（OpenCode）在深色表面上会消失，深色下反相；
  * - tile / round：自带深色圆角底板 / 圆形底的记号（Kimi、ZCode、CodeBuddy 家族、Qoder），
  *   深色下底板与表面融为一体，加 1px 中性描边勾出轮廓。
  */
 const DARK_THEME_ICON_TREATMENT: Partial<Record<Provider, 'invert' | 'tile' | 'round'>> = {
   grok: 'invert',
   opencode: 'invert',
+  // Cline 记号是近黑描边轮廓（#1C1C24，官方 favicon cline-outline.svg），深色下同 Grok 反相。
+  cline: 'invert',
   kimi: 'tile',
   zcode: 'tile',
   codebuddy: 'tile',

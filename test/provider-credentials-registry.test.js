@@ -21,7 +21,7 @@ test('凭据端口：每个合同里的 provider 都有凭据模块，契约字�
 
 test('凭据端口：原生身份去重与邮箱身份只对声明的 provider 生效；未知 provider 走中性默认', () => {
   const flagged = (flag) => PROVIDER_IDS.filter((id) => getProviderCredentialStrategy(id)[flag]).sort();
-  assert.deepEqual(flagged('dedupeByNativeIdentity'), ['grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'zcode']);
+  assert.deepEqual(flagged('dedupeByNativeIdentity'), ['cline', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'zcode']);
   assert.deepEqual(flagged('emailIsIdentity'), ['agy', 'gemini']);
   const fallback = getProviderCredentialStrategy('nope');
   assert.equal(fallback.extractNativeAuth({ auth: {} }), null);
@@ -35,16 +35,16 @@ test('凭据端口：导入别名、可导入与可按 OAuth 导出的 provider 
   assert.equal(normalizeImportProviderAlias('moonshot-ai'), 'kimi');
   assert.equal(normalizeImportProviderAlias('qoder_cn'), 'qodercn');
   const importable = PROVIDER_IDS.filter((id) => normalizeImportProviderAlias(id) === id).sort();
-  assert.deepEqual(importable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(importable, ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   const oauthExportable = PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id).exportOAuthKind === 'function').sort();
-  assert.deepEqual(oauthExportable, ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(oauthExportable, ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
 });
 
 test('凭据端口：标准格式导入导出的各项钩子覆盖范围与现状一致', () => {
   const declaring = (hook) => PROVIDER_IDS.filter((id) => typeof getProviderCredentialStrategy(id)[hook] === 'function').sort();
   assert.deepEqual(declaring('sub2apiCredentials'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
-  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('normalizeImportedOAuth'), ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
+  assert.deepEqual(declaring('importNativeAuth'), ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn', 'zcode']);
   assert.deepEqual(declaring('importApiKeyEnv'), ['claude', 'codex', 'gemini', 'kimi', 'zcode']);
   assert.deepEqual(getProviderCredentialStrategy('kimi').importApiKeyEnv({ apiKey: 'k', baseUrl: 'https://b' }), {
     MOONSHOT_API_KEY: 'k',

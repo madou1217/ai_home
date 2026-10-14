@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "manifest_id": "ai-home-route-ownership-2026-08-24",
-  "baseline_date": "2026-09-15",
+  "baseline_date": "2026-10-14",
   "source_revision": {
-    "git_commit": "c5d92cd04d8e618d55cbdeae8051584733b752e7",
+    "git_commit": "1b63ee8ea7c26aa57a57161633c082c3f23edf40",
     "collection_script": "scripts/collect-gateway-routes.js",
     "source_mode": "read_only_source_scan",
-    "note": "按最新 origin/main 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动；Go 已实现全部 7 条数据面 capability route，production owner 仍为 Node。"
+    "note": "按最新 origin/main 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动；Go 已实现全部 7 条数据面 capability route，production owner 仍为 Node。本次增量来自 WebUI 管理面新增 GET,POST /v0/webui/accounts/detect（lib/server/web-ui-router.js），已被 node.webui_and_session_surface 的 /v0/webui/* capability surface 覆盖，Go 侧不参与。"
   },
   "migration_state_machine": [
     "node_owned",
@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 336,
-      "endpoint_records": 326,
-      "unique_endpoint_patterns": 245,
-      "unique_http_endpoint_patterns": 240,
+      "route_records": 337,
+      "endpoint_records": 327,
+      "unique_endpoint_patterns": 246,
+      "unique_http_endpoint_patterns": 241,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 10,
       "fallback_records": 0

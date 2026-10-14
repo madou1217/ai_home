@@ -38,7 +38,8 @@ const { encryptZcodeCredentialValue } = require('../lib/account/zcode-credential
 const {
   readDefaultAccountRef,
   readDefaultProviderProfile,
-  writeDefaultAccountRef
+  writeDefaultAccountRef,
+  writeDefaultProviderProfile
 } = require('../lib/account/default-account-store');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/provider-profile-id');
 const { createHostConfigSyncer } = require('../lib/account/host-sync');
@@ -3757,6 +3758,213 @@ test('web ui clear-default revokes a leftover Codex host direct grant', async (t
   const config = fs.readFileSync(configPath, 'utf8');
   assert.doesNotMatch(config, /4router\.net/);
   assert.doesNotMatch(config, /X-Account-Ref/);
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+});
+
+// 「默认账号不再指定 ⇒ AIH Server 作为默认」：即使该账号没有残留宿主授权，
+// clear-default 也必须落到网关档，不能停在「无默认」的裸跑直连状态。
+test('web ui clear-default lands on the AIH Server default when the account had no host grant', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-clear-default-aih-server-');
+  const accountRef = fixture.register('codex', '9406', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL },
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: '4router.net' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = path.join(hostHomeDir, '.codex', 'config.toml');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, 'model_provider = "openai"\n', 'utf8');
+  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'codex', accountRef);
+  const syncCalls = [];
+  const res = createResCapture();
+  const pathname = `/v0/webui/accounts/codex/${accountRef}/clear-default`;
+
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname,
+    url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: { accounts: { codex: [{ accountRef }], agy: [], claude: [], gemini: [], opencode: [] } },
+    deps: createBaseDeps(fixture, {
+      hostHomeDir,
+      syncGlobalConfigToHost(provider, candidateRef, options) {
+        syncCalls.push({ provider, accountRef: candidateRef, options });
+        return { ok: true, gateway: true };
+      },
+      codexDesktopHookService: {
+        ensureInstalled: () => ({ ok: true, restartRequired: false }),
+        restartRunningAppServers: () => ({ ok: true, count: 0, pids: [] })
+      }
+    })
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), '');
+  assert.equal(body.hostGrantRevoke.revoked, false);
+  assert.equal(body.aihServerDefault.ok, true);
+  assert.equal(body.aihServerDefault.landed, true);
+  assert.equal(body.aihServerDefault.profile, AIH_SERVER_PROFILE_ID);
+  assert.deepEqual(syncCalls, [{ provider: 'codex', accountRef: '', options: { gateway: true } }]);
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+});
+
+// 反向：显式指定默认账号必须撤掉 AIH Server 档位，否则启动链路会继续命中网关档。
+test('web ui set-default clears a stale AIH Server provider slot so the account wins', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-set-default-clears-aih-server-');
+  const accountRef = fixture.register('codex', '9407', {
+    state: { configured: true, apiKeyMode: false, displayName: 'default@example.com' }
+  });
+  writeDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex', AIH_SERVER_PROFILE_ID);
+  const res = createResCapture();
+  const pathname = `/v0/webui/accounts/codex/${accountRef}/set-default`;
+
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname,
+    url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: { accounts: { codex: [{ accountRef }], agy: [], claude: [], gemini: [], opencode: [] } },
+    deps: createBaseDeps(fixture, {
+      syncGlobalConfigToHost: () => ({ ok: true }),
+      codexDesktopHookService: {
+        ensureInstalled: () => ({ ok: true, restartRequired: false }),
+        restartRunningAppServers: () => ({ ok: true, count: 0, pids: [] })
+      }
+    })
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), accountRef);
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), '');
+});
+
+// 删除的正是默认账号 ⇒ 删完就没有默认账号了，落点必须回到 AIH Server。
+test('web ui delete of the default account lands on the AIH Server default', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-default-landing-');
+  const accountRef = fixture.register('claude', '9501', {
+    state: { status: 'up', configured: true }
+  });
+  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'claude', accountRef);
+  const syncCalls = [];
+  const res = createResCapture();
+
+  const handled = await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/claude/${accountRef}`,
+    res,
+    fs,
+    deps: {
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir: path.join(fixture.aiHomeDir, 'host-home'),
+      syncGlobalConfigToHost(provider, candidateRef, options) {
+        syncCalls.push({ provider, accountRef: candidateRef, options });
+        return { ok: true, gateway: true };
+      }
+    },
+    state: {},
+    accountStateService: { deleteAccount: () => true },
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.aihServerDefault.ok, true);
+  assert.equal(body.aihServerDefault.landed, true);
+  assert.deepEqual(syncCalls, [{ provider: 'claude', accountRef: '', options: { gateway: true } }]);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'claude'), '');
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'claude'), AIH_SERVER_PROFILE_ID);
+});
+
+test('web ui delete of a non-default account leaves the host config alone', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-non-default-');
+  const accountRef = fixture.register('claude', '9502', {
+    state: { status: 'up', configured: true }
+  });
+  const syncCalls = [];
+  const res = createResCapture();
+
+  await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/claude/${accountRef}`,
+    res,
+    fs,
+    deps: {
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir: path.join(fixture.aiHomeDir, 'host-home'),
+      syncGlobalConfigToHost(...args) {
+        syncCalls.push(args);
+        return { ok: true };
+      }
+    },
+    state: {},
+    accountStateService: { deleteAccount: () => true },
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.aihServerDefault.landed, false);
+  assert.equal(body.aihServerDefault.reason, 'no_default_change');
+  assert.deepEqual(syncCalls, []);
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'claude'), '');
+});
+
+test('web ui delete of the default Codex account lands via the grant revoke without a second host sync', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-codex-default-');
+  const accountRef = fixture.register('codex', '9503', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL },
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: '4router.net' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = writeCodexHostDirectGrant(hostHomeDir, accountRef);
+  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'codex', accountRef);
+  const syncCalls = [];
+  const hostSyncer = createCodexHostSyncer(fixture, hostHomeDir);
+  const res = createResCapture();
+
+  await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}`,
+    res,
+    fs,
+    deps: {
+      aiHomeDir: fixture.aiHomeDir,
+      hostHomeDir,
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' }),
+      syncGlobalConfigToHost(...args) {
+        syncCalls.push(args);
+        return hostSyncer(...args);
+      }
+    },
+    state: {},
+    accountStateService: { deleteAccount: () => true },
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.hostGrantRevoke.revoked, true);
+  assert.equal(body.aihServerDefault.landed, false);
+  assert.equal(body.aihServerDefault.reason, 'landed_with_host_grant_revoke');
+  assert.equal(syncCalls.length, 1, 'the grant revoke must be the only host sync');
+  const config = fs.readFileSync(configPath, 'utf8');
+  assert.doesNotMatch(config, /4router\.net/);
+  assert.doesNotMatch(config, /X-Account-Ref/);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), '');
   assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
 });
 

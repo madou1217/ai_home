@@ -89,10 +89,50 @@ test('scheduler refreshes stale Grok billing periods with an unknown percentage 
         capturedAt: now,
         entries: [{ remainingPct: null, resetAtMs: now + 24 * 60 * 60 * 1000 }]
       } }
+
     ],
     ensureUsageSnapshotAsync: async (provider, ref) => { probed.push(`${provider}:${ref}`); return {}; }
   });
 
   await scheduler.tick();
   assert.deepEqual(probed, ['grok:acct_grok_1']);
+});
+
+// 回归:额度源注册表里的**插件型** provider（Cline Pass）也必须被定时采集，
+// 不能因为合同里没有 quota_usage 能力就永远不刷新。
+test('scheduler probes plugin-provided quota providers such as Cline Pass', async () => {
+  const now = Date.now();
+  const probed = [];
+  const scheduler = createAccountQuotaProbeScheduler({
+    listAccounts: () => [
+      // 额度已消耗且快照陈旧 → 走「15 分钟周期后台探测」规则。
+      {
+        provider: 'cline',
+        accountRef: 'acct_cline_1',
+        apiKeyMode: false,
+        usageSnapshot: {
+          kind: 'cline_pass_usage',
+          capturedAt: now - 20 * 60 * 1000,
+          entries: [{ bucket: '5h', remainingPct: 74, resetAtMs: now + 30 * 60 * 1000 }]
+        }
+      },
+      // 5h 窗口即将重置 → 走「重置前 3 分钟」规则。
+      {
+        provider: 'cline',
+        accountRef: 'acct_cline_2',
+        apiKeyMode: false,
+        usageSnapshot: {
+          kind: 'cline_pass_usage',
+          capturedAt: now,
+          entries: [{ bucket: '5h', remainingPct: 74, resetAtMs: now + 60_000 }]
+        }
+      },
+      // API Key 账号没有 Cline Pass 额度端点，必须跳过。
+      { provider: 'cline', accountRef: 'acct_cline_3', apiKeyMode: true }
+    ],
+    ensureUsageSnapshotAsync: async (provider, ref) => { probed.push(`${provider}:${ref}`); return {}; }
+  });
+
+  await scheduler.tick();
+  assert.deepEqual(probed.sort(), ['cline:acct_cline_1', 'cline:acct_cline_2']);
 });

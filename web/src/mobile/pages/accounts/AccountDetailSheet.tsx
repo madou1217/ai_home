@@ -35,6 +35,7 @@ import {
   getAccountRegionMeta,
   getAccountSecondaryLabel,
   getAccountStatusDetailLines,
+  getClinePlanSubscription,
   getKimiPlanSubscription,
   getPlanTagLabel
 } from '@/features/accounts/AccountBadges';
@@ -129,6 +130,8 @@ export default function AccountDetailSheet({
   const region = getAccountRegionMeta(record);
   const kimiPlan = getKimiPlanSubscription(record);
   const kimiPlanUntil = kimiPlan ? formatPlanValidUntil(kimiPlan.validUntilMs) : '';
+  const clinePlan = getClinePlanSubscription(record);
+  const clinePlanUntil = clinePlan ? formatPlanValidUntil(clinePlan.validUntilMs) : '';
   const codexSubscription = getCodexSubscription(record);
   const refreshingUsage = Boolean(actions.refreshingUsageAccountRefs[accountRef]);
   const updatingStatus = Boolean(actions.updatingStatusAccountRefs[accountRef]);
@@ -244,6 +247,8 @@ export default function AccountDetailSheet({
       label: '套餐',
       value: kimiPlan && kimiPlanUntil
         ? `${kimiPlan.name || getPlanTagLabel(record)} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
+        : clinePlan && clinePlanUntil
+          ? `${clinePlan.name || getPlanTagLabel(record)} · ${clinePlanUntil}`
         : codexSubscription
           ? `${getPlanTagLabel(record)} · ${describeCodexSubscription(codexSubscription).label}`
           : getPlanTagLabel(record)

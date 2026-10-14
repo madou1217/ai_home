@@ -372,6 +372,17 @@ export function getKimiPlanSubscription(record: Pick<Account, 'provider' | 'usag
   return subscription;
 }
 
+// Cline Pass 的订阅周期（额度插件把 planName 与 currentPeriodEnd 写进快照 account）。
+export function getClinePlanSubscription(record: Pick<Account, 'provider' | 'usageSnapshot'>) {
+  if (record.provider !== 'cline') return null;
+  const snapshot = record.usageSnapshot;
+  if (!snapshot || snapshot.kind !== 'cline_pass_usage' || !snapshot.account) return null;
+  const validUntilMs = Number(snapshot.account.periodEndMs) || 0;
+  const name = String(snapshot.account.planName || '').trim();
+  if (!name && validUntilMs <= 0) return null;
+  return { name, validUntilMs, status: '' };
+}
+
 export function formatPlanValidUntil(validUntilMs: number | null | undefined) {
   const value = Number(validUntilMs);
   if (!Number.isFinite(value) || value <= 0) return '';

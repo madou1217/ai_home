@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { Account } from '@/types';
 import {
   getAccountRegionMeta,
+  getClinePlanSubscription,
   getQuotaStateMeta,
   getPlanTagColor,
   getPlanTagLabel
@@ -97,6 +98,35 @@ test('quota diagnostics are independent from scheduling badges and their detail 
   }
   assert.deepEqual(getQuotaStateMeta(unknown), { status: 'default', label: '额度未知' });
   assert.deepEqual(getQuotaStateMeta(failed), { status: 'error', label: '采集失败' });
+
   assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'available' })), null);
   assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'not_applicable' })), null);
+});
+test('getClinePlanSubscription 只认 Cline Pass 快照，并给出订阅周期', () => {
+  const cline = makeAccount({
+    provider: 'cline',
+    usageSnapshot: {
+      kind: 'cline_pass_usage',
+      capturedAt: 1,
+      account: { userId: 'usr-1', planName: 'Cline Pass (Monthly)', periodEndMs: Date.UTC(2026, 10, 14, 5, 30, 4) },
+      entries: []
+    }
+  } as never);
+  assert.deepEqual(getClinePlanSubscription(cline), {
+    name: 'Cline Pass (Monthly)',
+    validUntilMs: Date.UTC(2026, 10, 14, 5, 30, 4),
+    status: ''
+  });
+  // 套餐列因此能显示真实套餐名而不是默认的 oauth。
+  assert.equal(getPlanTagLabel(makeAccount({ provider: 'cline', planName: 'Cline Pass (Monthly)' })), 'Cline Pass (Monthly)');
+  // 别的 provider / 别的 kind / 空快照都不认。
+  assert.equal(getClinePlanSubscription(makeAccount({ provider: 'cline' })), null);
+  assert.equal(getClinePlanSubscription(makeAccount({
+    provider: 'cline',
+    usageSnapshot: { kind: 'kimi_oauth_usage', capturedAt: 1, account: { planName: 'x' } }
+  } as never)), null);
+  assert.equal(getClinePlanSubscription(makeAccount({
+    provider: 'cline',
+    usageSnapshot: { kind: 'cline_pass_usage', capturedAt: 1, account: {} }
+  } as never)), null);
 });

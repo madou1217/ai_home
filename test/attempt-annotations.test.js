@@ -110,15 +110,78 @@ test('safety rejected log entries keep their explicit allowlist', () => {
   assert.equal(Object.hasOwn(entry, 'codebuddyFamilyToolChoice'), false);
 });
 
-test('the general transport logs only through the annotation funnel', () => {
-  // 结构守卫：本文件只允许一个 appendProxyRequestLog 调用点，且它必须经过 withAttemptAnnotations。
-  // 未来若新增日志分支而绕开漏斗，这个断言会失败——「新增注解自动进日志」就不会被悄悄破坏。
-  const source = fs.readFileSync(
-    path.join(__dirname, '..', 'lib', 'server', 'upstream-endpoints-transport-general.js'),
-    'utf8'
-  );
-  const callSites = source.match(/appendProxyRequestLog\(/g) || [];
-  assert.equal(callSites.length, 1);
-  assert.match(source, /appendProxyRequestLog\(withAttemptAnnotations\(entry, attemptMutable\)\)/);
-  assert.match(source, /annotations: attemptAnnotations\(attemptMutable\)/);
+// 结构守卫的发现范围：**凡是持有 attempt 袋子（attemptMutable）的模块**，其代理请求日志出口
+// 必须全部经过注解漏斗，失败诊断出口必须带上同一个注解袋子。名单不写死——新增一个 attempt 级
+// transport 时它自动进入守卫范围，绕开漏斗会立刻失败，而不是等线上发现注解丢了。
+// 历史缺陷：5 个 attempt 级文件各自手写日志字段表（geminiDiagnosticLogFields() 被手工展开 6 次），
+// 「新增注解自动进日志」只在 general transport 成立。
+function readAttemptScopedModules() {
+  const serverDir = path.join(__dirname, '..', 'lib', 'server');
+  return fs.readdirSync(serverDir)
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => ({ name, source: fs.readFileSync(path.join(serverDir, name), 'utf8') }))
+    .filter((file) => /attemptMutable/.test(file.source));
+}
+
+// 漏斗必须同时满足三件事：①唯一的 appendProxyRequestLog 直调在它体内；
+// ②门控用 `if (!options.logRequests) return;`（而非各出口手写 gate）；③注解袋子并入条目。
+// 出口可以把自己知道的字段放进 entry（也可以像 code-assist 那样由漏斗统一注入 provider 字段表）。
+const ANNOTATION_FUNNEL = /const logRequest = \(entry\) => \{([\s\S]*?)\n\s*\};/;
+// 两种合法形态：直接传 entry，或先把 provider 字段表展开再传（`{ ...providerFields(), ...entry }`）。
+const ANNOTATION_FUNNEL_CALL = /appendProxyRequestLog\(withAttemptAnnotations\((?:entry|\{[^{}]*\.\.\.entry[^{}]*\}), attemptMutable\)\);/;
+
+test('every attempt-scoped module routes its proxy log exits through the annotation funnel', () => {
+  const modules = readAttemptScopedModules();
+  // 下限守卫：改名/搬移若让发现逻辑失效，宁可这里报错，也不要静默通过一个空集合。
+  assert.ok(modules.length >= 5, `attempt-scoped discovery is broken (found ${modules.length} modules)`);
+
+  for (const { name, source } of modules) {
+    const directCallSites = source.match(/appendProxyRequestLog\(/g) || [];
+    if (directCallSites.length) {
+      // 只允许漏斗里那一次直调：任何新增日志分支都必须走 logRequest(...)。
+      assert.equal(
+        directCallSites.length,
+        1,
+        `${name}: proxy log exits must funnel through logRequest(entry), found ${directCallSites.length} appendProxyRequestLog calls`
+      );
+      const funnel = source.match(ANNOTATION_FUNNEL);
+      assert.ok(funnel, `${name}: missing the logRequest annotation funnel`);
+      assert.equal(
+        (funnel[1].match(/appendProxyRequestLog\(/g) || []).length,
+        1,
+        `${name}: the single appendProxyRequestLog call must live inside the logRequest funnel`
+      );
+      assert.match(funnel[1], /if \(!options\.logRequests\) return;/, `${name}: the funnel must own the logRequests gate`);
+      assert.match(funnel[1], ANNOTATION_FUNNEL_CALL, `${name}: the funnel must merge withAttemptAnnotations(entry, attemptMutable)`);
+    }
+    // 失败诊断是另一条出口（走 appendUpstreamFailureDiagnosticLog 的字段表），
+    // 必须显式并入同一个注解袋子，否则重试失败/耗尽路径仍然丢注解。
+    if (/appendUpstreamFailureDiagnosticLog\(/.test(source)) {
+      assert.match(
+        source,
+        /annotations: attemptAnnotations\(attemptMutable\)/,
+        `${name}: failure diagnostics must carry attemptAnnotations(attemptMutable)`
+      );
+    }
+    // 手写门控是绕过漏斗的标志写法（漏斗自身用的是 `if (!options.logRequests) return;`）。
+    assert.equal(
+      /if \(options\.logRequests\)/.test(source),
+      false,
+      `${name}: hand-rolled "if (options.logRequests)" log gates are not allowed`
+    );
+    // 用了助手却没导入，是运行时 ReferenceError（只在真实请求上炸，测试不一定覆盖）——
+    // 本守卫历史上真的抓到了 upstream-endpoints-attempt.js 漏 import attemptAnnotations。
+    const requireMatch = source.match(/const \{([^}]*)\} = require\('\.\/attempt-annotations'\);/);
+    const importedHelpers = requireMatch
+      ? requireMatch[1].split(',').map((entry) => entry.trim()).filter(Boolean)
+      : [];
+    for (const helper of ['annotateAttempt', 'attemptAnnotations', 'withAnnotations', 'withAttemptAnnotations']) {
+      if (new RegExp(`\\b${helper}\\(`).test(source)) {
+        assert.ok(
+          importedHelpers.includes(helper),
+          `${name}: uses ${helper}() but does not import it from ./attempt-annotations`
+        );
+      }
+    }
+  }
 });

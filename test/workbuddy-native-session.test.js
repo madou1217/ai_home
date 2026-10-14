@@ -51,11 +51,24 @@ for (const provider of ['workbuddy', 'workbuddycn']) {
   });
 
   test(`${provider} isolates both native config variables and does not inherit API keys`, () => {
-    const patch = buildEnvPatch({ cliName: provider, sandboxDir: '/test/scoped', hostHomeDir: '/test/host', path, baseEnv: {}, platform: 'darwin' });
-    assert.equal(patch.set.HOME, '/test/scoped');
-    assert.equal(patch.set.CODEBUDDY_CONFIG_DIR, `/test/scoped/${provider === 'workbuddy' ? '.workbuddy-ai' : '.workbuddy'}`);
-    assert.equal(patch.set.WORKBUDDY_CONFIG_DIR, patch.set.CODEBUDDY_CONFIG_DIR);
-    assert.ok(patch.unset.includes('CODEBUDDY_API_KEY'));
+    const scoped = provider === 'workbuddy' ? '.workbuddy-ai' : '.workbuddy';
+    // 平台与 path 实现必须成对：声明 darwin 就得配 posix 的 path —— 否则在 Windows 上跑测试会
+    // 拿 win32 的分隔符去比 POSIX 期望值（2026-10-14 Windows 实机跑出来的差异）。
+    const posixPatch = buildEnvPatch({
+      cliName: provider, sandboxDir: '/test/scoped', hostHomeDir: '/test/host', path: path.posix, baseEnv: {}, platform: 'darwin'
+    });
+    assert.equal(posixPatch.set.HOME, '/test/scoped');
+    assert.equal(posixPatch.set.CODEBUDDY_CONFIG_DIR, `/test/scoped/${scoped}`);
+    assert.equal(posixPatch.set.WORKBUDDY_CONFIG_DIR, posixPatch.set.CODEBUDDY_CONFIG_DIR);
+    assert.ok(posixPatch.unset.includes('CODEBUDDY_API_KEY'));
+
+    // Windows：同一份隔离语义，配置根按 win32 拼。
+    const winPatch = buildEnvPatch({
+      cliName: provider, sandboxDir: 'C:\\test\\scoped', hostHomeDir: 'C:\\test\\host', path: path.win32, baseEnv: {}, platform: 'win32'
+    });
+    assert.equal(winPatch.set.CODEBUDDY_CONFIG_DIR, `C:\\test\\scoped\\${scoped}`);
+    assert.equal(winPatch.set.WORKBUDDY_CONFIG_DIR, winPatch.set.CODEBUDDY_CONFIG_DIR);
+    assert.ok(winPatch.unset.includes('CODEBUDDY_API_KEY'));
   });
 }
 

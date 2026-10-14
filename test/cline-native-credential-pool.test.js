@@ -21,7 +21,6 @@ const { CLINE_CREDENTIAL_PATH, clineAuth, providersDocument } = require('./helpe
  */
 function fixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-cline-pool-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const aiHomeDir = path.join(root, 'aih');
   const hostHomeDir = path.join(root, 'home');
   const hostFile = path.join(hostHomeDir, ...CLINE_CREDENTIAL_PATH);
@@ -30,6 +29,16 @@ function fixture(t, options = {}) {
   fs.writeFileSync(hostFile, JSON.stringify(providersDocument('cline-pass', clineAuth('cline-user-1', 1))));
   const accountStateIndex = createAccountStateIndex({ fs, aiHomeDir });
   const accountStateService = createAccountStateService({ fs, accountStateIndex });
+  // 先放掉自己开的 SQLite 句柄再删目录：Windows 上删「打开中」的 app-state.db 会 EBUSY
+  // （POSIX 允许 unlink 打开中的文件，所以只有 win32 需要这层兜底，见 plugin-gateway-harness）。
+  t.after(() => {
+    try { accountStateIndex.close(); } catch (_closeError) {}
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch (error) {
+      if (!(process.platform === 'win32' && error.code === 'EBUSY')) throw error;
+    }
+  });
   const deps = {
     fs,
     aiHomeDir,

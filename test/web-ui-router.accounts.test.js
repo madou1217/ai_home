@@ -37,8 +37,12 @@ const { writeAccountTokenUsageCache } = require('../lib/server/webui-account-tok
 const { encryptZcodeCredentialValue } = require('../lib/account/zcode-credential');
 const {
   readDefaultAccountRef,
+  readDefaultProviderProfile,
   writeDefaultAccountRef
 } = require('../lib/account/default-account-store');
+const { AIH_SERVER_PROFILE_ID } = require('../lib/account/provider-profile-id');
+const { createHostConfigSyncer } = require('../lib/account/host-sync');
+const { NATIVE_API_BASE_URL_MARKER } = require('../lib/cli/services/pty/codex-config-sync');
 const { resolveAccountRuntimeDir } = require('../lib/runtime/aih-storage-layout');
 const { createSessionStoreService } = require('../lib/cli/services/session-store');
 const { refreshLiveAccountRecord } = require('../lib/server/webui-account-live');
@@ -3547,3 +3551,212 @@ test('kimi plan-stats 对未知账号返回 404，对非 kimi provider 返回 40
   assert.equal(wrong.res.statusCode, 400);
   assert.equal(wrong.body.error, 'unsupported_provider');
 });
+
+// 2026-10-14 4router 事故回归：停用 Codex 账号必须回收宿主 ~/.codex/config.toml 里
+// set-default 写入的直连授权（根级受管 openai_base_url + provider 段 X-Account-Ref），
+// 否则裸 codex / 桌面 App 会绕过网关直连该账号，停用对它无效。
+const CODEX_HOST_DIRECT_BASE_URL = 'https://4router.net/v1';
+
+function writeCodexHostDirectGrant(hostHomeDir, accountRef) {
+  const configPath = path.join(hostHomeDir, '.codex', 'config.toml');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, [
+    'preferred_auth_method = "apikey"',
+    'model_provider = "openai"',
+    NATIVE_API_BASE_URL_MARKER,
+    `openai_base_url = "${CODEX_HOST_DIRECT_BASE_URL}"`,
+    '',
+    '[model_providers.aih_server]',
+    'name = "AIH Server"',
+    'base_url = "http://127.0.0.1:9543/v1"',
+    'wire_api = "responses"',
+    `http_headers = { "X-Account-Ref" = "${accountRef}" }`,
+    ''
+  ].join('\n'), 'utf8');
+  return configPath;
+}
+
+function createCodexHostSyncer(fixture, hostHomeDir) {
+  return createHostConfigSyncer({
+    fs,
+    fse: fs,
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    aiHomeDir: fixture.aiHomeDir,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9543, apiKey: 'gateway-key' })
+  });
+}
+
+async function requestAccountStatusChange(fixture, provider, accountRef, status, deps = {}) {
+  const res = createResCapture();
+  const handled = await handleUpdateAccountStatusRequest({
+    pathname: `/v0/webui/accounts/${provider}/${accountRef}/status`,
+    req: {},
+    res,
+    state: {},
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    deps: { aiHomeDir: fixture.aiHomeDir, ...deps },
+    readRequestBody: async () => Buffer.from(JSON.stringify({ status })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: {
+      setOperationalStatus(candidateRef, candidateProvider, nextStatus) {
+        fixture.setState(candidateRef, candidateProvider, {
+          ...fixture.accountStateIndex.getAccountState(candidateRef),
+          status: nextStatus
+        });
+        return true;
+      }
+    },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    checkStatus: () => ({ configured: true, accountName: '4router.net' }),
+    loadServerRuntimeAccounts: () => ({ agy: [], claude: [], codex: [], gemini: [], opencode: [] }),
+    applyReloadState() {},
+    getLastUsageProbeError: () => '',
+    getLastUsageProbeState: () => null,
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+  return { handled, res, body: JSON.parse(res.body) };
+}
+
+test('web ui disable revokes the Codex host direct grant so clients cannot bypass the gateway', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-disable-host-grant-');
+  const accountRef = fixture.register('codex', '9401', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL },
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: '4router.net' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = writeCodexHostDirectGrant(hostHomeDir, accountRef);
+  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'codex', accountRef);
+  const desktopRuntimeCalls = [];
+
+  const { res, body } = await requestAccountStatusChange(fixture, 'codex', accountRef, 'down', {
+    hostHomeDir,
+    syncGlobalConfigToHost: createCodexHostSyncer(fixture, hostHomeDir),
+    codexDesktopHookService: {
+      ensureInstalled() {
+        desktopRuntimeCalls.push('ensure-installed');
+        return { ok: true, restartRequired: false };
+      },
+      restartRunningAppServers() {
+        desktopRuntimeCalls.push('restart-app-servers');
+        return { ok: true, count: 1, pids: [42] };
+      }
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.account.status, 'down');
+  assert.equal(body.hostGrantRevoke.ok, true);
+  assert.equal(body.hostGrantRevoke.revoked, true);
+  assert.deepEqual(body.hostGrantRevoke.reasons, ['default_account', 'pinned_account_ref', 'native_base_url']);
+  const config = fs.readFileSync(configPath, 'utf8');
+  assert.doesNotMatch(config, /4router\.net/, 'the disabled account upstream endpoint must be gone');
+  assert.doesNotMatch(config, /X-Account-Ref/, 'the disabled account pin must be gone');
+  assert.match(config, /^model_provider = "aih_server"$/m);
+  assert.match(config, /^openai_base_url = "http:\/\/127\.0\.0\.1:9543\/v1"$/m);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), '');
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+  assert.deepEqual(desktopRuntimeCalls, ['ensure-installed', 'restart-app-servers']);
+});
+
+test('web ui disable leaves the host config alone for an account without a host grant', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-disable-no-grant-');
+  const accountRef = fixture.register('codex', '9402', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL },
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: '4router.net' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = path.join(hostHomeDir, '.codex', 'config.toml');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const original = 'model_provider = "aih_server"\npreferred_auth_method = "apikey"\n';
+  fs.writeFileSync(configPath, original, 'utf8');
+  const syncCalls = [];
+
+  const { res, body } = await requestAccountStatusChange(fixture, 'codex', accountRef, 'down', {
+    hostHomeDir,
+    syncGlobalConfigToHost(...args) {
+      syncCalls.push(args);
+      return { ok: true };
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.hostGrantRevoke.revoked, false);
+  assert.deepEqual(body.hostGrantRevoke.reasons, []);
+  assert.deepEqual(syncCalls, [], 'a gateway-profile account must not rewrite the host config');
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+});
+
+test('web ui disable of a non-codex account never touches the Codex host config', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-disable-claude-');
+  const codexRef = fixture.register('codex', '9403', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL }
+  });
+  const claudeRef = fixture.register('claude', '9404', {
+    apiKeyMode: true,
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: 'claude-key' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = writeCodexHostDirectGrant(hostHomeDir, codexRef);
+  const syncCalls = [];
+
+  const { res, body } = await requestAccountStatusChange(fixture, 'claude', claudeRef, 'down', {
+    hostHomeDir,
+    syncGlobalConfigToHost(...args) {
+      syncCalls.push(args);
+      return { ok: true };
+    }
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.hostGrantRevoke, undefined);
+  assert.deepEqual(syncCalls, []);
+  assert.match(fs.readFileSync(configPath, 'utf8'), /X-Account-Ref/);
+});
+
+test('web ui clear-default revokes a leftover Codex host direct grant', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-clear-default-host-grant-');
+  const accountRef = fixture.register('codex', '9405', {
+    env: { OPENAI_API_KEY: 'router-key', OPENAI_BASE_URL: CODEX_HOST_DIRECT_BASE_URL },
+    state: { status: 'up', configured: true, apiKeyMode: true, displayName: '4router.net' }
+  });
+  const hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  const configPath = writeCodexHostDirectGrant(hostHomeDir, accountRef);
+  writeDefaultAccountRef(fs, fixture.aiHomeDir, 'codex', accountRef);
+  const res = createResCapture();
+  const pathname = `/v0/webui/accounts/codex/${accountRef}/clear-default`;
+
+  await handleWebUIRequest({
+    method: 'POST',
+    pathname,
+    url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} },
+    res,
+    options: {},
+    state: { accounts: { codex: [{ accountRef }], agy: [], claude: [], gemini: [], opencode: [] } },
+    deps: createBaseDeps(fixture, {
+      hostHomeDir,
+      syncGlobalConfigToHost: createCodexHostSyncer(fixture, hostHomeDir),
+      codexDesktopHookService: {
+        ensureInstalled: () => ({ ok: true, restartRequired: false }),
+        restartRunningAppServers: () => ({ ok: true, count: 0, pids: [] })
+      }
+    })
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(readDefaultAccountRef(fs, fixture.aiHomeDir, 'codex'), '');
+  assert.equal(body.hostGrantRevoke.revoked, true);
+  const config = fs.readFileSync(configPath, 'utf8');
+  assert.doesNotMatch(config, /4router\.net/);
+  assert.doesNotMatch(config, /X-Account-Ref/);
+  assert.equal(readDefaultProviderProfile(fs, fixture.aiHomeDir, 'codex'), AIH_SERVER_PROFILE_ID);
+});
+

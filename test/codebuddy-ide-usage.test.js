@@ -17,6 +17,7 @@ const { discoverCodebuddyIdeSessions } = require('../lib/sessions/codebuddy-ide-
 const { createCodebuddyUsageRefresh } = require('../lib/usage/codebuddy-usage-refresh');
 const { readProjectsFromHostByProviders, readSessionMessages, resolveSessionFilePath } = require('../lib/sessions/session-reader');
 const { buildResumeCommand } = require('../lib/server/native-session-chat-command');
+const { userDataParentSegments } = require('../lib/runtime/codebuddy-family-layouts');
 
 const AT = 1_791_000_000_000;
 const PROJECT = 'a'.repeat(32), SESSION = 'b'.repeat(32), USER = 'c'.repeat(32);
@@ -34,7 +35,8 @@ function harness(t) {
     const accountRef = upsertAccountRef(fs, aiHomeDir, { provider: 'codebuddy', cliAccountId: alias, identitySeed: `${uid}:${alias}` });
     writeAccountNativeAuth(fs, aiHomeDir, accountRef, { credentials: credential('codebuddy', { uid }) });
     const home = resolveAccountRuntimeDir(aiHomeDir, 'codebuddy', accountRef);
-    const project = path.join(home, 'Library', 'Application Support', 'CodeBuddyExtension', 'Data', uid, 'CodeBuddyIDE', uid, 'history', PROJECT);
+    // 用户数据根随平台变化（darwin Library/Application Support、win32 AppData/Local）。
+    const project = path.join(home, ...userDataParentSegments(), 'CodeBuddyExtension', 'Data', uid, 'CodeBuddyIDE', uid, 'history', PROJECT);
     const session = path.join(project, SESSION);
     fs.mkdirSync(path.join(session, 'messages'), { recursive: true });
     fs.mkdirSync(path.join(home, 'electron-user-data'), { recursive: true });

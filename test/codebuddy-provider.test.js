@@ -218,6 +218,9 @@ const {
   getProviderPrivateEntryNames,
   getProviderSharedEntries
 } = require('../lib/runtime/provider-storage-policy');
+// 平台感知的落盘段（唯一真值来源）。上面的 CODEBUDDY_*_AUTH_PATH 是刻意保留的
+// darwin 遗留导出：policy 声明与运行时落盘在 win32/linux 上本就不同。
+const { familyAuthRelativeSegments } = require('../lib/runtime/codebuddy-family-layouts');
 const {
   materializeProviderAuth,
   readProviderAuthProjection
@@ -380,7 +383,8 @@ test('buildProviderRuntimeEnv isolates a codebuddy account from host credentials
   );
   // 共享凭据不受 configDir 控制，HOME 必须隔离；仅可重建缓存共用。
   assert.equal(env.HOME, path.join(path.sep, 'sandbox', 'cb-3'));
-  assert.equal(env.CARGO_HOME, '/Users/host/.cargo');
+  // 共享缓存挂在宿主 HOME 下，拼接方式跟随宿主路径实现（win32 → `\Users\host\.cargo`）。
+  assert.equal(env.CARGO_HOME, path.join('/Users/host', '.cargo'));
 });
 
 test('two CodeBuddy accounts cannot read the host or each other through the shared auth path', (t) => {
@@ -636,8 +640,12 @@ test('the shared credential projects into the sandbox HOME and back to the host'
     assert.equal(materialized.materialized, provider === 'codebuddycn' ? 2 : 1, `${provider}: ${JSON.stringify(materialized)}`);
 
     // CLI 用 os.homedir() 定位凭据：沙箱里必须是同样的 HOME 相对路径。
+    // 落盘段按**当前平台**取（与 materializeProviderAuth 同一真值来源）；下面断言
+    // 的 policy 声明段则是 darwin 遗留导出，两者在 win32/linux 上本就不同。
     const relativePath = [...CODEBUDDY_EXTENSION_AUTH_DIR, expectedFile];
-    const artifactPath = path.join(runtimeDir, ...relativePath);
+    const runtimeRelativePath = familyAuthRelativeSegments(provider);
+    assert.equal(runtimeRelativePath.at(-1), expectedFile, provider);
+    const artifactPath = path.join(runtimeDir, ...runtimeRelativePath);
     assert.ok(fs.existsSync(artifactPath), `${provider}: missing ${artifactPath}`);
     const projected = readProviderAuthProjection(fs, runtimeDir, provider, {});
     assert.deepEqual(projected.credentials, payload);
@@ -651,7 +659,7 @@ test('the shared credential projects into the sandbox HOME and back to the host'
 test('every shared credential resolves from the login sandbox runtime dir', () => {
   for (const [provider, expectedFile] of Object.entries(SHARED_AUTH_FILE_BY_PROVIDER)) {
     const runtimeDir = path.join(path.sep, 'aih', 'run', 'login', provider, 'session-1');
-    const expected = path.join(runtimeDir, ...CODEBUDDY_EXTENSION_AUTH_DIR, expectedFile);
+    const expected = path.join(runtimeDir, ...familyAuthRelativeSegments(provider));
     assert.equal(getOauthArtifactPath({ provider, runtimeDir }), expected, provider);
     // 没有 runtimeDir 时不猜路径。
     assert.equal(getOauthArtifactPath({ provider, runtimeDir: '' }), '', provider);
@@ -777,8 +785,9 @@ test('the two WorkBuddy providers are desktop-only and each owns a distinct app'
     const cleanup = lifecycle.find(plan => plan.args.includes('--aih-managed-path-cleanup'));
     assert.ok(cleanup, `${provider}: declared user-installed application cleanup`);
     const cleanupPayload = JSON.parse(Buffer.from(cleanup.args.at(-1), 'base64').toString('utf8'));
-    assert.deepEqual(cleanupPayload.trees, [provider === 'workbuddy'
-      ? '/h/Applications/WorkBuddy AI.app' : '/h/Applications/WorkBuddy.app']);
+    // 清理目标 = 声明的 darwin 安装位置展开到宿主 HOME，按宿主路径实现拼接。
+    assert.deepEqual(cleanupPayload.trees, [path.join('/h', 'Applications',
+      provider === 'workbuddy' ? 'WorkBuddy AI.app' : 'WorkBuddy.app')]);
     // 不声明 CLI：WorkBuddy 不对独立分发 CLI（把 CodeBuddy runtime 内嵌在 App 内）。
     assert.equal(typeof installer.listCliBinaryNames, 'undefined', provider);
   }

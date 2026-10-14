@@ -305,11 +305,15 @@ test('desktop-linked toolchain caches never block family sessions', () => {
         assert.equal(nodeFs.existsSync(path.join(hostHomeDir, ...segments, 'account-copy')), false, 'never merged into the host');
       }
 
-      const unknown = path.join(projection, 'Library', 'Caches', 'unknown-session-cache');
+      // 未声明的会话数据：不迁移、不链接，如实报 unresolved 且内容原样保留。
+      // 位置刻意放在投影顶层：`Library/Caches/*` 那批宿主缓存声明是 darwin 独有的
+      // （getProviderSharedHostCaches(provider, 'win32') 会过滤掉），把夹具放在那里
+      // 其它平台会在上一层就停住，断言退化成平台相关的。
+      const unknown = path.join(projection, 'unknown-session-cache');
       nodeFs.mkdirSync(unknown, { recursive: true });
       nodeFs.writeFileSync(path.join(unknown, 'session.jsonl'), 'UNKNOWN-SESSION');
       const blocked = service.ensureSessionStoreLinks(provider, 'acct_x', { projectionRoot: projection });
-      assert.deepEqual(blocked.unresolved, [path.join('Library', 'Caches', 'unknown-session-cache')], provider);
+      assert.deepEqual(blocked.unresolved, [path.join('unknown-session-cache')], provider);
       assert.equal(nodeFs.readFileSync(path.join(unknown, 'session.jsonl'), 'utf8'), 'UNKNOWN-SESSION');
     }
   } finally {

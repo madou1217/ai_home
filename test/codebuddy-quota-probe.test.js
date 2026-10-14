@@ -35,6 +35,8 @@ const {
   resolveCodebuddyPaidPlanLabel,
   isCodebuddyFamilyProvider
 } = require('../lib/account/codebuddy-billing');
+// 平台感知的凭据落盘段：darwin 是 Library/Application Support，win32 是 AppData/Local。
+const { familyAuthRelativeSegments } = require('../lib/runtime/codebuddy-family-layouts');
 const {
   createCodebuddyQuotaProbe,
   CODEBUDDY_PROBE_USER_AGENT,
@@ -53,8 +55,10 @@ function makeOkResponse(payload, status = 200) {
 
 // 与实机同形：account.uid + auth.accessToken/domain 都在共享凭据文件里。
 function writeSharedCredential(aiHomeDir, provider, accountRef, overrides = {}) {
-  const relative = resolveCodebuddyFamilyAuthPath(provider);
-  if (!relative) return '';
+  // 必须与探测端（resolveAccountRuntimeDir + 家族布局）同源，否则 win32 上写进
+  // Library/Application Support 而探测读 AppData/Local，一律 missing_shared_credential。
+  const relative = familyAuthRelativeSegments(provider);
+  if (!relative.length) return '';
   const credentialPath = path.join(
     aiHomeDir,
     'run',

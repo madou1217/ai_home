@@ -19,8 +19,8 @@ const { createCodebuddyQuotaProbe } = require('../lib/cli/services/usage/codebud
 function fixture(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-family-source-')), aiHomeDir = path.join(home, '.ai_home');
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const write = (provider, value, root = home, index = 0) => {
-    const file = codebuddyCredentialPaths(root, provider)[index];
+  const write = (provider, value, root = home, index = 0, platform) => {
+    const file = codebuddyCredentialPaths(root, provider, platform ? { platform } : {})[index];
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); return file;
   };
   const adopt = (provider, value, options) => adoptCodebuddyCredential(fs, aiHomeDir, provider, value, options);
@@ -108,13 +108,54 @@ test('scoped desktop authentication is captured from its own Electron profile', 
   assert.deepEqual(store.readAccountNativeAuth(fs, f.aiHomeDir, account.accountRef).credentials, fresh);
 });
 
-test('unsupported platforms and unavailable desktop secrets retain the shared-file source', t => {
+// 共享 .info 的位置随平台变化（见 codebuddy-family-layouts）：桌面端密文读不出来时，
+// 每个平台必须回退到**自己**那一份共享文件，且不能串读别的平台的位置。
+test('desktop secrets unavailable: each platform falls back to its own shared file', t => {
   const f = fixture(t), existing = credential('codebuddy');
-  f.write('codebuddy', existing);
-  writeDesktopCredential(f.home, 'codebuddy', credential('codebuddy', { iat: newer }));
   const denied = () => { throw new Error('Keychain unavailable'); };
-  assert.deepEqual(selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform: 'darwin', execFileSync: denied }).credential, existing);
-  assert.deepEqual(selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform: 'linux', execFileSync: denied }).credential, existing);
+  for (const platform of ['darwin', 'linux']) {
+    f.write('codebuddy', existing, f.home, 0, platform);
+    assert.deepEqual(
+      selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform, execFileSync: denied }).credential,
+      existing,
+      `${platform} must read its own shared file`
+    );
+  }
+  const isolated = fixture(t), only = credential('codebuddy', { uid: 'linux-only' });
+  isolated.write('codebuddy', only, isolated.home, 0, 'linux');
+  assert.equal(
+    selectCodebuddyCredential(fs, isolated.home, 'codebuddy', { platform: 'darwin', execFileSync: denied }).credential,
+    undefined,
+    'a linux-only file must not be visible to darwin'
+  );
+  assert.deepEqual(
+    selectCodebuddyCredential(fs, isolated.home, 'codebuddy', { platform: 'linux', execFileSync: denied }).credential,
+    only
+  );
+});
+
+// 非 darwin 平台的端到端自动识别：共享 .info 与 Electron 登录仓都在该平台自己的位置，
+// 且桌面端更新的一代必须胜过陈旧的共享文件。
+test('linux auto-detection reads its own locations and prefers the newer desktop login', t => {
+  const f = fixture(t), stale = credential('codebuddy', { iat: now - 7200 }), fresh = credential('codebuddy', { iat: now - 30 });
+  f.write('codebuddy', stale, f.home, 0, 'linux');
+  const file = path.join(f.home, '.local', 'share', 'CodeBuddy', 'User', 'globalStorage', 'state.vscdb');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT)');
+  // Chromium 未接钥匙环时的确定性算法：PBKDF2('peanuts','saltysalt',1,sha1) + AES-128-CBC。
+  const key = crypto.pbkdf2Sync('peanuts', 'saltysalt', 1, 16, 'sha1');
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, Buffer.alloc(16, 0x20));
+  const blob = Buffer.concat([Buffer.from('v10'), cipher.update(JSON.stringify(fresh)), cipher.final()]);
+  db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run(
+    'secret://{"extensionId":"tencent-cloud.coding-copilot","key":"planning-genie.new.accessToken"}',
+    JSON.stringify(blob)
+  );
+  db.close();
+  const read = selectCodebuddyCredential(fs, f.home, 'codebuddy', { platform: 'linux' });
+  assert.equal(read.ok, true);
+  assert.deepEqual(read.credential, fresh);
+  assert.deepEqual(JSON.parse(fs.readFileSync(codebuddyCredentialPaths(f.home, 'codebuddy', { platform: 'linux' })[0])), stale);
 });
 
 test('a standalone CN filename is discovered only when its issuer proves CN', t => {

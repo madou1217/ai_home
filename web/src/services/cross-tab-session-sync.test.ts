@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 // BroadcastChannel 假实现：多个实例共享总线，但消息不投递给发送者自身（与浏览器语义一致）。
 class FakeBroadcastChannel {
@@ -39,6 +39,9 @@ const SYNC_CHANNEL_NAME = 'aih_cross_tab_sync_channel';
 const themeAttributes = new Map<string, string>();
 
 // 模块单例在 import 时即读取 window/BroadcastChannel/document，必须先注入假环境再动态导入。
+// 本文件跑完必须把 document 还原：bun 全量测试同进程内后续文件（如 use-session-runtime）会拿到
+// 这个只有 documentElement 的桩，调用 document.addEventListener 时直接崩。
+const previousDocument = (globalThis as any).document;
 (globalThis as any).window = globalThis;
 // 补齐 location：bun 全量测试同进程内其他测试文件会评估 axios，其浏览器环境探测要求 window.location 存在
 (globalThis as any).location = { href: 'http://localhost/' };
@@ -51,6 +54,9 @@ const themeAttributes = new Map<string, string>();
     getAttribute: (k: string) => (themeAttributes.has(k) ? themeAttributes.get(k)! : null),
   },
 };
+after(() => {
+  (globalThis as any).document = previousDocument;
+});
 const tabA = createStorageShim();
 const tabB = createStorageShim();
 (globalThis as any).localStorage = tabA.shim;

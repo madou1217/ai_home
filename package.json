@@ -16,6 +16,7 @@
     "accounts:e2e": "node scripts/e2e-account-runtime-smoke.js",
     "gateway:routes": "node scripts/collect-gateway-routes.js",
     "gateway:shadow": "node scripts/gateway-shadow-compare.js",
+    "chat:legacy-readiness": "node scripts/chat-legacy-readiness.js",
     "go:build": "node scripts/build-go-server.js",
     "go:migrate-accounts": "node scripts/go-account-migration.js",
     "go-cli:preview": "node scripts/go-accounts-preview.js cli",

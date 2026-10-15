@@ -44,13 +44,21 @@ function webAcceptsApiKeyAccounts() {
   return !/!\s*account\.apiKeyMode/.test(source);
 }
 
-/** 服务端驱动：composition 里 createProviderDriverRegistration({ provider: '<x>' }) 的注册。 */
-function serverDriverProviders() {
+/** 服务端驱动：composition 里注册了哪些 provider 的 driver（含引擎派生注册）。 */
+function serverDriverProviders(engineProviders) {
   const source = read(COMPOSITION);
   const inline = [...source.matchAll(/provider:\s*'([a-z0-9-]+)'/g)].map((match) => match[1]);
-  // 外部注册入口存在与否，决定「新增 provider 是否需要改 composition」。
+  // 引擎派生注册：名单来自 OFFICIAL_NATIVE_SESSION_PROVIDERS，不写死 provider 清单。
+  const engineDerived = /OFFICIAL_NATIVE_SESSION_PROVIDERS/.test(source)
+    && /nativeSessionProviderRegistrations/.test(source)
+    ? engineProviders
+    : [];
   const injectable = /options\.providerDriverRegistrations/.test(source);
-  return { providers: [...new Set(inline)].sort(), injectable };
+  return {
+    providers: [...new Set([...inline, ...engineDerived])].sort(),
+    injectable,
+    engineDerived: engineDerived.length > 0,
+  };
 }
 
 function main() {
@@ -59,7 +67,7 @@ function main() {
   const declaredProviders = listProvidersByCapability('sessionRuntime').slice().sort();
   const undeclared = legacyProviders.filter((provider) => !declaredProviders.includes(provider));
   const webProviders = webRegisteredProviders();
-  const server = serverDriverProviders();
+  const server = serverDriverProviders(legacyProviders);
   const acceptsApiKey = webAcceptsApiKeyAccounts();
 
   const missingWeb = legacyProviders.filter((provider) => !webProviders.includes(provider));

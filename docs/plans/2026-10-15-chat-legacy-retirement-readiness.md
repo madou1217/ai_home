@@ -46,6 +46,21 @@ canonical provider 注册表只有一条：`web/src/features/chat-runtime/runtim
 
 ## 4. 当前判定
 
+**进展（2026-10-15 第二轮）：条件 ① ② 已完成，③ ④ ⑤ 待做。**
+
+- ① 原生会话驱动已进 canonical：`lib/server/chat-runtime/native-session-driver.js`（复用 `spawnNativeSessionStream`，
+  只做参数适配 + 事件翻译 + 生命周期桥接；事件翻译在 `native-session-event-bridge.js`）。
+- ② 注册按能力派生：`chat-runtime-composition.js` 的 `nativeSessionProviderRegistrations()` 名单直接来自
+  `OFFICIAL_NATIVE_SESSION_PROVIDERS`（引擎加一支自动跟上），codex 由 app-server 驱动覆盖故跳过。
+- 真机验证：work 会话（provider=opencode，accountRef=acct_6019…，projectPath=/tmp/aih-work-e2e）在 canonical 下
+  跑通一轮 —— 事件序列 `turn.started → session.runtime.bound → timeline.item.delta → timeline.item.completed →
+  turn.phase.changed → turn.completed`，时间线拿到 assistant「开工」；会话 `runtimeId=opencode:<accountRef>`，
+  能力快照里 `session.resume=native`、`slash.execute/terminal.stream/interaction.approval=unsupported`（诚实降级）。
+- 守卫现状：`驱动未覆盖: (无)`；**剩余缺口 = web 表面**（13 个 provider 未注册 + 不接受 api-key 账号）→ 条件 ③；
+  条件 ④（slash / terminal / 审批对齐）仍未做，因此现在**仍不可删**。
+
+条件 1–5 中 1、2 已满足；3、4、5 未满足。
+
 - 条件 1–5 **全部未满足**（1、2 无实现；3 硬编码；4 缺 slash/terminal；5 不存在）。
 - 因此：**legacy 保留**。它仍在承载 work 模式下 12+ provider 的项目会话，删除会直接打断这些会话。
 - 已完成的替换部分：chat 模式全 provider（codex harness + aih 网关，含 aih-server 网关目标与同 provider 换账号重绑）。

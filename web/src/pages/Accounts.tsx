@@ -819,9 +819,8 @@ export default function Accounts() {
           >
             添加账号
           </Button>
-          {/* Kiro 免 CLI 登录：自带弹窗状态的自包含入口，只在 Kiro 档显示。 */}
+          {/* Kiro 免 CLI 登录：与「添加账号」同级无条件显示（按档位隐藏过，实测用户找不到入口）。 */}
           <KiroNativeLoginEntry
-            activeProvider={activeProvider}
             onAdded={() => { void accountsSnapshot.requestAccountsSnapshotUpdate(); }}
           />
         </>

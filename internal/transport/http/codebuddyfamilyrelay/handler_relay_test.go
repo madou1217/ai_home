@@ -282,3 +282,50 @@ func TestServeHTTPSurfacesUpstreamEnvelopeAndRetryHint(t *testing.T) {
 		t.Fatalf("可重试失败应带换号提示，实际 %q", got)
 	}
 }
+
+// postWithPins 发一次带钉选头的请求（可给多个值以构造非法钉选）。
+func (harness *relayHarness) postWithPins(t *testing.T, body string, pins ...string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	for _, pin := range pins {
+		request.Header.Add("X-Account-Ref", pin)
+	}
+	response := httptest.NewRecorder()
+	harness.handler.ServeHTTP(response, request)
+	return response
+}
+
+// 非法钉选（重复头 / 非规范引用）必须交回 Canonical，**不得当成未钉选请求改派账号**。
+//
+// 这条用例之所以能区分两条路径：替身凭据对任意账号引用都可用（见下面的对照用例），
+// 所以「被错误地当成未钉选」会真的走 relay 并返回 200，而正确实现必须交还 Canonical。
+// 旧版本用的是会失败的凭据替身，那时两条路径都因凭据不可用而交还，区分不出来。
+func TestServeHTTPRejectsInvalidPinWithUsableCredentials(t *testing.T) {
+	body := `{"model":"hy4-preview","messages":[{"role":"system","content":"s"}]}`
+	// 对照：单个合法钉选会真的走 relay —— 证明替身可用、本用例不是恒真。
+	working := newRelayHarness(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(response, aggregatedSSE)
+	}))
+	relayed := working.postWithPins(t, body, relayAccountRef)
+	if working.fallback.called || relayed.Code != http.StatusOK {
+		t.Fatalf("合法钉选应走 relay（fallback=%v code=%d）", working.fallback.called, relayed.Code)
+	}
+	// 非法钉选：重复头、非规范引用、以及「合法 + 非法」混合。
+	cases := [][]string{
+		{"not-a-ref"},
+		{relayAccountRef, "acct_bbbbbbbbbbbbbbbbbbbb"},
+		{relayAccountRef, "not-a-ref"},
+	}
+	for _, pins := range cases {
+		harness := newRelayHarness(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			response.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(response, aggregatedSSE)
+		}))
+		response := harness.postWithPins(t, body, pins...)
+		if !harness.fallback.called {
+			t.Fatalf("非法钉选 %v 必须交回 Canonical（实际走了 relay，code=%d）", pins, response.Code)
+		}
+	}
+}

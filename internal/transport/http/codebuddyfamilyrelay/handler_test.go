@@ -186,10 +186,9 @@ func TestServeHTTPHandsBackToCanonical(t *testing.T) {
 
 // 钉选头重复或非法时交回 Canonical（由它按协议返回 400），不得当成未钉选请求改派账号。
 //
-// 已知局限（不夸大这条测试的能力）：本用例断言的是「最终交回了 Canonical」，而在当前
-// 测试替身下，即使非法钉选被错误地当成「未钉选」，凭据解析失败同样会走到交还——所以
-// 单靠本用例**区分不出**这两条路径（负向对照实测：去掉 len(values) != 1 守卫不会让它变红）。
-// 要真正区分，需要一条能成功的凭据替身（走完整 relay 路径），见文件末尾的待办。
+// 本用例用「读不到凭据」的替身，只覆盖「最终交还」这一层；**区分**「非法钉选」与
+// 「未钉选」两条路径的是 handler_relay_test.go 的
+// TestServeHTTPRejectsInvalidPinWithUsableCredentials（用可用凭据替身，去掉守卫会变红）。
 func TestServeHTTPRejectsInvalidPin(t *testing.T) {
 	cases := [][]string{
 		{"not-a-ref"},
@@ -215,8 +214,6 @@ func TestServeHTTPRejectsInvalidPin(t *testing.T) {
 }
 
 // 待办（本文件尚未覆盖，需要在接线时补）：
-//  1. 用一条**能成功的凭据替身**（原生凭据 + 有效 observation）走完整 relay 路径，
-//     覆盖：补 system / stream 强制 / tool_choice 形态表 / 降级响应头 / 非流式聚合 /
-//     流式逐字节透传 / 上游 4xx 的信封文案与换号重试。
-//  2. 该替身就位后，TestServeHTTPRejectsInvalidPin 才能真正区分「非法钉选」与
-//     「未钉选」两条路径（当前两者都因凭据不可用而交还）。
+//  1. 上游 4xx 的**非**可重试分支（例如 400 请求不合法）：应交付上游原文且不带换号提示。
+//  2. 钉选保住的路径（tools 收窄 + required + 无降级头）——形态表已覆盖改写层，
+//     集成层再补一条更稳。

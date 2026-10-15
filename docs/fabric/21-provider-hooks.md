@@ -69,11 +69,15 @@ settings.json hooks:SessionStart/UserPromptSubmit/Stop/StopFailure/SessionEnd �
 诊断:claude-hook-diagnostics.js 从会话 .jsonl 提取 stop_hook_summary/hook_non_blocking_error。
 未用(P4):PreToolUse/PostToolUse(工具进度)、Notification(请求注意)。
 
-## 4. opencode(验证版本 1.4.7,2026-07-04 实证;spike 报告全文见 git 历史)
+## 4. opencode(插件 API 已跨代:v1 1.4.7 首证 / v2 2.0.29 复证;serve 见 §4.2,v1 时代验证)
 
-### 4.1 插件体系(实证)
-- 位置:`<config>/opencode/plugin(s)/*.js`(两个目录都加载;项目级 `.opencode/plugin(s)` 同;`~/.opencode` 恒被扫描;`--pure` 禁用)。ESM:`export const X = async ({project,directory,worktree,client,$}) => ({ hooks })`。
-- 实证事件:hooks=`chat.message`、`tool.execute.before/after`;`event` 钩子收 bus 全量:`message.updated/part.updated/part.delta`、`session.updated/status/diff/idle`、`permission.asked/replied` 等。**每个事件都带 sessionID**,session.updated 带 directory/projectID——P4 桥所需字段齐。
+### 4.1 插件体系(v1↔v2 双代实证)
+- 位置:`<config>/opencode/plugin(s)/*.js`(两个目录都加载;项目级 `.opencode/plugin(s)` 同;`~/.opencode` 恒被扫描;`--pure` 禁用)。
+- **入口契约(2.0 起变更,入口形状不兼容)**:
+  - v1(`<`2.0,`>=`1.18.29):default 导出为「工厂函数返回 hooks 对象」:`export const X = async ({project,directory,worktree,client,$}) => ({ hooks })`;**1.18.29 起也支持 default 对象 + `server()` 入口**。
+  - v2(2.0+):default 必须是**普通对象** `{id, effect|setup}`——函数导出(`Expected object at ["default"]`)、只有具名导出/缺 id(`Missing key at ["default"]`)都被拒绝;`setup(ctx)` 返回 cleanup 函数。
+- **事件形状也不同**:v1 `{type, properties}`,`sessionID` 在 `properties`(session.updated 带 directory/projectID);v2 是信封 `{id, created, type, location?, durable?, metadata?, data:{sessionID, ...}}`,**sessionID 在 `data.sessionID`**。v2 插件侧事件目录(run 实测)以 `session.execution.*` 为执行边界:`started` / `succeeded` / `failed` / `interrupted`;产出流为 `session.text|reasoning|tool.*`;`session.idle` 只存在于内部 bus,插件侧收不到。
+- 订阅:v2 用 `ctx.event.subscribe({signal})` 返回 AsyncIterable(文案 vs v1 的 `event` hook 收 bus 全量)。
 - run/serve/TUI 三形态都加载插件;`--format json` 输出不受影响。
 
 ### 4.2 审批(P3c,**已落地**:serve HTTP API 路线)
@@ -93,16 +97,29 @@ approvalModeNeedsBridge` 时改走该 runner;bypass 仍走 `opencode run --forma
 
 ### 4.3 生命周期 hook 桥(P4,**已落地**:插件文件)
 opencode 无 JSON hooks 配置,机制是 JS 插件。`opencode-plugin-template.js` 生成桥插件
-`<config>/opencode/plugin/aih-session-hook.js`(ESM,Bun 全局 fetch),订阅事件总线的会话
-边界信号 fire-and-forget POST 给现有 receiver:
-- 首个「会话产出」事件(message.updated/part.updated/part.delta/session.status)→ `?event=UserPromptSubmit`
-  → `session:turn-started`(每会话去重,idle 后重置);
-- `session.idle` → `?event=Stop` → `session:turn-completed`。
+`<config>/opencode/plugin/aih-session-hook.js`(ESM,零依赖),订阅事件总线的会话边界信号
+fire-and-forget POST 给现有 receiver。**生成模板是 v1/v2 双兼容对象**(opencode 2.0 实测,
+2026-10-15):`export default { id, setup(ctx), server() }`——v2 只读 `id`+`setup`(订阅
+`ctx.event.subscribe({signal})`,返回 cleanup),v1>=1.18.29 的对象入口调 `server()` 拿旧式
+hooks(v2 忽略未知键;同进程 `setup` 已生效时 `server()` 返回空对象防双发;1.18.29 以下不认识
+对象入口,插件静默不生效而非报错)。事件映射:
+- v2:`session.execution.started` → `?event=UserPromptSubmit` → `session:turn-started`;
+  `session.execution.succeeded|failed|interrupted` → `?event=Stop` → `session:turn-completed`
+  (每会话去重,终态后重置)。
+- v1:`message.updated/part.updated/part.delta/session.status` 首个出现 → UserPromptSubmit;
+  `session.idle` → Stop。
 安装/诊断:`opencode-plugin-hook-config.js`,经 `provider-session-hook-config.js` 的统一入口
-(`installProviderSessionHookConfig('opencode',...)` 等 4 个函数早分支)。文件式,幂等;换端口
-(receiver URL 变)诊断为需重装。真机 e2e(1.4.7,`opencode run`):UserPromptSubmit→Stop,同会话。
+(`installProviderSessionHookConfig('opencode',...)` 等 4 个函数早分支)。文件式,幂等;诊断三态:
+未装(`plugin-file`)、URL 变(`receiver-url-changed`)、**源码仍是旧 v1 形(`plugin-file-outdated`,
+只查 marker/URL 会把 v2 必挂的陈旧文件误报为已安装)**。真机 e2e:v1 1.4.7(`opencode run`,
+UserPromptSubmit→Stop 同会话);v2 2.0.29(生成文件装入测试配置目录,`opencode run` 实测
+`session.execution.started/succeeded` → 两条 POST 到达 receiver;真实 `~/.config` 下加载零失败)。
 - 与 §4.2 serve 的关系:serve 只在 confirm 模式;插件桥覆盖**默认(bypass)run 路径**的实时状态,
   两者互补(bypass 走插件桥拿 pending,confirm 走 serve 拿审批+事件)。
+- 注意:§4.2 的 serve 路线(HTTP `/session`+`/event`+permission.ask)验证于 v1 1.4.7,
+  v2 的 serve 契约是否兼容**未复证**,升级 opencode 2.x 后 confirm 模式需重跑 §4.2 真机 e2e。
+- 第三方插件生态:v1 形 npm 插件(如 oh-my-openagent 5.1.33)在 v2 一律加载失败
+  (`Missing key at ["default"]["effect"]`),需上游迁移(其仓库已有多个 v2 issue + 草稿 PR)。
 
 ## 5. codex(验证版本 0.142.0,2026-07-04 实证;完整报文样本见 S3 spike scratchpad)
 

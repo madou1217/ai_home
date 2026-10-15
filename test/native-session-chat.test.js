@@ -796,7 +796,9 @@ test('buildResumeCommand builds opencode interactive resume invocation for slash
   const command = buildResumeCommand('opencode', {
     sessionId: 'ses-opencode-real',
     model: 'opencode-go/glm-5.2',
-    interactiveCli: true
+    interactiveCli: true,
+    // 布局探测的目标二进制：给不存在的路径 → 布局表回落 v2（确定性，不依赖宿主安装版本）。
+    cliPath: '/nonexistent/opencode'
   });
 
   assert.equal(command.commandName, 'opencode');
@@ -804,7 +806,9 @@ test('buildResumeCommand builds opencode interactive resume invocation for slash
     '--model',
     'opencode-go/glm-5.2',
     '--session',
-    'ses-opencode-real'
+    'ses-opencode-real',
+    // v2：TUI 追加 --standalone（进程私有 server，绕开 channel 固定端口 49374 的后台 service）
+    '--standalone'
   ]);
 });
 
@@ -876,10 +880,13 @@ test('buildStartCommand builds opencode headless run invocation', () => {
   const command = buildStartCommand('opencode', {
     prompt: 'hello',
     model: 'opencode-go/glm-5.2',
-    projectPath: '/repo/project'
+    projectPath: '/repo/project',
+    // 布局探测的目标二进制：不存在的路径 → 回落 v2（确定性）。
+    cliPath: '/nonexistent/opencode'
   });
 
   assert.equal(command.commandName, 'opencode');
+  // v2 的 run 已移除 --dir（工作目录由 cwd/PWD 表达）；--standalone 绕开 49374 后台 service。
   assert.deepEqual(command.args, [
     'run',
     '--format',
@@ -887,8 +894,7 @@ test('buildStartCommand builds opencode headless run invocation', () => {
     '--dangerously-skip-permissions',
     '--model',
     'opencode-go/glm-5.2',
-    '--dir',
-    '/repo/project',
+    '--standalone',
     'hello'
   ]);
 });
@@ -1193,10 +1199,13 @@ test('opencode native session builds run resume command', () => {
     sessionId: 'ses_123',
     prompt: '继续',
     model: 'opencode-go/glm-5.2',
-    projectPath: '/repo/project'
+    projectPath: '/repo/project',
+    // 布局探测的目标二进制：不存在的路径 → 回落 v2（确定性）。
+    cliPath: '/nonexistent/opencode'
   });
 
   assert.equal(resume.commandName, 'opencode');
+  // v2：无 --dir（目录由 cwd/PWD 表达），run 追加 --standalone。
   assert.deepEqual(resume.args, [
     'run',
     '--format',
@@ -1206,8 +1215,7 @@ test('opencode native session builds run resume command', () => {
     'ses_123',
     '--model',
     'opencode-go/glm-5.2',
-    '--dir',
-    '/repo/project',
+    '--standalone',
     '继续'
   ]);
 });

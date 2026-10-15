@@ -203,6 +203,12 @@ export interface Account {
    * lib/account/official-upstream-endpoint.js。
    */
   customUpstream?: boolean;
+  /**
+   * 服务端判定：该 provider 是否支持「窗口激活」（5h 滚动限额探测）。
+   * 判定唯一来源是探测规格注册表（lib/server/window-activation/probe-specs.js），
+   * 客户端只消费结论，不在前端维护 provider 清单。
+   */
+  windowActivationSupported?: boolean;
   quotaStatus?: string;
   upstreamErrorRules?: UpstreamErrorRule[];
   upstreamErrorGroupIds?: string[];

@@ -73,6 +73,7 @@ function makeScheduler(overrides = {}) {
     readAccountState: (_fs, _dir, ref) => states[ref] || null,
     writeAccountState: (_fs, _dir, ref, value) => { stateWrites.push({ ref, value }); return true; },
     readLatestResetAt: overrides.readLatestResetAt || (() => 0),
+    listAccountModels: overrides.listAccountModels,
     deps: overrides.realDispatch
       ? null
       : {
@@ -94,6 +95,11 @@ test('decideActivation：前置过滤（关闭 / 无 spec / API-key / 防抖）'
   assert.equal(decideActivation({ ...base, spec: null }).trigger, 'no_spec');
   assert.equal(decideActivation({ ...base, apiKeyMode: true }).trigger, 'api_key_account');
   assert.equal(decideActivation({ ...base, status: 'down' }).trigger, 'account_down');
+  // 运行态被阻塞（配额耗尽 / 限流）的账号不探测：探了会被网关排除并回落，白花别的账号额度
+  assert.equal(decideActivation({ ...base, runtimeStatus: 'rate_limited' }).trigger, 'runtime_blocked');
+  // healthy / 未上报都不算阻塞（此处未到周期，只断言没有被运行态过滤掉）
+  assert.notEqual(decideActivation({ ...base, runtimeStatus: 'healthy' }).trigger, 'runtime_blocked');
+  assert.notEqual(decideActivation({ ...base, runtimeStatus: 'unknown' }).trigger, 'runtime_blocked');
   assert.equal(
     decideActivation({ ...base, now: 1000 + MIN_REPROBE_GAP_MS - 1, lastProbeAt: 1000 }).trigger,
     'debounced'
@@ -151,6 +157,7 @@ test('decideActivation：触发 1 周期到点探测，触发 2 活跃闸门拦�
     spec: CODEX_SPEC,
     snapshot: windowSnapshot(0),
     lastProbeAt: now - DEFAULT_INTERVAL_MS - 1,
+    lastActivatedAt: now - DEFAULT_INTERVAL_MS - 1,
     lastActivityAt: now - DEFAULT_INTERVAL_MS - 1,
     effectiveIntervalMs: DEFAULT_INTERVAL_MS
   });
@@ -162,6 +169,7 @@ test('decideActivation：触发 1 周期到点探测，触发 2 活跃闸门拦�
     spec: CODEX_SPEC,
     snapshot: windowSnapshot(0),
     lastProbeAt: now - DEFAULT_INTERVAL_MS - 1,
+    lastActivatedAt: now - DEFAULT_INTERVAL_MS - 1,
     lastActivityAt: now - 60_000, // 区间内有真实活动
     effectiveIntervalMs: DEFAULT_INTERVAL_MS
   });
@@ -173,12 +181,29 @@ test('decideActivation：触发 1 周期到点探测，触发 2 活跃闸门拦�
     enabled: true,
     spec: CODEX_SPEC,
     snapshot: windowSnapshot(0),
-    // 超过防抖窗口，但远未到周期
+    // 超过防抖窗口，但远未到周期（周期锚点是上次成功激活）
     lastProbeAt: now - 2 * MIN_REPROBE_GAP_MS,
+    lastActivatedAt: now - 2 * MIN_REPROBE_GAP_MS,
     lastActivityAt: 0,
     effectiveIntervalMs: DEFAULT_INTERVAL_MS
   });
   assert.equal(notDue.trigger, 'not_due');
+});
+
+test('decideActivation：失败的探测不推进周期锚点（窗口没被激活就该尽快重试）', () => {
+  const now = 100 * DEFAULT_INTERVAL_MS;
+  // 刚刚尝试过（防抖窗口外），但从未成功激活过：周期锚点仍是 0 → 到点探测
+  const decision = decideActivation({
+    now,
+    enabled: true,
+    spec: CODEX_SPEC,
+    snapshot: windowSnapshot(0),
+    lastProbeAt: now - 2 * MIN_REPROBE_GAP_MS,
+    lastActivatedAt: 0,
+    lastActivityAt: 0,
+    effectiveIntervalMs: DEFAULT_INTERVAL_MS
+  });
+  assert.deepEqual(decision, { action: 'probe', trigger: 'periodic' });
 });
 
 test('decideActivation：无 5h 窗口时回退纯固定周期', () => {
@@ -190,6 +215,7 @@ test('decideActivation：无 5h 窗口时回退纯固定周期', () => {
     spec: CODEX_SPEC,
     snapshot,
     lastProbeAt: now - DEFAULT_INTERVAL_MS - 1,
+    lastActivatedAt: now - DEFAULT_INTERVAL_MS - 1,
     lastActivityAt: 0,
     effectiveIntervalMs: DEFAULT_INTERVAL_MS
   });
@@ -199,13 +225,14 @@ test('decideActivation：无 5h 窗口时回退纯固定周期', () => {
 
 test('decideActivation：窗口重置后从重置点重新计时', () => {
   const now = 10 * DEFAULT_INTERVAL_MS;
-  // 距上次探测已超一个周期，本应探测
+  // 距上次成功激活已超一个周期，本应探测
   const base = {
     now,
     enabled: true,
     spec: CODEX_SPEC,
     snapshot: windowSnapshot(0),
     lastProbeAt: now - DEFAULT_INTERVAL_MS - 1,
+    lastActivatedAt: now - DEFAULT_INTERVAL_MS - 1,
     lastActivityAt: 0,
     effectiveIntervalMs: DEFAULT_INTERVAL_MS
   };
@@ -287,6 +314,91 @@ test('runNow：探测抛异常时整轮仍 ok 且不向上抛', async () => {
   const result = await scheduler.runNow('manual');
   assert.equal(result.ok, true);
   assert.equal(result.probed[0].outcome, 'boom');
+});
+
+test('runNow：探测模型来自目标账号目录（首选不在目录里就回退，避免路由层 503）', async () => {
+  const now = 10 * DEFAULT_INTERVAL_MS;
+  const { scheduler, dispatches } = makeScheduler({
+    now,
+    accounts: [account()],
+    configs: { [REF]: { enabled: true } },
+    listAccountModels: () => ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-6-sol'],
+    dispatchProbe: async (input) => {
+      dispatches.push(input);
+      return { ok: true, matched: true, servedAccountRef: input.accountRef };
+    }
+  });
+  const result = await scheduler.runNow('manual');
+  assert.equal(result.probed[0].outcome, 'activated');
+  assert.equal(dispatches[0].model, 'gpt-5.6-sol');
+  assert.equal(result.probed[0].model, 'gpt-5.6-sol');
+});
+
+test('runNow：账号目录里没有可用模型时不发探测（outcome=no_probe_model）', async () => {
+  const now = 10 * DEFAULT_INTERVAL_MS;
+  const { scheduler, dispatches, stateWrites } = makeScheduler({
+    now,
+    accounts: [account()],
+    configs: { [REF]: { enabled: true } },
+    listAccountModels: () => ['o3-mini'],
+    dispatchProbe: async (input) => {
+      dispatches.push(input);
+      return { ok: true, matched: true, servedAccountRef: input.accountRef };
+    }
+  });
+  const result = await scheduler.runNow('manual');
+  assert.equal(dispatches.length, 0);
+  assert.equal(result.probed[0].outcome, 'no_probe_model');
+  // 原因必须落盘（账号页据此解释「为什么没探测」）
+  assert.equal(stateWrites[0].value.lastOutcome, 'no_probe_model');
+});
+
+test('runNow：未注入 listAccountModels 时按目录未知处理，仍用 spec 默认模型', async () => {
+  const now = 10 * DEFAULT_INTERVAL_MS;
+  const { scheduler, dispatches } = makeScheduler({
+    now,
+    accounts: [account()],
+    configs: { [REF]: { enabled: true } },
+    dispatchProbe: async (input) => {
+      dispatches.push(input);
+      return { ok: true, matched: true, servedAccountRef: input.accountRef };
+    }
+  });
+  await scheduler.runNow('manual');
+  assert.equal(dispatches.length, 1);
+  assert.equal(dispatches[0].model, CODEX_SPEC.model);
+});
+
+test('runNow：探测失败不推进激活锚点，下一轮仍会重试', async () => {
+  const now = 10 * DEFAULT_INTERVAL_MS;
+  const { scheduler, dispatches, stateWrites } = makeScheduler({
+    now,
+    accounts: [account()],
+    configs: { [REF]: { enabled: true } },
+    dispatchProbe: async (input) => {
+      dispatches.push(input);
+      return { ok: false, matched: false, httpStatus: 503, error: 'http_503' };
+    }
+  });
+  const first = await scheduler.runNow('manual');
+  assert.equal(first.probed[0].outcome, 'http_503');
+  // 失败只记录尝试时间与原因，不推进「上次成功激活」
+  assert.equal(stateWrites[0].value.lastProbeAt, now);
+  assert.equal(stateWrites[0].value.lastActivatedAt, 0);
+
+  // 防抖窗口过后（同一个 tick 内不会，但下一轮会）应当再次尝试
+  const next = makeScheduler({
+    now: now + MIN_REPROBE_GAP_MS + 1000,
+    accounts: [account()],
+    configs: { [REF]: { enabled: true } },
+    states: { [REF]: { lastProbeAt: now, lastActivatedAt: 0, lastOutcome: 'http_503' } },
+    dispatchProbe: async (input) => {
+      dispatches.push(input);
+      return { ok: true, matched: true, servedAccountRef: input.accountRef };
+    }
+  });
+  const second = await next.scheduler.runNow('manual');
+  assert.equal(second.probed[0].outcome, 'activated');
 });
 
 test('runNow：未开启的账号不探测', async () => {

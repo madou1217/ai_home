@@ -117,6 +117,15 @@ export function canEditAccountRoutingRules(record: Pick<Account, 'apiKeyMode' | 
 }
 
 /**
+ * 窗口激活（5h 滚动限额探测）入口 —— 支持哪些 provider 由服务端探测规格注册表回答
+ * （lib/server/window-activation/probe-specs.js），客户端只消费结论：新增 provider
+ * 加一条 spec 即可，不用改前端。
+ */
+export function canConfigureWindowActivation(record: Pick<Account, 'windowActivationSupported'>) {
+  return record.windowActivationSupported === true;
+}
+
+/**
  * 账号级强制恢复调度入口 —— 只在账号当前确实被运行态阻塞时出现。
  * 与调度规则解耦：调度规则是「第三方上游错误码映射」（只对特定账号开放），恢复调度是
  * 「人工确认外部条件已恢复」的运维动作，对所有被阻塞的账号都成立（登录态失效除外，

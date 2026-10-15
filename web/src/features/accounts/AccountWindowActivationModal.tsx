@@ -142,13 +142,6 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
       ]}
     >
       <Spin spinning={loading}>
-        <Typography.Paragraph type="secondary">
-          部分账号（如 Codex Plus）的限额按 5 小时滚动窗口计算，窗口只有在账号被真正使用时才会推进。
-          开启后，AIH 会每隔一段时间用该账号发一个极小探测请求，把窗口「激活」。
-        </Typography.Paragraph>
-        <Typography.Paragraph type="secondary">
-          探测走网关数据面、不进入任何项目会话。默认关闭；仅对识别出 5 小时窗口的账号生效。
-        </Typography.Paragraph>
         <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
           <Space size={8} wrap>
             <Tag color={GLOBAL_TONE_COLORS[globalView.tone]}>{globalView.label}</Tag>

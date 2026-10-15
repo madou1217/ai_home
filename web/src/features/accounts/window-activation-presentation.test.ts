@@ -20,6 +20,7 @@ test('间隔毫秒按人话格式化，非法值返回空串', () => {
 test('探测结果码翻译成人话，未知码与 HTTP 码不掩盖原因', () => {
   assert.equal(describeWindowActivationOutcome('activated'), '已激活窗口');
   assert.equal(describeWindowActivationOutcome('http_429'), '探测返回 HTTP 429');
+  assert.equal(describeWindowActivationOutcome('no_probe_model'), '该账号目录里没有可用的探测模型');
   assert.equal(describeWindowActivationOutcome('weird_code'), 'weird_code');
   assert.equal(describeWindowActivationOutcome(''), '');
 });

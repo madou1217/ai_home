@@ -16,6 +16,7 @@ export const WINDOW_ACTIVATION_ENABLE_COMMAND = 'aih server config set --window-
 const PROBE_OUTCOME_LABELS: Record<string, string> = {
   activated: '已激活窗口',
   account_not_matched: '未命中该账号（请求回落到了池内其它账号）',
+  no_probe_model: '该账号目录里没有可用的探测模型',
   probe_input_invalid: '探测参数无效',
   probe_fetch_unavailable: '本机无法发起探测请求',
   probe_transport_failure: '探测请求未送达网关',

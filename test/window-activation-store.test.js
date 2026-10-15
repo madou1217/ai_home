@@ -80,12 +80,19 @@ test('损坏记录读取抛错，不伪装成未配置', (t) => {
   );
 });
 
-test('状态读写往返', (t) => {
+test('状态读写往返（含「上次成功激活」）', (t) => {
   const { accountRef, aiHomeDir } = createFixture(t);
   assert.equal(readWindowActivationState(fs, aiHomeDir, accountRef), null);
-  writeWindowActivationState(fs, aiHomeDir, accountRef, { lastProbeAt: 999, lastOutcome: 'activated' }, 1000);
+  writeWindowActivationState(
+    fs,
+    aiHomeDir,
+    accountRef,
+    { lastProbeAt: 999, lastActivatedAt: 900, lastOutcome: 'activated' },
+    1000
+  );
   const state = readWindowActivationState(fs, aiHomeDir, accountRef);
   assert.equal(state.lastProbeAt, 999);
+  assert.equal(state.lastActivatedAt, 900);
   assert.equal(state.lastOutcome, 'activated');
   assert.equal(state.updatedAt, 1000);
 });
@@ -94,7 +101,12 @@ test('normalize 形状：坏输入返回 null 或安全默认', () => {
   assert.equal(normalizeWindowActivationConfig(null), null);
   assert.equal(normalizeWindowActivationConfig('x'), null);
   assert.deepEqual(normalizeWindowActivationConfig({ enabled: 1 }), { enabled: false, intervalMs: null, updatedAt: 0 });
-  assert.deepEqual(normalizeWindowActivationState({ lastProbeAt: -5 }), { lastProbeAt: 0, lastOutcome: '', updatedAt: 0 });
+  assert.deepEqual(
+    normalizeWindowActivationState({ lastProbeAt: -5 }),
+    { lastProbeAt: 0, lastActivatedAt: 0, lastOutcome: '', updatedAt: 0 }
+  );
+  // 旧记录（没有 lastActivatedAt）按「还没成功激活过」读，下一轮会重试。
+  assert.equal(normalizeWindowActivationState({ lastProbeAt: 5 }).lastActivatedAt, 0);
 });
 
 test('写入的记录是合法 JSON 且可被 app_kv 读回', (t) => {

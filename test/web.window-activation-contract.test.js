@@ -54,6 +54,30 @@ test('类型定义包含开关与可空间隔', () => {
   assert.match(typesSource, /interface AccountWindowActivationResponse\b/);
 });
 
+test('窗口激活入口按服务端能力判定，前端不写 provider 清单', () => {
+  const accountsSource = fs.readFileSync(accountsPath, 'utf8');
+  const statePath = path.join(projectRoot, 'web/src/features/accounts/account-state.ts');
+  const livePath = path.join(projectRoot, 'lib/server/webui-account-live.js');
+
+  // 前端只消费服务端结论（account.windowActivationSupported）。
+  assert.match(accountsSource, /canConfigureWindowActivation/);
+  assert.equal(/provider === 'codex'/.test(accountsSource), false, '前端不得硬编码 provider 清单');
+  const stateSource = fs.readFileSync(statePath, 'utf8');
+  assert.match(stateSource, /export function canConfigureWindowActivation\(/);
+  assert.match(stateSource, /record\.windowActivationSupported === true/);
+
+  // 服务端判定唯一来源是探测规格注册表（新增 provider = 加一条 spec）。
+  const liveSource = fs.readFileSync(livePath, 'utf8');
+  assert.match(liveSource, /windowActivationSupported: Boolean\(getProbeSpec\(provider\)\)/);
+  assert.match(liveSource, /require\('\.\/window-activation\/probe-specs'\)/);
+});
+
+test('弹窗只保留可执行信息，不放整段说明文案', () => {
+  const modalSource = fs.readFileSync(modalPath, 'utf8');
+  assert.equal(/部分账号（如 Codex Plus）/.test(modalSource), false);
+  assert.equal(/探测走网关数据面/.test(modalSource), false);
+});
+
 test('弹窗状态在账号动作 hook 中集中管理', () => {
   const actionsSource = fs.readFileSync(actionsPath, 'utf8');
   assert.match(actionsSource, /accountWindowActivationAccount/);

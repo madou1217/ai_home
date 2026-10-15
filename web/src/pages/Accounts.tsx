@@ -57,6 +57,7 @@ import {
   useTokenDropEvents
 } from '@/features/accounts/useTokenDropEvents';
 import {
+  canConfigureWindowActivation,
   canCopyAccountEmail,
   canEditAccountConfig,
   canEditAccountRoutingRules,
@@ -154,12 +155,6 @@ function readStoredAccountsViewMode(): 'card' | 'list' {
 function persistAccountsViewMode(mode: 'card' | 'list'): void {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(ACCOUNTS_VIEW_MODE_STORAGE_KEY, mode); } catch (_error) {}
-}
-
-// 只有注册了探测规格的 provider 才支持窗口激活；当前后端仅 codex。
-// 后端新增 spec 后，这里同步放开即可。
-function canConfigureWindowActivation(record: Pick<Account, 'provider'>): boolean {
-  return record.provider === 'codex';
 }
 
 export default function Accounts() {

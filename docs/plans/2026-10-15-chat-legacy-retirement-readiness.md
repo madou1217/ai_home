@@ -59,7 +59,15 @@ canonical provider 注册表只有一条：`web/src/features/chat-runtime/runtim
 - 守卫现状：`驱动未覆盖: (无)`；**剩余缺口 = web 表面**（13 个 provider 未注册 + 不接受 api-key 账号）→ 条件 ③；
   条件 ④（slash / terminal / 审批对齐）仍未做，因此现在**仍不可删**。
 
-条件 1–5 中 1、2 已满足；3、4、5 未满足。
+**⚠️ 安全前置：③ 不能先于 ④（审批桥）。** 证据：legacy 的 confirm/plan 走审批桥
+（claude 注入 approval MCP config + `approvalRequestUrl`、grok 用 approval args、opencode 走 serve runner，
+见 `lib/server/native-session-chat.js:334-343` 与 `webui-chat-routes.js:874-880`）；而本驱动走 headless 路径、
+**没有权限回路** —— 直接放开 web 表面会让 13 个 provider 的 confirm/plan 会话失去权限提示（安全回归）。
+因此驱动内已加 fail-closed 守卫：`approvalMode !== 'bypass'` 时抛
+`native_session_approval_bridge_unavailable`（501），绝不静默降级为无权限提示直跑。
+真机已验证：confirm 模式 → 501 明确拒绝；bypass 模式 → 正常跑通。
+
+条件 1–5 中 1、2 已满足；3、4、5 未满足（3 被 4 阻塞）。
 
 - 条件 1–5 **全部未满足**（1、2 无实现；3 硬编码；4 缺 slash/terminal；5 不存在）。
 - 因此：**legacy 保留**。它仍在承载 work 模式下 12+ provider 的项目会话，删除会直接打断这些会话。

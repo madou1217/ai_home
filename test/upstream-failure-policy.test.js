@@ -379,11 +379,11 @@ test('failure policy treats generic upstream 5xx as model-scoped retry', () => {
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
 
-test('failure policy treats an upstream empty-content error envelope as empty_model_response', () => {
+test('failure policy treats an upstream empty-content error envelope as recorded model-scoped transient', () => {
   // 实测 cline 500：{"error":"empty response content","success":false}。
   // 语义是「模型本次产出为空」（请求级异常），不是账号/服务器故障：
-  // 不记账、零冷却、可试别的号——与 SSE 路径 EMPTY_UPSTREAM_RESPONSE 同一策略，
-  // 否则会落进通用 5xx 给健康账号的该模型挂 5 分钟冷却。
+  // 报错的请求必须记录（连击 + 最近失败原因），但单次只记录不冷却——
+  // 无成功间隔的连续 2 次（5 分钟窗口）才升级 30s 短冷却，不再落进通用 5xx 的 5 分钟。
   const policy = classifyUpstreamFailure({
     provider: 'cline',
     statusCode: 500,
@@ -392,8 +392,10 @@ test('failure policy treats an upstream empty-content error envelope as empty_mo
     defaultCooldownMs: 60000
   });
   assert.equal(policy.kind, 'empty_model_response');
-  assert.equal(policy.shouldMarkFailure, false);
-  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.shouldMarkFailure, true);
+  assert.equal(policy.failureThreshold, 2);
+  assert.equal(policy.cooldownMs, 30000);
+  assert.equal(policy.failureWindowMs, 5 * 60 * 1000);
   assert.equal(policy.scope, 'model');
   assert.equal(policy.shouldRetryAnotherAccount, true);
   assert.equal(policy.clientStatusCode, 502);
@@ -477,7 +479,7 @@ test('failure policy recognizes a structured safety code inside a successful SSE
   assert.equal(policy.clientStatusCode, 403);
 });
 
-test('failure policy treats empty upstream model responses as model-scoped retry without account cooldown', () => {
+test('failure policy treats empty upstream model responses as recorded model-scoped transient retry', () => {
   const err = new Error('empty_upstream_response');
   err.code = 'EMPTY_UPSTREAM_RESPONSE';
   const policy = classifyUpstreamFailure({
@@ -487,9 +489,11 @@ test('failure policy treats empty upstream model responses as model-scoped retry
   });
   assert.equal(policy.kind, 'empty_model_response');
   assert.equal(policy.scope, 'model');
-  assert.equal(policy.shouldMarkFailure, false);
+  // 报错的请求必须记录（failCount / 连击 / 最近失败原因），连续 2 次才 30s 短冷却。
+  assert.equal(policy.shouldMarkFailure, true);
   assert.equal(policy.shouldRetryAnotherAccount, true);
-  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.failureThreshold, 2);
+  assert.equal(policy.cooldownMs, 30000);
   assert.equal(policy.clientStatusCode, 502);
 });
 

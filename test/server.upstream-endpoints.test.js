@@ -3211,7 +3211,14 @@ test('Gemini Code Assist generateContent stream retries another account when ups
 
   const body = String(res.body);
   assert.deepEqual(attemptedAccountRefs, [accountRef('a1'), accountRef('a2')]);
-  assert.equal(failureCalls.length, 0);
+  // 空产出必须记录：a1 记一条 empty_model_response（连击 2 次才 30s 短冷却，单次不冷却），
+  // 请求换到 a2 成功。
+  assert.equal(failureCalls.length, 1);
+  assert.equal(failureCalls[0][0].accountRef, accountRef('a1'));
+  assert.equal(failureCalls[0][1], 'empty_upstream_response [EMPTY_UPSTREAM_RESPONSE]');
+  assert.equal(failureCalls[0][2], 30000);
+  assert.equal(failureCalls[0][3], 2);
+  assert.equal(failureCalls[0][4] && failureCalls[0][4].kind, 'empty_model_response');
   assert.deepEqual(successAccountRefs, [accountRef('a2')]);
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['x-aih-server-account-ref'], accountRef('a2'));
@@ -4533,7 +4540,14 @@ test('direct AGY Anthropic stream retries another account when upstream returns 
 
   const body = String(res.body);
   assert.deepEqual(attemptedAccountRefs, [accountRef('a1'), accountRef('a2')]);
-  assert.equal(failureCalls.length, 0);
+  // 空产出必须记录：a1 记一条 empty_model_response（连击 2 次才 30s 短冷却，单次不冷却），
+  // 请求换到 a2 成功。
+  assert.equal(failureCalls.length, 1);
+  assert.equal(failureCalls[0][0].accountRef, accountRef('a1'));
+  assert.equal(failureCalls[0][1], 'empty_upstream_response [EMPTY_UPSTREAM_RESPONSE]');
+  assert.equal(failureCalls[0][2], 30000);
+  assert.equal(failureCalls[0][3], 2);
+  assert.equal(failureCalls[0][4] && failureCalls[0][4].kind, 'empty_model_response');
   assert.deepEqual(successAccountRefs, [accountRef('a2')]);
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['x-aih-server-account-ref'], accountRef('a2'));

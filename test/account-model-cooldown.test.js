@@ -116,25 +116,35 @@ test('usage-limit exhaustion cools the whole account and survives last-resort', 
   }), null);
 });
 
-test('empty-content error envelope leaves the (account, model) routable (no cooldown, no streak)', () => {
+test('empty-content failures are recorded, and only a consecutive streak cools briefly', () => {
   const model = 'cline-pass/deepseek-v4.1-flash';
   const account = normalizeAccountRuntime({ id: '1', provider: 'cline', apiKeyMode: false, schedulableStatus: 'schedulable' });
-  const policy = classifyUpstreamFailure({
+  const buildPolicy = () => classifyUpstreamFailure({
     provider: 'cline',
     statusCode: 500,
     body: '{"error":"empty response content","success":false}',
     detail: 'upstream_500: {"error":"empty response content","success":false}',
     defaultCooldownMs: 60000
   });
-  applyAccountFailurePolicy(account, policy, { markProxyAccountFailure, model });
 
-  // 一次空产出是请求级异常：不写模型冷却、不留失败连击，账号对该模型仍可路由
-  // （对照：同状态码的通用 5xx 会给该 (account, model) 挂 5 分钟冷却）。
+  // 第一次空产出：必须记录（连击 1 + 最近失败原因），但不冷却，账号对该模型仍可路由。
+  applyAccountFailurePolicy(account, buildPolicy(), { markProxyAccountFailure, model });
+  assert.equal(account.lastFailureKind, 'empty_model_response');
+  assert.ok(String(account.lastFailureReason || '').includes('empty response content'));
+  assert.equal(account.modelFailureStreaks[model].count, 1);
   assert.equal(getAccountModelCooldownUntil(account, model), 0);
-  assert.equal(account.cooldownUntil, 0);
-  assert.equal(account.modelFailureStreaks[model], undefined);
   const picked = chooseServerAccount([account], {}, 'cline', { provider: 'cline', model });
   assert.equal(picked && picked.id, '1');
+
+  // 无成功间隔的连续第二次：升级短冷却（30s 档，不是通用 5xx 的 5 分钟），
+  // 且只作用于该 (account, model)——账号级不冷却、其它模型不受影响。
+  applyAccountFailurePolicy(account, buildPolicy(), { markProxyAccountFailure, model });
+  const until = getAccountModelCooldownUntil(account, model);
+  assert.ok(until > Date.now());
+  assert.ok(until <= Date.now() + 30_000 + 1000);
+  assert.equal(account.modelFailureStreaks[model].count, 2);
+  assert.equal(account.cooldownUntil, 0);
+  assert.equal(chooseServerAccount([account], {}, 'cline', { provider: 'cline', model }), null);
 });
 
 test('clearExpiredAccountModelState prunes elapsed cooldowns', () => {

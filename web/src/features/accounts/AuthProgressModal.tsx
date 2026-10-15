@@ -33,6 +33,18 @@ export function getCallbackUiCopy(provider?: string): CallbackUiCopy {
       requiresAwaitingCode: true
     };
   }
+  // kiro 只有 refresh_token 这一种认证方式会用到这个「粘贴并提交」入口
+  // （设备码方式由服务端直接透出验证码，不需要粘贴），所以 provider 级别的文案就足够精确。
+  if (provider === 'kiro') {
+    return {
+      hint: 'Kiro Desktop / Google / GitHub 账号：从 Kiro IDE 的 ~/.aws/sso/cache/kiro-auth-token.json 取出 refreshToken 粘贴到这里。',
+      placeholder: 'refresh_token',
+      submitLabel: '导入账号',
+      emptyWarning: '请粘贴 refresh_token',
+      submitSuccess: 'refresh_token 已提交，正在导入账号',
+      requiresAwaitingCode: false
+    };
+  }
   return {
     // codex / claude / gemini: aih (or the CLI) runs a localhost loopback server.
     // Same machine auto-captures; remote sessions paste the callback URL here.
@@ -325,6 +337,31 @@ export function AuthProgressModal({
                     : '本地自动接收已启动'}
                 </InlineNote>
               ) : null}
+              {addJob.status === 'running' ? (
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
+                  <Input.TextArea
+                    value={authCallbackUrl}
+                    onChange={(event) => onCallbackUrlChange(event.target.value)}
+                    placeholder={getCallbackUiCopy(addJob.provider).placeholder}
+                    autoSize={{ minRows: 2, maxRows: 4 }}
+                  />
+                  <Button
+                    type="primary"
+                    onClick={onSubmitBrowserCallback}
+                    loading={authCallbackSubmitting}
+                    disabled={!canSubmitCallback}
+                  >
+                    {getCallbackUiCopy(addJob.provider).submitLabel}
+                  </Button>
+                </Space>
+              ) : null}
+            </Card>
+          )}
+
+          {addJob.authMode === 'oauth-refresh-token' && (
+            <Card size="small" title="refresh_token 导入" className="hud-panel hud-panel--sm aih-overlay-section">
+              {renderAuthDetail('账号', getAuthJobIdentity(addJob, subjectLabel), { copyMessage: '已复制账号' })}
               {addJob.status === 'running' ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>

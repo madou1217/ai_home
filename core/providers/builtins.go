@@ -434,7 +434,8 @@ func builtinKiro() Definition {
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center；Kiro Desktop 账号可用 refresh_token），不需要本地 kiro CLI。"),
+			authOption(AuthModeOAuthDevice, "AWS Builder ID 登录", "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center），不需要本地 kiro CLI。"),
+			authOption(AuthModeOAuthRefreshToken, "Kiro Desktop / refresh_token", "Kiro Desktop（Google / GitHub）账号：粘贴 Kiro IDE 的 refresh_token 完成导入。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{
@@ -898,14 +899,17 @@ func builtinWorkbuddyCN() Definition {
 // CLINE_DATA_DIR 只是它下面 <CLINE_DIR>/data 的覆盖点，不是第二个根。
 // 它没有「打印后退出」的非交互入口（-p 是 plan mode），Headless 留空，
 // 一次性调用只能走 PTY 交互路径。
+// 会话恢复走原生 `--id <session-id>`（见 nativeCline）：会话身份与历史在
+// <CLINE_DATA_DIR>/db/sessions.db，持久会话重启恢复因此能精确续接同一段对话。
 func builtinCline() Definition {
 	return Definition{
-		ID:           "cline",
-		Presentation: presentation("cline", "Cline", "CLN", "⟡", "magenta"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(true, false),
-		Credentials:  &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		ID:             "cline",
+		Presentation:   presentation("cline", "Cline", "CLN", "⟡", "magenta"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(true, false),
+		Credentials:    &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
+		NativeBoundary: nativeCline(),
+		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),

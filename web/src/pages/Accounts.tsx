@@ -114,7 +114,6 @@ import { useAccountActions } from '@/features/accounts/use-account-actions';
 import { useAccountAppEntries } from '@/features/accounts/use-account-app-entries';
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
-import { KiroNativeLoginEntry } from '@/features/accounts/KiroNativeLoginEntry';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
 import {
@@ -833,10 +832,6 @@ export default function Accounts() {
           >
             添加账号
           </Button>
-          {/* Kiro 免 CLI 登录：与「添加账号」同级无条件显示（按档位隐藏过，实测用户找不到入口）。 */}
-          <KiroNativeLoginEntry
-            onAdded={() => { void accountsSnapshot.requestAccountsSnapshotUpdate(); }}
-          />
         </>
       )}
     >

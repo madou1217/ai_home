@@ -161,11 +161,12 @@ func validateAuthOptions(options []AuthOption) error {
 		return errors.New("authOptions 不能为空")
 	}
 	allowed := map[AuthMode]struct{}{
-		AuthModeAPIKey:       {},
-		AuthModeAuthToken:    {},
-		AuthModeOAuthBrowser: {},
-		AuthModeOAuthDevice:  {},
-		AuthModeVertexAI:     {},
+		AuthModeAPIKey:            {},
+		AuthModeAuthToken:         {},
+		AuthModeOAuthBrowser:      {},
+		AuthModeOAuthDevice:       {},
+		AuthModeOAuthRefreshToken: {},
+		AuthModeVertexAI:          {},
 	}
 	seen := make(map[AuthMode]struct{}, len(options))
 	for _, option := range options {

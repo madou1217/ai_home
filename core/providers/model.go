@@ -71,6 +71,9 @@ const (
 	AuthModeOAuthBrowser AuthMode = "oauth-browser"
 	// AuthModeOAuthDevice 表示设备码 OAuth 流程。
 	AuthModeOAuthDevice AuthMode = "oauth-device"
+	// AuthModeOAuthRefreshToken 表示由用户提供 refresh_token 的 OAuth 导入
+	// （没有浏览器/设备码环节，例如 Kiro Desktop / social 账号）。
+	AuthModeOAuthRefreshToken AuthMode = "oauth-refresh-token"
 	// AuthModeVertexAI 表示 Google Cloud Vertex AI 认证流程。
 	AuthModeVertexAI AuthMode = "vertex-ai"
 )

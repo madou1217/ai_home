@@ -352,9 +352,14 @@ export const PROVIDER_DEFINITIONS = [
     ],
     "authOptions": [
       {
-        "value": "oauth-browser",
+        "value": "oauth-device",
         "label": "AWS Builder ID 登录",
-        "description": "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center；Kiro Desktop 账号可用 refresh_token），不需要本地 kiro CLI。"
+        "description": "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center），不需要本地 kiro CLI。"
+      },
+      {
+        "value": "oauth-refresh-token",
+        "label": "Kiro Desktop / refresh_token",
+        "description": "Kiro Desktop（Google / GitHub）账号：粘贴 Kiro IDE 的 refresh_token 完成导入。"
       }
     ],
     "clients": {

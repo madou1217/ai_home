@@ -127,9 +127,13 @@ test('configureApiKeyAccount persists OPENCODE_API_KEY, OPENCODE_BASE_URL, and d
   });
 });
 
-test('Kiro WebUI auth contract supports browser OAuth', () => {
-  assert.equal(getDefaultAuthMode('kiro'), 'oauth-browser');
-  assert.equal(isSupportedAuthMode('kiro', 'oauth-browser'), true);
+test('Kiro 走原生认证方式（设备码 / refresh_token），不再依赖 CLI 浏览器流程', () => {
+  // 事实来源是 Go 契约的 authOptions（core/providers/builtins.go），这里守住派生结果：
+  // 设备码是默认项，refresh_token 导入是第二个认证方式，两者都不经过本地 kiro CLI。
+  assert.equal(getDefaultAuthMode('kiro'), 'oauth-device');
+  assert.equal(isSupportedAuthMode('kiro', 'oauth-device'), true);
+  assert.equal(isSupportedAuthMode('kiro', 'oauth-refresh-token'), true);
+  assert.equal(isSupportedAuthMode('kiro', 'oauth-browser'), false);
   assert.equal(isSupportedAuthMode('kiro', 'api-key'), false);
 });
 const {

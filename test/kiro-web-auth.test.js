@@ -81,12 +81,34 @@ test('Kiro OAuth freshness tracks the logical token, including committed WAL upd
   assert.equal(hasOauthCompletionArtifacts(job, fs), true);
 });
 
-test('a successful Kiro CLI login becomes a verified WebUI account, with polling safe during verification', async t => {
+test('Kiro 设备码登录（WebUI 添加账号）**不 spawn 任何 CLI**，直接产出已验证的账号', async t => {
   const { root } = fixture(t);
-  let onExit;
-  let spawnCall;
-  let respond;
+  let spawnCount = 0;
+  const requests = [];
   const replies = [];
+  const fetchImpl = async (url) => {
+    const target = String(url);
+    requests.push(target);
+    if (target.includes('/client/register')) {
+      return { status: 200, json: async () => ({ clientId: 'cid', clientSecret: 'secret' }) };
+    }
+    if (target.includes('/device_authorization')) {
+      return { status: 200, json: async () => ({ deviceCode: 'device-code', userCode: 'ABCD-EFGH',
+        verificationUri: 'https://view.awsapps.com/start/#/device',
+        verificationUriComplete: 'https://view.awsapps.com/start/#/device?user_code=ABCD-EFGH',
+        interval: 1, expiresIn: 600 }) };
+    }
+    if (target.includes('/token')) {
+      return { status: 200, json: async () => ({ accessToken: 'aoa-native', refreshToken: 'aor-native', expiresIn: 3600 }) };
+    }
+    // 身份核验走 GetUsageLimits，必须是真 Response（按 body 流读取）。
+    return new Response(JSON.stringify({
+      userInfo: { userId: 'verified-builder-user' },
+      subscriptionInfo: { type: 'Q_DEVELOPER_STANDALONE_FREE', subscriptionTitle: 'KIRO FREE' },
+      usageBreakdownList: [{ resourceType: 'CREDIT', usageLimit: 50, currentUsageWithPrecision: 0.13,
+        usageLimitWithPrecision: 50 }]
+    }), { status: 200 });
+  };
   const manager = createAuthJobManager({
     fs,
     aiHomeDir: path.join(root, 'aih'),
@@ -96,31 +118,94 @@ test('a successful Kiro CLI login becomes a verified WebUI account, with polling
       cwd: () => root,
       kill() {}
     },
-    resolveCliPathImpl: () => path.join(root, 'bin', 'kiro-cli'),
-    ptyImpl: {
-      spawn(command, args, options) {
-        spawnCall = { command, args, options };
-        return { pid: 12345, onData() {}, onExit(handler) { onExit = handler; }, kill() {} };
-      }
-    },
-    fetchImpl: () => new Promise(resolve => { respond = resolve; }),
+    // 这两条是本次需求的硬约束：设备码路径既不该解析 CLI，也不该 spawn PTY。
+    resolveCliPathImpl: () => { throw new Error('must_not_resolve_cli'); },
+    ptyImpl: { spawn() { spawnCount += 1; throw new Error('must_not_spawn_pty'); } },
+    fetchImpl,
     onOauthJobFinished: job => replies.push(job.accountRef)
   });
-  const started = manager.startOauthJob('kiro', 'oauth-browser');
+
+  const started = manager.startOauthJob('kiro', 'oauth-device');
   const job = manager.getJob(started.jobId);
-  assert.equal(spawnCall.options.env.KIRO_TEST_DB_PATH, path.join(job.runtimeDir, 'data.sqlite3'));
-  assert.equal(job.status, 'running');
-  const db = openDatabase(spawnCall.options.env.KIRO_TEST_DB_PATH);
-  writeToken(db);
-  db.close();
-  onExit({ exitCode: 0 });
-  assert.equal(manager.getJob(started.jobId).status, 'running');
-  assert.equal(listAccountCredentialRecords(fs, path.join(root, 'aih'), 'kiro').length, 0);
-  assert.equal(typeof respond, 'function');
-  respond(new Response(JSON.stringify({ userInfo: { userId: 'verified-builder-user' } })));
-  await job._identityVerification;
+  assert.equal(job.authMode, 'oauth-device');
+  assert.equal(spawnCount, 0, '原生登录不得 spawn 任何 CLI/PTY');
+
+  const waitFor = async (predicate, timeoutMs = 10000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return true;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return false;
+  };
+
+  assert.equal(await waitFor(() => job.userCode === 'ABCD-EFGH'), true, '设备码必须透出给 UI');
+  assert.equal(job.verificationUriComplete, 'https://view.awsapps.com/start/#/device?user_code=ABCD-EFGH');
+  assert.equal(Number.isFinite(job.expiresAt), true);
+  assert.equal(Number.isFinite(job.pollIntervalMs), true);
+  assert.match(job.logs, /ABCD-EFGH/);
+
+  assert.equal(await waitFor(() => job.status === 'succeeded'), true, `job 未成功: ${job.error}`);
+  assert.equal(job.authProgressState, 'completed');
+  assert.equal(readAccountNativeAuth(fs, path.join(root, 'aih'), job.accountRef).auth.access_token, 'aoa-native');
+  assert.deepEqual(replies, [job.accountRef]);
+  // 全程只碰 AWS 的 OIDC 与 CodeWhisperer 端点，没有任何 CLI 二进制。
+  assert.equal(requests.some(url => url.includes('/client/register')), true);
+  assert.equal(requests.some(url => url.includes('/device_authorization')), true);
+  assert.equal(requests.some(url => url.includes('codewhisperer.')), true);
+});
+
+test('Kiro refresh_token 认证方式（WebUI）：粘贴 token 即导入账号，同样不 spawn CLI', async t => {
+  const { root } = fixture(t);
+  let spawnCount = 0;
+  const replies = [];
+  const fetchImpl = async (url) => {
+    const target = String(url);
+    if (target.includes('auth.desktop.kiro.dev/refreshToken')) {
+      return { status: 200, json: async () => ({ accessToken: 'aoa-desktop', refreshToken: 'aor-desktop',
+        expiresIn: 3600, profileArn: 'arn:aws:codewhisperer:us-east-1:1:profile/social' }) };
+    }
+    return new Response(JSON.stringify({
+      userInfo: { userId: 'desktop-user' },
+      usageBreakdownList: [{ resourceType: 'CREDIT', usageLimit: 50, currentUsageWithPrecision: 1,
+        usageLimitWithPrecision: 50 }]
+    }), { status: 200 });
+  };
+  const manager = createAuthJobManager({
+    fs,
+    aiHomeDir: path.join(root, 'aih'),
+    processObj: {
+      env: { HOME: root, USERPROFILE: root, AIH_HOST_HOME: root, PATH: '' },
+      platform: process.platform,
+      cwd: () => root,
+      kill() {}
+    },
+    resolveCliPathImpl: () => { throw new Error('must_not_resolve_cli'); },
+    ptyImpl: { spawn() { spawnCount += 1; throw new Error('must_not_spawn_pty'); } },
+    fetchImpl,
+    onOauthJobFinished: job => replies.push(job.accountRef)
+  });
+
+  const started = manager.startOauthJob('kiro', 'oauth-refresh-token');
+  const job = manager.getJob(started.jobId);
+  assert.equal(job.authMode, 'oauth-refresh-token');
+  // 等用户粘贴：任务处于「等待输入」态，且没有设备码（不渲染设备码卡片）。
+  assert.equal(job.authProgressState, 'awaiting_code');
+  assert.equal(job.userCode, '');
+  assert.equal(spawnCount, 0);
+
+  const result = await manager.completeBrowserOauthCallback(started.jobId, 'aor-from-kiro-ide');
+  assert.equal(result.ok, true);
   assert.equal(job.status, 'succeeded', job.error);
   assert.equal(job.authProgressState, 'completed');
-  assert.equal(readAccountNativeAuth(fs, path.join(root, 'aih'), job.accountRef).auth.access_token, 'access-one');
+  const nativeAuth = readAccountNativeAuth(fs, path.join(root, 'aih'), job.accountRef);
+  assert.equal(nativeAuth.auth.access_token, 'aoa-desktop');
+  assert.equal(nativeAuth.auth.profileArn, 'arn:aws:codewhisperer:us-east-1:1:profile/social');
   assert.deepEqual(replies, [job.accountRef]);
+
+  // 判型为 desktop（social 账号没有 device-registration），下次刷新走 Kiro Desktop 口径。
+  const { resolveKiroTokenFlavour, KIRO_TOKEN_FLAVOURS } = require('../lib/account/kiro-token-flavour');
+  assert.equal(resolveKiroTokenFlavour(nativeAuth).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
+  assert.equal(require('../lib/account/kiro-device-registration').resolveKiroDeviceRegistration(nativeAuth).error,
+    'kiro_registration_missing');
 });

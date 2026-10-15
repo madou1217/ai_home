@@ -44,7 +44,7 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('sessionRuntime'),
-    ['codex', 'claude', 'agy', 'opencode']
+    ['codex', 'claude', 'agy', 'opencode', 'cline']
   );
   assert.deepEqual(
     listProvidersByCapability('fabricRuntime'),

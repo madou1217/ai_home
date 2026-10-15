@@ -918,7 +918,10 @@ func builtinCline() Definition {
 		// <CLINE_DATA_DIR>/db/sessions.db 与 sessions/<id>/<id>.messages.json
 		// （lib/sessions/session-reader-cline.js）。共享存储落地后同一条路径就是宿主
 		// 那份会话（软链接），因此 aih 会话历史与宿主 `cline /history` 看到的是同一批。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
+		// session_runtime：WebUI 聊天可驱动 cline CLI —— 新会话走 `cline --json <prompt>`
+		// 的 NDJSON 事件流，续聊只能 `cline --id <id>` 进 TUI（CLI 要求 TTY），
+		// 两条路径的声明见 lib/server/native-session-chat-transport.js。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilitySessionRuntime},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),

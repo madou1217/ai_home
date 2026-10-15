@@ -557,7 +557,8 @@ export const PROVIDER_DEFINITIONS = [
       "api_key_account",
       "model_catalog",
       "session_history",
-      "account_session_store"
+      "account_session_store",
+      "session_runtime"
     ],
     "authOptions": [
       {

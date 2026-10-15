@@ -354,7 +354,7 @@ export const PROVIDER_DEFINITIONS = [
       {
         "value": "oauth-browser",
         "label": "AWS Builder ID 登录",
-        "description": "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"
+        "description": "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center；Kiro Desktop 账号可用 refresh_token），不需要本地 kiro CLI。"
       }
     ],
     "clients": {

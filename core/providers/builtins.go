@@ -422,7 +422,9 @@ func builtinKimi() Definition {
 	}
 }
 
-// builtinKiro 定义 Kiro CLI 的 AWS Builder ID Device Flow。
+// builtinKiro 定义 Kiro 的 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center）。
+// 授权由 aih 自己完成，**不需要本地 kiro CLI**；Kiro Desktop / social（Google/GitHub）账号
+// 走 refresh_token 口径，见 lib/account/kiro-device-login.js。
 func builtinKiro() Definition {
 	return Definition{
 		ID:           "kiro",
@@ -432,7 +434,7 @@ func builtinKiro() Definition {
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "使用 Kiro CLI Device Flow 认证（支持 Google/GitHub/AWS Builder ID）。"),
+			authOption(AuthModeOAuthBrowser, "AWS Builder ID 登录", "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center；Kiro Desktop 账号可用 refresh_token），不需要本地 kiro CLI。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncPolling, Events: []string{}},
 		CLI: &CLIConfig{

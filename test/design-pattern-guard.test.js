@@ -38,7 +38,6 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/http-utils.js': 4,
   'lib/server/image-generation-model-specs.js': 6,
   'lib/server/model-capability-index.js': 2,
-  'lib/server/model-discovery/generic-models-probe.js': 9,
   'lib/server/models-dev-metadata.js': 7,
   'lib/server/models.js': 7,
   'lib/server/native-cli-model-discovery.js': 2,

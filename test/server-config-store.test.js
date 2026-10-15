@@ -44,6 +44,8 @@ test('server config store persists and normalizes server config', (t) => {
     noProxy: 'localhost,127.0.0.1',
     modelsProbeAccounts: 5,
     windowActivation: false,
+    windowActivationDefaultIntervalMs: 4 * 60 * 60 * 1000,
+    windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -98,6 +100,8 @@ test('server config store supports partial update semantics and empty string cle
     noProxy: '',
     modelsProbeAccounts: 4,
     windowActivation: false,
+    windowActivationDefaultIntervalMs: 4 * 60 * 60 * 1000,
+    windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -133,6 +137,8 @@ test('server config store works when fs only exposes mkdirSync for directory cre
     noProxy: '',
     modelsProbeAccounts: 2,
     windowActivation: false,
+    windowActivationDefaultIntervalMs: 4 * 60 * 60 * 1000,
+    windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -167,6 +173,8 @@ test('mergeServerConfigPatch ignores null updates and preserves explicit boolean
     noProxy: 'localhost',
     modelsProbeAccounts: 6,
     windowActivation: false,
+    windowActivationDefaultIntervalMs: 4 * 60 * 60 * 1000,
+    windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []

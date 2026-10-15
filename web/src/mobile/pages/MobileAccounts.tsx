@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
 import { useLocation } from 'react-router-dom';
 import {
+  ClockCircleOutlined,
   CodeOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
   ImportOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SyncOutlined
 } from '@ant-design/icons';
 import {
@@ -33,6 +35,7 @@ import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
+import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
 import { useAccountsSnapshot } from '@/features/accounts/useAccountsSnapshot';
 import type { UseAccountsSnapshotHandlers } from '@/features/accounts/useAccountsSnapshot';
 import { useModelCatalog } from '@/features/accounts/useModelCatalog';
@@ -43,6 +46,7 @@ import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-poller';
 import { formatImportJobProgress } from '@/features/accounts/account-import-export';
 import {
+  canConfigureWindowActivation,
   canEditAccountConfig,
   canEditAccountRoutingRules,
   canReauthAccount,
@@ -254,6 +258,14 @@ export default function MobileAccounts(_props: MobilePageProps) {
         onAction: () => actions.handleRestoreScheduling(record)
       });
     }
+    if (canConfigureWindowActivation(record)) {
+      list.push({
+        key: 'window-activation',
+        label: '窗口激活',
+        icon: <ClockCircleOutlined />,
+        onAction: () => actions.setAccountWindowActivationAccount(record)
+      });
+    }
     list.push({
       key: 'delete',
       label: '删除',
@@ -451,6 +463,10 @@ export default function MobileAccounts(_props: MobilePageProps) {
       <AccountEgressModal
         account={actions.accountEgressAccount}
         onClose={() => actions.setAccountEgressAccount(null)}
+      />
+      <AccountWindowActivationModal
+        account={actions.accountWindowActivationAccount}
+        onClose={() => actions.setAccountWindowActivationAccount(null)}
       />
     </MobilePage>
   );

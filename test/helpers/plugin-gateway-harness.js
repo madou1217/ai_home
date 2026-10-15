@@ -72,12 +72,20 @@ async function startClaudeServer(t) {
   const upstreamTokens = [];
   // failures.remaining：接下来几次上游回 500；failures.headerDelayMs：成功响应写头前的等待（模拟首字节慢）。
   // edgeBlocks：接下来几次上游回 Cloudflare 风格的 403 HTML 拦截页。
-  const failures = { remaining: 0, headerDelayMs: 0, edgeBlocks: 0 };
+  // gatewayFormatRejects：接下来几次上游回站点边缘网关（APISIX）的 401 `{"message":"invalid_format"}`。
+  const failures = { remaining: 0, headerDelayMs: 0, edgeBlocks: 0, gatewayFormatRejects: 0 };
   const upstream = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
       if (req.url !== '/v1/messages') { res.writeHead(404); res.end('{}'); return; }
+      if (failures.gatewayFormatRejects > 0) {
+        failures.gatewayFormatRejects -= 1;
+        upstreamTokens.push(req.headers.authorization);
+        res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8', server: 'APISIX/3.9.1' });
+        res.end('{"message":"invalid_format"}\n');
+        return;
+      }
       if (failures.edgeBlocks > 0) {
         failures.edgeBlocks -= 1;
         upstreamTokens.push(req.headers.authorization);

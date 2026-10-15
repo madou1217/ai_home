@@ -61,6 +61,67 @@ test('genuine JSON 401/403 auth failures still lock the account as before', () =
   assert.equal(noHeaders.kind, 'auth_invalid', '没有响应头与正文时维持原判定');
 });
 
+// APISIX 类边缘网关的**请求格式**拒绝（2026-10-15 事故）：www.workbuddy.ai/v2/chat/completions
+// 回 401 + `{"message":"invalid_format"}`（server: APISIX/3.9.1、content-type: text/plain），
+// 原判定把它当 auth_invalid_reauth_required → 健康账号被挂 31 536 000 000 ms 冷却。
+const APISIX_HEADERS = { server: 'APISIX/3.9.1', 'content-type': 'text/plain; charset=utf-8' };
+
+test('an APISIX `{"message":"invalid_format"}` 401 is a request-shape rejection, not an invalid credential', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'workbuddy',
+    statusCode: 401,
+    headers: APISIX_HEADERS,
+    body: '{"message":"invalid_format"}\n',
+    detail: 'upstream_401_account_acct_cb6a07c689c8d46432e6',
+    account: { accountRef: 'acct_cb6a07c689c8d46432e6', authType: 'oauth' },
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.kind, 'upstream_edge_format_rejected');
+  assert.equal(policy.failureReason, 'upstream_edge_format_rejected_401');
+  assert.equal(policy.shouldMarkFailure, false, '账号不记账（实测 token 有效、换请求形态即 200）');
+  assert.equal(policy.shouldRetryAnotherAccount, false, '换号只会拿到同一张格式拒绝');
+  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.clientStatusCode, 502);
+  assert.match(policy.detail, /invalid_format/, '原始正文保留在 detail 里，便于排查');
+
+  const marked = [];
+  const account = { accountRef: 'acct_cb6a07c689c8d46432e6', authType: 'oauth' };
+  applyAccountFailurePolicy(account, policy, { markProxyAccountFailure: (...args) => marked.push(args), defaultThreshold: 1 });
+  assert.deepEqual(marked, [], '账号状态不受影响');
+  assert.equal(account.lastFailureKind, undefined);
+});
+
+test('gateway-shaped 401/403 without the credentials-blind shape still stays auth_invalid', () => {
+  const cases = [
+    // message 含凭据语义：即便来自 APISIX 也按凭据问题处理（宁可锁号也不能漏掉真失效）。
+    [{ ...APISIX_HEADERS }, '{"message":"invalid token"}', 'message 含 token'],
+    [{ ...APISIX_HEADERS }, '{"message":"Missing API key in request"}', 'message 含 api key'],
+    // 厂商自己的错误信封是 {code,msg}：不是「只有 message 一个键」。
+    [{ ...APISIX_HEADERS }, '{"code":11128,"msg":"Illegal API invocation from an unapproved channel"}', '家族信封'],
+    // 没有网关签名头：普通上游的 401 维持原判定。
+    [{ 'content-type': 'application/json' }, '{"message":"invalid_format"}', '无 APISIX 头'],
+    // 结构不认（非 JSON 单键对象）。
+    [{ ...APISIX_HEADERS }, '{"message":{"nested":true}}', 'message 非字符串'],
+    [{ ...APISIX_HEADERS }, '{"message":"invalid_format","extra":1}', '多键'],
+    [{ ...APISIX_HEADERS }, '{not json', '正文不是 JSON']
+  ];
+  for (const [headers, body, label] of cases) {
+    const policy = classifyUpstreamFailure({
+      provider: 'workbuddy',
+      statusCode: 401,
+      headers,
+      body,
+      detail: 'upstream_401',
+      account: { accountRef: 'acct_x', authType: 'oauth' },
+      defaultCooldownMs: 60000
+    });
+    assert.equal(policy.kind, 'auth_invalid', label);
+    assert.equal(policy.shouldMarkFailure, true, label);
+    assert.equal(policy.failureReason, 'auth_invalid_reauth_required', label);
+  }
+});
+
 test('GET/HEAD on POST-only inference paths are refused locally; OPTIONS and other paths pass', () => {
   const calls = [];
   const res = { headers: {}, setHeader(name, value) { this.headers[name] = value; } };
@@ -83,6 +144,25 @@ test('through aih server: GET /v1/messages gets 405 and never reaches an upstrea
   assert.deepEqual(server.upstreamTokens, [], '上游零命中');
   const ok = await server.message('claude-opus-5', 'still works');
   assert.equal(ok.status, 200);
+});
+
+test('through aih server: an APISIX format rejection ends the request with 502 and never locks the account', async (t) => {
+  const server = await startClaudeServer(t);
+  server.failures.gatewayFormatRejects = 1;
+  const rejected = await server.message('claude-opus-5', 'rejected');
+  const body = await rejected.text();
+  assert.equal(rejected.status, 502, body);
+  assert.match(body, /edge_format_rejected|站点边缘网关/);
+  assert.equal(server.upstreamTokens.length, 1, '失败即终止：不换号、不刷新 token 重试');
+  const rejectedToken = server.upstreamTokens[0];
+  // 选号随机：被拒绝的账号若被误锁，20 次内绝不会再被选中。
+  let reused = false;
+  for (let index = 0; index < 20 && !reused; index += 1) {
+    const ok = await server.message('claude-opus-5', `after ${index}`);
+    assert.equal(ok.status, 200, await ok.text());
+    reused = server.upstreamTokens[server.upstreamTokens.length - 1] === rejectedToken;
+  }
+  assert.equal(reused, true, '被拒绝的账号仍可调度（没有被锁）');
 });
 
 test('through aih server: a 403 HTML edge block ends the request without refreshing, rotating or locking accounts', async (t) => {

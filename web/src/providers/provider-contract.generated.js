@@ -23,7 +23,8 @@ export const PROVIDER_DEFINITIONS = [
       "fabric_runtime",
       "gateway_profile",
       "session_history",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -64,7 +65,8 @@ export const PROVIDER_DEFINITIONS = [
       "quota_usage",
       "fabric_runtime",
       "session_history",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -109,7 +111,8 @@ export const PROVIDER_DEFINITIONS = [
       "fabric_runtime",
       "gateway_profile",
       "session_history",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -182,7 +185,8 @@ export const PROVIDER_DEFINITIONS = [
       "fabric_runtime",
       "gateway_profile",
       "session_history",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -316,7 +320,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "quota_usage",
       "usage_scan",
-      "gateway_profile"
+      "gateway_profile",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -420,7 +425,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "quota_usage",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -455,7 +461,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "quota_usage",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -490,7 +497,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "quota_usage",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -525,7 +533,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "quota_usage",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {
@@ -561,7 +570,8 @@ export const PROVIDER_DEFINITIONS = [
       "session_history",
       "account_session_store",
       "session_runtime",
-      "usage_scan"
+      "usage_scan",
+      "acp_session"
     ],
     "authOptions": [
       {

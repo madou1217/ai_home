@@ -68,6 +68,11 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
     ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kimi', 'zcode',
       'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']
   );
+  assert.deepEqual(
+    listProvidersByCapability('acpSession'),
+    ['codex', 'gemini', 'claude', 'opencode', 'kimi',
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']
+  );
 });
 
 test('core account modules do not duplicate the complete provider list', () => {

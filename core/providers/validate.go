@@ -141,6 +141,7 @@ func validateCapabilities(capabilities []Capability) error {
 		CapabilitySessionHistory:      {},
 		CapabilityAccountSessionStore: {},
 		CapabilityUsageScan:           {},
+		CapabilityACPSession:          {},
 	}
 	seen := make(map[Capability]struct{}, len(capabilities))
 	for _, capability := range capabilities {

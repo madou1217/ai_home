@@ -51,7 +51,7 @@ func builtinCodex() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "openai", APIKeyEnv: []string{"OPENAI_API_KEY"}, BaseURLEnv: []string{"OPENAI_BASE_URL"}},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ChatGPT / OpenAI 登录", "打开授权链接，授权后把回调地址提交给 WebUI。"),
 			authOption(AuthModeOAuthDevice, "设备码登录", "仅在账号支持 device auth 时使用，适合远程环境。"),
@@ -104,7 +104,7 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
 				AuthModeOAuthBrowser,
@@ -142,7 +142,7 @@ func builtinClaude() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "anthropic", APIKeyEnv: []string{"ANTHROPIC_API_KEY"}, AuthTokenEnv: []string{"ANTHROPIC_AUTH_TOKEN"}, BaseURLEnv: []string{"ANTHROPIC_BASE_URL"}},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Claude 登录", "使用 Claude Code 原生 login 流程（Claude.ai 凭据）。"),
 			authOption(AuthModeAPIKey, "Anthropic 密钥", "绑定 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL。"),
@@ -240,7 +240,7 @@ func builtinOpenCode() Definition {
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
 		NativeBoundary: nativeOpenCode(),
-		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
+		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
 		},
@@ -403,7 +403,7 @@ func builtinKimi() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
 			authOption(AuthModeOAuthBrowser, "Kimi Code 登录", "使用 Kimi Code CLI 原生 OAuth 设备码流程（需 Kimi 会员订阅）。"),
@@ -559,7 +559,7 @@ func builtinCodebuddy() Definition {
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
 		// model_catalog：从会话使用的 CLI `--help` 读取该账号支持的模型，家族四支共用
 		// lib/server/workbuddy-model-discovery.js，运行时与账号环境保持一致。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -672,7 +672,7 @@ func builtinCodebuddyCN() Definition {
 		// 同一份积分，因此四支一起声明。适配器在 lib/cli/services/usage/
 		// codebuddy-quota-probe.js，端点/鉴权头见 lib/account/codebuddy-billing.js。
 		// model_catalog：与 codebuddy 同一适配器，CLI 与凭据严格取本地区、本账号。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -767,7 +767,7 @@ func builtinWorkbuddy() Definition {
 		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
 		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
 		// lib/server/workbuddy-model-discovery.js，家族四支共用。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -850,7 +850,7 @@ func builtinWorkbuddyCN() Definition {
 		// model_catalog：个人账号没有模型接口，模型列表取 App 内嵌 CLI `--help` 里按当前登录
 		// 给出的「当前支持」列表（会话 --model 校验的也是它），适配器在
 		// lib/server/workbuddy-model-discovery.js，家族四支共用。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(
 				AuthModeOAuthBrowser,
@@ -933,7 +933,7 @@ func builtinCline() Definition {
 		// outputTokens / cacheReadTokens / cacheWriteTokens，2026-10-15 实测 3.0.71），
 		// 因此不需要网关流量也能统计该账号的 token 用量；账号归属取自持久会话注册表的
 		// 账号作用域（lib/usage/cline-usage-ownership.js）。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilitySessionRuntime, CapabilityUsageScan},
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilitySessionRuntime, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),

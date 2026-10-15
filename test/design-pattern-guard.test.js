@@ -2,11 +2,13 @@
 
 // **设计模式收口守卫**（Phase 4）——把「不许用 provider 名分支」从口头约定变成会红的测试。
 //
-// 三条不变量：
+// 四条不变量：
 //   1. 采集面的策略链是唯一派发路径：描述符声明的 handler id 必须在注册表里真实存在
 //      （写错 id / 忘了注册 → handler_unavailable → 这里红）。
 //   2. provider 名分支不许**新增**：每个已知文件记录基线，处数只能减少不能增加（随迁移缩小）。
 //   3. 新增文件（不在基线里）出现 ≥2 处 provider 名比较即红。
+//   4. 跨源登记面必须同源：hooks 档案 ↔ Go 合同 sessionSync.adapter；ACP 入口
+//      描述符声明 ↔ 布局表 ↔ Go 合同 acp_session（三份集合逐项一致）。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -123,6 +125,22 @@ test('hooks 档案：描述符声明的 adapter 必须与 Go 合同 sessionSync.
     if (!capability || capability.supported !== true) mismatches.push(`${definition.id}: 合同声明 hook 但描述符没有 hooks 档案`);
   }
   assert.deepEqual(mismatches, [], mismatches.join('\n'));
+});
+
+test('ACP 入口：描述符声明、布局表与 Go 合同三份集合必须同源（防漂移）', () => {
+  const { listProvidersByCapability } = require('../lib/provider-catalog');
+  const { buildAcpEntryArgs, listAcpProviders } = require('../lib/runtime/acp-layouts');
+  const registered = listProviders('acp');
+  const layout = listAcpProviders();
+  const contract = listProvidersByCapability('acpSession');
+  // 描述符声明了却没有布局行 = 消费方拿到空入口；有布局行却没登记 = 倒排索引漏人；
+  // 与 Go 合同不一致 = 跨端（WebUI 生成合同 / Node 运行时）结论分叉。
+  assert.deepEqual([...registered].sort(), [...layout].sort(), '描述符声明的 ACP provider 必须与布局表一致');
+  assert.deepEqual([...contract].sort(), [...layout].sort(), 'Go 合同的 acp_session 必须与布局表一致');
+  // 登记即承诺入口可解析：默认传输必须能组出参数（external-binary 形态返回 []，同样是可解析）。
+  for (const provider of layout) {
+    assert.ok(Array.isArray(buildAcpEntryArgs(provider)), `${provider} 登记了 ACP 却解析不出入口参数`);
+  }
 });
 
 test('provider 名分支只能减少：已知文件不得超过基线', () => {

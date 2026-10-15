@@ -57,6 +57,10 @@ const (
 	CapabilityAccountSessionStore Capability = "account_session_store"
 	// CapabilityUsageScan 表示已实现本地历史用量扫描适配器。
 	CapabilityUsageScan Capability = "usage_scan"
+	// CapabilityACPSession 表示该 Provider 已登记 ACP（Agent Client Protocol）会话入口，
+	// 可由 aih 以 ACP 模式启动会话；入口参数与传输形态由 Node 侧布局表
+	// （lib/runtime/acp-layouts.js）声明，Go 侧只登记能力（Node 描述符同源声明 `acp`）。
+	CapabilityACPSession Capability = "acp_session"
 )
 
 // AuthMode 是账号创建时可选择的认证方式。

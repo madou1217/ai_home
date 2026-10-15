@@ -74,7 +74,7 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/web-account-auth-job.js': 2,
   'lib/server/web-account-auth-oauth-tokens.js': 9,
   'lib/server/web-account-auth.js': 6,
-  'lib/server/webui-account-live.js': 25,
+  'lib/server/webui-account-live.js': 16,
   'lib/server/webui-account-routes-utils.js': 4,
   'lib/server/webui-account-routes.js': 22,
   'lib/server/webui-chat-routes-native-session.js': 2,

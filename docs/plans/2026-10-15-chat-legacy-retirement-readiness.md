@@ -71,6 +71,34 @@ canonical provider 注册表只有一条：`web/src/features/chat-runtime/runtim
 
 ---
 
+## 4.2 条件 ④ 第二批（2026-10-15 第四轮）：启动档案 + 准备管线 + agy 链路修复
+
+**四个修复（都按「描述符/注册表 + 单一事实来源」，驱动层无 provider 分支）：**
+
+1. `native-session-launch-profile.js`（新）—— 启动档案：执行模式/prompt 投递取自
+   `native-session-chat-transport`，运行事实取自 `chat-runner-profile`；模式→形态、投递通道→是否 PTY
+   都是表。驱动不再硬编码 `interactiveCli`/`prompt`/形态旗标。
+2. `native-session-launch-preparation.js`（新）—— 启动准备管线：步骤由档案声明、实现由注册表按 id 提供
+   （`session-store-links` / `session-index`），未注册/端口不可用记诊断（`chat_native_preparation`）。
+   **补上了 CLI 路径有、canonical 缺的「账号投影会话链接对账」**（`pty-runtime-run.js:301` 同款）。
+3. `session-store.js` —— 声明的 provider 本地别名（`agy: cli.log`）语义修正：允许落在宿主受管根**或投影自身**，
+   并容忍**日志轮换导致的悬空目标**（realpath 优先、失败退回链接文本解析）。此前一个被轮换的日志别名
+   会把整账号判 `provider_resource_reconcile_incomplete:cli.log`（canonical 与 legacy 同病）。
+4. 默认模型解析：驱动在 turn/策略都没给模型时，用与 legacy **同一处**的 `resolveProviderDefaultModel`
+   （server.js 注入端口）。缺它时 CLI 会停在模型选择上永不返回。
+
+**验证**：`test/session-store.test.js` 等 70/70 通过（含既有 agy 别名测试）；chat-runtime-composition /
+chat-harness-gateway / runtime-target 的 3 个失败在**无本次改动时同样失败**（其他会话 WIP，非回归）。
+
+**agy 现状（未绿，但病因已收窄到「引擎完成判定」）**：修复后 agy 依次前进
+`provider_resource_reconcile_incomplete` → 真实启动并流式输出 → 仍不结束。已逐项排除环境因素：
+同一 argv（`agy --print <prompt> --dangerously-skip-permissions`）+ 同一投影 HOME，在 shell 里
+10s 内 `ok`/exit 0，在 tmux 里（带/不带 skip flag）同样 `ok`/exit 0；进程 env 实测正确
+（HOME=投影、PATH、LANG、TERM 齐备）。剩余差异只在**引擎的完成判定**：agy 属于
+`pty-transcript` + `completeOnTranscriptUpdate=false`（等进程退出），而 tmux 包装的退出标记未被该模式识别。
+下一步：修引擎的 pty-transcript 完成判定（数据驱动，不加 provider 分支）。
+
+
 ## 4.1 条件 ④ 进展（2026-10-15 第三轮）：审批按策略表工程化
 
 **已完成（架构 + 真机验证）：**

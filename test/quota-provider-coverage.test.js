@@ -173,9 +173,46 @@ test('模型发现能力：策略自洽（http 不依赖客户端、cli 必须�
       if (strategy.transport === 'cli') assert.equal(strategy.clientDependent, true, `${provider}:${strategy.id} cli 通道必须声明依赖客户端`);
     }
     // 排序规则与运行时一致：不依赖本机客户端的策略必须排在最前面（否则「没装 CLI」时会先失败）。
+    // 真的只有 CLI 通道的（如 CodeBuddy 家族）必须显式给出 clientFreeReason —— 由上一个用例守卫。
     const ordered = capability.strategies.slice().sort((left, right) => (
       Number(Boolean(left.clientDependent)) - Number(Boolean(right.clientDependent))
     ));
-    assert.equal(ordered[0].clientDependent, false, `${provider} 的模型发现没有「不依赖 CLI」的首选策略`);
+    const hasClientFree = capability.strategies.some((strategy) => strategy.clientDependent !== true);
+    if (hasClientFree) {
+      assert.equal(ordered[0].clientDependent, false, `${provider} 的「不依赖 CLI」策略没有排在最前面`);
+    } else {
+      // 只有 CLI 通道的合法情形：必须显式给出原因（由上一个用例断言非空）。
+      assert.ok(String(capability.clientFreeReason || '').trim(), `${provider} 只有 CLI 通道却没写原因`);
+    }
+  }
+});
+
+test('模型发现面：每个 provider 都必须显式回答（有通道 / 没有通道 + 原因）', () => {
+  // 2026-10-15 kiro 事故的结构性根源：模型发现没人回答过「有没有不依赖本机客户端的通道」，
+  // 于是「没装 CLI」= 采集全废且看不出原因。契约现在强制每个 provider 回答这一面。
+  const { getProviderCapability } = require('../lib/providers');
+  for (const provider of PROVIDER_IDS) {
+    const models = getProviderCapability(provider, 'models');
+    assert.ok(models, `${provider} 没有回答模型发现能力（契约要求显式回答）`);
+    if (models.supported !== true) {
+      assert.ok(String(models.reason || '').trim(), `${provider} 声明不支持模型发现但没给原因`);
+      continue;
+    }
+    const clientFree = models.strategies.some((strategy) => strategy.clientDependent !== true);
+    if (!clientFree) {
+      assert.ok(String(models.clientFreeReason || '').trim(),
+        `${provider} 的模型发现只有依赖本机客户端的通道，必须写清为什么（clientFreeReason）`);
+    }
+  }
+});
+
+test('采集面审计：只有 CLI 通道的 provider 必须给出原因（可审计、可展示）', () => {
+  const { collectAudit } = require('../scripts/provider-collection-audit');
+  const audit = collectAudit();
+  assert.deepEqual(audit.descriptorLoadErrors, []);
+  for (const gap of audit.cliOnlyFaces) {
+    const capability = require('../lib/providers').getProviderCapability(gap.provider, gap.face);
+    assert.ok(String(capability.clientFreeReason || capability.reason || '').trim(),
+      `${gap.provider}.${gap.face} 只有 CLI 通道却没有原因说明`);
   }
 });

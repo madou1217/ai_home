@@ -116,3 +116,29 @@ test('家族谓词对非家族输入必须为假', () => {
   assert.equal(billing.isCodebuddyFamilyProvider(' WorkBuddy '), true);
   assert.equal(accountStatus.isCodebuddyFamilyProvider('WorkBuddyCN'), true);
 });
+// 跨语言一致性：Node 的家族名单必须等于 Go 契约清单里 buddy 两族的**并集**。
+//
+// 两侧分组口径本来就不同：Go 按产品线分组（codebuddy => codebuddy + codebuddycn，
+// workbuddy => workbuddy + workbuddycn），Node 按「共享凭据布局与端点」分组（四支一族）。
+// 口径可以不同，但**并集必须相同**：任意一侧加了第五支而另一侧没跟上，家族判定就会出现
+// 跨语言分歧——Go 按自己的分组决定展示/凭据策略，Node 按自己的名单决定翻译与端点，
+// 用户看到的是「同一支在两个入口行为不一样」。
+//
+// 清单是 core/providers/builtins.go 的生成物，`npm run providers:check` 守清单与 Go 源码一致；
+// 本测试守的是清单里的家族分组与 Node 名单一致，两段合起来才闭环。
+test('家族名单与 Go 契约清单的 buddy 两族并集一致', () => {
+  const manifest = require('../contracts/providers/manifest.json');
+  const providers = Array.isArray(manifest.providers) ? manifest.providers : [];
+  assert.ok(providers.length > 0, '契约清单必须能读到 providers');
+  const goFamily = providers
+    .filter((entry) => ['codebuddy', 'workbuddy'].includes(String(entry.family || '')))
+    .map((entry) => String(entry.id))
+    .sort();
+  assert.ok(goFamily.length > 0, '契约清单里必须能找到 buddy 两族');
+  assert.deepEqual(
+    goFamily,
+    CANONICAL,
+    `Go 清单的 buddy 并集 [${goFamily.join(', ')}] 与 Node 家族名单 [${CANONICAL.join(', ')}] 不一致`
+  );
+});
+

@@ -1889,7 +1889,7 @@ export default function Accounts() {
                 {getAccountPrimaryLabel(record)}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                {renderAccountRoleIcons(record)}
+                {/* 默认 / App 角色只由下方标签行表达（renderAccountRoleTags），此处不再重复图标 */}
                 {canCopyAccountEmail(record) ? (
                   <Tooltip title="复制账号">
                     <Button

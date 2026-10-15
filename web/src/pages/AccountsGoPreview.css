@@ -119,6 +119,19 @@
   overflow-wrap: anywhere;
 }
 
+/* 账号行复制图标：默认隐藏，鼠标悬停该行 / 键盘聚焦时才出现（与正式账号页同一交互语言）。
+ * 固定占位只切换透明度，避免 hover 造成行高与换行抖动。 */
+.go-preview-shell .account-email-row .copy-icon-btn {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+}
+.go-preview-shell .ant-table-row:hover .account-email-row .copy-icon-btn,
+.go-preview-shell .account-email-row .copy-icon-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 @media (max-width: 767px) {
   .go-preview-hud {
     flex-direction: column;

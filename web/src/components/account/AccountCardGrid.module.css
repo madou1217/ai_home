@@ -92,6 +92,19 @@
   outline: none;
 }
 
+/* 复制图标与列表行一致：默认隐藏，鼠标悬停卡片 / 键盘进入卡片时才出现。
+ * 固定占位只切换透明度，避免悬停造成标题行换行与卡片抖动。 */
+.accountCard .iconBtn {
+  opacity: 0;
+  pointer-events: none;
+}
+.accountCard:hover .iconBtn,
+.accountCard:focus-within .iconBtn,
+.accountCard .iconBtn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .accountSubtitle {
   font-size: 12px;
   color: var(--color-muted);

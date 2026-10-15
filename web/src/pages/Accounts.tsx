@@ -127,7 +127,6 @@ import {
   getPlanTagLabel,
   renderAccountDisplayBadge,
   renderAccountRegionTag,
-  renderAccountRoleIcons,
   renderAccountRoleTags
 } from '@/features/accounts/AccountBadges';
 import AccountRefreshLogo from '@/features/accounts/AccountRefreshLogo';
@@ -438,7 +437,7 @@ export default function Accounts() {
                   data={accountOutcomes.data}
                   unavailable={accountOutcomes.unavailable}
                 />
-                {renderAccountRoleIcons(record)}
+                {/* 默认 / App 角色只由下方标签行表达（renderAccountRoleTags），此处不再重复图标 */}
                 {canCopyAccountEmail(record) ? (
                   <Tooltip title="复制账号">
                     <Button

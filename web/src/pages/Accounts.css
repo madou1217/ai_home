@@ -40,6 +40,20 @@
   }
 }
 
+/* 账号行复制图标：默认隐藏，鼠标悬停该行 / 键盘聚焦时才出现（与 Models 列表同一交互语言）。
+ * 固定占位只切换透明度，避免 hover 造成行高与换行抖动；pointer-events 同步关闭，
+ * 保证未显示时不会误触发 Tooltip。 */
+.accounts-page .account-email-row .copy-icon-btn {
+  display: inline-flex;
+  opacity: 0;
+  pointer-events: none;
+}
+.accounts-page .ant-table-row:hover .account-email-row .copy-icon-btn,
+.accounts-page .account-email-row .copy-icon-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* 导入粘贴区域 */
 .accounts-import-paste {
   display: flex;

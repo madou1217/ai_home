@@ -379,6 +379,40 @@ test('failure policy treats generic upstream 5xx as model-scoped retry', () => {
   assert.equal(policy.shouldRetryAnotherAccount, true);
 });
 
+test('failure policy treats an upstream empty-content error envelope as empty_model_response', () => {
+  // 实测 cline 500：{"error":"empty response content","success":false}。
+  // 语义是「模型本次产出为空」（请求级异常），不是账号/服务器故障：
+  // 不记账、零冷却、可试别的号——与 SSE 路径 EMPTY_UPSTREAM_RESPONSE 同一策略，
+  // 否则会落进通用 5xx 给健康账号的该模型挂 5 分钟冷却。
+  const policy = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 500,
+    body: '{"error":"empty response content","success":false}',
+    detail: 'upstream_500: {"error":"empty response content","success":false}',
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.kind, 'empty_model_response');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.clientStatusCode, 502);
+});
+
+test('failure policy keeps a 4xx request-shape error with empty-content text as invalid_request', () => {
+  // 4xx 是请求形态问题，不因文本里出现「empty ... content」被改判成空产出
+  // （门在 isEmptyModelContentEnvelope：只认 5xx 或无 HTTP 状态的信封）。
+  const policy = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 400,
+    body: '{"error":"empty response content","success":false}',
+    detail: 'upstream_400',
+    defaultCooldownMs: 1000
+  });
+  assert.equal(policy.kind, 'invalid_request');
+  assert.notEqual(policy.kind, 'empty_model_response');
+});
+
 test('failure policy treats a structured sensitive-words code as request-scoped safety rejection', () => {
   const policy = classifyUpstreamFailure({
     provider: 'codex',

@@ -116,6 +116,27 @@ test('usage-limit exhaustion cools the whole account and survives last-resort', 
   }), null);
 });
 
+test('empty-content error envelope leaves the (account, model) routable (no cooldown, no streak)', () => {
+  const model = 'cline-pass/deepseek-v4.1-flash';
+  const account = normalizeAccountRuntime({ id: '1', provider: 'cline', apiKeyMode: false, schedulableStatus: 'schedulable' });
+  const policy = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 500,
+    body: '{"error":"empty response content","success":false}',
+    detail: 'upstream_500: {"error":"empty response content","success":false}',
+    defaultCooldownMs: 60000
+  });
+  applyAccountFailurePolicy(account, policy, { markProxyAccountFailure, model });
+
+  // 一次空产出是请求级异常：不写模型冷却、不留失败连击，账号对该模型仍可路由
+  // （对照：同状态码的通用 5xx 会给该 (account, model) 挂 5 分钟冷却）。
+  assert.equal(getAccountModelCooldownUntil(account, model), 0);
+  assert.equal(account.cooldownUntil, 0);
+  assert.equal(account.modelFailureStreaks[model], undefined);
+  const picked = chooseServerAccount([account], {}, 'cline', { provider: 'cline', model });
+  assert.equal(picked && picked.id, '1');
+});
+
 test('clearExpiredAccountModelState prunes elapsed cooldowns', () => {
   const account = normalizeAccountRuntime({ id: '1' });
   account.modelCooldowns = { 'm-old': Date.now() - 1000, 'm-new': Date.now() + 60_000 };

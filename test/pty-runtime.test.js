@@ -3064,6 +3064,32 @@ test('runtime routes Claude gateway through the shared host config without an in
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime launches bare opencode through the explicit AIH gateway profile env', () => {
+  // 回归守卫：裸 `aih opencode`（AIH Server profile）曾在 buildBuiltinServerProfileEnv 里
+  // 引用 router 作用域变量 ReferenceError（useBuiltinServerProfile is not defined）直接崩溃。
+  const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' }, {
+    resolveCliPath: () => '/usr/bin/opencode',
+    serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
+    readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: 'gateway-key' })
+  });
+  const { runtime, proc, spawns, hostHomeDir, rawModeCalls } = harness;
+
+  runtime.runCliPtyTracked('opencode', '', ['--version'], false, { gateway: true });
+
+  assert.equal(spawns.length, 1);
+  const env = spawns[0].options.env;
+  assert.equal(env.AIH_OPENCODE_GATEWAY_BASE_URL, 'http://127.0.0.1:9527/v1');
+  assert.equal(env.AIH_OPENCODE_GATEWAY_KEY, 'gateway-key');
+  assert.equal(env.AIH_OPENCODE_GATEWAY_BYOK, undefined);
+  const overlay = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
+  assert.equal(overlay.provider.aih.options.baseURL, 'http://127.0.0.1:9527/v1');
+  assert.equal(overlay.provider.aih.options.apiKey, 'gateway-key');
+  assert.equal(env.XDG_DATA_HOME, path.join(hostHomeDir, '.local', 'share'));
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  assert.deepEqual(rawModeCalls, [true, false]);
+});
+
 test('built-in AIH server resume no longer forces the gateway app-server remote', () => {
   // 网关 app-server 按宿主默认账号运行，会把恢复的会话跑到默认账号上；resume 改由 codex 包装层的
   // 本地 app-server 接管（codex-tui-local-app-server.js），这里不再注入 --remote。

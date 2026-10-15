@@ -6,7 +6,7 @@ import type {
   SessionRuntimeController,
   SessionState,
 } from '@/chat-runtime';
-import type { Account, Session } from '@/types';
+import type { ChatAccount, Session } from '@/types';
 import type { Provider } from '@/types';
 import { useWorkbench } from '@/features/project-workbench/WorkbenchContext';
 import Composer from './Composer';
@@ -34,11 +34,11 @@ interface Props {
   readonly runtimeTarget: SessionRuntimeTarget;
   readonly title: string;
   readonly mobile?: boolean;
-  readonly accounts: readonly Account[];
+  readonly accounts: readonly ChatAccount[];
   readonly accountRef: string;
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;
-  readonly onAccountChange: (account: Account) => void;
+  readonly onAccountChange: (account: ChatAccount) => void;
   readonly onModelChange: (model: string) => void;
   readonly onApprovalModeChange: (mode: ApprovalMode) => void;
   readonly onFreshNativeSessionBound: (nativeSessionId: string) => void;

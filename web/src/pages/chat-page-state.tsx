@@ -18,6 +18,7 @@ import ProjectWorkbench from '@/features/project-workbench/ProjectWorkbench';
 import { resolveWorkbenchSessions } from '@/features/project-workbench/workbench-sessions';
 import LegacyChatRuntime from '@/features/legacy-chat/LegacyChatRuntime';
 import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
+import { chatAccountIdentity } from '@/components/chat/aih-server-account';
 import { useProjectDialogs } from '@/features/legacy-chat/use-project-dialogs';
 import { useProjectCatalog } from '@/features/legacy-chat/use-project-catalog';
 import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
@@ -331,7 +332,8 @@ export function ChatConversationContent({
             approvalMode={approvalMode.mode}
             approvalModeReady={approvalMode.ready}
             onAccountChange={(account) => {
-              if (session.mode === 'chat' && session.accountRef === account.accountRef) return;
+              // 用稳定标识比较：网关目标没有 accountRef（标识是 gateway:<provider>）。
+              if (session.mode === 'chat' && String(session.accountRef || '') === chatAccountIdentity(account)) return;
               accountCatalog.setSelectedAccount(account);
               if (session.mode === 'chat') {
                 projectCatalog.setSelectedSession({

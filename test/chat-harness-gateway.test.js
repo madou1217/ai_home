@@ -107,3 +107,53 @@ test('Chat supplies document text to Harness while Work retains local file acces
     /Read these local document files/);
   assert.match(sessionDocumentPrompt({ policy: {} }, 'Read this', [file]), /\/owned-attachments\/notes.md/);
 });
+
+test('gateway-scoped harness drops the account pin, keeps one home per provider and reads the pooled catalog', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-harness-gateway-scope-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const readModelsCalls = [];
+  const options = {
+    aiHomeDir: root,
+    env: { HOME: '/host', OPENAI_API_KEY: 'host-secret' },
+    // 网关作用域刻意不读账号凭据：这里读到就说明实现回退了。
+    readAccountCredentialRecord: () => { throw new Error('gateway scope must not read account credentials'); },
+    chatGateway: {
+      port: 9999,
+      clientKey: 'gateway-secret',
+      readModels: async (provider, accountRef) => {
+        readModelsCalls.push([provider, accountRef]);
+        return ['opencode/deepseek-v4.1-flash-free', 'opencode/kimi-k3'];
+      }
+    }
+  };
+  const gateway = createChatGatewayOptions({ provider: 'opencode', executionAccountRef: 'gateway:opencode' }, options);
+  const env = await gateway.buildProviderEnvImpl();
+  // home 按 provider 分开（不同 provider 的网关档 config.toml 不能互踩），且不带账号 pin。
+  assert.ok(env.CODEX_HOME.includes(path.join('chat-harness', 'gateway-opencode')));
+  assert.equal(env.AIH_CODEX_GATEWAY_ACCOUNT_REF, undefined);
+  assert.equal(env.OPENAI_API_KEY, 'gateway-secret');
+  const config = fs.readFileSync(path.join(env.CODEX_HOME, 'config.toml'), 'utf8');
+  assert.doesNotMatch(config, /X-Account-Ref/);
+  assert.match(config, /X-Provider = "opencode"/);
+  assert.doesNotMatch(config, /host-secret|gateway-secret/);
+  // 模型目录走 provider 全池：readModels 收到的是网关作用域，而不是某个账号。
+  assert.deepEqual(readModelsCalls[0], ['opencode', 'gateway:opencode']);
+  assert.deepEqual((await gateway.modelCatalog.list()).map((entry) => entry.model),
+    ['opencode/deepseek-v4.1-flash-free', 'opencode/kimi-k3']);
+  // 身份校验只认 harness home，不再比对账号 hash。
+  assert.equal((await gateway.accountIdentityValidator({ initializeResult: { codexHome: env.CODEX_HOME } })).verified, true);
+  const otherHome = path.join(root, 'other-home');
+  fs.mkdirSync(otherHome, { recursive: true });
+  await assert.rejects(
+    gateway.accountIdentityValidator({ initializeResult: { codexHome: otherHome } }),
+    /chat_harness_execution_identity_mismatch/
+  );
+});
+
+test('gateway-scoped codex sessions use the gateway harness without an account credential', () => {
+  const noCredentials = { readAccountCredentialRecord: () => null };
+  assert.equal(usesChatGateway({ provider: 'codex', executionAccountRef: 'gateway:codex' }, noCredentials), true);
+  assert.equal(usesChatGateway({ provider: 'codex', executionAccountRef: 'acct_11111111111111111111' }, noCredentials), false);
+  assert.equal(usesChatGateway({ provider: 'opencode', executionAccountRef: 'gateway:opencode' }, noCredentials), true);
+});
+

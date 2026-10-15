@@ -1,5 +1,11 @@
-import type { Account, ChatAccount, Session } from '@/types';
+import type { ChatAccount, Session } from '@/types';
 import { chatRuntimeProviders } from './runtime-provider-registry';
+import {
+  chatAccountIdentity,
+  isAihServerAccount,
+  makeAihServerAccount,
+  supportsAihServer,
+} from '@/components/chat/aih-server-account';
 
 export type ApprovalMode = 'bypass' | 'confirm' | 'plan';
 
@@ -71,24 +77,42 @@ export function resolveSessionRuntimeTarget(
 
 export function runtimeAccountsForSession(
   session: Session,
-  accounts: readonly Account[],
-): readonly Account[] {
+  accounts: readonly ChatAccount[],
+): readonly ChatAccount[] {
   if (session.mode === 'chat') {
-    return accounts;
+    return withGatewayAccounts(accounts);
   }
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return [];
   return accounts.filter((account) => descriptor.acceptsAccount(account));
 }
 
+/**
+ * 在真实账号后追加「aih-server(全部账号+别名)」目标：每个**有账号且支持 gatewayProfile**
+ * 的 provider 一条。它代表"由网关在该 provider 池内挑号 + 别名回落"，所以与具体账号并列
+ * 出现在账号菜单里（与 legacy 引擎的呈现一致）。
+ */
+export function withGatewayAccounts(accounts: readonly ChatAccount[]): readonly ChatAccount[] {
+  const providers = [...new Set(accounts
+    .map((account) => account.provider)
+    .filter((provider) => supportsAihServer(provider)))];
+  return [
+    ...accounts,
+    ...providers.map((provider) => makeAihServerAccount(provider)),
+  ];
+}
+
 function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
   const account = input.account;
-  const accountRef = input.session.accountRef || account?.accountRef;
+  const boundScope = String(input.session.accountRef || '').trim();
+  const gatewayTarget = isAihServerAccount(account);
+  const providedIdentity = chatAccountIdentity(account);
+  // 网关目标（aih-server）没有 accountRef：作用域字符串带 provider，交给网关在池内挑号。
+  const accountRef = gatewayTarget ? providedIdentity : (boundScope || providedIdentity);
   if (!accountRef) return blocked('account_required');
-  if (account && (account.provider !== input.session.provider
-    || (input.session.accountRef && input.session.accountRef !== account.accountRef))) {
-    return blocked('provider_mismatch');
-  }
+  if (account && account.provider !== input.session.provider) return blocked('provider_mismatch');
+  // 会话已绑定目标时，传入的账号/网关目标必须与它一致（否则就是拿别人的运行态顶替）。
+  if (boundScope && providedIdentity && boundScope !== providedIdentity) return blocked('provider_mismatch');
   return {
     status: 'ready',
     target: {

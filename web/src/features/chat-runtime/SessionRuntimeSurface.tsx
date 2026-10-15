@@ -1,7 +1,7 @@
 import { Spin } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { ChatRuntimeSession } from '@/chat-runtime';
-import type { Account, Session } from '@/types';
+import type { ChatAccount, Session } from '@/types';
 import SessionWorkspace from './SessionWorkspace';
 import type {
   ApprovalMode,
@@ -17,10 +17,10 @@ interface Props {
   readonly runtimeInstanceKey: string;
   readonly title: string;
   readonly mobile?: boolean;
-  readonly accounts: readonly Account[];
+  readonly accounts: readonly ChatAccount[];
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;
-  readonly onAccountChange: (account: Account) => void;
+  readonly onAccountChange: (account: ChatAccount) => void;
   readonly onModelChange: (model: string) => void;
   readonly onApprovalModeChange: (mode: ApprovalMode) => void;
   readonly onNativeSessionBound?: (nativeSessionId: string) => void;

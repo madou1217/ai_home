@@ -1,6 +1,6 @@
 import { useCallback, useRef, type ClipboardEvent } from 'react';
 import { Input, message } from 'antd';
-import type { Account } from '@/types';
+import type { ChatAccount } from '@/types';
 import type { SessionProjectionStore, SessionRuntimeController } from '@/chat-runtime';
 import type { RuntimeComposerCatalogState } from './use-runtime-composer-catalog';
 import type { ApprovalMode } from './session-surface-policy';
@@ -17,12 +17,12 @@ export interface ComposerProps {
   readonly workspaceMode?: 'chat' | 'work';
   readonly store: SessionProjectionStore;
   readonly actions: SessionRuntimeActions;
-  readonly accounts: readonly Account[];
+  readonly accounts: readonly ChatAccount[];
   readonly accountRef: string;
   readonly catalog: RuntimeComposerCatalogState;
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;
-  readonly onAccountChange: (account: Account) => void;
+  readonly onAccountChange: (account: ChatAccount) => void;
   readonly onModelChange: (model: string) => void;
   readonly onApprovalModeChange: (mode: ApprovalMode) => void;
   readonly uploadAttachments: SessionRuntimeController['uploadAttachments'];

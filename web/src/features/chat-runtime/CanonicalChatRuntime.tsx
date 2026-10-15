@@ -1,4 +1,4 @@
-import type { Account, ChatAccount, Provider, Session } from '@/types';
+import type { ChatAccount, Provider, Session } from '@/types';
 import SessionRuntimeSurface from './SessionRuntimeSurface';
 import {
   resolveSessionRuntimeTarget,
@@ -17,13 +17,13 @@ interface Props {
   readonly session: Session;
   readonly projectPath?: string;
   readonly account: ChatAccount | null;
-  readonly accounts: readonly Account[];
+  readonly accounts: readonly ChatAccount[];
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;
   readonly approvalModeReady: boolean;
   readonly title: string;
   readonly mobile?: boolean;
-  readonly onAccountChange: (account: Account) => void;
+  readonly onAccountChange: (account: ChatAccount) => void;
   readonly onModelChange: (model: string) => void;
   readonly onApprovalModeChange: (mode: ApprovalMode) => void;
   readonly onSessionChange: (session: Session) => void;

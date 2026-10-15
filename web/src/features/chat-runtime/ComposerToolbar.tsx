@@ -8,6 +8,7 @@ import ComposerAccountMenu from '@/components/chat/composer/ComposerAccountMenu'
 import ComposerApprovalMenu from '@/components/chat/composer/ComposerApprovalMenu';
 import ComposerModelMenu from '@/components/chat/composer/ComposerModelMenu';
 import PromptPresetsCapsule from '@/components/chat/PromptPresetsCapsule';
+import { chatAccountIdentity, isAihServerAccount } from '@/components/chat/aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import type { ComposerDelivery } from './session-runtime-actions';
 import type { ComposerProps } from './Composer';
@@ -54,13 +55,14 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
           grouped={props.workspaceMode === 'chat'}
           selectionHint={props.workspaceMode === 'chat' ? '切换后新建会话' : undefined}
           options={props.accounts.map((account) => ({
-            id: account.accountRef,
+            id: chatAccountIdentity(account),
             provider: account.provider,
-            label: getAccountIdentityLabel(account) || account.displayName || account.accountRef,
-            badge: account.apiKeyMode ? 'API Key' : 'OAuth',
+            label: getAccountIdentityLabel(account) || account.displayName || chatAccountIdentity(account),
+            // 网关目标不是账号：用 Gateway 标记与真实凭据（API Key / OAuth）区分。
+            badge: isAihServerAccount(account) ? 'Gateway' : (account.apiKeyMode ? 'API Key' : 'OAuth'),
           }))}
-          onChange={(accountRef) => {
-            const account = props.accounts.find((candidate) => candidate.accountRef === accountRef);
+          onChange={(identity) => {
+            const account = props.accounts.find((candidate) => chatAccountIdentity(candidate) === identity);
             if (account) props.onAccountChange(account);
           }}
         />

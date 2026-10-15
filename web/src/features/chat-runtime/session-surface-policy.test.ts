@@ -5,7 +5,9 @@ import {
   resolveSessionRuntimeTarget,
   runtimeAccountsForSession,
   usesCanonicalSessionRuntime,
+  withGatewayAccounts,
 } from './session-surface-policy';
+import { chatAccountIdentity, makeAihServerAccount } from '@/components/chat/aih-server-account';
 
 const savedSession: Session = {
   id: 'native-thread-1', title: 'Runtime', updatedAt: 1,
@@ -114,7 +116,10 @@ test('every Chat account uses Harness and never inherits the Work directory or n
 test('saved Chat keeps providers visible while rejecting a different account on its bound runtime', () => {
   const chat: Session = { ...savedSession, mode: 'chat', accountRef: account.accountRef };
   const kimi = { ...account, provider: 'kimi' as const, accountRef: 'kimi-account' };
-  assert.deepEqual(runtimeAccountsForSession(chat, [account, kimi]), [account, kimi]);
+  // 真实账号原样在前，之后追加 gateway 目标（codex/kimi 都声明了 gateway_profile 能力）。
+  const visible = runtimeAccountsForSession(chat, [account, kimi]);
+  assert.deepEqual(visible.slice(0, 2), [account, kimi]);
+  assert.deepEqual(visible.slice(2).map((entry) => chatAccountIdentity(entry)), ['gateway:codex', 'gateway:kimi']);
   assert.equal(resolveSessionRuntimeTarget({ session: chat, account: kimi, approvalMode: 'confirm' }).status, 'blocked');
   const fresh = { ...chat, id: 'draft-new', accountRef: undefined, draft: true, provider: kimi.provider };
   const result = resolveSessionRuntimeTarget({ session: fresh, account: kimi, approvalMode: 'confirm' });
@@ -124,3 +129,40 @@ test('saved Chat keeps providers visible while rejecting a different account on 
     assert.equal(result.target.chatSessionId, undefined);
   }
 });
+
+test('chat account list gains one aih-server target per gateway-capable provider', () => {
+  const accounts = [
+    account,
+    { ...account, provider: 'opencode' as const, accountRef: 'account-2' },
+    { ...account, provider: 'grok' as const, accountRef: 'account-3' },
+  ];
+  const list = withGatewayAccounts(accounts);
+  // 真实账号保持在前，顺序不变。
+  assert.deepEqual(list.slice(0, accounts.length).map((entry) => entry.provider), ['codex', 'opencode', 'grok']);
+  const gateways = list.slice(accounts.length);
+  // 只有声明 gatewayProfile 能力的 provider 才有 aih-server 目标（grok 没有）。
+  assert.deepEqual(gateways.map((entry) => entry.provider), ['codex', 'opencode']);
+  assert.deepEqual(gateways.map((entry) => chatAccountIdentity(entry)), ['gateway:codex', 'gateway:opencode']);
+  assert.deepEqual(gateways.map((entry) => entry.displayName), [
+    'aih-server(全部账号+别名)', 'aih-server(全部账号+别名)',
+  ]);
+});
+
+test('a gateway chat target resolves to a pooled scope instead of an account ref', () => {
+  const gateway = makeAihServerAccount('opencode');
+  const result = resolveSessionRuntimeTarget({
+    session: { id: 'draft-1', title: '新对话', updatedAt: 1, provider: 'opencode', draft: true, mode: 'chat' },
+    account: gateway,
+    approvalMode: 'confirm',
+  });
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.target.executionAccountRef, 'gateway:opencode');
+  // 换 provider 必须挡住：网关目标也只在同一 provider 内挑号。
+  assert.deepEqual(resolveSessionRuntimeTarget({
+    session: { id: 'draft-2', title: '新对话', updatedAt: 1, provider: 'codex', draft: true, mode: 'chat' },
+    account: gateway,
+    approvalMode: 'confirm',
+  }), { status: 'blocked', reason: 'provider_mismatch' });
+});
+

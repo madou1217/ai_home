@@ -6,7 +6,9 @@ export const AIH_SERVER_ACCOUNT_LABEL = 'aih-server(全部账号+别名)';
 const GATEWAY_SELECTION_SCOPE_PREFIX = 'gateway:';
 
 // 网关 profile 的 Provider 集合来自生成合同，与后端 self-relay-account 保持同一真相源。
-export const AIH_SERVER_PROVIDERS: Provider[] = providerIdsByCapability('gatewayProfile') as Provider[];
+// 能力名必须用合同里的原字符串（snake_case）——曾写成 camelCase 'gatewayProfile'，
+// 查出来恒为空集，于是 aih-server 目标在所有引擎里都从未出现过。
+export const AIH_SERVER_PROVIDERS: Provider[] = providerIdsByCapability('gateway_profile') as Provider[];
 
 export function supportsAihServer(provider?: string | null): boolean {
   return AIH_SERVER_PROVIDERS.includes(String(provider || '').trim() as Provider);
@@ -24,6 +26,26 @@ export function parseGatewaySelectionScope(value: string): Provider | null {
 
 export function isAihServerAccount(account?: Pick<ChatAccount, 'gateway'> | null): account is GatewayAccount {
   return account?.gateway === true;
+}
+
+/** 运行作用域标记：会话列里存的值，允许 `gateway` 与 `gateway:<provider>` 两种形态。 */
+export const GATEWAY_RUNTIME_SCOPE = 'gateway';
+const GATEWAY_RUNTIME_SCOPE_PATTERN = /^gateway(?::[a-z0-9][a-z0-9-]*)?$/i;
+
+export function isGatewayRuntimeScope(value?: string | null): boolean {
+  return GATEWAY_RUNTIME_SCOPE_PATTERN.test(String(value || '').trim());
+}
+
+/**
+ * 账号选择器的稳定标识：真实账号用 accountRef，网关目标用 `gateway:<provider>`。
+ * 会话的 executionAccountRef 与账号菜单的 option id 必须用同一个字符串，
+ * 否则 aih-server 的选中态匹配不上（且同一 provider 组里不会出现第二个网关条目）。
+ */
+export function chatAccountIdentity(account?: ChatAccount | null): string {
+  if (!account) return '';
+  return isAihServerAccount(account)
+    ? getGatewaySelectionScope(account.provider)
+    : String(account.accountRef || '').trim();
 }
 
 export function makeAihServerAccount(provider: Provider): GatewayAccount {

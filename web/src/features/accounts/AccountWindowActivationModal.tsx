@@ -26,8 +26,9 @@ interface AccountWindowActivationModalProps {
 
 const MS_PER_MINUTE = 60 * 1000;
 
-// 与后端路由的下限一致（1 分钟）。
-const MIN_INTERVAL_MINUTES = 1;
+// 间隔下限的兜底值（分钟）：与调度器默认 windowActivationMinIntervalMs 同源（1 小时）。
+// 运行时优先用服务端上报的 global.minIntervalMs，保证「控件允许的值 = 调度器接受的值」。
+const FALLBACK_MIN_INTERVAL_MINUTES = 60;
 
 // 全局闸门状态标签色：生效=绿、未开启=黄、宿主未上报=灰。仅用紧凑标签表达，不做整块提示。
 const GLOBAL_TONE_COLORS: Record<'active' | 'inactive' | 'unknown', string> = {
@@ -91,6 +92,10 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
   const intervalHint = defaultIntervalText
     ? `留空则跟随全局默认间隔（当前为 ${defaultIntervalText}）。`
     : '留空则跟随全局默认间隔。';
+  const globalMinIntervalMs = Number(globalState?.minIntervalMs);
+  const minIntervalMinutes = Number.isFinite(globalMinIntervalMs) && globalMinIntervalMs > 0
+    ? Math.max(1, Math.round(globalMinIntervalMs / MS_PER_MINUTE))
+    : FALLBACK_MIN_INTERVAL_MINUTES;
 
   const save = async () => {
     if (!account || submitting) return;
@@ -163,13 +168,13 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
             extra={intervalHint}
             rules={[{
               validator: (_rule, value) => (
-                value === undefined || value === null || (Number.isFinite(Number(value)) && Number(value) >= MIN_INTERVAL_MINUTES)
+                value === undefined || value === null || (Number.isFinite(Number(value)) && Number(value) >= minIntervalMinutes)
                   ? Promise.resolve()
-                  : Promise.reject(new Error(`间隔不得小于 ${MIN_INTERVAL_MINUTES} 分钟`))
+                  : Promise.reject(new Error(`间隔不得小于 ${minIntervalMinutes} 分钟`))
               )
             }]}
           >
-            <InputNumber min={MIN_INTERVAL_MINUTES} step={30} style={{ width: 200 }} addonAfter="分钟" placeholder="跟随默认" />
+            <InputNumber min={minIntervalMinutes} step={30} style={{ width: 200 }} addonAfter="分钟" placeholder="跟随默认" />
           </Form.Item>
         </Form>
       </Spin>

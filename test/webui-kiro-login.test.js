@@ -101,6 +101,30 @@ test('start：只回用户要看的 code/URL，client_secret 与 deviceCode 绝�
   }
 });
 
+test('start：适配服务器注入的 fetchWithTimeout(url, init, timeoutMs) —— 缺超时会被立刻 abort', async () => {
+  const aiHomeDir = tempHome();
+  try {
+    const upstream = fakeUpstream();
+    const timeouts = [];
+    // 复现 lib/server/http-utils-utils.js 的真实契约：第 3 参是超时；
+    // 传 undefined 时 setTimeout(..., undefined) 立即触发 abort。
+    const fetchWithTimeout = async (url, init, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      if (!(Number(timeoutMs) > 0)) throw new Error('aborted_immediately');
+      return upstream.request(url, init);
+    };
+    const { ctx, captured } = makeCtx({ aiHomeDir, deps: { fetchWithTimeout } });
+    assert.equal(await handleKiroNativeLoginStartRequest(ctx), true);
+
+    assert.equal(captured.status, 200, '必须拿到设备码，而不是 transport 失败');
+    assert.ok(captured.payload.userCode);
+    assert.ok(timeouts.length > 0);
+    assert.ok(timeouts.every((value) => Number(value) > 0), '每次出站调用都必须带正整数超时');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('poll：pending 只是状态；授权成功后落库注册账号，且流程被消费（再次 poll 404）', async () => {
   const aiHomeDir = tempHome();
   try {

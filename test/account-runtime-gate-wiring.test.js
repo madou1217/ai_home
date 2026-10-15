@@ -77,6 +77,40 @@ test('every recovery path routes through the gate instead of the state service',
   assert.match(listener, /\.\.\.\(event\.usageSnapshot \? \{ usageSnapshot: event\.usageSnapshot \} : \{\}\)/);
 });
 
+test('direct state-service writes only survive as gate-absent fallbacks', () => {
+  const files = [
+    'lib/server/accounts.js',
+    'lib/server/web-ui-router.js',
+    'lib/server/token-refresh-daemon.js',
+    'lib/server/native-session-chat-failure.js',
+    'lib/server/webui-account-routes.js',
+    'lib/account/claude-login-recovery.js',
+    'lib/account/agy-auth-recovery.js',
+    'lib/cli/services/pty/runtime-state-store.js',
+    'lib/cli/services/usage/snapshot.js',
+    'lib/cli/services/usage/codex-auth-invalid-reconciler.js',
+    'lib/cli/services/account/selection.js'
+  ];
+  for (const file of files) {
+    const source = read(file);
+    const directWrites = source.match(/accountStateService\.(clearRuntimeBlock|recordRuntimeSuccess|recordRuntimeFailure)\(/g) || [];
+    assert.ok(
+      source.includes('accountRuntimeGate') || source.includes('createAccountRuntimeGate('),
+      `${file} 引用账号状态服务时必须同时接门禁（直写只能作为未装配门禁的兜底）`
+    );
+    if (directWrites.length > 0) {
+      // 兜底必须显式：文件里要能看到「没有门禁才走这里」的分支或注释。
+      assert.match(
+        source,
+        /observeRecovery\(|observeRuntimeState\(|accountRuntimeGate|createAccountRuntimeGate\(/,
+        `${file} 的直写必须是门禁缺席时的兜底路径`
+      );
+    }
+  }
+  // 门禁与监听器是唯一允许无条件直写运行态的两个模块。
+  assert.match(read('lib/server/account-runtime-event-listeners.js'), /accountStateService\.clearRuntimeBlock\(/);
+});
+
 test('probe failures are reported, never recorded', () => {
   const source = read('lib/server/account-probe-recovery.js');
   assert.match(source, /gate\.describeFailure\(/);

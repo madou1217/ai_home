@@ -298,6 +298,25 @@ test('observeRecovery without a hub persists through accountStateService with th
   assert.deepEqual(calls[0].usageSnapshot, snapshot);
 });
 
+test('observeRuntimeState publishes a caller-built runtime state through the same chain', () => {
+  const events = [];
+  const gate = createAccountRuntimeGate({ hub: createHub(events) });
+  assert.equal(gate.observeRuntimeState({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    runtimeState: { authInvalidUntil: Date.now() + 86400000, lastFailureKind: 'auth_invalid', consecutiveFailures: 1 },
+    baseState: { configured: true, apiKeyMode: false },
+    reason: 'auth_invalid_reauth_required',
+    source: 'native_session_terminal_output'
+  }), true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].nextStatus, 'auth_invalid');
+  assert.equal(events[0].runtimeState.lastFailureKind, 'auth_invalid');
+  // 缺 runtimeState 或账号身份时 fail closed。
+  assert.equal(gate.observeRuntimeState({ provider: 'codex', accountRef: ACCOUNT_REF }), false);
+  assert.equal(gate.observeRuntimeState({ provider: 'codex', runtimeState: {} }), false);
+});
+
 test('observeRawFailure routes legacy string-shaped marks through the same applier and event', () => {
   const events = [];
   const gate = createAccountRuntimeGate({ hub: createHub(events), markProxyAccountFailure });

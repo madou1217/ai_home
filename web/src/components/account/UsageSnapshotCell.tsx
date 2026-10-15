@@ -495,26 +495,15 @@ function UsageSnapshotBody({
   );
 }
 
-function UsageSnapshotCell(props: UsageSnapshotCellProps) {
+export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
   const { record } = props;
   const hasCollectionNotice = record.configured && !record.apiKeyMode && getQuotaStateMeta(record);
-  // data-usage-provider：自动化校验（scripts/webui-usage-e2e.js）据此把渲染出的额度行归属到账号，
-  // 断言「服务端 payload 的每一行都真的画到了页面上」。只暴露 provider 名，不含任何凭据。
-  const providerAttr = String(record.provider || '');
-  if (!hasCollectionNotice) {
-    return (
-      <div data-usage-provider={providerAttr}>
-        <UsageSnapshotBody {...props} />
-      </div>
-    );
-  }
+  if (!hasCollectionNotice) return <UsageSnapshotBody {...props} />;
   return (
-    <div className="usage-meta-list" data-quota-status={record.quotaStatus} data-usage-provider={providerAttr}>
+    <div className="usage-meta-list" data-quota-status={record.quotaStatus}>
       {renderQuotaStateBadge(record)}
       {record.usageSnapshot || record.remainingPct != null || record.usageRefreshing
         ? <UsageSnapshotBody {...props} /> : null}
     </div>
   );
 }
-
-export default UsageSnapshotCell;

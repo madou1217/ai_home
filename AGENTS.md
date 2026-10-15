@@ -72,11 +72,6 @@ Fuller layer map:
   printed. This is the only evidence that Go can replace Node — unit tests cannot
   see upstream behaviour differences. Re-run it after any change to Canonical
   encode/decode.
-- `npm run web:e2e:usage`: 用本机 Chrome（无头 + CDP，零新依赖）打开**真实 WebUI 账号页**，把服务端
-  `/v0/webui/accounts` payload 的每一行额度标签与页面上真正渲染出来的行逐一比对：自动点开「展开 N 项」
-  折叠行、逐个 hover agy 的分组模型清单（默认只列 8 条，按「名称 (N)」求和核对模型数）、并检查旁路条目
-  的「赠送/明细」标记。改了任何额度展示（服务端 payload / 展示行派生 / 渲染组件）都必须跑它——单测只看得到
-  payload 与派生，看不到 DOM。退出码 2 = 环境不满足（无 Chrome / Server 未运行 / 无快照），不是回归。
 
 ## Coding Style & Naming Conventions
 - Main body (`lib/`): Node.js CommonJS (`require`, `module.exports`).

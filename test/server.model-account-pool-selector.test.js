@@ -85,3 +85,46 @@ test('全部账号都停用该模型时排空池子', () => {
   assert.equal(result.filtered, true);
   assert.deepEqual(result.excludedAccountRefs.sort(), [ENABLED, DISABLED].sort());
 });
+
+// 额度窗口门禁：窗口已耗尽且未重置的 (账号, 模型) 不进候选池 —— 预防优于 429。
+test('额度窗口耗尽的账号被摘出候选池，窗口重置后恢复', () => {
+  const now = Date.now();
+  const exhausted = {
+    accountRef: ENABLED,
+    schedulableStatus: 'schedulable',
+    usageSnapshot: {
+      capturedAt: now - 60000,
+      models: [{ model: MODEL, remainingPct: 0, resetAtMs: now + 3600000 }]
+    }
+  };
+  const healthy = {
+    accountRef: DISABLED,
+    schedulableStatus: 'schedulable',
+    usageSnapshot: {
+      capturedAt: now - 60000,
+      models: [{ model: MODEL, remainingPct: 100, resetAtMs: 0 }]
+    }
+  };
+  const state = {
+    accounts: { agy: [exhausted, healthy] },
+    webUiModelsCache: {
+      updatedAt: now,
+      byAccount: { [ENABLED]: [MODEL], [DISABLED]: [MODEL] },
+      byProvider: {}
+    }
+  };
+  const result = selectPoolAccountsForModel({
+    pool: [exhausted, healthy], provider: 'agy', model: MODEL, state, options: {}
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [DISABLED]);
+  assert.deepEqual(result.windowExhaustedAccountRefs, [ENABLED]);
+  // 窗口已重置（resetAtMs 在过去）→ 重新进池。
+  const reset = { ...exhausted,
+    usageSnapshot: { ...exhausted.usageSnapshot,
+      models: [{ model: MODEL, remainingPct: 0, resetAtMs: now - 1000 }] } };
+  const after = selectPoolAccountsForModel({
+    pool: [reset, healthy], provider: 'agy', model: MODEL, state, options: {}
+  });
+  assert.equal(after.pool.length, 2);
+  assert.equal(after.windowExhaustedAccountRefs, undefined);
+});

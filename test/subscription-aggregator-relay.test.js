@@ -527,14 +527,17 @@ test('a remote client gets a working, authenticated entry on the LAN address (re
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-exposed-'));
   // dedicated 模式（每节点一个端口 + 远端绑 0.0.0.0）：server 模式默认不暴露，另有用例覆盖。
-  const relay = new LocalRelay({ runDir: dir, env: { AIH_RELAY_PORT_MODE: 'dedicated' }, readinessTimeoutMs: 15000 });
+  // basePort 挪到 24100：本机可能正跑着生产边车（占着 23100+），测试不该跟它抢端口。
+  const relay = new LocalRelay({
+    runDir: dir, env: { AIH_RELAY_PORT_MODE: 'dedicated' }, basePort: 24100, readinessTimeoutMs: 15000
+  });
   try {
     // 远端客户端：绑可达地址 + 认证。节点是假的上游（连不通没关系，验的是入口本身）。
     const result = await relay.ensure([{ ...VLESS_NODE }], { onlyIds: new Set(['n_vless']), remote: true });
     assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));
     const endpoint = result.endpoints.get('n_vless');
     const credentials = relay.credentials();
-    assert.deepEqual([endpoint.port, endpoint.username, endpoint.password], [23100, credentials.username, credentials.password]);
+    assert.deepEqual([endpoint.port, endpoint.username, endpoint.password], [24100, credentials.username, credentials.password]);
     assert.equal(relay.activeListenHost(), '0.0.0.0');
     assert.equal(relay.isExposed(), true);
 
@@ -586,7 +589,9 @@ test('server port mode keeps the sidecar on loopback and resolves a node from it
     return;
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-serverport-'));
-  const relay = new LocalRelay({ runDir: dir, env: { AIH_RELAY_PORT_MODE: 'server' }, readinessTimeoutMs: 15000 });
+  const relay = new LocalRelay({
+    runDir: dir, env: { AIH_RELAY_PORT_MODE: 'server' }, basePort: 24100, readinessTimeoutMs: 15000
+  });
   try {
     assert.equal(relay.portMode(), 'server');
     assert.equal(relay.serverPortMode(), true);
@@ -622,7 +627,9 @@ test('mihomo carries the transports sing-box cannot (real mihomo, when installed
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-mihomo-'));
   // 用真实环境变量（AIH_RELAY_MIHOMO_BIN 等）：内核位置就是这么传进去的。
-  const relay = new LocalRelay({ runDir: dir, env: { ...process.env, AIH_RELAY_PORT_MODE: 'dedicated' }, readinessTimeoutMs: 15000 });
+  const relay = new LocalRelay({
+    runDir: dir, env: { ...process.env, AIH_RELAY_PORT_MODE: 'dedicated' }, basePort: 24400, readinessTimeoutMs: 15000
+  });
   try {
     const result = await relay.ensure([{ ...KERNEL_NODES[1] }], { onlyIds: new Set(['k_xhttp']), remote: true });
     assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));

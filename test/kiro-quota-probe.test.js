@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createKiroQuotaProbe, parseKiroUsagePayload } = require('../lib/cli/services/usage/kiro-quota-probe');
+const { CREDENTIAL_SOURCES, createKiroQuotaProbe, parseKiroUsagePayload } = require('../lib/cli/services/usage/kiro-quota-probe');
 const { createKiroIdentityEvidence } = require('../lib/account/kiro-identity');
 const { getMinRemainingPctFromUsageSnapshot, USAGE_SOURCE_KIRO } = require('../lib/account/usage-remaining');
 const { normalizeAccountUsageSnapshot } = require('../lib/server/account-usage-view');
@@ -55,6 +55,7 @@ function fixture(overrides = {}) {
   const requests = [], captures = [];
   const service = createKiroQuotaProbe({
     fs: {}, aiHomeDir: '/tmp/aih-kiro-unit', usageSnapshotSchemaVersion: 2, now: () => 2000,
+    credentialSource: CREDENTIAL_SOURCES.CLI_CAPTURE,
     readAccountCredentialRecord: () => record,
     readKiroTokenFromDatabase: () => AUTH,
     resolveAccountEgressRequestOptions: async input => {
@@ -122,4 +123,32 @@ test('foreign users and credentials changed while probing cannot populate Kiro q
   assert.equal((await changed.service.probe(REF)).error, 'credential_changed_during_probe');
   const denied = fixture({ fetchWithTimeout: async () => new Response('', { status: 403 }) });
   assert.equal((await denied.service.probe(REF)).error, 'kiro_identity_access_denied');
+});
+
+test('纯 API 刷新策略：token 过期时自刷新并落库，**完全不碰本地 CLI**', async () => {
+  const staleAuth = { ...AUTH, expires_at: new Date(Date.now() - 86400000).toISOString() };
+  const freshAuth = { ...AUTH, access_token: 'aoa-fresh', expires_at: new Date(Date.now() + 3600000).toISOString() };
+  let record = { provider: 'kiro', accountRef: REF,
+    nativeAuth: { auth: staleAuth, identityEvidence: createKiroIdentityEvidence(staleAuth, DOCUMENT, 1000) } };
+  const requests = [];
+  let cliReads = 0;
+  const service = createKiroQuotaProbe({
+    fs: {}, aiHomeDir: '/tmp/aih-kiro-unit', usageSnapshotSchemaVersion: 2, now: () => 2000,
+    credentialSource: CREDENTIAL_SOURCES.HTTP_REFRESH,
+    readAccountCredentialRecord: () => record,
+    readKiroTokenFromDatabase: () => { cliReads += 1; return null; },
+    captureKiroNativeLogin: async () => { cliReads += 1; return { captured: false, reason: 'should_not_be_called' }; },
+    resolveAccountEgressRequestOptions: async () => ({ ok: true, options: { proxyUrl: 'http://account-proxy' } }),
+    ensureFreshKiroGrant: async (current) => {
+      record = { ...current, nativeAuth: { ...current.nativeAuth, auth: freshAuth,
+        identityEvidence: createKiroIdentityEvidence(freshAuth, DOCUMENT, 1500) } };
+      return { record, refreshed: true, persisted: true };
+    },
+    fetchWithTimeout: async (...args) => { requests.push(args); return new Response(JSON.stringify(DOCUMENT)); }
+  });
+  const result = await service.probe(REF, 5000);
+  assert.equal(result.error, undefined);
+  assert.equal(result.snapshot.entries[0].remainingPct, 99.74);
+  assert.equal(cliReads, 0, '纯 API 策略不得读写本地 CLI');
+  assert.equal(requests[0][1].headers.authorization, 'Bearer aoa-fresh');
 });

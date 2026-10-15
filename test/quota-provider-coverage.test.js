@@ -151,3 +151,31 @@ test('诊断输出：没有额度的 provider 带原因、依赖客户端的 pro
   assert.match(lines[0], /^quota sources: \d+ provider\(s\), with quota=\d+, no quota=\d+$/);
   assert.equal(lines.length > 1, true);
 });
+
+test('描述符加载零错误（新增能力被契约拒掉时必须红，而不是静默消失）', () => {
+  // 2026-10-15 教训：给 kiro 加 models 能力时忘了把它登记进 CAPABILITY_NAMES，
+  // 契约直接拒掉整个描述符 —— 表现是「策略链查不到任何策略」，而不是报错。
+  const { listProviderDescriptorLoadErrors } = require('../lib/providers');
+  assert.deepEqual(listProviderDescriptorLoadErrors(), []);
+});
+
+test('模型发现能力：策略自洽（http 不依赖客户端、cli 必须依赖），且不依赖客户端的排在前面', () => {
+  const { getProviderCapability, listProviders } = require('../lib/providers');
+  const declaring = listProviders('models');
+  assert.ok(declaring.length > 0, '至少要有一个 provider 声明模型发现能力（kiro 的纯 API 通道）');
+  for (const provider of declaring) {
+    const capability = getProviderCapability(provider, 'models');
+    if (!capability || capability.supported !== true) continue;
+    assert.ok(capability.strategies.length > 0, `${provider} 声明了模型发现却没有策略`);
+    for (const strategy of capability.strategies) {
+      assert.equal(typeof strategy.discover, 'function', `${provider}:${strategy.id} 缺 discover 工厂`);
+      if (strategy.transport === 'http') assert.equal(strategy.clientDependent, false, `${provider}:${strategy.id} http 通道不得依赖客户端`);
+      if (strategy.transport === 'cli') assert.equal(strategy.clientDependent, true, `${provider}:${strategy.id} cli 通道必须声明依赖客户端`);
+    }
+    // 排序规则与运行时一致：不依赖本机客户端的策略必须排在最前面（否则「没装 CLI」时会先失败）。
+    const ordered = capability.strategies.slice().sort((left, right) => (
+      Number(Boolean(left.clientDependent)) - Number(Boolean(right.clientDependent))
+    ));
+    assert.equal(ordered[0].clientDependent, false, `${provider} 的模型发现没有「不依赖 CLI」的首选策略`);
+  }
+});

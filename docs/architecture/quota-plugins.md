@@ -176,3 +176,46 @@ $ aih server status
 
 程序内：`describeQuotaSources()` / `formatQuotaSourceLines()` / `formatProviderCapabilityLines()` /
 `listProviderDescriptorLoadErrors()`。
+
+## 11. kiro：不依赖本地 CLI / App 的纯 API 采集（2026-10-15 实测）
+
+**症状**：账号页同时报「模型：`native_cli_model_discovery_cli_not_found`」与「额度：
+`kiro_identity_access_denied`」。看起来像权限问题，实际是两条都**只依赖本机客户端**：
+
+| 报错 | 真实原因 |
+| --- | --- |
+| `kiro_identity_access_denied` | access token 已过期（实测 `expires_at` 比当天早 3 天）。AWS 对过期 SSO token 返回 **403**（不是 401），被映射成 access_denied。刷新此前只能从本地 CLI 的 `data.sqlite3` 里抄，CLI 不在就永远 403 |
+| `native_cli_model_discovery_cli_not_found` | 模型清单只有「跑本地 CLI」一条路（`native-cli-model-discovery.js` 的 provider→CLI 参数表） |
+
+**纯 API 通道（已实测打通，全程不碰 CLI）**：
+
+1. **凭据**：导入时那份 CLI sqlite 以 base64 存在 `nativeAuth.database`，其中 `auth_kv` 表有
+   `kirocli:odic:device-registration`（`client_id` / `client_secret`，实测有效期到 2027-01）。
+   解析见 `lib/account/kiro-device-registration.js`（显式字段优先，内嵌 sqlite 兜底，都拿不到就 fail closed）。
+2. **刷新**：`POST https://oidc.<region>.amazonaws.com/token`
+   `{clientId, clientSecret, grantType: 'refresh_token', refreshToken}` → 200 `{accessToken, expiresIn, refreshToken}`
+   （实测 refresh_token **不轮换**）。见 `lib/account/kiro-token-refresh.js`。
+3. **额度**：`POST codewhisperer.<region>.amazonaws.com/` + `x-amz-target: AmazonCodeWhispererService.GetUsageLimits`
+   → 200（`usageBreakdownList` / `subscriptionInfo` / `nextDateReset`）。
+4. **模型**：同一个端点 + `AmazonCodeWhispererService.ListAvailableModels` → 200（`defaultModel` + `models[]`）。
+   见 `lib/account/kiro-model-catalog.js`。
+
+**策略链（自动抉择 + 兜底，两条路都在）**：
+
+```
+quota.strategies  = [ kiro-http-refresh (clientDependent:false, http)   ← 默认走这条
+                    , kiro-cli-capture (clientDependent:true,  client-cli) ]  ← 拿不到 registration 时兜底
+models.strategies = [ kiro-http-models  (clientDependent:false, http)
+                    , kiro-native-cli-models (clientDependent:true, cli) ]
+```
+
+链执行器（`lib/usage/quota/strategies.js` / `lib/server/provider-model-strategies.js`）按
+`clientDependent=false` 优先排序，失败自动切下一条，`attempts` 全程可观察。
+`models` 能力在描述符契约里（`lib/providers/contract.js` 的 `CAPABILITY_NAMES`），
+校验 http↔不依赖客户端、cli↔依赖客户端 的自洽性；**新增能力忘了登记进白名单会导致整个描述符
+被拒（表现为「策略链查不到任何策略」），`test/quota-provider-coverage.test.js` 用
+「描述符加载零错误」守住这一点**。
+
+**验收（真实账号）**：`aih kiro usage --refresh` → `age: 0s`，`credits: 48.7/50 remaining (97.40%)`；
+模型策略链 → `strategyId=kiro-http-models`，3 个模型；本地 CLI 路径在未安装 CLI 的机器上仍报
+`native_cli_model_discovery_cli_not_found`（证明它确实依赖 CLI，因此只作兜底）。

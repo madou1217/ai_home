@@ -46,7 +46,8 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
     createServerDeps(aiHomeDir, processObj, lifecycle)
   );
 
-  assert.equal(handle.server.listening, true);
+  // 端口可能由中转分流器持有（AIH_RELAY_PORT_MODE=server，默认）：判断"在监听"看 listener。
+  assert.equal(handle.listener.listening, true);
   assert.deepEqual(handle.address, { host: '127.0.0.1', port });
   assert.equal(typeof handle.stop, 'function');
   assert.equal(typeof handle.closed.then, 'function');
@@ -60,7 +61,7 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
   await handle.closed;
 
   assert.deepEqual(processObj.exitCalls, []);
-  assert.equal(handle.server.listening, false);
+  assert.equal(handle.listener.listening, false);
   assert.equal(lifecycle.relayClosed, 1);
   assert.equal(lifecycle.webrtcClosed, 1);
   assert.equal(lifecycle.fabricClosed, 1);
@@ -250,7 +251,8 @@ test('server stays available when chat runtime storage is unsupported', async (t
     headers: { authorization: 'Bearer management-key-that-is-long-enough' }
   });
 
-  assert.equal(handle.server.listening, true);
+  // 端口可能由中转分流器持有（AIH_RELAY_PORT_MODE=server，默认）：判断"在监听"看 listener。
+  assert.equal(handle.listener.listening, true);
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, 'chat_runtime_unavailable');
 });
@@ -272,7 +274,7 @@ test('foreground local server keeps signal-driven process exit behavior', async 
   let handle = null;
 
   t.after(async () => {
-    if (handle && handle.server.listening) await handle.stop('test-cleanup');
+    if (handle && handle.listener.listening) await handle.stop('test-cleanup');
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   });
 

@@ -55,6 +55,9 @@ async function withMux(run) {
   try {
     return await run({ port });
   } finally {
+    // 停服顺序与生产一致：先排空在途（这里没有），再让分流器销毁它接管的连接，
+    // 否则 listener.close() 要等 keep-alive 客户端自己断开（实测 3s）。
+    mux.destroyConnections();
     await new Promise((resolve) => listener.close(resolve));
     await new Promise((resolve) => kernel.server.close(resolve));
     await new Promise((resolve) => httpServer.close(resolve));
@@ -162,4 +165,38 @@ test('the port mux stays out of the way when the relay uses dedicated ports', as
   });
   assert.equal(mux.enabled(), false);
   await new Promise((resolve) => httpServer.close(resolve));
+});
+
+test('destroyConnections reaps handed-over sockets so shutdown does not wait for the client', async () => {
+  const httpServer = await startHttpServer();
+  const mux = createRelayPortMux({
+    httpServer,
+    resolveRelay: () => ({ enabled: true, password: PASSWORD, portForUser: () => 0 })
+  });
+  const listener = mux.listener();
+  await new Promise((resolve) => listener.listen(0, '127.0.0.1', resolve));
+  const port = listener.address().port;
+  const agent = new http.Agent({ keepAlive: true });
+  try {
+    const body = await new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port, agent }, (res) => {
+        let text = '';
+        res.on('data', (chunk) => { text += chunk; });
+        res.on('end', () => resolve(text));
+      });
+      req.on('error', reject);
+    });
+    assert.equal(body, 'http:GET:/');
+    // keep-alive socket 被交回 http server；而分流模式下 http server 从不 listen，
+    // Node 的 closeIdleConnections/closeAllConnections 对它不生效——必须由分流器销毁，
+    // 否则 listener.close() 要等客户端自己断开（实测 3s，停服被拖慢且连接泄漏）。
+    assert.equal(mux.destroyConnections(), 1);
+    assert.equal(mux.destroyConnections(), 0, '第二次调用不应重复计数');
+    const closingStartedAt = Date.now();
+    await new Promise((resolve) => listener.close(resolve));
+    assert.ok(Date.now() - closingStartedAt < 1000, 'listener.close() 必须在销毁连接后立刻完成');
+  } finally {
+    agent.destroy();
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
 });

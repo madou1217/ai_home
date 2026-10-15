@@ -2,7 +2,6 @@ import type { ChatAccount, Session } from '@/types';
 import { chatRuntimeProviders } from './runtime-provider-registry';
 import {
   chatAccountIdentity,
-  isAihServerAccount,
   makeAihServerAccount,
   supportsAihServer,
 } from '@/components/chat/aih-server-account';
@@ -102,17 +101,42 @@ export function withGatewayAccounts(accounts: readonly ChatAccount[]): readonly 
   ];
 }
 
+/**
+ * 换账号时该做什么。三种结果：
+ * - `ignore`：目标没变（含网关目标 gateway:<provider> 的稳定标识比较）。
+ * - `retarget`：**同 provider** 且已有服务端会话 → 换执行凭据、会话不变（服务端 open 时 rebind，
+ *   时间线保留、harness 换账号并回填历史）。
+ * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草稿）→ 按原行为新建。
+ */
+export type ChatAccountChangeAction = 'ignore' | 'retarget' | 'new-session';
+
+export function resolveChatAccountChange(input: {
+  readonly mode?: Session['mode'];
+  readonly provider: Provider;
+  readonly accountRef?: string;
+  readonly draft?: boolean;
+  readonly runtimeSessionId?: string;
+  readonly account: ChatAccount;
+}): ChatAccountChangeAction {
+  const identity = chatAccountIdentity(input.account);
+  if (String(input.accountRef || '') === identity) return 'ignore';
+  if (input.mode !== 'chat') return 'new-session';
+  if (input.provider !== input.account.provider) return 'new-session';
+  if (input.draft || !input.runtimeSessionId) return 'new-session';
+  return 'retarget';
+}
+
 function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
   const account = input.account;
   const boundScope = String(input.session.accountRef || '').trim();
-  const gatewayTarget = isAihServerAccount(account);
   const providedIdentity = chatAccountIdentity(account);
-  // 网关目标（aih-server）没有 accountRef：作用域字符串带 provider，交给网关在池内挑号。
-  const accountRef = gatewayTarget ? providedIdentity : (boundScope || providedIdentity);
+  // 显式传入的账号优先：同 provider 换账号时目标就是新账号（服务端 open 会 rebind）；
+  // 没有账号时退回会话已绑定的作用域。
+  const accountRef = providedIdentity || boundScope;
   if (!accountRef) return blocked('account_required');
   if (account && account.provider !== input.session.provider) return blocked('provider_mismatch');
-  // 会话已绑定目标时，传入的账号/网关目标必须与它一致（否则就是拿别人的运行态顶替）。
-  if (boundScope && providedIdentity && boundScope !== providedIdentity) return blocked('provider_mismatch');
+  // 会话已绑定的目标与传入账号不同时：**同 provider 就是换执行凭据**（服务端 open 会 rebind，
+  // 会话与时间线不变），跨 provider 已在上一步挡住。
   return {
     status: 'ready',
     target: {

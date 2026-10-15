@@ -9,6 +9,7 @@ import { sessionsAPI } from '@/services/api';
 import {
   CanonicalChatRuntime,
   resolveCanonicalSessionDirectoryFocus,
+  resolveChatAccountChange,
   useCanonicalSessionDirectory,
   useCanonicalSessionRestore,
   useSessionApprovalMode,
@@ -332,9 +333,22 @@ export function ChatConversationContent({
             approvalMode={approvalMode.mode}
             approvalModeReady={approvalMode.ready}
             onAccountChange={(account) => {
-              // 用稳定标识比较：网关目标没有 accountRef（标识是 gateway:<provider>）。
-              if (session.mode === 'chat' && String(session.accountRef || '') === chatAccountIdentity(account)) return;
+              const action = resolveChatAccountChange({
+                mode: session.mode, provider: session.provider, accountRef: session.accountRef,
+                draft: session.draft, runtimeSessionId: session.runtimeSessionId, account,
+              });
+              if (action === 'ignore') return;
               accountCatalog.setSelectedAccount(account);
+              if (action === 'retarget') {
+                // 同 provider 换账号 = 换执行凭据：会话与时间线不变，服务端 open 时会 rebind，
+                // harness 换到新账号并用会话历史回填。
+                projectCatalog.setSelectedSession({
+                  ...session,
+                  accountRef: chatAccountIdentity(account),
+                  updatedAt: Date.now(),
+                });
+                return;
+              }
               if (session.mode === 'chat') {
                 projectCatalog.setSelectedSession({
                   id: `draft-${Date.now()}`, title: '新对话', updatedAt: Date.now(),

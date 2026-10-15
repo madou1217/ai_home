@@ -1,6 +1,7 @@
 export { default as SessionRuntimeSurface } from './SessionRuntimeSurface';
 export { default as CanonicalChatRuntime } from './CanonicalChatRuntime';
 export {
+  resolveChatAccountChange,
   resolveSessionRuntimeTarget,
   runtimeAccountsForSession,
   usesCanonicalSessionRuntime,

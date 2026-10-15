@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Account, ChatAccount, Session } from '@/types';
 import {
+  resolveChatAccountChange,
   resolveSessionRuntimeTarget,
   runtimeAccountsForSession,
   usesCanonicalSessionRuntime,
@@ -108,8 +109,18 @@ test('every Chat account uses Harness and never inherits the Work directory or n
       provider, executionAccountRef: account.accountRef, projectPath: '', chatSessionId: 'chat-old',
       policy: { workspaceMode: 'chat', approvalMode: 'confirm' },
     } });
+    // 同 provider 换账号不再是 provider_mismatch：换执行凭据、会话继续（服务端 open 时 rebind）。
+    const retargeted = resolveSessionRuntimeTarget({ session: chat,
+      account: { ...selected, accountRef: 'another-account' }, approvalMode: 'confirm' });
+    assert.equal(retargeted.status, 'ready');
+    if (retargeted.status === 'ready') {
+      assert.equal(retargeted.target.executionAccountRef, 'another-account');
+      assert.equal(retargeted.target.chatSessionId, 'chat-old');
+    }
+    // 跨 provider 仍然挡住（协议不同，必须新建会话）。
     assert.equal(resolveSessionRuntimeTarget({ session: chat,
-      account: { ...selected, accountRef: 'another-account' }, approvalMode: 'confirm' }).status, 'blocked');
+      account: { ...selected, provider: provider === 'codex' ? 'claude' : 'codex' }, approvalMode: 'confirm' }).status,
+    'blocked');
   }
 });
 
@@ -146,6 +157,27 @@ test('chat account list gains one aih-server target per gateway-capable provider
   assert.deepEqual(gateways.map((entry) => entry.displayName), [
     'aih-server(全部账号+别名)', 'aih-server(全部账号+别名)',
   ]);
+});
+
+test('chat account change decides between ignore, retarget and a new session', () => {
+  const saved = { mode: 'chat' as const, provider: 'opencode' as const,
+    accountRef: 'account-a', runtimeSessionId: 'session-1' };
+  const sameProvider = { ...account, provider: 'opencode' as const, accountRef: 'account-b' };
+  // 目标没变 → 忽略（网关目标按 gateway:<provider> 的稳定标识比较）。
+  assert.equal(resolveChatAccountChange({ ...saved, account: { ...sameProvider, accountRef: 'account-a' } }), 'ignore');
+  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway:opencode',
+    account: makeAihServerAccount('opencode') }), 'ignore');
+  // 同 provider + 已有服务端会话 → 换执行凭据、会话不变。
+  assert.equal(resolveChatAccountChange({ ...saved, account: sameProvider }), 'retarget');
+  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway:opencode',
+    account: { ...sameProvider, accountRef: 'account-b' } }), 'retarget');
+  // 跨 provider → 新建。
+  assert.equal(resolveChatAccountChange({ ...saved, account: { ...account, provider: 'kimi' as const } }), 'new-session');
+  // 还没有服务端会话（草稿）→ 新建。
+  assert.equal(resolveChatAccountChange({ ...saved, runtimeSessionId: undefined, account: sameProvider }), 'new-session');
+  assert.equal(resolveChatAccountChange({ ...saved, draft: true, account: sameProvider }), 'new-session');
+  // work 模式沿用旧行为（由上层处理）。
+  assert.equal(resolveChatAccountChange({ ...saved, mode: 'work', account: sameProvider }), 'new-session');
 });
 
 test('a gateway chat target resolves to a pooled scope instead of an account ref', () => {

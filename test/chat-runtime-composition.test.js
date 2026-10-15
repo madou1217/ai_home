@@ -675,6 +675,31 @@ for (const workspaceMode of ['chat', 'work']) {
   });
 }
 
+test('Chat keeps one session when the same provider switches accounts (retarget)', async (t) => {
+  const fixture = createFixture(t);
+  const input = { provider: 'codex', executionAccountRef: 'account-1',
+    policy: { workspaceMode: 'chat', approvalMode: 'confirm' } };
+  const session = await fixture.service.openChatSession(input);
+  assert.equal(fixture.clientOptions.runtimeScope, 'chat-account-1');
+
+  // 同 provider 换账号：会话 id 与时间线不变，只把执行凭据换成另一个账号，
+  // harness 重绑到新账号（runtimeScope 跟着变）。
+  const retargeted = await fixture.service.openChatSession({
+    ...input, chatSessionId: session.sessionId, executionAccountRef: 'account-2'
+  });
+  assert.equal(retargeted.sessionId, session.sessionId);
+  assert.equal(retargeted.executionAccountRef, 'account-2');
+  assert.equal(fixture.clientOptions.runtimeScope, 'chat-account-2');
+  assert.deepEqual(fixture.service.getSnapshot(session.sessionId).timeline, []);
+
+  // 幂等：再开一次同一个账号不再重绑。
+  const again = await fixture.service.openChatSession({
+    ...input, chatSessionId: session.sessionId, executionAccountRef: 'account-2'
+  });
+  assert.equal(again.sessionId, session.sessionId);
+  assert.equal(again.executionAccountRef, 'account-2');
+});
+
 test('Chat imports legacy history once, resumes the native thread and keeps account ownership', async (t) => {
   const fixture = createFixture(t);
   const { saveChatSession, readChatSession } = require('../lib/server/webui-chat-store');
@@ -696,7 +721,7 @@ test('Chat imports legacy history once, resumes the native thread and keeps acco
   await assert.rejects(fixture.service.openChatSession({ ...input, executionAccountRef: 'account-2' }),
     /chat_session_account_mismatch/);
   await assert.rejects(fixture.service.openChatSession({ ...input, chatSessionId: session.sessionId,
-    executionAccountRef: 'account-2' }), /chat_session_account_mismatch/);
+    provider: 'claude' }), /chat_session_account_mismatch/);
 
   for (let index = 0; index < 2; index += 1) {
     await fixture.service.dispatchCommand(session.sessionId, {

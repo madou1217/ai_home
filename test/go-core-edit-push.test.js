@@ -16,6 +16,7 @@ const { handleWebUiUpstreamErrorMappingRoutes } = require('../lib/server/webui-u
 const { reloadRuntimeAccountsIfNeeded } = require('../lib/server/webui-account-routes-utils');
 const { createServerPoolSyncListener } = require('../lib/server/account-runtime-event-listeners');
 const { handleManagementRequest } = require('../lib/server/management-router');
+const { handleWebUIRequest } = require('../lib/server/web-ui-router');
 const { saveAliases } = require('../lib/server/model-alias-store');
 
 /** 记录推送调用的 goCoreSync 替身；flush 等待 fire-and-forget 的推送链跑完。 */
@@ -215,6 +216,75 @@ test('the management reload endpoint pushes the rules projection', async () => {
   assert.equal(res.statusCode, 200);
   await flush();
   assert.deepEqual(spy.calls, ['upstreamErrorRules']);
+});
+
+// 生产形状的 ctx 与单测手搓的 ctx 不同：server.js 调 handleWebUIRequest 时只把 goCoreSync
+// 放进 deps（web-ui-router 的 routeCtx.deps = { ...deps }），ctx 顶层没有它。若取同步入口
+// 只认 ctx.goCoreSync，WebUI 里所有编辑都会静默 no-op，而手搓顶层 ctx 的单测看不出来。
+// 这条用例走真实路由分发，锁住「路由器 → 路由模块 → ctx.deps 取入口」这一层。
+function createRouterDeps(aiHomeDir, overrides = {}) {
+  return {
+    fs,
+    aiHomeDir,
+    writeJson: (response, code, payload) => {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    },
+    readRequestBody: async () => null,
+    getProfileDir: () => '',
+    getToolConfigDir: () => '',
+    checkStatus: () => ({ configured: true }),
+    loadServerRuntimeAccounts: () => ({ codex: [{ accountRef: 'acct_1' }] }),
+    applyReloadState: (target, accounts) => { target.accounts = accounts; },
+    ...overrides
+  };
+}
+
+test('router-dispatched edits push through a deps-only goCoreSync (production ctx shape)', async (t) => {
+  const aiHomeDir = tempHome(t, 'aih-router-edit-push-');
+  const spy = createSyncSpy();
+  const state = { accounts: { codex: [], gemini: [], claude: [] } };
+  const send = async (method, pathname, deps) => {
+    const res = responseCapture();
+    const handled = await handleWebUIRequest({
+      method,
+      pathname,
+      url: new URL(`http://localhost${pathname}`),
+      req: { headers: {} },
+      res,
+      options: {},
+      state,
+      deps
+    });
+    return { handled, statusCode: res.statusCode, body: res.body };
+  };
+  const groupPath = '/v0/webui/upstream-error-mappings';
+  const group = {
+    name: 'router-guard',
+    provider: 'codex',
+    rules: [{
+      kind: 'rate_limited',
+      statuses: [429],
+      matchers: [{ source: 'http_code', operator: 'equals', value: 429 }]
+    }]
+  };
+
+  const created = await send('POST', groupPath, createRouterDeps(aiHomeDir, {
+    goCoreSync: spy.host,
+    readRequestBody: async () => Buffer.from(JSON.stringify(group))
+  }));
+  assert.equal(created.handled, true);
+  assert.equal(created.statusCode, 200);
+  await flush();
+  assert.deepEqual(spy.calls, ['upstreamErrorRules']);
+
+  const groupId = JSON.parse(created.body).group.id;
+  const deleted = await send('DELETE', `${groupPath}/${groupId}`, createRouterDeps(aiHomeDir, {
+    goCoreSync: spy.host
+  }));
+  assert.equal(deleted.statusCode, 200);
+  await flush();
+  assert.deepEqual(spy.calls, ['upstreamErrorRules', 'upstreamErrorRules']);
 });
 
 // 池变即推送是「编辑即推送」的另一半：任何重载运行池的地方都可能改变规则投影，

@@ -38,6 +38,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/server/chat-runtime/chat-harness-gateway.js` + `chat-harness-model-reader.js` | **Strategy（按运行作用域分流）** | 网关作用域：不写 `X-Account-Ref`（网关池化选号 + 别名回落）、模型目录取 provider 全池；账号作用域：钉选 + 单账号目录 | `test/chat-harness-gateway.test.js` |
 | `web/src/features/chat-runtime/session-surface-policy.ts` | **Policy（纯函数决策）** | `resolveChatAccountChange`（ignore / retarget / new-session）与网关目标解析，渲染层只执行结论 | `web/src/features/chat-runtime/session-surface-policy.test.ts` |
 | `scripts/provider-collection-audit.js` | **可观察性审计** | 把「有没有不依赖客户端的通道」变成可打印、可守卫的事实 | `npm run providers:audit` |
+| `lib/server/window-activation/probe-specs.js` + `lib/server/webui-account-live.js` | **Registry + Capability Flag（能力位驱动入口）** | 账号级动作入口不在前端写 provider 清单：服务端下发 `account.windowActivationSupported = Boolean(getProbeSpec(provider))`（同 `customUpstream`），前端只消费结论；**新增 provider = 加一条探测 spec**，调度器/派发层/前端都不改 | `test/web.window-activation-contract.test.js`（源码守卫：前端不得出现 `provider === 'codex'`） |
 
 
 ## 2. 反模式清单（该改的地方）

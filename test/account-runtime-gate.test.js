@@ -7,6 +7,7 @@ const {
   readFailureStatusCode
 } = require('../lib/server/account-runtime-gate');
 const { ACCOUNT_RUNTIME_CHANGED } = require('../lib/server/account-runtime-event-types');
+const { markProxyAccountFailure, markProxyAccountSuccess } = require('../lib/server/router');
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 
@@ -193,5 +194,59 @@ test('isProbeRefutableRuntimeState only accepts credential/transient evidence', 
   assert.equal(isProbeRefutableRuntimeState({ lastFailureKind: 'rate_limited' }, Date.now()), false);
   assert.equal(isProbeRefutableRuntimeState({ lastFailureKind: 'quota_exhausted' }, Date.now()), false);
   assert.equal(isProbeRefutableRuntimeState({ lastFailureKind: '' }, Date.now()), false);
+});
+
+test('describeFailure classifies without touching account state or emitting events', () => {
+  const events = [];
+  const gate = createAccountRuntimeGate({ hub: createHub(events), markProxyAccountFailure });
+  const account = makeAccount();
+  const policy = gate.describeFailure({ account, provider: 'codex', statusCode: 401, body: 'unauthorized' });
+  assert.equal(policy.kind, 'auth_invalid');
+  assert.equal(account.lastFailureKind, undefined);
+  assert.equal(events.length, 0);
+});
+
+test('observeSuccess clears the block through the shared applier and publishes one event', () => {
+  const events = [];
+  const gate = createAccountRuntimeGate({
+    hub: createHub(events),
+    markProxyAccountFailure,
+    markProxyAccountSuccess
+  });
+  const account = makeAccount({
+    authInvalidUntil: Date.now() + 86400000,
+    cooldownUntil: Date.now() + 86400000,
+    lastFailureKind: 'auth_invalid',
+    modelCooldowns: { 'gpt-5.4': Date.now() + 300000 }
+  });
+  assert.equal(gate.observeSuccess({ account, provider: 'codex', model: 'gpt-5.4' }), true);
+  assert.equal(account.authInvalidUntil, 0);
+  assert.equal(account.cooldownUntil, 0);
+  assert.deepEqual(account.modelCooldowns, {}, '该模型的成功要清掉它自己的冷却');
+  assert.equal(account.lastSuccessAt > 0, true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].source, 'server.upstream.success');
+  assert.equal(events[0].nextStatus, 'healthy');
+});
+
+test('observeRawFailure routes legacy string-shaped marks through the same applier and event', () => {
+  const events = [];
+  const gate = createAccountRuntimeGate({ hub: createHub(events), markProxyAccountFailure });
+  const account = makeAccount();
+  assert.equal(gate.observeRawFailure({
+    account,
+    provider: 'codex',
+    reason: 'invalid_codex_response',
+    cooldownMs: 60000,
+    failureThreshold: 1,
+    scope: 'account',
+    kind: 'invalid_codex_response'
+  }), true);
+  assert.equal(account.lastFailureKind, 'invalid_codex_response');
+  assert.equal(account.cooldownUntil > Date.now(), true);
+  assert.equal(events.length, 1);
+  // 无 typed 冷却字段的失败，状态就是失败种类本身（与既有 UI 口径一致）。
+  assert.equal(events[0].nextStatus, 'invalid_codex_response');
+  assert.equal(events[0].runtimeState.cooldownUntil > Date.now(), true);
 });
 

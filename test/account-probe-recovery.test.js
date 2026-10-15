@@ -102,7 +102,7 @@ test('probe success clears the auth block and publishes the cleared runtime stat
   assert.equal(events[0].baseState.apiKeyMode, false);
 });
 
-test('probe failure is recorded with the same rules as an inference failure', () => {
+test('probe failure is classified for the UI but never recorded as account state', () => {
   const account = blockedAccount({
     accountRef: 'acct_cccccccccccccccccccc',
     cooldownUntil: 0,
@@ -130,11 +130,19 @@ test('probe failure is recorded with the same rules as an inference failure', ()
     gate: createGate(events)
   });
   assert.deepEqual(recovered, []);
-  assert.deepEqual(failed, [{ provider: 'opencode', accountRef: account.accountRef, kind: 'auth_invalid', scope: 'account' }]);
-  assert.equal(account.lastFailureKind, 'auth_invalid');
-  assert.equal(account.authInvalidUntil > Date.now(), true);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].nextStatus, 'auth_invalid');
+  // 提示里能说清是什么错（与推理请求同一分类器），但账号状态一动不动。
+  assert.deepEqual(failed, [{
+    provider: 'opencode',
+    accountRef: account.accountRef,
+    kind: 'auth_invalid',
+    scope: 'account',
+    detail: 'HTTP 401 {"error":{"code":"invalid_api_key"}}'
+  }]);
+  assert.equal(account.lastFailureKind, '');
+  assert.equal(account.authInvalidUntil, 0);
+  assert.equal(account.cooldownUntil, 0);
+  assert.equal(account.consecutiveFailures, 0);
+  assert.equal(events.length, 0, '探测失败不得发布运行态事件');
 });
 
 test('healthy accounts and empty catalogs stay untouched', () => {

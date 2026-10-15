@@ -221,3 +221,23 @@ test('额度策略链：kiro 声明了「纯 API 刷新」与「CLI 兜底」两
   assert.equal(quota.strategies[1].clientDependent, true);
   assert.equal(quota.strategies[1].transport, 'client-cli');
 });
+
+test('账号页模型探测链路：kiro 走纯 API（回归：参数顺序写错会掉回 CLI）', async () => {
+  // 这条用例复现 2026-10-15 截图里的失败：账号页「模型探测」报
+  // native_cli_model_discovery_cli_not_found。根因是策略链 deps 里 fetchWithTimeout 的
+  // 参数顺序写错（http-utils 的签名是 (url, init, timeoutMs, egressOptions)），
+  // HTTP 策略静默失败 → 掉回 CLI → 没装 CLI 就报这个错。
+  const { fetchModelsForAccount } = require('../lib/server/http-utils');
+  const fs = require('node:fs');
+  const calls = [];
+  const models = await fetchModelsForAccount({
+    fs,
+    aiHomeDir: process.env.HOME + '/.ai_home',
+    fetchWithTimeout: async (url) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ defaultModel: { modelId: 'm1' }, models: [{ modelId: 'm1' }] }));
+    }
+  }, { provider: 'kiro', accountRef: 'acct_missing_for_test' }, 3000).catch((error) => ({ error: error.message }));
+  // 该账号不存在 → 策略链失败是预期的；关键是**不得**是 cli_not_found（那说明又掉回 CLI 了）。
+  assert.notEqual(models && models.error, 'native_cli_model_discovery_cli_not_found');
+});

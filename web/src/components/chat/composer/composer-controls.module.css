@@ -128,53 +128,13 @@
   font-size: var(--hos-text-micro);
 }
 
-.optionRow,
-.menuHeading,
+/* 模型菜单改用自带面板后，旧的 menuHeading/optionRow/optionMain/retryOption
+   已无消费者，这里只保留审批菜单仍在用的 approvalOption。 */
 .approvalOption {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--hos-space-5); /* 归级:原 18px */
-  min-width: 210px;
-}
-
-.optionMain {
-  display: flex;
-  align-items: center;
-  gap: var(--hos-space-2);
-  min-width: 0;
-}
-
-.optionRow,
-.menuHeading {
-  font-family: var(--font-mono);
-}
-
-.optionMain small {
-  color: var(--color-faint);
-  font-size: var(--hos-text-caption); /* 归级:原 11px */
-}
-
-.menuHeading > span:first-child {
-  color: var(--color-accent);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.menuHeading > span:nth-child(2) {
-  margin-left: auto;
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption); /* 归级:原 11px */
-}
-
-.menuHeading > :last-child {
-  color: var(--color-faint);
-  font-size: var(--hos-text-micro);
-}
-
-.approvalOption {
-  align-items: flex-start;
   min-width: 330px;
 }
 
@@ -194,9 +154,209 @@
   font-size: var(--hos-text-caption);
 }
 
-.retryOption {
-  color: var(--color-warning);
+.modelMenuOverlay :global(.ant-popover-inner) {
+  padding: 0;
+  overflow: hidden;
 }
+
+.modelMenuPanel {
+  width: min(420px, calc(100vw - 32px));
+  color: var(--color-text);
+}
+
+.modelMenuHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modelMenuHeader strong {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-accent);
+  text-shadow: var(--hud-text-glow-soft);
+}
+
+.modelMenuHeader span {
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+.modelSearchRow {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modelChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modelChip {
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  color: var(--color-muted-strong);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.modelChip:hover {
+  color: var(--color-text);
+  background: var(--color-overlay);
+}
+
+.modelChip[aria-pressed='true'] {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.modelChip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus) inset;
+}
+
+.modelGroupList {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px;
+  max-height: min(360px, 52vh);
+  overflow-y: auto;
+}
+
+.modelGroup {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+}
+
+.modelGroup + .modelGroup {
+  border-top: 1px solid var(--color-border);
+}
+
+.modelGroupHeading {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
+  background: var(--color-surface-raised);
+}
+
+.modelGroupHeading strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelGroupHeading span {
+  margin-left: auto;
+  color: var(--color-muted-strong);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+.modelOptionList {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.modelOptionButton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 2px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modelOptionButton:hover { background: var(--color-overlay); }
+
+.modelOptionButton[aria-selected='true'] {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent), var(--hud-glow-accent);
+}
+
+.modelOptionButton[aria-selected='true'] .modelOptionLabel { color: var(--color-accent); }
+
+.modelOptionButton:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus) inset;
+}
+
+.modelOptionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelOptionCheck {
+  visibility: hidden;
+  color: var(--color-accent);
+}
+
+.modelOptionButton[aria-selected='true'] .modelOptionCheck { visibility: visible; }
+
+.modelEmpty {
+  margin: 0;
+  padding: 16px 12px;
+  color: var(--color-muted-strong);
+  font-size: 12px;
+  text-align: center;
+}
+
+.modelEffortGroup {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.modelRetryRow {
+  padding: 10px 12px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-warning);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modelRetryRow:hover { background: var(--color-overlay); }
 
 .accountMenuOverlay :global(.ant-popover-inner) {
   padding: 0;
@@ -380,4 +540,7 @@
 @media (max-width: 560px) {
   .accountMenuPanel { width: min(358px, calc(100vw - 24px)); }
   .accountGroupList { max-height: min(420px, 58vh); }
+  /* 模型菜单更长（opencode 上百条），窄屏把可视高度再收一点，保证芯片与搜索都露出来。 */
+  .modelMenuPanel { width: min(358px, calc(100vw - 24px)); }
+  .modelGroupList { max-height: min(300px, 46vh); }
 }

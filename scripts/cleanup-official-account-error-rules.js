@@ -13,6 +13,7 @@
 // 备份：<AIH_HOME>/run/migrations/<时间戳>-official-account-error-rules.json（0600，含被删规则全文）。
 
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -30,6 +31,31 @@ function readFlag(argv, name) {
 function resolveAiHome(argv) {
   const explicit = readFlag(argv, '--aih-home') || process.env.AIH_HOME || process.env.AIH_HOME_DIR;
   return path.resolve(explicit || path.join(os.homedir(), '.ai_home'));
+}
+
+// 迁移写的是库，常驻 server 的内存池还拿着旧规则；顺手让它重载一次（需要管理密钥）。
+// 只做 best-effort：拿不到密钥 / 连不上都不算失败，只提示。
+function tryReloadRunningServer() {
+  return new Promise((resolve) => {
+    const key = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
+    if (!key) return resolve({ reloaded: false, reason: 'no_management_key' });
+    const host = String(process.env.AIH_SERVER_HOST || '127.0.0.1').trim() || '127.0.0.1';
+    const port = Number(process.env.AIH_SERVER_PORT) || 9527;
+    const req = http.request({
+      host,
+      port,
+      method: 'POST',
+      path: '/v0/management/reload',
+      headers: { authorization: `Bearer ${key}`, 'content-length': 0 },
+      timeout: 5000
+    }, (res) => {
+      res.resume();
+      resolve({ reloaded: res.statusCode === 200, reason: `http_${res.statusCode}` });
+    });
+    req.on('error', (error) => resolve({ reloaded: false, reason: String((error && error.code) || error) }));
+    req.on('timeout', () => { req.destroy(); resolve({ reloaded: false, reason: 'timeout' }); });
+    req.end();
+  });
 }
 
 function printHelp() {
@@ -52,7 +78,7 @@ function formatAccount(entry) {
   return `  ${entry.provider} ${entry.accountRef} rules=${entry.ruleCount}${groups}${host}${reason}`;
 }
 
-function main(argv = process.argv.slice(2)) {
+async function main(argv = process.argv.slice(2)) {
   if (argv.includes('--help') || argv.includes('-h')) {
     printHelp();
     return 0;
@@ -66,9 +92,21 @@ function main(argv = process.argv.slice(2)) {
     ? applyOfficialAccountRulesCleanup({ fs, aiHomeDir, accountStateIndex, plan })
     : plan;
 
+  if (apply && result.applied && result.applied.length > 0) {
+    return tryReloadRunningServer().then((reload) => {
+      printReport({ apply, asJson, aiHomeDir, result, reload });
+      return result.failed && result.failed.length ? 1 : 0;
+    });
+  }
+  printReport({ apply, asJson, aiHomeDir, result, reload: null });
+  return result.failed && result.failed.length ? 1 : 0;
+}
+
+function printReport(input) {
+  const { apply, asJson, aiHomeDir, result, reload } = input;
   if (asJson) {
-    process.stdout.write(`${JSON.stringify({ applied: apply, ...result }, null, 2)}\n`);
-    return result.failed && result.failed.length ? 1 : 0;
+    process.stdout.write(`${JSON.stringify({ applied: apply, ...result, reload }, null, 2)}\n`);
+    return;
   }
   process.stdout.write(`[aih] 数据目录 ${aiHomeDir}\n`);
   process.stdout.write(`[aih] 扫描账号 ${result.scannedAccounts}，其中带调度规则 ${result.accountsWithRules}\n`);
@@ -82,16 +120,23 @@ function main(argv = process.argv.slice(2)) {
       process.stdout.write(`[aih] 失败 ${result.failed.length} 个：\n`);
       result.failed.forEach((entry) => process.stdout.write(`  ${entry.provider} ${entry.accountRef}: ${entry.error}\n`));
     }
-    process.stdout.write('[aih] 常驻 server 需重启（或触发一次账号编辑）后才会把规则投影重新推给 Go Core。\n');
+    if (reload && reload.reloaded) {
+      process.stdout.write('[aih] 已让常驻 server 重载运行池，规则投影已重推给 Go Core。\n');
+    } else {
+      process.stdout.write(`[aih] 未能自动重载常驻 server（${reload ? reload.reason : 'skipped'}）：`
+        + '设 AIH_SERVER_MANAGEMENT_KEY 后可自动重载，或重启 server / 触发一次账号编辑。\n');
+    }
   } else {
     process.stdout.write('[aih] 这是演练；加 --apply 才会写库（写前会先落备份）。\n');
   }
-  return result.failed && result.failed.length ? 1 : 0;
 }
 
 if (require.main === module) {
   try {
-    process.exitCode = main();
+    Promise.resolve(main()).then((code) => { process.exitCode = code; }).catch((error) => {
+      process.stderr.write(`[aih] 清理失败：${String((error && error.message) || error)}\n`);
+      process.exitCode = 1;
+    });
   } catch (error) {
     process.stderr.write(`[aih] 清理失败：${String((error && error.message) || error)}\n`);
     process.exitCode = 1;

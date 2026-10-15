@@ -13,7 +13,7 @@ import {
   type AgyGroupMemberModel
 } from './usage-snapshot-format';
 import {
-  getPrimaryQuotaScopes,
+  getQuotaScopes,
   hasRenderableScopes,
   isNamedBucket
 } from './quota-scopes';
@@ -165,6 +165,7 @@ function UsageUnitsTooltipBody({ content }: { content: { title: string; detail: 
 
 function UsageMetaLine({
   label,
+  tag,
   value,
   resetIn,
   resetAtMs,
@@ -175,6 +176,7 @@ function UsageMetaLine({
   unknownLabel
 }: {
   label: string;
+  tag?: string;
   value: number | null;
   resetIn?: string;
   resetAtMs?: number;
@@ -191,6 +193,7 @@ function UsageMetaLine({
     <div className="usage-meta-line">
       <div className="usage-meta-line-head">
         <span className="usage-meta-line-label">{label}</span>
+        {tag ? <span className="usage-meta-line-tag">{tag}</span> : null}
         {resetInLabel ? (
           <span className="usage-meta-line-reset-in">
             {resetInLabel}
@@ -280,7 +283,9 @@ interface UsageRendererProps {
 // 只有 agy 的「按模型分组 + 每组限额」是真正特殊的展示，仍单独注册（见渲染器表）。
 function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
   const [expanded, setExpanded] = useState(false);
-  const rows = getPrimaryQuotaScopes(snapshot);
+  // 全部 scope（含 gift/detail）：聚合行 + 每包明细都要看得见；账号级 min 另在
+  // account-state 里只吃主额度，两者不冲突。
+  const rows = getQuotaScopes(snapshot);
   if (rows.length === 0) {
     return record.usageRefreshing ? (
       <Space size={6}>
@@ -306,6 +311,7 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
             <UsageMetaLine
               key={row.key}
               label={row.label}
+              tag={row.category === 'gift' ? '赠送' : (row.category === 'detail' ? '明细' : undefined)}
               value={row.remainingPct}
               resetIn={row.resetIn}
               resetAtMs={row.resetAtMs}
@@ -489,15 +495,26 @@ function UsageSnapshotBody({
   );
 }
 
-export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
+function UsageSnapshotCell(props: UsageSnapshotCellProps) {
   const { record } = props;
   const hasCollectionNotice = record.configured && !record.apiKeyMode && getQuotaStateMeta(record);
-  if (!hasCollectionNotice) return <UsageSnapshotBody {...props} />;
+  // data-usage-provider：自动化校验（scripts/webui-usage-e2e.js）据此把渲染出的额度行归属到账号，
+  // 断言「服务端 payload 的每一行都真的画到了页面上」。只暴露 provider 名，不含任何凭据。
+  const providerAttr = String(record.provider || '');
+  if (!hasCollectionNotice) {
+    return (
+      <div data-usage-provider={providerAttr}>
+        <UsageSnapshotBody {...props} />
+      </div>
+    );
+  }
   return (
-    <div className="usage-meta-list" data-quota-status={record.quotaStatus}>
+    <div className="usage-meta-list" data-quota-status={record.quotaStatus} data-usage-provider={providerAttr}>
       {renderQuotaStateBadge(record)}
       {record.usageSnapshot || record.remainingPct != null || record.usageRefreshing
         ? <UsageSnapshotBody {...props} /> : null}
     </div>
   );
 }
+
+export default UsageSnapshotCell;

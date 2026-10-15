@@ -32,6 +32,18 @@
   white-space: nowrap;
 }
 
+/* 旁路条目标记（赠送额度 / 每包明细）：紧凑行内标签，不用色块，遵循无左侧竖条约束。 */
+.usage-meta-line-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-size: clamp(10px, 2.6vw, 11px);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .usage-meta-line-reset-in,
 .usage-meta-line-reset-at {
   color: var(--color-muted);

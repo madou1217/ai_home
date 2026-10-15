@@ -151,3 +151,31 @@ test('remainingPct 越界值被夹到 0..100，非数值归一为 null', () => {
   assert.equal(view.scopes[1].remainingPct, null);
   assert.equal(view.minRemainingPct, 100);
 });
+
+test('codex 的内部桶名 primary/secondary 不携带身份，显示窗口标签', () => {
+  const view = buildQuotaView({
+    kind: 'codex_oauth_status',
+    capturedAt: 1,
+    entries: [
+      { bucket: 'primary', window: '5h', windowMinutes: 300, remainingPct: 53 },
+      { bucket: 'secondary', window: '7days', windowMinutes: 10080, remainingPct: 6 }
+    ]
+  });
+  assert.deepEqual(view.scopes.map((scope) => scope.label), ['5h', '7days']);
+});
+
+test('非整小时的窗口（zcode 的余额窗口 = 距重置的剩余分钟）折算成 XdYhZm', () => {
+  const view = buildQuotaView({
+    kind: 'zcode_plan_balance',
+    capturedAt: 1,
+    entries: [{ bucket: 'glm-5.3-flash', window: '2203m', windowMinutes: 2203, remainingPct: 100 }]
+  });
+  assert.equal(view.scopes[0].label, 'glm-5.3-flash 1d12h43m');
+  // 没给 window 时用 windowMinutes 兜底，同样折算。
+  const fallback = buildQuotaView({
+    kind: 'zcode_plan_balance',
+    capturedAt: 1,
+    entries: [{ bucket: 'glm-4.7', windowMinutes: 2203, remainingPct: 50 }]
+  });
+  assert.equal(fallback.scopes[0].label, 'glm-4.7 1d12h43m');
+});

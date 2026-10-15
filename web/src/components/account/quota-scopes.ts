@@ -27,7 +27,8 @@ export interface QuotaScopeRow {
   entry: CodexUsageEntry | GeminiUsageModel;
 }
 
-const GENERIC_BUCKET_PATTERN = /^(credits?|balance|monthly|monthly_quota|daily|weekly|gift|five_hour(_window)?|seven_day(_window)?|rolling_\d+m)$/;
+// 注意 codex 的内部桶名是 primary / secondary（真实数据实测），它们同样不携带身份。
+const GENERIC_BUCKET_PATTERN = /^(primary|secondary|credits?|balance|monthly|monthly_quota|daily|weekly|gift|five_hour(_window)?|seven_day(_window)?|rolling_\d+m)$/;
 
 // 桶名/窗口名的人读化（与服务端 lib/usage/quota/view.js 同一张表）：
 // 老缓存记录没有服务端 label 时，展示结果必须与新记录一致。
@@ -50,7 +51,11 @@ function humanizeMinutes(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return '';
   if (minutes % 1440 === 0) return `${minutes / 1440}days`;
   if (minutes % 60 === 0) return `${minutes / 60}h`;
-  return `${minutes}m`;
+  // 非整小时（zcode 的余额窗口 = 距重置的剩余分钟）→ 紧凑 XdYhZm。
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  return `${days > 0 ? `${days}d` : ''}${hours > 0 ? `${hours}h` : ''}${rest > 0 ? `${rest}m` : ''}` || `${minutes}m`;
 }
 
 function humanizeBucket(bucket: string): string {

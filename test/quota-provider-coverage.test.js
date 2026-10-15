@@ -1,23 +1,26 @@
 'use strict';
 
-// 额度抽象的**跨模块不变量**（三条，各自对应一次真实事故）：
-//   1) 注册表覆盖 = 合同 quota_usage 能力 ∪ 额度插件 —— 家族曾被写死名单漏掉，额度从未采集；
-//   2) 每个已登记的 kind 都能被服务端规范化 —— CodeBuddy 快照曾被规范化丢成空、显示「已耗尽」；
-//   3) WebUI 的 kind 集合与服务端登记表同步 —— Cline Pass 的 kind 曾在 WebUI 侧不存在，
-//      账号页只能拿到标量而不是快照窗口。
+// 额度抽象的**跨模块不变量**（每条都对应一次真实事故或一次设计约束）：
+//   1) 每个 catalog provider 都必须在自己的描述符里**显式回答额度**（有 or 没有 + 原因）
+//      —— 取代「中央的无额度清单」：答案跟着 provider 走，新增 provider 不做决定就红；
+//   2) 每个已登记的 kind 都能被服务端规范化（CodeBuddy 曾因缺这一支被丢成空 → 显示「已耗尽」）；
+//   3) WebUI 的 kind 集合与服务端登记表同步（Cline Pass 曾在 WebUI 侧不存在）；
+//   4) 描述符声明的原生 handler 必须在组合根里真的存在（防止声明漂移）；
+//   5) 策略链默认最稳、失败切换且过程可观察。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { listProviderIds, listProvidersByCapability } = require('../lib/provider-catalog');
+const { PROVIDER_IDS } = require('../lib/provider-catalog');
+const { getProviderRegistry, listProviders } = require('../lib/providers');
 const {
-  createQuotaRegistry,
   describeQuotaSources,
   formatQuotaSourceLines,
-  getQuotaRegistry,
-  listQuotaProviders
+  listQuotaProviders,
+  listQuotaSnapshotKinds,
+  runQuotaStrategies
 } = require('../lib/usage/quota');
 const { USAGE_SNAPSHOT_KINDS } = require('../lib/account/usage-remaining');
 const { normalizeAccountUsageSnapshot } = require('../lib/server/account-usage-view');
@@ -26,66 +29,52 @@ function sortedLower(values) {
   return values.map((value) => String(value).toLowerCase()).sort();
 }
 
-test('额度源覆盖 = 合同 quota_usage 能力 ∪ 额度插件（不再有第三方名单）', () => {
-  const registry = getQuotaRegistry();
-  const nativeProviders = sortedLower(listProvidersByCapability('quotaUsage'));
-  const pluginProviders = sortedLower(
-    registry.listSources().filter((source) => source.plugin).flatMap((source) => source.providers)
-  );
-  assert.deepEqual(listQuotaProviders(), [...new Set([...nativeProviders, ...pluginProviders])].sort());
-  // native 源声明必须与合同能力一一对应：多了说明某 provider 在合同里没声明能力。
-  const declaredNative = sortedLower(
-    registry.listSources().filter((source) => !source.plugin).flatMap((source) => source.providers)
-  );
-  assert.deepEqual(declaredNative, nativeProviders);
-});
-
-test('额度插件只能认领已知 provider', () => {
-  const known = new Set(sortedLower(listProviderIds()));
-  for (const source of getQuotaRegistry().listSources().filter((entry) => entry.plugin)) {
-    for (const provider of source.providers) {
-      assert.equal(known.has(String(provider).toLowerCase()), true, `${source.id} 认领了未知 provider ${provider}`);
+test('每个 catalog provider 都在自己的描述符里显式回答额度（没有中央清单）', () => {
+  const registry = getProviderRegistry();
+  const answers = new Map();
+  for (const provider of sortedLower(PROVIDER_IDS)) {
+    const quota = registry.getCapability(provider, 'quota');
+    assert.ok(quota, `${provider} 没有描述符回答额度问题（新增 provider 必须写 lib/providers/defs/<id>.js）`);
+    if (quota.supported === true) {
+      assert.ok(quota.kind && quota.source, `${provider} 声明有额度但没有 kind/source`);
+      assert.ok(quota.strategies.length > 0, `${provider} 声明有额度但没有策略`);
+    } else {
+      assert.equal(quota.supported, false);
+      assert.ok(String(quota.reason || '').trim().length > 0, `${provider} 声明没有额度但没写原因`);
     }
+    answers.set(provider, quota);
   }
+  // 倒排索引与描述符一致：quota 索引覆盖全部 catalog provider。
+  assert.deepEqual(listProviders('quota'), sortedLower(PROVIDER_IDS));
+  // 有额度的集合 = 声明 supported:true 的那批（这里不写死名单）。
+  const expectedCapable = sortedLower(PROVIDER_IDS).filter((provider) => answers.get(provider).supported === true);
+  assert.deepEqual(listQuotaProviders(), expectedCapable);
 });
 
 test('每个已登记的额度 kind 都能被服务端规范化（否则账号页会把快照丢成空）', () => {
-  const registry = getQuotaRegistry();
-  const entryKinds = [...registry.listSnapshotKinds('window'), ...registry.listSnapshotKinds('bucket')];
-  const modelKinds = registry.listSnapshotKinds('models');
-  assert.equal(entryKinds.length + modelKinds.length > 0, true);
+  const registry = getProviderRegistry();
+  const entryKinds = [...listQuotaSnapshotKinds('window'), ...listQuotaSnapshotKinds('bucket')];
+  const modelKinds = listQuotaSnapshotKinds('models');
+  assert.ok(entryKinds.length + modelKinds.length > 0);
   for (const kind of entryKinds) {
     const view = normalizeAccountUsageSnapshot({
-      kind,
-      capturedAt: 1,
-      account: {},
+      kind, capturedAt: 1, account: {},
       entries: [{ bucket: 'x', window: '1h', windowMinutes: 60, remainingPct: 50 }]
     });
     assert.equal(view && view.kind, kind, `${kind} 没有被 normalizeAccountUsageSnapshot 接受`);
     assert.equal(Array.isArray(view.entries), true);
   }
   for (const kind of modelKinds) {
-    const view = normalizeAccountUsageSnapshot({
-      kind,
-      capturedAt: 1,
-      account: {},
-      models: [{ model: 'm', remainingPct: 50 }]
-    });
+    const view = normalizeAccountUsageSnapshot({ kind, capturedAt: 1, account: {}, models: [{ model: 'm', remainingPct: 50 }] });
     assert.equal(view && view.kind, kind, `${kind} 没有被 normalizeAccountUsageSnapshot 接受`);
     assert.equal(Array.isArray(view.models), true);
   }
-});
-
-test('登记表里的每个 kind 都有额度源产出（没有孤儿 kind）', () => {
-  const registry = getQuotaRegistry();
-  const covered = new Set([
-    ...registry.listSnapshotKinds('window'),
-    ...registry.listSnapshotKinds('bucket'),
-    ...registry.listSnapshotKinds('models')
-  ]);
+  // 没有孤儿 kind：登记表里的每个 kind 都有 provider 产出。
+  const covered = new Set([...entryKinds, ...modelKinds]);
   for (const kind of Object.values(USAGE_SNAPSHOT_KINDS)) {
-    assert.equal(covered.has(kind), true, `${kind} 没有任何额度源产出`);
+    assert.equal(covered.has(kind), true, `${kind} 没有任何 provider 产出`);
   }
+  assert.equal(registry.listIds().length, PROVIDER_IDS.length);
 });
 
 test('WebUI 的 kind 集合与服务端登记表保持同步（跨语言镜像）', () => {
@@ -94,8 +83,7 @@ test('WebUI 的 kind 集合与服务端登记表保持同步（跨语言镜像�
   const start = source.indexOf('const ENTRY_WINDOW_SNAPSHOT_KINDS');
   const end = source.indexOf('export function getUsageSnapshotRemainingPct');
   assert.equal(start > 0 && end > start, true, 'account-state.ts 的 kind 集合结构变了，请更新本守卫');
-  const block = source.slice(start, end);
-  const webKinds = new Set([...block.matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1]));
+  const webKinds = new Set([...source.slice(start, end).matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1]));
   const registered = new Set(Object.values(USAGE_SNAPSHOT_KINDS));
   for (const kind of registered) {
     assert.equal(webKinds.has(kind), true, `WebUI 不认识 ${kind}：账号页读不到该快照的窗口剩余`);
@@ -105,36 +93,50 @@ test('WebUI 的 kind 集合与服务端登记表保持同步（跨语言镜像�
   }
 });
 
-// 刻意没有额度来源的 provider（每次新增 provider 都必须显式做这个决定）：
-//   opencode —— 官方无额度接口（Go/Zen 用量只能从会话统计侧算，属于 usage_scan，不是额度）；
-//   qoder / qodercn —— 凭据是 WASM + machineId 加密的本地 blob、请求过 sgsdk 签名，
-//     客户端侧没有可复用的额度查询面；上游配额墙只在推理失败时以 error_code 118 暴露
-//     （见 lib/server/qoder-cli-transport.js），拿不到「剩余百分比」。
-// 将来接上额度时：写插件 + 从本清单移除 + 走第 6 节的四步。
-const PROVIDERS_WITHOUT_QUOTA_SOURCE = Object.freeze(['opencode', 'qoder', 'qodercn']);
-
-test('没有额度来源的 provider 必须是显式清单：新增 provider 不能静默无额度', () => {
-  const withoutQuota = sortedLower(listProviderIds()).filter((provider) => !listQuotaProviders().includes(provider));
-  assert.deepEqual(withoutQuota, [...PROVIDERS_WITHOUT_QUOTA_SOURCE].sort());
+test('描述符声明的原生 handler 必须在组合根里存在（声明不得漂移）', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'lib/cli/services/usage/snapshot.js'), 'utf8');
+  const declared = new Set();
+  for (const provider of listProviders('quota')) {
+    for (const strategy of getProviderRegistry().listQuotaStrategies(provider)) {
+      if (strategy.handler) declared.add(strategy.handler);
+    }
+  }
+  assert.ok(declared.size > 0, '没有任何 handler 型策略？原生 provider 应该声明 handler');
+  for (const handler of declared) {
+    // 组合根以 `['<handler>', ...]`（Map 表）或 `<handler>: ...`（对象表）登记 handler。
+    assert.match(source, new RegExp(`(?:\\['${handler}'\\s*,|\\b${handler}:\\s)`), `组合根没有实现 handler '${handler}'`);
+  }
 });
 
-test('describeQuotaSources 汇总原生/插件来源，并把加载失败暴露出来', (t) => {
-  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aih-quota-coverage-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const pluginsDir = path.join(root, 'quota-plugins');
-  fs.mkdirSync(pluginsDir, { recursive: true });
-  fs.writeFileSync(path.join(pluginsDir, 'broken.js'), 'module.exports = { id: "broken" };');
+test('策略链：默认最稳策略；第一条不可用时自动切换，且每次尝试都可观察', async () => {
+  const attemptsSeen = [];
+  const strategies = [
+    { id: 'stable', clientDependent: false, probe: () => ({ probe: async () => ({ error: 'upstream_down' }) }) },
+    { id: 'fallback', clientDependent: true, probe: () => ({ probe: async () => ({ snapshot: { ok: true } }) }) }
+  ];
+  // 通过注册表注入两条策略，验证「最稳优先 + 失败切换 + attempts 记录」。
+  const registry = getProviderRegistry();
+  const original = registry.listQuotaStrategies;
+  registry.listQuotaStrategies = () => strategies;
+  try {
+    const result = await runQuotaStrategies('cline', 'acct_test', { deps: {}, options: { registry } });
+    assert.deepEqual(result.snapshot, { ok: true });
+    assert.equal(result.strategyId, 'fallback');
+    attemptsSeen.push(...result.attempts);
+  } finally {
+    registry.listQuotaStrategies = original;
+  }
+  assert.deepEqual(attemptsSeen, [{ strategyId: 'stable', error: 'upstream_down', auth: false }]);
+});
 
-  const summary = describeQuotaSources({ registry: createQuotaRegistry({ aiHomeDir: root }).registry });
-  assert.equal(summary.total, summary.native + summary.plugins.length);
-  assert.deepEqual(summary.plugins.map((plugin) => plugin.id), ['cline-pass']);
-  assert.deepEqual(summary.plugins[0].providers, ['cline']);
-  assert.equal(summary.errors.length, 1);
-  assert.equal(summary.errors[0].code, 'quota_plugin_contract_version_unsupported');
-  assert.match(summary.errors[0].target, /broken\.js$/);
-
-  const lines = formatQuotaSourceLines({ registry: createQuotaRegistry({ aiHomeDir: root }).registry });
-  assert.match(lines[0], /^quota sources: \d+ \(native=\d+, plugin=1: cline-pass→cline\)$/);
-  assert.match(lines[1], /^quota plugin errors: 1$/);
-  assert.match(lines[2], /broken\.js$/);
+test('诊断输出：没有额度的 provider 带原因、依赖客户端的 provider 被点名', () => {
+  const summary = describeQuotaSources();
+  assert.equal(summary.total, PROVIDER_IDS.length);
+  assert.equal(summary.supported + summary.unsupported.length, summary.total);
+  for (const entry of summary.unsupported) {
+    assert.ok(entry.reason.trim().length > 0, `${entry.provider} 的不可得原因不能为空`);
+  }
+  const lines = formatQuotaSourceLines();
+  assert.match(lines[0], /^quota sources: \d+ provider\(s\), with quota=\d+, no quota=\d+$/);
+  assert.equal(lines.length > 1, true);
 });

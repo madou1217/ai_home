@@ -1,6 +1,7 @@
 'use strict';
 
-// Cline Pass 额度插件（lib/usage/quota/plugins/cline.js）：
+// Cline Pass 额度探针（lib/usage/quota/probes/cline.js；能力事实声明在
+// lib/providers/defs/cline.js 的 quota 能力里）：
 // 服务端权威用量（/users/me/plan/usage-limits）→ entries[] 的映射、错误分支与 401 重试。
 //
 // 关键回归：曾用 `/users/{uid}/usages` 逐条累加算窗口用量。该接口翻页游标上游不生效、
@@ -10,7 +11,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const plugin = require('../lib/usage/quota/plugins/cline');
+const plugin = require('../lib/usage/quota/probes/cline');
+const { describeQuotaProvider } = require('../lib/usage/quota');
 const { clineAuth, providersDocument } = require('./helpers/cline-credential');
 
 const { readUsageLimits, readPlanEntitlement, summarizeUsageWindows } = plugin.__private;

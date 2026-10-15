@@ -225,6 +225,8 @@ export interface ProviderAuthSourceSummary {
   available: boolean;
   installable: boolean;
   reason: string;
+  /** 来源实现是否已把完整投影写好（true = 可不开登录任务直接建账号）。 */
+  directImport?: boolean;
 }
 
 export interface ProviderAuthMethodSources {
@@ -422,6 +424,19 @@ export const accountsAPI = {
   listProviderAuthSources: async (provider: string): Promise<ProviderAuthSourcesResponse> => {
     const response = await api.get<ProviderAuthSourcesResponse>(
       `/webui/accounts/provider-auth-sources?provider=${encodeURIComponent(provider)}`
+    );
+    return response.data;
+  },
+
+  // 从本机登录态**直接建账号**（不开登录任务）：给认证方式不经过登录任务的 provider 用
+  // （它们的本机登录态就是完整投影）。需要身份核验的来源会返回 auth_source_requires_login_job。
+  importLocalAuthSource: async (
+    provider: string,
+    sourceId: string
+  ): Promise<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }> => {
+    const response = await api.post<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }>(
+      '/webui/accounts/local-import',
+      { provider, sourceId }
     );
     return response.data;
   },

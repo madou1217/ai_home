@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
+import { Button, Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { InlineNote } from '@/components/ui/InlineNote';
 import {
@@ -15,6 +15,16 @@ interface AddAccountModalProps {
   submitting: boolean;
   onSubmit: (values: any) => void;
   onCancel: () => void;
+  /**
+   * 从本机登录态直接建账号（不走登录任务）。非 null 时渲染一行紧凑入口；
+   * 该不该给由服务端认证来源链决定（来源可用 + 能直接提交），弹窗不判断 provider 名。
+   */
+  localImport?: {
+    sourceId: string;
+    description: string;
+    submitting: boolean;
+    onImport: () => void;
+  } | null;
 }
 
 export function AddAccountModal({
@@ -22,7 +32,8 @@ export function AddAccountModal({
   form,
   submitting,
   onSubmit,
-  onCancel
+  onCancel,
+  localImport
 }: AddAccountModalProps) {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
@@ -112,6 +123,19 @@ export function AddAccountModal({
               </Space>
             </Radio.Group>
           </Form.Item>
+        ) : null}
+
+        {localImport ? (
+          <div style={{ marginBottom: 16 }}>
+            <Space size={8} align="center" wrap>
+              <Button size="small" loading={localImport.submitting} onClick={localImport.onImport}>
+                从本机导入
+              </Button>
+              <span className="aih-overlay-hint">
+                {localImport.description || '本机已检测到该客户端的登录态，可直接建账号'}
+              </span>
+            </Space>
+          </div>
         ) : null}
 
         {selectedAuthMode === 'api-key' || selectedAuthMode === 'auth-token' ? (

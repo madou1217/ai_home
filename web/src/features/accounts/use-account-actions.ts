@@ -6,7 +6,7 @@ import {
   toolkitAPI,
   waitForAppInstallJob
 } from '@/services/api';
-import type { AccountExportFormat, AccountImportUploadFile, ProviderAuthMethodSources, TokenConsumedEvent } from '@/services/api';
+import type { AccountExportFormat, AccountImportUploadFile, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
 import type {
   Account,
   AccountAddJob,
@@ -58,6 +58,10 @@ import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-pre
 // 编辑凭据 / 导入导出 / 启停 / 默认账号 / 用量刷新 / 删除 / 打开 Desktop·CLI / 应用安装 …）。
 // 桌面 Accounts.tsx 与移动端 MobileAccounts 共用同一套实现：同样的 API 调用、同样的守卫与提示文案。
 // 业务弹窗统一由 AccountFlowModals 渲染（出口设置弹窗由页面自己渲染）。
+
+// 不走登录任务、直接调注册接口的认证方式（与 handleAdd 的分支判定同源）：这些方式没有任务弹窗，
+// 本机导入入口因此挂在添加账号弹窗上，而不是授权进度弹窗。
+const DIRECT_REGISTER_AUTH_MODES: AccountAuthMode[] = ['api-key', 'auth-token', 'vertex-ai'];
 
 const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
@@ -190,6 +194,10 @@ export function useAccountActions({
   const previousAddProviderRef = React.useRef<Provider | undefined>(undefined);
   const cliClickTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
+  const addFormAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
+  // 添加账号弹窗里的「从本机导入」：来源由服务端来源链解析（可用 + directImport），这里只持有结果。
+  const [addLocalImportSource, setAddLocalImportSource] = React.useState<ProviderAuthSourceSummary | null>(null);
+  const [addLocalImportSubmitting, setAddLocalImportSubmitting] = React.useState(false);
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
   const editingClaudeCredentialMode = editingAccount?.provider === 'claude'
     ? getClaudeCredentialMode(editingAccount)
@@ -807,6 +815,67 @@ export function useAccountActions({
     const firstActiveMode = availableOptions.find((opt) => !opt.disabled)?.value || availableOptions[0]?.value;
     form.setFieldValue('authMode', firstActiveMode);
   }, [form, selectedProvider]);
+
+  /**
+   * 添加账号弹窗里的「从本机导入」。
+   *
+   * 走登录任务的认证方式，导入入口在任务弹窗里（同一动作不给两个入口）；**不经过登录任务**的
+   * 认证方式（直接调注册接口的那些）没有任何弹窗可承载，所以选完供应商/认证方式就在这里给一键导入
+   * ——例如只有 api-key 的 provider，本机登录态本来就是完整投影。
+   * 该给不给由服务端来源链决定（`available` + `directImport`），界面不判断 provider 名。
+   */
+  React.useEffect(() => {
+    if (!modalVisible || !selectedProvider || !addFormAuthMode) {
+      setAddLocalImportSource(null);
+      return undefined;
+    }
+    if (!DIRECT_REGISTER_AUTH_MODES.includes(addFormAuthMode)) {
+      setAddLocalImportSource(null);
+      return undefined;
+    }
+    let cancelled = false;
+    void accountsAPI.listProviderAuthSources(selectedProvider)
+      .then((response) => {
+        if (cancelled) return;
+        const methods = (response && response.methods) || [];
+        const method = methods.find((item) => item.authMode === addFormAuthMode) || null;
+        const sources = (method && method.sources) || [];
+        const preferred = sources.find((item) => item.id === (method && method.preferredSourceId)) || null;
+        const usable = preferred && preferred.available && preferred.directImport
+          ? preferred
+          : sources.find((item) => item.available && item.directImport) || null;
+        setAddLocalImportSource(usable);
+      })
+      .catch(() => {
+        // 解析失败只意味着「不展示本机导入」，粘贴 key 的路径照常可用。
+        if (!cancelled) setAddLocalImportSource(null);
+      });
+    return () => { cancelled = true; };
+  }, [modalVisible, selectedProvider, addFormAuthMode]);
+
+  /** 从本机登录态直接建账号（不开登录任务）。 */
+  const handleAddLocalImport = async () => {
+    const source = addLocalImportSource;
+    if (!source || !selectedProvider) return;
+    setAddLocalImportSubmitting(true);
+    try {
+      await accountsAPI.importLocalAuthSource(selectedProvider, source.id);
+      message.success('已从本机登录态建账号');
+      closeAddAccountModal();
+      await requestAccountsSnapshotUpdate({ failureMessage: '刷新账号列表失败' });
+    } catch (error: any) {
+      const code = error?.response?.data?.error || '';
+      if (code === 'auth_source_already_imported') {
+        message.info('该本机登录态已经在账号池里了');
+      } else if (code === 'auth_source_requires_login_job') {
+        message.warning('该来源需要走登录流程，请改用对应的认证方式');
+      } else {
+        message.error(error?.response?.data?.message || (code ? `从本机导入失败：${code}` : '从本机导入失败'));
+      }
+    } finally {
+      setAddLocalImportSubmitting(false);
+    }
+  };
 
   const closeAuthProgress = async (forceCancel = false) => {
     if (authSuccessClosing) return;
@@ -1456,7 +1525,14 @@ export function useAccountActions({
         form,
         submitting,
         onSubmit: handleAdd,
-        onCancel: closeAddAccountModal
+        onCancel: closeAddAccountModal,
+        // 非 null 时弹窗渲染「从本机导入」行（来源可用且能直接提交，例如只有 api-key 的 provider）。
+        localImport: addLocalImportSource ? {
+          sourceId: addLocalImportSource.id,
+          description: addLocalImportSource.description,
+          submitting: addLocalImportSubmitting,
+          onImport: handleAddLocalImport
+        } : null
       },
       edit: {
         open: editModalVisible,

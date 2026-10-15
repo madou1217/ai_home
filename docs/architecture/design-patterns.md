@@ -61,9 +61,11 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 **Phase 1 — 采集面（额度 + 模型）彻底策略化**
 1. ✅ 额度：16/16 provider 声明策略链，`clientDependent=false` 优先 + CLI 兜底（kiro 已实测纯 API）。
 2. ✅ 模型：16/16 provider 显式回答（`models` 能力），CLI-only 必须写 `clientFreeReason`。
-3. 🔄 **Handler Registry**：`lib/server/model-discovery/handlers/*.js` + 门面；描述符用 `handler: '<id>'` 声明；
-   `http-utils.js` 的 provider 名分支逐个删除（每迁一个跑一次等价性测试 + 真实账号实测）。
-4. ⬜ CLI 模型表迁进描述符，`native-cli-model-discovery.js` 只留执行器。
+3. ✅ **Handler Registry**：`lib/server/model-discovery/{handler-registry,http-handlers,generic-models-probe}.js` + 门面；
+   描述符声明 `handler: '<id>'`；通用探测已搬出 `http-utils.js`（provider 名分支逐面删除，等价性测试 71/71）。
+4. ✅ CLI 模型表迁进描述符（`models.strategies[].cli = { args, format, configDirFlag, minTimeoutMs }`），
+   `native-cli-model-discovery.js` 只留执行器，中央 provider→CLI 参数表已删除。
+5. ✅ `local` transport 策略在出网解析之前执行（cline 的静态规范清单不再依赖出网配置）。
 
 **Phase 2 — 账号视图与操作**
 5. ⬜ `accountView` 能力：账号视图字段/行为由描述符声明。
@@ -73,7 +75,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 7. ⬜ `native-session-chat*` 与 `webui-chat-routes` 的 provider 分支 → 适配器 + 策略表。
 
 **Phase 4 — 收口守卫**
-8. ⬜ 源码扫描守卫：`lib/server/**` 里新增文件出现 ≥2 处 provider 名比较即红（白名单只放迁移中文件，随迁移缩小）。
+8. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
+   记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。
 
 **验收标准（每个 provider × 每个采集面）**
 - `npm run providers:audit` 显示该面的通道与依赖；CLI-only 必须带原因。

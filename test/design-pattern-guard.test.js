@@ -76,7 +76,6 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/web-account-auth.js': 6,
   'lib/server/webui-account-live.js': 2,
   'lib/server/webui-account-routes-utils.js': 4,
-  'lib/server/webui-account-routes.js': 22,
   'lib/server/webui-chat-routes-native-session.js': 2,
   'lib/server/webui-chat-routes.js': 26,
   'lib/server/webui-project-cache.js': 7,

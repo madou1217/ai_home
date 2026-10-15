@@ -69,6 +69,51 @@ canonical provider 注册表只有一条：`web/src/features/chat-runtime/runtim
 
 条件 1–5 中 1、2 已满足；3、4、5 未满足（3 被 4 阻塞）。
 
+---
+
+## 4.1 条件 ④ 进展（2026-10-15 第三轮）：审批按策略表工程化
+
+**已完成（架构 + 真机验证）：**
+
+1. `lib/server/chat-runtime/native-approval-transports.js` —— **审批传输策略表**：
+   每行声明 `providers` / `modes` / `accountTypes` / `spawner` / `launch()` / 未接线原因；
+   求值 = 表顺序首个谓词全命中的行。驱动只按解析结果派发（**无 provider 分支**），
+   未声明或未接线一律 fail closed。执行器走 `createApprovalSpawnerRegistry`（id → 实现）。
+   - `claude` → `claude-permission-prompt-tool`（`http-callback`，spawner `native-stream`）
+   - `opencode` → `opencode-serve-permission`（`serve-permission`，spawner `opencode-serve`）
+   - `grok` → 声明存在但 `terminal-prompt` 未接线（fail closed，原因 `native_session_terminal_approval_not_wired`）
+2. `lib/server/chat-runtime/native-approval-surface.js` —— **传输无关审批面**：
+   权限请求 → canonical `interaction.requested`（既有审批卡 UI 零改动）→ `approval.decide`
+   → claim/finish（复用 `InteractionResolutionCoordinator`）→ 回填传输层；run 结束/通道断开自动 deny。
+   MCP HTTP 回调与 legacy 共用同一个 loopback ingress，按 **run 身份归属**分流（不看 provider）。
+3. 驱动接线：`native-session-chat` 新增 `approvalRunId`（canonical 用自己的 run 身份，legacy 行为不变）；
+   `opencode-serve-runner` 支持注入 `approvalSurface`（未注入 = 原 legacy 审批桥，行为零变化）；
+   `handlers['approval.decide']` 由审批面提供（与 codex 驱动同形状）。
+4. `lib/server/opencode-serve-api-layouts.js` —— **serve API 布局表**：v1（无前缀/无鉴权）与
+   v2（`/api/*` + Basic + `{data}` 信封）差异声明成数据。
+
+**真机证据（本机 9527，opencode v2.0.29 / claude 2.1.300）：**
+
+- 派发：`claude/confirm → native-stream + approvalMode/approvalRequestUrl/approvalRunId`；
+  `opencode/confirm → opencode-serve + 审批面`；`opencode/bypass → native-stream`；
+  `grok/confirm`、`gemini/confirm` → 501 + 声明原因。
+- claude 真实进程 argv 含 `--permission-mode default --permission-prompt-tool mcp__aih__approve
+  --mcp-config {AIH_APPROVAL_URL, AIH_RUN_ID=<canonical runId>}`。
+- 审批往返（真 HTTP，与 MCP 工具同路径）：ingress POST → `interaction.requested` 落库
+  （kind=approval、presentation+choices）→ `approval.decide` → 长挂响应返回
+  `{behavior:'allow', updatedInput}` / `{behavior:'deny', message:'…「拒绝」'}`；
+  事件序列 `interaction.requested → interaction.updated → interaction.resolved`，无残留挂起。
+
+**新发现（阻塞 opencode confirm 的真因，非本次引入）：** 安装的 opencode 已是 **v2.0.29**，
+`opencode serve` 把 API 整体搬到 `/api/*` + HTTP Basic（用户 `opencode`，密码启动时打印在日志），
+事件体 `{id,type,data}`、响应统一 `{data}` 信封、prompt 体用 `text`（不是 v1 的 `parts[]`）。
+legacy 的 serve client/runner 是 v1 布局 → 旧行为是**空转 25s「就绪超时」**（legacy confirm 同样受影响）。
+现在改为布局探测：约 4s 内报 `opencode_serve_api_layout_unsupported`（含实际版本）。
+**下一步**：给布局表的 v2 行补 adapter（路由表已实测确认：
+`GET /api/info`（就绪）、`POST /api/session`、`POST /api/session/:id/prompt`、
+`POST /api/session/:id/permission/:rid/reply`、`GET /api/event`），届时 opencode confirm 在
+canonical 与 legacy 同时恢复。
+
 - 条件 1–5 **全部未满足**（1、2 无实现；3 硬编码；4 缺 slash/terminal；5 不存在）。
 - 因此：**legacy 保留**。它仍在承载 work 模式下 12+ provider 的项目会话，删除会直接打断这些会话。
 - 已完成的替换部分：chat 模式全 provider（codex harness + aih 网关，含 aih-server 网关目标与同 provider 换账号重绑）。

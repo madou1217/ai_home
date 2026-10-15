@@ -39,6 +39,9 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `web/src/features/chat-runtime/session-surface-policy.ts` | **Policy（纯函数决策）** | `resolveChatAccountChange`（ignore / retarget / new-session）与网关目标解析，渲染层只执行结论 | `web/src/features/chat-runtime/session-surface-policy.test.ts` |
 | `scripts/provider-collection-audit.js` | **可观察性审计** | 把「有没有不依赖客户端的通道」变成可打印、可守卫的事实 | `npm run providers:audit` |
 | `lib/server/window-activation/probe-specs.js` + `lib/server/webui-account-live.js` | **Registry + Capability Flag（能力位驱动入口）** | 账号级动作入口不在前端写 provider 清单：服务端下发 `account.windowActivationSupported = Boolean(getProbeSpec(provider))`（同 `customUpstream`），前端只消费结论；**新增 provider = 加一条探测 spec**，调度器/派发层/前端都不改 | `test/web.window-activation-contract.test.js`（源码守卫：前端不得出现 `provider === 'codex'`） |
+| `lib/server/chat-runtime/native-approval-transports.js` | **Strategy Table（审批传输策略表）+ Spawner Registry** | 「confirm/plan 下权限请求怎么到达用户、决策怎么回到 CLI」按 provider/模式/账号类型声明成数据行（`http-callback` / `serve-permission` / `terminal-prompt`），执行器按 id 从注册表取；驱动只按解析结果派发，不出现 provider 分支；未声明/未接线一律 fail closed 且带声明原因 | `npm run chat:legacy-readiness` 的审批覆盖行；真机 claude 进程 argv 含 `--permission-prompt-tool mcp__aih__approve` + canonical runId |
+| `lib/server/chat-runtime/native-approval-surface.js` | **Adapter / Mediator（传输无关审批面）** | 任意审批传输（MCP HTTP 回调、opencode serve 权限事件）→ canonical `interaction.requested` → `approval.decide` → 回填传输；交互 id/持久化/收尾走既有 `InteractionResolutionCoordinator`，新增 provider 不动此处 | 真机：ingress POST → `interaction.requested` 落库 → `approval.decide` → 长挂 HTTP 返回 `{behavior:'allow'|'deny'}`；事件序列 `requested → updated → resolved` |
+| `lib/server/opencode-serve-api-layouts.js` | **Layout Table（API 布局表）** | `opencode serve` 两代 API（v1 无前缀/无鉴权、v2 `/api/*` + Basic + `{data}` 信封）差异声明成数据；已识别未实现的布局**立即**报明确原因（含实际版本），不让就绪探测空转到超时 | 真机：opencode 2.0.29 → `opencode_serve_api_layout_unsupported`（约 4s 内，而非 25s 超时） |
 
 
 ## 2. 反模式清单（该改的地方）

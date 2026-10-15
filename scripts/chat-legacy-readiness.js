@@ -19,6 +19,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { listProvidersByCapability } = require('../lib/provider-catalog');
 const { OFFICIAL_NATIVE_SESSION_PROVIDERS } = require('../lib/server/native-session-chat-utils');
+const {
+  findApprovalTransport,
+  resolveNativeApprovalTransport
+} = require('../lib/server/chat-runtime/native-approval-transports');
 
 const ROOT = path.join(__dirname, '..');
 const WEB_REGISTRY = path.join(ROOT, 'web', 'src', 'features', 'chat-runtime', 'runtime-provider-registry.ts');
@@ -82,10 +86,32 @@ function main() {
   console.log(`  表面未覆盖: ${missingWeb.join(', ') || '(无)'}`);
   console.log(`  驱动未覆盖: ${missingServer.join(', ') || '(无)'}`);
 
+  // 审批传输（策略表）：注册了原生驱动就必须有审批声明，否则 confirm/plan 只能 fail closed。
+  const approvalRows = legacyProviders
+    .filter((provider) => provider !== 'codex')
+    .map((provider) => {
+      const row = findApprovalTransport({ provider, approvalMode: 'confirm' });
+      const resolution = resolveNativeApprovalTransport({ provider, approvalMode: 'confirm' });
+      return { provider, row, resolution };
+    });
+  const approvalNative = approvalRows.filter((entry) => entry.resolution.support === 'native');
+  const approvalUndeclared = approvalRows.filter((entry) => !entry.row);
+  const approvalBlocked = approvalRows.filter((entry) => entry.row && entry.resolution.support !== 'native');
+  console.log(`  审批传输（confirm/plan）: ${approvalNative.map((entry) => `${entry.provider}=${entry.row.channel}`).join(', ') || '(无)'}`);
+  if (approvalUndeclared.length > 0) {
+    console.log(`    未声明（confirm/plan 直接拒绝）: ${approvalUndeclared.map((entry) => entry.provider).join(', ')}`);
+  }
+  if (approvalBlocked.length > 0) {
+    console.log(`    已声明未接线: ${approvalBlocked.map((entry) => `${entry.provider}(${entry.resolution.reason})`).join(', ')}`);
+  }
+
   const gaps = [];
   if (missingWeb.length > 0) gaps.push(`web 表面未注册 ${missingWeb.length} 个 provider`);
   if (missingServer.length > 0) gaps.push(`服务端缺少 ${missingServer.length} 个 provider 的 canonical driver`);
   if (!acceptsApiKey) gaps.push('web 表面不接受 API-key 账号（legacy 接受）');
+  if (approvalUndeclared.length > 0) {
+    gaps.push(`审批传输未声明 ${approvalUndeclared.length} 个 provider（confirm/plan 不可用）`);
+  }
 
   if (gaps.length > 0) {
     console.log(`\n[aih] 结论: legacy 仍必需，不可删 —— ${gaps.join('；')}`);

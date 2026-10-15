@@ -246,7 +246,8 @@ export const PROVIDER_DEFINITIONS = [
     "capabilities": [
       "model_catalog",
       "session_history",
-      "account_session_store"
+      "account_session_store",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -279,7 +280,8 @@ export const PROVIDER_DEFINITIONS = [
     "capabilities": [
       "model_catalog",
       "session_history",
-      "account_session_store"
+      "account_session_store",
+      "usage_scan"
     ],
     "authOptions": [
       {
@@ -558,7 +560,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "account_session_store",
-      "session_runtime"
+      "session_runtime",
+      "usage_scan"
     ],
     "authOptions": [
       {

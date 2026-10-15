@@ -312,7 +312,13 @@ func builtinQoder() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
+		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
+		// 索引，并在 assistant 记录带 usage 时统计 token。**2026-10-15 在 Windows 真机核实：
+		// qoder CLI 1.1.2 的会话 JSONL 不写 usage**，因此 token 用量的实际来源是运行时——
+		// 网关路径由 qoder-cli-transport 解析 stream-json 的 result.usage 记账
+		// （sourceKind=server_qoder_cli_proxy）；CLI 直跑会话无 token 数据，不猜。
+		// 账号会话落在账号 runtime 目录（account_session_store），归属精确、不需要注册表推断。
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder 登录", "使用 Qoder CLI 原生 browser login 流程（全球站 qodercli）。"),
 			authOption(AuthModeAPIKey, "Qoder Personal Access Token", "绑定 QODER_PERSONAL_ACCESS_TOKEN（全球站）。"),
@@ -351,7 +357,8 @@ func builtinQoderCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
+		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "Qoder CN 登录", "使用 Qoder CLI CN 原生 browser login 流程（qoderclicn）。"),
 			authOption(AuthModeAPIKey, "Qoder CN Personal Access Token", "绑定 QODER_PERSONAL_ACCESS_TOKEN（国内站）。"),
@@ -921,7 +928,12 @@ func builtinCline() Definition {
 		// session_runtime：WebUI 聊天可驱动 cline CLI —— 新会话走 `cline --json <prompt>`
 		// 的 NDJSON 事件流，续聊只能 `cline --id <id>` 进 TUI（CLI 要求 TTY），
 		// 两条路径的声明见 lib/server/native-session-chat-transport.js。
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilitySessionRuntime},
+		// usage_scan：cline 自己把每轮 token 记账写在会话文件里
+		// （sessions/<id>/<id>.messages.json 的 messages[].metrics = inputTokens /
+		// outputTokens / cacheReadTokens / cacheWriteTokens，2026-10-15 实测 3.0.71），
+		// 因此不需要网关流量也能统计该账号的 token 用量；账号归属取自持久会话注册表的
+		// 账号作用域（lib/usage/cline-usage-ownership.js）。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilitySessionRuntime, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),

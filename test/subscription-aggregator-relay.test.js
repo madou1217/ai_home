@@ -526,7 +526,8 @@ test('a remote client gets a working, authenticated entry on the LAN address (re
     return;
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-exposed-'));
-  const relay = new LocalRelay({ runDir: dir, env: {}, readinessTimeoutMs: 15000 });
+  // dedicated 模式（每节点一个端口 + 远端绑 0.0.0.0）：server 模式默认不暴露，另有用例覆盖。
+  const relay = new LocalRelay({ runDir: dir, env: { AIH_RELAY_PORT_MODE: 'dedicated' }, readinessTimeoutMs: 15000 });
   try {
     // 远端客户端：绑可达地址 + 认证。节点是假的上游（连不通没关系，验的是入口本身）。
     const result = await relay.ensure([{ ...VLESS_NODE }], { onlyIds: new Set(['n_vless']), remote: true });
@@ -576,6 +577,41 @@ test('a remote client gets a working, authenticated entry on the LAN address (re
   }
 });
 
+test('server port mode keeps the sidecar on loopback and resolves a node from its SOCKS5 username', async (t) => {
+  const { LocalRelay } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/local-relay');
+  const { userNameForNode } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/relay-users');
+  const binary = resolveSingBoxBinary({});
+  if (!binary) {
+    t.skip('本机没有 sing-box，跳过真内核中转校验');
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-serverport-'));
+  const relay = new LocalRelay({ runDir: dir, env: { AIH_RELAY_PORT_MODE: 'server' }, readinessTimeoutMs: 15000 });
+  try {
+    assert.equal(relay.portMode(), 'server');
+    assert.equal(relay.serverPortMode(), true);
+    const result = await relay.ensure([{ ...VLESS_NODE }], { onlyIds: new Set(['n_vless']), remote: true });
+    assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));
+    // 关键：server 模式下即使请求来自远端也不暴露边车 —— 入口是 AIH 自己的端口。
+    assert.equal(relay.activeListenHost(), '127.0.0.1');
+    assert.equal(relay.isExposed(), false);
+
+    const mux = relay.muxConfig();
+    const user = userNameForNode('n_vless');
+    assert.equal(mux.enabled, true);
+    assert.equal(mux.portForUser(user), result.endpoints.get('n_vless').port);
+    assert.equal(mux.portForUser('n_unknown'), 0);
+    assert.equal(userNameForNode('n_vless'), user, '用户名必须稳定（客户端会缓存它）');
+    // 边车配置里没有 users：认证在分流器那一层做（见 lib/server/relay-port-mux）。
+    const config = JSON.parse(fs.readFileSync(path.join(dir, 'sing-box', 'sing-box.json'), 'utf8'));
+    assert.equal(config.inbounds[0].listen, '127.0.0.1');
+    assert.equal('users' in config.inbounds[0], false);
+  } finally {
+    await relay.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('mihomo carries the transports sing-box cannot (real mihomo, when installed)', async (t) => {
   const { LocalRelay } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/local-relay');
   const mihomoKernel = KERNELS.find((kernel) => kernel.id === 'mihomo');
@@ -586,7 +622,7 @@ test('mihomo carries the transports sing-box cannot (real mihomo, when installed
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-mihomo-'));
   // 用真实环境变量（AIH_RELAY_MIHOMO_BIN 等）：内核位置就是这么传进去的。
-  const relay = new LocalRelay({ runDir: dir, env: process.env, readinessTimeoutMs: 15000 });
+  const relay = new LocalRelay({ runDir: dir, env: { ...process.env, AIH_RELAY_PORT_MODE: 'dedicated' }, readinessTimeoutMs: 15000 });
   try {
     const result = await relay.ensure([{ ...KERNEL_NODES[1] }], { onlyIds: new Set(['k_xhttp']), remote: true });
     assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));

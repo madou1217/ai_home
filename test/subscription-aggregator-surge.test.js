@@ -11,6 +11,7 @@ const { compileSurgeFamilyLine } = require('../lib/cli/services/toolkit/proxy-po
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
 const { buildRenderContext, requestOrigin } = require('../lib/cli/services/toolkit/subscription-aggregator/render-context');
+const { userNameForNode } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/relay-users');
 const { getRenderer } = require('../lib/cli/services/toolkit/subscription-aggregator/renderers');
 const {
   RuleSetConverter,
@@ -323,6 +324,35 @@ test('without the sidecar a loopback Surge preview points at the local relay ins
   const remote = service.preview(profile.id, 'surge', { remoteAddress: '203.0.113.8' });
   assert.deepEqual(remote.warnings, ['aggregator_nodes_unsupported_by_target']);
   assert.equal(remote.relay.active, false);
+});
+
+test('server port mode renders every node on the AIH port itself, one username per node', () => {
+  const relay = {
+    calls: { ensure: [] },
+    availability: () => ({
+      available: true, binary: '/opt/sing-box', source: 'explicit', version: '1.13.19',
+      running: true, nodes: 1, basePort: 23100, maxPort: 23355, portRange: '23100-23655',
+      listenHost: '127.0.0.1', kernels: []
+    }),
+    activeEndpoints: () => new Map([['n_vless', { host: '127.0.0.1', port: 23107, udp: true }]]),
+    activeListenHost: () => '127.0.0.1',
+    portMode: () => 'server',
+    serverPortMode: () => true,
+    credentials: () => ({ username: 'aih-relay', password: 'mux-pass' }),
+    ensure: async () => ({ ok: true, endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23107, udp: true }]]), skipped: [] })
+  };
+  const { service, profile } = createService([RELAY_NODES[0]], { relay });
+  const result = service.preview(profile.id, 'surge', { remoteAddress: '203.0.113.8', origin: 'http://aih.example:9527' });
+  const user = userNameForNode('n_vless');
+  // 入口就是 AIH 自己的 host:port，节点靠用户名区分；这条通路是 TCP，所以没有 udp-relay。
+  assert.match(result.content, new RegExp(`^vless = socks5, aih\\.example, 9527, ${user}, mux-pass$`, 'm'));
+  assert.equal(result.relay.portMode, 'server');
+  assert.equal(result.relay.authRequired, true);
+  // 没有「要放行端口段」的提醒 —— server 模式不额外开任何端口。
+  assert.deepEqual(result.warnings, []);
+  // 本机请求也走同一个端口（Host 就是它自己用的那个）。
+  const local = service.preview(profile.id, 'surge', { remoteAddress: '127.0.0.1', origin: 'http://127.0.0.1:9527' });
+  assert.match(local.content, new RegExp(`^vless = socks5, 127\\.0\\.0\\.1, 9527, ${user}, mux-pass$`, 'm'));
 });
 
 test('Surfboard gets the same remote relay entries: the phone dials the AIH host, not its own loopback', () => {

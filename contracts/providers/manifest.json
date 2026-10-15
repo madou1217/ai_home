@@ -259,7 +259,8 @@
           "flags": [
             "--resume",
             "--session-id",
-            "--list-sessions"
+            "--list-sessions",
+            "--session-file"
           ],
           "nativeStore": "sessions"
         },

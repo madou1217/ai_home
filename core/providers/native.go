@@ -66,7 +66,9 @@ func nativeGemini() *NativeCapability {
 			CLIFlags:        []string{"--model", "--approval-mode", "--policy", "--admin-policy"},
 		},
 		Sessions: NativeSessions{
-			Flags:       []string{"--resume", "--session-id", "--list-sessions"},
+			// --session-file：按绝对路径加载某段会话（绕开 cwd → projectHash 的发现机制，
+			// 持久会话重启恢复用这条；见 lib/runtime/provider-resume.js）。
+			Flags:       []string{"--resume", "--session-id", "--list-sessions", "--session-file"},
 			NativeStore: "sessions",
 		},
 		MCP: NativeMCP{
@@ -200,6 +202,41 @@ func nativeKiro() *NativeCapability {
 		Permissions: NativePermissions{
 			Flags: []string{},
 			Modes: []string{"default"},
+		},
+	}
+}
+
+// nativeCline 描述 Cline CLI 原生配置、会话和权限边界。
+//
+// 配置/状态两个根各有一个 env（CLINE_DIR / CLINE_DATA_DIR）与同名 CLI 参数
+// （--config / --data-dir）。会话身份与历史都落在 <CLINE_DATA_DIR>/db/sessions.db
+// （会话目录 <CLINE_DATA_DIR>/sessions/<session-id>/），恢复会话的入口是
+// `--id <session-id>`（`cline --help` 实测；没有 `--resume` / `--continue`）。
+// MCP 只有 `mcp` 子命令；hook 入口（`hook` + --hooks-dir）aih 尚未接入，
+// 权限模型未验证，因此这几项留空而不是猜测。
+func nativeCline() *NativeCapability {
+	return &NativeCapability{
+		Config: NativeConfig{
+			EnvHomeKeys:     []string{"CLINE_DIR", "CLINE_DATA_DIR"},
+			UserSettings:    []string{"data/settings/providers.json"},
+			ProjectSettings: []string{},
+			CLIFlags:        []string{"--config", "--data-dir"},
+		},
+		Sessions: NativeSessions{
+			Flags:       []string{"--id"},
+			NativeStore: "data/db/sessions.db",
+		},
+		MCP: NativeMCP{
+			Commands:    []string{"mcp"},
+			ConfigFiles: []string{},
+		},
+		Hooks: NativeHooks{
+			Files:                  []string{},
+			StopRequiresJSONStdout: false,
+		},
+		Permissions: NativePermissions{
+			Flags: []string{},
+			Modes: []string{},
 		},
 	}
 }

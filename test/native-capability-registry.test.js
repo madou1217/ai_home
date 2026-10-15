@@ -12,7 +12,7 @@ const {
 test('native capability registry declares all AIH providers', () => {
   assert.deepEqual(
     listProviderNativeCapabilities().map((item) => item.provider),
-    ['agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'kiro']
+    ['agy', 'claude', 'cline', 'codex', 'gemini', 'grok', 'kimi', 'kiro']
   );
 });
 
@@ -29,6 +29,12 @@ test('native capability registry exposes provider native boundaries', () => {
   assert.ok(agy.hooks.files.includes('.gemini/config/hooks.json'));
   assert.ok(agy.hooks.files.includes('.agents/hooks.json'));
   assert.ok(agy.hooks.files.includes('.gemini/antigravity-cli/plugins/*/hooks.json'));
+
+  // cline 的会话恢复入口是 `--id <session-id>`（重启恢复用），历史在 sessions.db。
+  const cline = getProviderNativeCapability('cline');
+  assert.deepEqual(cline.sessions.flags, ['--id']);
+  assert.equal(cline.sessions.nativeStore, 'data/db/sessions.db');
+  assert.deepEqual(cline.config.envHomeKeys, ['CLINE_DIR', 'CLINE_DATA_DIR']);
 });
 
 test('native capability registry returns defensive copies', () => {

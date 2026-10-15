@@ -153,6 +153,38 @@ test('planRestoreActions selects one reboot owner per Codex thread', () => {
   assert.equal(plan.unrecoverable[0].unrecoverable, 'codex-thread-duplicate');
 });
 
+test('planRestoreActions keeps one cline owner per session id without failing closed on absence', () => {
+  const clineSocket = persistentSession.deriveSocket('cline', ACCOUNT_REF_1);
+  const probeBySocket = { [clineSocket]: { trusted: true, noServer: true, aliveNames: new Set() } };
+  const plan = planRestoreActions(
+    [
+      entry({
+        provider: 'cline', runtimeScope: ACCOUNT_REF_1, accountRef: ACCOUNT_REF_1,
+        socket: clineSocket, session: 'p-old', nativeSessionId: '1792050248852_or8f0',
+        createdAt: 500, updatedAt: 1000
+      }),
+      entry({
+        provider: 'cline', runtimeScope: ACCOUNT_REF_1, accountRef: ACCOUNT_REF_1,
+        socket: clineSocket, session: 'p-new',
+        // 身份可以从恢复时的 forwardArgs 里认出来（跨重启链路）。
+        forwardArgs: ['-P', 'cline-pass', '--id', '1792050248852_or8f0'],
+        createdAt: 700, updatedAt: 1500
+      }),
+      entry({
+        provider: 'cline', runtimeScope: ACCOUNT_REF_1, accountRef: ACCOUNT_REF_1,
+        socket: clineSocket, session: 'p-no-identity', createdAt: 100, updatedAt: 1000
+      })
+    ],
+    probeBySocket,
+    { bootTimeMs: 2000, cwdExists: () => true }
+  );
+  // 同一段 cline 对话只恢复一个 pane；没有身份的那个普通重启（不判不可恢复）。
+  assert.deepEqual(plan.restore.map((item) => item.session).sort(), ['p-new', 'p-no-identity']);
+  assert.equal(plan.unrecoverable.length, 1);
+  assert.equal(plan.unrecoverable[0].session, 'p-old');
+  assert.equal(plan.unrecoverable[0].unrecoverable, 'cline-session-duplicate');
+});
+
 test('planRestoreActions keeps distinct Codex threads in the same cwd separate', () => {
   const probeBySocket = { [CODEX_SOCKET]: { trusted: true, noServer: true, aliveNames: new Set() } };
   const plan = planRestoreActions(

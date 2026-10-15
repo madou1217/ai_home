@@ -133,6 +133,36 @@ test('missing raw identity and persistence failure invalidate native capture bef
   }
 });
 
+test('native thread item write failure degrades to a coverage gap instead of failing the turn', async (t) => {
+  const f = fixture(t);
+  const session = f.store.createSession({ provider: 'codex', executionAccountRef: 'a',
+    runtimeBinding: { nativeSessionId: 'thread-a' } });
+  const failures = [];
+  const bridge = new CodexSessionEventBridge({
+    sessionId: session.sessionId,
+    eventSink() {},
+    // 模拟 identity 冲突（同一 item 被 provider 以新 turn 重发）。
+    nativeThreadItemSink: () => {
+      const error = new Error('chat_native_thread_item_conflict');
+      error.code = 'chat_native_thread_item_conflict';
+      throw error;
+    },
+    nativeHistoryCoverageSink: (evidence) => f.store.markNativeHistoryCoverage(session.sessionId, evidence),
+    nativeThreadItemFailureSink: (entry) => failures.push(entry)
+  });
+  const context = { sessionId: session.sessionId, turnId: 'turn', runId: 'run', toolOrder: bridge.createToolOrder() };
+  // 关键：写失败不能把这一轮判失败（旧行为会 reject → 用户侧 409）。
+  await bridge.forwardNotification({
+    method: 'item/started',
+    params: { threadId: 'thread-a', turnId: 'turn-a', item: { id: 'item-1', type: 'agentMessage' } }
+  }, context).persisted;
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].code, 'native_thread_item_write_failed');
+  assert.equal(failures[0].itemId, 'item-1');
+  // 该轮历史覆盖被标成不完整（分支/回滚据此拒绝，而不是给出错位的条目）。
+  assert.equal(f.store.nativeResponseItems.coverage(session.sessionId, 'thread-a', 'turn-a'), 'incomplete');
+});
+
 test('private output persistence precedes hooks for typed events released by the order coordinator', async () => {
   const events = [];
   const writes = [];

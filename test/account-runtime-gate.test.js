@@ -229,6 +229,75 @@ test('observeSuccess clears the block through the shared applier and publishes o
   assert.equal(events[0].nextStatus, 'healthy');
 });
 
+test('observeRecovery clears per mode, forwards evidence/scope, and fails closed on unknown evidence', () => {
+  const events = [];
+  const gate = createAccountRuntimeGate({ hub: createHub(events) });
+  const authBlocked = makeAccount({
+    authInvalidUntil: Date.now() + 86400000,
+    cooldownUntil: Date.now() + 86400000,
+    lastFailureKind: 'auth_invalid'
+  });
+  assert.equal(gate.observeRecovery({
+    account: authBlocked,
+    provider: 'codex',
+    evidence: 'token_refresh_success',
+    clear: 'auth_invalid'
+  }), true);
+  assert.equal(authBlocked.authInvalidUntil, 0);
+  assert.equal(authBlocked.lastFailureKind, '');
+  assert.equal(events.length, 1);
+  assert.equal(events[0].reason, 'token_refresh_success');
+  assert.equal(events[0].runtimeState, null, '恢复事件必须是 null runtimeState（listener 走 clearRuntimeBlock）');
+
+  const blocked = makeAccount({
+    routingBlock: { kind: 'billing_blocked', reason: 'billing_blocked', observedAt: Date.now() },
+    lastFailureKind: 'billing_blocked'
+  });
+  assert.equal(gate.observeRecovery({
+    account: blocked,
+    provider: 'codex',
+    evidence: 'manual_admin_clear',
+    scope: 'routing_block',
+    clear: 'routing_block'
+  }), true);
+  assert.equal(blocked.routingBlock, null);
+  assert.equal(events[1].scope, 'routing_block');
+
+  // 证据白名单之外的 evidence 一律 fail closed（不写状态、不发事件）。
+  const untouched = makeAccount({ authInvalidUntil: Date.now() + 86400000, lastFailureKind: 'auth_invalid' });
+  assert.equal(gate.observeRecovery({
+    account: untouched,
+    provider: 'codex',
+    evidence: 'made_up_evidence'
+  }), false);
+  assert.equal(untouched.authInvalidUntil > Date.now(), true);
+  assert.equal(events.length, 2);
+});
+
+test('observeRecovery without a hub persists through accountStateService with the same arguments', () => {
+  const calls = [];
+  const gate = createAccountRuntimeGate({
+    accountStateService: {
+      clearRuntimeBlock: (accountRef, provider, options) => {
+        calls.push({ accountRef, provider, ...options });
+        return true;
+      }
+    }
+  });
+  const account = makeAccount({ authInvalidUntil: Date.now() + 86400000, lastFailureKind: 'auth_invalid' });
+  const snapshot = { kind: 'codex_oauth_status', capturedAt: Date.now() };
+  assert.equal(gate.observeRecovery({
+    account,
+    provider: 'codex',
+    evidence: 'verified_usage_success',
+    clear: 'none',
+    usageSnapshot: snapshot
+  }), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].evidence, 'verified_usage_success');
+  assert.deepEqual(calls[0].usageSnapshot, snapshot);
+});
+
 test('observeRawFailure routes legacy string-shaped marks through the same applier and event', () => {
   const events = [];
   const gate = createAccountRuntimeGate({ hub: createHub(events), markProxyAccountFailure });

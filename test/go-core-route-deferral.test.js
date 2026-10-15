@@ -12,16 +12,36 @@ const accountStateIndex = {
   getAccountState: (ref) => ({ [LIVE]: { status: 'up' }, [DOWN]: { status: 'down' } }[ref] || null)
 };
 
-test('custom account error rules remain with their Node executor, including pins that may fall back', () => {
+test('custom account error rules defer exactly the requests that can reach the rule account', () => {
   const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
   const stateWithRules = { accounts: { claude: [{ accountRef: LIVE }, {
     accountRef: DOWN, upstreamErrorRules: [{ enabled: true }]
   }] } };
-  for (const pinnedAccountRef of ['', LIVE, DOWN]) {
-    assert.deepEqual(explainGoRouteDeferral({ entryId: 'gateway.anthropic.messages', pinnedAccountRef,
-      state: stateWithRules, accountStateIndex }), { defer: true, reason: 'account_error_rules' });
-  }
+  const decide = (pinnedAccountRef) => explainGoRouteDeferral({
+    entryId: 'gateway.anthropic.messages', pinnedAccountRef, state: stateWithRules, accountStateIndex
+  });
+  // 未钉选请求可能跨 Provider/别名回落到带规则的账号，必须交还 Node。
+  assert.deepEqual(decide(''), { defer: true, reason: 'account_error_rules' });
+  // 可用钉选是独占路由：被钉选账号自己没有规则时，池里别的账号带着规则与本请求无关。
+  assert.deepEqual(decide(LIVE), { defer: false, reason: '' });
+  // 不可用钉选仍然交还 Node（原因以钉选本身为准，规则不再是决定因素）。
+  assert.deepEqual(decide(DOWN), { defer: true, reason: 'pinned_account_unusable' });
   assert.equal(shouldDeferGoRouteToNode({ entryId: 'gateway.props', state: stateWithRules }), false);
+});
+
+test('a usable pin whose own account carries unaccepted rules stays with Node', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const stateWithPinnedRules = { accounts: { claude: [{
+    accountRef: LIVE, upstreamErrorRules: [{ enabled: true }]
+  }, { accountRef: DOWN }] } };
+  const input = {
+    entryId: 'gateway.anthropic.messages', pinnedAccountRef: LIVE,
+    state: stateWithPinnedRules, accountStateIndex, fabricGatewayReady: () => false
+  };
+  assert.deepEqual(explainGoRouteDeferral(input), { defer: true, reason: 'account_error_rules' });
+  // Go 承接了该账号后照常转发。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, goAcceptedErrorRuleRefs: () => new Set([LIVE]) }),
+    { defer: false, reason: '' });
 });
 
 test('usable pins are forwarded; unusable, unknown or malformed pins stay with Node', () => {

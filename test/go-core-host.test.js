@@ -529,7 +529,9 @@ test('the host pushes account error rules and only forwards accounts Go confirme
     accepted: 1,
     dropped: 1,
     droppedReasons: ['provider_not_supported'],
-    supportedProviders: ['codex']
+    supportedProviders: ['codex'],
+    // 池里没有「带生效规则但 Go 未承接」的账号，所以没有流量需要交还 Node。
+    keptOnNodeAccounts: []
   });
 
   // 内容未变化时不重复 PUT。
@@ -591,4 +593,52 @@ test('an unconfirmed or failed rules push keeps every rule account on Node', asy
   assert.equal(failedPushes, 1, '推送确实发出过，只是没被确认');
   assert.equal(failing.acceptedUpstreamErrorRuleRefs().size, 0);
   await failing.stop();
+});
+
+test('the host reports which rule accounts are still served by Node, so the switch cannot fail silently', async () => {
+  const { factory } = fakeSupervisorFactory();
+  const lines = [];
+  const pools = {
+    codex: [
+      { accountRef: 'acct_taken', provider: 'codex', upstreamErrorRules: [{ kind: 'rate_limited', enabled: true, statuses: [429], matchers: [{ source: 'body', operator: 'contains', value: 'slow down' }] }] },
+      { accountRef: 'acct_kept', provider: 'codex', upstreamErrorRules: [{ kind: 'rate_limited', enabled: true, statuses: [429], matchers: [{ source: 'body', operator: 'contains', value: 'slow down' }] }] },
+      // 没有生效规则的账号永远不参与交还判定，也不该出现在原因清单里。
+      { accountRef: 'acct_plain', provider: 'codex' }
+    ]
+  };
+  const host = createGoCoreHost({
+    settings: resolveGoCoreSettings(
+      { goCoreEnabled: true, goCoreRoutes: ['gateway.props'] },
+      { AIH_GO_CORE_ACCOUNT_SYNC: '0' }
+    ),
+    createGoCoreSupervisor: factory,
+    createGoManagementClient: () => ({
+      pushModelAliases: async () => ({ ok: true, data: { generation: 1, applied_generation: 1, accepted_ids: [], dropped: [] } }),
+      // Go 只承接了其中一个账号（例如另一个被 Provider 能力或规则编译丢弃）。
+      pushUpstreamErrorRules: async () => ({
+        ok: true,
+        data: {
+          generation: 1,
+          accepted_account_refs: ['acct_taken'],
+          dropped: [{ account_ref: 'acct_kept', reason: 'rule_not_supported' }],
+          supported_providers: ['codex']
+        }
+      })
+    }),
+    accountPools: () => pools,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [] }) }),
+    log: { log: (line) => lines.push(String(line)), error: (line) => lines.push(String(line)) }
+  });
+
+  await host.start();
+  const readiness = await host.readiness();
+  assert.deepEqual(readiness.upstream_error_rules.keptOnNodeAccounts, [
+    { accountRef: 'acct_kept', provider: 'codex' }
+  ]);
+  // 「开关打开了但流量全在 Node」必须有可见证据，否则只能靠猜。
+  assert.ok(
+    lines.some((line) => line.includes('still on Node') && line.includes('codex:acct_kept')),
+    '未承接的规则账号必须打日志'
+  );
+  await host.stop();
 });

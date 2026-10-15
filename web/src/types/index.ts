@@ -1697,11 +1697,36 @@ export interface AccountWindowActivationSettingInput {
   intervalMs?: number | null;
 }
 
+/**
+ * 「窗口激活」的全局闸门状态：逐账号开关之外还有一道全局 opt-in（默认关）。
+ * 两道闸门都开着才会真正探测，所以弹窗必须把全局状态显示出来。
+ */
+export interface AccountWindowActivationGlobalState {
+  /** 当前运行中是否生效；null 表示宿主未上报（旧版本 / 未装配）。 */
+  enabled: boolean | null;
+  /** 已保存到 server 配置的全局开关（重启后生效）。 */
+  savedEnabled: boolean;
+  /** 已保存设置与当前生效不一致 → 需重启 Server。 */
+  restartRequired: boolean;
+  /** 当前生效的全局默认间隔；null 表示未知。 */
+  defaultIntervalMs: number | null;
+  /** 当前生效的间隔下限；null 表示未知。 */
+  minIntervalMs: number | null;
+}
+
+/** 该账号最近一次窗口激活探测（0 / 空串表示还没有探测过）。 */
+export interface AccountWindowActivationProbeState {
+  at: number;
+  outcome: string;
+}
+
 export interface AccountWindowActivationResponse {
   ok: boolean;
   provider: string;
   accountRef: string;
   setting: AccountWindowActivationSetting;
+  global?: AccountWindowActivationGlobalState;
+  lastProbe?: AccountWindowActivationProbeState;
 }
 
 // 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。

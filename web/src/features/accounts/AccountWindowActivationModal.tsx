@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Button, Form, InputNumber, Modal, Spin, Switch, Typography, message } from 'antd';
+import { Button, Form, InputNumber, Modal, Space, Spin, Switch, Tag, Typography, message } from 'antd';
 import { accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
-import type { Account } from '@/types';
+import { formatTimeCell } from '@/utils/datetime';
+import {
+  describeWindowActivationGlobal,
+  formatWindowActivationInterval
+} from '@/features/accounts/window-activation-presentation';
+import type {
+  Account,
+  AccountWindowActivationGlobalState,
+  AccountWindowActivationProbeState
+} from '@/types';
 import './account-overlays.css';
 
 interface AccountWindowActivationFormValues {
@@ -20,6 +29,13 @@ const MS_PER_MINUTE = 60 * 1000;
 // 与后端路由的下限一致（1 分钟）。
 const MIN_INTERVAL_MINUTES = 1;
 
+// 全局闸门状态标签色：生效=绿、未开启=黄、宿主未上报=灰。仅用紧凑标签表达，不做整块提示。
+const GLOBAL_TONE_COLORS: Record<'active' | 'inactive' | 'unknown', string> = {
+  active: 'success',
+  inactive: 'warning',
+  unknown: 'default'
+};
+
 function msToMinutes(value: number | null | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
   return Math.round(value / MS_PER_MINUTE);
@@ -29,11 +45,16 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
   const [form] = Form.useForm<AccountWindowActivationFormValues>();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [globalState, setGlobalState] = useState<AccountWindowActivationGlobalState | null>(null);
+  const [lastProbe, setLastProbe] = useState<AccountWindowActivationProbeState | null>(null);
+  const accountEnabled = Form.useWatch('enabled', form) === true;
 
   useEffect(() => {
     if (!account) return undefined;
     let cancelled = false;
     setLoading(true);
+    setGlobalState(null);
+    setLastProbe(null);
     form.setFieldsValue({ enabled: false, intervalMinutes: undefined });
 
     accountsAPI.getAccountWindowActivation(account.provider, account.accountRef)
@@ -44,6 +65,8 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
           enabled: Boolean(setting.enabled),
           intervalMinutes: msToMinutes(setting.intervalMs)
         });
+        setGlobalState(response.global || null);
+        setLastProbe(response.lastProbe || null);
       })
       .catch(() => {
         if (!cancelled) message.error('读取窗口激活设置失败');
@@ -56,6 +79,18 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
       cancelled = true;
     };
   }, [account, form]);
+
+  // 逐账号开关只是两道闸门之一：全局没开时必须说清楚「现在不会探测」。
+  const globalView = describeWindowActivationGlobal({
+    global: globalState,
+    lastProbe,
+    lastProbeRelative: formatTimeCell(lastProbe?.at)?.relative || null,
+    accountEnabled
+  });
+  const defaultIntervalText = formatWindowActivationInterval(globalState?.defaultIntervalMs);
+  const intervalHint = defaultIntervalText
+    ? `留空则跟随全局默认间隔（当前为 ${defaultIntervalText}）。`
+    : '留空则跟随全局默认间隔。';
 
   const save = async () => {
     if (!account || submitting) return;
@@ -75,7 +110,11 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
         enabled: Boolean(values.enabled),
         intervalMs
       });
-      message.success(values.enabled ? '已开启窗口激活' : '已关闭窗口激活');
+      if (values.enabled && globalView.tone !== 'active') {
+        message.warning('已开启窗口激活，但全局开关未生效，当前不会发送探测');
+      } else {
+        message.success(values.enabled ? '已开启窗口激活' : '已关闭窗口激活');
+      }
       onClose();
     } catch (error: any) {
       const code = error?.response?.data?.error;
@@ -110,6 +149,17 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
         <Typography.Paragraph type="secondary">
           探测走网关数据面、不进入任何项目会话。默认关闭；仅对识别出 5 小时窗口的账号生效。
         </Typography.Paragraph>
+        <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
+          <Space size={8} wrap>
+            <Tag color={GLOBAL_TONE_COLORS[globalView.tone]}>{globalView.label}</Tag>
+            <Typography.Text type="secondary">{globalView.text}</Typography.Text>
+          </Space>
+          {globalView.hints.map((hint) => (
+            <Typography.Text key={hint} type="secondary">
+              {hint}
+            </Typography.Text>
+          ))}
+        </Space>
         <Form form={form} layout="vertical" initialValues={{ enabled: false }}>
           <Form.Item name="enabled" label="开启窗口激活" valuePropName="checked">
             <Switch checkedChildren="开启" unCheckedChildren="关闭" />
@@ -117,7 +167,7 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
           <Form.Item
             name="intervalMinutes"
             label="探测间隔（分钟）"
-            extra="留空则跟随全局默认间隔（当前为 4 小时）。"
+            extra={intervalHint}
             rules={[{
               validator: (_rule, value) => (
                 value === undefined || value === null || (Number.isFinite(Number(value)) && Number(value) >= MIN_INTERVAL_MINUTES)

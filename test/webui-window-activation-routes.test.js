@@ -7,7 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
-const { readWindowActivationConfig } = require('../lib/account/window-activation-store');
+const {
+  readWindowActivationConfig,
+  writeWindowActivationState
+} = require('../lib/account/window-activation-store');
 const {
   handleWindowActivationRequest,
   matchWindowActivationRoute,
@@ -126,6 +129,82 @@ test('账号不存在返回 404', async (t) => {
   await handleWindowActivationRequest(missing);
   assert.equal(missing.res.statusCode, 404);
   assert.equal(missing.res.payload.error, 'account_not_found');
+});
+
+test('GET 返回全局闸门状态与上次探测（宿主未上报时 enabled 为 null）', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createContext(fixture, 'GET', null);
+  await handleWindowActivationRequest(ctx);
+  assert.equal(ctx.res.statusCode, 200);
+  // 没有宿主注入时不得编造「已开启」：只报「未知 + 已保存值」。
+  assert.deepEqual(ctx.res.payload.global, {
+    enabled: null,
+    savedEnabled: false,
+    restartRequired: false,
+    defaultIntervalMs: null,
+    minIntervalMs: null
+  });
+  assert.deepEqual(ctx.res.payload.lastProbe, { at: 0, outcome: '' });
+});
+
+test('GET 用运行态回答「现在到底会不会探测」，并标出未生效的已保存配置', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createContext(fixture, 'GET', null);
+  ctx.deps = {
+    getWindowActivationState: () => ({
+      enabled: true,
+      defaultIntervalMs: 14400000,
+      minIntervalMs: 3600000
+    }),
+    readServerConfig: () => ({ windowActivation: false })
+  };
+  await handleWindowActivationRequest(ctx);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.deepEqual(ctx.res.payload.global, {
+    enabled: true,
+    savedEnabled: false,
+    restartRequired: true,
+    defaultIntervalMs: 14400000,
+    minIntervalMs: 3600000
+  });
+});
+
+test('GET 返回该账号上次探测的时间与结果', async (t) => {
+  const fixture = createFixture(t);
+  writeWindowActivationState(fs, fixture.aiHomeDir, fixture.accountRef, {
+    lastProbeAt: 1792000000000,
+    lastOutcome: 'activated'
+  });
+  const ctx = createContext(fixture, 'GET', null);
+  await handleWindowActivationRequest(ctx);
+  assert.deepEqual(ctx.res.payload.lastProbe, { at: 1792000000000, outcome: 'activated' });
+});
+
+test('全局状态读取失败不影响账号设置的读写', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createContext(fixture, 'GET', null);
+  ctx.deps = {
+    getWindowActivationState() { throw new Error('scheduler exploded'); },
+    readServerConfig() { throw new Error('/private/path/config.json permission denied'); }
+  };
+  await handleWindowActivationRequest(ctx);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.deepEqual(ctx.res.payload.setting, { enabled: false, intervalMs: null });
+  assert.equal(ctx.res.payload.global.enabled, null);
+  assert.equal(ctx.res.payload.global.savedEnabled, false);
+});
+
+test('POST 响应同样带全局闸门状态（保存后立刻能看到是否生效）', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createContext(fixture, 'POST', Buffer.from(JSON.stringify({ enabled: true, intervalMs: null })));
+  ctx.deps = {
+    getWindowActivationState: () => ({ enabled: false, defaultIntervalMs: 14400000, minIntervalMs: 3600000 }),
+    readServerConfig: () => ({ windowActivation: false })
+  };
+  await handleWindowActivationRequest(ctx);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.equal(ctx.res.payload.global.enabled, false);
+  assert.equal(ctx.res.payload.global.defaultIntervalMs, 14400000);
 });
 
 test('读取异常返回稳定 500', async (t) => {

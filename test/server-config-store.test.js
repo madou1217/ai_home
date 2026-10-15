@@ -43,6 +43,7 @@ test('server config store persists and normalizes server config', (t) => {
     proxyUrl: 'http://127.0.0.1:6152',
     noProxy: 'localhost,127.0.0.1',
     modelsProbeAccounts: 5,
+    windowActivation: false,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -96,6 +97,7 @@ test('server config store supports partial update semantics and empty string cle
     proxyUrl: '',
     noProxy: '',
     modelsProbeAccounts: 4,
+    windowActivation: false,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -130,6 +132,7 @@ test('server config store works when fs only exposes mkdirSync for directory cre
     proxyUrl: '',
     noProxy: '',
     modelsProbeAccounts: 2,
+    windowActivation: false,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -163,6 +166,7 @@ test('mergeServerConfigPatch ignores null updates and preserves explicit boolean
     proxyUrl: '',
     noProxy: 'localhost',
     modelsProbeAccounts: 6,
+    windowActivation: false,
     goCoreEnabled: false,
     goCoreRoutes: [],
     upstreamErrorRuleProviders: []
@@ -186,6 +190,27 @@ test('server config store persists Go Core opt-in and normalizes route entry ids
   const disabled = writeServerConfig({ goCoreEnabled: false, goCoreRoutes: [] }, { fs, aiHomeDir });
   assert.equal(disabled.goCoreEnabled, false);
   assert.deepEqual(disabled.goCoreRoutes, []);
+});
+
+test('server config store persists the window activation opt-in and passes it to serve args', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-server-config-window-activation-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+
+  // 默认关：窗口激活的每次探测都是一次真实上游请求，必须显式 opt-in。
+  assert.equal(DEFAULT_SERVER_CONFIG.windowActivation, false);
+  assert.equal(buildServerArgsFromConfig({}).includes('--window-activation'), false);
+
+  const saved = writeServerConfig({ windowActivation: true }, { fs, aiHomeDir });
+  assert.equal(saved.windowActivation, true);
+  assert.equal(readServerConfig({ fs, aiHomeDir }).windowActivation, true);
+  // 关键接线：`aih server restart` 只吃保存配置，args 里没有这个 flag 就等于「存了不生效」。
+  assert.equal(buildServerArgsFromConfig(saved).includes('--window-activation'), true);
+
+  const disabled = writeServerConfig({ windowActivation: false }, { fs, aiHomeDir });
+  assert.equal(disabled.windowActivation, false);
+  assert.equal(buildServerArgsFromConfig(disabled).includes('--window-activation'), false);
+  // 非布尔真值不得被当成开启（表单/JSON 传来的 "true" 字符串不算）。
+  assert.equal(writeServerConfig({ windowActivation: 'true' }, { fs, aiHomeDir }).windowActivation, false);
 });
 
 test('server config store normalizes the Go upstream error rule provider list', (t) => {

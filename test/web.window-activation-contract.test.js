@@ -14,6 +14,8 @@ const apiPath = path.join(projectRoot, 'web/src/services/api.ts');
 const typesPath = path.join(projectRoot, 'web/src/types/index.ts');
 const modalPath = path.join(projectRoot, 'web/src/features/accounts/AccountWindowActivationModal.tsx');
 const actionsPath = path.join(projectRoot, 'web/src/features/accounts/use-account-actions.ts');
+const presentationPath = path.join(projectRoot, 'web/src/features/accounts/window-activation-presentation.ts');
+const routePath = path.join(projectRoot, 'lib/server/webui-window-activation-routes.js');
 
 test('账号菜单为支持的 provider 打开窗口激活弹窗', () => {
   assert.equal(fs.existsSync(modalPath), true, '窗口激活必须拆到独立受控组件');
@@ -56,4 +58,47 @@ test('弹窗状态在账号动作 hook 中集中管理', () => {
   const actionsSource = fs.readFileSync(actionsPath, 'utf8');
   assert.match(actionsSource, /accountWindowActivationAccount/);
   assert.match(actionsSource, /setAccountWindowActivationAccount/);
+});
+
+test('弹窗显示全局闸门状态与上次探测（逐账号开关之外还有全局 opt-in）', () => {
+  assert.equal(fs.existsSync(presentationPath), true, '全局状态展示必须拆到纯函数模块');
+  const modalSource = fs.readFileSync(modalPath, 'utf8');
+
+  assert.match(modalSource, /describeWindowActivationGlobal\(/);
+  assert.match(modalSource, /setGlobalState\(response\.global/);
+  assert.match(modalSource, /setLastProbe\(response\.lastProbe/);
+  // 逐账号开关打开但全局没生效时必须当场说清楚，不能静默保存。
+  assert.match(modalSource, /全局开关未生效/);
+  // 默认间隔提示必须来自真实运行态，不能写死。
+  assert.match(modalSource, /formatWindowActivationInterval\(globalState\?\.defaultIntervalMs\)/);
+});
+
+test('路由把全局闸门状态与上次探测一起下发', () => {
+  const routeSource = fs.readFileSync(routePath, 'utf8');
+  assert.match(routeSource, /global: readGlobalState\(ctx, aiHomeDir\)/);
+  assert.match(routeSource, /lastProbe: readProbeState\(ctx, aiHomeDir, accountRef\)/);
+  assert.match(routeSource, /function presentGlobalState\(/);
+
+  const typesSource = fs.readFileSync(typesPath, 'utf8');
+  assert.match(typesSource, /interface AccountWindowActivationGlobalState\b/);
+  assert.match(typesSource, /interface AccountWindowActivationProbeState\b/);
+});
+
+test('全局开关有正规入口：server config → serve args → 调度器运行态', () => {
+  // 只有逐账号开关、没有全局入口时，账号页打开开关也不会探测 —— 这条链少一环就回到那个 bug。
+  const storeSource = fs.readFileSync(path.join(projectRoot, 'lib/server/server-config-store.js'), 'utf8');
+  assert.match(storeSource, /windowActivation: false/);
+  assert.match(storeSource, /if \(normalized\.windowActivation\) args\.push\('--window-activation'\)/);
+
+  const commandSource = fs.readFileSync(path.join(projectRoot, 'lib/server/server-config-command.js'), 'utf8');
+  assert.match(commandSource, /flag === '--window-activation'/);
+  assert.match(commandSource, /flag === '--no-window-activation'/);
+
+  // serve 侧必须能接住保存配置下发的 flag。
+  const argsSource = fs.readFileSync(path.join(projectRoot, 'lib/server/args.js'), 'utf8');
+  assert.match(argsSource, /arg === '--window-activation'/);
+
+  // WebUI 要能读到「当前生效」的运行态（而不是只读保存值）。
+  const serverSource = fs.readFileSync(path.join(projectRoot, 'lib/server/server.js'), 'utf8');
+  assert.match(serverSource, /getWindowActivationState: \(\) => \(windowActivationScheduler/);
 });

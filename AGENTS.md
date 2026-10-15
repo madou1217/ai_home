@@ -226,6 +226,8 @@ Fuller layer map:
     - **部署要求（dedicated 模式）**：客户端必须能连到 **23100-23655**（或按内核配置的端口段），AWS 安全组 / 防火墙 / frp 都要放行；远端拉取时预览会给 `aggregator_relay_remote:<host>:<端口段>` 提醒。server 模式没有这条要求（也不产生这条提醒）。拿不到 Host（`relay_origin_unknown`）、边车只绑在本机（`relay_not_exposed`，仅 dedicated）、内核缺失 / 配置被拒 / 端口起不来 —— 一律 fail-closed 退回原样输出，绝不给出连不上的入口。
     - 边界：mihomo 把 mieru 的 `transport` 当必填，缺了会让整份配置被拒，所以插件在缺字段时直接让该节点编不出来（跳过它，而不是毒掉整批）。Surge 与 Surfboard（都是 Surge 语法族、都没有 VLESS）都开了这个回退；Surfboard 跑在手机上，靠的正是「入口写客户端自己的 Host + 认证」这一形态（早期只支持回环的版本不能这么用）。
 
+- **窗口激活（2026-10-15 补全局入口）：对 5h 滚动限额类账号（当前只有 `codex` spec）定期发一个极小探测，推进/刷新它的限额窗口。** 探测走 `/v1/*` 数据面（`x-account-ref` 钉选，命中判定看响应头 `x-aih-server-account-ref` 是否回填同一账号 —— 池回落不算），绝不建项目会话。触发策略 = `reset_at` 对齐 OR（固定周期 AND 非活跃闸门），锚点取 `max(上次探测, 上次窗口重置)`。**双重 opt-in：逐账号开关**（账号页「窗口激活」弹窗 → `GET|POST /v0/webui/accounts/:provider/:accountRef/window-activation`，存 `account:window-activation:<ref>`；路由与弹窗的 provider 覆盖来自 `lib/server/window-activation/probe-specs.js` 注册表）**+ 全局开关**（`aih server config set --window-activation` / `--no-window-activation`，存 `config:server.windowActivation`，经 `lib/server/server-config-store.js` 的 `buildServerArgsFromConfig` 下发 `--window-activation`；`AIH_SERVER_WINDOW_ACTIVATION=1` 与 `aih server serve --window-activation` 等价）。**只有逐账号开关、没有全局入口时的表现是「开关开了但一次都不探测」**（2026-10-15 修的就是这个：全局闸门当时只能从 launchd plist 的环境变量给，WebUI/CLI 都到不了）。因此弹窗必须同时显示全局运行态与上次探测（路由响应的 `global` / `lastProbe`，`global.enabled` 取调度器 `getState()` 的运行态而不是保存值，`restartRequired` 标出「已保存但未重启」），账号页的展示逻辑集中在 `web/src/features/accounts/window-activation-presentation.ts`。已知不一致（未修）：弹窗与路由接受 ≥1 分钟的间隔，而调度器把有效间隔夹到 `windowActivationMinIntervalMs`（默认 1h），填 1–59 分钟会被静默抬到 1 小时。
+
 
 ## Testing Guidelines
 - Framework: built-in Node test runner (`node:test`) with `assert/strict`.

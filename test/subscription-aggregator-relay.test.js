@@ -424,6 +424,34 @@ test('the mihomo relay config binds one listener per node to its own outbound, w
   assert.equal('dialer-proxy' in config.proxies[1], false);
 });
 
+test('a kernel installed after the fact is picked up without restarting the server', () => {
+  // 内核查找失败不能缓存：用户把 sing-box 装进 ~/.ai_home/bin 之后，下一次拉订阅就该能用，
+  // 而不是「必须重启服务」（真实踩到过：AWS 上装完内核仍然 0 节点）。
+  const files = new Set();
+  const fakeFs = {
+    constants: { X_OK: 1 },
+    statSync: (file) => {
+      if (!files.has(file)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return { isFile: () => true };
+    },
+    accessSync: (file) => { if (!files.has(file)) throw Object.assign(new Error('EACCES'), { code: 'EACCES' }); },
+    readFileSync: () => '{}'
+  };
+  const { KernelSidecar } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar');
+  const sidecar = new KernelSidecar({
+    kernel: KERNELS[0],
+    fs: fakeFs,
+    path: path.posix,
+    env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/opt/sing-box' },
+    aiHomeDir: '/home/u/.ai_home',
+    spawnSync: () => ({ status: 0, stdout: 'sing-box version 1.13.19' })
+  });
+  assert.equal(sidecar.availability().available, false);
+  assert.equal(sidecar.availability().error, 'relay_binary_not_found');
+  files.add('/opt/sing-box');
+  assert.deepEqual([sidecar.availability().available, sidecar.availability().version], [true, '1.13.19']);
+});
+
 test('relay credentials come from the environment, else a private file that survives restarts', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-creds-'));
   try {

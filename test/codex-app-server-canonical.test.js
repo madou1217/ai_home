@@ -398,6 +398,10 @@ test('maps question requests, request resolution and unknown methods observably'
     value: 42,
     token: 'must-not-leak'
   }));
+  // 未知**请求**（带 id，必须应答）仍然失败关闭：协议上不能沉默。
+  const unknownRequest = mapCodexAppServerMessage(message('future/request', {
+    token: 'must-not-leak'
+  }, 7));
 
   assert.equal(question.type, 'interaction.requested');
   assert.equal(question.payload.interaction.kind, 'question');
@@ -412,15 +416,19 @@ test('maps question requests, request resolution and unknown methods observably'
     type: 'interaction.resolved',
     payload: { interactionId: interactionId(3) }
   });
-  assert.equal(unknown.type, 'stream.error');
-  assert.deepEqual(unknown.payload, {
+  // 未知**通知**（无 id）不再失败关闭：codex 升级新增通知不该让用户回合报错，
+  // 降级为可观察的 known_noop（方法名由 bridge 的诊断出口写 server.log）。
+  assert.equal(unknown.classification, 'known_noop');
+  assert.equal(unknown.method, 'future/event');
+  assert.equal(unknownRequest.type, 'stream.error');
+  assert.deepEqual(unknownRequest.payload, {
     error: 'unsupported_codex_app_server_method',
     message: 'Unsupported Codex app-server event',
     retryable: false
   });
   assert.doesNotMatch(
-    JSON.stringify(unknown),
-    /future\/event|must-not-leak|"method"\s*:|"paramKeys"\s*:/
+    JSON.stringify(unknownRequest),
+    /future\/request|must-not-leak|"method"\s*:|"paramKeys"\s*:/
   );
 });
 

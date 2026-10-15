@@ -65,7 +65,6 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/request-pool-retry-policy.js': 2,
   'lib/server/retry-hints.js': 2,
   'lib/server/session-lifecycle/legacy-archive-recovery.js': 2,
-  'lib/server/upstream-endpoints-path.js': 24,
   'lib/server/upstream-endpoints-transport-general.js': 5,
   'lib/server/upstream-endpoints-utils.js': 2,
   'lib/server/upstream-failure-policy.js': 4,

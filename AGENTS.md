@@ -112,6 +112,15 @@ Fuller layer map:
 - Preferred design: map runtime-specific tool names into stable workflow intents, then map those intents to the current provider's available capability. Tool aliases handle executable tools; workflow aliases handle stages such as plan, review, self-verify, and advisor.
 - Preserve the canonical protocol direction: client protocol -> canonical request/intent -> account/model router -> upstream/provider adapter -> canonical result/events -> client renderer.
 
+## Design Pattern Discipline（强制，2026-10-15 起）
+
+- **禁止新增 `if (provider === '…')` / `provider !==` / 中央 provider 清单。** 新增 provider 能力、采集面、协议分支、账号操作、会话命令，一律走「描述符声明 + 注册表倒排 + 策略链/门面执行」：新增 provider = 加一个描述符（+ 需要时注册一个 handler），**不动派发代码**。
+- 派发形状固定为：`Facade.getXxxStrategy(provider)`（`lib/providers/index.js` 是唯一门面）→ 策略链按 `clientDependent=false` 优先 → 失败自动切下一条 → `attempts` 可观察。实现可以内联（`probe`/`discover` 工厂）或注册（`handler: '<id>'`，组合根注入，见 `lib/server/model-discovery/handler-registry.js` 与额度策略）。
+- 模式差异（登录态 vs API Key、本地 CLI vs HTTP）**用数据声明**（如策略的 `modes: ['login'] / ['api-key']`），不要在代码里判模式。
+- **采集面（额度 / 模型发现）必须有「不依赖本机客户端」的通道**；确实没有的必须写 `clientFreeReason`（契约强制，写不出就加载失败）。CLI/App 只作兜底。
+- 每次遇到「这里要不要用模式」的判断，先看 `docs/architecture/design-patterns.md`：那里有现有模式清单、反模式清单（文件 + 处数 + 目标模式 + 优先级）与四阶段路线。**改动架构后必须回来更新该文档。**
+- 收口守卫（Phase 4）：`lib/server/**` 新增文件出现 ≥2 处 provider 名比较即红（白名单只放迁移中的文件，随迁移缩小）。
+
 ## Design Pattern Reporting Requirement
 - After completing any non-trivial optimization, compatibility change, architecture change, or runtime behavior change, the final report must list where design patterns were used.
 - Required format: `file/module -> pattern -> why it was used -> verification evidence`.

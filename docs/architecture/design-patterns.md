@@ -29,6 +29,10 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/account/host-account-sync/index.js` | **Observer Registry** | 宿主登录态观察者注册表；与删除墓碑集合互相守卫 | `test/host-account-sync-registry.test.js` |
 | `lib/runtime/provider-resume.js` | **Strategy Table** | 「恢复会话」策略表（各 provider 的 resume 参数） | `test/provider-resume.test.js` |
 | `lib/server/account-runtime-gate.js` | **Facade / Mediator** | 账号运行态唯一门禁，六条臂统一记账，禁止旁路 | `test/account-runtime-gate-wiring.test.js` |
+| `lib/account/runtime-target.js` | **Value Object（运行目标）** | 把「具体账号 / 网关作用域（`gateway:<provider>`）」统一成一个目标对象；调用方（codex app-server、原生会话、chat harness）不再各自判断账号形态 | `test/runtime-target.test.js` |
+| `lib/server/chat-runtime/chat-session-coordinator.js` | **Rebind（会话换执行凭据）** | 同 provider 换账号 = 换执行凭据而非换会话：会话 id/时间线不变，harness 重绑 + history seed 回填 | `test/chat-runtime-composition.test.js` |
+| `lib/server/chat-runtime/chat-harness-gateway.js` + `chat-harness-model-reader.js` | **Strategy（按运行作用域分流）** | 网关作用域：不写 `X-Account-Ref`（网关池化选号 + 别名回落）、模型目录取 provider 全池；账号作用域：钉选 + 单账号目录 | `test/chat-harness-gateway.test.js` |
+| `web/src/features/chat-runtime/session-surface-policy.ts` | **Policy（纯函数决策）** | `resolveChatAccountChange`（ignore / retarget / new-session）与网关目标解析，渲染层只执行结论 | `web/src/features/chat-runtime/session-surface-policy.test.ts` |
 | `scripts/provider-collection-audit.js` | **可观察性审计** | 把「有没有不依赖客户端的通道」变成可打印、可守卫的事实 | `npm run providers:audit` |
 
 

@@ -18,21 +18,8 @@ const {
 function createOpenCodeTestDb(dbPath, options = {}) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS project (
-      id TEXT PRIMARY KEY,
-      worktree TEXT NOT NULL,
-      vcs TEXT,
-      name TEXT,
-      icon_url TEXT,
-      icon_color TEXT,
-      time_created INTEGER NOT NULL,
-      time_updated INTEGER NOT NULL,
-      time_initialized INTEGER,
-      sandboxes TEXT NOT NULL,
-      commands TEXT,
-      icon_url_override TEXT
-    );
+  // opencode 2.x 起只写 session_v2/session_message；旧表在纯新库里可以完全缺席。
+  const legacyTablesSql = options.legacyTables === false ? '' : `
     CREATE TABLE IF NOT EXISTS session (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -79,6 +66,54 @@ function createOpenCodeTestDb(dbPath, options = {}) {
       time_updated INTEGER NOT NULL,
       data TEXT NOT NULL
     );
+  `;
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project (
+      id TEXT PRIMARY KEY,
+      worktree TEXT NOT NULL,
+      vcs TEXT,
+      name TEXT,
+      icon_url TEXT,
+      icon_color TEXT,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      time_initialized INTEGER,
+      sandboxes TEXT NOT NULL,
+      commands TEXT,
+      icon_url_override TEXT
+    );
+    CREATE TABLE IF NOT EXISTS session_v2 (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      parent_id TEXT,
+      slug TEXT NOT NULL,
+      directory TEXT NOT NULL,
+      path TEXT,
+      title TEXT NOT NULL,
+      version TEXT NOT NULL,
+      share_url TEXT,
+      model TEXT,
+      cost REAL DEFAULT 0 NOT NULL,
+      tokens_input INTEGER DEFAULT 0 NOT NULL,
+      tokens_output INTEGER DEFAULT 0 NOT NULL,
+      tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+      tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      time_compacting INTEGER,
+      time_archived INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS session_message (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      time_created INTEGER NOT NULL,
+      time_updated INTEGER NOT NULL,
+      data TEXT NOT NULL
+    );
+    ${legacyTablesSql}
   `);
 
   if (options.project) {
@@ -131,6 +166,52 @@ function createOpenCodeTestDb(dbPath, options = {}) {
       `).run(
         m.id,
         m.sessionId,
+        m.timeCreated || 1718000000000,
+        m.timeUpdated || 1718000005000,
+        typeof m.data === 'object' ? JSON.stringify(m.data) : m.data
+      );
+    }
+  }
+
+  if (Array.isArray(options.v2Sessions)) {
+    for (const s of options.v2Sessions) {
+      db.prepare(`
+        INSERT INTO session_v2 (
+          id, project_id, parent_id, slug, directory, path, title, version,
+          model, time_created, time_updated, time_archived,
+          tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, cost
+        ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+      `).run(
+        s.id,
+        s.projectId || 'proj-1',
+        s.slug || 'slug-' + s.id,
+        s.directory || '/Users/model/projects/demo',
+        s.path || null,
+        s.title || 'Demo Session',
+        s.version || '2.0.29',
+        typeof s.model === 'object' ? JSON.stringify(s.model) : (s.model || null),
+        s.timeCreated || 1718000000000,
+        s.timeUpdated || 1718000010000,
+        s.tokensInput || 0,
+        s.tokensOutput || 0,
+        s.tokensReasoning || 0,
+        s.tokensCacheRead || 0,
+        s.tokensCacheWrite || 0,
+        s.cost || 0
+      );
+    }
+  }
+
+  if (Array.isArray(options.v2Messages)) {
+    for (const m of options.v2Messages) {
+      db.prepare(`
+        INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        m.id,
+        m.sessionId,
+        m.type || 'assistant',
+        m.seq || 0,
         m.timeCreated || 1718000000000,
         m.timeUpdated || 1718000005000,
         typeof m.data === 'object' ? JSON.stringify(m.data) : m.data
@@ -335,4 +416,249 @@ test('modelUsageService.scan and getDashboard includes opencode stats end-to-end
   assert.equal(dashboard.sessions[0].sessionId, 'ses-opencode-1');
 
   await service.close();
+});
+
+test('scanOpenCodeFile reads the opencode 2.x session_v2/session_message layout', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-v2-scan-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const store = openModelUsageStore({ fs, path, aiHomeDir, DatabaseSync });
+
+  const dbPath = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
+  createOpenCodeTestDb(dbPath, {
+    legacyTables: false,
+    project: {
+      id: 'proj-v2',
+      worktree: '/Users/model/projects/demo',
+      name: 'demo'
+    },
+    v2Sessions: [{
+      id: 'ses-v2-1',
+      projectId: 'proj-v2',
+      title: 'V2 layout session',
+      directory: '/Users/model/projects/demo',
+      version: '2.0.29',
+      timeCreated: 1792000000000,
+      timeUpdated: 1792000020000,
+      model: { id: 'deepseek-v4.1-flash-free', providerID: 'opencode', variant: 'max' }
+    }],
+    v2Messages: [
+      {
+        id: 'msg-v2-user-1',
+        sessionId: 'ses-v2-1',
+        type: 'user',
+        seq: 1,
+        timeCreated: 1792000000000,
+        timeUpdated: 1792000000000,
+        data: { time: { created: 1792000000000 }, text: '帮我看看用量统计' }
+      },
+      {
+        id: 'msg-v2-asst-1',
+        sessionId: 'ses-v2-1',
+        type: 'assistant',
+        seq: 2,
+        timeCreated: 1792000005000,
+        timeUpdated: 1792000005000,
+        data: {
+          time: { created: 1792000005000, completed: 1792000005000 },
+          agent: 'build',
+          model: { id: 'deepseek-v4.1-flash-free', providerID: 'opencode', variant: 'max' },
+          tokens: { input: 1200, output: 450, reasoning: 80, cache: { read: 200, write: 0 } }
+        }
+      },
+      {
+        id: 'msg-v2-compaction-1',
+        sessionId: 'ses-v2-1',
+        type: 'compaction',
+        seq: 3,
+        timeCreated: 1792000010000,
+        timeUpdated: 1792000010000,
+        data: {
+          time: { created: 1792000010000 },
+          status: 'completed',
+          reason: 'auto',
+          model: { id: 'deepseek-v4.1-flash-free', providerID: 'opencode' },
+          summary: '上下文压缩',
+          tokens: { input: 300, output: 120, reasoning: 0, cache: { read: 100, write: 0 } }
+        }
+      },
+      {
+        id: 'msg-v2-idle-1',
+        sessionId: 'ses-v2-1',
+        type: 'idle',
+        seq: 4,
+        timeCreated: 1792000015000,
+        timeUpdated: 1792000015000,
+        data: { time: { created: 1792000015000 } }
+      }
+    ]
+  });
+
+  const scanResult = scanOpenCodeFile({
+    fs,
+    path,
+    store,
+    filePath: dbPath,
+    DatabaseSync
+  });
+
+  assert.equal(scanResult.records, 2);
+  assert.equal(scanResult.prompts, 1);
+
+  const stats = store.queryStats({ provider: 'opencode' });
+  assert.equal(stats.totalCalls, 2);
+  assert.equal(stats.totalPrompts, 1);
+  assert.equal(stats.inputTokens, 1200); // (1200 - 200) + (300 - 100)
+  assert.equal(stats.outputTokens, 570);
+  assert.equal(stats.cacheReadInputTokens, 300);
+  assert.equal(stats.reasoningOutputTokens, 80);
+  assert.equal(stats.totalTokens, 2450); // 1930 + 520
+
+  const sessions = store.querySessions({ provider: 'opencode' });
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].sessionId, 'ses-v2-1');
+  assert.equal(sessions[0].project, 'demo');
+  assert.equal(sessions[0].promptCount, 1);
+
+  // 无变化时增量跳过
+  const repeatScan = scanOpenCodeFile({
+    fs,
+    path,
+    store,
+    filePath: dbPath,
+    DatabaseSync
+  });
+  assert.equal(repeatScan.records, 0);
+  assert.equal(repeatScan.prompts, 0);
+
+  store.close();
+});
+
+test('scanOpenCodeFile merges dual-write rows by message id without double counting', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-dual-scan-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const store = openModelUsageStore({ fs, path, aiHomeDir, DatabaseSync });
+
+  const dbPath = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
+  const sessionColumns = {
+    id: 'ses-dual-1',
+    projectId: 'proj-dual',
+    title: 'Dual write session',
+    directory: '/Users/model/projects/demo',
+    timeCreated: 1718000000000,
+    timeUpdated: 1718000030000,
+    model: { id: 'glm-5.2', providerID: 'opencode-go' }
+  };
+  const dualSession = { id: 'ses-dual-1' };
+  createOpenCodeTestDb(dbPath, {
+    project: {
+      id: 'proj-dual',
+      worktree: '/Users/model/projects/demo',
+      name: 'demo'
+    },
+    sessions: [sessionColumns],
+    messages: [
+      {
+        id: 'msg-dual-user-1',
+        sessionId: dualSession.id,
+        timeCreated: 1718000000000,
+        timeUpdated: 1718000000000,
+        data: { role: 'user', time: { created: 1718000000000 } }
+      },
+      {
+        // 旧表是终值、新表是占位零值：取旧表
+        id: 'msg-dual-legacy-final',
+        sessionId: dualSession.id,
+        timeCreated: 1718000010000,
+        timeUpdated: 1718000010000,
+        data: {
+          role: 'assistant',
+          modelID: 'glm-5.2',
+          providerID: 'opencode-go',
+          time: { created: 1718000010000, completed: 1718000010000 },
+          tokens: { input: 1200, output: 450, reasoning: 80, cache: { read: 200, write: 0 }, total: 1730 }
+        }
+      },
+      {
+        // 旧表是占位零值、新表是终值：取新表
+        id: 'msg-dual-v2-final',
+        sessionId: dualSession.id,
+        timeCreated: 1718000020000,
+        timeUpdated: 1718000020000,
+        data: {
+          role: 'assistant',
+          modelID: 'glm-5.2',
+          providerID: 'opencode-go',
+          time: { created: 1718000020000, completed: 1718000020000 },
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 }, total: 0 }
+        }
+      }
+    ],
+    v2Sessions: [sessionColumns],
+    v2Messages: [
+      {
+        id: 'msg-dual-user-1',
+        sessionId: dualSession.id,
+        type: 'user',
+        seq: 1,
+        timeCreated: 1718000000000,
+        timeUpdated: 1718000000000,
+        data: { time: { created: 1718000000000 }, text: '同一个提问' }
+      },
+      {
+        id: 'msg-dual-legacy-final',
+        sessionId: dualSession.id,
+        type: 'assistant',
+        seq: 2,
+        timeCreated: 1718000010000,
+        timeUpdated: 1718000010000,
+        data: {
+          time: { created: 1718000010000, completed: 1718000010000 },
+          model: { id: 'glm-5.2', providerID: 'opencode-go' },
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        }
+      },
+      {
+        id: 'msg-dual-v2-final',
+        sessionId: dualSession.id,
+        type: 'assistant',
+        seq: 3,
+        timeCreated: 1718000020000,
+        timeUpdated: 1718000020000,
+        data: {
+          time: { created: 1718000020000, completed: 1718000020000 },
+          model: { id: 'glm-5.2', providerID: 'opencode-go' },
+          tokens: { input: 500, output: 250, reasoning: 0, cache: { read: 0, write: 0 } }
+        }
+      }
+    ]
+  });
+
+  const scanResult = scanOpenCodeFile({
+    fs,
+    path,
+    store,
+    filePath: dbPath,
+    DatabaseSync
+  });
+
+  assert.equal(scanResult.records, 2);
+  assert.equal(scanResult.prompts, 1);
+
+  const stats = store.queryStats({ provider: 'opencode' });
+  assert.equal(stats.totalCalls, 2);
+  assert.equal(stats.totalPrompts, 1);
+  assert.equal(stats.inputTokens, 1500); // (1200 - 200) + 500
+  assert.equal(stats.outputTokens, 700);
+  assert.equal(stats.cacheReadInputTokens, 200);
+  assert.equal(stats.reasoningOutputTokens, 80);
+  assert.equal(stats.totalTokens, 2480); // 1730 + 750
+
+  const sessions = store.querySessions({ provider: 'opencode' });
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].sessionId, 'ses-dual-1');
+  assert.equal(sessions[0].promptCount, 1);
+
+  store.close();
 });

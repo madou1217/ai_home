@@ -14,7 +14,7 @@ const {
   scanModelUsageSources,
   __private: {
     discoverZcodeUsageFile,
-    readZcodeDbChangeFingerprint,
+    readSqliteDbChangeFingerprint,
     scanZcodeUsageFile
   }
 } = require('../lib/usage/model-usage-scanner');
@@ -250,7 +250,7 @@ test('scanZcodeUsageFile rescan is incremental and dedups by event key', () => {
   const first = scanZcodeUsageFile({ fs, path, store, filePath: dbPath, accountRef: 'acct_aa000000000000000001', DatabaseSync });
   assert.equal(first.records, 1);
 
-  const fingerprint = readZcodeDbChangeFingerprint(fs, dbPath);
+  const fingerprint = readSqliteDbChangeFingerprint(fs, dbPath);
   store.setFileState(dbPath, { size: fingerprint.size, offset: fingerprint.size, scanContext: { mtimeMs: fingerprint.mtimeMs } });
   const skipped = scanZcodeUsageFile({ fs, path, store, filePath: dbPath, accountRef: 'acct_aa000000000000000001', DatabaseSync });
   assert.equal(skipped.records, 0, '指纹未变化时跳过');

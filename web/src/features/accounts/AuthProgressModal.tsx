@@ -5,6 +5,7 @@ import { providerNames } from '@/components/chat/ProviderIcon';
 import { InlineNote } from '@/components/ui/InlineNote';
 import { openExternalUrl } from '@/services/open-external-url';
 import type { AccountAddJob } from '@/types';
+import type { ProviderAuthMethodSources } from '@/services/api';
 import './account-overlays.css';
 
 const { Text } = Typography;
@@ -169,9 +170,12 @@ interface AuthProgressModalProps {
   callbackSubmitting: boolean;
   cliInstallSubmitting: boolean;
   canSubmitCallback: boolean;
+  authSources: ProviderAuthMethodSources | null;
+  localImportSubmitting: boolean;
   onClose: () => void;
   onCallbackUrlChange: (url: string) => void;
   onSubmitBrowserCallback: () => void;
+  onLocalImport: (sourceId: string) => void;
   onConfirmCliInstall: () => void;
 }
 
@@ -184,11 +188,18 @@ export function AuthProgressModal({
   callbackSubmitting: authCallbackSubmitting,
   cliInstallSubmitting,
   canSubmitCallback,
+  authSources,
+  localImportSubmitting,
   onClose,
   onCallbackUrlChange,
   onSubmitBrowserCallback,
+  onLocalImport,
   onConfirmCliInstall
 }: AuthProgressModalProps) {
+  // 本机来源可用 = 该认证方式下有一个可用的本机来源（由服务端认证来源链解析，界面不自己判断环境）。
+  const localSourceReady = Boolean(
+    authSources && authSources.localSourceAvailable && authSources.preferredSourceId
+  );
   const copyText = async (value: string, successMessage: string) => {
     const text = String(value || '').trim();
     if (!text) return;
@@ -362,6 +373,27 @@ export function AuthProgressModal({
           {addJob.authMode === 'oauth-refresh-token' && (
             <Card size="small" title="refresh_token 导入" className="hud-panel hud-panel--sm aih-overlay-section">
               {renderAuthDetail('账号', getAuthJobIdentity(addJob, subjectLabel), { copyMessage: '已复制账号' })}
+              {/* 本机来源可用（例如装了 Kiro IDE）→ 一键导入；不可用但可安装 → 只给紧凑提示，不占版面。 */}
+              {localSourceReady ? (
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  <Text type="secondary" className="aih-overlay-hint">
+                    检测到本机登录态，可直接导入，无需手动复制。
+                  </Text>
+                  <Button
+                    type="primary"
+                    loading={localImportSubmitting}
+                    disabled={addJob.status !== 'running'}
+                    onClick={() => onLocalImport(authSources.preferredSourceId)}
+                  >
+                    从本机导入
+                  </Button>
+                </Space>
+              ) : null}
+              {!localSourceReady && authSources && authSources.installableSourceId ? (
+                <Text type="secondary" className="aih-overlay-hint">
+                  未检测到本机登录态；安装对应客户端后可在本机一键导入（Toolkit › 应用管理）。
+                </Text>
+              ) : null}
               {addJob.status === 'running' ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>

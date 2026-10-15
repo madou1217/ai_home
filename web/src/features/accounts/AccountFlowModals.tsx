@@ -124,9 +124,12 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         callbackSubmitting={authProgress.callbackSubmitting}
         cliInstallSubmitting={authProgress.cliInstallSubmitting}
         canSubmitCallback={authProgress.canSubmitCallback}
+        authSources={authProgress.authSources}
+        localImportSubmitting={authProgress.localImportSubmitting}
         onClose={authProgress.onClose}
         onCallbackUrlChange={authProgress.onCallbackUrlChange}
         onSubmitBrowserCallback={authProgress.onSubmitBrowserCallback}
+        onLocalImport={authProgress.onLocalImport}
         onConfirmCliInstall={authProgress.onConfirmCliInstall}
       />
       <AccountAppInstallModal

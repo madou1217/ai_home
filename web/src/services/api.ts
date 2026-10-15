@@ -213,6 +213,36 @@ export type AccountImportPayload =
   | { mode: 'upload'; uploadKind?: 'file' | 'folder'; files: AccountImportUploadFile[]; provider?: string }
   | { mode: 'cliproxyapi'; provider?: string };
 
+// 认证来源链（本机导入能力）——服务端 lib/account/auth-sources.js 的解析结果形状。
+export interface ProviderAuthSourceSummary {
+  id: string;
+  kind: 'local' | 'remote';
+  clientDependent: boolean;
+  requiresApp: string;
+  authMode: string;
+  handler: string;
+  description: string;
+  available: boolean;
+  installable: boolean;
+  reason: string;
+}
+
+export interface ProviderAuthMethodSources {
+  authMode: string;
+  sources: ProviderAuthSourceSummary[];
+  preferredSourceId: string;
+  installableSourceId: string;
+  localSourceAvailable: boolean;
+}
+
+export interface ProviderAuthSourcesResponse {
+  ok: boolean;
+  supported: boolean;
+  provider: string;
+  methods: ProviderAuthMethodSources[];
+  error?: string;
+}
+
 /** 单次请求完成的实时 token 消耗事件（服务端 recordModelUsage 钩子推送）。 */
 export interface TokenConsumedEvent {
   provider: string;
@@ -377,6 +407,23 @@ export const accountsAPI = {
       { callbackUrl }
     );
     return response.data.job;
+  },
+
+  // 从本机登录态完成登录任务（例如 Kiro IDE 的登录态）：不需要用户粘贴任何东西。
+  completeLocalAuthImport: async (jobId: string, sourceId: string): Promise<AccountAddJob> => {
+    const response = await api.post<{ ok: boolean; job: AccountAddJob }>(
+      `/webui/accounts/add/jobs/${jobId}/local-import`,
+      { sourceId }
+    );
+    return response.data.job;
+  },
+
+  // 认证来源链：这台机器上每个认证方式现在能用哪些来源、能不能装（界面据此渲染，不自己判断环境）。
+  listProviderAuthSources: async (provider: string): Promise<ProviderAuthSourcesResponse> => {
+    const response = await api.get<ProviderAuthSourcesResponse>(
+      `/webui/accounts/provider-auth-sources?provider=${encodeURIComponent(provider)}`
+    );
+    return response.data;
   },
 
   reauth: async (provider: string, accountRef: string): Promise<AddAccountResponse> => {

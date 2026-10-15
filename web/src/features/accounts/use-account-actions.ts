@@ -6,7 +6,7 @@ import {
   toolkitAPI,
   waitForAppInstallJob
 } from '@/services/api';
-import type { AccountExportFormat, AccountImportUploadFile, TokenConsumedEvent } from '@/services/api';
+import type { AccountExportFormat, AccountImportUploadFile, ProviderAuthMethodSources, TokenConsumedEvent } from '@/services/api';
 import type {
   Account,
   AccountAddJob,
@@ -142,6 +142,10 @@ export function useAccountActions({
   const [authCallbackUrl, setAuthCallbackUrl] = React.useState('');
   const [authCallbackSubmitting, setAuthCallbackSubmitting] = React.useState(false);
   const [cliInstallSubmitting, setCliInstallSubmitting] = React.useState(false);
+  // 认证来源链：任务运行期间解析「这个认证方式在这台机器上有哪些来源」，
+  // 让弹窗能给出「从本机导入」而不是只让用户去拷文件。
+  const [authLocalSources, setAuthLocalSources] = React.useState<ProviderAuthMethodSources | null>(null);
+  const [authLocalImportSubmitting, setAuthLocalImportSubmitting] = React.useState(false);
   const [accountAppInstallPrompt, setAccountAppInstallPrompt] = React.useState<AccountAppInstallPrompt | null>(null);
   const [accountAppInstallSubmitting, setAccountAppInstallSubmitting] = React.useState(false);
   const [accountAppInstallResult, setAccountAppInstallResult] = React.useState<AccountAppInstallResult | null>(null);
@@ -698,6 +702,46 @@ export function useAccountActions({
       clearInterval(timer);
     };
   }, [addJobId, handleAuthJobUpdate]);
+
+  // 认证来源链：任务运行期间解析一次「这个认证方式在这台机器上有哪些来源」。
+  // 界面只消费解析结果（本机来源是否可用 / 是否可安装），不自己判断有没有装 IDE。
+  React.useEffect(() => {
+    if (!addJob || addJob.status !== 'running' || !addJob.provider || !addJob.authMode) {
+      setAuthLocalSources(null);
+      return undefined;
+    }
+    let cancelled = false;
+    void accountsAPI.listProviderAuthSources(addJob.provider)
+      .then((response) => {
+        if (cancelled || !response || !response.ok) return;
+        const method = (response.methods || []).find((item) => item.authMode === addJob.authMode) || null;
+        setAuthLocalSources(method);
+      })
+      .catch(() => {
+        // 解析失败只意味着「不展示本机导入」，不影响粘贴等兜底路径。
+        if (!cancelled) setAuthLocalSources(null);
+      });
+    return () => { cancelled = true; };
+  }, [addJob?.provider, addJob?.authMode, addJob?.status]);
+
+  /** 从本机登录态完成登录任务（例如 Kiro IDE 已登录时一键导入）。 */
+  const handleLocalAuthImport = async (sourceId: string) => {
+    if (!addJob || addJob.status !== 'running' || !sourceId) return;
+    setAuthLocalImportSubmitting(true);
+    try {
+      const job = await accountsAPI.completeLocalAuthImport(addJob.id, sourceId);
+      setAddJob(job);
+      message.success('已从本机导入登录态');
+    } catch (error: any) {
+      if (error?.response?.data?.job) {
+        setAddJob(error.response.data.job);
+        if (error.response.data.job.status !== 'running') setAddJobId(null);
+      }
+      message.error(error?.response?.data?.error || '从本机导入失败');
+    } finally {
+      setAuthLocalImportSubmitting(false);
+    }
+  };
 
   React.useEffect(() => {
     if (!selectedProvider) {
@@ -1391,6 +1435,9 @@ export function useAccountActions({
         callbackSubmitting: authCallbackSubmitting,
         cliInstallSubmitting,
         canSubmitCallback: canSubmitBrowserCallback,
+        authSources: authLocalSources,
+        localImportSubmitting: authLocalImportSubmitting,
+        onLocalImport: handleLocalAuthImport,
         onClose: () => closeAuthProgress(false),
         onCallbackUrlChange: setAuthCallbackUrl,
         onSubmitBrowserCallback: handleSubmitBrowserCallback,

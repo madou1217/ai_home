@@ -54,6 +54,9 @@ function makeDeps(lines, code = 0, overrides = {}) {
     path,
     materializeProviderAuth: () => ({ materialized: 1, removed: 0, missing: false }),
     resolveProviderCliPath: () => '/usr/bin/opencode',
+    // CLI 布局探测桩：默认识别为 v1（`--dir` 形态，与下面的参数断言一致），
+    // 用例可覆写成 v2 帮助文本；布局表见 lib/runtime/opencode-run-layouts.js。
+    spawnSync: () => ({ status: 0, stdout: 'opencode run [message..]\n\nOptions:\n  --dir  directory to run in\n', stderr: '' }),
     spawn: (command, args, options) => {
       const child = fakeChild(lines, code);
       invocations.push({ command, args, options, child });
@@ -194,6 +197,27 @@ test('runOpenCodeFreeCliTurn spawns the native CLI, streams deltas and maps usag
   const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
   assert.ok(config.provider.opencode.models['deepseek-v4.1-flash-free']);
   assert.equal(config.tools.bash, false);
+
+  // v2 布局（当前现实）：`--dir` 已移除（写了直接 Unrecognized flag），参数追加
+  // `--standalone`（绕开 v2 后台 service 的 channel 固定端口 49374 —— 多账号并发
+  // 时后启动的实例必吃 EADDRINUSE），且子进程 PWD 对齐到 relay workspace
+  // （v2 以 `PWD ?? cwd` 推断工作目录，spawn 只设 cwd 不改 PWD）。
+  const v2deps = makeDeps(OK_LINES, 0, {
+    resolveProviderCliPath: () => '/usr/bin/opencode-v2-fake',
+    spawnSync: () => ({ status: 0, stdout: 'FLAGS\n  --standalone  Run with a private server instead of the background service\n', stderr: '' })
+  });
+  const v2result = await __private.runOpenCodeFreeCliTurn(
+    { aiHomeDir: v2deps.aiHomeDir, hostHomeDir: '/tmp' },
+    ACCOUNT,
+    { model: FREE_MODEL, messages: [{ role: 'user', content: 'hi' }] },
+    1000,
+    v2deps
+  );
+  assert.equal(v2result.content, 'pong');
+  const v2invocation = v2deps.invocations[0];
+  assert.equal(v2invocation.args.includes('--dir'), false);
+  assert.equal(v2invocation.args.includes('--standalone'), true);
+  assert.ok(String(v2invocation.options.env.PWD).includes('opencode-free-relay'));
 });
 
 

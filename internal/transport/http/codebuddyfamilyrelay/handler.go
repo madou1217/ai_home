@@ -80,6 +80,11 @@ type Dependencies struct {
 	Clock func() time.Time
 	// DefaultSystemPrompt 覆盖补位文案；为空时用 DefaultSystemPrompt。
 	DefaultSystemPrompt string
+	// Endpoint 覆盖上游 URL 解析（默认 InferenceEndpoint：站点根 + /v2/chat/completions）。
+	//
+	// 注入点是给测试与运维用的：测试指向本地假上游；运维若要改址，只改这一处即可，
+	// 不必碰常量表。
+	Endpoint func(provider string) (string, bool)
 }
 
 // Handler 编排账号选择、请求改写、上游透传与响应回写。
@@ -91,6 +96,7 @@ type Handler struct {
 	attempts     *inferencegateway.ObservedAttemptRecorder
 	clock        func() time.Time
 	systemPrompt string
+	endpoint     func(provider string) (string, bool)
 }
 
 // NewHandler 创建默认失败关闭的家族透传通道。
@@ -116,7 +122,16 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		attempts:     attempts,
 		clock:        dependencies.Clock,
 		systemPrompt: strings.TrimSpace(dependencies.DefaultSystemPrompt),
+		endpoint:     resolveEndpoint(dependencies.Endpoint),
 	}, nil
+}
+
+// resolveEndpoint 取注入的端点解析器；未注入时用包内默认（站点根 + /v2/chat/completions）。
+func resolveEndpoint(injected func(provider string) (string, bool)) func(string) (string, bool) {
+	if injected != nil {
+		return injected
+	}
+	return InferenceEndpoint
 }
 
 // attemptOutcome 描述一次上游尝试对编排的影响。
@@ -455,7 +470,7 @@ func (handler *Handler) attemptRelay(
 			},
 		}, false
 	}
-	endpoint, ok := InferenceEndpoint(provider)
+	endpoint, ok := handler.endpoint(provider)
 	if !ok {
 		return attemptOutcome{
 			route:           route,
@@ -557,7 +572,14 @@ func (handler *Handler) writeResponse(
 	if len(outcome.rewritten.Degradations) > 0 {
 		response.Header().Set(DegradationHeader, strings.Join(outcome.rewritten.Degradations, ","))
 	}
-	if !stream {
+	// 只有「客户端要非流式」且「上游是成功响应」才聚合。
+	//
+	// 上游错误响应绝不能进聚合器：那是一段 JSON 错误正文，按 SSE 解析会产出空的
+	// chat.completion —— 等于把真实的 403/429 洗成「模型没说话」，客户端既看不到原因
+	// 也拿不到可重试信号。错误响应与流式客户端一律逐字节交付上游原文。
+	if !stream &&
+		upstreamResponse.StatusCode >= http.StatusOK &&
+		upstreamResponse.StatusCode < http.StatusMultipleChoices {
 		payload, err := io.ReadAll(io.LimitReader(upstreamResponse.Body, MaxRequestBodyBytes+1))
 		if err != nil {
 			writeRelayError(response, http.StatusBadGateway, "relay_upstream_unavailable", "家族上游响应读取失败")
@@ -574,9 +596,12 @@ func (handler *Handler) writeResponse(
 		_, _ = response.Write(aggregated.Payload)
 		return
 	}
-	response.Header().Set("Cache-Control", "no-cache")
-	response.Header().Set("X-Accel-Buffering", "no")
-	response.Header().Set("X-Content-Type-Options", "nosniff")
+	if upstreamResponse.StatusCode >= http.StatusOK &&
+		upstreamResponse.StatusCode < http.StatusMultipleChoices {
+		response.Header().Set("Cache-Control", "no-cache")
+		response.Header().Set("X-Accel-Buffering", "no")
+		response.Header().Set("X-Content-Type-Options", "nosniff")
+	}
 	response.WriteHeader(upstreamResponse.StatusCode)
 	_ = copyStreaming(response, upstreamResponse.Body)
 }

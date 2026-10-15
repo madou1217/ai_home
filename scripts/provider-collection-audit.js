@@ -44,7 +44,9 @@ function describeFace(provider, face) {
   return {
     declared: true,
     supported: true,
-    reason: '',
+    // 契约把「为什么没有不依赖客户端的通道」放在能力级（clientFreeReason），
+    // 这里必须读它 —— 否则 CLI-only 的面明明写了原因也显示不出来，报告不可信。
+    reason: String(capability.clientFreeReason || ''),
     source: String(capability.source || ''),
     clientFree: apiStrategies.length > 0,
     apiStrategies,
@@ -70,6 +72,7 @@ function collectAudit() {
     cliOnlyFaces: rows.flatMap((row) => row.gaps.map((face) => ({
       provider: row.provider,
       face,
+      reason: row.faces[face].reason,
       strategies: row.faces[face].cliStrategies
     })))
   };
@@ -92,7 +95,9 @@ function formatLines(audit) {
   lines.push('');
   lines.push(`只有 CLI 通道的采集面：${audit.cliOnlyFaces.length}`);
   for (const gap of audit.cliOnlyFaces) {
-    lines.push(`  ${gap.provider}.${gap.face} → ${gap.strategies.join(', ')}`);
+    const why = String(gap.reason || '').trim();
+    lines.push(`  ${gap.provider}.${gap.face} → ${gap.strategies.join(', ')}${why ? `
+      原因：${why}` : '  ⚠️ 未声明原因'}`);
   }
   if (audit.descriptorLoadErrors.length > 0) {
     lines.push(`描述符加载错误 ${audit.descriptorLoadErrors.length}：`);

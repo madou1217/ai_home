@@ -76,13 +76,19 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 5. ✅ `local` transport 策略在出网解析之前执行（cline 的静态规范清单不再依赖出网配置）。
 
 **Phase 2 — 账号视图与操作**
-5. ⬜ `accountView` 能力：账号视图字段/行为由描述符声明。
+5. 🔄 `accountView`：**视图特例已收口**（`lib/server/account-view-hints.js` 注册 agy 的 OAuth 元数据/额度视图/不可调度、
+   codex 的桌面端标记/auth.json 身份延迟/workspace 装饰、kimi 的手机号显示名；`lib/server/account-presence-probes.js`
+   注册在场判定探针）。`webui-account-live.js` 的派发分支已 **25 → 0**。仍未做：把「字段清单」本身（badges/actions）也声明化。
    * 形状（设计已定）：`capabilities.accountView = { fields: ['planType','planName',…], badges: ['plan','subscription'], actions: ['refresh','relogin','delete','set-default'], desktop?: {…} }`
    * 迁移对象：`lib/server/webui-account-live.js`（25 处）→ 视图层只读 `accountView`，不再判 provider。
-6. ⬜ 账号操作 Command Registry（登录 / 刷新 / 删除 / set-default）。
+6. 🔄 账号操作：**已落地两张表**（`ACCOUNT_ROUTE_SCOPES` 路由作用域 + `ACCOUNT_LIFECYCLE` 生命周期钩子，
+   含宿主直连授权回收 / 桌面端 runtime 重载 / agy 后台进程驱逐 / API Key 账号配置形状），
+   `webui-account-routes.js` 派发分支 **22 → 0**。仍未做：把「登录/刷新/删除」收敛成统一 Command Registry。
    * 形状：`capabilities.actions = { refresh: 'handler-id', relogin: 'handler-id', … }`；路由只做鉴权 + `Facade.dispatchAction(provider, action)`。
    * 迁移对象：`lib/server/webui-account-routes.js`（22 处）。
-7. ⬜ 协议路径策略化（`upstream-endpoints-path.js` 24 处）。
+7. ✅ 协议路径策略化：`upstream-endpoints-path.js` **24 → 0**（`UPSTREAM_BASE_URL_RULES` + `STRIP_V1_*` 两张表）。
+   注：该文件原头部写「GENERATED … do not edit manually」，但拆分脚本是一次性工具且已跑完、母文件已不含这些函数
+   —— 本文件现在是权威源（头部注释已纠正）。
    * 注意：该文件是 `upstream-endpoints-split` 脚本生成的（文件头写明 do not edit manually）——
      必须改**生成器 + 模板**，并新增 `capabilities.protocolPath = { resolve(account, reqUrl, upstreamBase) }`；
      claude 的 `/v1` 去重、codebuddy 家族的 `/v1→/v2` 抬升等规则随描述符走。
@@ -92,10 +98,25 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
    与 Go 合同 `sessionSync.adapter` 同源）；派发处零 provider 名，targetKind 直接取合同字段
    （原 `HOOKS_JSON_TARGET_PROVIDERS` 手写集合已删除）。漂移由 `test/design-pattern-guard.test.js`
    的「描述符 ↔ 合同一致性」用例双向守住。
-9. ⬜ 用量读取适配器：`lib/usage/model-usage-store.js`（10 处）→ `usage` 能力扩展。
+9. ✅ 复核结论：`lib/usage/model-usage-store.js` 的 10 处是 **`record.provider === 'kimi'` 这类记录字段过滤**，
+   不是派发分支（守卫正则已收紧排除点号前缀）。**无需迁移**。
+
+**本轮新增的注册表模块（模式清单补充）**
+
+| 模块 | 模式 | 解决的问题 |
+| --- | --- | --- |
+| `lib/server/account-presence-probes.js` | Table-Driven + 每条目自带事实 | 凭据形态判法按 provider 注册（`selfDetermining` / `credentialPresence` / `credentialPresenceApiKeyMode`） |
+| `lib/server/account-view-hints.js` | ViewModel Hints | agy/codex/kimi 的视图特例成数据；外部依赖由调用方注入（避免循环依赖） |
+| `lib/server/account-credential-patch.js` | Strategy Registry | 凭据写入（env 键名映射 + Claude 认证方式信封切换） |
+| `lib/server/chat-runner-profile.js` | Strategy Table | chat 运行方式（审批桥 runner / native 能力 / 生图通道 / 宿主同步 / 项目 hook） |
+| `lib/providers/contract.js` 的 `hooks` 能力 | Contract/Schema + Facade | Hook 档案（adapter / 目标路径段 / 超时单位 / eventMatchers / featureFlag），与 Go 合同 `sessionSync.adapter` 双向一致由守卫强制 |
 
 **Phase 3 — 会话与聊天**
-10. ⬜ `native-session-chat*`（21 + 18 处）与 `webui-chat-routes.js`（26 处）→ **Adapter + Strategy Table**。
+10. 🔄 会话与聊天：`webui-chat-routes.js` **19 → 10**（`lib/server/chat-runner-profile.js`：API Key 能否走 native、
+    抑制交互提示、生图走网关、审批桥 runner、宿主 provider 段同步、项目 hook 引导）。
+    **仍未做**：`webui-chat-routes.js` 剩下的会话 id 处理 / api-proxy 请求形状（10 处），以及
+    `native-session-chat.js`（20）+ `native-session-chat-command.js`（19）+ `-sessions.js`（8）——
+    这三个文件正被另一会话改动，等其收工后按 `capabilities.sessionAdapter` 收敛。
     * 形状（设计已定）：每 provider 一个会话适配器 `{ launchArgs(ctx), resumeArgs(ctx), streamParser, sessionIdFrom(event) }`，
       由描述符 `capabilities.sessionAdapter` 声明；命令层只做「取适配器 → 拼 argv → 执行」。
     * 参照实现：`lib/runtime/provider-resume.js`（策略表）与 `lib/cli/services/ai-cli/launch-profile/*-strategy.js`（每 provider 一个策略模块）。

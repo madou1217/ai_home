@@ -723,6 +723,49 @@
           ]
         }
       },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "OPENCODE_CONFIG",
+            "OPENCODE_CONFIG_DIR",
+            "OPENCODE_CONFIG_CONTENT"
+          ],
+          "userSettings": [
+            "opencode.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--agent"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--session",
+            "--fork"
+          ],
+          "nativeStore": "opencode.db"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": [
+            "opencode.json"
+          ]
+        },
+        "hooks": {
+          "files": [
+            "plugin/aih-session-hook.js"
+          ],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [],
+          "modes": []
+        }
+      },
       "credentials": {
         "apiKeyEnv": [
           "OPENCODE_API_KEY"
@@ -1516,6 +1559,57 @@
           ]
         }
       },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": []
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
       "credentials": {
         "apiKeyEnv": [
           "CODEBUDDY_API_KEY"
@@ -1607,6 +1701,57 @@
           ]
         }
       },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": []
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
       "credentials": {
         "apiKeyEnv": [
           "CODEBUDDY_API_KEY"
@@ -1689,6 +1834,57 @@
           }
         }
       },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": []
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
+        }
+      },
       "credentials": {
         "apiKeyEnv": [
           "CODEBUDDY_API_KEY"
@@ -1766,6 +1962,57 @@
               "{hostHomeDir}/Applications/WorkBuddy.app"
             ]
           }
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "CODEBUDDY_CONFIG_DIR",
+            "WORKBUDDY_CONFIG_DIR"
+          ],
+          "userSettings": [
+            "settings.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--model",
+            "--permission-mode",
+            "--mcp-config"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume",
+            "--session-id"
+          ],
+          "nativeStore": "projects/<project>/<session-id>.jsonl"
+        },
+        "mcp": {
+          "commands": [
+            "mcp"
+          ],
+          "configFiles": []
+        },
+        "hooks": {
+          "files": [],
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--permission-mode",
+            "--allowedTools",
+            "--disallowedTools",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "acceptEdits",
+            "plan",
+            "auto",
+            "dontAsk",
+            "bypassPermissions"
+          ]
         }
       },
       "credentials": {

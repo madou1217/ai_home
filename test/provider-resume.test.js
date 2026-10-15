@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 
 const {
   RESUME_STRATEGIES,
-  RESUME_STRATEGIES_PENDING_CONTRACT,
   RESUME_STRATEGYLESS_PROVIDERS,
   listResumeStrategies,
   resolveProviderResumeStrategy,
@@ -16,6 +15,7 @@ const {
   buildProviderResumeArgs,
   getDeclaredResumeFlags
 } = require('../lib/runtime/provider-resume');
+const { listProviderIds } = require('../lib/provider-catalog');
 
 const CODEX_THREAD_ID = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
 const CLINE_SESSION_ID = '1792050248852_or8f0';
@@ -33,11 +33,22 @@ test('every contract-declared resume strategy only uses flags the contract decla
   }
 });
 
-test('strategies pending contract coverage say so explicitly', () => {
-  for (const strategy of RESUME_STRATEGIES_PENDING_CONTRACT) {
-    assert.equal(strategy.contractDeclared, false);
+test('every resume strategy is covered by the contract and by an explicit no-strategy list', () => {
+  // 合同声明了 sessions 的 provider：要么有策略，要么在「无非交互 resume 标准」名单里。
+  const withStrategy = new Set(listResumeStrategies().flatMap((strategy) => strategy.providers));
+  const declared = [];
+  for (const provider of listProviderIds()) {
+    const flags = getDeclaredResumeFlags(provider);
+    if (Array.isArray(flags)) declared.push(provider);
+  }
+  for (const provider of declared) {
+    const covered = withStrategy.has(provider) || RESUME_STRATEGYLESS_PROVIDERS.includes(provider);
+    assert.ok(covered, `${provider} declares sessions but has neither a strategy nor an explicit reason`);
+  }
+  // 反向：有策略的 provider 必须在合同里声明（不许静默加策略）。
+  for (const strategy of RESUME_STRATEGIES) {
     for (const provider of strategy.providers) {
-      assert.equal(getDeclaredResumeFlags(provider), null, `${provider} must not declare sessions yet`);
+      assert.ok(Array.isArray(getDeclaredResumeFlags(provider)), `${provider} has a strategy but no contract declaration`);
     }
   }
 });

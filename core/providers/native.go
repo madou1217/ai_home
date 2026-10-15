@@ -240,3 +240,80 @@ func nativeCline() *NativeCapability {
 		},
 	}
 }
+
+// nativeOpenCode 描述 OpenCode CLI 原生配置、会话和权限边界。
+//
+// OpenCode 走 XDG 布局：config = $XDG_CONFIG_HOME/opencode/opencode.json、
+// data = $XDG_DATA_HOME/opencode/（auth.json、opencode.db、log/、repos/、storage/）。
+// 启动隔离只把 auth.json 留在账号投影里，其余数据与宿主共用同一份（见
+// launch-profile/opencode-strategy.js）。会话身份在 opencode.db；恢复入口是
+// `-c/--continue`（最近一段）与 `-s/--session <id>`（精确），另有 `--fork`（实测
+// `opencode run --help`）。MCP 有 `mcp` 子命令（add/list/auth/logout/debug），配置写在
+// opencode.json；hook 走插件文件 <configDir>/plugin/aih-session-hook.js（aih 已接入，
+// 见 sessionSync 的 opencode_plugin）。权限决策走 serve 的 permission 应答
+// （once/reject），没有 CLI 形态的模式枚举，因此 Flags/Modes 留空而不是编造。
+func nativeOpenCode() *NativeCapability {
+	return &NativeCapability{
+		Config: NativeConfig{
+			EnvHomeKeys:     []string{"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT"},
+			UserSettings:    []string{"opencode.json"},
+			ProjectSettings: []string{},
+			CLIFlags:        []string{"--model", "--agent"},
+		},
+		Sessions: NativeSessions{
+			Flags:       []string{"--continue", "--session", "--fork"},
+			NativeStore: "opencode.db",
+		},
+		MCP: NativeMCP{
+			Commands:    []string{"mcp"},
+			ConfigFiles: []string{"opencode.json"},
+		},
+		Hooks: NativeHooks{
+			Files:                  []string{"plugin/aih-session-hook.js"},
+			StopRequiresJSONStdout: false,
+		},
+		Permissions: NativePermissions{
+			Flags: []string{},
+			Modes: []string{},
+		},
+	}
+}
+
+// nativeCodebuddy 描述 CodeBuddy 家族（codebuddy / codebuddycn / workbuddy /
+// workbuddycn）原生配置、会话和权限边界。
+//
+// 四支共用同一内核（CodeBuddy Code，Claude Code 的衍生实现），磁盘布局同构、只有配置根名
+// 与站点不同（见 runtime/codebuddy-family-layouts.js 与 launch-profile/codebuddy-strategy.js）：
+// configDir 由 CODEBUDDY_CONFIG_DIR 选择（workbuddy* 另有 WORKBUDDY_CONFIG_DIR），CLI 自己
+// 在其中 bootstrap settings.json / plugins / logs；会话落
+// <configDir>/projects/<sanitized-cwd>/<session-id>.jsonl（与 Claude Code 同构）。
+// 恢复入口：`-c/--continue`、`-r/--resume [sessionId]`、`--session-id <uuid>`（实测
+// `codebuddy --help`）。MCP 有 `mcp` 子命令与 `--mcp-config`；权限用 `--permission-mode`
+// 的六个模式 + 工具白/黑名单。hook：内核有 hooks（`--debug hooks` 可见），但 aih 未接入、
+// 配置文件未验证，故留空而不是猜一个路径。
+func nativeCodebuddy() *NativeCapability {
+	return &NativeCapability{
+		Config: NativeConfig{
+			EnvHomeKeys:     []string{"CODEBUDDY_CONFIG_DIR", "WORKBUDDY_CONFIG_DIR"},
+			UserSettings:    []string{"settings.json"},
+			ProjectSettings: []string{},
+			CLIFlags:        []string{"--model", "--permission-mode", "--mcp-config"},
+		},
+		Sessions: NativeSessions{
+			Flags:       []string{"--continue", "--resume", "--session-id"},
+			NativeStore: "projects/<project>/<session-id>.jsonl",
+		},
+		MCP: NativeMCP{
+			Commands:    []string{"mcp"},
+			ConfigFiles: []string{},
+		},
+		Hooks: NativeHooks{
+			Files:                  []string{},
+			StopRequiresJSONStdout: false,
+		},
+		Permissions: NativePermissions{
+			Flags: []string{"--permission-mode", "--allowedTools", "--disallowedTools", "--dangerously-skip-permissions"},
+			Modes: []string{"default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"},
+		},
+	}
+}

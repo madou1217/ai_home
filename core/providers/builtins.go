@@ -234,12 +234,13 @@ func builtinAntigravity() Definition {
 // - 环境变量：OPENCODE_API_KEY 与 OPENCODE_BASE_URL。
 func builtinOpenCode() Definition {
 	return Definition{
-		ID:           "opencode",
-		Presentation: presentation("opencode", "OpenCode", "OC", "⌘", "default"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(true, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
-		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
+		ID:             "opencode",
+		Presentation:   presentation("opencode", "OpenCode", "OC", "⌘", "default"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(true, true),
+		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
+		NativeBoundary: nativeOpenCode(),
+		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
 		},
@@ -536,11 +537,12 @@ func builtinZcode() Definition {
 func builtinCodebuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
-		ID:           "codebuddy",
-		Presentation: presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(true, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
+		ID:             "codebuddy",
+		NativeBoundary: nativeCodebuddy(),
+		Presentation:   presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(true, true),
+		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// session_history：会话读取适配器已落地
 		// （lib/sessions/session-reader-codebuddy.js）。**刻意不声明 account_session_store**：
 		// 会话读的是宿主地区目录而不是账号沙箱（见 SessionSync 的说明）。
@@ -651,11 +653,12 @@ func builtinCodebuddy() Definition {
 func builtinCodebuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
-		ID:           "codebuddycn",
-		Presentation: presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(true, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
+		ID:             "codebuddycn",
+		NativeBoundary: nativeCodebuddy(),
+		Presentation:   presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(true, true),
+		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
 		// 与 codebuddy 同口径：会话历史已接入，账号隔离存储不声明（读的是宿主地区目录）。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、
@@ -741,11 +744,12 @@ func builtinCodebuddyCN() Definition {
 func builtinWorkbuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
-		ID:           "workbuddy",
-		Presentation: presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(false, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
+		ID:             "workbuddy",
+		NativeBoundary: nativeCodebuddy(),
+		Presentation:   presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(false, true),
+		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
 		// 会话历史已接入：WorkBuddy AI.app 与 codebuddy 跑同一套 CodeBuddy Code runtime，
 		// 写的是同一份地区会话存储，读取时两个数据根合并成一个项目列表。
 		// 客户端能力仍是 desktop-only（没有可安装的独立 CLI），因此可读历史、不可自行启动。
@@ -825,11 +829,12 @@ func builtinWorkbuddy() Definition {
 func builtinWorkbuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
-		ID:           "workbuddycn",
-		Presentation: presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(false, true),
-		Credentials:  &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
+		ID:             "workbuddycn",
+		NativeBoundary: nativeCodebuddy(),
+		Presentation:   presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
+		Gateway:        GatewayActive,
+		Clients:        clientSupport(false, true),
+		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
 		// 与 workbuddy 同口径：国内站 WorkBuddy.app 与 codebuddycn 共用同一份地区会话存储。
 		// quota_usage：家族四支共用同一个余额接口（POST {endpoint}/billing/meter/
 		// get-user-resource-summary，无 /v2 前缀），同地区 work/code 是同一个账号、

@@ -28,6 +28,10 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/account/native-auth-projection.js` | **Strategy（每 provider 一个投影策略）+ CAS** | 凭据投影/回写；`compareAndSwapAccountNativeAuth` 防并发覆盖 | `test/cline-*`、`test/kiro-*` |
 | `lib/account/host-account-sync/index.js` | **Observer Registry** | 宿主登录态观察者注册表；与删除墓碑集合互相守卫 | `test/host-account-sync-registry.test.js` |
 | `lib/runtime/provider-resume.js` | **Strategy Table** | 「恢复会话」策略表（各 provider 的 resume 参数） | `test/provider-resume.test.js` |
+| `lib/runtime/host-capabilities.js` | **Facade + Adapter（宿主机能力门面）** | 「是不是桌面环境 / 某个应用装了吗 / 装不了能不能装」三问收敛到一处，组合既有 app-entries 探测器与安装器注册表，不重复实现探测 | `test/host-capabilities.test.js`、与 `isCliInstallSupported` 的交叉守卫 |
+| `lib/account/auth-sources.js` | **Chain of Responsibility（认证来源链）** | 「这台机器上有哪些账号来源」= 描述符声明 + 宿主机能力 → 可用性排序（**可用优先 → 本机来源优先**，刻意与采集链的「不依赖客户端优先」相反）+ 已入库去重；不可用来源不给实现 | `test/auth-sources.test.js`、真机 `/v0/webui/accounts/provider-auth-sources` |
+| `lib/account/host-auth-import.js` | **Adapter（宿主凭据 → 账号投影）** | 把宿主 CLI/IDE 的登录态物化进新账号 runtime dir，注册仍走既有 `registerProviderAuthProjection`；去重指纹两侧同源（`identitySeed`，对 token 轮换免疫） | `test/auth-sources-import.test.js`、真机 claude/gemini（可导入）与 codex/kimi（已入库不显示） |
+| `lib/providers/loader.js` | **Convention over Configuration（默认注入）** | 有宿主凭据产物 + 认证方式含 `oauth-browser` 的 provider **自动**获得 `<provider>-host-local` 来源，显式声明优先；新增 provider 不必再抄声明 | 同上 |
 | `lib/server/account-runtime-gate.js` | **Facade / Mediator** | 账号运行态唯一门禁，六条臂统一记账，禁止旁路 | `test/account-runtime-gate-wiring.test.js` |
 | `lib/account/runtime-target.js` | **Value Object（运行目标）** | 把「具体账号 / 网关作用域（`gateway:<provider>`）」统一成一个目标对象；调用方（codex app-server、原生会话、chat harness）不再各自判断账号形态 | `test/runtime-target.test.js` |
 | `lib/server/chat-runtime/chat-session-coordinator.js` | **Rebind（会话换执行凭据）** | 同 provider 换账号 = 换执行凭据而非换会话：会话 id/时间线不变，harness 重绑 + history seed 回填 | `test/chat-runtime-composition.test.js` |

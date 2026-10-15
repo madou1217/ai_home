@@ -12,6 +12,7 @@
     "providers:check": "go run ./cmd/provider-manifest --check",
     "models:generate": "node scripts/gen-models-dev-modalities.js",
     "models:check": "node scripts/gen-models-dev-modalities.js --check",
+    "accounts:cleanup-rules": "node scripts/cleanup-official-account-error-rules.js",
     "gateway:routes": "node scripts/collect-gateway-routes.js",
     "gateway:shadow": "node scripts/gateway-shadow-compare.js",
     "go:build": "node scripts/build-go-server.js",

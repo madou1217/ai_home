@@ -2076,7 +2076,12 @@
           "CLINE_DATA_DIR",
           "CLINE_API_KEY",
           "CLINE_API_BASE_URL"
-        ]
+        ],
+        "headless": {
+          "triggerFlags": [
+            "--json"
+          ]
+        }
       },
       "nativeBoundary": {
         "config": {

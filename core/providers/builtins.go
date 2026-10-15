@@ -902,8 +902,8 @@ func builtinWorkbuddyCN() Definition {
 // （providers["cline-pass"].auth 的 accessToken/refreshToken）。
 // 原生 CLI 只有一个可执行文件（npm 包 cline），隔离根是 CLINE_DIR——
 // CLINE_DATA_DIR 只是它下面 <CLINE_DIR>/data 的覆盖点，不是第二个根。
-// 它没有「打印后退出」的非交互入口（-p 是 plan mode），Headless 留空，
-// 一次性调用只能走 PTY 交互路径。
+// 非交互入口是 `cline --json "<prompt>"`（Headless 声明见 CLI.Headless）：
+// 一次性跑完即退，stdout 是 NDJSON agent 事件；`--id` 续聊仍必须 TTY。
 // 会话恢复走原生 `--id <session-id>`（见 nativeCline）：会话身份与历史在
 // <CLINE_DATA_DIR>/db/sessions.db，持久会话重启恢复因此能精确续接同一段对话。
 func builtinCline() Definition {
@@ -934,6 +934,11 @@ func builtinCline() Definition {
 			BinaryName: "cline",
 			Package:    "cline",
 			EnvKeys:    []string{"CLINE_DIR", "CLINE_DATA_DIR", "CLINE_API_KEY", "CLINE_API_BASE_URL"},
+			// `cline --json "<prompt>"` 是一次性非交互入口：stdout 是 NDJSON agent 事件、
+			// 非 TTY 下跑完即退（2026-10-15 实测 3.0.71；README 也把 --json 列为 headless/CI 用法）。
+			// 注意 `--id <session-id>` 续聊**要求 TTY**，因此只有新会话能走这条 headless 路径
+			// （WebUI 聊天的分流见 lib/server/native-session-chat-transport.js）。
+			Headless: &HeadlessConfig{TriggerFlags: []string{"--json"}},
 		},
 	}
 }

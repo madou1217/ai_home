@@ -71,6 +71,36 @@ canonical provider 注册表只有一条：`web/src/features/chat-runtime/runtim
 
 ---
 
+## 4.3 agy 链路打通 + 地区资格账号处理（2026-10-15 第五轮）
+
+**agy 在 canonical 里由「三层失败」到全绿**（每层都是数据/描述符层修复，驱动无 provider 分支）：
+
+1. `TMUX_RUN_PROVIDERS` 曾是写死的 `{claude,codex,opencode}` → agy 被排除后回退 node-pty，而
+   `agy --print` 在 node-pty 下**挂住不退**（同 argv/env/投影在 tmux 里 14s 完成）。现在该集合由
+   描述符的 `tmuxRun` 派生，agy 在自己的行里声明 `tmuxRun: true`。
+2. 非交互分支此前不认 `streamRawStdout` → agy 的纯文本 stdout 被当 terminal-output 丢掉，时间线为空。
+   现在与交互分支同语义（stdout 即正文）。
+3. 事件桥补条目生命周期：首个 delta 前发 `timeline.item.started`、轮次收尾 `finalize()` 补
+   `timeline.item.completed`（引擎不发 `result` 的 provider 也不会停在 streaming）。
+
+**真机（本机 9527）**：agy `ok` 14s / `session.runtime.bound` / 时间线 1 条 assistant 消息
+（`content="ok"`，含 ttftMs/durationMs）；回归 cline 18s、codebuddy 8s、grok 15s 全部 `items=1`。
+
+**agy 账号可用性核查（7 个账号逐个真机跑 `--print`）**：6 个可用，1 个被地区资格拒用：
+
+| 账号 | 结果 |
+| --- | --- |
+| 270577450@qq.com / horsebeanbean@ / madou1217@live.com / codebeanbean@ / maxuyao0820@ / madou1217@gmail.com | ok（13–18s） |
+| **meadeodeo@gmail.com**（`acct_3ce26162844e68a9e25b`） | `Eligibility check failed: … not currently available in your location.`（3/3 稳定复现） |
+
+该账号此前用量正常（累计 6.4 亿 token），现被上游按地区拒用 → 归到新的声明式规则
+（`agy_region_not_eligible`）：
+- 本轮失败带可读文案（`turn.failed` + eligibility 原文，12s 内失败，不再挂死）；
+- 账号运行态被摘出调度池：`runtimeStatus=permission_denied`、`schedulableStatus=blocked_by_runtime_status`、
+  `runtimeReason=agy_region_not_eligible`（routingBlock 语义：探测成功不会推翻，需人工恢复或地区状态改变）。
+- 附带修复：canonical 驱动此前**没接**账号运行态端口（hub/state-service）→ 任何 native session 的
+  失败判定都写不回账号。现在经 `getAccountRuntimePorts`（延迟求值）注入。
+
 ## 4.2 条件 ④ 第二批（2026-10-15 第四轮）：启动档案 + 准备管线 + agy 链路修复
 
 **四个修复（都按「描述符/注册表 + 单一事实来源」，驱动层无 provider 分支）：**

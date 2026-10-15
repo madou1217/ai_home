@@ -104,6 +104,11 @@ test('Mieru 只有 mihomo 有出站，端口范围写成 port-range 且与 port 
   // sing-box 没有 mieru 出站：整类节点跳过，不会让配置被拒。
   assert.throws(() => compileSingBoxNodeOutbound(MIERU_NODE, 'mieru'), { code: 'unsupported_proxy_protocol_mieru' });
   assert.throws(() => validateProxyNodeInput({ ...MIERU_NODE, transport: 'quic' }), /invalid_proxy_field_transport/);
+  // mihomo 把 mieru 的 transport 当必填：缺了要在这里编不出来（渲染时跳过 / 中转时交给别的内核），
+  // 否则它会输出一份让 mihomo 拒掉整份配置的条目。
+  assert.throws(() => compileMihomoProxy({ ...MIERU_NODE, transport: undefined }, 'mieru'), {
+    code: 'missing_required_proxy_field_transport'
+  });
 });
 
 test('Naive 走 naive+https / naive+quic 链接，sing-box 只给官方 App 输出', () => {

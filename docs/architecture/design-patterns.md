@@ -69,13 +69,27 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 **Phase 2 — 账号视图与操作**
 5. ⬜ `accountView` 能力：账号视图字段/行为由描述符声明。
+   * 形状（设计已定）：`capabilities.accountView = { fields: ['planType','planName',…], badges: ['plan','subscription'], actions: ['refresh','relogin','delete','set-default'], desktop?: {…} }`
+   * 迁移对象：`lib/server/webui-account-live.js`（25 处）→ 视图层只读 `accountView`，不再判 provider。
 6. ⬜ 账号操作 Command Registry（登录 / 刷新 / 删除 / set-default）。
+   * 形状：`capabilities.actions = { refresh: 'handler-id', relogin: 'handler-id', … }`；路由只做鉴权 + `Facade.dispatchAction(provider, action)`。
+   * 迁移对象：`lib/server/webui-account-routes.js`（22 处）。
+7. ⬜ 协议路径策略化（`upstream-endpoints-path.js` 24 处）。
+   * 注意：该文件是 `upstream-endpoints-split` 脚本生成的（文件头写明 do not edit manually）——
+     必须改**生成器 + 模板**，并新增 `capabilities.protocolPath = { resolve(account, reqUrl, upstreamBase) }`；
+     claude 的 `/v1` 去重、codebuddy 家族的 `/v1→/v2` 抬升等规则随描述符走。
+8. ⬜ `hooks` 能力：`lib/server/provider-session-hook-config.js`（15 处）→ 描述符声明
+   `hooks = { configPath(homeDir), format: 'codex-json'|'claude-settings'|…, timeoutMs }`。
+9. ⬜ 用量读取适配器：`lib/usage/model-usage-store.js`（10 处）→ `usage` 能力扩展。
 
 **Phase 3 — 会话与聊天**
-7. ⬜ `native-session-chat*` 与 `webui-chat-routes` 的 provider 分支 → 适配器 + 策略表。
+10. ⬜ `native-session-chat*`（21 + 18 处）与 `webui-chat-routes.js`（26 处）→ **Adapter + Strategy Table**。
+    * 形状（设计已定）：每 provider 一个会话适配器 `{ launchArgs(ctx), resumeArgs(ctx), streamParser, sessionIdFrom(event) }`，
+      由描述符 `capabilities.sessionAdapter` 声明；命令层只做「取适配器 → 拼 argv → 执行」。
+    * 参照实现：`lib/runtime/provider-resume.js`（策略表）与 `lib/cli/services/ai-cli/launch-profile/*-strategy.js`（每 provider 一个策略模块）。
 
 **Phase 4 — 收口守卫**
-8. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
+11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
    记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。
 
 **验收标准（每个 provider × 每个采集面）**

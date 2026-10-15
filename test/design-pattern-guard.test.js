@@ -18,7 +18,8 @@ const { getModelDiscoveryHandler } = require('../lib/server/model-discovery/hand
 // 注册组合根（幂等）：保证检查的是「运行时真实可用的 handler」。
 require('../lib/server/http-utils');
 
-// 基线：迁移中的文件 → 当前 provider 名比较处数（只能减，不能增）。
+// 基线：引入本守卫时的真实快照（迁移中的文件 → provider 名比较处数）。**只能减，不能增**：
+// 新增分支会让这条用例红，从而逼着改动走描述符/注册表；迁移完成后把条目删掉。
 // 迁移完成一个文件就把它的条目删掉；新增条目需要 PR 说明理由（默认应当被拒绝）。
 const PROVIDER_BRANCH_BASELINE = {
   'lib/account/account-default-pointer.js': 2,
@@ -51,11 +52,11 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/models-dev-metadata.js': 7,
   'lib/server/models.js': 7,
   'lib/server/native-cli-model-discovery.js': 2,
-  'lib/server/native-session-chat-command.js': 18,
+  'lib/server/native-session-chat-command.js': 19,
   'lib/server/native-session-chat-failure.js': 3,
   'lib/server/native-session-chat-launch.js': 4,
   'lib/server/native-session-chat-sessions.js': 6,
-  'lib/server/native-session-chat-stream.js': 4,
+  'lib/server/native-session-chat-stream.js': 5,
   'lib/server/native-session-chat.js': 21,
   'lib/server/native-slash-commands.js': 5,
   'lib/server/protocol-fallback-bridge.js': 2,

@@ -94,6 +94,35 @@ test('解析：不支持的 provider 明确回答「不支持」，不伪装成�
   assert.equal(pickAuthSource(resolved, 'oauth-device'), null);
 });
 
+test('本机可观察 provider 必须登记扫描来源（探测器注册表 ↔ 认证来源表，单一真值来源）', () => {
+  const { hostAccountDetectionProviders } = require('../lib/account/host-account-detectors');
+  const providers = hostAccountDetectionProviders();
+  assert.ok(providers.length > 0, '注册表不该为空');
+  for (const provider of providers) {
+    const capability = getProviderCapability(provider, 'authSources');
+    assert.ok(capability && capability.supported, `${provider} 未声明 authSources`);
+    assert.ok(capability.sources.some((source) => source.handler === 'host-account-scan'),
+      `${provider} 有本机账号探测器，却没登记 host-account-scan 来源`);
+  }
+});
+
+test('来源的 handler 必须在契约词汇表里（写错立刻被拒，而不是静默不生效）', () => {
+  assert.deepEqual(listProviderDescriptorLoadErrors(), []);
+  const { validateProviderDescriptor } = require('../lib/providers/contract');
+  const base = {
+    contractVersion: 1,
+    id: 'demo',
+    capabilities: {
+      quota: { supported: false, reason: 'demo' },
+      authSources: {
+        supported: true,
+        sources: [{ id: 'x', kind: 'remote', clientDependent: false, authMode: 'oauth-device', handler: 'bogus-handler' }]
+      }
+    }
+  };
+  assert.throws(() => validateProviderDescriptor(base), /auth_source_handler_invalid/);
+});
+
 test('Kiro IDE 本机导入：读 token 文件后真刷一次，缺文件/坏 JSON/缺 refreshToken 各有明确原因', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kiro-ide-'));
   try {

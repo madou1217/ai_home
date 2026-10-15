@@ -172,10 +172,14 @@ interface AuthProgressModalProps {
   canSubmitCallback: boolean;
   authSources: ProviderAuthMethodSources | null;
   localImportSubmitting: boolean;
+  localInstallSubmitting: boolean;
+  localScanSubmitting: boolean;
   onClose: () => void;
   onCallbackUrlChange: (url: string) => void;
   onSubmitBrowserCallback: () => void;
   onLocalImport: (sourceId: string) => void;
+  onInstallLocalClient: (kind?: 'desktop' | 'cli') => void;
+  onScanHostAccounts: () => void;
   onConfirmCliInstall: () => void;
 }
 
@@ -190,16 +194,25 @@ export function AuthProgressModal({
   canSubmitCallback,
   authSources,
   localImportSubmitting,
+  localInstallSubmitting,
+  localScanSubmitting,
   onClose,
   onCallbackUrlChange,
   onSubmitBrowserCallback,
   onLocalImport,
+  onInstallLocalClient,
+  onScanHostAccounts,
   onConfirmCliInstall
 }: AuthProgressModalProps) {
   // 本机来源可用 = 该认证方式下有一个可用的本机来源（由服务端认证来源链解析，界面不自己判断环境）。
   const localSourceReady = Boolean(
     authSources && authSources.localSourceAvailable && authSources.preferredSourceId
   );
+  // 扫描来源（handler = host-account-scan）：本机登录态是整批的，走既有「扫描本机账号」入库。
+  const preferredSource = authSources
+    ? (authSources.sources || []).find((source) => source.id === authSources.preferredSourceId) || null
+    : null;
+  const localScanSource = preferredSource && preferredSource.handler === 'host-account-scan' ? preferredSource : null;
   const copyText = async (value: string, successMessage: string) => {
     const text = String(value || '').trim();
     if (!text) return;
@@ -370,6 +383,19 @@ export function AuthProgressModal({
             </Card>
           )}
 
+          {localScanSource && addJob.status === 'running' ? (
+            <Card size="small" title="本机登录态" className="hud-panel hud-panel--sm aih-overlay-section">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text type="secondary" className="aih-overlay-hint">
+                  检测到本机登录态，可直接扫描入库，不需要粘贴任何东西。
+                </Text>
+                <Button type="primary" loading={localScanSubmitting} onClick={onScanHostAccounts}>
+                  扫描本机账号
+                </Button>
+              </Space>
+            </Card>
+          ) : null}
+
           {addJob.authMode === 'oauth-refresh-token' && (
             <Card size="small" title="refresh_token 导入" className="hud-panel hud-panel--sm aih-overlay-section">
               {renderAuthDetail('账号', getAuthJobIdentity(addJob, subjectLabel), { copyMessage: '已复制账号' })}
@@ -390,9 +416,19 @@ export function AuthProgressModal({
                 </Space>
               ) : null}
               {!localSourceReady && authSources && authSources.installableSourceId ? (
-                <Text type="secondary" className="aih-overlay-hint">
-                  未检测到本机登录态；安装对应客户端后可在本机一键导入（Toolkit › 应用管理）。
-                </Text>
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  <Text type="secondary" className="aih-overlay-hint">
+                    未检测到本机登录态；装上对应客户端后即可一键导入。
+                  </Text>
+                  <Button
+                    loading={localInstallSubmitting}
+                    disabled={addJob.status !== 'running'}
+                    onClick={() => onInstallLocalClient(authSources.sources
+                      .find((source) => source.id === authSources.installableSourceId)?.requiresApp === 'cli' ? 'cli' : 'desktop')}
+                  >
+                    安装客户端
+                  </Button>
+                </Space>
               ) : null}
               {addJob.status === 'running' ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">

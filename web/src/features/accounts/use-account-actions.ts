@@ -146,6 +146,8 @@ export function useAccountActions({
   // 让弹窗能给出「从本机导入」而不是只让用户去拷文件。
   const [authLocalSources, setAuthLocalSources] = React.useState<ProviderAuthMethodSources | null>(null);
   const [authLocalImportSubmitting, setAuthLocalImportSubmitting] = React.useState(false);
+  const [authLocalInstallSubmitting, setAuthLocalInstallSubmitting] = React.useState(false);
+  const [authLocalScanSubmitting, setAuthLocalScanSubmitting] = React.useState(false);
   const [accountAppInstallPrompt, setAccountAppInstallPrompt] = React.useState<AccountAppInstallPrompt | null>(null);
   const [accountAppInstallSubmitting, setAccountAppInstallSubmitting] = React.useState(false);
   const [accountAppInstallResult, setAccountAppInstallResult] = React.useState<AccountAppInstallResult | null>(null);
@@ -705,24 +707,74 @@ export function useAccountActions({
 
   // 认证来源链：任务运行期间解析一次「这个认证方式在这台机器上有哪些来源」。
   // 界面只消费解析结果（本机来源是否可用 / 是否可安装），不自己判断有没有装 IDE。
+  const refreshAuthLocalSources = React.useCallback(async (job: AccountAddJob | null) => {
+    if (!job || !job.provider || !job.authMode) return;
+    try {
+      const response = await accountsAPI.listProviderAuthSources(job.provider);
+      if (!response || !response.ok) return;
+      setAuthLocalSources((response.methods || []).find((item) => item.authMode === job.authMode) || null);
+    } catch (_error) {
+      // 解析失败只意味着「不展示本机导入」，不影响粘贴等兜底路径。
+      setAuthLocalSources(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (!addJob || addJob.status !== 'running' || !addJob.provider || !addJob.authMode) {
       setAuthLocalSources(null);
       return undefined;
     }
     let cancelled = false;
-    void accountsAPI.listProviderAuthSources(addJob.provider)
-      .then((response) => {
-        if (cancelled || !response || !response.ok) return;
-        const method = (response.methods || []).find((item) => item.authMode === addJob.authMode) || null;
-        setAuthLocalSources(method);
-      })
-      .catch(() => {
-        // 解析失败只意味着「不展示本机导入」，不影响粘贴等兜底路径。
-        if (!cancelled) setAuthLocalSources(null);
-      });
+    void refreshAuthLocalSources(addJob).then(() => { if (cancelled) setAuthLocalSources(null); });
     return () => { cancelled = true; };
-  }, [addJob?.provider, addJob?.authMode, addJob?.status]);
+  }, [addJob?.provider, addJob?.authMode, addJob?.status, refreshAuthLocalSources]);
+
+  /**
+   * 装客户端后就能一键导入（安装通道复用既有 Toolkit 应用安装，装完自动重解析来源）。
+   */
+  const handleInstallLocalClient = async (kind: 'desktop' | 'cli' = 'desktop') => {
+    if (!addJob || !addJob.provider) return;
+    setAuthLocalInstallSubmitting(true);
+    try {
+      const appId = kind === 'desktop' ? `${addJob.provider}-desktop` : addJob.provider;
+      const response = await toolkitAPI.executeAppAction(appId, 'install', kind);
+      if (!response.ok || !response.job) {
+        throw new Error(response.error || '未创建安装任务');
+      }
+      message.info('已开始安装，完成后即可从本机导入');
+      const finished = await waitForAppInstallJob(response.job.id);
+      if (finished && finished.status === 'succeeded') {
+        message.success('安装完成');
+        await refreshAuthLocalSources(addJob);
+      } else {
+        message.warning('安装未完成，可在 Toolkit › 应用管理查看进度');
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '安装失败');
+    } finally {
+      setAuthLocalInstallSubmitting(false);
+    }
+  };
+
+  /** 扫描来源（handler = host-account-scan）：复用既有「扫描本机账号」，扫描后重解析来源。 */
+  const handleScanHostAccounts = async () => {
+    if (!addJob) return;
+    setAuthLocalScanSubmitting(true);
+    try {
+      const result = await accountsAPI.detectHostAccounts();
+      const registered = Array.isArray(result?.registered) ? result.registered.length : 0;
+      if (result?.ok === false) {
+        message.error('扫描本机账号失败');
+        return;
+      }
+      message.success(registered > 0 ? `扫描完成：新增/更新 ${registered} 个账号` : '扫描完成：没有新增账号');
+      await refreshAuthLocalSources(addJob);
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '扫描本机账号失败');
+    } finally {
+      setAuthLocalScanSubmitting(false);
+    }
+  };
 
   /** 从本机登录态完成登录任务（例如 Kiro IDE 已登录时一键导入）。 */
   const handleLocalAuthImport = async (sourceId: string) => {
@@ -1437,7 +1489,11 @@ export function useAccountActions({
         canSubmitCallback: canSubmitBrowserCallback,
         authSources: authLocalSources,
         localImportSubmitting: authLocalImportSubmitting,
+        localInstallSubmitting: authLocalInstallSubmitting,
+        localScanSubmitting: authLocalScanSubmitting,
         onLocalImport: handleLocalAuthImport,
+        onInstallLocalClient: handleInstallLocalClient,
+        onScanHostAccounts: handleScanHostAccounts,
         onClose: () => closeAuthProgress(false),
         onCallbackUrlChange: setAuthCallbackUrl,
         onSubmitBrowserCallback: handleSubmitBrowserCallback,

@@ -14,7 +14,7 @@ const path = require('node:path');
 
 const { createAuthJobManager } = require('../lib/server/web-account-auth');
 const { readAccountNativeAuth } = require('../lib/server/account-credential-store');
-const { resolveAuthSources } = require('../lib/account/auth-sources');
+const { resolveAuthSources, describeAuthMethodsWithSources } = require('../lib/account/auth-sources');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-kiro-local-import-'));
@@ -99,6 +99,52 @@ test('装了 Kiro IDE：认证来源判定为可用 → 从本机导入直接产
   assert.equal(nativeAuth.auth.profileArn, 'arn:aws:codewhisperer:us-east-1:1:profile/ide');
   const { resolveKiroTokenFlavour, KIRO_TOKEN_FLAVOURS } = require('../lib/account/kiro-token-flavour');
   assert.equal(resolveKiroTokenFlavour(nativeAuth).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
+});
+
+test('本机登录态已入库 → 来源不再可用（界面不显示）且服务端拒绝重复导入', async t => {
+  const { hostHomeDir, aiHomeDir } = fixture(t);
+  installFakeKiroDesktop(hostHomeDir);
+  writeIdeToken(hostHomeDir, { refreshToken: 'aor-ide' });
+
+  // 第一次：导入成功。
+  const first = createManager({ hostHomeDir, aiHomeDir });
+  const job1 = first.manager.startOauthJob('kiro', 'oauth-refresh-token');
+  assert.equal((await first.manager.completeLocalAuthImport(job1.jobId, 'kiro-ide-local')).ok, true);
+
+  // 再解析来源：这份本机登录态已在账号池里 → 不可用、原因是 account_already_registered、不给实现。
+  const resolved = resolveAuthSources('kiro', {
+    fs, aiHomeDir, hostCapabilitiesOptions: { hostHomeDir }
+  });
+  const ide = resolved.sources.find((source) => source.id === 'kiro-ide-local');
+  assert.equal(ide.available, false, '已入库的本机来源不得再显示为可用');
+  assert.equal(ide.alreadyImported, true);
+  assert.equal(ide.reason, 'account_already_registered');
+  assert.equal(ide.implementation, null);
+  assert.equal(ide.installable, false, '已入库时不该提示安装');
+
+  // refresh_token 认证方式不再优选本机来源，回落到粘贴兜底。
+  const methods = describeAuthMethodsWithSources('kiro', {
+    fs, aiHomeDir, hostCapabilitiesOptions: { hostHomeDir }
+  });
+  const refreshToken = methods.methods.find((method) => method.authMode === 'oauth-refresh-token');
+  assert.equal(refreshToken.preferredSourceId, 'kiro-paste-token');
+  assert.equal(refreshToken.localSourceAvailable, false);
+
+  // 服务端兜底：即使直接请求本机导入也必须拒绝，且不产生第二个账号。
+  const second = createManager({ hostHomeDir, aiHomeDir });
+  const job2 = second.manager.startOauthJob('kiro', 'oauth-refresh-token');
+  const again = await second.manager.completeLocalAuthImport(job2.jobId, 'kiro-ide-local');
+  assert.equal(again.ok, false);
+  assert.equal(again.code, 'auth_source_already_imported');
+  const { listAccountCredentialRecords } = require('../lib/server/account-credential-store');
+  assert.equal(listAccountCredentialRecords(fs, aiHomeDir, 'kiro').length, 1, '不得导入重复账号');
+
+  // 换了另一份本机登录态（例如另一个 IDE 账号）→ 重新可用。
+  writeIdeToken(hostHomeDir, { refreshToken: 'aor-other-account' });
+  const other = resolveAuthSources('kiro', { fs, aiHomeDir, hostCapabilitiesOptions: { hostHomeDir } });
+  const otherIde = other.sources.find((source) => source.id === 'kiro-ide-local');
+  assert.equal(otherIde.available, true);
+  assert.equal(otherIde.alreadyImported, false);
 });
 
 test('没装 Kiro IDE：本机来源不可用 → 明确拒绝并给出原因（不静默成功）', async t => {

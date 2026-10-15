@@ -5,8 +5,10 @@ const {
   accountProbeSucceeded,
   clearAccountRuntimeBlock,
   isAccountAuthBlocked,
-  recoverProbedAccounts
+  observeProbedAccounts
 } = require('../lib/server/account-probe-recovery');
+const { createAccountRuntimeGate } = require('../lib/server/account-runtime-gate');
+const { ACCOUNT_RUNTIME_CHANGED } = require('../lib/server/account-runtime-event-types');
 
 function blockedAccount(overrides = {}) {
   return {
@@ -21,6 +23,17 @@ function blockedAccount(overrides = {}) {
     consecutiveFailures: 1,
     ...overrides
   };
+}
+
+function createGate(events = []) {
+  return createAccountRuntimeGate({
+    hub: {
+      emit(type, event) {
+        if (type === ACCOUNT_RUNTIME_CHANGED) events.push(event);
+        return true;
+      }
+    }
+  });
 }
 
 test('isAccountAuthBlocked flags auth circuits and clear resets them', () => {
@@ -46,10 +59,9 @@ test('rate-limit cooldowns are NOT treated as auth blocks — probe success must
     sourcesByAccount: { acct_aaaaaaaaaaaaaaaaaaaa: 'remote' },
     byAccount: { acct_aaaaaaaaaaaaaaaaaaaa: ['opencode-go/glm-5.2'] }
   };
-  const recovered = recoverProbedAccounts(state, discovery, {
-    listAccountModelCacheRefs: (_p, a) => [a.accountRef],
-    accountStateService: { clearRuntimeBlock: () => { throw new Error('must not clear rate limits'); } }
-  });
+  const recovered = observeProbedAccounts(state, discovery, {
+    listAccountModelCacheRefs: (_p, a) => [a.accountRef]
+  }).recovered;
   assert.deepEqual(recovered, []);
   assert.equal(rateLimited.rateLimitUntil > Date.now(), true);
   assert.equal(rateLimited.cooldownUntil > Date.now(), true);
@@ -66,44 +78,82 @@ test('accountProbeSucceeded requires remote source AND non-empty models', () => 
   assert.equal(accountProbeSucceeded(discovery, []), false);
 });
 
-test('recoverProbedAccounts clears memory block and persists via accountStateService', () => {
+test('probe success clears the auth block and publishes the cleared runtime state', () => {
   const account = blockedAccount();
   const state = { accounts: { opencode: [account] } };
   const discovery = {
     sourcesByAccount: { acct_aaaaaaaaaaaaaaaaaaaa: 'remote' },
     byAccount: { acct_aaaaaaaaaaaaaaaaaaaa: ['opencode-go/glm-5.2'] }
   };
-  const cleared = [];
-  const recovered = recoverProbedAccounts(state, discovery, {
+  const events = [];
+  const { recovered, failed } = observeProbedAccounts(state, discovery, {
     listAccountModelCacheRefs: (_provider, a) => (a.accountRef ? [a.accountRef] : []),
-    accountStateService: {
-      clearRuntimeBlock: (accountRef, provider, baseState) => {
-        cleared.push({ provider, accountRef, evidence: baseState.evidence });
-        return true;
-      }
-    }
+    gate: createGate(events)
   });
-  assert.deepEqual(recovered, [{ provider: 'opencode', accountRef: account.accountRef }]);
+  assert.deepEqual(recovered, [{ provider: 'opencode', accountRef: account.accountRef, kind: 'auth_invalid' }]);
+  assert.deepEqual(failed, []);
   assert.equal(isAccountAuthBlocked(account), false);
-  assert.deepEqual(cleared, [{
-    provider: 'opencode',
-    accountRef: account.accountRef,
-    evidence: 'models_probe_success'
-  }]);
+  // 持久化走统一事件链路：runtimeState 是清空后的运行态，reason 是证据名。
+  assert.equal(events.length, 1);
+  assert.equal(events[0].reason, 'models_probe_success');
+  assert.equal(events[0].source, 'server.probe.models');
+  assert.equal(events[0].runtimeState.authInvalidUntil, 0);
+  assert.equal(events[0].runtimeState.lastFailureKind, '');
+  assert.equal(events[0].baseState.apiKeyMode, false);
 });
 
-test('recoverProbedAccounts leaves healthy and probe-failed accounts untouched', () => {
-  const healthy = blockedAccount({ accountRef: 'acct_bbbbbbbbbbbbbbbbbbbb', cooldownUntil: 0, authInvalidUntil: 0, lastFailureKind: '' });
-  const probeFailed = blockedAccount({ accountRef: 'acct_cccccccccccccccccccc' });
-  const state = { accounts: { opencode: [healthy, probeFailed] } };
+test('probe failure is recorded with the same rules as an inference failure', () => {
+  const account = blockedAccount({
+    accountRef: 'acct_cccccccccccccccccccc',
+    cooldownUntil: 0,
+    authInvalidUntil: 0,
+    lastFailureKind: '',
+    lastError: '',
+    consecutiveFailures: 0
+  });
+  const state = { accounts: { opencode: [account] } };
   const discovery = {
     sourcesByAccount: { acct_cccccccccccccccccccc: 'error' },
-    byAccount: {}
+    byAccount: {},
+    failuresByAccount: {
+      acct_cccccccccccccccccccc: {
+        reason: 'request_failed',
+        statusCode: 401,
+        detail: 'HTTP 401 {"error":{"code":"invalid_api_key"}}',
+        error: Object.assign(new Error('HTTP 401'), { status: 401, code: 'HTTP_401' })
+      }
+    }
   };
-  const recovered = recoverProbedAccounts(state, discovery, {
+  const events = [];
+  const { recovered, failed } = observeProbedAccounts(state, discovery, {
     listAccountModelCacheRefs: (_provider, a) => [a.accountRef],
-    accountStateService: { clearRuntimeBlock: () => { throw new Error('must not persist'); } }
+    gate: createGate(events)
   });
   assert.deepEqual(recovered, []);
-  assert.equal(isAccountAuthBlocked(probeFailed), true);
+  assert.deepEqual(failed, [{ provider: 'opencode', accountRef: account.accountRef, kind: 'auth_invalid', scope: 'account' }]);
+  assert.equal(account.lastFailureKind, 'auth_invalid');
+  assert.equal(account.authInvalidUntil > Date.now(), true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].nextStatus, 'auth_invalid');
+});
+
+test('healthy accounts and empty catalogs stay untouched', () => {
+  const healthy = blockedAccount({ accountRef: 'acct_bbbbbbbbbbbbbbbbbbbb', cooldownUntil: 0, authInvalidUntil: 0, lastFailureKind: '' });
+  const emptyCatalog = blockedAccount({ accountRef: 'acct_dddddddddddddddddddd', cooldownUntil: 0, authInvalidUntil: 0, lastFailureKind: '' });
+  const state = { accounts: { opencode: [healthy, emptyCatalog] } };
+  const discovery = {
+    sourcesByAccount: { acct_dddddddddddddddddddd: 'error' },
+    byAccount: {},
+    failuresByAccount: {
+      acct_dddddddddddddddddddd: { reason: 'empty_catalog', statusCode: 0, detail: '模型目录为空' }
+    }
+  };
+  const events = [];
+  const result = observeProbedAccounts(state, discovery, {
+    listAccountModelCacheRefs: (_provider, a) => [a.accountRef],
+    gate: createGate(events)
+  });
+  assert.deepEqual(result, { recovered: [], failed: [] });
+  assert.equal(events.length, 0);
+  assert.equal(emptyCatalog.lastFailureKind, '');
 });

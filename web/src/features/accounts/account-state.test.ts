@@ -6,7 +6,9 @@ import {
   applyAccountTokenUsageDelta,
   canCopyAccountEmail,
   canEditAccountConfig,
+  canEditAccountRoutingRules,
   canReauthAccount,
+  canRestoreAccountScheduling,
   canRefreshUsageAccount,
   countHealthyAccounts,
   formatQuotaReason,
@@ -268,6 +270,34 @@ test('reauth and edit gates depend on apiKeyMode only', () => {
   assert.equal(canReauthAccount({ apiKeyMode: true }), false);
   assert.equal(canEditAccountConfig({ apiKeyMode: true }), true);
   assert.equal(canEditAccountConfig({ apiKeyMode: false }), false);
+});
+
+test('routing rules gate needs an api key account on a third-party upstream', () => {
+  // 第三方/自建上游的 API Key 账号：有可对齐的错误码，给入口。
+  assert.equal(canEditAccountRoutingRules({ apiKeyMode: true, customUpstream: true }), true);
+  // 官方地址的 API Key 账号：厂商标准错误码，不给入口。
+  assert.equal(canEditAccountRoutingRules({ apiKeyMode: true, customUpstream: false }), false);
+  // 登录态账号：即便服务端标记了 customUpstream 也不给（两个条件必须同时成立）。
+  assert.equal(canEditAccountRoutingRules({ apiKeyMode: false, customUpstream: true }), false);
+  // 旧快照没有这个字段：fail closed，不给入口。
+  assert.equal(canEditAccountRoutingRules({ apiKeyMode: true }), false);
+});
+
+test('restore-scheduling gate follows the runtime block, not the credential kind', () => {
+  // 被运行态阻塞的账号（含官方地址的 API Key 账号与登录态账号）都能人工恢复。
+  assert.equal(canRestoreAccountScheduling(makeAccount({
+    runtimeStatus: 'billing_blocked', runtimeReason: 'billing_blocked'
+  })), true);
+  assert.equal(canRestoreAccountScheduling(makeAccount({
+    quotaStatus: 'exhausted', remainingPct: 0, usageSnapshot: {
+      kind: 'codex_oauth_status', capturedAt: Date.now(),
+      entries: [{ category: 'five_hour', remainingPct: 0 }]
+    }
+  })), true);
+  // 健康账号、未配置账号、以及需要重新登录的账号都不给（后者该走重新登录）。
+  assert.equal(canRestoreAccountScheduling(makeAccount()), false);
+  assert.equal(canRestoreAccountScheduling(makeAccount({ configured: false })), false);
+  assert.equal(canRestoreAccountScheduling(makeAccount({ runtimeStatus: 'auth_invalid' })), false);
 });
 
 test('getReauthActionLabel distinguishes pending, unconfigured and configured states', () => {

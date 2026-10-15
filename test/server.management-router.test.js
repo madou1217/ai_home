@@ -1132,9 +1132,8 @@ test('management router supports reload and cooldown clear contracts', async () 
       parseAuthorizationBearer: () => '',
       writeJson: jsonWriter,
       accountStateService: {
-        clearRuntimeBlock(accountRef, provider, options) {
-          const { evidence: _evidence, ...baseState } = options;
-          runtimeClears.push({ provider, accountRef, runtimeState: null, baseState });
+        recordRuntimeFailure(accountRef, provider, runtimeState) {
+          runtimeClears.push({ provider, accountRef, runtimeState });
           return true;
         }
       }
@@ -1151,11 +1150,17 @@ test('management router supports reload and cooldown clear contracts', async () 
   assert.equal(state.accounts.gemini[0].cooldownUntil, 0);
   assert.equal(state.accounts.gemini[0].consecutiveFailures, 0);
   assert.equal(state.accounts.claude[0], undefined);
-  assert.deepEqual(runtimeClears.map((item) => [item.provider, item.accountRef, item.runtimeState]), [
-    ['codex', MANAGEMENT_CODEX_ACCOUNT_REF, null],
-    ['gemini', MANAGEMENT_GEMINI_ACCOUNT_REF, null],
-    ['gemini', MANAGEMENT_GEMINI_SECOND_REF, null]
+  // 全局清空走统一门禁：持久化的是「清空后的运行态」，不是 clearRuntimeBlock 的 null 事件。
+  assert.deepEqual(runtimeClears.map((item) => [item.provider, item.accountRef]), [
+    ['codex', MANAGEMENT_CODEX_ACCOUNT_REF],
+    ['gemini', MANAGEMENT_GEMINI_ACCOUNT_REF],
+    ['gemini', MANAGEMENT_GEMINI_SECOND_REF]
   ]);
+  runtimeClears.forEach((item) => {
+    assert.equal(item.runtimeState.cooldownUntil, 0);
+    assert.equal(item.runtimeState.authInvalidUntil, 0);
+    assert.equal(item.runtimeState.lastFailureKind, '');
+  });
 });
 
 test('management restart endpoint returns deterministic payload', async () => {

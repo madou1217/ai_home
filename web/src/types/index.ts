@@ -196,6 +196,13 @@ export interface Account {
   region?: AccountRegion; // 当前账号客户端实际生效区域
   email: string;
   baseUrl?: string;
+  /**
+   * 服务端判定：该账号是否是「第三方/自建上游（new-api / one-api / 自建反代）的 API Key 账号」。
+   * 只有它为 true 才允许编辑调度规则（账号级上游错误映射）——OAuth 登录态账号与指向厂商
+   * 官方地址的账号返回标准错误码，没有可对齐的东西。判定唯一来源：
+   * lib/account/official-upstream-endpoint.js。
+   */
+  customUpstream?: boolean;
   quotaStatus?: string;
   upstreamErrorRules?: UpstreamErrorRule[];
   upstreamErrorGroupIds?: string[];
@@ -299,6 +306,8 @@ export interface AccountRefreshJob {
   finishedAt?: number | null;
   error?: string;
   scope?: 'account';
+  /** 本次刷新里的轻探测成功并因此自动清掉了运行态阻塞（服务端门禁判定，客户端只展示）。 */
+  recovered?: boolean;
   branches?: Partial<Record<'status' | 'models' | 'usage', {
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
     error?: string;

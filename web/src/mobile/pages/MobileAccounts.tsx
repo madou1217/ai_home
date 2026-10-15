@@ -44,7 +44,9 @@ import { startAccountAppEntryPolling } from '@/features/accounts/app-entry-polle
 import { formatImportJobProgress } from '@/features/accounts/account-import-export';
 import {
   canEditAccountConfig,
+  canEditAccountRoutingRules,
   canReauthAccount,
+  canRestoreAccountScheduling,
   getReauthActionLabel,
   requiresAccountReauth
 } from '@/features/accounts/account-state';
@@ -206,7 +208,8 @@ export default function MobileAccounts(_props: MobilePageProps) {
     void actions.chooseCliTerminal(record);
   };
 
-  // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」与「调度规则」（与桌面一致）。
+  // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」。
+  // 调度规则是第三方/自建上游的 API Key 账号专属，登录态与官方地址账号没有入口。
   const buildPrimaryActions = (record: Account): SwipeAction[] => {
     if (requiresAccountReauth(record)) {
       return [
@@ -216,12 +219,6 @@ export default function MobileAccounts(_props: MobilePageProps) {
           icon: <SyncOutlined />,
           tone: 'primary',
           onAction: () => { void actions.handleReauth(record); }
-        },
-        {
-          key: 'routing-rules',
-          label: '调度规则',
-          icon: <CodeOutlined />,
-          onAction: () => actions.handleRoutingRules(record)
         }
       ];
     }
@@ -246,7 +243,17 @@ export default function MobileAccounts(_props: MobilePageProps) {
         onAction: () => { void actions.handleReauth(record); }
       });
     }
-    list.push({ key: 'routing-rules', label: '调度规则', icon: <CodeOutlined />, onAction: () => actions.handleRoutingRules(record) });
+    if (canEditAccountRoutingRules(record)) {
+      list.push({ key: 'routing-rules', label: '调度规则', icon: <CodeOutlined />, onAction: () => actions.handleRoutingRules(record) });
+    }
+    if (canRestoreAccountScheduling(record)) {
+      list.push({
+        key: 'restore-scheduling',
+        label: '恢复调度',
+        icon: <ReloadOutlined />,
+        onAction: () => actions.handleRestoreScheduling(record)
+      });
+    }
     list.push({
       key: 'delete',
       label: '删除',

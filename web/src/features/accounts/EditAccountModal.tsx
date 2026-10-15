@@ -8,6 +8,8 @@ interface EditAccountModalProps {
   form: ReturnType<typeof Form.useForm>[0];
   isClaudeCredential: boolean;
   provider?: string;
+  /** 只有第三方/自建上游的 API Key 账号才渲染调度规则编辑器（官方地址无可对齐的错误码）。 */
+  showRoutingRules: boolean;
   effectiveAuthMode: string;
   credentialModeChanged: boolean;
   onClose: () => void;
@@ -19,6 +21,7 @@ export function EditAccountModal({
   form,
   isClaudeCredential,
   provider,
+  showRoutingRules,
   effectiveAuthMode,
   credentialModeChanged,
   onClose,
@@ -75,7 +78,7 @@ export function EditAccountModal({
       >
         <Input placeholder="https://api.openai.com/v1" className="aih-mono-input" />
       </Form.Item>
-      <UpstreamErrorRulesEditor provider={provider} />
+      {showRoutingRules ? <UpstreamErrorRulesEditor provider={provider} /> : null}
       <Form.Item name="clearErrorBlock" valuePropName="checked" style={{ marginTop: 16 }}>
         <Checkbox>余额或权限已恢复，手动清除账号异常阻塞</Checkbox>
       </Form.Item>

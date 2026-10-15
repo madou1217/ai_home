@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 337,
-      "endpoint_records": 327,
-      "unique_endpoint_patterns": 246,
-      "unique_http_endpoint_patterns": 241,
+      "route_records": 341,
+      "endpoint_records": 331,
+      "unique_endpoint_patterns": 250,
+      "unique_http_endpoint_patterns": 245,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 10,
       "fallback_records": 0

@@ -20,6 +20,9 @@ const {
   handleUpdateAccountRoutingRulesRequest,
   handleUpdateAccountStatusRequest
 } = require('../lib/server/webui-account-routes');
+const { handleRestoreAccountSchedulingRequest } = require('../lib/server/webui-account-restore-scheduling');
+const { createAccountRuntimeGate } = require('../lib/server/account-runtime-gate');
+const { ACCOUNT_RUNTIME_CHANGED } = require('../lib/server/account-runtime-event-types');
 const { OAUTH_PENDING_FALLBACK_STALE_MS } = require('../lib/server/oauth-pending-state');
 const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 const { buildAuthInvalidRuntimeState } = require('../lib/account/runtime-state-builders');
@@ -2848,7 +2851,7 @@ test('web ui account update rejects OAuth accountRef', async (t) => {
   assert.deepEqual(readAccountCredentials(fs, fixture.aiHomeDir, accountRef), before);
 });
 
-test('routing rule metadata can be updated for an OAuth account without touching credentials', async (t) => {
+test('routing rule metadata is refused for an OAuth account and credentials stay untouched', async (t) => {
   const fixture = createAccountFixture(t, 'aih-webui-oauth-routing-rules-');
   const accountRef = fixture.register('codex', '43', {
     state: { configured: true, apiKeyMode: false, authMode: 'oauth-browser' }
@@ -2877,21 +2880,235 @@ test('routing rule metadata can be updated for an OAuth account without touching
   });
 
   assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, 'routing_rules_unsupported_upstream');
+  assert.equal(body.code, 'oauth_account_standard_errors');
+  // 登录态账号没有可对齐的错误码，拒绝时不得碰凭据与规则。
+  assert.deepEqual(readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef), before);
+});
+
+test('routing rule metadata is refused for an API key account on the vendor official endpoint', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-official-upstream-routing-rules-');
+  // 默认 api-key 凭据指向官方地址（OPENAI_BASE_URL=https://api.openai.com/v1）。
+  const accountRef = fixture.register('codex', '44', {
+    apiKeyMode: true,
+    state: { configured: true, apiKeyMode: true }
+  });
+  const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  const state = { accounts: { codex: [{ accountRef, apiKeyMode: true, accessToken: 'official-key' }] } };
+  const rules = [{ name: '余额不足', enabled: true, statuses: [403], kind: 'billing_blocked',
+    matchers: [{ source: 'json', path: 'error.code', operator: 'equals', value: 'insufficient_user_quota' }] }];
+  const res = createResCapture();
+  const handled = await handleUpdateAccountRoutingRulesRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/routing-rules`,
+    req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+    readRequestBody: async () => Buffer.from(JSON.stringify({ upstreamErrorRules: rules })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: { clearRuntimeBlock() {} },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    loadServerRuntimeAccounts: () => state.accounts,
+    applyReloadState() {},
+    checkStatus: () => ({ configured: true, apiKeyMode: true }),
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error, 'routing_rules_unsupported_upstream');
+  assert.equal(body.code, 'official_upstream_standard_errors');
+  assert.deepEqual(readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef), before);
+});
+
+
+test('routing rule metadata is accepted for a third-party upstream API key account', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-custom-upstream-routing-rules-');
+  const accountRef = fixture.register('codex', '45', {
+    env: { OPENAI_API_KEY: 'relay-key', OPENAI_BASE_URL: 'https://relay.example.com/v1' },
+    state: { configured: true, apiKeyMode: true }
+  });
+  const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  const state = { accounts: { codex: [{ accountRef, apiKeyMode: true, accessToken: 'relay-key' }] } };
+  const rules = [{ name: 'New API 余额不足', enabled: true, statuses: [403], kind: 'billing_blocked',
+    matchers: [{ source: 'json', path: 'error.code', operator: 'equals', value: 'insufficient_user_quota' }] }];
+  const res = createResCapture();
+  const handled = await handleUpdateAccountRoutingRulesRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/routing-rules`,
+    req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+    readRequestBody: async () => Buffer.from(JSON.stringify({ upstreamErrorRules: rules })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: { clearRuntimeBlock() {} },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    loadServerRuntimeAccounts: () => state.accounts,
+    applyReloadState() {},
+    checkStatus: () => ({ configured: true, apiKeyMode: true }),
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.body);
   assert.equal(body.ok, true);
   assert.deepEqual(body.account.upstreamErrorRules, rules);
   const persisted = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
-  assert.deepEqual(JSON.parse(persisted.env.AIH_UPSTREAM_ERROR_RULES), body.account.upstreamErrorRules);
+  assert.deepEqual(JSON.parse(persisted.env.AIH_UPSTREAM_ERROR_RULES), rules);
   assert.equal(persisted.envUpdatedAt, before.envUpdatedAt);
 });
 
+
+test('account update refuses routing rules when the same save switches the account to the official endpoint', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-official-switch-routing-rules-');
+  const accountRef = fixture.register('codex', '46', {
+    env: { OPENAI_API_KEY: 'relay-key', OPENAI_BASE_URL: 'https://relay.example.com/v1' },
+    state: { configured: true, apiKeyMode: true }
+  });
+  const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
+  const state = { accounts: { codex: [{ accountRef, apiKeyMode: true, accessToken: 'relay-key' }] } };
+  const rules = [{ name: '余额不足', enabled: true, statuses: [403], kind: 'billing_blocked',
+    matchers: [{ source: 'json', path: 'error.code', operator: 'equals', value: 'insufficient_user_quota' }] }];
+  const res = createResCapture();
+  await handleUpdateAccountRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/update`,
+    req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+    readRequestBody: async () => Buffer.from(JSON.stringify({
+      baseUrl: 'https://api.openai.com/v1',
+      upstreamErrorRules: rules
+    })),
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: { syncAccountBaseState() {}, clearRuntimeBlock() {} },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    loadServerRuntimeAccounts: () => state.accounts,
+    applyReloadState() {},
+    checkStatus: () => ({ configured: true, apiKeyMode: true }),
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    writeJson: (response, code, data) => { response.statusCode = code; response.end(JSON.stringify(data)); }
+  });
+
+  assert.equal(res.statusCode, 400);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error, 'routing_rules_unsupported_upstream');
+  assert.equal(body.code, 'official_upstream_standard_errors');
+  // 官方地址账号不允许留规则：整次保存都不落地（地址与规则都保持原样）。
+  assert.deepEqual(readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef), before);
+});
+
+test('account level restore-scheduling clears the runtime block through the unified gate', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-restore-scheduling-');
+  const accountRef = fixture.register('codex', '47', {
+    env: { OPENAI_API_KEY: 'relay-key', OPENAI_BASE_URL: 'https://relay.example.com/v1' },
+    state: { configured: true, apiKeyMode: true }
+  });
+  const runtimeAccount = {
+    accountRef,
+    provider: 'codex',
+    apiKeyMode: true,
+    displayName: 'relay.example.com',
+    cooldownUntil: Date.now() + 86_400_000,
+    rateLimitUntil: Date.now() + 300_000,
+    lastFailureKind: 'billing_blocked',
+    lastError: 'billing_blocked',
+    routingBlock: { kind: 'billing_blocked', reason: 'billing_blocked', observedAt: Date.now() },
+    modelCooldowns: { 'gpt-5.4': Date.now() + 300_000 }
+  };
+  const state = { accounts: { codex: [runtimeAccount] } };
+  const events = [];
+  const gate = createAccountRuntimeGate({
+    hub: {
+      emit(type, event) {
+        if (type === ACCOUNT_RUNTIME_CHANGED) events.push(event);
+        return true;
+      }
+    }
+  });
+  const res = createResCapture();
+  const handled = await handleRestoreAccountSchedulingRequest({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/restore-scheduling`,
+    req: { headers: {} }, res, fs, aiHomeDir: fixture.aiHomeDir, state,
+    accountStateIndex: fixture.accountStateIndex,
+    accountStateService: { syncAccountBaseState() {}, clearRuntimeBlock() {} },
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    loadServerRuntimeAccounts: () => state.accounts,
+    applyReloadState() {},
+    checkStatus: () => ({ configured: true, apiKeyMode: true }),
+    deps: { aiHomeDir: fixture.aiHomeDir, accountRuntimeGate: gate },
+    writeJson: (response, code, data) => { response.statusCode = code; response.end(JSON.stringify(data)); }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).ok, true);
+  assert.equal(runtimeAccount.cooldownUntil, 0);
+  assert.equal(runtimeAccount.rateLimitUntil, 0);
+  assert.equal(runtimeAccount.routingBlock, null);
+  assert.deepEqual(runtimeAccount.modelCooldowns, {});
+  assert.equal(events.length, 1);
+  assert.equal(events[0].reason, 'manual_admin_clear');
+  assert.equal(events[0].reloadPool, true);
+});
+
+test('account level restore-scheduling fails closed without the runtime gate or the runtime account', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-webui-restore-scheduling-guards-');
+  const accountRef = fixture.register('codex', '48', {
+    env: { OPENAI_API_KEY: 'relay-key', OPENAI_BASE_URL: 'https://relay.example.com/v1' },
+    state: { configured: true, apiKeyMode: true }
+  });
+  const buildCtx = (overrides) => ({
+    pathname: `/v0/webui/accounts/codex/${accountRef}/restore-scheduling`,
+    req: { headers: {} }, res: createResCapture(), fs, aiHomeDir: fixture.aiHomeDir,
+    state: { accounts: { codex: [] } },
+    accountStateIndex: fixture.accountStateIndex,
+    getProfileDir: fixture.getProfileDir,
+    getToolConfigDir: fixture.getToolConfigDir,
+    checkStatus: () => ({ configured: true, apiKeyMode: true }),
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    writeJson: (response, code, data) => { response.statusCode = code; response.end(JSON.stringify(data)); },
+    ...overrides
+  });
+
+  const noGate = buildCtx({});
+  await handleRestoreAccountSchedulingRequest(noGate);
+  assert.equal(noGate.res.statusCode, 503);
+  assert.equal(JSON.parse(noGate.res.body).error, 'runtime_gate_unavailable');
+
+  const noRuntimeAccount = buildCtx({
+    deps: { aiHomeDir: fixture.aiHomeDir, accountRuntimeGate: createAccountRuntimeGate({}) }
+  });
+  await handleRestoreAccountSchedulingRequest(noRuntimeAccount);
+  assert.equal(noRuntimeAccount.res.statusCode, 409);
+  assert.equal(JSON.parse(noRuntimeAccount.res.body).error, 'account_not_in_runtime_pool');
+
+  const missing = buildCtx({
+    pathname: '/v0/webui/accounts/codex/acct_ffffffffffffffffffff/restore-scheduling',
+    deps: { aiHomeDir: fixture.aiHomeDir, accountRuntimeGate: createAccountRuntimeGate({}) }
+  });
+  await handleRestoreAccountSchedulingRequest(missing);
+  assert.equal(missing.res.statusCode, 404);
+});
+
+
 test('account error rule edits round-trip without pretending credentials changed and reject invalid rules atomically', async t => {
   const fixture = createAccountFixture(t, 'aih-webui-error-rules-');
-  const accountRef = fixture.register('codex', '90', { apiKeyMode: true,
+  // 调度规则只对第三方/自建上游开放，所以这条用例的账号必须指向自建地址。
+  const accountRef = fixture.register('codex', '90', {
+    env: { OPENAI_API_KEY: 'fixture-key', OPENAI_BASE_URL: 'https://relay.example.com/v1' },
     state: { configured: true, apiKeyMode: true, runtimeState: {
       routingBlock: { kind: 'billing_blocked', reason: 'billing_blocked', observedAt: Date.now() - 1000 }
-    } } });
+    } }
+  });
   const before = readAccountCredentialRecord(fs, fixture.aiHomeDir, accountRef);
   const state = { accounts: { codex: [{ accountRef, apiKeyMode: true, accessToken: 'fixture-key' }] } };
   const clears = [];

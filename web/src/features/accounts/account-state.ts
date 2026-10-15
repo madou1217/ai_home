@@ -106,6 +106,29 @@ export function canEditAccountConfig(record: Pick<Account, 'apiKeyMode'>) {
   return Boolean(record.apiKeyMode);
 }
 
+/**
+ * 调度规则（账号级上游错误映射）入口 —— 只对「第三方/自建上游的 API Key 账号」开放。
+ * OAuth 登录态账号与指向厂商官方地址的账号返回标准错误码，内置启发式已覆盖，没有可对齐
+ * 的东西。判定由服务端给出（account.customUpstream，见
+ * lib/account/official-upstream-endpoint.js），客户端只消费结论，不自己解析主机名。
+ */
+export function canEditAccountRoutingRules(record: Pick<Account, 'apiKeyMode' | 'customUpstream'>) {
+  return Boolean(record.apiKeyMode && record.customUpstream);
+}
+
+/**
+ * 账号级强制恢复调度入口 —— 只在账号当前确实被运行态阻塞时出现。
+ * 与调度规则解耦：调度规则是「第三方上游错误码映射」（只对特定账号开放），恢复调度是
+ * 「人工确认外部条件已恢复」的运维动作，对所有被阻塞的账号都成立（登录态失效除外，
+ * 那个该走重新登录）。服务端会把运行态整体归零（evidence=manual_admin_clear）。
+ */
+export function canRestoreAccountScheduling(record: Account) {
+  if (!record.configured) return false;
+  if (requiresAccountReauth(record)) return false;
+  const state = getAccountDisplayState(record);
+  return state === 'runtime_blocked' || state === 'policy_blocked' || state === 'exhausted';
+}
+
 export function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct' | 'provider' | 'usageSnapshot'>) {
   if (record.apiKeyMode) return false;
   return getEffectiveRemainingPct(record) != null;

@@ -24,6 +24,8 @@ import {
   applyAccountTokenUsageDelta,
   canCopyAccountEmail,
   canEditAccountConfig,
+  canEditAccountRoutingRules,
+  canRestoreAccountScheduling,
   getClaudeCredentialMode,
   mergeSingleAccount,
   reconcileAccountAfterReauthSuccess,
@@ -382,11 +384,18 @@ export function useAccountActions({
       const values = await editForm.validateFields();
       if (!editingAccount) return false;
       setSubmitting(true);
+      // 官方地址账号不提交规则字段：既让服务端的「官方地址不接受规则」守卫不被空数组
+      // 触发，也避免保存配置时顺手删掉账号上的历史规则。
+      const routingRulesEditable = canEditAccountRoutingRules(editingAccount);
       const res = await accountsAPI.updateAccount(editingAccount.provider, editingAccount.accountRef, {
         apiKey: values.apiKey,
         baseUrl: values.baseUrl,
-        upstreamErrorRules: values.upstreamErrorRules || [],
-        upstreamErrorGroupIds: values.upstreamErrorGroupIds || [],
+        ...(routingRulesEditable
+          ? {
+              upstreamErrorRules: values.upstreamErrorRules || [],
+              upstreamErrorGroupIds: values.upstreamErrorGroupIds || []
+            }
+          : {}),
         clearErrorBlock: values.clearErrorBlock === true,
         ...(editingAccount.provider === 'claude'
           ? {
@@ -411,7 +420,30 @@ export function useAccountActions({
     }
   };
 
+  const handleRestoreScheduling = (record: Account) => {
+    if (!canRestoreAccountScheduling(record)) return;
+    Modal.confirm({
+      title: '强制恢复调度？',
+      content: '将清空该账号的运行态阻塞（余额/权限/额度/冷却与模型级冷却），让它立刻重新参与调度。仅在你已确认上游条件恢复时使用。',
+      okText: '恢复调度',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await accountsAPI.restoreScheduling(record.provider, record.accountRef);
+          message.success('已恢复调度');
+          setAccounts((prev) => mergeSingleAccount(prev, res.account));
+        } catch (error: any) {
+          message.error(error?.response?.data?.message || '恢复调度失败');
+        }
+      }
+    });
+  };
+
   const handleRoutingRules = (record: Account) => {
+    if (!canEditAccountRoutingRules(record)) {
+      message.warning('调度规则只用于第三方/自建上游：官方地址与登录态账号返回厂商标准错误码。');
+      return;
+    }
     setRoutingRulesAccount(record);
     routingRulesForm.setFieldsValue({
       upstreamErrorRules: normalizeUpstreamErrorRulesForForm(record.upstreamErrorRules),
@@ -540,6 +572,7 @@ export function useAccountActions({
       });
       if (!active) {
         if (job.status === 'failed') message.warning(job.error || '账号部分刷新失败');
+        else if (job.recovered === true) message.success('账号已刷新，轻探测成功，已自动恢复调度');
         else message.success('账号已刷新');
       }
       return;
@@ -1290,6 +1323,7 @@ export function useAccountActions({
     copyAccountEmail,
     handleEdit,
     handleRoutingRules,
+    handleRestoreScheduling,
     handleReauth,
     confirmDeleteAccount,
     handleReload,
@@ -1333,6 +1367,9 @@ export function useAccountActions({
         form: editForm,
         isClaudeCredential: isEditingClaudeCredential,
         provider: editingAccount?.provider,
+        // 调度规则编辑器只对第三方/自建上游的 API Key 账号渲染：官方地址账号没有可对齐
+        // 的错误码，渲染出来就等于给了一条注定不命中的流程。
+        showRoutingRules: editingAccount ? canEditAccountRoutingRules(editingAccount) : false,
         effectiveAuthMode: effectiveEditAuthMode,
         credentialModeChanged: isEditCredentialModeChanged,
         onClose: () => setEditModalVisible(false),

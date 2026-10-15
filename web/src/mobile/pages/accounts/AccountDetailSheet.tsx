@@ -24,7 +24,9 @@ import UsageProgressEffects from '@/features/accounts/UsageProgressEffects';
 import type { TokenDropEvent } from '@/features/accounts/useTokenDropEvents';
 import {
   canCopyAccountEmail,
+  canEditAccountRoutingRules,
   canRefreshUsageAccount,
+  canRestoreAccountScheduling,
   isAccountEnabled,
   requiresAccountReauth
 } from '@/features/accounts/account-state';
@@ -144,12 +146,22 @@ export default function AccountDetailSheet({
   };
 
   const sheetActions: SheetAction[] = [];
-  sheetActions.push({
-    key: 'routing-rules',
-    label: '编辑调度规则',
-    icon: <ApiOutlined />,
-    onClick: closeThen(() => actions.handleRoutingRules(record))
-  });
+  if (canEditAccountRoutingRules(record)) {
+    sheetActions.push({
+      key: 'routing-rules',
+      label: '编辑调度规则',
+      icon: <ApiOutlined />,
+      onClick: closeThen(() => actions.handleRoutingRules(record))
+    });
+  }
+  if (canRestoreAccountScheduling(record)) {
+    sheetActions.push({
+      key: 'restore-scheduling',
+      label: '恢复调度',
+      icon: <ReloadOutlined />,
+      onClick: closeThen(() => actions.handleRestoreScheduling(record))
+    });
+  }
   if (!requiresReauth) {
     if (appEntriesLoaded && appSupport?.desktopSupported) {
       sheetActions.push({

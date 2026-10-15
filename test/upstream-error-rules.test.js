@@ -6,7 +6,7 @@ const { validateUpstreamErrorRules, matchUpstreamErrorRule, readUpstreamErrorRul
 const { classifyUpstreamFailure } = require('../lib/server/upstream-failure-policy');
 const { applyAccountFailurePolicy, deriveAccountRuntimeStatus, pickPersistedAccountRuntimeState, applyPersistedAccountRuntimeState } = require('../lib/server/account-runtime-state');
 const { markProxyAccountFailure, markProxyAccountSuccess, chooseServerAccount } = require('../lib/server/router');
-const { recoverProbedAccounts } = require('../lib/server/account-probe-recovery');
+const { observeProbedAccounts } = require('../lib/server/account-probe-recovery');
 const { createAccountStateService } = require('../lib/account/state-service');
 
 const balanceRule = {
@@ -95,9 +95,9 @@ test('configured billing block persists, survives models success and cannot be b
   const restored = applyPersistedAccountRuntimeState({ ...account }, pickPersistedAccountRuntimeState(account));
   markProxyAccountSuccess(restored, { model: 'other-model' });
   assert.equal(deriveAccountRuntimeStatus(restored, Date.now() + 365 * 86400000).status, 'billing_blocked');
-  assert.deepEqual(recoverProbedAccounts({ accounts: { codex: [restored] } }, {
+  assert.deepEqual(observeProbedAccounts({ accounts: { codex: [restored] } }, {
     byAccount: { [account.accountRef]: ['gpt-6.1-sol'] }, sourcesByAccount: { [account.accountRef]: 'remote' }
-  }, { listAccountModelCacheRefs: () => [account.accountRef] }), []);
+  }, { listAccountModelCacheRefs: () => [account.accountRef] }), { recovered: [], failed: [] });
   assert.equal(chooseServerAccount([restored], {}, 'codex', {
     model: 'other-model', allowModelCooled: true, preserveEncryptedReasoningAffinity: true
   }), null);

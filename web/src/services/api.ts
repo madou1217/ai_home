@@ -583,6 +583,12 @@ export const accountsAPI = {
     return response.data;
   },
 
+  /** 账号级强制恢复调度：人工覆盖，清空该账号的运行态阻塞（含余额/权限/额度类）。 */
+  restoreScheduling: async (provider: string, accountRef: string): Promise<{ ok: boolean; account: Account }> => {
+    const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/restore-scheduling`);
+    return response.data;
+  },
+
   setDefault: async (provider: string, accountRef: string): Promise<Account> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/set-default`);
     return response.data.account;

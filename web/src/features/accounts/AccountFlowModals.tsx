@@ -92,6 +92,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         form={edit.form}
         isClaudeCredential={edit.isClaudeCredential}
         provider={edit.provider}
+        showRoutingRules={edit.showRoutingRules}
         effectiveAuthMode={edit.effectiveAuthMode}
         credentialModeChanged={edit.credentialModeChanged}
         onClose={edit.onClose}

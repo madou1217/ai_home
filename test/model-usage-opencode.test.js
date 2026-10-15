@@ -662,3 +662,141 @@ test('scanOpenCodeFile merges dual-write rows by message id without double count
 
   store.close();
 });
+
+test('scanOpenCodeFile resolves dual-row roles by the new layout (synthetic/compaction are not prompts)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-role-scan-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  const store = openModelUsageStore({ fs, path, aiHomeDir, DatabaseSync });
+
+  const dbPath = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
+  const sessionColumns = {
+    id: 'ses-role-1',
+    projectId: 'proj-role',
+    title: 'Role precedence session',
+    directory: '/Users/model/projects/demo',
+    timeCreated: 1718100000000,
+    timeUpdated: 1718100010000,
+    model: { id: 'glm-5.2', providerID: 'opencode-go' }
+  };
+  createOpenCodeTestDb(dbPath, {
+    project: {
+      id: 'proj-role',
+      worktree: '/Users/model/projects/demo',
+      name: 'demo'
+    },
+    sessions: [sessionColumns],
+    messages: [
+      // 真人提问：两代都是 user → 记提示词
+      {
+        id: 'msg-role-user-1',
+        sessionId: 'ses-role-1',
+        timeCreated: 1718100000000,
+        timeUpdated: 1718100000000,
+        data: { role: 'user', time: { created: 1718100000000 } }
+      },
+      // 真机 8 月取证形状：旧代粗糙地记 role=user，新代类型是 synthetic（自动续写）——不算提示词
+      {
+        id: 'msg-role-synthetic-1',
+        sessionId: 'ses-role-1',
+        timeCreated: 1718100001000,
+        timeUpdated: 1718100001000,
+        data: { role: 'user', time: { created: 1718100001000 } }
+      },
+      // 旧代 role=user、新代 compaction（自动压缩）且带 token → 记用量、不算提示词
+      {
+        id: 'msg-role-compaction-1',
+        sessionId: 'ses-role-1',
+        timeCreated: 1718100002000,
+        timeUpdated: 1718100002000,
+        data: { role: 'user', time: { created: 1718100002000 } }
+      },
+      // 只有旧代有的提问（新代缺席）→ 回退旧代角色，照记提示词
+      {
+        id: 'msg-role-legacy-only-user',
+        sessionId: 'ses-role-1',
+        timeCreated: 1718100003000,
+        timeUpdated: 1718100003000,
+        data: { role: 'user', time: { created: 1718100003000 } }
+      }
+    ],
+    v2Sessions: [sessionColumns],
+    v2Messages: [
+      {
+        id: 'msg-role-user-1',
+        sessionId: 'ses-role-1',
+        type: 'user',
+        seq: 1,
+        timeCreated: 1718100000000,
+        timeUpdated: 1718100000000,
+        data: { time: { created: 1718100000000 }, text: '真人提问' }
+      },
+      {
+        id: 'msg-role-synthetic-1',
+        sessionId: 'ses-role-1',
+        type: 'synthetic',
+        seq: 2,
+        timeCreated: 1718100001000,
+        timeUpdated: 1718100001000,
+        data: {
+          time: { created: 1718100001000 },
+          text: 'The previous response was interrupted. Continue from where you left off.'
+        }
+      },
+      {
+        id: 'msg-role-compaction-1',
+        sessionId: 'ses-role-1',
+        type: 'compaction',
+        seq: 3,
+        timeCreated: 1718100002000,
+        timeUpdated: 1718100002000,
+        data: {
+          time: { created: 1718100002000 },
+          status: 'completed',
+          reason: 'auto',
+          model: { id: 'glm-5.2', providerID: 'opencode-go' },
+          summary: '上下文压缩',
+          tokens: { input: 300, output: 120, reasoning: 0, cache: { read: 100, write: 0 } }
+        }
+      },
+      // 新代独有的 synthetic（无旧代行）→ 同样不算提示词
+      {
+        id: 'msg-role-synthetic-v2only',
+        sessionId: 'ses-role-1',
+        type: 'synthetic',
+        seq: 4,
+        timeCreated: 1718100004000,
+        timeUpdated: 1718100004000,
+        data: { time: { created: 1718100004000 }, text: 'Continue' }
+      }
+    ]
+  });
+
+  const scanResult = scanOpenCodeFile({
+    fs,
+    path,
+    store,
+    filePath: dbPath,
+    DatabaseSync
+  });
+
+  // 用量只记 compaction 一条（synthetic 无 token 不产生记录）；
+  // 提示词 = 真人提问 + 仅旧代有的提问，synthetic/compaction 不计。
+  assert.equal(scanResult.records, 1);
+  assert.equal(scanResult.prompts, 2);
+
+  const stats = store.queryStats({ provider: 'opencode' });
+  assert.equal(stats.totalCalls, 1);
+  assert.equal(stats.totalPrompts, 2);
+  assert.equal(stats.inputTokens, 200); // 300 - 100
+  assert.equal(stats.outputTokens, 120);
+  assert.equal(stats.cacheReadInputTokens, 100);
+  assert.equal(stats.totalTokens, 520);
+
+  const sessions = store.querySessions({ provider: 'opencode' });
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0].sessionId, 'ses-role-1');
+  assert.equal(sessions[0].promptCount, 2);
+
+  store.close();
+});

@@ -50,6 +50,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/server/opencode-serve-api-layouts.js` | **Layout Table（API 布局表）** | `opencode serve` 两代 API（v1 无前缀/无鉴权、v2 `/api/*` + Basic + `{data}` 信封）差异声明成数据；已识别未实现的布局**立即**报明确原因（含实际版本），不让就绪探测空转到超时 | 真机：opencode 2.0.29 → `opencode_serve_api_layout_unsupported`（约 4s 内，而非 25s 超时） |
 | `lib/runtime/opencode-run-layouts.js` | **Layout Table + 旗标探测（不按版本号）** | `opencode run` v1（显式 `--dir`）/ v2（无 `--dir`，目录走 cwd/PWD，且必须 `--standalone` 绕开按 channel 固定的后台 service 端口 0xC0DE=49374——多账号并发串台/挂死的根源）差异声明成数据；探测用 `run --help` 旗标、命中才缓存（键=路径+mtime/size）、探测不出默认 v2；逃生门 `AIH_OPENCODE_RUN_LAYOUT`、`source` 可观察（env/probe/cache/default） | 真机 v2.0.29：探测 55ms、缓存 1ms、`--standalone` 生效；`test/opencode-free-cli-transport.test.js` 13/13 |
 | `lib/runtime/acp-layouts.js` | **Layout Table（ACP 入口布局，公共层）** | 面向**所有支持 ACP 的 provider** 的 ACP 入口参数/外部适配器二进制声明表（opencode→`acp`、gemini→`--acp`、codebuddy http-sse→`--serve`、claude→外部 `claude-code-acp` 二进制），门面 `buildAcpEntryArgs`/`getAcpExternalBinary`；**已登记为 provider 能力**（2026-10-16 两步登记完成：JS 描述符 `acp` + Go 合同 `acp_session` 同源；消费方走 `lib/providers` 门面倒排发现支持 ACP 的 provider，入口数据仍以本表为唯一源） | 守卫：`test/design-pattern-guard.test.js`「描述符 / 布局表 / Go 合同三份集合逐项一致 + 每个登记 provider 可解析出入口」；冒烟：providers 10 / verifiedOnly 5 / `opencode→["acp"]` / `gemini→["--acp"]` / `codebuddy http-sse→["--serve"]` / `claude→[]`+外部适配器 / 未知 provider→null / `grok→false` |
+| `lib/sessions/opencode-db-layouts.js` | **Layout Table（会话库存储布局表）** | opencode 会话库两代表（`session_v2`/`session_message` vs `session`/`message`/`part`：角色在 `type` 列 vs `data.role`、内容内嵌 `data.content` vs `part` 表）声明成数据 + 存在性探测 + 跨布局同形查询构造。两代**两侧都有独有行**（真机 3931 条同 id、旧独有 76 条/7.71M tokens、新独有 1459 条），读取方扫全部存在的布局再按 id 合并；写入方写「当前活跃布局」（新代优先）。新增布局 = 加一条描述符 | `test/opencode-db-layouts.test.js`、`test/model-usage-opencode.test.js`（纯新库 / 双写合并 / 角色以新代为准） |
 | `lib/server/opencode-zen-free-client.js` + `upstream-endpoints-transport-opencode-free-http.js` | **Gate Adapter（形状补足）+ Strategy Chain 首选 + Fail-open 交还** | 把 Zen 免费档门禁五条件固化进模块契约：离线铸造会话 id（`~(t*4096+counter)`，与官方 identifier.ts 逐位一致）、tools 缺 `read` 时补空描述垫片、`stream:true` 恒流式（非流式由 SSE 聚合器还原成 `chat.completion`）；吃到 403 门禁时 `run()` **返回 null 交还链上 CLI**（零记账 + `opencodeFreeZenGatedFallback` 注解留痕） | bisect 矩阵：`[read]`=200、`[todoread/READ/read_file]`=403、非流式=403、12 真工具/单 read 等价；冒烟 14/14（含 2 条真实网络腿）；真机 E2E 流式/非流式/带客户端工具三条全 200（回复 pong、零 tool_calls） |
 
 
@@ -76,6 +77,17 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 `lib/server/protocol-fallback-bridge.js`、`lib/server/web-account-auth*.js`、`lib/server/webui-project-cache.js`、
 `lib/server/provider-session-hook-config.js`、`lib/usage/codebuddy-*`、`lib/usage/model-usage-read-projection.js`、
 `lib/server/native-cli-model-discovery.js`。
+
+### 存储布局反模式（2026-10-16 · opencode 会话库两代并存）
+
+opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在迁移时刻，且两代**两侧都有独有行**
+（真机量化：3931 条同 id、旧独有 76 条/7.71M tokens、新独有 1459 条）——凡硬编码表名或「一侧为准」二选一的
+实现都会丢另一侧数据。布局知识唯一来源：`lib/sessions/opencode-db-layouts.js`（Layout Table）。
+
+| 优先级 | 文件 | 处数 | 现在在做什么 | 目标模式 |
+| --- | --- | --- | --- | --- |
+| P1 | `lib/sessions/session-reader-opencode.js` + `lib/sessions/session-reader.js`（`readOpenCodeSessionModel`） | 5 查询点 | WebUI 会话历史只读旧表：新会话定位（`FROM session`）查不到 → 历史与列表整个缺新会话；消息渲染依赖 `part` 表（新会话内容内嵌 `data.content`） | 消费同一张布局表：会话侧读新代（真机 `session_v2 ⊇ session`，0 独有）并回退旧代；消息侧并集 + 按 `contentModel` 渲染（`inline` vs `parts`） |
+| P2 | `lib/sessions/opencode-session-store.js`（WebUI chat 代理） | 7 写入点 | 混合写：`session`/`message`/`part` 写死旧表，`session_message` 只写 switch 行；`assertRequiredTables` 要求旧表存在（纯新库直接报错） | 消费同一张布局表：写目标 = 首个存在的布局（新代优先，写 `seq` 自增）；断言按活跃布局的表集合。症状：迁移只跑一次，切日后写进旧表的新会话对 opencode 2.x 不可见 |
 
 ## 3. 改造路线（每步独立可验证、可回滚）
 
@@ -133,6 +145,15 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
     * 形状（设计已定）：每 provider 一个会话适配器 `{ launchArgs(ctx), resumeArgs(ctx), streamParser, sessionIdFrom(event) }`，
       由描述符 `capabilities.sessionAdapter` 声明；命令层只做「取适配器 → 拼 argv → 执行」。
     * 参照实现：`lib/runtime/provider-resume.js`（策略表）与 `lib/cli/services/ai-cli/launch-profile/*-strategy.js`（每 provider 一个策略模块）。
+
+**Phase 3.5 — 存储布局（opencode 会话库两代并存，2026-10-16 新增）**
+12. ✅ 用量扫描：`lib/sessions/opencode-db-layouts.js` 布局表 + `model-usage-scanner.js` 消费——扫全部存在的布局、
+    同 id 按 token 总量合并、总量相等取新代（= 角色/类型以新代为准；真机 A/B：127 条 `synthetic`/`compaction`
+    不再误记为提示词，其余仅 ±1ms 时间对齐差异）。
+13. ⏳ WebUI 会话历史（P1，见 §2 存储布局反模式）：`session-reader-opencode.js` 5 个查询点消费同一张布局表——
+    会话侧读新代（`session_v2 ⊇ session`）+ 回退旧代；消息侧并集 + 按 `contentModel` 渲染（`inline` vs `parts`）。
+14. ⏳ WebUI chat 代理写入（P2）：`opencode-session-store.js` 写目标 = 首个存在的布局（新代优先，`seq` 自增）；
+    `assertRequiredTables` 按活跃布局的表集合。
 
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件

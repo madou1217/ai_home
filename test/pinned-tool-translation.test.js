@@ -18,8 +18,10 @@
 //      或显式报缺失（`pinMissing`），不存在第三种；
 //   ④ 保住的钉选必须严格等价：收窄 tools 到被钉的那一个 + `required`，且不再标记降级；
 //   ⑤ 不改写入参：客户端传进来的 tools 数组必须原样可用（调用方还要拿它做日志）；
-//   ⑥ 可观测：适配器返回的每个改写结论都必须在唯一调用点被 annotateAttempt 记进注解袋子，
-//      否则「有损」在日志里根本看不见（这条是 ②③ 能被事后排查的前提）。
+//   ⑥ 可观测：适配器把「结论 → 注解键」的映射**自己声明**（`annotations`），唯一调用点整体
+//      并入注解袋子，因此不存在「有损发生了、日志里却查不到」（这条是 ②③ 能被事后排查的前提）；
+//   ⑦ 客户端可见：有损改写必须同时给出降级码（`degradations`），由调用点下发
+//      `x-aih-degradations` 响应头 —— 日志里有不等于客户端知道，客户端不读服务器日志。
 //
 // 另一条同源的有损路径（非流式聚合丢工具调用）见文件末尾的流表：客户端拿到
 // `finish_reason: 'tool_calls'` 就必须有工具可执行，否则表现为「模型回答为空」。
@@ -299,7 +301,7 @@ test('非流式聚合不变量：声称要调用工具就必须给出可执行�
   assert.equal(empty.message.tool_calls, undefined);
 });
 
-// ⑥ 可观测：适配器的每个改写结论都必须在唯一调用点被 annotateAttempt 记进注解袋子。
+// ⑥ 可观测：适配器自己声明「结论 → 注解键」的完整映射，唯一调用点整体并入注解袋子。
 // 没有这一条，②③ 只是「代码里知道」——排查时日志里查不到（历史教训：
 // codebuddyFamilyInjectedSystemPrompt 曾只写在 attempt 上、从未进过任何日志行）。
 test('钉住工具的改写结论必须全部进注解袋子（唯一调用点不漏项）', () => {
@@ -307,39 +309,81 @@ test('钉住工具的改写结论必须全部进注解袋子（唯一调用点�
     path.join(__dirname, '..', 'lib', 'server', 'upstream-endpoints-transport-general.js'),
     'utf8'
   );
-  const conclusions = [
-    ['codebuddyFamilyInjectedSystemPrompt', 'injectedSystemPrompt'],
-    ['codebuddyFamilyToolChoice', 'body.tool_choice'],
-    ['codebuddyFamilyToolChoiceNormalized', 'toolChoiceNormalized'],
-    ['codebuddyFamilyToolChoiceDowngraded', 'toolChoiceDowngraded'],
-    ['codebuddyFamilyToolChoicePin', 'toolChoicePin'],
-    ['codebuddyFamilyToolChoicePinPreserved', 'toolChoicePinPreserved'],
-    ['codebuddyFamilyToolChoicePinMissing', 'toolChoicePinMissing'],
-    ['codebuddyFamilyToolChoiceUnsupportedForm', 'toolChoiceUnsupportedForm']
+  // 注解键 → 该键应当携带的值。两条派生条目读 body（生效的 tool_choice、收窄后的工具数），
+  // 其余逐字对应适配器的结论字段。
+  const expected = [
+    ['codebuddyFamilyInjectedSystemPrompt', (r) => r.injectedSystemPrompt],
+    ['codebuddyFamilyToolChoice', (r) => r.body.tool_choice],
+    ['codebuddyFamilyToolChoiceNormalized', (r) => r.toolChoiceNormalized],
+    ['codebuddyFamilyToolChoiceDowngraded', (r) => r.toolChoiceDowngraded],
+    ['codebuddyFamilyToolChoicePin', (r) => r.toolChoicePin],
+    ['codebuddyFamilyToolChoicePinPreserved', (r) => r.toolChoicePinPreserved],
+    ['codebuddyFamilyToolChoicePinMissing', (r) => r.toolChoicePinMissing],
+    ['codebuddyFamilyToolChoiceUnsupportedForm', (r) => r.toolChoiceUnsupportedForm],
+    ['codebuddyFamilyToolChoiceNarrowedTools', (r) => (r.toolChoicePinPreserved ? r.body.tools.length : undefined)]
   ];
-  for (const [key, field] of conclusions) {
-    assert.ok(
-      source.includes(`annotateAttempt(attemptMutable, '${key}', adapted.${field})`),
-      `${key} 没有从 adapted.${field} 记进注解袋子`
+  const cases = [
+    { name: '保住的钉选', request: { messages: MESSAGES.slice(), tool_choice: pin('read_file'), tools: PIN_TOOLS } },
+    { name: '钉选不在 tools 里', request: { messages: MESSAGES.slice(), tool_choice: pin('nope'), tools: PIN_TOOLS } },
+    { name: '钉选但没带 tools', request: { messages: MESSAGES.slice(), tool_choice: pin('read_file') } },
+    { name: '未识别的形态', request: { messages: MESSAGES.slice(), tool_choice: { type: 'wat' }, tools: PIN_TOOLS } }
+  ];
+  for (const item of cases) {
+    const adapted = adaptCodebuddyFamilyChatRequest(item.request);
+    const declared = Object.keys(adapted.annotations);
+    for (const key of declared) {
+      assert.ok(key.startsWith('codebuddyFamily'), `${item.name}: 注解键 ${key} 必须带命名空间前缀`);
+    }
+    for (const [key, read] of expected) {
+      assert.ok(declared.includes(key), `${item.name}: 适配器没有声明注解键 ${key}`);
+      assert.equal(adapted.annotations[key], read(adapted), `${item.name}: ${key} 的值不对`);
+    }
+    // 结论字段数 + 2 条派生条目 = 映射条数。新增结论却忘了映射时这个等式立刻不成立
+    // （「忘了记日志」因此是测试失败，而不是线上盲区）。
+    const conclusions = Object.keys(adapted).filter(
+      (key) => !['body', 'streamed', 'annotations', 'degradations'].includes(key)
+    );
+    assert.equal(declared.length, conclusions.length + 2, `${item.name}: 有结论没有对应的注解键`);
+  }
+  // 调用点必须整体并入适配器声明的映射，且不得退回「每个结论手写一行」的形态——
+  // 手写清单正是「漏接线」的来源。
+  assert.ok(source.includes('Object.entries(adapted.annotations)'), '调用点必须整体并入 adapted.annotations');
+  assert.ok(source.includes('annotateAttempt(attemptMutable, key, value)'), '调用点必须逐条写进注解袋子');
+  assert.ok(!source.includes("'codebuddyFamilyToolChoicePin'"), '调用点不得再手写家族注解键');
+});
+
+// ⑦ 客户端可见：有损必须给出降级码，并由唯一调用点下发 `x-aih-degradations` 响应头。
+// 这条与 ② 是同一件事的两端：日志侧的降级标记与客户端侧的降级码不得分叉。
+test('有损改写必须给出客户端可见的降级码，并由调用点下发响应头', () => {
+  const cases = [
+    { name: '保住钉选（干净路径）', request: { messages: MESSAGES.slice(), tool_choice: pin('read_file'), tools: PIN_TOOLS }, codes: [] },
+    { name: '钉选不在 tools 里', request: { messages: MESSAGES.slice(), tool_choice: pin('nope'), tools: PIN_TOOLS }, codes: ['tool_choice_pin_missing'] },
+    { name: '钉选但没带 tools', request: { messages: MESSAGES.slice(), tool_choice: pin('read_file') }, codes: ['tool_choice_pin_missing'] },
+    { name: 'function 形态没有名字', request: { messages: MESSAGES.slice(), tool_choice: { type: 'function' }, tools: PIN_TOOLS }, codes: ['tool_choice_unsupported_form'] },
+    { name: '未识别的形态', request: { messages: MESSAGES.slice(), tool_choice: { type: 'wat' }, tools: PIN_TOOLS }, codes: ['tool_choice_unsupported_form'] },
+    { name: '等价改写 any→required', request: { messages: MESSAGES.slice(), tool_choice: 'any', tools: PIN_TOOLS }, codes: [] },
+    { name: '补 system 占位不算有损', request: { messages: [{ role: 'user', content: 'hi' }], tool_choice: pin('read_file'), tools: PIN_TOOLS }, codes: [] }
+  ];
+  for (const item of cases) {
+    const adapted = adaptCodebuddyFamilyChatRequest(item.request);
+    assert.deepEqual(adapted.degradations, item.codes, `${item.name}: 降级码`);
+    assert.equal(
+      adapted.degradations.length > 0,
+      Boolean(adapted.toolChoiceDowngraded),
+      `${item.name}: 降级码与日志侧降级标记必须一致（不得一端有一端无）`
     );
   }
-  // 收窄数量取自 body，且只在真的收窄时上报（保住钉选时 tools 一定存在，否则读 length 会抛）。
-  assert.ok(
-    source.includes('adapted.toolChoicePinPreserved ? adapted.body.tools.length : undefined'),
-    'codebuddyFamilyToolChoiceNarrowedTools 必须由 pinPreserved 守卫'
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'lib', 'server', 'upstream-endpoints-transport-general.js'),
+    'utf8'
   );
-  // 适配器新增结论却没接线时，下面这条会失败（把「忘了记日志」变成测试失败而不是线上盲区）。
-  const adapted = adaptCodebuddyFamilyChatRequest({
-    messages: MESSAGES.slice(),
-    tool_choice: pin('read_file'),
-    tools: PIN_TOOLS
-  });
-  const returned = Object.keys(adapted).filter((key) => key !== 'body' && key !== 'streamed');
-  for (const key of returned) {
-    assert.ok(
-      conclusions.some(([, field]) => field === key),
-      `适配器新增的结论 ${key} 没有对应的注解键`
-    );
-  }
+  assert.ok(
+    source.includes("res.setHeader('x-aih-degradations', adapted.degradations.join(','))"),
+    '调用点必须把降级码下发给客户端'
+  );
+  assert.ok(
+    source.includes('if (adapted.degradations.length)'),
+    '干净路径不得下发降级头（否则每条响应都是噪音）'
+  );
 });
 

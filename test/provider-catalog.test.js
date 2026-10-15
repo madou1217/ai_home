@@ -56,12 +56,12 @@ test('ProviderCatalog exposes provider capabilities centrally', () => {
   );
   assert.deepEqual(
     listProvidersByCapability('accountSessionStore'),
-    ['grok', 'qoder', 'qodercn', 'kiro']
+    ['grok', 'qoder', 'qodercn', 'kiro', 'cline']
   );
   assert.deepEqual(
     listProvidersByCapability('sessionHistory'),
     ['codex', 'gemini', 'claude', 'agy', 'opencode', 'grok', 'qoder', 'qodercn', 'kiro', 'zcode',
-      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']
+      'codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']
   );
   assert.deepEqual(
     listProvidersByCapability('usageScan'),

@@ -555,7 +555,9 @@ export const PROVIDER_DEFINITIONS = [
     "tagColor": "magenta",
     "capabilities": [
       "api_key_account",
-      "model_catalog"
+      "model_catalog",
+      "session_history",
+      "account_session_store"
     ],
     "authOptions": [
       {

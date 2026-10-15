@@ -914,7 +914,11 @@ func builtinCline() Definition {
 		Clients:        clientSupport(true, false),
 		Credentials:    &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
 		NativeBoundary: nativeCline(),
-		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog},
+		// session_history + account_session_store：会话读的是账号沙箱里的
+		// <CLINE_DATA_DIR>/db/sessions.db 与 sessions/<id>/<id>.messages.json
+		// （lib/sessions/session-reader-cline.js）。共享存储落地后同一条路径就是宿主
+		// 那份会话（软链接），因此 aih 会话历史与宿主 `cline /history` 看到的是同一批。
+		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Cline API Key", "绑定 CLINE_API_KEY / CLINE_API_BASE_URL。"),
 			authOption(AuthModeOAuthBrowser, "Cline Pass 登录", "使用 Cline 原生 auth 流程（需 Cline Pass 订阅）。"),

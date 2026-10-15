@@ -204,15 +204,18 @@ export function AuthProgressModal({
   onScanHostAccounts,
   onConfirmCliInstall
 }: AuthProgressModalProps) {
-  // 本机来源可用 = 该认证方式下有一个可用的本机来源（由服务端认证来源链解析，界面不自己判断环境）。
-  const localSourceReady = Boolean(
-    authSources && authSources.localSourceAvailable && authSources.preferredSourceId
-  );
   // 扫描来源（handler = host-account-scan）：本机登录态是整批的，走既有「扫描本机账号」入库。
   const preferredSource = authSources
     ? (authSources.sources || []).find((source) => source.id === authSources.preferredSourceId) || null
     : null;
   const localScanSource = preferredSource && preferredSource.handler === 'host-account-scan' ? preferredSource : null;
+  // 本机导入来源：可用、且是「读本机登录态直接入库」的实现（不是整批扫描）。与认证方式无关——
+  // claude/codex/gemini/kimi 等 provider 的宿主登录态都走这一张卡片。
+  const localImportSource = preferredSource
+    && preferredSource.kind === 'local'
+    && preferredSource.handler !== 'host-account-scan'
+    ? preferredSource
+    : null;
   const copyText = async (value: string, successMessage: string) => {
     const text = String(value || '').trim();
     if (!text) return;
@@ -383,6 +386,23 @@ export function AuthProgressModal({
             </Card>
           )}
 
+          {localImportSource && addJob.status === 'running' ? (
+            <Card size="small" title="从本机导入" className="hud-panel hud-panel--sm aih-overlay-section">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text type="secondary" className="aih-overlay-hint">
+                  检测到本机 {providerNames[addJob.provider] || addJob.provider} 登录态，可直接导入，无需手动导出凭据。
+                </Text>
+                <Button
+                  type="primary"
+                  loading={localImportSubmitting}
+                  onClick={() => onLocalImport(localImportSource.id)}
+                >
+                  从本机导入
+                </Button>
+              </Space>
+            </Card>
+          ) : null}
+
           {localScanSource && addJob.status === 'running' ? (
             <Card size="small" title="本机登录态" className="hud-panel hud-panel--sm aih-overlay-section">
               <Space direction="vertical" style={{ width: '100%' }} size="small">
@@ -396,40 +416,27 @@ export function AuthProgressModal({
             </Card>
           ) : null}
 
+          {!localImportSource && !localScanSource && authSources && authSources.installableSourceId ? (
+            <Card size="small" title="本机登录态" className="hud-panel hud-panel--sm aih-overlay-section">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text type="secondary" className="aih-overlay-hint">
+                  未检测到本机登录态；装上对应客户端后即可一键导入。
+                </Text>
+                <Button
+                  loading={localInstallSubmitting}
+                  disabled={addJob.status !== 'running'}
+                  onClick={() => onInstallLocalClient(authSources.sources
+                    .find((source) => source.id === authSources.installableSourceId)?.requiresApp === 'cli' ? 'cli' : 'desktop')}
+                >
+                  安装客户端
+                </Button>
+              </Space>
+            </Card>
+          ) : null}
+
           {addJob.authMode === 'oauth-refresh-token' && (
             <Card size="small" title="refresh_token 导入" className="hud-panel hud-panel--sm aih-overlay-section">
               {renderAuthDetail('账号', getAuthJobIdentity(addJob, subjectLabel), { copyMessage: '已复制账号' })}
-              {/* 本机来源可用（例如装了 Kiro IDE）→ 一键导入；不可用但可安装 → 只给紧凑提示，不占版面。 */}
-              {localSourceReady ? (
-                <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  <Text type="secondary" className="aih-overlay-hint">
-                    检测到本机登录态，可直接导入，无需手动复制。
-                  </Text>
-                  <Button
-                    type="primary"
-                    loading={localImportSubmitting}
-                    disabled={addJob.status !== 'running'}
-                    onClick={() => onLocalImport(authSources.preferredSourceId)}
-                  >
-                    从本机导入
-                  </Button>
-                </Space>
-              ) : null}
-              {!localSourceReady && authSources && authSources.installableSourceId ? (
-                <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  <Text type="secondary" className="aih-overlay-hint">
-                    未检测到本机登录态；装上对应客户端后即可一键导入。
-                  </Text>
-                  <Button
-                    loading={localInstallSubmitting}
-                    disabled={addJob.status !== 'running'}
-                    onClick={() => onInstallLocalClient(authSources.sources
-                      .find((source) => source.id === authSources.installableSourceId)?.requiresApp === 'cli' ? 'cli' : 'desktop')}
-                  >
-                    安装客户端
-                  </Button>
-                </Space>
-              ) : null}
               {addJob.status === 'running' ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>

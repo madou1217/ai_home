@@ -305,17 +305,26 @@ export interface AggregatorOverview {
 }
 
 /**
- * 本机中转（sing-box 边车）的状态：能不能用、有没有在跑、这次要中转几个节点。
- * 只有声明了 relayFallback 的输出格式（Clash 经典 / Premium）才可能有内容。
+ * 本机中转（内核边车：sing-box + mihomo）的状态：能不能用、有没有在跑、这次要中转几个节点。
+ * 只有声明了 relayFallback 的输出格式（Clash 经典 / Premium、Surge）才可能有内容。
  */
 export interface AggregatorRelayStatus {
   /** 这次请求明确要求了中转（链接 ?relay=1 或界面按钮）。 */
   requested?: boolean;
-  /** 请求是不是来自本机（中转端口只监听 127.0.0.1，只有本机客户端用得上）。 */
+  /** 请求是不是来自本机。远端客户端走「绑可达地址 + 认证」形态，入口写它自己用的 Host。 */
   local?: boolean;
+  remote?: boolean;
+  /** 入口写进客户端配置时用的地址（远端 = 客户端用的 Host，本机 = 127.0.0.1）。 */
+  advertiseHost?: string;
+  /** 边车实际绑定的地址；远端场景下必须是可达地址，否则不给入口（fail-closed）。 */
+  listenHost?: string;
+  /** 入口是否需要认证（远端形态下恒为 true）。 */
+  authRequired?: boolean;
+  /** 需要放行的端口段（客户端要能连到它）。 */
+  portRange?: string;
   available: boolean;
   active: boolean;
-  /** 这次需要中转的节点数（内核认不出的协议）。0 表示这个格式不需要中转。 */
+  /** 这次需要中转的节点数（目标格式/内核表达不了的协议）。0 表示这个格式不需要中转。 */
   candidates?: number;
   /** 已经在跑的本地入口数量。 */
   nodes: number;

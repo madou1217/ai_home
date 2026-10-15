@@ -236,9 +236,11 @@ const GROUP_TYPE_NAMES: Record<string, string> = { fallback: '故障转移', 'lo
 /** 本机中转的失败码 → 用户能照做的说明（预览里的 aggregator_relay_unavailable:<码>）。 */
 export function relayWarningText(code: string) {
   if (code === 'relay_not_running') return '本机中转没有在运行：点「启动本机中转」后，这些节点会改成本地 socks5 入口';
-  if (code === 'relay_binary_not_found') return '没找到 sing-box 内核，本机中转用不了：装一个 sing-box（或放进 ~/.ai_home/bin）再试';
-  if (code === 'relay_local_only') return '本机中转只对本机生效：这份配置是从别的机器拉的，节点按原样输出';
-  if (code === 'relay_config_rejected') return 'sing-box 拒绝了本机中转配置，节点按原样输出（原因见服务端日志）';
+  if (code === 'relay_binary_not_found') return '没找到中转内核，本机中转用不了：装一个 sing-box（或 mihomo）并放进 ~/.ai_home/bin，或设 AIH_RELAY_SING_BOX_BIN / AIH_RELAY_MIHOMO_BIN';
+  if (code === 'relay_not_exposed') return '中转入口现在只绑在本机，别的机器连不上：重新拉一次这份订阅（或点「启动本机中转」），边车会改绑可达地址并要求认证';
+  if (code === 'relay_origin_unknown') return '拿不到客户端用的地址（Host），给不出它能连到的中转入口：用域名或 IP 访问本服务后再拉订阅';
+  if (code === 'relay_auth_required') return '对外暴露中转入口需要认证凭据，这次没能生成：检查 ~/.ai_home/run/subscription-relay 是否可写（或设 AIH_RELAY_USERNAME / AIH_RELAY_PASSWORD）';
+  if (code === 'relay_config_rejected') return '中转内核拒绝了配置，节点按原样输出（原因见服务端日志与 ~/.ai_home/run/subscription-relay 下的内核日志）';
   if (code === 'relay_port_unavailable') return '没有空闲端口可用，本机中转起不来：腾出 23100 起的端口再试';
   return `本机中转启动失败（${code}）：节点按原样输出`;
 }
@@ -270,6 +272,12 @@ export function previewWarningText(warning: string, describePolicy: (policy: str
   // 本机中转没起来（内核缺失 / 边车没跑 / 请求不是本机来的）：给出可照做的下一步。
   const relay = warning.match(/^aggregator_relay_unavailable:(.+)$/);
   if (relay) return relayWarningText(relay[1]);
+  // 远端客户端拿的是「它自己的 Host + 中转端口」：那段端口必须对它可达。
+  const remoteRelay = warning.match(/^aggregator_relay_remote:([^:]+)(?::(\d+-\d+))?$/);
+  if (remoteRelay) {
+    const range = remoteRelay[2] ? `，端口 ${remoteRelay[2]}` : '';
+    return `这份配置里的中转节点走 ${remoteRelay[1]}${range}：请确认该端口段对该客户端可达（安全组 / 防火墙 / frp 都要放行）`;
+  }
   return warning;
 }
 

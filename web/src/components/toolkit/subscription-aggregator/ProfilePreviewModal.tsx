@@ -143,8 +143,8 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
           {preview.view === 'nodes' && <Tag>仅节点</Tag>}
         </Space>
       )}
-      {/* 本机中转：只有「内核认不出的协议」存在时才出现（后端 relay.candidates > 0）。
-          同机的 ClashX 之类老内核靠它用上 VLESS / Hysteria2 等节点。 */}
+      {/* 本机中转：只有「目标格式/内核表达不了」的协议存在时才出现（后端 relay.candidates > 0）。
+          同机的 ClashX 之类老内核、Surge 的 VLESS 节点都靠它；远端客户端走「可达地址 + 认证」形态。 */}
       {preview?.relay && (preview.relay.candidates || 0) > 0 && (
         <Space wrap className={styles.previewStats}>
           <Text type="secondary">
@@ -163,6 +163,13 @@ export default function ProfilePreviewModal({ profile, formats, clients, describ
             </Button>
           )}
           {preview.relay.version ? <Tag>sing-box {preview.relay.version}</Tag> : null}
+          {/* 远端客户端连的是「它自己的 Host + 这段端口」：得放行，否则那些节点连不上。 */}
+          {preview.relay.active && preview.relay.remote && preview.relay.portRange ? (
+            <Tag color="warning">
+              {preview.relay.advertiseHost}:{preview.relay.portRange} 需对客户端可达
+            </Tag>
+          ) : null}
+          {preview.relay.active && preview.relay.authRequired ? <Tag>入口已启用认证</Tag> : null}
           {preview.relay.skipped && preview.relay.skipped.length > 0 && (
             <Text type="secondary">
               中转跳过 {preview.relay.skipped.length} 个节点（{skipReasonText(preview.relay.skipped[0].reason)}）

@@ -178,16 +178,26 @@ const SERVICE_NODES = Object.freeze([
   { id: 'n_ss', protocol: 'shadowsocks', name: 'ss', server: 'ss.example', port: 8388, cipher: 'aes-256-gcm', password: 'secret' }
 ]);
 
-function fakeRelay({ available = true, endpoints = new Map() } = {}) {
+function fakeRelay({ available = true, endpoints = new Map(), listenHost = '' } = {}) {
   const calls = { ensure: [] };
   return {
     calls,
     availability: () => (available
-      ? { available: true, binary: '/opt/sing-box', source: 'explicit', version: '1.13.19', running: endpoints.size > 0, nodes: endpoints.size, basePort: 23100 }
+      ? {
+        available: true, binary: '/opt/sing-box', source: 'explicit', version: '1.13.19',
+        running: endpoints.size > 0, nodes: endpoints.size, basePort: 23100, maxPort: 23355,
+        portRange: '23100-23655', listenHost, authRequired: [...endpoints.values()].some((item) => item.username),
+        kernels: []
+      }
       : { available: false, error: 'relay_binary_not_found' }),
     activeEndpoints: () => new Map(endpoints),
+    activeListenHost: () => (endpoints.size ? listenHost : ''),
     ensure: async (nodes, options = {}) => {
-      calls.ensure.push({ ids: nodes.map((node) => node.id), onlyIds: options.onlyIds ? [...options.onlyIds] : null });
+      calls.ensure.push({
+        ids: nodes.map((node) => node.id),
+        onlyIds: options.onlyIds ? [...options.onlyIds] : null,
+        remote: options.remote === true
+      });
       return { ok: true, endpoints: new Map(endpoints), skipped: [] };
     }
   };
@@ -275,8 +285,8 @@ test('a loopback Premium client pull starts the sidecar by default and reports i
       remoteAddress: '127.0.0.1'
     });
     assert.equal(pulled.status, 200);
-    // 只需中转内核认不出的那个节点。
-    assert.deepEqual(relay.calls.ensure, [{ ids: ['n_vless'], onlyIds: ['n_vless'] }]);
+    // 只需中转内核认不出的那个节点；本机请求不升级成暴露形态（remote: false）。
+    assert.deepEqual(relay.calls.ensure, [{ ids: ['n_vless'], onlyIds: ['n_vless'], remote: false }]);
     assert.equal(proxiesOf(pulled.body).find((proxy) => proxy.name === 'vless').type, 'socks5');
     const pull = service.getOverview().profiles[0].recentPulls[0];
     assert.deepEqual([pull.relayNodes, pull.relayError], [1, '']);
@@ -298,30 +308,61 @@ test('relay=0 from a loopback client skips the sidecar entirely', async () => {
   });
 });
 
-test('a remote client never receives loopback entries, even while the relay is running', async () => {
-  const relay = fakeRelay({ endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23101, udp: true }]]) });
+test('a remote client gets entries on its own host with credentials instead of loopback ones', async () => {
+  const relay = fakeRelay({
+    endpoints: new Map([['n_vless', { host: '0.0.0.0', port: 23101, udp: true, username: 'aih-relay', password: 'secret' }]]),
+    listenHost: '0.0.0.0'
+  });
+  await withService(SERVICE_NODES, relay, async (service, profile) => {
+    const pulled = await service.serveSubscription(profile.token, {
+      userAgent: 'ClashX/1.118.0 (com.west2online.ClashX)',
+      remoteAddress: '203.0.113.8',
+      origin: 'http://aih.example:9527'
+    });
+    // 远端客户端也要能用：这次真的拉边车，并要求它绑可达地址（remote: true）。
+    assert.deepEqual(relay.calls.ensure.map((call) => call.remote), [true]);
+    // 入口写客户端自己用的 Host，并带上认证 —— 127.0.0.1 对那边没有意义。
+    assert.deepEqual(proxiesOf(pulled.body).find((proxy) => proxy.name === 'vless'), {
+      name: 'vless', type: 'socks5', server: 'aih.example', port: 23101,
+      username: 'aih-relay', password: 'secret', udp: true
+    });
+    const pull = service.getOverview().profiles[0].recentPulls[0];
+    assert.deepEqual([pull.relayNodes, pull.relayError], [1, '']);
+  });
+});
+
+test('a remote client without a usable Host gets no entries at all (fail-closed)', async () => {
+  const relay = fakeRelay({ endpoints: new Map([['n_vless', { host: '0.0.0.0', port: 23101, udp: true }]]), listenHost: '0.0.0.0' });
   await withService(SERVICE_NODES, relay, async (service, profile) => {
     const pulled = await service.serveSubscription(profile.token, {
       userAgent: 'ClashX/1.118.0 (com.west2online.ClashX)',
       remoteAddress: '203.0.113.8'
     });
+    // 拿不到客户端用的地址就给不出可达入口：这一轮不中转，节点按原样输出。
     assert.equal(relay.calls.ensure.length, 0);
-    // 127.0.0.1 对远端客户端没有意义：照原样输出节点，而不是给一个连不上的入口。
     assert.equal(proxiesOf(pulled.body).find((proxy) => proxy.name === 'vless').type, 'vless');
   });
 });
 
-test('startRelay spawns on demand from the machine itself and refuses remote callers', async () => {
+test('startRelay spawns on demand from the machine itself and upgrades to the exposed form for remote callers', async () => {
   const relay = fakeRelay({ endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23101, udp: true }]]) });
   await withService(SERVICE_NODES, relay, async (service, profile) => {
     const started = await service.startRelay(profile.id, { target: 'clash-classic', remoteAddress: '127.0.0.1' });
     assert.equal(started.ok, true);
-    assert.deepEqual([started.relay.active, started.relay.nodes], [true, 1]);
-    assert.equal(relay.calls.ensure.length, 1);
+    assert.deepEqual([started.relay.active, started.relay.nodes, started.relay.remote], [true, 1, false]);
+    assert.deepEqual(relay.calls.ensure.map((call) => call.remote), [false]);
 
-    const remote = await service.startRelay(profile.id, { target: 'clash-classic', remoteAddress: '203.0.113.8' });
-    assert.equal(remote.relay.error, 'relay_local_only');
-    assert.equal(relay.calls.ensure.length, 1);
+    const remote = await service.startRelay(profile.id, {
+      target: 'clash-classic', remoteAddress: '203.0.113.8', origin: 'http://aih.example:9527'
+    });
+    assert.equal(remote.relay.error, '');
+    assert.deepEqual([remote.relay.remote, remote.relay.advertiseHost], [true, 'aih.example']);
+    assert.deepEqual(relay.calls.ensure.map((call) => call.remote), [false, true]);
+
+    // 远端但拿不到 Host：直接失败并说清原因，不去拉一个客户端连不到的边车。
+    const unknown = await service.startRelay(profile.id, { target: 'clash-classic', remoteAddress: '203.0.113.8' });
+    assert.equal(unknown.relay.error, 'relay_origin_unknown');
+    assert.equal(relay.calls.ensure.length, 2);
   });
 });
 
@@ -329,7 +370,80 @@ test('startRelay spawns on demand from the machine itself and refuses remote cal
 
 
 // ============================================================
-// 真内核校验：装了 sing-box 就校验编译结果，没装就跳过（不依赖内核也能跑单测）
+// 多内核：sing-box 编不出来的（xhttp / VLESS Encryption / SSR / Mieru）交给 mihomo
+// ============================================================
+
+const { KERNELS, splitByKernel } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/kernels');
+const { compileMihomoRelayConfig } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-config');
+const { resolveRelayCredentials } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials');
+
+const KERNEL_NODES = Object.freeze([
+  { id: 'k_vless', protocol: 'vless', name: 'vless', server: 'v.example', port: 443, uuid: UUID, tls: true },
+  { id: 'k_xhttp', protocol: 'vless', name: 'xhttp', server: 'x.example', port: 443, uuid: UUID, network: 'xhttp', path: '/x', tls: true },
+  { id: 'k_enc', protocol: 'vless', name: 'enc', server: 'e.example', port: 443, uuid: UUID, encryption: 'mlkem768x25519plus.native.0rtt.KEY', tls: true },
+  { id: 'k_ssr', protocol: 'shadowsocksr', name: 'ssr', server: 's.example', port: 8443, cipher: 'aes-256-cfb', password: 'p', ssrProtocol: 'auth_aes128_md5', ssrObfs: 'tls1.2_ticket_auth' },
+  { id: 'k_naive', protocol: 'naive', name: 'naive', server: 'n.example', port: 443, username: 'u', password: 'p', tls: true }
+]);
+
+test('nodes sing-box cannot compile go to mihomo, and a chain never straddles the two kernels', () => {
+  assert.deepEqual(KERNELS.map((kernel) => kernel.id), ['sing-box', 'mihomo']);
+  const groups = splitByKernel(KERNEL_NODES);
+  const byKernel = Object.fromEntries(groups.map((group) => [group.kernel.id, group.nodes.map((node) => node.id)]));
+  // sing-box 没有 xhttp 传输、没有 VLESS Encryption、没有 SSR 出站；naive 反过来只有它有。
+  assert.deepEqual(byKernel['sing-box'], ['k_vless', 'k_naive']);
+  assert.deepEqual(byKernel.mihomo, ['k_xhttp', 'k_enc', 'k_ssr']);
+
+  // 链上的前置跟着下游走：同一个内核才能让 detour 指得到 tag。
+  const chained = [{ ...KERNEL_NODES[1], chain: 'k_ssr' }, KERNEL_NODES[3]];
+  const chainedGroups = splitByKernel(chained);
+  assert.deepEqual(chainedGroups.map((group) => [group.kernel.id, group.nodes.map((node) => node.id)]), [
+    ['mihomo', ['k_xhttp', 'k_ssr']]
+  ]);
+});
+
+test('the mihomo relay config binds one listener per node to its own outbound, with credentials', () => {
+  const { config, endpoints, skipped } = compileMihomoRelayConfig(
+    [{ ...KERNEL_NODES[2], chain: 'k_ssr' }, KERNEL_NODES[3]],
+    { onlyIds: new Set(['k_enc']), listenHost: '0.0.0.0', advertiseHost: '1.2.3.4', auth: { username: 'u', password: 'p' } }
+  );
+  assert.deepEqual(skipped, []);
+  assert.deepEqual([...endpoints.keys()], ['k_enc']);
+  assert.deepEqual(endpoints.get('k_enc'), { host: '1.2.3.4', port: 23400, udp: true });
+  // 入口 → 出站是钉死的（listeners[].proxy），并带认证。
+  assert.deepEqual(config.listeners, [{
+    name: 'relay-in-k_enc',
+    type: 'mixed',
+    listen: '0.0.0.0',
+    port: 23400,
+    proxy: 'relay-k_enc',
+    users: [{ username: 'u', password: 'p' }]
+  }]);
+  // 链上前置只做出站（没有入口），下游用 dialer-proxy 指过去。
+  assert.deepEqual(config.proxies.map((proxy) => proxy.name), ['relay-k_enc', 'relay-k_ssr']);
+  assert.equal(config.proxies[0]['dialer-proxy'], 'relay-k_ssr');
+  assert.equal('dialer-proxy' in config.proxies[1], false);
+});
+
+test('relay credentials come from the environment, else a private file that survives restarts', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-creds-'));
+  try {
+    const fromEnv = resolveRelayCredentials({ runDir: dir, env: { AIH_RELAY_USERNAME: 'u1', AIH_RELAY_PASSWORD: 'p1' } });
+    assert.deepEqual([fromEnv.username, fromEnv.password, fromEnv.source], ['u1', 'p1', 'env']);
+    const generated = resolveRelayCredentials({ runDir: dir, env: {} });
+    assert.equal(generated.source, 'generated');
+    assert.ok(generated.password.length >= 16);
+    // 重启后必须还能读到同一串（客户端配置里已经写着它了）。
+    const again = resolveRelayCredentials({ runDir: dir, env: {} });
+    assert.deepEqual([again.username, again.password, again.source], [generated.username, generated.password, 'file']);
+    const mode = fs.statSync(path.join(dir, 'credentials.json')).mode & 0o777;
+    assert.equal(mode, 0o600);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================
+// 真内核校验：装了内核就校验编译结果与真实监听，没装就跳过（不依赖内核也能跑单测）
 // ============================================================
 
 test('the compiled relay config passes the real kernel check when sing-box is installed', (t) => {
@@ -363,6 +477,101 @@ test('the compiled relay config passes the real kernel check when sing-box is in
     const check = spawnSync(binary.path, ['check', '-c', configPath], { encoding: 'utf8', timeout: 20000 });
     assert.equal(check.status, 0, check.stderr || check.stdout);
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a remote client gets a working, authenticated entry on the LAN address (real sing-box)', async (t) => {
+  const { spawnSync } = require('node:child_process');
+  const net = require('node:net');
+  const { LocalRelay } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/local-relay');
+  const binary = resolveSingBoxBinary({});
+  if (!binary) {
+    t.skip('本机没有 sing-box，跳过真内核中转校验');
+    return;
+  }
+  const lanAddress = Object.values(require('node:os').networkInterfaces())
+    .flat()
+    .find((item) => item && item.family === 'IPv4' && !item.internal)?.address || '';
+  if (!lanAddress) {
+    t.skip('这台机器没有非回环 IPv4，跳过');
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-exposed-'));
+  const relay = new LocalRelay({ runDir: dir, env: {}, readinessTimeoutMs: 15000 });
+  try {
+    // 远端客户端：绑可达地址 + 认证。节点是假的上游（连不通没关系，验的是入口本身）。
+    const result = await relay.ensure([{ ...VLESS_NODE }], { onlyIds: new Set(['n_vless']), remote: true });
+    assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));
+    const endpoint = result.endpoints.get('n_vless');
+    const credentials = relay.credentials();
+    assert.deepEqual([endpoint.port, endpoint.username, endpoint.password], [23100, credentials.username, credentials.password]);
+    assert.equal(relay.activeListenHost(), '0.0.0.0');
+    assert.equal(relay.isExposed(), true);
+
+    // 从本机（回环）与局域网地址都连得上；认证必须真的生效：
+    // 只提供 no-auth 的握手被拒（0xff），密码错被拒，密码对才通过。
+    const handshake = (host, credentials = null) => new Promise((resolve) => {
+      const socket = net.connect({ host, port: endpoint.port });
+      const done = (value) => { socket.destroy(); resolve(value); };
+      socket.setTimeout(3000);
+      socket.once('error', () => done('error'));
+      socket.once('connect', () => {
+        socket.write(credentials ? Buffer.from([0x05, 0x02, 0x00, 0x02]) : Buffer.from([0x05, 0x01, 0x00]));
+      });
+      let stage = 'greeting';
+      socket.on('data', (chunk) => {
+        if (stage === 'greeting') {
+          if (chunk[1] === 0xff) return done('no-acceptable-method');
+          if (chunk[1] === 0x00) return done('no-auth-accepted');
+          stage = 'auth';
+          const user = Buffer.from(credentials.username);
+          const password = Buffer.from(credentials.password);
+          socket.write(Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([password.length]), password]));
+          return undefined;
+        }
+        return done(chunk[1] === 0x00 ? 'authenticated' : 'auth-rejected');
+      });
+    });
+    for (const host of ['127.0.0.1', lanAddress]) {
+      assert.equal(await handshake(host), 'no-acceptable-method', `${host}: 无凭据必须被拒`);
+      assert.equal(await handshake(host, { username: credentials.username, password: 'wrong' }), 'auth-rejected');
+      assert.equal(await handshake(host, credentials), 'authenticated');
+    }
+    // 边车配置里确实写着认证（不是靠别的手段）。
+    const config = JSON.parse(fs.readFileSync(path.join(dir, 'sing-box', 'sing-box.json'), 'utf8'));
+    assert.deepEqual(config.inbounds[0].users, [{ username: credentials.username, password: credentials.password }]);
+    assert.equal(config.inbounds[0].listen, '0.0.0.0');
+  } finally {
+    await relay.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mihomo carries the transports sing-box cannot (real mihomo, when installed)', async (t) => {
+  const { LocalRelay } = require('../lib/cli/services/toolkit/subscription-aggregator/relay/local-relay');
+  const mihomoKernel = KERNELS.find((kernel) => kernel.id === 'mihomo');
+  const binary = mihomoKernel.resolveBinary({});
+  if (!binary) {
+    t.skip('本机没有 mihomo（AIH_RELAY_MIHOMO_BIN 或 ~/.ai_home/bin/mihomo），跳过');
+    return;
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-mihomo-'));
+  // 用真实环境变量（AIH_RELAY_MIHOMO_BIN 等）：内核位置就是这么传进去的。
+  const relay = new LocalRelay({ runDir: dir, env: process.env, readinessTimeoutMs: 15000 });
+  try {
+    const result = await relay.ensure([{ ...KERNEL_NODES[1] }], { onlyIds: new Set(['k_xhttp']), remote: true });
+    assert.equal(result.ok, true, result.error + ' ' + (result.detail || ''));
+    const endpoint = result.endpoints.get('k_xhttp');
+    assert.equal(typeof endpoint.port, 'number');
+    assert.equal(relay.sidecar('mihomo').activeListenHost(), '0.0.0.0');
+    const text = fs.readFileSync(path.join(dir, 'mihomo', 'mihomo.yaml'), 'utf8');
+    assert.match(text, /proxy: "?relay-k_xhttp"?/);
+    // 监听与认证都落在配置里（mihomo 的 listeners[].proxy 把入口钉到这个出站）。
+    assert.match(text, /listen: "?0\.0\.0\.0"?/);
+    assert.match(text, /username: "?aih-relay"?/);
+  } finally {
+    await relay.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

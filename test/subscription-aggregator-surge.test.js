@@ -232,3 +232,110 @@ test('the public route serves converted rule sets and passes the request origin'
   });
   assert.equal(bad.status, 404);
 });
+
+// ============================================================
+// 本机中转：Surge 没有 VLESS 这一档，同机跑 AIH 时由 sing-box 边车代拨
+// ============================================================
+
+const RELAY_NODES = Object.freeze([
+  { id: 'n_vless', protocol: 'vless', name: 'vless', server: 'v.example', port: 443, uuid: UUID, tls: true, sni: 'v.example' },
+  { id: 'n_ss', protocol: 'shadowsocks', name: 'ss', server: 'ss.example', port: 8388, cipher: 'aes-256-gcm', password: 'secret' }
+]);
+
+function fakeRelay({ available = true, endpoints = new Map(), listenHost = '' } = {}) {
+  const calls = { ensure: [] };
+  return {
+    calls,
+    availability: () => (available
+      ? {
+        available: true, binary: '/opt/sing-box', source: 'explicit', version: '1.13.19',
+        running: endpoints.size > 0, nodes: endpoints.size, basePort: 23100, maxPort: 23655,
+        portRange: '23100-23655', listenHost, kernels: []
+      }
+      : { available: false, error: 'relay_binary_not_found' }),
+    activeEndpoints: () => new Map(endpoints),
+    activeListenHost: () => (endpoints.size ? listenHost : ''),
+    ensure: async (nodes, options = {}) => {
+      calls.ensure.push({
+        ids: nodes.map((node) => node.id),
+        onlyIds: options.onlyIds ? [...options.onlyIds] : null,
+        remote: options.remote === true
+      });
+      return { ok: true, endpoints: new Map(endpoints), skipped: [] };
+    }
+  };
+}
+
+test('the Surge relay entry is a loopback socks5 line that only opens udp-relay when the sidecar can', () => {
+  const surge = getRenderer('surge');
+  const node = RELAY_NODES[0];
+  const context = { relay: { endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23101, udp: true }]]) } };
+  assert.equal(compiledLine(surge.compileNode({ node, name: 'vless' }, context)), 'vless = socks5, 127.0.0.1, 23101, udp-relay=true');
+  // 名字保留原样（策略组与分流规则引用的就是它）；UDP 不能转时不写 udp-relay（Surge 默认关）。
+  const tcpOnly = { relay: { endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23102, udp: false }]]) } };
+  assert.equal(compiledLine(surge.compileNode({ node, name: 'vless' }, tcpOnly)), 'vless = socks5, 127.0.0.1, 23102');
+  // 链式关系在边车配置里（出站 detour）：本地入口这一行不能带 underlying-proxy，
+  // 否则前置会去连「本机的 127.0.0.1:<port>」，远端前置只会连到它自己的回环地址。
+  assert.equal(compiledLine(surge.compileNode({ node, name: 'vless' }, { ...tcpOnly, chain: '上游' })), 'vless = socks5, 127.0.0.1, 23102');
+});
+
+test('a running local relay gives Surge the VLESS nodes it cannot dial itself', () => {
+  const relay = fakeRelay({ endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23101, udp: true }]]) });
+  const { service, profile } = createService(RELAY_NODES, { relay });
+  const result = service.preview(profile.id, 'surge', { remoteAddress: '127.0.0.1' });
+  assert.equal(result.ok, true);
+  // 只有格式表达不了的那个节点需要中转。
+  assert.deepEqual([result.relay.candidates, result.relay.nodes, result.relay.active], [1, 1, true]);
+  assert.deepEqual(result.skippedNodes, []);
+  assert.equal(result.stats.nodes, 2);
+  assert.match(result.content, /^vless = socks5, 127\.0\.0\.1, 23101, udp-relay=true$/m);
+  // 策略组照旧引用节点名，Surge 本来就认的协议保持直连。
+  assert.match(result.content, /^🚀 节点选择 = .*\bvless\b.*$/m);
+  assert.match(result.content, /^ss = ss, ss\.example, 8388, encrypt-method=aes-256-gcm, password=secret, udp-relay=true$/m);
+  assert.deepEqual(result.warnings, []);
+  // 预览不拉进程：读的是已经在跑的那一份。
+  assert.equal(relay.calls.ensure.length, 0);
+});
+
+test('a loopback Surge pull starts the sidecar by default and ships the local entry in the managed config', async () => {
+  const relay = fakeRelay({ endpoints: new Map([['n_vless', { host: '127.0.0.1', port: 23101, udp: true }]]) });
+  const { service, profile } = createService(RELAY_NODES, { relay });
+  const pulled = await service.serveSubscription(profile.token, {
+    userAgent: 'Surge/5.20.0', remoteAddress: '127.0.0.1', origin: 'http://127.0.0.1:9527'
+  });
+  assert.equal(pulled.status, 200);
+  assert.deepEqual(relay.calls.ensure, [{ ids: ['n_vless'], onlyIds: ['n_vless'], remote: false }]);
+  assert.match(pulled.body, /^#!MANAGED-CONFIG http:\/\/127\.0\.0\.1:9527\/sub\/.*\?target=surge/m);
+  assert.match(pulled.body, /^vless = socks5, 127\.0\.0\.1, 23101, udp-relay=true$/m);
+  const pull = service.getOverview().profiles[0].recentPulls[0];
+  assert.deepEqual([pull.format, pull.relayNodes, pull.relayError], ['surge', 1, '']);
+});
+
+test('without the sidecar a loopback Surge preview points at the local relay instead of blaming the format', () => {
+  const relay = fakeRelay({ endpoints: new Map() });
+  const { service, profile } = createService([RELAY_NODES[0]], { relay });
+  const local = service.preview(profile.id, 'surge', { remoteAddress: '127.0.0.1' });
+  assert.equal(local.stats.nodes, 0);
+  // 可照做的下一步是「启动本机中转」，不是「换个输出格式」。
+  assert.deepEqual(local.warnings, ['aggregator_relay_unavailable:relay_not_running']);
+  assert.deepEqual(local.skippedNodes.map((item) => item.reason), ['unsupported_proxy_protocol_vless']);
+  // 远端拉取给不出本地入口（127.0.0.1 对那边没有意义）：这时才说换个格式。
+  const remote = service.preview(profile.id, 'surge', { remoteAddress: '203.0.113.8' });
+  assert.deepEqual(remote.warnings, ['aggregator_nodes_unsupported_by_target']);
+  assert.equal(remote.relay.active, false);
+});
+
+test('Surfboard gets the same remote relay entries: the phone dials the AIH host, not its own loopback', () => {
+  const relay = fakeRelay({
+    endpoints: new Map([['n_vless', { host: '0.0.0.0', port: 23101, udp: true, username: 'aih-relay', password: 'secret' }]]),
+    listenHost: '0.0.0.0'
+  });
+  const { service, profile } = createService([RELAY_NODES[0]], { relay });
+  const result = service.preview(profile.id, 'surfboard', { remoteAddress: '203.0.113.8', origin: 'http://aih.example:9527' });
+  assert.equal(result.relay.candidates, 1);
+  assert.deepEqual(result.skippedNodes, []);
+  // 入口是 AIH 那台机器的地址 + 认证（手机上的 127.0.0.1 没有意义）。
+  assert.match(result.content, /^vless = socks5, aih\.example, 23101, aih-relay, secret, udp-relay=true$/m);
+  assert.deepEqual(result.warnings, ['aggregator_relay_remote:aih.example:23100-23655']);
+});
+

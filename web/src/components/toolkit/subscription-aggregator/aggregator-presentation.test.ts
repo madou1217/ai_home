@@ -108,13 +108,30 @@ test('预览提示把警告码换成说明', () => {
   );
   assert.equal(
     previewWarningText('aggregator_relay_unavailable:relay_binary_not_found'),
-    '没找到 sing-box 内核，本机中转用不了：装一个 sing-box（或放进 ~/.ai_home/bin）再试'
+    '没找到中转内核，本机中转用不了：装一个 sing-box（或 mihomo）并放进 ~/.ai_home/bin，或设 AIH_RELAY_SING_BOX_BIN / AIH_RELAY_MIHOMO_BIN'
   );
   assert.equal(
     previewWarningText('aggregator_relay_unavailable:relay_port_mismatch'),
     '本机中转启动失败（relay_port_mismatch）：节点按原样输出'
   );
-  assert.equal(relayWarningText('relay_local_only'), '本机中转只对本机生效：这份配置是从别的机器拉的，节点按原样输出');
+  // 远端客户端：入口只绑在本机时给不出可达地址，提示要重新拉一次。
+  assert.equal(
+    relayWarningText('relay_not_exposed'),
+    '中转入口现在只绑在本机，别的机器连不上：重新拉一次这份订阅（或点「启动本机中转」），边车会改绑可达地址并要求认证'
+  );
+  assert.equal(
+    relayWarningText('relay_origin_unknown'),
+    '拿不到客户端用的地址（Host），给不出它能连到的中转入口：用域名或 IP 访问本服务后再拉订阅'
+  );
+  // 远端中转：把「哪段端口要对客户端可达」说清楚。
+  assert.equal(
+    previewWarningText('aggregator_relay_remote:aih.example.com:23100-23655'),
+    '这份配置里的中转节点走 aih.example.com，端口 23100-23655：请确认该端口段对该客户端可达（安全组 / 防火墙 / frp 都要放行）'
+  );
+  assert.equal(
+    previewWarningText('aggregator_relay_remote:192.168.31.8'),
+    '这份配置里的中转节点走 192.168.31.8：请确认该端口段对该客户端可达（安全组 / 防火墙 / frp 都要放行）'
+  );
   assert.equal(skipReasonText('too_many_relay_nodes'), '本机中转端口不够，这个节点没走中转');
   assert.equal(previewWarningText('something_new'), 'something_new');
 });

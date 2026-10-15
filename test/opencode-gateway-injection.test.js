@@ -42,6 +42,24 @@ test('upstream failure policy: classifies OpenCode CreditsError (401/402/403) wi
   assert.notEqual(creditsPolicy.kind, 'auth_invalid');
 });
 
+test('upstream failure policy: OpenCode FreeTierError gate is not an account-scope auth_invalid', () => {
+  // 2026-10-15：免费档门禁与凭据无关（带账号真 key 一样 403），落进通用 403 分支会把
+  // 整个账号锁 1 年（31536000000ms）。免费模型的正规通道是原生 CLI（opencode-free-cli-transport）。
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    account: { apiKeyMode: false, authType: 'opencode-auth' },
+    statusCode: 403,
+    detail: 'HTTP 403 {"type":"error","error":{"type":"FreeTierError","message":"OpenCode\'s free tier can only be used from within OpenCode."}}'
+  });
+  assert.notEqual(policy.kind, 'auth_invalid');
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.clientStatusCode, 403);
+  assert.equal(policy.failureReason, 'opencode_free_tier_client_gated');
+});
+
 test('opencode launch strategy: dynamically generates BYOK gateway config with healthy models', () => {
   const mockCtx = {
     baseEnv: {

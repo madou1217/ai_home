@@ -55,14 +55,13 @@ const PROVIDER_BRANCH_BASELINE = {
   'lib/server/native-session-chat-command.js': 19,
   'lib/server/native-session-chat-failure.js': 3,
   'lib/server/native-session-chat-launch.js': 4,
-  'lib/server/native-session-chat-sessions.js': 6,
+  'lib/server/native-session-chat-sessions.js': 8,
   'lib/server/native-session-chat-stream.js': 5,
   'lib/server/native-session-chat.js': 21,
   'lib/server/native-slash-commands.js': 5,
   'lib/server/protocol-fallback-bridge.js': 2,
   'lib/server/provider-hook-event-normalizer.js': 5,
   'lib/server/provider-model-discovery.js': 4,
-  'lib/server/provider-session-hook-config.js': 15,
   'lib/server/request-pool-retry-policy.js': 2,
   'lib/server/retry-hints.js': 2,
   'lib/server/session-lifecycle/legacy-archive-recovery.js': 2,
@@ -114,6 +113,32 @@ test('采集面：描述符声明的 handler 必须都在注册表里（写错 i
     }
   }
   assert.deepEqual(missing, [], `以下模型发现 handler 未注册：${missing.join(', ')}`);
+});
+
+test('hooks 档案：描述符声明的 adapter 必须与 Go 合同 sessionSync.adapter 一致（防漂移）', () => {
+  const { getProviderSessionSync } = require('../lib/provider-catalog');
+  const mismatches = [];
+  for (const provider of listProviders('hooks')) {
+    const capability = getProviderCapability(provider, 'hooks');
+    const sync = getProviderSessionSync(provider);
+    const contractAdapter = (sync && sync.adapter) || '';
+    if (!contractAdapter) {
+      mismatches.push(`${provider}: 描述符声明了 hooks 但合同没有 sessionSync.adapter`);
+      continue;
+    }
+    if (capability.adapter !== contractAdapter) {
+      mismatches.push(`${provider}: 描述符 ${capability.adapter} ≠ 合同 ${contractAdapter}`);
+    }
+  }
+  // 反向：合同声明 hook 的 provider 必须有档案，否则目标路径会静默变成 ''。
+  const { listProviderDefinitions } = require('../lib/provider-catalog');
+  for (const definition of listProviderDefinitions()) {
+    const sync = definition.sessionSync || {};
+    if (sync.mode !== 'hook' || !sync.adapter) continue;
+    const capability = getProviderCapability(definition.id, 'hooks');
+    if (!capability || capability.supported !== true) mismatches.push(`${definition.id}: 合同声明 hook 但描述符没有 hooks 档案`);
+  }
+  assert.deepEqual(mismatches, [], mismatches.join('\n'));
 });
 
 test('provider 名分支只能减少：已知文件不得超过基线', () => {

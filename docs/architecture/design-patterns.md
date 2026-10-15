@@ -78,8 +78,12 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
    * 注意：该文件是 `upstream-endpoints-split` 脚本生成的（文件头写明 do not edit manually）——
      必须改**生成器 + 模板**，并新增 `capabilities.protocolPath = { resolve(account, reqUrl, upstreamBase) }`；
      claude 的 `/v1` 去重、codebuddy 家族的 `/v1→/v2` 抬升等规则随描述符走。
-8. ⬜ `hooks` 能力：`lib/server/provider-session-hook-config.js`（15 处）→ 描述符声明
-   `hooks = { configPath(homeDir), format: 'codex-json'|'claude-settings'|…, timeoutMs }`。
+8. ✅ `hooks` 能力：`lib/server/provider-session-hook-config.js` 的 15 处 provider 名分支**清零**。
+   形状：描述符声明**档案**（`adapter` / `target` 路径段 / `timeoutUnit` / `eventMatchers` / `featureFlag`），
+   格式实现留在**适配器策略表**（`HOOK_ADAPTERS`：`json_hooks` / `agy_named_hooks` / `opencode_plugin`，
+   与 Go 合同 `sessionSync.adapter` 同源）；派发处零 provider 名，targetKind 直接取合同字段
+   （原 `HOOKS_JSON_TARGET_PROVIDERS` 手写集合已删除）。漂移由 `test/design-pattern-guard.test.js`
+   的「描述符 ↔ 合同一致性」用例双向守住。
 9. ⬜ 用量读取适配器：`lib/usage/model-usage-store.js`（10 处）→ `usage` 能力扩展。
 
 **Phase 3 — 会话与聊天**

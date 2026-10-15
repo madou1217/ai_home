@@ -27,7 +27,10 @@ test('Kiro credits use decimal precision, official subscription, identity and re
   assert.equal(snapshot.entries[0].resetAtMs, Date.parse('2026-11-01T00:00:00Z'));
   assert.equal(getMinRemainingPctFromUsageSnapshot(snapshot), 99.74);
   const view = normalizeAccountUsageSnapshot(snapshot);
-  assert.deepEqual(view.entries, snapshot.entries);
+  // 归一后的条目多一个展示用 label（额度视图模型给出：credits 桶 → Credits），
+  // 其余字段与快照逐字节一致。
+  assert.deepEqual(view.entries.map(({ label, ...rest }) => rest), snapshot.entries);
+  assert.equal(view.entries[0].label, 'Credits');
   assert.deepEqual(view.account, snapshot.account);
   assert.equal(evaluateProviderModelUsage('kiro', { accountRef: REF, usageSnapshot: snapshot }, 'auto').remainingPct, 99.74);
 });

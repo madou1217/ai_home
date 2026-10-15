@@ -32,6 +32,9 @@
 | `lib/usage/quota/index.js` | 额度领域派生：谁有额度、可信规则、时间窗 kind、策略链执行、诊断 |
 | `lib/usage/quota/strategies.js` | 策略链执行器（默认最稳 + 失败切换 + attempts 可观察） |
 | `lib/usage/quota/probes/*.js` | 探针实现（当前 `cline.js`：Cline Pass） |
+| `lib/usage/quota/view.js` | **展示视图模型**：快照 → 统一 scope（label / category / 顺序 / 单位），不含任何 provider 名单 |
+| `lib/cli/services/usage/{window-format,credit-format}.js` | CLI 渲染适配层（输出与历史逐字节一致），形态判定来自描述符 |
+| `web/src/components/account/quota-scopes.ts` | WebUI 展示行派生（消费服务端下发的 `entryShape` + `label`，同样无 kind 名单） |
 | `lib/usage/provider-usage/index.js` | 用量展示端口视图（`getProviderUsageStrategy`），不再有 `USAGE_MODULES` 手写数组 |
 
 ## 3. 描述符契约（contractVersion = 1）
@@ -133,8 +136,33 @@ node scripts/quota-usage-audit.js --json /tmp/quota-audit.json
 - 每个 catalog provider 必须有自己的描述符并显式回答额度（`test/quota-provider-coverage.test.js`）。
 - 插件/外部描述符不得覆盖内置 provider（冲突记为可观察错误）。
 - `snapshotKind` 必须已在 `USAGE_SNAPSHOT_KINDS` 登记；缺失窗口不产出条目（宁可 Unknown）。
-- 声明的 handler 必须在组合根里存在；WebUI 的 kind 镜像必须与服务端登记表一致。
+- 声明的 handler 必须在组合根里存在；展示层不得维护 kind 名单（按 `entryShape` 渲染）。
 - 策略链默认最稳、失败切换，attempts 可观察。
+- 每个声明了额度的 provider，按其声明的 `entryShape` 都必须能渲染出行内摘要与明细
+  （`test/quota-view.test.js` / `test/quota-view-provider-coverage.test.js`）：新增 provider 或
+  新增形态时展示层没跟上就直接红。
+
+## 10. 展示层：额度视图模型（`lib/usage/quota/view.js`）
+
+各家的快照形态不同（滚动时间窗 / 余额积分桶 / 每模型额度），但展示需求是同一组：
+「哪个额度、还剩多少、什么时候重置、单位是什么、是不是旁路信息」。视图模型把这层归一一次，
+CLI（`ls` / `usage` / PTY 标题）与 WebUI（账号列表 / 详情）都渲染同一份结果：
+
+| 概念 | 说明 |
+| --- | --- |
+| `entryShape` | 由 provider 描述符声明（`window` / `bucket` / `models`），展示层据此选渲染路径 |
+| scope | 一条额度行：`label` / `category` / `remainingPct` / `resetIn` / 单位绝对值 |
+| `category` | `primary` 参与账号级 min 剩余；`gift`（赠送包）与 `detail`（每包明细）是旁路信息，不参与 |
+| `label` | 展示标签：通用桶显示窗口（`7days`/`5h`），具名桶显示身份（`glm-5.3 1days`、`Invite to Earn Credit`） |
+| 顺序 | 主额度按窗口长度升序（短的在前），没有窗口长度的排最后，旁路条目最后 |
+
+服务端账号 payload 因此带上 `entryShape` 与每行的 `label`（`lib/server/account-usage-view.js`）：
+展示层不需要知道任何 provider 名，也不需要第二份 kind 名单。形态与快照结构不匹配时不静默返回空，
+而是给出 `unrenderable` 原因（`entry_shape_bucket_without_entries` 等），便于诊断。
+
+`lib/cli/services/usage/window-format.js` 与 `credit-format.js` 现在都是这个视图模型的适配层
+（输出与历史逐字节一致），`presenter.formatUsageSnapshotLines` 的兜底也改成「列出全部 scope」，
+不再把没登记 kind 的快照丢成原始 JSON。
 
 ## 9. 可观察性
 

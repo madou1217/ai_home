@@ -2,6 +2,7 @@ import type { Account, AccountAuthMode, AccountTokenUsage, AccountTokenUsageMode
 import { formatAccountIssueReason } from '@/utils/account-reasons';
 import { isInternalAccountLabel } from '@/utils/account-labels';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
+import { getMinRemainingPct, hasRenderableScopes } from '@/components/account/quota-scopes';
 
 const ACCOUNT_RECOVERY_REASON_PREFIX = 'account_recovery_required:';
 
@@ -110,47 +111,17 @@ export function hasKnownUsage(record: Pick<Account, 'apiKeyMode' | 'remainingPct
   return getEffectiveRemainingPct(record) != null;
 }
 
-// 按快照 kind 取剩余额度，kind 集合与服务端 lib/account/usage-remaining.js 保持一致（不再按 provider 名判断）。
-const ENTRY_WINDOW_SNAPSHOT_KINDS = new Set([
-  'codex_oauth_status',
-  'claude_oauth_usage',
-  'kimi_oauth_usage',
-  'grok_credit_usage',
-  'kiro_credit_usage',
-  'zcode_plan_balance',
-  'codebuddy_credit_balance',
-  // Cline Pass 的滚动窗口额度（额度插件 lib/usage/quota/plugins/cline.js 产出）。
-  'cline_pass_usage'
-]);
-const MODEL_LIST_SNAPSHOT_KINDS = new Set(['gemini_oauth_stats', 'agy_code_assist_quota']);
-
+// 账号级剩余额度：**由额度展示行派生**（web/src/components/account/quota-scopes.ts），
+// 形态来自服务端下发的 entryShape —— 这里不再维护 kind 名单，口径与 CLI / 服务端同源。
 export function getUsageSnapshotRemainingPct(record: Pick<Account, 'usageSnapshot'>) {
-  const snapshot = record.usageSnapshot;
-  if (!snapshot) return null;
-  let values: number[] = [];
-  if (ENTRY_WINDOW_SNAPSHOT_KINDS.has(snapshot.kind) && 'entries' in snapshot) {
-    values = (snapshot.entries || [])
-      // category='gift'（kimi 赠送额度）与 'detail'（CodeBuddy 每包明细）是旁路信息，不能拖低账号级 min 剩余，
-      // 否则赠送包用尽会把健康账号误显示成「已耗尽」；与服务端口径一致。
-      .filter((entry) => entry.category !== 'gift' && entry.category !== 'detail')
-      .filter((entry) => entry.remainingPct != null)
-      .map((entry) => Number(entry.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  } else if (MODEL_LIST_SNAPSHOT_KINDS.has(snapshot.kind) && 'models' in snapshot) {
-    values = (snapshot.models || [])
-      .filter((model) => model.remainingPct != null)
-      .map((model) => Number(model.remainingPct))
-      .filter((value) => Number.isFinite(value));
-  }
-  if (values.length === 0) return null;
-  return Math.max(0, Math.min(100, Math.min(...values)));
+  return getMinRemainingPct(record.usageSnapshot);
 }
 
 export function getEffectiveRemainingPct(record: Pick<Account, 'provider' | 'remainingPct' | 'usageSnapshot'>) {
   const snapshotRemaining = getUsageSnapshotRemainingPct(record);
   if (snapshotRemaining != null) return snapshotRemaining;
-  if (record.usageSnapshot && (ENTRY_WINDOW_SNAPSHOT_KINDS.has(record.usageSnapshot.kind)
-    || MODEL_LIST_SNAPSHOT_KINDS.has(record.usageSnapshot.kind))) return null;
+  // 有可渲染条目却没有数值（例如全部窗口都缺数字）时以快照为准，不回落到陈旧的账号级数字。
+  if (record.usageSnapshot && hasRenderableScopes(record.usageSnapshot)) return null;
   if (record.remainingPct == null) return null;
   const numeric = Number(record.remainingPct);
   if (!Number.isFinite(numeric)) return null;

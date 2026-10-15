@@ -1,23 +1,22 @@
 import { useState } from 'react';
 import { message, Progress, Space, Spin, Tooltip } from 'antd';
-import type {
-  AccountUsageSnapshot,
-  CodexUsageEntry,
-  GeminiUsageModel
-} from '@/types';
+import type { AccountUsageSnapshot } from '@/types';
 import Button from '@/components/ui/AppButton';
 import BurningParticles from '@/features/accounts/BurningParticles';
 import { getQuotaStateMeta, renderQuotaStateBadge } from '@/features/accounts/AccountBadges';
 import {
-  buildCodebuddyCreditRows,
   buildUsageUnitsTooltipLines,
   formatResetAt,
   formatResetIn,
-  formatWindowDuration,
   groupAgyQuotaModels,
   resolveActiveAgyQuotaGroupKeys,
   type AgyGroupMemberModel
 } from './usage-snapshot-format';
+import {
+  getPrimaryQuotaScopes,
+  hasRenderableScopes,
+  isNamedBucket
+} from './quota-scopes';
 import './UsageSnapshotCell.css';
 
 interface UsageRecordLike {
@@ -76,53 +75,6 @@ export function getUsageBarColor(value: number | null) {
   } catch (_error) {
     return '';
   }
-}
-
-// CodeBuddy 家族四支共用同一份 `codebuddy_credit_balance` 快照（同地区 work/code 是同一个
-// 账号、同一份积分），因此这里按 **provider 集合 + kind** 分支，而不是按单个 provider。
-function orderCodexEntries(entries: CodexUsageEntry[]) {
-  return [...entries].sort((a, b) => {
-    const aWindowValue = Number(a.windowMinutes);
-    const bWindowValue = Number(b.windowMinutes);
-    const aWindow = Number.isFinite(aWindowValue) && aWindowValue > 0 ? aWindowValue : Number.POSITIVE_INFINITY;
-    const bWindow = Number.isFinite(bWindowValue) && bWindowValue > 0 ? bWindowValue : Number.POSITIVE_INFINITY;
-    if (aWindow !== bWindow) return aWindow - bWindow;
-    return String(a.window || '').localeCompare(String(b.window || ''));
-  });
-}
-
-// kimi 条目顺序：月度订阅总量（bucket=monthly）置顶，短窗按时长升序居中，
-// 赠送额度（category=gift）垫底。默认展示前 2 条 = 月度 + 最近窗口。
-function orderKimiEntries(entries: CodexUsageEntry[]) {
-  const rankOf = (entry: CodexUsageEntry) => {
-    if (entry.bucket === 'monthly') return 0;
-    if (entry.category === 'gift') return 3;
-    const windowValue = Number(entry.windowMinutes);
-    return Number.isFinite(windowValue) && windowValue > 0 ? 1 : 2;
-  };
-  return [...entries].sort((a, b) => {
-    const aRank = rankOf(a);
-    const bRank = rankOf(b);
-    if (aRank !== bRank) return aRank - bRank;
-    const aWindow = Number(a.windowMinutes) || 0;
-    const bWindow = Number(b.windowMinutes) || 0;
-    if (aWindow !== bWindow) return aWindow - bWindow;
-    return String(a.window || '').localeCompare(String(b.window || ''));
-  });
-}
-
-function formatKimiEntryLabel(entry: CodexUsageEntry) {
-  if (entry.category === 'gift') return entry.bucket || 'Gift';
-  return formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage';
-}
-
-function orderGeminiModels(models: GeminiUsageModel[]) {
-  return [...models].sort((a, b) => {
-    const aRemaining = a.remainingPct == null ? 101 : a.remainingPct;
-    const bRemaining = b.remainingPct == null ? 101 : b.remainingPct;
-    if (aRemaining !== bRemaining) return aRemaining - bRemaining;
-    return String(a.model || '').localeCompare(String(b.model || ''));
-  });
 }
 
 function CopyableModelId({ modelId }: { modelId: string }) {
@@ -321,77 +273,14 @@ interface UsageRendererProps {
   effectKeyPrefix: string;
 }
 
-function EntryWindowUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
-  // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'codex_oauth_status' | 'claude_oauth_usage' | 'kimi_oauth_usage' | 'grok_credit_usage'>;
+// **统一的额度渲染器**：行来自服务端归一好的 scope（label / 顺序 / 旁路标记 / 单位），
+// 因此窗口（codex/claude/cline/kimi）、余额桶（kiro/codebuddy/workbuddy/grok）、
+// 每模型余额桶（zcode）走的是同一条路径 —— 新增 provider 不需要在这里加分支。
+//
+// 只有 agy 的「按模型分组 + 每组限额」是真正特殊的展示，仍单独注册（见渲染器表）。
+function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
   const [expanded, setExpanded] = useState(false);
-  const isKimiSnapshot = snapshot.kind === 'kimi_oauth_usage';
-  const isGrokSnapshot = snapshot.kind === 'grok_credit_usage';
-  const entries = (isKimiSnapshot ? orderKimiEntries : orderCodexEntries)(
-    // The upstream snapshot is the source of truth: any window with a
-    // numeric remaining value is renderable, including provider-specific
-    // windows such as Codex Free's 30-day quota.
-    (snapshot.entries || []).filter((entry) => (typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
-      || (isGrokSnapshot && (entry.windowMinutes > 0 || entry.resetAtMs > 0)))
-  );
-  if (entries.length === 0) {
-    return record.usageRefreshing ? (
-      <Space size={6}>
-        <span>-</span>
-        <Spin size="small" />
-      </Space>
-    ) : <>-</>;
-  }
-  const visibleEntries = hideModels ? entries.slice(0, 1) : (expanded ? entries : entries.slice(0, 2));
-  return (
-    <div style={{ minWidth: 180 }}>
-      <div className="usage-meta-list">
-        {visibleEntries.map((entry, index) => (
-          <UsageMetaLine
-            key={`${entry.window}-${index}`}
-            label={isKimiSnapshot
-              ? formatKimiEntryLabel(entry)
-              : (formatWindowDuration(entry.windowMinutes, entry.window) || entry.bucket || 'usage')}
-            value={entry.remainingPct}
-            unknownLabel={getQuotaStateMeta(record) ? '—' : '额度未知'}
-            resetIn={entry.resetIn}
-            resetAtMs={entry.resetAtMs}
-            running={running}
-            activityRate={activityRate}
-            effectKey={`${effectKeyPrefix}:window:${entry.window || entry.bucket || 'usage'}:${index}`}
-          />
-        ))}
-      </div>
-      {!hideModels && entries.length > 2 ? (
-        <Button
-          type="link"
-          size="small"
-          className="usage-expand-toggle"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
-        </Button>
-      ) : null}
-      {record.usageRefreshing ? (
-        <div className="usage-refreshing">
-          <Spin size="small" />
-          <span>刷新中</span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// CodeBuddy 家族：entries[0] 是**账户级聚合**（bucket=credits，权威值，也是
-// record.remainingPct 的来源），其余是 category='detail' 的每包明细
-// （activity / proTrialMon / freeMon …）。两者都渲染——聚合行给总量，明细行给每个额度包
-// 的剩余；hover 展示「总/剩余/已用」（unitType=credits）。
-// 放在通用兜底分支之前，否则就只剩一条账号级进度条，明细永远看不到。
-function CreditBalanceUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
-  // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'codebuddy_credit_balance' | 'kiro_credit_usage'>;
-  const [expanded, setExpanded] = useState(false);
-  const rows = buildCodebuddyCreditRows(snapshot.entries);
+  const rows = getPrimaryQuotaScopes(snapshot);
   if (rows.length === 0) {
     return record.usageRefreshing ? (
       <Space size={6}>
@@ -401,22 +290,28 @@ function CreditBalanceUsage({ record, snapshot: rawSnapshot, hideModels, running
     ) : <>-</>;
   }
   const visibleRows = hideModels ? rows.slice(0, 1) : (expanded ? rows : rows.slice(0, 2));
+  // 具名桶（zcode 的每模型余额）在组标题位置显示套餐名，通用桶不显示。
+  const planName = rows.some((row) => isNamedBucket(row.bucket))
+    ? String(('account' in snapshot ? snapshot.account?.planType : '') || '')
+    : '';
   return (
     <div style={{ minWidth: 200 }}>
+      {planName ? (
+        <div className="usage-group-title usage-group-title--plan">{planName}</div>
+      ) : null}
       <div className="usage-meta-list">
         {visibleRows.map((row, index) => {
-          const rawEntry = row.entry;
-          const unitsLines = buildUsageUnitsTooltipLines(rawEntry);
+          const unitsLines = buildUsageUnitsTooltipLines(row);
           return (
             <UsageMetaLine
               key={row.key}
-              label={snapshot.kind === 'kiro_credit_usage' && unitsLines ? unitsLines.title.replace(/^总 /, '') : row.label}
-              value={row.value}
-              resetIn={rawEntry.resetIn}
-              resetAtMs={rawEntry.resetAtMs}
+              label={row.label}
+              value={row.remainingPct}
+              resetIn={row.resetIn}
+              resetAtMs={row.resetAtMs}
               running={running}
               activityRate={activityRate}
-              effectKey={`${effectKeyPrefix}:bucket:${rawEntry.bucket || 'usage'}:${index}`}
+              effectKey={`${effectKeyPrefix}:scope:${row.shape}:${row.bucket || row.model || 'usage'}:${index}`}
               progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
             />
           );
@@ -430,75 +325,6 @@ function CreditBalanceUsage({ record, snapshot: rawSnapshot, hideModels, running
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? '收起' : `展开 ${rows.length - 2} 项`}
-        </Button>
-      ) : null}
-      {record.usageRefreshing ? (
-        <div className="usage-refreshing">
-          <Spin size="small" />
-          <span>刷新中</span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ZcodePlanUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
-  // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'zcode_plan_balance'>;
-  const [expanded, setExpanded] = useState(false);
-  // zcode 的 entries 是「按模型分桶」的余额（bucket = 模型 ID，window 多为 1days），
-  // 渲染成套餐分组（仿 agy）：组标题 = plan 名，行 = 模型 + 窗口。
-  const entries = orderCodexEntries(
-    (snapshot.entries || []).filter((entry) => typeof entry.remainingPct === 'number' && Number.isFinite(entry.remainingPct))
-  );
-  if (entries.length === 0) {
-    return record.usageRefreshing ? (
-      <Space size={6}>
-        <span>-</span>
-        <Spin size="small" />
-      </Space>
-    ) : <>-</>;
-  }
-  const planName = snapshot.account?.planType || '';
-  const visibleEntries = hideModels ? entries.slice(0, 1) : (expanded ? entries : entries.slice(0, 2));
-  return (
-    <div style={{ minWidth: 200 }}>
-      {planName ? (
-        <div className="usage-group-title usage-group-title--plan">
-          {planName}
-        </div>
-      ) : null}
-      <div className="usage-meta-list">
-        {visibleEntries.map((entry, index) => {
-          const windowLabel = formatWindowDuration(entry.windowMinutes, entry.window) || entry.window || '';
-          const label = entry.bucket
-            ? (windowLabel ? `${entry.bucket} · ${windowLabel}` : entry.bucket)
-            : (windowLabel || 'usage');
-          // billing/balance 带 unit_type=token 的绝对额度时，hover 进度条展示「总/剩余/已用」。
-          const unitsLines = buildUsageUnitsTooltipLines(entry);
-          return (
-            <UsageMetaLine
-              key={`${entry.bucket}-${entry.window}-${index}`}
-              label={label}
-              value={entry.remainingPct}
-              resetIn={entry.resetIn}
-              resetAtMs={entry.resetAtMs}
-              running={running}
-              activityRate={activityRate}
-              effectKey={`${effectKeyPrefix}:bucket:${entry.bucket || 'usage'}:${entry.window || 'window'}:${index}`}
-              progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
-            />
-          );
-        })}
-      </div>
-      {!hideModels && entries.length > 2 ? (
-        <Button
-          type="link"
-          size="small"
-          className="usage-expand-toggle"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? '收起' : `展开 ${entries.length - 2} 项`}
         </Button>
       ) : null}
       {record.usageRefreshing ? (
@@ -576,61 +402,10 @@ function AgyQuotaUsage({ record, snapshot: rawSnapshot, hideModels, running, act
   );
 }
 
-function GeminiModelUsage({ record, snapshot: rawSnapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
-  // 渲染器表按 kind 派发，这里的快照必然是该 kind。
-  const snapshot = rawSnapshot as SnapshotOf<'gemini_oauth_stats'>;
-  const [expanded, setExpanded] = useState(false);
-  const models = orderGeminiModels((snapshot.models || []).filter((model) => model.remainingPct != null));
-  if (models.length === 0) return <>-</>;
-  const visibleModels = hideModels ? models.slice(0, 1) : (expanded ? models : models.slice(0, 2));
-  return (
-    <div style={{ minWidth: 220 }}>
-      <div className="usage-meta-list">
-        {visibleModels.map((model, index) => (
-          <UsageMetaLine
-            key={`${model.model}-${index}`}
-            label={model.model || 'model'}
-            value={model.remainingPct}
-            resetIn={model.resetIn}
-            resetAtMs={model.resetAtMs}
-            running={running}
-            activityRate={activityRate}
-            effectKey={`${effectKeyPrefix}:model:${model.model || 'model'}:${index}`}
-          />
-        ))}
-      </div>
-      {!hideModels && models.length > 2 ? (
-        <Button
-          type="link"
-          size="small"
-          className="usage-expand-toggle"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? '收起' : `展开 ${models.length - 2} 个模型`}
-        </Button>
-      ) : null}
-      {record.usageRefreshing ? (
-        <div className="usage-refreshing">
-          <Spin size="small" />
-          <span>刷新中</span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// 按用量快照 kind 选择渲染方式：kind 由服务端按 provider 产出并校验（CodeBuddy 家族共用一个 kind），
-// 这里不再按 provider 名分支。未登记的 kind 走下方的单条进度条兜底。
+// 派发规则：**先按服务端下发的条目形态走通用渲染器**，只有 agy 的「按模型分组 + 每组限额」
+// 是真正特殊的展示，按 kind 单独注册。新增 provider 不需要在这里加分支。
 const USAGE_SNAPSHOT_RENDERERS: Partial<Record<UsageSnapshotKind, (props: UsageRendererProps) => JSX.Element>> = {
-  codex_oauth_status: EntryWindowUsage,
-  claude_oauth_usage: EntryWindowUsage,
-  kimi_oauth_usage: EntryWindowUsage,
-  grok_credit_usage: EntryWindowUsage,
-  kiro_credit_usage: CreditBalanceUsage,
-  codebuddy_credit_balance: CreditBalanceUsage,
-  zcode_plan_balance: ZcodePlanUsage,
-  agy_code_assist_quota: AgyQuotaUsage,
-  gemini_oauth_stats: GeminiModelUsage
+  agy_code_assist_quota: AgyQuotaUsage
 };
 
 function UsageSnapshotBody({
@@ -661,6 +436,22 @@ function UsageSnapshotBody({
   if (snapshot && Renderer) {
     return (
       <Renderer
+        record={record}
+        snapshot={snapshot}
+        hideModels={hideModels}
+        running={running}
+        activityRate={activityRate}
+        activeModels={activeModels}
+        effectKeyPrefix={effectKeyPrefix}
+      />
+    );
+  }
+
+  // 任何声明了条目形态的快照（window / bucket / models）都能由通用渲染器列出全部额度行；
+  // 只有真的没有可渲染条目时才回落到单条账号级进度条。
+  if (snapshot && hasRenderableScopes(snapshot)) {
+    return (
+      <ScopesUsage
         record={record}
         snapshot={snapshot}
         hideModels={hideModels}

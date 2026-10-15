@@ -192,6 +192,8 @@ test('normalizeAccountUsageSnapshot keeps zcode_plan_balance entries for the Web
   assert.deepEqual(normalized.account, { planType: 'ZCode Start Plan' });
   assert.deepEqual(normalized.entries[0], {
     bucket: 'glm-5.3',
+    // 具名桶（模型名）+ 窗口：展示层不用知道 provider 也能说清「哪个模型的哪个窗口」。
+    label: 'glm-5.3 1days',
     windowMinutes: 1440,
     window: '1days',
     remainingPct: 99.4,
@@ -202,16 +204,14 @@ test('normalizeAccountUsageSnapshot keeps zcode_plan_balance entries for the Web
     resetIn: '13h19m',
     resetAtMs: 1787068799000
   });
-  // 旧快照（新字段未写入前）同样合法：缺失的绝对值归一为 null / ''。
+  // 旧快照（新字段未写入前）同样合法：条目缺单位信息时 payload 干脆不带单位字段
+  // （展示层用 `!= null` 判断，不再出现「有键但恒为 null」的假字段）。
   assert.deepEqual(normalized.entries[1], {
     bucket: 'glm-4.7',
+    label: 'glm-4.7 1days',
     windowMinutes: 1440,
     window: '1days',
     remainingPct: 40,
-    totalUnits: null,
-    usedUnits: null,
-    remainingUnits: null,
-    unitType: '',
     resetIn: '',
     resetAtMs: 0
   });

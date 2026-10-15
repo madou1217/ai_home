@@ -20,6 +20,7 @@ test('normalizeAccountUsageSnapshot keeps claude_oauth_usage entries for the Web
   assert.equal(normalized.entries.length, 2);
   assert.deepEqual(normalized.entries[0], {
     bucket: 'five_hour',
+    label: '5h',
     windowMinutes: 300,
     window: '5h',
     remainingPct: 73.2,
@@ -82,15 +83,18 @@ test('normalizeAccountUsageSnapshot keeps kimi_oauth_usage entries for the WebUI
     phone: '+86 186****2115',
     planSubscription: null
   });
+  // 条目顺序由额度视图模型统一（主额度按窗口长度升序，与 `aih <p> ls` 的 5h / 7days 同序），
+  // 不再跟随快照声明顺序。
   assert.deepEqual(normalized.entries[0], {
-    bucket: 'weekly',
-    windowMinutes: 10080,
-    window: '7days',
-    remainingPct: 51,
-    resetIn: '6d',
-    resetAtMs: 111
+    bucket: 'rolling_300m',
+    label: '5h',
+    windowMinutes: 300,
+    window: '',
+    remainingPct: 58,
+    resetIn: '5h',
+    resetAtMs: 222
   });
-  assert.equal(normalized.entries[1].remainingPct, 58);
+  assert.equal(normalized.entries[1].remainingPct, 51);
 });
 
 test('normalizeAccountUsageSnapshot 透传 kimi 套餐订阅信息与 gift 条目标记', () => {

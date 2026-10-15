@@ -53,8 +53,10 @@ test('compact/inline views drop windows without a numeric figure', () => {
     ]
   };
   assert.equal(formatUsageWindows(cache), '5h: 70.0%');
-  // ...but the diagnostic `usage` view keeps the non-numeric fallback row.
-  assert.deepEqual(formatUsageWindowLines(cache), ['plan:team x@y.com', '5h: 70.0%']);
+  // ...but the diagnostic `usage` view keeps the non-numeric fallback row. Ordering is now the
+  // shared 额度视图模型规则：有明确窗口长度的在前（短的更前），没有窗口长度的兜底行排在最后
+  // （与 kimi 的月度总量排在 5h 之后同一条规则）。
+  assert.deepEqual(formatUsageWindowLines(cache), ['5h: 70.0%', 'plan:team x@y.com']);
 });
 
 test('non-windowed kinds (gemini/agy) yield nothing here', () => {

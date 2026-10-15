@@ -4,7 +4,7 @@
 //   1) 每个 catalog provider 都必须在自己的描述符里**显式回答额度**（有 or 没有 + 原因）
 //      —— 取代「中央的无额度清单」：答案跟着 provider 走，新增 provider 不做决定就红；
 //   2) 每个已登记的 kind 都能被服务端规范化（CodeBuddy 曾因缺这一支被丢成空 → 显示「已耗尽」）；
-//   3) WebUI 的 kind 集合与服务端登记表同步（Cline Pass 曾在 WebUI 侧不存在）；
+//   3) WebUI 不维护 kind 名单，按服务端下发的 entryShape 渲染（形态覆盖在 quota-view-provider-coverage 里守卫）；
 //   4) 描述符声明的原生 handler 必须在组合根里真的存在（防止声明漂移）；
 //   5) 策略链默认最稳、失败切换且过程可观察。
 
@@ -18,6 +18,7 @@ const { getProviderRegistry, listProviders } = require('../lib/providers');
 const {
   describeQuotaSources,
   formatQuotaSourceLines,
+  listQuotaEntryShapes,
   listQuotaProviders,
   listQuotaSnapshotKinds,
   runQuotaStrategies
@@ -77,20 +78,30 @@ test('每个已登记的额度 kind 都能被服务端规范化（否则账号�
   assert.equal(registry.listIds().length, PROVIDER_IDS.length);
 });
 
-test('WebUI 的 kind 集合与服务端登记表保持同步（跨语言镜像）', () => {
-  const file = path.join(__dirname, '..', 'web/src/features/accounts/account-state.ts');
-  const source = fs.readFileSync(file, 'utf8');
-  const start = source.indexOf('const ENTRY_WINDOW_SNAPSHOT_KINDS');
-  const end = source.indexOf('export function getUsageSnapshotRemainingPct');
-  assert.equal(start > 0 && end > start, true, 'account-state.ts 的 kind 集合结构变了，请更新本守卫');
-  const webKinds = new Set([...source.slice(start, end).matchAll(/'([a-z][a-z0-9_]*)'/g)].map((match) => match[1]));
-  const registered = new Set(Object.values(USAGE_SNAPSHOT_KINDS));
-  for (const kind of registered) {
-    assert.equal(webKinds.has(kind), true, `WebUI 不认识 ${kind}：账号页读不到该快照的窗口剩余`);
+test('WebUI 不再维护 kind 名单：账号页额度按服务端下发的 entryShape 渲染（跨语言镜像改为形态契约）', () => {
+  const accountState = fs.readFileSync(path.join(__dirname, '..', 'web/src/features/accounts/account-state.ts'), 'utf8');
+  // 历史形态是 WebUI 自己抄一份 kind 集合，漏一个 provider 就少一行额度且没人发现。
+  // 现在账号级剩余由额度展示行派生，形态来自服务端 payload 的 entryShape。
+  assert.equal(/ENTRY_WINDOW_SNAPSHOT_KINDS|MODEL_LIST_SNAPSHOT_KINDS/.test(accountState), false,
+    'account-state.ts 又出现了 kind 名单，请改回按 entryShape 渲染');
+  assert.match(accountState, /getMinRemainingPct/, '账号级剩余必须由 quota-scopes 的展示行派生');
+
+  // 形态类型（跨语言契约）：服务端在用的每种形态都必须在 WebUI 的 QuotaEntryShape 里。
+  const types = fs.readFileSync(path.join(__dirname, '..', 'web/src/types/index.ts'), 'utf8');
+  const shapeUnion = /export type QuotaEntryShape =([^;]+);/.exec(types);
+  assert.ok(shapeUnion, 'web/src/types/index.ts 必须声明 QuotaEntryShape');
+  for (const shape of listQuotaEntryShapes()) {
+    assert.match(shapeUnion[1], new RegExp(`'${shape}'`), `WebUI 的 QuotaEntryShape 缺少形态 ${shape}`);
   }
-  for (const kind of webKinds) {
-    assert.equal(registered.has(kind), true, `WebUI 里的 ${kind} 已不在服务端登记表，属于陈旧名单`);
-  }
+  // 展示层不得再出现 kind 字面量（那正是「漏一个 provider 就少一行」的来源）。
+  const scopes = fs.readFileSync(path.join(__dirname, '..', 'web/src/components/account/quota-scopes.ts'), 'utf8');
+  assert.equal(/_(?:oauth|credit|pass|assist|plan)[a-z_]*['"]/.test(scopes), false,
+    'quota-scopes.ts 出现了 kind 字面量，展示层必须只按形态渲染');
+
+  // 服务端 payload 必须真的带上形态与标签，否则 WebUI 只能再次按 kind 猜。
+  const view = fs.readFileSync(path.join(__dirname, '..', 'lib/server/account-usage-view.js'), 'utf8');
+  assert.match(view, /entryShape/, '账号 payload 必须下发 entryShape');
+  assert.match(view, /label: scope\.label/, '账号 payload 的条目必须带上服务端算好的 label');
 });
 
 test('描述符声明的原生 handler 必须在组合根里存在（声明不得漂移）', () => {

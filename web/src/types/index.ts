@@ -8,6 +8,9 @@ export interface CodexUsageEntry {
   bucket: string;
   windowMinutes: number;
   window: string;
+  // 服务端额度视图模型给出的展示标签（「5h」/「Credits」/「glm-5.3 1days」…）：
+  // 展示层不再按 provider 自己拼标签。
+  label?: string;
   remainingPct: number | null;
   resetIn: string;
   resetAtMs: number;
@@ -23,6 +26,8 @@ export interface CodexUsageEntry {
 
 export interface GeminiUsageModel {
   model: string;
+  // 服务端额度视图模型给出的展示标签（与 model 同名，统一展示层取值口径）。
+  label?: string;
   remainingPct: number | null;
   resetIn: string;
   resetAtMs: number;
@@ -61,7 +66,14 @@ export interface AccountModelSummary {
 
 export type AccountRegion = 'china' | 'overseas';
 
+/** 额度条目形态：由服务端按 provider 描述符下发，展示层据此渲染，不维护 kind 名单。 */
+export type QuotaEntryShape = 'window' | 'bucket' | 'models' | 'account';
+
 export type AccountUsageSnapshot =
+  {
+    /** 服务端额度视图模型给出的条目形态；老缓存记录可能缺省，展示层按结构兜底。 */
+    entryShape?: QuotaEntryShape;
+  } & (
   | {
       kind: 'codex_oauth_status';
       capturedAt: number;
@@ -157,7 +169,8 @@ export type AccountUsageSnapshot =
         planType: string;
       } | null;
       entries: CodexUsageEntry[];
-    };
+    }
+  );
 
 export interface Account {
   provider: Provider;

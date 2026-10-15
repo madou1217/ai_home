@@ -2443,10 +2443,16 @@ export interface ManagementStatus {
 export interface ManagementAccountActivity {
   provider: string;
   accountRef: string;
-  /** 网关 attempt 的 in-flight，外加一个「原生会话回合正在跑」的折算位。 */
+  /** 网关 attempt 的 in-flight，外加「原生会话回合 / 持久 CLI 会话正在跑」的折算位。 */
   inFlight: number;
   /** 原生 CLI 会话（不经网关）当前是否有回合在跑。 */
   sessionTurnActive?: boolean;
+  /** aih 托管的持久 CLI 会话是否存活（所有 provider 通用，含无 hook 的 provider）。 */
+  runtimeActive?: boolean;
+  /** 存活的持久 CLI 会话数。 */
+  runtimeSessions?: number;
+  /** 其中「用户正在其中」（attached）的会话数；只有它会把 inFlight 折算 +1。 */
+  runtimeAttached?: number;
   rate: number;
   activeModels?: string[];
   lastActivityAt: number;

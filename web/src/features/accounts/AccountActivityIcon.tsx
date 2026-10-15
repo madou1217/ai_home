@@ -19,17 +19,31 @@ function spinDurationMs(activity: ManagementAccountActivity): number {
 
 const AccountActivityIcon = ({ provider, activity, size = 18 }: Props) => {
   const active = Boolean(activity && activity.inFlight > 0);
+  const runtimeSessions = Math.max(0, Number(activity && activity.runtimeSessions) || 0);
+  const runtimeAttached = Math.max(0, Number(activity && activity.runtimeAttached) || 0);
+  const runtimeActive = Boolean(activity && (activity.runtimeActive || runtimeSessions > 0));
   const style: CSSProperties | undefined = active
     ? {
         display: 'inline-block',
         animation: `${provider === 'agy' ? 'aih-account-activity-spin-y' : 'aih-account-activity-spin'} ${spinDurationMs(activity as ManagementAccountActivity)}ms linear infinite`
       }
     : undefined;
+  // 活跃原因按来源说清楚：持久 CLI 会话（所有 provider）→ 原生会话回合 → 网关请求。
+  const title = !active
+    ? runtimeActive
+      ? `CLI 会话已开启（${runtimeSessions} 个，${runtimeAttached} 个已进入）`
+      : undefined
+    : runtimeAttached > 0
+      ? `服务中 · CLI 会话 ${runtimeAttached}/${runtimeSessions} 已进入 · 请求速率 ${(activity as ManagementAccountActivity).rate} 次/10s`
+      : (activity as ManagementAccountActivity).sessionTurnActive
+        ? `服务中 · 原生会话回合运行中 · 请求速率 ${(activity as ManagementAccountActivity).rate} 次/10s`
+        : `服务中 · 请求速率 ${(activity as ManagementAccountActivity).rate} 次/10s`;
   return (
     <span
       data-account-activity={active ? 'active' : 'idle'}
       data-account-activity-rate={active ? String((activity as ManagementAccountActivity).rate) : '0'}
-      title={active ? `服务中 · 请求速率 ${(activity as ManagementAccountActivity).rate} 次/10s` : undefined}
+      data-account-activity-runtime={runtimeActive ? 'live' : 'idle'}
+      title={title}
       style={style}
     >
       <ProviderIcon provider={provider} size={size} />

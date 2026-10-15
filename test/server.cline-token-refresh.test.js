@@ -147,7 +147,9 @@ test('cline refresh rewrites both slots with a prefixed access token and ms expi
     const slotAuth = stored.auth.providers[slotId].settings.auth;
     assert.equal(slotAuth.accessToken, 'workos:eyJnew.payload.sig', slotId);
     assert.equal(slotAuth.refreshToken, 'rt_new', slotId);
-    assert.equal(slotAuth.expiresAt, String(expiresAtMs), slotId);
+    // 必须是毫秒**数字**：字符串会让 CLI 把账号判成未登录（见 test/cline-credential-document.test.js 的实测说明）。
+    assert.equal(slotAuth.expiresAt, expiresAtMs, slotId);
+    assert.equal(typeof slotAuth.expiresAt, 'number', slotId);
   }
   // 槽位私有设置与别家 provider 的密钥原样保留。
   assert.equal(stored.auth.providers['cline-pass'].settings.model, 'cline-pass/glm-5.3');

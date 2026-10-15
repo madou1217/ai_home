@@ -168,7 +168,9 @@ test('模型发现能力：策略自洽（http 不依赖客户端、cli 必须�
     if (!capability || capability.supported !== true) continue;
     assert.ok(capability.strategies.length > 0, `${provider} 声明了模型发现却没有策略`);
     for (const strategy of capability.strategies) {
-      assert.equal(typeof strategy.discover, 'function', `${provider}:${strategy.id} 缺 discover 工厂`);
+      // 实现可以内联（discover 工厂）或走注册表（handler id，组合根注入）——二者必有其一。
+      const hasImpl = typeof strategy.discover === 'function' || Boolean(strategy.handler);
+      assert.equal(hasImpl, true, `${provider}:${strategy.id} 既没有 discover 也没有 handler`);
       if (strategy.transport === 'http') assert.equal(strategy.clientDependent, false, `${provider}:${strategy.id} http 通道不得依赖客户端`);
       if (strategy.transport === 'cli') assert.equal(strategy.clientDependent, true, `${provider}:${strategy.id} cli 通道必须声明依赖客户端`);
     }

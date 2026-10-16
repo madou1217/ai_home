@@ -11,6 +11,7 @@ const {
   LAYOUTS,
   hasOpenCodeTable,
   detectOpenCodeDbLayouts,
+  detectOpenCodeSessionLayouts,
   buildOpenCodeMessageQuery
 } = require('../lib/sessions/opencode-db-layouts');
 
@@ -62,6 +63,20 @@ test('detectOpenCodeDbLayouts 只认「会话 + 消息表同时存在」的布�
   assert.equal(hasOpenCodeTable(both, 'session_v2'), true);
   assert.equal(hasOpenCodeTable(both, 'missing_table'), false);
   assert.equal(hasOpenCodeTable(null, 'session'), false);
+});
+
+test('detectOpenCodeSessionLayouts 会话面只要求会话表存在（半残库不整段读不到）', () => {
+  const both = openDb(`${LEGACY_SCHEMA}${V2_SCHEMA}`);
+  assert.deepEqual(detectOpenCodeSessionLayouts(both).map((layout) => layout.id), ['session_v2', 'session_legacy']);
+
+  // 只有会话表、没有消息表：消息面读不到，但会话列表/定位/模型仍可读。
+  const sessionOnly = openDb('CREATE TABLE session (id TEXT);');
+  assert.deepEqual(detectOpenCodeDbLayouts(sessionOnly), []);
+  assert.deepEqual(detectOpenCodeSessionLayouts(sessionOnly).map((layout) => layout.id), ['session_legacy']);
+
+  // 只有消息表不算任何会话面布局。
+  const messageOnly = openDb('CREATE TABLE message (id TEXT);');
+  assert.deepEqual(detectOpenCodeSessionLayouts(messageOnly), []);
 });
 
 test('buildOpenCodeMessageQuery 的跨布局行形状一致：角色列只在新代取 type 列', () => {

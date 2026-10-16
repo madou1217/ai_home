@@ -86,7 +86,7 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
 
 | 优先级 | 文件 | 处数 | 现在在做什么 | 目标模式 |
 | --- | --- | --- | --- | --- |
-| P1 | `lib/sessions/session-reader-opencode.js` + `lib/sessions/session-reader.js`（`readOpenCodeSessionModel`） | 5 查询点 | WebUI 会话历史只读旧表：新会话定位（`FROM session`）查不到 → 历史与列表整个缺新会话；消息渲染依赖 `part` 表（新会话内容内嵌 `data.content`） | 消费同一张布局表：会话侧读新代（真机 `session_v2 ⊇ session`，0 独有）并回退旧代；消息侧并集 + 按 `contentModel` 渲染（`inline` vs `parts`） |
+| P1 ✅ | `lib/sessions/session-reader-opencode.js` + `lib/sessions/session-reader.js`（`readOpenCodeSessionModel`） | 5 查询点 | 原 WebUI 会话历史只读旧表：新会话定位（`FROM session`）查不到 → 历史与列表整个缺新会话；消息渲染依赖 `part` 表 | 已消费同一张布局表（2026-10-16 完成，验证见 §3 Phase 3.5 第 13 条）：会话面两代并集（同 id 取更新更晚副本，归档/子会话过滤在合并之后）；消息面并集 + 按 `contentModel` 渲染（`inline` vs `parts`），同 id 新代优先、新代渲染为空不遮挡旧代 |
 | P2 | `lib/sessions/opencode-session-store.js`（WebUI chat 代理） | 7 写入点 | 混合写：`session`/`message`/`part` 写死旧表，`session_message` 只写 switch 行；`assertRequiredTables` 要求旧表存在（纯新库直接报错） | 消费同一张布局表：写目标 = 首个存在的布局（新代优先，写 `seq` 自增）；断言按活跃布局的表集合。症状：迁移只跑一次，切日后写进旧表的新会话对 opencode 2.x 不可见 |
 
 ## 3. 改造路线（每步独立可验证、可回滚）
@@ -150,8 +150,15 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
 12. ✅ 用量扫描：`lib/sessions/opencode-db-layouts.js` 布局表 + `model-usage-scanner.js` 消费——扫全部存在的布局、
     同 id 按 token 总量合并、总量相等取新代（= 角色/类型以新代为准；真机 A/B：127 条 `synthetic`/`compaction`
     不再误记为提示词，其余仅 ±1ms 时间对齐差异）。
-13. ⏳ WebUI 会话历史（P1，见 §2 存储布局反模式）：`session-reader-opencode.js` 5 个查询点消费同一张布局表——
-    会话侧读新代（`session_v2 ⊇ session`）+ 回退旧代；消息侧并集 + 按 `contentModel` 渲染（`inline` vs `parts`）。
+13. ✅ WebUI 会话历史（P1，见 §2 存储布局反模式）：`session-reader-opencode.js` 消费同一张布局表——
+    会话面/定位/模型两代并集（同 id 取更新更晚副本；归档与子会话过滤移到合并之后，新代标记不被旧代
+    冻结副本复活）；消息面并集 + 按 `contentModel` 渲染（`inline` 用 `type` 列角色 + `data.content`
+    条目，tool 产出读 `state.content`；`parts` 走旧路径），同 id 新代优先、新代渲染为空不遮挡旧代；
+    `readOpenCodeSessionModel` 从 `session-reader.js` 迁进读取器（新代优先、旧代兜底）；
+    `detectOpenCodeSessionLayouts`（只要求会话表）与消息面探测区分，半残库会话面不整段读不到。
+    真机 A/B（165 会话）：140 完全一致、14 新代超集（旧读 0 条 → 新读全量）、模型 139 一致 / 26 从无到有 /
+    0 变化、列表 +14 会话 0 丢失；唯一索引级差异为 1 条旧代合并气泡被新代拆成 synthetic+user 两行（内容无损）。
+    测试：`test/session-reader.opencode-v2.test.js` + 布局表会话面探测用例。
 14. ⏳ WebUI chat 代理写入（P2）：`opencode-session-store.js` 写目标 = 首个存在的布局（新代优先，`seq` 自增）；
     `assertRequiredTables` 按活跃布局的表集合。
 

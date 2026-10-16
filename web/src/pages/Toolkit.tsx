@@ -6,6 +6,7 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   ForkOutlined,
+  GatewayOutlined,
   GlobalOutlined,
   ToolOutlined
 } from '@ant-design/icons';
@@ -18,6 +19,7 @@ import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
+import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -84,6 +86,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ForkOutlined />
     },
     {
+      id: 'edge-forwarding',
+      label: '入口与转发',
+      description: 'nginx / caddy / frp',
+      icon: <GatewayOutlined />
+    },
+    {
       id: 'proxy-diagnostics',
       label: '网络诊断',
       description: '代理状态与诊断',
@@ -122,6 +130,8 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="network-access" />;
     case 'subscription-aggregator':
       return <SubscriptionAggregatorPanel />;
+    case 'edge-forwarding':
+      return <EdgeProxyPanel />;
     case 'proxy-diagnostics':
       return <ProxyDiagnosticsPanel />;
     default:

@@ -525,8 +525,9 @@ test('plugin deferrals report which of the three blockers applies', async () => 
 
     control.install(packPlugin(dir, 'attempt', ATTEMPT_MANIFEST, ATTEMPT_SOURCE));
     await control.enable({ pluginId: 'aih.test.attempt', configuration: {} });
-    // gateway.attempt 目前只有 Node 执行：这类请求必须先补 Go 才能下线。
-    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.openai.responses' }).reason, 'plugin_unsupported_capability');
+    // gateway.attempt 已由 Go 执行：它不再把请求按「能力不支持」交回 Node，
+    // 剩下的唯一阻塞项是这一代插件还没被 Go 确认。
+    assert.equal(explainPluginDeferral(state, { entryId: 'gateway.openai.responses' }).reason, 'plugin_generation_unacked');
     assert.equal(shouldDeferToNodeForPlugins(state, { entryId: 'gateway.openai.responses' }), true);
     await runtime.stop();
   } finally {

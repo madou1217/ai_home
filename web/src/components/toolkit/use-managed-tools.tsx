@@ -85,10 +85,16 @@ function actionKey(tool: ManagedToolItem, action: ManagedToolLifecycleAction) {
 }
 
 /**
- * 受管工具（会话运行时 / 网络接入）的数据层（桌面面板与移动端共用）：
+ * 受管工具（会话运行时 / 网络接入 / 入口与转发）的数据层（桌面面板与移动端共用）：
  * 工具探测、生命周期计划确认与后台任务跟踪。配置编辑由界面自行持有。
+ *
+ * `options.toolIds` 用于「不按分类、只按 id」的视图（入口与转发要同时管 nginx / caddy / frpc）。
  */
-export function useManagedTools(category: ToolkitToolCategoryId, lifecycleApi: ManagedToolLifecycleApi) {
+export function useManagedTools(
+  category: ToolkitToolCategoryId,
+  lifecycleApi: ManagedToolLifecycleApi,
+  options: { toolIds?: string[] } = {}
+) {
   const [data, setData] = useState<ManagedToolsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -150,8 +156,12 @@ export function useManagedTools(category: ToolkitToolCategoryId, lifecycleApi: M
   }, [recentTasks]);
 
   const tools = useMemo(
-    () => (data?.tools || []).filter((tool) => tool.category === category),
-    [category, data]
+    () => {
+      const list = data?.tools || [];
+      const ids = options.toolIds;
+      return ids && ids.length ? list.filter((tool) => ids.includes(tool.id)) : list.filter((tool) => tool.category === category);
+    },
+    [category, data, options.toolIds]
   );
   // 首次加载（Windows 上要几秒）期间接口还没回分类名，先用本地名称，别把内部 id 露成标题。
   const categoryInfo = data?.categories.find((item) => item.id === category)

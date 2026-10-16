@@ -48,6 +48,21 @@ func TestStoreListsOnlyAccountsMissingUpstreamModels(t *testing.T) {
 		store,
 		"synthetic-initial-recovery-materialized",
 	)
+	// disabledAccount 指账号本身被停用（区别于上面的 disabled：那是模型被强制
+	// 禁用、账号仍启用）。它有凭据且无上游模型，若不按 enabled 过滤就会被误调度。
+	disabledAccount := registerInitialModelRefreshTestAccount(
+		t,
+		store,
+		"synthetic-initial-recovery-disabled-account",
+	)
+	if _, err := store.SetEnabled(
+		ctx,
+		disabledAccount.Ref(),
+		false,
+		testAccountTime(),
+	); err != nil {
+		t.Fatalf("SetEnabled(disabledAccount) error = %v", err)
+	}
 
 	forcedModel := initialModelRefreshTestModelID(t, "gpt-manually-enabled")
 	if _, err := store.SetManualModelPolicy(
@@ -126,7 +141,8 @@ func TestStoreListsOnlyAccountsMissingUpstreamModels(t *testing.T) {
 			t.Fatalf("恢复候选 %d = %#v, want ref=%s", index, candidate, wantRefs[index])
 		}
 		if candidate.AccountRef() == pending.Ref() ||
-			candidate.AccountRef() == materialized.Ref() {
+			candidate.AccountRef() == materialized.Ref() ||
+			candidate.AccountRef() == disabledAccount.Ref() {
 			t.Fatalf("恢复扫描包含不应调度的账号: %s", candidate.AccountRef())
 		}
 	}
@@ -174,6 +190,7 @@ func TestInitialModelRefreshRecoveryQueryUsesPrimaryKeys(t *testing.T) {
 	}
 	if strings.Contains(initialModelRefreshRecoverySQL, "credential_json") ||
 		strings.Count(initialModelRefreshRecoverySQL, "SELECT") != 2 ||
+		!strings.Contains(initialModelRefreshRecoverySQL, "a.enabled = 1") ||
 		!strings.Contains(initialModelRefreshRecoverySQL, "NOT EXISTS") {
 		t.Fatalf("恢复 SQL 合同错误: %s", initialModelRefreshRecoverySQL)
 	}

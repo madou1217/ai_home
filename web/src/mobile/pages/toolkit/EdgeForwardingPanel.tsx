@@ -1,19 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input, InputNumber, Select } from 'antd';
-import { SafetyCertificateOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  SyncOutlined
+} from '@ant-design/icons';
+import { toolkitAPI } from '@/services/api';
 import { HudSection, KeyValue, TelemetryGrid, TelemetryTile } from '@/mobile/ui';
 import { edgeProxyAPI } from '@/components/toolkit/edge-proxy/edge-proxy-api';
 import {
   EDGE_NGINX_MODES,
   EDGE_PROVIDER_META,
   describeApplyResult,
-  describeEdgeError,
-  edgeInstallHint
+  describeEdgeError
 } from '@/components/toolkit/edge-proxy/edge-proxy-presentation';
 import type { EdgeApplyResult, EdgeNginxMode, EdgePlan, EdgeProvider, EdgeStatus } from '@/components/toolkit/edge-proxy/types';
+import type { ManagedToolItem } from '@/types';
+import { useManagedTools } from '@/components/toolkit/use-managed-tools';
+import { useToolService } from '@/components/toolkit/use-tool-service';
 import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } from './toolkit-parts';
 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
+const LIFECYCLE_API = {
+  plan: toolkitAPI.planManagedToolAction,
+  execute: toolkitAPI.executeManagedToolAction
+};
 
 /** 入口与转发（移动端）：与桌面同名同位置，看本机 nginx / caddy / frp 现状并落一次改动。 */
 export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: boolean }) {
@@ -29,6 +44,20 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
   const [planError, setPlanError] = useState('');
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<EdgeApplyResult | null>(null);
+  // 入口层三个软件的安装 / 配置 / 启停走受管工具引擎（与桌面同一套），这里不发明第二份。
+  const {
+    fetchTools,
+    tools,
+    busyActionFor,
+    runAction
+  } = useManagedTools('edge-entry', LIFECYCLE_API, { toolIds: PROVIDERS });
+  const toolService = useToolService(fetchTools);
+
+  const toolById = useMemo(() => {
+    const map: Record<string, ManagedToolItem> = {};
+    tools.forEach((tool) => { map[tool.id] = tool; });
+    return map;
+  }, [tools]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,12 +73,13 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void fetchTools();
+  }, [load, fetchTools]);
 
   const platform = status?.platform || '';
   const installedCount = useMemo(
-    () => PROVIDERS.filter((item) => status?.providers?.[item]?.installed).length,
-    [status]
+    () => PROVIDERS.filter((item) => toolById[item]?.installed).length,
+    [toolById]
   );
   const planInput = useMemo(() => ({
     provider,
@@ -133,8 +163,11 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
       </TelemetryGrid>
 
       {PROVIDERS.map((item) => {
-        const info = status?.providers?.[item];
         if (planOnly) return null;
+        const tool = toolById[item];
+        const busy = tool ? busyActionFor(tool) : '';
+        const service = tool?.service;
+        const serviceBusy = tool ? toolService.busyFor(tool) : '';
         return (
           <HudSection key={item} code={item.toUpperCase()} title={EDGE_PROVIDER_META[item].label}>
             <KeyValue
@@ -142,21 +175,72 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
                 {
                   key: 'installed',
                   label: '状态',
-                  value: info?.installed ? `已安装${info.version ? ` ${info.version}` : ''}` : '未安装',
-                  tone: info?.installed ? 'ok' : 'warn'
+                  value: tool
+                    ? `${tool.installed ? '已安装' : '未安装'}${tool.version && tool.version !== '-' ? ` ${tool.version}` : ''}`
+                    : '未探测',
+                  tone: tool?.installed ? 'ok' : 'warn'
                 },
                 { key: 'role', label: '用途', value: EDGE_PROVIDER_META[item].role },
                 { key: 'capability', label: '能力', value: EDGE_PROVIDER_META[item].capability },
-                {
-                  key: 'config',
-                  label: '配置',
-                  value: `${info?.configDir || info?.configPath || '未探测到'}${info?.writable === false ? '（不可写）' : ''}`,
-                  mono: true
-                }
+                { key: 'managed', label: '管理', value: tool?.managedBy === 'homebrew' ? 'Homebrew' : tool?.managedBy === 'aih' ? 'AIH' : tool?.managedBy === 'external' ? '外部安装' : '—' },
+                ...(service ? [{ key: 'service', label: '服务', value: service.controllable ? (service.running ? '运行中' : '已停止') : '未托管', tone: service.running ? 'ok' as const : 'muted' as const }] : [])
               ]}
             />
-            {info && !info.installed ? (
-              <MonoBlock label="安装线索">{edgeInstallHint(item, platform)}</MonoBlock>
+            {tool?.canInstall ? (
+              <ActionButton
+                icon={<DownloadOutlined />}
+                label="安装"
+                tone="primary"
+                loading={busy === 'install'}
+                disabled={Boolean(busy)}
+                onClick={() => void runAction(tool, 'install')}
+              />
+            ) : null}
+            {tool?.canUpdate ? (
+              <ActionButton
+                icon={<ReloadOutlined />}
+                label="更新"
+                loading={busy === 'update'}
+                disabled={Boolean(busy)}
+                onClick={() => void runAction(tool, 'update')}
+              />
+            ) : null}
+            {service?.canStart ? (
+              <ActionButton
+                icon={<PlayCircleOutlined />}
+                label="启动"
+                loading={serviceBusy === 'start'}
+                disabled={Boolean(serviceBusy) || !service.controllable}
+                onClick={() => tool && toolService.control(tool, 'start')}
+              />
+            ) : null}
+            {service?.canStop ? (
+              <ActionButton
+                icon={<PauseCircleOutlined />}
+                label="停止"
+                loading={serviceBusy === 'stop'}
+                disabled={Boolean(serviceBusy) || !service.controllable}
+                onClick={() => tool && toolService.control(tool, 'stop')}
+              />
+            ) : null}
+            {service?.canRestart ? (
+              <ActionButton
+                icon={<SyncOutlined />}
+                label="重启"
+                loading={serviceBusy === 'restart'}
+                disabled={Boolean(serviceBusy) || !service.controllable}
+                onClick={() => tool && toolService.control(tool, 'restart')}
+              />
+            ) : null}
+            {tool?.canUninstall ? (
+              <ActionButton
+                icon={<DeleteOutlined />}
+                label="卸载"
+                tone="danger"
+                loading={busy === 'uninstall'}
+                disabled={Boolean(busy)}
+                onClick={() => void runAction(tool, 'uninstall')}
+              />
             ) : null}
           </HudSection>
         );

@@ -261,6 +261,10 @@ func (handler *Handler) executeStream(
 		if errors.Is(request.Context().Err(), context.Canceled) {
 			return
 		}
+		if rejection, ok := inferenceapi.PluginRejectionOf(executionErr); ok {
+			writeStreamFailure(stream, response, rejection.Status, "api_error", rejection.Message)
+			return
+		}
 		writeStreamFailure(
 			stream,
 			response,

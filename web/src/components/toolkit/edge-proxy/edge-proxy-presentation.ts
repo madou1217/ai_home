@@ -40,26 +40,7 @@ export const EDGE_NGINX_MODES: Array<{ value: EdgeNginxMode; label: string; deta
   { value: 'http-only', label: '仅 HTTPS 反代', detail: '只给 WebUI 上证书，代理不上这个端口' }
 ];
 
-function installHintFor(provider: EdgeProvider, platform: string): string {
-  if (platform === 'darwin') {
-    if (provider === 'nginx') return 'brew install nginx';
-    if (provider === 'caddy') return 'brew install caddy';
-    return 'brew install frpc';
-  }
-  if (platform === 'win32') {
-    if (provider === 'nginx') return 'scoop install nginx（或用 nginx.org 的官方 zip 解压）';
-    if (provider === 'caddy') return 'winget install caddy（或下载 caddy_*_windows_amd64.zip）';
-    return 'GitHub 取 frp_*_windows_amd64.zip 里的 frpc.exe';
-  }
-  if (provider === 'nginx') return 'sudo apt install nginx libnginx-mod-stream';
-  if (provider === 'caddy') return 'sudo apt install caddy（或官方 apt 源）';
-  return 'sudo apt install frp（或 GitHub 取 frpc）';
-}
-
-/** 没装时给一条本机可直接执行的安装线索（不同平台不同包管理器）。 */
-export function edgeInstallHint(provider: EdgeProvider, platform: string): string {
-  return installHintFor(provider, String(platform || ''));
-}
+/** 界面不再贴安装命令：装/更新/卸载都走受管工具的插件化生命周期（见 tool-plugins）。 */
 
 /** 误差码 → 人话 + 该怎么办（服务端只给机器码，文案在这里收口）。 */
 export function describeEdgeError(error: string | undefined, platform = ''): string {

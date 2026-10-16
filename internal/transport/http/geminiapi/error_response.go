@@ -88,6 +88,12 @@ func writeExecutionError(response http.ResponseWriter, ctx context.Context, err 
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return
 	}
+	// gateway.attempt 的拒绝是请求级裁决：按插件给的状态码写出；Google 风格的 status 词表里
+	// 没有插件码的位置，所以用协议自身的 INTERNAL，插件消息原样透出。
+	if rejection, ok := inferenceapi.PluginRejectionOf(err); ok {
+		writeError(response, rejection.Status, "INTERNAL", rejection.Message)
+		return
+	}
 	if inferenceapi.IsRequestNotRepresentable(err) {
 		writeError(response, http.StatusBadRequest, "INVALID_ARGUMENT", "Request contains a parameter the upstream protocol does not support")
 		return

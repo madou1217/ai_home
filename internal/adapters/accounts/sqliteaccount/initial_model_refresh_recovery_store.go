@@ -11,12 +11,14 @@ import (
 // initialModelRefreshRecoverySQL 是启动恢复扫描及查询计划测试共享的 SQL 合同。
 //
 // JOIN 只确认凭据存在，NOT EXISTS 只判断是否已经物化过真实上游模型；查询不会
-// 读取 credential_json，也不会为每个账号追加模型查询。
+// 读取 credential_json，也不会为每个账号追加模型查询。停用账号不参与路由，补齐
+// 它们的目录只会占用同 Provider 共享的刷新队列，因此与重扫保持同一 enabled 过滤。
 const initialModelRefreshRecoverySQL = `
 	SELECT a.account_ref, a.provider_id
 	FROM accounts AS a
 	JOIN account_credentials AS c ON c.account_ref = a.account_ref
 	WHERE a.account_ref > ?
+	  AND a.enabled = 1
 	  AND NOT EXISTS (
 		SELECT 1
 		FROM account_models AS m

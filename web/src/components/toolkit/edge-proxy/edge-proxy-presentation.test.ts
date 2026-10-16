@@ -5,16 +5,8 @@ import {
   EDGE_NGINX_MODES,
   EDGE_PROVIDER_META,
   describeApplyResult,
-  describeEdgeError,
-  edgeInstallHint
+  describeEdgeError
 } from './edge-proxy-presentation.ts';
-
-test('edgeInstallHint 按平台给线索，不跨平台乱开包管理器', () => {
-  assert.match(edgeInstallHint('nginx', 'darwin'), /brew install nginx/);
-  assert.match(edgeInstallHint('nginx', 'linux'), /libnginx-mod-stream/);
-  assert.match(edgeInstallHint('caddy', 'win32'), /winget install caddy/);
-  assert.match(edgeInstallHint('frp', 'darwin'), /brew install frpc/);
-});
 
 test('describeEdgeError 把服务端错误码翻成人话与下一步', () => {
   assert.match(describeEdgeError('edge_provider_not_installed'), /没装/);

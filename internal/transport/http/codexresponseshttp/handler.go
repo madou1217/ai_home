@@ -116,6 +116,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.fail(response, trail, "no_available_account")
 		return
 	}
+	// Go 的 native Responses 快路径没有插件尝试中间件（gateway.attempt 由 Canonical
+	// Coordinator 执行）：交还前置宿主执行同一代插件，而不是静默跳过它。
+	// 此时还没有联系上游、也没有写出任何字节，重放安全。
+	if inferenceapi.RequiresAttemptHandback(request.Context()) {
+		inferenceapi.MarkAttemptHandback(response)
+		writeError(response, "invalid_request_body")
+		return
+	}
 	// 整个请求（含流式交付）的总预算。10 分钟的旧上限会切断长推理流，
 	// 现在与流空闲策略共享同一个放宽后的总时长（见 G3）。
 	ctx, cancel := context.WithTimeout(ctx, inferenceapi.StreamTotalTimeout)

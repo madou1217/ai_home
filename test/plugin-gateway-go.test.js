@@ -67,6 +67,24 @@ const ACCOUNT_MANIFEST = manifest('aih.test.go-account', {
 const ACCOUNT_SOURCE = `export default { apply(ctx, config) {
   ctx.aih.register('goacct.prefer', () => ({ prefer: [config.prefer] }));
 } };`;
+const ATTEMPT_MANIFEST = manifest('aih.test.go-attempt', {
+  configSchema: { type: 'object', additionalProperties: false, properties: { mode: { type: 'string' } } },
+  contributes: [
+    { id: 'goattempt.attempt', capability: 'gateway.attempt', version: 1 },
+    { id: 'goattempt.dump', capability: 'command', version: 1 }
+  ]
+});
+const ATTEMPT_SOURCE = `const log = [];
+export default { apply(ctx, config) {
+  ctx.aih.register('goattempt.dump', () => log.splice(0));
+  ctx.aih.register('goattempt.attempt', async (value, context) => {
+    if (config.mode === 'reject') return { reject: { status: 451, message: 'blocked in go attempt' } };
+    const summary = await context.next();
+    log.push({ value, summary });
+    if (config.mode === 'stop') return { recovery: 'stop' };
+    return null;
+  });
+} };`;
 const NODE_EVENT_KEYS = ['accountRef', 'attempt', 'committed', 'durationMs', 'error', 'generation', 'model', 'outcome', 'provider', 'type'];
 
 async function listen(t, handler) {
@@ -79,7 +97,7 @@ async function listen(t, handler) {
 async function goPluginFixture(t) {
   const upstreamBodies = [];
   const hold = { next: null };
-  const failing = { next: 0 };
+  const failing = { next: 0, status: 400 };
   const upstreamKeys = [];
   const upstream = await listen(t, async (request, response) => {
     response.setHeader('content-type', 'application/json');
@@ -94,7 +112,7 @@ async function goPluginFixture(t) {
     upstreamKeys.push(String(request.headers.authorization || ''));
     if (failing.next > 0) {
       failing.next -= 1;
-      response.writeHead(400);
+      response.writeHead(failing.status);
       response.end('{"error":{"message":"rejected by fixture","type":"invalid_request_error","code":"fixture_rejected"}}');
       return;
     }
@@ -127,6 +145,7 @@ async function goPluginFixture(t) {
   system.control.install(packPlugin(dir, 'goreq', REQUEST_MANIFEST, REQUEST_SOURCE));
   system.control.install(packPlugin(dir, 'goobs', OBSERVER_MANIFEST, OBSERVER_SOURCE));
   system.control.install(packPlugin(dir, 'goacct', ACCOUNT_MANIFEST, ACCOUNT_SOURCE));
+  system.control.install(packPlugin(dir, 'goattempt', ATTEMPT_MANIFEST, ATTEMPT_SOURCE));
   const management = createGoManagementClient({ baseUrl: go.base, managementKey: go.managementKey });
   const sync = attachGoProjection(system, (payload) => management.pushPluginProjection(payload), { intervalMs: 200 });
   t.after(async () => {
@@ -312,4 +331,99 @@ test('Go applies gateway.account preference within the pool; a preference outsid
   assert.notEqual(violated.status, 200);
   assert.equal(violated.headers.get('x-served-by'), null, '越界偏好由 Go 拒绝，不交回 Node');
   assert.equal(f.upstreamKeys.length, hits, '越界的偏好不会让请求出站');
+});
+
+// ---- gateway.attempt：Go 把每次尝试包进插件中间件（反向调用 next()） ----
+
+async function dumpAttempts(system) {
+  let entries = [];
+  assert.ok(await waitFor(async () => {
+    entries = entries.concat((await system.runtime.invoke('goattempt.dump', null)).value || []);
+    return entries.length > 0;
+  }), JSON.stringify(entries));
+  return entries;
+}
+
+test('Go executes gateway.attempt for an attempt-only generation, and next() carries the summary', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  // 只装 attempt 插件：这一代没有任何 request/observe/account 贡献项，转发仍然必须带代次，
+  // 否则 Go 的入口闸门会直接放行、中间件被静默跳过。
+  await f.system.control.enable({ pluginId: 'aih.test.go-attempt', configuration: { mode: 'pass' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+
+  const hits = f.upstreamBodies.length;
+  // gateway.attempt 由 Canonical 执行：/v1/chat/completions 走 Canonical Coordinator。
+  const response = await f.send({ model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'hi' }] }, {}, '/v1/chat/completions');
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(response.headers.get('x-served-by'), null, '由 Go 服务');
+  assert.equal(f.nodeServed.length, 0, '请求没有被交回 Node');
+  assert.equal(f.upstreamBodies.length, hits + 1, '上游恰好命中一次');
+
+  const [entry] = await dumpAttempts(f.system);
+  assert.deepEqual(Object.keys(entry.value).sort(), ['accountRef', 'attempt', 'authType', 'model', 'provider'], '插件看不到请求体与凭据');
+  assert.equal(entry.value.provider, 'codex');
+  assert.equal(entry.value.model, 'gpt-5.4');
+  assert.equal(entry.value.attempt, 0);
+  assert.equal(entry.value.accountRef, f.go.accountRef);
+  assert.equal(entry.value.authType, 'api-key');
+  assert.equal(entry.summary.committed, true, '非流式响应在尝试结束时已经提交');
+  assert.equal(entry.summary.stopped, false);
+});
+
+test('a plugin rejection in Go keeps the upstream unhit and carries the plugin status', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  await f.system.control.enable({ pluginId: 'aih.test.go-attempt', configuration: { mode: 'reject' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+
+  const hits = f.upstreamBodies.length;
+  const rejected = await f.send({ model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'hi' }] }, {}, '/v1/chat/completions');
+  assert.equal(rejected.status, 451, await rejected.clone().text());
+  assert.equal((await rejected.json()).error.code, 'plugin_rejected');
+  assert.equal(rejected.headers.get('x-served-by'), null, '由 Go 拒绝，不交回 Node');
+  assert.equal(f.upstreamBodies.length, hits, '被拒绝的尝试零上游命中');
+  assert.equal(f.nodeServed.length, 0);
+});
+
+test('Go stops failover only when the attempt plugin asks for it on an uncommitted failure', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  // 第二个账号让换号真的会发生：没有插件时同一个失败会再打一次上游。
+  await f.go.register('second-upstream-key');
+
+  await f.system.control.enable({ pluginId: 'aih.test.go-attempt', configuration: { mode: 'pass' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+  let hits = f.upstreamBodies.length;
+  f.failing.status = 503;
+  f.failing.next = 1;
+  const recovered = await f.send({ model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'hi' }] }, {}, '/v1/chat/completions');
+  assert.equal(recovered.status, 200, await recovered.clone().text());
+  assert.equal(f.upstreamBodies.length, hits + 2, '默认行为：换号重试第二个账号');
+  let entries = await dumpAttempts(f.system);
+  assert.deepEqual(entries.map((entry) => entry.value.attempt), [0, 1], '插件看到请求级的尝试序号');
+
+  await f.system.control.enable({ pluginId: 'aih.test.go-attempt', configuration: { mode: 'stop' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+  hits = f.upstreamBodies.length;
+  f.failing.next = 1;
+  const stopped = await f.send({ model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'hi' }] }, {}, '/v1/chat/completions');
+  assert.notEqual(stopped.status, 200);
+  assert.equal(f.upstreamBodies.length, hits + 1, '插件要求停止换号：只打了一次上游');
+  entries = await dumpAttempts(f.system);
+  assert.equal(entries[0].summary.committed, false);
+  assert.equal(entries[0].summary.outcome, 'retry_next');
+});
+
+
+
+test('a native Go entry without the attempt middleware hands the request back instead of skipping the plugin', { skip: skip(), timeout: 120000 }, async (t) => {
+  const f = await goPluginFixture(t);
+  await f.system.control.enable({ pluginId: 'aih.test.go-attempt', configuration: { mode: 'reject' } });
+  assert.ok(await waitFor(() => f.sync.isAcked(f.system.runtime.snapshot().generation)));
+
+  // /v1/responses 在 Go 走 native 快路径（没有尝试中间件）：必须交还 Node，
+  // 而不是让 Go 静默跳过插件。交还发生在联系上游之前，Node 拿到未改写的原文。
+  const hits = f.upstreamBodies.length;
+  const response = await f.send(BODY);
+  assert.equal(response.headers.get('x-served-by'), 'node', 'Go 交还，由 Node 处理');
+  assert.deepEqual(f.nodeServed.at(-1), BODY, 'Node 收到的是未改写的原文');
+  assert.equal(f.upstreamBodies.length, hits, '交还发生在联系上游之前');
 });

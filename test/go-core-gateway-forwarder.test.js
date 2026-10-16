@@ -518,6 +518,12 @@ test('only a Go-marked decode rejection hands the buffered body back to Node; ot
         res.end('{"error":{"code":"unsupported_media_type","message":"Content type is not supported"}}');
         return;
       }
+      if (model === 'plugin-handback') {
+        // 插件能力缺口：同一回退链，但交还原因必须与解码拒收区分开。
+        res.writeHead(400, { 'content-type': 'application/json', 'x-aih-decode-rejected': '1', 'x-aih-plugin-handback': 'gateway.attempt' });
+        res.end('{"error":{"code":"invalid_request_body"}}');
+        return;
+      }
       if (model === 'server-error-with-marker') {
         // 5xx 永远不是解码阶段失败，即使误带标记也不得重放。
         res.writeHead(503, { 'content-type': 'application/json', 'x-aih-decode-rejected': '1' });
@@ -562,7 +568,7 @@ test('only a Go-marked decode rejection hands the buffered body back to Node; ot
   assert.equal(rejected.status, 200);
   assert.match(rejected.body, /handledBy/);
   assert.deepEqual(nodeBodies, [JSON.stringify(codexShape)], 'Node replays the exact buffered body');
-  assert.deepEqual(fallbacks, [{ entryId: 'gateway.openai.responses', requestId: 'req-decode' }]);
+  assert.deepEqual(fallbacks, [{ entryId: 'gateway.openai.responses', requestId: 'req-decode', pluginCapability: '' }], '普通解码拒收不带插件能力');
 
   const other = await post({ model: 'gpt-6-astra', input: 'hi' });
   assert.equal(other.status, 400, 'unmarked 400 is never replayed');
@@ -578,7 +584,13 @@ test('only a Go-marked decode rejection hands the buffered body back to Node; ot
   assert.deepEqual(nodeBodies, [JSON.stringify(codexShape), JSON.stringify(compressedShape)]);
   assert.equal(fallbacks.length, 2);
 
+  const pluginShape = { model: 'plugin-handback', input: 'hi' };
+  const pluginHandback = await post(pluginShape);
+  assert.equal(pluginHandback.status, 200, '插件能力缺口同样交还 Node');
+  assert.deepEqual(nodeBodies, [JSON.stringify(codexShape), JSON.stringify(compressedShape), JSON.stringify(pluginShape)]);
+  assert.deepEqual(fallbacks.at(-1), { entryId: 'gateway.openai.responses', requestId: 'req-decode', pluginCapability: 'gateway.attempt' });
+
   const serverError = await post({ model: 'server-error-with-marker', input: 'hi' });
   assert.equal(serverError.status, 503, 'a 5xx is never replayed even with the marker');
-  assert.equal(nodeBodies.length, 2);
+  assert.equal(nodeBodies.length, 3);
 });

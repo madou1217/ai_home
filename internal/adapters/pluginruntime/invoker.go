@@ -59,17 +59,36 @@ func (invoker *HostInvoker) Invoke(
 	value any,
 	timeout time.Duration,
 ) (json.RawMessage, error) {
+	return invoker.InvokeReverse(ctx, generation, contributionID, value, timeout, nil)
+}
+
+// InvokeReverse 与 Invoke 相同，并允许宿主在本次调用进行中反向调用网关（协议 v2 的 call 帧）。
+//
+// onCall 为 nil 时该调用名下的反向调用一律回 method_unknown。反向调用的生命周期由连接层管理：
+// 父调用一结束（结果、错误、取消、超时、断开），挂在它下面的反向调用都会被取消。
+func (invoker *HostInvoker) InvokeReverse(
+	ctx context.Context,
+	generation int64,
+	contributionID string,
+	value any,
+	timeout time.Duration,
+	onCall appplugins.ReverseCall,
+) (json.RawMessage, error) {
 	client, err := invoker.connection(ctx)
 	if err != nil {
 		return nil, err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	result, err := client.Call(callCtx, "invoke", map[string]any{
+	options := CallOptions{}
+	if onCall != nil {
+		options.OnCall = onCall
+	}
+	result, err := client.CallWith(callCtx, "invoke", map[string]any{
 		"generation":     generation,
 		"contributionId": contributionID,
 		"value":          value,
-	}, nil)
+	}, nil, options)
 	if err != nil {
 		return nil, err
 	}

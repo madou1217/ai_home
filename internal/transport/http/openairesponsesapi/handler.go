@@ -272,6 +272,10 @@ func (handler *Handler) executeStream(
 			message: "Invalid upstream response",
 		})
 	case executionErr != nil:
+		if rejection, ok := inferenceapi.PluginRejectionOf(executionErr); ok {
+			execution.Finish(streamFailure{status: rejection.Status, code: rejection.Code, message: rejection.Message})
+			return
+		}
 		execution.Finish(streamFailure{
 			status:  http.StatusServiceUnavailable,
 			code:    "upstream_unavailable",

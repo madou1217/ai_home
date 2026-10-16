@@ -229,6 +229,14 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 
+	// Go 的字节透传路径没有插件尝试中间件（gateway.attempt 由 Canonical Coordinator
+	// 执行）：交还前置宿主执行同一代插件，而不是静默跳过它。此时还没联系上游。
+	if inferenceapi.RequiresAttemptHandback(request.Context()) {
+		inferenceapi.MarkAttemptHandback(response)
+		writeRelayError(response, http.StatusBadRequest, "invalid_relay_request", "Claude Relay 需要宿主执行插件尝试中间件")
+		return
+	}
+
 	// 尝试循环：只要客户端还没收到任何字节，可重试失败就换号重发。
 	//
 	// 每次只保留最新一次结果，被取代的上游连接立即关闭；耗尽时把最后一次真实

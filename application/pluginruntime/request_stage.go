@@ -45,6 +45,9 @@ func (failure *StageError) Error() string {
 	return fmt.Sprintf("插件 %s 的 %s：%s", failure.InstanceID, failure.ContributionID, failure.Message)
 }
 
+// ErrorCode 让传输层不依赖本包也能读出稳定错误码（反向调用的错误要按合同码回给宿主）。
+func (failure *StageError) ErrorCode() string { return failure.Code }
+
 // Reject 是插件明确拒绝请求（只允许 4xx）。
 type Reject struct {
 	Status         int

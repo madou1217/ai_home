@@ -1851,7 +1851,7 @@ export interface ToolkitAppConfigResponse {
   size?: number;
 }
 
-export type ToolkitToolCategoryId = 'session-runtimes' | 'network-access';
+export type ToolkitToolCategoryId = 'session-runtimes' | 'network-access' | 'edge-entry';
 
 export interface ToolkitToolCategory {
   id: ToolkitToolCategoryId;

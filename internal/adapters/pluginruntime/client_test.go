@@ -354,7 +354,9 @@ func benchmarkCall(b *testing.B, payload []byte) {
 
 // Go 网关还不提供 gateway.next：中间件在 Go 发起的调用里调用 next() 必须立刻得到 method_unknown，
 // 而不是让宿主空等到 deadline。
-func TestReverseCallsFromTheHostAreRefusedImmediately(t *testing.T) {
+// 反向调用只在调用方声明了 onCall 时才受理：普通的 Call 仍然立即回 method_unknown，
+// 让宿主侧的父调用按插件失败处理，而不是空等到超时。
+func TestReverseCallsUnderACallWithoutHandlerFailImmediately(t *testing.T) {
 	fixture := startHost(t)
 	client := dialReady(t, fixture)
 	target := filepath.Join(fixture.dir, "attempt")
@@ -391,7 +393,7 @@ func TestReverseCallsFromTheHostAreRefusedImmediately(t *testing.T) {
 		t.Fatalf("invoke: %v", err)
 	}
 	if string(result.Value) != `"`+plugincontract.CodeRpcMethodUnknown+`"` {
-		t.Fatalf("next() under a Go invoke should fail with method_unknown, got %s", result.Value)
+		t.Fatalf("没有 onCall 的调用必须回 method_unknown，得到 %s", result.Value)
 	}
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("refusal should be immediate, took %s", elapsed)

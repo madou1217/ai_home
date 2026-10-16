@@ -235,6 +235,8 @@ func (coordinator *Coordinator) executePlan(
 	if _, pinned := PinnedAccount(ctx); !pinned {
 		plan = coordinator.orderRoutePlan(request.Model(), plan)
 	}
+	// 请求级尝试记账（插件看到的 attempt 序号与最近失败文本）；没有插件时只多一次 ctx 包装。
+	ctx = withAttemptJournal(ctx)
 	poolRetryPermit := coordinator.newRequestPoolRetryPermit(ctx)
 	defer poolRetryPermit.close()
 	var pendingFailure *attemptStream
@@ -671,6 +673,9 @@ func (coordinator *Coordinator) newRecruitmentRequest(
 }
 
 // executeAttempt 执行单账号调用并返回尚未对客户端可见的可重试失败。
+//
+// 请求固定的插件代次有 gateway.attempt 贡献项时，真实尝试被包在该中间件里面（插件可以
+// 在 next() 之前拒绝这次尝试，或在未提交的失败上停止换号）；没有插件时行为与之前完全一致。
 func (coordinator *Coordinator) executeAttempt(
 	ctx context.Context,
 	invocation Invocation,
@@ -679,8 +684,31 @@ func (coordinator *Coordinator) executeAttempt(
 	accountFailures *requestAccountFailureRecorder,
 ) (attemptOutcome, error) {
 	stream := newAttemptStream(emit, coordinator.clock)
-	outcome := newAttemptOutcome(stream, false)
 	observeAccount(ctx, invocation.Account().Ref(), invocation.Account().ProviderID())
+	outcome, err, ran := coordinator.runPluginAttemptStage(
+		ctx,
+		invocation,
+		stream,
+		accountFailures,
+		func(runCtx context.Context) (attemptOutcome, error) {
+			return coordinator.runUpstreamAttempt(runCtx, invocation, upstream, stream, accountFailures)
+		},
+	)
+	if ran {
+		return outcome, err
+	}
+	return coordinator.runUpstreamAttempt(ctx, invocation, upstream, stream, accountFailures)
+}
+
+// runUpstreamAttempt 执行一次真实上游尝试，并记录它的成功或失败终态。
+func (coordinator *Coordinator) runUpstreamAttempt(
+	ctx context.Context,
+	invocation Invocation,
+	upstream UpstreamAdapter,
+	stream *attemptStream,
+	accountFailures *requestAccountFailureRecorder,
+) (attemptOutcome, error) {
+	outcome := newAttemptOutcome(stream, false)
 	result, executeErr := upstream.Execute(ctx, invocation, stream.Accept)
 	if stream.Err() != nil {
 		return outcome, stream.Err()

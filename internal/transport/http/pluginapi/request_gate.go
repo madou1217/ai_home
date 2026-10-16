@@ -62,11 +62,12 @@ func (gate *RequestGate) Wrap(protocol string, next http.Handler) http.Handler {
 		}
 		observing := projection.Has(appplugins.CapabilityObserve) && gate.observer != nil
 		preferring := projection.Has(appplugins.CapabilityGatewayAccount) && gate.observer != nil
-		if !projection.Has(appplugins.CapabilityGatewayRequest) && !observing && !preferring {
+		attempting := projection.Has(appplugins.CapabilityGatewayAttempt) && gate.observer != nil
+		if !projection.Has(appplugins.CapabilityGatewayRequest) && !observing && !preferring && !attempting {
 			next.ServeHTTP(response, request)
 			return
 		}
-		if observing || preferring {
+		if observing || preferring || attempting {
 			var committed func() bool
 			if observing {
 				// 只在有观察插件时包装 ResponseWriter（记录失败时响应头是否已写出）。

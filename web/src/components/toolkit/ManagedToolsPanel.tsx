@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Modal, Space, Spin, Tag, message } from 'antd';
+import { Space, Spin, Tag } from 'antd';
 import {
   EditOutlined,
-  LockOutlined,
   ReloadOutlined,
   ToolOutlined
 } from '@ant-design/icons';
@@ -11,18 +10,17 @@ import type {
   ManagedToolItem,
   ManagedToolLifecycleAction,
   ToolkitToolCategoryId,
-  ToolkitToolConfigResponse
 } from '@/types';
 import Button from '@/components/ui/AppButton';
 import InstallLifecycleAction from './InstallLifecycleAction';
 import ManagedResourceCard from './ManagedResourceCard';
+import ManagedToolConfigModal from './ManagedToolConfigModal';
+import ManagedToolLogsModal from './ManagedToolLogsModal';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
-import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import { ToolServiceActions, ToolServicePolicy } from './ToolServiceControls';
 import { serviceSummary } from './tool-service-presentation';
 import { useToolService } from './use-tool-service';
 import { LIFECYCLE_ACTION_LABELS as ACTION_LABELS } from './lifecycle-presentation';
-import { toolkitRequestError as requestError } from './request-error';
 import {
   MANAGED_TOOL_CAPABILITY_LABELS as CAPABILITY_LABELS,
   MANAGED_TOOL_DISCOVERY_SOURCE_LABELS as DISCOVERY_SOURCE_LABELS,
@@ -60,55 +58,8 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
     execute: toolkitAPI.executeManagedToolAction
   });
   const [editingTool, setEditingTool] = useState<ManagedToolItem | null>(null);
-  const [configData, setConfigData] = useState<ToolkitToolConfigResponse | null>(null);
-  const [configContent, setConfigContent] = useState('');
-  const [configLoading, setConfigLoading] = useState(false);
-  const [savingConfig, setSavingConfig] = useState(false);
   const toolService = useToolService(fetchTools);
 
-  const openConfig = async (tool: ManagedToolItem) => {
-    setEditingTool(tool);
-    setConfigData(null);
-    setConfigContent('');
-    setConfigLoading(true);
-    try {
-      const result = await toolkitAPI.getToolConfig(tool.id);
-      if (!result.ok) throw new Error('工具配置接口未返回可用结果');
-      setConfigData(result);
-      setConfigContent(result.content || '');
-    } catch (error: unknown) {
-      setEditingTool(null);
-      message.error(requestError(error, '读取工具配置失败'));
-    } finally {
-      setConfigLoading(false);
-    }
-  };
-
-  const saveConfig = async (restartAfter = false) => {
-    if (!editingTool || !configData) return;
-    setSavingConfig(true);
-    try {
-      const result = await toolkitAPI.saveToolConfig(
-        editingTool.id,
-        configContent,
-        configData.revision,
-        configData.targetRevision
-      );
-      if (!result.ok) throw new Error('工具配置保存接口返回失败');
-      setConfigData(result);
-      message.success(result.elevated ? '配置已通过系统授权保存' : '配置已保存');
-      if (restartAfter) {
-        const restarted = await toolkitAPI.controlToolService(editingTool.id, 'restart');
-        if (!restarted.ok) throw new Error(restarted.message || '配置已保存，但重启失败');
-        message.success(`${editingTool.name} 已按新配置重启`);
-      }
-      await fetchTools();
-    } catch (error: unknown) {
-      message.error(requestError(error, '保存工具配置失败'));
-    } finally {
-      setSavingConfig(false);
-    }
-  };
 
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby={`toolkit-tools-${category}`}>
@@ -268,7 +219,7 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                           icon={<EditOutlined />}
                           aria-label={`编辑 ${tool.name} 配置`}
                           title={`编辑 ${tool.name} 配置`}
-                          onClick={() => openConfig(tool)}
+                          onClick={() => setEditingTool(tool)}
                         />
                       ) : null}
                       {tool.requiresElevation && tool.configEditable ? <Tag color="warning">保存需授权</Tag> : null}
@@ -286,78 +237,16 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
         </>
       ) : null}
 
-      <Modal
-        open={Boolean(editingTool)}
-        title={editingTool ? `编辑 ${editingTool.name} 配置` : '编辑配置'}
-        width={1000}
-        footer={[
-          <Button key="cancel" disabled={savingConfig} onClick={() => {
-            setEditingTool(null);
-            setConfigData(null);
-            setConfigContent('');
-          }}>取消</Button>,
-          ...(editingTool?.service?.canRestart ? [
-            <Button key="save-restart" loading={savingConfig} disabled={!configData} onClick={() => void saveConfig(true)}>保存并重启</Button>
-          ] : []),
-          <Button key="save" type="primary" loading={savingConfig} disabled={!configData} onClick={() => void saveConfig()}>保存配置</Button>
-        ]}
-        onCancel={() => {
-          if (!savingConfig) {
-            setEditingTool(null);
-            setConfigData(null);
-            setConfigContent('');
-          }
-        }}
-        destroyOnClose
-      >
-        {configLoading ? (
-          <div className="toolkit-loading compact"><Spin /></div>
-        ) : (
-          <>
-            <div className="toolkit-inline-note" role="note">
-              <LockOutlined aria-hidden="true" />
-              <span>
-                配置可能包含敏感信息；
-                {configData?.requiresElevation
-                  ? '当前目标需要系统授权才能保存，接口不会返回绝对路径。'
-                  : `格式为 ${configData?.configFormat || editingTool?.configFormat || 'text'}，保存时会校验并发修改。`}
-              </span>
-            </div>
-            <ConfigCodeEditor
-              value={configContent}
-              onChange={setConfigContent}
-              format={configData?.configFormat || editingTool?.configFormat}
-              fileName={configData?.configName || editingTool?.configName}
-              ariaLabel={`${editingTool?.name || '工具'} 配置内容`}
-              onSave={savingConfig ? undefined : () => void saveConfig()}
-            />
-          </>
-        )}
-      </Modal>
-
-      <Modal
-        open={Boolean(toolService.logs)}
-        title={toolService.logs ? `${toolService.logs.tool.name} 最近日志` : '日志'}
-        width={1000}
-        footer={[
-          <Button
-            key="refresh"
-            icon={<ReloadOutlined />}
-            onClick={() => toolService.logs && void toolService.openLogs(toolService.logs.tool)}
-          >刷新</Button>,
-          <Button key="close" type="primary" onClick={toolService.closeLogs}>关闭</Button>
-        ]}
-        onCancel={toolService.closeLogs}
-        destroyOnClose
-      >
-        {toolService.logs?.loading ? (
-          <div className="toolkit-loading compact"><Spin /></div>
-        ) : (
-          <pre className="toolkit-service-log" aria-label="服务日志">
-            {toolService.logs?.lines.length ? toolService.logs.lines.join('\n') : '暂无日志输出'}
-          </pre>
-        )}
-      </Modal>
+      <ManagedToolConfigModal
+        tool={editingTool}
+        onClose={() => setEditingTool(null)}
+        onSaved={() => void fetchTools()}
+      />
+      <ManagedToolLogsModal
+        logs={toolService.logs}
+        onReload={(tool) => void toolService.openLogs(tool)}
+        onClose={toolService.closeLogs}
+      />
     </section>
   );
 }

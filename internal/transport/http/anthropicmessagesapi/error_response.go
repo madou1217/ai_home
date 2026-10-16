@@ -77,6 +77,12 @@ func writeExecutionError(
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return
 	}
+	// gateway.attempt 的拒绝是请求级裁决：按插件给的状态码与消息写出，不压成 503。
+	// Anthropic 的错误视图没有独立 code 字段，插件码只在 OpenAPI 形状里保留。
+	if rejection, ok := inferenceapi.PluginRejectionOf(err); ok {
+		writeAPIError(response, rejection.Status, "api_error", rejection.Message)
+		return
+	}
 	if inferenceapi.IsRequestNotRepresentable(err) {
 		writeAPIError(response, http.StatusBadRequest, "invalid_request_error", "Request contains a parameter the upstream protocol does not support")
 		return

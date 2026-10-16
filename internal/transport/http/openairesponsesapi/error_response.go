@@ -82,6 +82,11 @@ func writeExecutionError(
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return
 	}
+	// gateway.attempt 的拒绝是请求级裁决：按插件给的状态码与稳定码写出，不压成 503。
+	if rejection, ok := inferenceapi.PluginRejectionOf(err); ok {
+		writeAPIError(response, rejection.Status, "server_error", rejection.Code, rejection.Message)
+		return
+	}
 	if inferenceapi.IsRequestNotRepresentable(err) {
 		writeAPIError(response, http.StatusBadRequest, "invalid_request_error", "unsupported_parameter", "Request contains a parameter the upstream protocol does not support")
 		return

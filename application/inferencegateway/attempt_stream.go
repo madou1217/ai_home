@@ -1,6 +1,7 @@
 package inferencegateway
 
 import (
+	"sync"
 	"time"
 
 	"github.com/madou1217/ai_home/core/inference"
@@ -18,11 +19,30 @@ type attemptStream struct {
 	err          error
 	usage        inference.Usage
 	hasUsage     bool
+	commitOnce   sync.Once
+	committed    chan struct{}
 }
 
 // newAttemptStream 创建同步传播背压的单次调用事件边界。
 func newAttemptStream(emit EventSink, clock func() time.Time) *attemptStream {
-	return &attemptStream{emit: emit, clock: clock}
+	return &attemptStream{emit: emit, clock: clock, committed: make(chan struct{})}
+}
+
+// Committed 在本次尝试的第一个事件写给客户端时关闭（提交点：之后的一切都不可撤回）。
+//
+// 插件中间件用它把 next() 的摘要结算在提交点，而不是等整条流结束。
+func (stream *attemptStream) Committed() <-chan struct{} {
+	if stream == nil {
+		return nil
+	}
+	return stream.committed
+}
+
+func (stream *attemptStream) markCommitted() {
+	if stream == nil {
+		return
+	}
+	stream.commitOnce.Do(func() { close(stream.committed) })
 }
 
 // Accept 校验连续序号，立即转发非终态并暂存终态。
@@ -66,6 +86,7 @@ func (stream *attemptStream) Accept(
 			return err
 		}
 		stream.visible = true
+		stream.markCommitted()
 		return nil
 	}
 }
@@ -149,6 +170,7 @@ func (stream *attemptStream) FlushTerminal() error {
 		return err
 	}
 	stream.visible = true
+	stream.markCommitted()
 	return nil
 }
 

@@ -25,10 +25,17 @@ func (e *Error) Error() string {
 func (e *Error) ErrorCode() string { return e.Code }
 
 // Code 返回错误链中的插件错误码；不是插件错误返回空串。
+//
+// 也认应用层的 ErrorCode()（例如 pluginruntime.StageError），这样反向调用回给宿主的错误码
+// 与合同里的稳定码一致，而不是被压成通用的 plugin_rpc_error。
 func Code(err error) string {
 	var target *Error
 	if errors.As(err, &target) {
 		return target.Code
+	}
+	var coded interface{ ErrorCode() string }
+	if errors.As(err, &coded) {
+		return coded.ErrorCode()
 	}
 	return ""
 }

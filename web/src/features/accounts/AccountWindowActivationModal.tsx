@@ -5,12 +5,14 @@ import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import { formatTimeCell } from '@/utils/datetime';
 import {
   describeWindowActivationGlobal,
+  describeWindowActivationWindow,
   formatWindowActivationInterval
 } from '@/features/accounts/window-activation-presentation';
 import type {
   Account,
   AccountWindowActivationGlobalState,
-  AccountWindowActivationProbeState
+  AccountWindowActivationProbeState,
+  AccountWindowActivationWindowState
 } from '@/types';
 import './account-overlays.css';
 
@@ -37,6 +39,13 @@ const GLOBAL_TONE_COLORS: Record<'active' | 'inactive' | 'unknown', string> = {
   unknown: 'default'
 };
 
+// 窗口状态标签色：运行中=绿、等待续窗/补窗=黄、观察不到=灰。
+const WINDOW_TONE_COLORS: Record<'active' | 'inactive' | 'unknown', string> = {
+  active: 'success',
+  inactive: 'warning',
+  unknown: 'default'
+};
+
 function msToMinutes(value: number | null | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
   return Math.round(value / MS_PER_MINUTE);
@@ -48,6 +57,8 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
   const [submitting, setSubmitting] = useState(false);
   const [globalState, setGlobalState] = useState<AccountWindowActivationGlobalState | null>(null);
   const [lastProbe, setLastProbe] = useState<AccountWindowActivationProbeState | null>(null);
+  const [windowState, setWindowState] = useState<AccountWindowActivationWindowState | null>(null);
+  const [loadedAt, setLoadedAt] = useState(0);
   const accountEnabled = Form.useWatch('enabled', form) === true;
 
   useEffect(() => {
@@ -56,6 +67,8 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
     setLoading(true);
     setGlobalState(null);
     setLastProbe(null);
+    setWindowState(null);
+    setLoadedAt(0);
     form.setFieldsValue({ enabled: false, intervalMinutes: undefined });
 
     accountsAPI.getAccountWindowActivation(account.provider, account.accountRef)
@@ -68,6 +81,8 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
         });
         setGlobalState(response.global || null);
         setLastProbe(response.lastProbe || null);
+        setWindowState(response.window || null);
+        setLoadedAt(Date.now());
       })
       .catch(() => {
         if (!cancelled) message.error('读取窗口激活设置失败');
@@ -88,10 +103,19 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
     lastProbeRelative: formatTimeCell(lastProbe?.at)?.relative || null,
     accountEnabled
   });
+  // 账号级窗口状态：与调度器决策同源，回答「窗口现在什么状态、下一步会不会续窗」。
+  const windowView = describeWindowActivationWindow({
+    window: windowState,
+    // 关窗时刻用绝对时刻（相对时间读起来别扭，且跨天时会歧义）；判定时间用相对时间。
+    closeAtText: formatTimeCell(windowState?.closeAtMs)?.absolute || null,
+    decisionAtText: formatTimeCell(windowState?.lastDecision?.at)?.relative || null,
+    decisionSinceMs: loadedAt,
+    nowMs: loadedAt || undefined
+  });
   const defaultIntervalText = formatWindowActivationInterval(globalState?.defaultIntervalMs);
   const intervalHint = defaultIntervalText
-    ? `留空则跟随全局默认间隔（当前为 ${defaultIntervalText}）。`
-    : '留空则跟随全局默认间隔。';
+    ? `留空则跟随全局默认间隔（当前为 ${defaultIntervalText}）。能识别窗口时按关窗时刻续窗，这个间隔只在观察不到窗口时兜底。`
+    : '留空则跟随全局默认间隔。能识别窗口时按关窗时刻续窗，这个间隔只在观察不到窗口时兜底。';
   const globalMinIntervalMs = Number(globalState?.minIntervalMs);
   const minIntervalMinutes = Number.isFinite(globalMinIntervalMs) && globalMinIntervalMs > 0
     ? Math.max(1, Math.round(globalMinIntervalMs / MS_PER_MINUTE))
@@ -152,6 +176,15 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
             <Tag color={GLOBAL_TONE_COLORS[globalView.tone]}>{globalView.label}</Tag>
             <Typography.Text type="secondary">{globalView.text}</Typography.Text>
           </Space>
+          {windowView ? (
+            <Space size={8} wrap>
+              <Tag color={WINDOW_TONE_COLORS[windowView.tone]}>{windowView.label}</Tag>
+              <Typography.Text type="secondary">{windowView.text}</Typography.Text>
+            </Space>
+          ) : null}
+          {windowView?.decision ? (
+            <Typography.Text type="secondary">{windowView.decision}</Typography.Text>
+          ) : null}
           {globalView.hints.map((hint) => (
             <Typography.Text key={hint} type="secondary">
               {hint}
@@ -164,7 +197,7 @@ export function AccountWindowActivationModal({ account, onClose }: AccountWindow
           </Form.Item>
           <Form.Item
             name="intervalMinutes"
-            label="探测间隔（分钟）"
+            label="兜底间隔（分钟）"
             extra={intervalHint}
             rules={[{
               validator: (_rule, value) => (

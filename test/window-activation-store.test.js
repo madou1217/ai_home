@@ -80,20 +80,41 @@ test('损坏记录读取抛错，不伪装成未配置', (t) => {
   );
 });
 
-test('状态读写往返（含「上次成功激活」）', (t) => {
+test('状态读写往返（含「上次成功激活」与窗口账本）', (t) => {
   const { accountRef, aiHomeDir } = createFixture(t);
   assert.equal(readWindowActivationState(fs, aiHomeDir, accountRef), null);
   writeWindowActivationState(
     fs,
     aiHomeDir,
     accountRef,
-    { lastProbeAt: 999, lastActivatedAt: 900, lastOutcome: 'activated' },
+    {
+      lastProbeAt: 999,
+      lastActivatedAt: 900,
+      lastOutcome: 'activated',
+      windowAnchorAtMs: 900,
+      windowMinutes: 300,
+      windowCloseAtMs: 900 + 300 * 60000,
+      windowSource: 'probe',
+      windowObservedAtMs: 900,
+      probeFailureCount: 2,
+      lastDecisionAction: 'skip',
+      lastDecisionReason: 'window_open',
+      lastDecisionAtMs: 901
+    },
     1000
   );
   const state = readWindowActivationState(fs, aiHomeDir, accountRef);
   assert.equal(state.lastProbeAt, 999);
   assert.equal(state.lastActivatedAt, 900);
   assert.equal(state.lastOutcome, 'activated');
+  assert.equal(state.windowAnchorAtMs, 900);
+  assert.equal(state.windowMinutes, 300);
+  assert.equal(state.windowCloseAtMs, 900 + 300 * 60000);
+  assert.equal(state.windowSource, 'probe');
+  assert.equal(state.probeFailureCount, 2);
+  assert.equal(state.lastDecisionAction, 'skip');
+  assert.equal(state.lastDecisionReason, 'window_open');
+  assert.equal(state.lastDecisionAtMs, 901);
   assert.equal(state.updatedAt, 1000);
 });
 
@@ -103,10 +124,48 @@ test('normalize 形状：坏输入返回 null 或安全默认', () => {
   assert.deepEqual(normalizeWindowActivationConfig({ enabled: 1 }), { enabled: false, intervalMs: null, updatedAt: 0 });
   assert.deepEqual(
     normalizeWindowActivationState({ lastProbeAt: -5 }),
-    { lastProbeAt: 0, lastActivatedAt: 0, lastOutcome: '', updatedAt: 0 }
+    {
+      lastProbeAt: 0,
+      lastActivatedAt: 0,
+      lastOutcome: '',
+      windowAnchorAtMs: 0,
+      windowMinutes: 0,
+      windowCloseAtMs: 0,
+      windowSource: '',
+      windowObservedAtMs: 0,
+      probeFailureCount: 0,
+      lastDecisionAction: '',
+      lastDecisionReason: '',
+      lastDecisionAtMs: 0,
+      updatedAt: 0
+    }
   );
   // 旧记录（没有 lastActivatedAt）按「还没成功激活过」读，下一轮会重试。
   assert.equal(normalizeWindowActivationState({ lastProbeAt: 5 }).lastActivatedAt, 0);
+  // 旧记录（没有账本字段）等价于「窗口状态未知」→ 调度器退回兜底节奏，不会误判成有窗口。
+  const legacy = normalizeWindowActivationState({ lastProbeAt: 5, lastActivatedAt: 6, lastOutcome: 'activated' });
+  assert.equal(legacy.windowCloseAtMs, 0);
+  assert.equal(legacy.windowObservedAtMs, 0);
+  assert.equal(legacy.windowSource, '');
+  // 坏字段一律读成「没有这条事实」，非法来源/判定动作被丢弃
+  const dirty = normalizeWindowActivationState({
+    windowAnchorAtMs: 'nope',
+    windowMinutes: -1,
+    windowCloseAtMs: {},
+    windowSource: 'guess',
+    windowObservedAtMs: NaN,
+    probeFailureCount: -3,
+    lastDecisionAction: 'explode',
+    lastDecisionAtMs: Infinity
+  });
+  assert.equal(dirty.windowAnchorAtMs, 0);
+  assert.equal(dirty.windowMinutes, 0);
+  assert.equal(dirty.windowCloseAtMs, 0);
+  assert.equal(dirty.windowSource, '');
+  assert.equal(dirty.windowObservedAtMs, 0);
+  assert.equal(dirty.probeFailureCount, 0);
+  assert.equal(dirty.lastDecisionAction, '');
+  assert.equal(dirty.lastDecisionAtMs, 0);
 });
 
 test('写入的记录是合法 JSON 且可被 app_kv 读回', (t) => {

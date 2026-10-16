@@ -180,6 +180,46 @@ test('GET 返回该账号上次探测的时间与结果', async (t) => {
   assert.deepEqual(ctx.res.payload.lastProbe, { at: 1792000000000, outcome: 'activated' });
 });
 
+test('GET 下发账号窗口状态（与调度器同源的账本视图 + 最近判定）', async (t) => {
+  const fixture = createFixture(t);
+  const now = Date.now();
+  const closeAtMs = now + 60 * 60 * 1000;
+  writeWindowActivationState(fs, fixture.aiHomeDir, fixture.accountRef, {
+    windowAnchorAtMs: closeAtMs - 300 * 60 * 1000,
+    windowMinutes: 300,
+    windowCloseAtMs: closeAtMs,
+    windowSource: 'probe',
+    windowObservedAtMs: closeAtMs - 300 * 60 * 1000,
+    lastDecisionAction: 'skip',
+    lastDecisionReason: 'window_open',
+    lastDecisionAtMs: now - 60 * 1000
+  });
+  const ctx = createContext(fixture, 'GET', null);
+  await handleWindowActivationRequest(ctx);
+  const windowState = ctx.res.payload.window;
+  assert.equal(windowState.kind, 'open');
+  assert.equal(windowState.closeAtMs, closeAtMs);
+  assert.equal(windowState.anchorAtMs, closeAtMs - 300 * 60 * 1000);
+  assert.equal(windowState.windowMinutes, 300);
+  assert.equal(windowState.source, 'probe');
+  assert.ok(windowState.remainingMs > 0);
+  assert.equal(windowState.nextActionAtMs, closeAtMs + 60 * 1000);
+  assert.deepEqual(windowState.lastDecision, {
+    action: 'skip',
+    reason: 'window_open',
+    at: now - 60 * 1000
+  });
+});
+
+test('GET 未探测过时窗口状态为 unknown（不编造窗口）', async (t) => {
+  const fixture = createFixture(t);
+  const ctx = createContext(fixture, 'GET', null);
+  await handleWindowActivationRequest(ctx);
+  assert.equal(ctx.res.payload.window.kind, 'unknown');
+  assert.equal(ctx.res.payload.window.closeAtMs, 0);
+  assert.deepEqual(ctx.res.payload.window.lastDecision, { action: '', reason: '', at: 0 });
+});
+
 test('全局状态读取失败不影响账号设置的读写', async (t) => {
   const fixture = createFixture(t);
   const ctx = createContext(fixture, 'GET', null);

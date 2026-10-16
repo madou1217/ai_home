@@ -35,11 +35,11 @@ function withEnv(patch, fn) {
   }
 }
 
-test('默认关闭，默认间隔 4 小时，下限 1 小时', () => {
+test('默认关闭，默认间隔 1 小时（兜底节奏），下限 1 小时', () => {
   withEnv({}, () => {
     const parsed = parseServerServeArgs([]);
     assert.equal(parsed.windowActivation, false);
-    assert.equal(parsed.windowActivationDefaultIntervalMs, 4 * 60 * 60 * 1000);
+    assert.equal(parsed.windowActivationDefaultIntervalMs, 60 * 60 * 1000);
     assert.equal(parsed.windowActivationMinIntervalMs, 60 * 60 * 1000);
     assert.equal(parsed.windowActivationTickIntervalMs, 10 * 60 * 1000);
     assert.equal(parsed.windowActivationStartDelayMs, 3 * 60 * 1000);
@@ -62,10 +62,10 @@ test('AIH_SERVER_WINDOW_ACTIVATION=1 打开，命令行可覆盖', () => {
   });
 });
 
-test('默认间隔低于下限时回落默认 4 小时（且不低于下限）', () => {
+test('默认间隔低于下限时回落默认 1 小时（且不低于下限）', () => {
   withEnv({ AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS: '1000' }, () => {
     const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.windowActivationDefaultIntervalMs, 4 * 60 * 60 * 1000);
+    assert.equal(parsed.windowActivationDefaultIntervalMs, 60 * 60 * 1000);
     assert.ok(parsed.windowActivationDefaultIntervalMs >= parsed.windowActivationMinIntervalMs);
   });
   withEnv({ AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS: String(2 * 60 * 60 * 1000) }, () => {

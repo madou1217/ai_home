@@ -1732,6 +1732,41 @@ export interface AccountWindowActivationProbeState {
   outcome: string;
 }
 
+/**
+ * 该账号的窗口状态（账本视图，与调度器决策同源）。
+ *
+ * kind:
+ *   open    窗口运行中（closeAtMs 在未来）→ 调度器一次都不探
+ *   closed  关窗时刻已过、等待续窗（closeAtMs 在过去）
+ *   absent  观察到「没有活跃窗口」（幻影 / 快照确认）→ 立刻补窗
+ *   unknown 观察不出窗口（快照缺失 / 该 provider 没有 resetAtMs）→ 按兜底间隔探测
+ */
+export interface AccountWindowActivationWindowState {
+  kind: 'open' | 'closed' | 'absent' | 'unknown' | string;
+  /** 窗口锚点（开窗时刻）；0 表示未知。 */
+  anchorAtMs: number;
+  /** 关窗时刻 = 锚点 + 窗口时长；0 表示未知。 */
+  closeAtMs: number;
+  /** 窗口时长（分钟）；0 表示未知。 */
+  windowMinutes: number;
+  /** 距关窗还剩多久（kind=open 时有意义）。 */
+  remainingMs: number;
+  /** 账本来源：snapshot=快照 / probe=我们的探测 / activity=用户自己的流量。 */
+  source: string;
+  /** 上次观察时刻（快照 capturedAt 或锚定时刻）。 */
+  observedAtMs: number;
+  /** 下一次动作时刻（kind=open 时是关窗后 + 时钟余量）。 */
+  nextActionAtMs: number;
+  /** 连续探测失败次数（>0 表示正在退避重试）。 */
+  probeFailureCount: number;
+  /** 最近一次判定（调度器为什么探 / 为什么没探）。 */
+  lastDecision: {
+    action: string;
+    reason: string;
+    at: number;
+  };
+}
+
 export interface AccountWindowActivationResponse {
   ok: boolean;
   provider: string;
@@ -1739,6 +1774,7 @@ export interface AccountWindowActivationResponse {
   setting: AccountWindowActivationSetting;
   global?: AccountWindowActivationGlobalState;
   lastProbe?: AccountWindowActivationProbeState;
+  window?: AccountWindowActivationWindowState;
 }
 
 // 兼容已发布的组件/API 类型名；新代码统一使用 AccountEgress*。

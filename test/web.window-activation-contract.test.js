@@ -84,7 +84,7 @@ test('弹窗状态在账号动作 hook 中集中管理', () => {
   assert.match(actionsSource, /setAccountWindowActivationAccount/);
 });
 
-test('弹窗显示全局闸门状态与上次探测（逐账号开关之外还有全局 opt-in）', () => {
+test('弹窗显示全局闸门状态、账号窗口状态与上次探测', () => {
   assert.equal(fs.existsSync(presentationPath), true, '全局状态展示必须拆到纯函数模块');
   const modalSource = fs.readFileSync(modalPath, 'utf8');
 
@@ -95,17 +95,31 @@ test('弹窗显示全局闸门状态与上次探测（逐账号开关之外还�
   assert.match(modalSource, /全局开关未生效/);
   // 默认间隔提示必须来自真实运行态，不能写死。
   assert.match(modalSource, /formatWindowActivationInterval\(globalState\?\.defaultIntervalMs\)/);
+  // 账号级窗口状态（账本视图）：一行紧凑状态，不做整块提示。
+  assert.match(modalSource, /describeWindowActivationWindow\(/);
+  assert.match(modalSource, /setWindowState\(response\.window/);
+  assert.match(modalSource, /WINDOW_TONE_COLORS\[windowView\.tone\]/);
+  assert.match(modalSource, /windowView\?\.decision/);
+  // 间隔语义变了：它是「观察不到窗口时的兜底节奏」，标签必须跟着改。
+  assert.match(modalSource, /兜底间隔（分钟）/);
+  assert.match(modalSource, /只在观察不到窗口时兜底/);
 });
 
-test('路由把全局闸门状态与上次探测一起下发', () => {
+test('路由把全局闸门状态、账号窗口状态与上次探测一起下发', () => {
   const routeSource = fs.readFileSync(routePath, 'utf8');
-  assert.match(routeSource, /global: readGlobalState\(ctx, aiHomeDir\)/);
-  assert.match(routeSource, /lastProbe: readProbeState\(ctx, aiHomeDir, accountRef\)/);
+  assert.match(routeSource, /global: globalState,/);
+  assert.match(routeSource, /lastProbe: presentLastProbe\(accountState\)/);
+  assert.match(routeSource, /window: presentWindowState\(accountState\)/);
   assert.match(routeSource, /function presentGlobalState\(/);
+  // 窗口视图必须与调度器同源（同一个 describeWindowView），否则展示与决策会分叉。
+  assert.match(routeSource, /describeWindowView\(\{/);
+  assert.match(routeSource, /require\('\.\/window-activation\/window-ledger'\)/);
 
   const typesSource = fs.readFileSync(typesPath, 'utf8');
   assert.match(typesSource, /interface AccountWindowActivationGlobalState\b/);
   assert.match(typesSource, /interface AccountWindowActivationProbeState\b/);
+  assert.match(typesSource, /interface AccountWindowActivationWindowState\b/);
+  assert.match(typesSource, /window\?: AccountWindowActivationWindowState/);
 });
 
 test('全局开关有正规入口：server config → serve args → 调度器运行态', () => {

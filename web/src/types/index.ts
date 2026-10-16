@@ -209,6 +209,12 @@ export interface Account {
    * 客户端只消费结论，不在前端维护 provider 清单。
    */
   windowActivationSupported?: boolean;
+  /**
+   * 服务端判定：该 provider 能否由**网关**服务（HTTP relay，不依赖本机 CLI）。
+   * 判定唯一来源是 provider 描述符的 relay 能力（transport=http 且 clientDependent=false），
+   * 客户端只消费结论 —— 为 true 时给出「aih-server」目标，chat 模式即可走网关（无 CLI 冷启动）。
+   */
+  gatewayTargetSupported?: boolean;
   quotaStatus?: string;
   upstreamErrorRules?: UpstreamErrorRule[];
   upstreamErrorGroupIds?: string[];

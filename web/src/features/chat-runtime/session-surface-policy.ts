@@ -87,14 +87,23 @@ export function runtimeAccountsForSession(
 }
 
 /**
- * 在真实账号后追加「aih-server(全部账号+别名)」目标：每个**有账号且支持 gatewayProfile**
- * 的 provider 一条。它代表"由网关在该 provider 池内挑号 + 别名回落"，所以与具体账号并列
+ * 在真实账号后追加「aih-server(全部账号+别名)」目标：每个**有账号且能由网关服务**的
+ * provider 一条。它代表"由网关在该 provider 池内挑号 + 别名回落"，所以与具体账号并列
  * 出现在账号菜单里（与 legacy 引擎的呈现一致）。
+ *
+ * 判定两个来源并集（都来自服务端结论，前端不维护 provider 清单）：
+ * - 生成合同的 `gateway_profile` 能力（CLI 可被指向网关的那批）；
+ * - 账号 payload 的 `gatewayTargetSupported`（描述符 relay 能力：transport=http 且
+ *   不依赖本机客户端）。后者让 agy 这类「CLI 不能指向网关、但网关能直接服务」的
+ *   provider 也拿到 aih-server 目标 —— chat 模式因此不需要启 CLI。
  */
 export function withGatewayAccounts(accounts: readonly ChatAccount[]): readonly ChatAccount[] {
+  const gatewayCapable = new Set(accounts
+    .filter((account) => account.gatewayTargetSupported === true)
+    .map((account) => account.provider));
   const providers = [...new Set(accounts
     .map((account) => account.provider)
-    .filter((provider) => supportsAihServer(provider)))];
+    .filter((provider) => supportsAihServer(provider) || gatewayCapable.has(provider)))];
   return [
     ...accounts,
     ...providers.map((provider) => makeAihServerAccount(provider)),

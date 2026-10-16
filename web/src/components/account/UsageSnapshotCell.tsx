@@ -499,11 +499,13 @@ export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
   const { record } = props;
   const hasCollectionNotice = record.configured && !record.apiKeyMode && getQuotaStateMeta(record);
   if (!hasCollectionNotice) return <UsageSnapshotBody {...props} />;
+  // 「额度不适用」是结论态：没有额度行可渲染，徽章即完整信息（不再补一个无意义的 “-”）。
+  const showBody = record.quotaStatus !== 'not_applicable'
+    && Boolean(record.usageSnapshot || record.remainingPct != null || record.usageRefreshing);
   return (
     <div className="usage-meta-list" data-quota-status={record.quotaStatus}>
       {renderQuotaStateBadge(record)}
-      {record.usageSnapshot || record.remainingPct != null || record.usageRefreshing
-        ? <UsageSnapshotBody {...props} /> : null}
+      {showBody ? <UsageSnapshotBody {...props} /> : null}
     </div>
   );
 }

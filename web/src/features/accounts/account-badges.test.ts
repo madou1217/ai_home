@@ -100,7 +100,17 @@ test('quota diagnostics are independent from scheduling badges and their detail 
   assert.deepEqual(getQuotaStateMeta(failed), { status: 'error', label: '采集失败' });
 
   assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'available' })), null);
+  // 无结论原因（API Key 模式 / provider 无额度能力）保持静默，避免给密钥账号加噪音。
   assert.equal(getQuotaStateMeta(makeAccount({ quotaStatus: 'not_applicable' })), null);
+  // 来源给出的「不适用」结论出徽章，让用户明白「为什么看不到额度」。
+  assert.deepEqual(
+    getQuotaStateMeta(makeAccount({ quotaStatus: 'not_applicable', quotaReason: 'no_plan_balance' })),
+    { status: 'default', label: '额度不适用' }
+  );
+  assert.deepEqual(
+    getQuotaStateMeta(makeAccount({ quotaStatus: 'not_applicable', quotaReason: 'qoder_no_consumable_credits' })),
+    { status: 'default', label: '额度不适用' }
+  );
 });
 test('getClinePlanSubscription 只认 Cline Pass 快照，并给出订阅周期', () => {
   const cline = makeAccount({

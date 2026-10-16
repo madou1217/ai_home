@@ -18,6 +18,9 @@ const KNOWN_REASON_MESSAGES: Record<string, string> = {
   codex_free_plan_pending_rate_limits: CODEX_FREE_QUOTA_PENDING_MESSAGE,
   codex_team_plan_pending_rate_limits: CODEX_TEAM_QUOTA_PENDING_MESSAGE,
   provider_returned_no_numeric_usage: '额度已查询，当前响应缺少可计算的剩余额度。',
+  // 额度来源给出的「不适用」结论（不是探测失败）：账号没有可消耗的额度池。
+  no_plan_balance: '当前账号没有生效的套餐（未订阅或已到期），不产生可计算的额度池。',
+  qoder_no_consumable_credits: '当前为 Qoder Free 档，没有 credits 额度池（上游恒报额度用尽），额度不适用；账号仍可用于免费模型。',
   timeout: '额度查询超时。',
   probe_exception: '额度查询过程中发生异常。',
   probe_failed: '额度查询失败。',

@@ -128,8 +128,14 @@ export function renderPolicyBlockedBadge(record: Pick<Account, 'schedulableReaso
 
 export function getQuotaStateMeta(record: Pick<Account, 'quotaStatus' | 'quotaReason'>): AccountBadgeMeta | null {
   const status = String(record.quotaStatus || '').trim();
-  if (!status || ['available', 'not_applicable', 'exhausted'].includes(status)) return null;
+  if (!status || ['available', 'exhausted'].includes(status)) return null;
   const rawReason = String(record.quotaReason || '').trim();
+  if (status === 'not_applicable') {
+    // 「额度不适用」是来源给出的**结论**（该账号没有可消耗的额度池：未订阅/已到期/Free 档），
+    // 有结论原因才出徽章，让用户明白「为什么看不到额度」；空 reason（API Key 模式、
+    // provider 无额度能力）保持静默，避免给每个密钥账号加噪音。
+    return rawReason ? { status: 'default', label: '额度不适用' } : null;
+  }
   return (
     status === 'probe_failed' ? { status: 'error', label: '采集失败' }
       : status === 'provider_unavailable' && rawReason === 'codex_team_plan_missing_rate_limits'

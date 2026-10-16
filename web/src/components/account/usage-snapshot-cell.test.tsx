@@ -45,6 +45,18 @@ test('API-key accounts never render OAuth quota collection notices', () => {
   assert.doesNotMatch(html, /采集失败|等待采集/);
 });
 
+test('a "not applicable" quota conclusion shows the badge alone, without an empty quota dash', () => {
+  const html = renderToStaticMarkup(<UsageSnapshotCell record={{
+    configured: true, apiKeyMode: false, provider: 'zcode', quotaStatus: 'not_applicable',
+    quotaReason: 'no_plan_balance',
+    usageSnapshot: { kind: 'zcode_plan_balance', capturedAt: 1000, entries: [] }
+  }} />);
+  assert.match(html, /额度不适用/);
+  assert.doesNotMatch(html, /额度未知|采集失败|等待采集/);
+  // 结论态没有可渲染的额度行：徽章即完整信息，不追加 “-” 占位。
+  assert.doesNotMatch(html, /-<\/div>/);
+});
+
 test('Kiro credits retain their official remaining percentage and reset date', () => {
   const html = renderToStaticMarkup(<UsageSnapshotCell record={{
     configured: true, apiKeyMode: false, provider: 'kiro',

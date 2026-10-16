@@ -760,3 +760,36 @@ test('other zcode business codes do not become quota exhaustion', () => {
   });
   assert.equal(policy.kind, 'unknown_error');
 });
+
+// agy 的 RESOURCE_EXHAUSTED 默认按「瞬时限流」处理（5 分钟 + 延后记账）。
+// 但调用方能给出该模型**额度窗口的恢复时刻**时（provider 额度快照的 resetAtMs，
+// 见 model-window-gates），窗口确实耗尽 → 冷却对齐到那一刻，不再每 5 分钟撞墙重试。
+test('agy 额度窗口耗尽时冷却对齐窗口重置时刻', () => {
+  const now = Date.now();
+  const text = 'RESOURCE_EXHAUSTED (code 429): Resource has been exhausted (e.g. check quota).';
+  const transient = classifyUpstreamFailure({ provider: 'agy', statusCode: 429, detail: text });
+  assert.equal(transient.kind, 'rate_limited');
+  assert.equal(transient.cooldownMs, 5 * 60 * 1000);
+
+  const aligned = classifyUpstreamFailure({
+    provider: 'agy',
+    statusCode: 429,
+    detail: text,
+    modelWindowResetAtMs: now + 50 * 60 * 1000,
+    nowMs: now
+  });
+  assert.equal(aligned.kind, 'model_quota_exhausted');
+  assert.equal(aligned.cooldownMs, 50 * 60 * 1000);
+  assert.equal(aligned.scope, 'model');
+  assert.equal(aligned.shouldRetryAnotherAccount, true);
+
+  // 窗口提示已过期 → 不改变行为（沿用瞬时限流语义）。
+  const expired = classifyUpstreamFailure({
+    provider: 'agy',
+    statusCode: 429,
+    detail: text,
+    modelWindowResetAtMs: now - 1000,
+    nowMs: now
+  });
+  assert.equal(expired.kind, 'rate_limited');
+});

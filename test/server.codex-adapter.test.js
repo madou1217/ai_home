@@ -1098,6 +1098,159 @@ test('codex adapter preserves a structured safety rejection without rotating acc
   assert.equal(Object.hasOwn(diagnosticLogs[0], 'upstreamError'), false);
 });
 
+test('codex adapter delivers a 502 contract error for a site edge rejection without rotating accounts', async () => {
+  const res = createResCapture();
+  const accounts = [
+    {
+      accountRef: accountRef('edge-1'),
+      accessToken: 'sk-live-1',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-one.example.com/v1'
+    },
+    {
+      accountRef: accountRef('edge-2'),
+      accessToken: 'sk-live-2',
+      apiKeyMode: true,
+      authType: 'api-key',
+      openaiBaseUrl: 'https://relay-two.example.com/v1'
+    }
+  ];
+  const state = {
+    accounts: { codex: accounts },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let upstreamCalls = 0;
+  let failureMarks = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 3,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      input: 'ordinary product debugging request'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'edge-block', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool, _state, _key, selection = {}) => pool.find(
+        (account) => !selection.excludeAccountRefs.has(account.accountRef)
+      ) || null,
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async () => {
+        upstreamCalls += 1;
+        return {
+          ok: false,
+          status: 403,
+          headers: new Map([['content-type', 'text/html']]),
+          text: async () => '<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body>blocked</body></html>'
+        };
+      },
+      markProxyAccountFailure: () => { failureMarks += 1; },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(upstreamCalls, 1, '边缘拒绝不换号重试');
+  assert.equal(failureMarks, 0, '边缘拒绝不记账号失败');
+  assert.equal(res.statusCode, 502);
+  const body = JSON.parse(String(res.body));
+  assert.deepEqual(body, {
+    error: {
+      message: 'The upstream site edge rejected this request (not an account problem)',
+      type: 'server_error',
+      param: null,
+      code: 'upstream_edge_rejected'
+    }
+  });
+  assert.equal(String(res.body).includes('Attention Required'), false, '不透传上游拦截页');
+});
+
+test('codex adapter still replays a genuine upstream 401 for native responses clients', async () => {
+  const res = createResCapture();
+  const state = {
+    accounts: {
+      codex: [{
+        accountRef: accountRef('auth-401-1'),
+        accessToken: 'sk-live',
+        apiKeyMode: true,
+        authType: 'api-key',
+        openaiBaseUrl: 'https://relay-one.example.com/v1'
+      }]
+    },
+    cursors: { codex: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  let failureMarks = 0;
+
+  await handleCodexChatCompletions({
+    options: {
+      codexBaseUrl: 'https://chatgpt.com/backend-api/codex',
+      upstreamTimeoutMs: 3000,
+      maxAttempts: 1,
+      failureThreshold: 1,
+      logRequests: false
+    },
+    state,
+    req: { headers: { 'content-type': 'application/json' } },
+    res,
+    requestJson: {
+      model: 'gpt-5.6-sol',
+      stream: false,
+      input: 'ordinary product debugging request'
+    },
+    routeKey: 'POST /v1/responses',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    requestMeta: { sessionKey: 'auth-401', clientProtocol: 'openai_responses' },
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (response, code, payload) => {
+        response.statusCode = code;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify(payload));
+      },
+      refreshCodexAccessToken: async () => ({ ok: true, refreshed: false, reason: 'api_key_mode' }),
+      fetchWithTimeout: async () => ({
+        ok: false,
+        status: 401,
+        headers: new Map([['content-type', 'application/json']]),
+        text: async () => JSON.stringify({
+          error: { message: 'Incorrect API key provided', type: 'invalid_request_error', code: 'invalid_api_key' }
+        })
+      }),
+      markProxyAccountFailure: () => { failureMarks += 1; },
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  assert.equal(res.statusCode, 401, '真凭据失败仍按上游原样重放');
+  const body = JSON.parse(String(res.body));
+  assert.equal(body.error.code, 'invalid_api_key');
+  assert.ok(failureMarks >= 1, '真凭据失败仍记账号失败（与边缘拒绝的 0 次相对）');
+});
+
 test('codex adapter stops on a structured SSE safety rejection without rotating accounts', async () => {
   const res = createResCapture();
   const accounts = [

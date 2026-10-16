@@ -52,12 +52,17 @@ test('Node adapter and Go HTTP server preserve the same upstream failures', {
   for (const scenario of [
     { status: 400 }, { status: 401 }, { status: 429 }, { status: 503 },
     { status: 503, empty: true }, { status: 403, safety: true },
-    { status: 200, safety: true }, { status: 200, safety: true, sse: true }
+    { status: 200, safety: true }, { status: 200, safety: true, sse: true },
+    { status: 403, edge: 'html' }, { status: 401, edge: 'apisix' }
   ]) {
     await context.test(JSON.stringify(scenario), async scenarioContext => {
       const errorBody = scenario.empty ? '' : scenario.safety
         ? '{"error":{"code":"content_policy_violation","message":"blocked by safety policy"}}'
-        : '{ "error":{"code":"fixture","message":"upstream original"},"opaque":9007199254740993 }';
+        : scenario.edge === 'apisix'
+          ? '{"message":"invalid_format"}'
+          : scenario.edge === 'html'
+            ? '<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body>blocked</body></html>'
+            : '{ "error":{"code":"fixture","message":"upstream original"},"opaque":9007199254740993 }';
       const body = scenario.sse
         ? 'data: {"type":"response.created","response":{"output":[]}}\n\n'
           + `data: {"type":"error",${errorBody.slice(1)}\n\n`
@@ -68,7 +73,16 @@ test('Node adapter and Go HTTP server preserve the same upstream failures', {
           response.end('{"data":[{"id":"gpt-5.4","object":"model"}]}');
           return;
         }
-        response.writeHead(scenario.status, { 'content-type': scenario.sse ? 'text/event-stream' : 'application/json', 'retry-after': '7', 'x-request-id': 'fixture-original' });
+        response.writeHead(scenario.status, {
+          'content-type': scenario.edge === 'html'
+            ? 'text/html'
+            : scenario.edge === 'apisix'
+              ? 'text/plain'
+              : scenario.sse ? 'text/event-stream' : 'application/json',
+          ...(scenario.edge === 'apisix' ? { server: 'APISIX/3.2.0' } : {}),
+          'retry-after': '7',
+          'x-request-id': 'fixture-original'
+        });
         response.end(body);
       });
       const go = await startGoGateway(scenarioContext, upstream + '/v1', 'gpt-5.4');
@@ -92,10 +106,17 @@ test('Node adapter and Go HTTP server preserve the same upstream failures', {
       })));
       const bodies = await Promise.all(responses.map(response => response.text()));
       for (let index = 0; index < responses.length; index += 1) {
-        assert.equal(responses[index].status, scenario.safety ? 403 : scenario.status, index === 0 ? 'Node' : 'Go');
+        assert.equal(responses[index].status, scenario.safety ? 403 : scenario.edge ? 502 : scenario.status,
+          index === 0 ? 'Node' : 'Go');
         if (scenario.safety) {
           assert.deepEqual(JSON.parse(bodies[index]), { error: { code: 'upstream_safety_rejected',
             message: errors.upstream_safety_rejected.message, type: 'permission_error', param: null } });
+        } else if (scenario.edge) {
+          // 站点边缘拒绝与账号无关：两侧同交契约 502，不重放上游拦截页，也不带上游头。
+          assert.deepEqual(JSON.parse(bodies[index]), { error: { code: 'upstream_edge_rejected',
+            message: errors.upstream_edge_rejected.message, type: 'server_error', param: null } });
+          assert.equal(responses[index].headers.get('retry-after'), null);
+          assert.equal(responses[index].headers.get('x-request-id'), null);
         } else {
           assert.equal(bodies[index], body);
           assert.equal(responses[index].headers.get('retry-after'), '7');

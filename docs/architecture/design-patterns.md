@@ -47,7 +47,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/cli/services/session-store.js` | **Table + 语义修正（provider 本地别名）** | 声明的 provider 本地别名（`agy: cli.log`）允许落在宿主受管根**或投影自身**，且**容忍日志轮换导致的悬空目标**（realpath 优先、失败退回链接文本解析）；不再因一个被轮换的日志别名把整账号 fail-closed | `test/session-store.test.js`（70/70，含既有 agy 别名测试） |
 | `lib/server/chat-runtime/native-approval-transports.js` | **Strategy Table（审批传输策略表）+ Spawner Registry** | 「confirm/plan 下权限请求怎么到达用户、决策怎么回到 CLI」按 provider/模式/账号类型声明成数据行（`http-callback` / `serve-permission` / `terminal-prompt`），执行器按 id 从注册表取；驱动只按解析结果派发，不出现 provider 分支；未声明/未接线一律 fail closed 且带声明原因 | `npm run chat:legacy-readiness` 的审批覆盖行；真机 claude 进程 argv 含 `--permission-prompt-tool mcp__aih__approve` + canonical runId |
 | `lib/server/chat-runtime/native-approval-surface.js` | **Adapter / Mediator（传输无关审批面）** | 任意审批传输（MCP HTTP 回调、opencode serve 权限事件）→ canonical `interaction.requested` → `approval.decide` → 回填传输；交互 id/持久化/收尾走既有 `InteractionResolutionCoordinator`，新增 provider 不动此处 | 真机：ingress POST → `interaction.requested` 落库 → `approval.decide` → 长挂 HTTP 返回 `{behavior:'allow'|'deny'}`；事件序列 `requested → updated → resolved` |
-| `lib/server/opencode-serve-api-layouts.js` | **Layout Table（API 布局表）** | `opencode serve` 两代 API（v1 无前缀/无鉴权、v2 `/api/*` + Basic + `{data}` 信封）差异声明成数据；已识别未实现的布局**立即**报明确原因（含实际版本），不让就绪探测空转到超时 | 真机：opencode 2.0.29 → `opencode_serve_api_layout_unsupported`（约 4s 内，而非 25s 超时） |
+| `lib/server/opencode-serve-api-layouts.js` + `opencode-serve-event-mappers.js` | **Layout Table（API 布局表）+ 形状适配器** | `opencode serve` 两代 API（v1 无前缀/无鉴权、v2 `/api/*` + Basic + `{data}` 信封）差异声明成数据：路由模板/鉴权/信封/作用域传递（v1 `?directory=` vs v2 create body `location`）/请求体形状（prompt `parts` vs `text`、权限规则字段名、回执 `reply` vs `decision`）/模型传递（随 prompt vs 会话级 `POST /api/session/:id/model`）/就绪探测谓词（v1 `{healthy}` vs v2 `/api/info` `{version,pid}`——v2 上旧路径返回 200 HTML，只看状态码必然误判）。事件流差异按 `eventShape` 选适配器（`properties` = v1 词汇 / `data` = v2 `session.text.*`/`session.tool.*`/`session.execution.*`），runner 只消费归一后的信号；未接入的新布局**立即**报明确原因（含实际版本），不让就绪探测空转到超时 | 真机 opencode 2.0.29：work(confirm) 全链路跑通（v2 复用 46802：建会话→PATCH `{permissions}`→切模型→`{text}` prompt→`permission.asked` 归一→审批 allow→`{decision:'once'}` 会话级回执→工具卡/正文/`session.execution.succeeded` 收尾，正文含命令输出）；`test/opencode-serve-api-layouts.test.js`（表契约 + 探测谓词互斥）、`test/opencode-serve-client.test.js`（v1 逐字节不变 + v2 真 http 往返）、`test/opencode-serve-runner.test.js`（v2 映射器/探测复用/未接入布局即报错） |
 | `lib/runtime/opencode-run-layouts.js` | **Layout Table + 旗标探测（不按版本号）** | `opencode run` v1（显式 `--dir`）/ v2（无 `--dir`，目录走 cwd/PWD，且必须 `--standalone` 绕开按 channel 固定的后台 service 端口 0xC0DE=49374——多账号并发串台/挂死的根源）差异声明成数据；探测用 `run --help` 旗标、命中才缓存（键=路径+mtime/size）、探测不出默认 v2；逃生门 `AIH_OPENCODE_RUN_LAYOUT`、`source` 可观察（env/probe/cache/default） | 真机 v2.0.29：探测 55ms、缓存 1ms、`--standalone` 生效；`test/opencode-free-cli-transport.test.js` 13/13 |
 | `lib/runtime/acp-layouts.js` | **Layout Table（ACP 入口布局，公共层）** | 面向**所有支持 ACP 的 provider** 的 ACP 入口参数/外部适配器二进制声明表（opencode→`acp`、gemini→`--acp`、codebuddy http-sse→`--serve`、claude→外部 `claude-code-acp` 二进制），门面 `buildAcpEntryArgs`/`getAcpExternalBinary`；**已登记为 provider 能力**（2026-10-16 两步登记完成：JS 描述符 `acp` + Go 合同 `acp_session` 同源；消费方走 `lib/providers` 门面倒排发现支持 ACP 的 provider，入口数据仍以本表为唯一源） | 守卫：`test/design-pattern-guard.test.js`「描述符 / 布局表 / Go 合同三份集合逐项一致 + 每个登记 provider 可解析出入口」；冒烟：providers 10 / verifiedOnly 5 / `opencode→["acp"]` / `gemini→["--acp"]` / `codebuddy http-sse→["--serve"]` / `claude→[]`+外部适配器 / 未知 provider→null / `grok→false` |
 | `lib/sessions/opencode-db-layouts.js` | **Layout Table（会话库存储布局表）** | opencode 会话库两代表（`session_v2`/`session_message` vs `session`/`message`/`part`：角色在 `type` 列 vs `data.role`、内容内嵌 `data.content` vs `part` 表）声明成数据 + 存在性探测 + 跨布局同形查询构造。两代**两侧都有独有行**（真机 3931 条同 id、旧独有 76 条/7.71M tokens、新独有 1459 条），读取方扫全部存在的布局再按 id 合并；写入方写「当前活跃布局」（新代优先）。新增布局 = 加一条描述符 | `test/opencode-db-layouts.test.js`、`test/model-usage-opencode.test.js`（纯新库 / 双写合并 / 角色以新代为准） |
@@ -171,6 +171,24 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
     新会话直接 FK 失败；修复后新会话与续写都落 `session_v2`、旧表冻结、读取器读回一致。
     测试：`test/opencode-session-store-write-layouts.test.js`（测试 schema 镜像真机 FK：
     session_message→session_v2、message→session、part→message）。
+
+**Phase 3.6 — opencode serve API 布局（work 模式两代接入，2026-10-16 新增）**
+15. ✅ work(confirm) 模式的 `opencode serve` v2 接入（背景：`opencode_serve_api_layout_v2_not_implemented`——v2 下
+    `/global/health` 返回 200 HTML，旧 v1 健康探测判否，布局识别正确但未实现）。落地形状与 12–14 同族：
+    **差异是数据不是 if/else**——`opencode-serve-api-layouts.js` 每代一行（路由/鉴权/信封/作用域/请求体形状/
+    探测谓词），`opencode-serve-client.js` 只按布局组装请求，`opencode-serve-event-mappers.js` 按 `eventShape`
+    选事件适配器（v2 新词汇归一成 runner 既有信号：`session.text.delta|ended` 累积补尾、`session.tool.*` 成对出卡、
+    `permission.asked{action,resources,source}` → 归一 props、`session.execution.succeeded` = 完成信号）。
+    关键事实（真机 2.0.29 取证）：v2 全路由要 Basic（user `opencode`，密码取 serve 日志**最后一条** `server password`，
+    轮换后旧值作废）；`/api/*` 响应统一 `{data}` 信封；会话创建必须放 body `location.directory`（query 无效，
+    会话会落 serve cwd）；`/api/event` 是**全局**流（跨 location，按 `data.sessionID` 过滤）；模型走会话级
+    `POST /api/session/:id/model`；权限回执是会话级路由 + `{decision}`；确认规则形状 `{action,resource,effect}`
+    （`CONFIRM_PERMISSION_RULES` 因此改成规范形，v1 字段名由表映射、线上字节不变）。
+    就绪探测谓词必须与 v1 **互斥**（v1 响应也带 `version`）：v2 = `{version:string, pid:number}`，v1 = `{healthy:true}`；
+    两者共用 `health()` 自动探测（无布局时逐代试，命中落定并记住密码），ensure 把 layout/password 回传给回合客户端。
+    验证：`test/opencode-serve-api-layouts.test.js` / `test/opencode-serve-client.test.js` / `test/opencode-serve-runner.test.js`
+    共 32 用例；真机 E2E（真实 `startOpenCodeServeTurn` 打活的 46802 实例）：建会话→审批 allow→工具输出
+    `e2e-ok`→`session.execution.succeeded`→`result` 正文含输出。
 
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件

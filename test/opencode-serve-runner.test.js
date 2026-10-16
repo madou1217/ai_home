@@ -248,6 +248,85 @@ test('ensureOpenCodeServe:健康 legacy serve 无 state 时回填 tmux binding',
   assert.equal(fixture.readState().multiplexer, 'tmux');
 });
 
+test('ensureOpenCodeServe:v2 布局探测命中即复用,回传 layout/password/version', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+  const { serveApiLayout } = require('../lib/server/opencode-serve-api-layouts');
+
+  const result = await ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({
+      async health() {
+        return { healthy: true, version: '2.0.29', layout: 'v2' };
+      },
+      layout: serveApiLayout('v2'),
+      password: 'pw-v2'
+    }),
+    spawnSyncImpl() {
+      assert.fail('健康 v2 serve 不应 spawn');
+    }
+  });
+
+  assert.equal(result.reused, true);
+  assert.equal(result.layout, 'v2');
+  assert.equal(result.password, 'pw-v2', 'v2 的 Basic 密码必须回传给 startOpenCodeServeTurn 的客户端');
+  assert.equal(result.version, '2.0.29');
+  assert.equal(fixture.readState().multiplexer, 'tmux');
+});
+
+test('ensureOpenCodeServe:识别到未接入布局立即报 coded error(不空转到就绪超时)', async (t) => {
+  const fixture = createServeEnsureFixture();
+  t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
+
+  await assert.rejects(ensureOpenCodeServe({
+    ...fixture.baseOptions,
+    clientFactory: () => ({
+      async health() {
+        return { healthy: true, version: '9.9.9' };
+      },
+      layout: { id: 'v9', supported: false, unsupportedReason: 'opencode_serve_api_layout_v9_not_implemented' },
+      password: ''
+    }),
+    spawnSyncImpl() {
+      assert.fail('识别到未接入布局不应探测/启动 multiplexer');
+    }
+  }), (error) => {
+    assert.equal(error.code, 'opencode_serve_api_layout_unsupported');
+    assert.match(error.message, /布局 v9/);
+    assert.match(error.message, /opencode_serve_api_layout_v9_not_implemented/);
+    assert.match(error.message, /当前支持布局 v1, v2/);
+    return true;
+  });
+});
+
+test('confirm 全链路(v2 serve):data 信封事件进正文,execution.succeeded 收尾', async () => {
+  const fake = createFakeClient();
+  const { serveApiLayout } = require('../lib/server/opencode-serve-api-layouts');
+  // 注入的假客户端带 layout → runner 按 eventShape 选 v2 映射器。
+  fake.layout = serveApiLayout('v2');
+  const bus = createFakeBus();
+  const events = [];
+  const handle = startTurn(fake, bus, events, { clientFactory: () => fake });
+
+  await waitFor(() => fake.calls.promptAsync.length > 0);
+  assert.deepEqual(fake.calls.createSession[0], { directory: '/tmp/oc-proj' });
+  assert.deepEqual(fake.calls.updateSessionPermissions[0].rules, CONFIRM_PERMISSION_RULES);
+
+  fake.emit({ type: 'session.text.delta', data: { sessionID: SID, assistantMessageID: 'msg_a', ordinal: 0, delta: '好' } });
+  fake.emit({ type: 'session.tool.input.started', data: { sessionID: SID, id: 'call_1', name: 'bash' } });
+  fake.emit({ type: 'session.tool.called', data: { sessionID: SID, id: 'call_1', input: { command: 'echo hi' } } });
+  fake.emit({ type: 'session.tool.success', data: { sessionID: SID, id: 'call_1', content: [{ type: 'text', text: 'hi' }] } });
+  fake.emit({ type: 'session.execution.succeeded', data: { sessionID: SID } });
+
+  const result = await handle.done;
+  assert.equal(result.sessionId, SID);
+  assert.equal(result.content, '好');
+  const streamed = events.filter((event) => event.type === 'delta').map((event) => event.delta).join('');
+  assert.equal(streamed, '好');
+  assert.equal(events.some((event) => event.type === 'assistant_tool_call'), true);
+  assert.equal(events.some((event) => event.type === 'result'), true);
+});
+
 test('ensureOpenCodeServe:未知 stored backend fail closed 且原 state 不变', async (t) => {
   const fixture = createServeEnsureFixture();
   t.after(() => fs.rmSync(fixture.aiHomeDir, { recursive: true, force: true }));
@@ -389,6 +468,130 @@ test('事件映射器把 session.status retry 透传为 canonical retry status',
     retryAt: 1_800_000_000_000,
     message: 'Provider is busy'
   }]);
+});
+
+// v2(opencode ≥2.0)事件流:信封是 {id,type,data},词汇是粗粒度的 session.text/session.tool/
+// session.execution;全局流(跨 location)必须按 data.sessionID 过滤(2026-10-16 真机 2.0.29 取证)。
+test('v2 事件映射器(data 信封):增量文本补尾/工具卡成对/审批归一/execution.succeeded 收尾', () => {
+  const out = [];
+  const asked = [];
+  const replied = [];
+  let idle = 0;
+  const mapper = createServeEventMapper({
+    sessionId: SID,
+    eventShape: 'data',
+    emit: (event) => out.push(event),
+    onPermissionAsked: (props) => asked.push(props),
+    onPermissionReplied: (props) => replied.push(props),
+    onIdle: () => { idle += 1; }
+  });
+  const frame = (type, data) => ({ id: 'evt_x', type, data: { sessionID: SID, ...data } });
+
+  // 全局流:无 sessionID(server.connected)与他会话事件一律不进本 run。
+  mapper.handle({ id: 'evt_0', type: 'server.connected', data: {} });
+  mapper.handle({ id: 'evt_1', type: 'session.execution.succeeded', data: { sessionID: 'ses_other' } });
+  assert.equal(idle, 0);
+
+  // 文本:delta 增量 + text.ended 累积补尾(不重复、不丢字符)
+  mapper.handle(frame('session.text.delta', { assistantMessageID: 'msg_a', ordinal: 0, delta: '输出是' }));
+  mapper.handle(frame('session.text.delta', { assistantMessageID: 'msg_a', ordinal: 0, delta: ' hi' }));
+  mapper.handle(frame('session.text.ended', { assistantMessageID: 'msg_a', ordinal: 0, text: '输出是 hi!' }));
+  assert.deepEqual(
+    out.filter((event) => event.type === 'delta').map((event) => event.delta),
+    ['输出是', ' hi', '!']
+  );
+  assert.equal(mapper.state.content, '输出是 hi!');
+
+  // 工具:name 在 input.started(按 id 缓存),called 发 call 卡,success 的 content 数组发 result 卡
+  mapper.handle(frame('session.tool.input.started', { assistantMessageID: 'msg_a', id: 'call_1', name: 'bash' }));
+  mapper.handle(frame('session.tool.input.ended', { assistantMessageID: 'msg_a', id: 'call_1', text: '{"command":"echo hi"}' }));
+  mapper.handle(frame('session.tool.called', { assistantMessageID: 'msg_a', id: 'call_1', input: { command: 'echo hi' }, executed: false }));
+  mapper.handle(frame('session.tool.progress', { id: 'call_1' }));
+  mapper.handle(frame('session.tool.success', {
+    assistantMessageID: 'msg_a',
+    id: 'call_1',
+    content: [{ type: 'text', text: 'hi' }],
+    executed: true
+  }));
+  const toolCalls = out.filter((event) => event.type === 'assistant_tool_call');
+  const toolResults = out.filter((event) => event.type === 'assistant_tool_result');
+  assert.equal(toolCalls.length, 1);
+  assert.match(toolCalls[0].content, /:::tool\{name="bash"\}/);
+  assert.match(toolCalls[0].content, /echo hi/);
+  assert.equal(toolResults.length, 1);
+  assert.match(toolResults[0].content, /:::tool-result\nhi\n:::/);
+  // 重复 success 不重复出卡
+  mapper.handle(frame('session.tool.success', { id: 'call_1', content: [{ type: 'text', text: 'hi' }] }));
+  assert.equal(out.filter((event) => event.type === 'assistant_tool_result').length, 1);
+
+  // 失败工具:error 结构化对象({type,message,status})→ result 卡
+  mapper.handle(frame('session.tool.input.started', { id: 'call_2', name: 'write' }));
+  mapper.handle(frame('session.tool.called', { id: 'call_2', input: { path: '/x' } }));
+  mapper.handle(frame('session.tool.failed', {
+    id: 'call_2',
+    error: { type: 'permission', message: 'The user rejected permission', status: 403 }
+  }));
+  assert.match(out.filter((event) => event.type === 'assistant_tool_result')[1].content, /rejected permission/);
+
+  // 审批:v2 形状 {action,resources,source} 归一成 runner 的既有 props 契约
+  mapper.handle(frame('permission.asked', {
+    id: 'per_1',
+    action: 'shell',
+    resources: ['echo probe-two'],
+    source: { type: 'tool', messageID: 'msg_a', id: 'call_1' }
+  }));
+  assert.deepEqual(asked, [{
+    id: 'per_1',
+    permission: 'shell',
+    patterns: ['echo probe-two'],
+    tool: { callID: 'call_1', messageID: 'msg_a' }
+  }]);
+  mapper.handle(frame('permission.replied', { requestID: 'per_1', reply: 'once' }));
+  assert.deepEqual(replied, [{ requestID: 'per_1', reply: 'once' }]);
+
+  // 终态:execution.succeeded → idle
+  mapper.handle(frame('session.execution.succeeded', {}));
+  assert.equal(idle, 1);
+});
+
+test('v2 事件映射器:重试调度透传 canonical retry status;execution.failed/interrupted → error', () => {
+  const out = [];
+  const errors = [];
+  const mapper = createServeEventMapper({
+    sessionId: SID,
+    eventShape: 'data',
+    emit: (event) => out.push(event),
+    onError: (message) => errors.push(message)
+  });
+  const frame = (type, data) => ({ id: 'evt_x', type, data: { sessionID: SID, ...data } });
+
+  mapper.handle(frame('session.retry.scheduled', {
+    assistantMessageID: 'msg_a',
+    attempt: 2,
+    at: 1_800_000_000_000,
+    error: { type: 'provider.rate-limit', message: 'Provider is busy', status: 429 }
+  }));
+  assert.deepEqual(out, [{
+    type: 'retry-status',
+    phase: 'scheduled',
+    source: 'provider-runtime',
+    provider: 'opencode',
+    attempt: 2,
+    retryAt: 1_800_000_000_000,
+    status: 429,
+    reason: 'provider.rate-limit',
+    message: 'Provider is busy'
+  }]);
+
+  // step.failed 不是终态(可重试),不报错;execution.failed 才是。
+  mapper.handle(frame('session.step.failed', { error: { type: 'x', message: 'step boom' } }));
+  assert.deepEqual(errors, []);
+  mapper.handle(frame('session.execution.failed', { error: { type: 'x', message: 'boom' } }));
+  assert.deepEqual(errors, ['boom']);
+
+  mapper.handle(frame('session.execution.interrupted', { reason: 'user' }));
+  assert.equal(errors.length, 2);
+  assert.match(errors[1], /中断/);
 });
 
 test('confirm 全链路(allow):建会话→注入 ask 规则→prompt→permission 挂起→审批桥 allow→reply once→idle 收尾', async () => {

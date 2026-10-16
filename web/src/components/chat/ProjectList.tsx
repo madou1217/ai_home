@@ -173,8 +173,9 @@ const ProjectList = ({
       if (selectedSession?.id === sessionId) {
         onCreateSession();
       }
-    } catch {
-      message.error('删除会话失败');
+    } catch (error) {
+      const code = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      message.error(code === 'chat_session_busy' ? '会话正在运行，请先停止再删除' : '删除会话失败');
     }
   };
 
@@ -270,7 +271,12 @@ const ProjectList = ({
                         icon={<DeleteOutlined />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void handleDeleteChatSession(session.id);
+                          openMobileConfirm({
+                            title: '删除该对话？',
+                            description: '将删除 AIH 的会话记录与附件，不可恢复；provider 原生会话不受影响。',
+                            confirmText: '删除',
+                            action: () => handleDeleteChatSession(session.id),
+                          });
                         }}
                       />
                     </div>
@@ -446,6 +452,7 @@ const ProjectList = ({
                       </button>
                       <Popconfirm
                         title="删除该对话？"
+                        description="将删除 AIH 的会话记录与附件，不可恢复；provider 原生会话不受影响。"
                         onConfirm={(e) => {
                           e?.stopPropagation();
                           void handleDeleteChatSession(session.id);

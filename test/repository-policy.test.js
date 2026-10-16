@@ -31,11 +31,10 @@ const ALLOWED_MARKDOWN = new Set([
   'README.md',
   'web/DESIGN.md',
   'web/DESIGN_SYSTEM.md',
+  // Tolerance entry: web/TODO_REFACTOR.md is an untracked, machine-local file that
+  // may still exist in other checkouts. The file was removed from this working copy.
   'web/TODO_REFACTOR.md',
-  'web/src/styles/DESIGN_SPECIFICATION.md',
-  'web/src/styles/UI_WIREFRAMES_AND_MOCKUPS.md',
-  'CLAUDE.md',
-  'GEMINI.md'
+  'CLAUDE.md'
 ]);
 
 const GENERATED_ROOT_BUNDLE_PATTERNS = [

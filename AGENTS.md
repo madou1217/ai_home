@@ -60,6 +60,11 @@ Fuller layer map:
   beside Node, and `--go-core-routes <entry-ids>` is the explicit operator canary that
   forwards those `contracts/route-ownership/manifest.json` data-plane entries to Go
   (fail closed, no Node fallback). Migration phases: `docs/plans/2026-09-24-go-migration-plan.md`.
+  **发布纪律（2026-10-16）：工件只从干净树构建**（用 HEAD 快照构建，工作区未提交改动不得进工件；
+  `aih-server.build.json` 的 `source_sha` 必须等于构建时的 HEAD，`binary_sha256` 与安装后的实际
+  文件一致），**安装一律原子替换**（同目录写临时文件后 `rename`；禁止用 `cp`/截断写直接覆写运行中
+  二进制所在的路径）。运行中的 Node server 与 Go core 只在下一次 `aih server restart` 时加载新工件
+  （原子替换天然不影响已运行的旧 inode，不需要为了"立即生效"去踢进程）。
 - `npm run gateway:routes`: read-only scan of both gateways' HTTP paths and their
   data-plane diff. Backs `docs/architecture/go-node-parity-matrix.md`; `--json`
   for CI. Note it collects path literals, so router scope guards (`/v1/`,

@@ -519,3 +519,35 @@ test('chat runtime artifact route returns scoped artifact bytes', async () => {
   assert.equal(ctx.res.headers['Content-Type'], 'text/plain');
   assert.equal(ctx.res.body, 'output');
 });
+
+test('chat runtime session delete route removes the session through the service', async () => {
+  const calls = [];
+  const service = {
+    async deleteSession(sessionId) {
+      calls.push(sessionId);
+      return { sessionId, provider: 'zcode' };
+    }
+  };
+  const ctx = createContext('DELETE', '/v0/webui/chat/sessions/session-12bd', { service });
+  assert.equal(await handleWebUiChatRuntimeRequest(ctx), true);
+  assert.deepEqual(calls, ['session-12bd']);
+  assert.equal(ctx.writes[0].statusCode, 200);
+  assert.deepEqual(ctx.writes[0].payload, {
+    ok: true, deleted: true, sessionId: 'session-12bd', provider: 'zcode'
+  });
+});
+
+test('chat runtime session delete route preserves the busy error contract', async () => {
+  const service = {
+    async deleteSession() {
+      const error = new Error('chat_session_busy');
+      error.code = 'chat_session_busy';
+      error.statusCode = 409;
+      throw error;
+    }
+  };
+  const ctx = createContext('DELETE', '/v0/webui/chat/sessions/session-1', { service });
+  await handleWebUiChatRuntimeRequest(ctx);
+  assert.equal(ctx.writes[0].statusCode, 409);
+  assert.equal(ctx.writes[0].payload.error, 'chat_session_busy');
+});

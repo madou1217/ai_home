@@ -64,3 +64,82 @@ test('webui-chat-sessions-routes handle endpoints correctly', async () => {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });
+
+function createRuntimeCtx(pathname, deps) {
+  const state = { status: 0, body: null };
+  const ctx = {
+    method: 'DELETE',
+    pathname,
+    hostHomeDir: os.tmpdir(),
+    deps,
+    readRequestBody: async () => Buffer.from(''),
+    writeJson: (_res, status, body) => {
+      state.status = status;
+      state.body = body;
+    },
+    res: {},
+    req: { headers: { host: '127.0.0.1:9527' }, url: pathname }
+  };
+  return { ctx, state };
+}
+
+test('canonical chat session delete removes the record instead of archiving it', async () => {
+  const deleted = [];
+  const archived = [];
+  const runtime = {
+    store: {
+      getSession: (sessionId) => (sessionId === 'session-runtime-1'
+        ? { sessionId, policy: { workspaceMode: 'chat' } } : null),
+      updatePolicy: (sessionId, patch) => archived.push([sessionId, patch])
+    },
+    async deleteSession(sessionId) { deleted.push(sessionId); }
+  };
+  const { ctx, state } = createRuntimeCtx('/v0/webui/chat-sessions/session-runtime-1', {
+    chatRuntimeService: runtime
+  });
+
+  assert.equal(await handleDeleteChatSessionRequest(ctx), true);
+  assert.equal(state.status, 200);
+  assert.equal(state.body.deleted, true);
+  assert.deepEqual(deleted, ['session-runtime-1']);
+  assert.deepEqual(archived, []);
+});
+
+test('canonical chat session delete reports the busy contract instead of a 500', async () => {
+  const runtime = {
+    store: {
+      getSession: () => ({ sessionId: 'session-busy', policy: { workspaceMode: 'chat' } })
+    },
+    async deleteSession() {
+      const error = new Error('chat_session_busy');
+      error.code = 'chat_session_busy';
+      error.statusCode = 409;
+      throw error;
+    }
+  };
+  const { ctx, state } = createRuntimeCtx('/v0/webui/chat-sessions/session-busy', {
+    chatRuntimeService: runtime
+  });
+
+  await handleDeleteChatSessionRequest(ctx);
+  assert.equal(state.status, 409);
+  assert.equal(state.body.error, 'chat_session_busy');
+});
+
+test('canonical chat session delete falls back to archiving without a delete-capable runtime', async () => {
+  const archived = [];
+  const runtime = {
+    store: {
+      getSession: () => ({ sessionId: 'session-old-runtime', policy: { workspaceMode: 'chat' } }),
+      updatePolicy: (sessionId, patch) => archived.push([sessionId, patch])
+    }
+  };
+  const { ctx, state } = createRuntimeCtx('/v0/webui/chat-sessions/session-old-runtime', {
+    chatRuntimeService: runtime
+  });
+
+  await handleDeleteChatSessionRequest(ctx);
+  assert.equal(state.status, 200);
+  assert.equal(state.body.deleted, true);
+  assert.deepEqual(archived, [['session-old-runtime', { archived: true }]]);
+});

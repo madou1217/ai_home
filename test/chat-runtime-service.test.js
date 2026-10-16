@@ -41,6 +41,8 @@ function createFixture(t, overrides = {}) {
       clock: () => 1000 + nextId,
       idFactory: (prefix) => `${prefix}-${++nextId}`
     },
+    // chat 会话的 legacy 来源文件解析根：不钉住的话会落到真实家目录（测试绝不碰真实 HOME）。
+    hostHomeDir: aiHomeDir,
     driverRegistry,
     runtimeResolver,
     eventHub: overrides.eventHub,
@@ -882,3 +884,74 @@ function disposableDriverRegistry(drivers) {
     }
   };
 }
+
+test('deleteSession removes the session, cascaded rows and attachment files', async (t) => {
+  const { aiHomeDir, service } = createFixture(t);
+  const session = await createSession(service, { sessionId: 'deletable-session' });
+  service.store.appendEvent(session.sessionId, {
+    type: 'turn.completed',
+    source: { provider: 'codex', runtimeId: 'codex-runtime' },
+    payload: {}
+  });
+  const shotPath = path.join(aiHomeDir, 'attachments', 'shot.png');
+  fs.mkdirSync(path.dirname(shotPath), { recursive: true });
+  fs.writeFileSync(shotPath, 'image-bytes');
+  fs.mkdirSync(`${shotPath}.frames`, { recursive: true });
+  fs.writeFileSync(path.join(`${shotPath}.frames`, 'frame-01.jpg'), 'frame');
+  service.store.createAttachments(session.sessionId, [{
+    filePath: shotPath, name: 'shot.png', mimeType: 'image/png'
+  }]);
+
+  assert.deepEqual(await service.deleteSession(session.sessionId), {
+    sessionId: 'deletable-session', provider: 'codex'
+  });
+  assert.equal(service.store.getSession(session.sessionId), null);
+  // 子表随主行级联删除（不是留下孤儿行）。
+  const db = service.store.store.context.db;
+  for (const table of ['chat_runtime_events', 'chat_runtime_attachments']) {
+    const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`)
+      .get(session.sessionId);
+    assert.equal(row.count, 0, `${table} still has rows`);
+  }
+  // 附件文件与视频抽帧目录一并清理。
+  assert.equal(fs.existsSync(shotPath), false);
+  assert.equal(fs.existsSync(`${shotPath}.frames`), false);
+  assert.throws(() => service.getSnapshot(session.sessionId), (error) => (
+    error.code === 'chat_session_not_found'
+  ));
+});
+
+test('deleteSession refuses a running session and succeeds once it stops', async (t) => {
+  const { service } = createFixture(t);
+  const session = await createSession(service, { sessionId: 'busy-delete' });
+  service.store.setSessionState(session.sessionId, 'running', {
+    turnId: 'turn-1', runId: 'run-1', state: 'running'
+  });
+  await assert.rejects(() => service.deleteSession(session.sessionId), (error) => (
+    error.code === 'chat_session_busy' && error.statusCode === 409 && error.details.state === 'running'
+  ));
+  assert.ok(service.store.getSession(session.sessionId));
+
+  service.store.setSessionState(session.sessionId, 'idle', null);
+  assert.deepEqual(await service.deleteSession(session.sessionId), {
+    sessionId: 'busy-delete', provider: 'codex'
+  });
+});
+
+test('deleteSession also removes the legacy chat file behind an imported chat session', async (t) => {
+  const { aiHomeDir, service } = createFixture(t);
+  const legacyDir = path.join(aiHomeDir, '.ai_home', 'chat-sessions');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const legacyFile = path.join(legacyDir, 'legacy-1.json');
+  fs.writeFileSync(legacyFile, JSON.stringify({
+    id: 'legacy-1', title: '旧对话', provider: 'codex', messages: []
+  }));
+  const session = await createSession(service, { sessionId: 'chat-imported-1' });
+  service.store.updatePolicy(session.sessionId, {
+    workspaceMode: 'chat', legacySessionId: 'legacy-1'
+  });
+
+  await service.deleteSession(session.sessionId);
+  // 只删 canonical 行不删文件的话，聊天列表会把导入前的旧条目重新列出来。
+  assert.equal(fs.existsSync(legacyFile), false);
+});

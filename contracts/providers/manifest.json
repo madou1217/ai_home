@@ -1010,6 +1010,33 @@
           ]
         }
       },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": null,
+          "userSettings": null,
+          "projectSettings": null,
+          "cliFlags": null
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume"
+          ],
+          "nativeStore": ""
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": null,
+          "modes": null
+        }
+      },
       "credentials": {
         "apiKeyEnv": [
           "QODER_PERSONAL_ACCESS_TOKEN"
@@ -1110,6 +1137,33 @@
           "triggerFlags": [
             "--print"
           ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": null,
+          "userSettings": null,
+          "projectSettings": null,
+          "cliFlags": null
+        },
+        "sessions": {
+          "flags": [
+            "--continue",
+            "--resume"
+          ],
+          "nativeStore": ""
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": null,
+          "modes": null
         }
       },
       "credentials": {

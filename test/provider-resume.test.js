@@ -29,6 +29,22 @@ test('every contract-declared resume strategy only uses flags the contract decla
       for (const flag of strategy.declaredFlags) {
         assert.ok(declared.includes(flag), `${provider}: ${flag} missing from the contract (${declared.join(',')})`);
       }
+      // 统一 `aih <cli> resume` 动词用的是同一批事实：它下发的每个参数也必须在合同里声明过，
+      // 否则「aih 帮你续接」会变成替用户认一个原生客户端并不支持的参数。
+      const verbFlags = new Set();
+      const collect = (value) => {
+        if (typeof value === 'string' && value.startsWith('-')) verbFlags.add(value);
+      };
+      (strategy.interactive.latestArgs || []).forEach(collect);
+      collect(strategy.interactive.idArgs('probe-id')[0]);
+      for (const flag of verbFlags) {
+        assert.ok(declared.includes(flag), `${provider}: resume 动词用到的 ${flag} 未在合同声明（${declared.join(',')}）`);
+      }
+      // 子命令形态（codex 的 `resume`）也必须出现在合同里。
+      if (!String(strategy.interactive.idArgs('probe-id')[0]).startsWith('-')) {
+        const sub = String(strategy.interactive.idArgs('probe-id')[0]);
+        assert.ok(declared.includes(sub), `${provider}: 子命令 ${sub} 未在合同声明`);
+      }
     }
   }
 });
@@ -112,10 +128,22 @@ test('bound-identity providers build their own native resume argv', () => {
 });
 
 test('providers without a resume standard relaunch plainly', () => {
-  for (const provider of ['kiro', 'kimi', 'zcode', 'qoder', 'unknown']) {
+  for (const provider of ['kiro', 'kimi', 'zcode', 'unknown']) {
     assert.deepEqual(buildProviderResumeArgs(provider, { nativeSessionId: 'whatever' }), [], provider);
     assert.equal(resolveProviderResumeStrategy(provider), null);
     assert.equal(resolveResumeIdentityKey(provider, { nativeSessionId: 'whatever' }), '');
+  }
+});
+
+test('qoder 家族按 CLI 事实续接（--resume <id> / 无身份时 --continue）', () => {
+  for (const provider of ['qoder', 'qodercn']) {
+    assert.equal(resolveProviderResumeStrategy(provider).id, 'qoder-session');
+    assert.deepEqual(buildProviderResumeArgs(provider, { nativeSessionId: 'sid-1' }), ['--resume', 'sid-1']);
+    assert.deepEqual(
+      buildProviderResumeArgs(provider, {}),
+      ['--continue'],
+      `${provider}: 没有身份时用同 cwd 的 --continue（安全近似），不是普通重启`
+    );
   }
 });
 

@@ -346,6 +346,14 @@ func builtinQoder() Definition {
 				[]string{"Qoder", "qodercli"},
 			),
 		},
+		// 会话续接是 CLI 自己的事实（qodercli 1.1.72 --help 实测）：-c/--continue 续最近一段、
+		// -r/--resume [id] 按 id 续。aih 的统一 `aih qoder resume` 直接翻译到这两个入口。
+		// 不声明 NativeStore：aih 不读它的会话库（会话身份由用户/CLI 提供）。
+		NativeBoundary: &NativeCapability{
+			Sessions: NativeSessions{
+				Flags: []string{"--continue", "--resume"},
+			},
+		},
 	}
 }
 
@@ -385,6 +393,12 @@ func builtinQoderCN() Definition {
 				[]string{"Qoder.exe", "qoderclicn.exe"},
 				[]string{"Qoder", "qoderclicn"},
 			),
+		},
+		// 与 qoder 同源（qoderclicn 1.1.72 实测同样的 -c/--continue 与 -r/--resume）。
+		NativeBoundary: &NativeCapability{
+			Sessions: NativeSessions{
+				Flags: []string{"--continue", "--resume"},
+			},
 		},
 	}
 }

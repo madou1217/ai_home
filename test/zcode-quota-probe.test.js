@@ -538,6 +538,67 @@ test('zcode quota probe reports empty_parsed_snapshot when balances is not an ar
   }
 });
 
+test('zcode quota probe concludes notApplicable with an empty snapshot when plans and balances are both empty', async () => {
+  // 套餐到期（如 Weekend 促销结束）时接口返回 { plans:[], balances:[] }：这是「无套餐」结论，
+  // 不是解析失败——必须返回 notApplicable + 空结论快照，让调用方覆盖缓存里已失效的正数快照，
+  // 否则界面会一直展示最后一次数值（100% 剩余 + 早已过期的重置时间）。
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: { zcodejwttoken: 'zcode-jwt-token' }
+  });
+  const probe = createZcodeQuotaProbe({
+    fs,
+    aiHomeDir,
+    usageSnapshotSchemaVersion: 2,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async () => makeOkResponse({
+      code: 0,
+      success: true,
+      data: { server_time: 1, plans: [], balances: [] }
+    })
+  });
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.equal(result.notApplicable, true);
+    assert.equal(result.reason, 'no_plan_balance');
+    assert.equal(result.error, undefined, '结论不是失败');
+    assert.ok(result.snapshot, '结论必须携带空快照供调用方替换陈旧正数缓存');
+    assert.equal(result.snapshot.kind, USAGE_SNAPSHOT_KINDS.zcode);
+    assert.equal(result.snapshot.source, USAGE_SOURCE_ZCODE);
+    assert.equal(result.snapshot.schemaVersion, 2);
+    assert.deepEqual(result.snapshot.entries, []);
+    assert.equal(result.snapshot.account, undefined, '没有套餐时不携带套餐名');
+    assert.equal(getUsageRemainingPctValues(result.snapshot).length, 0);
+    assert.equal(getMinRemainingPctFromUsageSnapshot(result.snapshot), null);
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('zcode quota probe keeps parse-failure semantics when a plan exists but balances are empty', async () => {
+  // 边界：plans 非空、balances 为空属于未知形态（计划在但没有任何余额桶），
+  // 保持保守的解析失败语义（保留上一次快照），不推断成「无套餐」。
+  const { aiHomeDir, accountRef } = setupZcodeAccount({
+    credentials: { zcodejwttoken: 'zcode-jwt-token' }
+  });
+  const probe = createZcodeQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async () => makeOkResponse({
+      code: 0,
+      success: true,
+      data: { plans: [{ name: 'pro' }], balances: [] }
+    })
+  });
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.equal(result.notApplicable, undefined);
+    assert.equal(result.error, 'empty_parsed_snapshot');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('zcode quota probe converts fetch exceptions into probe_exception errors', async () => {
   const { aiHomeDir, accountRef } = setupZcodeAccount({
     credentials: { zcodejwttoken: 'zcode-jwt-token' }

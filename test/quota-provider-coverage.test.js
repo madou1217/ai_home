@@ -140,6 +140,39 @@ test('策略链：默认最稳策略；第一条不可用时自动切换，且�
   assert.deepEqual(attemptsSeen, [{ strategyId: 'stable', error: 'upstream_down', auth: false }]);
 });
 
+test('策略链：「额度不适用」结论携带的替代快照原样穿过（zcode 无套餐时的空快照）', async () => {
+  // 结论 + 替代快照同时出现时语义以结论为准（判定必须在 snapshot 之前）：
+  // 快照会被调用方写进缓存替换陈旧正数，notApplicable/reason 走 not_applicable 状态。
+  const conclusionSnapshot = {
+    kind: USAGE_SNAPSHOT_KINDS.zcode,
+    capturedAt: 1_792_100_000_000,
+    source: 'zcode_plan_billing_balance_api',
+    entries: []
+  };
+  const strategies = [
+    {
+      id: 'zcode-http',
+      clientDependent: false,
+      probe: () => ({
+        probe: async () => ({ notApplicable: true, reason: 'no_plan_balance', snapshot: conclusionSnapshot })
+      })
+    }
+  ];
+  const registry = getProviderRegistry();
+  const original = registry.listQuotaStrategies;
+  registry.listQuotaStrategies = () => strategies;
+  try {
+    const result = await runQuotaStrategies('zcode', 'acct_test', { deps: {}, options: { registry } });
+    assert.equal(result.notApplicable, true);
+    assert.equal(result.reason, 'no_plan_balance');
+    assert.equal(result.strategyId, 'zcode-http');
+    assert.deepEqual(result.snapshot, conclusionSnapshot);
+    assert.deepEqual(result.attempts, [{ strategyId: 'zcode-http', notApplicable: true, error: 'no_plan_balance' }]);
+  } finally {
+    registry.listQuotaStrategies = original;
+  }
+});
+
 test('诊断输出：没有额度的 provider 带原因、依赖客户端的 provider 被点名', () => {
   const summary = describeQuotaSources();
   assert.equal(summary.total, PROVIDER_IDS.length);

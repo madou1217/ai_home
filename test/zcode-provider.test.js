@@ -157,6 +157,32 @@ test('zcode has an anthropic_messages passthrough route', () => {
   assert.ok(bridged, 'openai clients should bridge onto the anthropic route');
 });
 
+// --- Usage descriptor port (plan badge / on-view snapshot refresh) ---
+const { getProviderUsageStrategy } = require('../lib/usage/provider-usage');
+
+test('zcode declares a usage port that maps the snapshot plan name into the account identity', () => {
+  const strategy = getProviderUsageStrategy('zcode');
+  assert.equal(strategy.id, 'zcode');
+  assert.equal(strategy.capability, 'provider.usage');
+  assert.equal(strategy.accountSnapshotRefresh, true, '查看账号时按需刷新额度快照');
+  assert.equal(strategy.snapshotKind, 'zcode_plan_balance');
+  assert.deepEqual(strategy.liveAccountIdentity({
+    configured: true,
+    apiKeyMode: false,
+    effectiveUsageSnapshot: { account: { planType: 'ZCode Weekend Build' } }
+  }), { planType: 'ZCode Weekend Build' }, '套餐名进账号记录，badge 不再只显示泛型 OAuth');
+  assert.equal(strategy.liveAccountIdentity({
+    configured: true,
+    apiKeyMode: false,
+    effectiveUsageSnapshot: { entries: [] }
+  }), null, '无套餐（空结论快照）时不覆盖既有身份');
+  assert.equal(strategy.liveAccountIdentity({
+    configured: true,
+    apiKeyMode: true,
+    effectiveUsageSnapshot: { account: { planType: 'x' } }
+  }), null, 'API Key 账号没有套餐身份');
+});
+
 // --- Upstream base URL ---
 const { resolveProviderApiBaseUrl, ZCODE_DEFAULT_BASE_URL } = require('../lib/account/provider-api-base-url');
 

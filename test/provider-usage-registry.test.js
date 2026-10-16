@@ -24,7 +24,9 @@ test('用量端口：两类「用量托管」名单含义不同、成员保持�
   const flagged = (flag) => PROVIDER_IDS.filter((id) => getProviderUsageStrategy(id)[flag]).sort();
   // cline 于 2026-10-14 加入 accountSnapshotRefresh：它的额度由额度插件采集，
   // 账号状态读取时要按需刷新（见 lib/usage/quota/plugins/cline.js）。
+  // zcode 于 2026-10-16 加入 accountSnapshotRefresh：套餐到期时额度源给出「无套餐」结论，
+  // 账号状态读取要按需刷新才能把缓存里陈旧的正数快照替换成空结论（见 lib/usage/provider-usage/zcode.js）。
   // 终端标题（ptyUsageStatus）刻意保持原样，不因新增 provider 改变用户可见面。
-  assert.deepEqual(flagged('accountSnapshotRefresh'), ['agy', 'claude', 'cline', 'codex', 'gemini', 'grok', 'kimi', 'kiro']);
+  assert.deepEqual(flagged('accountSnapshotRefresh'), ['agy', 'claude', 'cline', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'zcode']);
   assert.deepEqual(flagged('ptyUsageStatus'), ['claude', 'codex', 'gemini']);
 });

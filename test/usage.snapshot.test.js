@@ -540,6 +540,90 @@ test('kimi OAuth usage snapshot parses rolling limits and persists the trusted c
   }
 });
 
+test('zcode usage snapshot replaces a stale positive cache with the no-plan conclusion', async () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'zcode', '1', {
+      nativeAuth: { credentials: { zcodejwttoken: 'zcode-jwt-token' } }
+    });
+    const cacheService = createUsageCacheService({ fs, aiHomeDir, path, getProfileDir, usageSnapshotSchemaVersion: 2 });
+    // 套餐已到期但缓存里还停留在最后一次正数快照（100% 剩余 + 早已过期的重置时间）。
+    const staleSnapshot = {
+      kind: 'zcode_plan_balance',
+      capturedAt: Date.now() - 6 * 24 * 3600 * 1000,
+      source: 'zcode_plan_billing_balance_api',
+      schemaVersion: 2,
+      entries: [{
+        bucket: 'glm-5.3',
+        windowMinutes: 10080,
+        window: '7days',
+        remainingPct: 100,
+        totalUnits: 300000000,
+        usedUnits: 0,
+        remainingUnits: 300000000,
+        unitType: 'token',
+        resetIn: '',
+        resetAtMs: Date.now() - 5 * 24 * 3600 * 1000
+      }],
+      account: { planType: 'ZCode Weekend Build' }
+    };
+    cacheService.writeUsageCache('zcode', accountRef, staleSnapshot);
+
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache,
+      // 上游对无套餐账号返回 { code:0, success:true, data:{ plans:[], balances:[] } }：
+      // 空是结论（无套餐），不是解析失败。
+      fetchWithTimeout: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: 0, success: true, data: { server_time: 1, plans: [], balances: [] } })
+      })
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync('zcode', accountRef, staleSnapshot, { forceRefresh: true });
+
+    assert.ok(snapshot, '结论携带的空快照必须返回，不能回落到陈旧缓存');
+    assert.deepEqual(snapshot.entries, []);
+    assert.equal(snapshot.kind, 'zcode_plan_balance');
+    assert.equal(snapshot.schemaVersion, 2);
+    assert.ok(Number(snapshot.capturedAt) > Date.now() - 60_000, 'capturedAt 必须是本次探测时间');
+    // 陈旧的正数快照必须被结论覆盖——否则 deriveQuotaState 会拿它把结论压回 probe_failed。
+    assert.deepEqual(cacheService.readUsageCache('zcode', accountRef), snapshot);
+    // 探针状态是「额度不适用」结论（带可识别前缀），不是探测失败。
+    assert.equal(usageSnapshotService.getLastUsageProbeError('zcode', accountRef), 'quota_not_applicable:no_plan_balance');
+
+    const { deriveQuotaState } = require('../lib/account/derived-state');
+    const quotaState = deriveQuotaState({
+      provider: 'zcode',
+      configured: true,
+      apiKeyMode: false,
+      remainingPct: null,
+      usageSnapshot: cacheService.readUsageCache('zcode', accountRef),
+      probeError: usageSnapshotService.getLastUsageProbeError('zcode', accountRef)
+    });
+    assert.equal(quotaState.status, 'not_applicable');
+    assert.equal(quotaState.reason, 'no_plan_balance');
+    assert.equal(quotaState.remainingPct, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailableModels quota', async () => {
   const root = mkTmpDir();
   try {

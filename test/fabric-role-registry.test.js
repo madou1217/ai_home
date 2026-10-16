@@ -293,7 +293,8 @@ test('fabric role registry persists runtime diagnostics for inventory gap blocke
       'codex:missing_provider_cli:codex',
       'claude:missing_provider_account:claude',
       'agy:provider_account_unavailable:agy',
-      'opencode:missing_provider_runtime:opencode'
+      'opencode:missing_provider_runtime:opencode',
+      'cline:missing_provider_runtime:cline'
     ]
   );
   assert.deepEqual(node.runtimeGaps.find((gap) => gap.provider === 'agy').diagnostic.accounts.reasons, [

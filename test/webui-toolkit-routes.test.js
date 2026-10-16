@@ -609,7 +609,7 @@ test('webui toolkit routes GET /v0/webui/toolkit/tools returns runtime and netwo
   assert.equal(handled, true);
   assert.equal(res.statusCode, 200);
   const data = JSON.parse(res.body);
-  assert.deepEqual(data.categories.map((category) => category.id), ['session-runtimes', 'network-access']);
+  assert.deepEqual(data.categories.map((category) => category.id), ['session-runtimes', 'network-access', 'edge-entry']);
   assert.ok(data.tools.some((tool) => tool.id === 'tmux'));
   assert.equal(Object.prototype.hasOwnProperty.call(data.tools[0], 'path'), false);
 });

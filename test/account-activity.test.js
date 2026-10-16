@@ -112,6 +112,10 @@ test('snapshot emits provider, accountRef and timestamps', () => {
     accountRef: 'acct_1',
     inFlight: 1,
     sessionTurnActive: false,
+    // aih 托管的持久 CLI 会话（2026-10-15 29707708 起随快照下发：CLI-only 账号也有健康结果）
+    runtimeActive: false,
+    runtimeSessions: 0,
+    runtimeAttached: 0,
     rate: 1,
     activeModels: [],
     lastActivityAt: 1_000_000,

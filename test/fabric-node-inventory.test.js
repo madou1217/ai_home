@@ -21,7 +21,8 @@ test('fabric node inventory gates provider sessions per node, not by global runt
       { id: 'local-codex', nodeId: 'local-mac-remote-node', provider: 'codex', mode: 'tui', status: 'available' },
       { id: 'local-claude', nodeId: 'local-mac-remote-node', provider: 'claude', mode: 'tui', status: 'available' },
       { id: 'local-agy', nodeId: 'local-mac-remote-node', provider: 'agy', mode: 'tui', status: 'available' },
-      { id: 'local-opencode', nodeId: 'local-mac-remote-node', provider: 'opencode', mode: 'tui', status: 'available' }
+      { id: 'local-opencode', nodeId: 'local-mac-remote-node', provider: 'opencode', mode: 'tui', status: 'available' },
+      { id: 'local-cline', nodeId: 'local-mac-remote-node', provider: 'cline', mode: 'tui', status: 'available' }
     ],
     transports: [
       {
@@ -59,10 +60,12 @@ test('fabric node inventory gates provider sessions per node, not by global runt
       'codex:missing:missing_provider_runtime:codex',
       'claude:missing:missing_provider_runtime:claude',
       'agy:missing:missing_provider_runtime:agy',
-      'opencode:missing:missing_provider_runtime:opencode'
+      'opencode:missing:missing_provider_runtime:opencode',
+      // 会话 provider 名单来自契约能力 sessionRuntime（不是这里手维护）；cline 2026-10-16 起有会话运行时
+      'cline:missing:missing_provider_runtime:cline'
     ]
   );
-  assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'codex', 'opencode']);
+  assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'cline', 'codex', 'opencode']);
   assert.deepEqual(local.runtimeGaps, []);
 
   const awsOpenProject = aws.actions.find((action) => action.id === 'open-project');
@@ -103,7 +106,7 @@ test('fabric node inventory treats ssh as bootstrap capability, not runtime read
   const host = inventory[0];
   assert.equal(host.capabilities.sshBootstrap, true);
   assert.equal(host.capabilities.runtimeHost, false);
-  assert.deepEqual(host.runtimeGaps.map((gap) => gap.provider), ['codex', 'claude', 'agy', 'opencode']);
+  assert.deepEqual(host.runtimeGaps.map((gap) => gap.provider), ['codex', 'claude', 'agy', 'opencode', 'cline']);
   assert.equal(host.actions.find((action) => action.id === 'open-project').enabled, false);
   assert.deepEqual(host.actions.find((action) => action.id === 'open-project').blockers, ['missing_project_snapshot']);
   assert.equal(host.actions.find((action) => action.id === 'configure-ssh').enabled, true);
@@ -155,7 +158,8 @@ test('fabric node inventory blocks registered runtime when all provider accounts
       'codex:degraded:provider_account_unavailable:codex',
       'claude:missing:missing_provider_runtime:claude',
       'agy:missing:missing_provider_runtime:agy',
-      'opencode:missing:missing_provider_runtime:opencode'
+      'opencode:missing:missing_provider_runtime:opencode',
+      'cline:missing:missing_provider_runtime:cline'
     ]
   );
   const codexAction = node.actions.find((action) => action.id === 'start-session:codex');

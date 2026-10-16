@@ -193,7 +193,8 @@ test('normalizeFabricRegistryResult falls back to node inventory when server omi
         { id: 'local-codex', nodeId: 'local-mac-remote-node', provider: 'codex', mode: 'tui', status: 'available' },
         { id: 'local-claude', nodeId: 'local-mac-remote-node', provider: 'claude', mode: 'tui', status: 'available' },
         { id: 'local-agy', nodeId: 'local-mac-remote-node', provider: 'agy', mode: 'tui', status: 'available' },
-        { id: 'local-opencode', nodeId: 'local-mac-remote-node', provider: 'opencode', mode: 'tui', status: 'available' }
+        { id: 'local-opencode', nodeId: 'local-mac-remote-node', provider: 'opencode', mode: 'tui', status: 'available' },
+        { id: 'local-cline', nodeId: 'local-mac-remote-node', provider: 'cline', mode: 'tui', status: 'available' }
       ],
       transports: [
         { id: 'aws-current-node-relay', nodeId: 'aws-current-node', kind: 'relay', health: 'online' },
@@ -211,11 +212,12 @@ test('normalizeFabricRegistryResult falls back to node inventory when server omi
       'codex:missing_provider_runtime:codex',
       'claude:missing_provider_runtime:claude',
       'agy:missing_provider_runtime:agy',
-      'opencode:missing_provider_runtime:opencode'
+      'opencode:missing_provider_runtime:opencode',
+      'cline:missing_provider_runtime:cline'
     ]
   );
   assert.equal(aws.actions.find((action) => action.id === 'start-session:codex').blockers.includes('missing_provider_runtime:codex'), true);
-  assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'codex', 'opencode']);
+  assert.deepEqual(local.capabilities.runtimeProviders, ['agy', 'claude', 'cline', 'codex', 'opencode']);
   assert.deepEqual(local.runtimeGaps, []);
 });
 

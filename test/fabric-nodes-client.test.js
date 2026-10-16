@@ -170,7 +170,8 @@ test('fabric nodes client reads AWS profile registry and explains runtime gaps',
       'codex:provider_account_unavailable:codex',
       'claude:missing_provider_account:claude',
       'agy:missing_provider_account:agy',
-      'opencode:missing_provider_account:opencode'
+      'opencode:missing_provider_account:opencode',
+      'cline:missing_provider_runtime:cline'
     ]
   );
   assert.equal(report.targetNode.capabilities.relayNode, true);

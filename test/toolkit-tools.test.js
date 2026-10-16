@@ -65,11 +65,11 @@ test('tool-manager exposes runtime and network categories without absolute paths
 
   assert.deepEqual(
     TOOLKIT_TOOL_CATEGORIES.map((category) => category.id),
-    ['session-runtimes', 'network-access']
+    ['session-runtimes', 'network-access', 'edge-entry']
   );
   assert.deepEqual(
     result.categories.map((category) => category.id),
-    ['session-runtimes', 'network-access']
+    ['session-runtimes', 'network-access', 'edge-entry']
   );
 
   const herdr = result.tools.find((tool) => tool.id === 'herdr');

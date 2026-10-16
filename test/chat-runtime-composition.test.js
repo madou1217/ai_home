@@ -60,7 +60,9 @@ test('composition wires the Codex driver to persistent, transient, and binding p
     turnId: 'native-turn-1',
     item: { id: 'item-1', type: 'agentMessage', text: 'hello', status: 'inProgress' }
   });
-  fixture.client.notify('item/future', { threadId: 'native-thread-1' });
+  // 未知通知自 2026-10-16（15b2f900）起是「可观察 noop」（codex 升级新增通知不再让回合失败）。
+  // 这里用「参数非法的已知通知」继续覆盖 transient 出口：非法时间线条目 → stream.error → transient sink。
+  fixture.client.notify('item/mcpToolCall/progress', { threadId: 'native-thread-1', itemId: 'item-1' });
   fixture.client.requestFromServer(41, 'item/commandExecution/requestApproval', {
     threadId: 'native-thread-1',
     turnId: 'native-turn-1',
@@ -303,12 +305,16 @@ test('composition records a safe diagnostic when provider failure cannot release
   assert.equal(JSON.stringify(diagnostic).includes('sensitive database detail'), false);
 });
 
-test('composition registers only Codex and emits sanitized command traces to the server log', async (t) => {
+test('composition registers the Codex app-server driver plus engine-declared native drivers and emits sanitized command traces', async (t) => {
   const fixture = createFixture(t);
 
-  await assert.rejects(fixture.service.createSession({
+  // 2026-10-16（0ca76cef）起：非 codex 的官方原生 provider 由**引擎能力集**自动注册原生会话驱动
+  // （名单来源 OFFICIAL_NATIVE_SESSION_PROVIDERS，组合根不写 provider 清单），
+  // 因此 claude 不再以 chat_provider_driver_unavailable 拒绝创建 —— 这里断言新契约成立。
+  const claudeSession = await fixture.service.createSession({
     provider: 'claude', executionAccountRef: 'account-1', projectPath: '/repo'
-  }), (error) => error.code === 'chat_provider_driver_unavailable');
+  });
+  assert.equal(claudeSession.provider, 'claude');
   const session = await fixture.service.createSession({
     provider: 'codex', executionAccountRef: 'account-1', projectPath: '/repo'
   });

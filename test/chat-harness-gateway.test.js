@@ -27,7 +27,9 @@ test('two gateway accounts keep distinct homes, fixed routing headers and model 
   assert.equal(firstEnv.OPENAI_API_KEY, 'gateway-secret');
   assert.equal(firstEnv.ANTHROPIC_API_KEY, undefined);
   const firstConfig = fs.readFileSync(path.join(firstEnv.CODEX_HOME, 'config.toml'), 'utf8');
+  // 账号作用域是双头钉选（X-Account-Ref + X-Provider）；网关作用域两个头都不写（另一条用例覆盖）。
   assert.match(firstConfig, /X-Account-Ref = "acct_one"/);
+  assert.match(firstConfig, /X-Provider = "claude"/);
   assert.doesNotMatch(firstConfig, /acct_two|host-secret|other-secret|gateway-secret/);
   const catalogPath = JSON.parse(firstConfig.match(/^model_catalog_json = (.+)$/m)[1]);
   const nativeCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
@@ -60,7 +62,7 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.equal(model.shell_type, 'disabled');
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v5');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v6');
 });
 
 test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {
@@ -134,7 +136,10 @@ test('gateway-scoped harness drops the account pin, keeps one home per provider 
   assert.equal(env.OPENAI_API_KEY, 'gateway-secret');
   const config = fs.readFileSync(path.join(env.CODEX_HOME, 'config.toml'), 'utf8');
   assert.doesNotMatch(config, /X-Account-Ref/);
-  assert.match(config, /X-Provider = "opencode"/);
+  // v6（0572d9e0，2026-10-15）：网关作用域两个钉选头都不写 —— 账号由网关在模型可用池里挑、
+  // provider 按模型 id 解析，否则「aih-server 会话里换到别家模型」做不到；账号作用域仍双头钉选。
+  assert.doesNotMatch(config, /http_headers/);
+  assert.doesNotMatch(config, /X-Provider/);
   assert.doesNotMatch(config, /host-secret|gateway-secret/);
   // 模型目录走 provider 全池：readModels 收到的是网关作用域，而不是某个账号。
   assert.deepEqual(readModelsCalls[0], ['opencode', 'gateway:opencode']);

@@ -158,7 +158,14 @@ func newRouter(handlers serverHandlers) http.Handler {
 		websocket:  handlers.codexResponsesWS,
 		observe:    handlers.observeCodexClient,
 	}))
-	mux.Handle(openaichatcompletionsapi.Path, handlers.plugins.wrap("openai_chat", handlers.inference))
+	// chat completions 入口先过家族透传通道：能承载的家族请求（钉选 + 家族账号）由它
+	// 直连家族官方端点，其余（非家族模型、钉选到别的 Provider、本通道表达不了的请求）
+	// 由它内部交回 Canonical。未装配（含 router 单测）时保持 Canonical 直挂。
+	chatCompletions := handlers.familyRelay
+	if chatCompletions == nil {
+		chatCompletions = handlers.inference
+	}
+	mux.Handle(openaichatcompletionsapi.Path, handlers.plugins.wrap("openai_chat", chatCompletions))
 	// /v1/messages 统一进入透传入口：能无损透传的走字节转发，其余（跨协议、
 	// 非 claude 模型、非官方端点凭据、不满足透传合同）由它自行交回 Canonical。
 	//

@@ -29,6 +29,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/agyoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/claudeoauth"
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/codexoauth"
+	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
@@ -58,6 +59,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
+	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
@@ -92,7 +94,10 @@ type serverHandlers struct {
 	codexResponsesHTTP http.Handler
 	claudeRelayLeases  http.Handler
 	claudeNativeRelay  http.Handler
-	catalogStatus      func() catalogReadiness
+	// familyRelay 是 CodeBuddy / WorkBuddy 家族的 chat completions 透传通道，
+	// 挂在 chat completions 入口前面，服务不了的请求由它内部交回 Canonical。
+	familyRelay   http.Handler
+	catalogStatus func() catalogReadiness
 	// observeCodexClient 从 Responses 入口的真实 Codex 客户端学习版本，见 client_version.go。
 	observeCodexClient func(*http.Request)
 	// accountOutcomes 是账号请求结果时间桶的只读管理接口。
@@ -376,14 +381,33 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 AGY OAuth Refresh Strategy 失败: %w", err)
 	}
+	// 家族四支没有 Go 侧刷新实现（Token 刷新由 Node 宿主完成并同步进凭据库），但
+	// 凭据解析器要求每个 Provider 都有一条策略才能读取凭据，所以显式登记静态策略
+	// （声明「永不刷新」，见 staticcredential 包注释）。Canonical 的组合同样登记，
+	// 避免家族账号在两条解析链上出现「一条能读、一条读不到」的分叉。
+	familyCredentialStrategies := make([]accountcredentials.RefreshStrategy, 0, len(codebuddyfamilyrelay.FamilyProviders))
+	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
+		strategy, err := staticcredential.New(providerID)
+		if err != nil {
+			return serverHandlers{}, nil, fmt.Errorf(
+				"创建家族静态凭据策略失败(%s): %w",
+				providerID,
+				err,
+			)
+		}
+		familyCredentialStrategies = append(familyCredentialStrategies, strategy)
+	}
 	credentials, err := accountcredentials.NewResolver(
 		accountcredentials.Dependencies{
 			Store: store,
-			Strategies: []accountcredentials.RefreshStrategy{
-				codexProvider,
-				claudeProvider,
-				agyProvider,
-			},
+			Strategies: append(
+				[]accountcredentials.RefreshStrategy{
+					codexProvider,
+					claudeProvider,
+					agyProvider,
+				},
+				familyCredentialStrategies...,
+			),
 			Clock:            time.Now,
 			RefreshDelegated: delegateCredentialRefresh,
 		},
@@ -638,11 +662,14 @@ func newHandlers(
 			strategy:       selectionStrategy,
 			models:         recoveringModelManagement,
 			modelRefreshes: modelRefresh,
-			credentialRefresh: []accountcredentials.RefreshStrategy{
-				codexProvider,
-				claudeProvider,
-				agyProvider,
-			},
+			credentialRefresh: append(
+				[]accountcredentials.RefreshStrategy{
+					codexProvider,
+					claudeProvider,
+					agyProvider,
+				},
+				familyCredentialStrategies...,
+			),
 			delegateCredentialRefresh: delegateCredentialRefresh,
 			authorizer:                clientAuthorizer,
 			httpClient:                inferenceClient,
@@ -777,6 +804,28 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf(
 			"创建 Claude Native Relay Handler 失败: %w",
+			err,
+		)
+	}
+	// 家族透传通道（CodeBuddy / WorkBuddy 四支）与 Native Relay 共用凭据解析、上游客户端
+	// 与运行态记账；能承载的家族请求直连家族官方端点，其余交回 Canonical（见包注释）。
+	//
+	// 当前只服务钉选调用方（x-account-ref）：未钉选征召需要家族模型目录进入 Go 的账号
+	// 索引（今天只有 codex/claude/agy 有其目录），在那之前未钉选家族请求继续由 Node
+	// 承载（Node 侧交还门按「透传通道」判定）。Accounts 留空即该语义，不是遗漏。
+	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
+		codebuddyfamilyrelay.Dependencies{
+			Fallback:    inference.handler,
+			Credentials: credentials,
+			Client:      relayClient,
+			Attempts:    accountRuntime,
+			Clock:       time.Now,
+		},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建家族透传 Handler 失败: %w",
 			err,
 		)
 	}
@@ -957,6 +1006,7 @@ func newHandlers(
 		accountUsageEvents: accountUsageEventsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
+		familyRelay:        familyRelayHandler,
 		shutdown:           shutdownHandler,
 		modelAliases:       modelAliasesHandler,
 		upstreamRules:      upstreamRulesHandler,

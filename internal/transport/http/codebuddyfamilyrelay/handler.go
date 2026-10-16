@@ -592,6 +592,10 @@ func (handler *Handler) writeResponse(
 		}
 		response.Header().Del("Content-Length")
 		response.Header().Set("Content-Type", "application/json; charset=utf-8")
+		// 非流式聚合结果与 Canonical 的非流式响应同口径：推理响应一律不可缓存。
+		if response.Header().Get("Cache-Control") == "" {
+			response.Header().Set("Cache-Control", "no-store")
+		}
 		response.WriteHeader(upstreamResponse.StatusCode)
 		_, _ = response.Write(aggregated.Payload)
 		return

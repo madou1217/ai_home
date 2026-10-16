@@ -323,6 +323,9 @@ lastProbeAt / lastActivatedAt / lastOutcome   （保留，语义收窄，见 4.7
    按 `10 分钟 × 失败次数` 线性退避、封顶兜底间隔 —— 关窗后的失败要尽快重试。
 4. **`unknown` 分支保留旧的活跃闸门**（"兜底间隔内有真实流量就跳过"）：该分支没有"关窗"概念，
    用旧语义最贴近既有行为；链分支的闸门则按 §4.5 收窄为"关窗之后有非探测流量才跳过"。
+5. **server.log 的行仍走既有 `logInfo`（verbose/debug 门控）**，与其它调度器一致：默认模式下
+   观测面是 state 落盘（`lastDecision*`）+ 路由 `window` 视图 + `model_usage_records` 探测签名，
+   §4.9 的"只在状态变化时出行"因此表现为 verbose 模式下可用（避免为一个调度器破例改日志约定）。
 
 验证（本次提交）：
 - `node --test test/window-activation-{ledger,scheduler,store,probe-specs,probe-model}.test.js test/webui-window-activation-routes.test.js test/web.window-activation-contract.test.js test/server.args.window-activation.test.js test/server-config-store.test.js test/account-quota-probe-scheduler.test.js` 全绿。
@@ -351,5 +354,24 @@ lastProbeAt / lastActivatedAt / lastOutcome   （保留，语义收窄，见 4.7
 只有失败才累积；回归用例 `test/window-activation-ledger.test.js`（clearProbeFailure）与
 `test/window-activation-scheduler.test.js`（兜底成功 → `probeFailureCount=0`）。
 
-**遗留观察项（需跨窗口周期）**：`window_closed → probe` 的续窗链、`window_absent` 的幻影补窗
-需等关窗时刻（18:50 起）后按 §10.2 复核；24h 探测次数目标 ≈5 次/账号（旧实现 ~24 次）。
+**关窗续窗链路（端到端已验证，2026-10-16 18:57:56）**：
+- gmail 的旧窗口 18:50:35 关闭 → 下一个 tick（18:57:50，tick 周期 10 分钟）自动补了一次极小探测
+  （`model_usage_records` 恰 1 条：18:57:56，in=10/out=5）→ `outcome=activated`、`fail=0`
+  （修复后的清零语义在生产上确认）→ 快照随即给出新锚点，账本重锚为
+  `anchor=18:57:56 / close=23:57:56`（5h 后，窗口被续上并持续滚动）→ 之后各 tick 判
+  `skip window_open`，一次都不再探。
+- 对照：旧实现会在窗口开着时每小时照探一次（24h 基线 27 / 20 / 14 次），新实现该账号
+  自 18:57 起到关窗前（23:57）**探测 0 次**。
+- 另两个 codex 账号（关窗 19:57:48 / 20:46:50）在窗口期内保持 `skip window_open` 零探测；
+  agy 账号按兜底节奏约 1 次/小时（观察不出窗口，符合规划 ④），`permission_denied` 的 agy
+  账号持续 `skip runtime_blocked`。
+- 路由视图（用户界面同源）：`window.kind=open`、`closeAtMs` 指向新关窗时刻、`source=snapshot`、
+  `lastDecision=skip/window_open`、`lastProbe.outcome=activated`。
+
+**遗留观察项（P1）**：`window_absent`（幻影）分支本次由关窗后的真实序列间接覆盖（关窗 tick 判
+`probe` 并成功重锚）；agy 的窗口观察（`resetAtMs` 缺失）留待 P1 取证后再并入链模式。
+
+§6 真机项对照：16 已完成 1 个完整周期（关窗 18:50:35 → 复开 18:57:56，间隔 7.3 分钟 ≤ 12 分钟；
+新锚点 18:57:56 + 5h = 23:57:56 与期望一致），第 2 个周期（23:57:56 关窗）待自然发生；
+17 的结构性证据已成立（codex 账号只在关窗时探测；24h 计数待满 24h 后复核）；
+18/19/20 已按上表与单测覆盖。

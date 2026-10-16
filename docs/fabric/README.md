@@ -1,15 +1,16 @@
 # AIH Fabric Design Pack
 
-> **当前设计入口：** [20-current-server-client-model.md](20-current-server-client-model.md) 与仓库根 `README.md`。`00`-`19` 和 `evidence/` 保留为历史设计、实验和迁移证据，其中包含已经删除的旧客户端授权模型；它们不得再作为当前实现依据。
+> **当前设计入口：** [20-current-server-client-model.md](20-current-server-client-model.md)、[21-provider-hooks.md](21-provider-hooks.md) 与仓库根 `README.md`。`00`-`19` 和 `evidence/` 保留为历史设计、实验和迁移证据，其中包含已经删除的旧客户端授权模型；它们不得再作为当前实现依据。
 
 AIH Fabric 文档包用于长期追溯远程开发产品线的设计演进。新实现必须先遵循当前 Server/Client 模型，再按需查阅历史记录理解背景。
 
 ## 阅读顺序
 
 1. [20-current-server-client-model.md](20-current-server-client-model.md): 当前唯一 Server/Client、Management Key 和 worker join 边界。
-2. 根目录 [README.md](../../README.md): 当前 CLI、WebUI、Server 与跨平台客户端使用说明。
-3. `00`-`19`: 只作为历史设计与迁移记录阅读。
-4. [08-current-status.md](08-current-status.md) 与 [evidence/](evidence/): append-only 历史验证证据。
+2. [21-provider-hooks.md](21-provider-hooks.md): provider hook / 事件 / 审批 / steer 的现役全景（`lib/server/` 代码引它作为更新依据）。
+3. 根目录 [README.md](../../README.md): 当前 CLI、WebUI、Server 与跨平台客户端使用说明。
+4. `00`-`19`: 只作为历史设计与迁移记录阅读。
+5. [08-current-status.md](08-current-status.md) 与 [evidence/](evidence/): append-only 历史验证证据。
 
 实验记录放在 [evidence/](evidence/)；任何真实网络、远程运行、弱网、relay failover 结论都必须有对应 evidence 文件。
 

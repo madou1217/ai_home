@@ -259,9 +259,16 @@ test('usage refresh gate: configured oauth accounts only, not_applicable exclude
   );
   assert.equal(canRefreshUsageAccount(makeAccount({ configured: true, apiKeyMode: true })), false);
   assert.equal(canRefreshUsageAccount(makeAccount({ configured: false, apiKeyMode: false })), false);
+  // 结构性「不适用」（无原因）没有可刷新的额度；结论型（有原因）允许手动重探（续订后立刻可见）。
   assert.equal(
     canRefreshUsageAccount(makeAccount({ configured: true, apiKeyMode: false, quotaStatus: 'not_applicable' })),
     false
+  );
+  assert.equal(
+    canRefreshUsageAccount(makeAccount({
+      configured: true, apiKeyMode: false, quotaStatus: 'not_applicable', quotaReason: 'no_plan_balance'
+    })),
+    true
   );
 });
 

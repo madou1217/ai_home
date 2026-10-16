@@ -84,12 +84,17 @@ export type AccountDisplayStateKind =
 
 export function canRefreshUsageAccount(record: Pick<Account,
   'status' | 'configured' | 'apiKeyMode' | 'authMode' | 'authType' | 'credentialType'
-  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'schedulableStatus'
+  | 'runtimeStatus' | 'runtimeReason' | 'quotaStatus' | 'quotaReason' | 'schedulableStatus'
 >) {
   // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
   if (requiresAccountReauth(record)) return false;
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return false;
-  return Boolean(record.configured) && !record.apiKeyMode;
+  if (!record.configured || record.apiKeyMode) return false;
+  // 「额度不适用」分两种：结论型（有原因：未订阅/已到期/Free 档）仍允许手动重探——
+  // 续订后能立刻看到额度；结构性（无原因：provider 无额度能力）没有可刷新的额度，保持禁用。
+  if (String(record.quotaStatus || '').trim() === 'not_applicable') {
+    return Boolean(String(record.quotaReason || '').trim());
+  }
+  return true;
 }
 
 export function canReauthAccount(record: Pick<Account, 'apiKeyMode'>) {

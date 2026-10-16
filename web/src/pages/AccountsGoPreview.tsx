@@ -261,10 +261,14 @@ function persistActiveProviderTab(provider: AccountProviderFilter): void {
   try { window.localStorage.setItem(ACCOUNTS_ACTIVE_PROVIDER_STORAGE_KEY, provider); } catch (_error) {}
 }
 
-function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'schedulableStatus'>) {
+function canRefreshUsageAccount(record: Pick<Account, 'configured' | 'apiKeyMode' | 'runtimeStatus' | 'quotaStatus' | 'quotaReason' | 'schedulableStatus'>) {
   // OAuth 已配置账号始终允许手动刷新用量,不再依赖已有额度状态。
-  if (String(record.quotaStatus || '').trim() === 'not_applicable') return false;
-  return Boolean(record.configured) && !record.apiKeyMode;
+  if (!record.configured || record.apiKeyMode) return false;
+  // 结论型「不适用」（有原因）允许手动重探；结构性（无原因）保持禁用——与 account-state 同规则。
+  if (String(record.quotaStatus || '').trim() === 'not_applicable') {
+    return Boolean(String(record.quotaReason || '').trim());
+  }
+  return true;
 }
 
 function canReauthAccount(record: Pick<Account, 'apiKeyMode'>) {

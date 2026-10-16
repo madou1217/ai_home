@@ -48,6 +48,7 @@ export const MANAGED_TOOL_CAPABILITY_LABELS: Readonly<Record<string, string>> = 
 export const MANAGED_TOOL_MANAGEMENT_LABELS: Readonly<Record<string, string>> = Object.freeze({
   aih: 'AIH 管理',
   homebrew: 'Homebrew 管理',
+  apt: '系统包（apt）',
   external: '外部安装'
 });
 

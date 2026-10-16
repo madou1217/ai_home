@@ -20,7 +20,7 @@ import {
 } from '@/components/toolkit/edge-proxy/edge-proxy-presentation';
 import type { EdgeApplyResult, EdgeNginxMode, EdgePlan, EdgeProvider, EdgeStatus } from '@/components/toolkit/edge-proxy/types';
 import type { ManagedToolItem } from '@/types';
-import { useManagedTools } from '@/components/toolkit/use-managed-tools';
+import { useManagedTools, MANAGED_TOOL_MANAGEMENT_LABELS as MANAGEMENT_LABELS } from '@/components/toolkit/use-managed-tools';
 import { useToolService } from '@/components/toolkit/use-tool-service';
 import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } from './toolkit-parts';
 
@@ -182,7 +182,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
                 },
                 { key: 'role', label: '用途', value: EDGE_PROVIDER_META[item].role },
                 { key: 'capability', label: '能力', value: EDGE_PROVIDER_META[item].capability },
-                { key: 'managed', label: '管理', value: tool?.managedBy === 'homebrew' ? 'Homebrew' : tool?.managedBy === 'aih' ? 'AIH' : tool?.managedBy === 'external' ? '外部安装' : '—' },
+                { key: 'managed', label: '管理', value: tool?.managedBy ? (MANAGEMENT_LABELS[tool.managedBy] || tool.managedBy) : '—' },
                 ...(service ? [{ key: 'service', label: '服务', value: service.controllable ? (service.running ? '运行中' : '已停止') : '未托管', tone: service.running ? 'ok' as const : 'muted' as const }] : [])
               ]}
             />

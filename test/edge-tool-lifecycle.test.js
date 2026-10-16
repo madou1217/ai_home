@@ -83,6 +83,25 @@ test('安装计划按平台给真命令：Homebrew / apt（免密 sudo）/ Windo
   assert.match(win.plans[0].args.join(' '), /Expand-Archive/);
 });
 
+test('Linux 上系统包装的（apt）算包管理器管理：可更新、可卸载，但绝不动外部自装的那份', () => {
+  const lifecycle = packageManagerLifecycle(DESCRIPTOR);
+  const apt = lifecycle.describe(
+    { ...TOOL, installed: true, executablePath: '/usr/sbin/nginx' },
+    { platform: 'linux' }
+  );
+  assert.equal(apt.managedBy, 'apt');
+  assert.equal(apt.canUpdate, true);
+  assert.equal(apt.canUninstall, true);
+
+  const homemade = lifecycle.describe(
+    { ...TOOL, installed: true, executablePath: '/opt/nginx-src/sbin/nginx' },
+    { platform: 'darwin' }
+  );
+  assert.equal(homemade.managedBy, 'external');
+  assert.equal(homemade.canUpdate, false);
+  assert.equal(homemade.canUninstall, false);
+});
+
 test('没有可自动执行的安装方式时明确说不，而不是给一条没法确认的命令', () => {
   const lifecycle = packageManagerLifecycle({ homebrew: 'nginx' });
   const result = lifecycle.resolvePlans(TOOL, 'install', { platform: 'linux' });

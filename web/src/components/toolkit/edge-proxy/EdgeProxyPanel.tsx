@@ -18,7 +18,7 @@ import ManagedToolLogsModal from '../ManagedToolLogsModal';
 import ToolkitStatusTrack from '../ToolkitStatusTrack';
 import { ToolServiceActions, ToolServicePolicy } from '../ToolServiceControls';
 import { useToolService } from '../use-tool-service';
-import { managedToolConfigSummary as configSummary, useManagedTools } from '../use-managed-tools';
+import { managedToolConfigSummary as configSummary, MANAGED_TOOL_MANAGEMENT_LABELS as MANAGEMENT_LABELS, useManagedTools } from '../use-managed-tools';
 import { serviceSummary } from '../tool-service-presentation';
 import { LIFECYCLE_ACTION_LABELS } from '../lifecycle-presentation';
 import EdgePlanCard from './EdgePlanCard';
@@ -35,10 +35,9 @@ const PROVIDER_ACTIONS: Record<EdgeProvider, string> = {
 };
 
 function managementLabel(managedBy: string) {
-  if (managedBy === 'homebrew') return 'Homebrew 管理';
-  if (managedBy === 'aih') return 'AIH 管理';
-  if (managedBy === 'external') return '外部安装';
-  return '未安装';
+  if (!managedBy) return '未安装';
+  // 标签只有一份事实源（与受管工具面板共用）。
+  return MANAGEMENT_LABELS[managedBy] || managedBy;
 }
 
 /**

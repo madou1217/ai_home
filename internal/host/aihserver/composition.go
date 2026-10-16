@@ -42,6 +42,7 @@ import (
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
 	"github.com/madou1217/ai_home/internal/adapters/clientversion"
+	codebuddyfamilymodelcatalog "github.com/madou1217/ai_home/internal/adapters/codebuddyfamily/modelcatalog"
 	codexresponses "github.com/madou1217/ai_home/internal/adapters/codex/responses"
 	"github.com/madou1217/ai_home/internal/adapters/codex/responseswebsocket"
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
@@ -346,20 +347,16 @@ func newHandlers(
 	}
 	modelRefresh, err = accountapp.NewModelRefreshCoordinator(
 		accountapp.ModelRefreshCoordinatorOptions{
-			Catalog:   catalog,
-			Refresher: recoveringModelManagement,
-			ProviderConcurrency: map[string]int{
-				string(inference.ProviderCodex):  modelRefreshConcurrency,
-				string(inference.ProviderClaude): modelRefreshConcurrency,
-				string(inference.ProviderAgy):    modelRefreshConcurrency,
-			},
-			RefreshTimeout: modelRefreshTimeout,
-			BaseBackoff:    modelRefreshBaseBackoff,
-			MaxBackoff:     modelRefreshMaxBackoff,
-			MaxAttempts:    modelRefreshMaxAttempts,
-			Clock:          time.Now,
-			Random:         rand.Reader,
-			Observer:       newModelRefreshObserver(errorLog),
+			Catalog:             catalog,
+			Refresher:           recoveringModelManagement,
+			ProviderConcurrency: modelRefreshProviderConcurrency(),
+			RefreshTimeout:      modelRefreshTimeout,
+			BaseBackoff:         modelRefreshBaseBackoff,
+			MaxBackoff:          modelRefreshMaxBackoff,
+			MaxAttempts:         modelRefreshMaxAttempts,
+			Clock:               time.Now,
+			Random:              rand.Reader,
+			Observer:            newModelRefreshObserver(errorLog),
 		},
 	)
 	if err != nil {
@@ -1171,6 +1168,23 @@ func newResponsesDecodeErrorObserver(logger *log.Logger) func(error) {
 	}
 }
 
+// modelRefreshProviderConcurrency 声明拥有独立刷新队列的 Provider 及其并发。
+//
+// Canonical 三支各一条队列；家族四支的刷新形态是同一个 HTTP 目录端点
+// （internal/adapters/codebuddyfamily/modelcatalog），同样各占一条、并发 1。
+// 漏登记的代价是静默的：账号不会被扫描/首次恢复刷新，模型目录永远为空。
+func modelRefreshProviderConcurrency() map[string]int {
+	concurrency := map[string]int{
+		string(inference.ProviderCodex):  modelRefreshConcurrency,
+		string(inference.ProviderClaude): modelRefreshConcurrency,
+		string(inference.ProviderAgy):    modelRefreshConcurrency,
+	}
+	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
+		concurrency[providerID] = modelRefreshConcurrency
+	}
+	return concurrency
+}
+
 // newModelDiscovery 创建生产 Codex/Claude 目录源，或使用测试显式注入的策略。
 func newModelDiscovery(
 	catalog *providers.Catalog,
@@ -1196,11 +1210,16 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 AGY 模型目录源失败: %w", err)
 		}
+		familySources, err := codebuddyfamilymodelcatalog.NewModelCatalogSources(client)
+		if err != nil {
+			return nil, fmt.Errorf("创建家族模型目录源失败: %w", err)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
 			agySource,
 		}
+		strategies = append(strategies, familySources...)
 	}
 	discovery, err := accountapp.NewModelDiscovery(catalog, strategies)
 	if err != nil {

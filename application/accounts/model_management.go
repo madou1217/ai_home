@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -62,6 +63,22 @@ func NewModelDiscovery(
 		indexed[providerID] = strategy
 	}
 	return &ModelDiscovery{catalog: catalog, strategies: indexed}, nil
+}
+
+// ProviderIDs 返回注册了发现策略的 Provider 集合（升序快照）。
+//
+// 供装配自检与守卫测试比对「有发现策略的 Provider」与「有刷新队列的 Provider」：
+// 两者不一致时的表现是静默的（账号永远不会被扫描刷新，模型目录一直为空）。
+func (discovery *ModelDiscovery) ProviderIDs() []string {
+	if discovery == nil {
+		return nil
+	}
+	providers := make([]string, 0, len(discovery.strategies))
+	for providerID := range discovery.strategies {
+		providers = append(providers, providerID)
+	}
+	sort.Strings(providers)
+	return providers
 }
 
 // DiscoverModels 执行 Provider 策略并规范化完整模型集合。

@@ -348,6 +348,50 @@ func TestHandlerClosesAfterUpstreamTerminalFailure(t *testing.T) {
 	}
 }
 
+// TestHandlerNormalizesEdgeRejectionOnDialFailure 验证上游握手被站点边缘拒绝
+// （APISIX 请求格式拒绝）时不透传拦截页：只记一次 NoStateChange 观察（不阻塞、
+// 不换号、不冷却），客户端收到网关 502 + upstream_edge_rejected（2026-10-15 事故镜像修复）。
+func TestHandlerNormalizesEdgeRejectionOnDialFailure(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(
+		response http.ResponseWriter,
+		_ *http.Request,
+	) {
+		response.Header().Set("Server", "APISIX/3.9.1")
+		response.WriteHeader(http.StatusUnauthorized)
+		_, _ = response.Write([]byte(`{"message":"invalid_format"}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	recorder := &attemptRecorder{}
+	handler := newTestHandler(t, upstream.URL, recorder)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	client, _ := dialGateway(t, server.URL, nil)
+	defer client.CloseNow()
+	writeClientText(t, client, []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`))
+	_, payload, err := readClientMessage(t, client)
+	if err != nil {
+		t.Fatalf("readClientMessage() error = %v payload=%s", err, payload)
+	}
+	if !strings.Contains(string(payload), `"status":502`) ||
+		!strings.Contains(string(payload), "upstream_edge_rejected") {
+		t.Fatalf("边缘拒绝必须交付网关 502 + upstream_edge_rejected，实际 %s", payload)
+	}
+	if strings.Contains(string(payload), "invalid_format") {
+		t.Fatalf("不得透传边缘拦截页原文: %s", payload)
+	}
+	waitForAttempts(t, recorder, 0, 1)
+	failure := recorder.Failures()[0]
+	if failure.RuntimeKind() != runtimecore.FailureUpstreamEdgeRejected ||
+		failure.ResponseFailure().Retryable() ||
+		!failure.BlockDirective().IsZero() {
+		t.Fatalf("记账口径错误: %#v", failure)
+	}
+}
+
 // TestHandlerRefreshesModelAfterUnsupportedFailure 验证明确的模型不支持事件
 // 只刷新该账号 Provider 的物化模型目录，同时关闭当前失败连接。
 func TestHandlerRefreshesModelAfterUnsupportedFailure(t *testing.T) {

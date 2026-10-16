@@ -168,6 +168,10 @@ func failureHTTPStatus(failure inference.ResponseFailure) int {
 	case string(runtimecore.FailureModelOverloaded),
 		string(runtimecore.FailureUpstreamUnavailable):
 		return http.StatusServiceUnavailable
+	case string(runtimecore.FailureUpstreamEdgeRejected):
+		// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：
+		// 交付 502 而不是让客户端把上游 401/403 当成账号问题（与 Node 同语义）。
+		return http.StatusBadGateway
 	default:
 		return http.StatusBadGateway
 	}

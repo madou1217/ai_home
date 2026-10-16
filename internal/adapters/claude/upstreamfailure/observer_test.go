@@ -230,6 +230,61 @@ func TestObserveClaudeHTTPRejectsSuccessWithoutFailure(t *testing.T) {
 	}
 }
 
+// TestObserveClaudeHTTPRecognizesEdgeRejection 固化「站点边缘拒绝不是凭据失效」：
+// APISIX invalid_format / WAF 拦截页在 canonical claude 路径上同样必须按
+// NoStateChange 处理，不能把健康账号判成凭据被拒。
+func TestObserveClaudeHTTPRecognizesEdgeRejection(t *testing.T) {
+	t.Parallel()
+
+	observedAt := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	apisix := http.Header{}
+	apisix.Set("Server", "APISIX/3.9.1")
+	classification, err := ObserveHTTP(
+		newClaudeHTTPResponse(
+			http.StatusUnauthorized,
+			apisix,
+			`{"message":"invalid_format"}`,
+		),
+		observedAt,
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP(edge) error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("ObserveHTTP(edge) = %#v", classification)
+	}
+
+	// 边缘文案谈凭据时不进入边缘判定（厂商真正的 401 仍按原逻辑处理）。
+	credentialShaped, err := ObserveHTTP(
+		newClaudeHTTPResponse(
+			http.StatusUnauthorized,
+			apisix,
+			`{"message":"token expired"}`,
+		),
+		observedAt,
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP(credential) error = %v", err)
+	}
+	if credentialShaped.Kind() == runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("凭据语义的 401 不应判成边缘拒绝: %#v", credentialShaped)
+	}
+
+	waf := http.Header{}
+	waf.Set("Cf-Mitigated", "challenge")
+	blocked, err := ObserveHTTP(
+		newClaudeHTTPResponse(
+			http.StatusForbidden,
+			waf,
+			"<!DOCTYPE html><html><body>Just a moment...</body></html>",
+		),
+		observedAt,
+	)
+	if err != nil || blocked.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("ObserveHTTP(waf) = %#v (%v)", blocked, err)
+	}
+}
+
 // newClaudeHTTPResponse 创建不包含真实凭据的 Claude 响应测试替身。
 func newClaudeHTTPResponse(
 	statusCode int,

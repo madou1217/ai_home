@@ -121,6 +121,8 @@ func SafeMessage(kind runtimecore.FailureKind) string {
 		return "上游资源不存在"
 	case runtimecore.FailureSafetyRejected:
 		return "请求被上游安全策略拒绝"
+	case runtimecore.FailureUpstreamEdgeRejected:
+		return "上游站点边缘拒绝了本次请求"
 	case runtimecore.FailureMalformedResponse:
 		return "上游响应结构无效"
 	case runtimecore.FailureRequestCancelled:

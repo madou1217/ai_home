@@ -443,6 +443,11 @@ func (handler *Handler) handleDialFailure(
 			response.StatusCode <= 599 {
 			status = response.StatusCode
 		}
+		if failure.RuntimeKind() == runtimecore.FailureUpstreamEdgeRejected {
+			// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：交付网关 502，
+			// 不透传上游的 401/403 拦截页（与 Node 的 edge policy 同语义）。
+			status = http.StatusBadGateway
+		}
 		writeWebSocketError(
 			client,
 			status,

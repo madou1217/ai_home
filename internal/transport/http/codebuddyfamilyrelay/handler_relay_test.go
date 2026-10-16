@@ -12,6 +12,7 @@ import (
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 )
@@ -93,6 +94,16 @@ type relayHarness struct {
 
 func newRelayHarness(t *testing.T, upstream http.Handler) *relayHarness {
 	t.Helper()
+	return newRelayHarnessWithAttempts(t, upstream, stubAttempts{})
+}
+
+// newRelayHarnessWithAttempts 与 newRelayHarness 相同，但允许注入可断言的运行态记录器。
+func newRelayHarnessWithAttempts(
+	t *testing.T,
+	upstream http.Handler,
+	attempts inferencegateway.AttemptRecorder,
+) *relayHarness {
+	t.Helper()
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 	accountRef, err := accountcore.ParseAccountRef(relayAccountRef)
@@ -106,7 +117,7 @@ func newRelayHarness(t *testing.T, upstream http.Handler) *relayHarness {
 		Fallback:    fallback,
 		Credentials: staticCredentials{binding: binding, observation: observation},
 		Client:      server.Client(),
-		Attempts:    stubAttempts{},
+		Attempts:    attempts,
 		Clock:       func() time.Time { return time.Unix(1792025000, 0) },
 		Endpoint: func(string) (string, bool) {
 			return server.URL + ChatCompletionsPath, true
@@ -116,6 +127,28 @@ func newRelayHarness(t *testing.T, upstream http.Handler) *relayHarness {
 		t.Fatalf("装配失败: %v", err)
 	}
 	return &relayHarness{handler: handler, fallback: fallback, upstream: server}
+}
+
+// recordingAttempts 记录每次运行态写入（用于断言边缘拒绝的记账口径）。
+type recordingAttempts struct {
+	failures []inferencegateway.AttemptFailure
+}
+
+func (*recordingAttempts) RecordSuccess(
+	context.Context,
+	runtimecore.ModelRoute,
+	inferencegateway.AttemptSuccess,
+) error {
+	return nil
+}
+
+func (recorder *recordingAttempts) RecordFailure(
+	_ context.Context,
+	_ runtimecore.ModelRoute,
+	failure inferencegateway.AttemptFailure,
+) error {
+	recorder.failures = append(recorder.failures, failure)
+	return nil
 }
 
 // post 发一次 chat completions 请求。
@@ -280,6 +313,41 @@ func TestServeHTTPSurfacesUpstreamEnvelopeAndRetryHint(t *testing.T) {
 	}
 	if got := response.Header().Get("X-AIH-Retry-Account"); got != "true" {
 		t.Fatalf("可重试失败应带换号提示，实际 %q", got)
+	}
+}
+
+// 站点边缘拒绝（APISIX invalid_format）：与账号无关——只记一次 NoStateChange
+// 观察（不阻塞、不冷却、不换号），交付网关自己的 502，不透传上游拦截页
+// （2026-10-15 事故的镜像修复；Node 同语义）。
+func TestServeHTTPDeliversEdgeRejectionAsGatewayError(t *testing.T) {
+	const edgeBody = `{"message":"invalid_format"}`
+	recorder := &recordingAttempts{}
+	harness := newRelayHarnessWithAttempts(t, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Server", "APISIX/3.9.1")
+		response.Header().Set("Content-Type", "text/plain")
+		response.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(response, edgeBody)
+	}), recorder)
+	response := harness.post(t, `{"model":"hy4-preview","messages":[{"role":"system","content":"s"}]}`)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("边缘拒绝必须交付网关 502，实际 %d（%s）", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "invalid_format") {
+		t.Fatalf("不得透传边缘拦截页原文: %s", response.Body.String())
+	}
+	payload := decodeJSON(t, response.Body.Bytes())
+	errorObject, _ := decodeRawObject(payload["error"])
+	if code, _ := rawString(errorObject["code"]); code != "upstream_edge_rejected" {
+		t.Fatalf("错误码应为 upstream_edge_rejected，实际 %q", code)
+	}
+	if got := response.Header().Get("X-AIH-Retry-Account"); got != "" {
+		t.Fatalf("边缘拒绝不得提示换号，实际 %q", got)
+	}
+	if len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() != runtimecore.FailureUpstreamEdgeRejected ||
+		!recorder.failures[0].BlockDirective().IsZero() ||
+		recorder.failures[0].ResponseFailure().Retryable() {
+		t.Fatalf("记账口径错误: %#v", recorder.failures)
 	}
 }
 

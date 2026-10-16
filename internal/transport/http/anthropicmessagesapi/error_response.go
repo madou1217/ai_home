@@ -7,6 +7,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"net/http"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/anthropicmessages"
@@ -114,6 +115,11 @@ func writeCanonicalFailure(
 
 // failureHTTPStatus 将公开 Anthropic 错误类别映射为 HTTP 状态。
 func failureHTTPStatus(failure inference.ResponseFailure) int {
+	if failure.Code() == string(runtimecore.FailureUpstreamEdgeRejected) {
+		// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：
+		// 交付 502 而不是让客户端把上游 401/403 当成账号问题（与 Node 同语义）。
+		return http.StatusBadGateway
+	}
 	switch anthropicmessages.ErrorTypeForFailure(failure) {
 	case "invalid_request_error":
 		return http.StatusBadRequest

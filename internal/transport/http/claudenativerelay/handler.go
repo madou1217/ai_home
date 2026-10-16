@@ -421,21 +421,24 @@ func readNativeRequest(
 }
 
 // recordHTTPFailure 保留原始错误正文，同时记录精确账号模型运行态。
+//
+// 第二个返回值表示「站点边缘拒绝」（WAF 拦截页 / 网关请求格式拒绝，与账号无关）：
+// 调用方应合成网关 502 而不是透传拦截页，也不换号（换号只会拿到同一张拦截页）。
 func (handler *Handler) recordHTTPFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
 	credentialObservation accountcredentials.CredentialObservation,
 	response *http.Response,
-) bool {
+) (retry bool, edgeRejected bool) {
 	if ctx == nil || response == nil || response.Body == nil {
-		return false
+		return false, false
 	}
 	originalBody := response.Body
 	// 账号自定义规则与内置观察器必须看到同一份原始正文：按观察器的同一上限预读
 	// 一次，再把它同时交给分类器和调用方（MultiReader 保证交付字节不变）。
 	prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
 	if readErr != nil {
-		return false
+		return false, false
 	}
 	observation := *response
 	observation.Body = io.NopCloser(bytes.NewReader(prefix))
@@ -453,13 +456,16 @@ func (handler *Handler) recordHTTPFailure(
 		},
 	)
 	if err != nil {
-		return false
+		return false, false
 	}
+	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
+	// 记账只留一次可观察的失败结果（不阻塞、不冷却、不换号），交付由调用方合成 502。
+	edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
 	failure, err := attemptfailure.New(classification)
 	if err != nil {
-		return false
+		return false, false
 	}
-	return handler.recordFailure(ctx, route, credentialObservation, failure)
+	return handler.recordFailure(ctx, route, credentialObservation, failure), edgeRejected
 }
 
 // recordTransportFailure 使用稳定 Go 错误身份记录尚未收到响应的失败。

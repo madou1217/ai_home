@@ -139,6 +139,36 @@ func TestSafetyRejectionIsNormalizedAndNeverRotated(t *testing.T) {
 	}
 }
 
+// 站点边缘拒绝（APISIX invalid_format）：与账号无关——只记一次 NoStateChange 观察，
+// 不换号，交付网关 502 而不是上游 401 拦截页（2026-10-15 事故的镜像修复）。
+func TestEdgeRejectionIsNormalizedAndNeverRotated(t *testing.T) {
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		calls++
+		response.Header().Set("Server", "APISIX/3.9.1")
+		response.Header().Set("Content-Type", "text/plain")
+		response.WriteHeader(401)
+		_, _ = io.WriteString(response, `{"message":"invalid_format"}`)
+	}))
+	defer upstream.Close()
+	handler, recorder, _ := fixture(t, upstream.URL, 2)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, nativeRequestFor([]byte(`{"model":"gpt-native"}`)))
+	if response.Code != 502 || calls != 1 ||
+		!strings.Contains(response.Body.String(), "upstream_edge_rejected") ||
+		strings.Contains(response.Body.String(), "invalid_format") {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls, response.Body.String())
+	}
+	if len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatal("wrong classification")
+	}
+	if recorder.failures[0].ResponseFailure().Retryable() ||
+		!recorder.failures[0].BlockDirective().IsZero() {
+		t.Fatalf("边缘拒绝不得阻塞或可重试: %#v", recorder.failures[0])
+	}
+}
+
 func TestFallbackRetainsOriginalRequest(t *testing.T) {
 	handler, _, source := fixture(t, "http://127.0.0.1:1/v1", 1)
 	source.notNative = true

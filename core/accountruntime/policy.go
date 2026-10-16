@@ -60,6 +60,12 @@ const (
 	FailureRegionUnsupported FailureKind = "region_unsupported"
 	// FailurePermissionDenied 表示凭据有效，但无权访问当前资源或能力。
 	FailurePermissionDenied FailureKind = "permission_denied"
+	// FailureUpstreamEdgeRejected 表示站点边缘（WAF/CDN/网关）拒绝了请求本身。
+	//
+	// 与账号凭据无关（换号只会得到同一张拦截页 / 同一个格式门），因此不记账、
+	// 不换号、不冷却。判定见 internal/adapters/upstreamfailure 的边缘拒绝识别
+	// （2026-10-15 家族事故：APISIX 按请求格式回 401，被通用 401 分支锁号一年）。
+	FailureUpstreamEdgeRejected FailureKind = "upstream_edge_rejected"
 	// FailureInvalidRequest 表示当前请求参数或上下文无效。
 	FailureInvalidRequest FailureKind = "invalid_request"
 	// FailureNotFound 表示当前请求访问的上游资源不存在。
@@ -127,6 +133,7 @@ func PolicyFor(kind FailureKind) (FailurePolicy, error) {
 		FailureSafetyRejected,
 		FailureMalformedResponse,
 		FailureRequestCancelled,
+		FailureUpstreamEdgeRejected,
 		FailureUnclassified:
 		return blockingPolicy(ActionNoStateChange), nil
 	default:

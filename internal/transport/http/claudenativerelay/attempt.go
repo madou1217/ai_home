@@ -167,12 +167,24 @@ func (handler *Handler) attemptRelay(
 		}, false
 	}
 
-	retry := handler.recordHTTPFailure(
+	retry, edgeRejected := handler.recordHTTPFailure(
 		request.Context(),
 		route,
 		observation,
 		upstreamResponse,
 	)
+	if edgeRejected {
+		// 与账号无关的边缘拒绝：交付网关自己的 502，不透传上游拦截页（与 Node 同语义）。
+		closeUpstreamResponse(upstreamResponse)
+		return attemptOutcome{
+			route: route,
+			failure: relayFailure{
+				status:  http.StatusBadGateway,
+				code:    "upstream_edge_rejected",
+				message: "上游站点边缘拒绝了本次请求（与账号无关）",
+			},
+		}, false
+	}
 	// 失败响应一律保留：无论是否继续换号，耗尽时都要把它原样交付。
 	return attemptOutcome{
 		response:     upstreamResponse,

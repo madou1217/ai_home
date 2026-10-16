@@ -36,6 +36,7 @@ func TestFailurePolicyMatrix(t *testing.T) {
 		{"内容策略拒绝", FailureSafetyRejected, ActionNoStateChange, 0, 0},
 		{"响应结构错误", FailureMalformedResponse, ActionNoStateChange, 0, 0},
 		{"请求被取消", FailureRequestCancelled, ActionNoStateChange, 0, 0},
+		{"站点边缘拒绝", FailureUpstreamEdgeRejected, ActionNoStateChange, 0, 0},
 		{"未分类错误", FailureUnclassified, ActionNoStateChange, 0, 0},
 	}
 

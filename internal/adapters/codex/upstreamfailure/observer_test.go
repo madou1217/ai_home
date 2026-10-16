@@ -452,6 +452,61 @@ func TestObserveCodexHTTPRejectsSuccessWithoutFailure(t *testing.T) {
 	}
 }
 
+// TestObserveCodexHTTPRecognizesEdgeRejection 固化「站点边缘拒绝不是凭据失效」：
+// 与 2026-10-15 家族事故同源的形状（APISIX invalid_format / WAF 拦截页）在 canonical
+// codex 路径上同样必须按 NoStateChange 处理，不能把健康账号判成凭据被拒。
+func TestObserveCodexHTTPRecognizesEdgeRejection(t *testing.T) {
+	t.Parallel()
+
+	observedAt := time.Date(2026, 7, 28, 18, 0, 0, 0, time.UTC)
+	apisix := http.Header{}
+	apisix.Set("Server", "APISIX/3.9.1")
+	classification, err := ObserveHTTP(
+		newCodexHTTPResponse(
+			http.StatusUnauthorized,
+			apisix,
+			`{"message":"invalid_format"}`,
+		),
+		observedAt,
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP(edge) error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("ObserveHTTP(edge) = %#v", classification)
+	}
+
+	// 边缘文案谈凭据时不进入边缘判定（厂商真正的 401 仍按原逻辑处理）。
+	credentialShaped, err := ObserveHTTP(
+		newCodexHTTPResponse(
+			http.StatusUnauthorized,
+			apisix,
+			`{"message":"api key expired"}`,
+		),
+		observedAt,
+	)
+	if err != nil {
+		t.Fatalf("ObserveHTTP(credential) error = %v", err)
+	}
+	if credentialShaped.Kind() == runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("凭据语义的 401 不应判成边缘拒绝: %#v", credentialShaped)
+	}
+
+	waf := http.Header{}
+	waf.Set("Content-Type", "text/html; charset=UTF-8")
+	blocked, err := ObserveHTTP(
+		newCodexHTTPResponse(
+			http.StatusForbidden,
+			waf,
+			"<!DOCTYPE html><html><body>Just a moment...</body></html>",
+		),
+		observedAt,
+	)
+	if err != nil || blocked.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("ObserveHTTP(waf) = %#v (%v)", blocked, err)
+	}
+}
+
 // newCodexHTTPResponse 创建无需真实凭据的错误响应测试替身。
 func newCodexHTTPResponse(
 	statusCode int,

@@ -220,6 +220,13 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 				handler.fail(response, trail, "upstream_safety_rejected")
 				return
 			}
+			if failure.RuntimeKind() == runtimecore.FailureUpstreamEdgeRejected {
+				// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：交付网关 502，
+				// 不透传上游拦截页，也不换号（与 Node 的 edge policy 同语义）。
+				_ = upstream.Body.Close()
+				handler.fail(response, trail, "upstream_edge_rejected")
+				return
+			}
 			retry = failure.ResponseFailure().Retryable()
 		}
 		if readErr != nil || len(prefix) > 1024*1024 || !retry {

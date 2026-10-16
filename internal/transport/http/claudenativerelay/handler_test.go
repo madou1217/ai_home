@@ -222,6 +222,52 @@ func TestHandlerRecordsPreCommitFailureAndSignalsAccountRetry(t *testing.T) {
 	}
 }
 
+// TestHandlerDeliversEdgeRejectionAsGatewayError 验证站点边缘拒绝（APISIX invalid_format）
+// 与账号无关：只记一次 NoStateChange 观察（不阻塞、不冷却、不换号），交付网关 502 而不是
+// 上游 401 拦截页（2026-10-15 事故的镜像修复；Node 同语义）。
+func TestHandlerDeliversEdgeRejectionAsGatewayError(t *testing.T) {
+	t.Parallel()
+
+	accountRef, credential := newRelayOAuthCredential(t)
+	recorder := &relayAttemptRecorder{}
+	client := &relayFailureClient{
+		status: http.StatusText(http.StatusUnauthorized),
+		code:   http.StatusUnauthorized,
+		header: http.Header{
+			"Server":       {"APISIX/3.9.1"},
+			"Content-Type": {"text/plain"},
+		},
+		body: `{"message":"invalid_format"}`,
+	}
+	handler := newRelayHandlerWithRecorder(t, accountRef, credential, client, recorder)
+	request := newNativeRelayRequest(
+		t,
+		`{"model":"claude-opus-5","messages":[{"role":"user","content":"relay"}]}`,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("边缘拒绝必须交付网关 502，实际 %d（%s）", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "invalid_format") {
+		t.Fatalf("不得透传边缘拦截页原文: %s", response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "upstream_edge_rejected") {
+		t.Fatalf("错误码应为 upstream_edge_rejected，实际 %s", response.Body.String())
+	}
+	if got := response.Header().Get(gatewaycontract.RetryAccountHeader); got != "" {
+		t.Fatalf("边缘拒绝不得提示换号，实际 %q", got)
+	}
+	if len(recorder.failures) != 1 ||
+		recorder.failures[0].RuntimeKind() != runtimecore.FailureUpstreamEdgeRejected ||
+		recorder.failures[0].ResponseFailure().Retryable() ||
+		!recorder.failures[0].BlockDirective().IsZero() {
+		t.Fatalf("记账口径错误: %#v", recorder.failures)
+	}
+}
+
 // TestHandlerPreservesStaleCredentialFailureResponseWithoutRuntimeWrite 验证请求读取
 // v1 凭据后账号切到 v2，v1 的迟到 529 仍原样返回并保持换号语义，但不污染
 // v2 的账号运行态。

@@ -168,3 +168,45 @@ func TestObserveHTTPHonoursRetryAfterWithinBounds(t *testing.T) {
 		t.Fatalf("非法 Retry-After 不应影响分类: %v", err)
 	}
 }
+
+// TestObserveHTTPRecognizesEdgeRejection 固化 2026-10-15 事故：站点边缘按**请求形态**拒绝
+// （server: APISIX/* + 单键 message 信封 / WAF 拦截页）与账号凭据无关，换号只会拿到同一张
+// 拒绝——绝不能判成凭据失效给健康账号挂硬阻塞。
+func TestObserveHTTPRecognizesEdgeRejection(t *testing.T) {
+	apisix := http.Header{}
+	apisix.Set("Server", "APISIX/3.9.1")
+	classification, err := ObserveHTTP(
+		http.StatusUnauthorized,
+		apisix,
+		[]byte(`{"message":"invalid_format"}`),
+		time.Now(),
+	)
+	if err != nil {
+		t.Fatalf("边缘拒绝应可分类: %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("401 invalid_format 不应判成凭据失效: %+v", classification)
+	}
+	// 边缘文案谈凭据时仍按凭据处理（避免把厂商真正的 401 吞掉）。
+	credentialShaped, err := ObserveHTTP(
+		http.StatusUnauthorized,
+		apisix,
+		[]byte(`{"message":"token expired"}`),
+		time.Now(),
+	)
+	if err != nil || credentialShaped.Kind() != runtimecore.FailureCredentialRejected {
+		t.Fatalf("凭据语义的 401 仍应按凭据拒绝: %+v (%v)", credentialShaped, err)
+	}
+	// WAF 拦截页（cf-mitigated / HTML 正文）同样与账号无关。
+	waf := http.Header{}
+	waf.Set("Cf-Mitigated", "challenge")
+	blocked, err := ObserveHTTP(
+		http.StatusForbidden,
+		waf,
+		[]byte("<!DOCTYPE html><html><body>blocked</body></html>"),
+		time.Now(),
+	)
+	if err != nil || blocked.Kind() != runtimecore.FailureUpstreamEdgeRejected {
+		t.Fatalf("WAF 拦截页不应判成账号问题: %+v (%v)", blocked, err)
+	}
+}

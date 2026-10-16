@@ -118,6 +118,11 @@ func ObserveHTTP(
 	if statusCode <= 0 {
 		return sharedfailure.Classification{}, ErrInvalidObservation
 	}
+	if classification, rejected := sharedfailure.ObserveEdgeRejection(statusCode, header, body); rejected {
+		// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号凭据无关：
+		// 不按凭据失效处理，调用方也不换号（与 Node 的 edge policy 同语义）。
+		return classification, nil
+	}
 	envelope := ParseEnvelope(statusCode, body)
 	if statusCode < http.StatusMultipleChoices && !envelope.Retryable {
 		return sharedfailure.Classification{}, sharedfailure.ErrNoFailureEvidence

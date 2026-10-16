@@ -54,6 +54,30 @@ Provider，与 `getModelBindingScore` 同源正向证据）全为 relay 通道�
 Node。交还原因逐项计数在 Node `/readyz` 的 `node_fallbacks`（`pool_model_carriers_unknown`
 是新增的一条：索引证据不足时不由 Go 提前合成 503）。
 
+### 2.3 失败语义对齐：站点边缘拒绝（2026-10-16）
+
+Node 的 `lib/server/upstream-edge-block.js`（2026-10-15 家族事故的修复）把两类 401/403 判为
+**与账号无关的站点边缘拒绝**：WAF/CDN 拦截页（`cf-mitigated` 头 / HTML 正文 / `text/html`
+且正文非 JSON）与 APISIX 类网关的请求格式拒绝（`server: APISIX/*` + 单键 `{message}` 且
+message 无凭据语义）。语义：不记账号失败、不换号、不冷却（`scope: none`）、不透传上游原文、
+客户端得 502。事故是一个健康账号因 401 `{"message":"invalid_format"}` 被挂 31 536 000 000 ms
+冷却。
+
+Go 已对齐：
+
+- 分类：`core/accountruntime` 的 `FailureUpstreamEdgeRejected` → `ActionNoStateChange`
+  （不阻塞、不冷却，`retryable` 自动为 false）；
+- 识别：`internal/adapters/upstreamfailure/edge_rejection.go` 是唯一实现，家族（信封路径）、
+  codex、claude 三个 observer 共用（插在 observer 内部，因此账号自定义规则仍优先求值，
+  与 Node 规则先于边缘检查的顺序一致）；
+- 交付：家族 relay、Claude native relay、codex 原生 HTTP/WS 一律合成 **502
+  `upstream_edge_rejected`**（`contracts/codex-relay/errors.json`），绝不把拦截页交给客户端。
+
+一处**有意**差异（不是遗漏）：Node 的 codex 原生入口（`clientProtocol: openai_responses`）会把
+上游 401 原样重放给客户端——`codex-adapter.js` 的失败重放记录器对 `shouldPassthroughToClient:
+false` 不设门，而 2026-10-15 的两个边缘拒绝提交只改了 policy 与 general transport，没改该分支。
+Go 在该入口按 policy 声明交付 502；账号面语义（不记账 / 不换号 / 不冷却）两侧完全一致。
+
 ## 3. 阶段计划
 
 ### P0 — 让 Go 可以接流量（本 PR，默认零行为变化）

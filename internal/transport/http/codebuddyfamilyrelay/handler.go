@@ -525,7 +525,19 @@ func (handler *Handler) attemptRelay(
 			provider:    provider,
 		}, false
 	}
-	retry := handler.recordHTTPFailure(request.Context(), route, observation, upstreamResponse)
+	retry, edgeRejected := handler.recordHTTPFailure(request.Context(), route, observation, upstreamResponse)
+	if edgeRejected {
+		// 与账号无关的边缘拒绝：交付网关自己的 502，不透传上游拦截页（与 Node 同语义）。
+		closeUpstreamResponse(upstreamResponse)
+		return attemptOutcome{
+			route: route,
+			failure: relayFailure{
+				status:  http.StatusBadGateway,
+				code:    "upstream_edge_rejected",
+				message: "上游站点边缘拒绝了本次请求（与账号无关）",
+			},
+		}, false
+	}
 	return attemptOutcome{
 		response:     upstreamResponse,
 		route:        route,
@@ -638,7 +650,8 @@ func (handler *Handler) recordTransportFailure(
 	return handler.recordClassification(ctx, route, observation, classification)
 }
 
-// recordHTTPFailure 记录上游 HTTP 失败，并返回「是否值得换号重试」。
+// recordHTTPFailure 记录上游 HTTP 失败，并返回「是否值得换号重试」与「是否为站点
+// 边缘拒绝（与账号无关，调用方应合成网关 502 而不是透传拦截页）」。
 //
 // 观察器必须看到原始正文：按上限预读一次，再用 MultiReader 把同样的字节交付给调用方。
 func (handler *Handler) recordHTTPFailure(
@@ -646,14 +659,14 @@ func (handler *Handler) recordHTTPFailure(
 	route runtimecore.ModelRoute,
 	observation accountcredentials.CredentialObservation,
 	response *http.Response,
-) bool {
+) (retry bool, edgeRejected bool) {
 	if response == nil || response.Body == nil {
-		return false
+		return false, false
 	}
 	originalBody := response.Body
 	prefix, readErr := io.ReadAll(io.LimitReader(originalBody, sharedfailure.MaxErrorPayloadBytes+1))
 	if readErr != nil {
-		return false
+		return false, false
 	}
 	response.Body = &replayReadCloser{
 		Reader: io.MultiReader(bytes.NewReader(prefix), originalBody),
@@ -667,9 +680,12 @@ func (handler *Handler) recordHTTPFailure(
 	)
 	if err != nil {
 		// 没有失败证据（例如 2xx）或分类不可用：不换号，按上游原样交付。
-		return false
+		return false, false
 	}
-	return handler.recordClassification(ctx, route, observation, classification)
+	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与账号无关：分类是 NoStateChange，
+	// 记账只留一次可观察的失败结果（不阻塞、不冷却、不换号），交付由调用方合成 502。
+	edgeRejected = classification.Kind() == runtimecore.FailureUpstreamEdgeRejected
+	return handler.recordClassification(ctx, route, observation, classification), edgeRejected
 }
 
 // recordClassification 写入运行态并给出换号建议。

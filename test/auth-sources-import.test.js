@@ -147,27 +147,26 @@ test('本机登录态已入库 → 来源不再可用（界面不显示）且服
   assert.equal(otherIde.alreadyImported, false);
 });
 
-test('没装 Kiro IDE：本机来源不可用 → 明确拒绝并给出原因（不静默成功）', async t => {
+test('没装 Kiro IDE：可用性看登录态文件（读得到即可导入；缺文件时才明确拒绝）', async t => {
   const { hostHomeDir, aiHomeDir } = fixture(t);
+  // 没装 Kiro.app，只写登录态文件 —— 规则（2026-10-15）下来源仍可用：可用性看凭据读得到，不看二进制。
   writeIdeToken(hostHomeDir, { refreshToken: 'aor-ide' });
-  const { manager } = createManager({ hostHomeDir, aiHomeDir });
-  const started = manager.startOauthJob('kiro', 'oauth-refresh-token');
-  const result = await manager.completeLocalAuthImport(started.jobId, 'kiro-ide-local');
+  const first = createManager({ hostHomeDir, aiHomeDir });
+  const job1 = first.manager.startOauthJob('kiro', 'oauth-refresh-token');
+  const imported = await first.manager.completeLocalAuthImport(job1.jobId, 'kiro-ide-local');
+  assert.equal(imported.ok, true, JSON.stringify(imported.code || ''));
+  assert.equal(first.spawnCalls.length, 0, '本机导入不得 spawn 任何 CLI/PTY');
+
+  // 没有登录态的机器（token 文件缺失）→ 来源不可用：明确拒绝并给原因，任务保持可继续（用户还能粘贴）。
+  fs.rmSync(path.join(hostHomeDir, '.aws'), { recursive: true, force: true });
+  const second = createManager({ hostHomeDir, aiHomeDir });
+  const started = second.manager.startOauthJob('kiro', 'oauth-refresh-token');
+  const result = await second.manager.completeLocalAuthImport(started.jobId, 'kiro-ide-local');
   assert.equal(result.ok, false);
   assert.match(String(result.code), /^auth_source_unavailable:client_/);
-  assert.equal(manager.getJob(started.jobId).status, 'running', '拒绝时任务应保持可继续（用户还能粘贴）');
+  assert.equal(second.manager.getJob(started.jobId).status, 'running', '拒绝时任务应保持可继续（用户还能粘贴）');
 
-  const unknown = await manager.completeLocalAuthImport(started.jobId, 'nope');
+  const unknown = await second.manager.completeLocalAuthImport(started.jobId, 'nope');
   assert.equal(unknown.ok, false);
   assert.equal(unknown.code, 'auth_source_unknown');
-
-  // 装了 IDE 但没有登录态（token 文件不存在）：失败带原因，任务结束而不是无限等。
-  installFakeKiroDesktop(hostHomeDir);
-  fs.rmSync(path.join(hostHomeDir, '.aws'), { recursive: true, force: true });
-  const noLogin = await manager.completeLocalAuthImport(started.jobId, 'kiro-ide-local');
-  assert.equal(noLogin.ok, false);
-  assert.equal(noLogin.code, 'ide_token_file_missing');
-  const failedJob = manager.getJob(started.jobId);
-  assert.equal(failedJob.status, 'failed');
-  assert.match(failedJob.error, /ide_token_file_missing/);
 });

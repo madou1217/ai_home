@@ -109,16 +109,32 @@ test('derived state treats OpenCode auth as not requiring quota collection', () 
 });
 
 test('derived state treats providers without quota usage as schedulable', () => {
-  for (const provider of ['opencode', 'qoder', 'qodercn']) {
-    const quotaState = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
-    const schedulableState = deriveSchedulableState({
-      provider,
-      configured: true,
-      apiKeyMode: false,
-      quotaState
+  // opencode：没有额度能力 → 「不适用」，仍照常调度。
+  const opencodeQuota = deriveQuotaState({ provider: 'opencode', configured: true, apiKeyMode: false });
+  assert.equal(opencodeQuota.status, 'not_applicable');
+  assert.equal(deriveSchedulableState({
+    provider: 'opencode', configured: true, apiKeyMode: false, quotaState: opencodeQuota
+  }).status, 'schedulable');
+
+  // qoder/qodercn：HTTP 配额已接入 → 首个快照前 pending（等待探测，不是在失败前判死），仍可调度；
+  // 探测给出「不适用」结论（Free 档没有可消耗 credits）时落到 not_applicable + 原因，同样可调度。
+  for (const provider of ['qoder', 'qodercn']) {
+    const pendingQuota = deriveQuotaState({ provider, configured: true, apiKeyMode: false });
+    assert.equal(pendingQuota.status, 'pending');
+    assert.equal(pendingQuota.remainingPct, null);
+    assert.equal(deriveSchedulableState({
+      provider, configured: true, apiKeyMode: false, quotaState: pendingQuota
+    }).status, 'schedulable');
+
+    const conclusion = deriveQuotaState({
+      provider, configured: true, apiKeyMode: false,
+      probeError: 'quota_not_applicable:qoder_no_consumable_credits'
     });
-    assert.equal(quotaState.status, 'not_applicable');
-    assert.equal(schedulableState.status, 'schedulable');
+    assert.equal(conclusion.status, 'not_applicable');
+    assert.equal(conclusion.reason, 'qoder_no_consumable_credits');
+    assert.equal(deriveSchedulableState({
+      provider, configured: true, apiKeyMode: false, quotaState: conclusion
+    }).status, 'schedulable');
   }
 });
 

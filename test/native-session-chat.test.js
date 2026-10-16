@@ -179,6 +179,9 @@ test('ensureNativeCliReadyForChat auto-installs a missing CLI and reports progre
   const progressEvents = [];
   const result = await ensureNativeCliReadyForChat('qoder', {
     env: { PATH: emptyPathDir },
+    // 隔离宿主家目录：否则解析会命中本机真实安装的 qodercli（~/.local/bin 等），
+    // 探测不会失败、走不到安装流程（这台机器上装了 qoder CLI 时必现）。
+    hostHomeDir: emptyPathDir,
     processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
     path,
     spawn: fakeSpawn,
@@ -202,6 +205,7 @@ test('ensureNativeCliReadyForChat fails closed when installation confirmation is
 
   const result = await ensureNativeCliReadyForChat('qoder', {
     env: { PATH: emptyPathDir },
+    hostHomeDir: emptyPathDir,
     resolveNativeCliPath: () => ''
   });
 
@@ -221,6 +225,7 @@ test('ensureNativeCliReadyForChat does not install when confirmation is cancelle
   const progressEvents = [];
   const result = await ensureNativeCliReadyForChat('qoder', {
     env: { PATH: emptyPathDir },
+    hostHomeDir: emptyPathDir,
     processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
     path,
     spawn() {
@@ -260,6 +265,7 @@ test('ensureNativeCliReadyForChat reports a composed failure message when every 
   const progressEvents = [];
   const result = await ensureNativeCliReadyForChat('qoder', {
     env: { PATH: emptyPathDir },
+    hostHomeDir: emptyPathDir,
     processObj: { platform: 'linux', env: { HOME: '/home/u', PATH: emptyPathDir }, cwd: () => '/repo' },
     path,
     spawn: fakeSpawn,
@@ -1223,9 +1229,14 @@ test('opencode native session builds run resume command', () => {
 test('agy native session builds antigravity CLI start/resume commands', () => {
   // 普通会话走 headless --print：不进 TUI、跳过首次引导、干净输出、正常完成(回复由 transcript 读)。
   // agy 自动生成 conversation id（新会话不预指定）。
-  const start = buildStartCommand('agy', { prompt: '你好', model: 'gemini-3-flash', interactiveCli: true });
+  // 模型 id 必须先用 agy-model-names 映射成 CLI 显示名（真机只认显示名，id 直接报错）。
+  const start = buildStartCommand('agy', { prompt: '你好', model: 'gemini-3.8-flash-medium', interactiveCli: true });
   assert.equal(start.commandName, 'agy');
-  assert.deepEqual(start.args, ['--print', '你好', '--dangerously-skip-permissions', '--model', 'gemini-3-flash']);
+  assert.deepEqual(start.args, ['--print', '你好', '--dangerously-skip-permissions', '--model', 'Gemini 3.8 Flash (Medium)']);
+
+  // 不可映射的 id（旧模型/未知）：宁可不传 --model（让 agy 用默认模型），也不传会被 CLI 拒绝的字符串。
+  const unmappable = buildStartCommand('agy', { prompt: '你好', model: 'gemini-3-flash', interactiveCli: true });
+  assert.deepEqual(unmappable.args, ['--print', '你好', '--dangerously-skip-permissions']);
 
   // 恢复：--conversation <id> 续指定会话（同 id 追加，不 fork），本轮同样走 --print。
   const resume = buildResumeCommand('agy', { sessionId: 'conv-123', prompt: '继续', interactiveCli: true });

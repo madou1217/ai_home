@@ -50,19 +50,31 @@ test('每个认证来源的 authMode 必须存在于 Go 契约声明的认证方
   }
 });
 
-test('解析：装了 Kiro IDE 时本机来源可用且排在最前', () => {
-  const resolved = resolveAuthSources('kiro', { hostCapabilities: hostWith({ desktopInstalled: true }) });
-  assert.equal(resolved.supported, true);
-  assert.equal(resolved.sources[0].id, 'kiro-ide-local', '可用来源必须排最前');
-  const ide = resolved.sources.find((source) => source.id === 'kiro-ide-local');
-  assert.equal(ide.available, true);
-  assert.equal(ide.installable, false);
-  assert.equal(ide.reason, '');
-  assert.equal(typeof ide.implementation, 'function', '可用来源必须给出实现');
-  const methods = describeAuthMethodsWithSources('kiro', { hostCapabilities: hostWith({ desktopInstalled: true }) });
-  const refreshToken = methods.methods.find((method) => method.authMode === 'oauth-refresh-token');
-  assert.equal(refreshToken.preferredSourceId, 'kiro-ide-local');
-  assert.equal(refreshToken.localSourceAvailable, true);
+test('解析：本机登录态读得到时本机来源可用且排在最前（可用性看凭据不看二进制）', () => {
+  // 规则（2026-10-15）：本机来源可用性 = 登录态文件读得到，与客户端装没装无关。
+  // 因此夹具给出一个「读得到登录态」的临时家目录，而不是替身宿主能力里的 desktopInstalled。
+  const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-auth-sources-'));
+  try {
+    const tokenPath = path.join(hostHomeDir, '.aws', 'sso', 'cache', 'kiro-auth-token.json');
+    fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+    fs.writeFileSync(tokenPath, JSON.stringify({ refreshToken: 'aor-ide' }));
+    const options = { hostCapabilitiesOptions: { hostHomeDir } };
+
+    const resolved = resolveAuthSources('kiro', options);
+    assert.equal(resolved.supported, true);
+    assert.equal(resolved.sources[0].id, 'kiro-ide-local', '可用来源必须排最前');
+    const ide = resolved.sources.find((source) => source.id === 'kiro-ide-local');
+    assert.equal(ide.available, true);
+    assert.equal(ide.installable, false);
+    assert.equal(ide.reason, '');
+    assert.equal(typeof ide.implementation, 'function', '可用来源必须给出实现');
+    const methods = describeAuthMethodsWithSources('kiro', options);
+    const refreshToken = methods.methods.find((method) => method.authMode === 'oauth-refresh-token');
+    assert.equal(refreshToken.preferredSourceId, 'kiro-ide-local');
+    assert.equal(refreshToken.localSourceAvailable, true);
+  } finally {
+    fs.rmSync(hostHomeDir, { recursive: true, force: true });
+  }
 });
 
 test('解析：没装但可装 → 不可用但可安装；不可安装 → 给出原因', () => {
@@ -88,7 +100,9 @@ test('解析：没装但可装 → 不可用但可安装；不可安装 → 给�
 });
 
 test('解析：不支持的 provider 明确回答「不支持」，不伪装成空来源', () => {
-  const resolved = resolveAuthSources('codex', { hostCapabilities: hostWith() });
+  // 所有已登记 provider 现在都有 authSources（loader 会给有宿主凭据产物的 provider 默认注入）；
+  // 该契约面向「未知/未登记 provider」的防御路径：必须显式回答 supported=false 而不是空 sources。
+  const resolved = resolveAuthSources('no-such-provider', { hostCapabilities: hostWith() });
   assert.equal(resolved.supported, false);
   assert.deepEqual(resolved.sources, []);
   assert.equal(pickAuthSource(resolved, 'oauth-device'), null);

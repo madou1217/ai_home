@@ -34,7 +34,8 @@ test('agy 规格形状：Gemini 数据面 + 模型进 URL', () => {
   assert.equal(spec.path('gemini-2.5-flash'), '/v1beta/models/gemini-2.5-flash:generateContent');
   assert.equal(spec.model, 'gemini-2.5-flash');
   assert.equal(spec.probeModelPattern, '^gemini-');
-  assert.deepEqual(spec.windowMatch, { windowMinutes: 300 });
+  // resetInLabel：agy 用量形状用 resetIn 文案标识窗口，规格里一并登记（253ce82d）。
+  assert.deepEqual(spec.windowMatch, { windowMinutes: 300, resetInLabel: '5h' });
   const body = spec.body();
   assert.equal(body.contents.length, 1);
   assert.equal(body.generationConfig.maxOutputTokens, 8);

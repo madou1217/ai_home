@@ -807,11 +807,25 @@ func newHandlers(
 	// 家族透传通道（CodeBuddy / WorkBuddy 四支）与 Native Relay 共用凭据解析、上游客户端
 	// 与运行态记账；能承载的家族请求直连家族官方端点，其余交回 Canonical（见包注释）。
 	//
-	// 当前只服务钉选调用方（x-account-ref）：未钉选征召需要家族模型目录进入 Go 的账号
-	// 索引（今天只有 codex/claude/agy 有其目录），在那之前未钉选家族请求继续由 Node
-	// 承载（Node 侧交还门按「透传通道」判定）。Accounts 留空即该语义，不是遗漏。
+	// 账号来源与 Native Relay 同构（未钉选走 Canonical 的调度器，钉选只认该账号）：
+	// 家族模型目录经无客户端 HTTP 通道进入 Go 的账号索引后，未钉选征召按家族表链式
+	// 开启多个会话；模型没有家族候选时安静交回 Canonical。Node 侧交还门按「透传通道」
+	// 判定哪些模型交给这里，本通道不为「别的 Provider 的模型」兜底。
+	familyRelayAccounts, err := newFamilyRelayAccountSource(
+		catalog,
+		inference.recruiter,
+		familyRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf(
+			"创建家族透传账号来源失败: %w",
+			err,
+		)
+	}
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
+			Accounts:    familyRelayAccounts,
 			Fallback:    inference.handler,
 			Credentials: credentials,
 			Client:      relayClient,

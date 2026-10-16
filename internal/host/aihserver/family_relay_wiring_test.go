@@ -282,6 +282,60 @@ func TestServerRelaysPinnedFamilyChatCompletionsThroughFamilyRelay(
 	}
 }
 
+// TestServerRelaysUnpinnedFamilyChatCompletionsThroughFamilyRelay 验证未钉选的家族
+// 模型请求由 Go 家族透传承载：账号经 Canonical 调度器（家族征召链）选出——模型先经
+// 无客户端目录通道物化进本地索引，候选池为空的三支被跳过，客户端拿到聚合后的非流式
+// 响应与服务归属头，Canonical 路径不被触达。
+func TestServerRelaysUnpinnedFamilyChatCompletionsThroughFamilyRelay(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	canonical := &syntheticInferenceHTTPClient{}
+	familyUpstream := &familyRelayUpstream{}
+	baseURL, client := startFamilyRelayTestServer(t, canonical, familyUpstream)
+	registerNativeFamilyAccount(
+		t,
+		client,
+		baseURL,
+		"workbuddy",
+		familyRelayWorkbuddyIssuer,
+		"family-unpinned-host",
+	)
+	// 家族模型物化进本地索引后，未钉选征召才有候选；等待也顺带验证「展示目录
+	// 包含家族透传模型」（路由目录不含它们的执行规则，见 catalog builder 的声明）。
+	waitForServerModels(t, client, baseURL, []string{"hy4-preview"})
+	exchange := performRequest(
+		t,
+		client,
+		http.MethodPost,
+		baseURL+openaichatcompletionsapi.Path,
+		testClientKey,
+		[]byte(`{"model":"hy4-preview","messages":[{"role":"user","content":"family-unpinned"}]}`),
+	)
+	assertStatus(t, exchange, http.StatusOK)
+	if !strings.Contains(exchange.body, "family-relay-ok") ||
+		!strings.Contains(exchange.body, `"object":"chat.completion"`) {
+		t.Fatalf("未钉选透传响应正文错误: %s", exchange.body)
+	}
+	if got := exchange.header.Get(inferenceapi.ServedProviderHeader); got != "workbuddy" {
+		t.Fatalf("服务归属 Provider 头 = %q want workbuddy", got)
+	}
+	if canonical.CallCount() != 0 {
+		t.Fatalf("未钉选家族请求不应落入 Canonical: calls=%d", canonical.CallCount())
+	}
+	if familyUpstream.callCount() != 1 {
+		t.Fatalf("家族上游调用次数 = %d want 1", familyUpstream.callCount())
+	}
+	recording := familyUpstream.lastRequest()
+	if recording.URL != "https://www.workbuddy.ai/v2/chat/completions" {
+		t.Fatalf("家族上游 URL = %q", recording.URL)
+	}
+	if !strings.Contains(string(recording.Body), `"model":"hy4-preview"`) {
+		t.Fatalf("家族上游请求正文错误: %s", recording.Body)
+	}
+}
+
 // TestServerDelegatesNonFamilyChatCompletionsToCanonical 验证入口换成家族透传后，
 // 非家族请求（未钉选 / 钉选到非家族账号）仍然原样回到 Canonical 承载。
 func TestServerDelegatesNonFamilyChatCompletionsToCanonical(

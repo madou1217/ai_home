@@ -38,6 +38,22 @@
 | G6 | 安装包不含/不校验 Go 构件；readiness 未汇合 `go_ready`/`build_sha`/`manifest_hash` | 无法正式发布 | P3 |
 | G7 | 没有「Node 直出 vs 经 Go」的性能基线 | 无法证明迁移达到目的 | P4 |
 
+### 2.2 已接入的推理通道（2026-10-16）
+
+Go 侧推理上游不止 canonical 一条通道；Node 按**入口感知的通道表**判断某 Provider 在该
+入口上 Go 服务得了与否（`lib/server/go-core-servable-providers.js`）：
+
+| 通道 | Provider | 入口 | 模型目录 | 未钉选推理 |
+| --- | --- | --- | --- | --- |
+| canonical | codex / claude / agy | 全部推理入口 | Go 侧探测目录（catalog source） | 钉选可承接；未钉选仍交还 Node（canonical 单 Provider 解禁未做，见 §3 P2） |
+| relay（家族透传） | codebuddy / codebuddycn / workbuddy / workbuddycn | 仅 `gateway.openai.chat_completions` | `GET {站点}/v3/config`（不依赖本机 CLI） | 承载者全为家族时承接（家族表链式征召，复用 Canonical 调度器） |
+
+未钉选推理的放行收窄到**模型级**：只有当「这个模型的承载者（Node 索引里真有该模型账号的
+Provider，与 `getModelBindingScore` 同源正向证据）全为 relay 通道」才交给 Go；其余情形
+（承载者混合 / 索引里没有绑定 / 别名命中 / Go 目录里没有该模型 / Go 未就绪）一律交还
+Node。交还原因逐项计数在 Node `/readyz` 的 `node_fallbacks`（`pool_model_carriers_unknown`
+是新增的一条：索引证据不足时不由 Go 提前合成 503）。
+
 ## 3. 阶段计划
 
 ### P0 — 让 Go 可以接流量（本 PR，默认零行为变化）

@@ -17,7 +17,9 @@
 //   ③ 家族只在透传挂载的入口（chat completions）上算「Go 服务得了」，别的入口照旧交还；
 //   ④ 钉选判定：透传入口上家族按 Node 自己的硬证据收窄（目录已知且不含该模型 = 交还），
 //      弱证据放行；该入口上真正服务不了的 Provider 照旧交还；
-//   ⑤ 池级判定带入口：家族在透传入口不再单独触发池级交还，其它入口/其它 Provider 照旧。
+//   ⑤ 池级判定带入口：家族在透传入口不再单独触发池级交还，其它入口/其它 Provider 照旧；
+//   ⑥ 池门的模型级收窄：承载者（索引里真有该模型账号的 Provider，与 Node 的绑定分同源）
+//      全为透传通道的模型才转发，混合/无绑定照旧交还 Node。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -45,6 +47,24 @@ const accountStateIndex = {
 const INFERENCE_ENTRY = 'gateway.openai.chat_completions';
 const MESSAGES_ENTRY = 'gateway.anthropic.messages';
 const routable = (...ids) => () => new Set(ids);
+
+// 与生产 index 同形（model-account-index）：承载者判定只读这份正向索引
+// （与 getModelBindingScore 同源）；entries 为 [accountRef, provider, models[]]。
+const indexFor = (entries) => {
+  const modelToAccounts = new Map();
+  const accountToModels = new Map();
+  const accountByRef = new Map();
+  for (const [accountRef, provider, models] of entries) {
+    accountByRef.set(accountRef, { accountRef, provider });
+    accountToModels.set(accountRef, new Set(models));
+    for (const model of models) {
+      const refs = modelToAccounts.get(model) || [];
+      if (!refs.includes(accountRef)) refs.push(accountRef);
+      modelToAccounts.set(model, refs);
+    }
+  }
+  return { builtAt: 1, modelToAccounts, accountToModels, accountByRef };
+};
 
 test('canonical 集合与 Go 源码的 ProviderID 常量一致', () => {
   const source = fs.readFileSync(path.join(ROOT, 'core', 'inference', 'protocol.go'), 'utf8');
@@ -242,12 +262,16 @@ test('池级判定带入口：家族只在透传入口豁免，其它 Provider/�
     }),
     { defer: false, reason: '' }
   );
-  // 池里还有真正服务不了的 Provider（该入口上没有 Go 通道）→ 照旧整体交还。
+  // 池里还有真正服务不了的 Provider（该入口上没有 Go 通道）且它是这个模型的承载者
+  // （索引里有绑定）→ 照旧整体交还。
   assert.deepEqual(
     explainGoRouteDeferral({
       entryId: INFERENCE_ENTRY,
       model: 'gpt-5-codex',
-      state: { accounts: { codex: [{ accountRef: LIVE }], gemini: [{ accountRef: DOWN }] } },
+      state: {
+        accounts: { codex: [{ accountRef: LIVE }], gemini: [{ accountRef: DOWN }] },
+        modelAccountIndex: indexFor([[DOWN, 'gemini', ['gpt-5-codex']]])
+      },
       goRoutableModelIds: routable('gpt-5-codex')
     }),
     { defer: true, reason: 'pool_has_non_go_servable_provider' }
@@ -257,7 +281,10 @@ test('池级判定带入口：家族只在透传入口豁免，其它 Provider/�
     explainGoRouteDeferral({
       entryId: MESSAGES_ENTRY,
       model: 'claude-sonnet-4',
-      state: { accounts: { claude: [{ accountRef: LIVE }], workbuddy: [{ accountRef: DOWN }] } },
+      state: {
+        accounts: { claude: [{ accountRef: LIVE }], workbuddy: [{ accountRef: DOWN }] },
+        modelAccountIndex: indexFor([[LIVE, 'claude', ['claude-sonnet-4']]])
+      },
       goRoutableModelIds: routable('claude-sonnet-4')
     }),
     { defer: true, reason: 'pool_has_non_go_servable_provider' }
@@ -269,6 +296,115 @@ test('池级判定带入口：家族只在透传入口豁免，其它 Provider/�
       model: 'gpt-5-codex',
       state: { accounts: { codex: [{ accountRef: LIVE }], agy: [{ accountRef: DOWN }] } },
       goRoutableModelIds: routable('gpt-5-codex')
+    }),
+    { defer: false, reason: '' }
+  );
+});
+
+test('池门模型级收窄：承载者全为透传通道才转发，混合/未知照旧交还', () => {
+  const relayOnlyState = {
+    accounts: { workbuddy: [{ accountRef: LIVE }], zcode: [{ accountRef: DOWN }] },
+    modelAccountIndex: indexFor([[LIVE, 'workbuddy', ['hy4-preview']]])
+  };
+  // workbuddy 在索引里绑定这个模型 → 承载者；zcode 没有任何绑定（目录未知）→ 不是承载者。
+  // 承载者全为透传通道（chat completions 挂载了家族 Handler）→ 转发 Go。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: relayOnlyState,
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: false, reason: '' }
+  );
+  // 池门之后的 Go 目录门照旧生效：Go 侧目录还没物化这个模型 → 交还（不是池门的原因）。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: relayOnlyState,
+      goRoutableModelIds: routable()
+    }),
+    { defer: true, reason: 'model_not_routable' }
+  );
+  // 别名门也仍在池门之后生效：命中未接受别名的请求即使承载者全为透传也交还 Node。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: relayOnlyState,
+      aliases: [{ id: 'alias-1', alias: 'hy4-*', enabled: true }],
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: true, reason: 'model_alias' }
+  );
+  // 承载者混合：kimi 在索引里也绑定这个模型（真有该模型的账号）→ 没有 Go 通道 → 交还。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: {
+        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        modelAccountIndex: indexFor([
+          [LIVE, 'workbuddy', ['hy4-preview']],
+          [DOWN, 'kimi', ['hy4-preview']]
+        ])
+      },
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: true, reason: 'pool_has_non_go_servable_provider' }
+  );
+  // 承载者为空：索引里没有任何账号绑定这个模型（目录全已知且都不含它）→ 交还 Node 裁定
+  // （Node 会按自己的弱证据语义渲染 no_available_account 或走别名回落，不由 Go 提前合成）。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: {
+        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        modelAccountIndex: indexFor([
+          [LIVE, 'workbuddy', ['hy3-legacy']],
+          [DOWN, 'kimi', ['kimi-k3']]
+        ])
+      },
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: true, reason: 'pool_model_carriers_unknown' }
+  );
+  // 索引未建（builtAt 未置位）：与 getModelBindingScore 同口径 —— 所有绑定都是 0，
+  // Node 会落到「缓存 + 注册表」的回落选择，不在本判定的证据范围内 → 按未知交还。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: {
+        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        modelAccountIndex: { ...indexFor([[LIVE, 'workbuddy', ['hy4-preview']]]), builtAt: 0 }
+      },
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: true, reason: 'pool_model_carriers_unknown' }
+  );
+  // 透传未挂载的入口（anthropic messages）上家族通道不作数 → 家族承载者也算「非透传」→ 交还。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: MESSAGES_ENTRY,
+      model: 'hy4-preview',
+      state: {
+        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        modelAccountIndex: indexFor([[LIVE, 'workbuddy', ['hy4-preview']]])
+      },
+      goRoutableModelIds: routable('hy4-preview')
+    }),
+    { defer: true, reason: 'pool_has_non_go_servable_provider' }
+  );
+  // 池里全为 Go 可服务 Provider：模型级判定不参与，旧语义的充分条件仍然成立。
+  assert.deepEqual(
+    explainGoRouteDeferral({
+      entryId: INFERENCE_ENTRY,
+      model: 'hy4-preview',
+      state: { accounts: { workbuddy: [{ accountRef: LIVE }] } },
+      goRoutableModelIds: routable('hy4-preview')
     }),
     { defer: false, reason: '' }
   );

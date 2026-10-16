@@ -203,7 +203,35 @@ test('every Node hand-off reports a reason so /readyz can break it down', () => 
     ['pinned_model_not_routable', { ...base, entryId: 'gateway.anthropic.messages', pinnedAccountRef: LIVE, model: 'gpt-6-astra', goAccountRefFor: () => 'acct_ffffffffffffffffffff', goRoutableModelIds: () => new Set(['gpt-5.5']) }],
     ['fabric_gateway_online', { ...base, entryId: 'gateway.anthropic.messages', fabricGatewayReady: () => true }],
     ['model_alias', { ...base, entryId: 'gateway.anthropic.messages', model: 'claude-opus-4-8', aliases: [{ alias: 'claude-opus-4-8', enabled: true }] }],
-    ['model_not_routable', { ...base, entryId: 'gateway.anthropic.messages', model: 'kimi-k2.6', aliases: [], goRoutableModelIds: () => new Set(['gpt-5.5']) }]
+    ['model_not_routable', { ...base, entryId: 'gateway.anthropic.messages', model: 'kimi-k2.6', aliases: [], goRoutableModelIds: () => new Set(['gpt-5.5']) }],
+    // 池门的模型级收窄：池里有 Go 服务不了的 Provider，但索引里没有任何账号绑定这个模型
+    // （目录全已知且都不含它，或索引未建）→ 交还 Node 裁定，而不是由 Go 提前合成
+    // no_available_account。
+    ['pool_model_carriers_unknown', {
+      ...base,
+      entryId: 'gateway.openai.chat_completions',
+      model: 'hy4-preview',
+      state: {
+        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        modelAccountIndex: {
+          builtAt: 1,
+          modelToAccounts: new Map([
+            ['hy3-legacy', [LIVE]],
+            ['kimi-k3', [DOWN]]
+          ]),
+          accountToModels: new Map([
+            [LIVE, new Set(['hy3-legacy'])],
+            [DOWN, new Set(['kimi-k3'])]
+          ]),
+          accountByRef: new Map([
+            [LIVE, { accountRef: LIVE, provider: 'workbuddy' }],
+            [DOWN, { accountRef: DOWN, provider: 'kimi' }]
+          ])
+        }
+      },
+      aliases: [],
+      goRoutableModelIds: () => new Set(['hy4-preview'])
+    }]
   ];
   for (const [reason, input] of cases) {
     const decision = explainGoRouteDeferral(input);

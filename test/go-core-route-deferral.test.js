@@ -76,6 +76,23 @@ test('a persisted billing block makes a pin unusable even while its lifecycle is
   }), true);
 });
 
+test('explicit provider selection keeps unpinned inference with Node', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const input = {
+    entryId: 'gateway.anthropic.messages', state, accountStateIndex, fabricGatewayReady: () => false
+  };
+  // Go 不读 x-provider：携带该头的未钉选请求必须留在 Node，否则 Go 可能选中另一个 Provider。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, explicitProvider: 'claude' }),
+    { defer: true, reason: 'explicit_provider' });
+  assert.deepEqual(explainGoRouteDeferral({ ...input, explicitProvider: '  ' }),
+    { defer: false, reason: '' }, '空白值不是显式选择');
+  // 钉选 + 显式 Provider 同现时账号由钉选决定，显式选择不影响路由。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, explicitProvider: 'claude', pinnedAccountRef: LIVE }),
+    { defer: false, reason: '' });
+  // 非推理入口与 Provider 选择无关。
+  assert.equal(shouldDeferGoRouteToNode({ entryId: 'gateway.props', explicitProvider: 'claude', state }), false);
+});
+
 test('an online Fabric gateway keeps unpinned inference with Node but not read-only routes', () => {
   const decide = (entryId, fabricReady, pinnedAccountRef = '') => shouldDeferGoRouteToNode({
     entryId, pinnedAccountRef, state, accountStateIndex, fabricGatewayReady: () => fabricReady

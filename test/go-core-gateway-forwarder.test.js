@@ -470,6 +470,34 @@ test('pinned Node account refs are rewritten to their Go refs when forwarding', 
   assert.equal(go.seen[0].headers['x-account-ref'], 'acct_fedcba9876543210fedc');
 });
 
+test('explicit provider headers reach the host deferral decision', async (t) => {
+  const go = await startFakeGo(t);
+  const decisions = [];
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: (input) => {
+      decisions.push(input);
+      return Boolean(input.explicitProvider);
+    }
+  });
+  const headers = (provider) => ({
+    authorization: `Bearer ${CLIENT_KEY}`,
+    'content-type': 'application/json',
+    ...(provider ? { 'x-provider': provider } : {})
+  });
+
+  const forwarded = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('') }, '{}');
+  assert.equal(forwarded.status, 200, '无显式 Provider 的请求照常交给 Go');
+  assert.equal(go.seen.length, 1);
+
+  const deferred = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('claude') }, '{}');
+  assert.equal(deferred.status, 404);
+  assert.match(deferred.body, /handled_by_node/);
+  assert.equal(go.seen.length, 1, '带 x-provider 的请求留在 Node');
+  assert.deepEqual(decisions.map((decision) => decision.explicitProvider), ['', 'claude']);
+});
+
 test('only a Go-marked decode rejection hands the buffered body back to Node; other 400s pass through', async (t) => {
   const goSeen = [];
   const goServer = http.createServer((req, res) => {

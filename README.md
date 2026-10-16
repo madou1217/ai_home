@@ -6,7 +6,7 @@
 
 `ai-home`（命令 `aih`）在一台机器上管理多个 AI CLI 的多账号，并内置一个 OpenAI / Anthropic / Gemini 兼容网关（**AIH Server**）：对外一个端点，背后在多账号、多 provider 之间按额度路由，按（账号, 模型）熔断，按模型别名的优先级降级。CLI 会话默认跑在持久 tmux 里，关终端、断 SSH 都不会丢。
 
-支持的 CLI：`codex`、`claude`、`gemini`、`agy`（Antigravity）、`opencode`、`grok`、`kimi`、`kiro`、`qoder`、`qodercn`、`codebuddy`、`codebuddycn`。上游 Gemini CLI 已停止服务，Google 账号请改用 `agy`。
+支持的 CLI：`codex`、`claude`、`gemini`、`agy`（Antigravity）、`opencode`、`grok`、`kimi`、`kiro`、`qoder`、`qodercn`、`codebuddy`、`codebuddycn`、`cline`。上游 Gemini CLI 已停止服务，Google 账号请改用 `agy`。
 
 部分 provider 还可以在 WebUI 的账号页里按账号打开桌面 App（例如 Codex、Claude、Kimi、ZCode、WorkBuddy、CodeBuddy），具体以账号页实际显示为准。
 
@@ -92,6 +92,8 @@ aih import ./sub2api-data.json --dry-run      # 只解析统计，不写入
 aih import codex ./some-folder                # 限定 provider
 aih import cliproxyapi                        # 读本机 CLIProxyAPI 的配置与 auth-dir
 aih import ./many-zips -j 8 -f nested/folder  # 并发预算；从 zip 内指定子目录开始
+
+aih codebuddy detect                          # 扫描本机已登录账号（CodeBuddy / WorkBuddy 家族与 cline）并入库
 ```
 
 - **导入来源**：目录、zip（含嵌套 zip）、单账号 JSON、JSONL、手动粘贴的 JSON、CLIProxyAPI 配置与 auth-dir（仅 codex / gemini / claude）、sub2api 的 `sub2api-data` / `sub2api-bundle`、Antigravity-Manager 的 JSON。
@@ -124,7 +126,7 @@ aih server config set --client-key <key>
 - **自启位置**：
   - macOS：`~/Library/LaunchAgents/com.clawdcodex.ai_home.plist`（launchd 直接运行 `aih`）
   - Linux：`~/.config/systemd/user/com.clawdcodex.ai_home.service`（用户级 systemd；无人登录时也要运行，需要启用 linger）
-  - Windows：启动文件夹里的 `com.clawdcodex.ai_home.vbs`
+  - Windows：启动文件夹里的 `com.clawdcodex.ai_home.vbs`（远程 / 计划任务拉起用 `~/.ai_home/run/aih-server-start.cmd`）
 
 ### 模型别名与调度
 
@@ -187,6 +189,16 @@ aih server config show --show-secrets   # 查看密钥（只在受信任的终�
 aih node doctor                         # 打印其他机器应使用的 endpoint candidate
 ```
 
+把 Server 暴露到公网时，用 `aih edge` 生成 frp / nginx / caddy 配置（先校验后落地，失败自动回滚）：
+
+```bash
+aih edge status                          # 查看本机入口转发现状
+aih edge plan frp --remote-port 9527     # 预览配置改动
+aih edge apply frp --remote-port 9527    # 写入配置（--dry-run 只预览不写）
+```
+
+WebUI「开发工具 → 入口与转发」是同一套配置的界面。
+
 在另一台机器的 CLI 上保存并切换 Server：
 
 ```bash
@@ -214,7 +226,7 @@ aih server remove home
 
 ## 持久会话
 
-`aih` 用 tmux 把每个 CLI 会话放在后台持久进程里，关终端、SSH 断线、合盖睡眠都不会丢。直接运行总是**新建**会话；要回到已有会话，用 `sessions` 选择器。
+`aih` 用 tmux 把每个 CLI 会话放在后台持久进程里，关终端、SSH 断线、合盖睡眠都不会丢。直接运行总是**新建**会话；要回到已有会话用 `sessions` 选择器，要接着上一段对话用 `resume`。
 
 ```bash
 cd ~/projA && aih claude     # 新建会话（AIH Server）
@@ -224,11 +236,14 @@ aih claude sessions 1        # 只看 1 号账号的会话
 aih claude 1 -S debug        # 具名会话：不存在就新建，已存在就进入
 aih claude 1 -R              # 接管本项目最近的会话（原来的终端被挤下线）
 aih claude 1 -M              # 镜像本项目最近的会话（两边同屏，谁都不挤掉谁）
+aih claude resume            # 续接最近一段对话（翻译成各 provider 的原生 resume）
+aih claude 1 resume <会话ID> # 指定账号 + 指定会话续接
 aih ss                       # 所有工具的会话总览（--list 只预览）
 ```
 
 - **选择器标记**：`●` 表示正被别处占用，`○` 表示空闲。
 - **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。
+- **续接**：`resume` 把「接着上次聊」翻译成各 provider 的原生恢复参数；不带 ID 时用「最近一段」（cline 必须给 ID，kimi / kiro 的入口在 TUI 内）。对应关系见 `aih <cli> resume --help`。
 - **socket 命名**：每个账号一个 tmux server，socket 为 `aih-<provider>-<accountRef>`；AIH Server 的会话用 `aih-<provider>-gateway`。
 
 tmux 常用操作（指挥键 `Ctrl-b`：先按 `Ctrl-b` 松开，再按下一个键）：

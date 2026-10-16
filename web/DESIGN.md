@@ -134,7 +134,7 @@ xs 480 · sm 640 · **md 768（移动 ↔ 桌面）** · lg 1024 · xl 1280（�
 
 不同 provider（codex / claude / gemini / agy）原生结构里同一语义的字段名各不相同
 （thinking 是 `reasoning` / `thoughts` / `content[].type=thinking`；plan 是 `update_plan` / `TodoWrite` / `PLANNER_RESPONSE`…）。
-渲染器**不应**认识这些私有名。分层契约（详见 `tmp/provider-native-session-structure-comparison.md`）：
+渲染器**不应**认识这些私有名。分层契约：
 
 ```
 后端 reader（字符串协议）→ parseMessageBlocks（中间 MessageBlock[]）

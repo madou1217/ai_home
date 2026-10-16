@@ -4,6 +4,7 @@ import {
   EditOutlined,
   EyeOutlined,
   FormOutlined,
+  GatewayOutlined,
   ImportOutlined,
   PlusOutlined,
   RetweetOutlined,
@@ -38,7 +39,8 @@ import { useSubscriptionAggregator } from '@/components/toolkit/subscription-agg
 import MobileBoot from '@/mobile/MobileBoot';
 import { DetailSheet, EmptySignal, HudSection, KeyValue, MonoList, SwipeRow, TelemetryGrid, TelemetryTile } from '@/mobile/ui';
 import { confirmAction } from '@/utils/confirm-action';
-import { ActionButton, InlineError, PanelToolbar, StatusText } from './toolkit-parts';
+import { ActionButton, InlineError, Note, PanelToolbar, StatusText } from './toolkit-parts';
+import EdgeForwardingPanel from './EdgeForwardingPanel';
 
 /** 订阅聚合与分流（移动端）：订阅源卡片列表 + 聚合订阅详情抽屉；编辑器与预览复用桌面组件（全宽）。 */
 export default function SubscriptionAggregatorPanel() {
@@ -48,6 +50,7 @@ export default function SubscriptionAggregatorPanel() {
   const [editingProfile, setEditingProfile] = useState<AggregatorProfileInput | null>(null);
   const [previewProfile, setPreviewProfile] = useState<AggregatorProfile | null>(null);
   const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
+  const [entryOpen, setEntryOpen] = useState(false);
   const [detailId, setDetailId] = useState('');
   const [nodesSourceId, setNodesSourceId] = useState('');
   const [addingNode, setAddingNode] = useState(false);
@@ -143,6 +146,14 @@ export default function SubscriptionAggregatorPanel() {
             ) : (
               <EmptySignal description="还没有聚合订阅，新建一个把订阅源合并成一个链接" />
             )}
+          </HudSection>
+
+          <HudSection title="客户端入口" code="ENTRY">
+            <Note tone="info">
+              聚合出来的中转条目写的是 <code>socks5, &lt;地址&gt;, &lt;端口&gt;</code>：这个入口怎么对外开放
+              （跟 443 走 / 上证书 / 从 VPS 转进来）在这里配；只是本机自用就不需要它。
+            </Note>
+            <ActionButton icon={<GatewayOutlined />} label="配置入口" onClick={() => setEntryOpen(true)} />
           </HudSection>
 
           <HudSection
@@ -246,6 +257,14 @@ export default function SubscriptionAggregatorPanel() {
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
           />
+          <DetailSheet
+            open={entryOpen}
+            onClose={() => setEntryOpen(false)}
+            title="客户端入口（nginx / caddy / frp）"
+            code="ENTRY"
+          >
+            <EdgeForwardingPanel />
+          </DetailSheet>
           <ProfileEditorDrawer
             open={Boolean(editingProfile)}
             profile={editingProfile}

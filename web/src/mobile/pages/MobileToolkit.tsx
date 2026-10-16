@@ -6,7 +6,6 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   ForkOutlined,
-  GatewayOutlined,
   GlobalOutlined,
   ToolOutlined
 } from '@ant-design/icons';
@@ -18,7 +17,6 @@ import DiagnosticsPanel from './toolkit/DiagnosticsPanel';
 import EnvironmentPanel from './toolkit/EnvironmentPanel';
 import MirrorsPanel from './toolkit/MirrorsPanel';
 import SubscriptionAggregatorPanel from './toolkit/SubscriptionAggregatorPanel';
-import EdgeForwardingPanel from './toolkit/EdgeForwardingPanel';
 import TerminalsPanel from './toolkit/TerminalsPanel';
 import ToolsPanel from './toolkit/ToolsPanel';
 import styles from './MobileToolkit.module.css';
@@ -52,7 +50,6 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
   network: [
     { id: 'network-access', label: '接入与隧道', icon: <ApiOutlined /> },
     { id: 'subscription-aggregator', label: '订阅聚合与分流', icon: <ForkOutlined /> },
-    { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
     { id: 'proxy-diagnostics', label: '网络诊断', icon: <GlobalOutlined /> }
   ]
 };
@@ -81,8 +78,6 @@ function renderPanel(panelId: string) {
       return <ToolsPanel category="network-access" />;
     case 'subscription-aggregator':
       return <SubscriptionAggregatorPanel />;
-    case 'edge-forwarding':
-      return <EdgeForwardingPanel />;
     case 'proxy-diagnostics':
       return <DiagnosticsPanel />;
     default:

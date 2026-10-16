@@ -43,7 +43,7 @@ function providerConfigLine(status: EdgeStatus | null, provider: EdgeProvider) {
   return `${target}${info.writable === false ? '（不可写）' : ''}`;
 }
 
-export default function EdgeProxyPanel() {
+export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' | 'drawer' }) {
   const [status, setStatus] = useState<EdgeStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
@@ -124,7 +124,11 @@ export default function EdgeProxyPanel() {
   const applyLine = applyResult ? describeApplyResult(applyResult) : null;
 
   return (
-    <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-edge-title">
+    <section
+      className={variant === 'drawer' ? 'toolkit-domain-panel' : 'toolkit-page toolkit-domain-panel'}
+      aria-labelledby="toolkit-edge-title"
+    >
+      {variant === 'page' ? (
       <header className="toolkit-panel-header">
         <div>
           <div className="toolkit-panel-kicker">ENTRY &amp; FORWARDING</div>
@@ -138,6 +142,7 @@ export default function EdgeProxyPanel() {
           <Button icon={<ReloadOutlined />} loading={statusLoading} onClick={() => void loadStatus()}>重新探测</Button>
         </div>
       </header>
+      ) : null}
 
       {statusError && <InlineNote tone="error" description={statusError}>本机入口探测失败</InlineNote>}
 

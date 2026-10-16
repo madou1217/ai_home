@@ -3,6 +3,7 @@ import { Input, InputNumber, Select } from 'antd';
 import {
   DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -23,6 +24,7 @@ import type { ManagedToolItem } from '@/types';
 import { useManagedTools, MANAGED_TOOL_MANAGEMENT_LABELS as MANAGEMENT_LABELS } from '@/components/toolkit/use-managed-tools';
 import { useToolService } from '@/components/toolkit/use-tool-service';
 import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } from './toolkit-parts';
+import ManagedToolConfigSheet from './ManagedToolConfigSheet';
 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
 const LIFECYCLE_API = {
@@ -52,6 +54,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
     runAction
   } = useManagedTools('edge-entry', LIFECYCLE_API, { toolIds: PROVIDERS });
   const toolService = useToolService(fetchTools);
+  const [configTool, setConfigTool] = useState<ManagedToolItem | null>(null);
 
   const toolById = useMemo(() => {
     const map: Record<string, ManagedToolItem> = {};
@@ -196,6 +199,14 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
                 onClick={() => void runAction(tool, 'install')}
               />
             ) : null}
+            {tool?.configEditable ? (
+              <ActionButton
+                icon={<EditOutlined />}
+                label="配置"
+                disabled={Boolean(busy)}
+                onClick={() => setConfigTool(tool)}
+              />
+            ) : null}
             {tool?.canUpdate ? (
               <ActionButton
                 icon={<ReloadOutlined />}
@@ -307,6 +318,12 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
           </Note>
         ) : null}
       </HudSection>
+
+      <ManagedToolConfigSheet
+        tool={configTool}
+        onClose={() => setConfigTool(null)}
+        onSaved={fetchTools}
+      />
     </>
   );
 }

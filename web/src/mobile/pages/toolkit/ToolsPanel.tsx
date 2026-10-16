@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -25,6 +26,7 @@ import { DetailSheet, EmptySignal, HudSection, KeyValue, MonoList, SwipeRow, Tel
 import type { SwipeAction } from '@/mobile/ui';
 import type { ManagedToolItem, ManagedToolLifecycleAction, ToolkitToolCategoryId } from '@/types';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText, TaskStatus } from './toolkit-parts';
+import ManagedToolConfigSheet from './ManagedToolConfigSheet';
 import styles from '../MobileToolkit.module.css';
 
 const LIFECYCLE_API = {
@@ -49,6 +51,7 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
     runAction
   } = useManagedTools(category, LIFECYCLE_API);
   const [detailId, setDetailId] = useState('');
+  const [configTool, setConfigTool] = useState<ManagedToolItem | null>(null);
   const detail = tools.find((tool) => tool.id === detailId) || null;
   const toolService = useToolService(fetchTools);
 
@@ -138,10 +141,16 @@ export default function ToolsPanel({ category }: { category: ToolkitToolCategory
         onClose={() => setDetailId('')}
         code="MANAGED TOOL"
         title={detail?.name || '工具'}
-        footer={detail ? <ToolFooter tool={detail} busyAction={busyActionFor(detail)} onAction={(action) => void runAction(detail, action)} /> : null}
+        footer={detail ? <ToolFooter tool={detail} busyAction={busyActionFor(detail)} onAction={(action) => void runAction(detail, action)} onConfig={() => setConfigTool(detail)} /> : null}
       >
         {detail ? <ToolDetail tool={detail} status={statusFor(detail)} /> : null}
       </DetailSheet>
+
+      <ManagedToolConfigSheet
+        tool={configTool}
+        onClose={() => setConfigTool(null)}
+        onSaved={fetchTools}
+      />
     </>
   );
 }
@@ -187,27 +196,29 @@ function ToolDetail({ tool, status }: { tool: ManagedToolItem; status: ReactNode
       />
       {tool.configEditable ? (
         <Note tone="info" title="配置编辑">
-          配置编辑器在桌面端提供{tool.requiresElevation ? '；该配置保存需系统授权' : ''}。
+          在底部「配置」里直接改：服务端会校验后保存；桌面端还提供格式化与语法高亮。
         </Note>
       ) : null}
     </div>
   );
 }
 
-function ToolFooter({ tool, busyAction, onAction }: {
+function ToolFooter({ tool, busyAction, onAction, onConfig }: {
   tool: ManagedToolItem;
   busyAction?: ManagedToolLifecycleAction;
   onAction: (action: ManagedToolLifecycleAction) => void;
+  onConfig: () => void;
 }) {
   const busy = Boolean(busyAction);
   const installable = !tool.installed && tool.canInstall;
   const updatable = tool.installed && tool.canUpdate;
   const removable = tool.installed && tool.canUninstall;
-  if (!installable && !updatable && !removable) {
+  if (!installable && !updatable && !removable && !tool.configEditable) {
     return <span className={styles.footerNote}>当前资源不提供自动安装操作</span>;
   }
   return (
     <>
+      {tool.configEditable ? <ActionButton icon={<EditOutlined />} label="配置" onClick={onConfig} disabled={busy} /> : null}
       {installable ? <ActionButton icon={<DownloadOutlined />} label="安装" tone="primary" loading={busyAction === 'install'} disabled={busy} onClick={() => onAction('install')} /> : null}
       {updatable ? <ActionButton icon={<ReloadOutlined />} label="更新" tone="primary" loading={busyAction === 'update'} disabled={busy} onClick={() => onAction('update')} /> : null}
       {removable ? <ActionButton icon={<DeleteOutlined />} label="卸载" tone="danger" loading={busyAction === 'uninstall'} disabled={busy} onClick={() => onAction('uninstall')} /> : null}

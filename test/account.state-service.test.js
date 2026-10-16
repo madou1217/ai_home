@@ -436,6 +436,124 @@ test('account state service refuses token refresh clear for agy cli login-missin
   assert.equal(writes[0].runtimeState, null);
 });
 
+test('account state service clears an agy region block only via a fresh usage probe', () => {
+  const now = Date.now();
+  const regionRuntimeState = {
+    lastFailureKind: 'permission_denied',
+    lastFailureReason: 'agy_region_not_eligible',
+    lastError: 'agy_region_not_eligible',
+    lastFailureAt: now - 1_000,
+    routingBlock: {
+      kind: 'permission_denied',
+      reason: 'agy_region_not_eligible',
+      observedAt: now - 1_000
+    }
+  };
+  const createService = (runtimeState, writes) => createAccountStateService({
+    accountStateIndex: {
+      getAccountState() {
+        return {
+          accountRef: ACCOUNT_REF_5,
+          status: 'up',
+          configured: true,
+          apiKeyMode: false,
+          authMode: 'oauth',
+          displayName: 'agy5@example.com',
+          runtimeState
+        };
+      },
+      upsertRuntimeState(accountRef, provider, nextRuntimeState, baseState) {
+        writes.push({ accountRef, provider, runtimeState: nextRuntimeState, baseState });
+        return true;
+      }
+    }
+  });
+
+  // CLI 刷新路径的 verified_usage_success：探测晚于失败 → 推翻地区块。
+  {
+    const writes = [];
+    const service = createService(regionRuntimeState, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', {
+      evidence: 'verified_usage_success',
+      usageSnapshot: { capturedAt: now }
+    }), true);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].runtimeState, null);
+  }
+
+  // 池重建收敛路径的 agy_usage_probe_verified：与 CLI 路径同一谓词。
+  {
+    const writes = [];
+    const service = createService(regionRuntimeState, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', {
+      evidence: 'agy_usage_probe_verified',
+      usageSnapshot: { capturedAt: now }
+    }), true);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].runtimeState, null);
+  }
+
+  // 探测早于失败（证据过时，地区可能再次失效）→ 不清。
+  {
+    const writes = [];
+    const service = createService(regionRuntimeState, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', {
+      evidence: 'verified_usage_success',
+      usageSnapshot: { capturedAt: now - 60_000 }
+    }), false);
+    assert.equal(writes.length, 0);
+  }
+
+  // 没有探测快照（freshness 无从判定）→ fail closed。
+  {
+    const writes = [];
+    const service = createService(regionRuntimeState, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', { evidence: 'verified_usage_success' }), false);
+    assert.equal(writes.length, 0);
+  }
+
+  // 非地区类 permission_denied → 仍只能人工清除。
+  {
+    const writes = [];
+    const service = createService({
+      ...regionRuntimeState,
+      routingBlock: { kind: 'permission_denied', reason: 'gemini_permission_denied', observedAt: now - 1_000 }
+    }, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', {
+      evidence: 'verified_usage_success',
+      usageSnapshot: { capturedAt: now }
+    }), false);
+    assert.equal(writes.length, 0);
+  }
+
+  // 额度类 routingBlock → 探测成功不清（语义与既有规则一致）。
+  {
+    const writes = [];
+    const service = createService({
+      lastFailureKind: 'quota_exhausted',
+      lastFailureReason: 'quota_exhausted',
+      lastFailureAt: now - 1_000,
+      routingBlock: { kind: 'quota_exhausted', reason: 'out of quota', observedAt: now - 1_000 }
+    }, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'agy', {
+      evidence: 'verified_usage_success',
+      usageSnapshot: { capturedAt: now }
+    }), false);
+    assert.equal(writes.length, 0);
+  }
+
+  // 非 agy provider 的同形块 → 不受影响。
+  {
+    const writes = [];
+    const service = createService(regionRuntimeState, writes);
+    assert.equal(service.clearRuntimeBlock(ACCOUNT_REF_5, 'gemini', {
+      evidence: 'verified_usage_success',
+      usageSnapshot: { capturedAt: now }
+    }), false);
+    assert.equal(writes.length, 0);
+  }
+});
+
 test('account state service records runtime failures with merged base state', () => {
   const writes = [];
   const service = createAccountStateService({

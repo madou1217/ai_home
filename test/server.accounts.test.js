@@ -1053,3 +1053,112 @@ test('stale AGY usage evidence does not clear a later auth failure', (t) => {
   assert.equal(accounts.agy[0].lastFailureKind, 'auth_invalid');
   assert.ok(accounts.agy[0].authInvalidUntil > now);
 });
+
+test('fresh AGY usage evidence clears a region block after success', (t) => {
+  const fixture = createFixture(t);
+  const now = Date.now();
+  const accountRef = fixture.register('agy', '34', {
+    nativeAuth: {
+      email: 'region-probe@example.com',
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          access_token: 'agy-access',
+          refresh_token: 'agy-refresh',
+          expiry: new Date(now + 3600_000).toISOString()
+        }
+      }
+    },
+    usage: agyUsage(now, [{ model: 'gemini-2.5-flash', remainingPct: 100 }]),
+    accountName: 'region-probe@example.com'
+  });
+  fixture.accountStateIndex.upsertRuntimeState(accountRef, 'agy', {
+    lastFailureKind: 'permission_denied',
+    lastFailureReason: 'agy_region_not_eligible',
+    lastError: 'agy_region_not_eligible',
+    lastFailureAt: now - 60_000,
+    routingBlock: { kind: 'permission_denied', reason: 'agy_region_not_eligible', observedAt: now - 60_000 }
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'consumer',
+    displayName: 'region-probe@example.com'
+  });
+
+  const accounts = loadServerRuntimeAccounts(fixture.deps());
+
+  assert.equal(accounts.agy[0].routingBlock, null);
+  assert.equal(fixture.accountStateIndex.getAccountState(accountRef).runtimeState, null);
+});
+
+test('stale AGY usage evidence does not clear a later region block', (t) => {
+  const fixture = createFixture(t);
+  const now = Date.now();
+  const accountRef = fixture.register('agy', '34', {
+    nativeAuth: {
+      email: 'region-stale@example.com',
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          refresh_token: 'agy-refresh'
+        }
+      }
+    },
+    usage: agyUsage(now - 120_000, [{ model: 'gemini-2.5-flash', remainingPct: 100 }]),
+    accountName: 'region-stale@example.com'
+  });
+  fixture.accountStateIndex.upsertRuntimeState(accountRef, 'agy', {
+    lastFailureKind: 'permission_denied',
+    lastFailureReason: 'agy_region_not_eligible',
+    lastError: 'agy_region_not_eligible',
+    lastFailureAt: now - 60_000,
+    routingBlock: { kind: 'permission_denied', reason: 'agy_region_not_eligible', observedAt: now - 60_000 }
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'consumer',
+    displayName: 'region-stale@example.com'
+  });
+
+  const accounts = loadServerRuntimeAccounts(fixture.deps());
+
+  assert.equal(accounts.agy[0].routingBlock.kind, 'permission_denied');
+  assert.equal(accounts.agy[0].routingBlock.reason, 'agy_region_not_eligible');
+});
+
+test('fresh AGY usage evidence does not clear a non-region permission block', (t) => {
+  const fixture = createFixture(t);
+  const now = Date.now();
+  const accountRef = fixture.register('agy', '34', {
+    nativeAuth: {
+      email: 'permission@example.com',
+      oauthToken: {
+        auth_method: 'consumer',
+        token: {
+          access_token: 'agy-access',
+          refresh_token: 'agy-refresh',
+          expiry: new Date(now + 3600_000).toISOString()
+        }
+      }
+    },
+    usage: agyUsage(now, [{ model: 'gemini-2.5-flash', remainingPct: 100 }]),
+    accountName: 'permission@example.com'
+  });
+  fixture.accountStateIndex.upsertRuntimeState(accountRef, 'agy', {
+    lastFailureKind: 'permission_denied',
+    lastFailureReason: 'other_permission_denied',
+    lastError: 'other_permission_denied',
+    lastFailureAt: now - 60_000,
+    routingBlock: { kind: 'permission_denied', reason: 'other_permission_denied', observedAt: now - 60_000 }
+  }, {
+    configured: true,
+    apiKeyMode: false,
+    authMode: 'consumer',
+    displayName: 'permission@example.com'
+  });
+
+  const accounts = loadServerRuntimeAccounts(fixture.deps());
+
+  assert.equal(accounts.agy[0].routingBlock.kind, 'permission_denied');
+  assert.equal(accounts.agy[0].routingBlock.reason, 'other_permission_denied');
+});

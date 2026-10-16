@@ -988,6 +988,56 @@ for (const failedBranch of ['status', 'models']) {
   });
 }
 
+test('web ui refresh reloads the runtime pool after a successful usage probe so a cleared block reports recovery', async (t) => {
+  const fixture = createAccountFixture(t);
+  const accountRef = fixture.register('gemini', '96', {
+    state: { configured: true, apiKeyMode: false }
+  });
+  const blockedAccount = {
+    provider: 'gemini',
+    accountRef,
+    accessToken: 'fixture-token',
+    routingBlock: { kind: 'permission_denied', reason: 'agy_region_not_eligible', observedAt: Date.now() }
+  };
+  const healthyAccount = { provider: 'gemini', accountRef, accessToken: 'fixture-token' };
+  let probed = false;
+  let reloadAfterProbe = 0;
+  let releaseModels;
+  const modelGate = new Promise((resolve) => { releaseModels = resolve; });
+  t.after(() => releaseModels());
+  const state = { accounts: { gemini: [blockedAccount] } };
+  const deps = createBaseDeps(fixture, {
+    loadServerRuntimeAccounts: () => {
+      if (probed) reloadAfterProbe += 1;
+      return { gemini: [probed ? healthyAccount : blockedAccount] };
+    },
+    applyReloadState(nextState, accounts) { nextState.accounts = accounts; },
+    ensureUsageSnapshotAsync: async () => {
+      // 探测成功：持久态已被 state-service 的 agy 地区块分支清掉，池重建后应看到健康账号。
+      probed = true;
+    },
+    fetchModelsForAccount: async () => {
+      // 模型分支挂住：recovered 只能由 usage 分支的「探测后重载」得出。
+      await modelGate;
+      return ['gemini-refresh-test'];
+    }
+  });
+  const pathname = `/v0/webui/accounts/gemini/${accountRef}/refresh`;
+  const res = createResCapture();
+  await handleWebUIRequest({ method: 'POST', pathname, url: new URL(`http://localhost${pathname}`),
+    req: { headers: {} }, res, options: {}, state, deps });
+  assert.equal(res.statusCode, 202);
+  const { accountRefreshJobs } = require('../lib/server/webui-account-routes-refresh');
+  const job = accountRefreshJobs.get(JSON.parse(res.body).job.id);
+  assert.equal(await waitFor(() => job.branches.usage.status === 'succeeded', 10000), true);
+  assert.equal(job.recovered, true);
+  assert.ok(reloadAfterProbe >= 1);
+  assert.equal(state.accounts.gemini[0].routingBlock, null);
+  releaseModels();
+  assert.equal(await waitFor(() => job.status === 'succeeded', 10000), true);
+  assert.equal(job.branches.models.status, 'succeeded');
+});
+
 test('web ui unified refresh allows API key model and status refresh without probing quota', async (t) => {
   const fixture = createAccountFixture(t);
   const accountRef = fixture.register('codex', '92', { apiKeyMode: true });

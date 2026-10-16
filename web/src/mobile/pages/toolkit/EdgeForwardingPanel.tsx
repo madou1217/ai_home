@@ -16,7 +16,7 @@ import { ActionButton, InlineError, MonoBlock, Note, PanelToolbar, StatusText } 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
 
 /** 入口与转发（移动端）：与桌面同名同位置，看本机 nginx / caddy / frp 现状并落一次改动。 */
-export default function EdgeForwardingPanel() {
+export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: boolean }) {
   const [status, setStatus] = useState<EdgeStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -115,6 +115,7 @@ export default function EdgeForwardingPanel() {
 
       {PROVIDERS.map((item) => {
         const info = status?.providers?.[item];
+        if (planOnly) return null;
         return (
           <HudSection key={item} code={item.toUpperCase()} title={EDGE_PROVIDER_META[item].label}>
             <KeyValue
@@ -186,14 +187,19 @@ export default function EdgeForwardingPanel() {
             {plan.files.map((file) => (
               <MonoBlock key={file.path} label={file.path}>{file.content}</MonoBlock>
             ))}
-            <ActionButton
-              icon={<SafetyCertificateOutlined />}
-              label="写入并重载"
-              tone="primary"
-              loading={applying}
-              onClick={() => void applyPlan()}
-            />
+            {planOnly ? null : (
+              <ActionButton
+                icon={<SafetyCertificateOutlined />}
+                label="写入并重载"
+                tone="primary"
+                loading={applying}
+                onClick={() => void applyPlan()}
+              />
+            )}
           </>
+        ) : null}
+        {planOnly ? (
+          <Note tone="info">写入、回滚与状态在「应用与集成 → 入口与转发」里做；这里只生成计划。</Note>
         ) : null}
         {applyLine ? (
           <Note tone={applyLine.tone === 'success' ? 'info' : 'err'} title={applyLine.text}>

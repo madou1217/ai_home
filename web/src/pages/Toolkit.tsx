@@ -6,6 +6,7 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   ForkOutlined,
+  GatewayOutlined,
   GlobalOutlined,
   ToolOutlined
 } from '@ant-design/icons';
@@ -18,6 +19,7 @@ import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
+import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -42,6 +44,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '终端管理',
       description: '安装、更新与卸载',
       icon: <ToolOutlined />
+    },
+    {
+      id: 'edge-forwarding',
+      label: '入口与转发',
+      description: 'nginx / caddy / frp',
+      icon: <GatewayOutlined />
     },
     {
       id: 'cli-upgrade',
@@ -114,6 +122,8 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'terminals':
       return <TerminalManagerPanel />;
+    case 'edge-forwarding':
+      return <EdgeProxyPanel />;
     case 'environment':
       return <EnvironmentPanel />;
     case 'mirrors':

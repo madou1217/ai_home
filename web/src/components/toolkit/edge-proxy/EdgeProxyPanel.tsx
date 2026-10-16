@@ -1,26 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Input, InputNumber, Popconfirm, Segmented, Select, Spin, Tag } from 'antd';
-import {
-  ApiOutlined,
-  CloudServerOutlined,
-  FileTextOutlined,
-  GatewayOutlined,
-  ReloadOutlined,
-  SafetyCertificateOutlined
-} from '@ant-design/icons';
+import { Spin, Tag } from 'antd';
+import { ApiOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import CopyableCommand from '../CopyableCommand';
 import ToolkitStatusTrack from '../ToolkitStatusTrack';
+import EdgePlanCard from './EdgePlanCard';
 import { edgeProxyAPI } from './edge-proxy-api';
-import {
-  EDGE_NGINX_MODES,
-  EDGE_PROVIDER_META,
-  describeApplyResult,
-  describeEdgeError,
-  edgeInstallHint
-} from './edge-proxy-presentation';
-import type { EdgeApplyResult, EdgeNginxMode, EdgePlan, EdgeProvider, EdgeStatus } from './types';
+import { EDGE_PROVIDER_META, edgeInstallHint } from './edge-proxy-presentation';
+import type { EdgeProvider, EdgeStatus } from './types';
 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
 
@@ -43,21 +31,14 @@ function providerConfigLine(status: EdgeStatus | null, provider: EdgeProvider) {
   return `${target}${info.writable === false ? '（不可写）' : ''}`;
 }
 
+/**
+ * 本机入口转发管理（nginx / caddy / frp）：看现状 + 生成计划 + 写入并重载。
+ * 挂在「应用与集成」下作为本机软件管理；订阅聚合那边只复用 EdgePlanCard 做 dry-run。
+ */
 export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' | 'drawer' }) {
   const [status, setStatus] = useState<EdgeStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
-
-  const [provider, setProvider] = useState<EdgeProvider>('nginx');
-  const [domain, setDomain] = useState('');
-  const [mode, setMode] = useState<EdgeNginxMode>('split');
-  const [remotePort, setRemotePort] = useState<number | null>(null);
-
-  const [plan, setPlan] = useState<EdgePlan | null>(null);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [planError, setPlanError] = useState('');
-  const [applying, setApplying] = useState(false);
-  const [applyResult, setApplyResult] = useState<EdgeApplyResult | null>(null);
 
   const loadStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -81,67 +62,25 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
     [status]
   );
 
-  const planInput = useMemo(() => ({
-    provider,
-    domain: domain.trim() || undefined,
-    mode: provider === 'nginx' ? mode : undefined,
-    remotePort: provider === 'frp' && remotePort ? remotePort : undefined
-  }), [provider, domain, mode, remotePort]);
-
-  const generatePlan = useCallback(async () => {
-    setPlanLoading(true);
-    setPlanError('');
-    setApplyResult(null);
-    try {
-      const data = await edgeProxyAPI.plan(planInput);
-      if (data.ok === false || !data.plan) {
-        setPlan(null);
-        setPlanError(describeEdgeError(data.error, platform));
-      } else {
-        setPlan(data.plan);
-      }
-    } catch (error: unknown) {
-      setPlan(null);
-      setPlanError(error instanceof Error ? error.message : '生成失败');
-    } finally {
-      setPlanLoading(false);
-    }
-  }, [planInput, platform]);
-
-  const applyPlan = useCallback(async () => {
-    setApplying(true);
-    try {
-      const data = await edgeProxyAPI.apply({ ...planInput, reload: true });
-      setApplyResult(data);
-      if (data.ok) void loadStatus();
-    } catch (error: unknown) {
-      setApplyResult({ ok: false, error: 'edge_request_failed', message: error instanceof Error ? error.message : '写入失败' });
-    } finally {
-      setApplying(false);
-    }
-  }, [planInput, loadStatus]);
-
-  const applyLine = applyResult ? describeApplyResult(applyResult) : null;
-
   return (
     <section
       className={variant === 'drawer' ? 'toolkit-domain-panel' : 'toolkit-page toolkit-domain-panel'}
       aria-labelledby="toolkit-edge-title"
     >
       {variant === 'page' ? (
-      <header className="toolkit-panel-header">
-        <div>
-          <div className="toolkit-panel-kicker">ENTRY &amp; FORWARDING</div>
-          <h2 id="toolkit-edge-title">入口与转发</h2>
-          <p>
-            管本机的 nginx / caddy / frp：让中转跟着 443 走、给 WebUI 上 HTTPS、或从 VPS 转进来。
-            改动一律先备份再校验，校验不过自动回滚。
-          </p>
-        </div>
-        <div className="toolkit-header-actions">
-          <Button icon={<ReloadOutlined />} loading={statusLoading} onClick={() => void loadStatus()}>重新探测</Button>
-        </div>
-      </header>
+        <header className="toolkit-panel-header">
+          <div>
+            <div className="toolkit-panel-kicker">ENTRY &amp; FORWARDING</div>
+            <h2 id="toolkit-edge-title">入口与转发</h2>
+            <p>
+              管本机的 nginx / caddy / frp：让中转跟着 443 走、给 WebUI 上 HTTPS、或从 VPS 转进来。
+              改动一律先备份再校验，校验不过自动回滚。
+            </p>
+          </div>
+          <div className="toolkit-header-actions">
+            <Button icon={<ReloadOutlined />} loading={statusLoading} onClick={() => void loadStatus()}>重新探测</Button>
+          </div>
+        </header>
       ) : null}
 
       {statusError && <InlineNote tone="error" description={statusError}>本机入口探测失败</InlineNote>}
@@ -208,104 +147,11 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
               </div>
               <span className="toolkit-section-note">只生成不落盘：这里看到的内容就是写入时会写的东西</span>
             </div>
-
-            <div className="toolkit-header-actions">
-              <Segmented
-                value={provider}
-                onChange={(value) => {
-                  setProvider(value as EdgeProvider);
-                  setPlan(null);
-                  setApplyResult(null);
-                }}
-                options={PROVIDERS.map((item) => ({ value: item, label: EDGE_PROVIDER_META[item].label }))}
-              />
-              {provider !== 'frp' ? (
-                <Input
-                  style={{ minWidth: 220 }}
-                  value={domain}
-                  onChange={(event) => setDomain(event.target.value)}
-                  placeholder="域名，例如 aih.example.com"
-                  aria-label="域名"
-                />
-              ) : null}
-              {provider === 'nginx' ? (
-                <Select
-                  style={{ minWidth: 200 }}
-                  value={mode}
-                  onChange={(value) => setMode(value as EdgeNginxMode)}
-                  aria-label="转发形态"
-                  options={EDGE_NGINX_MODES.map((item) => ({ value: item.value, label: item.label }))}
-                />
-              ) : null}
-              {provider === 'frp' ? (
-                <InputNumber
-                  style={{ minWidth: 160 }}
-                  value={remotePort}
-                  onChange={setRemotePort}
-                  placeholder="VPS 远端端口"
-                  aria-label="远端端口"
-                />
-              ) : null}
-              <Button
-                type="primary"
-                icon={<FileTextOutlined />}
-                loading={planLoading}
-                disabled={provider !== 'frp' && !domain.trim()}
-                onClick={() => void generatePlan()}
-              >
-                生成计划
-              </Button>
-            </div>
-
-            {provider === 'nginx' ? (
-              <p className="toolkit-section-note">{EDGE_NGINX_MODES.find((item) => item.value === mode)?.detail}</p>
-            ) : null}
-            {provider === 'frp' ? (
-              <p className="toolkit-section-note">只在本机 frpc 配置里补两条 [[proxies]]（TCP + UDP，名字带 aih-server），你自己写的转发不动。</p>
-            ) : null}
-
-            {planError && <InlineNote tone="error">{planError}</InlineNote>}
+            <EdgePlanCard
+              platform={platform}
+              apply={{ onApplied: () => void loadStatus() }}
+            />
           </section>
-
-          {plan ? (
-            <section aria-labelledby="toolkit-edge-preview-title">
-              <div className="toolkit-detail-heading">
-                <div>
-                  <span>DRY RUN</span>
-                  <h3 id="toolkit-edge-preview-title">{plan.files.length} 个文件将被写入</h3>
-                </div>
-              </div>
-              <InlineNote tone="info" icon={<GatewayOutlined />} description={plan.notes?.join('；')}>{plan.summary}</InlineNote>
-              {plan.files.map((file) => (
-                <div key={file.path}>
-                  <div className="toolkit-detail-heading">
-                    <div>
-                      <span>{file.topLevel ? 'TOP-LEVEL INCLUDE' : file.append ? 'MANAGED BLOCK' : 'SITE'}</span>
-                      <h3>{file.path}</h3>
-                    </div>
-                  </div>
-                  <CopyableCommand command={file.content} copyLabel="复制配置" />
-                </div>
-              ))}
-              <div className="toolkit-header-actions">
-                <Popconfirm
-                  title="写入并重载？"
-                  description="先备份原配置；校验不通过会整体回滚。"
-                  okText="写入"
-                  cancelText="取消"
-                  onConfirm={() => void applyPlan()}
-                >
-                  <Button type="primary" icon={<SafetyCertificateOutlined />} loading={applying}>写入并重载</Button>
-                </Popconfirm>
-              </div>
-            </section>
-          ) : null}
-
-          {applyLine ? (
-            <InlineNote tone={applyLine.tone} icon={<CloudServerOutlined />} description={applyLine.detail || undefined}>
-              {applyLine.text}
-            </InlineNote>
-          ) : null}
 
           <p className="toolkit-section-note">
             <ApiOutlined /> 命令行等价入口：<code>aih edge status | plan | apply</code>（Linux 上配置目录属 root，需要 sudo 执行）。

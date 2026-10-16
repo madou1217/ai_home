@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Drawer, Empty, List, Popconfirm, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { useState } from 'react';
+import { Empty, List, Popconfirm, Space, Spin, Tag, Tooltip, Typography } from 'antd';
 import {
   ApartmentOutlined,
   CloseOutlined,
@@ -7,7 +7,6 @@ import {
   EditOutlined,
   EyeOutlined,
   FormOutlined,
-  GatewayOutlined,
   ImportOutlined,
   LinkOutlined,
   PlusOutlined,
@@ -42,15 +41,10 @@ import SourceEditorModal from './SourceEditorModal';
 import SubscriptionLinkField from './SubscriptionLinkField';
 import type { AggregatorProfile, AggregatorProfileInput, AggregatorSource } from './types';
 import { useSubscriptionAggregator } from './use-subscription-aggregator';
-import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
-import { edgeProxyAPI } from '@/components/toolkit/edge-proxy/edge-proxy-api';
-import { EDGE_PROVIDER_META } from '@/components/toolkit/edge-proxy/edge-proxy-presentation';
-import type { EdgeProvider, EdgeStatus } from '@/components/toolkit/edge-proxy/types';
+import EdgePlanCard from '@/components/toolkit/edge-proxy/EdgePlanCard';
 import styles from './SubscriptionAggregator.module.css';
 
 const { Text } = Typography;
-
-const ENTRY_PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
 
 function totalTraffic(sources: AggregatorSource[]) {
   const withInfo = sources.filter((source) => source.userInfo?.total);
@@ -70,22 +64,6 @@ export default function SubscriptionAggregatorPanel() {
   const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
   const [nodesSourceId, setNodesSourceId] = useState('');
   const [addingNode, setAddingNode] = useState(false);
-  // 客户端入口（nginx / caddy / frp）不是独立页面，是本面板里的一个入口：这里只读一次
-  // 现状用于提示，真正的配置在抽屉里做。
-  const [entryOpen, setEntryOpen] = useState(false);
-  const [entryStatus, setEntryStatus] = useState<EdgeStatus | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const data = await edgeProxyAPI.status();
-        if (alive) setEntryStatus(data);
-      } catch {
-        // 探测失败不影响聚合本体：抽屉里会重新探，那里才是主界面。
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
   const sources = overview?.sources || [];
   const profiles = overview?.profiles || [];
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
@@ -261,27 +239,16 @@ export default function SubscriptionAggregatorPanel() {
           <SectionCard
             title="客户端入口"
             className={styles.section}
-            extra={(
-              <Button icon={<GatewayOutlined />} onClick={() => setEntryOpen(true)}>配置入口</Button>
-            )}
           >
             <Text type="secondary">
-              聚合出来的中转条目写的是 <Text code>socks5, &lt;地址&gt;, &lt;端口&gt;</Text>；
-              这个入口怎么对外开放（跟 443 走 / 上 HTTPS 证书 / 从 VPS 转进来）在这里配：
-              只是本机自用就不需要它。
+              中转条目写的是 <Text code>socks5, &lt;地址&gt;, &lt;端口&gt;</Text>。想把入口放到 443 / 域名 /
+              VPS 上，先用 nginx 或 caddy 生成一次计划看看会写什么——这里只生成，不落盘。
             </Text>
             <div style={{ marginTop: 12 }}>
-              <Space size={8} wrap>
-                <Tag color="blue">转发目标 127.0.0.1:{entryStatus?.aihPort ?? '—'}</Tag>
-                {ENTRY_PROVIDERS.map((provider) => {
-                  const installed = Boolean(entryStatus?.providers?.[provider]?.installed);
-                  return (
-                    <Tag key={provider} color={installed ? 'success' : 'default'}>
-                      {EDGE_PROVIDER_META[provider].label} {installed ? '已安装' : '未安装'}
-                    </Tag>
-                  );
-                })}
-              </Space>
+              <EdgePlanCard
+                providers={['nginx', 'caddy']}
+                hint="写入、回滚与状态在「应用与集成 → 入口与转发」里做。"
+              />
             </div>
           </SectionCard>
 
@@ -293,15 +260,6 @@ export default function SubscriptionAggregatorPanel() {
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
           />
-          <Drawer
-            open={entryOpen}
-            onClose={() => setEntryOpen(false)}
-            width={880}
-            destroyOnHidden
-            title="客户端入口（nginx / caddy / frp）"
-          >
-            <EdgeProxyPanel variant="drawer" />
-          </Drawer>
           <ProfileEditorDrawer
             open={Boolean(editingProfile)}
             profile={editingProfile}

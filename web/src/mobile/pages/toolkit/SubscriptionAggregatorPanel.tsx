@@ -150,10 +150,10 @@ export default function SubscriptionAggregatorPanel() {
 
           <HudSection title="客户端入口" code="ENTRY">
             <Note tone="info">
-              聚合出来的中转条目写的是 <code>socks5, &lt;地址&gt;, &lt;端口&gt;</code>：这个入口怎么对外开放
-              （跟 443 走 / 上证书 / 从 VPS 转进来）在这里配；只是本机自用就不需要它。
+              中转条目写的是 <code>socks5, &lt;地址&gt;, &lt;端口&gt;</code>：想把入口放到 443 / 域名 / VPS 上，
+              先用 nginx 或 caddy 生成一次计划；这里只生成，写入在「应用与集成 → 入口与转发」。
             </Note>
-            <ActionButton icon={<GatewayOutlined />} label="配置入口" onClick={() => setEntryOpen(true)} />
+            <ActionButton icon={<GatewayOutlined />} label="生成一次计划" onClick={() => setEntryOpen(true)} />
           </HudSection>
 
           <HudSection
@@ -260,10 +260,10 @@ export default function SubscriptionAggregatorPanel() {
           <DetailSheet
             open={entryOpen}
             onClose={() => setEntryOpen(false)}
-            title="客户端入口（nginx / caddy / frp）"
+            title="用 nginx / caddy 生成一次计划"
             code="ENTRY"
           >
-            <EdgeForwardingPanel />
+            <EdgeForwardingPanel planOnly />
           </DetailSheet>
           <ProfileEditorDrawer
             open={Boolean(editingProfile)}

@@ -87,7 +87,7 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
 | 优先级 | 文件 | 处数 | 现在在做什么 | 目标模式 |
 | --- | --- | --- | --- | --- |
 | P1 ✅ | `lib/sessions/session-reader-opencode.js` + `lib/sessions/session-reader.js`（`readOpenCodeSessionModel`） | 5 查询点 | 原 WebUI 会话历史只读旧表：新会话定位（`FROM session`）查不到 → 历史与列表整个缺新会话；消息渲染依赖 `part` 表 | 已消费同一张布局表（2026-10-16 完成，验证见 §3 Phase 3.5 第 13 条）：会话面两代并集（同 id 取更新更晚副本，归档/子会话过滤在合并之后）；消息面并集 + 按 `contentModel` 渲染（`inline` vs `parts`），同 id 新代优先、新代渲染为空不遮挡旧代 |
-| P2 | `lib/sessions/opencode-session-store.js`（WebUI chat 代理） | 7 写入点 | 混合写：`session`/`message`/`part` 写死旧表，`session_message` 只写 switch 行；`assertRequiredTables` 要求旧表存在（纯新库直接报错） | 消费同一张布局表：写目标 = 首个存在的布局（新代优先，写 `seq` 自增）；断言按活跃布局的表集合。症状：迁移只跑一次，切日后写进旧表的新会话对 opencode 2.x 不可见 |
+| P2 ✅ | `lib/sessions/opencode-session-store.js`（WebUI chat 代理） | 7 写入点 | 混合写：`session`/`message`/`part` 写死旧表，`session_message` 只写 switch 行；`assertRequiredTables` 要求旧表存在（纯新库直接报错）。真机后果比「新会话对 2.x 不可见」更重：`session_message.session_id` 有 FK → `session_v2(id)`（node:sqlite 默认强制），迁移后库上新会话创建直接 `FOREIGN KEY constraint failed` | 已消费同一张布局表（2026-10-16 完成，验证见 §3 Phase 3.5 第 14 条）：新会话写活跃布局（`detectOpenCodeWriteLayouts` 首个 = 新代优先）；已存在会话写自身布局（两代都有取新代、仅旧代保持旧代——消息不跨代分裂）；门禁按「至少一代完整可写」；switch 行删除（从未成功持久化过） |
 
 ## 3. 改造路线（每步独立可验证、可回滚）
 
@@ -159,8 +159,18 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
     真机 A/B（165 会话）：140 完全一致、14 新代超集（旧读 0 条 → 新读全量）、模型 139 一致 / 26 从无到有 /
     0 变化、列表 +14 会话 0 丢失；唯一索引级差异为 1 条旧代合并气泡被新代拆成 synthetic+user 两行（内容无损）。
     测试：`test/session-reader.opencode-v2.test.js` + 布局表会话面探测用例。
-14. ⏳ WebUI chat 代理写入（P2）：`opencode-session-store.js` 写目标 = 首个存在的布局（新代优先，`seq` 自增）；
-    `assertRequiredTables` 按活跃布局的表集合。
+14. ✅ WebUI chat 代理写入（P2，见 §2 存储布局反模式）：`opencode-session-store.js` 消费同一张布局表——
+    新会话写活跃布局（`detectOpenCodeWriteLayouts` 首个 = 新代优先，纯旧库写旧代）；已存在会话写它自己
+    所在的布局（两代都有取新代、仅旧代保持旧代：消息不跨代分裂，也不触发 `session_message` → `session_v2`
+    的 FK）；写入门禁 = `project` + 至少一代完整可写（会话表 + 消息表齐、旧代含 `part`），都不可写时
+    报告「部分存在」那一代缺的表；inline 布局消息行形状对齐真机（user `{text,time}`、
+    assistant `{agent,model,content,time,cost,tokens,finish}`，`seq` = max+1 单调唯一）。
+    switch 行（agent-switched/model-switched）删除——真机取证它们从未成功持久化（旧写法只在
+    `session_message` 存在时写，而该表存在即 FK 生效 → 新会话创建整段失败），opencode 自身的
+    agent-switched 形状带 `previous`、读取方也忽略该类型。真机副本验证：修复前 `beginOpenCodeChatTurn`
+    新会话直接 FK 失败；修复后新会话与续写都落 `session_v2`、旧表冻结、读取器读回一致。
+    测试：`test/opencode-session-store-write-layouts.test.js`（测试 schema 镜像真机 FK：
+    session_message→session_v2、message→session、part→message）。
 
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件

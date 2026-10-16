@@ -12,6 +12,7 @@ const {
   hasOpenCodeTable,
   detectOpenCodeDbLayouts,
   detectOpenCodeSessionLayouts,
+  detectOpenCodeWriteLayouts,
   buildOpenCodeMessageQuery
 } = require('../lib/sessions/opencode-db-layouts');
 
@@ -77,6 +78,19 @@ test('detectOpenCodeSessionLayouts 会话面只要求会话表存在（半残库
   // 只有消息表不算任何会话面布局。
   const messageOnly = openDb('CREATE TABLE message (id TEXT);');
   assert.deepEqual(detectOpenCodeSessionLayouts(messageOnly), []);
+});
+
+test('detectOpenCodeWriteLayouts 要求旧代 part 表齐（正文载体），新代只需会话 + 消息表', () => {
+  const full = openDb(`${LEGACY_SCHEMA}${V2_SCHEMA}`);
+  assert.deepEqual(detectOpenCodeWriteLayouts(full).map((layout) => layout.id), ['session_v2', 'session_legacy']);
+
+  // 旧代缺 part → 不可写（写出去的消息没有正文载体，渲染为空 = 静默丢数据）。
+  const legacyNoPart = openDb('CREATE TABLE session (id TEXT); CREATE TABLE message (id TEXT);');
+  assert.deepEqual(detectOpenCodeWriteLayouts(legacyNoPart), []);
+
+  // 新代齐、旧代缺 part → 新代仍可写。
+  const v2Only = openDb(V2_SCHEMA);
+  assert.deepEqual(detectOpenCodeWriteLayouts(v2Only).map((layout) => layout.id), ['session_v2']);
 });
 
 test('buildOpenCodeMessageQuery 的跨布局行形状一致：角色列只在新代取 type 列', () => {

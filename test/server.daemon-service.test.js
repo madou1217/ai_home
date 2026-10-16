@@ -2491,6 +2491,14 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   assert.equal(script.includes('C:\\Node\\node.exe'), false);
   assert.equal(script.includes('.codex\\tmp\\arg0'), false);
   assert.equal(fs.existsSync(legacyScriptPath), false);
+
+  // 远程重启用无空格启动器：路径里没有空格，schtasks /tr 不必加引号（真机上就是这里踩的坑）。
+  const launcherPath = path.join(aiHomeDir, 'run', 'aih-server-start.cmd');
+  assert.equal(status.launcher, launcherPath);
+  assert.equal(launcherPath.includes(' '), false);
+  const launcher = fs.readFileSync(launcherPath, 'utf8');
+  assert.match(launcher, /cscript \/\/nologo "/);
+  assert.equal(launcher.includes('Start\\ Menu'), false, '启动器里不能出现被转义的路径（\\ + 空格）');
 });
 
 test('daemon service preserves Windows access denied as a restart elevation signal', async (t) => {

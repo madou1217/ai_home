@@ -2485,8 +2485,9 @@ test('daemon service installs Windows Startup script for login autostart', () =>
   assert.equal(status.installed, true);
   assert.equal(status.loaded, true);
   assert.equal(script.includes(`""${validAihPath}"" ""server"" ""start""`), true);
-  assert.equal(script.includes('shell.Run'), true);
-  assert.equal(script.includes(', 0, False'), true);
+  // 启动器必须用 Exec：窗口样式 0 的 Run 在 SSH / 计划任务 / WMI 这类非交互上下文里会静默不启动。
+  assert.equal(script.includes('.Exec('), true);
+  assert.equal(script.includes('shell.Run'), false);
   assert.equal(script.includes('C:\\Node\\node.exe'), false);
   assert.equal(script.includes('.codex\\tmp\\arg0'), false);
   assert.equal(fs.existsSync(legacyScriptPath), false);

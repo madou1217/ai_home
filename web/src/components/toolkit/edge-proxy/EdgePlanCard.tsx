@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Input, InputNumber, Popconfirm, Segmented, Select, Space } from 'antd';
-import { FileTextOutlined, GatewayOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { GatewayOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
 import CopyableCommand from '../CopyableCommand';
@@ -13,25 +13,26 @@ import {
 } from './edge-proxy-presentation';
 import type { EdgeApplyResult, EdgeNginxMode, EdgePlan, EdgeProvider } from './types';
 
+const PREVIEW_DEBOUNCE_MS = 350;
+
 interface EdgePlanCardProps {
-  /** 允许选的软件；订阅侧只要「做一个入口」用的那两个，管理面给全集。 */
+  /** 允许选的软件；只传一个时不再显示软件切换（管理页就是"对着这个软件配置"）。 */
   providers?: EdgeProvider[];
   platform?: string;
   /**
-   * 传入 = 管理面：计划下方给「写入并重载」，落盘后回调刷新现状。
-   * 不传 = 纯 dry-run：只生成计划（订阅侧用的就是这一档，不在这里管 nginx）。
+   * 传入 = 管理面：预览下方给「写入并重载」，落盘后回调刷新现状。
+   * 不传 = 纯预览：只显示会写什么（订阅侧用的就是这一档，不在这里管 nginx）。
    */
   apply?: {
     label?: string;
     onApplied?: (result: EdgeApplyResult) => void;
   };
-  /** 计划区之外的补充说明（例如「写入与回滚在 应用与集成」）。 */
   hint?: ReactNode;
 }
 
 /**
- * 「生成计划」这一件事的**唯一实现**：选软件 / 域名 / 形态 → 拿到会写入的内容（可复制）。
- * 管理面（EdgeProxyPanel）在它下面接上写入按钮；订阅侧只渲染 dry-run，不碰写入。
+ * 「这个软件要写哪些文件」的**唯一实现**：参数填好即自动预览（不用先点一次生成计划），
+ * 内容与写入时逐字节一致（同一个 plan 接口）。管理面在预览下方接写入按钮，订阅侧只到预览为止。
  */
 export default function EdgePlanCard({
   providers = ['nginx', 'caddy', 'frp'],
@@ -44,8 +45,8 @@ export default function EdgePlanCard({
   const [mode, setMode] = useState<EdgeNginxMode>('split');
   const [remotePort, setRemotePort] = useState<number | null>(null);
   const [plan, setPlan] = useState<EdgePlan | null>(null);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [planError, setPlanError] = useState('');
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<EdgeApplyResult | null>(null);
 
@@ -56,25 +57,45 @@ export default function EdgePlanCard({
     remotePort: provider === 'frp' && remotePort ? remotePort : undefined
   }), [provider, domain, mode, remotePort]);
 
-  const generatePlan = useCallback(async () => {
-    setPlanLoading(true);
-    setPlanError('');
+  const ready = provider === 'frp' ? Boolean(remotePort) : Boolean(domain.trim());
+
+  // 参数齐了就自动预览（防抖）：用户不需要"先点一次生成计划"这个多余动作。
+  useEffect(() => {
     setApplyResult(null);
-    try {
-      const data = await edgeProxyAPI.plan(input);
-      if (data.ok === false || !data.plan) {
-        setPlan(null);
-        setPlanError(describeEdgeError(data.error, platform));
-      } else {
-        setPlan(data.plan);
-      }
-    } catch (error: unknown) {
+    if (!ready) {
       setPlan(null);
-      setPlanError(error instanceof Error ? error.message : '生成失败');
-    } finally {
-      setPlanLoading(false);
+      setPreviewError('');
+      setPreviewing(false);
+      return undefined;
     }
-  }, [input, platform]);
+    let alive = true;
+    const timer = setTimeout(() => {
+      setPreviewing(true);
+      void (async () => {
+        try {
+          const data = await edgeProxyAPI.plan(input);
+          if (!alive) return;
+          if (data.ok === false || !data.plan) {
+            setPlan(null);
+            setPreviewError(describeEdgeError(data.error, platform));
+          } else {
+            setPlan(data.plan);
+            setPreviewError('');
+          }
+        } catch (error: unknown) {
+          if (!alive) return;
+          setPlan(null);
+          setPreviewError(error instanceof Error ? error.message : '预览失败');
+        } finally {
+          if (alive) setPreviewing(false);
+        }
+      })();
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [ready, input, platform]);
 
   const runApply = useCallback(async () => {
     setApplying(true);
@@ -95,18 +116,20 @@ export default function EdgePlanCard({
   return (
     <>
       <Space wrap size={8}>
-        <Segmented
-          value={provider}
-          onChange={(value) => {
-            setProvider(value as EdgeProvider);
-            setPlan(null);
-            setApplyResult(null);
-          }}
-          options={providers.map((item) => ({ value: item, label: EDGE_PROVIDER_META[item].label }))}
-        />
+        {providers.length > 1 ? (
+          <Segmented
+            value={provider}
+            onChange={(value) => {
+              setProvider(value as EdgeProvider);
+              setPlan(null);
+              setApplyResult(null);
+            }}
+            options={providers.map((item) => ({ value: item, label: EDGE_PROVIDER_META[item].label }))}
+          />
+        ) : null}
         {provider !== 'frp' ? (
           <Input
-            style={{ minWidth: 220 }}
+            style={{ minWidth: 240 }}
             value={domain}
             onChange={(event) => setDomain(event.target.value)}
             placeholder="域名，例如 aih.example.com"
@@ -124,22 +147,13 @@ export default function EdgePlanCard({
         ) : null}
         {provider === 'frp' ? (
           <InputNumber
-            style={{ minWidth: 160 }}
+            style={{ minWidth: 180 }}
             value={remotePort}
             onChange={setRemotePort}
             placeholder="VPS 远端端口"
             aria-label="远端端口"
           />
         ) : null}
-        <Button
-          type="primary"
-          icon={<FileTextOutlined />}
-          loading={planLoading}
-          disabled={provider !== 'frp' && !domain.trim()}
-          onClick={() => void generatePlan()}
-        >
-          生成计划
-        </Button>
       </Space>
 
       {provider === 'nginx' && activeMode ? <p className="toolkit-section-note">{activeMode.detail}</p> : null}
@@ -148,10 +162,16 @@ export default function EdgePlanCard({
       ) : null}
       {hint ? <p className="toolkit-section-note">{hint}</p> : null}
 
-      {planError && <InlineNote tone="error">{planError}</InlineNote>}
+      {!ready ? (
+        <p className="toolkit-section-note">
+          {provider === 'frp' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}
+        </p>
+      ) : null}
+      {ready && previewing && !plan ? <p className="toolkit-section-note">正在算要写哪些文件…</p> : null}
+      {previewError ? <InlineNote tone="error">{previewError}</InlineNote> : null}
 
       {plan ? (
-        <section aria-label="计划预览">
+        <section aria-label="将要写入的内容">
           <InlineNote tone="info" icon={<GatewayOutlined />} description={plan.notes?.join('；')}>{plan.summary}</InlineNote>
           {plan.files.map((file) => (
             <div key={file.path}>

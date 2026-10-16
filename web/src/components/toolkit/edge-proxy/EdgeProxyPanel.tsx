@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Spin, Tag } from 'antd';
+import { Modal, Spin, Tag } from 'antd';
 import { ApiOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import InlineNote from '@/components/ui/InlineNote';
@@ -11,6 +11,13 @@ import { EDGE_PROVIDER_META, edgeInstallHint } from './edge-proxy-presentation';
 import type { EdgeProvider, EdgeStatus } from './types';
 
 const PROVIDERS: EdgeProvider[] = ['nginx', 'caddy', 'frp'];
+
+// 每张卡上的动作就是"对着这个软件做一件事"，不是通用表单。
+const PROVIDER_ACTIONS: Record<EdgeProvider, string> = {
+  nginx: '配置 443 入口',
+  caddy: '配置 HTTPS 反向代理',
+  frp: '转发到 VPS'
+};
 
 function providerTag(status: EdgeStatus | null, provider: EdgeProvider) {
   const info = status?.providers?.[provider];
@@ -39,6 +46,7 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
   const [status, setStatus] = useState<EdgeStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState('');
+  const [editing, setEditing] = useState<EdgeProvider | null>(null);
 
   const loadStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -134,28 +142,40 @@ export default function EdgeProxyPanel({ variant = 'page' }: { variant?: 'page' 
                   {info && !info.installed ? (
                     <CopyableCommand command={edgeInstallHint(item, platform)} copyLabel="复制安装命令" />
                   ) : null}
+                  <div className="toolkit-header-actions">
+                    <Button
+                      type={info?.installed ? 'primary' : 'default'}
+                      disabled={!info?.installed}
+                      onClick={() => setEditing(item)}
+                    >
+                      {PROVIDER_ACTIONS[item]}
+                    </Button>
+                  </div>
                 </article>
               );
             })}
           </div>
 
-          <section className="toolkit-proxy-apply" aria-labelledby="toolkit-edge-plan-title">
-            <div className="toolkit-detail-heading">
-              <div>
-                <span>STAGED CHANGE</span>
-                <h3 id="toolkit-edge-plan-title">生成计划</h3>
-              </div>
-              <span className="toolkit-section-note">只生成不落盘：这里看到的内容就是写入时会写的东西</span>
-            </div>
-            <EdgePlanCard
-              platform={platform}
-              apply={{ onApplied: () => void loadStatus() }}
-            />
-          </section>
-
           <p className="toolkit-section-note">
             <ApiOutlined /> 命令行等价入口：<code>aih edge status | plan | apply</code>（Linux 上配置目录属 root，需要 sudo 执行）。
           </p>
+
+          <Modal
+            open={Boolean(editing)}
+            onCancel={() => setEditing(null)}
+            footer={null}
+            width={880}
+            destroyOnHidden
+            title={editing ? `${EDGE_PROVIDER_META[editing].label} · ${PROVIDER_ACTIONS[editing]}` : ''}
+          >
+            {editing ? (
+              <EdgePlanCard
+                providers={[editing]}
+                platform={platform}
+                apply={{ onApplied: () => void loadStatus() }}
+              />
+            ) : null}
+          </Modal>
         </>
       ) : null}
     </section>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input, InputNumber, Select } from 'antd';
-import { FileTextOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { HudSection, KeyValue, TelemetryGrid, TelemetryTile } from '@/mobile/ui';
 import { edgeProxyAPI } from '@/components/toolkit/edge-proxy/edge-proxy-api';
 import {
@@ -58,25 +58,44 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
     remotePort: provider === 'frp' && remotePort ? remotePort : undefined
   }), [provider, domain, mode, remotePort]);
 
-  const generatePlan = useCallback(async () => {
-    setPlanLoading(true);
-    setPlanError('');
-    setApplyResult(null);
-    try {
-      const data = await edgeProxyAPI.plan(planInput);
-      if (data.ok === false || !data.plan) {
-        setPlan(null);
-        setPlanError(describeEdgeError(data.error, platform));
-      } else {
-        setPlan(data.plan);
-      }
-    } catch (error_: unknown) {
+  const ready = provider === 'frp' ? Boolean(remotePort) : Boolean(domain.trim());
+
+  // 参数齐了就自动预览（与桌面同一套：不用先点一次「生成计划」）。
+  useEffect(() => {
+    if (!ready) {
       setPlan(null);
-      setPlanError(error_ instanceof Error ? error_.message : '生成失败');
-    } finally {
-      setPlanLoading(false);
+      setPlanError('');
+      return undefined;
     }
-  }, [planInput, platform]);
+    setApplyResult(null);
+    let alive = true;
+    const timer = setTimeout(() => {
+      setPlanLoading(true);
+      void (async () => {
+        try {
+          const data = await edgeProxyAPI.plan(planInput);
+          if (!alive) return;
+          if (data.ok === false || !data.plan) {
+            setPlan(null);
+            setPlanError(describeEdgeError(data.error, platform));
+          } else {
+            setPlan(data.plan);
+            setPlanError('');
+          }
+        } catch (error_: unknown) {
+          if (!alive) return;
+          setPlan(null);
+          setPlanError(error_ instanceof Error ? error_.message : '预览失败');
+        } finally {
+          if (alive) setPlanLoading(false);
+        }
+      })();
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [ready, planInput, platform]);
 
   const applyPlan = useCallback(async () => {
     setApplying(true);
@@ -143,7 +162,7 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
         );
       })}
 
-      <HudSection code="PLAN" title="生成计划">
+      <HudSection code="PLAN" title="将要写入的内容">
         <Select
           style={{ width: '100%' }}
           value={provider}
@@ -173,13 +192,10 @@ export default function EdgeForwardingPanel({ planOnly = false }: { planOnly?: b
             placeholder="VPS 远端端口"
           />
         ) : null}
-        <ActionButton
-          icon={<FileTextOutlined />}
-          label="生成计划"
-          onClick={() => void generatePlan()}
-          loading={planLoading}
-          disabled={provider !== 'frp' && !domain.trim()}
-        />
+        {!ready ? (
+          <Note tone="info">{provider === 'frp' ? '填上远端端口就会显示要写的内容。' : '填上域名就会显示要写的内容。'}</Note>
+        ) : null}
+        {ready && planLoading && !plan ? <Note tone="info">正在算要写哪些文件…</Note> : null}
         {planError ? <InlineError title="生成失败" detail={planError} /> : null}
         {plan ? (
           <>

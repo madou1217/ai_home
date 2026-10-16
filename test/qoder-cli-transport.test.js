@@ -72,14 +72,52 @@ test('buildQoderCliPrompt flattens messages with role labels and keeps image pla
       { role: 'user', content: [{ type: 'text', text: '带图' }, { type: 'image_url', image_url: { url: 'data:...' } }] }
     ]
   });
+  assert.ok(prompt.startsWith('以下是完整的对话记录，请作为 Assistant 回复最后一条 User 消息。'));
+  assert.ok(prompt.includes('本环境没有文件/命令工具'), 'prompt must declare that no CLI tools are available');
   assert.ok(prompt.includes('System:\n你是助手'));
   assert.ok(prompt.includes('User:\n第一句'));
   assert.ok(prompt.includes('Assistant:\n回答一'));
   assert.ok(prompt.includes('带图'));
   assert.ok(prompt.includes('[图片附件暂不支持经 Qoder CLI 通道发送]'));
+  assert.ok(prompt.includes('【对话记录开始】'));
+  assert.ok(prompt.includes('【对话记录结束】'));
+  assert.ok(prompt.includes('请作为 Assistant 直接回复【最后一条 User 消息】。'));
   assert.ok(prompt.endsWith('Assistant:'));
   assert.equal(buildQoderCliPrompt({ messages: [] }), '');
   assert.equal(buildQoderCliPrompt({}), '');
+});
+
+// 回归（2026-10-16 驴头不对马嘴事故）：上游会把记录末尾的一条当成背景，只回「已就绪」；
+// 因此提示开头必须点名最后一条 User 消息正文，超长时截断点名、完整正文留在记录里。
+test('buildQoderCliPrompt anchors the last user message at the top of the transcript', () => {
+  const prompt = buildQoderCliPrompt({
+    messages: [
+      { role: 'user', content: '聊天策略块' },
+      { role: 'user', content: '技能清单块' },
+      { role: 'assistant', content: '历史回答' },
+      { role: 'user', content: '生成一个鹈鹕骑自行车的 3D 页面' }
+    ]
+  });
+  const calloutZone = prompt.slice(0, prompt.indexOf('【对话记录开始】'));
+  assert.ok(calloutZone.includes('【最后一条 User 消息（需要你直接回复的内容）】'));
+  assert.ok(calloutZone.includes('生成一个鹈鹕骑自行车的 3D 页面'));
+  assert.ok(!calloutZone.includes('聊天策略块'), 'callout must only carry the last user message');
+  const transcriptZone = prompt.slice(prompt.indexOf('【对话记录开始】'));
+  assert.ok(transcriptZone.includes('User:\n生成一个鹈鹕骑自行车的 3D 页面'));
+
+  const long = 'x'.repeat(5000);
+  const longPrompt = buildQoderCliPrompt({ messages: [{ role: 'user', content: long }] });
+  const longCalloutZone = longPrompt.slice(0, longPrompt.indexOf('【对话记录开始】'));
+  assert.ok(longCalloutZone.length < 2300, 'oversized callout must be clipped');
+  assert.ok(longCalloutZone.includes('完整正文见下方【对话记录】末尾'));
+  assert.ok(longPrompt.includes(long), 'full text must stay in the transcript');
+});
+
+test('buildQoderCliPrompt without a user message keeps the plain transcript form', () => {
+  const prompt = buildQoderCliPrompt({ messages: [{ role: 'system', content: '只有系统块' }] });
+  assert.ok(prompt.includes('System:\n只有系统块'));
+  assert.ok(!prompt.includes('【最后一条 User 消息'));
+  assert.ok(prompt.endsWith('Assistant:'));
 });
 
 test('readResultErrorMessage maps the pricingUrl quota wall to a readable message', () => {
@@ -116,6 +154,9 @@ test('runQoderCliTurn spawns headless CLI, streams deltas, resolves content and 
   assert.ok(args.includes('--print'));
   assert.ok(args.includes('stream-json'));
   assert.ok(args.includes('--max-turns'));
+  const toolsIndex = args.indexOf('--tools');
+  assert.ok(toolsIndex > -1, 'CLI built-in tools must be disabled for a chat-only relay');
+  assert.equal(args[toolsIndex + 1], '');
   const modelIndex = args.indexOf('--model');
   assert.equal(args[modelIndex + 1], 'Qwen3.8-Max');
   const configDirIndex = args.indexOf('--config-dir');

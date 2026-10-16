@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
 	"github.com/madou1217/ai_home/internal/adapters/clientprotocol/gemini"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
@@ -99,6 +100,13 @@ func writeCanonicalFailure(
 	response http.ResponseWriter,
 	failure inference.ResponseFailure,
 ) {
+	// 站点边缘拒绝（WAF 拦截页 / 网关请求格式拒绝）与请求内容、账号都无关：
+	// 交付 502 而不是 400，避免把上游边缘问题说成「请求非法」（与 Node 及其它
+	// 客户协议编码器同语义）。
+	if failure.Code() == string(runtimecore.FailureUpstreamEdgeRejected) {
+		writeError(response, http.StatusBadGateway, "INTERNAL", failure.SafeMessage())
+		return
+	}
 	status := http.StatusBadGateway
 	statusName := "INTERNAL"
 	if !failure.Retryable() {

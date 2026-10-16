@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
@@ -43,6 +44,9 @@ type ProviderRouteFactory interface {
 type Builder struct {
 	models    accountapp.RoutableModelReader
 	factories map[inference.ProviderID]ProviderRouteFactory
+	// relayProviders 声明由独立透传通道执行、不进 Canonical 路由目录的 Provider。
+	// 键是账号目录里的 Provider ID（字符串），不经过 Canonical 的封闭 Provider 集合。
+	relayProviders map[string]struct{}
 	// aliases 是 Node 推送的模型别名投影；为空表示 Go 不做别名改写（全部交还 Node）。
 	aliases *modelalias.Store
 }
@@ -80,6 +84,9 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if builder == nil || builder.models == nil || ctx == nil {
 		return nil, ErrInvalidBuilder
 	}
+	if err := builder.validateRelayProviders(); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -93,25 +100,100 @@ func (builder *Builder) Build(ctx context.Context) (*Snapshot, error) {
 	if len(models) == 0 {
 		// 没有本地可路由模型时仍要记录别名投影的编译结果，管理接口才能如实回报
 		// 「哪些别名 Go 接不了」，而不是静默丢失。
-		return newSnapshot(nil, nil, 0, builder.compileAliases(models, nil)), nil
+		return newSnapshot(nil, nil, 0, 0, builder.compileAliases(models, nil)), nil
 	}
 	rules := make([]inferencegateway.RouteRule, 0, len(models))
 	identities := make(map[ruleIdentity]struct{}, len(models))
+	routedModels := make([]accountapp.RoutableModel, 0, len(models))
 	for _, model := range models {
+		if builder.isRelayModel(model) {
+			// 透传通道执行的模型进入展示目录与账号路由索引，但不编译 Canonical
+			// 执行规则：通道选择由入口挂载决定，出现规则反而会制造第二处真相。
+			continue
+		}
 		rule, buildErr := builder.buildRule(model)
 		if buildErr != nil {
 			return nil, buildErr
 		}
 		rules = append(rules, rule)
 		identities[identityOf(rule)] = struct{}{}
+		routedModels = append(routedModels, model)
 	}
 	compilation := builder.compileAliases(models, identities)
 	rules = append(rules, compilation.Rules...)
-	routes, err := inferencegateway.NewRouteCatalog(rules...)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
+	var routes *inferencegateway.RouteCatalog
+	if len(rules) > 0 {
+		routes, err = inferencegateway.NewRouteCatalog(rules...)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidProviderRoute, err)
+		}
 	}
-	return newSnapshot(routes, uniqueModels(models), len(rules), compilation), nil
+	display := uniqueModels(models)
+	displayOnly := countDisplayOnlyModels(display, routedModels)
+	return newSnapshot(routes, display, len(rules), displayOnly, compilation), nil
+}
+
+// WithRelayProviders 声明由独立透传通道承载、不进 Canonical 路由目录的 Provider。
+//
+// 家族透传（CodeBuddy / WorkBuddy 四支）由专用 HTTP 通道直连官方端点，不经过
+// Canonical 执行计划：它们的模型必须出现在展示目录里（交还判定与 /v1/models
+// 依赖它），但不存在也不应该存在 RouteRule。未声明且没有 Factory 的 Canonical
+// Provider 仍然是 Build 的硬错误——那通常意味着漏注册 Factory，静默跳过会把
+// 故障推到运行时。
+func (builder *Builder) WithRelayProviders(providers ...string) *Builder {
+	if builder == nil {
+		return builder
+	}
+	registry := make(map[string]struct{}, len(providers))
+	for _, providerID := range providers {
+		registry[providerID] = struct{}{}
+	}
+	builder.relayProviders = registry
+	return builder
+}
+
+// validateRelayProviders 拒绝空 Provider ID：静默忽略会让「声明的透传通道」
+// 和「实际跳过的模型」悄悄不一致。
+func (builder *Builder) validateRelayProviders() error {
+	for providerID := range builder.relayProviders {
+		if strings.TrimSpace(providerID) == "" {
+			return ErrInvalidBuilder
+		}
+	}
+	return nil
+}
+
+// isRelayModel 判断该模型是否由声明的透传通道执行。
+func (builder *Builder) isRelayModel(model accountapp.RoutableModel) bool {
+	if builder == nil || len(builder.relayProviders) == 0 {
+		return false
+	}
+	_, relay := builder.relayProviders[model.ProviderID()]
+	return relay
+}
+
+// countDisplayOnlyModels 统计展示目录里没有 Canonical 执行规则的模型数。
+//
+// 这些模型由透传通道执行；快照不变量据此放行「展示多于规则」，同时仍然拒绝
+// 无法解释的缺口。
+func countDisplayOnlyModels(
+	display []accountapp.RoutableModel,
+	routed []accountapp.RoutableModel,
+) int {
+	if len(display) == 0 {
+		return 0
+	}
+	routedIDs := make(map[string]struct{}, len(routed))
+	for _, model := range routed {
+		routedIDs[model.ModelID().String()] = struct{}{}
+	}
+	displayOnly := 0
+	for _, model := range display {
+		if _, ok := routedIDs[model.ModelID().String()]; !ok {
+			displayOnly++
+		}
+	}
+	return displayOnly
 }
 
 // WithAliasStore 让 Builder 在编译目录时并入 Node 的模型别名投影；store 可为 nil，

@@ -211,6 +211,139 @@ func TestBuilderRejectsInvalidSnapshots(t *testing.T) {
 	}
 }
 
+// TestBuilderServesRelayChannelModelsFromDisplayOnly 验证透传通道的 Provider 模型
+// 只进展示目录与账号路由索引，不编译 Canonical 规则；解析该模型时按路由未命中
+// 交给入口自己的通道处理。
+func TestBuilderServesRelayChannelModelsFromDisplayOnly(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "workbuddy", "glm-5.3-flash"),
+		newRoutableModel(t, catalog, "codex", "gpt-5.6-sol"),
+	}}).WithRelayProviders("workbuddy")
+	snapshot, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+	if snapshot.ModelCount() != 2 || snapshot.RouteCount() != 1 {
+		t.Fatalf(
+			"snapshot model_count=%d route_count=%d",
+			snapshot.ModelCount(),
+			snapshot.RouteCount(),
+		)
+	}
+	models := snapshot.Models()
+	if len(models) != 2 ||
+		models[0].ModelID().String() != "glm-5.3-flash" ||
+		models[1].ModelID().String() != "gpt-5.6-sol" {
+		t.Fatalf("snapshot models = %#v", models)
+	}
+	if _, resolveErr := snapshot.Resolve(context.Background(), newTextRequest(
+		t, inference.ClientProtocolOpenAIChatCompletions, "glm-5.3-flash",
+	)); !errors.Is(resolveErr, inferencegateway.ErrRouteNotFound) {
+		t.Fatalf("Resolve(relay model) error = %v", resolveErr)
+	}
+	plan, resolveErr := snapshot.Resolve(context.Background(), newTextRequest(
+		t, inference.ClientProtocolOpenAIChatCompletions, "gpt-5.6-sol",
+	))
+	if resolveErr != nil || len(plan.Candidates()) != 1 ||
+		plan.Candidates()[0].ProviderID() != inference.ProviderCodex {
+		t.Fatalf("Resolve(canonical model) plan=%#v error=%v", plan, resolveErr)
+	}
+}
+
+// TestBuilderPublishesRelayOnlyCatalogWithoutCanonicalRoutes 验证当本地只有透传
+// 通道模型时快照仍然可发布：展示目录非空、无 Canonical 路由、解析交给通道。
+func TestBuilderPublishesRelayOnlyCatalogWithoutCanonicalRoutes(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "workbuddycn", "glm-5.3-flash"),
+	}}).WithRelayProviders("workbuddycn")
+	snapshot, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+	if snapshot.ModelCount() != 1 || snapshot.RouteCount() != 0 {
+		t.Fatalf(
+			"snapshot model_count=%d route_count=%d",
+			snapshot.ModelCount(),
+			snapshot.RouteCount(),
+		)
+	}
+	active, err := inferencecatalog.NewAtomicCatalog(newTestClock().Now)
+	if err != nil {
+		t.Fatalf("NewAtomicCatalog() error = %v", err)
+	}
+	if err := active.Publish(snapshot); err != nil {
+		t.Fatalf("Publish(relay-only) error = %v", err)
+	}
+	models, err := active.ListRoutableModels(context.Background())
+	if err != nil || len(models) != 1 ||
+		models[0].ModelID().String() != "glm-5.3-flash" {
+		t.Fatalf("ListRoutableModels() models=%#v error=%v", models, err)
+	}
+	if _, resolveErr := active.Resolve(context.Background(), newTextRequest(
+		t, inference.ClientProtocolOpenAIChatCompletions, "glm-5.3-flash",
+	)); !errors.Is(resolveErr, inferencegateway.ErrRouteNotFound) {
+		t.Fatalf("Resolve(relay-only) error = %v", resolveErr)
+	}
+}
+
+// TestBuilderKeepsAliasOffRelayChannelTargets 验证指向透传通道模型的别名不会被
+// Go 接受：Go 无法在别名改写后把请求交给透传通道，接受它会让别名请求落到没有
+// 规则的目标上。交还 Node 后由 Node 完成改写与选路。
+func TestBuilderKeepsAliasOffRelayChannelTargets(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "workbuddy", "glm-5.3-flash"),
+		newRoutableModel(t, catalog, "codex", "gpt-5.6-sol"),
+	}}).
+		WithRelayProviders("workbuddy").
+		WithAliasStore(aliasStore(t,
+			enabledAlias("relay-target", "wb-best", "glm-5.3-flash"),
+			enabledAlias("canonical-target", "code-best", "gpt-5.6-sol"),
+		))
+	snapshot, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+	compilation := snapshot.AliasCompilation()
+	if len(compilation.AcceptedIDs) != 1 ||
+		compilation.AcceptedIDs[0] != "canonical-target" {
+		t.Fatalf("accepted = %#v", compilation.AcceptedIDs)
+	}
+	reasons := map[string]inferencecatalog.AliasDropReason{}
+	for _, drop := range compilation.Dropped {
+		reasons[drop.ID] = drop.Reason
+	}
+	if reasons["relay-target"] != inferencecatalog.AliasDropTargetNotRoutable {
+		t.Fatalf("relay-target reason = %q", reasons["relay-target"])
+	}
+}
+
+// TestBuilderRejectsUndeclaredFactorylessProviders 验证透传声明不会放松安全网：
+// 未声明且没有 Factory 的 Provider 仍然让整批构建失败，而不是被静默跳过。
+func TestBuilderRejectsUndeclaredFactorylessProviders(t *testing.T) {
+	t.Parallel()
+
+	catalog := newProviderCatalog(t)
+	builder := newBuilder(t, &modelReader{models: []accountapp.RoutableModel{
+		newRoutableModel(t, catalog, "workbuddy", "glm-5.3-flash"),
+		newRoutableModel(t, catalog, "kimi", "kimi-k3"),
+	}}).WithRelayProviders("workbuddy")
+	if _, err := builder.Build(context.Background()); !errors.Is(
+		err,
+		inferencecatalog.ErrProviderRouteFactoryNotFound,
+	) {
+		t.Fatalf("Builder.Build() error = %v", err)
+	}
+}
+
 // TestAtomicCatalogPublishesWholeSnapshotsAndRetainsLastKnownGood 验证并发读取
 // 只观察完整快照，失败刷新只标记 stale 而不会清空旧目录。
 func TestAtomicCatalogPublishesWholeSnapshotsAndRetainsLastKnownGood(t *testing.T) {

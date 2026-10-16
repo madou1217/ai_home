@@ -23,6 +23,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
+	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -152,6 +153,9 @@ func newInferenceComposition(
 		return nil, err
 	}
 	builder.WithAliasStore(modelAliases)
+	// 家族透传（CodeBuddy / WorkBuddy 四支）由专用通道承载：模型进展示目录与账号
+	// 路由索引（交还判定、/v1/models 依赖），但不编译 Canonical 规则。
+	builder.WithRelayProviders(codebuddyfamilyrelay.FamilyProviders...)
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{
 			Builder: builder,

@@ -28,6 +28,8 @@ type Snapshot struct {
 	routes     *inferencegateway.RouteCatalog
 	models     []accountapp.RoutableModel
 	routeCount int
+	// displayOnly 是展示目录里没有 Canonical 执行规则的模型数（透传通道执行）。
+	displayOnly int
 	// aliases 记录本次构建接受的别名 id 与丢弃原因，供管理接口如实回报给 Node。
 	aliases AliasCompilation
 	built   bool
@@ -38,14 +40,16 @@ func newSnapshot(
 	routes *inferencegateway.RouteCatalog,
 	models []accountapp.RoutableModel,
 	routeCount int,
+	displayOnly int,
 	aliases AliasCompilation,
 ) *Snapshot {
 	return &Snapshot{
-		routes:     routes,
-		models:     append([]accountapp.RoutableModel(nil), models...),
-		routeCount: routeCount,
-		aliases:    aliases,
-		built:      true,
+		routes:      routes,
+		models:      append([]accountapp.RoutableModel(nil), models...),
+		routeCount:  routeCount,
+		displayOnly: displayOnly,
+		aliases:     aliases,
+		built:       true,
 	}
 }
 
@@ -106,18 +110,27 @@ func (snapshot *Snapshot) RouteCount() int {
 	return snapshot.routeCount
 }
 
-// isValid 复核空目录或模型与路由数量一致的构造不变量。
+// isValid 复核空目录或模型与执行通道数量一致的构造不变量。
+//
+// 不变量：每个展示模型都必须有执行通道——Canonical 规则（routeCount 覆盖，含同 id
+// 多 Provider 的冗余）或透传通道（displayOnly）。透传模型的规则数少于展示数因此
+// 合法，但没有通道的缺口仍然被拒绝。
 func (snapshot *Snapshot) isValid() bool {
 	if snapshot == nil ||
 		!snapshot.built ||
 		snapshot.routeCount < 0 ||
-		snapshot.routeCount < len(snapshot.models) {
+		snapshot.displayOnly < 0 ||
+		snapshot.routeCount+snapshot.displayOnly < len(snapshot.models) {
 		return false
 	}
 	if len(snapshot.models) == 0 {
-		return snapshot.routes == nil
+		return snapshot.routes == nil && snapshot.displayOnly == 0
 	}
-	return snapshot.routes != nil
+	if snapshot.routes == nil {
+		// 只有透传通道时没有 Canonical 路由目录，但每个展示模型都必须被声明过。
+		return snapshot.displayOnly == len(snapshot.models)
+	}
+	return true
 }
 
 // CatalogStatus 是不暴露模型名、账号或内部错误的目录健康快照。

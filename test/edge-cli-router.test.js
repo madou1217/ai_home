@@ -6,7 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { parseEdgeArgs, runEdgeCommand } = require('../lib/cli/commands/edge-router');
-const { rewriteProviderResumeVerb } = require('../lib/cli/services/ai-cli/provider-resume-verb');
+const { extractNativeEscape, rewriteProviderNativeVerb } = require('../lib/cli/services/ai-cli/provider-resume-verb');
+const rewriteProviderResumeVerb = rewriteProviderNativeVerb;
 
 function capture() {
   const lines = [];
@@ -136,7 +137,7 @@ test('aih <cli> resume：统一动词翻译成各 provider 的原生命令/旗�
 test('aih <cli> resume --help：打印统一用法而不是把 --help 发给原生 CLI', () => {
   const help = rewriteProviderResumeVerb('claude', ['claude', 'resume', '--help']);
   assert.equal(help.ok, false);
-  assert.equal(help.reason, 'resume_help');
+  assert.equal(help.reason, 'verb_help');
   assert.match(help.message, /aih <cli> resume \[<id>\]/);
   assert.match(help.message, /cline {5}--id/);
 });
@@ -159,6 +160,48 @@ test('aih <cli> resume：拒绝的三种情形各自有明确原因（不猜、�
   assert.equal(bad.reason, 'resume_identity_invalid');
 });
 
+test('aih <cli> fork：统一分叉动词（codex 子命令形态 + 其余 --fork-session/--fork）', () => {
+  assert.deepEqual(rewriteProviderNativeVerb('codex', ['codex', 'fork', 'sid']), { ok: true, args: ['codex', 'fork', 'sid'] });
+  assert.deepEqual(rewriteProviderNativeVerb('codex', ['codex', 'fork']), { ok: true, args: ['codex', 'fork'] });
+  assert.deepEqual(rewriteProviderNativeVerb('claude', ['claude', 'fork', 'sid']), { ok: true, args: ['claude', '--resume', 'sid', '--fork-session'] });
+  assert.deepEqual(rewriteProviderNativeVerb('claude', ['claude', 'fork']), { ok: true, args: ['claude', '--continue', '--fork-session'] });
+  assert.deepEqual(rewriteProviderNativeVerb('opencode', ['opencode', 'fork', 'ses_1']), { ok: true, args: ['opencode', '--session', 'ses_1', '--fork'] });
+  assert.deepEqual(rewriteProviderNativeVerb('qodercn', ['qodercn', 'fork']), { ok: true, args: ['qodercn', '--continue', '--fork-session'] });
+  // 没有 fork 能力的 provider 明确拒绝（gemini / cline / agy），TUI-only 的给 TUI 说明
+  for (const provider of ['gemini', 'cline', 'agy']) {
+    const refused = rewriteProviderNativeVerb(provider, [provider, 'fork', 'x']);
+    assert.equal(refused.ok, false, provider);
+    assert.equal(refused.reason, 'fork_unsupported', provider);
+  }
+  assert.equal(rewriteProviderNativeVerb('kimi', ['kimi', 'fork']).reason, 'resume_in_tui_only');
+});
+
+test('原生命令透传：统一动词之外的 token 一律不改写，`--` 之后强制原样', () => {
+  // 这些是各 CLI 的真实子命令/参数，必须原样交给原生 CLI
+  for (const tokens of [
+    ['codex', 'exec', '--json'],
+    ['codex', 'mcp', 'list'],
+    ['codex', 'agents'],
+    ['claude', '--model', 'opus'],
+    ['claude', '-p', 'hi'],
+    ['opencode', 'run', 'hello'],
+    ['gemini', '-i'],
+    ['cline', '--json'],
+    ['qoder', '--print', 'x']
+  ]) {
+    assert.equal(rewriteProviderNativeVerb(tokens[0], tokens), null, tokens.join(' '));
+  }
+
+  // codex 的 `resume --last` 既是原生参数也是统一动词：改写后必须逐字节等于原生形态。
+  assert.deepEqual(rewriteProviderNativeVerb('codex', ['codex', 'resume', '--last']), { ok: true, args: ['codex', 'resume', '--last'] });
+  assert.deepEqual(rewriteProviderNativeVerb('codex', ['codex', 'fork', '--last']), { ok: true, args: ['codex', 'fork', '--last'] });
+
+  // 逃生门：撞上 aih 保留字（ls / login / sessions / resume）也照原样发出去
+  assert.deepEqual(extractNativeEscape(['claude', '--', 'ls']), { escaped: true, args: ['claude', 'ls'] });
+  assert.deepEqual(extractNativeEscape(['claude', '2', '--', 'resume', 'sid']), { escaped: true, args: ['claude', 'resume', 'sid'] });
+  assert.deepEqual(extractNativeEscape(['claude', 'ls']), { escaped: false, args: ['claude', 'ls'] });
+});
+
 test('接线守卫：aih edge 必须挂在顶层路由器上，脚本只是薄壳；resume 动词必须接进 provider 派发', () => {
   const root = path.join(__dirname, '..');
   const router = fs.readFileSync(path.join(root, 'lib/cli/commands/root/router.js'), 'utf8');
@@ -179,6 +222,8 @@ test('接线守卫：aih edge 必须挂在顶层路由器上，脚本只是薄�
 
   // resume 统一动词：router 必须调用它，且拒绝时以非零退出（不许静默降级成转发原生命令）。
   const aiCliRouter = fs.readFileSync(path.join(root, 'lib/cli/commands/ai-cli/router.js'), 'utf8');
-  assert.match(aiCliRouter, /rewriteProviderResumeVerb\(cliName, args\)/);
-  assert.match(aiCliRouter, /resume 不支持/);
+  assert.match(aiCliRouter, /rewriteProviderNativeVerb\(cliName, args\)/);
+  assert.match(aiCliRouter, /不支持该统一动词/);
+  // 逃生门必须先于动词改写生效（`--` 之后原样透传）。
+  assert.match(aiCliRouter, /extractNativeEscape\(args\)/);
 });

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T16:06:32.282Z",
+  "generatedAt": "2026-10-16T16:23:57.445Z",
   "host": "darwin-arm64",
   "entries": [
     {
@@ -397,7 +397,8 @@
       ],
       "contractFlags": [
         "--continue",
-        "--resume"
+        "--resume",
+        "--fork-session"
       ],
       "resumeInTuiOnly": false,
       "headless": {
@@ -463,7 +464,8 @@
       ],
       "contractFlags": [
         "--continue",
-        "--resume"
+        "--resume",
+        "--fork-session"
       ],
       "resumeInTuiOnly": false,
       "headless": {

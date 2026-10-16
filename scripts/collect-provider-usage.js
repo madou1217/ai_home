@@ -143,9 +143,11 @@ function renderMarkdown(entries, generatedAt) {
   lines.push('## aih 统一入口（所有 provider 共用一套动词）');
   lines.push('');
   lines.push('- `aih <cli> resume [<id>]`：续接上一段对话；省略 `<id>` 时用该 CLI 的「最近一段」（没有安全退路的会明确报错）。');
-  lines.push('- `aih <cli> <账号> resume [<id>]`：指定账号续接。');
-  lines.push('- `aih <cli> resume --help`：打印各 provider 的原生形态对照表。');
+  lines.push('- `aih <cli> fork [<id>]`：从上一段对话**分叉**出新会话（原对话不动）；无 fork 能力的 provider 明确拒绝。');
+  lines.push('- `aih <cli> <账号> resume|fork [<id>]`：指定账号续接 / 分叉。');
+  lines.push('- `aih <cli> resume --help`：打印统一动词与各 provider 原生形态对照表。');
   lines.push('- `aih <cli> <任意原生参数>`：**完整透传**（`aih codex exec …`、`aih claude --model …` 都走原生），统一动词不影响它。');
+  lines.push('- `aih <cli> -- <任意原生参数...>`：**逃生门** —— `--` 之后逐字交给原生 CLI，即使撞上 aih 自己的保留字（ls / login / sessions / resume …）也不拦截。');
   lines.push('- 事实来源：`contracts/providers/manifest.json` 的 `nativeBoundary.sessions.flags`；翻译表 `lib/runtime/provider-resume.js`。');
   lines.push('');
   lines.push('## 各 provider 明细');

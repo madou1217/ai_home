@@ -1020,7 +1020,8 @@
         "sessions": {
           "flags": [
             "--continue",
-            "--resume"
+            "--resume",
+            "--fork-session"
           ],
           "nativeStore": ""
         },
@@ -1149,7 +1150,8 @@
         "sessions": {
           "flags": [
             "--continue",
-            "--resume"
+            "--resume",
+            "--fork-session"
           ],
           "nativeStore": ""
         },

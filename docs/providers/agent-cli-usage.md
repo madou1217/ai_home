@@ -1,6 +1,6 @@
 # Agent CLI 用法基线（aih 托管）
 
-> 生成命令：`npm run providers:usage -- --write`　生成时间：2026-10-16T16:06:32.282Z
+> 生成命令：`npm run providers:usage -- --write`　生成时间：2026-10-16T16:23:57.445Z
 > 这是**当前各 CLI 版本**的用法快照。升级 CLI 后重跑本命令，并与本文档 /
 > `agent-cli-usage.snapshot.json` 做 diff：新增的参数、子命令、slash 提示一眼可见。
 > slash 命令多数只在 TUI 内出现，本机实测后补记到「slash 命令」小节。
@@ -29,9 +29,11 @@
 ## aih 统一入口（所有 provider 共用一套动词）
 
 - `aih <cli> resume [<id>]`：续接上一段对话；省略 `<id>` 时用该 CLI 的「最近一段」（没有安全退路的会明确报错）。
-- `aih <cli> <账号> resume [<id>]`：指定账号续接。
-- `aih <cli> resume --help`：打印各 provider 的原生形态对照表。
+- `aih <cli> fork [<id>]`：从上一段对话**分叉**出新会话（原对话不动）；无 fork 能力的 provider 明确拒绝。
+- `aih <cli> <账号> resume|fork [<id>]`：指定账号续接 / 分叉。
+- `aih <cli> resume --help`：打印统一动词与各 provider 原生形态对照表。
 - `aih <cli> <任意原生参数>`：**完整透传**（`aih codex exec …`、`aih claude --model …` 都走原生），统一动词不影响它。
+- `aih <cli> -- <任意原生参数...>`：**逃生门** —— `--` 之后逐字交给原生 CLI，即使撞上 aih 自己的保留字（ls / login / sessions / resume …）也不拦截。
 - 事实来源：`contracts/providers/manifest.json` 的 `nativeBoundary.sessions.flags`；翻译表 `lib/runtime/provider-resume.js`。
 
 ## 各 provider 明细
@@ -233,7 +235,7 @@ Usage: grok [OPTIONS] [PROMPT] [COMMAND]
 
 - 二进制：`/Users/model/.local/bin/qodercli`
 - 版本命令：`qodercli --version`
-- 合同声明的会话入口：`--continue` `--resume`
+- 合同声明的会话入口：`--continue` `--resume` `--fork-session`
 - 统一续接：`aih qoder resume <id>` → 原生 `--resume <id>`
 - 统一续接（不带 id）：→ 原生 `--continue`
 
@@ -270,7 +272,7 @@ Usage: qodercli [options] [command] [query...]
 
 - 二进制：`/Users/model/.local/bin/qoderclicn`
 - 版本命令：`qoderclicn --version`
-- 合同声明的会话入口：`--continue` `--resume`
+- 合同声明的会话入口：`--continue` `--resume` `--fork-session`
 - 统一续接：`aih qodercn resume <id>` → 原生 `--resume <id>`
 - 统一续接（不带 id）：→ 原生 `--continue`
 

@@ -1,11 +1,13 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const dgram = require('node:dgram');
 const http = require('node:http');
 const net = require('node:net');
 const test = require('node:test');
 
 const { createRelayPortMux } = require('../lib/server/relay-port-mux');
+const { createRelayUdpFront } = require('../lib/server/relay-udp-front');
 
 /**
  * AIH 端口分流：同一个端口上 HTTP 与 SOCKS5 共存（中转跟随 AIH 端口的关键件）。
@@ -155,6 +157,151 @@ test('the port mux rejects a bad password, an unknown node and a no-auth-only cl
     const noAuth = await socksHandshake(port, { methods: [0x00] });
     assert.equal(noAuth.method, 0xff);
   });
+});
+
+/** 极简假边车（UDP 版）：TCP 上回答 ASSOCIATE，并给一个原样回显封装数据报的 UDP 中继。 */
+function startFakeUdpSidecar() {
+  return new Promise((resolve) => {
+    const udp = dgram.createSocket('udp4');
+    udp.on('message', (message, rinfo) => {
+      try { udp.send(message, rinfo.port, rinfo.address); } catch (_error) { /* 关停竞态 */ }
+    });
+    udp.bind(0, '127.0.0.1', () => {
+      const requestServer = net.createServer((socket) => {
+        socket.once('data', () => {
+          socket.write(Buffer.from([0x05, 0x00]));
+          socket.once('data', () => {
+            const port = udp.address().port;
+            socket.write(Buffer.concat([
+              Buffer.from([0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1]),
+              Buffer.from([(port >> 8) & 0xff, port & 0xff])
+            ]));
+          });
+        });
+      });
+      requestServer.listen(0, '127.0.0.1', () => resolve({ udp, requestServer, port: requestServer.address().port }));
+    });
+  });
+}
+
+/** 客户端侧：认证 + UDP ASSOCIATE，返回改写过后的 BND 与那条控制连接。 */
+function associate(port) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    let stage = 'greeting';
+    socket.once('connect', () => socket.write(Buffer.from([0x05, 0x01, 0x02])));
+    socket.on('data', (chunk) => {
+      if (stage === 'greeting') {
+        stage = 'auth';
+        const user = Buffer.from('n_known');
+        const pass = Buffer.from(PASSWORD);
+        socket.write(Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]));
+        return;
+      }
+      if (stage === 'auth') {
+        assert.equal(chunk[1], 0x00, '认证必须通过');
+        stage = 'associate';
+        socket.write(Buffer.from([0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        return;
+      }
+      assert.equal(chunk[1], 0x00, 'ASSOCIATE 必须成功');
+      const bindHost = `${chunk[4]}.${chunk[5]}.${chunk[6]}.${chunk[7]}`;
+      resolve({ socket, bindHost, bindPort: chunk.readUInt16BE(8) });
+    });
+  });
+}
+
+function udpEcho(host, port, payload) {
+  return new Promise((resolve) => {
+    const udp = dgram.createSocket('udp4');
+    const done = (value) => {
+      clearTimeout(timer);
+      try { udp.close(); } catch (_error) { /* 已经关了 */ }
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(null), 3000);
+    udp.once('message', (message) => done(message));
+    udp.send(payload, port, host, () => undefined);
+  });
+}
+
+test('UDP ASSOCIATE is terminated on the AIH port and datagrams are bridged to the kernel', async () => {
+  const sidecar = await startFakeUdpSidecar();
+  const httpServer = await startHttpServer();
+  // 生产里前端绑的是 AIH 的端口号；测试用临时端口。
+  const front = createRelayUdpFront({ port: 0, host: '127.0.0.1' });
+  await front.start();
+  const mux = createRelayPortMux({
+    httpServer,
+    resolveUdpFront: () => front,
+    resolveRelay: () => ({ enabled: true, password: PASSWORD, portForUser: () => sidecar.port })
+  });
+  const listener = mux.listener();
+  await new Promise((resolve) => listener.listen(0, '127.0.0.1', resolve));
+  const muxPort = listener.address().port;
+  try {
+    const client = await associate(muxPort);
+    // 关键：给客户端的 BND 是**我们的固定 UDP 端口**（不是边车那个临时端口）。
+    assert.equal(client.bindPort, front.port());
+    assert.notEqual(client.bindPort, sidecar.udp.address().port);
+    assert.equal(front.associationCount(), 1);
+
+    // 客户端把封装好的数据报发到那个端口 → 经边车 → 原样回来（这里用不透明字节验证透传）。
+    const payload = Buffer.concat([Buffer.from([0, 0, 0, 1, 1, 1, 1, 1, 0, 53]), Buffer.from('dns-query-bytes')]);
+    const reply = await udpEcho(client.bindHost, client.bindPort, payload);
+    assert.deepEqual(reply, payload);
+
+    // 控制连接断开 → 关联回收。
+    client.socket.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(front.associationCount(), 0);
+  } finally {
+    await new Promise((resolve) => listener.close(resolve));
+    front.stop();
+    await new Promise((resolve) => sidecar.requestServer.close(resolve));
+    sidecar.udp.close();
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
+});
+
+test('a client that asks for no UDP front is told the command is unsupported', async () => {
+  const sidecar = await startFakeUdpSidecar();
+  const httpServer = await startHttpServer();
+  const mux = createRelayPortMux({
+    httpServer,
+    resolveRelay: () => ({ enabled: true, password: PASSWORD, portForUser: () => sidecar.port })
+  });
+  const listener = mux.listener();
+  await new Promise((resolve) => listener.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await new Promise((resolve) => {
+      const socket = net.connect({ host: '127.0.0.1', port: listener.address().port });
+      let stage = 'greeting';
+      socket.once('connect', () => socket.write(Buffer.from([0x05, 0x01, 0x02])));
+      socket.on('data', (chunk) => {
+        if (stage === 'greeting') {
+          stage = 'auth';
+          const user = Buffer.from('n_known');
+          const pass = Buffer.from(PASSWORD);
+          socket.write(Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]));
+          return;
+        }
+        if (stage === 'auth') {
+          stage = 'associate';
+          socket.write(Buffer.from([0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+          return;
+        }
+        resolve(chunk[1]);
+        socket.destroy();
+      });
+    });
+    assert.equal(result, 0x07, '没有 UDP 前端时回「命令不支持」，而不是假装成功');
+  } finally {
+    await new Promise((resolve) => listener.close(resolve));
+    await new Promise((resolve) => sidecar.requestServer.close(resolve));
+    sidecar.udp.close();
+    await new Promise((resolve) => httpServer.close(resolve));
+  }
 });
 
 test('the port mux stays out of the way when the relay uses dedicated ports', async () => {

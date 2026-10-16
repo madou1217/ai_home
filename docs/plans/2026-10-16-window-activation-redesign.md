@@ -328,4 +328,28 @@ lastProbeAt / lastActivatedAt / lastOutcome   （保留，语义收窄，见 4.7
 - `node --test test/window-activation-{ledger,scheduler,store,probe-specs,probe-model}.test.js test/webui-window-activation-routes.test.js test/web.window-activation-contract.test.js test/server.args.window-activation.test.js test/server-config-store.test.js test/account-quota-probe-scheduler.test.js` 全绿。
 - `bun test web/src/features/accounts/window-activation-presentation.test.ts` 全绿。
 - `cd web && npx eslint <改动文件> --max-warnings 0` 干净；`cd web && npm run build` 通过。
-- 真机验收（§6 的 16–20）待 Server 重启后按 §10.2 记录。
+
+### 11.1 真机验收（2026-10-16 17:26 重启后，首个 tick 17:32:57）
+
+观测面：`GET /v0/webui/accounts/:provider/:ref/window-activation`（`window` 字段）+
+`app_kv` 的 `account:window-activation-state:*` 落盘 + `model_usage_records` 的探测签名
+（`provider=codex, model=gpt-5.6-sol, input_tokens=10, output_tokens=5, source_kind=server_codex_proxy`）。
+
+- **真实窗口被识别，零探测**：3 个 codex 账号（gmail / 126.com / meadeodeo）首个 tick 即从快照推出
+  真实锚点并判定 `skip window_open`（关窗时刻 18:50:35 / 19:57:48 / 20:46:50，`windowSource=snapshot`），
+  重启后 0 次探测 —— 旧实现同一时段是**每小时一次**（24h 基线 27 / 20 / 14 次）。
+- **agy 按规划落兜底/阻塞分支**：`acct_24e03aeb`（agy）走 `probe periodic_fallback`（观察不出窗口，
+  符合 §11 偏差 1）；`acct_3ce26162`（agy，runtime=permission_denied）判 `skip runtime_blocked`，
+  原因可见（R4）。
+- **存量状态记录迁移正确**：旧记录（无账本字段）被当作 `unknown` 兜底；`lastActivatedAt` 最近
+  （17:20 / 16:50）的账号判 `skip not_due`，不会立刻补探。
+
+**真机发现并修复的 bug（本次修复）**：兜底分支（`periodic_fallback`）的成功探测走了
+`markProbeFailure`，把成功记成失败 —— 实测出现 `lastOutcome=activated` 与 `probeFailureCount=1`
+并存，退避会按 `10min × n` 一路累积到封顶。修复：账本新增纯函数 `clearProbeFailure`，
+成功探测一律清零计数（链分支由 `anchorWindowAt` 清零、兜底分支由 `clearProbeFailure` 清零），
+只有失败才累积；回归用例 `test/window-activation-ledger.test.js`（clearProbeFailure）与
+`test/window-activation-scheduler.test.js`（兜底成功 → `probeFailureCount=0`）。
+
+**遗留观察项（需跨窗口周期）**：`window_closed → probe` 的续窗链、`window_absent` 的幻影补窗
+需等关窗时刻（18:50 起）后按 §10.2 复核；24h 探测次数目标 ≈5 次/账号（旧实现 ~24 次）。

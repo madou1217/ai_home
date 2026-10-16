@@ -421,7 +421,10 @@ test('runNow：观察不出窗口的账号按兜底间隔探测，命中后记�
   const { scheduler, dispatches, stateWrites } = makeScheduler({
     now,
     accounts: [account()],
-    configs: { [REF]: { enabled: true, intervalMs: null } }
+    configs: { [REF]: { enabled: true, intervalMs: null } },
+    // 上一轮失败留下的计数：兜底分支成功探测必须清零（真机验收实测：不清零会让
+    // outcome=activated 与 fail=1 并存，退避 10min×n 一路累积到封顶）。
+    states: { [REF]: unknownLedger({ probeFailureCount: 2 }) }
   });
   const result = await scheduler.runNow('manual');
   assert.equal(result.ok, true);
@@ -436,6 +439,7 @@ test('runNow：观察不出窗口的账号按兜底间隔探测，命中后记�
   assert.equal(stateWrites[0].ref, REF);
   // 兜底分支的成功探测也要推进周期锚点，否则下一轮（10 分钟后）会立刻再探。
   assert.equal(stateWrites[0].value.lastActivatedAt, now);
+  assert.equal(stateWrites[0].value.probeFailureCount, 0);
   assert.equal(stateWrites[0].value.lastDecisionReason, 'periodic_fallback');
 });
 

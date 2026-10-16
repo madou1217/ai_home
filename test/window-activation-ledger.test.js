@@ -16,6 +16,7 @@ const {
   describeWindowView,
   anchorWindowAt,
   markProbeFailure,
+  clearProbeFailure,
   normalizeLedger,
   findWindowEntry
 } = require('../lib/server/window-activation/window-ledger');
@@ -228,4 +229,22 @@ test('markProbeFailure：累计失败次数并封顶', () => {
   let ledger = normalizeLedger({});
   for (let i = 0; i < 40; i += 1) ledger = markProbeFailure(ledger);
   assert.equal(ledger.probeFailureCount, 32);
+});
+
+test('clearProbeFailure：成功一次即清零计数，且不丢账本字段', () => {
+  const ledger = normalizeLedger({
+    windowAnchorAtMs: NOW,
+    windowMinutes: 300,
+    windowCloseAtMs: NOW + 300 * MINUTE,
+    windowSource: 'probe',
+    windowObservedAtMs: NOW,
+    probeFailureCount: 7
+  });
+  const cleared = clearProbeFailure(ledger);
+  assert.equal(cleared.probeFailureCount, 0);
+  assert.equal(cleared.windowCloseAtMs, ledger.windowCloseAtMs);
+  assert.equal(cleared.windowSource, 'probe');
+  // 已经是 0 时返回规范化副本（幂等）
+  assert.equal(clearProbeFailure(cleared).probeFailureCount, 0);
+  assert.equal(clearProbeFailure(undefined).probeFailureCount, 0);
 });

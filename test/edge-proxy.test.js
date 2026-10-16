@@ -86,6 +86,16 @@ test('nginx plans cover the split / passthrough / http-only shapes', () => {
   assert.match(httpOnly.files[0].content, /ssl_certificate\s+\/etc\/letsencrypt\/live\/aih\.example\.com\/fullchain\.pem/);
 });
 
+test('unknown nginx shapes are refused instead of silently degrading to another shape', () => {
+  const service = new EdgeProxyService({ fs, aihPort: 9527, env: { AIH_EDGE_NGINX_CONF_DIR: '/tmp/nginx' } });
+  assert.throws(
+    () => service.plan('nginx', { domain: 'edge.example.com', mode: 'split-tls' }),
+    (error) => error.code === 'edge_invalid_mode'
+  );
+  // 合法形态仍然可解析，并且 plan 里回填的是判型后的值（调用方看到的与写入的一致）。
+  assert.equal(service.plan('nginx', { domain: 'edge.example.com', mode: '' }).mode, 'split');
+});
+
 test('caddy plan is an https reverse proxy and says what it cannot do', () => {
   const service = new EdgeProxyService({ env: { AIH_EDGE_CADDYFILE: '/etc/caddy/Caddyfile' }, path, aihPort: 9527 });
   const plan = service.plan('caddy', { domain: 'aih.example.com' });

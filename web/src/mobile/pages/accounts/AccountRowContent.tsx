@@ -3,10 +3,11 @@ import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import {
   getAccountDisplayBadgeMeta,
   getAccountPrimaryLabel,
-  getPlanTagLabel
+  getPlanTagLabel,
+  getQuotaStateMeta
 } from '@/features/accounts/AccountBadges';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
-import { getEffectiveRemainingPct } from '@/features/accounts/account-state';
+import { formatQuotaReason, getEffectiveRemainingPct } from '@/features/accounts/account-state';
 import type { Account, ManagementAccountActivity } from '@/types';
 import { badgeStatusTone, ledClass, remainingTone } from './account-tones';
 import styles from '../MobileAccounts.module.css';
@@ -16,6 +17,19 @@ interface Props {
   activity: ManagementAccountActivity | null;
   removing: boolean;
   desktopRunning: boolean;
+}
+
+/**
+ * 无剩余百分比时占位符（「—」）的 title 口径：与桌面额度徽章同源（getQuotaStateMeta），
+ * 结论型「额度不适用」给出原因，探测类状态给出徽章文案 + 原因，不再笼统地说「额度未知」。
+ */
+export function quotaPlaceholderTitle(record: Pick<Account, 'apiKeyMode' | 'quotaStatus' | 'quotaReason'>) {
+  const meta = getQuotaStateMeta(record);
+  if (meta) {
+    const reason = formatQuotaReason(record.quotaReason);
+    return reason ? `${meta.label}：${reason}` : meta.label;
+  }
+  return record.apiKeyMode ? '额度由上游管理' : '额度未知';
 }
 
 /**
@@ -62,7 +76,7 @@ export default function AccountRowContent({ record, activity, removing, desktopR
             </span>
           </span>
         ) : (
-          <span className={styles.quotaNone} title={record.apiKeyMode ? '额度由上游管理' : '额度未知'}>—</span>
+          <span className={styles.quotaNone} title={quotaPlaceholderTitle(record)}>—</span>
         )}
       </span>
     </div>

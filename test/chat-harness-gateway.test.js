@@ -31,6 +31,17 @@ test('two gateway accounts keep distinct homes, fixed routing headers and model 
   assert.match(firstConfig, /X-Account-Ref = "acct_one"/);
   assert.match(firstConfig, /X-Provider = "claude"/);
   assert.doesNotMatch(firstConfig, /acct_two|host-secret|other-secret|gateway-secret/);
+  // 聊天请求只带对话本身（v7，2026-10-16）：codex 的宿主提示词注入面全部显式关闭，
+  // 否则全局 AGENTS.md / skills 清单 / 环境块 / 权限块会被注入每一次模型请求。
+  for (const line of [
+    'skills.include_instructions = false',
+    'include_environment_context = false',
+    'include_permissions_instructions = false',
+    'include_apps_instructions = false',
+    'include_collaboration_mode_instructions = false'
+  ]) {
+    assert.ok(firstConfig.includes(`${line}\n`), `harness config must pin "${line}"`);
+  }
   const catalogPath = JSON.parse(firstConfig.match(/^model_catalog_json = (.+)$/m)[1]);
   const nativeCatalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
   assert.deepEqual(nativeCatalog.models.map((model) => model.slug), ['claude-sonnet-4-5']);
@@ -62,7 +73,7 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.equal(model.shell_type, 'disabled');
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v6');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v7');
 });
 
 test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {

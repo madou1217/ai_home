@@ -631,6 +631,41 @@ test('OAuth app-server runtimes link their sessions to the host ~/.codex before 
   ensureSharedCodexSessions({ aiHomeDir, env: {}, ensureSessionStoreLinks }, { accountRef: '', gateway: true, runtimeDir });
   assert.equal(calls.length, 1, 'API-key accounts and the gateway already use the host ~/.codex');
 
+  // 聊天 harness（runtimeNamespace=chat）必须排除宿主提示词资产：AGENTS.md / skills 会被
+  // codex 注入每一次模型请求（# AGENTS.md instructions / <skills_instructions>），聊天模型
+  // 会把用户的全局工程规范当成任务指令（2026-10-16 事故）。会话状态照旧共享。
+  const chatCalls = [];
+  ensureSharedCodexSessions(
+    {
+      aiHomeDir,
+      env: {},
+      runtimeNamespace: 'chat',
+      ensureSessionStoreLinks: (provider, accountRef, options) => {
+        chatCalls.push({ provider, accountRef, excludeSharedEntries: options.excludeSharedEntries });
+        return { migrated: 0, linked: 3 };
+      }
+    },
+    { accountRef: oauth, gateway: false, runtimeDir }
+  );
+  assert.equal(chatCalls.length, 1);
+  assert.deepEqual(chatCalls[0].excludeSharedEntries, ['AGENTS.md', 'AGENTS.override.md', 'skills']);
+
+  // 非聊天 app-server（原生 work 运行）行为不变：完整共享宿主 codex 状态，不传排除。
+  const nativeOptions = [];
+  ensureSharedCodexSessions(
+    {
+      aiHomeDir,
+      env: {},
+      ensureSessionStoreLinks: (provider, accountRef, options) => {
+        nativeOptions.push(options.excludeSharedEntries);
+        return { migrated: 0, linked: 3 };
+      }
+    },
+    { accountRef: oauth, gateway: false, runtimeDir }
+  );
+  assert.equal(nativeOptions.length, 1);
+  assert.equal(nativeOptions[0], undefined);
+
   assert.throws(
     () => ensureSharedCodexSessions({ aiHomeDir, env: {} }, { accountRef: oauth, gateway: false, runtimeDir }),
     (error) => error.code === 'provider_resource_reconcile_unavailable',

@@ -940,6 +940,66 @@ test('ensureSessionStoreLinks shares every non-private codex entry using exact a
   assert.equal(fs.readFileSync(path.join(accountConfigDir, 'auth.json'), 'utf8'), '{"token":"account-secret"}\n');
 });
 
+test('chat harness shared-entry exclusions detach host prompt assets and keep other entries linked', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const profilesDir = path.join(root, 'profiles');
+  const accountRoot = path.join(profilesDir, 'codex', '11');
+  const accountConfigDir = path.join(accountRoot, '.codex');
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  fs.mkdirSync(accountConfigDir, { recursive: true });
+  fs.mkdirSync(path.join(hostCodexDir, 'skills', '.system'), { recursive: true });
+  fs.mkdirSync(path.join(hostCodexDir, 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(hostCodexDir, 'AGENTS.md'), 'host global instructions\n');
+  // 既有聊天 harness home 形态：AGENTS.md / skills 已是 aih 建的托管链接。
+  fs.symlinkSync(path.join(hostCodexDir, 'AGENTS.md'), path.join(accountConfigDir, 'AGENTS.md'));
+  fs.symlinkSync(path.join(hostCodexDir, 'skills'), path.join(accountConfigDir, 'skills'), 'dir');
+  // 排除只摘 aih 自己建的链接：真实文件原位保留（不删除、也不计入 unresolved）。
+  fs.writeFileSync(path.join(accountConfigDir, 'AGENTS.override.md'), 'local override\n');
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    profilesDir,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    getProfileDir: (cliName, id) => path.join(profilesDir, cliName, String(id)),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+  const runtime = {
+    projectionRoot: accountRoot,
+    excludeSharedEntries: ['AGENTS.md', 'AGENTS.override.md', 'skills']
+  };
+
+  const result = service.ensureSessionStoreLinks('codex', '11', runtime);
+
+  assert.equal(fs.existsSync(path.join(accountConfigDir, 'AGENTS.md')), false,
+    'excluded managed link must be detached');
+  assert.equal(fs.existsSync(path.join(accountConfigDir, 'skills')), false,
+    'excluded managed directory link must be detached');
+  assert.equal(fs.readFileSync(path.join(hostCodexDir, 'AGENTS.md'), 'utf8'), 'host global instructions\n',
+    'host prompt assets stay untouched');
+  assert.equal(fs.existsSync(path.join(hostCodexDir, 'skills', '.system')), true);
+  assert.equal(fs.readFileSync(path.join(accountConfigDir, 'AGENTS.override.md'), 'utf8'), 'local override\n',
+    'real (non-managed) files are never deleted by exclusions');
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'AGENTS.override.md')).isSymbolicLink(), false);
+  assert.equal(result.unresolved, undefined,
+    'excluded entries must not be reported as unresolved reconciliation gaps');
+  // 会话状态照旧共享：排除不影响其余条目。
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'sessions')).isSymbolicLink(), true);
+
+  // 下一次 pane 启动对账时不得把排除条目重新链接回来。
+  const rerun = service.ensureSessionStoreLinks('codex', '11', runtime);
+  assert.equal(rerun.unresolved, undefined);
+  assert.equal(fs.existsSync(path.join(accountConfigDir, 'AGENTS.md')), false);
+  assert.equal(fs.existsSync(path.join(accountConfigDir, 'skills')), false);
+  assert.equal(fs.lstatSync(path.join(accountConfigDir, 'sessions')).isSymbolicLink(), true);
+});
+
 test('ensureSessionStoreLinks merges historical codex global state into host before linking', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

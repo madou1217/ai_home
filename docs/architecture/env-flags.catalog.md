@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:06.788Z
-> 共 **184** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:51.697Z
+> 共 **176** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，22）
+## path（数据/目录/仓库路径，21）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -17,7 +17,6 @@
 | `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
 | `AIH_OPENCODE_CONFIG_DIR` | — | 2 | opencode 配置根（账号投影） |
 | `AIH_ZCODE_DESKTOP_BRIDGE_DIR` | — | 2 | zcode 桌面桥接目录（登录态注入/读取） |
-| `AIH_ANTIGRAVITY_APP_PATH` | — | 1 | Antigravity 应用路径（启动桌面版/采集） |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | — | 1 | 跳过 codex 的仓库信任检查（自动化场景） |
 | `AIH_CODEX_USAGE_PATH` | — | 1 | codex 用量快照文件路径覆盖 |
 | `AIH_EDGE_NGINX_CONF_DIR` | — | 1 | 托管 nginx 的配置目录 |
@@ -31,7 +30,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，39）
+## network（端点 / 代理 / 端口，37）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -58,8 +57,6 @@
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_DEPLOY_SSH` | — | 1 | 部署脚本默认 SSH 目标 |
-| `AIH_EDGE_AIH_PORT` | — | 1 | ⚠ 边缘代理回源到 AIH 的端口（待确认） |
-| `AIH_FABRIC_LOCAL_URL` | — | 1 | fabric 本机回环地址 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
 | `AIH_SERVER_CODEX_BASE_URL` | — | 1 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
@@ -86,14 +83,13 @@
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## tuning（可调参数（超时 / TTL / 上限），2）
+## tuning（可调参数（超时 / TTL / 上限），1）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
-| `AIH_SERVER_MAX_ATTEMPTS` | — | 0 | 单次请求最多尝试账号数（config 优先；0 = 3） |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），22）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），21）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -110,7 +106,6 @@
 | `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | — | 1 | 账号冒烟测试使用的一次性 key |
 | `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检 |
-| `AIH_CODEX_USAGE_BULK_TOKEN_REFRESH` | — | 1 | 批量用量扫描前先刷新 token |
 | `AIH_DEPLOY_SSH_KEY` | — | 1 | 部署脚本使用的 SSH 私钥 |
 | `AIH_GO_CORE_CLIENT_KEY` | — | 1 | 传给 Go Core 的客户端 key |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | — | 1 | 传给 Go Core 的管理 key |
@@ -120,14 +115,13 @@
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | — | 0 | 本地 codex app-server 远程控制 token |
 | `AIH_TURN_CREDENTIAL` | — | 0 | TURN 密码 |
 
-## test（测试与探针专用，2）
+## test（测试与探针专用，1）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
-| `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 0 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），91）
+## plumbing（内部管道（进程间传递的身份 / 标记），89）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -142,7 +136,6 @@
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_ITERM_PROVIDER_PROFILE` | — | 2 | iTerm profile 名覆盖（按 provider） |
-| `AIH_KIMI_CODE_VERSION` | — | 2 | kimi-code 版本号 |
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | — | 2 | 插件随父进程退出 |
 | `AIH_PLUGIN_SOCKET` | — | 2 | 插件 RPC socket 路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
@@ -151,11 +144,9 @@
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
 | `AIH_ZCODE_AGENT_RUNNER` | — | 2 | zcode agent runner 脚本 |
-| `AIH_ZCODE_APP_VERSION` | — | 2 | zcode 应用版本 |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
 | `AIH_CJK_LOCALE` | — | 1 | CJK locale 判定开关 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
-| `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | — | 1 | 批量用量回退到 app-server 读取 |
 | `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（跳过 CLI） |
 | `AIH_DEPLOY_GO_TARGET` | — | 1 | 部署脚本的 Go 构建目标平台 |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
@@ -189,6 +180,7 @@
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
+| `AIH_ZCODE_APP_VERSION` | — | 1 | zcode 应用版本 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_ACCOUNT_ID` | — | 0 | 账号数字别名（cliAccountId） |
 | `AIH_ACCOUNT_REF` | — | 0 | 账号唯一标识（accountRef，贯穿 server/WebUI/runtime） |

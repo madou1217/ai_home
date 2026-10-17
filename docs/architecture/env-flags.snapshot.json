@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:42:06.788Z",
-  "total": 184,
+  "generatedAt": "2026-10-17T05:42:51.697Z",
+  "total": 176,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -568,16 +568,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_KIMI_CODE_VERSION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/kimi-request-headers.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_OPENCODE_CONFIG_DIR",
       "category": "path",
       "reads": 2,
@@ -782,17 +772,6 @@
       ]
     },
     {
-      "name": "AIH_ZCODE_APP_VERSION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/account/zcode-client-metadata.js",
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",
       "category": "path",
       "reads": 2,
@@ -825,16 +804,6 @@
       "literals": 0,
       "files": [
         "scripts/gateway-account-auth-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_ANTIGRAVITY_APP_PATH",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/antigravity-version.js"
       ],
       "aliasConstants": []
     },
@@ -921,26 +890,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_BULK_TOKEN_REFRESH",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_USAGE_DIRECT",
       "category": "plumbing",
       "reads": 1,
@@ -987,16 +936,6 @@
       "literals": 0,
       "files": [
         "scripts/deploy-server.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_EDGE_AIH_PORT",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/edge-proxy-service.js"
       ],
       "aliasConstants": []
     },
@@ -1058,16 +997,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/toolkit/edge-proxy/providers/nginx.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FABRIC_LOCAL_URL",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/fabric/broker-connect.js"
       ],
       "aliasConstants": []
     },
@@ -1550,6 +1479,16 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_ZCODE_APP_VERSION",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/usage/snapshot.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_ACCOUNT_APP",
       "category": "plumbing",
       "reads": 0,
@@ -1859,26 +1798,6 @@
       "aliasConstants": [
         "ELEVATED_RESTART_ENV"
       ]
-    },
-    {
-      "name": "AIH_SERVER_MAX_ATTEMPTS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODELS_PROBE_ACCOUNTS",
-      "category": "test",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_SERVER_SOURCE_AUTO_RESTART",

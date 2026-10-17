@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:36:38.851Z",
-  "total": 118,
+  "generatedAt": "2026-10-17T08:41:17.020Z",
+  "total": 117,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -621,16 +621,6 @@
       "aliasConstants": [
         "BRIDGE_IDENTITY_ENV"
       ]
-    },
-    {
-      "name": "AIH_ACCOUNT_SMOKE_CLIENT_KEY",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/gateway-account-auth-smoke.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_CODEX_AUTH_PREFLIGHT",

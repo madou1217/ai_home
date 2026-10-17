@@ -663,21 +663,7 @@ test('loadStateFromDb uses a read-only DatabaseSync and SELECT-only app_state/ap
   assert.equal(calls.at(-1).type, 'close');
 });
 
-test('client key loading prefers the dedicated env and otherwise reads config:server JSON read-only', () => {
-  let opens = 0;
-  class MustNotOpenDatabase {
-    constructor() {
-      opens += 1;
-      throw new Error('must not open');
-    }
-  }
-  assert.equal(loadClientKey({
-    env: { AIH_ACCOUNT_SMOKE_CLIENT_KEY: 'env-client-key' },
-    dbPath: '/mock/app-state.db',
-    DatabaseSyncImpl: MustNotOpenDatabase,
-  }), 'env-client-key');
-  assert.equal(opens, 0);
-
+test('client key loading reads config:server JSON read-only', () => {
   const aliases = [
     [{ apiKey: 'stored-api-key' }, 'stored-api-key'],
     [{ clientKey: 'stored-client-key' }, 'stored-client-key'],

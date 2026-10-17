@@ -385,11 +385,6 @@ function loadStateFromDb({ dbPath, DatabaseSyncImpl } = {}) {
 }
 
 function loadClientKey({ env = process.env, dbPath, DatabaseSyncImpl } = {}) {
-  const environmentKey = env.AIH_ACCOUNT_SMOKE_CLIENT_KEY;
-  if (typeof environmentKey === 'string' && environmentKey.trim()) {
-    return environmentKey.trim();
-  }
-
   const DatabaseSync = getDatabaseSync(DatabaseSyncImpl);
   const database = new DatabaseSync(dbPath || defaultDbPath(env), { readOnly: true });
   try {

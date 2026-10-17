@@ -19,7 +19,7 @@ function makeHarness(options = {}) {
   const fakeBin = path.join(path.dirname(confDir), `nginx-${path.basename(confDir)}`);
   fs.writeFileSync(fakeBin, '#!/bin/sh\n');
   fs.chmodSync(fakeBin, 0o755);
-  const env = { AIH_EDGE_NGINX_BIN: fakeBin, [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: confDir }) };
+  const env = { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: confDir, nginxBin: fakeBin }) };
   const ctx = {
     fs,
     serverPort: options.port || 9527,

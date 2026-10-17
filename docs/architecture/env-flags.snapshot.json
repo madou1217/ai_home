@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:08:03.898Z",
-  "total": 73,
+  "generatedAt": "2026-10-17T11:08:47.967Z",
+  "total": 70,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -370,36 +370,6 @@
       "files": [
         "lib/cli/services/pty/ssh-clipboard-bridge.js",
         "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_EDGE_CADDY_BIN",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/caddy.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_EDGE_FRPC_BIN",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/frp.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_EDGE_NGINX_BIN",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/nginx.js"
       ],
       "aliasConstants": []
     },

@@ -112,7 +112,7 @@ test('applyFrp validates a staged copy first and never leaves a rejected config 
   fs.writeFileSync(configPath, FRPC_BASE);
   const calls = [];
   const service = new EdgeProxyService({
-    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath }), AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc'), HOME: dir },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath, frpcBin: fakeBinary(dir, 'frpc') }), HOME: dir },
     run: (command, args) => {
       calls.push([command, ...args].join(' '));
       if (args[0] === 'verify' && service.rejectVerify) return { status: 1, stderr: 'bad config', stdout: '' };
@@ -151,7 +151,7 @@ test('a config we cannot write is reported instead of guessing sudo', () => {
   const configPath = path.join(dir, 'frpc.toml');
   fs.writeFileSync(configPath, FRPC_BASE);
   const service = new EdgeProxyService({
-    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath }), AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc') },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath, frpcBin: fakeBinary(dir, 'frpc') }) },
     path,
     run: () => ({ status: 0, stdout: '', stderr: '' })
   });
@@ -176,7 +176,7 @@ test('nginx apply rolls back every file when the kernel rejects the config', () 
   const configDir = path.join(dir, 'nginx');
   fs.mkdirSync(path.join(configDir, 'conf.d'), { recursive: true });
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_NGINX_BIN: fakeBinary(dir, 'nginx-bin'), [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: configDir }), HOME: dir },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: configDir, nginxBin: fakeBinary(dir, 'nginx-bin') }), HOME: dir },
     path,
     run: (command, args) => (args[0] === '-t'
       ? { status: 1, stderr: 'unexpected end of file', stdout: '' }
@@ -194,7 +194,7 @@ test('caddy apply replaces its managed block instead of appending again', () => 
   const caddyfile = path.join(dir, 'Caddyfile');
   fs.writeFileSync(caddyfile, 'example.org {\n\trespond "hi"\n}\n');
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_CADDY_BIN: fakeBinary(dir, 'caddy'), [EDGE_CONTEXT_ENV]: serializeEdgeContext({ caddyfile }), HOME: dir },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ caddyfile, caddyBin: fakeBinary(dir, 'caddy') }), HOME: dir },
     path,
     run: () => ({ status: 0, stdout: '', stderr: '' })
   });

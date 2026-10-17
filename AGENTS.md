@@ -72,9 +72,8 @@ Fuller layer map:
 - `npm run gateway:shadow -- --node <url> --go <url> [--include-inference]`:
   send the same requests to both gateways and diff status plus response
   structure. Read-only probes by default (no token cost); `--include-inference`
-  adds one minimal request per client protocol. Keys come from flags or
-  `AIH_SHADOW_NODE_KEY` / `AIH_SHADOW_GO_KEY` and are never written to disk or
-  printed. This is the only evidence that Go can replace Node — unit tests cannot
+  adds one minimal request per client protocol. Keys come from `--node-key` /
+  `--go-key` only and are never written to disk or printed. This is the only evidence that Go can replace Node — unit tests cannot
   see upstream behaviour differences. Re-run it after any change to Canonical
   encode/decode.
 

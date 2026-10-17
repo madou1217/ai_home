@@ -40,8 +40,6 @@ function parseArgs(argv) {
     else if (arg === '--include-inference') out.includeInference = true;
     else if (arg === '--json') out.json = true;
   }
-  out.nodeKey = out.nodeKey || String(process.env.AIH_SHADOW_NODE_KEY || '').trim();
-  out.goKey = out.goKey || String(process.env.AIH_SHADOW_GO_KEY || '').trim();
   return out;
 }
 

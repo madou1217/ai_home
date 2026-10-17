@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:03:39.295Z",
-  "total": 139,
+  "generatedAt": "2026-10-17T08:05:11.449Z",
+  "total": 136,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -362,16 +362,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_BENCH_KEY",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "scripts/go-core-benchmark.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLAUDE_API_BASE_URL",
       "category": "network",
       "reads": 2,
@@ -568,26 +558,6 @@
         "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SHADOW_GO_KEY",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "scripts/gateway-shadow-compare.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SHADOW_NODE_KEY",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "scripts/gateway-shadow-compare.js"
       ],
       "aliasConstants": []
     },

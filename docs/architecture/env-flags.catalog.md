@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:03:39.295Z
-> 共 **139** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:05:11.449Z
+> 共 **136** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -69,19 +69,16 @@
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），16）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），13）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_SERVER_MANAGEMENT_KEY` | ✅ | 22 | 管理面 key（公开；config 优先；空 = 管理面关闭） |
-| `AIH_BENCH_KEY` | — | 2 | 基准/压测脚本使用的 key |
 | `AIH_CLAUDE_OAUTH_TOKEN` | — | 2 | 注入 claude CLI 的 OAuth token（沙箱运行） |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | — | 2 | 远程 codex 认证 token |
 | `AIH_CODEX_TOKEN_URL` | — | 2 | codex OAuth token 端点覆盖 |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
 | `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；含 Go Core；config 优先） |
-| `AIH_SHADOW_GO_KEY` | — | 2 | gateway shadow 对比时 Go 端口令（只读环境，不落盘） |
-| `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | — | 1 | 账号冒烟测试使用的一次性 key |
 | `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检（内部/测试可关） |
 | `AIH_GO_CORE_CLIENT_KEY` | — | 1 | 传给 Go Core 的客户端 key |

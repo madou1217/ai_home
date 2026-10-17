@@ -110,8 +110,9 @@ function runLoadInChild(target, key, options) {
   return new Promise((resolve, reject) => {
     const child = childProcess.spawn(process.execPath, [
       __filename, '--load', target.host, String(target.port),
-      '--requests', String(options.requests), '--concurrency', String(options.concurrency)
-    ], { env: { ...process.env, AIH_BENCH_KEY: key }, stdio: ['ignore', 'pipe', 'inherit'] });
+      '--requests', String(options.requests), '--concurrency', String(options.concurrency),
+      '--bench-key', key
+    ], { stdio: ['ignore', 'pipe', 'inherit'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.on('error', reject);
@@ -216,7 +217,9 @@ async function loadMain(argv) {
   const index = argv.indexOf('--load');
   const target = { host: argv[index + 1], port: Number(argv[index + 2]) };
   const options = parseArgs(argv);
-  process.stdout.write(JSON.stringify(await runLoad(target, process.env.AIH_BENCH_KEY || '', options)));
+  const keyIndex = argv.indexOf('--bench-key');
+  const key = keyIndex >= 0 ? String(argv[keyIndex + 1] || '') : '';
+  process.stdout.write(JSON.stringify(await runLoad(target, key, options)));
 }
 
 if (require.main === module && process.argv.includes('--load')) {

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:05:11.449Z",
-  "total": 136,
+  "generatedAt": "2026-10-17T08:09:33.263Z",
+  "total": 134,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1114,32 +1114,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_TERMINAL_ICON_AUTO",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_TERMINAL_ICON_STRATEGY",
       "category": "plumbing",
       "reads": 1,
       "literals": 0,
       "files": [
         "lib/cli/services/terminal-icon-strategies.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TERMINAL_TITLE_AUTO",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },

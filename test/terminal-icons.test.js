@@ -386,29 +386,6 @@ test('mainstream terminals without portable tab icon APIs use title fallback', (
   }
 });
 
-test('terminal title fallback respects explicit disable flag', () => {
-  const writes = [];
-  const env = {
-    TERM_PROGRAM: 'Apple_Terminal',
-    AIH_TERMINAL_TITLE_AUTO: '0'
-  };
-
-  const result = prepareCurrentTerminalProviderIcon('codex', {
-    env,
-    processImpl: {
-      platform: 'darwin',
-      env,
-      stdout: {
-        isTTY: true,
-        write: (text) => writes.push(text)
-      }
-    }
-  });
-
-  assert.deepEqual(result, { applied: false, terminal: 'apple-terminal' });
-  assert.deepEqual(writes, []);
-});
-
 test('linux terminal icon install writes XDG icon, desktop entry, and Konsole profile', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-linux-icons-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

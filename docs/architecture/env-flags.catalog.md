@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:05:11.449Z
-> 共 **136** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:09:33.263Z
+> 共 **134** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -93,7 +93,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），72）
+## plumbing（内部管道（进程间传递的身份 / 标记），70）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -132,9 +132,7 @@
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
-| `AIH_TERMINAL_ICON_AUTO` | — | 1 | 自动设置终端图标 |
 | `AIH_TERMINAL_ICON_STRATEGY` | — | 1 | 终端图标策略 |
-| `AIH_TERMINAL_TITLE_AUTO` | — | 1 | 自动设置终端标题 |
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |

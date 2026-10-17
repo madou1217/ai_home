@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:56:47.807Z",
-  "total": 81,
+  "generatedAt": "2026-10-17T10:57:26.090Z",
+  "total": 80,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -426,17 +426,6 @@
       "files": [
         "lib/cli/services/pty/ssh-clipboard-bridge.js",
         "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_TUI_LOCAL_REMOTE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/runtime/multiplexer/tmux-session-env.js",
-        "lib/server/codex-default-cli-launcher.js"
       ],
       "aliasConstants": []
     },

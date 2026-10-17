@@ -4,6 +4,7 @@
 // app-server 用调用方自己的环境与配置(不借网关按宿主默认账号起的 app-server)。
 
 const test = require('node:test');
+const { CODEX_FLAGS_ENV, serializeCodexFlags } = require('../lib/runtime/codex-flags');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
@@ -32,11 +33,11 @@ test('only interactive TUI launches take the local app-server', () => {
   }
   const tty = { platform: 'darwin', stdin: { isTTY: true }, cwd: () => '/p' };
   assert.equal(isLocalAppServerEnabled({}, tty), true);
-  assert.equal(isLocalAppServerEnabled({ AIH_CODEX_TUI_LOCAL_REMOTE: '0' }, tty), false);
+  assert.equal(isLocalAppServerEnabled({ [CODEX_FLAGS_ENV]: serializeCodexFlags({ tuiLocalRemote: '0' }) }, tty), false);
   assert.equal(isLocalAppServerEnabled({}, { ...tty, stdin: { isTTY: false } }), false);
   // Windows（psmux）已真机验证，默认开启；紧急开关同样生效。
   assert.equal(isLocalAppServerEnabled({}, { ...tty, platform: 'win32' }), true);
-  assert.equal(isLocalAppServerEnabled({ AIH_CODEX_TUI_LOCAL_REMOTE: '0' }, { ...tty, platform: 'win32' }), false);
+  assert.equal(isLocalAppServerEnabled({ [CODEX_FLAGS_ENV]: serializeCodexFlags({ tuiLocalRemote: '0' }) }, { ...tty, platform: 'win32' }), false);
 });
 
 test('on Windows the app-server process tree is closed with taskkill', async () => {

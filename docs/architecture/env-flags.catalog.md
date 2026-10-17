@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:56:47.807Z
-> 共 **81** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:57:26.090Z
+> 共 **80** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，8）
@@ -65,7 +65,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），45）
+## plumbing（内部管道（进程间传递的身份 / 标记），44）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -76,7 +76,6 @@
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
-| `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
 | `AIH_EDGE_FRPC_BIN` | — | 1 | 托管 frpc 可执行文件路径 |
 | `AIH_EDGE_NGINX_BIN` | — | 1 | 托管 nginx 可执行文件路径 |

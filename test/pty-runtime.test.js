@@ -917,7 +917,7 @@ test('runtime wraps native Windows psmux for Codex by default', () => {
   assert.equal(spawns[0].args.includes('C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js'), true);
   assert.equal(spawns[0].args.includes('NODE_PATH=C:\\tools\\node_modules'), true);
   assert.equal(
-    spawns[0].args.includes(`${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`),
+    spawns[0].args.some((arg) => String(arg).includes(`psmux=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`)),
     true
   );
   assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
@@ -976,7 +976,7 @@ test('runtime installs psmux on Windows, re-detects it, and wraps the launch', (
   assert.equal(spawns[0].args.includes('C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js'), true);
   assert.equal(spawns[0].args.includes('NODE_PATH=C:\\tools\\node_modules'), true);
   assert.equal(
-    spawns[0].args.includes(`${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`),
+    spawns[0].args.some((arg) => String(arg).includes(`psmux=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`)),
     true
   );
   assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
@@ -1031,7 +1031,7 @@ test('runtime avoids psmux attach-or-create when session probing falls back to a
   assert.equal(spawns[0].args.includes('C:\\tools\\node_modules\\@openai\\codex\\bin\\codex.js'), true);
   assert.equal(spawns[0].args.includes('NODE_PATH=C:\\tools\\node_modules'), true);
   assert.equal(
-    spawns[0].args.includes(`${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`),
+    spawns[0].args.some((arg) => String(arg).includes(`psmux=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`)),
     true
   );
 
@@ -1082,10 +1082,14 @@ test('runtime re-enters Windows psmux Codex sessions with an exclusive explicit 
             'codex',
             'node',
             '123',
-            persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-            '',
+            persistentSession.serializeRuntimeMarker({
+              utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+              psmux: persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE,
+              supervisor: persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
+            }),
             '0',
-            persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+            explicitAttachProjectCwd,
+            CODEX_MANAGED_LAUNCH_VALUE
           ].join(explicitAttachSeparator)
         };
       }
@@ -1397,12 +1401,11 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       'LC_CTYPE=C.UTF-8',
       'LC_ALL=C.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `${persistentSession.RUNTIME_MARKER_ENV}=utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE},supervisor=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
-      `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       codexHomeEnvArg,
-      codexSqliteHomeEnvArg,
-      `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
+      codexSqliteHomeEnvArg
     ]
   );
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -1448,7 +1451,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
   assert.equal(spawns[0].options.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT, '1');
   assert.equal(spawns[0].options.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL, '1');
   assert.equal(
-    spawns[0].options.env[persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY],
+    persistentSession.parseRuntimeMarkerValue(spawns[0].options.env[persistentSession.RUNTIME_MARKER_ENV]).claude,
     persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
   );
   assert.equal(
@@ -1464,9 +1467,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
     true
   );
   assert.equal(
-    spawns[0].args.includes(
-      `${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`
-    ),
+    spawns[0].args.some((arg) => String(arg).includes(`claude=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`)),
     true
   );
   assert.equal(
@@ -1516,8 +1517,8 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
       'set-environment',
       '-t',
       sessionName,
-      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY,
-      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      persistentSession.RUNTIME_MARKER_ENV,
+      `utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE},claude=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`
     ].join('\x1f')),
     true
   );
@@ -1539,7 +1540,7 @@ test('runtime leaves direct Claude launches without tmux render compatibility en
   assert.equal(spawns[0].options.env.CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT, undefined);
   assert.equal(spawns[0].options.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT, undefined);
   assert.equal(spawns[0].options.env.CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL, undefined);
-  assert.equal(spawns[0].options.env[persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY], undefined);
+  assert.equal(persistentSession.parseRuntimeMarkerValue(spawns[0].options.env[persistentSession.RUNTIME_MARKER_ENV]).claude, undefined);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
 
@@ -1605,12 +1606,11 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       'LC_CTYPE=zh_CN.UTF-8',
       'LC_ALL=zh_CN.UTF-8',
       `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `${persistentSession.RUNTIME_MARKER_ENV}=utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE},supervisor=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
-      `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       codexHomeEnvArg,
-      codexSqliteHomeEnvArg,
-      `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`
+      codexSqliteHomeEnvArg
     ]
   );
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -1653,7 +1653,7 @@ test('runtime bare launch leaves detached stale tmux sessions untouched and crea
 
   assert.ok(!syncCalls.some((args) => args.includes('kill-server')), 'bare launch must not cycle an existing server');
   assertStrictFreshSessionLaunch(spawns[0], baseSession);
-  assert.equal(spawns[0].args.includes(`${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`), true);
+  assert.equal(spawns[0].args.some((arg) => String(arg).includes(`utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`)), true);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
 
@@ -1776,9 +1776,7 @@ test('runtime supervises the inner provider only when creating a projected persi
   assert.equal(supervisorArgs[1], '--no-warnings');
   assert.match(supervisorArgs[2], /persistent-provider-supervisor-entry\.js$/);
   assert.equal(
-    spawns[0].args.includes(
-      `${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`
-    ),
+    spawns[0].args.some((arg) => String(arg).includes(`supervisor=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`)),
     true
   );
   const context = parsePersistentProviderSupervisorArgs(supervisorArgs.slice(3));
@@ -2584,8 +2582,7 @@ test('runtime records Claude Stop hook JSON validation diagnostics from PTY outp
   }) + '\n', 'utf8');
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS: '1'
+    AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2600,7 +2597,7 @@ test('runtime records Claude Stop hook JSON validation diagnostics from PTY outp
   assert.equal(spawns[0].command, '/usr/local/bin/claude');
   assert.equal(spawns[0].options.env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:8317');
   spawns[0].proc._onData('Ran 1 stop hook\r\nStop hook error: JSON validation failed\r\n');
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await new Promise((resolve) => setTimeout(resolve, 400));
 
   const logPath = path.join(aiHomeDir, 'logs', 'claude', 'hook-diagnostics.jsonl');
   assert.equal(fsBase.existsSync(logPath), true);
@@ -2661,8 +2658,7 @@ test('runtime records Claude tool protocol diagnostics from PTY output', async (
   ].join('\n'), 'utf8');
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS: '1'
+    AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2675,7 +2671,7 @@ test('runtime records Claude tool protocol diagnostics from PTY output', async (
   runtime.runCliPtyTracked('claude', '', ['--resume', sessionId], false, { gateway: true });
   assert.equal(spawns.length, 1);
   spawns[0].proc._onData('[Tool use interrupted]\r\n');
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await new Promise((resolve) => setTimeout(resolve, 400));
 
   const logPath = path.join(aiHomeDir, 'logs', 'claude', 'hook-diagnostics.jsonl');
   assert.equal(fsBase.existsSync(logPath), true);
@@ -2701,9 +2697,7 @@ test('runtime coalesces Claude tool diagnostics without transcript evidence and 
   });
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS: '1',
-    AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS: '60000'
+    AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2717,9 +2711,9 @@ test('runtime coalesces Claude tool diagnostics without transcript evidence and 
   assert.equal(spawns.length, 1);
   spawns[0].proc._onData('old resume text [Tool use interrupted]\r\n');
   spawns[0].proc._onData('more old replay [Tool use interrupted]\r\n');
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   spawns[0].proc._onData('later replay [Tool use interrupted]\r\n');
-  await new Promise((resolve) => setTimeout(resolve, 25));
+  await new Promise((resolve) => setTimeout(resolve, 400));
 
   const logPath = path.join(aiHomeDir, 'logs', 'claude', 'hook-diagnostics.jsonl');
   assert.equal(fsBase.existsSync(logPath), true);
@@ -3907,23 +3901,22 @@ test('runtime toggles shell drawer with ctrl+alt+j and routes stdin to shell whi
 
 test('runtime resizes shell drawer pty to panel height when terminal size changes', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SHELL_DRAWER_HEIGHT: '6'
+    AIH_RUNTIME_SHOW_USAGE: '0'
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
   proc.stdin.emit('data', Buffer.from('\x1b\n'));
 
   assert.equal(spawns.length, 2);
-  assert.equal(spawns[1].options.rows, 3);
+  assert.equal(spawns[1].options.rows, 4);
 
   proc.stdout.columns = 100;
   proc.stdout.rows = 30;
   proc.stdout.emit('resize');
 
   assert.deepEqual(spawns[1].proc.resizeCalls, [
-    { cols: 80, rows: 3 },
-    { cols: 100, rows: 3 }
+    { cols: 80, rows: 4 },
+    { cols: 100, rows: 4 }
   ]);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);

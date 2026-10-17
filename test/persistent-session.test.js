@@ -19,6 +19,14 @@ function socket(provider, runtimeScope) {
   return persistentSession.deriveSocket(provider, runtimeScope);
 }
 
+const RUNTIME_MARKER_ENV = persistentSession.RUNTIME_MARKER_ENV;
+function runtimeMarker(fields) {
+  return persistentSession.serializeRuntimeMarker(fields);
+}
+function runtimeMarkerArg(fields) {
+  return `${RUNTIME_MARKER_ENV}=${runtimeMarker(fields)}`;
+}
+
 test('deriveSocket is stable for account and gateway runtime scopes', () => {
   assert.equal(socket('claude', ACCOUNT_REF_1), 'aih-claude-' + ACCOUNT_REF_1);
   assert.equal(socket('claude', ACCOUNT_REF_1), 'aih-claude-' + ACCOUNT_REF_1);
@@ -245,7 +253,7 @@ test('buildTmuxLaunch: default create uses new-session without attach or takeove
     '-u', '-L', socket('claude', ACCOUNT_REF_2),
     '-f', '/home/u/.aih/persist/tmux.conf',
     'new-session',
-    '-e', `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
+    '-e', runtimeMarkerArg({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
     '-s', wrapped.session,
     '-c', '/work/project',
     '--', '/usr/local/bin/claude', '--model', 'opus'
@@ -261,7 +269,7 @@ test('buildTmuxLaunch: explicit label yields a named concurrent window', () => {
   assert.deepEqual(wrapped.args, [
     '-u', '-L', socket('codex', ACCOUNT_REF_1),
     'new-session',
-    '-e', `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
+    '-e', runtimeMarkerArg({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
     '-s', 's-work2',
     '-c', '/work/project',
     '--', 'codex'
@@ -282,7 +290,10 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
         LC_ALL: 'C.UTF-8',
         CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT: '1',
         CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
-        [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
+        [RUNTIME_MARKER_ENV]: runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      }),
         AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1',
         [CODEX_MANAGED_LAUNCH_ENV]: '1',
         OPENAI_API_KEY: 'sk-secret'
@@ -290,7 +301,7 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
     }
   );
 
-  assert.deepEqual(wrapped.args.slice(3, 23), [
+  assert.deepEqual(wrapped.args.slice(3, 21), [
     'new-session',
     '-e',
     'LANG=C.UTF-8',
@@ -303,13 +314,14 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
     '-e',
     'CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL=1',
     '-e',
-    `${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}=${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE}`,
-    '-e',
     'AIH_PROVIDER_SESSION_CORRELATION_ID=pty-run-1',
     '-e',
-    `${CODEX_MANAGED_LAUNCH_ENV}=1`,
+    runtimeMarkerArg({
+      utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+    }),
     '-e',
-    `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
+    `${CODEX_MANAGED_LAUNCH_ENV}=1`,
     '-s'
   ]);
   assert.equal(wrapped.args.includes('-A'), false);
@@ -355,7 +367,7 @@ test('buildTmuxLaunch: detached restore keeps attach-or-create background semant
   assert.deepEqual(wrapped.args, [
     '-u', '-L', socket('codex', ACCOUNT_REF_1),
     'new-session', '-A', '-d',
-    '-e', `${persistentSession.UTF8_RUNTIME_MARKER_KEY}=${persistentSession.UTF8_RUNTIME_MARKER_VALUE}`,
+    '-e', runtimeMarkerArg({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
     '-s', 'p-project-abc123-10-20',
     '-c', '/work/project',
     '--', '/usr/local/bin/codex', 'resume'
@@ -374,7 +386,10 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
       LC_ALL: 'en_US.UTF-8',
       CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
       CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL: '1',
-      [persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY]: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE,
+      [RUNTIME_MARKER_ENV]: runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      }),
       [CODEX_MANAGED_LAUNCH_ENV]: CODEX_MANAGED_LAUNCH_VALUE,
       ANTHROPIC_API_KEY: 'sk-secret'
     }
@@ -392,8 +407,11 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
       socket('claude', ACCOUNT_REF_2),
       'set-environment',
       '-g',
-      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY,
-      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      RUNTIME_MARKER_ENV,
+      runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      })
     ]
   ]);
   assert.equal(commands.some((cmd) => cmd.args.includes('sk-secret')), false);
@@ -444,12 +462,9 @@ test('buildListSessionsCommand targets the account socket', () => {
       '#{window_name}',
       '#{pane_current_command}',
       '#{pane_pid}',
-      `#{E:${persistentSession.UTF8_RUNTIME_MARKER_KEY}}`,
-      `#{E:${persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_KEY}}`,
+      `#{E:${RUNTIME_MARKER_ENV}}`,
       '#{pane_dead}',
-      `#{E:${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_KEY}}`,
       '#{pane_current_path}',
-      `#{E:${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_KEY}}`,
       `#{E:${CODEX_MANAGED_LAUNCH_ENV}}`
     ].join(sep)
   ]);
@@ -783,10 +798,11 @@ test('parseSessionList prefers pane current path over session path', () => {
     'cmd',
     'cmd',
     '123',
-    persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-    '',
+    runtimeMarker({
+      utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+      psmux: persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+    }),
     '0',
-    persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE,
     'C:\\Users\\madou\\projects\\feature\\ai_home'
   ].join(sep));
 
@@ -805,9 +821,9 @@ test('parseSessionList carries pane dead state from tmux format', () => {
       'codex',
       'node',
       '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
-      '1'
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
+      '1',
+      ''
     ].join(sep),
     [
       'p-live',
@@ -818,9 +834,9 @@ test('parseSessionList carries pane dead state from tmux format', () => {
       'codex',
       'node',
       '124',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
-      '0'
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
+      '0',
+      ''
     ].join(sep)
   ].join('\n'));
 
@@ -849,7 +865,7 @@ test('parseSessionList carries UTF-8 runtime marker from tmux format', () => {
       'codex',
       'node',
       '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE })
     ].join(sep),
     [
       'p-legacy',
@@ -883,8 +899,10 @@ test('parseSessionList carries Claude render runtime marker from tmux format', (
       'claude',
       'claude',
       '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
+      })
     ].join(sep),
     [
       'p-legacy',
@@ -895,8 +913,7 @@ test('parseSessionList carries Claude render runtime marker from tmux format', (
       'claude',
       'claude',
       '124',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      ''
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE })
     ].join(sep)
   ].join('\n'));
 
@@ -919,10 +936,12 @@ test('parseSessionList carries psmux Codex launch runtime marker from tmux forma
       'codex',
       'node',
       '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
+      runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        psmux: persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+      }),
       '0',
-      persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE
+      ''
     ].join(sep),
     [
       'p-legacy',
@@ -933,8 +952,7 @@ test('parseSessionList carries psmux Codex launch runtime marker from tmux forma
       'codex',
       'node',
       '124',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
       '0',
       ''
     ].join(sep)
@@ -959,12 +977,12 @@ test('parseSessionList carries persistent provider supervisor runtime marker', (
       'agy',
       'node',
       '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
+      runtimeMarker({
+        utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
+        supervisor: persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
+      }),
       '0',
-      '',
-      '/work/ready',
-      persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
+      '/work/ready'
     ].join(sep),
     [
       'p-legacy',
@@ -975,12 +993,9 @@ test('parseSessionList carries persistent provider supervisor runtime marker', (
       'agy',
       'agy',
       '124',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE,
-      '',
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }),
       '0',
-      '',
-      '/work/legacy',
-      ''
+      '/work/legacy'
     ].join(sep)
   ].join('\n'));
 
@@ -996,12 +1011,12 @@ test('parseSessionList carries the AIH-managed Codex launch marker', () => {
   const [ready, legacy] = persistentSession.parseSessionList([
     [
       'p-ready', '0', '100', '/work/ready', '', 'codex', 'node', '123',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE, '', '0', '', '/work/ready', '',
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }), '0', '/work/ready',
       CODEX_MANAGED_LAUNCH_VALUE
     ].join(sep),
     [
       'p-legacy', '0', '100', '/work/legacy', '', 'codex', 'node', '124',
-      persistentSession.UTF8_RUNTIME_MARKER_VALUE, '', '0', '', '/work/legacy', '', ''
+      runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }), '0', '/work/legacy', ''
     ].join(sep)
   ].join('\n'));
 

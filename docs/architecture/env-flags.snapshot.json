@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:14:06.940Z",
-  "total": 129,
+  "generatedAt": "2026-10-17T08:21:25.338Z",
+  "total": 126,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -36,6 +36,7 @@
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RESUME_ENV": "AIH_SESSION_RESUME",
+    "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
     "SESSION_ENV": "AIH_SESSION",
     "TARGET_ENV": "AIH_SESSION_TARGET",
     "ZCODE_AGENT_ENTRY_ENV": "AIH_ZCODE_AGENT_ENTRY",
@@ -1184,17 +1185,6 @@
       ]
     },
     {
-      "name": "AIH_CLAUDE_TMUX_RENDER_RUNTIME",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/runtime/multiplexer/tmux-session-env.js",
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
       "category": "plumbing",
       "reads": 0,
@@ -1313,27 +1303,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/runtime/multiplexer/tmux-session-env.js",
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PERSIST_UTF8_RUNTIME",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_PROVIDER_SESSION_CORRELATION_ID",
       "category": "plumbing",
       "reads": 0,
@@ -1341,17 +1310,6 @@
       "files": [
         "lib/cli/services/pty/pty-runtime-launch.js",
         "lib/runtime/multiplexer/tmux-session-env.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PSMUX_CODEX_LAUNCH_RUNTIME",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/runtime/multiplexer/tmux-session-env.js",
-        "lib/runtime/persistent-session.js"
       ],
       "aliasConstants": []
     },
@@ -1376,6 +1334,19 @@
         "lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_RUNTIME_MARKER",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 2,
+      "files": [
+        "lib/runtime/multiplexer/tmux-session-env.js",
+        "lib/runtime/persistent-session.js"
+      ],
+      "aliasConstants": [
+        "RUNTIME_MARKER_ENV"
+      ]
     },
     {
       "name": "AIH_SERVER_AUTOSTART",

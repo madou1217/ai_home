@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:14:06.940Z
-> 覆盖 `lib / bin / scripts / core`，共 **119** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:21:25.338Z
+> 覆盖 `lib / bin / scripts / core`，共 **116** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -13,7 +13,7 @@
 | flag | 4 | 开关与逃生门（环境准入） |
 | credential | 11 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 66 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 63 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -171,19 +171,16 @@
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |
 | `AIH_ACCOUNT_APP` | 0 | 1 | lib/runtime/provider-session-context.js |
 | `AIH_ACCOUNT_REF` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
-| `AIH_CLAUDE_TMUX_RENDER_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_MANAGED_LAUNCH` | 0 | 2 | lib/runtime/codex-launch-context.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_CODEX_REMOTE_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
-| `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
-| `AIH_PERSIST_UTF8_RUNTIME` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/multiplexer/tmux-session-env.js |
-| `AIH_PSMUX_CODEX_LAUNCH_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_RELAY_MIHOMO_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js |
 | `AIH_RELAY_SING_BOX_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js |
+| `AIH_RUNTIME_MARKER` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_SERVER_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_SERVER_BACKGROUND_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
 | `AIH_SERVER_ELEVATED_RESTART` | 0 | 1 | lib/cli/services/server/windows-restart-elevation.js |

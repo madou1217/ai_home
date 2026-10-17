@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:12:47.424Z
-> 覆盖 `lib / bin / scripts / core`，共 **100** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:19:16.736Z
+> 覆盖 `lib / bin / scripts / core`，共 **96** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,7 +9,7 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 17 | 数据/目录/仓库路径 |
-| network | 17 | 端点 / 代理 / 端口 |
+| network | 13 | 端点 / 代理 / 端口 |
 | flag | 4 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
@@ -35,17 +35,17 @@
 | `AIH_CLI_PATH` | path | 5 | 5 |
 | `AIH_AGY_QUOTA_BASE_URLS` | plumbing | 4 | 2 |
 | `AIH_PROVIDER_ACCOUNT_REF` | plumbing | 4 | 4 |
-| `AIH_RELAY_UDP` | plumbing | 4 | 3 |
-| `AIH_RELAY_UDP_ADVERTISE_HOST` | network | 4 | 3 |
-| `AIH_RELAY_UDP_ADVERTISE_PORT` | network | 4 | 3 |
 | `AIH_AGY_BASE_URL` | network | 3 | 1 |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | plumbing | 3 | 2 |
 | `AIH_AGY_QUOTA_BASE_URL` | network | 3 | 1 |
 | `AIH_CODEX_BIN` | plumbing | 3 | 2 |
-| `AIH_RELAY_LISTEN_HOST` | network | 3 | 3 |
-| `AIH_RELAY_PORT_MODE` | network | 3 | 3 |
 | `AIH_REMOTE_SSH` | network | 3 | 2 |
 | `AIH_CLAUDE_API_BASE_URL` | network | 2 | 1 |
+| `AIH_CLAUDE_CODE_COMMANDS_DIR` | path | 2 | 1 |
+| `AIH_CLAUDE_OAUTH_TOKEN` | credential | 2 | 1 |
+| `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | flag | 2 | 2 |
+| `AIH_CODEX_HOME` | path | 2 | 1 |
+| `AIH_CODEX_REMOTE_AUTH_TOKEN` | credential | 2 | 4 |
 
 ## path（数据/目录/仓库路径）
 
@@ -73,12 +73,8 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_RELAY_UDP_ADVERTISE_HOST` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
-| `AIH_RELAY_UDP_ADVERTISE_PORT` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
 | `AIH_AGY_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_AGY_QUOTA_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_RELAY_LISTEN_HOST` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
-| `AIH_RELAY_PORT_MODE` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
 | `AIH_REMOTE_SSH` | 3 | 0 | lib/cli/commands/ai-cli/router.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
@@ -127,7 +123,6 @@
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | 6 | 5 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/cli/services/ai-cli/codex-provider-args.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>…共 8 个 |
 | `AIH_AGY_QUOTA_BASE_URLS` | 4 | 0 | lib/cli/services/usage/snapshot.js<br>lib/server/code-assist-quota.js |
 | `AIH_PROVIDER_ACCOUNT_REF` | 4 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/provider-session-context.js<br>…共 4 个 |
-| `AIH_RELAY_UDP` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
 | `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
@@ -167,6 +162,7 @@
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_RELAY_MIHOMO_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js |
+| `AIH_RELAY_SETTINGS` | 0 | 6 | lib/server/relay-settings.js<br>lib/server/server-config-schema.js |
 | `AIH_RELAY_SING_BOX_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js |
 | `AIH_RUNTIME_MARKER` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_SERVER_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |

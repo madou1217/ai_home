@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:12:47.424Z
-> 共 **110** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:19:16.736Z
+> 共 **106** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，19）
@@ -28,20 +28,16 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，21）
+## network（端点 / 代理 / 端口，17）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_SERVER_PROXY_URL` | ✅ | 18 | 上游请求 HTTP(S) 代理（公开；config 优先） |
 | `AIH_SERVER_NO_PROXY` | ✅ | 17 | 不走代理的主机列表（公开；config 优先） |
 | `AIH_SERVER_PORT` | ✅ | 6 | 网关监听端口（公开；config 优先） |
-| `AIH_RELAY_UDP_ADVERTISE_HOST` | — | 4 | 中转 UDP 播报给客户端的主机（config 优先） |
-| `AIH_RELAY_UDP_ADVERTISE_PORT` | — | 4 | 中转 UDP 播报给客户端的端口（config 优先） |
 | `AIH_SERVER_HOST` | ✅ | 4 | 网关监听地址（公开；config 优先） |
 | `AIH_AGY_BASE_URL` | — | 3 | agy（code assist）上游 base URL 覆盖 |
 | `AIH_AGY_QUOTA_BASE_URL` | — | 3 | agy 额度接口 base URL 覆盖 |
-| `AIH_RELAY_LISTEN_HOST` | — | 3 | 中转入口绑定网卡（config 优先） |
-| `AIH_RELAY_PORT_MODE` | — | 3 | 中转端口布局 server/dedicated（config 优先） |
 | `AIH_REMOTE_SSH` | — | 3 | 远程主机 SSH 目标（远程 node/relay 操作） |
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
@@ -93,7 +89,6 @@
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | — | 6 | 网关请求钉选的账号（x-account-ref 来源） |
 | `AIH_AGY_QUOTA_BASE_URLS` | — | 4 | agy 额度端点候选列表 |
 | `AIH_PROVIDER_ACCOUNT_REF` | — | 4 | 当前运行账号的 accountRef（沙箱注入） |
-| `AIH_RELAY_UDP` | — | 4 | 中转 UDP 开关（config 会写 0/1） |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
@@ -134,6 +129,7 @@
 | `AIH_OPENCODE_RUN_LAYOUT` | — | 0 | opencode run 布局逃生门（v1/v2） |
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | — | 0 | provider 会话关联 id（事件关联） |
 | `AIH_RELAY_MIHOMO_BIN` | — | 0 | mihomo 二进制路径（中转边车） |
+| `AIH_RELAY_SETTINGS` | — | 0 | 中转运行参数（udp/播报地址/端口/端口模式/绑定网卡 五项合一） |
 | `AIH_RELAY_SING_BOX_BIN` | — | 0 | sing-box 二进制路径（中转边车） |
 | `AIH_RUNTIME_MARKER` | — | 0 | 持久会话运行时兼容标记（utf8/claude/psmux/supervisor 四项合一） |
 | `AIH_SERVER_AUTOSTART` | — | 0 | 由 autostart 拉起的标记 |

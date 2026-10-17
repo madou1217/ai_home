@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:12:47.424Z",
-  "total": 110,
+  "generatedAt": "2026-10-17T09:19:16.736Z",
+  "total": 106,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -31,6 +31,7 @@
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
+    "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
     "SESSION_INTENT_ENV": "AIH_SESSION_INTENT"
@@ -219,42 +220,6 @@
       ]
     },
     {
-      "name": "AIH_RELAY_UDP",
-      "category": "plumbing",
-      "reads": 4,
-      "literals": 1,
-      "files": [
-        "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_UDP_ADVERTISE_HOST",
-      "category": "network",
-      "reads": 4,
-      "literals": 1,
-      "files": [
-        "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_UDP_ADVERTISE_PORT",
-      "category": "network",
-      "reads": 4,
-      "literals": 1,
-      "files": [
-        "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_HOST",
       "category": "network",
       "reads": 4,
@@ -306,30 +271,6 @@
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js",
         "lib/server/codex-client-version.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_LISTEN_HOST",
-      "category": "network",
-      "reads": 3,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js",
-        "lib/server/command-handler.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_PORT_MODE",
-      "category": "network",
-      "reads": 3,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js",
-        "lib/server/command-handler.js",
-        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1184,6 +1125,19 @@
         "lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_RELAY_SETTINGS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 6,
+      "files": [
+        "lib/server/relay-settings.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": [
+        "RELAY_SETTINGS_ENV"
+      ]
     },
     {
       "name": "AIH_RELAY_SING_BOX_BIN",

@@ -9,6 +9,7 @@ const test = require('node:test');
 const YAML = require('yaml');
 const { SubscriptionAggregatorStore } = require('../lib/cli/services/toolkit/subscription-aggregator/profile-store');
 const { SubscriptionAggregatorService } = require('../lib/cli/services/toolkit/subscription-aggregator/aggregator-service');
+const { RELAY_SETTINGS_ENV, serializeRelaySettings } = require('../lib/server/relay-settings');
 const {
   compileRelayConfig,
   inboundTag,
@@ -527,7 +528,7 @@ test('a remote client gets a working, authenticated entry on the LAN address (re
   // dedicated 模式（每节点一个端口 + 远端绑 0.0.0.0）：server 模式默认不暴露，另有用例覆盖。
   // basePort 挪到 24100：本机可能正跑着生产边车（占着 23100+），测试不该跟它抢端口。
   const relay = new LocalRelay({
-    runDir: dir, env: { AIH_RELAY_PORT_MODE: 'dedicated' }, basePort: 24100, readinessTimeoutMs: 15000
+    runDir: dir, env: { [RELAY_SETTINGS_ENV]: serializeRelaySettings({ portMode: 'dedicated' }) }, basePort: 24100, readinessTimeoutMs: 15000
   });
   try {
     // 远端客户端：绑可达地址 + 认证。节点是假的上游（连不通没关系，验的是入口本身）。
@@ -588,7 +589,7 @@ test('server port mode keeps the sidecar on loopback and resolves a node from it
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-serverport-'));
   const relay = new LocalRelay({
-    runDir: dir, env: { AIH_RELAY_PORT_MODE: 'server' }, basePort: 24100, readinessTimeoutMs: 15000
+    runDir: dir, env: { [RELAY_SETTINGS_ENV]: serializeRelaySettings({ portMode: 'server' }) }, basePort: 24100, readinessTimeoutMs: 15000
   });
   try {
     assert.equal(relay.portMode(), 'server');
@@ -626,7 +627,7 @@ test('mihomo carries the transports sing-box cannot (real mihomo, when installed
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-mihomo-'));
   // 用真实环境变量（AIH_RELAY_MIHOMO_BIN 等）：内核位置就是这么传进去的。
   const relay = new LocalRelay({
-    runDir: dir, env: { ...process.env, AIH_RELAY_PORT_MODE: 'dedicated' }, basePort: 24400, readinessTimeoutMs: 15000
+    runDir: dir, env: { ...process.env, [RELAY_SETTINGS_ENV]: serializeRelaySettings({ portMode: 'dedicated' }) }, basePort: 24400, readinessTimeoutMs: 15000
   });
   try {
     const result = await relay.ensure([{ ...KERNEL_NODES[1] }], { onlyIds: new Set(['k_xhttp']), remote: true });

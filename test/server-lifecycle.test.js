@@ -46,7 +46,7 @@ test('embedded local server returns an idempotent lifecycle handle without ownin
     createServerDeps(aiHomeDir, processObj, lifecycle)
   );
 
-  // 端口可能由中转分流器持有（AIH_RELAY_PORT_MODE=server，默认）：判断"在监听"看 listener。
+  // 端口可能由中转分流器持有（relay settings portMode=server，默认）：判断"在监听"看 listener。
   assert.equal(handle.listener.listening, true);
   assert.deepEqual(handle.address, { host: '127.0.0.1', port });
   assert.equal(typeof handle.stop, 'function');
@@ -251,7 +251,7 @@ test('server stays available when chat runtime storage is unsupported', async (t
     headers: { authorization: 'Bearer management-key-that-is-long-enough' }
   });
 
-  // 端口可能由中转分流器持有（AIH_RELAY_PORT_MODE=server，默认）：判断"在监听"看 listener。
+  // 端口可能由中转分流器持有（relay settings portMode=server，默认）：判断"在监听"看 listener。
   assert.equal(handle.listener.listening, true);
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, 'chat_runtime_unavailable');

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:07:04.729Z",
-  "total": 74,
+  "generatedAt": "2026-10-17T11:08:03.898Z",
+  "total": 73,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -17,6 +17,7 @@
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AGENT_ENDPOINT_ENV": "AIH_SSH_CLIP_AGENT_ENDPOINT",
+    "AGY_ENDPOINTS_ENV": "AIH_AGY_ENDPOINTS",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
@@ -196,17 +197,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_AGY_QUOTA_BASE_URLS",
-      "category": "plumbing",
-      "reads": 4,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js",
-        "lib/server/code-assist-quota.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_PROVIDER_ACCOUNT_REF",
       "category": "plumbing",
       "reads": 4,
@@ -231,16 +221,6 @@
         "lib/server/args.js",
         "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_BASE_URL",
-      "category": "network",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
       ],
       "aliasConstants": []
     },
@@ -659,6 +639,18 @@
       ],
       "aliasConstants": [
         "ACCOUNT_APP_MARKER_ENV"
+      ]
+    },
+    {
+      "name": "AIH_AGY_ENDPOINTS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/usage/agy-endpoints.js"
+      ],
+      "aliasConstants": [
+        "AGY_ENDPOINTS_ENV"
       ]
     },
     {

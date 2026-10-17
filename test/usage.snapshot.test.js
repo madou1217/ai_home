@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { CODEX_PROBE_ENV, serializeCodexProbeContext } = require('../lib/cli/services/usage/codex-probe-context');
+const { AGY_ENDPOINTS_ENV, serializeAgyEndpoints } = require('../lib/usage/agy-endpoints');
 
 const { createUsageSnapshotService } = require('../lib/cli/services/usage/snapshot');
 const { createUsageCacheService } = require('../lib/cli/services/usage/cache');
@@ -808,7 +809,7 @@ test('agy usage preflight reports local token and cache readiness without networ
         execPath: process.execPath,
         cwd: () => root,
         env: {
-          AIH_AGY_QUOTA_BASE_URLS: 'https://one.example.com/v1internal,https://two.example.com/v1internal',
+          [AGY_ENDPOINTS_ENV]: serializeAgyEndpoints({ quotaBaseUrls: 'https://one.example.com/v1internal,https://two.example.com/v1internal' }),
           AIH_AGY_CODE_ASSIST_CLIENT_VERSION: '2.0.6'
         },
         platform: process.platform

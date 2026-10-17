@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:37:23.269Z
-> 共 **204** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:40:51.111Z
+> 共 **192** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -32,7 +32,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，42）
+## network（端点 / 代理 / 端口，41）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -55,7 +55,6 @@
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
-| `AIH_SSH_IMAGE_PASTE` | — | 2 | SSH 会话图片粘贴开关 |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
 | `AIH_CLIP_AGENT_HOST` | — | 1 | 剪贴板 agent 监听地址 |
@@ -79,7 +78,7 @@
 | `AIH_WEBTRANSPORT_PAGE_URL` | — | 0 | WebTransport 探测页 URL |
 | `AIH_WEBTRANSPORT_URL` | — | 0 | fabric WebTransport 端点 |
 
-## flag（开关与逃生门（环境准入），7）
+## flag（开关与逃生门（环境准入），6）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -88,7 +87,6 @@
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | — | 1 | 禁止自动附加远程 resume 参数 |
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
-| `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
 ## tuning（可调参数（超时 / TTL / 上限），2）
@@ -132,7 +130,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 0 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），106）
+## plumbing（内部管道（进程间传递的身份 / 标记），96）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -153,8 +151,6 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_RUN_ID` | — | 2 | 当前运行 id（WebUI chat/work 轮次关联） |
 | `AIH_TERMINAL_PROVIDER_TITLE` | — | 2 | 终端标题是否带 provider |
-| `AIH_UTF8_LOCALE` | — | 2 | 强制 UTF-8 locale（终端兼容） |
-| `AIH_WINDOWS_IMAGE_PASTE` | — | 2 | Windows 图片粘贴开关 |
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
 | `AIH_ZCODE_AGENT_RUNNER` | — | 2 | zcode agent runner 脚本 |
@@ -177,23 +173,15 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | — | 1 | Go Core 工件下载基地址 |
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
 | `AIH_KONSOLE_PROVIDER_PROFILE` | — | 1 | Konsole profile 名覆盖 |
-| `AIH_NATIVE_BINARY_REPAIR` | — | 1 | 原生二进制修复开关 |
-| `AIH_NATIVE_CLI_PROJECT_FALLBACK` | — | 1 | 原生 CLI 找不到项目时的回退开关 |
 | `AIH_NATIVE_RUN_WATCHDOG` | — | 1 | 原生运行看门狗开关 |
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
 | `AIH_PERSIST_ACTIVE` | — | 1 | 当前已在持久会话内（防嵌套） |
 | `AIH_PERSIST_DETACHED` | — | 1 | 持久会话由 restore 以 detached 方式创建 |
 | `AIH_RELAY_USERNAME` | — | 1 | 中转 SOCKS5 用户名（由节点 id 派生） |
-| `AIH_RUNTIME_AUTO_SWITCH` | — | 1 | 运行时自动切号（默认开，=0 关） |
 | `AIH_RUNTIME_SHOW_USAGE` | — | 1 | 运行时显示用量 |
-| `AIH_RUNTIME_USAGE_STATUS_BAR` | — | 1 | 状态栏用量展示开关 |
 | `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
-| `AIH_SESSION_PICKER_ANIMATION` | — | 1 | 会话选择器动画开关 |
-| `AIH_SESSION_PICKER_ICONS` | — | 1 | 会话选择器图标开关 |
-| `AIH_SESSION_PICKER_SYMBOLS` | — | 1 | 会话选择器符号开关 |
-| `AIH_SESSION_SCAN_ALL` | — | 1 | 扫描全部会话（不限当前项目） |
 | `AIH_SHELL_DRAWER_HEIGHT` | — | 1 | shell drawer 高度 |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TERMINAL_ICON_AUTO` | — | 1 | 自动设置终端图标 |

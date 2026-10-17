@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:37:23.269Z",
-  "total": 204,
+  "generatedAt": "2026-10-17T05:40:51.111Z",
+  "total": 192,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -714,17 +714,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_IMAGE_PASTE",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js",
-        "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SSH_TERMINAL_CLIPBOARD",
       "category": "network",
       "reads": 2,
@@ -753,26 +742,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_UTF8_LOCALE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/provider-runtime-env.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WINDOWS_IMAGE_PASTE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/local-clipboard.js"
       ],
       "aliasConstants": []
     },
@@ -1235,26 +1204,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_NATIVE_BINARY_REPAIR",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-run.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NATIVE_CLI_PROJECT_FALLBACK",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/runtime/native-cli-resolver.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_NATIVE_RUN_WATCHDOG",
       "category": "plumbing",
       "reads": 1,
@@ -1372,17 +1321,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_RUNTIME_AUTO_SWITCH",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RUNTIME_ENABLE_USAGE_SCHEDULER",
       "category": "flag",
       "reads": 1,
@@ -1390,16 +1328,6 @@
       "files": [
         "lib/cli/services/pty/pty-runtime-launch.js",
         "lib/cli/services/pty/pty-runtime-run.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_FORCE_USAGE_STATUS_BAR",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/usage-status-runtime.js"
       ],
       "aliasConstants": []
     },
@@ -1421,17 +1349,6 @@
       "literals": 0,
       "files": [
         "lib/runtime/native-cli-resolver.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_USAGE_STATUS_BAR",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
       ],
       "aliasConstants": []
     },
@@ -1484,46 +1401,6 @@
         "lib/cli/services/server/go-core-supervisor.js",
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION_PICKER_ANIMATION",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/persistent-session-list.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION_PICKER_ICONS",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/persistent-session-list.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION_PICKER_SYMBOLS",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/persistent-session-list.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION_SCAN_ALL",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/persistent-session-list.js"
       ],
       "aliasConstants": []
     },

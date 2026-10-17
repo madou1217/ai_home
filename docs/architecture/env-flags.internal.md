@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:37:23.269Z
-> 覆盖 `lib / bin / scripts / core`，共 **194** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:40:51.111Z
+> 覆盖 `lib / bin / scripts / core`，共 **182** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,12 +9,12 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 21 | 数据/目录/仓库路径 |
-| network | 38 | 端点 / 代理 / 端口 |
-| flag | 6 | 开关与逃生门（环境准入） |
+| network | 37 | 端点 / 代理 / 端口 |
+| flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 2 | 可调参数（超时 / TTL / 上限） |
 | credential | 20 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 105 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 95 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -93,7 +93,6 @@
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
-| `AIH_SSH_IMAGE_PASTE` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/terminal-probe.js |
 | `AIH_CLIP_AGENT_HOST` | 1 | 0 | lib/cli/services/ssh-clipboard/clip-agent.js |
@@ -126,7 +125,6 @@
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | 1 | 0 | lib/server/codex-app-server-stdio-proxy-cliresume.js |
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |
-| `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | 1 | 0 | lib/cli/services/pty/usage-status-runtime.js |
 
 ## tuning（可调参数（超时 / TTL / 上限））
 
@@ -188,8 +186,6 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_RUN_ID` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_TERMINAL_PROVIDER_TITLE` | 2 | 0 | lib/cli/services/terminal-icons.js |
-| `AIH_UTF8_LOCALE` | 2 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
-| `AIH_WINDOWS_IMAGE_PASTE` | 2 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_ZCODE_AGENT_ENTRY` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_RUNNER` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
@@ -212,23 +208,15 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | 1 | 0 | scripts/postinstall-go-core.js |
 | `AIH_GO_CORE_ROUTES` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_KONSOLE_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
-| `AIH_NATIVE_BINARY_REPAIR` | 1 | 0 | lib/cli/services/pty/pty-runtime-run.js |
-| `AIH_NATIVE_CLI_PROJECT_FALLBACK` | 1 | 0 | lib/runtime/native-cli-resolver.js |
 | `AIH_NATIVE_RUN_WATCHDOG` | 1 | 0 | lib/server/native-run-watchdog.js |
 | `AIH_OPENCODE_GATEWAY_BYOK` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_PERSIST_ACTIVE` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_DETACHED` | 1 | 1 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/runtime/persistent-session.js |
 | `AIH_RELAY_USERNAME` | 1 | 0 | lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js |
-| `AIH_RUNTIME_AUTO_SWITCH` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_RUNTIME_SHOW_USAGE` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_RUNTIME_USAGE_STATUS_BAR` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_SERVER_CODEX_CLI_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/cli/services/server/go-core-supervisor.js<br>lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_SESSION_PICKER_ANIMATION` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
-| `AIH_SESSION_PICKER_ICONS` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
-| `AIH_SESSION_PICKER_SYMBOLS` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
-| `AIH_SESSION_SCAN_ALL` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
 | `AIH_SHELL_DRAWER_HEIGHT` | 1 | 0 | lib/cli/services/pty/shell-drawer.js |
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
 | `AIH_TERMINAL_ICON_AUTO` | 1 | 0 | lib/cli/services/terminal-icons.js |

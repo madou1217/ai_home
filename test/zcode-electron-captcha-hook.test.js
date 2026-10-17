@@ -12,8 +12,9 @@ const { getDesktopLaunchStrategy } = require('../lib/server/desktop-launch');
 const { buildZcodeDesktopApplicationName } = require('../lib/runtime/account-app-process-marker');
 const captchaHook = require('../lib/runtime/zcode-electron-captcha-hook');
 
+const { ZCODE_CONTEXT_ENV, readZcodeContextField, serializeZcodeContext } = require('../lib/runtime/zcode-context');
+
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
-const CAPTCHA_HOOK_STATE_ENV = 'AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH';
 
 function buildContext(overrides = {}) {
   return {
@@ -49,7 +50,7 @@ test('zcode macOS 启动保留现有 NODE_OPTIONS，并清理不再需要的外�
 
   assert.equal(env.NODE_OPTIONS, '--trace-warnings');
   assert.equal(
-    env[CAPTCHA_HOOK_STATE_ENV],
+    readZcodeContextField(env, 'captchaState'),
     '/sandbox/account/.aih-runtime/zcode-captcha-hook.json'
   );
 });

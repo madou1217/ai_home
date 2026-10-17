@@ -1,19 +1,19 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:23:03.484Z
-> 覆盖 `lib / bin / scripts / core`，共 **94** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:26:42.735Z
+> 覆盖 `lib / bin / scripts / core`，共 **92** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 16 | 数据/目录/仓库路径 |
+| path | 15 | 数据/目录/仓库路径 |
 | network | 13 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 52 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 51 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -66,7 +66,6 @@
 | `AIH_RUNTIME_TOOLS_DIR` | 1 | 0 | lib/runtime/native-cli-resolver.js |
 | `AIH_SSH_CLIP_SHIM_BIN_DIR` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_CLIP_SHIM_DIR` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
-| `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | 0 | 1 | lib/runtime/zcode-electron-captcha-hook.js |
 
 ## network（端点 / 代理 / 端口）
 
@@ -168,6 +167,5 @@
 | `AIH_SERVER_ELEVATED_RESTART` | 0 | 1 | lib/cli/services/server/windows-restart-elevation.js |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
 | `AIH_UPSTREAM_HEADERS` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
-| `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | 0 | 1 | lib/runtime/zcode-session-attribution-hook.js |
-| `AIH_ZCODE_USAGE_OWNER_LOG` | 0 | 1 | lib/runtime/zcode-usage-attribution-hook.js |
+| `AIH_ZCODE_CONTEXT` | 0 | 1 | lib/runtime/zcode-context.js |
 

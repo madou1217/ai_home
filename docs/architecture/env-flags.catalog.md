@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:23:03.484Z
-> 共 **104** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:26:42.735Z
+> 共 **102** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，18）
+## path（数据/目录/仓库路径，17）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -25,7 +25,6 @@
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 | `AIH_SSH_CLIP_SHIM_BIN_DIR` | — | 1 | SSH 剪贴板 shim 的 bin 目录 |
 | `AIH_SSH_CLIP_SHIM_DIR` | — | 1 | SSH 剪贴板 shim 安装目录 |
-| `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
 ## network（端点 / 代理 / 端口，17）
 
@@ -80,7 +79,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），53）
+## plumbing（内部管道（进程间传递的身份 / 标记），52）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -135,6 +134,5 @@
 | `AIH_SERVER_ELEVATED_RESTART` | — | 0 | 提权重启标记 |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | — | 0 | 源码变更自动重启标记 |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |
-| `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | — | 0 | zcode 会话归属作用域 |
-| `AIH_ZCODE_USAGE_OWNER_LOG` | — | 0 | zcode 用量归属日志路径 |
+| `AIH_ZCODE_CONTEXT` | — | 0 | ZCode 运行时上下文（scope/验证码状态/用量日志 三项合一） |
 

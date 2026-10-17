@@ -10,10 +10,10 @@ const { spawnSync } = require('node:child_process');
 const { Worker } = require('node:worker_threads');
 
 const {
-  AIH_ZCODE_SESSION_SCOPE_ENV,
   patchZcodeAgentSource,
   scopeZcodeSessionId
 } = require('../lib/runtime/zcode-session-attribution-hook');
+const { ZCODE_CONTEXT_ENV, readZcodeContextField, serializeZcodeContext } = require('../lib/runtime/zcode-context');
 const { buildZcodeAgentLauncherSource } = require('../lib/server/desktop-launch/zcode-strategy');
 const { getDesktopLaunchStrategy } = require('../lib/server/desktop-launch');
 const { buildZcodeDesktopApplicationName } = require('../lib/runtime/account-app-process-marker');
@@ -101,7 +101,7 @@ test('显式 agent runner 能在真实 CJS 入口加载前应用账号作用域 
       encoding: 'utf8',
       env: {
         ...process.env,
-        [AIH_ZCODE_SESSION_SCOPE_ENV]: ACCOUNT_REF
+        [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ scope: ACCOUNT_REF })
       }
     });
 
@@ -127,7 +127,7 @@ test('storage preparation ignores inherited Desktop bridge environment', t => {
   ].join(''));
   const result = spawnSync(process.execPath, [require.resolve('../lib/runtime/zcode-session-attribution-runner'),
     entryPath, 'app-server', '--stdio', '--prepare-storage'], {
-    encoding: 'utf8', env: { ...process.env, [AIH_ZCODE_SESSION_SCOPE_ENV]: ACCOUNT_REF,
+    encoding: 'utf8', env: { ...process.env, [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ scope: ACCOUNT_REF }),
       AIH_ZCODE_DESKTOP_BRIDGE_DIR: mailboxDir, AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY: 'fixture-identity' }
   });
   assert.equal(result.status, 0, result.stderr);
@@ -201,7 +201,7 @@ test('zcode desktop 仅在 macOS 注入 agent runner 与账号作用域', () => 
     bundlePath: '/Applications/ZCode.app'
   }, macContext);
 
-  assert.equal(macEnv[AIH_ZCODE_SESSION_SCOPE_ENV], ACCOUNT_REF);
+  assert.equal(readZcodeContextField(macEnv, 'scope'), ACCOUNT_REF);
   assert.match(macEnv.ZCODE_AGENT_SERVER_COMMAND, /\.aih-runtime\/zcode-agent-launcher\.cjs$/);
   const args = JSON.parse(macEnv.ZCODE_AGENT_SERVER_ARGS_JSON);
   assert.deepEqual(args, ['app-server', '--stdio']);
@@ -213,6 +213,6 @@ test('zcode desktop 仅在 macOS 注入 agent runner 与账号作用域', () => 
     executablePath: 'C:\\Program Files\\ZCode\\ZCode.exe',
     bundlePath: ''
   }, windowsContext);
-  assert.equal(windowsEnv[AIH_ZCODE_SESSION_SCOPE_ENV], undefined);
+  assert.equal(readZcodeContextField(windowsEnv, 'scope'), '');
   assert.equal(windowsEnv.ZCODE_AGENT_SERVER_COMMAND, undefined);
 });

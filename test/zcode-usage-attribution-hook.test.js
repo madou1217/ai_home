@@ -7,7 +7,8 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
-const { AIH_ZCODE_USAGE_OWNER_LOG_ENV, patchZcodeUsageSource, installZcodeUsageOwnerRecorder } = require('../lib/runtime/zcode-usage-attribution-hook');
+const { patchZcodeUsageSource, installZcodeUsageOwnerRecorder } = require('../lib/runtime/zcode-usage-attribution-hook');
+const { ZCODE_CONTEXT_ENV, serializeZcodeContext } = require('../lib/runtime/zcode-context');
 
 const REF = 'acct_0123456789abcdef0123';
 const USAGE = { id: 'usage_one', sessionID: 'session_one', startedAt: 1_790_000_000_000, completedAt: 1_790_000_000_100,
@@ -59,7 +60,7 @@ test('the actual agent runner captures a native committed usage ID without modif
     + `persist({},${JSON.stringify(USAGE)});`;
   fs.writeFileSync(entry, source);
   const result = spawnSync(process.execPath, [require.resolve('../lib/runtime/zcode-session-attribution-runner'), entry], {
-    encoding: 'utf8', env: { ...process.env, AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE: REF, [AIH_ZCODE_USAGE_OWNER_LOG_ENV]: logPath }
+    encoding: 'utf8', env: { ...process.env, [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ scope: REF, usageLog: logPath }) }
   });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, 'NATIVE_OK');

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:23:03.484Z",
-  "total": 104,
+  "generatedAt": "2026-10-17T09:26:42.735Z",
+  "total": 102,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -16,9 +16,6 @@
   ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
-    "AIH_ZCODE_CAPTCHA_HOOK_STATE_ENV": "AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH",
-    "AIH_ZCODE_SESSION_SCOPE_ENV": "AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE",
-    "AIH_ZCODE_USAGE_OWNER_LOG_ENV": "AIH_ZCODE_USAGE_OWNER_LOG",
     "BACKGROUND_RESTART_ENV": "AIH_SERVER_BACKGROUND_RESTART",
     "BRIDGE_DIR_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",
     "BRIDGE_IDENTITY_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY",
@@ -33,7 +30,8 @@
     "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
-    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT"
+    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
+    "ZCODE_CONTEXT_ENV": "AIH_ZCODE_CONTEXT"
   },
   "entries": [
     {
@@ -1207,39 +1205,15 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH",
-      "category": "path",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-electron-captcha-hook.js"
-      ],
-      "aliasConstants": [
-        "AIH_ZCODE_CAPTCHA_HOOK_STATE_ENV"
-      ]
-    },
-    {
-      "name": "AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE",
+      "name": "AIH_ZCODE_CONTEXT",
       "category": "plumbing",
       "reads": 0,
       "literals": 1,
       "files": [
-        "lib/runtime/zcode-session-attribution-hook.js"
+        "lib/runtime/zcode-context.js"
       ],
       "aliasConstants": [
-        "AIH_ZCODE_SESSION_SCOPE_ENV"
-      ]
-    },
-    {
-      "name": "AIH_ZCODE_USAGE_OWNER_LOG",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-usage-attribution-hook.js"
-      ],
-      "aliasConstants": [
-        "AIH_ZCODE_USAGE_OWNER_LOG_ENV"
+        "ZCODE_CONTEXT_ENV"
       ]
     }
   ]

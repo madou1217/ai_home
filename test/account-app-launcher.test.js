@@ -15,6 +15,7 @@ const {
   listRunningCliInstances,
   normalizePlatform
 } = require('../lib/server/account-app-launcher');
+const { readZcodeContextField } = require('../lib/runtime/zcode-context');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const {
@@ -631,7 +632,7 @@ test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执
   assert.equal(fakeSpawn.calls[0].options.env.ZCODE_HOME,
     `/aih-home/run/auth-projections/zcode/${ACCOUNT_REF}/.zcode`);
   assert.equal(
-    fakeSpawn.calls[0].options.env.AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE,
+    readZcodeContextField(fakeSpawn.calls[0].options.env, 'scope'),
     ACCOUNT_REF
   );
   assert.match(fakeSpawn.calls[0].options.env.ZCODE_AGENT_SERVER_COMMAND, /\.aih-runtime\/zcode-agent-launcher\.cjs$/);

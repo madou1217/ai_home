@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:14:05.879Z",
-  "total": 89,
+  "generatedAt": "2026-10-17T10:14:45.647Z",
+  "total": 88,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -619,16 +619,6 @@
       "files": [
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NODE_DIST_DIR",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/node/bootstrap-assets.js"
       ],
       "aliasConstants": []
     },

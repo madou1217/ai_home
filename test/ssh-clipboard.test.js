@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { SHIM_CONTEXT_ENV, serializeShimContext } = require('../lib/cli/services/ssh-clipboard/shim-context');
 const {
   encodeClipboardImageFrames,
   createClipboardFrameParser,
@@ -306,7 +307,7 @@ test('ssh clipboard shim writes pngpaste image responses to the requested file',
     path,
     processObj: {
       env: {
-        AIH_SSH_CLIP_SHIM_DIR: root
+        [SHIM_CONTEXT_ENV]: serializeShimContext({ root })
       },
       stdout: { write: (chunk) => stdoutWrites.push(chunk) },
       stderr: { write: (chunk) => stderrWrites.push(String(chunk || '')) }

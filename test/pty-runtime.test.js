@@ -14,6 +14,7 @@ const { writeDefaultAccountRef } = require('../lib/account/default-account-store
 const { writeAccountCredentials } = require('../lib/server/account-credential-store');
 const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
+const { readShimContextField } = require('../lib/cli/services/ssh-clipboard/shim-context');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
   CODEX_MANAGED_LAUNCH_ENV
@@ -5474,9 +5475,9 @@ test('runtime installs server-side xclip shim and fulfills image reads through p
   assert.equal(fsBase.existsSync(path.join(shimDir, 'pbpaste')), true);
   assert.equal(fsBase.existsSync(path.join(shimDir, 'pngpaste')), true);
   assert.equal(fsBase.existsSync(path.join(shimDir, 'osascript')), true);
-  assert.equal(env.AIH_SSH_CLIP_SHIM_BIN_DIR, shimDir);
+  assert.equal(readShimContextField(env, 'bin'), shimDir);
 
-  const responsePath = path.join(env.AIH_SSH_CLIP_SHIM_DIR, 'responses', 'req-image.json');
+  const responsePath = path.join(readShimContextField(env, 'root'), 'responses', 'req-image.json');
   const frame = buildShimRequestFrame({
     id: 'req-image',
     kind: 'read',
@@ -5518,7 +5519,7 @@ test('runtime fulfills server-side xclip TARGETS shim requests through OSC5522 M
   const env = spawns[0].options.env;
   assert.equal(String(env.PATH || '').split(path.delimiter)[0], path.join(aiHomeDir, 'run', 'shims', 'ssh-clipboard'));
 
-  const responsePath = path.join(env.AIH_SSH_CLIP_SHIM_DIR, 'responses', 'req-targets.json');
+  const responsePath = path.join(readShimContextField(env, 'root'), 'responses', 'req-targets.json');
   const frame = buildShimRequestFrame({
     id: 'req-targets',
     kind: 'list',
@@ -5553,7 +5554,7 @@ test('runtime does not install server-side clipboard command shims outside SSH s
 
   assert.equal(spawns.length, 1);
   const env = spawns[0].options.env;
-  assert.equal(env.AIH_SSH_CLIP_SHIM_DIR, undefined);
+  assert.equal(readShimContextField(env, 'root'), '');
   assert.notEqual(String(env.PATH || '').split(path.delimiter)[0], path.join(aiHomeDir, 'run', 'shims', 'ssh-clipboard'));
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);

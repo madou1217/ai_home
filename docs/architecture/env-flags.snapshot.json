@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:34:26.487Z",
-  "total": 99,
+  "generatedAt": "2026-10-17T09:38:31.894Z",
+  "total": 98,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -31,6 +31,7 @@
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
     "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
+    "SHIM_CONTEXT_ENV": "AIH_SSH_CLIP_SHIM_CONTEXT",
     "ZCODE_CONTEXT_ENV": "AIH_ZCODE_CONTEXT"
   },
   "entries": [
@@ -853,26 +854,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_SHIM_BIN_DIR",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/shim-cli.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIP_SHIM_DIR",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/shim-cli.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_TRACE",
       "category": "plumbing",
       "reads": 1,
@@ -1162,6 +1143,18 @@
         "lib/server/source-auto-restart.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_SSH_CLIP_SHIM_CONTEXT",
+      "category": "network",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ssh-clipboard/shim-context.js"
+      ],
+      "aliasConstants": [
+        "SHIM_CONTEXT_ENV"
+      ]
     },
     {
       "name": "AIH_UPSTREAM_HEADERS",

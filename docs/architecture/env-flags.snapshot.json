@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:14:21.955Z",
-  "total": 65,
+  "generatedAt": "2026-10-17T11:15:57.434Z",
+  "total": 64,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -266,17 +266,6 @@
         "lib/server/codex-app-server-stdio-proxy-cliresume.js",
         "lib/server/codex-default-cli-launcher.js",
         "lib/server/codex-native-transport-policy.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_REMOTE_PROXY",
-      "category": "network",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/server/codex-app-server-proxy.js"
       ],
       "aliasConstants": []
     },

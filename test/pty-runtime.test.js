@@ -2972,7 +2972,7 @@ test('runtime injects --skip-git-repo-check only when explicitly enabled', () =>
 
 test('runtime injects codex remote proxy when local aih server is running', () => {
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_CODEX_REMOTE_PROXY: '1'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' })
   }, {
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '0.0.0.0', port: 9527, apiKey: 'secret-key' })
@@ -3194,7 +3194,7 @@ test('runtime restarts stale local aih server only with source auto restart opt-
   };
   try {
     const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
-      AIH_CODEX_REMOTE_PROXY: '1',
+      [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' }),
       AIH_SERVER_SOURCE_AUTO_RESTART: '1'
     }, {
       serverDaemon,
@@ -3234,7 +3234,7 @@ test('runtime restarts stale local aih server only with source auto restart opt-
 
 test('runtime reuses a ready stale gateway without restarting other clients by default', () => {
   for (const env of [
-    { AIH_CODEX_REMOTE_PROXY: '1' }
+    { [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' }) }
   ]) {
     let restartCalls = 0;
     const { runtime, proc, spawns, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness(env, {
@@ -3320,7 +3320,7 @@ test('runtime autostarts local aih server before injecting codex remote proxy', 
   };
   try {
     const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
-      AIH_CODEX_REMOTE_PROXY: '1'
+      [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' })
     }, {
       serverDaemon,
       readServerConfig: () => ({
@@ -3359,7 +3359,7 @@ test('runtime autostarts local aih server before injecting codex remote proxy', 
 
 test('runtime skips codex remote proxy for non-default account ids', () => {
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_CODEX_REMOTE_PROXY: '1'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' })
   }, {
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '127.0.0.1', port: 8317, apiKey: 'secret-key' })

@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:40:51.111Z
-> 共 **192** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:06.788Z
+> 共 **184** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，23）
+## path（数据/目录/仓库路径，22）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -28,11 +28,10 @@
 | `AIH_SSH_CLIP_SHIM_BIN_DIR` | — | 1 | SSH 剪贴板 shim 的 bin 目录 |
 | `AIH_SSH_CLIP_SHIM_DIR` | — | 1 | SSH 剪贴板 shim 安装目录 |
 | `AIH_CODEX_HOST_HOME` | — | 0 | codex 视角的宿主家目录（沙箱里定位宿主 auth/config） |
-| `AIH_PROFILE_DIR` | — | 0 | 终端 profile 目录（iTerm/Warp 集成） |
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，41）
+## network（端点 / 代理 / 端口，39）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -57,8 +56,6 @@
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
-| `AIH_CLIP_AGENT_HOST` | — | 1 | 剪贴板 agent 监听地址 |
-| `AIH_CLIP_AGENT_PORT` | — | 1 | 剪贴板 agent 监听端口 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_DEPLOY_SSH` | — | 1 | 部署脚本默认 SSH 目标 |
 | `AIH_EDGE_AIH_PORT` | — | 1 | ⚠ 边缘代理回源到 AIH 的端口（待确认） |
@@ -130,7 +127,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 0 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），96）
+## plumbing（内部管道（进程间传递的身份 / 标记），91）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -156,7 +153,6 @@
 | `AIH_ZCODE_AGENT_RUNNER` | — | 2 | zcode agent runner 脚本 |
 | `AIH_ZCODE_APP_VERSION` | — | 2 | zcode 应用版本 |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
-| `AIH_AUTO_INSTALL_AGE` | — | 1 | 自动安装 Antigravity 的开关 |
 | `AIH_CJK_LOCALE` | — | 1 | CJK locale 判定开关 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | — | 1 | 批量用量回退到 app-server 读取 |
@@ -193,8 +189,6 @@
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
-| `AIH_ZCODE_CLIENT_LANGUAGE` | — | 1 | zcode 客户端语言 |
-| `AIH_ZCODE_CLIENT_TIMEZONE` | — | 1 | zcode 客户端时区 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_ACCOUNT_ID` | — | 0 | 账号数字别名（cliAccountId） |
 | `AIH_ACCOUNT_REF` | — | 0 | 账号唯一标识（accountRef，贯穿 server/WebUI/runtime） |
@@ -210,10 +204,8 @@
 | `AIH_OPENCODE_RUN_LAYOUT` | — | 0 | opencode run 布局逃生门（v1/v2） |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | — | 0 | 持久会话 provider supervisor 运行时标记 |
 | `AIH_PERSIST_UTF8_RUNTIME` | — | 0 | 持久会话 UTF-8 runtime 标记 |
-| `AIH_PROFILE_ID` | — | 0 | 当前终端 profile id |
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | — | 0 | provider 会话关联 id（事件关联） |
 | `AIH_PSMUX_CODEX_LAUNCH_RUNTIME` | — | 0 | psmux 下 codex 启动运行时标记 |
-| `AIH_QODER_PROVIDER` | — | 0 | qoder 家族的具体 provider（qoder / qodercn） |
 | `AIH_RELAY_MIHOMO_BIN` | — | 0 | mihomo 二进制路径（中转边车） |
 | `AIH_RELAY_SING_BOX_BIN` | — | 0 | sing-box 二进制路径（中转边车） |
 | `AIH_RUNTIME_SCOPE` | — | 0 | 运行时作用域（accountRef 或 gateway） |

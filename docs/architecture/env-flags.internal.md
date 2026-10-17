@@ -1,20 +1,20 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:40:51.111Z
-> 覆盖 `lib / bin / scripts / core`，共 **182** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:06.788Z
+> 覆盖 `lib / bin / scripts / core`，共 **174** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 21 | 数据/目录/仓库路径 |
-| network | 37 | 端点 / 代理 / 端口 |
+| path | 20 | 数据/目录/仓库路径 |
+| network | 35 | 端点 / 代理 / 端口 |
 | flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 2 | 可调参数（超时 / TTL / 上限） |
 | credential | 20 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 95 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 90 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -70,7 +70,6 @@
 | `AIH_SSH_CLIP_SHIM_BIN_DIR` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_CLIP_SHIM_DIR` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_CODEX_HOST_HOME` | 0 | 1 | lib/cli/services/account/codex-rekey-reference-policy.js |
-| `AIH_PROFILE_DIR` | 0 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/server/session-lifecycle/codex-stdio-client.js |
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | 0 | 1 | lib/runtime/zcode-electron-shadow-app.js |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | 0 | 1 | lib/runtime/zcode-electron-captcha-hook.js |
 
@@ -95,8 +94,6 @@
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/terminal-probe.js |
-| `AIH_CLIP_AGENT_HOST` | 1 | 0 | lib/cli/services/ssh-clipboard/clip-agent.js |
-| `AIH_CLIP_AGENT_PORT` | 1 | 0 | lib/cli/services/ssh-clipboard/clip-agent.js |
 | `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_DEPLOY_SSH` | 1 | 0 | scripts/deploy-server.js |
 | `AIH_EDGE_AIH_PORT` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/edge-proxy-service.js |
@@ -191,7 +188,6 @@
 | `AIH_ZCODE_AGENT_RUNNER` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_APP_VERSION` | 2 | 0 | lib/account/zcode-client-metadata.js<br>lib/cli/services/usage/snapshot.js |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
-| `AIH_AUTO_INSTALL_AGE` | 1 | 0 | lib/cli/services/backup/crypto.js |
 | `AIH_CJK_LOCALE` | 1 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
 | `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | 1 | 0 | lib/cli/services/usage/presenter.js |
@@ -228,8 +224,6 @@
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | 1 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_WT_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |
-| `AIH_ZCODE_CLIENT_LANGUAGE` | 1 | 0 | lib/account/zcode-client-metadata.js |
-| `AIH_ZCODE_CLIENT_TIMEZONE` | 1 | 0 | lib/account/zcode-client-metadata.js |
 | `AIH_ACCOUNT_APP` | 0 | 1 | lib/runtime/provider-session-context.js |
 | `AIH_ACCOUNT_ID` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
 | `AIH_ACCOUNT_REF` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
@@ -244,10 +238,8 @@
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_UTF8_RUNTIME` | 0 | 1 | lib/runtime/persistent-session.js |
-| `AIH_PROFILE_ID` | 0 | 1 | lib/cli/services/ai-cli/desktop-client-restart.js |
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_PSMUX_CODEX_LAUNCH_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
-| `AIH_QODER_PROVIDER` | 0 | 2 | lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_RELAY_MIHOMO_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js |
 | `AIH_RELAY_SING_BOX_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js |
 | `AIH_RUNTIME_SCOPE` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |

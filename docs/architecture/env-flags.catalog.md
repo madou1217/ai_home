@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:38:31.894Z
-> 共 **98** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:39:35.503Z
+> 共 **97** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，15）
@@ -24,7 +24,7 @@
 | `AIH_QUOTA_PLUGIN_DIR` | — | 1 | 额度插件目录 |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 
-## network（端点 / 代理 / 端口，18）
+## network（端点 / 代理 / 端口，17）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -38,8 +38,7 @@
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
-| `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
-| `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
+| `AIH_SSH_CLIP_AGENT_ENDPOINT` | — | 2 | 剪贴板 agent 端点（unix:/path 或 URL） |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |

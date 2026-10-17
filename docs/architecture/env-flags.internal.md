@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:38:31.894Z
-> 覆盖 `lib / bin / scripts / core`，共 **88** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:39:35.503Z
+> 覆盖 `lib / bin / scripts / core`，共 **87** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,7 +9,7 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 13 | 数据/目录/仓库路径 |
-| network | 14 | 端点 / 代理 / 端口 |
+| network | 13 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | plumbing | 49 | 内部管道（进程间传递的身份 / 标记） |
@@ -74,8 +74,7 @@
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
-| `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
-| `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
+| `AIH_SSH_CLIP_AGENT_ENDPOINT` | 2 | 1 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/agent-endpoint.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |

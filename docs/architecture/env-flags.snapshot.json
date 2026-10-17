@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:38:31.894Z",
-  "total": 98,
+  "generatedAt": "2026-10-17T09:39:35.503Z",
+  "total": 97,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -16,6 +16,7 @@
   ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
+    "AGENT_ENDPOINT_ENV": "AIH_SSH_CLIP_AGENT_ENDPOINT",
     "BACKGROUND_RESTART_ENV": "AIH_SERVER_BACKGROUND_RESTART",
     "BRIDGE_DIR_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",
     "BRIDGE_IDENTITY_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY",
@@ -422,26 +423,18 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_AGENT_SOCKET",
+      "name": "AIH_SSH_CLIP_AGENT_ENDPOINT",
       "category": "network",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/cli/services/pty/ssh-clipboard-bridge.js",
+        "lib/cli/services/ssh-clipboard/agent-endpoint.js",
         "lib/cli/services/ssh-clipboard/clip-agent-client.js"
       ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIP_AGENT_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js",
-        "lib/cli/services/ssh-clipboard/clip-agent-client.js"
-      ],
-      "aliasConstants": []
+      "aliasConstants": [
+        "AGENT_ENDPOINT_ENV"
+      ]
     },
     {
       "name": "AIH_SSH_TERMINAL_CLIPBOARD",

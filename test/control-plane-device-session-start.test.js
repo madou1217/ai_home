@@ -35,15 +35,7 @@ function createPendingNativeStream(runId = 'native-run-test') {
 
 test('resolveCompletedRunRetentionMs keeps completed run history long enough for reconnects', () => {
   assert.equal(DEFAULT_COMPLETED_RUN_RETENTION_MS, 30 * 60 * 1000);
-  assert.equal(resolveCompletedRunRetentionMs({}), DEFAULT_COMPLETED_RUN_RETENTION_MS);
-  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '120000' }), 120000);
-  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '240000' }), 240000);
-  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '100' }), 60 * 1000);
-  assert.equal(
-    resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: String(48 * 60 * 60 * 1000) }),
-    24 * 60 * 60 * 1000
-  );
-  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: 'not-a-number' }), DEFAULT_COMPLETED_RUN_RETENTION_MS);
+  assert.equal(resolveCompletedRunRetentionMs(), DEFAULT_COMPLETED_RUN_RETENTION_MS);
 });
 
 test('normalizeSessionStartPayload rejects non-canonical account keys', () => {

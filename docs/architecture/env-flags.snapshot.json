@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:33:32.688Z",
-  "total": 251,
+  "generatedAt": "2026-10-17T05:34:52.702Z",
+  "total": 245,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1692,16 +1692,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_NATIVE_RUN_RETENTION_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/control-plane-device-session-start.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_NATIVE_RUN_WATCHDOG",
       "category": "plumbing",
       "reads": 1,
@@ -1931,16 +1921,6 @@
         "lib/cli/services/server/go-core-supervisor.js",
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION_ARTIFACT_THRESHOLD",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/control-plane-device-session-start.js"
       ],
       "aliasConstants": []
     },
@@ -2355,46 +2335,6 @@
       "aliasConstants": [
         "MULTIPLEXER_ENV"
       ]
-    },
-    {
-      "name": "AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/native-run-watchdog.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NATIVE_STALL_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/native-run-watchdog.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NATIVE_TIMEOUT_KILL_GRACE_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/native-run-watchdog.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/native-run-watchdog.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_NO_PERSIST",

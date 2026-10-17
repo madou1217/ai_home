@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:33:32.688Z
-> 覆盖 `lib / bin / scripts / core`，共 **241** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:34:52.702Z
+> 覆盖 `lib / bin / scripts / core`，共 **235** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -11,10 +11,10 @@
 | path | 21 | 数据/目录/仓库路径 |
 | network | 43 | 端点 / 代理 / 端口 |
 | flag | 6 | 开关与逃生门（环境准入） |
-| tuning | 28 | 可调参数（超时 / TTL / 上限） |
+| tuning | 23 | 可调参数（超时 / TTL / 上限） |
 | credential | 20 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 121 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 120 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -160,11 +160,6 @@
 | `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
-| `AIH_NATIVE_RUN_RETENTION_MS` | 1 | 0 | lib/server/control-plane-device-session-start.js |
-| `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
-| `AIH_NATIVE_STALL_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
-| `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
-| `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -271,7 +266,6 @@
 | `AIH_SERVER_CODEX_CLI_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/cli/services/server/go-core-supervisor.js<br>lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_SESSION_ARTIFACT_THRESHOLD` | 1 | 0 | lib/server/control-plane-device-session-start.js |
 | `AIH_SESSION_PICKER_ANIMATION` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
 | `AIH_SESSION_PICKER_ICONS` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |
 | `AIH_SESSION_PICKER_SYMBOLS` | 1 | 0 | lib/cli/services/ai-cli/persistent-session-list.js |

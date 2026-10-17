@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:33:32.688Z
-> 共 **251** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:34:52.702Z
+> 共 **245** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -96,7 +96,7 @@
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## tuning（可调参数（超时 / TTL / 上限），28）
+## tuning（可调参数（超时 / TTL / 上限），23）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -123,11 +123,6 @@
 | `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | — | 2 | 窗口激活首跑延迟 |
 | `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | — | 2 | 窗口激活调度 tick |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
-| `AIH_NATIVE_RUN_RETENTION_MS` | — | 1 | 原生运行记录保留时长（新名） |
-| `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | — | 0 | 原生运行首字节超时（看门狗） |
-| `AIH_NATIVE_STALL_TIMEOUT_MS` | — | 0 | 原生运行无进展超时 |
-| `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | — | 0 | 超时后强杀的宽限期 |
-| `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | — | 0 | 上游错误等待超时 |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值），22）
 
@@ -163,7 +158,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），122）
+## plumbing（内部管道（进程间传递的身份 / 标记），121）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -236,7 +231,6 @@
 | `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
-| `AIH_SESSION_ARTIFACT_THRESHOLD` | — | 1 | ⚠ 设备会话启动时的产物记录阈值（待确认） |
 | `AIH_SESSION_PICKER_ANIMATION` | — | 1 | 会话选择器动画开关 |
 | `AIH_SESSION_PICKER_ICONS` | — | 1 | 会话选择器图标开关 |
 | `AIH_SESSION_PICKER_SYMBOLS` | — | 1 | 会话选择器符号开关 |

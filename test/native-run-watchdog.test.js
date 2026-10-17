@@ -104,10 +104,10 @@ test('watchdog defaults come from the measured TTFT distribution and stay env-ov
   // 任何分钟级预算都会误杀它们,而 headless 流拿不到「工具在跑」的信号来豁免。
   assert.equal(defaults.stallTimeoutMs, 0);
 
-  const tuned = resolveNativeRunWatchdogConfig({
-    AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS: '90000',
-    AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS: '30000',
-    AIH_NATIVE_STALL_TIMEOUT_MS: '600000'
+  const tuned = resolveNativeRunWatchdogConfig({}, {
+    firstProgressTimeoutMs: 90000,
+    upstreamErrorTimeoutMs: 30000,
+    stallTimeoutMs: 600000
   });
   assert.equal(tuned.firstProgressTimeoutMs, 90000);
   assert.equal(tuned.upstreamErrorTimeoutMs, 30000);
@@ -117,7 +117,7 @@ test('watchdog defaults come from the measured TTFT distribution and stay env-ov
   assert.equal(resolveNativeRunWatchdogConfig({}, { enabled: false }).enabled, false);
   // 垃圾值不许把预算变成 NaN（NaN 比较恒 false = 永不熔断）。
   assert.equal(
-    resolveNativeRunWatchdogConfig({ AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS: 'soon' }).firstProgressTimeoutMs,
+    resolveNativeRunWatchdogConfig({}, { firstProgressTimeoutMs: 'soon' }).firstProgressTimeoutMs,
     DEFAULT_FIRST_PROGRESS_TIMEOUT_MS
   );
 });

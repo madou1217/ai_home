@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { CODEX_PROBE_ENV, serializeCodexProbeContext } = require('../lib/cli/services/usage/codex-probe-context');
 const { EventEmitter } = require('node:events');
 
 const { createUsageSnapshotService } = require('../lib/cli/services/usage/snapshot');
@@ -292,7 +293,7 @@ test('codex async app-server probe wraps windows batch launch', async () => {
       processObj: {
         execPath: process.execPath,
         cwd: () => root,
-        env: { USERPROFILE: root, AIH_CODEX_USAGE_DIRECT: '0' },
+        env: { USERPROFILE: root, [CODEX_PROBE_ENV]: serializeCodexProbeContext({ direct: '0' }) },
         platform: 'win32'
       },
       resolveCliPath: () => 'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd',

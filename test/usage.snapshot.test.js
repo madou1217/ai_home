@@ -4,6 +4,7 @@ const EventEmitter = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { CODEX_PROBE_ENV, serializeCodexProbeContext } = require('../lib/cli/services/usage/codex-probe-context');
 
 const { createUsageSnapshotService } = require('../lib/cli/services/usage/snapshot');
 const { createUsageCacheService } = require('../lib/cli/services/usage/cache');
@@ -328,7 +329,7 @@ test('codex usage snapshot async preserves reset-credit count from account/rateL
       processObj: {
         execPath: process.execPath,
         cwd: () => root,
-        env: { AIH_CODEX_USAGE_DIRECT: '0' },
+        env: { [CODEX_PROBE_ENV]: serializeCodexProbeContext({ direct: '0' }) },
         platform: process.platform
       },
       resolveCliPath: () => '/usr/bin/codex',
@@ -1924,7 +1925,7 @@ test('codex usage snapshot does not mark empty account response as auth-invalid'
         execPath: process.execPath,
         cwd: () => root,
         env: {
-          AIH_CODEX_USAGE_DIRECT: '0'
+          [CODEX_PROBE_ENV]: serializeCodexProbeContext({ direct: '0' })
         },
         platform: process.platform
       },
@@ -2247,7 +2248,7 @@ test('codex account/read fallback alone does not clear stale auth-invalid state'
       processObj: {
         execPath: process.execPath,
         cwd: () => root,
-        env: { AIH_CODEX_USAGE_DIRECT: '0' },
+        env: { [CODEX_PROBE_ENV]: serializeCodexProbeContext({ direct: '0' }) },
         platform: process.platform
       },
       resolveCliPath: () => '/usr/bin/codex',

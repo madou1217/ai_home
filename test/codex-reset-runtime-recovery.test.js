@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { CODEX_PROBE_ENV, serializeCodexProbeContext } = require('../lib/cli/services/usage/codex-probe-context');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { createAccountStateIndex } = require('../lib/account/state-index');
 const { createAccountStateService } = require('../lib/account/state-service');
@@ -73,7 +74,7 @@ for (const retainedFailure of ['', 'billing_blocked', 'network_error']) {
       fs, path, aiHomeDir, accountStateService, getProfileDir, getToolConfigDir,
       usageSnapshotSchemaVersion: 2, usageSourceCodex: 'codex_app_server', usageRefreshStaleMs: 300000,
       processObj: { execPath: process.execPath, cwd: () => aiHomeDir, platform: process.platform,
-        env: { AIH_CODEX_USAGE_BASE_URL: baseUrl, AIH_CODEX_USAGE_PATH: '/wham/usage' } },
+        env: { [CODEX_PROBE_ENV]: serializeCodexProbeContext({ baseUrl, path: '/wham/usage' }) } },
       resolveCliPath: () => '',
       spawn: () => { throw new Error('local HTTP quota probe must not spawn a CLI'); },
       fetchImpl: (url, init) => {

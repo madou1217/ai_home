@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:39:35.503Z
-> 共 **97** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:40:26.357Z
+> 共 **95** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，15）
+## path（数据/目录/仓库路径，14）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -17,14 +17,13 @@
 | `AIH_OPENCODE_CONFIG_DIR` | — | 2 | opencode 配置根（账号投影） |
 | `AIH_ZCODE_DESKTOP_BRIDGE_DIR` | — | 2 | zcode 桌面桥接目录（登录态注入/读取） |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | — | 1 | 跳过 codex 的仓库信任检查（自动化场景） |
-| `AIH_CODEX_USAGE_PATH` | — | 1 | codex 用量快照文件路径覆盖 |
 | `AIH_EDGE_NGINX_CONF_DIR` | — | 1 | 托管 nginx 的配置目录 |
 | `AIH_NODE_DIST_DIR` | — | 1 | 内置 Node 发行目录（无 Node 环境自举） |
 | `AIH_PROVIDER_DEFS_DIR` | — | 1 | provider 定义/合同目录覆盖 |
 | `AIH_QUOTA_PLUGIN_DIR` | — | 1 | 额度插件目录 |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 
-## network（端点 / 代理 / 端口，17）
+## network（端点 / 代理 / 端口，16）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -40,7 +39,6 @@
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
 | `AIH_SSH_CLIP_AGENT_ENDPOINT` | — | 2 | 剪贴板 agent 端点（unix:/path 或 URL） |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
-| `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
@@ -71,7 +69,13 @@
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | — | 0 | claude 凭据类型标记（oauth / api-key），透传给 CLI |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | — | 0 | 本地 codex app-server 远程控制 token |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），50）
+## test（测试与探针专用，1）
+
+| 变量 | 公开 | 读取 | 含义 |
+| --- | --- | --- | --- |
+| `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
+
+## plumbing（内部管道（进程间传递的身份 / 标记），49）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -84,7 +88,6 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
-| `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（内部/测试可关，回退 app-server） |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
 | `AIH_EDGE_CADDYFILE` | — | 1 | 托管 caddy 的 Caddyfile 路径 |
 | `AIH_EDGE_FRPC_BIN` | — | 1 | 托管 frpc 可执行文件路径 |

@@ -1,18 +1,19 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:39:35.503Z
-> 覆盖 `lib / bin / scripts / core`，共 **87** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:40:26.357Z
+> 覆盖 `lib / bin / scripts / core`，共 **85** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 13 | 数据/目录/仓库路径 |
-| network | 13 | 端点 / 代理 / 端口 |
+| path | 12 | 数据/目录/仓库路径 |
+| network | 12 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
-| plumbing | 49 | 内部管道（进程间传递的身份 / 标记） |
+| test | 1 | 测试与探针专用 |
+| plumbing | 48 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -57,7 +58,6 @@
 | `AIH_OPENCODE_CONFIG_DIR` | 2 | 0 | lib/server/opencode-plugin-hook-config.js |
 | `AIH_ZCODE_DESKTOP_BRIDGE_DIR` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
-| `AIH_CODEX_USAGE_PATH` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_EDGE_NGINX_CONF_DIR` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/nginx.js |
 | `AIH_NODE_DIST_DIR` | 1 | 0 | lib/cli/services/node/bootstrap-assets.js |
 | `AIH_PROVIDER_DEFS_DIR` | 1 | 0 | lib/providers/loader.js |
@@ -76,7 +76,6 @@
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_ENDPOINT` | 2 | 1 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/agent-endpoint.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
-| `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
@@ -104,6 +103,12 @@
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | 0 | 2 | lib/account/claude-credential.js<br>lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | 0 | 1 | lib/server/codex-tui-local-app-server.js |
 
+## test（测试与探针专用）
+
+| 变量 | 读取 | 字面量 | 文件 |
+| --- | --- | --- | --- |
+| `AIH_CODEX_USAGE_PROBE` | 0 | 1 | lib/cli/services/usage/codex-probe-context.js |
+
 ## plumbing（内部管道（进程间传递的身份 / 标记））
 
 | 变量 | 读取 | 字面量 | 文件 |
@@ -117,7 +122,6 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
-| `AIH_CODEX_USAGE_DIRECT` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_EDGE_CADDY_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_CADDYFILE` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_FRPC_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/frp.js |

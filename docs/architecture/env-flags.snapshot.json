@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:39:35.503Z",
-  "total": 97,
+  "generatedAt": "2026-10-17T09:40:26.357Z",
+  "total": 95,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -23,6 +23,7 @@
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
+    "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
@@ -516,36 +517,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_USAGE_BASE_URL",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_DIRECT",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_PATH",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_EDGE_CADDY_BIN",
       "category": "plumbing",
       "reads": 1,
@@ -961,6 +932,18 @@
       ],
       "aliasConstants": [
         "CODEX_MANAGED_LAUNCH_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_USAGE_PROBE",
+      "category": "test",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/usage/codex-probe-context.js"
+      ],
+      "aliasConstants": [
+        "CODEX_PROBE_ENV"
       ]
     },
     {

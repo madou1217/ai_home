@@ -415,7 +415,7 @@ test('`aih claude resume <session>` forwards native resume command to built-in A
   assert.deepEqual(runCalls, [{
     cliName: 'claude',
     id: '',
-    forwardArgs: ['resume', 'a922845e-d7cd-4909-ae58-a699eb5f812e']
+    forwardArgs: ['--resume', 'a922845e-d7cd-4909-ae58-a699eb5f812e']
   }]);
 });
 

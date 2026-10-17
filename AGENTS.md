@@ -270,6 +270,7 @@ Fuller layer map:
 - **Never discard local unpushed commits.** When a rebase hits conflicts, prefer `git rebase --abort` and re-plan; never `git reset --hard origin/main` (or any hard reset) while the branch carries unpushed work. Before any destructive history operation, tag the current HEAD as a backup (e.g. `backup/<date>-<topic>`) and confirm the operation with the user.
   - Background: on 2026-08-14 a session aborted a conflicting rebase and then ran `reset --hard origin/main`, silently dropping 13 local commits (~17k insertions, including the full kimi integration) plus leaving a 3k-line stash. Recovery cost far exceeded the merge it was trying to avoid.
 - When multiple agent sessions share this repository, each session must assume another session may hold unpushed commits; check `git reflog` for recent `reset`/`rebase` operations before rewriting history, and never reset past commits you did not create.
+- **提交时必须带 pathspec（本仓库实测教训，2026-10-16）**：并行会话经常把文件留在**暂存区**，`git commit` 会把它们一并带走（表现为提交里混入不相干的文件、提交信息对不上）。因此一律用 `git commit -m <msg> -- <显式路径...>`（或先 `git add -- <路径>` 后 `git commit -- <路径>`），**禁止裸 `git commit` / `git add -A`**。已经混入的提交不要用 rebase/reset 去"修正"（那是破坏性历史操作，见上），在当次汇报里如实说明即可。
 - **`git push` 在本仓库不属高风险操作**（用户 2026-10-15 明确）：本地提交可以直接 `git push origin main`，不必先征求确认（并发会话的本地提交会一并推上去，这是共享 main 的正常流程）。仍必须先确认的是**破坏性历史操作**（`git reset --hard`、丢弃提交的 rebase、删除 worktree/branch）——见上一条。
 
 ## Commit & Pull Request Guidelines

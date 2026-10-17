@@ -10,7 +10,7 @@ const {
 const {
   parseWindowsProxyServer
 } = require('../lib/runtime/windows-system-proxy');
-const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 const { PROVIDER_ACCOUNT_REF_ENV } = require('../lib/runtime/provider-session-context');
 const { upsertAccountRef } = require('../lib/server/account-ref-store');
 const { buildEgressBindingKey, writeAccountEgressBinding } = require('../lib/account/zcode-egress-binding-store');
@@ -35,14 +35,14 @@ test('provider runtime env marks codex launches managed and clears the marker el
     HOME: '/home/u',
     PATH: '/usr/bin'
   }, { fs, path, platform: 'linux' });
-  assert.equal(codexEnv[CODEX_MANAGED_LAUNCH_ENV], '1');
+  assert.equal(readCodexFlag(codexEnv, 'managedLaunch'), '1');
 
   const claudeEnv = buildProviderRuntimeEnv('claude', '/home/u/.ai_home/run/auth-projections/claude/acct_0123456789abcdef0123', {
     HOME: '/home/u',
     PATH: '/usr/bin',
-    [CODEX_MANAGED_LAUNCH_ENV]: '1'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' })
   }, { fs, path, platform: 'linux' });
-  assert.equal(claudeEnv[CODEX_MANAGED_LAUNCH_ENV], undefined);
+  assert.equal(readCodexFlag(claudeEnv, 'managedLaunch'), '');
 });
 
 test('AGY CLI 与 Desktop 都保留文件凭据回退标记，避免共享 Keychain 串号', () => {

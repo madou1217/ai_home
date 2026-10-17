@@ -1,6 +1,7 @@
 'use strict';
 
 const test = require('node:test');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
@@ -20,7 +21,6 @@ const {
   runCodexDefaultCli
 } = require('../lib/server/codex-default-cli-launcher');
 const {
-  CODEX_MANAGED_LAUNCH_ENV
 } = require('../lib/runtime/codex-launch-context');
 const { writeServerConfig } = require('../lib/server/server-config-store');
 const {
@@ -195,7 +195,7 @@ test('AIH-managed Codex launches preserve the authentication selected by the cal
       platform: 'darwin',
       env: {
         HOME: homeDir,
-        [CODEX_MANAGED_LAUNCH_ENV]: '1',
+        [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' }),
         ...scenario.env
       }
     };
@@ -204,7 +204,7 @@ test('AIH-managed Codex launches preserve the authentication selected by the cal
     assert.equal(runtime.accountRef, '', scenario.name);
     assert.equal(runtime.env.OPENAI_API_KEY, scenario.env.OPENAI_API_KEY, scenario.name);
     assert.equal(runtime.env.OPENAI_BASE_URL, scenario.env.OPENAI_BASE_URL, scenario.name);
-    assert.equal(runtime.env[CODEX_MANAGED_LAUNCH_ENV], undefined, scenario.name);
+    assert.equal(readCodexFlag(runtime.env, 'managedLaunch'), '', scenario.name);
   }
 });
 
@@ -243,7 +243,7 @@ test('an OAuth default account never strips a managed launch API key', (t) => {
     aiHomeDir,
     processObj: {
       platform: 'darwin',
-      env: { ...runEnv, [CODEX_MANAGED_LAUNCH_ENV]: '1' }
+      env: { ...runEnv, [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' }) }
     }
   });
   assert.equal(managed.authMode, 'apikey');

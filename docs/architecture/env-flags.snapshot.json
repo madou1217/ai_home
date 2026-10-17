@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:23:56.657Z",
-  "total": 60,
+  "generatedAt": "2026-10-17T11:35:03.020Z",
+  "total": 59,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -23,7 +23,6 @@
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
     "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
-    "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
@@ -577,19 +576,6 @@
       ],
       "aliasConstants": [
         "REMOTE_AUTH_TOKEN_ENV"
-      ]
-    },
-    {
-      "name": "AIH_CODEX_MANAGED_LAUNCH",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/runtime/codex-launch-context.js",
-        "lib/runtime/multiplexer/tmux-session-env.js"
-      ],
-      "aliasConstants": [
-        "CODEX_MANAGED_LAUNCH_ENV"
       ]
     },
     {

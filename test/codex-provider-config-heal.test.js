@@ -9,7 +9,7 @@ const { EventEmitter } = require('node:events');
 const { spawnSync } = require('node:child_process');
 const { healCodexConfigFile } = require('../lib/cli/services/pty/codex-config-heal');
 const { runCodexDefaultCli } = require('../lib/server/codex-default-cli-launcher');
-const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
+const { CODEX_FLAGS_ENV, serializeCodexFlags } = require('../lib/runtime/codex-flags');
 
 function fixture(t, content) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-provider-config-heal-'));
@@ -108,7 +108,7 @@ test('bare codex heals the effective CODEX_HOME before starting upstream', (t) =
 
 test('gateway launch restores a missing provider from its scoped connection without persisting the key', (t) => {
   const f = fixture(t);
-  const env = { [CODEX_MANAGED_LAUNCH_ENV]: '1', OPENAI_API_KEY: 'test-private-key',
+  const env = { [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' }), OPENAI_API_KEY: 'test-private-key',
     OPENAI_BASE_URL: 'http://127.0.0.1:9999/v1', AIH_CODEX_GATEWAY_ACCOUNT_REF: 'acct_test' };
   launch(f, (_file, args, options) => {
     const config = fs.readFileSync(f.configPath, 'utf8');

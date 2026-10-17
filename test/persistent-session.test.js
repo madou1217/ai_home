@@ -5,10 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const persistentSession = require('../lib/runtime/persistent-session');
-const {
-  CODEX_MANAGED_LAUNCH_ENV,
-  CODEX_MANAGED_LAUNCH_VALUE
-} = require('../lib/runtime/codex-launch-context');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 
 const ACCOUNT_REF_1 = 'acct_00000000000000000001';
 const ACCOUNT_REF_2 = 'acct_00000000000000000002';
@@ -295,7 +292,7 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
         claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
       }),
         [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ correlation: 'pty-run-1' }),
-        [CODEX_MANAGED_LAUNCH_ENV]: '1',
+        [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' }),
         OPENAI_API_KEY: 'sk-secret'
       }
     }
@@ -321,7 +318,7 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
       claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
     }),
     '-e',
-    `${CODEX_MANAGED_LAUNCH_ENV}=1`,
+    `${CODEX_FLAGS_ENV}=managedLaunch=1`,
     '-s'
   ]);
   assert.equal(wrapped.args.includes('-A'), false);
@@ -390,7 +387,7 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
         utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
         claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
       }),
-      [CODEX_MANAGED_LAUNCH_ENV]: CODEX_MANAGED_LAUNCH_VALUE,
+      [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' }),
       ANTHROPIC_API_KEY: 'sk-secret'
     }
   });
@@ -415,7 +412,7 @@ test('buildSetEnvironmentCommands syncs only safe tmux env keys', () => {
     ]
   ]);
   assert.equal(commands.some((cmd) => cmd.args.includes('sk-secret')), false);
-  assert.equal(commands.some((cmd) => cmd.key === CODEX_MANAGED_LAUNCH_ENV), false);
+  assert.equal(commands.some((cmd) => cmd.key === CODEX_FLAGS_ENV), false);
 });
 
 test('buildSetEnvironmentCommands can target one existing session', () => {
@@ -427,7 +424,7 @@ test('buildSetEnvironmentCommands can target one existing session', () => {
       LANG: 'C.UTF-8',
       LC_CTYPE: 'C.UTF-8',
       LC_ALL: 'C.UTF-8',
-      [CODEX_MANAGED_LAUNCH_ENV]: CODEX_MANAGED_LAUNCH_VALUE
+      [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' })
     }
   });
 
@@ -442,7 +439,7 @@ test('buildSetEnvironmentCommands can target one existing session', () => {
     'C.UTF-8'
   ]);
   assert.equal(commands.every((cmd) => cmd.session === 'p-picked'), true);
-  assert.equal(commands.some((cmd) => cmd.key === CODEX_MANAGED_LAUNCH_ENV), true);
+  assert.equal(commands.some((cmd) => cmd.key === CODEX_FLAGS_ENV), true);
 });
 
 test('buildListSessionsCommand targets the account socket', () => {
@@ -465,7 +462,7 @@ test('buildListSessionsCommand targets the account socket', () => {
       `#{E:${RUNTIME_MARKER_ENV}}`,
       '#{pane_dead}',
       '#{pane_current_path}',
-      `#{E:${CODEX_MANAGED_LAUNCH_ENV}}`
+      `#{E:${CODEX_FLAGS_ENV}}`
     ].join(sep)
   ]);
 });
@@ -1012,7 +1009,7 @@ test('parseSessionList carries the AIH-managed Codex launch marker', () => {
     [
       'p-ready', '0', '100', '/work/ready', '', 'codex', 'node', '123',
       runtimeMarker({ utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE }), '0', '/work/ready',
-      CODEX_MANAGED_LAUNCH_VALUE
+      'managedLaunch=1'
     ].join(sep),
     [
       'p-legacy', '0', '100', '/work/legacy', '', 'codex', 'node', '124',

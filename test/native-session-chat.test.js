@@ -35,7 +35,7 @@ const {
   writeAccountNativeAuth
 } = require('../lib/server/account-credential-store');
 const { writeServerConfig } = require('../lib/server/server-config-store');
-const { CODEX_MANAGED_LAUNCH_ENV } = require('../lib/runtime/codex-launch-context');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 
 function createDeferred() {
   let resolve;
@@ -1090,7 +1090,7 @@ test('buildProviderEnv marks codex native runs as AIH-managed so the CLI hook pa
   assert.equal(env.OPENAI_API_KEY, 'dummy');
   assert.equal(env.OPENAI_BASE_URL, 'http://127.0.0.1:9527/v1');
   assert.equal(env.AIH_CODEX_GATEWAY_ACCOUNT_REF, accountRef);
-  assert.equal(env[CODEX_MANAGED_LAUNCH_ENV], '1');
+  assert.equal(readCodexFlag(env, 'managedLaunch'), '1');
 });
 
 test('buildProviderEnv drops an inherited codex managed-launch marker for other providers', (t) => {
@@ -1109,12 +1109,12 @@ test('buildProviderEnv drops an inherited codex managed-launch marker for other 
 
   const env = buildProviderEnv('gemini', runtimeDir, {
     HOME: hostHome,
-    [CODEX_MANAGED_LAUNCH_ENV]: '1'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ managedLaunch: '1' })
   }, { aiHomeDir, accountRef });
 
   // 该标记只对本次 codex 启动有效；继承给别的 provider 会让它们再拉起 codex 时
   // 带着一份没有 codex 凭据的 env 直接透传。
-  assert.equal(env[CODEX_MANAGED_LAUNCH_ENV], undefined);
+  assert.equal(readCodexFlag(env, 'managedLaunch'), '');
 });
 
 test('buildProviderEnv relays Claude OAuth by accountRef and keeps ~/.claude authoritative', (t) => {

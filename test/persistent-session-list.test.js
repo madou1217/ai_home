@@ -7,7 +7,6 @@ const { EventEmitter } = require('node:events');
 const persistentSession = require('../lib/runtime/persistent-session');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
-  CODEX_MANAGED_LAUNCH_VALUE
 } = require('../lib/runtime/codex-launch-context');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const { AIH_SERVER_PROFILE_ID } = require('../lib/account/self-relay-account');
@@ -111,8 +110,7 @@ test('session picker applies the same render and supervisor compatibility requir
     '',
     cwd,
     '',
-    CODEX_MANAGED_LAUNCH_VALUE
-  ].join(sep);
+    ].join(sep);
   const collect = (cliName, accountRef, cliAccountId, sessionRow) => listPersistentSessions(
     cliName,
     accountRef,

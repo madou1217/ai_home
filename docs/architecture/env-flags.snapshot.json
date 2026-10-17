@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:01:29.969Z",
-  "total": 79,
+  "generatedAt": "2026-10-17T11:05:43.747Z",
+  "total": 77,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -308,16 +308,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_HOME",
-      "category": "path",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_REMOTE_AUTH_TOKEN",
       "category": "credential",
       "reads": 2,
@@ -342,14 +332,17 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_SQLITE_HOME",
-      "category": "path",
+      "name": "AIH_CODEX_USAGE_PROBE",
+      "category": "test",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
+        "lib/cli/services/usage/codex-probe-context.js",
         "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
-      "aliasConstants": []
+      "aliasConstants": [
+        "CODEX_PROBE_ENV"
+      ]
     },
     {
       "name": "AIH_GEMINI_OAUTH_TOKEN",
@@ -772,18 +765,6 @@
       ],
       "aliasConstants": [
         "CODEX_MANAGED_LAUNCH_ENV"
-      ]
-    },
-    {
-      "name": "AIH_CODEX_USAGE_PROBE",
-      "category": "test",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/codex-probe-context.js"
-      ],
-      "aliasConstants": [
-        "CODEX_PROBE_ENV"
       ]
     },
     {

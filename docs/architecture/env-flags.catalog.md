@@ -1,18 +1,16 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:01:29.969Z
-> 共 **79** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:05:43.747Z
+> 共 **77** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，6）
+## path（数据/目录/仓库路径，4）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_HOST_HOME` | ✅ | 35 | 宿主真实家目录（公开；沙箱会话里必须钉住） |
 | `AIH_HOME_DIR` | ✅ | 11 | 数据根目录（公开；默认 ~/.ai_home） |
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
-| `AIH_CODEX_HOME` | — | 2 | codex 配置根（沙箱投影 / 宿主切换） |
-| `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 
 ## network（端点 / 代理 / 端口，15）
@@ -61,7 +59,7 @@
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
+| `AIH_CODEX_USAGE_PROBE` | — | 2 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
 ## plumbing（内部管道（进程间传递的身份 / 标记），45）
 

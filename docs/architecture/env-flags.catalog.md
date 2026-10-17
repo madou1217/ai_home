@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:06:32.778Z
-> 共 **75** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:07:04.729Z
+> 共 **74** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，4）
@@ -13,7 +13,7 @@
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 
-## network（端点 / 代理 / 端口，14）
+## network（端点 / 代理 / 端口，13）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -22,7 +22,6 @@
 | `AIH_SERVER_PORT` | ✅ | 6 | 网关监听端口（公开；config 优先） |
 | `AIH_SERVER_HOST` | ✅ | 4 | 网关监听地址（公开；config 优先） |
 | `AIH_AGY_BASE_URL` | — | 3 | agy（code assist）上游 base URL 覆盖 |
-| `AIH_AGY_QUOTA_BASE_URL` | — | 3 | agy 额度接口 base URL 覆盖 |
 | `AIH_REMOTE_SSH` | — | 3 | 远程主机 SSH 目标（远程 node/relay 操作） |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:50:01.416Z",
-  "total": 56,
+  "generatedAt": "2026-10-17T11:54:24.196Z",
+  "total": 55,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -28,7 +28,7 @@
     "EXTENSION_DIRS_ENV": "AIH_PROVIDER_EXTENSION_DIRS",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
-    "OPENCODE_GATEWAY_ENV": "AIH_OPENCODE_GATEWAY",
+    "OPENCODE_CONTEXT_ENV": "AIH_OPENCODE_GATEWAY",
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
     "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
@@ -623,21 +623,11 @@
       "reads": 0,
       "literals": 1,
       "files": [
-        "lib/cli/services/ai-cli/opencode-gateway-context.js"
+        "lib/runtime/opencode-context.js"
       ],
       "aliasConstants": [
-        "OPENCODE_GATEWAY_ENV"
+        "OPENCODE_CONTEXT_ENV"
       ]
-    },
-    {
-      "name": "AIH_OPENCODE_RUN_LAYOUT",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/opencode-run-layouts.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_PROVIDER_EXTENSION_DIRS",

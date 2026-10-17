@@ -365,7 +365,7 @@ test('runServerCommand elevates restart only after permission denied', async () 
 test('runServerCommand never opens UAC for a background restart', async () => {
   let elevationCalls = 0;
   const { result: code, logs, errors } = await captureConsole(() => runServerCommand(['server', 'restart'], {
-    processObj: { env: { AIH_SERVER_RESTART_MODE: 'background' } },
+    processObj: { env: { AIH_SERVER_RESTART: 'mode=background' } },
     showServerUsage() {},
     serverDaemon: {
       restart: async () => ({
@@ -463,7 +463,7 @@ test('runServerCommand accepts sanitized serve options for an internal source re
     '--proxy-url',
     'http://127.0.0.1:6152'
   ], {
-    processObj: { env: { AIH_SERVER_RESTART_MODE: 'background' } },
+    processObj: { env: { AIH_SERVER_RESTART: 'mode=background' } },
     showServerUsage() {},
     serverDaemon: {
       restart: async (rawServeArgs, restartOptions) => {

@@ -36,7 +36,7 @@ function createProcessCapture(argv = ['node', 'scripts/fabric-smoke-support.js']
   return {
     env: {
       ...process.env,
-      AIH_SERVER_SOURCE_AUTO_RESTART: '0'
+      AIH_SERVER_RESTART: 'sourceAuto=0'
     },
     argv,
     execPath: process.execPath,

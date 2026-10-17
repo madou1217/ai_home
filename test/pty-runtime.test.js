@@ -3194,7 +3194,7 @@ test('runtime restarts stale local aih server only with source auto restart opt-
   try {
     const { runtime, proc, spawns, rawModeCalls, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
       [CODEX_FLAGS_ENV]: serializeCodexFlags({ remoteProxy: '1' }),
-      AIH_SERVER_SOURCE_AUTO_RESTART: '1'
+      AIH_SERVER_RESTART: 'sourceAuto=1'
     }, {
       serverDaemon,
       readServerConfig: () => ({

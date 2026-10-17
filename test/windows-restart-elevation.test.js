@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  SERVER_RESTART_MODE_ENV,
+  SERVER_RESTART_ENV,
   createWindowsRestartElevation
 } = require('../lib/cli/services/server/windows-restart-elevation');
 
@@ -37,7 +37,7 @@ test('Windows restart elevation replays the command through one UAC prompt', () 
   assert.match(script, /-Verb RunAs -PassThru/);
   assert.match(script, /\$restartProcess\.WaitForExit\(\)/);
   assert.match(script, /exit \$restartProcess\.ExitCode/);
-  assert.match(script, new RegExp(`\\$env:${SERVER_RESTART_MODE_ENV} = 'elevated'`));
+  assert.match(script, new RegExp(`\\$env:${SERVER_RESTART_ENV} = 'mode=elevated'`));
   assert.match(script, /\$env:AIH_HOME_DIR = 'C:\\Users\\alice\\\.ai_home'/);
 });
 
@@ -48,7 +48,7 @@ test('Windows restart elevation prevents recursive UAC attempts', () => {
     processObj: {
       platform: 'win32',
       execPath: 'node.exe',
-      env: { [SERVER_RESTART_MODE_ENV]: 'elevated' }
+      env: { [SERVER_RESTART_ENV]: 'mode=elevated' }
     },
     spawnSync() {
       spawnCalls += 1;

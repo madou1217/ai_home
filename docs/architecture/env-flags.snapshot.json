@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:54:24.196Z",
-  "total": 55,
+  "generatedAt": "2026-10-17T12:03:48.244Z",
+  "total": 54,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -34,7 +34,7 @@
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
     "RUNTIME_USAGE_ENV": "AIH_RUNTIME_USAGE",
-    "SERVER_RESTART_MODE_ENV": "AIH_SERVER_RESTART_MODE",
+    "SERVER_RESTART_ENV": "AIH_SERVER_RESTART",
     "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
     "SHIM_CONTEXT_ENV": "AIH_SSH_CLIP_SHIM_CONTEXT",
     "ZCODE_CONTEXT_ENV": "AIH_ZCODE_CONTEXT"
@@ -681,27 +681,16 @@
       ]
     },
     {
-      "name": "AIH_SERVER_RESTART_MODE",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/server/windows-restart-elevation.js",
-        "lib/server/source-auto-restart.js"
-      ],
-      "aliasConstants": [
-        "SERVER_RESTART_MODE_ENV"
-      ]
-    },
-    {
-      "name": "AIH_SERVER_SOURCE_AUTO_RESTART",
+      "name": "AIH_SERVER_RESTART",
       "category": "plumbing",
       "reads": 0,
       "literals": 1,
       "files": [
-        "lib/server/source-auto-restart.js"
+        "lib/server/server-restart-context.js"
       ],
-      "aliasConstants": []
+      "aliasConstants": [
+        "SERVER_RESTART_ENV"
+      ]
     },
     {
       "name": "AIH_SSH_CLIP_SHIM_CONTEXT",

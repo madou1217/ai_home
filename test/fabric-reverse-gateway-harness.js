@@ -60,7 +60,7 @@ function isolatedServerEnvironment(homeDir) {
     AIH_HOME_DIR: homeDir,
     AIH_HOST_HOME: homeDir,
     HOME: homeDir,
-    AIH_SERVER_SOURCE_AUTO_RESTART: '0',
+    AIH_SERVER_RESTART: 'sourceAuto=0',
     AIH_CODEX_FLAGS: 'hooks=none',
     AIH_SERVER_PROXY_URL: '',
     AIH_SERVER_NO_PROXY: '127.0.0.1,localhost',

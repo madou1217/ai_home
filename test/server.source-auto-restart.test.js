@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  SERVER_RESTART_MODE_ENV,
+  SERVER_RESTART_ENV,
   startServerSourceAutoRestart,
   shouldEnableSourceAutoRestart,
   extractServeArgsFromArgv,
@@ -29,12 +29,12 @@ function makeSourceCheckout(root) {
 }
 
 test('source auto restart requires explicit opt-in', () => {
-  for (const env of [{}, { AIH_SERVER_SOURCE_AUTO_RESTART: '0' },
-    { AIH_SERVER_SOURCE_AUTO_RESTART: 'true' },
+  for (const env of [{}, { [SERVER_RESTART_ENV]: 'sourceAuto=0' },
+    { [SERVER_RESTART_ENV]: 'sourceAuto=true' },
 ]) {
     assert.equal(shouldEnableSourceAutoRestart({ env }), false);
   }
-  assert.equal(shouldEnableSourceAutoRestart({ env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' } }), true);
+  assert.equal(shouldEnableSourceAutoRestart({ env: { [SERVER_RESTART_ENV]: 'sourceAuto=1' } }), true);
 });
 
 test('default source change stays observable without restarting an active gateway', (t) => {
@@ -105,7 +105,7 @@ test('source auto restart records fingerprint and restarts on source change', (t
     processObj: {
       pid: 12345,
       execPath: '/usr/local/bin/node',
-      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' },
+      env: { [SERVER_RESTART_ENV]: 'sourceAuto=1' },
       argv: [
         '/usr/local/bin/node',
         source.entryFilePath,
@@ -145,7 +145,7 @@ test('source auto restart records fingerprint and restarts on source change', (t
   ]);
   assert.equal(spawnCalls[0].opts.detached, true);
   assert.equal(spawnCalls[0].opts.windowsHide, true);
-  assert.equal(spawnCalls[0].opts.env[SERVER_RESTART_MODE_ENV], 'background');
+  assert.equal(spawnCalls[0].opts.env[SERVER_RESTART_ENV], 'mode=background');
 
   controller.checkOnce();
   assert.equal(spawnCalls.length, 1);
@@ -175,7 +175,7 @@ test('source auto restart preserves proxy and model probe options when replaying
     processObj: {
       pid: 12345,
       execPath: '/usr/local/bin/node',
-      env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' },
+      env: { [SERVER_RESTART_ENV]: 'sourceAuto=1' },
       argv: [
         '/usr/local/bin/node',
         source.entryFilePath,

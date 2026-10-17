@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:02:48.297Z
-> 覆盖 `lib / bin / scripts / core`，共 **134** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:03:39.295Z
+> 覆盖 `lib / bin / scripts / core`，共 **129** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,11 +9,11 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 18 | 数据/目录/仓库路径 |
-| network | 22 | 端点 / 代理 / 端口 |
+| network | 21 | 端点 / 代理 / 端口 |
 | flag | 4 | 开关与逃生门（环境准入） |
-| credential | 16 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| credential | 14 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 73 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 71 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -34,7 +34,6 @@
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | plumbing | 6 | 8 |
 | `AIH_CLI_PATH` | path | 5 | 5 |
 | `AIH_AGY_QUOTA_BASE_URLS` | plumbing | 4 | 2 |
-| `AIH_PLUGIN_TOKEN` | credential | 4 | 1 |
 | `AIH_PROVIDER_ACCOUNT_REF` | plumbing | 4 | 4 |
 | `AIH_RELAY_UDP` | plumbing | 4 | 3 |
 | `AIH_RELAY_UDP_ADVERTISE_HOST` | network | 4 | 3 |
@@ -46,6 +45,7 @@
 | `AIH_CODEX_BIN` | plumbing | 3 | 2 |
 | `AIH_RELAY_LISTEN_HOST` | network | 3 | 3 |
 | `AIH_RELAY_PORT_MODE` | network | 3 | 3 |
+| `AIH_REMOTE_SSH` | network | 3 | 2 |
 
 ## path（数据/目录/仓库路径）
 
@@ -84,7 +84,6 @@
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
 | `AIH_FABRIC_ENDPOINT` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
-| `AIH_PLUGIN_HOST_VERSION` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
@@ -110,13 +109,11 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_PLUGIN_TOKEN` | 4 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_BENCH_KEY` | 2 | 0 | scripts/go-core-benchmark.js |
 | `AIH_CLAUDE_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | 2 | 3 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/server/codex-app-server-stdio-proxy-cliresume.js<br>lib/server/codex-default-cli-launcher.js<br>…共 4 个 |
 | `AIH_CODEX_TOKEN_URL` | 2 | 0 | lib/cli/services/usage/codex-auth-invalid-reconciler.js<br>lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GEMINI_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_PLUGIN_TOKEN_FROM_STDIN` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_SHADOW_GO_KEY` | 2 | 0 | scripts/gateway-shadow-compare.js |
 | `AIH_SHADOW_NODE_KEY` | 2 | 0 | scripts/gateway-shadow-compare.js |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | 1 | 0 | scripts/gateway-account-auth-smoke.js |
@@ -147,8 +144,6 @@
 | `AIH_FABRIC_NODE_ID` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
 | `AIH_GEMINI_PROJECT_ID` | 2 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_PLUGIN_EXIT_WITH_PARENT` | 2 | 0 | lib/plugins/host/host-entry.mjs |
-| `AIH_PLUGIN_SOCKET` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_ZCODE_AGENT_ENTRY` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |

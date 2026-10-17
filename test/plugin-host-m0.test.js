@@ -166,8 +166,8 @@ test('dependency plan orders providers first and diagnoses missing, mismatched a
 // ---- 宿主进程 ----
 
 test('plugin host environment is built from an allowlist without gateway secrets', () => {
-  const env = buildHostEnvironment({ PATH: '/bin', AIH_SERVER_MANAGEMENT_KEY: 'secret', OPENAI_API_KEY: 'k' }, { AIH_PLUGIN_SOCKET: 's' });
-  assert.deepEqual(env, { PATH: '/bin', AIH_PLUGIN_SOCKET: 's' });
+  const env = buildHostEnvironment({ PATH: '/bin', AIH_SERVER_MANAGEMENT_KEY: 'secret', OPENAI_API_KEY: 'k' });
+  assert.deepEqual(env, { PATH: '/bin' });
 });
 
 test('external sample loads, round-trips a bounded large payload, and unloads after its async disposer', async () => {

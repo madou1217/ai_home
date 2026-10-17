@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:02:48.297Z
-> 共 **144** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:03:39.295Z
+> 共 **139** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -29,7 +29,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，26）
+## network（端点 / 代理 / 端口，25）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -47,7 +47,6 @@
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_FABRIC_ENDPOINT` | — | 2 | fabric 服务端地址 |
-| `AIH_PLUGIN_HOST_VERSION` | — | 2 | 插件宿主协议版本（兼容判断） |
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
@@ -70,18 +69,16 @@
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），18）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），16）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_SERVER_MANAGEMENT_KEY` | ✅ | 22 | 管理面 key（公开；config 优先；空 = 管理面关闭） |
-| `AIH_PLUGIN_TOKEN` | — | 4 | 插件 RPC 鉴权 token（宿主生成并注入插件） |
 | `AIH_BENCH_KEY` | — | 2 | 基准/压测脚本使用的 key |
 | `AIH_CLAUDE_OAUTH_TOKEN` | — | 2 | 注入 claude CLI 的 OAuth token（沙箱运行） |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | — | 2 | 远程 codex 认证 token |
 | `AIH_CODEX_TOKEN_URL` | — | 2 | codex OAuth token 端点覆盖 |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
-| `AIH_PLUGIN_TOKEN_FROM_STDIN` | — | 2 | 让插件从 stdin 读取 token（避免出现在 argv） |
 | `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；含 Go Core；config 优先） |
 | `AIH_SHADOW_GO_KEY` | — | 2 | gateway shadow 对比时 Go 端口令（只读环境，不落盘） |
 | `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
@@ -99,7 +96,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），74）
+## plumbing（内部管道（进程间传递的身份 / 标记），72）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -113,8 +110,6 @@
 | `AIH_FABRIC_NODE_ID` | — | 2 | fabric 节点 id |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
-| `AIH_PLUGIN_EXIT_WITH_PARENT` | — | 2 | 插件随父进程退出 |
-| `AIH_PLUGIN_SOCKET` | — | 2 | 插件 RPC socket 路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |

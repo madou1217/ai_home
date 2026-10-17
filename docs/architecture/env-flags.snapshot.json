@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:02:48.297Z",
-  "total": 144,
+  "generatedAt": "2026-10-17T08:03:39.295Z",
+  "total": 139,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -207,16 +207,6 @@
       "files": [
         "lib/cli/services/usage/snapshot.js",
         "lib/server/code-assist-quota.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_TOKEN",
-      "category": "credential",
-      "reads": 4,
-      "literals": 0,
-      "files": [
-        "lib/plugins/host/host-entry.mjs"
       ],
       "aliasConstants": []
     },
@@ -555,46 +545,6 @@
       "literals": 0,
       "files": [
         "lib/server/opencode-plugin-hook-config.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_EXIT_WITH_PARENT",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/plugins/host/host-entry.mjs"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_HOST_VERSION",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/plugins/host/host-entry.mjs"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_SOCKET",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/plugins/host/host-entry.mjs"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_TOKEN_FROM_STDIN",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/plugins/host/host-entry.mjs"
       ],
       "aliasConstants": []
     },

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { OPENCODE_GATEWAY_ENV, serializeOpencodeGateway } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 
 const { getProviderLaunchStrategy } = require('../lib/cli/services/ai-cli/launch-profile');
 const { homeRedirectStrategy } = require('../lib/cli/services/ai-cli/launch-profile/home-redirect-strategy');
@@ -434,8 +435,7 @@ test('opencode gateway runtime injects an in-memory overlay without an internal 
     fs.mkdirSync(hostHome, { recursive: true });
     const baseEnv = {
       HOME: hostHome,
-      AIH_OPENCODE_GATEWAY_BASE_URL: 'http://127.0.0.1:9527/v1',
-      AIH_OPENCODE_GATEWAY_KEY: 'dummy'
+      [OPENCODE_GATEWAY_ENV]: serializeOpencodeGateway({ baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'dummy' })
     };
     prepareProviderRuntime('opencode', hostHome, baseEnv, {
       path,

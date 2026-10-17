@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:28:39.036Z",
-  "total": 85,
+  "generatedAt": "2026-10-17T10:31:17.195Z",
+  "total": 84,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -28,6 +28,7 @@
     "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
+    "OPENCODE_GATEWAY_ENV": "AIH_OPENCODE_GATEWAY",
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
     "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
@@ -593,28 +594,8 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_OPENCODE_GATEWAY_BASE_URL",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/launch-profile/opencode-strategy.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_OPENCODE_GATEWAY_BYOK",
       "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/launch-profile/opencode-strategy.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_OPENCODE_GATEWAY_KEY",
-      "category": "credential",
       "reads": 1,
       "literals": 0,
       "files": [
@@ -923,6 +904,18 @@
       ],
       "aliasConstants": [
         "DISABLE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_OPENCODE_GATEWAY",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/ai-cli/opencode-gateway-context.js"
+      ],
+      "aliasConstants": [
+        "OPENCODE_GATEWAY_ENV"
       ]
     },
     {

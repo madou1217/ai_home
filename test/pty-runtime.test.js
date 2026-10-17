@@ -15,6 +15,7 @@ const { writeAccountCredentials } = require('../lib/server/account-credential-st
 const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
 const { readShimContextField } = require('../lib/cli/services/ssh-clipboard/shim-context');
+const { readOpencodeGatewayField } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
   CODEX_MANAGED_LAUNCH_ENV
@@ -3091,8 +3092,8 @@ test('runtime launches bare opencode through the explicit AIH gateway profile en
 
   assert.equal(spawns.length, 1);
   const env = spawns[0].options.env;
-  assert.equal(env.AIH_OPENCODE_GATEWAY_BASE_URL, 'http://127.0.0.1:9527/v1');
-  assert.equal(env.AIH_OPENCODE_GATEWAY_KEY, 'gateway-key');
+  assert.equal(readOpencodeGatewayField(env, 'baseUrl'), 'http://127.0.0.1:9527/v1');
+  assert.equal(readOpencodeGatewayField(env, 'apiKey'), 'gateway-key');
   assert.equal(env.AIH_OPENCODE_GATEWAY_BYOK, undefined);
   const overlay = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
   assert.equal(overlay.provider.aih.options.baseURL, 'http://127.0.0.1:9527/v1');

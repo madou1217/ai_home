@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
+const { OPENCODE_GATEWAY_ENV, serializeOpencodeGateway } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 const fs = require('node:fs');
 
 const {
@@ -63,8 +64,7 @@ test('upstream failure policy: OpenCode FreeTierError gate is not an account-sco
 test('opencode launch strategy: dynamically generates BYOK gateway config with healthy models', () => {
   const mockCtx = {
     baseEnv: {
-      AIH_OPENCODE_GATEWAY_BASE_URL: 'http://127.0.0.1:9527/v1',
-      AIH_OPENCODE_GATEWAY_KEY: 'test-key'
+      [OPENCODE_GATEWAY_ENV]: serializeOpencodeGateway({ baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'test-key' })
     },
     hostHomeDir: os.tmpdir(),
     sandboxDir: os.tmpdir(),

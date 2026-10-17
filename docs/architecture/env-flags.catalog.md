@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:45:45.868Z
-> 共 **167** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:50:23.920Z
+> 共 **163** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，21）
+## path（数据/目录/仓库路径，20）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -26,7 +26,6 @@
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 | `AIH_SSH_CLIP_SHIM_BIN_DIR` | — | 1 | SSH 剪贴板 shim 的 bin 目录 |
 | `AIH_SSH_CLIP_SHIM_DIR` | — | 1 | SSH 剪贴板 shim 安装目录 |
-| `AIH_CODEX_HOST_HOME` | — | 0 | codex 视角的宿主家目录（沙箱里定位宿主 auth/config） |
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
@@ -112,7 +111,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），89）
+## plumbing（内部管道（进程间传递的身份 / 标记），86）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -173,10 +172,8 @@
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ZCODE_APP_VERSION` | — | 1 | zcode 应用版本 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
-| `AIH_ACCOUNT_ID` | — | 0 | 账号数字别名（cliAccountId） |
 | `AIH_ACCOUNT_REF` | — | 0 | 账号唯一标识（accountRef，贯穿 server/WebUI/runtime） |
 | `AIH_CLAUDE_TMUX_RENDER_RUNTIME` | — | 0 | claude 在 tmux 内的渲染运行时标记 |
-| `AIH_CLI_ACCOUNT_ID` | — | 0 | CLI 账号数字别名（子进程用） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |
@@ -191,7 +188,6 @@
 | `AIH_PSMUX_CODEX_LAUNCH_RUNTIME` | — | 0 | psmux 下 codex 启动运行时标记 |
 | `AIH_RELAY_MIHOMO_BIN` | — | 0 | mihomo 二进制路径（中转边车） |
 | `AIH_RELAY_SING_BOX_BIN` | — | 0 | sing-box 二进制路径（中转边车） |
-| `AIH_RUNTIME_SCOPE` | — | 0 | 运行时作用域（accountRef 或 gateway） |
 | `AIH_SERVER_AUTOSTART` | — | 0 | 由 autostart 拉起的标记 |
 | `AIH_SERVER_BACKGROUND_RESTART` | — | 0 | 后台重启标记 |
 | `AIH_SERVER_ELEVATED_RESTART` | — | 0 | 提权重启标记 |

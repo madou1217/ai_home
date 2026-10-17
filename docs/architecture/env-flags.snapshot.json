@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:45:45.868Z",
-  "total": 167,
+  "generatedAt": "2026-10-17T05:50:23.920Z",
+  "total": 163,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1470,16 +1470,6 @@
       ]
     },
     {
-      "name": "AIH_ACCOUNT_ID",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/session-lifecycle/codex-stdio-client.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_ACCOUNT_REF",
       "category": "plumbing",
       "reads": 0,
@@ -1514,16 +1504,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLI_ACCOUNT_ID",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/session-lifecycle/codex-stdio-client.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
       "category": "plumbing",
       "reads": 0,
@@ -1534,16 +1514,6 @@
       "aliasConstants": [
         "CODEX_APP_SERVER_PASSTHROUGH_ENV"
       ]
-    },
-    {
-      "name": "AIH_CODEX_HOST_HOME",
-      "category": "path",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/account/codex-rekey-reference-policy.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
@@ -1721,16 +1691,6 @@
       "files": [
         "lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js",
         "lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_SCOPE",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/session-lifecycle/codex-stdio-client.js"
       ],
       "aliasConstants": []
     },

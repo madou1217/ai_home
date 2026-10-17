@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:41:17.020Z",
-  "total": 117,
+  "generatedAt": "2026-10-17T09:10:30.241Z",
+  "total": 115,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1022,26 +1022,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/ssh-clipboard/shim-cli.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIP_SHIM_TTY",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/shim-cli.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/terminal-probe.js"
       ],
       "aliasConstants": []
     },

@@ -306,8 +306,7 @@ test('ssh clipboard shim writes pngpaste image responses to the requested file',
     path,
     processObj: {
       env: {
-        AIH_SSH_CLIP_SHIM_DIR: root,
-        AIH_SSH_CLIP_SHIM_TTY: '/dev/tty'
+        AIH_SSH_CLIP_SHIM_DIR: root
       },
       stdout: { write: (chunk) => stdoutWrites.push(chunk) },
       stderr: { write: (chunk) => stderrWrites.push(String(chunk || '')) }

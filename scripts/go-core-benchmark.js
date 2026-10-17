@@ -142,7 +142,7 @@ async function startStack(goRoutes) {
     HOME: aiHomeDir,
     AIH_GO_CORE_ENABLED: '1',
     AIH_GO_CORE_BINARY: ensureGoServerBinary(),
-    AIH_GO_CORE_PORT: String(await getFreePort()),
+    AIH_GO_CORE_BIND: `port=${await getFreePort()}`,
     AIH_GO_CORE_ACCOUNT_SYNC: '0',
     AIH_GO_CORE_CLIENT_KEY: GO_CLIENT_KEY,
     AIH_GO_CORE_ROUTES: goRoutes

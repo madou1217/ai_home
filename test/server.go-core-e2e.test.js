@@ -45,7 +45,7 @@ async function startWithGoCore(t, env, serveExtra = {}) {
     HOME: aiHomeDir,
     AIH_GO_CORE_ENABLED: '1',
     AIH_GO_CORE_BINARY: goBinary,
-    AIH_GO_CORE_PORT: String(await getFreePort()),
+    AIH_GO_CORE_BIND: `port=${await getFreePort()}`,
     ...env
   });
   const port = await getFreePort();

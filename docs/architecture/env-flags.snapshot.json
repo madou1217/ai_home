@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T12:11:34.929Z",
-  "total": 53,
+  "generatedAt": "2026-10-17T12:17:14.215Z",
+  "total": 52,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -26,6 +26,7 @@
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
     "EXTENSION_DIRS_ENV": "AIH_PROVIDER_EXTENSION_DIRS",
+    "GO_CORE_BIND_ENV": "AIH_GO_CORE_BIND",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
     "OPENCODE_CONTEXT_ENV": "AIH_OPENCODE_GATEWAY",
@@ -345,16 +346,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_GO_CORE_HOST",
-      "category": "network",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/server/go-core-host.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_GO_CORE_MANAGEMENT_KEY",
       "category": "credential",
       "reads": 1,
@@ -547,14 +538,16 @@
       ]
     },
     {
-      "name": "AIH_GO_CORE_PORT",
-      "category": "network",
+      "name": "AIH_GO_CORE_BIND",
+      "category": "plumbing",
       "reads": 0,
       "literals": 1,
       "files": [
-        "lib/server/go-core-host.js"
+        "lib/server/go-core-bind.js"
       ],
-      "aliasConstants": []
+      "aliasConstants": [
+        "GO_CORE_BIND_ENV"
+      ]
     },
     {
       "name": "AIH_IMAGE_API",

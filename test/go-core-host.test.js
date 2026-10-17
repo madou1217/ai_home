@@ -56,11 +56,12 @@ test('resolveGoCoreSettings reads persisted config and lets AIH_GO_CORE_* overri
   const fromEnv = resolveGoCoreSettings({}, {
     AIH_GO_CORE_ENABLED: 'true',
     AIH_GO_CORE_ROUTES: 'gateway.props,gateway.models.list',
-    AIH_GO_CORE_PORT: '19600'
+    AIH_GO_CORE_BIND: 'host=127.0.0.1,port=19600'
   });
   assert.equal(fromEnv.enabled, true);
   assert.deepEqual(fromEnv.routes, ['gateway.props', 'gateway.models.list']);
   assert.equal(fromEnv.port, 19600);
+  assert.equal(fromEnv.host, '127.0.0.1');
   assert.equal(resolveGoCoreSettings({}, {}).enabled, false);
 });
 

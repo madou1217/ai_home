@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T12:11:34.929Z
-> 覆盖 `lib / bin / scripts / core`，共 **43** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T12:17:14.215Z
+> 覆盖 `lib / bin / scripts / core`，共 **42** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,11 +9,11 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 2 | 数据/目录/仓库路径 |
-| network | 4 | 端点 / 代理 / 端口 |
+| network | 2 | 端点 / 代理 / 端口 |
 | flag | 1 | 开关与逃生门（环境准入） |
 | credential | 5 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 3 | 测试与探针专用 |
-| plumbing | 28 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 29 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -44,8 +44,8 @@
 | `AIH_GO_CORE_CLIENT_KEY` | credential | 1 | 1 |
 | `AIH_GO_CORE_DELEGATE_REFRESH` | plumbing | 1 | 1 |
 | `AIH_GO_CORE_ENABLED` | flag | 1 | 2 |
-| `AIH_GO_CORE_HOST` | network | 1 | 1 |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | credential | 1 | 1 |
+| `AIH_GO_CORE_ROUTES` | plumbing | 1 | 2 |
 
 ## path（数据/目录/仓库路径）
 
@@ -58,8 +58,6 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
-| `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
 | `AIH_SSH_CLIP_SHIM_CONTEXT` | 0 | 1 | lib/cli/services/ssh-clipboard/shim-context.js |
 | `AIH_SSH_CLIPBOARD` | 0 | 1 | lib/cli/services/ssh-clipboard/clipboard-context.js |
 
@@ -109,6 +107,7 @@
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_FLAGS` | 0 | 3 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/codex-flags.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_EDGE_CONTEXT` | 0 | 1 | lib/cli/services/toolkit/edge-proxy/edge-context.js |
+| `AIH_GO_CORE_BIND` | 0 | 1 | lib/server/go-core-bind.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_GATEWAY` | 0 | 1 | lib/runtime/opencode-context.js |

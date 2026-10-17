@@ -1,6 +1,19 @@
 {
-  "generatedAt": "2026-10-17T04:35:26.450Z",
+  "generatedAt": "2026-10-17T04:41:06.261Z",
   "total": 330,
+  "publicEnvLimit": 10,
+  "public": [
+    "AIH_HOME_DIR",
+    "AIH_HOST_HOME",
+    "AIH_SERVER_HOST",
+    "AIH_SERVER_PORT",
+    "AIH_SERVER_API_KEY",
+    "AIH_SERVER_MANAGEMENT_KEY",
+    "AIH_SERVER_PROXY_URL",
+    "AIH_SERVER_NO_PROXY",
+    "AIH_MULTIPLEXER",
+    "AIH_NO_PERSIST"
+  ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE_ENV": "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE",
@@ -35,12 +48,13 @@
       "name": "AIH_HOST_HOME",
       "category": "path",
       "reads": 35,
-      "literals": 2,
+      "literals": 3,
       "files": [
         "lib/account/zcode-client-metadata.js",
         "lib/cli/services/ai-cli/desktop-client-restart.js",
         "lib/cli/services/ai-cli/provider-runtime-env.js",
         "lib/cli/services/toolkit/tool-lifecycle/frpc-release-runner.js",
+        "lib/config/public-env.js",
         "lib/runtime/host-home.js",
         "lib/server/codex-app-server-endpoint.js",
         "lib/server/codex-cli-hook.js",
@@ -92,11 +106,12 @@
       "name": "AIH_SERVER_PROXY_URL",
       "category": "network",
       "reads": 18,
-      "literals": 1,
+      "literals": 2,
       "files": [
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
         "lib/cli/services/usage/snapshot.js",
         "lib/cli/services/usage/usage-snapshot-codex.js",
+        "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/go-core-proxy-guard.js",
         "lib/server/http-utils-utils.js",
@@ -110,10 +125,11 @@
       "name": "AIH_SERVER_NO_PROXY",
       "category": "network",
       "reads": 17,
-      "literals": 1,
+      "literals": 2,
       "files": [
         "lib/cli/services/usage/snapshot.js",
         "lib/cli/services/usage/usage-snapshot-codex.js",
+        "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/go-core-proxy-guard.js",
         "lib/server/http-utils-utils.js",
@@ -146,9 +162,10 @@
       "name": "AIH_SERVER_MANAGEMENT_KEY",
       "category": "credential",
       "reads": 11,
-      "literals": 3,
+      "literals": 4,
       "files": [
         "lib/cli/bootstrap/runtime-support-wiring.js",
+        "lib/config/public-env.js",
         "lib/plugins/control/cli.js",
         "lib/server/args.js",
         "lib/server/server-config-schema.js",
@@ -161,9 +178,10 @@
       "name": "AIH_HOME_DIR",
       "category": "path",
       "reads": 7,
-      "literals": 1,
+      "literals": 2,
       "files": [
         "lib/cli/services/node/bootstrap-assets.js",
+        "lib/config/public-env.js",
         "lib/runtime/aih-home.js",
         "scripts/cleanup-official-account-error-rules.js",
         "scripts/collect-env-flags.js",
@@ -192,8 +210,9 @@
       "name": "AIH_SERVER_PORT",
       "category": "network",
       "reads": 6,
-      "literals": 1,
+      "literals": 2,
       "files": [
+        "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/opencode-plugin-hook-config.js",
         "lib/server/server-config-schema.js",
@@ -305,8 +324,9 @@
       "name": "AIH_SERVER_HOST",
       "category": "network",
       "reads": 4,
-      "literals": 1,
+      "literals": 2,
       "files": [
+        "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js"
@@ -937,8 +957,9 @@
       "name": "AIH_SERVER_API_KEY",
       "category": "credential",
       "reads": 2,
-      "literals": 2,
+      "literals": 3,
       "files": [
+        "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/server-config-schema.js"
       ],
@@ -3044,8 +3065,9 @@
       "name": "AIH_MULTIPLEXER",
       "category": "plumbing",
       "reads": 0,
-      "literals": 1,
+      "literals": 2,
       "files": [
+        "lib/config/public-env.js",
         "lib/runtime/multiplexer/types.js"
       ],
       "aliasConstants": [
@@ -3096,8 +3118,9 @@
       "name": "AIH_NO_PERSIST",
       "category": "flag",
       "reads": 0,
-      "literals": 3,
+      "literals": 4,
       "files": [
+        "lib/config/public-env.js",
         "lib/runtime/multiplexer/drivers/herdr-driver.js",
         "lib/runtime/multiplexer/drivers/tmux-driver.js",
         "lib/runtime/persistent-session.js"

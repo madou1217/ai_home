@@ -8,6 +8,8 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.md');
 const SNAPSHOT = path.join(ROOT, 'docs', 'architecture', 'env-flags.snapshot.json');
+const INTERNAL_DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.internal.md');
+const { PUBLIC_ENV_VARS, PUBLIC_ENV_LIMIT } = require('../lib/config/public-env');
 
 function readSnapshot() {
   return JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
@@ -20,12 +22,58 @@ function collectNow() {
 
 test('环境变量清单存在且可解析（npm run env:inventory -- --write）', () => {
   assert.ok(fs.existsSync(DOC), 'docs/architecture/env-flags.md 必须存在');
+  assert.ok(fs.existsSync(INTERNAL_DOC), 'docs/architecture/env-flags.internal.md 必须存在');
   assert.ok(fs.existsSync(SNAPSHOT), 'docs/architecture/env-flags.snapshot.json 必须存在');
   const snapshot = readSnapshot();
   assert.ok(snapshot.generatedAt);
   assert.ok(Array.isArray(snapshot.entries) && snapshot.entries.length > 0);
   const doc = fs.readFileSync(DOC, 'utf8');
-  assert.match(doc, /新增环境变量的规则/);
+  assert.match(doc, /公开变量/);
+});
+
+test('公开环境变量白名单不超过 10 个，且每个都在源码里真实存在', () => {
+  assert.ok(PUBLIC_ENV_VARS.length > 0);
+  assert.ok(
+    PUBLIC_ENV_VARS.length <= PUBLIC_ENV_LIMIT,
+    `公开环境变量 ${PUBLIC_ENV_VARS.length} 个，超过上限 ${PUBLIC_ENV_LIMIT}；新增前先回答能不能进 server config / WebUI`
+  );
+  const names = PUBLIC_ENV_VARS.map((item) => item.name);
+  assert.equal(new Set(names).size, names.length, '公开变量不能重名');
+  for (const item of PUBLIC_ENV_VARS) {
+    assert.match(String(item.summary || ''), /\S/, `${item.name} 缺少用途说明`);
+    assert.ok(item.default !== undefined, `${item.name} 缺少默认值`);
+    assert.match(String(item.configEquivalent || ''), /\S/, `${item.name} 必须写明等价 config 入口或说明为什么没有`);
+  }
+  const known = new Set(collectNow().entries.map((entry) => entry.name));
+  const missing = names.filter((name) => !known.has(name));
+  assert.deepEqual(missing, [], `公开变量在源码里不存在（白名单写错或变量已删除）：${missing.join(', ')}`);
+});
+
+test('环境准入文档只出现公开变量（内部变量单独一份，不对外承诺）', () => {
+  const doc = fs.readFileSync(DOC, 'utf8');
+  const allowed = new Set(PUBLIC_ENV_VARS.map((item) => item.name));
+  const tokens = new Set((doc.match(/AIH_[A-Z0-9_]+/g) || []));
+  const leaked = [...tokens].filter((name) => !allowed.has(name));
+  assert.deepEqual(leaked, [], `公开文档里出现了非公开变量：${leaked.join(', ')}`);
+  for (const item of PUBLIC_ENV_VARS) {
+    assert.ok(doc.includes(item.name), `公开文档缺少 ${item.name}`);
+  }
+});
+
+test('内部变量清单覆盖全部非公开变量（明细可以很长，但必须完整）', () => {
+  const snapshot = readSnapshot();
+  const internalDoc = fs.readFileSync(INTERNAL_DOC, 'utf8');
+  const publicNames = new Set(PUBLIC_ENV_VARS.map((item) => item.name));
+  const internal = snapshot.entries.map((entry) => entry.name).filter((name) => !publicNames.has(name));
+  assert.ok(internal.length > 0);
+  const missing = internal.filter((name) => !internalDoc.includes(`\`${name}\``));
+  assert.deepEqual(missing, [], `内部清单漏了：${missing.slice(0, 10).join(', ')}`);
+});
+
+test('快照登记的公开集合与白名单一致', () => {
+  const snapshot = readSnapshot();
+  assert.equal(snapshot.publicEnvLimit, PUBLIC_ENV_LIMIT);
+  assert.deepEqual(snapshot.public, PUBLIC_ENV_VARS.map((item) => item.name));
 });
 
 test('新增环境变量必须登记：代码里出现的 AIH_* 不能在快照里缺席', () => {
@@ -60,13 +108,13 @@ test('成对开关（ENABLE/DISABLE）必须显式登记理由，否则视为反
   );
 });
 
-test('开关类变量必须在文档里逐个出现（环境准入不能只活在代码里）', () => {
+test('开关类变量必须逐个出现在（公开或内部）文档里（不能只活在代码里）', () => {
   const snapshot = readSnapshot();
-  const doc = fs.readFileSync(DOC, 'utf8');
+  const docs = fs.readFileSync(DOC, 'utf8') + fs.readFileSync(INTERNAL_DOC, 'utf8');
   const flags = snapshot.entries.filter((entry) => entry.category === 'flag');
   assert.ok(flags.length > 0);
   for (const entry of flags) {
-    assert.ok(doc.includes(`\`${entry.name}\``), `开关 ${entry.name} 必须出现在环境变量文档里`);
+    assert.ok(docs.includes(`\`${entry.name}\``), `开关 ${entry.name} 必须出现在环境变量文档里`);
   }
 });
 

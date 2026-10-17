@@ -3,7 +3,8 @@
 
 /**
  * 清点项目里的环境变量（重点是 `AIH_*` 这套「环境准入」开关），生成：
- *   docs/architecture/env-flags.md             人读清单（分类 / 读取次数 / 反模式 / 新增规则）
+ *   docs/architecture/env-flags.md             公开清单（≤10，唯一环境准入；白名单在 lib/config/public-env.js）
+ *   docs/architecture/env-flags.internal.md    内部变量明细（不要手工设置，不承诺兼容）
  *   docs/architecture/env-flags.snapshot.json  机器快照（新变量必须登记，见 test/env-inventory.test.js）
  *
  * 用法：
@@ -17,8 +18,17 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const {
+  PUBLIC_ENV_VARS,
+  PUBLIC_ENV_LIMIT,
+  isPublicEnvVar
+} = require('../lib/config/public-env');
+
 const ROOT = path.join(__dirname, '..');
+// 公开清单（≤10，人读的唯一环境准入）与内部清单（不要手工设置）分开生成：
+// 公开文档小到可以逐行审阅，内部明细只供排障与迁移参考。
 const DOC_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.md');
+const INTERNAL_DOC_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.internal.md');
 const SNAPSHOT_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.snapshot.json');
 const SCAN_ROOTS = ['lib', 'bin', 'scripts', 'core'];
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'bin/native']);
@@ -162,27 +172,55 @@ const CATEGORY_LABELS = Object.freeze({
   plumbing: '内部管道（进程间传递的身份 / 标记）'
 });
 
-function renderMarkdown(entries, generatedAt) {
+function renderPublicMarkdown(entries, generatedAt) {
+  const known = new Set(entries.map((entry) => entry.name));
+  const publicCount = PUBLIC_ENV_VARS.length;
+  const lines = [];
+  lines.push('# 环境准入（公开环境变量，≤10）');
+  lines.push('');
+  lines.push(`> 生成命令：\`npm run env:inventory -- --write\`　生成时间：${generatedAt}`);
+  lines.push(`> 公开变量 **${publicCount} / ${PUBLIC_ENV_LIMIT}**（白名单：\`lib/config/public-env.js\`，测试守住上限）。`);
+  lines.push('> 其余 `AIH_*` 都是**内部变量**（进程间身份/标记、实验开关、测试钩子），见 [`env-flags.internal.md`](./env-flags.internal.md)：不要写进部署脚本。');
+  lines.push('');
+  lines.push('## 规则');
+  lines.push('');
+  lines.push('1. **能进 `aih server config set …` 或 WebUI 的，就不要做环境变量**；env 只用于「配置还读不到」或容器编排的一次性注入。');
+  lines.push('2. **一个语义只用一个名字**；同义别名只允许一处解析（数据根目录见 `lib/runtime/aih-home.js`）。');
+  lines.push(`3. **公开变量上限 ${PUBLIC_ENV_LIMIT} 个**：新增必须同时改 \`lib/config/public-env.js\`、重跑本命令，并在 PR 里说明为什么 config/WebUI 放不下；超过上限 \`test/env-inventory.test.js\` 直接红。`);
+  lines.push('4. 调试/实验开关不进公开清单；确实需要长期保留的，先回答「能不能做成 server config 字段」。');
+  lines.push('');
+  lines.push(`## 公开变量（${publicCount} / ${PUBLIC_ENV_LIMIT}）`);
+  lines.push('');
+  lines.push('| 变量 | 用途 | 默认 | 等价持久化入口（推荐） |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const item of PUBLIC_ENV_VARS) {
+    const absent = known.has(item.name) ? '' : '（⚠️ 源码中未检出）';
+    lines.push(`| \`${item.name}\`${absent} | ${item.summary} | ${item.default} | ${item.configEquivalent} |`);
+  }
+  lines.push('');
+  const internalCount = entries.filter((entry) => !isPublicEnvVar(entry.name)).length;
+  lines.push('## 内部变量');
+  lines.push('');
+  lines.push(`共 **${internalCount}** 个（进程间传递的身份/标记、实验与调试开关、测试钩子）。按分类明细见 [\`env-flags.internal.md\`](./env-flags.internal.md)。`);
+  lines.push('');
+  lines.push('它们不是配置项：aih 自己会设置（例如账号投影、会话目标、网关连接串），手工覆盖通常会导致路由错乱或凭据串号。');
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}
+
+function renderInternalMarkdown(entries, generatedAt) {
+  const internal = entries.filter((entry) => !isPublicEnvVar(entry.name));
   const byCategory = {};
-  for (const entry of entries) {
+  for (const entry of internal) {
     byCategory[entry.category] = byCategory[entry.category] || [];
     byCategory[entry.category].push(entry);
   }
   const lines = [];
-  lines.push('# 环境变量清单（环境准入）');
+  lines.push('# 内部变量清单（不要手工设置）');
   lines.push('');
   lines.push(`> 生成命令：\`npm run env:inventory -- --write\`　生成时间：${generatedAt}`);
-  lines.push(`> 覆盖 \`${SCAN_ROOTS.join(' / ')}\`，共 **${entries.length}** 个 \`AIH_*\` 变量。`);
-  lines.push('> 本文件是**唯一清单**：新增环境变量必须重跑本命令，否则 `test/env-inventory.test.js` 会红。');
-  lines.push('');
-  lines.push('## 新增环境变量的规则');
-  lines.push('');
-  lines.push('1. **一个语义只用一个名字**；同义别名只能有一个解析处（参照 `lib/runtime/aih-home.js`）。');
-  lines.push('2. **不要用 `ENABLE`/`DISABLE` 两个变量表达一个开关**；确需兼容历史写法时，登记到「成对开关」一节并说明。');
-  lines.push('3. 可调参数（超时 / TTL / 上限）优先放进 `lib/cli/config/constants.js` 的常量，**不要**变成环境变量；');
-  lines.push('   必须是环境变量的（部署差异），命名带单位（`_MS`）并写明默认值。');
-  lines.push('4. 测试专用变量一律 `AIH_TEST_*` 前缀，禁止进入生产路径的默认判断。');
-  lines.push('5. 新增后跑 `npm run env:inventory -- --write`，把用途写进下表对应分类。');
+  lines.push(`> 覆盖 \`${SCAN_ROOTS.join(' / ')}\`，共 **${internal.length}** 个非公开 \`AIH_*\` 变量；公开的 ${PUBLIC_ENV_VARS.length} 个见 [env-flags.md](./env-flags.md)。`);
+  lines.push('> 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。');
   lines.push('');
   lines.push('## 分类概览');
   lines.push('');
@@ -194,7 +232,7 @@ function renderMarkdown(entries, generatedAt) {
     lines.push(`| ${category} | ${list.length} | ${CATEGORY_LABELS[category]} |`);
   }
   lines.push('');
-  lines.push('## 反模式与本次梳理发现');
+  lines.push('## 反模式与梳理发现');
   lines.push('');
   lines.push('### 同义别名（一个语义多个名字）');
   lines.push('');
@@ -206,12 +244,11 @@ function renderMarkdown(entries, generatedAt) {
   lines.push('');
   lines.push('### 成对开关（ENABLE / DISABLE）');
   lines.push('');
-  const pairs = findFlagPairs(entries);
+  const pairs = findFlagPairs(internal);
   if (pairs.length) {
     lines.push('| ENABLE | DISABLE | 处理 |');
     lines.push('| --- | --- | --- |');
     for (const pair of pairs) {
-      const prefix = pair.enable.replace('_ENABLE_', '_');
       const allowed = ALLOWED_FLAG_PAIRS.find((item) => item.stem.includes(pair.enable.replace('_ENABLE_', '_{ENABLE,DISABLE}_')));
       lines.push(`| \`${pair.enable}\` | \`${pair.disable}\` | ${allowed ? allowed.reason : '⚠️ 未登记：请合并成一个开关'} |`);
     }
@@ -223,7 +260,7 @@ function renderMarkdown(entries, generatedAt) {
   lines.push('');
   lines.push('| 变量 | 分类 | 读取 | 文件数 |');
   lines.push('| --- | --- | --- | --- |');
-  for (const entry of entries.slice(0, 15)) {
+  for (const entry of internal.slice(0, 15)) {
     lines.push(`| \`${entry.name}\` | ${entry.category} | ${entry.reads} | ${entry.files.length} |`);
   }
   lines.push('');
@@ -245,26 +282,48 @@ function renderMarkdown(entries, generatedAt) {
   return `${lines.join('\n')}\n`;
 }
 
+
 function main() {
   const argv = process.argv.slice(2);
   const write = argv.includes('--write');
   const jsonOnly = argv.includes('--json');
   const generatedAt = new Date().toISOString();
+  if (PUBLIC_ENV_VARS.length > PUBLIC_ENV_LIMIT) {
+    process.stderr.write(`[aih] WARNING: public env vars ${PUBLIC_ENV_VARS.length} > limit ${PUBLIC_ENV_LIMIT}\n`);
+  }
   const { entries, nameConstants } = collect();
-  const snapshot = { generatedAt, total: entries.length, nameConstants, entries };
-  const markdown = renderMarkdown(entries, generatedAt);
+  const snapshot = {
+    generatedAt,
+    total: entries.length,
+    publicEnvLimit: PUBLIC_ENV_LIMIT,
+    public: PUBLIC_ENV_VARS.map((item) => item.name),
+    nameConstants,
+    entries
+  };
+  const markdown = renderPublicMarkdown(entries, generatedAt);
+  const internalMarkdown = renderInternalMarkdown(entries, generatedAt);
   if (jsonOnly) process.stdout.write(`${JSON.stringify(snapshot, null, 2)}\n`);
   else process.stdout.write(markdown);
   if (write) {
     fs.mkdirSync(path.dirname(DOC_PATH), { recursive: true });
     fs.writeFileSync(DOC_PATH, markdown);
+    fs.writeFileSync(INTERNAL_DOC_PATH, internalMarkdown);
     fs.writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`);
-    process.stderr.write(`[aih] wrote ${path.relative(ROOT, DOC_PATH)} and ${path.relative(ROOT, SNAPSHOT_PATH)}\n`);
+    process.stderr.write(`[aih] wrote ${path.relative(ROOT, DOC_PATH)}, ${path.relative(ROOT, INTERNAL_DOC_PATH)} and ${path.relative(ROOT, SNAPSHOT_PATH)}\n`);
   }
   return 0;
 }
 
-module.exports = { ALLOWED_FLAG_PAIRS, KNOWN_SYNONYMS, categorize, collect, findFlagPairs, renderMarkdown };
+module.exports = {
+  ALLOWED_FLAG_PAIRS,
+  KNOWN_SYNONYMS,
+  categorize,
+  collect,
+  findFlagPairs,
+  renderPublicMarkdown,
+  renderInternalMarkdown
+};
+
 
 if (require.main === module) {
   process.exit(main());

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T12:03:48.244Z",
-  "total": 54,
+  "generatedAt": "2026-10-17T12:11:34.929Z",
+  "total": 53,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -330,16 +330,6 @@
       "literals": 1,
       "files": [
         "lib/server/go-core-host.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GO_CORE_DOWNLOAD_BASE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/postinstall-go-core.js"
       ],
       "aliasConstants": []
     },

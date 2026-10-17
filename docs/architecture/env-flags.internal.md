@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:10:30.241Z
-> 覆盖 `lib / bin / scripts / core`，共 **105** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:11:12.512Z
+> 覆盖 `lib / bin / scripts / core`，共 **103** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,9 +9,9 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 17 | 数据/目录/仓库路径 |
-| network | 18 | 端点 / 代理 / 端口 |
+| network | 17 | 端点 / 代理 / 端口 |
 | flag | 4 | 开关与逃生门（环境准入） |
-| credential | 10 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
 | plumbing | 55 | 内部管道（进程间传递的身份 / 标记） |
 
@@ -89,7 +89,6 @@
 | `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
-| `AIH_SERVER_CODEX_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
 
 ## flag（开关与逃生门（环境准入））
@@ -107,7 +106,6 @@
 | --- | --- | --- | --- |
 | `AIH_CLAUDE_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | 2 | 3 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/server/codex-app-server-stdio-proxy-cliresume.js<br>lib/server/codex-default-cli-launcher.js<br>…共 4 个 |
-| `AIH_CODEX_TOKEN_URL` | 2 | 0 | lib/cli/services/usage/codex-auth-invalid-reconciler.js<br>lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GEMINI_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_AUTH_PREFLIGHT` | 1 | 0 | lib/cli/services/pty/pty-runtime-run.js |
 | `AIH_GO_CORE_CLIENT_KEY` | 1 | 1 | lib/server/go-core-host.js |

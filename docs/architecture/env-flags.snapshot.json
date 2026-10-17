@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:10:30.241Z",
-  "total": 115,
+  "generatedAt": "2026-10-17T09:11:12.512Z",
+  "total": 113,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -428,17 +428,6 @@
       "reads": 2,
       "literals": 0,
       "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_TOKEN_URL",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
         "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
       "aliasConstants": []
@@ -936,16 +925,6 @@
       "literals": 0,
       "files": [
         "lib/runtime/native-cli-resolver.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_BASE_URL",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
       "aliasConstants": []
     },

@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:10:30.241Z
-> 共 **115** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:11:12.512Z
+> 共 **113** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，19）
@@ -28,7 +28,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，22）
+## network（端点 / 代理 / 端口，21）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -52,7 +52,6 @@
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
-| `AIH_SERVER_CODEX_BASE_URL` | — | 1 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
 
 ## flag（开关与逃生门（环境准入），5）
@@ -65,14 +64,13 @@
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），12）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），11）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_SERVER_MANAGEMENT_KEY` | ✅ | 22 | 管理面 key（公开；config 优先；空 = 管理面关闭） |
 | `AIH_CLAUDE_OAUTH_TOKEN` | — | 2 | 注入 claude CLI 的 OAuth token（沙箱运行） |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | — | 2 | 远程 codex 认证 token |
-| `AIH_CODEX_TOKEN_URL` | — | 2 | codex OAuth token 端点覆盖 |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
 | `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；含 Go Core；config 优先） |
 | `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检（内部/测试可关） |

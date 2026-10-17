@@ -967,8 +967,11 @@
       },
       "relayHosts": {
         "go": {
-          "supported": false,
-          "reason": "Go 无 grok 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
         },
         "node": {
           "supported": true,
@@ -1387,8 +1390,11 @@
       },
       "relayHosts": {
         "go": {
-          "supported": false,
-          "reason": "Go 无 kimi 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"
+          "supported": true,
+          "channel": "relay",
+          "entries": [
+            "gateway.openai.chat_completions"
+          ]
         },
         "node": {
           "supported": true,

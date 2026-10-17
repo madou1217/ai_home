@@ -423,16 +423,19 @@ test('池门模型级收窄：承载者全为透传通道才转发，混合/未�
     }),
     { defer: true, reason: 'model_alias' }
   );
-  // 承载者混合：kimi 在索引里也绑定这个模型（真有该模型的账号）→ 没有 Go 通道 → 交还。
+  // 承载者混合：kiro 在索引里也绑定这个模型（真有该模型的账号）→ 它没有 Go 通道 → 交还。
+  //
+  // 用 kiro 而不是 kimi：kimi 已接入 Go 的 relay 通道（2026-10-17），拿它做「没有 Go 通道」
+  // 的例子会让本用例失去意义。选例必须挑**当前确实不可服务**的 Provider。
   assert.deepEqual(
     explainGoRouteDeferral({
       entryId: INFERENCE_ENTRY,
       model: 'hy4-preview',
       state: {
-        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        accounts: { workbuddy: [{ accountRef: LIVE }], kiro: [{ accountRef: DOWN }] },
         modelAccountIndex: indexFor([
           [LIVE, 'workbuddy', ['hy4-preview']],
-          [DOWN, 'kimi', ['hy4-preview']]
+          [DOWN, 'kiro', ['hy4-preview']]
         ])
       },
       goRoutableModelIds: routable('hy4-preview')
@@ -446,10 +449,10 @@ test('池门模型级收窄：承载者全为透传通道才转发，混合/未�
       entryId: INFERENCE_ENTRY,
       model: 'hy4-preview',
       state: {
-        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        accounts: { workbuddy: [{ accountRef: LIVE }], kiro: [{ accountRef: DOWN }] },
         modelAccountIndex: indexFor([
           [LIVE, 'workbuddy', ['hy3-legacy']],
-          [DOWN, 'kimi', ['kimi-k3']]
+          [DOWN, 'kiro', ['kiro-model']]
         ])
       },
       goRoutableModelIds: routable('hy4-preview')
@@ -463,7 +466,7 @@ test('池门模型级收窄：承载者全为透传通道才转发，混合/未�
       entryId: INFERENCE_ENTRY,
       model: 'hy4-preview',
       state: {
-        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        accounts: { workbuddy: [{ accountRef: LIVE }], kiro: [{ accountRef: DOWN }] },
         modelAccountIndex: { ...indexFor([[LIVE, 'workbuddy', ['hy4-preview']]]), builtAt: 0 }
       },
       goRoutableModelIds: routable('hy4-preview')
@@ -476,7 +479,7 @@ test('池门模型级收窄：承载者全为透传通道才转发，混合/未�
       entryId: MESSAGES_ENTRY,
       model: 'hy4-preview',
       state: {
-        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        accounts: { workbuddy: [{ accountRef: LIVE }], kiro: [{ accountRef: DOWN }] },
         modelAccountIndex: indexFor([[LIVE, 'workbuddy', ['hy4-preview']]])
       },
       goRoutableModelIds: routable('hy4-preview')

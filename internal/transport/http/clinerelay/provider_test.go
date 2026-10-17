@@ -195,10 +195,10 @@ func TestAccessTokenRejectsDocumentWithoutClineSlot(t *testing.T) {
 // TestProviderResolvesOwnIDOnly 守单 Provider 通道的解析语义。
 func TestProviderResolvesOwnIDOnly(t *testing.T) {
 	provider := NewProvider("")
-	if _, ok := provider.Resolve("cline"); !ok {
+	if _, ok := provider.Resolve(relaycore.ResolveInput{ProviderID: "cline"}); !ok {
 		t.Fatal("cline 必须解析成功")
 	}
-	if _, ok := provider.Resolve("codebuddy"); ok {
+	if _, ok := provider.Resolve(relaycore.ResolveInput{ProviderID: "codebuddy"}); ok {
 		t.Fatal("家族 Provider 不得被 cline 通道解析")
 	}
 }

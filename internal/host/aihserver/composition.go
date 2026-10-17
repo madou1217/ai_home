@@ -62,13 +62,15 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
 	"github.com/madou1217/ai_home/internal/transport/http/clinerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
-	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
+	"github.com/madou1217/ai_home/internal/transport/http/grokrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
+	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
 )
@@ -837,6 +839,29 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 cline 透传账号来源失败: %w", err)
 	}
+	// grok 透传：与 cline 同属「多数派零覆盖」（标准 OpenAI 端点，无硬约束）。
+	grokRelayAccounts, err := newProviderRelayAccountSource(
+		grokrelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		grokRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 grok 透传账号来源失败: %w", err)
+	}
+	// kimi 透传：两处差异（设备指纹头 + 请求体字段翻译），且都**依赖账号**，
+	// 因此它的 Provider 是「按账号组装」的适配器（见 kimi_relay_provider.go）。
+	kimiRelayAccounts, err := newProviderRelayAccountSource(
+		kimirelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		kimiRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 kimi 透传账号来源失败: %w", err)
+	}
 	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
 	// + 合并的账号来源。
 	//
@@ -845,14 +870,24 @@ func newHandlers(
 	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
-			Accounts:    relaycore.NewAccountSourceChain(clineRelayAccounts, familyRelayAccounts),
+			Accounts: relaycore.NewAccountSourceChain(
+				clineRelayAccounts,
+				grokRelayAccounts,
+				kimiRelayAccounts,
+				familyRelayAccounts,
+			),
 			Fallback:    inference.handler,
 			Credentials: credentials,
 			Client:      relayClient,
 			Attempts:    accountRuntime,
 			Clock:       time.Now,
-			// 同一入口上还要服务 cline：把它的 Provider 接进链里。
-			ExtraProviders: []relaycore.Provider{clinerelay.NewProvider("")},
+			// 同一入口上还要服务 cline / grok / kimi：把它们的 Provider 接进链里。
+			// kimi 的 Provider 是「按账号组装」的适配器（设备指纹依赖账号）。
+			ExtraProviders: []relaycore.Provider{
+				clinerelay.NewProvider(""),
+				grokrelay.NewProvider(""),
+				newKimiRelayProvider(kimiClientVersion()),
+			},
 		},
 	)
 	if err != nil {

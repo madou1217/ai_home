@@ -276,22 +276,91 @@ type Handler struct {
 - Go `relayHosts.go` 改 `supported: true`
 - **验收**：真实 cline 账号端到端 200；`claude-*` 别名链路恢复；分类器连续 10 次全 200
 
-**M3 — 其余多数派批量接入**
-- opencode / kimi / grok：各自 `Provider` 也只声明端点与凭据（若确无差异）
-- 每接一个：Go `relayHosts.go` 改 true，守卫测试差异清单划掉一行
+**M3 — 其余多数派批量接入（进行中）**
+
+| provider | 形态 | 覆盖处 | 状态 |
+|---|---|---|---|
+| **grok** | 标准 OpenAI（`api.x.ai/v1`） | **零** | ✅ 已接入 |
+| **kimi** | 标准 OpenAI（按凭据分流端点） | **两处**（设备头 + 请求体翻译） | ✅ 已接入 |
+| opencode | **客户端仿真**（五条门禁） | 待设计 | ⏳ 见下 |
+| zcode | Anthropic 协议 | — | ❌ 不进 relaycore（需翻译） |
+| kiro | AWS Q 端点 | 待查 | ⏳ |
+
+**kimi 的两处差异**（这正是「形态一致但不全一致」的第二个样本）：
+
+1. **设备指纹头**（`X-Msh-*` 六项）——缺它上游按「非官方客户端」对待。
+   值的来源做成**可切换策略**（见下）。
+2. **请求体字段翻译**——`reasoning_effort` → `thinking{type,effort}`、
+   `max_tokens` → `max_completion_tokens`、流式补 `stream_options.include_usage`。
+   **原生字段优先**：已带 thinking / max_completion_tokens 的请求不动。
+
+**opencode 为什么单列**：它的免费档（占其流量 99.96%）有五条门禁——UA 必须四段式、
+必须带会话 id 头、id 必须结构合法、`tools` 必须含 `function.name === 'read'`、
+body 必须 `stream: true`。这不是「协议一致」而是**客户端仿真**，超出 relaycore 的准入
+边界（「上游线协议 == 客户端入口协议」）。它需要独立通道复用 relaycore 的编排骨架、
+覆盖门禁逻辑。用户已明确：**所有 provider 最终都要进 Go**，因此这项要做，只是单列。
+
+## 5.1 设备指纹策略（kimi 引入，可复用于其它需要客户端标识的 provider）
+
+背景：设备 id 的末级回落曾是 `crypto.randomUUID()` —— **同一账号每请求换一个指纹**，
+是风控最敏感的行为，而且静默。设备名/型号/OS 又直接取运行机器的信息，既泄漏宿主、
+也让 Node→Go 迁移时指纹突变。
+
+两种策略，**逐字段可选**（「id 要稳定、型号要真实」这类组合是合理的）：
+
+| 策略 | 行为 |
+|---|---|
+| `stable-derived`（默认） | 从账号确定性派生（`sha256("aih-device:" + accountRef + ":" + resetSeed)` 取前 32 位 hex 按 uuid 分段）；与运行机器无关，Node/Go 一致，迁移不变，不泄漏宿主 |
+| `host-derived` | 沿用历史行为（取运行机器的主机名/系统） |
+
+**存储位置**：账号凭据文档的 `native_auth_json.deviceProfile`。理由：它必须随凭据一起
+推送 Go（Go 侧要按同一策略解析同样的指纹）；存在凭据里，投影链路天然带过去。
+
+**重置**：`resetDeviceProfile()` 换派生种子。语义是「让上游看到一台新设备」，
+因此**可能触发风控而不是解除**——调用方（WebUI/CLI）负责把这个语义传达给用户，
+本函数不静默处理。
+
+**两侧同源**：Node `lib/account/device-profile.js` 与 Go `core/accounts/kimiidentity/device_profile.go`
+逐字段同算法，由跨语言守卫测试钉住（直接调 Node 实现比对，而不是各自断言）。
+
+## 5.2 客户端版本动态解析（kimi 引入）
+
+`X-Msh-Version` / `User-Agent` 自报的版本是上游识别客户端代际的依据。此前硬编码
+`0.36.0`，而本机真实 CLI 已是 **2.2.0**（差 6 个大版本）。
+
+三级解析（先本地、再远端、最后兜底）：
+
+| 档 | 来源 | 缓存 |
+|---|---|---|
+| ① | 本机 CLI 实测（`kimi --version`） | 1 小时（CLI 会自动更新） |
+| ② | **npm registry 最新版** —— 不要求装了 CLI | 24 小时 |
+| ③ | 代码内兜底常量 | — |
+
+请求路径只读缓存、不发网络请求；刷新由服务启动/定时任务负责。
+
+## 5.3 已知缺口：Go 侧缺模型 output limits
+
+Node 侧的 kimi 请求翻译在「既无 max_tokens 也无 max_completion_tokens」时会查
+models.dev 的 output limits 兜底。**Go 侧的模型元数据目前只有模态、没有 limits**，
+因此 Go 实现**如实留空**而不是编一个数字——编造预算会让上游按错误上限截断，比不传更糟。
+
+补齐需要先把 limits 引入 Go 的模型元数据（`internal/adapters/modelmetadata/modelsdev`）。
+在那之前，Go 路径上「两个预算字段都缺」的请求不会补默认值。
 
 ## 6. 验收标准
 
 | # | 标准 | 证据 |
 |---|---|---|
 | 1 | relaycore 内无 provider 名字面量 | `grep -n "codebuddy\|cline\|opencode" internal/transport/http/relaycore/` 无命中 |
-| 2 | 多数派零覆盖 | cline 的 Provider 只实现 Endpoint + AccessToken |
-| 3 | 差异局部化 | 家族的六处差异全在 `codebuddyfamilyrelay/provider.go` 一个文件 |
+| 2 | 多数派零覆盖 | cline / grok 的 Provider 只实现 Endpoint + AccessToken |
+| 3 | 差异局部化 | 家族的六处差异全在 `codebuddyfamilyrelay/provider.go` 一个文件；kimi 的两处在 `kimirelay/provider.go` |
 | 4 | 家族行为零变化 | 既有测试全绿且断言未改 |
 | 5 | 同协议边界 | zcode 不接入（上游 Anthropic 协议，需翻译） |
+| 6 | 设备指纹两侧一致 | 跨语言测试直接比对 Node 与 Go 的派生结果 |
+| 7 | 设备指纹稳定 | 同一账号重复派生结果相同（取代随机回落） |
 
 ## 7. 明确不做
 
 - **不做协议翻译**：上游协议 ≠ 入口协议的 provider（zcode）不进 relaycore
 - **不迁 canonical 三支**：codex / claude / agy 已有完整上游适配器，透传对它们无收益
-- **不改 Node 侧**：Node 的家族/cline 链路继续工作，Go 侧是并行通道
+- **不在 relaycore 里做客户端仿真**：opencode 免费档的门禁属独立通道的职责

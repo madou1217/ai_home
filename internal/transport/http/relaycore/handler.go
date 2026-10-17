@@ -262,12 +262,14 @@ func (handler *Handler) unavailableMessageText() string {
 	return handler.unavailableMessage
 }
 
-// servesProvider 判断本通道是否服务该 Provider（家族四支共用一个 Handler）。
-func (handler *Handler) servesProvider(providerID string) bool {
+// servesProvider 判断本通道是否服务该账号所属的 Provider。
+//
+// 传 accountRef 是因为解析可能依赖账号级信息（kimi 的设备指纹以账号引用为派生输入）。
+func (handler *Handler) servesProvider(providerID string, accountRef string) bool {
 	if handler == nil || handler.provider == nil {
 		return false
 	}
-	_, ok := handler.provider.Resolve(providerID)
+	_, ok := handler.provider.Resolve(ResolveInput{ProviderID: providerID, AccountRef: accountRef})
 	return ok
 }
 
@@ -389,7 +391,7 @@ func (source pinnedAccountSource) Accounts(
 		return nil, errNoRelayAccount
 	}
 	binding, _, err := source.handler.credentials.ResolveObservedCredentialBinding(ctx, source.accountRef)
-	if err != nil || !binding.IsValid() || !source.handler.servesProvider(binding.ProviderID()) {
+	if err != nil || !binding.IsValid() || !source.handler.servesProvider(binding.ProviderID(), source.accountRef.String()) {
 		return nil, errNoRelayAccount
 	}
 	return &singleAccountCursor{accountRef: source.accountRef}, nil
@@ -436,7 +438,7 @@ func (handler *Handler) attemptRelay(
 		binding.AccountRef() != accountRef ||
 		!observation.IsValid() ||
 		observation.AccountRef() != accountRef ||
-		!handler.servesProvider(binding.ProviderID()) {
+		!handler.servesProvider(binding.ProviderID(), accountRef.String()) {
 		// 凭据读取失败属该账号自身问题，换号可能成功。
 		return attemptOutcome{
 			route:        route,
@@ -448,7 +450,11 @@ func (handler *Handler) attemptRelay(
 			},
 		}, true
 	}
-	provider, ok := handler.provider.Resolve(binding.ProviderID())
+	provider, ok := handler.provider.Resolve(ResolveInput{
+		ProviderID: binding.ProviderID(),
+		AccountRef: accountRef.String(),
+		Credential: binding.Credential(),
+	})
 	if !ok {
 		// 账号属于本通道不服务的 Provider：交回 Canonical。
 		return attemptOutcome{

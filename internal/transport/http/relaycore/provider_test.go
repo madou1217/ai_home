@@ -71,13 +71,13 @@ func TestBaseProviderAccessTokenRefusesToGuess(t *testing.T) {
 // TestBaseProviderResolveOnlyAcceptsOwnID 守单 Provider 通道的默认解析语义。
 func TestBaseProviderResolveOnlyAcceptsOwnID(t *testing.T) {
 	base := NewBaseProvider("cline", "https://api.example.com")
-	if _, ok := base.Resolve("cline"); !ok {
+	if _, ok := base.Resolve(ResolveInput{ProviderID: "cline"}); !ok {
 		t.Fatal("同名必须解析成功")
 	}
-	if _, ok := base.Resolve("CLINE"); !ok {
+	if _, ok := base.Resolve(ResolveInput{ProviderID: "CLINE"}); !ok {
 		t.Fatal("解析必须大小写不敏感")
 	}
-	if _, ok := base.Resolve("kimi"); ok {
+	if _, ok := base.Resolve(ResolveInput{ProviderID: "kimi"}); ok {
 		t.Fatal("别的 Provider 不得解析成功")
 	}
 }

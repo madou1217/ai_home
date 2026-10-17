@@ -48,12 +48,12 @@ func (chain *ProviderChain) ID() string {
 // Resolve 依次询问每个成员，第一个认领该 Provider 的胜出。
 //
 // 顺序有意义：成员的认领范围应互不重叠（各自服务自己的 Provider 集），否则先声明者优先。
-func (chain *ProviderChain) Resolve(providerID string) (Provider, bool) {
+func (chain *ProviderChain) Resolve(input ResolveInput) (Provider, bool) {
 	if chain == nil {
 		return nil, false
 	}
 	for _, member := range chain.members {
-		if resolved, ok := member.Resolve(providerID); ok {
+		if resolved, ok := member.Resolve(input); ok {
 			return resolved, true
 		}
 	}

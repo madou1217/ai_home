@@ -69,8 +69,8 @@ func (provider Provider) ID() string { return provider.providerID }
 //
 // 差异只在该支的站点根（Origin/Referer 与上游 URL），因此换一个 providerID 即可，
 // 其余差异（改写 / UA / 信封）四支完全相同。
-func (provider Provider) Resolve(providerID string) (relaycore.Provider, bool) {
-	normalized := normalizeProvider(providerID)
+func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provider, bool) {
+	normalized := normalizeProvider(input.ProviderID)
 	if !IsFamilyProvider(normalized) {
 		return nil, false
 	}

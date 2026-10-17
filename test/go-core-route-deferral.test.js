@@ -224,25 +224,27 @@ test('every Node hand-off reports a reason so /readyz can break it down', () => 
     // 池门的模型级收窄：池里有 Go 服务不了的 Provider，但索引里没有任何账号绑定这个模型
     // （目录全已知且都不含它，或索引未建）→ 交还 Node 裁定，而不是由 Go 提前合成
     // no_available_account。
+    // 用 kiro 而不是 kimi：kimi 已接入 Go 的 relay 通道（2026-10-17），拿它做
+    // 「Go 服务不了」的例子会让本用例失去意义。选例必须挑当前确实不可服务的 Provider。
     ['pool_model_carriers_unknown', {
       ...base,
       entryId: 'gateway.openai.chat_completions',
       model: 'hy4-preview',
       state: {
-        accounts: { workbuddy: [{ accountRef: LIVE }], kimi: [{ accountRef: DOWN }] },
+        accounts: { workbuddy: [{ accountRef: LIVE }], kiro: [{ accountRef: DOWN }] },
         modelAccountIndex: {
           builtAt: 1,
           modelToAccounts: new Map([
             ['hy3-legacy', [LIVE]],
-            ['kimi-k3', [DOWN]]
+            ['kiro-model', [DOWN]]
           ]),
           accountToModels: new Map([
             [LIVE, new Set(['hy3-legacy'])],
-            [DOWN, new Set(['kimi-k3'])]
+            [DOWN, new Set(['kiro-model'])]
           ]),
           accountByRef: new Map([
             [LIVE, { accountRef: LIVE, provider: 'workbuddy' }],
-            [DOWN, { accountRef: DOWN, provider: 'kimi' }]
+            [DOWN, { accountRef: DOWN, provider: 'kiro' }]
           ])
         }
       },

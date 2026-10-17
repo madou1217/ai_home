@@ -318,7 +318,7 @@ func builtinGrok() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
-		RelayHosts:   relayHostsNodeOnly("Go 无 grok 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
@@ -460,7 +460,7 @@ func builtinKimi() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
-		RelayHosts:   relayHostsNodeOnly("Go 无 kimi 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
+		RelayHosts:   relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),

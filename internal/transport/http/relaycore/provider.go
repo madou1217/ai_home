@@ -15,12 +15,35 @@ import (
 // 留在 Handler 里由所有 Provider 共用；会变的按下面的方法逐条表达，每一条都对应某个
 // Provider 的真实约束（不是预设的扩展点）。
 //
+// ResolveInput 是「按账号解析 Provider 变体」的输入。
+//
+// 用结构体而不是散参数：解析所需的账号级信息会随 Provider 增加（家族要分支、
+// kimi 要账号引用派生设备指纹、将来可能有更多），结构体让新增字段不必改接口签名。
+type ResolveInput struct {
+	// ProviderID 是账号所属的 Provider。
+	ProviderID string
+	// AccountRef 是账号引用。设备指纹这类「必须按账号稳定」的值以它为派生输入。
+	AccountRef string
+	// Credential 是该账号的领域凭据，可能为 nil（调用方只做能力判定时不必读凭据）。
+	//
+	// 为什么放进这里：有些差异面**同时**依赖账号与凭据 —— kimi 的设备 id 优先取凭据里
+	// 官方声明的 device_id，取不到才按账号策略派生。把凭据交给 Resolve，Provider 变体
+	// 就能在构造时把两项都定下来，DecorateUpstream 不必再关心凭据。
+	Credential accountapp.Credential
+}
+
+// Provider 描述一个同协议透传通道的**差异面**。
+//
+// 设计原则：接口只暴露**会变**的东西。不变的（尝试循环、响应交付、记账、交还 Canonical）
+// 留在 Handler 里由所有 Provider 共用；会变的按下面的方法逐条表达，每一条都对应某个
+// Provider 的真实约束（不是预设的扩展点）。
+//
 // 实现方式：嵌入 BaseProvider 拿默认行为，只覆盖真正不同的方法。
 type Provider interface {
 	// ID 返回本 Provider 的标识（用于归属响应头与日志）。
 	ID() string
 
-	// Resolve 给定账号所属的 Provider ID，返回服务它的 Provider 变体。
+	// Resolve 按账号解析出服务它的 Provider 变体。
 	//
 	// 为什么需要它：一个透传通道可能服务多个 Provider ID —— 家族四支
 	// （codebuddy / codebuddycn / workbuddy / workbuddycn）共用一个 Handler，
@@ -28,7 +51,7 @@ type Provider interface {
 	// 返回 false 表示本通道不服务该 Provider（调用方交还 Canonical）。
 	//
 	// 单 Provider 的通道（如 cline）由 BaseProvider 默认实现处理：ID 相等即可。
-	Resolve(providerID string) (Provider, bool)
+	Resolve(input ResolveInput) (Provider, bool)
 
 	// Endpoint 解析上游 URL。返回 false 表示该 Provider 本通道表达不了（交还 Canonical）。
 	Endpoint() (string, bool)
@@ -97,8 +120,8 @@ func (base BaseProvider) ID() string { return base.providerID }
 // Resolve 是单 Provider 通道的默认实现：只有 ID 相等才认。
 //
 // 多 Provider 通道（家族四支共用一个 Handler）覆盖它，按账号所属支返回对应变体。
-func (base BaseProvider) Resolve(providerID string) (Provider, bool) {
-	if strings.EqualFold(strings.TrimSpace(providerID), base.providerID) {
+func (base BaseProvider) Resolve(input ResolveInput) (Provider, bool) {
+	if strings.EqualFold(strings.TrimSpace(input.ProviderID), base.providerID) {
 		return base, true
 	}
 	return nil, false

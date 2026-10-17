@@ -452,11 +452,9 @@ test('a kernel installed after the fact is picked up without restarting the serv
   assert.deepEqual([sidecar.availability().available, sidecar.availability().version], [true, '1.13.19']);
 });
 
-test('relay credentials come from the environment, else a private file that survives restarts', () => {
+test('relay credentials live in a private file that survives restarts', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-creds-'));
   try {
-    const fromEnv = resolveRelayCredentials({ runDir: dir, env: { AIH_RELAY_USERNAME: 'u1', AIH_RELAY_PASSWORD: 'p1' } });
-    assert.deepEqual([fromEnv.username, fromEnv.password, fromEnv.source], ['u1', 'p1', 'env']);
     const generated = resolveRelayCredentials({ runDir: dir, env: {} });
     assert.equal(generated.source, 'generated');
     assert.ok(generated.password.length >= 16);

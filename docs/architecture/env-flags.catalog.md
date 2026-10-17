@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:02:52.614Z
-> 共 **157** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:04:04.648Z
+> 共 **153** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -29,7 +29,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，27）
+## network（端点 / 代理 / 端口，26）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -56,7 +56,6 @@
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
 | `AIH_SERVER_CODEX_BASE_URL` | — | 1 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
-| `AIH_SERVER_MANAGEMENT_URL` | — | 1 | ⚠ 管理入口 URL（脚本/远程管理用；待确认具体调用点） |
 | `AIH_SSH_CLIP_SHIM_TTY` | — | 1 | shim 是否占用 TTY |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 1 | 终端剪贴板经 tmux 透传 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
@@ -78,7 +77,7 @@
 | --- | --- | --- | --- |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），19）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），18）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -98,7 +97,6 @@
 | `AIH_GO_CORE_CLIENT_KEY` | — | 1 | 传给 Go Core 的客户端 key |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | — | 1 | 传给 Go Core 的管理 key |
 | `AIH_OPENCODE_GATEWAY_KEY` | — | 1 | opencode 网关 key 覆盖 |
-| `AIH_RELAY_PASSWORD` | — | 1 | 中转 SOCKS5 密码（默认从 run/credentials.json 取） |
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | — | 0 | claude 凭据类型标记（oauth / api-key），透传给 CLI |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | — | 0 | 本地 codex app-server 远程控制 token |
 
@@ -108,7 +106,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），83）
+## plumbing（内部管道（进程间传递的身份 / 标记），81）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -147,12 +145,10 @@
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
 | `AIH_PERSIST_ACTIVE` | — | 1 | 当前已在持久会话内（防嵌套） |
 | `AIH_PERSIST_DETACHED` | — | 1 | 持久会话由 restore 以 detached 方式创建 |
-| `AIH_RELAY_USERNAME` | — | 1 | 中转 SOCKS5 用户名（由节点 id 派生） |
 | `AIH_RUNTIME_SHOW_USAGE` | — | 1 | 运行时显示用量 |
 | `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
-| `AIH_SHELL_DRAWER_HEIGHT` | — | 1 | shell drawer 高度 |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TERMINAL_ICON_AUTO` | — | 1 | 自动设置终端图标 |
 | `AIH_TERMINAL_ICON_STRATEGY` | — | 1 | 终端图标策略 |

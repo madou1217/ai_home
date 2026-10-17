@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:02:52.614Z
-> 覆盖 `lib / bin / scripts / core`，共 **147** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:04:04.648Z
+> 覆盖 `lib / bin / scripts / core`，共 **143** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,12 +9,12 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 18 | 数据/目录/仓库路径 |
-| network | 23 | 端点 / 代理 / 端口 |
+| network | 22 | 端点 / 代理 / 端口 |
 | flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 1 | 可调参数（超时 / TTL / 上限） |
-| credential | 17 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| credential | 16 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 82 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 80 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -94,7 +94,6 @@
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_SERVER_CODEX_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_SERVER_MANAGEMENT_URL` | 1 | 0 | lib/cli/bootstrap/runtime-support-wiring.js |
 | `AIH_SSH_CLIP_SHIM_TTY` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 1 | 0 | lib/cli/services/ssh-clipboard/terminal-probe.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
@@ -133,7 +132,6 @@
 | `AIH_GO_CORE_CLIENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_KEY` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
-| `AIH_RELAY_PASSWORD` | 1 | 0 | lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js |
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | 0 | 2 | lib/account/claude-credential.js<br>lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | 0 | 1 | lib/server/codex-tui-local-app-server.js |
 
@@ -182,12 +180,10 @@
 | `AIH_OPENCODE_GATEWAY_BYOK` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_PERSIST_ACTIVE` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_DETACHED` | 1 | 1 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/runtime/persistent-session.js |
-| `AIH_RELAY_USERNAME` | 1 | 0 | lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js |
 | `AIH_RUNTIME_SHOW_USAGE` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_SERVER_CODEX_CLI_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/cli/services/server/go-core-supervisor.js<br>lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_SHELL_DRAWER_HEIGHT` | 1 | 0 | lib/cli/services/pty/shell-drawer.js |
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
 | `AIH_TERMINAL_ICON_AUTO` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_TERMINAL_ICON_STRATEGY` | 1 | 0 | lib/cli/services/terminal-icon-strategies.js |

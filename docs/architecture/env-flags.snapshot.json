@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T06:02:52.614Z",
-  "total": 157,
+  "generatedAt": "2026-10-17T06:04:04.648Z",
+  "total": 153,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1120,26 +1120,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_RELAY_PASSWORD",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_USERNAME",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RUNTIME_ENABLE_USAGE_SCHEDULER",
       "category": "flag",
       "reads": 1,
@@ -1202,16 +1182,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SERVER_MANAGEMENT_URL",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/bootstrap/runtime-support-wiring.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_UPSTREAM_ERROR_RULES",
       "category": "plumbing",
       "reads": 1,
@@ -1220,16 +1190,6 @@
         "lib/cli/services/server/go-core-supervisor.js",
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SHELL_DRAWER_HEIGHT",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/shell-drawer.js"
       ],
       "aliasConstants": []
     },

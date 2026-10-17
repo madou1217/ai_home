@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:03:43.376Z
-> 共 **318** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:05:09.457Z
+> 共 **308** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -90,20 +90,13 @@
 | `AIH_WEBTRANSPORT_PAGE_URL` | — | 0 | WebTransport 探测页 URL |
 | `AIH_WEBTRANSPORT_URL` | — | 0 | fabric WebTransport 端点 |
 
-## flag（开关与逃生门（环境准入），18）
+## flag（开关与逃生门（环境准入），11）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_AGY_WARM_DEBUG` | — | 2 | agy 暖机池调试日志 |
 | `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | — | 2 | 启用 codex stop hook 通知 |
-| `AIH_DEBUG_CODE_ASSIST_MODELS` | — | 2 | 打印 code-assist 模型档位原始响应 |
-| `AIH_DEBUG_CODE_ASSIST_MODELS_DUMP` | — | 2 | 把该原始响应写入指定文件 |
-| `AIH_DEBUG_MODEL_CHAIN` | — | 2 | 打印模型尝试链（排障路由用） |
-| `AIH_PLUGIN_DEBUG` | — | 2 | 插件 RPC 错误附带堆栈 |
-| `AIH_ACCOUNT_ARTIFACT_HOOK_DEBUG` | — | 1 | 账号产物 hook 调试日志 |
 | `AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS` | — | 1 | 无证据诊断的冷却时间（本质是调参） |
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | — | 1 | 禁止自动附加远程 resume 参数 |
-| `AIH_DEBUG_PERSIST` | — | 1 | 持久会话调试日志 |
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
@@ -203,7 +196,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），149）
+## plumbing（内部管道（进程间传递的身份 / 标记），146）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -257,8 +250,6 @@
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
 | `AIH_AUTO_INSTALL_AGE` | — | 1 | 自动安装 Antigravity 的开关 |
 | `AIH_CJK_LOCALE` | — | 1 | CJK locale 判定开关 |
-| `AIH_CLAUDE_DIAGNOSTIC_STDOUT` | — | 1 | 诊断输出到 stdout |
-| `AIH_CLAUDE_DIAGNOSTIC_VERBOSE` | — | 1 | 诊断详细模式 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | — | 1 | 批量用量回退到 app-server 读取 |
 | `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（跳过 CLI） |
@@ -296,10 +287,9 @@
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TERMINAL_ICON_AUTO` | — | 1 | 自动设置终端图标 |
 | `AIH_TERMINAL_ICON_STRATEGY` | — | 1 | 终端图标策略 |
+| `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
-| `AIH_USAGE_SCAN_QUIET` | — | 1 | 强制静默用量扫描输出 |
-| `AIH_USAGE_SCAN_VERBOSE` | — | 1 | 用量扫描详细输出 |
 | `AIH_WARP_PROVIDER_ICON` | — | 1 | Warp 的 provider 图标覆盖 |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:03:43.376Z
-> 覆盖 `lib / bin / scripts / core`，共 **308** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:05:09.457Z
+> 覆盖 `lib / bin / scripts / core`，共 **298** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | path | 21 | 数据/目录/仓库路径 |
 | network | 49 | 端点 / 代理 / 端口 |
-| flag | 17 | 开关与逃生门（环境准入） |
+| flag | 10 | 开关与逃生门（环境准入） |
 | tuning | 48 | 可调参数（超时 / TTL / 上限） |
 | credential | 23 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 148 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 145 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -132,16 +132,9 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_AGY_WARM_DEBUG` | 2 | 0 | lib/server/agy-warm-ls-pool.js |
 | `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | 2 | 0 | lib/account/host-sync.js<br>lib/server/codex-project-registry.js |
-| `AIH_DEBUG_CODE_ASSIST_MODELS` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_DEBUG_CODE_ASSIST_MODELS_DUMP` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_DEBUG_MODEL_CHAIN` | 2 | 0 | lib/server/model-discovery/index.js |
-| `AIH_PLUGIN_DEBUG` | 2 | 0 | lib/plugins/transport/rpc-server.js |
-| `AIH_ACCOUNT_ARTIFACT_HOOK_DEBUG` | 1 | 1 | lib/cli/app.js |
 | `AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | 1 | 0 | lib/server/codex-app-server-stdio-proxy-cliresume.js |
-| `AIH_DEBUG_PERSIST` | 1 | 0 | lib/cli/services/pty/persistent-launch.js |
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | 1 | 0 | lib/cli/services/pty/usage-status-runtime.js |
@@ -292,8 +285,6 @@
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
 | `AIH_AUTO_INSTALL_AGE` | 1 | 0 | lib/cli/services/backup/crypto.js |
 | `AIH_CJK_LOCALE` | 1 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
-| `AIH_CLAUDE_DIAGNOSTIC_STDOUT` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
-| `AIH_CLAUDE_DIAGNOSTIC_VERBOSE` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
 | `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | 1 | 0 | lib/cli/services/usage/presenter.js |
 | `AIH_CODEX_USAGE_DIRECT` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
@@ -331,10 +322,9 @@
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
 | `AIH_TERMINAL_ICON_AUTO` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_TERMINAL_ICON_STRATEGY` | 1 | 0 | lib/cli/services/terminal-icon-strategies.js |
+| `AIH_TRACE` | 1 | 0 | lib/runtime/trace.js |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
 | `AIH_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/account/go-bridge/go-import-translator.js<br>lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>…共 4 个 |
-| `AIH_USAGE_SCAN_QUIET` | 1 | 0 | lib/cli/services/usage/presenter.js |
-| `AIH_USAGE_SCAN_VERBOSE` | 1 | 0 | lib/cli/services/usage/presenter.js |
 | `AIH_WARP_PROVIDER_ICON` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | 1 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_WT_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |

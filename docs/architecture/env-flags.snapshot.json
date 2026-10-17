@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:03:43.376Z",
-  "total": 318,
+  "generatedAt": "2026-10-17T05:05:09.457Z",
+  "total": 308,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -460,16 +460,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_AGY_WARM_DEBUG",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/agy-warm-ls-pool.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_AGY_WARM_MAX",
       "category": "tuning",
       "reads": 2,
@@ -668,36 +658,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_DEBUG_CODE_ASSIST_MODELS",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEBUG_CODE_ASSIST_MODELS_DUMP",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEBUG_MODEL_CHAIN",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/model-discovery/index.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_FABRIC_ENDPOINT",
       "category": "network",
       "reads": 2,
@@ -824,16 +784,6 @@
       "literals": 0,
       "files": [
         "lib/server/opencode-plugin-hook-config.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PLUGIN_DEBUG",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/plugins/transport/rpc-server.js"
       ],
       "aliasConstants": []
     },
@@ -1556,16 +1506,6 @@
       ]
     },
     {
-      "name": "AIH_ACCOUNT_ARTIFACT_HOOK_DEBUG",
-      "category": "flag",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/app.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_ACCOUNT_SMOKE_CLIENT_KEY",
       "category": "credential",
       "reads": 1,
@@ -1628,26 +1568,6 @@
     {
       "name": "AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS",
       "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/claude-diagnostic-scheduler.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_DIAGNOSTIC_STDOUT",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/claude-diagnostic-scheduler.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_DIAGNOSTIC_VERBOSE",
-      "category": "plumbing",
       "reads": 1,
       "literals": 0,
       "files": [
@@ -1794,16 +1714,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEBUG_PERSIST",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/persistent-launch.js"
       ],
       "aliasConstants": []
     },
@@ -2538,6 +2448,16 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_TRACE",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/runtime/trace.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_UPSTREAM_ERROR_GROUP_IDS",
       "category": "plumbing",
       "reads": 1,
@@ -2559,26 +2479,6 @@
         "lib/account/official-account-rules-cleanup.js",
         "lib/account/upstream-error-rules.js",
         "lib/server/webui-account-live.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_SCAN_QUIET",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_SCAN_VERBOSE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
       ],
       "aliasConstants": []
     },

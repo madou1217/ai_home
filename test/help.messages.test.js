@@ -37,7 +37,7 @@ test('root help explains remote defaults and the Server Management Key contract'
   assert.match(output, /tmux passthrough/);
   assert.match(output, /strict zero-client cannot fetch the client's clipboard image/);
   assert.match(output, /Non-zero-client fallback is explicit opt-in/);
-  assert.match(output, /AIH_SSH_CLIP_AGENT=1/);
+  assert.match(output, /AIH_SSH_CLIPBOARD=agent=1/);
   assert.match(output, /aih clip-agent start/);
   assert.match(output, /RemoteForward \/tmp\/aih-clip-%r\.sock 127\.0\.0\.1:17652/);
   assert.match(output, /separate non-zero-client wrapper fallback/);

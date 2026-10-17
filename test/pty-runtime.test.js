@@ -15,6 +15,7 @@ const { writeAccountCredentials } = require('../lib/server/account-credential-st
 const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
 const { readShimContextField } = require('../lib/cli/services/ssh-clipboard/shim-context');
+const { CLIPBOARD_CONTEXT_ENV, serializeClipboardContext } = require('../lib/cli/services/ssh-clipboard/clipboard-context');
 const { readOpencodeGatewayField } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
@@ -6071,7 +6072,7 @@ test('runtime falls back to SSH clip-agent only after explicit opt-in and termin
     const { runtime, proc, ptyWrites, writes } = createRuntimeHarness({
       SSH_CONNECTION: '192.0.2.10 50000 192.0.2.20 22',
       SSH_TTY: `/dev/pts/clip-agent-fallback-${process.pid}`,
-      AIH_SSH_CLIP_AGENT: '1'
+      [CLIPBOARD_CONTEXT_ENV]: serializeClipboardContext({ agent: '1' })
     }, {
       platform: 'linux',
       fetchSshClipAgentImage: async () => {
@@ -6124,7 +6125,7 @@ test('runtime keeps strict zero-client default and does not probe clip-agent wit
   const { runtime, proc, ptyWrites, writes } = createRuntimeHarness({
     SSH_CONNECTION: '192.0.2.10 50000 192.0.2.20 22',
     SSH_TTY: sshTty,
-    AIH_SSH_TERMINAL_CLIPBOARD: '0'
+    [CLIPBOARD_CONTEXT_ENV]: serializeClipboardContext({ terminal: '0' })
   }, {
     platform: 'linux',
     fetchSshClipAgentImage: async (options) => {

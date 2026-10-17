@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-17T04:23:06.536Z",
+  "generatedAt": "2026-10-17T04:35:26.450Z",
   "total": 330,
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
@@ -92,7 +92,7 @@
       "name": "AIH_SERVER_PROXY_URL",
       "category": "network",
       "reads": 18,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
         "lib/cli/services/usage/snapshot.js",
@@ -100,6 +100,7 @@
         "lib/server/args.js",
         "lib/server/go-core-proxy-guard.js",
         "lib/server/http-utils-utils.js",
+        "lib/server/server-config-schema.js",
         "lib/usage/quota/probes/cline.js",
         "lib/usage/quota/probes/qoder-family.js"
       ],
@@ -109,13 +110,14 @@
       "name": "AIH_SERVER_NO_PROXY",
       "category": "network",
       "reads": 17,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/cli/services/usage/snapshot.js",
         "lib/cli/services/usage/usage-snapshot-codex.js",
         "lib/server/args.js",
         "lib/server/go-core-proxy-guard.js",
         "lib/server/http-utils-utils.js",
+        "lib/server/server-config-schema.js",
         "lib/usage/quota/probes/cline.js",
         "lib/usage/quota/probes/qoder-family.js"
       ],
@@ -144,11 +146,12 @@
       "name": "AIH_SERVER_MANAGEMENT_KEY",
       "category": "credential",
       "reads": 11,
-      "literals": 2,
+      "literals": 3,
       "files": [
         "lib/cli/bootstrap/runtime-support-wiring.js",
         "lib/plugins/control/cli.js",
         "lib/server/args.js",
+        "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js",
         "scripts/collect-env-flags.js"
       ],
@@ -189,10 +192,11 @@
       "name": "AIH_SERVER_PORT",
       "category": "network",
       "reads": 6,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/server/args.js",
         "lib/server/opencode-plugin-hook-config.js",
+        "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js"
       ],
       "aliasConstants": []
@@ -265,10 +269,11 @@
       "name": "AIH_RELAY_UDP",
       "category": "plumbing",
       "reads": 4,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js"
+        "lib/server/relay-udp-front.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -276,10 +281,11 @@
       "name": "AIH_RELAY_UDP_ADVERTISE_HOST",
       "category": "network",
       "reads": 4,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js"
+        "lib/server/relay-udp-front.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -287,10 +293,11 @@
       "name": "AIH_RELAY_UDP_ADVERTISE_PORT",
       "category": "network",
       "reads": 4,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/server/command-handler.js",
-        "lib/server/relay-udp-front.js"
+        "lib/server/relay-udp-front.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -298,9 +305,10 @@
       "name": "AIH_SERVER_HOST",
       "category": "network",
       "reads": 4,
-      "literals": 0,
+      "literals": 1,
       "files": [
         "lib/server/args.js",
+        "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js"
       ],
       "aliasConstants": []
@@ -376,6 +384,30 @@
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js",
         "lib/server/codex-client-version.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RELAY_LISTEN_HOST",
+      "category": "network",
+      "reads": 3,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js",
+        "lib/server/command-handler.js",
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RELAY_PORT_MODE",
+      "category": "network",
+      "reads": 3,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js",
+        "lib/server/command-handler.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -905,9 +937,10 @@
       "name": "AIH_SERVER_API_KEY",
       "category": "credential",
       "reads": 2,
-      "literals": 1,
+      "literals": 2,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -945,9 +978,10 @@
       "name": "AIH_SERVER_CLIENT_KEY",
       "category": "credential",
       "reads": 2,
-      "literals": 1,
+      "literals": 2,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1095,9 +1129,10 @@
       "name": "AIH_SERVER_MAX_ATTEMPTS",
       "category": "tuning",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1145,9 +1180,10 @@
       "name": "AIH_SERVER_MODELS_PROBE_ACCOUNTS",
       "category": "test",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1265,9 +1301,10 @@
       "name": "AIH_SERVER_WINDOW_ACTIVATION",
       "category": "plumbing",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1285,9 +1322,10 @@
       "name": "AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS",
       "category": "tuning",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1295,9 +1333,10 @@
       "name": "AIH_SERVER_WINDOW_ACTIVATION_MIN_INTERVAL_MS",
       "category": "tuning",
       "reads": 2,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/server/args.js"
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -2027,9 +2066,10 @@
       "name": "AIH_GO_CORE_ENABLED",
       "category": "flag",
       "reads": 1,
-      "literals": 1,
+      "literals": 2,
       "files": [
-        "lib/server/go-core-host.js"
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -2057,9 +2097,10 @@
       "name": "AIH_GO_CORE_ROUTES",
       "category": "plumbing",
       "reads": 1,
-      "literals": 1,
+      "literals": 2,
       "files": [
-        "lib/server/go-core-host.js"
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -2201,32 +2242,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_RELAY_LISTEN_HOST",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RELAY_PASSWORD",
       "category": "credential",
       "reads": 1,
       "literals": 0,
       "files": [
         "lib/cli/services/toolkit/subscription-aggregator/relay/relay-credentials.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_PORT_MODE",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js"
       ],
       "aliasConstants": []
     },
@@ -2402,10 +2423,11 @@
       "name": "AIH_SERVER_UPSTREAM_ERROR_RULES",
       "category": "plumbing",
       "reads": 1,
-      "literals": 2,
+      "literals": 3,
       "files": [
         "lib/cli/services/server/go-core-supervisor.js",
-        "lib/server/go-core-host.js"
+        "lib/server/go-core-host.js",
+        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },

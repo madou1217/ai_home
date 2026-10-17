@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:40:26.357Z
-> 共 **95** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:50:02.267Z
+> 共 **94** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，14）
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），49）
+## plumbing（内部管道（进程间传递的身份 / 标记），48）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -100,8 +100,6 @@
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
 | `AIH_RUNTIME_SHOW_USAGE` | — | 1 | 运行时显示用量 |
-| `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
-| `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
 | `AIH_SESSION_INTENT` | — | 1 | 会话意图（label/resume/mirror/target/active/detached 六项合一） |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
@@ -112,6 +110,7 @@
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
+| `AIH_CODEX_HOOKS` | — | 0 | codex hook 安装开关（cli/desktop/none 列表） |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_LAUNCH_CONTEXT` | — | 0 | 单文件启动上下文：父进程写 0600 JSON，子进程只收文件路径（取代一批零散 AIH_* 上下文字段） |

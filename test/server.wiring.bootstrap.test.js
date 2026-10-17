@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createServerWiring } = require('../lib/cli/bootstrap/server-wiring');
-const { isEnvEnabled } = require('../lib/cli/config/env-flags');
+const { CODEX_HOOKS_ENV, parseCodexHookFlags } = require('../lib/cli/config/codex-hooks');
 
 function captureCodexCliHookFlag(enableCodexCliHook) {
   let received;
@@ -17,16 +17,18 @@ function captureCodexCliHookFlag(enableCodexCliHook) {
   return received;
 }
 
-test('Codex CLI hook env flag reaches the server composition with an enabled default', () => {
+test('Codex hook flags reach the server composition with an enabled default', () => {
   const cases = [
-    { env: {}, expected: true },
-    { env: { AIH_SERVER_CODEX_CLI_HOOK: 'true' }, expected: true },
-    { env: { AIH_SERVER_CODEX_CLI_HOOK: '0' }, expected: false }
+    { env: {}, cli: true, desktop: true },
+    { env: { [CODEX_HOOKS_ENV]: 'cli' }, cli: true, desktop: false },
+    { env: { [CODEX_HOOKS_ENV]: '0' }, cli: false, desktop: false }
   ];
 
-  cases.forEach(({ env, expected }) => {
-    const enabled = isEnvEnabled('AIH_SERVER_CODEX_CLI_HOOK', true, env);
-    assert.equal(captureCodexCliHookFlag(enabled), expected);
+  cases.forEach(({ env, cli, desktop }) => {
+    const flags = parseCodexHookFlags(env[CODEX_HOOKS_ENV]);
+    assert.equal(flags.cli, cli);
+    assert.equal(flags.desktop, desktop);
+    assert.equal(captureCodexCliHookFlag(flags.cli), cli);
   });
 });
 

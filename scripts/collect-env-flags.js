@@ -16,6 +16,7 @@
  */
 
 const fs = require('node:fs');
+const childProcess = require('node:child_process');
 const path = require('node:path');
 
 const {
@@ -58,6 +59,21 @@ const READ_PATTERNS = [
 const NAME_CONSTANT_PATTERN = /(?:const|let|var)\s+([A-Z][A-Z0-9_]*_ENV)\s*=\s*['"](AIH_[A-Z0-9_]+)['"]/g;
 const LITERAL_PATTERN = /['"](AIH_[A-Z0-9_]+)['"]/g;
 
+// 只扫描 git 索引里的文件：并行会话/实验留下的未跟踪草稿不该进入生成的清单，
+// 否则文档会提前出现尚未提交的变量名（提交时再生成本地快照即可）。
+function listTrackedFiles() {
+  try {
+    const output = childProcess.execFileSync('git', ['ls-files', '-z'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    return new Set(output.split('\0').filter(Boolean).map((item) => item.split('/').join(path.sep)));
+  } catch (_error) {
+    return null;
+  }
+}
+
 function listFiles(dir, out = []) {
   let entries = [];
   try {
@@ -90,7 +106,10 @@ function categorize(name) {
 }
 
 function collect() {
-  const files = SCAN_ROOTS.flatMap((root) => listFiles(path.join(ROOT, root)));
+  const tracked = listTrackedFiles();
+  const files = SCAN_ROOTS
+    .flatMap((root) => listFiles(path.join(ROOT, root)))
+    .filter((file) => !tracked || tracked.has(path.relative(ROOT, file)));
   const vars = new Map();
   const nameConstants = new Map();
 

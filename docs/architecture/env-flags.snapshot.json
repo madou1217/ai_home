@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:40:26.357Z",
-  "total": 95,
+  "generatedAt": "2026-10-17T09:50:02.267Z",
+  "total": 94,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -22,6 +22,7 @@
     "BRIDGE_IDENTITY_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
+    "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
     "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
@@ -762,26 +763,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SERVER_CODEX_CLI_HOOK",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/app.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_HOOK",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/app.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_UPSTREAM_ERROR_RULES",
       "category": "plumbing",
       "reads": 1,
@@ -907,6 +888,18 @@
       ],
       "aliasConstants": [
         "CODEX_APP_SERVER_PASSTHROUGH_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_HOOKS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/config/codex-hooks.js"
+      ],
+      "aliasConstants": [
+        "CODEX_HOOKS_ENV"
       ]
     },
     {

@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:51.697Z
-> 共 **176** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:43:29.589Z
+> 共 **173** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，21）
@@ -30,7 +30,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，37）
+## network（端点 / 代理 / 端口，34）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -54,7 +54,6 @@
 | `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
-| `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_DEPLOY_SSH` | — | 1 | 部署脚本默认 SSH 目标 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
@@ -62,9 +61,7 @@
 | `AIH_SERVER_CODEX_BASE_URL` | — | 1 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
 | `AIH_SERVER_MANAGEMENT_URL` | — | 1 | ⚠ 管理入口 URL（脚本/远程管理用；待确认具体调用点） |
 | `AIH_SSH_CLIP_SHIM_TTY` | — | 1 | shim 是否占用 TTY |
-| `AIH_SSH_CLIP_WATCH` | — | 1 | 剪贴板监视开关 |
-| `AIH_SSH_CLIPBOARD_SHIMS` | — | 1 | 要安装的剪贴板 shim 列表（pbcopy/xclip 等） |
-| `AIH_SSH_TERMINAL_PASTE_EVENTS` | — | 1 | 粘贴事件识别开关 |
+| `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 1 | 终端剪贴板经 tmux 透传 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
 | `AIH_TURN_ICE_SERVER` | — | 0 | TURN 服务器（单个） |
 | `AIH_TURN_ICE_SERVERS` | — | 0 | TURN 服务器列表（逗号分隔） |

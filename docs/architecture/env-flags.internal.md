@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:42:51.697Z
-> 覆盖 `lib / bin / scripts / core`，共 **166** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:43:29.589Z
+> 覆盖 `lib / bin / scripts / core`，共 **163** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,7 +9,7 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 19 | 数据/目录/仓库路径 |
-| network | 33 | 端点 / 代理 / 端口 |
+| network | 30 | 端点 / 代理 / 端口 |
 | flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 1 | 可调参数（超时 / TTL / 上限） |
 | credential | 19 | 凭据与密钥（文档只写变量名，绝不放真实值） |
@@ -92,7 +92,6 @@
 | `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
-| `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/terminal-probe.js |
 | `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_DEPLOY_SSH` | 1 | 0 | scripts/deploy-server.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
@@ -100,9 +99,7 @@
 | `AIH_SERVER_CODEX_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_SERVER_MANAGEMENT_URL` | 1 | 0 | lib/cli/bootstrap/runtime-support-wiring.js |
 | `AIH_SSH_CLIP_SHIM_TTY` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
-| `AIH_SSH_CLIP_WATCH` | 1 | 0 | lib/cli/services/ssh-clipboard/ssh-command.js |
-| `AIH_SSH_CLIPBOARD_SHIMS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-shims.js |
-| `AIH_SSH_TERMINAL_PASTE_EVENTS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js |
+| `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 1 | 0 | lib/cli/services/ssh-clipboard/terminal-probe.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
 | `AIH_TURN_ICE_SERVER` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |
 | `AIH_TURN_ICE_SERVERS` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |

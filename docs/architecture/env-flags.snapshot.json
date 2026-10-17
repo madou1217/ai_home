@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:42:51.697Z",
-  "total": 176,
+  "generatedAt": "2026-10-17T05:43:29.589Z",
+  "total": 173,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -715,17 +715,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js",
-        "lib/cli/services/ssh-clipboard/terminal-probe.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_TERMINAL_PROVIDER_TITLE",
       "category": "plumbing",
       "reads": 2,
@@ -1354,32 +1343,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_WATCH",
+      "name": "AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH",
       "category": "network",
       "reads": 1,
       "literals": 0,
       "files": [
-        "lib/cli/services/ssh-clipboard/ssh-command.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIPBOARD_SHIMS",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_TERMINAL_PASTE_EVENTS",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js"
+        "lib/cli/services/ssh-clipboard/terminal-probe.js"
       ],
       "aliasConstants": []
     },

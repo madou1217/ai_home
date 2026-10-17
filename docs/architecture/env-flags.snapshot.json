@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T06:04:04.648Z",
-  "total": 153,
+  "generatedAt": "2026-10-17T07:58:03.302Z",
+  "total": 147,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -778,26 +778,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/claude-diagnostic-scheduler.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/claude-diagnostic-scheduler.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_AUTH_PREFLIGHT",
       "category": "credential",
       "reads": 1,
@@ -1019,16 +999,6 @@
       "files": [
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_KONSOLE_PROVIDER_PROFILE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },
@@ -1264,6 +1234,16 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_TERMINAL_TITLE_AUTO",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/terminal-icons.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_TRACE",
       "category": "plumbing",
       "reads": 1,
@@ -1459,26 +1439,6 @@
       "files": [
         "lib/account/go-bridge/go-import-translator.js",
         "lib/server/upstream-account-profile.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_ITERM_PROVIDER_ICON_AUTO",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_KONSOLE_PROVIDER_ICON_AUTO",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },
@@ -1690,16 +1650,6 @@
       ]
     },
     {
-      "name": "AIH_TERMINAL_TITLE_AUTO",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_UPSTREAM_HEADERS",
       "category": "plumbing",
       "reads": 0,
@@ -1707,16 +1657,6 @@
       "files": [
         "lib/account/go-bridge/go-import-translator.js",
         "lib/server/upstream-account-profile.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WARP_PROVIDER_ICON_AUTO",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },

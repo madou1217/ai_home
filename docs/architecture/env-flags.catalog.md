@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:04:04.648Z
-> 共 **153** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T07:58:03.302Z
+> 共 **147** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -60,22 +60,15 @@
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 1 | 终端剪贴板经 tmux 透传 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
 
-## flag（开关与逃生门（环境准入），6）
+## flag（开关与逃生门（环境准入），5）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | — | 2 | 启用 codex stop hook 通知 |
-| `AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS` | — | 1 | 无证据诊断的冷却时间（本质是调参） |
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | — | 1 | 禁止自动附加远程 resume 参数 |
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
-
-## tuning（可调参数（超时 / TTL / 上限），1）
-
-| 变量 | 公开 | 读取 | 含义 |
-| --- | --- | --- | --- |
-| `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值），18）
 
@@ -106,7 +99,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），81）
+## plumbing（内部管道（进程间传递的身份 / 标记），77）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -141,7 +134,6 @@
 | `AIH_GO_CORE_DELEGATE_REFRESH` | — | 1 | 由 Go Core 代办 token 刷新 |
 | `AIH_GO_CORE_DOWNLOAD_BASE` | — | 1 | Go Core 工件下载基地址 |
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
-| `AIH_KONSOLE_PROVIDER_PROFILE` | — | 1 | Konsole profile 名覆盖 |
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
 | `AIH_PERSIST_ACTIVE` | — | 1 | 当前已在持久会话内（防嵌套） |
 | `AIH_PERSIST_DETACHED` | — | 1 | 持久会话由 restore 以 detached 方式创建 |
@@ -152,6 +144,7 @@
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TERMINAL_ICON_AUTO` | — | 1 | 自动设置终端图标 |
 | `AIH_TERMINAL_ICON_STRATEGY` | — | 1 | 终端图标策略 |
+| `AIH_TERMINAL_TITLE_AUTO` | — | 1 | 自动设置终端标题 |
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
@@ -167,8 +160,6 @@
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
-| `AIH_ITERM_PROVIDER_ICON_AUTO` | — | 0 | iTerm provider 图标自动 |
-| `AIH_KONSOLE_PROVIDER_ICON_AUTO` | — | 0 | Konsole provider 图标自动 |
 | `AIH_LAUNCH_CONTEXT` | — | 0 | 单文件启动上下文：父进程写 0600 JSON，子进程只收文件路径（取代一批零散 AIH_* 上下文字段） |
 | `AIH_MULTIPLEXER` | ✅ | 0 | 复用器选择 auto/tmux/herdr/off（公开；off = 关闭复用器直接跑） |
 | `AIH_OPENCODE_RUN_LAYOUT` | — | 0 | opencode run 布局逃生门（v1/v2） |
@@ -186,9 +177,7 @@
 | `AIH_SESSION_MIRROR` | — | 0 | 会话镜像模式标记 |
 | `AIH_SESSION_RESUME` | — | 0 | 续接标记（restore 用） |
 | `AIH_SESSION_TARGET` | — | 0 | 精确会话目标（picker / restore 注入） |
-| `AIH_TERMINAL_TITLE_AUTO` | — | 0 | 自动设置终端标题 |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |
-| `AIH_WARP_PROVIDER_ICON_AUTO` | — | 0 | Warp provider 图标自动 |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | — | 0 | zcode 会话归属作用域 |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | — | 0 | zcode 用量归属日志路径 |
 

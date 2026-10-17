@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:04:04.648Z
-> 覆盖 `lib / bin / scripts / core`，共 **143** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T07:58:03.302Z
+> 覆盖 `lib / bin / scripts / core`，共 **137** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -10,11 +10,10 @@
 | --- | --- | --- |
 | path | 18 | 数据/目录/仓库路径 |
 | network | 22 | 端点 / 代理 / 端口 |
-| flag | 5 | 开关与逃生门（环境准入） |
-| tuning | 1 | 可调参数（超时 / TTL / 上限） |
+| flag | 4 | 开关与逃生门（环境准入） |
 | credential | 16 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 80 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 76 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -103,16 +102,9 @@
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
 | `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | 2 | 0 | lib/account/host-sync.js<br>lib/server/codex-project-registry.js |
-| `AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | 1 | 0 | lib/server/codex-app-server-stdio-proxy-cliresume.js |
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |
-
-## tuning（可调参数（超时 / TTL / 上限））
-
-| 变量 | 读取 | 字面量 | 文件 |
-| --- | --- | --- | --- |
-| `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -176,7 +168,6 @@
 | `AIH_GO_CORE_DELEGATE_REFRESH` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_DOWNLOAD_BASE` | 1 | 0 | scripts/postinstall-go-core.js |
 | `AIH_GO_CORE_ROUTES` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_KONSOLE_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_OPENCODE_GATEWAY_BYOK` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_PERSIST_ACTIVE` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_DETACHED` | 1 | 1 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/runtime/persistent-session.js |
@@ -187,6 +178,7 @@
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
 | `AIH_TERMINAL_ICON_AUTO` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_TERMINAL_ICON_STRATEGY` | 1 | 0 | lib/cli/services/terminal-icon-strategies.js |
+| `AIH_TERMINAL_TITLE_AUTO` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_TRACE` | 1 | 0 | lib/runtime/trace.js |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
 | `AIH_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/account/go-bridge/go-import-translator.js<br>lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>…共 4 个 |
@@ -202,8 +194,6 @@
 | `AIH_CODEX_MANAGED_LAUNCH` | 0 | 2 | lib/runtime/codex-launch-context.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_CODEX_REMOTE_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
-| `AIH_ITERM_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
-| `AIH_KONSOLE_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
@@ -220,9 +210,7 @@
 | `AIH_SESSION_MIRROR` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_SESSION_RESUME` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_SESSION_TARGET` | 0 | 1 | lib/runtime/persistent-session.js |
-| `AIH_TERMINAL_TITLE_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_UPSTREAM_HEADERS` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
-| `AIH_WARP_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | 0 | 1 | lib/runtime/zcode-session-attribution-hook.js |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | 0 | 1 | lib/runtime/zcode-usage-attribution-hook.js |
 

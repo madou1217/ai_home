@@ -3096,7 +3096,7 @@ test('runtime launches bare opencode through the explicit AIH gateway profile en
   const env = spawns[0].options.env;
   assert.equal(readOpencodeGatewayField(env, 'baseUrl'), 'http://127.0.0.1:9527/v1');
   assert.equal(readOpencodeGatewayField(env, 'apiKey'), 'gateway-key');
-  assert.equal(env.AIH_OPENCODE_GATEWAY_BYOK, undefined);
+  assert.equal(readOpencodeGatewayField(env, 'byok'), '');
   const overlay = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
   assert.equal(overlay.provider.aih.options.baseURL, 'http://127.0.0.1:9527/v1');
   assert.equal(overlay.provider.aih.options.apiKey, 'gateway-key');

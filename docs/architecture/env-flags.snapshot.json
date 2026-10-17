@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:15:57.434Z",
-  "total": 64,
+  "generatedAt": "2026-10-17T11:19:28.805Z",
+  "total": 63,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -404,16 +404,6 @@
       "files": [
         "lib/server/go-core-host.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_OPENCODE_GATEWAY_BYOK",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/launch-profile/opencode-strategy.js"
       ],
       "aliasConstants": []
     },

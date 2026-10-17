@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T16:23:57.445Z",
+  "generatedAt": "2026-10-17T01:58:29.799Z",
   "host": "darwin-arm64",
   "entries": [
     {
@@ -126,7 +126,7 @@
       "binary": "claude",
       "binaryPath": "/Users/model/.local/bin/claude",
       "installed": true,
-      "version": "2.1.301 (Claude Code)",
+      "version": "2.1.302 (Claude Code)",
       "versionCommand": "claude --version",
       "unifiedResume": {
         "ok": true,

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:35:04.909Z",
-  "total": 119,
+  "generatedAt": "2026-10-17T08:36:38.851Z",
+  "total": 118,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1181,16 +1181,6 @@
       "aliasConstants": [
         "CODEX_MANAGED_LAUNCH_ENV"
       ]
-    },
-    {
-      "name": "AIH_CODEX_REMOTE_AUTOSTART",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_GO_CORE_PORT",

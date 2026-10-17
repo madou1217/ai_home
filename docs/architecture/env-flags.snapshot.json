@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:29:13.825Z",
-  "total": 121,
+  "generatedAt": "2026-10-17T08:35:04.909Z",
+  "total": 119,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -374,17 +374,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_DESKTOP_ACCOUNT_REF",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/profile/list.js",
-        "lib/server/codex-desktop-account.js"
       ],
       "aliasConstants": []
     },
@@ -1142,16 +1131,6 @@
       "aliasConstants": [
         "ACCOUNT_APP_MARKER_ENV"
       ]
-    },
-    {
-      "name": "AIH_ACCOUNT_REF",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/session-lifecycle/codex-stdio-client.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_CLAUDE_CREDENTIAL_TYPE",

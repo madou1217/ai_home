@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:29:13.825Z
-> 共 **121** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:35:04.909Z
+> 共 **119** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，19）
@@ -91,7 +91,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），59）
+## plumbing（内部管道（进程间传递的身份 / 标记），57）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -101,7 +101,6 @@
 | `AIH_RELAY_UDP` | — | 4 | 中转 UDP 开关（config 会写 0/1） |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
-| `AIH_CODEX_DESKTOP_ACCOUNT_REF` | — | 2 | codex 桌面会话使用的账号 |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
@@ -135,7 +134,6 @@
 | `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
-| `AIH_ACCOUNT_REF` | — | 0 | 账号唯一标识（accountRef，贯穿 server/WebUI/runtime） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |

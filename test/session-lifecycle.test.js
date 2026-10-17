@@ -389,7 +389,6 @@ test('Codex lifecycle host environment uses the shared native store without acco
   const env = buildCodexHostLifecycleEnv({
     env: {
       PATH: '/usr/bin',
-      AIH_ACCOUNT_REF: 'acct_must_not_leak',
       CODEX_HOME: '/account/profile/.codex'
     },
     hostHomeDir: '/Users/host'
@@ -400,7 +399,6 @@ test('Codex lifecycle host environment uses the shared native store without acco
   assert.equal(env.CODEX_HOME, '/Users/host/.codex');
   assert.equal(env.CODEX_SQLITE_HOME, '/Users/host/.codex');
   assert.equal(env.AIH_CODEX_APP_SERVER_PASSTHROUGH, '1');
-  assert.equal(Object.prototype.hasOwnProperty.call(env, 'AIH_ACCOUNT_REF'), false);
   assert.equal(env.PATH, '/usr/bin');
 });
 
@@ -459,7 +457,7 @@ test('Codex lifecycle stdio client initializes once and preserves JSON-RPC error
   const client = createCodexLifecycleStdioClient({
     executablePath: '/default/path/codex'
   }, {
-    env: { PATH: '/usr/bin', AIH_ACCOUNT_REF: 'acct_hidden' },
+    env: { PATH: '/usr/bin' },
     hostHomeDir,
     requestTimeoutMs: 1000,
     spawnImpl
@@ -476,7 +474,6 @@ test('Codex lifecycle stdio client initializes once and preserves JSON-RPC error
   assert.equal(children[0].command, '/default/path/codex');
   assert.deepEqual(children[0].args, ['app-server', '--listen', 'stdio://']);
   assert.equal(children[0].options.env.CODEX_HOME, path.join(hostHomeDir, '.codex'));
-  assert.equal(Object.prototype.hasOwnProperty.call(children[0].options.env, 'AIH_ACCOUNT_REF'), false);
   assert.deepEqual(messages.map((message) => message.method), [
     'initialize', 'initialized', 'thread/list', 'thread/archive'
   ]);

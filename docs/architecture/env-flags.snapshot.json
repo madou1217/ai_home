@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:45:06.864Z",
-  "total": 57,
+  "generatedAt": "2026-10-17T11:50:01.416Z",
+  "total": 56,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -232,17 +232,6 @@
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js",
         "lib/server/codex-client-version.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_REMOTE_SSH",
-      "category": "network",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/cli/commands/ai-cli/router.js",
-        "lib/cli/services/pty/pty-runtime-spawn.js"
       ],
       "aliasConstants": []
     },

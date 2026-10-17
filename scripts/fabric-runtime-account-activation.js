@@ -495,8 +495,8 @@ function buildRemoteRegistryPublishCommand(options) {
     "const {readRegistryAgentManagementKey}=require('./lib/cli/services/fabric/registry-agent-management-key-store')",
     "const root=String(process.env.AIH_HOST_HOME||process.env.HOME||'')",
     "const aiHomeDir=path.join(root,'.ai_home')",
-    "const endpoint=process.env.AIH_FABRIC_ENDPOINT",
-    "const nodeId=process.env.AIH_FABRIC_NODE_ID",
+    `const endpoint=${JSON.stringify(`http://127.0.0.1:${options.port}`)}`,
+    `const nodeId=${JSON.stringify(options.nodeId)}`,
     "const storedManagementKey=readRegistryAgentManagementKey(nodeId,{fs,aiHomeDir})",
     "const managementKey=String(readServerConfig({fs,aiHomeDir}).managementKey||'').trim()",
     "if(!storedManagementKey){console.log(JSON.stringify({ok:false,error:'management_key_missing'}));process.exit(2)}",
@@ -514,8 +514,6 @@ function buildRemoteRegistryPublishCommand(options) {
   ].join('; ');
   return [
     buildRemoteEnvCommand(options),
-    `export AIH_FABRIC_ENDPOINT=${shQuote(`http://127.0.0.1:${options.port}`)}`,
-    `export AIH_FABRIC_NODE_ID=${shQuote(options.nodeId)}`,
     `node -e ${shQuote(script)}`
   ].join(' && ');
 }

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:10:08.117Z",
-  "total": 133,
+  "generatedAt": "2026-10-17T08:14:06.940Z",
+  "total": 129,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -306,16 +306,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLAUDE_CLI_JS_PATH",
-      "category": "path",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/server/native-session-chat-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_BIN",
       "category": "plumbing",
       "reads": 3,
@@ -465,26 +455,6 @@
       "files": [
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
         "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FABRIC_ENDPOINT",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "scripts/fabric-runtime-account-activation.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FABRIC_NODE_ID",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "scripts/fabric-runtime-account-activation.js"
       ],
       "aliasConstants": []
     },
@@ -1175,16 +1145,6 @@
       "literals": 0,
       "files": [
         "lib/server/zcode-anthropic-thinking.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_APP_VERSION",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
       ],
       "aliasConstants": []
     },

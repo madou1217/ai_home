@@ -16,6 +16,7 @@ const { listCliAccountRefRecords } = require('../lib/server/account-ref-store');
 const persistentSession = require('../lib/runtime/persistent-session');
 const { readShimContextField } = require('../lib/cli/services/ssh-clipboard/shim-context');
 const { readOpencodeGatewayField } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
   CODEX_MANAGED_LAUNCH_ENV
@@ -360,7 +361,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
 for (const provider of ['claude', 'codex', 'gemini']) {
   test(`${provider} runtime frames fragmented terminal input without changing provider key or mouse semantics`, () => {
     const { runtime, proc, ptyWrites } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0', AIH_CODEX_AUTH_PREFLIGHT: '0'
+      AIH_RUNTIME_SHOW_USAGE: '0', [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
     });
     runtime.runCliPtyTracked(provider, '9', [], false);
     try {
@@ -2958,7 +2959,7 @@ test('runtime forwards explicit Codex user input exactly once', () => {
 
 test('runtime injects --skip-git-repo-check only when explicitly enabled', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_CODEX_AUTO_SKIP_REPO_CHECK: '1'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ autoSkipRepoCheck: '1' })
   });
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(spawns.length, 1);
@@ -3157,7 +3158,7 @@ test('runtime keeps reboot-restored Codex resume native with gateway credentials
   ]);
   assert.equal(resumeArgs.includes('--remote'), false);
   assert.equal(spawns[0].options.env.OPENAI_API_KEY, 'dummy');
-  assert.equal(spawns[0].options.env.AIH_CODEX_DISABLE_REMOTE_RESUME, '1');
+  assert.equal(readCodexFlag(spawns[0].options.env, 'disableRemoteResume'), '1');
   assert.equal(spawns[0].options.env.AIH_CODEX_REMOTE_AUTH_TOKEN, undefined);
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -3477,7 +3478,7 @@ test('runtime atomically assigns a Codex CLI id only after pending OAuth succeed
   const aiHomeDir = path.join(hostHomeDir, '.ai_home');
   t.after(() => fsBase.rmSync(hostHomeDir, { recursive: true, force: true }));
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -4285,7 +4286,7 @@ test('runtime starts explicit codex resume without startup auth preflight', () =
 test('runtime does not classify claude slash menu usage text as rate limit', async () => {
   const runtimeUpserts = [];
   const { runtime, proc, spawns, writes } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0',
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     getNextAvailableId: () => '10087',
@@ -4382,7 +4383,7 @@ test('runtime repairs missing Claude native binary before spawning pty', () => {
 test('runtime ignores cli output that only looks like a rate-limit error', async () => {
   const runtimeUpserts = [];
   const { runtime, proc, spawns, writes } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0',
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     getNextAvailableId: () => '10087',
@@ -4418,7 +4419,7 @@ test('runtime ignores rate-limit-looking output even when standby account is run
   const runtimeUpserts = [];
   let standbyAccountRef = '';
   const { runtime, proc, spawns, writes, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0',
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
     AIH_RUNTIME_SHOW_USAGE: '0'
   }, {
     getNextAvailableId: () => '10087',
@@ -4882,7 +4883,7 @@ test('runtime ignores cli output that only looks like auth expired text', async 
   const upserts = [];
   const nextLookups = [];
   const { runtime, proc, writes, spawns } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
   }, {
     getNextAvailableId: (provider, currentId, options) => {
       nextLookups.push({ provider, currentId, options });
@@ -4919,7 +4920,7 @@ test('runtime ignores cli output that only looks like auth expired text', async 
 
 test('runtime preserves explicit resume target when output contains auth expired text', async () => {
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_CODEX_AUTH_PREFLIGHT: '0'
+    [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
   }, {
     getNextAvailableId: () => '10016',
     getAccountStateIndex: () => ({

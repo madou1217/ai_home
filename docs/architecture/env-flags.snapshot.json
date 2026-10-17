@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:52:15.169Z",
-  "total": 83,
+  "generatedAt": "2026-10-17T10:56:47.807Z",
+  "total": 81,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -19,6 +19,7 @@
     "AGENT_ENDPOINT_ENV": "AIH_SSH_CLIP_AGENT_ENDPOINT",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
+    "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
     "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
     "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
@@ -429,37 +430,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_AUTH_PREFLIGHT",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-run.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_AUTO_SKIP_REPO_CHECK",
-      "category": "path",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/pty-runtime-spawn.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_DISABLE_REMOTE_RESUME",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/codex-app-server-stdio-proxy-cliresume.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_TUI_LOCAL_REMOTE",
       "category": "plumbing",
       "reads": 1,
@@ -781,6 +751,20 @@
       ],
       "aliasConstants": [
         "CODEX_APP_SERVER_PASSTHROUGH_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CODEX_FLAGS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 3,
+      "files": [
+        "lib/cli/services/pty/pty-runtime-launch.js",
+        "lib/runtime/codex-flags.js",
+        "lib/runtime/multiplexer/tmux-session-env.js"
+      ],
+      "aliasConstants": [
+        "CODEX_FLAGS_ENV"
       ]
     },
     {

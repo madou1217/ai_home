@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:52:15.169Z
-> 共 **83** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:56:47.807Z
+> 共 **81** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，9）
+## path（数据/目录/仓库路径，8）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -13,7 +13,6 @@
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
 | `AIH_CODEX_HOME` | — | 2 | codex 配置根（沙箱投影 / 宿主切换） |
 | `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
-| `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | — | 1 | 跳过 codex 的仓库信任检查（自动化场景） |
 | `AIH_PROVIDER_DEFS_DIR` | — | 1 | provider 定义/合同目录覆盖 |
 | `AIH_QUOTA_PLUGIN_DIR` | — | 1 | 额度插件目录 |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
@@ -38,16 +37,15 @@
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
 | `AIH_SSH_CLIP_SHIM_CONTEXT` | — | 0 | SSH 剪贴板 shim 路径（bin/邮箱根 两项合一） |
 
-## flag（开关与逃生门（环境准入），4）
+## flag（开关与逃生门（环境准入），3）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_CODEX_DISABLE_REMOTE_RESUME` | — | 1 | 禁止自动附加远程 resume 参数 |
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），10）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），9）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -56,7 +54,6 @@
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | — | 2 | 远程 codex 认证 token |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
 | `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；含 Go Core；config 优先） |
-| `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检（内部/测试可关） |
 | `AIH_GO_CORE_CLIENT_KEY` | — | 1 | 传给 Go Core 的客户端 key |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | — | 1 | 传给 Go Core 的管理 key |
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | — | 0 | claude 凭据类型标记（oauth / api-key），透传给 CLI |
@@ -68,7 +65,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），44）
+## plumbing（内部管道（进程间传递的身份 / 标记），45）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -100,6 +97,7 @@
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
+| `AIH_CODEX_FLAGS` | — | 0 | codex 启动/恢复开关（authPreflight/autoSkipRepoCheck/disableRemoteResume 三项合一） |
 | `AIH_CODEX_HOOKS` | — | 0 | codex hook 安装开关（cli/desktop/none 列表） |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_EDGE_CONTEXT` | — | 0 | 边缘代理配置位置（caddyfile/nginxConfDir/frpcConfig 三项合一） |

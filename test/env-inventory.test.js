@@ -13,6 +13,9 @@ const CATALOG_DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.catalog.m
 const { ENV_MEANINGS } = require('../lib/config/env-catalog');
 const { PUBLIC_ENV_VARS, PUBLIC_ENV_LIMIT } = require('../lib/config/public-env');
 
+// 内部变量基线：只减不增。新增 AIH_* 必须同时删除至少一个旧变量并在 PR 说明理由（见 AGENTS.md）。
+const INTERNAL_ENV_LIMIT = 42;
+
 function readSnapshot() {
   return JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
 }
@@ -49,6 +52,17 @@ test('公开环境变量白名单不超过 10 个，且每个都在源码里真�
   const known = new Set(collectNow().entries.map((entry) => entry.name));
   const missing = names.filter((name) => !known.has(name));
   assert.deepEqual(missing, [], `公开变量在源码里不存在（白名单写错或变量已删除）：${missing.join(', ')}`);
+});
+
+test('内部环境变量只减不增（默认禁止再新增 AIH_*）', () => {
+  const snapshot = readSnapshot();
+  const publicNames = new Set(PUBLIC_ENV_VARS.map((item) => item.name));
+  const internal = snapshot.entries.map((entry) => entry.name).filter((name) => !publicNames.has(name));
+  assert.equal(new Set(internal).size, internal.length, '内部变量不能重名');
+  assert.ok(
+    internal.length <= INTERNAL_ENV_LIMIT,
+    `内部环境变量 ${internal.length} 个，超过冻结基线 ${INTERNAL_ENV_LIMIT}；禁止再新增 AIH_*，新配置请走常量 / server config / WebUI / 现有 context 字段`
+  );
 });
 
 test('环境准入文档只出现公开变量（内部变量单独一份，不对外承诺）', () => {

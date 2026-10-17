@@ -79,6 +79,10 @@ Fuller layer map:
 
 ## 环境变量（环境准入）纪律
 
+- **默认禁止新增任何 `AIH_*` 环境变量（公开或内部），一个都不许再加。** 这不是“尽量少加”，而是硬规则：新配置只允许走四个出口——① 可调常量（`lib/cli/config/constants.js`）；② `aih server config set`（`lib/server/server-config-schema.js` 描述符表）；③ WebUI 设置；④ 已经存在的上下文变量里加字段（`lib/*/*-context.js` 的 `parse/serialize/read<Field>`）。四个出口都放不下时，正确做法是重新设计，不是再拉一个 `AIH_*`。
+- **唯一例外**：必须删除至少一个现有 `AIH_*` 并在 PR 里写清“为什么四个出口都不行”，且合并后内部变量总数不得增加（`test/env-inventory.test.js` 的 `INTERNAL_ENV_LIMIT` 只减不增）；公开变量仍受 10 个硬上限约束。没有删除项的“新增”一律打回。
+- **已合并的上下文变量只许继续合并，不许拆回多个变量**：`AIH_SESSION_INTENT`、`AIH_RUNTIME_MARKER`、`AIH_RELAY_SETTINGS`、`AIH_ZCODE_CONTEXT`、`AIH_CODEX_FLAGS`、`AIH_SSH_CLIPBOARD`、`AIH_EDGE_CONTEXT`、`AIH_RUNTIME_USAGE`、`AIH_CLI_FEATURES`、`AIH_OPENCODE_GATEWAY`、`AIH_SERVER_RESTART`、`AIH_GO_CORE_BIND`、`AIH_LAUNCH_CONTEXT` 等是当前形态；新增字段加进对应 context 模块，不要再开同名独立变量。
+- **当前存量 52 个（公开 10 + 内部 42）是冻结基线，只减不增。** 内部变量是 aih 自己给子进程的契约（Go Core 启动协议、账号 env 合同键、进程身份标记、运维路径），不是给用户/部署脚本用的旋钮；不要因为“顺手”再引入一个。
 - **环境准入 = 公开环境变量白名单 `lib/config/public-env.js`，硬上限 10 个**：`docs/architecture/env-flags.md` 只列这 10 个（由 `npm run env:inventory -- --write` 生成；另出 `env-flags.internal.md`、`env-flags.catalog.md`（全量含义目录）与 `env-flags.snapshot.json`）。其余 `AIH_*` 一律是**内部变量**（aih 设置给子进程的身份/标记、实验开关、测试钩子），只在内部清单出明细，**不承诺兼容、不许写进部署脚本**。新增公开变量 = 先删一个，或写清为什么 `server config`/WebUI 放不下；`test/env-inventory.test.js` 守「≤10 + 公开变量在源码中真实存在 + 公开文档不出现内部变量 + 内部清单完整 + 开关必须有文档 + 同义别名不许手写第二份」。
 - **一个语义只用一个名字**：同义别名只允许一处解析（示例：`AIH_HOME_DIR` / `AI_HOME` 的唯一解析处是 `lib/runtime/aih-home.js`；`AIH_HOME` 已于 2026-10-17 移除，Go Core 只认 `AIH_HOME_DIR`；`lib/cli/services/node/bootstrap-assets.js` 是远程自举模板，按设计内联同一规则，属唯一豁免）。
 - **禁止 `ENABLE`/`DISABLE` 成对开关**表达一个语义；确需兼容历史写法时，登记进 `scripts/collect-env-flags.js` 的 `ALLOWED_FLAG_PAIRS` 并在文档里说明（现存唯一一对：codex 远程代理）。

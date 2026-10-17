@@ -36,7 +36,7 @@ function fixture(t, initialized = true) {
 
 function isolatedEnv(root) {
   return { PATH: process.env.PATH, HOME: root, USERPROFILE: root, REAL_HOME: root,
-    AIH_HOST_HOME: root, AIH_HOME: root, NODE_NO_WARNINGS: '1' };
+    AIH_HOST_HOME: root, AIH_HOME_DIR: root, NODE_NO_WARNINGS: '1' };
 }
 
 function attempt(root, body) {

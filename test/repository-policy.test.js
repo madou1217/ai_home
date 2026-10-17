@@ -55,7 +55,7 @@ const LEGACY_AIH_PROFILE_STORAGE_RULES = [
   },
   {
     name: 'literal AIH profiles path',
-    pattern: /(?:\.ai_home|\$AIH_HOME|\$\{AIH_HOME\})[\\/]profiles\b/
+    pattern: /(?:\.ai_home|\$AIH_HOME_DIR|\$\{AIH_HOME_DIR\})[\\/]profiles\b/
   }
 ];
 

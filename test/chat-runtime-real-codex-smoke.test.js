@@ -119,7 +119,7 @@ test('real Codex smoke confines every runtime home to its owned temp root', () =
   });
   assert.deepEqual(buildSmokeIsolationEnvPatch(layout), {
     AIH_CODEX_APP_SERVER_PASSTHROUGH: '1',
-    AIH_HOME: tempRoot,
+    AIH_HOME_DIR: tempRoot,
     CODEX_HOME: layout.codexHome,
     CODEX_SQLITE_HOME: layout.codexSqliteHome,
     HOME: layout.homeDir,

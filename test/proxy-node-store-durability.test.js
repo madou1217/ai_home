@@ -8,11 +8,11 @@ const path = require('node:path');
 
 const { ProxyNodeStore } = require('../lib/cli/services/toolkit/proxy-pool/proxy-node-store');
 
-test('ProxyNodeStore uses AIH_HOME and keeps its directory and file private', (t) => {
+test('ProxyNodeStore uses AIH_HOME_DIR and keeps its directory and file private', (t) => {
   const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-proxy-store-'));
   t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
 
-  const store = new ProxyNodeStore({ aiHomeDir, env: { AIH_HOME: aiHomeDir } });
+  const store = new ProxyNodeStore({ aiHomeDir, env: { AIH_HOME_DIR: aiHomeDir } });
   store.bulkUpsertNodes([{
     name: 'private node',
     protocol: 'http',

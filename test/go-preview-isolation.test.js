@@ -70,7 +70,7 @@ test('默认账号页继续使用 Node API，Go 页面仅由 preview 环境选�
   assert.doesNotMatch(previewClient, /active-client|control-plane-selection/);
 });
 
-test('preview 使用固定独立端口且不复用正式 AIH_HOME', () => {
+test('preview 使用固定独立端口且不复用正式 AIH_HOME_DIR', () => {
   const launcherPath = path.join(repositoryRoot, 'scripts/go-accounts-preview.js');
   assert.equal(fs.existsSync(launcherPath), true);
   const launcher = read('scripts/go-accounts-preview.js');
@@ -78,7 +78,7 @@ test('preview 使用固定独立端口且不复用正式 AIH_HOME', () => {
   assert.match(launcher, /19527/);
   assert.match(launcher, /19528/);
   assert.doesNotMatch(launcher, /\b9527\b|\b3001\b/);
-  assert.match(launcher, /AIH_HOME/);
+  assert.match(launcher, /AIH_HOME_DIR/);
   assert.match(launcher, /tmpdir/);
 });
 
@@ -90,7 +90,7 @@ test('preview 启动器分别生成隔离的 Server、Web 与 CLI 调用', () =>
   } = require('../scripts/go-accounts-preview');
   const dependencies = {
     env: {
-      AIH_HOME: '/Users/example/.ai_home',
+      AIH_HOME_DIR: '/Users/example/.ai_home',
       PATH: '/usr/bin',
     },
     platform: 'darwin',
@@ -106,8 +106,8 @@ test('preview 启动器分别生成隔离的 Server、Web 与 CLI 调用', () =>
     'run', './cmd/aih-server', '--host', '127.0.0.1', '--port', '19527',
   ]);
   assert.equal(server.cwd, '/workspace/ai_home');
-  assert.equal(server.env.AIH_HOME, '/private/tmp/aih-go-accounts-preview');
-  assert.notEqual(server.env.AIH_HOME, dependencies.env.AIH_HOME);
+  assert.equal(server.env.AIH_HOME_DIR, '/private/tmp/aih-go-accounts-preview');
+  assert.notEqual(server.env.AIH_HOME_DIR, dependencies.env.AIH_HOME_DIR);
   assert.ok(server.env.AIH_SERVER_MANAGEMENT_KEY.length >= 32);
   assert.ok(server.env.AIH_SERVER_CLIENT_KEY.length >= 32);
   assert.notEqual(
@@ -136,7 +136,7 @@ test('preview 启动器分别生成隔离的 Server、Web 与 CLI 调用', () =>
     'run', './cmd/aih', 'account', 'list', '--limit', '5',
   ]);
   assert.equal(cli.env.AIH_SERVER_BASE_URL, 'http://127.0.0.1:19527');
-  assert.equal(cli.env.AIH_HOME, server.env.AIH_HOME);
+  assert.equal(cli.env.AIH_HOME_DIR, server.env.AIH_HOME_DIR);
   assert.equal(cli.env.AIH_SERVER_MANAGEMENT_KEY, server.env.AIH_SERVER_MANAGEMENT_KEY);
   assert.throws(
     () => createPreviewInvocation('unknown', [], dependencies),
@@ -211,7 +211,7 @@ test('preview 帮助明确固定端口、临时目录和禁止直接运行默认
   assert.match(help, /19527/);
   assert.match(help, /19528/);
   assert.match(help, /不得直接运行.*cmd\/aih-server/);
-  assert.match(help, /AIH_HOME.*\/private\/tmp\/aih-go-accounts-preview/);
+  assert.match(help, /AIH_HOME_DIR.*\/private\/tmp\/aih-go-accounts-preview/);
   assert.match(help, /Node 22/);
   assert.doesNotThrow(() => assertPreviewHome(
     '/private/tmp/aih-go-accounts-preview',
@@ -219,6 +219,6 @@ test('preview 帮助明确固定端口、临时目录和禁止直接运行默认
   ));
   assert.throws(
     () => assertPreviewHome('/Users/example/.ai_home', '/Users/example'),
-    /拒绝使用正式 AIH_HOME/,
+    /拒绝使用正式 AIH_HOME_DIR/,
   );
 });

@@ -38,7 +38,7 @@ test('Windows restart elevation replays the command through one UAC prompt', () 
   assert.match(script, /\$restartProcess\.WaitForExit\(\)/);
   assert.match(script, /exit \$restartProcess\.ExitCode/);
   assert.match(script, new RegExp(`\\$env:${ELEVATED_RESTART_ENV} = '1'`));
-  assert.match(script, /\$env:AIH_HOME = 'C:\\Users\\alice\\\.ai_home'/);
+  assert.match(script, /\$env:AIH_HOME_DIR = 'C:\\Users\\alice\\\.ai_home'/);
 });
 
 test('Windows restart elevation prevents recursive UAC attempts', () => {

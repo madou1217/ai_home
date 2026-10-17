@@ -1,16 +1,15 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:48:30.589Z
-> 共 **330** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:57:07.824Z
+> 共 **329** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，24）
+## path（数据/目录/仓库路径，23）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_HOST_HOME` | ✅ | 35 | 宿主真实家目录（公开；沙箱会话里必须钉住） |
-| `AIH_HOME` | — | 26 | 数据根目录的旧名（同义别名，只在 lib/runtime/aih-home.js 解析） |
-| `AIH_HOME_DIR` | ✅ | 7 | 数据根目录（公开；默认 ~/.ai_home） |
+| `AIH_HOME_DIR` | ✅ | 11 | 数据根目录（公开；默认 ~/.ai_home） |
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
 | `AIH_CLAUDE_CLI_JS_PATH` | — | 3 | claude CLI 的 JS 入口路径（绕过 wrapper 找真实脚本） |
 | `AIH_CLAUDE_CODE_COMMANDS_DIR` | — | 2 | claude 自定义 commands 目录（注入 aih 的 slash 命令） |

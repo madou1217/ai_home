@@ -90,7 +90,7 @@ func TestAccountUsageCommandPersistsSnapshotAcrossServerRestart(t *testing.T) {
 	}
 }
 
-// startAccountUsageServer 在指定 AIH_HOME 上启动正式 Go Server 组合根。
+// startAccountUsageServer 在指定 AIH_HOME_DIR 上启动正式 Go Server 组合根。
 func startAccountUsageServer(
 	t *testing.T,
 	home string,

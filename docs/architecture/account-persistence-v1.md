@@ -6,7 +6,7 @@
 `app-state.db`，也不为 Gemini、runtime、usage、模型 cooldown、OAuth 登录作业、
 历史记录或 outbox 预建结构。
 
-数据库固定为 `$AIH_HOME/aih.db`。当前只包含五个存在真实读写依据的表：
+数据库固定为 `$AIH_HOME_DIR/aih.db`。当前只包含五个存在真实读写依据的表：
 
 | 表 | 责任 | 热路径 |
 | --- | --- | --- |
@@ -434,7 +434,7 @@ go test -run '^TestAccountManagementScenario$' -v \
   ./internal/adapters/accounts/sqliteaccount
 ```
 
-测试使用临时 `$AIH_HOME/aih.db` 和合成凭据，真实执行以下应用链路：
+测试使用临时 `$AIH_HOME_DIR/aih.db` 和合成凭据，真实执行以下应用链路：
 
 - 注册带公开 Profile 的 Codex OAuth 账号，分配 `codex/1`；
 - 注册无 Profile 的 Claude API Key 账号，分配 `claude/1`；

@@ -667,7 +667,7 @@ test('desktop client restart injects a sanitized account profile into macOS open
       pid: 999,
       env: {
         PATH: '/usr/bin:/bin',
-        AIH_HOME: '/tmp/sandbox',
+        AIH_HOME_DIR: '/tmp/sandbox',
         CLAUDE_USER_DATA_DIR: '/tmp/wrong-profile',
         CODEX_ELECTRON_USER_DATA_PATH: '/tmp/wrong-codex-profile'
       },
@@ -697,7 +697,7 @@ test('desktop client restart injects a sanitized account profile into macOS open
     `CLAUDE_USER_DATA_DIR=${profileDir}`
   ]);
   assert.equal(launches[0].options.env.CLAUDE_USER_DATA_DIR, profileDir);
-  assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'AIH_HOME'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'AIH_HOME_DIR'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'CODEX_ELECTRON_USER_DATA_PATH'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'INVALID-KEY'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(launches[0].options.env, 'EMPTY_VALUE'), false);

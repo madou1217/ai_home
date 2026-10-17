@@ -189,7 +189,7 @@ func writeAccountUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  add/list/show/models/import 通过 AIH_SERVER_BASE_URL 使用目标 Go Server；不打开本地 aih.db。")
 	_, _ = fmt.Fprintln(output, "  add 只从官方环境变量读取静态凭据；Server 提交账号后异步刷新模型目录。")
 	_, _ = fmt.Fprintln(output, "  import 只从本机 CODEX_HOME/CLAUDE_CONFIG_DIR 读取官方 artifact，再上传到目标 Server。")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 是账号管理命令的必填凭据；AIH_HOME 不参与远端查询。")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 是账号管理命令的必填凭据；AIH_HOME_DIR 不参与远端查询。")
 }
 
 // accountUsageLine 供根帮助复用，保持两处命令描述一致。

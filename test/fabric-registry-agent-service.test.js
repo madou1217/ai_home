@@ -55,7 +55,7 @@ function makeDeps(root, platform, spawnSync, env = {}) {
   };
 }
 
-test('fabric registry service defaults logs under AIH_HOME when no root is injected', (t) => {
+test('fabric registry service defaults logs under AIH_HOME_DIR when no root is injected', (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const manager = createFabricRegistryAgentServiceManager({ nodeId: 'fabric-node' }, {

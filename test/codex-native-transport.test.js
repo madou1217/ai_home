@@ -28,7 +28,7 @@ function fixture(t, config = native + registry) {
   fs.mkdirSync(codexHome, { recursive: true }); fs.mkdirSync(cwd);
   const file = path.join(codexHome, 'config.toml'); fs.writeFileSync(file, config);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const processObj = { platform: process.platform, env: { HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME: aiHomeDir, CODEX_HOME: codexHome } };
+  const processObj = { platform: process.platform, env: { HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME_DIR: aiHomeDir, CODEX_HOME: codexHome } };
   return { root, home, codexHome, aiHomeDir, cwd, file, processObj };
 }
 function thread(f, provider = 'aih_server') {

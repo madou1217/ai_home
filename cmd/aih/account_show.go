@@ -92,7 +92,7 @@ func writeAccountShowUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "行为:")
 	_, _ = fmt.Fprintln(output, "  通过 AIH_SERVER_BASE_URL 返回基础账号、用户启停状态、认证类型、公开资料和时间戳。")
 	_, _ = fmt.Fprintln(output, "  不读取或输出凭据正文、usage、模型或运行态；停用账号仍可查看。")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 必填；AIH_HOME 不参与查询。")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY 必填；AIH_HOME_DIR 不参与查询。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account show claude:1")

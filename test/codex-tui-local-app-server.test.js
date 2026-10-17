@@ -151,7 +151,7 @@ test('an interactive resume runs on the caller\'s own app-server, not the gatewa
     fs,
     processObj: {
       platform: 'darwin',
-      env: { HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME: aiHomeDir, CODEX_HOME: codexHome },
+      env: { HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME_DIR: aiHomeDir, CODEX_HOME: codexHome },
       stdin: { isTTY: true },
       cwd: () => cwd,
       stderr: { write() {} },

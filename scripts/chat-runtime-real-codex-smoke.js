@@ -189,7 +189,7 @@ function buildSmokeIsolationLayout(tempRoot) {
 function buildSmokeIsolationEnvPatch(layout) {
   return {
     [CODEX_APP_SERVER_PASSTHROUGH_ENV]: '1',
-    AIH_HOME: layout.aiHomeDir,
+    AIH_HOME_DIR: layout.aiHomeDir,
     CODEX_HOME: layout.codexHome,
     CODEX_SQLITE_HOME: layout.codexSqliteHome,
     HOME: layout.homeDir,

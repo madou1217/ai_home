@@ -1,6 +1,6 @@
 'use strict';
 
-// 真机 E2E 冒烟：起真 server（临时 AIH_HOME、指定管理密钥、随机端口），只用 HTTP 走通
+// 真机 E2E 冒烟：起真 server（临时 AIH_HOME_DIR、指定管理密钥、随机端口），只用 HTTP 走通
 //   1) 指向第三方中转的 API Key 账号 → customUpstream=true；
 //   2) 账号级「恢复调度」清掉运行态阻塞（含 routingBlock）；
 //   3) 「刷新账号」的模型轻探测在上游不可达时**只提示、不记账**，job 如实报告分支失败。

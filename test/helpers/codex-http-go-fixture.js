@@ -12,7 +12,7 @@ async function startGoGateway(context, upstreamBase, model, options = {}) {
   const clientKey = 'fixture-client-key-0123456789abcdef';
   const managementKey = 'fixture-management-key-0123456789abcdef';
   const child = spawn(binary, ['--port', '0'], {
-    env: { PATH: process.env.PATH, HOME: root, USERPROFILE: root, AIH_HOME: root,
+    env: { PATH: process.env.PATH, HOME: root, USERPROFILE: root, AIH_HOME_DIR: root,
       AIH_SERVER_CLIENT_KEY: clientKey, AIH_SERVER_MANAGEMENT_KEY: managementKey,
       SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: root, TMP: root,
       LOCALAPPDATA: root, NO_PROXY: '127.0.0.1,localhost' },

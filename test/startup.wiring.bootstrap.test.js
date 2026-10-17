@@ -82,14 +82,14 @@ test('createStartupWiring decodes encoded Windows codex home before deriving pat
   assert.equal(profileLayoutArg.aiHomeDir, 'C:\\Users\\alice\\.ai_home');
 });
 
-test('createStartupWiring keeps explicit AIH_HOME across Windows elevation home changes', () => {
+test('createStartupWiring keeps explicit AIH_HOME_DIR across Windows elevation home changes', () => {
   let profileLayoutArg = null;
 
   const out = createStartupWiring({
     path: path.win32,
     fs: {},
     env: {
-      AIH_HOME: 'C:\\Users\\alice\\.ai_home',
+      AIH_HOME_DIR: 'C:\\Users\\alice\\.ai_home',
       USERPROFILE: 'C:\\Windows\\System32\\config\\systemprofile'
     },
     platform: 'win32',

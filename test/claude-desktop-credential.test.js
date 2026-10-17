@@ -10,7 +10,7 @@ const {
 
 const ACCOUNT_REF = 'acct_0123456789abcdef0123';
 
-test('Claude Desktop credential helper derives AIH_HOME from the isolated profile and reads the current server key', () => {
+test('Claude Desktop credential helper derives AIH_HOME_DIR from the isolated profile and reads the current server key', () => {
   const profileDir = path.join('/tmp', 'aih-test', 'desktop-clients', 'claude', ACCOUNT_REF);
   const calls = [];
   const credential = resolveClaudeDesktopGatewayCredential({

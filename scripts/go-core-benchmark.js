@@ -9,7 +9,7 @@
 // 真实推理基准会消耗 token，只在推理条目划转后按需另行执行。
 //
 // 用法: node scripts/go-core-benchmark.js [--requests 2000] [--concurrency 50] [--json]
-// 在临时 AIH_HOME 中拉起隔离的 Node 与 Go（不触碰用户数据），结束后全部清理。
+// 在临时 AIH_HOME_DIR 中拉起隔离的 Node 与 Go（不触碰用户数据），结束后全部清理。
 
 const childProcess = require('node:child_process');
 const fs = require('node:fs');

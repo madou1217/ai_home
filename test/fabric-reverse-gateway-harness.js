@@ -57,7 +57,7 @@ function isolatedServerEnvironment(homeDir) {
   });
   return {
     ...env,
-    AIH_HOME: homeDir,
+    AIH_HOME_DIR: homeDir,
     AIH_HOST_HOME: homeDir,
     HOME: homeDir,
     AIH_SERVER_ALLOW_MULTI: '1',

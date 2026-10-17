@@ -54,7 +54,7 @@ func TestLoadCommandConfigLetsCLIOverrideLoopbackEnvironment(t *testing.T) {
 	aiHomeDir := t.TempDir()
 	runtime := newConfigTestRuntime(
 		map[string]string{
-			"AIH_HOME":                  aiHomeDir,
+			"AIH_HOME_DIR":                  aiHomeDir,
 			"AIH_SERVER_HOST":           "127.0.0.2",
 			"AIH_SERVER_PORT":           "9000",
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
@@ -302,7 +302,7 @@ func TestLoadCommandConfigCarriesUpstreamErrorRuleProviders(t *testing.T) {
 
 	runtime := newConfigTestRuntime(
 		map[string]string{
-			"AIH_HOME":                        t.TempDir(),
+			"AIH_HOME_DIR":                        t.TempDir(),
 			"AIH_SERVER_MANAGEMENT_KEY":       configTestManagementKey,
 			"AIH_SERVER_CLIENT_KEY":           configTestClientKey,
 			"AIH_SERVER_UPSTREAM_ERROR_RULES": "codex",

@@ -26,7 +26,7 @@
 | --- | --- |
 | `lib/providers/contract.js` | 描述符契约与校验（叶子模块，无 I/O）。`quota` 能力必填：`supported:true` + 策略链，或 `supported:false` + reason |
 | `lib/providers/registry.js` | 注册表：`byId` 索引 + **能力倒排**；策略排序（不依赖客户端的优先）；冲突策略（内置优先） |
-| `lib/providers/loader.js` | 目录扫描：内置 `defs/`、`AIH_PROVIDER_DEFS_DIR`、`<AIH_HOME>/provider-defs`；兼容旧额度插件形状（`AIH_QUOTA_PLUGIN_DIR`、`<AIH_HOME>/quota-plugins`） |
+| `lib/providers/loader.js` | 目录扫描：内置 `defs/`、`AIH_PROVIDER_DEFS_DIR`、`<AIH_HOME_DIR>/provider-defs`；兼容旧额度插件形状（`AIH_QUOTA_PLUGIN_DIR`、`<AIH_HOME_DIR>/quota-plugins`） |
 | `lib/providers/defs/<id>.js` | **每个 provider 自己的能力自描述**（quota / usage / relay） |
 | `lib/providers/index.js` | 门面：倒排查询、能力读取、加载错误、诊断行 |
 | `lib/usage/quota/index.js` | 额度领域派生：谁有额度、可信规则、时间窗 kind、策略链执行、诊断 |

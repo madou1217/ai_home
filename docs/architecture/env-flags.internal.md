@@ -1,14 +1,14 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:48:02.639Z
-> 覆盖 `lib / bin / scripts / core`，共 **320** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:57:07.824Z
+> 覆盖 `lib / bin / scripts / core`，共 **319** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 22 | 数据/目录/仓库路径 |
+| path | 21 | 数据/目录/仓库路径 |
 | network | 51 | 端点 / 代理 / 端口 |
 | flag | 17 | 开关与逃生门（环境准入） |
 | tuning | 51 | 可调参数（超时 / TTL / 上限） |
@@ -22,7 +22,7 @@
 
 | 名字 | 唯一解析处 | 说明 |
 | --- | --- | --- |
-| `AIH_HOME_DIR` / `AIH_HOME` / `AI_HOME` | AIH_HOME_DIR（`lib/runtime/aih-home.js` 是唯一解析处） | 三个名字是同义别名，不是三种模式 |
+| `AIH_HOME_DIR` / `AI_HOME` | AIH_HOME_DIR（`lib/runtime/aih-home.js` 是唯一解析处） | 两个名字是同义别名；AIH_HOME 已于 2026-10-17 移除 |
 | `AIH_SERVER_MANAGEMENT_KEY` | AIH_SERVER_MANAGEMENT_KEY | 文档/示例里出现过的 AIH_MANAGEMENT_KEY 不是输入变量（只在脚本示例里当下发值用） |
 
 ### 成对开关（ENABLE / DISABLE）
@@ -35,7 +35,6 @@
 
 | 变量 | 分类 | 读取 | 文件数 |
 | --- | --- | --- | --- |
-| `AIH_HOME` | path | 26 | 20 |
 | `AIH_MANAGEMENT_KEY` | credential | 11 | 10 |
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | plumbing | 6 | 8 |
 | `AIH_SSH_CLIP_MAX_BYTES` | network | 6 | 5 |
@@ -50,12 +49,12 @@
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | plumbing | 3 | 2 |
 | `AIH_AGY_QUOTA_BASE_URL` | network | 3 | 1 |
 | `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | tuning | 3 | 2 |
+| `AIH_ANTIGRAVITY_VERSION` | plumbing | 3 | 2 |
 
 ## path（数据/目录/仓库路径）
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_HOME` | 26 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/fabric/closure-audit.js<br>…共 20 个 |
 | `AIH_CLI_PATH` | 5 | 1 | lib/cli/services/fabric/registry-agent-service.js<br>lib/cli/services/node/doctor.js<br>lib/cli/services/node/relay-service.js<br>…共 5 个 |
 | `AIH_CLAUDE_CLI_JS_PATH` | 3 | 0 | lib/server/native-session-chat-launch.js |
 | `AIH_CLAUDE_CODE_COMMANDS_DIR` | 2 | 0 | lib/server/native-slash-commands.js |

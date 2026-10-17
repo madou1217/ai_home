@@ -180,8 +180,8 @@ function fail(code) {
 }
 
 function defaultDbPath(env = process.env) {
-  const aihHome = typeof env.AIH_HOME === 'string' && env.AIH_HOME.trim()
-    ? env.AIH_HOME.trim()
+  const aihHome = typeof env.AIH_HOME_DIR === 'string' && env.AIH_HOME_DIR.trim()
+    ? env.AIH_HOME_DIR.trim()
     : path.join(os.homedir(), '.ai_home');
   return path.join(aihHome, 'app-state.db');
 }

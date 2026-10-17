@@ -32,7 +32,7 @@ Native Relay；普通 `/v1/messages` 会跳过它并继续征召 API Key/Auth To
 不会把本地传输不兼容写成账号失败或 cooldown。
 
 本阶段不创建 Node bridge，不启动 stdio worker，不读取、迁移或双写 `app-state.db`。
-账号持久化只使用 `$AIH_HOME/aih.db`。
+账号持久化只使用 `$AIH_HOME_DIR/aih.db`。
 
 ## 2. 分层与依赖方向
 
@@ -66,7 +66,7 @@ Application 不反向依赖进程、HTTP、环境变量或命令行。
 
 | 来源 | 默认值 | 含义 |
 | --- | --- | --- |
-| `AIH_HOME` | `$HOME/.ai_home` | 唯一数据库目录 |
+| `AIH_HOME_DIR` | `$HOME/.ai_home` | 唯一数据库目录 |
 | `AIH_SERVER_HOST` | `127.0.0.1` | 监听主机，只允许 loopback |
 | `AIH_SERVER_PORT` | `9527` | 监听端口；`0` 只用于系统分配临时端口 |
 | `AIH_SERVER_MANAGEMENT_KEY` | 无 | 必填的管理 Bearer 凭据 |
@@ -77,7 +77,7 @@ Application 不反向依赖进程、HTTP、环境变量或命令行。
 Management Key 必须为 32–8192 个非空白、非控制字符。命令刻意不提供
 `--management-key`，避免密钥进入 shell history、进程参数和 `ps`。
 
-只读取规范 `AIH_HOME`，不接受 `AI_HOME`、`AIH_HOME_DIR` 或旧数据库路径 fallback。
+只读取规范 `AIH_HOME_DIR`，不接受 `AIH_HOME_DIR`、`AI_HOME` 或旧数据库路径 fallback（`AIH_HOME_DIR` 已于 2026-10-17 移除）。
 端口被占用时启动失败，不自动选择另一个固定端口，避免同一机器同时存在两个调用方
 误认为是“当前 Server”的进程。只有调用方显式传入 `--port 0` 时才允许临时端口。
 
@@ -86,7 +86,7 @@ Management Key 必须为 32–8192 个非空白、非控制字符。命令刻意
 先通过当前终端或进程监督器设置：
 
 ```text
-AIH_HOME
+AIH_HOME_DIR
 AIH_SERVER_MANAGEMENT_KEY
 AIH_SERVER_CLIENT_KEY
 ```

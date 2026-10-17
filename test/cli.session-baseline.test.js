@@ -38,7 +38,7 @@ function runCli(args, hostHomeDir) {
       AIH_HOST_HOME: hostHomeDir,
       HOME: hostHomeDir,
       CODEX_HOME: path.join(hostHomeDir, '.codex'),
-      AIH_HOME: path.join(hostHomeDir, '.ai_home'),
+      AIH_HOME_DIR: path.join(hostHomeDir, '.ai_home'),
       AIH_HOME_DIR: path.join(hostHomeDir, '.ai_home'),
       OPENAI_API_KEY: '',
       OPENAI_BASE_URL: ''

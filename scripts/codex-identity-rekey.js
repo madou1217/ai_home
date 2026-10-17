@@ -36,7 +36,7 @@ function printHelp() {
     '',
     'Options:',
     '  --provider NAME      codex (default) or grok; identity migrations never cross Providers.',
-    '  --ai-home PATH       AIH data root. Defaults to AIH_HOME_DIR/AIH_HOME/AI_HOME or ~/.ai_home.',
+    '  --ai-home PATH       AIH data root. Defaults to AIH_HOME_DIR/AI_HOME or ~/.ai_home.',
     '  --ledger PATH        Ledger path. Defaults to <ai-home>/migration/codex-identity-ledger.json.',
     '  --apply              Rewrite stored accountRefs from a previously reviewed ledger.',
     '  --confirm-apply      Required together with --apply; states that the ledger was reviewed.',

@@ -51,7 +51,7 @@ function makeDeps(root, platform, spawnSync, env = {}) {
   };
 }
 
-test('node WebRTC service defaults logs under AIH_HOME when no root is injected', (t) => {
+test('node WebRTC service defaults logs under AIH_HOME_DIR when no root is injected', (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const manager = createNodeWebrtcServiceManager({ nodeId: 'webrtc-node' }, {

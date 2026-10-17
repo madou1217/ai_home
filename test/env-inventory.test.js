@@ -122,7 +122,7 @@ test('开关类变量必须逐个出现在（公开或内部）文档里（不�
 
 test('AIH 数据根目录只有一处解析（同义别名不许再各写一遍）', () => {
   const helper = fs.readFileSync(path.join(ROOT, 'lib', 'runtime', 'aih-home.js'), 'utf8');
-  assert.match(helper, /env\.AIH_HOME_DIR \|\| env\.AIH_HOME \|\| env\.AI_HOME/);
+  assert.match(helper, /env\.AIH_HOME_DIR \|\| env\.AI_HOME/);
   // 手写这条别名链的模块只允许 helper 自己 + 生成的 bootstrap 模板。
   const offenders = [];
   for (const dir of ['lib', 'bin', 'scripts']) {
@@ -139,12 +139,12 @@ test('AIH 数据根目录只有一处解析（同义别名不许再各写一遍�
         if (relative === 'lib/runtime/aih-home.js') continue;
         if (relative === 'lib/cli/services/node/bootstrap-assets.js') continue; // 远端自举脚本不能 require 本地模块
         const source = fs.readFileSync(full, 'utf8');
-        if (/AIH_HOME_DIR\s*\|\|\s*[\w.]*AIH_HOME\b/.test(source)) offenders.push(relative);
+        if (/AIH_HOME_DIR\s*\|\|\s*[^\n]*\bAI_HOME\b/.test(source)) offenders.push(relative);
       }
     };
     walk(path.join(ROOT, dir));
   }
-  assert.deepEqual(offenders, [], `这些文件又手写了 AIH_HOME 别名链，请改用 lib/runtime/aih-home.js：${offenders.join(', ')}`);
+  assert.deepEqual(offenders, [], `这些文件又手写了 AIH_HOME_DIR 别名链，请改用 lib/runtime/aih-home.js：${offenders.join(', ')}`);
 });
 
 test('每个 AIH_* 都有中文含义（目录与扫描双向一致）', () => {

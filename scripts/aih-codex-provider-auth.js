@@ -42,7 +42,7 @@ function auditLog(tier, detail) {
   } catch (_error) {}
 }
 function aiHomeDirForLog() {
-  // 唯一规则在 lib/runtime/aih-home.js（AIH_HOME_DIR / AIH_HOME / AI_HOME 为同义别名）。
+  // 唯一规则在 lib/runtime/aih-home.js（AIH_HOME_DIR / AI_HOME 为同义别名）。
   const explicit = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env });
   if (explicit) return explicit;
   const home = resolveHostHomeDir({ env: process.env, platform: process.platform });

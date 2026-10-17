@@ -30,7 +30,7 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 	listening := make(chan net.Addr, 1)
 	runtime := newConfigTestRuntime(
 		map[string]string{
-			"AIH_HOME":                  aiHomeDir,
+			"AIH_HOME_DIR":                  aiHomeDir,
 			"AIH_SERVER_MANAGEMENT_KEY": managementKey,
 			"AIH_SERVER_CLIENT_KEY":     clientKey,
 		},

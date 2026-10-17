@@ -157,9 +157,10 @@ func envPort(lookupEnv func(string) (string, bool)) (int, error) {
 	return port, nil
 }
 
-// resolveAIHomeDir 只读取 AIH_HOME，缺省时使用当前用户的 .ai_home。
+// resolveAIHomeDir 只读取规范 AIH_HOME_DIR，缺省时使用当前用户的 .ai_home。
+// 刻意不接受 AIH_HOME / AI_HOME 等旧别名：Go Core 只认一个名字，避免两侧数据根分家。
 func resolveAIHomeDir(runtime commandRuntime) (string, error) {
-	value := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_HOME", ""))
+	value := strings.TrimSpace(envValue(runtime.lookupEnv, "AIH_HOME_DIR", ""))
 	if value == "" {
 		userHome, err := runtime.userHomeDir()
 		if err != nil || strings.TrimSpace(userHome) == "" {
@@ -203,7 +204,7 @@ func writeUsage(output io.Writer, flags *flag.FlagSet) {
 	flags.PrintDefaults()
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_HOME")
+	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_HOST")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_PORT")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（必填，不接受命令行传入）")

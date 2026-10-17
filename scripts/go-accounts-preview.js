@@ -18,7 +18,7 @@ function assertPreviewHome(previewHome, userHome = os.homedir()) {
   const resolvedPreviewHome = path.resolve(String(previewHome || ''));
   const formalHome = path.resolve(String(userHome || ''), '.ai_home');
   if (resolvedPreviewHome === formalHome) {
-    throw new Error(`Go 账号 preview 拒绝使用正式 AIH_HOME: ${formalHome}`);
+    throw new Error(`Go 账号 preview 拒绝使用正式 AIH_HOME_DIR: ${formalHome}`);
   }
   return resolvedPreviewHome;
 }
@@ -74,12 +74,12 @@ function formatPreviewHelp(previewHome = path.join(os.tmpdir(), PREVIEW_HOME_NAM
     '  3. npm run go-cli:preview -- account list',
     '',
     'Preview Web 强制使用 PATH 中的 Node 22，避免 Homebrew npm 误带 Node 24/26。',
-    `隔离 AIH_HOME: ${previewHome}`,
+    `隔离 AIH_HOME_DIR: ${previewHome}`,
     '验收不得直接运行 `go run ./cmd/aih-server`，该入口仍保留正式默认端口。',
   ].join('\n');
 }
 
-// createPreviewInvocation 只生成隔离进程描述，不读取或修改正式 AIH_HOME。
+// createPreviewInvocation 只生成隔离进程描述，不读取或修改正式 AIH_HOME_DIR。
 function createPreviewInvocation(mode, argumentsList = [], dependencies = {}) {
   const repositoryRoot = path.resolve(
     dependencies.repositoryRoot || path.join(__dirname, '..'),
@@ -93,7 +93,7 @@ function createPreviewInvocation(mode, argumentsList = [], dependencies = {}) {
   const inheritedEnvironment = dependencies.env || process.env;
   const environment = {
     ...inheritedEnvironment,
-    AIH_HOME: previewHome,
+    AIH_HOME_DIR: previewHome,
     AIH_SERVER_BASE_URL: `http://127.0.0.1:${PREVIEW_SERVER_PORT}`,
     AIH_SERVER_CLIENT_KEY: PREVIEW_CLIENT_KEY,
     AIH_SERVER_MANAGEMENT_KEY: PREVIEW_MANAGEMENT_KEY,

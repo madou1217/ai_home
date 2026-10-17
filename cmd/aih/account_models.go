@@ -203,7 +203,7 @@ func writeAccountModelsUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  refresh 失败时保留旧快照；人工 force_enable/force_disable 策略不被覆盖。")
 	_, _ = fmt.Fprintln(output, "  set-policy 只修改一个精确模型，不访问 Provider；inherit 恢复跟随上游目录。")
 	_, _ = fmt.Fprintln(output, "  两个命令都不输出凭据正文、usage 或运行态。")
-	_, _ = fmt.Fprintln(output, "  AIH_HOME 不参与这些查询；账号事实以 AIH_SERVER_BASE_URL 为准。")
+	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR 不参与这些查询；账号事实以 AIH_SERVER_BASE_URL 为准。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "示例:")
 	_, _ = fmt.Fprintln(output, "  aih account models list claude:1")

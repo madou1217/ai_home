@@ -38,7 +38,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'bin/native']);
 
 // 已知的「一键多名」同义变量（历史上都进过部署脚本），必须在文档里点名而不是装作不存在。
 const KNOWN_SYNONYMS = Object.freeze([
-  { names: ['AIH_HOME_DIR', 'AIH_HOME', 'AI_HOME'], canonical: 'AIH_HOME_DIR（`lib/runtime/aih-home.js` 是唯一解析处）', note: '三个名字是同义别名，不是三种模式' },
+  { names: ['AIH_HOME_DIR', 'AI_HOME'], canonical: 'AIH_HOME_DIR（`lib/runtime/aih-home.js` 是唯一解析处）', note: '两个名字是同义别名；AIH_HOME 已于 2026-10-17 移除' },
   { names: ['AIH_SERVER_MANAGEMENT_KEY'], canonical: 'AIH_SERVER_MANAGEMENT_KEY', note: '文档/示例里出现过的 AIH_MANAGEMENT_KEY 不是输入变量（只在脚本示例里当下发值用）' }
 ]);
 

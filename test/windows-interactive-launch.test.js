@@ -26,11 +26,11 @@ function createFakeFs() {
 test('交互命令脚本只写入非敏感运行环境并在 Codex 退出后清理自身', () => {
   const script = buildInteractiveCommandScript('set "AIH_ACCOUNT_APP=1" && "C:\\node.exe" "C:\\repo\\bin\\ai-home.js" codex 3', {
     environment: {
-      AIH_HOME: 'C:\\Users\\madou\\.ai_home',
+      AIH_HOME_DIR: 'C:\\Users\\madou\\.ai_home',
       PATH: 'C:\\Program Files\\nodejs'
     }
   });
-  assert.match(script, /set "AIH_HOME=C:\\Users\\madou\\\.ai_home"/);
+  assert.match(script, /set "AIH_HOME_DIR=C:\\Users\\madou\\\.ai_home"/);
   assert.match(script, /set "PATH=C:\\Program Files\\nodejs"/);
   assert.match(script, /AIH_ACCOUNT_APP=1/);
   assert.match(script, /del "%~f0"/);

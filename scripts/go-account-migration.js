@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 'use strict';
 
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
+
 // Node -> Go 账号迁移（P1）命令行入口。
 //
 //   node scripts/go-account-migration.js plan    # 只读演练：临时 Go + 临时 aih.db，写出账本（默认）
-//   node scripts/go-account-migration.js apply   # 按账本导入真实 <AIH_HOME>/aih.db（Node 自 plan 后未变才允许）
+//   node scripts/go-account-migration.js apply   # 按账本导入真实 <AIH_HOME_DIR>/aih.db（Node 自 plan 后未变才允许）
 //   node scripts/go-account-migration.js verify  # 只读核对 aih.db 与 Node 账号逐字段一致
 //
-// 选项：--aih-home <dir>（默认 AIH_HOME 或 ~/.ai_home） --go-binary <path> --json
+// 选项：--aih-home <dir>（默认 AIH_HOME_DIR 或 ~/.ai_home） --go-binary <path> --json
 // apply 期间不要同时运行开启了 Go Core 的 aih server（两个 Go 进程写同一 aih.db 时
 // 常驻进程的路由索引不会刷新）；常驻 server 的持续同步会在下次启动时接管。
-// 账本写入 <AIH_HOME>/migration/go-account-ledger.json（0600，只含账号引用与分类，不含凭据）。
+// 账本写入 <AIH_HOME_DIR>/migration/go-account-ledger.json（0600，只含账号引用与分类，不含凭据）。
 
 const os = require('node:os');
 const path = require('node:path');
@@ -28,7 +30,7 @@ function readFlag(argv, name) {
 }
 
 function resolveAiHome(argv) {
-  const explicit = readFlag(argv, '--aih-home') || process.env.AIH_HOME || process.env.AIH_HOME_DIR;
+  const explicit = readFlag(argv, '--aih-home') || resolveAiHomeDir({ env: process.env });
   return path.resolve(explicit || path.join(os.homedir(), '.ai_home'));
 }
 

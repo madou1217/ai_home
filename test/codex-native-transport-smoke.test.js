@@ -156,7 +156,7 @@ test('installed engine resumes the same thread through native OAuth, API key and
   const configFile = path.join(codexHome, 'config.toml');
   fs.writeFileSync(configFile, `model="gpt-5.4"\nchatgpt_base_url="${nativeBase}/backend-api"\napproval_policy="never"\n[features]\nresponses_websockets_v2=false\n`);
   fs.writeFileSync(stateFile, JSON.stringify({ enabled: true, remoteControlProxy: false, traceResponses: false }));
-  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME: aiHomeDir,
+  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, AIH_HOST_HOME: home, AIH_HOME_DIR: aiHomeDir,
     NODE_PATH: process.env.NODE_PATH,
     SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: root, TMP: root,
     APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'),

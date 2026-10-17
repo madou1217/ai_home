@@ -46,7 +46,7 @@ test('host auth command pairs the gateway endpoint with its current key despite 
     assert.equal(auth.OPENAI_API_KEY, 'upstream-key-' + (refs.indexOf(ref) + 1));
     const actual = execFileSync(process.execPath, [script, '--gateway', '--ai-home', aiHomeDir], {
       encoding: 'utf8', env: { ...process.env, OPENAI_API_KEY: 'wrong-inherited-key',
-        OPENAI_BASE_URL: 'https://wrong.example/v1', AIH_HOME: '/nonexistent-projection', HOME: root }
+        OPENAI_BASE_URL: 'https://wrong.example/v1', AIH_HOME_DIR: '/nonexistent-projection', HOME: root }
     });
     assert.equal(actual, connection.apiKey);
   }

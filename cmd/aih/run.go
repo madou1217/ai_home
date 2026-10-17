@@ -154,9 +154,10 @@ func commandNeedsNativeStore(providerID string, arguments []string) bool {
 	return err == nil && intent.Mode() == providerlaunch.LaunchModeNativeDirect
 }
 
-// resolveAIHomeDir 复用全局 AIH_HOME；不创建任何 Provider 或账号级 HOME。
+// resolveAIHomeDir 复用全局 AIH_HOME_DIR；不创建任何 Provider 或账号级 HOME。
+// Go 侧只认规范名字，不提供 AIH_HOME / AI_HOME 别名 fallback。
 func resolveAIHomeDir(runtime commandRuntime) (string, error) {
-	value, found := runtime.lookupEnv("AIH_HOME")
+	value, found := runtime.lookupEnv("AIH_HOME_DIR")
 	if !found || strings.TrimSpace(value) == "" {
 		userHome, err := runtime.userHomeDir()
 		if err != nil || strings.TrimSpace(userHome) == "" {
@@ -208,10 +209,10 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "共享状态:")
 	_, _ = fmt.Fprintln(output, "  Codex 继承官方 CODEX_HOME；Claude 继承官方 CLAUDE_CONFIG_DIR。")
-	_, _ = fmt.Fprintln(output, "  AIH 不创建 Provider 或账号级 HOME；Native Direct 只读本地 AIH_HOME，Gateway Relay 只连接目标 Server。")
+	_, _ = fmt.Fprintln(output, "  AIH 不创建 Provider 或账号级 HOME；Native Direct 只读本地 AIH_HOME_DIR，Gateway Relay 只连接目标 Server。")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "环境变量:")
-	_, _ = fmt.Fprintln(output, "  AIH_HOME")
+	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（仅 Gateway 模式必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号管理和固定 Relay 数字别名解析必需）")
@@ -244,7 +245,7 @@ func writeProviderUsage(output io.Writer, providerID string) {
 		_, _ = fmt.Fprintln(output)
 		_, _ = fmt.Fprintln(output, "共享状态:")
 		_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CLAUDE_CONFIG_DIR；AIH 不创建账号级 HOME，会话、信任和插件配置保持共享。")
-		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME；Gateway Relay 不打开本地 AIH_HOME，固定数字别名由目标 Server 解析。")
+		_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME_DIR；Gateway Relay 不打开本地 AIH_HOME_DIR，固定数字别名由目标 Server 解析。")
 		return
 	}
 
@@ -273,5 +274,5 @@ func writeProviderUsage(output io.Writer, providerID string) {
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "共享状态:")
 	_, _ = fmt.Fprintln(output, "  所有模式继承同一个 CODEX_HOME；AIH 不创建账号级 HOME，会话、信任和 MCP 配置保持共享。")
-	_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME；Gateway Relay 不打开本地 AIH_HOME，固定数字别名由目标 Server 解析。")
+	_, _ = fmt.Fprintln(output, "  Native Direct 读取本地 AIH_HOME_DIR；Gateway Relay 不打开本地 AIH_HOME_DIR，固定数字别名由目标 Server 解析。")
 }

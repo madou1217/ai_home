@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T04:48:30.589Z",
-  "total": 330,
+  "generatedAt": "2026-10-17T04:57:07.824Z",
+  "total": 329,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -74,35 +74,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_HOME",
-      "category": "path",
-      "reads": 26,
-      "literals": 3,
-      "files": [
-        "lib/cli/services/account/codex-rekey-reference-policy.js",
-        "lib/cli/services/ai-cli/desktop-client-restart.js",
-        "lib/cli/services/fabric/closure-audit.js",
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/nodes-client.js",
-        "lib/cli/services/fabric/provider-accounts.js",
-        "lib/cli/services/fabric/session-control-client.js",
-        "lib/cli/services/fabric/session-start-client.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-readiness-client.js",
-        "lib/cli/services/node/bootstrap-assets.js",
-        "lib/runtime/aih-home.js",
-        "lib/server/codex-desktop-account.js",
-        "lib/server/token-refresh-suppression-store.js",
-        "lib/server/webui-window-activation-routes.js",
-        "lib/server/webui-zcode-egress-routes.js",
-        "scripts/cleanup-official-account-error-rules.js",
-        "scripts/collect-env-flags.js",
-        "scripts/gateway-account-auth-smoke.js",
-        "scripts/go-account-migration.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_PROXY_URL",
       "category": "network",
       "reads": 18,
@@ -140,6 +111,26 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_HOME_DIR",
+      "category": "path",
+      "reads": 11,
+      "literals": 4,
+      "files": [
+        "lib/cli/services/account/codex-rekey-reference-policy.js",
+        "lib/cli/services/ai-cli/desktop-client-restart.js",
+        "lib/cli/services/node/bootstrap-assets.js",
+        "lib/config/public-env.js",
+        "lib/runtime/aih-home.js",
+        "lib/server/codex-desktop-account.js",
+        "lib/server/token-refresh-suppression-store.js",
+        "lib/server/webui-window-activation-routes.js",
+        "lib/server/webui-zcode-egress-routes.js",
+        "scripts/collect-env-flags.js",
+        "scripts/gateway-account-auth-smoke.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_MANAGEMENT_KEY",
       "category": "credential",
       "reads": 11,
@@ -171,21 +162,6 @@
         "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js",
         "scripts/collect-env-flags.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_HOME_DIR",
-      "category": "path",
-      "reads": 7,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/node/bootstrap-assets.js",
-        "lib/config/public-env.js",
-        "lib/runtime/aih-home.js",
-        "scripts/cleanup-official-account-error-rules.js",
-        "scripts/collect-env-flags.js",
-        "scripts/go-account-migration.js"
       ],
       "aliasConstants": []
     },

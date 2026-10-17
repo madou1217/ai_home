@@ -128,7 +128,7 @@ Browser 到 Node 使用 HttpOnly、SameSite 的 WebUI 会话或等价桌面会�
 principal。Node 到 Go 使用彼此隔离的 boot-scoped `management` / `inference` capability，
 通过继承 pipe 或 `0600` 文件交付，不进入 renderer 或命令参数。
 
-每个 `AIH_HOME` 只有一个 Node supervisor owner，由原子 owner lock 和进程身份共同证明。
+每个 `AIH_HOME_DIR` 只有一个 Node supervisor owner，由原子 owner lock 和进程身份共同证明。
 Go readiness 返回 `boot_id`、`contract_version`、`build_sha`、`manifest_hash`；Node 全部核对
 成功后才发布组合 ready。Go 崩溃可以由 Node 重启进程，但任何结果不明的在途推理都不得
 由 Node 重放。
@@ -159,7 +159,7 @@ Core。
 node_owned -> write_frozen -> migrated_and_verified -> go_owned
 ```
 
-- `node_owned`：正式流量仍由 Node 现行路径处理；Go 只使用临时 `AIH_HOME`、fixture、
+- `node_owned`：正式流量仍由 Node 现行路径处理；Go 只使用临时 `AIH_HOME_DIR`、fixture、
   mock upstream 或 shadow 输入验证，不写生产账号事实。
 - `write_frozen`：对该能力短暂冻结新写入，导出带校验和的稳定快照；不得边迁移边双写。
 - `migrated_and_verified`：导入 `aih.db`，逐账号核对映射、凭据 generation、模型 LKG、
@@ -476,7 +476,7 @@ Server 未声明相应 capability 时，路由展示带原因的 unavailable 状
 
 ### M1：Codex API Key + Responses 隔离 canary
 
-- 使用独立 canary profile/隔离 `AIH_HOME`，只暴露 Codex API Key 与已声明支持的 Responses
+- 使用独立 canary profile/隔离 `AIH_HOME_DIR`，只暴露 Codex API Key 与已声明支持的 Responses
   文本能力；正式 `/accounts`、Chat 和公开 `/v1/responses` 继续 `node_owned`。
 - canary Web/CLI 创建、列表、轮换、停用、删除同一账号，只写 `aih.db`；`app-state.db` 不
   产生账号影子，且不把 Node 账号聚合进 Go 列表。

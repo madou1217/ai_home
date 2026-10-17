@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 'use strict';
 
+const { resolveAiHomeDir } = require('../lib/runtime/aih-home');
+
 // 一次性迁移入口：清掉官方上游 / OAuth 账号上的账号级调度规则（死配置）。
 //
 //   node scripts/cleanup-official-account-error-rules.js            # 演练（默认，只读）
 //   node scripts/cleanup-official-account-error-rules.js --apply    # 执行（先写备份再删键）
 //   node scripts/cleanup-official-account-error-rules.js --json     # 机器可读输出
 //
-// 选项：--aih-home <dir>（默认 AIH_HOME 或 ~/.ai_home）
+// 选项：--aih-home <dir>（默认 AIH_HOME_DIR 或 ~/.ai_home）
 //
 // 改哪些数据、为什么改、边界在哪：见 lib/account/official-account-rules-cleanup.js 文件头。
-// 备份：<AIH_HOME>/run/migrations/<时间戳>-official-account-error-rules.json（0600，含被删规则全文）。
+// 备份：<AIH_HOME_DIR>/run/migrations/<时间戳>-official-account-error-rules.json（0600，含被删规则全文）。
 
 const fs = require('node:fs');
 const http = require('node:http');
@@ -29,7 +31,7 @@ function readFlag(argv, name) {
 }
 
 function resolveAiHome(argv) {
-  const explicit = readFlag(argv, '--aih-home') || process.env.AIH_HOME || process.env.AIH_HOME_DIR;
+  const explicit = readFlag(argv, '--aih-home') || resolveAiHomeDir({ env: process.env });
   return path.resolve(explicit || path.join(os.homedir(), '.ai_home'));
 }
 
@@ -64,7 +66,7 @@ function printHelp() {
     '',
     'Options:',
     '  --apply            删除官方上游 / OAuth 账号上的调度规则（默认只演练）。',
-    '  --aih-home PATH    数据目录，默认 AIH_HOME 或 ~/.ai_home。',
+    '  --aih-home PATH    数据目录，默认 AIH_HOME_DIR 或 ~/.ai_home。',
     '  --json             输出完整 JSON 报告。',
     '  --help             显示本帮助。',
     ''

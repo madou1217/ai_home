@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:25:48.912Z",
-  "total": 87,
+  "generatedAt": "2026-10-17T10:28:39.036Z",
+  "total": 85,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -24,6 +24,7 @@
     "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
+    "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
     "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
@@ -480,16 +481,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_EDGE_CADDYFILE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/caddy.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_EDGE_FRPC_BIN",
       "category": "plumbing",
       "reads": 1,
@@ -500,29 +491,8 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_EDGE_FRPC_CONFIG",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/frp.js",
-        "lib/cli/services/toolkit/network-tool-discovery.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_EDGE_NGINX_BIN",
       "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/nginx.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_EDGE_NGINX_CONF_DIR",
-      "category": "path",
       "reads": 1,
       "literals": 0,
       "files": [
@@ -880,6 +850,18 @@
       ],
       "aliasConstants": [
         "CODEX_PROBE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_EDGE_CONTEXT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/toolkit/edge-proxy/edge-context.js"
+      ],
+      "aliasConstants": [
+        "EDGE_CONTEXT_ENV"
       ]
     },
     {

@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:25:48.912Z
-> 共 **87** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:28:39.036Z
+> 共 **85** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，10）
+## path（数据/目录/仓库路径，9）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -14,7 +14,6 @@
 | `AIH_CODEX_HOME` | — | 2 | codex 配置根（沙箱投影 / 宿主切换） |
 | `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | — | 1 | 跳过 codex 的仓库信任检查（自动化场景） |
-| `AIH_EDGE_NGINX_CONF_DIR` | — | 1 | 托管 nginx 的配置目录 |
 | `AIH_PROVIDER_DEFS_DIR` | — | 1 | provider 定义/合同目录覆盖 |
 | `AIH_QUOTA_PLUGIN_DIR` | — | 1 | 额度插件目录 |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
@@ -71,7 +70,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），45）
+## plumbing（内部管道（进程间传递的身份 / 标记），44）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -84,9 +83,7 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
-| `AIH_EDGE_CADDYFILE` | — | 1 | 托管 caddy 的 Caddyfile 路径 |
 | `AIH_EDGE_FRPC_BIN` | — | 1 | 托管 frpc 可执行文件路径 |
-| `AIH_EDGE_FRPC_CONFIG` | — | 1 | 托管 frpc 配置路径 |
 | `AIH_EDGE_NGINX_BIN` | — | 1 | 托管 nginx 可执行文件路径 |
 | `AIH_GO_CORE_ACCOUNT_SYNC` | — | 1 | Go Core 账号同步开关 |
 | `AIH_GO_CORE_BINARY` | — | 1 | Go Core 二进制路径 |
@@ -107,6 +104,7 @@
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_HOOKS` | — | 0 | codex hook 安装开关（cli/desktop/none 列表） |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
+| `AIH_EDGE_CONTEXT` | — | 0 | 边缘代理配置位置（caddyfile/nginxConfDir/frpcConfig 三项合一） |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_LAUNCH_CONTEXT` | — | 0 | 单文件启动上下文：父进程写 0600 JSON，子进程只收文件路径（取代一批零散 AIH_* 上下文字段） |
 | `AIH_MULTIPLEXER` | ✅ | 0 | 复用器选择 auto/tmux/herdr/off（公开；off = 关闭复用器直接跑） |

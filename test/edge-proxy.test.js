@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { EDGE_CONTEXT_ENV, serializeEdgeContext } = require('../lib/cli/services/toolkit/edge-proxy/edge-context');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
@@ -62,7 +63,7 @@ test('frp provider lists, adds and removes only the entries it manages', () => {
 });
 
 test('nginx plans cover the split / passthrough / http-only shapes', () => {
-  const service = new EdgeProxyService({ env: { AIH_EDGE_NGINX_CONF_DIR: '/etc/nginx' }, path, aihPort: 9527 });
+  const service = new EdgeProxyService({ env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: '/etc/nginx' }) }, path, aihPort: 9527 });
 
   const split = service.plan('nginx', { domain: 'aih.example.com', mode: 'split' });
   const stream = split.files.find((file) => file.topLevel).content;
@@ -87,7 +88,7 @@ test('nginx plans cover the split / passthrough / http-only shapes', () => {
 });
 
 test('unknown nginx shapes are refused instead of silently degrading to another shape', () => {
-  const service = new EdgeProxyService({ fs, aihPort: 9527, env: { AIH_EDGE_NGINX_CONF_DIR: '/tmp/nginx' } });
+  const service = new EdgeProxyService({ fs, aihPort: 9527, env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: '/tmp/nginx' }) } });
   assert.throws(
     () => service.plan('nginx', { domain: 'edge.example.com', mode: 'split-tls' }),
     (error) => error.code === 'edge_invalid_mode'
@@ -97,7 +98,7 @@ test('unknown nginx shapes are refused instead of silently degrading to another 
 });
 
 test('caddy plan is an https reverse proxy and says what it cannot do', () => {
-  const service = new EdgeProxyService({ env: { AIH_EDGE_CADDYFILE: '/etc/caddy/Caddyfile' }, path, aihPort: 9527 });
+  const service = new EdgeProxyService({ env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ caddyfile: '/etc/caddy/Caddyfile' }) }, path, aihPort: 9527 });
   const plan = service.plan('caddy', { domain: 'aih.example.com' });
   assert.match(plan.files[0].content, /aih\.example\.com \{/);
   assert.match(plan.files[0].content, /reverse_proxy 127\.0\.0\.1:9527/);
@@ -111,7 +112,7 @@ test('applyFrp validates a staged copy first and never leaves a rejected config 
   fs.writeFileSync(configPath, FRPC_BASE);
   const calls = [];
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_FRPC_CONFIG: configPath, AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc'), HOME: dir },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath }), AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc'), HOME: dir },
     run: (command, args) => {
       calls.push([command, ...args].join(' '));
       if (args[0] === 'verify' && service.rejectVerify) return { status: 1, stderr: 'bad config', stdout: '' };
@@ -150,7 +151,7 @@ test('a config we cannot write is reported instead of guessing sudo', () => {
   const configPath = path.join(dir, 'frpc.toml');
   fs.writeFileSync(configPath, FRPC_BASE);
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_FRPC_CONFIG: configPath, AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc') },
+    env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: configPath }), AIH_EDGE_FRPC_BIN: fakeBinary(dir, 'frpc') },
     path,
     run: () => ({ status: 0, stdout: '', stderr: '' })
   });
@@ -162,7 +163,7 @@ test('a config we cannot write is reported instead of guessing sudo', () => {
 
 test('dry-run only prints the plan', () => {
   const dir = tempDir();
-  const service = new EdgeProxyService({ env: { AIH_EDGE_FRPC_CONFIG: path.join(dir, 'frpc.toml') }, path });
+  const service = new EdgeProxyService({ env: { [EDGE_CONTEXT_ENV]: serializeEdgeContext({ frpcConfig: path.join(dir, 'frpc.toml') }) }, path });
   const result = service.apply('frp', { remotePort: 29527, dryRun: true });
   assert.equal(result.dryRun, true);
   assert.equal(result.plan.kind, 'frp');
@@ -175,7 +176,7 @@ test('nginx apply rolls back every file when the kernel rejects the config', () 
   const configDir = path.join(dir, 'nginx');
   fs.mkdirSync(path.join(configDir, 'conf.d'), { recursive: true });
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_NGINX_BIN: fakeBinary(dir, 'nginx-bin'), AIH_EDGE_NGINX_CONF_DIR: configDir, HOME: dir },
+    env: { AIH_EDGE_NGINX_BIN: fakeBinary(dir, 'nginx-bin'), [EDGE_CONTEXT_ENV]: serializeEdgeContext({ nginxConfDir: configDir }), HOME: dir },
     path,
     run: (command, args) => (args[0] === '-t'
       ? { status: 1, stderr: 'unexpected end of file', stdout: '' }
@@ -193,7 +194,7 @@ test('caddy apply replaces its managed block instead of appending again', () => 
   const caddyfile = path.join(dir, 'Caddyfile');
   fs.writeFileSync(caddyfile, 'example.org {\n\trespond "hi"\n}\n');
   const service = new EdgeProxyService({
-    env: { AIH_EDGE_CADDY_BIN: fakeBinary(dir, 'caddy'), AIH_EDGE_CADDYFILE: caddyfile, HOME: dir },
+    env: { AIH_EDGE_CADDY_BIN: fakeBinary(dir, 'caddy'), [EDGE_CONTEXT_ENV]: serializeEdgeContext({ caddyfile }), HOME: dir },
     path,
     run: () => ({ status: 0, stdout: '', stderr: '' })
   });

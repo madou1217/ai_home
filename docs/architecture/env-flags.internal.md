@@ -1,19 +1,19 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:25:48.912Z
-> 覆盖 `lib / bin / scripts / core`，共 **77** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:28:39.036Z
+> 覆盖 `lib / bin / scripts / core`，共 **75** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 8 | 数据/目录/仓库路径 |
+| path | 7 | 数据/目录/仓库路径 |
 | network | 12 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 44 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 43 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -55,7 +55,6 @@
 | `AIH_CODEX_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_CODEX_SQLITE_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
-| `AIH_EDGE_NGINX_CONF_DIR` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/nginx.js |
 | `AIH_PROVIDER_DEFS_DIR` | 1 | 0 | lib/providers/loader.js |
 | `AIH_QUOTA_PLUGIN_DIR` | 1 | 0 | lib/providers/loader.js |
 | `AIH_RUNTIME_TOOLS_DIR` | 1 | 0 | lib/runtime/native-cli-resolver.js |
@@ -118,9 +117,7 @@
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
 | `AIH_EDGE_CADDY_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
-| `AIH_EDGE_CADDYFILE` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_FRPC_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/frp.js |
-| `AIH_EDGE_FRPC_CONFIG` | 1 | 1 | lib/cli/services/toolkit/edge-proxy/providers/frp.js<br>lib/cli/services/toolkit/network-tool-discovery.js |
 | `AIH_EDGE_NGINX_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/nginx.js |
 | `AIH_GO_CORE_ACCOUNT_SYNC` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_BINARY` | 1 | 1 | lib/server/go-core-host.js |
@@ -141,6 +138,7 @@
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_HOOKS` | 0 | 1 | lib/cli/config/codex-hooks.js |
 | `AIH_CODEX_MANAGED_LAUNCH` | 0 | 2 | lib/runtime/codex-launch-context.js<br>lib/runtime/multiplexer/tmux-session-env.js |
+| `AIH_EDGE_CONTEXT` | 0 | 1 | lib/cli/services/toolkit/edge-proxy/edge-context.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |

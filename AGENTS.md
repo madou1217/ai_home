@@ -80,7 +80,7 @@ Fuller layer map:
 
 ## 环境变量（环境准入）纪律
 
-- **环境准入 = 公开环境变量白名单 `lib/config/public-env.js`，硬上限 10 个**：`docs/architecture/env-flags.md` 只列这 10 个（由 `npm run env:inventory -- --write` 生成；另出 `env-flags.internal.md` 与 `env-flags.snapshot.json`）。其余 `AIH_*` 一律是**内部变量**（aih 设置给子进程的身份/标记、实验开关、测试钩子），只在内部清单出明细，**不承诺兼容、不许写进部署脚本**。新增公开变量 = 先删一个，或写清为什么 `server config`/WebUI 放不下；`test/env-inventory.test.js` 守「≤10 + 公开变量在源码中真实存在 + 公开文档不出现内部变量 + 内部清单完整 + 开关必须有文档 + 同义别名不许手写第二份」。
+- **环境准入 = 公开环境变量白名单 `lib/config/public-env.js`，硬上限 10 个**：`docs/architecture/env-flags.md` 只列这 10 个（由 `npm run env:inventory -- --write` 生成；另出 `env-flags.internal.md`、`env-flags.catalog.md`（全量含义目录）与 `env-flags.snapshot.json`）。其余 `AIH_*` 一律是**内部变量**（aih 设置给子进程的身份/标记、实验开关、测试钩子），只在内部清单出明细，**不承诺兼容、不许写进部署脚本**。新增公开变量 = 先删一个，或写清为什么 `server config`/WebUI 放不下；`test/env-inventory.test.js` 守「≤10 + 公开变量在源码中真实存在 + 公开文档不出现内部变量 + 内部清单完整 + 开关必须有文档 + 同义别名不许手写第二份」。
 - **一个语义只用一个名字**：同义别名只允许一处解析（示例：`AIH_HOME_DIR` / `AIH_HOME` / `AI_HOME` 的唯一解析处是 `lib/runtime/aih-home.js`；`lib/cli/services/node/bootstrap-assets.js` 是远程自举模板，按设计内联同一规则，属唯一豁免）。
 - **禁止 `ENABLE`/`DISABLE` 成对开关**表达一个语义；确需兼容历史写法时，登记进 `scripts/collect-env-flags.js` 的 `ALLOWED_FLAG_PAIRS` 并在文档里说明（现存唯一一对：codex 远程代理）。
 - **可调参数优先做常量**（`lib/cli/config/constants.js`），不要为了调整超时/TTL 就新增环境变量；必须是环境变量的要带单位（`_MS`）并写明默认值。

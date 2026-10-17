@@ -9,6 +9,8 @@ const ROOT = path.join(__dirname, '..');
 const DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.md');
 const SNAPSHOT = path.join(ROOT, 'docs', 'architecture', 'env-flags.snapshot.json');
 const INTERNAL_DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.internal.md');
+const CATALOG_DOC = path.join(ROOT, 'docs', 'architecture', 'env-flags.catalog.md');
+const { ENV_MEANINGS } = require('../lib/config/env-catalog');
 const { PUBLIC_ENV_VARS, PUBLIC_ENV_LIMIT } = require('../lib/config/public-env');
 
 function readSnapshot() {
@@ -143,4 +145,21 @@ test('AIH 数据根目录只有一处解析（同义别名不许再各写一遍�
     walk(path.join(ROOT, dir));
   }
   assert.deepEqual(offenders, [], `这些文件又手写了 AIH_HOME 别名链，请改用 lib/runtime/aih-home.js：${offenders.join(', ')}`);
+});
+
+test('每个 AIH_* 都有中文含义（目录与扫描双向一致）', () => {
+  const names = collectNow().entries.map((entry) => entry.name);
+  const missing = names.filter((name) => !String(ENV_MEANINGS[name] || '').trim());
+  assert.deepEqual(missing, [], `这些变量缺含义，请在 lib/config/env-catalog.js 补一行：${missing.join(', ')}`);
+  const extra = Object.keys(ENV_MEANINGS).filter((name) => !names.includes(name));
+  assert.deepEqual(extra, [], `目录里有代码中已不存在的变量，请删除：${extra.join(', ')}`);
+});
+
+test('目录文档覆盖全部变量且含义与 catalog 一致', () => {
+  const doc = fs.readFileSync(CATALOG_DOC, 'utf8');
+  const missing = [];
+  for (const [name, meaning] of Object.entries(ENV_MEANINGS)) {
+    if (!doc.includes(`\`${name}\``) || !doc.includes(meaning)) missing.push(name);
+  }
+  assert.deepEqual(missing, [], `docs/architecture/env-flags.catalog.md 与 catalog 不一致（重跑 npm run env:inventory -- --write）：${missing.slice(0, 10).join(', ')}`);
 });

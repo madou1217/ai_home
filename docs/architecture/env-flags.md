@@ -1,6 +1,6 @@
 # 环境准入（公开环境变量，≤10）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:41:43.554Z
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:48:02.639Z
 > 公开变量 **10 / 10**（白名单：`lib/config/public-env.js`，测试守住上限）。
 > 其余 `AIH_*` 都是**内部变量**（进程间身份/标记、实验开关、测试钩子），见 [`env-flags.internal.md`](./env-flags.internal.md)：不要写进部署脚本。
 

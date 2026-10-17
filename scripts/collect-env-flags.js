@@ -23,6 +23,7 @@ const {
   PUBLIC_ENV_LIMIT,
   isPublicEnvVar
 } = require('../lib/config/public-env');
+const { ENV_MEANINGS } = require('../lib/config/env-catalog');
 
 const ROOT = path.join(__dirname, '..');
 // 公开清单（≤10，人读的唯一环境准入）与内部清单（不要手工设置）分开生成：
@@ -30,6 +31,8 @@ const ROOT = path.join(__dirname, '..');
 const DOC_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.md');
 const INTERNAL_DOC_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.internal.md');
 const SNAPSHOT_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.snapshot.json');
+// 全量目录（含每个变量的中文含义）：审查环境变量时看这一份。
+const CATALOG_DOC_PATH = path.join(ROOT, 'docs', 'architecture', 'env-flags.catalog.md');
 const SCAN_ROOTS = ['lib', 'bin', 'scripts', 'core'];
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'bin/native']);
 
@@ -283,6 +286,35 @@ function renderInternalMarkdown(entries, generatedAt) {
 }
 
 
+function renderCatalogMarkdown(entries, generatedAt) {
+  const byCategory = {};
+  for (const entry of entries) {
+    byCategory[entry.category] = byCategory[entry.category] || [];
+    byCategory[entry.category].push(entry);
+  }
+  const lines = [];
+  lines.push('# 环境变量目录（全部 `AIH_*`，含含义）');
+  lines.push('');
+  lines.push(`> 生成命令：\`npm run env:inventory -- --write\`　生成时间：${generatedAt}`);
+  lines.push(`> 共 **${entries.length}** 个：公开 ${PUBLIC_ENV_VARS.length} 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。`);
+  lines.push('> 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。');
+  lines.push('');
+  for (const category of ['path', 'network', 'flag', 'tuning', 'credential', 'test', 'plumbing']) {
+    const list = byCategory[category] || [];
+    if (!list.length) continue;
+    lines.push(`## ${category}（${CATEGORY_LABELS[category]}，${list.length}）`);
+    lines.push('');
+    lines.push('| 变量 | 公开 | 读取 | 含义 |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const entry of list) {
+      const meaning = ENV_MEANINGS[entry.name] || '（缺含义：请在 lib/config/env-catalog.js 补一行）';
+      lines.push(`| \`${entry.name}\` | ${isPublicEnvVar(entry.name) ? '✅' : '—'} | ${entry.reads} | ${meaning} |`);
+    }
+    lines.push('');
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const write = argv.includes('--write');
@@ -302,14 +334,16 @@ function main() {
   };
   const markdown = renderPublicMarkdown(entries, generatedAt);
   const internalMarkdown = renderInternalMarkdown(entries, generatedAt);
+  const catalogMarkdown = renderCatalogMarkdown(entries, generatedAt);
   if (jsonOnly) process.stdout.write(`${JSON.stringify(snapshot, null, 2)}\n`);
   else process.stdout.write(markdown);
   if (write) {
     fs.mkdirSync(path.dirname(DOC_PATH), { recursive: true });
     fs.writeFileSync(DOC_PATH, markdown);
     fs.writeFileSync(INTERNAL_DOC_PATH, internalMarkdown);
+    fs.writeFileSync(CATALOG_DOC_PATH, catalogMarkdown);
     fs.writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`);
-    process.stderr.write(`[aih] wrote ${path.relative(ROOT, DOC_PATH)}, ${path.relative(ROOT, INTERNAL_DOC_PATH)} and ${path.relative(ROOT, SNAPSHOT_PATH)}\n`);
+    process.stderr.write(`[aih] wrote ${path.relative(ROOT, DOC_PATH)}, ${path.relative(ROOT, INTERNAL_DOC_PATH)}, ${path.relative(ROOT, CATALOG_DOC_PATH)} and ${path.relative(ROOT, SNAPSHOT_PATH)}\n`);
   }
   return 0;
 }
@@ -321,7 +355,8 @@ module.exports = {
   collect,
   findFlagPairs,
   renderPublicMarkdown,
-  renderInternalMarkdown
+  renderInternalMarkdown,
+  renderCatalogMarkdown
 };
 
 

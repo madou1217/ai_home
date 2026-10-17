@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:05:43.747Z
-> 覆盖 `lib / bin / scripts / core`，共 **67** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:06:32.778Z
+> 覆盖 `lib / bin / scripts / core`，共 **65** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,11 +9,11 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 2 | 数据/目录/仓库路径 |
-| network | 11 | 端点 / 代理 / 端口 |
+| network | 10 | 端点 / 代理 / 端口 |
 | flag | 2 | 开关与逃生门（环境准入） |
-| credential | 7 | 凭据与密钥（文档只写变量名，绝不放真实值） |
-| test | 1 | 测试与探针专用 |
-| plumbing | 44 | 内部管道（进程间传递的身份 / 标记） |
+| credential | 5 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| test | 3 | 测试与探针专用 |
+| plumbing | 43 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -40,12 +40,12 @@
 | `AIH_AGY_QUOTA_BASE_URL` | network | 3 | 1 |
 | `AIH_CODEX_BIN` | plumbing | 3 | 2 |
 | `AIH_REMOTE_SSH` | network | 3 | 2 |
-| `AIH_CLAUDE_API_BASE_URL` | network | 2 | 1 |
-| `AIH_CLAUDE_OAUTH_TOKEN` | credential | 2 | 1 |
+| `AIH_CLAUDE_USAGE_PROBE` | test | 2 | 1 |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | credential | 2 | 4 |
 | `AIH_CODEX_REMOTE_PROXY` | network | 2 | 2 |
 | `AIH_CODEX_USAGE_PROBE` | test | 2 | 2 |
-| `AIH_GEMINI_OAUTH_TOKEN` | credential | 2 | 1 |
+| `AIH_GEMINI_USAGE_PROBE` | test | 2 | 1 |
+| `AIH_PSMUX_INSTALL_PROMPT` | plumbing | 2 | 2 |
 
 ## path（数据/目录/仓库路径）
 
@@ -61,7 +61,6 @@
 | `AIH_AGY_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_AGY_QUOTA_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_REMOTE_SSH` | 3 | 0 | lib/cli/commands/ai-cli/router.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
-| `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_ENDPOINT` | 2 | 1 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/agent-endpoint.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
@@ -81,9 +80,7 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_CLAUDE_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | 2 | 3 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/server/codex-app-server-stdio-proxy-cliresume.js<br>lib/server/codex-default-cli-launcher.js<br>…共 4 个 |
-| `AIH_GEMINI_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_GO_CORE_CLIENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | 0 | 2 | lib/account/claude-credential.js<br>lib/cli/services/ai-cli/provider-runtime-env.js |
@@ -93,7 +90,9 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
+| `AIH_CLAUDE_USAGE_PROBE` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_USAGE_PROBE` | 2 | 1 | lib/cli/services/usage/codex-probe-context.js<br>lib/cli/services/usage/usage-snapshot-codex.js |
+| `AIH_GEMINI_USAGE_PROBE` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 
 ## plumbing（内部管道（进程间传递的身份 / 标记））
 
@@ -104,7 +103,6 @@
 | `AIH_PROVIDER_ACCOUNT_REF` | 4 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/provider-session-context.js<br>…共 4 个 |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
-| `AIH_GEMINI_PROJECT_ID` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_EDGE_CADDY_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_FRPC_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/frp.js |

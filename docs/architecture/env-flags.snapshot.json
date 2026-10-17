@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:05:43.747Z",
-  "total": 77,
+  "generatedAt": "2026-10-17T11:06:32.778Z",
+  "total": 75,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -288,18 +288,8 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLAUDE_API_BASE_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_OAUTH_TOKEN",
-      "category": "credential",
+      "name": "AIH_CLAUDE_USAGE_PROBE",
+      "category": "test",
       "reads": 2,
       "literals": 0,
       "files": [
@@ -345,18 +335,8 @@
       ]
     },
     {
-      "name": "AIH_GEMINI_OAUTH_TOKEN",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GEMINI_PROJECT_ID",
-      "category": "plumbing",
+      "name": "AIH_GEMINI_USAGE_PROBE",
+      "category": "test",
       "reads": 2,
       "literals": 0,
       "files": [

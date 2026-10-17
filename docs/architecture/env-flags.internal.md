@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:01:02.944Z
-> 覆盖 `lib / bin / scripts / core`，共 **150** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:02:52.614Z
+> 覆盖 `lib / bin / scripts / core`，共 **147** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,12 +9,12 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 18 | 数据/目录/仓库路径 |
-| network | 24 | 端点 / 代理 / 端口 |
+| network | 23 | 端点 / 代理 / 端口 |
 | flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 1 | 可调参数（超时 / TTL / 上限） |
-| credential | 18 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| credential | 17 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 83 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 82 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -91,7 +91,6 @@
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_CODEX_USAGE_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_DEPLOY_SSH` | 1 | 0 | scripts/deploy-server.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_SERVER_CODEX_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
@@ -131,7 +130,6 @@
 | `AIH_SHADOW_NODE_KEY` | 2 | 0 | scripts/gateway-shadow-compare.js |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | 1 | 0 | scripts/gateway-account-auth-smoke.js |
 | `AIH_CODEX_AUTH_PREFLIGHT` | 1 | 0 | lib/cli/services/pty/pty-runtime-run.js |
-| `AIH_DEPLOY_SSH_KEY` | 1 | 0 | scripts/deploy-server.js |
 | `AIH_GO_CORE_CLIENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_KEY` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
@@ -170,7 +168,6 @@
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
 | `AIH_CODEX_USAGE_DIRECT` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_DEPLOY_GO_TARGET` | 1 | 0 | scripts/deploy-server.js |
 | `AIH_EDGE_CADDY_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_CADDYFILE` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/caddy.js |
 | `AIH_EDGE_FRPC_BIN` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/frp.js |

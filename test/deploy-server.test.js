@@ -11,13 +11,13 @@ const {
   remotePath
 } = require('../scripts/deploy-server');
 
-test('deploy-server 参数：需要 SSH 目标，可从环境变量读取，非法值被拒绝', () => {
+test('deploy-server 参数：需要 SSH 目标，非法值被拒绝', () => {
   assert.throws(() => parseArgs([], {}), /missing --ssh/);
-  const fromEnv = parseArgs([], { AIH_DEPLOY_SSH: 'ubuntu@host', AIH_DEPLOY_SSH_KEY: '~/.ssh/k.pem' });
-  assert.equal(fromEnv.ssh, 'ubuntu@host');
-  assert.equal(fromEnv.sshKey, '~/.ssh/k.pem');
-  assert.equal(fromEnv.ref, 'origin/main');
-  assert.equal(fromEnv.remoteDir, '~/ai_home');
+  const fromCli = parseArgs(['--ssh', 'ubuntu@host', '--ssh-key', '~/.ssh/k.pem'], {});
+  assert.equal(fromCli.ssh, 'ubuntu@host');
+  assert.equal(fromCli.sshKey, '~/.ssh/k.pem');
+  assert.equal(fromCli.ref, 'origin/main');
+  assert.equal(fromCli.remoteDir, '~/ai_home');
   assert.equal(parseArgs(['--ssh', 'a@b', '--no-restart', '--port', '9600'], {}).restart, false);
   assert.throws(() => parseArgs(['--ssh', 'a@b', '--unit', 'x; rm -rf /'], {}), /invalid --unit/);
   assert.throws(() => parseArgs(['--ssh', 'a@b', '--remote-dir', '$(whoami)'], {}), /invalid --remote-dir/);
@@ -74,7 +74,6 @@ test('deploy-server 远端 Go 目标：按 uname 探测，认不出来就交回�
 test('deploy-server 参数：--go-target 与 --skip-go-build 互斥且各自可用', () => {
   assert.equal(parseArgs(['--ssh', 'a@b'], {}).goTarget, '');
   assert.equal(parseArgs(['--ssh', 'a@b'], {}).skipGoBuild, false);
-  assert.equal(parseArgs(['--ssh', 'a@b'], { AIH_DEPLOY_GO_TARGET: 'linux-arm64' }).goTarget, 'linux-arm64');
   assert.equal(parseArgs(['--ssh', 'a@b', '--go-target', 'win32-x64'], {}).goTarget, 'win32-x64');
   assert.equal(parseArgs(['--ssh', 'a@b', '--skip-go-build'], {}).skipGoBuild, true);
   assert.throws(() => parseArgs(['--ssh', 'a@b', '--go-target', 'linux; rm -rf /'], {}), /invalid --go-target/);

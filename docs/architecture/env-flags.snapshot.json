@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T06:01:02.944Z",
-  "total": 160,
+  "generatedAt": "2026-10-17T06:02:52.614Z",
+  "total": 157,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -866,36 +866,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEPLOY_GO_TARGET",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/deploy-server.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEPLOY_SSH",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/deploy-server.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEPLOY_SSH_KEY",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/deploy-server.js"
       ],
       "aliasConstants": []
     },

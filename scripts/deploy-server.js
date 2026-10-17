@@ -16,7 +16,7 @@
  *
  * 用法：
  *   node scripts/deploy-server.js --ssh ubuntu@host --ssh-key ~/.ssh/key.pem
- *   （也可用环境变量 AIH_DEPLOY_SSH / AIH_DEPLOY_SSH_KEY；--dry-run 只打印步骤）
+ *   （SSH 目标只用命令行；--dry-run 只打印步骤）
  */
 
 const fs = require('node:fs');
@@ -81,8 +81,8 @@ Usage:
   node scripts/deploy-server.js --ssh <user@host> [--ssh-key <pem>] [options]
 
 Options:
-  --ssh <user@host>      SSH target (or AIH_DEPLOY_SSH)
-  --ssh-key <pem>        SSH identity file (or AIH_DEPLOY_SSH_KEY)
+  --ssh <user@host>      SSH target (required)
+  --ssh-key <pem>        SSH identity file
   --ref <git ref>        Pushed commit to deploy, default ${DEFAULTS.ref}
   --remote-dir <path>    Remote code directory, default ${DEFAULTS.remoteDir}
   --unit <name>          systemd user unit, default ${DEFAULTS.unit}
@@ -98,10 +98,10 @@ Options:
 
 function parseArgs(argv, env = process.env) {
   const options = {
-    ssh: String(env.AIH_DEPLOY_SSH || '').trim(),
-    sshKey: String(env.AIH_DEPLOY_SSH_KEY || '').trim(),
+    ssh: '',
+    sshKey: '',
     ...DEFAULTS,
-    goTarget: String(env.AIH_DEPLOY_GO_TARGET || '').trim(),
+    goTarget: '',
     skipWebBuild: false,
     skipGoBuild: false,
     restart: true,

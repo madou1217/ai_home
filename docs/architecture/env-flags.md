@@ -1,7 +1,7 @@
 # 环境变量清单（环境准入）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:20:20.140Z
-> 覆盖 `lib / bin / scripts / core`，共 **332** 个 `AIH_*` 变量。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:23:06.536Z
+> 覆盖 `lib / bin / scripts / core`，共 **330** 个 `AIH_*` 变量。
 > 本文件是**唯一清单**：新增环境变量必须重跑本命令，否则 `test/env-inventory.test.js` 会红。
 
 ## 新增环境变量的规则
@@ -18,7 +18,7 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 24 | 数据/目录/仓库路径 |
-| network | 57 | 端点 / 代理 / 端口 |
+| network | 55 | 端点 / 代理 / 端口 |
 | flag | 18 | 开关与逃生门（环境准入） |
 | tuning | 51 | 可调参数（超时 / TTL / 上限） |
 | credential | 27 | 凭据与密钥（文档只写变量名，绝不放真实值） |
@@ -143,8 +143,6 @@
 | `AIH_SSH_TERMINAL_CLIPBOARD_TIMEOUT_MS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js |
 | `AIH_SSH_TERMINAL_PASTE_EVENTS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
-| `AIH_M6_WEBTRANSPORT_PAGE_URL` | 0 | 4 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-webtransport.js<br>…共 4 个 |
-| `AIH_M6_WEBTRANSPORT_URL` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-webtransport.js<br>…共 4 个 |
 | `AIH_TURN_ICE_SERVER` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |
 | `AIH_TURN_ICE_SERVERS` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |
 | `AIH_TURN_USERNAME` | 0 | 4 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |

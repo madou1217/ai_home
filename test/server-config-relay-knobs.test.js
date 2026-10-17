@@ -12,11 +12,15 @@ test('sanitizeServerConfig normalizes relay udp knobs and max attempts', () => {
     relayUdp: 'OFF',
     relayUdpAdvertiseHost: '  relay.example.com ',
     relayUdpAdvertisePort: 29527,
+    relayPortMode: 'DEDICATED',
+    relayListenHost: ' 0.0.0.0 ',
     maxAttempts: 99
   });
   assert.equal(config.relayUdp, 'off');
   assert.equal(config.relayUdpAdvertiseHost, 'relay.example.com');
   assert.equal(config.relayUdpAdvertisePort, 29527);
+  assert.equal(config.relayPortMode, 'dedicated');
+  assert.equal(config.relayListenHost, '0.0.0.0');
   assert.equal(config.maxAttempts, 32);
   assert.equal(sanitizeServerConfig({ relayUdp: 'nonsense' }).relayUdp, 'default');
 });
@@ -27,12 +31,16 @@ test('parseServerConfigArgs accepts the relay/max-attempts flags', () => {
     '--relay-udp', 'off',
     '--relay-udp-advertise-host', '203.0.113.9',
     '--relay-udp-advertise-port', '29527',
-    '--max-attempts', '5'
+    '--max-attempts', '5',
+    '--relay-port-mode', 'dedicated',
+    '--relay-listen-host', '0.0.0.0'
   ], {});
   assert.equal(parsed.patch.relayUdp, 'off');
   assert.equal(parsed.patch.relayUdpAdvertiseHost, '203.0.113.9');
   assert.equal(parsed.patch.relayUdpAdvertisePort, 29527);
   assert.equal(parsed.patch.maxAttempts, 5);
+  assert.equal(parsed.patch.relayPortMode, 'dedicated');
+  assert.equal(parsed.patch.relayListenHost, '0.0.0.0');
 
   const cleared = parseServerConfigArgs([
     'set',
@@ -59,11 +67,15 @@ test('stored relay/max-attempts config is applied to serve options and process e
       relayUdp: 'off',
       relayUdpAdvertiseHost: 'relay.example.com',
       relayUdpAdvertisePort: 29527,
+      relayPortMode: 'dedicated',
+      relayListenHost: '0.0.0.0',
       maxAttempts: 5
     }));
     assert.equal(process.env.AIH_RELAY_UDP, '0');
     assert.equal(process.env.AIH_RELAY_UDP_ADVERTISE_HOST, 'relay.example.com');
     assert.equal(process.env.AIH_RELAY_UDP_ADVERTISE_PORT, '29527');
+    assert.equal(process.env.AIH_RELAY_PORT_MODE, 'dedicated');
+    assert.equal(process.env.AIH_RELAY_LISTEN_HOST, '0.0.0.0');
     assert.equal(options.maxAttempts, 5);
 
     // 'default' 不覆盖部署侧环境变量（drop-in 仍是 fallback 生效路径）。
@@ -72,6 +84,8 @@ test('stored relay/max-attempts config is applied to serve options and process e
       relayUdp: 'default',
       relayUdpAdvertiseHost: '',
       relayUdpAdvertisePort: 0,
+      relayPortMode: 'default',
+      relayListenHost: '',
       maxAttempts: 0
     }));
     assert.equal(process.env.AIH_RELAY_UDP, '1');

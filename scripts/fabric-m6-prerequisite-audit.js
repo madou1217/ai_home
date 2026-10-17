@@ -82,8 +82,8 @@ Environment defaults are read only when present:
   AIH_TURN_ICE_SERVER / AIH_TURN_ICE_SERVERS
   AIH_TURN_USERNAME
   AIH_TURN_CREDENTIAL
-  AIH_WEBTRANSPORT_URL / AIH_M6_WEBTRANSPORT_URL
-  AIH_WEBTRANSPORT_PAGE_URL / AIH_M6_WEBTRANSPORT_PAGE_URL
+  AIH_WEBTRANSPORT_URL
+  AIH_WEBTRANSPORT_PAGE_URL
 
 The audit is read-only. It does not import provider credentials, open product
 ports, install TURN/QUIC software, or touch retired VPS targets.
@@ -177,8 +177,8 @@ function parseArgs(argv = [], env = process.env) {
     turnIceServers: envTurnServers,
     turnUsername: envValue(env, ['AIH_TURN_USERNAME']),
     turnCredential: envValue(env, ['AIH_TURN_CREDENTIAL']),
-    webTransportUrl: envValue(env, ['AIH_WEBTRANSPORT_URL', 'AIH_M6_WEBTRANSPORT_URL']),
-    webTransportPageUrl: envValue(env, ['AIH_WEBTRANSPORT_PAGE_URL', 'AIH_M6_WEBTRANSPORT_PAGE_URL']) || DEFAULT_SECURE_PROBE_PAGE_URL,
+    webTransportUrl: envValue(env, ['AIH_WEBTRANSPORT_URL']),
+    webTransportPageUrl: envValue(env, ['AIH_WEBTRANSPORT_PAGE_URL']) || DEFAULT_SECURE_PROBE_PAGE_URL,
     sampleCount: DEFAULT_SAMPLE_COUNT,
     rpcSampleCount: DEFAULT_RPC_SAMPLE_COUNT,
     timeoutMs: DEFAULT_TIMEOUT_MS,

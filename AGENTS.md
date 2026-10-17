@@ -84,7 +84,7 @@ Fuller layer map:
 - **一个语义只用一个名字**：同义别名只允许一处解析（示例：`AIH_HOME_DIR` / `AIH_HOME` / `AI_HOME` 的唯一解析处是 `lib/runtime/aih-home.js`；`lib/cli/services/node/bootstrap-assets.js` 是远程自举模板，按设计内联同一规则，属唯一豁免）。
 - **禁止 `ENABLE`/`DISABLE` 成对开关**表达一个语义；确需兼容历史写法时，登记进 `scripts/collect-env-flags.js` 的 `ALLOWED_FLAG_PAIRS` 并在文档里说明（现存唯一一对：codex 远程代理）。
 - **可调参数优先做常量**（`lib/cli/config/constants.js`），不要为了调整超时/TTL 就新增环境变量；必须是环境变量的要带单位（`_MS`）并写明默认值。
-- **运维旋钮优先进 `aih server config set`，环境变量只作部署 fallback。** 已有持久化入口的：host/port/proxy-url/no-proxy/window-activation/upstream-error-rules/go-core，以及 **`--relay-udp on|off|default` / `--relay-udp-advertise-host` / `--relay-udp-advertise-port` / `--max-attempts`**（`lib/server/server-config-store.js` 是唯一写入门；`applyStoredServerConfigToServeOptions` 在 serve 启动时把 config 落到进程环境，**config 显式设置时优先于同名 env**，`default`/空值不覆盖部署侧 drop-in）。新增环境变量前先回答：能不能进 server config 或 WebUI？能就不加 env。
+- **运维旋钮优先进 `aih server config set`，环境变量只作部署 fallback。** 已有持久化入口的：host/port/proxy-url/no-proxy/window-activation/upstream-error-rules/go-core，以及 **`--relay-udp on|off|default` / `--relay-udp-advertise-host` / `--relay-udp-advertise-port` / `--relay-port-mode server|dedicated|default` / `--relay-listen-host` / `--max-attempts`**（`lib/server/server-config-store.js` 是唯一写入门；`applyStoredServerConfigToServeOptions` 在 serve 启动时把 config 落到进程环境，**config 显式设置时优先于同名 env**，`default`/空值不覆盖部署侧 drop-in）。新增环境变量前先回答：能不能进 server config 或 WebUI？能就不加 env。
 - 测试专用变量一律 `AIH_TEST_*` 前缀，禁止进入生产路径的默认判断。
 
 ## Coding Style & Naming Conventions

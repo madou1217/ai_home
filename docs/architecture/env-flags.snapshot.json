@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T04:20:20.140Z",
-  "total": 332,
+  "generatedAt": "2026-10-17T04:23:06.536Z",
+  "total": 330,
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE_ENV": "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE",
@@ -2995,32 +2995,6 @@
       "literals": 1,
       "files": [
         "scripts/fabric-real-session-recovery-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_M6_WEBTRANSPORT_PAGE_URL",
-      "category": "network",
-      "reads": 0,
-      "literals": 4,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-webtransport.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_M6_WEBTRANSPORT_URL",
-      "category": "network",
-      "reads": 0,
-      "literals": 5,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-webtransport.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
       ],
       "aliasConstants": []
     },

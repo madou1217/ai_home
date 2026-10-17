@@ -19,6 +19,7 @@ const { CLIPBOARD_CONTEXT_ENV, serializeClipboardContext } = require('../lib/cli
 const { readOpencodeGatewayField } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 const { RUNTIME_USAGE_ENV, serializeRuntimeUsage } = require('../lib/runtime/usage-settings');
+const { CLI_FEATURES_ENV, serializeCliFeatures } = require('../lib/cli/config/cli-features');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
   CODEX_MANAGED_LAUNCH_ENV
@@ -4490,7 +4491,7 @@ test('runtime starts windows clipboard mirror only when explicitly enabled on na
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '1' })
   }, {
     platform: 'win32',
     spawn: (cmd, args) => {
@@ -4518,7 +4519,7 @@ test('runtime can disable windows clipboard mirror explicitly', () => {
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '0'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '0' })
   }, {
     platform: 'win32',
     spawn: (cmd, args) => {
@@ -4577,7 +4578,7 @@ test('runtime enforces single clipboard mirror process across multiple windows P
 
   const h1 = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '1' })
   }, {
     platform: 'win32',
     aiHomeDir: sharedHome,
@@ -4587,7 +4588,7 @@ test('runtime enforces single clipboard mirror process across multiple windows P
   });
   const h2 = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '1' })
   }, {
     platform: 'win32',
     aiHomeDir: sharedHome,
@@ -4615,7 +4616,7 @@ test('runtime recovers stale clipboard mirror lock owned by dead process', () =>
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '1' })
   }, {
     platform: 'win32',
     aiHomeDir: sharedHome,
@@ -4640,7 +4641,7 @@ test('runtime releases clipboard mirror lock when all mirror spawn candidates fa
   const lockPath = path.join(sharedHome, 'run', 'locks', 'windows-clipboard-mirror.lock');
   const { runtime, proc } = createRuntimeHarness({
     [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
-    AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
+    [CLI_FEATURES_ENV]: serializeCliFeatures({ windowsImageClipboardMirror: '1' })
   }, {
     platform: 'win32',
     aiHomeDir: sharedHome,

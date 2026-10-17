@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { CLI_FEATURES_ENV, serializeCliFeatures } = require('../lib/cli/config/cli-features');
 const { EventEmitter } = require('node:events');
 const { runAiCliCommandRouter } = require('../lib/cli/commands/ai-cli/router');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
@@ -2182,7 +2183,7 @@ test('`aih codex sessions <id>` respects disabled Windows psmux install prompt',
     runAiCliCommandRouter('codex', ['codex', 'sessions', '12'], {
       processImpl: {
         platform: 'win32',
-        env: { AIH_PSMUX_INSTALL_PROMPT: '0' },
+        env: { [CLI_FEATURES_ENV]: serializeCliFeatures({ psmuxInstallPrompt: '0' }) },
         stdout: { isTTY: true },
         cwd: () => 'C:\\work\\ai_home',
         exit: (code) => exits.push(code)

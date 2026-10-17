@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:20:27.678Z
-> 共 **62** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:23:56.657Z
+> 共 **60** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，4）
@@ -54,14 +54,13 @@
 | `AIH_CODEX_USAGE_PROBE` | — | 2 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 | `AIH_GEMINI_USAGE_PROBE` | — | 2 | gemini 用量探测上下文（token/projectId） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），37）
+## plumbing（内部管道（进程间传递的身份 / 标记），35）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | — | 6 | 网关请求钉选的账号（x-account-ref 来源） |
 | `AIH_PROVIDER_ACCOUNT_REF` | — | 4 | 当前运行账号的 accountRef（沙箱注入） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
-| `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_GO_CORE_ACCOUNT_SYNC` | — | 1 | Go Core 账号同步开关 |
 | `AIH_GO_CORE_BINARY` | — | 1 | Go Core 二进制路径 |
 | `AIH_GO_CORE_DELEGATE_REFRESH` | — | 1 | 由 Go Core 代办 token 刷新 |
@@ -69,14 +68,13 @@
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
 | `AIH_SESSION_INTENT` | — | 1 | 会话意图（label/resume/mirror/target/active/detached 六项合一） |
-| `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
-| `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_AGY_USAGE` | — | 0 | agy 用量上下文（baseUrl/quotaBaseUrls/clientVersion） |
+| `AIH_CLI_FEATURES` | — | 0 | CLI 功能开关（psmux 提示/skill 注入/Windows 镜像） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_FLAGS` | — | 0 | codex 启动/恢复开关（authPreflight/autoSkipRepoCheck/disableRemoteResume 三项合一） |
 | `AIH_CODEX_HOOKS` | — | 0 | codex hook 安装开关（cli/desktop/none 列表） |

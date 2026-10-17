@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { CLI_FEATURES_ENV, serializeCliFeatures } = require('../lib/cli/config/cli-features');
 
 const {
   SKILL_NAME,
@@ -125,13 +126,13 @@ test('ensureProviderSkillInstalled: claude installs link, opencode writes block,
   assert.equal(loginResult.status, 'skipped');
 });
 
-test('AIH_SKILL_INJECT=0 uninstalls both shapes', () => {
+test('skillInject=0 uninstalls both shapes', () => {
   const sandbox = tmpdir();
   ensureProviderSkillInstalled(ctxFor('claude', sandbox));
   const opencodeCtx = ctxFor('opencode', sandbox);
   ensureProviderSkillInstalled(opencodeCtx);
 
-  const off = { baseEnv: { AIH_SKILL_INJECT: '0' } };
+  const off = { baseEnv: { [CLI_FEATURES_ENV]: serializeCliFeatures({ skillInject: '0' }) } };
   const claudeOff = ensureProviderSkillInstalled(ctxFor('claude', sandbox, off));
   assert.equal(claudeOff.status, 'uninstalled');
   assert.equal(fs.existsSync(claudeOff.target), false);

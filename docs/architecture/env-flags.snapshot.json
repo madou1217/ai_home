@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:20:27.678Z",
-  "total": 62,
+  "generatedAt": "2026-10-17T11:23:56.657Z",
+  "total": 60,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -19,6 +19,7 @@
     "AGY_USAGE_ENV": "AIH_AGY_USAGE",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CLIPBOARD_CONTEXT_ENV": "AIH_SSH_CLIPBOARD",
+    "CLI_FEATURES_ENV": "AIH_CLI_FEATURES",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
     "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
@@ -294,17 +295,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_PSMUX_INSTALL_PROMPT",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/persistent-session-list.js",
-        "lib/cli/services/pty/persistent-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_API_KEY",
       "category": "credential",
       "reads": 2,
@@ -446,16 +436,6 @@
       ]
     },
     {
-      "name": "AIH_SKILL_INJECT",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/provider-skill-installer.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_TRACE",
       "category": "plumbing",
       "reads": 1,
@@ -487,16 +467,6 @@
         "lib/account/official-account-rules-cleanup.js",
         "lib/account/upstream-error-rules.js",
         "lib/server/webui-account-live.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/local-clipboard.js"
       ],
       "aliasConstants": []
     },
@@ -545,6 +515,18 @@
       ],
       "aliasConstants": [
         "CLAUDE_CREDENTIAL_TYPE_ENV"
+      ]
+    },
+    {
+      "name": "AIH_CLI_FEATURES",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/cli/config/cli-features.js"
+      ],
+      "aliasConstants": [
+        "CLI_FEATURES_ENV"
       ]
     },
     {

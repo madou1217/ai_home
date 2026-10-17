@@ -263,11 +263,8 @@ test('影子 App 从自身资源加载 hook，缺失或过期的启动环境不�
     fs.copyFileSync(bundledHookPath, path.join(extractedResources, 'aih-zcode-captcha-hook.cjs'));
   }
   fs.writeFileSync(fixture.hookModulePath, 'throw new Error("external_hook_must_not_be_loaded");\n');
-  for (const hookPath of [undefined, path.join(fixture.root, 'removed-repo', 'hook.js'), fixture.hookModulePath]) {
-    const env = { ...process.env };
-    delete env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH;
-    if (hookPath) env.AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH = hookPath;
-    const result = spawnSync(process.execPath, [entryPath], { env, encoding: 'utf8' });
+  {
+    const result = spawnSync(process.execPath, [entryPath], { env: { ...process.env }, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), 'zcode_main_loaded');
   }

@@ -38,8 +38,7 @@ function buildContext(overrides = {}) {
 test('zcode macOS 启动保留现有 NODE_OPTIONS，并清理不再需要的外部 hook 路径', () => {
   const strategy = getDesktopLaunchStrategy('zcode');
   const env = {
-    NODE_OPTIONS: '--trace-warnings',
-    AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH: '/removed-checkout/zcode-electron-captcha-hook.js'
+    NODE_OPTIONS: '--trace-warnings'
   };
   const ctx = buildContext();
 
@@ -49,7 +48,6 @@ test('zcode macOS 启动保留现有 NODE_OPTIONS，并清理不再需要的外�
   }, ctx);
 
   assert.equal(env.NODE_OPTIONS, '--trace-warnings');
-  assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
   assert.equal(
     env[CAPTCHA_HOOK_STATE_ENV],
     '/sandbox/account/.aih-runtime/zcode-captcha-hook.json'

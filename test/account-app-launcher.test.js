@@ -670,7 +670,6 @@ test('zcode desktop 在 macOS 用账号影子 App 装载验证码 hook 后再 sp
   assert.equal(prepareCalls.length, 1);
   assert.equal(fakeSpawn.calls[0].file, shadowExe);
   const env = fakeSpawn.calls[0].options.env;
-  assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
   assert.deepEqual(JSON.parse(env.ZCODE_AGENT_SERVER_ARGS_JSON), ['app-server', '--stdio']);
 });
 

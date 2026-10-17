@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:19:16.736Z",
-  "total": 106,
+  "generatedAt": "2026-10-17T09:21:54.532Z",
+  "total": 105,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -16,7 +16,6 @@
   ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
-    "AIH_ZCODE_CAPTCHA_HOOK_MODULE_ENV": "AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH",
     "AIH_ZCODE_CAPTCHA_HOOK_STATE_ENV": "AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH",
     "AIH_ZCODE_SESSION_SCOPE_ENV": "AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE",
     "AIH_ZCODE_USAGE_OWNER_LOG_ENV": "AIH_ZCODE_USAGE_OWNER_LOG",
@@ -1217,18 +1216,6 @@
         "lib/server/upstream-account-profile.js"
       ],
       "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH",
-      "category": "path",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-electron-shadow-app.js"
-      ],
-      "aliasConstants": [
-        "AIH_ZCODE_CAPTCHA_HOOK_MODULE_ENV"
-      ]
     },
     {
       "name": "AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH",

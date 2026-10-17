@@ -425,7 +425,7 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
 test('runtime uses headless direct spawn for claude print prompts', () => {
   const directSpawns = [];
   const { runtime, spawns, writes } = createRuntimeHarness({
-    AIH_PROVIDER_SESSION_CORRELATION_ID: 'stale-parent-run',
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ correlation: 'stale-parent-run' }),
     [CODEX_MANAGED_LAUNCH_ENV]: '1'
   }, {
     resolveCliPath: () => '/usr/local/bin/claude',
@@ -452,11 +452,11 @@ test('runtime uses headless direct spawn for claude print prompts', () => {
   );
   assert.deepEqual(directSpawns[0].args.slice(2), ['-p', '只输出 ok']);
   assert.match(
-    directSpawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID,
+    persistentSession.readSessionIntentField(directSpawns[0].options.env, 'correlation'),
     /^[0-9a-f-]{36}$/
   );
   assert.notEqual(
-    directSpawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID,
+    persistentSession.readSessionIntentField(directSpawns[0].options.env, 'correlation'),
     'stale-parent-run'
   );
   assert.equal(directSpawns[0].options.env[CODEX_MANAGED_LAUNCH_ENV], undefined);
@@ -1351,7 +1351,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
     codexConfPath
   );
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
-  const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
+  const correlationId = persistentSession.readSessionIntentField(spawns[0].options.env, 'correlation');
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
   // 会话里必须能读到账号标识：provider hook 靠它把「正在跑」归属到某个账号。
   const launchAccountRef = spawns[0].options.env.AIH_PROVIDER_ACCOUNT_REF;
@@ -1385,12 +1385,12 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       ['-g', 'LANG', 'C.UTF-8'],
       ['-g', 'LC_CTYPE', 'C.UTF-8'],
       ['-g', 'LC_ALL', 'C.UTF-8'],
-      ['-g', 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-g', 'AIH_SESSION_INTENT', `correlation=${correlationId}`],
       ['-g', 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, 'LANG', 'C.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'C.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'C.UTF-8'],
-      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, 'AIH_SESSION_INTENT', `correlation=${correlationId}`],
       ['-t', sessionName, 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
@@ -1405,7 +1405,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
       'LANG=C.UTF-8',
       'LC_CTYPE=C.UTF-8',
       'LC_ALL=C.UTF-8',
-      `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `AIH_SESSION_INTENT=correlation=${correlationId}`,
       `${persistentSession.RUNTIME_MARKER_ENV}=utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE},supervisor=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,
@@ -1450,7 +1450,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
     /set -g terminal-features\[0\] "xterm\*:clipboard:ccolour:cstyle:focus:title:extkeys:sync"/
   );
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
-  const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
+  const correlationId = persistentSession.readSessionIntentField(spawns[0].options.env, 'correlation');
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
   assert.equal(spawns[0].options.env.CLAUDE_CODE_ALT_SCREEN_FULL_REPAINT, '1');
   assert.equal(spawns[0].options.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT, '1');
@@ -1575,7 +1575,7 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, '/usr/bin/tmux');
   const sessionName = assertStrictFreshSessionLaunch(spawns[0], baseSession);
-  const correlationId = spawns[0].options.env.AIH_PROVIDER_SESSION_CORRELATION_ID;
+  const correlationId = persistentSession.readSessionIntentField(spawns[0].options.env, 'correlation');
   assert.match(correlationId, /^[0-9a-f-]{36}$/);
   const launchAccountRef = spawns[0].options.env.AIH_PROVIDER_ACCOUNT_REF;
   assert.match(launchAccountRef, /^acct_[a-f0-9]{20}$/);
@@ -1590,12 +1590,12 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       ['-g', 'LANG', 'zh_CN.UTF-8'],
       ['-g', 'LC_CTYPE', 'zh_CN.UTF-8'],
       ['-g', 'LC_ALL', 'zh_CN.UTF-8'],
-      ['-g', 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-g', 'AIH_SESSION_INTENT', `correlation=${correlationId}`],
       ['-g', 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, 'LANG', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_CTYPE', 'zh_CN.UTF-8'],
       ['-t', sessionName, 'LC_ALL', 'zh_CN.UTF-8'],
-      ['-t', sessionName, 'AIH_PROVIDER_SESSION_CORRELATION_ID', correlationId],
+      ['-t', sessionName, 'AIH_SESSION_INTENT', `correlation=${correlationId}`],
       ['-t', sessionName, 'AIH_PROVIDER_ACCOUNT_REF', launchAccountRef],
       ['-t', sessionName, CODEX_MANAGED_LAUNCH_ENV, '1']
     ]
@@ -1610,7 +1610,7 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
       'LANG=zh_CN.UTF-8',
       'LC_CTYPE=zh_CN.UTF-8',
       'LC_ALL=zh_CN.UTF-8',
-      `AIH_PROVIDER_SESSION_CORRELATION_ID=${correlationId}`,
+      `AIH_SESSION_INTENT=correlation=${correlationId}`,
       `${persistentSession.RUNTIME_MARKER_ENV}=utf8=${persistentSession.UTF8_RUNTIME_MARKER_VALUE},supervisor=${persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE}`,
       `AIH_PROVIDER_ACCOUNT_REF=${launchAccountRef}`,
       `${CODEX_MANAGED_LAUNCH_ENV}=1`,

@@ -294,7 +294,7 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
         utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,
         claude: persistentSession.CLAUDE_RENDER_RUNTIME_MARKER_VALUE
       }),
-        AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1',
+        [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ correlation: 'pty-run-1' }),
         [CODEX_MANAGED_LAUNCH_ENV]: '1',
         OPENAI_API_KEY: 'sk-secret'
       }
@@ -314,7 +314,7 @@ test('buildTmuxLaunch: passes safe runtime env through tmux session env only', (
     '-e',
     'CLAUDE_CODE_DISABLE_VIRTUAL_SCROLL=1',
     '-e',
-    'AIH_PROVIDER_SESSION_CORRELATION_ID=pty-run-1',
+    'AIH_SESSION_INTENT=correlation=pty-run-1',
     '-e',
     runtimeMarkerArg({
       utf8: persistentSession.UTF8_RUNTIME_MARKER_VALUE,

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:14:45.647Z",
-  "total": 88,
+  "generatedAt": "2026-10-17T10:25:48.912Z",
+  "total": 87,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -720,10 +720,11 @@
       "name": "AIH_SESSION_INTENT",
       "category": "plumbing",
       "reads": 1,
-      "literals": 2,
+      "literals": 3,
       "files": [
         "lib/cli/services/ai-cli/desktop-client-restart.js",
         "lib/cli/services/ai-cli/provider-runtime-env.js",
+        "lib/runtime/multiplexer/tmux-session-env.js",
         "lib/runtime/persistent-session.js"
       ],
       "aliasConstants": [
@@ -949,17 +950,6 @@
       "literals": 1,
       "files": [
         "lib/runtime/opencode-run-layouts.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_PROVIDER_SESSION_CORRELATION_ID",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/runtime/multiplexer/tmux-session-env.js"
       ],
       "aliasConstants": []
     },

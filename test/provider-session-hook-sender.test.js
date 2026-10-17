@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { SESSION_INTENT_ENV, serializeSessionIntent } = require('../lib/runtime/persistent-session');
 const {
   buildHookNoopOutput,
   buildHookReceiverBody,
@@ -63,7 +64,7 @@ test('runProviderSessionHookSender forwards the PTY correlation id without chang
     eventName: 'SessionStart',
     stdin: JSON.stringify({ session_id: 's1' }),
     processEnv: {
-      AIH_PROVIDER_SESSION_CORRELATION_ID: 'pty-run-1',
+      [SESSION_INTENT_ENV]: serializeSessionIntent({ correlation: 'pty-run-1' }),
       AIH_PROVIDER_ACCOUNT_REF: 'acct_0123456789abcdef0123'
     },
     postJson: async (_url, payload) => {

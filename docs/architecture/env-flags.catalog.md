@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:31:17.195Z
-> 共 **84** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:52:15.169Z
+> 共 **83** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，9）
@@ -68,7 +68,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），45）
+## plumbing（内部管道（进程间传递的身份 / 标记），44）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -112,8 +112,7 @@
 | `AIH_RELAY_SETTINGS` | — | 0 | 中转运行参数（udp/播报地址/端口/端口模式/绑定网卡 五项合一） |
 | `AIH_RELAY_SING_BOX_BIN` | — | 0 | sing-box 二进制路径（中转边车） |
 | `AIH_RUNTIME_MARKER` | — | 0 | 持久会话运行时兼容标记（utf8/claude/psmux/supervisor 四项合一） |
-| `AIH_SERVER_BACKGROUND_RESTART` | — | 0 | 后台重启标记 |
-| `AIH_SERVER_ELEVATED_RESTART` | — | 0 | 提权重启标记 |
+| `AIH_SERVER_RESTART_MODE` | — | 0 | 重启模式标记（background/elevated） |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | — | 0 | 源码变更自动重启标记 |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |
 | `AIH_ZCODE_CONTEXT` | — | 0 | ZCode 运行时上下文（scope/验证码状态/用量日志 三项合一） |

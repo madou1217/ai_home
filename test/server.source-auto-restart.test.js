@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  BACKGROUND_RESTART_ENV,
+  SERVER_RESTART_MODE_ENV,
   startServerSourceAutoRestart,
   shouldEnableSourceAutoRestart,
   extractServeArgsFromArgv,
@@ -145,7 +145,7 @@ test('source auto restart records fingerprint and restarts on source change', (t
   ]);
   assert.equal(spawnCalls[0].opts.detached, true);
   assert.equal(spawnCalls[0].opts.windowsHide, true);
-  assert.equal(spawnCalls[0].opts.env[BACKGROUND_RESTART_ENV], '1');
+  assert.equal(spawnCalls[0].opts.env[SERVER_RESTART_MODE_ENV], 'background');
 
   controller.checkOnce();
   assert.equal(spawnCalls.length, 1);

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:31:17.195Z",
-  "total": 84,
+  "generatedAt": "2026-10-17T10:52:15.169Z",
+  "total": 83,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -17,7 +17,6 @@
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AGENT_ENDPOINT_ENV": "AIH_SSH_CLIP_AGENT_ENDPOINT",
-    "BACKGROUND_RESTART_ENV": "AIH_SERVER_BACKGROUND_RESTART",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
@@ -25,7 +24,6 @@
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
-    "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
     "OPENCODE_GATEWAY_ENV": "AIH_OPENCODE_GATEWAY",
@@ -33,6 +31,7 @@
     "RELAY_SETTINGS_ENV": "AIH_RELAY_SETTINGS",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
+    "SERVER_RESTART_MODE_ENV": "AIH_SERVER_RESTART_MODE",
     "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
     "SHIM_CONTEXT_ENV": "AIH_SSH_CLIP_SHIM_CONTEXT",
     "ZCODE_CONTEXT_ENV": "AIH_ZCODE_CONTEXT"
@@ -977,27 +976,16 @@
       ]
     },
     {
-      "name": "AIH_SERVER_BACKGROUND_RESTART",
+      "name": "AIH_SERVER_RESTART_MODE",
       "category": "plumbing",
       "reads": 0,
-      "literals": 1,
+      "literals": 2,
       "files": [
+        "lib/cli/services/server/windows-restart-elevation.js",
         "lib/server/source-auto-restart.js"
       ],
       "aliasConstants": [
-        "BACKGROUND_RESTART_ENV"
-      ]
-    },
-    {
-      "name": "AIH_SERVER_ELEVATED_RESTART",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/server/windows-restart-elevation.js"
-      ],
-      "aliasConstants": [
-        "ELEVATED_RESTART_ENV"
+        "SERVER_RESTART_MODE_ENV"
       ]
     },
     {

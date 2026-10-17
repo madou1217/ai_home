@@ -71,17 +71,29 @@ test('descriptor flags parse into the documented key and value', () => {
 });
 
 test('list output covers every option and masks secrets', () => {
-  const text = renderServerConfigList(SAMPLE_CONFIG, { color: false, columns: 120 });
-  for (const field of SERVER_CONFIG_FIELDS) {
-    assert.ok(text.includes(field.key), `list 缺少 ${field.key}`);
-    assert.ok(text.includes(field.flag), `list 缺少旗标 ${field.flag}`);
-    assert.ok(text.includes(field.summary.slice(0, 8)), `list 缺少 ${field.key} 的说明`);
-    assert.ok(text.includes(field.group), `list 缺少分组 ${field.group}`);
-    if (field.clearFlag) assert.ok(text.includes(field.clearFlag), `list 缺少清空旗标 ${field.clearFlag}`);
+  // 两种终端宽度都要成立：窄终端会折行，曾出现「折行把说明首行吞掉」的 bug。
+  for (const columns of [76, 120]) {
+    const text = renderServerConfigList(SAMPLE_CONFIG, { color: false, columns });
+    for (const field of SERVER_CONFIG_FIELDS) {
+      assert.ok(text.includes(field.key), `[${columns}] list 缺少 ${field.key}`);
+      assert.ok(text.includes(field.flag), `[${columns}] list 缺少旗标 ${field.flag}`);
+      assert.ok(text.includes(field.summary.slice(0, 8)), `[${columns}] list 缺少 ${field.key} 的说明`);
+      assert.ok(text.includes(field.group), `[${columns}] list 缺少分组 ${field.group}`);
+      if (field.clearFlag) assert.ok(text.includes(field.clearFlag), `[${columns}] list 缺少清空旗标 ${field.clearFlag}`);
+    }
+    assert.equal(text.includes('sk-super-secret'), false);
+    assert.equal(text.includes('mk-super-secret'), false);
+    assert.ok(text.includes('configured'));
   }
-  assert.equal(text.includes('sk-super-secret'), false);
-  assert.equal(text.includes('mk-super-secret'), false);
-  assert.ok(text.includes('configured'));
+});
+
+test('list truncates long current values in the table but keeps them in json', () => {
+  const routes = Array.from({ length: 11 }, (_, index) => `gateway.entry.${index}`);
+  const config = { ...SAMPLE_CONFIG, goCoreRoutes: routes };
+  const table = renderServerConfigList(config, { color: false, columns: 120 });
+  assert.ok(table.includes('…'), '长值应截断成 …');
+  const json = JSON.parse(renderServerConfigList(config, { json: true }));
+  assert.deepEqual(json.fields.find((field) => field.key === 'goCoreRoutes').current, routes);
 });
 
 test('list --json is machine readable and never carries secret values', () => {

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:21:25.338Z
-> 覆盖 `lib / bin / scripts / core`，共 **116** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:29:13.825Z
+> 覆盖 `lib / bin / scripts / core`，共 **111** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -13,7 +13,7 @@
 | flag | 4 | 开关与逃生门（环境准入） |
 | credential | 11 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 63 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 58 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -156,12 +156,11 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | 1 | 0 | scripts/postinstall-go-core.js |
 | `AIH_GO_CORE_ROUTES` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_OPENCODE_GATEWAY_BYOK` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
-| `AIH_PERSIST_ACTIVE` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
-| `AIH_PERSIST_DETACHED` | 1 | 1 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/runtime/persistent-session.js |
 | `AIH_RUNTIME_SHOW_USAGE` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_SERVER_CODEX_CLI_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | 1 | 1 | lib/cli/app.js |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/cli/services/server/go-core-supervisor.js<br>lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
+| `AIH_SESSION_INTENT` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
 | `AIH_TRACE` | 1 | 0 | lib/runtime/trace.js |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
@@ -185,10 +184,6 @@
 | `AIH_SERVER_BACKGROUND_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
 | `AIH_SERVER_ELEVATED_RESTART` | 0 | 1 | lib/cli/services/server/windows-restart-elevation.js |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
-| `AIH_SESSION` | 0 | 1 | lib/runtime/persistent-session.js |
-| `AIH_SESSION_MIRROR` | 0 | 1 | lib/runtime/persistent-session.js |
-| `AIH_SESSION_RESUME` | 0 | 1 | lib/runtime/persistent-session.js |
-| `AIH_SESSION_TARGET` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_UPSTREAM_HEADERS` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | 0 | 1 | lib/runtime/zcode-session-attribution-hook.js |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | 0 | 1 | lib/runtime/zcode-usage-attribution-hook.js |

@@ -230,7 +230,7 @@ test('shouldPersist gates on tmux, login, TTY, marker and disable flag', () => {
   assert.equal(persistentSession.shouldPersist({ tmux: { available: false }, isTTY: true, env: {} }), false);
   assert.equal(persistentSession.shouldPersist({ tmux, isLogin: true, isTTY: true, env: {} }), false);
   assert.equal(persistentSession.shouldPersist({ tmux, isLogin: false, isTTY: false, env: {} }), false);
-  assert.equal(persistentSession.shouldPersist({ tmux, isTTY: true, env: { AIH_PERSIST_ACTIVE: '1' } }), false);
+  assert.equal(persistentSession.shouldPersist({ tmux, isTTY: true, env: { [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ active: '1' }) } }), false);
   assert.equal(persistentSession.shouldPersist({ tmux, isTTY: true, env: { AIH_NO_PERSIST: '1' } }), false);
 });
 

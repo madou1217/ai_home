@@ -71,18 +71,20 @@ test('buildRestoreForwardArgs restores Codex only by exact native identity', () 
 test('buildRestoreChildEnv sets detached target and strips interactive session flags', () => {
   const env = buildRestoreChildEnv({
     PATH: '/bin',
-    [persistentSession.SESSION_ENV]: 'old-label',
-    [persistentSession.RESUME_ENV]: '1',
-    [persistentSession.MIRROR_ENV]: '1',
-    [persistentSession.MARKER_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      label: 'old-label',
+      resume: '1',
+      mirror: '1',
+      active: '1'
+    })
   }, entry(), persistentSession);
-  assert.equal(env[persistentSession.DETACHED_ENV], '1');
-  assert.equal(env[persistentSession.TARGET_ENV], 'p-alpha-abc123');
+  assert.equal(persistentSession.readSessionIntentField(env, 'detached'), '1');
+  assert.equal(persistentSession.readSessionIntentField(env, 'target'), 'p-alpha-abc123');
   assert.equal(env.PATH, '/bin');
-  assert.ok(!(persistentSession.SESSION_ENV in env));
-  assert.ok(!(persistentSession.RESUME_ENV in env));
-  assert.ok(!(persistentSession.MIRROR_ENV in env));
-  assert.ok(!(persistentSession.MARKER_ENV in env));
+  assert.equal(persistentSession.readSessionIntentField(env, 'label'), '');
+  assert.equal(persistentSession.readSessionIntentField(env, 'resume'), '');
+  assert.equal(persistentSession.readSessionIntentField(env, 'mirror'), '');
+  assert.equal(persistentSession.readSessionIntentField(env, 'active'), '');
 });
 
 test('planRestoreActions: alive sessions are touched, missing-on-live-server dropped', () => {
@@ -293,12 +295,12 @@ test('restorePersistentSessions spawns detached aih children with resume args fo
   assert.deepEqual(claudeChild.args, ['/repo/bin/ai-home.js', 'claude', '1', '--continue']);
   assert.equal(claudeChild.options.cwd, cwd);
   assert.equal(claudeChild.options.detached, true);
-  assert.equal(claudeChild.options.env[persistentSession.DETACHED_ENV], '1');
-  assert.equal(claudeChild.options.env[persistentSession.TARGET_ENV], 'p-alpha-abc123');
+  assert.equal(persistentSession.readSessionIntentField(claudeChild.options.env, 'detached'), '1');
+  assert.equal(persistentSession.readSessionIntentField(claudeChild.options.env, 'target'), 'p-alpha-abc123');
 
   const codexChild = spawned.find((c) => c.args.includes('codex'));
   assert.deepEqual(codexChild.args, ['/repo/bin/ai-home.js', 'codex', '2', 'resume', CODEX_THREAD_ID]);
-  assert.equal(codexChild.options.env[persistentSession.TARGET_ENV], 's-work');
+  assert.equal(persistentSession.readSessionIntentField(codexChild.options.env, 'target'), 's-work');
 
   // Lock is released so a subsequent run re-plans (children were spawned but
   // the fake spawn creates no real sessions, so they are victims again).
@@ -387,7 +389,7 @@ test('restorePersistentSessions is a no-op inside a restore child and without tm
     fs,
     path,
     os,
-    processObj: { pid: 1, platform: 'linux', env: { [persistentSession.DETACHED_ENV]: '1' }, execPath: 'node' },
+    processObj: { pid: 1, platform: 'linux', env: { [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ detached: '1' }) }, execPath: 'node' },
     aiHomeDir: home,
     persistentSession
   });

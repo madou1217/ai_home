@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:21:25.338Z",
-  "total": 126,
+  "generatedAt": "2026-10-17T08:29:13.825Z",
+  "total": 121,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -26,19 +26,14 @@
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_MANAGED_LAUNCH_ENV": "AIH_CODEX_MANAGED_LAUNCH",
-    "DETACHED_ENV": "AIH_PERSIST_DETACHED",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
-    "MARKER_ENV": "AIH_PERSIST_ACTIVE",
-    "MIRROR_ENV": "AIH_SESSION_MIRROR",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
-    "RESUME_ENV": "AIH_SESSION_RESUME",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
-    "SESSION_ENV": "AIH_SESSION",
-    "TARGET_ENV": "AIH_SESSION_TARGET",
+    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
     "ZCODE_AGENT_ENTRY_ENV": "AIH_ZCODE_AGENT_ENTRY",
     "ZCODE_AGENT_NODE_ENV": "AIH_ZCODE_AGENT_NODE",
     "ZCODE_AGENT_RUNNER_ENV": "AIH_ZCODE_AGENT_RUNNER"
@@ -914,33 +909,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_PERSIST_ACTIVE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/ai-cli/desktop-client-restart.js",
-        "lib/cli/services/ai-cli/provider-runtime-env.js",
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "MARKER_ENV"
-      ]
-    },
-    {
-      "name": "AIH_PERSIST_DETACHED",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-spawn.js",
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "DETACHED_ENV"
-      ]
-    },
-    {
       "name": "AIH_PROVIDER_DEFS_DIR",
       "category": "path",
       "reads": 1,
@@ -1033,6 +1001,20 @@
         "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_SESSION_INTENT",
+      "category": "plumbing",
+      "reads": 1,
+      "literals": 2,
+      "files": [
+        "lib/cli/services/ai-cli/desktop-client-restart.js",
+        "lib/cli/services/ai-cli/provider-runtime-env.js",
+        "lib/runtime/persistent-session.js"
+      ],
+      "aliasConstants": [
+        "SESSION_INTENT_ENV"
+      ]
     },
     {
       "name": "AIH_SKILL_INJECT",
@@ -1391,54 +1373,6 @@
         "lib/server/source-auto-restart.js"
       ],
       "aliasConstants": []
-    },
-    {
-      "name": "AIH_SESSION",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "SESSION_ENV"
-      ]
-    },
-    {
-      "name": "AIH_SESSION_MIRROR",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "MIRROR_ENV"
-      ]
-    },
-    {
-      "name": "AIH_SESSION_RESUME",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "RESUME_ENV"
-      ]
-    },
-    {
-      "name": "AIH_SESSION_TARGET",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/persistent-session.js"
-      ],
-      "aliasConstants": [
-        "TARGET_ENV"
-      ]
     },
     {
       "name": "AIH_UPSTREAM_HEADERS",

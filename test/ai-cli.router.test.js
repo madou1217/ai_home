@@ -2427,8 +2427,8 @@ test('`aih codex sessions` picker enters the selected tmux session in mirror mod
         accountRef,
         forwardArgs,
         cliAccountId: runtimeOptions.cliAccountId,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -2470,8 +2470,10 @@ test('`aih codex sessions` picker opens a compatible session for legacy UTF-8 ru
   const writes = [];
   const runCalls = [];
   const env = {
-    [persistentSession.TARGET_ENV]: 'stale-target',
-    [persistentSession.MIRROR_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'stale-target',
+      mirror: '1'
+    })
   };
   let cwd = '/work/current';
   const chdirCalls = [];
@@ -2524,8 +2526,8 @@ test('`aih codex sessions` picker opens a compatible session for legacy UTF-8 ru
         forwardArgs,
         isLogin,
         cwd,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -2539,8 +2541,8 @@ test('`aih codex sessions` picker opens a compatible session for legacy UTF-8 ru
     forwardArgs: [],
     isLogin: false,
     cwd: '/work/legacy',
-    target: undefined,
-    mirror: undefined
+    target: '',
+    mirror: ''
   }]);
   assert.equal(writes.join('').includes('[旧 tmux UTF-8 运行时]'), true);
 });
@@ -2552,8 +2554,10 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux pane
   const writes = [];
   const runCalls = [];
   const env = {
-    [persistentSession.TARGET_ENV]: 'stale-target',
-    [persistentSession.MIRROR_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'stale-target',
+      mirror: '1'
+    })
   };
   let cwd = 'C:\\Users\\me\\projects\\ai_home';
   const chdirCalls = [];
@@ -2618,8 +2622,8 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux pane
         forwardArgs,
         isLogin,
         cwd,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -2632,8 +2636,8 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux pane
     forwardArgs: [],
     isLogin: false,
     cwd: 'C:\\Users\\me\\projects\\ai_home',
-    target: undefined,
-    mirror: undefined
+    target: '',
+    mirror: ''
   }]);
   assert.equal(writes.join('').includes('[已结束]'), true);
 });
@@ -2644,8 +2648,10 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux scre
   const writes = [];
   const runCalls = [];
   const env = {
-    [persistentSession.TARGET_ENV]: 'stale-target',
-    [persistentSession.MIRROR_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'stale-target',
+      mirror: '1'
+    })
   };
   const cwd = 'C:\\Users\\me\\projects\\ai_home';
   const keys = ['\r'];
@@ -2708,8 +2714,8 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux scre
         accountRef: ref,
         forwardArgs,
         isLogin,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -2719,8 +2725,8 @@ test('`aih codex sessions` picker opens a fresh session for completed psmux scre
     accountRef,
     forwardArgs: [],
     isLogin: false,
-    target: undefined,
-    mirror: undefined
+    target: '',
+    mirror: ''
   }]);
   assert.equal(writes.join('').includes('[已结束]'), true);
 });
@@ -2842,8 +2848,8 @@ test('`aih codex sessions` async picker redraws from the block top without scrol
         cliName,
         accountRef: ref,
         forwardArgs,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -3043,8 +3049,8 @@ test('`aih codex sessions` picker keeps waiting when raw tty read is temporarily
         cliName,
         accountRef: ref,
         forwardArgs,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -3123,8 +3129,8 @@ test('`aih codex sessions` uses sync picker by default on native Windows', (t) =
         accountRef,
         forwardArgs,
         cliAccountId: runtimeOptions.cliAccountId,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });

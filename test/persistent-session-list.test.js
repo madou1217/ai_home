@@ -1396,8 +1396,8 @@ test('runGlobalPersistentSessionsCommand enters selected global session', (t) =>
         cliAccountId: options && options.cliAccountId,
         forwardArgs,
         isLogin,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -1430,8 +1430,10 @@ test('runGlobalPersistentSessionsCommand opens a compatible session for legacy U
   const codexAccountRef = registerTestAccount(root, 'codex', '1');
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const env = {
-    [persistentSession.TARGET_ENV]: 'stale-target',
-    [persistentSession.MIRROR_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'stale-target',
+      mirror: '1'
+    })
   };
   let cwd = '/work/current';
   const chdirCalls = [];
@@ -1491,8 +1493,8 @@ test('runGlobalPersistentSessionsCommand opens a compatible session for legacy U
         forwardArgs,
         isLogin,
         cwd,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -1507,8 +1509,8 @@ test('runGlobalPersistentSessionsCommand opens a compatible session for legacy U
     forwardArgs: [],
     isLogin: false,
     cwd: '/work/legacy',
-    target: undefined,
-    mirror: undefined
+    target: '',
+    mirror: ''
   }]);
   assert.equal(writes.join('').includes('[旧 tmux UTF-8 运行时]'), true);
 });
@@ -1520,8 +1522,10 @@ test('runGlobalPersistentSessionsCommand opens a fresh session for legacy psmux 
   const codexAccountRef = registerTestAccount(root, 'codex', '1');
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const env = {
-    [persistentSession.TARGET_ENV]: 'stale-target',
-    [persistentSession.MIRROR_ENV]: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'stale-target',
+      mirror: '1'
+    })
   };
   const cwd = 'C:\\work\\current';
   const writes = [];
@@ -1589,8 +1593,8 @@ test('runGlobalPersistentSessionsCommand opens a fresh session for legacy psmux 
         cliAccountId: options && options.cliAccountId,
         forwardArgs,
         isLogin,
-        target: env[persistentSession.TARGET_ENV],
-        mirror: env[persistentSession.MIRROR_ENV]
+        target: persistentSession.readSessionIntentField(env, 'target'),
+        mirror: persistentSession.readSessionIntentField(env, 'mirror')
       });
     }
   });
@@ -1602,8 +1606,8 @@ test('runGlobalPersistentSessionsCommand opens a fresh session for legacy psmux 
     cliAccountId: '1',
     forwardArgs: [],
     isLogin: false,
-    target: undefined,
-    mirror: undefined
+    target: '',
+    mirror: ''
   }]);
   assert.equal(writes.join('').includes('legacy psmux task'), true);
 });

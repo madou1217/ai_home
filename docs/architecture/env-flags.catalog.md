@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:21:25.338Z
-> 共 **126** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:29:13.825Z
+> 共 **121** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，19）
@@ -91,7 +91,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），64）
+## plumbing（内部管道（进程间传递的身份 / 标记），59）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -122,12 +122,11 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | — | 1 | Go Core 工件下载基地址 |
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
-| `AIH_PERSIST_ACTIVE` | — | 1 | 当前已在持久会话内（防嵌套） |
-| `AIH_PERSIST_DETACHED` | — | 1 | 持久会话由 restore 以 detached 方式创建 |
 | `AIH_RUNTIME_SHOW_USAGE` | — | 1 | 运行时显示用量 |
 | `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
+| `AIH_SESSION_INTENT` | — | 1 | 会话意图（label/resume/mirror/target/active/detached 六项合一） |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
@@ -152,10 +151,6 @@
 | `AIH_SERVER_BACKGROUND_RESTART` | — | 0 | 后台重启标记 |
 | `AIH_SERVER_ELEVATED_RESTART` | — | 0 | 提权重启标记 |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | — | 0 | 源码变更自动重启标记 |
-| `AIH_SESSION` | — | 0 | 会话标签（-S / --session 的注入形态） |
-| `AIH_SESSION_MIRROR` | — | 0 | 会话镜像模式标记 |
-| `AIH_SESSION_RESUME` | — | 0 | 续接标记（restore 用） |
-| `AIH_SESSION_TARGET` | — | 0 | 精确会话目标（picker / restore 注入） |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | — | 0 | zcode 会话归属作用域 |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | — | 0 | zcode 用量归属日志路径 |

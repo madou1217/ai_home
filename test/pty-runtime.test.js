@@ -920,7 +920,7 @@ test('runtime wraps native Windows psmux for Codex by default', () => {
     spawns[0].args.some((arg) => String(arg).includes(`psmux=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`)),
     true
   );
-  assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.equal(persistentSession.readSessionIntentField(spawns[0].options.env, 'active'), '1');
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -979,7 +979,7 @@ test('runtime installs psmux on Windows, re-detects it, and wraps the launch', (
     spawns[0].args.some((arg) => String(arg).includes(`psmux=${persistentSession.PSMUX_CODEX_LAUNCH_RUNTIME_MARKER_VALUE}`)),
     true
   );
-  assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.equal(persistentSession.readSessionIntentField(spawns[0].options.env, 'active'), '1');
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -1047,8 +1047,10 @@ test('runtime re-enters Windows psmux Codex sessions with an exclusive explicit 
   const explicitAttachSyncCalls = [];
   const { runtime, proc, spawns, writes, ptyWrites, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: explicitAttachBaseSession,
-    AIH_SESSION_MIRROR: '1',
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: explicitAttachBaseSession,
+      mirror: '1'
+    }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -1126,8 +1128,10 @@ test('runtime rejects legacy Windows psmux Codex targets without direct launch m
   const legacySyncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: legacyBaseSession,
-    AIH_SESSION_MIRROR: '1',
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: legacyBaseSession,
+      mirror: '1'
+    }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -1842,7 +1846,7 @@ test('runtime creates a fresh unique projected session when the same-cwd base is
   const innerArgs = spawns[0].args.slice(innerIndex + 1);
   assert.equal(innerArgs[0], process.execPath);
   assert.equal(innerArgs.some((arg) => /persistent-provider-supervisor-entry\.js$/.test(arg)), true);
-  assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.equal(persistentSession.readSessionIntentField(spawns[0].options.env, 'active'), '1');
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
   assert.deepEqual(rawModeCalls, [true, false]);
 });
@@ -1861,7 +1865,9 @@ test('runtime attaches an explicit detached session target without retaining an 
     resolveHarnessAccountRef
   } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: targetSession
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: targetSession
+    })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1910,7 +1916,7 @@ test('runtime attaches an explicit detached session target without retaining an 
     sourceConfigCall.args[4],
     path.join(aiHomeDir, 'run', 'tmux', 'tmux-codex.conf')
   );
-  assert.equal(spawns[0].options.env.AIH_PERSIST_ACTIVE, '1');
+  assert.equal(persistentSession.readSessionIntentField(spawns[0].options.env, 'active'), '1');
   assert.equal(spawns[0].proc.aihTransientAuthProjection, false);
   assert.equal(fsBase.existsSync(unusedRuntimeDir), false);
   assert.equal(fsBase.existsSync(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef)), false);
@@ -1923,8 +1929,10 @@ test('runtime still attaches an exact picker target when the session probe is un
   const targetSession = `${persistentSession.deriveSessionName({ cwd })}-picked`;
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: targetSession,
-    AIH_SESSION_MIRROR: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: targetSession,
+      mirror: '1'
+    })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1954,8 +1962,10 @@ test('runtime rejects a missing exact target without creating or replacing a ses
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: targetSession,
-    AIH_SESSION_MIRROR: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: targetSession,
+      mirror: '1'
+    })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1982,8 +1992,10 @@ test('runtime rejects an unsafe exact target instead of falling back to fresh or
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: 'unsafe target',
-    AIH_SESSION_MIRROR: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'unsafe target',
+      mirror: '1'
+    })
   }, {
     stdoutIsTTY: true,
     resolveCliPath: (name) => (name === 'tmux' ? '/usr/bin/tmux' : '/usr/bin/codex'),
@@ -2008,8 +2020,10 @@ test('runtime rejects an incompatible exact target without cycling the account t
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: targetSession,
-    AIH_SESSION_MIRROR: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: targetSession,
+      mirror: '1'
+    })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2179,8 +2193,10 @@ test('detached restore preserves the original persistent-session registry metada
   t.after(() => fsBase.rmSync(hostHomeDir, { recursive: true, force: true }));
   const { runtime, proc, spawns, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    [persistentSession.DETACHED_ENV]: '1',
-    [persistentSession.TARGET_ENV]: targetSession
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      detached: '1',
+      target: targetSession
+    })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2229,7 +2245,7 @@ test('runtime fails closed when explicit resume cannot probe the latest project 
   const cwd = '/tmp/aih-resume-probe-fail-project';
   const { runtime, spawns } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_RESUME: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2273,7 +2289,7 @@ test('runtime explicit resume selects the newest existing project session', () =
   ].join(separator);
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_RESUME: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2495,7 +2511,7 @@ test('runtime explicit resume breaks same-second tmux creation ties with the fre
   ].join(separator);
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_RESUME: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2519,8 +2535,10 @@ test('runtime explicit resume breaks same-second tmux creation ties with the fre
 test('runtime attaches an exact session picker target in mirror mode without detaching peers', () => {
   const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
     AIH_RUNTIME_SHOW_USAGE: '0',
-    AIH_SESSION_TARGET: 'p-picked',
-    AIH_SESSION_MIRROR: '1',
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
+      target: 'p-picked',
+      mirror: '1'
+    }),
     LANG: 'C',
     LC_ALL: 'C'
   }, {
@@ -3113,7 +3131,7 @@ test('built-in AIH server resume no longer forces the gateway app-server remote'
 
 test('runtime keeps reboot-restored Codex resume native with gateway credentials', () => {
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_PERSIST_DETACHED: '1'
+    [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ detached: '1' })
   }, {
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '0.0.0.0', port: 9527, apiKey: '' })

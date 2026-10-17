@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:21:54.532Z",
-  "total": 105,
+  "generatedAt": "2026-10-17T09:23:03.484Z",
+  "total": 104,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -311,17 +311,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK",
-      "category": "flag",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/account/host-sync.js",
-        "lib/server/codex-project-registry.js"
       ],
       "aliasConstants": []
     },

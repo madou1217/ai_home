@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:21:54.532Z
-> 覆盖 `lib / bin / scripts / core`，共 **95** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:23:03.484Z
+> 覆盖 `lib / bin / scripts / core`，共 **94** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | path | 16 | 数据/目录/仓库路径 |
 | network | 13 | 端点 / 代理 / 端口 |
-| flag | 4 | 开关与逃生门（环境准入） |
+| flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
 | plumbing | 52 | 内部管道（进程间传递的身份 / 标记） |
@@ -43,9 +43,9 @@
 | `AIH_CLAUDE_API_BASE_URL` | network | 2 | 1 |
 | `AIH_CLAUDE_CODE_COMMANDS_DIR` | path | 2 | 1 |
 | `AIH_CLAUDE_OAUTH_TOKEN` | credential | 2 | 1 |
-| `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | flag | 2 | 2 |
 | `AIH_CODEX_HOME` | path | 2 | 1 |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | credential | 2 | 4 |
+| `AIH_CODEX_REMOTE_PROXY` | network | 2 | 2 |
 
 ## path（数据/目录/仓库路径）
 
@@ -90,7 +90,6 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_CODEX_ENABLE_STOP_NOTIFY_HOOK` | 2 | 0 | lib/account/host-sync.js<br>lib/server/codex-project-registry.js |
 | `AIH_CODEX_DISABLE_REMOTE_RESUME` | 1 | 0 | lib/server/codex-app-server-stdio-proxy-cliresume.js |
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |

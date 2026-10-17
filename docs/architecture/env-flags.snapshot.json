@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:08:47.967Z",
-  "total": 70,
+  "generatedAt": "2026-10-17T11:09:48.140Z",
+  "total": 68,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -807,17 +807,6 @@
       ]
     },
     {
-      "name": "AIH_RELAY_MIHOMO_BIN",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js",
-        "lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RELAY_SETTINGS",
       "category": "plumbing",
       "reads": 0,
@@ -829,17 +818,6 @@
       "aliasConstants": [
         "RELAY_SETTINGS_ENV"
       ]
-    },
-    {
-      "name": "AIH_RELAY_SING_BOX_BIN",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js",
-        "lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_RUNTIME_MARKER",

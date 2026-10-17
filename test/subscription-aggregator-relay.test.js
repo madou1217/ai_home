@@ -64,7 +64,7 @@ test('sing-box binary lookup prefers explicit → managed → PATH → system di
   assert.equal(resolveSingBoxBinary({ ...posixOptions, fs: fakeFs([]), env: { PATH: '' } }), null);
   // 环境变量也是「显式」的一种（部署脚本用）。
   assert.deepEqual(
-    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/env/sing-box']), env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/env/sing-box' } }),
+    resolveSingBoxBinary({ ...posixOptions, fs: fakeFs(['/env/sing-box']), env: { PATH: '', [RELAY_SETTINGS_ENV]: serializeRelaySettings({ singBoxBin: '/env/sing-box' }) } }),
     { path: '/env/sing-box', source: 'explicit' }
   );
 });
@@ -443,7 +443,7 @@ test('a kernel installed after the fact is picked up without restarting the serv
     kernel: KERNELS[0],
     fs: fakeFs,
     path: path.posix,
-    env: { PATH: '', AIH_RELAY_SING_BOX_BIN: '/opt/sing-box' },
+    env: { PATH: '', [RELAY_SETTINGS_ENV]: serializeRelaySettings({ singBoxBin: '/opt/sing-box' }) },
     aiHomeDir: '/home/u/.ai_home',
     spawnSync: () => ({ status: 0, stdout: 'sing-box version 1.13.19' })
   });
@@ -621,11 +621,11 @@ test('mihomo carries the transports sing-box cannot (real mihomo, when installed
   const mihomoKernel = KERNELS.find((kernel) => kernel.id === 'mihomo');
   const binary = mihomoKernel.resolveBinary({});
   if (!binary) {
-    t.skip('本机没有 mihomo（AIH_RELAY_MIHOMO_BIN 或 ~/.ai_home/bin/mihomo），跳过');
+    t.skip('本机没有 mihomo（AIH_RELAY_SETTINGS 的 mihomoBin 或 ~/.ai_home/bin/mihomo），跳过');
     return;
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-relay-mihomo-'));
-  // 用真实环境变量（AIH_RELAY_MIHOMO_BIN 等）：内核位置就是这么传进去的。
+  // 用真实环境变量（AIH_RELAY_SETTINGS 的 mihomoBin 等）：内核位置就是这么传进去的。
   const relay = new LocalRelay({
     runDir: dir, env: { ...process.env, [RELAY_SETTINGS_ENV]: serializeRelaySettings({ portMode: 'dedicated' }) }, basePort: 24400, readinessTimeoutMs: 15000
   });

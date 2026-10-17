@@ -48,6 +48,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/imageblob"
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
+	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -1253,6 +1254,18 @@ func modelRefreshProviderConcurrency() map[string]int {
 	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
 		concurrency[providerID] = modelRefreshConcurrency
 	}
+	// 透传通道服务的 Provider 同样要有刷新队列。
+	//
+	// 为什么必须显式列：队列只在协调器构造时按这张表建立，**没有队列的 Provider 永远
+	// 不会被重扫**——表现是静默的（账号在池里、模型目录一直为空、请求被判成
+	// model_not_routable 交还 Node），等于透传通道白接。新增透传 Provider 时必须同步这里。
+	for _, providerID := range []string{
+		clinerelay.ProviderID,
+		grokrelay.ProviderID,
+		kimirelay.ProviderID,
+	} {
+		concurrency[providerID] = modelRefreshConcurrency
+	}
 	return concurrency
 }
 
@@ -1285,10 +1298,37 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建家族模型目录源失败: %w", err)
 		}
+		// kimi / grok 的透传通道已接入（见 relaycore），但账号的**模型目录**要单独发现：
+		// 没有目录，Go 就不知道这两个 Provider 有哪些模型可路由，请求会被判成
+		// model_not_routable 交还 Node —— 等于通道白接。
+		//
+		// 两者都是标准 OpenAI 兼容端点（GET {base}/models），因此共用同一实现，
+		// 差异只在端点与凭据取法。
+		kimiSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
+			ProviderID: kimirelay.ProviderID,
+			Endpoint:   kimirelay.KimiCodeBaseURL + openaicompatmodelcatalog.ModelsPath,
+			Token:      kimirelay.AccessTokenFromCredential,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建 kimi 模型目录源失败: %w", err)
+		}
+		grokSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
+			ProviderID: grokrelay.ProviderID,
+			Endpoint:   grokrelay.DefaultBaseURL + openaicompatmodelcatalog.ModelsPath,
+			Token:      grokrelay.AccessTokenFromCredential,
+			// grok 的 GET /models 只认 API Key：OAuth 账号会被 403，因此明确跳过
+			// （那些账号的目录只能靠本地 CLI，Go 服务端没有 —— 这是能力边界，不是缺陷）。
+			SupportsCredential: grokrelay.SupportsHTTPModelDiscovery,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
 			agySource,
+			kimiSource,
+			grokSource,
 		}
 		strategies = append(strategies, familySources...)
 	}

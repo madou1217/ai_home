@@ -14,6 +14,7 @@
 package grokrelay
 
 import (
+	"encoding/json"
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
@@ -91,21 +92,95 @@ func accessTokenFromPayload(payload []byte) (string, bool) {
 			return strings.TrimSpace(token), true
 		}
 	}
-	// 形态二：OAuth 原生文档（auth.default / credentials）。
-	for _, container := range []string{"auth", "credentials"} {
-		nested, ok := relaycore.DecodeRawObject(fields[container])
+	// 形态二：OAuth 原生文档（auth.<issuer>::<uuid>.key —— grok CLI 的登录态形状）。
+	//
+	// 这是 grok 的实际形态（实测 2026-10-17）：凭据文档顶层是 `auth`，其下每个键是
+	// `<issuer>::<uuid>`，值里带 `key`（JWT access token）与 `refresh_token` 等。
+	// 键名不是固定字面量，因此要**遍历**而不是按名取。
+	if auth, ok := relaycore.DecodeRawObject(fields["auth"]); ok {
+		if token, found := scanAuthRecords(auth); found {
+			return token, true
+		}
+	}
+	// 形态三：credentials（其它 provider 的同名容器）。
+	if credentials, ok := relaycore.DecodeRawObject(fields["credentials"]); ok {
+		if token, found := scanAuthRecords(credentials); found {
+			return token, true
+		}
+	}
+	return "", false
+}
+
+// scanAuthRecords 在一层记录里找鉴权令牌。
+//
+// 两种形状都要认：直接带字段的记录（`{access_token}`），以及 `{<name>: {key}}`
+// 这种嵌套（grok 的 `auth.<issuer>::<uuid>.key`）。
+func scanAuthRecords(record map[string]json.RawMessage) (string, bool) {
+	// 直接字段优先（含 grok 的 `key`）。
+	for _, key := range []string{"access_token", "accessToken", "api_key", "apiKey", "key"} {
+		if token, ok := relaycore.RawString(record[key]); ok && strings.TrimSpace(token) != "" {
+			return strings.TrimSpace(token), true
+		}
+	}
+	// 再下探一层：auth 下可能还有 default，或每个键各是一条记录。
+	if inner, ok := relaycore.DecodeRawObject(record["default"]); ok {
+		for _, key := range []string{"access_token", "accessToken", "api_key", "apiKey", "key"} {
+			if token, ok := relaycore.RawString(inner[key]); ok && strings.TrimSpace(token) != "" {
+				return strings.TrimSpace(token), true
+			}
+		}
+	}
+	for name, raw := range record {
+		if name == "default" {
+			continue
+		}
+		nested, ok := relaycore.DecodeRawObject(raw)
 		if !ok {
 			continue
 		}
-		// auth 下可能还有一层 default（与 opencode 的 auth.<name> 同形）。
-		if inner, ok := relaycore.DecodeRawObject(nested["default"]); ok {
-			nested = inner
-		}
-		for _, key := range []string{"access_token", "accessToken", "api_key", "apiKey"} {
+		for _, key := range []string{"key", "access_token", "accessToken"} {
 			if token, ok := relaycore.RawString(nested[key]); ok && strings.TrimSpace(token) != "" {
 				return strings.TrimSpace(token), true
 			}
 		}
 	}
 	return "", false
+}
+
+// SupportsHTTPModelDiscovery 判定该凭据形态能否走 HTTP 模型发现。
+//
+// grok 的 `GET /models` **只认 API Key**：OAuth 登录态会被上游 403（2026-10-17 实测
+// 两个 OAuth 账号都是 403）。这与 Node 侧一致——那边的 grok 目录对 OAuth 账号走本地
+// CLI（`grok models`），HTTP 探测只服务 API Key 账号。
+//
+// 因此 OAuth 账号在 Go 侧（服务端无本机 CLI）**没有模型目录**，这是能力边界而非缺陷：
+// 明确拒绝让刷新保持旧目录，而不是反复发一个必被 403 的请求。
+func SupportsHTTPModelDiscovery(credential accountapp.Credential) bool {
+	if credential == nil || credential.ProviderID() != ProviderID {
+		return false
+	}
+	payload := credentialPayload(credential)
+	if len(payload) == 0 {
+		return false
+	}
+	fields, ok := relaycore.DecodeRawObject(payload)
+	if !ok {
+		return false
+	}
+	// API Key 形态：扁平 api_key / apiKey。OAuth 形态的顶层是 auth 记录。
+	for _, key := range []string{"api_key", "apiKey"} {
+		if token, ok := relaycore.RawString(fields[key]); ok && strings.TrimSpace(token) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// credentialPayload 取凭据文档原始字节（非原生凭据返回 nil）。
+func credentialPayload(credential accountapp.Credential) []byte {
+	native, ok := credential.(interface{ Payload() []byte })
+	if !ok || native == nil {
+		return nil
+	}
+	return native.Payload()
 }

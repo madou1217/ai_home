@@ -107,6 +107,31 @@ func TestAccessTokenReadsOAuthDocument(t *testing.T) {
 	}
 }
 
+// TestAccessTokenReadsCLIAuthRecord 守 grok CLI 的真实登录态形状。
+//
+// 实测（2026-10-17）：凭据顶层是 auth，其下每个键是 `<issuer>::<uuid>`，
+// 值里带 key（JWT access token）。键名不是固定字面量，因此必须遍历而不是按名取 ——
+// 这条用例就是钉住这一点。
+func TestAccessTokenReadsCLIAuthRecord(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"auth": map[string]any{
+			"https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": map[string]any{
+				"key":        "jwt-access-token",
+				"auth_mode":  "oidc",
+				"user_id":    "af73aa79-1317-4d84-972a-16ed6acf256f",
+			},
+		},
+	})
+	provider := NewProvider("")
+	got, err := provider.AccessToken(nativeCredential(t, payload))
+	if err != nil {
+		t.Fatalf("取令牌失败: %v", err)
+	}
+	if got != "jwt-access-token" {
+		t.Fatalf("令牌错误：%q", got)
+	}
+}
+
 // TestAccessTokenRejectsUnknownShape 守不猜字段。
 func TestAccessTokenRejectsUnknownShape(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"unrelated": "value"})

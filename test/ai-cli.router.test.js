@@ -234,7 +234,6 @@ test('`aih codex` keeps the current Windows Terminal session when already in a p
       platform: 'win32',
       env: {
         WT_SESSION: 'session-1',
-        AIH_WT_PROVIDER_PROFILE: 'codex'
       },
       stdout: { isTTY: true },
       cwd: () => 'C:\\work\\ai_home',

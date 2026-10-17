@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:26:42.735Z
-> 共 **102** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:34:26.487Z
+> 共 **99** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，17）
@@ -73,13 +73,7 @@
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | — | 0 | claude 凭据类型标记（oauth / api-key），透传给 CLI |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | — | 0 | 本地 codex app-server 远程控制 token |
 
-## test（测试与探针专用，1）
-
-| 变量 | 公开 | 读取 | 含义 |
-| --- | --- | --- | --- |
-| `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
-
-## plumbing（内部管道（进程间传递的身份 / 标记），52）
+## plumbing（内部管道（进程间传递的身份 / 标记），50）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -88,7 +82,6 @@
 | `AIH_PROVIDER_ACCOUNT_REF` | — | 4 | 当前运行账号的 accountRef（沙箱注入） |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
-| `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
@@ -115,7 +108,6 @@
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
-| `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |

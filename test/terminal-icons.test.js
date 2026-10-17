@@ -200,7 +200,6 @@ test('windows terminal launch command opens the provider profile', () => {
   assert.deepEqual(launch.args.slice(0, 5), ['-w', '0', 'new-tab', '--profile', stableGuidForProvider('codex')]);
   assert.equal(launch.args.includes('--startingDirectory'), true);
   assert.deepEqual(launch.args.slice(-4), ['aih-dev', 'codex', '--resume', 'thread-1']);
-  assert.equal(launch.env.AIH_WT_PROVIDER_PROFILE, 'codex');
 });
 
 test('windows terminal fragment path follows LOCALAPPDATA fragments layout', () => {

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:26:42.735Z
-> 覆盖 `lib / bin / scripts / core`，共 **92** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:34:26.487Z
+> 覆盖 `lib / bin / scripts / core`，共 **89** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -12,8 +12,7 @@
 | network | 13 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
-| test | 1 | 测试与探针专用 |
-| plumbing | 51 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 49 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -107,12 +106,6 @@
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | 0 | 2 | lib/account/claude-credential.js<br>lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | 0 | 1 | lib/server/codex-tui-local-app-server.js |
 
-## test（测试与探针专用）
-
-| 变量 | 读取 | 字面量 | 文件 |
-| --- | --- | --- | --- |
-| `AIH_FFPROBE` | 2 | 0 | lib/server/chat-video-attachments.js |
-
 ## plumbing（内部管道（进程间传递的身份 / 标记））
 
 | 变量 | 读取 | 字面量 | 文件 |
@@ -122,7 +115,6 @@
 | `AIH_PROVIDER_ACCOUNT_REF` | 4 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/provider-session-context.js<br>…共 4 个 |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
-| `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
 | `AIH_GEMINI_PROJECT_ID` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
@@ -149,7 +141,6 @@
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
 | `AIH_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/account/go-bridge/go-import-translator.js<br>lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>…共 4 个 |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | 1 | 0 | lib/cli/services/pty/local-clipboard.js |
-| `AIH_WT_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |
 | `AIH_ACCOUNT_APP` | 0 | 1 | lib/runtime/provider-session-context.js |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |

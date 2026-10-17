@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:26:42.735Z",
-  "total": 102,
+  "generatedAt": "2026-10-17T09:34:26.487Z",
+  "total": 99,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -353,26 +353,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FFMPEG",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/chat-video-attachments.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FFPROBE",
-      "category": "test",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/chat-video-attachments.js"
       ],
       "aliasConstants": []
     },
@@ -934,16 +914,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/pty/local-clipboard.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WT_PROVIDER_PROFILE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },

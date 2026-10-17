@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createServerWiring } = require('../lib/cli/bootstrap/server-wiring');
-const { CODEX_HOOKS_ENV, parseCodexHookFlags } = require('../lib/cli/config/codex-hooks');
+const { parseCodexHookFlags } = require('../lib/cli/config/codex-hooks');
+const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
 
 function captureCodexCliHookFlag(enableCodexCliHook) {
   let received;
@@ -20,12 +21,12 @@ function captureCodexCliHookFlag(enableCodexCliHook) {
 test('Codex hook flags reach the server composition with an enabled default', () => {
   const cases = [
     { env: {}, cli: true, desktop: true },
-    { env: { [CODEX_HOOKS_ENV]: 'cli' }, cli: true, desktop: false },
-    { env: { [CODEX_HOOKS_ENV]: '0' }, cli: false, desktop: false }
+    { env: { [CODEX_FLAGS_ENV]: serializeCodexFlags({ hooks: 'cli' }) }, cli: true, desktop: false },
+    { env: { [CODEX_FLAGS_ENV]: serializeCodexFlags({ hooks: '0' }) }, cli: false, desktop: false }
   ];
 
   cases.forEach(({ env, cli, desktop }) => {
-    const flags = parseCodexHookFlags(env[CODEX_HOOKS_ENV]);
+    const flags = parseCodexHookFlags(readCodexFlag(env, 'hooks', 'cli,desktop'));
     assert.equal(flags.cli, cli);
     assert.equal(flags.desktop, desktop);
     assert.equal(captureCodexCliHookFlag(flags.cli), cli);

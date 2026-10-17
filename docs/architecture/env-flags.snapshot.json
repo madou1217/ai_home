@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:35:03.020Z",
-  "total": 59,
+  "generatedAt": "2026-10-17T11:40:24.777Z",
+  "total": 58,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -22,7 +22,6 @@
     "CLI_FEATURES_ENV": "AIH_CLI_FEATURES",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_FLAGS_ENV": "AIH_CODEX_FLAGS",
-    "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
@@ -552,18 +551,6 @@
       ],
       "aliasConstants": [
         "CODEX_FLAGS_ENV"
-      ]
-    },
-    {
-      "name": "AIH_CODEX_HOOKS",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/config/codex-hooks.js"
-      ],
-      "aliasConstants": [
-        "CODEX_HOOKS_ENV"
       ]
     },
     {

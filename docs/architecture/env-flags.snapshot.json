@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:34:52.702Z",
-  "total": 245,
+  "generatedAt": "2026-10-17T05:37:23.269Z",
+  "total": 204,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -371,28 +371,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SERVER_CODEX_BASE_URL",
-      "category": "network",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js",
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_CLIENT_VERSION",
-      "category": "plumbing",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/codex-client-version.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_APPROVAL_URL",
       "category": "network",
       "reads": 2,
@@ -671,26 +649,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SERVER_AGY_BASE_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_AGY_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_API_KEY",
       "category": "credential",
       "reads": 2,
@@ -699,401 +657,6 @@
         "lib/config/public-env.js",
         "lib/server/args.js",
         "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_BACKEND",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CLAUDE_BASE_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CLAUDE_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_REMOTE_PROXY",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_TRACE_FILE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_TRACE_REMOTE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_TRACE_RESPONSES",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_MODELS",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_COOLDOWN_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_FAILURE_THRESHOLD",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_GEMINI_BASE_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_GEMINI_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_LOG_REQUESTS",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MAX_ATTEMPTS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODEL_USAGE_SCAN",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODELS_CACHE_TTL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MODELS_PROBE_ACCOUNTS",
-      "category": "test",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_OPENCODE_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_PROVIDER",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_APPLY",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_START_DELAY_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_QUEUE_LIMIT",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_SESSION_AFFINITY_MAX",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_SESSION_AFFINITY_TTL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_STRATEGY",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_UPSTREAM_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_BATCH_SIZE",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_MIN_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_PROBE_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
       ],
       "aliasConstants": []
     },
@@ -1873,6 +1436,16 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_SERVER_CODEX_BASE_URL",
+      "category": "network",
+      "reads": 1,
+      "literals": 0,
+      "files": [
+        "lib/cli/services/usage/usage-snapshot-codex.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_SERVER_CODEX_CLI_HOOK",
       "category": "plumbing",
       "reads": 1,
@@ -1899,16 +1472,6 @@
       "literals": 0,
       "files": [
         "lib/cli/bootstrap/runtime-support-wiring.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_STRICT_PORT",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/server.js"
       ],
       "aliasConstants": []
     },
@@ -2500,6 +2063,26 @@
       "aliasConstants": [
         "ELEVATED_RESTART_ENV"
       ]
+    },
+    {
+      "name": "AIH_SERVER_MAX_ATTEMPTS",
+      "category": "tuning",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_SERVER_MODELS_PROBE_ACCOUNTS",
+      "category": "test",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/server/server-config-schema.js"
+      ],
+      "aliasConstants": []
     },
     {
       "name": "AIH_SERVER_SOURCE_AUTO_RESTART",

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:34:52.702Z
-> 覆盖 `lib / bin / scripts / core`，共 **235** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:37:23.269Z
+> 覆盖 `lib / bin / scripts / core`，共 **194** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,12 +9,12 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 21 | 数据/目录/仓库路径 |
-| network | 43 | 端点 / 代理 / 端口 |
+| network | 38 | 端点 / 代理 / 端口 |
 | flag | 6 | 开关与逃生门（环境准入） |
-| tuning | 23 | 可调参数（超时 / TTL / 上限） |
+| tuning | 2 | 可调参数（超时 / TTL / 上限） |
 | credential | 20 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 120 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 105 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -85,16 +85,11 @@
 | `AIH_RELAY_LISTEN_HOST` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
 | `AIH_RELAY_PORT_MODE` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
 | `AIH_REMOTE_SSH` | 3 | 0 | lib/cli/commands/ai-cli/router.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
-| `AIH_SERVER_CODEX_BASE_URL` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/args.js |
 | `AIH_APPROVAL_URL` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
 | `AIH_FABRIC_ENDPOINT` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_PLUGIN_HOST_VERSION` | 2 | 0 | lib/plugins/host/host-entry.mjs |
-| `AIH_SERVER_AGY_BASE_URL` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CLAUDE_BASE_URL` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_REMOTE_PROXY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_GEMINI_BASE_URL` | 2 | 0 | lib/server/args.js |
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
@@ -109,8 +104,8 @@
 | `AIH_FABRIC_LOCAL_URL` | 1 | 0 | lib/cli/services/fabric/broker-connect.js |
 | `AIH_GO_CORE_HOST` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
+| `AIH_SERVER_CODEX_BASE_URL` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_SERVER_MANAGEMENT_URL` | 1 | 0 | lib/cli/bootstrap/runtime-support-wiring.js |
-| `AIH_SERVER_STRICT_PORT` | 1 | 0 | lib/server/server.js |
 | `AIH_SSH_CLIP_SHIM_TTY` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_CLIP_WATCH` | 1 | 0 | lib/cli/services/ssh-clipboard/ssh-command.js |
 | `AIH_SSH_CLIPBOARD_SHIMS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-shims.js |
@@ -137,29 +132,8 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_SERVER_AGY_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CLAUDE_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_COOLDOWN_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_GEMINI_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_MAX_ATTEMPTS` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
-| `AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_MODELS_CACHE_TTL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_OPENCODE_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_START_DELAY_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_QUEUE_LIMIT` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_SESSION_AFFINITY_MAX` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_SESSION_AFFINITY_TTL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_UPSTREAM_TIMEOUT_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_BATCH_SIZE` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_MIN_INTERVAL_MS` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_PROBE_TIMEOUT_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
+| `AIH_SERVER_MAX_ATTEMPTS` | 0 | 1 | lib/server/server-config-schema.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -191,7 +165,7 @@
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | 2 | 0 | lib/server/chat-video-attachments.js |
-| `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
+| `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | 0 | 1 | lib/server/server-config-schema.js |
 
 ## plumbing（内部管道（进程间传递的身份 / 标记））
 
@@ -203,7 +177,6 @@
 | `AIH_RELAY_UDP` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
-| `AIH_SERVER_CODEX_CLIENT_VERSION` | 3 | 0 | lib/server/args.js<br>lib/server/codex-client-version.js |
 | `AIH_CODEX_DESKTOP_ACCOUNT_REF` | 2 | 0 | lib/cli/services/profile/list.js<br>lib/server/codex-desktop-account.js |
 | `AIH_FABRIC_NODE_ID` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
@@ -214,20 +187,6 @@
 | `AIH_PLUGIN_SOCKET` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_RUN_ID` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
-| `AIH_SERVER_BACKEND` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_FILE` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_REMOTE` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_RESPONSES` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_MODELS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_FAILURE_THRESHOLD` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_LOG_REQUESTS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_MODEL_USAGE_SCAN` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_PROVIDER` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_APPLY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_STRATEGY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_WINDOW_ACTIVATION` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
 | `AIH_TERMINAL_PROVIDER_TITLE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_UTF8_LOCALE` | 2 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_WINDOWS_IMAGE_PASTE` | 2 | 0 | lib/cli/services/pty/local-clipboard.js |

@@ -72,13 +72,6 @@ test('parseServerServeArgs allows CLI proxy overrides', () => {
 });
 
 test('parseServerServeArgs accepts codex client version override', () => {
-  withEnv({
-    AIH_SERVER_CODEX_CLIENT_VERSION: '0.129.0'
-  }, () => {
-    const fromEnv = parseServerServeArgs([]);
-    assert.equal(fromEnv.codexClientVersion, '0.129.0');
-  });
-
   const fromCli = parseServerServeArgs([
     '--codex-client-version', 'codex-cli 0.130.0'
   ]);
@@ -90,14 +83,7 @@ test('parseServerServeArgs accepts opencode provider mode', () => {
   assert.equal(parsed.provider, 'opencode');
 });
 
-test('parseServerServeArgs accepts opencode concurrency from env and cli', () => {
-  withEnv({
-    AIH_SERVER_OPENCODE_MAX_CONCURRENCY: '3'
-  }, () => {
-    const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.opencodeMaxConcurrency, 3);
-  });
-
+test('parseServerServeArgs accepts opencode concurrency from cli', () => {
   const parsed = parseServerServeArgs(['--opencode-max-concurrency', '4']);
   assert.equal(parsed.opencodeMaxConcurrency, 4);
 });
@@ -114,46 +100,17 @@ test('parseServerServeArgs supports equals syntax for host, port and api key', (
 });
 
 test('parseServerServeArgs does not terminate the Codex App server by default', () => {
-  withEnv({
-    AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE: undefined
-  }, () => {
-    const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.codexDesktopRestartAppServerOnHookChange, false);
-  });
-
-  withEnv({
-    AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE: '1'
-  }, () => {
-    const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.codexDesktopRestartAppServerOnHookChange, true);
-  });
+  assert.equal(parseServerServeArgs([]).codexDesktopRestartAppServerOnHookChange, false);
 });
 
 test('parseServerServeArgs enables model usage background scan by default', () => {
-  withEnv({
-    AIH_SERVER_MODEL_USAGE_SCAN: undefined,
-    AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS: undefined,
-    AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS: undefined
-  }, () => {
-    const parsed = parseServerServeArgs([]);
-    assert.equal(parsed.modelUsageScan, true);
-    assert.equal(parsed.modelUsageScanStartDelayMs, 5000);
-    assert.equal(parsed.modelUsageScanIntervalMs, 600000);
-  });
+  const parsed = parseServerServeArgs([]);
+  assert.equal(parsed.modelUsageScan, true);
+  assert.equal(parsed.modelUsageScanStartDelayMs, 5000);
+  assert.equal(parsed.modelUsageScanIntervalMs, 600000);
 });
 
 test('parseServerServeArgs allows disabling model usage scan and tuning cadence', () => {
-  withEnv({
-    AIH_SERVER_MODEL_USAGE_SCAN: '0',
-    AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS: '1500',
-    AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS: '120000'
-  }, () => {
-    const fromEnv = parseServerServeArgs([]);
-    assert.equal(fromEnv.modelUsageScan, false);
-    assert.equal(fromEnv.modelUsageScanStartDelayMs, 1500);
-    assert.equal(fromEnv.modelUsageScanIntervalMs, 120000);
-  });
-
   const fromCli = parseServerServeArgs([
     '--no-model-usage-scan',
     '--model-usage-scan-start-delay-ms', '0',

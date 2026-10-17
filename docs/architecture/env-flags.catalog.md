@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:34:52.702Z
-> 共 **245** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:37:23.269Z
+> 共 **204** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -32,7 +32,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，47）
+## network（端点 / 代理 / 端口，42）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -47,16 +47,11 @@
 | `AIH_RELAY_LISTEN_HOST` | — | 3 | 中转入口绑定网卡（config 优先） |
 | `AIH_RELAY_PORT_MODE` | — | 3 | 中转端口布局 server/dedicated（config 优先） |
 | `AIH_REMOTE_SSH` | — | 3 | 远程主机 SSH 目标（远程 node/relay 操作） |
-| `AIH_SERVER_CODEX_BASE_URL` | — | 3 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
 | `AIH_APPROVAL_URL` | — | 2 | 审批回调地址（MCP/HTTP 审批通道） |
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_FABRIC_ENDPOINT` | — | 2 | fabric 服务端地址 |
 | `AIH_PLUGIN_HOST_VERSION` | — | 2 | 插件宿主协议版本（兼容判断） |
-| `AIH_SERVER_AGY_BASE_URL` | — | 2 | serve 的 agy 上游 base URL（--agy-base-url 的 env 形态） |
-| `AIH_SERVER_CLAUDE_BASE_URL` | — | 2 | serve 的 claude 上游 base URL（--claude-base-url 的 env 形态） |
-| `AIH_SERVER_CODEX_DESKTOP_REMOTE_PROXY` | — | 2 | codex 桌面远程代理开关（默认开） |
-| `AIH_SERVER_GEMINI_BASE_URL` | — | 2 | serve 的 gemini 上游 base URL（--gemini-base-url 的 env 形态） |
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
@@ -71,8 +66,8 @@
 | `AIH_FABRIC_LOCAL_URL` | — | 1 | fabric 本机回环地址 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
+| `AIH_SERVER_CODEX_BASE_URL` | — | 1 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
 | `AIH_SERVER_MANAGEMENT_URL` | — | 1 | ⚠ 管理入口 URL（脚本/远程管理用；待确认具体调用点） |
-| `AIH_SERVER_STRICT_PORT` | — | 1 | 端口被占用时直接失败（不自动换端口） |
 | `AIH_SSH_CLIP_SHIM_TTY` | — | 1 | shim 是否占用 TTY |
 | `AIH_SSH_CLIP_WATCH` | — | 1 | 剪贴板监视开关 |
 | `AIH_SSH_CLIPBOARD_SHIMS` | — | 1 | 要安装的剪贴板 shim 列表（pbcopy/xclip 等） |
@@ -96,33 +91,12 @@
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## tuning（可调参数（超时 / TTL / 上限），23）
+## tuning（可调参数（超时 / TTL / 上限），2）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_SERVER_AGY_MAX_CONCURRENCY` | — | 2 | agy 并发上限（--agy-max-concurrency） |
-| `AIH_SERVER_CLAUDE_MAX_CONCURRENCY` | — | 2 | claude 并发上限（--claude-max-concurrency） |
-| `AIH_SERVER_CODEX_MAX_CONCURRENCY` | — | 2 | codex 并发上限（--codex-max-concurrency） |
-| `AIH_SERVER_COOLDOWN_MS` | — | 2 | 账号失败冷却基础时长 |
-| `AIH_SERVER_GEMINI_MAX_CONCURRENCY` | — | 2 | gemini 并发上限（--gemini-max-concurrency） |
-| `AIH_SERVER_MAX_ATTEMPTS` | — | 2 | 单次请求最多尝试账号数（config 优先；0 = 3） |
-| `AIH_SERVER_MODEL_USAGE_SCAN_INTERVAL_MS` | — | 2 | 会话用量扫描周期 |
-| `AIH_SERVER_MODEL_USAGE_SCAN_START_DELAY_MS` | — | 2 | 会话用量扫描首跑延迟 |
-| `AIH_SERVER_MODELS_CACHE_TTL_MS` | — | 2 | 模型目录缓存 TTL |
-| `AIH_SERVER_OPENCODE_MAX_CONCURRENCY` | — | 2 | opencode 并发上限（--opencode-max-concurrency） |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_INTERVAL_MS` | — | 2 | provider CLI 自动升级检查周期 |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_START_DELAY_MS` | — | 2 | provider CLI 自动升级首跑延迟 |
-| `AIH_SERVER_QUEUE_LIMIT` | — | 2 | 等待队列上限 |
-| `AIH_SERVER_SESSION_AFFINITY_MAX` | — | 2 | 会话亲和表容量 |
-| `AIH_SERVER_SESSION_AFFINITY_TTL_MS` | — | 2 | 会话亲和 TTL |
-| `AIH_SERVER_UPSTREAM_TIMEOUT_MS` | — | 2 | 上游请求超时 |
-| `AIH_SERVER_WINDOW_ACTIVATION_BATCH_SIZE` | — | 2 | 窗口激活单轮批量 |
-| `AIH_SERVER_WINDOW_ACTIVATION_DEFAULT_INTERVAL_MS` | — | 2 | 窗口激活兜底间隔（config 优先） |
-| `AIH_SERVER_WINDOW_ACTIVATION_MIN_INTERVAL_MS` | — | 2 | 窗口激活间隔下限（config 优先） |
-| `AIH_SERVER_WINDOW_ACTIVATION_PROBE_TIMEOUT_MS` | — | 2 | 窗口激活探测超时 |
-| `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | — | 2 | 窗口激活首跑延迟 |
-| `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | — | 2 | 窗口激活调度 tick |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
+| `AIH_SERVER_MAX_ATTEMPTS` | — | 0 | 单次请求最多尝试账号数（config 优先；0 = 3） |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值），22）
 
@@ -156,9 +130,9 @@
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
-| `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
+| `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 0 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），121）
+## plumbing（内部管道（进程间传递的身份 / 标记），106）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -168,7 +142,6 @@
 | `AIH_RELAY_UDP` | — | 4 | 中转 UDP 开关（config 会写 0/1） |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
-| `AIH_SERVER_CODEX_CLIENT_VERSION` | — | 3 | codex 客户端版本请求头 |
 | `AIH_CODEX_DESKTOP_ACCOUNT_REF` | — | 2 | codex 桌面会话使用的账号 |
 | `AIH_FABRIC_NODE_ID` | — | 2 | fabric 节点 id |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
@@ -179,20 +152,6 @@
 | `AIH_PLUGIN_SOCKET` | — | 2 | 插件 RPC socket 路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_RUN_ID` | — | 2 | 当前运行 id（WebUI chat/work 轮次关联） |
-| `AIH_SERVER_BACKEND` | — | 2 | serve 后端模式（codex-adapter 等） |
-| `AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE` | — | 2 | hook 变化时重启 codex app-server |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_FILE` | — | 2 | codex 桌面 trace 输出文件 |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_REMOTE` | — | 2 | remote-control trace 开关 |
-| `AIH_SERVER_CODEX_DESKTOP_TRACE_RESPONSES` | — | 2 | responses trace 开关 |
-| `AIH_SERVER_CODEX_MODELS` | — | 2 | codex 模型清单覆盖 |
-| `AIH_SERVER_FAILURE_THRESHOLD` | — | 2 | 连续失败阈值（进入冷却前） |
-| `AIH_SERVER_LOG_REQUESTS` | — | 2 | 是否打印请求日志 |
-| `AIH_SERVER_MODEL_USAGE_SCAN` | — | 2 | 会话用量扫描开关 |
-| `AIH_SERVER_PROVIDER` | — | 2 | 默认 provider（auto 等） |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE` | — | 2 | provider CLI 自动升级总开关 |
-| `AIH_SERVER_PROVIDER_CLI_AUTO_UPGRADE_APPLY` | — | 2 | 允许实际执行升级（否则只检查） |
-| `AIH_SERVER_STRATEGY` | — | 2 | 选号策略（random / round-robin） |
-| `AIH_SERVER_WINDOW_ACTIVATION` | — | 2 | 窗口激活全局开关（config 优先） |
 | `AIH_TERMINAL_PROVIDER_TITLE` | — | 2 | 终端标题是否带 provider |
 | `AIH_UTF8_LOCALE` | — | 2 | 强制 UTF-8 locale（终端兼容） |
 | `AIH_WINDOWS_IMAGE_PASTE` | — | 2 | Windows 图片粘贴开关 |

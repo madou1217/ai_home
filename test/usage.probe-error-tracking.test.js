@@ -115,7 +115,7 @@ test('gemini probe records probe_not_ok when ok is false', () => {
     const accountRef = registerUsageAccount(root, 'gemini');
 
     const payload = JSON.stringify({ ok: false, error: 'auth_failed' });
-    const stdout = `AIH_QUOTA_JSON_START\n${payload}\nAIH_QUOTA_JSON_END\n`;
+    const stdout = `__AIH_QUOTA_JSON_START__\n${payload}\n__AIH_QUOTA_JSON_END__\n`;
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => ({ stdout, stderr: '' }),
@@ -138,7 +138,7 @@ test('gemini probe records empty_parsed_snapshot when buckets produce no models'
     const accountRef = registerUsageAccount(root, 'gemini');
 
     const payload = JSON.stringify({ ok: true, buckets: [] });
-    const stdout = `AIH_QUOTA_JSON_START\n${payload}\nAIH_QUOTA_JSON_END\n`;
+    const stdout = `__AIH_QUOTA_JSON_START__\n${payload}\n__AIH_QUOTA_JSON_END__\n`;
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => ({ stdout, stderr: '' }),
@@ -162,19 +162,19 @@ test('gemini probe clears probe error on successful snapshot', () => {
 
     // First: produce an error
     const failPayload = JSON.stringify({ ok: false, error: 'temp_failure' });
-    const failStdout = `AIH_QUOTA_JSON_START\n${failPayload}\nAIH_QUOTA_JSON_END\n`;
+    const failStdout = `__AIH_QUOTA_JSON_START__\n${failPayload}\n__AIH_QUOTA_JSON_END__\n`;
 
     const spawnResults = [
       { stdout: failStdout, stderr: '' },
       {
-        stdout: `AIH_QUOTA_JSON_START\n${JSON.stringify({
+        stdout: `__AIH_QUOTA_JSON_START__\n${JSON.stringify({
           ok: true,
           buckets: [{
             modelId: 'gemini-2.5-pro',
             remainingFraction: 0.75,
             resetTime: new Date(Date.now() + 3600000).toISOString()
           }]
-        })}\nAIH_QUOTA_JSON_END\n`,
+        })}\n__AIH_QUOTA_JSON_END__\n`,
         stderr: ''
       }
     ];
@@ -246,7 +246,7 @@ test('claude probe records probe_not_ok when response is not ok', () => {
     const accountRef = registerUsageAccount(root, 'claude');
 
     const payload = JSON.stringify({ ok: false, error: 'rate_limited', status: 429 });
-    const stdout = `AIH_CLAUDE_USAGE_JSON_START\n${payload}\nAIH_CLAUDE_USAGE_JSON_END\n`;
+    const stdout = `__AIH_CLAUDE_USAGE_JSON_START__\n${payload}\n__AIH_CLAUDE_USAGE_JSON_END__\n`;
 
     const service = createUsageSnapshotService(makeBaseServiceOptions(root, {
       spawnSync: () => ({ stdout, stderr: '' })

@@ -585,7 +585,7 @@ async function waitForMarker(state, marker, fromCursor, timeoutMs) {
 }
 
 async function startSession(state, options) {
-  const start = buildPromptParts('AIH_M5_RECOVERY_START_OK');
+  const start = buildPromptParts('__AIH_M5_RECOVERY_START_OK__');
   state.startMarker = start.marker;
   const response = await requestServerApi(state, '/v0/node-rpc/device-node-session-start', {
     method: 'POST',
@@ -632,7 +632,7 @@ async function attachSession(state, cursor, phase = 'attach') {
 }
 
 async function sendMessage(state, options) {
-  const message = buildPromptParts('AIH_M5_RECOVERY_MESSAGE_OK');
+  const message = buildPromptParts('__AIH_M5_RECOVERY_MESSAGE_OK__');
   state.messageMarker = message.marker;
   return requestServerApi(state, '/v0/node-rpc/device-node-session-command', {
     method: 'POST',

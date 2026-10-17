@@ -69,9 +69,9 @@ test('session recovery parser defaults to AWS broker and local default port', ()
 });
 
 test('buildPromptParts keeps expected marker out of the prompt text', () => {
-  const prompt = buildPromptParts('AIH_M5_RECOVERY_START_OK');
+  const prompt = buildPromptParts('__AIH_M5_RECOVERY_START_OK__');
 
-  assert.equal(prompt.marker, 'AIH_M5_RECOVERY_START_OK_20260628');
+  assert.equal(prompt.marker, '__AIH_M5_RECOVERY_START_OK___20260628');
   assert.equal(prompt.prompt.includes(prompt.marker), false);
   assert.match(prompt.prompt, /AIH M5 RECOVERY START OK 20260628/);
 });
@@ -180,7 +180,7 @@ test('runSessionRecoverySmoke resumes the same session after broker interruption
               events: [{
                 cursor: 10,
                 type: 'terminal-output',
-                text: 'AIH_M5_RECOVERY_START_OK_20260628'
+                text: '__AIH_M5_RECOVERY_START_OK___20260628'
               }]
             }
           });
@@ -193,7 +193,7 @@ test('runSessionRecoverySmoke resumes the same session after broker interruption
               events: [{
                 cursor: 20,
                 type: 'terminal-output',
-                text: 'AIH_M5_RECOVERY_MESSAGE_OK_20260628'
+                text: '__AIH_M5_RECOVERY_MESSAGE_OK___20260628'
               }]
             }
           });
@@ -317,7 +317,7 @@ test('runSessionRecoverySmoke observes relay offline before relay recovery', asy
             ok: true,
             result: {
               cursor: 10,
-              events: [{ cursor: 10, type: 'terminal-output', text: 'AIH_M5_RECOVERY_START_OK_20260628' }]
+              events: [{ cursor: 10, type: 'terminal-output', text: '__AIH_M5_RECOVERY_START_OK___20260628' }]
             }
           });
         }
@@ -326,7 +326,7 @@ test('runSessionRecoverySmoke observes relay offline before relay recovery', asy
             ok: true,
             result: {
               cursor: 20,
-              events: [{ cursor: 20, type: 'terminal-output', text: 'AIH_M5_RECOVERY_MESSAGE_OK_20260628' }]
+              events: [{ cursor: 20, type: 'terminal-output', text: '__AIH_M5_RECOVERY_MESSAGE_OK___20260628' }]
             }
           });
         }

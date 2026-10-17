@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:07:23.216Z",
-  "total": 300,
+  "generatedAt": "2026-10-17T05:08:02.742Z",
+  "total": 289,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -2567,26 +2567,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLAUDE_USAGE_JSON_END",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_USAGE_JSON_START",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLI_ACCOUNT_ID",
       "category": "plumbing",
       "reads": 0,
@@ -2644,26 +2624,6 @@
       ]
     },
     {
-      "name": "AIH_CODEX_RATE_LIMIT_JSON_END",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_RATE_LIMIT_JSON_START",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_REMOTE_AUTOSTART",
       "category": "plumbing",
       "reads": 0,
@@ -2680,16 +2640,6 @@
       "literals": 1,
       "files": [
         "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FABRIC_REAL_MARKER",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/fabric/closure-plan.js"
       ],
       "aliasConstants": []
     },
@@ -2731,46 +2681,6 @@
       "literals": 1,
       "files": [
         "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_M5_RECOVERY_MESSAGE_OK",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "scripts/fabric-real-session-recovery-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_M5_RECOVERY_START_OK",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "scripts/fabric-real-session-recovery-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_MOBILE_PWA_MESSAGE_OK",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "scripts/fabric-real-mobile-pwa-session-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_MOBILE_PWA_START_OK",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "scripts/fabric-real-mobile-pwa-session-smoke.js"
       ],
       "aliasConstants": []
     },
@@ -2923,26 +2833,6 @@
       "literals": 2,
       "files": [
         "lib/cli/services/ai-cli/provider-runtime-env.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_QUOTA_JSON_END",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_QUOTA_JSON_START",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
       ],
       "aliasConstants": []
     },

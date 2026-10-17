@@ -106,7 +106,7 @@ test('codex usage snapshot uses the live account plan over stale local metadata 
       },
       fallback: 'account_read'
     };
-    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify(payload)}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    const stdout = `__AIH_CODEX_RATE_LIMIT_JSON_START__\n${JSON.stringify(payload)}\n__AIH_CODEX_RATE_LIMIT_JSON_END__\n`;
 
     const usageSnapshotService = createUsageSnapshotService({
       fs,
@@ -173,13 +173,13 @@ test('codex usage snapshot keeps app-server plan type when local metadata has no
       usageSourceClaudeOauth: 'claude_oauth_usage_api',
       usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
     });
-    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify({
+    const stdout = `__AIH_CODEX_RATE_LIMIT_JSON_START__\n${JSON.stringify({
       ok: true,
       rateLimits: {
         planType: 'pro',
         primary: { windowDurationMins: 300, usedPercent: 20, resetsAt: 123 }
       }
-    })}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    })}\n__AIH_CODEX_RATE_LIMIT_JSON_END__\n`;
     const usageSnapshotService = createUsageSnapshotService({
       fs,
       path,
@@ -230,14 +230,14 @@ test('codex usage snapshot preserves app-server reset-credit count in the cached
       usageSourceClaudeOauth: 'claude_oauth_usage_api',
       usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
     });
-    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify({
+    const stdout = `__AIH_CODEX_RATE_LIMIT_JSON_START__\n${JSON.stringify({
       ok: true,
       rateLimits: {
         planType: 'plus',
         primary: { windowDurationMins: 300, usedPercent: 20, resetsAt: 123 }
       },
       rateLimitResetCredits: { availableCount: 3 }
-    })}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    })}\n__AIH_CODEX_RATE_LIMIT_JSON_END__\n`;
     let probeScript = '';
     const usageSnapshotService = createUsageSnapshotService({
       fs,
@@ -379,7 +379,7 @@ test('claude OAuth usage snapshot preserves the explicit Max rate-limit tier', (
       usageSourceClaudeOauth: 'claude_oauth_usage_api',
       usageSourceClaudeAuthToken: 'claude_auth_token_usage_api'
     });
-    const stdout = `AIH_CLAUDE_USAGE_JSON_START\n${JSON.stringify({
+    const stdout = `__AIH_CLAUDE_USAGE_JSON_START__\n${JSON.stringify({
       ok: true,
       payload: {
         five_hour: { utilization: 25, resets_at: '2030-01-01T00:00:00.000Z' }
@@ -391,7 +391,7 @@ test('claude OAuth usage snapshot preserves the explicit Max rate-limit tier', (
           rate_limit_tier: 'default_claude_max_20x'
         }
       }
-    })}\nAIH_CLAUDE_USAGE_JSON_END\n`;
+    })}\n__AIH_CLAUDE_USAGE_JSON_END__\n`;
     const usageSnapshotService = createUsageSnapshotService({
       fs,
       path,
@@ -759,9 +759,9 @@ test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailable
 
 test('agy usage preflight reports local token and cache readiness without network probe', () => {
   const root = mkTmpDir();
-  const oldAgyVersion = process.env.AIH_ANTIGRAVITY_VERSION;
+  const oldAgyVersion = process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION;
   try {
-    process.env.AIH_ANTIGRAVITY_VERSION = '2.0.6';
+    process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION = '2.0.6';
     const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
     const accountRef = registerUsageAccount(aiHomeDir, 'agy', '7');
     writeAgyNativeAuth(aiHomeDir, accountRef, {
@@ -808,7 +808,7 @@ test('agy usage preflight reports local token and cache readiness without networ
         cwd: () => root,
         env: {
           AIH_AGY_QUOTA_BASE_URLS: 'https://one.example.com/v1internal,https://two.example.com/v1internal',
-          AIH_ANTIGRAVITY_VERSION: '2.0.6'
+          AIH_AGY_CODE_ASSIST_CLIENT_VERSION: '2.0.6'
         },
         platform: process.platform
       },
@@ -846,9 +846,9 @@ test('agy usage preflight reports local token and cache readiness without networ
     assert.equal(Object.prototype.hasOwnProperty.call(report, 'refreshToken'), false);
   } finally {
     if (oldAgyVersion === undefined) {
-      delete process.env.AIH_ANTIGRAVITY_VERSION;
+      delete process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION;
     } else {
-      process.env.AIH_ANTIGRAVITY_VERSION = oldAgyVersion;
+      process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION = oldAgyVersion;
     }
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1273,7 +1273,7 @@ test('codex account/read fallback prefers local auth metadata over stale account
       },
       fallback: 'account_read'
     };
-    const stdout = `AIH_CODEX_RATE_LIMIT_JSON_START\n${JSON.stringify(payload)}\nAIH_CODEX_RATE_LIMIT_JSON_END\n`;
+    const stdout = `__AIH_CODEX_RATE_LIMIT_JSON_START__\n${JSON.stringify(payload)}\n__AIH_CODEX_RATE_LIMIT_JSON_END__\n`;
     const usageSnapshotService = createUsageSnapshotService({
       fs,
       path,

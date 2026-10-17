@@ -478,8 +478,8 @@ function buildPromptParts(prefix) {
 }
 
 function buildMobileBrowserInput(options, managementKey) {
-  const start = buildPromptParts('AIH_MOBILE_PWA_START_OK');
-  const message = buildPromptParts('AIH_MOBILE_PWA_MESSAGE_OK');
+  const start = buildPromptParts('__AIH_MOBILE_PWA_START_OK__');
+  const message = buildPromptParts('__AIH_MOBILE_PWA_MESSAGE_OK__');
   return {
     endpoint: options.clientEndpoint,
     nodeId: options.nodeId,

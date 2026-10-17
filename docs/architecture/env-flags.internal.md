@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:07:23.216Z
-> 覆盖 `lib / bin / scripts / core`，共 **290** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:08:02.742Z
+> 覆盖 `lib / bin / scripts / core`，共 **279** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -11,10 +11,10 @@
 | path | 21 | 数据/目录/仓库路径 |
 | network | 49 | 端点 / 代理 / 端口 |
 | flag | 6 | 开关与逃生门（环境准入） |
-| tuning | 48 | 可调参数（超时 / TTL / 上限） |
+| tuning | 46 | 可调参数（超时 / TTL / 上限） |
 | credential | 23 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 141 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 132 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -182,8 +182,6 @@
 | `AIH_RUNTIME_USAGE_DISPLAY_INTERVAL_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_RUNTIME_USAGE_REFRESH_MIN_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_RUNTIME_USAGE_STALE_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_CODEX_RATE_LIMIT_JSON_END` | 0 | 1 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_CODEX_RATE_LIMIT_JSON_START` | 0 | 1 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_STALL_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
@@ -330,21 +328,14 @@
 | `AIH_ACCOUNT_ID` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
 | `AIH_ACCOUNT_REF` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
 | `AIH_CLAUDE_TMUX_RENDER_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
-| `AIH_CLAUDE_USAGE_JSON_END` | 0 | 1 | lib/cli/services/usage/snapshot.js |
-| `AIH_CLAUDE_USAGE_JSON_START` | 0 | 1 | lib/cli/services/usage/snapshot.js |
 | `AIH_CLI_ACCOUNT_ID` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_MANAGED_LAUNCH` | 0 | 2 | lib/runtime/codex-launch-context.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_CODEX_REMOTE_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_CODEX_USAGE_BULK_JOBS` | 0 | 1 | lib/cli/services/usage/presenter.js |
-| `AIH_FABRIC_REAL_MARKER` | 0 | 1 | lib/cli/services/fabric/closure-plan.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
-| `AIH_M5_RECOVERY_MESSAGE_OK` | 0 | 1 | scripts/fabric-real-session-recovery-smoke.js |
-| `AIH_M5_RECOVERY_START_OK` | 0 | 1 | scripts/fabric-real-session-recovery-smoke.js |
-| `AIH_MOBILE_PWA_MESSAGE_OK` | 0 | 1 | scripts/fabric-real-mobile-pwa-session-smoke.js |
-| `AIH_MOBILE_PWA_START_OK` | 0 | 1 | scripts/fabric-real-mobile-pwa-session-smoke.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_UTF8_RUNTIME` | 0 | 1 | lib/runtime/persistent-session.js |
@@ -352,8 +343,6 @@
 | `AIH_PROVIDER_SESSION_CORRELATION_ID` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_PSMUX_CODEX_LAUNCH_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_QODER_PROVIDER` | 0 | 2 | lib/cli/services/ai-cli/provider-runtime-env.js |
-| `AIH_QUOTA_JSON_END` | 0 | 1 | lib/cli/services/usage/snapshot.js |
-| `AIH_QUOTA_JSON_START` | 0 | 1 | lib/cli/services/usage/snapshot.js |
 | `AIH_RELAY_MIHOMO_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js |
 | `AIH_RELAY_SING_BOX_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js |
 | `AIH_RUNTIME_SCOPE` | 0 | 1 | lib/server/session-lifecycle/codex-stdio-client.js |

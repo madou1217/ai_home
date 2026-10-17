@@ -318,7 +318,7 @@ test('mobile browser client flow resumes by cursor and sends canonical commands'
           result: {
             cursor: 5,
             status: 'running',
-            events: [{ cursor: 5, type: 'terminal-output', text: 'AIH_MOBILE_PWA_START_OK_20260628' }]
+            events: [{ cursor: 5, type: 'terminal-output', text: '__AIH_MOBILE_PWA_START_OK___20260628' }]
           }
         }), { status: 200 });
       }
@@ -329,7 +329,7 @@ test('mobile browser client flow resumes by cursor and sends canonical commands'
           result: {
             cursor: 8,
             status: 'running',
-            events: [{ cursor: 8, type: 'terminal-output', text: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' }]
+            events: [{ cursor: 8, type: 'terminal-output', text: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' }]
           }
         }), { status: 200 });
       }
@@ -438,9 +438,9 @@ test('mobile browser current-node flow fails when slash remains unsupported', as
             completed: true,
             events: [
               { cursor: 1, type: 'ready' },
-              { cursor: 2, type: 'delta', delta: 'AIH_MOBILE_PWA_START_OK_20260628' },
-              { cursor: 3, type: 'result', content: 'AIH_MOBILE_PWA_START_OK_20260628' },
-              { cursor: 4, type: 'done', content: 'AIH_MOBILE_PWA_START_OK_20260628' }
+              { cursor: 2, type: 'delta', delta: '__AIH_MOBILE_PWA_START_OK___20260628' },
+              { cursor: 3, type: 'result', content: '__AIH_MOBILE_PWA_START_OK___20260628' },
+              { cursor: 4, type: 'done', content: '__AIH_MOBILE_PWA_START_OK___20260628' }
             ]
           }
         }), { status: 200 });
@@ -454,8 +454,8 @@ test('mobile browser current-node flow fails when slash remains unsupported', as
             status: 'completed',
             completed: true,
             events: [
-              { cursor: 5, type: 'delta', delta: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' },
-              { cursor: 6, type: 'done', content: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' }
+              { cursor: 5, type: 'delta', delta: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' },
+              { cursor: 6, type: 'done', content: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' }
             ]
           }
         }), { status: 200 });
@@ -557,9 +557,9 @@ test('mobile browser current-node flow follows resumed message run id', async (t
             events: [
               { cursor: 1, type: 'ready' },
               { cursor: 2, type: 'session-created', sessionId: 'ses-current-mobile' },
-              { cursor: 3, type: 'delta', delta: 'AIH_MOBILE_PWA_START_OK_20260628' },
-              { cursor: 4, type: 'result', content: 'AIH_MOBILE_PWA_START_OK_20260628' },
-              { cursor: 5, type: 'done', content: 'AIH_MOBILE_PWA_START_OK_20260628' }
+              { cursor: 3, type: 'delta', delta: '__AIH_MOBILE_PWA_START_OK___20260628' },
+              { cursor: 4, type: 'result', content: '__AIH_MOBILE_PWA_START_OK___20260628' },
+              { cursor: 5, type: 'done', content: '__AIH_MOBILE_PWA_START_OK___20260628' }
             ]
           }
         }), { status: 200 });
@@ -575,8 +575,8 @@ test('mobile browser current-node flow follows resumed message run id', async (t
               status: 'running',
               completed: false,
               events: [
-                { cursor: 2, type: 'delta', delta: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' },
-                { cursor: 3, type: 'result', content: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' }
+                { cursor: 2, type: 'delta', delta: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' },
+                { cursor: 3, type: 'result', content: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' }
               ]
             }
           }), { status: 200 });
@@ -589,9 +589,9 @@ test('mobile browser current-node flow follows resumed message run id', async (t
             status: 'completed',
             completed: true,
             events: [
-              { cursor: 2, type: 'delta', delta: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' },
-              { cursor: 3, type: 'result', content: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' },
-              { cursor: 4, type: 'done', content: 'AIH_MOBILE_PWA_MESSAGE_OK_20260628' }
+              { cursor: 2, type: 'delta', delta: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' },
+              { cursor: 3, type: 'result', content: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' },
+              { cursor: 4, type: 'done', content: '__AIH_MOBILE_PWA_MESSAGE_OK___20260628' }
             ]
           }
         }), { status: 200 });

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:11:31.363Z
-> 覆盖 `lib / bin / scripts / core`，共 **56** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:14:21.955Z
+> 覆盖 `lib / bin / scripts / core`，共 **55** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -13,7 +13,7 @@
 | flag | 2 | 开关与逃生门（环境准入） |
 | credential | 5 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 3 | 测试与探针专用 |
-| plumbing | 38 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 37 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -34,7 +34,6 @@
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | plumbing | 6 | 8 |
 | `AIH_CLI_PATH` | path | 5 | 5 |
 | `AIH_PROVIDER_ACCOUNT_REF` | plumbing | 4 | 4 |
-| `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | plumbing | 3 | 2 |
 | `AIH_CODEX_BIN` | plumbing | 3 | 2 |
 | `AIH_REMOTE_SSH` | network | 3 | 2 |
 | `AIH_CLAUDE_USAGE_PROBE` | test | 2 | 1 |
@@ -46,6 +45,7 @@
 | `AIH_GO_CORE_ACCOUNT_SYNC` | plumbing | 1 | 1 |
 | `AIH_GO_CORE_BINARY` | plumbing | 1 | 1 |
 | `AIH_GO_CORE_CLIENT_KEY` | credential | 1 | 1 |
+| `AIH_GO_CORE_DELEGATE_REFRESH` | plumbing | 1 | 1 |
 
 ## path（数据/目录/仓库路径）
 
@@ -96,7 +96,6 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | 6 | 5 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/cli/services/ai-cli/codex-provider-args.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>…共 8 个 |
 | `AIH_PROVIDER_ACCOUNT_REF` | 4 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/provider-session-context.js<br>…共 4 个 |
-| `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
 | `AIH_GO_CORE_ACCOUNT_SYNC` | 1 | 1 | lib/server/go-core-host.js |
@@ -115,7 +114,7 @@
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | 1 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |
 | `AIH_ACCOUNT_APP` | 0 | 1 | lib/runtime/provider-session-context.js |
-| `AIH_AGY_ENDPOINTS` | 0 | 1 | lib/usage/agy-endpoints.js |
+| `AIH_AGY_USAGE` | 0 | 1 | lib/usage/agy-endpoints.js |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_FLAGS` | 0 | 3 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/codex-flags.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_CODEX_HOOKS` | 0 | 1 | lib/cli/config/codex-hooks.js |

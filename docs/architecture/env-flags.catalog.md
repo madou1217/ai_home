@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:11:31.363Z
-> 共 **66** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:14:21.955Z
+> 共 **65** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，4）
@@ -56,13 +56,12 @@
 | `AIH_CODEX_USAGE_PROBE` | — | 2 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 | `AIH_GEMINI_USAGE_PROBE` | — | 2 | gemini 用量探测上下文（token/projectId） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），39）
+## plumbing（内部管道（进程间传递的身份 / 标记），38）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | — | 6 | 网关请求钉选的账号（x-account-ref 来源） |
 | `AIH_PROVIDER_ACCOUNT_REF` | — | 4 | 当前运行账号的 accountRef（沙箱注入） |
-| `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
 | `AIH_GO_CORE_ACCOUNT_SYNC` | — | 1 | Go Core 账号同步开关 |
@@ -81,7 +80,7 @@
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
-| `AIH_AGY_ENDPOINTS` | — | 0 | agy 用量/额度端点（baseUrl/quotaBaseUrls 两项合一） |
+| `AIH_AGY_USAGE` | — | 0 | agy 用量上下文（baseUrl/quotaBaseUrls/clientVersion） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_FLAGS` | — | 0 | codex 启动/恢复开关（authPreflight/autoSkipRepoCheck/disableRemoteResume 三项合一） |
 | `AIH_CODEX_HOOKS` | — | 0 | codex hook 安装开关（cli/desktop/none 列表） |

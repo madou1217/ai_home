@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { CODEX_PROBE_ENV, serializeCodexProbeContext } = require('../lib/cli/services/usage/codex-probe-context');
-const { AGY_ENDPOINTS_ENV, serializeAgyEndpoints } = require('../lib/usage/agy-endpoints');
+const { AGY_USAGE_ENV, serializeAgyEndpoints } = require('../lib/usage/agy-endpoints');
 
 const { createUsageSnapshotService } = require('../lib/cli/services/usage/snapshot');
 const { createUsageCacheService } = require('../lib/cli/services/usage/cache');
@@ -761,9 +761,9 @@ test('agy usage snapshot reads Antigravity OAuth token and caches fetchAvailable
 
 test('agy usage preflight reports local token and cache readiness without network probe', () => {
   const root = mkTmpDir();
-  const oldAgyVersion = process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION;
+  const oldAgyVersion = process.env[AGY_USAGE_ENV];
   try {
-    process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION = '2.0.6';
+    process.env[AGY_USAGE_ENV] = serializeAgyEndpoints({ clientVersion: '2.0.6' });
     const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
     const accountRef = registerUsageAccount(aiHomeDir, 'agy', '7');
     writeAgyNativeAuth(aiHomeDir, accountRef, {
@@ -809,8 +809,10 @@ test('agy usage preflight reports local token and cache readiness without networ
         execPath: process.execPath,
         cwd: () => root,
         env: {
-          [AGY_ENDPOINTS_ENV]: serializeAgyEndpoints({ quotaBaseUrls: 'https://one.example.com/v1internal,https://two.example.com/v1internal' }),
-          AIH_AGY_CODE_ASSIST_CLIENT_VERSION: '2.0.6'
+          [AGY_USAGE_ENV]: serializeAgyEndpoints({
+            quotaBaseUrls: 'https://one.example.com/v1internal,https://two.example.com/v1internal',
+            clientVersion: '2.0.6'
+          })
         },
         platform: process.platform
       },
@@ -848,9 +850,9 @@ test('agy usage preflight reports local token and cache readiness without networ
     assert.equal(Object.prototype.hasOwnProperty.call(report, 'refreshToken'), false);
   } finally {
     if (oldAgyVersion === undefined) {
-      delete process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION;
+      delete process.env[AGY_USAGE_ENV];
     } else {
-      process.env.AIH_AGY_CODE_ASSIST_CLIENT_VERSION = oldAgyVersion;
+      process.env[AGY_USAGE_ENV] = oldAgyVersion;
     }
     fs.rmSync(root, { recursive: true, force: true });
   }

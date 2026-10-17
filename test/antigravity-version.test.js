@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { AGY_USAGE_ENV, serializeAgyEndpoints } = require('../lib/usage/agy-endpoints');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -23,7 +24,7 @@ test('detectAntigravityClientVersion prefers explicit env override', () => {
   resetAntigravityClientVersionCacheForTest();
   assert.equal(detectAntigravityClientVersion({
     env: {
-      AIH_AGY_CODE_ASSIST_CLIENT_VERSION: 'Antigravity/2.1.3'
+      [AGY_USAGE_ENV]: serializeAgyEndpoints({ clientVersion: 'Antigravity/2.1.3' })
     },
     noCache: true
   }), '2.1.3');

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:11:31.363Z",
-  "total": 66,
+  "generatedAt": "2026-10-17T11:14:21.955Z",
+  "total": 65,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -16,7 +16,7 @@
   ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
-    "AGY_ENDPOINTS_ENV": "AIH_AGY_ENDPOINTS",
+    "AGY_USAGE_ENV": "AIH_AGY_USAGE",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CLIPBOARD_CONTEXT_ENV": "AIH_SSH_CLIPBOARD",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
@@ -221,17 +221,6 @@
         "lib/server/args.js",
         "lib/server/server-config-schema.js",
         "scripts/cleanup-official-account-error-rules.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_CODE_ASSIST_CLIENT_VERSION",
-      "category": "plumbing",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/server/antigravity-version.js",
-        "lib/server/http-utils-code-assist.js"
       ],
       "aliasConstants": []
     },
@@ -576,7 +565,7 @@
       ]
     },
     {
-      "name": "AIH_AGY_ENDPOINTS",
+      "name": "AIH_AGY_USAGE",
       "category": "plumbing",
       "reads": 0,
       "literals": 1,
@@ -584,7 +573,7 @@
         "lib/usage/agy-endpoints.js"
       ],
       "aliasConstants": [
-        "AGY_ENDPOINTS_ENV"
+        "AGY_USAGE_ENV"
       ]
     },
     {

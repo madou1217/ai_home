@@ -14,6 +14,16 @@ const {
 } = require('../lib/server/server-config-store');
 const { readJsonValue } = require('../lib/server/app-state-store');
 
+// 中转/尝试次数默认值：写入门会把它们归一化进保存对象（原 AIH_RELAY_* / AIH_SERVER_MAX_ATTEMPTS）。
+const RELAY_DEFAULTS = {
+  relayUdp: 'default',
+  relayUdpAdvertiseHost: '',
+  relayUdpAdvertisePort: 0,
+  relayPortMode: 'default',
+  relayListenHost: '',
+  maxAttempts: 0
+};
+
 test('server config store defaults to AIH provider port 9527', () => {
   assert.equal(DEFAULT_SERVER_CONFIG.port, 9527);
   assert.equal(readServerConfig({ fs, aiHomeDir: path.join(os.tmpdir(), 'aih-missing-config') }).port, 9527);
@@ -48,7 +58,8 @@ test('server config store persists and normalizes server config', (t) => {
     windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
-    upstreamErrorRuleProviders: []
+    upstreamErrorRuleProviders: [],
+    ...RELAY_DEFAULTS
   });
 
   const loaded = readServerConfig({ fs, aiHomeDir });
@@ -104,7 +115,8 @@ test('server config store supports partial update semantics and empty string cle
     windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
-    upstreamErrorRuleProviders: []
+    upstreamErrorRuleProviders: [],
+    ...RELAY_DEFAULTS
   });
 });
 
@@ -141,7 +153,8 @@ test('server config store works when fs only exposes mkdirSync for directory cre
     windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
-    upstreamErrorRuleProviders: []
+    upstreamErrorRuleProviders: [],
+    ...RELAY_DEFAULTS
   });
 });
 
@@ -177,7 +190,8 @@ test('mergeServerConfigPatch ignores null updates and preserves explicit boolean
     windowActivationMinIntervalMs: 60 * 60 * 1000,
     goCoreEnabled: false,
     goCoreRoutes: [],
-    upstreamErrorRuleProviders: []
+    upstreamErrorRuleProviders: [],
+    ...RELAY_DEFAULTS
   });
 });
 

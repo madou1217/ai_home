@@ -558,18 +558,6 @@ test('runtime env: prefers zh_CN UTF-8 for macOS tmux, SSH and Warp CJK renderin
   assert.equal(nestedTmuxEnv.LC_ALL, 'zh_CN.UTF-8');
 });
 
-test('runtime env: keeps macOS English locale when CJK override is disabled', () => {
-  const env = normalizeUtf8LocaleEnv({
-    LANG: 'en_US.UTF-8',
-    TERM_PROGRAM: 'tmux',
-    AIH_CJK_LOCALE: '0'
-  }, { platform: 'darwin' });
-
-  assert.equal(env.LANG, 'en_US.UTF-8');
-  assert.equal(env.LC_CTYPE, 'en_US.UTF-8');
-  assert.equal(env.LC_ALL, 'en_US.UTF-8');
-});
-
 test('runtime env: codex uses explicit host home without profile-path compatibility inference', () => {
   const profileDir = '/home/u/.ai_home/run/auth-projections/codex/acct_0123456789abcdefabcd';
   const env = buildProviderRuntimeEnv('codex', profileDir, {

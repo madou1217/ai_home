@@ -16,13 +16,9 @@ test('parseCodexClientVersion extracts semver from codex --version output', () =
   assert.equal(parseCodexClientVersion('not a version'), '');
 });
 
-test('detectCodexClientVersion prefers configured environment override', () => {
+test('detectCodexClientVersion prefers an explicit client version override', () => {
   assert.equal(detectCodexClientVersion({
-    processObj: {
-      env: {
-        AIH_SERVER_CODEX_CLIENT_VERSION: 'codex-cli 0.131.0'
-      }
-    },
+    codexClientVersion: 'codex-cli 0.131.0',
     codexCommand: '/missing/codex'
   }), '0.131.0');
 });

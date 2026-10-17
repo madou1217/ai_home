@@ -358,7 +358,6 @@ test('default macOS Terminal receives provider title badge fallback', () => {
 
   assert.deepEqual(result, { applied: true, terminal: 'apple-terminal' });
   assert.equal(writes.join(''), buildTerminalTitleSequence(buildProviderTerminalTitle('codex')));
-  assert.equal(env.AIH_TERMINAL_PROVIDER_TITLE, 'codex');
 });
 
 test('mainstream terminals without portable tab icon APIs use title fallback', () => {
@@ -590,7 +589,6 @@ test('warp provider icon preparation auto-writes agent command mapping', (t) => 
   assert.equal(content.includes('"^aih\\\\s+opencode(?:\\\\s|$).*" = "OpenCode"'), true);
   assert.equal(content.includes('"^aih\\\\s+agy(?:\\\\s|$).*" = "Gemini"'), true);
   assert.deepEqual(writes, []);
-  assert.equal(env.AIH_WARP_PROVIDER_ICON, 'codex');
 });
 
 test('unsupported Warp provider uses the AIH title fallback without a fake native mapping', (t) => {
@@ -620,7 +618,6 @@ test('unsupported Warp provider uses the AIH title fallback without a fake nativ
   assert.deepEqual(result, { applied: true, terminal: 'warp' });
   assert.equal(fs.existsSync(resolveWarpSettingsPath({ path, platform: 'darwin', env })), false);
   assert.deepEqual(writes, [buildTerminalTitleSequence(buildAiHomeTerminalTitle('kimi'))]);
-  assert.equal(env.AIH_TERMINAL_PROVIDER_TITLE, 'kimi');
 });
 
 test('terminal icon command auto-installs Warp mappings when Warp is detected', (t) => {

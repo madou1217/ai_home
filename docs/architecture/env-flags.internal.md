@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T07:58:03.302Z
-> 覆盖 `lib / bin / scripts / core`，共 **137** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:02:48.297Z
+> 覆盖 `lib / bin / scripts / core`，共 **134** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -13,7 +13,7 @@
 | flag | 4 | 开关与逃生门（环境准入） |
 | credential | 16 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 76 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 73 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -147,11 +147,9 @@
 | `AIH_FABRIC_NODE_ID` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
 | `AIH_GEMINI_PROJECT_ID` | 2 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_ITERM_PROVIDER_PROFILE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PLUGIN_SOCKET` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
-| `AIH_TERMINAL_PROVIDER_TITLE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_AGENT_ENTRY` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_RUNNER` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
@@ -182,7 +180,6 @@
 | `AIH_TRACE` | 1 | 0 | lib/runtime/trace.js |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
 | `AIH_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/account/go-bridge/go-import-translator.js<br>lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>…共 4 个 |
-| `AIH_WARP_PROVIDER_ICON` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | 1 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_WT_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |

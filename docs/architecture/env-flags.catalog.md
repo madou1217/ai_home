@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T07:58:03.302Z
-> 共 **147** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T08:02:48.297Z
+> 共 **144** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -99,7 +99,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），77）
+## plumbing（内部管道（进程间传递的身份 / 标记），74）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -113,11 +113,9 @@
 | `AIH_FABRIC_NODE_ID` | — | 2 | fabric 节点 id |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
-| `AIH_ITERM_PROVIDER_PROFILE` | — | 2 | iTerm profile 名覆盖（按 provider） |
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | — | 2 | 插件随父进程退出 |
 | `AIH_PLUGIN_SOCKET` | — | 2 | 插件 RPC socket 路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
-| `AIH_TERMINAL_PROVIDER_TITLE` | — | 2 | 终端标题是否带 provider |
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
 | `AIH_ZCODE_AGENT_RUNNER` | — | 2 | zcode agent runner 脚本 |
@@ -148,7 +146,6 @@
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
-| `AIH_WARP_PROVIDER_ICON` | — | 1 | Warp 的 provider 图标覆盖 |
 | `AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR` | — | 1 | Windows 图片剪贴板镜像开关 |
 | `AIH_WT_PROVIDER_PROFILE` | — | 1 | Windows Terminal profile 名覆盖 |
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T07:58:03.302Z",
-  "total": 147,
+  "generatedAt": "2026-10-17T08:02:48.297Z",
+  "total": 144,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -549,16 +549,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_ITERM_PROVIDER_PROFILE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_OPENCODE_CONFIG_DIR",
       "category": "path",
       "reads": 2,
@@ -692,16 +682,6 @@
       "files": [
         "lib/cli/services/pty/ssh-clipboard-bridge.js",
         "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TERMINAL_PROVIDER_TITLE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },
@@ -1275,16 +1255,6 @@
         "lib/account/official-account-rules-cleanup.js",
         "lib/account/upstream-error-rules.js",
         "lib/server/webui-account-live.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WARP_PROVIDER_ICON",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
     },

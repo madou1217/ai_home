@@ -637,11 +637,6 @@ test('zcode desktop 在 macOS 使用 manifest installPaths 解析 .app 内可执
   assert.match(fakeSpawn.calls[0].options.env.ZCODE_AGENT_SERVER_COMMAND, /\.aih-runtime\/zcode-agent-launcher\.cjs$/);
   const agentArgs = JSON.parse(fakeSpawn.calls[0].options.env.ZCODE_AGENT_SERVER_ARGS_JSON);
   assert.deepEqual(agentArgs, ['app-server', '--stdio']);
-  assert.match(fakeSpawn.calls[0].options.env.AIH_ZCODE_AGENT_RUNNER, /zcode-session-attribution-runner\.js$/);
-  assert.equal(
-    fakeSpawn.calls[0].options.env.AIH_ZCODE_AGENT_ENTRY,
-    '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
-  );
 });
 
 test('zcode desktop 在 macOS 用账号影子 App 装载验证码 hook 后再 spawn', () => {
@@ -677,7 +672,6 @@ test('zcode desktop 在 macOS 用账号影子 App 装载验证码 hook 后再 sp
   const env = fakeSpawn.calls[0].options.env;
   assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
   assert.deepEqual(JSON.parse(env.ZCODE_AGENT_SERVER_ARGS_JSON), ['app-server', '--stdio']);
-  assert.equal(env.AIH_ZCODE_AGENT_ENTRY, `${shadowBundlePath}/Contents/Resources/glm/zcode.cjs`);
 });
 
 test('zcode desktop 启动预检只确认可启动，不准备账号投影、原生设置或进程', () => {

@@ -141,7 +141,11 @@ test('zcode agent launcher 在普通进程和 storage Worker 中转发参数、�
   const launcherPath = path.join(root, 'launcher.cjs');
   const runnerPath = path.join(root, 'runner.cjs');
   const entryPath = path.join(root, 'entry.cjs');
-  fs.writeFileSync(launcherPath, buildZcodeAgentLauncherSource(), { mode: 0o700 });
+  fs.writeFileSync(launcherPath, buildZcodeAgentLauncherSource({
+    nodeExecutable: process.execPath,
+    runnerPath,
+    entryPath
+  }), { mode: 0o700 });
   fs.writeFileSync(entryPath, 'module.exports = {}\n');
   fs.writeFileSync(runnerPath, [
     "if (process.env.AIH_LAUNCHER_TEST_MODE === 'direct') {",
@@ -154,9 +158,6 @@ test('zcode agent launcher 在普通进程和 storage Worker 中转发参数、�
   ].join('\n'));
   const env = {
     ...process.env,
-    AIH_ZCODE_AGENT_NODE: process.execPath,
-    AIH_ZCODE_AGENT_RUNNER: runnerPath,
-    AIH_ZCODE_AGENT_ENTRY: entryPath,
     AIH_LAUNCHER_TEST_MODE: 'direct'
   };
   const direct = spawnSync(process.execPath, [launcherPath, 'direct-arg'], {
@@ -204,8 +205,6 @@ test('zcode desktop 仅在 macOS 注入 agent runner 与账号作用域', () => 
   assert.match(macEnv.ZCODE_AGENT_SERVER_COMMAND, /\.aih-runtime\/zcode-agent-launcher\.cjs$/);
   const args = JSON.parse(macEnv.ZCODE_AGENT_SERVER_ARGS_JSON);
   assert.deepEqual(args, ['app-server', '--stdio']);
-  assert.match(macEnv.AIH_ZCODE_AGENT_RUNNER, /zcode-session-attribution-runner\.js$/);
-  assert.equal(macEnv.AIH_ZCODE_AGENT_ENTRY, '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs');
 
   const windowsEnv = {};
   const windowsContext = buildContext({ platformKey: 'windows' });

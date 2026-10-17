@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:11:12.512Z",
-  "total": 113,
+  "generatedAt": "2026-10-17T09:12:47.424Z",
+  "total": 110,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -33,10 +33,7 @@
     "PROVIDER_ACCOUNT_REF_ENV": "AIH_PROVIDER_ACCOUNT_REF",
     "REMOTE_AUTH_TOKEN_ENV": "AIH_CODEX_LOCAL_REMOTE_TOKEN",
     "RUNTIME_MARKER_ENV": "AIH_RUNTIME_MARKER",
-    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT",
-    "ZCODE_AGENT_ENTRY_ENV": "AIH_ZCODE_AGENT_ENTRY",
-    "ZCODE_AGENT_NODE_ENV": "AIH_ZCODE_AGENT_NODE",
-    "ZCODE_AGENT_RUNNER_ENV": "AIH_ZCODE_AGENT_RUNNER"
+    "SESSION_INTENT_ENV": "AIH_SESSION_INTENT"
   },
   "entries": [
     {
@@ -548,42 +545,6 @@
         "lib/cli/services/pty/ssh-clipboard-shims.js"
       ],
       "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_AGENT_ENTRY",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/desktop-launch/zcode-strategy.js"
-      ],
-      "aliasConstants": [
-        "ZCODE_AGENT_ENTRY_ENV"
-      ]
-    },
-    {
-      "name": "AIH_ZCODE_AGENT_NODE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/desktop-launch/zcode-strategy.js"
-      ],
-      "aliasConstants": [
-        "ZCODE_AGENT_NODE_ENV"
-      ]
-    },
-    {
-      "name": "AIH_ZCODE_AGENT_RUNNER",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/server/desktop-launch/zcode-strategy.js"
-      ],
-      "aliasConstants": [
-        "ZCODE_AGENT_RUNNER_ENV"
-      ]
     },
     {
       "name": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",

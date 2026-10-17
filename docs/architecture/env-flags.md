@@ -1,6 +1,6 @@
 # 环境准入（公开环境变量，≤10）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:41:06.261Z
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:41:43.554Z
 > 公开变量 **10 / 10**（白名单：`lib/config/public-env.js`，测试守住上限）。
 > 其余 `AIH_*` 都是**内部变量**（进程间身份/标记、实验开关、测试钩子），见 [`env-flags.internal.md`](./env-flags.internal.md)：不要写进部署脚本。
 
@@ -23,7 +23,7 @@
 | `AIH_SERVER_MANAGEMENT_KEY` | 管理面 key（WebUI / 远程管理 / 中转服务）。 | （空 = 管理面关闭） | `aih server config set --management-key <key>` |
 | `AIH_SERVER_PROXY_URL` | 上游请求出口代理（HTTP(S)）。 | （空 = 直连） | `aih server config set --proxy-url <url>` |
 | `AIH_SERVER_NO_PROXY` | 不走代理的主机列表（逗号分隔，兼容标准 NO_PROXY 语义）。 | （空） | `aih server config set --no-proxy <hosts>` |
-| `AIH_MULTIPLEXER` | 持久会话/后台运行使用的复用器：auto | tmux | herdr。宿主机没装 tmux 时用来切换后端。 | auto | 无（CLI 运行时选择，不属于 server 配置） |
+| `AIH_MULTIPLEXER` | 持久会话/后台运行使用的复用器（auto / tmux / herdr）。宿主机没装 tmux 时用来切换后端。 | auto | 无（CLI 运行时选择，不属于 server 配置） |
 | `AIH_NO_PERSIST` | 交互式 CLI 的逃生门：=1 时不套 tmux/psmux，直接前台运行（排查卡死/嵌套会话时用）。 | （未设置 = 启用持久会话） | 无（一次性排障开关） |
 
 ## 内部变量

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T08:09:33.263Z",
-  "total": 134,
+  "generatedAt": "2026-10-17T08:10:08.117Z",
+  "total": 133,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1110,16 +1110,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/ssh-clipboard/terminal-probe.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TERMINAL_ICON_STRATEGY",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/terminal-icon-strategies.js"
       ],
       "aliasConstants": []
     },

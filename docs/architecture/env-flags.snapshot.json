@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:13:17.031Z",
-  "total": 276,
+  "generatedAt": "2026-10-17T05:33:32.688Z",
+  "total": 251,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -185,20 +185,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_MAX_BYTES",
-      "category": "network",
-      "reads": 6,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js",
-        "lib/cli/services/pty/ssh-clipboard-shims.js",
-        "lib/cli/services/ssh-clipboard/clip-agent.js",
-        "lib/cli/services/ssh-clipboard/ssh-command.js",
-        "lib/cli/services/ssh-clipboard/terminal-probe.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLI_PATH",
       "category": "path",
       "reads": 5,
@@ -329,17 +315,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_AGY_USAGE_HTTP_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js",
-        "lib/server/agy-usage-snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLAUDE_CLI_JS_PATH",
       "category": "path",
       "reads": 3,
@@ -418,46 +393,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_AGY_CODE_ASSIST_CHROME_VERSION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_CODE_ASSIST_ELECTRON_VERSION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_CODE_ASSIST_MACHINE_ID",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_CODE_ASSIST_USER_AGENT",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_APPROVAL_URL",
       "category": "network",
       "reads": 2,
@@ -500,16 +435,6 @@
     {
       "name": "AIH_CLAUDE_OAUTH_TOKEN",
       "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_USAGE_TIMEOUT_MS",
-      "category": "tuning",
       "reads": 2,
       "literals": 0,
       "files": [
@@ -584,33 +509,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_TOKEN_REFRESH_TIMEOUT_MS",
-      "category": "credential",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_TOKEN_URL",
       "category": "credential",
       "reads": 2,
       "literals": 0,
       "files": [
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_HTTP_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
       "aliasConstants": []
@@ -652,46 +556,6 @@
       "literals": 0,
       "files": [
         "lib/server/chat-video-attachments.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GEMINI_CLI_CLIENT_NAME",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GEMINI_CLI_SURFACE",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GEMINI_CLI_VERSION",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_GEMINI_CODE_ASSIST_USER_AGENT",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/http-utils-code-assist.js"
       ],
       "aliasConstants": []
     },
@@ -860,26 +724,6 @@
     },
     {
       "name": "AIH_SERVER_CLAUDE_MAX_CONCURRENCY",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_CLI_HOOK_SELF_HEAL_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CODEX_DESKTOP_HOOK_SELF_HEAL_INTERVAL_MS",
       "category": "tuning",
       "reads": 2,
       "literals": 0,
@@ -1307,17 +1151,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_SHIM_TIMEOUT_MS",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-shims.js",
-        "lib/cli/services/ssh-clipboard/shim-cli.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SSH_IMAGE_PASTE",
       "category": "network",
       "reads": 2,
@@ -1464,26 +1297,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_AGY_TOKEN_REFRESH_TIMEOUT_MS",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_USAGE_REFRESH_TTL_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/agy-usage-snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_ANTIGRAVITY_APP_PATH",
       "category": "path",
       "reads": 1,
@@ -1530,16 +1343,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/pty/claude-diagnostic-scheduler.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_TOKEN_REFRESH_TIMEOUT_MS",
-      "category": "credential",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
       ],
       "aliasConstants": []
     },
@@ -1652,16 +1455,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/snapshot.js"
       ],
       "aliasConstants": []
     },
@@ -2212,36 +2005,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SSH_CLIP_AGENT_TIMEOUT_MS",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/clip-agent-client.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIP_CHUNK_SIZE",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/ssh-command.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_CLIP_PROBE_TIMEOUT_MS",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/terminal-probe.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SSH_CLIP_SHIM_BIN_DIR",
       "category": "path",
       "reads": 1,
@@ -2288,16 +2051,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/pty/ssh-clipboard-shims.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SSH_TERMINAL_CLIPBOARD_TIMEOUT_MS",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/pty/ssh-clipboard-bridge.js"
       ],
       "aliasConstants": []
     },
@@ -2811,16 +2564,6 @@
     {
       "name": "AIH_SERVER_SOURCE_AUTO_RESTART",
       "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/source-auto-restart.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_SOURCE_AUTO_RESTART_INTERVAL_MS",
-      "category": "tuning",
       "reads": 0,
       "literals": 1,
       "files": [

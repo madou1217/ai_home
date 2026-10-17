@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:13:17.031Z
-> 覆盖 `lib / bin / scripts / core`，共 **266** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:33:32.688Z
+> 覆盖 `lib / bin / scripts / core`，共 **241** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,12 +9,12 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 21 | 数据/目录/仓库路径 |
-| network | 49 | 端点 / 代理 / 端口 |
+| network | 43 | 端点 / 代理 / 端口 |
 | flag | 6 | 开关与逃生门（环境准入） |
-| tuning | 36 | 可调参数（超时 / TTL / 上限） |
-| credential | 23 | 凭据与密钥（文档只写变量名，绝不放真实值） |
+| tuning | 28 | 可调参数（超时 / TTL / 上限） |
+| credential | 20 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 129 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 121 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -33,7 +33,6 @@
 | 变量 | 分类 | 读取 | 文件数 |
 | --- | --- | --- | --- |
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | plumbing | 6 | 8 |
-| `AIH_SSH_CLIP_MAX_BYTES` | network | 6 | 5 |
 | `AIH_CLI_PATH` | path | 5 | 5 |
 | `AIH_AGY_QUOTA_BASE_URLS` | plumbing | 4 | 2 |
 | `AIH_PLUGIN_TOKEN` | credential | 4 | 1 |
@@ -44,9 +43,10 @@
 | `AIH_AGY_BASE_URL` | network | 3 | 1 |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | plumbing | 3 | 2 |
 | `AIH_AGY_QUOTA_BASE_URL` | network | 3 | 1 |
-| `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | tuning | 3 | 2 |
 | `AIH_CLAUDE_CLI_JS_PATH` | path | 3 | 1 |
 | `AIH_CODEX_BIN` | plumbing | 3 | 2 |
+| `AIH_RELAY_LISTEN_HOST` | network | 3 | 3 |
+| `AIH_RELAY_PORT_MODE` | network | 3 | 3 |
 
 ## path（数据/目录/仓库路径）
 
@@ -78,7 +78,6 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_SSH_CLIP_MAX_BYTES` | 6 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js<br>lib/cli/services/ssh-clipboard/clip-agent.js<br>…共 5 个 |
 | `AIH_RELAY_UDP_ADVERTISE_HOST` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
 | `AIH_RELAY_UDP_ADVERTISE_PORT` | 4 | 1 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js<br>lib/server/server-config-schema.js |
 | `AIH_AGY_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
@@ -99,7 +98,6 @@
 | `AIH_SSH_CLIP_AGENT` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
 | `AIH_SSH_CLIP_AGENT_URL` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/clip-agent-client.js |
-| `AIH_SSH_CLIP_SHIM_TIMEOUT_MS` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-shims.js<br>lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_IMAGE_PASTE` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | 2 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/ssh-clipboard/terminal-probe.js |
@@ -113,13 +111,9 @@
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_SERVER_MANAGEMENT_URL` | 1 | 0 | lib/cli/bootstrap/runtime-support-wiring.js |
 | `AIH_SERVER_STRICT_PORT` | 1 | 0 | lib/server/server.js |
-| `AIH_SSH_CLIP_AGENT_TIMEOUT_MS` | 1 | 0 | lib/cli/services/ssh-clipboard/clip-agent-client.js |
-| `AIH_SSH_CLIP_CHUNK_SIZE` | 1 | 0 | lib/cli/services/ssh-clipboard/ssh-command.js |
-| `AIH_SSH_CLIP_PROBE_TIMEOUT_MS` | 1 | 0 | lib/cli/services/ssh-clipboard/terminal-probe.js |
 | `AIH_SSH_CLIP_SHIM_TTY` | 1 | 0 | lib/cli/services/ssh-clipboard/shim-cli.js |
 | `AIH_SSH_CLIP_WATCH` | 1 | 0 | lib/cli/services/ssh-clipboard/ssh-command.js |
 | `AIH_SSH_CLIPBOARD_SHIMS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-shims.js |
-| `AIH_SSH_TERMINAL_CLIPBOARD_TIMEOUT_MS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js |
 | `AIH_SSH_TERMINAL_PASTE_EVENTS` | 1 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js |
 | `AIH_GO_CORE_PORT` | 0 | 1 | lib/server/go-core-host.js |
 | `AIH_TURN_ICE_SERVER` | 0 | 5 | lib/cli/services/fabric/closure-resume-check.js<br>lib/cli/services/fabric/transport-config.js<br>lib/cli/services/fabric/transport-turn-relay.js<br>…共 4 个 |
@@ -143,13 +137,8 @@
 
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
-| `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | 3 | 0 | lib/cli/services/usage/snapshot.js<br>lib/server/agy-usage-snapshot.js |
-| `AIH_CLAUDE_USAGE_TIMEOUT_MS` | 2 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_SERVER_AGY_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_CLAUDE_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_CLI_HOOK_SELF_HEAL_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_SERVER_CODEX_DESKTOP_HOOK_SELF_HEAL_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_CODEX_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_COOLDOWN_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_GEMINI_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
@@ -170,15 +159,12 @@
 | `AIH_SERVER_WINDOW_ACTIVATION_PROBE_TIMEOUT_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | 2 | 0 | lib/server/args.js |
-| `AIH_AGY_USAGE_REFRESH_TTL_MS` | 1 | 0 | lib/server/agy-usage-snapshot.js |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
-| `AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS` | 1 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_NATIVE_RUN_RETENTION_MS` | 1 | 0 | lib/server/control-plane-device-session-start.js |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_STALL_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
-| `AIH_SERVER_SOURCE_AUTO_RESTART_INTERVAL_MS` | 0 | 1 | lib/server/source-auto-restart.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -188,15 +174,12 @@
 | `AIH_BENCH_KEY` | 2 | 0 | scripts/go-core-benchmark.js |
 | `AIH_CLAUDE_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | 2 | 3 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/server/codex-app-server-stdio-proxy-cliresume.js<br>lib/server/codex-default-cli-launcher.js<br>…共 4 个 |
-| `AIH_CODEX_TOKEN_REFRESH_TIMEOUT_MS` | 2 | 0 | lib/cli/services/usage/codex-auth-invalid-reconciler.js<br>lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_CODEX_TOKEN_URL` | 2 | 0 | lib/cli/services/usage/codex-auth-invalid-reconciler.js<br>lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_GEMINI_OAUTH_TOKEN` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_PLUGIN_TOKEN_FROM_STDIN` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_SHADOW_GO_KEY` | 2 | 0 | scripts/gateway-shadow-compare.js |
 | `AIH_SHADOW_NODE_KEY` | 2 | 0 | scripts/gateway-shadow-compare.js |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | 1 | 0 | scripts/gateway-account-auth-smoke.js |
-| `AIH_AGY_TOKEN_REFRESH_TIMEOUT_MS` | 1 | 0 | lib/cli/services/usage/snapshot.js |
-| `AIH_CLAUDE_TOKEN_REFRESH_TIMEOUT_MS` | 1 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_AUTH_PREFLIGHT` | 1 | 0 | lib/cli/services/pty/pty-runtime-run.js |
 | `AIH_CODEX_USAGE_BULK_TOKEN_REFRESH` | 1 | 0 | lib/cli/services/usage/presenter.js |
 | `AIH_DEPLOY_SSH_KEY` | 1 | 0 | scripts/deploy-server.js |
@@ -226,17 +209,9 @@
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
 | `AIH_SERVER_CODEX_CLIENT_VERSION` | 3 | 0 | lib/server/args.js<br>lib/server/codex-client-version.js |
-| `AIH_AGY_CODE_ASSIST_CHROME_VERSION` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_AGY_CODE_ASSIST_ELECTRON_VERSION` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_AGY_CODE_ASSIST_MACHINE_ID` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_AGY_CODE_ASSIST_USER_AGENT` | 2 | 0 | lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_DESKTOP_ACCOUNT_REF` | 2 | 0 | lib/cli/services/profile/list.js<br>lib/server/codex-desktop-account.js |
 | `AIH_FABRIC_NODE_ID` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_FFMPEG` | 2 | 0 | lib/server/chat-video-attachments.js |
-| `AIH_GEMINI_CLI_CLIENT_NAME` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_GEMINI_CLI_SURFACE` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_GEMINI_CLI_VERSION` | 2 | 0 | lib/server/http-utils-code-assist.js |
-| `AIH_GEMINI_CODE_ASSIST_USER_AGENT` | 2 | 0 | lib/server/http-utils-code-assist.js |
 | `AIH_GEMINI_PROJECT_ID` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_ITERM_PROVIDER_PROFILE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_KIMI_CODE_VERSION` | 2 | 0 | lib/server/kimi-request-headers.js |

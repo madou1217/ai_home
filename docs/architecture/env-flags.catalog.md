@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:13:17.031Z
-> 共 **276** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:33:32.688Z
+> 共 **251** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -32,14 +32,13 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，53）
+## network（端点 / 代理 / 端口，47）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_SERVER_PROXY_URL` | ✅ | 18 | 上游请求 HTTP(S) 代理（公开；config 优先） |
 | `AIH_SERVER_NO_PROXY` | ✅ | 17 | 不走代理的主机列表（公开；config 优先） |
 | `AIH_SERVER_PORT` | ✅ | 6 | 网关监听端口（公开；config 优先） |
-| `AIH_SSH_CLIP_MAX_BYTES` | — | 6 | SSH 剪贴板单次传输上限（字节） |
 | `AIH_RELAY_UDP_ADVERTISE_HOST` | — | 4 | 中转 UDP 播报给客户端的主机（config 优先） |
 | `AIH_RELAY_UDP_ADVERTISE_PORT` | — | 4 | 中转 UDP 播报给客户端的端口（config 优先） |
 | `AIH_SERVER_HOST` | ✅ | 4 | 网关监听地址（公开；config 优先） |
@@ -61,7 +60,6 @@
 | `AIH_SSH_CLIP_AGENT` | — | 2 | 远端剪贴板 agent 的启动方式/命令 |
 | `AIH_SSH_CLIP_AGENT_SOCKET` | — | 2 | 剪贴板 agent socket 路径 |
 | `AIH_SSH_CLIP_AGENT_URL` | — | 2 | 剪贴板 agent 的 URL |
-| `AIH_SSH_CLIP_SHIM_TIMEOUT_MS` | — | 2 | 剪贴板 shim 请求超时 |
 | `AIH_SSH_IMAGE_PASTE` | — | 2 | SSH 会话图片粘贴开关 |
 | `AIH_SSH_TERMINAL_CLIPBOARD` | — | 2 | 终端剪贴板透传开关 |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
@@ -75,13 +73,9 @@
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
 | `AIH_SERVER_MANAGEMENT_URL` | — | 1 | ⚠ 管理入口 URL（脚本/远程管理用；待确认具体调用点） |
 | `AIH_SERVER_STRICT_PORT` | — | 1 | 端口被占用时直接失败（不自动换端口） |
-| `AIH_SSH_CLIP_AGENT_TIMEOUT_MS` | — | 1 | 剪贴板 agent 请求超时 |
-| `AIH_SSH_CLIP_CHUNK_SIZE` | — | 1 | 剪贴板分块大小 |
-| `AIH_SSH_CLIP_PROBE_TIMEOUT_MS` | — | 1 | 剪贴板能力探测超时 |
 | `AIH_SSH_CLIP_SHIM_TTY` | — | 1 | shim 是否占用 TTY |
 | `AIH_SSH_CLIP_WATCH` | — | 1 | 剪贴板监视开关 |
 | `AIH_SSH_CLIPBOARD_SHIMS` | — | 1 | 要安装的剪贴板 shim 列表（pbcopy/xclip 等） |
-| `AIH_SSH_TERMINAL_CLIPBOARD_TIMEOUT_MS` | — | 1 | 终端剪贴板操作超时 |
 | `AIH_SSH_TERMINAL_PASTE_EVENTS` | — | 1 | 粘贴事件识别开关 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
 | `AIH_TURN_ICE_SERVER` | — | 0 | TURN 服务器（单个） |
@@ -102,17 +96,12 @@
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## tuning（可调参数（超时 / TTL / 上限），36）
+## tuning（可调参数（超时 / TTL / 上限），28）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | — | 3 | agy 用量请求超时 |
-| `AIH_CLAUDE_USAGE_TIMEOUT_MS` | — | 2 | claude 用量接口超时 |
-| `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | — | 2 | codex 用量 HTTP 超时 |
 | `AIH_SERVER_AGY_MAX_CONCURRENCY` | — | 2 | agy 并发上限（--agy-max-concurrency） |
 | `AIH_SERVER_CLAUDE_MAX_CONCURRENCY` | — | 2 | claude 并发上限（--claude-max-concurrency） |
-| `AIH_SERVER_CODEX_CLI_HOOK_SELF_HEAL_INTERVAL_MS` | — | 2 | codex CLI hook 自愈检查间隔 |
-| `AIH_SERVER_CODEX_DESKTOP_HOOK_SELF_HEAL_INTERVAL_MS` | — | 2 | codex 桌面 hook 自愈检查间隔 |
 | `AIH_SERVER_CODEX_MAX_CONCURRENCY` | — | 2 | codex 并发上限（--codex-max-concurrency） |
 | `AIH_SERVER_COOLDOWN_MS` | — | 2 | 账号失败冷却基础时长 |
 | `AIH_SERVER_GEMINI_MAX_CONCURRENCY` | — | 2 | gemini 并发上限（--gemini-max-concurrency） |
@@ -133,17 +122,14 @@
 | `AIH_SERVER_WINDOW_ACTIVATION_PROBE_TIMEOUT_MS` | — | 2 | 窗口激活探测超时 |
 | `AIH_SERVER_WINDOW_ACTIVATION_START_DELAY_MS` | — | 2 | 窗口激活首跑延迟 |
 | `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | — | 2 | 窗口激活调度 tick |
-| `AIH_AGY_USAGE_REFRESH_TTL_MS` | — | 1 | agy 用量快照缓存 TTL |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
-| `AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS` | — | 1 | codex 用量慢速重试超时 |
 | `AIH_NATIVE_RUN_RETENTION_MS` | — | 1 | 原生运行记录保留时长（新名） |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | — | 0 | 原生运行首字节超时（看门狗） |
 | `AIH_NATIVE_STALL_TIMEOUT_MS` | — | 0 | 原生运行无进展超时 |
 | `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | — | 0 | 超时后强杀的宽限期 |
 | `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | — | 0 | 上游错误等待超时 |
-| `AIH_SERVER_SOURCE_AUTO_RESTART_INTERVAL_MS` | — | 0 | 源码变更自动重启检查间隔 |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），25）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），22）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -152,7 +138,6 @@
 | `AIH_BENCH_KEY` | — | 2 | 基准/压测脚本使用的 key |
 | `AIH_CLAUDE_OAUTH_TOKEN` | — | 2 | 注入 claude CLI 的 OAuth token（沙箱运行） |
 | `AIH_CODEX_REMOTE_AUTH_TOKEN` | — | 2 | 远程 codex 认证 token |
-| `AIH_CODEX_TOKEN_REFRESH_TIMEOUT_MS` | — | 2 | codex token 刷新超时 |
 | `AIH_CODEX_TOKEN_URL` | — | 2 | codex OAuth token 端点覆盖 |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
 | `AIH_PLUGIN_TOKEN_FROM_STDIN` | — | 2 | 让插件从 stdin 读取 token（避免出现在 argv） |
@@ -160,8 +145,6 @@
 | `AIH_SHADOW_GO_KEY` | — | 2 | gateway shadow 对比时 Go 端口令（只读环境，不落盘） |
 | `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | — | 1 | 账号冒烟测试使用的一次性 key |
-| `AIH_AGY_TOKEN_REFRESH_TIMEOUT_MS` | — | 1 | agy token 刷新超时 |
-| `AIH_CLAUDE_TOKEN_REFRESH_TIMEOUT_MS` | — | 1 | claude token 刷新超时 |
 | `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检 |
 | `AIH_CODEX_USAGE_BULK_TOKEN_REFRESH` | — | 1 | 批量用量扫描前先刷新 token |
 | `AIH_DEPLOY_SSH_KEY` | — | 1 | 部署脚本使用的 SSH 私钥 |
@@ -180,7 +163,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），130）
+## plumbing（内部管道（进程间传递的身份 / 标记），122）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -191,17 +174,9 @@
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_SERVER_CODEX_CLIENT_VERSION` | — | 3 | codex 客户端版本请求头 |
-| `AIH_AGY_CODE_ASSIST_CHROME_VERSION` | — | 2 | code-assist Chrome UA 版本 |
-| `AIH_AGY_CODE_ASSIST_ELECTRON_VERSION` | — | 2 | code-assist Electron UA 版本 |
-| `AIH_AGY_CODE_ASSIST_MACHINE_ID` | — | 2 | code-assist machine id 请求头 |
-| `AIH_AGY_CODE_ASSIST_USER_AGENT` | — | 2 | code-assist UA 覆盖 |
 | `AIH_CODEX_DESKTOP_ACCOUNT_REF` | — | 2 | codex 桌面会话使用的账号 |
 | `AIH_FABRIC_NODE_ID` | — | 2 | fabric 节点 id |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
-| `AIH_GEMINI_CLI_CLIENT_NAME` | — | 2 | gemini CLI 客户端名（请求头） |
-| `AIH_GEMINI_CLI_SURFACE` | — | 2 | gemini CLI surface（terminal 等） |
-| `AIH_GEMINI_CLI_VERSION` | — | 2 | gemini CLI 版本请求头 |
-| `AIH_GEMINI_CODE_ASSIST_USER_AGENT` | — | 2 | gemini code-assist UA 覆盖 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_ITERM_PROVIDER_PROFILE` | — | 2 | iTerm profile 名覆盖（按 provider） |
 | `AIH_KIMI_CODE_VERSION` | — | 2 | kimi-code 版本号 |

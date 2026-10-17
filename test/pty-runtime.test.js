@@ -18,6 +18,7 @@ const { readShimContextField } = require('../lib/cli/services/ssh-clipboard/shim
 const { CLIPBOARD_CONTEXT_ENV, serializeClipboardContext } = require('../lib/cli/services/ssh-clipboard/clipboard-context');
 const { readOpencodeGatewayField } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 const { CODEX_FLAGS_ENV, serializeCodexFlags, readCodexFlag } = require('../lib/runtime/codex-flags');
+const { RUNTIME_USAGE_ENV, serializeRuntimeUsage } = require('../lib/runtime/usage-settings');
 const persistentSessionRegistry = require('../lib/runtime/persistent-session-registry');
 const {
   CODEX_MANAGED_LAUNCH_ENV
@@ -362,7 +363,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
 for (const provider of ['claude', 'codex', 'gemini']) {
   test(`${provider} runtime frames fragmented terminal input without changing provider key or mouse semantics`, () => {
     const { runtime, proc, ptyWrites } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0', [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }), [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' })
     });
     runtime.runCliPtyTracked(provider, '9', [], false);
     try {
@@ -689,7 +690,7 @@ test('runtime maps codex slash resume shortcut to native resume command', () => 
 test('runtime leaves codex resume visibility to CLI hook without mutating state', () => {
   const calls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     repairCodexSessionVisibility: () => {
       calls.push(true);
@@ -711,7 +712,7 @@ test('runtime reinitializes codex session links after config sync creates accoun
   const aiHomeDir = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-session-links-'));
   const calls = [];
   const harness = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     ensureSessionStoreLinks: (cliName, accountRef, options = {}) => {
@@ -747,7 +748,7 @@ test('runtime reinitializes codex session links after config sync creates accoun
 
 test('runtime blocks a projected provider launch when resources remain unreconciled', () => {
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     ensureSessionStoreLinks: () => ({ unresolved: ['sessions'] })
   });
@@ -765,7 +766,7 @@ test('runtime reconciles persistent CodeBuddy-family projections by session link
   for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']) {
     const calls = [];
     const { runtime, spawns } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
     }, {
       ensureSessionStoreLinks(cliName, accountRef, options) {
         calls.push({ cliName, options });
@@ -789,7 +790,7 @@ test('runtime reconciles persistent CodeBuddy-family projections by session link
 
 test('runtime keeps codex account auth isolated while sharing host sqlite state', () => {
   const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
   const accountRef = resolveHarnessAccountRef('codex', '10086');
   const persistentAccountDir = resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef);
@@ -816,7 +817,7 @@ test('runtime ignores stale opencode auth projection because DB is the only auth
   const hostHomeDir = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-opencode-host-'));
   try {
     const harness = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0',
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
       HOME: hostHomeDir
     }, {
       aiHomeDir,
@@ -845,7 +846,7 @@ test('runtime ignores stale opencode auth projection because DB is the only auth
 test('runtime asks before installing psmux on Windows and degrades when declined', () => {
   const calls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -881,7 +882,7 @@ test('runtime wraps native Windows psmux for Codex by default', () => {
   const psmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const syncCalls = [];
   const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -934,7 +935,7 @@ test('runtime installs psmux on Windows, re-detects it, and wraps the launch', (
   const calls = [];
   const psmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -993,7 +994,7 @@ test('runtime avoids psmux attach-or-create when session probing falls back to a
   const fallbackPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const fallbackSyncCalls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -1050,7 +1051,7 @@ test('runtime re-enters Windows psmux Codex sessions with an exclusive explicit 
   const explicitAttachPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const explicitAttachSyncCalls = [];
   const { runtime, proc, spawns, writes, ptyWrites, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: explicitAttachBaseSession,
       mirror: '1'
@@ -1131,7 +1132,7 @@ test('runtime rejects legacy Windows psmux Codex targets without direct launch m
   const legacyPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const legacySyncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: legacyBaseSession,
       mirror: '1'
@@ -1197,7 +1198,7 @@ test('runtime bare launch creates a fresh Windows psmux session without reusing 
   const completedPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const completedSyncCalls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -1262,7 +1263,7 @@ test('runtime bare launch creates a fresh Windows psmux session without reusing 
   const screenCompletedPsmuxPath = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\psmux.exe';
   const screenCompletedSyncCalls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
     Path: ''
   }, {
@@ -1328,7 +1329,7 @@ test('runtime bare launch creates a fresh strict tmux session when a project ses
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const spawnSyncCalls = [];
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1425,7 +1426,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const spawnSyncCalls = [];
   const { runtime, proc, spawns, resolveHarnessAccountRef, aiHomeDir } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1535,7 +1536,7 @@ test('runtime applies Claude tmux render compatibility only when persistent tmux
 
 test('runtime leaves direct Claude launches without tmux render compatibility env', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     stdoutIsTTY: true,
     resolveCliPath: (name) => (name === 'claude' ? '/usr/local/bin/claude' : '')
@@ -1557,7 +1558,7 @@ test('runtime uses zh_CN UTF-8 tmux env for macOS generic UTF-8 sessions', () =>
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const spawnSyncCalls = [];
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     LANG: 'C.UTF-8'
   }, {
     cwd,
@@ -1630,7 +1631,7 @@ test('runtime bare launch leaves detached stale tmux sessions untouched and crea
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const syncCalls = [];
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1671,7 +1672,7 @@ test('runtime bare launch leaves an attached stale session untouched and creates
   const sep = persistentSession.SESSION_LIST_SEPARATOR;
   const syncCalls = [];
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1700,7 +1701,7 @@ test('runtime bare launch keeps strict fresh tmux create when session probing fa
   const cwd = '/tmp/aih-probe-fail-project';
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     pid: 22222,
@@ -1727,7 +1728,7 @@ test('runtime bare launch creates a fresh strict tmux session when no server exi
   const cwd = '/tmp/aih-no-server-project';
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1761,7 +1762,7 @@ test('runtime supervises the inner provider only when creating a projected persi
     aiHomeDir,
     hostHomeDir
   } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1810,7 +1811,7 @@ test('runtime creates a fresh unique projected session when the same-cwd base is
   const baseSession = persistentSession.deriveSessionName({ cwd });
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -1868,7 +1869,7 @@ test('runtime attaches an explicit detached session target without retaining an 
     aiHomeDir,
     resolveHarnessAccountRef
   } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: targetSession
     })
@@ -1932,7 +1933,7 @@ test('runtime still attaches an exact picker target when the session probe is un
   const cwd = '/tmp/aih-explicit-target-probe-fail-project';
   const targetSession = `${persistentSession.deriveSessionName({ cwd })}-picked`;
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: targetSession,
       mirror: '1'
@@ -1965,7 +1966,7 @@ test('runtime rejects a missing exact target without creating or replacing a ses
   const siblingSession = `${persistentSession.deriveSessionName({ cwd })}-sibling`;
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: targetSession,
       mirror: '1'
@@ -1995,7 +1996,7 @@ test('runtime rejects a missing exact target without creating or replacing a ses
 test('runtime rejects an unsafe exact target instead of falling back to fresh or latest', () => {
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: 'unsafe target',
       mirror: '1'
@@ -2023,7 +2024,7 @@ test('runtime rejects an incompatible exact target without cycling the account t
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
   const syncCalls = [];
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: targetSession,
       mirror: '1'
@@ -2073,7 +2074,7 @@ test('runtime bare launch leaves an incompatible projected pane untouched and cr
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
   const syncCalls = [];
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2123,7 +2124,7 @@ test('runtime blocks persistent tmux launch when its registry entry cannot be wr
   const registryRoot = path.join(aiHomeDir, 'run', 'persistent-sessions');
   let registryWriteAttempts = 0;
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     stdoutIsTTY: true,
@@ -2161,7 +2162,7 @@ test('outer tmux cleanup retains a supervisor-owned registry after inner cleanup
   const aiHomeDir = path.join(hostHomeDir, '.ai_home');
   t.after(() => fsBase.rmSync(hostHomeDir, { recursive: true, force: true }));
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2196,7 +2197,7 @@ test('detached restore preserves the original persistent-session registry metada
   const targetSession = `${persistentSession.deriveSessionName({ cwd })}-original`;
   t.after(() => fsBase.rmSync(hostHomeDir, { recursive: true, force: true }));
   const { runtime, proc, spawns, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       detached: '1',
       target: targetSession
@@ -2248,7 +2249,7 @@ test('detached restore preserves the original persistent-session registry metada
 test('runtime fails closed when explicit resume cannot probe the latest project session', () => {
   const cwd = '/tmp/aih-resume-probe-fail-project';
   const { runtime, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
@@ -2292,7 +2293,7 @@ test('runtime explicit resume selects the newest existing project session', () =
     persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
   ].join(separator);
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
@@ -2324,7 +2325,7 @@ test('runtime explicit Codex thread resume attaches its existing persistent owne
   const ownerSession = `${persistentSession.deriveSessionName({ cwd })}-owner`;
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
   const harness = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2386,7 +2387,7 @@ test('runtime explicit Codex thread resume attaches an owner from another persis
   const separator = persistentSession.SESSION_LIST_SEPARATOR;
   const gatewaySocket = persistentSession.deriveSocket('codex', 'gateway');
   const harness = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2455,7 +2456,7 @@ test('runtime explicit Codex thread resume fails closed to its registered owner 
   const threadId = '019f97d8-2007-7f90-8f8b-d627bd6b0327';
   const ownerSession = `${persistentSession.deriveSessionName({ cwd })}-owner`;
   const harness = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     cwd,
     stdoutIsTTY: true,
@@ -2514,7 +2515,7 @@ test('runtime explicit resume breaks same-second tmux creation ties with the fre
     persistentSession.PROVIDER_SUPERVISOR_RUNTIME_MARKER_VALUE
   ].join(separator);
   const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({ resume: '1' })
   }, {
     cwd,
@@ -2538,7 +2539,7 @@ test('runtime explicit resume breaks same-second tmux creation ties with the fre
 
 test('runtime attaches an exact session picker target in mirror mode without detaching peers', () => {
   const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     [persistentSession.SESSION_INTENT_ENV]: persistentSession.serializeSessionIntent({
       target: 'p-picked',
       mirror: '1'
@@ -2604,7 +2605,7 @@ test('runtime records Claude Stop hook JSON validation diagnostics from PTY outp
   }) + '\n', 'utf8');
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2680,7 +2681,7 @@ test('runtime records Claude tool protocol diagnostics from PTY output', async (
   ].join('\n'), 'utf8');
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2719,7 +2720,7 @@ test('runtime coalesces Claude tool diagnostics without transcript evidence and 
   });
 
   const { runtime, proc, spawns, writes, rawModeCalls } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2751,7 +2752,7 @@ test('runtime coalesces Claude tool diagnostics without transcript evidence and 
 
 test('runtime rebuilds transient codex config from the host template', () => {
   const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
   const accountRef = resolveHarnessAccountRef('codex', '10014');
   const hostConfigDir = path.join(hostHomeDir, '.codex');
@@ -2812,7 +2813,7 @@ test('runtime does not emit account config hooks for disposable codex config', (
     })
   });
   const { runtime, proc, spawns, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     aiHomeDir,
     hostHomeDir,
@@ -2838,7 +2839,7 @@ test('runtime does not emit account config hooks for disposable codex config', (
 
 test('runtime ignores legacy account configs while rebuilding transient config from host', () => {
   const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls, resolveHarnessAccountRef } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
   const trustedAccountRef = resolveHarnessAccountRef('codex', '10086');
   const targetAccountRef = resolveHarnessAccountRef('codex', '10014');
@@ -2898,7 +2899,7 @@ test('runtime never injects repeated skip text from Codex repaint output', () =>
 
   try {
     const { runtime, proc, spawns } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
     });
 
     runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -2921,7 +2922,7 @@ test('runtime leaves Codex update and trust prompts under user input ownership',
 
   try {
     const { runtime, proc, spawns } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
     });
 
     runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -2948,7 +2949,7 @@ test('runtime leaves Codex update and trust prompts under user input ownership',
 
 test('runtime forwards explicit Codex user input exactly once', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -3038,7 +3039,7 @@ test('runtime routes codex through the built-in AIH server profile when no accou
 });
 
 test('runtime does not create an account directory for codex API-key accounts', () => {
-  const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+  const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) });
   const { runtime, proc, spawns, aiHomeDir, hostHomeDir, rawModeCalls } = harness;
   const accountRef = harness.resolveHarnessAccountRef('codex', '1');
   writeAccountCredentials(fsBase, aiHomeDir, accountRef, {
@@ -3061,7 +3062,7 @@ test('runtime does not create an account directory for codex API-key accounts', 
 });
 
 test('runtime routes Claude gateway through the shared host config without an internal profile', () => {
-  const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' }, {
+  const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) }, {
     resolveCliPath: () => '/usr/bin/claude',
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: 'gateway-key' })
@@ -3083,7 +3084,7 @@ test('runtime routes Claude gateway through the shared host config without an in
 test('runtime launches bare opencode through the explicit AIH gateway profile env', () => {
   // 回归守卫：裸 `aih opencode`（AIH Server profile）曾在 buildBuiltinServerProfileEnv 里
   // 引用 router 作用域变量 ReferenceError（useBuiltinServerProfile is not defined）直接崩溃。
-  const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' }, {
+  const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) }, {
     resolveCliPath: () => '/usr/bin/opencode',
     serverDaemon: { status: () => ({ running: true, ready: true, state: 'running' }) },
     readServerConfig: () => ({ host: '127.0.0.1', port: 9527, apiKey: 'gateway-key' })
@@ -3559,7 +3560,7 @@ test('runtime reports a non-zero native Codex login exit without allocating an a
 test('runtime relays native Claude OAuth by accountRef while keeping host session state', () => {
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir, hostHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
     USER: 'model',
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     resolveCliPath: () => '/usr/bin/claude',
     ensureSessionStoreLinks: () => {
@@ -3592,7 +3593,7 @@ test('runtime relays native Claude OAuth by accountRef while keeping host sessio
 test('runtime does not create an account directory for Claude token accounts', () => {
   const harness = createRuntimeHarness({
     USER: 'model',
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     resolveCliPath: () => '/usr/bin/claude'
   });
@@ -3619,7 +3620,7 @@ test('runtime does not create an account directory for Claude token accounts', (
 test('runtime keeps USER and uses a disposable auth directory for Claude login', () => {
   const { runtime, proc, spawns, rawModeCalls, aiHomeDir } = createRuntimeHarness({
     USER: 'model',
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     resolveCliPath: () => '/usr/bin/claude'
   });
@@ -3747,7 +3748,7 @@ test('runtime publishes claude title without provider text or fake icon', () => 
 test('runtime keeps Windows Terminal progress clear for idle PTY lifecycle', () => {
   const { runtime, proc, writes } = createRuntimeHarness({
     WT_SESSION: 'wt-session-1',
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     stdoutIsTTY: true
   });
@@ -3799,7 +3800,7 @@ test('runtime unrefs the boot animation timer', () => {
 
 test('runtime starts usage refresh scheduler only when explicitly enabled', () => {
   const { runtime, proc, getSchedulerCalls } = createRuntimeHarness({
-    AIH_RUNTIME_ENABLE_USAGE_SCHEDULER: '1'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ scheduler: '1' })
   });
   runtime.runCliPtyTracked('codex', '10086', ['--version'], false);
   assert.equal(getSchedulerCalls(), 1);
@@ -3852,7 +3853,7 @@ test('runtime auto-switch resumes the latest codex thread for the current projec
   try {
     const now = Date.now();
     const { runtime, proc, spawns, hostHomeDir, cwd, resolveHarnessAccountRef } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
     }, {
       DatabaseSync: FakeDatabaseSync,
       readUsageCache: () => ({
@@ -3896,7 +3897,7 @@ test('runtime auto-switch resumes the latest codex thread for the current projec
 
 test('runtime toggles shell drawer with ctrl+alt+j and routes stdin to shell while open', () => {
   const { runtime, proc, spawns, rawModeCalls, cwd } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -3923,7 +3924,7 @@ test('runtime toggles shell drawer with ctrl+alt+j and routes stdin to shell whi
 
 test('runtime resizes shell drawer pty to panel height when terminal size changes', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -3946,7 +3947,7 @@ test('runtime resizes shell drawer pty to panel height when terminal size change
 
 test('runtime renders drawer borders when shell drawer opens', () => {
   const { runtime, proc, spawns, writes } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   });
 
   runtime.runCliPtyTracked('codex', '10086', [], false);
@@ -4051,7 +4052,7 @@ test('runtime gives the Codex inline TUI exclusive ownership of startup screen w
   let proc;
 
   try {
-    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) });
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('codex', '10086', [], false);
 
@@ -4073,7 +4074,7 @@ test('runtime gives the Codex resume TUI exclusive ownership of startup screen w
   let proc;
 
   try {
-    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) });
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('codex', '10086', ['resume', 'thread-123'], false);
 
@@ -4095,7 +4096,7 @@ test('runtime does not clear a provider boot line before the spinner actually dr
   let proc;
 
   try {
-    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) });
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('claude', '4', [], false);
 
@@ -4116,7 +4117,7 @@ test('runtime clears a provider boot line after the spinner has drawn it', () =>
   let proc;
 
   try {
-    const harness = createRuntimeHarness({ AIH_RUNTIME_SHOW_USAGE: '0' });
+    const harness = createRuntimeHarness({ [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }) });
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('claude', '4', [], false);
 
@@ -4288,7 +4289,7 @@ test('runtime does not classify claude slash menu usage text as rate limit', asy
   const runtimeUpserts = [];
   const { runtime, proc, spawns, writes } = createRuntimeHarness({
     [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     getNextAvailableId: () => '10087',
     getAccountStateIndex: () => ({
@@ -4343,7 +4344,7 @@ test('runtime repairs missing Claude native binary before spawning pty', () => {
   console.log = (...args) => logs.push(args.join(' '));
   try {
     const { runtime, proc, spawns, rawModeCalls } = createRuntimeHarness({
-      AIH_RUNTIME_SHOW_USAGE: '0'
+      [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
     }, {
       platform: 'linux',
       resolveCliPath: () => cliPath,
@@ -4385,7 +4386,7 @@ test('runtime ignores cli output that only looks like a rate-limit error', async
   const runtimeUpserts = [];
   const { runtime, proc, spawns, writes } = createRuntimeHarness({
     [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     getNextAvailableId: () => '10087',
     getAccountStateIndex: () => ({
@@ -4421,7 +4422,7 @@ test('runtime ignores rate-limit-looking output even when standby account is run
   let standbyAccountRef = '';
   const { runtime, proc, spawns, writes, resolveHarnessAccountRef } = createRuntimeHarness({
     [CODEX_FLAGS_ENV]: serializeCodexFlags({ authPreflight: '0' }),
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     getNextAvailableId: () => '10087',
     getAccountStateIndex: () => ({
@@ -4467,7 +4468,7 @@ test('runtime ignores rate-limit-looking output even when standby account is run
 test('runtime does not start windows clipboard mirror by default on native windows', () => {
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0'
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
   }, {
     platform: 'win32',
     spawn: (cmd, args) => {
@@ -4488,7 +4489,7 @@ test('runtime does not start windows clipboard mirror by default on native windo
 test('runtime starts windows clipboard mirror only when explicitly enabled on native windows', () => {
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
   }, {
     platform: 'win32',
@@ -4516,7 +4517,7 @@ test('runtime starts windows clipboard mirror only when explicitly enabled on na
 test('runtime can disable windows clipboard mirror explicitly', () => {
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '0'
   }, {
     platform: 'win32',
@@ -4575,7 +4576,7 @@ test('runtime enforces single clipboard mirror process across multiple windows P
   };
 
   const h1 = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
   }, {
     platform: 'win32',
@@ -4585,7 +4586,7 @@ test('runtime enforces single clipboard mirror process across multiple windows P
     spawn: spawnImpl
   });
   const h2 = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
   }, {
     platform: 'win32',
@@ -4613,7 +4614,7 @@ test('runtime recovers stale clipboard mirror lock owned by dead process', () =>
 
   const spawnCalls = [];
   const { runtime, proc } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
   }, {
     platform: 'win32',
@@ -4638,7 +4639,7 @@ test('runtime releases clipboard mirror lock when all mirror spawn candidates fa
   const sharedHome = fsBase.mkdtempSync(path.join(os.tmpdir(), 'aih-pty-failed-spawn-'));
   const lockPath = path.join(sharedHome, 'run', 'locks', 'windows-clipboard-mirror.lock');
   const { runtime, proc } = createRuntimeHarness({
-    AIH_RUNTIME_SHOW_USAGE: '0',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' }),
     AIH_WINDOWS_IMAGE_CLIPBOARD_MIRROR: '1'
   }, {
     platform: 'win32',

@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:19:28.805Z
-> 共 **63** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:20:27.678Z
+> 共 **62** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，4）
@@ -27,12 +27,11 @@
 | `AIH_SSH_CLIP_SHIM_CONTEXT` | — | 0 | SSH 剪贴板 shim 路径（bin/邮箱根 两项合一） |
 | `AIH_SSH_CLIPBOARD` | — | 0 | SSH 剪贴板桥模式（terminal/agent/endpoint 三项合一） |
 
-## flag（开关与逃生门（环境准入），3）
+## flag（开关与逃生门（环境准入），2）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
-| `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值），7）
@@ -68,7 +67,6 @@
 | `AIH_GO_CORE_DELEGATE_REFRESH` | — | 1 | 由 Go Core 代办 token 刷新 |
 | `AIH_GO_CORE_DOWNLOAD_BASE` | — | 1 | Go Core 工件下载基地址 |
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
-| `AIH_RUNTIME_SHOW_USAGE` | — | 1 | 运行时显示用量 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
 | `AIH_SESSION_INTENT` | — | 1 | 会话意图（label/resume/mirror/target/active/detached 六项合一） |
 | `AIH_SKILL_INJECT` | — | 1 | 注入 skills 的开关 |
@@ -92,6 +90,7 @@
 | `AIH_PROVIDER_EXTENSION_DIRS` | — | 0 | 外部 provider 扩展目录（defs/quota 两项合一） |
 | `AIH_RELAY_SETTINGS` | — | 0 | 中转运行参数（udp/播报地址/端口/端口模式/绑定网卡 五项合一） |
 | `AIH_RUNTIME_MARKER` | — | 0 | 持久会话运行时兼容标记（utf8/claude/psmux/supervisor 四项合一） |
+| `AIH_RUNTIME_USAGE` | — | 0 | 运行时用量显示/调度（show/scheduler 两项合一） |
 | `AIH_SERVER_RESTART_MODE` | — | 0 | 重启模式标记（background/elevated） |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | — | 0 | 源码变更自动重启标记 |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:19:28.805Z
-> 覆盖 `lib / bin / scripts / core`，共 **53** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:20:27.678Z
+> 覆盖 `lib / bin / scripts / core`，共 **52** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | path | 2 | 数据/目录/仓库路径 |
 | network | 5 | 端点 / 代理 / 端口 |
-| flag | 2 | 开关与逃生门（环境准入） |
+| flag | 1 | 开关与逃生门（环境准入） |
 | credential | 5 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 3 | 测试与探针专用 |
 | plumbing | 36 | 内部管道（进程间传递的身份 / 标记） |
@@ -69,7 +69,6 @@
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -102,7 +101,6 @@
 | `AIH_GO_CORE_DELEGATE_REFRESH` | 1 | 1 | lib/server/go-core-host.js |
 | `AIH_GO_CORE_DOWNLOAD_BASE` | 1 | 0 | scripts/postinstall-go-core.js |
 | `AIH_GO_CORE_ROUTES` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
-| `AIH_RUNTIME_SHOW_USAGE` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/cli/services/server/go-core-supervisor.js<br>lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_SESSION_INTENT` | 1 | 3 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>…共 4 个 |
 | `AIH_SKILL_INJECT` | 1 | 0 | lib/cli/services/ai-cli/provider-skill-installer.js |
@@ -125,6 +123,7 @@
 | `AIH_PROVIDER_EXTENSION_DIRS` | 0 | 1 | lib/providers/extension-dirs.js |
 | `AIH_RELAY_SETTINGS` | 0 | 6 | lib/server/relay-settings.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_MARKER` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
+| `AIH_RUNTIME_USAGE` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/runtime/usage-settings.js |
 | `AIH_SERVER_RESTART_MODE` | 0 | 2 | lib/cli/services/server/windows-restart-elevation.js<br>lib/server/source-auto-restart.js |
 | `AIH_SERVER_SOURCE_AUTO_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
 | `AIH_UPSTREAM_HEADERS` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |

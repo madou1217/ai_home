@@ -78,6 +78,14 @@ Fuller layer map:
   see upstream behaviour differences. Re-run it after any change to Canonical
   encode/decode.
 
+## 环境变量（环境准入）纪律
+
+- **唯一清单：`docs/architecture/env-flags.md`（+ `env-flags.snapshot.json`）**，由 `npm run env:inventory -- --write` 从源码生成（当前 333 个 `AIH_*`）。**新增/删除环境变量必须重跑该命令**，否则 `test/env-inventory.test.js` 会红（它同时守住「开关类变量必须写进文档」与「同义别名不许再手写第二份」）。
+- **一个语义只用一个名字**：同义别名只允许一处解析（示例：`AIH_HOME_DIR` / `AIH_HOME` / `AI_HOME` 的唯一解析处是 `lib/runtime/aih-home.js`；`lib/cli/services/node/bootstrap-assets.js` 是远程自举模板，按设计内联同一规则，属唯一豁免）。
+- **禁止 `ENABLE`/`DISABLE` 成对开关**表达一个语义；确需兼容历史写法时，登记进 `scripts/collect-env-flags.js` 的 `ALLOWED_FLAG_PAIRS` 并在文档里说明（现存唯一一对：codex 远程代理）。
+- **可调参数优先做常量**（`lib/cli/config/constants.js`），不要为了调整超时/TTL 就新增环境变量；必须是环境变量的要带单位（`_MS`）并写明默认值。
+- 测试专用变量一律 `AIH_TEST_*` 前缀，禁止进入生产路径的默认判断。
+
 ## Coding Style & Naming Conventions
 - Main body (`lib/`): Node.js CommonJS (`require`, `module.exports`).
 - Formatting style in repo: 2-space indentation, semicolons, single quotes.

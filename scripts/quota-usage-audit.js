@@ -41,7 +41,8 @@ function parseArgs(argv) {
 }
 
 function resolveAiHomeDir() {
-  return String(process.env.AIH_HOME_DIR || process.env.AIH_HOME || '').trim() || path.join(os.homedir(), '.ai_home');
+  // 唯一规则在 lib/runtime/aih-home.js。
+  return require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env });
 }
 
 // CHILD_PROCESS 行是分多行的：`spawnSync [Object: null prototype] {` 之后有 args: [...] / file: '...'。

@@ -42,7 +42,8 @@ function auditLog(tier, detail) {
   } catch (_error) {}
 }
 function aiHomeDirForLog() {
-  const explicit = String(process.env.AIH_HOME_DIR || process.env.AIH_HOME || process.env.AI_HOME || '').trim();
+  // 唯一规则在 lib/runtime/aih-home.js（AIH_HOME_DIR / AIH_HOME / AI_HOME 为同义别名）。
+  const explicit = require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env });
   if (explicit) return explicit;
   const home = resolveHostHomeDir({ env: process.env, platform: process.platform });
   return home ? path.join(home, '.ai_home') : '';
@@ -58,7 +59,7 @@ const hostHomeDir = resolveHostHomeDir({
   platform: process.platform
 });
 const explicitAiHomeDir = String(
-  process.env.AIH_HOME_DIR || process.env.AIH_HOME || process.env.AI_HOME || ''
+  require('../lib/runtime/aih-home').resolveAiHomeDir({ env: process.env })
 ).trim();
 const aiHomeDir = explicitAiHomeDir || (hostHomeDir ? path.join(hostHomeDir, '.ai_home') : '');
 if (!aiHomeDir) fail('cannot resolve ai-home directory');

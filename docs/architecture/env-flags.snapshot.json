@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:04:55.201Z",
-  "total": 90,
+  "generatedAt": "2026-10-17T10:14:05.879Z",
+  "total": 89,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -365,16 +365,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_OPENCODE_CONFIG_DIR",
-      "category": "path",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/opencode-plugin-hook-config.js"
       ],
       "aliasConstants": []
     },

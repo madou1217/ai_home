@@ -1,14 +1,14 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:04:55.201Z
-> 覆盖 `lib / bin / scripts / core`，共 **80** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:14:05.879Z
+> 覆盖 `lib / bin / scripts / core`，共 **79** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 10 | 数据/目录/仓库路径 |
+| path | 9 | 数据/目录/仓库路径 |
 | network | 12 | 端点 / 代理 / 端口 |
 | flag | 3 | 开关与逃生门（环境准入） |
 | credential | 9 | 凭据与密钥（文档只写变量名，绝不放真实值） |
@@ -54,7 +54,6 @@
 | `AIH_CLI_PATH` | 5 | 1 | lib/cli/services/fabric/registry-agent-service.js<br>lib/cli/services/node/doctor.js<br>lib/cli/services/node/relay-service.js<br>…共 5 个 |
 | `AIH_CODEX_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_CODEX_SQLITE_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_OPENCODE_CONFIG_DIR` | 2 | 0 | lib/server/opencode-plugin-hook-config.js |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
 | `AIH_EDGE_NGINX_CONF_DIR` | 1 | 0 | lib/cli/services/toolkit/edge-proxy/providers/nginx.js |
 | `AIH_NODE_DIST_DIR` | 1 | 0 | lib/cli/services/node/bootstrap-assets.js |

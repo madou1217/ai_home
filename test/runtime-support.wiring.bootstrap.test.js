@@ -38,8 +38,8 @@ test('createStateIndexClientWiring resolves management settings from env by defa
   const client = {};
   const out = createStateIndexClientWiring({
     fetchImpl: async () => ({}),
+    managementBase: 'http://127.0.0.1:9999/v0/management',
     env: {
-      AIH_SERVER_MANAGEMENT_URL: 'http://127.0.0.1:9999/v0/management',
       AIH_SERVER_MANAGEMENT_KEY: 'k'
     },
     abortSignalFactory: () => ({})

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:40:24.777Z
-> 覆盖 `lib / bin / scripts / core`，共 **48** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:45:06.864Z
+> 覆盖 `lib / bin / scripts / core`，共 **47** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -13,7 +13,7 @@
 | flag | 1 | 开关与逃生门（环境准入） |
 | credential | 5 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 3 | 测试与探针专用 |
-| plumbing | 32 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 31 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -105,7 +105,6 @@
 | `AIH_TRACE` | 1 | 0 | lib/runtime/trace.js |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | 1 | 2 | lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>lib/server/webui-account-live.js |
 | `AIH_UPSTREAM_ERROR_RULES` | 1 | 3 | lib/account/go-bridge/go-import-translator.js<br>lib/account/official-account-rules-cleanup.js<br>lib/account/upstream-error-rules.js<br>…共 4 个 |
-| `AIH_ZCODE_ALWAYS_THINKING_MODELS` | 1 | 0 | lib/server/zcode-anthropic-thinking.js |
 | `AIH_ACCOUNT_APP` | 0 | 1 | lib/runtime/provider-session-context.js |
 | `AIH_AGY_USAGE` | 0 | 1 | lib/usage/agy-endpoints.js |
 | `AIH_CLI_FEATURES` | 0 | 1 | lib/cli/config/cli-features.js |

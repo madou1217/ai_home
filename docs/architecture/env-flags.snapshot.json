@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T11:40:24.777Z",
-  "total": 58,
+  "generatedAt": "2026-10-17T11:45:06.864Z",
+  "total": 57,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -465,16 +465,6 @@
         "lib/account/official-account-rules-cleanup.js",
         "lib/account/upstream-error-rules.js",
         "lib/server/webui-account-live.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_ALWAYS_THINKING_MODELS",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/zcode-anthropic-thinking.js"
       ],
       "aliasConstants": []
     },

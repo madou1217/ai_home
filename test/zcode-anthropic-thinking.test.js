@@ -1,6 +1,7 @@
 'use strict';
 
 const test = require('node:test');
+const { ZCODE_CONTEXT_ENV, serializeZcodeContext } = require('../lib/runtime/zcode-context');
 const assert = require('node:assert/strict');
 
 const {
@@ -25,12 +26,12 @@ test('isAlwaysThinkingModel matches bare and prefixed always-thinking model ids'
 
 test('resolveAlwaysThinkingModels honours the env override and falls back to the default', () => {
   assert.deepEqual(
-    resolveAlwaysThinkingModels({ AIH_ZCODE_ALWAYS_THINKING_MODELS: ' glm-5.4 , glm-6 ' }),
+    resolveAlwaysThinkingModels({ [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ thinkingModels: ' glm-5.4 , glm-6 ' }) }),
     ['glm-5.4', 'glm-6']
   );
   assert.deepEqual(resolveAlwaysThinkingModels({}), DEFAULT_ALWAYS_THINKING_MODELS);
   assert.deepEqual(
-    resolveAlwaysThinkingModels({ AIH_ZCODE_ALWAYS_THINKING_MODELS: ' , ' }),
+    resolveAlwaysThinkingModels({ [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ thinkingModels: ' , ' }) }),
     DEFAULT_ALWAYS_THINKING_MODELS,
     '全空条目回退默认清单'
   );

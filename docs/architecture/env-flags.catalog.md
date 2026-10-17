@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:40:24.777Z
-> 共 **58** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:45:06.864Z
+> 共 **57** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，4）
@@ -54,7 +54,7 @@
 | `AIH_CODEX_USAGE_PROBE` | — | 2 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 | `AIH_GEMINI_USAGE_PROBE` | — | 2 | gemini 用量探测上下文（token/projectId） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），33）
+## plumbing（内部管道（进程间传递的身份 / 标记），32）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -71,7 +71,6 @@
 | `AIH_TRACE` | — | 1 | 统一调试开关：=1 全开，或逗号分隔 scope（agy-warm/models/model-chain/plugin/persist/artifact-hook/claude） |
 | `AIH_UPSTREAM_ERROR_GROUP_IDS` | — | 1 | 账号适用的错误规则分组 id |
 | `AIH_UPSTREAM_ERROR_RULES` | — | 1 | 账号自定义上游错误规则（JSON） |
-| `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_AGY_USAGE` | — | 0 | agy 用量上下文（baseUrl/quotaBaseUrls/clientVersion） |
 | `AIH_CLI_FEATURES` | — | 0 | CLI 功能开关（psmux 提示/skill 注入/Windows 镜像） |

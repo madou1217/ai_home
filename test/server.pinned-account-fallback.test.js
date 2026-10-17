@@ -36,7 +36,7 @@ async function getFreePort() {
 
 function createProcessCapture() {
   const processObj = new EventEmitter();
-  processObj.env = { AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' };
+  processObj.env = {};
   processObj.argv = ['node', 'bin/ai-home.js', '__background', 'run'];
   processObj.execPath = process.execPath;
   processObj.pid = process.pid;

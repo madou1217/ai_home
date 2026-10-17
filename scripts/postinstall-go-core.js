@@ -6,7 +6,7 @@
 //   2. 本机有 Go 工具链 → 本地构建（scripts/build-go-server.js，同时写 stamp）；
 //   3. 否则下载与 npm 版本匹配的预编译构件，按发布的 sha256 校验通过后才落盘并写 stamp。
 // 下载源默认 GitHub Release（v<version>），可用 AIH_GO_CORE_DOWNLOAD_BASE 覆盖；
-// AIH_SKIP_GO_CORE_INSTALL=1 完全跳过。
+// `--skip`（或 npm_config 里的 skip）完全跳过。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -67,7 +67,7 @@ async function prepareGoCore(options = {}) {
   const repositoryRoot = options.repositoryRoot || REPOSITORY_ROOT;
   const platform = options.platform || process.platform;
   const arch = options.arch || process.arch;
-  if (/^(1|true|yes)$/i.test(String(env.AIH_SKIP_GO_CORE_INSTALL || ''))) return { action: 'skipped' };
+  if (options.skip === true) return { action: 'skipped' };
 
   const binaryPath = resolveGoServerBinary({ repositoryRoot, platform, arch });
   const version = readPackageVersion(fsImpl, repositoryRoot);

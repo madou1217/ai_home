@@ -38,7 +38,6 @@ function createProcessCapture() {
   const exited = new Promise((resolve) => { resolveExit = resolve; });
   return {
     env: {
-      AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1'
     },
     argv: ['node', 'bin/ai-home.js', 'server', 'serve'],
     execPath: process.execPath,

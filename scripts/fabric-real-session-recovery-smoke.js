@@ -348,7 +348,7 @@ function spawnAihProcess(label, hostHomeDir, args, options = {}) {
       AIH_HOST_HOME: hostHomeDir,
       REAL_HOME: hostHomeDir,
       HOME: hostHomeDir,
-      AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1',
+      AIH_SERVER_SOURCE_AUTO_RESTART: '0',
       AIH_SERVER_MODEL_USAGE_SCAN: '0',
       AIH_SERVER_LOG_REQUESTS: '0'
     },

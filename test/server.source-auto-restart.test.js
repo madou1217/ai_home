@@ -28,10 +28,10 @@ function makeSourceCheckout(root) {
   return { repoDir, entryFilePath };
 }
 
-test('source auto restart requires explicit opt-in and the disable flag takes precedence', () => {
+test('source auto restart requires explicit opt-in', () => {
   for (const env of [{}, { AIH_SERVER_SOURCE_AUTO_RESTART: '0' },
     { AIH_SERVER_SOURCE_AUTO_RESTART: 'true' },
-    { AIH_SERVER_SOURCE_AUTO_RESTART: '1', AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART: '1' }]) {
+]) {
     assert.equal(shouldEnableSourceAutoRestart({ env }), false);
   }
   assert.equal(shouldEnableSourceAutoRestart({ env: { AIH_SERVER_SOURCE_AUTO_RESTART: '1' } }), true);

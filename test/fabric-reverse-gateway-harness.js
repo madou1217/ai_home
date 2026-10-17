@@ -60,7 +60,6 @@ function isolatedServerEnvironment(homeDir) {
     AIH_HOME_DIR: homeDir,
     AIH_HOST_HOME: homeDir,
     HOME: homeDir,
-    AIH_SERVER_ALLOW_MULTI: '1',
     AIH_SERVER_STRICT_PORT: '1',
     AIH_SERVER_SOURCE_AUTO_RESTART: '0',
     AIH_SERVER_CODEX_DESKTOP_HOOK: '0',
@@ -94,7 +93,8 @@ function startAihServer(input) {
     '--codex-base-url',
     input.codexBaseUrl,
     '--no-model-usage-scan',
-    '--no-request-log'
+    '--no-request-log',
+    '--allow-multi'
   ];
   const child = spawn(process.execPath, args, {
     cwd: path.join(__dirname, '..'),

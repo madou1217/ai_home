@@ -5,7 +5,6 @@ const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
 
 const {
-  ANIMATION_ENV_KEY,
   createHeadlessProgress
 } = require('../lib/cli/services/pty/headless-progress');
 
@@ -53,17 +52,6 @@ test('非 TTY 时不写任何动画字节', () => {
   progress.start();
   progress.markFirstOutput();
   progress.stop();
-
-  assert.equal(progress.isAnimated(), false);
-  assert.equal(errorWrites.join(''), '');
-});
-
-test('AIH_HEADLESS_SPINNER=0 关掉动画', () => {
-  const { processObj, errorWrites } = createProcessStub({ env: { [ANIMATION_ENV_KEY]: '0' } });
-  const progress = createHeadlessProgress({ processObj, label: 'Running claude' });
-
-  progress.start();
-  progress.markFirstOutput();
 
   assert.equal(progress.isAnimated(), false);
   assert.equal(errorWrites.join(''), '');

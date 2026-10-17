@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:05:09.457Z
-> 覆盖 `lib / bin / scripts / core`，共 **298** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:07:23.216Z
+> 覆盖 `lib / bin / scripts / core`，共 **290** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | path | 21 | 数据/目录/仓库路径 |
 | network | 49 | 端点 / 代理 / 端口 |
-| flag | 10 | 开关与逃生门（环境准入） |
+| flag | 6 | 开关与逃生门（环境准入） |
 | tuning | 48 | 可调参数（超时 / TTL / 上限） |
 | credential | 23 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 145 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 141 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -138,10 +138,6 @@
 | `AIH_GO_CORE_ENABLED` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/pty-runtime-run.js |
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | 1 | 0 | lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_SERVER_ALLOW_MULTI` | 1 | 0 | lib/server/server.js |
-| `AIH_SKIP_GO_CORE_INSTALL` | 1 | 0 | scripts/postinstall-go-core.js |
-| `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
-| `AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE` | 0 | 1 | lib/runtime/zcode-electron-captcha-hook.js |
 
 ## tuning（可调参数（超时 / TTL / 上限））
 
@@ -276,7 +272,6 @@
 | `AIH_SERVER_WINDOW_ACTIVATION` | 2 | 1 | lib/server/args.js<br>lib/server/server-config-schema.js |
 | `AIH_TERMINAL_PROVIDER_TITLE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_UTF8_LOCALE` | 2 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
-| `AIH_WEBUI_TMUX_RUNS` | 2 | 0 | lib/server/native-session-chat-command.js |
 | `AIH_WINDOWS_IMAGE_PASTE` | 2 | 0 | lib/cli/services/pty/local-clipboard.js |
 | `AIH_ZCODE_AGENT_ENTRY` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
@@ -343,8 +338,6 @@
 | `AIH_CODEX_REMOTE_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_CODEX_USAGE_BULK_JOBS` | 0 | 1 | lib/cli/services/usage/presenter.js |
 | `AIH_FABRIC_REAL_MARKER` | 0 | 1 | lib/cli/services/fabric/closure-plan.js |
-| `AIH_HEADLESS_DIRECT_SPAWN` | 0 | 1 | lib/cli/services/pty/headless-invocation.js |
-| `AIH_HEADLESS_SPINNER` | 0 | 1 | lib/cli/services/pty/headless-progress.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
@@ -353,7 +346,6 @@
 | `AIH_MOBILE_PWA_MESSAGE_OK` | 0 | 1 | scripts/fabric-real-mobile-pwa-session-smoke.js |
 | `AIH_MOBILE_PWA_START_OK` | 0 | 1 | scripts/fabric-real-mobile-pwa-session-smoke.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
-| `AIH_OPENCODE_ZEN_UA` | 0 | 1 | lib/server/opencode-zen-free-client.js |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_UTF8_RUNTIME` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_PROFILE_ID` | 0 | 1 | lib/cli/services/ai-cli/desktop-client-restart.js |

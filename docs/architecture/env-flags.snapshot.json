@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:05:09.457Z",
-  "total": 308,
+  "generatedAt": "2026-10-17T05:07:23.216Z",
+  "total": 300,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -16,7 +16,6 @@
   ],
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
-    "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE_ENV": "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE",
     "AIH_ZCODE_CAPTCHA_HOOK_MODULE_ENV": "AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH",
     "AIH_ZCODE_CAPTCHA_HOOK_STATE_ENV": "AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH",
     "AIH_ZCODE_SESSION_SCOPE_ENV": "AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE",
@@ -40,8 +39,7 @@
     "TARGET_ENV": "AIH_SESSION_TARGET",
     "ZCODE_AGENT_ENTRY_ENV": "AIH_ZCODE_AGENT_ENTRY",
     "ZCODE_AGENT_NODE_ENV": "AIH_ZCODE_AGENT_NODE",
-    "ZCODE_AGENT_RUNNER_ENV": "AIH_ZCODE_AGENT_RUNNER",
-    "ZEN_FREE_USER_AGENT_ENV": "AIH_OPENCODE_ZEN_UA"
+    "ZCODE_AGENT_RUNNER_ENV": "AIH_ZCODE_AGENT_RUNNER"
   },
   "entries": [
     {
@@ -1413,16 +1411,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_WEBUI_TMUX_RUNS",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/native-session-chat-command.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_WINDOWS_IMAGE_PASTE",
       "category": "plumbing",
       "reads": 2,
@@ -2186,16 +2174,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SERVER_ALLOW_MULTI",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/server.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SERVER_CODEX_CLI_HOOK",
       "category": "plumbing",
       "reads": 1,
@@ -2314,16 +2292,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/ai-cli/provider-skill-installer.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SKIP_GO_CORE_INSTALL",
-      "category": "flag",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "scripts/postinstall-go-core.js"
       ],
       "aliasConstants": []
     },
@@ -2736,26 +2704,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_HEADLESS_DIRECT_SPAWN",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/headless-invocation.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_HEADLESS_SPINNER",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/headless-progress.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_IMAGE_API",
       "category": "plumbing",
       "reads": 0,
@@ -2905,18 +2853,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_OPENCODE_ZEN_UA",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/opencode-zen-free-client.js"
-      ],
-      "aliasConstants": [
-        "ZEN_FREE_USER_AGENT_ENV"
-      ]
-    },
-    {
       "name": "AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME",
       "category": "plumbing",
       "reads": 0,
@@ -3063,16 +2999,6 @@
       "aliasConstants": [
         "BACKGROUND_RESTART_ENV"
       ]
-    },
-    {
-      "name": "AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART",
-      "category": "flag",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/server/source-auto-restart.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_SERVER_ELEVATED_RESTART",
@@ -3302,18 +3228,6 @@
         "scripts/fabric-m6-prerequisite-audit.js"
       ],
       "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE",
-      "category": "flag",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-electron-captcha-hook.js"
-      ],
-      "aliasConstants": [
-        "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE_ENV"
-      ]
     },
     {
       "name": "AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH",

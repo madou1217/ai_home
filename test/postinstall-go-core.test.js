@@ -77,7 +77,7 @@ test('a missing release or a network error leaves installation successful', asyn
   assert.equal(missing.action, 'unavailable');
   const offline = await prepareGoCore({ repositoryRoot, platform: 'linux', arch: 'x64', env: {}, spawnSync: noGo, fetchImpl: async () => { throw Object.assign(new Error('offline'), { code: 'ENOTFOUND' }); }, log: silentLog });
   assert.deepEqual(offline, { action: 'unavailable', reason: 'ENOTFOUND' });
-  const skipped = await prepareGoCore({ repositoryRoot, env: { AIH_SKIP_GO_CORE_INSTALL: '1' }, log: silentLog });
+  const skipped = await prepareGoCore({ repositoryRoot, skip: true, log: silentLog });
   assert.equal(skipped.action, 'skipped');
 });
 

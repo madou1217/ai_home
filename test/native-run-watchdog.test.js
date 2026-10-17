@@ -379,14 +379,14 @@ test('watchdog optionally breaks a stalled run after progress started', () => {
 
 test('native codex run breaks out of a retry storm with a distinct timeout code', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-watchdog-'));
-  const originalTmuxRuns = process.env.AIH_WEBUI_TMUX_RUNS;
+  const originalMultiplexer = process.env.AIH_MULTIPLEXER;
   t.after(() => {
-    if (originalTmuxRuns === undefined) delete process.env.AIH_WEBUI_TMUX_RUNS;
-    else process.env.AIH_WEBUI_TMUX_RUNS = originalTmuxRuns;
+    if (originalMultiplexer === undefined) delete process.env.AIH_MULTIPLEXER;
+    else process.env.AIH_MULTIPLEXER = originalMultiplexer;
     fs.rmSync(root, { recursive: true, force: true });
   });
   // tmux run 会把进程甩到 server 之外，单测里只验证看门狗本身，走 nodePty 分支。
-  process.env.AIH_WEBUI_TMUX_RUNS = '0';
+  process.env.AIH_MULTIPLEXER = 'off';
 
   const binDir = path.join(root, 'bin');
   const projectPath = path.join(root, 'project');

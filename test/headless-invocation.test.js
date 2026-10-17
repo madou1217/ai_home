@@ -3,10 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const {
-  DISABLE_ENV_KEY,
-  detectHeadlessInvocation
-} = require('../lib/cli/services/pty/headless-invocation');
+const { detectHeadlessInvocation } = require('../lib/cli/services/pty/headless-invocation');
 
 function detect(provider, args, options = {}) {
   return detectHeadlessInvocation(provider, args, { env: {}, ...options });
@@ -51,12 +48,8 @@ test('stream-json 输入才要求接通 stdin', () => {
   assert.equal(detect('claude', ['-p', '--input-format', 'text']).wantsStdin, false);
 });
 
-test('login 流程与 env 开关可以关掉 headless', () => {
+test('login 流程不会被当成 headless', () => {
   assert.equal(detect('claude', ['-p', 'hi'], { isLogin: true }).reason, 'login_flow');
-  assert.equal(
-    detect('claude', ['-p', 'hi'], { env: { [DISABLE_ENV_KEY]: '0' } }).reason,
-    'disabled_by_env'
-  );
 });
 
 test('未知 provider 与空参数安全回退', () => {

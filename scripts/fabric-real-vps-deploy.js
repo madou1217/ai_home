@@ -344,7 +344,7 @@ function buildRemoteStartCommand(options, remoteLog, remotePid) {
     `if ss -lntp 2>/dev/null | grep -q ${shQuote(`:${options.port}`)}; then echo ${shQuote(`port_${options.port}_still_in_use`)} >&2; ss -lntp 2>/dev/null | grep ${shQuote(`:${options.port}`)} >&2 || true; exit 91; fi`
   ].join('; ');
   const launch = [
-    `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1 AIH_SERVER_STRICT_PORT=1 nohup node bin/ai-home.js server serve --host 0.0.0.0 --port ${options.port} > ${shQuote(remoteLog)} 2>&1 & new_pid=$!`,
+    `AIH_SERVER_STRICT_PORT=1 nohup node bin/ai-home.js server serve --host 0.0.0.0 --port ${options.port} > ${shQuote(remoteLog)} 2>&1 & new_pid=$!`,
     `echo "$new_pid" > ${shQuote(remotePid)}`,
     'sleep 2',
     `if ! kill -0 "$new_pid" 2>/dev/null; then tail -80 ${shQuote(remoteLog)} || true; exit 92; fi`,

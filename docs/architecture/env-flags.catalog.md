@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:05:09.457Z
-> 共 **308** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:07:23.216Z
+> 共 **300** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -90,7 +90,7 @@
 | `AIH_WEBTRANSPORT_PAGE_URL` | — | 0 | WebTransport 探测页 URL |
 | `AIH_WEBTRANSPORT_URL` | — | 0 | fabric WebTransport 端点 |
 
-## flag（开关与逃生门（环境准入），11）
+## flag（开关与逃生门（环境准入），7）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -100,11 +100,7 @@
 | `AIH_GO_CORE_ENABLED` | — | 1 | 启用 Go Core 数据面（config 优先） |
 | `AIH_RUNTIME_ENABLE_USAGE_SCHEDULER` | — | 1 | 启用运行时用量调度（内部） |
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
-| `AIH_SERVER_ALLOW_MULTI` | — | 1 | 允许同端口多实例（测试或有意多开） |
-| `AIH_SKIP_GO_CORE_INSTALL` | — | 1 | 安装脚本跳过 Go Core 工件下载 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
-| `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART` | — | 0 | 关闭源码变更自动重启 |
-| `AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE` | — | 0 | 强制 zcode 验证码走交互模式 |
 
 ## tuning（可调参数（超时 / TTL / 上限），48）
 
@@ -196,7 +192,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），146）
+## plumbing（内部管道（进程间传递的身份 / 标记），142）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -241,7 +237,6 @@
 | `AIH_SERVER_WINDOW_ACTIVATION` | — | 2 | 窗口激活全局开关（config 优先） |
 | `AIH_TERMINAL_PROVIDER_TITLE` | — | 2 | 终端标题是否带 provider |
 | `AIH_UTF8_LOCALE` | — | 2 | 强制 UTF-8 locale（终端兼容） |
-| `AIH_WEBUI_TMUX_RUNS` | — | 2 | WebUI 原生运行是否走 tmux（逃生开关） |
 | `AIH_WINDOWS_IMAGE_PASTE` | — | 2 | Windows 图片粘贴开关 |
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
@@ -308,8 +303,6 @@
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |
 | `AIH_CODEX_USAGE_BULK_JOBS` | — | 0 | codex 批量用量并发任务数 |
 | `AIH_FABRIC_REAL_MARKER` | — | 0 | fabric 真机 smoke 的输出标记（不是环境变量） |
-| `AIH_HEADLESS_DIRECT_SPAWN` | — | 0 | headless 直接 spawn 的逃生开关 |
-| `AIH_HEADLESS_SPINNER` | — | 0 | headless 进度动画开关 |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | — | 0 | iTerm provider 图标自动 |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | — | 0 | Konsole provider 图标自动 |
@@ -317,9 +310,8 @@
 | `AIH_M5_RECOVERY_START_OK` | — | 0 | M5 恢复 smoke 开始标记（不是环境变量） |
 | `AIH_MOBILE_PWA_MESSAGE_OK` | — | 0 | PWA smoke 输出标记（不是环境变量） |
 | `AIH_MOBILE_PWA_START_OK` | — | 0 | PWA smoke 开始标记（不是环境变量） |
-| `AIH_MULTIPLEXER` | ✅ | 0 | 复用器选择 auto/tmux/herdr（公开） |
+| `AIH_MULTIPLEXER` | ✅ | 0 | 复用器选择 auto/tmux/herdr/off（公开；off = 关闭复用器直接跑） |
 | `AIH_OPENCODE_RUN_LAYOUT` | — | 0 | opencode run 布局逃生门（v1/v2） |
-| `AIH_OPENCODE_ZEN_UA` | — | 0 | opencode Zen 请求 UA 覆盖 |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | — | 0 | 持久会话 provider supervisor 运行时标记 |
 | `AIH_PERSIST_UTF8_RUNTIME` | — | 0 | 持久会话 UTF-8 runtime 标记 |
 | `AIH_PROFILE_ID` | — | 0 | 当前终端 profile id |

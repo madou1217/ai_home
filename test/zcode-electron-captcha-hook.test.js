@@ -50,7 +50,6 @@ test('zcode macOS 启动保留现有 NODE_OPTIONS，并清理不再需要的外�
 
   assert.equal(env.NODE_OPTIONS, '--trace-warnings');
   assert.equal(Object.hasOwn(env, 'AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH'), false);
-  assert.equal(env.AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE, '1');
   assert.equal(
     env[CAPTCHA_HOOK_STATE_ENV],
     '/sandbox/account/.aih-runtime/zcode-captcha-hook.json'
@@ -295,7 +294,6 @@ test('Electron 主进程在 dom-ready 注入 renderer hook，并仅落盘无凭�
       fs,
       path,
       processObject: {
-        env: { AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE: '1' },
         pid: 4242,
         type: 'browser',
         versions: { electron: '41.0.3' }

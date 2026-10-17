@@ -21,7 +21,7 @@
 
 ## 已实施修复
 
-- `lib/server/source-auto-restart.js`：默认不启用源码自动重启；仅 `AIH_SERVER_SOURCE_AUTO_RESTART=1` 显式开启开发自动重载。原 `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART=1` 保持最高优先级。
+- `lib/server/source-auto-restart.js`：默认不启用源码自动重启；仅 `AIH_SERVER_RESTART=sourceAuto=1` 显式开启开发自动重载（2026-10-17 已把 `AIH_SERVER_SOURCE_AUTO_RESTART` 合入该上下文变量）。原 `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART` 已随本次合并移除（`sourceAuto` 非 `1` 即关闭）。
 - 关闭自动重启时，`checkOnce()` 仍返回 `stale: true`，不覆盖启动指纹、不启动重启子进程。`aih server status` 继续显示新源码尚未加载。
 - `lib/cli/services/pty/pty-runtime-launch.js`：复用同一策略判断，CLI 默认使用 ready 的服务，不因源码 stale 打断其他客户端。服务未运行时的正常自动启动保持原行为。
 - README 和功能矩阵更新相应语义。需要应用新的业务代码时，在会话空闲后显式执行 `aih server restart`；本修复没有引入零停机部署机制，显式重启仍可能中断连接。

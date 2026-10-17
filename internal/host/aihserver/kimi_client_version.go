@@ -1,10 +1,8 @@
 package aihserver
 
 import (
-	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 )
@@ -45,10 +43,7 @@ func kimiClientVersion() string {
 //
 // 失败（没装、超时、输出认不出）返回兜底常量：「这台机器没装 CLI」是正常情况。
 func detectKimiClientVersion() string {
-	command := strings.TrimSpace(os.Getenv("AIH_KIMI_BIN"))
-	if command == "" {
-		command = "kimi"
-	}
+	command := "kimi"
 	output, err := exec.Command(command, "--version").Output()
 	if err != nil {
 		return kimiClientVersionFallback

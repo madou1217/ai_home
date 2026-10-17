@@ -372,7 +372,7 @@ node --test test/go-route-ownership-manifest.test.js
 | SRV-016 | Server profile 列表/选择/删除 | `ls/use/remove`、Web | secret 不回显；切换 active profile 改变 Web 请求目标 | 稳定 | `control-plane-profiles`、`active-control-plane` |
 | SRV-017 | LAN/mDNS Server 发现 | — | 仅由已删除的桌面客户端使用；Server 端 mDNS 广播与 LAN route proof 已一并删除，Server identity 由 `server-identity.js` 直接加载 | 废弃 | — |
 | SRV-018 | LAN profile 授权与 route refresh | — | 仅由已删除的桌面客户端实现，随之移除 | 废弃 | — |
-| SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale；默认由用户显式重启，仅 `AIH_SERVER_SOURCE_AUTO_RESTART=1` 允许开发自动重启；CLI 复用 ready 服务 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
+| SRV-019 | Source stale 检测/自动重启辅助 | status/background | source fingerprint 变化标为 stale；默认由用户显式重启，仅 `AIH_SERVER_RESTART=sourceAuto=1` 允许开发自动重启；CLI 复用 ready 服务 | 内部/受限 | `source-fingerprint.js`、`source-auto-restart.js` |
 | SRV-020 | 自更新检查 | `aih update --check` | 检查 npm/source install 更新，不改代码 | 稳定 | `lib/cli/services/update/self-update.js` |
 | SRV-021 | Dry-run/强制更新 | `aih update --dry-run\|--force` | npm 安装可自动更新；source-linked 安装只给安全的手工提示 | 稳定/受限 | `self-update.js` |
 | SRV-022 | Management status/metrics/accounts | `/v0/management/*`、Web proxy | 状态、指标、账号、模型和 usage 只读视图 | 稳定 | `management-router.js` |
@@ -623,7 +623,7 @@ Tauri 桌面客户端（含托盘、系统 Keyring、原生 HTTP/SSE/blob 传输
 | OPS-017 | Postinstall | 修复权限/hooks/本地可执行项 | 内部 | `scripts/postinstall.js` |
 | OPS-018 | models.dev SDK 快照 | 模型元数据（modalities、上下文窗口、定价）来自 `@opencode-ai/models` npm 依赖内置的离线快照，package.json 钉精确版本；升级依赖后 `npm run models:generate` 重新派生 Go 模态索引，`npm run models:check` 离线校验一致。运行时完全离线，不存在抓取上游的定时任务 | 运维/稳定 | `scripts/gen-models-dev-modalities.js`、`internal/tools/modelsdevmodalities` |
 | OPS-019 | OAuth 身份迁移计划与恢复验证 | 显式计划摘要确认、独占锁、备份与提交标记保护 apply/recover/rollback；原生 Codex SQLite 指针作为补偿事务参与者，未知引用仍拒绝。完整真实数据副本已通过迁移及回滚；2026-09-18 生产 4 个身份迁移、3 条原生路径读回、服务恢复通过，剩余迁移 0 | 高级/受控维护 | `scripts/oauth-identity-maintenance.js`、`docs/architecture/account-identity-production-acceptance-2026-09-18.md` |
-| OPS-020 | 真实数据只读快照与隔离副本演练 | 内部快照/复制适配器；原库由 OS 禁写，副本评估禁止回读原库。已核对 29 个账号、4 条身份映射；实际 32 个阻塞保留，副本执行被安全拒绝、DB/文件不变；不等于真实迁移或回滚已成功 | 内部验证/仍有真实数据阻塞 | `docs/architecture/account-maintenance-real-data-rehearsal.md`、`test/rekey-rehearsal-snapshot.test.js` |
+| OPS-020 | 真实数据只读快照与隔离副本演练 | 内部快照/复制适配器；原库由 OS 禁写，副本评估禁止回读原库。已核对 29 个账号、4 条身份映射；实际 32 个阻塞保留，副本执行被安全拒绝、DB/文件不变；不等于真实迁移或回滚已成功 | 内部验证/历史演练（已由 OPS-019 生产验收收官） | `test/rekey-rehearsal-snapshot.test.js` |
 
 ## 13. 兼容、废弃与未公开能力清单
 

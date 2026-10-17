@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:50:23.920Z
-> 共 **163** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:53:57.124Z
+> 共 **162** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -29,7 +29,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，29）
+## network（端点 / 代理 / 端口，28）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -44,7 +44,6 @@
 | `AIH_RELAY_LISTEN_HOST` | — | 3 | 中转入口绑定网卡（config 优先） |
 | `AIH_RELAY_PORT_MODE` | — | 3 | 中转端口布局 server/dedicated（config 优先） |
 | `AIH_REMOTE_SSH` | — | 3 | 远程主机 SSH 目标（远程 node/relay 操作） |
-| `AIH_APPROVAL_URL` | — | 2 | 审批回调地址（MCP/HTTP 审批通道） |
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
 | `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_FABRIC_ENDPOINT` | — | 2 | fabric 服务端地址 |
@@ -129,7 +128,6 @@
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | — | 2 | 插件随父进程退出 |
 | `AIH_PLUGIN_SOCKET` | — | 2 | 插件 RPC socket 路径 |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
-| `AIH_RUN_ID` | — | 2 | 当前运行 id（WebUI chat/work 轮次关联） |
 | `AIH_TERMINAL_PROVIDER_TITLE` | — | 2 | 终端标题是否带 provider |
 | `AIH_ZCODE_AGENT_ENTRY` | — | 2 | zcode agent 入口脚本 |
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
@@ -180,6 +178,7 @@
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | — | 0 | iTerm provider 图标自动 |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | — | 0 | Konsole provider 图标自动 |
+| `AIH_LAUNCH_CONTEXT` | — | 0 | 单文件启动上下文：父进程写 0600 JSON，子进程只收文件路径（取代一批零散 AIH_* 上下文字段） |
 | `AIH_MULTIPLEXER` | ✅ | 0 | 复用器选择 auto/tmux/herdr/off（公开；off = 关闭复用器直接跑） |
 | `AIH_OPENCODE_RUN_LAYOUT` | — | 0 | opencode run 布局逃生门（v1/v2） |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | — | 0 | 持久会话 provider supervisor 运行时标记 |

@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:50:23.920Z
-> 覆盖 `lib / bin / scripts / core`，共 **153** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:53:57.124Z
+> 覆盖 `lib / bin / scripts / core`，共 **152** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -9,7 +9,7 @@
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
 | path | 18 | 数据/目录/仓库路径 |
-| network | 25 | 端点 / 代理 / 端口 |
+| network | 24 | 端点 / 代理 / 端口 |
 | flag | 5 | 开关与逃生门（环境准入） |
 | tuning | 1 | 可调参数（超时 / TTL / 上限） |
 | credential | 18 | 凭据与密钥（文档只写变量名，绝不放真实值） |
@@ -82,7 +82,6 @@
 | `AIH_RELAY_LISTEN_HOST` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/kernel-sidecar.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
 | `AIH_RELAY_PORT_MODE` | 3 | 1 | lib/cli/services/toolkit/subscription-aggregator/relay/local-relay.js<br>lib/server/command-handler.js<br>lib/server/server-config-schema.js |
 | `AIH_REMOTE_SSH` | 3 | 0 | lib/cli/commands/ai-cli/router.js<br>lib/cli/services/pty/pty-runtime-spawn.js |
-| `AIH_APPROVAL_URL` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_REMOTE_PROXY` | 2 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/server/codex-app-server-proxy.js |
 | `AIH_FABRIC_ENDPOINT` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
@@ -164,7 +163,6 @@
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PLUGIN_SOCKET` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
-| `AIH_RUN_ID` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_TERMINAL_PROVIDER_TITLE` | 2 | 0 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_AGENT_ENTRY` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
@@ -215,6 +213,7 @@
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
+| `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
 | `AIH_PERSIST_PROVIDER_SUPERVISOR_RUNTIME` | 0 | 2 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_UTF8_RUNTIME` | 0 | 1 | lib/runtime/persistent-session.js |

@@ -31,10 +31,11 @@ test('审批模式归一与 claude 参数映射', () => {
   assert.ok(!planArgs.includes('--mcp-config'), '无 config 时不带 --mcp-config');
 
   const config = JSON.parse(buildClaudeApprovalMcpConfig({
-    toolPath: '/x/tool.js', approvalUrl: 'http://127.0.0.1:9527/a', runId: 'r1', nodePath: '/usr/bin/node'
+    toolPath: '/x/tool.js', launchContextPath: '/tmp/ctx.json', nodePath: '/usr/bin/node'
   }));
   assert.equal(config.mcpServers.aih.command, '/usr/bin/node');
-  assert.equal(config.mcpServers.aih.env.AIH_RUN_ID, 'r1');
+  assert.equal(config.mcpServers.aih.env.AIH_LAUNCH_CONTEXT, '/tmp/ctx.json');
+  assert.equal(Object.hasOwn(config.mcpServers.aih.env, 'AIH_RUN_ID'), false);
 });
 
 test('grok approval args map canonical modes to native permission modes', () => {

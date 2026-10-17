@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:50:23.920Z",
-  "total": 163,
+  "generatedAt": "2026-10-17T05:53:57.124Z",
+  "total": 162,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -29,6 +29,7 @@
     "DETACHED_ENV": "AIH_PERSIST_DETACHED",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "ELEVATED_RESTART_ENV": "AIH_SERVER_ELEVATED_RESTART",
+    "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MARKER_ENV": "AIH_PERSIST_ACTIVE",
     "MIRROR_ENV": "AIH_SESSION_MIRROR",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
@@ -371,16 +372,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_APPROVAL_URL",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/claude-permission-mcp-tool.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_BENCH_KEY",
       "category": "credential",
       "reads": 2,
@@ -625,16 +616,6 @@
       "files": [
         "lib/cli/services/ai-cli/persistent-session-list.js",
         "lib/cli/services/pty/persistent-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUN_ID",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/claude-permission-mcp-tool.js"
       ],
       "aliasConstants": []
     },
@@ -1590,6 +1571,18 @@
         "lib/cli/services/terminal-icons.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_LAUNCH_CONTEXT",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/runtime/launch-context.js"
+      ],
+      "aliasConstants": [
+        "LAUNCH_CONTEXT_ENV"
+      ]
     },
     {
       "name": "AIH_MULTIPLEXER",

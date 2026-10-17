@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:57:07.824Z
-> 共 **329** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:03:43.376Z
+> 共 **318** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -32,7 +32,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，55）
+## network（端点 / 代理 / 端口，53）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -51,6 +51,7 @@
 | `AIH_SERVER_CODEX_BASE_URL` | — | 3 | serve 的 codex 上游 base URL（--codex-base-url 的 env 形态） |
 | `AIH_APPROVAL_URL` | — | 2 | 审批回调地址（MCP/HTTP 审批通道） |
 | `AIH_CLAUDE_API_BASE_URL` | — | 2 | claude API base URL 覆盖 |
+| `AIH_CODEX_REMOTE_PROXY` | — | 2 | codex 远程代理开关（=1 开，其它关） |
 | `AIH_FABRIC_ENDPOINT` | — | 2 | fabric 服务端地址 |
 | `AIH_PLUGIN_HOST_VERSION` | — | 2 | 插件宿主协议版本（兼容判断） |
 | `AIH_SERVER_AGY_BASE_URL` | — | 2 | serve 的 agy 上游 base URL（--agy-base-url 的 env 形态） |
@@ -66,9 +67,6 @@
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 2 | 终端剪贴板经 tmux 透传 |
 | `AIH_CLIP_AGENT_HOST` | — | 1 | 剪贴板 agent 监听地址 |
 | `AIH_CLIP_AGENT_PORT` | — | 1 | 剪贴板 agent 监听端口 |
-| `AIH_CODEX_DISABLE_REMOTE_PROXY` | — | 1 | codex 远程代理的历史反向写法（=1 关） |
-| `AIH_CODEX_ENABLE_REMOTE_PROXY` | — | 1 | codex 远程代理的历史写法（=1 开） |
-| `AIH_CODEX_REMOTE_PROXY` | — | 1 | codex 远程代理主开关 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_DEPLOY_SSH` | — | 1 | 部署脚本默认 SSH 目标 |
 | `AIH_EDGE_AIH_PORT` | — | 1 | ⚠ 边缘代理回源到 AIH 的端口（待确认） |
@@ -115,7 +113,7 @@
 | `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART` | — | 0 | 关闭源码变更自动重启 |
 | `AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE` | — | 0 | 强制 zcode 验证码走交互模式 |
 
-## tuning（可调参数（超时 / TTL / 上限），51）
+## tuning（可调参数（超时 / TTL / 上限），48）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -125,6 +123,7 @@
 | `AIH_AGY_WARM_TTL_MS` | — | 2 | agy 暖机会话空闲回收 TTL |
 | `AIH_APPROVAL_TIMEOUT_MS` | — | 2 | 等待用户审批的上限 |
 | `AIH_CLAUDE_USAGE_TIMEOUT_MS` | — | 2 | claude 用量接口超时 |
+| `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | — | 2 | codex 用量 HTTP 超时 |
 | `AIH_SERVER_AGY_MAX_CONCURRENCY` | — | 2 | agy 并发上限（--agy-max-concurrency） |
 | `AIH_SERVER_CLAUDE_MAX_CONCURRENCY` | — | 2 | claude 并发上限（--claude-max-concurrency） |
 | `AIH_SERVER_CODEX_CLI_HOOK_SELF_HEAL_INTERVAL_MS` | — | 2 | codex CLI hook 自愈检查间隔 |
@@ -151,16 +150,12 @@
 | `AIH_SERVER_WINDOW_ACTIVATION_TICK_INTERVAL_MS` | — | 2 | 窗口激活调度 tick |
 | `AIH_AGY_USAGE_REFRESH_TTL_MS` | — | 1 | agy 用量快照缓存 TTL |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
-| `AIH_CLIP_AGENT_MAX_BYTES` | — | 1 | 剪贴板 agent 单次传输上限 |
-| `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | — | 1 | codex 用量 HTTP 超时 |
 | `AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS` | — | 1 | codex 用量慢速重试超时 |
-| `AIH_CODEX_USAGE_TIMEOUT_MS` | — | 1 | codex 用量读取超时 |
 | `AIH_NATIVE_RUN_RETENTION_MS` | — | 1 | 原生运行记录保留时长（新名） |
 | `AIH_RUNTIME_THRESHOLD_CHECK_MS` | — | 1 | 运行时阈值检查间隔 |
 | `AIH_RUNTIME_USAGE_DISPLAY_INTERVAL_MS` | — | 1 | 状态栏用量刷新显示间隔 |
 | `AIH_RUNTIME_USAGE_REFRESH_MIN_MS` | — | 1 | 状态栏用量最小刷新间隔 |
 | `AIH_RUNTIME_USAGE_STALE_MS` | — | 1 | 用量数据过期阈值 |
-| `AIH_SESSION_RUN_RETENTION_MS` | — | 1 | 原生运行记录保留时长（旧名） |
 | `AIH_CODEX_RATE_LIMIT_JSON_END` | — | 0 | 额度脚本输出包裹标记（不是配置） |
 | `AIH_CODEX_RATE_LIMIT_JSON_START` | — | 0 | 额度脚本输出包裹标记（不是配置） |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | — | 0 | 原生运行首字节超时（看门狗） |
@@ -171,12 +166,11 @@
 | `AIH_USAGE_BULK_PROBE_TIMEOUT_MS` | — | 0 | 批量用量扫描单账号探测超时 |
 | `AIH_USAGE_SCAN_DEADLINE_MS` | — | 0 | 批量用量扫描整体截止时间 |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），27）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），25）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_MANAGEMENT_KEY` | — | 11 | 管理 key 的脚本/smoke 用名（server 实际读取 AIH_SERVER_MANAGEMENT_KEY） |
-| `AIH_SERVER_MANAGEMENT_KEY` | ✅ | 11 | 管理面 key（公开；config 优先；空 = 管理面关闭） |
+| `AIH_SERVER_MANAGEMENT_KEY` | ✅ | 22 | 管理面 key（公开；config 优先；空 = 管理面关闭） |
 | `AIH_PLUGIN_TOKEN` | — | 4 | 插件 RPC 鉴权 token（宿主生成并注入插件） |
 | `AIH_BENCH_KEY` | — | 2 | 基准/压测脚本使用的 key |
 | `AIH_CLAUDE_OAUTH_TOKEN` | — | 2 | 注入 claude CLI 的 OAuth token（沙箱运行） |
@@ -185,8 +179,7 @@
 | `AIH_CODEX_TOKEN_URL` | — | 2 | codex OAuth token 端点覆盖 |
 | `AIH_GEMINI_OAUTH_TOKEN` | — | 2 | 注入 gemini CLI 的 OAuth token |
 | `AIH_PLUGIN_TOKEN_FROM_STDIN` | — | 2 | 让插件从 stdin 读取 token（避免出现在 argv） |
-| `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；config 优先） |
-| `AIH_SERVER_CLIENT_KEY` | — | 2 | 客户端 key 的旧名（读取顺序在 AIH_SERVER_API_KEY 之后） |
+| `AIH_SERVER_API_KEY` | ✅ | 2 | 客户端 key（公开；含 Go Core；config 优先） |
 | `AIH_SHADOW_GO_KEY` | — | 2 | gateway shadow 对比时 Go 端口令（只读环境，不落盘） |
 | `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | — | 1 | 账号冒烟测试使用的一次性 key |
@@ -210,7 +203,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），153）
+## plumbing（内部管道（进程间传递的身份 / 标记），149）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -219,7 +212,6 @@
 | `AIH_PROVIDER_ACCOUNT_REF` | — | 4 | 当前运行账号的 accountRef（沙箱注入） |
 | `AIH_RELAY_UDP` | — | 4 | 中转 UDP 开关（config 会写 0/1） |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | — | 3 | code-assist 客户端版本（伪装头） |
-| `AIH_ANTIGRAVITY_VERSION` | — | 3 | Antigravity 版本覆盖 |
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_SERVER_CODEX_CLIENT_VERSION` | — | 3 | codex 客户端版本请求头 |
 | `AIH_AGY_CODE_ASSIST_CHROME_VERSION` | — | 2 | code-assist Chrome UA 版本 |
@@ -227,7 +219,6 @@
 | `AIH_AGY_CODE_ASSIST_MACHINE_ID` | — | 2 | code-assist machine id 请求头 |
 | `AIH_AGY_CODE_ASSIST_USER_AGENT` | — | 2 | code-assist UA 覆盖 |
 | `AIH_CODEX_DESKTOP_ACCOUNT_REF` | — | 2 | codex 桌面会话使用的账号 |
-| `AIH_CODEX_STOP_NOTIFY_HOOK` | — | 2 | codex stop hook 通知开关（旧名） |
 | `AIH_FABRIC_NODE_ID` | — | 2 | fabric 节点 id |
 | `AIH_FFMPEG` | — | 2 | ffmpeg 路径 |
 | `AIH_GEMINI_CLI_CLIENT_NAME` | — | 2 | gemini CLI 客户端名（请求头） |
@@ -268,7 +259,6 @@
 | `AIH_CJK_LOCALE` | — | 1 | CJK locale 判定开关 |
 | `AIH_CLAUDE_DIAGNOSTIC_STDOUT` | — | 1 | 诊断输出到 stdout |
 | `AIH_CLAUDE_DIAGNOSTIC_VERBOSE` | — | 1 | 诊断详细模式 |
-| `AIH_CODEX_CLIENT_VERSION` | — | 1 | codex 客户端版本（旧名） |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_CODEX_USAGE_BULK_APP_SERVER_FALLBACK` | — | 1 | 批量用量回退到 app-server 读取 |
 | `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（跳过 CLI） |
@@ -328,7 +318,6 @@
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |
 | `AIH_CODEX_USAGE_BULK_JOBS` | — | 0 | codex 批量用量并发任务数 |
 | `AIH_FABRIC_REAL_MARKER` | — | 0 | fabric 真机 smoke 的输出标记（不是环境变量） |
-| `AIH_FRPC_CONFIG` | — | 0 | frpc 配置路径（探测/旧名） |
 | `AIH_HEADLESS_DIRECT_SPAWN` | — | 0 | headless 直接 spawn 的逃生开关 |
 | `AIH_HEADLESS_SPINNER` | — | 0 | headless 进度动画开关 |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |

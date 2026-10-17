@@ -42,7 +42,7 @@ Options:
   -h, --help              Show this help.
 
 Authentication:
-  Set AIH_MANAGEMENT_KEY in the environment. The key is sent only in the
+  Set AIH_SERVER_MANAGEMENT_KEY in the environment. The key is sent only in the
   Authorization header and is never written to the diagnostics report.
 
 This smoke opens two real Chromium pages, creates one real Fabric WebRTC
@@ -169,7 +169,7 @@ function parseArgs(argv = [], env = process.env) {
     peerRole: '',
     peerId: '',
     headed: false,
-    managementKey: String((env && env.AIH_MANAGEMENT_KEY) || '').trim()
+    managementKey: String((env && env.AIH_SERVER_MANAGEMENT_KEY) || '').trim()
   };
 
   for (let index = 0; index < argv.length;) {

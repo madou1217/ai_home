@@ -41,7 +41,7 @@ test('mobile pwa smoke parseArgs accepts AWS default-port session options', () =
     '--session-timeout-ms',
     '60000',
     '--headed'
-  ], { AIH_MANAGEMENT_KEY: 'env-management-key' });
+  ], { AIH_SERVER_MANAGEMENT_KEY: 'env-management-key' });
 
   assert.equal(options.endpoint, 'http://control.example.com:9527');
   assert.equal(options.clientEndpoint, 'http://control.example.com:9527');

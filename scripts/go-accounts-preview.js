@@ -95,7 +95,7 @@ function createPreviewInvocation(mode, argumentsList = [], dependencies = {}) {
     ...inheritedEnvironment,
     AIH_HOME_DIR: previewHome,
     AIH_SERVER_BASE_URL: `http://127.0.0.1:${PREVIEW_SERVER_PORT}`,
-    AIH_SERVER_CLIENT_KEY: PREVIEW_CLIENT_KEY,
+    AIH_SERVER_API_KEY: PREVIEW_CLIENT_KEY,
     AIH_SERVER_MANAGEMENT_KEY: PREVIEW_MANAGEMENT_KEY,
   };
 

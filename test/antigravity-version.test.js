@@ -23,7 +23,7 @@ test('detectAntigravityClientVersion prefers explicit env override', () => {
   resetAntigravityClientVersionCacheForTest();
   assert.equal(detectAntigravityClientVersion({
     env: {
-      AIH_ANTIGRAVITY_VERSION: 'Antigravity/2.1.3'
+      AIH_AGY_CODE_ASSIST_CLIENT_VERSION: 'Antigravity/2.1.3'
     },
     noCache: true
   }), '2.1.3');

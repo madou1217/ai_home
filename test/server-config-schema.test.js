@@ -107,7 +107,7 @@ test('list --json is machine readable and never carries secret values', () => {
   const apiKey = parsed.fields.find((field) => field.key === 'apiKey');
   assert.equal(apiKey.secret, true);
   assert.equal(apiKey.current, 'configured');
-  assert.deepEqual(apiKey.env, ['AIH_SERVER_API_KEY', 'AIH_SERVER_CLIENT_KEY']);
+  assert.deepEqual(apiKey.env, ['AIH_SERVER_API_KEY']);
   assert.equal(parsed.fields.find((field) => field.key === 'relayUdp').current, 'off');
   assert.equal(parsed.fields.find((field) => field.key === 'port').current, 9600);
 

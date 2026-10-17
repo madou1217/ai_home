@@ -261,7 +261,7 @@ test('background supervisor runs every component in one process and forwards shu
   const processObj = new EventEmitter();
   processObj.env = {
     PATH: '/usr/local/bin:/usr/bin',
-    AIH_MANAGEMENT_KEY: 'must-not-be-shared-between-nodes'
+    AIH_SERVER_MANAGEMENT_KEY: 'must-not-be-shared-between-nodes'
   };
   processObj.execPath = '/usr/local/bin/node';
   processObj.argv = ['/usr/local/bin/node', '/opt/homebrew/bin/aih', '__background', 'run'];
@@ -342,7 +342,7 @@ test('background supervisor runs every component in one process and forwards shu
     '--node-id',
     'nat-node'
   ]);
-  assert.equal(calls.find((call) => call.kind === 'registry').env.AIH_MANAGEMENT_KEY, undefined);
+  assert.equal(calls.find((call) => call.kind === 'registry').env.AIH_SERVER_MANAGEMENT_KEY, undefined);
   assert.equal(calls.every((call) => call.processObj === processObj), true);
 
   processObj.emit('SIGTERM');

@@ -81,7 +81,7 @@ func loadCommandConfig(
 		return commandConfig{}, err
 	}
 	managementKey, _ := runtime.lookupEnv("AIH_SERVER_MANAGEMENT_KEY")
-	clientKey, _ := runtime.lookupEnv("AIH_SERVER_CLIENT_KEY")
+	clientKey, _ := runtime.lookupEnv("AIH_SERVER_API_KEY")
 	if err := aihserver.ValidateServerKeys(managementKey, clientKey); err != nil {
 		return commandConfig{}, err
 	}
@@ -207,7 +207,7 @@ func writeUsage(output io.Writer, flags *flag.FlagSet) {
 	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_HOST")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_PORT")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（必填，不接受命令行传入）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_API_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（必填，不接受命令行传入）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CREDENTIAL_REFRESH（self|delegated，默认 self）")
 }

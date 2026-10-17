@@ -37,7 +37,7 @@ test('resolveCompletedRunRetentionMs keeps completed run history long enough for
   assert.equal(DEFAULT_COMPLETED_RUN_RETENTION_MS, 30 * 60 * 1000);
   assert.equal(resolveCompletedRunRetentionMs({}), DEFAULT_COMPLETED_RUN_RETENTION_MS);
   assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '120000' }), 120000);
-  assert.equal(resolveCompletedRunRetentionMs({ AIH_SESSION_RUN_RETENTION_MS: '240000' }), 240000);
+  assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '240000' }), 240000);
   assert.equal(resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: '100' }), 60 * 1000);
   assert.equal(
     resolveCompletedRunRetentionMs({ AIH_NATIVE_RUN_RETENTION_MS: String(48 * 60 * 60 * 1000) }),

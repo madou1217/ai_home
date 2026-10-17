@@ -32,7 +32,7 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 		map[string]string{
 			"AIH_HOME_DIR":                  aiHomeDir,
 			"AIH_SERVER_MANAGEMENT_KEY": managementKey,
-			"AIH_SERVER_CLIENT_KEY":     clientKey,
+			"AIH_SERVER_API_KEY":     clientKey,
 		},
 		t.TempDir(),
 	)

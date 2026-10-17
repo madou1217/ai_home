@@ -20,14 +20,14 @@ function showHelp() {
   console.log(`AIH Fabric real broker diagnostics smoke
 
 Usage:
-  AIH_MANAGEMENT_KEY=<key> node scripts/fabric-real-broker-diagnostics-smoke.js [options]
+  AIH_SERVER_MANAGEMENT_KEY=<key> node scripts/fabric-real-broker-diagnostics-smoke.js [options]
 
 Options:
   --endpoint <url>      Running AIH server/broker endpoint, default ${DEFAULT_ENDPOINT}.
   --server-id <id>      Broker server id, default ${DEFAULT_SERVER_ID}.
   --local-url <url>     Local AIH server URL reached by broker connector, default endpoint.
   --management-key <key>
-                        Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+                        Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --management-key-file <path>
                         Read the Server Management Key from a local file.
   --timeout-ms <n>      Request/connect timeout, default ${DEFAULT_TIMEOUT_MS}.

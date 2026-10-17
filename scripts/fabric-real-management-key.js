@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 
 function managementKeyFromEnv(env = process.env) {
-  return String(env.AIH_MANAGEMENT_KEY || '').trim();
+  return String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
 }
 
 function readManagementKey(options = {}, deps = {}) {
@@ -15,7 +15,7 @@ function readManagementKey(options = {}, deps = {}) {
   const inline = String(options.managementKey || '').trim();
   if (inline) return inline;
   throw new Error(
-    'missing Management Key: set AIH_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
+    'missing Management Key: set AIH_SERVER_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
   );
 }
 

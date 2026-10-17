@@ -501,7 +501,7 @@ function buildRemoteRegistryPublishCommand(options) {
     "const managementKey=String(readServerConfig({fs,aiHomeDir}).managementKey||'').trim()",
     "if(!storedManagementKey){console.log(JSON.stringify({ok:false,error:'management_key_missing'}));process.exit(2)}",
     "if(!managementKey){console.log(JSON.stringify({ok:false,error:'management_key_missing'}));process.exit(2)}",
-    "const env={...process.env,AIH_MANAGEMENT_KEY:storedManagementKey||managementKey}",
+    "const env={...process.env,AIH_SERVER_MANAGEMENT_KEY:storedManagementKey||managementKey}",
     "const args=['bin/ai-home.js','fabric','registry','publish',endpoint,'--from-server','--node-id',nodeId,'--relay-node','--transport','relay','--transport','webrtc=webrtc://'+nodeId,'--json']",
     "const result=spawnSync(process.execPath,args,{cwd:process.cwd(),env,encoding:'utf8'})",
     "if(result.stderr)process.stderr.write(result.stderr)",

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T04:57:07.824Z",
-  "total": 329,
+  "generatedAt": "2026-10-17T05:03:43.376Z",
+  "total": 318,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -74,6 +74,31 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_SERVER_MANAGEMENT_KEY",
+      "category": "credential",
+      "reads": 22,
+      "literals": 2,
+      "files": [
+        "lib/cli/bootstrap/runtime-support-wiring.js",
+        "lib/cli/services/background/supervisor-runtime.js",
+        "lib/cli/services/fabric/broker-connect.js",
+        "lib/cli/services/fabric/transport-echo.js",
+        "lib/config/public-env.js",
+        "lib/plugins/control/cli.js",
+        "lib/server/args.js",
+        "lib/server/server-config-schema.js",
+        "scripts/cleanup-official-account-error-rules.js",
+        "scripts/fabric-real-management-key.js",
+        "scripts/fabric-real-mobile-pwa-session-smoke.js",
+        "scripts/fabric-real-outbound-relay-smoke.js",
+        "scripts/fabric-real-server-profile-switch-smoke.js",
+        "scripts/fabric-real-session-recovery-smoke.js",
+        "scripts/fabric-real-vps-registry-publish.js",
+        "scripts/fabric-real-webrtc-datachannel-smoke.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_SERVER_PROXY_URL",
       "category": "network",
       "reads": 18,
@@ -127,41 +152,6 @@
         "lib/server/webui-zcode-egress-routes.js",
         "scripts/collect-env-flags.js",
         "scripts/gateway-account-auth-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_MANAGEMENT_KEY",
-      "category": "credential",
-      "reads": 11,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/background/supervisor-runtime.js",
-        "lib/cli/services/fabric/broker-connect.js",
-        "lib/cli/services/fabric/transport-echo.js",
-        "scripts/fabric-real-management-key.js",
-        "scripts/fabric-real-mobile-pwa-session-smoke.js",
-        "scripts/fabric-real-outbound-relay-smoke.js",
-        "scripts/fabric-real-server-profile-switch-smoke.js",
-        "scripts/fabric-real-session-recovery-smoke.js",
-        "scripts/fabric-real-vps-registry-publish.js",
-        "scripts/fabric-real-webrtc-datachannel-smoke.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_MANAGEMENT_KEY",
-      "category": "credential",
-      "reads": 11,
-      "literals": 4,
-      "files": [
-        "lib/cli/bootstrap/runtime-support-wiring.js",
-        "lib/config/public-env.js",
-        "lib/plugins/control/cli.js",
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js",
-        "scripts/cleanup-official-account-error-rules.js",
-        "scripts/collect-env-flags.js"
       ],
       "aliasConstants": []
     },
@@ -348,17 +338,6 @@
       "files": [
         "lib/cli/services/usage/snapshot.js",
         "lib/server/agy-usage-snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_ANTIGRAVITY_VERSION",
-      "category": "plumbing",
-      "reads": 3,
-      "literals": 0,
-      "files": [
-        "lib/server/antigravity-version.js",
-        "lib/server/http-utils-code-assist.js"
       ],
       "aliasConstants": []
     },
@@ -636,23 +615,23 @@
       "aliasConstants": []
     },
     {
+      "name": "AIH_CODEX_REMOTE_PROXY",
+      "category": "network",
+      "reads": 2,
+      "literals": 1,
+      "files": [
+        "lib/cli/services/pty/pty-runtime-launch.js",
+        "lib/server/codex-app-server-proxy.js"
+      ],
+      "aliasConstants": []
+    },
+    {
       "name": "AIH_CODEX_SQLITE_HOME",
       "category": "path",
       "reads": 2,
       "literals": 0,
       "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_STOP_NOTIFY_HOOK",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/account/host-sync.js",
-        "lib/server/codex-project-registry.js"
       ],
       "aliasConstants": []
     },
@@ -674,6 +653,16 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
+        "lib/cli/services/usage/usage-snapshot-codex.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_CODEX_USAGE_HTTP_TIMEOUT_MS",
+      "category": "tuning",
+      "reads": 2,
+      "literals": 0,
+      "files": [
         "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
       "aliasConstants": []
@@ -968,17 +957,6 @@
       "literals": 0,
       "files": [
         "lib/server/args.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_SERVER_CLIENT_KEY",
-      "category": "credential",
-      "reads": 2,
-      "literals": 2,
-      "files": [
-        "lib/server/args.js",
-        "lib/server/server-config-schema.js"
       ],
       "aliasConstants": []
     },
@@ -1708,16 +1686,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CLIP_AGENT_MAX_BYTES",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ssh-clipboard/clip-agent.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLIP_AGENT_PORT",
       "category": "network",
       "reads": 1,
@@ -1749,52 +1717,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_CLIENT_VERSION",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/codex-client-version.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_DISABLE_REMOTE_PROXY",
-      "category": "network",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_DISABLE_REMOTE_RESUME",
       "category": "flag",
       "reads": 1,
       "literals": 0,
       "files": [
         "lib/server/codex-app-server-stdio-proxy-cliresume.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_ENABLE_REMOTE_PROXY",
-      "category": "network",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_REMOTE_PROXY",
-      "category": "network",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/codex-app-server-proxy.js"
       ],
       "aliasConstants": []
     },
@@ -1850,16 +1778,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_USAGE_HTTP_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CODEX_USAGE_PATH",
       "category": "path",
       "reads": 1,
@@ -1876,16 +1794,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CODEX_USAGE_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/usage/usage-snapshot-codex.js"
       ],
       "aliasConstants": []
     },
@@ -1973,9 +1881,10 @@
       "name": "AIH_EDGE_FRPC_CONFIG",
       "category": "plumbing",
       "reads": 1,
-      "literals": 0,
+      "literals": 1,
       "files": [
-        "lib/cli/services/toolkit/edge-proxy/providers/frp.js"
+        "lib/cli/services/toolkit/edge-proxy/providers/frp.js",
+        "lib/cli/services/toolkit/network-tool-discovery.js"
       ],
       "aliasConstants": []
     },
@@ -2469,16 +2378,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_SESSION_RUN_RETENTION_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/control-plane-device-session-start.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_SESSION_SCAN_ALL",
       "category": "plumbing",
       "reads": 1,
@@ -2923,16 +2822,6 @@
       "literals": 1,
       "files": [
         "lib/cli/services/fabric/closure-plan.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_FRPC_CONFIG",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/toolkit/network-tool-discovery.js"
       ],
       "aliasConstants": []
     },

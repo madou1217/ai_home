@@ -20,14 +20,14 @@ function showHelp() {
   console.log(`AIH Fabric real broker smoke
 
 Usage:
-  AIH_MANAGEMENT_KEY=<key> node scripts/fabric-real-broker-smoke.js [options]
+  AIH_SERVER_MANAGEMENT_KEY=<key> node scripts/fabric-real-broker-smoke.js [options]
 
 Options:
   --endpoint <url>      Running AIH server/broker endpoint, default ${DEFAULT_ENDPOINT}.
   --server-id <id>      Broker server id, default ${DEFAULT_SERVER_ID}.
   --local-url <url>     Local AIH server URL reached by broker connector, default endpoint.
   --management-key <key>
-                        Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+                        Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --management-key-file <path>
                         File containing the Server Management Key; the key is never printed.
   --timeout-ms <n>      Request/connect timeout, default ${DEFAULT_TIMEOUT_MS}.
@@ -155,7 +155,7 @@ function parseArgs(argv = [], env = process.env) {
   if (!options.serverId) throw new Error('--server-id must match Fabric server id rules');
   if (!options.managementKey && !options.managementKeyFile) {
     throw new Error(
-      'missing Management Key: set AIH_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
+      'missing Management Key: set AIH_SERVER_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
     );
   }
   return options;

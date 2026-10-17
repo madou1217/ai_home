@@ -35,7 +35,7 @@ Options:
   --host-home <dir>     Host home used by the running endpoint, default AIH_HOST_HOME/HOME.
   --node-join-url <url> Register the smoke node through the real node join API instead of writing endpoint files.
   --management-key <key>
-                         Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+                         Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --timeout-ms <n>      End-to-end wait timeout, default ${DEFAULT_TIMEOUT_MS}.
   --control-port <n>    Server port. Omit or pass 0 to auto-pick.
   --node-port <n>       Local node server port. Omit or pass 0 to auto-pick.
@@ -112,7 +112,7 @@ function parseArgs(argv = [], env = process.env) {
     clientEndpoint: '',
     hostHome: '',
     nodeJoinUrl: '',
-    managementKey: String(env.AIH_MANAGEMENT_KEY || '').trim(),
+    managementKey: String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim(),
     timeoutMs: DEFAULT_TIMEOUT_MS,
     controlPort: 0,
     nodePort: 0,
@@ -1136,7 +1136,7 @@ async function runExistingEndpointRelaySmoke(rawOptions = {}, deps = {}) {
     options.managementKey || (nodeManagement.source === 'server-config' ? nodeManagement.key : '')
   ).trim();
   if (!clientManagementKey) {
-    throw new Error('missing Management Key: set AIH_MANAGEMENT_KEY or pass --management-key');
+    throw new Error('missing Management Key: set AIH_SERVER_MANAGEMENT_KEY or pass --management-key');
   }
   const children = [];
   let managementKey = '';

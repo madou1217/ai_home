@@ -36,7 +36,7 @@ Options:
   --node-runtime <tar.xz>  Optional Linux Node.js runtime archive to unpack under remote-dir.
   --port <n>              Temporary server port, default ${DEFAULT_PORT}.
   --management-key-file <path>
-                          Remote file containing the Server Management Key (AIH_MANAGEMENT_KEY).
+                          Remote file containing the Server Management Key (AIH_SERVER_MANAGEMENT_KEY).
   --source-transfer <mode> Source transfer mode: cache or stream, default cache.
   --no-source-cache        Alias for --source-transfer stream.
   --skip-build            Do not run local npm run web:build.
@@ -323,7 +323,7 @@ function buildRemoteEnvCommand(options) {
   if (options.managementKeyFile) {
     commands.push(
       `test -s ${shQuote(options.managementKeyFile)}`,
-      `export AIH_MANAGEMENT_KEY="$(cat ${shQuote(options.managementKeyFile)})"`
+      `export AIH_SERVER_MANAGEMENT_KEY="$(cat ${shQuote(options.managementKeyFile)})"`
     );
   }
   if (nodeHome) {

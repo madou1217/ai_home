@@ -43,7 +43,7 @@ test('Go Core invocation keeps credentials out of argv and binds a private endpo
   assert.deepEqual(invocation.args, ['--host', '127.0.0.1', '--port', '19551']);
   assert.equal(invocation.env.AIH_HOME_DIR, '/tmp/aih-home');
   assert.equal(invocation.env.AIH_SERVER_MANAGEMENT_KEY, 'management-secret');
-  assert.equal(invocation.env.AIH_SERVER_CLIENT_KEY, 'client-secret');
+  assert.equal(invocation.env.AIH_SERVER_API_KEY, 'client-secret');
   assert.equal(invocation.args.includes('management-secret'), false);
   assert.equal(invocation.args.includes('client-secret'), false);
 });

@@ -238,11 +238,11 @@ test('remote Node helpers keep runtime and AIH state scoped to remote deploy dir
   assert.match(envCommand, /mkdir -p '\/home\/ubuntu\/aih-fabric-current\/\.aih-host-home'/);
   assert.match(envCommand, /export AIH_HOST_HOME='\/home\/ubuntu\/aih-fabric-current\/\.aih-host-home'/);
   assert.match(envCommand, /test -s '\/home\/ubuntu\/aih-fabric-current\/\.management-key'/);
-  assert.match(envCommand, /export AIH_MANAGEMENT_KEY="\$\(cat '\/home\/ubuntu\/aih-fabric-current\/\.management-key'\)"/);
+  assert.match(envCommand, /export AIH_SERVER_MANAGEMENT_KEY="\$\(cat '\/home\/ubuntu\/aih-fabric-current\/\.management-key'\)"/);
   assert.match(envCommand, /export PATH='\/home\/ubuntu\/aih-fabric-current\/\.node-runtime\/node-v22\.16\.0-linux-x64\/bin':'\/home\/ubuntu\/aih-fabric-current\/node_modules\/\.bin':\$PATH/);
   assert.equal(
     buildRemoteNodeCommand(options, 'node --version'),
-    "mkdir -p '/home/ubuntu/aih-fabric-current/.aih-host-home' && export AIH_HOST_HOME='/home/ubuntu/aih-fabric-current/.aih-host-home' && test -s '/home/ubuntu/aih-fabric-current/.management-key' && export AIH_MANAGEMENT_KEY=\"$(cat '/home/ubuntu/aih-fabric-current/.management-key')\" && export PATH='/home/ubuntu/aih-fabric-current/.node-runtime/node-v22.16.0-linux-x64/bin':'/home/ubuntu/aih-fabric-current/node_modules/.bin':$PATH; node --version"
+    "mkdir -p '/home/ubuntu/aih-fabric-current/.aih-host-home' && export AIH_HOST_HOME='/home/ubuntu/aih-fabric-current/.aih-host-home' && test -s '/home/ubuntu/aih-fabric-current/.management-key' && export AIH_SERVER_MANAGEMENT_KEY=\"$(cat '/home/ubuntu/aih-fabric-current/.management-key')\" && export PATH='/home/ubuntu/aih-fabric-current/.node-runtime/node-v22.16.0-linux-x64/bin':'/home/ubuntu/aih-fabric-current/node_modules/.bin':$PATH; node --version"
   );
   assert.match(
     buildRemoteNodeProbeCommand(options),

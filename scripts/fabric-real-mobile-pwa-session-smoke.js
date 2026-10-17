@@ -24,7 +24,7 @@ function showHelp() {
   console.log(`AIH Fabric real mobile/PWA session smoke
 
 Usage:
-  AIH_MANAGEMENT_KEY=<key> npx --yes --package playwright node scripts/fabric-real-mobile-pwa-session-smoke.js [options]
+  AIH_SERVER_MANAGEMENT_KEY=<key> npx --yes --package playwright node scripts/fabric-real-mobile-pwa-session-smoke.js [options]
 
 Options:
   --endpoint <url>      AWS/current Server endpoint, default ${DEFAULT_ENDPOINT}.
@@ -33,7 +33,7 @@ Options:
   --host-home <dir>    Host home used by local relay/runtime, default AIH_HOST_HOME/HOME.
   --node-id <id>       Remote node id, default ${DEFAULT_NODE_ID}.
   --management-key <key>
-                        Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+                        Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --session-provider <provider>
                         Native provider, default codex.
   --session-account-ref <ref>
@@ -101,7 +101,7 @@ function normalizeNodeId(value) {
 }
 
 function parseArgs(argv = [], env = process.env) {
-  const envManagementKey = String(env.AIH_MANAGEMENT_KEY || '').trim();
+  const envManagementKey = String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
   const options = {
     help: false,
     endpoint: DEFAULT_ENDPOINT,
@@ -1317,7 +1317,7 @@ function resolveServerManagementKey(options = {}, nodeManagement = {}) {
       source: 'server-config'
     };
   }
-  throw new Error('missing Management Key: set AIH_MANAGEMENT_KEY or pass --management-key');
+  throw new Error('missing Management Key: set AIH_SERVER_MANAGEMENT_KEY or pass --management-key');
 }
 
 async function runMobilePwaSessionSmoke(options = {}, deps = {}) {

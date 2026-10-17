@@ -9,7 +9,7 @@
  * Optional:
  *   AIH_WEBUI_URL=http://127.0.0.1:9527/ui
  *   AIH_CHROME_PATH="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
- *   AIH_MANAGEMENT_KEY=***   # only if no saved profile exists
+ *   AIH_SERVER_MANAGEMENT_KEY=***   # only if no saved profile exists
  */
 import { chromium } from 'playwright-core';
 
@@ -17,7 +17,7 @@ const baseUrl = String(process.env.AIH_WEBUI_URL || 'http://127.0.0.1:9527/ui').
 const accountsUrl = `${baseUrl}/accounts`;
 const chromePath = String(process.env.AIH_CHROME_PATH || '').trim()
   || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const managementKey = String(process.env.AIH_MANAGEMENT_KEY || '').trim();
+const managementKey = String(process.env.AIH_SERVER_MANAGEMENT_KEY || '').trim();
 const serverUrl = String(process.env.AIH_SERVER_URL || 'http://127.0.0.1:9527').replace(/\/$/, '');
 
 const REQUIRED_PROVIDERS = [
@@ -173,7 +173,7 @@ async function main() {
   if (!(await openAddModal(page))) {
     await page.screenshot({ path: 'test/playwright-accounts-add-failed.png', fullPage: true });
     throw new Error(
-      'Could not open Add Account modal. Connect a Server in the UI once, or set AIH_MANAGEMENT_KEY. '
+      'Could not open Add Account modal. Connect a Server in the UI once, or set AIH_SERVER_MANAGEMENT_KEY. '
       + 'Screenshot: test/playwright-accounts-add-failed.png'
     );
   }

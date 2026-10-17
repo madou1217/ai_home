@@ -44,7 +44,7 @@ Options:
   --node-id <id>        Remote node id, default ${DEFAULT_NODE_ID}.
   --host-home <dir>     Host home used by the running endpoint, default AIH_HOST_HOME/HOME.
   --management-key <key>
-                        Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+                        Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --management-key-file <path>
                         File containing the Server Management Key; the key is never printed.
   --timeout-ms <n>      End-to-end wait timeout, default ${DEFAULT_TIMEOUT_MS}.
@@ -258,7 +258,7 @@ function parseArgs(argv = [], env = process.env) {
   }
   if (!options.managementKey && !options.managementKeyFile) {
     throw new Error(
-      'missing Management Key: set AIH_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
+      'missing Management Key: set AIH_SERVER_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
     );
   }
   if (!options.hostHome) throw new Error('--host-home is required');

@@ -101,7 +101,7 @@ test('成对开关（ENABLE/DISABLE）必须显式登记理由，否则视为反
     .filter((entry) => /ENABLE/.test(entry.name) && names.has(entry.name.replace('ENABLE', 'DISABLE')))
     .map((entry) => ({ enable: entry.name, disable: entry.name.replace('ENABLE', 'DISABLE') }));
   // 目前只有 codex 远程代理这一对是历史兼容，已在脚本文档里登记；新增必须同时改文档说明。
-  const allowed = new Set(['AIH_CODEX_ENABLE_REMOTE_PROXY']);
+  const allowed = new Set();
   const unexpected = pairs.filter((pair) => !allowed.has(pair.enable));
   assert.deepEqual(
     unexpected,

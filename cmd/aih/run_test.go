@@ -131,7 +131,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			name:      "Gateway 跨 Provider 固定账号",
 			arguments: []string{"codex", "relay", "claude", "9", "--model", "claude-opus-5"},
 			environment: map[string]string{
-				"AIH_SERVER_CLIENT_KEY": "client-key-with-at-least-thirty-two-characters",
+				"AIH_SERVER_API_KEY": "client-key-with-at-least-thirty-two-characters",
 			},
 			wantProvider:  "codex",
 			wantArguments: []string{"relay", "claude", "9", "--model", "claude-opus-5"},
@@ -144,7 +144,7 @@ func TestRunPassesNativeAndGatewayInputsWithoutModeGuessing(t *testing.T) {
 			arguments: []string{"claude", "relay", "7", "--model", "opus"},
 			environment: map[string]string{
 				"AIH_SERVER_BASE_URL":   "http://127.0.0.1:19527",
-				"AIH_SERVER_CLIENT_KEY": "client-key-with-at-least-thirty-two-characters",
+				"AIH_SERVER_API_KEY": "client-key-with-at-least-thirty-two-characters",
 			},
 			wantProvider:  "claude",
 			wantArguments: []string{"relay", "7", "--model", "opus"},

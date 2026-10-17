@@ -24,7 +24,7 @@ func TestLoadCommandConfigUsesCanonicalDefaults(t *testing.T) {
 	runtime := newConfigTestRuntime(
 		map[string]string{
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
+			"AIH_SERVER_API_KEY":     configTestClientKey,
 			"AI_HOME":                   "/legacy-must-not-be-used",
 		},
 		userHome,
@@ -58,7 +58,7 @@ func TestLoadCommandConfigLetsCLIOverrideLoopbackEnvironment(t *testing.T) {
 			"AIH_SERVER_HOST":           "127.0.0.2",
 			"AIH_SERVER_PORT":           "9000",
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
+			"AIH_SERVER_API_KEY":     configTestClientKey,
 		},
 		t.TempDir(),
 	)
@@ -114,7 +114,7 @@ func TestLoadCommandConfigFailsClosed(t *testing.T) {
 			name: "weak client key",
 			env: map[string]string{
 				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-				"AIH_SERVER_CLIENT_KEY":     "too-short",
+				"AIH_SERVER_API_KEY":     "too-short",
 			},
 			wantErr: aihserver.ErrInvalidClientKey,
 		},
@@ -122,7 +122,7 @@ func TestLoadCommandConfigFailsClosed(t *testing.T) {
 			name: "client key with whitespace",
 			env: map[string]string{
 				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-				"AIH_SERVER_CLIENT_KEY":     "synthetic client key that is long enough",
+				"AIH_SERVER_API_KEY":     "synthetic client key that is long enough",
 			},
 			wantErr: aihserver.ErrInvalidClientKey,
 		},
@@ -130,7 +130,7 @@ func TestLoadCommandConfigFailsClosed(t *testing.T) {
 			name: "server key collision",
 			env: map[string]string{
 				"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-				"AIH_SERVER_CLIENT_KEY":     configTestManagementKey,
+				"AIH_SERVER_API_KEY":     configTestManagementKey,
 			},
 			wantErr: aihserver.ErrServerKeyCollision,
 		},
@@ -304,7 +304,7 @@ func TestLoadCommandConfigCarriesUpstreamErrorRuleProviders(t *testing.T) {
 		map[string]string{
 			"AIH_HOME_DIR":                        t.TempDir(),
 			"AIH_SERVER_MANAGEMENT_KEY":       configTestManagementKey,
-			"AIH_SERVER_CLIENT_KEY":           configTestClientKey,
+			"AIH_SERVER_API_KEY":           configTestClientKey,
 			"AIH_SERVER_UPSTREAM_ERROR_RULES": "codex",
 		},
 		t.TempDir(),
@@ -333,7 +333,7 @@ func TestLoadCommandConfigParsesCredentialRefreshOwnership(t *testing.T) {
 	} {
 		env := map[string]string{
 			"AIH_SERVER_MANAGEMENT_KEY": configTestManagementKey,
-			"AIH_SERVER_CLIENT_KEY":     configTestClientKey,
+			"AIH_SERVER_API_KEY":     configTestClientKey,
 		}
 		if testCase.value != "" {
 			env["AIH_SERVER_CREDENTIAL_REFRESH"] = testCase.value

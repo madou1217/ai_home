@@ -27,7 +27,7 @@ Options:
   --headed                     Show the browser window.
   -h, --help                   Show this help.
 
-Set AIH_MANAGEMENT_KEY before running. The smoke opens the real WebUI Server
+Set AIH_SERVER_MANAGEMENT_KEY before running. The smoke opens the real WebUI Server
 Setup page in Chromium, saves both Server URL + Management Key profiles,
 switches the active server through the product selector, reloads to prove
 persistence, and reads the active node inventory with the Management Key. It
@@ -85,7 +85,7 @@ function parseArgs(argv = [], env = process.env) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     diagnosticsFile: '',
     browserChannel: DEFAULT_BROWSER_CHANNEL,
-    managementKey: String(env.AIH_MANAGEMENT_KEY || '').trim(),
+    managementKey: String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim(),
     headed: false
   };
 

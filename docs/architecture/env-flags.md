@@ -1,6 +1,6 @@
 # 环境准入（公开环境变量，≤10）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:57:07.824Z
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:03:43.376Z
 > 公开变量 **10 / 10**（白名单：`lib/config/public-env.js`，测试守住上限）。
 > 其余 `AIH_*` 都是**内部变量**（进程间身份/标记、实验开关、测试钩子），见 [`env-flags.internal.md`](./env-flags.internal.md)：不要写进部署脚本。
 
@@ -28,7 +28,7 @@
 
 ## 内部变量
 
-共 **319** 个（进程间传递的身份/标记、实验与调试开关、测试钩子）。按分类明细见 [`env-flags.internal.md`](./env-flags.internal.md)。
+共 **308** 个（进程间传递的身份/标记、实验与调试开关、测试钩子）。按分类明细见 [`env-flags.internal.md`](./env-flags.internal.md)。
 
 它们不是配置项：aih 自己会设置（例如账号投影、会话目标、网关连接串），手工覆盖通常会导致路由错乱或凭据串号。
 

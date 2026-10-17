@@ -37,7 +37,7 @@ function showHelp() {
   console.log(`AIH Fabric real session recovery smoke
 
 Usage:
-  AIH_MANAGEMENT_KEY=<aws-key> node scripts/fabric-real-session-recovery-smoke.js [options]
+  AIH_SERVER_MANAGEMENT_KEY=<aws-key> node scripts/fabric-real-session-recovery-smoke.js [options]
 
 Options:
   --broker-endpoint <url>  AWS/current broker endpoint, default ${DEFAULT_BROKER_ENDPOINT}.
@@ -45,7 +45,7 @@ Options:
   --host-home <dir>        Host home used by local server/runtime, default AIH_HOST_HOME/HOME.
   --server-id <id>         Broker server id, default ${DEFAULT_SERVER_ID}.
   --node-id <id>           Local relay node id, default ${DEFAULT_NODE_ID}.
-  --management-key <key>   AWS Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+  --management-key <key>   AWS Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   --management-key-file <path>
                            File containing the AWS Server Management Key; the key is never printed.
   --session-provider <p>   Native provider, default codex.
@@ -120,7 +120,7 @@ function parseArgs(argv = [], env = process.env) {
     hostHome: '',
     serverId: DEFAULT_SERVER_ID,
     nodeId: DEFAULT_NODE_ID,
-    managementKey: String(env.AIH_MANAGEMENT_KEY || '').trim(),
+    managementKey: String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim(),
     managementKeyFile: '',
     sessionProvider: 'codex',
     sessionAccountRef: '',
@@ -261,7 +261,7 @@ function parseArgs(argv = [], env = process.env) {
   }
   if (!options.managementKey && !options.managementKeyFile) {
     throw new Error(
-      'missing Management Key: set AIH_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
+      'missing Management Key: set AIH_SERVER_MANAGEMENT_KEY, pass --management-key, or pass --management-key-file'
     );
   }
   return options;

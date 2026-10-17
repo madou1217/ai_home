@@ -14,7 +14,7 @@ function showHelp() {
   console.log(`AIH Fabric real VPS registry publish
 
 Usage:
-  AIH_MANAGEMENT_KEY=<key> node scripts/fabric-real-vps-registry-publish.js --port 18482 --node-id vps-152-jp-v4 --name "VPS 152 Japan" --bandwidth-kbps 3072
+  AIH_SERVER_MANAGEMENT_KEY=<key> node scripts/fabric-real-vps-registry-publish.js --port 18482 --node-id vps-152-jp-v4 --name "VPS 152 Japan" --bandwidth-kbps 3072
 
 Options:
   --port <n>              Required local AIH server port.
@@ -26,7 +26,7 @@ Options:
   --agent-interval-ms <n> Agent heartbeat interval for this smoke, default 1000.
   --agent-probe-transport <kind=url>
                            Probe target for agent transport health. When omitted, this script starts a temporary local tcp-echo server.
-  --management-key <key>   Server Management Key. Prefer AIH_MANAGEMENT_KEY to avoid argv leaks.
+  --management-key <key>   Server Management Key. Prefer AIH_SERVER_MANAGEMENT_KEY to avoid argv leaks.
   -h, --help              Show this help.
 
 The script authenticates with the server Management Key, runs
@@ -58,7 +58,7 @@ function parseArgs(argv, env = process.env) {
     agentCount: 2,
     agentIntervalMs: 1000,
     agentProbeTransports: [],
-    managementKey: String(env.AIH_MANAGEMENT_KEY || '').trim()
+    managementKey: String(env.AIH_SERVER_MANAGEMENT_KEY || '').trim()
   };
 
   for (let index = 0; index < argv.length;) {
@@ -135,7 +135,7 @@ function parseArgs(argv, env = process.env) {
   }
   if (!options.nodeId) throw new Error('--node-id is required');
   if (!options.managementKey) {
-    throw new Error('missing Management Key: set AIH_MANAGEMENT_KEY or pass --management-key');
+    throw new Error('missing Management Key: set AIH_SERVER_MANAGEMENT_KEY or pass --management-key');
   }
   options.name = options.name || options.nodeId;
   return options;
@@ -276,7 +276,7 @@ async function runRealVpsRegistryPublish(options, deps = {}) {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      AIH_MANAGEMENT_KEY: managementContext.managementKey
+      AIH_SERVER_MANAGEMENT_KEY: managementContext.managementKey
     },
     encoding: 'utf8'
   });
@@ -301,7 +301,7 @@ async function runRealVpsRegistryPublish(options, deps = {}) {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      AIH_MANAGEMENT_KEY: managementContext.managementKey
+      AIH_SERVER_MANAGEMENT_KEY: managementContext.managementKey
     },
     encoding: 'utf8'
   });
@@ -338,7 +338,7 @@ async function runRealVpsRegistryPublish(options, deps = {}) {
         cwd: process.cwd(),
         env: {
           ...process.env,
-          AIH_MANAGEMENT_KEY: managementContext.managementKey
+          AIH_SERVER_MANAGEMENT_KEY: managementContext.managementKey
         },
         encoding: 'utf8',
         timeoutMs: Math.max(30000, agentCount * agentIntervalMs + 30000)

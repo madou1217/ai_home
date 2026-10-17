@@ -883,7 +883,7 @@ test('remote commands scope runtime state to AWS current dir and default port', 
   assert.match(publish, /publish/);
   assert.match(publish, /--from-server/);
   assert.doesNotMatch(publish, /AIH_FABRIC_TOKEN/);
-  assert.match(publish, /AIH_MANAGEMENT_KEY:storedManagementKey\|\|managementKey/);
+  assert.match(publish, /AIH_SERVER_MANAGEMENT_KEY:storedManagementKey\|\|managementKey/);
   assert.doesNotMatch(publish, /--token/);
   assert.doesNotMatch(publish, /--management-key/);
   assert.equal(buildRemoteCleanupCommand('/tmp/accounts.zip'), "rm -f '/tmp/accounts.zip'");

@@ -25,7 +25,7 @@ test('parseArgs validates real VPS registry publish inputs', () => {
     '2',
     '--agent-interval-ms',
     '1000'
-  ], { AIH_MANAGEMENT_KEY: 'management-secret' });
+  ], { AIH_SERVER_MANAGEMENT_KEY: 'management-secret' });
 
   assert.equal(parsed.port, 18482);
   assert.equal(parsed.nodeId, 'vps-152-jp-v4');
@@ -36,7 +36,7 @@ test('parseArgs validates real VPS registry publish inputs', () => {
   assert.equal(parsed.agentIntervalMs, 1000);
   assert.deepEqual(parsed.agentProbeTransports, []);
   assert.throws(
-    () => parseArgs(['--port', '18482'], { AIH_MANAGEMENT_KEY: 'management-secret' }),
+    () => parseArgs(['--port', '18482'], { AIH_SERVER_MANAGEMENT_KEY: 'management-secret' }),
     /--node-id is required/
   );
 });
@@ -233,15 +233,15 @@ test('runRealVpsRegistryPublish prints only sanitized registry evidence', async 
   assert.equal(JSON.stringify(report).includes('management-secret'), false);
   assert.equal(String(JSON.stringify(report)).includes('Bearer'), false);
   assert.equal(spawnCalls.length, 3);
-  assert.equal(spawnCalls[0].options.env.AIH_MANAGEMENT_KEY, 'management-secret');
+  assert.equal(spawnCalls[0].options.env.AIH_SERVER_MANAGEMENT_KEY, 'management-secret');
   assert.equal(spawnCalls[0].args.includes('--from-server'), true);
   assert.equal(spawnCalls[1].args.includes('heartbeat'), true);
-  assert.equal(spawnCalls[1].options.env.AIH_MANAGEMENT_KEY, spawnCalls[0].options.env.AIH_MANAGEMENT_KEY);
+  assert.equal(spawnCalls[1].options.env.AIH_SERVER_MANAGEMENT_KEY, spawnCalls[0].options.env.AIH_SERVER_MANAGEMENT_KEY);
   assert.equal(spawnCalls[2].args.includes('agent'), true);
   assert.equal(spawnCalls[2].args.includes('--count'), true);
   assert.equal(spawnCalls[2].args.includes('--probe-transport'), true);
   assert.equal(spawnCalls[2].args.includes('relay=tcp://127.0.0.1:29001'), true);
-  assert.equal(spawnCalls[2].options.env.AIH_MANAGEMENT_KEY, spawnCalls[0].options.env.AIH_MANAGEMENT_KEY);
+  assert.equal(spawnCalls[2].options.env.AIH_SERVER_MANAGEMENT_KEY, spawnCalls[0].options.env.AIH_SERVER_MANAGEMENT_KEY);
   assert.deepEqual(closedProbeServers, [29001]);
   assert.equal(fetchCalls.length, 2);
   assert.match(fetchCalls[0].options.headers.authorization, /^Bearer /);

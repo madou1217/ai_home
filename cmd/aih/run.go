@@ -103,7 +103,7 @@ func run(ctx context.Context, arguments []string, runtime commandRuntime) error 
 		return nil
 	}
 	baseURL := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_BASE_URL", defaultGatewayBaseURL)
-	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_CLIENT_KEY", "")
+	clientKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_API_KEY", "")
 	managementKey := lookupOrDefault(runtime.lookupEnv, "AIH_SERVER_MANAGEMENT_KEY", "")
 	needsNativeStore := commandNeedsNativeStore(providerID, arguments[1:])
 	var err error
@@ -214,7 +214,7 @@ func writeUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "环境变量:")
 	_, _ = fmt.Fprintln(output, "  AIH_HOME_DIR")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_BASE_URL（默认 http://127.0.0.1:9527）")
-	_, _ = fmt.Fprintln(output, "  AIH_SERVER_CLIENT_KEY（仅 Gateway 模式必需）")
+	_, _ = fmt.Fprintln(output, "  AIH_SERVER_API_KEY（仅 Gateway 模式必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_SERVER_MANAGEMENT_KEY（账号管理和固定 Relay 数字别名解析必需）")
 	_, _ = fmt.Fprintln(output, "  AIH_CODEX_BINARY / AIH_CLAUDE_BINARY（可选官方 CLI 路径）")
 }

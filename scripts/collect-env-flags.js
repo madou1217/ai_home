@@ -39,13 +39,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'bin/native']);
 // 已知的「一键多名」同义变量（历史上都进过部署脚本），必须在文档里点名而不是装作不存在。
 const KNOWN_SYNONYMS = Object.freeze([
   { names: ['AIH_HOME_DIR', 'AI_HOME'], canonical: 'AIH_HOME_DIR（`lib/runtime/aih-home.js` 是唯一解析处）', note: '两个名字是同义别名；AIH_HOME 已于 2026-10-17 移除' },
-  { names: ['AIH_SERVER_MANAGEMENT_KEY'], canonical: 'AIH_SERVER_MANAGEMENT_KEY', note: '文档/示例里出现过的 AIH_MANAGEMENT_KEY 不是输入变量（只在脚本示例里当下发值用）' }
 ]);
 
 // ENABLE/DISABLE 成对开关是反模式：一个语义两条变量，很容易两边都设、互相打架。
 // 允许保留的只在这里登记（新增必须给出理由，否则守卫测试会红）。
 const ALLOWED_FLAG_PAIRS = Object.freeze([
-  { stem: 'AIH_CODEX_{ENABLE,DISABLE}_REMOTE_PROXY', reason: '历史兼容：DISABLE=1 仍生效，新写法统一用 ENABLE=1' }
 ]);
 
 const READ_PATTERNS = [

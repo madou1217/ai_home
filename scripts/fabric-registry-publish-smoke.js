@@ -124,7 +124,7 @@ async function main() {
       cwd: repoRoot,
       env: {
         ...process.env,
-        AIH_MANAGEMENT_KEY: managementKey
+        AIH_SERVER_MANAGEMENT_KEY: managementKey
       }
     });
 

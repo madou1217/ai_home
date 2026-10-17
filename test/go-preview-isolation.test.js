@@ -109,10 +109,10 @@ test('preview 启动器分别生成隔离的 Server、Web 与 CLI 调用', () =>
   assert.equal(server.env.AIH_HOME_DIR, '/private/tmp/aih-go-accounts-preview');
   assert.notEqual(server.env.AIH_HOME_DIR, dependencies.env.AIH_HOME_DIR);
   assert.ok(server.env.AIH_SERVER_MANAGEMENT_KEY.length >= 32);
-  assert.ok(server.env.AIH_SERVER_CLIENT_KEY.length >= 32);
+  assert.ok(server.env.AIH_SERVER_API_KEY.length >= 32);
   assert.notEqual(
     server.env.AIH_SERVER_MANAGEMENT_KEY,
-    server.env.AIH_SERVER_CLIENT_KEY,
+    server.env.AIH_SERVER_API_KEY,
   );
 
   const web = createPreviewInvocation('web', [], dependencies);

@@ -211,7 +211,7 @@ test('real broker smoke parser defaults to existing 9527 endpoint', () => {
     'Local Default'
   ], {
     AIH_FABRIC_BROKER_TOKEN: 'broker-token',
-    AIH_MANAGEMENT_KEY: 'management-secret'
+    AIH_SERVER_MANAGEMENT_KEY: 'management-secret'
   });
 
   assert.equal(options.endpoint, 'http://127.0.0.1:9527');

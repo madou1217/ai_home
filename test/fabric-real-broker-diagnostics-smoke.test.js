@@ -50,7 +50,7 @@ test('explicit Management Key file overrides an inherited environment key', () =
   const options = parseArgs([
     '--management-key-file',
     '/tmp/management-key'
-  ], { AIH_MANAGEMENT_KEY: 'inherited-environment-key' });
+  ], { AIH_SERVER_MANAGEMENT_KEY: 'inherited-environment-key' });
 
   assert.equal(readManagementKey(options, {
     readFileSync: () => 'explicit-file-key\n'

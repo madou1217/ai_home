@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:54:34.343Z",
-  "total": 93,
+  "generatedAt": "2026-10-17T10:04:10.112Z",
+  "total": 92,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1058,16 +1058,6 @@
       "aliasConstants": [
         "RUNTIME_MARKER_ENV"
       ]
-    },
-    {
-      "name": "AIH_SERVER_AUTOSTART",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 2,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js"
-      ],
-      "aliasConstants": []
     },
     {
       "name": "AIH_SERVER_BACKGROUND_RESTART",

@@ -1,19 +1,19 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:57:26.090Z
-> 覆盖 `lib / bin / scripts / core`，共 **70** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T11:01:29.969Z
+> 覆盖 `lib / bin / scripts / core`，共 **69** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
 
 | 分类 | 数量 | 含义 |
 | --- | --- | --- |
-| path | 6 | 数据/目录/仓库路径 |
+| path | 4 | 数据/目录/仓库路径 |
 | network | 11 | 端点 / 代理 / 端口 |
 | flag | 2 | 开关与逃生门（环境准入） |
 | credential | 7 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 43 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 44 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -54,8 +54,6 @@
 | `AIH_CLI_PATH` | 5 | 1 | lib/cli/services/fabric/registry-agent-service.js<br>lib/cli/services/node/doctor.js<br>lib/cli/services/node/relay-service.js<br>…共 5 个 |
 | `AIH_CODEX_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_CODEX_SQLITE_HOME` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
-| `AIH_PROVIDER_DEFS_DIR` | 1 | 0 | lib/providers/loader.js |
-| `AIH_QUOTA_PLUGIN_DIR` | 1 | 0 | lib/providers/loader.js |
 | `AIH_RUNTIME_TOOLS_DIR` | 1 | 0 | lib/runtime/native-cli-resolver.js |
 
 ## network（端点 / 代理 / 端口）
@@ -138,6 +136,7 @@
 | `AIH_LAUNCH_CONTEXT` | 0 | 1 | lib/runtime/launch-context.js |
 | `AIH_OPENCODE_GATEWAY` | 0 | 1 | lib/cli/services/ai-cli/opencode-gateway-context.js |
 | `AIH_OPENCODE_RUN_LAYOUT` | 0 | 1 | lib/runtime/opencode-run-layouts.js |
+| `AIH_PROVIDER_EXTENSION_DIRS` | 0 | 1 | lib/providers/extension-dirs.js |
 | `AIH_RELAY_MIHOMO_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/mihomo.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/mihomo-binary.js |
 | `AIH_RELAY_SETTINGS` | 0 | 6 | lib/server/relay-settings.js<br>lib/server/server-config-schema.js |
 | `AIH_RELAY_SING_BOX_BIN` | 0 | 2 | lib/cli/services/toolkit/subscription-aggregator/relay/kernels/sing-box.js<br>lib/cli/services/toolkit/subscription-aggregator/relay/sing-box-binary.js |

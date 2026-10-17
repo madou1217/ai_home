@@ -17,7 +17,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | --- | --- | --- | --- |
 | `lib/providers/contract.js` | **Contract / Schema 校验** | provider 描述符契约：能力必须显式回答（`supported` + `reason`/策略），transport↔clientDependent 自洽，只有客户端通道必须写 `clientFreeReason` | `test/provider-capability-registry.test.js`、`test/quota-provider-coverage.test.js` |
 | `lib/providers/registry.js` | **Registry + 倒排索引** | 能力名 → provider 集合；`getProviderCapability(provider, face)` / `listProviders(face)`，消费方问能力不问 provider | 同上 |
-| `lib/providers/loader.js` | **Plugin Loader** | 扫描 `defs/`、`AIH_PROVIDER_DEFS_DIR`、`<AIH_HOME>/provider-defs`，外部插件与内置同构 | `test/provider-capability-registry.test.js` |
+| `lib/providers/loader.js` | **Plugin Loader** | 扫描 `defs/`、`AIH_PROVIDER_EXTENSION_DIRS` 的 `defs`、`<AIH_HOME>/provider-defs`，外部插件与内置同构 | `test/provider-capability-registry.test.js` |
 | `lib/providers/index.js` | **Facade（门面）** | 消费方唯一入口：`getProviderCapability` / `listProviders` / `listQuotaStrategies` | 全仓只 import 这里 |
 | `lib/usage/quota/strategies.js` | **Chain of Responsibility（策略链）** | 额度：`clientDependent=false` 优先、失败自动切下一条、`attempts` 可观察。结果可带**结论** `notApplicable + reason`（来源明确回答「没有可消耗的额度池」，先例 qoder Free；zcode 套餐到期走同一条，见 `test/usage.snapshot.test.js`），结论可携带**替代快照**（zcode 空结论快照）覆盖缓存里已失效的正数快照，且判定先于失败语义 | `test/quota-provider-coverage.test.js`、`test/usage.snapshot.test.js` |
 | `lib/server/provider-model-strategies.js` | **Chain of Responsibility** | 模型发现策略链（同一套语义，避免两套行为） | `test/kiro-pure-api.test.js` |

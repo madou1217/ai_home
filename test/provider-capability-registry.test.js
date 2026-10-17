@@ -7,6 +7,7 @@
 // 因此新增 provider 不需要在消费侧或中央清单里加行 —— 本文件守卫这一点。
 
 const test = require('node:test');
+const { EXTENSION_DIRS_ENV, serializeProviderExtensionDirs } = require('../lib/providers/extension-dirs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -140,7 +141,7 @@ test('描述符目录动态扫描：内置目录 + 外部目录 + 兼容旧额�
   const registry = createProviderRegistry();
   const result = loadProviderDefinitions({
     registry, builtinDir, aiHomeDir: root, fs,
-    env: { AIH_PROVIDER_DEFS_DIR: externalDir, AIH_QUOTA_PLUGIN_DIR: legacyDir }
+    env: { [EXTENSION_DIRS_ENV]: serializeProviderExtensionDirs({ defs: externalDir, quota: legacyDir }) }
   });
   assert.deepEqual(result.loaded.map((entry) => entry.id).sort(), ['extra', 'good', 'legacy']);
   assert.equal(registry.has('legacy'), true);

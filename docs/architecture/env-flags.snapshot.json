@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:57:26.090Z",
-  "total": 80,
+  "generatedAt": "2026-10-17T11:01:29.969Z",
+  "total": 79,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -25,6 +25,7 @@
     "CODEX_PROBE_ENV": "AIH_CODEX_USAGE_PROBE",
     "DISABLE_ENV": "AIH_NO_PERSIST",
     "EDGE_CONTEXT_ENV": "AIH_EDGE_CONTEXT",
+    "EXTENSION_DIRS_ENV": "AIH_PROVIDER_EXTENSION_DIRS",
     "LAUNCH_CONTEXT_ENV": "AIH_LAUNCH_CONTEXT",
     "MULTIPLEXER_ENV": "AIH_MULTIPLEXER",
     "OPENCODE_GATEWAY_ENV": "AIH_OPENCODE_GATEWAY",
@@ -562,26 +563,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_PROVIDER_DEFS_DIR",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/providers/loader.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_QUOTA_PLUGIN_DIR",
-      "category": "path",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/providers/loader.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RUNTIME_ENABLE_USAGE_SCHEDULER",
       "category": "flag",
       "reads": 1,
@@ -899,6 +880,18 @@
         "lib/runtime/opencode-run-layouts.js"
       ],
       "aliasConstants": []
+    },
+    {
+      "name": "AIH_PROVIDER_EXTENSION_DIRS",
+      "category": "plumbing",
+      "reads": 0,
+      "literals": 1,
+      "files": [
+        "lib/providers/extension-dirs.js"
+      ],
+      "aliasConstants": [
+        "EXTENSION_DIRS_ENV"
+      ]
     },
     {
       "name": "AIH_RELAY_MIHOMO_BIN",

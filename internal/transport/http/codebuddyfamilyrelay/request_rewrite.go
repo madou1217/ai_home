@@ -30,6 +30,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 )
 
 // ErrInvalidRequestBody 表示请求体不是合法 JSON 对象。
@@ -354,37 +356,24 @@ func firstMessageIsSystem(messages []json.RawMessage) bool {
 }
 
 // decodeRawArray 解析 JSON 数组；字段缺席返回空数组，类型不符返回错误。
+//
+// 实现复用 relaycore（协议形状的 JSON 解析与 Provider 无关，只有一份）。
 func decodeRawArray(raw json.RawMessage) ([]json.RawMessage, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return nil, nil
-	}
-	if trimmed[0] != '[' {
-		return nil, errors.New("不是数组")
-	}
-	var items []json.RawMessage
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return relaycore.DecodeRawArray(raw)
 }
 
 // describeJSONForm 给认不出的形态一个人可读的名字（进 unsupportedForm 与日志）。
 func describeJSONForm(trimmed string) string {
-	switch trimmed {
-	case "":
-		return "empty"
-	case "null":
-		return "null"
-	}
-	switch trimmed[0] {
-	case '[':
-		return "array"
-	case 't', 'f':
-		return "boolean"
-	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		return "number"
-	default:
-		return "unknown"
-	}
+	return relaycore.DescribeJSONForm(trimmed)
 }
+
+// 包内小写别名：家族自己的解析逻辑与测试沿用这些短名，实现统一指向 relaycore。
+func decodeRawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	return relaycore.DecodeRawObject(raw)
+}
+
+func rawString(raw json.RawMessage) (string, bool) { return relaycore.RawString(raw) }
+
+func rawArray(raw json.RawMessage) []json.RawMessage { return relaycore.RawArray(raw) }
+
+func rawInt64(raw json.RawMessage) (int64, bool) { return relaycore.RawInt64(raw) }

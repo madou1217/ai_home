@@ -90,6 +90,9 @@ func validateDefinition(definition Definition) error {
 	if err := validateCredentialFacts(definition.Credentials); err != nil {
 		return err
 	}
+	if err := validateRelayHosts(definition.RelayHosts); err != nil {
+		return err
+	}
 	// API-only Provider 可以没有 CLI；只有声明了 CLI 才校验运行时投影字段。
 	if definition.CLI != nil {
 		if strings.TrimSpace(definition.CLI.GlobalDir) == "" {
@@ -152,6 +155,45 @@ func validateCapabilities(capabilities []Capability) error {
 			return fmt.Errorf("capability 重复: %s", capability)
 		}
 		seen[capability] = struct{}{}
+	}
+	return nil
+}
+
+// validateRelayHosts 校验「各宿主能否服务该 Provider 推理」的声明。
+//
+// 不变量（对应 docs/plans/2026-10-17-inference-capability-registry.md §3.4）：
+//   * 宿主名只能是 node / go —— 拼错会让声明静默失效，等于回到了「没声明」；
+//   * supported=false 时 reason 必填 —— 禁止沉默缺失。cline 此前不在任何名单里、
+//     没人知道为什么，正是这条要消灭的形态；
+//   * supported=true 时 channel 必填且取值合法 —— 「能服务」必须说清用哪条通道，
+//     否则转发判定无从决定请求该怎么走；
+//   * entries 只在 channel=relay 时有意义（canonical 覆盖全部推理入口）。
+func validateRelayHosts(hosts map[string]RelayHost) error {
+	if len(hosts) == 0 {
+		return nil
+	}
+	for host, capability := range hosts {
+		if host != RelayHostNode && host != RelayHostGo {
+			return fmt.Errorf("relayHosts 含未知宿主: %s", host)
+		}
+		if !capability.Supported {
+			if strings.TrimSpace(capability.Reason) == "" {
+				return fmt.Errorf("relayHosts.%s 声明不支持时必须写明 reason", host)
+			}
+			if capability.Channel != "" || len(capability.Entries) > 0 {
+				return fmt.Errorf("relayHosts.%s 声明不支持时不能声明 channel 或 entries", host)
+			}
+			continue
+		}
+		if capability.Channel != RelayChannelCanonical && capability.Channel != RelayChannelRelay {
+			return fmt.Errorf("relayHosts.%s 的 channel 非法: %q", host, capability.Channel)
+		}
+		if capability.Channel == RelayChannelCanonical && len(capability.Entries) > 0 {
+			return fmt.Errorf("relayHosts.%s 使用 canonical 通道时不应限定 entries（该通道覆盖全部推理入口）", host)
+		}
+		if capability.Reason != "" {
+			return fmt.Errorf("relayHosts.%s 声明支持时不应写 reason", host)
+		}
 	}
 	return nil
 }

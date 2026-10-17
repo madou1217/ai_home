@@ -163,7 +163,7 @@ func nativeIdentity(providerID, authKind, seed string) NativeIdentity {
 
 func nativeSubjectProvider(providerID string) bool {
 	switch providerID {
-	case "kimi", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn":
+	case "kimi", "zcode", "codebuddy", "codebuddycn", "workbuddy", "workbuddycn", "cline":
 		return true
 	default:
 		return false

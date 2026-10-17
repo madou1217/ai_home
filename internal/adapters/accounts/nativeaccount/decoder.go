@@ -53,6 +53,7 @@ func NewDecoder() *Decoder {
 			"codebuddycn": decodeExtended("codebuddycn", codebuddyIdentity),
 			"workbuddy":   decodeExtended("workbuddy", codebuddyIdentity),
 			"workbuddycn": decodeExtended("workbuddycn", codebuddyIdentity),
+			"cline":       decodeExtended("cline", clineIdentity),
 		},
 	}
 }

@@ -124,7 +124,45 @@ type Definition struct {
 	// Credentials 是凭据相关的静态事实（厂商标识与各类凭据的环境变量名），
 	// 让调用方查表而不是按 provider 名写分支。未声明的字段表示该 Provider 没有这类凭据。
 	Credentials *CredentialFacts `json:"credentials,omitempty"`
+	// RelayHosts 声明**各宿主**能否承接该 Provider 的推理，key 为宿主名（"node" / "go"）。
+	//
+	// 为什么需要它：Provider 有没有 HTTP 推理通道（账号侧事实）与「哪个宿主能服务它」
+	// 是两个问题。同一 Provider 可能 Node 能服务而 Go 不能（上游适配器尚未落地），
+	// 而路由一旦划给 Go 就没有 Node 回落——请求只会失败。把「Go 能不能服务」显式声明出来，
+	// 转发判定才能问能力而不是查一份容易漂移的中央名单。
+	//
+	// 未声明的宿主 = 该宿主不能服务（保守侧）；声明 supported=false 时 Reason 必填，
+	// 让「为什么不能」可读，而不是留下一个没人知道原因的缺席。
+	RelayHosts map[string]RelayHost `json:"relayHosts,omitempty"`
 }
+
+// RelayHost 描述某个宿主对该 Provider 推理的承接能力。
+type RelayHost struct {
+	// Supported 表示该宿主能否服务该 Provider 的推理。
+	Supported bool `json:"supported"`
+	// Channel 是承接通道：'canonical'（有完整上游适配器，全入口可用）或
+	// 'relay'（同协议透传，受 Entries 限制）。Supported 为 false 时无意义。
+	Channel string `json:"channel,omitempty"`
+	// Entries 限定该通道挂载的入口；空表示全部推理入口。
+	// 例：家族透传只挂在 gateway.openai.chat_completions，在 /v1/messages 上不可用。
+	Entries []string `json:"entries,omitempty"`
+	// Reason 在 Supported=false 时必填：为什么该宿主不能服务（如「Go 无 cline 上游适配器」）。
+	Reason string `json:"reason,omitempty"`
+}
+
+// Relay 通道名。与 Node 侧 lib/providers/contract.js 的取值逐字一致。
+const (
+	// RelayChannelCanonical 表示宿主有该 Provider 的完整上游适配器。
+	RelayChannelCanonical = "canonical"
+	// RelayChannelRelay 表示宿主以同协议透传方式承接（不重建协议语义）。
+	RelayChannelRelay = "relay"
+)
+
+// RelayHostNode / RelayHostGo 是 RelayHosts 的键。
+const (
+	RelayHostNode = "node"
+	RelayHostGo   = "go"
+)
 
 // CredentialFacts 记录与凭据有关的静态事实。环境变量列表按优先级排列：
 // 调用方取第一个非空值，因此顺序本身就是合同的一部分。

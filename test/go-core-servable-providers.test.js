@@ -27,16 +27,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  GO_CANONICAL_INFERENCE_PROVIDERS,
-  GO_RELAY_INFERENCE_PROVIDERS,
-  GO_RELAY_INFERENCE_ENTRIES,
   GO_INFERENCE_CHANNEL_CANONICAL,
   GO_INFERENCE_CHANNEL_RELAY,
   goInferenceChannel,
-  goServesInference
+  goServesInference,
+  goInferenceUnsupportedReason
 } = require('../lib/server/go-core-servable-providers');
+const { resolveRelayHost, listProviders } = require('../lib/providers');
 const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
 const { FAMILY_PROVIDERS } = require('../lib/runtime/codebuddy-family-layouts');
+const { SUPPORTED_SERVER_PROVIDERS } = require('../lib/server/providers');
 
 const ROOT = path.join(__dirname, '..');
 const LIVE = 'acct_0123456789abcdef0123';
@@ -47,6 +47,13 @@ const accountStateIndex = {
 const INFERENCE_ENTRY = 'gateway.openai.chat_completions';
 const MESSAGES_ENTRY = 'gateway.anthropic.messages';
 const routable = (...ids) => () => new Set(ids);
+
+// 从声明里取「Go 服务得了」的 Provider（取代已删除的硬编码常量）。
+const goServableProviders = () => SUPPORTED_SERVER_PROVIDERS
+  .filter((provider) => resolveRelayHost('go', provider, INFERENCE_ENTRY).supported);
+const canonicalProviders = () => SUPPORTED_SERVER_PROVIDERS
+  .filter((provider) => resolveRelayHost('go', provider).channel === GO_INFERENCE_CHANNEL_CANONICAL);
+
 
 // 与生产 index 同形（model-account-index）：承载者判定只读这份正向索引
 // （与 getModelBindingScore 同源）；entries 为 [accountRef, provider, models[]]。
@@ -66,6 +73,24 @@ const indexFor = (entries) => {
   return { builtAt: 1, modelToAccounts, accountToModels, accountByRef };
 };
 
+test('每个 Provider 都显式声明 Go 的推理承接能力，禁止沉默缺失', () => {
+  // 这条守卫是本能力位存在的理由：cline 此前不在任何名单里、没人知道为什么，
+  // 而用户的别名恰好指向它承载的模型 → 请求转到 Go 后 503。
+  for (const provider of SUPPORTED_SERVER_PROVIDERS) {
+    const declared = resolveRelayHost('go', provider, INFERENCE_ENTRY);
+    assert.ok(
+      declared.reason !== undefined,
+      `${provider} 必须显式声明 relayHosts.go（supported 真或假）`
+    );
+    if (!declared.supported) {
+      assert.ok(
+        String(declared.reason || '').trim().length > 0,
+        `${provider} 声明 Go 不支持时必须写明 reason，否则故障时只能翻代码猜`
+      );
+    }
+  }
+});
+
 test('canonical 集合与 Go 源码的 ProviderID 常量一致', () => {
   const source = fs.readFileSync(path.join(ROOT, 'core', 'inference', 'protocol.go'), 'utf8');
   const ids = [...source.matchAll(/^\s*Provider[A-Za-z]*\s+ProviderID\s*=\s*"([^"]+)"/gm)]
@@ -73,15 +98,57 @@ test('canonical 集合与 Go 源码的 ProviderID 常量一致', () => {
     .sort();
   assert.ok(ids.length > 0, '必须能从 core/inference/protocol.go 解析出 ProviderID 常量');
   assert.deepEqual(
-    [...GO_CANONICAL_INFERENCE_PROVIDERS].sort(),
+    canonicalProviders().sort(),
     ids,
-    'Node 的 canonical 集合与 Go 的 ProviderID 常量不一致：Go 新增 Provider 时必须补上游适配器并'
-    + '同步本集合，否则该 Provider 的请求划给 Go 会失败（划转后没有 Node 回落）'
+    '声明为 canonical 通道的 Provider 集合与 Go 的 ProviderID 常量不一致：Go 新增 Provider 时'
+    + '必须补上游适配器并同步声明，否则该 Provider 的请求划给 Go 会失败（划转后没有 Node 回落）'
   );
 });
 
-test('家族透传集合与 Go 的 FamilyProviders 一致，且确实挂在 chat completions 入口', () => {
-  // ① 三方集合一致：Node 能力表 == Go 透传包 == Node 家族布局表。
+test('声明的通道在 Go 侧必须有对应实现（假声明比沉默缺失更危险）', () => {
+  // 声明 supported:true 却无实现，请求转发过去必失败 —— 比「没声明」更难排查，
+  // 因为它看起来是「Go 能服务」。这条守卫把声明钉在源码事实上。
+  for (const provider of canonicalProviders()) {
+    const adapterDir = path.join(ROOT, 'internal', 'adapters', provider);
+    assert.ok(
+      fs.existsSync(adapterDir),
+      `${provider} 声明 canonical 通道，但 internal/adapters/${provider}/ 不存在 —— `
+      + 'canonical 意味着有完整上游适配器，目录缺失说明声明与实现脱节'
+    );
+  }
+
+  // relay 通道：Go 侧必须有对应的透传包（当前只有家族一个）。
+  const relayProviders = SUPPORTED_SERVER_PROVIDERS.filter((provider) => {
+    const declared = resolveRelayHost('go', provider, INFERENCE_ENTRY);
+    return declared.supported && declared.channel === GO_INFERENCE_CHANNEL_RELAY;
+  });
+  if (relayProviders.length > 0) {
+    const relayDir = path.join(ROOT, 'internal', 'transport', 'http', 'codebuddyfamilyrelay');
+    assert.ok(
+      fs.existsSync(relayDir),
+      '有 Provider 声明 relay 通道，但 Go 侧没有对应的透传包'
+    );
+  }
+
+  // 反向：Go 侧有 ProviderID 常量却没有 Provider 声明 canonical —— 上游白写了。
+  const source = fs.readFileSync(path.join(ROOT, 'core', 'inference', 'protocol.go'), 'utf8');
+  const goIds = [...source.matchAll(/^\s*Provider[A-Za-z]*\s+ProviderID\s*=\s*"([^"]+)"/gm)]
+    .map((match) => match[1]);
+  const declaredCanonical = new Set(canonicalProviders());
+  for (const id of goIds) {
+    assert.ok(
+      declaredCanonical.has(id),
+      `Go 有 ${id} 的 ProviderID 常量与上游适配器，但没有 Provider 声明 canonical 通道 —— `
+      + '该 Provider 的推理永远不会被转发到 Go，上游白写了'
+    );
+  }
+});
+
+test('家族透传声明与 Go 的 FamilyProviders、Node 家族布局表三方一致，且确实挂在 chat completions', () => {
+  // ① 三方集合一致：声明为 relay 通道的**家族** == Go 透传包 == Node 家族布局表。
+  //
+  // 注意：relay 通道上还有别的 Provider（cline），它们不是家族，因此这里用
+  // FAMILY_PROVIDERS 做交集而不是要求整个 relay 集合等于家族集合。
   const familySource = fs.readFileSync(
     path.join(ROOT, 'internal', 'transport', 'http', 'codebuddyfamilyrelay', 'family_provider.go'),
     'utf8'
@@ -89,16 +156,24 @@ test('家族透传集合与 Go 的 FamilyProviders 一致，且确实挂在 chat
   const goFamily = [...familySource.matchAll(/var FamilyProviders = \[\]string\{([^}]*)\}/g)]
     .flatMap((match) => [...match[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]));
   assert.ok(goFamily.length > 0, '必须能从 Go 源码解析出 FamilyProviders');
-  assert.deepEqual(
-    [...GO_RELAY_INFERENCE_PROVIDERS].sort(),
-    [...goFamily].sort(),
-    'Node 的透传集合与 Go 的 FamilyProviders 不一致'
-  );
-  assert.deepEqual(
-    [...GO_RELAY_INFERENCE_PROVIDERS].sort(),
-    [...FAMILY_PROVIDERS].sort(),
-    'Node 的透传集合与 Node 的家族布局表 FAMILY_PROVIDERS 不一致'
-  );
+
+  const relayProviders = SUPPORTED_SERVER_PROVIDERS.filter((provider) => {
+    const declared = resolveRelayHost('go', provider, INFERENCE_ENTRY);
+    return declared.supported && declared.channel === GO_INFERENCE_CHANNEL_RELAY;
+  });
+  const familyInRelay = relayProviders.filter((provider) => FAMILY_PROVIDERS.includes(provider));
+  assert.deepEqual([...familyInRelay].sort(), [...goFamily].sort(),
+    '声明为 relay 通道的家族 Provider 与 Go 的 FamilyProviders 不一致');
+  assert.deepEqual([...familyInRelay].sort(), [...FAMILY_PROVIDERS].sort(),
+    '声明为 relay 通道的家族 Provider 与 Node 的家族布局表 FAMILY_PROVIDERS 不一致');
+  // 每个家族成员都必须在 relay 集合里（漏一个 = 该支的请求划给 Go 后会失败）。
+  for (const provider of FAMILY_PROVIDERS) {
+    assert.ok(
+      relayProviders.includes(provider),
+      `${provider} 必须声明 Go 的 relay 通道，否则该支的请求划给 Go 后没有 Node 回落`
+    );
+  }
+
   // ② Go 的挂载：chat completions 入口必须过家族 Handler（nil 时才回退 Canonical）。
   const router = fs.readFileSync(
     path.join(ROOT, 'internal', 'host', 'aihserver', 'router.go'),
@@ -108,7 +183,7 @@ test('家族透传集合与 Go 的 FamilyProviders 一致，且确实挂在 chat
     router,
     /chatCompletions\s*:=\s*handlers\.familyRelay/,
     'Go router 必须把 chat completions 入口接到家族透传 Handler；拆掉挂载时本守卫与'
-    + ' Node 的透传能力表必须一起改，否则 Node 会把请求转发给一个不存在的通道'
+    + ' Node 的透传声明必须一起改，否则 Node 会把请求转发给一个不存在的通道'
   );
   assert.match(
     router,
@@ -119,8 +194,18 @@ test('家族透传集合与 Go 的 FamilyProviders 一致，且确实挂在 chat
     .split('\n')
     .find((line) => line.includes('openaichatcompletionsapi.Path'));
   assert.ok(mountLine && mountLine.includes('chatCompletions'), 'chat completions 挂载行必须使用家族入口变量');
-  // ③ 入口表：目前透传只挂这一个入口。
-  assert.deepEqual([...GO_RELAY_INFERENCE_ENTRIES], ['gateway.openai.chat_completions']);
+
+  // ③ 入口限定：家族声明里必须显式列出 chat completions，不能只写布尔。
+  const { getProviderDefinition } = require('../lib/provider-catalog');
+  for (const provider of FAMILY_PROVIDERS) {
+    const definition = getProviderDefinition(provider);
+    assert.deepEqual(
+      [...definition.relayHosts.go.entries],
+      ['gateway.openai.chat_completions'],
+      `${provider} 必须把透传挂载的入口写进 entries —— 只写布尔会让 /v1/messages 上的`
+      + ' 请求被误判为「Go 能服务」，而那条路径上没有透传 Handler'
+    );
+  }
 });
 
 test('家族只在透传挂载的入口上算 Go 服务得了，别的入口照旧交还', () => {
@@ -142,7 +227,7 @@ test('家族只在透传挂载的入口上算 Go 服务得了，别的入口照�
       `${provider} 在未挂载透传的入口（anthropic messages）上仍必须交还`
     );
   }
-  for (const provider of GO_CANONICAL_INFERENCE_PROVIDERS) {
+  for (const provider of canonicalProviders()) {
     assert.equal(goInferenceChannel(provider, INFERENCE_ENTRY), GO_INFERENCE_CHANNEL_CANONICAL);
     assert.equal(goServesInference(provider), true, 'canonical 通道的判定与入口无关');
   }

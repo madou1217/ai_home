@@ -60,7 +60,9 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/claudenativerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/clauderelayleaseapi"
 	"github.com/madou1217/ai_home/internal/transport/http/clientauth"
+	"github.com/madou1217/ai_home/internal/transport/http/clinerelay"
 	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
+	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponseshttp"
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
@@ -823,14 +825,34 @@ func newHandlers(
 			err,
 		)
 	}
+	// cline 透传：与家族共用 chat completions 入口，但服务的是 cline 账号。
+	// 它是 relaycore「多数派零覆盖」的验证用例——上游就是标准 OpenAI 兼容端点。
+	clineRelayAccounts, err := newProviderRelayAccountSource(
+		clinerelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		clineRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 cline 透传账号来源失败: %w", err)
+	}
+	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
+	// + 合并的账号来源。
+	//
+	// 为什么不是两个 Handler 串接：每个 Handler 在「服务不了」时交回 Canonical，
+	// 串接会让第一个 Handler 直接交还、第二个永远轮不到。分派必须发生在**账号所属
+	// Provider** 这一层——链按账号解析 Provider，账号来源按模型汇总两个池。
 	familyRelayHandler, err := codebuddyfamilyrelay.NewHandler(
 		codebuddyfamilyrelay.Dependencies{
-			Accounts:    familyRelayAccounts,
+			Accounts:    relaycore.NewAccountSourceChain(clineRelayAccounts, familyRelayAccounts),
 			Fallback:    inference.handler,
 			Credentials: credentials,
 			Client:      relayClient,
 			Attempts:    accountRuntime,
 			Clock:       time.Now,
+			// 同一入口上还要服务 cline：把它的 Provider 接进链里。
+			ExtraProviders: []relaycore.Provider{clinerelay.NewProvider("")},
 		},
 	)
 	if err != nil {

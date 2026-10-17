@@ -43,6 +43,40 @@ func BuiltinManifest() Manifest {
 	}
 }
 
+// relayHostsCanonical 声明「两个宿主都能服务该 Provider 的推理，且 Go 走 canonical 通道」。
+//
+// canonical 表示 Go 有该 Provider 的完整上游适配器（core/inference 的 ProviderID +
+// internal/adapters 下的协议适配器），因此覆盖全部推理入口，不限定 Entries。
+func relayHostsCanonical() map[string]RelayHost {
+	return map[string]RelayHost{
+		RelayHostNode: {Supported: true, Channel: RelayChannelRelay},
+		RelayHostGo:   {Supported: true, Channel: RelayChannelCanonical},
+	}
+}
+
+// relayHostsGoRelay 声明「Go 以同协议透传承接，且只在这些入口上挂载」。
+//
+// 用于家族透传（codebuddy / workbuddy 四支）：Go 的 codebuddyfamilyrelay 只挂在
+// chat completions 一个入口上，因此 entries 必须显式列出——只写布尔会让 /v1/messages
+// 上的家族请求被误判为「Go 能服务」，而那条路径上根本没有透传 Handler。
+func relayHostsGoRelay(entries ...string) map[string]RelayHost {
+	return map[string]RelayHost{
+		RelayHostNode: {Supported: true, Channel: RelayChannelRelay},
+		RelayHostGo:   {Supported: true, Channel: RelayChannelRelay, Entries: entries},
+	}
+}
+
+// relayHostsNodeOnly 声明「只有 Node 能服务该 Provider 的推理」，并写明 Go 不能的原因。
+//
+// reason 必填（validateRelayHosts 强制）：沉默缺失正是本能力位要消灭的形态——
+// Provider 不在任何名单里、没人知道为什么，故障时只能靠翻代码猜。
+func relayHostsNodeOnly(reason string) map[string]RelayHost {
+	return map[string]RelayHost{
+		RelayHostNode: {Supported: true, Channel: RelayChannelRelay},
+		RelayHostGo:   {Supported: false, Reason: reason},
+	}
+}
+
 // builtinCodex 定义 Codex/ChatGPT 的稳定身份和声明式能力。
 func builtinCodex() Definition {
 	return Definition{
@@ -93,6 +127,7 @@ func builtinCodex() Definition {
 			},
 		},
 		NativeBoundary: nativeCodex(),
+		RelayHosts:     relayHostsCanonical(),
 	}
 }
 
@@ -104,6 +139,7 @@ func builtinGemini() Definition {
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
+		RelayHosts:   relayHostsNodeOnly("Go 无 gemini 直连上游（gemini-* 模型经 agy 的 Code Assist 服务，agy 已声明 canonical）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			disabledAuthOption(
@@ -182,6 +218,7 @@ func builtinClaude() Definition {
 			},
 		},
 		NativeBoundary: nativeClaude(),
+		RelayHosts:     relayHostsCanonical(),
 	}
 }
 
@@ -223,6 +260,7 @@ func builtinAntigravity() Definition {
 			),
 		},
 		NativeBoundary: nativeAntigravity(),
+		RelayHosts:     relayHostsCanonical(),
 	}
 }
 
@@ -240,6 +278,7 @@ func builtinOpenCode() Definition {
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
 		NativeBoundary: nativeOpenCode(),
+		RelayHosts:     relayHostsNodeOnly("Go 无 opencode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
@@ -279,6 +318,7 @@ func builtinGrok() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
+		RelayHosts:   relayHostsNodeOnly("Go 无 grok 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "xAI 密钥", "绑定 XAI_API_KEY / XAI_BASE_URL。"),
@@ -312,6 +352,7 @@ func builtinQoder() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
+		RelayHosts:   relayHostsNodeOnly("qoder 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"),
 		// usage_scan：扫描本地会话历史（projects/<project>/<session>.jsonl）建立会话/prompt
 		// 索引，并在 assistant 记录带 usage 时统计 token。**2026-10-15 在 Windows 真机核实：
 		// qoder CLI 1.1.2 的会话 JSONL 不写 usage**，因此 token 用量的实际来源是运行时——
@@ -366,6 +407,7 @@ func builtinQoderCN() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
+		RelayHosts:   relayHostsNodeOnly("qodercn 的推理只能经本机 CLI headless 执行，Go 服务端无此条件"),
 		// 与 qoder 同源：会话 JSONL + usage 字段（账号 runtime 目录归属）。
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
@@ -418,6 +460,7 @@ func builtinKimi() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
+		RelayHosts:   relayHostsNodeOnly("Go 无 kimi 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilityQuotaUsage, CapabilityUsageScan, CapabilityGatewayProfile, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "Moonshot 密钥", "绑定 MOONSHOT_API_KEY / KIMI_BASE_URL（支持 api.moonshot.cn 和 api.moonshot.ai 双端点）。"),
@@ -455,6 +498,7 @@ func builtinKiro() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
+		RelayHosts:   relayHostsNodeOnly("Go 无 kiro 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthDevice, "AWS Builder ID 登录", "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center），不需要本地 kiro CLI。"),
@@ -493,6 +537,7 @@ func builtinZcode() Definition {
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
+		RelayHosts:   relayHostsNodeOnly("Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
@@ -561,6 +606,7 @@ func builtinCodebuddy() Definition {
 	return Definition{
 		ID:             "codebuddy",
 		NativeBoundary: nativeCodebuddy(),
+		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
@@ -677,6 +723,7 @@ func builtinCodebuddyCN() Definition {
 	return Definition{
 		ID:             "codebuddycn",
 		NativeBoundary: nativeCodebuddy(),
+		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
@@ -768,6 +815,7 @@ func builtinWorkbuddy() Definition {
 	return Definition{
 		ID:             "workbuddy",
 		NativeBoundary: nativeCodebuddy(),
+		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
@@ -853,6 +901,7 @@ func builtinWorkbuddyCN() Definition {
 	return Definition{
 		ID:             "workbuddycn",
 		NativeBoundary: nativeCodebuddy(),
+		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
@@ -936,6 +985,12 @@ func builtinCline() Definition {
 		Clients:        clientSupport(true, false),
 		Credentials:    &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
 		NativeBoundary: nativeCline(),
+		// cline 走 relaycore 的同协议透传通道（internal/transport/http/clinerelay）：
+		// 上游就是标准 OpenAI 兼容端点（POST {base}/chat/completions + Bearer workos:<JWT>），
+		// 没有任何硬约束，因此它是「多数派零覆盖」的验证用例——Provider 只声明端点与
+		// 凭据取法，改写/请求头/错误分类全部沿用 relaycore.BaseProvider 的默认实现。
+		// 账号层由 nativeaccount 的 clineIdentity 解码，导入走原生信封。
+		RelayHosts: relayHostsGoRelay("gateway.openai.chat_completions"),
 		// session_history + account_session_store：会话读的是账号沙箱里的
 		// <CLINE_DATA_DIR>/db/sessions.db 与 sessions/<id>/<id>.messages.json
 		// （lib/sessions/session-reader-cline.js）。共享存储落地后同一条路径就是宿主

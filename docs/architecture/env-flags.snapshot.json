@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:43:29.589Z",
-  "total": 173,
+  "generatedAt": "2026-10-17T05:45:45.868Z",
+  "total": 167,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -1837,58 +1837,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_TURN_CREDENTIAL",
-      "category": "credential",
-      "reads": 0,
-      "literals": 4,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-turn-relay.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TURN_ICE_SERVER",
-      "category": "network",
-      "reads": 0,
-      "literals": 5,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-turn-relay.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TURN_ICE_SERVERS",
-      "category": "network",
-      "reads": 0,
-      "literals": 5,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-turn-relay.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_TURN_USERNAME",
-      "category": "network",
-      "reads": 0,
-      "literals": 4,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-turn-relay.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_UPSTREAM_HEADERS",
       "category": "plumbing",
       "reads": 0,
@@ -1906,32 +1854,6 @@
       "literals": 1,
       "files": [
         "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WEBTRANSPORT_PAGE_URL",
-      "category": "network",
-      "reads": 0,
-      "literals": 4,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-webtransport.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_WEBTRANSPORT_URL",
-      "category": "network",
-      "reads": 0,
-      "literals": 5,
-      "files": [
-        "lib/cli/services/fabric/closure-resume-check.js",
-        "lib/cli/services/fabric/transport-config.js",
-        "lib/cli/services/fabric/transport-webtransport.js",
-        "scripts/fabric-m6-prerequisite-audit.js"
       ],
       "aliasConstants": []
     },

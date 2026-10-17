@@ -39,14 +39,15 @@ test('M6 prerequisite audit parser can skip default TURN UDP probe', () => {
   assert.equal(options.skipTurnUdpProbe, true);
 });
 
-test('M6 prerequisite audit parser reads optional environment defaults', () => {
-  const options = parseArgs([], {
-    AIH_TURN_ICE_SERVERS: 'turn:relay.example.com:3478, turns:relay.example.com:5349',
-    AIH_TURN_USERNAME: 'relay-user',
-    AIH_TURN_CREDENTIAL: 'relay-secret',
-    AIH_WEBTRANSPORT_URL: 'https://transport.example.com/wt',
-    AIH_WEBTRANSPORT_PAGE_URL: 'https://transport.example.com/'
-  });
+test('M6 prerequisite audit parser reads optional CLI defaults', () => {
+  const options = parseArgs([
+    '--turn-ice-server', 'turn:relay.example.com:3478',
+    '--turn-ice-server', 'turns:relay.example.com:5349',
+    '--turn-username', 'relay-user',
+    '--turn-credential', 'relay-secret',
+    '--webtransport-url', 'https://transport.example.com/wt',
+    '--webtransport-page-url', 'https://transport.example.com/'
+  ]);
 
   assert.deepEqual(options.turnIceServers, ['turn:relay.example.com:3478', 'turns:relay.example.com:5349']);
   assert.equal(options.turnUsername, 'relay-user');

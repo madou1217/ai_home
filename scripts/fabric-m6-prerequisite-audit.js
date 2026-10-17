@@ -147,14 +147,6 @@ function splitList(value) {
     .filter(Boolean);
 }
 
-function envValue(env, names) {
-  for (const name of names) {
-    const value = normalizeText(env && env[name], 4096);
-    if (value) return value;
-  }
-  return '';
-}
-
 function buildDefaultWebTransportUrl(endpoint) {
   return buildHttpsUrlFromEndpoint(endpoint, DEFAULT_WEBTRANSPORT_PATH);
 }
@@ -163,8 +155,7 @@ function buildPageUrl(endpoint) {
   return `${String(endpoint || '').replace(/\/+$/, '')}${DEFAULT_PAGE_PATH}`;
 }
 
-function parseArgs(argv = [], env = process.env) {
-  const envTurnServers = splitList(envValue(env, ['AIH_TURN_ICE_SERVERS', 'AIH_TURN_ICE_SERVER']));
+function parseArgs(argv = []) {
   const options = {
     help: false,
     json: false,
@@ -174,11 +165,11 @@ function parseArgs(argv = [], env = process.env) {
     remoteDir: DEFAULT_REMOTE_DIR,
     nodeId: DEFAULT_NODE_ID,
     port: DEFAULT_PORT,
-    turnIceServers: envTurnServers,
-    turnUsername: envValue(env, ['AIH_TURN_USERNAME']),
-    turnCredential: envValue(env, ['AIH_TURN_CREDENTIAL']),
-    webTransportUrl: envValue(env, ['AIH_WEBTRANSPORT_URL']),
-    webTransportPageUrl: envValue(env, ['AIH_WEBTRANSPORT_PAGE_URL']) || DEFAULT_SECURE_PROBE_PAGE_URL,
+    turnIceServers: [],
+    turnUsername: '',
+    turnCredential: '',
+    webTransportUrl: '',
+    webTransportPageUrl: DEFAULT_SECURE_PROBE_PAGE_URL,
     sampleCount: DEFAULT_SAMPLE_COUNT,
     rpcSampleCount: DEFAULT_RPC_SAMPLE_COUNT,
     timeoutMs: DEFAULT_TIMEOUT_MS,

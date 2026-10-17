@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:43:29.589Z
-> 共 **173** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:45:45.868Z
+> 共 **167** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，21）
@@ -30,7 +30,7 @@
 | `AIH_ZCODE_CAPTCHA_HOOK_MODULE_PATH` | — | 0 | zcode 验证码 hook 注入模块路径 |
 | `AIH_ZCODE_CAPTCHA_HOOK_STATE_PATH` | — | 0 | zcode 验证码 hook 状态文件路径 |
 
-## network（端点 / 代理 / 端口，34）
+## network（端点 / 代理 / 端口，29）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -63,11 +63,6 @@
 | `AIH_SSH_CLIP_SHIM_TTY` | — | 1 | shim 是否占用 TTY |
 | `AIH_SSH_TERMINAL_CLIPBOARD_TMUX_PASSTHROUGH` | — | 1 | 终端剪贴板经 tmux 透传 |
 | `AIH_GO_CORE_PORT` | — | 0 | Go Core 子进程监听端口 |
-| `AIH_TURN_ICE_SERVER` | — | 0 | TURN 服务器（单个） |
-| `AIH_TURN_ICE_SERVERS` | — | 0 | TURN 服务器列表（逗号分隔） |
-| `AIH_TURN_USERNAME` | — | 0 | TURN 用户名 |
-| `AIH_WEBTRANSPORT_PAGE_URL` | — | 0 | WebTransport 探测页 URL |
-| `AIH_WEBTRANSPORT_URL` | — | 0 | fabric WebTransport 端点 |
 
 ## flag（开关与逃生门（环境准入），6）
 
@@ -86,7 +81,7 @@
 | --- | --- | --- | --- |
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
 
-## credential（凭据与密钥（文档只写变量名，绝不放真实值），21）
+## credential（凭据与密钥（文档只写变量名，绝不放真实值），20）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -110,7 +105,6 @@
 | `AIH_RELAY_PASSWORD` | — | 1 | 中转 SOCKS5 密码（默认从 run/credentials.json 取） |
 | `AIH_CLAUDE_CREDENTIAL_TYPE` | — | 0 | claude 凭据类型标记（oauth / api-key），透传给 CLI |
 | `AIH_CODEX_LOCAL_REMOTE_TOKEN` | — | 0 | 本地 codex app-server 远程控制 token |
-| `AIH_TURN_CREDENTIAL` | — | 0 | TURN 密码 |
 
 ## test（测试与探针专用，1）
 

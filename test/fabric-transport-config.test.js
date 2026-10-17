@@ -173,7 +173,7 @@ test('fabric command router routes transport config JSON', async () => {
   assert.equal(payload.config.turn.configured, false);
 });
 
-test('applyTransportConfigDefaults keeps environment values ahead of stored values', () => {
+test('applyTransportConfigDefaults applies stored values when options do not set them', () => {
   const deps = createStoreDeps({
     version: 1,
     turn: {
@@ -190,15 +190,8 @@ test('applyTransportConfigDefaults keeps environment values ahead of stored valu
     updatedAt: 1
   });
 
-  const merged = applyTransportConfigDefaults({
-    turnIceServers: ['turn:env.example.com:3478']
-  }, [], {
-    ...deps,
-    env: {
-      AIH_TURN_ICE_SERVER: 'turn:env.example.com:3478'
-    }
-  });
+  const merged = applyTransportConfigDefaults({}, [], deps);
 
-  assert.deepEqual(merged.options.turnIceServers, ['turn:env.example.com:3478']);
+  assert.deepEqual(merged.options.turnIceServers, ['turn:configured.example.com:3478']);
   assert.equal(merged.options.turnUsername, 'configured-user');
 });

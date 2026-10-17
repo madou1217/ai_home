@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T10:04:10.112Z",
-  "total": 92,
+  "generatedAt": "2026-10-17T10:04:55.201Z",
+  "total": 90,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -18,8 +18,6 @@
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AGENT_ENDPOINT_ENV": "AIH_SSH_CLIP_AGENT_ENDPOINT",
     "BACKGROUND_RESTART_ENV": "AIH_SERVER_BACKGROUND_RESTART",
-    "BRIDGE_DIR_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",
-    "BRIDGE_IDENTITY_ENV": "AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY",
     "CLAUDE_CREDENTIAL_TYPE_ENV": "AIH_CLAUDE_CREDENTIAL_TYPE",
     "CODEX_APP_SERVER_PASSTHROUGH_ENV": "AIH_CODEX_APP_SERVER_PASSTHROUGH",
     "CODEX_HOOKS_ENV": "AIH_CODEX_HOOKS",
@@ -438,32 +436,6 @@
         "lib/cli/services/pty/ssh-clipboard-shims.js"
       ],
       "aliasConstants": []
-    },
-    {
-      "name": "AIH_ZCODE_DESKTOP_BRIDGE_DIR",
-      "category": "path",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-desktop-bridge-binding.js",
-        "lib/runtime/zcode-session-attribution-runner.js"
-      ],
-      "aliasConstants": [
-        "BRIDGE_DIR_ENV"
-      ]
-    },
-    {
-      "name": "AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 1,
-      "files": [
-        "lib/runtime/zcode-desktop-bridge-binding.js",
-        "lib/runtime/zcode-session-attribution-runner.js"
-      ],
-      "aliasConstants": [
-        "BRIDGE_IDENTITY_ENV"
-      ]
     },
     {
       "name": "AIH_CODEX_AUTH_PREFLIGHT",

@@ -1,10 +1,10 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:04:10.112Z
-> 共 **92** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T10:04:55.201Z
+> 共 **90** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，13）
+## path（数据/目录/仓库路径，12）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -14,7 +14,6 @@
 | `AIH_CODEX_HOME` | — | 2 | codex 配置根（沙箱投影 / 宿主切换） |
 | `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
 | `AIH_OPENCODE_CONFIG_DIR` | — | 2 | opencode 配置根（账号投影） |
-| `AIH_ZCODE_DESKTOP_BRIDGE_DIR` | — | 2 | zcode 桌面桥接目录（登录态注入/读取） |
 | `AIH_CODEX_AUTO_SKIP_REPO_CHECK` | — | 1 | 跳过 codex 的仓库信任检查（自动化场景） |
 | `AIH_EDGE_NGINX_CONF_DIR` | — | 1 | 托管 nginx 的配置目录 |
 | `AIH_NODE_DIST_DIR` | — | 1 | 内置 Node 发行目录（无 Node 环境自举） |
@@ -74,7 +73,7 @@
 | --- | --- | --- | --- |
 | `AIH_CODEX_USAGE_PROBE` | — | 0 | codex 用量探测上下文（direct/baseUrl/path 三项合一） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），47）
+## plumbing（内部管道（进程间传递的身份 / 标记），46）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -85,7 +84,6 @@
 | `AIH_CODEX_BIN` | — | 3 | codex 可执行文件路径 |
 | `AIH_GEMINI_PROJECT_ID` | — | 2 | gemini OAuth 项目 id（模板替换） |
 | `AIH_PSMUX_INSTALL_PROMPT` | — | 2 | 是否提示安装 psmux |
-| `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
 | `AIH_EDGE_CADDYFILE` | — | 1 | 托管 caddy 的 Caddyfile 路径 |

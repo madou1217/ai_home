@@ -127,8 +127,9 @@ test('storage preparation ignores inherited Desktop bridge environment', t => {
   ].join(''));
   const result = spawnSync(process.execPath, [require.resolve('../lib/runtime/zcode-session-attribution-runner'),
     entryPath, 'app-server', '--stdio', '--prepare-storage'], {
-    encoding: 'utf8', env: { ...process.env, [ZCODE_CONTEXT_ENV]: serializeZcodeContext({ scope: ACCOUNT_REF }),
-      AIH_ZCODE_DESKTOP_BRIDGE_DIR: mailboxDir, AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY: 'fixture-identity' }
+    encoding: 'utf8', env: { ...process.env, [ZCODE_CONTEXT_ENV]: serializeZcodeContext({
+      scope: ACCOUNT_REF, bridgeDir: mailboxDir, bridgeIdentity: 'fixture-identity'
+    }) }
   });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), ['app-server', '--stdio', '--prepare-storage']);

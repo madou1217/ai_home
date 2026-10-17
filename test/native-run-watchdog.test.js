@@ -113,7 +113,6 @@ test('watchdog defaults come from the measured TTFT distribution and stay env-ov
   assert.equal(tuned.upstreamErrorTimeoutMs, 30000);
   assert.equal(tuned.stallTimeoutMs, 600000);
 
-  assert.equal(resolveNativeRunWatchdogConfig({ AIH_NATIVE_RUN_WATCHDOG: '0' }).enabled, false);
   assert.equal(resolveNativeRunWatchdogConfig({}, { enabled: false }).enabled, false);
   // 垃圾值不许把预算变成 NaN（NaN 比较恒 false = 永不熔断）。
   assert.equal(

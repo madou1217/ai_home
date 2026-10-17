@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:53:57.124Z
-> 覆盖 `lib / bin / scripts / core`，共 **152** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:01:02.944Z
+> 覆盖 `lib / bin / scripts / core`，共 **150** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -14,7 +14,7 @@
 | tuning | 1 | 可调参数（超时 / TTL / 上限） |
 | credential | 18 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 1 | 测试与探针专用 |
-| plumbing | 85 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 83 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -168,7 +168,6 @@
 | `AIH_ZCODE_AGENT_NODE` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_AGENT_RUNNER` | 2 | 1 | lib/server/desktop-launch/zcode-strategy.js |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | 2 | 1 | lib/runtime/zcode-desktop-bridge-binding.js<br>lib/runtime/zcode-session-attribution-runner.js |
-| `AIH_CJK_LOCALE` | 1 | 0 | lib/cli/services/ai-cli/provider-runtime-env.js |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | 1 | 1 | lib/runtime/multiplexer/tmux-session-env.js<br>lib/server/codex-default-cli-launcher.js |
 | `AIH_CODEX_USAGE_DIRECT` | 1 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_DEPLOY_GO_TARGET` | 1 | 0 | scripts/deploy-server.js |
@@ -183,7 +182,6 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | 1 | 0 | scripts/postinstall-go-core.js |
 | `AIH_GO_CORE_ROUTES` | 1 | 2 | lib/server/go-core-host.js<br>lib/server/server-config-schema.js |
 | `AIH_KONSOLE_PROVIDER_PROFILE` | 1 | 0 | lib/cli/services/terminal-icons.js |
-| `AIH_NATIVE_RUN_WATCHDOG` | 1 | 0 | lib/server/native-run-watchdog.js |
 | `AIH_OPENCODE_GATEWAY_BYOK` | 1 | 0 | lib/cli/services/ai-cli/launch-profile/opencode-strategy.js |
 | `AIH_PERSIST_ACTIVE` | 1 | 2 | lib/cli/services/ai-cli/desktop-client-restart.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>lib/runtime/persistent-session.js |
 | `AIH_PERSIST_DETACHED` | 1 | 1 | lib/cli/services/pty/pty-runtime-spawn.js<br>lib/runtime/persistent-session.js |

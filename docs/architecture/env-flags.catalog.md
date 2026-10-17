@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:53:57.124Z
-> 共 **162** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T06:01:02.944Z
+> 共 **160** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，20）
@@ -95,7 +95,7 @@
 | `AIH_SHADOW_GO_KEY` | — | 2 | gateway shadow 对比时 Go 端口令（只读环境，不落盘） |
 | `AIH_SHADOW_NODE_KEY` | — | 2 | gateway shadow 对比时 Node 端口令 |
 | `AIH_ACCOUNT_SMOKE_CLIENT_KEY` | — | 1 | 账号冒烟测试使用的一次性 key |
-| `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检 |
+| `AIH_CODEX_AUTH_PREFLIGHT` | — | 1 | 启动前做一次 token 预检（内部/测试可关） |
 | `AIH_DEPLOY_SSH_KEY` | — | 1 | 部署脚本使用的 SSH 私钥 |
 | `AIH_GO_CORE_CLIENT_KEY` | — | 1 | 传给 Go Core 的客户端 key |
 | `AIH_GO_CORE_MANAGEMENT_KEY` | — | 1 | 传给 Go Core 的管理 key |
@@ -110,7 +110,7 @@
 | --- | --- | --- | --- |
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），86）
+## plumbing（内部管道（进程间传递的身份 / 标记），84）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -133,9 +133,8 @@
 | `AIH_ZCODE_AGENT_NODE` | — | 2 | zcode agent 使用的 node |
 | `AIH_ZCODE_AGENT_RUNNER` | — | 2 | zcode agent runner 脚本 |
 | `AIH_ZCODE_DESKTOP_BRIDGE_IDENTITY` | — | 2 | zcode 桌面桥接身份 |
-| `AIH_CJK_LOCALE` | — | 1 | CJK locale 判定开关 |
 | `AIH_CODEX_TUI_LOCAL_REMOTE` | — | 1 | codex TUI 本地 app-server 的远程控制开关 |
-| `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（跳过 CLI） |
+| `AIH_CODEX_USAGE_DIRECT` | — | 1 | 直接读取 codex 用量（内部/测试可关，回退 app-server） |
 | `AIH_DEPLOY_GO_TARGET` | — | 1 | 部署脚本的 Go 构建目标平台 |
 | `AIH_EDGE_CADDY_BIN` | — | 1 | 托管 caddy 可执行文件路径 |
 | `AIH_EDGE_CADDYFILE` | — | 1 | 托管 caddy 的 Caddyfile 路径 |
@@ -148,7 +147,6 @@
 | `AIH_GO_CORE_DOWNLOAD_BASE` | — | 1 | Go Core 工件下载基地址 |
 | `AIH_GO_CORE_ROUTES` | — | 1 | 由 Go 承接的路由条目（config 优先） |
 | `AIH_KONSOLE_PROVIDER_PROFILE` | — | 1 | Konsole profile 名覆盖 |
-| `AIH_NATIVE_RUN_WATCHDOG` | — | 1 | 原生运行看门狗开关 |
 | `AIH_OPENCODE_GATEWAY_BYOK` | — | 1 | opencode BYOK overlay 显式 opt-in |
 | `AIH_PERSIST_ACTIVE` | — | 1 | 当前已在持久会话内（防嵌套） |
 | `AIH_PERSIST_DETACHED` | — | 1 | 持久会话由 restore 以 detached 方式创建 |

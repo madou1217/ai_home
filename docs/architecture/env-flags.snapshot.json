@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:53:57.124Z",
-  "total": 162,
+  "generatedAt": "2026-10-17T06:01:02.944Z",
+  "total": 160,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -778,16 +778,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CJK_LOCALE",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/cli/services/ai-cli/provider-runtime-env.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_CLAUDE_DIAGNOSTIC_NO_EVIDENCE_COOLDOWN_MS",
       "category": "flag",
       "reads": 1,
@@ -1069,16 +1059,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/terminal-icons.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_NATIVE_RUN_WATCHDOG",
-      "category": "plumbing",
-      "reads": 1,
-      "literals": 0,
-      "files": [
-        "lib/server/native-run-watchdog.js"
       ],
       "aliasConstants": []
     },

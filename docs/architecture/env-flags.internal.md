@@ -1,7 +1,7 @@
 # 内部变量清单（不要手工设置）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:08:02.742Z
-> 覆盖 `lib / bin / scripts / core`，共 **279** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:13:17.031Z
+> 覆盖 `lib / bin / scripts / core`，共 **266** 个非公开 `AIH_*` 变量；公开的 10 个见 [env-flags.md](./env-flags.md)。
 > 这些名字由 aih 自己设置给子进程，或属实验/调试/测试钩子：**不承诺兼容**，升级可能改名或删除。不要把这里的东西写进部署脚本。
 
 ## 分类概览
@@ -11,10 +11,10 @@
 | path | 21 | 数据/目录/仓库路径 |
 | network | 49 | 端点 / 代理 / 端口 |
 | flag | 6 | 开关与逃生门（环境准入） |
-| tuning | 46 | 可调参数（超时 / TTL / 上限） |
+| tuning | 36 | 可调参数（超时 / TTL / 上限） |
 | credential | 23 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
-| plumbing | 132 | 内部管道（进程间传递的身份 / 标记） |
+| plumbing | 129 | 内部管道（进程间传递的身份 / 标记） |
 
 ## 反模式与梳理发现
 
@@ -144,10 +144,6 @@
 | 变量 | 读取 | 字面量 | 文件 |
 | --- | --- | --- | --- |
 | `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | 3 | 0 | lib/cli/services/usage/snapshot.js<br>lib/server/agy-usage-snapshot.js |
-| `AIH_AGY_WARM_MAX` | 2 | 0 | lib/server/agy-warm-ls-pool.js |
-| `AIH_AGY_WARM_RESP_TIMEOUT_MS` | 2 | 0 | lib/server/agy-warm-ls-pool.js |
-| `AIH_AGY_WARM_TTL_MS` | 2 | 0 | lib/server/agy-warm-ls-pool.js |
-| `AIH_APPROVAL_TIMEOUT_MS` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_CLAUDE_USAGE_TIMEOUT_MS` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | 2 | 0 | lib/cli/services/usage/usage-snapshot-codex.js |
 | `AIH_SERVER_AGY_MAX_CONCURRENCY` | 2 | 0 | lib/server/args.js |
@@ -178,17 +174,11 @@
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | 1 | 0 | lib/cli/services/pty/claude-diagnostic-scheduler.js |
 | `AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS` | 1 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_NATIVE_RUN_RETENTION_MS` | 1 | 0 | lib/server/control-plane-device-session-start.js |
-| `AIH_RUNTIME_THRESHOLD_CHECK_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_RUNTIME_USAGE_DISPLAY_INTERVAL_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_RUNTIME_USAGE_REFRESH_MIN_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
-| `AIH_RUNTIME_USAGE_STALE_MS` | 1 | 1 | lib/cli/services/pty/pty-runtime-launch.js<br>lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_STALL_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | 0 | 1 | lib/server/native-run-watchdog.js |
 | `AIH_SERVER_SOURCE_AUTO_RESTART_INTERVAL_MS` | 0 | 1 | lib/server/source-auto-restart.js |
-| `AIH_USAGE_BULK_PROBE_TIMEOUT_MS` | 0 | 1 | lib/cli/services/usage/presenter.js |
-| `AIH_USAGE_SCAN_DEADLINE_MS` | 0 | 1 | lib/cli/services/usage/presenter.js |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值））
 
@@ -332,7 +322,6 @@
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | 0 | 1 | lib/server/codex-app-server-hook-wrapper.js |
 | `AIH_CODEX_MANAGED_LAUNCH` | 0 | 2 | lib/runtime/codex-launch-context.js<br>lib/runtime/multiplexer/tmux-session-env.js |
 | `AIH_CODEX_REMOTE_AUTOSTART` | 0 | 2 | lib/cli/services/pty/pty-runtime-launch.js |
-| `AIH_CODEX_USAGE_BULK_JOBS` | 0 | 1 | lib/cli/services/usage/presenter.js |
 | `AIH_IMAGE_API` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
@@ -356,8 +345,6 @@
 | `AIH_SESSION_TARGET` | 0 | 1 | lib/runtime/persistent-session.js |
 | `AIH_TERMINAL_TITLE_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_UPSTREAM_HEADERS` | 0 | 2 | lib/account/go-bridge/go-import-translator.js<br>lib/server/upstream-account-profile.js |
-| `AIH_USAGE_BULK_JOBS` | 0 | 1 | lib/cli/services/usage/presenter.js |
-| `AIH_USAGE_BULK_THRESHOLD` | 0 | 1 | lib/cli/services/usage/presenter.js |
 | `AIH_WARP_PROVIDER_ICON_AUTO` | 0 | 1 | lib/cli/services/terminal-icons.js |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | 0 | 1 | lib/runtime/zcode-session-attribution-hook.js |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | 0 | 1 | lib/runtime/zcode-usage-attribution-hook.js |

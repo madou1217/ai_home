@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T05:08:02.742Z",
-  "total": 289,
+  "generatedAt": "2026-10-17T05:13:17.031Z",
+  "total": 276,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -454,46 +454,6 @@
       "literals": 0,
       "files": [
         "lib/server/http-utils-code-assist.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_WARM_MAX",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/agy-warm-ls-pool.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_WARM_RESP_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/agy-warm-ls-pool.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_AGY_WARM_TTL_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/agy-warm-ls-pool.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_APPROVAL_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/claude-permission-mcp-tool.js"
       ],
       "aliasConstants": []
     },
@@ -2109,56 +2069,12 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_RUNTIME_THRESHOLD_CHECK_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_RUNTIME_TOOLS_DIR",
       "category": "path",
       "reads": 1,
       "literals": 0,
       "files": [
         "lib/runtime/native-cli-resolver.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_USAGE_DISPLAY_INTERVAL_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_USAGE_REFRESH_MIN_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RUNTIME_USAGE_STALE_MS",
-      "category": "tuning",
-      "reads": 1,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js",
-        "lib/cli/services/pty/usage-status-runtime.js"
       ],
       "aliasConstants": []
     },
@@ -2634,16 +2550,6 @@
       "aliasConstants": []
     },
     {
-      "name": "AIH_CODEX_USAGE_BULK_JOBS",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
       "name": "AIH_GO_CORE_PORT",
       "category": "network",
       "reads": 0,
@@ -3040,46 +2946,6 @@
       "files": [
         "lib/account/go-bridge/go-import-translator.js",
         "lib/server/upstream-account-profile.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_BULK_JOBS",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_BULK_PROBE_TIMEOUT_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_BULK_THRESHOLD",
-      "category": "plumbing",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_USAGE_SCAN_DEADLINE_MS",
-      "category": "tuning",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/usage/presenter.js"
       ],
       "aliasConstants": []
     },

@@ -1,7 +1,7 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:08:02.742Z
-> 共 **289** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T05:13:17.031Z
+> 共 **276** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
 ## path（数据/目录/仓库路径，23）
@@ -102,15 +102,11 @@
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | — | 1 | 强制显示用量状态栏 |
 | `AIH_NO_PERSIST` | ✅ | 0 | 交互式逃生门：=1 时不套 tmux（公开） |
 
-## tuning（可调参数（超时 / TTL / 上限），46）
+## tuning（可调参数（超时 / TTL / 上限），36）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_AGY_USAGE_HTTP_TIMEOUT_MS` | — | 3 | agy 用量请求超时 |
-| `AIH_AGY_WARM_MAX` | — | 2 | agy 暖机池并发上限（每实例 ~185MB） |
-| `AIH_AGY_WARM_RESP_TIMEOUT_MS` | — | 2 | agy 暖机会话响应超时 |
-| `AIH_AGY_WARM_TTL_MS` | — | 2 | agy 暖机会话空闲回收 TTL |
-| `AIH_APPROVAL_TIMEOUT_MS` | — | 2 | 等待用户审批的上限 |
 | `AIH_CLAUDE_USAGE_TIMEOUT_MS` | — | 2 | claude 用量接口超时 |
 | `AIH_CODEX_USAGE_HTTP_TIMEOUT_MS` | — | 2 | codex 用量 HTTP 超时 |
 | `AIH_SERVER_AGY_MAX_CONCURRENCY` | — | 2 | agy 并发上限（--agy-max-concurrency） |
@@ -141,17 +137,11 @@
 | `AIH_CLAUDE_HOOK_DIAGNOSTIC_DELAY_MS` | — | 1 | claude hook 诊断输出延迟 |
 | `AIH_CODEX_USAGE_SLOW_RETRY_TIMEOUT_MS` | — | 1 | codex 用量慢速重试超时 |
 | `AIH_NATIVE_RUN_RETENTION_MS` | — | 1 | 原生运行记录保留时长（新名） |
-| `AIH_RUNTIME_THRESHOLD_CHECK_MS` | — | 1 | 运行时阈值检查间隔 |
-| `AIH_RUNTIME_USAGE_DISPLAY_INTERVAL_MS` | — | 1 | 状态栏用量刷新显示间隔 |
-| `AIH_RUNTIME_USAGE_REFRESH_MIN_MS` | — | 1 | 状态栏用量最小刷新间隔 |
-| `AIH_RUNTIME_USAGE_STALE_MS` | — | 1 | 用量数据过期阈值 |
 | `AIH_NATIVE_FIRST_PROGRESS_TIMEOUT_MS` | — | 0 | 原生运行首字节超时（看门狗） |
 | `AIH_NATIVE_STALL_TIMEOUT_MS` | — | 0 | 原生运行无进展超时 |
 | `AIH_NATIVE_TIMEOUT_KILL_GRACE_MS` | — | 0 | 超时后强杀的宽限期 |
 | `AIH_NATIVE_UPSTREAM_ERROR_TIMEOUT_MS` | — | 0 | 上游错误等待超时 |
 | `AIH_SERVER_SOURCE_AUTO_RESTART_INTERVAL_MS` | — | 0 | 源码变更自动重启检查间隔 |
-| `AIH_USAGE_BULK_PROBE_TIMEOUT_MS` | — | 0 | 批量用量扫描单账号探测超时 |
-| `AIH_USAGE_SCAN_DEADLINE_MS` | — | 0 | 批量用量扫描整体截止时间 |
 
 ## credential（凭据与密钥（文档只写变量名，绝不放真实值），25）
 
@@ -190,7 +180,7 @@
 | `AIH_FFPROBE` | — | 2 | ffprobe 路径覆盖（视频附件抽帧） |
 | `AIH_SERVER_MODELS_PROBE_ACCOUNTS` | — | 2 | 模型目录探测并发账号数（config 优先） |
 
-## plumbing（内部管道（进程间传递的身份 / 标记），133）
+## plumbing（内部管道（进程间传递的身份 / 标记），130）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
@@ -297,7 +287,6 @@
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
 | `AIH_CODEX_MANAGED_LAUNCH` | — | 0 | 由 aih 托管的 codex 启动标记 |
 | `AIH_CODEX_REMOTE_AUTOSTART` | — | 0 | 远程自动启动 codex 的标记 |
-| `AIH_CODEX_USAGE_BULK_JOBS` | — | 0 | codex 批量用量并发任务数 |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | — | 0 | iTerm provider 图标自动 |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | — | 0 | Konsole provider 图标自动 |
@@ -322,8 +311,6 @@
 | `AIH_SESSION_TARGET` | — | 0 | 精确会话目标（picker / restore 注入） |
 | `AIH_TERMINAL_TITLE_AUTO` | — | 0 | 自动设置终端标题 |
 | `AIH_UPSTREAM_HEADERS` | — | 0 | 上游附加请求头（JSON） |
-| `AIH_USAGE_BULK_JOBS` | — | 0 | 用量批量任务并发数 |
-| `AIH_USAGE_BULK_THRESHOLD` | — | 0 | 进入批量扫描的阈值 |
 | `AIH_WARP_PROVIDER_ICON_AUTO` | — | 0 | Warp provider 图标自动 |
 | `AIH_ZCODE_SESSION_ATTRIBUTION_SCOPE` | — | 0 | zcode 会话归属作用域 |
 | `AIH_ZCODE_USAGE_OWNER_LOG` | — | 0 | zcode 用量归属日志路径 |

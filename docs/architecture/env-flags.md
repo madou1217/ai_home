@@ -1,7 +1,7 @@
 # 环境变量清单（环境准入）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T02:15:06.661Z
-> 覆盖 `lib / bin / scripts / core`，共 **333** 个 `AIH_*` 变量。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:20:20.140Z
+> 覆盖 `lib / bin / scripts / core`，共 **332** 个 `AIH_*` 变量。
 > 本文件是**唯一清单**：新增环境变量必须重跑本命令，否则 `test/env-inventory.test.js` 会红。
 
 ## 新增环境变量的规则
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | path | 24 | 数据/目录/仓库路径 |
 | network | 57 | 端点 / 代理 / 端口 |
-| flag | 19 | 开关与逃生门（环境准入） |
+| flag | 18 | 开关与逃生门（环境准入） |
 | tuning | 51 | 可调参数（超时 / TTL / 上限） |
 | credential | 27 | 凭据与密钥（文档只写变量名，绝不放真实值） |
 | test | 2 | 测试与探针专用 |
@@ -58,7 +58,7 @@
 | `AIH_AGY_QUOTA_BASE_URLS` | plumbing | 4 | 2 |
 | `AIH_PLUGIN_TOKEN` | credential | 4 | 1 |
 | `AIH_PROVIDER_ACCOUNT_REF` | plumbing | 4 | 4 |
-| `AIH_SERVER_HOST` | network | 4 | 2 |
+| `AIH_RELAY_UDP` | plumbing | 4 | 2 |
 
 ## path（数据/目录/仓库路径）
 
@@ -97,6 +97,8 @@
 | `AIH_SERVER_NO_PROXY` | 17 | 0 | lib/cli/services/usage/snapshot.js<br>lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/args.js<br>…共 7 个 |
 | `AIH_SERVER_PORT` | 6 | 0 | lib/server/args.js<br>lib/server/opencode-plugin-hook-config.js<br>scripts/cleanup-official-account-error-rules.js |
 | `AIH_SSH_CLIP_MAX_BYTES` | 6 | 0 | lib/cli/services/pty/ssh-clipboard-bridge.js<br>lib/cli/services/pty/ssh-clipboard-shims.js<br>lib/cli/services/ssh-clipboard/clip-agent.js<br>…共 5 个 |
+| `AIH_RELAY_UDP_ADVERTISE_HOST` | 4 | 0 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js |
+| `AIH_RELAY_UDP_ADVERTISE_PORT` | 4 | 0 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js |
 | `AIH_SERVER_HOST` | 4 | 0 | lib/server/args.js<br>scripts/cleanup-official-account-error-rules.js |
 | `AIH_AGY_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_AGY_QUOTA_BASE_URL` | 3 | 0 | lib/cli/services/usage/snapshot.js |
@@ -106,8 +108,6 @@
 | `AIH_CLAUDE_API_BASE_URL` | 2 | 0 | lib/cli/services/usage/snapshot.js |
 | `AIH_FABRIC_ENDPOINT` | 2 | 0 | scripts/fabric-runtime-account-activation.js |
 | `AIH_PLUGIN_HOST_VERSION` | 2 | 0 | lib/plugins/host/host-entry.mjs |
-| `AIH_RELAY_UDP_ADVERTISE_HOST` | 2 | 0 | lib/server/relay-udp-front.js |
-| `AIH_RELAY_UDP_ADVERTISE_PORT` | 2 | 0 | lib/server/relay-udp-front.js |
 | `AIH_SERVER_AGY_BASE_URL` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_CLAUDE_BASE_URL` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_CODEX_DESKTOP_REMOTE_PROXY` | 2 | 0 | lib/server/args.js |
@@ -170,7 +170,6 @@
 | `AIH_RUNTIME_FORCE_USAGE_STATUS_BAR` | 1 | 0 | lib/cli/services/pty/usage-status-runtime.js |
 | `AIH_SERVER_ALLOW_MULTI` | 1 | 0 | lib/server/server.js |
 | `AIH_SKIP_GO_CORE_INSTALL` | 1 | 0 | scripts/postinstall-go-core.js |
-| `AIH_DEBUG_CONFIG_SYNC` | 0 | 1 | lib/cli/services/pty/pty-runtime-launch.js |
 | `AIH_NO_PERSIST` | 0 | 3 | lib/runtime/multiplexer/drivers/herdr-driver.js<br>lib/runtime/multiplexer/drivers/tmux-driver.js<br>lib/runtime/persistent-session.js |
 | `AIH_SERVER_DISABLE_SOURCE_AUTO_RESTART` | 0 | 1 | lib/server/source-auto-restart.js |
 | `AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE` | 0 | 1 | lib/runtime/zcode-electron-captcha-hook.js |
@@ -277,6 +276,7 @@
 | `AIH_CODEX_GATEWAY_ACCOUNT_REF` | 6 | 5 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/cli/services/ai-cli/codex-provider-args.js<br>lib/cli/services/ai-cli/provider-runtime-env.js<br>…共 8 个 |
 | `AIH_AGY_QUOTA_BASE_URLS` | 4 | 0 | lib/cli/services/usage/snapshot.js<br>lib/server/code-assist-quota.js |
 | `AIH_PROVIDER_ACCOUNT_REF` | 4 | 3 | lib/cli/services/account/codex-rekey-reference-policy.js<br>lib/runtime/multiplexer/tmux-session-env.js<br>lib/runtime/provider-session-context.js<br>…共 4 个 |
+| `AIH_RELAY_UDP` | 4 | 0 | lib/server/command-handler.js<br>lib/server/relay-udp-front.js |
 | `AIH_AGY_CODE_ASSIST_CLIENT_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_ANTIGRAVITY_VERSION` | 3 | 0 | lib/server/antigravity-version.js<br>lib/server/http-utils-code-assist.js |
 | `AIH_CODEX_BIN` | 3 | 0 | lib/cli/services/usage/usage-snapshot-codex.js<br>lib/server/codex-client-version.js |
@@ -299,7 +299,6 @@
 | `AIH_PLUGIN_EXIT_WITH_PARENT` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PLUGIN_SOCKET` | 2 | 0 | lib/plugins/host/host-entry.mjs |
 | `AIH_PSMUX_INSTALL_PROMPT` | 2 | 0 | lib/cli/services/ai-cli/persistent-session-list.js<br>lib/cli/services/pty/persistent-launch.js |
-| `AIH_RELAY_UDP` | 2 | 0 | lib/server/relay-udp-front.js |
 | `AIH_RUN_ID` | 2 | 0 | lib/server/claude-permission-mcp-tool.js |
 | `AIH_SERVER_BACKEND` | 2 | 0 | lib/server/args.js |
 | `AIH_SERVER_CODEX_DESKTOP_RESTART_APP_SERVER_ON_HOOK_CHANGE` | 2 | 0 | lib/server/args.js |

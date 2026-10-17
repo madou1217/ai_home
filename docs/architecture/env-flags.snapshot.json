@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T02:15:06.661Z",
-  "total": 333,
+  "generatedAt": "2026-10-17T04:20:20.140Z",
+  "total": 332,
   "nameConstants": {
     "ACCOUNT_APP_MARKER_ENV": "AIH_ACCOUNT_APP",
     "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE_ENV": "AIH_ZCODE_CAPTCHA_FORCE_INTERACTIVE",
@@ -260,6 +260,39 @@
       "aliasConstants": [
         "PROVIDER_ACCOUNT_REF_ENV"
       ]
+    },
+    {
+      "name": "AIH_RELAY_UDP",
+      "category": "plumbing",
+      "reads": 4,
+      "literals": 0,
+      "files": [
+        "lib/server/command-handler.js",
+        "lib/server/relay-udp-front.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RELAY_UDP_ADVERTISE_HOST",
+      "category": "network",
+      "reads": 4,
+      "literals": 0,
+      "files": [
+        "lib/server/command-handler.js",
+        "lib/server/relay-udp-front.js"
+      ],
+      "aliasConstants": []
+    },
+    {
+      "name": "AIH_RELAY_UDP_ADVERTISE_PORT",
+      "category": "network",
+      "reads": 4,
+      "literals": 0,
+      "files": [
+        "lib/server/command-handler.js",
+        "lib/server/relay-udp-front.js"
+      ],
+      "aliasConstants": []
     },
     {
       "name": "AIH_SERVER_HOST",
@@ -835,36 +868,6 @@
       "files": [
         "lib/cli/services/ai-cli/persistent-session-list.js",
         "lib/cli/services/pty/persistent-launch.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_UDP",
-      "category": "plumbing",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/relay-udp-front.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_UDP_ADVERTISE_HOST",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/relay-udp-front.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_RELAY_UDP_ADVERTISE_PORT",
-      "category": "network",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/relay-udp-front.js"
       ],
       "aliasConstants": []
     },
@@ -2891,16 +2894,6 @@
       "literals": 1,
       "files": [
         "lib/cli/services/usage/presenter.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_DEBUG_CONFIG_SYNC",
-      "category": "flag",
-      "reads": 0,
-      "literals": 1,
-      "files": [
-        "lib/cli/services/pty/pty-runtime-launch.js"
       ],
       "aliasConstants": []
     },

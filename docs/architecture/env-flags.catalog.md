@@ -1,6 +1,6 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:48:02.639Z
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T04:48:30.589Z
 > 共 **330** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
@@ -72,11 +72,11 @@
 | `AIH_CODEX_REMOTE_PROXY` | — | 1 | codex 远程代理主开关 |
 | `AIH_CODEX_USAGE_BASE_URL` | — | 1 | codex 用量 API base URL 覆盖 |
 | `AIH_DEPLOY_SSH` | — | 1 | 部署脚本默认 SSH 目标 |
-| `AIH_EDGE_AIH_PORT` | — | 1 | 边缘代理回源到 AIH 的端口 |
+| `AIH_EDGE_AIH_PORT` | — | 1 | ⚠ 边缘代理回源到 AIH 的端口（待确认） |
 | `AIH_FABRIC_LOCAL_URL` | — | 1 | fabric 本机回环地址 |
 | `AIH_GO_CORE_HOST` | — | 1 | Go Core 子进程监听地址 |
 | `AIH_OPENCODE_GATEWAY_BASE_URL` | — | 1 | opencode 网关 base URL 覆盖 |
-| `AIH_SERVER_MANAGEMENT_URL` | — | 1 | 已保存 server 的管理入口地址（脚本用） |
+| `AIH_SERVER_MANAGEMENT_URL` | — | 1 | ⚠ 管理入口 URL（脚本/远程管理用；待确认具体调用点） |
 | `AIH_SERVER_STRICT_PORT` | — | 1 | 端口被占用时直接失败（不自动换端口） |
 | `AIH_SSH_CLIP_AGENT_TIMEOUT_MS` | — | 1 | 剪贴板 agent 请求超时 |
 | `AIH_SSH_CLIP_CHUNK_SIZE` | — | 1 | 剪贴板分块大小 |
@@ -298,7 +298,7 @@
 | `AIH_SERVER_CODEX_CLI_HOOK` | — | 1 | codex CLI hook 垫片路径 |
 | `AIH_SERVER_CODEX_DESKTOP_HOOK` | — | 1 | codex 桌面 hook 垫片路径 |
 | `AIH_SERVER_UPSTREAM_ERROR_RULES` | — | 1 | 由 Go 承接错误规则的 provider 列表（config 优先） |
-| `AIH_SESSION_ARTIFACT_THRESHOLD` | — | 1 | 设备会话启动时的产物记录阈值 |
+| `AIH_SESSION_ARTIFACT_THRESHOLD` | — | 1 | ⚠ 设备会话启动时的产物记录阈值（待确认） |
 | `AIH_SESSION_PICKER_ANIMATION` | — | 1 | 会话选择器动画开关 |
 | `AIH_SESSION_PICKER_ICONS` | — | 1 | 会话选择器图标开关 |
 | `AIH_SESSION_PICKER_SYMBOLS` | — | 1 | 会话选择器符号开关 |
@@ -317,7 +317,7 @@
 | `AIH_ZCODE_ALWAYS_THINKING_MODELS` | — | 1 | zcode 始终思考的模型清单 |
 | `AIH_ZCODE_CLIENT_LANGUAGE` | — | 1 | zcode 客户端语言 |
 | `AIH_ZCODE_CLIENT_TIMEZONE` | — | 1 | zcode 客户端时区 |
-| `AIH_ACCOUNT_APP` | — | 0 | 账号所属客户端标记（codex app / cli） |
+| `AIH_ACCOUNT_APP` | — | 0 | ⚠ 账号所属客户端标记（codex app / cli；待确认取值） |
 | `AIH_ACCOUNT_ID` | — | 0 | 账号数字别名（cliAccountId） |
 | `AIH_ACCOUNT_REF` | — | 0 | 账号唯一标识（accountRef，贯穿 server/WebUI/runtime） |
 | `AIH_CLAUDE_TMUX_RENDER_RUNTIME` | — | 0 | claude 在 tmux 内的渲染运行时标记 |
@@ -332,7 +332,7 @@
 | `AIH_FRPC_CONFIG` | — | 0 | frpc 配置路径（探测/旧名） |
 | `AIH_HEADLESS_DIRECT_SPAWN` | — | 0 | headless 直接 spawn 的逃生开关 |
 | `AIH_HEADLESS_SPINNER` | — | 0 | headless 进度动画开关 |
-| `AIH_IMAGE_API` | — | 0 | 上游图像 API 选择标记（账号 env 透传） |
+| `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |
 | `AIH_ITERM_PROVIDER_ICON_AUTO` | — | 0 | iTerm provider 图标自动 |
 | `AIH_KONSOLE_PROVIDER_ICON_AUTO` | — | 0 | Konsole provider 图标自动 |
 | `AIH_M5_RECOVERY_MESSAGE_OK` | — | 0 | M5 恢复 smoke 输出标记（不是环境变量） |

@@ -1,17 +1,16 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:50:02.267Z
-> 共 **94** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T09:54:34.343Z
+> 共 **93** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
-## path（数据/目录/仓库路径，14）
+## path（数据/目录/仓库路径，13）
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
 | `AIH_HOST_HOME` | ✅ | 35 | 宿主真实家目录（公开；沙箱会话里必须钉住） |
 | `AIH_HOME_DIR` | ✅ | 11 | 数据根目录（公开；默认 ~/.ai_home） |
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
-| `AIH_CLAUDE_CODE_COMMANDS_DIR` | — | 2 | claude 自定义 commands 目录（注入 aih 的 slash 命令） |
 | `AIH_CODEX_HOME` | — | 2 | codex 配置根（沙箱投影 / 宿主切换） |
 | `AIH_CODEX_SQLITE_HOME` | — | 2 | codex 状态 sqlite 目录（读会话与额度时定位） |
 | `AIH_OPENCODE_CONFIG_DIR` | — | 2 | opencode 配置根（账号投影） |

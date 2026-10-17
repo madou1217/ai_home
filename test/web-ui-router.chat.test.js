@@ -1909,10 +1909,11 @@ test('web ui chat attachment endpoint resolves provider-native aliases and rejec
 });
 
 test('web ui chat accepts source-backed claude slash command and forwards it to native session', async (t) => {
-  const commandsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-commands-'));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-commands-'));
+  const commandsDir = path.join(configDir, 'commands');
   t.after(() => {
-    fs.rmSync(commandsDir, { recursive: true, force: true });
-    delete process.env.AIH_CLAUDE_CODE_COMMANDS_DIR;
+    fs.rmSync(configDir, { recursive: true, force: true });
+    delete process.env.CLAUDE_CONFIG_DIR;
     nativeSlashCommands.clearNativeSlashCommandCache();
   });
   fs.mkdirSync(path.join(commandsDir, 'compact'), { recursive: true });
@@ -1928,7 +1929,7 @@ test('web ui chat accepts source-backed claude slash command and forwards it to 
       '};'
     ].join('\n')
   );
-  process.env.AIH_CLAUDE_CODE_COMMANDS_DIR = commandsDir;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
   nativeSlashCommands.clearNativeSlashCommandCache();
 
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
@@ -2002,7 +2003,6 @@ test('web ui chat routes claude slash command to native session even for api-key
   t.after(() => {
     fs.rmSync(commandsDir, { recursive: true, force: true });
     fs.rmSync(profileRoot, { recursive: true, force: true });
-    delete process.env.AIH_CLAUDE_CODE_COMMANDS_DIR;
     nativeSlashCommands.clearNativeSlashCommandCache();
   });
   fs.mkdirSync(path.join(commandsDir, 'compact'), { recursive: true });
@@ -2018,7 +2018,7 @@ test('web ui chat routes claude slash command to native session even for api-key
       '};'
     ].join('\n')
   );
-  process.env.AIH_CLAUDE_CODE_COMMANDS_DIR = commandsDir;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
   nativeSlashCommands.clearNativeSlashCommandCache();
 
   const originalSpawn = nativeSessionChat.spawnNativeSessionStream;
@@ -2214,14 +2214,16 @@ test('web ui chat passes unknown slash commands through to the provider CLI', as
 });
 
 test('web ui slash commands endpoint returns provider commands from source-backed registry', async (t) => {
-  const commandsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-commands-'));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-claude-commands-'));
+  const commandsDir = path.join(configDir, 'commands');
   t.after(() => {
-    fs.rmSync(commandsDir, { recursive: true, force: true });
-    delete process.env.AIH_CLAUDE_CODE_COMMANDS_DIR;
+    fs.rmSync(configDir, { recursive: true, force: true });
+    delete process.env.CLAUDE_CONFIG_DIR;
     nativeSlashCommands.clearNativeSlashCommandCache();
   });
+  fs.mkdirSync(commandsDir, { recursive: true });
   fs.writeFileSync(path.join(commandsDir, 'project-audit.md'), '# Project audit\n', 'utf8');
-  process.env.AIH_CLAUDE_CODE_COMMANDS_DIR = commandsDir;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
   nativeSlashCommands.clearNativeSlashCommandCache();
 
   const res = createStreamResCapture();

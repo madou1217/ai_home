@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:50:02.267Z",
-  "total": 94,
+  "generatedAt": "2026-10-17T09:54:34.343Z",
+  "total": 93,
   "publicEnvLimit": 10,
   "public": [
     "AIH_HOME_DIR",
@@ -293,16 +293,6 @@
       "literals": 0,
       "files": [
         "lib/cli/services/usage/snapshot.js"
-      ],
-      "aliasConstants": []
-    },
-    {
-      "name": "AIH_CLAUDE_CODE_COMMANDS_DIR",
-      "category": "path",
-      "reads": 2,
-      "literals": 0,
-      "files": [
-        "lib/server/native-slash-commands.js"
       ],
       "aliasConstants": []
     },

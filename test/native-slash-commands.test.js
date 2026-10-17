@@ -11,19 +11,21 @@ const {
 } = require('../lib/server/native-slash-commands');
 
 test('claude slash registry merges builtin list with user .md commands', (t) => {
-  const commandsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-slash-'));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-native-slash-'));
+  const commandsDir = path.join(configDir, 'commands');
   t.after(() => {
-    fs.rmSync(commandsDir, { recursive: true, force: true });
-    delete process.env.AIH_CLAUDE_CODE_COMMANDS_DIR;
+    fs.rmSync(configDir, { recursive: true, force: true });
+    delete process.env.CLAUDE_CONFIG_DIR;
     clearNativeSlashCommandCache();
   });
 
-  // 新契约：不再解析 claude 源码(.ts)，清单 = 精选内置静态清单 + <commandsDir>/**/*.md 用户命令。
+  // 新契约：不再解析 claude 源码(.ts)，清单 = 精选内置静态清单 + <CLAUDE_CONFIG_DIR>/commands/**/*.md 用户命令。
+  fs.mkdirSync(commandsDir, { recursive: true });
   fs.writeFileSync(path.join(commandsDir, 'deploy.md'), '# deploy');
   fs.mkdirSync(path.join(commandsDir, 'infra'), { recursive: true });
   fs.writeFileSync(path.join(commandsDir, 'infra', 'restart.md'), '# restart');
 
-  process.env.AIH_CLAUDE_CODE_COMMANDS_DIR = commandsDir;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
   clearNativeSlashCommandCache();
 
   const commands = getProviderSlashCommands('claude');

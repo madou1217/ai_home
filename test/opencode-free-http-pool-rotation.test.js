@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 
 const registry = require('../lib/runtime/egress-pool-registry');
 const { openCodeFreeHttpTransport } = require('../lib/server/upstream-endpoints-transport-opencode-free-http');
+const { DEFAULT_MAX_EGRESS_HOPS } = require('../lib/server/opencode-free-egress-rotation');
 
 function freeUsageLimitError() {
   const error = new Error('HTTP_429');
@@ -60,13 +61,38 @@ function installPool() {
   return () => rotations;
 }
 
-test('pool-bound account: 429 FreeUsageLimitError rotates the pool and retries without accounting', async (t) => {
+// 2026-10-18：单账号池的 maxAttempts = 1，旧逻辑「轮换后 retry_next 换账号」没有下一次
+// 尝试，节点换了请求照样失败。现在出口受限时在 transport 内**同账号原地**换节点重发。
+test('pool-bound account: a limited exit is rotated and the same request succeeds in place', async (t) => {
+  t.after(() => registry.resetEgressPoolServiceForTests());
+  const rotations = installPool();
+  const { ctx, failures } = buildCtx('pool');
+  let calls = 0;
+  ctx.deps.fetchOpenCodeZenFreeChatCompletion = async () => {
+    calls += 1;
+    if (calls === 1) throw freeUsageLimitError();
+    return { id: 'x', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }] };
+  };
+  const written = {};
+  ctx.res = { setHeader: () => {}, end: (raw) => { written.body = String(raw); } };
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(calls, 2);
+  assert.equal(rotations(), 1);
+  assert.equal(failures.length, 0);
+  assert.equal(ctx.res.statusCode, 200);
+  assert.match(written.body, /"OK"/);
+});
+
+test('pool-bound account: a fully limited pool hands off to the account loop without accounting', async (t) => {
   t.after(() => registry.resetEgressPoolServiceForTests());
   const rotations = installPool();
   const { ctx, failures } = buildCtx('pool');
   const action = await openCodeFreeHttpTransport.run(ctx);
   assert.deepEqual(action, { action: 'retry_next' });
-  assert.equal(rotations(), 1);
+  // 原地跳数用完（DEFAULT_MAX_EGRESS_HOPS）后再轮换一次交给账号循环：多账号池时下一个
+  // 账号直接用上新节点。全程是出口问题，不给账号记失败。
+  assert.equal(rotations(), DEFAULT_MAX_EGRESS_HOPS + 1);
   assert.equal(failures.length, 0);
   assert.equal(ctx.attemptMutable.finalStatusCode, 429);
 });

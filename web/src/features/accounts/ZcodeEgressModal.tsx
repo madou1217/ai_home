@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Button, Form, Input, Modal, Radio, Space, Spin, Tag, Typography, message } from 'antd';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Button, Form, Input, Modal, Popover, Radio, Space, Spin, Tag, Typography, message } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type {
@@ -34,6 +35,57 @@ const RUNTIME_LED_CLASS = {
   idle: ''
 } as const;
 
+/**
+ * 说明气泡：默认收起的 info 图标，点击才展开。
+ *
+ * 为什么不做成常驻段落：这些内容（平台限制、探测语义、各来源的行为）对**已经知道**的
+ * 用户是纯噪音，而这个弹窗的日常操作只是「选一个来源 + 填地址 + 保存」。按选项挂载
+ * 说明，谁需要谁点开，弹窗本体保持可一眼扫完。
+ *
+ * 图标内嵌在 Radio 的 label 里（antd 的 .ant-radio-wrapper 就是 label），点击会冒泡成
+ * 「选中该项」——所以这里必须 preventDefault + stopPropagation：看说明不该改变用户的选择。
+ */
+function EgressHint({ title, children }: { title: string; children: ReactNode }) {
+  // 受控打开：span 不会因 Enter/Space 合成 click，键盘用户必须由这里显式切换。
+  const [open, setOpen] = useState(false);
+  const swallow = (event: { preventDefault: () => void; stopPropagation: () => void }) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  return (
+    <Popover
+      title={title}
+      content={<div className="egress-hint">{children}</div>}
+      trigger={['click']}
+      open={open}
+      onOpenChange={setOpen}
+      placement="rightTop"
+      overlayClassName="egress-hint-popover"
+    >
+      <span
+        className="egress-hint-trigger"
+        role="button"
+        tabIndex={0}
+        aria-label={`${title}说明`}
+        aria-expanded={open}
+        onClick={swallow}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            if (open) swallow(event);
+            setOpen(false);
+            return;
+          }
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          swallow(event);
+          setOpen((current) => !current);
+        }}
+      >
+        <InfoCircleOutlined />
+      </span>
+    </Popover>
+  );
+}
+
 export function AccountEgressModal({ account, onClose }: AccountEgressModalProps) {
   const [form] = Form.useForm<AccountEgressFormValues>();
   const [loading, setLoading] = useState(false);
@@ -45,6 +97,29 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const mode = Form.useWatch('mode', form) || 'url';
   const usesNativeSettings = account?.provider === 'zcode';
   const retired = isRetiredEgressBinding(binding);
+
+  // 各来源的行为说明（按 provider 分叉：原生设置只认 HTTP(S) 代理）。
+  const sourceHints: Record<AccountEgressMode, ReactNode> = {
+    pool: (
+      <>
+        用你的代理池（订阅聚合的节点）作为出口：AIH 在本机开一个只监听回环的出站端口，
+        某个出口被上游限流时自动换下一个节点。绑定只记「用池」，池换端口或换节点都不用重新绑定。
+      </>
+    ),
+    url: usesNativeSettings ? (
+      <>支持 http(s)://host:port 或 host:port。该客户端的原生代理字段只认 HTTP(S)，SOCKS5 请在本机代理客户端另开一个 HTTP 端口。</>
+    ) : (
+      <>支持 http(s)://host:port、socks5://host:port 与 host:port 简写；不支持 socks4 与带账号密码的地址。个别客户端只认 HTTP(S)（例如基于 Bun 的 opencode），填 SOCKS5 时保存会明确提示。</>
+    ),
+    system: usesNativeSettings ? (
+      <>按 HTTPS、HTTP 顺序读取当前系统代理；该客户端的原生代理字段只认 HTTP(S)。未配置可用项时拒绝启动，不会修改系统设置。</>
+    ) : (
+      <>按 HTTPS、HTTP、SOCKS5 顺序读取当前系统代理（只认 HTTP(S) 的客户端，例如 opencode，跳过 SOCKS5）；都没有可用的时拒绝启动，不会修改系统设置。</>
+    ),
+    tun: (
+      <>仅在检测到外部 TUN 已激活时使用：账号直连，由 TUN 接管；AIH 不创建、不启停，也不接管该 TUN。</>
+    )
+  };
 
   const showBinding = (response: AccountEgressResponse) => {
     setBinding(response.binding || null);
@@ -173,18 +248,6 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
       ]}
     >
       <Spin spinning={loading}>
-        <Typography.Paragraph type="secondary" className="egress-intro">
-          当前仅支持 macOS。AIH 不运行代理内核、不开本地端口：账号直接使用外部 HTTP(S) 代理、当前系统代理或外部 TUN；
-          不会改写系统代理，也不会创建或接管 TUN。
-        </Typography.Paragraph>
-        <Typography.Paragraph type="secondary" className="egress-intro egress-intro--last">
-          保存时只访问中性连通性地址探测一次，不调用 ZCode 接口，也不调用其它 provider 推理接口。出口不可用时阻止启动与请求并保留现有设置，
-          不会回退到全局代理或直连；绑定记录无法读取或 marker 无法识别时同样阻止启动，用户手工设置不变。
-          {usesNativeSettings
-            ? ' ZCode 的模型、MCP、命令工具和内置浏览器统一读取账号隔离的 setting.json；用户手工设置会安全合并。'
-            : ' 其它 provider 在 CLI、Desktop 和网关请求边界直接使用该代理；外部 TUN 模式下不注入代理。'}
-          {' 桌面端正在运行时，保存后会以新出口重启该实例。'}
-        </Typography.Paragraph>
         <div className="egress-runtime hud-panel hud-panel--sm">
           <span className={`egress-runtime-state egress-runtime-state--${runtimeDescription.state}`}>
             <span className={`hud-led${RUNTIME_LED_CLASS[runtimeDescription.state]}`} aria-hidden="true" />
@@ -215,33 +278,54 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
           </div>
         ) : null}
         <Form form={form} layout="vertical" initialValues={{ mode: 'url' }}>
-          <Form.Item name="mode" label="出口来源">
+          <Form.Item
+            name="mode"
+            label={(
+              <span className="egress-source-label">
+                出口来源
+                <EgressHint title="出口设置说明">
+                  <p>当前仅支持 macOS。AIH 不会改写系统代理，也不创建、不接管 TUN；只有选择「AIH 出口池」时才会运行代理内核，并在本机开一个只监听回环的出站端口，其它来源都不开本地端口。</p>
+                  <p>
+                    保存时只访问中性连通性地址探测一次，不调用任何 provider 接口。出口不可用时阻止启动与请求并保留现有设置，
+                    不会回退到全局代理或直连；绑定记录无法读取或 marker 无法识别时同样阻止启动，用户手工设置不变。
+                  </p>
+                  <p>
+                    {usesNativeSettings
+                      ? '该客户端统一读取账号隔离的 setting.json（原生代理字段只支持 HTTP(S) 地址）；用户手工设置会安全合并。'
+                      : '在 CLI、桌面端与网关请求边界都直接使用该代理；外部 TUN 模式下不注入代理。'}
+                    {' 桌面端正在运行时，保存后会以新出口重启该实例。'}
+                  </p>
+                </EgressHint>
+              </span>
+            )}
+          >
             <Radio.Group className="aih-choice-tiles">
               <Space direction="vertical">
-                <Radio value="url"><span className="aih-choice-tile-title">外部 HTTP(S) 代理地址</span></Radio>
-                <Radio value="system"><span className="aih-choice-tile-title">现有系统代理（只读复用）</span></Radio>
-                <Radio value="tun"><span className="aih-choice-tile-title">现有外部 TUN（只读复用）</span></Radio>
+                {([
+                  ['pool', 'AIH 出口池（自动轮换代理池节点）'],
+                  ['url', '外部代理地址（HTTP(S) 或 SOCKS5）'],
+                  ['system', '现有系统代理（只读复用）'],
+                  ['tun', '现有外部 TUN（只读复用）']
+                ] as const).map(([value, label]) => (
+                  <Radio key={value} value={value} className="egress-choice-tile">
+                    <span className="aih-choice-tile-title">{label}</span>
+                    <EgressHint title={label}>{sourceHints[value]}</EgressHint>
+                  </Radio>
+                ))}
               </Space>
             </Radio.Group>
           </Form.Item>
-          {mode === 'system' ? (
-            <Typography.Paragraph type="secondary" className="egress-intro">
-              按 HTTPS、HTTP 顺序读取当前系统代理；只配置了 SOCKS 或未配置时拒绝启动，不会修改系统设置。
-            </Typography.Paragraph>
-          ) : null}
-          {mode === 'tun' ? (
-            <Typography.Paragraph type="secondary" className="egress-intro">
-              仅在检测到外部 TUN 已激活时使用：账号直连，由 TUN 接管；AIH 不创建、不启停，也不接管该 TUN。
-            </Typography.Paragraph>
-          ) : null}
           {mode === 'url' ? (
             <Form.Item
               name="proxyUrl"
               label="代理地址"
-              extra="支持 http(s)://host:port 或 host:port；不支持 SOCKS 与带账号密码的地址，需要时请在本机代理客户端开一个 HTTP 端口。"
               rules={[{ required: true, whitespace: true, message: '请输入代理地址' }]}
             >
-              <Input placeholder="127.0.0.1:6152" autoComplete="off" className="aih-mono-input" />
+              <Input
+                placeholder={usesNativeSettings ? '127.0.0.1:6152' : 'socks5://127.0.0.1:6153'}
+                autoComplete="off"
+                className="aih-mono-input"
+              />
             </Form.Item>
           ) : null}
         </Form>

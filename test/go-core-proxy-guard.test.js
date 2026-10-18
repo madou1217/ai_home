@@ -77,11 +77,20 @@ test('a no-proxy bypass list Go cannot see also defers, so both sides bypass the
   );
 });
 
-test('a socks proxy in config means Node connects directly, so Go must carry no proxy either', () => {
+test('a socks5 proxy in config is carried into Go, which dials socks5 natively', () => {
+  // Go 的 http.Transport 原生处理 socks5/socks5h（net/http/transport.go 的 dialConn
+  // 里走 socksNewDialer），因此 socks5 出口同样可以交给 Go —— 两边走同一个出口，
+  // 判定才是「一致」而不是「必须交还」。
+  const env = applyProxyEnvironment({}, buildGoProxyEnvironment({
+    proxyUrl: 'socks5://127.0.0.1:6153',
+    env: {}
+  }));
+  assert.equal(env.HTTPS_PROXY, 'socks5://127.0.0.1:6153');
   assert.deepEqual(
-    explainGoProxyHandoff({ proxyUrl: 'socks5://127.0.0.1:6153', env: {} }),
+    explainGoProxyHandoff({ proxyUrl: 'socks5://127.0.0.1:6153', env }),
     { defer: false, reason: '' }
   );
+  // 但两边不是同一个代理时仍然交还（静默分叉一律不许）。
   assert.deepEqual(
     explainGoProxyHandoff({ proxyUrl: 'socks5://127.0.0.1:6153', env: { HTTPS_PROXY: 'http://env.local:9090' } }),
     { defer: true, reason: 'proxy_not_go_visible' }
@@ -120,11 +129,15 @@ test('the Go child environment follows Node bypass and direct-connect rules', ()
   );
   // 完全没有绕过表：删除继承变量，两边都不绕过。
   assert.equal(buildGoProxyEnvironment({ proxyUrl: 'http://p:1', env: {} }).NO_PROXY, null);
-  // 非 http(s) 显式代理：Node 直连，Go 的代理变量全部删除。
-  const socks = buildGoProxyEnvironment({ proxyUrl: 'socks5://127.0.0.1:6153', env: { HTTPS_PROXY: 'http://x:1' } });
-  assert.equal(socks.HTTPS_PROXY, null);
-  assert.equal(socks.NO_PROXY, null);
-  assert.equal('HTTPS_PROXY' in applyProxyEnvironment({ HTTPS_PROXY: 'http://x:1' }, socks), false);
+  // socks5 显式代理：Go 原生支持，因此原样下发（不是删除后各自直连）。
+  const socks5 = buildGoProxyEnvironment({ proxyUrl: 'socks5://127.0.0.1:6153', env: { HTTPS_PROXY: 'http://x:1' } });
+  assert.equal(socks5.HTTPS_PROXY, 'socks5://127.0.0.1:6153');
+  assert.equal(socks5.ALL_PROXY, 'socks5://127.0.0.1:6153');
+  // socks4 等不受支持的 scheme：Node 直连，Go 的代理变量全部删除。
+  const socks4 = buildGoProxyEnvironment({ proxyUrl: 'socks4://127.0.0.1:6153', env: { HTTPS_PROXY: 'http://x:1' } });
+  assert.equal(socks4.HTTPS_PROXY, null);
+  assert.equal(socks4.NO_PROXY, null);
+  assert.equal('HTTPS_PROXY' in applyProxyEnvironment({ HTTPS_PROXY: 'http://x:1' }, socks4), false);
   // 没有显式代理：不覆盖，Node 与 Go 读同一份宿主环境。
   assert.deepEqual(buildGoProxyEnvironment({ proxyUrl: '', env: { HTTPS_PROXY: 'http://x:1' } }), {});
   assert.equal(

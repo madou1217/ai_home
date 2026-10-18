@@ -94,6 +94,69 @@
   line-height: var(--leading-normal);
 }
 
+/* 选项说明图标：内嵌在 Radio 的 label 里，靠右贴齐，默认低调、悬停才亮起。
+   它是「看说明」的入口，不是选项本身——点击必须只开气泡、不改变选中项
+   （阻止冒泡在组件里做，见 EgressHint）。 */
+.egress-hint-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text));
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    color var(--motion-fast, 120ms) var(--ease-standard),
+    border-color var(--motion-fast, 120ms) var(--ease-standard),
+    background-color var(--motion-fast, 120ms) var(--ease-standard);
+}
+
+.egress-hint-trigger:hover,
+.egress-hint-trigger:focus-visible {
+  border-color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent);
+  outline: none;
+}
+
+/* 出口来源瓷砖：标题占满剩余宽度，info 图标贴在瓷砖右侧（不再跟在文字后面缩成一个点）。 */
+.egress-choice-tile > span:last-child {
+  display: flex;
+  align-items: center;
+}
+
+.egress-choice-tile .aih-choice-tile-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 说明图标与标题同排：标题占满剩余宽度，图标贴右。 */
+.egress-source-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 说明气泡正文：小字号 + 段落间距，避免长句挤成一坨。 */
+.egress-hint p {
+  margin: 0 0 var(--space-3);
+  max-width: 340px;
+  font-family: var(--font-prose);
+  font-size: var(--hos-text-caption);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-text);
+}
+
+.egress-hint p:last-child {
+  margin-bottom: 0;
+}
+
 /* 地址 / 路径类输入：等宽 */
 .ant-input.aih-mono-input,
 .aih-mono-input .ant-input {
@@ -537,17 +600,6 @@
 /* -----------------------------------------------------------------------------
  * 9. 出口设置（ZcodeEgressModal）
  * -------------------------------------------------------------------------- */
-.egress-intro.ant-typography {
-  margin-bottom: var(--space-6);
-  font-family: var(--font-prose);
-  font-size: var(--hos-text-caption);
-  line-height: var(--leading-relaxed, 1.65);
-}
-
-.egress-intro--last.ant-typography {
-  margin-bottom: var(--space-8);
-}
-
 .egress-runtime {
   display: flex;
   flex-wrap: wrap;

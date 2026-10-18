@@ -8,14 +8,16 @@ import type {
 export const ACCOUNT_EGRESS_SOURCE_LABELS: Record<AccountEgressMode, string> = {
   url: '代理地址',
   system: '系统代理',
-  tun: '外部 TUN'
+  tun: '外部 TUN',
+  pool: 'AIH 出口池'
 };
 
 const EGRESS_ERROR_LABELS: Record<string, string> = {
   invalid_proxy_url: '代理地址无效',
-  proxy_scheme_unsupported: '只支持 HTTP(S) 代理地址',
+  proxy_scheme_unsupported: '只支持 HTTP(S) 与 SOCKS5 代理地址',
+  zcode_native_proxy_scheme_unsupported: '该客户端只支持 HTTP(S) 代理（原生代理字段或运行时不认 SOCKS），SOCKS5 请改用 HTTP 端口',
   system_proxy_unavailable: '未检测到可用的系统代理',
-  system_proxy_http_unavailable: '系统代理只配置了 SOCKS，账号出口只支持 HTTP(S)',
+  system_proxy_scheme_unavailable: '系统代理的协议类型不被该客户端支持（该客户端只认 HTTP(S) 代理，原生代理字段或运行时不认 SOCKS）',
   tun_inactive: '未检测到已激活的外部 TUN',
   tun_state_unknown: '无法确认外部 TUN 状态',
   account_egress_mode_retired: '节点 / 分组出口已下线，请改绑',
@@ -23,7 +25,8 @@ const EGRESS_ERROR_LABELS: Record<string, string> = {
   not_supported: '当前平台不支持账号出口',
   unknown_egress_mode: '出口绑定模式无效',
   invalid_egress_mode: '出口模式无效',
-  egress_apply_failed: '出口应用失败'
+  egress_apply_failed: '出口应用失败',
+  egress_pool_not_ready: 'AIH 出口池尚未就绪（出口池只由运行中的 aih server 提供；server 未运行、池启动中或启动失败时不可用）'
 };
 
 export function describeEgressError(code?: string | null) {

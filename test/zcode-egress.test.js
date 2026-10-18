@@ -8,10 +8,12 @@ const path = require('node:path');
 
 const {
   EGRESS_MODES,
+  EGRESS_MODE_POOL,
   EGRESS_MODE_SYSTEM,
   EGRESS_MODE_TUN,
   EGRESS_MODE_URL,
   buildEgressBindingKey,
+  hasAnyEgressPoolBinding,
   normalizeEgressBinding,
   readAccountEgressBinding,
   writeAccountEgressBinding
@@ -53,8 +55,18 @@ test('normalizeEgressBinding 按有值的一侧推断 mode', () => {
   assert.equal(normalizeEgressBinding({ proxyUrl: '127.0.0.1:10801' }).mode, EGRESS_MODE_URL);
 });
 
-test('normalizeEgressBinding 只支持 system、tun、url 三种模式', () => {
-  assert.deepEqual([...EGRESS_MODES].sort(), [EGRESS_MODE_SYSTEM, EGRESS_MODE_TUN, EGRESS_MODE_URL].sort());
+test('normalizeEgressBinding 支持 system、tun、url、pool 四种模式', () => {
+  // pool 是 2026-10-17 重新启用的出口模式：绑定到 AIH 自己维护的出口池
+  // （代理池节点转成的本地出站端口），与 url 的区别是端口由 AIH 决定、不写进绑定。
+  assert.deepEqual(
+    [...EGRESS_MODES].sort(),
+    [EGRESS_MODE_SYSTEM, EGRESS_MODE_TUN, EGRESS_MODE_URL, EGRESS_MODE_POOL].sort()
+  );
+  assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_POOL }), {
+    mode: EGRESS_MODE_POOL,
+    proxyUrl: '',
+    updatedAt: 0
+  });
   assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_SYSTEM }), {
     mode: EGRESS_MODE_SYSTEM,
     proxyUrl: '',
@@ -72,9 +84,11 @@ test('normalizeEgressBinding 只支持 system、tun、url 三种模式', () => {
   });
 });
 
-test('normalizeEgressBinding 把历史 node/group/pool 记录标记为已下线并保留原字段', () => {
-  assert.deepEqual(normalizeEgressBinding({ mode: 'pool', nodeId: 'node-a', updatedAt: 7 }), {
-    mode: 'pool',
+test('normalizeEgressBinding 把历史 node/group 记录标记为已下线并保留原字段', () => {
+  // node/group 依赖旧实现里 AIH 自己开的本地代理端口，已下线；pool 则重新启用
+  // （新语义见上），因此不再出现在这里。
+  assert.deepEqual(normalizeEgressBinding({ mode: 'node', nodeId: 'node-a', updatedAt: 7 }), {
+    mode: 'node',
     retired: true,
     proxyUrl: '',
     nodeId: 'node-a',
@@ -125,6 +139,31 @@ test('readAccountEgressBinding 区分未绑定与损坏的持久化记录', (t) 
     () => readAccountEgressBinding(fs, aiHomeDir, accountRef),
     /invalid_account_egress_binding_record/
   );
+});
+
+test('hasAnyEgressPoolBinding 只在有账号绑定出口池时为真', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-pool-bound-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  // 还没有库：不应创建库，也不应报真。
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), false);
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'zcode',
+    cliAccountId: '1',
+    identitySeed: 'oauth:zcode:pool-bound@example.com'
+  });
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, { mode: EGRESS_MODE_URL, proxyUrl: 'http://127.0.0.1:7890' });
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), false);
+  // 已下线的旧 node 记录不算绑定了池。
+  writeJsonValue(fs, aiHomeDir, 'account:egress:retired-ref', { mode: 'node', nodeId: 'n1' });
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), false);
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, { mode: EGRESS_MODE_POOL });
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), true);
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, null);
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), false);
+  // 删号后残留的 pool 绑定不算：账号已不存在，没有人会用这个池。
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, { mode: EGRESS_MODE_POOL });
+  require('../lib/server/account-ref-store').deleteAccountRef(fs, aiHomeDir, accountRef);
+  assert.equal(hasAnyEgressPoolBinding(fs, aiHomeDir), false);
 });
 
 test('writeAccountEgressBinding 拒绝非空非法绑定且不删除已有记录', (t) => {
@@ -201,7 +240,6 @@ test('历史节点/分组绑定可读出 retired 形状，但不能再写入', (
   for (const binding of [
     { mode: 'node', nodeId: 'node-a' },
     { mode: 'group', groupId: 'group-a' },
-    { mode: 'pool', nodeId: 'node-a' },
     { nodeId: 'node-a' }
   ]) {
     assert.throws(
@@ -215,6 +253,23 @@ test('历史节点/分组绑定可读出 retired 形状，但不能再写入', (
     'subscription:sub_a',
     '拒绝写入不会删除旧记录'
   );
+});
+
+test('pool 模式可以写入：它绑定的是 AIH 出口池而不是某个具体端口', (t) => {
+  const aiHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-zcode-egress-pool-'));
+  t.after(() => fs.rmSync(aiHomeDir, { recursive: true, force: true }));
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'opencode',
+    cliAccountId: '1',
+    identitySeed: 'oauth:opencode:pool-binding@example.com'
+  });
+
+  writeAccountEgressBinding(fs, aiHomeDir, accountRef, { mode: EGRESS_MODE_POOL });
+  const binding = readAccountEgressBinding(fs, aiHomeDir, accountRef);
+  // 关键：绑定里没有端口 —— 池换端口/换节点都不需要重新绑定。
+  assert.equal(binding.mode, EGRESS_MODE_POOL);
+  assert.equal(binding.proxyUrl, '');
+  assert.equal(binding.retired, undefined);
 });
 
 // ── ZCode 原生 setting.json ────────────────────────────────────────────────
@@ -566,8 +621,12 @@ test('normalizeProxyUrl 把 host:port 简写补成 http，并保留 https', () =
   assert.equal(normalizeProxyUrl('https://proxy.local:8443'), 'https://proxy.local:8443');
 });
 
-test('normalizeProxyUrl 拒绝不合法输入与非 HTTP(S) 代理', () => {
-  assert.equal(normalizeProxyUrl('socks5://1.2.3.4:1080'), '', 'socks 在网关请求路径上会被静默直连，必须拒绝');
+test('normalizeProxyUrl 拒绝不合法输入与不受支持的代理 scheme', () => {
+  // socks5/socks5h 已放行（网关侧由 socks5-connector 建隧道），其余 scheme 仍拒绝：
+  // 放行一个消费方建不起隧道的 scheme，就是让请求静默直连、泄漏真实出口 IP。
+  assert.equal(normalizeProxyUrl('socks5://1.2.3.4:1080'), 'socks5://1.2.3.4:1080');
+  assert.equal(normalizeProxyUrl('socks5h://1.2.3.4:1080'), 'socks5h://1.2.3.4:1080');
+  assert.equal(normalizeProxyUrl('socks4://1.2.3.4:1080'), '', 'socks4 不支持');
   assert.equal(normalizeProxyUrl('ftp://1.2.3.4:21'), '', '不支持的 scheme');
   assert.equal(normalizeProxyUrl('1.2.3.4'), '', '缺端口');
   assert.equal(normalizeProxyUrl('1.2.3.4:99999'), '', '端口越界');
@@ -646,19 +705,19 @@ test('resolveAccountEgress 在 TUN 激活时返回直连目标且不探测代理
   assert.deepEqual(result, { ok: true, source: EGRESS_MODE_TUN, proxyServer: '', direct: true });
 });
 
-test('resolveAccountEgress 对 socks 地址、已下线模式与非 macOS 平台 fail-closed 且不探测', async () => {
+test('resolveAccountEgress 对 socks4 地址、已下线模式与非 macOS 平台 fail-closed 且不探测', async () => {
   const deps = {
     probeProxyServer: async () => {
       throw new Error('fail-closed 前不得探测');
     }
   };
-  const socks = await resolveAccountEgress(egressResolveInput(
-    { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
+  const socks4 = await resolveAccountEgress(egressResolveInput(
+    { mode: EGRESS_MODE_URL, proxyUrl: 'socks4://127.0.0.1:6153' },
     { deps }
   ));
-  assert.equal(socks.ok, false);
-  assert.equal(socks.error, 'proxy_scheme_unsupported');
-  assert.equal(socks.proxyServer, '');
+  assert.equal(socks4.ok, false);
+  assert.equal(socks4.error, 'proxy_scheme_unsupported');
+  assert.equal(socks4.proxyServer, '');
 
   const retired = await resolveAccountEgress(egressResolveInput(
     { mode: 'node', retired: true, nodeId: 'node-a', proxyUrl: '', groupId: '' },
@@ -1387,8 +1446,9 @@ test('zcode 策略不直接注入会被 Desktop host 清理的代理环境变量
 
 test('describeEgressWarning 说明平台限制与 fail-closed 事实', () => {
   assert.match(describeEgressWarning({ ok: false, error: 'not_supported', platform: 'windows' }), /仅支持 macOS/);
-  assert.match(describeEgressWarning({ ok: false, error: 'proxy_scheme_unsupported' }), /只支持 HTTP\(S\).*阻止启动/);
-  assert.match(describeEgressWarning({ ok: false, error: 'system_proxy_http_unavailable' }), /只配置了 SOCKS/);
+  assert.match(describeEgressWarning({ ok: false, error: 'proxy_scheme_unsupported' }), /只支持 HTTP\(S\) 与 SOCKS5.*阻止启动/);
+  assert.match(describeEgressWarning({ ok: false, error: 'zcode_native_proxy_scheme_unsupported' }), /只支持 HTTP\(S\)/);
+  assert.match(describeEgressWarning({ ok: false, error: 'system_proxy_scheme_unavailable' }), /协议类型不被该客户端支持/);
   assert.match(describeEgressWarning({ ok: false, error: 'account_egress_mode_retired' }), /已下线.*阻止启动/);
   assert.match(
     describeEgressWarning({ ok: false, error: 'proxy_unreachable', reason: 'curl_exit_7' }),

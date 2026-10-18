@@ -1643,9 +1643,9 @@ export interface AccountAppLaunchResponse {
   egressWarning?: string;
 }
 
-export type AccountEgressMode = 'system' | 'tun' | 'url';
-/** 已下线的历史出口模式（节点 / 分组 / 代理池）：只读展示，提示改绑。 */
-export type RetiredAccountEgressMode = 'node' | 'group' | 'pool';
+export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool';
+/** 已下线的历史出口模式（节点 / 分组）：只读展示，提示改绑。 */
+export type RetiredAccountEgressMode = 'node' | 'group';
 
 export interface AccountEgressBinding {
   mode: AccountEgressMode | RetiredAccountEgressMode;

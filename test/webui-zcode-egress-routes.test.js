@@ -216,13 +216,35 @@ test('egress POST 接受 system、tun、url 三种模式并立即应用', async 
   }
 });
 
-test('egress POST 拒绝已下线的 node/group/pool 模式与 socks 代理地址', async (t) => {
+test('egress POST 保存 pool 绑定时先拉起出口池再探测；其它模式不碰出口池', async (t) => {
+  const fixture = createFixture(t, 'opencode');
+  const order = [];
+  const poolCtx = createContext(fixture, 'POST', Buffer.from(JSON.stringify({ mode: 'pool' })));
+  poolCtx.deps = {
+    startEgressPool: async () => { order.push('start'); return { ok: true }; },
+    applyStoredAccountEgress: () => { order.push('apply'); return { ok: true, applied: true, status: 'applied' }; }
+  };
+  await handleZcodeEgressRequest(poolCtx);
+  assert.equal(poolCtx.res.statusCode, 200);
+  assert.equal(poolCtx.res.payload.binding.mode, 'pool');
+  assert.deepEqual(order, ['start', 'apply']);
+
+  const urlOrder = [];
+  const urlCtx = createContext(fixture, 'POST', Buffer.from(JSON.stringify({ mode: 'system' })));
+  urlCtx.deps = {
+    startEgressPool: async () => { urlOrder.push('start'); return { ok: true }; },
+    applyStoredAccountEgress: () => { urlOrder.push('apply'); return { ok: true, applied: true, status: 'applied' }; }
+  };
+  await handleZcodeEgressRequest(urlCtx);
+  assert.deepEqual(urlOrder, ['apply']);
+});
+
+test('egress POST 拒绝已下线的 node/group 模式、socks4 与带凭据地址', async (t) => {
   const fixture = createFixture(t);
   const cases = [
     [{ mode: 'node', nodeId: 'node-a' }, 'invalid_egress_mode'],
     [{ mode: 'group', groupId: 'group-fast' }, 'invalid_egress_mode'],
-    [{ mode: 'pool', nodeId: 'node-a' }, 'invalid_egress_mode'],
-    [{ mode: 'url', proxyUrl: 'socks5://127.0.0.1:6153' }, 'proxy_scheme_unsupported'],
+    [{ mode: 'url', proxyUrl: 'socks4://127.0.0.1:6153' }, 'proxy_scheme_unsupported'],
     [{ mode: 'url', proxyUrl: 'http://user:pass@proxy.example:8080' }, 'invalid_proxy_url']
   ];
   for (const [payload, error] of cases) {
@@ -237,6 +259,28 @@ test('egress POST 拒绝已下线的 node/group/pool 模式与 socks 代理地�
     assert.equal(ctx.res.payload.error, error, JSON.stringify(payload));
   }
   assert.equal(readAccountEgressBinding(fs, fixture.aiHomeDir, fixture.accountRef), null);
+});
+
+// scheme 白名单是「消费方能力」而非「地址非法」：同一份 socks5 地址在 codex 上必须保存成功，
+// 在 ZCode 上必须被拒（原生 setting.json 只有 httpProxy 字段）。
+test('egress POST 的 socks5 地址按 provider 收窄：ZCode 拒绝、其它 provider 接受', async (t) => {
+  const zcodeFixture = createFixture(t, 'zcode');
+  const zcodeCtx = createContext(zcodeFixture, 'POST', Buffer.from(JSON.stringify({
+    mode: 'url', proxyUrl: 'socks5://127.0.0.1:6153'
+  })));
+  zcodeCtx.deps = { applyStoredAccountEgress: () => ({ ok: true, applied: true, status: 'applied' }) };
+  await handleZcodeEgressRequest(zcodeCtx);
+  assert.equal(zcodeCtx.res.statusCode, 400);
+  assert.equal(zcodeCtx.res.payload.error, 'zcode_native_proxy_scheme_unsupported');
+
+  const codexFixture = createFixture(t, 'codex');
+  const codexCtx = createContext(codexFixture, 'POST', Buffer.from(JSON.stringify({
+    mode: 'url', proxyUrl: 'socks5://127.0.0.1:6153'
+  })));
+  codexCtx.deps = { applyStoredAccountEgress: () => ({ ok: true, applied: true, status: 'applied' }) };
+  await handleZcodeEgressRequest(codexCtx);
+  assert.equal(codexCtx.res.statusCode, 200);
+  assert.equal(codexCtx.res.payload.binding.proxyUrl, 'socks5://127.0.0.1:6153');
 });
 
 test('egress POST 把账号级 Desktop launcher 注入首次运行态接管流程', async (t) => {

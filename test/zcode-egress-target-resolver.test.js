@@ -25,11 +25,21 @@ test('resolver 同步解析出口，只暴露外部代理目标', () => {
   });
 });
 
-test('proxyUrlIssue 只接受不带凭据与路径的 HTTP(S) 代理', () => {
-  for (const value of ['http://127.0.0.1:6152', 'https://proxy.example:8443', '127.0.0.1:6152', 'proxy.example:8080']) {
+test('proxyUrlIssue 接受 HTTP(S) 与 SOCKS5，拒绝 socks4/ss 与带凭据/路径的地址', () => {
+  for (const value of [
+    'http://127.0.0.1:6152',
+    'https://proxy.example:8443',
+    '127.0.0.1:6152',
+    'proxy.example:8080',
+    // socks5/socks5h 自 2026-10-17 起放行：网关侧由 socks5-connector 提供真正的
+    // SOCKS5 隧道，曾经「静默直连」的成因消失。
+    'socks5://127.0.0.1:6153',
+    'socks5h://127.0.0.1:6153'
+  ]) {
     assert.equal(resolver.proxyUrlIssue(value), '', value);
   }
-  for (const value of ['socks5://127.0.0.1:6153', 'socks4a://proxy.example:1080', 'ss://proxy.example:8388']) {
+  // socks4 无域名解析且已过时；`socks://` 语义在实现间不一致，不猜。
+  for (const value of ['socks4://127.0.0.1:6153', 'socks4a://proxy.example:1080', 'ss://proxy.example:8388']) {
     assert.equal(resolver.proxyUrlIssue(value), 'proxy_scheme_unsupported', value);
   }
   for (const value of [
@@ -48,11 +58,14 @@ test('normalizeProxyUrl 把简写补成 http://host:port，非法地址返回空
   assert.equal(resolver.normalizeProxyUrl('127.0.0.1:6152'), 'http://127.0.0.1:6152');
   assert.equal(resolver.normalizeProxyUrl(' https://proxy.example:8443/ '), 'https://proxy.example:8443');
   assert.equal(resolver.normalizeProxyUrl('HTTP://Proxy.Example:80'), 'http://proxy.example');
-  assert.equal(resolver.normalizeProxyUrl('socks5://127.0.0.1:6153'), '');
+  // socks5/socks5h 归一化时保留原 scheme（不能改写成 http://，那会变成另一种协议）。
+  assert.equal(resolver.normalizeProxyUrl('socks5://127.0.0.1:6153'), 'socks5://127.0.0.1:6153');
+  assert.equal(resolver.normalizeProxyUrl('socks5h://127.0.0.1:6153'), 'socks5h://127.0.0.1:6153');
+  assert.equal(resolver.normalizeProxyUrl('socks5://127.0.0.1:6153', { provider: 'zcode' }), '');
   assert.equal(resolver.normalizeProxyUrl(''), '');
 });
 
-test('url 模式按 HTTP(S) 校验，socks 与带凭据地址 fail-closed', () => {
+test('url 模式按消费方能力校验，socks4 与带凭据地址 fail-closed', () => {
   const shorthand = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_URL, proxyUrl: 'proxy.example:8080' },
     platform: 'darwin'
@@ -63,9 +76,11 @@ test('url 模式按 HTTP(S) 校验，socks 与带凭据地址 fail-closed', () =
     binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
     platform: 'darwin'
   });
-  assert.equal(socks.ok, false);
-  assert.equal(socks.error, 'proxy_scheme_unsupported');
-  assert.equal(socks.target, null);
+  assert.deepEqual(socks, {
+    ok: true,
+    source: EGRESS_MODE_URL,
+    target: { kind: 'proxy-url', proxyUrl: 'socks5://127.0.0.1:6153' }
+  });
 
   const credentials = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_URL, proxyUrl: 'http://user:pass@proxy.example:8080' },
@@ -74,7 +89,77 @@ test('url 模式按 HTTP(S) 校验，socks 与带凭据地址 fail-closed', () =
   assert.equal(credentials.error, 'invalid_proxy_url');
 });
 
-test('system 模式优先 HTTPS 再 HTTP，只有 SOCKS 时报 system_proxy_http_unavailable', () => {
+// ZCode 的出口写进原生 setting.json 的 httpProxy 字段（socks 语义未经取证），因此
+// url 模式的 scheme 白名单按 provider 收窄：保存时就明确报错，而不是写进一个会静默
+// 失效的字段。其它 provider 的消费方（undici / Go / Chromium）都原生支持 socks5。
+test('url 模式的 scheme 白名单按 provider 收窄：ZCode 只收 HTTP(S)', () => {
+  const zcodeSocks = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
+    platform: 'darwin',
+    provider: 'zcode'
+  });
+  assert.equal(zcodeSocks.ok, false);
+  assert.equal(zcodeSocks.error, 'zcode_native_proxy_scheme_unsupported');
+
+  const zcodeHttp = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'http://127.0.0.1:6152' },
+    platform: 'darwin',
+    provider: 'zcode'
+  });
+  assert.equal(zcodeHttp.ok, true);
+  assert.equal(zcodeHttp.target.proxyUrl, 'http://127.0.0.1:6152');
+
+  // 同一份绑定在别的 provider 上可用 —— 收窄是「消费方能力」，不是「地址非法」。
+  const codexSocks = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_URL, proxyUrl: 'socks5://127.0.0.1:6153' },
+    platform: 'darwin',
+    provider: 'codex'
+  });
+  assert.equal(codexSocks.ok, true);
+});
+
+// opencode 是 Bun 二进制：Bun 静默忽略 socks 代理 env，socks5 写进 CLI 环境等于直连。
+// 收窄声明在 opencode 描述符的 egress.proxySchemes，解析器不持有 provider 名单。
+test('opencode 描述符声明只收 HTTP(S)：socks5 在入口被拒，applyAccountEgressProxyEnv 不会写出 socks', () => {
+  for (const proxyUrl of ['socks5://127.0.0.1:6153', 'socks5h://127.0.0.1:6153']) {
+    const result = resolver.resolveEgressTarget({
+      binding: { mode: EGRESS_MODE_URL, proxyUrl },
+      platform: 'darwin',
+      provider: 'opencode'
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'zcode_native_proxy_scheme_unsupported');
+  }
+  assert.equal(resolver.proxyUrlIssue('socks5://127.0.0.1:6153', { provider: 'opencode' }), 'zcode_native_proxy_scheme_unsupported');
+  assert.equal(resolver.proxyUrlIssue('http://127.0.0.1:6152', { provider: 'opencode' }), '');
+  assert.deepEqual(resolver.allowedSchemesForProvider('opencode'), ['http:', 'https:']);
+  assert.deepEqual(resolver.allowedSchemesForProvider('codex'), ['http:', 'https:', 'socks5:', 'socks5h:']);
+
+  const { applyAccountEgressProxyEnv } = require('../lib/runtime/account-egress-proxy');
+  assert.throws(
+    () => applyAccountEgressProxyEnv({}, 'opencode', {
+      accountRef: 'acct_opencode_1',
+      accountEgress: { ok: true, source: 'url', proxyServer: 'socks5://127.0.0.1:6153' }
+    }),
+    (error) => error.code === 'account_egress_endpoint_invalid'
+  );
+});
+
+test('egress 描述符契约：只能收窄到全集子集，且必须写 reason', () => {
+  const { validateProviderDescriptor } = require('../lib/providers/contract');
+  const build = (egress) => ({
+    contractVersion: 1,
+    id: 'demo',
+    capabilities: { quota: { supported: false, reason: 'demo' }, egress }
+  });
+  const ok = validateProviderDescriptor(build({ proxySchemes: ['HTTP:', 'https:', 'http:'], reason: 'demo only' }));
+  assert.deepEqual(ok.capabilities.egress.proxySchemes, ['http:', 'https:']);
+  assert.throws(() => validateProviderDescriptor(build({ proxySchemes: [], reason: 'x' })), /egress_schemes_empty/);
+  assert.throws(() => validateProviderDescriptor(build({ proxySchemes: ['socks4:'], reason: 'x' })), /egress_scheme_invalid/);
+  assert.throws(() => validateProviderDescriptor(build({ proxySchemes: ['http:'] })), /egress_reason_missing/);
+});
+
+test('system 模式按 HTTPS > HTTP > SOCKS5 取用，只配 SOCKS 时也能用', () => {
   const calls = [];
   const preferred = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_SYSTEM },
@@ -104,13 +189,25 @@ test('system 模式优先 HTTPS 再 HTTP，只有 SOCKS 时报 system_proxy_http
   });
   assert.equal(httpOnly.target.proxyUrl, 'http://127.0.0.1:9080');
 
+  // 只配了 SOCKS 的系统代理现在可直接复用（HTTP(S) 优先，SOCKS 兜底），
+  // 用户不再需要为此手工另开一个 HTTP 端口。
   const socksOnly = resolver.resolveEgressTarget({
     binding: { mode: EGRESS_MODE_SYSTEM },
     platform: 'darwin',
     detectSystemProxy: () => ({ enabled: true, probeStatus: 'available', socksProxy: 'socks5://127.0.0.1:1080' })
   });
-  assert.equal(socksOnly.ok, false);
-  assert.equal(socksOnly.error, 'system_proxy_http_unavailable');
+  assert.equal(socksOnly.ok, true);
+  assert.equal(socksOnly.target.proxyUrl, 'socks5://127.0.0.1:1080');
+
+  // 但消费方承载不了 socks 时（ZCode 原生 httpProxy）仍要 fail-closed。
+  const zcodeSocksOnly = resolver.resolveEgressTarget({
+    binding: { mode: EGRESS_MODE_SYSTEM },
+    platform: 'darwin',
+    provider: 'zcode',
+    detectSystemProxy: () => ({ enabled: true, probeStatus: 'available', socksProxy: 'socks5://127.0.0.1:1080' })
+  });
+  assert.equal(zcodeSocksOnly.ok, false);
+  assert.equal(zcodeSocksOnly.error, 'system_proxy_scheme_unavailable');
 });
 
 test('system 模式在系统代理未配置或探测失败时拒绝静默直连', () => {
@@ -187,6 +284,33 @@ test('已下线的 node/group/pool 绑定、未绑定与未知模式都返回稳
     resolver.resolveEgressTarget({ binding: { mode: 'mystery' }, platform: 'darwin' }).error,
     'unknown_egress_mode'
   );
+});
+
+test('pool 绑定在池未就绪时 fail-closed 并惰性拉起池；就绪后解析到池地址', () => {
+  let ensured = 0;
+  const notReady = resolver.resolveEgressTarget({
+    binding: { mode: 'pool' },
+    platform: 'darwin',
+    egressPoolRegistry: {
+      currentEgressPoolProxyUrl: () => '',
+      ensureEgressPoolStarted: () => { ensured += 1; return true; }
+    }
+  });
+  assert.equal(notReady.ok, false);
+  assert.equal(notReady.error, 'egress_pool_not_ready');
+  assert.equal(ensured, 1);
+
+  const ready = resolver.resolveEgressTarget({
+    binding: { mode: 'pool' },
+    platform: 'darwin',
+    egressPoolRegistry: {
+      currentEgressPoolProxyUrl: () => 'http://127.0.0.1:17890',
+      ensureEgressPoolStarted: () => { ensured += 1; return true; }
+    }
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.target.proxyUrl, 'http://127.0.0.1:17890');
+  assert.equal(ensured, 1);
 });
 
 test('非 macOS 平台不支持账号出口，且不触发探测', () => {

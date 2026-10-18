@@ -22,6 +22,7 @@ const {
 const { refreshKiroGrant, isKiroAccessTokenFresh } = require('../lib/account/kiro-token-refresh');
 const { fetchKiroAvailableModels, collectModelIds } = require('../lib/account/kiro-model-catalog');
 const { createKiroHttpModelDiscovery } = require('../lib/account/kiro-model-discovery');
+const { resolveKiroModelProfileArn, kiroBuilderIdProfileArn } = require('../lib/account/kiro-profile');
 const { runProviderModelStrategies } = require('../lib/server/provider-model-strategies');
 const { getProviderCapability } = require('../lib/providers');
 
@@ -115,10 +116,11 @@ test('token 新鲜度：过期/临近过期都要判为需要刷新', () => {
 });
 
 
-test('模型清单：ListAvailableModels 解析出 models[] 与 defaultModel（去重排序）', async () => {
+test('模型清单（无 profileArn）：走 V2 旧端点，解析 models[] 与 defaultModel（去重排序）', async () => {
   const request = async (url, init) => {
     assert.equal(url, 'https://codewhisperer.us-east-1.amazonaws.com/');
     assert.equal(init.headers['x-amz-target'], 'AmazonCodeWhispererService.ListAvailableModels');
+    assert.deepEqual(JSON.parse(init.body), { origin: 'CLI' });
     return {
       status: 200,
       text: async () => JSON.stringify({
@@ -131,6 +133,45 @@ test('模型清单：ListAvailableModels 解析出 models[] 与 defaultModel（�
   assert.deepEqual(catalog.models, ['claude-haiku-4.5', 'claude-sonnet-4', 'claude-sonnet-4.5']);
   assert.equal(catalog.defaultModel, 'claude-sonnet-4.5');
   assert.deepEqual(collectModelIds({ models: [{ modelName: 'x' }, {}] }), ['x']);
+});
+
+test('模型清单（带 profileArn）：走 V3 控制面端点，body 带 origin=KIRO_CLI + profileArn', async () => {
+  const calls = [];
+  const request = async (url, init) => {
+    calls.push({ url, target: init.headers['x-amz-target'], body: JSON.parse(init.body) });
+    return {
+      status: 200,
+      text: async () => JSON.stringify({
+        defaultModel: { modelId: 'auto' },
+        models: [{ modelId: 'auto' }, { modelId: 'claude-opus-5.5' }, { modelId: 'claude-sonnet-5.5' }]
+      })
+    };
+  };
+  const catalog = await fetchKiroAvailableModels(
+    { access_token: 'tok', region: 'us-east-1' },
+    { request, profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/X' }
+  );
+  assert.equal(calls.length, 1, '有 profileArn 时只打 V3，不打 V2');
+  assert.equal(calls[0].url, 'https://management.us-east-1.kiro.dev/');
+  assert.equal(calls[0].target, 'KiroControlPlaneBearerService.ListAvailableModels');
+  assert.deepEqual(calls[0].body, { origin: 'KIRO_CLI', profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/X' });
+  assert.deepEqual(catalog.models, ['auto', 'claude-opus-5.5', 'claude-sonnet-5.5']);
+});
+
+test('模型清单：V3 失败回落 V2（端点抖动不该让账号变「无模型」）', async () => {
+  const calls = [];
+  const request = async (url, init) => {
+    calls.push(url);
+    if (url.includes('kiro.dev')) return { status: 500, text: async () => '{}' };
+    return { status: 200, text: async () => JSON.stringify({ models: [{ modelId: 'claude-sonnet-4.5' }] }) };
+  };
+  const catalog = await fetchKiroAvailableModels(
+    { access_token: 'tok', region: 'us-east-1' },
+    { request, profileArn: 'arn:x' }
+  );
+  assert.deepEqual(calls, ['https://management.us-east-1.kiro.dev/', 'https://codewhisperer.us-east-1.amazonaws.com/']);
+  assert.deepEqual(catalog.models, ['claude-sonnet-4.5']);
+  assert.equal(catalog.fallbackFrom, 'kiro_models_http_500');
 });
 
 test('模型清单：403/空目录必须报错，不能返回空清单冒充成功', async () => {
@@ -176,14 +217,41 @@ test('模型发现纯 API：token 过期先自刷新，再列模型（全程不�
         }
       };
     },
-    fetchKiroAvailableModels: async (auth) => {
-      seen.push(`models:${auth.access_token}`);
-      return { models: ['claude-sonnet-4.5'], defaultModel: 'claude-sonnet-4.5' };
+    // profileArn 解析可注入（默认会打 ListAvailableProfiles）：这里给一个固定值，断言它流到 fetchModels。
+    resolveKiroModelProfileArn: async () => ({ profileArn: 'arn:test', source: 'credential' }),
+    fetchKiroAvailableModels: async (auth, opts) => {
+      seen.push(`models:${auth.access_token}:${opts.profileArn}`);
+      return { models: ['claude-opus-5.5'], defaultModel: 'auto' };
     }
   });
   const result = await discovery.discover({ provider: 'kiro', accountRef: 'acct_test' }, 5000);
-  assert.deepEqual(result.models, ['claude-sonnet-4.5']);
-  assert.deepEqual(seen, ['refresh', 'models:aoa-fresh']);
+  assert.deepEqual(result.models, ['claude-opus-5.5']);
+  assert.deepEqual(seen, ['refresh', 'models:aoa-fresh:arn:test']);
+});
+
+test('profileArn 解析：凭据带了优先用；Builder ID 列不出 profile 时回落固定 ARN', async () => {
+  // 1) 凭据带 profileArn → 直接用，不打 ListAvailableProfiles（request 被调用即失败）。
+  const withCred = await resolveKiroModelProfileArn(
+    { auth: { access_token: 't', profile_arn: 'arn:cred' } },
+    { request: () => { throw new Error('不该打网络'); } }
+  );
+  assert.deepEqual(withCred, { profileArn: 'arn:cred', source: 'credential' });
+
+  // 2) Builder ID：ListAvailableProfiles 抛 403 → 回落官方固定 Builder-ID ARN（region 跟随账号）。
+  const builderId = await resolveKiroModelProfileArn(
+    { auth: { access_token: 't', region: 'us-east-1' } },
+    { resolveKiroProfileArn: async () => { const e = new Error('x'); e.code = 'kiro_profiles_http_403'; throw e; } }
+  );
+  assert.equal(builderId.source, 'builder-id');
+  assert.equal(builderId.profileArn, kiroBuilderIdProfileArn('us-east-1'));
+  assert.match(builderId.profileArn, /^arn:aws:codewhisperer:us-east-1:\d+:profile\//);
+
+  // 3) 企业多 profile：不替用户选 → 回传歧义，调用方据此回落 V2。
+  const ambiguous = await resolveKiroModelProfileArn(
+    { auth: { access_token: 't' } },
+    { resolveKiroProfileArn: async () => ({ error: 'kiro_profile_ambiguous', profiles: [{ arn: 'a' }, { arn: 'b' }] }) }
+  );
+  assert.equal(ambiguous.error, 'kiro_profile_ambiguous');
 });
 
 test('模型发现纯 API：拿不到凭据记录时报错而不是抛异常', async () => {

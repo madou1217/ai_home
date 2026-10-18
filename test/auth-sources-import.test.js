@@ -96,7 +96,9 @@ test('装了 Kiro IDE：认证来源判定为可用 → 从本机导入直接产
   assert.equal(spawnCalls.length, 0, '本机导入不得 spawn 任何 CLI/PTY');
   const nativeAuth = readAccountNativeAuth(fs, aiHomeDir, job.accountRef);
   assert.equal(nativeAuth.auth.access_token, 'aoa-from-ide', '必须用真刷后的 token 入库');
-  assert.equal(nativeAuth.auth.profileArn, 'arn:aws:codewhisperer:us-east-1:1:profile/ide');
+  // social 凭据以 kiro-cli 原生形状入库（profile_arn），读取方一律经 readKiroProfileArn。
+  const { readKiroProfileArn } = require('../lib/account/kiro-profile');
+  assert.equal(readKiroProfileArn(nativeAuth), 'arn:aws:codewhisperer:us-east-1:1:profile/ide');
   const { resolveKiroTokenFlavour, KIRO_TOKEN_FLAVOURS } = require('../lib/account/kiro-token-flavour');
   assert.equal(resolveKiroTokenFlavour(nativeAuth).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
 });

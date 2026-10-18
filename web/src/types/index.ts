@@ -566,7 +566,10 @@ export interface AccountConfig {
   location?: string;
 }
 
-export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oauth-device' | 'vertex-ai';
+// 与 Go 契约的 authOptions 一一对应（core/providers/model.go 的 AuthMode）：
+// oauth-refresh-token 是 kiro 的 Kiro Desktop / social 导入模式，之前这里漏了，
+// 导致 AuthProgressModal 里判断该模式的分支被判成「不可能成立」。
+export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oauth-device' | 'oauth-refresh-token' | 'vertex-ai';
 
 export interface AddAccountRequest {
   provider: Provider;

@@ -74,7 +74,10 @@ test('设备码投影：写出的 data.sqlite3 能被既有 CLI 侧读取器原�
   }
 });
 
-test('refreshToken 投影（B）：只有 token 行，social 标记让判型走 desktop 而不是 oidc', () => {
+test('refreshToken 投影（B）：social 凭据写进 kirocli:social:token（CLI 原生形状），判型走 desktop', () => {
+  const { readKiroTokenRecord } = require('../lib/account/kiro-auth-metadata');
+  const { readKiroProfileArn } = require('../lib/account/kiro-profile');
+  const { DatabaseSync } = require('node:sqlite');
   const runtimeDir = tempRuntime();
   try {
     const databasePath = path.join(runtimeDir, 'data.sqlite3');
@@ -87,10 +90,41 @@ test('refreshToken 投影（B）：只有 token 行，social 标记让判型走 
       database: fs.readFileSync(databasePath).toString('base64')
     }).error, 'kiro_registration_missing');
 
-    const nativeAuth = { database: fs.readFileSync(databasePath).toString('base64'),
-      auth: readKiroTokenFromDatabase(databasePath) };
+    // 槽位与形状：kiro-cli 经 KIRO_TEST_DB_PATH 读这个库，social token 放进 odic 槽会被当成
+    // Builder ID 按 OIDC 刷新而失败。CLI 行只放 CLI 自己的字段，aih 元数据另起一行。
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    const rows = Object.fromEntries(database.prepare('SELECT key, value FROM auth_kv').all()
+      .map((row) => [row.key, JSON.parse(row.value)]));
+    database.close();
+    assert.deepEqual(Object.keys(rows).sort(), ['aih:kiro:auth-meta', 'kirocli:social:token']);
+    assert.deepEqual(Object.keys(rows['kirocli:social:token']).sort(),
+      ['access_token', 'expires_at', 'profile_arn', 'provider', 'refresh_token']);
+    assert.equal(rows['kirocli:social:token'].provider, 'google', 'CLI 自己写的 provider 是小写');
+    assert.deepEqual(rows['aih:kiro:auth-meta'], { authMethod: 'social' });
+
+    const record = readKiroTokenRecord(databasePath);
+    assert.equal(record.slot, 'kirocli:social:token');
+    const nativeAuth = { database: fs.readFileSync(databasePath).toString('base64'), auth: record.token };
+    assert.equal(record.token.authMethod, 'social', 'aih 元数据在读取时合并回来');
     assert.equal(resolveKiroTokenFlavour(nativeAuth).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
-    assert.equal(nativeAuth.auth.profileArn, 'arn:profile/social');
+    assert.equal(readKiroProfileArn(nativeAuth), 'arn:profile/social');
+  } finally {
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test('refreshToken 投影（B）：提供方认不出时退回 odic 槽 + social 标记（不猜新口径）', () => {
+  const runtimeDir = tempRuntime();
+  try {
+    const databasePath = path.join(runtimeDir, 'data.sqlite3');
+    writeKiroCredentialDatabase(fs, databasePath, {
+      registration: null,
+      auth: buildKiroAuthRow(GRANT, { authMethod: 'social', profileArn: 'arn:profile/unknown' })
+    });
+    const { readKiroTokenRecord } = require('../lib/account/kiro-auth-metadata');
+    const record = readKiroTokenRecord(databasePath);
+    assert.equal(record.slot, 'kirocli:odic:token');
+    assert.equal(resolveKiroTokenFlavour({ auth: record.token }).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
   } finally {
     fs.rmSync(runtimeDir, { recursive: true, force: true });
   }

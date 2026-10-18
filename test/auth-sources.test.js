@@ -37,8 +37,9 @@ test('描述符加载零错误：kiro 的 authSources 声明合法（能力未�
   assert.deepEqual(listProviderDescriptorLoadErrors(), []);
   const capability = getProviderCapability('kiro', 'authSources');
   assert.equal(capability.supported, true);
+  // kiro 有两条设备流：Builder ID（AWS SSO OIDC）与 social（Google / GitHub，另一套协议）。
   assert.deepEqual(capability.sources.map((source) => source.id),
-    ['kiro-ide-local', 'kiro-device-code', 'kiro-paste-token']);
+    ['kiro-ide-local', 'kiro-device-code', 'kiro-social-device-code', 'kiro-paste-token']);
 });
 
 test('每个认证来源的 authMode 必须存在于 Go 契约声明的认证方式里（跨语言防漂移）', () => {

@@ -14,6 +14,7 @@ import type {
   AccountAuthMode,
   AccountImportJob,
   AccountRefreshJob,
+  AddAccountRequest,
   AppInstallJob,
   ClientTerminalItem,
   Provider
@@ -150,6 +151,7 @@ export function useAccountActions({
   // 让弹窗能给出「从本机导入」而不是只让用户去拷文件。
   const [authLocalSources, setAuthLocalSources] = React.useState<ProviderAuthMethodSources | null>(null);
   const [authLocalImportSubmitting, setAuthLocalImportSubmitting] = React.useState(false);
+  const [socialSubmitting, setSocialSubmitting] = React.useState(false);
   const [authLocalInstallSubmitting, setAuthLocalInstallSubmitting] = React.useState(false);
   const [authLocalScanSubmitting, setAuthLocalScanSubmitting] = React.useState(false);
   const [accountAppInstallPrompt, setAccountAppInstallPrompt] = React.useState<AccountAppInstallPrompt | null>(null);
@@ -781,6 +783,34 @@ export function useAccountActions({
       message.error(error?.response?.data?.message || error?.message || '扫描本机账号失败');
     } finally {
       setAuthLocalScanSubmitting(false);
+    }
+  };
+
+  /**
+   * 切到 social（Google / Github）设备流。
+   *
+   * 为什么是「重开一个任务」而不是在同一个任务里换：两条设备流是**两套协议**
+   * （Builder ID 走 AWS SSO OIDC，social 走 Kiro 自己的认证服务），设备码不通用。
+   * 服务端按 loginProvider 选协议，因此这里取消旧任务后按同一 authMode 重新发起。
+   */
+  const handleStartSocialDevice = async (loginProvider: 'Google' | 'Github') => {
+    if (!addJob || addJob.status !== 'running') return;
+    setSocialSubmitting(true);
+    try {
+      const result = await accountsAPI.add({
+        provider: addJob.provider as Provider,
+        authMode: addJob.authMode as AccountAuthMode,
+        config: { loginProvider },
+        replaceExisting: true
+      } as AddAccountRequest);
+      if (result.jobId) {
+        openAuthProgressFromResult(result, 'add', 'OAuth 授权');
+        message.info(`已切换到 ${loginProvider} 设备流，请按新验证码完成授权`);
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || `切换到 ${loginProvider} 登录失败`);
+    } finally {
+      setSocialSubmitting(false);
     }
   };
 
@@ -1567,9 +1597,11 @@ export function useAccountActions({
         localImportSubmitting: authLocalImportSubmitting,
         localInstallSubmitting: authLocalInstallSubmitting,
         localScanSubmitting: authLocalScanSubmitting,
+        socialSubmitting,
         onLocalImport: handleLocalAuthImport,
         onInstallLocalClient: handleInstallLocalClient,
         onScanHostAccounts: handleScanHostAccounts,
+        onStartSocialDevice: handleStartSocialDevice,
         onClose: () => closeAuthProgress(false),
         onCallbackUrlChange: setAuthCallbackUrl,
         onSubmitBrowserCallback: handleSubmitBrowserCallback,

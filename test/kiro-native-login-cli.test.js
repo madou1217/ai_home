@@ -15,7 +15,8 @@ const {
   parseKiroNativeLoginArgs,
   runKiroNativeLogin,
   runKiroNativeLoginCommand,
-  waitForKiroDeviceAuthorization
+  waitForKiroDeviceAuthorization,
+  waitForKiroSocialDeviceAuthorization
 } = require('../lib/cli/services/account/kiro-native-login');
 const { readKiroTokenFromDatabase } = require('../lib/account/kiro-auth-metadata');
 const { resolveKiroDeviceRegistration } = require('../lib/account/kiro-device-registration');
@@ -173,4 +174,71 @@ test('命令层：用法错误返回 2、授权被拒返回 1、成功返回 0',
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });
   }
+});
+
+test('social 设备流：--social / --github 选对提供方，产物判型为 desktop', async () => {
+  assert.equal(parseKiroNativeLoginArgs(['--social']).loginProvider, 'Google');
+  assert.equal(parseKiroNativeLoginArgs(['--google']).loginProvider, 'Google');
+  assert.equal(parseKiroNativeLoginArgs(['--github']).loginProvider, 'Github');
+  assert.equal(parseKiroNativeLoginArgs(['--social']).mode, 'device-code');
+
+  const aiHomeDir = tempHome();
+  const seen = [];
+  try {
+    const responses = [
+      { status: 200, json: async () => ({ deviceCode: 'DEV', userCode: 'WWTZ-VKPW',
+        verificationUri: 'https://app.kiro.dev/account/device',
+        verificationUriComplete: 'https://app.kiro.dev/account/device?user_code=WWTZ-VKPW&login_provider=Google',
+        expiresInMilliseconds: 300000, intervalInMilliseconds: 5000 }) },
+      { status: 200, json: async () => ({ accessToken: 'aoa-social', refreshToken: 'aor-social',
+        profileArn: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK',
+        identityProvider: 'Google', status: 'success' }) }
+    ];
+    let index = 0;
+    const committed = [];
+    const result = await runKiroNativeLogin({
+      fs, aiHomeDir, loginProvider: 'Google', mode: 'device-code',
+      request: async (url) => { seen.push(url); return responses[index++]; },
+      registerKiroNativeLogin: async (_fs, runtimeDir) => {
+        committed.push(runtimeDir);
+        return { registered: true, accountRef: 'acct_kiro_social', cliAccountId: 1 };
+      }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(seen[0], 'https://prod.us-east-1.auth.desktop.kiro.dev/oauth/device/authorization');
+    assert.equal(seen[1], 'https://prod.us-east-1.auth.desktop.kiro.dev/oauth/device/poll');
+    const databasePath = path.join(committed[0], 'data.sqlite3');
+    const { readKiroTokenRecord } = require('../lib/account/kiro-auth-metadata');
+    const { readKiroProfileArn } = require('../lib/account/kiro-profile');
+    const record = readKiroTokenRecord(databasePath);
+    const auth = record.token;
+    // 写进 CLI 的 social 槽（原生形状），aih 的 social 标记从私有元数据行合并回来 → 判型走 desktop。
+    assert.equal(record.slot, 'kirocli:social:token');
+    assert.equal(auth.authMethod, 'social');
+    assert.equal(auth.provider, 'google');
+    assert.equal(readKiroProfileArn({ auth }), 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK');
+    assert.equal(resolveKiroTokenFlavour({ auth }).flavour, KIRO_TOKEN_FLAVOURS.DESKTOP);
+    // social 账号没有 device-registration —— 这正是以前「判型靠猜」的地方。
+    assert.equal(resolveKiroDeviceRegistration({ database: fs.readFileSync(databasePath).toString('base64') }).error,
+      'kiro_registration_missing');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('social 设备流：等待循环不认 slow_down（该口径上游只给 pending / invalid_token）', async () => {
+  const flow = { clientId: 'cid', deviceCode: 'd', intervalSeconds: 5, expiresAtMs: Date.now() + 60_000 };
+  const sleeps = [];
+  let call = 0;
+  const result = await waitForKiroSocialDeviceAuthorization(flow, {
+    request: async () => {
+      call += 1;
+      if (call === 1) return { status: 200, json: async () => ({ status: 'authorization_pending' }) };
+      return { status: 200, json: async () => ({ accessToken: 'a', refreshToken: 'r', status: 'success' }) };
+    },
+    sleep: async (ms) => sleeps.push(ms)
+  });
+  assert.equal(result.status, 'authorized');
+  assert.equal(sleeps.length, 1);
 });

@@ -174,6 +174,7 @@ interface AuthProgressModalProps {
   localImportSubmitting: boolean;
   localInstallSubmitting: boolean;
   localScanSubmitting: boolean;
+  socialSubmitting: boolean;
   onClose: () => void;
   onCallbackUrlChange: (url: string) => void;
   onSubmitBrowserCallback: () => void;
@@ -181,6 +182,8 @@ interface AuthProgressModalProps {
   onInstallLocalClient: (kind?: 'desktop' | 'cli') => void;
   onScanHostAccounts: () => void;
   onConfirmCliInstall: () => void;
+  /** 切到 social（Google / Github）设备流 —— 与 Builder ID 是两套协议。 */
+  onStartSocialDevice: (loginProvider: 'Google' | 'Github') => void;
 }
 
 export function AuthProgressModal({
@@ -196,17 +199,24 @@ export function AuthProgressModal({
   localImportSubmitting,
   localInstallSubmitting,
   localScanSubmitting,
+  socialSubmitting,
   onClose,
   onCallbackUrlChange,
   onSubmitBrowserCallback,
   onLocalImport,
   onInstallLocalClient,
   onScanHostAccounts,
-  onConfirmCliInstall
+  onConfirmCliInstall,
+  onStartSocialDevice
 }: AuthProgressModalProps) {
   // 扫描来源（handler = host-account-scan）：本机登录态是整批的，走既有「扫描本机账号」入库。
   const preferredSource = authSources
     ? (authSources.sources || []).find((source) => source.id === authSources.preferredSourceId) || null
+    : null;
+  // social 设备流来源（handler = social-device-code）：只有它可用时才渲染切换按钮 ——
+  // 界面不按 provider 名判断，只认来源链的结论。
+  const socialDeviceSource = authSources
+    ? (authSources.sources || []).find((source) => source.handler === 'social-device-code' && source.available) || null
     : null;
   const localScanSource = preferredSource && preferredSource.handler === 'host-account-scan' ? preferredSource : null;
   // 本机导入来源：可用、且是「读本机登录态直接入库」的实现（不是整批扫描）。与认证方式无关——
@@ -467,6 +477,23 @@ export function AuthProgressModal({
                 addJob.verificationUriComplete || addJob.verificationUri || '',
                 { copyMessage: '已复制授权链接', openable: true }
               )}
+              {/* Google / GitHub 账号是**另一套设备流**（不是 Builder ID 的 AWS SSO OIDC）。
+                  两者都能远程完成；这里给的是「当前这条走不通就换那条」的出口。 */}
+              {socialDeviceSource && addJob.status === 'running' ? (
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  <Text type="secondary" className="aih-overlay-hint">
+                    用 Google / GitHub 账号登录？那是另一套设备流（与 Builder ID 不通用）。
+                  </Text>
+                  <Space size={8}>
+                    <Button size="small" loading={socialSubmitting} onClick={() => onStartSocialDevice('Google')}>
+                      用 Google 登录
+                    </Button>
+                    <Button size="small" loading={socialSubmitting} onClick={() => onStartSocialDevice('Github')}>
+                      用 GitHub 登录
+                    </Button>
+                  </Space>
+                </Space>
+              ) : null}
             </Card>
           )}
 

@@ -129,6 +129,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         localImportSubmitting={authProgress.localImportSubmitting}
         localInstallSubmitting={authProgress.localInstallSubmitting}
         localScanSubmitting={authProgress.localScanSubmitting}
+        socialSubmitting={authProgress.socialSubmitting}
         onClose={authProgress.onClose}
         onCallbackUrlChange={authProgress.onCallbackUrlChange}
         onSubmitBrowserCallback={authProgress.onSubmitBrowserCallback}
@@ -136,6 +137,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onInstallLocalClient={authProgress.onInstallLocalClient}
         onScanHostAccounts={authProgress.onScanHostAccounts}
         onConfirmCliInstall={authProgress.onConfirmCliInstall}
+        onStartSocialDevice={authProgress.onStartSocialDevice}
       />
       <AccountAppInstallModal
         open={Boolean(appInstall.prompt)}

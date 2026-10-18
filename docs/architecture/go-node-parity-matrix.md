@@ -617,6 +617,16 @@ Node 那侧的 `200 + ready=false` 是**被文档依赖的诊断信号**，不�
 - 账号数含**已停用账号**（与 Node 一致）：运维在 `/readyz` 上要看的是「这台机器有没有账号」，
   停用账号仍占一个席位。
 
+## 只在 Node 入口生效的请求头（2026-10-18）
+
+- `x-aih-model-namespace`（`lib/server/model-namespace-header.js`）：`aih opencode` 把 opencode
+  内置 Zen provider 改道到网关时注入（同时带 `x-provider: opencode`），Node `v1-router` 据此把
+  裸模型名补成 `<namespace>/<model>` 再选号。Go ingress 不读该头，收到裸名会选不到账号。
+  **处置：交还 Node，不在 Go 重做补全**——`go-core-route-deferral` 对推理入口上「头合法且模型是
+  裸名」的请求（钉选与否都一样）一律交还，原因 `model_namespace_header`（随 `/readyz` 计数）；
+  已带命名空间的模型 Node 也不改写，两侧语义一致，照常转发。Go 若要承接这类请求，需要先在
+  Canonical 入口实现同一补全并补影子比对。
+
 ## 维护
 
 路径清单会随开发漂移。重新采集：

@@ -8,6 +8,7 @@ const { parse: parseJsonc } = require('jsonc-parser');
 const { parse: parseToml } = require('smol-toml');
 const { createHostConfigSyncer } = require('../lib/account/host-sync');
 const { writeServerConfig } = require('../lib/server/server-config-store');
+const { writePersistedWebUiModelsCache } = require('../lib/server/webui-model-cache');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const {
   writeAccountCredentials,
@@ -18,7 +19,7 @@ const {
   getAihProviderKey
 } = require('../lib/cli/services/pty/codex-config-sync');
 
-function createFixture(t) {
+function createFixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-host-sync-'));
   const fixture = {
     root,
@@ -28,6 +29,14 @@ function createFixture(t) {
   fixture.hostCodexDir = path.join(fixture.hostHomeDir, '.codex');
   fs.mkdirSync(fixture.hostCodexDir, { recursive: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // OpenCode 网关配置的模型清单只来自运行时探测缓存（不再有硬编码兜底），
+  // 所以夹具模拟「网关已探测过上游」。没有缓存时的失败关闭另有专门用例。
+  if (options.models !== false) {
+    writePersistedWebUiModelsCache({ fs, aiHomeDir: fixture.aiHomeDir }, {
+      updatedAt: Date.now(),
+      byProvider: { claude: ['claude-opus-5', 'claude-sonnet-4-6'] }
+    });
+  }
   return fixture;
 }
 
@@ -109,6 +118,37 @@ test('syncGlobalConfigToHost selects AIH Server in OpenCode without losing prefe
   assert.equal(config.provider.aih.options.apiKey, 'gateway-key');
   assert.ok(config.provider.aih.models[config.model.slice('aih/'.length)]);
   assert.equal(fs.statSync(configPath).mode & 0o777, 0o600);
+});
+
+test('syncGlobalConfigToHost fails closed for OpenCode when no gateway models were discovered', (t) => {
+  const fixture = createFixture(t, { models: false });
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const original = JSON.stringify({ theme: 'system' });
+  fs.writeFileSync(configPath, original);
+  writeServerConfig({ apiKey: 'gateway-key', port: 9544 }, { fs, aiHomeDir: fixture.aiHomeDir });
+
+  const result = createGatewaySyncer(fixture, 'opencode')('opencode', '', { gateway: true });
+
+  // 没有探测结果就不写一份猜出来的模型清单：拒绝切换，宿主配置原样不动。
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'opencode_gateway_models_unavailable');
+  assert.equal(fs.readFileSync(configPath, 'utf8'), original);
+});
+
+test('the OpenCode gateway default model is picked from discovered models', (t) => {
+  const fixture = createFixture(t, { models: false });
+  writePersistedWebUiModelsCache({ fs, aiHomeDir: fixture.aiHomeDir }, {
+    updatedAt: Date.now(),
+    byProvider: { claude: ['claude-opus-5', 'claude-sonnet-9-1'], opencode: ['opencode/some-free'] }
+  });
+  writeServerConfig({ apiKey: 'gateway-key', port: 9544 }, { fs, aiHomeDir: fixture.aiHomeDir });
+
+  assert.equal(createGatewaySyncer(fixture, 'opencode')('opencode', '', { gateway: true }).ok, true);
+  const configPath = path.join(fixture.hostHomeDir, '.config', 'opencode', 'opencode.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(config.model, 'aih/claude-sonnet-9-1');
+  assert.ok(config.provider.aih.models['opencode/some-free']);
 });
 
 test('syncGlobalConfigToHost preserves OpenCode JSONC comments and restores its original content', (t) => {

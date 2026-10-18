@@ -498,6 +498,34 @@ test('explicit provider headers reach the host deferral decision', async (t) => 
   assert.deepEqual(decisions.map((decision) => decision.explicitProvider), ['', 'claude']);
 });
 
+test('the model-namespace header reaches the host deferral decision', async (t) => {
+  const go = await startFakeGo(t);
+  const decisions = [];
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: (input) => {
+      decisions.push(input);
+      return false;
+    }
+  });
+  await request(port, {
+    method: 'POST',
+    path: '/v1/messages',
+    headers: {
+      authorization: `Bearer ${CLIENT_KEY}`,
+      'content-type': 'application/json',
+      'x-aih-model-namespace': 'opencode'
+    }
+  }, '{}');
+  await request(port, {
+    method: 'POST',
+    path: '/v1/messages',
+    headers: { authorization: `Bearer ${CLIENT_KEY}`, 'content-type': 'application/json' }
+  }, '{}');
+  assert.deepEqual(decisions.map((decision) => decision.modelNamespace), ['opencode', '']);
+});
+
 test('only a Go-marked decode rejection hands the buffered body back to Node; other 400s pass through', async (t) => {
   const goSeen = [];
   const goServer = http.createServer((req, res) => {

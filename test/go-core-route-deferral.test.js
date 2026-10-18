@@ -93,6 +93,26 @@ test('explicit provider selection keeps unpinned inference with Node', () => {
   assert.equal(shouldDeferGoRouteToNode({ entryId: 'gateway.props', explicitProvider: 'claude', state }), false);
 });
 
+test('a model-namespace header on a bare model keeps inference with Node, pinned or not', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const input = {
+    entryId: 'gateway.anthropic.messages', state, accountStateIndex, fabricGatewayReady: () => false
+  };
+  // 补全（裸名 → opencode/<model>）只在 Node v1-router 发生：Go 收到裸名会选不到账号。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, modelNamespace: 'opencode', model: 'deepseek-v4.1-flash-free' }),
+    { defer: true, reason: 'model_namespace_header' });
+  assert.deepEqual(explainGoRouteDeferral({
+    ...input, modelNamespace: 'opencode', model: 'deepseek-v4.1-flash-free', pinnedAccountRef: LIVE
+  }), { defer: true, reason: 'model_namespace_header' });
+  // 已带命名空间的模型 Node 也不改写，语义两侧一致，不必交还。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, modelNamespace: 'opencode', model: 'opencode/x' }),
+    { defer: false, reason: '' });
+  // 非法命名空间值 Node 忽略，这里同样忽略。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, modelNamespace: 'Bad Value!', model: 'x' }),
+    { defer: false, reason: '' });
+  assert.equal(shouldDeferGoRouteToNode({ entryId: 'gateway.props', modelNamespace: 'opencode', model: 'x', state }), false);
+});
+
 test('an online Fabric gateway keeps unpinned inference with Node but not read-only routes', () => {
   const decide = (entryId, fabricReady, pinnedAccountRef = '') => shouldDeferGoRouteToNode({
     entryId, pinnedAccountRef, state, accountStateIndex, fabricGatewayReady: () => fabricReady

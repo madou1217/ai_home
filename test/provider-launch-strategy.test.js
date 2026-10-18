@@ -6,6 +6,7 @@ const path = require('node:path');
 const { OPENCODE_GATEWAY_ENV, serializeOpencodeGateway } = require('../lib/cli/services/ai-cli/opencode-gateway-context');
 
 const { getProviderLaunchStrategy } = require('../lib/cli/services/ai-cli/launch-profile');
+const { writePersistedWebUiModelsCache } = require('../lib/server/webui-model-cache');
 const { homeRedirectStrategy } = require('../lib/cli/services/ai-cli/launch-profile/home-redirect-strategy');
 const { agyStrategy } = require('../lib/cli/services/ai-cli/launch-profile/agy-strategy');
 const { claudeStrategy } = require('../lib/cli/services/ai-cli/launch-profile/claude-strategy');
@@ -431,8 +432,14 @@ test('opencode gateway runtime injects an in-memory overlay without an internal 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-gateway-'));
   try {
     const hostHome = path.join(root, 'home');
-    const internalDir = path.join(root, '.ai_home', 'run', 'internal', 'opencode');
+    const aiHomeDir = path.join(root, '.ai_home');
+    const internalDir = path.join(aiHomeDir, 'run', 'internal', 'opencode');
     fs.mkdirSync(hostHome, { recursive: true });
+    // 模型清单只来自运行时探测缓存（无硬编码兜底）：模拟网关已探测过上游。
+    writePersistedWebUiModelsCache({ fs, aiHomeDir }, {
+      updatedAt: Date.now(),
+      byProvider: { claude: ['claude-sonnet-4-6'] }
+    });
     const baseEnv = {
       HOME: hostHome,
       [OPENCODE_GATEWAY_ENV]: serializeOpencodeGateway({ baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'dummy' })
@@ -441,11 +448,12 @@ test('opencode gateway runtime injects an in-memory overlay without an internal 
       path,
       fs,
       hostHomeDir: hostHome,
+      aiHomeDir,
       materializeAuth: false
     });
 
     const env = buildProviderRuntimeEnv('opencode', hostHome, baseEnv, {
-      path, fs, hostHomeDir: hostHome, platform: 'linux'
+      path, fs, hostHomeDir: hostHome, aiHomeDir, platform: 'linux'
     });
     const overlay = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
     assert.equal(overlay.provider.anthropic.options.baseURL, 'http://127.0.0.1:9527/v1');

@@ -12,6 +12,7 @@ const {
   resolveGatewayProfile
 } = require('../lib/cli/services/ai-cli/launch-profile/opencode-strategy');
 const { classifyUpstreamFailure } = require('../lib/server/upstream-failure-policy');
+const { writePersistedWebUiModelsCache } = require('../lib/server/webui-model-cache');
 
 test('upstream failure policy: distinguishes OpenCode FreeUsageLimitError (model scope) from GoUsageLimitError (account scope)', () => {
   const freePolicy = classifyUpstreamFailure({
@@ -61,13 +62,23 @@ test('upstream failure policy: OpenCode FreeTierError gate is not an account-sco
   assert.equal(policy.failureReason, 'opencode_free_tier_client_gated');
 });
 
-test('opencode launch strategy: dynamically generates BYOK gateway config with healthy models', () => {
+test('opencode launch strategy: dynamically generates BYOK gateway config with healthy models', (t) => {
+  // 模型清单只来自运行时探测缓存（无硬编码兜底），且 aiHome 必须显式注入。
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-opencode-injection-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const aiHomeDir = path.join(root, '.ai_home');
+  writePersistedWebUiModelsCache({ fs, aiHomeDir }, {
+    updatedAt: Date.now(),
+    byProvider: { claude: ['claude-sonnet-4-6'], opencode: ['opencode/some-free'] }
+  });
   const mockCtx = {
     baseEnv: {
       [OPENCODE_GATEWAY_ENV]: serializeOpencodeGateway({ baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'test-key' })
     },
-    hostHomeDir: os.tmpdir(),
-    sandboxDir: os.tmpdir(),
+    hostHomeDir: path.join(root, 'home'),
+    sandboxDir: path.join(root, 'home'),
+    aiHomeDir,
+    fs,
     path: path
   };
 

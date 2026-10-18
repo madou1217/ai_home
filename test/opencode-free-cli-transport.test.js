@@ -349,3 +349,38 @@ test('upstream failure policy: FreeTierError never locks the account for a year'
   assert.equal(cliPolicy.cooldownMs, 0);
 });
 
+// 出口代理协议不被 Bun 支持（socks5）时，是**出口配错**而不是账号故障：
+// 记账/冷却/换号都指向错误的方向（换号仍是同一个出口，必然再失败一次）。
+test('upstream failure policy: 不支持的出口代理协议不记账、不冷却、不换号', () => {
+  const fromCode = classifyUpstreamFailure({
+    provider: 'opencode',
+    account: { accountRef: 'acct_1' },
+    statusCode: 0,
+    error: Object.assign(new Error('boom'), { code: 'opencode_free_cli_proxy_unsupported' })
+  });
+  assert.equal(fromCode.failureReason, 'proxy_protocol_unsupported');
+  assert.equal(fromCode.scope, 'none');
+  assert.equal(fromCode.shouldMarkFailure, false);
+  assert.equal(fromCode.cooldownMs, 0);
+  assert.equal(fromCode.shouldRetryAnotherAccount, false);
+  assert.match(fromCode.detail, /只认 HTTP\(S\) 代理/);
+
+  // Bun 自己抛的形态（CLI 通道未包装时）同样识别。
+  const fromText = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 0,
+    error: new Error('UnsupportedProxyProtocol fetching "https://opencode.ai/zen/v1/chat/completions"')
+  });
+  assert.equal(fromText.failureReason, 'proxy_protocol_unsupported');
+  assert.equal(fromText.shouldMarkFailure, false);
+
+  // 对照：普通错误仍按账号/模型记账，说明上面的判定没有放宽其它路径。
+  const ordinary = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 500,
+    error: new Error('boom'),
+    defaultCooldownMs: 1000
+  });
+  assert.equal(ordinary.shouldMarkFailure, true);
+});
+

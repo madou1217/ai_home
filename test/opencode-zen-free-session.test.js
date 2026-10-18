@@ -161,3 +161,77 @@ test('the upstream payload always carries the gate shim and streams', () => {
   assert.equal(reads.length, 1);
   assert.ok(reads[0].function.description.trim());
 });
+
+// ── 真实 opencode 客户端的请求原样转发（2026-10-18）─────────────────────────────
+// opencode 的标题请求不带工具、靠标题提示词过门禁；网关补 `read` 垫片后反而 403
+// （实测原样 200、加垫片 403），且每次失败都轮换共享出口池、连累同时在飞的正文请求。
+
+const { isOpenCodeNativeClient } = require('../lib/server/opencode-native-client');
+
+test('a request from a non-opencode client gets the read gate shim', () => {
+  const payload = buildZenFreeChatPayload({ model: 'opencode/deepseek-v4.1-flash-free', messages: [] }, 'deepseek-v4.1-flash-free');
+  assert.deepEqual(payload.tools.map((tool) => tool.function.name), ['read']);
+  assert.ok(payload.tools[0].function.description, 'glm 系上游要求描述非空');
+});
+
+test('a native opencode title request keeps its empty tool set', () => {
+  const payload = buildZenFreeChatPayload(
+    { model: 'opencode/deepseek-v4.1-flash-free', messages: [{ role: 'system', content: 'title prompt' }] },
+    'deepseek-v4.1-flash-free',
+    { nativeClient: true }
+  );
+  assert.equal('tools' in payload, false);
+  assert.equal(payload.stream, true);
+});
+
+test('a native opencode agent request keeps its own tools untouched', () => {
+  const tools = [{ type: 'function', function: { name: 'read', description: 'Read a file', parameters: { type: 'object', properties: {} } } }];
+  const payload = buildZenFreeChatPayload({ model: 'x', messages: [], tools }, 'x', { nativeClient: true });
+  assert.equal(payload.tools, tools);
+});
+
+// ── glm 系要求工具描述非空（2026-10-18）──────────────────────────────────────
+// MCP / 插件工具常不写描述：deepseek 收、glm 回 400。用工具名兜底，不增删工具。
+
+const { ensureToolDescriptions } = require('../lib/server/opencode-zen-free-client');
+
+test('tools without a description get their name as one, other fields untouched', () => {
+  const tools = [
+    { type: 'function', function: { name: 'read', description: 'Read a file', parameters: { type: 'object' } } },
+    { type: 'function', function: { name: 'mcp_search', parameters: { type: 'object', properties: { q: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'mcp_blank', description: '   ', parameters: {} } }
+  ];
+  const filled = ensureToolDescriptions(tools);
+  assert.equal(filled.length, 3);
+  assert.strictEqual(filled[0], tools[0]);
+  assert.equal(filled[1].function.description, 'mcp_search');
+  assert.deepEqual(filled[1].function.parameters, tools[1].function.parameters);
+  assert.equal(filled[2].function.description, 'mcp_blank');
+  // 不改调用方的对象。
+  assert.equal(tools[1].function.description, undefined);
+});
+
+test('a tool set that is already complete is returned as the same reference', () => {
+  const tools = [{ type: 'function', function: { name: 'read', description: 'Read a file', parameters: {} } }];
+  assert.strictEqual(ensureToolDescriptions(tools), tools);
+  assert.equal(ensureToolDescriptions(undefined), undefined);
+});
+
+test('both native and non-native payloads carry non-empty tool descriptions', () => {
+  const tools = [
+    { type: 'function', function: { name: 'read', description: 'Read a file', parameters: {} } },
+    { type: 'function', function: { name: 'mcp_tool', description: '', parameters: {} } }
+  ];
+  for (const nativeClient of [true, false]) {
+    const payload = buildZenFreeChatPayload({ model: 'x', messages: [], tools }, 'glm-5.3-flash-free', { nativeClient });
+    assert.deepEqual(payload.tools.map((tool) => tool.function.name), ['read', 'mcp_tool']);
+    for (const tool of payload.tools) assert.ok(tool.function.description.trim(), `${tool.function.name} (native=${nativeClient})`);
+  }
+});
+
+test('the native opencode client is recognised by its own headers', () => {
+  assert.equal(isOpenCodeNativeClient({ 'x-opencode-client': 'cli', 'user-agent': 'opencode/latest/2.0.32/cli' }), true);
+  assert.equal(isOpenCodeNativeClient({ 'user-agent': 'opencode/latest/2.0.32/cli' }), false);
+  assert.equal(isOpenCodeNativeClient({ 'x-opencode-client': 'cli', 'user-agent': 'curl/8.0' }), false);
+  assert.equal(isOpenCodeNativeClient({}), false);
+});

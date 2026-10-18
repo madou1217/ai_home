@@ -545,6 +545,56 @@ test('capability router keeps model-family protocol routes for alias targets on 
   assert.equal(result.source, 'provider_protocol_route');
 });
 
+// 回归（2026-10-17/18）：opencode 池一时没有该模型的可用绑定（目录重建窗口、账号短暂不健康）时，
+// 不带 x-provider 的 `opencode/glm-5.3-flash-free` 被 claude 直通路由按协议亲和接走，
+// 报「no available claude account can serve model opencode/…」。命名空间就是家族证据。
+function opencodeNamespaceState({ opencodeModels, opencodeCooling = false }) {
+  return {
+    accounts: {
+      codex: [],
+      gemini: [],
+      claude: [
+        { id: 'cl1', accountRef: CLAUDE_REF_1, provider: 'claude', accessToken: 'claude-token-1' },
+        { id: 'cl2', accountRef: AGY_REF_1, provider: 'claude', accessToken: 'claude-token-2' }
+      ],
+      agy: [],
+      opencode: [{
+        id: 'o1',
+        accountRef: OPENCODE_REF_1,
+        provider: 'opencode',
+        accessToken: 'oc-token-1',
+        availableModels: opencodeModels,
+        ...(opencodeCooling ? { cooldownUntil: Date.now() + 60_000 } : {})
+      }]
+    },
+    webUiModelsCache: { byProvider: { opencode: opencodeModels } }
+  };
+}
+
+test('capability router keeps an opencode/ model in the opencode pool even when its catalog binding is momentarily missing', () => {
+  const result = resolveGatewayProvider({
+    options: { provider: 'auto' },
+    state: opencodeNamespaceState({ opencodeModels: [] }),
+    requestJson: { model: 'opencode/glm-5.3-flash-free' },
+    headers: {},
+    clientProtocol: 'openai_chat'
+  });
+  assert.equal(result.provider, 'opencode');
+  assert.equal(result.source, 'model_family');
+});
+
+test('capability router reports opencode-truthful unavailability instead of handing an opencode/ model to claude', () => {
+  const result = resolveGatewayProvider({
+    options: { provider: 'auto' },
+    state: opencodeNamespaceState({ opencodeModels: ['opencode/glm-5.3-flash-free'], opencodeCooling: true }),
+    requestJson: { model: 'opencode/glm-5.3-flash-free' },
+    headers: {},
+    clientProtocol: 'openai_chat'
+  });
+  assert.equal(result.provider, '');
+  assert.equal(result.familyProvider, 'opencode');
+});
+
 test('capability router keeps protocol-affinity routing for requests that were not rewritten by an alias', () => {
   // 直连请求（没有别名改写）保持既有语义：模型家族与目录都没有结论时按客户端协议亲和兜底。
   const result = resolveGatewayProvider({

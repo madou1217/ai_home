@@ -238,12 +238,14 @@ aih claude 1 -R              # 接管本项目最近的会话（原来的终端�
 aih claude 1 -M              # 镜像本项目最近的会话（两边同屏，谁都不挤掉谁）
 aih claude resume            # 续接最近一段对话（翻译成各 provider 的原生 resume）
 aih claude 1 resume <会话ID> # 指定账号 + 指定会话续接
+aih claude fork              # 从最近一段分叉出新会话（原对话不动）
 aih ss                       # 所有工具的会话总览（--list 只预览）
 ```
 
 - **选择器标记**：`●` 表示正被别处占用，`○` 表示空闲。
 - **长参数**：`-S`、`-R`、`-M` 是 aih 自己的开关，对应 `--session`、`--aih-resume`、`--aih-mirror`；它们不会吞掉原生的 `--resume` 等参数。
-- **续接**：`resume` 把「接着上次聊」翻译成各 provider 的原生恢复参数；不带 ID 时用「最近一段」（cline 必须给 ID，kimi / kiro 的入口在 TUI 内）。对应关系见 `aih <cli> resume --help`。
+- **续接与分叉**：`resume` 把「接着上次聊」翻译成各 provider 的原生恢复参数；`fork` 从上一段对话分叉出新会话、原对话不动（无分叉能力的 provider 会明确拒绝）。不带 ID 时用「最近一段」（cline 必须给 ID，kimi / kiro 的入口在 TUI 内）。对应关系见 `aih <cli> resume --help`。
+- **原生透传**：`aih <cli> -- <任意原生参数...>` 把 `--` 之后逐字交给原生 CLI，即使撞上 aih 的保留字（`ls`、`login`、`resume`…）也不会被拦截。
 - **socket 命名**：每个账号一个 tmux server，socket 为 `aih-<provider>-<accountRef>`；AIH Server 的会话用 `aih-<provider>-gateway`。
 
 tmux 常用操作（指挥键 `Ctrl-b`：先按 `Ctrl-b` 松开，再按下一个键）：

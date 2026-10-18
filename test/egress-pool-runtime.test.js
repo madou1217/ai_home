@@ -289,6 +289,9 @@ test('an orphaned core already answering the controller port blocks the start', 
 
 test('a core that exits during startup is never reported ready even if the port answers', async () => {
   const deps = coreAvailableDeps();
+  // 控制端口「应答」只在子进程退出之后才返回：确定性地复现「别的进程仍在应答、自己的内核已退出」，
+  // 不依赖 setImmediate 与定时器的先后（旧写法 2ms 定时器在高负载下偶发先于退出事件）。
+  const exited = new Promise((resolve) => deps.child.once('exit', resolve));
   const { runtime } = buildRuntime({
     spawn: () => {
       deps.state.spawned = true;
@@ -298,7 +301,7 @@ test('a core that exits during startup is never reported ready even if the port 
     },
     fetch: async () => {
       if (!deps.state.spawned) throw new Error('ECONNREFUSED');
-      await new Promise((resolve) => setTimeout(resolve, 2));
+      await exited;
       return { ok: true, text: async () => '{}' };
     }
   });

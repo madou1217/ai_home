@@ -2,6 +2,8 @@
 
 ## 1. 边界
 
+> **状态注记（2026-10-18）**：『只覆盖 Codex、Claude』是本文写作时的范围；Go 账号持久化此后已扩展——`internal/adapters/accounts/` 现有 `sub2api`、`managementapi`、`sqliteaccount`、`nativeaccount` 等适配器，多 provider 迁移批次见 `docs/plans/2026-09-24-go-migration-plan.md` 的 P1。表结构与单库（`aih.db`）原则仍有效。
+
 本设计只覆盖当前已经研究和实现的 Codex、Claude 账号领域，不迁移或读取旧
 `app-state.db`，也不为 Gemini、runtime、usage、模型 cooldown、OAuth 登录作业、
 历史记录或 outbox 预建结构。

@@ -2,6 +2,8 @@
 
 ## 1. 目标与边界
 
+> **状态注记（2026-10-18）**：运行态规则此后已扩展——失败语义含 `FailureUpstreamEdgeRejected`（边缘拒绝，2026-10 新增）等，完整清单见 `internal/adapters/attemptfailure/mapper.go` 的 kind 映射；覆盖 provider 也不止 Codex/Claude。FailureKind → 状态动作/作用域的映射原则仍有效。
+
 本阶段只为 Codex、Claude 固化账号征召所需的运行态规则，核心定义是：
 
 > cooldown 只表示“预计经过有限时间可以自动恢复，因此在截止时间前暂缓自动重试”。

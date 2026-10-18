@@ -1,6 +1,6 @@
 # ADR：无稳定字段时的身份回退（AGY / Gemini / Kiro）
 
-- **状态**：AGY、Gemini **接受为例外**（Accepted exception）；Kiro **待取证**（Pending evidence）。
+- **状态**：AGY、Gemini **接受为例外**（Accepted exception）；Kiro **已解决**（2026-10-18 更新：稳定身份来自**认证后** `GetUsageLimits` 响应的 `userInfo.userId`，由 `lib/account/kiro-identity.js` 派生 canonical subject，不依赖本地 `auth_kv` 中缺失的字段）。
 - **日期**：2026-09-16
 - **依据**：`product-direction-node-go-2026-08-15.md` §8.1
 - **相关**：`codex-oauth-identity-vector-adr.md`（已实施的三个 Provider）、
@@ -34,6 +34,8 @@ trim + lowercase，于是能铸出 `oauth:agy:no-at-sign` 这种 Go 直接拒绝
 `contracts/agy-oauth-identity.json` 的 17 条向量）。
 
 ### 2. Kiro：**待取证，不猜**
+
+> **2026-10-18 更新：已解决**——Kiro 的稳定身份最终来自认证后 `GetUsageLimits` 响应的 `userInfo.userId`（`lib/account/kiro-identity.js`），既是上游证据、也不随 token 轮换；下方为当时分析。
 
 Kiro 比前两个更糟：邮箱至少在「用户不换邮箱」时是稳定的，而 token 会轮换。
 实测确认轮换会改变 `accountRef`，直接违反 §8.1 第 3 条：

@@ -2,6 +2,8 @@
 
 ## 1. 目标
 
+> **状态注记（2026-10-18）**：『本阶段只支持 Codex 和 Claude』已过时——Go 侧现有 `internal/adapters/{codex/responses,claude/messages,agy/codeassist}/route_factory.go` 三条 route factory，路由目录已含 agy 等更多 provider。Snapshot 编译合同仍有效。
+
 生产路由目录把账号管理写侧维护的本地模型正排、倒排索引编译为 Canonical 推理使用的
 不可变快照。它解决两个一致性问题：
 

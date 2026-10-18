@@ -2,6 +2,8 @@
 
 ## 1. 状态与边界
 
+> **状态注记（2026-10-18）**：『只由独立 Preview 进程验收』已过时——Go 核心现由 Node server supervisor 监督运行（`aih server config set --go-core`），Node 侧 `lib/account/go-bridge/`（`go-management-client.js`、`go-import-translator.js`；使用方含 `lib/server/go-core-host.js`）已在生产链路调用 `/v1/management/accounts`、`/v1/management/account-imports[/sub2api]`。资源形状 / 幂等 / 错误码等领域合同仍有效。
+
 本合同实现于 `internal/transport/http/accountsapi`，并由 `cmd/aih-server` 的 Go
 Composition Root 挂载（当前只由独立 Preview 进程验收）。该命令直接装配 Provider Catalog、账号应用用例和
 `$AIH_HOME/aih.db`，不接入旧 Node Server，也不读取 `app-state.db`。Host 设计见

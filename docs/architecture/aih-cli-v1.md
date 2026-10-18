@@ -1,5 +1,7 @@
 # AIH Go CLI v1 命令说明
 
+> **状态注记（2026-10-18）**：『Go 账号链只允许通过独立 Preview 运行』的阶段已结束——Go 核心现由 Node server supervisor 监督运行（`aih server config set --go-core`；`npm run go:build` 产出 `bin/native/<platform>-<arch>/aih-server`），Node 侧 `lib/account/go-bridge/` 已在生产链路调用 `/v1/management/*`。Preview 三入口（`go-preview:server|web`、`go-cli:preview`）仍存在，本文的命令语义继续有效；『正式 aih、Node Server 均保持现状』不再成立。
+
 本文件说明 Go 重构线 `cmd/aih` 的账号命令，以及它与正式 npm 入口、现有 Provider
 runtime 的边界。G1 闭环前，Go 账号链只允许通过独立 Preview 运行；正式 `aih`、Node
 Server 和默认 WebUI 均保持现状。命令级用法以 Preview `--help` 为准；本文件额外交代

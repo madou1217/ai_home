@@ -1,5 +1,7 @@
 # Go Server Host v1
 
+> **状态注记（2026-10-18）**：两处已过时——① §1『当前挂载』清单落后于 `cmd/aih-server` 实际路由（此后新增 `/v1/management/upstream-error-rules`（Node 规则投影推送端点，`internal/transport/http/upstreamrulesapi/`）等管理端点与更多 provider 数据面；现状以 `cmd/aih-server` 与 `internal/transport/http/` 为准）；② §1『本阶段不创建 Node bridge』已不成立——Node 侧现有 `lib/account/go-bridge/`（经 `/v1/management/*` 的账号导入与管理调用）。Host 边界原则（supervisor 私有 endpoint、readyz 门限、账号只存 `aih.db`）仍有效。
+
 > **2026-08-15 运行边界勘误：** 本文中的默认 `9527` 启动命令只用于隔离开发和测试，
 > 不构成生产公开入口的切换授权。Go 上线门禁完成前，生产 `127.0.0.1:9527` 必须继续
 > 由 Node Host 持有，Go 只能绑定 supervisor 分配的私有 endpoint；门禁通过后若要改变

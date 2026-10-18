@@ -4,6 +4,8 @@
 
 范围：Provider 静态定义、跨语言合同和现有消费层收敛；不包含网关主链重写。
 
+> **状态注记（2026-10-18）**：文中『运行时不会调用 Go 进程』已不成立——Go 核心现由 Node server supervisor 监督运行并承接生产数据面路由（`aih server config set --go-core`、`--go-core-routes` canary；两侧经 `/v1/management/*` 互通），进程生命周期与 IPC 面已是现实约束。分层边界（合同 / 应用 / 适配）与『生成合同只含数据不含行为』的原则仍有效；当前迁移状态见 `docs/plans/2026-09-24-go-migration-plan.md` 与 `docs/architecture/go-node-parity-matrix.md`。
+
 ## 1. 问题定义
 
 旧实现把 Provider 身份、展示字段、认证方式、CLI 配置、原生能力和会话同步清单分散在 Node 与 Web 文件中。新增 Provider 即使还没有进入运行链，也要修改多份联合类型、对象和列表，容易出现字段漏配、顺序漂移和 Client 崩溃。
@@ -51,7 +53,7 @@ cmd/provider-manifest (校验 + 生成)
                                 +--> TypeScript Client Catalog --> React UI
 ```
 
-运行时不会调用 Go 进程。Go 只在开发和构建阶段生成合同，因此不存在新增的进程生命周期、网络故障或 IPC 成本。
+运行时不会调用 Go 进程。Go 只在开发和构建阶段生成合同，因此不存在新增的进程生命周期、网络故障或 IPC 成本。**（2026-10-18 更新：此判断已过时——Go 核心现已监督运行并承接数据面；见文首状态注记。）**
 
 ## 4. 语言决策（ADR-001）
 

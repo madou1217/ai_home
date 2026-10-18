@@ -53,6 +53,8 @@
 
 ## 已实测确认的 §8.1 违规
 
+> **2026-10-18 更新：两例均已关闭。** ① grok 已改为稳定 ID 集合向量（`email` 不再优先；迁移账本见文首注记与 `scripts/oauth-identity-rekey.js`）；② kiro 已改用认证后 `userInfo.userId` 派生的稳定 subject（`lib/account/kiro-identity.js`），不再以 token 哈希命名。下文保留当时的问题分析。
+
 ### 1. `grok`：可变字段赢了稳定字段
 
 ```

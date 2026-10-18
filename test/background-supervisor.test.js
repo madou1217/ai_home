@@ -13,8 +13,11 @@ const {
   upsertBackgroundComponent
 } = require('../lib/cli/services/background/supervisor-state-store');
 const {
+  DEFAULT_SERVER_SHUTDOWN_TIMEOUT_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
   runBackgroundSupervisor
 } = require('../lib/cli/services/background/supervisor-runtime');
+const { SHUTDOWN_GRACE_MS } = require('../lib/server/inference-drain');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aih-background-supervisor-'));
@@ -476,7 +479,7 @@ test('background supervisor keeps invalid worker credentials blocked without a r
 test('background supervisor stops the server immediately and bounds a stuck worker shutdown', async () => {
   const processObj = new EventEmitter();
   processObj.env = {};
-  let resolveShutdownDeadline = null;
+  const shutdownDeadlines = [];
   let serverStops = 0;
 
   const running = runBackgroundSupervisor({
@@ -486,7 +489,7 @@ test('background supervisor stops the server immediately and bounds a stuck work
     aiHomeDir: '/tmp/.ai_home',
     shutdownTimeoutMs: 25,
     setShutdownTimeout(callback) {
-      resolveShutdownDeadline = callback;
+      shutdownDeadlines.push(callback);
       return { unref() {} };
     },
     clearShutdownTimeout() {},
@@ -512,8 +515,72 @@ test('background supervisor stops the server immediately and bounds a stuck work
   processObj.emit('SIGTERM');
   await new Promise((resolve) => setImmediate(resolve));
 
+  // server 的停机必须立刻开始，不能被卡死的 worker 推迟。
   assert.equal(serverStops, 1);
-  assert.equal(typeof resolveShutdownDeadline, 'function');
-  resolveShutdownDeadline();
+  // worker 与 server 各自持有一个 deadline（两段独立预算）。
+  assert.equal(shutdownDeadlines.length, 2);
+  shutdownDeadlines.forEach((fire) => fire());
   await running;
+});
+
+test('background supervisor never truncates the server inference drain to bound a stuck worker', async () => {
+  // 回归：worker 与内嵌 server 曾共用一个 deadline，server 的停机（推理排空 + 停 Go Core）
+  // 会被 worker 的上限截断，进程在 server 收尾途中直接退出。
+  // 本测试断言：worker 的 deadline 到期后，server 的 stop() 仍必须继续跑完。
+  const processObj = new EventEmitter();
+  processObj.env = {};
+  const shutdownDeadlines = [];
+  let serverStopStarted = 0;
+  let serverStopCompleted = 0;
+
+  const running = runBackgroundSupervisor({
+    fs,
+    processObj,
+    consoleImpl: { error() {}, warn() {}, log() {} },
+    aiHomeDir: '/tmp/.ai_home',
+    // worker 预算极短；server 预算给足，模拟"排空需要时间"。
+    shutdownTimeoutMs: 10,
+    serverShutdownTimeoutMs: 5000,
+    setShutdownTimeout(callback) {
+      shutdownDeadlines.push(callback);
+      return { unref() {} };
+    },
+    clearShutdownTimeout() {},
+    resolveServerOptions: () => ({ host: '127.0.0.1', port: 9527 }),
+    startLocalServer: async () => ({
+      async stop() {
+        serverStopStarted += 1;
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        serverStopCompleted += 1;
+      }
+    }),
+    runNodeRelayConnect: () => new Promise(() => {}),
+    readState: () => ({
+      schemaVersion: 1,
+      components: {
+        'node-relay:nat-node': {
+          id: 'node-relay:nat-node',
+          args: ['node', 'relay', 'connect', 'https://control.example.com', '--node-id', 'nat-node']
+        }
+      }
+    })
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  processObj.emit('SIGTERM');
+  // 触发 worker 的 deadline（第一个注册的是 worker 预算）。
+  shutdownDeadlines[0]();
+  await running;
+
+  assert.equal(serverStopStarted, 1);
+  // 关键断言：worker 放弃后，server 的 stop() 仍然完整跑完。
+  assert.equal(serverStopCompleted, 1);
+});
+
+test('background supervisor shutdown budgets share the server stop budget and keep workers abandonable', () => {
+  // 内嵌 server 的上限必须与 server 自己声明的停机预算同源；
+  // 两者曾经各写各的（15s vs 110s），停机时长由更短的那个偶然决定。
+  assert.equal(DEFAULT_SERVER_SHUTDOWN_TIMEOUT_MS, SHUTDOWN_GRACE_MS);
+  // worker 是可放弃的连接，预算不应超过 server 的预算。
+  assert.ok(DEFAULT_SHUTDOWN_TIMEOUT_MS <= DEFAULT_SERVER_SHUTDOWN_TIMEOUT_MS);
 });

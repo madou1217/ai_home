@@ -42,3 +42,10 @@ test('stopper grace covers the drain window', () => {
   assert.equal(isInferencePath('/v1/responses'), true);
   assert.equal(isInferencePath('/v0/webui/accounts'), false);
 });
+
+// 回归守卫（2026-10-18 用户决策：极速重启优先）：排空期间监听已关闭、新请求全部被拒，
+// 排空上限就是每次重启的停机时长。曾经的 90s 让重启停机 16–90s，却没保住在途回答。
+test('shutdown budget stays short so a restart is fast', () => {
+  assert.ok(DEFAULT_DRAIN_TIMEOUT_MS <= 5000, `drain ${DEFAULT_DRAIN_TIMEOUT_MS}ms must stay a short grace`);
+  assert.ok(SHUTDOWN_GRACE_MS <= 15000, `shutdown grace ${SHUTDOWN_GRACE_MS}ms must stay bounded`);
+});

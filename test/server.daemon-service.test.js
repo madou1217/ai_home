@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createServerDaemonService } = require('../lib/cli/services/server/daemon');
+const { SHUTDOWN_GRACE_MS } = require('../lib/server/inference-drain');
 
 const POSIX_ONLY = { skip: process.platform === 'win32' };
 const { createServerDaemonController } = require('../lib/server/daemon');
@@ -183,10 +184,10 @@ test('daemon service start heals a loaded macOS supervisor ghost instead of reus
   assert.equal(fixture.runtime.launchdLoaded, true);
 });
 
-test('daemon service stop unloads a macOS supervisor ghost before it can respawn', (t) => {
+test('daemon service stop unloads a macOS supervisor ghost before it can respawn', async (t) => {
   const fixture = makeGhostSupervisorFixture(t);
 
-  const result = fixture.daemon.stop({ gracefulStopWaitMs: 20 });
+  const result = await fixture.daemon.stop({ gracefulStopWaitMs: 20 });
 
   assert.equal(result.stopped, true);
   assert.equal(fixture.launchctlCalls.filter((args) => args[0] === 'bootout').length, 1);
@@ -345,7 +346,7 @@ test('daemon service manages server launched through global aih shim', POSIX_ONL
   assert.equal(status.port, 9527);
   assert.equal(fs.realpathSync(status.entryFilePath), fs.realpathSync(entryFilePath));
 
-  const stopped = daemon.stop({ gracefulStopWaitMs: 20 });
+  const stopped = await daemon.stop({ gracefulStopWaitMs: 20 });
   assert.equal(stopped.stopped, true);
   assert.equal(stopped.pid, 1001);
   assert.equal(stopped.reason, '');
@@ -1781,7 +1782,7 @@ test('daemon service start reuses target AIH listener and stops extra AIH server
   }]);
 });
 
-test('daemon service stop clears every discovered AIH server instance', POSIX_ONLY, () => {
+test('daemon service stop clears every discovered AIH server instance', POSIX_ONLY, async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -1868,7 +1869,7 @@ test('daemon service stop clears every discovered AIH server instance', POSIX_ON
     entryFilePath: '/repo/lib/cli/app.js'
   });
 
-  const result = daemon.stop({ gracefulStopWaitMs: 20 });
+  const result = await daemon.stop({ gracefulStopWaitMs: 20 });
   assert.equal(result.stopped, true);
   assert.equal(result.pid, 1002);
   assert.deepEqual(result.pids, [1001, 1002]);
@@ -1879,7 +1880,7 @@ test('daemon service stop clears every discovered AIH server instance', POSIX_ON
   assert.equal(killCalls.some((call) => call.pid === 1002 && call.signal === 'SIGTERM'), true);
 });
 
-test('daemon service stop unloads the macOS supervisor before terminating its residual process', (t) => {
+test('daemon service stop unloads the macOS supervisor before terminating its residual process', async (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { repoDir, entryFilePath } = makeSourceCheckout(root);
@@ -1980,7 +1981,7 @@ test('daemon service stop unloads the macOS supervisor before terminating its re
     entryFilePath
   });
 
-  const result = daemon.stop({ gracefulStopWaitMs: 20 });
+  const result = await daemon.stop({ gracefulStopWaitMs: 20 });
   const status = daemon.getStatus();
 
   assert.equal(result.stopped, true);
@@ -1996,7 +1997,7 @@ test('daemon service stop unloads the macOS supervisor before terminating its re
   assert.equal(fs.existsSync(pidFile), false);
 });
 
-test('daemon service stop fails closed when the loaded macOS supervisor cannot be unloaded', (t) => {
+test('daemon service stop fails closed when the loaded macOS supervisor cannot be unloaded', async (t) => {
   const root = makeTempDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const aiHomeDir = path.join(root, '.ai_home');
@@ -2051,7 +2052,7 @@ test('daemon service stop fails closed when the loaded macOS supervisor cannot b
     entryFilePath: '/repo/lib/cli/app.js'
   });
 
-  assert.throws(
+  await assert.rejects(
     () => daemon.stop({ gracefulStopWaitMs: 20 }),
     { code: 'background_launchd_stop_failed' }
   );
@@ -2060,7 +2061,7 @@ test('daemon service stop fails closed when the loaded macOS supervisor cannot b
   assert.equal(fs.readFileSync(pidFile, 'utf8'), '2002');
 });
 
-test('daemon service stop does not terminate external process occupying target port', () => {
+test('daemon service stop does not terminate external process occupying target port', async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');
   fs.mkdirSync(aiHomeDir, { recursive: true });
@@ -2104,7 +2105,7 @@ test('daemon service stop does not terminate external process occupying target p
     entryFilePath: '/repo/lib/cli/app.js'
   });
 
-  const result = daemon.stop({ gracefulStopWaitMs: 20 });
+  const result = await daemon.stop({ gracefulStopWaitMs: 20 });
   assert.equal(result.stopped, false);
   assert.equal(result.reason, 'not_running');
   assert.equal(killCalls.some((call) => call.pid === 2222 && call.signal === 'SIGTERM'), false);
@@ -2227,7 +2228,7 @@ test('daemon service installs the branded macOS background supervisor', POSIX_ON
   assert.match(plist, /<string>\/opt\/homebrew\/bin\/aih<\/string>/);
   assert.match(plist, /<string>__background<\/string>\s+<string>run<\/string>/);
   assert.match(plist, /<key>KeepAlive<\/key>\s+<dict>\s+<key>SuccessfulExit<\/key>\s+<false\/>\s+<\/dict>/);
-  assert.match(plist, /<key>ExitTimeOut<\/key>\s+<integer>110<\/integer>/);
+  assert.match(plist, new RegExp(`<key>ExitTimeOut</key>\\s+<integer>${Math.ceil(SHUTDOWN_GRACE_MS / 1000)}</integer>`));
   assert.doesNotMatch(plist, /<string>server<\/string>\s+<string>serve<\/string>/);
   assert.equal(plist.includes('/usr/local/bin/node'), false);
   assert.equal(fs.existsSync(legacyLaunchdPlist), false);

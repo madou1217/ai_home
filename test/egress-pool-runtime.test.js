@@ -471,3 +471,25 @@ test('stop() racing readiness kills the spawned core', async () => {
   assert.ok(kills >= 1);
   assert.equal(runtime.ready, false);
 });
+
+// 2026-10-18：opencode 的标题请求与正文请求同时在 node-0 失败，各自无条件 +1 会连跳
+// 两格、把对方刚换到的好节点切走。比较后再换：池已不在 fromNode 时不再前进。
+test('rotateNode(fromNode) does not advance when another request already moved the pool', async () => {
+  const { runtime } = buildRuntime();
+  await runtime.start();
+  assert.equal(await runtime.rotateNode('node-0'), 'node-1');
+  // 第二个请求也是在 node-0 失败的：池已经被切走，原地返回当前节点让它重试。
+  assert.equal(await runtime.rotateNode('node-0'), 'node-1');
+  assert.equal(runtime.status.activeNode, 'node-1');
+  runtime.stop();
+});
+
+test('concurrent rotations from the same node advance the pool only once', async () => {
+  const { runtime } = buildRuntime();
+  await runtime.start();
+  const [a, b] = await Promise.all([runtime.rotateNode('node-0'), runtime.rotateNode('node-0')]);
+  assert.equal(a, 'node-1');
+  assert.equal(b, 'node-1');
+  assert.equal(runtime.status.activeNodeIndex, 1);
+  runtime.stop();
+});

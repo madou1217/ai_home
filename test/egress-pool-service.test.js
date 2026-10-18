@@ -293,3 +293,23 @@ test('service.stop() during a start leaves no core behind and no TypeError', asy
   assert.equal(service.runtime, null);
   assert.equal(service.ready, false);
 });
+
+// 订阅的「剩余流量 / 距离重置 / 套餐到期」信息行常指向同一服务器：池里留着它们，
+// 轮换会在同一个被限的 IP 上连跳（2026-10-18 实测 4 条全是 direct-us-01:36699）。
+test('nodes that share one exit collapse into a single pool entry', () => {
+  const sameExit = { protocol: 'vless', server: 'direct-us-01.example.com', port: 36699, uuid: 'u-1' };
+  const result = readProxyPoolNodes({
+    aiHomeDir: '/home/.ai_home',
+    getProxyNodeStore: () => ({
+      listNodes: () => [
+        { ...sameExit, name: '剩余流量：50 GB' },
+        { ...sameExit, name: '套餐到期：2026-11-11' },
+        { ...sameExit, name: 'US01' },
+        { ...sameExit, port: 36700, name: 'US01-alt-port' },
+        { ...sameExit, uuid: 'u-2', name: 'US01-other-credential' }
+      ]
+    })
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nodes.map((node) => node.name), ['剩余流量：50 GB', 'US01-alt-port', 'US01-other-credential']);
+});

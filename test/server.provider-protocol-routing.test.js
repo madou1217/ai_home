@@ -396,3 +396,48 @@ test('provider protocol dispatcher carries route metadata into upstream transpor
     'code_assist_anthropic_direct'
   );
 });
+
+// 2026-10-18 事故：依赖白名单只拷贝函数，fs/aiHomeDir（对象/字符串）与
+// accountActivity（带方法的对象）被静默丢掉 —— 走协议路由的请求判定「账号无出口
+// 绑定」回落全局代理（绑了出口池照样从耗尽的宿主出口出去，用户只见 429），
+// 账号活动计数也一直缺失。
+test('provider protocol route deps keep the storage context and object dependencies', () => {
+  const fakeFs = { readFileSync() {} };
+  const accountActivity = { begin() {}, end() {} };
+  const deps = createProviderProtocolRouteDeps(resolveDirectProviderProtocolRoute('openai_chat', 'opencode'), {
+    chooseServerAccount: () => {},
+    resolveRequestProvider: () => {},
+    pushMetricError: () => {},
+    writeJson: () => {},
+    fetchWithTimeout: () => {},
+    markProxyAccountFailure: () => {},
+    markProxyAccountSuccess: () => {},
+    appendProxyRequestLog: () => {},
+    fetchOpenCodeChatCompletion: () => {},
+    fetchOpenCodeChatCompletionStream: () => {},
+    fs: fakeFs,
+    aiHomeDir: '/home/.ai_home',
+    accountActivity
+  });
+  assert.equal(deps.fs, fakeFs);
+  assert.equal(deps.aiHomeDir, '/home/.ai_home');
+  assert.equal(deps.accountActivity, accountActivity);
+});
+
+test('provider protocol route deps omit an absent storage context instead of inventing one', () => {
+  const deps = createProviderProtocolRouteDeps(resolveDirectProviderProtocolRoute('openai_chat', 'opencode'), {
+    chooseServerAccount: () => {},
+    resolveRequestProvider: () => {},
+    pushMetricError: () => {},
+    writeJson: () => {},
+    fetchWithTimeout: () => {},
+    markProxyAccountFailure: () => {},
+    markProxyAccountSuccess: () => {},
+    appendProxyRequestLog: () => {},
+    fetchOpenCodeChatCompletion: () => {},
+    fetchOpenCodeChatCompletionStream: () => {},
+    aiHomeDir: ''
+  });
+  assert.equal('fs' in deps, false);
+  assert.equal('aiHomeDir' in deps, false);
+});

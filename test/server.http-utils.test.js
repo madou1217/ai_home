@@ -2734,3 +2734,60 @@ test('fetchModelsForAccount leaves kimi descriptors untouched when probe payload
   assert.deepEqual(models, []);
   assert.deepEqual(account.modelDescriptors, [{ id: 'existing', displayName: 'Existing' }]);
 });
+
+// 2026-10-16 kiro 事故：HTTP 策略的真实失败（超时）被 CLI 兜底的 cli_not_found 掩盖，
+// 界面看起来像「模型清单只有装 CLI 一条路」。CLI 兜底失败时必须报出链里的真实失败。
+test('native CLI fallback failure does not mask the HTTP strategy failure', () => {
+  const cliError = Object.assign(new Error('native_cli_model_discovery_cli_not_found'), {
+    code: 'native_cli_model_discovery_cli_not_found'
+  });
+  const failure = __private.describeNativeCliFallbackFailure({
+    attempts: [
+      { strategyId: 'kiro-local', error: 'skipped_transport:local' },
+      { strategyId: 'kiro-api-key', error: 'not_applicable_mode:api-key' },
+      { strategyId: 'kiro-cli-placeholder', error: 'strategy_factory_invalid' },
+      { strategyId: 'kiro-http', error: 'model_discovery_timeout' }
+    ]
+  }, cliError);
+  assert.notEqual(failure, cliError);
+  assert.equal(failure.code, 'model_discovery_timeout');
+  assert.equal(failure.strategyId, 'kiro-http');
+  assert.equal(failure.chainAttempts.length, 1);
+  assert.equal(failure.cliFallbackError, 'native_cli_model_discovery_cli_not_found');
+  assert.match(failure.message, /model_discovery_timeout/);
+});
+
+test('native CLI fallback error is kept when the chain only recorded expected noise', () => {
+  const cliError = new Error('native_cli_model_discovery_cli_not_found');
+  assert.equal(__private.describeNativeCliFallbackFailure({
+    attempts: [
+      { strategyId: 'a', error: 'skipped_transport:http' },
+      { strategyId: 'b', error: 'not_applicable_mode:login' },
+      { strategyId: 'c', error: 'strategy_factory_invalid' },
+      { strategyId: 'd', error: '' }
+    ]
+  }, cliError), cliError);
+  assert.equal(__private.describeNativeCliFallbackFailure(null, cliError), cliError);
+});
+
+test('fetchModelsForAccount surfaces the chain failure when the CLI fallback throws', async () => {
+  const cliError = Object.assign(new Error('native_cli_model_discovery_cli_not_found'), {
+    code: 'native_cli_model_discovery_cli_not_found'
+  });
+  // kiro 账号缺凭据记录：HTTP 策略离线即失败（credential_record_missing），CLI 兜底再抛 cli_not_found。
+  // 接线点必须报出 HTTP 的真实失败，CLI 错误只作附带信息。
+  let thrown = null;
+  try {
+    await fetchModelsForAccount({
+      resolveAccountEgressRequestOptions: async () => ({ ok: true, options: {} }),
+      discoverNativeCliModels: async () => { throw cliError; }
+    }, { provider: 'kiro', accountRef: 'acct_00000000000000000000', accessToken: 'x' }, 200);
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown, 'the CLI fallback failure must propagate');
+  assert.notEqual(thrown, cliError);
+  assert.equal(thrown.code, 'credential_record_missing');
+  assert.equal(thrown.strategyId, 'kiro-http-models');
+  assert.equal(thrown.cliFallbackError, 'native_cli_model_discovery_cli_not_found');
+});

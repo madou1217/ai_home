@@ -2600,9 +2600,11 @@ test('web ui openai models refresh starts async job and streams catalog result',
     const req = new EventEmitter();
     req.headers = {};
     const streamRes = createStreamResCapture();
+    const probeTimeouts = [];
     const deps = {
       ...createBaseDeps(aiHomeDir),
-      fetchModelsForAccount: async () => new Promise((resolve) => {
+      fetchModelsForAccount: async (_options, _account, timeoutMs) => new Promise((resolve) => {
+        probeTimeouts.push(timeoutMs);
         releaseProbe = () => resolve(['gpt-5.7-live']);
       })
     };
@@ -2672,6 +2674,14 @@ test('web ui openai models refresh starts async job and streams catalog result',
     assert.match(streamRes.body, new RegExp(`"accountRef":"${accountRef}"`));
     assert.match(streamRes.body, /"byAccountRef"/);
     assert.doesNotMatch(streamRes.body, /accountUniqueKey/);
+    // 显式刷新是用户在等的操作：探测预算必须是 WEBUI_MODELS_REFRESH_TIMEOUT_MS，而不是后台的 2.5s
+    // （2026-10-16 kiro 事故：冷启动 ListAvailableModels 被 2.5s 截断）。
+    const { WEBUI_MODELS_REFRESH_TIMEOUT_MS } = require('../lib/server/webui-model-cache');
+    assert.ok(probeTimeouts.length > 0, 'the explicit refresh must probe the scoped account');
+    assert.ok(
+      probeTimeouts.every((timeoutMs) => timeoutMs >= WEBUI_MODELS_REFRESH_TIMEOUT_MS),
+      `explicit refresh probe budget: ${probeTimeouts.join(',')}`
+    );
     req.emit('close');
   } finally {
     fs.rmSync(aiHomeDir, { recursive: true, force: true });

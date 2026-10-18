@@ -3588,6 +3588,38 @@ test('runtime relays native Claude OAuth by accountRef while keeping host sessio
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime hands Claude the gateway credential through a 0600 --settings file, never argv', () => {
+  const { runtime, proc, spawns, aiHomeDir, resolveHarnessAccountRef } = createRuntimeHarness({
+    USER: 'model',
+    [RUNTIME_USAGE_ENV]: serializeRuntimeUsage({ show: '0' })
+  }, {
+    resolveCliPath: () => '/usr/bin/claude',
+    fs: { renameSync: fsBase.renameSync.bind(fsBase) },
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 })
+  });
+
+  runtime.runCliPtyTracked('claude', '4', ['auth', 'status', '--json'], false);
+  const accountRef = resolveHarnessAccountRef('claude', '4');
+  assert.equal(spawns.length, 1);
+  const [flag, settingsPath, ...rest] = spawns[0].args;
+  assert.equal(flag, '--settings');
+  assert.deepEqual(rest, ['auth', 'status', '--json']);
+  assert.equal(path.dirname(settingsPath), path.join(aiHomeDir, 'run', 'claude-launch-settings'));
+  assert.equal(fsBase.statSync(settingsPath).mode & 0o777, 0o600);
+  const gatewayKey = spawns[0].options.env.ANTHROPIC_API_KEY;
+  assert.ok(gatewayKey);
+  assert.equal(spawns[0].args.some((arg) => String(arg).includes(gatewayKey)), false);
+  assert.deepEqual(JSON.parse(fsBase.readFileSync(settingsPath, 'utf8')).env, {
+    ANTHROPIC_BASE_URL: 'http://127.0.0.1:9527',
+    ANTHROPIC_CUSTOM_HEADERS: `x-account-ref: ${accountRef}`,
+    ANTHROPIC_API_KEY: gatewayKey,
+    // 宿主 settings.json 手写的 Bearer 被空串压掉（Claude Code 的 --settings 优先）。
+    ANTHROPIC_AUTH_TOKEN: ''
+  });
+
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
 test('runtime does not create an account directory for Claude token accounts', () => {
   const harness = createRuntimeHarness({
     USER: 'model',

@@ -55,19 +55,8 @@ test('Claude Desktop API mode writes an applied local 3P gateway config without 
     inferenceGatewayBaseUrl: 'http://127.0.0.1:9527',
     inferenceGatewayAuthScheme: 'bearer',
     inferenceCredentialHelper: helperPath,
-    modelDiscoveryEnabled: true,
-    inferenceModels: [
-      {
-        name: 'claude-sonnet-4-6',
-        anthropicFamilyTier: 'sonnet',
-        isFamilyDefault: true
-      },
-      {
-        name: 'claude-opus-4-8',
-        anthropicFamilyTier: 'opus',
-        isFamilyDefault: true
-      }
-    ]
+    // 模型清单由网关动态发现（modelDiscoveryEnabled），配置里不预置写死的列表。
+    modelDiscoveryEnabled: true
   });
   assert.equal(fs.readFileSync(path.join(libraryDir, `${meta.appliedId}.json`), 'utf8').includes('must-not-be-persisted'), false);
   assert.deepEqual(readJson(path.join(profileDir, 'developer_settings.json')), { allowDevTools: true });

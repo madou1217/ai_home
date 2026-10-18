@@ -478,6 +478,118 @@ test('a manual edit to the AIH-managed Claude credential fields still blocks swi
   assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).env.ANTHROPIC_BASE_URL, 'https://manual.example');
 });
 
+test('an explicit set-default takes over a manual Claude credential edit and adopts it as the baseline', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, '{"env":{"CUSTOM_SETTING":"keep"}}\n');
+  writeServerConfig({ apiKey: 'gateway-key', port: 9543 }, { fs, aiHomeDir: fixture.aiHomeDir });
+  const apiRef = registerClaudeApiAccount(fixture, '23', { ANTHROPIC_API_KEY: 'sk-one', ANTHROPIC_BASE_URL: 'https://one.example' });
+  const oauthRef = registerClaudeAccount(fixture, '1', { claudeAiOauth: { accessToken: 'database' } });
+  const sync = createClaudeSyncer(fixture, {
+    reconcileClaudeHostCredentials: (record) => ({ ok: true, credentials: record.nativeAuth.credentials })
+  });
+
+  assert.equal(sync('claude', '', { gateway: true }).ok, true);
+  // 用户手改：不再指向 AIH 网关、换成自己的 token。
+  const manual = { env: { CUSTOM_SETTING: 'keep', ANTHROPIC_BASE_URL: 'https://manual.example', ANTHROPIC_AUTH_TOKEN: 'manual-token' } };
+  const manualContent = `${JSON.stringify(manual, null, 2)}\n`;
+  fs.writeFileSync(settingsPath, manualContent);
+
+  // 后台/隐式同步仍失败关闭。
+  assert.equal(sync('claude', apiRef, { restoreGateway: true }).ok, false);
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), manualContent);
+
+  const result = sync('claude', apiRef, { restoreGateway: true, takeover: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.hostConfigTakeover.externallyChanged, true);
+  assert.equal(result.hostConfigTakeover.adoptedAsBaseline, true);
+  assert.equal(result.hostConfigTakeover.fileName, 'settings.json');
+  const relayed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  assert.equal(relayed.env.ANTHROPIC_AUTH_TOKEN, 'gateway-key');
+  assert.equal(relayed.env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:9543');
+  assert.equal(relayed.env.ANTHROPIC_CUSTOM_HEADERS, `x-account-ref: ${apiRef}`);
+
+  // 之后的命令（含后台同步）继续可用；切回 OAuth 时还原到用户手改的版本，并提示残留覆盖字段。
+  const restored = sync('claude', oauthRef, { restoreGateway: true, takeover: true });
+  assert.equal(restored.ok, true);
+  assert.equal(restored.hostConfigTakeover, undefined, '受管一致时不再报告接管');
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), manualContent);
+});
+
+test('an explicit unset-default takes over a gateway-shaped manual edit and keeps the previous baseline', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  const original = '{"env":{"CUSTOM_SETTING":"keep"}}\n';
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, original);
+  writeServerConfig({ apiKey: 'gateway-key', port: 9543 }, { fs, aiHomeDir: fixture.aiHomeDir });
+  const apiRef = registerClaudeApiAccount(fixture, '24', { ANTHROPIC_API_KEY: 'sk-one', ANTHROPIC_BASE_URL: 'https://one.example' });
+  const sync = createClaudeSyncer(fixture);
+
+  assert.equal(sync('claude', apiRef, { restoreGateway: true }).ok, true);
+  // 手改了 token，但地址仍是 AIH 网关、钉选头还在：这是 AIH 写过的内容被局部改过。
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  settings.env.ANTHROPIC_AUTH_TOKEN = 'stale-key';
+  fs.writeFileSync(settingsPath, JSON.stringify(settings));
+
+  assert.equal(sync('claude', '', { gateway: true }).ok, false, '隐式同步仍拒绝');
+  const result = sync('claude', '', { gateway: true, takeover: true });
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    { externallyChanged: result.hostConfigTakeover.externallyChanged, adoptedAsBaseline: result.hostConfigTakeover.adoptedAsBaseline },
+    { externallyChanged: true, adoptedAsBaseline: false }
+  );
+  const gateway = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  assert.equal(gateway.env.ANTHROPIC_AUTH_TOKEN, 'gateway-key');
+  assert.equal(gateway.env.ANTHROPIC_CUSTOM_HEADERS, undefined, '不钉选 = AIH Server 账号池');
+
+  // 旧基线保留：还原回到最初的文件。
+  assert.equal(sync('claude', '', { restoreGateway: true }).ok, true);
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), original);
+});
+
+test('an explicit restore after a manual edit leaves the edited file and reports residual overrides', (t) => {
+  const fixture = createFixture(t);
+  const settingsPath = path.join(fixture.hostHomeDir, '.claude', 'settings.json');
+  writeServerConfig({ apiKey: 'gateway-key', port: 9543 }, { fs, aiHomeDir: fixture.aiHomeDir });
+  const sync = createClaudeSyncer(fixture);
+  assert.equal(sync('claude', '', { gateway: true }).ok, true);
+  const manualContent = '{"env":{"ANTHROPIC_API_KEY":"manual-key"}}\n';
+  fs.writeFileSync(settingsPath, manualContent);
+
+  assert.equal(sync('claude', '', { restoreGateway: true }).ok, false);
+  const result = sync('claude', '', { restoreGateway: true, takeover: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.hostConfigTakeover.adoptedAsBaseline, true);
+  assert.deepEqual(result.hostConfigTakeover.residualOverrides, ['ANTHROPIC_API_KEY']);
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), manualContent);
+  const state = JSON.parse(fs.readFileSync(path.join(fixture.hostHomeDir, '.claude', '.aih-server-default-state.json'), 'utf8'));
+  assert.equal(state.active, false);
+});
+
+test('an explicit set-default rebuilds a corrupt gateway default state file', (t) => {
+  const fixture = createFixture(t);
+  const claudeDir = path.join(fixture.hostHomeDir, '.claude');
+  const settingsPath = path.join(claudeDir, 'settings.json');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  fs.writeFileSync(settingsPath, '{"env":{"CUSTOM_SETTING":"keep"}}\n');
+  fs.writeFileSync(path.join(claudeDir, '.aih-server-default-state.json'), '{broken');
+  writeServerConfig({ apiKey: 'gateway-key', port: 9543 }, { fs, aiHomeDir: fixture.aiHomeDir });
+  const sync = createClaudeSyncer(fixture);
+
+  const implicit = sync('claude', '', { gateway: true });
+  assert.equal(implicit.ok, false);
+  assert.equal(implicit.error, 'invalid_gateway_default_state');
+
+  const result = sync('claude', '', { gateway: true, takeover: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.hostConfigTakeover.stateReset, true);
+  assert.equal(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).env.ANTHROPIC_AUTH_TOKEN, 'gateway-key');
+  assert.equal(sync('claude', '', { restoreGateway: true }).ok, true);
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), '{"env":{"CUSTOM_SETTING":"keep"}}\n');
+});
+
 test('a legacy whole-file Claude state upgrades to field ownership after Claude Code edits permissions', (t) => {
   const fixture = createFixture(t);
   const claudeDir = path.join(fixture.hostHomeDir, '.claude');
@@ -517,6 +629,7 @@ test('syncGlobalConfigToHost does not overwrite invalid Claude settings for AIH 
 
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'claude_gateway_config_sync_failed');
+  assert.ok(result.error, '底层错误原文随结果返回，供 CLI 打印');
   assert.equal(fs.readFileSync(settingsPath, 'utf8'), '{invalid');
 });
 

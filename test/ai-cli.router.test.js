@@ -823,7 +823,7 @@ test('`aih codex set-default` selects the built-in AIH Server profile', (t) => {
   assert.deepEqual(syncCalls, [{
     provider: 'codex',
     selectedRef: '',
-    options: { gateway: true }
+    options: { gateway: true, takeover: true }
   }]);
   assert.equal(logs.some((line) => line.includes('Set AIH Server as the default provider for codex')), true);
 });
@@ -850,7 +850,7 @@ for (const provider of ['claude', 'opencode', 'kimi']) {
     assert.deepEqual(exits, [0]);
     assert.equal(readDefaultAccountRef(fs, aiHomeDir, provider), '');
     assert.equal(readDefaultProviderProfile(fs, aiHomeDir, provider), AIH_SERVER_PROFILE_ID);
-    assert.deepEqual(syncCalls, [{ selectedProvider: provider, selectedRef: '', options: { gateway: true } }]);
+    assert.deepEqual(syncCalls, [{ selectedProvider: provider, selectedRef: '', options: { gateway: true, takeover: true } }]);
   });
 }
 
@@ -952,16 +952,64 @@ for (const provider of ['claude', 'opencode', 'kimi']) {
   });
 }
 
-test('`aih codex unset-default` clears current default pointer without user account id', (t) => {
-  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t);
-  writeDefaultAccountRef(fs, aiHomeDir, 'codex', accountRef);
+// 支持 AIH Server 网关默认的 provider：unset-default 与不带账号的 set-default 完全等价。
+function runDefaultCommand(t, provider, action) {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, provider);
+  writeDefaultAccountRef(fs, aiHomeDir, provider, accountRef);
+  const exits = [];
+  const logs = [];
+  const syncCalls = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    runAiCliCommandRouter(provider, [provider, ...action], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: (selectedProvider, selectedRef, options) => {
+        syncCalls.push({ selectedProvider, selectedRef, options });
+        return { ok: true, gateway: true };
+      }
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  return {
+    exits,
+    logs,
+    syncCalls,
+    defaultRef: readDefaultAccountRef(fs, aiHomeDir, provider),
+    defaultProfile: readDefaultProviderProfile(fs, aiHomeDir, provider)
+  };
+}
+
+for (const provider of ['codex', 'claude', 'opencode', 'kimi']) {
+  test(`\`aih ${provider} unset-default\` is the same as \`aih ${provider} set-default\` without an id`, (t) => {
+    const unset = runDefaultCommand(t, provider, ['unset-default']);
+    const set = runDefaultCommand(t, provider, ['set-default']);
+
+    assert.deepEqual(unset.exits, [0]);
+    assert.deepEqual(unset.syncCalls, set.syncCalls);
+    assert.deepEqual(unset.syncCalls, [{ selectedProvider: provider, selectedRef: '', options: { gateway: true, takeover: true } }]);
+    assert.equal(unset.defaultRef, '');
+    assert.equal(unset.defaultProfile, AIH_SERVER_PROFILE_ID);
+    assert.equal(unset.defaultProfile, set.defaultProfile);
+    assert.equal(unset.logs.some((line) => line.includes(`Set AIH Server as the default provider for ${provider}`)), true);
+  });
+}
+
+test('`aih <provider> unset-default` without a gateway default still clears the default pointer', (t) => {
+  const { root, aiHomeDir, profilesDir, accountRef } = createRegisteredTestHome(t, 'gemini');
+  writeDefaultAccountRef(fs, aiHomeDir, 'gemini', accountRef);
 
   const exits = [];
   const logs = [];
   const originalLog = console.log;
   console.log = (msg) => logs.push(String(msg));
   try {
-    runAiCliCommandRouter('codex', ['codex', 'unset-default'], {
+    runAiCliCommandRouter('gemini', ['gemini', 'unset-default'], {
       processImpl: { exit: (code) => exits.push(code) },
       fs,
       PROFILES_DIR: profilesDir,
@@ -973,8 +1021,68 @@ test('`aih codex unset-default` clears current default pointer without user acco
   }
 
   assert.deepEqual(exits, [0]);
-  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'codex'), '');
-  assert.equal(logs.some((line) => line.includes('Cleared default account for codex')), true);
+  assert.equal(readDefaultAccountRef(fs, aiHomeDir, 'gemini'), '');
+  assert.equal(readDefaultProviderProfile(fs, aiHomeDir, 'gemini'), '');
+  assert.equal(logs.some((line) => line.includes('Cleared default account for gemini')), true);
+});
+
+test('set-default failure prints the underlying host sync error and a remedy', (t) => {
+  const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t, 'claude');
+  const exits = [];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    runAiCliCommandRouter('claude', ['claude', 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code) },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      syncGlobalConfigToHost: () => ({ ok: false, gateway: true, reason: 'claude_gateway_config_sync_failed', error: 'invalid_claude_settings' })
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(exits, [1]);
+  const line = errors.find((entry) => entry.includes('Failed to sync claude'));
+  assert.ok(line, errors.join('\n'));
+  assert.match(line, /claude_gateway_config_sync_failed: invalid_claude_settings/);
+  assert.match(line, /settings\.json/);
+});
+
+test('set-default warns on stderr when the host config was taken over or the gateway is down', (t) => {
+  const { root, aiHomeDir, profilesDir } = createRegisteredTestHome(t, 'claude');
+  const exits = [];
+  const errors = [];
+  const originalError = console.error;
+  const originalLog = console.log;
+  console.error = (msg) => errors.push(String(msg));
+  console.log = () => {};
+  try {
+    runAiCliCommandRouter('claude', ['claude', 'set-default'], {
+      processImpl: { exit: (code) => exits.push(code), execPath: process.execPath },
+      fs,
+      PROFILES_DIR: profilesDir,
+      aiHomeDir,
+      HOST_HOME_DIR: root,
+      readServerConfig: () => ({ host: '127.0.0.1', port: 9 }),
+      spawnSync: () => ({ status: 1 }),
+      syncGlobalConfigToHost: () => ({
+        ok: true,
+        gateway: true,
+        hostConfigTakeover: { externallyChanged: true, adoptedAsBaseline: true, fileName: 'settings.json', residualOverrides: [] }
+      })
+    });
+  } finally {
+    console.error = originalError;
+    console.log = originalLog;
+  }
+
+  assert.deepEqual(exits, [0]);
+  assert.equal(errors.some((line) => line.includes('settings.json was edited outside aih; taking over')), true);
+  assert.equal(errors.some((line) => line.includes('is not reachable') && line.includes('aih server start')), true);
 });
 
 test('`aih codex unset-default <id>` is rejected because CLI infers the current default', (t) => {

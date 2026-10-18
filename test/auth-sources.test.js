@@ -116,8 +116,13 @@ test('本机可观察 provider 必须登记扫描来源（探测器注册表 ↔
   for (const provider of providers) {
     const capability = getProviderCapability(provider, 'authSources');
     assert.ok(capability && capability.supported, `${provider} 未声明 authSources`);
-    assert.ok(capability.sources.some((source) => source.handler === 'host-account-scan'),
-      `${provider} 有本机账号探测器，却没登记 host-account-scan 来源`);
+    // 两种登记方式：专属检测器（cline / codebuddy 家族）登记 host-account-scan 来源；
+    // 通用检测器由来源的 scan 钩子（宿主登录态是完整投影）或凭据端口的 hostApiKeySlots 倒排出覆盖面。
+    const { getProviderCredentialStrategy } = require('../lib/account/provider-credentials');
+    const declared = capability.sources.some((source) => source.handler === 'host-account-scan'
+      || typeof source.scan === 'function')
+      || (getProviderCredentialStrategy(provider).hostApiKeySlots || []).length > 0;
+    assert.ok(declared, `${provider} 有本机账号探测器，却没登记扫描来源`);
   }
 });
 

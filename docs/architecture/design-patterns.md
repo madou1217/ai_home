@@ -28,6 +28,10 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `web/src/components/account/quota-scopes.ts` | **Single Source of Truth（跨端契约）** | WebUI 展示行唯一派生处，只镜像服务端契约，不镜像 provider 名单 | 同上 |
 | `lib/account/native-auth-projection.js` | **Strategy（每 provider 一个投影策略）+ CAS** | 凭据投影/回写；`compareAndSwapAccountNativeAuth` 防并发覆盖 | `test/cline-*`、`test/kiro-*` |
 | `lib/account/host-account-sync/index.js` | **Observer Registry** | 宿主登录态观察者注册表；与删除墓碑集合互相守卫 | `test/host-account-sync-registry.test.js` |
+| `lib/account/host-generic-detectors.js` + `lib/account/host-account-detectors.js` | **Registry Inversion** | 「扫描本机账号」覆盖面由声明倒排：认证来源 `scan` 钩子（`lib/providers/contract.js` 白名单登记，`host-auth-import` 默认注入）+ 凭据端口 `hostApiKeySlots`（provider 专属 API Key 落点）；不维护 provider 名单 | `test/host-account-detectors.test.js`、`test/auth-sources.test.js` |
+| `lib/account/host-auth-scan.js` / `lib/account/host-api-key-scan.js` | **Template（insert-only 入库链）** | 宿主产物 → 临时登录目录 → `registerProviderAuthProjection({ respectDeletion, insertOnly })`；API Key 走 `buildApiKeyIdentity` 同源身份。只新增、尊重墓碑、比不出代际就不动库 | `test/host-generic-account-scan.test.js` |
+| `lib/account/host-self-write-guard.js` | **Guard（自写回流守卫）** | aih 写到宿主的网关地址 / client key / management key / `x-account-ref` / `model_providers.aih_server` / `<aiHomeDir>` 内文件一律拒绝入库 | `test/host-generic-account-scan.test.js` |
+| `lib/account/host-account-sync/generic-host-account-sync.js` | **Observer（stamp 门控）** | 通用检测器接进后台轮询：被观察文件 stamp 未变不重扫；覆盖 provider 全部进 `host-observed-providers.js` 墓碑集合 | `test/host-generic-account-scan.test.js`、`test/host-account-sync-registry.test.js` |
 | `lib/runtime/provider-resume.js` | **Strategy Table** | 「恢复会话」策略表（各 provider 的 resume 参数） | `test/provider-resume.test.js` |
 | `lib/runtime/host-capabilities.js` | **Facade + Adapter（宿主机能力门面）** | 「是不是桌面环境 / 某个应用装了吗 / 装不了能不能装」三问收敛到一处，组合既有 app-entries 探测器与安装器注册表，不重复实现探测 | `test/host-capabilities.test.js`、与 `isCliInstallSupported` 的交叉守卫 |
 | `lib/account/auth-sources.js` | **Chain of Responsibility（认证来源链）** | 「这台机器上有哪些账号来源」= 描述符声明 + 宿主机能力 → 可用性排序（**可用优先 → 本机来源优先**，刻意与采集链的「不依赖客户端优先」相反）+ 已入库去重；不可用来源不给实现 | `test/auth-sources.test.js`、真机 `/v0/webui/accounts/provider-auth-sources` |

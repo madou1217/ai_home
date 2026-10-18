@@ -16,15 +16,19 @@ const { CLINE_CREDENTIAL_PATH, clineAuth, providersDocument } = require('./helpe
 
 test('the detection capability list is the single source of truth for callers', () => {
   // WebUI 路由与 `aih <cli> detect` 都读这份列表，不再各自写死 provider 名。
-  assert.deepEqual(hostAccountDetectionProviders(),
-    ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']);
-  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline']) {
+  // 覆盖面 = 专属检测器 + 注册表倒排（认证来源 scan 钩子 / 凭据端口 hostApiKeySlots）。
+  const expected = ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn', 'cline',
+    'agy', 'claude', 'codex', 'gemini', 'grok', 'kimi', 'opencode', 'qoder', 'qodercn', 'zcode'];
+  assert.deepEqual([...hostAccountDetectionProviders()].sort(), [...expected].sort());
+  for (const provider of expected) {
     assert.equal(isHostAccountDetectionSupported(provider), true, `${provider} 必须可扫描`);
   }
-  for (const provider of ['codex', 'claude', 'agy', 'gemini', '']) {
+  // kiro 的 IDE 登录态需要身份核验/换 token（directImport=false、无 scan 钩子），不进自动扫描。
+  for (const provider of ['kiro', '']) {
     assert.equal(isHostAccountDetectionSupported(provider), false, `${provider} 不该被声明为可扫描`);
   }
-  assert.deepEqual(HOST_ACCOUNT_DETECTORS.map(detector => detector.id), ['codebuddy-family', 'cline']);
+  assert.deepEqual(HOST_ACCOUNT_DETECTORS.map(detector => detector.id),
+    ['codebuddy-family', 'cline', 'host-auth-projection', 'host-api-key']);
 });
 
 test('a host Cline login is discovered through the shared detection entry point', t => {

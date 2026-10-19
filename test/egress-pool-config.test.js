@@ -188,9 +188,26 @@ test('the managed core wins over a client-bundled one', () => {
     fs,
     path: require('node:path'),
     env: {},
-    aiHomeDir: '/home/.ai_home'
+    aiHomeDir: '/home/.ai_home',
+    platform: 'darwin'
   });
   assert.equal(resolved.source, 'managed');
+});
+
+test('Windows resolves .exe cores (managed, client-bundled, PATH) and never an extensionless file', () => {
+  const winPath = require('node:path').win32;
+  const files = new Set();
+  const fs = { statSync: (filePath) => { if (files.has(filePath)) return { isFile: () => true, size: 4096 }; throw new Error('ENOENT'); } };
+  const resolve = (env = {}) => resolveMihomoCorePath({ fs, path: winPath, env, aiHomeDir: 'C:\\Users\\u\\.ai_home', platform: 'win32' });
+  files.add('C:\\Users\\u\\.ai_home\\tools\\mihomo');
+  assert.equal(resolve(), null, 'an extensionless file cannot be spawned on Windows');
+  files.add('C:\\Program Files\\Clash Verge\\verge-mihomo-alpha.exe');
+  assert.deepEqual(resolve(), { path: 'C:\\Program Files\\Clash Verge\\verge-mihomo-alpha.exe', source: 'client' });
+  files.add('C:\\Users\\u\\.ai_home\\tools\\mihomo.exe');
+  assert.equal(resolve().source, 'managed');
+  files.clear();
+  files.add('D:\\bin\\mihomo.exe');
+  assert.deepEqual(resolve({ PATH: 'D:\\bin' }), { path: 'D:\\bin\\mihomo.exe', source: 'path' });
 });
 
 test('a missing core resolves to null so callers can fail closed', () => {
@@ -218,4 +235,19 @@ test('no AIH_* env override exists: the managed path is the only explicit overri
     aiHomeDir: '/home/.ai_home'
   });
   assert.equal(resolved, null);
+});
+
+test('physical interface skips Windows / macOS TUN adapters by name and fake-ip address', () => {
+  const { resolvePhysicalInterface } = require('../lib/runtime/egress-pool-config');
+  // Windows 真机（2026-10-19）：Clash Verge 的 TUN 网卡排在以太网前面。
+  assert.equal(resolvePhysicalInterface(() => ({
+    Clash: [{ family: 'IPv4', address: '198.18.0.1', internal: false }],
+    '以太网': [{ family: 'IPv4', address: '192.168.3.76', internal: false }]
+  })), '以太网');
+  assert.equal(resolvePhysicalInterface(() => ({
+    utun4: [{ family: 'IPv4', address: '198.18.0.1', internal: false }],
+    'Unnamed TUN': [{ family: 'IPv4', address: '198.19.0.2', internal: false }],
+    en0: [{ family: 'IPv4', address: '192.168.31.8', internal: false }]
+  })), 'en0');
+  assert.equal(resolvePhysicalInterface(() => ({ wintun: [{ family: 'IPv4', address: '10.0.0.2', internal: false }] })), '');
 });

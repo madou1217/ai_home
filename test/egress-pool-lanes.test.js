@@ -398,8 +398,11 @@ test('session leases: concurrent sessions get different lanes, dead holders are 
     assert.deepEqual(describeSessionLeases({ fs, aiHomeDir: home, accountRef: 'acct_x', count: 2, isPidAlive: (pid) => pid === 104 || alive.has(Number(pid)) })
       .map((lease) => [lease.pid, lease.alive]), [[104, true], [102, true]]);
     assert.equal(acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls: [] }), null);
-    const mode = fs.statSync(nodePath.join(home, 'run', 'egress-pool', 'session-leases', 'acct_x', 'lane-0.json')).mode & 0o777;
-    assert.equal(mode, 0o600);
+    // Windows 没有 POSIX 权限位（stat 恒为 0o666），只在 POSIX 上校验 0600。
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(nodePath.join(home, 'run', 'egress-pool', 'session-leases', 'acct_x', 'lane-0.json')).mode & 0o777;
+      assert.equal(mode, 0o600);
+    }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

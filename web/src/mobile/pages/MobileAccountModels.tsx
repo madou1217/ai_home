@@ -41,6 +41,7 @@ import {
 import { getModelRowKey, type ModelGroupFilter } from '@/features/models/account-models';
 import { useAccountModels } from '@/features/models/use-account-models';
 import AccountModelSheet from './accounts/AccountModelSheet';
+import { EditModelPricingModal } from '@/features/models/EditModelPricingModal';
 import AccountManualModelSheet from './accounts/AccountManualModelSheet';
 import styles from './MobileAccountModels.module.css';
 
@@ -56,6 +57,8 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
   const state = useAccountModels({ provider: params.provider, accountRef: params.accountRef });
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [pricingTarget, setPricingTarget] = useState<ManagedOpenAIModelItem | null>(null);
+  const [pricingSaving, setPricingSaving] = useState(false);
 
   const selectedModel = selectedKey
     ? state.rows.find((model) => getModelRowKey(model) === selectedKey) || null
@@ -312,6 +315,27 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
         onToggleEnabled={(model, enabled) => { void state.updateModelEnabled(model, enabled); }}
         onSetDefault={(model) => { void state.updateModelDefault(model, true); }}
         onCopyId={(modelId) => { void state.copyModelId(modelId); }}
+        onEditPricing={(model) => { setPricingTarget(model); }}
+      />
+      <EditModelPricingModal
+        open={pricingTarget !== null}
+        target={pricingTarget ? {
+          id: pricingTarget.id,
+          accountRef: pricingTarget.accountRef,
+          provider: pricingTarget.provider,
+          customPricing: pricingTarget.customPricing
+        } : null}
+        submitting={pricingSaving}
+        onDismiss={() => setPricingTarget(null)}
+        onSubmit={async (payload) => {
+          setPricingSaving(true);
+          try {
+            const ok = await state.updateModelPricing(payload, payload.customPricing);
+            if (ok) setPricingTarget(null);
+          } finally {
+            setPricingSaving(false);
+          }
+        }}
       />
       <AccountManualModelSheet
         open={manualOpen}

@@ -2,6 +2,7 @@ import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { modelsAPI } from '@/services/api';
 import type {
+  CustomPricing,
   ManagedOpenAIModelItem,
   WebUiOpenAIModelAccount,
   WebUiOpenAIModelsJob,
@@ -212,6 +213,27 @@ export function useAccountModels(params: { provider?: string; accountRef?: strin
     }
   }, [loadModels]);
 
+  /** 自定义模型价：undefined = 不修改该维度；null = 清空覆盖、恢复 models.dev 原价。 */
+  const updateModelPricing = useCallback(async (
+    model: Pick<ManagedOpenAIModelItem, 'id' | 'accountRef' | 'provider'>,
+    customPricing: CustomPricing | null
+  ) => {
+    try {
+      await modelsAPI.updateModel({
+        id: model.id,
+        accountRef: model.accountRef,
+        provider: model.provider,
+        customPricing
+      });
+      message.success(customPricing ? '模型价格已更新' : '已恢复 models.dev 原价');
+      await loadModels({ quiet: true });
+      return true;
+    } catch (error: unknown) {
+      message.error(errorText(error, '更新模型价格失败'));
+      return false;
+    }
+  }, [loadModels]);
+
   /** 手动补充模型：Provider / 账号固定为当前账号（与桌面账号作用域下禁用两项下拉一致）。 */
   const createManualModel = useCallback(async (values: AccountManualModelValues) => {
     if (!scopedAccount) {
@@ -282,6 +304,7 @@ export function useAccountModels(params: { provider?: string; accountRef?: strin
     canCreateManualModel: Boolean(scopedAccount),
     updateModelEnabled,
     updateModelDefault,
+    updateModelPricing,
     createManualModel,
     copyModelId,
     getModelDisplayLabel: getLabel

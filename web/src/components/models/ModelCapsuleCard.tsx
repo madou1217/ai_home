@@ -7,8 +7,28 @@ import {
   CopyOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  PayCircleOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
+import {
+  formatPricePerM,
+  hasCustomPricingValues,
+  resolveModelPriceCells,
+  type ModelPriceCell
+} from '@/utils/model-price';
 import styles from './ModelCapsuleCard.module.css';
+
+function PriceValue({ cell }: { cell: ModelPriceCell }) {
+  return (
+    <span className={styles.priceValue}>
+      <span className={styles.priceKind}>{cell.label}</span>
+      <span className={styles.priceAmount}>${formatPricePerM(cell.value)}</span>
+      {cell.overridden && cell.base !== undefined ? (
+        <span className={styles.priceBase}>${formatPricePerM(cell.base)}</span>
+      ) : null}
+    </span>
+  );
+}
 
 export interface ModelCapsuleCardProps {
   modelId: string;
@@ -19,7 +39,11 @@ export interface ModelCapsuleCardProps {
   isDefault?: boolean;
   contextWindow?: number;
   maxOutputTokens?: number;
-  pricing?: { input?: number; output?: number };
+  /** models.dev 原价（每百万 token 美元），来自 metadata.cost。 */
+  pricing?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  /** 账号自定义价覆盖（同单位）；有值的维度显示为生效价，原价划线。 */
+  customPricing?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  onEditPricing?: () => void;
   onToggleEnabled?: (enabled: boolean) => void;
   onSetDefault?: () => void;
   onCopyId?: () => void;
@@ -43,10 +67,35 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   isDefault = false,
   contextWindow,
   maxOutputTokens,
+  pricing,
+  customPricing,
+  onEditPricing,
   onToggleEnabled,
   onSetDefault,
   onCopyId,
 }: ModelCapsuleCardProps) {
+  const priceCells = resolveModelPriceCells(pricing, customPricing);
+  const pricingTitle = priceCells
+    .map((cell) => `${cell.label} $${formatPricePerM(cell.value)}${cell.overridden && cell.base !== undefined ? `（原价 $${formatPricePerM(cell.base)}）` : ''}`)
+    .join(' · ');
+  const pricingRow = priceCells.length > 0 ? (
+    <Tooltip title={`${pricingTitle}${onEditPricing ? ' · 点击编辑价格（每百万 token 美元）' : ''}`}>
+      <button
+        type="button"
+        className={styles.pricingCapsule}
+        onClick={onEditPricing}
+        disabled={!onEditPricing}
+      >
+        <PayCircleOutlined className={styles.metricIcon} />
+        <span className={styles.pricingPair}>
+          {priceCells.map((cell) => <PriceValue key={cell.key} cell={cell} />)}
+        </span>
+        {hasCustomPricingValues(customPricing) ? (
+          <EditOutlined className={styles.pricingEditIcon} />
+        ) : null}
+      </button>
+    </Tooltip>
+  ) : null;
   return (
     <div className={`${styles.cardContainer} hud-panel hud-panel--sm ${enabled ? '' : styles.cardDisabled}`}>
       <div className={styles.cardHeader}>
@@ -92,6 +141,7 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
               输出上限 {formatTokensK(maxOutputTokens)}
             </span>
           ) : null}
+          {pricingRow}
         </div>
       </div>
 

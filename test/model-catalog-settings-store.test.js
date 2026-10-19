@@ -137,3 +137,70 @@ test('disabling a default account model clears default marker', () => {
   assert.equal(disabled.accountModels[0].defaultModel, false);
   assert.equal(store.findDefaultAccountModelSetting(disabled, CLAUDE_ACCOUNT_REF), null);
 });
+
+test('custom pricing normalizes to four non-negative dimensions and drops empty values', () => {
+  const settings = seedSettings([{
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    customPricing: { input: 1.5, output: 0, cache_read: 0.2, bogus: 9, cacheWrite: -1 }
+  }]);
+
+  assert.deepEqual(settings.accountModels[0].customPricing, {
+    input: 1.5,
+    output: 0,
+    cacheRead: 0.2
+  });
+
+  const empty = seedSettings([{
+    id: 'm2',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    customPricing: { input: 'nope', output: -3 }
+  }]);
+  assert.equal(Object.prototype.hasOwnProperty.call(empty.accountModels[0], 'customPricing'), false);
+});
+
+test('custom pricing survives updates that do not submit it, and explicit null clears it', () => {
+  const created = store.upsertAccountModelSetting(seedSettings([]), {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    customPricing: { input: 2, output: 4 }
+  });
+  assert.deepEqual(created.accountModels[0].customPricing, { input: 2, output: 4 });
+
+  const toggled = store.upsertAccountModelSetting(created, {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    enabled: false
+  });
+  assert.deepEqual(toggled.accountModels[0].customPricing, { input: 2, output: 4 });
+
+  const cleared = store.upsertAccountModelSetting(toggled, {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    customPricing: null
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(cleared.accountModels[0], 'customPricing'), false);
+});
+
+test('custom pricing is scoped to one accountRef', () => {
+  const created = store.upsertAccountModelSetting(seedSettings([]), {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: CLAUDE_ACCOUNT_REF,
+    customPricing: { input: 2 }
+  });
+  const other = store.upsertAccountModelSetting(created, {
+    id: 'm1',
+    provider: 'codex',
+    accountRef: OTHER_ACCOUNT_REF
+  });
+
+  const byRef = new Map(other.accountModels.map((item) => [item.accountRef, item]));
+  assert.deepEqual(byRef.get(CLAUDE_ACCOUNT_REF).customPricing, { input: 2 });
+  assert.equal(Object.prototype.hasOwnProperty.call(byRef.get(OTHER_ACCOUNT_REF), 'customPricing'), false);
+});

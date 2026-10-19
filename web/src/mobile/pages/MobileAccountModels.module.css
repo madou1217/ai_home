@@ -66,3 +66,21 @@
 .monoInput {
   font-family: var(--font-mono);
 }
+
+/* 详情抽屉价格行：四个维度可换行，自定义覆盖价旁保留划线原价 */
+.priceSummary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.priceSummaryCell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+.priceSummaryBase {
+  color: var(--color-faint);
+  font-size: 10px;
+  text-decoration: line-through;
+}

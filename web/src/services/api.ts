@@ -90,6 +90,13 @@ import type {
   ManagedToolServiceResponse,
   ManagedToolLifecycleAction,
   ToolkitToolConfigResponse,
+  ProviderConfigDetailResponse,
+  ProviderConfigExportResponse,
+  ProviderConfigHistoryEntryResponse,
+  ProviderConfigHistoryResponse,
+  ProviderConfigListResponse,
+  ProviderConfigSaveResponse,
+  ProviderConfigValidationResponse,
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
   ProviderCliUpgradeStatusResponse,
@@ -119,7 +126,8 @@ import type {
   SessionEventsResponse,
   SessionEventItem,
   SshHostTestResult,
-  InteractivePrompt
+  InteractivePrompt,
+  CustomPricing
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 
@@ -1404,6 +1412,7 @@ export const modelsAPI = {
     accountRef: string;
     description?: string;
     enabled?: boolean;
+    customPricing?: CustomPricing | null;
   }) => {
     const response = await api.post('/webui/openai-models', payload);
     return response.data;
@@ -1415,6 +1424,8 @@ export const modelsAPI = {
     defaultModel?: boolean;
     provider?: string;
     description?: string;
+    // undefined = 不修改；null = 清空自定义价。
+    customPricing?: CustomPricing | null;
   }) => {
     const response = await api.patch('/webui/openai-models', payload);
     return response.data;
@@ -2257,6 +2268,80 @@ export const toolkitAPI = {
   },
   testConnectivity: async (params: { route?: 'direct' | 'proxy'; proxyUrl?: string } = {}): Promise<ConnectivityResponse> => {
     const response = await api.get<ConnectivityResponse>('/webui/toolkit/connectivity', { params });
+    return response.data;
+  }
+};
+
+export const providerConfigAPI = {
+  // Provider 配置文件列表：只读目录/存在性，不探测 CLI 版本（避免一次请求 spawn 十几个进程）。
+  list: async (): Promise<ProviderConfigListResponse> => {
+    const response = await api.get<ProviderConfigListResponse>('/webui/toolkit/provider-configs');
+    return response.data;
+  },
+  get: async (provider: string, fileId: string): Promise<ProviderConfigDetailResponse> => {
+    const response = await api.get<ProviderConfigDetailResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}`
+    );
+    return response.data;
+  },
+  save: async (
+    provider: string,
+    fileId: string,
+    payload: { content: string; revision: string; note?: string }
+  ): Promise<ProviderConfigSaveResponse> => {
+    const response = await api.put<ProviderConfigSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}`,
+      payload
+    );
+    return response.data;
+  },
+  validate: async (
+    provider: string,
+    fileId: string,
+    content: string
+  ): Promise<ProviderConfigValidationResponse> => {
+    const response = await api.post<ProviderConfigValidationResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/validate`,
+      { content }
+    );
+    return response.data;
+  },
+  history: async (provider: string, fileId: string): Promise<ProviderConfigHistoryResponse> => {
+    const response = await api.get<ProviderConfigHistoryResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history`
+    );
+    return response.data;
+  },
+  historyEntry: async (
+    provider: string,
+    fileId: string,
+    entryId: string
+  ): Promise<ProviderConfigHistoryEntryResponse> => {
+    const response = await api.get<ProviderConfigHistoryEntryResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history/${encodeURIComponent(entryId)}`
+    );
+    return response.data;
+  },
+  restore: async (
+    provider: string,
+    fileId: string,
+    entryId: string
+  ): Promise<ProviderConfigSaveResponse> => {
+    const response = await api.post<ProviderConfigSaveResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/history/${encodeURIComponent(entryId)}/restore`,
+      {}
+    );
+    return response.data;
+  },
+  exportFile: async (
+    provider: string,
+    fileId: string,
+    mode: 'redacted' | 'raw'
+  ): Promise<ProviderConfigExportResponse> => {
+    const response = await api.get<ProviderConfigExportResponse>(
+      `/webui/toolkit/provider-configs/${encodeURIComponent(provider)}/${encodeURIComponent(fileId)}/export`,
+      { params: { mode } }
+    );
     return response.data;
   }
 };

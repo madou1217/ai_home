@@ -8,12 +8,14 @@ import { ApiOutlined, ArrowLeftOutlined, CopyOutlined, PlusOutlined, ReloadOutli
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { modelsAPI } from '@/services/api';
 import type {
+  CustomPricing,
   ManagedOpenAIModelItem,
   Provider,
   WebUiOpenAIModelAccount,
   WebUiOpenAIModelsJob,
   WebUiOpenAIModelsResponse
 } from '@/types';
+import { EditModelPricingModal } from '@/features/models/EditModelPricingModal';
 import Button from '@/components/ui/AppButton';
 import DataToolbar from '@/components/ui/DataToolbar';
 import PaginatedList from '@/components/ui/PaginatedList';
@@ -293,6 +295,37 @@ export default function Models() {
     }
   }, [loadModels]);
 
+  const [pricingTarget, setPricingTarget] = useState<ManagedOpenAIModelItem | null>(null);
+  const [pricingSaving, setPricingSaving] = useState(false);
+
+  const openPricingEditor = useCallback((model: ManagedOpenAIModelItem) => {
+    setPricingTarget(model);
+  }, []);
+
+  const submitModelPricing = useCallback(async (payload: {
+    id: string;
+    accountRef: string;
+    provider: string;
+    customPricing: CustomPricing | null;
+  }) => {
+    setPricingSaving(true);
+    try {
+      await modelsAPI.updateModel({
+        id: payload.id,
+        accountRef: payload.accountRef,
+        provider: payload.provider,
+        customPricing: payload.customPricing
+      });
+      message.success(payload.customPricing ? '模型价格已更新' : '已恢复 models.dev 原价');
+      setPricingTarget(null);
+      await loadModels({ quiet: true });
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '更新模型价格失败');
+    } finally {
+      setPricingSaving(false);
+    }
+  }, [loadModels]);
+
   const accountModelRows = useMemo(() => filterAccountModelRows(managedSource, {
     provider: providerFilter,
     accountRef: accountFilter,
@@ -404,6 +437,14 @@ export default function Models() {
           accountRef={model.accountRef}
           enabled={enabled}
           isDefault={Boolean(model.defaultModel)}
+          pricing={{
+            input: model.metadata?.cost?.input,
+            output: model.metadata?.cost?.output,
+            cacheRead: model.metadata?.cost?.cacheRead,
+            cacheWrite: model.metadata?.cost?.cacheWrite
+          }}
+          customPricing={model.customPricing}
+          onEditPricing={() => openPricingEditor(model)}
           onToggleEnabled={(checked) => updateModelEnabled(model, checked)}
           onSetDefault={!model.defaultModel && enabled ? () => updateModelDefault(model, true) : undefined}
           onCopyId={() => copyModelId(model.id)}
@@ -682,6 +723,19 @@ export default function Models() {
           />
         )}
       </SectionCard>
+
+      <EditModelPricingModal
+        open={pricingTarget !== null}
+        target={pricingTarget ? {
+          id: pricingTarget.id,
+          accountRef: pricingTarget.accountRef,
+          provider: pricingTarget.provider,
+          customPricing: pricingTarget.customPricing
+        } : null}
+        submitting={pricingSaving}
+        onDismiss={() => setPricingTarget(null)}
+        onSubmit={submitModelPricing}
+      />
 
       <ModalForm
         title="手动添加模型"

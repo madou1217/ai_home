@@ -1,3 +1,5 @@
+import { ensurePreviewWindowCaptureHost } from '../../features/capture';
+
 export type HtmlPreviewDevice = 'desktop' | 'mobile';
 
 export interface HtmlPreviewWindowOptions {
@@ -7,6 +9,10 @@ export interface HtmlPreviewWindowOptions {
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
 const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
+
+/** 与宿主 preview-window-host.ts 约定的消息契约（弹窗侧不能 import，保持常量同步）。 */
+const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
+const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -50,6 +56,11 @@ export function buildHtmlPreviewWindowDocument(
     .subtitle { color: #5c7890; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
     .controls, .devices { display: flex; align-items: center; gap: 6px; }
     .device { min-height: 32px; padding: 5px 12px; border: 1px solid #15263d; border-radius: 0; background: #03060b; color: #7f9bb3; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms, box-shadow 120ms; }
+    .capture { min-height: 32px; padding: 5px 12px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
+    .capture:hover { border-color: #00f0ff; color: #00f0ff; background: rgba(0, 240, 255, .08); }
+    .capture:disabled { opacity: .65; cursor: default; }
+    .capture-status { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
+    .capture-status[hidden] { display: none; }
     .device:hover { border-color: rgba(0, 240, 255, .55); color: #00f0ff; }
     .device[aria-pressed="true"] { border-color: #00f0ff; background: rgba(0, 240, 255, .14); color: #00f0ff; box-shadow: 0 0 18px rgba(0, 240, 255, .25); text-shadow: 0 0 10px rgba(0, 240, 255, .55); }
     .fullscreen { min-height: 32px; padding: 5px 12px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
@@ -87,6 +98,9 @@ export function buildHtmlPreviewWindowDocument(
         <button class="device" type="button" data-device-option="mobile" aria-pressed="${initialDevice === 'mobile'}">手机预览</button>
       </div>
       <button class="fullscreen" type="button" data-fullscreen${initialDevice === 'mobile' ? ' hidden' : ''}>全屏</button>
+      <button class="capture" type="button" data-capture="screenshot">截图</button>
+      <button class="capture" type="button" data-capture="record">录制</button>
+      <span class="capture-status" data-capture-status hidden></span>
     </div>
   </header>
   <main class="stage" data-preview-stage data-device="${initialDevice}">
@@ -113,6 +127,87 @@ export function buildHtmlPreviewWindowDocument(
         // 浏览器拒绝全屏时保留普通 PC 预览，不影响页面交互。
       }
     });
+
+    // 捕获桥（弹窗侧）：按钮 → 请求宿主编码 → 进度展示 → 回传 URL 触发下载。
+    // 弹窗文档没有主 bundle，栅格化与格式编码全部由宿主完成，这里只做编排。
+    const status = document.querySelector('[data-capture-status]');
+    const CAPTURE_TIMEOUT_MS = 90000;
+    let captureSeq = 0;
+    let pendingRequest = '';
+    let pendingTimer = 0;
+    const captureButtons = Array.prototype.slice.call(document.querySelectorAll('[data-capture]'));
+    function setCaptureBusy(busy, label) {
+      captureButtons.forEach((button) => { button.disabled = busy; });
+      if (busy) {
+        status.textContent = label || '正在捕获…';
+        status.hidden = false;
+      } else {
+        status.hidden = true;
+      }
+    }
+    function requestCapture(kind) {
+      if (!window.opener) {
+        setCaptureBusy(false);
+        status.textContent = '宿主页面已关闭，无法捕获';
+        status.hidden = false;
+        return;
+      }
+      const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
+      pendingRequest = requestId;
+      clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(() => {
+        if (pendingRequest !== requestId) return;
+        pendingRequest = '';
+        setCaptureBusy(false);
+        status.textContent = '捕获超时，请重试';
+        status.hidden = false;
+      }, CAPTURE_TIMEOUT_MS);
+      const srcdoc = preview.getAttribute('srcdoc') || '';
+      window.opener.postMessage({
+        type: '${CAPTURE_REQUEST_TYPE}',
+        requestId: requestId,
+        kind: kind,
+        html: srcdoc,
+        width: Math.round(preview.getBoundingClientRect().width) || 0
+      }, window.location.origin);
+    }
+    function settleCapture(requestId) {
+      if (pendingRequest && pendingRequest !== requestId) return;
+      pendingRequest = '';
+      clearTimeout(pendingTimer);
+    }
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || data.type !== '${CAPTURE_RESULT_TYPE}') return;
+      if (data.kind === 'progress') {
+        status.textContent = data.label || '正在捕获…';
+        status.hidden = false;
+        return;
+      }
+      settleCapture(data.requestId);
+      if (data.kind !== 'artifact' || !data.ok) {
+        setCaptureBusy(false);
+        status.textContent = '捕获失败：' + ((data && data.message) || '未知错误');
+        status.hidden = false;
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.download = data.fileName || 'html-preview';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setCaptureBusy(false);
+    });
+    captureButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.disabled) return;
+        const kind = button.dataset.capture === 'record' ? 'record' : 'still';
+        setCaptureBusy(true, kind === 'record' ? '正在录制…' : '正在生成截图…');
+        requestCapture(kind);
+      });
+    });
   </script>
 </body>
 </html>`;
@@ -126,10 +221,12 @@ export function openHtmlPreviewWindow(
 
   const previewDocument = buildHtmlPreviewWindowDocument(documentContent, options);
   const previewUrl = window.URL.createObjectURL(new Blob([previewDocument], { type: 'text/html' }));
+  // 捕获桥要求弹窗持有 window.opener：这里不能加 noopener/noreferrer。
+  // 弹窗首屏脚本全部是本模块生成的编排代码，用户 HTML 隔离在 sandbox iframe 内，风险可控。
+  ensurePreviewWindowCaptureHost();
   const link = window.document.createElement('a');
   link.href = previewUrl;
   link.target = '_blank';
-  link.rel = 'noopener noreferrer';
   link.click();
   window.setTimeout(() => window.URL.revokeObjectURL(previewUrl), PREVIEW_URL_REVOKE_DELAY_MS);
   return true;

@@ -6,16 +6,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
 import type {
   AnimationCaptureFormatId,
-  CaptureEncodeResult,
   CaptureFormatAvailability,
   CaptureFormatId,
   CapturePreferences
 } from '../../features/capture';
 import {
-  DomPreviewFrameSource,
-  captureAnimation,
-  captureStill,
   downloadCaptureArtifact,
+  encodePreviewDocument,
+  FALLBACK_VIEWPORT_WIDTH,
   isAnimationCaptureFormat,
   isFormatAvailable,
   isStillCaptureFormat,
@@ -23,13 +21,6 @@ import {
   probeCaptureFormatAvailability,
   readCapturePreferences
 } from '../../features/capture';
-
-/** 录制参数：10fps × 3s ≈ 30 帧，落在 capture-controller 的 MAX_FRAMES=48 之内。 */
-const RECORD_FPS = 10;
-const RECORD_DURATION_MS = 3000;
-
-/** 视口宽度兜底（取不到预览容器宽度时用，与弹窗桌面档同量级）。 */
-const FALLBACK_VIEWPORT_WIDTH = 720;
 
 export interface PreviewCaptureState {
   busy: boolean;
@@ -100,7 +91,8 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
     const still = isStillCaptureFormat(format);
     setState({ busy: true, progressLabel: still ? '正在生成截图…' : '正在录制…' });
     try {
-      const result = await runEncode(format, {
+      const result = await encodePreviewDocument({
+        format,
         html: optionsRef.current.getPreviewDoc(),
         width: optionsRef.current.getViewportWidth() || FALLBACK_VIEWPORT_WIDTH,
         signal: controller.signal,
@@ -123,39 +115,6 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
   useEffect(() => () => abortRef.current?.abort(), []);
 
   return { state, runFormat };
-}
-
-interface EncodeDispatchRequest {
-  html: string;
-  width: number;
-  signal: AbortSignal;
-  onPhase: (captured: number, total: number) => void;
-  onEncode: (ratio: number) => void;
-}
-
-/** 统一编码派发：静图走 grab→captureStill，动画走帧管线→编码策略。 */
-async function runEncode(format: CaptureFormatId, request: EncodeDispatchRequest): Promise<CaptureEncodeResult> {
-  const source = await DomPreviewFrameSource.create({ html: request.html, width: request.width });
-  try {
-    if (isStillCaptureFormat(format)) {
-      const canvas = (await source.grab()) as HTMLCanvasElement | null;
-      if (!canvas) throw new Error('dom_capture_frame_unavailable');
-      return await captureStill({ canvas, format, baseName: 'html-preview' });
-    }
-    // 上一分支已 return，这里仅剩动画格式；守卫不做负向收窄，显式标注。
-    return await captureAnimation({
-      source,
-      format: format as AnimationCaptureFormatId,
-      baseName: 'html-preview',
-      fps: RECORD_FPS,
-      durationMs: RECORD_DURATION_MS,
-      signal: request.signal,
-      onPhase: request.onPhase,
-      onEncode: request.onEncode
-    });
-  } finally {
-    source.dispose();
-  }
 }
 
 function failureText(raw: string): string {

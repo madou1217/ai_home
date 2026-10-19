@@ -44,3 +44,24 @@ export {
   type CaptureAnimationOptions,
   type CaptureStillOptions
 } from './capture-controller';
+export {
+  FALLBACK_VIEWPORT_WIDTH,
+  encodePreviewDocument,
+  type PreviewEncodeRequest
+} from './preview-encode-dispatch';
+export {
+  CAPTURE_REQUEST_TYPE,
+  CAPTURE_RESULT_TYPE,
+  ensurePreviewWindowCaptureHost,
+  installPreviewWindowCaptureHost,
+  isCaptureWindowRequest,
+  resolveRequestFormat,
+  runCaptureForWindowRequest,
+  type CaptureReplyTarget,
+  type CaptureWindowFailure,
+  type CaptureWindowReply,
+  type CaptureWindowRequest,
+  type CaptureWindowRequestKind,
+  type CaptureWindowSuccess,
+  type ResolveRequestFormatDeps
+} from './preview-window-host';

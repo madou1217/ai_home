@@ -1,7 +1,22 @@
-import React, { useState, useMemo } from 'react';
-import { EyeOutlined, CodeOutlined, DesktopOutlined, MobileOutlined } from '@ant-design/icons';
+import { useMemo, useRef, useState } from 'react';
+import {
+  CameraOutlined,
+  CodeOutlined,
+  DownOutlined,
+  DesktopOutlined,
+  EyeOutlined,
+  MobileOutlined,
+  VideoCameraOutlined
+} from '@ant-design/icons';
+import { Dropdown } from 'antd';
+import type { AnimationCaptureFormatId } from '../../features/capture';
+import {
+  listRecordableAnimationFormats,
+  resolveDefaultRecordFormat
+} from './capture-bridge';
 import { normalizeHtmlPreviewDocument } from './file-preview-utils';
 import { openHtmlPreviewWindow } from './html-preview-window';
+import { usePreviewCaptureActions } from './capture-bridge';
 import styles from './message-bubble.module.css';
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
@@ -16,6 +31,28 @@ export default function HtmlCodeBlock({ code }: Props) {
   const [copied, setCopied] = useState(false);
 
   const previewDoc = useMemo(() => normalizeHtmlPreviewDocument(code), [code]);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  const capture = usePreviewCaptureActions({
+    getPreviewDoc: () => previewDoc,
+    getViewportWidth: () => stageRef.current?.clientWidth ?? 0
+  });
+
+  /** 可选录制格式（菜单项）。 */
+  const recordOptions = useMemo(() => listRecordableAnimationFormats(), []);
+
+  const recordMenu = useMemo(
+    () => ({
+      items: recordOptions.map((option) => ({ key: option.id, label: option.label })),
+      onClick: ({ key }: { key: string }) => {
+        void capture.runFormat(key as AnimationCaptureFormatId);
+      }
+    }),
+    [capture, recordOptions]
+  );
+
+  /** 主按钮直接执行的格式：全局默认格式（若在可选清单里），否则第一个可选格式。 */
+  const recordAction = useMemo(() => resolveDefaultRecordFormat(recordOptions), [recordOptions]);
 
   const handleCopy = () => {
     if (copied) return;
@@ -68,6 +105,43 @@ export default function HtmlCodeBlock({ code }: Props) {
               >
                 <MobileOutlined /> 手机弹窗
               </button>
+              <button
+                type="button"
+                className={styles.htmlBlockActionBtn}
+                title="保存当前预览为截图"
+                disabled={capture.state.busy}
+                onClick={() => void capture.runFormat('png')}
+              >
+                <CameraOutlined /> 截图
+              </button>
+              <span className={styles.htmlBlockSplit}>
+                <button
+                  type="button"
+                  className={styles.htmlBlockActionBtn}
+                  disabled={capture.state.busy || !recordAction}
+                  onClick={() => {
+                    if (recordAction) void capture.runFormat(recordAction);
+                  }}
+                >
+                  {capture.state.busy ? (
+                    capture.state.progressLabel
+                  ) : (
+                    <>
+                      <VideoCameraOutlined /> 录制
+                    </>
+                  )}
+                </button>
+                <Dropdown menu={recordMenu} trigger={['click']} disabled={capture.state.busy}>
+                  <button
+                    type="button"
+                    className={styles.htmlBlockActionBtn}
+                    aria-label="选择录制格式"
+                    disabled={capture.state.busy}
+                  >
+                    <DownOutlined />
+                  </button>
+                </Dropdown>
+              </span>
             </>
           )}
           <button
@@ -82,7 +156,7 @@ export default function HtmlCodeBlock({ code }: Props) {
 
       <div className={styles.htmlBlockBody}>
         {viewMode === 'preview' ? (
-          <div className={styles.htmlPreviewStage}>
+          <div className={styles.htmlPreviewStage} ref={stageRef}>
             <iframe
               className={styles.htmlPreviewFrame}
               title="HTML Preview"

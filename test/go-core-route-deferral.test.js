@@ -323,3 +323,59 @@ test('account error rules leave Node only once Go confirms it took the account o
 });
 
 });
+
+// 2026-10-19：Go Core 不执行账号出口。账号绑定了网关侧出口（代理地址 / 出口池 / 系统代理）时，
+// 被 Go 承接的请求会绕过出口直连上游 —— 必须交还 Node。作用域与自定义错误规则一致。
+test('requests that may land on an account with a gateway-side egress stay on Node', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const { createAccountEgressBindingIndex, requiresNodeEgress } = require('../lib/server/account-egress-binding-index');
+  const boundRef = 'acct_aaaaaaaaaaaaaaaaaaaa';
+  const freeRef = 'acct_bbbbbbbbbbbbbbbbbbbb';
+  const state = { accounts: { claude: [{ accountRef: boundRef, provider: 'claude' }, { accountRef: freeRef, provider: 'claude' }] } };
+  const base = {
+    entryId: 'gateway.anthropic.messages',
+    model: 'claude-sonnet-5-5',
+    state,
+    goRoutableModelIds: () => new Set(['claude-sonnet-5-5']),
+    goModelOwner: () => 'claude'
+  };
+
+  const unpinned = explainGoRouteDeferral({ ...base, egressBoundRefs: () => new Set([boundRef]) });
+  assert.deepEqual(unpinned, { defer: true, reason: 'account_egress' });
+  assert.equal(explainGoRouteDeferral({ ...base, egressBoundRefs: () => null }).reason, 'account_egress', 'unknown index is conservative');
+  assert.notEqual(explainGoRouteDeferral({ ...base, egressBoundRefs: () => new Set() }).reason, 'account_egress');
+  // Go 服务不了的 Provider（例如 opencode）的出口绑定不影响 Go 的转发。
+  const withOpencode = { ...base, state: { accounts: { ...state.accounts, opencode: [{ accountRef: 'acct_cccccccccccccccccccc', provider: 'opencode' }] } } };
+  assert.notEqual(explainGoRouteDeferral({ ...withOpencode, egressBoundRefs: () => new Set(['acct_cccccccccccccccccccc']) }).reason, 'account_egress');
+  // 钉选：只看被钉选账号自己。
+  const { goServesInference } = require('../lib/server/go-core-servable-providers');
+  assert.equal(goServesInference('claude', 'gateway.anthropic.messages'), true, 'fixture assumes claude is Go-servable here');
+
+  // 索引：只有网关侧改写出站的模式需要 Node；tun 在网关是直连，与 Go 一致。
+  assert.equal(requiresNodeEgress({ mode: 'url' }), true);
+  assert.equal(requiresNodeEgress({ mode: 'pool' }), true);
+  assert.equal(requiresNodeEgress({ mode: 'system' }), true);
+  assert.equal(requiresNodeEgress({ mode: 'tun' }), false);
+  assert.equal(requiresNodeEgress({ mode: 'node', retired: true }), true);
+  let calls = 0;
+  let clock = 0;
+  const index = createAccountEgressBindingIndex({
+    aiHomeDir: '/x',
+    ttlMs: 1000,
+    now: () => clock,
+    listBindings: () => { calls += 1; return [{ accountRef: boundRef, binding: { mode: 'pool' } }, { accountRef: freeRef, binding: { mode: 'tun' } }]; }
+  });
+  assert.deepEqual([...index.refs()], [boundRef]);
+  index.refs();
+  assert.equal(calls, 1, 'cached within the TTL');
+  index.invalidate();
+  index.refs();
+  assert.equal(calls, 2, 'invalidate forces a reload');
+  clock = 5000;
+  index.refs();
+  assert.equal(calls, 3, 'reloads after the TTL');
+  assert.equal(index.requiresNode(freeRef), false);
+  const broken = createAccountEgressBindingIndex({ aiHomeDir: '/x', listBindings: () => { throw new Error('db'); } });
+  assert.equal(broken.refs(), null);
+  assert.equal(broken.requiresNode(freeRef), true);
+});

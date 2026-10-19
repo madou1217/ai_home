@@ -65,8 +65,17 @@ test('normalizeEgressBinding 支持 system、tun、url、pool 四种模式', () 
   assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_POOL }), {
     mode: EGRESS_MODE_POOL,
     proxyUrl: '',
+    scope: { kind: 'all', groups: [], nodes: [] },
+    strategy: 'shared',
     updatedAt: 0
   });
+  // 出口池的节点选择：范围（全部 / 分组 / 自选）与策略（共享 / 独占）；空选择回到全部节点。
+  assert.deepEqual(
+    normalizeEgressBinding({ mode: EGRESS_MODE_POOL, scope: { kind: 'nodes', nodes: ['vless|a.example.com|443', 'vless|a.example.com|443'] }, strategy: 'sticky' }),
+    { mode: EGRESS_MODE_POOL, proxyUrl: '', scope: { kind: 'nodes', groups: [], nodes: ['vless|a.example.com|443'] }, strategy: 'sticky', updatedAt: 0 }
+  );
+  assert.equal(normalizeEgressBinding({ mode: EGRESS_MODE_POOL, scope: { kind: 'groups', groups: [] } }).scope.kind, 'all');
+  assert.equal(normalizeEgressBinding({ mode: EGRESS_MODE_POOL, strategy: 'weird' }).strategy, 'shared');
   assert.deepEqual(normalizeEgressBinding({ mode: EGRESS_MODE_SYSTEM }), {
     mode: EGRESS_MODE_SYSTEM,
     proxyUrl: '',

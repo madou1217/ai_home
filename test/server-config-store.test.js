@@ -21,7 +21,8 @@ const RELAY_DEFAULTS = {
   relayUdpAdvertisePort: 0,
   relayPortMode: 'default',
   relayListenHost: '',
-  maxAttempts: 0
+  maxAttempts: 0,
+  egressEvidenceTtlMs: 0
 };
 
 test('server config store defaults to AIH provider port 9527', () => {

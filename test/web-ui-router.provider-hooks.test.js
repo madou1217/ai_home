@@ -113,7 +113,18 @@ test('buildProviderSessionHookDiagnostic reports installed generated config', (t
 
 test('web ui provider-hooks route returns read-only diagnostics', async (t) => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-provider-hooks-home-'));
-  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+  // opencode 插件路径优先跟随 XDG_CONFIG_HOME；宿主机真实插件会让 installed 断言失真。
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  const previousExplicit = process.env.OPENCODE_CONFIG_DIR;
+  process.env.XDG_CONFIG_HOME = path.join(homeDir, '.config');
+  delete process.env.OPENCODE_CONFIG_DIR;
+  t.after(() => {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+    if (previousExplicit === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = previousExplicit;
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
 
   const codexConfig = buildProviderSessionHookConfigPatch('codex', {}, {
     homeDir,

@@ -14,6 +14,22 @@ const {
 } = require('../lib/server/provider-session-hook-config');
 const { AIH_PLUGIN_MARKER, buildOpenCodePluginSource } = require('../lib/server/opencode-plugin-template');
 
+// 测试隔离：getOpenCodePluginPath 会优先跟随 OPENCODE_CONFIG_DIR / XDG_CONFIG_HOME，
+// 宿主机上真实的插件文件会让「装前 installed=false」的断言失效。把 opencode 配置根
+// 钉到临时 home 下，测试结束后恢复进程环境。
+function withOpenCodeConfigHome(homeDir) {
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  const previousExplicit = process.env.OPENCODE_CONFIG_DIR;
+  process.env.XDG_CONFIG_HOME = path.join(homeDir, '.config');
+  delete process.env.OPENCODE_CONFIG_DIR;
+  return () => {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+    if (previousExplicit === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+    else process.env.OPENCODE_CONFIG_DIR = previousExplicit;
+  };
+}
+
 // opencode 生命周期 hook(P4):文件式插件桥的安装/诊断,经统一入口分派。
 // opencode v2 把插件入口改为 default 对象({id, setup}),旧的「导出工厂函数」形态被直接拒绝,
 // 事件也从 {type, properties} 改为信封 {type, data:{sessionID}};生成模板因此是双兼容对象
@@ -47,6 +63,7 @@ test('生成的插件源码含 marker + receiver URL + 双兼容入口 + 只发�
 
 test('install → diagnose 闭环:写文件、幂等、URL 变更需重装', () => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-oc-plugin-'));
+  const restoreEnv = withOpenCodeConfigHome(homeDir);
   try {
     // 装前:未安装
     const before = diagnoseProviderSessionHookConfig('opencode', {}, { homeDir, port: 9527 });
@@ -81,12 +98,14 @@ test('install → diagnose 闭环:写文件、幂等、URL 变更需重装', () 
     assert.equal(portChanged.installed, false);
     assert.deepEqual(portChanged.missingEvents, ['receiver-url-changed']);
   } finally {
+    restoreEnv();
     fs.removeSync(homeDir);
   }
 });
 
 test('诊断:旧版(v1 形)托管文件被标为 plugin-file-outdated,重装后恢复', () => {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-oc-plugin-legacy-'));
+  const restoreEnv = withOpenCodeConfigHome(homeDir);
   try {
     const pluginDir = path.join(homeDir, '.config', 'opencode', 'plugin');
     fs.ensureDirSync(pluginDir);
@@ -109,6 +128,7 @@ test('诊断:旧版(v1 形)托管文件被标为 plugin-file-outdated,重装后�
     assert.equal(after.installed, true);
     assert.deepEqual(after.missingEvents, []);
   } finally {
+    restoreEnv();
     fs.removeSync(homeDir);
   }
 });

@@ -192,3 +192,42 @@ test('server pool listener reloads runtime pool when event requests recovery rel
   assert.equal(reloaded, true);
   assert.equal(state.accounts.codex[0].accountRef, accountRef);
 });
+
+// 2026-10-19 事故：重建池时对 codex 账号做「已验证恢复」，恢复事件（runtimeState:null）又触发重建，
+// 同步无限递归 → 栈溢出被 hub 吞掉、进程 100% CPU、网关拒绝所有连接。重建必须不可重入。
+test('a pool reload that emits recovery events does not re-enter itself', () => {
+  const accountRef = 'acct_10015000000000000099';
+  const errors = [];
+  const hub = createAccountRuntimeEventHub({ onError: (error) => errors.push(error.message) });
+  const state = { accounts: { codex: [] } };
+  let loads = 0;
+  const deps = {
+    state,
+    applyReloadState: (target, accounts) => { target.accounts = accounts; },
+    loadServerRuntimeAccounts: () => {
+      loads += 1;
+      if (loads > 50) throw new Error('reload recursion');
+      // 与 mergePersistedRuntimeFields → observeRecovery 同形：加载过程中发出恢复事件。
+      hub.emit(ACCOUNT_RUNTIME_CHANGED, { provider: 'codex', accountRef, runtimeState: null, nextStatus: 'up', reason: 'verified_usage_success' });
+      return { codex: [{ accountRef, provider: 'codex' }] };
+    }
+  };
+  hub.on(ACCOUNT_RUNTIME_CHANGED, createServerPoolSyncListener(deps));
+
+  hub.emit(ACCOUNT_RUNTIME_CHANGED, { provider: 'codex', accountRef, runtimeState: null, nextStatus: 'up', reason: 'manual_admin_clear' });
+  assert.equal(loads, 1, 'the nested recovery event must not reload again');
+  assert.deepEqual(errors, []);
+  assert.equal(state.accounts.codex[0].accountRef, accountRef);
+
+  // 标记在异常时也必须复位，否则之后的重建永远被跳过。
+  let failNext = true;
+  deps.loadServerRuntimeAccounts = () => {
+    loads += 1;
+    if (failNext) { failNext = false; throw new Error('load failed'); }
+    return { codex: [] };
+  };
+  hub.emit(ACCOUNT_RUNTIME_CHANGED, { provider: 'codex', accountRef, runtimeState: null, reason: 'x' });
+  hub.emit(ACCOUNT_RUNTIME_CHANGED, { provider: 'codex', accountRef, runtimeState: null, reason: 'y' });
+  assert.equal(loads, 3);
+  assert.deepEqual(state.accounts.codex, []);
+});

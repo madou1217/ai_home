@@ -11,7 +11,8 @@ const path = require('node:path');
 
 const {
   resolveNativeChatTransport,
-  typesPromptIntoTerminal
+  typesPromptIntoTerminal,
+  usesNativeStreamUsage
 } = require('../lib/server/native-session-chat-transport');
 const {
   resolveNativeSessionLaunchProfile,
@@ -29,6 +30,15 @@ test('cline 续聊声明为 acp-session 通道（prompt 不再 typed 敲入）',
 
   const fresh = resolveNativeChatTransport('cline', { isResume: false });
   assert.equal(fresh.mode, 'headless-stream', '新会话保持 headless（实测可用，不动）');
+});
+
+test('只有本地会话文件缺 usage 的 provider 从 stream-json result.usage 记账', () => {
+  assert.equal(usesNativeStreamUsage('qoder'), true);
+  assert.equal(usesNativeStreamUsage('qodercn'), true);
+  assert.equal(resolveNativeChatTransport('qoder').streamUsage, true);
+  assert.equal(usesNativeStreamUsage('claude'), false);
+  assert.equal(usesNativeStreamUsage('qoder', { isResume: true }), true);
+  assert.equal(usesNativeStreamUsage('codebuddy'), false);
 });
 
 test('acp-session 形态派生：非 PTY、prompt 走 argv 通道、transcript 收尾', () => {

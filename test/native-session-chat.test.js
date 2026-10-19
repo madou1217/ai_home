@@ -29,6 +29,7 @@ const {
   startAgyColdAfterQuiesce,
   shouldScanNativeRuntimeBlockerOutput
 } = require('../lib/server/native-session-chat');
+const { recordNativeSessionModelUsage } = require('../lib/server/webui-chat-routes-native-session');
 const { registerAccountIdentity } = require('../lib/account/account-registration');
 const {
   writeAccountCredentials,
@@ -920,6 +921,7 @@ test('qoder providers use native headless stream commands', () => {
       '--print',
       '--output-format',
       'stream-json',
+      '--include-partial-messages',
       '--session-id',
       'qoder-session',
       'hello'
@@ -930,7 +932,15 @@ test('qoder providers use native headless stream commands', () => {
     prompt: 'again'
   }), {
     commandName: 'qoder',
-    args: ['--print', '--output-format', 'stream-json', '--resume', 'qoder-session', 'again']
+    args: [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--resume',
+      'qoder-session',
+      'again'
+    ]
   });
 });
 
@@ -960,7 +970,109 @@ test('parseNativeStreamEvent parses qoder stream-json like claude protocol event
     type: 'result',
     subtype: 'success',
     result: 'hello'
-  }), state), { type: 'result', content: 'hello' });
+  }), state), {
+    type: 'result',
+    content: 'hello',
+    // qoder 的 result 没有真实 token 计数时也会给出**透明估算**（estimated: true），
+    // 绝不伪装成上游精确 usage；非 qoder provider 仍保持「无 usage 就不记」。
+    usage: {
+      inputTokens: 0,
+      outputTokens: 2,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      reasoningOutputTokens: 0,
+      contextUsageRatio: 0,
+      credits: 0,
+      billable: null,
+      requestId: '',
+      estimated: true
+    }
+  });
+});
+
+test('parseNativeStreamEvent marks qoder estimates and never records empty turns', () => {
+  const state = { content: '' };
+  const event = parseNativeStreamEvent('qoder', JSON.stringify({
+    type: 'result',
+    subtype: 'success',
+    result: 'hello',
+    usage: {
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_read_input_tokens: 3,
+      cache_creation_input_tokens: 2,
+      reasoning_output_tokens: 1
+    }
+  }), state);
+  assert.deepEqual(state.usage, {
+    inputTokens: 10,
+    outputTokens: 5,
+    cacheReadInputTokens: 3,
+    cacheCreationInputTokens: 2,
+    reasoningOutputTokens: 1,
+    contextUsageRatio: 0,
+    credits: 0,
+    billable: null,
+    requestId: '',
+    estimated: false
+  });
+  assert.deepEqual(event, { type: 'result', content: 'hello', usage: state.usage });
+
+  // qodercli 1.1.73 的计数恒为 0：有输出文本时按透明估算记录（estimated: true），
+  // 不写 0 token 的垃圾记录；连可估算的文本都没有时保持不记。
+  const zeroState = { content: 'hello' };
+  const zeroEvent = parseNativeStreamEvent('qodercn', JSON.stringify({
+    type: 'result',
+    result: 'hello',
+    usage: { input_tokens: 0, output_tokens: 0 }
+  }), zeroState);
+  assert.equal(zeroState.usage.estimated, true);
+  assert.equal(zeroState.usage.outputTokens, 2);
+  assert.deepEqual(zeroEvent, { type: 'result', content: 'hello', usage: zeroState.usage });
+
+  const emptyState = { content: '' };
+  const emptyEvent = parseNativeStreamEvent('qodercn', JSON.stringify({
+    type: 'result',
+    result: '',
+    usage: { input_tokens: 0, output_tokens: 0 }
+  }), emptyState);
+  assert.equal(emptyState.usage, undefined);
+  assert.deepEqual(emptyEvent, { type: 'result', content: '' });
+});
+
+test('recordNativeSessionModelUsage persists stream usage with the native turn event key', () => {
+  const calls = [];
+  const ctx = {
+    deps: {
+      modelUsageService: {
+        recordUsage(input) {
+          calls.push(input);
+        }
+      }
+    }
+  };
+  recordNativeSessionModelUsage(ctx, {
+    provider: 'qoder',
+    accountRef: 'acct_1234567890abcdef1234',
+    sessionId: 'qoder-session',
+    runId: 'run-1',
+    model: 'deepseek-v4.1-flash',
+    usage: {
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadInputTokens: 3,
+      cacheCreationInputTokens: 2,
+      reasoningOutputTokens: 1
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].eventKey, 'qoder:native-done:qoder-session:run-1');
+  assert.equal(calls[0].sourceKind, 'native_session_done');
+  assert.equal(calls[0].inputTokens, 10);
+  assert.equal(calls[0].outputTokens, 5);
+  assert.equal(calls[0].cacheReadInputTokens, 3);
+  assert.equal(calls[0].cacheCreationInputTokens, 2);
+  assert.equal(calls[0].reasoningOutputTokens, 1);
 });
 
 test('Grok native session commands use streaming JSON and exact resume ids', () => {

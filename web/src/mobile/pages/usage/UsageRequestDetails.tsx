@@ -4,6 +4,7 @@ import { Button, Spin } from 'antd';
 import { ReloadOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import ProviderIcon from '@/components/chat/ProviderIcon';
+import { formatModelShortName } from '@/features/model-usage/model-usage-presentation';
 import {
   REQUEST_DETAIL_COLUMN_CONTRACTS,
   buildRequestTokenParts,
@@ -124,7 +125,9 @@ export default function UsageRequestDetails({ usage, errors, requested, loading,
                 {row.provider ? <ProviderIcon provider={row.provider} size={18} /> : <WarningOutlined />}
               </span>
               <span className="mhud-row__main">
-                <span className="mhud-row__title">{row.model || '-'}</span>
+                <span className="mhud-row__title" title={row.model || undefined}>
+                  {formatModelShortName(row.model) || '-'}
+                </span>
                 <span className={`mhud-row__meta${kind === 'errors' ? ' mhud-tone--err' : ''}`}>
                   {kind === 'usage'
                     ? `${formatRequestType(row.requestType)} · ${formatRequestDuration(row.durationMs)} · ${row.endpoint || '-'}`
@@ -155,7 +158,11 @@ export default function UsageRequestDetails({ usage, errors, requested, loading,
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
           code={active.kind === 'usage' ? 'REQUEST' : 'REQUEST ERR'}
-          title={active.row.model || active.row.requestId}
+          title={(
+            <span title={active.row.model || undefined}>
+              {formatModelShortName(active.row.model) || active.row.requestId}
+            </span>
+          )}
         >
           <KeyValue rows={buildDetailRows(active.kind, active.row)} />
         </DetailSheet>

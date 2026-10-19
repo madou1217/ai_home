@@ -8,6 +8,7 @@ import {
   formatAccountScope,
   formatCacheRate,
   formatCost,
+  formatModelShortName,
   formatTokens
 } from '@/features/model-usage/model-usage-presentation';
 import {
@@ -257,7 +258,9 @@ export default function MobileUsage(_props: MobilePageProps) {
                 >
                   <span className="mhud-row__icon"><ProviderIcon provider={row.provider} size={18} /></span>
                   <span className="mhud-row__main">
-                    <span className="mhud-row__title">{row.model || '未知模型'}</span>
+                    <span className="mhud-row__title" title={row.model || '未知模型'}>
+                      {formatModelShortName(row.model) || '未知模型'}
+                    </span>
                     <span className="mhud-row__meta">
                       {providerLabel(row.provider)} · {formatAccountScope(row.accountCount, row.unattributedCalls)} · {row.calls} 次
                     </span>

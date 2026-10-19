@@ -11,6 +11,17 @@ export interface ModelMixDatum {
   isOther: boolean;
 }
 
+/**
+ * 展示用短模型名：去掉目录/网关前缀，只保留最后一段。
+ * 查询、过滤、alias 解析与成本计算仍然使用完整模型 ID，本函数只服务于显示。
+ */
+export function formatModelShortName(model: string) {
+  const value = String(model || '').trim();
+  if (!value) return '';
+  const segments = value.split('/').filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] : value;
+}
+
 export function formatTokens(value: number) {
   const number = Number(value) || 0;
   if (number >= 1_000_000_000) return `${(number / 1_000_000_000).toFixed(2)}B`;
@@ -86,20 +97,23 @@ export function buildModelMixData(
     .filter((row) => valueOf(row) > 0)
     .sort((left, right) => valueOf(right) - valueOf(left));
   const modelNameCounts = ranked.reduce((counts, row) => {
-    const model = row.model || '未知模型';
-    counts.set(model, (counts.get(model) || 0) + 1);
+    const shortName = formatModelShortName(row.model || '未知模型') || '未知模型';
+    counts.set(shortName, (counts.get(shortName) || 0) + 1);
     return counts;
   }, new Map<string, number>());
-  const head: ModelMixDatum[] = ranked.slice(0, Math.max(1, limit)).map((row) => ({
-    key: `${row.provider}:${row.model}`,
-    label: (modelNameCounts.get(row.model || '未知模型') || 0) > 1
-      ? `${row.provider} · ${row.model || '未知模型'}`
-      : row.model || '未知模型',
-    provider: row.provider,
-    model: row.model,
-    value: valueOf(row),
-    isOther: false
-  }));
+  const head: ModelMixDatum[] = ranked.slice(0, Math.max(1, limit)).map((row) => {
+    const shortName = formatModelShortName(row.model || '未知模型') || '未知模型';
+    return {
+      key: `${row.provider}:${row.model}`,
+      label: (modelNameCounts.get(shortName) || 0) > 1
+        ? `${row.provider} · ${shortName}`
+        : shortName,
+      provider: row.provider,
+      model: row.model,
+      value: valueOf(row),
+      isOther: false
+    };
+  });
   const tail = ranked.slice(Math.max(1, limit));
   if (tail.length === 0) return head;
   head.push({

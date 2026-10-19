@@ -1002,6 +1002,118 @@ test('model usage store exposes only epoch-guarded pricing maintenance mutations
   }], { source: 'test-bootstrap' }), /model_usage_pricing_catalog_active/);
 });
 
+test('restartPricingMaintenance is epoch guarded and starts a fresh sweep', (t) => {
+  const DatabaseSync = requireDatabaseSync(t);
+  if (!DatabaseSync) return;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-restart-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = openModelUsageStore({
+    fs,
+    path,
+    aiHomeDir: path.join(root, '.ai_home'),
+    DatabaseSync
+  });
+  t.after(() => store.close());
+
+  const activation = activateTestCatalog(store, 'b'.repeat(64), 0.000001);
+  const active = activation.activeCatalog;
+  store.insertUsage({
+    eventKey: 'pricing-restart-high-water',
+    provider: 'codex',
+    model: 'gpt-standard',
+    inputTokens: 1,
+    timestampMs: new Date(2026, 6, 16, 12).getTime()
+  });
+
+  const stale = store.restartPricingMaintenance({
+    expectedSource: active.source,
+    expectedEpoch: active.epoch - 1
+  });
+  assert.equal(stale.stale, true);
+  assert.equal(store.getActivePricingCatalog().epoch, active.epoch);
+
+  const restarted = store.restartPricingMaintenance({
+    expectedSource: active.source,
+    expectedEpoch: active.epoch
+  });
+  assert.equal(restarted.stale, false);
+  assert.equal(restarted.activeCatalog.epoch, active.epoch + 1);
+  assert.equal(restarted.maintenance.status, 'pending');
+  assert.equal(restarted.maintenance.catalogEpoch, active.epoch + 1);
+  assert.equal(restarted.maintenance.cursorId, 0);
+  assert.equal(restarted.maintenance.targetMaxId > 0, true);
+  assert.equal(restarted.maintenance.scanned, 0);
+  assert.equal(restarted.maintenance.recalculated, 0);
+});
+
+test('explicit cost recalculation restarts a completed sweep after late rows are written', async (t) => {
+  const DatabaseSync = requireDatabaseSync(t);
+  if (!DatabaseSync) return;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-model-pricing-restart-service-'));
+  const aiHomeDir = path.join(root, '.ai_home');
+  const modelsDevCatalogPath = path.join(root, 'models-dev-catalog.json');
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  writeModelPrice(modelsDevCatalogPath, 1, 2);
+
+  const createService = () => createModelUsageService({
+    fs,
+    path,
+    aiHomeDir,
+    hostHomeDir: root,
+    modelsDevCatalogPath,
+    DatabaseSync
+  });
+
+  try {
+    const firstService = createService();
+    const initial = await firstService.syncPricingIfStale({ recalculateCosts: true });
+    assert.equal(initial.ok, true);
+    assert.equal(initial.recalculated, 0);
+    assert.equal(initial.maintenance.status, 'completed');
+    const firstEpoch = initial.maintenance.catalogEpoch;
+
+    // 模拟「写入时解析不到价格」的历史行：成本显式为 0，而不是按当前目录计算。
+    firstService.recordUsage({
+      eventKey: 'pricing-restart-late-row',
+      provider: 'codex',
+      model: 'gpt-standard',
+      inputTokens: 1_000_000,
+      costUsd: 0,
+      timestampMs: new Date(2026, 6, 16, 12).getTime()
+    });
+
+    const db = new DatabaseSync(path.join(aiHomeDir, 'app-state.db'));
+    try {
+      const before = db.prepare(`
+        SELECT cost_usd FROM model_usage_records WHERE event_key = 'pricing-restart-late-row'
+      `).get();
+      assert.equal(Number(before.cost_usd), 0);
+    } finally {
+      db.close();
+    }
+
+    const secondService = createService();
+    const replayed = await secondService.syncPricingIfStale({ recalculateCosts: true });
+    assert.equal(replayed.ok, true);
+    assert.equal(replayed.synced, false);
+    assert.equal(replayed.recalculated, 1);
+    assert.equal(replayed.maintenance.status, 'completed');
+    assert.equal(replayed.maintenance.catalogEpoch, firstEpoch + 1);
+
+    const verified = new DatabaseSync(path.join(aiHomeDir, 'app-state.db'));
+    try {
+      const after = verified.prepare(`
+        SELECT cost_usd FROM model_usage_records WHERE event_key = 'pricing-restart-late-row'
+      `).get();
+      assert.equal(Number(after.cost_usd), 1);
+    } finally {
+      verified.close();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a second service skips all-cost recalculation for the same bundled catalog', async (t) => {
   const DatabaseSync = requireDatabaseSync(t);
   if (!DatabaseSync) return;

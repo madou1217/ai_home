@@ -48,6 +48,7 @@ import {
   formatAccountScope,
   formatCacheRate,
   formatCost,
+  formatModelShortName,
   formatTokens,
   getCacheTokens
 } from '@/features/model-usage/model-usage-presentation';
@@ -492,7 +493,11 @@ export default function ModelUsage() {
       dataIndex: 'model',
       width: 220,
       ellipsis: true,
-      render: (value) => value || '-'
+      render: (value) => {
+        const fullName = String(value || '').trim();
+        if (!fullName) return '-';
+        return <Tooltip title={fullName}>{formatModelShortName(fullName)}</Tooltip>;
+      }
     },
     {
       title: '账号',
@@ -689,7 +694,8 @@ export default function ModelUsage() {
           ? ''
           : ` · ${Array.from(providers).map((item) => providerNames[item] || item).join('/')}`;
         return {
-          label: `${modelName}${suffix}`,
+          label: `${formatModelShortName(modelName)}${suffix}`,
+          title: modelName,
           value: modelName
         };
       });

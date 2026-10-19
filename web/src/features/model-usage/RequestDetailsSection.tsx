@@ -7,6 +7,7 @@ import Button from '@/components/ui/AppButton';
 import ListTable from '@/components/ui/ListTable';
 import SectionCard from '@/components/ui/SectionCard';
 import type { ModelUsageRequestRow } from '@/types';
+import { formatModelShortName } from './model-usage-presentation';
 import {
   REQUEST_DETAIL_COLUMN_CONTRACTS,
   buildRequestTokenParts,
@@ -49,6 +50,18 @@ function renderEllipsisText(value: string, maxWidth: number, monospace = false):
   );
 }
 
+function renderModelText(value: string, maxWidth: number): ReactNode {
+  const fullName = String(value || '').trim();
+  if (!fullName) return '-';
+  return (
+    <Tooltip title={fullName}>
+      <Text ellipsis style={{ display: 'block', maxWidth }}>
+        {formatModelShortName(fullName)}
+      </Text>
+    </Tooltip>
+  );
+}
+
 function renderTokenParts(row: ModelUsageRequestRow) {
   return (
     <div className="request-detail-token-cell">
@@ -78,7 +91,7 @@ const REQUEST_COLUMN_CONFIG: Record<RequestDetailColumnKey, RequestColumnConfig>
   model: {
     dataIndex: 'model',
     width: 180,
-    render: (_, row) => renderEllipsisText(row.model, 180)
+    render: (_, row) => renderModelText(row.model, 180)
   },
   reasoningEffort: {
     dataIndex: 'reasoningEffort',

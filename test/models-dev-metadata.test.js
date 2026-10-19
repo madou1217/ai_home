@@ -166,6 +166,16 @@ test('models.dev provider inference keeps AIH provider separate from catalog pro
   assert.deepEqual(inferModelsDevProviderIds('opencode', 'opencode-go/glm-5.2'), ['opencode-go', 'opencode']);
 });
 
+test('models.dev provider inference maps Cline Pass and CodeBuddy family bare model names', () => {
+  assert.deepEqual(inferModelsDevProviderIds('cline', 'cline-pass/deepseek-v4-pro'), ['cline-pass']);
+  assert.deepEqual(inferModelsDevProviderIds('cline', 'cline-pass/glm-5.3-flash'), ['cline-pass']);
+  assert.deepEqual(inferModelsDevProviderIds('codebuddy', 'deepseek-v4.1-flash'), ['opencode-go']);
+  assert.deepEqual(inferModelsDevProviderIds('workbuddycn', 'deepseek-v4.1-flash'), ['opencode-go']);
+  assert.deepEqual(inferModelsDevProviderIds('workbuddy', 'hy4-preview'), ['tencent-token-plan']);
+  assert.deepEqual(inferModelsDevProviderIds('codebuddy', 'default-model'), []);
+  assert.deepEqual(inferModelsDevProviderIds('codebuddy', 'auto'), []);
+});
+
 test('models.dev provider inference maps zcode to current Z.AI coding plan catalogs', () => {
   const expected = ['zai-coding-plan', 'zhipuai-coding-plan', 'zai', 'zhipuai'];
   assert.deepEqual(inferModelsDevProviderIds('zcode', 'glm-5.3'), expected);

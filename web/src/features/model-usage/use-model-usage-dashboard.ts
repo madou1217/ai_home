@@ -17,7 +17,11 @@ import type {
   Provider
 } from '@/types';
 import type { UsageBreakdownTarget } from './UsageBreakdownDrawer';
-import { calculateCacheHitRate, getCacheTokens } from './model-usage-presentation';
+import {
+  calculateCacheHitRate,
+  formatModelShortName,
+  getCacheTokens
+} from './model-usage-presentation';
 import {
   EMPTY_USAGE_STATS,
   EMPTY_USAGE_TREND,
@@ -376,7 +380,8 @@ export function useModelUsageDashboard() {
           ? ''
           : ` · ${Array.from(providers).map((item) => providerNames[item] || item).join('/')}`;
         return {
-          label: `${modelName}${suffix}`,
+          label: `${formatModelShortName(modelName)}${suffix}`,
+          title: modelName,
           value: modelName
         };
       });

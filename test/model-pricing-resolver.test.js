@@ -107,6 +107,37 @@ test('models.dev pricing provider resolves dynamic provider identities and prese
             id: 'gemini-3.7-flash'
           }
         }
+      },
+      'cline-pass': {
+        id: 'cline-pass',
+        models: {
+          'cline-pass/deepseek-v4-pro': {
+            ...model({ input: 1.74, output: 3.48, cache_read: 0.0145 }),
+            id: 'cline-pass/deepseek-v4-pro'
+          },
+          'cline-pass/deepseek-v4-flash': {
+            ...model({ input: 0.14, output: 0.28, cache_read: 0.0028 }),
+            id: 'cline-pass/deepseek-v4-flash'
+          }
+        }
+      },
+      'opencode-go': {
+        id: 'opencode-go',
+        models: {
+          'deepseek-v4.1-flash': {
+            ...model({ input: 0.15, output: 0.6, cache_read: 0.003 }),
+            id: 'deepseek-v4.1-flash'
+          }
+        }
+      },
+      'tencent-token-plan': {
+        id: 'tencent-token-plan',
+        models: {
+          'hy4-preview': {
+            ...model({ input: 0.834, output: 2.501, cache_read: 0.042 }),
+            id: 'hy4-preview'
+          }
+        }
       }
     }
   });
@@ -127,7 +158,7 @@ test('models.dev pricing provider resolves dynamic provider identities and prese
     model: modelId
   }, { pricingByModel });
 
-  assert.equal(snapshot.records.length, 4, 'explicit zero prices remain addressable records');
+  assert.equal(snapshot.records.length, 8, 'explicit zero prices remain addressable records');
   assert.deepEqual(
     [resolve('grok', 'grok-4.3').status, resolve('grok', 'grok-4.3').matchedModel],
     [PRICING_RESOLUTION_STATUS.PRICED, 'xai/grok-4.3']
@@ -144,6 +175,39 @@ test('models.dev pricing provider resolves dynamic provider identities and prese
     resolve('agy', 'gemini-3.7-flash').matchedModel,
     'google/gemini-3.7-flash'
   );
+  assert.equal(
+    resolve('agy', 'gemini-3.7-flash-high').matchedModel,
+    'google/gemini-3.7-flash',
+    'capability suffix variants resolve to their base model without a billing alias'
+  );
+  assert.deepEqual(
+    [resolve('cline', 'cline-pass/deepseek-v4-pro').status, resolve('cline', 'cline-pass/deepseek-v4-pro').matchedModel],
+    [PRICING_RESOLUTION_STATUS.PRICED, 'cline-pass/cline-pass/deepseek-v4-pro']
+  );
+  assert.deepEqual(
+    [resolve('cline', 'cline-pass/deepseek-v4.1-flash').status, resolve('cline', 'cline-pass/deepseek-v4.1-flash').matchedModel],
+    [PRICING_RESOLUTION_STATUS.PRICED, 'cline-pass/cline-pass/deepseek-v4-flash'],
+    'Cline Pass v4.1 flash falls back to the same-tier v4 flash price until the catalog lists it'
+  );
+  assert.equal(
+    resolve('codex', 'cline-pass/deepseek-v4.1-flash').matchedModel,
+    'cline-pass/cline-pass/deepseek-v4-flash',
+    'the Cline Pass billing alias is keyed by the model id, not by the client provider'
+  );
+  assert.deepEqual(
+    [resolve('codex', 'cline-pass/deepseek-v4-pro').status, resolve('codex', 'cline-pass/deepseek-v4-pro').matchedModel],
+    [PRICING_RESOLUTION_STATUS.PRICED, 'cline-pass/cline-pass/deepseek-v4-pro'],
+    'a provider-qualified model id resolves through the catalog provider it names'
+  );
+  assert.deepEqual(
+    [resolve('codebuddy', 'deepseek-v4.1-flash').status, resolve('codebuddy', 'deepseek-v4.1-flash').matchedModel],
+    [PRICING_RESOLUTION_STATUS.PRICED, 'opencode-go/deepseek-v4.1-flash']
+  );
+  assert.deepEqual(
+    [resolve('workbuddycn', 'hy4-preview').status, resolve('workbuddycn', 'hy4-preview').matchedModel],
+    [PRICING_RESOLUTION_STATUS.PRICED, 'tencent-token-plan/hy4-preview']
+  );
+  assert.equal(resolve('codebuddy', 'default-model').status, PRICING_RESOLUTION_STATUS.UNKNOWN);
   assert.equal(resolve('codex', 'unknown-model').status, PRICING_RESOLUTION_STATUS.UNKNOWN);
 });
 

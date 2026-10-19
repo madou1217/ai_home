@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Empty, Segmented } from 'antd';
 
+import { providerNames } from '@/components/chat/provider-registry';
 import type { ModelUsageModelRow } from '@/types';
 import EChartCanvas, { buildChartTooltipStyle, type UsageChartPalette } from './EChartCanvas';
 import {
@@ -8,12 +9,37 @@ import {
   formatCost,
   formatModelMixAxisValue,
   formatTokens,
+  type ModelMixDatum,
   type ModelMixMetric
 } from './model-usage-presentation';
 
 interface UsageModelMixChartProps {
   models: ModelUsageModelRow[];
   onSelectModel: (row: ModelUsageModelRow) => void;
+}
+
+interface ModelMixTooltipParam {
+  dataIndex?: number;
+}
+
+function buildModelMixTooltipFormatter(data: ModelMixDatum[], metric: ModelMixMetric) {
+  return (params: unknown) => {
+    const entries = Array.isArray(params) ? params : [params];
+    return entries
+      .map((entry) => {
+        const param = entry && typeof entry === 'object' ? entry as ModelMixTooltipParam : {};
+        const datum = typeof param.dataIndex === 'number' ? data[param.dataIndex] : undefined;
+        if (!datum) return '';
+        const provider = datum.provider ? providerNames[datum.provider] || datum.provider : '';
+        const title = datum.isOther
+          ? datum.label
+          : [provider, datum.model].filter(Boolean).join(' · ');
+        const value = metric === 'cost' ? formatCost(datum.value) : formatTokens(datum.value);
+        return `${title}<br/>${value}`;
+      })
+      .filter(Boolean)
+      .join('<br/>');
+  };
 }
 
 export default function UsageModelMixChart({ models, onSelectModel }: UsageModelMixChartProps) {
@@ -29,9 +55,8 @@ export default function UsageModelMixChart({ models, onSelectModel }: UsageModel
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: palette.brand, opacity: 0.08 } },
       ...buildChartTooltipStyle(palette),
-      valueFormatter: (value: unknown) => (
-        metric === 'cost' ? formatCost(Number(value) || 0) : formatTokens(Number(value) || 0)
-      )
+      // 坐标轴标签用短名，悬停时给出完整的 provider + model ID（含目录前缀）。
+      formatter: buildModelMixTooltipFormatter(data, metric)
     },
     xAxis: {
       type: 'value',

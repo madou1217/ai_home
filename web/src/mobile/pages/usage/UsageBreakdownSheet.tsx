@@ -7,6 +7,7 @@ import {
   formatAccountScope,
   formatCacheRate,
   formatCost,
+  formatModelShortName,
   formatTokens,
   getCacheTokens
 } from '@/features/model-usage/model-usage-presentation';
@@ -48,9 +49,11 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
   if (!shown) return null;
 
   const summary = shownData?.summary;
-  const title = shown.kind === 'model'
-    ? `${providerLabel(shown.row.provider)} · ${shown.row.model || '未知模型'}`
-    : shown.row.project || shown.row.sessionId;
+  const title = shown.kind === 'model' ? (
+    <span title={shown.row.model || undefined}>
+      {providerLabel(shown.row.provider)} · {formatModelShortName(shown.row.model) || '未知模型'}
+    </span>
+  ) : shown.row.project || shown.row.sessionId;
 
   return (
     <DetailSheet
@@ -102,7 +105,8 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
                   const label = row.accountRef
                     ? account?.displayName || account?.email || `账号 ${shortAccountRef(row.accountRef)}`
                     : '未归属';
-                  const modelsText = row.models.map((item) => item.model).filter(Boolean).join(' · ') || '-';
+                  const fullModelNames = row.models.map((item) => item.model).filter(Boolean);
+                  const modelsText = fullModelNames.map(formatModelShortName).join(' · ') || '-';
                   return (
                     <SwipeRow key={row.accountRef || '__unattributed__'}>
                       <span className="mhud-row__icon">
@@ -110,7 +114,7 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
                       </span>
                       <span className="mhud-row__main">
                         <span className="mhud-row__title">{label}</span>
-                        <span className="mhud-row__meta">
+                        <span className="mhud-row__meta" title={fullModelNames.join(' · ') || undefined}>
                           {row.accountRef ? `${shortAccountRef(row.accountRef)} · ${modelsText}` : '缺少可审计账号证据，不做猜测'}
                         </span>
                         <span className="mhud-row__meta">
@@ -134,7 +138,9 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
                 <SwipeRow key={`${row.provider}:${row.model}`}>
                   <span className="mhud-row__icon"><ProviderIcon provider={row.provider} size={18} /></span>
                   <span className="mhud-row__main">
-                    <span className="mhud-row__title">{row.model || '-'}</span>
+                    <span className="mhud-row__title" title={row.model || undefined}>
+                      {formatModelShortName(row.model) || '-'}
+                    </span>
                     <span className="mhud-row__meta">
                       {providerLabel(row.provider)} · {row.calls} 次 · 缓存率 {formatCacheRate(row.cacheHitRate)}
                     </span>

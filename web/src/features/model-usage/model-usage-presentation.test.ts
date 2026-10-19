@@ -8,6 +8,7 @@ import {
   formatCacheRate,
   formatCost,
   formatModelMixAxisValue,
+  formatModelShortName,
   formatTokens
 } from './model-usage-presentation.ts';
 
@@ -45,6 +46,10 @@ test('model usage presentation keeps compact values and explicit unknown attribu
   assert.equal(formatModelMixAxisValue(1_250_000_000, 'tokens'), '1.3B');
   assert.equal(formatModelMixAxisValue(200, 'cost'), '$200');
   assert.equal(formatModelMixAxisValue(0.0042, 'cost'), '$0.0042');
+  assert.equal(formatModelShortName('moonshotai/kimi-k3'), 'kimi-k3');
+  assert.equal(formatModelShortName('cline-pass/cline-pass/deepseek-v4-pro'), 'deepseek-v4-pro');
+  assert.equal(formatModelShortName('gpt-5.4-mini'), 'gpt-5.4-mini');
+  assert.equal(formatModelShortName('  '), '');
   assert.equal(calculateCacheHitRate({
     inputTokens: 100,
     cacheReadInputTokens: 300,
@@ -88,4 +93,12 @@ test('model mix disambiguates the same model exposed by different providers', ()
     'codex · shared-model',
     'claude · shared-model'
   ]);
+});
+
+test('model mix uses the short display name while keeping the full model id', () => {
+  const rows = [model('moonshotai/kimi-k3', 100, 1)];
+  const mix = buildModelMixData(rows, 'tokens');
+
+  assert.equal(mix[0].label, 'kimi-k3');
+  assert.equal(mix[0].model, 'moonshotai/kimi-k3');
 });

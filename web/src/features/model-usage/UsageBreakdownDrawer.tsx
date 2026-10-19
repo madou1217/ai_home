@@ -17,6 +17,7 @@ import {
   formatAccountScope,
   formatCacheRate,
   formatCost,
+  formatModelShortName,
   formatTokens,
   getCacheTokens
 } from './model-usage-presentation';
@@ -44,6 +45,22 @@ function renderProvider(provider: Provider | '') {
   return <ProviderIcon provider={provider} size={16} />;
 }
 
+function renderModelName(value: string) {
+  const fullName = String(value || '').trim();
+  if (!fullName) return '-';
+  return <Tooltip title={fullName}>{formatModelShortName(fullName)}</Tooltip>;
+}
+
+function renderModelNames(models: string[]) {
+  const names = models.map((model) => String(model || '').trim()).filter(Boolean);
+  if (!names.length) return '-';
+  return (
+    <Tooltip title={names.join(' · ')}>
+      <span>{names.map((model) => formatModelShortName(model)).join(' · ')}</span>
+    </Tooltip>
+  );
+}
+
 export default function UsageBreakdownDrawer({
   target,
   data,
@@ -53,7 +70,12 @@ export default function UsageBreakdownDrawer({
 }: UsageBreakdownDrawerProps) {
   const summary = data?.summary;
   const title = target?.kind === 'model'
-    ? `模型分量 · ${providerNames[target.row.provider] || target.row.provider} · ${target.row.model || '未知模型'}`
+    ? (
+      <span>
+        模型分量 · {providerNames[target.row.provider] || target.row.provider} ·{' '}
+        {renderModelName(target.row.model)}
+      </span>
+    )
     : target?.kind === 'session'
       ? `会话分量 · ${target.row.project || target.row.sessionId}`
       : '用量分量';
@@ -104,7 +126,7 @@ export default function UsageBreakdownDrawer({
       key: 'models',
       width: 180,
       ellipsis: true,
-      render: (_, row) => row.models.map((model) => model.model).filter(Boolean).join(' · ') || '-'
+      render: (_, row) => renderModelNames(row.models.map((model) => model.model))
     },
     { title: '调用', dataIndex: 'calls', width: 78, align: 'right' },
     {
@@ -170,7 +192,12 @@ export default function UsageBreakdownDrawer({
         );
       }
     },
-    { title: '模型', dataIndex: 'model', ellipsis: true, render: (value) => value || '-' },
+    {
+      title: '模型',
+      dataIndex: 'model',
+      ellipsis: true,
+      render: (value) => renderModelName(value as string)
+    },
     { title: '调用', dataIndex: 'calls', width: 78, align: 'right' },
     {
       title: 'Input',

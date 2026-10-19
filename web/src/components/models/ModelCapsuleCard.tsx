@@ -95,6 +95,20 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
         ) : null}
       </button>
     </Tooltip>
+  ) : onEditPricing ? (
+    // 目录里没有同模型价格（或 models.dev 未收录）时，仍然保留定价入口：
+    // 否则「价格未知」的模型恰好没有任何地方能设置自定义价。
+    <Tooltip title="价格未知 · 点击设置自定义价格（每百万 token 美元）">
+      <button
+        type="button"
+        className={`${styles.pricingCapsule} ${styles.pricingUnknown}`}
+        onClick={onEditPricing}
+      >
+        <PayCircleOutlined className={styles.metricIcon} />
+        <span>价格未知</span>
+        <EditOutlined className={styles.pricingEditIcon} />
+      </button>
+    </Tooltip>
   ) : null;
   return (
     <div className={`${styles.cardContainer} hud-panel hud-panel--sm ${enabled ? '' : styles.cardDisabled}`}>

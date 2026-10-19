@@ -140,6 +140,11 @@
   cursor: default;
 }
 
+/* 目录未收录价格时的可编辑占位：保持入口可见，但不伪装成已定价。 */
+.pricingUnknown {
+  color: var(--color-muted);
+}
+
 .pricingPair {
   display: inline-flex;
   align-items: center;

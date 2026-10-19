@@ -793,3 +793,61 @@ test('agy 额度窗口耗尽时冷却对齐窗口重置时刻', () => {
   });
   assert.equal(expired.kind, 'rate_limited');
 });
+
+// 2026-10-19 日志排查：cline 账号吃满每周 Clinepass 额度后，通用 429 只冷却 5 分钟，
+// 网关一天里 132 次回去重撞。额度窗口要冷却到上游给出的恢复时刻（账号级）。
+test('Clinepass caps cool the whole account until the stated reset', () => {
+  const body = (message) => JSON.stringify({ error: { code: 'INFERENCE_CAP_ERROR', message } });
+  const weekly = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 429,
+    body: body('Error 429: You have reached your weekly Clinepass limit. The limit resets in 6d 8h, please try again later.')
+  });
+  assert.equal(weekly.kind, 'account_usage_exhausted');
+  assert.equal(weekly.scope, 'account');
+  assert.equal(weekly.cooldownMs, (6 * 24 + 8) * 3600000);
+
+  // 5 小时窗口剩 2h15m：冷却就是 2h15m，不套 24h 下限。
+  const fiveHour = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 429,
+    body: body('Error 429: You have reached your 5-hour Clinepass limit. The limit resets in 2h 15m, please try again later.')
+  });
+  assert.equal(fiveHour.cooldownMs, (2 * 60 + 15) * 60000);
+
+  // 没有恢复提示：按 1 小时退避，而不是 5 分钟就回来。
+  const noHint = classifyUpstreamFailure({
+    provider: 'cline',
+    statusCode: 429,
+    body: body('Error 429: You have reached your weekly Clinepass limit.')
+  });
+  assert.equal(noHint.cooldownMs, 3600000);
+
+  // 普通 429 不受影响。
+  const plain = classifyUpstreamFailure({ provider: 'cline', statusCode: 429, body: '{"error":{"message":"slow down"}}' });
+  assert.equal(plain.kind, 'rate_limited');
+  assert.equal(plain.scope, 'model');
+});
+
+test('usage-limit reset hints are read from the response body, so "Resets in 13 days" is 13 days', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: '{"type":"error","error":{"type":"GoUsageLimitError","message":"Monthly usage limit reached. Resets in 13 days"}}'
+  });
+  assert.equal(policy.kind, 'account_usage_exhausted');
+  assert.equal(policy.cooldownMs, 13 * 86400000);
+});
+
+// 2026-10-19：opencode 免费账号没有付费 key，付费模型请求此前落进 unknown_error（一天 97 次假失败）。
+test('an opencode account without a paid key is a capability gap, not a failure', () => {
+  const error = Object.assign(new Error('invalid_opencode_go_api_key'), { code: 'invalid_opencode_go_api_key' });
+  const policy = classifyUpstreamFailure({ provider: 'opencode', error, defaultCooldownMs: 60000 });
+  assert.equal(policy.kind, 'model_entitlement_required');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.cooldownMs, 0);
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.clientStatusCode, 403);
+  assert.equal(policy.failureReason, 'opencode_paid_credential_missing');
+});

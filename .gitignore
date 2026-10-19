@@ -13,6 +13,7 @@ tmp/
 .aih/
 .antigravitycli/
 .ahr/
+.agents/
 
 # Documentation policy: keep root entry docs, the Web design-system spec,
 # and the Fabric design pack.

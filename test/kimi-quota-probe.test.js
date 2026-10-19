@@ -1286,6 +1286,78 @@ test('kimi probe keeps the quota snapshot when /me fails (best-effort identity)'
 });
 
 
+test('kimi probe treats an expired paid plan (200 {} + /me Free) as not applicable', async () => {
+  const { aiHomeDir, accountRef } = setupKimiAccount({
+    credentials: {
+      access_token: 'still-valid-token',
+      refresh_token: 'rt',
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    }
+  });
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    usageSnapshotSchemaVersion: 2,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async (url) => {
+      if (url.endsWith('/me')) {
+        return makeOkResponse({
+          nickname: '登月者2115',
+          phone: { country_code: '86', number: '186****2115' },
+          user_level: 10,
+          user_level_name: 'Free'
+        });
+      }
+      // 订阅到期后上游仍回 200，但正文没有任何额度窗口。
+      return makeOkResponse({});
+    }
+  });
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.equal(result.notApplicable, true);
+    assert.equal(result.reason, 'kimi_free_plan_no_quota');
+    assert.equal(result.error, undefined);
+    assert.ok(result.snapshot, 'expected a conclusion snapshot');
+    assert.equal(result.snapshot.kind, 'kimi_oauth_usage');
+    assert.equal(result.snapshot.schemaVersion, 2);
+    assert.deepEqual(result.snapshot.entries, []);
+    assert.equal(result.snapshot.account.planName, 'Free');
+    assert.equal(result.snapshot.account.planType, 'free');
+    assert.equal(result.snapshot.account.displayName, '登月者2115');
+    assert.equal(result.snapshot.account.phone, '+86 186****2115');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('kimi probe keeps empty_parsed_snapshot when the plan is not Free', async () => {
+  const { aiHomeDir, accountRef } = setupKimiAccount({
+    credentials: {
+      access_token: 'still-valid-token',
+      refresh_token: 'rt',
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    }
+  });
+  const probe = createKimiQuotaProbe({
+    fs,
+    aiHomeDir,
+    readAccountCredentialRecord: require('../lib/server/account-credential-store').readAccountCredentialRecord,
+    fetchWithTimeout: async (url) => {
+      if (url.endsWith('/me')) {
+        return makeOkResponse({ user_level: 25, user_level_name: 'Allegretto' });
+      }
+      return makeOkResponse({});
+    }
+  });
+  try {
+    const result = await probe.probe(accountRef, 5000);
+    assert.equal(result.notApplicable, undefined);
+    assert.equal(result.error, 'empty_parsed_snapshot');
+  } finally {
+    fs.rmSync(aiHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('mergeDesktopPlanStatsIntoSnapshot 并入月度总量、Gift 与套餐信息', () => {
   const snapshot = probePrivate.parseKimiUsagePayload({
     usage: { used: 200, limit: 1000, resetTime: '2030-01-01T00:00:00Z' }

@@ -542,6 +542,107 @@ test('kimi OAuth usage snapshot parses rolling limits and persists the trusted c
   }
 });
 
+test('kimi usage snapshot replaces a stale paid-plan cache with the Free-plan conclusion', async () => {
+  const root = mkTmpDir();
+  try {
+    const { aiHomeDir, getProfileDir, getToolConfigDir } = createUsagePaths(root);
+    const accountRef = registerUsageAccount(aiHomeDir, 'kimi', '1', {
+      nativeAuth: {
+        credentials: {
+          access_token: 'kimi-access-token',
+          refresh_token: 'kimi-refresh-token',
+          token_type: 'Bearer',
+          expires_at: Math.floor(Date.now() / 1000) + 3600
+        },
+        deviceId: 'kimi-device-id'
+      }
+    });
+    const cacheService = createUsageCacheService({
+      fs,
+      aiHomeDir,
+      path,
+      getProfileDir,
+      usageSnapshotSchemaVersion: 2,
+      usageSourceKimiOauth: 'kimi_oauth_usages_api'
+    });
+    // 订阅到期前留下的旧付费套餐条目：缓存里的 monthly 0% 会把结论压成 exhausted。
+    const staleSnapshot = {
+      kind: 'kimi_oauth_usage',
+      capturedAt: Date.now() - 30 * 24 * 3600 * 1000,
+      source: 'kimi_oauth_usages_api',
+      schemaVersion: 2,
+      entries: [{ bucket: 'monthly', windowMinutes: 43200, window: 'month', remainingPct: 0, resetAtMs: 0 }],
+      account: {
+        planName: 'Allegretto',
+        planType: 'intermediate',
+        planSubscription: { name: 'Allegretto', status: 'canceled', validUntilMs: Date.now() - 86400000 }
+      }
+    };
+    cacheService.writeUsageCache('kimi', accountRef, staleSnapshot);
+
+    const usageSnapshotService = createUsageSnapshotService({
+      fs,
+      path,
+      aiHomeDir,
+      processObj: {
+        execPath: process.execPath,
+        cwd: () => root,
+        env: {},
+        platform: process.platform
+      },
+      usageSnapshotSchemaVersion: 2,
+      usageRefreshStaleMs: 5 * 60 * 1000,
+      usageSourceKimiOauth: 'kimi_oauth_usages_api',
+      getProfileDir,
+      getToolConfigDir,
+      writeUsageCache: cacheService.writeUsageCache,
+      readUsageCache: cacheService.readUsageCache,
+      // 订阅到期后上游仍回 200 {}；/me 把套餐降为 Free。
+      fetchWithTimeout: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => (String(url || '').endsWith('/me')
+          ? { nickname: '登月者2115', user_level: 10, user_level_name: 'Free' }
+          : {})
+      })
+    });
+
+    const snapshot = await usageSnapshotService.ensureUsageSnapshotAsync(
+      'kimi',
+      accountRef,
+      staleSnapshot,
+      { forceRefresh: true }
+    );
+
+    assert.ok(snapshot, '结论携带的空快照必须返回，不能回落到陈旧缓存');
+    assert.deepEqual(snapshot.entries, []);
+    assert.equal(snapshot.kind, 'kimi_oauth_usage');
+    assert.equal(snapshot.schemaVersion, 2);
+    assert.equal(snapshot.account.planName, 'Free');
+    assert.equal(snapshot.account.planSubscription, undefined);
+    assert.deepEqual(cacheService.readUsageCache('kimi', accountRef), snapshot);
+    assert.equal(
+      usageSnapshotService.getLastUsageProbeError('kimi', accountRef),
+      'quota_not_applicable:kimi_free_plan_no_quota'
+    );
+
+    const { deriveQuotaState } = require('../lib/account/derived-state');
+    const quotaState = deriveQuotaState({
+      provider: 'kimi',
+      configured: true,
+      apiKeyMode: false,
+      remainingPct: null,
+      usageSnapshot: cacheService.readUsageCache('kimi', accountRef),
+      probeError: usageSnapshotService.getLastUsageProbeError('kimi', accountRef)
+    });
+    assert.equal(quotaState.status, 'not_applicable');
+    assert.equal(quotaState.reason, 'kimi_free_plan_no_quota');
+    assert.equal(quotaState.remainingPct, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('zcode usage snapshot replaces a stale positive cache with the no-plan conclusion', async () => {
   const root = mkTmpDir();
   try {

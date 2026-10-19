@@ -10,6 +10,7 @@ const {
   extractAssistantText,
   qoderEstimatedSourceKind,
   readQoderUsageDetails,
+  resolveQoderUsage,
   toOpenAiUsage
 } = require('../lib/usage/qoder-usage');
 
@@ -68,6 +69,24 @@ test('estimateQoderUsage falls back to prompt text only when no context ratio ex
   });
   assert.equal(estimated.inputTokens, 2);
   assert.equal(estimated.outputTokens, 2);
+});
+
+test('resolveQoderUsage prefers real token counters over estimation', () => {
+  const resolved = resolveQoderUsage({
+    usage: {
+      input_tokens: 10,
+      output_tokens: 5,
+      context_usage_ratio: 0.5,
+      credits: 1
+    },
+    outputText: 'hello world'
+  });
+  assert.equal(resolved.inputTokens, 10);
+  assert.equal(resolved.outputTokens, 5);
+  assert.equal(resolved.totalTokens, 15);
+  assert.equal(resolved.contextUsageRatio, 0.5);
+  assert.equal(resolved.credits, 1);
+  assert.equal(resolved.estimated, false);
 });
 
 test('estimateQoderUsage returns null when there is no evidence at all', () => {

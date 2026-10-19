@@ -153,6 +153,7 @@ test('runQoderCliTurn spawns headless CLI, streams deltas, resolves content and 
   assert.equal(command, '/usr/bin/qoderclicn');
   assert.ok(args.includes('--print'));
   assert.ok(args.includes('stream-json'));
+  assert.ok(args.includes('--include-partial-messages'), 'partial messages keep long answers alive');
   assert.ok(args.includes('--max-turns'));
   const toolsIndex = args.indexOf('--tools');
   assert.ok(toolsIndex > -1, 'CLI built-in tools must be disabled for a chat-only relay');
@@ -163,6 +164,64 @@ test('runQoderCliTurn spawns headless CLI, streams deltas, resolves content and 
   assert.ok(String(args[configDirIndex + 1]).includes('acct_63044849a0f6d3b8ee09'));
 });
 
+test('runQoderCliTurn dedupes partial events and estimates usage from context ratio', async () => {
+  const deps = makeDeps([
+    '{"type":"system","subtype":"init","session_id":"s-est","model":"Qwen3.8-Flash"}',
+    '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"想"}}}',
+    '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"你"}}}',
+    '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"好"}}}',
+    // CLI 在 partial delta 之后仍会发一次完整 assistant 消息：不能再重复一遍。
+    '{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"想"},{"type":"text","text":"你好"}]}}',
+    '{"type":"result","subtype":"success","result":"你好","usage":{"input_tokens":0,"output_tokens":0,"credits":0.25,"billable":true,"context_usage_ratio":0.1,"request_id":"req-est"}}'
+  ]);
+  const deltas = [];
+  const result = await __private.runQoderCliTurn(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+    1000,
+    deps,
+    (delta) => deltas.push(delta)
+  );
+  assert.deepEqual(deltas, ['你', '好']);
+  assert.equal(result.content, '你好');
+  assert.equal(result.usageEstimated, true);
+  assert.deepEqual(result.usage, {
+    prompt_tokens: 20000,
+    completion_tokens: 3,
+    total_tokens: 20003
+  });
+  assert.equal(result.usageEvidence.credits, 0.25);
+  assert.equal(result.usageEvidence.billable, true);
+  assert.equal(result.usageEvidence.requestId, 'req-est');
+});
+
+test('runQoderCliTurn kills a silent CLI on the shared idle watchdog', async () => {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = { write() {}, end() {} };
+  child.kill = () => {};
+  const deps = {
+    ...makeDeps([]),
+    spawn: () => child,
+    cliIdleTimeoutMs: 30
+  };
+  const startedAt = Date.now();
+  // 看门狗定时器是 unref 的（生产里子进程本身撑住事件循环）；假子进程没有真实句柄，
+  // 测试自己持有一个 ref 定时器，避免 node:test 提前收尾。
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await assert.rejects(
+      __private.runQoderCliTurn({}, ACCOUNT, { messages: [{ role: 'user', content: 'hi' }] }, 1000, deps),
+      (error) => error.code === 'qoder_cli_timeout' && /qoder_cli_no_output_30ms/.test(error.message)
+    );
+  } finally {
+    clearInterval(keepAlive);
+  }
+  assert.ok(Date.now() - startedAt < 1000, 'idle watchdog must fire without waiting the old 120s wall clock');
+});
+
 test('runQoderCliTurn surfaces the upstream quota wall instead of a generic failure', async () => {
   const deps = makeDeps([
     '{"type":"system","subtype":"init","session_id":"s-2"}',
@@ -170,7 +229,7 @@ test('runQoderCliTurn surfaces the upstream quota wall instead of a generic fail
   ]);
   await assert.rejects(
     __private.runQoderCliTurn({}, ACCOUNT, { messages: [{ role: 'user', content: 'hi' }] }, 1000, deps),
-    (error) => error.code === 'qoder_cli_upstream_error' && /套餐\/额度不足/.test(error.message)
+    (error) => error.code === 'qoder_cli_quota_exceeded' && /套餐\/额度不足/.test(error.message)
   );
 });
 
@@ -191,7 +250,7 @@ test('runQoderCliTurn suppresses CLI synthetic error placeholders from deltas', 
   const deltas = [];
   await assert.rejects(
     __private.runQoderCliTurn({}, ACCOUNT, { messages: [{ role: 'user', content: 'hi' }] }, 1000, deps, (delta) => deltas.push(delta)),
-    (error) => error.code === 'qoder_cli_upstream_error' && /套餐\/额度不足/.test(error.message)
+    (error) => error.code === 'qoder_cli_quota_exceeded' && /套餐\/额度不足/.test(error.message)
   );
   assert.deepEqual(deltas, [], 'synthetic quota-wall placeholder must not leak into assistant deltas');
 });

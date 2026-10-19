@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useLocation } from '@umijs/max';
 import { Tabs } from 'antd';
 import {
   ApiOutlined,
@@ -20,6 +21,7 @@ import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
+import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -92,6 +94,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ForkOutlined />
     },
     {
+      id: 'egress-pool',
+      label: '出口池',
+      description: '节点使用、冷却与恢复',
+      icon: <ApiOutlined />
+    },
+    {
       id: 'proxy-diagnostics',
       label: '网络诊断',
       description: '代理状态与诊断',
@@ -132,6 +140,8 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="network-access" />;
     case 'subscription-aggregator':
       return <SubscriptionAggregatorPanel />;
+    case 'egress-pool':
+      return <EgressPoolPanel />;
     case 'proxy-diagnostics':
       return <ProxyDiagnosticsPanel />;
     default:
@@ -139,9 +149,21 @@ function renderPanel(panelId: string) {
   }
 }
 
+// 深链：`/toolkit?panel=<id>` 直接打开某个二级面板（例如账号出口弹窗里的「查看出口池」）。
+function resolveDeepLink(search: string): { section: ToolkitSection; panel: string } | null {
+  const panel = new URLSearchParams(search).get('panel') || '';
+  const section = (Object.keys(SECTION_ITEMS) as ToolkitSection[])
+    .find((key) => SECTION_ITEMS[key].some((item) => item.id === panel));
+  return section ? { section, panel } : null;
+}
+
 export default function Toolkit() {
-  const [activeSection, setActiveSection] = useState<ToolkitSection>('integration');
-  const [secondarySelection, setSecondarySelection] = useState<Record<ToolkitSection, string>>(DEFAULT_SECONDARY);
+  const location = useLocation();
+  const deepLink = resolveDeepLink(location.search);
+  const [activeSection, setActiveSection] = useState<ToolkitSection>(deepLink?.section || 'integration');
+  const [secondarySelection, setSecondarySelection] = useState<Record<ToolkitSection, string>>(
+    deepLink ? { ...DEFAULT_SECONDARY, [deepLink.section]: deepLink.panel } : DEFAULT_SECONDARY
+  );
 
   const renderSectionBody = (section: ToolkitSection) => {
     const sectionItems = SECTION_ITEMS[section];
@@ -173,7 +195,8 @@ export default function Toolkit() {
           ))}
         </nav>
 
-        <main className="toolkit-panel-host">
+        {/* key 随面板变化：切换二级面板时重新挂载并播放进场过渡（styles/motion.css） */}
+        <main className="toolkit-panel-host aih-panel-enter" key={activePanelId}>
           {renderPanel(activePanelId)}
         </main>
       </div>

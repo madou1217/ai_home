@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Form, Input, Modal, Popover, Radio, Space, Spin, Tag, Typography, message } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { ApiOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { history } from '@umijs/max';
 import { accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type {
@@ -102,8 +103,9 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const sourceHints: Record<AccountEgressMode, ReactNode> = {
     pool: (
       <>
-        用你的代理池（订阅聚合的节点）作为出口：AIH 在本机开一个只监听回环的出站端口，
-        某个出口被上游限流时自动换下一个节点。绑定只记「用池」，池换端口或换节点都不用重新绑定。
+        用你的代理池（订阅聚合的节点）作为出口：AIH 在本机开一个只监听回环的出站端口。
+        某个节点被上游限流或连不上时自动冷却并换下一个节点，冷却结束或探测通过后恢复使用。
+        绑定只记「用池」，池换端口或换节点都不用重新绑定。每个节点的使用情况在「开发工具 → 网络 → 出口池」查看。
       </>
     ),
     url: usesNativeSettings ? (
@@ -257,6 +259,20 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             <Typography.Text code className="egress-runtime-endpoint">{resolvedEndpoint}</Typography.Text>
           ) : null}
           {runtime?.desktopRunning ? <Tag>桌面端运行中{runtime.desktopPid ? ` · PID ${runtime.desktopPid}` : ''}</Tag> : null}
+          {mode === 'pool' || binding?.mode === 'pool' ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<ApiOutlined />}
+              className="egress-pool-link"
+              onClick={() => {
+                onClose();
+                history.push('/toolkit?panel=egress-pool');
+              }}
+            >
+              查看出口池节点
+            </Button>
+          ) : null}
         </div>
         {retired ? (
           <Typography.Paragraph type="warning" className="egress-message">

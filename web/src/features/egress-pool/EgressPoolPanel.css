@@ -1,0 +1,324 @@
+/* 出口池面板（见 EgressPoolPanel.tsx）。状态只用圆点 / 文字色 / 完整边框表达，
+ * 不用整块彩底与左侧竖条（AGENTS.md「UI Visual Constraints」）。动效走 design-tokens 的时长，
+ * prefers-reduced-motion 下时长归零。 */
+
+.egress-pool-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.egress-auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+/* 冷却规则：一行紧凑的规则芯片，不是提示块 */
+.egress-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.egress-rules > li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-pill);
+  font-size: var(--text-xs);
+  color: var(--color-muted-strong);
+  background: var(--color-surface);
+  transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.egress-rules > li:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-heading);
+}
+
+.egress-rules strong {
+  color: var(--color-heading);
+  font-weight: 600;
+}
+
+.egress-pool-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* 节点表需要整宽（7 列）；侧栏只在超宽屏并排，否则事件流放到表格下方 */
+@media (max-width: 1919px) {
+  .egress-pool-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.egress-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.egress-toolbar .ant-input-affix-wrapper {
+  max-width: 280px;
+}
+
+/* 节点表格 */
+.egress-node-table .ant-table-tbody > tr > td {
+  transition: background-color var(--motion-base) var(--ease-standard);
+}
+
+.egress-node-table .egress-row-active > td {
+  background: var(--color-accent-soft);
+}
+
+.egress-node-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.egress-node-label {
+  color: var(--color-heading);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.egress-node-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+
+.egress-node-meta code {
+  align-self: flex-start;
+  padding: 0 var(--space-1);
+  border-radius: var(--hos-radius-xs);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+}
+
+.egress-status-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
+  white-space: nowrap;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-muted-strong);
+}
+
+.egress-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-muted);
+  flex: none;
+  transition: background-color var(--motion-base) var(--ease-standard), box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.egress-status-cell[data-tone='success'] .egress-status-dot { background: var(--color-success); }
+.egress-status-cell[data-tone='info'] .egress-status-dot {
+  background: var(--color-accent);
+  animation: egress-pulse calc(var(--motion-slower) * 6) var(--ease-in-out) infinite;
+}
+.egress-status-cell[data-tone='warning'] .egress-status-dot { background: var(--color-warning); }
+.egress-status-cell[data-tone='danger'] .egress-status-dot { background: var(--color-danger); }
+.egress-status-cell[data-tone='warning'] { color: var(--color-warning); }
+.egress-status-cell[data-tone='danger'] { color: var(--color-danger); }
+
+@keyframes egress-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
+  50% { box-shadow: 0 0 0 4px var(--color-accent-soft); }
+}
+
+.egress-countdown {
+  flex-basis: 100%;
+  padding-left: calc(8px + var(--space-2));
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.egress-latency {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-danger);
+}
+
+.egress-latency[data-ok] {
+  color: var(--color-success);
+}
+
+.egress-muted {
+  color: var(--color-muted);
+}
+
+.egress-usage-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+}
+
+.egress-usage-cell > span:first-child {
+  white-space: nowrap;
+}
+
+.egress-rate-bar {
+  display: block;
+  height: 4px;
+  border-radius: var(--hos-radius-pill);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.egress-rate-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-success);
+  transition: width var(--motion-slower) var(--ease-standard);
+}
+
+.egress-failure {
+  display: flex;
+  white-space: nowrap;
+  flex-direction: column;
+  font-size: var(--text-sm);
+  color: var(--color-muted-strong);
+}
+
+.egress-failure small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.egress-account-count {
+  cursor: default;
+}
+
+.egress-account-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-xs);
+}
+
+.egress-actions {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+/* 事件流 */
+.egress-events {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  background: var(--color-surface);
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.egress-events-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-heading);
+}
+
+.egress-events-head small {
+  margin-left: auto;
+  color: var(--color-muted);
+}
+
+.egress-event-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.egress-event-list > li {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--hos-radius-xs);
+  transition: background-color var(--motion-fast) var(--ease-standard);
+  animation: aih-fade-up var(--motion-slow) var(--ease-standard) both;
+}
+
+.egress-event-list > li:hover {
+  background: var(--color-overlay);
+}
+
+.egress-event-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted-strong);
+  font-size: 12px;
+}
+
+.egress-event-list > li[data-type='cooldown'] .egress-event-icon { color: var(--color-warning); border-color: var(--color-warning); }
+.egress-event-list > li[data-type='recovered'] .egress-event-icon { color: var(--color-success); border-color: var(--color-success); }
+.egress-event-list > li[data-type='probe_failed'] .egress-event-icon { color: var(--color-danger); border-color: var(--color-danger); }
+.egress-event-list > li[data-type='switch'] .egress-event-icon { color: var(--color-accent); border-color: var(--color-accent); }
+
+.egress-event-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.egress-event-body small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .egress-status-cell[data-tone='info'] .egress-status-dot,
+  .egress-event-list > li {
+    animation: none;
+  }
+}

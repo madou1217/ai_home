@@ -24,6 +24,8 @@ interface ConfigCodeEditorProps {
   height?: number;
   detectContent?: boolean;
   onSave?: () => void;
+  onCursorLineChange?: (line: number) => void;
+  onHoverLineChange?: (line: number | null) => void;
 }
 
 function formatError(error: unknown) {
@@ -40,7 +42,9 @@ export default function ConfigCodeEditor({
   ariaLabel,
   height = 430,
   detectContent = false,
-  onSave
+  onSave,
+  onCursorLineChange,
+  onHoverLineChange
 }: ConfigCodeEditorProps) {
   const sourceKey = `${format || ''}:${fileName || ''}:${detectContent ? 'detect' : 'fixed'}`;
   const inferredLanguage = useMemo(() => resolveConfigLanguage({
@@ -133,6 +137,8 @@ export default function ConfigCodeEditor({
             height={height}
             onSave={onSave}
             onHighlightingStatusChange={setHighlightingStatus}
+            onCursorLineChange={onCursorLineChange}
+            onHoverLineChange={onHoverLineChange}
           />
         </Suspense>
       </div>

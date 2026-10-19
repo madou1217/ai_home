@@ -7,6 +7,7 @@ import {
   CloudServerOutlined,
   CloudSyncOutlined,
   CodeOutlined,
+  FileTextOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -20,6 +21,7 @@ import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
+import ProviderConfigPanel from '@/features/provider-config/ProviderConfigPanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
@@ -48,6 +50,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '终端管理',
       description: '安装、更新与卸载',
       icon: <ToolOutlined />
+    },
+    {
+      id: 'provider-config',
+      label: 'Provider 配置',
+      description: '字段解读、历史与导出',
+      icon: <FileTextOutlined />
     },
     {
       id: 'edge-forwarding',
@@ -138,6 +146,8 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'terminals':
       return <TerminalManagerPanel />;
+    case 'provider-config':
+      return <ProviderConfigPanel />;
     case 'edge-forwarding':
       return <EdgeProxyPanel />;
     case 'environment':

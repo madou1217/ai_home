@@ -1876,6 +1876,183 @@ export interface ToolkitAppConfigResponse {
   size?: number;
 }
 
+export interface ProviderConfigFieldCompatibility {
+  state: 'ok' | 'deprecated' | 'unsupported' | string;
+  messages: string[];
+}
+
+export interface ProviderConfigSchemaField {
+  path: string;
+  type: string;
+  typeLabel?: string;
+  description: string;
+  options?: Array<string | number | boolean>;
+  default?: unknown;
+  scope?: string;
+  topic?: string;
+  deprecated?: boolean;
+  secret?: boolean;
+  since?: string;
+  removedIn?: string;
+  compatibility?: ProviderConfigFieldCompatibility;
+}
+
+export interface ProviderConfigSchemaWarning {
+  path: string;
+  state: string;
+  messages: string[];
+}
+
+export interface ProviderConfigSchema {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl: string;
+  docsUrl: string;
+  verifiedAt: string;
+  verifiedCliVersion: string;
+  sensitive: boolean;
+  fieldCount: number;
+  fields: ProviderConfigSchemaField[];
+  compatibilityWarnings: ProviderConfigSchemaWarning[];
+}
+
+export interface ProviderConfigCliInfo {
+  installed: boolean;
+  version: string;
+  path: string;
+}
+
+export interface ProviderConfigSchemaVersionStatus {
+  verified: string;
+  installed: string;
+  mismatch: boolean;
+  installedNewer?: boolean;
+  message: string;
+}
+
+export interface ProviderConfigFileSummary {
+  provider: string;
+  id: string;
+  label: string;
+  displayPath: string;
+  exists: boolean;
+  size: number;
+  modifiedAt: number;
+  format: string;
+  sensitive: boolean;
+  editable: boolean;
+  schemaId: string;
+  schemaTitle: string;
+  schemaFieldCount: number;
+  schemaVerifiedCliVersion: string;
+  description: string;
+  docsUrl: string;
+  canCreate: boolean;
+}
+
+export interface ProviderConfigFileDetail extends ProviderConfigFileSummary {
+  writable: boolean;
+  requiresElevation: boolean;
+}
+
+export interface ProviderConfigProvider {
+  id: string;
+  label: string;
+  cli: ProviderConfigCliInfo | null;
+  files: ProviderConfigFileSummary[];
+}
+
+export interface ProviderConfigListResponse {
+  ok: boolean;
+  providers: ProviderConfigProvider[];
+  total: number;
+}
+
+export interface ProviderConfigDetailResponse {
+  ok: boolean;
+  provider: string;
+  file: ProviderConfigFileDetail;
+  content: string;
+  revision: string;
+  size: number;
+  cli: ProviderConfigCliInfo;
+  schema: ProviderConfigSchema | null;
+  schemaVersion: ProviderConfigSchemaVersionStatus | null;
+  historyCount: number;
+  historyLimit: number;
+  docsUrl: string;
+  description: string;
+}
+
+export interface ProviderConfigValidationError {
+  message: string;
+  line: number;
+  column: number;
+}
+
+export interface ProviderConfigValidationResponse {
+  ok: boolean;
+  provider?: string;
+  fileId?: string;
+  format?: string;
+  valid: boolean;
+  errors: ProviderConfigValidationError[];
+  empty?: boolean;
+  skipped?: boolean;
+}
+
+export interface ProviderConfigSaveResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  revision: string;
+  size: number;
+  savedAt: number;
+  changed: boolean;
+  historyEntry: ProviderConfigHistoryEntry | null;
+  validation: ProviderConfigValidationResponse;
+}
+
+export interface ProviderConfigHistoryEntry {
+  id: string;
+  revision: string;
+  savedAt: number;
+  reason: string;
+  note: string;
+  size: number;
+  containsSecrets: boolean;
+}
+
+export interface ProviderConfigHistoryResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  entries: ProviderConfigHistoryEntry[];
+  limit: number;
+}
+
+export interface ProviderConfigHistoryEntryResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  entry: ProviderConfigHistoryEntry & { content: string };
+}
+
+export interface ProviderConfigExportResponse {
+  ok: boolean;
+  provider: string;
+  fileId: string;
+  mode: 'raw' | 'redacted';
+  filename: string;
+  content: string;
+  redactedFields: string[];
+  parsed?: boolean;
+  sensitive: boolean;
+  warning: string;
+}
+
+
 export type ToolkitToolCategoryId = 'session-runtimes' | 'network-access' | 'edge-entry';
 
 export interface ToolkitToolCategory {

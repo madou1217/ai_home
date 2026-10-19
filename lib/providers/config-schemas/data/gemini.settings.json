@@ -1,0 +1,669 @@
+{
+  "id": "gemini.settings",
+  "title": "Gemini CLI settings.json",
+  "source": "Gemini CLI settings reference (bundled with CLI)",
+  "sourceUrl": "https://geminicli.com/docs/cli/settings/",
+  "docsUrl": "https://geminicli.com/docs/cli/settings/",
+  "verifiedCliVersion": "0.64.0",
+  "fields": [
+    {
+      "path": "general.vimMode",
+      "type": "boolean",
+      "description": "Enable Vim keybindings",
+      "default": "false"
+    },
+    {
+      "path": "general.defaultApprovalMode",
+      "type": "string",
+      "description": "The default approval mode for tool execution. 'default' prompts for approval, 'auto_edit' auto-approves edit tools, and 'plan' is read-only mode. YOLO mode (auto-approve all actions) can only be enabled via command line (--yolo or --approval-mode=yolo).",
+      "default": "\"default\""
+    },
+    {
+      "path": "general.enableAutoUpdate",
+      "type": "boolean",
+      "description": "Enable automatic updates.",
+      "default": "true"
+    },
+    {
+      "path": "general.enableNotifications",
+      "type": "boolean",
+      "description": "Enable terminal run-event notifications for action-required prompts and session completion.",
+      "default": "false"
+    },
+    {
+      "path": "general.notificationMethod",
+      "type": "string",
+      "description": "How to send terminal notifications.",
+      "default": "\"auto\""
+    },
+    {
+      "path": "general.plan.enabled",
+      "type": "boolean",
+      "description": "Enable Plan Mode for read-only safety during planning.",
+      "default": "true"
+    },
+    {
+      "path": "general.plan.directory",
+      "type": "string",
+      "description": "The directory where planning artifacts are stored. If not specified, defaults to the system temporary directory. A custom directory requires a policy to allow write access in Plan Mode.",
+      "default": "undefined"
+    },
+    {
+      "path": "general.plan.modelRouting",
+      "type": "boolean",
+      "description": "Automatically switch between Pro and Flash models based on Plan Mode status. Uses Pro for the planning phase and Flash for the implementation phase.",
+      "default": "true"
+    },
+    {
+      "path": "general.retryFetchErrors",
+      "type": "boolean",
+      "description": "Retry on \"exception TypeError: fetch failed sending request\" errors.",
+      "default": "true"
+    },
+    {
+      "path": "general.maxAttempts",
+      "type": "string",
+      "description": "Maximum number of attempts for requests to the main chat model. Cannot exceed 10.",
+      "default": "10"
+    },
+    {
+      "path": "general.debugKeystrokeLogging",
+      "type": "boolean",
+      "description": "Enable debug logging of keystrokes to the console.",
+      "default": "false"
+    },
+    {
+      "path": "general.sessionRetention.enabled",
+      "type": "boolean",
+      "description": "Enable automatic session cleanup",
+      "default": "true"
+    },
+    {
+      "path": "general.sessionRetention.maxAge",
+      "type": "string",
+      "description": "Automatically delete chats older than this time period (e.g., \"30d\", \"7d\", \"24h\", \"1w\")",
+      "default": "\"30d\""
+    },
+    {
+      "path": "general.topicUpdateNarration",
+      "type": "boolean",
+      "description": "Enable the Topic & Update communication model for reduced chattiness and structured progress reporting.",
+      "default": "true"
+    },
+    {
+      "path": "general.logRagSnippets",
+      "type": "boolean",
+      "description": "Log full Code Customization (RAG) retrieved snippets to a local file for debugging.",
+      "default": "false"
+    },
+    {
+      "path": "output.format",
+      "type": "string",
+      "description": "The format of the CLI output. Can be text or json.",
+      "default": "\"text\""
+    },
+    {
+      "path": "ui.autoThemeSwitching",
+      "type": "boolean",
+      "description": "Automatically switch between default light and dark themes based on terminal background color.",
+      "default": "true"
+    },
+    {
+      "path": "ui.terminalBackgroundPollingInterval",
+      "type": "string",
+      "description": "Interval in seconds to poll the terminal background color.",
+      "default": "60"
+    },
+    {
+      "path": "ui.hideWindowTitle",
+      "type": "boolean",
+      "description": "Hide the window title bar",
+      "default": "false"
+    },
+    {
+      "path": "ui.inlineThinkingMode",
+      "type": "string",
+      "description": "Display model thinking inline: off or full.",
+      "default": "\"off\""
+    },
+    {
+      "path": "ui.showStatusInTitle",
+      "type": "boolean",
+      "description": "Show Gemini CLI model thoughts in the terminal window title during the working phase",
+      "default": "false"
+    },
+    {
+      "path": "ui.dynamicWindowTitle",
+      "type": "boolean",
+      "description": "Update the terminal window title with current status icons (Ready: ◇, Action Required: ✋, Working: ✦)",
+      "default": "true"
+    },
+    {
+      "path": "ui.showHomeDirectoryWarning",
+      "type": "boolean",
+      "description": "Show a warning when running Gemini CLI in the home directory.",
+      "default": "true"
+    },
+    {
+      "path": "ui.showCompatibilityWarnings",
+      "type": "boolean",
+      "description": "Show warnings about terminal or OS compatibility issues.",
+      "default": "true"
+    },
+    {
+      "path": "ui.hideTips",
+      "type": "boolean",
+      "description": "Hide helpful tips in the UI",
+      "default": "false"
+    },
+    {
+      "path": "ui.escapePastedAtSymbols",
+      "type": "boolean",
+      "description": "When enabled, @ symbols in pasted text are escaped to prevent unintended @path expansion.",
+      "default": "false"
+    },
+    {
+      "path": "ui.showShortcutsHint",
+      "type": "boolean",
+      "description": "Show the \"? for shortcuts\" hint above the input.",
+      "default": "true"
+    },
+    {
+      "path": "ui.compactToolOutput",
+      "type": "boolean",
+      "description": "Display tool outputs (like directory listings and file reads) in a compact, structured format.",
+      "default": "true"
+    },
+    {
+      "path": "ui.hideBanner",
+      "type": "boolean",
+      "description": "Hide the application banner",
+      "default": "false"
+    },
+    {
+      "path": "ui.hideContextSummary",
+      "type": "boolean",
+      "description": "Hide the context summary (GEMINI.md, MCP servers) above the input.",
+      "default": "false"
+    },
+    {
+      "path": "ui.footer.hideCWD",
+      "type": "boolean",
+      "description": "Hide the current working directory in the footer.",
+      "default": "false"
+    },
+    {
+      "path": "ui.footer.hideSandboxStatus",
+      "type": "boolean",
+      "description": "Hide the sandbox status indicator in the footer.",
+      "default": "false"
+    },
+    {
+      "path": "ui.footer.hideModelInfo",
+      "type": "boolean",
+      "description": "Hide the model name and context usage in the footer.",
+      "default": "false"
+    },
+    {
+      "path": "ui.footer.hideContextPercentage",
+      "type": "boolean",
+      "description": "Hides the context window usage percentage.",
+      "default": "true"
+    },
+    {
+      "path": "ui.hideFooter",
+      "type": "boolean",
+      "description": "Hide the footer from the UI",
+      "default": "false"
+    },
+    {
+      "path": "ui.showMemoryUsage",
+      "type": "boolean",
+      "description": "Display memory usage information in the UI",
+      "default": "false"
+    },
+    {
+      "path": "ui.showLineNumbers",
+      "type": "boolean",
+      "description": "Show line numbers in the chat.",
+      "default": "true"
+    },
+    {
+      "path": "ui.showCitations",
+      "type": "boolean",
+      "description": "Show citations for generated text in the chat.",
+      "default": "false"
+    },
+    {
+      "path": "ui.showModelInfoInChat",
+      "type": "boolean",
+      "description": "Show the model name in the chat for each model turn.",
+      "default": "false"
+    },
+    {
+      "path": "ui.showUserIdentity",
+      "type": "boolean",
+      "description": "Show the signed-in user's identity (e.g. email) in the UI.",
+      "default": "true"
+    },
+    {
+      "path": "ui.useAlternateBuffer",
+      "type": "boolean",
+      "description": "Use an alternate screen buffer for the UI, preserving shell history.",
+      "default": "false"
+    },
+    {
+      "path": "ui.renderProcess",
+      "type": "boolean",
+      "description": "Enable Ink render process for the UI.",
+      "default": "true"
+    },
+    {
+      "path": "ui.terminalBuffer",
+      "type": "boolean",
+      "description": "Use the new terminal buffer architecture for rendering.",
+      "default": "false"
+    },
+    {
+      "path": "ui.useBackgroundColor",
+      "type": "boolean",
+      "description": "Whether to use background colors in the UI.",
+      "default": "true"
+    },
+    {
+      "path": "ui.incrementalRendering",
+      "type": "boolean",
+      "description": "Enable incremental rendering for the UI. This option will reduce flickering but may cause rendering artifacts. Only supported when useAlternateBuffer is enabled.",
+      "default": "true"
+    },
+    {
+      "path": "ui.showSpinner",
+      "type": "boolean",
+      "description": "Show the spinner during operations.",
+      "default": "true"
+    },
+    {
+      "path": "ui.loadingPhrases",
+      "type": "string",
+      "description": "What to show while the model is working: tips, witty comments, all, or off.",
+      "default": "\"off\""
+    },
+    {
+      "path": "ui.errorVerbosity",
+      "type": "string",
+      "description": "Controls whether recoverable errors are hidden (low) or fully shown (full).",
+      "default": "\"low\""
+    },
+    {
+      "path": "ui.accessibility.screenReader",
+      "type": "boolean",
+      "description": "Render output in plain-text to be more screen reader accessible",
+      "default": "false"
+    },
+    {
+      "path": "ide.enabled",
+      "type": "boolean",
+      "description": "Enable IDE integration mode.",
+      "default": "false"
+    },
+    {
+      "path": "billing.overageStrategy",
+      "type": "string",
+      "description": "How to handle quota exhaustion when AI credits are available. 'ask' prompts each time, 'always' automatically uses credits, 'never' disables credit usage.",
+      "default": "\"ask\""
+    },
+    {
+      "path": "model.name",
+      "type": "string",
+      "description": "The Gemini model to use for conversations.",
+      "default": "undefined"
+    },
+    {
+      "path": "model.maxSessionTurns",
+      "type": "string",
+      "description": "Maximum number of user/model/tool turns to keep in a session. -1 means unlimited.",
+      "default": "-1"
+    },
+    {
+      "path": "model.compressionThreshold",
+      "type": "string",
+      "description": "The fraction of context usage at which to trigger context compression (e.g. 0.2, 0.3).",
+      "default": "0.5"
+    },
+    {
+      "path": "model.disableLoopDetection",
+      "type": "boolean",
+      "description": "Disable automatic detection and prevention of infinite loops.",
+      "default": "false"
+    },
+    {
+      "path": "model.skipNextSpeakerCheck",
+      "type": "boolean",
+      "description": "Skip the next speaker check.",
+      "default": "true"
+    },
+    {
+      "path": "agents.browser.confirmSensitiveActions",
+      "type": "boolean",
+      "description": "Require manual confirmation for sensitive browser actions (e.g., fill_form, evaluate_script).",
+      "default": "false"
+    },
+    {
+      "path": "agents.browser.blockFileUploads",
+      "type": "boolean",
+      "description": "Hard-block file upload requests from the browser agent.",
+      "default": "false"
+    },
+    {
+      "path": "context.discoveryMaxDirs",
+      "type": "string",
+      "description": "Maximum number of directories to search for memory.",
+      "default": "200"
+    },
+    {
+      "path": "context.loadMemoryFromIncludeDirectories",
+      "type": "boolean",
+      "description": "Controls how /memory reload loads GEMINI.md files. When true, include directories are scanned; when false, only the current directory is used.",
+      "default": "false"
+    },
+    {
+      "path": "context.fileFiltering.respectGitIgnore",
+      "type": "boolean",
+      "description": "Respect .gitignore files when searching.",
+      "default": "true"
+    },
+    {
+      "path": "context.fileFiltering.respectGeminiIgnore",
+      "type": "boolean",
+      "description": "Respect .geminiignore files when searching.",
+      "default": "true"
+    },
+    {
+      "path": "context.fileFiltering.enableRecursiveFileSearch",
+      "type": "boolean",
+      "description": "Enable recursive file search functionality when completing @ references in the prompt.",
+      "default": "true"
+    },
+    {
+      "path": "context.fileFiltering.enableFuzzySearch",
+      "type": "boolean",
+      "description": "Enable fuzzy search when searching for files.",
+      "default": "true"
+    },
+    {
+      "path": "context.fileFiltering.customIgnoreFilePaths",
+      "type": "array",
+      "description": "Additional ignore file paths to respect. These files take precedence over .geminiignore and .gitignore. Files earlier in the array take precedence over files later in the array, e.g. the first file takes precedence over the second one.",
+      "default": "[]"
+    },
+    {
+      "path": "tools.sandboxAllowedPaths",
+      "type": "array",
+      "description": "List of additional paths that the sandbox is allowed to access.",
+      "default": "[]"
+    },
+    {
+      "path": "tools.sandboxNetworkAccess",
+      "type": "boolean",
+      "description": "Whether the sandbox is allowed to access the network.",
+      "default": "false"
+    },
+    {
+      "path": "tools.shell.enableInteractiveShell",
+      "type": "boolean",
+      "description": "Use node-pty for an interactive shell experience. Fallback to child_process still applies.",
+      "default": "true"
+    },
+    {
+      "path": "tools.shell.showColor",
+      "type": "boolean",
+      "description": "Show color in shell output.",
+      "default": "true"
+    },
+    {
+      "path": "tools.useRipgrep",
+      "type": "boolean",
+      "description": "Use ripgrep for file content search instead of the fallback implementation. Provides faster search performance.",
+      "default": "true"
+    },
+    {
+      "path": "tools.truncateToolOutputThreshold",
+      "type": "string",
+      "description": "Maximum characters to show when truncating large tool outputs. Set to 0 or negative to disable truncation.",
+      "default": "40000"
+    },
+    {
+      "path": "tools.disableLLMCorrection",
+      "type": "boolean",
+      "description": "Disable LLM-based error correction for edit tools. When enabled, tools will fail immediately if exact string matches are not found, instead of attempting to self-correct.",
+      "default": "true"
+    },
+    {
+      "path": "security.toolSandboxing",
+      "type": "boolean",
+      "description": "Tool-level sandboxing. Isolates individual tools instead of the entire CLI process.",
+      "default": "false"
+    },
+    {
+      "path": "security.disableYoloMode",
+      "type": "boolean",
+      "description": "Disable YOLO mode, even if enabled by a flag.",
+      "default": "false"
+    },
+    {
+      "path": "security.disableAlwaysAllow",
+      "type": "boolean",
+      "description": "Disable \"Always allow\" options in tool confirmation dialogs.",
+      "default": "false"
+    },
+    {
+      "path": "security.enablePermanentToolApproval",
+      "type": "boolean",
+      "description": "Enable the \"Allow for all future sessions\" option in tool confirmation dialogs.",
+      "default": "false"
+    },
+    {
+      "path": "security.autoAddToPolicyByDefault",
+      "type": "boolean",
+      "description": "When enabled, the \"Allow for all future sessions\" option becomes the default choice for low-risk tools in trusted workspaces.",
+      "default": "false"
+    },
+    {
+      "path": "security.blockGitExtensions",
+      "type": "boolean",
+      "description": "Blocks installing and loading extensions from Git.",
+      "default": "false"
+    },
+    {
+      "path": "security.allowedExtensions",
+      "type": "array",
+      "description": "List of Regex patterns for allowed extensions. If nonempty, only extensions that match the patterns in this list are allowed. Overrides the blockGitExtensions setting.",
+      "default": "[]"
+    },
+    {
+      "path": "security.folderTrust.enabled",
+      "type": "boolean",
+      "description": "Setting to track whether Folder trust is enabled.",
+      "default": "true"
+    },
+    {
+      "path": "security.environmentVariableRedaction.enabled",
+      "type": "boolean",
+      "description": "Enable redaction of environment variables that may contain secrets.",
+      "default": "false"
+    },
+    {
+      "path": "security.enableConseca",
+      "type": "boolean",
+      "description": "Enable the context-aware security checker. This feature uses an LLM to dynamically generate and enforce security policies for tool use based on your prompt, providing an additional layer of protection against unintended actions.",
+      "default": "false"
+    },
+    {
+      "path": "advanced.autoConfigureMemory",
+      "type": "boolean",
+      "description": "Automatically configure Node.js memory limits. Note: Because memory is allocated during the initial process boot, this setting is only read from the global user settings file and ignores workspace-level overrides.",
+      "default": "true"
+    },
+    {
+      "path": "advanced.ignoreLocalEnv",
+      "type": "boolean",
+      "description": "Whether to ignore generic .env files in the project directory.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.gemma",
+      "type": "boolean",
+      "description": "Enable access to Gemma 4 models via Gemini API.",
+      "default": "true"
+    },
+    {
+      "path": "experimental.voiceMode",
+      "type": "boolean",
+      "description": "Enable experimental voice dictation and commands (/voice, /voice model).",
+      "default": "false"
+    },
+    {
+      "path": "experimental.voice.activationMode",
+      "type": "string",
+      "description": "How to trigger voice recording with the Space key.",
+      "default": "\"push-to-talk\""
+    },
+    {
+      "path": "experimental.voice.backend",
+      "type": "string",
+      "description": "The backend to use for voice transcription. Note: When using the Gemini Live backend, voice recordings are sent to Google Cloud for transcription.",
+      "default": "\"gemini-live\""
+    },
+    {
+      "path": "experimental.voice.whisperModel",
+      "type": "string",
+      "description": "The Whisper model to use for local transcription.",
+      "default": "\"ggml-base.en.bin\""
+    },
+    {
+      "path": "experimental.voice.stopGracePeriodMs",
+      "type": "string",
+      "description": "How long to wait for final transcription after stopping recording.",
+      "default": "4000"
+    },
+    {
+      "path": "experimental.worktrees",
+      "type": "boolean",
+      "description": "Enable automated Git worktree management for parallel work.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.useOSC52Paste",
+      "type": "boolean",
+      "description": "Use OSC 52 for pasting. This may be more robust than the default system when using remote terminal sessions (if your terminal is configured to allow it).",
+      "default": "false"
+    },
+    {
+      "path": "experimental.useOSC52Copy",
+      "type": "boolean",
+      "description": "Use OSC 52 for copying. This may be more robust than the default system when using remote terminal sessions (if your terminal is configured to allow it).",
+      "default": "false"
+    },
+    {
+      "path": "experimental.modelSteering",
+      "type": "boolean",
+      "description": "Enable model steering (user hints) to guide the model during tool execution.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.directWebFetch",
+      "type": "boolean",
+      "description": "Enable web fetch behavior that bypasses LLM summarization.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.gemmaModelRouter.enabled",
+      "type": "boolean",
+      "description": "Enable the Gemma Model Router (experimental). Requires a local endpoint serving Gemma via the Gemini API using LiteRT-LM shim.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.gemmaModelRouter.autoStartServer",
+      "type": "boolean",
+      "description": "Automatically start the LiteRT-LM server when Gemini CLI starts and the Gemma router is enabled.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.autoMemory",
+      "type": "boolean",
+      "description": "Automatically extract memory patches and skills from past sessions in the background. Every change is written as a unified diff .patch file under <projectMemoryDir>/.inbox/<kind>/ and held for review in /memory inbox; nothing is applied until you approve it.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.generalistProfile",
+      "type": "boolean",
+      "description": "Suitable for general coding and software development tasks.",
+      "default": "false"
+    },
+    {
+      "path": "experimental.contextManagement",
+      "type": "boolean",
+      "description": "Enable logic for context management.",
+      "default": "false"
+    },
+    {
+      "path": "skills.enabled",
+      "type": "boolean",
+      "description": "Enable Agent Skills.",
+      "default": "true"
+    },
+    {
+      "path": "hooksConfig.enabled",
+      "type": "boolean",
+      "description": "Canonical toggle for the hooks system. When disabled, no hooks will be executed.",
+      "default": "true"
+    },
+    {
+      "path": "hooksConfig.notifications",
+      "type": "boolean",
+      "description": "Show visual indicators when hooks are executing.",
+      "default": "true"
+    },
+    {
+      "path": "mcpServers",
+      "type": "object",
+      "description": "MCP 服务器表：键是服务器名，值声明 command、args、env、url、httpUrl、trust 等。"
+    },
+    {
+      "path": "hooks",
+      "type": "object",
+      "description": "生命周期 Hook：按事件名（SessionStart、BeforeAgent、AfterAgent、BeforeTool 等）挂命令。"
+    },
+    {
+      "path": "context.fileName",
+      "type": "array",
+      "description": "作为上下文加载的文件名列表，默认包含 GEMINI.md。"
+    },
+    {
+      "path": "tools.allowed",
+      "type": "array",
+      "description": "工具白名单（工具名数组）；与 tools.exclude 同时存在时先应用 exclude。"
+    },
+    {
+      "path": "tools.exclude",
+      "type": "array",
+      "description": "工具黑名单（工具名数组）。"
+    },
+    {
+      "path": "security.auth.selectedType",
+      "type": "enum",
+      "description": "登录方式：oauth-personal、gemini-api-key、vertex-ai 等。",
+      "options": [
+        "oauth-personal",
+        "gemini-api-key",
+        "vertex-ai"
+      ]
+    },
+    {
+      "path": "ui.footer.items",
+      "type": "array",
+      "description": "底部状态栏条目顺序（workspace、git-branch、sandbox、model-name 等）。"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

@@ -1,0 +1,51 @@
+{
+  "id": "opencode.auth",
+  "title": "OpenCode auth.json",
+  "source": "Credential file structure (observed + provider CLI behavior)",
+  "sourceUrl": "https://opencode.ai/docs/providers/",
+  "docsUrl": "https://opencode.ai/docs/providers/",
+  "verifiedCliVersion": "2.0.32",
+  "sensitive": true,
+  "fields": [
+    {
+      "path": "<provider>",
+      "type": "object",
+      "description": "以 provider id 为键的凭据对象；每个 provider 的字段不同。",
+      "secret": true
+    },
+    {
+      "path": "<provider>.type",
+      "type": "enum",
+      "description": "凭据类型：api / oauth / wellknown。",
+      "options": [
+        "api",
+        "oauth",
+        "wellknown"
+      ]
+    },
+    {
+      "path": "<provider>.key",
+      "type": "string",
+      "description": "API Key（type=api）。",
+      "secret": true
+    },
+    {
+      "path": "<provider>.access",
+      "type": "string",
+      "description": "OAuth Access Token（type=oauth）。",
+      "secret": true
+    },
+    {
+      "path": "<provider>.refresh",
+      "type": "string",
+      "description": "OAuth Refresh Token（type=oauth）。",
+      "secret": true
+    },
+    {
+      "path": "<provider>.expires",
+      "type": "string",
+      "description": "Access Token 过期时间（epoch ms）。"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

@@ -80,6 +80,10 @@ interface MonacoConfigEditorProps {
   height: number;
   onSave?: () => void;
   onHighlightingStatusChange?: (status: 'loading' | 'ready' | 'fallback') => void;
+  /** 光标所在行变化（Provider 配置工作台用来定位右侧字段解读）。 */
+  onCursorLineChange?: (line: number) => void;
+  /** 鼠标悬停行变化；离开编辑器时传 null。 */
+  onHoverLineChange?: (line: number | null) => void;
 }
 
 export default function MonacoConfigEditor({
@@ -90,14 +94,26 @@ export default function MonacoConfigEditor({
   ariaLabel,
   height,
   onSave,
-  onHighlightingStatusChange
+  onHighlightingStatusChange,
+  onCursorLineChange,
+  onHoverLineChange
 }: MonacoConfigEditorProps) {
   const [highlightingStatus, setHighlightingStatus] = useState<'loading' | 'ready' | 'fallback'>('loading');
   const saveRef = useRef(onSave);
+  const cursorRef = useRef(onCursorLineChange);
+  const hoverRef = useRef(onHoverLineChange);
 
   useEffect(() => {
     saveRef.current = onSave;
   }, [onSave]);
+
+  useEffect(() => {
+    cursorRef.current = onCursorLineChange;
+  }, [onCursorLineChange]);
+
+  useEffect(() => {
+    hoverRef.current = onHoverLineChange;
+  }, [onHoverLineChange]);
 
   useEffect(() => {
     let active = true;
@@ -122,6 +138,16 @@ export default function MonacoConfigEditor({
     editor.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
       saveRef.current?.();
     });
+    editor.onDidChangeCursorPosition((event) => {
+      cursorRef.current?.(event.position.lineNumber);
+    });
+    editor.onMouseMove((event) => {
+      hoverRef.current?.(event.target.position ? event.target.position.lineNumber : null);
+    });
+    editor.onMouseLeave(() => {
+      hoverRef.current?.(null);
+    });
+    cursorRef.current?.(editor.getPosition()?.lineNumber || 1);
   };
 
   if (highlightingStatus === 'loading') {

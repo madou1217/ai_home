@@ -1,0 +1,55 @@
+{
+  "id": "agy.settings",
+  "title": "Antigravity CLI settings.json",
+  "source": "Antigravity CLI settings (observed keys + CLI behavior)",
+  "sourceUrl": "https://antigravity.google/docs/cli",
+  "docsUrl": "https://antigravity.google/docs/cli",
+  "verifiedCliVersion": "1.4.0",
+  "fields": [
+    {
+      "path": "model",
+      "type": "string",
+      "description": "默认模型显示名，例如 \"Gemini 3.8 Flash (Low)\"。"
+    },
+    {
+      "path": "runningLightSpeed",
+      "type": "enum",
+      "description": "运行速度档位。",
+      "options": [
+        "fast",
+        "standard"
+      ]
+    },
+    {
+      "path": "statusLine.enabled",
+      "type": "boolean",
+      "description": "是否在终端底部显示状态行。"
+    },
+    {
+      "path": "statusLine.type",
+      "type": "string",
+      "description": "状态行类型；留空使用内置状态。"
+    },
+    {
+      "path": "statusLine.command",
+      "type": "string",
+      "description": "自定义状态行命令（type 为 command 时使用）。"
+    },
+    {
+      "path": "toolPermission",
+      "type": "enum",
+      "description": "工具权限策略：always-proceed 自动执行，其他值会在执行前询问。",
+      "options": [
+        "always-proceed",
+        "ask",
+        "deny"
+      ]
+    },
+    {
+      "path": "trustedWorkspaces",
+      "type": "array",
+      "description": "受信任工作区绝对路径列表；不在列表中的项目会触发确认。"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

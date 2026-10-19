@@ -1,0 +1,46 @@
+{
+  "id": "gemini.oauth",
+  "title": "Gemini oauth_creds.json",
+  "source": "Credential file structure (observed + provider CLI behavior)",
+  "sourceUrl": "https://geminicli.com/docs/get-started/authentication/",
+  "docsUrl": "https://geminicli.com/docs/get-started/authentication/",
+  "verifiedCliVersion": "0.64.0",
+  "sensitive": true,
+  "fields": [
+    {
+      "path": "access_token",
+      "type": "string",
+      "description": "Google OAuth Access Token。",
+      "secret": true
+    },
+    {
+      "path": "refresh_token",
+      "type": "string",
+      "description": "Google OAuth Refresh Token。",
+      "secret": true
+    },
+    {
+      "path": "expiry_date",
+      "type": "string",
+      "description": "Access Token 过期时间（epoch ms）。"
+    },
+    {
+      "path": "token_type",
+      "type": "string",
+      "description": "Token 类型，通常为 Bearer。",
+      "secret": true
+    },
+    {
+      "path": "scope",
+      "type": "string",
+      "description": "授权 scope（空格分隔）。"
+    },
+    {
+      "path": "id_token",
+      "type": "string",
+      "description": "Google OIDC ID Token（JWT）。",
+      "secret": true
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

@@ -1,0 +1,2088 @@
+{
+  "id": "codex.config",
+  "title": "Codex config.toml",
+  "source": "OpenAI Codex Configuration Reference",
+  "sourceUrl": "https://developers.openai.com/codex/config-reference",
+  "docsUrl": "https://developers.openai.com/codex/config-reference",
+  "verifiedCliVersion": "0.163.0",
+  "fields": [
+    {
+      "path": "model",
+      "type": "string",
+      "description": "Model to use (e.g., gpt-6.1-sol).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "review_model",
+      "type": "string",
+      "description": "Optional model override used by /review (defaults to the current session model).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_provider",
+      "type": "string",
+      "description": "Provider id from model_providers (default: openai).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "openai_base_url",
+      "type": "string",
+      "description": "Base URL override for the built-in openai model provider.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_context_window",
+      "type": "string",
+      "description": "Context window tokens available to the active model.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_auto_compact_token_limit",
+      "type": "string",
+      "description": "Token threshold that triggers automatic history compaction (unset uses model defaults).",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "model_auto_compact_token_limit_scope",
+      "type": "enum",
+      "description": "Controls whether the auto-compaction threshold counts the full active context (total, the default) or only growth after the carried compaction-window prefix (body_after_prefix).",
+      "options": [
+        "total",
+        "body_after_prefix"
+      ],
+      "typeLabel": "total | body_after_prefix",
+      "secret": true
+    },
+    {
+      "path": "model_catalog_json",
+      "type": "string",
+      "description": "Optional path to a JSON model catalog loaded on startup. A selected $CODEX_HOME/profile-name.config.toml profile file can override this per profile.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "oss_provider",
+      "type": "enum",
+      "description": "Default local provider used when running with --oss (defaults to prompting if unset).",
+      "options": [
+        "lmstudio",
+        "ollama"
+      ],
+      "typeLabel": "lmstudio | ollama"
+    },
+    {
+      "path": "approval_policy",
+      "type": "enum",
+      "description": "Controls when Codex pauses for approval before executing commands. You can also use approval_policy = { granular = { ... } } to allow or auto-reject specific prompt categories while keeping other prompts interactive. untrusted is unsupported, and on-failure is deprecated; use on-request for interactive runs or never for non-interactive runs.",
+      "options": [
+        "on-request",
+        "never"
+      ],
+      "typeLabel": "on-request | never | { granular = { sandbox_approval = bool, rules = bool, mcp_elicitations = bool, request_permissions = bool, skill_approval = bool } }"
+    },
+    {
+      "path": "approval_policy.granular.sandbox_approval",
+      "type": "boolean",
+      "description": "When true, sandbox escalation approval prompts are allowed to surface.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "approval_policy.granular.rules",
+      "type": "boolean",
+      "description": "When true, approvals triggered by execpolicy prompt rules are allowed to surface.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "approval_policy.granular.mcp_elicitations",
+      "type": "boolean",
+      "description": "When true, MCP elicitation prompts are allowed to surface instead of being auto-rejected.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "approval_policy.granular.request_permissions",
+      "type": "boolean",
+      "description": "When true, prompts from the request_permissions tool are allowed to surface.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "approval_policy.granular.skill_approval",
+      "type": "boolean",
+      "description": "When true, skill-script approval prompts are allowed to surface.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "approvals_reviewer",
+      "type": "enum",
+      "description": "Who reviews eligible approval prompts under on-request or granular approval policies. Defaults to user; auto_review uses the reviewer subagent. This setting doesn't change sandboxing or review actions already allowed inside the sandbox.",
+      "options": [
+        "user",
+        "auto_review"
+      ],
+      "typeLabel": "user | auto_review"
+    },
+    {
+      "path": "auto_review.policy",
+      "type": "string",
+      "description": "Local Markdown policy instructions for automatic review. Managed guardian_policy_config takes precedence. Blank values are ignored.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "auto_review.extra_policy",
+      "type": "string",
+      "description": "Additional local Markdown policy for automatic review, included alongside the main policy. Managed guardian_extra_policy takes precedence. Blank values are ignored.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "allow_login_shell",
+      "type": "boolean",
+      "description": "Allow shell-based tools to use login-shell semantics. Defaults to true; when false, login = true requests are rejected and omitted login defaults to non-login shells.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "sandbox_mode",
+      "type": "enum",
+      "description": "Sandbox policy for filesystem and network access during command execution.",
+      "options": [
+        "read-only",
+        "workspace-write",
+        "danger-full-access"
+      ],
+      "typeLabel": "read-only | workspace-write | danger-full-access"
+    },
+    {
+      "path": "sandbox_workspace_write.writable_roots",
+      "type": "array",
+      "description": "Additional writable roots when sandbox_mode = \"workspace-write\".",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "sandbox_workspace_write.network_access",
+      "type": "boolean",
+      "description": "Allow outbound network access inside the workspace-write sandbox.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "sandbox_workspace_write.exclude_tmpdir_env_var",
+      "type": "boolean",
+      "description": "Exclude $TMPDIR from writable roots in workspace-write mode.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "sandbox_workspace_write.exclude_slash_tmp",
+      "type": "boolean",
+      "description": "Exclude /tmp from writable roots in workspace-write mode.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "windows.sandbox",
+      "type": "enum",
+      "description": "Native Windows sandbox implementation. Explicit mxc selection fails when MXC is unavailable or prohibited by managed requirements. Use features.prefer_mxc with a legacy selection for automatic MXC selection with fallback.",
+      "options": [
+        "mxc",
+        "elevated",
+        "unelevated"
+      ],
+      "typeLabel": "mxc | elevated | unelevated"
+    },
+    {
+      "path": "browser_use.allow_history_access",
+      "type": "boolean",
+      "description": "Set to false to restrict browser-history access. Managed requirements can enforce this restriction.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "browser_use.default_origin_policy",
+      "type": "object",
+      "description": "Fallback browser-origin restrictions. Supports access, uploads, downloads, and full_cdp_access, each set to allow or deny.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "browser_use.origins.<origin>",
+      "type": "object",
+      "description": "Per-origin browser restrictions with the same fields as browser_use.default_origin_policy. Include an HTTP or HTTPS scheme and optional port; omit paths, queries, and fragments. Local values cannot relax managed denies.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "computer_use.default_app_access",
+      "type": "enum",
+      "description": "Fallback native-app access policy for Computer Use. App-specific entries can supply a policy; local configuration cannot relax managed restrictions.",
+      "options": [
+        "allow",
+        "deny"
+      ],
+      "typeLabel": "allow | deny"
+    },
+    {
+      "path": "computer_use.macos.bundle_ids",
+      "type": "object",
+      "description": "Native macOS app access keyed by bundle identifier.",
+      "typeLabel": "map<string, allow | deny>"
+    },
+    {
+      "path": "computer_use.windows.aumids",
+      "type": "object",
+      "description": "Packaged Windows app access keyed by Application User Model ID (AUMID).",
+      "typeLabel": "map<string, allow | deny>"
+    },
+    {
+      "path": "computer_use.windows.exes",
+      "type": "array",
+      "description": "Windows executable access rules. Each rule requires publisher_name, product_name, and access (allow or deny); binary_name is optional.",
+      "typeLabel": "array<table>"
+    },
+    {
+      "path": "computer_use.windows.always_allowed_app_ids",
+      "type": "array",
+      "description": "Windows app identifiers that Computer Use can open without prompting. Apps not in the list require approval; remove saved entries from the ChatGPT desktop app's Computer Use settings.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "notify",
+      "type": "array",
+      "description": "Command invoked for notifications; receives a JSON payload from Codex.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "check_for_update_on_startup",
+      "type": "boolean",
+      "description": "Check for Codex updates on startup (set to false only when updates are centrally managed).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "feedback.enabled",
+      "type": "boolean",
+      "description": "Enable feedback submission via /feedback across local clients (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "analytics.enabled",
+      "type": "boolean",
+      "description": "Enable or disable analytics for this machine/profile. In Codex CLI, false also disables custom OTLP metrics exporters. When unset, the client default applies.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "instructions",
+      "type": "string",
+      "description": "Reserved for future use; prefer model_instructions_file or AGENTS.md.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "developer_instructions",
+      "type": "string",
+      "description": "Additional developer instructions injected into the session (optional).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "log_dir",
+      "type": "string",
+      "description": "Directory where Codex writes log files; defaults to $CODEX_HOME/log. Setting this explicitly also enables the opt-in plaintext TUI log, codex-tui.log, in that directory.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "sqlite_home",
+      "type": "string",
+      "description": "Directory where Codex stores the SQLite-backed state DB used by agent jobs and other resumable runtime state.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "compact_prompt",
+      "type": "string",
+      "description": "Inline override for the history compaction prompt.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_instructions_file",
+      "type": "string",
+      "description": "Replacement for built-in instructions instead of AGENTS.md.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "personality",
+      "type": "enum",
+      "description": "Deprecated compatibility setting. friendly and pragmatic no longer select a style. none omits the built-in Personality section from model instructions; explicit instruction overrides are unchanged.",
+      "options": [
+        "none",
+        "friendly",
+        "pragmatic"
+      ],
+      "typeLabel": "none | friendly | pragmatic",
+      "deprecated": true
+    },
+    {
+      "path": "service_tier",
+      "type": "string",
+      "description": "Preferred service tier for new turns. Use fast or another tier advertised by the active model; fast maps to the request value priority.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "experimental_compact_prompt_file",
+      "type": "string",
+      "description": "Load the compaction prompt override from a file (experimental).",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "skills.max_context_tokens",
+      "type": "string",
+      "description": "Token budget for the available-skills catalog. Defaults to 2% of the model's context window. Explicit values are capped at 10000 tokens.",
+      "typeLabel": "integer (positive)",
+      "secret": true
+    },
+    {
+      "path": "skills.config",
+      "type": "array",
+      "description": "Per-skill enablement overrides stored in config.toml.",
+      "typeLabel": "array<object>"
+    },
+    {
+      "path": "skills.config.<index>.path",
+      "type": "string",
+      "description": "Path to a skill folder containing SKILL.md.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "skills.config.<index>.enabled",
+      "type": "boolean",
+      "description": "Enable or disable the referenced skill.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps.<id>.enabled",
+      "type": "boolean",
+      "description": "Enable or disable a specific app/connector by id (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps._default.enabled",
+      "type": "boolean",
+      "description": "Default app enabled state for all apps unless overridden per app.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps._default.destructive_enabled",
+      "type": "boolean",
+      "description": "Default allow/deny for app tools with destructive_hint = true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps._default.open_world_enabled",
+      "type": "boolean",
+      "description": "Default allow/deny for app tools with open_world_hint = true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps._default.approvals_reviewer",
+      "type": "enum",
+      "description": "Default reviewer for app tool approval prompts unless overridden per app. When omitted, apps inherit the top-level approvals_reviewer value.",
+      "options": [
+        "user",
+        "auto_review"
+      ],
+      "typeLabel": "user | auto_review"
+    },
+    {
+      "path": "apps._default.default_tools_approval_mode",
+      "type": "enum",
+      "description": "Default approval behavior for app tools without per-app or per-tool overrides.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "apps.<id>.destructive_enabled",
+      "type": "boolean",
+      "description": "Allow or block tools in this app that advertise destructive_hint = true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps.<id>.open_world_enabled",
+      "type": "boolean",
+      "description": "Allow or block tools in this app that advertise open_world_hint = true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps.<id>.default_tools_enabled",
+      "type": "boolean",
+      "description": "Default enabled state for tools in this app unless a per-tool override exists.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps.<id>.approvals_reviewer",
+      "type": "enum",
+      "description": "Reviewer for this app's tool approval prompts. Overrides apps._default.approvals_reviewer.",
+      "options": [
+        "user",
+        "auto_review"
+      ],
+      "typeLabel": "user | auto_review"
+    },
+    {
+      "path": "apps.<id>.default_tools_approval_mode",
+      "type": "enum",
+      "description": "Default approval behavior for tools in this app unless a per-tool override exists.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "apps.<id>.tools.<tool>.enabled",
+      "type": "boolean",
+      "description": "Per-tool enabled override for an app tool (for example repos/list).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "apps.<id>.tools.<tool>.approval_mode",
+      "type": "enum",
+      "description": "Per-tool approval behavior override for a single app tool.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "tool_suggest.discoverables",
+      "type": "array",
+      "description": "Allow tool suggestions for additional discoverable connectors or plugins. Each entry uses type = \"connector\" or \"plugin\" and an id.",
+      "typeLabel": "array<table>"
+    },
+    {
+      "path": "tool_suggest.disabled_tools",
+      "type": "array",
+      "description": "Disable suggestions for specific discoverable connectors or plugins. Each entry uses type = \"connector\" or \"plugin\" and an id.",
+      "typeLabel": "array<table>"
+    },
+    {
+      "path": "features.apps",
+      "type": "boolean",
+      "description": "Enable app (connector) integrations (stable; on by default). App and connector traffic is not controlled by the sandboxed-command network proxy or its domain allowlist.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.hooks",
+      "type": "boolean",
+      "description": "Enable lifecycle hooks loaded from hooks.json or inline [hooks] config. features.codex_hooks is a deprecated alias.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.code_mode.enabled",
+      "type": "boolean",
+      "description": "Enable code mode feature configuration. This feature is under development and off by default.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.code_mode.excluded_tool_namespaces",
+      "type": "array",
+      "description": "Tool namespaces code mode excludes from nested code-mode tool guidance and executor exposure.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "features.code_mode.direct_only_tool_namespaces",
+      "type": "array",
+      "description": "Tool namespaces code mode can use only through direct tool calls.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "features.context_management.experimental_mode",
+      "type": "boolean",
+      "description": "Experimental context-management setting. The feature is not currently available.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.rollout_budget.enabled",
+      "type": "boolean",
+      "description": "Enable rollout budget tracking. This feature is under development and off by default. When enabled, features.rollout_budget.limit_tokens is required.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.rollout_budget.limit_tokens",
+      "type": "string",
+      "description": "Positive token limit for rollout budget tracking. Required when rollout budget is enabled.",
+      "typeLabel": "integer",
+      "secret": true
+    },
+    {
+      "path": "features.rollout_budget.reminder_interval_tokens",
+      "type": "string",
+      "description": "Positive token interval between rollout budget reminders. Defaults to 10% of limit_tokens, with a minimum of 1 token.",
+      "typeLabel": "integer",
+      "secret": true
+    },
+    {
+      "path": "features.rollout_budget.sampling_token_weight",
+      "type": "string",
+      "description": "Finite non-negative multiplier for sampled tokens in rollout budget accounting. Defaults to 1.0.",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "features.rollout_budget.prefill_token_weight",
+      "type": "string",
+      "description": "Finite non-negative multiplier for prefill tokens in rollout budget accounting. Defaults to 1.0.",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "hooks",
+      "type": "object",
+      "description": "Lifecycle hooks configured inline in config.toml. Uses the same event schema as hooks.json; see the Hooks guide for examples and supported events.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "hooks.<Event>",
+      "type": "array",
+      "description": "Matcher groups for hook events such as PreToolUse, PermissionRequest, PostToolUse, PreCompact, PostCompact, SessionStart, SessionEnd, SubagentStart, SubagentStop, UserPromptSubmit, Stop, or Interrupt.",
+      "typeLabel": "array<table>"
+    },
+    {
+      "path": "hooks.<Event>[].hooks",
+      "type": "array",
+      "description": "Hook handlers for a matcher group. Command and MCP tool hooks are supported while prompt and agent hook handlers are parsed but skipped.",
+      "typeLabel": "array<table>"
+    },
+    {
+      "path": "hooks.<Event>[].hooks[].async",
+      "type": "boolean",
+      "description": "Run a command hook in the background without delaying the triggering operation. Defaults to false; SessionEnd always runs synchronously. See Run hooks in the background.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "hooks.<Event>[].hooks[].additionalContextLimit",
+      "type": "string",
+      "description": "Approximate per-handler token threshold for saving oversized additionalContext to disk and showing the model a shorter preview. Defaults to 2500; 0 passes the full context directly to the model. See Large hook output.",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "hooks.<Event>[].hooks[].commandWindows",
+      "type": "string",
+      "description": "Windows-only command override for command hooks. The TOML alias command_windows is also accepted.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.memories",
+      "type": "boolean",
+      "description": "Enable Memories (off by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp_optional_startup_grace_ms",
+      "type": "string",
+      "description": "Shared wait for optional MCP servers when building the initial tool catalog. Defaults to 1000. Set to 0 to wait for each server's startup_timeout_sec instead.",
+      "typeLabel": "integer (milliseconds)"
+    },
+    {
+      "path": "mcp_servers.<id>.command",
+      "type": "string",
+      "description": "Launcher command for an MCP stdio server.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.args",
+      "type": "array",
+      "description": "Arguments passed to the MCP stdio server command.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "mcp_servers.<id>.env",
+      "type": "object",
+      "description": "Environment variables forwarded to the MCP stdio server.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "mcp_servers.<id>.env_vars",
+      "type": "array",
+      "description": "Additional environment variables to whitelist for an MCP stdio server. String entries default to source = \"local\"; use source = \"remote\" only with executor-backed remote stdio.",
+      "typeLabel": "array<string | { name = string, source = \"local\" | \"remote\" }>"
+    },
+    {
+      "path": "mcp_servers.<id>.cwd",
+      "type": "string",
+      "description": "Working directory for the MCP stdio server process.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.url",
+      "type": "string",
+      "description": "Endpoint for an MCP streamable HTTP server.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.auth",
+      "type": "enum",
+      "description": "Authentication fallback for an MCP HTTP server after configured bearer tokens and authorization headers. oauth (default) uses stored MCP OAuth credentials when available. chatgpt uses the current ChatGPT session for the trusted first-party ChatGPT origin, then falls back to stored OAuth. Both modes can connect without authentication if no credential source resolves.",
+      "options": [
+        "oauth",
+        "chatgpt"
+      ],
+      "typeLabel": "oauth | chatgpt"
+    },
+    {
+      "path": "mcp_servers.<id>.oauth.client_id",
+      "type": "string",
+      "description": "Pre-registered OAuth client ID used for authorization and token exchange with this MCP server.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.oauth.client_secret",
+      "type": "string",
+      "description": "OAuth client secret for token exchange with a pre-registered client. Requires a nonempty oauth.client_id; the secret must also be nonempty. Stored in configuration.",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<id>.oauth.callback_url",
+      "type": "string",
+      "description": "Server-specific OAuth callback. Pre-registered clients reuse it when issuer identification is supported or the URL already ends in the server-specific callback ID. Otherwise, Codex uses the global or default callback with that ID appended. Clients without a pre-registered ID use this callback during client registration.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.oauth.callback_port",
+      "type": "string",
+      "description": "Fixed OAuth callback listener port for this MCP server. Overrides mcp_oauth_callback_port. For a direct loopback callback with an explicit URL port, configure the same listener port.",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "mcp_servers.<id>.bearer_token_env_var",
+      "type": "string",
+      "description": "Environment variable sourcing the bearer token for an MCP HTTP server.",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<id>.http_headers",
+      "type": "object",
+      "description": "Static HTTP headers included with each MCP HTTP request.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "mcp_servers.<id>.http_headers_helper",
+      "type": "string",
+      "description": "Local command that prints a JSON object of HTTP header names and values. Supported only for locally connected HTTP MCP servers. Explicit bearer tokens and OAuth credentials take precedence over helper-provided Authorization headers.",
+      "typeLabel": "string (command)"
+    },
+    {
+      "path": "mcp_servers.<id>.env_http_headers",
+      "type": "object",
+      "description": "HTTP headers populated from environment variables for an MCP HTTP server.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "mcp_servers.<id>.enabled",
+      "type": "boolean",
+      "description": "Disable an MCP server without removing its configuration.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp_servers.<id>.required",
+      "type": "boolean",
+      "description": "When true, fail startup/resume if this enabled MCP server cannot initialize.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "mcp_servers.<id>.startup_timeout_sec",
+      "type": "string",
+      "description": "Override the default 10s startup timeout for an MCP server.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<id>.startup_timeout_ms",
+      "type": "string",
+      "description": "Alias for startup_timeout_sec in milliseconds.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<id>.tool_timeout_sec",
+      "type": "string",
+      "description": "Override the default 60s per-tool timeout for an MCP server.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "mcp_servers.<id>.enabled_tools",
+      "type": "array",
+      "description": "Allow list of tool names exposed by the MCP server.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "mcp_servers.<id>.disabled_tools",
+      "type": "array",
+      "description": "Deny list applied after enabled_tools for the MCP server.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "mcp_servers.<id>.default_tools_approval_mode",
+      "type": "enum",
+      "description": "Default approval behavior for MCP tools on this server unless a per-tool override exists.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "mcp_servers.<id>.tools.<tool>.approval_mode",
+      "type": "enum",
+      "description": "Per-tool approval behavior override for one MCP tool on this server.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "mcp_servers.<id>.tools.<tool>.output_token_limit",
+      "type": "string",
+      "description": "Token budget for one MCP tool's output, before the standard 20% serialization allowance. Overrides the model's default output truncation budget for that tool.",
+      "typeLabel": "integer (positive)",
+      "secret": true
+    },
+    {
+      "path": "mcp_servers.<id>.scopes",
+      "type": "array",
+      "description": "OAuth scopes to request when authenticating to that MCP server.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "mcp_servers.<id>.oauth_resource",
+      "type": "string",
+      "description": "Optional RFC 8707 OAuth resource parameter to include during MCP login.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "mcp_servers.<id>.experimental_environment",
+      "type": "enum",
+      "description": "Experimental placement for an MCP server. remote starts stdio servers through a remote executor environment; streamable HTTP remote placement is not implemented.",
+      "options": [
+        "local",
+        "remote"
+      ],
+      "typeLabel": "local | remote"
+    },
+    {
+      "path": "agents",
+      "type": "object",
+      "description": "Multi-agent settings and custom role declarations. Scalar setting names are reserved and can't be used as custom role names.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "agents.enabled",
+      "type": "boolean",
+      "description": "Enable or disable multi-agent tools (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "agents.max_concurrent_threads_per_session",
+      "type": "string",
+      "description": "Maximum number of spawned-agent threads that can be open concurrently, excluding the primary thread. When unset, Codex chooses the default.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "agents.max_threads",
+      "type": "string",
+      "description": "Legacy alias for agents.max_concurrent_threads_per_session.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "agents.default_subagent_model",
+      "type": "string",
+      "description": "Default model for spawned agents. An explicit spawn model takes precedence.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "agents.default_subagent_reasoning_effort",
+      "type": "string",
+      "description": "Default reasoning effort for spawned agents. An explicit spawn effort takes precedence.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "agents.interrupt_message",
+      "type": "boolean",
+      "description": "Record a model-visible message when an agent turn is interrupted (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "agents.<name>.description",
+      "type": "string",
+      "description": "Role guidance shown to Codex when choosing and spawning that agent type.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "agents.<name>.config_file",
+      "type": "string",
+      "description": "Path to a TOML config layer for that role; relative paths resolve from the config file that declares the role.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "memories.generate_memories",
+      "type": "boolean",
+      "description": "When false, newly created threads are not stored as memory-generation inputs. Defaults to true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memories.use_memories",
+      "type": "boolean",
+      "description": "When false, Codex skips injecting existing memories into future sessions. Defaults to true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memories.disable_on_external_context",
+      "type": "boolean",
+      "description": "When true, threads that use external context such as MCP tool calls, web search, or tool search are kept out of memory generation. Defaults to false. Legacy alias: memories.no_memories_if_mcp_or_web_search.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "memories.max_raw_memories_for_consolidation",
+      "type": "string",
+      "description": "Maximum recent raw memories retained for global consolidation. Defaults to 256 and is capped at 4096.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.max_unused_days",
+      "type": "string",
+      "description": "Maximum days since a memory was last used before it becomes ineligible for consolidation. Defaults to 30 and is clamped to 0-365.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.max_rollout_age_days",
+      "type": "string",
+      "description": "Maximum age of threads considered for memory generation. Defaults to 30 and is clamped to 0-90.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.max_rollouts_per_startup",
+      "type": "string",
+      "description": "Maximum rollout candidates processed per startup pass. Defaults to 16 and is capped at 128.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.min_rollout_idle_hours",
+      "type": "string",
+      "description": "Minimum idle time before a thread is considered for memory generation. Defaults to 6 and is clamped to 1-48.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.min_rate_limit_remaining_percent",
+      "type": "string",
+      "description": "Minimum remaining percentage required in Codex rate-limit windows before memory generation starts. Defaults to 25 and is clamped to 0-100.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "memories.extract_model",
+      "type": "string",
+      "description": "Optional model override for per-thread memory extraction.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "memories.consolidation_model",
+      "type": "string",
+      "description": "Optional model override for global memory consolidation.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.prefer_mxc",
+      "type": "boolean",
+      "description": "Prefer MXC for local Windows execution when native capabilities and policy allow it; otherwise retain the configured legacy sandbox and setup. Disabled by default in the standalone CLI; the desktop app can enable it through rollout configuration. Command failures don't trigger fallback.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.unified_exec",
+      "type": "boolean",
+      "description": "Use resumable command execution (stable; enabled on all platforms). User opt-outs are ignored. Managed requirements can disable resumable processes and write_stdin, leaving one-shot exec_command available.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.shell_snapshot",
+      "type": "boolean",
+      "description": "Snapshot shell environment to speed up repeated commands (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.multi_agent",
+      "type": "boolean",
+      "description": "Enable multi-agent collaboration tools (spawn_agent, send_input, resume_agent, wait_agent, and close_agent) (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.goals",
+      "type": "boolean",
+      "description": "Enable persisted goals and automatic continuation (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.remote_plugin",
+      "type": "boolean",
+      "description": "Enable the remote plugin catalog (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.personality",
+      "type": "boolean",
+      "description": "Removed feature flag. Accepted for compatibility and ignored.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy",
+      "type": "enum",
+      "description": "Start the network proxy for sandboxed commands (experimental; off by default). Required to enforce permission-profile domain rules unless enabled administrator-managed experimental_network requirements start the proxy. Use a table when setting feature-level policy options such as domains. Does not filter web search, apps, MCP, or other hosted tools.",
+      "options": [
+        "boolean",
+        "table"
+      ],
+      "typeLabel": "boolean | table"
+    },
+    {
+      "path": "features.network_proxy.enabled",
+      "type": "boolean",
+      "description": "Start the sandboxed-command network proxy when command network access is enabled. Defaults to false; permission-profile domain rules are not enforced while the proxy is off.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.domains",
+      "type": "object",
+      "description": "Domain policy for sandboxed networking. Unset by default, which means no external destinations are allowed until you add allow rules. Supports exact hosts, .example.com for subdomains only, .example.com for apex plus subdomains, and global allow rules. Prefer scoped rules because * broadly opens public outbound access. Add deny rules for blocked destinations; deny wins on conflicts.",
+      "typeLabel": "map<string, allow | deny>"
+    },
+    {
+      "path": "features.network_proxy.unix_sockets",
+      "type": "object",
+      "description": "Unix socket policy for sandboxed networking. Unset by default; add allow entries for permitted sockets.",
+      "typeLabel": "map<string, allow | deny>"
+    },
+    {
+      "path": "features.network_proxy.allow_local_binding",
+      "type": "boolean",
+      "description": "Allow broader local/private-network access. Defaults to false; exact local IP literal or localhost allow rules can still permit specific local targets.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.enable_socks5",
+      "type": "boolean",
+      "description": "Expose SOCKS5 support. Defaults to true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.enable_socks5_udp",
+      "type": "boolean",
+      "description": "Allow UDP over SOCKS5. Defaults to true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.allow_upstream_proxy",
+      "type": "boolean",
+      "description": "Allow chaining through an upstream proxy from the environment. Defaults to true.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.dangerously_allow_non_loopback_proxy",
+      "type": "boolean",
+      "description": "Permit non-loopback listener addresses. Defaults to false; enabling it can expose proxy listeners beyond localhost.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.dangerously_allow_all_unix_sockets",
+      "type": "boolean",
+      "description": "Permit arbitrary Unix socket destinations instead of allowlist-only access. Defaults to false; use only in tightly controlled environments.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.network_proxy.proxy_url",
+      "type": "string",
+      "description": "HTTP listener URL for sandboxed networking. Defaults to \"http://127.0.0.1:3128\".",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.network_proxy.socks_url",
+      "type": "string",
+      "description": "SOCKS5 listener URL. Defaults to \"http://127.0.0.1:8081\".",
+      "typeLabel": "string"
+    },
+    {
+      "path": "features.web_search",
+      "type": "boolean",
+      "description": "Deprecated legacy toggle; prefer the top-level web_search setting.",
+      "typeLabel": "boolean",
+      "deprecated": true
+    },
+    {
+      "path": "features.web_search_cached",
+      "type": "boolean",
+      "description": "Deprecated legacy toggle. When web_search is unset, true maps to web_search = \"cached\".",
+      "typeLabel": "boolean",
+      "deprecated": true
+    },
+    {
+      "path": "features.web_search_request",
+      "type": "boolean",
+      "description": "Deprecated legacy toggle. When web_search is unset, true maps to web_search = \"live\".",
+      "typeLabel": "boolean",
+      "deprecated": true
+    },
+    {
+      "path": "features.shell_tool",
+      "type": "boolean",
+      "description": "Enable command execution tools (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.enable_request_compression",
+      "type": "boolean",
+      "description": "Compress streaming request bodies with zstd when supported (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.skill_mcp_dependency_install",
+      "type": "boolean",
+      "description": "Allow prompting and installing missing MCP dependencies for skills (stable; on by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.fast_mode",
+      "type": "boolean",
+      "description": "Enable Fast mode controls advertised by the active model (stable; on by default), independently of features.ultrafast_mode. Availability still depends on the model and account.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.ultrafast_mode",
+      "type": "boolean",
+      "description": "Enable Ultrafast mode controls (stable; on by default), independently of features.fast_mode. Availability still depends on the model and account.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "features.prevent_idle_sleep",
+      "type": "boolean",
+      "description": "Prevent the machine from sleeping while a turn is actively running (experimental; off by default).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "suppress_unstable_features_warning",
+      "type": "boolean",
+      "description": "Suppress the warning that appears when under-development feature flags are enabled.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<id>",
+      "type": "object",
+      "description": "Custom provider definition. Built-in provider IDs (openai, ollama, and lmstudio) are reserved and cannot be overridden.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "model_providers.<id>.name",
+      "type": "string",
+      "description": "Display name for a custom model provider.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.base_url",
+      "type": "string",
+      "description": "API base URL for the model provider.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.model_catalog_url",
+      "type": "string",
+      "description": "Full URL for a Codex-native model catalog. Omit to keep the provider's default model discovery.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.capabilities.external_web_access",
+      "type": "boolean",
+      "description": "Whether the provider's hosted web search can access the live web. Omit to keep provider defaults; model and turn settings may restrict access further.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<id>.capabilities.remote_compaction",
+      "type": "enum",
+      "description": "Provider compaction protocol. unsupported uses local compaction; v2 sends compaction triggers through Responses. Omit to keep provider defaults; model and turn settings may restrict support further.",
+      "options": [
+        "unsupported",
+        "v2"
+      ],
+      "typeLabel": "unsupported | v2"
+    },
+    {
+      "path": "model_providers.<id>.env_key",
+      "type": "string",
+      "description": "Environment variable supplying the provider API key.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.env_key_instructions",
+      "type": "string",
+      "description": "Optional setup guidance for the provider API key.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.experimental_bearer_token",
+      "type": "string",
+      "description": "Direct bearer token for the provider (discouraged; use env_key).",
+      "typeLabel": "string",
+      "secret": true
+    },
+    {
+      "path": "model_providers.<id>.requires_openai_auth",
+      "type": "boolean",
+      "description": "The provider uses OpenAI authentication (defaults to false).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<id>.wire_api",
+      "type": "string",
+      "description": "Protocol used by the provider. responses is the only supported value, and it is the default when omitted.",
+      "typeLabel": "responses"
+    },
+    {
+      "path": "model_providers.<id>.query_params",
+      "type": "object",
+      "description": "Extra query parameters appended to provider requests.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model_providers.<id>.http_headers",
+      "type": "object",
+      "description": "Static HTTP headers added to provider requests.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model_providers.<id>.env_http_headers",
+      "type": "object",
+      "description": "HTTP headers populated from environment variables when present.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "model_providers.<id>.request_max_retries",
+      "type": "string",
+      "description": "Retry count for HTTP requests to the provider (default: 4).",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_providers.<id>.stream_max_retries",
+      "type": "string",
+      "description": "Retry count for SSE streaming interruptions (default: 5).",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_providers.<id>.stream_idle_timeout_ms",
+      "type": "string",
+      "description": "Idle timeout for SSE streams in milliseconds (default: 300000).",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_providers.<id>.supports_websockets",
+      "type": "boolean",
+      "description": "Whether that provider supports the Responses API WebSocket transport.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<id>.supports_standalone_web_search",
+      "type": "boolean",
+      "description": "Advertise support for a compatible standalone web search endpoint (default: false). Standalone search remains under development and off by default; provider compatibility alone doesn't enable it.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "model_providers.<id>.auth",
+      "type": "object",
+      "description": "Command-backed bearer token configuration for a custom provider. Do not combine with env_key, experimental_bearer_token, or requires_openai_auth.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "model_providers.<id>.auth.command",
+      "type": "string",
+      "description": "Command to run when Codex needs a bearer token. The command must print the token to stdout.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.<id>.auth.args",
+      "type": "array",
+      "description": "Arguments passed to the token command.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "model_providers.<id>.auth.timeout_ms",
+      "type": "string",
+      "description": "Maximum token command runtime in milliseconds (default: 5000).",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_providers.<id>.auth.refresh_interval_ms",
+      "type": "string",
+      "description": "How often Codex proactively refreshes the token in milliseconds (default: 300000). Set to 0 to refresh only after an authentication retry.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "model_providers.<id>.auth.cwd",
+      "type": "string",
+      "description": "Working directory for the token command.",
+      "typeLabel": "string (path)"
+    },
+    {
+      "path": "model_providers.amazon-bedrock.aws.profile",
+      "type": "string",
+      "description": "AWS profile name used by the built-in amazon-bedrock provider.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_providers.amazon-bedrock.aws.region",
+      "type": "string",
+      "description": "AWS region used by the built-in amazon-bedrock provider.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_reasoning_effort",
+      "type": "string",
+      "description": "Reasoning effort advertised by the selected model, such as low, medium, high, xhigh, max, or ultra. Available levels depend on the model and client.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "plan_mode_reasoning_effort",
+      "type": "string",
+      "description": "Plan-mode-specific reasoning override using a level supported by the selected model. When unset, Plan mode uses its built-in preset default.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "model_reasoning_summary",
+      "type": "enum",
+      "description": "Select reasoning summary detail or disable summaries entirely.",
+      "options": [
+        "auto",
+        "concise",
+        "detailed",
+        "none"
+      ],
+      "typeLabel": "auto | concise | detailed | none"
+    },
+    {
+      "path": "model_verbosity",
+      "type": "enum",
+      "description": "Optional GPT-5 Responses API verbosity override; when unset, the selected model/preset default is used.",
+      "options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "typeLabel": "low | medium | high"
+    },
+    {
+      "path": "model_supports_reasoning_summaries",
+      "type": "boolean",
+      "description": "Force Codex to send or not send reasoning metadata.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "shell_environment_policy.inherit",
+      "type": "enum",
+      "description": "Baseline environment inheritance when spawning subprocesses.",
+      "options": [
+        "all",
+        "core",
+        "none"
+      ],
+      "typeLabel": "all | core | none"
+    },
+    {
+      "path": "shell_environment_policy.ignore_default_excludes",
+      "type": "boolean",
+      "description": "Keep variables containing KEY, SECRET, or TOKEN before other filters run (default: true). Set to false to apply automatic secret-name exclusions.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "shell_environment_policy.filters",
+      "type": "object",
+      "description": "Canonical case-insensitive environment-variable pattern filters. Include entries create an allowlist and can't restore excluded values. Explicit set values apply after exclusions. Don't combine filters with legacy exclude or include_only arrays in the same layer.",
+      "typeLabel": "map<string, include | exclude>"
+    },
+    {
+      "path": "shell_environment_policy.exclude",
+      "type": "array",
+      "description": "Legacy environment-variable exclusion patterns. Use shell_environment_policy.filters for new configuration; don't combine both forms in the same layer.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "shell_environment_policy.include_only",
+      "type": "array",
+      "description": "Legacy allowlist of environment-variable patterns. Use shell_environment_policy.filters for new configuration; don't combine both forms in the same layer.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "shell_environment_policy.set",
+      "type": "object",
+      "description": "Explicit environment values injected after exclusions; include filters can still remove them.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "shell_environment_policy.experimental_use_profile",
+      "type": "boolean",
+      "description": "Use the user shell profile when spawning subprocesses.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "project_root_markers",
+      "type": "array",
+      "description": "List of project root marker filenames; used when searching parent directories for the project root.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "project_doc_max_bytes",
+      "type": "string",
+      "description": "Maximum bytes read from AGENTS.md when building project instructions.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "project_doc_fallback_filenames",
+      "type": "array",
+      "description": "Additional filenames to try when AGENTS.md is missing.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "history.persistence",
+      "type": "enum",
+      "description": "Control whether Codex saves session transcripts to history.jsonl.",
+      "options": [
+        "save-all",
+        "none"
+      ],
+      "typeLabel": "save-all | none"
+    },
+    {
+      "path": "tool_output_token_limit",
+      "type": "string",
+      "description": "Token budget for storing individual tool/function outputs in history.",
+      "typeLabel": "number",
+      "secret": true
+    },
+    {
+      "path": "background_terminal_max_timeout",
+      "type": "string",
+      "description": "Maximum poll window in milliseconds for empty write_stdin polls (background terminal polling). Default: 300000 (5 minutes). Replaces the older background_terminal_timeout key.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "history.max_bytes",
+      "type": "string",
+      "description": "If set, caps the history file size in bytes by dropping oldest entries.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "file_opener",
+      "type": "enum",
+      "description": "URI scheme used to open citations from Codex output (default: vscode).",
+      "options": [
+        "vscode",
+        "vscode-insiders",
+        "windsurf",
+        "cursor",
+        "none"
+      ],
+      "typeLabel": "vscode | vscode-insiders | windsurf | cursor | none"
+    },
+    {
+      "path": "otel.environment",
+      "type": "string",
+      "description": "Environment tag applied to emitted OpenTelemetry events (default: dev).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.exporter",
+      "type": "enum",
+      "description": "Select the OpenTelemetry exporter and provide any endpoint metadata.",
+      "options": [
+        "none",
+        "otlp-http",
+        "otlp-grpc"
+      ],
+      "typeLabel": "none | otlp-http | otlp-grpc"
+    },
+    {
+      "path": "otel.trace_exporter",
+      "type": "enum",
+      "description": "Select the OpenTelemetry trace exporter and provide any endpoint metadata.",
+      "options": [
+        "none",
+        "otlp-http",
+        "otlp-grpc"
+      ],
+      "typeLabel": "none | otlp-http | otlp-grpc"
+    },
+    {
+      "path": "otel.metrics_exporter",
+      "type": "enum",
+      "description": "Select the OpenTelemetry metrics exporter (defaults to statsig). In Codex CLI, analytics.enabled = false disables this exporter, including custom OTLP exporters. Set to none to disable metrics export independently.",
+      "options": [
+        "none",
+        "statsig",
+        "otlp-http",
+        "otlp-grpc"
+      ],
+      "typeLabel": "none | statsig | otlp-http | otlp-grpc"
+    },
+    {
+      "path": "otel.log_user_prompt",
+      "type": "boolean",
+      "description": "Opt in to exporting raw user prompts with OpenTelemetry logs.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "otel.exporter.<id>.endpoint",
+      "type": "string",
+      "description": "Exporter endpoint for OTEL logs.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.exporter.<id>.protocol",
+      "type": "enum",
+      "description": "Protocol used by the OTLP/HTTP exporter.",
+      "options": [
+        "binary",
+        "json"
+      ],
+      "typeLabel": "binary | json"
+    },
+    {
+      "path": "otel.exporter.<id>.headers",
+      "type": "object",
+      "description": "Static headers included with OTEL exporter requests.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.endpoint",
+      "type": "string",
+      "description": "Trace exporter endpoint for OTEL logs.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.protocol",
+      "type": "enum",
+      "description": "Protocol used by the OTLP/HTTP trace exporter.",
+      "options": [
+        "binary",
+        "json"
+      ],
+      "typeLabel": "binary | json"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.headers",
+      "type": "object",
+      "description": "Static headers included with OTEL trace exporter requests.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "otel.exporter.<id>.tls.ca-certificate",
+      "type": "string",
+      "description": "CA certificate path for OTEL exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.exporter.<id>.tls.client-certificate",
+      "type": "string",
+      "description": "Client certificate path for OTEL exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.exporter.<id>.tls.client-private-key",
+      "type": "string",
+      "description": "Client private key path for OTEL exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.tls.ca-certificate",
+      "type": "string",
+      "description": "CA certificate path for OTEL trace exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.tls.client-certificate",
+      "type": "string",
+      "description": "Client certificate path for OTEL trace exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "otel.trace_exporter.<id>.tls.client-private-key",
+      "type": "string",
+      "description": "Client private key path for OTEL trace exporter TLS.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>",
+      "type": "object",
+      "description": "User-level only. Defines an additional Open in target for the ChatGPT desktop app. See Add custom file handlers for examples and handler ID constraints.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.label",
+      "type": "string",
+      "description": "Display name shown in Open in menus. Required.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.icon",
+      "type": "string",
+      "description": "Bundled asset path, Base64-encoded data:image/... URL, file URI, or absolute local path for the handler icon. Required; unsupported sources use the default VS Code icon.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.command",
+      "type": "string",
+      "description": "Executable path or command name to detect and launch. Required.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.args",
+      "type": "array",
+      "description": "Arguments inserted between the command and file input (default: []).",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.input",
+      "type": "enum",
+      "description": "How the app sends file input to the handler (default: path).",
+      "options": [
+        "path",
+        "json_argument",
+        "json_stdin"
+      ],
+      "typeLabel": "path | json_argument | json_stdin"
+    },
+    {
+      "path": "desktop.custom_file_handlers.<id>.supports_ssh",
+      "type": "boolean",
+      "description": "Offer the handler for files in SSH workspaces (default: false).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui",
+      "type": "object",
+      "description": "TUI-specific options such as enabling inline desktop notifications.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "tui.notifications",
+      "type": "string",
+      "description": "Enable TUI notifications; optionally restrict to specific event types.",
+      "typeLabel": "boolean | array<string>"
+    },
+    {
+      "path": "tui.notification_method",
+      "type": "enum",
+      "description": "Notification method for terminal notifications (default: auto).",
+      "options": [
+        "auto",
+        "osc9",
+        "bel"
+      ],
+      "typeLabel": "auto | osc9 | bel"
+    },
+    {
+      "path": "tui.notification_condition",
+      "type": "enum",
+      "description": "Control whether TUI notifications fire only when the terminal is unfocused or regardless of focus. Defaults to unfocused.",
+      "options": [
+        "unfocused",
+        "always"
+      ],
+      "typeLabel": "unfocused | always"
+    },
+    {
+      "path": "tui.animations",
+      "type": "boolean",
+      "description": "Enable terminal animations (welcome screen, shimmer, spinner) (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.disable_paste_burst",
+      "type": "boolean",
+      "description": "Disable burst-paste detection in the TUI (default: false). Takes precedence over the legacy top-level disable_paste_burst setting.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.alternate_screen",
+      "type": "enum",
+      "description": "Control alternate screen usage for the TUI (default: auto; auto skips it in Zellij to preserve scrollback).",
+      "options": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "typeLabel": "auto | always | never"
+    },
+    {
+      "path": "tui.resume_cwd",
+      "type": "enum",
+      "description": "Working directory to use when resuming or forking a session. When unset, Codex asks you to choose if your current directory differs from the session's saved directory.",
+      "options": [
+        "current",
+        "session"
+      ],
+      "typeLabel": "current | session"
+    },
+    {
+      "path": "tui.vim_mode_default",
+      "type": "boolean",
+      "description": "Start the composer in Vim normal mode instead of insert mode (default: false). You can still toggle it per session with /vim.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.raw_output_mode",
+      "type": "boolean",
+      "description": "Start the TUI in raw scrollback mode for copy-friendly terminal selection (default: false). You can toggle it with /raw or the default alt-r key binding.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.show_tooltips",
+      "type": "boolean",
+      "description": "Show onboarding tooltips in the TUI welcome screen (default: true).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.auto_recap",
+      "type": "boolean",
+      "description": "Generate automatic conversation recaps while the terminal is unfocused (default: true). Set to false to disable automatic recaps; /recap remains available.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.show_server_version_notice",
+      "type": "boolean",
+      "description": "Show informational notices about connected app-server version differences (default: true). Does not hide compatibility errors or version status.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tui.status_line",
+      "type": "array",
+      "description": "Ordered list of TUI footer status-line item identifiers. null disables the status line.",
+      "typeLabel": "array<string> | null"
+    },
+    {
+      "path": "tui.terminal_title",
+      "type": "array",
+      "description": "Ordered list of terminal window/tab title item identifiers. Defaults to [\"spinner\", \"project\"]; null disables title updates.",
+      "typeLabel": "array<string> | null"
+    },
+    {
+      "path": "tui.theme",
+      "type": "string",
+      "description": "Syntax-highlighting theme override (kebab-case theme name).",
+      "typeLabel": "string"
+    },
+    {
+      "path": "tui.keymap.<context>.<action>",
+      "type": "string",
+      "description": "Keyboard shortcut binding for a TUI action. Supported contexts include global, chat, composer, editor, vim_normal, vim_operator, vim_text_object, pager, list, and approval. Selected composer actions fall back to matching tui.keymap.global bindings; context-specific bindings take precedence when supported.",
+      "typeLabel": "string | array<string>"
+    },
+    {
+      "path": "tui.keymap.<context>.<action> = []",
+      "type": "string",
+      "description": "Unbind the action in that keymap context. Key names use normalized strings such as ctrl-a, shift-enter, page-down, or minus.",
+      "typeLabel": "empty array"
+    },
+    {
+      "path": "marketplaces.<name>.source_type",
+      "type": "enum",
+      "description": "Source kind for a configured plugin marketplace. Marketplaces can be defined in system, cloud-managed, user, or trusted-project config.toml.",
+      "options": [
+        "git",
+        "local"
+      ],
+      "typeLabel": "git | local"
+    },
+    {
+      "path": "marketplaces.<name>.source",
+      "type": "string",
+      "description": "Git repository location or local marketplace root directory. Use an absolute path for a local source; the directory contains .agents/plugins/marketplace.json.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "marketplaces.<name>.ref",
+      "type": "string",
+      "description": "Optional Git branch, tag, or commit for the marketplace.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "marketplaces.<name>.sparse_paths",
+      "type": "array",
+      "description": "Optional sparse checkout paths for a Git marketplace. Include the marketplace catalog and any local plugin directories it references.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "plugins.<plugin>.enabled",
+      "type": "boolean",
+      "description": "Enable or disable a local-marketplace plugin using a plugin-name@marketplace-name key. Read from the effective merged config; trusted-project settings can override user, cloud-managed, and system defaults. Marketplace refresh can install or refresh configured plugins even when disabled. This does not override workspace-managed enabled states.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "plugins.<plugin>.mcp_servers.<server>.enabled",
+      "type": "boolean",
+      "description": "Enable or disable an MCP server bundled by an installed plugin without changing the plugin manifest.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "plugins.<plugin>.mcp_servers.<server>.default_tools_approval_mode",
+      "type": "enum",
+      "description": "Default approval behavior for tools on a plugin-provided MCP server.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "plugins.<plugin>.mcp_servers.<server>.enabled_tools",
+      "type": "array",
+      "description": "Allow list of tools exposed from a plugin-provided MCP server.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "plugins.<plugin>.mcp_servers.<server>.disabled_tools",
+      "type": "array",
+      "description": "Deny list applied after enabled_tools for a plugin-provided MCP server.",
+      "typeLabel": "array<string>"
+    },
+    {
+      "path": "plugins.<plugin>.mcp_servers.<server>.tools.<tool>.approval_mode",
+      "type": "enum",
+      "description": "Per-tool approval behavior override for a plugin-provided MCP tool.",
+      "options": [
+        "auto",
+        "prompt",
+        "writes",
+        "approve"
+      ],
+      "typeLabel": "auto | prompt | writes | approve"
+    },
+    {
+      "path": "tui.model_availability_nux.<model>",
+      "type": "string",
+      "description": "Internal startup-tooltip state keyed by model slug.",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "hide_agent_reasoning",
+      "type": "boolean",
+      "description": "Suppress reasoning events in both the TUI and codex exec output.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "show_raw_agent_reasoning",
+      "type": "boolean",
+      "description": "Surface raw reasoning content when the active model emits it.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "disable_paste_burst",
+      "type": "boolean",
+      "description": "Legacy fallback for tui.disable_paste_burst. Prefer the setting under [tui].",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "windows_wsl_setup_acknowledged",
+      "type": "boolean",
+      "description": "Track Windows onboarding acknowledgement (Windows only).",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "chatgpt_base_url",
+      "type": "string",
+      "description": "Override the base URL used during the ChatGPT login flow.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "cli_auth_credentials_store",
+      "type": "enum",
+      "description": "Control where the CLI stores cached credentials.",
+      "options": [
+        "file",
+        "keyring",
+        "auto",
+        "ephemeral"
+      ],
+      "typeLabel": "file | keyring | auto | ephemeral",
+      "secret": true
+    },
+    {
+      "path": "mcp_oauth_credentials_store",
+      "type": "enum",
+      "description": "Preferred store for MCP OAuth credentials.",
+      "options": [
+        "auto",
+        "file",
+        "keyring"
+      ],
+      "typeLabel": "auto | file | keyring",
+      "secret": true
+    },
+    {
+      "path": "mcp_oauth_callback_port",
+      "type": "string",
+      "description": "Optional global fixed port for the local HTTP callback server used during MCP OAuth login. A server-specific oauth.callback_port takes precedence. When neither is set, Codex binds to an ephemeral port chosen by the OS.",
+      "typeLabel": "integer"
+    },
+    {
+      "path": "mcp_oauth_callback_url",
+      "type": "string",
+      "description": "Optional base callback URL for MCP OAuth login, such as a devbox ingress URL. Newly added pre-registered clients use this URL unchanged when the authorization server supports issuer identification; existing clients without a saved callback append a server-specific callback ID. Without issuer support, any pre-registered MCP server whose configured callback lacks the required ID falls back to this URL with the ID appe…",
+      "typeLabel": "string"
+    },
+    {
+      "path": "experimental_use_unified_exec_tool",
+      "type": "boolean",
+      "description": "Legacy name for enabling unified exec; prefer [features].unified_exec or codex --enable unified_exec.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "tools.web_search",
+      "type": "string",
+      "description": "Optional web search tool configuration. The object form can set search context size, allowed search domains, and approximate user location. These search-domain filters are separate from sandboxed-command network domain rules and do not restrict connectors or MCP servers.",
+      "typeLabel": "boolean | { context_size = \"low|medium|high\", allowed_domains = [string], location = { country, region, city, timezone } }"
+    },
+    {
+      "path": "tools.view_image",
+      "type": "boolean",
+      "description": "Enable the local-image attachment tool view_image.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "web_search",
+      "type": "enum",
+      "description": "Web search mode (default: \"cached\"; cached uses an OpenAI-maintained index without external web access; indexed permits external access only when gated by the search index; if you use --yolo or another full access sandbox setting, it defaults to \"live\"). Use \"live\" for unrestricted live retrieval, or \"disabled\" to remove the tool.",
+      "options": [
+        "disabled",
+        "cached",
+        "indexed",
+        "live"
+      ],
+      "typeLabel": "disabled | cached | indexed | live"
+    },
+    {
+      "path": "default_permissions",
+      "type": "string",
+      "description": "Name of the default permissions profile to apply to sandboxed tool calls. Built-ins are :read-only, :workspace, and :danger-full-access; custom profile names require matching [permissions.<name>] tables. Don't combine with sandbox_mode or [sandbox_workspace_write].",
+      "typeLabel": "string"
+    },
+    {
+      "path": "permissions.<name>.description",
+      "type": "string",
+      "description": "Human-readable description for this named profile. A profile does not inherit its parent's description through extends.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "permissions.<name>.extends",
+      "type": "string",
+      "description": "Optional parent profile applied before this named profile. Set it to another named profile, :read-only, or :workspace; :danger-full-access, undefined parents, and cycles are rejected.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "permissions.<name>.workspace_roots",
+      "type": "object",
+      "description": "Profile-defined workspace roots that receive :workspace_roots filesystem rules alongside the session's runtime workspace roots.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "permissions.<name>.workspace_roots.<path>",
+      "type": "boolean",
+      "description": "Opt a path into the profile's workspace root set when true. Disabled entries remain inactive.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.filesystem",
+      "type": "object",
+      "description": "Named filesystem permission profile. Each key is an absolute path or special token such as :minimal or :workspace_roots.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "permissions.<name>.filesystem.glob_scan_max_depth",
+      "type": "string",
+      "description": "Maximum depth for expanding deny-read glob patterns on platforms that snapshot matches before sandbox startup. Must be at least 1 when set.",
+      "typeLabel": "number"
+    },
+    {
+      "path": "permissions.<name>.filesystem.<path-or-glob>",
+      "type": "enum",
+      "description": "Grant direct access for a path, glob pattern, or special token, or scope nested entries under that root. Use \"deny\" to deny reads for matching paths.",
+      "options": [
+        "\"read\"",
+        "\"write\"",
+        "\"deny\"",
+        "table"
+      ],
+      "typeLabel": "\"read\" | \"write\" | \"deny\" | table"
+    },
+    {
+      "path": "permissions.<name>.filesystem.\":workspace_roots\".<subpath-or-glob>",
+      "type": "enum",
+      "description": "Scoped filesystem access relative to each effective workspace root. Use \".\" for the root itself; glob subpaths such as \"*/.env\" can deny reads with \"deny\".",
+      "options": [
+        "\"read\"",
+        "\"write\"",
+        "\"deny\""
+      ],
+      "typeLabel": "\"read\" | \"write\" | \"deny\""
+    },
+    {
+      "path": "permissions.<name>.network.enabled",
+      "type": "boolean",
+      "description": "Enable network access for commands in this permission profile. This does not start the network proxy. Without features.network_proxy or enabled administrator-managed networking requirements, command network access is direct and profile domain rules are not enforced.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.proxy_url",
+      "type": "string",
+      "description": "HTTP listener URL used when this permissions profile enables sandboxed networking.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "permissions.<name>.network.enable_socks5",
+      "type": "boolean",
+      "description": "Expose SOCKS5 support when this permissions profile enables sandboxed networking.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.socks_url",
+      "type": "string",
+      "description": "SOCKS5 proxy endpoint used by this permissions profile.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "permissions.<name>.network.enable_socks5_udp",
+      "type": "boolean",
+      "description": "Allow UDP over the SOCKS5 listener when enabled.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.allow_upstream_proxy",
+      "type": "boolean",
+      "description": "Allow sandboxed networking to chain through another upstream proxy.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.dangerously_allow_non_loopback_proxy",
+      "type": "boolean",
+      "description": "Permit non-loopback bind addresses for sandboxed networking listeners. Enabling it can expose listeners beyond localhost.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.dangerously_allow_all_unix_sockets",
+      "type": "boolean",
+      "description": "Allow arbitrary Unix socket destinations instead of the default restricted set. Use only in tightly controlled environments.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "permissions.<name>.network.mode",
+      "type": "enum",
+      "description": "Network proxy mode used for subprocess traffic.",
+      "options": [
+        "limited",
+        "full"
+      ],
+      "typeLabel": "limited | full"
+    },
+    {
+      "path": "permissions.<name>.network.domains",
+      "type": "object",
+      "description": "Domain rules for sandboxed commands. Enforced only when features.network_proxy or enabled administrator-managed networking requirements activate the proxy. Supports exact hosts, .example.com, .example.com, and global allow rules; deny wins. Does not restrict web search, apps, or MCP servers.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "permissions.<name>.network.domains.<pattern>",
+      "type": "enum",
+      "description": "Allow or deny an exact host or scoped wildcard pattern such as .example.com or *.example.com.",
+      "options": [
+        "allow",
+        "deny"
+      ],
+      "typeLabel": "allow | deny"
+    },
+    {
+      "path": "permissions.<name>.network.unix_sockets",
+      "type": "object",
+      "description": "Unix socket allowlist overrides for sandboxed networking. Use socket paths as keys; allow adds a path, and deny rejects it.",
+      "typeLabel": "table"
+    },
+    {
+      "path": "permissions.<name>.network.unix_sockets.<path>",
+      "type": "enum",
+      "description": "Add an absolute Unix socket path to the effective allowlist with allow, or reject it with deny. Denied entries are omitted from the effective allowlist.",
+      "options": [
+        "allow",
+        "deny"
+      ],
+      "typeLabel": "allow | deny"
+    },
+    {
+      "path": "permissions.<name>.network.allow_local_binding",
+      "type": "boolean",
+      "description": "Permit broader local/private-network access through sandboxed networking. Exact local IP literal or localhost allow rules can still permit specific local targets when this stays false.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "projects.<path>.trust_level",
+      "type": "string",
+      "description": "Mark a project or worktree as trusted or untrusted (\"trusted\" | \"untrusted\"). Untrusted projects skip project-scoped .codex/ layers, including project-local config, hooks, and rules.",
+      "typeLabel": "string"
+    },
+    {
+      "path": "notice.hide_full_access_warning",
+      "type": "boolean",
+      "description": "Track acknowledgement of the full access warning prompt.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "notice.hide_world_writable_warning",
+      "type": "boolean",
+      "description": "Track acknowledgement of the Windows world-writable directories warning.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "notice.hide_rate_limit_model_nudge",
+      "type": "boolean",
+      "description": "Track opt-out of the rate limit model switch reminder.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "notice.hide_gpt5_1_migration_prompt",
+      "type": "boolean",
+      "description": "Track acknowledgement of the GPT-5.1 migration prompt.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "notice.hide_gpt-5.1-codex-max_migration_prompt",
+      "type": "boolean",
+      "description": "Track acknowledgement of the gpt-5.1-codex-max migration prompt.",
+      "typeLabel": "boolean"
+    },
+    {
+      "path": "notice.model_migrations",
+      "type": "object",
+      "description": "Track acknowledged model migrations as old->new mappings.",
+      "typeLabel": "map<string,string>"
+    },
+    {
+      "path": "forced_login_method",
+      "type": "enum",
+      "description": "Restrict Codex to a specific authentication method.",
+      "options": [
+        "chatgpt",
+        "api"
+      ],
+      "typeLabel": "chatgpt | api"
+    },
+    {
+      "path": "forced_chatgpt_workspace_id",
+      "type": "string",
+      "description": "Limit ChatGPT logins to a specific workspace identifier.",
+      "typeLabel": "string (uuid)"
+    }
+  ],
+  "verifiedAt": "2026-10-19"
+}

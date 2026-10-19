@@ -384,3 +384,73 @@ test('upstream failure policy: 不支持的出口代理协议不记账、不冷�
   assert.equal(ordinary.shouldMarkFailure, true);
 });
 
+
+// 2026-10-19：CLI 超时是**静默**超时 —— 长轮次只要还在吐事件就不能被杀（原 120s 总时长
+// 把仍在思考/输出的正常轮次杀掉，用户等 178s 拿到超时）；真卡死（无输出）仍按时结束。
+function pacedChild(lines, intervalMs, { closeAfter = true } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.killed = false;
+  child.stdin = {
+    write() {},
+    end() {
+      let index = 0;
+      const tick = () => {
+        if (child.killed) return;
+        if (index < lines.length) {
+          child.stdout.emit('data', Buffer.from(`${lines[index]}\n`));
+          index += 1;
+          setTimeout(tick, intervalMs);
+          return;
+        }
+        if (closeAfter) child.emit('close', 0);
+      };
+      setTimeout(tick, intervalMs);
+    }
+  };
+  child.kill = () => { child.killed = true; };
+  return child;
+}
+
+test('a CLI turn that keeps producing events outlives the idle window', async () => {
+  const lines = [
+    OK_LINES[0],
+    '{"type":"reasoning","sessionID":"ses_test_1","part":{"type":"reasoning","text":"thinking"}}',
+    '{"type":"reasoning","sessionID":"ses_test_1","part":{"type":"reasoning","text":"thinking more"}}',
+    ...OK_LINES.slice(1)
+  ];
+  // 6 行 × 40ms ≈ 240ms 的总时长，远超 100ms 的静默窗口；每行间隔都在窗口内。
+  const deps = makeDeps([], 0, {
+    cliIdleTimeoutMs: 100,
+    spawn: () => pacedChild(lines, 40)
+  });
+  const result = await fetchOpenCodeFreeCliChatCompletion({}, ACCOUNT, {
+    model: FREE_MODEL, messages: [{ role: 'user', content: 'hi' }]
+  }, 1, deps);
+  assert.equal(result.choices[0].message.content, 'pong');
+});
+
+test('a silent CLI turn is still cut off by the idle window, and a chatty one by the turn limit', async () => {
+  let killed = 0;
+  const silent = makeDeps([], 0, {
+    cliIdleTimeoutMs: 60,
+    spawn: () => { const c = pacedChild([], 1000, { closeAfter: false }); const kill = c.kill; c.kill = () => { killed += 1; kill(); }; return c; }
+  });
+  await assert.rejects(
+    fetchOpenCodeFreeCliChatCompletion({}, ACCOUNT, { model: FREE_MODEL, messages: [{ role: 'user', content: 'hi' }] }, 1, silent),
+    (error) => error.code === 'opencode_free_cli_timeout' && /timeout_60ms/.test(error.message)
+  );
+  assert.equal(killed, 1);
+
+  const endless = Array.from({ length: 200 }, () => '{"type":"reasoning","part":{"type":"reasoning","text":"…"}}');
+  const chatty = makeDeps([], 0, {
+    cliIdleTimeoutMs: 100,
+    cliMaxTurnMs: 150,
+    spawn: () => pacedChild(endless, 20, { closeAfter: false })
+  });
+  await assert.rejects(
+    fetchOpenCodeFreeCliChatCompletion({}, ACCOUNT, { model: FREE_MODEL, messages: [{ role: 'user', content: 'hi' }] }, 1, chatty),
+    (error) => error.code === 'opencode_free_cli_timeout' && /turn_limit_150ms/.test(error.message)
+  );
+});

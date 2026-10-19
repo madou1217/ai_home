@@ -235,3 +235,69 @@ test('the native opencode client is recognised by its own headers', () => {
   assert.equal(isOpenCodeNativeClient({ 'x-opencode-client': 'cli', 'user-agent': 'curl/8.0' }), false);
   assert.equal(isOpenCodeNativeClient({}), false);
 });
+
+// ── 门禁形状序列（2026-10-19）──────────────────────────────────────────────
+// 真实 opencode 的「无 read、非标题」轮次（压缩/总结）原样发出必被门禁拒绝；从任何出口都一样。
+// 先原样（标题请求加垫片反而 403），吃门禁 403 后补 read 垫片重发一次，不消耗出口轮换。
+const {
+  fetchOpenCodeZenFreeChatCompletionStream: fetchZenStream,
+  fetchOpenCodeZenFreeChatCompletion: fetchZenOnce,
+  __private: zenPrivate
+} = require('../lib/server/opencode-zen-free-client');
+
+function gateAwareFetch(calls) {
+  return async (_url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    const hasRead = Array.isArray(body.tools) && body.tools.some((t) => t && t.function && t.function.name === 'read');
+    if (!hasRead) {
+      return { ok: false, status: 403, text: async () => '{"type":"error","error":{"type":"FreeTierError","message":"OpenCode\'s free tier can only be used from within OpenCode"}}' };
+    }
+    const sse = 'data: {"choices":[{"index":0,"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n';
+    return { ok: true, status: 200, body: null, text: async () => sse };
+  };
+}
+
+test('a native-client turn the gate rejects as sent is resent once with the read shim', async () => {
+  const calls = [];
+  const variants = [];
+  const res = await fetchZenStream({}, { accountRef: 'acct_00000000000000000000' }, {
+    model: 'opencode/deepseek-v4.1-flash-free', messages: [{ role: 'user', content: 'summarize the conversation' }]
+  }, 1000, { fetchWithTimeout: gateAwareFetch(calls), nativeClient: true, onPayloadVariant: (v) => variants.push(v) });
+  assert.equal(res.status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].tools, undefined, 'first attempt is forwarded unchanged');
+  assert.ok(calls[1].tools.some((t) => t.function.name === 'read'), 'second attempt carries the read shim');
+  assert.deepEqual(variants, [1]);
+
+  const nonStream = [];
+  const body = await fetchZenOnce({}, {}, { model: 'opencode/glm-5.3-flash-free', messages: [] }, 1000, {
+    fetchWithTimeout: gateAwareFetch(nonStream), nativeClient: true
+  });
+  assert.equal(body.choices[0].message.content, 'OK');
+  assert.equal(nonStream.length, 2);
+});
+
+test('the shape sequence only retries on the gate: other failures and passing requests are sent once', async () => {
+  const calls = [];
+  const fetch500 = async (_url, init) => { calls.push(JSON.parse(init.body)); return { ok: false, status: 500, text: async () => 'boom' }; };
+  await assert.rejects(
+    fetchZenStream({}, {}, { model: 'opencode/deepseek-v4.1-flash-free', messages: [] }, 1000, { fetchWithTimeout: fetch500, nativeClient: true }),
+    (error) => error.statusCode === 500
+  );
+  // 500 先走旧端点回退判定（只对 404/429 回退），所以只发一次。
+  assert.equal(calls.length, 1);
+
+  const ok = [];
+  const res = await fetchZenStream({}, {}, {
+    model: 'opencode/deepseek-v4.1-flash-free', messages: [], tools: [{ type: 'function', function: { name: 'read', description: 'r', parameters: {} } }]
+  }, 1000, { fetchWithTimeout: gateAwareFetch(ok), nativeClient: true });
+  assert.equal(res.status, 200);
+  assert.equal(ok.length, 1, 'a request that already has read has a single shape');
+
+  // 非 opencode 客户端恒补垫片：只有一种形状，门禁 403 直接抛给调用方（出口轮换 / CLI 兜底）。
+  assert.equal(zenPrivate.buildZenFreePayloadVariants({ model: 'x', messages: [] }, 'x', false).length, 1);
+  assert.equal(zenPrivate.isZenFreeGateRejection(403, '{"error":{"type":"FreeTierError"}}'), true);
+  assert.equal(zenPrivate.isZenFreeGateRejection(403, '{"error":{"type":"FreeUsageLimitError"}}'), false);
+  assert.equal(zenPrivate.isZenFreeGateRejection(429, 'FreeTierError'), false);
+});

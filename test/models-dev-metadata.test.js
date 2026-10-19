@@ -191,10 +191,10 @@ test('bundled models.dev catalog resolves zcode through a coding plan provider',
 });
 
 test('models.dev provider inference maps kimi to coding and moonshotai catalogs', () => {
-  assert.deepEqual(inferModelsDevProviderIds('kimi', 'kimi-k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);
-  assert.deepEqual(inferModelsDevProviderIds('kimi', 'k3'), ['kimi-for-coding', 'moonshotai-cn', 'moonshotai']);
-  assert.deepEqual(inferModelsDevProviderIds('', 'kimi-for-coding-highspeed'), ['kimi-for-coding']);
-  assert.deepEqual(inferModelsDevProviderIds('', 'k3-256k'), ['kimi-for-coding']);
+  assert.deepEqual(inferModelsDevProviderIds('kimi', 'kimi-k3'), ['kimi-code-plan-global', 'kimi-code-plan-cn', 'moonshotai-cn', 'moonshotai', 'kimi-for-coding']);
+  assert.deepEqual(inferModelsDevProviderIds('kimi', 'k3'), ['kimi-code-plan-global', 'kimi-code-plan-cn', 'moonshotai-cn', 'moonshotai', 'kimi-for-coding']);
+  assert.deepEqual(inferModelsDevProviderIds('', 'kimi-for-coding-highspeed'), ['kimi-code-plan-global', 'kimi-code-plan-cn']);
+  assert.deepEqual(inferModelsDevProviderIds('', 'k3-256k'), ['kimi-code-plan-global', 'kimi-code-plan-cn']);
   assert.deepEqual(inferModelsDevProviderIds('', 'gpt-5'), []);
 });
 

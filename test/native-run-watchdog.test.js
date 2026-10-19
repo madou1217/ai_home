@@ -9,6 +9,7 @@ const path = require('node:path');
 const {
   DEFAULT_FIRST_PROGRESS_TIMEOUT_MS,
   DEFAULT_UPSTREAM_ERROR_TIMEOUT_MS,
+  DEFAULT_MAX_TURN_TIMEOUT_MS,
   MAX_ADVISED_RETRY_WAIT_MS,
   NATIVE_SESSION_TIMEOUT_CODE,
   classifyWatchdogEvent,
@@ -103,6 +104,9 @@ test('watchdog defaults come from the measured TTFT distribution and stay env-ov
   // stall 默认关闭：30 天里有 5 次合法的多小时本地工具执行(最长 12.4h),
   // 任何分钟级预算都会误杀它们,而 headless 流拿不到「工具在跑」的信号来豁免。
   assert.equal(defaults.stallTimeoutMs, 0);
+  // 单轮硬上限同样默认关闭：只有 Qoder CLI headless 这类明确短轮次的调用方显式开启。
+  assert.equal(defaults.maxTurnTimeoutMs, 0);
+  assert.equal(DEFAULT_MAX_TURN_TIMEOUT_MS, 0);
 
   const tuned = resolveNativeRunWatchdogConfig({}, {
     firstProgressTimeoutMs: 90000,
@@ -149,6 +153,28 @@ test('watchdog leaves a slow but healthy turn alone once upstream answers', () =
 
   assert.equal(fired.length, 0);
   assert.equal(watchdog.snapshot().firstProgressAt > 0, true);
+});
+
+test('watchdog enforces an optional hard turn cap without treating progress as a reset', () => {
+  const clock = createClock();
+  const { watchdog, fired } = createWatchdog(clock, {
+    maxTurnTimeoutMs: 1800000,
+    stallTimeoutMs: 120000
+  });
+  watchdog.start();
+
+  // 长回答一直有 delta：idle 预算不会杀它，但单轮硬上限到点必须结束。
+  for (let second = 10; second <= 1790; second += 10) {
+    clock.advance(10000);
+    watchdog.observe({ type: 'delta', delta: 'x' });
+  }
+  assert.equal(fired.length, 0);
+  clock.advance(10000);
+
+  assert.equal(fired.length, 1);
+  assert.equal(fired[0].reason, 'turn_limit');
+  assert.equal(fired[0].limitMs, 1800000);
+  assert.match(fired[0].message, /单轮 1800s 上限/);
 });
 
 test('watchdog cuts a retry storm short instead of waiting out all five attempts', () => {

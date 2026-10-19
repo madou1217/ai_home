@@ -1,47 +1,52 @@
-// 代码块美化导出（ray.so 风格）：shiki 高亮 → 内联样式卡片 → modern-screenshot 导出 PNG。
+// 代码块美化导出（ray.so 风格）：shiki token → Canvas 直接绘制 → PNG。
 //
-// 实现策略：不创建真实 DOM 挂到页面上再截图，而是构造一个独立的 Document，
-// 走 DomPreviewFrameSource 同一条栅格化管线（FrameSource 契约复用，编译走
-// dom-preview 的实现），因此截图派发仍只有一个入口。
+// 性能约束：合成卡片不走「HTML 克隆 + modern-screenshot」的抓帧管线——
+// 那条路径的成本是 O(DOM 节点)，300 行 HTML 的 4 万个高亮 span 实测要 13s。
+// 这里按 token 排版后直接 fillText，成本只与 token 数线性相关（约百毫秒级）。
+// 布局在 code-card-layout（纯函数），绘制在 code-card-renderer。
 
-import type { StillCaptureFormatId } from '../types';
+import type { StillCaptureFormatId } from './types';
+import type { HighlighterCore } from 'shiki/core';
+import { normalizeCodeIndent, type CodeCardToken } from './code-card-layout';
+import { renderCodeCard } from './code-card-renderer';
 
-/** 卡片视觉常量（ray.so 风格骨架，深色底 + 大圆角 + 内边距）。 */
-const CARD_THEME = {
-  background: '#0b1120',
-  padding: 40,
-  radius: 16,
-  titleBarHeight: 44,
-  fontSize: 15,
-  lineHeight: 1.7,
-  maxCharsPerLine: 80
-} as const;
-
-/** shiki 主题/语言按需加载集合：html/嵌html/js/css 覆盖预览代码块的主要形态。 */
+/** 预览代码块就是 HTML，固定语言避免整包语言表进入初始 chunk。 */
 const HIGHLIGHT_LANG = 'html';
 const HIGHLIGHT_THEME = 'github-dark-default';
 
-let highlighterPromise: Promise<import('shiki').Highlighter> | null = null;
+let highlighterPromise: Promise<HighlighterCore> | null = null;
 
-async function loadHighlighter(): Promise<import('shiki').Highlighter> {
+/** 按需加载 shiki core + 单一语言/主题（不 import 'shiki' 全量包）。 */
+async function loadHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
-    highlighterPromise = import('shiki').then((shiki) =>
-      shiki.createHighlighter({
-        themes: [HIGHLIGHT_THEME],
-        langs: [HIGHLIGHT_LANG]
-      })
-    );
+    highlighterPromise = (async () => {
+      const [core, engine, lang, theme] = await Promise.all([
+        import('shiki/core'),
+        import('shiki/engine/oniguruma'),
+        import('shiki/langs/html.mjs'),
+        import('shiki/themes/github-dark-default.mjs')
+      ]);
+      return core.createHighlighterCore({
+        themes: [theme.default],
+        langs: [lang.default],
+        engine: engine.createOnigurumaEngine(import('shiki/wasm'))
+      });
+    })().catch((error) => {
+      // 首次加载失败（如 chunk 网络错误）时允许下次重试。
+      highlighterPromise = null;
+      throw error;
+    });
   }
   return highlighterPromise;
 }
 
 export interface BeautifyExportOptions {
   code: string;
-  /** 可选语言提示；未识别时回退 html（预览块场景代码就是 HTML）。 */
-  language?: string;
   format?: StillCaptureFormatId;
   /** 导出文件基础名。 */
   baseName?: string;
+  /** 分阶段进度（高亮 / 绘制 / 编码），供按钮展示。 */
+  onProgress?: (label: string) => void;
 }
 
 /**
@@ -52,101 +57,31 @@ export async function createBeautifiedCapture(options: BeautifyExportOptions): P
   blob: Blob;
   fileName: string;
 }> {
-  const { code, format = 'png', baseName = 'code-beautify' } = options;
+  const { code, format = 'png', baseName = 'code-beautify', onProgress } = options;
+
+  onProgress?.('正在高亮…');
   const highlighter = await loadHighlighter();
-  const html = highlighter.codeToHtml(normalizeCodeIndent(code), {
+  const { tokens, fg, bg } = highlighter.codeToTokens(normalizeCodeIndent(code), {
     lang: HIGHLIGHT_LANG,
     theme: HIGHLIGHT_THEME
   });
-  const width = measureViewportWidth(code);
-  const doc = buildBeautifyDocument(html, width);
-  const canvas = await rasterizeDocument(doc, width);
-  const blob = await encodeStillFormat(canvas, format);
-  return { blob, fileName: `${baseName}-${Date.now()}.${format === 'png' ? 'png' : format}` };
-}
-
-/** 统一去公共缩进，避免整段代码被一层缩进推宽。 */
-function normalizeCodeIndent(code: string): string {
-  const lines = code.replace(/\t/g, '  ').split('\n');
-  const indents = lines
-    .filter((line) => line.trim().length > 0)
-    .map((line) => (line.match(/^ +/)?.[0].length ?? 0));
-  const common = indents.length > 0 ? Math.min(...indents) : 0;
-  return lines.map((line) => line.slice(common)).join('\n').trim();
-}
-
-/** 视口宽度按最长行估算（等宽字体、像素级近似）。 */
-function measureViewportWidth(code: string): number {
-  const longest = Math.max(
-    CARD_TITLE_WIDTH_SCALE,
-    ...normalizeCodeIndent(code)
-      .split('\n')
-      .map((line) => line.length)
+  const cardTokens: CodeCardToken[][] = tokens.map((line) =>
+    line.map((token) => ({
+      content: token.content,
+      color: token.color,
+      fontStyle: token.fontStyle
+    }))
   );
-  const clamped = Math.min(longest, CARD_MAX_CHARS);
-  return CARD_PADDING * 2 + CODE_FONT_WIDTH * clamped;
-}
 
-const CARD_TITLE_WIDTH_SCALE = 24;
-const CARD_MAX_CHARS = 96;
-const CARD_PADDING = 40;
-const CODE_FONT_WIDTH = 9;
+  onProgress?.('正在绘制卡片…');
+  const canvas = renderCodeCard(cardTokens, {
+    fallbackColor: fg,
+    panelColor: bg
+  });
 
-function buildBeautifyDocument(shikiHtml: string, width: number): string {
-  const { background, padding, radius, titleBarHeight, fontSize, lineHeight } = CARD_THEME;
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    width: ${width}px;
-    background: ${background};
-    padding: ${padding}px;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  }
-  .titlebar {
-    height: ${titleBarHeight}px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .dot { width: 12px; height: 12px; border-radius: 50%; }
-  .dot-1 { background: #ff5f57; }
-  .dot-2 { background: #febc2e; }
-  .dot-3 { background: #28c840; }
-  pre {
-    padding: 0;
-    border-radius: ${radius}px;
-    font-size: ${fontSize}px;
-    line-height: ${lineHeight};
-    overflow: hidden;
-  }
-  code { font-family: inherit; }
-</style>
-</head>
-<body>
-  <div class="titlebar">
-    <span class="dot dot-1"></span><span class="dot dot-2"></span><span class="dot dot-3"></span>
-  </div>
-  ${shikiHtml}
-</body>
-</html>`;
-}
-
-/** 复用 DOM 栅格化管线（与预览截图同一 FrameSource 实现）。 */
-async function rasterizeDocument(docHtml: string, width: number): Promise<HTMLCanvasElement> {
-  const { DomPreviewFrameSource } = await import('./dom-preview-frame-source');
-  const source = await DomPreviewFrameSource.create({ html: docHtml, width });
-  try {
-    const canvas = await source.grab();
-    if (!canvas) throw new Error('beautify_rasterize_failed');
-    return canvas as HTMLCanvasElement;
-  } finally {
-    source.dispose();
-  }
+  onProgress?.(format === 'png' ? '正在编码 PNG…' : '正在编码图片…');
+  const blob = await encodeStillFormat(canvas, format);
+  return { blob, fileName: `${baseName}-${Date.now()}.${format}` };
 }
 
 async function encodeStillFormat(

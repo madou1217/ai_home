@@ -73,7 +73,11 @@ export default function HtmlCodeBlock({ code }: Props) {
     setBeautifyState({ busy: true, progressLabel: '正在生成…' });
     try {
       const { createBeautifiedCapture } = await import('../../features/capture/code-beautify');
-      const { blob, fileName } = await createBeautifiedCapture({ code, baseName: 'html-code' });
+      const { blob, fileName } = await createBeautifiedCapture({
+        code,
+        baseName: 'html-code',
+        onProgress: (progressLabel) => setBeautifyState({ busy: true, progressLabel })
+      });
       downloadBlobArtifact(blob, fileName, blob.type);
       message.success('美化截图已保存');
     } catch (error) {

@@ -121,3 +121,55 @@ test('older sync state without rejection records remains usable', async (t) => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(f.state(), { links: {}, modelPolicies: [], rejectedImports: {} });
 });
+
+test('generation-arbitration refusals settle until content changes or the Go account disappears', async (t) => {
+  const f = fixture(t);
+
+  // 先成功导入，建立 link（模拟账号已在 Go 侧，随后 Node 侧内容被重写为解码态）。
+  f.respond({ ok: true, status: 201, data: { account_ref: GO_REF } });
+  let sync = f.buildSync();
+  assert.equal((await sync.reconcile()).pushed, 1);
+  assert.equal(f.requests.length, 1);
+
+  // Node 内容变化（真实故障里只是昵称编码差异），Go 判定无法证明代际更新 → 409。
+  f.record.nativeAuth.auth.openai.key = 'synthetic-opencode-key-reencoded';
+  f.respond({ ok: false, status: 409, errorCode: 'account_import_generation_unordered' });
+  const refused = await sync.reconcile();
+  assert.equal(refused.pushed, 0);
+  assert.equal(refused.errors[0].error, 'account_import_generation_unordered');
+  assert.equal(refused.errors[0].cached, undefined, 'first refusal is reported without cache flag');
+  assert.equal(f.requests.length, 2);
+  const persisted = f.state().rejectedImports[NODE_REF];
+  assert.deepEqual(Object.keys(persisted).sort(), ['error', 'goRef', 'print']);
+  assert.equal(persisted.error, 'account_import_generation_unordered');
+  assert.equal(persisted.goRef, GO_REF);
+  assert.equal(JSON.stringify(f.state()).includes('synthetic-opencode-key'), false, 'state contains no credential');
+
+  // 稳态：同一份内容不再发请求，但拒绝仍可观察。
+  const repeated = await sync.reconcile();
+  assert.equal(repeated.errors[0].error, 'account_import_generation_unordered');
+  assert.equal(repeated.errors[0].cached, true);
+  assert.equal(f.requests.length, 2, 'unchanged refused content is not sent again');
+
+  // 重建同步器（进程重启）后仍然不再重发。
+  await sync.stop();
+  sync = f.buildSync();
+  assert.equal((await sync.reconcile()).errors[0].cached, true);
+  assert.equal(f.requests.length, 2, 'restart keeps the settled refusal');
+
+  // 内容再次变化 → 缓存让路，立刻重试（凭据代际推进后即可被接受）。
+  f.record.nativeAuth.auth.openai.key = 'synthetic-opencode-key-next-generation';
+  const retried = await sync.reconcile();
+  assert.equal(retried.errors[0].cached, undefined);
+  assert.equal(f.requests.length, 3, 'content change re-arms the push');
+
+  // Go 账号被删除 → 缓存必须让路，重新导入以重建账号。
+  f.go.accounts = [];
+  f.respond({ ok: true, status: 201, data: { account_ref: GO_REF } });
+  const rebuilt = await sync.reconcile();
+  assert.equal(rebuilt.pushed, 1);
+  assert.deepEqual(rebuilt.errors, []);
+  assert.equal(f.requests.length, 4, 'missing Go account re-arms the push');
+  assert.deepEqual(f.state().rejectedImports, {});
+  assert.equal(f.state().links[NODE_REF].goRef, GO_REF);
+});

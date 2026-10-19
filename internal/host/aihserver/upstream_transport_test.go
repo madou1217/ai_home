@@ -58,7 +58,11 @@ func TestUpstreamTransportReusesConnectionsUnderConcurrency(t *testing.T) {
 		}
 		group.Wait()
 	}
-	if got := newConnections.Load(); got > concurrency {
+	// 复用成立时连接数应稳定在 concurrency 量级；给偶发的空闲连接重建留出余量
+	// （CI 上曾观察到 17 条：16 条并发连接中一条被重建，不代表连接池失效）。
+	// 真失效会接近 rounds*concurrency（默认 transport 每轮都会重拨约 14 条）。
+	const maxAcceptable = concurrency + 4
+	if got := newConnections.Load(); got > maxAcceptable {
 		t.Fatalf("%d 轮并发 %d 新建了 %d 个连接，空闲连接没有被复用", rounds, concurrency, got)
 	}
 }

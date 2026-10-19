@@ -66,7 +66,9 @@ func TestRunServesAccountsAndShutsDownCleanly(t *testing.T) {
 	var address net.Addr
 	select {
 	case address = <-listening:
-	case <-time.After(3 * time.Second):
+	// `go test ./...` 会并行跑所有包；启动涉及真实装配与目录初始化，
+	// 在低核 CI runner 上 3s 会偶发超时（不是启动失败）。给足余量。
+	case <-time.After(15 * time.Second):
 		t.Fatal("aih-server 未开始监听")
 	}
 	baseURL := "http://" + address.String()

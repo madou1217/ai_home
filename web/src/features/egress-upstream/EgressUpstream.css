@@ -1,0 +1,368 @@
+/* 上游地区策略（EgressUpstreamPanel / PoolScopePicker / BulkEgressModal）。
+ * 状态只用标签 / 文字色 / 完整 1px 边框表达，不用整块彩底与左侧竖条（AGENTS.md「UI Visual Constraints」）。
+ * 动效走 design-tokens 的时长，prefers-reduced-motion 下时长归零。 */
+
+.egress-up-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.egress-up-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .egress-up-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 上游列表 */
+.egress-up-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.egress-up-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.egress-up-list-item:hover {
+  border-color: var(--color-border-strong);
+  transform: translateY(-1px);
+}
+
+.egress-up-list-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.egress-up-list-item[data-active] {
+  border-color: var(--color-accent);
+  background: var(--color-surface-raised, var(--color-surface));
+}
+
+.egress-up-list-host {
+  font-weight: 600;
+  color: var(--color-heading);
+  overflow-wrap: anywhere;
+}
+
+.egress-up-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.egress-up-list-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.egress-up-list-flags:empty {
+  display: none;
+}
+
+/* 详情 */
+.egress-up-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  animation: egress-up-enter var(--motion-base) var(--ease-standard) both;
+}
+
+@keyframes egress-up-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.egress-up-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-md);
+  background: var(--color-surface);
+}
+
+.egress-up-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.egress-up-section-head > strong {
+  color: var(--color-heading);
+}
+
+.egress-up-section-head > small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  flex: 1 1 200px;
+}
+
+.egress-up-section-actions {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.egress-up-row-denied td {
+  color: var(--color-muted);
+}
+
+.egress-up-node-label {
+  color: var(--color-heading);
+}
+
+.egress-up-geo {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.egress-up-evidence {
+  font-size: var(--text-xs);
+}
+
+.egress-up-evidence[data-status='blocked'] {
+  color: var(--color-danger);
+}
+
+.egress-up-evidence[data-status='ok'] {
+  color: var(--color-success);
+}
+
+.egress-up-evidence[data-expired] {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+
+.egress-up-account-egress,
+.egress-up-account-network {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.egress-up-account-egress small {
+  color: var(--color-muted);
+}
+
+/* 规则 */
+.egress-up-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.egress-up-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: egress-rule;
+}
+
+.egress-up-rule-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  counter-increment: egress-rule;
+  transition: border-color var(--motion-fast) var(--ease-standard);
+}
+
+.egress-up-rule-list > li::before {
+  content: counter(egress-rule);
+  min-width: 1.5em;
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.egress-up-rule-list > li:hover {
+  border-color: var(--color-border-strong);
+}
+
+.egress-up-rule-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.egress-up-rule-text small {
+  color: var(--color-muted);
+}
+
+.egress-up-rule-actions {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+/* 提示与有效期 */
+.egress-up-hints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.egress-up-hints > li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.egress-up-hints a {
+  font-size: var(--text-xs);
+}
+
+.egress-up-ttl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.egress-up-ttl .ant-input-number-group-wrapper {
+  width: 140px;
+}
+
+/* 出口池节点范围选择（账号出口弹窗） */
+.egress-up-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  animation: egress-up-enter var(--motion-base) var(--ease-standard) both;
+}
+
+.egress-up-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.egress-up-row-label {
+  min-width: 64px;
+  color: var(--color-muted-strong);
+  font-size: var(--text-sm);
+}
+
+.egress-up-row-hint {
+  font-size: var(--text-xs);
+}
+
+.egress-up-groups {
+  width: 100%;
+}
+
+.egress-up-nodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.egress-up-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.egress-up-filter .ant-input-affix-wrapper {
+  max-width: 200px;
+}
+
+.egress-up-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.egress-up-select-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.egress-up-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+  font-size: var(--text-sm);
+  transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.egress-up-summary > span:nth-child(2) {
+  flex: 1;
+}
+
+.egress-up-summary[data-tone='success'] .egress-up-summary-icon {
+  color: var(--color-success);
+}
+
+.egress-up-summary[data-tone='warning'] .egress-up-summary-icon {
+  color: var(--color-warning);
+}
+
+.egress-up-summary[data-tone='error'] {
+  border-color: var(--color-danger);
+}
+
+.egress-up-summary[data-tone='error'] .egress-up-summary-icon {
+  color: var(--color-danger);
+}
+
+.egress-up-bulk-targets {
+  font-size: var(--text-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .egress-up-detail,
+  .egress-up-picker {
+    animation: none;
+  }
+
+  .egress-up-list-item:hover {
+    transform: none;
+  }
+}

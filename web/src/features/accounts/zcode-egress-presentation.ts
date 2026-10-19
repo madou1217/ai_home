@@ -26,7 +26,18 @@ const EGRESS_ERROR_LABELS: Record<string, string> = {
   unknown_egress_mode: '出口绑定模式无效',
   invalid_egress_mode: '出口模式无效',
   egress_apply_failed: '出口应用失败',
-  egress_pool_not_ready: 'AIH 出口池尚未就绪（出口池只由运行中的 aih server 提供；server 未运行、池启动中或启动失败时不可用）'
+  egress_pool_not_ready: 'AIH 出口池尚未就绪（出口池只由运行中的 aih server 提供；server 未运行、池启动中或启动失败时不可用）',
+  egress_pool_no_allowed_nodes: '所选节点都被该账号的上游拒绝，出口池没有可用节点',
+  egress_region_denied_all_nodes: '所选节点都被该账号的上游按地区拒绝，请换节点范围或调整上游地区规则',
+  egress_pool_geo_pending: '正在查询节点的真实位置，查到后自动放行允许的节点',
+  egress_pool_scope_empty: '所选范围里没有节点（分组为空或节点已删除）',
+  egress_pool_lane_overflow: '出口池车道已用满，请把部分账号改为「共享轮换」',
+  egress_pool_lane_not_ready: '出口池正在为该账号选择节点，稍后重试',
+  egress_pool_probe_unavailable: '出口池探测入口不可用（请重启 aih server 以加载新版出口池）',
+  egress_region_denied: '当前网络被该账号的上游按地区拒绝，请设置出口',
+  account_egress_region_denied: '当前网络被该账号的上游按地区拒绝，请设置出口',
+  no_nodes_to_probe: '没有可测试的节点',
+  upstream_not_found: '找不到该上游（账号可能已停用）'
 };
 
 export function describeEgressError(code?: string | null) {

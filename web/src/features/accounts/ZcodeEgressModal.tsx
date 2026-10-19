@@ -1,5 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Form, Input, Modal, Popover, Radio, Space, Spin, Tag, Typography, message } from 'antd';
+import InlineNote from '@/components/ui/InlineNote';
+import PoolScopePicker, { type PoolSelection } from '@/features/egress-upstream/PoolScopePicker';
+import { egressUpstreamAPI } from '@/features/egress-upstream/egress-upstream-api';
+import { applyEgressToAccounts } from '@/features/egress-upstream/bulk-egress';
+import { sameUpstreamUnbound } from '@/features/egress-upstream/egress-upstream-presentation';
+import type { EgressUpstreamView } from '@/features/egress-upstream/types';
 import { ApiOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import { accountsAPI } from '@/services/api';
@@ -8,6 +14,7 @@ import type {
   Account,
   AccountEgressApplyResult,
   AccountEgressBinding,
+  AccountEgressBindingInput,
   AccountEgressMode,
   AccountEgressResponse,
   AccountEgressRuntimeStatus
@@ -29,6 +36,8 @@ interface AccountEgressModalProps {
   account: Account | null;
   onClose: () => void;
 }
+
+const DEFAULT_POOL_SELECTION: PoolSelection = { scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' };
 
 const RUNTIME_LED_CLASS = {
   ready: ' hud-led--ok hud-led--live',
@@ -101,6 +110,12 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const [runtime, setRuntime] = useState<AccountEgressRuntimeStatus | null>(null);
   const [runtimeError, setRuntimeError] = useState('');
   const mode = Form.useWatch('mode', form) || 'url';
+  // 上游判定（节点能否访问该账号的上游、当前网络是否被拒）与出口池节点范围。
+  const [upstreamView, setUpstreamView] = useState<EgressUpstreamView | null>(null);
+  const [poolSelection, setPoolSelection] = useState<PoolSelection>(DEFAULT_POOL_SELECTION);
+  const [probing, setProbing] = useState(false);
+  const upstream = upstreamView?.upstreams[0] || null;
+  const upstreamAccount = upstream?.accounts.find((item) => item.accountRef === account?.accountRef) || null;
   const usesNativeSettings = account?.provider === 'zcode';
   const retired = isRetiredEgressBinding(binding);
 
@@ -134,6 +149,60 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     setRuntimeError(response.runtimeError || '');
   };
 
+  // 上游视图读失败不影响出口设置本身（只是少了节点判定与同上游提示）。
+  const loadUpstream = async (accountRef: string, isCancelled: () => boolean = () => false) => {
+    try {
+      const next = await egressUpstreamAPI.view(accountRef);
+      if (!isCancelled()) setUpstreamView(next);
+    } catch {
+      /* 可选信息 */
+    }
+  };
+
+  const probeNodes = async (nodes: string[]) => {
+    if (!upstream || nodes.length === 0) return;
+    setProbing(true);
+    try {
+      const result = await egressUpstreamAPI.probe(upstream.id, nodes);
+      if (!result.ok) message.warning(describeEgressError(result.error));
+      else if (result.background) message.info(`已在后台测试 ${result.count} 个节点`);
+      else {
+        const blocked = (result.results || []).filter((item) => item.status === 'blocked').length;
+        message.success(`测试完成：${(result.results || []).length - blocked} 个可连通，${blocked} 个被拒`);
+      }
+      if (account) await loadUpstream(account.accountRef);
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  /** 保存成功后：同上游还有没设置出口的账号，提示一起设置同样的出口（每个账号仍是独立绑定）。 */
+  const offerSameUpstream = (input: AccountEgressBindingInput) => {
+    if (!account) return;
+    const others = sameUpstreamUnbound(upstream, account.accountRef);
+    if (others.length === 0) return;
+    Modal.confirm({
+      title: `${upstream?.host} 还有 ${others.length} 个账号未设置出口`,
+      content: (
+        <div className="egress-same-upstream">
+          <p>它们与当前账号访问同一个上游，地区限制相同。要用同样的出口设置吗？之后每个账号仍可单独修改。</p>
+          <p className="egress-same-upstream-list">{others.map((item) => item.label || item.accountRef).join('、')}</p>
+        </div>
+      ),
+      okText: `一起设置 ${others.length} 个`,
+      cancelText: '暂不',
+      onOk: async () => {
+        const result = await applyEgressToAccounts(
+          others.map((item) => ({ provider: item.provider, accountRef: item.accountRef, label: item.label })),
+          input
+        );
+        if (result.failed.length === 0) message.success(`已为另外 ${result.applied} 个账号设置出口`);
+        else message.warning(`${result.applied} 个成功，${result.failed.length} 个失败（${result.failed.map((item) => item.label || item.accountRef).join('、')}）`);
+        await loadUpstream(account.accountRef);
+      }
+    });
+  };
+
   useEffect(() => {
     if (!account) return undefined;
     let cancelled = false;
@@ -144,6 +213,9 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     setRuntimeError('');
     form.setFieldsValue({ mode: 'url', proxyUrl: '' });
 
+    setUpstreamView(null);
+    setPoolSelection(DEFAULT_POOL_SELECTION);
+    void loadUpstream(account.accountRef, () => cancelled);
     accountsAPI.getAccountEgress(account.provider, account.accountRef)
       .then((response) => {
         if (cancelled) return;
@@ -151,6 +223,12 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
         const current = response.binding;
         if (current && !current.retired) {
           form.setFieldsValue({ mode: current.mode as AccountEgressMode, proxyUrl: current.proxyUrl || '' });
+          if (current.mode === 'pool') {
+            setPoolSelection({
+              scope: current.scope || DEFAULT_POOL_SELECTION.scope,
+              strategy: current.strategy || 'shared'
+            });
+          }
         }
       })
       .catch(() => {
@@ -188,12 +266,16 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     }
     setSubmitting(true);
     try {
-      const response = await accountsAPI.saveAccountEgress(account.provider, account.accountRef, {
+      const input: AccountEgressBindingInput = {
         mode: values.mode,
-        proxyUrl: values.mode === 'url' ? String(values.proxyUrl || '').trim() : ''
-      });
+        proxyUrl: values.mode === 'url' ? String(values.proxyUrl || '').trim() : '',
+        ...(values.mode === 'pool' ? { scope: poolSelection.scope, strategy: poolSelection.strategy } : {})
+      };
+      const response = await accountsAPI.saveAccountEgress(account.provider, account.accountRef, input);
       showBinding(response);
       reportApplyResult(response.apply);
+      await loadUpstream(account.accountRef);
+      if (!response.apply || response.apply.ok) offerSameUpstream(input);
     } catch (error: any) {
       const code = error?.response?.data?.error;
       message.error(code ? describeEgressError(code) : error?.message || '保存账号出口失败');
@@ -226,7 +308,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     <Modal
       open={Boolean(account)}
       title={account ? `出口设置 · ${getAccountPrimaryLabel(account)}` : '账号出口设置'}
-      width={640}
+      width={mode === 'pool' ? 780 : 640}
       destroyOnHidden
       maskClosable={!submitting}
       onCancel={onClose}
@@ -279,6 +361,11 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
             </Button>
           ) : null}
         </div>
+        {upstreamAccount?.network?.status === 'denied' ? (
+          <InlineNote tone="error" description={upstreamAccount.network.detail}>
+            当前网络（{upstreamAccount.network.geoText || '本机出口'}）被 {upstream?.host} 拒绝：该账号已被禁止使用，请设置出口
+          </InlineNote>
+        ) : null}
         {retired ? (
           <Typography.Paragraph type="warning" className="egress-message">
             该账号的出口模式（{binding?.mode === 'group' ? '节点组' : '节点'}）已随 AIH 本地代理端口一起下线，启动会被阻止；
@@ -336,6 +423,17 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
               </Space>
             </Radio.Group>
           </Form.Item>
+          {mode === 'pool' ? (
+            <PoolScopePicker
+              upstream={upstream}
+              groups={upstreamView?.groups || []}
+              poolReady={Boolean(upstreamView?.pool.ready)}
+              value={poolSelection}
+              onChange={setPoolSelection}
+              probing={probing}
+              onProbe={(nodes) => void probeNodes(nodes)}
+            />
+          ) : null}
           {mode === 'url' ? (
             <Form.Item
               name="proxyUrl"

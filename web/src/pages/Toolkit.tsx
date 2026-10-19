@@ -4,6 +4,7 @@ import { Tabs } from 'antd';
 import {
   ApiOutlined,
   AppstoreOutlined,
+  CloudServerOutlined,
   CloudSyncOutlined,
   CodeOutlined,
   ForkOutlined,
@@ -22,6 +23,7 @@ import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePane
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
+import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -100,6 +102,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ApiOutlined />
     },
     {
+      id: 'egress-upstreams',
+      label: '上游地区策略',
+      description: '哪些出口位置能访问哪个上游',
+      icon: <CloudServerOutlined />
+    },
+    {
       id: 'proxy-diagnostics',
       label: '网络诊断',
       description: '代理状态与诊断',
@@ -142,6 +150,8 @@ function renderPanel(panelId: string) {
       return <SubscriptionAggregatorPanel />;
     case 'egress-pool':
       return <EgressPoolPanel />;
+    case 'egress-upstreams':
+      return <EgressUpstreamPanel />;
     case 'proxy-diagnostics':
       return <ProxyDiagnosticsPanel />;
     default:

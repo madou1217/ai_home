@@ -1647,6 +1647,15 @@ export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool';
 /** 已下线的历史出口模式（节点 / 分组）：只读展示，提示改绑。 */
 export type RetiredAccountEgressMode = 'node' | 'group';
 
+/** 出口池绑定的节点范围（全部 / 自建分组 / 自选节点，节点按出口身份记）。 */
+export interface AccountEgressPoolScope {
+  kind: 'all' | 'groups' | 'nodes';
+  groups: string[];
+  nodes: string[];
+}
+
+export type AccountEgressPoolStrategy = 'shared' | 'sticky';
+
 export interface AccountEgressBinding {
   mode: AccountEgressMode | RetiredAccountEgressMode;
   proxyUrl: string;
@@ -1654,11 +1663,15 @@ export interface AccountEgressBinding {
   retired?: boolean;
   nodeId?: string;
   groupId?: string;
+  scope?: AccountEgressPoolScope;
+  strategy?: AccountEgressPoolStrategy;
 }
 
 export interface AccountEgressBindingInput {
   mode: AccountEgressMode;
   proxyUrl?: string;
+  scope?: AccountEgressPoolScope;
+  strategy?: AccountEgressPoolStrategy;
 }
 
 export interface AccountEgressApplyResult {

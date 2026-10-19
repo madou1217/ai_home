@@ -5,7 +5,9 @@ const transport = require('../lib/server/kiro-chat-transport');
 const {
   encodeKiroEventStreamFrame,
   encodeKiroAssistantEvent,
-  encodeKiroInitialResponse
+  encodeKiroInitialResponse,
+  encodeKiroEvent,
+  encodeKiroToolUseEvents
 } = require('./helpers/kiro-event-stream-encoder');
 
 function toWebStream(buffer) {
@@ -279,20 +281,135 @@ test('fetchKiroChatCompletionStream emits OpenAI chat SSE chunks', async () => {
   assert.ok(text.endsWith('data: [DONE]\n\n'));
 });
 
-test('fetchKiroChatCompletionStream destroys the stream on upstream failure', async () => {
+function readSsePayloads(text) {
+  return text.split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => line.slice(6))
+    .filter((value) => value !== '[DONE]')
+    .map((value) => JSON.parse(value));
+}
+
+async function drain(body) {
+  let text = '';
+  for await (const chunk of body) text += chunk.toString('utf8');
+  return text;
+}
+
+test('fetchKiroChatCompletionStream rejects before the first byte so the strategy can retry another account', async () => {
+  // 旧行为：先返回流再 destroy —— 客户端已收到头，400/401/429 一律无法换号。
+  await assert.rejects(
+    () => transport.fetchKiroChatCompletionStream({}, { accessToken: 'tok' }, {
+      model: 'claude-haiku-4.5',
+      messages: [{ role: 'user', content: 'hi' }]
+    }, 5000, {
+      fetch: async () => fakeResponse([
+        encodeKiroEventStreamFrame({ ':message-type': 'exception', ':exception-type': 'ThrottlingException' }, {})
+      ])
+    }),
+    (error) => {
+      assert.equal(error.code, 'kiro_upstream_throttled');
+      return true;
+    }
+  );
+});
+
+test('fetchKiroChatCompletionStream emits OpenAI tool_calls deltas and finish_reason tool_calls', async () => {
+  const upstream = await transport.fetchKiroChatCompletionStream({}, { accessToken: 'tok' }, {
+    model: 'claude-opus-5.5',
+    messages: [{ role: 'user', content: 'weather?' }],
+    tools: [{ type: 'function', function: { name: 'get_weather', parameters: { type: 'object' } } }]
+  }, 5000, {
+    fetch: async () => fakeResponse([
+      encodeKiroInitialResponse('conv-t'),
+      encodeKiroAssistantEvent('Checking.'),
+      ...encodeKiroToolUseEvents('toolu_1', 'get_weather', ['{"ci', 'ty":"Paris"}']),
+      encodeKiroEvent('contextUsageEvent', { contextUsagePercentage: 2.5 }),
+      encodeKiroEvent('meteringEvent', { unit: 'credit', unitPlural: 'credits', usage: 0.02 })
+    ])
+  });
+  const payloads = readSsePayloads(await drain(upstream.body));
+  const toolDeltas = payloads.flatMap((item) => (item.choices[0].delta.tool_calls || []));
+  assert.equal(toolDeltas[0].id, 'toolu_1');
+  assert.equal(toolDeltas[0].function.name, 'get_weather');
+  assert.equal(toolDeltas.map((delta) => delta.function.arguments).join(''), '{"city":"Paris"}');
+  assert.equal(payloads[payloads.length - 1].choices[0].finish_reason, 'tool_calls');
+  const outcome = await upstream.completion;
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.result.credits, 0.02);
+  assert.equal(outcome.result.contextUsagePercentage, 2.5);
+  assert.deepEqual(outcome.result.toolCalls, [{ index: 0, id: 'toolu_1', name: 'get_weather', arguments: '{"city":"Paris"}' }]);
+});
+
+test('fetchKiroChatCompletionStream turns a mid-stream failure into an error frame instead of a fake stop', async () => {
   const upstream = await transport.fetchKiroChatCompletionStream({}, { accessToken: 'tok' }, {
     model: 'claude-haiku-4.5',
     messages: [{ role: 'user', content: 'hi' }]
   }, 5000, {
     fetch: async () => fakeResponse([
-      encodeKiroEventStreamFrame({ ':message-type': 'exception', ':exception-type': 'ThrottlingException' }, {})
+      encodeKiroAssistantEvent('partial answer'),
+      encodeKiroEventStreamFrame({ ':message-type': 'exception', ':exception-type': 'InternalServerException' }, { message: 'boom' })
     ])
   });
-  await assert.rejects(async () => {
-    for await (const _chunk of upstream.body) { /* drain */ }
-  }, (error) => {
-    assert.equal(error.code, 'kiro_upstream_throttled');
-    return true;
-  });
+  const text = await drain(upstream.body);
+  const payloads = readSsePayloads(text);
+  assert.equal(payloads.some((item) => item.choices && item.choices[0].finish_reason), false);
+  const last = payloads[payloads.length - 1];
+  assert.equal(last.error.code, 'kiro_upstream_capacity');
+  assert.equal(last.error.status, 503);
+  assert.equal(text.includes('[DONE]'), false);
+  const outcome = await upstream.completion;
+  assert.equal(outcome.ok, false);
 });
 
+test('fetchKiroChatCompletion returns tool_calls for a tool-only answer', async () => {
+  const payload = await transport.fetchKiroChatCompletion({}, { accessToken: 'tok' }, {
+    model: 'claude-haiku-4.5',
+    messages: [{ role: 'user', content: 'weather?' }],
+    tools: [{ type: 'function', function: { name: 'get_weather' } }]
+  }, 5000, {
+    fetch: async () => fakeResponse(encodeKiroToolUseEvents('t9', 'get_weather', ['{"city":"Oslo"}']))
+  });
+  assert.equal(payload.choices[0].finish_reason, 'tool_calls');
+  assert.equal(payload.choices[0].message.content, null);
+  assert.deepEqual(payload.choices[0].message.tool_calls, [
+    { id: 't9', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Oslo"}' } }
+  ]);
+});
+
+test('runKiroTurn sends tools and paired tool results upstream', async () => {
+  let sent = null;
+  await transport.runKiroTurn({}, { accessToken: 'tok' }, {
+    model: 'claude-haiku-4.5',
+    messages: [
+      { role: 'user', content: 'weather?' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 't1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } }] },
+      { role: 'tool', tool_call_id: 't1', content: 'sunny' }
+    ],
+    tools: [{ type: 'function', function: { name: 'get_weather', description: 'Weather', parameters: { type: 'object' } } }]
+  }, 5000, {
+    fetch: async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return fakeResponse([encodeKiroAssistantEvent('It is sunny.')]);
+    }
+  });
+  const state = sent.conversationState;
+  assert.deepEqual(state.history[1].assistantResponseMessage.toolUses, [{ toolUseId: 't1', name: 'get_weather', input: { city: 'Paris' } }]);
+  const context = state.currentMessage.userInputMessage.userInputMessageContext;
+  assert.deepEqual(context.toolResults, [{ toolUseId: 't1', status: 'success', content: [{ text: 'sunny' }] }]);
+  assert.equal(context.tools[0].toolSpecification.name, 'get_weather');
+});
+
+test('mapKiroUpstreamError uses the structured reason for model and context-length rejections', () => {
+  const model = transport.mapKiroUpstreamError({
+    payload: JSON.stringify({ __type: 'com.amazon.aws.codewhisperer#ValidationException', message: 'Invalid model. Please select a different model to continue.', reason: 'INVALID_MODEL_ID' }),
+    fallbackStatus: 400
+  });
+  assert.equal(model.code, 'model_not_found');
+  assert.match(model.message, /model_not_found/);
+  const length = transport.mapKiroUpstreamError({
+    payload: JSON.stringify({ __type: 'ValidationException', message: 'Input is too long.', reason: 'CONTENT_LENGTH_EXCEEDS_THRESHOLD' }),
+    fallbackStatus: 400
+  });
+  assert.equal(length.code, 'context_length_exceeded');
+  assert.match(length.message, /prompt is too long/);
+});

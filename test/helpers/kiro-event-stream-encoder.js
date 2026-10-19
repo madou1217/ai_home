@@ -45,8 +45,26 @@ function encodeKiroInitialResponse(conversationId) {
   );
 }
 
+function encodeKiroEvent(eventType, payload) {
+  return encodeKiroEventStreamFrame(
+    { ':message-type': 'event', ':event-type': eventType, ':content-type': 'application/json' },
+    payload
+  );
+}
+
+/** 真机形状：首帧只有 name，随后 input 字符串分片，最后 stop:true。 */
+function encodeKiroToolUseEvents(toolUseId, name, inputChunks = []) {
+  return [
+    encodeKiroEvent('toolUseEvent', { name, toolUseId }),
+    ...inputChunks.map((input) => encodeKiroEvent('toolUseEvent', { input, name, toolUseId })),
+    encodeKiroEvent('toolUseEvent', { name, stop: true, toolUseId })
+  ];
+}
+
 module.exports = {
   encodeKiroEventStreamFrame,
   encodeKiroAssistantEvent,
-  encodeKiroInitialResponse
+  encodeKiroInitialResponse,
+  encodeKiroEvent,
+  encodeKiroToolUseEvents
 };

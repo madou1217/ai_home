@@ -355,7 +355,8 @@ export const PROVIDER_DEFINITIONS = [
       "model_catalog",
       "session_history",
       "account_session_store",
-      "quota_usage"
+      "quota_usage",
+      "usage_scan"
     ],
     "authOptions": [
       {

@@ -499,7 +499,11 @@ func builtinKiro() Definition {
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
 		RelayHosts:   relayHostsNodeOnly("Go 无 kiro 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
-		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage},
+		// usage_scan：kiro-cli 的会话写在宿主共享的 ~/.kiro/sessions/<sha256(cwd)[:16]>/sess_*/messages.jsonl，
+		// 每次模型请求一条 contextUsage（上下文占用百分比）、每轮一条 usage_summary（credits + status），
+		// 2026-10-19 实测 kiro-cli 2.32。token 没有原生字段，按「百分比 × 模型 maxInputTokens」估算；
+		// 账号归属取自持久会话注册表的账号作用域（lib/usage/kiro-session-usage.js）。
+		Capabilities: []Capability{CapabilityModelCatalog, CapabilitySessionHistory, CapabilityAccountSessionStore, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeOAuthDevice, "AWS Builder ID 登录", "由 aih 直接完成 AWS SSO OIDC 设备码授权（Builder ID / IAM Identity Center），不需要本地 kiro CLI。"),
 			authOption(AuthModeOAuthRefreshToken, "Kiro Desktop / refresh_token", "Kiro Desktop（Google / GitHub）账号：粘贴 Kiro IDE 的 refresh_token 完成导入。"),

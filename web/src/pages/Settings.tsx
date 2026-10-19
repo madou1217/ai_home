@@ -1,4 +1,5 @@
 import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
+import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
 import InlineNote from '@/components/ui/InlineNote';
 import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
@@ -547,6 +548,8 @@ const Settings = ({ section }: SettingsProps) => {
           onChange={handleWallpaperFileChange}
         />
       </SettingsGroupCard>
+
+      <CaptureSettingsCard />
 
       <ProCard className="settings-panel hud-panel" bordered bodyStyle={{ padding: 16 }}>
         <div className="settings-panel-head">

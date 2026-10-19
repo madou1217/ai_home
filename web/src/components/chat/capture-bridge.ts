@@ -4,22 +4,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
-import type {
-  AnimationCaptureFormatId,
-  CaptureFormatAvailability,
-  CaptureFormatId,
-  CapturePreferences
-} from '../../features/capture';
+import type { CaptureFormatId } from '../../features/capture';
 import {
   downloadCaptureArtifact,
   encodePreviewDocument,
   FALLBACK_VIEWPORT_WIDTH,
-  isAnimationCaptureFormat,
-  isFormatAvailable,
-  isStillCaptureFormat,
-  listAnimationFormats,
-  probeCaptureFormatAvailability,
-  readCapturePreferences
+  isStillCaptureFormat
+} from '../../features/capture';
+
+// 格式选项与默认格式裁决的事实源在 capture 域（设置页共用），这里只做转发。
+export {
+  listRecordableAnimationFormats,
+  resolveDefaultRecordFormat,
+  type RecordFormatOption
 } from '../../features/capture';
 
 export interface PreviewCaptureState {
@@ -37,37 +34,6 @@ export interface PreviewCaptureActionsOptions {
   getPreviewDoc: () => string;
   /** 预览视口宽度（与用户实际看到的宽度一致）。 */
   getViewportWidth: () => number;
-}
-
-export interface RecordFormatOption {
-  id: AnimationCaptureFormatId;
-  label: string;
-}
-
-/** 可选录制格式 = 全局启用矩阵 ∩ 浏览器探测能力；落库偏好是唯一事实源。 */
-export function listRecordableAnimationFormats(
-  deps: {
-    availability?: CaptureFormatAvailability;
-    preferences?: CapturePreferences;
-  } = {}
-): RecordFormatOption[] {
-  const availability = deps.availability ?? probeCaptureFormatAvailability();
-  const prefs = deps.preferences ?? readCapturePreferences();
-  return listAnimationFormats()
-    .filter((format) => prefs.enabledFormats[format.id] && isFormatAvailable(format.id, availability))
-    .map((format) => ({ id: format.id, label: format.label }));
-}
-
-/** 主按钮默认动作：偏好默认格式（必须启用且在可选清单里），否则清单第一项。 */
-export function resolveDefaultRecordFormat(
-  options: RecordFormatOption[],
-  preferences: CapturePreferences = readCapturePreferences()
-): AnimationCaptureFormatId | null {
-  const preferred = preferences.defaultFormat;
-  if (isAnimationCaptureFormat(preferred) && preferences.enabledFormats[preferred] && options.some((option) => option.id === preferred)) {
-    return preferred;
-  }
-  return options[0]?.id ?? null;
 }
 
 export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions): PreviewCaptureActions {

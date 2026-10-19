@@ -50,6 +50,12 @@ export {
   type PreviewEncodeRequest
 } from './preview-encode-dispatch';
 export {
+  listRecordableAnimationFormats,
+  resolveDefaultRecordFormat,
+  type RecordFormatOption,
+  type RecordFormatOptionDeps
+} from './capture-options';
+export {
   CAPTURE_REQUEST_TYPE,
   CAPTURE_RESULT_TYPE,
   ensurePreviewWindowCaptureHost,

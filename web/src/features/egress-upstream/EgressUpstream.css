@@ -366,3 +366,56 @@
     transform: none;
   }
 }
+
+/* 账号列表出口徽标与批量选择 */
+.account-egress-badge {
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 4px;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+
+.account-egress-badge:hover,
+.account-egress-badge:focus-visible {
+  border-color: var(--color-accent);
+  outline: none;
+}
+
+.egress-bulk-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.egress-bulk-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 56vh;
+  overflow: auto;
+}
+
+.egress-bulk-group {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--hos-radius-sm);
+}
+
+.egress-bulk-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 var(--space-5, 24px);
+  list-style: none;
+}
+
+.egress-bulk-group li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}

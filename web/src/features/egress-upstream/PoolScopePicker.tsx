@@ -48,9 +48,12 @@ export default function PoolScopePicker({ upstream, groups, poolReady, value, on
   const nodes = upstream?.nodes || [];
   const scope = value.scope;
   const summary = useMemo(() => summarizeScope(nodes, scope), [nodes, scope]);
-  const summaryText = scope.kind === 'nodes' && scope.nodes.length === 0
-    ? { tone: 'warning' as const, text: '勾选要使用的节点（一个都不选时保存为全部节点）' }
-    : describeScopeSummary(summary);
+  // 没有单一上游（批量设置跨了多个上游）：节点按每个账号各自的上游判定，这里不汇总。
+  const summaryText = !upstream
+    ? { tone: 'success' as const, text: '所选账号属于不同上游：每个账号按自己上游的地区判定使用节点' }
+    : scope.kind === 'nodes' && scope.nodes.length === 0
+      ? { tone: 'warning' as const, text: '勾选要使用的节点（一个都不选时保存为全部节点）' }
+      : describeScopeSummary(summary);
   const countries = useMemo(() => countriesOf(nodes), [nodes]);
   const visible = useMemo(() => nodes.filter((node) => {
     if (country && node.geo?.country !== country) return false;

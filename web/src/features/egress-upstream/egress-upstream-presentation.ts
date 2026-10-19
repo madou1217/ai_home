@@ -151,3 +151,24 @@ export function describeAccountEgress(account: EgressUpstreamAccount) {
   const labels: Record<string, string> = { url: '代理地址', system: '系统代理', tun: '外部 TUN' };
   return { tone: 'success' as const, label: labels[account.egress.mode] || account.egress.mode, detail: account.network?.geoText || '' };
 }
+
+export type BulkQuickSelect = 'unbound' | 'denied' | 'none';
+
+/** 批量设置的快捷选择：未设置出口的 / 当前网络被拒的。 */
+export function quickSelectAccounts(upstreams: EgressUpstream[], kind: BulkQuickSelect) {
+  if (kind === 'none') return [];
+  return upstreams.flatMap((upstream) => upstream.accounts
+    .filter((account) => (kind === 'unbound'
+      ? !account.egress
+      : account.network?.status === 'denied'))
+    .map((account) => account.accountRef));
+}
+
+/** 所选账号是否属于同一个上游（是 → 弹窗可以显示该上游的节点判定）。 */
+export function commonUpstream(upstreams: EgressUpstream[], accountRefs: string[]) {
+  if (accountRefs.length === 0) return null;
+  const owners = new Set(accountRefs.map((ref) => upstreams.find((upstream) => upstream.accounts.some((account) => account.accountRef === ref))?.id || ''));
+  if (owners.size !== 1) return null;
+  const [id] = [...owners];
+  return upstreams.find((upstream) => upstream.id === id) || null;
+}

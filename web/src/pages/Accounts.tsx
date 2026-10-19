@@ -117,6 +117,9 @@ import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
+import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
+import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
+import { useAccountEgressSummary } from '@/features/egress-upstream/use-account-egress-summary';
 import {
   formatCodexResetMenuLabel,
   isCodexOAuthResetEligible
@@ -247,6 +250,16 @@ export default function Accounts() {
     accountWindowActivationAccount,
     setAccountWindowActivationAccount
   } = accountActions;
+
+  // 账号出口摘要：列表 / 卡片上的出口徽标与「批量设置出口」共用（见 features/egress-upstream）。
+  const egressSummary = useAccountEgressSummary();
+  const [bulkEgressOpen, setBulkEgressOpen] = useState(false);
+  const renderEgressBadge = (record: Account) => (
+    <AccountEgressBadge
+      entry={egressSummary.byAccount.get(getAccountRef(record))}
+      onOpen={() => setAccountEgressAccount(record)}
+    />
+  );
 
   useEffect(() => {
     persistActiveProviderTab(activeProvider);
@@ -462,6 +475,7 @@ export default function Accounts() {
                 {getPlanTagLabel(record)}
               </Tag>
               {renderAccountRegionTag(record)}
+              {renderEgressBadge(record)}
               {/* 操作按钮必须保持语义化图标（DesktopOutlined / CodeOutlined），禁止替换为 ProviderIcon，避免与行首厂商主图标混淆 */}
               {appEntries && desktopSupported ? (
                 <Tooltip title={requiresReauth ? '需要重新登录后才能打开 Desktop' : !record.configured ? '账号未配置，完成授权后可打开 Desktop' : runningAccounts.includes(getAccountRef(record)) ? 'Desktop 运行中（点击关闭）' : desktopInstalled ? '打开 Desktop' : '未安装 Desktop，点击后确认安装'}>
@@ -889,6 +903,9 @@ export default function Accounts() {
         // 列表自动订阅快照；账号刷新统一由行首 Logo 触发。
         extra={
           <Space size={8}>
+            <Button icon={<GlobalOutlined />} onClick={() => setBulkEgressOpen(true)}>
+              批量设置出口
+            </Button>
             <Select
               value={filterStatus}
               onChange={setFilterStatus}
@@ -937,6 +954,7 @@ export default function Accounts() {
                   drops={tokenDrops}
                 />
               )}
+              renderExtraTags={renderEgressBadge}
               getMenuItems={buildAccountMenuItems}
               onMenuClick={handleAccountMenuClick}
               onConfirmSubscription={handleRefreshUsage}
@@ -990,7 +1008,19 @@ export default function Accounts() {
       <AccountFlowModals actions={accountActions} />
       <AccountEgressModal
         account={accountEgressAccount}
-        onClose={() => setAccountEgressAccount(null)}
+        onClose={() => {
+          setAccountEgressAccount(null);
+          void egressSummary.reload();
+        }}
+      />
+      <AccountEgressBulkPicker
+        open={bulkEgressOpen}
+        view={egressSummary.view}
+        providers={[...new Set(filteredAccounts.map((account) => account.provider))]}
+        onClose={(changed) => {
+          setBulkEgressOpen(false);
+          if (changed) void egressSummary.reload();
+        }}
       />
       <AccountWindowActivationModal
         account={accountWindowActivationAccount}

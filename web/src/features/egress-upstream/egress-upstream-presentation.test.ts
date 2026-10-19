@@ -78,3 +78,20 @@ test('account egress badge: denied network wins, pool shows lane', () => {
   assert.equal(describeAccountEgress({ accountRef: 'a', provider: 'claude', label: '', egress: { mode: 'pool', retired: false, strategy: 'sticky' },
     lane: { activeNode: 'node-1', activeLabel: 'US01', blocked: '', allowedCount: 3, scopeCount: 4 }, network: null } as never).detail, 'US01 · 可用 3/4');
 });
+
+test('bulk quick-select and shared-upstream detection', async () => {
+  const { quickSelectAccounts, commonUpstream } = await import('./egress-upstream-presentation.ts');
+  const upstreams = [
+    { id: 'u1', accounts: [
+      { accountRef: 'a', egress: null, network: { status: 'denied' } },
+      { accountRef: 'b', egress: { mode: 'url' }, network: { status: 'allowed' } }
+    ] },
+    { id: 'u2', accounts: [{ accountRef: 'c', egress: null, network: null }] }
+  ] as never;
+  assert.deepEqual(quickSelectAccounts(upstreams, 'unbound'), ['a', 'c']);
+  assert.deepEqual(quickSelectAccounts(upstreams, 'denied'), ['a']);
+  assert.deepEqual(quickSelectAccounts(upstreams, 'none'), []);
+  assert.equal((commonUpstream(upstreams, ['a', 'b']) as { id: string } | null)?.id, 'u1');
+  assert.equal(commonUpstream(upstreams, ['a', 'c']), null);
+  assert.equal(commonUpstream(upstreams, []), null);
+});

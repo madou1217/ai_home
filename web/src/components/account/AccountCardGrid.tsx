@@ -35,6 +35,8 @@ interface AccountCardGridProps {
   renderHealth: (account: Account) => ReactNode;
   /** 剩余额度（全部窗口 + 消耗动效），与列表「剩余额度」列同一组件。 */
   renderUsage: (account: Account) => ReactNode;
+  /** 标签行末尾的附加标签（例如出口徽标），与列表账号列同一组件。 */
+  renderExtraTags?: (account: Account) => ReactNode;
   /** ⋮ 菜单与列表操作列共用同一套 items + 点击分发。 */
   getMenuItems: (account: Account) => MenuProps['items'];
   onMenuClick: (account: Account, key: string) => void;
@@ -61,6 +63,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   isRefreshing,
   renderHealth,
   renderUsage,
+  renderExtraTags,
   getMenuItems,
   onMenuClick,
   onCopy,
@@ -135,6 +138,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
                 <span className={styles.tagGroup}>
                   <Tag color={getPlanTagColor(acc)} className={styles.planTag}>{getPlanTagLabel(acc)}</Tag>
                   {renderAccountRegionTag(acc)}
+                  {renderExtraTags ? renderExtraTags(acc) : null}
                 </span>
               </div>
               <div className={styles.usageBlock}>{renderUsage(acc)}</div>

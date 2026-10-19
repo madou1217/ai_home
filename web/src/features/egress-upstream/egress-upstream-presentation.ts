@@ -141,7 +141,7 @@ export function describeAccountEgress(account: EgressUpstreamAccount) {
   if (!account.egress) return { tone: 'default' as const, label: '未设置', detail: '使用默认网络' };
   if (account.egress.mode === 'pool') {
     if (account.lane && account.lane.blocked) return { tone: 'error' as const, label: '出口池无可用节点', detail: account.lane.blocked };
-    const strategy = account.egress.strategy === 'sticky' ? '独占' : '共享';
+    const strategy = account.egress.strategy === 'sticky' ? '独占' : account.egress.strategy === 'session' ? '会话独占' : '共享';
     return {
       tone: 'success' as const,
       label: `出口池 · ${strategy}`,

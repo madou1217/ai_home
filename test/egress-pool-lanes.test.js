@@ -351,3 +351,80 @@ test('traffic evidence: region denial on a lane records blocked, skips account c
     runtime.stop();
   }
 });
+
+test('session strategy: planner reserves distinct-node lanes per account; state file exposes them', async () => {
+  const home = tempHome();
+  const { runtime } = buildRuntime({ lanePorts: [17903, 17904, 17905] });
+  try {
+    await runtime.start();
+    ['node-0', 'node-1', 'node-2', 'node-3'].forEach((name) => runtime.health.recordGeo(name, { country: 'US' }));
+    const session = { mode: 'pool', proxyUrl: '', scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'session' };
+    const planner = plannerFor(home, runtime, [{ accountRef: 'g1', provider: 'agy', binding: session }]);
+    const computed = planner.planNow();
+    const lanes = computed.plan.filter((lane) => lane.strategy === 'session');
+    assert.equal(lanes.length, 3, 'capped by free lane slots');
+    assert.deepEqual(lanes.map((lane) => lane.sessionSlot), [0, 1, 2]);
+    await runtime.rotationQueue;
+    const urls = runtime.sessionLaneUrlMap().g1;
+    assert.equal(urls.length, 3);
+    const actives = runtime.describeLanes().filter((lane) => lane.sessionSlot !== undefined).map((lane) => lane.activeNode);
+    assert.equal(new Set(actives).size, 3, 'each session lane exits through a different node');
+    // 网关请求走槽位 0。
+    assert.equal(runtime.laneProxyUrl('g1'), urls[0]);
+  } finally {
+    runtime.stop();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('session leases: concurrent sessions get different lanes, dead holders are reclaimed, overflow shares', () => {
+  const { acquireSessionLane, describeSessionLeases } = require('../lib/runtime/egress-pool-session-lease');
+  const home = tempHome();
+  try {
+    const urls = ['http://127.0.0.1:1', 'http://127.0.0.1:2'];
+    const alive = new Set([101, 102, 103]);
+    const isPidAlive = (pid) => alive.has(Number(pid));
+    const first = acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls, pid: 101, isPidAlive });
+    const second = acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls, pid: 102, isPidAlive });
+    assert.deepEqual([first.slot, second.slot, first.shared, second.shared], [0, 1, false, false]);
+    // 同一进程再查一次：拿回自己的槽位。
+    assert.equal(acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls, pid: 101, isPidAlive }).slot, 0);
+    // 两条都被占：第三个会话复用一条并标记 shared。
+    assert.equal(acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls, pid: 103, isPidAlive }).shared, true);
+    // 101 退出：新会话接管槽位 0。
+    alive.delete(101);
+    const reclaimed = acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls, pid: 104, isPidAlive: (pid) => pid === 104 || alive.has(Number(pid)) });
+    assert.deepEqual([reclaimed.slot, reclaimed.shared], [0, false]);
+    assert.deepEqual(describeSessionLeases({ fs, aiHomeDir: home, accountRef: 'acct_x', count: 2, isPidAlive: (pid) => pid === 104 || alive.has(Number(pid)) })
+      .map((lease) => [lease.pid, lease.alive]), [[104, true], [102, true]]);
+    assert.equal(acquireSessionLane({ fs, aiHomeDir: home, accountRef: 'acct_x', urls: [] }), null);
+    const mode = fs.statSync(nodePath.join(home, 'run', 'egress-pool', 'session-leases', 'acct_x', 'lane-0.json')).mode & 0o777;
+    assert.equal(mode, 0o600);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('registry: CLI sessions of a session-strategy account read leased lanes from the state file', () => {
+  const stateFile = require('../lib/runtime/egress-pool-state-file');
+  const home = tempHome();
+  try {
+    fs.mkdirSync(nodePath.join(home, 'run', 'egress-pool'), { recursive: true });
+    stateFile.writeEgressPoolState({
+      fs, aiHomeDir: home, ownerPid: process.pid, corePid: process.pid, proxyUrl: 'http://127.0.0.1:17890',
+      controllerPort: 17891, secret: 's',
+      lanes: { acct_x: 'http://127.0.0.1:17893' },
+      sessionLanes: { acct_x: ['http://127.0.0.1:17893', 'http://127.0.0.1:17894', 'http://evil.example:1'] }
+    });
+    registry.resetEgressPoolServiceForTests();
+    assert.deepEqual(stateFile.readEgressPoolState({ fs, aiHomeDir: home }).sessionLanes.acct_x,
+      ['http://127.0.0.1:17893', 'http://127.0.0.1:17894'], 'non-loopback lanes are dropped');
+    // 非会话调用（用量探测等）：槽位 0 / 账号车道。
+    assert.equal(registry.currentEgressPoolProxyUrl({ fs, aiHomeDir: home, accountRef: 'acct_x' }), 'http://127.0.0.1:17893');
+    // 会话调用：认领租约（本进程 = 持有者）。
+    const leased = registry.currentEgressPoolProxyUrl({ fs, aiHomeDir: home, accountRef: 'acct_x', session: true });
+    assert.ok(['http://127.0.0.1:17893', 'http://127.0.0.1:17894'].includes(leased));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

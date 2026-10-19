@@ -95,3 +95,9 @@ test('bulk quick-select and shared-upstream detection', async () => {
   assert.equal(commonUpstream(upstreams, ['a', 'c']), null);
   assert.equal(commonUpstream(upstreams, []), null);
 });
+
+test('session strategy badge', async () => {
+  const { describeAccountEgress } = await import('./egress-upstream-presentation.ts');
+  assert.equal(describeAccountEgress({ accountRef: 'a', provider: 'opencode', label: '', egress: { mode: 'pool', retired: false, strategy: 'session' },
+    lane: null, network: null } as never).label, '出口池 · 会话独占');
+});

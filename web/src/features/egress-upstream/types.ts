@@ -80,7 +80,7 @@ export interface EgressPoolScope {
   nodes: string[];
 }
 
-export type EgressPoolStrategy = 'shared' | 'sticky';
+export type EgressPoolStrategy = 'shared' | 'sticky' | 'session';
 
 export interface EgressUpstreamAccount {
   accountRef: string;

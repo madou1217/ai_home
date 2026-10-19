@@ -31,6 +31,12 @@ interface PoolScopePickerProps {
   onProbe: (nodeNames: string[]) => void;
 }
 
+const STRATEGY_HINTS: Record<string, string> = {
+  shared: '同上游、同范围的账号共用一条轮换',
+  sticky: '同上游的账号尽量分到不同出口 IP（降低关联风险）',
+  session: '该账号每开一个本地 CLI 会话就认领一个不同的出口（最多 4 个，更多会话复用）；网关请求走第一个'
+};
+
 const SUMMARY_ICON = {
   success: <CheckCircleOutlined />,
   warning: <LoadingOutlined />,
@@ -191,11 +197,12 @@ export default function PoolScopePicker({ upstream, groups, poolReady, value, on
           size="small"
           options={[
             { value: 'shared', label: '共享轮换' },
-            { value: 'sticky', label: '账号独占' }
+            { value: 'sticky', label: '账号独占' },
+            { value: 'session', label: '会话独占' }
           ]}
         />
         <Typography.Text type="secondary" className="egress-up-row-hint">
-          {value.strategy === 'sticky' ? '同上游的账号尽量分到不同出口 IP（降低关联风险）' : '同上游、同范围的账号共用一条轮换'}
+          {STRATEGY_HINTS[value.strategy] || STRATEGY_HINTS.shared}
         </Typography.Text>
       </div>
       <div className="egress-up-summary" data-tone={summaryText.tone} role="status">

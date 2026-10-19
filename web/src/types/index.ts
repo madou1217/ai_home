@@ -1654,7 +1654,7 @@ export interface AccountEgressPoolScope {
   nodes: string[];
 }
 
-export type AccountEgressPoolStrategy = 'shared' | 'sticky';
+export type AccountEgressPoolStrategy = 'shared' | 'sticky' | 'session';
 
 export interface AccountEgressBinding {
   mode: AccountEgressMode | RetiredAccountEgressMode;

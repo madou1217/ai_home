@@ -313,8 +313,11 @@ test('an opencode utility turn on a paid model without a paid key is answered by
       };
     }
   });
-  ctx.requestJson = { model: 'opencode/gpt-6-luna', messages: [{ role: 'user', content: 'Generate a title' }] };
+  ctx.requestJson = { model: 'opencode/gpt-6-luna', reasoning_effort: 'none', messages: [{ role: 'user', content: 'Generate a title' }] };
   ctx.requestMeta = { requestId: 'req-title', openCodeNativeClient: true };
+  const sentBodies = [];
+  const realFetch = ctx.deps.fetchOpenCodeZenFreeChatCompletion;
+  ctx.deps.fetchOpenCodeZenFreeChatCompletion = async (o, a, json, ...rest) => { sentBodies.push(json); return realFetch(o, a, json, ...rest); };
   assert.equal(openCodeFreeHttpTransport.matches(ctx), true);
   const action = await openCodeFreeHttpTransport.run(ctx);
   assert.deepEqual(action, { action: 'return' });
@@ -324,6 +327,8 @@ test('an opencode utility turn on a paid model without a paid key is answered by
   assert.match(written.body, /A title/);
   assert.equal(headers['x-aih-model-fallback'], `opencode/gpt-6-luna->${upstreamModels[0]}`);
   assert.equal(usage[0].model, upstreamModels[0]);
+  // 原付费模型的推理强度不带给代答模型（beam-free 不认 "none"，实测 400）。
+  assert.equal(Object.prototype.hasOwnProperty.call(sentBodies[0], 'reasoning_effort'), false);
 });
 
 test('paid-model turns the user chose (tools present, or not from opencode) are never substituted', () => {

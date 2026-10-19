@@ -87,9 +87,10 @@
     transform var(--motion-fast) var(--ease-standard);
 }
 
-/* 可点击的卡片 / 平铺选项：悬停微抬起 + 描边加强（只作用于有点击语义的元素） */
+/* 可点击的卡片：悬停微抬起 + 描边加强（只作用于有点击语义的元素）。
+ * 选项瓷砖（.aih-choice-tiles）刻意不做位移：瓷砖里挂着说明气泡的锚点，按下缩放会让气泡按缩小后的
+ * 位置计算，打开即偏移（2026-10-19 出口设置弹窗反馈）。 */
 .ant-card-hoverable,
-.aih-choice-tiles .ant-radio-wrapper,
 .toolkit-secondary-nav-item,
 .toolkit-observation-card,
 .toolkit-tool-config-card {
@@ -104,8 +105,7 @@
 .toolkit-tool-config-card:hover {
   transform: translate3d(0, -1px, 0);
 }
-.toolkit-secondary-nav-item:active,
-.aih-choice-tiles .ant-radio-wrapper:active {
+.toolkit-secondary-nav-item:active {
   transform: scale(0.99);
 }
 

@@ -60,7 +60,12 @@ function EgressHint({ title, children }: { title: string; children: ReactNode })
       trigger={['click']}
       open={open}
       onOpenChange={setOpen}
-      placement="rightTop"
+      // 向下展开、右对齐到图标：弹窗靠右时 rightTop 会冲出视口；autoAdjustOverflow 在底部空间
+      // 不够时自动翻到上方。宽度封顶在视口内（见 .egress-hint-popover），长内容换行而不是被裁掉。
+      placement="bottomRight"
+      autoAdjustOverflow
+      arrow={{ pointAtCenter: true }}
+      getPopupContainer={() => document.body}
       overlayClassName="egress-hint-popover"
     >
       <span

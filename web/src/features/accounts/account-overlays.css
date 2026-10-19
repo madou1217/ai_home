@@ -707,3 +707,18 @@
     grid-auto-flow: row;
   }
 }
+
+/* 出口来源说明气泡：宽度封顶在视口内，长内容换行、超高时内部滚动，绝不伸出屏幕。 */
+.egress-hint-popover {
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.egress-hint-popover .ant-popover-inner {
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.egress-hint-popover .egress-hint p {
+  max-width: none;
+  overflow-wrap: anywhere;
+}

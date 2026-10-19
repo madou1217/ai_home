@@ -11,6 +11,7 @@ const {
   fetchQoderCliChatCompletionStream,
   __private
 } = require('../lib/server/qoder-cli-transport');
+const { createQoderCliWarmPool } = require('../lib/server/qoder-cli-warm-pool');
 const { qoderCliTransport } = require('../lib/server/upstream-endpoints-transport-qoder-cli');
 const { runTransportChain } = require('../lib/server/upstream-endpoints-transport-chain');
 
@@ -328,4 +329,224 @@ test('qoderCliTransport matches qoder variants and runTransportChain dispatches 
   const payload = JSON.parse(sent.body);
   assert.equal(payload.choices[0].message.content, 'hello world');
   assert.equal(sent.headers['x-aih-server-account-ref'], ACCOUNT.accountRef);
+});
+
+// ---- warm CLI 会话池 ---------------------------------------------------------
+
+function fakePersistentChild(replyForInput) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = {
+    written: [],
+    write(line) {
+      this.written.push(line);
+      let input = null;
+      try { input = JSON.parse(line); } catch (_error) { input = null; }
+      const reply = replyForInput(input);
+      setImmediate(() => {
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({
+          type: 'system', subtype: 'init', session_id: 's-warm', model: 'Qwen3.8-Flash'
+        })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: reply } }
+        })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({
+          type: 'result', subtype: 'success', result: reply,
+          usage: { input_tokens: 1, output_tokens: 1 }
+        })}\n`));
+      });
+    },
+    end() {}
+  };
+  child.kill = () => {};
+  return child;
+}
+
+function warmDeps(children, replyForInput) {
+  const pool = createQoderCliWarmPool({
+    spawn: () => {
+      const child = fakePersistentChild(replyForInput);
+      children.push(child);
+      return child;
+    },
+    killGraceMs: 0
+  });
+  return {
+    ...makeDeps([]),
+    spawn: () => { throw new Error('cold spawn must not be used while warm reuse is possible'); },
+    qoderWarmPool: pool,
+    sessionKey: 'session-warm-1'
+  };
+}
+
+test('warm CLI reuses one process for the same session and sends only the new user message', async () => {
+  const children = [];
+  const deps = warmDeps(children, (input) => {
+    const text = input && input.message && input.message.content && input.message.content[0]
+      ? input.message.content[0].text
+      : '';
+    return text === 'again' ? 'pong-again' : 'pong';
+  });
+  const first = await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Flash', messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hello' }] },
+    1000,
+    deps
+  );
+  assert.equal(first.content, 'pong');
+  assert.equal(first.warm, true);
+  assert.equal(first.warmReused, false);
+  assert.equal(children.length, 1);
+  assert.equal(children[0].stdin.written.length, 1);
+  assert.ok(children[0].stdin.written[0].includes('【对话记录开始】'), 'first turn must carry the full transcript');
+
+  const second = await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    {
+      model: 'Qwen3.8-Flash',
+      messages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'pong' },
+        { role: 'user', content: 'again' }
+      ]
+    },
+    1000,
+    deps
+  );
+  assert.equal(second.content, 'pong-again');
+  assert.equal(second.warm, true);
+  assert.equal(second.warmReused, true);
+  assert.equal(children.length, 1, 'second turn must reuse the same CLI process');
+  assert.equal(children[0].stdin.written.length, 2);
+  const secondInput = JSON.parse(children[0].stdin.written[1]);
+  assert.equal(secondInput.message.content[0].text, 'again', 'warm turn must send only the delta user message');
+  assert.ok(!children[0].stdin.written[1].includes('【对话记录开始】'));
+});
+
+test('warm CLI starts a fresh process when the conversation prefix changed', async () => {
+  const children = [];
+  const deps = warmDeps(children, () => 'pong');
+  await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Flash', messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hello' }] },
+    1000,
+    deps
+  );
+  const changed = await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    {
+      model: 'Qwen3.8-Flash',
+      messages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'a different answer' },
+        { role: 'user', content: 'again' }
+      ]
+    },
+    1000,
+    deps
+  );
+  assert.equal(changed.warmReused, false);
+  assert.equal(children.length, 2, 'prefix mismatch must spawn a new CLI process');
+  assert.ok(children[1].stdin.written[0].includes('【对话记录开始】'), 'fresh process must get the full transcript');
+});
+
+test('warm CLI is skipped without a session key and uses the cold one-shot path', async () => {
+  let acquireCalls = 0;
+  const deps = {
+    ...makeDeps(OK_LINES),
+    sessionKey: '',
+    qoderWarmPool: {
+      get: () => null,
+      acquire: () => { acquireCalls += 1; return null; }
+    }
+  };
+  const result = await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Max', messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hi' }] },
+    1000,
+    deps
+  );
+  assert.equal(result.content, 'hello world');
+  assert.equal(result.warm, undefined);
+  assert.equal(acquireCalls, 0);
+  assert.equal(deps.invocations.length, 1);
+});
+
+test('warm CLI falls back to a cold turn when the pooled process exits before any delta', async () => {
+  const deps = {
+    ...makeDeps(OK_LINES),
+    sessionKey: 'session-fallback',
+    qoderWarmPool: {
+      get: () => null,
+      acquire: () => ({ key: 'k', state: 'idle', sessionId: '', historyHash: '' }),
+      sendTurn: async () => {
+        throw Object.assign(new Error('qoder_cli_warm_exit_1'), { code: 'qoder_cli_warm_exit' });
+      },
+      failTurn: () => {},
+      discard: () => {}
+    }
+  };
+  const result = await __private.runQoderCliTurnAutomatic(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Max', messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hi' }] },
+    1000,
+    deps
+  );
+  assert.equal(result.content, 'hello world');
+  assert.equal(result.warm, undefined);
+  assert.equal(deps.invocations.length, 1, 'warm failure must fall back to exactly one cold spawn');
+});
+
+test('qoder transport records estimated usage with an explicit estimated sourceKind', async () => {
+  const recorded = [];
+  const sent = { status: 0, headers: {}, body: '' };
+  const res = {
+    statusCode: 0,
+    setHeader(key, value) { sent.headers[key] = value; },
+    end(body) { sent.body = body ? body.toString() : ''; },
+    write(chunk) { sent.body += chunk.toString(); },
+    get headersSent() { return true; },
+    get writableEnded() { return false; }
+  };
+  const deps = makeDeps([
+    '{"type":"system","subtype":"init","session_id":"s-est","model":"qmodel"}',
+    '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}',
+    '{"type":"result","subtype":"success","result":"hi","usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}'
+  ]);
+  const action = await runTransportChain({
+    options: {},
+    res,
+    requestJson: { model: 'Qwen3.8-Max', messages: [{ role: 'user', content: 'hi' }] },
+    provider: 'qodercn',
+    streamRequested: false,
+    requestMeta: {},
+    state: { metrics: { providerFailures: {} } },
+    deps: {
+      fetchQoderCliChatCompletion: (options, account, requestJson, timeoutMs, extraDeps) =>
+        fetchQoderCliChatCompletion(options, account, requestJson, timeoutMs, { ...deps, ...extraDeps })
+    },
+    recordAccountSuccess: () => {},
+    recordAccountFailure: () => {},
+    recordModelUsage: (record) => recorded.push(record),
+    appendProxyRequestLog: () => {},
+    diagnosticMaxAttempts: () => 1,
+    control: { attempt: 0, setLastError() {} },
+    account: ACCOUNT,
+    attemptUpstreamTimeoutMs: 1000,
+    attemptMutable: {}
+  }, [qoderCliTransport]);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].sourceKind, 'server_qoder_cli_proxy_estimated');
+  assert.ok(recorded[0].usage.prompt_tokens > 0);
 });

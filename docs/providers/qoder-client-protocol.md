@@ -126,16 +126,53 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 也就是说：**url、headers、body 三者都会被 WASM 改写**。客户端 JSON 只是签名输入，
 不能直接当成线上请求体。
 
-这解释了为什么“复刻头 + 裸 Bearer 打 `POST /model/v1/chat/completions`”目前只能
-证明到配额层：
+### 4.1 裸 HTTP 的边界（2026-10-19 实测）
+
+“复刻固定头 + 裸 Bearer 打 `POST /model/v1/chat/completions`”只能证明到配额层：
 
 - 有效 token → `402 {"code":116,"error":"quota exceeded"}`；
 - 假 token → `401`。
 
-`402/116` 证明 token 被接受、请求到达了配额判定，但**没有证明**普通 HTTP 能生成
-内容，也没有证明付费账号可绕过 WASM 签名。P1 的 HTTP transport 必须把这条边界
-写清楚：它可以作为付费账号的探测/首选策略，失败必须自动切 CLI，绝不能把
-`402/116` 记成账号故障。
+`402/116` 只证明 token 被接受、请求到达了配额判定，不能证明普通 HTTP 能生成内容。
+`POST /model/v1/chat/completions` 与根路径均 404；`gateway.qoder.com.cn`（CN）返回
+503 ALB。因此不能让“裸 HTTP”进入每请求固定延迟的路径。
+
+### 4.2 WASM 签名链路已打通（2026-10-19 真机）
+
+从二进制内嵌的 298606 字节 wasm 与 wasm-bindgen glue 复刻调用后，
+`prepareInferRequest` 可以离线生成完整的线上请求。关键事实：
+
+- 构造：`EN(machineId, cosyVersion, userInfoJson, optionsJson?)`；`machineId` 来自
+  `.auth/machine_id`，`cosyVersion` 是 CLI 版本，`userInfoJson` 是
+  `{"uid","encrypt_user_info","key"}`（来自 `.auth/user` 解密后的 payload）。
+  `optionsJson` 可省略（glue 会传 `(0,0)`）。
+- 签名 URL 固定为
+  `https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`。
+- 返回 20 个 header（**没有独立 `Signature` 头**，签名在
+  `Authorization: Bearer COSY.<jwt>` 里）：`Accept`、`Authorization`、
+  `Cache-Control`、`Connection`、`Content-Type`、`Cosy-Business-Product`、
+  `Cosy-Business-Type`、`Cosy-ClientType`、`Cosy-Data-Policy`、`Cosy-Date`、
+  `Cosy-Key`、`Cosy-MachineId`、`Cosy-MachineToken`、`Cosy-MachineType`、
+  `Cosy-Scene`、`Cosy-User`、`Cosy-Version`、`Login-Version`、`X-Model-Key`、
+  `X-Model-Source`。
+- `Cosy-MachineToken` / `Cosy-MachineType` 必须用 `umid-cache.json` 的
+  `info.machineToken` / `info.machineType` 覆盖；`Authorization` 不能改成裸 token。
+- **wasm-bindgen ABI 坑**：`__wbindgen_cast_0000000000000002(ptr,len)` 必须返回
+  `addHeapObject(readString(ptr,len))`，不是裸字符串；`__wbg_set_...` 的实参是
+  heap index，返回裸字符串会让 Map 变成 `[undefined, undefined]`，服务端判
+  `{"code":"101","message":"Signature invalid"}`。`__wbg_getRandomValues_...` 的入参是
+  `(ptr,len)`；`requestresult_url/body` 的返回值读取后要 `free`，而传给
+  `qodercontext_new/prepareInferRequest` 的输入字符串不能释放（否则
+  `RuntimeError: unreachable`）。
+- **代理**：本机 DNS 对 `api3.qoder.sh` 返回 fake-ip（198.18.x.x），Node `fetch` 默认
+  不走 `HTTPS_PROXY`，会挂到超时；必须显式用 `ProxyAgent`（或让 CLI 走系统代理）。
+  curl 走系统代理时对该端点的 GET 返回 400，说明主机可达。
+- 修复 ABI 后，签名请求返回 `200 text/event-stream`，首帧是业务错误：
+  `[FAIL]node:agent_router msg:None flow nodes found for router agent_router`。
+  这证明签名 / URL / body 加密全部有效；**当前唯一阻塞是 body 里缺少服务端
+  agent flow**（`business` / `flow` 形状未证明）。不要靠猜字段继续打；正确做法是
+  从真实 CLI 请求抓一份完整 body（MITM 或客户端日志），或在付费账号上验证是否
+  同一约束。在这种证据出现前，P1 的 HTTP transport 不应进入请求路径。
 
 ## 5. 免费额度事实
 
@@ -164,13 +201,15 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 - 1.1.73 的 8 个身份头名字、值清洗规则、model/session/requestSet 的写入逻辑；
 - 模型服务请求的 5 个固定头与 Bearer 位置；
 - 推理链路的 WASM 签名调用与“三处改写”；
+- `prepareInferRequest` 的精确 URL、20 个 header、加密 body 与完整 ABI；
 - 账户面 4 条路径与 Free 档字段；
-- 有效 token 的裸请求到配额层返回 402/116，假 token 返回 401。
+- 有效 token 的裸请求到配额层返回 402/116，假 token 返回 401；
+- warm CLI：`--input-format stream-json` 在 `result` 后继续等待下一条 user 消息。
 
 未证明（必须保留在布局表的 `unproven` 里）：
 
+- `agent_chat_generation` 要求的 `business` / `flow` body 形状；
 - 推理链路（非 MCP）实际发送哪些身份头、`safetyTag` 与 `internalContext` 的取值；
-- `prepareInferRequest` 之后的精确 URL / body / 签名头；
 - 付费账号走普通 HTTP 能否生成；
 - qodercn 当前版本的端点、注入与签名链路；
 - qoder CLI 的精确 token 数（`usage` 字段恒为 0，只能从
@@ -187,10 +226,26 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 3. **P1.5：用量闭环**。扫描 qoder 会话 JSONL 的 `credits` / `billable` /
    `context_usage_ratio`，用输出文本做透明估算，写入 model usage；原生 chat 完成后
    触发同会话扫描，避免只等后台定时器。
-4. **P2：warm CLI**。在 P1 的策略日志证明 HTTP 不稳定或不可用时，再评估常驻
-   CLI/预热进程；没有证据前不引入。
+4. **P2：warm CLI（已实现）**。同一会话复用
+   `--print --input-format stream-json` 常驻进程：首轮 ~7.6-8.6s，同进程第二轮
+   ~2.7-3.5s（1.1.73 实测）。只有 `sessionKey` + 消息前缀哈希完全匹配才复用；
+   无 sessionKey、最后一条不是纯文本 user、池满或进程 busy 时自动走冷启动。
+   idle TTL 5 分钟、最多 8 个进程、LRU 淘汰 idle；失败/超时/abort 一律杀进程。
 
-## 8. 升级后如何重新取证
+## 8. warm CLI 协议（1.1.73 实测）
+
+- 启动参数在冷启动参数上追加 `--input-format stream-json`；`--print` 保留。
+- 输入是一行 JSON：
+  `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}`。
+- 首轮发完整 transcript（`buildQoderCliPrompt`）；后续轮只发最后一条 user 文本，
+  CLI 自己保留历史。
+- 输出仍是逐行 stream-json；`result` 之后进程不退出，继续等待下一条输入。
+- 复用校验：上一次请求的 `messages` + 本轮 assistant 回答 与本次请求的前缀逐字
+  哈希一致；不一致重建进程，绝不跨会话带上下文。
+- 估算用量：`usage` 全零时用 `context_usage_ratio × 200000` + 输出文本估算，
+  `sourceKind` 带 `_estimated` 后缀；有真实非零计数时优先真值。
+
+## 9. 升级后如何重新取证
 
 ```bash
 # 1) 版本与二进制指纹

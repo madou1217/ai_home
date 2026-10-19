@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -23,7 +24,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferencehttp"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
-	"github.com/madou1217/ai_home/internal/transport/http/codebuddyfamilyrelay"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 )
 
@@ -87,6 +87,8 @@ type inferenceCompositionDependencies struct {
 	agyModelWires   agycodeassist.ModelWireReader
 	// upstreamRules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
 	upstreamRules configured.Rules
+	// componentLog 记录不影响启动的组件级失败（如初次目录刷新）；可为空。
+	componentLog *log.Logger
 }
 
 // newInferenceComposition 装配模型快照、共享刷新调度器、Canonical Runtime 和 HTTP。
@@ -153,9 +155,10 @@ func newInferenceComposition(
 		return nil, err
 	}
 	builder.WithAliasStore(modelAliases)
-	// 家族透传（CodeBuddy / WorkBuddy 四支）由专用通道承载：模型进展示目录与账号
-	// 路由索引（交还判定、/v1/models 依赖），但不编译 Canonical 规则。
-	builder.WithRelayProviders(codebuddyfamilyrelay.FamilyProviders...)
+	// 透传通道（家族四支 + cline/grok/kimi）由专用 HTTP 通道承载：模型进展示目录
+	// 与账号路由索引（交还判定、/v1/models 依赖），但不编译 Canonical 规则。
+	// 名单只从 relayProviderIDs 取，避免目录声明与模型刷新队列各写一份而漂移。
+	builder.WithRelayProviders(relayProviderIDs()...)
 	catalogRefresh, err := inferencecatalog.NewRefreshCoordinator(
 		inferencecatalog.RefreshCoordinatorOptions{
 			Builder: builder,
@@ -174,7 +177,12 @@ func newInferenceComposition(
 		return nil, err
 	}
 	// 初次失败只关闭推理目录；账号管理仍可通过后续成功写入触发恢复。
-	_ = catalogRefresh.Refresh(ctx)
+	if err := catalogRefresh.Refresh(ctx); err != nil && dependencies.componentLog != nil {
+		dependencies.componentLog.Printf(
+			"[aih] inference catalog initial refresh failed: %v",
+			err,
+		)
+	}
 	poolRetries, err := inferencegateway.NewDefaultRequestPoolRetryPolicy()
 	if err != nil {
 		return nil, err

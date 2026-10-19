@@ -684,6 +684,7 @@ func newHandlers(
 			codexRejections:           newCodexRejectionObserver(errorLog),
 			agyModelWires:             agyModelWires,
 			upstreamRules:             upstreamRuleEvaluator,
+			componentLog:              errorLog,
 		},
 	)
 	if err != nil {
@@ -1251,19 +1252,12 @@ func modelRefreshProviderConcurrency() map[string]int {
 		string(inference.ProviderClaude): modelRefreshConcurrency,
 		string(inference.ProviderAgy):    modelRefreshConcurrency,
 	}
-	for _, providerID := range codebuddyfamilyrelay.FamilyProviders {
-		concurrency[providerID] = modelRefreshConcurrency
-	}
-	// 透传通道服务的 Provider 同样要有刷新队列。
+	// 透传通道服务的 Provider 同样要有刷新队列，且与目录构建共用同一份声明。
 	//
 	// 为什么必须显式列：队列只在协调器构造时按这张表建立，**没有队列的 Provider 永远
 	// 不会被重扫**——表现是静默的（账号在池里、模型目录一直为空、请求被判成
-	// model_not_routable 交还 Node），等于透传通道白接。新增透传 Provider 时必须同步这里。
-	for _, providerID := range []string{
-		clinerelay.ProviderID,
-		grokrelay.ProviderID,
-		kimirelay.ProviderID,
-	} {
+	// model_not_routable 交还 Node），等于透传通道白接。
+	for _, providerID := range relayProviderIDs() {
 		concurrency[providerID] = modelRefreshConcurrency
 	}
 	return concurrency

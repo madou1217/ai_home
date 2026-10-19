@@ -238,3 +238,85 @@ test('models.dev metadata resolves capability-suffix variants to their base mode
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
+
+test('models.dev metadata inherits base-provider pricing for alias variants', () => {
+  const fixture = writeCatalogFixture({
+    models: {
+      'anthropic/claude-opus-4-6': {
+        id: 'anthropic/claude-opus-4-6',
+        modalities: { input: ['text'], output: ['text'] }
+      },
+      'anthropic/claude-sonnet-4-5': {
+        id: 'anthropic/claude-sonnet-4-5',
+        modalities: { input: ['text'], output: ['text'] }
+      },
+      'deepseek/deepseek-v4-pro': {
+        id: 'deepseek/deepseek-v4-pro',
+        modalities: { input: ['text'], output: ['text'] }
+      },
+      'alibaba/qwen3.8-flash': {
+        id: 'alibaba/qwen3.8-flash',
+        modalities: { input: ['text'], output: ['text'] }
+      }
+    },
+    providers: {
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-opus-4-6': {
+            id: 'claude-opus-4-6',
+            cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 }
+          },
+          'claude-sonnet-4-5': {
+            id: 'claude-sonnet-4-5',
+            cost: { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 }
+          }
+        }
+      },
+      deepseek: {
+        id: 'deepseek',
+        models: {
+          'deepseek-v4-pro': {
+            id: 'deepseek-v4-pro',
+            cost: { input: 0.66, output: 1.98, cache_read: 0.022 }
+          }
+        }
+      },
+      alibaba: {
+        id: 'alibaba',
+        models: {
+          'qwen3.8-flash': {
+            id: 'qwen3.8-flash',
+            cost: { input: 0.15, output: 0.47, cache_read: 0.016 }
+          }
+        }
+      }
+    }
+  });
+
+  try {
+    const metadata = buildModelMetadataMap([
+      { id: 'claude-opus-4-6-thinking', provider: 'claude' },
+      { id: 'claude-sonnet-4.5', provider: 'kiro' },
+      { id: 'deepseek-v4-pro', provider: 'codex' },
+      { id: 'Qwen3.8-Flash', provider: 'qoder' }
+    ], { fs, modelsDevCatalogPath: fixture.filePath });
+
+    assert.equal(metadata['claude-opus-4-6-thinking'].baseModel, 'anthropic/claude-opus-4-6');
+    assert.equal(metadata['claude-opus-4-6-thinking'].cost.input, 5);
+    assert.equal(metadata['claude-sonnet-4.5'].baseModel, 'anthropic/claude-sonnet-4-5');
+    assert.equal(metadata['claude-sonnet-4.5'].cost.cacheWrite, 3.75);
+    assert.equal(metadata['deepseek-v4-pro'].cost.input, 0.66);
+    assert.equal(metadata['Qwen3.8-Flash'].cost.cacheRead, 0.016);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('models.dev provider inference maps Grok to xAI catalog entries', () => {
+  assert.deepEqual(
+    inferModelsDevProviderIds('grok', 'grok-4.7'),
+    ['xai', 'github-copilot']
+  );
+});
+

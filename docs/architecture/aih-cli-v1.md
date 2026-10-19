@@ -241,7 +241,7 @@ TOCTOU 窗口。它是已知剩余边界，后续 Node runtime 全迁移时由�
 | --- | --- |
 | `AIH_HOME` | Go Server 业务数据库所在目录；Preview 启动器强制覆盖为系统临时目录 |
 | `AIH_SERVER_BASE_URL` | Go 二进制保留默认 `http://127.0.0.1:9527`；G1 Preview wrapper 始终覆盖为 `http://127.0.0.1:19527`，验收禁止使用默认值 |
-| `AIH_SERVER_CLIENT_KEY` | Gateway 模式必需的客户端密钥，CLI 与 Server 两侧都要 |
+| `AIH_SERVER_API_KEY` | Gateway 模式必需的客户端密钥，CLI 与 Server 两侧都要（旧名 `AIH_SERVER_CLIENT_KEY` 已在 env 合并中删除） |
 | `AIH_SERVER_MANAGEMENT_KEY` | 固定 Relay 数字别名解析和账号管理所需的管理密钥，只从环境变量读取 |
 | `AIH_SERVER_HOST` / `AIH_SERVER_PORT` | Server 监听地址与端口，只允许 loopback |
 | `AIH_CODEX_BINARY` / `AIH_CLAUDE_BINARY` | 可选官方 CLI 路径 |

@@ -72,7 +72,7 @@ Application 不反向依赖进程、HTTP、环境变量或命令行。
 | `AIH_SERVER_HOST` | `127.0.0.1` | 监听主机，只允许 loopback |
 | `AIH_SERVER_PORT` | `9527` | 监听端口；`0` 只用于系统分配临时端口 |
 | `AIH_SERVER_MANAGEMENT_KEY` | 无 | 必填的管理 Bearer 凭据 |
-| `AIH_SERVER_CLIENT_KEY` | 无 | 必填的模型目录和推理客户端凭据 |
+| `AIH_SERVER_API_KEY` | 无 | 必填的模型目录和推理客户端凭据 |
 | `--host` | 环境值 | 显式覆盖 loopback 主机 |
 | `--port` | 环境值 | 显式覆盖端口 |
 
@@ -90,7 +90,7 @@ Management Key 必须为 32–8192 个非空白、非控制字符。命令刻意
 ```text
 AIH_HOME_DIR
 AIH_SERVER_MANAGEMENT_KEY
-AIH_SERVER_CLIENT_KEY
+AIH_SERVER_API_KEY
 ```
 
 然后启动：

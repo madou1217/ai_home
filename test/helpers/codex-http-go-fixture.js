@@ -13,7 +13,8 @@ async function startGoGateway(context, upstreamBase, model, options = {}) {
   const managementKey = 'fixture-management-key-0123456789abcdef';
   const child = spawn(binary, ['--port', '0'], {
     env: { PATH: process.env.PATH, HOME: root, USERPROFILE: root, AIH_HOME_DIR: root,
-      AIH_SERVER_CLIENT_KEY: clientKey, AIH_SERVER_MANAGEMENT_KEY: managementKey,
+      // Go 读的是公开名 AIH_SERVER_API_KEY（053 的 env 合并把旧 CLIENT_KEY 别名删掉了）。
+      AIH_SERVER_API_KEY: clientKey, AIH_SERVER_MANAGEMENT_KEY: managementKey,
       SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: root, TMP: root,
       LOCALAPPDATA: root, NO_PROXY: '127.0.0.1,localhost' },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true

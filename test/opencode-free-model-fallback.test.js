@@ -259,3 +259,42 @@ test('the free HTTP transport answers from another free model when the chosen on
   assert.equal(usage[0].model, 'opencode/beam-free');
   assert.equal(ctx.requestJson.model, 'opencode/deepseek-v4.1-flash-free');
 });
+
+// 2026-10-18：opencode 客户端发的是流式请求（glm 503「Endpoint is unavailable」时整轮失败）。
+// 流式通道的上游失败发生在拿到响应头之前（还没向客户端写字节），必须同样换模型接着答。
+test('a streaming request whose chosen model returns 503 is answered by the next free model', async () => {
+  const upstreamModels = [];
+  const { ctx, usage, logs, headers } = buildTransportCtx({ fetchFreeChat: async () => { throw new Error('non-stream path must not be used'); } });
+  const chunks = [];
+  ctx.streamRequested = true;
+  ctx.requestJson = { ...ctx.requestJson, stream: true };
+  ctx.res = {
+    headersSent: false,
+    writableEnded: false,
+    setHeader: (name, value) => { headers[name.toLowerCase()] = value; },
+    writeHead() { this.headersSent = true; return this; },
+    flushHeaders() { this.headersSent = true; },
+    write(chunk) { this.headersSent = true; chunks.push(String(chunk)); return true; },
+    end(chunk) { if (chunk) chunks.push(String(chunk)); this.writableEnded = true; },
+    on() { return this; },
+    once() { return this; }
+  };
+  ctx.deps.fetchOpenCodeZenFreeChatCompletionStream = async (_options, _account, requestJson) => {
+    upstreamModels.push(requestJson.model);
+    if (requestJson.model === 'opencode/deepseek-v4.1-flash-free') throw httpError(503);
+    const sse = 'data: {"choices":[{"index":0,"delta":{"content":"OK"}}]}\n\n'
+      + 'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\ndata: [DONE]\n\n';
+    return { ok: true, status: 200, body: require('node:stream').Readable.from([Buffer.from(sse)]) };
+  };
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'return' });
+  assert.deepEqual(upstreamModels, ['opencode/deepseek-v4.1-flash-free', 'opencode/beam-free']);
+  assert.match(chunks.join(''), /"content":"OK"/);
+  assert.equal(headers['x-aih-model-fallback'], 'opencode/deepseek-v4.1-flash-free->opencode/beam-free');
+  const success = logs.find((entry) => entry.status === 200 && !entry.error);
+  assert.ok(success, 'a successful stream is logged');
+  assert.equal(success.opencodeFreeModelFallback, 'opencode/deepseek-v4.1-flash-free->opencode/beam-free');
+  assert.equal(success.opencodeFreeModelFailures, 'opencode/deepseek-v4.1-flash-free:503');
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0].model, 'opencode/beam-free');
+});

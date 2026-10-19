@@ -27,8 +27,14 @@ export default [
     files: ['scripts/**/*.{js,cjs,mjs}'],
     languageOptions: {
       globals: {
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
         console: 'readonly',
+        exports: 'readonly',
+        module: 'readonly',
         process: 'readonly',
+        require: 'readonly',
         window: 'readonly'
       }
     }

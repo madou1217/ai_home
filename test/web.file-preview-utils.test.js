@@ -15,7 +15,12 @@ function loadTypeScriptModule(...relativePath) {
     }
   });
   const moduleRef = { exports: {} };
+  // 弹窗脚本只依赖 capture 域的宿主安装函数；测试不加载浏览器模块，给出等价空实现。
+  const stubs = {
+    '../../features/capture': { ensurePreviewWindowCaptureHost: () => {} }
+  };
   const requireFromPreviewUtils = (request) => {
+    if (Object.prototype.hasOwnProperty.call(stubs, request)) return stubs[request];
     throw new Error(`Unexpected file preview dependency: ${request}`);
   };
   Function('module', 'exports', 'require', outputText)(

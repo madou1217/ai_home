@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -28,6 +29,7 @@ type hostFixture struct {
 	address string
 	dir     string
 	cmd     *exec.Cmd
+	stdin   io.WriteCloser
 }
 
 func repoRoot(t testing.TB) string {
@@ -68,8 +70,16 @@ func startHost(t testing.TB) *hostFixture {
 	// --import 只接受 URL；Windows 上裸的 C:\ 路径会被当成 c: 协议拒绝。
 	hooks := (&url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(root, "lib", "plugins", "host", "register-hooks.mjs")), "/")}).String()
 	cmd := exec.Command(node, "--import", hooks,
-		filepath.Join(root, "lib", "plugins", "host", "host-entry.mjs"))
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "SystemRoot=" + os.Getenv("SystemRoot"), "AIH_PLUGIN_SOCKET=" + address, "AIH_PLUGIN_TOKEN=" + testToken}
+		filepath.Join(root, "lib", "plugins", "host", "host-entry.mjs"),
+		"--socket", address,
+		"--host-version", "1.0.0")
+	// 宿主入口参数走 argv、令牌走 stdin 第一行（与 lib/plugins/host/supervisor.js 同一协议）：
+	// 环境块里不出现任何插件 IPC 名称。
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "SystemRoot=" + os.Getenv("SystemRoot")}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +88,11 @@ func startHost(t testing.TB) *hostFixture {
 	cmd.Stderr = &stderr
 	cmd.WaitDelay = 3 * time.Second
 	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// 管道保持打开：宿主的 --exit-with-parent 语义靠 EOF 触发，测试里提前关闭会让宿主退出。
+	if _, err := io.WriteString(stdin, testToken+"\n"); err != nil {
+		_ = cmd.Process.Kill()
 		t.Fatal(err)
 	}
 	ready := make(chan struct{})
@@ -98,8 +113,9 @@ func startHost(t testing.TB) *hostFixture {
 		_ = cmd.Process.Kill()
 		t.Fatalf("plugin host did not become ready: %s", stderr.String())
 	}
-	fixture := &hostFixture{address: address, dir: dir, cmd: cmd}
+	fixture := &hostFixture{address: address, dir: dir, cmd: cmd, stdin: stdin}
 	t.Cleanup(func() {
+		_ = stdin.Close()
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		_ = os.RemoveAll(dir)

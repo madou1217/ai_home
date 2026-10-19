@@ -101,6 +101,13 @@ function isAhrTaskFile(relativePath) {
   return relativePath.startsWith('.ahr/');
 }
 
+// .agents/ is the task orchestrator's scratch output (task.json + review.md).
+// Its Markdown is already gitignored via `*.md`; like .ahr/ it is not repository
+// documentation, so the root-markdown allowlist does not apply.
+function isAgentTaskFile(relativePath) {
+  return relativePath.startsWith('.agents/');
+}
+
 // .workbuddy/ and .workbuddy-ai/ are the agent tooling's own working state (memory
 // notes, automations, skills) and are gitignored via `*.md`. They are not repository
 // documentation, so the root-markdown allowlist does not apply — same rationale as
@@ -117,6 +124,7 @@ test('repository policy keeps only root AGENTS and README markdown files (docs/ 
       && !isDocsMarkdown(relativePath)
       && !isProviderSkillAsset(relativePath)
       && !isAhrTaskFile(relativePath)
+      && !isAgentTaskFile(relativePath)
       && !isWorkBuddyAgentData(relativePath)
   });
 

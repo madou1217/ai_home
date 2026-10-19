@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   CameraOutlined,
   CodeOutlined,
@@ -8,8 +8,9 @@ import {
   MobileOutlined,
   VideoCameraOutlined
 } from '@ant-design/icons';
-import { Dropdown } from 'antd';
+import { Dropdown, message } from 'antd';
 import type { AnimationCaptureFormatId } from '../../features/capture';
+import { downloadBlobArtifact } from '../../features/capture/frame-utils';
 import {
   listRecordableAnimationFormats,
   resolveDefaultRecordFormat
@@ -66,6 +67,22 @@ export default function HtmlCodeBlock({ code }: Props) {
     openHtmlPreviewWindow(previewDoc, { device, title: 'HTML 页面预览' });
   };
 
+  const [beautifyState, setBeautifyState] = useState({ busy: false, progressLabel: '' });
+  const handleBeautifyExport = useCallback(async () => {
+    if (beautifyState.busy) return;
+    setBeautifyState({ busy: true, progressLabel: '正在生成…' });
+    try {
+      const { createBeautifiedCapture } = await import('../../features/capture/code-beautify');
+      const { blob, fileName } = await createBeautifiedCapture({ code, baseName: 'html-code' });
+      downloadBlobArtifact(blob, fileName, blob.type);
+      message.success('美化截图已保存');
+    } catch (error) {
+      message.error(error instanceof Error ? `美化导出失败：${error.message}` : '美化导出失败');
+    } finally {
+      setBeautifyState({ busy: false, progressLabel: '' });
+    }
+  }, [beautifyState.busy, code]);
+
   return (
     <div className={styles.htmlBlockContainer}>
       <div className={styles.htmlBlockHeader}>
@@ -87,6 +104,17 @@ export default function HtmlCodeBlock({ code }: Props) {
         </div>
 
         <div className={styles.htmlBlockActions}>
+          {viewMode === 'code' && (
+            <button
+              type="button"
+              className={styles.htmlBlockActionBtn}
+              title="导出美化代码截图"
+              disabled={beautifyState.busy}
+              onClick={() => void handleBeautifyExport()}
+            >
+              {beautifyState.busy ? beautifyState.progressLabel : <><CameraOutlined /> 美化导出</>}
+            </button>
+          )}
           {viewMode === 'preview' && (
             <>
               <button

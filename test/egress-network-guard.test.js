@@ -54,6 +54,8 @@ test('launch guard: claude official upstream from mainland is refused; gateway-m
     writeUpstreamPolicy(fs, home, denial.upstream.id, { rules: [{ effect: 'allow', match: { country: ['CN'] } }] });
     assert.equal(checkLaunchNetwork({ env: {}, provider: 'claude', egress: { bound: false }, fs, aiHomeDir: home, lookupSync }), null);
     assert.deepEqual(readEnvBaseUrls({ OPENAI_BASE_URL: 'https://x', FOO: 'https://y', BAR_BASE_URL: 'nope' }), ['https://x']);
+    // aih 自己注入的协作地址（AIH_GATEWAY_BASE_URL → 本机网关）不是客户端上游，不能让守卫误以为「经网关」而跳过。
+    assert.ok(checkLaunchNetwork({ env: { AIH_GATEWAY_BASE_URL: 'http://127.0.0.1:9527' }, provider: 'codex', egress: { bound: false }, fs, aiHomeDir: home, lookupSync }));
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -70,6 +72,33 @@ test('applyAccountEgressProxyEnv: guard is opt-in and throws account_egress_regi
     );
     assert.doesNotThrow(() => applyAccountEgressProxyEnv({}, 'claude', { ...base, networkGuard: true, isLogin: true }));
   } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('gateway guard: denied refs feed the Go hand-back set (Go has no network guard)', () => {
+  const home = tempHome();
+  const guard = require('../lib/runtime/egress-network-guard');
+  try {
+    fs.mkdirSync(path.join(home, 'run'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'run', guard.CACHE_FILE), JSON.stringify({ entries: { direct: CN } }));
+    guard.resetEgressNetworkGuardCacheForTests();
+    gatewayGuard.configureGatewayNetworkGuard({
+      fs,
+      aiHomeDir: home,
+      getServerOptions: () => ({}),
+      getPools: () => ({ claude: [{ provider: 'claude', accountRef: 'c1' }], cline: [{ provider: 'cline', accountRef: 'x1' }] })
+    });
+    const saved = { HTTPS_PROXY: process.env.HTTPS_PROXY, HTTP_PROXY: process.env.HTTP_PROXY, https_proxy: process.env.https_proxy, http_proxy: process.env.http_proxy };
+    Object.keys(saved).forEach((key) => delete process.env[key]);
+    try {
+      assert.deepEqual([...gatewayGuard.listNetworkDeniedRefs()], ['c1']);
+    } finally {
+      Object.entries(saved).forEach(([key, value]) => { if (value !== undefined) process.env[key] = value; });
+    }
+  } finally {
+    gatewayGuard.configureGatewayNetworkGuard(null);
+    guard.resetEgressNetworkGuardCacheForTests();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });

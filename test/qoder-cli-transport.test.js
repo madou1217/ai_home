@@ -197,6 +197,26 @@ test('runQoderCliTurn dedupes partial events and estimates usage from context ra
   assert.equal(result.usageEvidence.requestId, 'req-est');
 });
 
+test('runQoderCliTurn captures the upstream message id as the usage idempotency key', async () => {
+  const deps = makeDeps([
+    '{"type":"system","subtype":"init","session_id":"s-id","model":"Qwen3.8-Flash"}',
+    '{"type":"assistant","message":{"id":"chatcmpl-usage-1","role":"assistant","model":"qfmodel","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}}',
+    '{"type":"result","subtype":"success","result":"hi","usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1,"request_id":"req-1"}}'
+  ]);
+  const result = await __private.runQoderCliTurn(
+    {},
+    ACCOUNT,
+    { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+    1000,
+    deps
+  );
+  assert.equal(result.messageId, 'chatcmpl-usage-1');
+  const payload = __private.buildChatCompletionPayload(result, 'Qwen3.8-Flash');
+  assert.equal(payload.usageMessageId, 'chatcmpl-usage-1');
+  assert.equal(Object.prototype.propertyIsEnumerable.call(payload, 'usageMessageId'), false,
+    'the id must not leak into the OpenAI response body');
+});
+
 test('runQoderCliTurn kills a silent CLI on the shared idle watchdog', async () => {
   const child = new EventEmitter();
   child.stdout = new EventEmitter();
@@ -329,6 +349,51 @@ test('qoderCliTransport matches qoder variants and runTransportChain dispatches 
   const payload = JSON.parse(sent.body);
   assert.equal(payload.choices[0].message.content, 'hello world');
   assert.equal(sent.headers['x-aih-server-account-ref'], ACCOUNT.accountRef);
+});
+
+test('streaming qoder transport shares the JSONL usage event key', async () => {
+  const recorded = [];
+  const sent = { status: 0, headers: {}, body: '' };
+  const res = {
+    statusCode: 0,
+    setHeader(key, value) { sent.headers[key] = value; },
+    end(body) { sent.body = body ? body.toString() : ''; },
+    write(chunk) { sent.body += chunk.toString(); return true; },
+    get headersSent() { return true; },
+    get writableEnded() { return false; }
+  };
+  const deps = makeDeps([
+    '{"type":"system","subtype":"init","session_id":"s-stream","model":"Qwen3.8-Flash"}',
+    '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}}',
+    '{"type":"assistant","message":{"id":"chatcmpl-stream-1","role":"assistant","model":"qfmodel","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}}',
+    '{"type":"result","subtype":"success","result":"hi","usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}'
+  ]);
+  const action = await runTransportChain({
+    options: {},
+    res,
+    requestJson: { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+    provider: 'qodercn',
+    streamRequested: true,
+    requestMeta: {},
+    state: { metrics: { providerFailures: {} } },
+    deps: {
+      fetchQoderCliChatCompletionStream: (options, account, requestJson, timeoutMs, extraDeps) =>
+        fetchQoderCliChatCompletionStream(options, account, requestJson, timeoutMs, { ...deps, ...extraDeps })
+    },
+    recordAccountSuccess: () => {},
+    recordAccountFailure: () => {},
+    recordModelUsage: (record) => recorded.push(record),
+    appendProxyRequestLog: () => {},
+    diagnosticMaxAttempts: () => 1,
+    control: { attempt: 0, setLastError() {} },
+    account: ACCOUNT,
+    attemptUpstreamTimeoutMs: 1000,
+    attemptMutable: {}
+  }, [qoderCliTransport]);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].eventKey, 'qodercn:message:chatcmpl-stream-1');
+  assert.equal(recorded[0].sourceKind, 'server_qoder_cli_proxy_estimated');
 });
 
 // ---- warm CLI 会话池 ---------------------------------------------------------
@@ -520,7 +585,7 @@ test('qoder transport records estimated usage with an explicit estimated sourceK
   };
   const deps = makeDeps([
     '{"type":"system","subtype":"init","session_id":"s-est","model":"qmodel"}',
-    '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}',
+    '{"type":"assistant","message":{"id":"chatcmpl-est-1","role":"assistant","model":"qmodel","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}}',
     '{"type":"result","subtype":"success","result":"hi","usage":{"input_tokens":0,"output_tokens":0,"context_usage_ratio":0.1}}'
   ]);
   const action = await runTransportChain({
@@ -548,5 +613,7 @@ test('qoder transport records estimated usage with an explicit estimated sourceK
   assert.deepEqual(action, { action: 'return' });
   assert.equal(recorded.length, 1);
   assert.equal(recorded[0].sourceKind, 'server_qoder_cli_proxy_estimated');
+  assert.equal(recorded[0].eventKey, 'qodercn:message:chatcmpl-est-1',
+    'the live path must reuse the JSONL scanner event key');
   assert.ok(recorded[0].usage.prompt_tokens > 0);
 });

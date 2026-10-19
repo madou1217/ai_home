@@ -298,3 +298,43 @@ test('a streaming request whose chosen model returns 503 is answered by the next
   assert.equal(usage.length, 1);
   assert.equal(usage[0].model, 'opencode/beam-free');
 });
+
+// 2026-10-19：opencode 生成标题等内部轮次时自动挑付费小模型（gpt-6-luna）。免费账号没有付费 key，
+// 这类请求一天失败 97 次、会话标题永远出不来。真实 opencode 客户端的无工具轮次由免费模型代答。
+test('an opencode utility turn on a paid model without a paid key is answered by a free model', async () => {
+  const upstreamModels = [];
+  const { ctx, usage, headers, written } = buildTransportCtx({
+    fetchFreeChat: async (_options, _account, requestJson) => {
+      upstreamModels.push(requestJson.model);
+      return {
+        id: 'x', object: 'chat.completion', model: requestJson.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: 'A title' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 }
+      };
+    }
+  });
+  ctx.requestJson = { model: 'opencode/gpt-6-luna', messages: [{ role: 'user', content: 'Generate a title' }] };
+  ctx.requestMeta = { requestId: 'req-title', openCodeNativeClient: true };
+  assert.equal(openCodeFreeHttpTransport.matches(ctx), true);
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(upstreamModels.length, 1);
+  assert.notEqual(upstreamModels[0], 'opencode/gpt-6-luna');
+  assert.match(upstreamModels[0], /-free$/);
+  assert.match(written.body, /A title/);
+  assert.equal(headers['x-aih-model-fallback'], `opencode/gpt-6-luna->${upstreamModels[0]}`);
+  assert.equal(usage[0].model, upstreamModels[0]);
+});
+
+test('paid-model turns the user chose (tools present, or not from opencode) are never substituted', () => {
+  const { ctx } = buildTransportCtx({ fetchFreeChat: async () => { throw new Error('unused'); } });
+  ctx.requestJson = { model: 'opencode/gpt-6-luna', messages: [], tools: [{ type: 'function', function: { name: 'read' } }] };
+  ctx.requestMeta = { openCodeNativeClient: true };
+  assert.equal(openCodeFreeHttpTransport.matches(ctx), false, 'a main agent turn keeps the chosen model');
+  ctx.requestJson = { model: 'opencode/gpt-6-luna', messages: [] };
+  ctx.requestMeta = {};
+  assert.equal(openCodeFreeHttpTransport.matches(ctx), false, 'other clients keep the chosen model');
+  ctx.requestMeta = { openCodeNativeClient: true };
+  ctx.account = { accountRef: ACCOUNT_REF, provider: 'opencode', opencodeGoApiKey: 'sk-paid' };
+  assert.equal(openCodeFreeHttpTransport.matches(ctx), false, 'an account with a paid key keeps the paid channel');
+});

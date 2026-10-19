@@ -48,7 +48,7 @@ test('turn-relay parser defaults to AWS current and no TURN config', () => {
   assert.deepEqual(buildTurnConfiguration(options).blockers, ['turn_ice_server_not_configured']);
 });
 
-test('turn-relay parser supports TURN aliases and env defaults', () => {
+test('turn-relay parser supports TURN aliases and ignores the removed env defaults', () => {
   const options = parseTurnRelayCommandArgs([
     '--endpoint',
     'http://127.0.0.1:9527/',
@@ -64,13 +64,14 @@ test('turn-relay parser supports TURN aliases and env defaults', () => {
     '1',
     '--json'
   ], {
+    // 8c8c3169 起 TURN 配置只认 transport config / CLI，旧 env 名字必须被忽略。
     AIH_TURN_ICE_SERVER: 'turn:env.example.com:3478',
     AIH_TURN_USERNAME: 'env-user',
     AIH_TURN_CREDENTIAL: 'env-secret'
   });
 
   assert.equal(options.endpoint, 'http://127.0.0.1:9527');
-  assert.deepEqual(options.turnIceServers, ['turn:env.example.com:3478', 'turn:turn.example.com:3478']);
+  assert.deepEqual(options.turnIceServers, ['turn:turn.example.com:3478']);
   assert.equal(options.turnUsername, 'user');
   assert.equal(options.turnCredential, 'secret');
   assert.equal(options.sampleCount, 2);

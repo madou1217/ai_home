@@ -12,7 +12,8 @@ const {
 test('native capability registry declares all AIH providers', () => {
   assert.deepEqual(
     listProviderNativeCapabilities().map((item) => item.provider),
-    ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'workbuddy', 'workbuddycn']
+    // 06d9eb6f 给 qoder/qodercn 补了 --continue/--resume/--fork-session，合同从此有 nativeBoundary。
+    ['agy', 'claude', 'cline', 'codebuddy', 'codebuddycn', 'codex', 'gemini', 'grok', 'kimi', 'kiro', 'opencode', 'qoder', 'qodercn', 'workbuddy', 'workbuddycn']
   );
 });
 

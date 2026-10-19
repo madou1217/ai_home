@@ -53,9 +53,9 @@
 - 升级到 `0.0.109`，重新生成 `internal/adapters/modelmetadata/modelsdev/modalities.json`；
 - `lib/server/models-dev-metadata.js` 增加版本点号、`[1m]`、`:0731` 变体，
   基座厂牌价格兜底，Grok/Kimi 目录映射；
-- 282 个唯一 `provider|model` 行中，无价从 137 降到 37；
+- 282 个唯一 `provider|model` 行中，无价从 137 降到 33（Kimi 目录改名修正后）；
   `gpt-6.1-sol` 返回 input 2 / output 10 / cacheRead 0.1 / cacheWrite 2.5；
-- 剩余 37 个主要是订阅别名、Ollama 标签、目录未收录模型，**不应猜价格**。
+- 剩余 33 个主要是订阅别名、Ollama 标签、目录未收录模型，**不应猜价格**。
 
 但这仍是「内置快照 + 内部 resolver」，不是标准。下一个模型改名（例如本次
 `kimi-for-coding` → `kimi-code-plan-*`）还会以同样方式静默失效。
@@ -681,7 +681,7 @@ module.exports = {
 
 - SDK `0.0.71` → `0.0.109`，重生成 Go 模态索引；
 - 修正 alias / 基座 / 版本点号 / `[1m]` / `:0731` 解析；
-- 新增回归测试；`gpt-6.1-sol` 等恢复价格；无价唯一行 137 → 37；
+- 新增回归测试；`gpt-6.1-sol` 等恢复价格；无价唯一行 137 → 33；
 - 提交：`d5d79de7`、`33d0994b`。
 
 验收：`npm run models:check` 通过；定向测试 60 pass；`/v0/webui/openai-models`

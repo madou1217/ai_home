@@ -1,0 +1,183 @@
+/* =============================================================================
+ * 全局动效层（web/DESIGN.md「动效」：时长与缓动只取 design-tokens 的 --motion-* / --ease-*）
+ *
+ * 原则：
+ *   1. 动效只表达「变化」——进场、状态切换、交互反馈；不做装饰性循环（LED 呼吸除外，已在 hud.css）。
+ *   2. 进场动画一律 `animation-fill-mode: backwards`：结束后不残留 transform，
+ *      否则带 transform 的祖先会变成 position:fixed 子元素的包含块（聊天浮层、任务队列会错位）。
+ *   3. prefers-reduced-motion 下全部归零（tokens 已归零，这里再兜住 animation 本身）。
+ *   4. 不引入整块彩色提示块与左侧竖条（AGENTS.md「UI Visual Constraints」）。
+ * ========================================================================== */
+
+@keyframes aih-fade-up {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes aih-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes aih-scale-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes aih-value-flash {
+  0% { color: var(--color-accent); }
+  100% { color: inherit; }
+}
+
+/* ── 1. 路由进场：页面骨架挂载时淡入上移（每次切页都是新元素，CSS 动画自动重放） ── */
+.unified-page-wrapper,
+.unified-page-scaffold--fullbleed {
+  animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
+}
+
+/* 二级面板切换（开发工具等以 key 重新挂载的面板宿主） */
+.aih-panel-enter {
+  animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
+}
+
+/* Tabs：切换后的面板淡入（antd 默认无内容过渡） */
+.ant-tabs-tabpane-active {
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
+/* ── 2. 列表 / 卡片组的错峰进场：父级加 .aih-stagger，前 10 个子元素依次延迟 ── */
+.aih-stagger > * {
+  animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
+}
+.aih-stagger > *:nth-child(2) { animation-delay: 30ms; }
+.aih-stagger > *:nth-child(3) { animation-delay: 60ms; }
+.aih-stagger > *:nth-child(4) { animation-delay: 90ms; }
+.aih-stagger > *:nth-child(5) { animation-delay: 120ms; }
+.aih-stagger > *:nth-child(6) { animation-delay: 150ms; }
+.aih-stagger > *:nth-child(7) { animation-delay: 180ms; }
+.aih-stagger > *:nth-child(8) { animation-delay: 210ms; }
+.aih-stagger > *:nth-child(n + 9) { animation-delay: 240ms; }
+
+/* KPI 轨道 / 统计条：每一格依次出现，数值变化时一闪强调色 */
+.hud-kpi-strip > li,
+.toolkit-status-track > li {
+  animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
+}
+.hud-kpi-strip > li:nth-child(2), .toolkit-status-track > li:nth-child(2) { animation-delay: 40ms; }
+.hud-kpi-strip > li:nth-child(3), .toolkit-status-track > li:nth-child(3) { animation-delay: 80ms; }
+.hud-kpi-strip > li:nth-child(4), .toolkit-status-track > li:nth-child(4) { animation-delay: 120ms; }
+.hud-kpi-strip > li:nth-child(n + 5), .toolkit-status-track > li:nth-child(n + 5) { animation-delay: 160ms; }
+
+.aih-value-flash {
+  animation: aih-value-flash var(--motion-slower) var(--ease-standard);
+}
+
+/* ── 3. 交互反馈 ─────────────────────────────────────────────────────────── */
+
+/* 按钮按下：轻微下沉（App.css 规定按钮平面无投影，这里只给按压瞬间的 2% 缩放反馈） */
+.ant-btn:not(:disabled):active {
+  transform: scale(0.98);
+  transition-duration: var(--motion-instant);
+}
+.ant-btn {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+/* 可点击的卡片 / 平铺选项：悬停微抬起 + 描边加强（只作用于有点击语义的元素） */
+.ant-card-hoverable,
+.aih-choice-tiles .ant-radio-wrapper,
+.toolkit-secondary-nav-item,
+.toolkit-observation-card,
+.toolkit-tool-config-card {
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    background-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard);
+}
+.ant-card-hoverable:hover,
+.toolkit-observation-card:hover,
+.toolkit-tool-config-card:hover {
+  transform: translate3d(0, -1px, 0);
+}
+.toolkit-secondary-nav-item:active,
+.aih-choice-tiles .ant-radio-wrapper:active {
+  transform: scale(0.99);
+}
+
+/* 表格行 / 列表项：悬停底色过渡，而不是硬切 */
+.ant-table-tbody > tr > td,
+.ant-list-item,
+.ant-dropdown-menu-item,
+.ant-select-item,
+.ant-menu-item,
+.ant-menu-submenu-title {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+/* 标签 / 徽标：状态切换时颜色过渡 */
+.ant-tag,
+.ant-badge-status-dot,
+.hud-led {
+  transition:
+    background-color var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard);
+}
+
+/* 开关 / 复选框 / 单选：antd 自带过渡，统一到我们的时长曲线 */
+.ant-switch,
+.ant-checkbox-inner,
+.ant-radio-inner {
+  transition-timing-function: var(--ease-standard) !important;
+}
+
+/* 键盘焦点：焦点环淡入，便于看清焦点移动 */
+:focus-visible {
+  transition: outline-offset var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+/* 空状态 / 加载完成后的内容：轻量淡入 */
+.ant-empty,
+.ant-result,
+.ant-spin-container:not(.ant-spin-blur) > * {
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
+/* 弹层：Popover / Tooltip 的展开曲线统一（antd 已有 zoom 动效，这里只调缓动） */
+.ant-popover,
+.ant-tooltip,
+.ant-dropdown {
+  transition-timing-function: var(--ease-standard);
+}
+
+/* 进度条：宽度变化平滑 */
+.ant-progress-bg,
+.ant-progress-success-bg {
+  transition: width var(--motion-slower) var(--ease-standard) !important;
+}
+
+/* ── 4. 减少动态效果 ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .ant-btn:not(:disabled):active,
+  .ant-card-hoverable:hover,
+  .toolkit-observation-card:hover,
+  .toolkit-tool-config-card:hover {
+    transform: none;
+  }
+}

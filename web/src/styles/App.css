@@ -199,7 +199,8 @@ samp {
   box-shadow: var(--ring-focus) !important;
 }
 
-/* 6. 按钮：平面、无位移、无投影。主按钮墨色由 antd-theme.ts 的 Button token 负责。 */
+/* 6. 按钮：平面、无投影、悬停不位移。主按钮墨色由 antd-theme.ts 的 Button token 负责。
+ *    按下瞬间的 2% 缩放反馈在 styles/motion.css（交互反馈统一放在动效层）。 */
 .ant-btn {
   transition:
     background-color var(--motion-fast) var(--ease-standard),

@@ -8,6 +8,7 @@
 @import './styles/App.css';
 @import './styles/mobile-shell.css';
 @import './styles/hud.css';
+@import './styles/motion.css';
 
 html, body {
   margin: 0;

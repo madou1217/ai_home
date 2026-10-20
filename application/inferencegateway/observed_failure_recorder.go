@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/madou1217/ai_home/application/accountcredentials"
+	pluginruntime "github.com/madou1217/ai_home/application/pluginruntime"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
 
@@ -39,6 +40,10 @@ func NewObservedAttemptRecorder(
 }
 
 // RecordSuccess 在写入前复核凭据代次；不可验证时只跳过状态清理。
+//
+// 插件观察事件是「这次尝试发生过」的事实，和运行态是否允许写入无关：凭据轮换或
+// 存储暂时不可读时仍要投递，否则 observe 插件会漏掉这次请求（Node 侧按尝试记录，
+// 不按状态写入是否成功记录）。
 func (recorder *ObservedAttemptRecorder) RecordSuccess(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
@@ -48,6 +53,7 @@ func (recorder *ObservedAttemptRecorder) RecordSuccess(
 	if !recorder.validObservation(ctx, route, observation) || !success.IsValid() {
 		return false, ErrInvalidObservedAttempt
 	}
+	defer pluginruntime.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), true, "")
 	current, err := recorder.observations.IsCurrentCredentialObservation(
 		ctx,
 		observation,
@@ -64,7 +70,8 @@ func (recorder *ObservedAttemptRecorder) RecordSuccess(
 // RecordFailure 在失败冷路径复核凭据观察，并返回是否实际写入了运行态。
 //
 // 校验存储异常与凭据已变化都返回 recorded=false、error=nil，避免把本地观察
-// 故障替换成客户端原本应该收到的真实上游结果。
+// 故障替换成客户端原本应该收到的真实上游结果。观察事件不受该守卫影响，理由
+// 同 RecordSuccess。
 func (recorder *ObservedAttemptRecorder) RecordFailure(
 	ctx context.Context,
 	route runtimecore.ModelRoute,
@@ -74,15 +81,16 @@ func (recorder *ObservedAttemptRecorder) RecordFailure(
 	if !recorder.validObservation(ctx, route, observation) || !failure.IsValid() {
 		return false, ErrInvalidObservedAttempt
 	}
+	if observation.IsStaticSecret() {
+		failure = failure.forStaticSecret()
+	}
+	defer pluginruntime.ObserveAttempt(ctx, route.AccountRef().String(), route.ModelID().String(), false, string(failure.RuntimeKind()))
 	current, err := recorder.observations.IsCurrentCredentialObservation(
 		ctx,
 		observation,
 	)
 	if err != nil || !current {
 		return false, nil
-	}
-	if observation.IsStaticSecret() {
-		failure = failure.forStaticSecret()
 	}
 	if err := recorder.attempts.RecordFailure(ctx, route, failure); err != nil {
 		return false, err

@@ -286,14 +286,28 @@ test('a request keeps the generation it was forwarded with across a publish', { 
   assert.ok(await waitFor(() => f.system.runtime.status().retiringGenerations.length === 0), '响应结束后旧代次卸载');
 });
 
-async function dumpObservations(system, count) {
+async function dumpObservations(f, count, label = '') {
   let events = [];
-  assert.ok(await waitFor(async () => {
-    events = events.concat((await system.runtime.invoke('goobs.dump', null)).value || []);
+  const observed = await waitFor(async () => {
+    events = events.concat((await f.system.runtime.invoke('goobs.dump', null)).value || []);
     return events.length >= count;
   // 观察事件由 Go 命中后经 Plugin Host 回传：CI 低核 runner 上排在启动/编译之后，
   // 5s 会偶发不够（本用例自身的兜底超时是 120s）。
-  }, 20000), JSON.stringify(events));
+  }, 20000);
+  if (!observed) {
+    // 超时后把两侧的投递计数一起带出来：Go failed > 0 是宿主回传失败（事件被丢），
+    // Node failed > 0 是 Node 侧排队失败；全 0 则是事件从未入队（pin/记录路径没走到）。
+    const listing = await f.management.send({ method: 'GET', path: '/v1/management/plugins/projection' });
+    const runtime = f.system.runtime.status();
+    throw new assert.AssertionError({
+      actual: events,
+      expected: true,
+      message: `${label} go=${JSON.stringify(listing.ok ? listing.data.observations : listing)} node=${JSON.stringify({
+        state: runtime.state, restarts: runtime.restarts, lastExit: runtime.lastExit, host: runtime.host,
+        observations: runtime.observations, diagnostics: runtime.diagnostics, lastError: runtime.lastError
+      })}\n${f.go.stderr()}`
+    });
+  }
   return events;
 }
 
@@ -313,7 +327,7 @@ test('Go delivers one observe event per attempt on each Go entry, in the Node ev
     const response = await f.send(body, {}, route);
     assert.equal(response.status, 200, `${route}: ${await response.clone().text()}`);
     assert.equal(response.headers.get('x-served-by'), null, `${route} 由 Go 服务`);
-    const [event] = await dumpObservations(f.system, 1);
+    const [event] = await dumpObservations(f, 1, route);
     assert.deepEqual(Object.keys(event).sort(), NODE_EVENT_KEYS, route);
     assert.equal(event.type, 'gateway.attempt');
     assert.equal(event.generation, generation);
@@ -330,12 +344,17 @@ test('Go delivers one observe event per attempt on each Go entry, in the Node ev
   f.failing.next = 4;
   const failed = await f.send(BODY);
   assert.notEqual(failed.status, 200);
-  const [failure] = await dumpObservations(f.system, 1);
+  const [failure] = await dumpObservations(f, 1, `${BODY.model} failure`);
   assert.equal(failure.outcome, 'error');
   assert.equal(failure.committed, false, '失败的尝试在输出前结束');
   assert.notEqual(failure.error, '');
-  const listing = await f.management.send({ method: 'GET', path: '/v1/management/plugins/projection' });
-  assert.ok(listing.data.observations.delivered >= 4, JSON.stringify(listing.data));
+  // 事件的可见性早于投递计数：宿主把事件交给插件后，Go 才在 Invoke 返回时 +1。
+  // 这里必须等计数追上来，否则测试会在两者之间的窗口里误判（与产品行为无关）。
+  let listing = null;
+  assert.ok(await waitFor(async () => {
+    listing = await f.management.send({ method: 'GET', path: '/v1/management/plugins/projection' });
+    return Boolean(listing.ok && listing.data.observations && listing.data.observations.delivered >= 4);
+  }), JSON.stringify(listing && listing.data));
 });
 
 test('Go applies gateway.account preference within the pool; a preference outside it fails the request in Go', { skip: skip(), timeout: 120000 }, async (t) => {

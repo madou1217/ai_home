@@ -15,9 +15,13 @@ function loadTypeScriptModule(...relativePath) {
     }
   });
   const moduleRef = { exports: {} };
-  // 弹窗脚本只依赖 capture 域的宿主安装函数；测试不加载浏览器模块，给出等价空实现。
+  // 弹窗脚本依赖 capture 域的宿主安装与录制偏好；测试不加载浏览器模块，给出等价纯函数实现。
   const stubs = {
-    '../../features/capture': { ensurePreviewWindowCaptureHost: () => {} }
+    '../../features/capture': {
+      ensurePreviewWindowCaptureHost: () => {},
+      readCapturePreferences: () => ({}),
+      summarizeRecordingSettings: () => '手动停止'
+    }
   };
   const requireFromPreviewUtils = (request) => {
     if (Object.prototype.hasOwnProperty.call(stubs, request)) return stubs[request];

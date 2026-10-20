@@ -1609,7 +1609,13 @@ export function useAccountActions({
       const harnessIds = supportedIds.length ? supportedIds : [record.provider];
       const harnesses = harnessIds
         .map((id) => {
-          const name = String(providerNames[id as keyof typeof providerNames] || id);
+          // 外部 harness（Pi/DSH）没有 provider 目录条目，显示名由能力描述符直接下发；
+          // 原生 harness 仍用 provider 的展示名（例如 codex → ChatGPT）。
+          const name = String(
+            capabilities[id]?.label
+            || providerNames[id as keyof typeof providerNames]
+            || id
+          );
           const cliInstalled = entryState[id]?.cli === true;
           return { id, label: cliInstalled ? name : `${name}（未安装）` };
         })

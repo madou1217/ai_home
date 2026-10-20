@@ -423,6 +423,28 @@ test('open-app 端点跨 Provider harness 缺失时安装目标跟随 harness', 
   assert.equal(body.installAvailable, true);
 });
 
+test('open-app 端点外部 harness 缺失时安装目标跟随 harness', async (t) => {
+  const fixture = createFixture(t, 'codex');
+  const ctx = createOpenAppCtx(fixture, { kind: 'cli', action: 'open', harness: 'pi' });
+  ctx.deps.hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  ctx.processObj = { platform: 'linux', env: { PATH: '' }, execPath: process.execPath };
+  ctx.deps.resolveNativeCliPath = () => '';
+  ctx.deps.appInstallJobManager = {
+    canInstall(input) {
+      assert.deepEqual(input, { provider: 'pi', kind: 'cli', appId: 'pi' });
+      return true;
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 428);
+  const body = ctx.res.json();
+  assert.equal(body.error, 'install_required');
+  assert.deepEqual(body.installTarget, { provider: 'pi', kind: 'cli', appId: 'pi' });
+  assert.equal(body.installAvailable, true);
+});
+
 test('open-app 端点在没有自动安装器时保留 install_required 并给出手动安装提示', async (t) => {
   const fixture = createFixture(t);
   const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });

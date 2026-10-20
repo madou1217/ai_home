@@ -693,7 +693,7 @@ export const accountsAPI = {
   // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
   listAppEntries: async (options: { refresh?: boolean } = {}): Promise<{
     entries: Record<string, { desktop: boolean; cli: boolean }>;
-    capabilities: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean }>;
+    capabilities: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean; label?: string; externalHarness?: boolean; interactiveKind?: string; managedAppId?: string }>;
     runningAccounts: string[];
     runningAccountPids: Record<string, number[]>;
     runningCliAccounts: string[];
@@ -702,7 +702,7 @@ export const accountsAPI = {
     const response = await api.get<{
       ok: boolean;
       entries: Record<string, { desktop: boolean; cli: boolean }>;
-      capabilities?: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean }>;
+      capabilities?: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean; label?: string; externalHarness?: boolean; interactiveKind?: string; managedAppId?: string }>;
       runningAccounts?: string[];
       runningAccountPids?: Record<string, number[]>;
       runningCliAccounts?: string[];

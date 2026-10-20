@@ -88,7 +88,7 @@ test('独立托管 CLI 不污染 Provider 合同，并通过同一生命周期�
   assert.equal(dsh.managedApp.id, 'dsh');
   assert.equal(dsh.managedApp.type, 'cli');
   assert.equal(dsh.listCliBinaryNames()[0], 'dsh');
-  assert.deepEqual(listManagedAppInstallers().map((installer) => installer.provider), ['dsh']);
+  assert.deepEqual(listManagedAppInstallers().map((installer) => installer.provider), ['dsh', 'pi']);
   assert.deepEqual(dsh.resolveLifecyclePlans('update', { kind: 'cli' }).map((plan) => plan.id), ['npm_global_update']);
   assert.deepEqual(dsh.resolveLifecyclePlans('uninstall', { kind: 'cli' }).map((plan) => plan.id), ['npm_global_uninstall']);
 });

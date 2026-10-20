@@ -49,7 +49,7 @@ import {
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
-import type { Account, AccountActivityResult } from '@/types';
+import type { Account, AccountActivityAction, AccountActivityResult } from '@/types';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
@@ -64,7 +64,6 @@ import {
   canEditAccountRoutingRules,
   canReauthAccount,
   canRestoreAccountScheduling,
-  canRunAccountActivity,
   getAccountDisplayState,
   getReauthActionLabel,
   getUsageSortValue,
@@ -257,9 +256,11 @@ export default function Accounts() {
   // 账号出口摘要：列表 / 卡片上的出口徽标与「批量设置出口」共用（见 features/egress-upstream）。
   const egressSummary = useAccountEgressSummary();
   const [bulkEgressOpen, setBulkEgressOpen] = useState(false);
-  // 账号福利（签到 / 领取试用套餐）：请求与结果状态留在页面，展示交给 AccountActivityModal。
+  // 账号活动（签到 / 领臭鸡蛋）：入口只在声明了该动作的供应商 tab 出现；
+  // 动作清单来自服务端下发的 activityActions，前端不判断 provider。
   const [rewardsRunning, setRewardsRunning] = useState(false);
   const [rewardsOpen, setRewardsOpen] = useState(false);
+  const [rewardsTitle, setRewardsTitle] = useState('');
   const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
   const renderEgressBadge = (record: Account) => (
     <AccountEgressBadge
@@ -297,6 +298,24 @@ export default function Accounts() {
     return filtered;
   }, [accounts, activeProvider, filterStatus]);
 
+  // 当前供应商 tab 下可见账号声明的动作（按动作 id 去重，providers 记录族内哪些站点可执行）。
+  // “全部” tab 不提供入口：动作只在支持它的供应商菜单下出现。
+  const visibleActivityActions = useMemo(() => {
+    if (activeProvider === 'all') return [];
+    const actions = new Map<string, { action: AccountActivityAction; providers: Set<string> }>();
+    for (const record of filteredAccounts) {
+      for (const action of record.activityActions || []) {
+        const entry = actions.get(action.id) || { action, providers: new Set<string>() };
+        entry.providers.add(record.provider);
+        actions.set(action.id, entry);
+      }
+    }
+    return [...actions.values()].map(({ action, providers }) => ({
+      action,
+      providers: [...providers]
+    }));
+  }, [activeProvider, filteredAccounts]);
+
   useEffect(() => {
     if (!accountRouteTarget) return;
     // 从仪表盘错误跳入账号页时，确保目标账号不会被 provider/status 过滤掉。
@@ -318,7 +337,8 @@ export default function Accounts() {
   };
 
   // 领取结果只带 provider + accountRef；展示名由页面补（与账号行同一套文案）。
-  const presentRewards = (results: AccountActivityResult[]) => {
+  const presentRewards = (results: AccountActivityResult[], title?: string) => {
+    if (title) setRewardsTitle(title);
     setRewardsResults(results.map((result) => {
       const record = accounts.find((item) => (
         item.provider === result.provider && item.accountRef === result.accountRef
@@ -331,24 +351,28 @@ export default function Accounts() {
     setRewardsOpen(true);
   };
 
-  const runAllRewards = async () => {
-    if (rewardsRunning) return;
+  // 只跑当前供应商 tab 里声明了该动作的账号（族内站点一起跑，如 Qoder 国际站 + 国内站）。
+  const runProviderRewards = async (action: AccountActivityAction, providers: string[]) => {
+    if (rewardsRunning || providers.length === 0) return;
     setRewardsRunning(true);
     try {
-      const response = await accountsAPI.runAllAccountActivities();
-      presentRewards(response.results || []);
+      const response = await accountsAPI.runAccountActivities({
+        providers,
+        actionId: action.id
+      });
+      presentRewards(response.results || [], action.label);
       const summary = response.summary;
       if (summary && summary.claimed > 0) {
-        message.success(`已领取 ${summary.claimed} 个账号的福利`);
+        message.success(`${action.label}：${summary.claimed} 个账号成功`);
       } else if (summary && summary.failed > 0) {
-        message.warning('部分账号领取失败，详情见结果');
+        message.warning(`${action.label}：${summary.failed} 个账号失败，详情见结果`);
       } else if (summary && summary.alreadyClaimed > 0) {
-        message.info('今天已经领过了');
+        message.info(`${action.label}：今天已经领过了`);
       } else {
-        message.info('当前没有可领取的活动');
+        message.info(`${action.label}：当前没有可领取的活动`);
       }
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || '领取失败');
+      message.error(error?.response?.data?.error || error?.message || `${action.label}失败`);
     } finally {
       setRewardsRunning(false);
     }
@@ -356,12 +380,13 @@ export default function Accounts() {
 
   const runOneReward = async (record: Account, actionId: string) => {
     if (rewardsRunning) return;
+    const action = (record.activityActions || []).find((item) => item.id === actionId);
     setRewardsRunning(true);
     try {
       const result = await accountsAPI.runAccountActivity(record.provider, record.accountRef, actionId);
-      presentRewards([result]);
+      presentRewards([result], action?.label);
       if (result.status === 'claimed') {
-        message.success(`${getAccountPrimaryLabel(record)}：领取成功`);
+        message.success(`${getAccountPrimaryLabel(record)}：${action?.label || '领取'}成功`);
       } else if (result.status === 'error') {
         message.warning(`${getAccountPrimaryLabel(record)}：${result.error || result.message || '领取失败'}`);
       }
@@ -424,7 +449,7 @@ export default function Accounts() {
     if (canRestoreAccountScheduling(record)) {
       menuItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
     }
-    // 账号福利（签到 / 领取试用套餐）：动作来自服务端下发的 activityActions，
+    // 账号活动（签到 / 领臭鸡蛋）：动作来自服务端下发的 activityActions，
     // 前端不判断 provider（新增 provider 只加描述符）。
     for (const action of record.activityActions || []) {
       menuItems.push({
@@ -978,15 +1003,6 @@ export default function Accounts() {
         // 列表自动订阅快照；账号刷新统一由行首 Logo 触发。
         extra={
           <Space size={8}>
-            {accounts.some(canRunAccountActivity) ? (
-              <Button
-                icon={<GiftOutlined />}
-                loading={rewardsRunning}
-                onClick={() => void runAllRewards()}
-              >
-                签到 / 领福利
-              </Button>
-            ) : null}
             <Button icon={<GlobalOutlined />} onClick={() => setBulkEgressOpen(true)}>
               批量设置出口
             </Button>
@@ -1014,6 +1030,23 @@ export default function Accounts() {
           activeKey={activeProvider}
           onChange={(key) => setActiveProvider(key)}
           items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
+          // 动作属于供应商：只在支持它的 tab 下显示（“全部” tab 不提供全局入口）。
+          tabBarExtraContent={visibleActivityActions.length > 0 ? (
+            <Space size={8}>
+              {visibleActivityActions.map(({ action, providers }) => (
+                <Button
+                  key={action.id}
+                  size="small"
+                  icon={<GiftOutlined />}
+                  title={action.description || action.label}
+                  loading={rewardsRunning}
+                  onClick={() => void runProviderRewards(action, providers)}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </Space>
+          ) : null}
         />
         {viewMode === 'card' ? (
           <div style={{ marginBottom: 16 }}>
@@ -1112,6 +1145,7 @@ export default function Accounts() {
       />
       <AccountActivityModal
         open={rewardsOpen}
+        title={rewardsTitle}
         results={rewardsResults}
         onClose={() => setRewardsOpen(false)}
       />

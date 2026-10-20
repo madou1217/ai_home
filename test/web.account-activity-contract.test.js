@@ -14,12 +14,16 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('账号页把 activityActions 渲染成工具栏按钮与账号菜单项', () => {
+test('账号页把 activityActions 渲染成供应商 tab 动作按钮与账号菜单项', () => {
   const page = read('web/src/pages/Accounts.tsx');
   assert.match(page, /import \{ AccountActivityModal \} from '@\/features\/accounts\/AccountActivityModal'/);
   assert.match(page, /for \(const action of record\.activityActions \|\| \[\]\)/);
   assert.match(page, /key: `activity:\$\{action\.id\}`/);
-  assert.match(page, /accounts\.some\(canRunAccountActivity\)/);
+  // 动作只在声明它的供应商 tab 下出现（“全部”不提供全局入口），不按全部账号批量跑。
+  assert.match(page, /const visibleActivityActions = useMemo/);
+  assert.match(page, /if \(activeProvider === 'all'\) return \[\];/);
+  assert.match(page, /tabBarExtraContent=/);
+  assert.doesNotMatch(page, /runAllAccountActivities/);
   assert.match(page, /<AccountActivityModal[\s\S]*results=\{rewardsResults\}/);
 });
 

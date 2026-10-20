@@ -348,7 +348,7 @@ test('activity 能力从 provider 描述符派生（不在本模块维护 provid
   assert.deepEqual(listActivityProviders().sort(), ['qoder', 'qodercn', 'zcode']);
   assert.deepEqual(listActivityActions('qoder'), [{
     id: 'daily_checkin',
-    label: '每日签到',
+    label: '签到',
     description: '每天 10:00 (UTC+8) 重置，领取 100 Credits'
   }]);
   assert.deepEqual(listActivityActions('codex'), []);

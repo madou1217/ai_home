@@ -743,7 +743,7 @@ export const accountsAPI = {
     return response.data;
   },
 
-  /** 执行账号活动（签到 / 领取试用套餐）：单账号单动作。 */
+  /** 执行账号活动（签到 / 领臭鸡蛋）：单账号单动作。 */
   runAccountActivity: async (
     provider: string,
     accountRef: string,
@@ -758,8 +758,11 @@ export const accountsAPI = {
     return response.data;
   },
 
-  /** 对所有声明了 activity 能力的账号执行领取（账号页工具栏入口）。 */
-  runAllAccountActivities: async (): Promise<{
+  /** 对指定 provider 集合执行同一个账号活动（账号页按当前供应商 tab 触发，不做全局批量）。 */
+  runAccountActivities: async (input: {
+    providers: string[];
+    actionId: string;
+  }): Promise<{
     ok: boolean;
     capturedAt?: string;
     results: AccountActivityResult[];
@@ -770,7 +773,7 @@ export const accountsAPI = {
       capturedAt?: string;
       results: AccountActivityResult[];
       summary: AccountActivitySummary;
-    }>('/webui/accounts/activity/run', undefined, {
+    }>('/webui/accounts/activity/run', input, {
       // 批量会逐个账号跑（ZCode 每个都要过一次验证码），给足时间。
       timeout: 600000
     });

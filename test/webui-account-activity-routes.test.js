@@ -79,6 +79,50 @@ test('批量领取逐账号执行并汇总（账号来源由注入的仓库读�
   });
 });
 
+test('批量领取按 providers + actionId 收窄到供应商 tab，未声明该动作的站点跳过', async () => {
+  const seen = [];
+  const recordsByProvider = {
+    qoder: [{ provider: 'qoder', accountRef: 'acct_qoder_1' }],
+    zcode: [{ provider: 'zcode', accountRef: 'acct_zcode_1' }]
+  };
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
+    deps: {
+      listActivityProviders: () => ['qoder', 'zcode'],
+      listActivityActions: (provider) => (provider === 'qoder'
+        ? [{ id: 'daily_checkin', label: '签到' }]
+        : [{ id: 'trial_plan', label: '领臭鸡蛋' }]),
+      listAccountCredentialRecords: (_fs, _home, provider) => recordsByProvider[provider] || [],
+      runActivityClaim: async (input) => {
+        seen.push({ provider: input.provider, actionId: input.actionId });
+        return {
+          provider: input.provider,
+          accountRef: input.record.accountRef,
+          actionId: input.actionId,
+          status: 'claimed'
+        };
+      }
+    }
+  });
+  ctx.req = {};
+  ctx.readRequestBody = async () => Buffer.from(JSON.stringify({
+    providers: ['qoder', 'zcode'],
+    actionId: 'daily_checkin'
+  }));
+  assert.equal(await handleAccountActivityRequest(ctx), true);
+  assert.deepEqual(seen, [{ provider: 'qoder', actionId: 'daily_checkin' }]);
+  assert.equal(calls[0].status, 200);
+  assert.equal(calls[0].payload.summary.accounts, 1);
+});
+
+test('批量领取筛选后没有任何可用 provider 时明确失败', async () => {
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run');
+  ctx.req = {};
+  ctx.readRequestBody = async () => Buffer.from(JSON.stringify({ providers: ['claude'] }));
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 400);
+  assert.equal(calls[0].payload.error, 'activity_unsupported');
+});
+
 test('批量领取把业务失败计入 failed，但仍返回 200（不是服务器故障）', async () => {
   const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
     deps: {

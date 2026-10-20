@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Space, Tag, Typography } from 'antd';
 import type { AccountActivityResult } from '@/types';
 
-// 纯展示弹窗：账号活动（签到 / 领取试用套餐）的执行结果。
+// 纯展示弹窗：账号活动（签到 / 领臭鸡蛋）的执行结果。
 // 状态与请求都留在页面（Accounts.tsx），这里只按结果渲染，符合「弹窗状态留页面」的拆分约定。
 
 const STATUS_TEXT: Record<string, string> = {
@@ -52,11 +52,13 @@ function countByStatus(results: AccountActivityResult[]) {
 
 export interface AccountActivityModalProps {
   open: boolean;
+  /** 动作名（签到 / 领臭鸡蛋），由页面按实际执行的动作传入。 */
+  title?: string;
   results: AccountActivityResult[];
   onClose: () => void;
 }
 
-export function AccountActivityModal({ open, results, onClose }: AccountActivityModalProps) {
+export function AccountActivityModal({ open, title, results, onClose }: AccountActivityModalProps) {
   const counts = countByStatus(results);
   const summary = [
     counts.claimed ? `领取 ${counts.claimed}` : '',
@@ -67,7 +69,7 @@ export function AccountActivityModal({ open, results, onClose }: AccountActivity
 
   return (
     <Modal
-      title="账号福利"
+      title={title || '账号活动'}
       open={open}
       onCancel={onClose}
       onOk={onClose}

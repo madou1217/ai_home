@@ -205,13 +205,65 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
    逐帧透传；`body:"[DONE]"` 是结束帧。结束前的 timing 帧
    （`firstTokenDuration` / `totalDuration` / `serverDuration`）与 usage 帧
    （`prompt_tokens` / `completion_tokens` / `*_details` / `credits` / `billable`）
-   被记录到 attempt 注解与 model usage。
+   被记录到 `transportAttempts` 与 model usage。
 5. 策略链顺序：**HTTP 在前，CLI headless 兜底**。首字节之前失败（签名/认证/代理/
    HTTP 错误/空流/上游错误帧）只写一条 `qoder_http_failed` 请求日志并返回 `null`，
    不记账号失败，由 CLI 接手；首字节之后失败无法回落，按上游失败记账。
 6. 首字节前代理失败且**只用了环境变量代理**时才允许直连回退（显式
    `--proxy-url` / 账号 egress 不绕过用户选择）；直连用客户端 DNS 缓存 IP，
    避免 fake-ip。代理首包预算 15s，直连/后续静默预算 120s，单轮 30min。
+
+### 4.5 统一 transport attempt 日志模型（2026-10-20）
+
+HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
+`lib/server/transport-attempts.js` 往 `attempt.annotations.transportAttempts`
+追加**同构**记录，所有成功/失败/回退日志自动带上：
+
+| 字段 | 含义 |
+| --- | --- |
+| `transport` | `qoder_http` / `qoder_cli` |
+| `outcome` | `success` / `failure` |
+| `durationMs` | 该策略从进入 `run()` 到结束的耗时（毫秒） |
+| `upstream` | HTTP 实际 endpoint / `qoder-cli` |
+| `provider` / `accountRef` | 本次 attempt 实际使用的账号 |
+| `model` | 客户端请求的模型名 |
+| `stream` | 是否流式 |
+| `firstTokenMs` | 拿得到首字节时才有（HTTP） |
+| `errorCode` | 失败时的错误码（HTTP/CLI 同一位置） |
+| `usage` | `source`（`exact` / `estimated`）+ token 计数、credits、billable；拿不到计数时整块省略 |
+| `details` | 策略专有标量（HTTP：endpointSource/egress/clientVersion/upstreamModel/timing；CLI：warm/warmReused/responseModel/sessionId） |
+
+一次 HTTP 失败后 CLI 接手的最终日志示例（字段顺序仅示意）：
+
+```json
+"transportAttempts": [
+  {
+    "transport": "qoder_http", "outcome": "failure", "durationMs": 63,
+    "upstream": "https://gateway.qoder.com.cn", "provider": "qodercn",
+    "accountRef": "acct_…", "model": "Qwen3.8-Flash", "stream": false,
+    "errorCode": "ECONNREFUSED",
+    "details": { "egress": "proxy", "policyKind": "network_error", "statusCode": 502 }
+  },
+  {
+    "transport": "qoder_cli", "outcome": "success", "durationMs": 7875,
+    "upstream": "qoder-cli", "provider": "qodercn",
+    "accountRef": "acct_…", "model": "Qwen3.8-Flash", "stream": false,
+    "usage": { "source": "estimated", "promptTokens": 3272, "completionTokens": 12, "totalTokens": 3284 },
+    "details": { "warm": false, "warmReused": false, "streamTransport": "non_stream", "statusCode": 200 }
+  }
+]
+```
+
+统计口径：按 `transport / outcome / durationMs / upstream` 聚合；`usage.source`
+区分精确/估算；`details` 只放策略专有标量，不放 body、签名串或整块上游对象。
+**不再有第二套 HTTP 统计字段**：endpoint / egress / firstToken / timing / usage 只出现
+在 `transportAttempts` 的 `qoder_http` 条目里；日志顶层只保留
+`qoderHttpFallback` 这个请求级回退标记（表示「本次 HTTP 交给 CLI 了」），
+它不是统计字段。
+
+回退链会先写一条 `qoder_http_failed` 的**中间证据行**（`transportAttemptsPartial=true`），
+同一 `requestId` 的最终行才带完整的 `transportAttempts`（HTTP 失败 + CLI 成功）。
+统计时只取最终行，避免把一次 HTTP 失败重复计数。
 
 真机证据（2026-10-20）：
 
@@ -230,7 +282,7 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
   - 非流式：HTTP 200 / 930ms，精确 usage `26/1`，usage record
     `sourceKind=server_qoder_http_proxy` 且 `session_id` 归属目标会话；
   - 流式：HTTP 200 / 735ms / 4 个 chunk / `[DONE]`，首字节约 0.54s，
-    `qoderHttpUsageExact=true`；
+    `transportAttempts[0].usage.source=exact`；
   - 强制首字节前失败（把账号投影端点缓存临时指向 `127.0.0.1:9`）：63ms 记录
     `qoder_http_failed`（`qoderHttpFallback=true`，不记账号失败），同一 requestId
     随后由 CLI 在 7.9s 返回 200，usage record 为
@@ -293,8 +345,10 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 2. **P1：HTTP → CLI 策略链（已实现，2026-10-20）**。
    `qoderHttpTransport` 在 `qoderCliTransport` 之前；首字节前失败只留
    `qoder_http_failed` 日志并交还 CLI，不记账号失败；首字节后失败按上游失败记账。
-   日志字段见 `qoderHttp*` attempt 注解（egress / endpoint / firstToken /
-   upstream timing / usage exact / cached / reasoning / credits / fallback）。
+   两条策略的延迟/上游/结果统一写在 `transportAttempts`（同构字段见 4.5）；
+   日志顶层只保留 `qoderHttpFallback` 这个请求级回退标记；endpoint / egress /
+   timing / usage 等细节全部在 `transportAttempts[].details` 与
+   `transportAttempts[].usage` 里，不存在第二套 HTTP 统计字段。
 3. **P1.5：用量闭环（HTTP 已实现）**。HTTP 通道直接记录精确 usage，id 用
    `<provider>:message:<message.id>`，与会话 JSONL 扫描器共用幂等键；CLI 兜底
    继续用 `context_usage_ratio × 200000` + 输出文本估算，`sourceKind` 带

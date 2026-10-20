@@ -11,6 +11,7 @@ const {
   qoderEstimatedSourceKind,
   readQoderUsageDetails,
   resolveQoderUsage,
+  summarizeQoderUsage,
   toOpenAiUsage
 } = require('../lib/usage/qoder-usage');
 
@@ -123,4 +124,45 @@ test('toOpenAiUsage emits chat completion usage fields', () => {
     { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }
   );
   assert.equal(toOpenAiUsage(null), undefined);
+});
+
+
+test('summarizeQoderUsage produces the unified attempt usage shape', () => {
+  const exact = summarizeQoderUsage({
+    prompt_tokens: 26,
+    completion_tokens: 1,
+    total_tokens: 27,
+    prompt_tokens_details: { cached_tokens: 20 },
+    completion_tokens_details: { reasoning_tokens: 1 },
+    credits: 0,
+    original_credits: 0,
+    billable: false
+  });
+  assert.deepEqual(exact, {
+    source: 'exact',
+    promptTokens: 26,
+    completionTokens: 1,
+    totalTokens: 27,
+    cachedTokens: 20,
+    reasoningTokens: 1,
+    credits: 0,
+    originalCredits: 0,
+    billable: false
+  });
+
+  const estimated = summarizeQoderUsage(
+    { prompt_tokens: 3272, completion_tokens: 12, total_tokens: 3284 },
+    { estimated: true }
+  );
+  assert.equal(estimated.source, 'estimated');
+  assert.equal(estimated.promptTokens, 3272);
+  assert.equal(estimated.completionTokens, 12);
+  assert.equal(estimated.totalTokens, 3284);
+  assert.equal(estimated.credits, undefined, 'no billing evidence must not be reported as zero credits');
+});
+
+test('summarizeQoderUsage returns null without token counters', () => {
+  assert.equal(summarizeQoderUsage(null), null);
+  assert.equal(summarizeQoderUsage({ input_tokens: 0, output_tokens: 0 }), null);
+  assert.equal(summarizeQoderUsage({ prompt_tokens: 0, completion_tokens: 0 }), null);
 });

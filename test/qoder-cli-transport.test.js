@@ -353,6 +353,7 @@ test('qoderCliTransport matches qoder variants and runTransportChain dispatches 
 
 test('streaming qoder transport shares the JSONL usage event key', async () => {
   const recorded = [];
+  const attemptMutable = {};
   const sent = { status: 0, headers: {}, body: '' };
   const res = {
     statusCode: 0,
@@ -388,12 +389,21 @@ test('streaming qoder transport shares the JSONL usage event key', async () => {
     control: { attempt: 0, setLastError() {} },
     account: ACCOUNT,
     attemptUpstreamTimeoutMs: 1000,
-    attemptMutable: {}
+    attemptMutable
   }, [qoderCliTransport]);
   assert.deepEqual(action, { action: 'return' });
   assert.equal(recorded.length, 1);
   assert.equal(recorded[0].eventKey, 'qodercn:message:chatcmpl-stream-1');
   assert.equal(recorded[0].sourceKind, 'server_qoder_cli_proxy_estimated');
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_cli');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.upstream, 'qoder-cli');
+  assert.equal(attemptRecord.stream, true);
+  assert.equal(attemptRecord.usage.source, 'estimated');
+  assert.ok(attemptRecord.usage.promptTokens > 0);
+  assert.equal(attemptRecord.details.streamTransport, 'qoder_cli_stream_json');
+  assert.ok(attemptRecord.durationMs >= 0);
 });
 
 test('qoder transport exposes warm reuse as a log annotation', async () => {
@@ -434,6 +444,62 @@ test('qoder transport exposes warm reuse as a log annotation', async () => {
   assert.equal(attemptMutable.annotations.qoderCliWarm, true);
   assert.equal(attemptMutable.annotations.qoderCliWarmReused, true);
   assert.equal(attemptMutable.streamTransport, 'qoder_cli_non_stream_warm');
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_cli');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.upstream, 'qoder-cli');
+  assert.equal(attemptRecord.stream, false);
+  assert.equal(attemptRecord.details.warm, true);
+  assert.equal(attemptRecord.details.warmReused, true);
+  assert.equal(attemptRecord.details.streamTransport, 'qoder_cli_non_stream_warm');
+  assert.equal(attemptRecord.details.statusCode, 200);
+  assert.ok(attemptRecord.durationMs >= 0);
+});
+
+test('qoder CLI failure records the same unified attempt shape as HTTP', async () => {
+  const attemptMutable = {};
+  const res = {
+    statusCode: 0,
+    setHeader() {},
+    end() {},
+    write() {},
+    get headersSent() { return false; },
+    get writableEnded() { return false; }
+  };
+  const action = await runTransportChain({
+    options: {},
+    res,
+    requestJson: { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+    provider: 'qodercn',
+    streamRequested: false,
+    requestMeta: {},
+    state: { metrics: { totalFailures: 0, totalTimeouts: 0, providerFailures: {} } },
+    deps: {
+      fetchQoderCliChatCompletion: async () => {
+        const error = new Error('cli exploded');
+        error.code = 'qoder_cli_test_failure';
+        throw error;
+      }
+    },
+    recordAccountSuccess: () => {},
+    recordAccountFailure: () => {},
+    recordModelUsage: () => {},
+    appendProxyRequestLog: () => {},
+    diagnosticMaxAttempts: () => 1,
+    control: { attempt: 0, setLastError() {} },
+    account: ACCOUNT,
+    attemptUpstreamTimeoutMs: 1000,
+    attemptMutable
+  }, [qoderCliTransport]);
+  assert.ok(action && action.action);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_cli');
+  assert.equal(attemptRecord.outcome, 'failure');
+  assert.equal(attemptRecord.upstream, 'qoder-cli');
+  assert.equal(attemptRecord.errorCode, 'qoder_cli_test_failure');
+  assert.equal(attemptRecord.stream, false);
+  assert.equal(attemptRecord.details.statusCode, 502);
+  assert.ok(attemptRecord.durationMs >= 0);
 });
 
 // ---- warm CLI 会话池 ---------------------------------------------------------
@@ -614,6 +680,7 @@ test('warm CLI falls back to a cold turn when the pooled process exits before an
 
 test('qoder transport records estimated usage with an explicit estimated sourceKind', async () => {
   const recorded = [];
+  const attemptMutable = {};
   const sent = { status: 0, headers: {}, body: '' };
   const res = {
     statusCode: 0,
@@ -648,7 +715,7 @@ test('qoder transport records estimated usage with an explicit estimated sourceK
     control: { attempt: 0, setLastError() {} },
     account: ACCOUNT,
     attemptUpstreamTimeoutMs: 1000,
-    attemptMutable: {}
+    attemptMutable
   }, [qoderCliTransport]);
   assert.deepEqual(action, { action: 'return' });
   assert.equal(recorded.length, 1);
@@ -656,4 +723,9 @@ test('qoder transport records estimated usage with an explicit estimated sourceK
   assert.equal(recorded[0].eventKey, 'qodercn:message:chatcmpl-est-1',
     'the live path must reuse the JSONL scanner event key');
   assert.ok(recorded[0].usage.prompt_tokens > 0);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_cli');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.usage.source, 'estimated');
+  assert.equal(attemptRecord.usage.promptTokens, recorded[0].usage.prompt_tokens);
 });

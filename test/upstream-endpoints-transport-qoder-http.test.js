@@ -7,6 +7,7 @@ const path = require('node:path');
 const { PassThrough } = require('node:stream');
 
 const { qoderHttpTransport } = require('../lib/server/upstream-endpoints-transport-qoder-http');
+const { qoderCliTransport } = require('../lib/server/upstream-endpoints-transport-qoder-cli');
 const { runTransportChain } = require('../lib/server/upstream-endpoints-transport-chain');
 
 const SESSION_ID = 'session-ccdbf520-9d60-4bd1-afad-b4d38fd4f736';
@@ -172,12 +173,72 @@ test('pre-header HTTP failure falls back to the next transport without recording
   assert.equal(failures.length, 0);
   assert.equal(attemptMutable.streamTransport, undefined);
   assert.equal(attemptMutable.annotations.qoderHttpFallback, true);
-  assert.equal(attemptMutable.annotations.qoderHttpErrorCode, 'qoder_http_sign_failed');
+  assert.equal(attemptMutable.annotations.qoderHttpErrorCode, undefined,
+    'HTTP error classification must not be duplicated outside transportAttempts');
+  const attempts = attemptMutable.annotations.transportAttempts;
+  assert.equal(attempts.length, 1, 'HTTP failure must produce one unified attempt record');
+  assert.equal(attempts[0].transport, 'qoder_http');
+  assert.equal(attempts[0].outcome, 'failure');
+  assert.equal(attempts[0].errorCode, 'qoder_http_sign_failed');
+  assert.equal(attempts[0].stream, false);
+  assert.equal(attempts[0].firstTokenMs, undefined, 'no first byte means no firstTokenMs');
+  assert.ok(attempts[0].durationMs >= 0);
   assert.equal(logs.length, 1);
   assert.equal(logs[0].streamTransport, 'qoder_http_failed');
   assert.equal(logs[0].streamRequested, false);
   assert.equal(logs[0].qoderHttpFallback, true);
+  assert.equal(logs[0].transportAttemptsPartial, true, 'intermediate fallback lines must be marked');
   assert.match(String(logs[0].error), /qoder_http_sign_failed/);
+});
+
+test('fallback logs one unified attempt for HTTP failure and one for CLI success', async () => {
+  const payload = {
+    id: 'chatcmpl-cli-fallback',
+    object: 'chat.completion',
+    created: 1,
+    model: 'Qwen3.8-Flash',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'fallback ok' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }
+  };
+  Object.defineProperty(payload, 'usageEstimated', { value: true, enumerable: false });
+  const { ctx, logs, successes, failures, attemptMutable } = makeCtx({
+    deps: {
+      fetchQoderHttpChatCompletion: async () => {
+        const error = new Error('connection refused');
+        error.code = 'ECONNREFUSED';
+        error.qoderHttpEndpoint = 'https://gateway.qoder.com.cn';
+        error.qoderHttpEgress = 'proxy';
+        throw error;
+      },
+      fetchQoderCliChatCompletion: async () => payload
+    }
+  });
+  const action = await runTransportChain(ctx, [qoderHttpTransport, qoderCliTransport]);
+  assert.deepEqual(action, { action: 'return' });
+  const attempts = attemptMutable.annotations.transportAttempts;
+  assert.equal(attempts.length, 2, 'HTTP failure + CLI success must both be visible');
+  assert.equal(attempts[0].transport, 'qoder_http');
+  assert.equal(attempts[0].outcome, 'failure');
+  assert.equal(attempts[0].upstream, 'https://gateway.qoder.com.cn');
+  assert.equal(attempts[0].errorCode, 'ECONNREFUSED');
+  assert.ok(attempts[0].durationMs >= 0);
+  assert.equal(attempts[1].transport, 'qoder_cli');
+  assert.equal(attempts[1].outcome, 'success');
+  assert.equal(attempts[1].upstream, 'qoder-cli');
+  assert.equal(attempts[1].model, 'qodercn/auto');
+  assert.equal(attempts[1].stream, false);
+  assert.equal(attempts[1].usage.source, 'estimated');
+  assert.equal(attempts[1].usage.promptTokens, 10);
+  assert.ok(attempts[1].durationMs >= 0);
+  assert.equal(failures.length, 0, 'HTTP pre-header failure must not be recorded as account failure');
+  assert.equal(successes.length, 1, 'only the CLI success is an account success');
+  assert.equal(logs.length, 2);
+  assert.equal(logs[0].streamTransport, 'qoder_http_failed');
+  assert.equal(logs[0].transportAttemptsPartial, true);
+  assert.equal(logs[1].transportAttemptsPartial, undefined, 'final route log is the complete record');
+  assert.equal(logs[1].transportAttempts.length, 2, 'final route log must carry both attempts');
+  assert.equal(logs[1].transportAttempts[0].transport, 'qoder_http');
+  assert.equal(logs[1].transportAttempts[1].transport, 'qoder_cli');
 });
 
 test('streaming annotations drop the pre-finalization estimated flag when exact usage arrives', async () => {
@@ -228,8 +289,10 @@ test('streaming annotations drop the pre-finalization estimated flag when exact 
   assert.deepEqual(action, { action: 'return' });
   assert.equal(recorded.length, 1);
   assert.equal(recorded[0].sourceKind, 'server_qoder_http_proxy');
-  assert.equal(attemptMutable.annotations.qoderHttpUsageExact, true);
-  assert.equal(attemptMutable.annotations.qoderHttpUsageEstimated, undefined);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.usage.source, 'exact');
+  assert.equal(attemptRecord.usage.promptTokens, 24);
+  assert.equal(attemptRecord.usage.completionTokens, 198);
 });
 
 test('streaming HTTP success records exact usage with the shared message event key', async () => {
@@ -254,24 +317,39 @@ test('streaming HTTP success records exact usage with the shared message event k
   assert.equal(successes.length, 1);
   assert.equal(failures.length, 0);
   assert.equal(attemptMutable.streamTransport, 'qoder_http_sse');
-  assert.equal(attemptMutable.annotations.qoderHttp, true);
-  assert.equal(attemptMutable.annotations.qoderHttpEgress, 'proxy');
-  assert.equal(attemptMutable.annotations.qoderHttpEndpoint, 'https://gateway.qoder.com.cn');
-  assert.equal(attemptMutable.annotations.qoderHttpClientVersion, '1.1.72');
-  assert.equal(attemptMutable.annotations.qoderHttpFirstTokenMs, 3512);
-  assert.equal(attemptMutable.annotations.qoderHttpUpstreamTotalMs, 6239);
-  assert.equal(attemptMutable.annotations.qoderHttpServerDurationMs, 91);
-  assert.equal(attemptMutable.annotations.qoderHttpUsageExact, true);
-  assert.equal(attemptMutable.annotations.qoderHttpUsageEstimated, undefined);
-  assert.equal(attemptMutable.annotations.qoderHttpPromptTokens, 24);
-  assert.equal(attemptMutable.annotations.qoderHttpCompletionTokens, 198);
-  assert.equal(attemptMutable.annotations.qoderHttpCachedTokens, 20);
-  assert.equal(attemptMutable.annotations.qoderHttpReasoningTokens, 195);
-  assert.equal(attemptMutable.annotations.qoderHttpCredits, 0.03626);
-  assert.equal(attemptMutable.annotations.qoderHttpBillable, true);
+  assert.equal(attemptMutable.annotations.qoderHttp, undefined,
+    'HTTP must not keep a second parallel stats model');
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_http');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.upstream, 'https://gateway.qoder.com.cn');
+  assert.equal(attemptRecord.provider, 'qodercn');
+  assert.equal(attemptRecord.accountRef, ACCOUNT.accountRef);
+  assert.equal(attemptRecord.model, 'qodercn/auto');
+  assert.equal(attemptRecord.stream, true);
+  assert.equal(attemptRecord.firstTokenMs, 3512);
+  assert.equal(attemptRecord.usage.source, 'exact');
+  assert.equal(attemptRecord.usage.promptTokens, 24);
+  assert.equal(attemptRecord.usage.completionTokens, 198);
+  assert.equal(attemptRecord.usage.totalTokens, 222);
+  assert.equal(attemptRecord.usage.cachedTokens, 20);
+  assert.equal(attemptRecord.usage.reasoningTokens, 195);
+  assert.equal(attemptRecord.usage.credits, 0.03626);
+  assert.equal(attemptRecord.usage.billable, true);
+  assert.equal(attemptRecord.details.endpointSource, 'endpoint_cache');
+  assert.equal(attemptRecord.details.egress, 'proxy');
+  assert.equal(attemptRecord.details.clientVersion, '1.1.72');
+  assert.equal(attemptRecord.details.upstreamModel, 'auto');
+  assert.equal(attemptRecord.details.upstreamTotalMs, 6239);
+  assert.equal(attemptRecord.details.serverDurationMs, 91);
+  assert.equal(attemptRecord.details.usageMessageId, 'chatcmpl-http-1');
+  assert.equal(attemptRecord.details.statusCode, 200);
+  assert.equal(attemptRecord.details.streamTransport, 'qoder_http_sse');
   assert.equal(logs.length, 1);
   assert.equal(logs[0].streamTransport, 'qoder_http_sse');
-  assert.equal(logs[0].qoderHttpUsageExact, true);
+  assert.equal(logs[0].transportAttempts.length, 1, 'unified attempts must be flattened into the log line');
+  assert.equal(logs[0].qoderHttpPromptTokens, undefined,
+    'token counts must only live in transportAttempts.usage');
 });
 
 test('stream error after headers records account failure and never falls back', async () => {
@@ -315,6 +393,12 @@ test('stream error after headers records account failure and never falls back', 
   assert.equal(failures.length, 1);
   assert.equal(ctx.state.metrics.totalFailures, 1);
   assert.equal(attemptMutable.streamTransport, 'qoder_http_sse_error');
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_http');
+  assert.equal(attemptRecord.outcome, 'failure');
+  assert.equal(attemptRecord.errorCode, 'ECONNRESET');
+  assert.equal(attemptRecord.usage, undefined);
+  assert.equal(attemptRecord.details.policyKind, 'network_error');
   assert.equal(logs.length, 1);
   assert.equal(logs[0].streamTransport, 'qoder_http_sse_error');
   assert.match(String(logs[0].error), /upstream reset/);
@@ -330,7 +414,7 @@ test('stream error after exact usage still records the consumed tokens', async (
     credits: 0.03626,
     billable: true
   };
-  const { ctx, logs, recorded, failures } = makeCtx({
+  const { ctx, logs, recorded, failures, attemptMutable } = makeCtx({
     streamRequested: true,
     deps: {
       fetchQoderHttpChatCompletionStream: async () => {
@@ -367,9 +451,14 @@ test('stream error after exact usage still records the consumed tokens', async (
   assert.equal(recorded[0].sourceKind, 'server_qoder_http_proxy');
   assert.equal(recorded[0].usage.completion_tokens, 198);
   assert.equal(failures.length, 1);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.outcome, 'failure');
+  assert.equal(attemptRecord.usage.source, 'exact');
+  assert.equal(attemptRecord.usage.promptTokens, 24);
+  assert.equal(attemptRecord.usage.completionTokens, 198);
   assert.equal(logs.length, 1);
   assert.equal(logs[0].streamTransport, 'qoder_http_sse_error');
-  assert.equal(logs[0].qoderHttpUsageExact, true);
+  assert.equal(logs[0].qoderHttpPromptTokens, undefined);
 });
 
 test('non-stream HTTP success writes chat.completion and records exact usage', async () => {
@@ -417,9 +506,19 @@ test('non-stream HTTP success writes chat.completion and records exact usage', a
   assert.equal(recorded[0].eventKey, 'qodercn:message:chatcmpl-http-2');
   assert.equal(recorded[0].sourceKind, 'server_qoder_http_proxy');
   assert.equal(attemptMutable.streamTransport, 'qoder_http_json');
-  assert.equal(attemptMutable.annotations.qoderHttpFirstTokenMs, 792);
-  assert.equal(attemptMutable.annotations.qoderHttpUpstreamTotalMs, 2079);
-  assert.equal(attemptMutable.annotations.qoderHttpUsageExact, true);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_http');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.upstream, 'https://gateway.qoder.com.cn');
+  assert.equal(attemptRecord.stream, false);
+  assert.equal(attemptRecord.firstTokenMs, 792);
+  assert.equal(attemptRecord.usage.source, 'exact');
+  assert.equal(attemptRecord.usage.promptTokens, 22);
+  assert.equal(attemptRecord.usage.completionTokens, 91);
+  assert.equal(attemptRecord.usage.totalTokens, 113);
+  assert.equal(attemptRecord.details.upstreamTotalMs, 2079);
+  assert.equal(attemptRecord.details.serverDurationMs, 59);
+  assert.equal(attemptRecord.details.streamTransport, 'qoder_http_json');
   assert.equal(logs.length, 1);
   assert.equal(logs[0].streamTransport, 'qoder_http_json');
 });
@@ -450,8 +549,12 @@ test('estimated non-stream HTTP usage is marked with the estimated source kind',
   await runTransportChain(ctx, [qoderHttpTransport]);
   assert.equal(recorded.length, 1);
   assert.equal(recorded[0].sourceKind, 'server_qoder_http_proxy_estimated');
-  assert.equal(attemptMutable.annotations.qoderHttpUsageEstimated, true);
-  assert.equal(attemptMutable.annotations.qoderHttpUsageExact, undefined);
+  const [attemptRecord] = attemptMutable.annotations.transportAttempts;
+  assert.equal(attemptRecord.transport, 'qoder_http');
+  assert.equal(attemptRecord.outcome, 'success');
+  assert.equal(attemptRecord.usage.source, 'estimated');
+  assert.equal(attemptRecord.usage.promptTokens, 10);
+  assert.equal(attemptRecord.model, 'qoder/auto');
 });
 
 test('attempt chain wires qoder HTTP before the CLI fallback', () => {

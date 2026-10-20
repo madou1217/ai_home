@@ -27,8 +27,9 @@ test('the detection capability list is the single source of truth for callers', 
   for (const provider of ['kiro', '']) {
     assert.equal(isHostAccountDetectionSupported(provider), false, `${provider} 不该被声明为可扫描`);
   }
+  // host-env-api-key：只存在于环境变量里的 API Key（grok / kimi / zcode …），没有宿主文件可扫。
   assert.deepEqual(HOST_ACCOUNT_DETECTORS.map(detector => detector.id),
-    ['codebuddy-family', 'cline', 'host-auth-projection', 'host-api-key']);
+    ['codebuddy-family', 'cline', 'host-auth-projection', 'host-api-key', 'host-env-api-key']);
 });
 
 test('a host Cline login is discovered through the shared detection entry point', t => {

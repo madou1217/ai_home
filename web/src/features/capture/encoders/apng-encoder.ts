@@ -6,7 +6,7 @@
 
 import type { EncodeAnimationRequest } from '../types';
 import { getCaptureFormat } from '../format-catalog';
-import { loadImageFromDataUrl, sleep } from '../frame-utils';
+import { loadImageFromDataUrl, resolveFrameDelayMs, sleep } from '../frame-utils';
 
 /** APNG 编码较重，超限则等比缩到该最长边内。 */
 const APNG_MAX_SIZE = 800;
@@ -232,7 +232,8 @@ export async function encodeApngAnimation(request: EncodeAnimationRequest): Prom
   for (let index = 0; index < total; index += 1) {
     if (request.signal?.aborted) throw new DOMException('capture_aborted', 'AbortError');
     const bytes = await pullFrameBytes(context, canvas, request.frames[index].dataUrl);
-    frames.push({ bytes, ...buildApngDelay(request.frameDelayMs) });
+    const delayMs = resolveFrameDelayMs(request.frameDelaysMs, index, request.frameDelayMs);
+    frames.push({ bytes, ...buildApngDelay(delayMs) });
     idatStreams.push(extractIdatStream(bytes));
     request.onProgress?.(total > 0 ? (index + 1) / (total + 1) : 1);
   }

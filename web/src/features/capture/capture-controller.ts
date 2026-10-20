@@ -1,10 +1,17 @@
 // 统一捕获控制器：surface 抓帧 → 编码策略 → 产物。
 // 派发只有两条形状分支（still/animation 的类型不同），不许出现按格式名的分支。
+//
+// 录制时间轴以墙钟为准：
+// - 每帧记录相对首帧的真实 atMs，编码时据此生成逐帧 delay；
+// - stopSignal 是「手动停止」：停止抓帧后仍编码已抓到的帧；
+// - signal 是「硬取消」（组件卸载）：丢弃帧并返回 cancelled。
 
 import type {
   AnimationCaptureFormatId,
   CaptureArtifact,
   CaptureEncodeResult,
+  CaptureFrame,
+  CaptureNotice,
   EncodeAnimationRequest,
   FrameSource
 } from './types';
@@ -12,10 +19,14 @@ import { encodeStill } from './still-encoder';
 import { getCaptureFormat } from './format-catalog';
 import { getAnimationEncoder } from './encoders/encoder-registry';
 import { downloadBlobArtifact } from './frame-utils';
+import {
+  RECORDING_MAX_DURATION_MS,
+  RECORDING_MAX_FRAMES
+} from './recording-settings';
 
 export interface CaptureStillOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
-  format: StillCaptureFormatId;
+  format: 'png' | 'jpeg' | 'webp';
   baseName: string;
   quality?: number;
 }
@@ -57,36 +68,128 @@ export interface CaptureAnimationOptions {
   source: FrameSource;
   format: AnimationCaptureFormatId;
   baseName: string;
-  /** 帧率与时长决定抓多少帧。 */
+  /** 目标采样帧率；实际间隔受抓帧耗时影响，时间轴按真实 atMs 记录。 */
   fps: number;
-  durationMs: number;
+  /** 最长录制时长（墙钟）。到时停止抓帧并编码已抓到的帧。 */
+  maxDurationMs?: number;
+  /** 帧数上限；frameCountMode 时抓满即停，否则只是安全上限。 */
+  maxFrames?: number;
+  /** true 时 onPhase 的 total 是确定目标帧数；false 时 total 为 null（手动停止）。 */
+  frameCountMode?: boolean;
+  /** 手动停止：停止抓帧后继续编码已抓到的帧（graceful）。 */
+  stopSignal?: AbortSignal;
+  /** 硬取消：丢弃已抓帧、不产出产物（unmount）。 */
   signal?: AbortSignal;
-  onPhase?: (captured: number, total: number) => void;
+  /** captured/total 为帧进度，elapsedMs 为相对首帧的真实墙钟时间。 */
+  onPhase?: (captured: number, total: number | null, elapsedMs: number) => void;
   onEncode?: (ratio: number) => void;
+  /** 录制被 60 秒上限或内存预算提前结束时回调一次。 */
+  onNotice?: (notice: CaptureNotice) => void;
 }
 
 const MS_PER_SECOND = 1000;
-/** 帧序列的最大帧数上限，防止长间隔误输入导致 OOM。 */
-const MAX_FRAMES = 48;
+/** 抓帧间隔下限：再快只会让编码器重复帧，不会提升观感。 */
+const MIN_INTERVAL_MS = 40;
+/** 单次录制允许持有的 dataURL 字符预算（约 128MB，含编码前的原始字符串）。 */
+const MAX_FRAME_DATA_CHARS = 128 * 1024 * 1024;
+/** 手动模式停止瞬间至少保留两帧，动画格式才有可播放的时长。 */
+const MIN_ANIMATION_FRAMES = 2;
+
+function now(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+/**
+ * 由真实时间戳生成每帧显示时长：第 i 帧持续到第 i+1 帧被拍下的时刻；
+ * 最后一帧沿用前一帧的间隔，保证总时长与录制墙钟一致。
+ */
+export function computeFrameDelays(frames: CaptureFrame[], fallbackMs: number): number[] {
+  if (frames.length <= 1) return [Math.max(1, Math.round(fallbackMs))];
+  return frames.map((frame, index) => {
+    const next = frames[index + 1];
+    const delta = next
+      ? next.atMs - frame.atMs
+      : frame.atMs - frames[index - 1].atMs;
+    return Math.max(1, Math.round(delta));
+  });
+}
 
 export async function captureAnimation(options: CaptureAnimationOptions): Promise<CaptureEncodeResult> {
   const { source, format } = options;
-  const intervalMs = Math.max(40, MS_PER_SECOND / Math.max(1, options.fps));
-  const totalFrames = Math.max(2, Math.min(MAX_FRAMES, Math.round((options.durationMs / intervalMs) || 8)));
-  const frames = [];
+  const intervalMs = Math.max(MIN_INTERVAL_MS, MS_PER_SECOND / Math.max(1, options.fps));
+  const maxDurationMs = Math.max(
+    intervalMs,
+    Math.min(RECORDING_MAX_DURATION_MS, options.maxDurationMs ?? RECORDING_MAX_DURATION_MS)
+  );
+  const maxFrames = Math.max(
+    1,
+    Math.min(RECORDING_MAX_FRAMES, Math.round(options.maxFrames ?? RECORDING_MAX_FRAMES))
+  );
+  const frameCountMode = options.frameCountMode === true;
+  const frames: CaptureFrame[] = [];
+  const startedAt = now();
+  let scheduledAt = startedAt;
+  let dataUrlChars = 0;
+  let notice: CaptureNotice | null = null;
+
+  const markNotice = (next: CaptureNotice) => {
+    if (notice) return;
+    notice = next;
+    options.onNotice?.(next);
+  };
 
   try {
-    for (let index = 0; index < totalFrames; index += 1) {
+    while (true) {
       if (options.signal?.aborted) return abortFailure();
+      // 停止信号在首帧之前到达时也至少抓一帧，否则「点停止太快」会变成空录制失败。
+      if (options.stopSignal?.aborted && frames.length > 0) break;
+      if (frames.length >= maxFrames) break;
+      const elapsedMs = now() - startedAt;
+      if (elapsedMs >= maxDurationMs) {
+        markNotice('duration_limit');
+        break;
+      }
       const image = await source.grab();
       if (!image) return { ok: false, failure: { code: 'encode_failed', message: 'frame_source_unavailable' } };
       // 把 image 落成 dataURL，编码策略统一消费 dataUrl。
       const dataUrl = toDataUrl(image, source);
-      frames.push({ dataUrl, atMs: index * intervalMs });
-      options.onPhase?.(index + 1, totalFrames);
-      if (index < totalFrames - 1) {
-        await abortableDelay(intervalMs, options.signal);
+      // 时间戳取抓帧完成时刻：DOM 栅格化本身耗时，用开始时刻会让时间轴偏快。
+      const capturedAtMs = Math.round(now() - startedAt);
+      frames.push({ dataUrl, atMs: capturedAtMs });
+      dataUrlChars += dataUrl.length;
+      options.onPhase?.(frames.length, frameCountMode ? maxFrames : null, capturedAtMs);
+
+      if (options.stopSignal?.aborted) break;
+      if (frames.length >= maxFrames) break;
+      if (dataUrlChars >= MAX_FRAME_DATA_CHARS) {
+        markNotice('memory_limit');
+        break;
       }
+
+      // 按目标帧率排下一帧；抓帧本身超过间隔时立刻抓下一帧，不补帧。
+      scheduledAt += intervalMs;
+      const waitMs = scheduledAt - now();
+      if (waitMs > 0) {
+        await abortableDelay(waitMs, options.signal, options.stopSignal);
+      } else {
+        scheduledAt = now();
+      }
+    }
+
+    if (frames.length === 0) {
+      return { ok: false, failure: { code: 'encode_failed', message: 'capture_no_frames' } };
+    }
+    if (frames.length === 1) {
+      // 手动停止得很快时至少补一帧，否则 GIF/APNG 只有一帧（播放器可能不显示）。
+      const last = frames[0];
+      const duplicateAtMs = last.atMs + Math.max(100, intervalMs);
+      frames.push({ dataUrl: last.dataUrl, atMs: duplicateAtMs });
+      options.onPhase?.(frames.length, frameCountMode ? maxFrames : null, duplicateAtMs);
+    }
+    if (frames.length < MIN_ANIMATION_FRAMES) {
+      return { ok: false, failure: { code: 'encode_failed', message: 'capture_no_frames' } };
     }
 
     const encoder = getAnimationEncoder(format).encodeAnimation;
@@ -97,6 +200,7 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
       width: source.width,
       height: source.height,
       frameDelayMs: intervalMs,
+      frameDelaysMs: computeFrameDelays(frames, intervalMs),
       baseName: options.baseName,
       signal: options.signal,
       onProgress: (ratio) => options.onEncode?.(ratio)
@@ -122,8 +226,16 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
 }
 
 function toDataUrl(image: CanvasImageSource, source: FrameSource): string {
-  // frame-utils 里统一的 dataURL 抽取；仍然显式写在这里保证 capture controller
-  // 是唯一负责 CSS 尺寸→像素换算的层。
+  // 动画抓帧按 scale=1 栅格化时，抓到的 canvas 已经等于目标尺寸，直接导出
+  // 省掉一次全画布 drawImage + 编码（每帧数百 ms 的主要成本之一）。
+  if (
+    typeof HTMLCanvasElement !== 'undefined' &&
+    image instanceof HTMLCanvasElement &&
+    image.width === source.width &&
+    image.height === source.height
+  ) {
+    return image.toDataURL('image/png');
+  }
   const canvas = document.createElement('canvas');
   canvas.width = source.width;
   canvas.height = source.height;
@@ -133,21 +245,39 @@ function toDataUrl(image: CanvasImageSource, source: FrameSource): string {
   return canvas.toDataURL('image/png');
 }
 
-function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+function abortableDelay(
+  ms: number,
+  cancelSignal?: AbortSignal,
+  stopSignal?: AbortSignal
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
+    if (cancelSignal?.aborted) {
       reject(new DOMException('capture_aborted', 'AbortError'));
       return;
     }
-    const timer = window.setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
+    if (stopSignal?.aborted) {
       resolve();
-    }, ms);
-    const onAbort = () => {
+      return;
+    }
+    const cleanup = () => {
       window.clearTimeout(timer);
+      cancelSignal?.removeEventListener('abort', onCancel);
+      stopSignal?.removeEventListener('abort', onStop);
+    };
+    const onCancel = () => {
+      cleanup();
       reject(new DOMException('capture_aborted', 'AbortError'));
     };
-    signal?.addEventListener('abort', onAbort, { once: true });
+    const onStop = () => {
+      cleanup();
+      resolve();
+    };
+    const timer = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    cancelSignal?.addEventListener('abort', onCancel, { once: true });
+    stopSignal?.addEventListener('abort', onStop, { once: true });
   });
 }
 

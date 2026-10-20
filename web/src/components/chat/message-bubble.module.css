@@ -1033,6 +1033,19 @@
   background: var(--color-accent-soft);
 }
 
+.htmlBlockActionBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 录制中主按钮是「停止」：用危险色表达可中断的正在进行的录制。 */
+.htmlBlockActionBtnRecording,
+.htmlBlockActionBtnRecording:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
 .htmlBlockSplit {
   display: inline-flex;
   align-items: stretch;

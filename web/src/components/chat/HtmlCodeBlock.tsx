@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CameraOutlined,
   CodeOutlined,
@@ -6,21 +6,32 @@ import {
   DesktopOutlined,
   EyeOutlined,
   MobileOutlined,
+  SettingOutlined,
+  StopOutlined,
   VideoCameraOutlined
 } from '@ant-design/icons';
 import { Dropdown, message } from 'antd';
-import type { AnimationCaptureFormatId } from '../../features/capture';
-import { downloadBlobArtifact } from '../../features/capture/frame-utils';
 import {
+  readCapturePreferences,
+  subscribeCapturePreferences,
+  summarizeRecordingSettings,
+  type AnimationCaptureFormatId,
+  type RecordingSettings
+} from '../../features/capture';
+import { downloadBlobArtifact } from '../../features/capture/frame-utils';
+import RecordingSettingsModal from '../../features/capture/RecordingSettingsModal';
+import {
+  captureProgressText,
   listRecordableAnimationFormats,
-  resolveDefaultRecordFormat
+  resolveDefaultRecordFormat,
+  usePreviewCaptureActions
 } from './capture-bridge';
 import { normalizeHtmlPreviewDocument } from './file-preview-utils';
 import { openHtmlPreviewWindow } from './html-preview-window';
-import { usePreviewCaptureActions } from './capture-bridge';
 import styles from './message-bubble.module.css';
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
+const RECORDING_SETTINGS_KEY = '__recording-settings__';
 
 interface Props {
   code: string;
@@ -38,22 +49,44 @@ export default function HtmlCodeBlock({ code }: Props) {
     getPreviewDoc: () => previewDoc,
     getViewportWidth: () => stageRef.current?.clientWidth ?? 0
   });
+  const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(
+    () => readCapturePreferences().recording
+  );
+  const [recordingSettingsOpen, setRecordingSettingsOpen] = useState(false);
+
+  useEffect(
+    () => subscribeCapturePreferences((preferences) => setRecordingSettings(preferences.recording)),
+    []
+  );
 
   /** 可选录制格式（菜单项）。 */
   const recordOptions = useMemo(() => listRecordableAnimationFormats(), []);
 
   const recordMenu = useMemo(
     () => ({
-      items: recordOptions.map((option) => ({ key: option.id, label: option.label })),
+      items: [
+        ...recordOptions.map((option) => ({ key: option.id, label: option.label })),
+        { type: 'divider' as const },
+        {
+          key: RECORDING_SETTINGS_KEY,
+          icon: <SettingOutlined />,
+          label: `录制方式与时长 · ${summarizeRecordingSettings(recordingSettings)}`
+        }
+      ],
       onClick: ({ key }: { key: string }) => {
+        if (key === RECORDING_SETTINGS_KEY) {
+          setRecordingSettingsOpen(true);
+          return;
+        }
         void capture.runFormat(key as AnimationCaptureFormatId);
       }
     }),
-    [capture, recordOptions]
+    [capture, recordOptions, recordingSettings]
   );
 
   /** 主按钮直接执行的格式：全局默认格式（若在可选清单里），否则第一个可选格式。 */
   const recordAction = useMemo(() => resolveDefaultRecordFormat(recordOptions), [recordOptions]);
+  const recordingNow = capture.state.kind === 'animation' && !capture.state.stopping;
 
   const handleCopy = () => {
     if (copied) return;
@@ -149,14 +182,24 @@ export default function HtmlCodeBlock({ code }: Props) {
               <span className={styles.htmlBlockSplit}>
                 <button
                   type="button"
-                  className={styles.htmlBlockActionBtn}
-                  disabled={capture.state.busy || !recordAction}
+                  className={`${styles.htmlBlockActionBtn} ${recordingNow ? styles.htmlBlockActionBtnRecording : ''}`}
+                  aria-label={recordingNow ? '停止录制' : '开始录制'}
+                  title={recordingNow ? '停止录制并保存已抓到的帧' : '按当前录制设置开始录制'}
+                  disabled={!recordingNow && (capture.state.busy || !recordAction)}
                   onClick={() => {
+                    if (recordingNow) {
+                      capture.stop();
+                      return;
+                    }
                     if (recordAction) void capture.runFormat(recordAction);
                   }}
                 >
-                  {capture.state.busy ? (
-                    capture.state.progressLabel
+                  {recordingNow ? (
+                    <>
+                      <StopOutlined /> 停止录制 · {(capture.state.elapsedMs / 1000).toFixed(1)}s
+                    </>
+                  ) : capture.state.busy ? (
+                    captureProgressText(capture.state)
                   ) : (
                     <>
                       <VideoCameraOutlined /> 录制
@@ -202,6 +245,11 @@ export default function HtmlCodeBlock({ code }: Props) {
           </pre>
         )}
       </div>
+      <RecordingSettingsModal
+        open={recordingSettingsOpen}
+        onClose={() => setRecordingSettingsOpen(false)}
+        onSaved={setRecordingSettings}
+      />
     </div>
   );
 }

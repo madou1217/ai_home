@@ -4,8 +4,10 @@ import { describe, expect, test } from 'bun:test';
 import type { CaptureFormatAvailability, CapturePreferences } from '../../features/capture';
 import { createDefaultCapturePreferences } from '../../features/capture';
 import {
+  captureProgressText,
   listRecordableAnimationFormats,
-  resolveDefaultRecordFormat
+  resolveDefaultRecordFormat,
+  type PreviewCaptureState
 } from './capture-bridge';
 
 const ALL_AVAILABLE: CaptureFormatAvailability = {
@@ -21,6 +23,7 @@ const ALL_AVAILABLE: CaptureFormatAvailability = {
 function prefsWith(overrides: Partial<CapturePreferences>): CapturePreferences {
   const base = createDefaultCapturePreferences();
   return {
+    ...base,
     defaultFormat: overrides.defaultFormat ?? base.defaultFormat,
     enabledFormats: { ...base.enabledFormats, ...overrides.enabledFormats }
   };
@@ -48,6 +51,36 @@ describe('listRecordableAnimationFormats', () => {
       preferences: createDefaultCapturePreferences()
     });
     expect(list.map((option) => option.id)).toEqual(['gif', 'apng']);
+  });
+});
+
+describe('captureProgressText', () => {
+  const base: PreviewCaptureState = {
+    busy: true,
+    kind: 'animation',
+    stopping: false,
+    elapsedMs: 3200,
+    capturedFrames: 32,
+    totalFrames: null,
+    progressLabel: ''
+  };
+
+  test('手动录制显示真实秒数与已抓帧数', () => {
+    expect(captureProgressText(base)).toBe('正在录制 3.2s · 32 帧');
+  });
+
+  test('固定帧数模式显示目标总数', () => {
+    expect(captureProgressText({ ...base, totalFrames: 60 })).toBe('正在录制 3.2s · 32/60 帧');
+  });
+
+  test('停止后显示编码进度而不是继续计时', () => {
+    expect(
+      captureProgressText({ ...base, stopping: true, progressLabel: '正在编码 40%…' })
+    ).toBe('正在编码 40%…');
+  });
+
+  test('空闲时没有文案', () => {
+    expect(captureProgressText({ ...base, busy: false, kind: null })).toBe('');
   });
 });
 

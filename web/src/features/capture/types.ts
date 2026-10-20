@@ -59,6 +59,12 @@ export interface CaptureAnimationSpec {
   height: number;
   /** 帧间目标间隔（ms），编码器可以按格式取整。 */
   frameDelayMs: number;
+  /**
+   * 每帧实际显示时长（ms，与 frames 等长）。抓帧受 DOM 栅格化耗时影响，
+   * 实际间隔往往大于目标帧率；编码器必须优先消费这里的真实时间轴，
+   * 否则慢页面录出来会变成「快进」。
+   */
+  frameDelaysMs?: number[];
   /** 元信息：文件名（不含扩展名）。 */
   baseName: string;
 }
@@ -82,6 +88,9 @@ export interface CaptureEncodeFailure {
   message: string;
   detail?: unknown;
 }
+
+/** 录制提前结束的非失败原因（UI 只用来补充提示，不影响产物）。 */
+export type CaptureNotice = 'duration_limit' | 'memory_limit';
 
 export type CaptureEncodeResult =
   | { ok: true; artifact: CaptureArtifact }

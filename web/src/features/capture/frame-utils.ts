@@ -47,6 +47,22 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * 取第 index 帧的真实显示时长：录制时间轴优先，缺失或非法时回落到目标帧率。
+ * GIF/APNG/WebM 三个编码器共用，避免各自解释 frameDelaysMs。
+ */
+export function resolveFrameDelayMs(
+  frameDelaysMs: number[] | undefined,
+  index: number,
+  fallbackMs: number
+): number {
+  const value = frameDelaysMs?.[index];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return Math.max(1, Math.round(fallbackMs));
+  }
+  return Math.max(1, Math.round(value));
+}
+
 /** 大致等间隔地把 frames 切成 maxCount 份（保留首尾）。 */
 export function sampleFrames<T>(frames: T[], maxCount: number): T[] {
   if (frames.length <= maxCount) return frames;

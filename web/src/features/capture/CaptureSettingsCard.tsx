@@ -2,20 +2,24 @@
 // 状态唯一事实源是 capture-preferences（localStorage: aih.capture），
 // chat 预览按钮与弹窗录制都读取同一份偏好。
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Select, Switch } from 'antd';
 import SettingsGroupCard, { SettingsItem } from '../../components/settings/SettingsGroupCard';
-import type { CaptureFormatId, CapturePreferences } from './index';
+import type { CaptureFormatId, CapturePreferences, RecordingSettings } from './index';
 import {
   CAPTURE_FORMAT_CATALOG,
+  describeRecordingSettings,
   isFormatAvailable,
   listRecordableAnimationFormats,
+  normalizeRecordingSettings,
   notifyCapturePreferences,
   probeCaptureFormatAvailability,
   readCapturePreferences,
   resolveDefaultRecordFormat,
+  subscribeCapturePreferences,
   writeCapturePreferences
 } from './index';
+import RecordingSettingsFields from './RecordingSettingsFields';
 
 export default function CaptureSettingsCard() {
   const [preferences, setPreferences] = useState<CapturePreferences>(() => readCapturePreferences());
@@ -29,10 +33,17 @@ export default function CaptureSettingsCard() {
     [recordOptions, preferences]
   );
 
+  // 聊天预览里的录制设置弹窗也会写同一份偏好，这里跟随广播保持同步。
+  useEffect(() => subscribeCapturePreferences(setPreferences), []);
+
   const commit = (next: CapturePreferences) => {
     setPreferences(next);
     writeCapturePreferences(next);
     notifyCapturePreferences(next);
+  };
+
+  const setRecording = (recording: RecordingSettings) => {
+    commit({ ...preferences, recording: normalizeRecordingSettings(recording) });
   };
 
   const setFormatEnabled = (id: CaptureFormatId, enabled: boolean) => {
@@ -48,7 +59,7 @@ export default function CaptureSettingsCard() {
       );
       if (fallback) defaultFormat = fallback.id;
     }
-    commit({ defaultFormat, enabledFormats });
+    commit({ ...preferences, defaultFormat, enabledFormats });
   };
 
   return (
@@ -74,6 +85,17 @@ export default function CaptureSettingsCard() {
                 !isFormatAvailable(format.id, availability)
             }))}
             onChange={(id: CaptureFormatId) => commit({ ...preferences, defaultFormat: id })}
+          />
+        }
+      />
+      <SettingsItem
+        title="录制方式"
+        subtitle={describeRecordingSettings(preferences.recording)}
+        action={
+          <RecordingSettingsFields
+            compact
+            value={preferences.recording}
+            onChange={setRecording}
           />
         }
       />

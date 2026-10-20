@@ -1,10 +1,16 @@
-import { ensurePreviewWindowCaptureHost } from '../../features/capture';
+import {
+  ensurePreviewWindowCaptureHost,
+  readCapturePreferences,
+  summarizeRecordingSettings
+} from '../../features/capture';
 
 export type HtmlPreviewDevice = 'desktop' | 'mobile';
 
 export interface HtmlPreviewWindowOptions {
   device: HtmlPreviewDevice;
   title?: string;
+  /** 录制条件摘要；省略时读取全局录制设置。 */
+  recordingHint?: string;
 }
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
@@ -13,6 +19,7 @@ const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
 /** 与宿主 preview-window-host.ts 约定的消息契约（弹窗侧不能 import，保持常量同步）。 */
 const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
+const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -36,6 +43,9 @@ export function buildHtmlPreviewWindowDocument(
   const title = escapeHtml(rawTitle);
   const titleAttribute = escapeHtmlAttribute(rawTitle);
   const srcDoc = escapeHtmlAttribute(documentContent);
+  const recordingHint = escapeHtml(
+    options.recordingHint ?? summarizeRecordingSettings(readCapturePreferences().recording)
+  );
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -59,6 +69,9 @@ export function buildHtmlPreviewWindowDocument(
     .capture { min-height: 32px; padding: 5px 12px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
     .capture:hover { border-color: #00f0ff; color: #00f0ff; background: rgba(0, 240, 255, .08); }
     .capture:disabled { opacity: .65; cursor: default; }
+    .capture.is-recording { border-color: #ff5c7a; color: #ff8fa3; background: rgba(255, 92, 122, .12); }
+    .capture.is-recording:hover { border-color: #ff8fa3; color: #ffb3c0; background: rgba(255, 92, 122, .2); }
+    .capture-hint { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
     .capture-status { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
     .capture-status[hidden] { display: none; }
     .device:hover { border-color: rgba(0, 240, 255, .55); color: #00f0ff; }
@@ -98,6 +111,7 @@ export function buildHtmlPreviewWindowDocument(
         <button class="device" type="button" data-device-option="mobile" aria-pressed="${initialDevice === 'mobile'}">手机预览</button>
       </div>
       <button class="fullscreen" type="button" data-fullscreen${initialDevice === 'mobile' ? ' hidden' : ''}>全屏</button>
+      <span class="capture-hint" data-recording-hint>${recordingHint}</span>
       <button class="capture" type="button" data-capture="screenshot">截图</button>
       <button class="capture" type="button" data-capture="record">录制</button>
       <span class="capture-status" data-capture-status hidden></span>
@@ -131,13 +145,25 @@ export function buildHtmlPreviewWindowDocument(
     // 捕获桥（弹窗侧）：按钮 → 请求宿主编码 → 进度展示 → 回传 URL 触发下载。
     // 弹窗文档没有主 bundle，栅格化与格式编码全部由宿主完成，这里只做编排。
     const status = document.querySelector('[data-capture-status]');
+    const recordButton = document.querySelector('[data-capture="record"]');
     const CAPTURE_TIMEOUT_MS = 90000;
     let captureSeq = 0;
     let pendingRequest = '';
     let pendingTimer = 0;
+    let recording = false;
     const captureButtons = Array.prototype.slice.call(document.querySelectorAll('[data-capture]'));
+    function setRecording(active) {
+      recording = Boolean(active);
+      recordButton.textContent = recording ? '停止' : '录制';
+      recordButton.classList.toggle('is-recording', recording);
+      recordButton.setAttribute('aria-pressed', String(recording));
+    }
     function setCaptureBusy(busy, label) {
-      captureButtons.forEach((button) => { button.disabled = busy; });
+      if (!busy) setRecording(false);
+      captureButtons.forEach((button) => {
+        // 录制中记录按钮必须保持可点：它是「停止」。
+        button.disabled = busy && !(recording && button === recordButton);
+      });
       if (busy) {
         status.textContent = label || '正在捕获…';
         status.hidden = false;
@@ -171,6 +197,18 @@ export function buildHtmlPreviewWindowDocument(
         width: Math.round(preview.getBoundingClientRect().width) || 0
       }, window.location.origin);
     }
+    function cancelRecording() {
+      if (!pendingRequest) return;
+      if (window.opener) {
+        window.opener.postMessage({
+          type: '${CAPTURE_CANCEL_TYPE}',
+          requestId: pendingRequest
+        }, window.location.origin);
+      }
+      // 停止后宿主还要编码已抓帧，按钮先进入不可点的「完成中」。
+      setRecording(false);
+      setCaptureBusy(true, '正在完成录制…');
+    }
     function settleCapture(requestId) {
       if (pendingRequest && pendingRequest !== requestId) return;
       pendingRequest = '';
@@ -183,6 +221,11 @@ export function buildHtmlPreviewWindowDocument(
       if (data.kind === 'progress') {
         status.textContent = data.label || '正在捕获…';
         status.hidden = false;
+        // 编码阶段不能再「停止」，其它按钮也保持忙碌态。
+        if (data.phase === 'encoding') {
+          setRecording(false);
+          setCaptureBusy(true, data.label);
+        }
         return;
       }
       settleCapture(data.requestId);
@@ -202,8 +245,13 @@ export function buildHtmlPreviewWindowDocument(
     });
     captureButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        if (button.disabled) return;
         const kind = button.dataset.capture === 'record' ? 'record' : 'still';
+        if (kind === 'record' && recording) {
+          cancelRecording();
+          return;
+        }
+        if (button.disabled) return;
+        setRecording(kind === 'record');
         setCaptureBusy(true, kind === 'record' ? '正在录制…' : '正在生成截图…');
         requestCapture(kind);
       });

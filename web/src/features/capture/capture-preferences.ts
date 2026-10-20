@@ -1,15 +1,22 @@
-// 截图/录制全局偏好：默认录制格式与 UI 开关集合（布尔矩阵）。
+// 截图/录制全局偏好：默认录制格式、UI 开关集合（布尔矩阵）与录制设置。
 // 唯一真相存在 localStorage（键 aih.capture），UI 只通过这里读写，
 // 与 aih.theme / aih.hud 同一模式。
 
 import { CAPTURE_FORMAT_CATALOG } from './format-catalog';
 import type { CaptureFormatId } from './types';
+import {
+  RECORDING_DEFAULT_SETTINGS,
+  normalizeRecordingSettings,
+  type RecordingSettings
+} from './recording-settings';
 
 export interface CapturePreferences {
   /** 全局默认录制/截图格式（PC 与手机弹窗共用）。 */
   defaultFormat: CaptureFormatId;
   /** 格式开关矩阵（关闭的格式不出现在选择器里）。 */
   enabledFormats: Record<CaptureFormatId, boolean>;
+  /** 录制方式、目标帧数与目标时长（聊天预览与弹窗共用）。 */
+  recording: RecordingSettings;
 }
 
 export const CAPTURE_PREFERENCES_KEY = 'aih.capture';
@@ -19,7 +26,11 @@ export function createDefaultCapturePreferences(): CapturePreferences {
   for (const format of CAPTURE_FORMAT_CATALOG) {
     enabledFormats[format.id] = format.defaultEnabled === true;
   }
-  return { defaultFormat: 'png', enabledFormats };
+  return {
+    defaultFormat: 'png',
+    enabledFormats,
+    recording: { ...RECORDING_DEFAULT_SETTINGS }
+  };
 }
 
 type Listener = (prefs: CapturePreferences) => void;
@@ -56,9 +67,18 @@ export function parseCapturePreferences(raw: string | null | undefined): Capture
     const effectiveDefault = enabledFormats[defaultFormat]
       ? defaultFormat
       : (CAPTURE_FORMAT_CATALOG.find((item) => enabledFormats[item.id])?.id ?? fallback.defaultFormat);
-    return { defaultFormat: effectiveDefault, enabledFormats };
+    const recording = normalizeRecordingSettings(
+      value.recording && typeof value.recording === 'object'
+        ? value.recording
+        : undefined
+    );
+    return { defaultFormat: effectiveDefault, enabledFormats, recording };
   } catch {
-    return { ...fallback, enabledFormats: { ...fallback.enabledFormats } };
+    return {
+      ...fallback,
+      enabledFormats: { ...fallback.enabledFormats },
+      recording: { ...fallback.recording }
+    };
   }
 }
 
@@ -92,4 +112,19 @@ export function subscribeCapturePreferences(listener: Listener): () => void {
 
 export function notifyCapturePreferences(prefs: CapturePreferences): void {
   for (const listener of listeners) listener(prefs);
+}
+
+/** 只更新录制设置并广播（设置页与聊天录制设置弹窗共用）。 */
+export function updateRecordingSettings(
+  settings: RecordingSettings,
+  storage: CapturePreferencesStorage | null = defaultStorage()
+): CapturePreferences {
+  const current = readCapturePreferences(storage);
+  const next: CapturePreferences = {
+    ...current,
+    recording: normalizeRecordingSettings(settings)
+  };
+  writeCapturePreferences(next, storage);
+  notifyCapturePreferences(next);
+  return next;
 }

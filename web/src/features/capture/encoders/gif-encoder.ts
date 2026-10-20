@@ -5,7 +5,7 @@ import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 import type { EncodeAnimationRequest } from '../types';
 import { getCaptureFormat } from '../format-catalog';
-import { loadImageFromDataUrl, sleep } from '../frame-utils';
+import { loadImageFromDataUrl, resolveFrameDelayMs, sleep } from '../frame-utils';
 
 /** GIF 编码在主线程解码 RGBA + 量化较重，超限则等比缩到该最长边内。 */
 const GIF_MAX_SIZE = 640;
@@ -63,7 +63,6 @@ async function pullFramePixelData(
 
 export async function encodeGifAnimation(request: EncodeAnimationRequest): Promise<Blob> {
   const descriptor = getCaptureFormat('gif');
-  const delay = Math.max(20, Math.round(request.frameDelayMs));
   const bounds = scaleToGifBounds(request.width, request.height);
   const { canvas, context } = createEncodeCanvas(bounds.width, bounds.height);
 
@@ -76,6 +75,12 @@ export async function encodeGifAnimation(request: EncodeAnimationRequest): Promi
       canvas,
       request.frames[index].dataUrl,
       request.signal
+    );
+    // GIF 的 delay 单位是毫秒（gifenc 内部换算成 1/100 秒），按真实时间轴写，
+    // 否则慢页面抓帧会被编码成「快进」。
+    const delay = Math.max(
+      20,
+      resolveFrameDelayMs(request.frameDelaysMs, index, request.frameDelayMs)
     );
     encoder.writeFrame(frame.indexed, bounds.width, bounds.height, {
       palette: frame.palette,

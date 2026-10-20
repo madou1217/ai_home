@@ -9,6 +9,7 @@ export type {
   CaptureFormatDescriptor,
   CaptureFormatId,
   CaptureFrame,
+  CaptureNotice,
   CaptureSurfaceDescriptor,
   EncodeAnimationRequest,
   FrameSource,
@@ -33,8 +34,28 @@ export {
   parseCapturePreferences,
   readCapturePreferences,
   subscribeCapturePreferences,
+  updateRecordingSettings,
   writeCapturePreferences
 } from './capture-preferences';
+export {
+  RECORDING_DEFAULT_DURATION_SECONDS,
+  RECORDING_DEFAULT_FRAME_COUNT,
+  RECORDING_DEFAULT_MODE,
+  RECORDING_DEFAULT_SETTINGS,
+  RECORDING_FPS,
+  RECORDING_MAX_DURATION_MS,
+  RECORDING_MAX_DURATION_SECONDS,
+  RECORDING_MAX_FRAMES,
+  RECORDING_MIN_DURATION_SECONDS,
+  RECORDING_MIN_FRAMES,
+  describeRecordingSettings,
+  normalizeRecordingSettings,
+  resolveRecordingPlan,
+  summarizeRecordingSettings,
+  type RecordingMode,
+  type RecordingPlan,
+  type RecordingSettings
+} from './recording-settings';
 export { probeCaptureFormatAvailability, isFormatAvailable, type CaptureFormatAvailability } from './format-availability';
 export { DomPreviewFrameSource } from './dom-preview-frame-source';
 export {
@@ -56,15 +77,19 @@ export {
   type RecordFormatOptionDeps
 } from './capture-options';
 export {
+  CAPTURE_CANCEL_TYPE,
   CAPTURE_REQUEST_TYPE,
   CAPTURE_RESULT_TYPE,
   ensurePreviewWindowCaptureHost,
   installPreviewWindowCaptureHost,
+  isCaptureWindowCancel,
   isCaptureWindowRequest,
   resolveRequestFormat,
   runCaptureForWindowRequest,
   type CaptureReplyTarget,
+  type CaptureWindowCancel,
   type CaptureWindowFailure,
+  type CaptureWindowProgressPhase,
   type CaptureWindowReply,
   type CaptureWindowRequest,
   type CaptureWindowRequestKind,

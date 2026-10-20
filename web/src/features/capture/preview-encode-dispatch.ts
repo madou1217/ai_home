@@ -6,15 +6,18 @@
 import type {
   AnimationCaptureFormatId,
   CaptureEncodeResult,
-  CaptureFormatId
+  CaptureFormatId,
+  CaptureNotice
 } from './types';
 import { isStillCaptureFormat } from './types';
 import { DomPreviewFrameSource } from './dom-preview-frame-source';
 import { captureAnimation, captureStill } from './capture-controller';
-
-/** 录制参数：10fps × 3s ≈ 30 帧，落在 capture-controller 的 MAX_FRAMES=48 之内。 */
-const RECORD_FPS = 10;
-const RECORD_DURATION_MS = 3000;
+import {
+  RECORDING_DEFAULT_SETTINGS,
+  RECORDING_FPS,
+  resolveRecordingPlan,
+  type RecordingSettings
+} from './recording-settings';
 
 /** 视口宽度兜底（取不到预览容器宽度时用，与弹窗桌面档同量级）。 */
 export const FALLBACK_VIEWPORT_WIDTH = 720;
@@ -23,9 +26,15 @@ export interface PreviewEncodeRequest {
   format: CaptureFormatId;
   html: string;
   width: number;
+  /** 本次录制的停止条件；静图忽略。 */
+  recording?: RecordingSettings;
+  /** 硬取消（组件卸载）：丢弃帧、不产出产物。 */
   signal: AbortSignal;
-  onPhase: (captured: number, total: number) => void;
+  /** 手动停止（录制按钮 → 停止）：保留已抓帧并继续编码。 */
+  stopSignal?: AbortSignal;
+  onPhase: (captured: number, total: number | null, elapsedMs: number) => void;
   onEncode: (ratio: number) => void;
+  onNotice?: (notice: CaptureNotice) => void;
 }
 
 export async function encodePreviewDocument(request: PreviewEncodeRequest): Promise<CaptureEncodeResult> {
@@ -40,15 +49,25 @@ export async function encodePreviewDocument(request: PreviewEncodeRequest): Prom
       return await captureStill({ canvas, format: request.format, baseName: 'html-preview' });
     }
     // 上一分支已 return，这里仅剩动画格式；守卫不做负向收窄，显式标注。
+    const recording = request.recording ?? RECORDING_DEFAULT_SETTINGS;
+    const plan = resolveRecordingPlan(recording);
     return await captureAnimation({
       source,
       format: request.format as AnimationCaptureFormatId,
       baseName: 'html-preview',
-      fps: RECORD_FPS,
-      durationMs: RECORD_DURATION_MS,
+      fps: RECORDING_FPS,
+      maxDurationMs: plan.maxDurationMs,
+      maxFrames: plan.maxFrames,
+      frameCountMode: plan.frameCountMode,
+      stopSignal: request.stopSignal,
       signal: request.signal,
       onPhase: request.onPhase,
-      onEncode: request.onEncode
+      onEncode: request.onEncode,
+      onNotice: (notice) => {
+        // duration 模式的时长上限是目标本身，不是「提前结束」。
+        if (notice === 'duration_limit' && recording.mode === 'duration') return;
+        request.onNotice?.(notice);
+      }
     });
   } finally {
     source.dispose();

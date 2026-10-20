@@ -6,7 +6,9 @@ import type { CaptureFormatAvailability } from './format-availability';
 import type { CapturePreferences } from './capture-preferences';
 import { createDefaultCapturePreferences } from './capture-preferences';
 import {
+  CAPTURE_CANCEL_TYPE,
   CAPTURE_REQUEST_TYPE,
+  isCaptureWindowCancel,
   isCaptureWindowRequest,
   resolveRequestFormat
 } from './preview-window-host';
@@ -24,6 +26,7 @@ const ALL_AVAILABLE: CaptureFormatAvailability = {
 function prefsWith(overrides: Partial<CapturePreferences>): CapturePreferences {
   const base = createDefaultCapturePreferences();
   return {
+    ...base,
     defaultFormat: overrides.defaultFormat ?? base.defaultFormat,
     enabledFormats: { ...base.enabledFormats, ...overrides.enabledFormats }
   };
@@ -62,6 +65,21 @@ describe('isCaptureWindowRequest', () => {
     expect(isCaptureWindowRequest({ ...valid, html: '' })).toBe(false);
     expect(isCaptureWindowRequest(null)).toBe(false);
     expect(isCaptureWindowRequest('capture')).toBe(false);
+  });
+});
+
+describe('isCaptureWindowCancel', () => {
+  test('接受带 requestId 的取消消息', () => {
+    expect(
+      isCaptureWindowCancel({ type: CAPTURE_CANCEL_TYPE, requestId: 'cap-1' })
+    ).toBe(true);
+  });
+
+  test('拒绝错误类型、空 requestId 与非对象', () => {
+    expect(isCaptureWindowCancel({ type: 'other', requestId: 'cap-1' })).toBe(false);
+    expect(isCaptureWindowCancel({ type: CAPTURE_CANCEL_TYPE, requestId: '' })).toBe(false);
+    expect(isCaptureWindowCancel(null)).toBe(false);
+    expect(isCaptureWindowCancel('cancel')).toBe(false);
   });
 });
 

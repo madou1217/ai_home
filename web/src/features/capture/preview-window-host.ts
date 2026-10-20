@@ -17,8 +17,10 @@ import { listAnimationFormats, listStillFormats } from './format-catalog';
 /** 消息类型标记：命名空间常量，弹窗脚本与宿主各自遵守同一契约。 */
 export const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 export const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
+export const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 
 export type CaptureWindowRequestKind = 'still' | 'record';
+export type CaptureWindowProgressPhase = 'capturing' | 'encoding';
 
 export interface CaptureWindowRequest {
   type: typeof CAPTURE_REQUEST_TYPE;
@@ -30,11 +32,18 @@ export interface CaptureWindowRequest {
   width: number;
 }
 
+/** 弹窗 → 宿主：结束当前录制（保留已抓帧并继续编码）。 */
+export interface CaptureWindowCancel {
+  type: typeof CAPTURE_CANCEL_TYPE;
+  requestId: string;
+}
+
 interface CaptureWindowProgress {
   type: typeof CAPTURE_RESULT_TYPE;
   requestId: string;
   kind: 'progress';
   label: string;
+  phase?: CaptureWindowProgressPhase;
 }
 
 export interface CaptureWindowSuccess {
@@ -105,8 +114,21 @@ export function isCaptureWindowRequest(data: unknown): data is CaptureWindowRequ
   return typeof candidate.html === 'string' && candidate.html.length > 0;
 }
 
+/** 判定消息是否为「停止录制」请求（形状校验，来源校验在接线层）。 */
+export function isCaptureWindowCancel(data: unknown): data is CaptureWindowCancel {
+  if (typeof data !== 'object' || data === null) return false;
+  const candidate = data as Partial<CaptureWindowCancel>;
+  return (
+    candidate.type === CAPTURE_CANCEL_TYPE &&
+    typeof candidate.requestId === 'string' &&
+    candidate.requestId.length > 0
+  );
+}
+
 export interface CaptureWindowRequestHooks {
-  onProgress?: (label: string) => void;
+  onProgress?: (label: string, phase?: CaptureWindowProgressPhase) => void;
+  /** 手动停止：停止抓帧后继续编码已抓到的帧。 */
+  stopSignal?: AbortSignal;
 }
 
 /** 执行一次捕获并返回回传载荷（不碰 postMessage，方便单测）。 */
@@ -121,7 +143,8 @@ export async function runCaptureForWindowRequest(
     ok: false,
     message
   });
-  const format = resolveRequestFormat(request);
+  const preferences = readCapturePreferences();
+  const format = resolveRequestFormat(request, { preferences });
   if (!format) return fail('capture_format_unavailable');
   const controller = new AbortController();
   try {
@@ -129,9 +152,16 @@ export async function runCaptureForWindowRequest(
       format,
       html: request.html,
       width: request.width || 720,
+      recording: preferences.recording,
       signal: controller.signal,
-      onPhase: (captured, total) => hooks.onProgress?.(`正在抓帧 ${captured}/${total}…`),
-      onEncode: (ratio) => hooks.onProgress?.(`正在编码 ${Math.round(ratio * 100)}%…`)
+      stopSignal: hooks.stopSignal,
+      onPhase: (captured, total, elapsedMs) => {
+        const seconds = (Math.max(0, elapsedMs) / 1000).toFixed(1);
+        const frames = total ? `${captured}/${total}` : `${captured}`;
+        hooks.onProgress?.(`正在录制 ${seconds}s（${frames} 帧）`, 'capturing');
+      },
+      onEncode: (ratio) =>
+        hooks.onProgress?.(`正在编码 ${Math.round(ratio * 100)}%…`, 'encoding')
     });
     if (!result.ok) return fail(result.failure.message);
     const url = URL.createObjectURL(result.artifact.blob);
@@ -151,18 +181,32 @@ export async function runCaptureForWindowRequest(
 
 /** 安装弹窗捕获宿主。只应答同源（blob 文档继承当前 origin）。返回解绑函数。 */
 export function installPreviewWindowCaptureHost(target: Window = window): () => void {
+  /** requestId → 停止控制器；弹窗的「停止」消息命中后只结束抓帧，编码继续。 */
+  const stopControllers = new Map<string, AbortController>();
   const listener = async (event: MessageEvent) => {
-    if (!isCaptureWindowRequest(event.data)) return;
     if (event.origin !== target.location.origin) return;
+    if (isCaptureWindowCancel(event.data)) {
+      stopControllers.get(event.data.requestId)?.abort();
+      return;
+    }
+    if (!isCaptureWindowRequest(event.data)) return;
     const source = event.source as CaptureReplyTarget | null;
     if (!source || typeof source.postMessage !== 'function') return;
     const request = event.data as CaptureWindowRequest;
     const reply = (payload: CaptureWindowReply) => source.postMessage(payload, '*');
+    const stopController = new AbortController();
+    stopControllers.set(request.requestId, stopController);
     reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label: '正在捕获…' });
-    const result = await runCaptureForWindowRequest(request, {
-      onProgress: (label) => reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label })
-    });
-    reply(result);
+    try {
+      const result = await runCaptureForWindowRequest(request, {
+        stopSignal: stopController.signal,
+        onProgress: (label, phase) =>
+          reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label, phase })
+      });
+      reply(result);
+    } finally {
+      stopControllers.delete(request.requestId);
+    }
   };
   target.addEventListener('message', listener);
   return () => target.removeEventListener('message', listener);

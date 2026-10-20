@@ -5,7 +5,7 @@
 // 列按 frameDelayMs 重放进画布的流里，浏览器用 vp8/vp9 压缩。
 
 import type { EncodeAnimationRequest } from '../types';
-import { loadImageFromDataUrl, sleep } from '../frame-utils';
+import { loadImageFromDataUrl, resolveFrameDelayMs, sleep } from '../frame-utils';
 
 /** 探测候选 matcher，从 format-availability 的同一清单取。 */
 const MEDIA_MIME_CANDIDATES = [
@@ -67,7 +67,9 @@ export async function encodeWebmAnimation(request: EncodeAnimationRequest): Prom
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     // 手动要求 track 捕获本帧；captureStream(0) 需要 requestFrame 驱动。
     track.requestFrame?.();
-    await sleep(Math.max(1, Math.round(request.frameDelayMs)), request.signal);
+    // 按真实时间轴重放，保证录出来的 WebM 时长与录制墙钟一致。
+    const delayMs = resolveFrameDelayMs(request.frameDelaysMs, index, request.frameDelayMs);
+    await sleep(delayMs, request.signal);
     if (index % 5 === 0) request.onProgress?.(total > 0 ? ((index + 1) / total) * 0.6 : 0.6);
   }
 

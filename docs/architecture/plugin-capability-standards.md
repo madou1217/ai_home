@@ -739,7 +739,10 @@ module.exports = {
   （`ok` / `not_applicable` / `unavailable`），带 `source` / `capturedAt` /
   `stale` / `attempts` / `warnings`；`runQuotaProbe()` 在 `strategies.js`
   包装现有策略链，快照额外写 `provenance`（不覆盖既有的字符串 `source`，
-  恢复/匹配逻辑零改动）。WebUI `UsageSnapshotCell` 展示来源、快照年龄与过期态。
+  恢复/匹配逻辑零改动）。`lib/account/usage-snapshot-store.js` 在额度快照读写
+  边界统一补齐并重算 `provenance`，因此原生 handler（codex/claude/agy/gemini）
+  的快照同样有来源/年龄/stale，而不是只有策略链探针才有。
+  WebUI `UsageSnapshotCell` 展示来源、快照年龄与过期态。
 - 模型元数据：`models-dev-metadata.js` 的 `model.metadata` 贡献带
   `metadataStatus` / `metadataSource` / `metadataAuthority` / `metadataFetchedAt` /
   `metadataStale` 与结构化 `source`；未知仍是 `unknown`，不伪造 context/0 价；

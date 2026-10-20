@@ -1306,6 +1306,127 @@ test('daemon service restart reloads loaded launchd autostart with saved serve c
   assert.doesNotMatch(plist, /client-secret|management-secret|--host|--management-key/);
 });
 
+function makeRestartStopFailureFixture(t) {
+  const root = makeTempDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { repoDir, entryFilePath } = makeSourceCheckout(root);
+  const aihCommandPath = makeAihCommandShim(root, repoDir);
+  const aiHomeDir = path.join(root, '.ai_home');
+  const pidFile = path.join(aiHomeDir, 'server.pid');
+  const logFile = path.join(aiHomeDir, 'server.log');
+  const launchdLabel = 'com.clawdcodex.ai_home';
+  const launchdPlist = path.join(root, 'Library', 'LaunchAgents', `${launchdLabel}.plist`);
+  fs.mkdirSync(path.dirname(launchdPlist), { recursive: true });
+  fs.mkdirSync(aiHomeDir, { recursive: true });
+  fs.writeFileSync(launchdPlist, 'existing plist', 'utf8');
+  fs.writeFileSync(pidFile, '2001', 'utf8');
+  // bootoutFailures：前 N 次 bootout/unload 失败（模拟 restart 的停止阶段失败，之后恢复正常）。
+  const runtime = {
+    launchdLoaded: true,
+    pid: 2001,
+    bootoutFailures: 2,
+    bootstrapFails: false,
+    killCalls: [],
+    launchctlCalls: [],
+    spawnCalls: []
+  };
+  const supervisorCommand = `/usr/local/bin/node ${aihCommandPath} __background run`;
+  const daemon = createServerDaemonService({
+    fs,
+    path,
+    spawn(...args) {
+      runtime.spawnCalls.push(args);
+      return { pid: 3001, unref() {} };
+    },
+    spawnSync(cmd, args) {
+      if (cmd === 'launchctl') {
+        runtime.launchctlCalls.push(args.slice());
+        const queryResult = launchctlQueryResult(args, (label) => label === launchdLabel && runtime.launchdLoaded);
+        if (queryResult) return queryResult;
+        if (args[0] === 'bootout' || args[0] === 'unload') {
+          if (runtime.bootoutFailures > 0) {
+            runtime.bootoutFailures -= 1;
+            return { status: 1, stdout: '', stderr: 'operation not permitted' };
+          }
+          runtime.launchdLoaded = false;
+          runtime.pid = 0;
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        if (args[0] === 'bootstrap' || args[0] === 'load') {
+          if (runtime.bootstrapFails) return { status: 5, stdout: '', stderr: 'Bootstrap failed: 5: Input/output error' };
+          runtime.launchdLoaded = true;
+          runtime.pid = 2002;
+          return { status: 0, stdout: '', stderr: '' };
+        }
+      }
+      if (String(cmd).endsWith('/lsregister')) return { status: 0, stdout: '', stderr: '' };
+      if (cmd === 'lsof' && args.includes('-iTCP:9527')) {
+        return runtime.pid > 0 ? { status: 0, stdout: `${runtime.pid}\n`, stderr: '' } : { status: 1, stdout: '', stderr: '' };
+      }
+      if (cmd === 'ps' && args[0] === '-axo') {
+        return { status: 0, stdout: runtime.pid > 0 ? `${runtime.pid} ${supervisorCommand}\n` : '', stderr: '' };
+      }
+      if (cmd === 'ps' && args[0] === '-p') {
+        return Number(args[1]) === runtime.pid && runtime.pid > 0
+          ? { status: 0, stdout: `${supervisorCommand}\n`, stderr: '' }
+          : { status: 1, stdout: '', stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    },
+    fetchImpl: async () => ({ ok: true }),
+    processObj: {
+      execPath: '/usr/local/bin/node',
+      env: { AIH_CLI_PATH: aihCommandPath, HOME: root, PATH: '/opt/homebrew/bin:/usr/bin' },
+      platform: 'darwin',
+      cwd() { return root; },
+      getuid() { return 501; },
+      kill(pid, signal) {
+        runtime.killCalls.push({ pid: Number(pid), signal });
+        if (Number(pid) !== runtime.pid || runtime.pid <= 0) throw new Error('ESRCH');
+      }
+    },
+    ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); },
+    parseServeArgs() { return { host: '127.0.0.1', port: 9527 }; },
+    readServerConfig() { return { host: '127.0.0.1', port: 9527 }; },
+    buildServerArgsFromConfig() { return ['--host', '127.0.0.1', '--port', '9527']; },
+    aiHomeDir,
+    hostHomeDir: root,
+    pidFile,
+    logFile,
+    launchdLabel,
+    launchdPlist,
+    entryFilePath
+  });
+  return { daemon, runtime };
+}
+
+test('daemon service restart still reloads the autostart job when the stop phase throws', async (t) => {
+  const { daemon, runtime } = makeRestartStopFailureFixture(t);
+
+  const result = await daemon.restart([], { waitForReady: false, gracefulStopWaitMs: 20 });
+
+  assert.equal(result.recoveredAfterStopFailure, true);
+  assert.equal(result.started, true);
+  assert.equal(result.stoppedForRestart.reason, 'background_launchd_stop_failed');
+  assert.equal(runtime.launchdLoaded, true);
+  assert.equal(runtime.pid, 2002);
+  assert.equal(runtime.launchctlCalls.some((args) => args[0] === 'bootstrap'), true);
+  assert.equal(runtime.spawnCalls.length, 0, 'recovery reloads the supervisor, never a server-only spawn');
+});
+
+test('daemon service restart reports a failure (not a throw) when the reload after a failed stop also fails', async (t) => {
+  const { daemon, runtime } = makeRestartStopFailureFixture(t);
+  runtime.bootstrapFails = true;
+
+  const result = await daemon.restart([], { waitForReady: false, gracefulStopWaitMs: 20 });
+
+  assert.equal(result.failed, true);
+  assert.equal(result.started, false);
+  assert.equal(result.reason, 'background_launchd_stop_failed');
+  assert.ok(result.recoveryError, 'the reload error is surfaced to the CLI');
+  assert.equal(runtime.spawnCalls.length, 0);
+});
+
 test('daemon service start can skip foreground ready wait and return immediately', async () => {
   const root = makeTempDir();
   const aiHomeDir = path.join(root, '.ai_home');

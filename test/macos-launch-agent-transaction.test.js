@@ -186,6 +186,80 @@ test('macOS launch agent fails closed when launchd never completes bootout', (t)
   assert.equal(fs.readFileSync(fixture.launchdPlist, 'utf8'), 'existing-supervisor-plist');
 });
 
+// 2026-10-18 事故复现：旧实例按 90s 排空，CLI 的等待窗口只有 22s；bootout 之后 launchd 停在
+// SIGTERMed（`launchctl print` 仍报 pid），此时 bootstrap 一律 `5: Input/output error`。
+function makeSlowDrainFixture(t, options = {}) {
+  let clock = 0;
+  const state = { loaded: true, alive: true, kills: [], calls: [] };
+  const fixture = makeFixture((command, args) => {
+    state.calls.push(args[0]);
+    if (command !== 'launchctl') return launchctlResult(0);
+    if (args[0] === 'print') {
+      return state.loaded
+        ? { status: 0, stdout: `\tstate = SIGTERMed\n\tpid = 4242\n`, stderr: '' }
+        : launchctlResult(1, 'Could not find service');
+    }
+    if (args[0] === 'list') return state.loaded ? launchctlResult(0) : launchctlResult(1, 'Could not find service');
+    if (args[0] === 'bootout') return launchctlResult(0);
+    if (args[0] === 'bootstrap') {
+      if (state.loaded) return launchctlResult(5, 'Bootstrap failed: 5: Input/output error');
+      state.loaded = true;
+      return launchctlResult(0);
+    }
+    return launchctlResult(0);
+  }, () => [], {
+    now: () => clock,
+    sleepSync(delayMs) {
+      clock += delayMs;
+    },
+    processObj: {
+      env: { PATH: '/opt/homebrew/bin:/usr/bin' },
+      getuid: () => 501,
+      kill(pid, signal) {
+        state.kills.push({ pid, signal });
+        if (options.killFails) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+        // launchd 在进程真正退出后回收 job（实测强杀后约 100ms）。
+        state.alive = false;
+        state.loaded = false;
+      }
+    }
+  });
+  t.after(() => fs.rmSync(fixture.root, { recursive: true, force: true }));
+  return { ...fixture, state };
+}
+
+test('macOS launch agent force-kills a draining job that outlives the stop window instead of leaving it half-unloaded', (t) => {
+  const fixture = makeSlowDrainFixture(t);
+
+  const status = fixture.agent.stopLoaded();
+
+  assert.equal(status.loaded, false);
+  assert.equal(status.forcedPid, 4242);
+  assert.deepEqual(fixture.state.kills, [{ pid: 4242, signal: 'SIGKILL' }]);
+});
+
+test('macOS launch agent install reloads the supervisor after force-killing a slow-draining job', (t) => {
+  const fixture = makeSlowDrainFixture(t);
+  fs.mkdirSync(path.dirname(fixture.launchdPlist), { recursive: true });
+  fs.writeFileSync(fixture.launchdPlist, 'existing-supervisor-plist');
+
+  const status = fixture.agent.install();
+
+  assert.equal(status.loaded, true);
+  assert.deepEqual(fixture.state.kills, [{ pid: 4242, signal: 'SIGKILL' }]);
+  assert.ok(fixture.state.calls.lastIndexOf('bootstrap') > fixture.state.calls.indexOf('bootout'));
+});
+
+test('macOS launch agent still fails closed when the slow-draining job cannot be killed', (t) => {
+  const fixture = makeSlowDrainFixture(t, { killFails: true });
+
+  assert.throws(
+    () => fixture.agent.stopLoaded(),
+    { code: 'background_launchd_stop_timeout', pid: 4242 }
+  );
+  assert.equal(fixture.state.loaded, true);
+});
+
 test('macOS launch agent does not treat a launchctl query timeout as an unloaded job', (t) => {
   const timeoutError = Object.assign(new Error('launchctl timed out'), { code: 'ETIMEDOUT' });
   const fixture = makeFixture((command, args) => {

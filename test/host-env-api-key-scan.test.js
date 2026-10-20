@@ -78,6 +78,31 @@ test('先手工添加、后被环境变量扫到：同一把 key 不会出第二
   assert.equal(result.registered.filter((item) => item.provider === 'grok').length, 0);
 });
 
+test('覆盖面上的每个 provider 都真的能入库（不留「声明了却算不出身份」的半截）', (t) => {
+  const { listEnvApiKeySpecs } = require('../lib/account/host-api-key-env-scan');
+  for (const spec of listEnvApiKeySpecs()) {
+    const f = fixture(t, { [spec.apiKeys[0]]: `probe-key-${spec.provider}-0123456789` });
+    const result = f.detect();
+    const reasons = result.skipped.filter((item) => item.provider === spec.provider).map((item) => item.reason);
+    assert.equal(f.records(spec.provider).length, 1, `${spec.provider} 应入库，实际跳过原因：${reasons.join(',')}`);
+  }
+});
+
+test('opencode：与手工添加一样写原生 auth.json 条目，且与手工添加互认同一账号', (t) => {
+  const { configureApiKeyAccount } = require('../lib/server/web-account-auth-account-config');
+  const f = fixture(t, { OPENCODE_API_KEY: 'oc-env-key-1' });
+  f.detect();
+  const records = f.records('opencode');
+  assert.equal(records.length, 1);
+  const native = store.readAccountNativeAuth(fs, f.aiHomeDir, records[0].accountRef);
+  assert.equal(native.auth.opencode.type, 'api', 'opencode CLI 只认原生 auth.json，env key 启动时会被剥掉');
+  assert.equal(native.auth.opencode.key, 'oc-env-key-1');
+
+  // 手工添加同一把 key：身份同算法 → 同一个账号，不重复。
+  configureApiKeyAccount({ fs, provider: 'opencode', config: { apiKey: 'oc-env-key-1' }, aiHomeDir: f.aiHomeDir });
+  assert.equal(f.records('opencode').length, 1);
+});
+
 test('aih 自己的 client key / 指向本机网关的基础地址不会被扫成账号', (t) => {
   // 实机情况：shell 里的 ANTHROPIC_API_KEY 就是 aih 网关 client key（aih 注入给宿主 CLI 用的）。
   const f = fixture(t, {

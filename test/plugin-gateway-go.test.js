@@ -94,6 +94,29 @@ async function listen(t, handler) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
+// Canonical 路由目录由 Go 的后台 worker 异步发布，Canonical 的首个请求可能早于首次发布，
+// 在低核 CI runner 上落成 503 inference_unavailable（本地快机器几乎看不到）。
+// 夹具返回前把 Canonical 通道预热到真的能服务，只对 503 重试；其它状态立刻失败。
+async function waitForCanonicalReady(go) {
+  const deadline = Date.now() + 20000;
+  let last = '';
+  for (;;) {
+    const response = await fetch(`${go.base}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${go.clientKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-5.4', stream: false, messages: [{ role: 'user', content: 'ready' }] })
+    });
+    if (response.status === 200) {
+      await response.arrayBuffer();
+      return;
+    }
+    last = `${response.status} ${await response.text()}`;
+    if (response.status !== 503 || Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Go Canonical path not ready: ${last}\n${go.stderr()}`);
+}
+
 async function goPluginFixture(t) {
   const upstreamBodies = [];
   const hold = { next: null };
@@ -136,6 +159,7 @@ async function goPluginFixture(t) {
     } else finish();
   });
   const go = await startGoGateway(t, upstream + '/v1', 'gpt-5.4', { binary: testGoBinary() });
+  await waitForCanonicalReady(go);
 
   const dir = tempDir('aihgo-');
   const aiHomeDir = path.join(dir, 'home');
@@ -342,7 +366,9 @@ async function dumpAttempts(system) {
   assert.ok(await waitFor(async () => {
     entries = entries.concat((await system.runtime.invoke('goattempt.dump', null)).value || []);
     return entries.length > 0;
-  }), JSON.stringify(entries));
+  // 尝试摘要与 observe 走同一条 Plugin Host 回传路径：低核 runner 上同样可能晚于 5s，
+  // 与 dumpObservations 对齐到 20s（用例自身兜底超时是 120s）。
+  }, 20000), JSON.stringify(entries));
   return entries;
 }
 

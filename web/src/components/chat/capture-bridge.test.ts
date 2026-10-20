@@ -79,6 +79,27 @@ describe('captureProgressText', () => {
     ).toBe('正在编码 40%…');
   });
 
+  test('首帧前显示屏幕共享请求文案', () => {
+    expect(
+      captureProgressText({
+        ...base,
+        elapsedMs: 0,
+        capturedFrames: 0,
+        progressLabel: '正在请求屏幕共享…'
+      })
+    ).toBe('正在请求屏幕共享…');
+  });
+
+  test('静图阶段显示截图请求文案', () => {
+    expect(
+      captureProgressText({
+        ...base,
+        kind: 'still',
+        progressLabel: '正在请求屏幕共享…'
+      })
+    ).toBe('正在请求屏幕共享…');
+  });
+
   test('空闲时没有文案', () => {
     expect(captureProgressText({ ...base, busy: false, kind: null })).toBe('');
   });

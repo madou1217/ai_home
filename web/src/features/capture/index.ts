@@ -59,6 +59,13 @@ export {
 export { probeCaptureFormatAvailability, isFormatAvailable, type CaptureFormatAvailability } from './format-availability';
 export { DomPreviewFrameSource } from './dom-preview-frame-source';
 export {
+  LivePreviewFrameSource,
+  computeDisplayCrop,
+  type DisplayCropInput,
+  type DisplayCropResult,
+  type LivePreviewFrameSourceOptions
+} from './live-preview-frame-source';
+export {
   captureAnimation,
   captureStill,
   downloadCaptureArtifact,
@@ -68,7 +75,9 @@ export {
 export {
   FALLBACK_VIEWPORT_WIDTH,
   encodePreviewDocument,
-  type PreviewEncodeRequest
+  encodePreviewSource,
+  type PreviewEncodeRequest,
+  type PreviewSourceEncodeRequest
 } from './preview-encode-dispatch';
 export {
   listRecordableAnimationFormats,
@@ -80,12 +89,15 @@ export {
   CAPTURE_CANCEL_TYPE,
   CAPTURE_REQUEST_TYPE,
   CAPTURE_RESULT_TYPE,
+  CAPTURE_STREAM_READY_TYPE,
   ensurePreviewWindowCaptureHost,
   installPreviewWindowCaptureHost,
   isCaptureWindowCancel,
   isCaptureWindowRequest,
+  isCaptureWindowStreamReady,
   resolveRequestFormat,
   runCaptureForWindowRequest,
+  runCaptureForWindowStream,
   type CaptureReplyTarget,
   type CaptureWindowCancel,
   type CaptureWindowFailure,
@@ -93,6 +105,13 @@ export {
   type CaptureWindowReply,
   type CaptureWindowRequest,
   type CaptureWindowRequestKind,
+  type CaptureWindowStreamReady,
   type CaptureWindowSuccess,
   type ResolveRequestFormatDeps
 } from './preview-window-host';
+export {
+  CAPTURE_TARGET_ID,
+  CAPTURE_VIDEO_ID,
+  PopupWindowFrameSource,
+  type PopupWindowFrameSourceOptions
+} from './popup-window-frame-source';

@@ -7,9 +7,9 @@ import { message } from 'antd';
 import type { CaptureFormatId, RecordingSettings } from '../../features/capture';
 import {
   downloadCaptureArtifact,
-  encodePreviewDocument,
-  FALLBACK_VIEWPORT_WIDTH,
+  encodePreviewSource,
   isStillCaptureFormat,
+  LivePreviewFrameSource,
   readCapturePreferences
 } from '../../features/capture';
 
@@ -45,10 +45,8 @@ export interface PreviewCaptureActions {
 }
 
 export interface PreviewCaptureActionsOptions {
-  /** 当前预览文档（完整 HTML），每次执行时取最新值。 */
-  getPreviewDoc: () => string;
-  /** 预览视口宽度（与用户实际看到的宽度一致）。 */
-  getViewportWidth: () => number;
+  /** 当前预览容器（包含 iframe 的 stage）；每次执行时取最新值。 */
+  getCaptureTarget: () => HTMLElement | null;
 }
 
 const IDLE_STATE: PreviewCaptureState = {
@@ -64,8 +62,12 @@ const IDLE_STATE: PreviewCaptureState = {
 /** 录制阶段的按钮/状态文案；组件只消费这里，不自己拼数字。 */
 export function captureProgressText(state: PreviewCaptureState): string {
   if (!state.busy) return '';
-  if (state.kind === 'still') return '正在生成截图…';
+  if (state.kind === 'still') return state.progressLabel || '正在生成截图…';
   if (state.stopping) return state.progressLabel || '正在完成录制…';
+  // 屏幕共享授权/首帧之前显示请求文案，避免用户以为点击没反应。
+  if (state.capturedFrames === 0 && state.elapsedMs === 0) {
+    return state.progressLabel || '正在录制…';
+  }
   const seconds = (Math.max(0, state.elapsedMs) / 1000).toFixed(1);
   const frames = state.totalFrames
     ? `${state.capturedFrames}/${state.totalFrames} 帧`
@@ -101,6 +103,11 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
 
   const runFormat = useCallback(async (format: CaptureFormatId) => {
     if (busyRef.current) return;
+    const target = optionsRef.current.getCaptureTarget();
+    if (!target) {
+      message.error('预览区域不可见，请先打开预览再试');
+      return;
+    }
     busyRef.current = true;
     const still = isStillCaptureFormat(format);
     const cancelController = new AbortController();
@@ -114,13 +121,22 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       ...IDLE_STATE,
       busy: true,
       kind: still ? 'still' : 'animation',
-      progressLabel: still ? '正在生成截图…' : '正在录制…'
+      progressLabel: '正在请求屏幕共享…'
     });
     try {
-      const result = await encodePreviewDocument({
+      // 实时取景：getDisplayMedia 必须在点击手势内同步进入（create 的第一条 await）。
+      const source = await LivePreviewFrameSource.create({
+        target,
+        displaySurface: 'browser',
+        preferCurrentTab: true
+      });
+      setState((previous) => ({
+        ...previous,
+        progressLabel: still ? '正在生成截图…' : '正在录制…'
+      }));
+      const result = await encodePreviewSource({
+        source,
         format,
-        html: optionsRef.current.getPreviewDoc(),
-        width: optionsRef.current.getViewportWidth() || FALLBACK_VIEWPORT_WIDTH,
         recording,
         signal: cancelController.signal,
         stopSignal: still ? undefined : stopController.signal,
@@ -173,7 +189,7 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
 }
 
 function failureText(raw: string): string {
-  if (raw === 'frame_source_unavailable') return '预览暂不可截取';
+  if (raw === 'frame_source_unavailable') return '屏幕共享已结束，未抓到画面';
   if (raw === 'webm_encoder_unavailable') return '当前浏览器不支持 WebM 录制';
   if (raw === 'webm_encode_empty') return '录制的帧数据为空，请重试';
   if (raw === 'capture_no_frames') return '没有抓到任何帧，请重试';
@@ -182,6 +198,18 @@ function failureText(raw: string): string {
 
 function unknownErrorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
+  const name =
+    error && typeof error === 'object' && 'name' in error
+      ? String((error as { name?: unknown }).name || '')
+      : '';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return '需要允许共享当前标签页，才能录制实时预览';
+  }
+  if (raw === 'display_capture_unavailable') return '当前浏览器不支持实时预览录制';
+  if (raw === 'display_capture_video_failed') return '无法读取屏幕共享画面，请重试';
+  if (raw === 'display_capture_target_detached') return '预览区域已关闭，请重试';
+  if (raw === 'preview_not_visible') return '请先让预览区域完整显示在屏幕上';
+  if (raw === 'Permission denied') return '需要允许共享当前标签页，才能录制实时预览';
   if (raw === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
   if (raw === 'dom_capture_load_failed') return '预览克隆失败，请重试';
   return `操作失败：${raw}`;

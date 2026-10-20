@@ -17,9 +17,9 @@ const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popup
 const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
 
 /** 与宿主 preview-window-host.ts 约定的消息契约（弹窗侧不能 import，保持常量同步）。 */
-const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
+const CAPTURE_STREAM_READY_TYPE = 'aih:html-preview-capture-stream-ready';
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -118,7 +118,7 @@ export function buildHtmlPreviewWindowDocument(
     </div>
   </header>
   <main class="stage" data-preview-stage data-device="${initialDevice}">
-    <iframe class="preview" title="${titleAttribute}" sandbox="${HTML_PREVIEW_SANDBOX}" referrerpolicy="no-referrer" srcdoc="${srcDoc}"></iframe>
+    <iframe id="aih-preview-target" class="preview" title="${titleAttribute}" sandbox="${HTML_PREVIEW_SANDBOX}" referrerpolicy="no-referrer" srcdoc="${srcDoc}"></iframe>
   </main>
   <script>
     const stage = document.querySelector('[data-preview-stage]');
@@ -142,97 +142,209 @@ export function buildHtmlPreviewWindowDocument(
       }
     });
 
-    // 捕获桥（弹窗侧）：按钮 → 请求宿主编码 → 进度展示 → 回传 URL 触发下载。
-    // 弹窗文档没有主 bundle，栅格化与格式编码全部由宿主完成，这里只做编排。
+    // 捕获桥（弹窗侧）：先由弹窗在用户点击手势里拿屏幕共享，把流挂到隐藏
+    // video；宿主从同源弹窗读取该 video 的实时帧并裁切到预览区域后编码。
+    // 录到的是预览里真实渲染的画面（脚本、Canvas/WebGL、滚动、旋转都在内），
+    // 不再把 HTML 克隆成不执行脚本的静态文档。
     const status = document.querySelector('[data-capture-status]');
     const recordButton = document.querySelector('[data-capture="record"]');
-    const CAPTURE_TIMEOUT_MS = 90000;
+    const shotButton = document.querySelector('[data-capture="screenshot"]');
+    const captureButtons = [shotButton, recordButton];
+    const CAPTURE_TIMEOUT_MS = 300000;
+    const CAPTURE_VIDEO_ID = 'aih-capture-video';
     let captureSeq = 0;
     let pendingRequest = '';
     let pendingTimer = 0;
-    let recording = false;
-    const captureButtons = Array.prototype.slice.call(document.querySelectorAll('[data-capture]'));
-    function setRecording(active) {
-      recording = Boolean(active);
-      recordButton.textContent = recording ? '停止' : '录制';
-      recordButton.classList.toggle('is-recording', recording);
-      recordButton.setAttribute('aria-pressed', String(recording));
+    let phase = 'idle';
+    let activeStream = null;
+    let activeVideo = null;
+
+    function showStatus(label) {
+      status.textContent = label;
+      status.hidden = false;
     }
-    function setCaptureBusy(busy, label) {
-      if (!busy) setRecording(false);
-      captureButtons.forEach((button) => {
-        // 录制中记录按钮必须保持可点：它是「停止」。
-        button.disabled = busy && !(recording && button === recordButton);
-      });
-      if (busy) {
-        status.textContent = label || '正在捕获…';
-        status.hidden = false;
-      } else {
-        status.hidden = true;
+    function setPhase(next, label) {
+      phase = next;
+      recordButton.textContent =
+        next === 'recording' ? '停止' : next === 'requesting' ? '请求中…' : '录制';
+      recordButton.classList.toggle('is-recording', next === 'recording');
+      recordButton.setAttribute('aria-pressed', String(next === 'recording'));
+      recordButton.disabled = next === 'requesting' || next === 'finishing';
+      shotButton.disabled = next !== 'idle';
+      if (label) showStatus(label);
+      else if (next === 'idle') status.hidden = true;
+    }
+    function cleanupStream() {
+      if (activeVideo) {
+        try {
+          activeVideo.pause();
+        } catch (_error) {}
+        activeVideo.srcObject = null;
+        activeVideo.remove();
+        activeVideo = null;
+      }
+      if (activeStream) {
+        activeStream.getTracks().forEach(function(track) {
+          try {
+            track.stop();
+          } catch (_error) {}
+        });
+        activeStream = null;
       }
     }
-    function requestCapture(kind) {
+    function settleFailure(message) {
+      pendingRequest = '';
+      clearTimeout(pendingTimer);
+      cleanupStream();
+      setPhase('idle');
+      showStatus(message);
+    }
+    function settleCapture(requestId) {
+      if (pendingRequest && pendingRequest !== requestId) return false;
+      pendingRequest = '';
+      clearTimeout(pendingTimer);
+      return true;
+    }
+    async function startLiveCapture(kind) {
+      if (phase !== 'idle') return;
       if (!window.opener) {
-        setCaptureBusy(false);
-        status.textContent = '宿主页面已关闭，无法捕获';
-        status.hidden = false;
+        settleFailure('宿主页面已关闭，无法捕获');
+        return;
+      }
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+        settleFailure('当前浏览器不支持实时预览捕获');
         return;
       }
       const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
       pendingRequest = requestId;
+      setPhase('requesting', '请在共享选择器中选择当前预览窗口…');
       clearTimeout(pendingTimer);
-      pendingTimer = window.setTimeout(() => {
+      pendingTimer = window.setTimeout(function() {
         if (pendingRequest !== requestId) return;
-        pendingRequest = '';
-        setCaptureBusy(false);
-        status.textContent = '捕获超时，请重试';
-        status.hidden = false;
+        settleFailure('捕获超时，请重试');
       }, CAPTURE_TIMEOUT_MS);
-      const srcdoc = preview.getAttribute('srcdoc') || '';
-      window.opener.postMessage({
-        type: '${CAPTURE_REQUEST_TYPE}',
-        requestId: requestId,
-        kind: kind,
-        html: srcdoc,
-        width: Math.round(preview.getBoundingClientRect().width) || 0
-      }, window.location.origin);
+
+      let stream;
+      try {
+        // 必须在点击手势内同步进入：这是浏览器允许 getDisplayMedia 的前提。
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 30 },
+          audio: false,
+          preferCurrentTab: true
+        });
+      } catch (error) {
+        if (pendingRequest !== requestId) return;
+        const denied =
+          error && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError');
+        settleFailure(denied ? '需要允许共享当前预览窗口' : '无法开始屏幕共享，请重试');
+        return;
+      }
+      if (pendingRequest !== requestId) {
+        stream.getTracks().forEach(function(track) {
+          try {
+            track.stop();
+          } catch (_error) {}
+        });
+        return;
+      }
+      activeStream = stream;
+
+      // Chrome Region Capture：直接把视频轨裁到预览 iframe；不支持时宿主按 rect 裁。
+      let cropped = false;
+      try {
+        const track = stream.getVideoTracks()[0];
+        if (window.CropTarget && track && typeof track.cropTo === 'function') {
+          const cropTarget = await window.CropTarget.fromElement(preview);
+          await track.cropTo(cropTarget);
+          cropped = true;
+        }
+      } catch (_error) {
+        cropped = false;
+      }
+      if (pendingRequest !== requestId) {
+        cleanupStream();
+        return;
+      }
+
+      const video = document.createElement('video');
+      video.id = CAPTURE_VIDEO_ID;
+      video.muted = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      video.setAttribute('aria-hidden', 'true');
+      video.style.cssText =
+        'position:fixed;left:-10000px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+      video.srcObject = stream;
+      document.body.appendChild(video);
+      activeVideo = video;
+      try {
+        await new Promise(function(resolve, reject) {
+          if (video.readyState >= 1) {
+            resolve();
+            return;
+          }
+          video.addEventListener('loadedmetadata', resolve, { once: true });
+          video.addEventListener(
+            'error',
+            function() {
+              reject(new Error('video_failed'));
+            },
+            { once: true }
+          );
+        });
+        await video.play();
+      } catch (_error) {
+        if (pendingRequest === requestId) settleFailure('无法读取屏幕共享画面，请重试');
+        else cleanupStream();
+        return;
+      }
+      if (pendingRequest !== requestId) {
+        cleanupStream();
+        return;
+      }
+
+      if (kind === 'record') setPhase('recording', '正在录制…');
+      else setPhase('requesting', '正在生成截图…');
+      window.opener.postMessage(
+        {
+          type: '${CAPTURE_STREAM_READY_TYPE}',
+          requestId: requestId,
+          kind: kind,
+          cropped: cropped
+        },
+        window.location.origin
+      );
     }
     function cancelRecording() {
-      if (!pendingRequest) return;
+      if (!pendingRequest || phase !== 'recording') return;
       if (window.opener) {
-        window.opener.postMessage({
-          type: '${CAPTURE_CANCEL_TYPE}',
-          requestId: pendingRequest
-        }, window.location.origin);
+        window.opener.postMessage(
+          { type: '${CAPTURE_CANCEL_TYPE}', requestId: pendingRequest },
+          window.location.origin
+        );
       }
-      // 停止后宿主还要编码已抓帧，按钮先进入不可点的「完成中」。
-      setRecording(false);
-      setCaptureBusy(true, '正在完成录制…');
+      setPhase('finishing', '正在完成录制…');
     }
-    function settleCapture(requestId) {
-      if (pendingRequest && pendingRequest !== requestId) return;
-      pendingRequest = '';
-      clearTimeout(pendingTimer);
-    }
-    window.addEventListener('message', (event) => {
+    window.addEventListener('message', function(event) {
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.type !== '${CAPTURE_RESULT_TYPE}') return;
+      if (pendingRequest && data.requestId !== pendingRequest) return;
       if (data.kind === 'progress') {
-        status.textContent = data.label || '正在捕获…';
-        status.hidden = false;
-        // 编码阶段不能再「停止」，其它按钮也保持忙碌态。
-        if (data.phase === 'encoding') {
-          setRecording(false);
-          setCaptureBusy(true, data.label);
+        if (data.phase === 'encoding' && phase !== 'finishing') {
+          // 宿主已抓完帧，先释放屏幕共享指示器，再等编码产物。
+          cleanupStream();
+          setPhase('finishing', data.label || '正在编码…');
+        } else {
+          showStatus(data.label || '正在捕获…');
         }
         return;
       }
-      settleCapture(data.requestId);
+      if (!settleCapture(data.requestId)) return;
+      cleanupStream();
       if (data.kind !== 'artifact' || !data.ok) {
-        setCaptureBusy(false);
-        status.textContent = '捕获失败：' + ((data && data.message) || '未知错误');
-        status.hidden = false;
+        setPhase('idle');
+        showStatus('捕获失败：' + ((data && data.message) || '未知错误'));
         return;
       }
       const link = document.createElement('a');
@@ -241,19 +353,18 @@ export function buildHtmlPreviewWindowDocument(
       document.body.appendChild(link);
       link.click();
       link.remove();
-      setCaptureBusy(false);
+      setPhase('idle');
     });
-    captureButtons.forEach((button) => {
-      button.addEventListener('click', () => {
+    window.addEventListener('beforeunload', cleanupStream);
+    captureButtons.forEach(function(button) {
+      button.addEventListener('click', function() {
         const kind = button.dataset.capture === 'record' ? 'record' : 'still';
-        if (kind === 'record' && recording) {
+        if (kind === 'record' && phase === 'recording') {
           cancelRecording();
           return;
         }
-        if (button.disabled) return;
-        setRecording(kind === 'record');
-        setCaptureBusy(true, kind === 'record' ? '正在录制…' : '正在生成截图…');
-        requestCapture(kind);
+        if (phase !== 'idle') return;
+        startLiveCapture(kind);
       });
     });
   </script>

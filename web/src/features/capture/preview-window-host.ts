@@ -5,7 +5,8 @@
 // 再把 blob URL 回传给弹窗触发下载。捕获逻辑零复制，单测不打 postMessage。
 
 import type { CaptureFormatId, CapturePreferences, StillCaptureFormatId } from './types';
-import { encodePreviewDocument } from './preview-encode-dispatch';
+import { encodePreviewDocument, encodePreviewSource } from './preview-encode-dispatch';
+import { PopupWindowFrameSource } from './popup-window-frame-source';
 import {
   isFormatAvailable,
   probeCaptureFormatAvailability,
@@ -18,9 +19,21 @@ import { listAnimationFormats, listStillFormats } from './format-catalog';
 export const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 export const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 export const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
+/** 弹窗已拿到屏幕共享流并挂到隐藏 video 上，宿主可以开始实时抓帧。 */
+export const CAPTURE_STREAM_READY_TYPE = 'aih:html-preview-capture-stream-ready';
 
 export type CaptureWindowRequestKind = 'still' | 'record';
 export type CaptureWindowProgressPhase = 'capturing' | 'encoding';
+
+export interface CaptureWindowStreamReady {
+  type: typeof CAPTURE_STREAM_READY_TYPE;
+  requestId: string;
+  kind: CaptureWindowRequestKind;
+  /** 省略时由宿主按偏好解析。 */
+  format?: string;
+  /** 弹窗是否已用 Region Capture 把视频轨裁到预览元素。 */
+  cropped: boolean;
+}
 
 export interface CaptureWindowRequest {
   type: typeof CAPTURE_REQUEST_TYPE;
@@ -114,6 +127,16 @@ export function isCaptureWindowRequest(data: unknown): data is CaptureWindowRequ
   return typeof candidate.html === 'string' && candidate.html.length > 0;
 }
 
+/** 判定消息是否为「实时流已就绪」（形状校验，来源校验在接线层）。 */
+export function isCaptureWindowStreamReady(data: unknown): data is CaptureWindowStreamReady {
+  if (typeof data !== 'object' || data === null) return false;
+  const candidate = data as Partial<CaptureWindowStreamReady>;
+  if (candidate.type !== CAPTURE_STREAM_READY_TYPE) return false;
+  if (typeof candidate.requestId !== 'string' || candidate.requestId.length === 0) return false;
+  if (candidate.kind !== 'still' && candidate.kind !== 'record') return false;
+  return typeof candidate.cropped === 'boolean';
+}
+
 /** 判定消息是否为「停止录制」请求（形状校验，来源校验在接线层）。 */
 export function isCaptureWindowCancel(data: unknown): data is CaptureWindowCancel {
   if (typeof data !== 'object' || data === null) return false;
@@ -131,6 +154,104 @@ export interface CaptureWindowRequestHooks {
   stopSignal?: AbortSignal;
 }
 
+type WindowCaptureResult = Awaited<ReturnType<typeof encodePreviewSource>>;
+
+/** 把捕获域/弹窗桥的内部错误码收敛成用户可读文案。 */
+function friendlyCaptureError(message: string): string {
+  if (message === 'popup_capture_unavailable') return '无法读取预览窗口，请重试';
+  if (message === 'popup_capture_video_missing') return '没有找到屏幕共享画面，请重试';
+  if (message === 'popup_capture_target_missing') return '预览区域已关闭';
+  if (message === 'popup_capture_target_not_visible') return '请先让预览完整显示在屏幕上';
+  if (message === 'popup_capture_video_not_ready') return '屏幕共享画面未就绪，请重试';
+  if (message === 'popup_capture_video_failed') return '屏幕共享画面读取失败，请重试';
+  if (message === 'frame_source_unavailable') return '屏幕共享已结束，未抓到画面';
+  if (message === 'capture_format_unavailable') return '没有可用的录制格式';
+  if (message === 'capture_no_frames') return '没有抓到任何帧，请重试';
+  if (message === 'dom_capture_frame_unavailable') return '预览暂不可截取';
+  if (message === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
+  if (message === 'dom_capture_load_failed') return '预览克隆失败，请重试';
+  if (message === 'webm_encoder_unavailable') return '当前浏览器不支持 WebM 录制';
+  if (message === 'webm_encode_empty') return '录制的帧数据为空，请重试';
+  if (message === 'Permission denied' || message === 'NotAllowedError') {
+    return '需要允许共享当前预览窗口';
+  }
+  return message;
+}
+
+function toCaptureWindowReply(
+  result: WindowCaptureResult,
+  requestId: string
+): CaptureWindowSuccess | CaptureWindowFailure {
+  if (!result.ok) {
+    return {
+      type: CAPTURE_RESULT_TYPE,
+      requestId,
+      kind: 'artifact',
+      ok: false,
+      message: friendlyCaptureError(result.failure.message)
+    };
+  }
+  const url = URL.createObjectURL(result.artifact.blob);
+  window.setTimeout(() => URL.revokeObjectURL(url), ARTIFACT_URL_REVOKE_DELAY_MS);
+  return {
+    type: CAPTURE_RESULT_TYPE,
+    requestId,
+    kind: 'artifact',
+    ok: true,
+    url,
+    fileName: result.artifact.fileName
+  };
+}
+
+function progressReporter(
+  onProgress?: (label: string, phase?: CaptureWindowProgressPhase) => void
+) {
+  return {
+    onPhase: (captured: number, total: number | null, elapsedMs: number) => {
+      const seconds = (Math.max(0, elapsedMs) / 1000).toFixed(1);
+      const frames = total ? `${captured}/${total}` : `${captured}`;
+      onProgress?.(`正在录制 ${seconds}s（${frames} 帧）`, 'capturing');
+    },
+    onEncode: (ratio: number) =>
+      onProgress?.(`正在编码 ${Math.round(ratio * 100)}%…`, 'encoding')
+  };
+}
+
+/** 弹窗实时流：宿主读取弹窗里的屏幕共享 video，按预览区域裁切后编码。 */
+export async function runCaptureForWindowStream(
+  request: CaptureWindowStreamReady,
+  sourceWindow: Window,
+  hooks: CaptureWindowRequestHooks = {}
+): Promise<CaptureWindowSuccess | CaptureWindowFailure> {
+  const fail = (message: string): CaptureWindowFailure => ({
+    type: CAPTURE_RESULT_TYPE,
+    requestId: request.requestId,
+    kind: 'artifact',
+    ok: false,
+    message: friendlyCaptureError(message)
+  });
+  const preferences = readCapturePreferences();
+  const format = resolveRequestFormat(request, { preferences });
+  if (!format) return fail('capture_format_unavailable');
+  const controller = new AbortController();
+  try {
+    const source = await PopupWindowFrameSource.create(sourceWindow, {
+      cropped: request.cropped
+    });
+    const result = await encodePreviewSource({
+      source,
+      format,
+      recording: preferences.recording,
+      signal: controller.signal,
+      stopSignal: hooks.stopSignal,
+      ...progressReporter(hooks.onProgress)
+    });
+    return toCaptureWindowReply(result, request.requestId);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 /** 执行一次捕获并返回回传载荷（不碰 postMessage，方便单测）。 */
 export async function runCaptureForWindowRequest(
   request: CaptureWindowRequest,
@@ -141,7 +262,7 @@ export async function runCaptureForWindowRequest(
     requestId: request.requestId,
     kind: 'artifact',
     ok: false,
-    message
+    message: friendlyCaptureError(message)
   });
   const preferences = readCapturePreferences();
   const format = resolveRequestFormat(request, { preferences });
@@ -155,25 +276,9 @@ export async function runCaptureForWindowRequest(
       recording: preferences.recording,
       signal: controller.signal,
       stopSignal: hooks.stopSignal,
-      onPhase: (captured, total, elapsedMs) => {
-        const seconds = (Math.max(0, elapsedMs) / 1000).toFixed(1);
-        const frames = total ? `${captured}/${total}` : `${captured}`;
-        hooks.onProgress?.(`正在录制 ${seconds}s（${frames} 帧）`, 'capturing');
-      },
-      onEncode: (ratio) =>
-        hooks.onProgress?.(`正在编码 ${Math.round(ratio * 100)}%…`, 'encoding')
+      ...progressReporter(hooks.onProgress)
     });
-    if (!result.ok) return fail(result.failure.message);
-    const url = URL.createObjectURL(result.artifact.blob);
-    window.setTimeout(() => URL.revokeObjectURL(url), ARTIFACT_URL_REVOKE_DELAY_MS);
-    return {
-      type: CAPTURE_RESULT_TYPE,
-      requestId: request.requestId,
-      kind: 'artifact',
-      ok: true,
-      url,
-      fileName: result.artifact.fileName
-    };
+    return toCaptureWindowReply(result, request.requestId);
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
@@ -189,11 +294,33 @@ export function installPreviewWindowCaptureHost(target: Window = window): () => 
       stopControllers.get(event.data.requestId)?.abort();
       return;
     }
+    const sourceWindow = event.source as (Window & CaptureReplyTarget) | null;
+    if (!sourceWindow || typeof sourceWindow.postMessage !== 'function') return;
+    const reply = (payload: CaptureWindowReply) => sourceWindow.postMessage(payload, '*');
+    if (isCaptureWindowStreamReady(event.data)) {
+      const request = event.data;
+      const stopController = new AbortController();
+      stopControllers.set(request.requestId, stopController);
+      reply({
+        type: CAPTURE_RESULT_TYPE,
+        requestId: request.requestId,
+        kind: 'progress',
+        label: request.kind === 'still' ? '正在生成截图…' : '正在捕获…'
+      });
+      try {
+        const result = await runCaptureForWindowStream(request, sourceWindow, {
+          stopSignal: stopController.signal,
+          onProgress: (label, phase) =>
+            reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label, phase })
+        });
+        reply(result);
+      } finally {
+        stopControllers.delete(request.requestId);
+      }
+      return;
+    }
     if (!isCaptureWindowRequest(event.data)) return;
-    const source = event.source as CaptureReplyTarget | null;
-    if (!source || typeof source.postMessage !== 'function') return;
     const request = event.data as CaptureWindowRequest;
-    const reply = (payload: CaptureWindowReply) => source.postMessage(payload, '*');
     const stopController = new AbortController();
     stopControllers.set(request.requestId, stopController);
     reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label: '正在捕获…' });

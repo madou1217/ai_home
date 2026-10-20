@@ -8,8 +8,10 @@ import { createDefaultCapturePreferences } from './capture-preferences';
 import {
   CAPTURE_CANCEL_TYPE,
   CAPTURE_REQUEST_TYPE,
+  CAPTURE_STREAM_READY_TYPE,
   isCaptureWindowCancel,
   isCaptureWindowRequest,
+  isCaptureWindowStreamReady,
   resolveRequestFormat
 } from './preview-window-host';
 
@@ -80,6 +82,28 @@ describe('isCaptureWindowCancel', () => {
     expect(isCaptureWindowCancel({ type: CAPTURE_CANCEL_TYPE, requestId: '' })).toBe(false);
     expect(isCaptureWindowCancel(null)).toBe(false);
     expect(isCaptureWindowCancel('cancel')).toBe(false);
+  });
+});
+
+describe('isCaptureWindowStreamReady', () => {
+  const valid = {
+    type: CAPTURE_STREAM_READY_TYPE,
+    requestId: 'cap-1',
+    kind: 'record',
+    cropped: true
+  };
+
+  test('接受合法实时流就绪消息', () => {
+    expect(isCaptureWindowStreamReady(valid)).toBe(true);
+    expect(isCaptureWindowStreamReady({ ...valid, kind: 'still', cropped: false })).toBe(true);
+  });
+
+  test('拒绝错误类型、空 requestId、未知 kind 或缺失 cropped', () => {
+    expect(isCaptureWindowStreamReady({ ...valid, type: 'other' })).toBe(false);
+    expect(isCaptureWindowStreamReady({ ...valid, requestId: '' })).toBe(false);
+    expect(isCaptureWindowStreamReady({ ...valid, kind: 'animation' })).toBe(false);
+    expect(isCaptureWindowStreamReady({ ...valid, cropped: undefined })).toBe(false);
+    expect(isCaptureWindowStreamReady(null)).toBe(false);
   });
 });
 

@@ -12,13 +12,17 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain('data-recording-hint>6 秒<');
   });
 
-  test('弹窗包含停止/取消协议与录制状态样式', () => {
+  test('弹窗包含实时屏幕共享与停止/取消协议', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'mobile',
       recordingHint: '手动停止'
     });
+    expect(doc).toContain("'aih:html-preview-capture-stream-ready'");
     expect(doc).toContain("'aih:html-preview-capture-cancel'");
+    expect(doc).toContain('navigator.mediaDevices.getDisplayMedia');
+    expect(doc).toContain('id="aih-preview-target"');
+    expect(doc).toContain('aih-capture-video');
     expect(doc).toContain('is-recording');
-    expect(doc).toContain("recordButton.textContent = recording ? '停止' : '录制'");
+    expect(doc).toContain("next === 'recording' ? '停止'");
   });
 });

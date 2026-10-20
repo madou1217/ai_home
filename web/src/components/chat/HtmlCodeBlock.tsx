@@ -46,8 +46,7 @@ export default function HtmlCodeBlock({ code }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const capture = usePreviewCaptureActions({
-    getPreviewDoc: () => previewDoc,
-    getViewportWidth: () => stageRef.current?.clientWidth ?? 0
+    getCaptureTarget: () => stageRef.current
   });
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(
     () => readCapturePreferences().recording

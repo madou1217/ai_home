@@ -347,6 +347,227 @@ test('app-manager detects the Windows Store ChatGPT/Codex package without launch
   assert.equal(calls.filter((call) => call.command === 'powershell.exe').length, 1);
 });
 
+test('app-manager scans macOS applications by bundle id when the bundle name differs from the contract', () => {
+  const bundlePath = '/Applications/Qoder CN.app';
+  const plistPath = `${bundlePath}/Contents/Info.plist`;
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'macos',
+    hostHomeDir: '/home/tester',
+    fs: {
+      readdirSync(root) {
+        if (root === '/Applications') {
+          return [
+            { name: 'Qoder CN.app', isDirectory: () => true },
+            { name: 'Unrelated.app', isDirectory: () => true }
+          ];
+        }
+        throw new Error('unexpected root');
+      },
+      existsSync(candidate) {
+        return candidate === bundlePath
+          || candidate === `${bundlePath}/Contents/MacOS/Qoder CN`;
+      },
+      readFileSync(file) {
+        if (file !== plistPath) throw new Error('unexpected file');
+        return '<key>CFBundleIdentifier</key><string>com.aliyun.lingma.ide</string>';
+      }
+    },
+    spawnSync() {
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.bundlePath, bundlePath);
+  assert.equal(record.executablePath, `${bundlePath}/Contents/MacOS/Qoder CN`);
+});
+
+test('app-manager rejects a same-family macOS bundle with a different bundle id', () => {
+  const bundlePath = '/Applications/Qoder CN IDE.app';
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'macos',
+    hostHomeDir: '/home/tester',
+    fs: {
+      readdirSync(root) {
+        if (root === '/Applications') {
+          return [{ name: 'Qoder CN IDE.app', isDirectory: () => true }];
+        }
+        throw new Error('unexpected root');
+      },
+      existsSync(candidate) {
+        return candidate === bundlePath
+          || candidate === `${bundlePath}/Contents/MacOS/Qoder CN`;
+      },
+      readFileSync() {
+        // 国际站 Qoder IDE 的 bundle id；名字相近但不能当作国内站 Desktop。
+        return '<key>CFBundleIdentifier</key><string>com.qoder.ide</string>';
+      }
+    },
+    spawnSync() {
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.equal(record, null);
+});
+
+test('app-manager falls back to Spotlight bundle-id lookup for renamed macOS bundles', () => {
+  const bundlePath = '/Applications/Lingma IDE.app';
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'macos',
+    hostHomeDir: '/home/tester',
+    fs: {
+      readdirSync(root) {
+        if (root === '/Applications') {
+          return [{ name: 'Lingma IDE.app', isDirectory: () => true }];
+        }
+        throw new Error('unexpected root');
+      },
+      existsSync(candidate) {
+        return candidate === bundlePath
+          || candidate === `${bundlePath}/Contents/MacOS/Qoder CN`;
+      },
+      readFileSync() {
+        return '<key>CFBundleIdentifier</key><string>com.aliyun.lingma.ide</string>';
+      }
+    },
+    spawnSync(command) {
+      if (command === 'mdfind') return { status: 0, stdout: `${bundlePath}\n`, stderr: '' };
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.bundlePath, bundlePath);
+});
+
+test('app-manager verifies the install plan report path before falling back to path guesses', () => {
+  const installedPath = '/Users/test/Applications/Qoder CN IDE.app';
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'macos',
+    hostHomeDir: '/Users/test',
+    installedPath,
+    fs: {
+      existsSync(candidate) {
+        return candidate === installedPath
+          || candidate === `${installedPath}/Contents/MacOS/Qoder CN`;
+      },
+      readFileSync() {
+        throw new Error('info plist unavailable');
+      }
+    },
+    spawnSync() {
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.bundlePath, installedPath);
+  assert.equal(record.executablePath, `${installedPath}/Contents/MacOS/Qoder CN`);
+});
+
+test('app-manager discovers Windows desktops through uninstall registry entries and caches the scan', () => {
+  const installLocation = 'C:\\Users\\tester\\AppData\\Local\\Programs\\QoderCN';
+  const executablePath = `${installLocation}\\Qoder CN.exe`;
+  const powershellCalls = [];
+  const desktopScanCache = {};
+  const options = {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: {},
+    desktopScanCache,
+    fs: {
+      existsSync(candidate) {
+        return candidate === executablePath;
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        powershellCalls.push({ command, args });
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            DisplayName: 'Qoder CN IDE 1.2.3',
+            DisplayVersion: '1.2.3',
+            InstallLocation: installLocation,
+            DisplayIcon: ''
+          }]),
+          stderr: ''
+        };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  };
+
+  const first = findDesktopClientRecord('qodercn', options);
+  const second = findDesktopClientRecord('qodercn', options);
+
+  assert.ok(first);
+  assert.equal(first.executablePath, executablePath);
+  assert.equal(first.packageVersion, '1.2.3');
+  assert.equal(first.packageName, 'Qoder CN IDE 1.2.3');
+  assert.ok(second);
+  assert.equal(powershellCalls.length, 1);
+});
+
+test('app-manager does not mistake the Kiro CLI registration for Kiro Desktop', () => {
+  const cliPath = 'C:\\Program Files\\Kiro CLI\\kiro.exe';
+  const record = findDesktopClientRecord('kiro', {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: {},
+    fs: {
+      existsSync(candidate) {
+        return candidate === cliPath;
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            DisplayName: 'Kiro CLI',
+            DisplayVersion: '1.0.0',
+            InstallLocation: 'C:\\Program Files\\Kiro CLI',
+            DisplayIcon: cliPath
+          }, {
+            DisplayName: 'Kiro (CLI)',
+            DisplayVersion: '1.0.0',
+            InstallLocation: 'C:\\Program Files\\Kiro CLI',
+            DisplayIcon: cliPath
+          }]),
+          stderr: ''
+        };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.equal(record, null);
+});
+
+test('app-manager finds Qoder CN Linux desktop by its package binary name', () => {
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'linux',
+    hostHomeDir: '/home/tester',
+    env: {},
+    fs: {
+      existsSync(candidate) {
+        return candidate === '/usr/bin/qoder-cn';
+      }
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.executablePath, '/usr/bin/qoder-cn');
+});
+
 test('app-manager reads a conventional Windows desktop version through file metadata', () => {
   const executablePath = 'C:\\Tools\\ChatGPT.exe';
   const calls = [];

@@ -265,6 +265,8 @@ type DesktopPlatform struct {
 	PathIncludes []string `json:"pathIncludes,omitempty"`
 	BundleID     string   `json:"bundleId,omitempty"`
 	InstallPaths []string `json:"installPaths,omitempty"`
+	// DisplayNames 是 Windows 卸载注册表里的产品名（用于安装后探测，不猜安装目录）。
+	DisplayNames []string `json:"displayNames,omitempty"`
 }
 
 // NativeCapability 描述原生 CLI 对配置、会话、MCP、Hook 和权限的边界。

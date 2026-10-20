@@ -377,15 +377,17 @@ func builtinQoder() Definition {
 			InstallRegion:          "global",
 			EnvKeys:                []string{"QODER_PERSONAL_ACCESS_TOKEN"},
 			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
-			DesktopClient: desktopClient(
+			// 官方 DMG 的实际包名是 Qoder IDE.app（可执行文件 Qoder，
+			// bundle id com.qoder.ide）；Qoder.app 只作为旧版本回退。
+			DesktopClient: describeDesktopClient(desktopClient(
 				"Qoder",
 				[]string{"Qoder"},
-				[]string{"/Qoder.app/Contents/MacOS/"},
-				[]string{"/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
+				[]string{"/Qoder IDE.app/Contents/MacOS/", "/Qoder.app/Contents/MacOS/"},
+				[]string{"/Applications/Qoder IDE.app", "{hostHomeDir}/Applications/Qoder IDE.app", "/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
 				[]string{"Qoder.exe"},
-				[]string{"Qoder.exe", "qodercli.exe"},
-				[]string{"Qoder", "qodercli"},
-			),
+				[]string{"Qoder.exe"},
+				[]string{"qoder", "Qoder"},
+			), "com.qoder.ide", []string{"Qoder IDE"}),
 		},
 		// 会话续接是 CLI 自己的事实（qodercli 1.1.72 --help 实测）：-c/--continue 续最近一段、
 		// -r/--resume [id] 按 id 续、--fork-session 在续接时分叉成新会话。aih 的统一
@@ -427,15 +429,17 @@ func builtinQoderCN() Definition {
 			InstallRegion:          "cn",
 			EnvKeys:                []string{"QODER_PERSONAL_ACCESS_TOKEN"},
 			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
-			DesktopClient: desktopClient(
+			// 国内站 DMG 的实际包名是 Qoder CN IDE.app（可执行文件 Qoder CN，
+			// bundle id com.aliyun.lingma.ide）；旧包名 Qoder.app 保留为回退。
+			DesktopClient: describeDesktopClient(desktopClient(
 				"Qoder CN",
-				[]string{"Qoder", "QoderCN"},
-				[]string{"/Qoder.app/Contents/MacOS/"},
-				[]string{"/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
-				[]string{"Qoder.exe", "qoderclicn.exe"},
-				[]string{"Qoder.exe", "qoderclicn.exe"},
-				[]string{"Qoder", "qoderclicn"},
-			),
+				[]string{"Qoder CN", "QoderCN"},
+				[]string{"/Qoder CN IDE.app/Contents/MacOS/", "/Qoder.app/Contents/MacOS/"},
+				[]string{"/Applications/Qoder CN IDE.app", "{hostHomeDir}/Applications/Qoder CN IDE.app", "/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
+				[]string{"QoderCN.exe", "Qoder CN.exe"},
+				[]string{"QoderCN.exe", "Qoder CN.exe"},
+				[]string{"qoder-cn", "qodercn", "Qoder CN", "QoderCN"},
+			), "com.aliyun.lingma.ide", []string{"Qoder CN IDE"}),
 		},
 		// 与 qoder 同源（qoderclicn 1.1.72 实测同样支持 -c/--continue、-r/--resume、--fork-session）。
 		NativeBoundary: &NativeCapability{
@@ -517,7 +521,11 @@ func builtinKiro() Definition {
 			BinaryName: "kiro-cli",
 			Package:    "",
 			EnvKeys:    []string{"KIRO_HOME", "KIRO_TEST_DB_PATH", "KIRO_API_KEY"},
-			DesktopClient: desktopClient(
+			// Kiro CLI.app 内含 kiro_cli_desktop 原生 GUI，是现有桌面启动/实例
+			// 隔离通道；Kiro.app（IDE）作为第二种落点保留。安装作业完成后的
+			// 校验优先使用安装计划回报的实际落点，因此装了 IDE 时不会被
+			// 先命中的 CLI 宿主掩盖。
+			DesktopClient: describeDesktopClient(desktopClient(
 				"Kiro",
 				[]string{"kiro_cli_desktop", "Kiro"},
 				[]string{"/Kiro CLI.app/Contents/MacOS/", "/Kiro.app/Contents/MacOS/"},
@@ -525,7 +533,7 @@ func builtinKiro() Definition {
 				[]string{"Kiro.exe"},
 				[]string{"Kiro.exe"},
 				[]string{"kiro", "Kiro"},
-			),
+			), "", []string{"Kiro"}),
 		},
 		NativeBoundary: nativeKiro(),
 	}
@@ -1089,6 +1097,22 @@ func disabledAuthOption(value AuthMode, label, description, disabledReason strin
 		Disabled:       true,
 		DisabledReason: disabledReason,
 	}
+}
+
+// describeDesktopClient 为已构造的桌面客户端补充安装后探测所需的强身份：
+// macOS bundle id 与 Windows 卸载注册表产品名。两者都存在时，探测不必依赖
+// 固定的安装目录（实际包名/安装位置由厂商安装器决定）。
+func describeDesktopClient(client *DesktopClient, macBundleID string, windowsDisplayNames []string) *DesktopClient {
+	if client == nil {
+		return nil
+	}
+	if client.MacOS != nil && macBundleID != "" {
+		client.MacOS.BundleID = macBundleID
+	}
+	if client.Windows != nil && len(windowsDisplayNames) > 0 {
+		client.Windows.DisplayNames = windowsDisplayNames
+	}
+	return client
 }
 
 // desktopClient 统一构造结构相同的跨平台桌面客户端定义。

@@ -1042,9 +1042,13 @@
               "Qoder"
             ],
             "pathIncludes": [
+              "/Qoder IDE.app/Contents/MacOS/",
               "/Qoder.app/Contents/MacOS/"
             ],
+            "bundleId": "com.qoder.ide",
             "installPaths": [
+              "/Applications/Qoder IDE.app",
+              "{hostHomeDir}/Applications/Qoder IDE.app",
               "/Applications/Qoder.app",
               "{hostHomeDir}/Applications/Qoder.app"
             ]
@@ -1055,15 +1059,17 @@
               "Qoder.exe"
             ],
             "execNames": [
-              "Qoder.exe",
-              "qodercli.exe"
+              "Qoder.exe"
+            ],
+            "displayNames": [
+              "Qoder IDE"
             ]
           },
           "linux": {
             "clientName": "Qoder",
             "execNames": [
-              "Qoder",
-              "qodercli"
+              "qoder",
+              "Qoder"
             ]
           }
         },
@@ -1177,13 +1183,17 @@
           "macos": {
             "clientName": "Qoder CN",
             "execNames": [
-              "Qoder",
+              "Qoder CN",
               "QoderCN"
             ],
             "pathIncludes": [
+              "/Qoder CN IDE.app/Contents/MacOS/",
               "/Qoder.app/Contents/MacOS/"
             ],
+            "bundleId": "com.aliyun.lingma.ide",
             "installPaths": [
+              "/Applications/Qoder CN IDE.app",
+              "{hostHomeDir}/Applications/Qoder CN IDE.app",
               "/Applications/Qoder.app",
               "{hostHomeDir}/Applications/Qoder.app"
             ]
@@ -1191,19 +1201,24 @@
           "windows": {
             "clientName": "Qoder CN",
             "processNames": [
-              "Qoder.exe",
-              "qoderclicn.exe"
+              "QoderCN.exe",
+              "Qoder CN.exe"
             ],
             "execNames": [
-              "Qoder.exe",
-              "qoderclicn.exe"
+              "QoderCN.exe",
+              "Qoder CN.exe"
+            ],
+            "displayNames": [
+              "Qoder CN IDE"
             ]
           },
           "linux": {
             "clientName": "Qoder CN",
             "execNames": [
-              "Qoder",
-              "qoderclicn"
+              "qoder-cn",
+              "qodercn",
+              "Qoder CN",
+              "QoderCN"
             ]
           }
         },
@@ -1486,6 +1501,9 @@
             ],
             "execNames": [
               "Kiro.exe"
+            ],
+            "displayNames": [
+              "Kiro"
             ]
           },
           "linux": {

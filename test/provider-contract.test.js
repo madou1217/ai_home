@@ -88,9 +88,14 @@ test('客户端形态由统一 clients 合同声明，不由 CLI 细节推断', 
 
 test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', () => {
   const qoder = AI_CLI_CONFIGS.qoder;
-
   assert.deepEqual(qoder.desktopClient.windows.processNames, ['Qoder.exe']);
-  assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe', 'qodercli.exe']);
+  assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe']);
+  assert.equal(qoder.desktopClient.windows.processNames.includes('qodercli.exe'), false);
+
+  const qoderCn = AI_CLI_CONFIGS.qodercn;
+  assert.deepEqual(qoderCn.desktopClient.windows.processNames, ['QoderCN.exe', 'Qoder CN.exe']);
+  assert.deepEqual(qoderCn.desktopClient.windows.execNames, ['QoderCN.exe', 'Qoder CN.exe']);
+  assert.equal(qoderCn.desktopClient.windows.execNames.includes('qoderclicn.exe'), false);
 });
 
 test('Codex Desktop contract recognizes the merged ChatGPT executable on Windows', () => {

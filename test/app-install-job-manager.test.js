@@ -136,6 +136,28 @@ test('app install job exposes failed result without throwing into the HTTP calle
   assert.match(job.error, /permission denied/);
 });
 
+test('desktop install waits briefly for the installed client to become visible', async () => {
+  let verificationCalls = 0;
+  const manager = createAppInstallJobManager({
+    resolveDesktopInstallPlans: () => [
+      { id: 'official-installer', label: 'official installer', command: 'installer', args: [] }
+    ],
+    runInstallPlan: async () => ({ ok: true, status: 0 }),
+    verifyRetries: 3,
+    verifyRetryDelayMs: 1,
+    verifyDesktopInstall: async () => {
+      verificationCalls += 1;
+      return verificationCalls >= 3 ? { executablePath: '/Applications/OpenCode.app' } : null;
+    }
+  });
+
+  const started = manager.start({ provider: 'opencode', kind: 'desktop' });
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+
+  assert.equal(verificationCalls, 3);
+  assert.equal(manager.getJob(started.job.id).result.executablePath, '/Applications/OpenCode.app');
+});
+
 test('desktop install only succeeds after the installed client is rediscovered', async () => {
   const verificationResults = [null, { executablePath: '/Applications/OpenCode.app' }];
   const manager = createAppInstallJobManager({
@@ -156,6 +178,65 @@ test('desktop install only succeeds after the installed client is rediscovered',
   assert.equal(job.attempts[0].ok, false);
   assert.match(job.attempts[0].error, /未检测到目标 Desktop 应用/);
   assert.equal(job.attempts[1].ok, true);
+});
+
+test('desktop install verification prefers the path reported by the install plan', async () => {
+  const verifications = [];
+  const manager = createAppInstallJobManager({
+    resolveDesktopInstallPlans: () => [
+      { id: 'official-dmg', label: 'official dmg', command: 'bash', args: [] }
+    ],
+    runInstallPlan: async () => ({
+      ok: true,
+      status: 0,
+      stdout: [
+        'installing...',
+        'AIH_DESKTOP_INSTALLED_PATH="/Users/test/Applications/Qoder CN IDE.app"',
+        'AIH_DESKTOP_INSTALLED_PATH="/Users/test/Applications/Qoder CN IDE.app"'
+      ].join('\n'),
+      stderr: ''
+    }),
+    verifyDesktopInstall: async (provider, options) => {
+      verifications.push({ provider, installedPath: options.installedPath });
+      return { executablePath: '/Users/test/Applications/Qoder CN IDE.app/Contents/MacOS/Qoder CN' };
+    }
+  });
+
+  const started = manager.start({ provider: 'qodercn', kind: 'desktop' });
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+
+  assert.deepEqual(verifications, [{
+    provider: 'qodercn',
+    installedPath: '/Users/test/Applications/Qoder CN IDE.app'
+  }]);
+  assert.equal(
+    manager.getJob(started.job.id).result.executablePath,
+    '/Users/test/Applications/Qoder CN IDE.app/Contents/MacOS/Qoder CN'
+  );
+});
+
+test('desktop install verification falls back to stderr when the plan reports there', async () => {
+  const verifications = [];
+  const manager = createAppInstallJobManager({
+    resolveDesktopInstallPlans: () => [
+      { id: 'official-dmg', label: 'official dmg', command: 'bash', args: [] }
+    ],
+    runInstallPlan: async () => ({
+      ok: true,
+      status: 0,
+      stdout: 'done',
+      stderr: 'AIH_DESKTOP_INSTALLED_PATH=/Users/test/Applications/Kimi.app'
+    }),
+    verifyDesktopInstall: async (provider, options) => {
+      verifications.push(options.installedPath);
+      return { executablePath: '/Users/test/Applications/Kimi.app/Contents/MacOS/Kimi' };
+    }
+  });
+
+  const started = manager.start({ provider: 'kimi', kind: 'desktop' });
+  await waitFor(() => manager.getJob(started.job.id)?.status === 'succeeded');
+
+  assert.deepEqual(verifications, ['/Users/test/Applications/Kimi.app']);
 });
 
 test('Kimi macOS Desktop 通过统一异步任务执行官方安装计划并回流可执行路径', async () => {

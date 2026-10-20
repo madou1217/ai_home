@@ -163,7 +163,9 @@ test('Kimi Desktop Windows 安装器校验官方跳转、Authenticode 与发布�
   assert.match(script, /\/app\/download\/windows\/kimi_/);
   assert.match(script, /Get-AuthenticodeSignature/);
   assert.match(script, /SignerCertificate\.Subject -notmatch 'Moonshot'/);
-  assert.match(script, /Start-Process .* -ArgumentList '\/S' -Wait -PassThru/);
+  assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -Wait -PassThru/);
+  assert.match(script, /3010/);
+  assert.match(script, /管理员权限/);
   assert.match(script, /Remove-Item -Force \$dest/);
 });
 
@@ -260,4 +262,79 @@ test('IDE 应用插件同时声明宿主描述与安装方式，IDE 注册表从
     assert.ok(client.configDirectoryName);
   }
   assert.equal(typeof INSTALLERS.claude.desktopConfigPath, 'function');
+});
+
+function resolveDesktopPlans(provider, platform, arch = 'arm64') {
+  return getAppInstaller(provider).resolveDesktopInstallPlans({
+    platform,
+    processObj: {
+      platform: platform === 'windows' ? 'win32' : (platform === 'linux' ? 'linux' : 'darwin'),
+      arch,
+      env: {}
+    }
+  });
+}
+
+test('macOS Desktop 安装计划回报 DMG 的实际落点，而不是只写进猜测路径', () => {
+  for (const provider of ['qoder', 'qodercn', 'kiro', 'kimi', 'agy', 'zcode']) {
+    const [plan] = resolveDesktopPlans(provider, 'macos', 'arm64');
+    assert.ok(plan, `${provider} 应提供 macOS 安装计划`);
+    const script = plan.args.at(-1);
+    assert.match(script, /AIH_DESKTOP_INSTALLED_PATH=\$/, `${provider} 必须回报实际安装落点`);
+  }
+});
+
+test('Qoder 系列安装器对齐官方包名、用户级安装器与静默参数', () => {
+  const [qoderMac] = resolveDesktopPlans('qoder', 'macos', 'arm64');
+  const qoderMacScript = qoderMac.args.at(-1);
+  assert.match(qoderMacScript, /-name 'Qoder IDE\.app'/);
+  assert.match(qoderMacScript, /installed="\$HOME\/Applications\/\$\(basename "\$app"\)"/);
+
+  const [qoderCnMac] = resolveDesktopPlans('qodercn', 'macos', 'arm64');
+  const qoderCnMacScript = qoderCnMac.args.at(-1);
+  assert.match(qoderCnMacScript, /-name 'Qoder CN IDE\.app'/);
+
+  const [qoderWindows] = resolveDesktopPlans('qoder', 'windows', 'x64');
+  const qoderWindowsScript = qoderWindows.args.at(-1);
+  assert.match(qoderWindowsScript, /QoderIDEUserSetup-x64\.exe/);
+  assert.match(qoderWindowsScript, /-ArgumentList @\('\/VERYSILENT', '\/SUPPRESSMSGBOXES', '\/NORESTART', '\/SP-'\)/);
+
+  // 国内站必须使用 UserSetup（用户级，不弹 UAC），而不是机器级 Setup。
+  const [qoderCnWindows] = resolveDesktopPlans('qodercn', 'windows', 'x64');
+  const qoderCnWindowsScript = qoderCnWindows.args.at(-1);
+  assert.match(qoderCnWindowsScript, /QoderCNIDEUserSetup-x64\.exe/);
+  assert.doesNotMatch(qoderCnWindowsScript, /QoderCNIDESetup-x64\.exe/);
+  assert.match(qoderCnWindowsScript, /-ArgumentList @\('\/VERYSILENT', '\/SUPPRESSMSGBOXES', '\/NORESTART', '\/SP-'\)/);
+  assert.match(qoderCnWindowsScript, /-PassThru/);
+  assert.match(qoderCnWindowsScript, /3010/);
+  assert.match(qoderCnWindowsScript, /管理员权限/);
+});
+
+test('Kiro Desktop 从官方 metadata 解析安装包并静默安装', () => {
+  const [macPlan] = resolveDesktopPlans('kiro', 'macos', 'arm64');
+  const macScript = macPlan.args.at(-1);
+  assert.match(macScript, /prod\.download\.desktop\.kiro\.dev\/stable\/metadata-\$target-stable\.json/);
+  assert.match(macScript, /dmg-darwin-arm64/);
+  assert.doesNotMatch(macScript, /kiro\.dev\/downloads/);
+
+  const [windowsPlan] = resolveDesktopPlans('kiro', 'windows', 'x64');
+  const windowsScript = windowsPlan.args.at(-1);
+  assert.match(windowsScript, /metadata-win32-\$arch-user-stable\.json/);
+  assert.doesNotMatch(windowsScript, /kiro\.dev\/downloads/);
+  assert.match(windowsScript, /-ArgumentList @\('\/VERYSILENT', '\/SUPPRESSMSGBOXES', '\/NORESTART', '\/SP-'\)/);
+  assert.match(windowsScript, /3010/);
+  assert.match(windowsScript, /管理员权限/);
+});
+
+test('Windows 可执行安装器统一使用静默参数、退出码校验与 UAC 提示', () => {
+  const providers = ['opencode', 'zcode', 'agy', 'kimi'];
+  for (const provider of providers) {
+    const [plan] = resolveDesktopPlans(provider, 'windows', 'x64');
+    assert.ok(plan, `${provider} 应提供 Windows 安装计划`);
+    const script = plan.args.at(-1);
+    assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -Wait -PassThru/, provider);
+    assert.match(script, /3010/, provider);
+    assert.match(script, /管理员权限/, provider);
+    assert.match(script, /安装器退出码/, provider);
+  }
 });

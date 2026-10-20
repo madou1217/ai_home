@@ -60,7 +60,15 @@ test('声明式生命周期：没装的工具在本机可装，装过的才谈�
 });
 
 test('安装计划按平台给真命令：Homebrew / apt（免密 sudo）/ Windows 官方压缩包', () => {
-  const plan = (platform) => planManagedToolAction({ toolId: 'nginx', action: 'install' }, { platform });
+  // 计划只取决于声明的平台：不能因为 CI runner 恰好用 apt 装了 nginx（或本机 PATH 有它）
+  // 就把「安装计划」判成 already_installed。探测面显式清空。
+  const plan = (platform) => planManagedToolAction({ toolId: 'nginx', action: 'install' }, {
+    platform,
+    networkRuntime: {},
+    resolveCommandPath: () => '',
+    hostHomeDir: '/nonexistent-aih-home',
+    env: { LOCALAPPDATA: '/nonexistent-localappdata' }
+  });
 
   const mac = plan('darwin');
   assert.equal(mac.ok, true);

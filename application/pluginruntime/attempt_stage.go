@@ -256,7 +256,11 @@ func (state *attemptState) enter(ctx context.Context, index int) attemptSummary 
 		nextCalled = true
 		mu.Unlock()
 		disarm()
-		innerOnce.Do(func() { inner = state.enter(reverseCtx, index+1) })
+		// 内层尝试属于请求，不属于这次反向调用：next() 的摘要可能在提交点提前结算并让反向
+		// 调用立刻结束，而真实上游仍在用这个 Context 记录终态。若把 reverseCtx（连接层在反向
+		// 调用结束时取消）传下去，慢 runner 上 RecordSuccess 会拿到 context canceled 并以 503
+		// 结束一个已经成功的请求。请求取消仍经外层 ctx 传播。
+		innerOnce.Do(func() { inner = state.enter(ctx, index+1) })
 		arm()
 		// 交给插件的是摘要 + 宿主侧已收窄的状态（stopped / rejected），不是内部摘要结构。
 		return state.flags(inner), nil

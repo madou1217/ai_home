@@ -69,10 +69,14 @@ type fakeAttemptRun struct {
 	action string
 	err    error
 	onRun  func()
+	onCtx  func(context.Context)
 }
 
-func (run *fakeAttemptRun) run(context.Context) (AttemptRun, error) {
+func (run *fakeAttemptRun) run(ctx context.Context) (AttemptRun, error) {
 	run.hits++
+	if run.onCtx != nil {
+		run.onCtx(ctx)
+	}
 	if run.onRun != nil {
 		run.onRun()
 	}
@@ -160,6 +164,46 @@ func TestAttemptStageRunsTheAttemptOnceAndSettlesNextAtTheCommitPoint(t *testing
 	if len(value) != 5 || value["provider"] != "claude" || value["model"] != "claude-opus-5" ||
 		value["attempt"] != float64(0) || value["accountRef"] != "acct_00000000000000000001" || value["authType"] != "oauth" {
 		t.Fatalf("plugin input=%v", value)
+	}
+}
+
+// next() 的摘要在提交点提前结算后就会返回，连接层随即取消这次反向调用的 Context。
+// 真实尝试仍在这之后记录终态，所以它必须挂在请求 Context 上；否则慢机器上成功请求会以
+// context canceled 变成 503（与 test/plugin-gateway-go.test.js 的 attempt 用例同源）。
+func TestAttemptStageKeepsTheRunOnTheRequestContextAfterNextReturns(t *testing.T) {
+	probe := newCommitProbe()
+	nextReturned := make(chan struct{})
+	runContextErr := make(chan error, 1)
+	run := &fakeAttemptRun{action: "return"}
+	run.onCtx = func(ctx context.Context) {
+		probe.Fire()
+		<-nextReturned
+		runContextErr <- ctx.Err()
+	}
+	invoker := &fakeAttemptInvoker{respond: func(ctx context.Context, _ map[string]any, next ReverseCall) (string, error) {
+		reverseCtx, cancel := context.WithCancel(ctx)
+		flags, err := next(reverseCtx, attemptNextMethod, nil)
+		cancel()
+		close(nextReturned)
+		if err != nil {
+			return "", err
+		}
+		encoded, _ := json.Marshal(flags)
+		return string(encoded), nil
+	}}
+
+	result := RunAttemptStage(
+		context.Background(),
+		invoker,
+		attemptProjectionOf(attemptContribution("a.attempt", 0, "deny")),
+		attemptRequest(run, probe),
+		AttemptOptions{},
+	)
+	if result.Err != nil || !result.Started || run.hits != 1 {
+		t.Fatalf("result=%+v hits=%d", result, run.hits)
+	}
+	if err := <-runContextErr; err != nil {
+		t.Fatalf("attempt context canceled after next() returned: %v", err)
 	}
 }
 

@@ -163,7 +163,10 @@ test('Kimi Desktop Windows 安装器校验官方跳转、Authenticode 与发布�
   assert.match(script, /\/app\/download\/windows\/kimi_/);
   assert.match(script, /Get-AuthenticodeSignature/);
   assert.match(script, /SignerCertificate\.Subject -notmatch 'Moonshot'/);
-  assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -Wait -PassThru/);
+  assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -PassThru/);
+  // 不能等整棵进程树：安装器会拉起应用，-Wait 会一直卡到应用退出。
+  assert.doesNotMatch(script, /-Wait/);
+  assert.match(script, /WaitForExit\(1200000\)/);
   assert.match(script, /3010/);
   assert.match(script, /管理员权限/);
   assert.match(script, /Remove-Item -Force \$dest/);
@@ -308,6 +311,13 @@ test('Qoder 系列安装器对齐官方包名、用户级安装器与静默参�
   assert.match(qoderCnWindowsScript, /-PassThru/);
   assert.match(qoderCnWindowsScript, /3010/);
   assert.match(qoderCnWindowsScript, /管理员权限/);
+  // Windows PowerShell 5.1 的 Invoke-WebRequest 下载大安装包会卡死；
+  // 有 curl.exe 时优先用它，并保留无 curl 环境的回落。
+  assert.match(qoderCnWindowsScript, /Get-Command curl\.exe/);
+  assert.match(qoderCnWindowsScript, /--speed-time 60/);
+  assert.match(qoderCnWindowsScript, /Invoke-WebRequest/);
+  // `if (...) { ... }; else { ... }` 在 PowerShell 里是语法错误（真机踩过）。
+  assert.doesNotMatch(qoderCnWindowsScript, /\}\s*;\s*else/);
 });
 
 test('Kiro Desktop 从官方 metadata 解析安装包并静默安装', () => {
@@ -324,6 +334,8 @@ test('Kiro Desktop 从官方 metadata 解析安装包并静默安装', () => {
   assert.match(windowsScript, /-ArgumentList @\('\/VERYSILENT', '\/SUPPRESSMSGBOXES', '\/NORESTART', '\/SP-'\)/);
   assert.match(windowsScript, /3010/);
   assert.match(windowsScript, /管理员权限/);
+  assert.match(windowsScript, /Get-Command curl\.exe/);
+  assert.match(windowsScript, /--speed-time 60/);
 });
 
 test('Windows 可执行安装器统一使用静默参数、退出码校验与 UAC 提示', () => {
@@ -332,9 +344,15 @@ test('Windows 可执行安装器统一使用静默参数、退出码校验与 UA
     const [plan] = resolveDesktopPlans(provider, 'windows', 'x64');
     assert.ok(plan, `${provider} 应提供 Windows 安装计划`);
     const script = plan.args.at(-1);
-    assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -Wait -PassThru/, provider);
+    assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -PassThru/, provider);
+    assert.doesNotMatch(script, /-Wait/, provider);
+    assert.match(script, /WaitForExit\(1200000\)/, provider);
     assert.match(script, /3010/, provider);
     assert.match(script, /管理员权限/, provider);
     assert.match(script, /安装器退出码/, provider);
+    // 大安装包必须走 curl（Invoke-WebRequest 会卡死），并保留无 curl 时的回落。
+    assert.match(script, /Get-Command curl\.exe/, provider);
+    assert.match(script, /--speed-time 60/, provider);
+    assert.doesNotMatch(script, /\}\s*;\s*else/, provider);
   }
 });

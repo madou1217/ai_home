@@ -18,6 +18,52 @@ test('Windows async installer can execute npm.cmd without spawn EINVAL', { skip:
   assert.equal(result.ok, true, result.error || result.stderr);
   assert.match(result.stdout, /\d+\.\d+\.\d+/);
 });
+test('runInstallPlanAsync kills a hung installer and reports partial output', async () => {
+  const { EventEmitter } = require('node:events');
+  const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+  const child = new EventEmitter();
+  child.pid = 4321;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  let killed = 0;
+  child.kill = () => { killed += 1; };
+  const result = await runInstallPlanAsync({ command: 'powershell.exe', args: [], timeoutMs: 30 }, {
+    processObj: { platform: 'linux', env: {} },
+    spawn: () => {
+      setTimeout(() => child.stdout.emit('data', 'partial-output'), 1);
+      return child;
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /^timeout_30ms/);
+  assert.equal(result.stdout, 'partial-output');
+  assert.equal(killed, 1);
+});
+
+test('runInstallPlanAsync terminates the Windows installer process tree on timeout', async () => {
+  const { EventEmitter } = require('node:events');
+  const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+  const calls = [];
+  const spawn = (command, args) => {
+    calls.push({ command, args });
+    const child = new EventEmitter();
+    child.pid = 7788;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    return child;
+  };
+  const result = await runInstallPlanAsync({ command: 'powershell.exe', args: [], timeoutMs: 30 }, {
+    processObj: { platform: 'win32', env: {} },
+    spawn
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /^timeout_30ms/);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].command, 'taskkill.exe');
+  assert.deepEqual(calls[1].args, ['/pid', '7788', '/T', '/F']);
+});
+
 const {
   collectNativeCliPathEntries,
   resolveNativeCliInstallPlans,

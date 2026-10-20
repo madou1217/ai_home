@@ -145,6 +145,33 @@ test('failures that are not about the model are not papered over by switching mo
   }
 });
 
+// 2026-10-19 13:27–15:15：glm-5.3-flash-free 连续 254 次以 **429** 回 Zen 的
+// 「Upstream request failed: Endpoint is unavailable.」，只认 5xx 的互备一次都没换模型。
+test('the Zen endpoint-unavailable error switches models whatever the status code, but a quota 429 does not', async () => {
+  const endpointUnavailable = JSON.stringify({ error: { type: 'server_error', message: 'Upstream request failed: Endpoint is unavailable.' } });
+  const modelUnavailable = JSON.stringify({ error: { type: 'server_error', message: 'Upstream request failed: Model is unavailable.' } });
+  for (const [status, body] of [[429, endpointUnavailable], [400, modelUnavailable]]) {
+    const tried = [];
+    const served = await fetchWithFreeModelFallback(async (model) => {
+      tried.push(model);
+      if (model === 'opencode/glm-5.3-flash-free') throw httpError(status, body);
+      return model;
+    }, { requestedModel: 'opencode/glm-5.3-flash-free', candidates: ['opencode/beam-free'], health: createFreeModelHealth() });
+    assert.equal(served.model, 'opencode/beam-free', `status ${status}`);
+    assert.deepEqual(tried, ['opencode/glm-5.3-flash-free', 'opencode/beam-free']);
+  }
+
+  // 真正的时间限流（FreeUsageLimitError）说的是出口/额度，换模型救不了。
+  const freeUsageLimit = JSON.stringify({ type: 'error', error: { type: 'FreeUsageLimitError', message: 'Free usage limit reached' } });
+  const tried = [];
+  await assert.rejects(fetchWithFreeModelFallback(async (model) => {
+    tried.push(model);
+    throw httpError(429, freeUsageLimit);
+  }, { requestedModel: 'opencode/glm-5.3-flash-free', candidates: ['opencode/beam-free'], health: createFreeModelHealth() }),
+  (error) => error.statusCode === 429);
+  assert.deepEqual(tried, ['opencode/glm-5.3-flash-free']);
+});
+
 test('a candidate that rejects the request is skipped; one hitting an account/egress limit stops the chain', async () => {
   const health = createFreeModelHealth();
   const served = await fetchWithFreeModelFallback(async (model) => {

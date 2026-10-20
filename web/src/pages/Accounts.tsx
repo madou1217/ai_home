@@ -338,6 +338,29 @@ export default function Accounts() {
       : `${rewardsJob.actionLabel}：进行中 ${rewardsJob.progress.completed}/${rewardsJob.progress.total}`)
     : '';
 
+  const renderProviderActivityActions = () => (
+    <Space size={8} wrap>
+      {visibleActivityActions.map(({ action, providers }) => (
+        <Button
+          key={action.id}
+          size="small"
+          icon={<GiftOutlined />}
+          title={action.description || action.label}
+          loading={rewardsJob?.actionId === action.id ? rewardsRunning : false}
+          disabled={rewardsRunning}
+          onClick={() => void runProviderRewards(action, providers)}
+        >
+          {action.label}
+        </Button>
+      ))}
+      {rewardsProgressText ? (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {rewardsProgressText}
+        </Typography.Text>
+      ) : null}
+    </Space>
+  );
+
   useEffect(() => {
     if (!accountRouteTarget) return;
     // 从仪表盘错误跳入账号页时，确保目标账号不会被 provider/status 过滤掉。
@@ -1103,29 +1126,10 @@ export default function Accounts() {
           onChange={(key) => setActiveProvider(key)}
           items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
         />
-        {/* 供应商动作放在 tab 内容区顶部，不塞进 tab 栏；“全部”不显示任何动作。 */}
-        {visibleActivityActions.length > 0 || rewardsProgressText ? (
+        {/* 卡片视图：供应商动作放在 tab 内容区顶部；列表视图把它并到“可用 n”同一行。 */}
+        {viewMode === 'card' && (visibleActivityActions.length > 0 || rewardsProgressText) ? (
           <div className="accounts-activity-bar">
-            <Space size={8} wrap>
-              {visibleActivityActions.map(({ action, providers }) => (
-                <Button
-                  key={action.id}
-                  size="small"
-                  icon={<GiftOutlined />}
-                  title={action.description || action.label}
-                  loading={rewardsJob?.actionId === action.id ? rewardsRunning : false}
-                  disabled={rewardsRunning}
-                  onClick={() => void runProviderRewards(action, providers)}
-                >
-                  {action.label}
-                </Button>
-              ))}
-              {rewardsProgressText ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {rewardsProgressText}
-                </Typography.Text>
-              ) : null}
-            </Space>
+            {renderProviderActivityActions()}
           </div>
         ) : null}
         {viewMode === 'card' ? (
@@ -1184,6 +1188,11 @@ export default function Accounts() {
                 )}
               </Space>
             }
+            toolBarRender={() => (
+              visibleActivityActions.length > 0 || rewardsProgressText
+                ? [renderProviderActivityActions()]
+                : []
+            )}
             dataSource={filteredAccounts}
             columns={columns}
             rowKey={(record) => record.accountRef}

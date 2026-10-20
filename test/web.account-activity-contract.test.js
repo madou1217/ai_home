@@ -23,6 +23,9 @@ test('账号页把 activityActions 渲染成供应商内容区动作按钮与账
   assert.match(page, /const visibleActivityActions = useMemo/);
   assert.match(page, /if \(activeProvider === 'all'\) return \[\];/);
   assert.match(page, /accounts-activity-bar/);
+  // 列表视图把动作放进 ProTable 右侧 toolBarRender，与左侧“可用 n”状态同一行。
+  assert.match(page, /toolBarRender=\{\(\) => \(/);
+  assert.match(page, /renderProviderActivityActions/);
   assert.doesNotMatch(page, /tabBarExtraContent/);
   // 批量领取是异步任务：开始后轮询进度，不再同步等待全部账号。
   assert.match(page, /accountsAPI\.startAccountActivityJob/);

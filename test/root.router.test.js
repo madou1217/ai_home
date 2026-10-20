@@ -151,6 +151,25 @@ test('runCliRootRouter routes global usage to model accounting', async () => {
   assert.equal(h.events.some((event) => event.startsWith('ai:')), false);
 });
 
+test('runCliRootRouter routes claim before ai cli fallback', async () => {
+  const calls = [];
+  const h = createHarness({
+    claimContext: { aiHomeDir: '/tmp/aih-home' },
+    runClaimCommand: async (args, context) => {
+      calls.push({ args, context });
+      return 0;
+    }
+  });
+
+  await runCliRootRouter(['claim', 'qoder', '--dry-run'], h.deps);
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].args, ['qoder', '--dry-run']);
+  assert.equal(calls[0].context.aiHomeDir, '/tmp/aih-home');
+  assert.equal(h.events.some((event) => event.startsWith('ai:')), false);
+  assert.equal(h.getExitCode(), 0);
+});
+
 test('runCliRootRouter routes sessions before ai cli fallback', async () => {
   const calls = [];
   const h = createHarness({

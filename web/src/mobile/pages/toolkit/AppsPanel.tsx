@@ -8,6 +8,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SettingOutlined,
   StarFilled,
   StopOutlined
 } from '@ant-design/icons';
@@ -26,6 +27,7 @@ import { toolkitRequestError as requestError } from '@/components/toolkit/reques
 import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
+import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
 import { renderAccountRegionTag } from '@/features/accounts/AccountBadges';
 import MobileBoot from '@/mobile/MobileBoot';
 import {
@@ -55,6 +57,11 @@ function canLaunch(app: ManagedAppItem) {
   return app.installed && (app.type === 'cli' || app.type === 'desktop');
 }
 
+/** 与桌面卡片同一条判定：CLI 都有启动权限，Desktop/IDE 只有登记了配置文件才可进入。 */
+function canOpenAdvanced(app: ManagedAppItem) {
+  return app.type === 'cli' || Math.max(0, Number(app.configFileCount) || 0) > 0;
+}
+
 /** 应用管理：清单 + 左滑生命周期操作 + 详情抽屉 + 选择账号打开。 */
 export default function AppsPanel() {
   const {
@@ -79,6 +86,7 @@ export default function AppsPanel() {
   const [category, setCategory] = useState('ALL');
   const [detailId, setDetailId] = useState('');
   const [launchId, setLaunchId] = useState('');
+  const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{ app: ManagedAppItem; accountRef: string } | null>(null);
 
   const filteredApps = useMemo(() => {
@@ -284,9 +292,16 @@ export default function AppsPanel() {
             installingHooks={installingHooks}
             busy={Boolean(busyActionFor(detailApp))}
             onInstallHooks={() => void installHooks([detailApp.provider])}
+            onOpenAdvanced={() => setAdvancedApp(detailApp)}
           />
         ) : null}
       </DetailSheet>
+
+      <AppAdvancedSettingsModal
+        open={Boolean(advancedApp)}
+        app={advancedApp}
+        onClose={() => setAdvancedApp(null)}
+      />
 
       <DetailSheet
         open={Boolean(launchApp)}
@@ -335,12 +350,13 @@ export default function AppsPanel() {
   );
 }
 
-function AppDetail({ app, status, installingHooks, busy, onInstallHooks }: {
+function AppDetail({ app, status, installingHooks, busy, onInstallHooks, onOpenAdvanced }: {
   app: ManagedAppItem;
   status: ReactNode;
   installingHooks: boolean;
   busy: boolean;
   onInstallHooks: () => void;
+  onOpenAdvanced: () => void;
 }) {
   const hookDetail = getAppHookStatusDetail(app);
   const rows = [
@@ -360,6 +376,16 @@ function AppDetail({ app, status, installingHooks, busy, onInstallHooks }: {
   return (
     <div className={styles.sheetStack}>
       <KeyValue rows={rows} />
+      {canOpenAdvanced(app) ? (
+        <div className={styles.sheetBlock}>
+          <p className={styles.prose}>
+            {app.type === 'cli'
+              ? '启动权限与配置文件（含历史、恢复与脱敏导出）。'
+              : '管理该应用的配置文件（含历史、恢复与脱敏导出）。'}
+          </p>
+          <ActionButton icon={<SettingOutlined />} label="高级设置" disabled={busy} onClick={onOpenAdvanced} />
+        </div>
+      ) : null}
       {hookDetail ? <Note tone="warn">{hookDetail}</Note> : null}
       {app.installed && app.hookSupported && !app.hookInstalled ? (
         <div className={styles.sheetBlock}>

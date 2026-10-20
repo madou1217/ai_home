@@ -5,7 +5,6 @@ import {
   AppstoreOutlined,
   CloudSyncOutlined,
   CodeOutlined,
-  FileTextOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -13,7 +12,6 @@ import {
 } from '@ant-design/icons';
 import type { MobilePageProps } from '../mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
-import ProviderConfigPanel from '@/features/provider-config/ProviderConfigPanel';
 import AppsPanel from './toolkit/AppsPanel';
 import CliUpgradePanel from './toolkit/CliUpgradePanel';
 import DiagnosticsPanel from './toolkit/DiagnosticsPanel';
@@ -44,7 +42,6 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
   integration: [
     { id: 'apps', label: '应用管理', icon: <AppstoreOutlined /> },
     { id: 'terminals', label: '终端管理', icon: <ToolOutlined /> },
-    { id: 'provider-config', label: 'Provider 配置', icon: <FileTextOutlined /> },
     { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
     { id: 'cli-upgrade', label: 'CLI 自动升级', icon: <CloudSyncOutlined /> },
     { id: 'session-runtimes', label: '持久化工具', icon: <ToolOutlined /> }
@@ -72,8 +69,6 @@ function renderPanel(panelId: string) {
       return <AppsPanel />;
     case 'terminals':
       return <TerminalsPanel />;
-    case 'provider-config':
-      return <ProviderConfigPanel />;
     case 'edge-forwarding':
       return <EdgeForwardingPanel />;
     case 'cli-upgrade':

@@ -552,6 +552,84 @@ test('app-manager does not mistake the Kiro CLI registration for Kiro Desktop', 
   assert.equal(record, null);
 });
 
+test('app-manager ignores uninstaller and MSI host DisplayIcon values for Windows desktops', () => {
+  const installLocation = 'C:\\Program Files\\Qoder CN';
+  const executablePath = `${installLocation}\\Qoder CN.exe`;
+  const uninstallerPath = `${installLocation}\\unins000.exe`;
+  const msiHostPath = 'C:\\Windows\\System32\\msiexec.exe';
+  const visible = new Set([executablePath, uninstallerPath, msiHostPath]);
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: {},
+    fs: {
+      existsSync(candidate) {
+        return visible.has(candidate);
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            DisplayName: 'Qoder CN IDE',
+            DisplayVersion: '1.2.3',
+            InstallLocation: installLocation,
+            DisplayIcon: uninstallerPath
+          }, {
+            DisplayName: 'Qoder CN IDE',
+            DisplayVersion: '1.2.3',
+            InstallLocation: installLocation,
+            DisplayIcon: `"${msiHostPath}",0`
+          }]),
+          stderr: ''
+        };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.executablePath, executablePath);
+});
+
+test('app-manager strips the icon index from quoted Windows DisplayIcon paths', () => {
+  const executablePath = 'C:\\Program Files\\Qoder CN\\Qoder CN.exe';
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: {},
+    fs: {
+      existsSync(candidate) {
+        return candidate === executablePath;
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            DisplayName: 'Qoder CN IDE',
+            DisplayVersion: '1.2.3',
+            DisplayIcon: `"${executablePath}",0`
+          }]),
+          stderr: ''
+        };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.executablePath, executablePath);
+});
+
 test('app-manager finds Qoder CN Linux desktop by its package binary name', () => {
   const record = findDesktopClientRecord('qodercn', {
     platform: 'linux',

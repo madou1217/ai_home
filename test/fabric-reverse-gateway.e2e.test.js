@@ -41,8 +41,6 @@ function seedCodexAccount(homeDir) {
 test('two real AIH Servers use the local Server outbound link as an automatic provider gateway', async (t) => {
   const publicHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-public-gateway-'));
   const localHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-local-gateway-'));
-  const publicPort = await freePort();
-  const localPort = await freePort();
   const publicManagementKey = 'public-management-key-fabric-e2e';
   const localManagementKey = 'local-management-key-fabric-e2e';
   const publicClientKey = 'public-client-key-fabric-e2e';
@@ -84,6 +82,12 @@ test('two real AIH Servers use the local Server outbound link as an automatic pr
   });
   const upstreamAddress = await listen(upstream);
   const upstreamUrl = `http://127.0.0.1:${upstreamAddress.port}`;
+  // 端口必须在 upstream 真正监听之后再探测：freePort 先绑定再释放，内核会立刻把刚
+  // 释放的端口复用给后一次 listen(0)（Linux 上很常见），随后 AIH 启动就会
+  // port_in_use。upstream 已占用后，两次 freePort 也不会再拿到它。
+  const publicPort = await freePort();
+  let localPort = await freePort();
+  while (localPort === publicPort) localPort = await freePort();
   const publicServer = startAihServer({
     homeDir: publicHome,
     port: publicPort,

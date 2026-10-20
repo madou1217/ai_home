@@ -16,6 +16,8 @@ export {
 } from './webui-auth-transport';
 import type {
   Account,
+  AccountActivityResult,
+  AccountActivitySummary,
   UpstreamErrorRule,
   UpstreamErrorMappingGroup,
   AccountRefreshJob,
@@ -99,6 +101,7 @@ import type {
   ProviderConfigValidationResponse,
   ManagedAppsResponse,
   ManagedAppUpdateResponse,
+  ToolPermissionSettingsResponse,
   ProviderCliUpgradeStatusResponse,
   ProviderCliUpgradeClearBrokenResponse,
   AccountAppLaunchResponse,
@@ -349,6 +352,12 @@ const buildAccountEgressPath = (provider: string, accountRef: string) => (
 const buildAccountWindowActivationPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/window-activation`
 );
+const buildAccountAliasPoolPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/alias-pool`
+);
+const buildAccountActivityPath = (provider: string, accountRef: string, actionId: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/activity/${encodeURIComponent(actionId)}`
+);
 
 export const accountsAPI = {
   // 获取所有账号
@@ -521,11 +530,19 @@ export const accountsAPI = {
     kind: 'desktop' | 'cli',
     action: 'open' | 'close' = 'open',
     terminalId?: string,
-    workdir?: string
+    workdir?: string,
+    options?: { harness?: string; model?: string }
   ): Promise<AccountAppLaunchResponse> => {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
-      { kind, action, ...(terminalId ? { terminalId } : {}), ...(workdir ? { workdir } : {}) }
+      {
+        kind,
+        action,
+        ...(terminalId ? { terminalId } : {}),
+        ...(workdir ? { workdir } : {}),
+        ...(options?.harness ? { harness: options.harness } : {}),
+        ...(options?.model ? { model: options.model } : {})
+      }
     );
     return response.data;
   },
@@ -555,6 +572,28 @@ export const accountsAPI = {
   ): Promise<AccountWindowActivationResponse> => {
     const response = await api.get<AccountWindowActivationResponse>(
       buildAccountWindowActivationPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  getAccountAliasPool: async (
+    provider: string,
+    accountRef: string
+  ): Promise<{ ok: boolean; setting: { participates: boolean } }> => {
+    const response = await api.get<{ ok: boolean; setting: { participates: boolean } }>(
+      buildAccountAliasPoolPath(provider, accountRef)
+    );
+    return response.data;
+  },
+
+  saveAccountAliasPool: async (
+    provider: string,
+    accountRef: string,
+    setting: { participates: boolean }
+  ): Promise<{ ok: boolean; setting: { participates: boolean }; reloaded?: boolean }> => {
+    const response = await api.post<{ ok: boolean; setting: { participates: boolean }; reloaded?: boolean }>(
+      buildAccountAliasPoolPath(provider, accountRef),
+      setting
     );
     return response.data;
   },
@@ -609,7 +648,7 @@ export const accountsAPI = {
   // 宿主机实测的各 Provider 桌面/CLI 入口可用性，附带桌面运行中的账号清单
   listAppEntries: async (options: { refresh?: boolean } = {}): Promise<{
     entries: Record<string, { desktop: boolean; cli: boolean }>;
-    capabilities: Record<string, { desktop: boolean; cli: boolean }>;
+    capabilities: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean }>;
     runningAccounts: string[];
     runningAccountPids: Record<string, number[]>;
     runningCliAccounts: string[];
@@ -618,7 +657,7 @@ export const accountsAPI = {
     const response = await api.get<{
       ok: boolean;
       entries: Record<string, { desktop: boolean; cli: boolean }>;
-      capabilities?: Record<string, { desktop: boolean; cli: boolean }>;
+      capabilities?: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean }>;
       runningAccounts?: string[];
       runningAccountPids?: Record<string, number[]>;
       runningCliAccounts?: string[];
@@ -656,6 +695,40 @@ export const accountsAPI = {
   /** 账号级强制恢复调度：人工覆盖，清空该账号的运行态阻塞（含余额/权限/额度类）。 */
   restoreScheduling: async (provider: string, accountRef: string): Promise<{ ok: boolean; account: Account }> => {
     const response = await api.post<{ ok: boolean; account: Account }>(`/webui/accounts/${provider}/${accountRef}/restore-scheduling`);
+    return response.data;
+  },
+
+  /** 执行账号活动（签到 / 领取试用套餐）：单账号单动作。 */
+  runAccountActivity: async (
+    provider: string,
+    accountRef: string,
+    actionId: string
+  ): Promise<AccountActivityResult & { ok: boolean }> => {
+    const response = await api.post<AccountActivityResult & { ok: boolean }>(
+      buildAccountActivityPath(provider, accountRef, actionId),
+      undefined,
+      // 领取可能包含无痕验证码（本机 Chrome 打开约 10–20s），不能吃默认 30s 超时。
+      { timeout: 180000 }
+    );
+    return response.data;
+  },
+
+  /** 对所有声明了 activity 能力的账号执行领取（账号页工具栏入口）。 */
+  runAllAccountActivities: async (): Promise<{
+    ok: boolean;
+    capturedAt?: string;
+    results: AccountActivityResult[];
+    summary: AccountActivitySummary;
+  }> => {
+    const response = await api.post<{
+      ok: boolean;
+      capturedAt?: string;
+      results: AccountActivityResult[];
+      summary: AccountActivitySummary;
+    }>('/webui/accounts/activity/run', undefined, {
+      // 批量会逐个账号跑（ZCode 每个都要过一次验证码），给足时间。
+      timeout: 600000
+    });
     return response.data;
   },
 
@@ -2038,6 +2111,22 @@ export const toolkitAPI = {
   },
   listApps: async (): Promise<ManagedAppsResponse> => {
     const response = await api.get<ManagedAppsResponse>('/webui/toolkit/apps');
+    return response.data;
+  },
+  getAppPermissionSettings: async (appId: string): Promise<ToolPermissionSettingsResponse> => {
+    const response = await api.get<ToolPermissionSettingsResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`
+    );
+    return response.data;
+  },
+  saveAppPermissionSettings: async (
+    appId: string,
+    payload: { maxPermission: boolean; applyToHost: boolean }
+  ): Promise<ToolPermissionSettingsResponse> => {
+    const response = await api.put<ToolPermissionSettingsResponse>(
+      `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`,
+      payload
+    );
     return response.data;
   },
   checkAppUpdate: async (appId: string): Promise<ManagedAppUpdateResponse> => {

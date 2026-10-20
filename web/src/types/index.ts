@@ -188,6 +188,55 @@ export type AccountUsageSnapshot =
     }
   );
 
+/**
+ * 账号活动动作（签到 / 领取试用套餐）。
+ * 由服务端从 provider 描述符的 `activity` 能力下发，前端只渲染，不判断 provider。
+ */
+export interface AccountActivityAction {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface AccountActivityPlan {
+  planId?: string;
+  name?: string;
+  description?: string;
+  priority?: number;
+  status?: string;
+  startsAt?: string;
+  endsAt?: string;
+}
+
+/** 一次领取的执行结果（服务端 / CLI 同一形状）。 */
+export interface AccountActivityResult {
+  provider: string;
+  accountRef: string;
+  actionId?: string;
+  action?: string;
+  status: string;
+  error?: string;
+  message?: string;
+  code?: number | null;
+  auth?: boolean;
+  credits?: number;
+  claimed?: Array<Record<string, unknown>>;
+  plans?: AccountActivityPlan[];
+  plan?: AccountActivityPlan | null;
+  /** 前端补的展示名（服务端结果只带 accountRef）。 */
+  displayName?: string;
+}
+
+/** 批量领取的汇总计数。 */
+export interface AccountActivitySummary {
+  accounts: number;
+  claimed: number;
+  alreadyClaimed: number;
+  nothingClaimable: number;
+  notApplicable: number;
+  failed: number;
+}
+
 export interface Account {
   provider: Provider;
   accountRef: string;
@@ -225,6 +274,17 @@ export interface Account {
    * 客户端只消费结论，不在前端维护 provider 清单。
    */
   windowActivationSupported?: boolean;
+  /**
+   * 账号是否进入「全局别名」的自动选号池。默认 true；false 时别名请求不会自动把这个账号
+   * 拉进候选（显式钉选/手动选择仍可用）。服务端运行池里的同一字段决定路由。
+   */
+  aliasPoolParticipates?: boolean;
+  /**
+   * 可执行的账号活动（签到 / 领取试用套餐）。
+   * 由服务端从 provider 描述符的 `activity` 能力下发：空 / 缺省 = 该 provider 没有可领活动，
+   * 前端据此决定是否显示入口（不维护 provider 清单）。
+   */
+  activityActions?: AccountActivityAction[];
   /**
    * 服务端判定：该 provider 能否由**网关**服务（HTTP relay，不依赖本机 CLI）。
    * 判定唯一来源是 provider 描述符的 relay 能力（transport=http 且 clientDependent=false），
@@ -1579,6 +1639,8 @@ export interface ManagedAppItem {
   configName: string;
   configFormat: string;
   configExists: boolean;
+  /** 该应用可管理的配置文件数量（来自 Provider 配置声明表）。 */
+  configFileCount?: number;
   installed: boolean;
   version: string;
   versionSource?: {
@@ -1608,6 +1670,44 @@ export interface ManagedAppsResponse {
   total: number;
   installedCount: number;
   apps: ManagedAppItem[];
+}
+
+export interface ToolPermissionSettings {
+  maxPermission: boolean;
+  applyToHost: boolean;
+  updatedAt: number;
+}
+
+export interface ToolPermissionCapability {
+  maxSupported: boolean;
+  maxArgs: string[];
+  /** 不支持最大权限时的可读原因（已包含应用名）。 */
+  maxReason: string;
+  hostSupported: boolean;
+  hostFileId: string;
+  hostDisplayPath: string;
+  hostExists: boolean;
+  hostWritable: boolean;
+  hostRequiresElevation: boolean;
+  hostReason: string;
+}
+
+export interface ToolPermissionSettingsResponse {
+  ok: boolean;
+  appId: string;
+  provider: string;
+  label: string;
+  settings: ToolPermissionSettings;
+  capability: ToolPermissionCapability;
+  hostApply?: {
+    supported: boolean;
+    applied: boolean;
+    changed: boolean;
+    fileId?: string;
+    displayPath?: string;
+    revision?: string;
+    reason?: string;
+  } | null;
 }
 
 // provider CLI 自动升级（只读状态面）。字段与 ~/.ai_home/run/provider-cli-upgrade.json

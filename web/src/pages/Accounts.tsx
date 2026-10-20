@@ -44,11 +44,12 @@ import {
   HistoryOutlined,
   ReloadOutlined,
   ClockCircleOutlined,
+  GiftOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
-import type { Account } from '@/types';
+import type { Account, AccountActivityResult } from '@/types';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
@@ -63,6 +64,7 @@ import {
   canEditAccountRoutingRules,
   canReauthAccount,
   canRestoreAccountScheduling,
+  canRunAccountActivity,
   getAccountDisplayState,
   getReauthActionLabel,
   getUsageSortValue,
@@ -117,6 +119,7 @@ import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
+import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
 import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
 import { useAccountEgressSummary } from '@/features/egress-upstream/use-account-egress-summary';
@@ -254,6 +257,10 @@ export default function Accounts() {
   // 账号出口摘要：列表 / 卡片上的出口徽标与「批量设置出口」共用（见 features/egress-upstream）。
   const egressSummary = useAccountEgressSummary();
   const [bulkEgressOpen, setBulkEgressOpen] = useState(false);
+  // 账号福利（签到 / 领取试用套餐）：请求与结果状态留在页面，展示交给 AccountActivityModal。
+  const [rewardsRunning, setRewardsRunning] = useState(false);
+  const [rewardsOpen, setRewardsOpen] = useState(false);
+  const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
   const renderEgressBadge = (record: Account) => (
     <AccountEgressBadge
       entry={egressSummary.byAccount.get(getAccountRef(record))}
@@ -310,6 +317,61 @@ export default function Accounts() {
     openAddAccountModal(resolveAddAccountDefaultProvider(activeProvider));
   };
 
+  // 领取结果只带 provider + accountRef；展示名由页面补（与账号行同一套文案）。
+  const presentRewards = (results: AccountActivityResult[]) => {
+    setRewardsResults(results.map((result) => {
+      const record = accounts.find((item) => (
+        item.provider === result.provider && item.accountRef === result.accountRef
+      ));
+      return {
+        ...result,
+        displayName: record ? getAccountPrimaryLabel(record) : (result.accountRef || result.provider)
+      };
+    }));
+    setRewardsOpen(true);
+  };
+
+  const runAllRewards = async () => {
+    if (rewardsRunning) return;
+    setRewardsRunning(true);
+    try {
+      const response = await accountsAPI.runAllAccountActivities();
+      presentRewards(response.results || []);
+      const summary = response.summary;
+      if (summary && summary.claimed > 0) {
+        message.success(`已领取 ${summary.claimed} 个账号的福利`);
+      } else if (summary && summary.failed > 0) {
+        message.warning('部分账号领取失败，详情见结果');
+      } else if (summary && summary.alreadyClaimed > 0) {
+        message.info('今天已经领过了');
+      } else {
+        message.info('当前没有可领取的活动');
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.error || error?.message || '领取失败');
+    } finally {
+      setRewardsRunning(false);
+    }
+  };
+
+  const runOneReward = async (record: Account, actionId: string) => {
+    if (rewardsRunning) return;
+    setRewardsRunning(true);
+    try {
+      const result = await accountsAPI.runAccountActivity(record.provider, record.accountRef, actionId);
+      presentRewards([result]);
+      if (result.status === 'claimed') {
+        message.success(`${getAccountPrimaryLabel(record)}：领取成功`);
+      } else if (result.status === 'error') {
+        message.warning(`${getAccountPrimaryLabel(record)}：${result.error || result.message || '领取失败'}`);
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.error || error?.message || '领取失败');
+    } finally {
+      setRewardsRunning(false);
+    }
+  };
+
   // 账号操作菜单（⋮）—— 列表列与卡片视图共用同一套 items + 点击分发，避免逻辑分叉。
   // 需要重新登录的账号只有重新登录一件事可做：调度规则是第三方上游专属，
   // 登录态账号本来就没有入口。
@@ -362,6 +424,15 @@ export default function Accounts() {
     if (canRestoreAccountScheduling(record)) {
       menuItems.push({ key: 'restore-scheduling', label: '恢复调度', icon: <ReloadOutlined /> });
     }
+    // 账号福利（签到 / 领取试用套餐）：动作来自服务端下发的 activityActions，
+    // 前端不判断 provider（新增 provider 只加描述符）。
+    for (const action of record.activityActions || []) {
+      menuItems.push({
+        key: `activity:${action.id}`,
+        label: action.label,
+        icon: <GiftOutlined />
+      });
+    }
     menuItems.push({ key: 'account-egress', label: '出口设置', icon: <GlobalOutlined /> });
     if (canConfigureWindowActivation(record)) {
       menuItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
@@ -390,6 +461,10 @@ export default function Accounts() {
       return;
     }
     if (key === 'restore-scheduling') { handleRestoreScheduling(record); return; }
+    if (key.startsWith('activity:')) {
+      void runOneReward(record, key.slice('activity:'.length));
+      return;
+    }
     if (key === 'account-egress') {
       setAccountEgressAccount(record);
       return;
@@ -903,6 +978,15 @@ export default function Accounts() {
         // 列表自动订阅快照；账号刷新统一由行首 Logo 触发。
         extra={
           <Space size={8}>
+            {accounts.some(canRunAccountActivity) ? (
+              <Button
+                icon={<GiftOutlined />}
+                loading={rewardsRunning}
+                onClick={() => void runAllRewards()}
+              >
+                签到 / 领福利
+              </Button>
+            ) : null}
             <Button icon={<GlobalOutlined />} onClick={() => setBulkEgressOpen(true)}>
               批量设置出口
             </Button>
@@ -1025,6 +1109,11 @@ export default function Accounts() {
       <AccountWindowActivationModal
         account={accountWindowActivationAccount}
         onClose={() => setAccountWindowActivationAccount(null)}
+      />
+      <AccountActivityModal
+        open={rewardsOpen}
+        results={rewardsResults}
+        onClose={() => setRewardsOpen(false)}
       />
     </PageScaffold>
   );

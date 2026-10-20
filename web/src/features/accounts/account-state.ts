@@ -131,6 +131,15 @@ export function canConfigureWindowActivation(record: Pick<Account, 'windowActiva
 }
 
 /**
+ * 账号活动（签到 / 领试用套餐）入口 —— 动作清单由服务端 provider 描述符下发
+ * （lib/providers/defs/<id>.js 的 activity 能力），客户端只消费结论：
+ * 没有动作 = 该 provider 没有可领活动，不显示入口。
+ */
+export function canRunAccountActivity(record: Pick<Account, 'activityActions'>) {
+  return Array.isArray(record.activityActions) && record.activityActions.length > 0;
+}
+
+/**
  * 账号级强制恢复调度入口 —— 只在账号当前确实被运行态阻塞时出现。
  * 与调度规则解耦：调度规则是「第三方上游错误码映射」（只对特定账号开放），恢复调度是
  * 「人工确认外部条件已恢复」的运维动作，对所有被阻塞的账号都成立（登录态失效除外，

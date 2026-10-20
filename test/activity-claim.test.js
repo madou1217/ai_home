@@ -21,7 +21,12 @@ const {
   buildZcodePlanUrl,
   runZcodePlanClaim
 } = require('../lib/account/activity-claim/zcode-plan');
-const { listClaimProviders, getClaimStrategy } = require('../lib/account/activity-claim');
+const {
+  getActivityAction,
+  listActivityActions,
+  listActivityProviders,
+  runActivityClaim
+} = require('../lib/account/activity-claim');
 
 const AI_HOME = '/tmp/aih-test-home';
 const EGRESS_STUB = async () => ({ ok: true, options: {} });
@@ -339,8 +344,27 @@ test('zcode preview url carries app version and platform', () => {
   assert.equal(parsed.searchParams.get('platform'), 'darwin-arm64');
 });
 
-test('claim strategy registry covers qoder, qodercn and zcode', () => {
-  assert.deepEqual(listClaimProviders(), ['qoder', 'qodercn', 'zcode']);
-  assert.equal(getClaimStrategy('QODER').provider, 'qoder');
-  assert.equal(getClaimStrategy('unknown'), null);
+test('activity 能力从 provider 描述符派生（不在本模块维护 provider 名单）', () => {
+  assert.deepEqual(listActivityProviders().sort(), ['qoder', 'qodercn', 'zcode']);
+  assert.deepEqual(listActivityActions('qoder'), [{
+    id: 'daily_checkin',
+    label: '每日签到',
+    description: '每天 10:00 (UTC+8) 重置，领取 100 Credits'
+  }]);
+  assert.deepEqual(listActivityActions('codex'), []);
+  assert.equal(getActivityAction('QODER', 'daily_checkin').handler, 'qoder-daily-checkin');
+  assert.equal(getActivityAction('qoder', 'nope'), null);
+});
+
+test('runActivityClaim fail-closed：未知 provider / 动作 / handler 都有明确错误码', async () => {
+  const unsupported = await runActivityClaim({ provider: 'codex', record: { accountRef: 'acct_x' } });
+  assert.equal(unsupported.status, 'error');
+  assert.equal(unsupported.error, 'activity_unsupported:codex');
+
+  const unknownAction = await runActivityClaim({
+    provider: 'qoder',
+    actionId: 'nope',
+    record: { accountRef: 'acct_x' }
+  });
+  assert.equal(unknownAction.error, 'activity_action_unknown:qoder:nope');
 });

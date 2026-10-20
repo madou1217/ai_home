@@ -108,6 +108,65 @@ test('策略链默认把不依赖客户端的排前面，组内保持声明顺�
   assert.deepEqual(ordered.map((strategy) => strategy.id), ['http-a', 'http-b', 'client']);
 });
 
+test('activity 能力：声明式动作 + 倒排，不写 provider 名单；坏声明当场拒绝', () => {
+  const registry = createProviderRegistry({
+    descriptors: [
+      quotaDescriptor('demo', {
+        activity: {
+          supported: true,
+          actions: [
+            { id: 'daily_checkin', label: '每日签到', handler: 'demo-daily' },
+            { id: 'trial_plan', label: '领取试用套餐', handler: 'demo-plan', description: '窗口开放时可领' }
+          ]
+        }
+      })
+    ]
+  });
+
+  assert.deepEqual(registry.listProviders('activity'), ['demo']);
+  assert.deepEqual(
+    registry.getCapability('demo', 'activity').actions.map((action) => action.id),
+    ['daily_checkin', 'trial_plan']
+  );
+  assert.equal(registry.getCapability('demo', 'activity').actions[1].description, '窗口开放时可领');
+
+  const bad = (activity) => () => registry.register({
+    contractVersion: 1,
+    id: 'broken',
+    capabilities: { quota: { supported: false, reason: 'none' }, activity }
+  });
+  // 不支持必须写原因
+  assert.throws(bad({ supported: false }), /provider_descriptor_activity_reason_missing/);
+  // 支持必须有动作
+  assert.throws(bad({ supported: true, actions: [] }), /provider_descriptor_activity_actions_empty/);
+  // 动作必须可执行：label 给 UI，handler 给宿主
+  assert.throws(bad({ supported: true, actions: [{ id: 'a', handler: 'h' }] }), /provider_descriptor_activity_action_label_missing/);
+  assert.throws(bad({ supported: true, actions: [{ id: 'a', label: 'A' }] }), /provider_descriptor_activity_action_handler_invalid/);
+  // 同一 provider 内动作 id 唯一
+  assert.throws(
+    bad({ supported: true, actions: [
+      { id: 'a', label: 'A', handler: 'h' },
+      { id: 'a', label: 'B', handler: 'h' }
+    ] }),
+    /provider_descriptor_activity_action_duplicate/
+  );
+});
+
+test('内置额度 provider 的 activity 声明可被倒排索引到', () => {
+  const registry = getProviderRegistry();
+  const providers = registry.listProviders('activity');
+  for (const provider of ['qoder', 'qodercn', 'zcode']) {
+    assert.ok(providers.includes(provider), `${provider} should declare activity`);
+    const capability = registry.getCapability(provider, 'activity');
+    assert.equal(capability.supported, true);
+    assert.ok(capability.actions.length > 0);
+    for (const action of capability.actions) {
+      assert.ok(action.label);
+      assert.ok(action.handler);
+    }
+  }
+});
+
 test('冲突策略：同一 provider 重复注册以内置优先，外部覆盖被记为可观察错误', () => {
   const registry = createProviderRegistry();
   registry.register(quotaDescriptor('demo'));

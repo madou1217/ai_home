@@ -7,6 +7,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
+  GiftOutlined,
   ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -51,6 +52,7 @@ import {
   canEditAccountRoutingRules,
   canReauthAccount,
   canRestoreAccountScheduling,
+  canRunAccountActivity,
   getReauthActionLabel,
   requiresAccountReauth
 } from '@/features/accounts/account-state';
@@ -214,6 +216,23 @@ export default function MobileAccounts(_props: MobilePageProps) {
 
   // 左滑与详情抽屉底部共用的主操作；需重新登录的账号只暴露「重新登录」。
   // 调度规则是第三方/自建上游的 API Key 账号专属，登录态与官方地址账号没有入口。
+  const runAccountReward = async (record: Account, actionId: string) => {
+    try {
+      const result = await accountsAPI.runAccountActivity(record.provider, record.accountRef, actionId);
+      if (result.status === 'claimed') {
+        message.success(`${getAccountPrimaryLabel(record)}：领取成功`);
+      } else if (result.status === 'already_claimed') {
+        message.info(`${getAccountPrimaryLabel(record)}：已经领过了`);
+      } else if (result.status === 'nothing_claimable') {
+        message.info(`${getAccountPrimaryLabel(record)}：当前没有可领活动`);
+      } else {
+        message.warning(result.error || result.message || '领取失败');
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.error || error?.message || '领取失败');
+    }
+  };
+
   const buildPrimaryActions = (record: Account): SwipeAction[] => {
     if (requiresAccountReauth(record)) {
       return [
@@ -257,6 +276,17 @@ export default function MobileAccounts(_props: MobilePageProps) {
         icon: <ReloadOutlined />,
         onAction: () => actions.handleRestoreScheduling(record)
       });
+    }
+    // 账号福利（签到 / 领试用套餐）：动作由服务端 activityActions 下发，前端不判断 provider。
+    if (canRunAccountActivity(record)) {
+      for (const action of record.activityActions || []) {
+        list.push({
+          key: `activity:${action.id}`,
+          label: action.label,
+          icon: <GiftOutlined />,
+          onAction: () => { void runAccountReward(record, action.id); }
+        });
+      }
     }
     if (canConfigureWindowActivation(record)) {
       list.push({

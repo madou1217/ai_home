@@ -202,7 +202,7 @@ function toCaptureWindowReply(
     kind: 'artifact',
     ok: true,
     url,
-    fileName: result.artifact.fileName
+    fileName: result.artifact.suggestedFileName
   };
 }
 

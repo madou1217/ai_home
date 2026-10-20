@@ -901,11 +901,15 @@
     overflow-x: auto;
     overflow-y: visible;
     padding-bottom: var(--space-2);
+    scroll-snap-type: x proximity;
   }
   .pc-provider-item {
     flex: 0 0 auto;
-    min-width: 200px;
+    width: 176px;
+    min-width: 176px;
+    max-width: 176px;
     grid-template-columns: 26px minmax(0, 1fr) 8px;
+    scroll-snap-align: start;
   }
 }
 

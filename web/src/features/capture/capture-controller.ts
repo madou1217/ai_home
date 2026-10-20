@@ -23,12 +23,15 @@ import {
   RECORDING_MAX_DURATION_MS,
   RECORDING_MAX_FRAMES
 } from './recording-settings';
+import { drawCaptureWatermark, type CaptureWatermarkSettings } from './watermark';
 
 export interface CaptureStillOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   format: 'png' | 'jpeg' | 'webp';
   baseName: string;
   quality?: number;
+  /** 开启后在编码前叠加到画面右下角。 */
+  watermark?: CaptureWatermarkSettings;
 }
 
 function fail(code: 'encode_failed', error: unknown): CaptureEncodeResult {
@@ -42,6 +45,7 @@ function abortFailure(): CaptureEncodeResult {
 
 export async function captureStill(options: CaptureStillOptions): Promise<CaptureEncodeResult> {
   try {
+    drawCaptureWatermark(options.canvas, options.watermark);
     const blob = await encodeStill({
       format: options.format,
       canvas: options.canvas,
@@ -85,13 +89,15 @@ export interface CaptureAnimationOptions {
   onEncode?: (ratio: number) => void;
   /** 录制被 60 秒上限或内存预算提前结束时回调一次。 */
   onNotice?: (notice: CaptureNotice) => void;
+  /** 开启后在每帧编码前叠加到画面右下角。 */
+  watermark?: CaptureWatermarkSettings;
 }
 
 const MS_PER_SECOND = 1000;
-/** 抓帧间隔下限：再快只会让编码器重复帧，不会提升观感。 */
-const MIN_INTERVAL_MS = 40;
-/** 单次录制允许持有的 dataURL 字符预算（约 128MB，含编码前的原始字符串）。 */
-const MAX_FRAME_DATA_CHARS = 128 * 1024 * 1024;
+/** 抓帧间隔下限：支持 60fps，同时避免空转抓重复帧。 */
+const MIN_INTERVAL_MS = 8;
+/** 单次录制允许持有的 dataURL 字符预算（约 192MB，含编码前的原始字符串）。 */
+const MAX_FRAME_DATA_CHARS = 192 * 1024 * 1024;
 /** 手动模式停止瞬间至少保留两帧，动画格式才有可播放的时长。 */
 const MIN_ANIMATION_FRAMES = 2;
 
@@ -153,8 +159,9 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
       }
       const image = await source.grab();
       if (!image) return { ok: false, failure: { code: 'encode_failed', message: 'frame_source_unavailable' } };
-      // 把 image 落成 dataURL，编码策略统一消费 dataUrl。
-      const dataUrl = toDataUrl(image, source);
+      // 把 image 落成 dataURL，编码策略统一消费 dataUrl。优先走异步 toBlob，
+      // 让 PNG 压缩离开主线程，避免 30/60fps 抓帧时 UI 长时间掉帧。
+      const dataUrl = await toDataUrl(image, source, options.watermark, options.signal);
       // 时间戳取抓帧完成时刻：DOM 栅格化本身耗时，用开始时刻会让时间轴偏快。
       const capturedAtMs = Math.round(now() - startedAt);
       frames.push({ dataUrl, atMs: capturedAtMs });
@@ -225,7 +232,12 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
   }
 }
 
-function toDataUrl(image: CanvasImageSource, source: FrameSource): string {
+function toDataUrl(
+  image: CanvasImageSource,
+  source: FrameSource,
+  watermark?: CaptureWatermarkSettings,
+  signal?: AbortSignal
+): Promise<string> {
   // 动画抓帧按 scale=1 栅格化时，抓到的 canvas 已经等于目标尺寸，直接导出
   // 省掉一次全画布 drawImage + 编码（每帧数百 ms 的主要成本之一）。
   if (
@@ -234,7 +246,8 @@ function toDataUrl(image: CanvasImageSource, source: FrameSource): string {
     image.width === source.width &&
     image.height === source.height
   ) {
-    return image.toDataURL('image/png');
+    if (watermark?.enabled) drawCaptureWatermark(image, watermark);
+    return canvasToDataUrl(image, signal);
   }
   const canvas = document.createElement('canvas');
   canvas.width = source.width;
@@ -242,7 +255,41 @@ function toDataUrl(image: CanvasImageSource, source: FrameSource): string {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('capture_canvas_context_unavailable');
   context.drawImage(image, 0, 0, source.width, source.height);
-  return canvas.toDataURL('image/png');
+  if (watermark?.enabled) drawCaptureWatermark(canvas, watermark);
+  return canvasToDataUrl(canvas, signal);
+}
+
+/**
+ * 异步导出 PNG dataURL：`toBlob` 的压缩由浏览器在后台完成，主线程只负责
+ * 一次位图快照。拿不到 toBlob 的旧环境回落到同步 toDataURL。
+ */
+function canvasToDataUrl(canvas: HTMLCanvasElement, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) return Promise.reject(new DOMException('capture_aborted', 'AbortError'));
+  if (typeof canvas.toBlob !== 'function' || typeof FileReader === 'undefined') {
+    return Promise.resolve(canvas.toDataURL('image/png'));
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (signal?.aborted) {
+        reject(new DOMException('capture_aborted', 'AbortError'));
+        return;
+      }
+      if (!blob) {
+        reject(new Error('capture_frame_encode_failed'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string' || !reader.result) {
+          reject(new Error('capture_frame_encode_failed'));
+          return;
+        }
+        resolve(reader.result);
+      };
+      reader.onerror = () => reject(new Error('capture_frame_encode_failed'));
+      reader.readAsDataURL(blob);
+    }, 'image/png');
+  });
 }
 
 function abortableDelay(

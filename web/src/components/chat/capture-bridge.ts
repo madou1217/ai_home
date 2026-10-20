@@ -7,6 +7,7 @@ import { message } from 'antd';
 import type { CaptureFormatId, RecordingSettings } from '../../features/capture';
 import {
   downloadCaptureArtifact,
+  encodePreviewDocument,
   encodePreviewSource,
   isStillCaptureFormat,
   LivePreviewFrameSource,
@@ -45,8 +46,12 @@ export interface PreviewCaptureActions {
 }
 
 export interface PreviewCaptureActionsOptions {
-  /** 当前预览容器（包含 iframe 的 stage）；每次执行时取最新值。 */
+  /** 当前预览容器（包含 iframe 的 stage）；实时取景时每次执行都取最新值。 */
   getCaptureTarget: () => HTMLElement | null;
+  /** 完整页面模式使用的原始 HTML（与预览 iframe 的 srcdoc 一致）。 */
+  getCaptureDocument?: () => string | null;
+  /** 完整页面模式的逻辑视口宽度（CSS px）；缺省回退到 target.clientWidth。 */
+  getCaptureWidth?: () => number;
 }
 
 const IDLE_STATE: PreviewCaptureState = {
@@ -103,44 +108,33 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
 
   const runFormat = useCallback(async (format: CaptureFormatId) => {
     if (busyRef.current) return;
+    const still = isStillCaptureFormat(format);
+    const preferences = readCapturePreferences();
+    const recording: RecordingSettings | undefined = still ? undefined : preferences.recording;
+    const fullPage = preferences.captureScope === 'full';
     const target = optionsRef.current.getCaptureTarget();
-    if (!target) {
+    if (!fullPage && !target) {
       message.error('预览区域不可见，请先打开预览再试');
       return;
     }
+    if (fullPage && !optionsRef.current.getCaptureDocument) {
+      message.error('当前预览不支持完整页面捕获，请切换到实时画面');
+      return;
+    }
     busyRef.current = true;
-    const still = isStillCaptureFormat(format);
     const cancelController = new AbortController();
     const stopController = new AbortController();
     cancelRef.current = cancelController;
     stopRef.current = still ? null : stopController;
-    const recording: RecordingSettings | undefined = still
-      ? undefined
-      : readCapturePreferences().recording;
     setState({
       ...IDLE_STATE,
       busy: true,
       kind: still ? 'still' : 'animation',
-      progressLabel: '正在请求屏幕共享…'
+      progressLabel: fullPage ? '正在渲染完整页面…' : '正在请求屏幕共享…'
     });
     try {
-      // 实时取景：getDisplayMedia 必须在点击手势内同步进入（create 的第一条 await）。
-      const source = await LivePreviewFrameSource.create({
-        target,
-        displaySurface: 'browser',
-        preferCurrentTab: true
-      });
-      setState((previous) => ({
-        ...previous,
-        progressLabel: still ? '正在生成截图…' : '正在录制…'
-      }));
-      const result = await encodePreviewSource({
-        source,
-        format,
-        recording,
-        signal: cancelController.signal,
-        stopSignal: still ? undefined : stopController.signal,
-        onPhase: (captured, total, elapsedMs) => {
+      const callbacks = {
+        onPhase: (captured: number, total: number | null, elapsedMs: number) => {
           if (still) return;
           setState((previous) => ({
             ...previous,
@@ -149,21 +143,60 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
             totalFrames: total
           }));
         },
-        onEncode: (ratio) => {
+        onEncode: (ratio: number) => {
           setState((previous) => ({
             ...previous,
             stopping: true,
             progressLabel: `正在编码 ${Math.round(ratio * 100)}%…`
           }));
         },
-        onNotice: (notice) => {
+        onNotice: (notice: 'duration_limit' | 'memory_limit') => {
           if (notice === 'duration_limit') {
-            message.info('已达到 60 秒录制上限，已保存前 60 秒');
+            message.info('已达到 60 秒录制上限，已保存已抓取的片段');
           } else if (notice === 'memory_limit') {
             message.warning('录制帧数据达到内存上限，已提前结束');
           }
         }
-      });
+      };
+      const result = fullPage
+        ? await (async () => {
+            const html = optionsRef.current.getCaptureDocument?.() || '';
+            if (!html.trim()) throw new Error('capture_document_unavailable');
+            return encodePreviewDocument({
+              format,
+              html,
+              width: Math.round(
+                optionsRef.current.getCaptureWidth?.() ?? target?.clientWidth ?? 0
+              ),
+              recording,
+              watermark: preferences.watermark,
+              signal: cancelController.signal,
+              stopSignal: still ? undefined : stopController.signal,
+              ...callbacks
+            });
+          })()
+        : await (async () => {
+            // 实时取景：getDisplayMedia 必须在点击手势内同步进入（create 的第一条 await）。
+            const source = await LivePreviewFrameSource.create({
+              target: target as HTMLElement,
+              displaySurface: 'browser',
+              preferCurrentTab: true,
+              frameRate: still ? undefined : recording?.fps
+            });
+            setState((previous) => ({
+              ...previous,
+              progressLabel: still ? '正在生成截图…' : '正在录制…'
+            }));
+            return encodePreviewSource({
+              source,
+              format,
+              recording,
+              watermark: preferences.watermark,
+              signal: cancelController.signal,
+              stopSignal: still ? undefined : stopController.signal,
+              ...callbacks
+            });
+          })();
       if (result.ok) {
         downloadCaptureArtifact(result.artifact);
         message.success(still ? '截图已保存' : '录制已保存');
@@ -189,7 +222,7 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
 }
 
 function failureText(raw: string): string {
-  if (raw === 'frame_source_unavailable') return '屏幕共享已结束，未抓到画面';
+  if (raw === 'frame_source_unavailable') return '未抓到可编码的画面，请重试';
   if (raw === 'webm_encoder_unavailable') return '当前浏览器不支持 WebM 录制';
   if (raw === 'webm_encode_empty') return '录制的帧数据为空，请重试';
   if (raw === 'capture_no_frames') return '没有抓到任何帧，请重试';
@@ -210,7 +243,9 @@ function unknownErrorText(error: unknown): string {
   if (raw === 'display_capture_target_detached') return '预览区域已关闭，请重试';
   if (raw === 'preview_not_visible') return '请先让预览区域完整显示在屏幕上';
   if (raw === 'Permission denied') return '需要允许共享当前标签页，才能录制实时预览';
+  if (raw === 'dom_capture_requires_window') return '当前环境不支持完整页面渲染，请切换到实时画面';
   if (raw === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
   if (raw === 'dom_capture_load_failed') return '预览克隆失败，请重试';
+  if (raw === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
   return `操作失败：${raw}`;
 }

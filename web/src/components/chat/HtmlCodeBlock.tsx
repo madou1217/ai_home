@@ -44,9 +44,12 @@ export default function HtmlCodeBlock({ code }: Props) {
 
   const previewDoc = useMemo(() => normalizeHtmlPreviewDocument(code), [code]);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   const capture = usePreviewCaptureActions({
-    getCaptureTarget: () => stageRef.current
+    getCaptureTarget: () => stageRef.current,
+    getCaptureDocument: () => previewDoc,
+    getCaptureWidth: () => previewFrameRef.current?.clientWidth ?? stageRef.current?.clientWidth ?? 0
   });
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(
     () => readCapturePreferences().recording
@@ -232,6 +235,7 @@ export default function HtmlCodeBlock({ code }: Props) {
         {viewMode === 'preview' ? (
           <div className={styles.htmlPreviewStage} ref={stageRef}>
             <iframe
+              ref={previewFrameRef}
               className={styles.htmlPreviewFrame}
               title="HTML Preview"
               sandbox={HTML_PREVIEW_SANDBOX}

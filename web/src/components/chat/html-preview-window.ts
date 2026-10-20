@@ -17,6 +17,7 @@ const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popup
 const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
 
 /** 与宿主 preview-window-host.ts 约定的消息契约（弹窗侧不能 import，保持常量同步）。 */
+const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 const CAPTURE_STREAM_READY_TYPE = 'aih:html-preview-capture-stream-ready';
@@ -43,9 +44,12 @@ export function buildHtmlPreviewWindowDocument(
   const title = escapeHtml(rawTitle);
   const titleAttribute = escapeHtmlAttribute(rawTitle);
   const srcDoc = escapeHtmlAttribute(documentContent);
+  const preferences = readCapturePreferences();
   const recordingHint = escapeHtml(
-    options.recordingHint ?? summarizeRecordingSettings(readCapturePreferences().recording)
+    options.recordingHint ?? summarizeRecordingSettings(preferences.recording)
   );
+  const captureScope = preferences.captureScope === 'live' ? 'live' : 'full';
+  const captureFps = Math.max(1, Math.min(60, Math.round(preferences.recording.fps)));
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -142,16 +146,18 @@ export function buildHtmlPreviewWindowDocument(
       }
     });
 
-    // 捕获桥（弹窗侧）：先由弹窗在用户点击手势里拿屏幕共享，把流挂到隐藏
-    // video；宿主从同源弹窗读取该 video 的实时帧并裁切到预览区域后编码。
-    // 录到的是预览里真实渲染的画面（脚本、Canvas/WebGL、滚动、旋转都在内），
-    // 不再把 HTML 克隆成不执行脚本的静态文档。
+    // 捕获桥（弹窗侧）：
+    // - 完整页面：把原始文档 + 逻辑宽度投回宿主，重新渲染整页（不执行脚本）；
+    // - 实时画面：在点击手势里拿屏幕共享，把流挂到隐藏 video，宿主按预览区域裁切。
+    // 两种模式都由宿主的同一条编码派发产出产物。
     const status = document.querySelector('[data-capture-status]');
     const recordButton = document.querySelector('[data-capture="record"]');
     const shotButton = document.querySelector('[data-capture="screenshot"]');
     const captureButtons = [shotButton, recordButton];
     const CAPTURE_TIMEOUT_MS = 300000;
     const CAPTURE_VIDEO_ID = 'aih-capture-video';
+    const CAPTURE_SCOPE = '${captureScope}';
+    const CAPTURE_FPS = ${captureFps};
     let captureSeq = 0;
     let pendingRequest = '';
     let pendingTimer = 0;
@@ -205,6 +211,35 @@ export function buildHtmlPreviewWindowDocument(
       clearTimeout(pendingTimer);
       return true;
     }
+    function startDocumentCapture(kind) {
+      if (phase !== 'idle') return;
+      if (!window.opener) {
+        settleFailure('宿主页面已关闭，无法捕获');
+        return;
+      }
+      const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
+      pendingRequest = requestId;
+      setPhase('requesting', kind === 'record' ? '正在渲染完整页面…' : '正在生成截图…');
+      clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(function() {
+        if (pendingRequest !== requestId) return;
+        settleFailure('捕获超时，请重试');
+      }, CAPTURE_TIMEOUT_MS);
+      // 完整页面模式：把弹窗里的原始文档 + 逻辑宽度投回宿主，由宿主重新渲染
+      // 整页内容（不执行脚本），不申请屏幕共享、也不受当前视口裁剪。
+      window.opener.postMessage(
+        {
+          type: '${CAPTURE_REQUEST_TYPE}',
+          requestId: requestId,
+          kind: kind,
+          html: preview.srcdoc,
+          width: Math.max(1, Math.round(preview.clientWidth))
+        },
+        window.location.origin
+      );
+      // 录制请求发出后即可停止（宿主会在停止信号后编码已抓到的帧）。
+      if (kind === 'record') setPhase('recording', '正在捕获完整页面…');
+    }
     async function startLiveCapture(kind) {
       if (phase !== 'idle') return;
       if (!window.opener) {
@@ -228,7 +263,7 @@ export function buildHtmlPreviewWindowDocument(
       try {
         // 必须在点击手势内同步进入：这是浏览器允许 getDisplayMedia 的前提。
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: 30 },
+          video: { frameRate: CAPTURE_FPS },
           audio: false,
           preferCurrentTab: true
         });
@@ -364,7 +399,8 @@ export function buildHtmlPreviewWindowDocument(
           return;
         }
         if (phase !== 'idle') return;
-        startLiveCapture(kind);
+        if (CAPTURE_SCOPE === 'live') startLiveCapture(kind);
+        else startDocumentCapture(kind);
       });
     });
   </script>

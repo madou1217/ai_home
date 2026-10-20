@@ -22,6 +22,8 @@ export interface LivePreviewFrameSourceOptions {
   viewportOffset?: { x: number; y: number };
   /** 输出画布的最大宽度，避免 5K 屏把帧数据打爆。 */
   maxWidth?: number;
+  /** 请求的屏幕共享帧率；默认 30fps。 */
+  frameRate?: number;
 }
 
 export interface DisplayCropInput {
@@ -210,14 +212,6 @@ export class LivePreviewFrameSource implements FrameSource {
       throw error;
     }
 
-    // 授权弹窗关闭后再把预览滚到可见区域，避免在用户选择共享面之前抖动页面。
-    try {
-      options.target.scrollIntoView({ block: 'center', inline: 'nearest' });
-      await nextFrame();
-    } catch {
-      // 元素已经不可滚动时保持原位置。
-    }
-
     const cropped = await cropStreamToElement(stream, options.target);
     if (cropped) {
       // 裁切后的轨道尺寸要等下一帧才反映到 video.videoWidth。
@@ -325,7 +319,7 @@ async function requestDisplayStream(options: LivePreviewFrameSourceOptions): Pro
     preferCurrentTab?: boolean;
   } = {
     video: {
-      frameRate: 30,
+      frameRate: Math.max(1, Math.min(60, Math.round(options.frameRate ?? 30))),
       ...(options.displaySurface ? { displaySurface: options.displaySurface } : {})
     } as MediaTrackConstraints,
     audio: false,

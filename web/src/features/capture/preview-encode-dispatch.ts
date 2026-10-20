@@ -15,15 +15,20 @@ import { DomPreviewFrameSource } from './dom-preview-frame-source';
 import { captureAnimation, captureStill } from './capture-controller';
 import {
   RECORDING_DEFAULT_SETTINGS,
-  RECORDING_FPS,
   resolveRecordingPlan,
   type RecordingSettings
 } from './recording-settings';
+import type { CaptureWatermarkSettings } from './watermark';
 
 /** 视口宽度兜底（取不到预览容器宽度时用，与弹窗桌面档同量级）。 */
 export const FALLBACK_VIEWPORT_WIDTH = 720;
 
-export interface PreviewEncodeRequest {
+interface WatermarkRequest {
+  /** 开启后在编码前自动叠加到产物右下角。 */
+  watermark?: CaptureWatermarkSettings;
+}
+
+export interface PreviewEncodeRequest extends WatermarkRequest {
   format: CaptureFormatId;
   html: string;
   width: number;
@@ -42,7 +47,7 @@ export interface PreviewEncodeRequest {
  * 对任意 FrameSource 执行一次截图/录制。
  * inline 预览用实时屏幕抓帧源，弹窗宿主用弹窗视频帧源，二者共用这一条编码派发。
  */
-export interface PreviewSourceEncodeRequest {
+export interface PreviewSourceEncodeRequest extends WatermarkRequest {
   source: FrameSource;
   format: CaptureFormatId;
   /** 产物文件名（不含扩展名）；缺省 html-preview。 */
@@ -67,7 +72,12 @@ export async function encodePreviewSource(
     if (isStillCaptureFormat(request.format)) {
       const canvas = (await source.grab()) as HTMLCanvasElement | null;
       if (!canvas) throw new Error('frame_source_unavailable');
-      return await captureStill({ canvas, format: request.format, baseName });
+      return await captureStill({
+        canvas,
+        format: request.format,
+        baseName,
+        watermark: request.watermark
+      });
     }
     // 上一分支已 return，这里仅剩动画格式；守卫不做负向收窄，显式标注。
     const recording = request.recording ?? RECORDING_DEFAULT_SETTINGS;
@@ -76,12 +86,13 @@ export async function encodePreviewSource(
       source,
       format: request.format as AnimationCaptureFormatId,
       baseName,
-      fps: RECORDING_FPS,
+      fps: recording.fps,
       maxDurationMs: plan.maxDurationMs,
       maxFrames: plan.maxFrames,
       frameCountMode: plan.frameCountMode,
       stopSignal: request.stopSignal,
       signal: request.signal,
+      watermark: request.watermark,
       onPhase: request.onPhase,
       onEncode: request.onEncode,
       onNotice: (notice) => {
@@ -96,17 +107,25 @@ export async function encodePreviewSource(
   }
 }
 
-/** 静态克隆路径（弹窗旧协议 / 无实时取景时的回退）。 */
+/** 静态克隆路径（完整页面 / 弹窗文档捕获）。 */
 export async function encodePreviewDocument(request: PreviewEncodeRequest): Promise<CaptureEncodeResult> {
+  const still = isStillCaptureFormat(request.format);
   const source = await DomPreviewFrameSource.create({
     html: request.html,
-    width: request.width || FALLBACK_VIEWPORT_WIDTH
+    width: request.width || FALLBACK_VIEWPORT_WIDTH,
+    // 动画每帧都要重新栅格化整页，按 1x 渲染避免 4~9 倍像素放大；
+    // 静图一次性渲染，仍按 dpr（上限 2x）保证清晰度。
+    scale: still ? Math.min(2, window.devicePixelRatio || 1) : 1,
+    // 截图允许更长的完整页面与更高的像素预算；录制受逐帧内存/耗时约束，更保守。
+    maxContentHeight: still ? 10_000 : 6_000,
+    maxPixels: still ? 12_000_000 : 3_000_000
   });
   return encodePreviewSource({
     source,
     format: request.format,
     baseName: 'html-preview',
     recording: request.recording,
+    watermark: request.watermark,
     signal: request.signal,
     stopSignal: request.stopSignal,
     onPhase: request.onPhase,

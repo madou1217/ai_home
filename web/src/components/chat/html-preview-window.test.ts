@@ -25,4 +25,23 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain('is-recording');
     expect(doc).toContain("next === 'recording' ? '停止'");
   });
+
+  test('默认完整页面走文档捕获而不是屏幕共享', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止'
+    });
+    expect(doc).toContain("'aih:html-preview-capture-request'");
+    expect(doc).toContain('startDocumentCapture');
+    expect(doc).toContain("const CAPTURE_SCOPE = 'full'");
+    expect(doc).toContain("const CAPTURE_FPS = 30");
+  });
+
+  test('录制启动不滚动宿主页面（避免录制瞬间跳动）', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止'
+    });
+    expect(doc).not.toContain('scrollIntoView');
+  });
 });

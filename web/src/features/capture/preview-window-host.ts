@@ -4,7 +4,8 @@
 // 宿主（同一 origin），宿主复用 encodePreviewDocument 完成栅格化与编码，
 // 再把 blob URL 回传给弹窗触发下载。捕获逻辑零复制，单测不打 postMessage。
 
-import type { CaptureFormatId, CapturePreferences, StillCaptureFormatId } from './types';
+import type { CaptureFormatId, StillCaptureFormatId } from './types';
+import type { CapturePreferences } from './capture-preferences';
 import { encodePreviewDocument, encodePreviewSource } from './preview-encode-dispatch';
 import { PopupWindowFrameSource } from './popup-window-frame-source';
 import {
@@ -164,9 +165,11 @@ function friendlyCaptureError(message: string): string {
   if (message === 'popup_capture_target_not_visible') return '请先让预览完整显示在屏幕上';
   if (message === 'popup_capture_video_not_ready') return '屏幕共享画面未就绪，请重试';
   if (message === 'popup_capture_video_failed') return '屏幕共享画面读取失败，请重试';
-  if (message === 'frame_source_unavailable') return '屏幕共享已结束，未抓到画面';
+  if (message === 'frame_source_unavailable') return '未抓到可编码的画面，请重试';
   if (message === 'capture_format_unavailable') return '没有可用的录制格式';
   if (message === 'capture_no_frames') return '没有抓到任何帧，请重试';
+  if (message === 'dom_capture_requires_window') return '当前环境不支持完整页面渲染';
+  if (message === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
   if (message === 'dom_capture_frame_unavailable') return '预览暂不可截取';
   if (message === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
   if (message === 'dom_capture_load_failed') return '预览克隆失败，请重试';
@@ -242,6 +245,7 @@ export async function runCaptureForWindowStream(
       source,
       format,
       recording: preferences.recording,
+      watermark: preferences.watermark,
       signal: controller.signal,
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)
@@ -274,6 +278,7 @@ export async function runCaptureForWindowRequest(
       html: request.html,
       width: request.width || 720,
       recording: preferences.recording,
+      watermark: preferences.watermark,
       signal: controller.signal,
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)

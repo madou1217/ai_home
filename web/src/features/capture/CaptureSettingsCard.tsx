@@ -5,21 +5,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Select, Switch } from 'antd';
 import SettingsGroupCard, { SettingsItem } from '../../components/settings/SettingsGroupCard';
-import type { CaptureFormatId, CapturePreferences, RecordingSettings } from './index';
+import type {
+  CaptureFormatId,
+  CapturePreferences,
+  CaptureScope,
+  CaptureWatermarkSettings,
+  RecordingSettings
+} from './index';
 import {
   CAPTURE_FORMAT_CATALOG,
+  CAPTURE_SCOPE_OPTIONS,
   describeRecordingSettings,
   isFormatAvailable,
   listRecordableAnimationFormats,
+  normalizeCaptureWatermark,
   normalizeRecordingSettings,
   notifyCapturePreferences,
   probeCaptureFormatAvailability,
   readCapturePreferences,
   resolveDefaultRecordFormat,
+  resolveWatermarkText,
   subscribeCapturePreferences,
   writeCapturePreferences
 } from './index';
 import RecordingSettingsFields from './RecordingSettingsFields';
+import CaptureScopeFields, { captureScopeDescription } from './CaptureScopeFields';
+import WatermarkSettingsFields from './WatermarkSettingsFields';
 
 export default function CaptureSettingsCard() {
   const [preferences, setPreferences] = useState<CapturePreferences>(() => readCapturePreferences());
@@ -45,6 +56,16 @@ export default function CaptureSettingsCard() {
   const setRecording = (recording: RecordingSettings) => {
     commit({ ...preferences, recording: normalizeRecordingSettings(recording) });
   };
+
+  const setCaptureScope = (captureScope: CaptureScope) => {
+    commit({ ...preferences, captureScope });
+  };
+
+  const setWatermark = (watermark: CaptureWatermarkSettings) => {
+    commit({ ...preferences, watermark: normalizeCaptureWatermark(watermark) });
+  };
+
+  const watermarkText = resolveWatermarkText(preferences.watermark);
 
   const setFormatEnabled = (id: CaptureFormatId, enabled: boolean) => {
     const enabledFormats = { ...preferences.enabledFormats, [id]: enabled };
@@ -89,6 +110,16 @@ export default function CaptureSettingsCard() {
         }
       />
       <SettingsItem
+        title="捕获范围"
+        subtitle={`${
+          CAPTURE_SCOPE_OPTIONS.find((option) => option.value === preferences.captureScope)?.label ??
+          ''
+        } · ${captureScopeDescription(preferences.captureScope)}`}
+        action={
+          <CaptureScopeFields value={preferences.captureScope} onChange={setCaptureScope} compact />
+        }
+      />
+      <SettingsItem
         title="录制方式"
         subtitle={describeRecordingSettings(preferences.recording)}
         action={
@@ -96,6 +127,17 @@ export default function CaptureSettingsCard() {
             compact
             value={preferences.recording}
             onChange={setRecording}
+          />
+        }
+      />
+      <SettingsItem
+        title="自动水印"
+        subtitle={watermarkText || '关闭时输出原始画面'}
+        action={
+          <WatermarkSettingsFields
+            compact
+            value={preferences.watermark}
+            onChange={setWatermark}
           />
         }
       />

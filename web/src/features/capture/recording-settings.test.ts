@@ -4,13 +4,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   RECORDING_DEFAULT_DURATION_SECONDS,
   RECORDING_DEFAULT_FRAME_COUNT,
+  RECORDING_DEFAULT_FPS,
   RECORDING_DEFAULT_SETTINGS,
-  RECORDING_FPS,
+  RECORDING_FPS_OPTIONS,
   RECORDING_MAX_DURATION_MS,
   RECORDING_MAX_DURATION_SECONDS,
   RECORDING_MAX_FRAMES,
   RECORDING_MIN_FRAMES,
   describeRecordingSettings,
+  normalizeRecordingFps,
   normalizeRecordingSettings,
   resolveRecordingPlan,
   summarizeRecordingSettings
@@ -20,6 +22,7 @@ describe('normalizeRecordingSettings', () => {
   test('旧快照缺字段时收敛到默认值', () => {
     expect(normalizeRecordingSettings({ mode: 'manual' })).toEqual({
       mode: 'manual',
+      fps: RECORDING_DEFAULT_FPS,
       frameCount: RECORDING_DEFAULT_FRAME_COUNT,
       durationSeconds: RECORDING_DEFAULT_DURATION_SECONDS
     });
@@ -52,6 +55,15 @@ describe('normalizeRecordingSettings', () => {
     expect(settings.frameCount).toBe(RECORDING_DEFAULT_FRAME_COUNT);
     expect(settings.durationSeconds).toBe(RECORDING_DEFAULT_DURATION_SECONDS);
   });
+
+  test('任意帧率收敛到最接近的可用档位', () => {
+    expect(normalizeRecordingFps(60)).toBe(60);
+    expect(normalizeRecordingFps(25)).toBe(24);
+    expect(normalizeRecordingFps(58)).toBe(60);
+    expect(normalizeRecordingFps(0)).toBe(RECORDING_DEFAULT_FPS);
+    expect(normalizeRecordingFps(Number.NaN)).toBe(RECORDING_DEFAULT_FPS);
+    expect(RECORDING_FPS_OPTIONS).toContain(normalizeRecordingFps(12));
+  });
 });
 
 describe('resolveRecordingPlan', () => {
@@ -59,7 +71,8 @@ describe('resolveRecordingPlan', () => {
     expect(resolveRecordingPlan(RECORDING_DEFAULT_SETTINGS)).toEqual({
       maxFrames: RECORDING_MAX_FRAMES,
       maxDurationMs: RECORDING_MAX_DURATION_MS,
-      frameCountMode: false
+      frameCountMode: false,
+      fps: RECORDING_DEFAULT_FPS
     });
   });
 
@@ -67,16 +80,24 @@ describe('resolveRecordingPlan', () => {
     expect(resolveRecordingPlan({ mode: 'frames', frameCount: 30 })).toEqual({
       maxFrames: 30,
       maxDurationMs: RECORDING_MAX_DURATION_MS,
-      frameCountMode: true
+      frameCountMode: true,
+      fps: RECORDING_DEFAULT_FPS
     });
   });
 
   test('时长模式按时长与帧率换算上限', () => {
     expect(resolveRecordingPlan({ mode: 'duration', durationSeconds: 6 })).toEqual({
-      maxFrames: 6 * RECORDING_FPS,
+      maxFrames: 6 * RECORDING_DEFAULT_FPS,
       maxDurationMs: 6000,
-      frameCountMode: true
+      frameCountMode: true,
+      fps: RECORDING_DEFAULT_FPS
     });
+  });
+
+  test('60fps 时长模式按 3600 帧硬上限收口', () => {
+    const plan = resolveRecordingPlan({ mode: 'duration', fps: 60, durationSeconds: 60 });
+    expect(plan.fps).toBe(60);
+    expect(plan.maxFrames).toBe(RECORDING_MAX_FRAMES);
   });
 
   test('帧数模式也受 60 秒硬上限约束', () => {
@@ -87,16 +108,21 @@ describe('resolveRecordingPlan', () => {
 
 describe('录制设置文案', () => {
   test('短摘要只给用户关心的数字', () => {
-    expect(summarizeRecordingSettings({ mode: 'manual' })).toBe('手动停止');
-    expect(summarizeRecordingSettings({ mode: 'frames', frameCount: 60 })).toBe('60 帧');
-    expect(summarizeRecordingSettings({ mode: 'duration', durationSeconds: 6 })).toBe('6 秒');
+    expect(summarizeRecordingSettings({ mode: 'manual' })).toBe(`${RECORDING_DEFAULT_FPS}fps · 手动停止`);
+    expect(summarizeRecordingSettings({ mode: 'frames', frameCount: 60 })).toBe(
+      `${RECORDING_DEFAULT_FPS}fps · 60 帧`
+    );
+    expect(summarizeRecordingSettings({ mode: 'duration', durationSeconds: 6 })).toBe(
+      `${RECORDING_DEFAULT_FPS}fps · 6 秒`
+    );
   });
 
-  test('完整说明同时给出帧数与时长', () => {
+  test('完整说明同时给出帧率、帧数与时长', () => {
+    expect(describeRecordingSettings({ mode: 'frames', fps: 60, frameCount: 60 })).toContain('60 fps');
     expect(describeRecordingSettings({ mode: 'frames', frameCount: 60 })).toContain('60 帧');
-    expect(describeRecordingSettings({ mode: 'frames', frameCount: 60 })).toContain('6.0 秒');
+    expect(describeRecordingSettings({ mode: 'frames', frameCount: 60 })).toContain('2.0 秒');
     expect(describeRecordingSettings({ mode: 'duration', durationSeconds: 6 })).toContain('6 秒');
-    expect(describeRecordingSettings({ mode: 'duration', durationSeconds: 6 })).toContain('60 帧');
+    expect(describeRecordingSettings({ mode: 'duration', durationSeconds: 6 })).toContain('180 帧');
     expect(describeRecordingSettings({ mode: 'manual' })).toContain('60 秒');
   });
 });

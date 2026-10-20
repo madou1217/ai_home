@@ -1,16 +1,21 @@
-// 聊天预览里的「录制设置」弹窗：与设置页共用 RecordingSettingsFields 与持久化入口。
+// 聊天预览里的「截图与录制设置」弹窗：与设置页共用字段组件与持久化入口。
 
 import { useEffect, useState } from 'react';
 import { Button, Modal, Typography } from 'antd';
 import {
-  RECORDING_DEFAULT_SETTINGS,
+  createDefaultCapturePreferences,
   describeRecordingSettings,
+  normalizeCapturePreferences,
   normalizeRecordingSettings,
   readCapturePreferences,
-  updateRecordingSettings,
+  saveCapturePreferences,
+  type CapturePreferences,
   type RecordingSettings
 } from './index';
 import RecordingSettingsFields, { recordingSettingsEstimate } from './RecordingSettingsFields';
+import CaptureScopeFields, { captureScopeDescription } from './CaptureScopeFields';
+import WatermarkSettingsFields from './WatermarkSettingsFields';
+import styles from './recording-settings.module.css';
 
 interface Props {
   open: boolean;
@@ -19,35 +24,44 @@ interface Props {
 }
 
 export default function RecordingSettingsModal({ open, onClose, onSaved }: Props) {
-  const [draft, setDraft] = useState<RecordingSettings>(
-    () => readCapturePreferences().recording
-  );
+  const [draft, setDraft] = useState<CapturePreferences>(() => readCapturePreferences());
 
   useEffect(() => {
     if (!open) return;
-    setDraft(readCapturePreferences().recording);
+    setDraft(readCapturePreferences());
   }, [open]);
 
+  const patch = (next: Partial<CapturePreferences>) => {
+    setDraft((current) => normalizeCapturePreferences({ ...current, ...next }));
+  };
+
   const handleSave = () => {
-    const normalized = normalizeRecordingSettings(draft);
-    updateRecordingSettings(normalized);
-    onSaved?.(normalized);
+    const saved = saveCapturePreferences(draft);
+    onSaved?.(saved.recording);
     onClose();
+  };
+
+  const handleReset = () => {
+    const defaults = createDefaultCapturePreferences();
+    setDraft((current) => ({
+      ...current,
+      recording: { ...defaults.recording },
+      captureScope: defaults.captureScope,
+      watermark: { ...defaults.watermark }
+    }));
   };
 
   return (
     <Modal
       open={open}
-      title="录制方式与时长"
+      title="截图与录制设置"
+      width={520}
       okText="保存"
       cancelText="取消"
       onOk={handleSave}
       onCancel={onClose}
       footer={[
-        <Button
-          key="reset"
-          onClick={() => setDraft({ ...RECORDING_DEFAULT_SETTINGS })}
-        >
+        <Button key="reset" onClick={handleReset}>
           恢复默认
         </Button>,
         <Button key="cancel" onClick={onClose}>
@@ -58,14 +72,39 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
         </Button>
       ]}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Typography.Text type="secondary">
-          录制中主按钮会变成「停止」，随时可以手动结束。
-        </Typography.Text>
-        <RecordingSettingsFields value={draft} onChange={setDraft} />
-        <Typography.Text type="secondary">
-          {describeRecordingSettings(draft)}（{recordingSettingsEstimate(draft)}）
-        </Typography.Text>
+      <div className={styles.modalStack}>
+        <section className={styles.modalSection}>
+          <Typography.Text strong>捕获范围</Typography.Text>
+          <CaptureScopeFields
+            value={draft.captureScope}
+            onChange={(captureScope) => patch({ captureScope })}
+          />
+          <Typography.Text type="secondary">
+            {captureScopeDescription(draft.captureScope)}
+          </Typography.Text>
+        </section>
+
+        <section className={styles.modalSection}>
+          <Typography.Text strong>录制方式</Typography.Text>
+          <RecordingSettingsFields
+            value={draft.recording}
+            onChange={(recording) => patch({ recording: normalizeRecordingSettings(recording) })}
+          />
+          <Typography.Text type="secondary">
+            {describeRecordingSettings(draft.recording)}（{recordingSettingsEstimate(draft.recording)}）
+          </Typography.Text>
+        </section>
+
+        <section className={styles.modalSection}>
+          <Typography.Text strong>水印</Typography.Text>
+          <WatermarkSettingsFields
+            value={draft.watermark}
+            onChange={(watermark) => patch({ watermark })}
+          />
+          <Typography.Text type="secondary">
+            开启后自动叠加到截图与每一帧录制的右下角。
+          </Typography.Text>
+        </section>
       </div>
     </Modal>
   );

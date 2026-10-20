@@ -10,3 +10,28 @@
 .compact {
   justify-content: flex-end;
 }
+
+.fieldGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
+  white-space: nowrap;
+}
+
+.modalStack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modalSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

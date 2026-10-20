@@ -1,7 +1,12 @@
 // capture-bridge 纯助手的行为测试：录制格式清单 = 启用矩阵 ∩ 浏览器探测。
 
 import { describe, expect, test } from 'bun:test';
-import type { CaptureFormatAvailability, CapturePreferences } from '../../features/capture';
+import type {
+  CaptureFormatAvailability,
+  CaptureFormatId,
+  CapturePreferences,
+  RecordingSettings
+} from '../../features/capture';
 import { createDefaultCapturePreferences } from '../../features/capture';
 import {
   captureProgressText,
@@ -20,12 +25,19 @@ const ALL_AVAILABLE: CaptureFormatAvailability = {
   webp: true
 };
 
-function prefsWith(overrides: Partial<CapturePreferences>): CapturePreferences {
+type PreferenceOverrides = Partial<Omit<CapturePreferences, 'enabledFormats' | 'recording'>> & {
+  enabledFormats?: Partial<Record<CaptureFormatId, boolean>>;
+  recording?: Partial<RecordingSettings>;
+};
+
+function prefsWith(overrides: PreferenceOverrides): CapturePreferences {
   const base = createDefaultCapturePreferences();
   return {
     ...base,
+    ...overrides,
     defaultFormat: overrides.defaultFormat ?? base.defaultFormat,
-    enabledFormats: { ...base.enabledFormats, ...overrides.enabledFormats }
+    enabledFormats: { ...base.enabledFormats, ...overrides.enabledFormats },
+    recording: { ...base.recording, ...overrides.recording }
   };
 }
 
@@ -98,6 +110,18 @@ describe('captureProgressText', () => {
         progressLabel: '正在请求屏幕共享…'
       })
     ).toBe('正在请求屏幕共享…');
+  });
+
+  test('完整页面模式直接显示渲染文案', () => {
+    expect(
+      captureProgressText({
+        ...base,
+        kind: 'animation',
+        elapsedMs: 0,
+        capturedFrames: 0,
+        progressLabel: '正在渲染完整页面…'
+      })
+    ).toBe('正在渲染完整页面…');
   });
 
   test('空闲时没有文案', () => {

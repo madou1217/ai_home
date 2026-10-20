@@ -4,11 +4,12 @@
 import { useEffect, useState } from 'react';
 import { InputNumber, Segmented } from 'antd';
 import {
-  RECORDING_FPS,
+  RECORDING_FPS_OPTIONS,
   RECORDING_MAX_DURATION_SECONDS,
   RECORDING_MAX_FRAMES,
   RECORDING_MIN_DURATION_SECONDS,
   RECORDING_MIN_FRAMES,
+  normalizeRecordingFps,
   normalizeRecordingSettings,
   type RecordingMode,
   type RecordingSettings
@@ -91,6 +92,17 @@ export default function RecordingSettingsFields({ value, onChange, compact = fal
   };
   return (
     <div className={`${styles.fields} ${compact ? styles.compact : ''}`}>
+      <span className={styles.fieldGroup}>
+        <span className={styles.fieldLabel}>帧率</span>
+        <Segmented
+          size="small"
+          value={settings.fps}
+          options={RECORDING_FPS_OPTIONS.map((fps) => ({ label: `${fps}`, value: fps }))}
+          onChange={(value) =>
+            onChange(normalizeRecordingSettings({ ...settings, fps: normalizeRecordingFps(value) }))
+          }
+        />
+      </span>
       <Segmented
         size="small"
         value={settings.mode}
@@ -129,10 +141,10 @@ export default function RecordingSettingsFields({ value, onChange, compact = fal
 export function recordingSettingsEstimate(value: RecordingSettings): string {
   const settings = normalizeRecordingSettings(value);
   if (settings.mode === 'frames') {
-    return `约 ${(settings.frameCount / RECORDING_FPS).toFixed(1)} 秒`;
+    return `约 ${(settings.frameCount / settings.fps).toFixed(1)} 秒`;
   }
   if (settings.mode === 'duration') {
-    return `约 ${Math.round(settings.durationSeconds * RECORDING_FPS)} 帧`;
+    return `约 ${Math.round(settings.durationSeconds * settings.fps)} 帧`;
   }
   return '最长 60 秒';
 }

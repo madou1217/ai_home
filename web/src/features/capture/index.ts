@@ -28,11 +28,17 @@ export {
 } from './format-catalog';
 export {
   CAPTURE_PREFERENCES_KEY,
+  CAPTURE_SCOPE_OPTIONS,
+  DEFAULT_CAPTURE_SCOPE,
   type CapturePreferences,
+  type CaptureScope,
   createDefaultCapturePreferences,
+  normalizeCapturePreferences,
+  normalizeCaptureScope,
   notifyCapturePreferences,
   parseCapturePreferences,
   readCapturePreferences,
+  saveCapturePreferences,
   subscribeCapturePreferences,
   updateRecordingSettings,
   writeCapturePreferences
@@ -40,22 +46,33 @@ export {
 export {
   RECORDING_DEFAULT_DURATION_SECONDS,
   RECORDING_DEFAULT_FRAME_COUNT,
+  RECORDING_DEFAULT_FPS,
   RECORDING_DEFAULT_MODE,
   RECORDING_DEFAULT_SETTINGS,
-  RECORDING_FPS,
+  RECORDING_FPS_OPTIONS,
   RECORDING_MAX_DURATION_MS,
   RECORDING_MAX_DURATION_SECONDS,
   RECORDING_MAX_FRAMES,
   RECORDING_MIN_DURATION_SECONDS,
   RECORDING_MIN_FRAMES,
   describeRecordingSettings,
+  normalizeRecordingFps,
   normalizeRecordingSettings,
   resolveRecordingPlan,
   summarizeRecordingSettings,
+  type RecordingFps,
   type RecordingMode,
   type RecordingPlan,
   type RecordingSettings
 } from './recording-settings';
+export {
+  DEFAULT_CAPTURE_WATERMARK,
+  drawCaptureWatermark,
+  drawCaptureWatermarkOnContext,
+  normalizeCaptureWatermark,
+  resolveWatermarkText,
+  type CaptureWatermarkSettings
+} from './watermark';
 export { probeCaptureFormatAvailability, isFormatAvailable, type CaptureFormatAvailability } from './format-availability';
 export { DomPreviewFrameSource } from './dom-preview-frame-source';
 export {

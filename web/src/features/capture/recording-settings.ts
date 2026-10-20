@@ -1,4 +1,4 @@
-// 录制设置（capture 域唯一事实源）：录制方式、目标帧数与目标时长。
+// 录制设置（capture 域唯一事实源）：录制方式、帧率、目标帧数与目标时长。
 //
 // 三种方式共用同一条「抓帧 → 编码」管线，区别只在停止条件：
 // - manual：用户点「停止」结束（另有 60 秒硬上限与帧数安全上限）；
@@ -9,22 +9,29 @@
 
 export type RecordingMode = 'manual' | 'frames' | 'duration';
 
+/** 常用采样帧率；UI 只提供这些档位，旧快照会收敛到最接近的档位。 */
+export const RECORDING_FPS_OPTIONS = [10, 15, 24, 30, 60] as const;
+
+export type RecordingFps = (typeof RECORDING_FPS_OPTIONS)[number];
+
 export interface RecordingSettings {
   mode: RecordingMode;
+  /** 采样目标帧率；抓帧间隔 = 1000 / fps。 */
+  fps: RecordingFps;
   /** frames 模式的目标帧数；其它模式忽略。 */
   frameCount: number;
   /** duration 模式的目标时长（秒）；其它模式忽略。 */
   durationSeconds: number;
 }
 
-/** 采样目标帧率（抓帧间隔 = 1000 / fps）。 */
-export const RECORDING_FPS = 10;
+/** 默认帧率：30fps 对大多数 HTML 动效足够，且抓帧/编码压力可控。 */
+export const RECORDING_DEFAULT_FPS: RecordingFps = 30;
 /** 录制墙钟上限：60 秒（产品约束，不随设置放大）。 */
 export const RECORDING_MAX_DURATION_MS = 60_000;
-/** 帧数绝对上限 = 10fps × 60s，防止内存被单次录制打爆。 */
-export const RECORDING_MAX_FRAMES = 600;
+/** 帧数绝对上限 = 60fps × 60s，防止内存被单次录制打爆。 */
+export const RECORDING_MAX_FRAMES = 3600;
 export const RECORDING_MIN_FRAMES = 2;
-/** 默认帧数模式目标（6 秒 @ 10fps）。 */
+/** 默认帧数模式目标（2 秒 @ 30fps）。 */
 export const RECORDING_DEFAULT_FRAME_COUNT = 60;
 /** 时长模式的取值范围（秒）。 */
 export const RECORDING_MIN_DURATION_SECONDS = 1;
@@ -36,6 +43,7 @@ export const RECORDING_DEFAULT_MODE: RecordingMode = 'manual';
 
 export const RECORDING_DEFAULT_SETTINGS: RecordingSettings = {
   mode: RECORDING_DEFAULT_MODE,
+  fps: RECORDING_DEFAULT_FPS,
   frameCount: RECORDING_DEFAULT_FRAME_COUNT,
   durationSeconds: RECORDING_DEFAULT_DURATION_SECONDS
 };
@@ -48,6 +56,8 @@ export interface RecordingPlan {
   maxDurationMs: number;
   /** true 时进度可显示确定的帧数总数。 */
   frameCountMode: boolean;
+  /** 本次录制的目标采样帧率（编码器用它作为缺失时间轴的兜底）。 */
+  fps: RecordingFps;
 }
 
 function clampFrameCount(value: unknown): number {
@@ -67,6 +77,27 @@ function clampDurationSeconds(value: unknown): number {
   );
 }
 
+function clampFps(value: unknown): RecordingFps {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return RECORDING_DEFAULT_FPS;
+  }
+  let nearest: RecordingFps = RECORDING_FPS_OPTIONS[0];
+  let smallestDelta = Number.POSITIVE_INFINITY;
+  for (const option of RECORDING_FPS_OPTIONS) {
+    const delta = Math.abs(option - value);
+    if (delta < smallestDelta || (delta === smallestDelta && option > nearest)) {
+      nearest = option;
+      smallestDelta = delta;
+    }
+  }
+  return nearest;
+}
+
+/** 把任意帧率收敛到可用档位（UI 与旧快照共用）。 */
+export function normalizeRecordingFps(value: unknown): RecordingFps {
+  return clampFps(value);
+}
+
 function normalizeMode(value: unknown): RecordingMode {
   if (value === 'frames' || value === 'duration') return value;
   return 'manual';
@@ -78,6 +109,7 @@ export function normalizeRecordingSettings(
 ): RecordingSettings {
   return {
     mode: normalizeMode(input?.mode),
+    fps: clampFps(input?.fps),
     frameCount: clampFrameCount(input?.frameCount),
     durationSeconds: clampDurationSeconds(input?.durationSeconds)
   };
@@ -95,7 +127,8 @@ export function resolveRecordingPlan(
     return {
       maxFrames: settings.frameCount,
       maxDurationMs: RECORDING_MAX_DURATION_MS,
-      frameCountMode: true
+      frameCountMode: true,
+      fps: settings.fps
     };
   }
   if (settings.mode === 'duration') {
@@ -104,17 +137,19 @@ export function resolveRecordingPlan(
         RECORDING_MAX_FRAMES,
         Math.max(
           RECORDING_MIN_FRAMES,
-          Math.round(settings.durationSeconds * RECORDING_FPS)
+          Math.round(settings.durationSeconds * settings.fps)
         )
       ),
       maxDurationMs: settings.durationSeconds * 1000,
-      frameCountMode: true
+      frameCountMode: true,
+      fps: settings.fps
     };
   }
   return {
     maxFrames: RECORDING_MAX_FRAMES,
     maxDurationMs: RECORDING_MAX_DURATION_MS,
-    frameCountMode: false
+    frameCountMode: false,
+    fps: settings.fps
   };
 }
 
@@ -123,9 +158,9 @@ export function summarizeRecordingSettings(
   input?: Partial<RecordingSettings> | null
 ): string {
   const settings = normalizeRecordingSettings(input);
-  if (settings.mode === 'frames') return `${settings.frameCount} 帧`;
-  if (settings.mode === 'duration') return `${settings.durationSeconds} 秒`;
-  return '手动停止';
+  if (settings.mode === 'frames') return `${settings.fps}fps · ${settings.frameCount} 帧`;
+  if (settings.mode === 'duration') return `${settings.fps}fps · ${settings.durationSeconds} 秒`;
+  return `${settings.fps}fps · 手动停止`;
 }
 
 /** 设置行副标题里的完整说明。 */
@@ -134,12 +169,12 @@ export function describeRecordingSettings(
 ): string {
   const settings = normalizeRecordingSettings(input);
   if (settings.mode === 'frames') {
-    const seconds = (settings.frameCount / RECORDING_FPS).toFixed(1);
-    return `抓满 ${settings.frameCount} 帧后自动结束（约 ${seconds} 秒）`;
+    const seconds = (settings.frameCount / settings.fps).toFixed(1);
+    return `${settings.fps} fps · 抓满 ${settings.frameCount} 帧后自动结束（约 ${seconds} 秒）`;
   }
   if (settings.mode === 'duration') {
-    const frames = Math.round(settings.durationSeconds * RECORDING_FPS);
-    return `录制 ${settings.durationSeconds} 秒后自动结束（约 ${frames} 帧）`;
+    const frames = Math.round(settings.durationSeconds * settings.fps);
+    return `${settings.fps} fps · 录制 ${settings.durationSeconds} 秒后自动结束（约 ${frames} 帧）`;
   }
-  return '由你点击「停止」结束，最长 60 秒';
+  return `${settings.fps} fps · 由你点击「停止」结束，最长 ${RECORDING_MAX_DURATION_SECONDS} 秒`;
 }

@@ -312,6 +312,22 @@ test('prepareDshHarness writes the AIH provider and passes the pnpm native addon
   assert.equal(fs.readlinkSync(path.join(prepared.dshHome, 'sessions')), path.join(hostHomeDir, '.dsh', 'sessions'));
 });
 
+test('prepareDshHarness fails closed when the shim target cannot be resolved', async (t) => {
+  const aiHomeDir = tempDir(t, 'aih-dsh-bad-entry-');
+  await assert.rejects(() => prepareDshHarness({
+    fs,
+    path,
+    aiHomeDir,
+    hostHomeDir: tempDir(t, 'aih-dsh-bad-entry-host-'),
+    accountRef: 'acct_dsh',
+    provider: 'codex',
+    model: 'gpt-test',
+    gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' },
+    catalog: CATALOG,
+    dshPath: path.join(aiHomeDir, 'missing-dsh')
+  }), (error) => error.message === 'dsh_entry_not_found');
+});
+
 test('external harness env keeps gateway credentials but drops native provider credentials', () => {
   const env = buildExternalHarnessEnv({
     PATH: '/bin',

@@ -44,6 +44,7 @@ import {
   HistoryOutlined,
   ReloadOutlined,
   ClockCircleOutlined,
+  BranchesOutlined,
   GiftOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
@@ -118,6 +119,7 @@ import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
+import { AccountAliasPoolModal } from '@/features/accounts/AccountAliasPoolModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
 import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
@@ -262,6 +264,8 @@ export default function Accounts() {
   const [rewardsOpen, setRewardsOpen] = useState(false);
   const [rewardsTitle, setRewardsTitle] = useState('');
   const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
+  const [aliasPoolAccount, setAliasPoolAccount] = useState<Account | null>(null);
+
   const renderEgressBadge = (record: Account) => (
     <AccountEgressBadge
       entry={egressSummary.byAccount.get(getAccountRef(record))}
@@ -462,6 +466,7 @@ export default function Accounts() {
     if (canConfigureWindowActivation(record)) {
       menuItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
     }
+    menuItems.push({ key: 'alias-pool', label: '别名选号', icon: <BranchesOutlined /> });
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
     return menuItems;
@@ -496,6 +501,10 @@ export default function Accounts() {
     }
     if (key === 'window-activation') {
       setAccountWindowActivationAccount(record);
+      return;
+    }
+    if (key === 'alias-pool') {
+      setAliasPoolAccount(record);
       return;
     }
     if (key === 'delete') {
@@ -1142,6 +1151,10 @@ export default function Accounts() {
       <AccountWindowActivationModal
         account={accountWindowActivationAccount}
         onClose={() => setAccountWindowActivationAccount(null)}
+      />
+      <AccountAliasPoolModal
+        account={aliasPoolAccount}
+        onClose={() => setAliasPoolAccount(null)}
       />
       <AccountActivityModal
         open={rewardsOpen}

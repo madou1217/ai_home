@@ -128,3 +128,34 @@ test('额度窗口耗尽的账号被摘出候选池，窗口重置后恢复', ()
   assert.equal(after.pool.length, 2);
   assert.equal(after.windowExhaustedAccountRefs, undefined);
 });
+
+test('别名请求排除「不入别名池」的账号，普通请求不受影响', () => {
+  const { state, pool } = makeState([]);
+  pool[1].aliasPoolParticipates = false;
+
+  const normal = select(state, pool);
+  assert.deepEqual(normal.pool.map((item) => item.accountRef).sort(), [ENABLED, DISABLED].sort());
+
+  const alias = selectPoolAccountsForModel({
+    pool, provider: 'codex', model: MODEL, state, options: {}, aliasMatched: true
+  });
+  assert.deepEqual(alias.pool.map((item) => item.accountRef), [ENABLED]);
+  assert.deepEqual(alias.aliasPoolExcludedAccountRefs, [DISABLED]);
+  assert.equal(alias.aliasPoolExhausted, undefined);
+});
+
+test('全部账号都退出别名池时给出明确原因', () => {
+  const { state, pool } = makeState([]);
+  pool.forEach((item) => { item.aliasPoolParticipates = false; });
+  const alias = selectPoolAccountsForModel({
+    pool, provider: 'codex', model: MODEL, state, options: {}, aliasMatched: true
+  });
+  assert.deepEqual(alias.pool, []);
+  assert.equal(alias.aliasPoolExhausted, true);
+  assert.deepEqual(alias.aliasPoolExcludedAccountRefs.sort(), [ENABLED, DISABLED].sort());
+  // 显式钉选（单账号池）不携带 aliasMatched，退出别名池不影响它。
+  const pinned = selectPoolAccountsForModel({
+    pool: [pool[1]], provider: 'codex', model: MODEL, state, options: {}
+  });
+  assert.equal(pinned.pool.length, 1);
+});

@@ -267,7 +267,9 @@ async function dumpObservations(system, count) {
   assert.ok(await waitFor(async () => {
     events = events.concat((await system.runtime.invoke('goobs.dump', null)).value || []);
     return events.length >= count;
-  }), JSON.stringify(events));
+  // 观察事件由 Go 命中后经 Plugin Host 回传：CI 低核 runner 上排在启动/编译之后，
+  // 5s 会偶发不够（本用例自身的兜底超时是 120s）。
+  }, 20000), JSON.stringify(events));
   return events;
 }
 

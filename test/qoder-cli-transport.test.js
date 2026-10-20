@@ -396,6 +396,46 @@ test('streaming qoder transport shares the JSONL usage event key', async () => {
   assert.equal(recorded[0].sourceKind, 'server_qoder_cli_proxy_estimated');
 });
 
+test('qoder transport exposes warm reuse as a log annotation', async () => {
+  const attemptMutable = {};
+  const sent = { headers: {}, body: '' };
+  const res = {
+    statusCode: 0,
+    setHeader(key, value) { sent.headers[key] = value; },
+    end(body) { sent.body = body ? body.toString() : ''; },
+    get headersSent() { return true; },
+    get writableEnded() { return false; }
+  };
+  const action = await runTransportChain({
+    options: {},
+    res,
+    requestJson: { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+    provider: 'qodercn',
+    streamRequested: false,
+    requestMeta: {},
+    state: { metrics: { providerFailures: {} } },
+    deps: {
+      fetchQoderCliChatCompletion: async (_options, _account, _requestJson, _timeoutMs, extraDeps) => {
+        extraDeps.onQoderCliTransport({ warm: true, reused: true });
+        return { id: 'chatcmpl-warm-test', choices: [{ index: 0, message: { role: 'assistant', content: 'ok' } }] };
+      }
+    },
+    recordAccountSuccess: () => {},
+    recordAccountFailure: () => {},
+    recordModelUsage: () => {},
+    appendProxyRequestLog: () => {},
+    diagnosticMaxAttempts: () => 1,
+    control: { attempt: 0, setLastError() {} },
+    account: ACCOUNT,
+    attemptUpstreamTimeoutMs: 1000,
+    attemptMutable
+  }, [qoderCliTransport]);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(attemptMutable.annotations.qoderCliWarm, true);
+  assert.equal(attemptMutable.annotations.qoderCliWarmReused, true);
+  assert.equal(attemptMutable.streamTransport, 'qoder_cli_non_stream_warm');
+});
+
 // ---- warm CLI 会话池 ---------------------------------------------------------
 
 function fakePersistentChild(replyForInput) {

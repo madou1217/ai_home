@@ -235,6 +235,20 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
     usage-scan-contract,provider-descriptor-plugin}.test.js`；WebUI 构建 +
     改动文件 eslint + 前端单测。
 
+**Phase 3.8 — 账号与价格插件治理（P4/P5，2026-10-20 新增）**
+19. ✅ 账号生命周期拆成四个窄能力（`account.source/login/refresh/materialize`），
+    宿主保留账号分配、判重、入库、任务持久化与运行目录写入。插件只交换 JSON；
+    登录任务只持久化公开状态，凭据不进入任务文件。刷新采用两阶段
+    `match` → `refresh`，并用运行目录内容摘要做乐观 CAS，避免覆盖另一条
+    refresh_token 轮换链。实现：`lib/plugins/account/{contract,service,auth-sources}.js`；
+    WebUI 登录任务路由与管理面入口复用既有账号注册/重载链路，不新增 provider 分支。
+20. ✅ 价格治理采用「收采集 + 快照 + 人工复核」三层：插件/社区只产出
+    `PriceQuote`；`catalog-source-store` 负责原子快照与 pending/reviews；
+    `catalog-layered` 只把已批准快照叠加到 models.dev。首次采集生效，后续变化
+    不自动覆盖，失败保留旧快照。官方样例包与 LiteLLM/OpenRouter 固定解析器都走
+    同一复核门；`cacheWrite1h` 独立，不做 5m 复制。
+    验证：`test/{pricing-catalog-source-store,plugin-pricing-sync,plugin-account-contract}.test.js`。
+
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
    记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。

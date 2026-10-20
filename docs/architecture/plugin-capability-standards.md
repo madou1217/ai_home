@@ -323,44 +323,53 @@ interface LoginJob {
 | `account.refresh` | 用 refresh_token / API key 换取新凭据 | CAS 写回、轮换协调、失败分类 |
 | `account.materialize` | 把凭据投影成 CLI/App 可用的 runtime dir / env | 沙箱、权限、HOME/XDG 隔离 |
 
-**`account.source` 示例**：
+**`account.source` 示例**（一个贡献点注册一个 JSON handler，按 `input.kind` 分派）：
 
 ```js
-module.exports = {
-  async list(ctx) {
-    return [{
-      id: 'local-desktop',
-      kind: 'local',
-      app: 'desktop',
-      authMode: 'oauth-browser',
-      directImport: false,
-      clientDependent: true,
-      identity: { subject: 'user@example.com' },
-      credential: { /* opaque */ }
-    }];
+module.exports = async (input) => {
+  if (input.kind === 'list') {
+    return {
+      sources: [{
+        id: 'local-desktop',
+        kind: 'local',
+        requiresApp: 'desktop',
+        authMode: 'oauth-browser',
+        directImport: false,
+        clientDependent: true,
+        identity: { subject: 'user@example.com' }
+      }]
+    };
   }
+  if (input.kind === 'import') {
+    // directImport=true 时返回投影文件；也可以返回 credential，由宿主调用 materialize。
+    return { files: [{ path: '.config/example/auth.json', content: '…' }] };
+  }
+  throw new Error('unsupported_kind');
 };
 ```
 
 宿主拿 `identity` 算指纹，命中已有账号就标 `alreadyImported` 并不显示（沿用现有
 `auth-sources.js` 语义）；`directImport=true` 时才允许直接提交
-`/v0/webui/accounts/local-import`，否则必须走登录任务。
+`/v0/webui/accounts/local-import`，否则必须走登录任务。投影文件允许在 `import`
+调用时才生成，不要求 `list` 阶段就携带凭据。
 
 **`account.login` 示例**：
 
 ```js
-module.exports = {
-  async start(input, ctx) {
-    return { status: 'waiting_user', verificationUri, userCode, expiresAt };
-  },
-  async poll(jobId, ctx) {
-    return { status: 'success', credential: { /* ... */ } };
-  },
-  async cancel(jobId, ctx) { /* ... */ }
+module.exports = async (input) => {
+  if (input.kind === 'start') {
+    return { status: 'waiting_user', jobId, verificationUri, userCode, expiresAt };
+  }
+  if (input.kind === 'poll') {
+    return { status: 'success', credential: { /* opaque */ } };
+  }
+  return { status: 'cancelled' };
 };
 ```
 
-登录插件**不**决定账号显示名、不写 `app-state.db`、不生成 `accountRef`。
+登录插件**不**决定账号显示名、不写 `app-state.db`、不生成 `accountRef`。插件返回的
+`credential` 由宿主调用 `account.materialize`（或 `source.credential.files`）写成投影
+文件；任务文件只保存公开状态，凭据不落盘。
 
 **`account.refresh` 示例**：
 
@@ -377,6 +386,26 @@ module.exports = {
   }
 };
 ```
+
+**P4 实施落点（2026-10-20）**：
+
+- `lib/plugins/account/contract.js`：账号插件 JSON 合同。`directImport` 来源可以在
+  `list` 阶段给出 `credential`/`projectionId`，也可以在 `import` 调用时才返回投影
+  文件或 credential；投影文件只能是 `runtimeDir` 下的相对路径，禁止 `..`、绝对路径、
+  反斜杠和超限内容。
+- `lib/plugins/account/service.js`：来源收集、`directImport`、登录任务（公开状态持久化、
+  轮询、取消、TTL）、`refresh` 的两阶段 `match` → `refresh`、物化写回。
+  `refresh` 在执行前后对 `runtimeDir` 计算内容摘要，发现并发写入时返回
+  `account_refresh_conflict`，不覆盖另一条刷新链（Kimi 这类会轮换 refresh_token 的账号）。
+- `lib/plugins/account/auth-sources.js`：把插件来源适配成 `auth-sources` 描述符，
+  WebUI 的 `provider-auth-sources` 与 `local-import` 直接复用，不按 provider 名分支。
+- 宿主入口：`POST /v0/webui/accounts/plugin-login/start`、
+  `GET /v0/webui/accounts/plugin-login/:jobId`、
+  `POST /v0/webui/accounts/plugin-login/:jobId/cancel`；
+  管理面 `GET/POST /v0/plugins/accounts/{sources,import,refresh,materialize}`。
+- 权限：声明任一 `account.*` 能力时，manifest 必须带 `permissions`；网络只接受
+  `https://` 源，文件系统只接受插件私有 `state`，凭据只能走 `secrets` 声明。
+
 
 ### 5.3 模型价格插件
 
@@ -504,6 +533,27 @@ conflicts: record warnings [{ dimension, chosen, rejected: [...] }]
   - 新价格与旧价格差异超过阈值时进入人工复核队列（不自动生效）。
 - 不鼓励无审查的通用爬虫；价格是计费事实，不是搜索结果。
 
+**P5 实施落点（2026-10-20）**：
+
+- `lib/plugins/pricing/catalog-sync.js` 收集已启用插件的 `pricing.catalog`，把每个
+  贡献项写成独立来源。插件代次变化立即重采；另有 6 小时低频自动刷新。插件失败只
+  记录 attempt，不改写既有快照。
+- `lib/usage/pricing/catalog-source-store.js` 是唯一快照门：
+  `<aiHome>/pricing/sources/<source>.json`（0600、原子写）。首次采集直接生效；
+  后续价格变化写入 `.pending.json` + `reviews.json`，**旧快照继续计费**，人工
+  approve 后才整份替换，reject 丢弃候选。
+- `lib/usage/pricing-providers/catalog-layered.js` 把生效快照叠加到 models.dev
+  记录上，按维度保留非空值；模型 ID 解析仍由 models.dev provider 负责。
+- 官方样例包：`examples/plugins/pricing-official-{openai,anthropic,google,deepseek}`。
+  社区兜底：`lib/usage/pricing/community-sources.js` 固定解析 LiteLLM 与 OpenRouter
+  的 JSON（authority=20），同样走复核门，不把刚抓到的数据直接用于计费。
+- 管理面：`GET /v0/plugins/pricing/sources`、`GET /v0/plugins/pricing/reviews`、
+  `GET /v0/plugins/pricing/status`、`POST /v0/plugins/pricing/refresh|approve|reject|quote`；
+  `aih plugin doctor` 输出来源数、生效报价数、待复核数。
+- `pricing.quote` 是实时/按账号报价的 collect 能力，宿主用同一 `mergePriceQuotes`
+  裁决；`cacheWrite1h` 独立于 `cacheWrite`，缺失保持 `null`，绝不复用 5m 价。
+
+
 ### 5.4 模型元数据插件
 
 `model.catalog` 仍保留现有 alias 语义（`terminal`），另加：
@@ -604,16 +654,18 @@ module.exports = {
     "network": ["https://models.dev", "https://api.openai.com"],
     "filesystem": { "read": ["state"], "write": ["state"] },
     "secrets": ["apiKey"],
-    "env": ["OPENAI_API_KEY"]
+    "environment": ["OPENAI_API_KEY"]
   },
   "stateSchemaVersion": 1
 }
 ```
 
-- `network` 是域名白名单，不是通配；`*` 只允许内置签名插件。
-- `filesystem` 只能访问插件私有 state 目录；账号凭据目录不在白名单内。
+- `network` 只接受 `https://` 源，**不接受通配、用户信息或路径**；外部插件没有例外。
+- `filesystem` 只能声明插件私有 `state` 目录（读写分别声明）；账号凭据目录不在白名单内。
 - 插件需要宿主服务时，只能通过 `hostServices` 里的只读查询，不允许直连数据库。
-- 权限校验在安装时与运行时各做一次；越权调用记审计日志并拒绝。
+- **权限声明的边界**：安装/启用时校验声明并记录确认与审计，宿主写入投影文件时按
+  `runtimeDir` + 相对路径强制约束。`network`、`secrets`、`environment` 目前是
+  **声明 + 审计**，不是操作系统级沙箱；不要把它们描述成运行时强制隔离。
 
 ### 6.3 代次与 Go 投影
 

@@ -114,6 +114,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onSubmit={add.onSubmit}
         onCancel={add.onCancel}
         localImport={add.localImport}
+        pluginLogin={add.pluginLogin}
       />
 
       <AuthProgressModal

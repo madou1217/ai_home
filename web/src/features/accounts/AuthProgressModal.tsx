@@ -374,7 +374,7 @@ export function AuthProgressModal({
                     : '本地自动接收已启动'}
                 </InlineNote>
               ) : null}
-              {addJob.status === 'running' ? (
+              {addJob.status === 'running' && !addJob.pluginLogin ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
                   <Input.TextArea
@@ -447,7 +447,7 @@ export function AuthProgressModal({
           {addJob.authMode === 'oauth-refresh-token' && (
             <Card size="small" title="refresh_token 导入" className="hud-panel hud-panel--sm aih-overlay-section">
               {renderAuthDetail('账号', getAuthJobIdentity(addJob, subjectLabel), { copyMessage: '已复制账号' })}
-              {addJob.status === 'running' ? (
+              {addJob.status === 'running' && !addJob.pluginLogin ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
                   <Input.TextArea

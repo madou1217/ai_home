@@ -138,6 +138,11 @@
       "mode": "collect"
     },
     {
+      "id": "pricing.quote",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
       "id": "model.metadata",
       "version": 1,
       "mode": "collect"
@@ -156,6 +161,26 @@
       "id": "provider.descriptor",
       "version": 1,
       "mode": "collect"
+    },
+    {
+      "id": "account.source",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "account.login",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "account.refresh",
+      "version": 1,
+      "mode": "terminal"
+    },
+    {
+      "id": "account.materialize",
+      "version": 1,
+      "mode": "terminal"
     },
     {
       "id": "chat.prepare",

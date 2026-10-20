@@ -25,6 +25,13 @@ interface AddAccountModalProps {
     submitting: boolean;
     onImport: () => void;
   } | null;
+  /** 外部账号插件提供的交互登录入口（account.login）。 */
+  pluginLogin?: {
+    sourceId: string;
+    description: string;
+    submitting: boolean;
+    onLogin: () => void;
+  } | null;
 }
 
 export function AddAccountModal({
@@ -33,7 +40,8 @@ export function AddAccountModal({
   submitting,
   onSubmit,
   onCancel,
-  localImport
+  localImport,
+  pluginLogin
 }: AddAccountModalProps) {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
   const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
@@ -133,6 +141,19 @@ export function AddAccountModal({
               </Button>
               <span className="aih-overlay-hint">
                 {localImport.description || '本机已检测到该客户端的登录态，可直接建账号'}
+              </span>
+            </Space>
+          </div>
+        ) : null}
+
+        {pluginLogin ? (
+          <div style={{ marginBottom: 16 }}>
+            <Space size={8} align="center" wrap>
+              <Button size="small" loading={pluginLogin.submitting} onClick={pluginLogin.onLogin}>
+                插件登录
+              </Button>
+              <span className="aih-overlay-hint">
+                {pluginLogin.description || '该供应商由外部账号插件提供登录流程'}
               </span>
             </Space>
           </div>

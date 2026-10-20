@@ -238,6 +238,30 @@ export interface ProviderAuthSourceSummary {
   reason: string;
   /** 来源实现是否已把完整投影写好（true = 可不开登录任务直接建账号）。 */
   directImport?: boolean;
+  /** 来源由外部账号插件提供且有 account.login 能力时，走 /plugin-login 入口。 */
+  pluginLogin?: boolean;
+}
+
+/** 外部账号插件的登录任务公开状态（不含任何凭据）。 */
+export interface PluginAccountLoginJob {
+  jobId: string;
+  provider: string;
+  sourceId: string;
+  authMode: string;
+  status: 'waiting_user' | 'success' | 'failed' | 'cancelled' | 'expired';
+  message: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  userCode: string;
+  authorizationUrl: string;
+  redirectUri: string;
+  intervalMs: number;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+  accountRef: string;
+  cliAccountId: string;
+  error: string;
 }
 
 export interface ProviderAuthMethodSources {
@@ -410,6 +434,27 @@ export const accountsAPI = {
 
   cancelAddJob: async (jobId: string) => {
     const response = await api.post(`/webui/accounts/add/jobs/${jobId}/cancel`);
+    return response.data;
+  },
+
+  // P4 外部账号插件登录：来源、任务与凭据投影都由宿主托管，浏览器只拿公开状态。
+  startPluginLogin: async (provider: string, sourceId: string): Promise<PluginAccountLoginJob> => {
+    const response = await api.post<{ ok: boolean; job: PluginAccountLoginJob }>(
+      '/webui/accounts/plugin-login/start',
+      { provider, sourceId }
+    );
+    return response.data.job;
+  },
+
+  getPluginLoginJob: async (jobId: string): Promise<PluginAccountLoginJob> => {
+    const response = await api.get<{ ok: boolean; job: PluginAccountLoginJob }>(
+      `/webui/accounts/plugin-login/${jobId}`
+    );
+    return response.data.job;
+  },
+
+  cancelPluginLoginJob: async (jobId: string) => {
+    const response = await api.post(`/webui/accounts/plugin-login/${jobId}/cancel`);
     return response.data;
   },
 

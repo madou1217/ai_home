@@ -6,7 +6,7 @@ import {
   toolkitAPI,
   waitForAppInstallJob
 } from '@/services/api';
-import type { AccountExportFormat, AccountImportUploadFile, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
+import type { AccountExportFormat, AccountImportUploadFile, PluginAccountLoginJob, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
 import type {
   Account,
   AccountAddJob,
@@ -68,6 +68,39 @@ const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
 const CLI_WORKDIR_HISTORY_STORAGE_KEY = 'accounts-cli-workdir-history:v1';
 const CLI_WORKDIR_HISTORY_LIMIT = 10;
+
+function mapPluginLoginJob(job: PluginAccountLoginJob): AccountAddJob {
+  const status = job.status === 'success'
+    ? 'succeeded'
+    : job.status === 'failed'
+      ? 'failed'
+      : job.status === 'cancelled'
+        ? 'cancelled'
+        : job.status === 'expired'
+          ? 'expired'
+          : 'running';
+  return {
+    id: job.jobId,
+    provider: job.provider as Provider,
+    accountRef: job.accountRef || '',
+    authMode: job.authMode as AccountAuthMode,
+    status,
+    createdAt: Number(job.createdAt) || Date.now(),
+    updatedAt: Number(job.updatedAt) || Date.now(),
+    expiresAt: Number(job.expiresAt) || null,
+    pollIntervalMs: Number(job.intervalMs) || null,
+    exitCode: null,
+    verificationUri: job.verificationUri || '',
+    verificationUriComplete: job.verificationUriComplete || '',
+    userCode: job.userCode || '',
+    authorizationUrl: job.authorizationUrl || '',
+    redirectUri: job.redirectUri || '',
+    pluginLogin: true,
+    sourceId: job.sourceId || '',
+    logs: job.message || '',
+    error: job.error || ''
+  };
+}
 
 export type AccountAppInstallKind = 'desktop' | 'cli';
 
@@ -200,6 +233,9 @@ export function useAccountActions({
   // 添加账号弹窗里的「从本机导入」：来源由服务端来源链解析（可用 + directImport），这里只持有结果。
   const [addLocalImportSource, setAddLocalImportSource] = React.useState<ProviderAuthSourceSummary | null>(null);
   const [addLocalImportSubmitting, setAddLocalImportSubmitting] = React.useState(false);
+  const [addPluginLoginSource, setAddPluginLoginSource] = React.useState<ProviderAuthSourceSummary | null>(null);
+  const [addPluginLoginSubmitting, setAddPluginLoginSubmitting] = React.useState(false);
+  const [pluginLoginJobId, setPluginLoginJobId] = React.useState<string | null>(null);
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
   const editingClaudeCredentialMode = editingAccount?.provider === 'claude'
     ? getClaudeCredentialMode(editingAccount)
@@ -265,6 +301,7 @@ export function useAccountActions({
     }
     setAuthSuccessClosing(false);
     setAddJobId(null);
+    setPluginLoginJobId(null);
     setAddJob(null);
     setAuthFlowKind('add');
     setAuthSubjectLabel('');
@@ -715,6 +752,46 @@ export function useAccountActions({
     };
   }, [addJobId, handleAuthJobUpdate]);
 
+  // 外部账号插件的登录任务：独立轮询入口，成功/失败都走同一套进度弹窗。
+  React.useEffect(() => {
+    if (!pluginLoginJobId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      try {
+        const pluginJob = await accountsAPI.getPluginLoginJob(pluginLoginJobId);
+        if (cancelled) return;
+        const job = mapPluginLoginJob(pluginJob);
+        setAddJob(job);
+        if (job.status === 'running') return;
+        setPluginLoginJobId(null);
+        if (job.status === 'succeeded') {
+          setAuthSuccessClosing(true);
+          message.success('插件登录完成');
+          void requestAccountsSnapshotUpdate({ failureMessage: '刷新账号列表失败' });
+          if (successAutoCloseTimerRef.current !== null) {
+            window.clearTimeout(successAutoCloseTimerRef.current);
+          }
+          successAutoCloseTimerRef.current = window.setTimeout(() => {
+            closeAuthProgressPanel();
+          }, 3000);
+        } else if (job.status === 'failed') {
+          message.error(job.error || '插件登录失败');
+        }
+      } catch (_error) {
+        if (!cancelled) setPluginLoginJobId(null);
+      }
+    };
+
+    void poll();
+    timer = setInterval(poll, AUTH_JOB_FALLBACK_POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [pluginLoginJobId, closeAuthProgressPanel, requestAccountsSnapshotUpdate]);
+
   // 认证来源链：任务运行期间解析一次「这个认证方式在这台机器上有哪些来源」。
   // 界面只消费解析结果（本机来源是否可用 / 是否可安装），不自己判断有没有装 IDE。
   const refreshAuthLocalSources = React.useCallback(async (job: AccountAddJob | null) => {
@@ -816,7 +893,7 @@ export function useAccountActions({
 
   /** 从本机登录态完成登录任务（例如 Kiro IDE 已登录时一键导入）。 */
   const handleLocalAuthImport = async (sourceId: string) => {
-    if (!addJob || addJob.status !== 'running' || !sourceId) return;
+    if (!addJob || addJob.status !== 'running' || addJob.pluginLogin || !sourceId) return;
     setAuthLocalImportSubmitting(true);
     try {
       const job = await accountsAPI.completeLocalAuthImport(addJob.id, sourceId);
@@ -857,10 +934,7 @@ export function useAccountActions({
   React.useEffect(() => {
     if (!modalVisible || !selectedProvider || !addFormAuthMode) {
       setAddLocalImportSource(null);
-      return undefined;
-    }
-    if (!DIRECT_REGISTER_AUTH_MODES.includes(addFormAuthMode)) {
-      setAddLocalImportSource(null);
+      setAddPluginLoginSource(null);
       return undefined;
     }
     let cancelled = false;
@@ -871,14 +945,23 @@ export function useAccountActions({
         const method = methods.find((item) => item.authMode === addFormAuthMode) || null;
         const sources = (method && method.sources) || [];
         const preferred = sources.find((item) => item.id === (method && method.preferredSourceId)) || null;
-        const usable = preferred && preferred.available && preferred.directImport
+        const usable = DIRECT_REGISTER_AUTH_MODES.includes(addFormAuthMode)
+          ? (preferred && preferred.available && preferred.directImport
+            ? preferred
+            : sources.find((item) => item.available && item.directImport) || null)
+          : null;
+        const pluginSource = preferred && preferred.available && preferred.pluginLogin
           ? preferred
-          : sources.find((item) => item.available && item.directImport) || null;
+          : sources.find((item) => item.available && item.pluginLogin) || null;
         setAddLocalImportSource(usable);
+        setAddPluginLoginSource(pluginSource);
       })
       .catch(() => {
-        // 解析失败只意味着「不展示本机导入」，粘贴 key 的路径照常可用。
-        if (!cancelled) setAddLocalImportSource(null);
+        // 解析失败只意味着「不展示本机/插件入口」，粘贴 key 的路径照常可用。
+        if (!cancelled) {
+          setAddLocalImportSource(null);
+          setAddPluginLoginSource(null);
+        }
       });
     return () => { cancelled = true; };
   }, [modalVisible, selectedProvider, addFormAuthMode]);
@@ -907,9 +990,38 @@ export function useAccountActions({
     }
   };
 
+  /** 外部账号插件登录（P4）：任务与投影由宿主托管，这里只消费公开状态。 */
+  const handleAddPluginLogin = async () => {
+    const source = addPluginLoginSource;
+    if (!source || !selectedProvider) return;
+    setAddPluginLoginSubmitting(true);
+    try {
+      const pluginJob = await accountsAPI.startPluginLogin(selectedProvider, source.id);
+      const job = mapPluginLoginJob(pluginJob);
+      setAuthSuccessClosing(false);
+      setAuthFlowKind('add');
+      setAuthSubjectLabel(source.description || '插件登录');
+      setAuthCallbackUrl('');
+      setAuthCallbackSubmitting(false);
+      // 插件任务没有内置回调/粘贴入口，来源卡片也不应由内置链路承接。
+      setAuthLocalSources(null);
+      setAddJob(job);
+      setAddJobId(null);
+      setPluginLoginJobId(job.status === 'running' ? job.id : null);
+      setAuthProgressVisible(true);
+      closeAddAccountModal();
+    } catch (error: any) {
+      const code = error?.response?.data?.error || '';
+      message.error(error?.response?.data?.detail || (code ? `插件登录启动失败：${code}` : '插件登录启动失败'));
+    } finally {
+      setAddPluginLoginSubmitting(false);
+    }
+  };
+
   const closeAuthProgress = async (forceCancel = false) => {
     if (authSuccessClosing) return;
     if (addJob && addJob.status === 'running') {
+      const pluginManaged = Boolean(pluginLoginJobId && addJob.id === pluginLoginJobId);
       if (!forceCancel) {
         Modal.confirm({
           title: '取消当前授权流程？',
@@ -927,7 +1039,9 @@ export function useAccountActions({
       }
 
       try {
-        await accountsAPI.cancelAddJob(addJob.id);
+        if (pluginManaged) await accountsAPI.cancelPluginLoginJob(addJob.id);
+        else await accountsAPI.cancelAddJob(addJob.id);
+        setPluginLoginJobId(null);
         message.success('已取消当前授权流程');
         await requestAccountsSnapshotUpdate({ failureMessage: '刷新账号列表失败' });
       } catch (error: any) {
@@ -961,6 +1075,7 @@ export function useAccountActions({
     setAuthSubjectLabel(subjectLabel || (result.authMode === 'oauth-device' ? '设备码授权' : 'OAuth 授权'));
     setAuthCallbackUrl('');
     setAuthCallbackSubmitting(false);
+    setPluginLoginJobId(null);
     setAddJob({
       id: result.jobId,
       provider: result.provider,
@@ -997,6 +1112,7 @@ export function useAccountActions({
     setAuthFlowKind(flowKind);
     setAuthCallbackUrl('');
     setAuthCallbackSubmitting(false);
+    setPluginLoginJobId(null);
     setAddJob(job);
     setAddJobId(job.status === 'running' ? jobId : null);
     setAuthProgressVisible(true);
@@ -1004,7 +1120,7 @@ export function useAccountActions({
   }, []);
 
   const handleSubmitBrowserCallback = async () => {
-    if (!addJob || addJob.status !== 'running') return;
+    if (!addJob || addJob.status !== 'running' || addJob.pluginLogin) return;
     const copy = getCallbackUiCopy(addJob.provider);
     const callbackUrl = authCallbackUrl.trim();
     if (!callbackUrl) {
@@ -1031,14 +1147,14 @@ export function useAccountActions({
   };
 
   const canSubmitBrowserCallback = React.useMemo(() => {
-    if (!addJob || addJob.status !== 'running') return false;
+    if (!addJob || addJob.status !== 'running' || addJob.pluginLogin) return false;
     if (!authCallbackUrl.trim()) return false;
     if (!getCallbackUiCopy(addJob.provider).requiresAwaitingCode) return true;
     return addJob.authProgressState === 'awaiting_code';
   }, [addJob, authCallbackUrl]);
 
   const handleConfirmCliInstall = async () => {
-    if (!addJob?.id) return;
+    if (!addJob?.id || addJob.pluginLogin) return;
     setCliInstallSubmitting(true);
     try {
       const job = await accountsAPI.confirmCliInstall(addJob.id);
@@ -1562,6 +1678,12 @@ export function useAccountActions({
           description: addLocalImportSource.description,
           submitting: addLocalImportSubmitting,
           onImport: handleAddLocalImport
+        } : null,
+        pluginLogin: addPluginLoginSource ? {
+          sourceId: addPluginLoginSource.id,
+          description: addPluginLoginSource.description,
+          submitting: addPluginLoginSubmitting,
+          onLogin: handleAddPluginLogin
         } : null
       },
       edit: {

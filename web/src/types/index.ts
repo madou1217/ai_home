@@ -799,6 +799,9 @@ export interface AccountAddJob {
   email?: string;
   displayName?: string;
   planType?: string;
+  /** 该任务由外部账号插件托管：回调/粘贴入口由插件自己轮询，宿主 UI 不提供内置提交。 */
+  pluginLogin?: boolean;
+  sourceId?: string;
   logs: string;
   error?: string;
 }

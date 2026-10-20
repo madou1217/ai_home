@@ -19,6 +19,7 @@
     "configSchema": { "type": "object" },
     "secretsSchema": { "type": "object" },
     "stateSchemaVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "permissions": { "$ref": "#/definitions/permissions" },
     "requires": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/requirement" } },
     "provides": { "type": "array", "maxItems": 128, "items": { "$ref": "#/definitions/service" } },
     "contributes": {
@@ -36,6 +37,34 @@
     }
   },
   "definitions": {
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "filesystem", "secrets"],
+      "properties": {
+        "network": {
+          "type": "array", "maxItems": 64, "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 512, "pattern": "^https://[^/*\\s]+$" }
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read", "write"],
+          "properties": {
+            "read": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "enum": ["state"] } },
+            "write": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "enum": ["state"] } }
+          }
+        },
+        "secrets": {
+          "type": "array", "maxItems": 64, "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,127}$" }
+        },
+        "environment": {
+          "type": "array", "maxItems": 64, "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }
+        }
+      }
+    },
     "service": {
       "type": "object", "additionalProperties": false, "required": ["name", "version"],
       "properties": {

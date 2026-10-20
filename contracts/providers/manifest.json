@@ -1056,10 +1056,12 @@
           "windows": {
             "clientName": "Qoder",
             "processNames": [
-              "Qoder.exe"
+              "Qoder.exe",
+              "Qoder IDE.exe"
             ],
             "execNames": [
-              "Qoder.exe"
+              "Qoder.exe",
+              "Qoder IDE.exe"
             ],
             "displayNames": [
               "Qoder IDE"
@@ -1202,11 +1204,13 @@
             "clientName": "Qoder CN",
             "processNames": [
               "QoderCN.exe",
-              "Qoder CN.exe"
+              "Qoder CN.exe",
+              "Qoder CN IDE.exe"
             ],
             "execNames": [
               "QoderCN.exe",
-              "Qoder CN.exe"
+              "Qoder CN.exe",
+              "Qoder CN IDE.exe"
             ],
             "displayNames": [
               "Qoder CN IDE"

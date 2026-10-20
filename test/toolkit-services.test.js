@@ -630,6 +630,93 @@ test('app-manager strips the icon index from quoted Windows DisplayIcon paths', 
   assert.equal(record.executablePath, executablePath);
 });
 
+test('app-manager treats the Inno per-user display name suffix as the same desktop product', () => {
+  const installLocation = 'C:\\Users\\tester\\AppData\\Local\\Programs\\Qoder CN IDE\\';
+  const executablePath = `${installLocation}Qoder CN IDE.exe`;
+  const record = findDesktopClientRecord('qodercn', {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: {},
+    fs: {
+      existsSync(candidate) {
+        return candidate === executablePath;
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    },
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            DisplayName: 'Qoder CN IDE (User)',
+            DisplayVersion: '1.106.3',
+            InstallLocation: installLocation,
+            DisplayIcon: `${executablePath},0`
+          }]),
+          stderr: ''
+        };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+
+  assert.ok(record);
+  assert.equal(record.executablePath, executablePath);
+  assert.equal(record.packageVersion, '1.106.3');
+});
+
+test('app-manager prefers the Windows uninstall entry over a legacy install path', () => {
+  // 真机场景：机器级旧版留在 C:\Program Files\Qoder\Qoder.exe，UserSetup
+  // 把新版装到 %LOCALAPPDATA%\Programs\Qoder IDE，注册项是唯一指向新版的事实。
+  const legacyExecutable = 'C:\\Program Files\\Qoder\\Qoder.exe';
+  const installLocation = 'C:\\Users\\tester\\AppData\\Local\\Programs\\Qoder IDE\\';
+  const executablePath = `${installLocation}Qoder IDE.exe`;
+  const visible = new Set([legacyExecutable, executablePath]);
+  const options = {
+    platform: 'win32',
+    hostHomeDir: 'C:\\Users\\tester',
+    env: { ProgramFiles: 'C:\\Program Files' },
+    fs: {
+      existsSync(candidate) {
+        return visible.has(candidate);
+      },
+      readdirSync() {
+        throw new Error('unexpected directory scan');
+      }
+    }
+  };
+  const registryRows = [{
+    DisplayName: 'Qoder IDE (User)',
+    DisplayVersion: '1.106.3',
+    InstallLocation: installLocation,
+    DisplayIcon: `${executablePath},0`
+  }];
+  const withRegistry = findDesktopClientRecord('qoder', {
+    ...options,
+    spawnSync(command, args) {
+      if (command === 'powershell.exe' && String(args[3] || '').includes('Get-ItemProperty')) {
+        return { status: 0, stdout: JSON.stringify(registryRows), stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: '' };
+    }
+  });
+  assert.ok(withRegistry);
+  assert.equal(withRegistry.executablePath, executablePath);
+  assert.equal(withRegistry.packageVersion, '1.106.3');
+
+  // 没有注册项的绿色版/旧安装仍然回落到固定路径，不能因为改了优先级就探测不到。
+  const withoutRegistry = findDesktopClientRecord('qoder', {
+    ...options,
+    spawnSync() {
+      return { status: 0, stdout: '[]', stderr: '' };
+    }
+  });
+  assert.ok(withoutRegistry);
+  assert.equal(withoutRegistry.executablePath, legacyExecutable);
+});
+
 test('app-manager finds Qoder CN Linux desktop by its package binary name', () => {
   const record = findDesktopClientRecord('qodercn', {
     platform: 'linux',

@@ -379,13 +379,16 @@ func builtinQoder() Definition {
 			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
 			// 官方 DMG 的实际包名是 Qoder IDE.app（可执行文件 Qoder，
 			// bundle id com.qoder.ide）；Qoder.app 只作为旧版本回退。
+			// Windows 的 UserSetup 安装到 %LOCALAPPDATA%\Programs\Qoder IDE，
+			// 可执行文件是 Qoder IDE.exe；Qoder.exe 只属于旧版机器级安装
+			// （C:\Program Files\Qoder），保留为回退而不是唯一事实。
 			DesktopClient: describeDesktopClient(desktopClient(
 				"Qoder",
 				[]string{"Qoder"},
 				[]string{"/Qoder IDE.app/Contents/MacOS/", "/Qoder.app/Contents/MacOS/"},
 				[]string{"/Applications/Qoder IDE.app", "{hostHomeDir}/Applications/Qoder IDE.app", "/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
-				[]string{"Qoder.exe"},
-				[]string{"Qoder.exe"},
+				[]string{"Qoder.exe", "Qoder IDE.exe"},
+				[]string{"Qoder.exe", "Qoder IDE.exe"},
 				[]string{"qoder", "Qoder"},
 			), "com.qoder.ide", []string{"Qoder IDE"}),
 		},
@@ -431,13 +434,15 @@ func builtinQoderCN() Definition {
 			Headless:               &HeadlessConfig{TriggerFlags: []string{"--print"}},
 			// 国内站 DMG 的实际包名是 Qoder CN IDE.app（可执行文件 Qoder CN，
 			// bundle id com.aliyun.lingma.ide）；旧包名 Qoder.app 保留为回退。
+			// Windows 的 UserSetup 安装到 %LOCALAPPDATA%\Programs\Qoder CN IDE，
+			// 可执行文件是 Qoder CN IDE.exe；QoderCN.exe 属于旧版机器级安装。
 			DesktopClient: describeDesktopClient(desktopClient(
 				"Qoder CN",
 				[]string{"Qoder CN", "QoderCN"},
 				[]string{"/Qoder CN IDE.app/Contents/MacOS/", "/Qoder.app/Contents/MacOS/"},
 				[]string{"/Applications/Qoder CN IDE.app", "{hostHomeDir}/Applications/Qoder CN IDE.app", "/Applications/Qoder.app", "{hostHomeDir}/Applications/Qoder.app"},
-				[]string{"QoderCN.exe", "Qoder CN.exe"},
-				[]string{"QoderCN.exe", "Qoder CN.exe"},
+				[]string{"QoderCN.exe", "Qoder CN.exe", "Qoder CN IDE.exe"},
+				[]string{"QoderCN.exe", "Qoder CN.exe", "Qoder CN IDE.exe"},
 				[]string{"qoder-cn", "qodercn", "Qoder CN", "QoderCN"},
 			), "com.aliyun.lingma.ide", []string{"Qoder CN IDE"}),
 		},

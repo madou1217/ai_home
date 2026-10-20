@@ -88,13 +88,15 @@ test('客户端形态由统一 clients 合同声明，不由 CLI 细节推断', 
 
 test('Qoder 桌面进程识别不会把命令行进程当作桌面客户端', () => {
   const qoder = AI_CLI_CONFIGS.qoder;
-  assert.deepEqual(qoder.desktopClient.windows.processNames, ['Qoder.exe']);
-  assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe']);
+  // UserSetup 装出来的可执行文件是 `Qoder IDE.exe`；`Qoder.exe` 只属于旧版
+  // 机器级安装，两者都是桌面进程，CLI（qodercli.exe）不在其中。
+  assert.deepEqual(qoder.desktopClient.windows.processNames, ['Qoder.exe', 'Qoder IDE.exe']);
+  assert.deepEqual(qoder.desktopClient.windows.execNames, ['Qoder.exe', 'Qoder IDE.exe']);
   assert.equal(qoder.desktopClient.windows.processNames.includes('qodercli.exe'), false);
 
   const qoderCn = AI_CLI_CONFIGS.qodercn;
-  assert.deepEqual(qoderCn.desktopClient.windows.processNames, ['QoderCN.exe', 'Qoder CN.exe']);
-  assert.deepEqual(qoderCn.desktopClient.windows.execNames, ['QoderCN.exe', 'Qoder CN.exe']);
+  assert.deepEqual(qoderCn.desktopClient.windows.processNames, ['QoderCN.exe', 'Qoder CN.exe', 'Qoder CN IDE.exe']);
+  assert.deepEqual(qoderCn.desktopClient.windows.execNames, ['QoderCN.exe', 'Qoder CN.exe', 'Qoder CN IDE.exe']);
   assert.equal(qoderCn.desktopClient.windows.execNames.includes('qoderclicn.exe'), false);
 });
 

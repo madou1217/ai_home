@@ -1,6 +1,6 @@
 import AccountCardGrid from '@/components/account/AccountCardGrid';
 import './Accounts.css';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StatisticCard } from '@ant-design/pro-components';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
@@ -19,7 +19,8 @@ import {
   Switch,
   Popover,
   Menu,
-  Tabs
+  Tabs,
+  Typography
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -50,7 +51,7 @@ import {
 import { accountsAPI } from '@/services/api';
 import { formatTimeCell } from '@/utils/datetime';
 import type { AccountExportFormat } from '@/services/api';
-import type { Account, AccountActivityAction, AccountActivityResult } from '@/types';
+import type { Account, AccountActivityAction, AccountActivityJob, AccountActivityResult } from '@/types';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { getProviderFamily } from '@/providers/catalog';
 import TokenUsageCell from '@/components/account/TokenUsageCell';
@@ -164,6 +165,10 @@ function persistAccountsViewMode(mode: 'card' | 'list'): void {
   try { window.localStorage.setItem(ACCOUNTS_VIEW_MODE_STORAGE_KEY, mode); } catch (_error) {}
 }
 
+function isActivityJobTerminal(status: string): boolean {
+  return status === 'succeeded' || status === 'partial' || status === 'failed';
+}
+
 export default function Accounts() {
   const [viewMode, setViewMode] = useState<'card' | 'list'>(readStoredAccountsViewMode);
   const location = useLocation();
@@ -264,6 +269,8 @@ export default function Accounts() {
   const [rewardsOpen, setRewardsOpen] = useState(false);
   const [rewardsTitle, setRewardsTitle] = useState('');
   const [rewardsResults, setRewardsResults] = useState<AccountActivityResult[]>([]);
+  const [rewardsJob, setRewardsJob] = useState<AccountActivityJob | null>(null);
+  const rewardsPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aliasPoolAccount, setAliasPoolAccount] = useState<Account | null>(null);
 
   const renderEgressBadge = (record: Account) => (
@@ -276,6 +283,11 @@ export default function Accounts() {
   useEffect(() => {
     persistActiveProviderTab(activeProvider);
   }, [activeProvider]);
+
+  // 页面卸载时停止轮询；后台任务本身在服务端继续跑，重新进入页面不会重复领取。
+  useEffect(() => () => {
+    if (rewardsPollTimer.current) clearTimeout(rewardsPollTimer.current);
+  }, []);
 
   // 按产品族分组统计（族内所有站点账号合并计数）
   const providerStats = useMemo<ProviderStats>(() => {
@@ -320,6 +332,12 @@ export default function Accounts() {
     }));
   }, [activeProvider, filteredAccounts]);
 
+  const rewardsProgressText = rewardsJob && rewardsRunning
+    ? (rewardsJob.status === 'queued'
+      ? `${rewardsJob.actionLabel}：排队中，共 ${rewardsJob.progress.total} 个账号`
+      : `${rewardsJob.actionLabel}：进行中 ${rewardsJob.progress.completed}/${rewardsJob.progress.total}`)
+    : '';
+
   useEffect(() => {
     if (!accountRouteTarget) return;
     // 从仪表盘错误跳入账号页时，确保目标账号不会被 provider/status 过滤掉。
@@ -355,36 +373,81 @@ export default function Accounts() {
     setRewardsOpen(true);
   };
 
+  const showRewardsSummary = (job: AccountActivityJob) => {
+    const summary = job.summary;
+    if (summary && summary.claimed > 0) {
+      message.success(`${job.actionLabel}：${summary.claimed} 个账号成功`);
+    } else if (summary && summary.failed > 0) {
+      message.warning(`${job.actionLabel}：${summary.failed} 个账号失败，详情见结果`);
+    } else if (summary && summary.alreadyClaimed > 0) {
+      message.info(`${job.actionLabel}：今天已经领过了`);
+    } else {
+      message.info(`${job.actionLabel}：当前没有可领取的活动`);
+    }
+  };
+
+  const finishRewardsJob = (job: AccountActivityJob) => {
+    setRewardsRunning(false);
+    setRewardsJob(job);
+    presentRewards(job.results || [], job.actionLabel);
+    showRewardsSummary(job);
+  };
+
+  const pollRewardsJob = async (jobId: string) => {
+    try {
+      const response = await accountsAPI.getAccountActivityJob(jobId);
+      const job = response.job;
+      if (!job) throw new Error('领取任务不存在');
+      if (isActivityJobTerminal(job.status)) {
+        finishRewardsJob(job);
+        return;
+      }
+      setRewardsJob(job);
+      rewardsPollTimer.current = setTimeout(() => { void pollRewardsJob(jobId); }, 1000);
+    } catch (error: any) {
+      setRewardsRunning(false);
+      setRewardsJob(null);
+      message.error(error?.response?.data?.error || error?.message || '领取任务查询失败');
+    }
+  };
+
   // 只跑当前供应商 tab 里声明了该动作的账号（族内站点一起跑，如 Qoder 国际站 + 国内站）。
+  // 开始请求立即返回 job，真正的领取在服务端后台串行执行，页面轮询进度。
   const runProviderRewards = async (action: AccountActivityAction, providers: string[]) => {
     if (rewardsRunning || providers.length === 0) return;
+    if (rewardsPollTimer.current) {
+      clearTimeout(rewardsPollTimer.current);
+      rewardsPollTimer.current = null;
+    }
     setRewardsRunning(true);
+    setRewardsJob(null);
     try {
-      const response = await accountsAPI.runAccountActivities({
+      const started = await accountsAPI.startAccountActivityJob({
         providers,
         actionId: action.id
       });
-      presentRewards(response.results || [], action.label);
-      const summary = response.summary;
-      if (summary && summary.claimed > 0) {
-        message.success(`${action.label}：${summary.claimed} 个账号成功`);
-      } else if (summary && summary.failed > 0) {
-        message.warning(`${action.label}：${summary.failed} 个账号失败，详情见结果`);
-      } else if (summary && summary.alreadyClaimed > 0) {
-        message.info(`${action.label}：今天已经领过了`);
-      } else {
-        message.info(`${action.label}：当前没有可领取的活动`);
+      if (!started.job) {
+        throw new Error('服务端未返回领取任务，请重启 Server 后重试');
       }
+      setRewardsJob(started.job);
+      if (started.alreadyRunning) {
+        message.info(`${action.label}：已有任务在跑，继续跟踪进度`);
+      }
+      void pollRewardsJob(started.job.id);
     } catch (error: any) {
-      message.error(error?.response?.data?.error || error?.message || `${action.label}失败`);
-    } finally {
       setRewardsRunning(false);
+      message.error(error?.response?.data?.error || error?.message || `${action.label}失败`);
     }
   };
 
   const runOneReward = async (record: Account, actionId: string) => {
     if (rewardsRunning) return;
     const action = (record.activityActions || []).find((item) => item.id === actionId);
+    if (rewardsPollTimer.current) {
+      clearTimeout(rewardsPollTimer.current);
+      rewardsPollTimer.current = null;
+    }
+    setRewardsJob(null);
     setRewardsRunning(true);
     try {
       const result = await accountsAPI.runAccountActivity(record.provider, record.accountRef, actionId);
@@ -1039,24 +1102,32 @@ export default function Accounts() {
           activeKey={activeProvider}
           onChange={(key) => setActiveProvider(key)}
           items={tabItems.map((tab) => ({ key: tab.key, label: tab.label }))}
-          // 动作属于供应商：只在支持它的 tab 下显示（“全部” tab 不提供全局入口）。
-          tabBarExtraContent={visibleActivityActions.length > 0 ? (
-            <Space size={8}>
+        />
+        {/* 供应商动作放在 tab 内容区顶部，不塞进 tab 栏；“全部”不显示任何动作。 */}
+        {visibleActivityActions.length > 0 || rewardsProgressText ? (
+          <div className="accounts-activity-bar">
+            <Space size={8} wrap>
               {visibleActivityActions.map(({ action, providers }) => (
                 <Button
                   key={action.id}
                   size="small"
                   icon={<GiftOutlined />}
                   title={action.description || action.label}
-                  loading={rewardsRunning}
+                  loading={rewardsJob?.actionId === action.id ? rewardsRunning : false}
+                  disabled={rewardsRunning}
                   onClick={() => void runProviderRewards(action, providers)}
                 >
                   {action.label}
                 </Button>
               ))}
+              {rewardsProgressText ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {rewardsProgressText}
+                </Typography.Text>
+              ) : null}
             </Space>
-          ) : null}
-        />
+          </div>
+        ) : null}
         {viewMode === 'card' ? (
           <div style={{ marginBottom: 16 }}>
             <AccountCardGrid

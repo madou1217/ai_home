@@ -1,11 +1,13 @@
 'use strict';
 
-// WebUI 账号活动路由（POST /v0/webui/accounts/activity/run 与单账号动作）。
+// WebUI 账号活动路由。
 //
-// 守住两条边界：
-//   * 执行走 CLI 同一条策略执行器（注入点唯一），路由不自己拼上游请求；
-//   * 业务失败是 200 + ok:false（活动未开放 / 已领过都是正常结果），只有路径/账号/动作
-//     不存在才是 4xx。
+// 守住三条边界：
+//   * 批量领取是异步任务：POST 只返回 job，执行在后台，页面轮询 GET jobs/:id；
+//   * 批量选择必须显式给出 providers + actionId，且每个 provider 都必须声明该动作；
+//     绝不回退成“所有 provider 一起跑”（Qoder / ZCode 不能混批）；
+//   * 业务失败是 200 + ok:false（活动未开放 / 已领过都是正常结果），只有路径 / 选择 /
+//     账号不存在才是 4xx。
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,13 +16,19 @@ const {
   handleAccountActivityRequest,
   matchAccountActivityRoute
 } = require('../lib/server/webui-account-activity-routes');
+const { createAccountActivityJobManager } = require('../lib/server/account-activity-job-manager');
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function createCtx(pathname, overrides = {}) {
   const calls = [];
-  const records = overrides.records || [
-    { provider: 'qoder', accountRef: 'acct_qoder_1' },
-    { provider: 'qoder', accountRef: 'acct_qoder_2' }
-  ];
+  const recordsByProvider = overrides.recordsByProvider || {
+    qoder: [
+      { provider: 'qoder', accountRef: 'acct_qoder_1' },
+      { provider: 'qoder', accountRef: 'acct_qoder_2' }
+    ],
+    zcode: [{ provider: 'zcode', accountRef: 'acct_zcode_1' }]
+  };
   const ctx = {
     method: overrides.method || 'POST',
     pathname,
@@ -29,15 +37,16 @@ function createCtx(pathname, overrides = {}) {
     processObj: process,
     res: {},
     deps: {
-      listAccountCredentialRecords: () => records,
-      listActivityProviders: () => ['qoder'],
-      listActivityActions: (provider) => (provider === 'qoder'
-        ? [{ id: 'daily_checkin', label: '每日签到' }]
-        : []),
+      listAccountCredentialRecords: (_fs, _home, provider) => recordsByProvider[provider] || [],
+      listActivityActions: (provider) => {
+        if (provider === 'qoder') return [{ id: 'daily_checkin', label: '签到' }];
+        if (provider === 'zcode') return [{ id: 'trial_plan', label: '领臭鸡蛋' }];
+        return [];
+      },
       runActivityClaim: async (input) => ({
         provider: input.provider,
         accountRef: input.record.accountRef,
-        actionId: input.actionId || 'daily_checkin',
+        actionId: input.actionId,
         status: 'claimed',
         credits: 100
       }),
@@ -48,10 +57,19 @@ function createCtx(pathname, overrides = {}) {
   return { ctx, calls };
 }
 
-test('matchAccountActivityRoute 只认 POST，并解析单账号动作', () => {
+function attachBody(ctx, body) {
+  ctx.req = {};
+  ctx.readRequestBody = async () => Buffer.from(JSON.stringify(body));
+}
+
+test('matchAccountActivityRoute 解析批量、任务查询与单账号动作', () => {
   assert.deepEqual(
     matchAccountActivityRoute('POST', '/v0/webui/accounts/activity/run'),
     { bulk: true }
+  );
+  assert.deepEqual(
+    matchAccountActivityRoute('GET', '/v0/webui/accounts/activity/jobs/activity-job-abc'),
+    { jobId: 'activity-job-abc' }
   );
   assert.deepEqual(
     matchAccountActivityRoute('POST', '/v0/webui/accounts/qoder/acct_1/activity/daily_checkin'),
@@ -61,39 +79,131 @@ test('matchAccountActivityRoute 只认 POST，并解析单账号动作', () => {
   assert.equal(matchAccountActivityRoute('POST', '/v0/webui/accounts/qoder/acct_1/activity'), null);
 });
 
-test('批量领取逐账号执行并汇总（账号来源由注入的仓库读取器决定）', async () => {
-  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run');
-  assert.equal(await handleAccountActivityRequest(ctx), true);
-  assert.equal(calls.length, 1);
-  const { status, payload } = calls[0];
-  assert.equal(status, 200);
-  assert.equal(payload.ok, true);
-  assert.equal(payload.results.length, 2);
-  assert.deepEqual(payload.summary, {
-    accounts: 2,
-    claimed: 2,
-    alreadyClaimed: 0,
-    nothingClaimable: 0,
-    notApplicable: 0,
-    failed: 0
-  });
+test('批量领取只接受显式的 providers + actionId，不再回退到全部 provider', async () => {
+  const missingBody = createCtx('/v0/webui/accounts/activity/run');
+  await handleAccountActivityRequest(missingBody.ctx);
+  assert.equal(missingBody.calls[0].status, 400);
+  assert.equal(missingBody.calls[0].payload.error, 'invalid_activity_selection');
+
+  const missingAction = createCtx('/v0/webui/accounts/activity/run');
+  attachBody(missingAction.ctx, { providers: ['qoder'] });
+  await handleAccountActivityRequest(missingAction.ctx);
+  assert.equal(missingAction.calls[0].status, 400);
+  assert.equal(missingAction.calls[0].payload.error, 'invalid_activity_selection');
 });
 
-test('批量领取按 providers + actionId 收窄到供应商 tab，未声明该动作的站点跳过', async () => {
-  const seen = [];
-  const recordsByProvider = {
-    qoder: [{ provider: 'qoder', accountRef: 'acct_qoder_1' }],
-    zcode: [{ provider: 'zcode', accountRef: 'acct_zcode_1' }]
-  };
+test('批量领取拒绝混入未声明该动作的 provider（Qoder 任务不会带上 ZCode）', async () => {
   const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
     deps: {
-      listActivityProviders: () => ['qoder', 'zcode'],
-      listActivityActions: (provider) => (provider === 'qoder'
-        ? [{ id: 'daily_checkin', label: '签到' }]
-        : [{ id: 'trial_plan', label: '领臭鸡蛋' }]),
-      listAccountCredentialRecords: (_fs, _home, provider) => recordsByProvider[provider] || [],
+      accountActivityJobManager: {
+        start: () => { throw new Error('should not start'); },
+        getJob: () => null
+      }
+    }
+  });
+  attachBody(ctx, { providers: ['qoder', 'zcode'], actionId: 'daily_checkin' });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 400);
+  assert.equal(calls[0].payload.error, 'activity_action_unknown:zcode:daily_checkin');
+});
+
+test('批量领取按当前供应商快照账号并返回 202 job', async () => {
+  const started = [];
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
+    deps: {
+      accountActivityJobManager: {
+        start: (input) => {
+          started.push(input);
+          return {
+            ok: true,
+            alreadyRunning: false,
+            job: {
+              id: 'activity-job-1',
+              providers: input.providers,
+              actionId: input.actionId,
+              actionLabel: input.actionLabel,
+              status: 'queued',
+              progress: { total: input.targets.length, completed: 0 }
+            }
+          };
+        },
+        getJob: () => null
+      }
+    }
+  });
+  attachBody(ctx, { providers: ['qoder'], actionId: 'daily_checkin' });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 202);
+  assert.equal(calls[0].payload.ok, true);
+  assert.equal(calls[0].payload.job.id, 'activity-job-1');
+  assert.equal(started.length, 1);
+  assert.deepEqual(started[0].providers, ['qoder']);
+  assert.equal(started[0].actionId, 'daily_checkin');
+  assert.equal(started[0].actionLabel, '签到');
+  assert.deepEqual(
+    started[0].targets.map((target) => target.record.accountRef),
+    ['acct_qoder_1', 'acct_qoder_2']
+  );
+  assert.deepEqual(started[0].targets.map((target) => target.provider), ['qoder', 'qoder']);
+  assert.equal(typeof started[0].execute, 'function');
+});
+
+test('批量领取没有可执行账号时明确失败', async () => {
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
+    recordsByProvider: { qoder: [], zcode: [] },
+    deps: {
+      accountActivityJobManager: {
+        start: () => { throw new Error('should not start'); },
+        getJob: () => null
+      }
+    }
+  });
+  attachBody(ctx, { providers: ['qoder'], actionId: 'daily_checkin' });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 400);
+  assert.equal(calls[0].payload.error, 'activity_no_accounts');
+});
+
+test('任务查询返回 job，未知任务 404', async () => {
+  const job = {
+    id: 'activity-job-1',
+    status: 'running',
+    progress: { total: 2, completed: 1 },
+    results: []
+  };
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/jobs/activity-job-1', {
+    method: 'GET',
+    deps: {
+      accountActivityJobManager: {
+        start: () => { throw new Error('should not start'); },
+        getJob: (jobId) => (jobId === 'activity-job-1' ? job : null)
+      }
+    }
+  });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 200);
+  assert.equal(calls[0].payload.job.id, 'activity-job-1');
+  const found = createCtx('/v0/webui/accounts/activity/jobs/missing', {
+    method: 'GET',
+    deps: {
+      accountActivityJobManager: {
+        start: () => { throw new Error('should not start'); },
+        getJob: () => null
+      }
+    }
+  });
+  await handleAccountActivityRequest(found.ctx);
+  assert.equal(found.calls[0].status, 404);
+  assert.equal(found.calls[0].payload.error, 'activity_job_not_found');
+});
+
+test('批量任务真实接线：POST 立即返回 job，GET 轮询到最终结果', async () => {
+  const manager = createAccountActivityJobManager();
+  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
+    deps: {
+      accountActivityJobManager: manager,
       runActivityClaim: async (input) => {
-        seen.push({ provider: input.provider, actionId: input.actionId });
+        await sleep(5);
         return {
           provider: input.provider,
           accountRef: input.record.accountRef,
@@ -103,49 +213,39 @@ test('批量领取按 providers + actionId 收窄到供应商 tab，未声明该
       }
     }
   });
-  ctx.req = {};
-  ctx.readRequestBody = async () => Buffer.from(JSON.stringify({
-    providers: ['qoder', 'zcode'],
-    actionId: 'daily_checkin'
-  }));
-  assert.equal(await handleAccountActivityRequest(ctx), true);
-  assert.deepEqual(seen, [{ provider: 'qoder', actionId: 'daily_checkin' }]);
-  assert.equal(calls[0].status, 200);
-  assert.equal(calls[0].payload.summary.accounts, 1);
-});
-
-test('批量领取筛选后没有任何可用 provider 时明确失败', async () => {
-  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run');
-  ctx.req = {};
-  ctx.readRequestBody = async () => Buffer.from(JSON.stringify({ providers: ['claude'] }));
+  attachBody(ctx, { providers: ['qoder'], actionId: 'daily_checkin' });
   await handleAccountActivityRequest(ctx);
-  assert.equal(calls[0].status, 400);
-  assert.equal(calls[0].payload.error, 'activity_unsupported');
-});
+  assert.equal(calls[0].status, 202);
+  assert.equal(calls[0].payload.ok, true);
+  assert.equal(calls[0].payload.job.status, 'queued');
+  const jobId = calls[0].payload.job.id;
 
-test('批量领取把业务失败计入 failed，但仍返回 200（不是服务器故障）', async () => {
-  const { ctx, calls } = createCtx('/v0/webui/accounts/activity/run', {
-    deps: {
-      runActivityClaim: async (input) => ({
-        provider: input.provider,
-        accountRef: input.record.accountRef,
-        status: input.record.accountRef === 'acct_qoder_2' ? 'error' : 'already_claimed',
-        error: input.record.accountRef === 'acct_qoder_2' ? 'qoder_token_missing' : undefined
-      })
-    }
+  let job = null;
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    job = manager.getJob(jobId);
+    if (job && job.status === 'succeeded') break;
+    await sleep(5);
+  }
+  assert.equal(job.status, 'succeeded');
+  assert.equal(job.summary.claimed, 2);
+
+  const poll = createCtx(`/v0/webui/accounts/activity/jobs/${jobId}`, {
+    method: 'GET',
+    deps: { accountActivityJobManager: manager }
   });
-  await handleAccountActivityRequest(ctx);
-  assert.equal(calls[0].status, 200);
-  assert.equal(calls[0].payload.ok, false);
-  assert.equal(calls[0].payload.summary.failed, 1);
-  assert.equal(calls[0].payload.summary.alreadyClaimed, 1);
+  await handleAccountActivityRequest(poll.ctx);
+  assert.equal(poll.calls[0].status, 200);
+  assert.equal(poll.calls[0].payload.job.id, jobId);
+  assert.equal(poll.calls[0].payload.job.progress.completed, 2);
+  assert.equal(poll.calls[0].payload.job.results.length, 2);
 });
 
 test('单账号动作：未知 provider / 未知动作 / 账号不存在分别明确失败', async () => {
-  const unsupported = createCtx('/v0/webui/accounts/zcode/acct_1/activity/daily_checkin');
+  const unsupported = createCtx('/v0/webui/accounts/codex/acct_1/activity/daily_checkin');
   await handleAccountActivityRequest(unsupported.ctx);
   assert.equal(unsupported.calls[0].status, 400);
-  assert.equal(unsupported.calls[0].payload.error, 'activity_unsupported:zcode');
+  assert.equal(unsupported.calls[0].payload.error, 'activity_unsupported:codex');
 
   const unknownAction = createCtx('/v0/webui/accounts/qoder/acct_1/activity/nope');
   await handleAccountActivityRequest(unknownAction.ctx);
@@ -173,6 +273,23 @@ test('单账号动作把选中的 actionId 透传给执行器', async () => {
   assert.equal(seen.provider, 'qoder');
   assert.equal(calls[0].status, 200);
   assert.equal(calls[0].payload.ok, true);
+});
+
+test('单账号业务失败仍返回 200（不是服务器故障）', async () => {
+  const { ctx, calls } = createCtx('/v0/webui/accounts/qoder/acct_qoder_1/activity/daily_checkin', {
+    deps: {
+      runActivityClaim: async (input) => ({
+        provider: input.provider,
+        accountRef: input.record.accountRef,
+        status: 'error',
+        error: 'qoder_token_missing'
+      })
+    }
+  });
+  await handleAccountActivityRequest(ctx);
+  assert.equal(calls[0].status, 200);
+  assert.equal(calls[0].payload.ok, false);
+  assert.equal(calls[0].payload.error, 'qoder_token_missing');
 });
 
 test('非活动路径不接管（交给后续路由）', async () => {

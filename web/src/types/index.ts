@@ -237,6 +237,37 @@ export interface AccountActivitySummary {
   failed: number;
 }
 
+/** 异步领取任务的进度（服务端后台串行执行）。 */
+export interface AccountActivityJobProgress {
+  total: number;
+  completed: number;
+  percent: number;
+  currentProvider?: string;
+  currentAccountRef?: string;
+}
+
+export type AccountActivityJobStatus = 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';
+
+/**
+ * 一次批量领取任务。POST /activity/run 立即返回 job，页面随后轮询
+ * /activity/jobs/:id 直到 status 进入终态（succeeded / partial / failed）。
+ */
+export interface AccountActivityJob {
+  id: string;
+  providers: string[];
+  actionId: string;
+  actionLabel: string;
+  status: AccountActivityJobStatus;
+  phase: string;
+  progress: AccountActivityJobProgress;
+  results: AccountActivityResult[];
+  summary: AccountActivitySummary | null;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+}
+
 export interface Account {
   provider: Provider;
   accountRef: string;

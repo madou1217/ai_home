@@ -14,15 +14,20 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('账号页把 activityActions 渲染成供应商 tab 动作按钮与账号菜单项', () => {
+test('账号页把 activityActions 渲染成供应商内容区动作按钮与账号菜单项', () => {
   const page = read('web/src/pages/Accounts.tsx');
   assert.match(page, /import \{ AccountActivityModal \} from '@\/features\/accounts\/AccountActivityModal'/);
   assert.match(page, /for \(const action of record\.activityActions \|\| \[\]\)/);
   assert.match(page, /key: `activity:\$\{action\.id\}`/);
-  // 动作只在声明它的供应商 tab 下出现（“全部”不提供全局入口），不按全部账号批量跑。
+  // 动作只在声明它的供应商内容区出现（“全部”不提供全局入口），且不塞进 tab 栏。
   assert.match(page, /const visibleActivityActions = useMemo/);
   assert.match(page, /if \(activeProvider === 'all'\) return \[\];/);
-  assert.match(page, /tabBarExtraContent=/);
+  assert.match(page, /accounts-activity-bar/);
+  assert.doesNotMatch(page, /tabBarExtraContent/);
+  // 批量领取是异步任务：开始后轮询进度，不再同步等待全部账号。
+  assert.match(page, /accountsAPI\.startAccountActivityJob/);
+  assert.match(page, /accountsAPI\.getAccountActivityJob/);
+  assert.match(page, /rewardsProgressText/);
   assert.doesNotMatch(page, /runAllAccountActivities/);
   assert.match(page, /<AccountActivityModal[\s\S]*results=\{rewardsResults\}/);
 });
@@ -59,7 +64,8 @@ test('服务端路由与 CLI 共用同一条策略执行器', () => {
 
   const routes = read('lib/server/webui-account-activity-routes.js');
   assert.match(routes, /runActivityClaim/);
-  assert.match(routes, /listActivityProviders/);
+  assert.match(routes, /listActivityActions/);
+  assert.match(routes, /account-activity-job-manager/);
 
   const command = read('lib/cli/services/claim/claim-command.js');
   assert.match(command, /listActivityProviders/);

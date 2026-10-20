@@ -16,8 +16,8 @@ export {
 } from './webui-auth-transport';
 import type {
   Account,
+  AccountActivityJob,
   AccountActivityResult,
-  AccountActivitySummary,
   UpstreamErrorRule,
   UpstreamErrorMappingGroup,
   AccountRefreshJob,
@@ -758,25 +758,35 @@ export const accountsAPI = {
     return response.data;
   },
 
-  /** 对指定 provider 集合执行同一个账号活动（账号页按当前供应商 tab 触发，不做全局批量）。 */
-  runAccountActivities: async (input: {
+  /** 开始一个供应商作用域的批量领取任务；立即返回 job，进度通过轮询查询。 */
+  startAccountActivityJob: async (input: {
     providers: string[];
     actionId: string;
   }): Promise<{
     ok: boolean;
-    capturedAt?: string;
-    results: AccountActivityResult[];
-    summary: AccountActivitySummary;
+    alreadyRunning?: boolean;
+    job: AccountActivityJob;
   }> => {
     const response = await api.post<{
       ok: boolean;
-      capturedAt?: string;
-      results: AccountActivityResult[];
-      summary: AccountActivitySummary;
+      alreadyRunning?: boolean;
+      job: AccountActivityJob;
     }>('/webui/accounts/activity/run', input, {
-      // 批量会逐个账号跑（ZCode 每个都要过一次验证码），给足时间。
-      timeout: 600000
+      // 只负责“开始”，真正执行在服务端后台，不需要长超时。
+      timeout: 30000
     });
+    return response.data;
+  },
+
+  /** 查询异步领取任务的进度与结果。 */
+  getAccountActivityJob: async (jobId: string): Promise<{
+    ok: boolean;
+    job: AccountActivityJob;
+  }> => {
+    const response = await api.get<{
+      ok: boolean;
+      job: AccountActivityJob;
+    }>(`/webui/accounts/activity/jobs/${encodeURIComponent(jobId)}`);
     return response.data;
   },
 

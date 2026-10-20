@@ -6,6 +6,17 @@
   margin-inline: auto;
 }
 
+/* 供应商动作条：位于 provider tab 内容区顶部，只显示当前供应商支持的动作。
+ * 不放进 tab 栏，也不使用卡片 / Alert 容器；进度是紧凑的行内文字。 */
+.accounts-activity-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 24px;
+  margin: -4px 0 12px;
+}
+
 /* 额度列缩窄后，取消内部各快照渲染器的旧最小宽度。 */
 .accounts-remaining-cell,
 .accounts-remaining-cell .usage-progress-effects,

@@ -19,18 +19,20 @@ test('two gateway accounts keep distinct homes, fixed routing headers and model 
       accountRef === 'acct_one' ? ['claude-sonnet-4-5'] : ['claude-haiku-4-5']
     ) }
   };
-  const one = createChatGatewayOptions({ provider: 'claude', executionAccountRef: 'acct_one' }, options);
-  const two = createChatGatewayOptions({ provider: 'claude', executionAccountRef: 'acct_two' }, options);
+  const one = createChatGatewayOptions({ provider: 'claude', executionAccountRef: 'acct_one', sessionId: 'session-one' }, options);
+  const two = createChatGatewayOptions({ provider: 'claude', executionAccountRef: 'acct_two', sessionId: 'session-two' }, options);
   const firstEnv = await one.buildProviderEnvImpl();
   const secondEnv = await two.buildProviderEnvImpl();
   assert.notEqual(firstEnv.CODEX_HOME, secondEnv.CODEX_HOME);
   assert.equal(firstEnv.OPENAI_API_KEY, 'gateway-secret');
   assert.equal(firstEnv.ANTHROPIC_API_KEY, undefined);
   const firstConfig = fs.readFileSync(path.join(firstEnv.CODEX_HOME, 'config.toml'), 'utf8');
-  // 账号作用域是双头钉选（X-Account-Ref + X-Provider）；网关作用域两个头都不写（另一条用例覆盖）。
+  // 账号作用域是双头钉选（X-Account-Ref + X-Provider）+ 稳定会话头；网关作用域只写会话头
+  // （另一条用例覆盖）。会话头不能串到另一个 harness home。
   assert.match(firstConfig, /X-Account-Ref = "acct_one"/);
   assert.match(firstConfig, /X-Provider = "claude"/);
-  assert.doesNotMatch(firstConfig, /acct_two|host-secret|other-secret|gateway-secret/);
+  assert.match(firstConfig, /X-Session-Id = "session-one"/);
+  assert.doesNotMatch(firstConfig, /session-two|acct_two|host-secret|other-secret|gateway-secret/);
   // 聊天请求只带对话本身（v7，2026-10-16）：codex 的宿主提示词注入面全部显式关闭，
   // 否则全局 AGENTS.md / skills 清单 / 环境块 / 权限块会被注入每一次模型请求。
   for (const line of [
@@ -71,9 +73,11 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.deepEqual(model.supported_reasoning_levels.map((entry) => entry.effort), ['low', 'high', 'max']);
   assert.deepEqual(model.input_modalities, ['text', 'image']);
   assert.equal(model.shell_type, 'disabled');
+  // 没有会话 id 时不写 X-Session-Id（旧调用方行为不变）。
+  assert.doesNotMatch(config, /X-Session-Id/);
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v7');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v8');
 });
 
 test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {
@@ -139,7 +143,7 @@ test('gateway-scoped harness drops the account pin, keeps one home per provider 
       }
     }
   };
-  const gateway = createChatGatewayOptions({ provider: 'opencode', executionAccountRef: 'gateway:opencode' }, options);
+  const gateway = createChatGatewayOptions({ provider: 'opencode', executionAccountRef: 'gateway:opencode', sessionId: 'session-gateway-one' }, options);
   const env = await gateway.buildProviderEnvImpl();
   // home 按 provider 分开（不同 provider 的网关档 config.toml 不能互踩），且不带账号 pin。
   assert.ok(env.CODEX_HOME.includes(path.join('chat-harness', 'gateway-opencode')));
@@ -149,7 +153,9 @@ test('gateway-scoped harness drops the account pin, keeps one home per provider 
   assert.doesNotMatch(config, /X-Account-Ref/);
   // v6（0572d9e0，2026-10-15）：网关作用域两个钉选头都不写 —— 账号由网关在模型可用池里挑、
   // provider 按模型 id 解析，否则「aih-server 会话里换到别家模型」做不到；账号作用域仍双头钉选。
-  assert.doesNotMatch(config, /http_headers/);
+  // v8：网关作用域仍写稳定的会话头，供网关做会话亲和、warm CLI 复用与 usage 会话归属。
+  assert.match(config, /\[model_providers\.aih_server\.http_headers\]/);
+  assert.match(config, /X-Session-Id = "session-gateway-one"/);
   assert.doesNotMatch(config, /X-Provider/);
   assert.doesNotMatch(config, /host-secret|gateway-secret/);
   // 模型目录走 provider 全池：readModels 收到的是网关作用域，而不是某个账号。

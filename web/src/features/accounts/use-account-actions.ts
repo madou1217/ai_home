@@ -3,6 +3,7 @@ import { Form, Modal, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
   accountsAPI,
+  modelsAPI,
   toolkitAPI,
   waitForAppInstallJob
 } from '@/services/api';
@@ -109,6 +110,9 @@ export interface AccountAppInstallPrompt {
   kind: AccountAppInstallKind;
   terminalId?: string;
   workdir?: string;
+  /** 跨 Provider 时缺的是 harness 的二进制，不是身份账号 Provider 的。 */
+  harness?: string;
+  model?: string;
   message: string;
 }
 
@@ -219,6 +223,12 @@ export function useAccountActions({
   const [cliHomeDir, setCliHomeDir] = React.useState('');
   const [cliWorkdir, setCliWorkdir] = React.useState('');
   const [cliWorkdirHistory, setCliWorkdirHistory] = React.useState<string[]>(readCliWorkdirHistory);
+  const [cliPickerHarnesses, setCliPickerHarnesses] = React.useState<Array<{ id: string; label: string }>>([]);
+  const [selectedCliHarness, setSelectedCliHarness] = React.useState('');
+  const [cliPickerModels, setCliPickerModels] = React.useState<string[]>([]);
+  const [cliPickerModelLabels, setCliPickerModelLabels] = React.useState<Record<string, string>>({});
+  const [cliPickerDefaultModel, setCliPickerDefaultModel] = React.useState('');
+  const [selectedCliModel, setSelectedCliModel] = React.useState('');
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const importFolderInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
@@ -1403,9 +1413,24 @@ export function useAccountActions({
     }
   };
 
-  const handleOpenApp = async (record: Account, kind: 'desktop' | 'cli', terminalId?: string, workdir?: string): Promise<boolean> => {
+  const handleOpenApp = async (
+    record: Account,
+    kind: 'desktop' | 'cli',
+    terminalId?: string,
+    workdir?: string,
+    options?: { harness?: string; model?: string }
+  ): Promise<boolean> => {
+    const launchOptions = kind === 'cli' ? options : undefined;
     try {
-      const result = await accountsAPI.openApp(record.provider, record.accountRef, kind, 'open', terminalId, workdir);
+      const result = await accountsAPI.openApp(
+        record.provider,
+        record.accountRef,
+        kind,
+        'open',
+        terminalId,
+        workdir,
+        launchOptions
+      );
       onOpenAppResponseRef.current?.(result);
       if (kind === 'desktop' && result.status === 'already_running') {
         Modal.confirm({
@@ -1445,6 +1470,8 @@ export function useAccountActions({
           kind,
           terminalId,
           workdir,
+          harness: launchOptions?.harness,
+          model: launchOptions?.model,
           message: error?.response?.data?.message || '当前主机尚未安装目标客户端。'
         });
         return false;
@@ -1500,7 +1527,9 @@ export function useAccountActions({
     setAccountAppInstallSubmitting(true);
     setAccountAppInstallPrompt(null);
     try {
-      const appId = prompt.kind === 'desktop' ? `${prompt.record.provider}-desktop` : prompt.record.provider;
+      const appId = prompt.kind === 'desktop'
+        ? `${prompt.record.provider}-desktop`
+        : (prompt.harness || prompt.record.provider);
       const response = await toolkitAPI.executeAppAction(appId, 'install', prompt.kind);
       if (!response.ok || !response.job) {
         throw new Error(response.error || 'Toolkit 未创建安装任务');
@@ -1535,7 +1564,13 @@ export function useAccountActions({
     const result = accountAppInstallResult;
     if (!result) return;
     setAccountAppInstallResult(null);
-    void handleOpenApp(result.prompt.record, result.prompt.kind, result.prompt.terminalId, result.prompt.workdir);
+    void handleOpenApp(
+      result.prompt.record,
+      result.prompt.kind,
+      result.prompt.terminalId,
+      result.prompt.workdir,
+      { harness: result.prompt.harness, model: result.prompt.model }
+    );
   };
 
   const retryAccountAppInstall = () => {
@@ -1548,17 +1583,70 @@ export function useAccountActions({
   const chooseCliTerminal = async (record: Account) => {
     setCliTerminalsLoading(true);
     try {
-      const response = await accountsAPI.listTerminals();
+      // 三个数据面并行读取：终端、已安装的 harness、身份账号的模型目录。
+      // 任一副数据失败都不拦终端选择；跨 Provider 的模型缺失会由弹窗提示。
+      const [terminalsResult, entriesResult, catalogResult] = await Promise.allSettled([
+        accountsAPI.listTerminals(),
+        accountsAPI.listAppEntries(),
+        modelsAPI.listCatalog()
+      ]);
+      if (terminalsResult.status !== 'fulfilled') throw terminalsResult.reason;
+      const response = terminalsResult.value;
       const available = (response.terminals || []).filter((terminal) => terminal.installed);
       if (!available.length) {
         message.info('当前主机没有可用终端，请到 Toolkit > 终端管理安装。');
         return;
       }
+      const installed = entriesResult.status === 'fulfilled' ? entriesResult.value : null;
+      const capabilities = installed?.capabilities || {};
+      const entryState = installed?.entries || {};
+      // harness 与账号身份解耦：列出所有合同声明支持 CLI 的 harness（未安装也列出，
+      // 选中后由 open-app 的 install_required 流程自动安装）；账号 Provider 的原生
+      // CLI 可用时排第一，否则默认使用第一个 harness。
+      const supportedIds = Object.keys(capabilities)
+        .filter((id) => capabilities[id]?.cli !== false
+          && (id === record.provider || capabilities[id]?.crossProviderHarness === true));
+      const harnessIds = supportedIds.length ? supportedIds : [record.provider];
+      const harnesses = harnessIds
+        .map((id) => {
+          const name = String(providerNames[id as keyof typeof providerNames] || id);
+          const cliInstalled = entryState[id]?.cli === true;
+          return { id, label: cliInstalled ? name : `${name}（未安装）` };
+        })
+        .sort((a, b) => {
+          if (a.id === record.provider) return -1;
+          if (b.id === record.provider) return 1;
+          return a.label.localeCompare(b.label);
+        });
+      if (!harnesses.length) {
+        message.info('当前主机没有支持的 CLI harness，请到 Toolkit > 应用管理检查。');
+        return;
+      }
+
+      const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : null;
+      const accountRef = getAccountRef(record);
+      const models = [...new Set(
+        (catalog?.selectableByAccountRef?.[accountRef]
+          || catalog?.byAccountRef?.[accountRef]
+          || catalog?.models?.[record.provider]
+          || []).map((item) => String(item || '').trim()).filter(Boolean)
+      )];
+      const modelLabels = catalog?.labels?.[record.provider] || {};
+      const defaultModel = String(catalog?.defaultByAccountRef?.[accountRef] || '').trim();
+      const defaultHarness = harnesses[0].id;
+
       setCliTerminals(available);
       setSelectedCliTerminalId(available.find((terminal) => terminal.default)?.id || available[0].id);
       const homeDir = String(response.homeDir || '').trim();
       setCliHomeDir(homeDir);
       setCliWorkdir(homeDir);
+      setCliPickerHarnesses(harnesses);
+      setSelectedCliHarness(defaultHarness);
+      setCliPickerModels(models);
+      setCliPickerModelLabels(modelLabels);
+      setCliPickerDefaultModel(defaultModel);
+      // 跨 Provider 默认必须带一个身份账号支持的模型；同 Provider 跟随 harness 默认。
+      setSelectedCliModel(defaultHarness !== record.provider ? (defaultModel || models[0] || '') : '');
       setCliPickerAccount(record);
     } catch (error: any) {
       message.error(error?.response?.data?.message || '读取可用终端失败');
@@ -1603,9 +1691,28 @@ export function useAccountActions({
     persistCliWorkdirHistory([]);
   };
 
-  const openCliFromPicker = (account: Account, terminalId: string, workdir: string) => {
+  const handleCliHarnessChange = (harness: string) => {
+    setSelectedCliHarness(harness);
+    const crossProvider = Boolean(cliPickerAccount && harness !== cliPickerAccount.provider);
+    if (crossProvider && !selectedCliModel) {
+      // 跨 Provider 不能跟随 harness 自己的默认模型（那通常是它自己 Provider 的模型，
+      // 在身份账号的目录里不存在）。优先用账号默认模型，否则用目录第一项。
+      setSelectedCliModel(cliPickerDefaultModel || cliPickerModels[0] || '');
+    }
+  };
+
+  const openCliFromPicker = (
+    account: Account,
+    terminalId: string,
+    workdir: string,
+    harness: string,
+    model: string
+  ) => {
     setCliPickerAccount(null);
-    void handleOpenApp(account, 'cli', terminalId, workdir || undefined).then((opened) => {
+    void handleOpenApp(account, 'cli', terminalId, workdir || undefined, {
+      harness,
+      model: model || undefined
+    }).then((opened) => {
       if (opened) rememberCliWorkdir(workdir);
     });
   };
@@ -1763,6 +1870,14 @@ export function useAccountActions({
         loading: cliTerminalsLoading,
         workdir: cliWorkdir,
         workdirHistory: cliWorkdirHistory,
+        harnesses: cliPickerHarnesses,
+        selectedHarness: selectedCliHarness,
+        models: cliPickerModels,
+        modelLabels: cliPickerModelLabels,
+        selectedModel: selectedCliModel,
+        defaultModel: cliPickerDefaultModel,
+        onHarnessChange: handleCliHarnessChange,
+        onModelChange: setSelectedCliModel,
         onTerminalChange: setSelectedCliTerminalId,
         onWorkdirChange: setCliWorkdir,
         onClearWorkdirHistory: clearCliWorkdirHistory,

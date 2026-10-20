@@ -470,6 +470,63 @@ test('pinned Node account refs are rewritten to their Go refs when forwarding', 
   assert.equal(go.seen[0].headers['x-account-ref'], 'acct_fedcba9876543210fedc');
 });
 
+test('the route-owner header reaches the host decision and is never forwarded', async (t) => {
+  const go = await startFakeGo(t);
+  const decisions = [];
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.anthropic.messages']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: (input) => {
+      decisions.push(input);
+      return input.forceNode === true;
+    }
+  });
+  const headers = (routeOwner) => ({
+    authorization: `Bearer ${CLIENT_KEY}`,
+    'content-type': 'application/json',
+    ...(routeOwner ? { 'x-aih-route-owner': routeOwner } : {})
+  });
+
+  const deferred = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('node') }, '{}');
+  assert.equal(deferred.status, 404);
+  assert.match(deferred.body, /handled_by_node/);
+  assert.equal(go.seen.length, 0, '声明由 Node 承接的请求一条都不发往 Go');
+
+  const forwarded = await request(port, { method: 'POST', path: '/v1/messages', headers: headers('') }, '{}');
+  assert.equal(forwarded.status, 200);
+  assert.equal(go.seen.length, 1);
+  assert.equal(go.seen[0].headers['x-aih-route-owner'], undefined, '内部路由归属头不得穿到 Go');
+  assert.deepEqual(decisions.map((decision) => decision.forceNode), [true, false]);
+});
+
+test('the route-owner header also keeps WebSocket upgrades on Node', async (t) => {
+  const go = await startFakeGo(t);
+  const port = await startNodeHost(t, {
+    entryIds: new Set(['gateway.codex.responses.ws']),
+    getTarget: () => ({ host: '127.0.0.1', port: go.port, clientKey: GO_KEY }),
+    deferToNode: (input) => input.forceNode === true
+  });
+  const result = await new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: '/v1/responses',
+      headers: {
+        authorization: `Bearer ${CLIENT_KEY}`,
+        connection: 'Upgrade',
+        upgrade: 'websocket',
+        'x-aih-route-owner': 'node'
+      }
+    });
+    req.on('upgrade', () => reject(new Error('must not upgrade through Go')));
+    req.on('response', (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(result, 404);
+  assert.equal(go.seen.length, 0);
+});
+
 test('explicit provider headers reach the host deferral decision', async (t) => {
   const go = await startFakeGo(t);
   const decisions = [];

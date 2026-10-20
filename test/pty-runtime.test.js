@@ -424,6 +424,52 @@ test('runtime does not inject --skip-git-repo-check by default', () => {
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('cross-provider harness launch injects only gateway env and pins the identity account', () => {
+  const harness = createRuntimeHarness({}, {
+    resolveCliPath: (cliName) => (cliName === 'claude' ? '/usr/local/bin/claude' : '/usr/bin/codex')
+  });
+  const codexRef = harness.resolveHarnessAccountRef('codex', '77');
+  writeAccountCredentials(fsBase, harness.aiHomeDir, codexRef, {
+    OPENAI_API_KEY: 'sk-codex-native-must-not-leak',
+    OPENAI_BASE_URL: 'https://api.openai.com/v1'
+  });
+
+  harness.runtime.runCliPtyTracked('claude', codexRef, ['--version'], false);
+
+  assert.equal(harness.spawns.length, 1);
+  const env = harness.spawns[0].options.env;
+  assert.equal(env.ANTHROPIC_BASE_URL, 'http://127.0.0.1:9527');
+  assert.equal(env.ANTHROPIC_API_KEY, 'dummy');
+  assert.match(env.ANTHROPIC_CUSTOM_HEADERS, new RegExp(`x-account-ref:\\s*${codexRef}`));
+  // 跨 Provider harness 显式要求 Node 承接：Go 上同一入口的协议桥会 200 但挂住。
+  assert.match(env.ANTHROPIC_CUSTOM_HEADERS, /x-aih-route-owner:\s*node/);
+  assert.notEqual(env.OPENAI_API_KEY, 'sk-codex-native-must-not-leak');
+  assert.notEqual(env.OPENAI_BASE_URL, 'https://api.openai.com/v1');
+  assert.doesNotMatch(String(env.CLAUDE_CONFIG_DIR || ''), new RegExp(`auth-projections[/\\\\]claude[/\\\\]${codexRef}`));
+  // relay 的 --settings 必须压过宿主 settings.json，且钉选头随启动交付。
+  // 权限旗标可能排在它前面（由 provider 权限策略注入），这里只要求存在。
+  assert.notEqual(harness.spawns[0].args.indexOf('--settings'), -1);
+  const launchSettingsIdx = harness.spawns[0].args.indexOf('--settings');
+  const launchSettings = JSON.parse(harness.spawns[0].args[launchSettingsIdx + 1]);
+  assert.match(launchSettings.env.ANTHROPIC_CUSTOM_HEADERS, /x-aih-route-owner:\s*node/);
+  assert.deepEqual(harness.spawns[0].args.slice(-1), ['--version']);
+
+  assert.throws(() => harness.proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('cross-provider launch rejects harnesses without explicit cross-provider support', () => {
+  const harness = createRuntimeHarness({}, {
+    resolveCliPath: () => '/usr/local/bin/kimi'
+  });
+  const codexRef = harness.resolveHarnessAccountRef('codex', '77');
+  // kimi 能钉账号，但没有声明跨 Provider 支持：明确失败，不回落到池。
+  assert.throws(
+    () => harness.runtime.runCliPtyTracked('kimi', codexRef, ['--version'], false),
+    /cross_provider_relay_unsupported:kimi/
+  );
+  assert.equal(harness.spawns.length, 0);
+});
+
 test('runtime uses headless direct spawn for claude print prompts', () => {
   const directSpawns = [];
   const { runtime, spawns, writes } = createRuntimeHarness({

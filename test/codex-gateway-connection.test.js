@@ -71,6 +71,13 @@ test('Codex account relay preserves explicit account selection and keeps OAuth/l
     assert.equal(launch.args.some(arg => /["\s]/.test(arg)), false);
     assert.equal(JSON.stringify(launch.args).includes('upstream'), false);
     assert.deepEqual(buildAccountScopedEnv(env, {}), {});
+    // 跨 Provider 形态额外声明 Node 承接；同 Provider relay 不带该头。
+    const crossEnv = codexRelayProfile.buildCrossProviderEnv(
+      { OPENAI_API_KEY: 'gateway', OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1' }, accountRef);
+    assert.equal(crossEnv.AIH_CODEX_ROUTE_OWNER, 'node');
+    const crossLaunch = codexRelayProfile.buildRelayLaunch({ args: ['exec', 'hello'], accountEnv: crossEnv });
+    assert.ok(crossLaunch.args.includes('model_providers.aih_server.http_headers.X-Aih-Route-Owner=node'));
+    assert.equal(launch.args.some(arg => arg.includes('X-Aih-Route-Owner')), false);
   }
   assert.throws(() => codexRelayProfile.buildAccountRelayEnv({}, '1'), /invalid_codex/);
 });

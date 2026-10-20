@@ -144,6 +144,76 @@ test('launchAccountApp 在生产资格检查开启且 CLI 缺失时返回 cli_no
   assert.equal(result.error, 'cli_not_installed');
 });
 
+test('launchAccountApp 跨 Provider harness 用 accountRef 并传 --model', () => {
+  const { launcher, interactiveLaunches } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
+    enforceCliInstallation: true,
+    resolveCliPath: () => 'C:\\bin\\claude.exe'
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    harness: 'claude',
+    model: 'gpt-5.6-luna'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(interactiveLaunches.length, 1);
+  assert.match(interactiveLaunches[0].command, / claude acct_0123456789abcdef0123 --model /);
+  assert.doesNotMatch(interactiveLaunches[0].command, / codex 3 /);
+  assert.match(interactiveLaunches[0].options.title, /^aih claude acct_/);
+  assert.match(interactiveLaunches[0].options.title, /gpt-5\.6-luna/);
+});
+
+test('launchAccountApp 同 Provider 保留数字别名并追加 --model', () => {
+  const { launcher, interactiveLaunches } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
+    enforceCliInstallation: true,
+    resolveCliPath: () => 'C:\\bin\\codex.exe'
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    model: 'gpt-5.6-luna'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(interactiveLaunches.length, 1);
+  assert.match(interactiveLaunches[0].command, / codex 3 --model /);
+});
+
+test('launchAccountApp 拒绝不存在的 harness', () => {
+  const { launcher } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
+    enforceCliInstallation: true,
+    resolveCliPath: () => 'C:\\bin\\codex.exe'
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    harness: 'not-a-provider'
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'cli_not_supported');
+});
+
+test('launchAccountApp 拒绝没有账号钉选能力的跨 Provider harness', () => {
+  const { launcher } = createLauncher({
+    resolveAccount: () => ({ accountRef: ACCOUNT_REF, provider: 'codex', cliAccountId: '3' }),
+    enforceCliInstallation: true,
+    resolveCliPath: () => 'C:\\bin\\opencode.exe'
+  });
+  const result = launcher.launchAccountApp({
+    provider: 'codex',
+    accountRef: ACCOUNT_REF,
+    kind: 'cli',
+    harness: 'opencode'
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'cross_provider_relay_unsupported');
+});
+
 test('launchAccountApp 校验 kind，未知 kind 返回 unsupported_kind', () => {
   const { launcher } = createLauncher();
   assert.equal(launcher.launchAccountApp({ provider: 'zcode', accountRef: ACCOUNT_REF, kind: 'gui' }).error, 'unsupported_kind');
@@ -1640,6 +1710,19 @@ test('listRunningCliInstances 在 POSIX 通过 marker 和父子进程识别账�
     { pid: 9301, ppid: 1, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 },
     { pid: 9302, ppid: 9301, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 },
     { pid: 9303, ppid: 9302, provider: 'codex', cliAccountId: '3', accountRef: ACCOUNT_REF, rootPid: 9301 }
+  ]);
+});
+
+test('listRunningCliInstances 识别跨 Provider accountRef 启动', () => {
+  const execFileSync = () => [
+    `  9401 1 aih claude ${ACCOUNT_REF} AIH_ACCOUNT_APP=1 AIH_PROVIDER_ACCOUNT_REF=${ACCOUNT_REF}`,
+    `  9402 9401 /usr/local/bin/node /repo/bin/ai-home.js claude ${ACCOUNT_REF} --model gpt-5.6-luna`
+  ].join('\n');
+
+  const instances = listRunningCliInstances('linux', { execFileSync });
+  assert.deepEqual(instances, [
+    { pid: 9401, ppid: 1, provider: 'claude', cliAccountId: ACCOUNT_REF, accountRef: ACCOUNT_REF, rootPid: 9401 },
+    { pid: 9402, ppid: 9401, provider: 'claude', cliAccountId: ACCOUNT_REF, accountRef: ACCOUNT_REF, rootPid: 9401 }
   ]);
 });
 

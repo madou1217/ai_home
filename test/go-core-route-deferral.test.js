@@ -44,6 +44,28 @@ test('a usable pin whose own account carries unaccepted rules stays with Node', 
     { defer: false, reason: '' });
 });
 
+test('the route-owner header short-circuits every deferral input to Node', () => {
+  const { explainGoRouteDeferral } = require('../lib/server/go-core-route-deferral');
+  const input = {
+    entryId: 'gateway.anthropic.messages',
+    pinnedAccountRef: LIVE,
+    state,
+    accountStateIndex,
+    fabricGatewayReady: () => false
+  };
+  // 同一份输入平时会转发给 Go；显式声明由 Node 承接后不再参与任何其它判定。
+  assert.deepEqual(explainGoRouteDeferral(input), { defer: false, reason: '' });
+  assert.deepEqual(explainGoRouteDeferral({ ...input, forceNode: true }),
+    { defer: true, reason: 'route_owner_node' });
+  // 非布尔真值不触发短路：头解析只认精确的 `node`（由调用方归一成 boolean）。
+  assert.deepEqual(explainGoRouteDeferral({ ...input, forceNode: 'true' }),
+    { defer: false, reason: '' });
+  // 非推理入口同样受该声明约束（它表达的是「谁实现这条请求」，不是路由语义）。
+  assert.deepEqual(explainGoRouteDeferral({
+    entryId: 'gateway.props', state, forceNode: true
+  }), { defer: true, reason: 'route_owner_node' });
+});
+
 test('usable pins are forwarded; unusable, unknown or malformed pins stay with Node', () => {
   const decide = (pinnedAccountRef) => shouldDeferGoRouteToNode({
     entryId: 'gateway.anthropic.messages', pinnedAccountRef, state, accountStateIndex, fabricGatewayReady: () => false

@@ -167,6 +167,13 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         loading={cliPicker.loading}
         workdir={cliPicker.workdir}
         workdirHistory={cliPicker.workdirHistory}
+        harnesses={cliPicker.harnesses}
+        selectedHarness={cliPicker.selectedHarness}
+        models={cliPicker.models}
+        modelLabels={cliPicker.modelLabels}
+        selectedModel={cliPicker.selectedModel}
+        onHarnessChange={cliPicker.onHarnessChange}
+        onModelChange={cliPicker.onModelChange}
         onTerminalChange={cliPicker.onTerminalChange}
         onWorkdirChange={cliPicker.onWorkdirChange}
         onBrowseWorkdir={cliPicker.directoryPicker.open}

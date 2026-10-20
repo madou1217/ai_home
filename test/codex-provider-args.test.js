@@ -50,6 +50,21 @@ test('codex provider args stay quotable-free for the windows cmd transport', () 
   assert.equal(args.some((arg) => /model_providers\..*\.name=/.test(arg)), false);
 });
 
+test('codex provider args translate the cross-provider route owner into an HTTP header', () => {
+  const args = buildCodexProviderArgs({
+    OPENAI_API_KEY: 'secret-key',
+    OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1',
+    AIH_CODEX_GATEWAY_ACCOUNT_REF: 'acct_0123456789abcdef0123',
+    AIH_CODEX_ROUTE_OWNER: 'node'
+  });
+  assert.ok(args.includes('model_providers.aih_server.http_headers.X-Account-Ref=acct_0123456789abcdef0123'));
+  assert.ok(args.includes('model_providers.aih_server.http_headers.X-Aih-Route-Owner=node'));
+  // 只有精确的 `node` 才注入；其它值（含空串）不得产生该头。
+  assert.equal(buildCodexProviderArgs({
+    OPENAI_API_KEY: 'secret-key', AIH_CODEX_ROUTE_OWNER: 'go'
+  }).some((arg) => arg.includes('X-Aih-Route-Owner')), false);
+});
+
 test('codex provider args leave native OAuth config untouched', () => {
   assert.deepEqual(buildCodexProviderArgs({}), []);
 });

@@ -72,6 +72,83 @@ function codexDesktopStatePath(aiHomeDir) {
   return path.join(aiHomeDir, 'run', 'codex', 'desktop-hook-state.json');
 }
 
+test('`aih claude <accountRef>` 解析身份账号并按跨 Provider 语义启动', (t) => {
+  const fixture = createRegisteredTestHome(t, 'codex', '12');
+  const runCalls = [];
+  const exits = [];
+
+  runAiCliCommandRouter('claude', ['claude', fixture.accountRef, '--model', 'gpt-5.6-luna'], {
+    processImpl: { exit: (code) => exits.push(code), env: {} },
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    HOST_HOME_DIR: fixture.root,
+    extractActiveEnv: () => null,
+    checkStatus: () => ({ configured: true }),
+    runCliPty: (cliName, id, forwardArgs, isLogin, runtimeOptions) => runCalls.push({
+      cliName,
+      id,
+      forwardArgs,
+      isLogin,
+      runtimeOptions
+    })
+  });
+
+  assert.deepEqual(exits, []);
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].cliName, 'claude');
+  assert.equal(runCalls[0].id, fixture.accountRef);
+  assert.deepEqual(runCalls[0].forwardArgs, ['--model', 'gpt-5.6-luna']);
+  assert.equal(runCalls[0].isLogin, false);
+  assert.equal(runCalls[0].runtimeOptions.cliAccountId, '12');
+});
+
+test('`aih claude -- <accountRef>` 保持原生逃生门，不把 accountRef 当账号位', (t) => {
+  const fixture = createRegisteredTestHome(t, 'codex', '12');
+  const runCalls = [];
+  const exits = [];
+
+  runAiCliCommandRouter('claude', ['claude', '--', fixture.accountRef], {
+    processImpl: { exit: (code) => exits.push(code), env: {} },
+    fs,
+    aiHomeDir: fixture.aiHomeDir,
+    HOST_HOME_DIR: fixture.root,
+    extractActiveEnv: () => null,
+    checkStatus: () => ({ configured: true }),
+    runCliPty: (cliName, id, forwardArgs) => runCalls.push({ cliName, id, forwardArgs })
+  });
+
+  assert.deepEqual(exits, []);
+  assert.equal(runCalls.length, 1);
+  assert.equal(runCalls[0].id, '');
+  assert.deepEqual(runCalls[0].forwardArgs, [fixture.accountRef]);
+});
+
+test('`aih opencode <accountRef>` 拒绝没有账号钉选能力的跨 Provider harness', (t) => {
+  const fixture = createRegisteredTestHome(t, 'codex', '12');
+  const exits = [];
+  const errors = [];
+  const runCalls = [];
+  const originalError = console.error;
+  console.error = (line = '') => errors.push(String(line));
+  try {
+    runAiCliCommandRouter('opencode', ['opencode', fixture.accountRef], {
+      processImpl: { exit: (code) => exits.push(code), env: {} },
+      fs,
+      aiHomeDir: fixture.aiHomeDir,
+      HOST_HOME_DIR: fixture.root,
+      extractActiveEnv: () => null,
+      checkStatus: () => ({ configured: true }),
+      runCliPty: (cliName, id, forwardArgs) => runCalls.push({ cliName, id, forwardArgs })
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.deepEqual(exits, [1]);
+  assert.equal(runCalls.length, 0);
+  assert.match(errors.join('\n'), /does not support cross-provider/);
+});
+
 test('`aih codex` without explicit action uses built-in AIH server profile', () => {
   const runCalls = [];
   const exits = [];

@@ -401,6 +401,28 @@ test('open-app 端点在 CLI 缺失时返回 install_required，并返回 CLI To
   assert.equal(body.installAvailable, true);
 });
 
+test('open-app 端点跨 Provider harness 缺失时安装目标跟随 harness', async (t) => {
+  const fixture = createFixture(t, 'codex');
+  const ctx = createOpenAppCtx(fixture, { kind: 'cli', action: 'open', harness: 'claude' });
+  ctx.deps.hostHomeDir = path.join(fixture.aiHomeDir, 'host-home');
+  ctx.processObj = { platform: 'linux', env: { PATH: '' }, execPath: process.execPath };
+  ctx.deps.resolveNativeCliPath = () => '';
+  ctx.deps.appInstallJobManager = {
+    canInstall(input) {
+      assert.deepEqual(input, { provider: 'claude', kind: 'cli', appId: 'claude' });
+      return true;
+    }
+  };
+
+  const handled = await handleOpenAccountAppRequest(ctx);
+  assert.equal(handled, true);
+  assert.equal(ctx.res.statusCode, 428);
+  const body = ctx.res.json();
+  assert.equal(body.error, 'install_required');
+  assert.deepEqual(body.installTarget, { provider: 'claude', kind: 'cli', appId: 'claude' });
+  assert.equal(body.installAvailable, true);
+});
+
 test('open-app 端点在没有自动安装器时保留 install_required 并给出手动安装提示', async (t) => {
   const fixture = createFixture(t);
   const ctx = createOpenAppCtx(fixture, { kind: 'desktop', action: 'open' });
@@ -437,6 +459,12 @@ test('app-entries 端点返回按 Provider 分组的布尔入口可用性并命�
   assert.equal(typeof body.entries.zcode.cli, 'boolean');
   assert.equal(body.capabilities.zcode.desktop, true);
   assert.equal(body.capabilities.zcode.cli, false);
+  // crossProviderHarness 是跨 Provider harness 能力，不能被已有 zcode/kir 断言覆盖。
+  assert.equal(typeof body.capabilities.claude.crossProviderHarness, 'boolean');
+  assert.equal(body.capabilities.claude.crossProviderHarness, true);
+  assert.equal(body.capabilities.codex.crossProviderHarness, true);
+  assert.equal(body.capabilities.kimi.crossProviderHarness, false);
+  assert.equal(body.capabilities.opencode.crossProviderHarness, false);
   assert.equal(typeof body.entries.kiro.desktop, 'boolean');
   assert.equal(body.capabilities.kiro.desktop, true);
   assert.ok(Array.isArray(body.runningAccounts), '响应必须带 runningAccounts 数组');

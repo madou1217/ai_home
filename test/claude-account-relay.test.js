@@ -81,6 +81,24 @@ test('aih Claude launches hand the gateway address and pin to --settings so host
   assert.deepEqual(buildClaudeLaunchSettingsArgs(relayEnv, ['--settings=/tmp/x.json']), []);
 });
 
+test('Claude cross-provider launches also declare Node as the request owner', () => {
+  const env = buildClaudeAccountRelayEnv({
+    ANTHROPIC_API_KEY: 'gateway-key',
+    ANTHROPIC_BASE_URL: 'http://127.0.0.1:9527'
+  }, ACCOUNT_REF, { crossProvider: true });
+  assert.equal(env.ANTHROPIC_CUSTOM_HEADERS, [
+    `x-account-ref: ${ACCOUNT_REF}`,
+    'x-aih-route-owner: node'
+  ].join('\n'));
+  // 同 Provider relay（Node 已完整实现的路径）不多带该头，Go 承接行为不变。
+  assert.equal(buildClaudeAccountRelayEnv({}, ACCOUNT_REF).ANTHROPIC_CUSTOM_HEADERS,
+    `x-account-ref: ${ACCOUNT_REF}`);
+  // 经 --settings 交付时同样保留（settings 优先级高于宿主 settings.json）。
+  const args = buildClaudeLaunchSettingsArgs(env, []);
+  assert.equal(JSON.parse(args[1]).env.ANTHROPIC_CUSTOM_HEADERS,
+    `x-account-ref: ${ACCOUNT_REF}\nx-aih-route-owner: node`);
+});
+
 test('the Claude relay profile prefixes --settings for every non-login launch', () => {
   const accountEnv = buildClaudeAccountRelayEnv({ ANTHROPIC_BASE_URL: 'http://127.0.0.1:9527' }, ACCOUNT_REF);
   const launch = claudeRelayProfile.buildRelayLaunch({ args: ['--resume', 'abc'], accountEnv, isLogin: false });

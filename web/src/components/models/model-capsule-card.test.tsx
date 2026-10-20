@@ -2,7 +2,7 @@ import React from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import ModelCapsuleCard from './ModelCapsuleCard';
+import ModelCapsuleCard, { formatCatalogProvenance } from './ModelCapsuleCard';
 
 const baseProps = {
   modelId: 'demo-model',
@@ -54,6 +54,39 @@ test('ModelCapsuleCard shows pricing provenance and stale/derived state inline',
   assert.match(html, /models\.dev/);
   assert.match(html, /过期/);
   assert.match(html, /派生/);
+});
+
+test('catalog provenance names the source, snapshot date and stale state', () => {
+  const text = formatCatalogProvenance({
+    status: 'resolved',
+    source: 'models.dev',
+    authority: 40,
+    fetchedAt: '2026-09-01T00:00:00.000Z',
+    stale: true
+  });
+  assert.match(text, /models\.dev/);
+  assert.match(text, /2026-09-01/);
+  assert.match(text, /过期/);
+});
+
+test('ModelCapsuleCard shows catalog unknown/stale as compact inline state', () => {
+  const unknown = renderToStaticMarkup(
+    <ModelCapsuleCard
+      {...baseProps}
+      catalogMeta={{ status: 'unknown', source: 'models.dev' }}
+      onEditPricing={() => {}}
+    />
+  );
+  assert.match(unknown, /元数据未知/);
+
+  const stale = renderToStaticMarkup(
+    <ModelCapsuleCard
+      {...baseProps}
+      contextWindow={400000}
+      catalogMeta={{ status: 'resolved', source: 'models.dev', stale: true }}
+    />
+  );
+  assert.match(stale, /元数据过期/);
 });
 
 test('ModelCapsuleCard marks account custom pricing as the visible source', () => {

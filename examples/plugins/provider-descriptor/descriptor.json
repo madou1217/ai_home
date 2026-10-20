@@ -1,0 +1,23 @@
+{
+  "contractVersion": 1,
+  "id": "sample-provider",
+  "capabilities": {
+    "quota": {
+      "supported": false,
+      "reason": "示例插件没有额度接口；真实 provider 必须显式回答原因"
+    },
+    "models": {
+      "supported": true,
+      "source": "sample-static-catalog",
+      "strategies": [
+        {
+          "id": "sample-models",
+          "transport": "local",
+          "clientDependent": false,
+          "handler": "generic-models-probe",
+          "description": "示例只声明数据：实现引用宿主已注册的 handler，不随插件传入函数"
+        }
+      ]
+    }
+  }
+}

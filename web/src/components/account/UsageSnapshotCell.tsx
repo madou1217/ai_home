@@ -163,6 +163,41 @@ function UsageUnitsTooltipBody({ content }: { content: { title: string; detail: 
   );
 }
 
+function formatSnapshotAge(capturedAt?: number | null): string {
+  const value = Number(capturedAt);
+  if (!Number.isFinite(value) || value <= 0) return '';
+  const diff = Math.max(0, Date.now() - value);
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
+
+/** 额度来源/年龄：紧凑行内信息，过期时才改变颜色，不使用整块提示。 */
+function UsageProvenance({ provenance }: { provenance: NonNullable<AccountUsageSnapshot['provenance']> }) {
+  const sourceId = String(provenance.id || '').trim();
+  const age = formatSnapshotAge(provenance.capturedAt);
+  if (!sourceId && !age && !provenance.stale) return null;
+  const title = [
+    sourceId ? `来源 ${sourceId}` : '',
+    provenance.kind ? `类型 ${provenance.kind}` : '',
+    age ? `快照 ${age}` : '',
+    provenance.stale ? '数据可能已过期' : ''
+  ].filter(Boolean).join(' · ');
+  return (
+    <span
+      className={`usage-provenance${provenance.stale ? ' usage-provenance--stale' : ''}`}
+      title={title}
+    >
+      {sourceId || '来源未知'}
+      {age ? ` · ${age}` : ''}
+      {provenance.stale ? ' · 已过期' : ''}
+    </span>
+  );
+}
+
 function UsageMetaLine({
   label,
   tag,
@@ -497,8 +532,22 @@ function UsageSnapshotBody({
 
 export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
   const { record } = props;
+  // 老缓存 / 原生 handler 的快照没有 `provenance`，但仍有 `source` 与 `capturedAt`；
+  // 用它们做同形状兜底（stale 未知时不冒充过期），新快照仍以宿主归一结果为准。
+  const snapshot = record.usageSnapshot as (AccountUsageSnapshot & { source?: string }) | null | undefined;
+  const provenance = snapshot?.provenance || (snapshot?.source
+    ? { id: snapshot.source, kind: 'provider', capturedAt: snapshot.capturedAt, stale: undefined }
+    : null);
+  const provenanceLine = provenance ? <UsageProvenance provenance={provenance} /> : null;
   const hasCollectionNotice = record.configured && !record.apiKeyMode && getQuotaStateMeta(record);
-  if (!hasCollectionNotice) return <UsageSnapshotBody {...props} />;
+  if (!hasCollectionNotice) {
+    return (
+      <>
+        <UsageSnapshotBody {...props} />
+        {provenanceLine}
+      </>
+    );
+  }
   // 「额度不适用」是结论态：没有额度行可渲染，徽章即完整信息（不再补一个无意义的 “-”）。
   const showBody = record.quotaStatus !== 'not_applicable'
     && Boolean(record.usageSnapshot || record.remainingPct != null || record.usageRefreshing);
@@ -506,6 +555,7 @@ export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
     <div className="usage-meta-list" data-quota-status={record.quotaStatus}>
       {renderQuotaStateBadge(record)}
       {showBody ? <UsageSnapshotBody {...props} /> : null}
+      {provenanceLine}
     </div>
   );
 }

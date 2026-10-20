@@ -297,6 +297,22 @@
   color: var(--color-muted);
 }
 
+.usage-provenance {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-provenance--stale {
+  color: var(--color-warning);
+}
+
 @media (max-width: 767px) {
   .usage-progress-line {
     grid-template-columns: minmax(0, 1fr) 44px;

@@ -444,6 +444,13 @@ export default function Models() {
             cacheWrite: model.metadata?.cost?.cacheWrite,
             cacheWrite1h: model.metadata?.cost?.cacheWrite1h
           }}
+          catalogMeta={{
+            status: model.metadata?.metadataStatus,
+            source: model.metadata?.metadataSource || model.metadata?.source?.id,
+            authority: model.metadata?.metadataAuthority ?? model.metadata?.source?.authority,
+            fetchedAt: model.metadata?.metadataFetchedAt || model.metadata?.source?.fetchedAt,
+            stale: model.metadata?.metadataStale ?? model.metadata?.source?.stale
+          }}
           pricingMeta={model.metadata?.pricing}
           customPricing={model.customPricing}
           onEditPricing={() => openPricingEditor(model)}

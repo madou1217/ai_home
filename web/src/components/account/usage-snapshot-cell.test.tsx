@@ -57,6 +57,21 @@ test('a "not applicable" quota conclusion shows the badge alone, without an empt
   assert.doesNotMatch(html, /-<\/div>/);
 });
 
+test('quota provenance shows the source and stale state without replacing the quota rows', () => {
+  const html = renderToStaticMarkup(<UsageSnapshotCell record={{
+    configured: true, apiKeyMode: false, remainingPct: 75,
+    usageSnapshot: {
+      kind: 'codex_oauth_status', capturedAt: 1000, entries: [],
+      provenance: {
+        id: 'codex_app_server', kind: 'provider', capturedAt: 1000, stale: true
+      }
+    }
+  }} />);
+  assert.match(html, /codex_app_server/);
+  assert.match(html, /已过期/);
+  assert.match(html, /data-usage-progress-value="75"/);
+});
+
 test('Kiro credits retain their official remaining percentage and reset date', () => {
   const html = renderToStaticMarkup(<UsageSnapshotCell record={{
     configured: true, apiKeyMode: false, provider: 'kiro',

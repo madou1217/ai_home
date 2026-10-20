@@ -69,10 +69,26 @@ export type AccountRegion = 'china' | 'overseas';
 /** 额度条目形态：由服务端按 provider 描述符下发，展示层据此渲染，不维护 kind 名单。 */
 export type QuotaEntryShape = 'window' | 'bucket' | 'models' | 'account';
 
+export interface QuotaSnapshotProvenance {
+  schemaVersion?: number;
+  /** 来源 id（探针/额度接口），例如 codex_app_server、qoder-account-api。 */
+  id?: string;
+  kind?: string;
+  authority?: number | null;
+  confidence?: number | null;
+  url?: string;
+  fetchedAt?: string;
+  expiresAt?: string;
+  capturedAt?: number | null;
+  stale?: boolean;
+}
+
 export type AccountUsageSnapshot =
   {
     /** 服务端额度视图模型给出的条目形态；老缓存记录可能缺省，展示层按结构兜底。 */
     entryShape?: QuotaEntryShape;
+    /** 来源/年龄/stale（`quota.probe` 归一后写入；老缓存可能缺省）。 */
+    provenance?: QuotaSnapshotProvenance;
   } & (
   | {
       kind: 'codex_oauth_status';
@@ -435,11 +451,23 @@ export interface ModelMetadata {
   id: string;
   providerId?: string;
   baseModel?: string;
+  metadataSchemaVersion?: number;
+  metadataStatus?: 'resolved' | 'unknown';
+  metadataSource?: string;
+  metadataAuthority?: number;
+  metadataFetchedAt?: string;
+  metadataStale?: boolean;
   source?: {
-    type: 'models.dev';
+    type: string;
+    id?: string;
+    kind?: string;
+    authority?: number;
+    confidence?: number;
     repository?: string;
     url?: string;
     path?: string;
+    fetchedAt?: string;
+    stale?: boolean;
   };
   name?: string;
   family?: string;

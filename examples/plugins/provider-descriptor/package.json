@@ -1,0 +1,8 @@
+{
+  "name": "aih-plugin-provider-descriptor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider 插件样例：只提供 canonical provider.descriptor 数据，handler 引用宿主注册表。",
+  "peerDependencies": { "@ai-home/plugin-sdk": "0.1.0" }
+}

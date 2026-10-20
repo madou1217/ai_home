@@ -212,6 +212,27 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
     共 32 用例；真机 E2E（真实 `startOpenCodeServeTurn` 打活的 46802 实例）：建会话→审批 allow→工具输出
     `e2e-ok`→`session.execution.succeeded`→`result` 正文含输出。
 
+**Phase 3.7 — 插件能力契约（P1–P3，2026-10-20 新增）**
+16. ✅ 价格/额度/元数据/扫描/Provider 描述符统一走插件契约：
+    `contracts/plugins/contract.json` 是能力唯一事实源（`pricing.catalog` /
+    `model.metadata` / `quota.probe` / `usage.scan` / `provider.descriptor`）。
+    宿主裁决仍集中在既有门面：`lib/usage/pricing/{price-quote,merge-quotes}.js`、
+    `lib/usage/quota/probe-result.js`、`lib/usage/usage-scan-contract.js`、
+    `lib/providers/contract.js`；插件只送数据。
+17. ✅ Provider 描述符插件化：`lib/providers/handler-registry.js` 统一解析
+    `handler` id（缺失 = `provider_descriptor_handler_unavailable`），
+    `lib/plugins/provider/descriptor-collector.js` 拒绝函数/重复/非法描述符，
+    代次激活后 `replaceOrigin('plugin', …)` 整体替换（内置/外部目录不变），
+    宿主空闲/崩溃时清空 plugin origin。`lib/plugins/provider/registry.js` 已并入
+    canonical 校验，不再维护第二份形状与内置名单。样例：
+    `examples/plugins/provider-descriptor/`。
+18. ✅ 来源可追溯：价格/额度/元数据/扫描结果都带 `source` + 新鲜度；
+    未知保持 `unknown`，只有来源明确免费才是 `free/0`；过期数据不丢、只标
+    `stale`。WebUI 用紧凑 Tooltip/行内标签展示，不新增大块提示。
+    验证：`test/{price-quote,quota-probe-contract,model-metadata-provenance,
+    usage-scan-contract,provider-descriptor-plugin}.test.js`；WebUI 构建 +
+    改动文件 eslint + 前端单测。
+
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
    记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。

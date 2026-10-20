@@ -138,6 +138,26 @@
       "mode": "collect"
     },
     {
+      "id": "model.metadata",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "quota.probe",
+      "version": 1,
+      "mode": "serial"
+    },
+    {
+      "id": "usage.scan",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
+      "id": "provider.descriptor",
+      "version": 1,
+      "mode": "collect"
+    },
+    {
       "id": "chat.prepare",
       "version": 1,
       "mode": "waterfall"

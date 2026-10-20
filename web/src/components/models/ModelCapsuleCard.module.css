@@ -112,6 +112,11 @@
   color: var(--color-muted);
 }
 
+/* 目录元数据未知/过期：紧凑标签 + Tooltip，不使用整块告警。 */
+.catalogWarning {
+  color: var(--color-warning, var(--color-muted));
+}
+
 /* 价格胶囊：可编辑（semantic button），单位 = 每百万 token 美元 */
 .pricingCapsule {
   display: inline-flex;

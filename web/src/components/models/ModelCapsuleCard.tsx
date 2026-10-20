@@ -40,6 +40,27 @@ function formatPricingDate(value?: string): string {
   return text ? text.slice(0, 10) : '';
 }
 
+export interface ModelCatalogMeta {
+  status?: 'resolved' | 'unknown';
+  source?: string;
+  authority?: number;
+  fetchedAt?: string;
+  stale?: boolean;
+}
+
+/** 目录元数据来源/新鲜度（能力标签的 Tooltip）。未知/过期时文案明确，不显示 0。 */
+export function formatCatalogProvenance(meta?: ModelCatalogMeta): string {
+  if (!meta) return '';
+  const parts: string[] = [];
+  if (meta.source) parts.push(`目录 ${meta.source}`);
+  if (meta.authority !== undefined) parts.push(`authority ${meta.authority}`);
+  const fetchedAt = String(meta.fetchedAt || '').trim().slice(0, 10);
+  if (fetchedAt) parts.push(`快照 ${fetchedAt}`);
+  if (meta.stale) parts.push('已超过 14 天，元数据可能过期');
+  if (meta.status === 'unknown') parts.push('目录未收录该模型');
+  return parts.join(' · ');
+}
+
 /** 价格来源/新鲜度的一行说明，放在 Tooltip 里，不占用卡片主视觉。 */
 export function formatPricingProvenance(meta?: ModelPricingMeta): string {
   if (!meta) return '';
@@ -83,6 +104,8 @@ export interface ModelCapsuleCardProps {
     cacheWrite?: number;
     cacheWrite1h?: number;
   };
+  /** 目录元数据来源、新鲜度与 unknown 状态（来自 metadata.metadata*）。 */
+  catalogMeta?: ModelCatalogMeta;
   /** 价格来源、新鲜度与派生信息（来自 metadata.pricing）。 */
   pricingMeta?: ModelPricingMeta;
   /** 账号自定义价覆盖（同单位）；有值的维度显示为生效价，原价划线。 */
@@ -112,6 +135,7 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   contextWindow,
   maxOutputTokens,
   pricing,
+  catalogMeta,
   pricingMeta,
   customPricing,
   onEditPricing,
@@ -122,6 +146,10 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   const priceCells = resolveModelPriceCells(pricing, customPricing);
   const customPricingActive = hasCustomPricingValues(customPricing);
   const provenance = formatPricingProvenance(pricingMeta);
+  const catalogProvenance = formatCatalogProvenance(catalogMeta);
+  const catalogWarning = catalogMeta?.status === 'unknown'
+    ? '元数据未知'
+    : (catalogMeta?.stale ? '元数据过期' : '');
   const pricingTitle = [
     priceCells
       .map((cell) => `${cell.label} $${formatPricePerM(cell.value)}${cell.overridden && cell.base !== undefined ? `（原价 $${formatPricePerM(cell.base)}）` : ''}`)
@@ -207,14 +235,23 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
       <div className={styles.cardBody}>
         <div className={styles.capsuleTags}>
           {contextWindow ? (
-            <span className={styles.metricCapsule}>
-              <ThunderboltFilled className={styles.metricIcon} /> 上下文 {formatTokensK(contextWindow)}
-            </span>
+            <Tooltip title={catalogProvenance}>
+              <span className={styles.metricCapsule}>
+                <ThunderboltFilled className={styles.metricIcon} /> 上下文 {formatTokensK(contextWindow)}
+              </span>
+            </Tooltip>
           ) : null}
           {maxOutputTokens ? (
-            <span className={styles.metricCapsule}>
-              输出上限 {formatTokensK(maxOutputTokens)}
-            </span>
+            <Tooltip title={catalogProvenance}>
+              <span className={styles.metricCapsule}>
+                输出上限 {formatTokensK(maxOutputTokens)}
+              </span>
+            </Tooltip>
+          ) : null}
+          {catalogWarning ? (
+            <Tooltip title={catalogProvenance}>
+              <span className={`${styles.metricCapsule} ${styles.catalogWarning}`}>{catalogWarning}</span>
+            </Tooltip>
           ) : null}
           {pricingRow}
         </div>

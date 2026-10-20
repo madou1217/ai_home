@@ -521,7 +521,7 @@ conflicts: record warnings [{ dimension, chosen, rejected: [...] }]
 | capability | 语义 | 说明 |
 | --- | --- | --- |
 | `quota.probe` | `serial`（策略链） | 每个 Provider 多条策略，按 `clientDependent=false` 优先；第一条成功/`not_applicable` 即停 |
-| `usage.scan` | `collect` | 从本地会话文件扫描 token 用量；返回 `UsageRecord[]` |
+| `usage.scan` | `collect` | 从本地会话文件扫描 token 用量；返回扫描摘要（计数/状态/来源），记录由宿主写入 store |
 
 **`quota.probe` 示例**：
 
@@ -563,7 +563,8 @@ module.exports = {
 - `notApplicable` 必须显式返回，不能用一个全 0 快照冒充。
 - 宿主负责调度、缓存、失败冷却、账号归属（`registry-scope-ownership`）和 UI 投影；
   插件不写账号状态。
-- `usage.scan` 只返回原始记录；计价由 `pricing` 在宿主侧完成。
+- `usage.scan` 只返回扫描摘要（记录/提示词/文件计数、`status`、来源与 warnings）；
+  记录由宿主写入 store，计价由 `pricing` 在宿主侧完成。
 
 ## 6. 契约扩展
 
@@ -729,11 +730,55 @@ module.exports = {
 - `usage.scan` 抽象本地会话扫描；
 - UI 显示来源/新鲜度，gift 余额仍不计入 min 剩余（现有口径）。
 
+**实施落点（P2，已完成）**：
+
+- 合同：`model.metadata`（`collect`）、`quota.probe`（`serial`）、
+  `usage.scan`（`collect`）进 `contracts/plugins/contract.json`，生成物由
+  `scripts/generate-plugin-contract.js` 重生成。
+- 额度：`lib/usage/quota/probe-result.js` 把策略结果归一成互斥三态
+  （`ok` / `not_applicable` / `unavailable`），带 `source` / `capturedAt` /
+  `stale` / `attempts` / `warnings`；`runQuotaProbe()` 在 `strategies.js`
+  包装现有策略链，快照额外写 `provenance`（不覆盖既有的字符串 `source`，
+  恢复/匹配逻辑零改动）。WebUI `UsageSnapshotCell` 展示来源、快照年龄与过期态。
+- 模型元数据：`models-dev-metadata.js` 的 `model.metadata` 贡献带
+  `metadataStatus` / `metadataSource` / `metadataAuthority` / `metadataFetchedAt` /
+  `metadataStale` 与结构化 `source`；未知仍是 `unknown`，不伪造 context/0 价；
+  `aih server status` 输出目录快照行；WebUI 在能力/输出胶囊 Tooltip 展示来源与
+  新鲜度，未知/过期只显示紧凑标签。
+- 用量扫描：`lib/usage/usage-scan-contract.js` 定义扫描请求、结果、来源与
+  三态（`ok` / `empty` / `unavailable`），`model-usage-service.scan()` 已接入；
+  原字段全部保留，调用方零行为差异。扫描器只回计数，计价与持久化仍在宿主。
+- 验证：`test/quota-probe-contract.test.js`、`test/model-metadata-provenance.test.js`、
+  `test/usage-scan-contract.test.js`；WebUI 构建、改动文件 eslint 与前端单测通过。
+
 ### P3：Provider 插件
 
 - `provider.descriptor` + handler 注册；现有 `lib/providers/defs/*.js` 作为内置插件；
 - 外部 Provider 插件样例 + conformance 套件；
 - Go 投影 `contracts/providers/manifest.json` 保持同源。
+
+**实施落点（P3，已完成）**：
+
+- 合同与校验：`provider.descriptor`（`collect`）进合同；canonical 校验仍是
+  `lib/providers/contract.js` 唯一入口。旧 `lib/plugins/provider/registry.js`
+  已统一到同一校验器，不再维护第二份 provider 形状/内置名单。
+- Handler Registry：`lib/providers/handler-registry.js` 统一解析描述符里的
+  `handler` id（先查 provider 表，再回落既有 `model-discovery/handler-registry`）；
+  缺失 handler 是显式拒绝（`provider_descriptor_handler_unavailable`），不静默降级。
+- 收集器：`lib/plugins/provider/descriptor-collector.js` 接受 host RPC 的 JSON
+  贡献、拒绝函数/符号/bigint（`provider_descriptor_not_serializable`）、拒绝
+  同批重复 provider；单个描述符失败只记 `errors`，其余照常收集。
+- 代次同步：`runtime-service` 在准备阶段收集候选描述符，激活后整体替换
+  provider 注册表的 `plugin` origin；宿主空闲/崩溃时清空该 origin，内置与
+  外部目录描述符不受影响（`replaceOrigin`，冲突记
+  `provider_descriptor_conflict`）。
+- 内置包装：`collectBuiltinProviderDescriptors()` /
+  `createBuiltinProviderDescriptorContribution()` 把 `lib/providers/defs/*.js`
+  暴露成同形状的 `provider.descriptor` 贡献；conformance 测试直接对比其 id
+  集合与 Go `contracts/providers/manifest.json`。
+- 外部样例：`examples/plugins/provider-descriptor/`（manifest + descriptor JSON
+  + 只调用 SDK 的 `index.mjs`）。外部 provider 当前**不进入** Go manifest，
+  这是显式边界；Go 消费外部 descriptor 留待 P6。
 
 ### P4：账号插件
 

@@ -7,6 +7,7 @@ const {
   QODER_CLIENT_LAYOUTS,
   QODER_IDENTITY_HEADERS,
   QODER_IDENTITY_HEADER_ORDER,
+  QODER_INFERENCE_WIRE,
   QODER_MODEL_SERVER_HEADERS,
   buildQoderIdentityHeaders,
   buildQoderModelServerHeaders,
@@ -26,6 +27,11 @@ test('qoder client layout pins the verified 1.1.73 binary and endpoints', () => 
   assert.equal(layout.inference.operation, 'inference.remoteChat.stream');
   assert.equal(layout.inference.wasmSigning.wasmCall, 'prepareInferRequest');
   assert.equal(layout.inference.wasmSigning.wireBodyIsClientJson, false);
+  assert.equal(layout.inference.sessionType, 'qodercli');
+  assert.equal(layout.inference.wire.path, '/algo/api/v2/service/pro/sse/agent_chat_generation');
+  assert.equal(layout.inference.wire.requestContentEncoding, 'zstd');
+  assert.equal(layout.inference.wire.responseContentType, 'text/event-stream;charset=UTF-8');
+  assert.equal(QODER_INFERENCE_WIRE.doneFrame, 'body: "[DONE]"');
 });
 
 test('qoder identity header names match the client constants exactly', () => {
@@ -105,15 +111,24 @@ test('model server headers include the fixed client headers without leaking empt
   assert.equal(withoutAuth.Authorization, undefined);
 });
 
-test('layout resolution is explicit about version mismatch and unverified providers', () => {
+test('layout resolution pins the verified qodercn 1.1.72 binary and wire facts', () => {
   const mismatch = resolveQoderClientLayout({ provider: 'qoder', version: '9.9.9' });
   assert.equal(mismatch.id, 'qoder-cli-1.1.73');
   assert.equal(mismatch.resolution, 'version_mismatch');
 
   const cn = resolveQoderClientLayout({ provider: 'qodercn' });
-  assert.equal(cn.status, 'unverified');
-  assert.equal(cn.cliVersion, null);
+  assert.equal(cn.id, 'qodercn-cli-1.1.72');
+  assert.equal(cn.status, 'verified');
+  assert.equal(cn.cliVersion, '1.1.72');
   assert.equal(cn.resolution, 'latest');
+  assert.equal(cn.homeDir, '.qoder-cn');
+  assert.equal(cn.binary.sha256, '2e55dab3998c6a8f3b6f8c74993cb9a2132889f1bdac6f8c79a0982ccdc65cb6');
+  assert.equal(cn.endpoints.inference, 'https://gateway.qoder.com.cn');
+  assert.equal(cn.inference.sessionType, 'qoderclicn');
+  assert.equal(cn.inference.wasmSigning.wasmCall, 'prepareInferRequest');
+  assert.equal(cn.inference.wasmSigning.wireBodyIsClientJson, false);
+  assert.equal(cn.inference.wire.requestBodyEncoding.includes('WASM prepareInferRequest'), true);
+  assert.equal(cn.inference.wire.query.includes('AgentId=agent_common'), true);
   assert.equal(resolveQoderClientLayout({ provider: 'unknown' }), null);
 });
 

@@ -60,9 +60,17 @@ function firstFileId(provider: ProviderConfigProvider | null): string {
   return (provider.files.find((file) => file.exists) || provider.files[0]).id;
 }
 
-export default function ProviderConfigPanel() {
+export interface ProviderConfigPanelProps {
+  /** 固定只展示某个 Provider（应用管理的高级设置里嵌入时使用）。 */
+  providerId?: string;
+  /** 嵌入模式：隐藏页面标题与 Provider 侧栏，只保留文件标签 + 编辑器 + 字段解读。 */
+  embedded?: boolean;
+}
+
+export default function ProviderConfigPanel({ providerId = '', embedded = false }: ProviderConfigPanelProps) {
   const screens = Grid.useBreakpoint();
   const compact = !screens.lg;
+  const fixedProviderId = providerId.trim().toLowerCase();
   const [providers, setProviders] = useState<ProviderConfigProvider[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState('');
@@ -110,6 +118,14 @@ export default function ProviderConfigPanel() {
     const result = await providerConfigAPI.list();
     setProviders(result.providers || []);
     if (!options.keepSelection) {
+      if (fixedProviderId) {
+        const fixed = result.providers.find((item) => item.id === fixedProviderId) || null;
+        if (fixed) {
+          setActiveProvider(fixed.id);
+          setActiveFileId(firstFileId(fixed));
+        }
+        return result;
+      }
       const preferred = result.providers.find((provider) => configuredCount(provider) > 0)
         || result.providers.find((provider) => provider.id === 'codex')
         || result.providers[0]
@@ -120,7 +136,7 @@ export default function ProviderConfigPanel() {
       }
     }
     return result;
-  }, []);
+  }, [fixedProviderId]);
 
   useEffect(() => {
     let active = true;
@@ -268,6 +284,7 @@ export default function ProviderConfigPanel() {
   }), []);
 
   const selectProvider = async (providerId: string) => {
+    if (fixedProviderId) return;
     if (providerId === activeProvider) return;
     if (!(await confirmDiscard())) return;
     const next = providers.find((item) => item.id === providerId) || null;
@@ -286,6 +303,14 @@ export default function ProviderConfigPanel() {
     setReloadToken((value) => value + 1);
     try {
       const result = await loadProviders({ keepSelection: true });
+      if (fixedProviderId) {
+        const fixed = result.providers.find((item) => item.id === fixedProviderId) || null;
+        if (fixed) {
+          setActiveProvider(fixed.id);
+          setActiveFileId(firstFileId(fixed));
+        }
+        return;
+      }
       if (!result.providers.some((item) => item.id === activeProvider)) {
         const preferred = result.providers.find((item) => configuredCount(item) > 0) || result.providers[0] || null;
         setActiveProvider(preferred?.id || '');
@@ -348,7 +373,10 @@ export default function ProviderConfigPanel() {
 
   const schemaWarnings = detail?.schema?.compatibilityWarnings || [];
   const validationErrors = validation && !validation.valid ? validation.errors : [];
-  const editorHeight = Math.max(compact ? 320 : 380, Math.min(640, viewportHeight - (compact ? 500 : 430)));
+  const editorHeight = Math.max(
+    compact ? 320 : 380,
+    Math.min(embedded ? 520 : 640, viewportHeight - (compact ? (embedded ? 420 : 500) : (embedded ? 360 : 430)))
+  );
   const status = file ? fileStatus(file) : null;
 
   const inspector = (
@@ -367,35 +395,47 @@ export default function ProviderConfigPanel() {
   );
 
   return (
-    <section className="toolkit-page toolkit-domain-panel pc-panel" aria-labelledby="toolkit-provider-config-title">
-      <header className="toolkit-panel-header">
-        <div>
-          <div className="toolkit-panel-kicker">PROVIDER CONFIG WORKBENCH</div>
-          <h2 id="toolkit-provider-config-title">Provider 配置</h2>
-          <p>
-            浏览每个 CLI 的宿主全局配置文件：右侧字段解读、语法校验、版本历史与脱敏导出都在同一个工作台里，
-            不需要自己去找文件路径。
-          </p>
-        </div>
-        <div className="toolkit-header-actions">
-          {compact && (
-            <Button icon={<ReadOutlined />} onClick={() => setInspectorOpen(true)}>
-              字段解读
+    <section
+      className={embedded ? 'toolkit-domain-panel pc-panel' : 'toolkit-page toolkit-domain-panel pc-panel'}
+      data-embedded={embedded || undefined}
+      aria-labelledby="toolkit-provider-config-title"
+    >
+      {!embedded && (
+        <header className="toolkit-panel-header">
+          <div>
+            <div className="toolkit-panel-kicker">PROVIDER CONFIG WORKBENCH</div>
+            <h2 id="toolkit-provider-config-title">Provider 配置</h2>
+            <p>
+              浏览每个 CLI 的宿主全局配置文件：右侧字段解读、语法校验、版本历史与脱敏导出都在同一个工作台里，
+              不需要自己去找文件路径。
+            </p>
+          </div>
+          <div className="toolkit-header-actions">
+            {compact && (
+              <Button icon={<ReadOutlined />} onClick={() => setInspectorOpen(true)}>
+                字段解读
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} loading={listLoading && !providers.length} onClick={() => void reload()}>
+              重新读取
             </Button>
-          )}
-          <Button icon={<ReloadOutlined />} loading={listLoading && !providers.length} onClick={() => void reload()}>
-            重新读取
-          </Button>
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
 
       {listError && <div className="pc-inline-error" role="alert">{listError}</div>}
 
       {listLoading && !providers.length ? (
         <div className="pc-loading"><Spin size="large" tip="正在读取 Provider 配置文件" /></div>
       ) : (
-        <div className="pc-layout" data-compact={compact || undefined}>
-          <aside className="pc-provider-rail" aria-label="Provider 列表">
+        <div
+          className="pc-layout"
+          data-compact={compact || undefined}
+          data-embedded={embedded || undefined}
+          data-fixed-provider={fixedProviderId || undefined}
+        >
+          {!fixedProviderId && (
+            <aside className="pc-provider-rail" aria-label="Provider 列表">
             <Input
               allowClear
               value={search}
@@ -430,6 +470,7 @@ export default function ProviderConfigPanel() {
               {!filteredProviders.length && <div className="pc-empty-note">没有匹配的 Provider。</div>}
             </div>
           </aside>
+          )}
 
           <main className="pc-workbench">
             {provider ? (
@@ -596,7 +637,9 @@ export default function ProviderConfigPanel() {
                 ) : null}
               </>
             ) : (
-              <div className="pc-empty-note pc-workbench-empty">选择左侧的 Provider 开始。</div>
+              <div className="pc-empty-note pc-workbench-empty">
+                {fixedProviderId ? '该应用没有可管理的配置文件。' : '选择左侧的 Provider 开始。'}
+              </div>
             )}
           </main>
 

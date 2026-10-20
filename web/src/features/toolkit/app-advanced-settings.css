@@ -1,0 +1,166 @@
+/* 应用高级设置：启动权限 + 配置文件工作台。状态用行内图标/标签表达，不使用大块提示。 */
+
+.aas-shell {
+  min-width: 0;
+}
+
+.aas-tabs .ant-tabs-nav {
+  margin-bottom: var(--space-5);
+}
+
+.aas-single-title {
+  margin-bottom: var(--space-5);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.aas-permission-pane {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.aas-loading {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+}
+
+.aas-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface-soft) 64%, transparent);
+}
+
+.aas-section-head {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.aas-section-head > .anticon {
+  color: var(--color-accent);
+  font-size: 18px;
+}
+
+.aas-section-head > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aas-section-head strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.aas-section-head span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.aas-code-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.aas-code-line code,
+.aas-path {
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.aas-path {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.aas-inline-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.aas-inline-state[data-tone="error"] {
+  color: var(--color-danger);
+}
+
+.aas-inline-state[data-tone="muted"] {
+  color: var(--color-text-muted);
+}
+
+.aas-host-state {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.aas-host-state[data-tone="ok"] .anticon {
+  color: var(--color-success);
+}
+
+.aas-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.aas-hint code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.aas-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.aas-footer span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.aas-config-pane {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .aas-section {
+    padding: var(--space-4);
+  }
+  .aas-footer {
+    align-items: stretch;
+  }
+  .aas-footer span {
+    flex: 1 1 100%;
+  }
+}

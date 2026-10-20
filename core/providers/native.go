@@ -250,8 +250,9 @@ func nativeCline() *NativeCapability {
 // `-c/--continue`（最近一段）与 `-s/--session <id>`（精确），另有 `--fork`（实测
 // `opencode run --help`）。MCP 有 `mcp` 子命令（add/list/auth/logout/debug），配置写在
 // opencode.json；hook 走插件文件 <configDir>/plugin/aih-session-hook.js（aih 已接入，
-// 见 sessionSync 的 opencode_plugin）。权限决策走 serve 的 permission 应答
-// （once/reject），没有 CLI 形态的模式枚举，因此 Flags/Modes 留空而不是编造。
+// 见 sessionSync 的 opencode_plugin）。权限决策有两套入口：serve 的 permission 应答
+// （once/reject）与 CLI 的 `--auto`（“Auto-approve permissions that are not explicitly
+// denied”，TUI 与 run 都接受，2.0.x 实测）。这里只声明后者；显式 deny 规则仍然优先。
 func nativeOpenCode() *NativeCapability {
 	return &NativeCapability{
 		Config: NativeConfig{
@@ -273,8 +274,8 @@ func nativeOpenCode() *NativeCapability {
 			StopRequiresJSONStdout: false,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{},
-			Modes: []string{},
+			Flags: []string{"--auto"},
+			Modes: []string{"auto"},
 		},
 	}
 }

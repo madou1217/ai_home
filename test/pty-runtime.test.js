@@ -154,6 +154,11 @@ function createRuntimeHarness(env = {}, overrides = {}) {
   fsBase.mkdirSync(lockRoot, { recursive: true });
   const profileRoot = overrides.aiHomeDir || lockRoot;
   const hostHomeDir = overrides.hostHomeDir || path.dirname(profileRoot);
+  // 既有用例聚焦参数整形与会话行为，这里显式关掉「默认最大权限」注入，
+  // 避免每个参数断言都要感知权限旗标；权限装配本身由
+  // test/tool-permission-launch.test.js 与本文件末尾的专门用例覆盖。
+  const readToolPermissionSettings = overrides.readToolPermissionSettings
+    || (() => ({ maxPermission: false, applyToHost: false }));
   const getProfileDir = overrides.getProfileDir
     || ((cliName, accountRef) => resolveAccountRuntimeDir(profileRoot, cliName, accountRef));
   const getAccountRuntimeDir = overrides.getAccountRuntimeDir || getProfileDir;
@@ -279,6 +284,7 @@ function createRuntimeHarness(env = {}, overrides = {}) {
     getShellDrawerPtyRows,
     getShellDrawerTotalHeight,
     readUsageConfig: () => ({}),
+    readToolPermissionSettings,
     cliConfigs: {
       codex: { pkg: '@openai/codex', loginArgs: ['login'] },
       claude: { pkg: '@anthropic-ai/claude-code', loginArgs: ['login'] }
@@ -6228,5 +6234,24 @@ test('runtime keeps strict zero-client default and does not probe clip-agent wit
   assert.equal(writes.some((line) => line.includes('strict zero-client mode')), true);
   assert.equal(writes.some((line) => line.includes('wrapper fallback')), false);
 
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
+test('runtime injects contract-declared max-permission flags when the provider switch is on', () => {
+  const { runtime, proc, spawns } = createRuntimeHarness({}, {
+    readToolPermissionSettings: (provider) => ({
+      maxPermission: provider === 'codex',
+      applyToHost: false
+    })
+  });
+
+  runtime.runCliPtyTracked('codex', '1', [], false);
+
+  assert.deepEqual(spawns[0].args.slice(0, 4), [
+    '--sandbox',
+    'danger-full-access',
+    '--ask-for-approval',
+    'never'
+  ]);
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });

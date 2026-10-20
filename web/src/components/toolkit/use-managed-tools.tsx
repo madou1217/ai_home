@@ -20,7 +20,7 @@ import { toolkitRequestError as requestError } from './request-error';
 
 // 与服务端 TOOLKIT_TOOL_CATEGORIES 的 label 一致，只在接口返回前兜底。
 const TOOL_CATEGORY_LABELS: Readonly<Record<ToolkitToolCategoryId, string>> = Object.freeze({
-  'session-runtimes': '会话运行时',
+  'session-runtimes': '持久化工具',
   'network-access': '网络接入与隧道'
 });
 

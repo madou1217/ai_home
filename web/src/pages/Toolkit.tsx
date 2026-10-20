@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from '@umijs/max';
 import { Tabs } from 'antd';
 import {
@@ -7,7 +7,6 @@ import {
   CloudServerOutlined,
   CloudSyncOutlined,
   CodeOutlined,
-  FileTextOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -21,11 +20,11 @@ import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
-import ProviderConfigPanel from '@/features/provider-config/ProviderConfigPanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
+import { subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -52,12 +51,6 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <ToolOutlined />
     },
     {
-      id: 'provider-config',
-      label: 'Provider 配置',
-      description: '字段解读、历史与导出',
-      icon: <FileTextOutlined />
-    },
-    {
       id: 'edge-forwarding',
       label: '入口与转发',
       description: 'nginx / caddy / frp',
@@ -71,8 +64,8 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
     },
     {
       id: 'session-runtimes',
-      label: '会话运行时',
-      description: '持久会话后端',
+      label: '持久化工具',
+      description: 'tmux / psmux 持久会话',
       icon: <ToolOutlined />
     }
   ],
@@ -146,8 +139,6 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'terminals':
       return <TerminalManagerPanel />;
-    case 'provider-config':
-      return <ProviderConfigPanel />;
     case 'edge-forwarding':
       return <EdgeProxyPanel />;
     case 'environment':
@@ -185,6 +176,20 @@ export default function Toolkit() {
     deepLink ? { ...DEFAULT_SECONDARY, [deepLink.section]: deepLink.panel } : DEFAULT_SECONDARY
   );
 
+  useEffect(() => subscribeToolkitPanel((panel) => {
+    const next = resolveDeepLink(panel ? `?panel=${encodeURIComponent(panel)}` : '');
+    if (!next) return;
+    setActiveSection(next.section);
+    setSecondarySelection((current) => ({ ...current, [next.section]: next.panel }));
+  }), []);
+
+  useEffect(() => {
+    const next = resolveDeepLink(location.search);
+    if (!next) return;
+    setActiveSection(next.section);
+    setSecondarySelection((current) => ({ ...current, [next.section]: next.panel }));
+  }, [location.search]);
+
   const renderSectionBody = (section: ToolkitSection) => {
     const sectionItems = SECTION_ITEMS[section];
     const activePanelId = secondarySelection[section];
@@ -200,10 +205,13 @@ export default function Toolkit() {
               className="toolkit-secondary-nav-item"
               data-active={item.id === activePanelId || undefined}
               aria-current={item.id === activePanelId ? 'page' : undefined}
-              onClick={() => setSecondarySelection((current) => ({
-                ...current,
-                [section]: item.id
-              }))}
+              onClick={() => {
+                setSecondarySelection((current) => ({
+                  ...current,
+                  [section]: item.id
+                }));
+                writeToolkitPanel(item.id);
+              }}
             >
               <span className="toolkit-secondary-nav-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
               <span className="toolkit-secondary-nav-icon" aria-hidden="true">{item.icon}</span>
@@ -235,7 +243,11 @@ export default function Toolkit() {
         <Tabs
           className="toolkit-primary-tabs"
           activeKey={activeSection}
-          onChange={(value) => setActiveSection(value as ToolkitSection)}
+          onChange={(value) => {
+            const next = value as ToolkitSection;
+            setActiveSection(next);
+            writeToolkitPanel(secondarySelection[next]);
+          }}
           destroyInactiveTabPane
           items={[
             { key: 'integration', label: <span><AppstoreOutlined /> 应用与集成</span>, children: renderSectionBody('integration') },

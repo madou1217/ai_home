@@ -16,6 +16,18 @@
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
 }
 
+/* 固定 Provider（应用高级设置里嵌入）：没有左侧 Provider 列表。 */
+.pc-layout[data-fixed-provider] {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+/* 嵌入到弹窗时不再画第二层边框/背景。 */
+.pc-layout[data-embedded] {
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+
 .pc-provider-rail {
   display: flex;
   min-width: 0;
@@ -884,6 +896,12 @@
 @media (max-width: 1120px) {
   .pc-layout {
     grid-template-columns: 196px minmax(0, 1fr);
+  }
+  .pc-layout[data-fixed-provider] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pc-layout[data-fixed-provider] .pc-inspector-rail {
+    display: none;
   }
 }
 

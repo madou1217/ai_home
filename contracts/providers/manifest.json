@@ -806,8 +806,12 @@
           "stopRequiresJsonStdout": false
         },
         "permissions": {
-          "flags": [],
-          "modes": []
+          "flags": [
+            "--auto"
+          ],
+          "modes": [
+            "auto"
+          ]
         }
       },
       "credentials": {

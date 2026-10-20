@@ -2,23 +2,16 @@ import { useMemo, useState } from 'react';
 import {
   Empty,
   message,
-  Modal,
   Segmented,
   Spin
 } from 'antd';
-import {
-  LockOutlined,
-  ReloadOutlined
-} from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { toolkitAPI } from '@/services/api';
-import type {
-  ManagedAppItem,
-  ToolkitAppConfigResponse
-} from '@/types';
+import type { ManagedAppItem } from '@/types';
 import ToolkitStatusTrack from './ToolkitStatusTrack';
-import ConfigCodeEditor from './config-editor/ConfigCodeEditor';
 import ManagedAppCard from './ManagedAppCard';
+import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
@@ -58,11 +51,7 @@ export default function AppManagerPanel() {
     installHooks
   } = useManagedApps();
   const [category, setCategory] = useState('ALL');
-  const [editingApp, setEditingApp] = useState<ManagedAppItem | null>(null);
-  const [configData, setConfigData] = useState<ToolkitAppConfigResponse | null>(null);
-  const [configContent, setConfigContent] = useState('');
-  const [configLoading, setConfigLoading] = useState(false);
-  const [configSaving, setConfigSaving] = useState(false);
+  const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
     app: ManagedAppItem;
     accountRef: string;
@@ -115,41 +104,6 @@ export default function AppManagerPanel() {
       await refreshRunningApps();
     } catch (requestFailure: unknown) {
       message.error(requestError(requestFailure, kind === 'desktop' ? '结束 Desktop 失败' : '结束 CLI 会话失败'));
-    }
-  };
-
-  const openConfig = async (app: ManagedAppItem) => {
-    if (!app.configExists || !app.configName) return;
-    setEditingApp(app);
-    setConfigData(null);
-    setConfigContent('');
-    setConfigLoading(true);
-    try {
-      const response = await toolkitAPI.getAppConfig(app.id);
-      if (!response.ok) throw new Error('配置接口未返回可用结果');
-      setConfigData(response);
-      setConfigContent(response.content || '');
-    } catch (requestFailure: unknown) {
-      setEditingApp(null);
-      message.error(requestError(requestFailure, '读取配置失败'));
-    } finally {
-      setConfigLoading(false);
-    }
-  };
-
-  const saveConfig = async () => {
-    if (!editingApp || !configData) return;
-    setConfigSaving(true);
-    try {
-      const response = await toolkitAPI.saveAppConfig(editingApp.id, configContent, configData.revision);
-      if (!response.ok) throw new Error('配置保存接口返回失败');
-      setConfigData(response);
-      message.success(response.elevated ? '配置已通过系统授权保存' : '配置已保存');
-      await fetchApps();
-    } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, '保存配置失败'));
-    } finally {
-      setConfigSaving(false);
     }
   };
 
@@ -214,7 +168,7 @@ export default function AppManagerPanel() {
                   onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
                   onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
                   onInstallHooks={(provider) => void installHooks([provider])}
-                  onEditConfig={openConfig}
+                  onEditConfig={(target) => setAdvancedApp(target)}
                 />
               ))}
             </div>
@@ -234,47 +188,11 @@ export default function AppManagerPanel() {
         }}
       />
 
-      <Modal
-        open={Boolean(editingApp)}
-        title={editingApp ? `编辑 ${editingApp.name} 配置` : '编辑配置'}
-        width={1000}
-        confirmLoading={configSaving}
-        okText="保存配置"
-        cancelText="取消"
-        onOk={saveConfig}
-        onCancel={() => {
-          if (!configSaving) {
-            setEditingApp(null);
-            setConfigData(null);
-            setConfigContent('');
-          }
-        }}
-        destroyOnClose
-      >
-        {configLoading ? (
-          <div className="toolkit-loading compact"><Spin /></div>
-        ) : (
-          <>
-            <div className="toolkit-config-note" role="note">
-              <LockOutlined aria-hidden="true" />
-              <span>
-                <strong>配置可能包含访问令牌或其他敏感信息</strong>
-                {configData?.requiresElevation
-                  ? '；当前配置需要系统授权才能保存，保存后会出现平台授权提示。'
-                  : `；格式：${configData?.configFormat || editingApp?.configFormat || 'text'}，保存时会检查文件是否被其他进程修改。`}
-              </span>
-            </div>
-            <ConfigCodeEditor
-              value={configContent}
-              onChange={setConfigContent}
-              format={configData?.configFormat || editingApp?.configFormat}
-              fileName={configData?.configName || editingApp?.configName}
-              ariaLabel={`${editingApp?.name || '应用'} 配置内容`}
-              onSave={configSaving ? undefined : () => void saveConfig()}
-            />
-          </>
-        )}
-      </Modal>
+      <AppAdvancedSettingsModal
+        open={Boolean(advancedApp)}
+        app={advancedApp}
+        onClose={() => setAdvancedApp(null)}
+      />
     </section>
   );
 }

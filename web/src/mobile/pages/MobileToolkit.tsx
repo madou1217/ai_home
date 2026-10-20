@@ -47,7 +47,7 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
     { id: 'provider-config', label: 'Provider 配置', icon: <FileTextOutlined /> },
     { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
     { id: 'cli-upgrade', label: 'CLI 自动升级', icon: <CloudSyncOutlined /> },
-    { id: 'session-runtimes', label: '会话运行时', icon: <ToolOutlined /> }
+    { id: 'session-runtimes', label: '持久化工具', icon: <ToolOutlined /> }
   ],
   runtime: [
     { id: 'environment', label: '语言运行时', icon: <CodeOutlined /> },

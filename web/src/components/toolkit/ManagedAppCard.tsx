@@ -50,6 +50,8 @@ export default function ManagedAppCard({
 }: ManagedAppCardProps) {
   const canInstall = Boolean(app.installAvailable);
   const existingConfig = hasExistingConfig(app);
+  const configFileCount = Math.max(0, Number(app.configFileCount) || 0);
+  const canOpenAdvanced = app.type === 'cli' || configFileCount > 0;
   const hookStatusDetail = getHookStatusDetail(app);
   const currentVersion = getAppCurrentVersion(app);
   const details = [
@@ -63,7 +65,10 @@ export default function ManagedAppCard({
       value: app.cliPath || '未探测到',
       tooltip: app.cliPath || '未探测到可执行路径'
     }] : []),
-    ...(existingConfig ? [{
+    ...(configFileCount > 0 ? [{
+      label: '配置文件',
+      value: `${configFileCount} 个可管理`
+    }] : existingConfig ? [{
       label: '配置',
       value: `${app.configName} 已存在`
     }] : [])
@@ -143,13 +148,13 @@ export default function ManagedAppCard({
               </Button>
             </Tooltip>
           ) : null}
-          {existingConfig ? (
-            <Tooltip title={`编辑 ${app.name} 配置`}>
+          {canOpenAdvanced ? (
+            <Tooltip title={`${app.name} 高级设置`}>
               <Button
                 size="small"
                 shape="circle"
                 icon={<EditOutlined />}
-                aria-label={`编辑 ${app.name} 配置`}
+                aria-label={`${app.name} 高级设置`}
                 onClick={() => onEditConfig(app)}
               />
             </Tooltip>

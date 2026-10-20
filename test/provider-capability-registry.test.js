@@ -165,6 +165,10 @@ test('内置额度 provider 的 activity 声明可被倒排索引到', () => {
       assert.ok(action.handler);
     }
   }
+  // 动作名是产品文案，不允许被泛化成“领福利”：Qoder 叫签到，ZCode 叫领臭鸡蛋。
+  assert.equal(registry.getCapability('qoder', 'activity').actions[0].label, '签到');
+  assert.equal(registry.getCapability('qodercn', 'activity').actions[0].label, '签到');
+  assert.equal(registry.getCapability('zcode', 'activity').actions[0].label, '领臭鸡蛋');
 });
 
 test('冲突策略：同一 provider 重复注册以内置优先，外部覆盖被记为可观察错误', () => {

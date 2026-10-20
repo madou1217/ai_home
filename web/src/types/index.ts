@@ -437,8 +437,9 @@ export interface ModelMetadata {
   baseModel?: string;
   source?: {
     type: 'models.dev';
-    repository: string;
-    path: string;
+    repository?: string;
+    url?: string;
+    path?: string;
   };
   name?: string;
   family?: string;
@@ -478,6 +479,7 @@ export interface ModelMetadata {
     reasoning?: number;
     cacheRead?: number;
     cacheWrite?: number;
+    cacheWrite1h?: number;
     inputAudio?: number;
     outputAudio?: number;
     tiers?: unknown[];
@@ -486,8 +488,35 @@ export interface ModelMetadata {
       output?: number;
       cacheRead?: number;
       cacheWrite?: number;
+      cacheWrite1h?: number;
     };
   };
+  /** 价格来源与新鲜度（宿主合并后的投影；缺省 = 未知）。 */
+  pricing?: {
+    schemaVersion?: number;
+    status?: 'priced' | 'free' | 'unknown';
+    authority?: number;
+    stale?: boolean;
+    derived?: boolean;
+    derivedFrom?: string;
+    warnings?: Array<Record<string, unknown>>;
+    source?: {
+      id?: string;
+      kind?: string;
+      authority?: number;
+      confidence?: number;
+      url?: string;
+      license?: string;
+      fetchedAt?: string;
+      expiresAt?: string;
+    };
+  };
+  pricingSource?: string;
+  pricingAuthority?: number;
+  pricingFetchedAt?: string;
+  pricingStale?: boolean;
+  pricingStatus?: 'priced' | 'free' | 'unknown';
+  derivedFrom?: string;
   interleaved?: {
     field?: string;
   };

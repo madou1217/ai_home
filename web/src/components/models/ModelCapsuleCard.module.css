@@ -175,6 +175,17 @@
   text-decoration: line-through;
 }
 
+.pricingSource {
+  color: var(--color-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* 价格快照超过 14 天：只在来源标签上提示，不使用整块告警。 */
+.pricingSourceStale {
+  color: var(--color-warning, var(--color-muted));
+}
+
 .pricingEditIcon {
   color: var(--color-accent);
 }

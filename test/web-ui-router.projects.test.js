@@ -2191,6 +2191,10 @@ test('web ui openai models route exposes resolved models.dev catalog metadata', 
     assert.equal(body.metadata['gpt-5'].providerId, 'openai');
     assert.equal(body.metadata['gpt-5'].limits.context, 400000);
     assert.equal(body.metadata['gpt-5'].cost.cacheRead, 0.125);
+    assert.equal(body.metadata['gpt-5'].pricing.status, 'priced');
+    assert.equal(body.metadata['gpt-5'].pricing.source.id, 'models.dev');
+    assert.equal(body.metadata['gpt-5'].pricing.source.authority, 40);
+    assert.equal(body.metadata['gpt-5'].pricingSource, 'models.dev');
     assert.equal(body.managedData.find((item) => item.id === 'gpt-5').metadata.family, 'gpt');
     assertNoInternalAccountKeys(body);
   } finally {

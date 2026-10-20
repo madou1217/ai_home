@@ -57,6 +57,7 @@
     { "id": "gateway.account", "version": 1, "mode": "serial" },
     { "id": "gateway.attempt", "version": 1, "mode": "middleware" },
     { "id": "model.catalog", "version": 1, "mode": "terminal" },
+    { "id": "pricing.catalog", "version": 1, "mode": "collect" },
     { "id": "chat.prepare", "version": 1, "mode": "waterfall" },
     { "id": "chat.beforeCommand", "version": 1, "mode": "serial" },
     { "id": "tool", "version": 1, "mode": "terminal" },

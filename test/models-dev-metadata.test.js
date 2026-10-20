@@ -7,8 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  attachModelMetadata,
   buildModelMetadataMap,
-  inferModelsDevProviderIds
+  inferModelsDevProviderIds,
+  readPricingSourceStatus
 } = require('../lib/server/models-dev-metadata');
 
 function writeCatalogFixture(catalog) {
@@ -320,3 +322,59 @@ test('models.dev provider inference maps Grok to xAI catalog entries', () => {
   );
 });
 
+
+test('models.dev metadata carries pricing provenance and explicit unknown status', () => {
+  const catalog = {
+    generatedAt: '2026-09-01T00:00:00.000Z',
+    models: {
+      'openai/gpt-priced': { id: 'openai/gpt-priced' }
+    },
+    providers: {
+      openai: {
+        id: 'openai',
+        models: {
+          'gpt-priced': { id: 'gpt-priced', cost: { input: 1.25, output: 10 } },
+          'gpt-free': { id: 'gpt-free', cost: { input: 0, output: 0 } }
+        }
+      }
+    }
+  };
+  const options = {
+    modelsDevCatalog: catalog,
+    now: Date.parse('2026-10-20T00:00:00.000Z')
+  };
+
+  const priced = buildModelMetadataMap([{ id: 'gpt-priced', provider: 'codex' }], options)['gpt-priced'];
+  assert.equal(priced.cost.input, 1.25);
+  assert.equal(priced.pricing.status, 'priced');
+  assert.equal(priced.pricing.source.id, 'models.dev');
+  assert.equal(priced.pricing.source.authority, 40);
+  assert.equal(priced.pricing.fetchedAt, undefined);
+  assert.equal(priced.pricing.source.fetchedAt, '2026-09-01T00:00:00.000Z');
+  assert.equal(priced.pricing.stale, true);
+  assert.equal(priced.pricingSource, 'models.dev');
+  assert.equal(priced.pricingAuthority, 40);
+  assert.equal(priced.pricingStale, true);
+
+  const free = buildModelMetadataMap([{ id: 'gpt-free', provider: 'codex' }], options)['gpt-free'];
+  assert.equal(free.pricing.status, 'free');
+
+  const unknown = attachModelMetadata([{ id: 'not-in-catalog', provider: 'codex' }], options)[0].metadata;
+  assert.equal(unknown.pricing.status, 'unknown');
+  assert.equal(unknown.pricingSource, 'models.dev');
+  assert.equal(unknown.cost, undefined);
+});
+
+test('pricing source status marks snapshots older than 14 days as stale', () => {
+  const lines = readPricingSourceStatus({
+    modelsDevCatalog: {
+      generatedAt: '2026-09-01T00:00:00.000Z',
+      models: { 'openai/gpt': { id: 'openai/gpt' } },
+      providers: { openai: { models: { gpt: { id: 'gpt', cost: { input: 1 } } } } }
+    },
+    now: Date.parse('2026-10-20T00:00:00.000Z')
+  });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /pricing: models\.dev/);
+  assert.match(lines[0], /stale=true/);
+});

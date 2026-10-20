@@ -30,3 +30,40 @@ test('ModelCapsuleCard renders catalog prices instead of the unknown placeholder
   assert.match(html, /\$1\.50/);
   assert.match(html, /\$3\.0/);
 });
+
+test('ModelCapsuleCard shows pricing provenance and stale/derived state inline', () => {
+  const html = renderToStaticMarkup(
+    <ModelCapsuleCard
+      {...baseProps}
+      pricing={{ input: 2, output: 10 }}
+      pricingMeta={{
+        status: 'priced',
+        stale: true,
+        derived: true,
+        derivedFrom: 'demo/base-model',
+        source: {
+          id: 'models.dev',
+          kind: 'aggregator',
+          authority: 40,
+          fetchedAt: '2026-09-01T00:00:00.000Z'
+        }
+      }}
+      onEditPricing={() => {}}
+    />
+  );
+  assert.match(html, /models\.dev/);
+  assert.match(html, /过期/);
+  assert.match(html, /派生/);
+});
+
+test('ModelCapsuleCard marks account custom pricing as the visible source', () => {
+  const html = renderToStaticMarkup(
+    <ModelCapsuleCard
+      {...baseProps}
+      pricing={{ input: 2, output: 10 }}
+      customPricing={{ input: 1 }}
+      onEditPricing={() => {}}
+    />
+  );
+  assert.match(html, /自定义/);
+});

@@ -687,7 +687,7 @@ module.exports = {
 验收：`npm run models:check` 通过；定向测试 60 pass；`/v0/webui/openai-models`
 返回 `gpt-6.1-sol` 的完整 cost。
 
-### P1：价格插件第一切片（下一步，优先）
+### P1：价格插件第一切片（已交付，2026-10-20）
 
 1. 在 `contracts/plugins/contract.json` 增加 `pricing.catalog` + `collect`，
    重新生成 Node/Go/TS 合同。
@@ -703,6 +703,24 @@ module.exports = {
 
 验收：同一模型多来源冲突时官方优先且可见；无来源仍 `unknown`；不因价格缺失
 拒绝推理；请求路径无网络；`test/design-pattern-guard.test.js` 仍绿。
+
+**实施落点（P1，已完成）**：
+
+- 合同：`contracts/plugins/contract.json` 增加 `pricing.catalog`（`collect`），
+  四个生成物由 `scripts/generate-plugin-contract.js` 重生成。
+- 运行时：`lib/plugins/runtime/capability-pipeline.js` 新增 `collect()`；
+  `delegate` 来源失败只跳过并记录 `attempts`，默认策略 fail closed。
+- 值对象/合并：`lib/usage/pricing/price-quote.js`、
+  `lib/usage/pricing/merge-quotes.js`；单位固定 USD/1M token，逐维度裁决，
+  缺省维度保持 `null`，显式全 0 才是 `free`。
+- 内置适配器：`lib/usage/pricing/catalog-sources/models-dev.js` 把 SDK 快照
+  包装成 `pricing.catalog` 数据源；`models.dev` 仍是 authority 40 的聚合目录，
+  尚未变成外部插件包（外部加载留到 P5）。
+- 元数据/UI：`/v0/webui/openai-models` 的 `metadata.pricing` 带 source /
+  authority / fetchedAt / stale / derived；WebUI 在价格胶囊上显示来源、过期、
+  派生与“未收录”，不新增大块提示。`aih server status` 输出 pricing 快照行。
+- 验证：价格/合并/collect/元数据/路由定向测试通过；WebUI `npm run build` 与
+  改动文件 eslint 通过。账号自定义价仍是宿主 override，未改推理计费主链。
 
 ### P2：额度与模型元数据插件
 

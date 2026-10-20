@@ -7,7 +7,8 @@ export const PRICE_DIMENSIONS = [
   { key: 'input', label: '入' },
   { key: 'output', label: '出' },
   { key: 'cacheRead', label: '缓读' },
-  { key: 'cacheWrite', label: '缓写' }
+  { key: 'cacheWrite', label: '缓写' },
+  { key: 'cacheWrite1h', label: '缓写1h' }
 ] as const;
 
 export type PriceDimensionKey = (typeof PRICE_DIMENSIONS)[number]['key'];
@@ -32,8 +33,11 @@ export function formatPricePerM(n: number): string {
   if (!Number.isFinite(n)) return '--';
   if (n === 0) return '0';
   if (n >= 10) return n.toFixed(1);
-  if (n >= 0.01) return n.toFixed(2);
-  return Number(n.toPrecision(2)).toString();
+  // 先保证两位小数（1.5 → 1.50），再按 3 位有效数字补足精度
+  // （0.015 不能显示成 0.01，0.003 不能显示成 0.00）。
+  const fixed = n.toFixed(2);
+  const precise = Number(n.toPrecision(3));
+  return Number(fixed) === precise ? fixed : precise.toString();
 }
 
 /**

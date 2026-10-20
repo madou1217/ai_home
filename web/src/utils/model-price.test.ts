@@ -12,6 +12,8 @@ test('formatPricePerM keeps meaningful precision without long tails', () => {
   assert.equal(formatPricePerM(15), '15.0');
   assert.equal(formatPricePerM(1.234), '1.23');
   assert.equal(formatPricePerM(0.003), '0.003');
+  assert.equal(formatPricePerM(0.015), '0.015');
+  assert.equal(formatPricePerM(0.0125), '0.0125');
   assert.equal(formatPricePerM(Number.NaN), '--');
 });
 

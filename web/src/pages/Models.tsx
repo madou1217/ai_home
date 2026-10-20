@@ -441,8 +441,10 @@ export default function Models() {
             input: model.metadata?.cost?.input,
             output: model.metadata?.cost?.output,
             cacheRead: model.metadata?.cost?.cacheRead,
-            cacheWrite: model.metadata?.cost?.cacheWrite
+            cacheWrite: model.metadata?.cost?.cacheWrite,
+            cacheWrite1h: model.metadata?.cost?.cacheWrite1h
           }}
+          pricingMeta={model.metadata?.pricing}
           customPricing={model.customPricing}
           onEditPricing={() => openPricingEditor(model)}
           onToggleEnabled={(checked) => updateModelEnabled(model, checked)}

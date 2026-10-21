@@ -111,8 +111,12 @@ test('the listener requires the per-launch token and shares sessions across prov
   const forwarded = new Promise((resolve) => children[0].child.stdin.once('data', (chunk) => resolve(JSON.parse(String(chunk)))));
   client.send(JSON.stringify({ id: 7, method: 'thread/list', params: { modelProviders: ['aih_server'] } }));
   const message = await forwarded;
+  // 跨 provider：清掉调用方自己的 modelProviders 过滤，否则看不到别的 provider 的会话。
   assert.deepEqual(message.params.modelProviders, []);
-  assert.equal(message.params.cwd, '/work/project');
+  // 跨项目（2026-10-21）：不再补 cwd。codex 不带 cwd 就是「列全部项目」，
+  // 补成当前目录会让 /resume 看不到别的项目里的会话，用户无法在会话之间互相恢复。
+  assert.equal(message.params.cwd, undefined);
+  assert.equal(message.params.useStateDbOnly, true);
 
   const reply = new Promise((resolve) => client.once('message', (data) => resolve(JSON.parse(String(data)))));
   children[0].child.stdout.write(`${JSON.stringify({ id: 7, result: { data: [] } })}\n`);

@@ -51,6 +51,17 @@ test('tool permission launch derives max-permission args from the provider contr
   assert.equal(launch('cline', [], { aiHomeDir: home }).reason, 'unsupported');
 });
 
+// 2026-10-21 实测（kimi 2.2.0 --help 原文）：`-y/--yolo` 是「Ask When Needed」，
+// **有风险的操作、提问与计划仍会问**；`--auto` 才是「Never Ask」。合同原先只声明
+// `--yolo`，于是「最大权限」被注入成低一档。
+test('kimi max permission is --auto (Never Ask), not --yolo (Ask When Needed)', (t) => {
+  const home = withHome(t);
+  const result = launch('kimi', [], { aiHomeDir: home });
+  assert.deepEqual(result.args, ['--auto']);
+  // --yolo 低一档，不能拿来当最大权限。
+  assert.ok(!result.args.includes('--yolo'));
+});
+
 test('tool permission launch never overrides an explicit native permission flag', (t) => {
   const home = withHome(t);
 
@@ -166,3 +177,53 @@ test('tool permission launch refuses selected args that conflict with the native
   assert.deepEqual(result.args, []);
 });
 
+
+// 2026-10-21 用户报障：`aih codex` 每次启动都补 `--sandbox danger-full-access
+// --ask-for-approval never`，而 config.toml 里本来就写着 `sandbox_mode =
+// "danger-full-access"`。命令行与配置重复表达同一件事，让 codex 界面的权限状态与
+// 用户自己 /approvals 切出来的对不上，resume 路径又会把旗标整组摘掉，于是新会话与
+// 恢复会话显示两种权限状态。用户的要求：配置里已经有的就不要再加。
+test('a host config that already grants the permission is not restated on the command line', (t) => {
+  const home = withHome(t);
+  const codexDir = path.join(home, '.codex');
+  fs.mkdirSync(codexDir, { recursive: true });
+  fs.writeFileSync(path.join(codexDir, 'config.toml'), 'sandbox_mode = "danger-full-access"\n');
+
+  const result = launch('codex', [], { aiHomeDir: home, hostHomeDir: home, env: { HOME: home } });
+  // sandbox 已在配置里 → 不再注入；approval 配置没写 → 补上（不替用户加宽）。
+  assert.deepEqual(result.args, ['--ask-for-approval', 'never']);
+  assert.equal(result.reason, 'applied_remainder');
+  assert.equal(result.hostState.known, true);
+});
+
+test('a host config that grants everything means no permission args at all', (t) => {
+  const home = withHome(t);
+  const claudeDir = path.join(home, '.claude');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  fs.writeFileSync(path.join(claudeDir, 'settings.json'), JSON.stringify({
+    permissions: { defaultMode: 'bypassPermissions' }
+  }));
+
+  const result = launch('claude', [], { aiHomeDir: home, hostHomeDir: home, env: { HOME: home } });
+  assert.deepEqual(result.args, []);
+  assert.equal(result.applied, false);
+  assert.equal(result.reason, 'host_config_satisfied');
+});
+
+test('without a readable host config the full max-permission set is still injected', (t) => {
+  const home = withHome(t);
+  const result = launch('opencode', [], { aiHomeDir: home, hostHomeDir: home, env: { HOME: home } });
+  assert.deepEqual(result.args, ['--auto']);
+  assert.equal(result.reason, 'applied');
+});
+
+test('a host config that grants a weaker value does not suppress the injection', (t) => {
+  const home = withHome(t);
+  const codexDir = path.join(home, '.codex');
+  fs.mkdirSync(codexDir, { recursive: true });
+  fs.writeFileSync(path.join(codexDir, 'config.toml'), 'sandbox_mode = "workspace-write"\n');
+
+  const result = launch('codex', [], { aiHomeDir: home, hostHomeDir: home, env: { HOME: home } });
+  assert.deepEqual(result.args, ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never']);
+  assert.equal(result.reason, 'applied');
+});

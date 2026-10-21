@@ -206,6 +206,33 @@ test('rewriteCodexAppServerClientMessage keeps explicit cwd over injected cwd', 
   assert.equal(out.params.cwd, '/tmp/request-project');
 });
 
+// 2026-10-21 用户报障：不同 aih codex 会话之间无法 /resume。codex 的 /resume 不带 cwd
+// 时是想列**全部**项目的会话；代理原先一律补成当前项目目录，别的项目的会话就列不出来。
+test('rewriteCodexAppServerClientMessage can leave thread/list unscoped so resume sees every project', () => {
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'thread/list',
+    params: { limit: 50 }
+  });
+  const out = JSON.parse(rewriteCodexAppServerClientMessage(raw, { cwd: '/tmp/current-project', injectCwd: false }));
+  assert.equal(out.params.cwd, undefined);
+  // 其余改写照旧：跨 provider 的会话仍要能列出来。
+  assert.deepEqual(out.params.modelProviders, []);
+  assert.equal(out.params.useStateDbOnly, true);
+});
+
+test('rewriteCodexAppServerClientMessage still honours an explicit cwd when injection is off', () => {
+  const raw = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'thread/list',
+    params: { cwd: '/tmp/request-project' }
+  });
+  const out = JSON.parse(rewriteCodexAppServerClientMessage(raw, { cwd: '/tmp/current-project', injectCwd: false }));
+  assert.equal(out.params.cwd, '/tmp/request-project');
+});
+
 test('rewriteCodexAppServerClientMessage strips remote-only config.profile on thread/resume', () => {
   const raw = JSON.stringify({
     jsonrpc: '2.0',

@@ -37,11 +37,15 @@ export interface EgressPoolNode {
   cooldownUntil: number;
   cooldownKind: EgressNodeFailureKind | '';
   cooldownRemainingMs: number;
+  /** 被拦截策略挡住（延迟超阈值 / 探测不通 / 手动关闭）：不参与轮换与车道。 */
+  blocked: boolean;
+  blockedReason: string;
+  blockedDetail: string;
   probe: EgressPoolNodeProbe | null;
   accounts: EgressPoolNodeAccount[];
 }
 
-export type EgressPoolEventType = 'switch' | 'cooldown' | 'recovered' | 'probe_failed';
+export type EgressPoolEventType = 'switch' | 'cooldown' | 'recovered' | 'probe_failed' | 'blocked' | 'unblocked';
 
 export interface EgressPoolEvent {
   at: number;
@@ -75,6 +79,14 @@ export interface EgressPoolBoundAccount {
   updatedAt: number;
 }
 
+/** 节点拦截策略（见 lib/runtime/egress-pool-node-policy.js）。 */
+export interface EgressPoolNodePolicy {
+  latency: { enabled: boolean; maxMs: number };
+  unreachable: { enabled: boolean };
+  disabledCount: number;
+  summary: string;
+}
+
 export interface EgressPoolView {
   ok: boolean;
   available: boolean;
@@ -82,6 +94,8 @@ export interface EgressPoolView {
   nodes: EgressPoolNode[];
   events: EgressPoolEvent[];
   boundAccounts: EgressPoolBoundAccount[];
+  /** 当前拦截策略；无池时为 null。 */
+  nodePolicy: EgressPoolNodePolicy | null;
   serverTime: number;
 }
 
@@ -89,5 +103,8 @@ export interface EgressPoolActionResult {
   ok: boolean;
   error?: string;
   node?: string;
+  blocked?: boolean;
+  removed?: number;
+  nodePolicy?: EgressPoolNodePolicy;
   results?: Array<{ name: string; ok: boolean; latencyMs?: number; error?: string }>;
 }

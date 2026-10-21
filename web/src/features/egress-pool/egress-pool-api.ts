@@ -26,5 +26,17 @@ export const egressPoolAPI = {
   },
   clearCooldown(node: string) {
     return postAction(`${BASE}/nodes/${encodeURIComponent(node)}/clear-cooldown`);
+  },
+  /** 手动关闭 / 放行一个节点（按出口身份记，重启后仍有效）。 */
+  setBlocked(node: string, blocked: boolean) {
+    return postAction(`${BASE}/nodes/${encodeURIComponent(node)}/${blocked ? 'block' : 'unblock'}`);
+  },
+  /** 改拦截策略：延迟阈值开关 + 阈值、连不上开关。 */
+  updatePolicy(patch: { latency?: { enabled?: boolean; maxMs?: number }; unreachable?: { enabled?: boolean } }) {
+    return postAction(`${BASE}/node-policy`, patch);
+  },
+  /** 放行全部手动关闭的节点。 */
+  clearDisabled() {
+    return postAction(`${BASE}/node-policy/clear-disabled`);
   }
 };

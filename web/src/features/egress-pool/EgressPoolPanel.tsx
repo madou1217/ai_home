@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Empty, Input, Segmented, Spin, Switch, Table, Tag, Tooltip, message } from 'antd';
+import { Empty, Input, InputNumber, Segmented, Spin, Switch, Table, Tag, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   AimOutlined,
@@ -8,6 +8,7 @@ import {
   ClockCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
+  StopOutlined,
   SwapOutlined,
   ThunderboltOutlined,
   UnlockOutlined,
@@ -39,7 +40,9 @@ const EVENT_ICON: Record<string, JSX.Element> = {
   switch: <SwapOutlined />,
   cooldown: <ClockCircleOutlined />,
   recovered: <CheckCircleOutlined />,
-  probe_failed: <WarningOutlined />
+  probe_failed: <WarningOutlined />,
+  blocked: <StopOutlined />,
+  unblocked: <CheckCircleOutlined />
 };
 
 function describeEvent(event: EgressPoolEvent): string {
@@ -52,6 +55,10 @@ function describeEvent(event: EgressPoolEvent): string {
       return `${event.node} 恢复 · ${eventReasonLabel(event.reason)}${event.latencyMs ? ` · ${event.latencyMs}ms` : ''}`;
     case 'probe_failed':
       return `${event.node} 探测失败`;
+    case 'blocked':
+      return `${event.node} 被拦截 · ${eventReasonLabel(event.reason)}`;
+    case 'unblocked':
+      return `${event.node} 已放行 · ${eventReasonLabel(event.reason)}`;
     default:
       return event.node;
   }
@@ -126,6 +133,8 @@ export default function EgressPoolPanel() {
     [nodes, filter, query, activeNode]
   );
   const coolingCount = nodes.filter((node) => node.cooling).length;
+  const blockedCount = nodes.filter((node) => node.blocked).length;
+  const policy = view?.nodePolicy || null;
   const probedOk = nodes.filter((node) => node.probe?.ok).length;
   const activeEntry = nodes.find((node) => node.name === activeNode);
   const accountLabel = (ref: string) => accountLabels[ref] || shortRef(ref);
@@ -170,6 +179,9 @@ export default function EgressPoolPanel() {
             <span>{health.label}</span>
             {node.cooling && (
               <span className="egress-countdown" aria-label="剩余冷却">{formatDuration(node.cooldownRemainingMs)}</span>
+            )}
+            {node.blocked && node.blockedDetail && (
+              <span className="egress-block-detail" title={node.blockedDetail}>{node.blockedDetail}</span>
             )}
           </div>
         );
@@ -243,9 +255,24 @@ export default function EgressPoolPanel() {
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 240,
       render: (_value, node) => (
         <div className="egress-actions">
+          <Tooltip title={node.blocked && node.blockedReason === 'node_blocked_manual' ? '放行：让它重新参与轮换' : '手动关闭：不再被选中出网（按出口身份记，重启后仍有效）'}>
+            <Button
+              size="small"
+              danger={!node.blocked}
+              type={node.blocked && node.blockedReason === 'node_blocked_manual' ? 'primary' : 'default'}
+              icon={<StopOutlined />}
+              loading={busy === `block:${node.name}`}
+              onClick={() => void runAction(
+                `block:${node.name}`,
+                () => egressPoolAPI.setBlocked(node.name, !(node.blocked && node.blockedReason === 'node_blocked_manual')),
+                node.blocked && node.blockedReason === 'node_blocked_manual' ? `已放行 ${node.label}` : `已关闭 ${node.label}`
+              )}
+              aria-label={`${node.blocked ? '放行' : '关闭'} ${node.label}`}
+            />
+          </Tooltip>
           <Tooltip title="切到这个节点出网">
             <Button
               size="small"
@@ -328,9 +355,9 @@ export default function EgressPoolPanel() {
               },
               {
                 label: '节点',
-                value: `${nodes.length - coolingCount} / ${nodes.length} 可用`,
-                detail: `${coolingCount} 个冷却中 · ${probedOk} 个探测通过`,
-                tone: coolingCount > 0 ? 'warning' : 'success'
+                value: `${nodes.length - coolingCount - blockedCount} / ${nodes.length} 可用`,
+                detail: `${coolingCount} 个冷却中 · ${blockedCount} 个被拦截 · ${probedOk} 个探测通过`,
+                tone: blockedCount > 0 ? 'warning' : coolingCount > 0 ? 'warning' : 'success'
               },
               {
                 label: '当前出口',
@@ -356,6 +383,82 @@ export default function EgressPoolPanel() {
             ))}
           </ul>
 
+          <section className="egress-policy" aria-label="节点拦截策略">
+            <div className="egress-policy-head">
+              <StopOutlined />
+              <strong>节点拦截策略</strong>
+              <small>{policy ? policy.summary : '未启用任何拦截'}</small>
+            </div>
+            <div className="egress-policy-controls">
+              <label className="egress-policy-item">
+                <Switch
+                  size="small"
+                  checked={Boolean(policy?.latency.enabled)}
+                  loading={busy === 'policy:latency'}
+                  disabled={!status?.ready}
+                  onChange={(checked) => void runAction(
+                    'policy:latency',
+                    () => egressPoolAPI.updatePolicy({ latency: { enabled: checked } }),
+                    checked ? '已启用延迟拦截' : '已关闭延迟拦截'
+                  )}
+                />
+                <span>
+                  延迟拦截
+                  <InputNumber
+                    size="small"
+                    min={100}
+                    max={15000}
+                    step={500}
+                    value={policy?.latency.maxMs ?? 3000}
+                    disabled={!status?.ready || !policy?.latency.enabled}
+                    onChange={(value) => {
+                      const maxMs = Number(value);
+                      if (!Number.isFinite(maxMs)) return;
+                      void runAction('policy:latency', () => egressPoolAPI.updatePolicy({ latency: { maxMs } }), `延迟阈值已设为 ${maxMs}ms`);
+                    }}
+                    addonAfter="ms"
+                    aria-label="延迟阈值"
+                  />
+                  <small>探测延迟超过它的节点不再被选中（默认 3000ms）</small>
+                </span>
+              </label>
+              <label className="egress-policy-item">
+                <Switch
+                  size="small"
+                  checked={Boolean(policy?.unreachable.enabled)}
+                  loading={busy === 'policy:unreachable'}
+                  disabled={!status?.ready}
+                  onChange={(checked) => void runAction(
+                    'policy:unreachable',
+                    () => egressPoolAPI.updatePolicy({ unreachable: { enabled: checked } }),
+                    checked ? '已启用「连不上」拦截' : '已关闭「连不上」拦截'
+                  )}
+                />
+                <span>
+                  连不上拦截
+                  <small>探测超时 / 拒绝的节点不再被选中；被拦的节点仍会定期重探，恢复正常后自动放行</small>
+                </span>
+              </label>
+              <label className="egress-policy-item">
+                <span>
+                  手动关闭 <strong>{policy?.disabledCount ?? 0}</strong> 个
+                  <small>在节点行上点「关闭」；按出口身份记录，重启与节点重排后仍然有效</small>
+                </span>
+                {Boolean(policy?.disabledCount) && (
+                  <Button
+                    size="small"
+                    icon={<UnlockOutlined />}
+                    loading={busy === 'policy:clear'}
+                    disabled={!status?.ready}
+                    onClick={() => void runAction('policy:clear', () => egressPoolAPI.clearDisabled(), '已放行全部手动关闭的节点')}
+                  >
+                    全部放行
+                  </Button>
+                )}
+              </label>
+            </div>
+          </section>
+
           <div className="egress-pool-grid">
             <section className="egress-nodes" aria-label="节点">
               <div className="egress-toolbar">
@@ -366,6 +469,7 @@ export default function EgressPoolPanel() {
                     { label: `全部 ${nodes.length}`, value: 'all' },
                     { label: '可用', value: 'healthy' },
                     { label: `冷却中 ${coolingCount}`, value: 'cooling' },
+                    { label: `已拦截 ${blockedCount}`, value: 'blocked' },
                     { label: '用过', value: 'used' }
                   ]}
                 />
@@ -387,10 +491,11 @@ export default function EgressPoolPanel() {
                 pagination={visibleNodes.length > 20 ? { pageSize: 20, showSizeChanger: false } : false}
                 rowClassName={(node) => [
                   node.name === activeNode ? 'egress-row-active' : '',
-                  node.cooling ? 'egress-row-cooling' : ''
+                  node.cooling ? 'egress-row-cooling' : '',
+                  node.blocked ? 'egress-row-blocked' : ''
                 ].filter(Boolean).join(' ')}
                 locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的节点" /> }}
-                scroll={{ x: 980 }}
+                scroll={{ x: 1020 }}
               />
             </section>
 

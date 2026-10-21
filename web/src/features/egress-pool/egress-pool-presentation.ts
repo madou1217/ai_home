@@ -11,6 +11,9 @@ export interface NodeHealthLike {
   cooldownKind: string;
   cooldownRemainingMs: number;
   lastFailureKind: string;
+  blocked?: boolean;
+  blockedReason?: string;
+  blockedDetail?: string;
   probe: { ok: boolean; latencyMs: number } | null;
 }
 
@@ -31,8 +34,20 @@ const EVENT_REASON_LABELS: Record<string, string> = {
   manual: '手动解除',
   probe_ok: '探测恢复',
   request_succeeded: '请求成功',
-  probe_unreachable: '探测失败'
+  probe_unreachable: '探测失败',
+  node_blocked: '被拦截'
 };
+
+/** 拦截原因 → 界面文案（与 lib/runtime/egress-pool-node-policy.js 的 BLOCK_REASONS 对齐）。 */
+const BLOCK_REASON_LABELS: Record<string, string> = {
+  node_blocked_slow: '延迟超阈值',
+  node_blocked_unreachable: '连不上',
+  node_blocked_manual: '手动关闭'
+};
+
+export function blockReasonLabel(reason: string): string {
+  return BLOCK_REASON_LABELS[reason] || reason || '已拦截';
+}
 
 export function failureKindLabel(kind: string): string {
   return FAILURE_KIND_LABELS[kind] || kind || '—';
@@ -75,6 +90,8 @@ export function successRate(node: Pick<NodeHealthLike, 'uses' | 'successes'>): n
 
 /** 节点健康状态：冷却 > 探测失败 > 正常 > 未知。 */
 export function nodeHealth(node: NodeHealthLike, activeNode: string): { tone: NodeHealthTone; label: string } {
+  // 被拦截优先显示：这类节点不会被选中，比「冷却中」更能解释「为什么没用它」。
+  if (node.blocked) return { tone: 'danger', label: `已拦截 · ${blockReasonLabel(node.blockedReason || '')}` };
   if (node.cooling) return { tone: 'warning', label: `冷却 · ${eventReasonLabel(node.cooldownKind) || failureKindLabel(node.cooldownKind)}` };
   if (node.probe && !node.probe.ok) return { tone: 'danger', label: '探测失败' };
   if (node.name === activeNode) return { tone: 'info', label: '当前出口' };
@@ -83,13 +100,14 @@ export function nodeHealth(node: NodeHealthLike, activeNode: string): { tone: No
   return { tone: 'neutral', label: '未探测' };
 }
 
-export type NodeFilter = 'all' | 'healthy' | 'cooling' | 'used';
+export type NodeFilter = 'all' | 'healthy' | 'cooling' | 'used' | 'blocked';
 
 export function filterNodes<T extends NodeHealthLike>(nodes: T[], filter: NodeFilter, query: string): T[] {
   const needle = query.trim().toLowerCase();
   return nodes.filter((node) => {
+    if (filter === 'blocked' && !node.blocked) return false;
     if (filter === 'cooling' && !node.cooling) return false;
-    if (filter === 'healthy' && (node.cooling || (node.probe && !node.probe.ok))) return false;
+    if (filter === 'healthy' && (node.blocked || node.cooling || (node.probe && !node.probe.ok))) return false;
     if (filter === 'used' && !node.uses) return false;
     if (!needle) return true;
     const haystack = `${node.name} ${(node as unknown as { label?: string }).label || ''} ${(node as unknown as { server?: string }).server || ''}`.toLowerCase();

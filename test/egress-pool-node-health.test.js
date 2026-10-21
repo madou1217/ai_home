@@ -242,6 +242,10 @@ test('the egress pool route serves the ledger view and runs node actions', async
   assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/probe'), true);
   assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/nodes/node-3/select'), true);
   assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/nodes/node-3/clear-cooldown'), true);
+  assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/nodes/node-3/block'), true);
+  assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/nodes/node-3/unblock'), true);
+  assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/node-policy'), true);
+  assert.equal(matchEgressPoolRoute('POST', '/v0/webui/egress-pool/node-policy/clear-disabled'), true);
   assert.equal(matchEgressPoolRoute('DELETE', '/v0/webui/egress-pool'), false);
 
   const actions = [];
@@ -271,6 +275,53 @@ test('the egress pool route serves the ledger view and runs node actions', async
     readRequestBody: async () => Buffer.from('{not json'), ...bad
   });
   assert.equal(bad.res.status, 400);
+});
+
+test('the egress pool route toggles node blocking and writes the policy', async () => {
+  const actions = [];
+  const policies = [];
+  const deps = {
+    runEgressPoolAction: async (action, node, options) => {
+      actions.push([action, node, options && options.reason]);
+      return node === 'node-9' ? { ok: false, error: 'egress_pool_node_unknown' } : { ok: true, blocked: action === 'block' };
+    },
+    runEgressPoolPolicy: (action, payload) => {
+      policies.push([action, payload]);
+      return { ok: true, nodePolicy: { latency: { enabled: true, maxMs: 3000 }, unreachable: { enabled: false }, disabledCount: 0, summary: '' } };
+    }
+  };
+  const block = capture();
+  await handleEgressPoolRequest({ method: 'POST', pathname: '/v0/webui/egress-pool/nodes/node-1/block', deps, ...block });
+  assert.deepEqual([block.res.status, block.res.body.blocked], [200, true]);
+  assert.deepEqual(actions, [['block', 'node-1', 'manual']]);
+
+  const unblock = capture();
+  await handleEgressPoolRequest({ method: 'POST', pathname: '/v0/webui/egress-pool/nodes/node-1/unblock', deps, ...unblock });
+  assert.deepEqual([unblock.res.status, unblock.res.body.blocked], [200, false]);
+
+  const unknown = capture();
+  await handleEgressPoolRequest({ method: 'POST', pathname: '/v0/webui/egress-pool/nodes/node-9/block', deps, ...unknown });
+  assert.deepEqual([unknown.res.status, unknown.res.body.error], [409, 'egress_pool_node_unknown']);
+
+  // 策略：body 原样转给 runEgressPoolPolicy('update', ...)；清空手动关闭走另一条路径。
+  const update = capture();
+  await handleEgressPoolRequest({
+    method: 'POST', pathname: '/v0/webui/egress-pool/node-policy', deps,
+    readRequestBody: async () => Buffer.from('{"latency":{"enabled":true,"maxMs":3000}}'), ...update
+  });
+  assert.deepEqual([update.res.status, policies.at(-1)], [200, ['update', { latency: { enabled: true, maxMs: 3000 } }]]);
+
+  const clear = capture();
+  await handleEgressPoolRequest({ method: 'POST', pathname: '/v0/webui/egress-pool/node-policy/clear-disabled', deps, ...clear });
+  assert.deepEqual(policies.at(-1), ['clear-disabled', {}]);
+  assert.equal(clear.res.status, 200);
+
+  const badBody = capture();
+  await handleEgressPoolRequest({
+    method: 'POST', pathname: '/v0/webui/egress-pool/node-policy', deps,
+    readRequestBody: async () => Buffer.from('{nope'), ...badBody
+  });
+  assert.equal(badBody.res.status, 400);
 });
 
 // 2026-10-19 真机：node-1..6 都回 403 FreeTierError「detected abusive traffic from this IP address」。

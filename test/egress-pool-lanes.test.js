@@ -18,6 +18,7 @@ const {
   writeUpstreamPolicy
 } = require('../lib/server/egress-region-policy');
 const registry = require('../lib/runtime/egress-pool-registry');
+const { setNodeDisabled, writeNodePolicy } = require('../lib/runtime/egress-pool-node-policy');
 
 function node(server, extra = {}) {
   return { protocol: 'ss', server, port: 443, cipher: 'aes-128-gcm', password: `p-${server}`, name: server, ...extra };
@@ -428,6 +429,53 @@ test('registry: CLI sessions of a session-strategy account read leased lanes fro
     const leased = registry.currentEgressPoolProxyUrl({ fs, aiHomeDir: home, accountRef: 'acct_x', session: true });
     assert.ok(['http://127.0.0.1:17893', 'http://127.0.0.1:17894'].includes(leased));
   } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// 2026-10-21：拦截策略（延迟阈值 / 连不上 / 手动关闭）与地区判定一样是车道的硬约束 ——
+// 被拦的节点不进 allowed，这样账号不会经它出网（用户诉求：总命中 10000ms+ 无响应的节点）。
+test('planner: blocked nodes (slow / unreachable / manually closed) never enter a lane', async () => {
+  const home = tempHome();
+  const { runtime } = buildRuntime();
+  try {
+    await runtime.start();
+    const pool = { mode: 'pool', proxyUrl: '', scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' };
+    const bindings = [{ accountRef: 'g1', provider: 'agy', binding: pool }];
+    const planner = plannerFor(home, runtime, bindings);
+    // 全组节点都有位置（agy 无地区提示，位置不影响判定），先确认四个都可用。
+    ['node-0', 'node-1', 'node-2', 'node-3'].forEach((name) => runtime.health.recordGeo(name, { country: 'US' }));
+    assert.deepEqual(planner.planNow().plan[0].allowed.sort(), ['node-0', 'node-1', 'node-2', 'node-3']);
+
+    // 1) 延迟阈值：node-1 探测 10s，启用后不进车道。
+    runtime.health.recordProbe('node-1', { ok: true, latencyMs: 10000 });
+    writeNodePolicy(fs, home, { latency: { enabled: true, maxMs: 3000 } });
+    let computed = planner.reconcile({ force: true });
+    assert.deepEqual(computed.plan[0].allowed.sort(), ['node-0', 'node-2', 'node-3']);
+    assert.equal(computed.accounts.get('g1').blockedCount, 1);
+
+    // 2) 连不上：node-2 探测失败，单独开关也生效。
+    runtime.health.recordProbe('node-2', { ok: false, error: 'probe_unreachable' });
+    writeNodePolicy(fs, home, { unreachable: { enabled: true } });
+    computed = planner.reconcile({ force: true });
+    assert.deepEqual(computed.plan[0].allowed.sort(), ['node-0', 'node-3']);
+
+    // 3) 手动关闭：node-0 被关掉；关掉延迟拦截后 node-1 应回来，但 node-0 仍然不在。
+    setNodeDisabled(fs, home, runtime.health.nodes[0].identity, true, { label: 'US-0' });
+    writeNodePolicy(fs, home, { latency: { enabled: false }, unreachable: { enabled: false } });
+    computed = planner.reconcile({ force: true });
+    assert.deepEqual(computed.plan[0].allowed.sort(), ['node-1', 'node-2', 'node-3']);
+
+    // 4) 全部被拦：车道给出「全被拦截」这个原因，用户才知道去关拦截而不是查地区策略。
+    ['node-0', 'node-1', 'node-2', 'node-3'].forEach((name, index) => {
+      if (index === 0) return;
+      setNodeDisabled(fs, home, runtime.health.nodes[index].identity, true, { label: `US-${index}` });
+    });
+    computed = planner.reconcile({ force: true });
+    assert.deepEqual(computed.plan[0].allowed, []);
+    assert.equal(computed.accounts.get('g1').blockedReason, 'egress_pool_all_nodes_blocked');
+  } finally {
+    runtime.stop();
     fs.rmSync(home, { recursive: true, force: true });
   }
 });

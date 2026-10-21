@@ -330,3 +330,43 @@ test('SubscriptionFetcher returns subscription-userinfo from the response header
   const result = await fetcher.fetch('https://subscription.example/sub');
   assert.deepEqual(result.userInfo, { upload: 5, download: 6, total: 100, expire: 1700000000 });
 });
+
+test('countOnly selection matches the full selection across filters, scopes and renames', () => {
+  const sources = [
+    { id: 'sub_a', name: '机场A', url: 'https://a.example/sub' },
+    { id: 'sub_b', name: '机场B', url: 'https://b.example/sub' }
+  ];
+  const nodes = [];
+  for (let i = 0; i < 50; i += 1) {
+    nodes.push({
+      id: `a${i}`, name: `${i % 3 === 0 ? '🇭🇰 香港' : '剩余流量'}${i}`, protocol: 'vless',
+      server: `a${i}.example.com`, port: 443, uuid: `u${i}`, subscriptionId: 'sub_a'
+    });
+  }
+  for (let i = 0; i < 30; i += 1) {
+    nodes.push({
+      id: `b${i}`, name: `US ${i}`, protocol: 'trojan', server: `b${i}.example.com`, port: 443,
+      password: `p${i}`, subscriptionId: 'sub_b'
+    });
+  }
+  nodes.push({ id: 'm1', name: '手动香港', protocol: 'vless', server: 'm.example.com', port: 443, uuid: 'um' });
+
+  const cases = [
+    {},
+    { dedupe: false },
+    { sources: { all: false, subscriptionIds: ['sub_a'] } },
+    { sources: { all: false, subscriptionIds: ['sub_b'], includeManualNodes: true } },
+    { filter: { protocols: ['trojan'] } },
+    { naming: { sourcePrefix: true, renames: [{ pattern: '香港', replace: 'HK' }] } },
+    { filter: { exclude: '剩余' } }
+  ];
+  cases.forEach((input) => {
+    const profile = makeProfile(input);
+    const full = selectAggregatedNodes(profile, sources, nodes);
+    const counted = selectAggregatedNodes(profile, sources, nodes, { countOnly: true });
+    // 概览用 countOnly 只取数量：必须与完整选点一模一样，否则列表计数会骗人。
+    assert.equal(counted.stats.selected, full.entries.length, JSON.stringify(input));
+    assert.deepEqual(counted.stats, { ...full.stats, selected: full.entries.length });
+    assert.deepEqual(counted.entries, [], 'countOnly 不构造条目');
+  });
+});

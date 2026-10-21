@@ -117,6 +117,8 @@ export interface AggregatorProtocolForm {
 /** 订阅源里的一个节点（节点表格用；link 是分享链接，含凭据）。 */
 export interface AggregatorSourceNode {
   id: string;
+  /** 连接身份（服务端下发，持久且改名不漂）：延迟结果等跨层数据都按它取。 */
+  nodeKey: string;
   name: string;
   protocol: string;
   server: string;

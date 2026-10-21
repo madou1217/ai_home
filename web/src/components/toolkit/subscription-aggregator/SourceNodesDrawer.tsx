@@ -24,6 +24,8 @@ interface Row {
   key: string;
   /** 节点库里的 id（配前置节点用）；没对上节点库时为空串 */
   id: string;
+  /** 连接身份（服务端下发）：延迟结果按它取，改名/重排都不漂 */
+  nodeKey: string;
   name: string;
   protocol: string;
   server: string;
@@ -37,7 +39,8 @@ interface Row {
 }
 
 const addressKey = (server: string, port: number) => `${String(server).toLowerCase()}:${Number(port)}`;
-const nodeKey = (protocol: string, server: string, port: number) => `${protocol}|${addressKey(server, port)}`;
+// 本地展示用的地址键（协议|地址:端口）：只用于把表格行对上节点库，不是跨层引用键。
+const rowAddressKey = (protocol: string, server: string, port: number) => `${protocol}|${addressKey(server, port)}`;
 
 function latencyTag(latency: AggregatorLatency | undefined) {
   if (!latency) return null;
@@ -99,17 +102,19 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   }, [measure, reloadChainNodes, source]);
 
   // 延迟按节点 id 返回；手动节点行按地址对上同一个节点。
-  const latencyByAddress = useMemo(() => new Map(nodes.map((node) => [addressKey(node.server, node.port), latency[node.id]])), [latency, nodes]);
-  const linkByAddress = useMemo(() => new Map(nodes.map((node) => [nodeKey(node.protocol, node.server, node.port), node.link])), [nodes]);
-  const idByAddress = useMemo(() => new Map(nodes.map((node) => [nodeKey(node.protocol, node.server, node.port), node.id])), [nodes]);
+  // 延迟结果由服务端按连接身份（nodeKey）返回：用 id 会因改名/重排对不上（见 lib/runtime/node-identity.js）。
+  const latencyByAddress = useMemo(() => new Map(nodes.map((node) => [addressKey(node.server, node.port), latency[node.nodeKey || node.id]])), [latency, nodes]);
+  const linkByAddress = useMemo(() => new Map(nodes.map((node) => [rowAddressKey(node.protocol, node.server, node.port), node.link])), [nodes]);
+  const idByAddress = useMemo(() => new Map(nodes.map((node) => [rowAddressKey(node.protocol, node.server, node.port), node.id])), [nodes]);
   const rows: Row[] = manualNodes
     ? manualNodes.map((node, index) => {
       const server = String(node.server || '');
       const port = Number(node.port);
-      const key = nodeKey(node.protocol, server, port);
+      const key = rowAddressKey(node.protocol, server, port);
       return {
         key: `${index}`,
         id: idByAddress.get(key) || '',
+        nodeKey: nodes.find((item) => rowAddressKey(item.protocol, item.server, item.port) === key)?.nodeKey || '',
         name: String(node.name || ''),
         protocol: node.protocol,
         server,

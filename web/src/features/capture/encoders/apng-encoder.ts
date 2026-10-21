@@ -23,9 +23,14 @@ type PngChunk = {
   length: number;
 };
 
-type ApngFrame = {
+export interface ApngFrameBytes {
   /** 已编码好的单帧 PNG 字节。 */
   bytes: Uint8Array;
+  /** 该帧的显示时长（ms）。 */
+  delayMs: number;
+}
+
+type ApngDelay = {
   delayNum: number;
   delayDen: number;
 };
@@ -156,22 +161,22 @@ async function pullFrameBytes(
   return bytes;
 }
 
-function buildApngDelay(delayMs: number): { delayNum: number; delayDen: number } {
+function buildApngDelay(delayMs: number): ApngDelay {
   // fcTL 的 delay 是分数：delayNum/delayDen 秒，两项都是 uint16。
   if (delayMs > 0 && delayMs <= 65535) return { delayNum: Math.round(delayMs), delayDen: 1000 };
   return { delayNum: Math.min(65535, Math.max(1, Math.round(delayMs / 10))), delayDen: 100 };
 }
 
-function buildFctlChunk(sequence: number, width: number, height: number, frame: ApngFrame): Uint8Array {
+function buildFctlChunk(sequence: number, width: number, height: number, delay: ApngDelay): Uint8Array {
   const data = new Uint8Array(26);
   writeUint32(data, 0, sequence);
   writeUint32(data, 4, width);
   writeUint32(data, 8, height);
   writeUint32(data, 12, 0); // x offset
   writeUint32(data, 16, 0); // y offset
-  const delay = new DataView(data.buffer, data.byteOffset + 20, 4);
-  delay.setUint16(0, frame.delayNum, false);
-  delay.setUint16(2, frame.delayDen, false);
+  const delayView = new DataView(data.buffer, data.byteOffset + 20, 4);
+  delayView.setUint16(0, delay.delayNum, false);
+  delayView.setUint16(2, delay.delayDen, false);
   data[24] = 0; // dispose_op: APNG_DISPOSE_OP_NONE
   data[25] = 0; // blend_op: APNG_BLEND_OP_SOURCE
   return buildChunk('fcTL', data);
@@ -184,36 +189,79 @@ function buildFdatChunk(sequence: number, stream: Uint8Array): Uint8Array {
   return buildChunk('fdAT', data);
 }
 
-/** 把多个单帧 PNG 拼成一个 APNG（纯字节操作）。 */
-function assembleApng(
-  frames: ApngFrame[],
-  idatStreams: Uint8Array[],
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
+/** 取单帧 PNG 的 IHDR chunk 字节（含长度/类型/CRC），用于校验帧布局一致。 */
+function readIhdrChunk(png: Uint8Array): Uint8Array | null {
+  const ihdr = iterateChunks(png).find((chunk) => chunk.type === 'IHDR');
+  return ihdr ? copyChunk(png, ihdr) : null;
+}
+
+/**
+ * 把多个单帧 PNG 拼成一个 APNG（纯字节操作，便于单测）。
+ *
+ * APNG 的 chunk 顺序是硬约束（顺序错了 ImageIO / Preview 直接判为损坏）：
+ *   PNG 签名 → IHDR → acTL → …(首帧其它 chunk)… → fcTL(seq 0) → IDAT… →
+ *   [fcTL + fdAT]×(n-1) → IEND
+ * 即：IHDR 必须是第一个 chunk、acTL 必须在首个 IDAT 之前，
+ * 首帧 fcTL 必须紧邻首个 IDAT 之前，而 IEND 必须是整份文件的最后一个 chunk。
+ */
+export function assembleApngFromPngFrames(
+  frames: ApngFrameBytes[],
   width: number,
   height: number
 ): Uint8Array {
+  if (frames.length === 0) throw new Error('apng_no_frames');
   const firstChunks = iterateChunks(frames[0].bytes);
   const ihdr = firstChunks.find((chunk) => chunk.type === 'IHDR');
   if (!ihdr) throw new Error('apng_first_frame_missing_ihdr');
+  if (!firstChunks.some((chunk) => chunk.type === 'IDAT')) {
+    throw new Error('apng_first_frame_missing_idat');
+  }
+  const firstIhdrBytes = copyChunk(frames[0].bytes, ihdr);
+  for (let index = 1; index < frames.length; index += 1) {
+    const candidate = readIhdrChunk(frames[index].bytes);
+    if (!candidate || !bytesEqual(candidate, firstIhdrBytes)) {
+      throw new Error(`apng_frame_layout_mismatch: ${index}`);
+    }
+  }
 
   const parts: Uint8Array[] = [PNG_SIGNATURE];
-  // acTL：num_frames + num_plays(0 = 无限循环)
+  // IHDR 必须是 PNG 流的第一个 chunk。
+  parts.push(firstIhdrBytes);
+  // acTL：num_frames + num_plays(0 = 无限循环)，必须在首个 IDAT 之前。
   const actl = new Uint8Array(8);
   writeUint32(actl, 0, frames.length);
   writeUint32(actl, 4, 0);
   parts.push(buildChunk('acTL', actl));
-  parts.push(copyChunk(frames[0].bytes, ihdr));
-  parts.push(buildFctlChunk(0, width, height, frames[0]));
+
+  // 保留首帧的其它 chunk（pHYs / sRGB 等），并在首个 IDAT 前插入首帧 fcTL。
+  let wroteFirstFrameHeader = false;
   for (const chunk of firstChunks) {
-    if (chunk.type !== 'IDAT') continue;
+    if (chunk.type === 'IHDR' || chunk.type === 'IEND') continue;
+    if (chunk.type === 'IDAT' && !wroteFirstFrameHeader) {
+      parts.push(buildFctlChunk(0, width, height, buildApngDelay(frames[0].delayMs)));
+      wroteFirstFrameHeader = true;
+    }
     parts.push(copyChunk(frames[0].bytes, chunk));
   }
-  parts.push(buildChunk('IEND', new Uint8Array(0)));
+  if (!wroteFirstFrameHeader) throw new Error('apng_first_frame_missing_idat');
 
   let sequence = 1;
   for (let index = 1; index < frames.length; index += 1) {
-    parts.push(buildFctlChunk(sequence++, width, height, frames[index]));
-    parts.push(buildFdatChunk(sequence++, idatStreams[index]));
+    parts.push(
+      buildFctlChunk(sequence++, width, height, buildApngDelay(frames[index].delayMs))
+    );
+    parts.push(buildFdatChunk(sequence++, extractIdatStream(frames[index].bytes)));
   }
+  // IEND 永远是最后一个 chunk：所有动画帧都必须写在它之前。
+  parts.push(buildChunk('IEND', new Uint8Array(0)));
   return concatBytes(parts);
 }
 
@@ -226,20 +274,18 @@ export async function encodeApngAnimation(request: EncodeAnimationRequest): Prom
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('frame_canvas_context_unavailable');
 
-  const frames: ApngFrame[] = [];
-  const idatStreams: Uint8Array[] = [];
+  const frames: ApngFrameBytes[] = [];
   const total = request.frames.length;
   for (let index = 0; index < total; index += 1) {
     if (request.signal?.aborted) throw new DOMException('capture_aborted', 'AbortError');
     const bytes = await pullFrameBytes(context, canvas, request.frames[index].dataUrl);
     const delayMs = resolveFrameDelayMs(request.frameDelaysMs, index, request.frameDelayMs);
-    frames.push({ bytes, ...buildApngDelay(delayMs) });
-    idatStreams.push(extractIdatStream(bytes));
+    frames.push({ bytes, delayMs });
     request.onProgress?.(total > 0 ? (index + 1) / (total + 1) : 1);
   }
 
-  // assembleApng 是纯字节操作，单独占进度最后一档。
-  const assembled = assembleApng(frames, idatStreams, bounds.width, bounds.height);
+  // 装配是纯字节操作，单独占进度最后一档。
+  const assembled = assembleApngFromPngFrames(frames, bounds.width, bounds.height);
   request.onProgress?.(1);
   return new Blob([assembled], { type: descriptor.mimeType });
 }

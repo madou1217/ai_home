@@ -31,6 +31,8 @@ type Provider struct {
 	endpoint func(provider string) (string, bool)
 	// providerID 是本次请求实际使用的家族支（四支共用本类型，故不能写死在基类里）。
 	providerID string
+	// userID 是账号 uid，用于官方身份头 X-User-Id（复刻官方画像；为空则不下发该头）。
+	userID string
 }
 
 // 编译期确认家族实现满足 relaycore 契约。
@@ -76,6 +78,9 @@ func (provider Provider) Resolve(input relaycore.ResolveInput) (relaycore.Provid
 	}
 	resolved := provider
 	resolved.providerID = normalized
+	// 账号 uid 与 access token 同源（同一个 credentials 载荷），从同一处取，
+	// 避免两处口径分叉。取不到只是不下发 X-User-Id，不影响渠道校验。
+	resolved.userID = UserIDFromCredential(input.Credential)
 	return resolved, true
 }
 
@@ -107,14 +112,34 @@ func (provider Provider) RewriteRequest(body []byte) (relaycore.RewriteResult, e
 //
 // 先调基类拿通用头（Content-Type / Accept / Authorization），再追加家族特有的 ——
 // 覆盖时漏掉基类那几行是这类改写的典型缺陷。
+//
+// 会话 ID 家族是渠道校验的必需项：缺任一个或为空，上游回 400 code 11128「request illegal」
+// （2026-10-21 抓官方 CLI 后在真上游逐项删除确认，见 ConversationHeaders）。
+//
+// 刻意**不发** Origin / Referer：官方 CLI 身份不发这两个头（浏览器语义头，只有桌面/VSCode
+// 身份才带）。此前本端补发它们，反而是一处与官方不符的差异。
 func (provider Provider) DecorateUpstream(request *http.Request, accessToken string) {
 	provider.BaseProvider.DecorateUpstream(request, accessToken)
 	request.Header.Set("User-Agent", UserAgent)
 	request.Header.Set("X-Requested-With", "XMLHttpRequest")
-	if base, ok := InferenceBaseURL(provider.providerID); ok {
-		request.Header.Set("Origin", base)
-		request.Header.Set("Referer", base+"/")
+	for name, value := range IdentityHeaders(provider.providerID, provider.userID) {
+		request.Header.Set(name, value)
 	}
+	for name, value := range StainlessHeaders() {
+		request.Header.Set(name, value)
+	}
+	for name, value := range TraceHeaders() {
+		request.Header.Set(name, value)
+	}
+	conversation := ConversationHeaders(time.Now())
+	for name, value := range conversation {
+		request.Header.Set(name, value)
+	}
+	// baggage 引用会话 id，必须在它们算出来之后再写。
+	request.Header.Set("Baggage", BaggageHeader(
+		conversation[ConversationIDHeader],
+		conversation[ConversationRequestIDHeader],
+	))
 }
 
 // ClassifyFailure 解析腾讯信封（差异 5）。

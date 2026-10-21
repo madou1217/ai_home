@@ -17,6 +17,8 @@ const {
   resolveCodebuddyFamilyOrigin,
   resolveCodebuddyFamilyInferencePath,
   buildCodebuddyFamilyUpstreamHeaders,
+  buildCodebuddyFamilyConversationHeaders,
+  createCodebuddyFamilyConversationId,
   adaptCodebuddyFamilyChatRequest,
   aggregateCodebuddyFamilySse,
   parseCodebuddyFamilyError
@@ -70,15 +72,74 @@ test('resolveCodebuddyFamilyInferencePath leaves /v2 and unrelated paths untouch
   assert.equal(resolveCodebuddyFamilyInferencePath('qoder', '/v1/chat/completions'), '/v1/chat/completions');
 });
 
-test('buildCodebuddyFamilyUpstreamHeaders carries the client UA and the station origin', () => {
+test('buildCodebuddyFamilyUpstreamHeaders reproduces the official CLI identity and omits browser-only headers', () => {
   const headers = buildCodebuddyFamilyUpstreamHeaders('workbuddycn', null);
-  assert.equal(headers.origin, 'https://copilot.tencent.com');
-  assert.equal(headers.referer, 'https://copilot.tencent.com/');
   assert.equal(headers['x-requested-with'], 'XMLHttpRequest');
   // 国内站网关对脚本 UA 返回 403 code 10085，UA 是必需项而不是装饰。
-  assert.match(headers['user-agent'], /CodeBuddy/);
+  assert.match(headers['user-agent'], /^CLI\/[\d.]+ CodeBuddy\/[\d.]+$/);
   // authorization 由通用直通链路统一写，这里不重复设置以免两处口径分叉。
   assert.equal(headers.authorization, undefined);
+  // 官方 CLI 身份**不发** Origin / Referer（2026-10-21 抓包确认）：浏览器语义头只有
+  // 桌面/VSCode 身份才带，发它们反而是一处与官方不符的差异。
+  assert.equal(headers.origin, undefined);
+  assert.equal(headers.referer, undefined);
+  // 官方身份头（实测不参与渠道校验，发它们只为让请求画像与官方一致）。
+  assert.equal(headers['x-product'], 'SaaS');
+  assert.equal(headers['x-domain'], 'copilot.tencent.com');
+  assert.equal(headers['x-ide-type'], 'CLI');
+  assert.equal(headers['x-agent-intent'], 'craft');
+  assert.equal(headers['x-codebuddy-request'], '1');
+});
+
+test('buildCodebuddyFamilyUpstreamHeaders carries X-User-Id only when a uid is supplied', () => {
+  const withUid = buildCodebuddyFamilyUpstreamHeaders('workbuddy', null, { uid: 'uid-1' });
+  assert.equal(withUid['x-user-id'], 'uid-1');
+  // uid 缺失时不下发空头——留空头比不发更容易被识别为异常。
+  const withoutUid = buildCodebuddyFamilyUpstreamHeaders('workbuddy', null);
+  assert.equal(withoutUid['x-user-id'], undefined);
+});
+
+// 渠道校验（2026-10-21 实测）：会话 ID 家族缺任一个或为空，上游回 400 code 11128
+// 「request illegal / 没通过渠道校验」。UA、X-IDE-*、body 形状都不参与这条校验。
+test('buildCodebuddyFamilyUpstreamHeaders always carries the non-empty conversation ids required by channel verification', () => {
+  for (const provider of ['codebuddy', 'codebuddycn', 'workbuddy', 'workbuddycn']) {
+    const headers = buildCodebuddyFamilyUpstreamHeaders(provider, null);
+    for (const name of ['x-conversation-id', 'x-conversation-message-id', 'x-conversation-request-id', 'x-request-id']) {
+      assert.ok(String(headers[name] || '').trim(), `${provider} 缺少 ${name}`);
+      assert.match(headers[name], /^[0-9a-f-]+$/);
+    }
+  }
+});
+
+test('buildCodebuddyFamilyConversationHeaders keeps one conversation id per client session without leaking the session key', () => {
+  const first = buildCodebuddyFamilyConversationHeaders('session-abc');
+  const second = buildCodebuddyFamilyConversationHeaders('session-abc');
+  const other = buildCodebuddyFamilyConversationHeaders('session-xyz');
+  // 同一会话 → 同一 conversation id（与官方客户端一致），不同会话不撞。
+  assert.equal(first['x-conversation-id'], second['x-conversation-id']);
+  assert.notEqual(first['x-conversation-id'], other['x-conversation-id']);
+  // 会话键来自客户端，不能原样外发给上游。
+  assert.ok(!first['x-conversation-id'].includes('session-abc'));
+  // 消息 / 请求级 id 每次都新建。
+  assert.notEqual(first['x-conversation-message-id'], second['x-conversation-message-id']);
+  assert.notEqual(first['x-conversation-request-id'], second['x-conversation-request-id']);
+});
+
+test('buildCodebuddyFamilyConversationHeaders mints a fresh conversation id when there is no session key', () => {
+  const a = buildCodebuddyFamilyConversationHeaders('');
+  const b = buildCodebuddyFamilyConversationHeaders(undefined);
+  assert.ok(a['x-conversation-id']);
+  assert.notEqual(a['x-conversation-id'], b['x-conversation-id']);
+});
+
+test('createCodebuddyFamilyConversationId is time-ordered and shaped like the official UUIDv7 ids', () => {
+  const earlier = createCodebuddyFamilyConversationId(1_000);
+  const later = createCodebuddyFamilyConversationId(2_000);
+  // 官方形状（2026-10-21 抓包样本 `01a15ede-5927-7289-86f7-0648bbaa2d32`）：
+  // 8-4-4-4-12 十六进制，第 13 位版本固定 7、第 17 位变体固定 8。
+  assert.match(earlier, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(earlier.replace(/-/g, '').slice(0, 12), (1_000).toString(16).padStart(12, '0'));
+  assert.ok(earlier.replace(/-/g, '').slice(0, 12) < later.replace(/-/g, '').slice(0, 12));
 });
 
 test('adaptCodebuddyFamilyChatRequest injects a neutral system prompt when the first message is not system', () => {
@@ -411,6 +472,29 @@ test('parseCodebuddyFamilyError surfaces the Chinese display message from the Te
   assert.equal(result.message, '请求被安全策略拦截，请稍后重试或联系支持。');
   // 该码换账号重试有意义（可能是出口 IP 被拦），所以标成可重试。
   assert.equal(result.retryable, true);
+});
+
+test('parseCodebuddyFamilyError treats channel verification (11128) as not retryable but keeps the other 11128 meaning', () => {
+  // 渠道校验：请求形态被拦，换号只会拿到同一张拒绝 → 不可重试（与 Go observer 同口径）。
+  const channel = parseCodebuddyFamilyError(400, JSON.stringify({
+    code: 11128,
+    msg: 'request illegal',
+    requestId: 'x',
+    displayMsg: { en: 'Request blocked. Please send it again', zh: '请求被拦截，请重新发送' },
+    displayTips: { en: 'This call failed channel verification, possibly because it was not sent from an official client.' },
+    actions: ['EDIT_INPUT', 'SUBMIT_FEEDBACK']
+  }));
+  assert.equal(channel.ok, false);
+  assert.equal(channel.code, 11128);
+  assert.equal(channel.message, '请求被拦截，请重新发送');
+  assert.equal(channel.retryable, false);
+
+  // 同一个码的另一种语义（首条非 system）：本端应当规避的形态，仍按可重试处理。
+  const notSystem = parseCodebuddyFamilyError(400, JSON.stringify({
+    code: 11128,
+    msg: 'first message is not system prompt'
+  }));
+  assert.equal(notSystem.retryable, true);
 });
 
 test('parseCodebuddyFamilyError falls back to msg then to the status code', () => {

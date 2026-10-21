@@ -34,6 +34,24 @@ var retryableEnvelopeCodes = map[int64]bool{
 	11128: true,
 }
 
+// channelVerificationCode 是渠道校验失败的业务码。它与「首条非 system」共用 11128，
+// 只能靠 msg 区分（2026-10-21 实测：渠道校验的 msg 是 "request illegal"）。
+const channelVerificationCode int64 = 11128
+
+// isChannelVerificationRejection 判定信封是否是渠道校验失败。
+//
+// 渠道校验看的是请求形态（会话三件套），与账号无关：换号只会拿到同一张拒绝，
+// 还会给每个账号挂上模型冷却，把整个家族池拖进冷却。因此它不可重试。
+func isChannelVerificationRejection(code int64, msg string) bool {
+	if code != channelVerificationCode {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(msg))
+	return strings.Contains(normalized, "request illegal") ||
+		strings.Contains(normalized, "unapproved channel") ||
+		strings.Contains(normalized, "channel")
+}
+
 // Envelope 是家族上游错误响应的解析结论。
 type Envelope struct {
 	// Present 表示这是腾讯统一信封（带 code 字段）。
@@ -69,7 +87,21 @@ func ParseEnvelope(statusCode int, body []byte) Envelope {
 		result.Retryable = retryableEnvelopeCodes[code]
 	}
 	result.Message = envelopeMessage(fields, rawCode)
+	// 渠道校验失败与账号无关，换号只会拿到同一张拒绝并给每个账号挂冷却：
+	// 撤销它的可重试性，让调用方原样把拒绝交给客户端（与 Node 的通用 400 分支一致）。
+	if result.Code != nil && isChannelVerificationRejection(*result.Code, rawMessage(fields)) {
+		result.Retryable = false
+	}
 	return result
+}
+
+// rawMessage 取信封里未经 displayMsg 润色的原始 msg（渠道校验靠它区分两种 11128 语义）。
+func rawMessage(fields map[string]json.RawMessage) string {
+	message, ok := stringValue(fields["msg"])
+	if !ok {
+		return ""
+	}
+	return message
 }
 
 // Classify 按状态码 + 信封可重试性返回单一失败分类。

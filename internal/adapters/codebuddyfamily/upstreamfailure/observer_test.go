@@ -39,6 +39,17 @@ func TestParseEnvelope(t *testing.T) {
 			retryable: true,
 		},
 		{
+			// 渠道校验（2026-10-21 真上游实测文案）：请求形态被拦、与账号无关，换号只会拿到
+			// 同一张拒绝并给每个账号挂冷却，因此即便同为 11128 也必须不可重试。
+			name:      "channel verification 11128 is not retryable",
+			status:    400,
+			body:      `{"code":11128,"msg":"request illegal","displayMsg":{"en":"Request blocked. Please send it again","zh":"请求被拦截，请重新发送"}}`,
+			envelope:  true,
+			code:      11128,
+			message:   "请求被拦截，请重新发送",
+			retryable: false,
+		},
+		{
 			name:      "unknown code is not retryable",
 			status:    400,
 			body:      `{"code":12345,"msg":"whatever"}`,

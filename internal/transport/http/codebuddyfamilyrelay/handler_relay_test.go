@@ -217,11 +217,38 @@ func TestServeHTTPRelaysAndAggregatesNonStream(t *testing.T) {
 	if gotHeaders.Get("User-Agent") != UserAgent {
 		t.Fatalf("UA 必须是真实客户端标识: %q", gotHeaders.Get("User-Agent"))
 	}
-	if gotHeaders.Get("Origin") != "https://www.codebuddy.ai" {
-		t.Fatalf("Origin 应为站点根: %q", gotHeaders.Get("Origin"))
-	}
 	if gotHeaders.Get("X-Requested-With") != "XMLHttpRequest" {
 		t.Fatalf("缺 X-Requested-With: %q", gotHeaders.Get("X-Requested-With"))
+	}
+	// 官方 CLI 身份**不发** Origin / Referer（浏览器语义头，只有桌面/VSCode 身份才带）。
+	// 发它们反而是一处与官方不符的差异（2026-10-21 抓包确认）。
+	if origin := gotHeaders.Get("Origin"); origin != "" {
+		t.Fatalf("官方 CLI 身份不应发 Origin: %q", origin)
+	}
+	if referer := gotHeaders.Get("Referer"); referer != "" {
+		t.Fatalf("官方 CLI 身份不应发 Referer: %q", referer)
+	}
+	// 官方身份头：实测不参与渠道校验，但复刻它们让请求画像与官方一致。
+	if gotHeaders.Get(ProductHeader) != "SaaS" {
+		t.Fatalf("缺官方身份头 %s: %q", ProductHeader, gotHeaders.Get(ProductHeader))
+	}
+	if gotHeaders.Get(DomainHeader) != "www.codebuddy.ai" {
+		t.Fatalf("%s 应为站点域名: %q", DomainHeader, gotHeaders.Get(DomainHeader))
+	}
+	if gotHeaders.Get(IDEVersionHeader) != IDEVersion {
+		t.Fatalf("%s 应为 CLI 版本: %q", IDEVersionHeader, gotHeaders.Get(IDEVersionHeader))
+	}
+	// 渠道校验：会话 ID 家族缺任一个或为空，上游回 400 code 11128（2026-10-21 实测）。
+	for _, name := range []string{ConversationIDHeader, ConversationMessageIDHeader, ConversationRequestIDHeader} {
+		if strings.TrimSpace(gotHeaders.Get(name)) == "" {
+			t.Fatalf("缺渠道校验必需头 %s", name)
+		}
+	}
+	// 官方让 X-Request-ID 与 X-Conversation-Message-ID 同值，复刻它避免留下可区分的差异。
+	if gotHeaders.Get(RequestIDHeader) != gotHeaders.Get(ConversationMessageIDHeader) {
+		t.Fatalf("%s 应与 %s 同值: %q vs %q",
+			RequestIDHeader, ConversationMessageIDHeader,
+			gotHeaders.Get(RequestIDHeader), gotHeaders.Get(ConversationMessageIDHeader))
 	}
 	// 改写：stream 强制 true、首条补 system、tool_choice 降级成 required、tools 原样保留。
 	if string(gotBody["stream"]) != "true" {

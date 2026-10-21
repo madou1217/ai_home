@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Empty, List, Popconfirm, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { Empty, List, Pagination, Popconfirm, Space, Spin, Switch, Tag, Tooltip, Typography } from 'antd';
 import {
   ApartmentOutlined,
   CloseOutlined,
@@ -22,6 +22,7 @@ import SectionCard from '@/components/ui/SectionCard';
 import '@/components/ui/kpi-strip.css';
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
+  aggregatorErrorText,
   countEnabledPresets,
   describeSourceOrigin,
   describeSourceScope,
@@ -46,6 +47,9 @@ import styles from './SubscriptionAggregator.module.css';
 
 const { Text } = Typography;
 
+// 订阅源多了以后一屏放不下（几十个源时列表会很长），分页显示。
+const SOURCE_PAGE_SIZE = 8;
+
 function totalTraffic(sources: AggregatorSource[]) {
   const withInfo = sources.filter((source) => source.userInfo?.total);
   if (!withInfo.length) return '—';
@@ -64,9 +68,18 @@ export default function SubscriptionAggregatorPanel() {
   const [importProfile, setImportProfile] = useState<AggregatorProfile | null>(null);
   const [nodesSourceId, setNodesSourceId] = useState('');
   const [addingNode, setAddingNode] = useState(false);
+  const [sourcePage, setSourcePage] = useState(1);
   const sources = overview?.sources || [];
   const profiles = overview?.profiles || [];
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
+  const enabledSources = sources.filter((source) => source.enabled);
+  const sourcePages = Math.max(1, Math.ceil(sources.length / SOURCE_PAGE_SIZE));
+  const pagedSources = sources.slice((sourcePage - 1) * SOURCE_PAGE_SIZE, sourcePage * SOURCE_PAGE_SIZE);
+
+  // 删除 / 停用后当前页可能已经不存在（例如删掉最后一页的唯一一条）。
+  useEffect(() => {
+    setSourcePage((current) => Math.min(current, Math.max(1, Math.ceil(sources.length / SOURCE_PAGE_SIZE))));
+  }, [sources.length]);
 
   const createProfile = () => {
     if (!overview) return;
@@ -114,8 +127,13 @@ export default function SubscriptionAggregatorPanel() {
             className={styles.section}
             extra={(
               <Space wrap>
-                <Button icon={<SyncOutlined />} loading={state.syncingAll} disabled={!sources.length} onClick={() => void state.syncAllSources()}>
-                  全部同步
+                <Button
+                  icon={<SyncOutlined />}
+                  loading={state.syncingAll}
+                  disabled={!enabledSources.length || state.syncingAll}
+                  onClick={() => state.syncAllSources(enabledSources.map((source) => source.id))}
+                >
+                  {state.syncingAll ? '同步中' : '全部同步'}
                 </Button>
                 <Button icon={<FormOutlined />} onClick={() => setAddingNode(true)}>手动添加节点</Button>
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setSourceEditor({ source: null })}>添加订阅</Button>
@@ -123,20 +141,32 @@ export default function SubscriptionAggregatorPanel() {
             )}
           >
             <List
-              dataSource={sources}
-              locale={{ emptyText: <Empty description="还没有订阅源：添加机场订阅地址（可批量粘贴），或粘贴自建节点" /> }}
+              dataSource={pagedSources}
+              locale={{ emptyText: <Empty description="还没有订阅源：添加机场订阅地址（可批量粘贴），扫描本机客户端，或粘贴自建节点" /> }}
               renderItem={(source) => {
                 const traffic = formatTraffic(source.userInfo);
+                const syncing = state.syncingIds.has(source.id);
+                const last = state.lastResultFor(source.id);
                 return (
                   <List.Item
+                    className={source.enabled ? undefined : styles.sourceDisabled}
                     actions={[
-                      <Tooltip key="sync" title={source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
+                      <Tooltip key="enabled" title={source.enabled ? '停用：节点保留，但不进聚合订阅与出口池' : '启用'}>
+                        <Switch
+                          size="small"
+                          checked={source.enabled}
+                          disabled={syncing}
+                          aria-label={`${source.enabled ? '停用' : '启用'} ${source.name}`}
+                          onChange={(checked) => void state.setSourceEnabled(source.id, checked)}
+                        />
+                      </Tooltip>,
+                      <Tooltip key="sync" title={!source.enabled ? '已停用，启用后才能同步' : syncing ? '同步中…' : source.kind === 'local' ? '重新解析本地内容' : '立即拉取订阅'}>
                         <Button
                           size="small"
-                          icon={<SyncOutlined />}
-                          loading={state.syncingIds.has(source.id)}
+                          icon={<SyncOutlined spin={syncing} />}
+                          disabled={syncing || !source.enabled}
                           aria-label={`同步 ${source.name}`}
-                          onClick={() => void state.syncSource(source.id)}
+                          onClick={() => state.syncSource(source.id)}
                         />
                       </Tooltip>,
                       <Tooltip key="nodes" title="节点与延迟">
@@ -158,9 +188,16 @@ export default function SubscriptionAggregatorPanel() {
                       title={(
                         <Space size={8} wrap>
                           <span>{source.name}</span>
-                          <Tag color="blue">{source.nodeCount} 个节点</Tag>
+                          {!source.enabled && <Tag>已停用</Tag>}
+                          <Tag color={source.enabled ? 'blue' : undefined}>{source.nodeCount} 个节点</Tag>
                           {traffic && <Tag>{traffic}</Tag>}
                           {source.userInfo?.total ? <Tag>到期 {formatExpire(source.userInfo.expire)}</Tag> : null}
+                          {syncing && <Tag color="processing" icon={<SyncOutlined spin />}>同步中</Tag>}
+                          {!syncing && last?.state === 'failed' && (
+                            <Tooltip title={last.message || last.error}>
+                              <Tag color="error">上次同步失败：{aggregatorErrorText(last.error, '同步失败')}</Tag>
+                            </Tooltip>
+                          )}
                         </Space>
                       )}
                       description={(
@@ -176,6 +213,19 @@ export default function SubscriptionAggregatorPanel() {
                 );
               }}
             />
+            {sources.length > SOURCE_PAGE_SIZE && (
+              <div className={styles.pagination}>
+                <Pagination
+                  size="small"
+                  current={sourcePage}
+                  pageSize={SOURCE_PAGE_SIZE}
+                  total={sources.length}
+                  showSizeChanger={false}
+                  showTotal={(total) => `共 ${total} 个订阅源 · 第 ${sourcePage}/${sourcePages} 页`}
+                  onChange={setSourcePage}
+                />
+              </div>
+            )}
           </SectionCard>
 
           <SectionCard
@@ -259,6 +309,9 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setSourceEditor(null)}
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
+            onScanLocal={state.scanLocalSources}
+            onImportLocal={state.importLocalSources}
+            scanning={state.scanning}
           />
           <ProfileEditorDrawer
             open={Boolean(editingProfile)}

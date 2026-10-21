@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import {
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
   EyeOutlined,
   FormOutlined,
   GatewayOutlined,
   ImportOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   RetweetOutlined,
   SyncOutlined,
   UnorderedListOutlined
 } from '@ant-design/icons';
 import { formatLastSynced } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import {
+  aggregatorErrorText,
   countEnabledPresets,
   describePull,
   describeSourceOrigin,
@@ -42,6 +45,9 @@ import { confirmAction } from '@/utils/confirm-action';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText } from './toolkit-parts';
 import EdgeForwardingPanel from './EdgeForwardingPanel';
 
+// 手机屏幕小：订阅源列表先显示这么多，其余按需展开。
+const MOBILE_SOURCE_PAGE_SIZE = 12;
+
 /** 订阅聚合与分流（移动端）：订阅源卡片列表 + 聚合订阅详情抽屉；编辑器与预览复用桌面组件（全宽）。 */
 export default function SubscriptionAggregatorPanel() {
   const state = useSubscriptionAggregator();
@@ -54,6 +60,8 @@ export default function SubscriptionAggregatorPanel() {
   const [detailId, setDetailId] = useState('');
   const [nodesSourceId, setNodesSourceId] = useState('');
   const [addingNode, setAddingNode] = useState(false);
+  // 手机上几十个订阅源一次渲染太长，分批展开。
+  const [sourceLimit, setSourceLimit] = useState(MOBILE_SOURCE_PAGE_SIZE);
 
   if (loading && !overview) return <MobileBoot label="READING SUBSCRIPTIONS" />;
 
@@ -61,6 +69,8 @@ export default function SubscriptionAggregatorPanel() {
   const profiles = overview?.profiles || [];
   const detail = profiles.find((profile) => profile.id === detailId) || null;
   const totalNodes = sources.reduce((sum, source) => sum + source.nodeCount, 0) + (overview?.manualNodeCount || 0);
+  const enabledSources = sources.filter((source) => source.enabled);
+  const visibleSources = sources.slice(0, sourceLimit);
 
   const createProfile = () => {
     if (!overview) return;
@@ -162,46 +172,69 @@ export default function SubscriptionAggregatorPanel() {
             count={sources.length}
             extra={(
               <>
-                <ActionButton icon={<SyncOutlined />} label="全部同步" loading={state.syncingAll} disabled={!sources.length} onClick={() => void state.syncAllSources()} />
+                <ActionButton
+                  icon={<SyncOutlined />}
+                  label={state.syncingAll ? '同步中' : '全部同步'}
+                  loading={state.syncingAll}
+                  disabled={!enabledSources.length || state.syncingAll}
+                  onClick={() => state.syncAllSources(enabledSources.map((source) => source.id))}
+                />
                 <ActionButton icon={<FormOutlined />} label="加节点" onClick={() => setAddingNode(true)} />
                 <ActionButton icon={<PlusOutlined />} label="添加" tone="primary" onClick={() => setSourceEditor({ source: null })} />
               </>
             )}
           >
             {sources.length ? (
-              <MonoList ariaLabel="订阅源列表">
-                {sources.map((source) => {
-                  const traffic = formatTraffic(source.userInfo);
-                  return (
-                    <SwipeRow
-                      key={source.id}
-                      ariaLabel={`${source.name} 操作`}
-                      onTap={() => setSourceEditor({ source })}
-                      actions={[
-                        { key: 'nodes', label: '节点', icon: <UnorderedListOutlined />, onAction: () => setNodesSourceId(source.id) },
-                        { key: 'sync', label: '同步', icon: <SyncOutlined />, disabled: state.syncingIds.has(source.id), onAction: () => void state.syncSource(source.id) },
-                        { key: 'delete', label: '删除', icon: <DeleteOutlined />, tone: 'danger', onAction: () => void confirmDeleteSource(source) }
-                      ]}
-                    >
-                      <span className="mhud-row__main">
-                        <span className="mhud-row__title">{source.name}</span>
-                        <span className="mhud-row__meta">
-                          {source.kind === 'local'
-                            ? describeSourceOrigin(source)
-                            : traffic ? `${traffic} · 到期 ${formatExpire(source.userInfo?.expire)}` : `上次同步 ${formatLastSynced(source.lastSyncedAt)}`}
+              <>
+                <MonoList ariaLabel="订阅源列表">
+                  {visibleSources.map((source) => {
+                    const traffic = formatTraffic(source.userInfo);
+                    const syncing = state.syncingIds.has(source.id);
+                    const last = state.lastResultFor(source.id);
+                    return (
+                      <SwipeRow
+                        key={source.id}
+                        ariaLabel={`${source.name} 操作`}
+                        onTap={() => setSourceEditor({ source })}
+                        actions={[
+                          { key: 'toggle', label: source.enabled ? '停用' : '启用', icon: <PoweroffOutlined />, disabled: syncing, onAction: () => void state.setSourceEnabled(source.id, !source.enabled) },
+                          { key: 'nodes', label: '节点', icon: <UnorderedListOutlined />, onAction: () => setNodesSourceId(source.id) },
+                          { key: 'sync', label: '同步', icon: <SyncOutlined />, disabled: syncing || !source.enabled, onAction: () => state.syncSource(source.id) },
+                          { key: 'delete', label: '删除', icon: <DeleteOutlined />, tone: 'danger', onAction: () => void confirmDeleteSource(source) }
+                        ]}
+                      >
+                        <span className="mhud-row__main">
+                          <span className="mhud-row__title">{source.enabled ? source.name : `${source.name}（已停用）`}</span>
+                          <span className="mhud-row__meta">
+                            {source.kind === 'local'
+                              ? describeSourceOrigin(source)
+                              : traffic ? `${traffic} · 到期 ${formatExpire(source.userInfo?.expire)}` : `上次同步 ${formatLastSynced(source.lastSyncedAt)}`}
+                            {!syncing && last?.state === 'failed' ? ` · 上次失败：${aggregatorErrorText(last.error, '同步失败')}` : ''}
+                          </span>
                         </span>
-                      </span>
-                      <span className="mhud-row__side">
-                        {state.syncingIds.has(source.id)
-                          ? <StatusText tone="info" live>同步中</StatusText>
-                          : <StatusText tone={source.nodeCount ? 'ok' : 'warn'}>{`${source.nodeCount} 节点`}</StatusText>}
-                      </span>
-                    </SwipeRow>
-                  );
-                })}
-              </MonoList>
+                        <span className="mhud-row__side">
+                          {syncing
+                            ? <StatusText tone="info" live>同步中</StatusText>
+                            : source.enabled
+                              ? <StatusText tone={source.nodeCount ? 'ok' : 'warn'}>{`${source.nodeCount} 节点`}</StatusText>
+                              : <StatusText tone="muted">已停用</StatusText>}
+                        </span>
+                      </SwipeRow>
+                    );
+                  })}
+                </MonoList>
+                {sources.length > MOBILE_SOURCE_PAGE_SIZE && (
+                  <ActionButton
+                    icon={<DownOutlined />}
+                    label={visibleSources.length < sources.length
+                      ? `显示更多（还有 ${sources.length - visibleSources.length} 个）`
+                      : '收起'}
+                    onClick={() => setSourceLimit((current) => (current >= sources.length ? MOBILE_SOURCE_PAGE_SIZE : current + MOBILE_SOURCE_PAGE_SIZE))}
+                  />
+                )}
+              </>
             ) : (
-              <EmptySignal description="还没有订阅源，点「添加」填订阅地址（可批量）或粘贴自建节点" />
+              <EmptySignal description="还没有订阅源，点「添加」填订阅地址（可批量）、扫描本机，或粘贴自建节点" />
             )}
           </HudSection>
 
@@ -256,6 +289,9 @@ export default function SubscriptionAggregatorPanel() {
             onClose={() => setSourceEditor(null)}
             onSave={state.saveSource}
             onSaveBatch={state.saveSources}
+            onScanLocal={state.scanLocalSources}
+            onImportLocal={state.importLocalSources}
+            scanning={state.scanning}
           />
           <DetailSheet
             open={entryOpen}

@@ -1,13 +1,16 @@
-import api from '@/services/api';
+import api, { guardedWebUiEventSource } from '@/services/api';
 import type {
   AggregatorDraftNode,
   AggregatorLatency,
   AggregatorNodeOption,
   AggregatorProbeResult,
+  AggregatorSource,
   AggregatorSourceNode,
   AggregatorFormat,
   AggregatorImportLinks,
   AggregatorLocalClients,
+  AggregatorLocalImportResult,
+  AggregatorLocalScan,
   AggregatorOverview,
   AggregatorPreview,
   AggregatorProfile,
@@ -17,7 +20,7 @@ import type {
   AggregatorSourceInput,
   AggregatorSourcePreview,
   AggregatorSourceSaveResult,
-  AggregatorSyncResult
+  AggregatorSyncStartResult
 } from './types';
 
 const BASE = '/webui/toolkit/subscription-aggregator';
@@ -106,10 +109,40 @@ export const subscriptionAggregatorAPI = {
   async deleteSource(subscriptionId: string) {
     return (await api.delete<{ ok: boolean; error?: string }>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}`)).data;
   },
-  async syncSource(subscriptionId: string) {
-    return (await api.post<AggregatorSyncResult>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}/sync`, {}, { timeout: 60000 })).data;
+  /** 启用 / 停用订阅源：停用后不进聚合、不进出口池、也不再自动刷新（节点保留）。 */
+  async setSourceEnabled(subscriptionId: string, enabled: boolean) {
+    return (await api.post<{ ok: boolean; subscription?: AggregatorSource; error?: string }>(
+      `${BASE}/sources/${encodeURIComponent(subscriptionId)}/enabled`, { enabled }
+    )).data;
   },
-  async syncAllSources() {
-    return (await api.post<{ ok: boolean; results: Record<string, AggregatorSyncResult> }>(`${BASE}/sources/sync`, {}, { timeout: 120000 })).data;
+  /** 同步一个订阅源：立刻返回任务（202），结果经 watchSourceSync 推送。 */
+  async syncSource(subscriptionId: string) {
+    return (await api.post<AggregatorSyncStartResult>(`${BASE}/sources/${encodeURIComponent(subscriptionId)}/sync`, {}, {
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 同步一批订阅源（不传 = 全部）：立刻返回任务，不等上游。 */
+  async syncSources(ids: string[] = []) {
+    return (await api.post<AggregatorSyncStartResult>(`${BASE}/sources/sync`, { ids }, {
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 同步任务的进度流（先一帧 snapshot，之后每次变化一帧 job）。 */
+  watchSourceSync(): EventSource {
+    return guardedWebUiEventSource(`/v0${BASE}/sources/sync/watch`);
+  },
+  /** 扫描本机代理客户端的配置文件（只读；只在 WebUI 与服务同一台机器时可用）。 */
+  async scanLocalSources() {
+    return (await api.get<AggregatorLocalScan>(`${BASE}/local-sources`, {
+      timeout: 30000,
+      validateStatus: (status) => status < 500
+    })).data;
+  },
+  /** 导入扫描到的订阅：先落库，节点拉取在后台任务里进行。 */
+  async importLocalSources(ids: string[]) {
+    return (await api.post<AggregatorLocalImportResult>(`${BASE}/local-sources/import`, { ids }, {
+      timeout: 30000,
+      validateStatus: (status) => status < 500
+    })).data;
   }
 };

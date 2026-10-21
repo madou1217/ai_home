@@ -3,13 +3,14 @@ import { Form, Input, Modal, Segmented, Typography } from 'antd';
 import { isHttpUrl } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
 import { LOCAL_SOURCE_MAX_BYTES, parseBatchSources, utf8ByteLength } from './aggregator-presentation';
 import LocalFileImport, { importableFiles, type ImportFileEntry } from './LocalFileImport';
+import LocalClientScan from './LocalClientScan';
 import SourcePreviewSummary from './SourcePreviewSummary';
-import type { AggregatorSource, AggregatorSourceInput } from './types';
+import type { AggregatorLocalScan, AggregatorSource, AggregatorSourceInput } from './types';
 import { useSourcePreview } from './use-source-preview';
 
 const { Text } = Typography;
 
-type EditorMode = 'remote' | 'batch' | 'local' | 'files';
+type EditorMode = 'remote' | 'batch' | 'local' | 'files' | 'scan';
 
 interface SourceFormValues {
   name: string;
@@ -27,6 +28,11 @@ interface SourceEditorModalProps {
   onClose: () => void;
   onSave: (source: AggregatorSourceInput) => Promise<boolean>;
   onSaveBatch: (sources: AggregatorSourceInput[]) => Promise<{ saved: number; failed: string[] }>;
+  /** 扫描本机客户端（只读）；不在服务同一台机器上时返回 null。 */
+  onScanLocal: () => Promise<AggregatorLocalScan | null>;
+  /** 导入选中的本机订阅。 */
+  onImportLocal: (ids: string[]) => Promise<{ saved: number; failed: string[] }>;
+  scanning: boolean;
 }
 
 const LOCAL_PLACEHOLDER = '每行一个分享链接（vless:// trojan:// ss:// hy2:// tuic:// …），\n或整段 Clash / sing-box / v2rayN（Xray）/ Egern / Surge / Loon / Quantumult X 配置、WireGuard .conf、Base64 订阅内容';
@@ -35,13 +41,24 @@ const LOCAL_PLACEHOLDER = '每行一个分享链接（vless:// trojan:// ss:// h
  * 添加/编辑订阅源：远程订阅地址（可批量粘贴，可按源指定 User-Agent），或本地内容
  * （粘贴自建节点或整段配置，保存即解析）。编辑时可在远程与本地之间切换。
  */
-export default function SourceEditorModal({ open, source, defaultUserAgent, onClose, onSave, onSaveBatch }: SourceEditorModalProps) {
+export default function SourceEditorModal({
+  open,
+  source,
+  defaultUserAgent,
+  onClose,
+  onSave,
+  onSaveBatch,
+  onScanLocal,
+  onImportLocal,
+  scanning
+}: SourceEditorModalProps) {
   const [form] = Form.useForm<SourceFormValues>();
   const [mode, setMode] = useState<EditorMode>('remote');
   const [batchText, setBatchText] = useState('');
   const [failures, setFailures] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [files, setFiles] = useState<ImportFileEntry[]>([]);
+  const [scanSelected, setScanSelected] = useState<Set<string>>(new Set());
   const batch = useMemo(() => parseBatchSources(batchText), [batchText]);
   const content = (Form.useWatch('content', form) as string | undefined) || '';
   const contentPreview = useSourcePreview(content, open && mode === 'local');
@@ -53,6 +70,7 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
     setBatchText('');
     setFailures([]);
     setFiles([]);
+    setScanSelected(new Set());
     form.setFieldsValue({
       name: source?.name || '',
       url: source?.url || '',
@@ -64,6 +82,13 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
   const submit = async () => {
     setSaving(true);
     try {
+      if (mode === 'scan') {
+        if (!scanSelected.size) return;
+        const result = await onImportLocal([...scanSelected]);
+        setFailures(result.failed);
+        if (result.saved && !result.failed.length) onClose();
+        return;
+      }
       if (mode === 'batch' || mode === 'files') {
         const inputs: AggregatorSourceInput[] = mode === 'batch'
           ? batch.sources.map((item) => ({ ...item, kind: 'remote' }))
@@ -92,11 +117,14 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
       { label: '订阅地址', value: 'remote' },
       { label: '批量地址', value: 'batch' },
       { label: '本地节点', value: 'local' },
-      { label: '导入文件', value: 'files' }
+      { label: '导入文件', value: 'files' },
+      { label: '扫描本机', value: 'scan' }
     ];
-  const okText = mode === 'batch'
-    ? `添加 ${batch.sources.length} 个`
-    : mode === 'files' ? `导入 ${readyFiles.length} 个文件` : mode === 'local' ? '保存并解析' : '保存并同步';
+  const okText = mode === 'scan'
+    ? `导入 ${scanSelected.size} 个`
+    : mode === 'batch'
+      ? `添加 ${batch.sources.length} 个`
+      : mode === 'files' ? `导入 ${readyFiles.length} 个文件` : mode === 'local' ? '保存并解析' : '保存并同步';
 
   return (
     <Modal
@@ -105,7 +133,11 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
       onCancel={onClose}
       onOk={() => void submit()}
       okText={okText}
-      okButtonProps={{ disabled: (mode === 'batch' && !batch.sources.length) || (mode === 'files' && !readyFiles.length) }}
+      okButtonProps={{
+        disabled: (mode === 'batch' && !batch.sources.length)
+          || (mode === 'files' && !readyFiles.length)
+          || (mode === 'scan' && (!scanSelected.size || scanning))
+      }}
       confirmLoading={saving}
       destroyOnHidden
       width={640}
@@ -117,7 +149,22 @@ export default function SourceEditorModal({ open, source, defaultUserAgent, onCl
         options={modeOptions}
         style={{ marginBottom: 16 }}
       />
-      {mode === 'files' ? (
+      {mode === 'scan' ? (
+        <>
+          <LocalClientScan
+            active={open && mode === 'scan'}
+            scanning={scanning}
+            onScan={onScanLocal}
+            selected={scanSelected}
+            onSelectedChange={setScanSelected}
+          />
+          {failures.length > 0 && (
+            <Text type="danger" style={{ display: 'block', marginTop: 8 }}>
+              {failures.join('；')}
+            </Text>
+          )}
+        </>
+      ) : mode === 'files' ? (
         <>
           <LocalFileImport files={files} onChange={setFiles} />
           {failures.length > 0 && (

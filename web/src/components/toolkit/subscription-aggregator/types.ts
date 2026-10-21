@@ -52,6 +52,8 @@ export interface AggregatorSource {
   nodeCount: number;
   lastSyncedAt: number | null;
   userInfo: AggregatorUserInfo | null;
+  /** false = 已停用：节点留在库里，但不进聚合订阅、不进出口池、也不再自动刷新。 */
+  enabled: boolean;
 }
 
 /** 客户端拉取一次订阅的记录（服务端内存里保留最近 20 次）。 */
@@ -174,6 +176,7 @@ export interface AggregatorSourceInput {
   url?: string;
   userAgent?: string;
   content?: string;
+  enabled?: boolean;
 }
 
 /** 可编辑字段（id 只在更新时带上，token/时间戳由服务端维护）。 */
@@ -387,11 +390,79 @@ export interface AggregatorSyncResult {
   count?: number;
   error?: string;
   message?: string;
+  /** 远程订阅的拉取已交给后台任务（进度走 SSE），保存时不等结果。 */
+  pending?: boolean;
 }
 
 export interface AggregatorSourceSaveResult {
   ok: boolean;
   subscription: AggregatorSource;
   sync?: AggregatorSyncResult;
+  job?: AggregatorSyncJob | null;
+  error?: string;
+}
+
+/** 一个订阅源在同步任务里的状态（每个源各自出结果，一个失败不影响其它）。 */
+export type AggregatorSyncItemState = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface AggregatorSyncJobItem {
+  sourceId: string;
+  name: string;
+  state: AggregatorSyncItemState;
+  startedAt: number | null;
+  finishedAt: number | null;
+  count: number;
+  error: string;
+  message: string;
+}
+
+/** 异步同步任务：开始即返回，之后经 /sources/sync/watch 推送进度。partial = 部分成功。 */
+export interface AggregatorSyncJob {
+  id: string;
+  taskName: string;
+  status: 'queued' | 'running' | 'succeeded' | 'partial' | 'failed';
+  counts: { total: number; done: number; failed: number; succeeded: number };
+  items: AggregatorSyncJobItem[];
+  createdAt: number;
+  updatedAt: number;
+  finishedAt: number | null;
+}
+
+export interface AggregatorSyncStartResult {
+  ok: boolean;
+  job?: AggregatorSyncJob;
+  /** 这个源已在进行中的任务里，返回的是那个任务。 */
+  reused?: boolean;
+  error?: string;
+}
+
+/** 扫描到的本机客户端订阅。imported = 订阅地址与已有订阅源相同。 */
+export interface AggregatorLocalCandidate {
+  id: string;
+  clientId: string;
+  clientName: string;
+  name: string;
+  url: string;
+  file: string;
+  updatedAt?: number;
+  imported: boolean;
+  importedSourceId: string;
+  importedSourceName: string;
+}
+
+export interface AggregatorLocalScan {
+  ok: boolean;
+  platform: string;
+  /** 每个看过的客户端：找到几条、有没有出错（没装 = 0 条、无错）。 */
+  clients: Array<{ id: string; name: string; found: number; error: string }>;
+  candidates: AggregatorLocalCandidate[];
+  error?: string;
+}
+
+export interface AggregatorLocalImportResult {
+  ok: boolean;
+  imported: Array<{ id: string; name: string; url: string; clientId: string; clientName: string }>;
+  skipped: Array<{ id: string; name: string; reason: string }>;
+  job: AggregatorSyncJob | null;
   error?: string;
 }

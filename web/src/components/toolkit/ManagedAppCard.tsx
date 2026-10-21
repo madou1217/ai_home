@@ -9,6 +9,7 @@ import ManagedResourceCard from './ManagedResourceCard';
 import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import {
+  getAppAdvancedEntryLabel,
   getAppCurrentVersion,
   getAppHookStatusDetail as getHookStatusDetail,
   hasExistingAppConfig as hasExistingConfig,
@@ -214,7 +215,7 @@ export default function ManagedAppCard({
             </Popconfirm>
           ) : null}
           {canOpenAdvanced ? (
-            <Tooltip title={`${app.name} 高级设置`}>
+            <Tooltip title={`${app.name} 高级设置：${getAppAdvancedEntryLabel(app, configFileCount)}`}>
               <Button
                 size="small"
                 shape="circle"

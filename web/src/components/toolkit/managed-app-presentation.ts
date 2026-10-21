@@ -43,6 +43,24 @@ export function getAppCurrentVersion(app: ManagedAppItem) {
     : '未安装';
 }
 
+/**
+ * 「高级设置」入口的说明文字：它已经是 provider 配置的唯一入口（独立的
+ * Provider 配置面板已并入应用管理），所以入口本身必须说清里面有什么，
+ * 否则用户只会看到一支没有含义的铅笔。
+ */
+export function getAppAdvancedEntryLabel(
+  app: Pick<ManagedAppItem, 'type'>,
+  configFileCount: number
+) {
+  const fileCount = Math.max(0, Number(configFileCount) || 0);
+  const hasPermission = app.type === 'cli';
+  const parts = [
+    hasPermission ? '启动权限' : '',
+    fileCount > 0 ? `配置文件 ${fileCount} 个` : ''
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '高级设置';
+}
+
 export function managedAppAccountLabel(account: Account) {
   return String(account.displayName || account.email || account.accountRef || '未命名账号').trim();
 }

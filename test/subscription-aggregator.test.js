@@ -288,9 +288,24 @@ test('saveSource syncs new or re-pointed subscriptions but not renames', async (
   const port = createSourcePort();
   const { service, dir } = createService(port);
   const created = await service.saveSource({ name: '新订阅', url: 'https://c.example/sub' });
-  assert.deepEqual(created.sync, { ok: true, count: 1 });
+  // 远程订阅的拉取在后台：保存立即返回任务，不等上游。
+  assert.deepEqual(created.sync, { ok: true, pending: true });
+  assert.equal(created.job.items[0].sourceId, 'sub_new');
+  await new Promise(setImmediate);
+  assert.deepEqual(port.calls.filter((call) => call[0] === 'sync'), [['sync', 'sub_new']]);
   const renamed = await service.saveSource({ id: 'sub_a', name: '改名', url: 'https://a.example/sub' });
   assert.equal(renamed.sync, undefined);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('saveSource names a nameless subscription from its URL, but keeps a typed name', async () => {
+  const port = createSourcePort();
+  const { service, dir } = createService(port);
+  await service.saveSource({ name: '', url: 'https://airport.example/sub?token=t&name=%E6%9C%BA%E5%9C%BA%E7%94%B2' });
+  await service.saveSource({ name: '   ', url: 'https://b2.example/sub?token=t' });
+  await service.saveSource({ name: '我自己起的', url: 'https://c2.example/sub?name=ignored' });
+  const saved = port.calls.filter((call) => call[0] === 'save').map((call) => call[1].name);
+  assert.deepEqual(saved, ['机场甲', 'b2.example', '我自己起的']);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

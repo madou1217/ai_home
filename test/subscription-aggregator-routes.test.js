@@ -43,18 +43,57 @@ function createService(overrides = {}) {
     preview: (id, format) => { calls.push(['preview', id, format]); return { ok: true, content: 'x' }; },
     saveSource: async (input) => { calls.push(['saveSource', input]); return { ok: true }; },
     deleteSource: async (id) => { calls.push(['deleteSource', id]); return { ok: true }; },
-    syncSource: async (id) => { calls.push(['syncSource', id]); return { ok: false, error: 'subscription_fetch_timeout' }; },
-    syncSources: async (ids) => { calls.push(['syncSources', ids]); return { ok: true, results: {} }; },
+    startSourceSync: (ids) => { calls.push(['startSourceSync', ids]); return { ok: true, job: { id: 'job_all' } }; },
+    startSourceSyncOne: (id) => {
+      calls.push(['startSourceSyncOne', id]);
+      return id === 'sub_a' ? { ok: true, job: { id: 'job_one' } } : { ok: false, error: 'subscription_not_found' };
+    },
+    setSourceEnabled: async (id, enabled) => {
+      calls.push(['setSourceEnabled', id, enabled]);
+      return id === 'sub_a' ? { ok: true, subscription: { id, enabled } } : { ok: false, error: 'subscription_not_found' };
+    },
+    scanLocalSources: () => { calls.push(['scanLocalSources']); return { ok: true, clients: [], candidates: [{ id: 'clash-verge:https://a' }] }; },
+    importLocalSources: async (ids) => { calls.push(['importLocalSources', ids]); return { ok: true, imported: [], skipped: [], job: null }; },
     ...overrides
+  };
+}
+
+/** SSE 响应替身：记下每一帧 data 的 JSON。 */
+function createStreamRes() {
+  const chunks = [];
+  const handlers = {};
+  return {
+    statusCode: 0,
+    headers: {},
+    destroyed: false,
+    writableEnded: false,
+    writeHead(status, headers) {
+      this.statusCode = status;
+      this.headers = headers;
+    },
+    write(chunk) {
+      chunks.push(String(chunk));
+      return true;
+    },
+    on(event, handler) {
+      handlers[event] = handler;
+    },
+    close() {
+      this.destroyed = true;
+      if (handlers.close) handlers.close();
+    },
+    frames() {
+      return chunks.filter((chunk) => chunk.startsWith('data: ')).map((chunk) => JSON.parse(chunk.slice(6)));
+    }
   };
 }
 
 const PREFIX = '/v0/webui/toolkit/subscription-aggregator';
 
-async function call(method, pathname, { body, service = createService(), url, bodyLimits = [] } = {}) {
+async function call(method, pathname, { body, service = createService(), url, bodyLimits = [], remoteAddress = '127.0.0.1' } = {}) {
   const recorder = createRecorder();
   const handled = await handleWebUiSubscriptionAggregatorRoutes(
-    { url: url || pathname },
+    { url: url || pathname, socket: { remoteAddress } },
     {},
     method,
     pathname,
@@ -106,11 +145,68 @@ test('aggregator routes serve draft node lists and rule tests', async () => {
   assert.deepEqual([invalid.status, invalid.payload.error], [422, 'invalid_route_target']);
 });
 
-test('aggregator routes dispatch source operations and map upstream failures', async () => {
-  const sync = await call('POST', `${PREFIX}/sources/sub_a/sync`);
-  assert.equal(sync.status, 502);
+test('aggregator routes start sync jobs asynchronously instead of waiting for every source', async () => {
+  // 单个与批量同步都只是「开始任务」：立刻 202，结果走 /sources/sync/watch。
+  const one = await call('POST', `${PREFIX}/sources/sub_a/sync`);
+  assert.deepEqual([one.status, one.payload.job.id, one.service.calls[0]], [202, 'job_one', ['startSourceSyncOne', 'sub_a']]);
   const all = await call('POST', `${PREFIX}/sources/sync`, { body: {} });
-  assert.deepEqual(all.service.calls[0], ['syncSources', []]);
+  assert.deepEqual([all.status, all.service.calls[0]], [202, ['startSourceSync', []]]);
+  const some = await call('POST', `${PREFIX}/sources/sync`, { body: { ids: ['sub_a', 7] } });
+  assert.deepEqual(some.service.calls[0], ['startSourceSync', ['sub_a', '7']]);
+  const missing = await call('POST', `${PREFIX}/sources/sub_x/sync`);
+  assert.equal(missing.status, 404);
+  const empty = await call('POST', `${PREFIX}/sources/sync`, {
+    body: {},
+    service: createService({ startSourceSync: () => ({ ok: false, error: 'subscription_source_required' }) })
+  });
+  assert.equal(empty.status, 409);
+});
+
+test('aggregator routes toggle a source on and off', async () => {
+  const off = await call('POST', `${PREFIX}/sources/sub_a/enabled`, { body: { enabled: false } });
+  assert.deepEqual([off.status, off.service.calls[0]], [200, ['setSourceEnabled', 'sub_a', false]]);
+  const on = await call('POST', `${PREFIX}/sources/sub_a/enabled`, { body: { enabled: true } });
+  assert.deepEqual(on.service.calls[0], ['setSourceEnabled', 'sub_a', true]);
+  // 只认显式的 true：缺省 / 字符串都按停用处理之外的「不启用」，避免误把停用的源打开。
+  const junk = await call('POST', `${PREFIX}/sources/sub_a/enabled`, { body: { enabled: 'yes' } });
+  assert.deepEqual(junk.service.calls[0], ['setSourceEnabled', 'sub_a', false]);
+  assert.equal((await call('POST', `${PREFIX}/sources/sub_x/enabled`, { body: { enabled: true } })).status, 404);
+});
+
+test('aggregator routes only scan and import local client configs for loopback callers', async () => {
+  const scanned = await call('GET', `${PREFIX}/local-sources`, { remoteAddress: '127.0.0.1' });
+  assert.deepEqual([scanned.status, scanned.payload.candidates.length], [200, 1]);
+  const remote = await call('GET', `${PREFIX}/local-sources`, { remoteAddress: '203.0.113.9' });
+  assert.deepEqual([remote.status, remote.payload.error], [403, 'local_scan_requires_local_request']);
+  const imported = await call('POST', `${PREFIX}/local-sources/import`, { remoteAddress: '::1', body: { ids: ['clash-verge:https://a'] } });
+  assert.deepEqual([imported.status, imported.service.calls[0]], [200, ['importLocalSources', ['clash-verge:https://a']]]);
+  const remoteImport = await call('POST', `${PREFIX}/local-sources/import`, { remoteAddress: '203.0.113.9', body: { ids: ['x'] } });
+  assert.equal(remoteImport.status, 403);
+  assert.deepEqual(remoteImport.service.calls, [], 'remote callers never reach the importer');
+});
+
+test('aggregator sync watch streams a snapshot then every job change', async () => {
+  const listeners = new Set();
+  const service = createService({
+    listSourceSyncJobs: () => ({ sources: {}, jobs: [{ id: 'job_old' }] }),
+    onSourceSyncChange: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }
+  });
+  const res = createStreamRes();
+  const req = { on() {}, socket: { remoteAddress: '127.0.0.1' }, url: `${PREFIX}/sources/sync/watch` };
+  const handled = await handleWebUiSubscriptionAggregatorRoutes(req, res, 'GET', `${PREFIX}/sources/sync/watch`, { subscriptionAggregatorService: service });
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.headers['Content-Type'], /text\/event-stream/);
+  assert.deepEqual(res.frames(), [{ type: 'snapshot', sources: {}, jobs: [{ id: 'job_old' }] }]);
+  for (const listener of listeners) listener({ type: 'job', job: { id: 'job_new', status: 'running' } });
+  assert.deepEqual(res.frames().at(-1), { type: 'job', job: { id: 'job_new', status: 'running' } });
+  // 第二个订阅者复用同一个服务监听，不会给服务挂两份。
+  await handleWebUiSubscriptionAggregatorRoutes(req, createStreamRes(), 'GET', `${PREFIX}/sources/sync/watch`, { subscriptionAggregatorService: service });
+  assert.equal(listeners.size, 1);
+  res.close();
+});
+
+test('aggregator routes dispatch source operations and map upstream failures', async () => {
   const removed = await call('DELETE', `${PREFIX}/sources/sub_a`);
   assert.deepEqual(removed.service.calls[0], ['deleteSource', 'sub_a']);
   // 保存订阅源的请求可以带本地订阅内容，读取上限比其它接口大。

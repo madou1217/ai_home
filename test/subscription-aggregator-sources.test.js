@@ -44,6 +44,17 @@ function setup(t, { fetch } = {}) {
   return { service, nodeStore, fetches, advance: (ms) => { now += ms; } };
 }
 
+/** 等某个异步同步任务结束（远程订阅保存后的拉取在后台进行）。 */
+async function waitForJob(service, jobId, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const job = service.syncRunner.getJob(jobId);
+    if (job && job.finishedAt) return job;
+    if (Date.now() > deadline) throw new Error(`sync job ${jobId} did not finish`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 test('local sources parse pasted content without fetching and re-sync only when it changes', async (t) => {
   const { service, nodeStore, fetches } = setup(t);
   const created = await service.saveSource({ name: '自建', kind: 'local', content: TROJAN });
@@ -84,8 +95,12 @@ test('remote sources fetch with the per-source User-Agent and re-sync when it ch
   const created = await service.saveSource({ name: '机场', url: 'https://a.example/sub' });
   const id = created.subscription.id;
   assert.equal(created.subscription.userAgent, null);
+  // 远程订阅保存后不阻塞：返回待完成的任务，拉取在后台进行。
+  assert.deepEqual(created.sync, { ok: true, pending: true });
+  await waitForJob(service, created.job.id);
   const withUa = await service.saveSource({ id, name: '机场', url: 'https://a.example/sub', userAgent: 'v2rayN/6.42' });
   assert.equal(withUa.sync.ok, true);
+  assert.equal((await waitForJob(service, withUa.job.id)).status, 'succeeded');
   assert.deepEqual(fetches, [['https://a.example/sub', undefined], ['https://a.example/sub', 'v2rayN/6.42']]);
   await assert.rejects(
     service.saveSource({ id, name: '机场', url: 'https://a.example/sub', userAgent: 'bad\r\nX-Injected: 1' }),

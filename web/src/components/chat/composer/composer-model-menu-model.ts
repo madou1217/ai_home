@@ -52,8 +52,12 @@ const BUCKET_LABELS: Readonly<Record<'free' | 'zen' | 'go' | 'other', string>> =
 const BUCKET_ORDER: readonly ('free' | 'zen' | 'go' | 'other')[] = ['free', 'zen', 'go', 'other'];
 
 /**
- * 目录里是否含 OpenCode 命名空间模型：只有这种目录才显示免费/Zen/Go 芯片与分组，
- * 其他 Provider（claude / codex / …）保持单一「全部模型」分组，不引入空分组。
+ * 目录里是否含 OpenCode 命名空间模型。
+ *
+ * **不要用它决定分组**：aih-server 是全量网关目录，必然含 opencode 模型，按内容判断
+ * 会给跨 provider 目标套上 OpenCode 专属分组（2026-10-21 真机反馈）。分组该由调用方
+ * 按**选中的目标**声明（见 ComposerModelMenu 的 openCodeCatalog prop）。保留此函数只
+ * 用于「这个目录里有没有 opencode 模型」这类事实判断。
  */
 export function isOpenCodeModelCatalog(models: readonly ComposerModelEntry[]): boolean {
   return models.some((model) => {
@@ -76,16 +80,18 @@ export function filterComposerModels(
 }
 
 /**
- * 分组标题渲染用：非 OpenCode 目录只返回一个「全部模型」组（保持服务端顺序）；
- * OpenCode 目录按 免费 → Zen → Go → 其他 分组，组内保持服务端顺序（不重排，
- * 免得和模型页的顺序打架）。
+ * 分组标题渲染用。
+ *
+ * @param filters.openCodeCatalog **必需**：当前目标是不是 OpenCode 目录。true 时按
+ *   免费 → Zen → Go → 其他分组并显示芯片；false 时只返回一个「全部模型」组。
+ *   刻意不做成可选，避免调用方漏传后又被目录内容兜底回错误行为。
  */
 export function buildComposerModelGroups(
   models: readonly ComposerModelEntry[],
-  filters: { readonly query: string; readonly chip: ComposerModelChip },
+  filters: { readonly query: string; readonly chip: ComposerModelChip; readonly openCodeCatalog: boolean },
 ): readonly ComposerModelGroup[] {
   const filtered = filterComposerModels(models, filters);
-  if (!isOpenCodeModelCatalog(models)) {
+  if (!filters.openCodeCatalog) {
     return filtered.length > 0 ? [{ id: 'all', label: '全部模型', models: filtered }] : [];
   }
   const buckets = new Map<string, ComposerModelEntry[]>();

@@ -256,7 +256,9 @@ interface EventPayloadByType {
   'run.lost': RunLostPayload;
   'runtime.prewarm.started': RuntimeProjectionPayload;
   'runtime.prewarm.ready': RuntimeProjectionPayload;
-  'runtime.prewarm.failed': { error: string };
+  // `error` 是机器码（供重试判定与排障），`message` 是给用户看的一句话
+  // （内部 harness 码必须经服务端翻译，见 lib/server/chat-runtime/runtime-failure-copy.js）。
+  'runtime.prewarm.failed': { error: string; message?: string };
   'stream.error': { error: string; message: string; retryable?: boolean };
 }
 

@@ -22,6 +22,24 @@ interface Props {
   readonly onSelectImages: () => void;
 }
 
+/**
+ * 当前目标是不是 OpenCode 目录 —— 决定模型菜单是否显示 免费/Zen/Go 分组与芯片。
+ *
+ * 必须按**选中的目标**判断，不能按模型列表内容：aih-server 目标拿到的是全量网关目录，
+ * 里面必然含 opencode 模型，按内容判断会给它套上 OpenCode 专属分组，看起来像
+ * 「选了 aih-server 却全是 opencode 模型」（2026-10-21 真机反馈）。
+ *
+ * aih-server 是跨 provider 目标，一律用单一「全部模型」分组。
+ */
+function resolveOpenCodeCatalogTarget(
+  accounts: ComposerProps['accounts'],
+  accountRef: string,
+): boolean {
+  const selected = accounts.find((account) => chatAccountIdentity(account) === accountRef);
+  if (!selected || isAihServerAccount(selected)) return false;
+  return selected.provider === 'opencode';
+}
+
 export default function ComposerToolbar({ props, controller, onSelectImages }: Props) {
   return (
     <div className={styles.composerToolbar}>
@@ -72,6 +90,7 @@ export default function ComposerToolbar({ props, controller, onSelectImages }: P
         /> : null}
         <ComposerModelMenu
           grouped={props.workspaceMode === 'chat'}
+          openCodeCatalog={resolveOpenCodeCatalogTarget(props.accounts, props.accountRef)}
           models={props.catalog.models}
           model={controller.model}
           effort={controller.reasoningEffort}

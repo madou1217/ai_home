@@ -6,7 +6,6 @@ import BrainIcon from './BrainIcon';
 import {
   buildComposerModelGroups,
   COMPOSER_MODEL_CHIPS,
-  isOpenCodeModelCatalog,
   type ComposerModelChip,
 } from './composer-model-menu-model';
 import styles from './composer-controls.module.css';
@@ -19,6 +18,13 @@ interface Props {
   readonly error?: string;
   readonly disabled?: boolean;
   readonly grouped?: boolean;
+  /**
+   * 当前目标是不是 OpenCode 目录（决定是否显示 免费/Zen/Go 芯片与分组）。
+   * 由调用方按**选中的目标**判定，不能从模型列表内容反推 —— aih-server 是全量网关
+   * 目录，必然含 opencode 命名空间模型，按内容判断会给跨 provider 目录套上 OpenCode
+   * 专属分组（2026-10-21 真机反馈）。
+   */
+  readonly openCodeCatalog?: boolean;
   readonly onModelChange: (model: string) => void;
   readonly onEffortChange: (effort: string) => void;
   readonly onRetry?: () => void;
@@ -32,13 +38,14 @@ interface Props {
 export default function ComposerModelMenu(props: Props) {
   const current = props.models.find((model) => model.id === props.model);
   const efforts = current?.supportedEfforts || [];
-  const opencodeCatalog = useMemo(() => isOpenCodeModelCatalog(props.models), [props.models]);
+  // 分组开关来自**选中目标**（调用方判定），不来自目录内容：见 Props.openCodeCatalog。
+  const opencodeCatalog = props.openCodeCatalog === true;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [chip, setChip] = useState<ComposerModelChip>('all');
   const groups = useMemo(
-    () => buildComposerModelGroups(props.models, { query, chip }),
-    [props.models, query, chip],
+    () => buildComposerModelGroups(props.models, { query, chip, openCodeCatalog: opencodeCatalog }),
+    [props.models, query, chip, opencodeCatalog],
   );
   const matchedCount = groups.reduce((total, group) => total + group.models.length, 0);
   const firstMatch = groups[0]?.models[0];

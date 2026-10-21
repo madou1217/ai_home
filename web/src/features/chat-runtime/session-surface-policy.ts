@@ -1,4 +1,4 @@
-import type { ChatAccount, Session } from '@/types';
+import type { ChatAccount, Provider, Session } from '@/types';
 import { chatRuntimeProviders } from './runtime-provider-registry';
 import {
   chatAccountIdentity,
@@ -79,7 +79,7 @@ export function runtimeAccountsForSession(
   accounts: readonly ChatAccount[],
 ): readonly ChatAccount[] {
   if (session.mode === 'chat') {
-    return withGatewayAccounts(accounts);
+    return withGatewayAccounts(accounts, session.provider);
   }
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return [];
@@ -87,27 +87,36 @@ export function runtimeAccountsForSession(
 }
 
 /**
- * 在真实账号后追加「aih-server(全部账号+别名)」目标：每个**有账号且能由网关服务**的
- * provider 一条。它代表"由网关在该 provider 池内挑号 + 别名回落"，所以与具体账号并列
- * 出现在账号菜单里（与 legacy 引擎的呈现一致）。
+ * 在真实账号后追加「aih-server(全部账号+别名)」目标 —— **每个会话只一条**。
+ *
+ * 它代表「不钉账号，由网关挑号」；选中后模型列表就是整个 server 的目录（服务端对网关
+ * 作用域返回全局池，见 chat-harness-model-reader）。
+ *
+ * 为什么只给**会话自己的 provider** 一条（2026-10-21 真机反馈「账号里 aih-server 出现了
+ * 15 次」）：服务端 `resolveSessionRuntimeTarget` 有 provider_mismatch 守卫 —— 账号
+ * provider 必须等于会话 provider。所以其它 provider 的网关条目在会话内**根本选不了**，
+ * 列出来既是视觉噪音，也让人误以为能跨 provider 换（实际会 blocked）。同理，网关作用域
+ * 的 harness 也按 `gateway-<provider>` 分目录，多列无用。
  *
  * 判定两个来源并集（都来自服务端结论，前端不维护 provider 清单）：
  * - 生成合同的 `gateway_profile` 能力（CLI 可被指向网关的那批）；
  * - 账号 payload 的 `gatewayTargetSupported`（描述符 relay 能力：transport=http 且
  *   不依赖本机客户端）。后者让 agy 这类「CLI 不能指向网关、但网关能直接服务」的
  *   provider 也拿到 aih-server 目标 —— chat 模式因此不需要启 CLI。
+ *
+ * @param provider 会话自己的 provider；缺省时不追加任何网关目标（没有可绑的池）。
  */
-export function withGatewayAccounts(accounts: readonly ChatAccount[]): readonly ChatAccount[] {
-  const gatewayCapable = new Set(accounts
-    .filter((account) => account.gatewayTargetSupported === true)
-    .map((account) => account.provider));
-  const providers = [...new Set(accounts
-    .map((account) => account.provider)
-    .filter((provider) => supportsAihServer(provider) || gatewayCapable.has(provider)))];
-  return [
-    ...accounts,
-    ...providers.map((provider) => makeAihServerAccount(provider)),
-  ];
+export function withGatewayAccounts(
+  accounts: readonly ChatAccount[],
+  provider?: Provider | null,
+): readonly ChatAccount[] {
+  const target = String(provider || '').trim();
+  if (!target) return accounts;
+  const gatewayCapable = accounts.some(
+    (account) => account.provider === target && account.gatewayTargetSupported === true,
+  );
+  if (!gatewayCapable && !supportsAihServer(target)) return accounts;
+  return [...accounts, makeAihServerAccount(target as Provider)];
 }
 
 /**

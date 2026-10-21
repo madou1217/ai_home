@@ -127,10 +127,11 @@ test('every Chat account uses Harness and never inherits the Work directory or n
 test('saved Chat keeps providers visible while rejecting a different account on its bound runtime', () => {
   const chat: Session = { ...savedSession, mode: 'chat', accountRef: account.accountRef };
   const kimi = { ...account, provider: 'kimi' as const, accountRef: 'kimi-account' };
-  // 真实账号原样在前，之后追加 gateway 目标（codex/kimi 都声明了 gateway_profile 能力）。
+  // 真实账号原样在前；网关目标只追加**会话自己的 provider**（codex）一条 —— kimi 那条
+  // 在本会话选不了（见下面的 blocked 断言），列出来只会误导。
   const visible = runtimeAccountsForSession(chat, [account, kimi]);
   assert.deepEqual(visible.slice(0, 2), [account, kimi]);
-  assert.deepEqual(visible.slice(2).map((entry) => chatAccountIdentity(entry)), ['gateway:codex', 'gateway:kimi']);
+  assert.deepEqual(visible.slice(2).map((entry) => chatAccountIdentity(entry)), ['gateway:codex']);
   assert.equal(resolveSessionRuntimeTarget({ session: chat, account: kimi, approvalMode: 'confirm' }).status, 'blocked');
   const fresh = { ...chat, id: 'draft-new', accountRef: undefined, draft: true, provider: kimi.provider };
   const result = resolveSessionRuntimeTarget({ session: fresh, account: kimi, approvalMode: 'confirm' });
@@ -141,22 +142,33 @@ test('saved Chat keeps providers visible while rejecting a different account on 
   }
 });
 
-test('chat account list gains one aih-server target per gateway-capable provider', () => {
+test('chat account list gains exactly one aih-server target, bound to the session provider', () => {
   const accounts = [
     account,
     { ...account, provider: 'opencode' as const, accountRef: 'account-2' },
     { ...account, provider: 'grok' as const, accountRef: 'account-3' },
   ];
-  const list = withGatewayAccounts(accounts);
-  // 真实账号保持在前，顺序不变。
+  // 会话 provider = codex → 只追加 codex 那条网关目标。
+  // 2026-10-21 真机反馈：此前按「每个有账号且能由网关服务的 provider 各一条」生成，
+  // 本机 15 个 provider 就是 15 条同名 aih-server；而服务端 resolveSessionRuntimeTarget
+  // 有 provider_mismatch 守卫，其它 provider 的条目在会话内根本选不了。
+  const list = withGatewayAccounts(accounts, 'codex');
   assert.deepEqual(list.slice(0, accounts.length).map((entry) => entry.provider), ['codex', 'opencode', 'grok']);
   const gateways = list.slice(accounts.length);
-  // 只有声明 gatewayProfile 能力的 provider 才有 aih-server 目标（grok 没有）。
-  assert.deepEqual(gateways.map((entry) => entry.provider), ['codex', 'opencode']);
-  assert.deepEqual(gateways.map((entry) => chatAccountIdentity(entry)), ['gateway:codex', 'gateway:opencode']);
-  assert.deepEqual(gateways.map((entry) => entry.displayName), [
-    'aih-server(全部账号+别名)', 'aih-server(全部账号+别名)',
-  ]);
+  assert.equal(gateways.length, 1, '每个会话只一条 aih-server');
+  assert.equal(gateways[0].provider, 'codex');
+  assert.equal(chatAccountIdentity(gateways[0]), 'gateway:codex');
+  assert.equal(gateways[0].displayName, 'aih-server(全部账号+别名)');
+});
+
+test('aih-server target follows the session provider and is skipped when unavailable', () => {
+  const accounts = [{ ...account, provider: 'opencode' as const, accountRef: 'account-2' }];
+  assert.deepEqual(withGatewayAccounts(accounts, 'opencode').map(chatAccountIdentity),
+    ['account-2', 'gateway:opencode']);
+  // 没有可绑的池（该 provider 无账号且不声明 gateway_profile）→ 不追加空目标。
+  assert.deepEqual(withGatewayAccounts(accounts, 'grok').map(chatAccountIdentity), ['account-2']);
+  // 缺 provider 时不追加（没有可绑的池，凭空的网关目标会指向不存在的池）。
+  assert.deepEqual(withGatewayAccounts(accounts).map(chatAccountIdentity), ['account-2']);
 });
 
 test('chat account change decides between ignore, retarget and a new session', () => {

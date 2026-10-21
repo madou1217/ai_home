@@ -62,18 +62,40 @@ test('prewarm lifecycle persists a sanitized failure and rethrows the provider e
   assert.deepEqual(order, [
     'runtime.prewarm.started', 'provider', 'runtime.prewarm.failed'
   ]);
-  assert.deepEqual(store.events.at(-1).payload, {
-    error: 'codex_app_server_disconnected'
-  });
+  // 码保持机器可读（供重试判定与排障），另给一条用户文案 —— 内部 harness 码
+  // 不能当正文透给用户（见 runtime-failure-copy）。
+  assert.equal(store.events.at(-1).payload.error, 'codex_app_server_disconnected');
+  assert.match(store.events.at(-1).payload.message, /会话运行时/);
   assert.doesNotMatch(JSON.stringify(store.events), /must-not-leak/);
 });
 
-function createStore(order) {
+// 2026-10-21 真机反馈：workbuddy 会话的「运行错误」显示成 codex_app_server_rpc_error。
+// 根因是 chat 模式的 harness 就是 Codex app-server，任何 provider 的启动失败都带
+// codex_* 前缀，而该码被原样当正文透出 —— 归属错乱且用户无法行动。
+// 文案必须讲清楚「运行时与账号无关」，并带上真实会话 provider。
+test('prewarm failure copy names the session provider, not the internal harness', async () => {
+  const order = [];
+  const store = createStore(order, { provider: 'workbuddy' });
+  const handler = createRuntimePrewarmHandler(async () => {
+    throw Object.assign(new Error('rpc blew up'), { code: 'codex_app_server_rpc_error' });
+  });
+
+  await assert.rejects(handler({ sessionId: 'session-1', store }));
+
+  const payload = store.events.at(-1).payload;
+  assert.equal(payload.error, 'codex_app_server_rpc_error');
+  assert.doesNotMatch(payload.message, /codex_app_server_rpc_error/);
+  assert.match(payload.message, /workbuddy/);
+  assert.match(payload.message, /与账号无关/);
+});
+
+function createStore(order, overrides = {}) {
   const session = {
     sessionId: 'session-1',
     provider: 'codex',
     runtimeBinding: { runtimeId: 'codex:account-1', runtimeGeneration: 4 },
-    capabilitySnapshot: { revision: 'capability-4' }
+    capabilitySnapshot: { revision: 'capability-4' },
+    ...overrides
   };
   return {
     events: [],

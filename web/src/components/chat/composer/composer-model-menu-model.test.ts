@@ -24,7 +24,7 @@ test('composer model buckets are mutually exclusive with free taking precedence'
 });
 
 test('opencode catalogs get free/zen/go sections in a fixed order without duplicates', () => {
-  const groups = buildComposerModelGroups(OPENCODE_MODELS, { query: '', chip: 'all' });
+  const groups = buildComposerModelGroups(OPENCODE_MODELS, { query: '', chip: 'all', openCodeCatalog: true });
   assert.deepEqual(groups.map((group) => [group.id, group.label]), [
     ['free', '免费模型'],
     ['zen', 'OpenCode Zen'],
@@ -44,13 +44,13 @@ test('non-opencode catalogs keep a single section and keep server order', () => 
     { id: 'claude-opus-4-6', label: 'claude-opus-4-6' },
   ];
   assert.equal(isOpenCodeModelCatalog(models), false);
-  const groups = buildComposerModelGroups(models, { query: '', chip: 'all' });
+  const groups = buildComposerModelGroups(models, { query: '', chip: 'all', openCodeCatalog: false });
   assert.deepEqual(groups.map((group) => group.id), ['all']);
   assert.deepEqual(groups[0].models.map((model) => model.id), ['gpt-5.5', 'claude-opus-4-6']);
 });
 
 test('search matches id or label case-insensitively and keeps the group shape', () => {
-  const groups = buildComposerModelGroups(OPENCODE_MODELS, { query: 'DEEPSEEK', chip: 'all' });
+  const groups = buildComposerModelGroups(OPENCODE_MODELS, { query: 'DEEPSEEK', chip: 'all', openCodeCatalog: true });
   assert.deepEqual(groups.flatMap((group) => group.models.map((model) => model.id)), [
     'opencode/deepseek-v4.1-flash-free',
     'opencode-go/deepseek-v4-pro',
@@ -60,7 +60,7 @@ test('search matches id or label case-insensitively and keeps the group shape', 
     ['free', 'go'],
     '只剩命中的分组，空分组不渲染',
   );
-  assert.deepEqual(buildComposerModelGroups(OPENCODE_MODELS, { query: 'nothing-matches', chip: 'all' }), []);
+  assert.deepEqual(buildComposerModelGroups(OPENCODE_MODELS, { query: 'nothing-matches', chip: 'all', openCodeCatalog: true }), []);
 });
 
 test('free chip uses the shared model-page predicate (overlapping with zen/go)', () => {
@@ -78,4 +78,22 @@ test('free chip uses the shared model-page predicate (overlapping with zen/go)',
   ]);
   const go = filterComposerModels(OPENCODE_MODELS, { query: '', chip: 'go' });
   assert.deepEqual(go.map((model) => model.id), ['opencode-go/cat-jam-free', 'opencode-go/deepseek-v4-pro']);
+});
+
+// 2026-10-21 真机反馈：选中 aih-server 目标时，模型列表被套上了 OpenCode 专属分组
+// （免费/Zen/Go 芯片 + 「其他模型」分组），看起来像「选了 aih-server 却全是 opencode
+// 模型」。根因是分组开关从**目录内容**反推 —— aih-server 拿到的是全量网关目录，
+// 必然含 opencode 命名空间模型。分组必须由调用方按**选中目标**声明。
+test('跨 provider 的全量目录不因含 opencode 模型而被套上 OpenCode 分组', () => {
+  const gatewayModels = [
+    ...OPENCODE_MODELS,
+    { id: 'gpt-5.5', label: 'gpt-5.5' },
+    { id: 'claude-opus-5-5', label: 'claude-opus-5-5' },
+  ];
+  // 目录内容确实含 opencode 模型（这是事实判断，仍为 true）。
+  assert.equal(isOpenCodeModelCatalog(gatewayModels), true);
+  // 但目标不是 opencode → 单一「全部模型」分组，与目录内容无关。
+  const groups = buildComposerModelGroups(gatewayModels, { query: '', chip: 'all', openCodeCatalog: false });
+  assert.deepEqual(groups.map((group) => group.id), ['all']);
+  assert.deepEqual(groups[0].models.map((model) => model.id), gatewayModels.map((model) => model.id));
 });

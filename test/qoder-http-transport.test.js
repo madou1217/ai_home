@@ -5,6 +5,11 @@ const assert = require('node:assert/strict');
 const { PassThrough } = require('node:stream');
 
 const {
+  normalizeCatalogEntry,
+  __private: { buildCatalogIndex }
+} = require('../lib/account/qoder-model-catalog');
+
+const {
   QODER_HTTP_TRANSPORT_ID,
   supportsQoderHttpTransport,
   buildQoderHttpRequestBody,
@@ -19,6 +24,35 @@ const {
     resolveQoderClientVersion
   }
 } = require('../lib/server/qoder-http-transport');
+
+// 测试目录夹具：字段与真实 `catalog-v7` 一致（服务端下发、客户端缓存）。
+// 重点覆盖「同一展示名在不同站点取值不同」与「名字里没有 thinking 但仍是 reasoning」。
+function makeCatalog(entries) {
+  const models = entries.map(normalizeCatalogEntry).filter(Boolean);
+  const { byKey, byDisplayName } = buildCatalogIndex(models);
+  return { ok: true, source: 'catalog-v7', scene: 'assistant', models, byKey, byDisplayName };
+}
+
+const TEST_CATALOG = makeCatalog([
+  { key: 'auto', display_name: 'Auto', is_vl: true, is_reasoning: false, max_input_tokens: 200000, is_default: true },
+  {
+    key: 'qmodel_38max',
+    display_name: 'Qwen3.8-Max',
+    is_vl: true,
+    is_reasoning: true,
+    max_input_tokens: 180000,
+    thinking_config: { enabled: { is_default: true, efforts: { medium: { is_default: true }, high: {} } } }
+  },
+  {
+    key: 'qfmodel',
+    display_name: 'Qwen3.8-Flash',
+    is_vl: true,
+    is_reasoning: true,
+    max_input_tokens: 180000,
+    thinking_config: { enabled: { is_default: true, efforts: { medium: { is_default: true } } }, disabled: {} }
+  },
+  { key: 'kmodel_latest', display_name: 'Kimi-K3', is_vl: true, is_reasoning: false, max_input_tokens: 180000 }
+]);
 
 function envelope(body, statusCodeValue = 200) {
   return JSON.stringify({
@@ -122,34 +156,78 @@ test('buildQoderHttpRequestBody flattens multi-turn tool history into one transc
       { role: 'tool', tool_call_id: 'call-1', name: 'read_file', content: 'file-body' },
       { role: 'user', content: 'summarize it' }
     ]
-  }, { provider: 'qodercn', version: '1.1.72' });
+  }, { provider: 'qodercn', version: '1.1.72', catalog: TEST_CATALOG });
 
   const prompt = result.body.messages[1].content;
   assert.match(prompt, /User:\nread the file/);
   assert.match(prompt, /Assistant:\n\[调用工具 read_file\]\n\{"path":"\/tmp\/a"\}/);
   assert.match(prompt, /Tool:\nfile-body/);
   assert.match(prompt, /User:\nsummarize it/);
-  assert.equal(result.body.model_config.key, 'Qwen3.8-Max');
-  assert.equal(result.body.model_config.is_reasoning, false);
+  // 目录 key 是 `qmodel_38max`；`is_reasoning` 来自目录（名字里没有 thinking）。
+  assert.equal(result.body.model_config.key, 'qmodel_38max');
+  assert.equal(result.body.model_config.display_name, 'Qwen3.8-Max');
+  assert.equal(result.body.model_config.is_reasoning, true);
+  assert.equal(result.body.model_config.max_input_tokens, 180000);
+  assert.equal(result.body.business.model_key, 'qmodel_38max');
 });
 
-test('buildQoderHttpRequestBody resolves aliases and reasoning model variants', () => {
+test('buildQoderHttpRequestBody resolves aliases and derives reasoning from the catalog', () => {
   const alias = buildQoderHttpRequestBody({
     model: 'qoder/Qwen3.8-Max',
     messages: [{ role: 'user', content: 'hi' }]
   }, {
     provider: 'qoder',
     version: '1.1.73',
+    catalog: TEST_CATALOG,
     requestMeta: { aliasResolution: { effectiveModel: 'qoder/auto' } }
   });
   assert.equal(alias.body.model_config.key, 'auto');
 
   const reasoning = buildQoderHttpRequestBody({
-    model: 'qoder/Qwen3.8-Thinking',
+    model: 'qoder/Qwen3.8-Flash',
     messages: [{ role: 'user', content: 'hi' }]
-  }, { provider: 'qoder', version: '1.1.73' });
-  assert.equal(reasoning.body.model_config.key, 'Qwen3.8-Thinking');
+  }, { provider: 'qoder', version: '1.1.73', catalog: TEST_CATALOG });
+  assert.equal(reasoning.body.model_config.key, 'qfmodel');
   assert.equal(reasoning.body.model_config.is_reasoning, true);
+
+  // 请求级只允许 true → false：effort=none 必须把 is_reasoning 降级，
+  // 同时用 enable_thinking=false 表达（不猜默认 effort）。
+  const degraded = buildQoderHttpRequestBody({
+    model: 'Qwen3.8-Flash',
+    reasoning_effort: 'none',
+    messages: [{ role: 'user', content: 'hi' }]
+  }, { provider: 'qoder', version: '1.1.73', catalog: TEST_CATALOG });
+  assert.equal(degraded.body.model_config.is_reasoning, false);
+  assert.equal(degraded.body.parameters.enable_thinking, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(degraded.body.parameters, 'reasoning_effort'), false);
+
+  // 目录说不是 reasoning 的模型保持 false，绝不被名字/请求字段反向置 true。
+  const nonReasoning = buildQoderHttpRequestBody({
+    model: 'Kimi-K3',
+    reasoning_effort: 'high',
+    messages: [{ role: 'user', content: 'hi' }]
+  }, { provider: 'qoder', version: '1.1.73', catalog: TEST_CATALOG });
+  assert.equal(nonReasoning.body.model_config.key, 'kmodel_latest');
+  assert.equal(nonReasoning.body.model_config.is_reasoning, false);
+  assert.equal(nonReasoning.body.parameters.reasoning_effort, 'high');
+});
+
+test('buildQoderHttpRequestBody fails closed when the catalog is missing or the model is unknown', () => {
+  // 目录缺失：只有 Auto 可以继续（Auto 不依赖目录），其余一律交还 CLI。
+  assert.throws(
+    () => buildQoderHttpRequestBody({
+      model: 'Qwen3.8-Flash',
+      messages: [{ role: 'user', content: 'hi' }]
+    }, { provider: 'qoder', version: '1.1.73' }),
+    (error) => error.code === 'qoder_http_model_catalog_missing'
+  );
+  assert.throws(
+    () => buildQoderHttpRequestBody({
+      model: 'not-a-real-model',
+      messages: [{ role: 'user', content: 'hi' }]
+    }, { provider: 'qoder', version: '1.1.73', catalog: TEST_CATALOG }),
+    (error) => error.code === 'qoder_http_model_catalog_missing'
+  );
 });
 
 test('buildQoderHttpRequestBody rejects requests without a conversational message', () => {
@@ -277,7 +355,8 @@ test('fetchQoderHttpChatCompletionStream signs, sends zstd body and forwards inn
       id: 'chatcmpl-stream-1',
       object: 'chat.completion.chunk',
       created: 100,
-      model: 'auto',
+      // 上游按目录 key 回 model；展示层再对齐成请求的模型名。
+      model: 'qfmodel',
       choices: [{ index: 0, delta: { role: 'assistant', content: '你' }, finish_reason: null }]
     }),
     envelope({
@@ -332,6 +411,7 @@ test('fetchQoderHttpChatCompletionStream signs, sends zstd body and forwards inn
           body: input.bodyJson
         };
       },
+      readQoderModelCatalog: () => TEST_CATALOG,
       fetchQoderHttp: fakeFetch,
       compressQoderBody: (body) => Buffer.from(body, 'utf8'),
       qoderHttpDispatcher: dispatcher
@@ -365,8 +445,49 @@ test('fetchQoderHttpChatCompletionStream signs, sends zstd body and forwards inn
   assert.equal(sentBody.messages[1].content, 'hi');
   assert.equal(sentBody.tools[0].function.name, 'read');
   assert.equal(signed.length, 1);
-  assert.equal(signed[0].modelKey, 'Qwen3.8-Flash');
+  // WASM 签名用的 modelKey 必须是**目录 key**（qfmodel），不是展示名。
+  assert.equal(signed[0].modelKey, 'qfmodel');
   assert.equal(signed[0].machineToken, '');
+});
+
+test('fetchQoderHttpChatCompletionStream fails closed when upstream substitutes the model', async () => {
+  // 请求具体模型、上游却回 auto —— 这是真实的模型替换，不能被改写成请求模型。
+  const streamText = sseText([
+    envelope({
+      id: 'chatcmpl-substituted',
+      object: 'chat.completion.chunk',
+      model: 'auto',
+      choices: [{ index: 0, delta: { role: 'assistant', content: '替身回答' }, finish_reason: null }]
+    }),
+    envelope('[DONE]')
+  ]);
+  await assert.rejects(
+    () => fetchQoderHttpChatCompletionStream(
+      { aiHomeDir: '/tmp/aih-home', hostHomeDir: '/tmp/aih-host' },
+      { provider: 'qoder', accountRef: 'acct_test' },
+      { model: 'Qwen3.8-Flash', messages: [{ role: 'user', content: 'hi' }] },
+      120000,
+      {
+        resolveQoderHttpInvocation: () => ({
+          runtimeDir: '/tmp/aih-host/.ai_home/run/auth-projections/qoder/acct_test',
+          cliPath: '/tmp/x/qodercli-1.1.73',
+          cwd: '/tmp/aih-host'
+        }),
+        readQoderModelCatalog: () => TEST_CATALOG,
+        signQoderRequest: (input) => ({
+          url: 'https://example.test/algo/api/v2/service/pro/sse/agent_chat_generation?Encode=1',
+          headers: { 'Content-Type': 'application/json' },
+          body: input.bodyJson
+        }),
+        fetchQoderHttp: async () => new Response(streamText, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream;charset=UTF-8' }
+        }),
+        compressQoderBody: (body) => Buffer.from(body, 'utf8')
+      }
+    ),
+    (error) => error.code === 'qoder_http_model_substituted'
+  );
 });
 
 test('fetchQoderHttpChatCompletion aggregates the streamed chunks into a chat.completion payload', async () => {
@@ -527,4 +648,33 @@ test('fetchQoderHttpChatCompletionStream retries directly when an env proxy is u
     if (oldNoProxy === undefined) delete process.env.NO_PROXY;
     else process.env.NO_PROXY = oldNoProxy;
   }
+});
+
+// 2026-10-21 真机报文：qoder 全球站 Free 账号被服务端资源限流时，外层 envelope
+// 的 statusCodeValue 是 403，body 里套了三层 JSON 才到 isQueued/retryAfterSeconds。
+test('parseQoderSseEnvelope extracts the resource-limit retry hint from the real 403 payload', () => {
+  const inner = JSON.stringify({
+    isQueued: true,
+    modelKey: 'qfmodel',
+    queueCount: 0,
+    queueType: 'p3',
+    retryAfterSeconds: 30,
+    serviceAvailable: false,
+    subCode: 'RESOURCE_LIMIT',
+    waitTime: 30
+  });
+  const data = JSON.stringify({
+    statusCodeValue: 403,
+    body: JSON.stringify({
+      code: '403',
+      message: JSON.stringify({ code: '10605', message: inner, subCode: 'RESOURCE_LIMIT' })
+    })
+  });
+  const parsed = parseQoderSseEnvelope(data);
+  assert.equal(parsed.kind, 'error');
+  assert.equal(parsed.error.code, 'qoder_http_upstream_error');
+  assert.equal(parsed.error.statusCode, 403);
+  assert.equal(parsed.error.qoderHttpQueue.retryAfterSeconds, 30);
+  assert.equal(parsed.error.qoderHttpQueue.queueType, 'p3');
+  assert.equal(parsed.error.retryAfterSeconds, 30);
 });

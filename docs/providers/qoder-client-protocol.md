@@ -189,6 +189,70 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 不是真实 body 需要 flow。** 用真实 body（无 flow）签名后，上游返回正常 SSE。
 最小合法 body（1,193 bytes 明文）也返回 200 与正文，证明 `flow` 不是必需字段。
 
+> `model_config.api_key` 不是“缺失的字段”。客户端 `wkt()` 构造 `model_config` 时
+> 把它写死为 `""`（只有 BYOK custom model 的 `parameters.api_key` 才有值）；
+> CLI 日志里的 `"api_key":"[redacted]"` 是**日志脱敏器**把凭据键名统一替换成占位符
+> （`sanitizeModelRequestContext`），不代表真实值非空。我们的 body 与该构造逐字段一致。
+>
+> 注意：上面 `max_input_tokens:200000` 是 **`auto` 条目**在目录里的真实值；
+> 非 auto 模型的值来自服务端目录（例如 `qfmodel` 是 `180000`，见 4.6），
+> 不再有写死的 200000。
+
+### 4.6 模型目录、模型发现与模型替换检测（2026-10-21 真机）
+
+**目录是唯一事实源，模型名不是。** 服务端目录（客户端缓存文件名 `catalog-v7`）
+由客户端在登录/启动时拉取并用 `model_cache_decrypt(text, uid)` 解密：
+
+| 事实 | 位置 |
+| --- | --- |
+| 目录指针 | `<runtimeDir>/.models/default` → `{ uid, scene }` |
+| 目录内容 | `<runtimeDir>/.models/<uid>/catalog-v7`（宿主 `~/.qoder/.models` 兜底） |
+| scene | `assistant`（推理用）／`chat`（另一组条目，不能混用） |
+| 读取实现 | `lib/account/qoder-model-catalog.js` |
+| 布局常量 | `lib/runtime/qoder-client-layouts.js` 的 `QODER_MODEL_CATALOG` |
+
+条目字段（实测 global 16 条 / CN 12 条 `assistant`）：`key`（签名用的真实模型键）、
+`display_name`、`format`、`is_vl`、`is_reasoning`、`max_input_tokens`、
+`thinking_config`、`is_default`。派生规则（与客户端 `Dvt()` 一致）：
+
+- `model_config.key` = 目录 `key`（`Qwen3.8-Flash → qfmodel`）；
+- `is_reasoning` / `is_vl` / `max_input_tokens` / `format` / `source` 全部取目录值；
+- 请求级只允许 **true → false** 的降级（`reasoning_effort=none`、
+  `enable_thinking=false`、`thinkingBudget=0`）；显式 effort 原样透传，
+  不按模型名/目录猜默认 effort；
+- 目录缺失且请求的不是 `auto` 时 `qoder_http_model_catalog_missing`
+  **fail-closed 交还 CLI**；`auto` 不依赖目录，可继续直连。
+
+实测目录值（Free 账号）：
+
+| 站点 | key | display | is_reasoning | max_input_tokens |
+| --- | --- | --- | --- | --- |
+| qoder | `qfmodel` | Qwen3.8-Flash | true | 180000 |
+| qoder | `kmodel_latest` | Kimi-K3 | false | 180000 |
+| qoder | `dfmodel` | DeepSeek-Flash | true | 1000000 |
+| qoder | `auto` | Auto | false | 200000 |
+| qodercn | `auto` | Auto | **true** | 200000 |
+| qodercn | `qfmodel` | Qwen3.8-Flash | true | 180000 |
+
+**模型发现改为 HTTP 优先**（不再声明 `clientFreeReason`）：
+`GET <endpoint>/algo/api/v2/model/list?Encode=1`，经 WASM
+`prepareRequest(endpoint, path, 'GET', 'auth')` 生成签名头；真实响应是**明文 JSON**
+（`content-type: application/json`，约 66KB 全量目录），
+`decrypt_server_response` 只在响应确实被编码时才兜底（对明文会报
+`Corrupt input at byte 3`）。本地 CLI `--list-models` 保留为兜底策略。
+
+**模型替换检测**：流式分片的 `model` 必须命中 `{请求名, 目录 key, 目录展示名}`；
+请求具体模型却收到 `auto` 等其它模型时抛 `qoder_http_model_substituted`
+（首字节前 → 回落 CLI；首字节后 → 破坏流，绝不伪装成功）。请求 `auto` 时接受
+上游任意模型。旧实现无条件把 `chunk.model` 改写成请求模型，会掩盖真实替换，已移除。
+
+**服务端资源限流不是凭据失效**：qoder 全球站 Free 账号实测
+`HTTP 403 {"code":"10605", "subCode":"RESOURCE_LIMIT", "isQueued":true,
+"retryAfterSeconds":30, "waitTime":30}`。分类为 `overloaded`
+（`failureReason=qoder_resource_limit`、`shouldMarkFailure=false`、
+`scope=none`、客户端 429 + `retryHintMs=30000`），不记账号失败、不锁号，
+由 HTTP 策略回落 CLI。普通 403 仍按凭据失效处理。
+
 ### 4.4 HTTP transport 已进入请求路径（2026-10-20）
 
 实现：`lib/server/qoder-http-transport.js`（协议）与
@@ -231,7 +295,7 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
 | `firstTokenMs` | 拿得到首字节时才有（HTTP） |
 | `errorCode` | 失败时的错误码（HTTP/CLI 同一位置） |
 | `usage` | `source`（`exact` / `estimated`）+ token 计数、credits、billable；拿不到计数时整块省略 |
-| `details` | 策略专有标量（HTTP：endpointSource/egress/clientVersion/upstreamModel/timing；CLI：warm/warmReused/responseModel/sessionId） |
+| `details` | 策略专有标量（HTTP：endpointSource/egress/clientVersion/requestedModelKey/upstreamModel/modelSource/modelMaxInputTokens/timing；CLI：warm/warmReused/responseModel/sessionId） |
 
 一次 HTTP 失败后 CLI 接手的最终日志示例（字段顺序仅示意）：
 
@@ -256,6 +320,8 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
 
 统计口径：按 `transport / outcome / durationMs / upstream` 聚合；`usage.source`
 区分精确/估算；`details` 只放策略专有标量，不放 body、签名串或整块上游对象。
+`requestedModelKey` 是目录 key（请求事实），`upstreamModel` 是上游帧里真实的
+`model`（可能被替换）；两者都在，替换/回退原因不需要靠改写字段去猜。
 **不再有第二套 HTTP 统计字段**：endpoint / egress / firstToken / timing / usage 只出现
 在 `transportAttempts` 的 `qoder_http` 条目里；日志顶层只保留
 `qoderHttpFallback` 这个请求级回退标记（表示「本次 HTTP 交给 CLI 了」），
@@ -324,14 +390,28 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
 - qodercn 1.1.72 的端点、WASM（与 qoder 同字节）、`session_type:qoderclicn`
   与经代理的 200 响应；
 - HTTP 直连的精确 token usage（prompt/completion/cached/reasoning/credits）；
+- 服务端模型目录 `catalog-v7`：读取/解密路径、assistant scene、16/12 条目、
+  `model_config` 全字段派生（`key` / `is_reasoning` / `is_vl` /
+  `max_input_tokens` 等）；
+- HTTP 模型发现：`prepareRequest(..., 'auth')` + `GET /api/v2/model/list?Encode=1`
+  的真实 200 明文 JSON（约 66KB）；
+- 模型替换检测：qodercn Free 账号请求 `Qwen3.8-Flash`（HTTP）实测上游回 `auto`，
+  `qoder_http_model_substituted` 在首字节前拦下并交还 CLI；
+- qoder 全球站 `10605 / RESOURCE_LIMIT / isQueued / retryAfterSeconds:30` 的
+  资源限流语义（`overloaded`，不记账号失败、不锁号）；
+- CLI `--model Qwen3.8-Flash` 冷启动实测 200 且回答正确（约 4.3s）；
 - 账户面 4 条路径与 Free 档字段；
 - warm CLI：`--input-format stream-json` 在 `result` 后继续等待下一条 user 消息。
 
 未证明（必须保留在布局表的 `unproven` 里）：
 
-- 非 `auto` 模型键（如 `Qwen3.8-Max`）在 HTTP 直连下的上游行为；transport 会透传
-  key，失败自动回落 CLI，不猜参数；
-- 付费账号走普通 HTTP 能否生成（当前本机两个账号都是 Free；Free 已实测 200）；
+- 非 `auto` 模型键在 HTTP 直连下**是否被上游真正执行**：qodercn Free 账号实测
+  HTTP 请求 `qfmodel` 上游返回 `auto`（被替换检测拦下并回落 CLI）；CLI
+  `--model Qwen3.8-Flash` 返回 200，但可观测侧只能看到 CLI 结果事件的
+  `model=Qwen3.8-Flash`，无法区分上游实际执行的是 qfmodel 还是 auto。
+  transport 透传目录 key，绝不把替换伪装成成功；付费账号待测；
+- 付费账号走普通 HTTP 能否生成（当前本机两个账号都是 Free；Free 的 `auto` 已实测
+  200，非 auto 见上一条）；
 - `t5e` 身份头在推理链路上的实际发送集合、`safetyTag` 与 `internalContext` 取值
   （HTTP transport 不发送这组头，只使用 WASM 返回的 20 个签名头）；
 - qoder CLI 自身的 token 数（CLI `usage` 字段恒为 0；HTTP 通道有精确 usage，
@@ -351,15 +431,22 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
    `transportAttempts[].usage` 里，不存在第二套 HTTP 统计字段。
 3. **P1.5：用量闭环（HTTP 已实现）**。HTTP 通道直接记录精确 usage，id 用
    `<provider>:message:<message.id>`，与会话 JSONL 扫描器共用幂等键；CLI 兜底
-   继续用 `context_usage_ratio × 200000` + 输出文本估算，`sourceKind` 带
-   `_estimated`。WebUI chat 的 `X-Session-Id` 会写入 usage record 的 `sessionId`。
+   继续用 `context_usage_ratio × 窗口` + 输出文本估算，`sourceKind` 带
+   `_estimated`。**窗口按目录条目的 `max_input_tokens` 取**（180k / 1M 等），
+   拿不到目录时才回落 200k——用 200k 当所有模型的基数会把 token 数算错。
+   WebUI chat 的 `X-Session-Id` 会写入 usage record 的 `sessionId`。
 4. **P2：warm CLI（已实现）**。同一会话复用
    `--print --input-format stream-json` 常驻进程：首轮 ~7.6-8.6s，同进程第二轮
    ~2.7-3.5s（1.1.73 实测）。只有 `sessionKey` + 消息前缀哈希完全匹配才复用；
    无 sessionKey、最后一条不是纯文本 user、池满或进程 busy 时自动走冷启动。
    idle TTL 5 分钟、最多 8 个进程、LRU 淘汰 idle；失败/超时/abort 一律杀进程。
-5. **剩余验证**：付费账号 / 非 auto 模型键 / `t5e` 推理身份头。没有这些证据前
-   不要把它们写成已证明；HTTP 失败一律由 CLI 兜底。
+5. **P1.6：模型目录驱动的模型事实（已实现，2026-10-21）**。目录（`catalog-v7`）
+   是 `model_config.key` / `is_reasoning` / `is_vl` / `max_input_tokens` 的唯一事实源；
+   请求级只做 true→false 降级；目录缺失且非 auto 时 fail-closed 交还 CLI。
+   模型发现改为 HTTP 优先（`GET /api/v2/model/list?Encode=1`），本地 CLI 兜底；
+   上游模型替换检测不再被无条件改写掩盖。
+6. **剩余验证**：付费账号 / 非 auto 模型键的上游真实执行 / `t5e` 推理身份头。
+   没有这些证据前不要把它们写成已证明；HTTP 失败一律由 CLI 兜底。
 
 ## 8. warm CLI 协议（1.1.73 实测）
 

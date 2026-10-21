@@ -851,3 +851,40 @@ test('an opencode account without a paid key is a capability gap, not a failure'
   assert.equal(policy.clientStatusCode, 403);
   assert.equal(policy.failureReason, 'opencode_paid_credential_missing');
 });
+
+// 2026-10-21 真机取证：qoder 全球站 Free 账号请求具体模型时上游回
+// HTTP 403 + code 10605 / subCode RESOURCE_LIMIT / isQueued / retryAfterSeconds。
+// 这是资源排队，不是凭据失效——通用 403 分支会把它判成 auth_invalid 并锁号一年。
+test('a qoder resource-limit 403 is an overload hint, never an account auth failure', () => {
+  const inner = JSON.stringify({
+    isQueued: true,
+    modelKey: 'qfmodel',
+    queueCount: 0,
+    queueType: 'p3',
+    retryAfterSeconds: 30,
+    serviceAvailable: false,
+    subCode: 'RESOURCE_LIMIT',
+    waitTime: 30
+  });
+  const body = JSON.stringify({
+    code: '403',
+    message: JSON.stringify({ code: '10605', message: inner, subCode: 'RESOURCE_LIMIT' })
+  });
+  // 策略链拿到的 detail 就是 error.message（外层 JSON 字符串）。
+  const policy = classifyUpstreamFailure({
+    provider: 'qoder',
+    statusCode: 403,
+    detail: body,
+    defaultCooldownMs: 60000
+  });
+  assert.equal(policy.kind, 'overloaded');
+  assert.equal(policy.failureReason, 'qoder_resource_limit');
+  assert.equal(policy.shouldMarkFailure, false);
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+  assert.equal(policy.scope, 'none');
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.retryHintMs, 30000);
+  // 普通 403（没有限流负载）仍然按凭据失效处理，不受影响。
+  const plain = classifyUpstreamFailure({ provider: 'qoder', statusCode: 403, detail: 'upstream_403' });
+  assert.equal(plain.kind, 'auth_invalid');
+});

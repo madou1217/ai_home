@@ -69,7 +69,7 @@ const CATALOG = Object.freeze({
 
 test('external harness catalog exposes descriptor-driven Pi and DSH entries', () => {
   const ids = listExternalHarnesses().map((harness) => harness.id);
-  assert.deepEqual(ids, ['pi', 'dsh']);
+  assert.deepEqual(ids, ['pi', 'dsh', 'dsh-tui']);
   assert.equal(isExternalHarness('PI'), true);
   assert.equal(isExternalHarness('codex'), false);
   assert.equal(getExternalHarness('dsh').interactiveKind, 'web');

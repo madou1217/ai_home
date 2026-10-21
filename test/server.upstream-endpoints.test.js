@@ -5708,3 +5708,75 @@ test('native Gemini generateContent strips the Code Assist {response} envelope',
     assert.equal(body.includes('traceId'), false);
   }
 });
+
+// 家族上游的**完整头集**端到端校验（2026-10-21）。
+//
+// 为什么必须有这一条：头构造函数（buildCodebuddyFamilyUpstreamHeaders）的单测只能证明
+// 「构造出来的头对不对」，证明不了「发出去的字节就是它」——构造函数之后还有代码会追加头
+// （accept-encoding、账号级覆盖、x-aih-*）。这条测试走真实链路，断言最终 init.headers。
+//
+// 期望集合 = 2026-10-21 抓官方 CLI 2.161.4 得到的 35 个头（剔除 authorization/content-length）。
+test('family upstream sends exactly the official CLI header picture', async () => {
+  const res = createResCapture();
+  let seenHeaders = null;
+  const familyRef = accountRef('fam');
+  const state = {
+    accounts: { workbuddy: [{ accountRef: familyRef, email: 'uid-1', accessToken: 'tok', openaiBaseUrl: 'https://www.workbuddy.ai', nativeAuth: { credentials: { account: { uid: 'uid-1' } } } }] },
+    cursors: { workbuddy: 0 },
+    metrics: { totalFailures: 0, totalSuccess: 0, totalTimeouts: 0 }
+  };
+  await handleUpstreamPassthrough({
+    options: { upstreamTimeoutMs: 3000, maxAttempts: 1, failureThreshold: 1, logRequests: false },
+    state,
+    // 显式钉住 provider：本用例只验家族头集，不该依赖模型→provider 的绑定推断。
+    requestMeta: { effectiveProvider: 'workbuddy' },
+    // requestJson 是独立入参（不从 bodyBuffer 解析）；stream:true 才会走到
+    // 「构造之后追加 accept-encoding」那一行——本用例正是要覆盖那段。
+    requestJson: { model: 'hy4-preview', messages: [{ role: 'user', content: 'hi' }], stream: true },
+    req: {
+      url: '/v1/chat/completions',
+      headers: { host: '127.0.0.1:8317', authorization: 'Bearer client-key', 'content-type': 'application/json' }
+    },
+    res,
+    method: 'POST',
+    // 用流式请求：这才是家族的真实路径，也才会走到「构造之后追加 accept-encoding」那一行。
+    bodyBuffer: Buffer.from(JSON.stringify({ model: 'hy4-preview', messages: [{ role: 'user', content: 'hi' }], stream: true })),
+    routeKey: 'POST /v1/chat/completions',
+    requestStartedAt: Date.now(),
+    cooldownMs: 1000,
+    deps: {
+      chooseServerAccount: (pool) => pool[0],
+      pushMetricError: () => {},
+      writeJson: (r, code, payload) => { r.statusCode = code; r.end(JSON.stringify(payload)); },
+      fetchWithTimeout: async (_url, init) => {
+        seenHeaders = init.headers || {};
+        return {
+          status: 200,
+          headers: new Map([['content-type', 'text/event-stream']]),
+          arrayBuffer: async () => Buffer.from('data: {"choices":[{"delta":{"content":"x"}}]}\n\ndata: [DONE]\n\n')
+        };
+      },
+      markProxyAccountFailure: () => {},
+      markProxyAccountSuccess: () => {},
+      appendProxyRequestLog: () => {}
+    }
+  });
+
+  // 官方抓包的 35 个头（小写；已剔除 authorization / content-length / host / connection）。
+  const OFFICIAL = [
+    'accept', 'b3', 'baggage', 'content-type', 'traceparent', 'user-agent',
+    'x-agent-intent', 'x-agent-purpose', 'x-agent-type', 'x-b3-parentspanid',
+    'x-b3-sampled', 'x-b3-spanid', 'x-b3-traceid', 'x-codebuddy-request',
+    'x-conversation-id', 'x-conversation-message-id', 'x-conversation-request-id',
+    'x-domain', 'x-ide-name', 'x-ide-type', 'x-ide-version', 'x-private-data',
+    'x-product', 'x-request-id', 'x-requested-with', 'x-root-request-id',
+    'x-stainless-arch', 'x-stainless-lang', 'x-stainless-os',
+    'x-stainless-package-version', 'x-stainless-retry-count', 'x-stainless-runtime',
+    'x-stainless-runtime-version', 'x-trace-id', 'x-user-id'
+  ];
+  const sent = Object.keys(seenHeaders || {});
+  const extra = sent.filter((k) => !OFFICIAL.includes(k) && !['authorization', 'content-length'].includes(k));
+  const missing = OFFICIAL.filter((k) => !sent.includes(k));
+  assert.deepEqual(extra, [], `家族上游不该多发这些头（会暴露非官方身份）：${extra.join(', ')}`);
+  assert.deepEqual(missing, [], `家族上游缺这些官方头：${missing.join(', ')}（实际发送：${sent.sort().join(', ')}）`);
+});

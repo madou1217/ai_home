@@ -6,7 +6,7 @@
 // 滚动和旋转都会被真实录制，不再依赖不执行脚本的静态 HTML 克隆。
 
 import type { FrameSource } from './types';
-import { computeDisplayCrop } from './live-preview-frame-source';
+import { computeDisplayCrop, isTargetFullyVisible } from './live-preview-frame-source';
 
 export const CAPTURE_VIDEO_ID = 'aih-capture-video';
 export const CAPTURE_TARGET_ID = 'aih-preview-target';
@@ -70,6 +70,11 @@ export class PopupWindowFrameSource implements FrameSource {
       width: Math.max(1, sourceWindow.innerWidth),
       height: Math.max(1, sourceWindow.innerHeight)
     };
+    // 录制/截图的取景范围就是屏幕像素：目标不完整可见时 fail closed，
+    // 不能只抓可见的一半（聊天滚动区/窗口裁剪会把可视区域挡住）。
+    if (!isTargetFullyVisible(target, viewport)) {
+      throw new Error('popup_capture_target_not_visible');
+    }
 
     let width: number;
     let height: number;

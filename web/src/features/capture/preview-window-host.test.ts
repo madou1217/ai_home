@@ -66,12 +66,14 @@ describe('isCaptureWindowStreamReady', () => {
     expect(isCaptureWindowStreamReady({ ...valid, kind: 'still', cropped: false })).toBe(true);
   });
 
-  test('接受可选的会话水印身份', () => {
+  test('接受可选的会话水印身份与录制格式', () => {
     expect(
       isCaptureWindowStreamReady({ ...valid, provider: 'codex', model: 'gpt-5.4' })
     ).toBe(true);
+    expect(isCaptureWindowStreamReady({ ...valid, format: 'webm' })).toBe(true);
     expect(isCaptureWindowStreamReady({ ...valid, provider: 1 })).toBe(false);
     expect(isCaptureWindowStreamReady({ ...valid, model: null })).toBe(false);
+    expect(isCaptureWindowStreamReady({ ...valid, format: 1 })).toBe(false);
   });
 
   test('拒绝错误类型、空 requestId、未知 kind 或缺失 cropped', () => {

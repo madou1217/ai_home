@@ -348,3 +348,91 @@ test('markdown carousel fences split provider slides without treating them as co
   ]);
   assert.deepEqual(utils.parseMarkdownCarouselSlides('javascript', content), []);
 });
+
+test('html preview opens via window.open so the popup keeps window.opener', () => {
+  const utils = loadHtmlPreviewWindow();
+  const opened = [];
+  const written = [];
+  const delegated = [];
+  const popup = {
+    document: {
+      open() {},
+      write(value) {
+        written.push(value);
+      },
+      close() {}
+    },
+    location: {},
+    focus() {},
+    postMessage(...args) {
+      delegated.push(args);
+    }
+  };
+  const previousWindow = globalThis.window;
+  const previousBlob = globalThis.Blob;
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+  class FakeBlob {
+    constructor(parts, options) {
+      this.parts = parts;
+      this.type = options?.type ?? '';
+    }
+  }
+  try {
+    globalThis.Blob = FakeBlob;
+    globalThis.window = {
+      location: { origin: 'https://aih.local' },
+      URL: {
+        createObjectURL: () => 'blob:preview',
+        revokeObjectURL: () => {}
+      },
+      open(url, target) {
+        opened.push({ url, target });
+        return popup;
+      },
+      setTimeout: () => 0
+    };
+
+    assert.equal(
+      utils.openHtmlPreviewWindow('<html><body>hi</body></html>', { device: 'desktop' }),
+      popup
+    );
+    assert.deepEqual(opened, [{ url: 'blob:preview', target: '_blank' }]);
+
+    opened.length = 0;
+    written.length = 0;
+    delegated.length = 0;
+    assert.equal(
+      utils.openHtmlPreviewWindow('<html><body>hi</body></html>', {
+        device: 'desktop',
+        autoCapture: { kind: 'record', format: 'webm' }
+      }),
+      popup
+    );
+    assert.deepEqual(opened, [{ url: '', target: '_blank' }]);
+    assert.equal(written.length, 1);
+    assert.match(written[0], /const AUTO_CAPTURE_KIND = "record"/);
+    assert.match(written[0], /const AUTO_CAPTURE_FORMAT = "webm"/);
+    assert.equal(delegated.length, 1);
+    assert.equal(delegated[0][0].type, 'aih:html-preview-capture-auto-start');
+    assert.equal(delegated[0][0].kind, 'record');
+    assert.equal(delegated[0][0].format, 'webm');
+    assert.equal(delegated[0][1], 'https://aih.local');
+    assert.equal(delegated[0][2].delegate, 'display-capture');
+  } finally {
+    if (hadWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+    globalThis.Blob = previousBlob;
+  }
+});
+
+test('inline html recording opens the standalone preview prompt', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'web', 'src', 'components', 'chat', 'HtmlCodeBlock.tsx'),
+    'utf8'
+  );
+  assert.match(source, /autoCapture: \{ kind: 'record'/);
+  assert.match(source, /onClick=\{\(\) => openRecordPrompt\(recordAction\)\}/);
+  assert.match(source, /PC 预览（推荐）/);
+  assert.doesNotMatch(source, /capture\.runFormat\(recordAction\)/);
+  assert.doesNotMatch(source, /capture\.runFormat\(key as AnimationCaptureFormatId\)/);
+});

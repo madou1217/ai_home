@@ -81,8 +81,45 @@ describe('buildHtmlPreviewWindowDocument', () => {
     });
     expect(doc).not.toContain("'aih:html-preview-capture-request'");
     expect(doc).not.toContain('startDocumentCapture');
-    expect(doc).toContain('startLiveCapture(kind, currentCaptureSettings().fps)');
+    expect(doc).toContain('startLiveCapture(');
+    expect(doc).toContain('currentCaptureSettings().fps');
     expect(doc).not.toContain('settings.scope');
+  });
+
+  test('自动录制意图会在页面渲染完成后等待裁切尺寸稳定', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止',
+      autoCapture: { kind: 'record', format: 'webm' }
+    });
+    expect(doc).toContain('const AUTO_CAPTURE_KIND = "record"');
+    expect(doc).toContain('const AUTO_CAPTURE_FORMAT = "webm"');
+    expect(doc).toContain("'aih:html-preview-capture-auto-start'");
+    expect(doc).toContain('startLiveCapture(');
+    expect(doc).toContain('currentCaptureSettings().fps');
+    expect(doc).toContain('preview.addEventListener(\'load\', markPreviewLoaded)');
+    expect(doc).toContain('await previewReady;');
+    expect(doc).toContain('waitForStablePopupVideo');
+    expect(doc).toContain('requestVideoFrameCallback');
+    expect(doc).toContain('format: format || undefined');
+    expect(doc).toContain('is-auto-ready');
+    expect(doc).toContain('页面已渲染完成');
+    expect(doc).toContain('点击「');
+    const previewReadyAt = doc.indexOf('await previewReady;');
+    const cropAt = doc.indexOf('CropTarget.fromElement(preview)');
+    const videoAt = doc.indexOf('video.srcObject = stream');
+    expect(previewReadyAt).toBeGreaterThan(-1);
+    expect(cropAt).toBeGreaterThan(previewReadyAt);
+    expect(videoAt).toBeGreaterThan(cropAt);
+  });
+
+  test('没有自动录制意图时不启用自动启动', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止'
+    });
+    expect(doc).toContain('const AUTO_CAPTURE_KIND = ""');
+    expect(doc).toContain('const AUTO_CAPTURE_FORMAT = ""');
   });
 
   test('产物会展示实际帧率提示', () => {

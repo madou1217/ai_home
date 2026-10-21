@@ -7,6 +7,12 @@ import {
 
 export type HtmlPreviewDevice = 'desktop' | 'mobile';
 
+export interface HtmlPreviewAutoCapture {
+  kind: 'still' | 'record';
+  /** 录制格式；省略时由宿主按全局偏好解析。 */
+  format?: string;
+}
+
 export interface HtmlPreviewWindowOptions {
   device: HtmlPreviewDevice;
   title?: string;
@@ -14,11 +20,20 @@ export interface HtmlPreviewWindowOptions {
   recordingHint?: string;
   /** 打开弹窗时所处会话的 provider/model；捕获水印使用。 */
   captureIdentity?: CaptureWatermarkIdentity;
+  /** 页面渲染完成后自动进入捕获流程（主要用于从会话内跳转录制）。 */
+  autoCapture?: HtmlPreviewAutoCapture;
 }
 
 export interface PopupCaptureSettings {
   fps: number;
 }
+
+/** Chrome capability delegation：把一次用户手势授权转交给新弹窗。 */
+type CapabilityDelegatingPostMessage = (
+  message: unknown,
+  targetOrigin: string,
+  options?: { delegate?: string }
+) => void;
 
 /**
  * 弹窗点击捕获时的帧率解析（纯函数）。
@@ -70,6 +85,8 @@ const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
 const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 const CAPTURE_STREAM_READY_TYPE = 'aih:html-preview-capture-stream-ready';
+/** 宿主在打开弹窗时用 capability delegation 授权弹窗立即调用 getDisplayMedia。 */
+const CAPTURE_AUTO_START_TYPE = 'aih:html-preview-capture-auto-start';
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -108,6 +125,11 @@ export function buildHtmlPreviewWindowDocument(
     : 30;
   const captureProvider = options.captureIdentity?.provider || '';
   const captureModel = options.captureIdentity?.model || '';
+  const autoCaptureKind =
+    options.autoCapture?.kind === 'still' || options.autoCapture?.kind === 'record'
+      ? options.autoCapture.kind
+      : '';
+  const autoCaptureFormat = options.autoCapture?.format || '';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -134,6 +156,15 @@ export function buildHtmlPreviewWindowDocument(
     .capture:disabled { opacity: .65; cursor: default; }
     .capture.is-recording { border-color: #ff5c7a; color: #ff8fa3; background: rgba(255, 92, 122, .12); }
     .capture.is-recording:hover { border-color: #ff8fa3; color: #ffb3c0; background: rgba(255, 92, 122, .2); }
+    .capture.is-auto-ready { border-color: #00ff66; color: #00ff66; background: rgba(0, 255, 102, .1); animation: capture-ready-pulse 1.4s ease-in-out infinite; }
+    .capture.is-auto-ready:hover { border-color: #7dffae; color: #7dffae; background: rgba(0, 255, 102, .18); }
+    @keyframes capture-ready-pulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(0, 255, 102, 0); }
+      50% { box-shadow: 0 0 18px rgba(0, 255, 102, .35); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .capture.is-auto-ready { animation: none; }
+    }
     .capture-hint { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
     .capture-status { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 420px; color: #5c7890; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: .04em; text-align: right; }
     .capture-status[hidden] { display: none; }
@@ -219,6 +250,12 @@ export function buildHtmlPreviewWindowDocument(
     const FALLBACK_CAPTURE_FPS = ${fallbackFps};
     const CAPTURE_PROVIDER = ${jsonForScript(captureProvider)};
     const CAPTURE_MODEL = ${jsonForScript(captureModel)};
+    const AUTO_CAPTURE_KIND = ${jsonForScript(autoCaptureKind)};
+    const AUTO_CAPTURE_FORMAT = ${jsonForScript(autoCaptureFormat)};
+    const AUTO_CAPTURE_START_TYPE = '${CAPTURE_AUTO_START_TYPE}';
+    const PREVIEW_READY_TIMEOUT_MS = 4000;
+    const CAPTURE_STABILITY_TIMEOUT_MS = 2500;
+    const CAPTURE_STABILITY_TOLERANCE = 0.04;
     // 点击时重新解析偏好：弹窗打开后用户在设置页的修改也要立即生效。
     const readLiveCaptureSettings = ${parsePopupCaptureSettings.toString()};
     let captureSeq = 0;
@@ -227,6 +264,13 @@ export function buildHtmlPreviewWindowDocument(
     let phase = 'idle';
     let activeStream = null;
     let activeVideo = null;
+    let previewLoaded = false;
+    let previewReadyResolved = false;
+    let previewReadyResolve = null;
+    const previewReady = new Promise(function(resolve) {
+      previewReadyResolve = resolve;
+    });
+    let autoCapturePending = AUTO_CAPTURE_KIND !== '';
 
     function readCapturePreferencesRaw() {
       try {
@@ -254,6 +298,10 @@ export function buildHtmlPreviewWindowDocument(
       recordButton.textContent =
         next === 'recording' ? '停止' : next === 'requesting' ? '请求中…' : '录制';
       recordButton.classList.toggle('is-recording', next === 'recording');
+      if (next !== 'idle') {
+        recordButton.classList.remove('is-auto-ready');
+        shotButton.classList.remove('is-auto-ready');
+      }
       recordButton.setAttribute('aria-pressed', String(next === 'recording'));
       recordButton.disabled = next === 'requesting' || next === 'finishing';
       shotButton.disabled = next !== 'idle';
@@ -263,6 +311,152 @@ export function buildHtmlPreviewWindowDocument(
         status.textContent = '';
       }
     }
+    function resolvePreviewReady() {
+      if (previewReadyResolved) return;
+      previewReadyResolved = true;
+      if (previewReadyResolve) previewReadyResolve();
+    }
+    function markPreviewLoaded() {
+      if (previewLoaded) return;
+      previewLoaded = true;
+      // iframe load 只代表资源结束；再等一个短任务让首屏布局/尺寸稳定，
+      // 之后才开始 Region Capture 裁切。
+      window.setTimeout(function() {
+        resolvePreviewReady();
+        maybeAutoCapture();
+      }, 160);
+    }
+    function showAutoReadyPrompt() {
+      const label = AUTO_CAPTURE_KIND === 'still' ? '截图' : '录制';
+      const actionButton = AUTO_CAPTURE_KIND === 'still' ? shotButton : recordButton;
+      setPhase('idle', '页面已渲染完成 · 点击「' + label + '」开始');
+      actionButton.classList.add('is-auto-ready');
+      try {
+        actionButton.focus({ preventScroll: true });
+      } catch (_error) {}
+    }
+    function maybeAutoCapture() {
+      if (!previewLoaded || !autoCapturePending) return;
+      autoCapturePending = false;
+      const activation = navigator.userActivation;
+      // 没有能力委托时，浏览器不允许弹窗在没有手势的情况下调用
+      // getDisplayMedia。给出明确的一键入口，而不是静默失败。
+      if (!activation || activation.isActive !== true) {
+        showAutoReadyPrompt();
+        return;
+      }
+      startLiveCapture(
+        AUTO_CAPTURE_KIND,
+        currentCaptureSettings().fps,
+        AUTO_CAPTURE_FORMAT || undefined,
+        true
+      );
+    }
+    function handleDelegatedAutoStart(data) {
+      if (phase !== 'idle') return;
+      const kind = data && data.kind === 'still' ? 'still' : 'record';
+      const format =
+        data && typeof data.format === 'string' && data.format
+          ? data.format
+          : AUTO_CAPTURE_FORMAT || undefined;
+      autoCapturePending = false;
+      recordButton.classList.remove('is-auto-ready');
+      shotButton.classList.remove('is-auto-ready');
+      startLiveCapture(kind, currentCaptureSettings().fps, format, true);
+    }
+    function waitForVideoData(video) {
+      if (video.readyState >= 2) return Promise.resolve();
+      return new Promise(function(resolve, reject) {
+        const timer = window.setTimeout(function() {
+          cleanup();
+          reject(new Error('video_not_ready'));
+        }, 3000);
+        function cleanup() {
+          window.clearTimeout(timer);
+          video.removeEventListener('loadeddata', onReady);
+          video.removeEventListener('canplay', onReady);
+          video.removeEventListener('error', onError);
+        }
+        function onReady() {
+          cleanup();
+          resolve();
+        }
+        function onError() {
+          cleanup();
+          reject(new Error('video_failed'));
+        }
+        video.addEventListener('loadeddata', onReady);
+        video.addEventListener('canplay', onReady);
+        video.addEventListener('error', onError);
+      });
+    }
+    function waitForPresentedFrame(video) {
+      return new Promise(function(resolve) {
+        let settled = false;
+        const finish = function() {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          resolve();
+        };
+        const timer = window.setTimeout(finish, 240);
+        if (typeof video.requestVideoFrameCallback === 'function') {
+          video.requestVideoFrameCallback(function() {
+            finish();
+          });
+          return;
+        }
+        requestAnimationFrame(function() {
+          finish();
+        });
+      });
+    }
+    async function waitForPresentedFrames(video, count) {
+      for (let index = 0; index < count; index += 1) {
+        await waitForPresentedFrame(video);
+      }
+    }
+    function popupVideoMatchesTarget(video, target) {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      const rect = target.getBoundingClientRect();
+      if (width <= 0 || height <= 0 || rect.width <= 0 || rect.height <= 0) return false;
+      const sourceRatio = width / height;
+      const targetRatio = rect.width / rect.height;
+      return (
+        Math.abs(sourceRatio - targetRatio) / targetRatio <= CAPTURE_STABILITY_TOLERANCE
+      );
+    }
+    async function waitForStablePopupVideo(video, target) {
+      const deadline = performance.now() + CAPTURE_STABILITY_TIMEOUT_MS;
+      let stableWidth = 0;
+      let stableHeight = 0;
+      let stableFrames = 0;
+      while (performance.now() < deadline) {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        if (popupVideoMatchesTarget(video, target)) {
+          if (width === stableWidth && height === stableHeight) stableFrames += 1;
+          else {
+            stableWidth = width;
+            stableHeight = height;
+            stableFrames = 1;
+          }
+          if (stableFrames >= 2) {
+            // 裁切后的尺寸稳定后再多丢几帧，避开轨道切换残留的整窗画面。
+            await waitForPresentedFrames(video, 3);
+            return true;
+          }
+        } else {
+          stableFrames = 0;
+        }
+        await waitForPresentedFrame(video);
+      }
+      return false;
+    }
+    preview.addEventListener('load', markPreviewLoaded);
+    window.addEventListener('load', markPreviewLoaded);
+    window.setTimeout(markPreviewLoaded, PREVIEW_READY_TIMEOUT_MS);
     function cleanupStream() {
       if (activeVideo) {
         try {
@@ -294,10 +488,12 @@ export function buildHtmlPreviewWindowDocument(
       clearTimeout(pendingTimer);
       return true;
     }
-    async function startLiveCapture(kind, fps) {
+    async function startLiveCapture(kind, fps, format, auto) {
       if (phase !== 'idle') return;
-      if (!window.opener) {
-        settleFailure('宿主页面已关闭，无法捕获');
+      recordButton.classList.remove('is-auto-ready');
+      shotButton.classList.remove('is-auto-ready');
+      if (!window.opener || window.opener.closed) {
+        settleFailure('独立预览已与宿主断开，请从会话重新打开');
         return;
       }
       if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
@@ -316,6 +512,7 @@ export function buildHtmlPreviewWindowDocument(
       let stream;
       try {
         // 必须在点击手势内同步进入：这是浏览器允许 getDisplayMedia 的前提。
+        // 能力委托成功时，这一行由宿主用户手势授权，在页面渲染期间即可开始共享。
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             frameRate: Math.max(1, Math.min(60, Math.round(fps || FALLBACK_CAPTURE_FPS)))
@@ -325,8 +522,21 @@ export function buildHtmlPreviewWindowDocument(
         });
       } catch (error) {
         if (pendingRequest !== requestId) return;
-        const denied =
-          error && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError');
+        const name = error && error.name;
+        // 自动录制依赖 capability delegation；浏览器不支持、瞬态用户激活已过期，
+        // 或用户取消共享时，都回落到弹窗内的一键开始，而不是让用户看到失败。
+        if (auto && name !== 'NotSupportedError') {
+          const label = AUTO_CAPTURE_KIND === 'still' ? '截图' : '录制';
+          autoCapturePending = true;
+          cleanupStream();
+          pendingRequest = '';
+          clearTimeout(pendingTimer);
+          setPhase('idle');
+          if (previewLoaded) showAutoReadyPrompt();
+          else showStatus('页面渲染完成后点击「' + label + '」开始');
+          return;
+        }
+        const denied = name === 'NotAllowedError' || name === 'PermissionDeniedError';
         settleFailure(denied ? '需要允许共享当前预览窗口' : '无法开始屏幕共享，请重试');
         return;
       }
@@ -339,6 +549,14 @@ export function buildHtmlPreviewWindowDocument(
         return;
       }
       activeStream = stream;
+
+      // 先等预览布局稳定，再把轨道裁到目标区域。顺序很重要：
+      // CropTarget 必须取到最终矩形，视频也应该从裁切后的轨道开始解码。
+      await previewReady;
+      if (pendingRequest !== requestId) {
+        cleanupStream();
+        return;
+      }
 
       // Chrome Region Capture：直接把视频轨裁到预览 iframe；不支持时宿主按 rect 裁。
       let cropped = false;
@@ -369,25 +587,34 @@ export function buildHtmlPreviewWindowDocument(
       document.body.appendChild(video);
       activeVideo = video;
       try {
-        await new Promise(function(resolve, reject) {
-          if (video.readyState >= 1) {
-            resolve();
-            return;
-          }
-          video.addEventListener('loadedmetadata', resolve, { once: true });
-          video.addEventListener(
-            'error',
-            function() {
-              reject(new Error('video_failed'));
-            },
-            { once: true }
-          );
-        });
+        await waitForVideoData(video);
         await video.play();
+        // 首帧解码完成后再检查轨道尺寸；裁切结果反映到 videoWidth/videoHeight
+        // 可能比 loadeddata 晚一拍。
+        await waitForPresentedFrame(video);
       } catch (_error) {
         if (pendingRequest === requestId) settleFailure('无法读取屏幕共享画面，请重试');
         else cleanupStream();
         return;
+      }
+      if (pendingRequest !== requestId) {
+        cleanupStream();
+        return;
+      }
+
+      if (cropped) {
+        const stable = await waitForStablePopupVideo(video, preview);
+        if (!stable) {
+          if (pendingRequest === requestId) {
+            settleFailure('屏幕共享画面还未裁切到预览区域，请重试');
+          } else {
+            cleanupStream();
+          }
+          return;
+        }
+      } else {
+        // 回退到 rect 裁切时没有轨道尺寸切换，但仍要丢掉首批未稳定的画面。
+        await waitForPresentedFrames(video, 3);
       }
       if (pendingRequest !== requestId) {
         cleanupStream();
@@ -401,6 +628,7 @@ export function buildHtmlPreviewWindowDocument(
           type: '${CAPTURE_STREAM_READY_TYPE}',
           requestId: requestId,
           kind: kind,
+          format: format || undefined,
           cropped: cropped,
           provider: CAPTURE_PROVIDER,
           model: CAPTURE_MODEL
@@ -420,7 +648,12 @@ export function buildHtmlPreviewWindowDocument(
     }
     window.addEventListener('message', function(event) {
       if (event.origin !== window.location.origin) return;
+      if (event.source !== window.opener) return;
       const data = event.data;
+      if (data && data.type === AUTO_CAPTURE_START_TYPE) {
+        handleDelegatedAutoStart(data);
+        return;
+      }
       if (!data || data.type !== '${CAPTURE_RESULT_TYPE}') return;
       if (pendingRequest && data.requestId !== pendingRequest) return;
       if (data.kind === 'progress') {
@@ -472,7 +705,13 @@ export function buildHtmlPreviewWindowDocument(
         }
         if (phase !== 'idle') return;
         // 截图与录制都走实时屏幕共享：脚本、Canvas、动画和鼠标交互都必须保留。
-        startLiveCapture(kind, currentCaptureSettings().fps);
+        // 从会话跳转过来的录制沿用用户选中的格式；手动打开的弹窗交回宿主按偏好解析。
+        startLiveCapture(
+          kind,
+          currentCaptureSettings().fps,
+          kind === 'record' ? AUTO_CAPTURE_FORMAT || undefined : undefined,
+          false
+        );
       });
     });
   </script>
@@ -483,18 +722,75 @@ export function buildHtmlPreviewWindowDocument(
 export function openHtmlPreviewWindow(
   documentContent: string,
   options: HtmlPreviewWindowOptions
-) {
-  if (typeof window === 'undefined' || typeof Blob === 'undefined') return false;
+): Window | null {
+  if (typeof window === 'undefined' || typeof Blob === 'undefined') return null;
 
   const previewDocument = buildHtmlPreviewWindowDocument(documentContent, options);
-  const previewUrl = window.URL.createObjectURL(new Blob([previewDocument], { type: 'text/html' }));
-  // 捕获桥要求弹窗持有 window.opener：这里不能加 noopener/noreferrer。
+  // 捕获桥要求弹窗持有 window.opener：必须用 window.open（或显式 rel=opener）。
+  // <a target="_blank"> 会被现代浏览器隐式加上 noopener，导致弹窗无法回传捕获结果。
   // 弹窗首屏脚本全部是本模块生成的编排代码，用户 HTML 隔离在 sandbox iframe 内，风险可控。
   ensurePreviewWindowCaptureHost();
-  const link = window.document.createElement('a');
-  link.href = previewUrl;
-  link.target = '_blank';
-  link.click();
+
+  if (options.autoCapture) {
+    // about:blank + document.write 让我们在同一个用户手势内拿到弹窗引用，
+    // 并尝试用 capability delegation 把 getDisplayMedia 的自旋授权交给弹窗。
+    // 浏览器不支持时，弹窗会在页面渲染完成后显示明确的一键录制入口。
+    const popup = window.open('', '_blank');
+    if (!popup) return null;
+    let wroteDocument = false;
+    try {
+      popup.document.open();
+      popup.document.write(previewDocument);
+      popup.document.close();
+      wroteDocument = true;
+    } catch {
+      // 某些浏览器/安全策略不允许写 about:blank，回退到 blob 页面。
+    }
+    if (!wroteDocument) {
+      const fallbackUrl = window.URL.createObjectURL(
+        new Blob([previewDocument], { type: 'text/html' })
+      );
+      popup.location.href = fallbackUrl;
+      window.setTimeout(
+        () => window.URL.revokeObjectURL(fallbackUrl),
+        PREVIEW_URL_REVOKE_DELAY_MS
+      );
+      return popup;
+    }
+    try {
+      const postDelegated = popup.postMessage as unknown as CapabilityDelegatingPostMessage;
+      postDelegated.call(
+        popup,
+        {
+          type: CAPTURE_AUTO_START_TYPE,
+          kind: options.autoCapture.kind,
+          format: options.autoCapture.format
+        },
+        window.location.origin,
+        { delegate: 'display-capture' }
+      );
+    } catch {
+      // 能力委托需要浏览器支持且宿主仍持有瞬态用户激活；失败时走弹窗内兜底。
+    }
+    try {
+      popup.focus();
+    } catch {
+      // 浏览器拒绝聚焦不影响弹窗已经打开。
+    }
+    return popup;
+  }
+
+  const previewUrl = window.URL.createObjectURL(new Blob([previewDocument], { type: 'text/html' }));
+  const popup = window.open(previewUrl, '_blank');
+  if (!popup) {
+    window.URL.revokeObjectURL(previewUrl);
+    return null;
+  }
+  try {
+    popup.focus();
+  } catch {
+    // 浏览器拒绝聚焦不影响弹窗已经打开。
+  }
   window.setTimeout(() => window.URL.revokeObjectURL(previewUrl), PREVIEW_URL_REVOKE_DELAY_MS);
-  return true;
+  return popup;
 }

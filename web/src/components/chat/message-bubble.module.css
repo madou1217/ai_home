@@ -1038,17 +1038,31 @@
   cursor: default;
 }
 
-/* 录制中主按钮是「停止」：用危险色表达可中断的正在进行的录制。 */
-.htmlBlockActionBtnRecording,
-.htmlBlockActionBtnRecording:hover {
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
-}
-
 .htmlBlockSplit {
   display: inline-flex;
   align-items: stretch;
+}
+
+.htmlRecordPrompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3);
+}
+
+.htmlRecordPromptHint,
+.htmlRecordPromptMeta {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.htmlRecordPromptHint {
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-body-sm);
+}
+
+.htmlRecordPromptMeta {
+  color: var(--color-muted);
+  font-size: var(--hos-text-caption);
 }
 
 /* 拆分按钮两段共用圆角，唯一分界线由前段 1px 边框承担（仅控件分界）。 */

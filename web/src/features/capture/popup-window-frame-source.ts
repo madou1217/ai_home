@@ -11,6 +11,31 @@ import { computeDisplayCrop, isTargetFullyVisible } from './live-preview-frame-s
 export const CAPTURE_VIDEO_ID = 'aih-capture-video';
 export const CAPTURE_TARGET_ID = 'aih-preview-target';
 const MAX_WIDTH = 1280;
+const CROP_ASPECT_TOLERANCE = 0.04;
+
+/**
+ * Region Capture 生效后，视频轨尺寸应当等于预览元素的宽高比。
+ * 裁切尚未反映到 videoWidth/videoHeight 时抓帧会把整窗画面压进目标画布，
+ * 表现为开头几帧错位。
+ */
+export function videoMatchesTargetAspectRatio(
+  videoWidth: number,
+  videoHeight: number,
+  target: { width: number; height: number },
+  tolerance = CROP_ASPECT_TOLERANCE
+): boolean {
+  if (
+    videoWidth <= 0 ||
+    videoHeight <= 0 ||
+    target.width <= 0 ||
+    target.height <= 0
+  ) {
+    return false;
+  }
+  const sourceRatio = videoWidth / videoHeight;
+  const targetRatio = target.width / target.height;
+  return Math.abs(sourceRatio - targetRatio) / targetRatio <= tolerance;
+}
 
 export interface PopupWindowFrameSourceOptions {
   /** 弹窗是否已用 Region Capture 把视频轨裁到预览元素。 */
@@ -66,6 +91,10 @@ export class PopupWindowFrameSource implements FrameSource {
     if (!target) throw new Error('popup_capture_target_missing');
 
     await waitForPlayableVideo(video);
+    if (options.cropped) {
+      const cropReady = await waitForStableCroppedVideo(video, target, 2000);
+      if (!cropReady) throw new Error('popup_capture_crop_not_ready');
+    }
     const viewport = {
       width: Math.max(1, sourceWindow.innerWidth),
       height: Math.max(1, sourceWindow.innerHeight)
@@ -113,6 +142,17 @@ export class PopupWindowFrameSource implements FrameSource {
   async grab(): Promise<HTMLCanvasElement | null> {
     if (this.video.readyState < 2) return null;
     if (this.cropped) {
+      const rect = this.target.getBoundingClientRect();
+      if (
+        !videoMatchesTargetAspectRatio(
+          this.video.videoWidth,
+          this.video.videoHeight,
+          rect
+        )
+      ) {
+        const cropReady = await waitForStableCroppedVideo(this.video, this.target, 600);
+        if (!cropReady) throw new Error('popup_capture_crop_not_ready');
+      }
       const sourceWidth = this.video.videoWidth;
       const sourceHeight = this.video.videoHeight;
       if (sourceWidth <= 0 || sourceHeight <= 0) return null;
@@ -175,6 +215,54 @@ function windowCaptureOffset(
   const extraHeight = Math.max(0, video.videoHeight - viewport.height * scale);
   if (extraWidth < 2 && extraHeight < 2) return undefined;
   return { x: extraWidth / scale / 2, y: extraHeight / scale };
+}
+
+async function waitForStableCroppedVideo(
+  video: HTMLVideoElement,
+  target: HTMLElement,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let lastWidth = 0;
+  let lastHeight = 0;
+  let stableFrames = 0;
+  while (Date.now() < deadline) {
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const rect = target.getBoundingClientRect();
+    if (videoMatchesTargetAspectRatio(width, height, rect)) {
+      if (width === lastWidth && height === lastHeight) {
+        stableFrames += 1;
+      } else {
+        lastWidth = width;
+        lastHeight = height;
+        stableFrames = 1;
+      }
+      if (stableFrames >= 2) return true;
+    } else {
+      stableFrames = 0;
+    }
+    await waitForNextVideoFrame(video);
+  }
+  return false;
+}
+
+function waitForNextVideoFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, 200);
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      video.requestVideoFrameCallback(() => finish());
+      return;
+    }
+    window.requestAnimationFrame(() => finish());
+  });
 }
 
 function waitForPlayableVideo(video: HTMLVideoElement): Promise<void> {

@@ -124,6 +124,7 @@ export function isCaptureWindowStreamReady(data: unknown): data is CaptureWindow
   if (candidate.type !== CAPTURE_STREAM_READY_TYPE) return false;
   if (typeof candidate.requestId !== 'string' || candidate.requestId.length === 0) return false;
   if (candidate.kind !== 'still' && candidate.kind !== 'record') return false;
+  if (candidate.format !== undefined && typeof candidate.format !== 'string') return false;
   if (candidate.provider !== undefined && typeof candidate.provider !== 'string') return false;
   if (candidate.model !== undefined && typeof candidate.model !== 'string') return false;
   return typeof candidate.cropped === 'boolean';
@@ -156,6 +157,7 @@ function friendlyCaptureError(message: string): string {
   if (message === 'popup_capture_target_not_visible') return '请先让预览完整显示在屏幕上';
   if (message === 'popup_capture_video_not_ready') return '屏幕共享画面未就绪，请重试';
   if (message === 'popup_capture_video_failed') return '屏幕共享画面读取失败，请重试';
+  if (message === 'popup_capture_crop_not_ready') return '屏幕共享画面还未裁切到预览区域，请重试';
   if (message === 'frame_source_unavailable') return '未抓到可编码的画面，请重试';
   if (message === 'capture_format_unavailable') return '没有可用的录制格式';
   if (message === 'capture_no_frames') return '没有抓到任何帧，请重试';

@@ -7,10 +7,9 @@ import {
   EyeOutlined,
   MobileOutlined,
   SettingOutlined,
-  StopOutlined,
   VideoCameraOutlined
 } from '@ant-design/icons';
-import { Dropdown, message } from 'antd';
+import { Dropdown, Modal, Radio, message } from 'antd';
 import {
   readCapturePreferences,
   subscribeCapturePreferences,
@@ -22,13 +21,15 @@ import {
 import { downloadBlobArtifact } from '../../features/capture/frame-utils';
 import RecordingSettingsModal from '../../features/capture/RecordingSettingsModal';
 import {
-  captureProgressText,
   listRecordableAnimationFormats,
   resolveDefaultRecordFormat,
   usePreviewCaptureActions
 } from './capture-bridge';
 import { normalizeHtmlPreviewDocument } from './file-preview-utils';
-import { openHtmlPreviewWindow } from './html-preview-window';
+import {
+  openHtmlPreviewWindow,
+  type HtmlPreviewDevice
+} from './html-preview-window';
 import styles from './message-bubble.module.css';
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
@@ -55,6 +56,11 @@ export default function HtmlCodeBlock({ code }: Props) {
     () => readCapturePreferences().recording
   );
   const [recordingSettingsOpen, setRecordingSettingsOpen] = useState(false);
+  const [recordPromptOpen, setRecordPromptOpen] = useState(false);
+  const [recordPromptFormat, setRecordPromptFormat] =
+    useState<AnimationCaptureFormatId | null>(null);
+  const [recordPreviewDevice, setRecordPreviewDevice] =
+    useState<HtmlPreviewDevice>('desktop');
 
   useEffect(
     () => subscribeCapturePreferences((preferences) => setRecordingSettings(preferences.recording)),
@@ -63,6 +69,12 @@ export default function HtmlCodeBlock({ code }: Props) {
 
   /** 可选录制格式（菜单项）。 */
   const recordOptions = useMemo(() => listRecordableAnimationFormats(), []);
+
+  const openRecordPrompt = useCallback((format: AnimationCaptureFormatId | null) => {
+    setRecordPreviewDevice('desktop');
+    setRecordPromptFormat(format);
+    setRecordPromptOpen(true);
+  }, []);
 
   const recordMenu = useMemo(
     () => ({
@@ -80,15 +92,20 @@ export default function HtmlCodeBlock({ code }: Props) {
           setRecordingSettingsOpen(true);
           return;
         }
-        void capture.runFormat(key as AnimationCaptureFormatId);
+        openRecordPrompt(key as AnimationCaptureFormatId);
       }
     }),
-    [capture, recordOptions, recordingSettings]
+    [openRecordPrompt, recordOptions, recordingSettings]
   );
 
   /** 主按钮直接执行的格式：全局默认格式（若在可选清单里），否则第一个可选格式。 */
   const recordAction = useMemo(() => resolveDefaultRecordFormat(recordOptions), [recordOptions]);
-  const recordingNow = capture.state.kind === 'animation' && !capture.state.stopping;
+  const pendingRecordFormat = recordPromptFormat ?? recordAction;
+  const pendingRecordFormatLabel = useMemo(
+    () =>
+      recordOptions.find((option) => option.id === pendingRecordFormat)?.label ?? '全局默认格式',
+    [pendingRecordFormat, recordOptions]
+  );
 
   const handleCopy = () => {
     if (copied) return;
@@ -99,12 +116,29 @@ export default function HtmlCodeBlock({ code }: Props) {
   };
 
   const handleOpenWindow = (device: 'desktop' | 'mobile') => {
-    openHtmlPreviewWindow(previewDoc, {
+    const popup = openHtmlPreviewWindow(previewDoc, {
       device,
       title: 'HTML 页面预览',
       captureIdentity: captureIdentity ?? undefined
     });
+    if (!popup) message.error('预览窗口被浏览器拦截，请允许弹窗后重试');
   };
+
+  const confirmRecordPreview = useCallback(() => {
+    setRecordPromptOpen(false);
+    const popup = openHtmlPreviewWindow(previewDoc, {
+      device: recordPreviewDevice,
+      title: 'HTML 页面预览',
+      captureIdentity: captureIdentity ?? undefined,
+      autoCapture: { kind: 'record', format: pendingRecordFormat ?? undefined }
+    });
+    if (!popup) message.error('预览窗口被浏览器拦截，请允许弹窗后重试');
+  }, [
+    captureIdentity,
+    pendingRecordFormat,
+    previewDoc,
+    recordPreviewDevice
+  ]);
 
   const [beautifyState, setBeautifyState] = useState({ busy: false, progressLabel: '' });
   const handleBeautifyExport = useCallback(async () => {
@@ -188,29 +222,13 @@ export default function HtmlCodeBlock({ code }: Props) {
               <span className={styles.htmlBlockSplit}>
                 <button
                   type="button"
-                  className={`${styles.htmlBlockActionBtn} ${recordingNow ? styles.htmlBlockActionBtnRecording : ''}`}
-                  aria-label={recordingNow ? '停止录制' : '开始录制'}
-                  title={recordingNow ? '停止录制并保存已抓到的帧' : '按当前录制设置开始录制'}
-                  disabled={!recordingNow && (capture.state.busy || !recordAction)}
-                  onClick={() => {
-                    if (recordingNow) {
-                      capture.stop();
-                      return;
-                    }
-                    if (recordAction) void capture.runFormat(recordAction);
-                  }}
+                  className={styles.htmlBlockActionBtn}
+                  aria-label="在独立预览中录制"
+                  title="打开独立预览并录制（默认 PC）"
+                  disabled={capture.state.busy || !recordAction}
+                  onClick={() => openRecordPrompt(recordAction)}
                 >
-                  {recordingNow ? (
-                    <>
-                      <StopOutlined /> 停止录制 · {(capture.state.elapsedMs / 1000).toFixed(1)}s
-                    </>
-                  ) : capture.state.busy ? (
-                    captureProgressText(capture.state)
-                  ) : (
-                    <>
-                      <VideoCameraOutlined /> 录制
-                    </>
-                  )}
+                  <VideoCameraOutlined /> 录制
                 </button>
                 <Dropdown menu={recordMenu} trigger={['click']} disabled={capture.state.busy}>
                   <button
@@ -251,6 +269,37 @@ export default function HtmlCodeBlock({ code }: Props) {
           </pre>
         )}
       </div>
+      <Modal
+        open={recordPromptOpen}
+        title="在独立预览中录制"
+        okText="打开并录制"
+        cancelText="取消"
+        onOk={confirmRecordPreview}
+        onCancel={() => setRecordPromptOpen(false)}
+      >
+        <div className={styles.htmlRecordPrompt}>
+          <p className={styles.htmlRecordPromptHint}>
+            聊天内的预览会随消息区域裁剪和滚动。录制将改在独立预览窗口中进行，画面按完整视口取景。
+          </p>
+          <Radio.Group
+            value={recordPreviewDevice}
+            onChange={(event) =>
+              setRecordPreviewDevice(event.target.value as HtmlPreviewDevice)
+            }
+          >
+            <Radio.Button value="desktop">
+              <DesktopOutlined /> PC 预览（推荐）
+            </Radio.Button>
+            <Radio.Button value="mobile">
+              <MobileOutlined /> 手机预览
+            </Radio.Button>
+          </Radio.Group>
+          <p className={styles.htmlRecordPromptMeta}>录制格式：{pendingRecordFormatLabel}</p>
+          <p className={styles.htmlRecordPromptMeta}>
+            页面渲染完成后会自动开始。若浏览器要求一次用户手势，预览窗口会高亮「录制」按钮，点击即可开始。
+          </p>
+        </div>
+      </Modal>
       <RecordingSettingsModal
         open={recordingSettingsOpen}
         onClose={() => setRecordingSettingsOpen(false)}

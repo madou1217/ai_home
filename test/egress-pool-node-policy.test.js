@@ -185,3 +185,30 @@ test('the ledger keeps working when the policy cannot be read', (t) => {
   assert.deepEqual(health.blockedReason('node-0'), { blocked: false, reason: '', detail: '' });
   assert.equal(health.pickNext(-1), 0);
 });
+
+// 用户在节点抽屉里测出来的慢节点，也要能被延迟拦截挡住
+// （两路探测：内核探测经出口真出网、权威；节点库实测只证明服务器连得上）。
+test('the latency policy also uses the node library measurement when the core has not probed yet', (t) => {
+  const dir = tempHome(t);
+  const policyRef = { value: normalizeNodePolicy({ latency: { enabled: true, maxMs: 3000 } }) };
+  const health = new EgressPoolNodeHealth({ fs, aiHomeDir: dir, now: () => 1_000_000, policyProvider: () => policyRef.value });
+  health.bindNodes([
+    { name: 'node-0', node: { ...vless('a.example.com'), latencyMs: 9000, lastChecked: 999_000 } },
+    { name: 'node-1', node: { ...vless('b.example.com'), latencyMs: 120, lastChecked: 999_000 } },
+    { name: 'node-2', node: vless('c.example.com') }
+  ]);
+  // 库里测出 9s：内核还没探过，延迟拦截照样生效。
+  assert.equal(health.blockedReason('node-0').reason, BLOCK_REASONS.latency);
+  assert.equal(health.blockedReason('node-0').blocked, true);
+  assert.equal(health.blockedReason('node-1').blocked, false);
+  assert.equal(health.blockedReason('node-2').blocked, false, '库里没测过 = 未知，不拦');
+  assert.equal(health.pickNext(0), 1, '轮换跳过库里测出来的慢节点');
+  // 快照里标出来源，界面能说明这条延迟是哪来的。
+  const view = health.snapshot();
+  assert.equal(view.nodes.find((n) => n.name === 'node-0').probe.source, 'library');
+  assert.equal(view.nodes.find((n) => n.name === 'node-0').probe.latencyMs, 9000);
+  // 内核探测一旦有结果，就以内核为准（它证明的是「经这个出口能不能出网」）。
+  health.recordProbe('node-0', { ok: true, latencyMs: 200 });
+  assert.equal(health.blockedReason('node-0').blocked, false, '内核实测正常即放行');
+  assert.equal(health.snapshot().nodes.find((n) => n.name === 'node-0').probe.source, 'core');
+});

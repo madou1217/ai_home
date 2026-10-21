@@ -116,6 +116,29 @@ opencode 2.0.29 起只写新代 `session_v2`/`session_message`，旧代表停在
 | P1 ✅ | `lib/sessions/session-reader-opencode.js` + `lib/sessions/session-reader.js`（`readOpenCodeSessionModel`） | 5 查询点 | 原 WebUI 会话历史只读旧表：新会话定位（`FROM session`）查不到 → 历史与列表整个缺新会话；消息渲染依赖 `part` 表 | 已消费同一张布局表（2026-10-16 完成，验证见 §3 Phase 3.5 第 13 条）：会话面两代并集（同 id 取更新更晚副本，归档/子会话过滤在合并之后）；消息面并集 + 按 `contentModel` 渲染（`inline` vs `parts`），同 id 新代优先、新代渲染为空不遮挡旧代 |
 | P2 ✅ | `lib/sessions/opencode-session-store.js`（WebUI chat 代理） | 7 写入点 | 混合写：`session`/`message`/`part` 写死旧表，`session_message` 只写 switch 行；`assertRequiredTables` 要求旧表存在（纯新库直接报错）。真机后果比「新会话对 2.x 不可见」更重：`session_message.session_id` 有 FK → `session_v2(id)`（node:sqlite 默认强制），迁移后库上新会话创建直接 `FOREIGN KEY constraint failed` | 已消费同一张布局表（2026-10-16 完成，验证见 §3 Phase 3.5 第 14 条）：新会话写活跃布局（`detectOpenCodeWriteLayouts` 首个 = 新代优先）；已存在会话写自身布局（两代都有取新代、仅旧代保持旧代——消息不跨代分裂）；门禁按「至少一代完整可写」；switch 行删除（从未成功持久化过） |
 
+### 残缺目录反模式（2026-10-21 · opencode 官方目录两腿并集）
+
+opencode 官方模型目录是**两条上游腿的并集**：Go（`/zen/go/v1/models`，37 个订阅模型）∪
+Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-client.js` 用
+`Promise.allSettled` 并行探两条腿、**只在两条都失败时才报错** —— 单腿失败被静默吞掉
+（2026-10-21 实测复现：只让 Zen 腿失败 → 返回 37 个模型、零错误信号）。
+
+而 `model-pool-narrowing.js` 的 `excludeAccountsWithoutModel` 把「目录已知且不含」当**强证据**
+否定账号。于是残缺目录被误当强证据：`opencode/<x>-free` 不在 37 个里 → 唯一 opencode 账号
+被判「不支持该模型」→ 踢出候选池 → 免费模型请求恒定 **503 no_available_account**。
+真机触发条件：后台刷新只有 2.5s 预算，Zen 腿偶发超时。
+
+| 优先级 | 文件 | 处数 | 现在在做什么 | 目标模式 |
+| --- | --- | --- | --- | --- |
+| P0 ✅ | `lib/server/opencode-server-client.js`（`probeOpenCodeCatalog`） | 2 腿 | 单腿失败静默丢弃，残缺目录冒充完整目录 | **显式事实传递**（2026-10-21 完成，commit 111d0fad）：返回 `{models, incomplete, legErrors}`，残缺不再隐式 |
+| P0 ✅ | `lib/server/http-utils.js`（`markCatalogCompleteness`）→ `model-discovery/index.js` → `provider-model-discovery.js` → `webui-model-cache.js` → `model-account-pool-selector.js` | 5 跳 | 目录质量在链路中途丢失 | 同一事实沿链路传递：`fetchModelsForAccount` 用**非枚举属性** `catalogIncomplete` 挂在返回数组上（返回值必须仍是数组，调用方大量按数组消费）；缓存落 `incompleteByAccount` 并按「本轮确实探过」合并（补探成功自动清标记） |
+| P0 ✅ | `lib/server/model-pool-narrowing.js`（`excludeAccountsWithoutModel` / `isPoolCatalogComplete`） | 2 判定点 | 残缺目录参与否定排除与「没有账号能服务」终判 | **证据强度分级**：残缺目录降级为弱证据放行，与既有「目录未知 ≠ 账号不能服务」同源——残缺目录缺的是证据，不是能力 |
+
+验证：`test/opencode-server-client.test.js`（单腿失败标 incomplete / 双腿齐全标 complete）、
+`test/server.model-pool-narrowing.test.js`（残缺不排除 / 清标记后恢复强证据 / 池含残缺账号不下终判）；
+真机：修复后目录 37 → 123（86 Zen + 37 Go），免费模型错误从网关合成的 `no_available_account`
+变成真实上游 `429 FreeUsageLimitError`。
+
 ## 3. 改造路线（每步独立可验证、可回滚）
 
 **Phase 1 — 采集面（额度 + 模型）彻底策略化**

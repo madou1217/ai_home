@@ -20,6 +20,7 @@ const {
   buildCodexAppServerSpawnEnv,
   buildStateThreadListResponse,
   buildCodexCliResumeArgs,
+  buildCodexRemoteResumeLaunch,
   shouldAggregateThreadList,
   buildAggregatePageRequest,
   mergeThreadListData,
@@ -257,6 +258,26 @@ test('buildCodexCliResumeArgs injects remote options after resume command', () =
     buildCodexCliResumeArgs(['resume', '--remote', 'ws://custom', '--last'], { remoteUrl: 'ws://127.0.0.1:9527' }),
     ['resume', '--remote', 'ws://custom', '--last']
   );
+});
+
+test('buildCodexCliResumeArgs strips permission overrides when it injects --remote', () => {
+  // codex-cli 0.163.0：远程 resume 拒绝任何权限覆盖（Permission overrides are not
+  // supported when resuming a remote task）。注入 --remote 的同一步必须摘掉它们。
+  const launch = buildCodexRemoteResumeLaunch(
+    ['resume', '--last', '-s', 'danger-full-access', '-a', 'never'],
+    { remoteUrl: 'ws://127.0.0.1:9527' }
+  );
+  assert.deepEqual(launch.args, ['resume', '--remote', 'ws://127.0.0.1:9527', '--last']);
+  assert.deepEqual(launch.removedPermissionFlags, ['-s', '-a']);
+  // hook-trust 与工具确认无关，保留
+  const kept = buildCodexRemoteResumeLaunch(
+    ['resume', '--last', '--dangerously-bypass-hook-trust'],
+    { remoteUrl: 'ws://127.0.0.1:9527' }
+  );
+  assert.deepEqual(kept.args, [
+    'resume', '--remote', 'ws://127.0.0.1:9527', '--last', '--dangerously-bypass-hook-trust'
+  ]);
+  assert.deepEqual(kept.removedPermissionFlags, []);
 });
 
 test('runCodexCliResume scopes shared app-server remote to current cwd', async (t) => {

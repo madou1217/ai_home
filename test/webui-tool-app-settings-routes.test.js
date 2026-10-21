@@ -95,11 +95,74 @@ test('GET tool app settings returns default max permission and capability', asyn
   assert.equal(res.statusCode, 200);
   assert.equal(data.ok, true);
   assert.equal(data.appId, 'claude');
-  assert.deepEqual(data.settings, { maxPermission: true, applyToHost: false, updatedAt: 0 });
+  assert.deepEqual(data.settings, {
+    maxPermission: true,
+    applyToHost: false,
+    permissionArgs: [],
+    updatedAt: 0
+  });
   assert.equal(data.capability.maxSupported, true);
   assert.deepEqual(data.capability.maxArgs, ['--permission-mode', 'bypassPermissions']);
   assert.equal(data.capability.hostSupported, true);
   assert.match(data.capability.hostDisplayPath, /\.claude[/\\]settings\.json$/);
+  // 权限参数目录随能力一起下发：前端只渲染这份数据，不维护 provider 名单
+  const catalog = data.capability.permissionCatalog;
+  assert.equal(catalog.verifiedCliVersion, '2.1.306');
+  assert.ok(catalog.flags.some((entry) => entry.flag === '--permission-mode'));
+  assert.ok(catalog.groups.approval);
+});
+
+test('PUT tool app settings persists WebUI-selected permission args', async (t) => {
+  const { deps } = withHome(t);
+  const { res, data } = await runSettingsRequest(
+    '/v0/webui/toolkit/apps/claude/settings',
+    {
+      method: 'PUT',
+      body: {
+        maxPermission: true,
+        applyToHost: false,
+        permissionArgs: ['--permission-mode', 'acceptEdits']
+      },
+      deps
+    }
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(data.settings.permissionArgs, ['--permission-mode', 'acceptEdits']);
+  const stored = readToolPermissionSettings(fs, deps.aiHomeDir);
+  assert.deepEqual(stored.apps.claude.permissionArgs, ['--permission-mode', 'acceptEdits']);
+});
+
+test('PUT tool app settings rejects mutually exclusive or unknown permission args', async (t) => {
+  const { deps } = withHome(t);
+
+  // 互斥组合绝不落库（kimi 实测 -y × --auto 上游直接报错）
+  const conflict = await runSettingsRequest('/v0/webui/toolkit/apps/kimi/settings', {
+    method: 'PUT',
+    body: { maxPermission: true, applyToHost: false, permissionArgs: ['--yolo', '--auto'] },
+    deps
+  });
+  assert.equal(conflict.res.statusCode, 400);
+  assert.equal(conflict.data.error, 'permission_args_invalid');
+  assert.equal(conflict.data.validation.conflicts.length, 1);
+
+  // 取值不在枚举内
+  const badValue = await runSettingsRequest('/v0/webui/toolkit/apps/claude/settings', {
+    method: 'PUT',
+    body: { maxPermission: true, applyToHost: false, permissionArgs: ['--permission-mode', 'nope'] },
+    deps
+  });
+  assert.equal(badValue.res.statusCode, 400);
+  assert.equal(badValue.data.error, 'permission_args_invalid');
+
+  // 关闭最大权限时不允许挑选具体参数（语义矛盾）
+  const contradictory = await runSettingsRequest('/v0/webui/toolkit/apps/claude/settings', {
+    method: 'PUT',
+    body: { maxPermission: false, applyToHost: false, permissionArgs: ['--permission-mode', 'plan'] },
+    deps
+  });
+  assert.equal(contradictory.res.statusCode, 400);
+  assert.equal(contradictory.data.error, 'permission_args_requires_max_permission');
 });
 
 test('PUT tool app settings persists the per-provider switch', async (t) => {

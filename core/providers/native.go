@@ -151,6 +151,12 @@ func nativeGrok() *NativeCapability {
 }
 
 // nativeKimi 描述 Kimi Code 原生配置、会话和权限边界。
+//
+// 权限三档（kimi 2.2.0 的 --help 原文，2026-10-21 实测）：
+//   - 默认（不带旗标）= Always Ask：执行命令/改文件前都问；
+//   - `-y` / `--yolo` = Ask When Needed：常规编辑与命令自动执行，**有风险的操作、提问与计划仍会问**；
+//   - `--auto` = Never Ask：不再打断，一切自动决定。
+// 因此**最高档是 `--auto` 而不是 `--yolo`** —— 只声明 `--yolo` 会让「最大权限」注入成低一档。
 func nativeKimi() *NativeCapability {
 	return &NativeCapability{
 		Config: NativeConfig{
@@ -172,8 +178,8 @@ func nativeKimi() *NativeCapability {
 			StopRequiresJSONStdout: false,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{"--yolo"},
-			Modes: []string{"default", "yolo", "plan"},
+			Flags: []string{"--auto", "--yolo"},
+			Modes: []string{"always-ask", "yolo", "never-ask"},
 		},
 	}
 }

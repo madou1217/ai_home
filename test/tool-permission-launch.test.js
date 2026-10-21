@@ -51,6 +51,16 @@ test('tool permission launch derives max-permission args from the provider contr
   assert.equal(launch('cline', [], { aiHomeDir: home }).reason, 'unsupported');
 });
 
+// qoder 的权限取值用下划线（bypass_permissions），与 claude 的驼峰（bypassPermissions）
+// 不同；合同原先没声明权限，最大权限推导不出参数。
+test('qoder and qodercn resolve max permission with their own underscore mode', (t) => {
+  const home = withHome(t);
+  for (const provider of ['qoder', 'qodercn']) {
+    const result = launch(provider, [], { aiHomeDir: home });
+    assert.deepEqual(result.args, ['--permission-mode', 'bypass_permissions'], provider);
+  }
+});
+
 // 2026-10-21 实测（kimi 2.2.0 --help 原文）：`-y/--yolo` 是「Ask When Needed」，
 // **有风险的操作、提问与计划仍会问**；`--auto` 才是「Never Ask」。合同原先只声明
 // `--yolo`，于是「最大权限」被注入成低一档。

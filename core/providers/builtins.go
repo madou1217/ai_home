@@ -400,6 +400,15 @@ func builtinQoder() Definition {
 			Sessions: NativeSessions{
 				Flags: []string{"--continue", "--resume", "--fork-session"},
 			},
+			// 权限（qodercli 1.1.74 的 --help 与内置设置项，2026-10-22 实测）：
+			//   --permission-mode <mode>  取值 default / accept_edits / auto / bypass_permissions / dont_ask
+			//   --dangerously-skip-permissions  跳过全部权限检查
+			// 设置项 `defaultPermissionMode` 收同样的取值，别名 yolo = bypass_permissions。
+			// 取值用下划线形态（原生取值），不用界面上的驼峰别名。
+			Permissions: NativePermissions{
+				Flags: []string{"--permission-mode", "--dangerously-skip-permissions"},
+				Modes: []string{"default", "accept_edits", "auto", "bypass_permissions", "dont_ask"},
+			},
 		},
 	}
 }
@@ -450,6 +459,11 @@ func builtinQoderCN() Definition {
 		NativeBoundary: &NativeCapability{
 			Sessions: NativeSessions{
 				Flags: []string{"--continue", "--resume", "--fork-session"},
+			},
+			// 权限与 qoder 同源（qoderclicn 的 --help 实测同样的旗标与取值）。
+			Permissions: NativePermissions{
+				Flags: []string{"--permission-mode", "--dangerously-skip-permissions"},
+				Modes: []string{"default", "accept_edits", "auto", "bypass_permissions", "dont_ask"},
 			},
 		},
 	}

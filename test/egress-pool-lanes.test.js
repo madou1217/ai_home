@@ -258,7 +258,7 @@ test('planner: sticky lanes downgrade to shared when slots run out', async () =>
   }
 });
 
-test('registry: account lanes resolve per account and plan on demand', async () => {
+test('registry: account lanes resolve per account without blocking the request on a plan', async () => {
   const { runtime } = buildRuntime();
   await runtime.start();
   let planned = 0;
@@ -270,10 +270,14 @@ test('registry: account lanes resolve per account and plan on demand', async () 
   };
   registry.setEgressPoolService(service);
   try {
-    // 第一次查询：账号还没有车道 → 同步规划；节点还没选好时 fail-closed（''）。
-    assert.equal(registry.currentEgressPoolProxyUrl({ accountRef: 'a' }), '');
-    assert.equal(planned, 1);
+    // 第一次查询：账号还没有车道 → 请求**不等**规划，当场走默认出口（2w 节点时同步规划会把请求卡住）。
+    assert.equal(registry.currentEgressPoolProxyUrl({ accountRef: 'a' }), 'http://127.0.0.1:17900');
+    assert.equal(planned, 0, '请求路径上不同步规划');
+    // 规划在后台补上（setImmediate）。
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(planned, 1, '后台补了一次规划');
     await runtime.reselectAssignedLanes();
+    // 车道就绪后按账号返回车道地址。
     assert.equal(registry.currentEgressPoolProxyUrl({ accountRef: 'a' }), 'http://127.0.0.1:17903');
     assert.equal(registry.currentEgressPoolNode('a'), 'node-1');
     // 没有账号上下文：默认出口（旧行为）。

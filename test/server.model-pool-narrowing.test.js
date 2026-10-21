@@ -256,3 +256,51 @@ test('原生生图模型不会因常规文本目录缺失而被误排除', () =>
   assert.deepEqual(result.pool.map((item) => item.accountRef), [AGY_REF]);
   assert.deepEqual(result.excludedAccountRefs, []);
 });
+
+// 2026-10-21 真机事故回归：opencode 官方目录是 Go + Zen 两条腿的并集，后台刷新 2.5s
+// 预算下 Zen 腿偶发超时 → 目录只剩 Go 的 37 个模型。残缺目录此前被当成「已知且完整的
+// 目录」，于是 opencode/<x>-free（全在 Zen 腿）被判成「该账号不支持」→ 唯一账号被踢出
+// 候选池 → 免费模型请求恒定 503 no_available_account。
+test('目录残缺的账号不参与否定排除——缺项说明没探到，不说明不支持', () => {
+  const result = excludeAccountsWithoutModel({
+    pool: [account(OAUTH_A)],
+    provider: 'opencode',
+    model: 'opencode/deepseek-v4.1-flash-free',
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['opencode-go/glm-5.3'])]
+    ]),
+    incompleteAccountRefs: new Set([OAUTH_A]),
+    getAccountRef
+  });
+  assert.deepEqual(result.pool.map((item) => item.accountRef), [OAUTH_A]);
+  assert.deepEqual(result.excludedAccountRefs, []);
+  assert.deepEqual(result.incompleteAccountRefs, [OAUTH_A]);
+});
+
+test('残缺标记清掉后同一份目录重新成为强证据', () => {
+  const result = excludeAccountsWithoutModel({
+    pool: [account(OAUTH_A)],
+    provider: 'opencode',
+    model: 'opencode/deepseek-v4.1-flash-free',
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['opencode-go/glm-5.3'])]
+    ]),
+    incompleteAccountRefs: new Set(),
+    getAccountRef
+  });
+  assert.deepEqual(result.pool, []);
+  assert.deepEqual(result.excludedAccountRefs, [OAUTH_A]);
+});
+
+test('池里有残缺账号时不下「没有账号能服务」的终判', () => {
+  const result = narrow({
+    accountCatalogs: new Map([
+      [OAUTH_A, new Set(['gpt-5.5'])],
+      [OAUTH_B, new Set(['gpt-5.5'])],
+      [RELAY, new Set(['gpt-5.5'])]
+    ]),
+    incompleteAccountRefs: new Set([RELAY])
+  });
+  assert.equal(result.unchecked, true);
+  assert.equal(result.pool.length, 3);
+});

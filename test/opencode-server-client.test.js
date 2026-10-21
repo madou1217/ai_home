@@ -379,3 +379,36 @@ test('fetchOpenCodeChatCompletion respects custom baseUrl configured on account'
   assert.equal(calls[0].url, 'https://opencode.ai/zen/v1/chat/completions');
   assert.equal(calls[0].init.headers.authorization, 'Bearer sk-custom-zen-key');
 });
+
+// 2026-10-21 真机事故回归：官方目录是 Go + Zen 两条腿的并集。只回来一条腿时，
+// 返回的模型列表必须被标成「不完整」——否则下游会拿它反证「该账号不支持缺失的
+// 模型」（免费模型全在 Zen 腿），把唯一的账号踢出候选池。
+test('probeOpenCodeCatalog marks the catalog incomplete when one leg fails', async () => {
+  const { probeOpenCodeCatalog } = require('../lib/server/opencode-server-client');
+  const probe = await probeOpenCodeCatalog({
+    opencodeGoBaseUrl: 'https://opencode.ai/zen/go/v1'
+  }, { provider: 'opencode' }, 500, {
+    fetchWithTimeout: async (url) => {
+      if (String(url).includes('/zen/v1/')) throw new Error('zen leg timeout');
+      return jsonResponse({ object: 'list', data: [{ id: 'glm-5.3', object: 'model' }] });
+    }
+  });
+
+  assert.deepEqual(probe.models, ['opencode-go/glm-5.3']);
+  assert.equal(probe.incomplete, true);
+  assert.match(probe.legErrors.zen, /zen leg timeout/);
+  assert.equal(probe.legErrors.go, undefined);
+});
+
+test('probeOpenCodeCatalog is complete when both legs answer', async () => {
+  const { probeOpenCodeCatalog } = require('../lib/server/opencode-server-client');
+  const probe = await probeOpenCodeCatalog({}, { provider: 'opencode' }, 500, {
+    fetchWithTimeout: async (url) => (String(url).includes('/zen/go/')
+      ? jsonResponse({ object: 'list', data: [{ id: 'glm-5.3' }] })
+      : jsonResponse({ object: 'list', data: [{ id: 'deepseek-v4.1-flash-free' }] }))
+  });
+
+  assert.deepEqual(probe.models, ['opencode-go/glm-5.3', 'opencode/deepseek-v4.1-flash-free']);
+  assert.equal(probe.incomplete, false);
+  assert.deepEqual(probe.legErrors, {});
+});

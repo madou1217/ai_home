@@ -13,7 +13,6 @@ import {
 import type { MobilePageProps } from '../mobile-routes';
 import { HudChips, MobilePage } from '@/mobile/ui';
 import AppsPanel from './toolkit/AppsPanel';
-import CliUpgradePanel from './toolkit/CliUpgradePanel';
 import DiagnosticsPanel from './toolkit/DiagnosticsPanel';
 import EnvironmentPanel from './toolkit/EnvironmentPanel';
 import MirrorsPanel from './toolkit/MirrorsPanel';
@@ -43,7 +42,6 @@ const SECTION_ITEMS: Record<ToolkitSection, SecondaryItem[]> = {
     { id: 'apps', label: '应用管理', icon: <AppstoreOutlined /> },
     { id: 'terminals', label: '终端管理', icon: <ToolOutlined /> },
     { id: 'edge-forwarding', label: '入口与转发', icon: <GatewayOutlined /> },
-    { id: 'cli-upgrade', label: 'CLI 自动升级', icon: <CloudSyncOutlined /> },
     { id: 'session-runtimes', label: '持久化工具', icon: <ToolOutlined /> }
   ],
   runtime: [
@@ -71,8 +69,6 @@ function renderPanel(panelId: string) {
       return <TerminalsPanel />;
     case 'edge-forwarding':
       return <EdgeForwardingPanel />;
-    case 'cli-upgrade':
-      return <CliUpgradePanel />;
     case 'session-runtimes':
       return <ToolsPanel category="session-runtimes" />;
     case 'environment':

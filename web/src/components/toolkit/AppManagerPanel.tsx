@@ -16,6 +16,16 @@ import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import { APP_CATEGORIES, useManagedApps } from './use-managed-apps';
+import { describeClearBrokenResult } from './provider-cli-upgrade-presentation';
+import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
+
+const UPGRADE_TRACK_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
+  success: 'success',
+  warning: 'warning',
+  error: 'danger',
+  active: 'info',
+  neutral: 'neutral'
+};
 
 function requestError(error: unknown, fallback: string) {
   if (typeof error === 'object' && error) {
@@ -50,6 +60,18 @@ export default function AppManagerPanel() {
     runAppAction,
     installHooks
   } = useManagedApps();
+  // 自动升级结论挂在应用卡片上（同 provider 只给一处结论），不再有独立的升级面板。
+  const {
+    loading: upgradeLoading,
+    error: upgradeError,
+    fetchStatus: fetchUpgradeStatus,
+    mode: upgradeMode,
+    byProvider: upgradeByProvider,
+    updatable: upgradeUpdatable,
+    attention: upgradeAttention,
+    clearBroken,
+    clearingProvider
+  } = useProviderCliUpgrade();
   const [category, setCategory] = useState('ALL');
   const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
@@ -107,15 +129,29 @@ export default function AppManagerPanel() {
     }
   };
 
+  const handleClearUpgradeBroken = async (provider: string) => {
+    const result = await clearBroken(provider);
+    const text = describeClearBrokenResult(result);
+    if (result.ok) message.success(`${provider}：${text}`);
+    else message.error(`${provider}：${text}`, 8);
+  };
+
   return (
     <section className="toolkit-page toolkit-domain-panel" aria-labelledby="toolkit-apps-title">
       <header className="toolkit-panel-header">
         <div>
           <div className="toolkit-panel-kicker">APPLICATION INVENTORY</div>
           <h2 id="toolkit-apps-title">应用管理</h2>
+          <p>应用清单与 provider CLI 的自动升级结论在同一张卡片上：新版本只在该 CLI 空闲时生效，不会打断进行中的会话。</p>
         </div>
         <div className="toolkit-header-actions">
-          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => { void fetchApps(); }}>重新探测</Button>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={loading || upgradeLoading}
+            onClick={() => { void fetchApps(); void fetchUpgradeStatus(); }}
+          >
+            重新探测
+          </Button>
         </div>
       </header>
 
@@ -124,6 +160,13 @@ export default function AppManagerPanel() {
           <span className="hud-led hud-led--err" aria-hidden="true" />
           <strong>应用清单读取失败</strong>
           <span>{error}</span>
+        </div>
+      )}
+      {upgradeError && (
+        <div className="toolkit-inline-error" role="alert">
+          <span className="hud-led hud-led--err" aria-hidden="true" />
+          <strong>升级状态读取失败</strong>
+          <span>{upgradeError}</span>
         </div>
       )}
       {loading && !data ? (
@@ -135,7 +178,17 @@ export default function AppManagerPanel() {
             items={[
               { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
               { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '网页会话刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: SESSION_SYNC_SUMMARY, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' }
+              { label: '网页会话刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: SESSION_SYNC_SUMMARY, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' },
+              {
+                label: 'CLI 自动升级',
+                value: upgradeMode.label,
+                detail: upgradeAttention
+                  ? `${upgradeAttention} 个异常需要人工确认 · ${upgradeMode.detail}`
+                  : upgradeUpdatable
+                    ? `${upgradeUpdatable} 个有新版 · ${upgradeMode.detail}`
+                    : upgradeMode.detail,
+                tone: upgradeAttention ? 'danger' : UPGRADE_TRACK_TONES[upgradeMode.tone]
+              }
             ]}
           />
 
@@ -163,11 +216,14 @@ export default function AppManagerPanel() {
                   runningAccountPids={runningAccountPids}
                   runningCliAccountPids={runningCliAccountPids}
                   installingHooks={installingHooks}
+                  upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
+                  clearingUpgrade={clearingProvider === app.provider}
                   onAction={(target, action) => void runAppAction(target, action)}
                   onCheckUpdate={(target) => void checkAppUpdate(target)}
                   onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
                   onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
                   onInstallHooks={(provider) => void installHooks([provider])}
+                  onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
                   onEditConfig={(target) => setAdvancedApp(target)}
                 />
               ))}

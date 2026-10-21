@@ -26,6 +26,11 @@ export interface ProviderCliUpgradeRowPresentation {
   canClearBroken: boolean;
   /** 只有「查过且找不到命令」才是 false；没查过、读不到版本都不算未安装。 */
   installed: boolean;
+  /**
+   * 真的存在可跟进的新版本。熔断/回滚行即使账本里 updateAvailable 仍为 true 也不算，
+   * 否则「有新版」会把「已经停在那儿等人工」的坏消息盖掉。
+   */
+  hasUpdate: boolean;
 }
 
 const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -163,7 +168,8 @@ export function getProviderCliUpgradeRow(
     channelLabel: getUpgradeChannelLabel(record.channel),
     lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now),
     installed: true,
-    canClearBroken: false
+    canClearBroken: false,
+    hasUpdate: false
   };
 
   if (record.enabled === false) {
@@ -219,6 +225,7 @@ export function getProviderCliUpgradeRow(
   if (record.updateAvailable) {
     return {
       ...base,
+      hasUpdate: true,
       // 渠道钉不了版本就永远不会自动装，不能说「待升级」（重启后还没跑过 tick 时 reason 为空，以渠道能力为准）。
       statusLabel: scheduler && scheduler.applyEnabled && record.pinnable !== false && reason !== 'channel_not_pinnable'
         ? '待升级'
@@ -236,6 +243,68 @@ export function getProviderCliUpgradeRows(
 ): ProviderCliUpgradeRowPresentation[] {
   if (!status || !Array.isArray(status.providers)) return [];
   return status.providers.map((record) => getProviderCliUpgradeRow(record, status.scheduler, now));
+}
+
+/**
+ * 应用卡片要的那一份视角：账本行 + 卡片额外要展示的回退锚点与已拉黑版本。
+ *
+ * 版本闭环与「应用清单」是两份数据（一个在服务器账本里，一个来自本机探测），
+ * 合并只能按 provider 对齐。账本里没有这个 provider 就返回 null —— 卡片此时
+ * 什么升级结论都不显示，而不是显示「已是最新」（那是在编造好消息）。
+ */
+export interface ManagedAppUpgradeView {
+  provider: string;
+  statusLabel: string;
+  statusTone: ProviderCliUpgradeTone;
+  versionText: string;
+  reasonText: string;
+  channelLabel: string;
+  lastCheckText: string;
+  attention: boolean;
+  canClearBroken: boolean;
+  hasUpdate: boolean;
+  knownGoodVersion: string;
+  blockedVersions: string[];
+}
+
+export function getManagedAppUpgradeView(
+  status: ProviderCliUpgradeStatusResponse | null,
+  provider: string,
+  now: number = Date.now()
+): ManagedAppUpgradeView | null {
+  const key = String(provider || '').trim();
+  if (!status || !key || !Array.isArray(status.providers)) return null;
+  const record = status.providers.find((item) => item.provider === key);
+  if (!record) return null;
+  const row = getProviderCliUpgradeRow(record, status.scheduler || null, now);
+  return {
+    provider: row.provider,
+    statusLabel: row.statusLabel,
+    statusTone: row.statusTone,
+    versionText: row.versionText,
+    reasonText: row.reasonText,
+    channelLabel: row.channelLabel,
+    lastCheckText: row.lastCheckText,
+    attention: row.attention,
+    canClearBroken: row.canClearBroken,
+    hasUpdate: row.hasUpdate,
+    knownGoodVersion: String(record.knownGoodVersion || '').trim(),
+    blockedVersions: Array.isArray(record.blockedVersions) ? record.blockedVersions.map(String) : []
+  };
+}
+
+/** 「应用管理」按 provider 一次性建索引；逐个 provider 再扫一遍账本没有意义。 */
+export function getManagedAppUpgradeViews(
+  status: ProviderCliUpgradeStatusResponse | null,
+  now: number = Date.now()
+): Record<string, ManagedAppUpgradeView> {
+  const map: Record<string, ManagedAppUpgradeView> = {};
+  if (!status || !Array.isArray(status.providers)) return map;
+  for (const record of status.providers) {
+    const view = getManagedAppUpgradeView(status, record.provider, now);
+    if (view) map[view.provider] = view;
+  }
+  return map;
 }
 
 // 「验证并解除熔断」的结果文案。

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toolkitAPI } from '@/services/api';
 import type { ProviderCliUpgradeClearBrokenResponse, ProviderCliUpgradeStatusResponse } from '@/types';
-import { getProviderCliUpgradeRows, getUpgradeModeSummary } from './provider-cli-upgrade-presentation';
+import {
+  getManagedAppUpgradeViews,
+  getProviderCliUpgradeRows,
+  getUpgradeModeSummary,
+  type ManagedAppUpgradeView
+} from './provider-cli-upgrade-presentation';
 
 /**
  * CLI 自动升级状态面的数据层（桌面面板与移动端共用）。
@@ -51,9 +56,24 @@ export function useProviderCliUpgrade() {
 
   const rows = useMemo(() => getProviderCliUpgradeRows(data), [data]);
   const mode = useMemo(() => getUpgradeModeSummary(data?.scheduler || null, data?.global), [data]);
+  // 应用卡片按 provider 查同一份账本：一个 provider 只有一条结论，界面上也只该出现一次。
+  const byProvider = useMemo<Record<string, ManagedAppUpgradeView>>(() => getManagedAppUpgradeViews(data), [data]);
   const updatable = rows.filter((row) => row.statusLabel === '有新版' || row.statusLabel === '待升级').length;
   const attention = rows.filter((row) => row.attention).length;
   const installed = rows.filter((row) => row.installed).length;
 
-  return { data, loading, error, fetchStatus, rows, mode, updatable, attention, installed, clearBroken, clearingProvider };
+  return {
+    data,
+    loading,
+    error,
+    fetchStatus,
+    rows,
+    mode,
+    byProvider,
+    updatable,
+    attention,
+    installed,
+    clearBroken,
+    clearingProvider
+  };
 }

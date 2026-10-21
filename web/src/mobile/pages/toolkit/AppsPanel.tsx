@@ -8,6 +8,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   StarFilled,
   StopOutlined
@@ -25,6 +26,8 @@ import {
 } from '@/components/toolkit/managed-app-presentation';
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
+import { describeClearBrokenResult, type ManagedAppUpgradeView } from '@/components/toolkit/provider-cli-upgrade-presentation';
+import { useProviderCliUpgrade } from '@/components/toolkit/use-provider-cli-upgrade';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
@@ -41,7 +44,7 @@ import {
   TelemetryGrid,
   TelemetryTile
 } from '@/mobile/ui';
-import type { SwipeAction } from '@/mobile/ui';
+import type { HudTone, SwipeAction } from '@/mobile/ui';
 import { toolkitAPI } from '@/services/api';
 import type { Account, ManagedAppItem } from '@/types';
 import { ActionButton, InlineError, Note, PanelToolbar, StatusText, TaskStatus } from './toolkit-parts';
@@ -51,6 +54,15 @@ const TYPE_CODES: Record<ManagedAppItem['type'], string> = {
   cli: 'CLI',
   desktop: 'DESKTOP',
   ide: 'IDE'
+};
+
+/** 自动升级 tone → 移动端 HUD tone；一处映射，卡片与详情共用。 */
+const UPGRADE_HUD_TONES: Record<ManagedAppUpgradeView['statusTone'], HudTone> = {
+  success: 'ok',
+  warning: 'warn',
+  error: 'err',
+  active: 'info',
+  neutral: 'muted'
 };
 
 function canLaunch(app: ManagedAppItem) {
@@ -83,10 +95,21 @@ export default function AppsPanel() {
     runAppAction,
     installHooks
   } = useManagedApps();
+  const {
+    error: upgradeError,
+    fetchStatus: fetchUpgradeStatus,
+    mode: upgradeMode,
+    byProvider: upgradeByProvider,
+    updatable: upgradeUpdatable,
+    attention: upgradeAttention,
+    clearingProvider,
+    clearBroken
+  } = useProviderCliUpgrade();
   const [category, setCategory] = useState('ALL');
   const [detailId, setDetailId] = useState('');
   const [launchId, setLaunchId] = useState('');
   const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
+  const [clearResult, setClearResult] = useState<{ provider: string; ok: boolean; text: string } | null>(null);
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{ app: ManagedAppItem; accountRef: string } | null>(null);
 
   const filteredApps = useMemo(() => {
@@ -98,6 +121,15 @@ export default function AppsPanel() {
 
   const detailApp = data?.apps.find((app) => app.id === detailId) || null;
   const launchApp = data?.apps.find((app) => app.id === launchId) || null;
+  /** 自动升级账本只对 CLI 成立；Desktop/IDE 由各自的更新渠道负责，卡片上不冒充。 */
+  const upgradeFor = (app: ManagedAppItem): ManagedAppUpgradeView | null => (
+    app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null
+  );
+
+  const handleClearBroken = async (provider: string) => {
+    const result = await clearBroken(provider);
+    setClearResult({ provider, ok: result.ok, text: describeClearBrokenResult(result) });
+  };
 
   const runningPidsFor = (app: ManagedAppItem) => (app.type === 'desktop' ? runningAccountPids : runningCliAccountPids);
   const hasRunningAccount = (app: ManagedAppItem) => sortManagedAppAccounts(accounts, app.provider)
@@ -200,6 +232,16 @@ export default function AppsPanel() {
     return <StatusText tone="ok">已安装</StatusText>;
   };
 
+  /**
+   * 列表行上的升级结论只在「有新版」或「需要人管」时出现；
+   * 「已是最新」「待首轮检查」这类常态不该挤进每一条行。
+   */
+  const upgradeSideStatus = (app: ManagedAppItem) => {
+    const upgrade = upgradeFor(app);
+    if (!upgrade || !(upgrade.attention || upgrade.hasUpdate)) return null;
+    return <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText>;
+  };
+
   if (loading && !data) return <MobileBoot label="PROBING APPS" />;
 
   return (
@@ -208,10 +250,11 @@ export default function AppsPanel() {
         status={data ? `当前显示 ${filteredApps.length} 项` : null}
         refreshLabel="重新探测"
         refreshing={loading}
-        onRefresh={() => { void fetchApps(); }}
+        onRefresh={() => { void fetchApps(); void fetchUpgradeStatus(); }}
       />
 
       {error ? <InlineError title="应用清单读取失败" detail={error} onRetry={() => { void fetchApps(); }} retrying={loading} /> : null}
+      {upgradeError ? <InlineError title="升级状态读取失败" detail={upgradeError} onRetry={() => { void fetchUpgradeStatus(); }} retrying={false} /> : null}
 
       {data ? (
         <>
@@ -233,6 +276,18 @@ export default function AppsPanel() {
               tone={hookSupportedCount === 0 ? 'muted' : hookReadyCount === hookSupportedCount ? 'ok' : 'warn'}
               led={hookSupportedCount > 0}
               sub={SESSION_SYNC_SUMMARY}
+            />
+            <TelemetryTile
+              wide
+              label="CLI 自动升级"
+              value={upgradeMode.label}
+              tone={upgradeAttention ? 'err' : UPGRADE_HUD_TONES[upgradeMode.tone]}
+              led
+              sub={upgradeAttention
+                ? `${upgradeAttention} 个异常需要人工确认 · ${upgradeMode.detail}`
+                : upgradeUpdatable
+                  ? `${upgradeUpdatable} 个有新版 · ${upgradeMode.detail}`
+                  : upgradeMode.detail}
             />
           </TelemetryGrid>
 
@@ -258,7 +313,10 @@ export default function AppsPanel() {
                       <span className="mhud-row__title">{app.name}</span>
                       <span className="mhud-row__meta">{TYPE_CODES[app.type]} · {getAppCurrentVersion(app)}</span>
                     </span>
-                    <span className="mhud-row__side">{rowStatus(app)}</span>
+                    <span className="mhud-row__side">
+                      {upgradeSideStatus(app)}
+                      {rowStatus(app)}
+                    </span>
                   </SwipeRow>
                 ))}
               </MonoList>
@@ -289,10 +347,14 @@ export default function AppsPanel() {
           <AppDetail
             app={detailApp}
             status={rowStatus(detailApp)}
+            upgrade={upgradeFor(detailApp)}
+            clearResult={clearResult}
             installingHooks={installingHooks}
             busy={Boolean(busyActionFor(detailApp))}
+            clearingUpgrade={clearingProvider === detailApp.provider}
             onInstallHooks={() => void installHooks([detailApp.provider])}
             onOpenAdvanced={() => setAdvancedApp(detailApp)}
+            onClearBroken={() => void handleClearBroken(detailApp.provider)}
           />
         ) : null}
       </DetailSheet>
@@ -350,13 +412,17 @@ export default function AppsPanel() {
   );
 }
 
-function AppDetail({ app, status, installingHooks, busy, onInstallHooks, onOpenAdvanced }: {
+function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, clearingUpgrade, onInstallHooks, onOpenAdvanced, onClearBroken }: {
   app: ManagedAppItem;
   status: ReactNode;
+  upgrade: ManagedAppUpgradeView | null;
+  clearResult: { provider: string; ok: boolean; text: string } | null;
   installingHooks: boolean;
   busy: boolean;
+  clearingUpgrade: boolean;
   onInstallHooks: () => void;
   onOpenAdvanced: () => void;
+  onClearBroken: () => void;
 }) {
   const hookDetail = getAppHookStatusDetail(app);
   const rows = [
@@ -371,11 +437,37 @@ function AppDetail({ app, status, installingHooks, busy, onInstallHooks, onOpenA
         ? <StatusText tone="info">已启用</StatusText>
         : <StatusText tone="warn">待启用</StatusText>
     }] : []),
-    ...(app.type === 'cli' ? [{ key: 'sync', label: '网页会话刷新', value: SYNC_MODE_LABELS[app.syncMode], mono: false }] : [])
+    ...(app.type === 'cli' ? [{ key: 'sync', label: '网页会话刷新', value: SYNC_MODE_LABELS[app.syncMode], mono: false }] : []),
+    // 升级账本的结论与桌面卡片同一份数据、同一套文案。
+    ...(upgrade ? [
+      { key: 'upgrade', label: '自动升级', value: <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText> },
+      { key: 'upgradeReason', label: '升级结论', value: upgrade.reasonText || '—', mono: false, tone: upgrade.reasonText ? undefined : 'muted' as const },
+      { key: 'upgradeChannel', label: '安装渠道', value: upgrade.channelLabel, mono: false },
+      { key: 'upgradeCheck', label: '最近检查', value: upgrade.lastCheckText },
+      ...(upgrade.knownGoodVersion ? [{ key: 'upgradeGood', label: '回退锚点', value: upgrade.knownGoodVersion }] : []),
+      ...(upgrade.blockedVersions.length
+        ? [{ key: 'upgradeBlocked', label: '已拉黑版本', value: upgrade.blockedVersions.join('、') }]
+        : [])
+    ] : [])
   ];
   return (
     <div className={styles.sheetStack}>
       <KeyValue rows={rows} />
+      {upgrade?.canClearBroken ? (
+        <div className={styles.sheetBlock}>
+          <p className={styles.prose}>已熔断：自动升级对该 CLI 暂停。「验证并解除」会用升级同一套验证检查当前安装的版本（可能需要十几秒），通过才解除；不会安装任何东西。</p>
+          <ActionButton
+            icon={<SafetyCertificateOutlined />}
+            label="验证并解除熔断"
+            loading={clearingUpgrade}
+            disabled={busy || clearingUpgrade}
+            onClick={onClearBroken}
+          />
+        </div>
+      ) : null}
+      {clearResult?.provider === app.provider ? (
+        <Note tone={clearResult.ok ? 'info' : 'err'}>{clearResult.text}</Note>
+      ) : null}
       {canOpenAdvanced(app) ? (
         <div className={styles.sheetBlock}>
           <p className={styles.prose}>

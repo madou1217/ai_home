@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   readToolkitPanel,
+  resolveToolkitPanelAlias,
   subscribeToolkitPanel,
   writeToolkitPanel
 } from './toolkit-url-state';
@@ -62,6 +63,14 @@ describe('toolkit panel URL state', () => {
     expect(readToolkitPanel()).toBe('managed-apps');
     expect(readToolkitPanel('?panel=edge-forwarding')).toBe('edge-forwarding');
     expect(readToolkitPanel('?foo=bar')).toBe('');
+  });
+
+  // 「CLI 自动升级」已并入应用管理：旧链接必须落到 apps，而不是打开一个空面板。
+  test('retired panel ids fall back to the panel that absorbed them', () => {
+    expect(resolveToolkitPanelAlias('cli-upgrade')).toBe('apps');
+    expect(resolveToolkitPanelAlias(' apps ')).toBe('apps');
+    expect(resolveToolkitPanelAlias('')).toBe('');
+    expect(resolveToolkitPanelAlias('notion')).toBe('notion');
   });
 
   test('writes the panel with replaceState so history is not polluted', () => {

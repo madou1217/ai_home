@@ -19,12 +19,11 @@ import EnvironmentPanel from '@/components/toolkit/EnvironmentPanel';
 import ManagedToolsPanel from '@/components/toolkit/ManagedToolsPanel';
 import MirrorManagerPanel from '@/components/toolkit/MirrorManagerPanel';
 import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
-import ProviderCliUpgradePanel from '@/components/toolkit/ProviderCliUpgradePanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
-import { subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
+import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
 
 type ToolkitSection = 'integration' | 'runtime' | 'network';
@@ -55,12 +54,6 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '入口与转发',
       description: 'nginx / caddy / frp',
       icon: <GatewayOutlined />
-    },
-    {
-      id: 'cli-upgrade',
-      label: 'CLI 自动升级',
-      description: '版本状态与回滚记录',
-      icon: <CloudSyncOutlined />
     },
     {
       id: 'session-runtimes',
@@ -133,8 +126,6 @@ function renderPanel(panelId: string) {
   switch (panelId) {
     case 'apps':
       return <AppManagerPanel />;
-    case 'cli-upgrade':
-      return <ProviderCliUpgradePanel />;
     case 'session-runtimes':
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'terminals':
@@ -161,8 +152,10 @@ function renderPanel(panelId: string) {
 }
 
 // 深链：`/toolkit?panel=<id>` 直接打开某个二级面板（例如账号出口弹窗里的「查看出口池」）。
+// 已并入其它面板的旧 id（如 cli-upgrade → apps）在这里归一，旧书签不会落到空面板。
 function resolveDeepLink(search: string): { section: ToolkitSection; panel: string } | null {
-  const panel = new URLSearchParams(search).get('panel') || '';
+  const raw = new URLSearchParams(search).get('panel') || '';
+  const panel = resolveToolkitPanelAlias(raw);
   const section = (Object.keys(SECTION_ITEMS) as ToolkitSection[])
     .find((key) => SECTION_ITEMS[key].some((item) => item.id === panel));
   return section ? { section, panel } : null;

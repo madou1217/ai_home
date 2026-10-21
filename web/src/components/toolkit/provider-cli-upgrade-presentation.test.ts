@@ -6,6 +6,8 @@ import {
   formatUpgradeInterval,
   formatUpgradeTimestamp,
   formatUpgradeVersions,
+  getManagedAppUpgradeView,
+  getManagedAppUpgradeViews,
   getProviderCliUpgradeRow,
   getProviderCliUpgradeRows,
   getUpgradeChannelLabel,
@@ -199,4 +201,57 @@ test('被停用(enabled=false)的熔断行同样可以验证后解除', () => {
   const row = getProviderCliUpgradeRow(record({ enabled: false, disabledReason: 'rollback_plan_unavailable' }), AUTO_APPLY, NOW);
   assert.equal(row.statusLabel, '已熔断');
   assert.equal(row.canClearBroken, true);
+});
+
+// 「有新版」是应用卡片上唯一该冒出来的好消息；熔断/回滚时账本里的 updateAvailable
+// 仍然为 true，但那不是可跟进的新版，不能盖掉「等人处理」。
+test('只有真的要跟进的新版才算 hasUpdate', () => {
+  const base = record({ installedVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true });
+  assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).hasUpdate, true);
+  assert.equal(getProviderCliUpgradeRow({ ...base, enabled: false, disabledReason: 'apply_failed_network' }, CHECK_ONLY, NOW).hasUpdate, false);
+  assert.equal(getProviderCliUpgradeRow({ ...base, state: 'rolled_back' }, CHECK_ONLY, NOW).hasUpdate, false);
+  assert.equal(getProviderCliUpgradeRow(record({ installedVersion: '1.0.0', updateAvailable: false }), CHECK_ONLY, NOW).hasUpdate, false);
+});
+
+// 应用卡片与账本是两份数据，只能按 provider 对齐；账本里没有就必须是 null。
+test('应用卡片按 provider 取到同一份升级结论', () => {
+  const status = {
+    ok: true,
+    scheduler: AUTO_APPLY,
+    global: { enabled: true, disabledReason: '' },
+    providers: [
+      record({
+        installedVersion: '0.153.4',
+        latestVersion: '0.154.0',
+        updateAvailable: true,
+        channel: 'npm_global',
+        knownGoodVersion: '0.152.0',
+        blockedVersions: ['0.153.9']
+      }),
+      record({ provider: 'gemini', enabled: false, disabledReason: 'apply_failed_network' })
+    ]
+  };
+
+  const codex = getManagedAppUpgradeView(status, 'codex', NOW);
+  assert.ok(codex);
+  assert.equal(codex.provider, 'codex');
+  assert.equal(codex.statusLabel, '待升级');
+  assert.equal(codex.hasUpdate, true);
+  assert.equal(codex.channelLabel, 'npm 全局');
+  assert.equal(codex.knownGoodVersion, '0.152.0');
+  assert.deepEqual(codex.blockedVersions, ['0.153.9']);
+
+  const gemini = getManagedAppUpgradeView(status, 'gemini', NOW);
+  assert.ok(gemini);
+  assert.equal(gemini.canClearBroken, true);
+  assert.equal(gemini.hasUpdate, false);
+
+  // 账本里没有的 provider（Desktop/IDE、或尚未进候选集）不显示任何升级结论。
+  assert.equal(getManagedAppUpgradeView(status, 'claude-desktop', NOW), null);
+  assert.equal(getManagedAppUpgradeView(status, '', NOW), null);
+  assert.equal(getManagedAppUpgradeView(null, 'codex', NOW), null);
+
+  const all = getManagedAppUpgradeViews(status, NOW);
+  assert.deepEqual(Object.keys(all).sort(), ['codex', 'gemini']);
+  assert.deepEqual(getManagedAppUpgradeViews(null, NOW), {});
 });

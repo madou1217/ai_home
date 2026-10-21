@@ -6,6 +6,24 @@
 
 export const TOOLKIT_PANEL_QUERY_KEY = 'panel';
 
+/**
+ * 已并入其它面板的旧面板 id → 现在的面板 id。
+ *
+ * 「CLI 自动升级」不再是独立二级面板：它的一份结论直接长在「应用管理」的
+ * provider 卡片上（同一份账本、同一个 provider）。旧链接、浏览器书签和别处
+ * 引用的 `?panel=cli-upgrade` 必须还能落到应用管理，而不是打开一个空面板。
+ */
+const RETIRED_PANEL_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  'cli-upgrade': 'apps'
+});
+
+/** 把历史面板 id 归一到当前面板 id；未知 id 原样返回。 */
+export function resolveToolkitPanelAlias(panel: string): string {
+  const key = String(panel || '').trim();
+  if (!key) return '';
+  return RETIRED_PANEL_ALIASES[key] || key;
+}
+
 export function readToolkitPanel(search?: string): string {
   if (typeof window === 'undefined') return '';
   const source = typeof search === 'string' ? search : window.location.search;

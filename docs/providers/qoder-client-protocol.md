@@ -251,7 +251,30 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 "retryAfterSeconds":30, "waitTime":30}`。分类为 `overloaded`
 （`failureReason=qoder_resource_limit`、`shouldMarkFailure=false`、
 `scope=none`、客户端 429 + `retryHintMs=30000`），不记账号失败、不锁号，
-由 HTTP 策略回落 CLI。普通 403 仍按凭据失效处理。
+由 HTTP 策略回落 CLI。普通 403 仍按凭据失效处理。策略链只传 `error`，
+判定因此同时读取 `error.upstreamBody/body/message`（不再只认 `detail`），
+否则真机上会落回通用 403 分支。
+
+### 4.7 免费账号闭环实测（2026-10-21，真实网关）
+
+请求经真实网关（`POST /v1/chat/completions`，`x-account-ref` 钉选账号），
+日志取最终请求行里的 `transportAttempts`：
+
+| 账号 | 模型 | HTTP 尝试 | 兜底 | 客户端 |
+| --- | --- | --- | --- | --- |
+| qodercn（Free） | `Auto` | 200，精确 usage，`upstreamModel=auto` | — | 200 |
+| qodercn（Free） | `Qwen3.8-Flash` | 429（`All backends failed`）或 502 | CLI 成功（6.2s / 5.6s） | 200 |
+| qoder（Free） | `Qwen3.8-Flash` | 200，精确 usage，`upstreamModel=Qwen3.8-Flash` | — | 200 |
+| qoder（Free） | `Auto` | 403 `10605`（`policyKind=overloaded`，429 + retryAfter 30s） | CLI 在队列里等 ≥180s | 504 |
+
+结论：**qodercn 免费账号闭环**（HTTP 精确 usage；HTTP 被限流/网络失败时 CLI
+兜底在同一请求内成功，账号不被锁，随后的另一模型请求立即恢复）。
+**qoder 全球站免费账号在上游排队期间不闭环**：HTTP 被上游排队，CLI 兜底
+等的是同一个队列，实测首字节 ≥180s（一次成功发生在第 121s），客户端通常已超时。
+这是上游 Free 档容量限制，不是目录/协议推导问题；网关侧已做到语义正确
+（`overloaded` + 429 + `retryAfterSeconds`，不记账号失败）、不锁号、不伪装成功。
+CLI 首字节预算因此从 120s 放宽到 180s（覆盖 121s 那次真实成功），
+但**不承诺**覆盖更长的排队窗口。
 
 ### 4.4 HTTP transport 已进入请求路径（2026-10-20）
 

@@ -884,6 +884,12 @@ test('a qoder resource-limit 403 is an overload hint, never an account auth fail
   assert.equal(policy.scope, 'none');
   assert.equal(policy.clientStatusCode, 429);
   assert.equal(policy.retryHintMs, 30000);
+  // 策略链的真实调用形状：只给 `error`（message 是上游 JSON），没有 detail/body。
+  const shaped = Object.assign(new Error(body), { statusCode: 403 });
+  const fromError = classifyUpstreamFailure({ provider: 'qoder', statusCode: 403, error: shaped });
+  assert.equal(fromError.kind, 'overloaded');
+  assert.equal(fromError.clientStatusCode, 429);
+  assert.equal(fromError.retryHintMs, 30000);
   // 普通 403（没有限流负载）仍然按凭据失效处理，不受影响。
   const plain = classifyUpstreamFailure({ provider: 'qoder', statusCode: 403, detail: 'upstream_403' });
   assert.equal(plain.kind, 'auth_invalid');

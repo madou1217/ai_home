@@ -13,6 +13,7 @@ import {
   type RecordingSettings
 } from './index';
 import RecordingSettingsFields, { recordingSettingsEstimate } from './RecordingSettingsFields';
+import PreviewDeviceFields from './PreviewDeviceFields';
 import WatermarkSettingsFields from './WatermarkSettingsFields';
 import styles from './recording-settings.module.css';
 
@@ -45,6 +46,7 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
     setDraft((current) => ({
       ...current,
       recording: { ...defaults.recording },
+      previewDevice: defaults.previewDevice,
       watermark: { ...defaults.watermark }
     }));
   };
@@ -71,6 +73,17 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
       ]}
     >
       <div className={styles.modalStack}>
+        <section className={styles.modalSection}>
+          <Typography.Text strong>默认预览设备</Typography.Text>
+          <PreviewDeviceFields
+            value={draft.previewDevice}
+            onChange={(previewDevice) => patch({ previewDevice })}
+          />
+          <Typography.Text type="secondary">
+            从聊天录制时默认选中该设备；确认框里仍可临时切换。
+          </Typography.Text>
+        </section>
+
         <section className={styles.modalSection}>
           <Typography.Text strong>录制方式</Typography.Text>
           <RecordingSettingsFields

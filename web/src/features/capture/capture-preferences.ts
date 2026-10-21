@@ -1,9 +1,9 @@
-// 截图/录制全局偏好：默认录制格式、UI 开关集合（布尔矩阵）、水印开关与录制设置。
+// 截图/录制全局偏好：默认预览设备、录制格式、UI 开关集合（布尔矩阵）、水印开关与录制设置。
 // 唯一真相存在 localStorage（键 aih.capture），UI 只通过这里读写，
 // 与 aih.theme / aih.hud 同一模式。截图与录制都只使用实时画面。
 
 import { CAPTURE_FORMAT_CATALOG } from './format-catalog';
-import type { CaptureFormatId } from './types';
+import type { CaptureFormatId, CapturePreviewDevice } from './types';
 import {
   DEFAULT_CAPTURE_WATERMARK,
   normalizeCaptureWatermark,
@@ -24,9 +24,15 @@ export interface CapturePreferences {
   watermark: CaptureWatermarkPreference;
   /** 帧率、录制方式、目标帧数与目标时长（聊天预览与弹窗共用）。 */
   recording: RecordingSettings;
+  /** 从聊天打开录制确认框时默认选中的预览设备。 */
+  previewDevice: CapturePreviewDevice;
 }
 
 export const CAPTURE_PREFERENCES_KEY = 'aih.capture';
+
+export function normalizeCapturePreviewDevice(value: unknown): CapturePreviewDevice {
+  return value === 'mobile' ? 'mobile' : 'desktop';
+}
 
 export function createDefaultCapturePreferences(): CapturePreferences {
   const enabledFormats = {} as Record<CaptureFormatId, boolean>;
@@ -37,7 +43,8 @@ export function createDefaultCapturePreferences(): CapturePreferences {
     defaultFormat: 'png',
     enabledFormats,
     watermark: { ...DEFAULT_CAPTURE_WATERMARK },
-    recording: { ...RECORDING_DEFAULT_SETTINGS }
+    recording: { ...RECORDING_DEFAULT_SETTINGS },
+    previewDevice: 'desktop'
   };
 }
 
@@ -83,7 +90,8 @@ export function normalizeCapturePreferences(
     ),
     recording: normalizeRecordingSettings(
       value?.recording && typeof value.recording === 'object' ? value.recording : undefined
-    )
+    ),
+    previewDevice: normalizeCapturePreviewDevice(value?.previewDevice)
   };
 }
 

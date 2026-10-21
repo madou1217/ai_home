@@ -59,22 +59,32 @@ export default function HtmlCodeBlock({ code }: Props) {
   const [recordPromptOpen, setRecordPromptOpen] = useState(false);
   const [recordPromptFormat, setRecordPromptFormat] =
     useState<AnimationCaptureFormatId | null>(null);
+  const [defaultPreviewDevice, setDefaultPreviewDevice] = useState<HtmlPreviewDevice>(
+    () => readCapturePreferences().previewDevice
+  );
   const [recordPreviewDevice, setRecordPreviewDevice] =
-    useState<HtmlPreviewDevice>('desktop');
+    useState<HtmlPreviewDevice>(() => readCapturePreferences().previewDevice);
 
   useEffect(
-    () => subscribeCapturePreferences((preferences) => setRecordingSettings(preferences.recording)),
+    () =>
+      subscribeCapturePreferences((preferences) => {
+        setRecordingSettings(preferences.recording);
+        setDefaultPreviewDevice(preferences.previewDevice);
+      }),
     []
   );
 
   /** 可选录制格式（菜单项）。 */
   const recordOptions = useMemo(() => listRecordableAnimationFormats(), []);
 
-  const openRecordPrompt = useCallback((format: AnimationCaptureFormatId | null) => {
-    setRecordPreviewDevice('desktop');
-    setRecordPromptFormat(format);
-    setRecordPromptOpen(true);
-  }, []);
+  const openRecordPrompt = useCallback(
+    (format: AnimationCaptureFormatId | null) => {
+      setRecordPreviewDevice(defaultPreviewDevice);
+      setRecordPromptFormat(format);
+      setRecordPromptOpen(true);
+    },
+    [defaultPreviewDevice]
+  );
 
   const recordMenu = useMemo(
     () => ({
@@ -84,7 +94,7 @@ export default function HtmlCodeBlock({ code }: Props) {
         {
           key: RECORDING_SETTINGS_KEY,
           icon: <SettingOutlined />,
-          label: `录制方式与时长 · ${summarizeRecordingSettings(recordingSettings)}`
+          label: `截图与录制设置 · ${summarizeRecordingSettings(recordingSettings)}`
         }
       ],
       onClick: ({ key }: { key: string }) => {
@@ -224,7 +234,7 @@ export default function HtmlCodeBlock({ code }: Props) {
                   type="button"
                   className={styles.htmlBlockActionBtn}
                   aria-label="在独立预览中录制"
-                  title="打开独立预览并录制（默认 PC）"
+                  title="打开独立预览并录制"
                   disabled={capture.state.busy || !recordAction}
                   onClick={() => openRecordPrompt(recordAction)}
                 >

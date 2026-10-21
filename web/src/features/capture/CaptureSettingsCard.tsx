@@ -1,4 +1,4 @@
-// 设置页「截图与录制」：默认录制格式 + 格式开关矩阵。
+// 设置页「截图与录制」：默认预览设备、录制格式、录制方式、水印与格式开关矩阵。
 // 状态唯一事实源是 capture-preferences（localStorage: aih.capture），
 // chat 预览按钮与弹窗录制都读取同一份偏好。
 
@@ -26,6 +26,7 @@ import {
   writeCapturePreferences
 } from './index';
 import RecordingSettingsFields from './RecordingSettingsFields';
+import PreviewDeviceFields from './PreviewDeviceFields';
 import WatermarkSettingsFields from './WatermarkSettingsFields';
 
 export default function CaptureSettingsCard() {
@@ -96,6 +97,16 @@ export default function CaptureSettingsCard() {
                 !isFormatAvailable(format.id, availability)
             }))}
             onChange={(id: CaptureFormatId) => commit({ ...preferences, defaultFormat: id })}
+          />
+        }
+      />
+      <SettingsItem
+        title="默认预览设备"
+        subtitle="从聊天录制时确认框默认选中的预览尺寸"
+        action={
+          <PreviewDeviceFields
+            value={preferences.previewDevice}
+            onChange={(previewDevice) => commit({ ...preferences, previewDevice })}
           />
         }
       />

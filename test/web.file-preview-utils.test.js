@@ -433,6 +433,9 @@ test('inline html recording opens the standalone preview prompt', () => {
   assert.match(source, /autoCapture: \{ kind: 'record'/);
   assert.match(source, /onClick=\{\(\) => openRecordPrompt\(recordAction\)\}/);
   assert.match(source, /PC 预览（推荐）/);
+  assert.match(source, /setRecordPreviewDevice\(defaultPreviewDevice\)/);
+  assert.match(source, /preferences\.previewDevice/);
+  assert.doesNotMatch(source, /setRecordPreviewDevice\('desktop'\)/);
   assert.doesNotMatch(source, /capture\.runFormat\(recordAction\)/);
   assert.doesNotMatch(source, /capture\.runFormat\(key as AnimationCaptureFormatId\)/);
 });

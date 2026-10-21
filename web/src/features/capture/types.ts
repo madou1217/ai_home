@@ -7,6 +7,9 @@
  * 任何一侧都不允许出现 `if (fmt === '...')` / `if (surface === '...')` 的硬编码分支。
  */
 
+/** 独立预览的默认设备（录制确认框默认选中项）。 */
+export type CapturePreviewDevice = 'desktop' | 'mobile';
+
 /** 静态图（单帧）formats。 */
 export type StillCaptureFormatId = 'png' | 'jpeg' | 'webp';
 

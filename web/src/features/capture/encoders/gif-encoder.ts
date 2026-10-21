@@ -7,11 +7,11 @@ import type { EncodeAnimationRequest } from '../types';
 import { getCaptureFormat } from '../format-catalog';
 import { loadImageFromDataUrl, resolveFrameDelayMs, sleep } from '../frame-utils';
 
-/** GIF 编码在主线程解码 RGBA + 量化较重，超限则等比缩到该最长边内。 */
-const GIF_MAX_SIZE = 640;
+/** GIF 编码在主线程解码 RGBA + 量化较重；桌面预览按 1280 长边保留原生清晰度。 */
+const GIF_MAX_SIZE = 1280;
 /** 每帧处理之间让出主线程一次，避免 UI 长时间卡帧。 */
 const YIELD_MS = 0;
-/** 传给 quantize 的最大颜色数（256 包含超出色阶的抖动余量）。 */
+/** 传给 quantize 的最大颜色数（GIF 格式上限；包含色阶余量）。 */
 const GIF_MAX_COLORS = 256;
 
 type GifFrame = {
@@ -19,7 +19,7 @@ type GifFrame = {
   indexed: Uint8Array;
 };
 
-function scaleToGifBounds(width: number, height: number): { width: number; height: number } {
+export function scaleGifBounds(width: number, height: number): { width: number; height: number } {
   const longest = Math.max(width, height);
   if (longest <= GIF_MAX_SIZE) return { width, height };
   const ratio = GIF_MAX_SIZE / longest;
@@ -38,6 +38,8 @@ function createEncodeCanvas(width: number, height: number): {
   canvas.height = height;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('frame_canvas_context_unavailable');
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   return { canvas, context };
 }
 
@@ -63,7 +65,7 @@ async function pullFramePixelData(
 
 export async function encodeGifAnimation(request: EncodeAnimationRequest): Promise<Blob> {
   const descriptor = getCaptureFormat('gif');
-  const bounds = scaleToGifBounds(request.width, request.height);
+  const bounds = scaleGifBounds(request.width, request.height);
   const { canvas, context } = createEncodeCanvas(bounds.width, bounds.height);
 
   const encoder = GIFEncoder();

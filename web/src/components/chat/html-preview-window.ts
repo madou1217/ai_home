@@ -2,10 +2,11 @@ import {
   ensurePreviewWindowCaptureHost,
   readCapturePreferences,
   summarizeRecordingSettings,
+  type CapturePreviewDevice,
   type CaptureWatermarkIdentity
 } from '../../features/capture';
 
-export type HtmlPreviewDevice = 'desktop' | 'mobile';
+export type HtmlPreviewDevice = CapturePreviewDevice;
 
 export interface HtmlPreviewAutoCapture {
   kind: 'still' | 'record';

@@ -31,6 +31,24 @@ describe('capture preferences', () => {
     );
     expect(parsed.recording.fps).toBe(30);
     expect(parsed.watermark).toEqual({ enabled: false });
+    expect(parsed.previewDevice).toBe('desktop');
+  });
+
+  test('默认预览设备独立持久化，未知值回落到 PC', () => {
+    expect(parseCapturePreferences(JSON.stringify({ previewDevice: 'mobile' })).previewDevice).toBe(
+      'mobile'
+    );
+    expect(
+      parseCapturePreferences(JSON.stringify({ previewDevice: 'tablet' })).previewDevice
+    ).toBe('desktop');
+
+    const storage = memoryStorage();
+    const saved = saveCapturePreferences(
+      { ...createDefaultCapturePreferences(), previewDevice: 'mobile' },
+      storage
+    );
+    expect(saved.previewDevice).toBe('mobile');
+    expect(storage.value()).toContain('"previewDevice":"mobile"');
   });
 
   test('旧版捕获范围被忽略，未知水印字段被收敛为仅开关', () => {

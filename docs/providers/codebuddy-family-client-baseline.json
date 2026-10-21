@@ -1,0 +1,71 @@
+{
+  "checkedAt": "2026-10-21T15:47:10.739Z",
+  "client": {
+    "installedVersions": [
+      "2.161.4"
+    ],
+    "resolvedVersion": "2.161.4",
+    "usedFallbackVersion": false
+  },
+  "headers": {
+    "count": 34,
+    "names": [
+      "accept",
+      "b3",
+      "baggage",
+      "traceparent",
+      "user-agent",
+      "x-agent-intent",
+      "x-agent-purpose",
+      "x-agent-type",
+      "x-b3-parentspanid",
+      "x-b3-sampled",
+      "x-b3-spanid",
+      "x-b3-traceid",
+      "x-codebuddy-request",
+      "x-conversation-id",
+      "x-conversation-message-id",
+      "x-conversation-request-id",
+      "x-domain",
+      "x-ide-name",
+      "x-ide-type",
+      "x-ide-version",
+      "x-private-data",
+      "x-product",
+      "x-request-id",
+      "x-requested-with",
+      "x-root-request-id",
+      "x-stainless-arch",
+      "x-stainless-lang",
+      "x-stainless-os",
+      "x-stainless-package-version",
+      "x-stainless-retry-count",
+      "x-stainless-runtime",
+      "x-stainless-runtime-version",
+      "x-trace-id",
+      "x-user-id"
+    ],
+    "constants": {
+      "accept": "application/json",
+      "user-agent": "CLI/2.63.2 CodeBuddy/2.63.2",
+      "x-agent-intent": "craft",
+      "x-agent-purpose": "conversation",
+      "x-agent-type": "main",
+      "x-codebuddy-request": "1",
+      "x-domain": "www.workbuddy.ai",
+      "x-ide-name": "CLI",
+      "x-ide-type": "CLI",
+      "x-ide-version": "2.63.2",
+      "x-private-data": "false",
+      "x-product": "SaaS",
+      "x-stainless-arch": "arm64",
+      "x-stainless-lang": "js",
+      "x-stainless-os": "MacOS",
+      "x-stainless-package-version": "6.25.0",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "node",
+      "x-stainless-runtime-version": "v26.3.0",
+      "x-user-id": "drift-probe-uid"
+    }
+  }
+}

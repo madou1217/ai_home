@@ -33,7 +33,8 @@
     "web:build": "cd web && npm run build",
     "web:dev": "cd web && npm run dev",
     "build": "npm run web:build",
-    "providers:audit": "node scripts/provider-collection-audit.js"
+    "providers:audit": "node scripts/provider-collection-audit.js",
+    "providers:family-drift": "node scripts/codebuddy-family-drift-check.js"
   },
   "keywords": [],
   "author": "",

@@ -1,4 +1,6 @@
 import {
+  detectScriptDependentHtml,
+  describeScriptDependentReasons,
   ensurePreviewWindowCaptureHost,
   readCapturePreferences,
   summarizeRecordingSettings
@@ -11,6 +13,62 @@ export interface HtmlPreviewWindowOptions {
   title?: string;
   /** 录制条件摘要；省略时读取全局录制设置。 */
   recordingHint?: string;
+}
+
+export interface PopupCaptureSettings {
+  scope: 'full' | 'live';
+  fps: number;
+}
+
+/**
+ * 弹窗点击捕获时的偏好解析（纯函数）。
+ *
+ * 弹窗文档在打开时就把脚本写死了，如果沿用构建期快照，用户之后在设置页改的
+ * 捕获范围/帧率不会生效。这里允许把函数体原样注入弹窗脚本（toString），
+ * 因此它必须自包含：不能引用模块里的其它常量或函数。
+ */
+export function parsePopupCaptureSettings(
+  raw: string | null | undefined,
+  fallbackScope: 'full' | 'live' = 'full',
+  fallbackFps = 30
+): PopupCaptureSettings {
+  const options = [10, 15, 24, 30, 60];
+  const nearest = (value: number) => {
+    let chosen = options[0];
+    let smallest = Number.POSITIVE_INFINITY;
+    for (const option of options) {
+      const delta = Math.abs(option - value);
+      if (delta < smallest || (delta === smallest && option > chosen)) {
+        chosen = option;
+        smallest = delta;
+      }
+    }
+    return chosen;
+  };
+  const fallback: PopupCaptureSettings = {
+    scope: fallbackScope === 'live' ? 'live' : 'full',
+    fps:
+      typeof fallbackFps === 'number' && Number.isFinite(fallbackFps) && fallbackFps > 0
+        ? nearest(fallbackFps)
+        : 30
+  };
+  if (!raw) return fallback;
+  try {
+    const value = JSON.parse(raw) as {
+      captureScope?: unknown;
+      recording?: { fps?: unknown };
+    };
+    const recordedFps = value?.recording?.fps;
+    return {
+      scope: value?.captureScope === 'live' ? 'live' : 'full',
+      fps:
+        typeof recordedFps === 'number' && Number.isFinite(recordedFps) && recordedFps > 0
+          ? nearest(recordedFps)
+          : fallback.fps
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popups allow-downloads';
@@ -48,8 +106,10 @@ export function buildHtmlPreviewWindowDocument(
   const recordingHint = escapeHtml(
     options.recordingHint ?? summarizeRecordingSettings(preferences.recording)
   );
-  const captureScope = preferences.captureScope === 'live' ? 'live' : 'full';
-  const captureFps = Math.max(1, Math.min(60, Math.round(preferences.recording.fps)));
+  const fallbackScope = preferences.captureScope === 'live' ? 'live' : 'full';
+  const fallbackFps = Math.max(1, Math.min(60, Math.round(preferences.recording.fps)));
+  const dynamicReasons = detectScriptDependentHtml(documentContent);
+  const dynamicLabel = describeScriptDependentReasons(dynamicReasons);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -69,6 +129,7 @@ export function buildHtmlPreviewWindowDocument(
     .title { overflow: hidden; color: #f2fbff; font-size: 13px; font-weight: 700; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
     .subtitle { color: #5c7890; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
     .controls, .devices { display: flex; align-items: center; gap: 6px; }
+    .controls { flex-wrap: wrap; justify-content: flex-end; }
     .device { min-height: 32px; padding: 5px 12px; border: 1px solid #15263d; border-radius: 0; background: #03060b; color: #7f9bb3; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms, box-shadow 120ms; }
     .capture { min-height: 32px; padding: 5px 12px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
     .capture:hover { border-color: #00f0ff; color: #00f0ff; background: rgba(0, 240, 255, .08); }
@@ -76,8 +137,10 @@ export function buildHtmlPreviewWindowDocument(
     .capture.is-recording { border-color: #ff5c7a; color: #ff8fa3; background: rgba(255, 92, 122, .12); }
     .capture.is-recording:hover { border-color: #ff8fa3; color: #ffb3c0; background: rgba(255, 92, 122, .2); }
     .capture-hint { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
-    .capture-status { color: #5c7890; font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
+    .capture-status { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 420px; color: #5c7890; font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: .04em; text-align: right; }
     .capture-status[hidden] { display: none; }
+    .status-action { flex: 0 0 auto; min-height: 26px; padding: 2px 8px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .status-action:hover { border-color: #00f0ff; color: #00f0ff; background: rgba(0, 240, 255, .08); }
     .device:hover { border-color: rgba(0, 240, 255, .55); color: #00f0ff; }
     .device[aria-pressed="true"] { border-color: #00f0ff; background: rgba(0, 240, 255, .14); color: #00f0ff; box-shadow: 0 0 18px rgba(0, 240, 255, .25); text-shadow: 0 0 10px rgba(0, 240, 255, .55); }
     .fullscreen { min-height: 32px; padding: 5px 12px; border: 1px solid #23405f; border-radius: 0; background: #0c1524; color: #e2f1f8; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em; cursor: pointer; transition: background-color 120ms, border-color 120ms, color 120ms; }
@@ -156,18 +219,56 @@ export function buildHtmlPreviewWindowDocument(
     const captureButtons = [shotButton, recordButton];
     const CAPTURE_TIMEOUT_MS = 300000;
     const CAPTURE_VIDEO_ID = 'aih-capture-video';
-    const CAPTURE_SCOPE = '${captureScope}';
-    const CAPTURE_FPS = ${captureFps};
+    const CAPTURE_PREFS_KEY = 'aih.capture';
+    const FALLBACK_CAPTURE_SCOPE = ${JSON.stringify(fallbackScope)};
+    const FALLBACK_CAPTURE_FPS = ${fallbackFps};
+    const HAS_DYNAMIC_CONTENT = ${dynamicReasons.length > 0 ? 'true' : 'false'};
+    const DYNAMIC_CONTENT_LABEL = ${JSON.stringify(dynamicLabel)};
+    // 点击时重新解析偏好：弹窗打开后用户在设置页的修改也要立即生效。
+    const readLiveCaptureSettings = ${parsePopupCaptureSettings.toString()};
     let captureSeq = 0;
     let pendingRequest = '';
     let pendingTimer = 0;
     let phase = 'idle';
+    let activeCaptureMode = 'full';
+    let activeCaptureKind = 'still';
     let activeStream = null;
     let activeVideo = null;
 
+    function readCapturePreferencesRaw() {
+      try {
+        return window.localStorage.getItem(CAPTURE_PREFS_KEY);
+      } catch (_error) {
+        return null;
+      }
+    }
+    function currentCaptureSettings() {
+      return readLiveCaptureSettings(
+        readCapturePreferencesRaw(),
+        FALLBACK_CAPTURE_SCOPE,
+        FALLBACK_CAPTURE_FPS
+      );
+    }
+    function formatFps(value) {
+      const rounded = Math.round(value * 10) / 10;
+      return rounded === Math.round(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
+    }
     function showStatus(label) {
       status.textContent = label;
       status.hidden = false;
+    }
+    function showLiveSuggestion(kind, label) {
+      status.textContent = label ? label + ' · ' : '';
+      status.hidden = false;
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'status-action';
+      action.textContent = '改用实时画面';
+      action.addEventListener('click', function() {
+        setPhase('idle');
+        startLiveCapture(kind, currentCaptureSettings().fps);
+      });
+      status.appendChild(action);
     }
     function setPhase(next, label) {
       phase = next;
@@ -178,7 +279,10 @@ export function buildHtmlPreviewWindowDocument(
       recordButton.disabled = next === 'requesting' || next === 'finishing';
       shotButton.disabled = next !== 'idle';
       if (label) showStatus(label);
-      else if (next === 'idle') status.hidden = true;
+      else if (next === 'idle') {
+        status.hidden = true;
+        status.textContent = '';
+      }
     }
     function cleanupStream() {
       if (activeVideo) {
@@ -217,6 +321,8 @@ export function buildHtmlPreviewWindowDocument(
         settleFailure('宿主页面已关闭，无法捕获');
         return;
       }
+      activeCaptureMode = 'full';
+      activeCaptureKind = kind;
       const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
       pendingRequest = requestId;
       setPhase('requesting', kind === 'record' ? '正在渲染完整页面…' : '正在生成截图…');
@@ -240,7 +346,7 @@ export function buildHtmlPreviewWindowDocument(
       // 录制请求发出后即可停止（宿主会在停止信号后编码已抓到的帧）。
       if (kind === 'record') setPhase('recording', '正在捕获完整页面…');
     }
-    async function startLiveCapture(kind) {
+    async function startLiveCapture(kind, fps) {
       if (phase !== 'idle') return;
       if (!window.opener) {
         settleFailure('宿主页面已关闭，无法捕获');
@@ -250,6 +356,8 @@ export function buildHtmlPreviewWindowDocument(
         settleFailure('当前浏览器不支持实时预览捕获');
         return;
       }
+      activeCaptureMode = 'live';
+      activeCaptureKind = kind;
       const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
       pendingRequest = requestId;
       setPhase('requesting', '请在共享选择器中选择当前预览窗口…');
@@ -263,7 +371,9 @@ export function buildHtmlPreviewWindowDocument(
       try {
         // 必须在点击手势内同步进入：这是浏览器允许 getDisplayMedia 的前提。
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: CAPTURE_FPS },
+          video: {
+            frameRate: Math.max(1, Math.min(60, Math.round(fps || FALLBACK_CAPTURE_FPS)))
+          },
           audio: false,
           preferCurrentTab: true
         });
@@ -388,7 +498,30 @@ export function buildHtmlPreviewWindowDocument(
       document.body.appendChild(link);
       link.click();
       link.remove();
+      const notes = [];
+      if (data.notice === 'content_truncated') {
+        notes.push('页面超出可捕获高度，底部内容已截断');
+      }
+      if (
+        typeof data.effectiveFps === 'number' &&
+        data.effectiveFps > 0 &&
+        typeof data.targetFps === 'number' &&
+        data.effectiveFps < data.targetFps * 0.8
+      ) {
+        notes.push(
+          '实际约 ' + formatFps(data.effectiveFps) + 'fps（目标 ' + data.targetFps + 'fps）'
+        );
+      }
       setPhase('idle');
+      if (activeCaptureMode === 'full' && HAS_DYNAMIC_CONTENT) {
+        const prefix = notes.length ? notes.join('；') + '；' : '';
+        showLiveSuggestion(
+          activeCaptureKind,
+          prefix + '完整页面不执行脚本（检测到' + DYNAMIC_CONTENT_LABEL + '）'
+        );
+      } else if (notes.length) {
+        showStatus('已保存 · ' + notes.join('；'));
+      }
     });
     window.addEventListener('beforeunload', cleanupStream);
     captureButtons.forEach(function(button) {
@@ -399,7 +532,8 @@ export function buildHtmlPreviewWindowDocument(
           return;
         }
         if (phase !== 'idle') return;
-        if (CAPTURE_SCOPE === 'live') startLiveCapture(kind);
+        const settings = currentCaptureSettings();
+        if (settings.scope === 'live') startLiveCapture(kind, settings.fps);
         else startDocumentCapture(kind);
       });
     });

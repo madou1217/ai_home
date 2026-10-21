@@ -5,6 +5,7 @@ export type {
   AnimationCaptureFormatId,
   CaptureArtifact,
   CaptureEncodeResult,
+  CaptureEncodeSuccess,
   CaptureEncoderStrategy,
   CaptureFormatDescriptor,
   CaptureFormatId,
@@ -74,7 +75,17 @@ export {
   type CaptureWatermarkSettings
 } from './watermark';
 export { probeCaptureFormatAvailability, isFormatAvailable, type CaptureFormatAvailability } from './format-availability';
-export { DomPreviewFrameSource } from './dom-preview-frame-source';
+export {
+  DomPreviewFrameSource,
+  isStaticDocument,
+  resolveContentHeight,
+  type ResolvedContentHeight
+} from './dom-preview-frame-source';
+export {
+  detectScriptDependentHtml,
+  describeScriptDependentReasons,
+  type ScriptDependentReason
+} from './capture-content-probe';
 export {
   LivePreviewFrameSource,
   computeDisplayCrop,
@@ -85,14 +96,20 @@ export {
 export {
   captureAnimation,
   captureStill,
+  computeEffectiveFps,
   downloadCaptureArtifact,
   type CaptureAnimationOptions,
   type CaptureStillOptions
 } from './capture-controller';
 export {
   FALLBACK_VIEWPORT_WIDTH,
+  RECORDING_MAX_CONTENT_HEIGHT,
+  RECORDING_MAX_PIXELS,
+  STILL_MAX_CONTENT_HEIGHT,
+  STILL_MAX_PIXELS,
   encodePreviewDocument,
   encodePreviewSource,
+  resolveDocumentHeightLimit,
   type PreviewEncodeRequest,
   type PreviewSourceEncodeRequest
 } from './preview-encode-dispatch';

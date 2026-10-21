@@ -2,16 +2,25 @@
 // 组件只感知「动作 + 状态」；帧源实现与编码派发留在 capture 域。
 // still/animation 的两条形状分支是这里仅有的分派点，禁止出现按格式名的分支。
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { message } from 'antd';
-import type { CaptureFormatId, RecordingSettings } from '../../features/capture';
+import { createElement, useCallback, useEffect, useRef, useState } from 'react';
+import { Button, message, notification } from 'antd';
+import type {
+  CaptureEncodeSuccess,
+  CaptureFormatId,
+  CaptureNotice,
+  CaptureScope,
+  RecordingSettings
+} from '../../features/capture';
 import {
+  detectScriptDependentHtml,
+  describeScriptDependentReasons,
   downloadCaptureArtifact,
   encodePreviewDocument,
   encodePreviewSource,
   isStillCaptureFormat,
   LivePreviewFrameSource,
-  readCapturePreferences
+  readCapturePreferences,
+  type ScriptDependentReason
 } from '../../features/capture';
 
 // 格式选项与默认格式裁决的事实源在 capture 域（设置页共用），这里只做转发。
@@ -40,9 +49,14 @@ export interface PreviewCaptureState {
 export interface PreviewCaptureActions {
   state: PreviewCaptureState;
   /** 开始截图/录制；录制停止条件来自全局录制设置。 */
-  runFormat: (format: CaptureFormatId) => Promise<void>;
+  runFormat: (format: CaptureFormatId, options?: PreviewCaptureOptions) => Promise<void>;
   /** 手动结束录制：保留已抓帧并继续编码。非录制阶段无副作用。 */
   stop: () => void;
+}
+
+export interface PreviewCaptureOptions {
+  /** 覆盖全局捕获范围（用于「改用实时画面」一键切换）。 */
+  scope?: CaptureScope;
 }
 
 export interface PreviewCaptureActionsOptions {
@@ -80,6 +94,73 @@ export function captureProgressText(state: PreviewCaptureState): string {
   return `正在录制 ${seconds}s · ${frames}`;
 }
 
+const DYNAMIC_CONTENT_NOTICE_KEY = 'aih-capture-dynamic-content';
+
+function formatFps(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/** 成功提示里必须如实报告的限制（截断优先于帧率）。 */
+export function captureSuccessNotes(
+  result: CaptureEncodeSuccess,
+  options: { still: boolean; targetFps?: number }
+): string[] {
+  const notes: string[] = [];
+  if (result.notice === 'content_truncated') {
+    notes.push('页面超出可捕获高度，底部内容已截断');
+  }
+  const fps = result.effectiveFps;
+  if (
+    !options.still &&
+    typeof fps === 'number' &&
+    fps > 0 &&
+    typeof options.targetFps === 'number' &&
+    fps < options.targetFps * 0.8
+  ) {
+    notes.push(`实际约 ${formatFps(fps)}fps（目标 ${options.targetFps}fps）`);
+  }
+  return notes;
+}
+
+interface CaptureSuccessContext {
+  still: boolean;
+  targetFps?: number;
+  dynamicReasons: ScriptDependentReason[];
+  onUseLive: () => void;
+}
+
+function announceCaptureSuccess(
+  result: CaptureEncodeSuccess,
+  context: CaptureSuccessContext
+): void {
+  const label = context.still ? '截图' : '录制';
+  const notes = captureSuccessNotes(result, {
+    still: context.still,
+    targetFps: context.targetFps
+  });
+  if (notes.length > 0) {
+    message.warning(`${label}已保存 · ${notes.join('；')}`);
+  } else {
+    message.success(`${label}已保存`);
+  }
+  if (context.dynamicReasons.length > 0) {
+    notification.warning({
+      key: DYNAMIC_CONTENT_NOTICE_KEY,
+      message: '完整页面模式不执行脚本',
+      description: `检测到${describeScriptDependentReasons(
+        context.dynamicReasons
+      )}：静态渲染可能与你看到的预览不同。需要脚本生成的内容、Canvas 画面或当前动画进度时，改用实时画面。`,
+      duration: 8,
+      btn: createElement(
+        Button,
+        { size: 'small', onClick: context.onUseLive },
+        '改用实时画面'
+      )
+    });
+  }
+}
+
 export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions): PreviewCaptureActions {
   const [state, setState] = useState<PreviewCaptureState>(IDLE_STATE);
   const busyRef = useRef(false);
@@ -106,12 +187,16 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
     );
   }, []);
 
-  const runFormat = useCallback(async (format: CaptureFormatId) => {
+  const runFormatRef = useRef<
+    ((format: CaptureFormatId, options?: PreviewCaptureOptions) => Promise<void>) | null
+  >(null);
+
+  const runFormat = useCallback(async (format: CaptureFormatId, overrides?: PreviewCaptureOptions) => {
     if (busyRef.current) return;
     const still = isStillCaptureFormat(format);
     const preferences = readCapturePreferences();
     const recording: RecordingSettings | undefined = still ? undefined : preferences.recording;
-    const fullPage = preferences.captureScope === 'full';
+    const fullPage = (overrides?.scope ?? preferences.captureScope) === 'full';
     const target = optionsRef.current.getCaptureTarget();
     if (!fullPage && !target) {
       message.error('预览区域不可见，请先打开预览再试');
@@ -132,6 +217,7 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       kind: still ? 'still' : 'animation',
       progressLabel: fullPage ? '正在渲染完整页面…' : '正在请求屏幕共享…'
     });
+    let dynamicReasons: ScriptDependentReason[] = [];
     try {
       const callbacks = {
         onPhase: (captured: number, total: number | null, elapsedMs: number) => {
@@ -150,7 +236,7 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
             progressLabel: `正在编码 ${Math.round(ratio * 100)}%…`
           }));
         },
-        onNotice: (notice: 'duration_limit' | 'memory_limit') => {
+        onNotice: (notice: CaptureNotice) => {
           if (notice === 'duration_limit') {
             message.info('已达到 60 秒录制上限，已保存已抓取的片段');
           } else if (notice === 'memory_limit') {
@@ -162,6 +248,7 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
         ? await (async () => {
             const html = optionsRef.current.getCaptureDocument?.() || '';
             if (!html.trim()) throw new Error('capture_document_unavailable');
+            dynamicReasons = detectScriptDependentHtml(html);
             return encodePreviewDocument({
               format,
               html,
@@ -199,7 +286,15 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
           })();
       if (result.ok) {
         downloadCaptureArtifact(result.artifact);
-        message.success(still ? '截图已保存' : '录制已保存');
+        announceCaptureSuccess(result, {
+          still,
+          targetFps: recording?.fps,
+          dynamicReasons: fullPage ? dynamicReasons : [],
+          onUseLive: () => {
+            notification.destroy(DYNAMIC_CONTENT_NOTICE_KEY);
+            void runFormatRef.current?.(format, { scope: 'live' });
+          }
+        });
       } else if (result.failure.code !== 'cancelled') {
         message.error(failureText(result.failure.message));
       }
@@ -209,6 +304,9 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       finish();
     }
   }, [finish]);
+  useEffect(() => {
+    runFormatRef.current = runFormat;
+  }, [runFormat]);
 
   useEffect(
     () => () => {

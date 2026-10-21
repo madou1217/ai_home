@@ -122,6 +122,17 @@ export function computeFrameDelays(frames: CaptureFrame[], fallbackMs: number): 
   });
 }
 
+/**
+ * 实际有效帧率 = (帧数 - 1) / 首尾真实时间跨度。
+ * 抓帧慢于目标帧率时如实下降，绝不用重复帧补足目标帧率。
+ */
+export function computeEffectiveFps(frames: CaptureFrame[]): number {
+  if (frames.length < 2) return 0;
+  const spanMs = frames[frames.length - 1].atMs - frames[0].atMs;
+  if (!Number.isFinite(spanMs) || spanMs <= 0) return 0;
+  return Math.round(((frames.length - 1) / (spanMs / MS_PER_SECOND)) * 10) / 10;
+}
+
 export async function captureAnimation(options: CaptureAnimationOptions): Promise<CaptureEncodeResult> {
   const { source, format } = options;
   const intervalMs = Math.max(MIN_INTERVAL_MS, MS_PER_SECOND / Math.max(1, options.fps));
@@ -181,7 +192,11 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
       if (waitMs > 0) {
         await abortableDelay(waitMs, options.signal, options.stopSignal);
       } else {
+        // 已经落后于目标帧率：让出一帧给浏览器绘制，避免长时间独占主线程
+        // 导致界面卡死。后台标签页的 rAF 会被暂停，此时退化为 setTimeout。
         scheduledAt = now();
+        await yieldToPaint();
+        if (options.signal?.aborted) return abortFailure();
       }
     }
 
@@ -222,7 +237,9 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
         fileExtension: descriptor.fileExtension,
         suggestedFileName: `${options.baseName || 'capture'}-${Date.now()}.${descriptor.fileExtension}`,
         format
-      }
+      },
+      notice: notice ?? undefined,
+      effectiveFps: computeEffectiveFps(frames)
     };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return abortFailure();
@@ -240,13 +257,15 @@ function toDataUrl(
 ): Promise<string> {
   // 动画抓帧按 scale=1 栅格化时，抓到的 canvas 已经等于目标尺寸，直接导出
   // 省掉一次全画布 drawImage + 编码（每帧数百 ms 的主要成本之一）。
+  // 但开启水印时必须先复制：帧源可能复用同一张画布（静态页面缓存），
+  // 直接在上面绘制会让水印逐帧累积。
   if (
     typeof HTMLCanvasElement !== 'undefined' &&
     image instanceof HTMLCanvasElement &&
     image.width === source.width &&
-    image.height === source.height
+    image.height === source.height &&
+    !watermark?.enabled
   ) {
-    if (watermark?.enabled) drawCaptureWatermark(image, watermark);
     return canvasToDataUrl(image, signal);
   }
   const canvas = document.createElement('canvas');
@@ -290,6 +309,22 @@ function canvasToDataUrl(canvas: HTMLCanvasElement, signal?: AbortSignal): Promi
       reader.readAsDataURL(blob);
     }, 'image/png');
   });
+}
+
+/** 让出一次绘制机会：优先 scheduler.yield（不额外等一整帧），再退 rAF/setTimeout。 */
+function yieldToPaint(): Promise<void> {
+  const hidden =
+    typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  const scheduler = (globalThis as {
+    scheduler?: { yield?: () => Promise<void> };
+  }).scheduler;
+  if (!hidden && typeof scheduler?.yield === 'function') {
+    return scheduler.yield();
+  }
+  if (!hidden && typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+  }
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
 function abortableDelay(

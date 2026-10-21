@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type {
+  CaptureEncodeSuccess,
   CaptureFormatAvailability,
   CaptureFormatId,
   CapturePreferences,
@@ -10,6 +11,7 @@ import type {
 import { createDefaultCapturePreferences } from '../../features/capture';
 import {
   captureProgressText,
+  captureSuccessNotes,
   listRecordableAnimationFormats,
   resolveDefaultRecordFormat,
   type PreviewCaptureState
@@ -129,8 +131,44 @@ describe('captureProgressText', () => {
   });
 });
 
-describe('resolveDefaultRecordFormat', () => {
-  const options = [
+describe('captureSuccessNotes', () => {
+  const success: CaptureEncodeSuccess = {
+    ok: true,
+    artifact: {
+      blob: new Blob(),
+      mimeType: 'image/gif',
+      fileExtension: 'gif',
+      suggestedFileName: 'capture.gif',
+      format: 'gif'
+    }
+  };
+
+  test('截断提示优先出现', () => {
+    expect(
+      captureSuccessNotes(
+        { ...success, notice: 'content_truncated', effectiveFps: 30 },
+        { still: false, targetFps: 30 }
+      )
+    ).toEqual(['页面超出可捕获高度，底部内容已截断']);
+  });
+
+  test('实际帧率明显低于目标时如实上报', () => {
+    expect(
+      captureSuccessNotes({ ...success, effectiveFps: 12.3 }, { still: false, targetFps: 30 })
+    ).toEqual(['实际约 12.3fps（目标 30fps）']);
+  });
+
+  test('达到目标 80% 不提示，静图不提示帧率', () => {
+    expect(
+      captureSuccessNotes({ ...success, effectiveFps: 24 }, { still: false, targetFps: 30 })
+    ).toEqual([]);
+    expect(
+      captureSuccessNotes({ ...success, effectiveFps: 8 }, { still: true, targetFps: 30 })
+    ).toEqual([]);
+  });
+});
+
+describe('resolveDefaultRecordFormat', () => {  const options = [
     { id: 'gif' as const, label: 'GIF 动图' },
     { id: 'apng' as const, label: 'APNG 动图' },
     { id: 'webm' as const, label: 'WebM 动图' }

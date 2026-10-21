@@ -4,7 +4,7 @@
 // 宿主（同一 origin），宿主复用 encodePreviewDocument 完成栅格化与编码，
 // 再把 blob URL 回传给弹窗触发下载。捕获逻辑零复制，单测不打 postMessage。
 
-import type { CaptureFormatId, StillCaptureFormatId } from './types';
+import type { CaptureFormatId, CaptureNotice, StillCaptureFormatId } from './types';
 import type { CapturePreferences } from './capture-preferences';
 import { encodePreviewDocument, encodePreviewSource } from './preview-encode-dispatch';
 import { PopupWindowFrameSource } from './popup-window-frame-source';
@@ -67,6 +67,12 @@ export interface CaptureWindowSuccess {
   ok: true;
   url: string;
   fileName: string;
+  /** 产物不完整/提前结束的真实原因。 */
+  notice?: CaptureNotice;
+  /** 动画录制的实际抓帧速率（帧/秒）。 */
+  effectiveFps?: number;
+  /** 本次录制的目标帧率，用于判断实际帧率是否明显偏低。 */
+  targetFps?: number;
 }
 
 export interface CaptureWindowFailure {
@@ -183,7 +189,8 @@ function friendlyCaptureError(message: string): string {
 
 function toCaptureWindowReply(
   result: WindowCaptureResult,
-  requestId: string
+  requestId: string,
+  targetFps?: number
 ): CaptureWindowSuccess | CaptureWindowFailure {
   if (!result.ok) {
     return {
@@ -202,7 +209,10 @@ function toCaptureWindowReply(
     kind: 'artifact',
     ok: true,
     url,
-    fileName: result.artifact.suggestedFileName
+    fileName: result.artifact.suggestedFileName,
+    notice: result.notice,
+    effectiveFps: result.effectiveFps,
+    targetFps
   };
 }
 
@@ -250,7 +260,11 @@ export async function runCaptureForWindowStream(
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)
     });
-    return toCaptureWindowReply(result, request.requestId);
+    return toCaptureWindowReply(
+      result,
+      request.requestId,
+      request.kind === 'record' ? preferences.recording.fps : undefined
+    );
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }
@@ -283,7 +297,11 @@ export async function runCaptureForWindowRequest(
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)
     });
-    return toCaptureWindowReply(result, request.requestId);
+    return toCaptureWindowReply(
+      result,
+      request.requestId,
+      request.kind === 'record' ? preferences.recording.fps : undefined
+    );
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
   }

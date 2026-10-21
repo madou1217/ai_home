@@ -89,11 +89,23 @@ export interface CaptureEncodeFailure {
   detail?: unknown;
 }
 
-/** 录制提前结束的非失败原因（UI 只用来补充提示，不影响产物）。 */
-export type CaptureNotice = 'duration_limit' | 'memory_limit';
+/**
+ * 录制提前结束/内容不完整的原因（UI 只用来补充提示，不影响产物）。
+ * - content_truncated：整页高度超过可捕获上限，底部内容被裁掉。
+ */
+export type CaptureNotice = 'duration_limit' | 'memory_limit' | 'content_truncated';
+
+export interface CaptureEncodeSuccess {
+  ok: true;
+  artifact: CaptureArtifact;
+  /** 本次捕获的真实限制说明；同一产物只报最主要的一条。 */
+  notice?: CaptureNotice;
+  /** 动画录制的实际抓帧速率（帧/秒，按真实时间轴计算，不补帧）。 */
+  effectiveFps?: number;
+}
 
 export type CaptureEncodeResult =
-  | { ok: true; artifact: CaptureArtifact }
+  | CaptureEncodeSuccess
   | { ok: false; failure: CaptureEncodeFailure };
 
 /** 编码器策略：一个 format # 一个策略实现（策略模式）。 */
@@ -108,6 +120,8 @@ export interface FrameSource {
   /** 目标视口的 CSS 尺寸（device pixel 已在 width/height 中体现）。 */
   readonly width: number;
   readonly height: number;
+  /** true 表示源内容超过可捕获上限，产物底部被裁掉（整页静态帧源会设置）。 */
+  readonly contentTruncated?: boolean;
   /** 抓一帧；返回 null 表示当前不可抓（surface 已被销毁等）。 */
   grab(): Promise<CanvasImageSource | null>;
   /** 释放底层监听/注入（布尔矩阵、rtv 注入等）。 */

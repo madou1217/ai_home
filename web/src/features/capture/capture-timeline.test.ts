@@ -1,7 +1,7 @@
 // 录制时间轴的纯逻辑测试：真实帧间隔优先于目标帧率。
 
 import { describe, expect, test } from 'bun:test';
-import { captureAnimation, computeFrameDelays } from './capture-controller';
+import { captureAnimation, computeEffectiveFps, computeFrameDelays } from './capture-controller';
 import { resolveFrameDelayMs } from './frame-utils';
 
 class FakeCanvas {
@@ -30,6 +30,30 @@ describe('computeFrameDelays', () => {
   test('单帧回落到目标帧率且至少 1ms', () => {
     expect(computeFrameDelays([{ dataUrl: 'a', atMs: 0 }], 100)).toEqual([100]);
     expect(computeFrameDelays([{ dataUrl: 'a', atMs: 0 }], 0)).toEqual([1]);
+  });
+});
+
+describe('computeEffectiveFps', () => {
+  test('按首尾真实时间跨度计算，不补帧', () => {
+    expect(
+      computeEffectiveFps([
+        { dataUrl: 'a', atMs: 0 },
+        { dataUrl: 'b', atMs: 100 },
+        { dataUrl: 'c', atMs: 250 },
+        { dataUrl: 'd', atMs: 400 }
+      ])
+    ).toBe(7.5);
+  });
+
+  test('单帧或零跨度返回 0', () => {
+    expect(computeEffectiveFps([])).toBe(0);
+    expect(computeEffectiveFps([{ dataUrl: 'a', atMs: 0 }])).toBe(0);
+    expect(
+      computeEffectiveFps([
+        { dataUrl: 'a', atMs: 10 },
+        { dataUrl: 'b', atMs: 10 }
+      ])
+    ).toBe(0);
   });
 });
 

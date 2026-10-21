@@ -22,6 +22,26 @@ import type { CaptureWatermarkSettings } from './watermark';
 
 /** 视口宽度兜底（取不到预览容器宽度时用，与弹窗桌面档同量级）。 */
 export const FALLBACK_VIEWPORT_WIDTH = 720;
+/** 静图整页像素预算：长页面优先降低倍率，仍不够时才截断。 */
+export const STILL_MAX_PIXELS = 12_000_000;
+/** 静图高度硬上限（避免极端页面把序列化 SVG 撑爆）。 */
+export const STILL_MAX_CONTENT_HEIGHT = 32_000;
+/** 录制逐帧栅格化，高度/像素预算更保守。 */
+export const RECORDING_MAX_CONTENT_HEIGHT = 6_000;
+export const RECORDING_MAX_PIXELS = 3_000_000;
+
+/**
+ * 静图高度上限按像素预算动态推导：宽度越大允许的页面高度越小，
+ * 不再用固定的 10000px（宽画布会先撞像素预算再被静默降倍率）。
+ */
+export function resolveDocumentHeightLimit(width: number, still: boolean): number {
+  if (!still) return RECORDING_MAX_CONTENT_HEIGHT;
+  const safeWidth = Math.max(1, Math.round(width));
+  return Math.min(
+    STILL_MAX_CONTENT_HEIGHT,
+    Math.max(1_000, Math.floor(STILL_MAX_PIXELS / safeWidth))
+  );
+}
 
 interface WatermarkRequest {
   /** 开启后在编码前自动叠加到产物右下角。 */
@@ -72,17 +92,18 @@ export async function encodePreviewSource(
     if (isStillCaptureFormat(request.format)) {
       const canvas = (await source.grab()) as HTMLCanvasElement | null;
       if (!canvas) throw new Error('frame_source_unavailable');
-      return await captureStill({
+      const result = await captureStill({
         canvas,
         format: request.format,
         baseName,
         watermark: request.watermark
       });
+      return withTruncationNotice(result, source);
     }
     // 上一分支已 return，这里仅剩动画格式；守卫不做负向收窄，显式标注。
     const recording = request.recording ?? RECORDING_DEFAULT_SETTINGS;
     const plan = resolveRecordingPlan(recording);
-    return await captureAnimation({
+    const result = await captureAnimation({
       source,
       format: request.format as AnimationCaptureFormatId,
       baseName,
@@ -101,24 +122,35 @@ export async function encodePreviewSource(
         request.onNotice?.(notice);
       }
     });
+    return withTruncationNotice(result, source);
   } finally {
     // captureAnimation 自己也会 dispose；FrameSource 的 dispose 必须幂等。
     source.dispose();
   }
 }
 
+/** 整页被裁断时优先级最高：用户必须知道产物不完整。 */
+function withTruncationNotice(
+  result: CaptureEncodeResult,
+  source: FrameSource
+): CaptureEncodeResult {
+  if (!source.contentTruncated || !result.ok) return result;
+  return { ...result, notice: 'content_truncated' };
+}
+
 /** 静态克隆路径（完整页面 / 弹窗文档捕获）。 */
 export async function encodePreviewDocument(request: PreviewEncodeRequest): Promise<CaptureEncodeResult> {
   const still = isStillCaptureFormat(request.format);
+  const width = request.width || FALLBACK_VIEWPORT_WIDTH;
   const source = await DomPreviewFrameSource.create({
     html: request.html,
-    width: request.width || FALLBACK_VIEWPORT_WIDTH,
+    width,
     // 动画每帧都要重新栅格化整页，按 1x 渲染避免 4~9 倍像素放大；
     // 静图一次性渲染，仍按 dpr（上限 2x）保证清晰度。
     scale: still ? Math.min(2, window.devicePixelRatio || 1) : 1,
-    // 截图允许更长的完整页面与更高的像素预算；录制受逐帧内存/耗时约束，更保守。
-    maxContentHeight: still ? 10_000 : 6_000,
-    maxPixels: still ? 12_000_000 : 3_000_000
+    // 截图的高度上限由像素预算和宽度推出；录制保持固定的 6000px / 3MP。
+    maxContentHeight: resolveDocumentHeightLimit(width, still),
+    maxPixels: still ? STILL_MAX_PIXELS : RECORDING_MAX_PIXELS
   });
   return encodePreviewSource({
     source,

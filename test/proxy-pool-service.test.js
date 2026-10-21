@@ -166,3 +166,50 @@ test('ProxyPoolService deletes a subscription together with its nodes', async (t
   assert.deepEqual(store.listNodes().map((node) => node.name), ['kept']);
   assert.equal((await service.deleteSubscription(subscription.id)).error, 'subscription_not_found');
 });
+
+// 节点快照缓存（2026-10-22）：只加速解析，绝不改变语义 —— 调用方改拷贝不能污染库，
+// 本进程写入与外部改文件都必须立刻可见（这是「缓存」不是「TTL 缓存」）。
+test('listNodes caches parsing but still hands out isolated copies that follow every write', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-node-cache-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let reads = 0;
+  const countingFs = new Proxy(fs, {
+    get(target, prop) {
+      if (prop !== 'readFileSync') return target[prop];
+      return (...args) => { reads += 1; return target.readFileSync(...args); };
+    }
+  });
+  const store = new ProxyNodeStore({ filePath: path.join(dir, 'pool.json'), fs: countingFs });
+  const sub = store.upsertSubscription({ name: '机场', url: 'https://a.example/sub' });
+  store.replaceSubscriptionNodes(sub.id, [
+    { protocol: 'vless', server: 'a.example.com', port: 443, uuid: 'u1', name: '甲' },
+    { protocol: 'vless', server: 'b.example.com', port: 443, uuid: 'u2', name: '乙' }
+  ]);
+
+  reads = 0;
+  const first = store.listNodes();
+  store.listNodes();
+  store.listNodes();
+  assert.equal(reads, 1, '重复读取只解析一次（缓存生效）');
+
+  // 隔离性：改拷贝不影响库，也不影响下一次读取（缓存复用了内部快照，但对外必须发拷贝）。
+  first[0].latencyMs = 12345;
+  first.pop();
+  const second = store.listNodes();
+  assert.equal(second.length, 2, '调用方 pop 不影响后续读取');
+  assert.notEqual(second[0].latencyMs, 12345, '调用方改拷贝不污染库');
+  assert.notEqual(second, first, '每次都是新数组');
+
+  // 本进程写入立刻可见（同一次写入 mtime 可能不变，所以不能只靠 mtime）。
+  store.recordNodeLatency({ [require('../lib/runtime/node-identity').nodeKeyOf(second[0])]: { ms: 777 } });
+  assert.equal(store.listNodes()[0].latencyMs, 777, '写入后立即读到新值');
+
+  // 外部改文件也立刻可见。
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, 'pool.json'), 'utf8'));
+  raw.nodes[0].latencyMs = 999;
+  fs.writeFileSync(path.join(dir, 'pool.json'), JSON.stringify(raw, null, 2));
+  assert.equal(store.listNodes()[0].latencyMs, 999, '外部写入后立即读到新值');
+
+  // 带过滤的调用返回新数组（不共享缓存数组）。
+  assert.notEqual(store.listNodes({ protocol: 'vless' }), store.listNodes({ protocol: 'vless' }));
+});

@@ -196,7 +196,8 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
     const still = isStillCaptureFormat(format);
     const preferences = readCapturePreferences();
     const recording: RecordingSettings | undefined = still ? undefined : preferences.recording;
-    const fullPage = (overrides?.scope ?? preferences.captureScope) === 'full';
+    // 录制必须抓真实运行中的预览（脚本/Canvas/游戏交互），静态整页克隆只用于截图。
+    const fullPage = still && (overrides?.scope ?? preferences.captureScope) === 'full';
     const target = optionsRef.current.getCaptureTarget();
     if (!fullPage && !target) {
       message.error('预览区域不可见，请先打开预览再试');
@@ -345,5 +346,6 @@ function unknownErrorText(error: unknown): string {
   if (raw === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
   if (raw === 'dom_capture_load_failed') return '预览克隆失败，请重试';
   if (raw === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
+  if (raw === 'record_requires_live_stream') return '录制需要使用实时画面（保留脚本与交互）';
   return `操作失败：${raw}`;
 }

@@ -210,9 +210,10 @@ export function buildHtmlPreviewWindowDocument(
     });
 
     // 捕获桥（弹窗侧）：
-    // - 完整页面：把原始文档 + 逻辑宽度投回宿主，重新渲染整页（不执行脚本）；
-    // - 实时画面：在点击手势里拿屏幕共享，把流挂到隐藏 video，宿主按预览区域裁切。
-    // 两种模式都由宿主的同一条编码派发产出产物。
+    // - 截图：范围由偏好决定。full 把原始文档投回宿主重新渲染整页（不执行脚本）；
+    //   live 在点击手势里拿屏幕共享，保留脚本与动画。
+    // - 录制：始终走实时画面（脚本、Canvas、鼠标交互），不重新渲染。
+    // 两条路径都由宿主的同一条编码派发产出产物。
     const status = document.querySelector('[data-capture-status]');
     const recordButton = document.querySelector('[data-capture="record"]');
     const shotButton = document.querySelector('[data-capture="screenshot"]');
@@ -533,8 +534,13 @@ export function buildHtmlPreviewWindowDocument(
         }
         if (phase !== 'idle') return;
         const settings = currentCaptureSettings();
-        if (settings.scope === 'live') startLiveCapture(kind, settings.fps);
-        else startDocumentCapture(kind);
+        // 录制始终走实时屏幕共享：脚本、Canvas 和鼠标交互都必须保留；
+        // 完整页面静态克隆只用于截图。
+        if (kind === 'record' || settings.scope === 'live') {
+          startLiveCapture(kind, settings.fps);
+        } else {
+          startDocumentCapture(kind);
+        }
       });
     });
   </script>

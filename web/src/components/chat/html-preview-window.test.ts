@@ -62,14 +62,14 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).not.toContain("const CAPTURE_SCOPE = 'full'");
   });
 
-  test('默认完整页面走文档捕获而不是屏幕共享', () => {
+  test('默认完整页面截图走文档捕获，录制始终走实时屏幕共享', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'desktop',
       recordingHint: '手动停止'
     });
     expect(doc).toContain("'aih:html-preview-capture-request'");
     expect(doc).toContain('startDocumentCapture');
-    expect(doc).toContain('settings.scope ===');
+    expect(doc).toContain('kind === \'record\' || settings.scope === \'live\'');
     expect(doc).toContain('startLiveCapture(kind, settings.fps)');
   });
 
@@ -94,7 +94,7 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain('const HAS_DYNAMIC_CONTENT = false');
   });
 
-  test('录制启动不滚动宿主页面（避免录制瞬间跳动）', () => {
+  test('弹窗脚本不直接滚动页面，完整可见性交给实时帧源', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'desktop',
       recordingHint: '手动停止'

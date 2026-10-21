@@ -16,9 +16,9 @@ import {
 } from './recording-settings';
 
 /**
- * 捕获范围：
- * - full：用同一份 HTML 重新渲染整页（不执行脚本），截图/录制都能拿到完整内容；
- * - live：抓取用户此刻看到的真实预览（脚本、Canvas/WebGL 动效保真），但受视口裁剪。
+ * 截图范围（只影响静图；录制始终抓实时画面）：
+ * - full：用同一份 HTML 重新渲染整页（不执行脚本），截图覆盖完整长页面；
+ * - live：抓取用户此刻看到的真实预览（脚本、Canvas/WebGL 保真），但受视口裁剪。
  */
 export type CaptureScope = 'full' | 'live';
 
@@ -32,12 +32,12 @@ export const CAPTURE_SCOPE_OPTIONS: Array<{
   {
     value: 'full',
     label: '完整页面',
-    description: '重新渲染整页，完整覆盖长页面；不执行脚本（JS 动效请选实时画面）'
+    description: '截图重新渲染整页，完整覆盖长页面；不执行脚本。录制始终使用实时画面'
   },
   {
     value: 'live',
     label: '实时画面',
-    description: '保留脚本与动画，但只覆盖当前可见区域'
+    description: '截图抓当前可见区域，保留脚本与动画；录制始终使用实时画面'
   }
 ];
 
@@ -46,7 +46,7 @@ export interface CapturePreferences {
   defaultFormat: CaptureFormatId;
   /** 格式开关矩阵（关闭的格式不出现在选择器里）。 */
   enabledFormats: Record<CaptureFormatId, boolean>;
-  /** 截图与录制的取景范围（聊天预览与弹窗共用）。 */
+  /** 截图的取景范围（聊天预览与弹窗共用）；录制固定使用实时画面。 */
   captureScope: CaptureScope;
   /** 截图/录制水印（关闭时不绘制）。 */
   watermark: CaptureWatermarkSettings;

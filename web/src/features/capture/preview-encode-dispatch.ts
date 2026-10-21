@@ -141,6 +141,8 @@ function withTruncationNotice(
 /** 静态克隆路径（完整页面 / 弹窗文档捕获）。 */
 export async function encodePreviewDocument(request: PreviewEncodeRequest): Promise<CaptureEncodeResult> {
   const still = isStillCaptureFormat(request.format);
+  // 静态克隆不执行脚本：录制必须保留脚本/Canvas/鼠标交互，fail closed。
+  if (!still) throw new Error('record_requires_live_stream');
   const width = request.width || FALLBACK_VIEWPORT_WIDTH;
   const source = await DomPreviewFrameSource.create({
     html: request.html,

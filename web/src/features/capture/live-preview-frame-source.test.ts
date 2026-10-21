@@ -1,7 +1,11 @@
 // 实时取景裁切换算的纯函数测试：Retina、部分离屏、窗口边框偏移与最大宽度。
 
 import { describe, expect, test } from 'bun:test';
-import { computeDisplayCrop } from './live-preview-frame-source';
+import {
+  computeDisplayCrop,
+  isTargetFullyVisible,
+  revealCaptureTarget
+} from './live-preview-frame-source';
 
 describe('computeDisplayCrop', () => {
   test('Retina 视频像素按视口比例换算', () => {
@@ -93,5 +97,46 @@ describe('computeDisplayCrop', () => {
         rect: { left: 0, top: 0, width: 300, height: 200 }
       })
     ).toBeNull();
+  });
+});
+
+describe('录制前让目标完整可见', () => {
+  const viewport = { width: 1000, height: 800 };
+
+  function fakeTarget(
+    rect: { left: number; top: number; width: number; height: number },
+    onScroll?: () => void
+  ): HTMLElement {
+    return {
+      getBoundingClientRect: () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height }),
+      scrollIntoView: (options: ScrollIntoViewOptions) => {
+        expect(options.block).toBe('center');
+        onScroll?.();
+      }
+    } as unknown as HTMLElement;
+  }
+
+  test('完整落在视口内时不滚动', () => {
+    let scrolled = false;
+    const target = fakeTarget({ left: 100, top: 100, width: 800, height: 380 }, () => {
+      scrolled = true;
+    });
+    revealCaptureTarget(target, viewport);
+    expect(scrolled).toBe(false);
+    expect(isTargetFullyVisible(target, viewport)).toBe(true);
+  });
+
+  test('被聊天滚动区裁掉时滚动到中央', () => {
+    let scrolled = false;
+    const target = fakeTarget({ left: 0, top: 600, width: 1000, height: 380 }, () => {
+      scrolled = true;
+    });
+    revealCaptureTarget(target, viewport);
+    expect(scrolled).toBe(true);
+  });
+
+  test('目标仍不完整可见时判定失败（不静默录半截）', () => {
+    const target = fakeTarget({ left: 0, top: 500, width: 1000, height: 380 });
+    expect(isTargetFullyVisible(target, viewport)).toBe(false);
   });
 });

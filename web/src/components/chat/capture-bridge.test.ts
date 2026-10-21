@@ -114,11 +114,11 @@ describe('captureProgressText', () => {
     ).toBe('正在请求屏幕共享…');
   });
 
-  test('完整页面模式直接显示渲染文案', () => {
+  test('静图完整页面模式直接显示渲染文案', () => {
     expect(
       captureProgressText({
         ...base,
-        kind: 'animation',
+        kind: 'still',
         elapsedMs: 0,
         capturedFrames: 0,
         progressLabel: '正在渲染完整页面…'

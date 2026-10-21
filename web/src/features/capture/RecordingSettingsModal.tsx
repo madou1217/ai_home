@@ -74,7 +74,7 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
     >
       <div className={styles.modalStack}>
         <section className={styles.modalSection}>
-          <Typography.Text strong>捕获范围</Typography.Text>
+          <Typography.Text strong>截图范围</Typography.Text>
           <CaptureScopeFields
             value={draft.captureScope}
             onChange={(captureScope) => patch({ captureScope })}

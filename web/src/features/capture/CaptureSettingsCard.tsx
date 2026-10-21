@@ -110,7 +110,7 @@ export default function CaptureSettingsCard() {
         }
       />
       <SettingsItem
-        title="捕获范围"
+        title="截图范围"
         subtitle={`${
           CAPTURE_SCOPE_OPTIONS.find((option) => option.value === preferences.captureScope)?.label ??
           ''

@@ -48,6 +48,49 @@ export interface DisplayCropResult {
 }
 
 const DEFAULT_MAX_WIDTH = 1280;
+/** 判定目标完整可见时的像素容差（亚像素/缩放误差）。 */
+const FULL_VISIBILITY_TOLERANCE = 1;
+
+/**
+ * 目标元素是否完整落在视口内（录制不能只抓可见的一部分）。
+ * 返回 false 时调用方应先滚动/调整布局，再重试；仍不满足则明确报错。
+ */
+export function isTargetFullyVisible(
+  target: HTMLElement,
+  viewport: { width: number; height: number }
+): boolean {
+  const rect = target.getBoundingClientRect();
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    rect.left >= -FULL_VISIBILITY_TOLERANCE &&
+    rect.top >= -FULL_VISIBILITY_TOLERANCE &&
+    rect.right <= viewport.width + FULL_VISIBILITY_TOLERANCE &&
+    rect.bottom <= viewport.height + FULL_VISIBILITY_TOLERANCE
+  );
+}
+
+/**
+ * 点击录制时把预览目标滚动到视口中央，保证整个可视区域可见。
+ * 必须在 `getDisplayMedia` 之前同步调用（保住用户手势）；滚动失败或目标
+ * 仍不完整可见时由调用方 fail closed，绝不静默裁掉被聊天界面遮挡的部分。
+ */
+export function revealCaptureTarget(
+  target: HTMLElement,
+  viewport: { width: number; height: number } = {
+    width: Math.max(1, window.innerWidth),
+    height: Math.max(1, window.innerHeight)
+  }
+): void {
+  if (isTargetFullyVisible(target, viewport)) return;
+  target.scrollIntoView({
+    block: 'center',
+    inline: 'nearest',
+    behavior: 'instant' as ScrollBehavior
+  });
+  // 强制布局，确保后续可见性判定看到滚动后的位置。
+  void target.getBoundingClientRect();
+}
 
 /**
  * 把「页面坐标里的元素 rect」换算成视频源裁切区域与输出尺寸。
@@ -184,6 +227,17 @@ export class LivePreviewFrameSource implements FrameSource {
     if (typeof window === 'undefined') throw new Error('display_capture_requires_window');
     if (!options.target.isConnected) throw new Error('display_capture_target_detached');
 
+    const viewport = options.viewport ?? {
+      width: Math.max(1, window.innerWidth),
+      height: Math.max(1, window.innerHeight)
+    };
+    // 录制的取景范围就是屏幕上的可见像素：先把目标完整滚到视口中央，
+    // 否则 computeDisplayCrop 会静默裁掉被聊天滚动区/固定区域挡住的部分。
+    revealCaptureTarget(options.target, viewport);
+    if (!isTargetFullyVisible(options.target, viewport)) {
+      throw new Error('preview_not_visible');
+    }
+
     // 关键：同步进入 getDisplayMedia，保住用户手势（点击「录制/截图」）。
     const stream = await requestDisplayStream(options);
 
@@ -219,10 +273,6 @@ export class LivePreviewFrameSource implements FrameSource {
     }
 
     const rect = options.target.getBoundingClientRect();
-    const viewport = options.viewport ?? {
-      width: Math.max(1, window.innerWidth),
-      height: Math.max(1, window.innerHeight)
-    };
     const maxWidth = Math.max(320, options.maxWidth ?? DEFAULT_MAX_WIDTH);
 
     let width: number;

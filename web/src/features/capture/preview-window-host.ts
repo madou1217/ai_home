@@ -176,6 +176,7 @@ function friendlyCaptureError(message: string): string {
   if (message === 'capture_no_frames') return '没有抓到任何帧，请重试';
   if (message === 'dom_capture_requires_window') return '当前环境不支持完整页面渲染';
   if (message === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
+  if (message === 'record_requires_live_stream') return '录制请使用实时画面（需要保留脚本与交互）';
   if (message === 'dom_capture_frame_unavailable') return '预览暂不可截取';
   if (message === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
   if (message === 'dom_capture_load_failed') return '预览克隆失败，请重试';

@@ -1,4 +1,4 @@
-// 捕获范围选择：设置页与聊天录制设置弹窗共用。
+// 截图范围选择：设置页与聊天设置弹窗共用；录制始终使用实时画面。
 // 只负责受控展示，偏好持久化由调用方完成。
 
 import { Segmented } from 'antd';
@@ -22,7 +22,7 @@ export default function CaptureScopeFields({ value, onChange, compact = false }:
     <Segmented
       size={compact ? 'small' : 'middle'}
       value={value}
-      aria-label="捕获范围"
+      aria-label="截图范围"
       options={CAPTURE_SCOPE_OPTIONS.map((option) => ({
         label: option.label,
         value: option.value

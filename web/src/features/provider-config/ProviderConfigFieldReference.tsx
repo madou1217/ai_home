@@ -78,13 +78,13 @@ export default function ProviderConfigFieldReference({
           aria-label="搜索配置文件里出现的键"
         />
         {filtered.length ? (
-          <div className="pc-ref-rows" role="list">
+          <div className="pc-ref-rows">
             {filtered.map((row) => (
               <button
                 key={row.path}
                 type="button"
-                role="listitem"
                 className="pc-ref-row"
+                aria-pressed={row.path === selectedPath}
                 data-active={row.path === selectedPath || undefined}
                 data-issue={row.issue === 'none' ? undefined : row.issue}
                 onClick={() => setSelectedPath(row.path)}

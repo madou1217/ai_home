@@ -1709,7 +1709,51 @@ export interface ManagedAppsResponse {
 export interface ToolPermissionSettings {
   maxPermission: boolean;
   applyToHost: boolean;
+  /** WebUI 逐旗标选择的权限参数（`[]` = 用合同推导的默认最大权限）。 */
+  permissionArgs: string[];
   updatedAt: number;
+}
+
+/** 目录里的一个权限旗标（服务端 describePermissionCatalog 下发）。 */
+export interface ToolPermissionFlagEntry {
+  flag: string;
+  aliases: string[];
+  group: string;
+  groupLabel: string;
+  /** none = 无值开关；value = 取值受限；list = 自由列表 */
+  value: 'none' | 'value' | 'list';
+  options: string[];
+  /** 中文说明；翻译管道未接入前等同英文原文的意译 */
+  description: string;
+  /** CLI --help 原文 */
+  descriptionEn: string;
+  /** 用法示例，例如 `codex -s danger-full-access` */
+  example: string;
+  /** 对应的配置文件写法（没有等价字段时为空串） */
+  configEquivalent: string;
+  note: string;
+}
+
+export interface ToolPermissionConflict {
+  a: string;
+  b: string;
+  message: string;
+}
+
+export interface ToolPermissionOverride {
+  by: string;
+  over: string;
+  message: string;
+}
+
+export interface ToolPermissionCatalog {
+  verifiedCliVersion: string;
+  groups: Record<string, string>;
+  flags: ToolPermissionFlagEntry[];
+  conflicts: ToolPermissionConflict[];
+  overrides: ToolPermissionOverride[];
+  subcommandsWithoutApprovalFlag: string[];
+  subcommandsBlockingPermissionOverrides: string[];
 }
 
 export interface ToolPermissionCapability {
@@ -1717,6 +1761,8 @@ export interface ToolPermissionCapability {
   maxArgs: string[];
   /** 不支持最大权限时的可读原因（已包含应用名）。 */
   maxReason: string;
+  /** 全量权限参数目录：前端只渲染这份数据，不维护 provider 名单。 */
+  permissionCatalog: ToolPermissionCatalog;
   hostSupported: boolean;
   hostFileId: string;
   hostDisplayPath: string;
@@ -2085,6 +2131,10 @@ export interface ProviderConfigSchemaField {
   secret?: boolean;
   since?: string;
   removedIn?: string;
+  /** CLI 等价长旗标；只在该 CLI 自己的 `--help` 里确实出现时才下发。 */
+  cliFlag?: string;
+  /** 可直接复制的用法示例，例如 `codex --model <model>`。 */
+  cliSample?: string;
   compatibility?: ProviderConfigFieldCompatibility;
 }
 

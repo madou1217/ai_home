@@ -21,6 +21,11 @@
   grid-template-columns: minmax(0, 1fr) 320px;
 }
 
+/* 「参数解读」视图没有右侧字段解读栏。 */
+.pc-layout[data-reference] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* 嵌入到弹窗时不再画第二层边框/背景。 */
 .pc-layout[data-embedded] {
   min-height: 0;
@@ -456,6 +461,12 @@
   color: var(--color-heading);
 }
 
+.pc-inspector-note[data-tone='muted'] {
+  border-color: var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-muted-strong);
+}
+
 .pc-inspector-section {
   display: flex;
   flex-direction: column;
@@ -884,6 +895,224 @@
     transition: none;
   }
 }
+
+/* ---------------- 参数解读（配置文件里真实出现的键） ----------------
+ * 两类高亮互不覆盖：选中项 = 强调色边框 + 浅底，问题项 = 告警色边框与文字。
+ * 不使用左侧色条，状态依靠完整边框 + 图标 + 文案表达。 */
+
+.pc-ref {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  min-height: 480px;
+  flex: 1;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  overflow: hidden;
+}
+
+.pc-ref-list {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-right: var(--space-4);
+  border-right: 1px solid var(--color-border);
+}
+
+.pc-ref-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.pc-ref-list-head strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-heading);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+}
+
+.pc-ref-count {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: var(--tracking-caps);
+  white-space: nowrap;
+}
+
+.pc-ref-rows {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.pc-ref-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted-strong);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.pc-ref-row:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+  background: var(--color-overlay);
+}
+
+.pc-ref-row[data-active='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+
+.pc-ref-row[data-issue='deprecated'] {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-border));
+}
+
+.pc-ref-row[data-issue='unsupported'] {
+  border-color: color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
+}
+
+.pc-ref-row[data-issue='unknown'] {
+  border-color: var(--color-border);
+}
+
+.pc-ref-row[data-issue][data-active='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+
+.pc-ref-row-path {
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.pc-ref-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 10px;
+}
+
+.pc-ref-row-kind,
+.pc-ref-row-line {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.pc-ref-row-issue {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-warning);
+  font-weight: var(--weight-semibold);
+}
+
+.pc-ref-row[data-issue='unsupported'] .pc-ref-row-issue {
+  color: var(--color-danger);
+}
+
+.pc-ref-row[data-issue='unknown'] .pc-ref-row-issue {
+  color: var(--color-faint);
+  font-weight: var(--weight-normal);
+}
+
+.pc-ref-detail {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+}
+
+.pc-ref-detail .pc-field-card[data-reference-active='true'] {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 4%, var(--color-surface));
+}
+
+.pc-ref-option {
+  padding: 1px var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.pc-ref-cli {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
+  color: var(--color-accent);
+  font-size: 11px;
+}
+
+.pc-ref-cli code {
+  color: var(--color-heading);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.pc-ref-cli-hint {
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: var(--leading-normal);
+}
+
+.pc-ref-foot {
+  padding-top: var(--space-2);
+  color: var(--color-faint);
+  font-size: 10px;
+  line-height: var(--leading-normal);
+}
+
+.pc-ref-empty {
+  padding: var(--space-5);
+  border: 1px dashed var(--color-border);
+  color: var(--color-muted);
+  font-size: var(--text-2xs);
+}
+
+@media (max-width: 992px) {
+  .pc-ref {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .pc-ref-list {
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: var(--space-4);
+  }
+  .pc-ref-rows {
+    max-height: 240px;
+  }
+}
+
 
 /* ---------------- 响应式 ---------------- */
 

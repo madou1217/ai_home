@@ -2179,7 +2179,7 @@ export const toolkitAPI = {
   },
   saveAppPermissionSettings: async (
     appId: string,
-    payload: { maxPermission: boolean; applyToHost: boolean }
+    payload: { maxPermission: boolean; applyToHost: boolean; permissionArgs?: string[] }
   ): Promise<ToolPermissionSettingsResponse> => {
     const response = await api.put<ToolPermissionSettingsResponse>(
       `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`,

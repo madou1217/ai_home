@@ -153,6 +153,11 @@
   min-width: 0;
 }
 
+/* 「参数解读」在弹窗里限高，左侧键列表与右侧解读各自滚动。 */
+.aas-config-pane .pc-ref {
+  max-height: 62vh;
+}
+
 @media (max-width: 720px) {
   .aas-section {
     padding: var(--space-4);

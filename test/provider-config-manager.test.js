@@ -89,6 +89,27 @@ test('provider config detail can describe a file that does not exist yet', () =>
   assert.equal(detail.file.canCreate, true);
 });
 
+test('schema fields carry a CLI equivalent only when the CLI help declares the flag', () => {
+  const home = createHome();
+  const detail = readConfigFile('codex', 'config', {
+    ...optionsFor(home),
+    readCliHelp: () => 'Usage: codex\n  -m, --model <MODEL>\n  -s, --sandbox <MODE>\n'
+  });
+  const model = detail.schema.fields.find((field) => field.path === 'model');
+  assert.equal(model.cliFlag, '--model');
+  assert.equal(model.cliSample, 'codex --model <model>');
+  const provider = detail.schema.fields.find((field) => field.path === 'model_provider');
+  assert.equal(provider.cliFlag, undefined);
+});
+
+test('schema fields never claim a CLI equivalent when help is unavailable', () => {
+  const home = createHome();
+  const detail = readConfigFile('codex', 'config', { ...optionsFor(home), readCliHelp: () => '' });
+  const model = detail.schema.fields.find((field) => field.path === 'model');
+  assert.equal(model.cliFlag, undefined);
+  assert.equal(model.cliSample, undefined);
+});
+
 test('saving creates a baseline snapshot, writes atomically and records history', () => {
   const home = createHome();
   const target = path.join(home, '.codex', 'config.toml');

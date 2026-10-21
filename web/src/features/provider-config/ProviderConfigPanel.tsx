@@ -27,6 +27,7 @@ import type {
 } from '@/types';
 import ProviderConfigExportModal from './ProviderConfigExportModal';
 import ProviderConfigFieldInspector from './ProviderConfigFieldInspector';
+import ProviderConfigFieldReference from './ProviderConfigFieldReference';
 import ProviderConfigHistoryDrawer from './ProviderConfigHistoryDrawer';
 import {
   applyProviderConfigOption,
@@ -65,9 +66,16 @@ export interface ProviderConfigPanelProps {
   providerId?: string;
   /** 嵌入模式：隐藏页面标题与 Provider 侧栏，只保留文件标签 + 编辑器 + 字段解读。 */
   embedded?: boolean;
+  /** 工作台视图：`editor` 编辑配置文件；`reference` 只解读这份文件里真实出现的键。 */
+  view?: 'editor' | 'reference';
 }
 
-export default function ProviderConfigPanel({ providerId = '', embedded = false }: ProviderConfigPanelProps) {
+export default function ProviderConfigPanel({
+  providerId = '',
+  embedded = false,
+  view = 'editor'
+}: ProviderConfigPanelProps) {
+  const referenceView = view === 'reference';
   const screens = Grid.useBreakpoint();
   const compact = !screens.lg;
   const fixedProviderId = providerId.trim().toLowerCase();
@@ -433,6 +441,7 @@ export default function ProviderConfigPanel({ providerId = '', embedded = false 
           data-compact={compact || undefined}
           data-embedded={embedded || undefined}
           data-fixed-provider={fixedProviderId || undefined}
+          data-reference={referenceView || undefined}
         >
           {!fixedProviderId && (
             <aside className="pc-provider-rail" aria-label="Provider 列表">
@@ -480,7 +489,7 @@ export default function ProviderConfigPanel({ providerId = '', embedded = false 
                     <ProviderIcon provider={provider.id} size={28} />
                     <div>
                       <strong>{provider.label}</strong>
-                      <small>宿主全局配置 · 账号投影不在此处</small>
+                      <small>{provider.files.length} 个配置文件</small>
                     </div>
                   </div>
                   <div className="pc-file-tabs" role="tablist" aria-label={`${provider.label} 配置文件`}>
@@ -519,6 +528,30 @@ export default function ProviderConfigPanel({ providerId = '', embedded = false 
                     <Button onClick={() => setReloadToken((value) => value + 1)}>重试</Button>
                   </div>
                 ) : detail && file ? (
+                  referenceView ? (
+                    <>
+                      <div className="pc-file-status">
+                        <div className="pc-file-status-main">
+                          <code className="pc-path" title={file.displayPath}>{file.displayPath}</code>
+                          <div className="pc-status-tags">
+                            <Tag className="pc-tag">{file.format.toUpperCase()}</Tag>
+                            {status && <Tag className="pc-tag" color={status.tone === 'ok' ? 'green' : status.tone === 'danger' ? 'red' : 'default'}>{status.label}</Tag>}
+                            {!file.exists && <Tag className="pc-tag">这份文件还不存在</Tag>}
+                            {detail.schemaVersion?.mismatch && (
+                              <Tag color="orange"><WarningOutlined /> 字段说明与当前版本不一致</Tag>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <ProviderConfigFieldReference
+                        schema={detail.schema}
+                        content={loadedContent}
+                        format={file.format}
+                        cli={detail.cli}
+                        schemaVersion={detail.schemaVersion}
+                      />
+                    </>
+                  ) : (
                   <>
                     <div className="pc-file-status">
                       <div className="pc-file-status-main">
@@ -634,6 +667,7 @@ export default function ProviderConfigPanel({ providerId = '', embedded = false 
                       )}
                     </footer>
                   </>
+                  )
                 ) : null}
               </>
             ) : (
@@ -643,11 +677,11 @@ export default function ProviderConfigPanel({ providerId = '', embedded = false 
             )}
           </main>
 
-          {!compact && <aside className="pc-inspector-rail">{inspector}</aside>}
+          {!compact && !referenceView && <aside className="pc-inspector-rail">{inspector}</aside>}
         </div>
       )}
 
-      {compact && (
+      {compact && !referenceView && (
         <Drawer
           open={inspectorOpen}
           onClose={() => setInspectorOpen(false)}

@@ -23,6 +23,7 @@ const {
 } = require('../lib/harness/dsh-tui');
 const { getExternalHarness, listExternalHarnesses } = require('../lib/harness/catalog');
 const { getHarnessAdapter } = require('../lib/harness/adapters');
+const { getAppInstaller } = require('../lib/server/app-installers');
 
 function tempDir(t, prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -178,6 +179,14 @@ test('dsh-tui preferences seed onboarding and model only once', (t) => {
     provider: 'aih',
     model: 'claude-test'
   });
+});
+
+test('dsh-tui install resolves to the DSH managed app through its descriptor', () => {
+  const installer = getAppInstaller('dsh-tui');
+  assert.ok(installer, 'dsh-tui must resolve to an installer');
+  assert.equal(installer.provider, 'dsh');
+  assert.equal(getAppInstaller('PI').provider, 'pi');
+  assert.equal(getAppInstaller('missing-harness'), null);
 });
 
 test('dsh-tui bundle detection requires the installed profile package', (t) => {

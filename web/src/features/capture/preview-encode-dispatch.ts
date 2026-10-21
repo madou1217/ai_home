@@ -17,18 +17,12 @@ import {
   resolveRecordingPlan,
   type RecordingSettings
 } from './recording-settings';
-import type { CaptureWatermarkSettings } from './watermark';
-
-interface WatermarkRequest {
-  /** 开启后在编码前自动叠加到产物右下角。 */
-  watermark?: CaptureWatermarkSettings;
-}
 
 /**
  * 对任意 FrameSource 执行一次截图/录制。
  * inline 预览用实时屏幕抓帧源，弹窗宿主用弹窗视频帧源，二者共用这一条编码派发。
  */
-export interface PreviewSourceEncodeRequest extends WatermarkRequest {
+export interface PreviewSourceEncodeRequest {
   source: FrameSource;
   format: CaptureFormatId;
   /** 产物文件名（不含扩展名）；缺省 html-preview。 */
@@ -56,8 +50,7 @@ export async function encodePreviewSource(
       return captureStill({
         canvas,
         format: request.format,
-        baseName,
-        watermark: request.watermark
+        baseName
       });
     }
     // 上一分支已 return，这里仅剩动画格式；守卫不做负向收窄，显式标注。
@@ -73,7 +66,6 @@ export async function encodePreviewSource(
       frameCountMode: plan.frameCountMode,
       stopSignal: request.stopSignal,
       signal: request.signal,
-      watermark: request.watermark,
       onPhase: request.onPhase,
       onEncode: request.onEncode,
       onNotice: (notice) => {

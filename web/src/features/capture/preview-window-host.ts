@@ -8,7 +8,6 @@ import type { CaptureFormatId, CaptureNotice, StillCaptureFormatId } from './typ
 import type { CapturePreferences } from './capture-preferences';
 import { encodePreviewSource } from './preview-encode-dispatch';
 import { PopupWindowFrameSource } from './popup-window-frame-source';
-import { resolveCaptureWatermark } from './watermark';
 import {
   isFormatAvailable,
   probeCaptureFormatAvailability,
@@ -34,9 +33,6 @@ export interface CaptureWindowStreamReady {
   format?: string;
   /** 弹窗是否已用 Region Capture 把视频轨裁到预览元素。 */
   cropped: boolean;
-  /** 打开弹窗时的当前会话身份；仅用于水印。 */
-  provider?: string;
-  model?: string;
 }
 
 /** 弹窗 → 宿主：结束当前录制（保留已抓帧并继续编码）。 */
@@ -125,8 +121,6 @@ export function isCaptureWindowStreamReady(data: unknown): data is CaptureWindow
   if (typeof candidate.requestId !== 'string' || candidate.requestId.length === 0) return false;
   if (candidate.kind !== 'still' && candidate.kind !== 'record') return false;
   if (candidate.format !== undefined && typeof candidate.format !== 'string') return false;
-  if (candidate.provider !== undefined && typeof candidate.provider !== 'string') return false;
-  if (candidate.model !== undefined && typeof candidate.model !== 'string') return false;
   return typeof candidate.cropped === 'boolean';
 }
 
@@ -237,10 +231,6 @@ export async function runCaptureForWindowStream(
       source,
       format,
       recording: preferences.recording,
-      watermark: resolveCaptureWatermark(preferences.watermark, {
-        provider: request.provider || '',
-        model: request.model || ''
-      }),
       signal: controller.signal,
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)

@@ -8,7 +8,6 @@ import type {
   CaptureEncodeSuccess,
   CaptureFormatId,
   CaptureNotice,
-  CaptureWatermarkIdentity,
   RecordingSettings
 } from '../../features/capture';
 import {
@@ -16,8 +15,7 @@ import {
   encodePreviewSource,
   isStillCaptureFormat,
   LivePreviewFrameSource,
-  readCapturePreferences,
-  resolveCaptureWatermark
+  readCapturePreferences
 } from '../../features/capture';
 
 // 格式选项与默认格式裁决的事实源在 capture 域（设置页共用），这里只做转发。
@@ -54,8 +52,6 @@ export interface PreviewCaptureActions {
 export interface PreviewCaptureActionsOptions {
   /** 当前预览容器（包含 iframe 的 stage）；实时取景时每次执行都取最新值。 */
   getCaptureTarget: () => HTMLElement | null;
-  /** 捕获瞬间的会话身份，用于水印；不要从偏好或全局选择器读取。 */
-  getWatermarkIdentity?: () => CaptureWatermarkIdentity | null;
 }
 
 const IDLE_STATE: PreviewCaptureState = {
@@ -157,10 +153,6 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       message.error('预览区域不可见，请先打开预览再试');
       return;
     }
-    const watermark = resolveCaptureWatermark(
-      preferences.watermark,
-      optionsRef.current.getWatermarkIdentity?.()
-    );
     busyRef.current = true;
     const cancelController = new AbortController();
     const stopController = new AbortController();
@@ -213,7 +205,6 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
         source,
         format,
         recording,
-        watermark,
         signal: cancelController.signal,
         stopSignal: still ? undefined : stopController.signal,
         ...callbacks

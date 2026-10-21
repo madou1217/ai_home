@@ -1,6 +1,9 @@
 import {
+  buildPreviewWatermarkMarks,
   ensurePreviewWindowCaptureHost,
   readCapturePreferences,
+  resolveCaptureWatermark,
+  resolveWatermarkText,
   summarizeRecordingSettings,
   type CapturePreviewDevice,
   type CaptureWatermarkIdentity
@@ -124,8 +127,9 @@ export function buildHtmlPreviewWindowDocument(
   const fallbackFps = Number.isFinite(recordingFps)
     ? Math.max(1, Math.min(60, Math.round(recordingFps)))
     : 30;
-  const captureProvider = options.captureIdentity?.provider || '';
-  const captureModel = options.captureIdentity?.model || '';
+  const watermarkText = resolveWatermarkText(
+    resolveCaptureWatermark(preferences.watermark, options.captureIdentity)
+  );
   const autoCaptureKind =
     options.autoCapture?.kind === 'still' || options.autoCapture?.kind === 'record'
       ? options.autoCapture.kind
@@ -177,11 +181,17 @@ export function buildHtmlPreviewWindowDocument(
     .fullscreen:hover { border-color: #00f0ff; color: #00f0ff; background: rgba(0, 240, 255, .08); }
     .fullscreen[hidden] { display: none; }
     .stage { flex: 1; min-height: 0; padding: 16px; display: flex; align-items: center; justify-content: center; overflow: auto; background-color: #05080e; background-image: linear-gradient(rgba(0, 240, 255, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 240, 255, .035) 1px, transparent 1px); background-size: 32px 32px; }
-    .preview { display: block; border: 1px solid rgba(0, 240, 255, .35); background: #fff; transition: width 160ms cubic-bezier(0.2, 0, 0, 1), height 160ms cubic-bezier(0.2, 0, 0, 1), border-radius 160ms cubic-bezier(0.2, 0, 0, 1); }
+    .viewport { position: relative; display: block; width: 100%; height: 100%; }
+    .preview { display: block; width: 100%; height: 100%; border: 1px solid rgba(0, 240, 255, .35); background: #fff; transition: width 160ms cubic-bezier(0.2, 0, 0, 1), height 160ms cubic-bezier(0.2, 0, 0, 1), border-radius 160ms cubic-bezier(0.2, 0, 0, 1); }
     .preview:fullscreen { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
-    .stage[data-device="desktop"] .preview { width: 100%; height: 100%; border-radius: 0; box-shadow: 0 0 18px rgba(0, 240, 255, .12); }
+    .stage[data-device="desktop"] .preview { border-radius: 0; box-shadow: 0 0 18px rgba(0, 240, 255, .12); }
     /* 手机视口保留设备外框圆角（模拟真机屏幕边界），外框用 HUD 发丝线 + 辉光 */
-    .stage[data-device="mobile"] .preview { width: min(390px, calc(100vw - 24px)); height: min(844px, calc(100vh - 96px)); border-width: 8px; border-color: #0c1524; border-radius: 30px; box-shadow: 0 0 0 1px rgba(0, 240, 255, .35), 0 0 30px rgba(0, 240, 255, .12); }
+    .stage[data-device="mobile"] .viewport { width: min(390px, calc(100vw - 24px)); height: min(844px, calc(100vh - 96px)); }
+    .stage[data-device="mobile"] .preview { border-width: 8px; border-color: #0c1524; border-radius: 30px; box-shadow: 0 0 0 1px rgba(0, 240, 255, .35), 0 0 30px rgba(0, 240, 255, .12); }
+    /* 预览水印：弹幕式随机浅色分布，只属于预览，不参与截图/录制。 */
+    .watermark { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; user-select: none; }
+    .watermark[hidden] { display: none; }
+    .watermark span { position: absolute; max-width: 90%; overflow: hidden; color: #334155; font-weight: 600; line-height: 1.1; letter-spacing: .02em; white-space: nowrap; text-overflow: ellipsis; mix-blend-mode: multiply; transform-origin: center; }
     @media (max-width: 560px) {
       .toolbar { align-items: flex-start; flex-direction: column; gap: 8px; }
       .controls, .devices { width: 100%; }
@@ -189,7 +199,7 @@ export function buildHtmlPreviewWindowDocument(
       .device { flex: 1; }
       .fullscreen { flex: 0 0 auto; }
       .stage { padding: 8px; }
-      .stage[data-device="mobile"] .preview { height: calc(100vh - 122px); }
+      .stage[data-device="mobile"] .viewport { height: calc(100vh - 122px); }
     }
   </style>
 </head>
@@ -215,7 +225,10 @@ export function buildHtmlPreviewWindowDocument(
     </div>
   </header>
   <main class="stage" data-preview-stage data-device="${initialDevice}">
-    <iframe id="aih-preview-target" class="preview" title="${titleAttribute}" sandbox="${HTML_PREVIEW_SANDBOX}" referrerpolicy="no-referrer" srcdoc="${srcDoc}"></iframe>
+    <div class="viewport">
+      <iframe id="aih-preview-target" class="preview" title="${titleAttribute}" sandbox="${HTML_PREVIEW_SANDBOX}" referrerpolicy="no-referrer" srcdoc="${srcDoc}"></iframe>
+      <div class="watermark" data-watermark-layer aria-hidden="true"${watermarkText ? '' : ' hidden'}></div>
+    </div>
   </main>
   <script>
     const stage = document.querySelector('[data-preview-stage]');
@@ -228,6 +241,8 @@ export function buildHtmlPreviewWindowDocument(
         document.querySelectorAll('[data-device-option]').forEach((option) => {
           option.setAttribute('aria-pressed', String(option === button));
         });
+        renderWatermark();
+        window.setTimeout(renderWatermark, 220);
       });
     });
     fullscreen.addEventListener('click', async () => {
@@ -249,8 +264,8 @@ export function buildHtmlPreviewWindowDocument(
     const CAPTURE_VIDEO_ID = 'aih-capture-video';
     const CAPTURE_PREFS_KEY = 'aih.capture';
     const FALLBACK_CAPTURE_FPS = ${fallbackFps};
-    const CAPTURE_PROVIDER = ${jsonForScript(captureProvider)};
-    const CAPTURE_MODEL = ${jsonForScript(captureModel)};
+    const WATERMARK_TEXT = ${jsonForScript(watermarkText)};
+    const buildWatermarkMarks = ${buildPreviewWatermarkMarks.toString()};
     const AUTO_CAPTURE_KIND = ${jsonForScript(autoCaptureKind)};
     const AUTO_CAPTURE_FORMAT = ${jsonForScript(autoCaptureFormat)};
     const AUTO_CAPTURE_START_TYPE = '${CAPTURE_AUTO_START_TYPE}';
@@ -273,6 +288,35 @@ export function buildHtmlPreviewWindowDocument(
     });
     let autoCapturePending = AUTO_CAPTURE_KIND !== '';
 
+    const watermarkLayer = document.querySelector('[data-watermark-layer]');
+    function setWatermarkHidden(hidden) {
+      if (watermarkLayer) watermarkLayer.hidden = hidden === true;
+    }
+    function renderWatermark() {
+      if (!watermarkLayer || !WATERMARK_TEXT) return;
+      const rect = watermarkLayer.getBoundingClientRect();
+      const marks = buildWatermarkMarks({
+        text: WATERMARK_TEXT,
+        width: rect.width,
+        height: rect.height
+      });
+      watermarkLayer.textContent = '';
+      marks.forEach(function(mark) {
+        const item = document.createElement('span');
+        item.textContent = mark.text;
+        item.style.left = mark.leftPct + '%';
+        item.style.top = mark.topPct + '%';
+        item.style.opacity = String(mark.opacity);
+        item.style.fontSize = mark.fontSizePx + 'px';
+        item.style.transform =
+          'translate(-50%, -50%) rotate(' + mark.rotateDeg + 'deg)';
+        watermarkLayer.appendChild(item);
+      });
+    }
+    if (WATERMARK_TEXT) {
+      renderWatermark();
+      window.addEventListener('resize', renderWatermark);
+    }
     function readCapturePreferencesRaw() {
       try {
         return window.localStorage.getItem(CAPTURE_PREFS_KEY);
@@ -459,6 +503,8 @@ export function buildHtmlPreviewWindowDocument(
     window.addEventListener('load', markPreviewLoaded);
     window.setTimeout(markPreviewLoaded, PREVIEW_READY_TIMEOUT_MS);
     function cleanupStream() {
+      // 抓帧结束（或失败/取消）后恢复预览水印；水印从不进入录制产物。
+      setWatermarkHidden(false);
       if (activeVideo) {
         try {
           activeVideo.pause();
@@ -501,6 +547,8 @@ export function buildHtmlPreviewWindowDocument(
         settleFailure('当前浏览器不支持实时预览捕获');
         return;
       }
+      // 屏幕共享会抓到预览区域的实际像素：抓帧前先隐藏水印。
+      setWatermarkHidden(true);
       const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
       pendingRequest = requestId;
       setPhase('requesting', '请在共享选择器中选择当前预览窗口…');
@@ -630,9 +678,7 @@ export function buildHtmlPreviewWindowDocument(
           requestId: requestId,
           kind: kind,
           format: format || undefined,
-          cropped: cropped,
-          provider: CAPTURE_PROVIDER,
-          model: CAPTURE_MODEL
+          cropped: cropped
         },
         window.location.origin
       );

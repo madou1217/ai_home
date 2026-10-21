@@ -1,4 +1,4 @@
-// 预览弹窗文档的静态契约：水印身份、录制帧率与「停止」消息类型必须出现在脚本里。
+// 预览弹窗文档的静态契约：预览水印、录制帧率与「停止」消息类型必须出现在脚本里。
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -51,14 +51,41 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain("next === 'recording' ? '停止'");
   });
 
-  test('水印身份随打开参数注入，且不写手填全局 provider/model', () => {
+  test('预览水印来自当前会话身份，只渲染在预览层', () => {
+    const globals = globalThis as typeof globalThis & { window?: unknown };
+    const previousWindow = globals.window;
+    globals.window = {
+      localStorage: {
+        getItem: () => JSON.stringify({ watermark: { enabled: true } })
+      }
+    };
+    let doc = '';
+    try {
+      doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+        device: 'desktop',
+        recordingHint: '手动停止',
+        captureIdentity: { provider: 'codex', model: 'gpt-5.4' }
+      });
+    } finally {
+      globals.window = previousWindow;
+    }
+    expect(doc).toContain('const WATERMARK_TEXT = "AIH · codex · gpt-5.4"');
+    expect(doc).toContain('data-watermark-layer');
+    expect(doc).toContain('const buildWatermarkMarks =');
+    expect(doc).not.toContain('CAPTURE_PROVIDER');
+    expect(doc).not.toContain('CAPTURE_MODEL');
+    // 抓帧前后必须切换水印可见性，产物里不能留下水印。
+    expect(doc).toContain('setWatermarkHidden(true)');
+    expect(doc).toContain('setWatermarkHidden(false)');
+  });
+
+  test('水印默认关闭时不渲染任何水印标记', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'desktop',
-      recordingHint: '手动停止',
-      captureIdentity: { provider: 'codex', model: 'gpt-5.4' }
+      recordingHint: '手动停止'
     });
-    expect(doc).toContain('const CAPTURE_PROVIDER = "codex"');
-    expect(doc).toContain('const CAPTURE_MODEL = "gpt-5.4"');
+    expect(doc).toContain('const WATERMARK_TEXT = ""');
+    expect(doc).toContain('data-watermark-layer aria-hidden="true" hidden');
   });
 
   test('点击时重新读取 localStorage 的帧率', () => {

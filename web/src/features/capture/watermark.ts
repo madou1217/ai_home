@@ -1,14 +1,16 @@
-// 截图/录制水印：把「AIH · provider · model」自动画到每一帧的右下角。
+// 预览水印：只在 PC / 手机独立预览与聊天内预览上浅色平铺「谁的回答」，
+// 绝不烧进截图或录制产物。
 //
-// 偏好只保存开关；provider/model 在捕获时从当前会话身份解析，不能由设置页
-// 手填。capture-controller 在编码前统一叠加，GIF / APNG / WebM / 静图共用。
+// 偏好只保存开关；provider/model 在预览时从当前会话身份解析，不能由设置页
+// 手填。老的「把水印画到每帧画布」路径已移除：水印属于预览层，不属于编码层，
+// 这样录制产物天然干净，也避免水印与录制格式/分辨率互相耦合。
 
 /** 持久化偏好：只允许控制开关，provider/model 不属于用户配置。 */
 export interface CaptureWatermarkPreference {
   enabled: boolean;
 }
 
-/** 捕获时解析出的完整水印（开关 + 当前会话身份）。 */
+/** 预览时解析出的完整水印（开关 + 当前会话身份）。 */
 export interface CaptureWatermarkSettings {
   enabled: boolean;
   provider: string;
@@ -30,7 +32,7 @@ export function normalizeCaptureWatermark(
   return { enabled: input?.enabled === true };
 }
 
-/** 把全局开关与当前会话的 provider/model 合成为实际绘制水印。 */
+/** 把全局开关与当前会话的 provider/model 合成为水印文案输入。 */
 export function resolveCaptureWatermark(
   preference?: Partial<CaptureWatermarkPreference> | null,
   identity?: Partial<CaptureWatermarkIdentity> | null
@@ -42,7 +44,7 @@ export function resolveCaptureWatermark(
   };
 }
 
-/** 生成要绘制的文案；关闭或没有内容时返回空串（调用方据此跳过绘制）。 */
+/** 生成要显示的文案；关闭或没有内容时返回空串（调用方据此跳过渲染）。 */
 export function resolveWatermarkText(
   input?: Partial<CaptureWatermarkSettings> | null
 ): string {
@@ -54,108 +56,97 @@ export function resolveWatermarkText(
   return detail ? `AIH · ${detail}` : 'AIH';
 }
 
-type WatermarkContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-
-function drawRoundedRect(
-  context: WatermarkContext,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.lineTo(x + width - r, y);
-  context.quadraticCurveTo(x + width, y, x + width, y + r);
-  context.lineTo(x + width, y + height - r);
-  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  context.lineTo(x + r, y + height);
-  context.quadraticCurveTo(x, y + height, x, y + height - r);
-  context.lineTo(x, y + r);
-  context.quadraticCurveTo(x, y, x + r, y);
-  context.closePath();
+/** 单个预览水印标记：位置是相对容器的百分比，渲染层直接可用。 */
+export interface PreviewWatermarkMark {
+  text: string;
+  /** 文本中心相对容器的位置（0-100）。 */
+  leftPct: number;
+  topPct: number;
+  /** 轻微倾斜，模拟弹幕的随机感。 */
+  rotateDeg: number;
+  /** 字号（px），随容器短边缩放。 */
+  fontSizePx: number;
+  /** 很浅的透明度，避免遮挡页面内容。 */
+  opacity: number;
 }
 
-function fitWatermarkText(context: WatermarkContext, text: string, maxWidth: number): string {
-  if (!text || maxWidth <= 0) return '';
-  if (context.measureText(text).width <= maxWidth) return text;
-  const ellipsis = '…';
-  if (context.measureText(ellipsis).width > maxWidth) return '';
-  let low = 0;
-  let high = text.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    const candidate = `${text.slice(0, middle).trimEnd()}${ellipsis}`;
-    if (context.measureText(candidate).width <= maxWidth) low = middle;
-    else high = middle - 1;
+export interface PreviewWatermarkLayoutInput {
+  /** 已解析好的水印文案；空串返回空数组。 */
+  text: string;
+  /** 预览容器（不是整个窗口）的像素尺寸。 */
+  width: number;
+  height: number;
+  /** 稳定种子：同一尺寸下重复渲染位置不跳动。 */
+  seed?: number;
+}
+
+/** 网格密度上限：再大只会让浅色水印糊成一片。 */
+const MAX_WATERMARK_COLUMNS = 5;
+const MAX_WATERMARK_ROWS = 6;
+/** 单个文字标记的字号范围。 */
+const MIN_MARK_FONT_SIZE = 11;
+const MAX_MARK_FONT_SIZE = 16;
+
+/** 32 位稳定哈希：把文案与尺寸折进种子。 */
+function hashSeed(text: string, width: number, height: number, seed: number): number {
+  let hash = 2166136261 ^ seed;
+  const source = `${text}|${Math.round(width / 40)}|${Math.round(height / 40)}`;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  return `${text.slice(0, Math.max(1, low)).trimEnd()}${ellipsis}`;
+  return hash >>> 0;
+}
+
+/** mulberry32：纯函数式伪随机，保证同一 seed 得到同一组位置。 */
+function createRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /**
- * 直接把水印画到画布上。字号按画面宽度等比缩放，保证 GIF/APNG 编码器
- * 把画面缩到 640/800 长边后仍然可读（源帧上的字号会一起被缩小）。
+ * 生成「像弹幕一样随机、浅浅分布」的预览水印布局。
+ *
+ * 做法是抖动网格而不是完全随机撒点：完全随机会留下大片空白或互相重叠，
+ * 抖动网格保证整块预览都被覆盖到，又不会排成整齐的表格。
  */
-export function drawCaptureWatermark(
-  canvas: HTMLCanvasElement | OffscreenCanvas,
-  input?: Partial<CaptureWatermarkSettings> | null
-): void {
-  const text = resolveWatermarkText(input);
-  if (!text) return;
-  const context = canvas.getContext('2d') as WatermarkContext | null;
-  if (!context) return;
-  drawCaptureWatermarkOnContext(context, canvas.width, canvas.height, text);
-}
-
-export function drawCaptureWatermarkOnContext(
-  context: WatermarkContext,
-  width: number,
-  height: number,
-  text: string
-): void {
-  if (!text || width <= 0 || height <= 0) return;
-  const safeWidth = Math.max(1, Math.round(width));
-  const safeHeight = Math.max(1, Math.round(height));
-  const scale = Math.max(0.72, Math.min(1.4, safeWidth / 1280));
-  const fontSize = Math.max(16, Math.min(44, Math.round(safeWidth * 0.026)));
-  const paddingX = Math.max(10, Math.round(fontSize * 0.55));
-  const paddingY = Math.max(6, Math.round(fontSize * 0.34));
-  const margin = Math.max(
-    4,
-    Math.min(
-      Math.round(fontSize * 0.7),
-      Math.floor(safeWidth * 0.04),
-      Math.floor(safeHeight * 0.04)
-    )
-  );
-  const radius = Math.max(5, Math.round(fontSize * 0.32));
-  context.save();
-  try {
-    context.font = `600 ${fontSize}px "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace`;
-    context.textAlign = 'left';
-    context.textBaseline = 'middle';
-    const maxTextWidth = Math.max(1, safeWidth - margin * 2 - paddingX * 2);
-    const label = fitWatermarkText(context, text, maxTextWidth);
-    if (!label) return;
-    const textWidth = context.measureText(label).width;
-    const boxWidth = Math.max(
-      1,
-      Math.min(safeWidth - margin * 2, textWidth + paddingX * 2)
-    );
-    const boxHeight = fontSize + paddingY * 2;
-    const x = Math.max(margin, safeWidth - margin - boxWidth);
-    const y = Math.max(margin, safeHeight - margin - boxHeight);
-    context.fillStyle = 'rgba(5, 10, 18, 0.78)';
-    context.strokeStyle = 'rgba(255, 255, 255, 0.24)';
-    context.lineWidth = Math.max(1, Math.round(scale));
-    drawRoundedRect(context, x, y, boxWidth, boxHeight, radius);
-    context.fill();
-    context.stroke();
-    context.fillStyle = '#f2fbff';
-    context.fillText(label, x + paddingX, y + boxHeight / 2);
-  } finally {
-    context.restore();
+export function buildPreviewWatermarkMarks(
+  input: PreviewWatermarkLayoutInput
+): PreviewWatermarkMark[] {
+  const text = typeof input.text === 'string' ? input.text.trim() : '';
+  const width = Number(input.width);
+  const height = Number(input.height);
+  if (!text || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return [];
   }
+  const columns = Math.max(2, Math.min(MAX_WATERMARK_COLUMNS, Math.round(width / 320)));
+  const rows = Math.max(2, Math.min(MAX_WATERMARK_ROWS, Math.round(height / 200)));
+  const random = createRandom(hashSeed(text, width, height, input.seed ?? 0));
+  const fontSizePx = Math.max(
+    MIN_MARK_FONT_SIZE,
+    Math.min(MAX_MARK_FONT_SIZE, Math.round(Math.min(width, height) * 0.02))
+  );
+  const marks: PreviewWatermarkMark[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      // 在网格单元内抖动 ±34%，保留边距，避免贴边被裁掉。
+      const jitterX = (random() - 0.5) * 0.68;
+      const jitterY = (random() - 0.5) * 0.68;
+      marks.push({
+        text,
+        leftPct: ((column + 0.5 + jitterX) / columns) * 100,
+        topPct: ((row + 0.5 + jitterY) / rows) * 100,
+        rotateDeg: Math.round((random() * 2 - 1) * 12 * 10) / 10,
+        fontSizePx,
+        opacity: Math.round((0.09 + random() * 0.08) * 100) / 100
+      });
+    }
+  }
+  return marks;
 }

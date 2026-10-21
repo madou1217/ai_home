@@ -1,0 +1,31 @@
+/* 预览水印层：弹幕式随机浅色分布，只显示在预览画面上。 */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.mark {
+  position: absolute;
+  display: block;
+  max-width: 90%;
+  color: #334155;
+  font-family: var(--font-mono, 'JetBrains Mono', 'SF Mono', ui-monospace, monospace);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  /* 浅色水印：白底深字，避免在亮色页面上变成突兀的深色块。 */
+  mix-blend-mode: multiply;
+  transform-origin: center;
+}

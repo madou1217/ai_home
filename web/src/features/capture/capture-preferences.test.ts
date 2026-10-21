@@ -1,5 +1,5 @@
 // 水印偏好的兼容性测试：旧快照、未知字段、保存与广播。
-// 水印只持久化开关；provider/model 在捕获时从当前会话身份解析。
+// 水印只持久化开关；provider/model 在预览时从当前会话身份解析。
 
 import { describe, expect, test } from 'bun:test';
 import {

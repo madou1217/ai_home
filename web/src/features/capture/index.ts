@@ -66,15 +66,17 @@ export {
 } from './recording-settings';
 export {
   DEFAULT_CAPTURE_WATERMARK,
-  drawCaptureWatermark,
-  drawCaptureWatermarkOnContext,
+  buildPreviewWatermarkMarks,
   normalizeCaptureWatermark,
   resolveCaptureWatermark,
   resolveWatermarkText,
   type CaptureWatermarkIdentity,
   type CaptureWatermarkPreference,
-  type CaptureWatermarkSettings
+  type CaptureWatermarkSettings,
+  type PreviewWatermarkLayoutInput,
+  type PreviewWatermarkMark
 } from './watermark';
+export { default as PreviewWatermarkOverlay } from './PreviewWatermarkOverlay';
 export {
   CaptureIdentityBoundary,
   CaptureIdentityProvider,

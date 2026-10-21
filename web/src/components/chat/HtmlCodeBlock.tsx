@@ -11,7 +11,10 @@ import {
 } from '@ant-design/icons';
 import { Dropdown, Modal, Radio, message } from 'antd';
 import {
+  PreviewWatermarkOverlay,
   readCapturePreferences,
+  resolveCaptureWatermark,
+  resolveWatermarkText,
   subscribeCapturePreferences,
   summarizeRecordingSettings,
   useCaptureIdentity,
@@ -49,11 +52,13 @@ export default function HtmlCodeBlock({ code }: Props) {
   const captureIdentity = useCaptureIdentity();
 
   const capture = usePreviewCaptureActions({
-    getCaptureTarget: () => stageRef.current,
-    getWatermarkIdentity: () => captureIdentity
+    getCaptureTarget: () => stageRef.current
   });
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(
     () => readCapturePreferences().recording
+  );
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(
+    () => readCapturePreferences().watermark.enabled
   );
   const [recordingSettingsOpen, setRecordingSettingsOpen] = useState(false);
   const [recordPromptOpen, setRecordPromptOpen] = useState(false);
@@ -70,8 +75,17 @@ export default function HtmlCodeBlock({ code }: Props) {
       subscribeCapturePreferences((preferences) => {
         setRecordingSettings(preferences.recording);
         setDefaultPreviewDevice(preferences.previewDevice);
+        setWatermarkEnabled(preferences.watermark.enabled);
       }),
     []
+  );
+
+  const previewWatermarkText = useMemo(
+    () =>
+      resolveWatermarkText(
+        resolveCaptureWatermark({ enabled: watermarkEnabled }, captureIdentity)
+      ),
+    [captureIdentity, watermarkEnabled]
   );
 
   /** 可选录制格式（菜单项）。 */
@@ -271,6 +285,10 @@ export default function HtmlCodeBlock({ code }: Props) {
               title="HTML Preview"
               sandbox={HTML_PREVIEW_SANDBOX}
               srcDoc={previewDoc}
+            />
+            <PreviewWatermarkOverlay
+              text={previewWatermarkText}
+              hidden={capture.state.busy}
             />
           </div>
         ) : (

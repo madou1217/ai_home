@@ -122,8 +122,8 @@ export default function CaptureSettingsCard() {
         }
       />
       <SettingsItem
-        title="自动水印"
-        subtitle="开启后自动使用当前会话的 Provider · Model"
+        title="预览水印"
+        subtitle="仅在预览中浅色平铺，不影响截图与录制产物"
         action={
           <WatermarkSettingsFields
             compact

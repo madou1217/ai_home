@@ -23,15 +23,12 @@ import {
   RECORDING_MAX_DURATION_MS,
   RECORDING_MAX_FRAMES
 } from './recording-settings';
-import { drawCaptureWatermark, type CaptureWatermarkSettings } from './watermark';
 
 export interface CaptureStillOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   format: 'png' | 'jpeg' | 'webp';
   baseName: string;
   quality?: number;
-  /** 开启后在编码前叠加到画面右下角。 */
-  watermark?: CaptureWatermarkSettings;
 }
 
 function fail(code: 'encode_failed', error: unknown): CaptureEncodeResult {
@@ -45,7 +42,6 @@ function abortFailure(): CaptureEncodeResult {
 
 export async function captureStill(options: CaptureStillOptions): Promise<CaptureEncodeResult> {
   try {
-    drawCaptureWatermark(options.canvas, options.watermark);
     const blob = await encodeStill({
       format: options.format,
       canvas: options.canvas,
@@ -89,8 +85,6 @@ export interface CaptureAnimationOptions {
   onEncode?: (ratio: number) => void;
   /** 录制被 60 秒上限或内存预算提前结束时回调一次。 */
   onNotice?: (notice: CaptureNotice) => void;
-  /** 开启后在每帧编码前叠加到画面右下角。 */
-  watermark?: CaptureWatermarkSettings;
 }
 
 const MS_PER_SECOND = 1000;
@@ -172,7 +166,7 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
       if (!image) return { ok: false, failure: { code: 'encode_failed', message: 'frame_source_unavailable' } };
       // 把 image 落成 dataURL，编码策略统一消费 dataUrl。优先走异步 toBlob，
       // 让 PNG 压缩离开主线程，避免 30/60fps 抓帧时 UI 长时间掉帧。
-      const dataUrl = await toDataUrl(image, source, options.watermark, options.signal);
+      const dataUrl = await toDataUrl(image, source, options.signal);
       // 时间戳取抓帧完成时刻：DOM 栅格化本身耗时，用开始时刻会让时间轴偏快。
       const capturedAtMs = Math.round(now() - startedAt);
       frames.push({ dataUrl, atMs: capturedAtMs });
@@ -252,19 +246,15 @@ export async function captureAnimation(options: CaptureAnimationOptions): Promis
 function toDataUrl(
   image: CanvasImageSource,
   source: FrameSource,
-  watermark?: CaptureWatermarkSettings,
   signal?: AbortSignal
 ): Promise<string> {
   // 动画抓帧按 scale=1 栅格化时，抓到的 canvas 已经等于目标尺寸，直接导出
   // 省掉一次全画布 drawImage + 编码（每帧数百 ms 的主要成本之一）。
-  // 但开启水印时必须先复制：帧源可能复用同一张画布（静态页面缓存），
-  // 直接在上面绘制会让水印逐帧累积。
   if (
     typeof HTMLCanvasElement !== 'undefined' &&
     image instanceof HTMLCanvasElement &&
     image.width === source.width &&
-    image.height === source.height &&
-    !watermark?.enabled
+    image.height === source.height
   ) {
     return canvasToDataUrl(image, signal);
   }
@@ -274,7 +264,6 @@ function toDataUrl(
   const context = canvas.getContext('2d');
   if (!context) throw new Error('capture_canvas_context_unavailable');
   context.drawImage(image, 0, 0, source.width, source.height);
-  if (watermark?.enabled) drawCaptureWatermark(canvas, watermark);
   return canvasToDataUrl(canvas, signal);
 }
 

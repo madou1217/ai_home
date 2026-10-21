@@ -96,13 +96,14 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
         </section>
 
         <section className={styles.modalSection}>
-          <Typography.Text strong>水印</Typography.Text>
+          <Typography.Text strong>预览水印</Typography.Text>
           <WatermarkSettingsFields
             value={draft.watermark}
             onChange={(watermark) => patch({ watermark })}
           />
           <Typography.Text type="secondary">
-            开启后自动使用当前会话的 Provider · Model，叠加到截图与每一帧录制的右下角。
+            开启后在聊天内预览与 PC / 手机独立预览里浅色平铺，显示当前会话的 Provider · Model；
+            不进入截图与录制产物。
           </Typography.Text>
         </section>
       </div>

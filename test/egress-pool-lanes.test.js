@@ -479,3 +479,69 @@ test('planner: blocked nodes (slow / unreachable / manually closed) never enter 
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+// 2026-10-21 报障：保存出口后立即探测，而车道是异步选节点的 —— 不等就吃到
+// egress_pool_lane_not_ready、把刚保存的绑定回滚。reconcileAndApply 就是那个「等」。
+test('planner: reconcileAndApply waits until the lane has picked its node', async () => {
+  const home = tempHome();
+  const { runtime } = buildRuntime();
+  try {
+    await runtime.start();
+    const planner = plannerFor(home, runtime, [
+      { accountRef: 'c1', provider: 'claude', binding: { mode: 'pool', proxyUrl: '', scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' } }
+    ]);
+    // 应用车道表被拖慢：reconcile（不等）会立刻返回，而 reconcileAndApply 必须等它完成。
+    let applied = false;
+    const slowService = {
+      runtime,
+      get ready() { return runtime.ready; },
+      async applyLanePlan(plan) {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        await runtime.applyLanePlan(plan);
+        applied = true;
+      }
+    };
+    const slowPlanner = plannerFor(home, runtime, [
+      { accountRef: 'c1', provider: 'claude', binding: { mode: 'pool', proxyUrl: '', scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' } }
+    ], { getService: () => slowService });
+    // claude 上游按国家判定：先给节点位置，否则车道挂起（与本用例无关的既有语义）。
+    for (const name of runtime.nodeNames) runtime.health.recordGeo(name, { country: 'US' });
+    slowPlanner.planNow();
+    assert.equal(applied, false, 'planNow 不等待车道应用');
+    await slowPlanner.reconcileAndApply({ force: true });
+    assert.equal(applied, true, 'reconcileAndApply 等到车道应用完成');
+    assert.equal(runtime.laneUnavailableReason('c1'), '', '车道已就绪');
+    assert.ok(runtime.laneProxyUrl('c1'), '车道给出可用的出口地址');
+    planner.planNow();
+  } finally {
+    runtime.stop();
+  }
+});
+
+// 策略改完要**立即**生效：正在用被拦节点的车道不能等下一次规划才换走
+// （用户点「关闭」时期望当场就不再走这个节点）。
+test('planner: a lane already using a node switches away as soon as the node gets blocked', async () => {
+  const home = tempHome();
+  const { runtime } = buildRuntime();
+  try {
+    await runtime.start();
+    const pool = { mode: 'pool', proxyUrl: '', scope: { kind: 'all', groups: [], nodes: [] }, strategy: 'shared' };
+    const planner = plannerFor(home, runtime, [{ accountRef: 'g1', provider: 'agy', binding: pool }]);
+    ['node-0', 'node-1', 'node-2', 'node-3'].forEach((name) => runtime.health.recordGeo(name, { country: 'US' }));
+    planner.planNow();
+    await runtime.rotationQueue;
+    const before = runtime.laneActiveNode('g1');
+    assert.ok(before, '车道先要有出口');
+
+    // 手动关闭这个正在被使用的节点，然后重新规划（WebUI 保存策略走的就是这条路径）。
+    setNodeDisabled(fs, home, runtime.health.nodes[runtime.nodeNames.indexOf(before)].identity, true, { label: before });
+    planner.reconcile({ force: true });
+    await runtime.rotationQueue;
+    const after = runtime.laneActiveNode('g1');
+    assert.notEqual(after, before, '被关闭的节点必须立刻从车道上换走');
+    assert.equal(runtime.health.blockedReason(after).blocked, false, '换到的节点不该也是被拦的');
+  } finally {
+    runtime.stop();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

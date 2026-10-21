@@ -1,13 +1,13 @@
-// 截图/录制全局偏好：默认录制格式、UI 开关集合（布尔矩阵）、捕获范围、水印与录制设置。
+// 截图/录制全局偏好：默认录制格式、UI 开关集合（布尔矩阵）、水印开关与录制设置。
 // 唯一真相存在 localStorage（键 aih.capture），UI 只通过这里读写，
-// 与 aih.theme / aih.hud 同一模式。
+// 与 aih.theme / aih.hud 同一模式。截图与录制都只使用实时画面。
 
 import { CAPTURE_FORMAT_CATALOG } from './format-catalog';
 import type { CaptureFormatId } from './types';
 import {
   DEFAULT_CAPTURE_WATERMARK,
   normalizeCaptureWatermark,
-  type CaptureWatermarkSettings
+  type CaptureWatermarkPreference
 } from './watermark';
 import {
   RECORDING_DEFAULT_SETTINGS,
@@ -15,50 +15,18 @@ import {
   type RecordingSettings
 } from './recording-settings';
 
-/**
- * 截图范围（只影响静图；录制始终抓实时画面）：
- * - full：用同一份 HTML 重新渲染整页（不执行脚本），截图覆盖完整长页面；
- * - live：抓取用户此刻看到的真实预览（脚本、Canvas/WebGL 保真），但受视口裁剪。
- */
-export type CaptureScope = 'full' | 'live';
-
-export const DEFAULT_CAPTURE_SCOPE: CaptureScope = 'full';
-
-export const CAPTURE_SCOPE_OPTIONS: Array<{
-  value: CaptureScope;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'full',
-    label: '完整页面',
-    description: '截图重新渲染整页，完整覆盖长页面；不执行脚本。录制始终使用实时画面'
-  },
-  {
-    value: 'live',
-    label: '实时画面',
-    description: '截图抓当前可见区域，保留脚本与动画；录制始终使用实时画面'
-  }
-];
-
 export interface CapturePreferences {
   /** 全局默认录制/截图格式（PC 与手机弹窗共用）。 */
   defaultFormat: CaptureFormatId;
   /** 格式开关矩阵（关闭的格式不出现在选择器里）。 */
   enabledFormats: Record<CaptureFormatId, boolean>;
-  /** 截图的取景范围（聊天预览与弹窗共用）；录制固定使用实时画面。 */
-  captureScope: CaptureScope;
-  /** 截图/录制水印（关闭时不绘制）。 */
-  watermark: CaptureWatermarkSettings;
+  /** 水印开关；provider/model 捕获时从当前会话身份解析。 */
+  watermark: CaptureWatermarkPreference;
   /** 帧率、录制方式、目标帧数与目标时长（聊天预览与弹窗共用）。 */
   recording: RecordingSettings;
 }
 
 export const CAPTURE_PREFERENCES_KEY = 'aih.capture';
-
-export function normalizeCaptureScope(value: unknown): CaptureScope {
-  return value === 'live' ? 'live' : DEFAULT_CAPTURE_SCOPE;
-}
 
 export function createDefaultCapturePreferences(): CapturePreferences {
   const enabledFormats = {} as Record<CaptureFormatId, boolean>;
@@ -68,7 +36,6 @@ export function createDefaultCapturePreferences(): CapturePreferences {
   return {
     defaultFormat: 'png',
     enabledFormats,
-    captureScope: DEFAULT_CAPTURE_SCOPE,
     watermark: { ...DEFAULT_CAPTURE_WATERMARK },
     recording: { ...RECORDING_DEFAULT_SETTINGS }
   };
@@ -111,7 +78,6 @@ export function normalizeCapturePreferences(
   return {
     defaultFormat: effectiveDefault,
     enabledFormats,
-    captureScope: normalizeCaptureScope(value?.captureScope),
     watermark: normalizeCaptureWatermark(
       value?.watermark && typeof value.watermark === 'object' ? value.watermark : undefined
     ),
@@ -175,7 +141,7 @@ export function saveCapturePreferences(
   return next;
 }
 
-/** 只更新录制设置并广播（保留捕获范围、水印等其它偏好）。 */
+/** 只更新录制设置并广播（保留水印等其它偏好）。 */
 export function updateRecordingSettings(
   settings: RecordingSettings,
   storage: CapturePreferencesStorage | null = defaultStorage()

@@ -1,26 +1,23 @@
 // UI 层与 capture 域之间的桥接：每个 HTML 预览面挂一份 usePreviewCaptureActions。
 // 组件只感知「动作 + 状态」；帧源实现与编码派发留在 capture 域。
-// still/animation 的两条形状分支是这里仅有的分派点，禁止出现按格式名的分支。
+// 截图与录制都抓真实运行的实时预览，不再有静态整页分支。
 
-import { createElement, useCallback, useEffect, useRef, useState } from 'react';
-import { Button, message, notification } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { message } from 'antd';
 import type {
   CaptureEncodeSuccess,
   CaptureFormatId,
   CaptureNotice,
-  CaptureScope,
+  CaptureWatermarkIdentity,
   RecordingSettings
 } from '../../features/capture';
 import {
-  detectScriptDependentHtml,
-  describeScriptDependentReasons,
   downloadCaptureArtifact,
-  encodePreviewDocument,
   encodePreviewSource,
   isStillCaptureFormat,
   LivePreviewFrameSource,
   readCapturePreferences,
-  type ScriptDependentReason
+  resolveCaptureWatermark
 } from '../../features/capture';
 
 // 格式选项与默认格式裁决的事实源在 capture 域（设置页共用），这里只做转发。
@@ -49,23 +46,16 @@ export interface PreviewCaptureState {
 export interface PreviewCaptureActions {
   state: PreviewCaptureState;
   /** 开始截图/录制；录制停止条件来自全局录制设置。 */
-  runFormat: (format: CaptureFormatId, options?: PreviewCaptureOptions) => Promise<void>;
+  runFormat: (format: CaptureFormatId) => Promise<void>;
   /** 手动结束录制：保留已抓帧并继续编码。非录制阶段无副作用。 */
   stop: () => void;
-}
-
-export interface PreviewCaptureOptions {
-  /** 覆盖全局捕获范围（用于「改用实时画面」一键切换）。 */
-  scope?: CaptureScope;
 }
 
 export interface PreviewCaptureActionsOptions {
   /** 当前预览容器（包含 iframe 的 stage）；实时取景时每次执行都取最新值。 */
   getCaptureTarget: () => HTMLElement | null;
-  /** 完整页面模式使用的原始 HTML（与预览 iframe 的 srcdoc 一致）。 */
-  getCaptureDocument?: () => string | null;
-  /** 完整页面模式的逻辑视口宽度（CSS px）；缺省回退到 target.clientWidth。 */
-  getCaptureWidth?: () => number;
+  /** 捕获瞬间的会话身份，用于水印；不要从偏好或全局选择器读取。 */
+  getWatermarkIdentity?: () => CaptureWatermarkIdentity | null;
 }
 
 const IDLE_STATE: PreviewCaptureState = {
@@ -94,22 +84,17 @@ export function captureProgressText(state: PreviewCaptureState): string {
   return `正在录制 ${seconds}s · ${frames}`;
 }
 
-const DYNAMIC_CONTENT_NOTICE_KEY = 'aih-capture-dynamic-content';
-
 function formatFps(value: number): string {
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-/** 成功提示里必须如实报告的限制（截断优先于帧率）。 */
+/** 成功提示里必须如实报告的限制（帧率不足）。 */
 export function captureSuccessNotes(
   result: CaptureEncodeSuccess,
   options: { still: boolean; targetFps?: number }
 ): string[] {
   const notes: string[] = [];
-  if (result.notice === 'content_truncated') {
-    notes.push('页面超出可捕获高度，底部内容已截断');
-  }
   const fps = result.effectiveFps;
   if (
     !options.still &&
@@ -123,41 +108,16 @@ export function captureSuccessNotes(
   return notes;
 }
 
-interface CaptureSuccessContext {
-  still: boolean;
-  targetFps?: number;
-  dynamicReasons: ScriptDependentReason[];
-  onUseLive: () => void;
-}
-
 function announceCaptureSuccess(
   result: CaptureEncodeSuccess,
-  context: CaptureSuccessContext
+  context: { still: boolean; targetFps?: number }
 ): void {
   const label = context.still ? '截图' : '录制';
-  const notes = captureSuccessNotes(result, {
-    still: context.still,
-    targetFps: context.targetFps
-  });
+  const notes = captureSuccessNotes(result, context);
   if (notes.length > 0) {
     message.warning(`${label}已保存 · ${notes.join('；')}`);
   } else {
     message.success(`${label}已保存`);
-  }
-  if (context.dynamicReasons.length > 0) {
-    notification.warning({
-      key: DYNAMIC_CONTENT_NOTICE_KEY,
-      message: '完整页面模式不执行脚本',
-      description: `检测到${describeScriptDependentReasons(
-        context.dynamicReasons
-      )}：静态渲染可能与你看到的预览不同。需要脚本生成的内容、Canvas 画面或当前动画进度时，改用实时画面。`,
-      duration: 8,
-      btn: createElement(
-        Button,
-        { size: 'small', onClick: context.onUseLive },
-        '改用实时画面'
-      )
-    });
   }
 }
 
@@ -187,26 +147,20 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
     );
   }, []);
 
-  const runFormatRef = useRef<
-    ((format: CaptureFormatId, options?: PreviewCaptureOptions) => Promise<void>) | null
-  >(null);
-
-  const runFormat = useCallback(async (format: CaptureFormatId, overrides?: PreviewCaptureOptions) => {
+  const runFormat = useCallback(async (format: CaptureFormatId) => {
     if (busyRef.current) return;
     const still = isStillCaptureFormat(format);
     const preferences = readCapturePreferences();
     const recording: RecordingSettings | undefined = still ? undefined : preferences.recording;
-    // 录制必须抓真实运行中的预览（脚本/Canvas/游戏交互），静态整页克隆只用于截图。
-    const fullPage = still && (overrides?.scope ?? preferences.captureScope) === 'full';
     const target = optionsRef.current.getCaptureTarget();
-    if (!fullPage && !target) {
+    if (!target) {
       message.error('预览区域不可见，请先打开预览再试');
       return;
     }
-    if (fullPage && !optionsRef.current.getCaptureDocument) {
-      message.error('当前预览不支持完整页面捕获，请切换到实时画面');
-      return;
-    }
+    const watermark = resolveCaptureWatermark(
+      preferences.watermark,
+      optionsRef.current.getWatermarkIdentity?.()
+    );
     busyRef.current = true;
     const cancelController = new AbortController();
     const stopController = new AbortController();
@@ -216,9 +170,8 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       ...IDLE_STATE,
       busy: true,
       kind: still ? 'still' : 'animation',
-      progressLabel: fullPage ? '正在渲染完整页面…' : '正在请求屏幕共享…'
+      progressLabel: '正在请求屏幕共享…'
     });
-    let dynamicReasons: ScriptDependentReason[] = [];
     try {
       const callbacks = {
         onPhase: (captured: number, total: number | null, elapsedMs: number) => {
@@ -245,56 +198,31 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
           }
         }
       };
-      const result = fullPage
-        ? await (async () => {
-            const html = optionsRef.current.getCaptureDocument?.() || '';
-            if (!html.trim()) throw new Error('capture_document_unavailable');
-            dynamicReasons = detectScriptDependentHtml(html);
-            return encodePreviewDocument({
-              format,
-              html,
-              width: Math.round(
-                optionsRef.current.getCaptureWidth?.() ?? target?.clientWidth ?? 0
-              ),
-              recording,
-              watermark: preferences.watermark,
-              signal: cancelController.signal,
-              stopSignal: still ? undefined : stopController.signal,
-              ...callbacks
-            });
-          })()
-        : await (async () => {
-            // 实时取景：getDisplayMedia 必须在点击手势内同步进入（create 的第一条 await）。
-            const source = await LivePreviewFrameSource.create({
-              target: target as HTMLElement,
-              displaySurface: 'browser',
-              preferCurrentTab: true,
-              frameRate: still ? undefined : recording?.fps
-            });
-            setState((previous) => ({
-              ...previous,
-              progressLabel: still ? '正在生成截图…' : '正在录制…'
-            }));
-            return encodePreviewSource({
-              source,
-              format,
-              recording,
-              watermark: preferences.watermark,
-              signal: cancelController.signal,
-              stopSignal: still ? undefined : stopController.signal,
-              ...callbacks
-            });
-          })();
+      // 实时取景：getDisplayMedia 必须在点击手势内同步进入（create 的第一条 await）。
+      const source = await LivePreviewFrameSource.create({
+        target,
+        displaySurface: 'browser',
+        preferCurrentTab: true,
+        frameRate: still ? undefined : recording?.fps
+      });
+      setState((previous) => ({
+        ...previous,
+        progressLabel: still ? '正在生成截图…' : '正在录制…'
+      }));
+      const result = await encodePreviewSource({
+        source,
+        format,
+        recording,
+        watermark,
+        signal: cancelController.signal,
+        stopSignal: still ? undefined : stopController.signal,
+        ...callbacks
+      });
       if (result.ok) {
         downloadCaptureArtifact(result.artifact);
         announceCaptureSuccess(result, {
           still,
-          targetFps: recording?.fps,
-          dynamicReasons: fullPage ? dynamicReasons : [],
-          onUseLive: () => {
-            notification.destroy(DYNAMIC_CONTENT_NOTICE_KEY);
-            void runFormatRef.current?.(format, { scope: 'live' });
-          }
+          targetFps: recording?.fps
         });
       } else if (result.failure.code !== 'cancelled') {
         message.error(failureText(result.failure.message));
@@ -305,9 +233,6 @@ export function usePreviewCaptureActions(options: PreviewCaptureActionsOptions):
       finish();
     }
   }, [finish]);
-  useEffect(() => {
-    runFormatRef.current = runFormat;
-  }, [runFormat]);
 
   useEffect(
     () => () => {
@@ -342,10 +267,5 @@ function unknownErrorText(error: unknown): string {
   if (raw === 'display_capture_target_detached') return '预览区域已关闭，请重试';
   if (raw === 'preview_not_visible') return '请先让预览区域完整显示在屏幕上';
   if (raw === 'Permission denied') return '需要允许共享当前标签页，才能录制实时预览';
-  if (raw === 'dom_capture_requires_window') return '当前环境不支持完整页面渲染，请切换到实时画面';
-  if (raw === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
-  if (raw === 'dom_capture_load_failed') return '预览克隆失败，请重试';
-  if (raw === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
-  if (raw === 'record_requires_live_stream') return '录制需要使用实时画面（保留脚本与交互）';
   return `操作失败：${raw}`;
 }

@@ -1,5 +1,5 @@
 // 预览弹窗捕获桥的纯逻辑测试：消息形状校验与格式裁决。
-// 编码执行（encodePreviewDocument）依赖真实 DOM，不在单测范围。
+// 编码执行依赖真实 DOM，不在单测范围。
 
 import { describe, expect, test } from 'bun:test';
 import type { CaptureFormatAvailability } from './format-availability';
@@ -7,10 +7,8 @@ import type { CapturePreferences } from './capture-preferences';
 import { createDefaultCapturePreferences } from './capture-preferences';
 import {
   CAPTURE_CANCEL_TYPE,
-  CAPTURE_REQUEST_TYPE,
   CAPTURE_STREAM_READY_TYPE,
   isCaptureWindowCancel,
-  isCaptureWindowRequest,
   isCaptureWindowStreamReady,
   resolveRequestFormat
 } from './preview-window-host';
@@ -40,36 +38,6 @@ function request(kind: 'still' | 'record', format?: string) {
 
 const DEPS = { availability: ALL_AVAILABLE, preferences: createDefaultCapturePreferences() };
 
-describe('isCaptureWindowRequest', () => {
-  const valid = {
-    type: CAPTURE_REQUEST_TYPE,
-    requestId: 'cap-1',
-    kind: 'still',
-    html: '<html><body>hi</body></html>',
-    width: 720
-  };
-
-  test('接受合法 still/record 请求', () => {
-    expect(isCaptureWindowRequest(valid)).toBe(true);
-    expect(isCaptureWindowRequest({ ...valid, kind: 'record' })).toBe(true);
-  });
-
-  test('拒绝错误消息类型', () => {
-    expect(isCaptureWindowRequest({ ...valid, type: 'other' })).toBe(false);
-  });
-
-  test('拒绝空 requestId 或未知 kind', () => {
-    expect(isCaptureWindowRequest({ ...valid, requestId: '' })).toBe(false);
-    expect(isCaptureWindowRequest({ ...valid, kind: 'animation' })).toBe(false);
-  });
-
-  test('拒绝空文档与 nil', () => {
-    expect(isCaptureWindowRequest({ ...valid, html: '' })).toBe(false);
-    expect(isCaptureWindowRequest(null)).toBe(false);
-    expect(isCaptureWindowRequest('capture')).toBe(false);
-  });
-});
-
 describe('isCaptureWindowCancel', () => {
   test('接受带 requestId 的取消消息', () => {
     expect(
@@ -96,6 +64,14 @@ describe('isCaptureWindowStreamReady', () => {
   test('接受合法实时流就绪消息', () => {
     expect(isCaptureWindowStreamReady(valid)).toBe(true);
     expect(isCaptureWindowStreamReady({ ...valid, kind: 'still', cropped: false })).toBe(true);
+  });
+
+  test('接受可选的会话水印身份', () => {
+    expect(
+      isCaptureWindowStreamReady({ ...valid, provider: 'codex', model: 'gpt-5.4' })
+    ).toBe(true);
+    expect(isCaptureWindowStreamReady({ ...valid, provider: 1 })).toBe(false);
+    expect(isCaptureWindowStreamReady({ ...valid, model: null })).toBe(false);
   });
 
   test('拒绝错误类型、空 requestId、未知 kind 或缺失 cropped', () => {

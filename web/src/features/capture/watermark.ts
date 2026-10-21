@@ -1,30 +1,44 @@
 // 截图/录制水印：把「AIH · provider · model」自动画到每一帧的右下角。
 //
-// 水印是捕获域的产物处理步骤，组件层只负责选择 provider/model；开启后由
-// capture-controller 在编码前统一叠加，GIF / APNG / WebM / 静图都走同一条路径。
-// 不依赖 DOM 字体加载完成状态，使用系统等宽字体即可。
+// 偏好只保存开关；provider/model 在捕获时从当前会话身份解析，不能由设置页
+// 手填。capture-controller 在编码前统一叠加，GIF / APNG / WebM / 静图共用。
 
+/** 持久化偏好：只允许控制开关，provider/model 不属于用户配置。 */
+export interface CaptureWatermarkPreference {
+  enabled: boolean;
+}
+
+/** 捕获时解析出的完整水印（开关 + 当前会话身份）。 */
 export interface CaptureWatermarkSettings {
   enabled: boolean;
-  /** Provider 的展示名（由设置页从 provider 目录选择后写入）。 */
   provider: string;
-  /** 模型 ID / 展示名，允许自由填写。 */
   model: string;
 }
 
-export const DEFAULT_CAPTURE_WATERMARK: CaptureWatermarkSettings = {
-  enabled: false,
-  provider: '',
-  model: ''
+export interface CaptureWatermarkIdentity {
+  provider: string;
+  model: string;
+}
+
+export const DEFAULT_CAPTURE_WATERMARK: CaptureWatermarkPreference = {
+  enabled: false
 };
 
 export function normalizeCaptureWatermark(
-  input?: Partial<CaptureWatermarkSettings> | null
+  input?: Partial<CaptureWatermarkPreference> | null
+): CaptureWatermarkPreference {
+  return { enabled: input?.enabled === true };
+}
+
+/** 把全局开关与当前会话的 provider/model 合成为实际绘制水印。 */
+export function resolveCaptureWatermark(
+  preference?: Partial<CaptureWatermarkPreference> | null,
+  identity?: Partial<CaptureWatermarkIdentity> | null
 ): CaptureWatermarkSettings {
   return {
-    enabled: input?.enabled === true,
-    provider: typeof input?.provider === 'string' ? input.provider.trim().slice(0, 80) : '',
-    model: typeof input?.model === 'string' ? input.model.trim().slice(0, 120) : ''
+    enabled: preference?.enabled === true,
+    provider: typeof identity?.provider === 'string' ? identity.provider.trim().slice(0, 80) : '',
+    model: typeof identity?.model === 'string' ? identity.model.trim().slice(0, 120) : ''
   };
 }
 
@@ -32,9 +46,11 @@ export function normalizeCaptureWatermark(
 export function resolveWatermarkText(
   input?: Partial<CaptureWatermarkSettings> | null
 ): string {
-  const settings = normalizeCaptureWatermark(input);
-  if (!settings.enabled) return '';
-  const detail = [settings.provider, settings.model].filter(Boolean).join(' · ');
+  const enabled = input?.enabled === true;
+  if (!enabled) return '';
+  const provider = typeof input?.provider === 'string' ? input.provider.trim() : '';
+  const model = typeof input?.model === 'string' ? input.model.trim() : '';
+  const detail = [provider, model].filter(Boolean).join(' · ');
   return detail ? `AIH · ${detail}` : 'AIH';
 }
 

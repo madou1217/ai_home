@@ -15,6 +15,7 @@ import {
   readCapturePreferences,
   subscribeCapturePreferences,
   summarizeRecordingSettings,
+  useCaptureIdentity,
   type AnimationCaptureFormatId,
   type RecordingSettings
 } from '../../features/capture';
@@ -44,12 +45,11 @@ export default function HtmlCodeBlock({ code }: Props) {
 
   const previewDoc = useMemo(() => normalizeHtmlPreviewDocument(code), [code]);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const captureIdentity = useCaptureIdentity();
 
   const capture = usePreviewCaptureActions({
     getCaptureTarget: () => stageRef.current,
-    getCaptureDocument: () => previewDoc,
-    getCaptureWidth: () => previewFrameRef.current?.clientWidth ?? stageRef.current?.clientWidth ?? 0
+    getWatermarkIdentity: () => captureIdentity
   });
   const [recordingSettings, setRecordingSettings] = useState<RecordingSettings>(
     () => readCapturePreferences().recording
@@ -99,7 +99,11 @@ export default function HtmlCodeBlock({ code }: Props) {
   };
 
   const handleOpenWindow = (device: 'desktop' | 'mobile') => {
-    openHtmlPreviewWindow(previewDoc, { device, title: 'HTML 页面预览' });
+    openHtmlPreviewWindow(previewDoc, {
+      device,
+      title: 'HTML 页面预览',
+      captureIdentity: captureIdentity ?? undefined
+    });
   };
 
   const [beautifyState, setBeautifyState] = useState({ busy: false, progressLabel: '' });
@@ -235,7 +239,6 @@ export default function HtmlCodeBlock({ code }: Props) {
         {viewMode === 'preview' ? (
           <div className={styles.htmlPreviewStage} ref={stageRef}>
             <iframe
-              ref={previewFrameRef}
               className={styles.htmlPreviewFrame}
               title="HTML Preview"
               sandbox={HTML_PREVIEW_SANDBOX}

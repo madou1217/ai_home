@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   drawCaptureWatermark,
   normalizeCaptureWatermark,
+  resolveCaptureWatermark,
   resolveWatermarkText
 } from './watermark';
 
@@ -78,12 +79,14 @@ describe('watermark', () => {
     expect(resolveWatermarkText({ enabled: true })).toBe('AIH');
   });
 
-  test('字段被裁剪且空白被去掉', () => {
-    const settings = normalizeCaptureWatermark({
-      enabled: true,
+  test('偏好只保留开关，会话身份在捕获时裁剪并注入', () => {
+    const preference = normalizeCaptureWatermark({ enabled: true });
+    expect(preference).toEqual({ enabled: true });
+    const settings = resolveCaptureWatermark(preference, {
       provider: `  ${'p'.repeat(100)}  `,
       model: `  ${'m'.repeat(160)}  `
     });
+    expect(settings.enabled).toBe(true);
     expect(settings.provider).toHaveLength(80);
     expect(settings.model).toHaveLength(120);
     expect(settings.provider.startsWith('p')).toBe(true);

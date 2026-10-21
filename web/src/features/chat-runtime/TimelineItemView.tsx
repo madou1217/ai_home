@@ -20,6 +20,8 @@ import MessageBubble from '@/components/chat/MessageBubble';
 import ThinkingBlock from '@/components/chat/ThinkingBlock';
 import type { TimelineItem } from '@/chat-runtime';
 import type { Provider } from '@/types';
+import { CaptureIdentityBoundary } from '@/features/capture';
+import { getProviderLabel } from '@/components/chat/provider-registry';
 import { collectTimelineFileReferences } from './timeline-file-references';
 import { reasoningText } from './timeline-presentation';
 import { formatDurationLabel, formatTtftLabel } from '@/components/chat/message-metrics-format';
@@ -43,21 +45,23 @@ function TimelineItemView({
   const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
   if (item.kind === 'message') {
     return (
-      <MessageBubble
-        message={{
-          role: item.detail.role,
-          content: item.content || '',
-          timestamp: item.updatedAt || item.createdAt,
-          model: item.detail.model,
-          metrics: item.detail.metrics,
-        }}
-        provider={provider}
-        session={{ projectPath }}
-        mobile={mobile}
-        progress={progress}
-        onRetry={onRetry}
-        onFork={onFork}
-      />
+      <CaptureIdentityBoundary provider={getProviderLabel(provider)} model={item.detail.model || ''}>
+        <MessageBubble
+          message={{
+            role: item.detail.role,
+            content: item.content || '',
+            timestamp: item.updatedAt || item.createdAt,
+            model: item.detail.model,
+            metrics: item.detail.metrics,
+          }}
+          provider={provider}
+          session={{ projectPath }}
+          mobile={mobile}
+          progress={progress}
+          onRetry={onRetry}
+          onFork={onFork}
+        />
+      </CaptureIdentityBoundary>
     );
   }
   if (item.kind === 'reasoning') {

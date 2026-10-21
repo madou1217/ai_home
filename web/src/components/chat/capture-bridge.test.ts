@@ -114,18 +114,6 @@ describe('captureProgressText', () => {
     ).toBe('正在请求屏幕共享…');
   });
 
-  test('静图完整页面模式直接显示渲染文案', () => {
-    expect(
-      captureProgressText({
-        ...base,
-        kind: 'still',
-        elapsedMs: 0,
-        capturedFrames: 0,
-        progressLabel: '正在渲染完整页面…'
-      })
-    ).toBe('正在渲染完整页面…');
-  });
-
   test('空闲时没有文案', () => {
     expect(captureProgressText({ ...base, busy: false, kind: null })).toBe('');
   });
@@ -142,15 +130,6 @@ describe('captureSuccessNotes', () => {
       format: 'gif'
     }
   };
-
-  test('截断提示优先出现', () => {
-    expect(
-      captureSuccessNotes(
-        { ...success, notice: 'content_truncated', effectiveFps: 30 },
-        { still: false, targetFps: 30 }
-      )
-    ).toEqual(['页面超出可捕获高度，底部内容已截断']);
-  });
 
   test('实际帧率明显低于目标时如实上报', () => {
     expect(

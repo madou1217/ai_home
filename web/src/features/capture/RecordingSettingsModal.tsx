@@ -13,7 +13,6 @@ import {
   type RecordingSettings
 } from './index';
 import RecordingSettingsFields, { recordingSettingsEstimate } from './RecordingSettingsFields';
-import CaptureScopeFields, { captureScopeDescription } from './CaptureScopeFields';
 import WatermarkSettingsFields from './WatermarkSettingsFields';
 import styles from './recording-settings.module.css';
 
@@ -46,7 +45,6 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
     setDraft((current) => ({
       ...current,
       recording: { ...defaults.recording },
-      captureScope: defaults.captureScope,
       watermark: { ...defaults.watermark }
     }));
   };
@@ -74,17 +72,6 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
     >
       <div className={styles.modalStack}>
         <section className={styles.modalSection}>
-          <Typography.Text strong>截图范围</Typography.Text>
-          <CaptureScopeFields
-            value={draft.captureScope}
-            onChange={(captureScope) => patch({ captureScope })}
-          />
-          <Typography.Text type="secondary">
-            {captureScopeDescription(draft.captureScope)}
-          </Typography.Text>
-        </section>
-
-        <section className={styles.modalSection}>
           <Typography.Text strong>录制方式</Typography.Text>
           <RecordingSettingsFields
             value={draft.recording}
@@ -102,7 +89,7 @@ export default function RecordingSettingsModal({ open, onClose, onSaved }: Props
             onChange={(watermark) => patch({ watermark })}
           />
           <Typography.Text type="secondary">
-            开启后自动叠加到截图与每一帧录制的右下角。
+            开启后自动使用当前会话的 Provider · Model，叠加到截图与每一帧录制的右下角。
           </Typography.Text>
         </section>
       </div>

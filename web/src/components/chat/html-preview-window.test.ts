@@ -1,4 +1,4 @@
-// 预览弹窗文档的静态契约：录制条件提示与「停止」消息类型必须出现在脚本里。
+// 预览弹窗文档的静态契约：水印身份、录制帧率与「停止」消息类型必须出现在脚本里。
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -7,21 +7,24 @@ import {
 } from './html-preview-window';
 
 describe('parsePopupCaptureSettings', () => {
-  test('没有快照时回落到构建期默认值', () => {
-    expect(parsePopupCaptureSettings(null, 'live', 60)).toEqual({ scope: 'live', fps: 60 });
-    expect(parsePopupCaptureSettings('', 'full', 30)).toEqual({ scope: 'full', fps: 30 });
+  test('没有快照时回落到构建期默认帧率', () => {
+    expect(parsePopupCaptureSettings(null, 60)).toEqual({ fps: 60 });
+    expect(parsePopupCaptureSettings('', 30)).toEqual({ fps: 30 });
   });
 
-  test('读取最新捕获范围并把帧率收敛到档位', () => {
-    const raw = JSON.stringify({ captureScope: 'live', recording: { fps: 58 } });
-    expect(parsePopupCaptureSettings(raw, 'full', 30)).toEqual({ scope: 'live', fps: 60 });
+  test('读取最新帧率并收敛到档位', () => {
+    const raw = JSON.stringify({ recording: { fps: 58 } });
+    expect(parsePopupCaptureSettings(raw, 30)).toEqual({ fps: 60 });
   });
 
-  test('损坏或未知字段回落到默认值', () => {
-    expect(parsePopupCaptureSettings('{oops', 'full', 30)).toEqual({ scope: 'full', fps: 30 });
+  test('旧版捕获范围字段被忽略，损坏或非法值回落到默认帧率', () => {
+    expect(parsePopupCaptureSettings('{oops', 15)).toEqual({ fps: 15 });
     expect(
-      parsePopupCaptureSettings(JSON.stringify({ captureScope: 'other', recording: { fps: 0 } }), 'live', 15)
-    ).toEqual({ scope: 'full', fps: 15 });
+      parsePopupCaptureSettings(
+        JSON.stringify({ captureScope: 'other', recording: { fps: 0 } }),
+        15
+      )
+    ).toEqual({ fps: 15 });
   });
 });
 
@@ -48,7 +51,17 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain("next === 'recording' ? '停止'");
   });
 
-  test('点击时重新读取 localStorage 的捕获范围与帧率', () => {
+  test('水印身份随打开参数注入，且不写手填全局 provider/model', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止',
+      captureIdentity: { provider: 'codex', model: 'gpt-5.4' }
+    });
+    expect(doc).toContain('const CAPTURE_PROVIDER = "codex"');
+    expect(doc).toContain('const CAPTURE_MODEL = "gpt-5.4"');
+  });
+
+  test('点击时重新读取 localStorage 的帧率', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'desktop',
       recordingHint: '手动停止'
@@ -56,42 +69,31 @@ describe('buildHtmlPreviewWindowDocument', () => {
     expect(doc).toContain("const CAPTURE_PREFS_KEY = 'aih.capture'");
     expect(doc).toContain('localStorage.getItem(CAPTURE_PREFS_KEY)');
     expect(doc).toContain('const readLiveCaptureSettings = function parsePopupCaptureSettings');
-    expect(doc).toContain("const FALLBACK_CAPTURE_SCOPE = \"full\"");
     expect(doc).toContain('const FALLBACK_CAPTURE_FPS = 30');
     expect(doc).toContain('currentCaptureSettings()');
-    expect(doc).not.toContain("const CAPTURE_SCOPE = 'full'");
+    expect(doc).not.toContain('captureScope');
   });
 
-  test('默认完整页面截图走文档捕获，录制始终走实时屏幕共享', () => {
+  test('截图与录制都只走实时屏幕共享', () => {
     const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
       device: 'desktop',
       recordingHint: '手动停止'
     });
-    expect(doc).toContain("'aih:html-preview-capture-request'");
-    expect(doc).toContain('startDocumentCapture');
-    expect(doc).toContain('kind === \'record\' || settings.scope === \'live\'');
-    expect(doc).toContain('startLiveCapture(kind, settings.fps)');
+    expect(doc).not.toContain("'aih:html-preview-capture-request'");
+    expect(doc).not.toContain('startDocumentCapture');
+    expect(doc).toContain('startLiveCapture(kind, currentCaptureSettings().fps)');
+    expect(doc).not.toContain('settings.scope');
   });
 
-  test('产物会展示截断、实际帧率与脚本检测提示', () => {
-    const doc = buildHtmlPreviewWindowDocument(
-      '<html><body><script>1</script><canvas></canvas></body></html>',
-      { device: 'desktop', recordingHint: '手动停止' }
-    );
-    expect(doc).toContain("data.notice === 'content_truncated'");
+  test('产物会展示实际帧率提示', () => {
+    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
+      device: 'desktop',
+      recordingHint: '手动停止'
+    });
     expect(doc).toContain('data.effectiveFps');
     expect(doc).toContain('data.targetFps');
-    expect(doc).toContain('const HAS_DYNAMIC_CONTENT = true');
-    expect(doc).toContain("action.className = 'status-action'");
-    expect(doc).toContain('改用实时画面');
-  });
-
-  test('静态文档不注入脚本检测提示', () => {
-    const doc = buildHtmlPreviewWindowDocument('<html><body>hi</body></html>', {
-      device: 'desktop',
-      recordingHint: '手动停止'
-    });
-    expect(doc).toContain('const HAS_DYNAMIC_CONTENT = false');
+    expect(doc).not.toContain('HAS_DYNAMIC_CONTENT');
+    expect(doc).not.toContain('改用实时画面');
   });
 
   test('弹窗脚本不直接滚动页面，完整可见性交给实时帧源', () => {

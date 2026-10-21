@@ -45,6 +45,8 @@ import {
 import bubbleStyles from './message-bubble.module.css';
 import filePreviewStyles from './file-preview.module.css';
 import { isExternalHttpUrl, openExternalUrl } from '@/services/open-external-url';
+import { CaptureIdentityBoundary } from '@/features/capture';
+import { getProviderLabel } from './provider-registry';
 
 // toolBody/toolGroupItemInteractive 与 fileTypeIcon 共选择器，归入 file-preview 域；类名无交集，合并后引用行为不变
 const styles = { ...bubbleStyles, ...filePreviewStyles };
@@ -740,13 +742,18 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
               projectDirName={session?.projectDirName}
               mobile={mobile}
               renderMessage={(childMessage, index) => (
-                <MessageBubble
+                <CaptureIdentityBoundary
                   key={`${childMessage.role}-${index}`}
-                  message={childMessage}
-                  provider={provider}
-                  session={childSession}
-                  mobile={mobile}
-                />
+                  provider={getProviderLabel(provider)}
+                  model={childMessage.model || ''}
+                >
+                  <MessageBubble
+                    message={childMessage}
+                    provider={provider}
+                    session={childSession}
+                    mobile={mobile}
+                  />
+                </CaptureIdentityBoundary>
               )}
             />
           );

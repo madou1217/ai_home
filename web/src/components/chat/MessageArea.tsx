@@ -12,7 +12,7 @@ import DictationButton from './composer/DictationButton';
 import DictationRecordingBar from './composer/DictationRecordingBar';
 import { useDictation } from './composer/useDictation';
 import dictationStyles from './composer/dictation.module.css';
-import { providerAccentStyle } from './provider-registry';
+import { getProviderLabel, providerAccentStyle } from './provider-registry';
 import TaskDock from './TaskDock';
 import StatsLine from './StatsLine';
 import SlashCommandMenu from './SlashCommandMenu';
@@ -27,6 +27,7 @@ import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
 import { resolveNativeSessionWriteBlock } from '@/features/legacy-chat/native-session-write-policy';
+import { CaptureIdentityBoundary } from '@/features/capture';
 import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-overscroll-feedback';
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
@@ -589,22 +590,27 @@ const MessageArea = ({
     displayMessages.map((msg, i) => {
       const isFollowup = msg.role === 'assistant' && i > 0 && displayMessages[i - 1].role === 'assistant';
       return (
-      <MessageBubble
-        isFollowup={isFollowup}
+      <CaptureIdentityBoundary
         // key 必须稳定：不能把 pending 编进去，否则流式回复从 pending→done 时
         // key 变化会强制卸载重挂整个气泡，造成"闪屏"。消息位置(i)在流式期间不变，
         // 内容变化由 message prop 触发正常 re-render，无需用 key 强制刷新。
         key={`${msg.role}-${i}`}
-        message={msg}
-        provider={sessionProvider}
-        session={session}
-        mobile={mobile}
-        onRetry={msg.role === 'assistant' && onRetry ? () => onRetry(displayMessages[i - 1]?.content || '') : undefined}
-        onFork={() => onForkSession?.(i)}
-      />
+        provider={getProviderLabel(sessionProvider)}
+        model={effectiveSelectedModel || msg.model || session?.model || ''}
+      >
+        <MessageBubble
+          isFollowup={isFollowup}
+          message={msg}
+          provider={sessionProvider}
+          session={session}
+          mobile={mobile}
+          onRetry={msg.role === 'assistant' && onRetry ? () => onRetry(displayMessages[i - 1]?.content || '') : undefined}
+          onFork={() => onForkSession?.(i)}
+        />
+      </CaptureIdentityBoundary>
       );
     })
-  ), [displayMessages, mobile, sessionProvider, session, onRetry, onForkSession]);
+  ), [displayMessages, effectiveSelectedModel, mobile, sessionProvider, session, onRetry, onForkSession]);
 
   const activeChecklist = useMemo(
     () => findLatestActiveChecklist(displayMessages),

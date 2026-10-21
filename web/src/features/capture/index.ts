@@ -29,13 +29,9 @@ export {
 } from './format-catalog';
 export {
   CAPTURE_PREFERENCES_KEY,
-  CAPTURE_SCOPE_OPTIONS,
-  DEFAULT_CAPTURE_SCOPE,
   type CapturePreferences,
-  type CaptureScope,
   createDefaultCapturePreferences,
   normalizeCapturePreferences,
-  normalizeCaptureScope,
   notifyCapturePreferences,
   parseCapturePreferences,
   readCapturePreferences,
@@ -71,21 +67,18 @@ export {
   drawCaptureWatermark,
   drawCaptureWatermarkOnContext,
   normalizeCaptureWatermark,
+  resolveCaptureWatermark,
   resolveWatermarkText,
+  type CaptureWatermarkIdentity,
+  type CaptureWatermarkPreference,
   type CaptureWatermarkSettings
 } from './watermark';
+export {
+  CaptureIdentityBoundary,
+  CaptureIdentityProvider,
+  useCaptureIdentity
+} from './capture-identity-context';
 export { probeCaptureFormatAvailability, isFormatAvailable, type CaptureFormatAvailability } from './format-availability';
-export {
-  DomPreviewFrameSource,
-  isStaticDocument,
-  resolveContentHeight,
-  type ResolvedContentHeight
-} from './dom-preview-frame-source';
-export {
-  detectScriptDependentHtml,
-  describeScriptDependentReasons,
-  type ScriptDependentReason
-} from './capture-content-probe';
 export {
   LivePreviewFrameSource,
   computeDisplayCrop,
@@ -102,15 +95,7 @@ export {
   type CaptureStillOptions
 } from './capture-controller';
 export {
-  FALLBACK_VIEWPORT_WIDTH,
-  RECORDING_MAX_CONTENT_HEIGHT,
-  RECORDING_MAX_PIXELS,
-  STILL_MAX_CONTENT_HEIGHT,
-  STILL_MAX_PIXELS,
-  encodePreviewDocument,
   encodePreviewSource,
-  resolveDocumentHeightLimit,
-  type PreviewEncodeRequest,
   type PreviewSourceEncodeRequest
 } from './preview-encode-dispatch';
 export {
@@ -121,23 +106,19 @@ export {
 } from './capture-options';
 export {
   CAPTURE_CANCEL_TYPE,
-  CAPTURE_REQUEST_TYPE,
   CAPTURE_RESULT_TYPE,
   CAPTURE_STREAM_READY_TYPE,
   ensurePreviewWindowCaptureHost,
   installPreviewWindowCaptureHost,
   isCaptureWindowCancel,
-  isCaptureWindowRequest,
   isCaptureWindowStreamReady,
   resolveRequestFormat,
-  runCaptureForWindowRequest,
   runCaptureForWindowStream,
   type CaptureReplyTarget,
   type CaptureWindowCancel,
   type CaptureWindowFailure,
   type CaptureWindowProgressPhase,
   type CaptureWindowReply,
-  type CaptureWindowRequest,
   type CaptureWindowRequestKind,
   type CaptureWindowStreamReady,
   type CaptureWindowSuccess,

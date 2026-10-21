@@ -1,9 +1,8 @@
 import {
-  detectScriptDependentHtml,
-  describeScriptDependentReasons,
   ensurePreviewWindowCaptureHost,
   readCapturePreferences,
-  summarizeRecordingSettings
+  summarizeRecordingSettings,
+  type CaptureWatermarkIdentity
 } from '../../features/capture';
 
 export type HtmlPreviewDevice = 'desktop' | 'mobile';
@@ -13,23 +12,23 @@ export interface HtmlPreviewWindowOptions {
   title?: string;
   /** 录制条件摘要；省略时读取全局录制设置。 */
   recordingHint?: string;
+  /** 打开弹窗时所处会话的 provider/model；捕获水印使用。 */
+  captureIdentity?: CaptureWatermarkIdentity;
 }
 
 export interface PopupCaptureSettings {
-  scope: 'full' | 'live';
   fps: number;
 }
 
 /**
- * 弹窗点击捕获时的偏好解析（纯函数）。
+ * 弹窗点击捕获时的帧率解析（纯函数）。
  *
  * 弹窗文档在打开时就把脚本写死了，如果沿用构建期快照，用户之后在设置页改的
- * 捕获范围/帧率不会生效。这里允许把函数体原样注入弹窗脚本（toString），
+ * 帧率不会生效。这里允许把函数体原样注入弹窗脚本（toString），
  * 因此它必须自包含：不能引用模块里的其它常量或函数。
  */
 export function parsePopupCaptureSettings(
   raw: string | null | undefined,
-  fallbackScope: 'full' | 'live' = 'full',
   fallbackFps = 30
 ): PopupCaptureSettings {
   const options = [10, 15, 24, 30, 60];
@@ -45,29 +44,22 @@ export function parsePopupCaptureSettings(
     }
     return chosen;
   };
-  const fallback: PopupCaptureSettings = {
-    scope: fallbackScope === 'live' ? 'live' : 'full',
-    fps:
-      typeof fallbackFps === 'number' && Number.isFinite(fallbackFps) && fallbackFps > 0
-        ? nearest(fallbackFps)
-        : 30
-  };
-  if (!raw) return fallback;
+  const safeFallback =
+    typeof fallbackFps === 'number' && Number.isFinite(fallbackFps) && fallbackFps > 0
+      ? nearest(fallbackFps)
+      : 30;
+  if (!raw) return { fps: safeFallback };
   try {
-    const value = JSON.parse(raw) as {
-      captureScope?: unknown;
-      recording?: { fps?: unknown };
-    };
+    const value = JSON.parse(raw) as { recording?: { fps?: unknown } };
     const recordedFps = value?.recording?.fps;
     return {
-      scope: value?.captureScope === 'live' ? 'live' : 'full',
       fps:
         typeof recordedFps === 'number' && Number.isFinite(recordedFps) && recordedFps > 0
           ? nearest(recordedFps)
-          : fallback.fps
+          : safeFallback
     };
   } catch {
-    return fallback;
+    return { fps: safeFallback };
   }
 }
 
@@ -75,7 +67,6 @@ const HTML_PREVIEW_SANDBOX = 'allow-scripts allow-forms allow-modals allow-popup
 const PREVIEW_URL_REVOKE_DELAY_MS = 60_000;
 
 /** 与宿主 preview-window-host.ts 约定的消息契约（弹窗侧不能 import，保持常量同步）。 */
-const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 const CAPTURE_STREAM_READY_TYPE = 'aih:html-preview-capture-stream-ready';
@@ -93,6 +84,11 @@ function escapeHtmlAttribute(value: string) {
     .replace(/'/g, '&#39;');
 }
 
+/** JSON 字符串嵌入 <script> 时转义 "<"，避免内容提前闭合脚本标签。 */
+function jsonForScript(value: string) {
+  return JSON.stringify(String(value || '')).replace(/</g, '\\u003c');
+}
+
 export function buildHtmlPreviewWindowDocument(
   documentContent: string,
   options: HtmlPreviewWindowOptions
@@ -106,10 +102,12 @@ export function buildHtmlPreviewWindowDocument(
   const recordingHint = escapeHtml(
     options.recordingHint ?? summarizeRecordingSettings(preferences.recording)
   );
-  const fallbackScope = preferences.captureScope === 'live' ? 'live' : 'full';
-  const fallbackFps = Math.max(1, Math.min(60, Math.round(preferences.recording.fps)));
-  const dynamicReasons = detectScriptDependentHtml(documentContent);
-  const dynamicLabel = describeScriptDependentReasons(dynamicReasons);
+  const recordingFps = Number(preferences?.recording?.fps);
+  const fallbackFps = Number.isFinite(recordingFps)
+    ? Math.max(1, Math.min(60, Math.round(recordingFps)))
+    : 30;
+  const captureProvider = options.captureIdentity?.provider || '';
+  const captureModel = options.captureIdentity?.model || '';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -209,11 +207,8 @@ export function buildHtmlPreviewWindowDocument(
       }
     });
 
-    // 捕获桥（弹窗侧）：
-    // - 截图：范围由偏好决定。full 把原始文档投回宿主重新渲染整页（不执行脚本）；
-    //   live 在点击手势里拿屏幕共享，保留脚本与动画。
-    // - 录制：始终走实时画面（脚本、Canvas、鼠标交互），不重新渲染。
-    // 两条路径都由宿主的同一条编码派发产出产物。
+    // 捕获桥（弹窗侧）：截图与录制都只抓实时画面，保留脚本、Canvas/WebGL
+    // 与鼠标交互；不再重新渲染静态整页。
     const status = document.querySelector('[data-capture-status]');
     const recordButton = document.querySelector('[data-capture="record"]');
     const shotButton = document.querySelector('[data-capture="screenshot"]');
@@ -221,18 +216,15 @@ export function buildHtmlPreviewWindowDocument(
     const CAPTURE_TIMEOUT_MS = 300000;
     const CAPTURE_VIDEO_ID = 'aih-capture-video';
     const CAPTURE_PREFS_KEY = 'aih.capture';
-    const FALLBACK_CAPTURE_SCOPE = ${JSON.stringify(fallbackScope)};
     const FALLBACK_CAPTURE_FPS = ${fallbackFps};
-    const HAS_DYNAMIC_CONTENT = ${dynamicReasons.length > 0 ? 'true' : 'false'};
-    const DYNAMIC_CONTENT_LABEL = ${JSON.stringify(dynamicLabel)};
+    const CAPTURE_PROVIDER = ${jsonForScript(captureProvider)};
+    const CAPTURE_MODEL = ${jsonForScript(captureModel)};
     // 点击时重新解析偏好：弹窗打开后用户在设置页的修改也要立即生效。
     const readLiveCaptureSettings = ${parsePopupCaptureSettings.toString()};
     let captureSeq = 0;
     let pendingRequest = '';
     let pendingTimer = 0;
     let phase = 'idle';
-    let activeCaptureMode = 'full';
-    let activeCaptureKind = 'still';
     let activeStream = null;
     let activeVideo = null;
 
@@ -246,7 +238,6 @@ export function buildHtmlPreviewWindowDocument(
     function currentCaptureSettings() {
       return readLiveCaptureSettings(
         readCapturePreferencesRaw(),
-        FALLBACK_CAPTURE_SCOPE,
         FALLBACK_CAPTURE_FPS
       );
     }
@@ -257,19 +248,6 @@ export function buildHtmlPreviewWindowDocument(
     function showStatus(label) {
       status.textContent = label;
       status.hidden = false;
-    }
-    function showLiveSuggestion(kind, label) {
-      status.textContent = label ? label + ' · ' : '';
-      status.hidden = false;
-      const action = document.createElement('button');
-      action.type = 'button';
-      action.className = 'status-action';
-      action.textContent = '改用实时画面';
-      action.addEventListener('click', function() {
-        setPhase('idle');
-        startLiveCapture(kind, currentCaptureSettings().fps);
-      });
-      status.appendChild(action);
     }
     function setPhase(next, label) {
       phase = next;
@@ -316,37 +294,6 @@ export function buildHtmlPreviewWindowDocument(
       clearTimeout(pendingTimer);
       return true;
     }
-    function startDocumentCapture(kind) {
-      if (phase !== 'idle') return;
-      if (!window.opener) {
-        settleFailure('宿主页面已关闭，无法捕获');
-        return;
-      }
-      activeCaptureMode = 'full';
-      activeCaptureKind = kind;
-      const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
-      pendingRequest = requestId;
-      setPhase('requesting', kind === 'record' ? '正在渲染完整页面…' : '正在生成截图…');
-      clearTimeout(pendingTimer);
-      pendingTimer = window.setTimeout(function() {
-        if (pendingRequest !== requestId) return;
-        settleFailure('捕获超时，请重试');
-      }, CAPTURE_TIMEOUT_MS);
-      // 完整页面模式：把弹窗里的原始文档 + 逻辑宽度投回宿主，由宿主重新渲染
-      // 整页内容（不执行脚本），不申请屏幕共享、也不受当前视口裁剪。
-      window.opener.postMessage(
-        {
-          type: '${CAPTURE_REQUEST_TYPE}',
-          requestId: requestId,
-          kind: kind,
-          html: preview.srcdoc,
-          width: Math.max(1, Math.round(preview.clientWidth))
-        },
-        window.location.origin
-      );
-      // 录制请求发出后即可停止（宿主会在停止信号后编码已抓到的帧）。
-      if (kind === 'record') setPhase('recording', '正在捕获完整页面…');
-    }
     async function startLiveCapture(kind, fps) {
       if (phase !== 'idle') return;
       if (!window.opener) {
@@ -357,8 +304,6 @@ export function buildHtmlPreviewWindowDocument(
         settleFailure('当前浏览器不支持实时预览捕获');
         return;
       }
-      activeCaptureMode = 'live';
-      activeCaptureKind = kind;
       const requestId = 'cap-' + Date.now().toString(36) + '-' + (++captureSeq);
       pendingRequest = requestId;
       setPhase('requesting', '请在共享选择器中选择当前预览窗口…');
@@ -456,7 +401,9 @@ export function buildHtmlPreviewWindowDocument(
           type: '${CAPTURE_STREAM_READY_TYPE}',
           requestId: requestId,
           kind: kind,
-          cropped: cropped
+          cropped: cropped,
+          provider: CAPTURE_PROVIDER,
+          model: CAPTURE_MODEL
         },
         window.location.origin
       );
@@ -500,9 +447,6 @@ export function buildHtmlPreviewWindowDocument(
       link.click();
       link.remove();
       const notes = [];
-      if (data.notice === 'content_truncated') {
-        notes.push('页面超出可捕获高度，底部内容已截断');
-      }
       if (
         typeof data.effectiveFps === 'number' &&
         data.effectiveFps > 0 &&
@@ -514,13 +458,7 @@ export function buildHtmlPreviewWindowDocument(
         );
       }
       setPhase('idle');
-      if (activeCaptureMode === 'full' && HAS_DYNAMIC_CONTENT) {
-        const prefix = notes.length ? notes.join('；') + '；' : '';
-        showLiveSuggestion(
-          activeCaptureKind,
-          prefix + '完整页面不执行脚本（检测到' + DYNAMIC_CONTENT_LABEL + '）'
-        );
-      } else if (notes.length) {
+      if (notes.length) {
         showStatus('已保存 · ' + notes.join('；'));
       }
     });
@@ -533,14 +471,8 @@ export function buildHtmlPreviewWindowDocument(
           return;
         }
         if (phase !== 'idle') return;
-        const settings = currentCaptureSettings();
-        // 录制始终走实时屏幕共享：脚本、Canvas 和鼠标交互都必须保留；
-        // 完整页面静态克隆只用于截图。
-        if (kind === 'record' || settings.scope === 'live') {
-          startLiveCapture(kind, settings.fps);
-        } else {
-          startDocumentCapture(kind);
-        }
+        // 截图与录制都走实时屏幕共享：脚本、Canvas、动画和鼠标交互都必须保留。
+        startLiveCapture(kind, currentCaptureSettings().fps);
       });
     });
   </script>

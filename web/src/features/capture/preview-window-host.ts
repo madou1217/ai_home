@@ -1,13 +1,14 @@
 // HTML 预览弹窗（blob 独立文档）与宿主应用之间的捕获桥（宿主侧）。
 //
-// 弹窗文档拿不到主 bundle：它通过 postMessage 把「待捕获文档 + 视口宽」投回
-// 宿主（同一 origin），宿主复用 encodePreviewDocument 完成栅格化与编码，
-// 再把 blob URL 回传给弹窗触发下载。捕获逻辑零复制，单测不打 postMessage。
+// 弹窗文档拿不到主 bundle：它拿到屏幕共享流后通过 postMessage 通知宿主，
+// 宿主读取弹窗里的 video 抓帧并编码，再把 blob URL 回传触发下载。
+// 截图与录制都走实时画面，没有静态整页路径。
 
 import type { CaptureFormatId, CaptureNotice, StillCaptureFormatId } from './types';
 import type { CapturePreferences } from './capture-preferences';
-import { encodePreviewDocument, encodePreviewSource } from './preview-encode-dispatch';
+import { encodePreviewSource } from './preview-encode-dispatch';
 import { PopupWindowFrameSource } from './popup-window-frame-source';
+import { resolveCaptureWatermark } from './watermark';
 import {
   isFormatAvailable,
   probeCaptureFormatAvailability,
@@ -17,7 +18,6 @@ import { readCapturePreferences } from './capture-preferences';
 import { listAnimationFormats, listStillFormats } from './format-catalog';
 
 /** 消息类型标记：命名空间常量，弹窗脚本与宿主各自遵守同一契约。 */
-export const CAPTURE_REQUEST_TYPE = 'aih:html-preview-capture-request';
 export const CAPTURE_RESULT_TYPE = 'aih:html-preview-capture-result';
 export const CAPTURE_CANCEL_TYPE = 'aih:html-preview-capture-cancel';
 /** 弹窗已拿到屏幕共享流并挂到隐藏 video 上，宿主可以开始实时抓帧。 */
@@ -34,16 +34,9 @@ export interface CaptureWindowStreamReady {
   format?: string;
   /** 弹窗是否已用 Region Capture 把视频轨裁到预览元素。 */
   cropped: boolean;
-}
-
-export interface CaptureWindowRequest {
-  type: typeof CAPTURE_REQUEST_TYPE;
-  requestId: string;
-  kind: CaptureWindowRequestKind;
-  /** 省略时：still → png；record → 偏好默认录制格式。 */
-  format?: string;
-  html: string;
-  width: number;
+  /** 打开弹窗时的当前会话身份；仅用于水印。 */
+  provider?: string;
+  model?: string;
 }
 
 /** 弹窗 → 宿主：结束当前录制（保留已抓帧并继续编码）。 */
@@ -107,7 +100,7 @@ function resolveStillFormat(format: string | undefined): StillCaptureFormatId {
 
 /** 解析弹窗请求的最终格式；解析不出可用格式时返回 null。 */
 export function resolveRequestFormat(
-  request: Pick<CaptureWindowRequest, 'kind' | 'format'>,
+  request: Pick<CaptureWindowStreamReady, 'kind' | 'format'>,
   deps: ResolveRequestFormatDeps = {}
 ): CaptureFormatId | null {
   const availability = deps.availability ?? probeCaptureFormatAvailability();
@@ -124,16 +117,6 @@ export function resolveRequestFormat(
   return options[0]?.id ?? null;
 }
 
-/** 判定消息是否为捕获请求（形状校验，来源校验在接线层）。 */
-export function isCaptureWindowRequest(data: unknown): data is CaptureWindowRequest {
-  if (typeof data !== 'object' || data === null) return false;
-  const candidate = data as Partial<CaptureWindowRequest>;
-  if (candidate.type !== CAPTURE_REQUEST_TYPE) return false;
-  if (typeof candidate.requestId !== 'string' || candidate.requestId.length === 0) return false;
-  if (candidate.kind !== 'still' && candidate.kind !== 'record') return false;
-  return typeof candidate.html === 'string' && candidate.html.length > 0;
-}
-
 /** 判定消息是否为「实时流已就绪」（形状校验，来源校验在接线层）。 */
 export function isCaptureWindowStreamReady(data: unknown): data is CaptureWindowStreamReady {
   if (typeof data !== 'object' || data === null) return false;
@@ -141,6 +124,8 @@ export function isCaptureWindowStreamReady(data: unknown): data is CaptureWindow
   if (candidate.type !== CAPTURE_STREAM_READY_TYPE) return false;
   if (typeof candidate.requestId !== 'string' || candidate.requestId.length === 0) return false;
   if (candidate.kind !== 'still' && candidate.kind !== 'record') return false;
+  if (candidate.provider !== undefined && typeof candidate.provider !== 'string') return false;
+  if (candidate.model !== undefined && typeof candidate.model !== 'string') return false;
   return typeof candidate.cropped === 'boolean';
 }
 
@@ -174,12 +159,6 @@ function friendlyCaptureError(message: string): string {
   if (message === 'frame_source_unavailable') return '未抓到可编码的画面，请重试';
   if (message === 'capture_format_unavailable') return '没有可用的录制格式';
   if (message === 'capture_no_frames') return '没有抓到任何帧，请重试';
-  if (message === 'dom_capture_requires_window') return '当前环境不支持完整页面渲染';
-  if (message === 'capture_document_unavailable') return '无法读取预览文档，请重新打开预览';
-  if (message === 'record_requires_live_stream') return '录制请使用实时画面（需要保留脚本与交互）';
-  if (message === 'dom_capture_frame_unavailable') return '预览暂不可截取';
-  if (message === 'dom_capture_load_timeout') return '预览渲染超时，请重试';
-  if (message === 'dom_capture_load_failed') return '预览克隆失败，请重试';
   if (message === 'webm_encoder_unavailable') return '当前浏览器不支持 WebM 录制';
   if (message === 'webm_encode_empty') return '录制的帧数据为空，请重试';
   if (message === 'Permission denied' || message === 'NotAllowedError') {
@@ -256,44 +235,10 @@ export async function runCaptureForWindowStream(
       source,
       format,
       recording: preferences.recording,
-      watermark: preferences.watermark,
-      signal: controller.signal,
-      stopSignal: hooks.stopSignal,
-      ...progressReporter(hooks.onProgress)
-    });
-    return toCaptureWindowReply(
-      result,
-      request.requestId,
-      request.kind === 'record' ? preferences.recording.fps : undefined
-    );
-  } catch (error) {
-    return fail(error instanceof Error ? error.message : String(error));
-  }
-}
-
-/** 执行一次捕获并返回回传载荷（不碰 postMessage，方便单测）。 */
-export async function runCaptureForWindowRequest(
-  request: CaptureWindowRequest,
-  hooks: CaptureWindowRequestHooks = {}
-): Promise<CaptureWindowSuccess | CaptureWindowFailure> {
-  const fail = (message: string): CaptureWindowFailure => ({
-    type: CAPTURE_RESULT_TYPE,
-    requestId: request.requestId,
-    kind: 'artifact',
-    ok: false,
-    message: friendlyCaptureError(message)
-  });
-  const preferences = readCapturePreferences();
-  const format = resolveRequestFormat(request, { preferences });
-  if (!format) return fail('capture_format_unavailable');
-  const controller = new AbortController();
-  try {
-    const result = await encodePreviewDocument({
-      format,
-      html: request.html,
-      width: request.width || 720,
-      recording: preferences.recording,
-      watermark: preferences.watermark,
+      watermark: resolveCaptureWatermark(preferences.watermark, {
+        provider: request.provider || '',
+        model: request.model || ''
+      }),
       signal: controller.signal,
       stopSignal: hooks.stopSignal,
       ...progressReporter(hooks.onProgress)
@@ -341,22 +286,6 @@ export function installPreviewWindowCaptureHost(target: Window = window): () => 
       } finally {
         stopControllers.delete(request.requestId);
       }
-      return;
-    }
-    if (!isCaptureWindowRequest(event.data)) return;
-    const request = event.data as CaptureWindowRequest;
-    const stopController = new AbortController();
-    stopControllers.set(request.requestId, stopController);
-    reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label: '正在捕获…' });
-    try {
-      const result = await runCaptureForWindowRequest(request, {
-        stopSignal: stopController.signal,
-        onProgress: (label, phase) =>
-          reply({ type: CAPTURE_RESULT_TYPE, requestId: request.requestId, kind: 'progress', label, phase })
-      });
-      reply(result);
-    } finally {
-      stopControllers.delete(request.requestId);
     }
   };
   target.addEventListener('message', listener);

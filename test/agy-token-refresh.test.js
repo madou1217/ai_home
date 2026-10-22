@@ -228,6 +228,34 @@ test('Agy token refresh tries the next client credential after invalid_client', 
   );
 });
 
+test('Agy token refresh tries the next client credential after a network failure', async (t) => {
+  const fixture = createFixture(t);
+  const calls = [];
+  const result = await refreshAgyAccessToken(fixture.account, {
+    force: true,
+    nowMs: 1700000000000,
+    clientCredentials: [
+      { clientId: 'network-fail-client', clientSecret: 'secret-a' },
+      { clientId: 'good-client', clientSecret: 'secret-b' }
+    ]
+  }, {
+    ...fixture.deps,
+    fetchWithTimeout: async (_url, init) => {
+      const body = parseRequestBody(init);
+      calls.push(body);
+      if (body.client_id === 'network-fail-client') throw new Error('fetch failed');
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ access_token: 'new-token', expires_in: 3600 })
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.refreshed, true);
+  assert.deepEqual(calls.map((body) => body.client_id), ['network-fail-client', 'good-client']);
+});
+
 test('Agy token refresh decodes gzip invalid_client before trying the next credential', async (t) => {
   const fixture = createFixture(t);
   const calls = [];

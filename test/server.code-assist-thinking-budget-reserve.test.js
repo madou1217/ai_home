@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  reserveAnswerBudgetForCodeAssistThinking
+  reserveAnswerBudgetForCodeAssistThinking,
+  resolveCodeAssistAdaptiveThinkingConfig
 } = require('../lib/server/code-assist-provider-strategy');
 
 // agy/antigravity 把网关注入的思考 token 计入 maxOutputTokens；客户端 max_tokens 只为答案预算。
@@ -51,4 +52,33 @@ test('disabled thinking (budget 0) => untouched', () => {
   const cfg = { maxOutputTokens: 300, thinkingConfig: { includeThoughts: false, thinkingBudget: 0 } };
   reserveAnswerBudgetForCodeAssistThinking(cfg);
   assert.equal(cfg.maxOutputTokens, 300);
+});
+
+test('reasoning_effort none omits the default thinking config entirely', () => {
+  const strategy = {
+    adaptiveThinkingConfig: { mode: 'budget', defaultBudget: -1 }
+  };
+  assert.equal(resolveCodeAssistAdaptiveThinkingConfig(strategy, { effort: 'none' }), null);
+  assert.equal(resolveCodeAssistAdaptiveThinkingConfig(strategy, { effort: 'off' }), null);
+  assert.equal(resolveCodeAssistAdaptiveThinkingConfig(strategy, { disableThinking: true }), null);
+});
+
+test('reasoning_effort minimal asks for an explicit zero thinking budget', () => {
+  const strategy = {
+    adaptiveThinkingConfig: { mode: 'budget', defaultBudget: -1 }
+  };
+  assert.deepEqual(
+    resolveCodeAssistAdaptiveThinkingConfig(strategy, { effort: 'minimal' }),
+    { includeThoughts: false, thinkingBudget: 0 }
+  );
+});
+
+test('no reasoning effort keeps the provider default (unlimited thinking)', () => {
+  const strategy = {
+    adaptiveThinkingConfig: { mode: 'budget', defaultBudget: -1 }
+  };
+  assert.deepEqual(
+    resolveCodeAssistAdaptiveThinkingConfig(strategy, {}),
+    { includeThoughts: true, thinkingBudget: -1 }
+  );
 });

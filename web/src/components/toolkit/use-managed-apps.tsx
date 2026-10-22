@@ -33,7 +33,7 @@ const actionKey = (app: ManagedAppItem, action: string) => `${app.id}:${action}`
 
 /**
  * 应用管理的数据层（桌面面板与移动端共用）：应用清单 + 账号 + 运行中实例轮询、
- * 安装 / 更新 / 卸载计划确认、检查更新、启用网页会话即时刷新。
+ * 安装 / 更新 / 卸载计划确认、检查更新、启用即时刷新。
  * 打开 / 结束应用与配置编辑仍由各自界面持有（交互差异较大）。
  */
 export function useManagedApps() {
@@ -245,7 +245,7 @@ export function useManagedApps() {
       .filter((app) => app.installed && app.hookSupported && !app.hookInstalled)
       .map((app) => app.provider);
     if (!targets.length) {
-      message.info('没有待启用的网页会话刷新');
+      message.info('没有待启用的即时刷新');
       return;
     }
 
@@ -254,12 +254,12 @@ export function useManagedApps() {
       const response = await toolkitAPI.installHooks(targets);
       const failed = (response.results || []).filter((result) => !result.ok);
       if (!response.ok || failed.length) {
-        throw new Error(failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；') || '网页会话刷新未通过验证');
+        throw new Error(failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；') || '即时刷新未通过验证');
       }
-      message.success('网页会话刷新已启用并验证');
+      message.success('即时刷新已启用并验证');
       await fetchApps();
     } catch (requestFailure: unknown) {
-      message.error(requestError(requestFailure, '网页会话刷新配置失败'));
+      message.error(requestError(requestFailure, '即时刷新配置失败'));
     } finally {
       setInstallingHooks(false);
     }

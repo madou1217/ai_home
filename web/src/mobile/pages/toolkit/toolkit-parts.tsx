@@ -1,4 +1,5 @@
 import { CloseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Badge } from 'antd';
 import type { ReactNode } from 'react';
 import { HudIconButton } from '@/mobile/ui';
 import type { HudTone } from '@/mobile/ui';
@@ -92,7 +93,7 @@ export function PanelToolbar({ status, refreshLabel, refreshing, onRefresh, chil
 }
 
 /** 抽屉底部 / 卡片内的操作按钮（≥44px，切角，一处最多一个 primary）。 */
-export function ActionButton({ icon, label, onClick, disabled, loading, tone = 'default', href }: {
+export function ActionButton({ icon, label, onClick, disabled, loading, tone = 'default', href, dot }: {
   icon?: ReactNode;
   label: ReactNode;
   onClick?: () => void;
@@ -100,16 +101,19 @@ export function ActionButton({ icon, label, onClick, disabled, loading, tone = '
   loading?: boolean;
   tone?: 'default' | 'primary' | 'danger';
   href?: string;
+  /** 图标右上角的黄点，用于「有新版」这类值得注意但不是故障的状态。 */
+  dot?: boolean;
 }) {
   const className = [
     styles.actionButton,
     tone !== 'default' ? styles[`actionButton_${tone}`] : '',
     loading ? styles.actionButtonLoading : ''
   ].filter(Boolean).join(' ');
+  const shownIcon = dot && icon ? <Badge dot color="var(--color-warning)" offset={[2, -2]}>{icon}</Badge> : icon;
   if (href) {
     return (
       <a className={className} href={href} target="_blank" rel="noreferrer">
-        {icon}
+        {shownIcon}
         <span>{label}</span>
       </a>
     );
@@ -122,7 +126,7 @@ export function ActionButton({ icon, label, onClick, disabled, loading, tone = '
       aria-busy={loading || undefined}
       onClick={onClick}
     >
-      {icon}
+      {shownIcon}
       <span>{label}</span>
     </button>
   );

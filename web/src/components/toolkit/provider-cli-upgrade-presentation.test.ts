@@ -255,3 +255,18 @@ test('应用卡片按 provider 取到同一份升级结论', () => {
   assert.deepEqual(Object.keys(all).sort(), ['codex', 'gemini']);
   assert.deepEqual(getManagedAppUpgradeViews(null, NOW), {});
 });
+
+// 卡片上「自动升级」这一行已经说了状态；再单列一行「升级结论」只是同义反复
+// （「已是最新」→「已是最新版」），用户明确嫌它多余。回归：它只能以「原因」的
+// 身份、且只在需要人介入时出现。
+test('卡片不再单列「升级结论」，只在需要人介入时给原因', async () => {
+  const fs = await import('node:fs');
+  const card = fs.readFileSync(new URL('./ManagedAppCard.tsx', import.meta.url), 'utf8');
+  const mobile = fs.readFileSync(new URL('../../mobile/pages/toolkit/AppsPanel.tsx', import.meta.url), 'utf8');
+
+  for (const source of [card, mobile]) {
+    assert.doesNotMatch(source, /label:\s*'升级结论'/);
+    // 原因行必须挂在 attention 上，常态不该冒出来。
+    assert.match(source, /upgrade\??\.attention\s*&&\s*upgrade\??\.reasonText/);
+  }
+});

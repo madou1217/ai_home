@@ -14,7 +14,6 @@ import ManagedAppCard from './ManagedAppCard';
 import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
-import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import { APP_CATEGORIES, useManagedApps } from './use-managed-apps';
 import { describeClearBrokenResult } from './provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from './use-provider-cli-upgrade';
@@ -178,7 +177,7 @@ export default function AppManagerPanel() {
             items={[
               { label: '实测', value: `${data.total} 个应用`, detail: '来自当前主机的应用清单', tone: 'info' },
               { label: '配置', value: `${data.installedCount} 个已安装`, detail: `${data.total - data.installedCount} 个未安装`, tone: data.installedCount ? 'success' : 'neutral' },
-              { label: '网页会话刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: SESSION_SYNC_SUMMARY, tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' },
+              { label: '即时刷新', value: hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount} 个 CLI 已启用` : '无需启用', detail: '新回合写入本地会话后可立即在 WebUI 看到', tone: hookSupportedCount === 0 ? 'neutral' : hookReadyCount === hookSupportedCount ? 'success' : 'warning' },
               {
                 label: 'CLI 自动升级',
                 value: upgradeMode.label,

@@ -1,5 +1,5 @@
 import { CloudSyncOutlined, EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { Popconfirm, Space, Tag, Tooltip } from 'antd';
+import { Badge, Popconfirm, Space, Tag, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { Account, ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
@@ -12,12 +12,14 @@ import {
   getAppAdvancedEntryLabel,
   getAppCurrentVersion,
   getAppHookStatusDetail as getHookStatusDetail,
-  hasExistingAppConfig as hasExistingConfig,
-  SYNC_MODE_DESCRIPTIONS,
-  SYNC_MODE_LABELS
+  hasExistingAppConfig as hasExistingConfig
 } from './managed-app-presentation';
 
-export { SYNC_MODE_LABELS } from './managed-app-presentation';
+/**
+ * 有新版时更新图标右上角的小黄点。用主题的 warning 色而不是 antd 默认红点：
+ * 红点是「出错了」，有新版是正常且值得做的事，不该被读成故障。
+ */
+const UPGRADE_DOT_COLOR = 'var(--color-warning)';
 
 /** 自动升级状态标签的色板：与纯展示映射的 tone 一一对应，不再另设语义。 */
 const UPGRADE_TAG_COLORS: Record<ManagedAppUpgradeView['statusTone'], string> = {
@@ -97,8 +99,10 @@ export default function ManagedAppCard({
       tooltip: `${upgrade.channelLabel} · 最近检查 ${upgrade.lastCheckText}`,
       muted: upgrade.statusTone === 'neutral'
     }] : []),
-    ...(upgrade?.reasonText ? [{
-      label: '升级结论',
+    // 不再单列「升级结论」：它在常态下只是把左边那行状态换个说法（「已是最新」→「已是最新版」），
+    // 只有需要人介入时，reasonText 才带着状态标签给不出的原因（熔断原因、回滚后仍失败等）。
+    ...(upgrade?.attention && upgrade.reasonText ? [{
+      label: '原因',
       value: upgrade.reasonText
     }] : []),
     ...(upgrade?.knownGoodVersion ? [{
@@ -112,7 +116,8 @@ export default function ManagedAppCard({
     }] : [])
   ];
 
-  const upgradeBadge = upgrade && (upgrade.attention || upgrade.hasUpdate) ? (
+  // 有新版只交给更新图标上的黄点，不再额外贴标签：同一件事说两遍反而像在催。
+  const upgradeBadge = upgrade?.attention ? (
     <Tag color={UPGRADE_TAG_COLORS[upgrade.statusTone]}>{upgrade.statusLabel}</Tag>
   ) : null;
 
@@ -158,16 +163,18 @@ export default function ManagedAppCard({
           ) : null}
           {app.installed ? (
             <>
-              <InstallLifecycleAction
-                action="update"
-                size="small"
-                iconOnly
-                tooltip={`更新 ${app.name}`}
-                aria-label={`更新 ${app.name}`}
-                loading={checkingUpdate || busyAction === 'update'}
-                disabled={Boolean(busyAction) || checkingUpdate || app.canUpdate === false}
-                onClick={() => onCheckUpdate(app)}
-              />
+              <Badge dot={Boolean(upgrade?.hasUpdate)} color={UPGRADE_DOT_COLOR} offset={[-2, 2]}>
+                <InstallLifecycleAction
+                  action="update"
+                  size="small"
+                  iconOnly
+                  tooltip={upgrade?.hasUpdate ? `更新 ${app.name}：有新版 ${upgrade.versionText}` : `更新 ${app.name}`}
+                  aria-label={`更新 ${app.name}`}
+                  loading={checkingUpdate || busyAction === 'update'}
+                  disabled={Boolean(busyAction) || checkingUpdate || app.canUpdate === false}
+                  onClick={() => onCheckUpdate(app)}
+                />
+              </Badge>
               <InstallLifecycleAction
                 action="uninstall"
                 size="small"
@@ -227,12 +234,9 @@ export default function ManagedAppCard({
           ) : null}
         </Space>
       )}
-      footer={app.type === 'cli' ? (
+      footer={hookStatusDetail ? (
         <div className="toolkit-sync-summary">
-          <Tooltip title={SYNC_MODE_DESCRIPTIONS[app.syncMode]}>
-            <span className="toolkit-sync-mode">网页会话刷新：{SYNC_MODE_LABELS[app.syncMode]}</span>
-          </Tooltip>
-          {hookStatusDetail ? <span className="toolkit-sync-detail">{hookStatusDetail}</span> : null}
+          <span className="toolkit-sync-detail">{hookStatusDetail}</span>
         </div>
       ) : null}
     />

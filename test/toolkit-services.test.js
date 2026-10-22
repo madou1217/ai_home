@@ -158,7 +158,7 @@ test('app-manager listManagedApps returns structured apps list', async () => {
   assert.equal(result.apps.some((a) => a.id === 'gemini-desktop'), false, 'Gemini must not expose a Desktop installer without a desktop contract');
 });
 
-test('app-manager 缺少 CLI 时使用网页会话刷新术语', async (t) => {
+test('app-manager 缺少 CLI 时使用即时刷新术语', async (t) => {
   const hostHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-toolkit-session-refresh-'));
   t.after(() => fs.rmSync(hostHomeDir, { recursive: true, force: true }));
 
@@ -176,7 +176,7 @@ test('app-manager 缺少 CLI 时使用网页会话刷新术语', async (t) => {
   });
 
   assert.equal(result.ok, false);
-  assert.match(result.results[0].error, /网页会话刷新/);
+  assert.match(result.results[0].error, /即时刷新/);
   assert.doesNotMatch(result.results[0].error, /会话同步/);
 });
 

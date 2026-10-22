@@ -1,17 +1,4 @@
 import type { Account, ManagedAppItem } from '@/types';
-import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
-
-export const SYNC_MODE_LABELS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: '即时通知',
-  polling: '定时检查',
-  unavailable: '不可读取'
-};
-
-export const SYNC_MODE_DESCRIPTIONS: Record<ManagedAppItem['syncMode'], string> = {
-  hook: `${SESSION_SYNC_SUMMARY} 当前使用即时通知，新回合后可立即刷新。`,
-  polling: `${SESSION_SYNC_SUMMARY} 当前定时检查会话文件，可能有轻微延迟。`,
-  unavailable: '当前 Provider 没有可读取的本地会话文件。'
-};
 
 const HOOK_REASON_LABELS: Record<string, string> = {
   disabled: '即时刷新已禁用',

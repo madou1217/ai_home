@@ -21,8 +21,7 @@ import {
   hasExistingAppConfig,
   managedAppAccountIsRunning,
   managedAppAccountLabel,
-  sortManagedAppAccounts,
-  SYNC_MODE_LABELS
+  sortManagedAppAccounts
 } from '@/components/toolkit/managed-app-presentation';
 import { toolkitRequestError as requestError } from '@/components/toolkit/request-error';
 import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
@@ -270,12 +269,12 @@ export default function AppsPanel() {
             />
             <TelemetryTile
               wide
-              label="网页会话刷新"
+              label="即时刷新"
               value={hookSupportedCount ? `${hookReadyCount} / ${hookSupportedCount}` : '无需启用'}
               unit={hookSupportedCount ? '个 CLI 已启用' : undefined}
               tone={hookSupportedCount === 0 ? 'muted' : hookReadyCount === hookSupportedCount ? 'ok' : 'warn'}
               led={hookSupportedCount > 0}
-              sub={SESSION_SYNC_SUMMARY}
+              sub="新回合写入本地会话后可立即在 WebUI 看到"
             />
             <TelemetryTile
               wide
@@ -337,6 +336,7 @@ export default function AppsPanel() {
           busy={Boolean(busyActionFor(detailApp))}
           busyAction={busyActionFor(detailApp)}
           checking={Boolean(checkingUpdates[detailApp.id])}
+          hasUpdate={Boolean(upgradeFor(detailApp)?.hasUpdate)}
           onOpen={() => setLaunchId(detailApp.id)}
           onInstall={() => void runAppAction(detailApp, 'install')}
           onUpdate={() => void checkAppUpdate(detailApp)}
@@ -437,11 +437,12 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
         ? <StatusText tone="info">已启用</StatusText>
         : <StatusText tone="warn">待启用</StatusText>
     }] : []),
-    ...(app.type === 'cli' ? [{ key: 'sync', label: '网页会话刷新', value: SYNC_MODE_LABELS[app.syncMode], mono: false }] : []),
     // 升级账本的结论与桌面卡片同一份数据、同一套文案。
     ...(upgrade ? [
       { key: 'upgrade', label: '自动升级', value: <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText> },
-      { key: 'upgradeReason', label: '升级结论', value: upgrade.reasonText || '—', mono: false, tone: upgrade.reasonText ? undefined : 'muted' as const },
+      ...(upgrade.attention && upgrade.reasonText
+        ? [{ key: 'upgradeReason', label: '原因', value: upgrade.reasonText, mono: false }]
+        : []),
       { key: 'upgradeChannel', label: '安装渠道', value: upgrade.channelLabel, mono: false },
       { key: 'upgradeCheck', label: '最近检查', value: upgrade.lastCheckText },
       ...(upgrade.knownGoodVersion ? [{ key: 'upgradeGood', label: '回退锚点', value: upgrade.knownGoodVersion }] : []),
@@ -495,11 +496,13 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
   );
 }
 
-function AppSheetFooter({ app, busy, busyAction, checking, onOpen, onInstall, onUpdate, onUninstall }: {
+function AppSheetFooter({ app, busy, busyAction, checking, hasUpdate, onOpen, onInstall, onUpdate, onUninstall }: {
   app: ManagedAppItem;
   busy: boolean;
   busyAction?: string;
   checking: boolean;
+  /** 自动升级账本里有可跟进的新版：更新按钮图标挂黄点。 */
+  hasUpdate?: boolean;
   onOpen: () => void;
   onInstall: () => void;
   onUpdate: () => void;
@@ -520,6 +523,7 @@ function AppSheetFooter({ app, busy, busyAction, checking, onOpen, onInstall, on
       <ActionButton
         icon={<ReloadOutlined />}
         label="更新"
+        dot={Boolean(hasUpdate) && !checking && !busy}
         loading={checking || busyAction === 'update'}
         disabled={busy || checking || app.canUpdate === false}
         onClick={onUpdate}

@@ -87,6 +87,13 @@ export interface EgressPoolNodePolicy {
   summary: string;
 }
 
+export interface EgressPoolPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}
+
 export interface EgressPoolView {
   ok: boolean;
   available: boolean;
@@ -96,6 +103,12 @@ export interface EgressPoolView {
   boundAccounts: EgressPoolBoundAccount[];
   /** 当前拦截策略；无池时为 null。 */
   nodePolicy: EgressPoolNodePolicy | null;
+  /** 服务端分页信息（带 page 参数请求时才有；全量请求时为 undefined）。 */
+  pagination?: EgressPoolPagination;
+  /** 各筛选类别下的总条数（服务端算，分页时前端不用再遍历全量）。 */
+  nodeCounts?: Record<string, number>;
+  /** 节点表版本指纹：没变时服务端回 304，前端沿用上一份数据。 */
+  version?: string;
   serverTime: number;
 }
 

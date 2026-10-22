@@ -362,3 +362,68 @@ test('when the active exit goes into cooldown the pool moves off it right away',
   assert.equal(runtime.status.activeNode, 'node-1');
   runtime.stop();
 });
+
+// 服务端分页（2026-10-22）：2w 节点的视图有十几 MB，前端每 5 秒全量拉等于持续占带宽。
+// 分页参数与前端 filterNodes/sortNodes 同一套语义（见 lib/runtime/egress-pool-node-view.js）。
+test('the egress pool route paginates, counts by filter, and answers 304 on an unchanged version', async () => {
+  const { filterNodes, sortNodes, countByFilter, paginateNodes } = require('../lib/runtime/egress-pool-node-view');
+  const nodes = Array.from({ length: 120 }, (_, i) => ({
+    name: `node-${i}`, label: `节点 ${i}`, server: `s${i}.example.com`,
+    cooling: i % 5 === 0, blocked: i % 7 === 0, uses: i % 3, lastUsedAt: i * 10,
+    cooldownRemainingMs: i % 5 === 0 ? 60_000 - i : 0,
+    probe: i % 2 === 0 ? { ok: true, latencyMs: 100 + i, at: 1 } : null
+  }));
+  // 筛选/排序/计数
+  assert.equal(filterNodes(nodes, 'blocked', '').length, nodes.filter((n) => n.blocked).length);
+  assert.equal(filterNodes(nodes, 'cooling', '').length, nodes.filter((n) => n.cooling).length);
+  assert.equal(filterNodes(nodes, 'used', '').length, nodes.filter((n) => n.uses > 0).length);
+  assert.equal(filterNodes(nodes, 'healthy', '').length, nodes.filter((n) => !n.blocked && !n.cooling && !(n.probe && n.probe.ok === false)).length);
+  assert.equal(filterNodes(nodes, 'all', 's42.').length, 1, '关键词匹配服务器名');
+  assert.deepEqual(countByFilter(nodes).all, nodes.length);
+  // 排序：当前出口置顶
+  assert.equal(sortNodes(nodes, 'node-119')[0].name, 'node-119');
+  // 分页
+  const page2 = paginateNodes(nodes, { page: 2, pageSize: 50 });
+  assert.deepEqual([page2.page, page2.pageSize, page2.total, page2.pageCount, page2.nodes.length], [2, 50, 120, 3, 50]);
+  assert.equal(paginateNodes(nodes, { page: 99, pageSize: 50 }).page, 3, '超出范围夹到最后一页');
+
+  // 路由：带 page 走分页 + ETag；不带 page 保持全量旧行为。
+  const deps = {
+    describeEgressPool: () => ({
+      available: true,
+      status: { ready: true, nodeCount: nodes.length, activeNode: 'node-0' },
+      nodes, events: [], nodePolicy: null
+    }),
+    listEgressPoolBoundAccounts: () => []
+  };
+  const blockedTotal = nodes.filter((n) => n.blocked).length;
+  const paged = await request('GET', '/v0/webui/egress-pool?page=1&pageSize=20&filter=blocked', deps);
+  assert.equal(paged.status, 200);
+  // 被拦截的只有 18 个（i%7===0），一页 20 条时正好全在这一页。
+  assert.equal(paged.body.nodes.length, blockedTotal);
+  assert.ok(blockedTotal < 20, '本用例的节点数就该少于一页');
+  assert.deepEqual(paged.body.pagination, { page: 1, pageSize: 20, total: nodes.filter((n) => n.blocked).length, pageCount: Math.ceil(nodes.filter((n) => n.blocked).length / 20) });
+  assert.ok(paged.body.version, '带版本指纹');
+  assert.match(paged.headers.ETag, /^W\//);
+  // 同一版本再要一次 → 304（不重传节点表）
+  const cached = await request('GET', '/v0/webui/egress-pool?page=1&pageSize=20', deps, { 'if-none-match': paged.headers.ETag });
+  assert.equal(cached.status, 304);
+  // 不带 page：全量（旧行为，既有调用方不受影响）
+  const full = await request('GET', '/v0/webui/egress-pool', deps);
+  assert.equal(full.body.nodes.length, nodes.length);
+  assert.equal(full.body.pagination, undefined);
+});
+
+/** 发一个 GET 并收集状态/头/体（路由用原生 writeHead 时会带响应头）。 */
+function request(method, url, deps, headers = {}) {
+  return new Promise((resolve) => {
+    const res = {
+      statusCode: 0,
+      headers: {},
+      writeHead(status, responseHeaders) { this.statusCode = status; this.headers = responseHeaders || {}; return this; },
+      end(body) { resolve({ status: this.statusCode, headers: this.headers, body: body ? JSON.parse(body) : null }); }
+    };
+    const req = { url, method, headers, on() {} };
+    handleEgressPoolRequest({ req, res, method, pathname: url.split('?')[0], aiHomeDir: '/x', deps, writeJson: (target, status, payload) => { target.statusCode = status; target.end(JSON.stringify(payload)); } });
+  });
+}

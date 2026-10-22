@@ -14,9 +14,38 @@ async function postAction(path: string, body?: unknown): Promise<EgressPoolActio
   }
 }
 
+export interface EgressPoolViewQuery {
+  page?: number;
+  pageSize?: number;
+  filter?: string;
+  query?: string;
+  /** 上一份数据的版本指纹：没变时服务端回 304，直接沿用缓存。 */
+  version?: string;
+}
+
 export const egressPoolAPI = {
-  async view(): Promise<EgressPoolView> {
-    return (await api.get<EgressPoolView>(BASE)).data;
+  /**
+   * 出口池视图。带 page 时走**服务端分页**（2w 节点的全量视图有十几 MB，
+   * 前端每 5 秒拉一次等于持续占带宽）；不带 page 时是全量（旧行为）。
+   * 带 version 时若服务端判定没变化会回 304，此时返回 null，调用方沿用上一份数据。
+   */
+  async view(query: EgressPoolViewQuery = {}): Promise<EgressPoolView | null> {
+    const params: Record<string, string | number> = {};
+    if (query.page !== undefined) {
+      params.page = query.page;
+      params.pageSize = query.pageSize ?? 50;
+      params.filter = query.filter || 'all';
+      if (query.query) params.query = query.query;
+    }
+    const headers = query.version ? { 'if-none-match': `W/"${query.version}"` } : undefined;
+    const response = await api.get<EgressPoolView>(BASE, {
+      params: Object.keys(params).length ? params : undefined,
+      headers,
+      // 304 不是错误：交给调用方沿用上一份数据。
+      validateStatus: (status) => status === 304 || (status >= 200 && status < 300)
+    });
+    if (response.status === 304) return null;
+    return response.data;
   },
   probe(node?: string) {
     return postAction(`${BASE}/probe`, node ? { node } : {});

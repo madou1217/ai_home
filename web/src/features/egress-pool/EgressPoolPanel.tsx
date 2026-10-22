@@ -23,11 +23,9 @@ import {
   COOLDOWN_RULES,
   eventReasonLabel,
   failureKindLabel,
-  filterNodes,
   formatAgo,
   formatDuration,
   nodeHealth,
-  sortNodes,
   successRate,
   type NodeFilter
 } from './egress-pool-presentation';
@@ -35,6 +33,8 @@ import type { EgressPoolEvent, EgressPoolNode, EgressPoolView } from './types';
 import './EgressPoolPanel.css';
 
 const REFRESH_INTERVAL_MS = 5000;
+// 节点表每页条数：2w 节点时表格不能吃全量数据（见 visibleNodes 的注释）。
+const PAGE_SIZE = 50;
 
 const EVENT_ICON: Record<string, JSX.Element> = {
   switch: <SwapOutlined />,
@@ -80,16 +80,36 @@ export default function EgressPoolPanel() {
   const [filter, setFilter] = useState<NodeFilter>('all');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState('');
+  const [page, setPage] = useState(1);
   const [accountLabels, setAccountLabels] = useState<Record<string, string>>({});
   // 本地时钟：冷却倒计时按秒走，不必每秒请求服务端。
   const fetchedAtRef = useRef(Date.now());
   const [now, setNow] = useState(Date.now());
+  // 分页/筛选的当前值给 load 用（避免把它塞进 useCallback 依赖导致每次变化都重建定时器）。
+  const pageRef = useRef(1);
+  const filterRef = useRef<NodeFilter>('all');
+  const queryRef = useRef('');
+  const versionRef = useRef('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (overrides: { page?: number; filter?: NodeFilter; query?: string } = {}) => {
+    const targetPage = overrides.page ?? pageRef.current;
+    const targetFilter = overrides.filter ?? filterRef.current;
+    const targetQuery = overrides.query ?? queryRef.current;
     try {
-      const next = await egressPoolAPI.view();
+      const next = await egressPoolAPI.view({
+        page: targetPage,
+        pageSize: PAGE_SIZE,
+        filter: targetFilter,
+        query: targetQuery,
+        // 只在同一页/同一筛选下用版本指纹换 304；换页或换筛选必须重新拿数据。
+        version: versionRef.current
+      });
       fetchedAtRef.current = Date.now();
-      setView(next);
+      // null = 304：节点表没变，沿用上一份（省掉十几 MB 传输）。
+      if (next) {
+        setView(next);
+        versionRef.current = next.version || '';
+      }
       setError('');
     } catch (loadError: unknown) {
       setError((loadError as Error)?.message || '出口池状态读取失败');
@@ -98,12 +118,45 @@ export default function EgressPoolPanel() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  // 唯一的取数 effect：挂载、换页、换筛选、改关键词都走它。
+  // **换页/换筛选要作废版本指纹**（必须重新取数据）；单纯轮询/重挂载则保留，好让服务端回 304。
+  useEffect(() => {
+    const changed = pageRef.current !== page || filterRef.current !== filter || queryRef.current !== query;
+    pageRef.current = page;
+    filterRef.current = filter;
+    queryRef.current = query;
+    if (changed) versionRef.current = '';
+    void load({ page, filter, query });
+  }, [page, filter, query, load]);
+  // 自动刷新：**页面不可见时不拉**（切到别的标签页仍在轮询会把整个节点表反复传一遍；
+  // 节点多时那是每分钟十几 MB），回到前台立刻补一次。节点越多间隔越长，避免持续占带宽。
   useEffect(() => {
     if (!autoRefresh) return undefined;
-    const timer = window.setInterval(() => { void load(); }, REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, [autoRefresh, load]);
+    const nodeCount = view?.nodes.length || 0;
+    const interval = nodeCount > 5000 ? REFRESH_INTERVAL_MS * 6 : nodeCount > 1000 ? REFRESH_INTERVAL_MS * 3 : REFRESH_INTERVAL_MS;
+    let timer: number | null = null;
+    // 轮询不带 overrides：沿用当前页与版本指纹，服务端没变就回 304（不重传节点表）。
+    const tick = () => { if (document.visibilityState === 'visible') void load(); };
+    const start = () => {
+      if (timer !== null) window.clearInterval(timer);
+      timer = window.setInterval(tick, interval);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+        start();
+      } else if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timer !== null) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [autoRefresh, load, view?.nodes.length]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -124,19 +177,33 @@ export default function EgressPoolPanel() {
   const serverNow = (view?.serverTime || fetchedAtRef.current) + elapsed;
   const status = view?.status || null;
   const activeNode = status?.activeNode || '';
-  const nodes = useMemo(() => (view?.nodes || []).map((node) => {
+  // 服务端返回的**当前页**（筛选/排序/分页都在服务端做，见 lib/runtime/egress-pool-node-view.js）。
+  // 前端不再对全量做过滤或切片 —— 那会让「服务端给了 50 条、前端又筛掉几条」，页数对不上。
+  const nodes = useMemo(() => view?.nodes || [], [view]);
+  const pagination = view?.pagination;
+  const safePage = pagination?.page ?? page;
+  const changeFilter = (next: NodeFilter) => { setPage(1); setFilter(next); };
+  const changeQuery = (next: string) => { setPage(1); setQuery(next); };
+
+  // 只在这一页上逐秒重算倒计时（50 条/秒，代价可忽略）。
+  const visibleNodes = useMemo(() => nodes.map((node) => {
     const remaining = Math.max(0, node.cooldownRemainingMs - elapsed);
     return { ...node, cooldownRemainingMs: remaining, cooling: node.cooling && remaining > 0 };
-  }), [view, elapsed]);
-  const visibleNodes = useMemo(
-    () => sortNodes(filterNodes(nodes, filter, query), activeNode),
-    [nodes, filter, query, activeNode]
-  );
-  const coolingCount = nodes.filter((node) => node.cooling).length;
-  const blockedCount = nodes.filter((node) => node.blocked).length;
+  }), [nodes, elapsed]);
+  // 计数走**服务端**（分页后前端只有一页数据，自己数会得出「本页 3 个冷却」这种错数）。
+  // 没有 nodeCounts（全量旧行为）时才回退到本地统计。
+  const nodeCounts = useMemo(() => view?.nodeCounts || {
+    all: nodes.length,
+    healthy: nodes.filter((node) => !node.blocked && !node.cooling && !(node.probe && node.probe.ok === false)).length,
+    cooling: nodes.filter((node) => node.cooling).length,
+    blocked: nodes.filter((node) => node.blocked).length,
+    used: nodes.filter((node) => node.uses > 0).length
+  }, [view, nodes]);
+  const coolingCount = nodeCounts.cooling;
+  const blockedCount = nodeCounts.blocked;
   const policy = view?.nodePolicy || null;
-  const probedOk = nodes.filter((node) => node.probe?.ok).length;
-  const activeEntry = nodes.find((node) => node.name === activeNode);
+  const probedOk = useMemo(() => nodes.filter((node) => node.probe?.ok).length, [nodes]);
+  const activeEntry = useMemo(() => nodes.find((node) => node.name === activeNode), [nodes, activeNode]);
   const accountLabel = (ref: string) => accountLabels[ref] || shortRef(ref);
 
   const runAction = async (key: string, action: () => Promise<{ ok: boolean; error?: string }>, success: string) => {
@@ -464,13 +531,13 @@ export default function EgressPoolPanel() {
               <div className="egress-toolbar">
                 <Segmented
                   value={filter}
-                  onChange={(value) => setFilter(value as NodeFilter)}
+                  onChange={(value) => changeFilter(value as NodeFilter)}
                   options={[
-                    { label: `全部 ${nodes.length}`, value: 'all' },
-                    { label: '可用', value: 'healthy' },
-                    { label: `冷却中 ${coolingCount}`, value: 'cooling' },
-                    { label: `已拦截 ${blockedCount}`, value: 'blocked' },
-                    { label: '用过', value: 'used' }
+                    { label: `全部 ${nodeCounts.all}`, value: 'all' },
+                    { label: `可用 ${nodeCounts.healthy}`, value: 'healthy' },
+                    { label: `冷却中 ${nodeCounts.cooling}`, value: 'cooling' },
+                    { label: `已拦截 ${nodeCounts.blocked}`, value: 'blocked' },
+                    { label: `用过 ${nodeCounts.used}`, value: 'used' }
                   ]}
                 />
                 <Input
@@ -478,7 +545,7 @@ export default function EgressPoolPanel() {
                   prefix={<SearchOutlined />}
                   placeholder="搜索节点名 / 服务器"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => changeQuery(event.target.value)}
                   aria-label="搜索节点"
                 />
               </div>
@@ -488,7 +555,15 @@ export default function EgressPoolPanel() {
                 className="egress-node-table"
                 columns={columns}
                 dataSource={visibleNodes}
-                pagination={visibleNodes.length > 20 ? { pageSize: 20, showSizeChanger: false } : false}
+                pagination={(pagination?.total ?? 0) > PAGE_SIZE
+                  ? {
+                      current: safePage,
+                      pageSize: pagination?.pageSize ?? PAGE_SIZE,
+                      total: pagination?.total ?? 0,
+                      showSizeChanger: false,
+                      onChange: setPage
+                    }
+                  : false}
                 rowClassName={(node) => [
                   node.name === activeNode ? 'egress-row-active' : '',
                   node.cooling ? 'egress-row-cooling' : '',

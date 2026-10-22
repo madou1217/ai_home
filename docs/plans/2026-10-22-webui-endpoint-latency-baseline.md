@@ -549,3 +549,19 @@ stall 558 ms  t+2854     stall  213 ms t+5295     stall 287 ms t+9439
 
 不这样做会得出完全相反的结论——同一个接口在不同轮次里会读到 0ms 和 1123ms。
 
+### 7.4 最终验收（2026-10-23）
+
+**58 条只读接口全部 ≤ 300ms，0 条超标。**
+
+补充修掉的最后四条（都是「TTL 到期瞬间同步重算」这一类）：
+
+| 接口 | 问题 | 修法 |
+| --- | --- | --- |
+| `GET /toolkit/tools` | TTL 只有 3 秒，过期即同步重算（本机 228ms、Windows 约 3s） | 改为 stale-while-revalidate |
+| `GET /sessions/archived` | 逐个 provider 读会话文件，p50 1.1s / p95 2.6s | 10 秒 TTL，archive/unarchive 后失效 |
+| `GET /git/summary` | 每次起 git 子进程（40~350ms） | 5 秒 TTL + 后台刷新 |
+| `GET /v0/webui/projects` 等 | 同上一类 | 见 7.1 |
+
+验收口径：每个接口交错采样 9 次（每次前后各取 `/v0/webui/tasks` 基准，
+基准 > 60ms 的采样丢弃），取中位数之差。
+

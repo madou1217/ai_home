@@ -22,6 +22,7 @@ import ProxyDiagnosticsPanel from '@/components/toolkit/ProxyDiagnosticsPanel';
 import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggregator/SubscriptionAggregatorPanel';
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
+import GeoResourcePanel from '@/features/geo-resource/GeoResourcePanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
@@ -102,6 +103,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       icon: <CloudServerOutlined />
     },
     {
+      id: 'geo-resources',
+      label: 'GeoIP 数据',
+      description: '本地归属地库与更新',
+      icon: <GlobalOutlined />
+    },
+    {
       id: 'proxy-diagnostics',
       label: '网络诊断',
       description: '代理状态与诊断',
@@ -144,6 +151,8 @@ function renderPanel(panelId: string) {
       return <EgressPoolPanel />;
     case 'egress-upstreams':
       return <EgressUpstreamPanel />;
+    case 'geo-resources':
+      return <GeoResourcePanel />;
     case 'proxy-diagnostics':
       return <ProxyDiagnosticsPanel />;
     default:

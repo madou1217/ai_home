@@ -147,21 +147,33 @@ test('lanes planned before start are applied when the core becomes ready', async
 });
 
 test('probe listener: lookups are serialized and routed via AIH-PROBE', async () => {
+  // 位置查询分两段（2026-10-22）：① 经节点拿出口 IP（出网，走 AIH-PROBE 串行化）；
+  // ② IP → 归属地（本地 mmdb 库，不出网）。所以这里 mock 的 proxyFetch 只需要回一个 IP。
   const seen = [];
   const { runtime, puts } = buildRuntime({
     proxyFetch: async (proxyUrl, url) => {
       seen.push({ proxyUrl, url, probe: puts.filter((put) => /AIH-PROBE$/.test(put.url)).pop().body.name });
-      return { ok: true, status: 200, text: async () => JSON.stringify({ ip: '1.2.3.4', country: 'HK', region: 'Hong Kong', city: 'Hong Kong', org: 'AS9304 HKBN' }) };
+      // 第一个端点（ipify，JSON 形状）就成功 —— 不成功的响应会让实现继续试下一个端点，
+      // 那是多端点故障转移的正常行为，但这里要验的是「经 AIH-PROBE 串行化」，不是端点回退。
+      return { ok: true, status: 200, text: async () => JSON.stringify({ ip: '1.2.3.4' }) };
+    },
+    // 注入本地库替身：真实 mmdb 文件不该出现在单测依赖里（这台机器有没有文件因机器而异）。
+    geoChain: {
+      lookup: (ip) => ({ ok: true, geo: { ip, country: 'HK', region: 'Hong Kong', city: 'Hong Kong', asn: 'AS9304' }, providers: ['fake-city'], attempts: [] })
     }
   });
   await runtime.start();
   const [first, second] = await Promise.all([runtime.lookupNodeGeo('node-0'), runtime.lookupNodeGeo('node-1')]);
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
+  // 串行化：两次查询各自经自己节点的 AIH-PROBE 入口，没有交叉。
   assert.deepEqual(seen.map((entry) => entry.probe), ['node-0', 'node-1']);
   assert.ok(seen.every((entry) => entry.proxyUrl === 'http://127.0.0.1:17902'));
   assert.equal(runtime.health.geoOf('node-0').country, 'HK');
   assert.equal(runtime.health.geoOf('node-0').asn, 'AS9304');
+  // 记下了出口 IP 与数据来源（本地库），便于诊断。
+  assert.equal(runtime.health.geoOf('node-0').ip, '1.2.3.4');
+  assert.match(runtime.health.geoOf('node-0').source, /^local:/);
   const cached = await runtime.lookupNodeGeo('node-0');
   assert.equal(cached.cached, true);
   runtime.stop();

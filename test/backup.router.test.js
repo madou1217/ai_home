@@ -782,7 +782,7 @@ test('runBackupCommand treats bare `aih backup` as help and exits 0', async () =
   assert.match(logs[0], /AIH Backup/);
 });
 
-test('runBackupCommand rejects an unknown `aih backup` subcommand with usage and exit 1', async () => {
+test('runBackupCommand rejects an unknown `aih backup` subcommand with a notice, usage and exit 0', async () => {
   const logs = [];
   let exitCode = null;
   const handled = await runBackupCommand('backup', ['backup', 'bogus'], {
@@ -790,8 +790,10 @@ test('runBackupCommand rejects an unknown `aih backup` subcommand with usage and
     processImpl: { exit: (code) => { exitCode = code; } }
   });
   assert.equal(handled, true);
-  assert.equal(exitCode, 1);
-  assert.match(logs[0], /AIH Backup/);
+  assert.equal(exitCode, 0);
+  assert.equal(logs.length, 2);
+  assert.match(logs[0], /未识别的子命令 'bogus'/);
+  assert.match(logs[1], /AIH Backup/);
 });
 
 test('runBackupCommand still ignores unrelated root commands', async () => {

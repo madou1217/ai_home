@@ -68,6 +68,7 @@ test('createRootCommandContexts builds all root command contexts', () => {
     askYesNo: () => true,
     showCliUsage: () => {},
     showLsHelp: () => {},
+    showHelp: () => {},
     listProfiles: () => {},
     showCodexPolicy: () => {},
     setCodexPolicy: () => {},
@@ -90,6 +91,7 @@ test('createRootCommandContexts builds all root command contexts', () => {
   assert.equal(contexts.serverEntryContext.spawnSync, deps.spawnSync);
   assert.equal(contexts.serverEntryContext.aiHomeDir, '/tmp/aih');
   assert.equal(typeof contexts.aiCliContext, 'object');
+  assert.equal(contexts.aiCliContext.showHelp, deps.showHelp);
   assert.equal(typeof contexts.nodeContext, 'object');
   assert.equal(typeof contexts.globalSessionContext, 'object');
   assert.equal(contexts.aiCliContext.HOST_HOME_DIR, '/tmp');
@@ -228,6 +230,7 @@ test('createRootDispatchWiring composes contexts and router deps in one call', (
     askYesNo: () => true,
     showCliUsage: () => {},
     showLsHelp: () => {},
+    showHelp: () => {},
     listProfiles: () => {},
     showCodexPolicy: () => {},
     setCodexPolicy: () => {},

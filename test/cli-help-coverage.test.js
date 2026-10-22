@@ -61,9 +61,23 @@ test('aih backup without a subcommand prints usage and exits 0', async () => {
   assert.match(output, /AIH Backup/i);
 });
 
-test('aih backup with an unknown subcommand prints usage and exits 1', async () => {
+test('aih backup with an unknown subcommand prints a notice plus usage and exits 0', async () => {
   const { code, stdout, stderr } = await runCli(['backup', 'bogus']);
   const output = `${stdout}${stderr}`;
-  assert.equal(code, 1);
+  assert.equal(code, 0);
+  assert.match(output, /未识别的子命令 'bogus'/);
   assert.match(output, /AIH Backup/i);
+});
+
+test('an unknown root command prints a notice plus the root help and exits 0', async () => {
+  for (const argv of [['foo'], ['123'], ['99999999']]) {
+    const { code, stdout, stderr } = await runCli(argv);
+    const output = `${stdout}${stderr}`;
+    assert.equal(code, 0, `aih ${argv.join(' ')} must exit 0\n${output}`);
+    assert.match(output, new RegExp(`未识别的命令 '${argv[0]}'`), `aih ${argv.join(' ')} must name the rejected token`);
+    // 根帮助的特征行，证明展示的是根用法而不是空输出
+    assert.match(output, /AI Home \(aih\)/);
+    assert.match(output, /Multi-account sandbox manager/);
+    assert.match(output, /aih server \[action\]/);
+  }
 });

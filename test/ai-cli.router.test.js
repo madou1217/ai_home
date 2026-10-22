@@ -149,6 +149,33 @@ test('`aih opencode <accountRef>` 拒绝没有账号钉选能力的跨 Provider 
   assert.match(errors.join('\n'), /does not support cross-provider/);
 });
 
+test('an unknown root command prints the root help and exits 0', () => {
+  const exits = [];
+  const helpCalls = [];
+  runAiCliCommandRouter('foo', ['foo'], {
+    processImpl: { exit: (code) => exits.push(code) },
+    showHelp: () => helpCalls.push(true)
+  });
+  assert.deepEqual(exits, [0]);
+  assert.equal(helpCalls.length, 1);
+});
+
+test('an unknown root command still fails loudly when showHelp is unwired', () => {
+  const exits = [];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (line) => errors.push(String(line));
+  try {
+    runAiCliCommandRouter('foo', ['foo'], {
+      processImpl: { exit: (code) => exits.push(code) }
+    });
+  } finally {
+    console.error = originalError;
+  }
+  assert.deepEqual(exits, [1]);
+  assert.match(errors.join('\n'), /Unknown tool 'foo'/);
+});
+
 test('`aih codex` without explicit action uses built-in AIH server profile', () => {
   const runCalls = [];
   const exits = [];

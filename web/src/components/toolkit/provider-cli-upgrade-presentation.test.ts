@@ -270,3 +270,17 @@ test('卡片不再单列「升级结论」，只在需要人介入时给原因',
     assert.match(source, /upgrade\??\.attention\s*&&\s*upgrade\??\.reasonText/);
   }
 });
+
+// 同理：「即时刷新已启用」是每张卡都一样的常态，挂个标签只是噪音。
+// 只有「待启用」是一个还没做、且点一下就能做好的动作，才值得提示。
+test('即时刷新只在待启用时提示，已启用不占位', async () => {
+  const fs = await import('node:fs');
+  const card = fs.readFileSync(new URL('./ManagedAppCard.tsx', import.meta.url), 'utf8');
+  const mobile = fs.readFileSync(new URL('../../mobile/pages/toolkit/AppsPanel.tsx', import.meta.url), 'utf8');
+
+  for (const source of [card, mobile]) {
+    assert.doesNotMatch(source, /即时刷新已启用/);
+    // 待启用分支必须同时要求「已安装、支持 hook、且未启用」，否则未安装的卡片也会挂标签。
+    assert.match(source, /hookSupported\s*&&\s*!app\.hookInstalled/);
+  }
+});

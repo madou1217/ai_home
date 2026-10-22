@@ -430,12 +430,11 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
     { key: 'version', label: '当前版本', value: getAppCurrentVersion(app), tone: app.installed ? undefined : 'muted' as const },
     ...(app.installed ? [{ key: 'path', label: '程序路径', value: app.cliPath || '未探测到' }] : []),
     ...(hasExistingAppConfig(app) ? [{ key: 'config', label: '配置', value: `${app.configName} 已存在` }] : []),
-    ...(app.installed && app.hookSupported ? [{
+    // 与桌面卡片同一套取舍：「已启用」是常态，不占一行；只有待启用才值得说。
+    ...(app.installed && app.hookSupported && !app.hookInstalled ? [{
       key: 'hook',
       label: '即时刷新',
-      value: app.hookInstalled
-        ? <StatusText tone="info">已启用</StatusText>
-        : <StatusText tone="warn">待启用</StatusText>
+      value: <StatusText tone="warn">待启用</StatusText>
     }] : []),
     // 升级账本的结论与桌面卡片同一份数据、同一套文案。
     ...(upgrade ? [

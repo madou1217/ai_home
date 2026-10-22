@@ -120,6 +120,11 @@ export default function ManagedAppCard({
   const upgradeBadge = upgrade?.attention ? (
     <Tag color={UPGRADE_TAG_COLORS[upgrade.statusTone]}>{upgrade.statusLabel}</Tag>
   ) : null;
+  // 「已启用」是常态，每张卡都挂一个一切正常的标签只是噪音；只有待启用时
+  // 才需要提示——那是一个还没做、且点一下就能做好的动作。
+  const hookBadge = app.installed && app.hookSupported && !app.hookInstalled ? (
+    <Tag color="warning">即时刷新待启用</Tag>
+  ) : null;
 
   return (
     <ManagedResourceCard
@@ -128,11 +133,7 @@ export default function ManagedAppCard({
       installed={app.installed}
       icon={<ManagedAppIcon app={app} />}
       badges={<>
-        {app.installed && app.hookSupported ? (
-          <Tag color={app.hookInstalled ? 'blue' : 'warning'}>
-            {app.hookInstalled ? '即时刷新已启用' : '即时刷新待启用'}
-          </Tag>
-        ) : null}
+        {hookBadge}
         {upgradeBadge}
       </>}
       details={details}

@@ -234,3 +234,40 @@ test('整轮跑干净后清掉上一轮的错误', async () => {
   await scheduler.runNow();
   assert.equal(scheduler.getState().lastError, '');
 });
+
+// 界面要靠 applyingProvider 把「升级中」的转圈精确挂到那一张卡片上：整轮的 cycling
+// 只能说明「有东西在跑」，说不了是谁。一轮里逐个串行，所以它最多指向一个 provider。
+test('applyingProvider 在装的那一刻指向该 provider，装完清空', async () => {
+  const seen = [];
+  let schedulerRef = null;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const scheduler = createProviderCliUpgradeScheduler({
+    ...fakeTimers(),
+    ...ledgerStore(),
+    deps: {},
+    providers: ['codex', 'claude'],
+    runCycle: async (provider, current) => {
+      // 进到 cycle 内部时读一次：此刻正是「正在装这个 provider」。
+      seen.push({ provider, applying: schedulerRef.getState().applyingProvider });
+      if (provider === 'codex') await gate;
+      return { ledger: current, state: 'healthy', reason: 'up_to_date' };
+    }
+  });
+  schedulerRef = scheduler;
+
+  assert.equal(scheduler.getState().applyingProvider, '');
+  const run = scheduler.runNow('test');
+  // 让 codex 那一轮进到 gate，claude 还没轮到。
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(scheduler.getState().applyingProvider, 'codex');
+
+  release();
+  await run;
+
+  assert.deepEqual(seen, [
+    { provider: 'codex', applying: 'codex' },
+    { provider: 'claude', applying: 'claude' }
+  ]);
+  assert.equal(scheduler.getState().applyingProvider, '');
+});

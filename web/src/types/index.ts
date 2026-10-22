@@ -1836,6 +1836,8 @@ export interface ProviderCliUpgradeRecord {
 export interface ProviderCliUpgradeSchedulerState {
   running?: boolean;
   cycling?: boolean;
+  /** 此刻正在装新版本的 provider（逐个串行，最多一个）；空串 = 没在装。 */
+  applyingProvider?: string;
   enabled?: boolean;
   applyEnabled?: boolean;
   intervalMs?: number;

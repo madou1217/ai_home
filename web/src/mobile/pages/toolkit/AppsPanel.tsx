@@ -232,12 +232,12 @@ export default function AppsPanel() {
   };
 
   /**
-   * 列表行上的升级结论只在「有新版」或「需要人管」时出现；
-   * 「已是最新」「待首轮检查」这类常态不该挤进每一条行。
+   * 列表行上的升级结论只在「需要人管」时出现；
+   * 有新版交给详情页的更新按钮黄点，「已是最新」「待首轮检查」这类常态不挤进行里。
    */
   const upgradeSideStatus = (app: ManagedAppItem) => {
     const upgrade = upgradeFor(app);
-    if (!upgrade || !(upgrade.attention || upgrade.hasUpdate)) return null;
+    if (!upgrade || !upgrade.attention || !upgrade.statusLabel) return null;
     return <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText>;
   };
 
@@ -337,6 +337,7 @@ export default function AppsPanel() {
           busyAction={busyActionFor(detailApp)}
           checking={Boolean(checkingUpdates[detailApp.id])}
           hasUpdate={Boolean(upgradeFor(detailApp)?.hasUpdate)}
+          applying={Boolean(upgradeFor(detailApp)?.applying)}
           onOpen={() => setLaunchId(detailApp.id)}
           onInstall={() => void runAppAction(detailApp, 'install')}
           onUpdate={() => void checkAppUpdate(detailApp)}
@@ -436,9 +437,12 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
       label: '即时刷新',
       value: <StatusText tone="warn">待启用</StatusText>
     }] : []),
-    // 升级账本的结论与桌面卡片同一份数据、同一套文案。
+    // 升级账本的结论与桌面卡片同一份数据、同一套文案。有新版时 statusLabel 为空
+    // （那件事由更新按钮上的黄点表达），这一行同样不占位。
     ...(upgrade ? [
-      { key: 'upgrade', label: '自动升级', value: <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText> },
+      ...(upgrade.statusLabel
+        ? [{ key: 'upgrade', label: '自动升级', value: <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText> }]
+        : []),
       ...(upgrade.attention && upgrade.reasonText
         ? [{ key: 'upgradeReason', label: '原因', value: upgrade.reasonText, mono: false }]
         : []),
@@ -495,13 +499,15 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
   );
 }
 
-function AppSheetFooter({ app, busy, busyAction, checking, hasUpdate, onOpen, onInstall, onUpdate, onUninstall }: {
+function AppSheetFooter({ app, busy, busyAction, checking, hasUpdate, applying, onOpen, onInstall, onUpdate, onUninstall }: {
   app: ManagedAppItem;
   busy: boolean;
   busyAction?: string;
   checking: boolean;
   /** 自动升级账本里有可跟进的新版：更新按钮图标挂黄点。 */
   hasUpdate?: boolean;
+  /** 调度器正在装这个 provider：按钮转圈取代黄点。 */
+  applying?: boolean;
   onOpen: () => void;
   onInstall: () => void;
   onUpdate: () => void;
@@ -521,10 +527,10 @@ function AppSheetFooter({ app, busy, busyAction, checking, hasUpdate, onOpen, on
       ) : null}
       <ActionButton
         icon={<ReloadOutlined />}
-        label="更新"
-        dot={Boolean(hasUpdate) && !checking && !busy}
-        loading={checking || busyAction === 'update'}
-        disabled={busy || checking || app.canUpdate === false}
+        label={applying ? '升级中' : '更新'}
+        dot={Boolean(hasUpdate) && !applying && !checking && !busy}
+        loading={applying || checking || busyAction === 'update'}
+        disabled={busy || checking || applying || app.canUpdate === false}
         onClick={onUpdate}
       />
       <ActionButton

@@ -58,7 +58,8 @@ export function useProviderCliUpgrade() {
   const mode = useMemo(() => getUpgradeModeSummary(data?.scheduler || null, data?.global), [data]);
   // 应用卡片按 provider 查同一份账本：一个 provider 只有一条结论，界面上也只该出现一次。
   const byProvider = useMemo<Record<string, ManagedAppUpgradeView>>(() => getManagedAppUpgradeViews(data), [data]);
-  const updatable = rows.filter((row) => row.statusLabel === '有新版' || row.statusLabel === '待升级').length;
+  // 有新版不再写标签（改由更新图标上的黄点表达），所以按 hasUpdate 统计而不是按文案。
+  const updatable = rows.filter((row) => row.hasUpdate).length;
   const attention = rows.filter((row) => row.attention).length;
   const installed = rows.filter((row) => row.installed).length;
 

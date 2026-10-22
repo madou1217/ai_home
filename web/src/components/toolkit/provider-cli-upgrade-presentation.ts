@@ -31,6 +31,8 @@ export interface ProviderCliUpgradeRowPresentation {
    * 否则「有新版」会把「已经停在那儿等人工」的坏消息盖掉。
    */
   hasUpdate: boolean;
+  /** 调度器此刻正在给这个 provider 装新版本（卡片上更新图标转圈）。 */
+  applying: boolean;
 }
 
 const CHANNEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -169,7 +171,8 @@ export function getProviderCliUpgradeRow(
     lastCheckText: formatUpgradeTimestamp(record.lastCheckAt, now),
     installed: true,
     canClearBroken: false,
-    hasUpdate: false
+    hasUpdate: false,
+    applying: Boolean(scheduler && scheduler.applyingProvider === record.provider)
   };
 
   if (record.enabled === false) {
@@ -223,13 +226,12 @@ export function getProviderCliUpgradeRow(
     return { ...base, statusLabel: '版本未知', statusTone: 'warning', reasonText: '探测不到当前安装的版本', attention: false };
   }
   if (record.updateAvailable) {
+    // 有新版不再写标签：界面上由更新图标右上角的黄点表达，装的过程中换成转圈。
+    // statusLabel 留空是刻意的 —— 调用方据此不渲染这一行。
     return {
       ...base,
       hasUpdate: true,
-      // 渠道钉不了版本就永远不会自动装，不能说「待升级」（重启后还没跑过 tick 时 reason 为空，以渠道能力为准）。
-      statusLabel: scheduler && scheduler.applyEnabled && record.pinnable !== false && reason !== 'channel_not_pinnable'
-        ? '待升级'
-        : '有新版',
+      statusLabel: '',
       statusTone: 'warning',
       attention: false
     };
@@ -263,6 +265,8 @@ export interface ManagedAppUpgradeView {
   attention: boolean;
   canClearBroken: boolean;
   hasUpdate: boolean;
+  /** 调度器正在给这个 provider 装新版本。 */
+  applying: boolean;
   knownGoodVersion: string;
   blockedVersions: string[];
 }
@@ -288,6 +292,7 @@ export function getManagedAppUpgradeView(
     attention: row.attention,
     canClearBroken: row.canClearBroken,
     hasUpdate: row.hasUpdate,
+    applying: row.applying,
     knownGoodVersion: String(record.knownGoodVersion || '').trim(),
     blockedVersions: Array.isArray(record.blockedVersions) ? record.blockedVersions.map(String) : []
   };

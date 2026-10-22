@@ -80,16 +80,20 @@ test('从没查过时是「待首轮检查」而不是「已是最新」', () =>
   assert.equal(row.attention, false);
 });
 
-test('有新版时按是否自动应用给不同措辞', () => {
+// 有新版不再写标签：界面上由更新图标右上角的黄点表达。statusLabel 为空是刻意的，
+// 卡片据此不渲染那一行——「待升级」不是状态也不是动作，读者看完不知道该做什么。
+test('有新版时不产生状态文案，只标记 hasUpdate', () => {
   const base = record({ installedVersion: '0.153.4', latestVersion: '0.154.0', updateAvailable: true, lastTickReason: 'apply_disabled' });
-  assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).statusLabel, '有新版');
-  assert.equal(getProviderCliUpgradeRow(base, AUTO_APPLY, NOW).statusLabel, '待升级');
+  for (const scheduler of [CHECK_ONLY, AUTO_APPLY]) {
+    const row = getProviderCliUpgradeRow(base, scheduler, NOW);
+    assert.equal(row.statusLabel, '');
+    assert.equal(row.hasUpdate, true);
+  }
   assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).versionText, '0.153.4 → 0.154.0');
   assert.equal(getProviderCliUpgradeRow(base, CHECK_ONLY, NOW).reasonText, '仅检查，未安装');
+  // 渠道钉不了版本也一样：反正不写标签。
   const unpinnable = { ...base, lastTickReason: 'channel_not_pinnable' };
-  assert.equal(getProviderCliUpgradeRow(unpinnable, AUTO_APPLY, NOW).statusLabel, '有新版');
-  // 重启后 tick 结论为空，仍按渠道能力判断。
-  assert.equal(getProviderCliUpgradeRow({ ...base, lastTickReason: '', pinnable: false }, AUTO_APPLY, NOW).statusLabel, '有新版');
+  assert.equal(getProviderCliUpgradeRow(unpinnable, AUTO_APPLY, NOW).statusLabel, '');
   assert.equal(getUpgradeReasonLabel('busy'), '该 CLI 正在使用，本轮推迟');
 });
 
@@ -213,6 +217,20 @@ test('只有真的要跟进的新版才算 hasUpdate', () => {
   assert.equal(getProviderCliUpgradeRow(record({ installedVersion: '1.0.0', updateAvailable: false }), CHECK_ONLY, NOW).hasUpdate, false);
 });
 
+// 调度器一轮里逐个 provider 串行，applyingProvider 指到谁，就只该那一张卡片转圈。
+test('applying 只落在调度器正在装的那一个 provider 上', () => {
+  const applying = { ...AUTO_APPLY, applyingProvider: 'codex' };
+  const codex = record({ installedVersion: '1.0.0', latestVersion: '1.1.0', updateAvailable: true });
+  const gemini = record({ provider: 'gemini', installedVersion: '2.0.0', latestVersion: '2.1.0', updateAvailable: true });
+
+  assert.equal(getProviderCliUpgradeRow(codex, applying, NOW).applying, true);
+  assert.equal(getProviderCliUpgradeRow(gemini, applying, NOW).applying, false);
+  // 没在装的时候谁都不转圈；scheduler 缺席（独立进程/未接线）也不该编造。
+  assert.equal(getProviderCliUpgradeRow(codex, AUTO_APPLY, NOW).applying, false);
+  assert.equal(getProviderCliUpgradeRow(codex, null, NOW).applying, false);
+  assert.equal(getProviderCliUpgradeRow(codex, { ...AUTO_APPLY, applyingProvider: '' }, NOW).applying, false);
+});
+
 // 应用卡片与账本是两份数据，只能按 provider 对齐；账本里没有就必须是 null。
 test('应用卡片按 provider 取到同一份升级结论', () => {
   const status = {
@@ -235,7 +253,7 @@ test('应用卡片按 provider 取到同一份升级结论', () => {
   const codex = getManagedAppUpgradeView(status, 'codex', NOW);
   assert.ok(codex);
   assert.equal(codex.provider, 'codex');
-  assert.equal(codex.statusLabel, '待升级');
+  assert.equal(codex.statusLabel, '');
   assert.equal(codex.hasUpdate, true);
   assert.equal(codex.channelLabel, 'npm 全局');
   assert.equal(codex.knownGoodVersion, '0.152.0');

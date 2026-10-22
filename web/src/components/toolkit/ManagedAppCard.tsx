@@ -93,7 +93,10 @@ export default function ManagedAppCard({
       value: `${app.configName} 已存在`
     }] : []),
     // 自动升级的账本结论挂回这条 provider 卡片：同一个 provider 只在一个地方给版本结论。
-    ...(upgrade ? [{
+    // 有新版时 statusLabel 为空（那件事由更新图标上的黄点表达），整行不占位：
+    // 「待升级」既不是状态也不是动作，读者看完也不知道该做什么。
+    // 正在装的时候由图标转圈表达，同样不需要一行字。
+    ...(upgrade && upgrade.statusLabel ? [{
       label: '自动升级',
       value: upgrade.statusLabel,
       tooltip: `${upgrade.channelLabel} · 最近检查 ${upgrade.lastCheckText}`,
@@ -117,7 +120,7 @@ export default function ManagedAppCard({
   ];
 
   // 有新版只交给更新图标上的黄点，不再额外贴标签：同一件事说两遍反而像在催。
-  const upgradeBadge = upgrade?.attention ? (
+  const upgradeBadge = upgrade?.attention && upgrade.statusLabel ? (
     <Tag color={UPGRADE_TAG_COLORS[upgrade.statusTone]}>{upgrade.statusLabel}</Tag>
   ) : null;
   // 「已启用」是常态，每张卡都挂一个一切正常的标签只是噪音；只有待启用时
@@ -164,15 +167,22 @@ export default function ManagedAppCard({
           ) : null}
           {app.installed ? (
             <>
-              <Badge dot={Boolean(upgrade?.hasUpdate)} color={UPGRADE_DOT_COLOR} offset={[-2, 2]}>
+              {/* 自动升级在装这个 provider 时，转圈就是进度本身；有新版则挂黄点。 */}
+              <Badge
+                dot={Boolean(upgrade?.hasUpdate) && !upgrade?.applying}
+                color={UPGRADE_DOT_COLOR}
+                offset={[-2, 2]}
+              >
                 <InstallLifecycleAction
                   action="update"
                   size="small"
                   iconOnly
-                  tooltip={upgrade?.hasUpdate ? `更新 ${app.name}：有新版 ${upgrade.versionText}` : `更新 ${app.name}`}
+                  tooltip={upgrade?.applying
+                    ? `正在升级 ${app.name}…`
+                    : upgrade?.hasUpdate ? `更新 ${app.name}：有新版 ${upgrade.versionText}` : `更新 ${app.name}`}
                   aria-label={`更新 ${app.name}`}
-                  loading={checkingUpdate || busyAction === 'update'}
-                  disabled={Boolean(busyAction) || checkingUpdate || app.canUpdate === false}
+                  loading={Boolean(upgrade?.applying) || checkingUpdate || busyAction === 'update'}
+                  disabled={Boolean(busyAction) || checkingUpdate || Boolean(upgrade?.applying) || app.canUpdate === false}
                   onClick={() => onCheckUpdate(app)}
                 />
               </Badge>

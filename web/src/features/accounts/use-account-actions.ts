@@ -989,7 +989,8 @@ export function useAccountActions({
     if (!source || !selectedProvider) return;
     setAddLocalImportSubmitting(true);
     try {
-      await accountsAPI.importLocalAuthSource(selectedProvider, source.id);
+      const aliasPoolParticipates = form.getFieldValue('aliasPoolParticipates') !== false;
+      await accountsAPI.importLocalAuthSource(selectedProvider, source.id, { aliasPoolParticipates });
       message.success('已从本机登录态建账号');
       closeAddAccountModal();
       await requestAccountsSnapshotUpdate({ failureMessage: '刷新账号列表失败' });
@@ -1258,7 +1259,9 @@ export function useAccountActions({
     const requestPayload = {
       provider: values.provider as Provider,
       authMode: values.authMode as AccountAuthMode,
-      config: configPayload
+      config: configPayload,
+      // 缺省＝参与；只有用户显式关掉才传 false（服务端建账号后立即落账号级偏好）。
+      aliasPoolParticipates: values.aliasPoolParticipates !== false
     };
     try {
       const result = await accountsAPI.add(requestPayload);

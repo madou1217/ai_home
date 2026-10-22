@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
+import { Button, Form, Input, Modal, Radio, Select, Space, Switch, Tag } from 'antd';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import { InlineNote } from '@/components/ui/InlineNote';
 import {
@@ -206,6 +206,18 @@ export function AddAccountModal({
             )}
           </>
         ) : null}
+
+        {/* 别名选号偏好：默认参与；关掉后这个新账号不会被全局别名的自动选号拉进候选池，
+            但仍可被账号位显式启动或手动选择。服务端在建账号时立即落库。 */}
+        <Form.Item
+          name="aliasPoolParticipates"
+          label="进入别名自动选号池"
+          valuePropName="checked"
+          initialValue
+          extra="关闭后仍可用账号位显式启动或手动选择；创建后也可在账号菜单「别名选号」里改。"
+        >
+          <Switch checkedChildren="参与" unCheckedChildren="不参与" />
+        </Form.Item>
 
         {selectedAuthMode === 'vertex-ai' ? (
           <>

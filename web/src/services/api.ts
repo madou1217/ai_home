@@ -513,11 +513,12 @@ export const accountsAPI = {
   // （它们的本机登录态就是完整投影）。需要身份核验的来源会返回 auth_source_requires_login_job。
   importLocalAuthSource: async (
     provider: string,
-    sourceId: string
+    sourceId: string,
+    options?: { aliasPoolParticipates?: boolean }
   ): Promise<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }> => {
     const response = await api.post<{ ok: boolean; accountRef?: string; cliAccountId?: number; sourceId?: string }>(
       '/webui/accounts/local-import',
-      { provider, sourceId }
+      { provider, sourceId, ...(options || {}) }
     );
     return response.data;
   },

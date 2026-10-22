@@ -733,6 +733,11 @@ export interface AddAccountRequest {
   authMode: AccountAuthMode;
   config?: AccountConfig;
   replaceExisting?: boolean;
+  /**
+   * 新增账号时是否进入全局别名的自动选号池。缺省（或不传）＝参与；
+   * 显式 false 时服务端在建账号后立刻写入账号级偏好（账号级开关仍可再改）。
+   */
+  aliasPoolParticipates?: boolean;
 }
 
 export interface AddAccountResponse {

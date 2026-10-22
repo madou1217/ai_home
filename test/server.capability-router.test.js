@@ -11,6 +11,7 @@ const AGY_REF_1 = 'acct_33333333333333333333';
 const OPENCODE_REF_1 = 'acct_44444444444444444444';
 const OPENCODE_REF_2 = 'acct_55555555555555555555';
 const CLINE_REF_1 = 'acct_66666666666666666666';
+const WORKBUDDY_REF_1 = 'acct_77777777777777777777';
 
 test('capability router routes aliased claude requests to codex account pool', () => {
   const result = resolveGatewayProvider({
@@ -618,4 +619,58 @@ test('capability router keeps protocol-affinity routing for requests that were n
 
   assert.equal(result.provider, 'opencode');
   assert.equal(result.source, 'provider_protocol_route');
+});
+
+// 2026-10-22 真机：gemini-3.5-flash 被前缀推断成 agy（gemini 家族），但上游已把它下架、
+// agy 目录只剩 -low / -lite / -extra-low 变体；agy 池有账号 → 家族短路直接返回 →
+// 产出误导性的「no available agy account can serve model gemini-3.5-flash」，
+// 而真正持有该裸名的 workbuddy 账号从未被考虑。
+// 强证据（账号目录真的探测到该模型）必须优先于弱证据（按名字猜家族）。
+test('family inference yields to a provider that actually probed the model', () => {
+  const result = resolveGatewayProvider({
+    options: { provider: 'auto' },
+    state: {
+      accounts: {
+        // agy 有账号，但目录里只有档位变体，没有裸名。
+        agy: [{ id: 'a1', accountRef: AGY_REF_1, provider: 'agy', accessToken: 'agy-token',
+          availableModels: ['gemini-3.5-flash-low', 'gemini-3.5-flash-lite'] }],
+        // workbuddy 真的探测到了裸名。
+        workbuddy: [{ id: 'w1', accountRef: WORKBUDDY_REF_1, provider: 'workbuddy', accessToken: 'wb-token',
+          availableModels: ['gemini-3.5-flash'] }]
+      },
+      webUiModelsCache: {
+        byProvider: { agy: ['gemini-3.5-flash-low'], workbuddy: ['gemini-3.5-flash'] }
+      }
+    },
+    requestJson: { model: 'gemini-3.5-flash' },
+    headers: {},
+    clientProtocol: 'openai_responses'
+  });
+
+  assert.equal(result.provider, 'workbuddy');
+  assert.equal(result.source, 'model_capability');
+});
+
+test('family inference still wins when the family catalog knows the model', () => {
+  const result = resolveGatewayProvider({
+    options: { provider: 'auto' },
+    state: {
+      accounts: {
+        agy: [{ id: 'a1', accountRef: AGY_REF_1, provider: 'agy', accessToken: 'agy-token',
+          availableModels: ['gemini-3.5-flash-low'] }],
+        // 中转账号也宣称支持同一个档位变体 —— 不该被它抢走。
+        claude: [{ id: 'cl1', accountRef: CLAUDE_REF_1, provider: 'claude', accessToken: 'claude-token',
+          availableModels: ['gemini-3.5-flash-low'] }]
+      },
+      webUiModelsCache: {
+        byProvider: { agy: ['gemini-3.5-flash-low'], claude: ['gemini-3.5-flash-low'] }
+      }
+    },
+    requestJson: { model: 'gemini-3.5-flash-low' },
+    headers: {},
+    clientProtocol: 'openai_responses'
+  });
+
+  assert.equal(result.provider, 'agy');
+  assert.equal(result.source, 'model_family');
 });

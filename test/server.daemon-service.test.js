@@ -1435,6 +1435,7 @@ test('daemon service start can skip foreground ready wait and return immediately
   const logFile = path.join(aiHomeDir, 'server.log');
 
   let readyProbeCount = 0;
+  let probeSettled = false;
   const daemon = createServerDaemonService({
     fs,
     path,
@@ -1447,6 +1448,7 @@ test('daemon service start can skip foreground ready wait and return immediately
     fetchImpl: async () => {
       readyProbeCount += 1;
       await new Promise((resolve) => setTimeout(resolve, 250));
+      probeSettled = true;
       return { ok: true };
     },
     processObj: {
@@ -1468,16 +1470,18 @@ test('daemon service start can skip foreground ready wait and return immediately
     entryFilePath: '/repo/lib/cli/app.js'
   });
 
-  const startedAt = Date.now();
   const result = await daemon.start([], { waitForReady: false });
-  const elapsedMs = Date.now() - startedAt;
 
   assert.equal(result.alreadyRunning, false);
   assert.equal(result.started, true);
   assert.equal(result.readyCheck, 'background');
   assert.equal(result.state, 'starting');
   assert.equal(result.pid, 45678);
-  assert.ok(elapsedMs < 120, `expected non-blocking start, got ${elapsedMs}ms`);
+  // 「没有阻塞等待就绪」的直接证据：fetchImpl 里有 250ms 的慢探针，返回时它必然还没结束。
+  // 原先断言 elapsedMs < 120 是同一件事的墙钟近似——全量并行跑时机器负载高会假红，
+  // 而它想证明的从来不是「机器快」，而是「没等探针」。
+  assert.equal(readyProbeCount <= 1 && !probeSettled, true,
+    'start must return before the slow ready probe settles');
 
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.ok(readyProbeCount >= 0);

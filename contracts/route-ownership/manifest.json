@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "manifest_id": "ai-home-route-ownership-2026-08-24",
-  "baseline_date": "2026-10-16",
+  "baseline_date": "2026-10-22",
   "source_revision": {
-    "git_commit": "f3939f9dce5ba389fa711c8c1434a1526a9bc777",
+    "git_commit": "67dc389bcf7d68d8c89233962dc43b70c0217215",
     "collection_script": "scripts/collect-gateway-routes.js",
     "source_mode": "read_only_source_scan",
-    "note": "按最新 origin/main 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动；Go 已实现全部 7 条数据面 capability route，production owner 仍为 Node。WebUI 管理面增量均已被 node.webui_and_session_surface 的 /v0/webui/* capability surface 覆盖，Go 侧不参与：2026-10-14 的 GET,POST /v0/webui/accounts/detect（lib/server/web-ui-router.js）；2026-10-16 的 GET,POST /v0/webui/accounts/local-import（lib/server/web-ui-router.js，本机来源直连导入）与 GET /v0/webui/toolkit/edge 及其作用域守卫（lib/server/webui-edge-proxy-routes.js，本地入口转发 nginx/caddy 管理面）。Go 侧后续增量来自账号自定义上游错误规则投影的管理接口 PUT,GET /v1/management/upstream-error-rules（internal/transport/http/upstreamrulesapi），属控制面管理面、不是数据面 capability route，production owner 仍为 Node。"
+    "note": "按最新 origin/main 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动；Go 已实现全部 7 条数据面 capability route，production owner 仍为 Node。本次（2026-10-22）基线刷新：Node endpoint 344 / route 355（较 10-16 的 338/349 增加 6 条 endpoint），Go endpoint 32 / route 33，数据面候选 14 条全部有 Go 实现（missing_in_go 为空）。WebUI 管理面增量均已被 node.webui_and_session_surface 的 /v0/webui/* capability surface 覆盖，Go 侧不参与；Go 侧控制面管理接口（如 PUT,GET /v1/management/upstream-error-rules）不是数据面 capability route，production owner 仍为 Node。"
   },
   "migration_state_machine": [
     "node_owned",
@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 349,
-      "endpoint_records": 338,
-      "unique_endpoint_patterns": 254,
-      "unique_http_endpoint_patterns": 249,
+      "route_records": 356,
+      "endpoint_records": 345,
+      "unique_endpoint_patterns": 259,
+      "unique_http_endpoint_patterns": 254,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 11,
       "fallback_records": 0

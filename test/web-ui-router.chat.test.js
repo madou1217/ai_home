@@ -959,7 +959,9 @@ test('web ui chat retries gemini native session on permission denied without lea
       }
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 轮询等待重试链路走完，不要用固定 sleep：全量并行跑 1 万项时机器负载高，
+    // 30ms 经常不够，表现为「本文件单独跑全绿、全量跑偶发红」的假失败。
+    await waitForCondition(() => attempts.length >= 2 && res.writableEnded, 5000);
 
     assert.equal(handled, true);
     assert.deepEqual(attempts, [ACCOUNT_REFS.geminiOne, ACCOUNT_REFS.geminiTwo]);

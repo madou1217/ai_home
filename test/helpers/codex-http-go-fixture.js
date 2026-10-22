@@ -31,7 +31,11 @@ async function startGoGateway(context, upstreamBase, model, options = {}) {
   child.stderr.on('data', data => { stderr = (stderr + data).slice(-4000); });
   const base = await new Promise((resolve, reject) => {
     let output = '';
-    const timer = setTimeout(() => reject(new Error('Go fixture startup timed out: ' + stderr)), 10000);
+    // 启动预算按机器负载放宽：全量并行跑（1 万项）时 spawn Go 二进制、建 HOME、
+    // 初始化目录常常超过 10s，表现为「本文件单独跑全绿、全量随机某个 Go fixture 用例超时」。
+    // 超时只该拦住真正卡死的启动，不该拦住繁忙机器上启动得慢的进程。
+    const startupBudgetMs = Number(process.env.AIH_TEST_GO_FIXTURE_TIMEOUT_MS) || 60000;
+    const timer = setTimeout(() => reject(new Error('Go fixture startup timed out: ' + stderr)), startupBudgetMs);
     child.once('error', error => { clearTimeout(timer); reject(error); });
     child.once('exit', code => { clearTimeout(timer); reject(new Error(`Go fixture exited ${code}: ${stderr}`)); });
     child.stdout.on('data', data => {

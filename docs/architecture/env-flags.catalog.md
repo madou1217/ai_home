@@ -1,6 +1,6 @@
 # 环境变量目录（全部 `AIH_*`，含含义）
 
-> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-17T12:17:14.215Z
+> 生成命令：`npm run env:inventory -- --write`　生成时间：2026-10-22T04:18:15.928Z
 > 共 **52** 个：公开 10 个（见 [env-flags.md](./env-flags.md)），其余为内部变量（见 [env-flags.internal.md](./env-flags.internal.md)）。
 > 含义的唯一来源是 `lib/config/env-catalog.js`；漏写或多写都会被 `test/env-inventory.test.js` 拦下。
 
@@ -8,8 +8,8 @@
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_HOST_HOME` | ✅ | 35 | 宿主真实家目录（公开；沙箱会话里必须钉住） |
-| `AIH_HOME_DIR` | ✅ | 11 | 数据根目录（公开；默认 ~/.ai_home） |
+| `AIH_HOST_HOME` | ✅ | 36 | 宿主真实家目录（公开；沙箱会话里必须钉住） |
+| `AIH_HOME_DIR` | ✅ | 14 | 数据根目录（公开；默认 ~/.ai_home） |
 | `AIH_CLI_PATH` | — | 5 | aih 可执行文件路径覆盖（自举/远程拉起时定位自身） |
 | `AIH_RUNTIME_TOOLS_DIR` | — | 1 | 运行时工具目录（内置/下载的二进制） |
 
@@ -17,8 +17,8 @@
 
 | 变量 | 公开 | 读取 | 含义 |
 | --- | --- | --- | --- |
-| `AIH_SERVER_PROXY_URL` | ✅ | 18 | 上游请求 HTTP(S) 代理（公开；config 优先） |
-| `AIH_SERVER_NO_PROXY` | ✅ | 17 | 不走代理的主机列表（公开；config 优先） |
+| `AIH_SERVER_PROXY_URL` | ✅ | 19 | 上游请求 HTTP(S) 代理（公开；config 优先） |
+| `AIH_SERVER_NO_PROXY` | ✅ | 18 | 不走代理的主机列表（公开；config 优先） |
 | `AIH_SERVER_PORT` | ✅ | 6 | 网关监听端口（公开；config 优先） |
 | `AIH_SERVER_HOST` | ✅ | 4 | 网关监听地址（公开；config 优先） |
 | `AIH_SSH_CLIP_SHIM_CONTEXT` | — | 0 | SSH 剪贴板 shim 路径（bin/邮箱根 两项合一） |
@@ -71,7 +71,7 @@
 | `AIH_AGY_USAGE` | — | 0 | agy 用量上下文（baseUrl/quotaBaseUrls/clientVersion） |
 | `AIH_CLI_FEATURES` | — | 0 | CLI 功能开关（psmux 提示/skill 注入/Windows 镜像） |
 | `AIH_CODEX_APP_SERVER_PASSTHROUGH` | — | 0 | codex app-server 透传标记 |
-| `AIH_CODEX_FLAGS` | — | 0 | codex 启动/恢复开关（authPreflight/autoSkipRepoCheck/disableRemoteResume 三项合一） |
+| `AIH_CODEX_FLAGS` | — | 0 | codex 启动/恢复开关（authPreflight/autoSkipRepoCheck/disableRemoteResume/routeOwner 等合并） |
 | `AIH_EDGE_CONTEXT` | — | 0 | 边缘代理配置位置（caddyfile/nginxConfDir/frpcConfig 三项合一） |
 | `AIH_GO_CORE_BIND` | — | 0 | Go Core 子进程监听地址与端口（host/port 两项合一） |
 | `AIH_IMAGE_API` | — | 0 | ⚠ 上游图像 API 选择标记（账号 env 透传；待确认取值） |

@@ -55,13 +55,16 @@ test('codex provider args translate the cross-provider route owner into an HTTP 
     OPENAI_API_KEY: 'secret-key',
     OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1',
     AIH_CODEX_GATEWAY_ACCOUNT_REF: 'acct_0123456789abcdef0123',
-    AIH_CODEX_ROUTE_OWNER: 'node'
+    AIH_CODEX_FLAGS: 'routeOwner=node'
   });
   assert.ok(args.includes('model_providers.aih_server.http_headers.X-Account-Ref=acct_0123456789abcdef0123'));
   assert.ok(args.includes('model_providers.aih_server.http_headers.X-Aih-Route-Owner=node'));
   // 只有精确的 `node` 才注入；其它值（含空串）不得产生该头。
   assert.equal(buildCodexProviderArgs({
-    OPENAI_API_KEY: 'secret-key', AIH_CODEX_ROUTE_OWNER: 'go'
+    OPENAI_API_KEY: 'secret-key', AIH_CODEX_FLAGS: 'routeOwner=go'
+  }).some((arg) => arg.includes('X-Aih-Route-Owner')), false);
+  assert.equal(buildCodexProviderArgs({
+    OPENAI_API_KEY: 'secret-key', AIH_CODEX_FLAGS: 'managedLaunch=1'
   }).some((arg) => arg.includes('X-Aih-Route-Owner')), false);
 });
 

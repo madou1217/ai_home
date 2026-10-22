@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-17T12:17:14.215Z",
+  "generatedAt": "2026-10-22T04:18:15.928Z",
   "total": 52,
   "publicEnvLimit": 10,
   "public": [
@@ -44,7 +44,7 @@
     {
       "name": "AIH_HOST_HOME",
       "category": "path",
-      "reads": 35,
+      "reads": 36,
       "literals": 3,
       "files": [
         "lib/account/zcode-client-metadata.js",
@@ -61,6 +61,7 @@
         "lib/server/native-session-chat-launch.js",
         "lib/server/native-session-chat.js",
         "lib/server/opencode-serve-runner.js",
+        "lib/server/webui-account-activity-routes.js",
         "lib/sessions/session-reader-utils.js",
         "scripts/fabric-m3-daemon-preflight.js",
         "scripts/fabric-real-broker-relay-smoke.js",
@@ -98,9 +99,10 @@
     {
       "name": "AIH_SERVER_PROXY_URL",
       "category": "network",
-      "reads": 18,
+      "reads": 19,
       "literals": 2,
       "files": [
+        "lib/account/activity-claim/http.js",
         "lib/cli/services/usage/codex-auth-invalid-reconciler.js",
         "lib/cli/services/usage/snapshot.js",
         "lib/cli/services/usage/usage-snapshot-codex.js",
@@ -117,9 +119,10 @@
     {
       "name": "AIH_SERVER_NO_PROXY",
       "category": "network",
-      "reads": 17,
+      "reads": 18,
       "literals": 2,
       "files": [
+        "lib/account/activity-claim/http.js",
         "lib/cli/services/usage/snapshot.js",
         "lib/cli/services/usage/usage-snapshot-codex.js",
         "lib/config/public-env.js",
@@ -135,7 +138,7 @@
     {
       "name": "AIH_HOME_DIR",
       "category": "path",
-      "reads": 11,
+      "reads": 14,
       "literals": 4,
       "files": [
         "lib/cli/services/account/codex-rekey-reference-policy.js",
@@ -145,6 +148,9 @@
         "lib/runtime/aih-home.js",
         "lib/server/codex-desktop-account.js",
         "lib/server/token-refresh-suppression-store.js",
+        "lib/server/webui-account-activity-routes.js",
+        "lib/server/webui-alias-pool-routes.js",
+        "lib/server/webui-translation-routes.js",
         "lib/server/webui-window-activation-routes.js",
         "lib/server/webui-zcode-egress-routes.js",
         "scripts/collect-env-flags.js",

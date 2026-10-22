@@ -74,7 +74,9 @@ test('Codex account relay preserves explicit account selection and keeps OAuth/l
     // 跨 Provider 形态额外声明 Node 承接；同 Provider relay 不带该头。
     const crossEnv = codexRelayProfile.buildCrossProviderEnv(
       { OPENAI_API_KEY: 'gateway', OPENAI_BASE_URL: 'http://127.0.0.1:9527/v1' }, accountRef);
-    assert.equal(crossEnv.AIH_CODEX_ROUTE_OWNER, 'node');
+    // 路由归属走已合并的 AIH_CODEX_FLAGS 上下文，不再单开一个 AIH_*（env 纪律：只减不增）。
+    assert.equal(crossEnv.AIH_CODEX_ROUTE_OWNER, undefined);
+    assert.equal(crossEnv.AIH_CODEX_FLAGS, 'routeOwner=node');
     const crossLaunch = codexRelayProfile.buildRelayLaunch({ args: ['exec', 'hello'], accountEnv: crossEnv });
     assert.ok(crossLaunch.args.includes('model_providers.aih_server.http_headers.X-Aih-Route-Owner=node'));
     assert.equal(launch.args.some(arg => arg.includes('X-Aih-Route-Owner')), false);

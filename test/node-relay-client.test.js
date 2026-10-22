@@ -396,11 +396,14 @@ test('runNodeRelayConnect applies relay stream window before forwarding next chu
       'cache-control': 'no-cache'
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    // 时序必须留足余量：本用例断言「第二块被窗口挡住」，而它在拿到第一块后只等 60ms
+    // 就检查有没有收到第二块。此前这里 120ms 才写第一块、80ms 后就 end()，全量并行跑时
+    // 事件循环被占住会让两个时间点错位，断言随机翻转（本文件单独跑恒绿、全量偶发红）。
     setTimeout(() => {
       res.write(`data: ${JSON.stringify({ ok: true, type: 'events', result: { cursor: 1, events: [{ type: 'assistant_text', text: 'one' }] } })}\n\n`);
       res.write(`data: ${JSON.stringify({ ok: true, type: 'events', result: { cursor: 2, events: [{ type: 'assistant_text', text: 'two' }] } })}\n\n`);
-      setTimeout(() => res.end(), 80);
-    }, 120);
+      setTimeout(() => res.end(), 400);
+    }, 20);
   });
 
   const relayRun = runNodeRelayConnect([

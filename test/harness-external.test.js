@@ -402,6 +402,53 @@ test('prepareExternalHarness resolves aliases before pinning and prepares Pi', a
   assert.deepEqual(prepared.args, ['--provider', 'aih', '--model', 'gpt-test']);
 });
 
+test('prepareExternalHarness defaults to a model the pinned account can serve', async (t) => {
+  const aiHomeDir = tempDir(t, 'aih-ext-default-');
+  const hostHomeDir = tempDir(t, 'aih-ext-default-host-');
+
+  const prepared = await prepareExternalHarness({
+    harness: 'pi',
+    fs,
+    aiHomeDir,
+    hostHomeDir,
+    accountRef: 'acct_pi',
+    provider: 'codex',
+    // 网关目录第一条是池级入口（钉选后路由不到）；该账号自己的目录只有 claude-test。
+    catalog: {
+      models: [{ id: 'auto', metadata: { name: 'Auto' } }, ...CATALOG.models]
+    },
+    readModelsCache: () => ({ byAccount: { acct_pi: ['claude-test'] } }),
+    readSettings: () => ({ accountModels: [] }),
+    gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' }
+  });
+
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.requestedModel, '');
+  assert.equal(prepared.model, 'claude-test');
+  assert.deepEqual(prepared.args, ['--provider', 'aih', '--model', 'claude-test']);
+});
+
+test('prepareExternalHarness keeps the pool default when no account catalogue is known', async (t) => {
+  const aiHomeDir = tempDir(t, 'aih-ext-nodefault-');
+  const hostHomeDir = tempDir(t, 'aih-ext-nodefault-host-');
+
+  const prepared = await prepareExternalHarness({
+    harness: 'pi',
+    fs,
+    aiHomeDir,
+    hostHomeDir,
+    accountRef: 'acct_pi',
+    provider: 'codex',
+    catalog: CATALOG,
+    readModelsCache: () => ({ byAccount: {} }),
+    readSettings: () => ({ accountModels: [] }),
+    gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' }
+  });
+
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.model, CATALOG.models[0].id);
+});
+
 test('prepareExternalHarness fails closed for unknown harnesses', async () => {
   const result = await prepareExternalHarness({ harness: 'missing' });
   assert.equal(result.ok, false);

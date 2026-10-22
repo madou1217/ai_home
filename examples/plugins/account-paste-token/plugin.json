@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "protocolVersion": 1,
+  "pluginId": "aih.demo.account.paste-token",
+  "version": "0.1.0",
+  "engines": {
+    "aih": ">=1.0.0",
+    "node": ">=22"
+  },
+  "runtime": "node",
+  "entry": "index.mjs",
+  "targets": [
+    "any"
+  ],
+  "contributes": [
+    {
+      "id": "aih.demo.account.paste-token.source",
+      "capability": "account.source",
+      "version": 1
+    },
+    {
+      "id": "aih.demo.account.paste-token.login",
+      "capability": "account.login",
+      "version": 1
+    },
+    {
+      "id": "aih.demo.account.paste-token.refresh",
+      "capability": "account.refresh",
+      "version": 1
+    },
+    {
+      "id": "aih.demo.account.paste-token.materialize",
+      "capability": "account.materialize",
+      "version": 1
+    }
+  ],
+  "permissions": {
+    "network": [],
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "secrets": [],
+    "environment": []
+  }
+}

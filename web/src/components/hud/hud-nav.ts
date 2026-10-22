@@ -15,6 +15,7 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/toolkit': { no: '06', code: 'TOOLKIT' },
   '/studio': { no: '07', code: 'STUDIO' },
   '/studio/image': { code: 'IMAGE' },
+  '/studio/translation': { code: 'TRANSLATE' },
   '/fabric': { no: '08', code: 'SERVER' },
   '/fabric/servers': { code: 'NODES' },
   '/fabric/ssh-hosts': { code: 'SSH' },

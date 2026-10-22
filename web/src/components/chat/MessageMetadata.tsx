@@ -14,6 +14,7 @@ interface Props {
   role: ChatMessage['role'];
   timestamp?: ChatMessage['timestamp'];
   model?: ChatMessage['model'];
+  effort?: ChatMessage['effort'];
   source?: ChatMessage['source'];
   metrics?: ChatMessage['metrics'];
   copyText: string;
@@ -33,6 +34,7 @@ export default function MessageMetadata({
   role,
   timestamp,
   model,
+  effort,
   source,
   metrics,
   copyText,
@@ -43,6 +45,8 @@ export default function MessageMetadata({
 }: Props) {
   const timeLabel = formatMessageTime(timestamp);
   const modelLabel = String(model || '').trim();
+  // 推理强度只显示本轮真正生效的档位；没有档位（或未记录）就留空，不显示占位符。
+  const effortLabel = String(effort || '').trim();
   const isCodexMobile = source === 'codex-mobile';
   const durationLabel = progress ? '' : formatDurationLabel(metrics?.durationMs);
   const ttftLabel = progress ? '' : formatTtftLabel(metrics?.ttftMs);
@@ -59,6 +63,12 @@ export default function MessageMetadata({
         {timeLabel && modelLabel ? <span aria-hidden="true">·</span> : null}
         {modelLabel ? (
           <span className={styles.messageModel} title={modelLabel}>{modelLabel}</span>
+        ) : null}
+        {effortLabel ? (
+          <>
+            {timeLabel || modelLabel ? <span aria-hidden="true">·</span> : null}
+            <span className={styles.messageEffort} title={`推理强度 ${effortLabel}`}>{effortLabel}</span>
+          </>
         ) : null}
         {(timeLabel || modelLabel) && isCodexMobile ? <span aria-hidden="true">·</span> : null}
         {isCodexMobile ? (

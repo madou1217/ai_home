@@ -168,6 +168,8 @@ interface AuthProgressModalProps {
   successClosing: boolean;
   callbackUrl: string;
   callbackSubmitting: boolean;
+  pluginLoginSubmitValue: string;
+  pluginLoginSubmitSubmitting: boolean;
   cliInstallSubmitting: boolean;
   canSubmitCallback: boolean;
   authSources: ProviderAuthMethodSources | null;
@@ -178,6 +180,8 @@ interface AuthProgressModalProps {
   onClose: () => void;
   onCallbackUrlChange: (url: string) => void;
   onSubmitBrowserCallback: () => void;
+  onPluginLoginSubmitValueChange: (value: string) => void;
+  onSubmitPluginLogin: () => void;
   onLocalImport: (sourceId: string) => void;
   onInstallLocalClient: (kind?: 'desktop' | 'cli') => void;
   onScanHostAccounts: () => void;
@@ -193,6 +197,8 @@ export function AuthProgressModal({
   successClosing: authSuccessClosing,
   callbackUrl: authCallbackUrl,
   callbackSubmitting: authCallbackSubmitting,
+  pluginLoginSubmitValue,
+  pluginLoginSubmitSubmitting,
   cliInstallSubmitting,
   canSubmitCallback,
   authSources,
@@ -203,6 +209,8 @@ export function AuthProgressModal({
   onClose,
   onCallbackUrlChange,
   onSubmitBrowserCallback,
+  onPluginLoginSubmitValueChange,
+  onSubmitPluginLogin,
   onLocalImport,
   onInstallLocalClient,
   onScanHostAccounts,
@@ -346,6 +354,30 @@ export function AuthProgressModal({
                   <span className="aih-kv-value">{Math.round(addJob.pollIntervalMs / 1000)} 秒</span>
                 </div>
               ) : null}
+            </Card>
+          )}
+
+          {addJob.pluginLogin && addJob.canSubmit && addJob.status === 'running' && (
+            <Card size="small" title="提交授权结果" className="hud-panel hud-panel--sm aih-overlay-section">
+              <Space direction="vertical" style={{ width: '100%' }} size="small">
+                <Text type="secondary" className="aih-overlay-hint">
+                  {addJob.submitPlaceholder || '粘贴授权码、回调地址或凭据，由插件完成登录。'}
+                </Text>
+                <Input.TextArea
+                  value={pluginLoginSubmitValue}
+                  onChange={(event) => onPluginLoginSubmitValueChange(event.target.value)}
+                  placeholder={addJob.submitPlaceholder || '粘贴授权结果'}
+                  autoSize={{ minRows: 2, maxRows: 5 }}
+                />
+                <Button
+                  type="primary"
+                  loading={pluginLoginSubmitSubmitting}
+                  disabled={!pluginLoginSubmitValue.trim()}
+                  onClick={onSubmitPluginLogin}
+                >
+                  {addJob.submitLabel || '提交'}
+                </Button>
+              </Space>
             </Card>
           )}
 

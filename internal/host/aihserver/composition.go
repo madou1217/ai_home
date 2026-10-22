@@ -680,6 +680,7 @@ func newHandlers(
 			upstreamDecodeErrors:      upstreamDecodeErrors,
 			clock:                     time.Now,
 			requestRewriter:           visionGuard,
+			effortLadders:             modelModalities,
 			codexVersions:             codexVersions,
 			codexRejections:           newCodexRejectionObserver(errorLog),
 			agyModelWires:             agyModelWires,

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 func writeCatalogFixture(t *testing.T, models map[string]catalogModel, shaOverride string) string {
@@ -99,6 +101,51 @@ func assertValues(t *testing.T, got []string, want []string) {
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("values = %#v, want %#v", got, want)
+		}
+	}
+}
+
+// TestEffortLadderOrdersByCanonicalStrength 锁住阶梯顺序：对齐按位置配对，顺序错了映射就错。
+func TestEffortLadderOrdersByCanonicalStrength(t *testing.T) {
+	t.Parallel()
+	got, err := effortLadder([]catalogReasoningItem{
+		{Type: "toggle"},
+		{Type: "effort", Values: []string{"high", "low", "max"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValues(t, got, []string{"low", "high", "max"})
+}
+
+// TestEffortLadderRejectsUnknownTiers 失败关闭：目录出现未登记档位时不能静默丢弃——
+// 那会把「模型支持该档位」变成「模型不支持」。
+func TestEffortLadderRejectsUnknownTiers(t *testing.T) {
+	t.Parallel()
+	if _, err := effortLadder([]catalogReasoningItem{{Type: "effort", Values: []string{"turbo"}}}); err == nil {
+		t.Fatal("effortLadder() error = nil for an unknown tier")
+	}
+}
+
+func TestEffortLadderAbsentWhenNoEffortOption(t *testing.T) {
+	t.Parallel()
+	got, err := effortLadder([]catalogReasoningItem{{Type: "toggle"}, {Type: "budget_tokens"}})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("effortLadder() = %v, %v; want empty", got, err)
+	}
+}
+
+// TestCanonicalOrderMatchesInferencePackage 守住生成器里重复声明的那份 Canonical 全序
+// 与 core/inference 一致（生成器不能 import core，因此只能靠测试兜住）。
+func TestCanonicalOrderMatchesInferencePackage(t *testing.T) {
+	t.Parallel()
+	canonical := inference.CanonicalEffortOrder()
+	if len(canonical) != len(canonicalEffortOrder) {
+		t.Fatalf("canonical order length = %d, generator has %d", len(canonical), len(canonicalEffortOrder))
+	}
+	for index, effort := range canonical {
+		if string(effort) != canonicalEffortOrder[index] {
+			t.Fatalf("canonical order[%d] = %q, generator has %q", index, effort, canonicalEffortOrder[index])
 		}
 	}
 }

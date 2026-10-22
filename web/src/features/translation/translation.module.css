@@ -1,0 +1,362 @@
+/* AI 翻译工作台：HUD 面板式双栏（原文 / 流式译文）。
+ *
+ * 视觉只借用既有 token 与形态语言：等宽字体只用于元信息（字符数、模型、代号），
+ * 正文用正文字体与行高保证长文本可读。分隔只出现在面板标题/页脚的功能边界，
+ * 不用左侧色条或整块告警卡片表达状态。 */
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.toolbarGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.languageSelect {
+  width: 160px;
+}
+
+.modelSelect {
+  width: 300px;
+  max-width: 100%;
+}
+
+.savedHint {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.floatingToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.floatingToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted-strong);
+  cursor: default;
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 460px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.paneHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-muted);
+}
+
+.paneTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted-strong);
+}
+
+.paneMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 选择器带 .pane 前缀：覆盖 antd 的 .ant-input 内边距/边框（同级单类选择器会随注入顺序失效）。 */
+.pane .sourceInput {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.75;
+  resize: none;
+}
+
+.pane .sourceInput:focus,
+.pane .sourceInput:hover {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.output {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.outputText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-text);
+}
+
+.outputPlaceholder {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-accent);
+  animation: translation-cursor 1s step-end infinite;
+}
+
+@keyframes translation-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.paneFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.paneFooterLeft,
+.paneFooterRight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.paneHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.detectChip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.limitWarning {
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.inlineNotice {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  font-size: 12px;
+  color: var(--color-muted-strong);
+}
+
+.inlineError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.errorCode {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-danger);
+  opacity: 0.75;
+}
+
+/* 翻译记录：本机便利记录列表。行内展示原文/译文，等宽元信息标注语言与模型，
+ * 只保留图标化的复制/删除，不引入大块提示或左侧色条。 */
+
+.history {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.historyHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.historyItem {
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.historyItemHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.historyRoute {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-muted-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyMeta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.historyBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 6px;
+}
+
+@media (max-width: 1100px) {
+  .historyBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.historySource,
+.historyResult {
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.historySource {
+  color: var(--color-muted-strong);
+}
+
+.historyResult {
+  color: var(--color-text);
+}
+
+.historyEmpty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--color-muted);
+}

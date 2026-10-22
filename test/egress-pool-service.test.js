@@ -311,5 +311,27 @@ test('nodes that share one exit collapse into a single pool entry', () => {
     })
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.nodes.map((node) => node.name), ['剩余流量：50 GB', 'US01-alt-port', 'US01-other-credential']);
+  // 同一出口只留一个，且留下的是**真实节点名**：提示行排到后面再按出口去重，
+  // 否则用户看到的是「剩余流量：50 GB」而不是能认出是哪台机器的 US01（2026-10-21）。
+  assert.deepEqual(result.nodes.map((node) => node.name), ['US01', 'US01-alt-port', 'US01-other-credential']);
+});
+
+test('informational and unroutable entries never enter the pool', () => {
+  const result = readProxyPoolNodes({
+    aiHomeDir: '/home/.ai_home',
+    getProxyNodeStore: () => ({
+      listNodes: () => [
+        // 机场把流量 / 到期写成假节点（真节点库实测 785 个里混着这些）。
+        { protocol: 'vless', server: 'us01.example.com', port: 443, uuid: 'u-1', name: '64.48 GB | 300 GB' },
+        { protocol: 'vless', server: 'us02.example.com', port: 443, uuid: 'u-2', name: 'Traffic Reset: 25 Days Left' },
+        { protocol: 'vless', server: 'us03.example.com', port: 443, uuid: 'u-3', name: 'Expire Date: 2027-03-14' },
+        // 占位提示指向文档保留网段 / 全零地址，永远连不上。
+        { protocol: 'vmess', server: '192.0.2.1', port: 1, uuid: 'u-4', name: '📢暂不支持clash和singbox' },
+        { protocol: 'vmess', server: '0.0.0.0', port: 443, uuid: 'u-5', name: '一元机场.asia' },
+        { protocol: 'vless', server: 'uk01.example.com', port: 443, uuid: 'u-6', name: 'UK-London1' }
+      ]
+    })
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.nodes.map((node) => node.name), ['UK-London1']);
 });

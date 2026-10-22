@@ -433,3 +433,21 @@ test('prewarm events outside the replay window are pruned when a new one is writ
   `).get(sessionId).count;
   assert.equal(timelineRows, PREWARM_RETAINED_EVENT_WINDOW, 'timeline rows untouched');
 });
+
+// 历史导入只带「原生记录里有什么」——它不知道本轮跑的是哪个模型、哪一档强度。
+// 因此导入覆盖时必须继承实时行上的 model/effort/metrics，否则用户看到的消息
+// 会丢掉刚跑完那轮的真实元信息（2026-10-22 实测：effort 就是这样被抹掉的）。
+test('a history re-import keeps the live message model and effort', (t) => {
+  const { store, imports, sessionId } = createFixture(t);
+  const live = event('live-turn', 'native-item-1', 'same content');
+  live.payload.item.detail = { role: 'assistant', model: 'gpt-6-luna', effort: 'max' };
+  store.appendEvent(sessionId, { ...live, eventId: undefined });
+
+  const imported = event('history-after-turn', 'native-item-1', 'same content');
+  imported.payload.item.updatedAt = 2;
+  imports.import(sessionId, [imported]);
+
+  const [item] = store.getSnapshot(sessionId).timeline;
+  assert.equal(item.detail.model, 'gpt-6-luna');
+  assert.equal(item.detail.effort, 'max');
+});

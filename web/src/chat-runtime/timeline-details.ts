@@ -16,7 +16,14 @@ export interface TimelineMessageMetrics {
 }
 
 export interface TimelineDetailByKind {
-  message: { role: 'user' | 'assistant' | 'system'; phase?: string; model?: string; metrics?: TimelineMessageMetrics };
+  message: {
+    role: 'user' | 'assistant' | 'system';
+    phase?: string;
+    model?: string;
+    /** 本轮实际生效的推理强度；provider 没有档位概念时缺省（界面留空）。 */
+    effort?: string;
+    metrics?: TimelineMessageMetrics;
+  };
   reasoning: { summary?: string; segments?: readonly string[]; metrics?: TimelineMessageMetrics };
   plan: {
     state?: 'draft' | 'proposed' | 'accepted' | 'rejected';

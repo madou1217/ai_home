@@ -21,7 +21,7 @@
   ],
   "permissions": {
     "network": [
-      "https://openai.com"
+      "https://developers.openai.com"
     ],
     "filesystem": {
       "read": [],

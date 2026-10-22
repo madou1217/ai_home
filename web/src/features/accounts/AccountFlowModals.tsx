@@ -134,6 +134,10 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onClose={authProgress.onClose}
         onCallbackUrlChange={authProgress.onCallbackUrlChange}
         onSubmitBrowserCallback={authProgress.onSubmitBrowserCallback}
+        pluginLoginSubmitValue={authProgress.pluginLoginSubmitValue}
+        pluginLoginSubmitSubmitting={authProgress.pluginLoginSubmitSubmitting}
+        onPluginLoginSubmitValueChange={authProgress.onPluginLoginSubmitValueChange}
+        onSubmitPluginLogin={authProgress.onSubmitPluginLogin}
         onLocalImport={authProgress.onLocalImport}
         onInstallLocalClient={authProgress.onInstallLocalClient}
         onScanHostAccounts={authProgress.onScanHostAccounts}

@@ -291,6 +291,73 @@ test('login completes through the host registration chain without persisting cre
   assert.doesNotMatch(persisted, /WXYZ-1234/);
 });
 
+test('login submit accepts pasted credentials without persisting them', async (t) => {
+  const aiHomeDir = tempHome(t);
+  const submitted = [];
+  const loginContribution = {
+    id: 'demo.account.login',
+    capability: 'account.login',
+    instanceId: 'inst-1',
+    handler: (input) => {
+      if (input.kind === 'start') {
+        return {
+          status: 'waiting_user',
+          jobId: 'plugin-job-submit',
+          canSubmit: true,
+          submitLabel: '提交令牌',
+          submitPlaceholder: '粘贴 API Key',
+          expiresAt: Date.now() + 60_000
+        };
+      }
+      if (input.kind === 'poll') return { status: 'waiting_user' };
+      if (input.kind === 'submit') {
+        submitted.push(input.value);
+        return {
+          status: 'success',
+          files: [{
+            path: '.local/share/opencode/auth.json',
+            content: openCodeProjection()
+          }]
+        };
+      }
+      return { status: 'cancelled' };
+    }
+  };
+  const runtime = fakeRuntime([accountSourceContribution({ directImport: false }), loginContribution]);
+  const service = createAccountPluginService({ runtime, aiHomeDir });
+  const started = await service.startLogin({ provider: 'opencode', sourceId: 'demo-source' });
+  assert.equal(started.canSubmit, true);
+  assert.equal(started.submitLabel, '提交令牌');
+  assert.equal(started.submitPlaceholder, '粘贴 API Key');
+
+  const finished = await service.submitLogin(started.jobId, { value: 'plugin-test-key' });
+  assert.equal(finished.status, 'success');
+  assert.match(finished.accountRef, /^acct_/);
+  assert.deepEqual(submitted, ['plugin-test-key']);
+
+  const jobsFile = path.join(aiHomeDir, 'plugins', 'account-login-jobs.json');
+  const persisted = fs.readFileSync(jobsFile, 'utf8');
+  assert.doesNotMatch(persisted, /plugin-test-key/);
+});
+
+test('login submit rejects tasks whose plugin did not advertise it', async (t) => {
+  const runtime = fakeRuntime([accountSourceContribution({ directImport: false }), {
+    id: 'demo.account.login',
+    capability: 'account.login',
+    instanceId: 'inst-1',
+    handler: (input) => (input.kind === 'start'
+      ? { status: 'waiting_user', jobId: 'device-only', expiresAt: Date.now() + 60_000 }
+      : { status: 'waiting_user' })
+  }]);
+  const service = createAccountPluginService({ runtime, aiHomeDir: tempHome(t) });
+  const started = await service.startLogin({ provider: 'opencode', sourceId: 'demo-source' });
+  assert.equal(started.canSubmit, false);
+  await assert.rejects(
+    () => service.submitLogin(started.jobId, { value: 'secret' }),
+    (error) => error.code === 'account_login_submit_unsupported'
+  );
+});
+
 test('refresh refuses to overwrite a runtime dir another writer changed concurrently', async (t) => {
   const aiHomeDir = tempHome(t);
   const runtimeDir = path.join(aiHomeDir, 'runtime');

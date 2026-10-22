@@ -833,6 +833,10 @@ export interface AccountAddJob {
   /** 该任务由外部账号插件托管：回调/粘贴入口由插件自己轮询，宿主 UI 不提供内置提交。 */
   pluginLogin?: boolean;
   sourceId?: string;
+  /** 插件声明可接受 paste/submit 时的宿主文案；缺省不渲染提交框。 */
+  canSubmit?: boolean;
+  submitLabel?: string;
+  submitPlaceholder?: string;
   logs: string;
   error?: string;
 }
@@ -2751,6 +2755,8 @@ export interface ChatMessage {
   statusText?: string;
   timestamp?: string | number;
   model?: string;
+  /** 本轮实际生效的推理强度；没有档位概念的 provider 缺省（界面留空）。 */
+  effort?: string;
   source?: 'codex-mobile';
   metrics?: ChatMessageMetrics;
 }
@@ -3512,3 +3518,100 @@ export interface ImageStudioRunInput {
 export interface ImageStudioRunResponse extends ImageStudioSessionResponse {
   revisionId: string;
 }
+
+// ---------------------------------------------------------------------------
+// AI 翻译（/translation 页面 + 全局选区悬浮翻译）
+// ---------------------------------------------------------------------------
+
+export interface TranslationLanguage {
+  code: string;
+  label: string;
+  english: string;
+  native: string;
+}
+
+export interface TranslationLanguagesResponse {
+  ok: boolean;
+  languages: TranslationLanguage[];
+  auto: string;
+}
+
+export interface TranslationSettings {
+  /** 'auto' = 自动检测源语言 */
+  source: string;
+  target: string;
+  /** 空串 = 未显式设置，由服务端按模型目录兜底 */
+  model: string;
+  provider: string;
+  updatedAt: number;
+}
+
+export interface TranslationSettingsResponse {
+  ok: boolean;
+  settings: TranslationSettings;
+  autoDetectedModel: string;
+  autoDetectedProvider: string;
+}
+
+export interface TranslationModelOption {
+  id: string;
+  provider: string;
+  providerLabel: string;
+  source: string;
+  origin: string;
+  availableAccountCount: number;
+}
+
+export interface TranslationModelsResponse {
+  ok: boolean;
+  models: TranslationModelOption[];
+  defaultModel: string;
+  defaultProvider: string;
+}
+
+export interface TranslationDetectionResponse {
+  ok: boolean;
+  code: string;
+  label: string;
+  confidence: 'high' | 'medium' | 'low';
+  script: string;
+}
+
+export interface TranslationGlossaryEntry {
+  source: string;
+  target: string;
+}
+
+export interface TranslationStreamRequest {
+  text: string;
+  source?: string;
+  target: string;
+  model?: string;
+  provider?: string;
+  glossary?: TranslationGlossaryEntry[];
+  formality?: 'formal' | 'casual';
+}
+
+export type TranslationStreamEvent =
+  | {
+    type: 'start';
+    from: string;
+    fromLabel: string;
+    detected: string;
+    detectedLabel: string;
+    detectionConfidence: 'high' | 'medium' | 'low';
+    to: string;
+    toLabel: string;
+    model: string;
+    provider: string;
+  }
+  | { type: 'delta'; content: string }
+  | { type: 'done'; text: string; usage: Record<string, unknown> | null; elapsedMs: number }
+  | {
+    type: 'error';
+    code: string;
+    message: string;
+    status: number;
+    partialText: string;
+    elapsedMs: number;
+  };

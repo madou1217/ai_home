@@ -57,7 +57,10 @@ test('Codex native catalog rejects a native default effort outside its supported
   );
 });
 
-test('Codex native catalog accepts supported explicit effort and rejects unsupported effort', async () => {
+// 目录只有 medium/high 时，harness 发来的 max 不再是错误：档位按位置倒排压进目标阶梯
+// （规则见 lib/server/chat-runtime/reasoning-effort-ladder.js，与 Go 侧同构）。
+// 只有**无法定序**的档位才继续失败关闭 —— 绝不猜一个映射。
+test('Codex native catalog aligns an out-of-ladder effort instead of rejecting it', async () => {
   const fixture = createFixture();
   const catalog = new CodexNativeModelCatalog({ client: fixture.client });
 
@@ -65,13 +68,21 @@ test('Codex native catalog accepts supported explicit effort and rejects unsuppo
     model: 'gpt-account-default',
     reasoningEffort: 'high'
   });
+  assert.deepEqual(await catalog.resolveTurnSettings({ reasoningEffort: 'max' }), {
+    model: 'gpt-account-default',
+    reasoningEffort: 'high'
+  });
+  assert.deepEqual(await catalog.resolveTurnSettings({ reasoningEffort: 'minimal' }), {
+    model: 'gpt-account-default',
+    reasoningEffort: 'medium'
+  });
   await assert.rejects(
-    catalog.resolveTurnSettings({ reasoningEffort: 'max' }),
+    catalog.resolveTurnSettings({ reasoningEffort: 'turbo' }),
     (error) => (
       error.code === 'codex_native_reasoning_effort_unsupported'
       && error.statusCode === 422
       && error.details.model === 'gpt-account-default'
-      && error.details.reasoningEffort === 'max'
+      && error.details.reasoningEffort === 'turbo'
       && error.details.supportedReasoningEfforts.join(',') === 'medium,high'
     )
   );

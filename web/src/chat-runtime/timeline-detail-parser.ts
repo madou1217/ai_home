@@ -19,6 +19,7 @@ export function parseMessageDetail(value: unknown): TimelineDetailByKind['messag
     role: choice(source.role, ROLES, 'role'),
     ...optionalText(source, 'phase'),
     ...optionalText(source, 'model'),
+    ...optionalText(source, 'effort'),
     ...(source.metrics === undefined ? {} : { metrics: parseMessageMetrics(source.metrics) }),
   };
 }

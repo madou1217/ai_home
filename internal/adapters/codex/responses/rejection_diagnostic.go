@@ -3,6 +3,7 @@ package responses
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"io"
 	"net/http"
 	"strings"
@@ -29,6 +30,16 @@ type UpstreamRejection struct {
 	Code       string
 	Param      string
 	Message    string
+}
+
+// ObserveEffortLadders 注入目标模型的推理强度档位来源。
+//
+// nil 表示 Go 不承接强度对齐：请求原样透传，档位收敛仍由 projectReasoningEffort 决定。
+func (adapter *Adapter) ObserveEffortLadders(ladders effortalign.LadderReader) {
+	if adapter == nil {
+		return
+	}
+	adapter.aligner = effortalign.New(ladders)
 }
 
 // ObserveRejections 注册上游拒绝观察器；只在组合根装配期调用。

@@ -52,6 +52,7 @@ function TimelineItemView({
             content: item.content || '',
             timestamp: item.updatedAt || item.createdAt,
             model: item.detail.model,
+            effort: item.detail.effort,
             metrics: item.detail.metrics,
           }}
           provider={provider}

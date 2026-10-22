@@ -107,6 +107,14 @@ test('桌面安装参数只来自对应 Provider 安装器', () => {
   assert.deepEqual(claude.resolveDesktopInstallPlans({ platform: 'win32' })[0].args.slice(0, 4), [
     'install', '--id', 'Anthropic.Claude', '--exact'
   ]);
+  // Store 的 ChatGPT 产品 id 是 9PLM9XGG6VKS（PackageFamilyName OpenAI.Codex），
+  // 社区源没有 OpenAI.ChatGPT，必须钉住 msstore 源。
+  const codexWindows = codex.resolveDesktopInstallPlans({ platform: 'win32' })[0];
+  assert.deepEqual(codexWindows.args, [
+    'install', '--id', '9PLM9XGG6VKS', '--exact', '--source', 'msstore',
+    '--accept-package-agreements', '--accept-source-agreements'
+  ]);
+  assert.ok(codexWindows.successExitCodes.includes(2316632107));
   assert.equal(kimi.resolveDesktopInstallPlans({
     platform: 'darwin',
     processObj: { platform: 'darwin', arch: 'arm64', env: {} }
@@ -162,7 +170,10 @@ test('Kimi Desktop Windows 安装器校验官方跳转、Authenticode 与发布�
   assert.match(script, /kimi-img\.moonshot\.cn/);
   assert.match(script, /\/app\/download\/windows\/kimi_/);
   assert.match(script, /Get-AuthenticodeSignature/);
-  assert.match(script, /SignerCertificate\.Subject -notmatch 'Moonshot'/);
+  assert.match(script, /SignerCertificate/);
+  // 官方安装包的证书 Subject 是中文法定名，不含 Moonshot；指纹校验才是语言无关的。
+  assert.match(script, /6DA99CCA99A69947C11F97395A55FD2DC683420D/);
+  assert.match(script, /Moonshot\|月之暗面/);
   assert.match(script, /Start-Process -FilePath \$dest -ArgumentList @\('\/S'\) -PassThru/);
   // 不能等整棵进程树：安装器会拉起应用，-Wait 会一直卡到应用退出。
   assert.doesNotMatch(script, /-Wait/);
@@ -170,6 +181,18 @@ test('Kimi Desktop Windows 安装器校验官方跳转、Authenticode 与发布�
   assert.match(script, /3010/);
   assert.match(script, /管理员权限/);
   assert.match(script, /Remove-Item -Force \$dest/);
+});
+
+test('Windows 官方安装脚本在内存执行，不落临时 .ps1', () => {
+  const codex = getAppInstaller('codex');
+  const [plan] = codex.resolveCliInstallPlans({ platform: 'win32' });
+  const script = plan.args.at(-1);
+  assert.match(script, /Invoke-WebRequest -Uri 'https:\/\/chatgpt\.com\/codex\/install\.ps1'/);
+  assert.match(script, /\[scriptblock\]::Create\(\$text\)/);
+  assert.match(script, /\[System\.Text\.Encoding\]::UTF8\.GetString/);
+  // 火绒会把刚下载的 .ps1 隔离成不可读；脚本不应再落到临时文件。
+  assert.doesNotMatch(script, /Join-Path \$env:TEMP/);
+  assert.doesNotMatch(script, /Get-Command curl\.exe/);
 });
 
 test('安装器公共平台接口使用 macos/windows/linux，兼容 Node 别名输入', () => {
@@ -211,11 +234,18 @@ test('官方安装器优先使用可验证的稳定下载端点，并覆盖 Wind
   assert.ok(agyWindowsCli[1].args.at(-1).includes('https://antigravity.google/cli/install.cmd'));
 
   const claude = getAppInstaller('claude');
-  assert.deepEqual(claude.resolveCliInstallPlans({ platform: 'windows' }).map((plan) => plan.id), [
+  const claudePlans = claude.resolveCliInstallPlans({ platform: 'windows' });
+  assert.deepEqual(claudePlans.map((plan) => plan.id), [
     'claude_windows_official',
     'claude_windows_cmd_official',
     'winget'
   ]);
+  const claudeCmd = claudePlans.find((plan) => plan.id === 'claude_windows_cmd_official');
+  assert.equal(claudeCmd.windowsVerbatimArguments, true);
+  assert.deepEqual(claudeCmd.args.slice(0, 3), ['/d', '/s', '/c']);
+  // cmd 脚本里的 URL 必须保留双引号；libuv 默认的 \" 转义会让 curl 报端口号错误。
+  // 目标文件用字面量 %TEMP%\...（不要 set 变量再 call：展开时机不可靠）。
+  assert.match(claudeCmd.args[3], /^"curl\.exe -fsSL "https:\/\/claude\.ai\/install\.cmd" -o "%TEMP%\\aih-installer-claude_windows_cmd_official\.cmd"/);
 
   const opencode = getAppInstaller('opencode');
   const opencodeWindows = opencode.resolveDesktopInstallPlans({ platform: 'windows' });

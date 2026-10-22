@@ -360,13 +360,16 @@ module.exports = async (input) => {
   if (input.kind === 'start') {
     return { status: 'waiting_user', jobId, verificationUri, userCode, expiresAt };
   }
-  if (input.kind === 'poll') {
-    return { status: 'success', credential: { /* opaque */ } };
+  if (input.kind === 'submit') {
+    // 用户粘贴的授权码 / 回调地址 / token；只在本次调用中存在。
+    return { status: 'success', credential: { token: input.value } };
   }
   return { status: 'cancelled' };
 };
 ```
 
+需要在 UI 显示粘贴框时，`start` 返回 `canSubmit: true` 以及可选的
+`submitLabel` / `submitPlaceholder`；`submit` 的值不写任务文件、不写审计、不回显。
 登录插件**不**决定账号显示名、不写 `app-state.db`、不生成 `accountRef`。插件返回的
 `credential` 由宿主调用 `account.materialize`（或 `source.credential.files`）写成投影
 文件；任务文件只保存公开状态，凭据不落盘。
@@ -394,17 +397,20 @@ module.exports = {
   文件或 credential；投影文件只能是 `runtimeDir` 下的相对路径，禁止 `..`、绝对路径、
   反斜杠和超限内容。
 - `lib/plugins/account/service.js`：来源收集、`directImport`、登录任务（公开状态持久化、
-  轮询、取消、TTL）、`refresh` 的两阶段 `match` → `refresh`、物化写回。
+  轮询、粘贴/回调提交、取消、TTL）、`refresh` 的两阶段 `match` → `refresh`、物化写回。
   `refresh` 在执行前后对 `runtimeDir` 计算内容摘要，发现并发写入时返回
   `account_refresh_conflict`，不覆盖另一条刷新链（Kimi 这类会轮换 refresh_token 的账号）。
 - `lib/plugins/account/auth-sources.js`：把插件来源适配成 `auth-sources` 描述符，
   WebUI 的 `provider-auth-sources` 与 `local-import` 直接复用，不按 provider 名分支。
 - 宿主入口：`POST /v0/webui/accounts/plugin-login/start`、
   `GET /v0/webui/accounts/plugin-login/:jobId`、
+  `POST /v0/webui/accounts/plugin-login/:jobId/submit`、
   `POST /v0/webui/accounts/plugin-login/:jobId/cancel`；
   管理面 `GET/POST /v0/plugins/accounts/{sources,import,refresh,materialize}`。
 - 权限：声明任一 `account.*` 能力时，manifest 必须带 `permissions`；网络只接受
   `https://` 源，文件系统只接受插件私有 `state`，凭据只能走 `secrets` 声明。
+- 可运行样例：`examples/plugins/account-paste-token/` 演示 `source/login/submit/materialize/refresh`；
+  `test/plugin-account-e2e.test.js` 走真实的打包、安装、启用插件宿主、粘贴登录、投影注册、刷新与取消。
 
 
 ### 5.3 模型价格插件
@@ -536,8 +542,8 @@ conflicts: record warnings [{ dimension, chosen, rejected: [...] }]
 **P5 实施落点（2026-10-20）**：
 
 - `lib/plugins/pricing/catalog-sync.js` 收集已启用插件的 `pricing.catalog`，把每个
-  贡献项写成独立来源。插件代次变化立即重采；另有 6 小时低频自动刷新。插件失败只
-  记录 attempt，不改写既有快照。
+  贡献项写成独立来源。插件代次变化立即重采；另有每天一次的低频自动刷新。抓取只发生在
+  这个同步任务里，绝不在 `/v1` 请求路径上联网。插件失败只记录 attempt，不改写既有快照。
 - `lib/usage/pricing/catalog-source-store.js` 是唯一快照门：
   `<aiHome>/pricing/sources/<source>.json`（0600、原子写）。首次采集直接生效；
   后续价格变化写入 `.pending.json` + `reviews.json`，**旧快照继续计费**，人工
@@ -545,13 +551,17 @@ conflicts: record warnings [{ dimension, chosen, rejected: [...] }]
 - `lib/usage/pricing-providers/catalog-layered.js` 把生效快照叠加到 models.dev
   记录上，按维度保留非空值；模型 ID 解析仍由 models.dev provider 负责。
 - 官方样例包：`examples/plugins/pricing-official-{openai,anthropic,google,deepseek}`。
+  它们在同步任务里抓官方页面（OpenAI / Anthropic 用 `.md`，Google / DeepSeek 用
+  HTML + 固定解析器），失败回退内置离线快照并标记 `stale`，不会用旧价冒充新价。
   社区兜底：`lib/usage/pricing/community-sources.js` 固定解析 LiteLLM 与 OpenRouter
   的 JSON（authority=20），同样走复核门，不把刚抓到的数据直接用于计费。
 - 管理面：`GET /v0/plugins/pricing/sources`、`GET /v0/plugins/pricing/reviews`、
   `GET /v0/plugins/pricing/status`、`POST /v0/plugins/pricing/refresh|approve|reject|quote`；
   `aih plugin doctor` 输出来源数、生效报价数、待复核数。
-- `pricing.quote` 是实时/按账号报价的 collect 能力，宿主用同一 `mergePriceQuotes`
-  裁决；`cacheWrite1h` 独立于 `cacheWrite`，缺失保持 `null`，绝不复用 5m 价。
+- `pricing.quote` 是「按请求/按账号查询报价」的 collect 能力，只给确实需要实时
+  查询的来源用；官方页面抓取不走上这条路径，统一放在每日同步任务里。宿主用同一
+  `mergePriceQuotes` 裁决；`cacheWrite1h` 独立于 `cacheWrite`，缺失保持 `null`，
+  绝不复用 5m 价。
 
 
 ### 5.4 模型元数据插件

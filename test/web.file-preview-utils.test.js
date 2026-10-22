@@ -20,7 +20,11 @@ function loadTypeScriptModule(...relativePath) {
     '../../features/capture': {
       ensurePreviewWindowCaptureHost: () => {},
       readCapturePreferences: () => ({}),
-      summarizeRecordingSettings: () => '手动停止'
+      summarizeRecordingSettings: () => '手动停止',
+      // 水印布局只依赖纯函数；测试用空实现避免加载浏览器/CSS 模块。
+      buildPreviewWatermarkMarks: () => [],
+      resolveCaptureWatermark: () => ({ enabled: false, provider: '', model: '' }),
+      resolveWatermarkText: () => ''
     }
   };
   const requireFromPreviewUtils = (request) => {

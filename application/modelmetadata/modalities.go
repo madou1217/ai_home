@@ -4,6 +4,8 @@ package modelmetadata
 import (
 	"errors"
 	"strings"
+
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 var (
@@ -17,6 +19,14 @@ type Reader interface {
 	// LookupOrInferModalities 在快照未命中时按保守家族兜底，供「需要明确判定」的消费方
 	// （模型目录 capability 过滤、vision guard）使用：它们要的是答案，不是「不知道」。
 	LookupOrInferModalities(providerID string, modelID string) (Modalities, bool)
+}
+
+// ReasoningLadderReader 返回模型声明的推理强度档位（升序）。
+//
+// 它刻意不提供「兜底推断」：猜错模态只是多剥或少剥一张图，猜错强度却会把用户明确要求
+// 的 high 静默降档。查不到时返回未命中，由调用方决定是去掉强度意图还是拒绝。
+type ReasoningLadderReader interface {
+	LookupReasoningEfforts(providerID string, modelID string) ([]inference.ReasoningEffort, bool)
 }
 
 // Modalities 是不共享可变切片的输入和输出模态值对象。

@@ -98,6 +98,9 @@ function mapPluginLoginJob(job: PluginAccountLoginJob): AccountAddJob {
     redirectUri: job.redirectUri || '',
     pluginLogin: true,
     sourceId: job.sourceId || '',
+    canSubmit: job.canSubmit === true,
+    submitLabel: job.submitLabel || '',
+    submitPlaceholder: job.submitPlaceholder || '',
     logs: job.message || '',
     error: job.error || ''
   };
@@ -246,6 +249,8 @@ export function useAccountActions({
   const [addPluginLoginSource, setAddPluginLoginSource] = React.useState<ProviderAuthSourceSummary | null>(null);
   const [addPluginLoginSubmitting, setAddPluginLoginSubmitting] = React.useState(false);
   const [pluginLoginJobId, setPluginLoginJobId] = React.useState<string | null>(null);
+  const [pluginLoginSubmitValue, setPluginLoginSubmitValue] = React.useState('');
+  const [pluginLoginSubmitSubmitting, setPluginLoginSubmitSubmitting] = React.useState(false);
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
   const editingClaudeCredentialMode = editingAccount?.provider === 'claude'
     ? getClaudeCredentialMode(editingAccount)
@@ -317,6 +322,8 @@ export function useAccountActions({
     setAuthSubjectLabel('');
     setAuthCallbackUrl('');
     setAuthCallbackSubmitting(false);
+    setPluginLoginSubmitValue('');
+    setPluginLoginSubmitSubmitting(false);
     setAuthProgressVisible(false);
   }, []);
 
@@ -1013,6 +1020,8 @@ export function useAccountActions({
       setAuthSubjectLabel(source.description || '插件登录');
       setAuthCallbackUrl('');
       setAuthCallbackSubmitting(false);
+      setPluginLoginSubmitValue('');
+      setPluginLoginSubmitSubmitting(false);
       // 插件任务没有内置回调/粘贴入口，来源卡片也不应由内置链路承接。
       setAuthLocalSources(null);
       setAddJob(job);
@@ -1025,6 +1034,47 @@ export function useAccountActions({
       message.error(error?.response?.data?.detail || (code ? `插件登录启动失败：${code}` : '插件登录启动失败'));
     } finally {
       setAddPluginLoginSubmitting(false);
+    }
+  };
+
+  /**
+   * 插件登录的粘贴/回调通道：服务端只把值转交给插件，不落任务文件。
+   * 成功后与轮询路径走同一套收尾（刷新运行池、自动关闭进度弹窗）。
+   */
+  const handleSubmitPluginLogin = async () => {
+    const jobId = pluginLoginJobId || (addJob?.pluginLogin ? addJob.id : '');
+    if (!jobId || !addJob?.canSubmit) return;
+    const value = pluginLoginSubmitValue.trim();
+    if (!value) {
+      message.warning('请先粘贴授权码或凭据');
+      return;
+    }
+    setPluginLoginSubmitSubmitting(true);
+    try {
+      const result = await accountsAPI.submitPluginLogin(jobId, value);
+      const job = mapPluginLoginJob(result.job);
+      setAddJob(job);
+      setPluginLoginSubmitValue('');
+      if (job.status === 'running') return;
+      setPluginLoginJobId(null);
+      if (job.status === 'succeeded') {
+        setAuthSuccessClosing(true);
+        message.success('插件登录完成');
+        void requestAccountsSnapshotUpdate({ failureMessage: '刷新账号列表失败' });
+        if (successAutoCloseTimerRef.current !== null) {
+          window.clearTimeout(successAutoCloseTimerRef.current);
+        }
+        successAutoCloseTimerRef.current = window.setTimeout(() => {
+          closeAuthProgressPanel();
+        }, 3000);
+      } else if (job.status === 'failed') {
+        message.error(job.error || '插件登录失败');
+      }
+    } catch (error: any) {
+      const code = error?.response?.data?.error || '';
+      message.error(error?.response?.data?.detail || (code ? `插件登录提交失败：${code}` : '插件登录提交失败'));
+    } finally {
+      setPluginLoginSubmitSubmitting(false);
     }
   };
 
@@ -1826,6 +1876,8 @@ export function useAccountActions({
         successClosing: authSuccessClosing,
         callbackUrl: authCallbackUrl,
         callbackSubmitting: authCallbackSubmitting,
+        pluginLoginSubmitValue,
+        pluginLoginSubmitSubmitting,
         cliInstallSubmitting,
         canSubmitCallback: canSubmitBrowserCallback,
         authSources: authLocalSources,
@@ -1840,6 +1892,8 @@ export function useAccountActions({
         onClose: () => closeAuthProgress(false),
         onCallbackUrlChange: setAuthCallbackUrl,
         onSubmitBrowserCallback: handleSubmitBrowserCallback,
+        onPluginLoginSubmitValueChange: setPluginLoginSubmitValue,
+        onSubmitPluginLogin: handleSubmitPluginLogin,
         onConfirmCliInstall: handleConfirmCliInstall
       },
       import: {

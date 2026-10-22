@@ -6,6 +6,7 @@ import AppErrorBoundary from "@/components/ui/AppErrorBoundary";
 import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
 import MobileApp from "@/mobile/MobileApp";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
+import TranslationFloatingPanel from "@/features/translation/TranslationFloatingPanel";
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
 import { resolveHudNavCode } from "@/components/hud/hud-nav";
@@ -235,6 +236,12 @@ export const layout = ({ initialState }: any) => {
             </MobileApp>
           </AppErrorBoundary>
           {canRenderDataPlane && <AppInstallTaskQueue />}
+          {/* 全局划词翻译浮层：选中任意页面文本即可翻译（可在 /translation 关闭） */}
+          {canRenderDataPlane && (
+            <AppErrorBoundary>
+              <TranslationFloatingPanel />
+            </AppErrorBoundary>
+          )}
         </>
       );
     },

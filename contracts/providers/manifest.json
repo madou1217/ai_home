@@ -1109,8 +1109,17 @@
           "stopRequiresJsonStdout": false
         },
         "permissions": {
-          "flags": null,
-          "modes": null
+          "flags": [
+            "--permission-mode",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "accept_edits",
+            "auto",
+            "bypass_permissions",
+            "dont_ask"
+          ]
         }
       },
       "credentials": {
@@ -1260,8 +1269,17 @@
           "stopRequiresJsonStdout": false
         },
         "permissions": {
-          "flags": null,
-          "modes": null
+          "flags": [
+            "--permission-mode",
+            "--dangerously-skip-permissions"
+          ],
+          "modes": [
+            "default",
+            "accept_edits",
+            "auto",
+            "bypass_permissions",
+            "dont_ask"
+          ]
         }
       },
       "credentials": {
@@ -1393,12 +1411,13 @@
         },
         "permissions": {
           "flags": [
+            "--auto",
             "--yolo"
           ],
           "modes": [
-            "default",
+            "manual",
             "yolo",
-            "plan"
+            "auto"
           ]
         }
       },
@@ -1559,10 +1578,11 @@
           "stopRequiresJsonStdout": false
         },
         "permissions": {
-          "flags": [],
-          "modes": [
-            "default"
-          ]
+          "flags": [
+            "--trust-all-tools",
+            "--trust-tools"
+          ],
+          "modes": []
         }
       },
       "credentials": {

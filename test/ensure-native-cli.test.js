@@ -18,6 +18,54 @@ test('Windows async installer can execute npm.cmd without spawn EINVAL', { skip:
   assert.equal(result.ok, true, result.error || result.stderr);
   assert.match(result.stdout, /\d+\.\d+\.\d+/);
 });
+test('runInstallPlanAsync accepts plan-specific success exit codes', async () => {
+  const { EventEmitter } = require('node:events');
+  const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+  for (const status of [2316632107, -1978335189]) {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const result = await runInstallPlanAsync({
+      command: 'winget.exe',
+      args: ['install'],
+      successExitCodes: [2316632107],
+      timeoutMs: 5000
+    }, {
+      processObj: { platform: 'win32', env: {} },
+      spawn: () => {
+        setTimeout(() => child.emit('close', status), 1);
+        return child;
+      }
+    });
+    assert.equal(result.ok, true, `status ${status}`);
+    assert.equal(result.error, '');
+  }
+});
+
+test('runInstallPlanAsync forwards windowsVerbatimArguments for cmd command strings', async () => {
+  const { EventEmitter } = require('node:events');
+  const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');
+  let captured = null;
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const result = await runInstallPlanAsync({
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/c', '"echo hi"'],
+    windowsVerbatimArguments: true,
+    timeoutMs: 5000
+  }, {
+    processObj: { platform: 'win32', env: {} },
+    spawn: (_command, _args, options) => {
+      captured = options;
+      setTimeout(() => child.emit('close', 0), 1);
+      return child;
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(captured.windowsVerbatimArguments, true);
+});
+
 test('runInstallPlanAsync kills a hung installer and reports partial output', async () => {
   const { EventEmitter } = require('node:events');
   const { runInstallPlanAsync } = require('../lib/cli/services/ai-cli/ensure-native-cli');

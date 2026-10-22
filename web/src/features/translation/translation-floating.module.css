@@ -1,0 +1,209 @@
+/* 划词翻译浮层：固定定位，不参与页面布局。
+ * 视觉与 /translation 工作台同源（等宽元信息 + 面板边框），但更紧凑：
+ * 浮层是「看一眼就走」的，不要抢页面注意力。 */
+
+.trigger {
+  position: fixed;
+  z-index: 1200;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  box-shadow: 0 4px 14px rgba(7, 18, 31, 0.16);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.trigger:hover,
+.trigger:focus-visible {
+  background: var(--color-accent);
+  color: var(--color-surface);
+  outline: none;
+}
+
+.triggerGlyph {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.panel {
+  position: fixed;
+  z-index: 1201;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: min(60vh, 460px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  box-shadow: 0 12px 36px rgba(7, 18, 31, 0.2);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-muted);
+}
+
+.route {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--color-muted-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.targetSelect {
+  min-width: 108px;
+}
+
+/* 语言下拉是 body 级 portal，AntD 默认 z-index（1050）低于面板（1201），
+   不抬高层级会被面板正文/footer 压住。 */
+.targetSelectPopup {
+  z-index: 1300 !important;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--color-text);
+}
+
+.panelBody {
+  flex: 1;
+  min-height: 72px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+
+.placeholder {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-accent);
+  animation: translation-floating-cursor 1s step-end infinite;
+}
+
+@keyframes translation-floating-cursor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.errorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.errorText {
+  color: var(--color-danger);
+}
+
+.panelFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.textButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.textButton:hover:not(:disabled) {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+.textButton:disabled {
+  color: var(--color-muted);
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    width: calc(100vw - 24px);
+    max-height: min(56vh, 420px);
+  }
+}

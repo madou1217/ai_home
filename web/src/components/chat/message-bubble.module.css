@@ -645,6 +645,12 @@
   white-space: nowrap;
 }
 
+/* 推理强度紧跟在模型名后：同色系、等宽数字，保持元信息一行不换行。 */
+.messageEffort {
+  color: var(--color-faint);
+  white-space: nowrap;
+}
+
 .messageMetricItem {
   font-variant-numeric: tabular-nums;
   color: var(--color-faint);

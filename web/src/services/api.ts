@@ -58,6 +58,13 @@ import type {
   ImageStudioRunResponse,
   ImageStudioSessionResponse,
   ImageStudioSessionsResponse,
+  TranslationDetectionResponse,
+  TranslationLanguagesResponse,
+  TranslationModelsResponse,
+  TranslationSettings,
+  TranslationSettingsResponse,
+  TranslationStreamEvent,
+  TranslationStreamRequest,
   NativeSlashCommand,
   Provider,
   SlashCommandsResponse,
@@ -256,6 +263,10 @@ export interface PluginAccountLoginJob {
   authorizationUrl: string;
   redirectUri: string;
   intervalMs: number;
+  /** 插件是否接受用户粘贴授权码 / 回调地址 / token。 */
+  canSubmit?: boolean;
+  submitLabel?: string;
+  submitPlaceholder?: string;
   expiresAt: number;
   createdAt: number;
   updatedAt: number;
@@ -451,6 +462,14 @@ export const accountsAPI = {
       `/webui/accounts/plugin-login/${jobId}`
     );
     return response.data.job;
+  },
+
+  submitPluginLogin: async (jobId: string, value: string): Promise<{ job: PluginAccountLoginJob; account?: unknown }> => {
+    const response = await api.post<{ ok: boolean; job: PluginAccountLoginJob; account?: unknown }>(
+      `/webui/accounts/plugin-login/${jobId}/submit`,
+      { value }
+    );
+    return response.data;
   },
 
   cancelPluginLoginJob: async (jobId: string) => {
@@ -1848,8 +1867,104 @@ export const imageStudioAPI = {
   }
 };
 
-// VSCode 风格底部终端：交互式 shell PTY（POST 写 + SSE 读）。
+// AI 翻译：默认设置 / 语言目录 / 语言检测 / 模型候选 / 流式翻译。
 //
+// 流式翻译必须用裸 fetch（与聊天流同因）：axios 会在浏览器里缓冲响应体，看不出增量。
+// 鉴权头与 server scope 也照抄聊天流，否则远端视图里翻译会打到本地 server。
+export const translationAPI = {
+  getSettings: async (): Promise<TranslationSettingsResponse> => {
+    const response = await api.get<TranslationSettingsResponse>('/webui/translation/settings');
+    return response.data;
+  },
+
+  saveSettings: async (patch: Partial<TranslationSettings>): Promise<TranslationSettingsResponse> => {
+    const response = await api.post<TranslationSettingsResponse>('/webui/translation/settings', patch);
+    return response.data;
+  },
+
+  listLanguages: async (): Promise<TranslationLanguagesResponse> => {
+    const response = await api.get<TranslationLanguagesResponse>('/webui/translation/languages');
+    return response.data;
+  },
+
+  detect: async (text: string): Promise<TranslationDetectionResponse> => {
+    const response = await api.post<TranslationDetectionResponse>('/webui/translation/detect', { text });
+    return response.data;
+  },
+
+  listModels: async (): Promise<TranslationModelsResponse> => {
+    const response = await api.get<TranslationModelsResponse>('/webui/translation/models');
+    return response.data;
+  },
+
+  stream: async (
+    request: TranslationStreamRequest,
+    options: {
+      signal?: AbortSignal;
+      onEvent?: (event: TranslationStreamEvent) => void;
+    } = {}
+  ): Promise<void> => {
+    const activeServer = resolveActiveServer();
+    const gateToken = resolveWebUiManagementKey();
+    const response = await fetch('/v0/webui/translation/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(gateToken ? { Authorization: `Bearer ${gateToken}` } : {}),
+        ...(activeServer.isRemote && activeServer.serverId
+          ? { 'x-aih-server-id': activeServer.serverId }
+          : {})
+      },
+      body: JSON.stringify(request),
+      signal: options.signal
+    });
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const data = await response.json();
+        message = data?.detail || data?.error || message;
+      } catch (_error) {
+        const text = await response.text().catch(() => '');
+        if (text) message = text;
+      }
+      throw new Error(message);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('translation_stream_unavailable');
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const emitBlock = (rawBlock: string) => {
+      const payload = rawBlock
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n');
+      if (!payload || payload === '[DONE]') return;
+      const parsed = JSON.parse(payload) as TranslationStreamEvent;
+      options.onEvent?.(parsed);
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const block = buffer.slice(0, boundary).trim();
+        buffer = buffer.slice(boundary + 2);
+        if (block) emitBlock(block);
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) emitBlock(buffer.trim());
+  }
+};
+
+// VSCode 风格底部终端：交互式 shell PTY（POST 写 + SSE 读）。//
 // 终端连的是「当前激活的 server」——本机激活就是本机的 shell，远端激活(如 AWS)就是那台机器的
 // shell（PTY 在目标 server 上创建，pickShell 用目标机的 process.platform，Windows/Mac/Linux 自动对）。
 // 这需要:①POST/SSE 都带 x-aih-server-id 指向目标 server；②本地代理把 SSE **边收边转**(见

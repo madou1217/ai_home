@@ -21,7 +21,7 @@
   ],
   "permissions": {
     "network": [
-      "https://www.anthropic.com"
+      "https://platform.claude.com"
     ],
     "filesystem": {
       "read": [],

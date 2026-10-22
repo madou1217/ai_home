@@ -12,6 +12,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -44,6 +45,8 @@ type Adapter struct {
 	rules configured.Rules
 	// rejections 接收上游拒绝请求的低敏诊断，见 rejection_diagnostic.go。
 	rejections func(UpstreamRejection)
+	// aligner 可选：把请求的推理强度压进目标模型的档位阶梯，见 ObserveEffortLadders。
+	aligner *effortalign.Aligner
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
@@ -121,8 +124,11 @@ func (adapter *Adapter) Execute(
 	}
 	effectiveModel := invocation.Route().EffectiveModel()
 	profile := requestProfileForModel(effectiveModel)
+	// 强度对齐在 profile 默认值之前：profile 只负责「请求没要求强度时给默认档」，
+	// 而用户显式要求的档位必须按目标模型阶梯映射，不能被 profile 的就地夹取改写。
+	aligned := adapter.aligner.Apply(invocation.Request(), invocation.Route().ProviderID(), effectiveModel)
 	payload, err := encodeRequest(
-		invocation.Request(),
+		aligned,
 		effectiveModel,
 		auth.kind,
 		profile,

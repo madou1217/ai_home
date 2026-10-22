@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Drawer, List, Popconfirm, Space, Tag, Tooltip, Typography } from 'antd';
+import { Drawer, List, Pagination, Popconfirm, Space, Tag, Tooltip, Typography } from 'antd';
 import { CopyOutlined, DeleteOutlined, EditOutlined, LinkOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { copyText } from '@/components/toolkit/proxy-pool/proxy-pool-utils';
@@ -38,6 +38,9 @@ interface Row {
   index: number;
 }
 
+// 节点抽屉每页条数：订阅源可能有上万个节点，全量渲染会卡死（分页只渲染当前页）。
+const PAGE_SIZE = 50;
+
 const addressKey = (server: string, port: number) => `${String(server).toLowerCase()}:${Number(port)}`;
 // 本地展示用的地址键（协议|地址:端口）：只用于把表格行对上节点库，不是跨层引用键。
 const rowAddressKey = (protocol: string, server: string, port: number) => `${protocol}|${addressKey(server, port)}`;
@@ -63,6 +66,7 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<{ index: number; node: ManualNode | null } | null>(null);
   const [chainEditing, setChainEditing] = useState<{ id: string; name: string } | null>(null);
+  const [page, setPage] = useState(1);
   const manualNodes = useMemo(() => (source?.kind === 'local' ? parseManualContent(source.content) : null), [source]);
 
   const measure = useCallback(async (sourceId: string, fresh: boolean) => {
@@ -127,6 +131,13 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
     })
     : nodes.map((node) => ({ ...node, key: node.id, index: -1 }));
   const fakeIp = Object.values(latency).some((item) => item?.fakeIp);
+  // 只渲染当前页：订阅源上万个节点时，全量渲染会明显卡顿（切页/重测都卡）。
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pagedRows = useMemo(
+    () => rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [rows, safePage]
+  );
 
   const saveManual = async (next: ManualNode[]) => {
     if (!source) return false;
@@ -178,7 +189,7 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
         {error ? <Text type="danger">{error}</Text> : null}
         <List
           loading={loading}
-          dataSource={rows}
+          dataSource={pagedRows}
           locale={{ emptyText: manualNodes ? '还没有节点，点右上角「添加节点」' : '这个订阅源没有节点' }}
           renderItem={(row) => (
             <List.Item
@@ -221,6 +232,18 @@ export default function SourceNodesDrawer({ source, forms, width = 720, onClose,
             </List.Item>
           )}
         />
+        {rows.length > PAGE_SIZE && (
+          <Pagination
+            size="small"
+            align="end"
+            current={safePage}
+            pageSize={PAGE_SIZE}
+            total={rows.length}
+            showSizeChanger={false}
+            showTotal={(total) => `共 ${total} 个节点 · 第 ${safePage}/${pageCount} 页`}
+            onChange={setPage}
+          />
+        )}
       </Space>
       <ManualNodeModal
         open={Boolean(editing)}

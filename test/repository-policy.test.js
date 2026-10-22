@@ -50,8 +50,18 @@ const LEGACY_AIH_PROFILE_STORAGE_RULES = [
     pattern: /\b(?:PROFILES_DIR|profilesDir)\b/
   },
   {
+    // 锚定**第一个参数是 aih 数据根**，而不是靠「240 字符窗口内出现 profiles」：
+    // 后者会误伤任何 `<某个自有目录>/profiles/<名字>` 布局。实例（2026-10-22）：
+    // lib/harness/dsh.js 的 `pathImpl.join(dshHome, 'profiles', PROFILE_NAME)` 里的 dshHome
+    // 是 harness 投影根（`<aiHomeDir>/run/harness/<id>/<ref>`，见 lib/harness/projection.js），
+    // 与 aih 的旧 profile 存储无关，却被旧规则判成违规。
+    //
+    // 旧 profile 存储的真实形态是 `path.join(aiHomeDir, 'profiles', …)`——第一个参数就是
+    // aih 数据根本身（对照 lib/cli/services/account/codex-rekey-storage.js 的
+    // `path.join(aiHomeDir, root)`）。因此这里要求「第一参数像 aih 数据根」：
+    // aiHomeDir / aiHome / AIH_HOME_DIR / AIH_HOME。
     name: 'legacy profile path construction',
-    pattern: /\b(?:path|pathImpl)\.(?:join|resolve)\s*\([\s\S]{0,240}?['"`]profiles['"`][\s\S]{0,120}?\)/
+    pattern: /\b(?:path|pathImpl)\.(?:join|resolve)\s*\(\s*(?:[A-Za-z_$][\w$]*\.)?(?:aiHomeDir|aiHome|AIH_HOME_DIR|AIH_HOME)\b[^)]{0,120}?['"`]profiles['"`]/
   },
   {
     name: 'literal AIH profiles path',

@@ -459,10 +459,22 @@ test('normalizeTimelineItem omits blank optional message metadata', () => {
     kind: 'message',
     createdAt: 1,
     status: 'completed',
-    detail: { role: 'assistant', phase: ' ', model: '' }
+    detail: { role: 'assistant', phase: ' ', model: '', effort: ' ' }
   });
 
   assert.deepEqual(message.detail, { role: 'assistant' });
+});
+
+test('normalizeTimelineItem keeps the effective reasoning effort on messages', () => {
+  const message = normalizeTimelineItem({
+    id: 'message-1',
+    kind: 'message',
+    createdAt: 1,
+    status: 'completed',
+    detail: { role: 'assistant', model: 'k3', effort: ' high ' }
+  });
+
+  assert.deepEqual(message.detail, { role: 'assistant', model: 'k3', effort: 'high' });
 });
 
 test('normalizeTimelineItem rejects invalid non-null optional process details', () => {

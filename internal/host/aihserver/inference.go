@@ -12,6 +12,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencecatalog"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/core/providers"
@@ -84,6 +85,9 @@ type inferenceCompositionDependencies struct {
 	clock           func() time.Time
 	// requestRewriter 在派发前按 Provider 改写请求（vision guard）。
 	requestRewriter inferencegateway.RequestRewriter
+	// effortLadders 提供每个模型的推理强度档位，供上游适配器在编码前对齐。
+	// nil 表示 Go 不承接该能力（请求原样透传，由上游适配器按原规则处理）。
+	effortLadders effortalign.LadderReader
 	agyModelWires   agycodeassist.ModelWireReader
 	// upstreamRules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
 	upstreamRules configured.Rules
@@ -126,6 +130,7 @@ func newInferenceComposition(
 	}
 	codexAdapter.ObserveRejections(dependencies.codexRejections)
 	codexAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
+	codexAdapter.ObserveEffortLadders(dependencies.effortLadders)
 	claudeAdapter, err := claudemessages.NewAdapter(
 		client,
 		dependencies.clock,
@@ -135,6 +140,7 @@ func newInferenceComposition(
 		return nil, err
 	}
 	claudeAdapter.ObserveUpstreamRules(dependencies.upstreamRules)
+	claudeAdapter.ObserveEffortLadders(dependencies.effortLadders)
 	agyAdapter, err := agycodeassist.NewAdapterWithWireModels(client, dependencies.clock, dependencies.agyModelWires)
 	if err != nil {
 		return nil, err

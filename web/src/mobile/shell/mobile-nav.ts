@@ -24,10 +24,11 @@ export interface MobileMoreItem {
 
 /** 「更多」面板：低频页面入口（与 MOBILE_ROUTES 中 nav:'more' 的页面一一对应）。 */
 export const MOBILE_MORE_ITEMS: MobileMoreItem[] = [
-  { path: '/models', code: '05', label: '模型目录', desc: 'MODELS' },
-  { path: '/toolkit', code: '06', label: '开发工具', desc: 'TOOLKIT' },
-  { path: '/studio/image', code: '07', label: '灵感工坊', desc: 'STUDIO' },
-  { path: '/fabric/servers', code: '08', label: 'Server 管理', desc: 'SERVER' },
-  { path: '/fabric/ssh-hosts', code: '08', label: 'SSH 开发机', desc: 'SSH' },
-  { path: '/settings', code: '09', label: '设置', desc: 'CONFIG' },
+  { path: '/translation', code: '05', label: 'AI 翻译', desc: 'TRANSLATE' },
+  { path: '/models', code: '06', label: '模型目录', desc: 'MODELS' },
+  { path: '/toolkit', code: '07', label: '开发工具', desc: 'TOOLKIT' },
+  { path: '/studio/image', code: '08', label: '灵感工坊', desc: 'STUDIO' },
+  { path: '/fabric/servers', code: '09', label: 'Server 管理', desc: 'SERVER' },
+  { path: '/fabric/ssh-hosts', code: '09', label: 'SSH 开发机', desc: 'SSH' },
+  { path: '/settings', code: '10', label: '设置', desc: 'CONFIG' },
 ];

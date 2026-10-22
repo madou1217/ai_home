@@ -740,6 +740,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-fable-5-1": {
@@ -750,6 +757,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-haiku-4-5": {
@@ -780,6 +794,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-mythos-5": {
@@ -840,6 +861,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "anthropic/claude-opus-4-5-20251101": {
@@ -850,6 +876,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "anthropic/claude-opus-4-6": {
@@ -860,6 +891,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "anthropic/claude-opus-4-7": {
@@ -870,6 +907,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-opus-4-8": {
@@ -880,6 +924,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-opus-5": {
@@ -890,6 +941,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-opus-5-5": {
@@ -900,6 +958,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-sonnet-4-0": {
@@ -950,6 +1015,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "anthropic/claude-sonnet-5": {
@@ -960,6 +1031,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "anthropic/claude-sonnet-5-5": {
@@ -970,6 +1048,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "apodex/apodex-1.1-mini": {
@@ -1614,6 +1699,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-fable-5.1": {
@@ -1624,6 +1716,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-haiku-4.5": {
@@ -1644,6 +1743,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-opus-4.7": {
@@ -1654,6 +1760,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-opus-4.8": {
@@ -1664,6 +1777,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-opus-5": {
@@ -1674,6 +1794,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-opus-5.5": {
@@ -1684,6 +1811,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-sonnet-4.6": {
@@ -1694,6 +1828,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "github-copilot/claude-sonnet-5": {
@@ -1704,6 +1844,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/claude-sonnet-5.5": {
@@ -1714,6 +1861,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gemini-3.5-flash": {
@@ -1726,6 +1880,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gemini-3.6-flash": {
@@ -1736,6 +1896,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gemini-3.7-flash": {
@@ -1745,6 +1911,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gemini-3.8-flash": {
@@ -1754,6 +1925,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gemini-4-argon": {
@@ -1766,6 +1942,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gpt-5-mini": {
@@ -1775,6 +1956,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/gpt-5.3-codex": {
@@ -1785,6 +1971,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/gpt-5.4": {
@@ -1795,6 +1987,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/gpt-5.4-mini": {
@@ -1804,6 +2003,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/gpt-5.4-nano": {
@@ -1823,6 +2029,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/gpt-5.6-luna": {
@@ -1833,6 +2046,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-5.6-sol": {
@@ -1843,6 +2064,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-5.6-terra": {
@@ -1853,6 +2082,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-6-astra": {
@@ -1863,6 +2100,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-6-luna": {
@@ -1873,6 +2117,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-6-sol": {
@@ -1883,6 +2135,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/gpt-6.1-sol": {
@@ -1893,6 +2153,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "github-copilot/grok-4.5": {
@@ -1902,6 +2169,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/grok-4.6": {
@@ -1911,6 +2183,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/grok-4.7": {
@@ -1921,6 +2199,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "github-copilot/kimi-k2.7-code": {
@@ -1939,6 +2223,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "github-copilot/mai-code-1-flash-picker": {
@@ -1947,6 +2236,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "github-copilot/mai-code-1.1-flash": {
@@ -1957,6 +2251,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/claude-fable-5-1@default": {
@@ -1967,6 +2266,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-fable-5@default": {
@@ -1977,6 +2283,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-haiku-4-5@20251001": {
@@ -1997,6 +2310,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-opus-4-1@20250805": {
@@ -2017,6 +2337,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/claude-opus-4-6@default": {
@@ -2027,6 +2352,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "google-vertex/claude-opus-4-7@default": {
@@ -2037,6 +2368,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-opus-4-8@default": {
@@ -2047,6 +2385,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-opus-4@20250514": {
@@ -2067,6 +2412,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-opus-5@default": {
@@ -2077,6 +2429,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-sonnet-4-5@20250929": {
@@ -2097,6 +2456,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "google-vertex/claude-sonnet-4@20250514": {
@@ -2117,6 +2482,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/claude-sonnet-5@default": {
@@ -2127,6 +2499,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "google-vertex/codestral-2": {
@@ -2226,6 +2605,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3-pro-image": {
@@ -2249,6 +2634,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "high"
     ]
   },
   "google-vertex/gemini-3.1-flash-lite": {
@@ -2261,6 +2650,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.1-flash-lite-image": {
@@ -2271,6 +2666,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "high"
     ]
   },
   "google-vertex/gemini-3.1-pro-preview": {
@@ -2283,6 +2682,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.1-pro-preview-customtools": {
@@ -2295,6 +2699,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.5-flash": {
@@ -2307,6 +2716,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.5-flash-lite": {
@@ -2319,6 +2734,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.6-flash": {
@@ -2331,6 +2752,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.7-flash": {
@@ -2343,6 +2770,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-3.8-flash": {
@@ -2355,6 +2787,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-4-argon": {
@@ -2367,6 +2804,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/gemini-embedding-001": {
@@ -2386,6 +2828,11 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/google/gemma-4-26b-a4b-it-maas": {
@@ -2455,6 +2902,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/openai/gpt-oss-20b-maas": {
@@ -2463,6 +2915,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/qwen/qwen3-235b-a22b-instruct-2507-maas": {
@@ -2525,6 +2982,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/xai/grok-4.7": {
@@ -2534,6 +2996,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google-vertex/zai-org/glm-4.7-maas": {
@@ -2727,6 +3194,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3-pro-image": {
@@ -2737,6 +3210,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "low",
+      "high"
     ]
   },
   "google/gemini-3-pro-image-preview": {
@@ -2771,6 +3248,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-image-preview": {
@@ -2782,6 +3263,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-lite": {
@@ -2794,6 +3279,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-lite-image": {
@@ -2804,6 +3295,10 @@
     "output": [
       "text",
       "image"
+    ],
+    "efforts": [
+      "minimal",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-lite-preview": {
@@ -2816,6 +3311,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-live-preview": {
@@ -2828,6 +3329,12 @@
     "output": [
       "text",
       "audio"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.1-flash-tts-preview": {
@@ -2848,6 +3355,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.1-pro-preview-customtools": {
@@ -2860,6 +3372,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.5-flash": {
@@ -2872,6 +3389,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.5-flash-lite": {
@@ -2884,6 +3407,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.5-live-translate-preview": {
@@ -2913,6 +3442,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.7-flash": {
@@ -2925,6 +3460,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-3.8-flash": {
@@ -2937,6 +3477,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-4-argon": {
@@ -2949,6 +3494,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-embedding-001": {
@@ -2981,6 +3531,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-flash-lite-latest": {
@@ -2993,6 +3548,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "google/gemini-nano-banana-2.1": {
@@ -4104,6 +4665,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "moonshotai/kimi-k2": {
@@ -4204,6 +4770,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "morph/morph-v3-fast": {
@@ -4600,6 +5171,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/gpt-5-chat-latest": {
@@ -4649,6 +5226,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/gpt-5-nano": {
@@ -4658,6 +5241,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/gpt-5-pro": {
@@ -4667,6 +5256,9 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high"
     ]
   },
   "openai/gpt-5.1": {
@@ -4676,6 +5268,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/gpt-5.1-chat-latest": {
@@ -4721,6 +5319,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.2-chat-latest": {
@@ -4730,6 +5335,9 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium"
     ]
   },
   "openai/gpt-5.2-codex": {
@@ -4749,6 +5357,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.3-chat-latest": {
@@ -4768,6 +5381,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.3-codex-spark": {
@@ -4778,6 +5398,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.4": {
@@ -4788,6 +5415,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.4-image-2": {
@@ -4808,6 +5442,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.4-nano": {
@@ -4817,6 +5458,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.4-pro": {
@@ -4826,6 +5474,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.5": {
@@ -4836,6 +5489,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.5-instant": {
@@ -4856,6 +5516,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-5.6": {
@@ -4866,6 +5531,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-5.6-cyber": {
@@ -4885,6 +5558,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-5.6-sol": {
@@ -4895,6 +5576,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-5.6-terra": {
@@ -4905,6 +5594,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-6-astra": {
@@ -4915,6 +5612,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-6-astra-fast": {
@@ -4935,6 +5639,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-6-sol": {
@@ -4945,6 +5657,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-6.1-sol": {
@@ -4955,6 +5675,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-daybreak-blue-latest": {
@@ -4965,6 +5692,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-daybreak-red-latest": {
@@ -4974,6 +5709,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "openai/gpt-image-1": {
@@ -5073,6 +5816,13 @@
     "output": [
       "text",
       "audio"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "openai/gpt-realtime-whisper": {
@@ -5091,6 +5841,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o1-pro": {
@@ -5100,6 +5855,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o3": {
@@ -5110,6 +5870,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o3-deep-research": {
@@ -5127,6 +5892,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o3-pro": {
@@ -5136,6 +5906,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o4-mini": {
@@ -5145,6 +5920,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "openai/o4-mini-deep-research": {
@@ -5218,6 +5998,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/cat-jam-free": {
@@ -5226,6 +6013,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/claude-haiku-5-5": {
@@ -5236,6 +6030,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/deepseek-v4-pro": {
@@ -5244,6 +6045,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "opencode-go/deepseek-v4.1-flash": {
@@ -5253,6 +6058,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode-go/gemini-4-argon-contributor": {
@@ -5265,6 +6075,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode-go/glm-5.2": {
@@ -5273,6 +6088,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "opencode-go/glm-5.3": {
@@ -5281,6 +6100,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode-go/glm-5.3-flash": {
@@ -5292,6 +6116,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode-go/gpt-5.6-luna": {
@@ -5302,6 +6131,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/gpt-6-luna": {
@@ -5312,6 +6149,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/grok-4.7": {
@@ -5322,6 +6167,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode-go/hy3": {
@@ -5330,6 +6181,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "high"
     ]
   },
   "opencode-go/hy4-preview": {
@@ -5338,6 +6194,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
     ]
   },
   "opencode-go/kimi-k2.7-code": {
@@ -5358,6 +6218,9 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "max"
     ]
   },
   "opencode-go/longcat-2.0": {
@@ -5446,6 +6309,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode-go/muse-spark-1.3-contributor": {
@@ -5458,6 +6328,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode-go/qwen3.7-plus": {
@@ -5478,6 +6355,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
     ]
   },
   "opencode-go/qwen3.8-max": {
@@ -5488,6 +6370,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
     ]
   },
   "opencode-go/space-bunny": {
@@ -5498,6 +6385,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode-go/step-5-preview": {
@@ -5508,6 +6402,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode-go/step-5-preview-free": {
@@ -5518,6 +6417,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/beam-free": {
@@ -5526,6 +6430,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/big-pickle": {
@@ -5542,6 +6453,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-3-5-haiku": {
@@ -5562,6 +6480,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-fable-5-1": {
@@ -5572,6 +6497,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-haiku-4-5": {
@@ -5592,6 +6524,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-opus-4-1": {
@@ -5612,6 +6551,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/claude-opus-4-6": {
@@ -5622,6 +6566,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "opencode/claude-opus-4-7": {
@@ -5632,6 +6582,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-opus-4-8": {
@@ -5642,6 +6599,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-opus-5": {
@@ -5652,6 +6616,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-opus-5-5": {
@@ -5662,6 +6633,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-sonnet-4": {
@@ -5692,6 +6670,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "max"
     ]
   },
   "opencode/claude-sonnet-5": {
@@ -5702,6 +6686,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/claude-sonnet-5-5": {
@@ -5712,6 +6703,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/deepseek-v4-flash": {
@@ -5720,6 +6718,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/deepseek-v4-flash-free": {
@@ -5728,6 +6731,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/deepseek-v4-flash-vision-exp": {
@@ -5737,6 +6745,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/deepseek-v4-pro": {
@@ -5745,6 +6758,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "opencode/deepseek-v4.1-flash": {
@@ -5754,6 +6771,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/deepseek-v4.1-flash-free": {
@@ -5763,6 +6785,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/exo-free": {
@@ -5772,6 +6799,9 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high"
     ]
   },
   "opencode/fledge-alpha-free": {
@@ -5781,6 +6811,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/gemini-3-flash": {
@@ -5793,6 +6828,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3-pro": {
@@ -5805,6 +6846,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high"
     ]
   },
   "opencode/gemini-3.1-pro": {
@@ -5817,6 +6862,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3.5-flash": {
@@ -5829,6 +6879,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3.5-flash-lite": {
@@ -5841,6 +6897,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3.6-flash": {
@@ -5853,6 +6915,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3.7-flash": {
@@ -5865,6 +6933,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-3.8-flash": {
@@ -5877,6 +6950,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gemini-4-argon": {
@@ -5889,6 +6967,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/glm-4.6": {
@@ -5945,6 +7028,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "opencode/glm-5.3": {
@@ -5953,6 +7040,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/glm-5.3-flash": {
@@ -5964,6 +7056,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/glm-5.3-flash-free": {
@@ -5975,6 +7072,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "opencode/gpt-5": {
@@ -5984,6 +7086,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5-codex": {
@@ -5993,6 +7101,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5-nano": {
@@ -6002,6 +7115,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5.1": {
@@ -6011,6 +7130,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5.1-codex": {
@@ -6020,6 +7145,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5.1-codex-max": {
@@ -6029,6 +7159,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.1-codex-mini": {
@@ -6038,6 +7174,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/gpt-5.2": {
@@ -6047,6 +7188,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.2-codex": {
@@ -6057,6 +7205,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.3-codex": {
@@ -6067,6 +7221,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.3-codex-spark": {
@@ -6075,6 +7236,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.4": {
@@ -6085,6 +7252,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.4-mini": {
@@ -6095,6 +7269,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.4-nano": {
@@ -6105,6 +7286,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.4-pro": {
@@ -6115,6 +7303,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.5": {
@@ -6125,6 +7318,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.5-pro": {
@@ -6135,6 +7335,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/gpt-5.6-luna": {
@@ -6145,6 +7350,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-5.6-sol": {
@@ -6155,6 +7368,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-5.6-terra": {
@@ -6165,6 +7386,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-6-astra": {
@@ -6175,6 +7404,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-6-luna": {
@@ -6185,6 +7421,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-6-sol": {
@@ -6195,6 +7439,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/gpt-6.1-sol": {
@@ -6205,6 +7457,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/grok-4.5": {
@@ -6214,6 +7473,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/grok-4.6": {
@@ -6223,6 +7487,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/grok-4.7": {
@@ -6233,6 +7503,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/grok-build-0.1": {
@@ -6259,6 +7535,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/hy3-preview-free": {
@@ -6349,6 +7630,9 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "max"
     ]
   },
   "opencode/laguna-s-2.1-free": {
@@ -6357,6 +7641,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/ling-2.6-flash-free": {
@@ -6381,6 +7670,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/ling-3.0-tiny-free": {
@@ -6405,6 +7699,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/longcat-2.0-free": {
@@ -6540,6 +7841,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
     ]
   },
   "opencode/muse-spark-1.2": {
@@ -6552,6 +7857,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/muse-spark-1.2-contributor-free": {
@@ -6564,6 +7876,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/muse-spark-1.3": {
@@ -6576,6 +7895,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/muse-spark-1.3-contributor-free": {
@@ -6588,6 +7914,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/nemotron-3-super-free": {
@@ -6621,6 +7954,14 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "opencode/north-mini-code-free": {
@@ -6629,6 +7970,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "high"
     ]
   },
   "opencode/qwen3-coder": {
@@ -6677,6 +8022,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "xhigh"
     ]
   },
   "opencode/qwen3.8-max": {
@@ -6704,6 +8054,13 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "opencode/step-5-preview-free": {
@@ -6714,6 +8071,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "opencode/trinity-large-preview-free": {
@@ -6732,6 +8094,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "paddlepaddle/paddleocr-vl": {
@@ -7333,6 +8700,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "xai/grok-4.3": {
@@ -7343,6 +8716,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "none",
+      "low",
+      "medium",
+      "high"
     ]
   },
   "xai/grok-4.5": {
@@ -7353,6 +8732,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high"
     ]
   },
   "xai/grok-4.6": {
@@ -7363,6 +8747,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "xai/grok-4.7": {
@@ -7373,6 +8763,12 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
     ]
   },
   "xai/grok-build-0.1": {
@@ -7582,6 +8978,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "zai-coding-plan/glm-5.2-highspeed": {
@@ -7590,6 +8990,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "zai-coding-plan/glm-5.3": {
@@ -7598,6 +9002,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai-coding-plan/glm-5.3-flash": {
@@ -7609,6 +9018,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai-coding-plan/glm-5.3-highspeed": {
@@ -7617,6 +9031,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai/glm-4.5": {
@@ -7735,6 +9154,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "zai/glm-5.3": {
@@ -7743,6 +9166,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai/glm-5.3-flash": {
@@ -7754,6 +9182,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai/glm-5.3-flashx": {
@@ -7765,6 +9198,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zai/glm-5v-turbo": {
@@ -7794,6 +9232,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai-coding-plan/glm-5.3-flash": {
@@ -7805,6 +9248,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai-coding-plan/glm-5.3-highspeed": {
@@ -7813,6 +9261,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai/autoglm-phone-9b-multilingual": {
@@ -7940,6 +9393,10 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "high",
+      "max"
     ]
   },
   "zhipuai/glm-5.3": {
@@ -7948,6 +9405,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai/glm-5.3-flash": {
@@ -7959,6 +9421,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai/glm-5.3-flashx": {
@@ -7970,6 +9437,11 @@
     ],
     "output": [
       "text"
+    ],
+    "efforts": [
+      "low",
+      "high",
+      "max"
     ]
   },
   "zhipuai/glm-5v-turbo": {

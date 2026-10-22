@@ -177,6 +177,9 @@ test('Codex driver reuses resident client and persists mapped native events', as
   assert.equal(fixture.events[0].turnId, 'turn-1');
   assert.equal(fixture.events[0].payload.item.turnId, 'turn-1');
   assert.equal(fixture.events[0].payload.item.detail.model, 'gpt-5.3-codex');
+  // 本轮实际生效的推理强度随消息 detail 一起落库：WebUI 直接照它显示，
+  // 不再用「当前选择」去猜历史消息跑的是什么。
+  assert.equal(fixture.events[0].payload.item.detail.effort, 'high');
   assert.equal(Object.hasOwn(fixture.events[0].payload, 'providerTurnId'), false);
   assert.deepEqual(fixture.events[1].payload, {
     itemId: 'message-1',

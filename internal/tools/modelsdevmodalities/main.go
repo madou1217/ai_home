@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -21,9 +22,14 @@ const (
 var errInvalidSource = errors.New("models.dev catalog 快照无效")
 
 // snapshotRecord 是嵌入 Go 二进制的稳定 JSON 记录。
+//
+// Efforts 是该模型声明的推理强度档位（升序、去重）。网关按它做阶梯对齐：
+// 客户端要的档位（Claude Code 发 max）与模型能表达的档位（kimi k3 只有 low/high/max）
+// 不是同一套词汇，没有这份数据就只能拒绝或猜。缺失表示「该模型没有档位概念」。
 type snapshotRecord struct {
-	Input  []string `json:"input"`
-	Output []string `json:"output"`
+	Input   []string `json:"input"`
+	Output  []string `json:"output"`
+	Efforts []string `json:"efforts,omitempty"`
 }
 
 type sourceMetadata struct {
@@ -53,8 +59,18 @@ type catalogSource struct {
 }
 
 type catalogModel struct {
-	ID         string         `json:"id"`
-	Modalities snapshotRecord `json:"modalities"`
+	ID               string                 `json:"id"`
+	Modalities       snapshotRecord         `json:"modalities"`
+	ReasoningOptions []catalogReasoningItem `json:"reasoning_options"`
+}
+
+// catalogReasoningItem 是 models.dev 的单个推理配置项。
+//
+// 只有 type=effort 的项携带档位枚举；toggle / budget_tokens 表达的是「能不能关」
+// 与「给多少预算」，不是档位，因此不参与阶梯。
+type catalogReasoningItem struct {
+	Type   string   `json:"type"`
+	Values []string `json:"values"`
 }
 
 // main 校验命令参数并原子替换生成快照。
@@ -172,16 +188,70 @@ func appendModels(
 		if !validModalities(model.Modalities.Input) || !validModalities(model.Modalities.Output) {
 			return fmt.Errorf("%w: %s modalities", errInvalidSource, modelID)
 		}
+		efforts, err := effortLadder(model.ReasoningOptions)
+		if err != nil {
+			return fmt.Errorf("%w: %s", err, modelID)
+		}
 		key := modelID
 		if namespace != "" {
 			key = namespace + "/" + modelID
 		}
 		snapshot[key] = snapshotRecord{
-			Input:  append([]string(nil), model.Modalities.Input...),
-			Output: append([]string(nil), model.Modalities.Output...),
+			Input:   append([]string(nil), model.Modalities.Input...),
+			Output:  append([]string(nil), model.Modalities.Output...),
+			Efforts: efforts,
 		}
 	}
 	return nil
+}
+
+// effortLadder 提取模型声明的强度档位，按强度升序去重。
+//
+// 排序必须与网关的 Canonical 强度全序一致（none<minimal<low<medium<high<xhigh<max<ultra）：
+// 阶梯对齐按位置配对，顺序错了映射就错了。目录里出现未登记的档位是**数据错误**——
+// 静默丢弃会让「模型支持该档位」变成「模型不支持」，比整条失败更危险。
+func effortLadder(options []catalogReasoningItem) ([]string, error) {
+	declared := make(map[string]struct{})
+	for _, option := range options {
+		if option.Type != "effort" {
+			continue
+		}
+		for _, value := range option.Values {
+			declared[value] = struct{}{}
+		}
+	}
+	if len(declared) == 0 {
+		return nil, nil
+	}
+	ordered := make([]string, 0, len(declared))
+	for _, value := range canonicalEffortOrder {
+		if _, found := declared[value]; found {
+			ordered = append(ordered, value)
+			delete(declared, value)
+		}
+	}
+	if len(declared) > 0 {
+		return nil, fmt.Errorf("未知推理档位 %v", sortedKeys(declared))
+	}
+	return ordered, nil
+}
+
+// canonicalEffortOrder 是网关 Canonical 推理强度的升序全序。
+//
+// 它与 core/inference 的 ReasoningEffort 枚举是同一套词汇；生成器不能 import core
+// （生成工具必须独立于被生成物），因此这里显式重复一次，并由 core 侧的
+// TestCanonicalEffortOrderMatchesGenerator 守住两者一致。
+var canonicalEffortOrder = []string{
+	"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func validModalities(values []string) bool {

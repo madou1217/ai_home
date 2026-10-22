@@ -33,6 +33,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // 只处理 http(s) 同源/跨源 GET 请求：扩展程序、data:、chrome-extension: 等 scheme
+  // 无法被 Cache API 接受，否则 c.put 会抛 'Request scheme ... is unsupported'。
+  if (event.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    return;
+  }
+
   // API 请求与 SSE 流式请求直连，不走缓存
   if (url.pathname.startsWith('/v0/') || url.pathname.startsWith('/v1/') || event.request.headers.get('accept')?.includes('text/event-stream')) {
     return;
@@ -45,7 +51,7 @@ self.addEventListener('fetch', (event) => {
         if (cached) {
           fetch(event.request).then((networkRes) => {
             if (networkRes.ok) {
-              caches.open(CACHE_NAME).then((c) => c.put(event.request, networkRes));
+              caches.open(CACHE_NAME).then((c) => c.put(event.request, networkRes)).catch(() => {});
             }
           }).catch(() => {});
           return cached;
@@ -53,7 +59,7 @@ self.addEventListener('fetch', (event) => {
         return fetch(event.request).then((res) => {
           if (res.ok) {
             const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone)).catch(() => {});
           }
           return res;
         });
@@ -68,7 +74,7 @@ self.addEventListener('fetch', (event) => {
       fetch(event.request).then((res) => {
         if (res.ok) {
           const clone = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone)).catch(() => {});
         }
         return res;
       }).catch(() => {

@@ -30,6 +30,7 @@ export const MOBILE_ROUTES: MobileRouteEntry[] = [
   { pattern: '/accounts', code: 'ACCTS', title: '账号管理', nav: 'accounts' },
   { pattern: '/chat', code: 'CHAT', title: 'AI 会话', nav: 'chat' },
   { pattern: '/usage', code: 'USAGE', title: '模型用量', nav: 'usage' },
+  { pattern: '/studio/translation', code: 'TRANSLATE', title: 'AI 翻译', nav: 'more' },
   { pattern: '/models', code: 'MODELS', title: '模型目录', nav: 'more' },
   { pattern: '/toolkit/install-guide', code: 'GUIDE', title: '安装指南', nav: 'more' },
   { pattern: '/toolkit', code: 'TOOLS', title: '开发工具', nav: 'more' },

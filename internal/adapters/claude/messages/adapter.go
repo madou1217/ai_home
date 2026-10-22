@@ -11,6 +11,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/effortalign"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	"github.com/madou1217/ai_home/core/inference"
@@ -40,6 +41,8 @@ type Adapter struct {
 	decodeErrors func(error)
 	// rules 可选：账号自定义上游错误规则求值端口，见 ObserveUpstreamRules。
 	rules configured.Rules
+	// aligner 可选：把请求的推理强度压进目标模型的档位阶梯，见 ObserveEffortLadders。
+	aligner *effortalign.Aligner
 }
 
 // 编译期确认 Adapter 完整实现上游端口。
@@ -81,6 +84,16 @@ func (adapter *Adapter) ObserveUpstreamRules(rules configured.Rules) {
 	adapter.rules = rules
 }
 
+// ObserveEffortLadders 注入目标模型的推理强度档位来源。
+//
+// nil 表示 Go 不承接强度对齐：请求原样透传，档位收敛仍由 encodeReasoning 的既有规则决定。
+func (adapter *Adapter) ObserveEffortLadders(ladders effortalign.LadderReader) {
+	if adapter == nil {
+		return
+	}
+	adapter.aligner = effortalign.New(ladders)
+}
+
 // SupportsCredential 只接受能够由 Go Messages Adapter 精确承载的 Claude 凭据。
 // 订阅 OAuth 也在其中：官方客户端仍优先走 Native Relay，但跨协议客户端只能
 // 由 Canonical 承载，能力边界因此不再按凭据类型排除订阅账号。
@@ -116,8 +129,11 @@ func (adapter *Adapter) Execute(
 		return inferencegateway.AttemptResult{}, err
 	}
 	effectiveModel := invocation.Route().EffectiveModel()
+	// 强度对齐必须发生在编码之前：encodeReasoning 只认识 Anthropic 的档位词汇，
+	// 把 Codex 的 xhigh/ultra 交给它会在各条路径各夹一次、方向还可能相反。
+	aligned := adapter.aligner.Apply(invocation.Request(), invocation.Route().ProviderID(), effectiveModel)
 	encoded, err := encodeRequest(
-		invocation.Request(),
+		aligned,
 		effectiveModel,
 		auth.officialClient,
 	)

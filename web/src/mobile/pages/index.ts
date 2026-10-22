@@ -11,6 +11,7 @@ export const MOBILE_PAGES: Record<string, MobilePageComponent> = {
   '/accounts': lazy(() => import('./MobileAccounts')),
   '/chat': lazy(() => import('./MobileChat')),
   '/usage': lazy(() => import('./MobileUsage')),
+  '/studio/translation': lazy(() => import('./MobileTranslation')),
   '/models': lazy(() => import('./MobileModels')),
   '/toolkit/install-guide': lazy(() => import('./MobileInstallGuide')),
   '/toolkit': lazy(() => import('./MobileToolkit')),

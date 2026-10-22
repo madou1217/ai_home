@@ -882,6 +882,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            effort={message.effort}
             source={message.source}
             copyText={messageText || message.content}
             actionsVisible={metaVisible}
@@ -915,6 +916,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            effort={message.effort}
             copyText={message.content}
             actionsVisible={metaVisible}
           />
@@ -951,6 +953,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            effort={message.effort}
             copyText={message.content || ''}
             actionsVisible={metaVisible}
           />
@@ -982,6 +985,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
           role={message.role}
           timestamp={message.timestamp}
           model={message.model}
+          effort={message.effort}
           metrics={message.metrics}
           progress={progress}
           copyText={messageText || message.content}

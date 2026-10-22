@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 var (
@@ -22,14 +23,19 @@ var (
 )
 
 // snapshotRecord 是生成快照的 JSON 传输形状。
+//
+// Efforts 是该模型声明的推理强度档位（升序）；缺省表示「没有档位概念」，
+// 与「有档位但一个都没记下来」不是一回事，因此用 nil 与空切片区分。
 type snapshotRecord struct {
-	Input  []string `json:"input"`
-	Output []string `json:"output"`
+	Input   []string `json:"input"`
+	Output  []string `json:"output"`
+	Efforts []string `json:"efforts,omitempty"`
 }
 
-// Index 保存启动时构建后不再修改的 O(1) 模态查找表。
+// Index 保存启动时构建后不再修改的 O(1) 模态与强度档位查找表。
 type Index struct {
-	models map[string]modelmetadata.Modalities
+	models  map[string]modelmetadata.Modalities
+	efforts map[string][]inference.ReasoningEffort
 }
 
 // 编译期确认索引满足 HTTP 模型目录所依赖的应用层端口。
@@ -42,6 +48,7 @@ func New() (*Index, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSnapshot, err)
 	}
 	models := make(map[string]modelmetadata.Modalities, len(records))
+	efforts := make(map[string][]inference.ReasoningEffort, len(records))
 	for modelID, record := range records {
 		if strings.TrimSpace(modelID) == "" || modelID != strings.TrimSpace(modelID) {
 			return nil, ErrInvalidSnapshot
@@ -51,8 +58,15 @@ func New() (*Index, error) {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidSnapshot, modelID)
 		}
 		models[modelID] = modalities
+		ladder, err := effortLadderOf(record.Efforts)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", ErrInvalidSnapshot, modelID, err)
+		}
+		if len(ladder) > 0 {
+			efforts[modelID] = ladder
+		}
 	}
-	return &Index{models: models}, nil
+	return &Index{models: models, efforts: efforts}, nil
 }
 
 // LookupModalities 按 AIH Provider 和真实模型 ID 返回不可变值对象。
@@ -88,6 +102,71 @@ func (index *Index) LookupModalities(
 		}
 	}
 	return modelmetadata.Modalities{}, false
+}
+
+// LookupReasoningEfforts 返回该模型声明的推理强度档位（升序）。
+//
+// 与模态不同，这里**不做家族兜底**：模态猜错的代价是「多剥一张图」或「少剥一张图」，
+// 而强度猜错的代价是「用户要 high 却被静默降成 low」——强度必须来自权威目录，
+// 查不到就如实说查不到，由调用方决定是拒绝还是按「不设强度」处理。
+//
+// 解析路径与 LookupModalities 一致（命名空间精确命中 → 基座模型回退 → 裁尾段），
+// 这样 provider 自定义的档位后缀（…-high / …-thinking）能落到基座模型的档位表上。
+func (index *Index) LookupReasoningEfforts(
+	providerID string,
+	modelID string,
+) ([]inference.ReasoningEffort, bool) {
+	if index == nil || len(index.efforts) == 0 {
+		return nil, false
+	}
+	id := strings.TrimSpace(modelID)
+	if id == "" {
+		return nil, false
+	}
+	stripped := stripKnownModelPrefix(id)
+	for _, namespace := range providerNamespacesFor(providerID, id, stripped) {
+		if ladder, found := index.efforts[namespace+"/"+stripped]; found {
+			return append([]inference.ReasoningEffort(nil), ladder...), true
+		}
+	}
+	for _, key := range baseModelCandidates(id, stripped) {
+		if ladder, found := index.efforts[key]; found {
+			return append([]inference.ReasoningEffort(nil), ladder...), true
+		}
+	}
+	return nil, false
+}
+
+// effortLadderOf 把快照里的档位字符串转成 Canonical 枚举，并校验升序唯一。
+//
+// 生成器已按 Canonical 全序排好；这里再校验一次，是为了让「快照被手工改坏」失败关闭
+// 而不是把错序的阶梯喂给对齐器（错序会静默产生错误的映射）。
+func effortLadderOf(values []string) ([]inference.ReasoningEffort, error) {
+	ladder := make([]inference.ReasoningEffort, 0, len(values))
+	for index, value := range values {
+		effort := inference.ReasoningEffort(strings.TrimSpace(value))
+		if !effort.IsValid() {
+			return nil, fmt.Errorf("未知推理档位 %q", value)
+		}
+		if index > 0 && !effortStrongerThan(ladder[index-1], effort) {
+			return nil, fmt.Errorf("推理档位未按强度升序排列: %q", value)
+		}
+		ladder = append(ladder, effort)
+	}
+	return ladder, nil
+}
+
+// effortStrongerThan 判断后者是否严格强于前者（按 Canonical 全序）。
+func effortStrongerThan(weaker inference.ReasoningEffort, stronger inference.ReasoningEffort) bool {
+	for _, effort := range inference.CanonicalEffortOrder() {
+		if effort == weaker {
+			return true
+		}
+		if effort == stronger {
+			return false
+		}
+	}
+	return false
 }
 
 // LookupOrInferModalities 在快照未命中时按保守家族兜底推断。

@@ -59,6 +59,12 @@ const nodeRoutes = [
         component: "./StudioImage",
         icon: "picture",
       },
+      {
+        name: "AI 翻译",
+        path: "/studio/translation",
+        component: "./Translation",
+        icon: "translation",
+      },
     ]
   },
   {
@@ -109,6 +115,11 @@ const nodeRoutes = [
   {
     path: "/server-setup",
     component: "./FabricServerSetup",
+    hideInMenu: true,
+  },
+  {
+    path: "/translation",
+    redirect: "/studio/translation",
     hideInMenu: true,
   },
   {

@@ -1,6 +1,7 @@
 package modelsdev_test
 
 import (
+	"github.com/madou1217/ai_home/core/inference"
 	"testing"
 
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
@@ -82,4 +83,37 @@ func assertStrings(t *testing.T, got []string, want []string) {
 			t.Fatalf("strings = %#v, want %#v", got, want)
 		}
 	}
+}
+
+// TestIndexResolvesReasoningLadders 验证档位查询走与模态相同的三层解析。
+func TestIndexResolvesReasoningLadders(t *testing.T) {
+	t.Parallel()
+	index, err := modelsdev.New()
+	if err != nil {
+		t.Fatalf("modelsdev.New() error = %v", err)
+	}
+	ladder, found := index.LookupReasoningEfforts("codex", "gpt-5.6-sol")
+	if !found {
+		t.Fatal("gpt-5.6-sol must declare a reasoning ladder")
+	}
+	assertStrings(t, effortStrings(ladder), []string{"none", "low", "medium", "high", "xhigh", "max"})
+	// provider 自定义的档位后缀（…-high）落到基座模型的阶梯上。
+	suffixed, found := index.LookupReasoningEfforts("codex", "gpt-5.6-sol-high")
+	if !found {
+		t.Fatal("a suffixed variant must fall back to the base model ladder")
+	}
+	assertStrings(t, effortStrings(suffixed), effortStrings(ladder))
+	// 没有档位概念的模型如实未命中，不做家族兜底。
+	if _, found := index.LookupReasoningEfforts("codex", "not-a-real-model"); found {
+		t.Fatal("unknown models must not report a guessed ladder")
+	}
+}
+
+// effortStrings 把档位枚举转成断言用的字符串切片。
+func effortStrings(values []inference.ReasoningEffort) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
 }

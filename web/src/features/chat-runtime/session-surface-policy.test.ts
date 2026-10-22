@@ -131,7 +131,7 @@ test('saved Chat keeps providers visible while rejecting a different account on 
   // 在本会话选不了（见下面的 blocked 断言），列出来只会误导。
   const visible = runtimeAccountsForSession(chat, [account, kimi]);
   assert.deepEqual(visible.slice(0, 2), [account, kimi]);
-  assert.deepEqual(visible.slice(2).map((entry) => chatAccountIdentity(entry)), ['gateway:codex']);
+  assert.deepEqual(visible.slice(2).map((entry) => chatAccountIdentity(entry)), ['gateway']);
   assert.equal(resolveSessionRuntimeTarget({ session: chat, account: kimi, approvalMode: 'confirm' }).status, 'blocked');
   const fresh = { ...chat, id: 'draft-new', accountRef: undefined, draft: true, provider: kimi.provider };
   const result = resolveSessionRuntimeTarget({ session: fresh, account: kimi, approvalMode: 'confirm' });
@@ -142,29 +142,27 @@ test('saved Chat keeps providers visible while rejecting a different account on 
   }
 });
 
-test('chat account list gains exactly one aih-server target, bound to the session provider', () => {
+test('chat account list gains exactly one aih-server target for the whole server', () => {
   const accounts = [
     account,
     { ...account, provider: 'opencode' as const, accountRef: 'account-2' },
     { ...account, provider: 'grok' as const, accountRef: 'account-3' },
   ];
-  // 会话 provider = codex → 只追加 codex 那条网关目标。
-  // 2026-10-21 真机反馈：此前按「每个有账号且能由网关服务的 provider 各一条」生成，
-  // 本机 15 个 provider 就是 15 条同名 aih-server；而服务端 resolveSessionRuntimeTarget
-  // 有 provider_mismatch 守卫，其它 provider 的条目在会话内根本选不了。
+  // 全局唯一一条：不钉账号、不钉 provider。
+  // 2026-10-21 真机反馈：此前按 provider 各一条，本机 15 个 provider 就是 15 条同名条目。
   const list = withGatewayAccounts(accounts, 'codex');
   assert.deepEqual(list.slice(0, accounts.length).map((entry) => entry.provider), ['codex', 'opencode', 'grok']);
   const gateways = list.slice(accounts.length);
-  assert.equal(gateways.length, 1, '每个会话只一条 aih-server');
+  assert.equal(gateways.length, 1, '整个 server 只一条 aih-server');
   assert.equal(gateways[0].provider, 'codex');
-  assert.equal(chatAccountIdentity(gateways[0]), 'gateway:codex');
+  assert.equal(chatAccountIdentity(gateways[0]), 'gateway');
   assert.equal(gateways[0].displayName, 'aih-server(全部账号+别名)');
 });
 
-test('aih-server target follows the session provider and is skipped when unavailable', () => {
+test('aih-server target is appended when a pool exists and skipped otherwise', () => {
   const accounts = [{ ...account, provider: 'opencode' as const, accountRef: 'account-2' }];
   assert.deepEqual(withGatewayAccounts(accounts, 'opencode').map(chatAccountIdentity),
-    ['account-2', 'gateway:opencode']);
+    ['account-2', 'gateway']);
   // 没有可绑的池（该 provider 无账号且不声明 gateway_profile）→ 不追加空目标。
   assert.deepEqual(withGatewayAccounts(accounts, 'grok').map(chatAccountIdentity), ['account-2']);
   // 缺 provider 时不追加（没有可绑的池，凭空的网关目标会指向不存在的池）。
@@ -177,11 +175,11 @@ test('chat account change decides between ignore, retarget and a new session', (
   const sameProvider = { ...account, provider: 'opencode' as const, accountRef: 'account-b' };
   // 目标没变 → 忽略（网关目标按 gateway:<provider> 的稳定标识比较）。
   assert.equal(resolveChatAccountChange({ ...saved, account: { ...sameProvider, accountRef: 'account-a' } }), 'ignore');
-  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway:opencode',
+  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway',
     account: makeAihServerAccount('opencode') }), 'ignore');
   // 同 provider + 已有服务端会话 → 换执行凭据、会话不变。
   assert.equal(resolveChatAccountChange({ ...saved, account: sameProvider }), 'retarget');
-  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway:opencode',
+  assert.equal(resolveChatAccountChange({ ...saved, accountRef: 'gateway',
     account: { ...sameProvider, accountRef: 'account-b' } }), 'retarget');
   // 跨 provider → 新建。
   assert.equal(resolveChatAccountChange({ ...saved, account: { ...account, provider: 'kimi' as const } }), 'new-session');
@@ -201,11 +199,28 @@ test('a gateway chat target resolves to a pooled scope instead of an account ref
   });
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') return;
-  assert.equal(result.target.executionAccountRef, 'gateway:opencode');
-  // 换 provider 必须挡住：网关目标也只在同一 provider 内挑号。
-  assert.deepEqual(resolveSessionRuntimeTarget({
+  assert.equal(result.target.executionAccountRef, 'gateway');
+});
+
+// 2026-10-21 收敛：网关目标是**全局池**，不钉账号也不钉 provider（服务端目录取自全局池、
+// harness 不写 X-Provider 钉选头）。所以跨 provider 选它不再 blocked —— 这正是
+// 「全局一条、跨 provider 通用」的含义。
+test('a gateway target is accepted regardless of the session provider', () => {
+  const gateway = makeAihServerAccount('opencode');
+  const result = resolveSessionRuntimeTarget({
     session: { id: 'draft-2', title: '新对话', updatedAt: 1, provider: 'codex', draft: true, mode: 'chat' },
     account: gateway,
+    approvalMode: 'confirm',
+  });
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.target.executionAccountRef, 'gateway');
+  // 会话 provider 保持原值（harness 目录命名与元数据解析要用），不被网关目标改写。
+  assert.equal(result.target.provider, 'codex');
+  // 但**真实账号**的跨 provider 仍然挡住（协议不同，必须新建会话）。
+  assert.deepEqual(resolveSessionRuntimeTarget({
+    session: { id: 'draft-3', title: '新对话', updatedAt: 1, provider: 'codex', draft: true, mode: 'chat' },
+    account: { ...account, provider: 'kimi' as const, accountRef: 'kimi-1' },
     approvalMode: 'confirm',
   }), { status: 'blocked', reason: 'provider_mismatch' });
 });

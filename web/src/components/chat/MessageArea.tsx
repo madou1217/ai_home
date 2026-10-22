@@ -40,10 +40,10 @@ import { getAccountDefaultModel, getSessionModelKey, listAccountEnabledModels, l
 import { isSessionAccountProviderCompatible } from './session-provider-policy.js';
 import {
   AIH_SERVER_ACCOUNT_LABEL,
-  getGatewaySelectionScope,
+  GATEWAY_SELECTION_SCOPE,
   isAihServerAccount,
   makeAihServerAccount,
-  parseGatewaySelectionScope,
+  providerFromGatewayScope,
   supportsAihServer
 } from './aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
@@ -295,9 +295,8 @@ const MessageArea = ({
   const selectedAccountRef = String(selectedAccount?.accountRef || '').trim();
   const aihServerSelected = isAihServerAccount(selectedAccount);
   const aihServerProvider = aihServerSelected ? String(selectedAccount?.provider || '') : '';
-  const selectedTargetKey = aihServerSelected
-    ? getGatewaySelectionScope(aihServerProvider as Provider)
-    : selectedAccountRef;
+  // 网关目标是全局唯一标识（不绑 provider），与账号菜单的 option id 一致。
+  const selectedTargetKey = aihServerSelected ? GATEWAY_SELECTION_SCOPE : selectedAccountRef;
   const accountModelIds = accountModelState.targetKey === selectedTargetKey ? accountModelState.ids : [];
   const effectiveSelectedModel = resolveEffectiveSelectedModel(selectedModel, accountModelIds);
   const activeModelMeta = accountModelState.metadata && effectiveSelectedModel
@@ -477,6 +476,26 @@ const MessageArea = ({
     ? accounts.filter((account) => isSessionAccountProviderCompatible(session, account.provider))
     : accounts
   ).filter(isChatSelectableAccount);
+
+  /**
+   * 网关目标该带哪个 provider —— 只影响 harness 目录命名与模型元数据解析，不进标识
+   * （网关目标是全局唯一的，见 aih-server-account 的 GATEWAY_SELECTION_SCOPE）。
+   *
+   * 优先沿用当前会话/选中目标已有的 provider（存量 `gateway:<provider>` 会话因此保持原样），
+   * 否则退回会话 provider，最后退回首个可用账号的 provider。
+   */
+  const gatewayTargetProvider: Provider = (() => {
+    const fromSelected = isAihServerAccount(selectedAccount)
+      ? String(selectedAccount?.provider || '').trim()
+      : '';
+    if (fromSelected) return fromSelected as Provider;
+    // 存量会话：accountRef 可能还是旧的 `gateway:<provider>`，从中取回 provider。
+    const fromLegacyScope = providerFromGatewayScope(session?.accountRef);
+    if (fromLegacyScope) return fromLegacyScope;
+    const fromSession = String(session?.provider || '').trim();
+    if (fromSession) return fromSession as Provider;
+    return (filteredAccounts[0]?.provider || 'codex') as Provider;
+  })();
 
   const mobileAccountSummary = selectedAccount
     ? `${selectedAccount.provider.toUpperCase()} · ${formatChatAccountLabel(selectedAccount)}`
@@ -1111,18 +1130,18 @@ const MessageArea = ({
                 <ComposerAccountMenu
                   value={selectedAccount
                     ? (isAihServerAccount(selectedAccount)
-                        ? getGatewaySelectionScope(selectedAccount.provider)
+                        ? GATEWAY_SELECTION_SCOPE
                         : selectedAccount.accountRef)
                     : ''}
                   options={[
-                    ...Array.from(new Set(filteredAccounts.map((account) => account.provider)))
-                      .filter(supportsAihServer)
-                      .map((provider) => ({
-                        id: getGatewaySelectionScope(provider),
-                        provider,
-                        label: AIH_SERVER_ACCOUNT_LABEL,
-                        badge: 'gateway',
-                      })),
+                    // 网关目标全局唯一一条：不钉账号、也不钉 provider，由网关按模型 id 挑号。
+                    // provider 取当前会话/首个可用者，仅用于 harness 目录命名与元数据解析。
+                    ...(gatewayTargetProvider ? [{
+                      id: GATEWAY_SELECTION_SCOPE,
+                      provider: gatewayTargetProvider,
+                      label: AIH_SERVER_ACCOUNT_LABEL,
+                      badge: 'gateway',
+                    }] : []),
                     ...filteredAccounts.map((account) => ({
                       id: account.accountRef,
                       provider: account.provider,
@@ -1131,9 +1150,8 @@ const MessageArea = ({
                     })),
                   ]}
                   onChange={(value) => {
-                    const gatewayProvider = parseGatewaySelectionScope(value);
-                    if (gatewayProvider) {
-                      onAccountChange(makeAihServerAccount(gatewayProvider));
+                    if (value === GATEWAY_SELECTION_SCOPE) {
+                      onAccountChange(makeAihServerAccount(gatewayTargetProvider));
                       return;
                     }
                     const account = filteredAccounts.find((candidate) => candidate.accountRef === value);
@@ -1226,30 +1244,28 @@ const MessageArea = ({
             <Select
               value={selectedAccount
                 ? (isAihServerAccount(selectedAccount)
-                    ? getGatewaySelectionScope(selectedAccount.provider)
+                    ? GATEWAY_SELECTION_SCOPE
                     : selectedAccount.accountRef)
                 : undefined}
               onChange={(value) => {
-                const gatewayProvider = parseGatewaySelectionScope(value);
-                if (gatewayProvider) {
-                  onAccountChange(makeAihServerAccount(gatewayProvider));
+                if (value === GATEWAY_SELECTION_SCOPE) {
+                  onAccountChange(makeAihServerAccount(gatewayTargetProvider));
                   return;
                 }
                 const account = accounts.find(a => a.accountRef === value);
                 if (account) onAccountChange(account);
               }}
               options={[
-                // 各支持 provider 的网关"全部账号+别名"选项置顶(agy/gemini 跳过)。
-                ...Array.from(new Set(filteredAccounts.map(a => a.provider)))
-                  .filter(supportsAihServer)
-                  .map(provider => ({
-                    label: <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <ProviderIcon provider={provider} size={14} />
-                      <span>{AIH_SERVER_ACCOUNT_LABEL}</span>
-                      <span title="网关" style={{ fontSize: 10, color: 'var(--color-muted)' }}>网关</span>
-                    </span>,
-                    value: getGatewaySelectionScope(provider)
-                  })),
+                // 网关目标全局唯一一条：不钉账号、不钉 provider，由网关按模型 id 挑号。
+                // 图标用会话 provider（仅视觉），不参与标识。
+                ...(filteredAccounts.length > 0 || supportsAihServer(gatewayTargetProvider) ? [{
+                  label: <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ProviderIcon provider={gatewayTargetProvider} size={14} />
+                    <span>{AIH_SERVER_ACCOUNT_LABEL}</span>
+                    <span title="网关" style={{ fontSize: 10, color: 'var(--color-muted)' }}>网关</span>
+                  </span>,
+                  value: GATEWAY_SELECTION_SCOPE
+                }] : []),
                 ...filteredAccounts.map(acc => ({
                   label: <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <ProviderIcon provider={acc.provider} size={14} />

@@ -2,6 +2,7 @@ import type { ChatAccount, Provider, Session } from '@/types';
 import { chatRuntimeProviders } from './runtime-provider-registry';
 import {
   chatAccountIdentity,
+  isAihServerAccount,
   makeAihServerAccount,
   supportsAihServer,
 } from '@/components/chat/aih-server-account';
@@ -87,24 +88,21 @@ export function runtimeAccountsForSession(
 }
 
 /**
- * 在真实账号后追加「aih-server(全部账号+别名)」目标 —— **每个会话只一条**。
+ * 在真实账号后追加「aih-server(全部账号+别名)」目标 —— **全局唯一一条，跨 provider 通用**。
  *
- * 它代表「不钉账号，由网关挑号」；选中后模型列表就是整个 server 的目录（服务端对网关
- * 作用域返回全局池，见 chat-harness-model-reader）。
+ * 它代表「不钉账号、也不钉 provider，由网关按模型 id 挑号」；选中后模型列表就是整个
+ * server 的目录（服务端对网关作用域返回全局池，见 chat-harness-model-reader 的
+ * isGatewayRuntimeScope 分支），harness 请求也不写 X-Provider 钉选头
+ * （见 chat-harness-gateway 的 runtimeConfigRevision v6）。所以它本来就与 provider 无关。
  *
- * 为什么只给**会话自己的 provider** 一条（2026-10-21 真机反馈「账号里 aih-server 出现了
- * 15 次」）：服务端 `resolveSessionRuntimeTarget` 有 provider_mismatch 守卫 —— 账号
- * provider 必须等于会话 provider。所以其它 provider 的网关条目在会话内**根本选不了**，
- * 列出来既是视觉噪音，也让人误以为能跨 provider 换（实际会 blocked）。同理，网关作用域
- * 的 harness 也按 `gateway-<provider>` 分目录，多列无用。
+ * 2026-10-21 收敛：此前每个 provider 一条（`gateway:<provider>`），本机 15 个 provider
+ * 就是 15 条同名条目 —— 既是视觉噪音，也让人误以为要按 provider 选。
  *
- * 判定两个来源并集（都来自服务端结论，前端不维护 provider 清单）：
- * - 生成合同的 `gateway_profile` 能力（CLI 可被指向网关的那批）；
- * - 账号 payload 的 `gatewayTargetSupported`（描述符 relay 能力：transport=http 且
- *   不依赖本机客户端）。后者让 agy 这类「CLI 不能指向网关、但网关能直接服务」的
- *   provider 也拿到 aih-server 目标 —— chat 模式因此不需要启 CLI。
+ * 何时追加：只要**任一**账号声明 `gatewayTargetSupported`（描述符 relay 能力：
+ * transport=http 且不依赖本机客户端），或该 provider 有 `gateway_profile` 能力，就有
+ * 可用的池。判定来自服务端结论，前端不维护 provider 清单。
  *
- * @param provider 会话自己的 provider；缺省时不追加任何网关目标（没有可绑的池）。
+ * @param provider 会话自己的 provider —— 只用来判断「有没有可绑的池」，不进标识。
  */
 export function withGatewayAccounts(
   accounts: readonly ChatAccount[],
@@ -121,10 +119,13 @@ export function withGatewayAccounts(
 
 /**
  * 换账号时该做什么。三种结果：
- * - `ignore`：目标没变（含网关目标 gateway:<provider> 的稳定标识比较）。
+ * - `ignore`：目标没变（网关目标按裸 `gateway` 比较，与 provider 无关）。
  * - `retarget`：**同 provider** 且已有服务端会话 → 换执行凭据、会话不变（服务端 open 时 rebind，
  *   时间线保留、harness 换账号并回填历史）。
- * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草稿）→ 按原行为新建。
+ * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草��）→ 按原行为新建。
+ *
+ * 注意：选网关目标**不是**跨 provider —— 会话 provider 不变，只是不钉账号。所以它命中
+ * retarget（有服务端会话时）而不是 new-session。
  */
 export type ChatAccountChangeAction = 'ignore' | 'retarget' | 'new-session';
 
@@ -139,7 +140,8 @@ export function resolveChatAccountChange(input: {
   const identity = chatAccountIdentity(input.account);
   if (String(input.accountRef || '') === identity) return 'ignore';
   if (input.mode !== 'chat') return 'new-session';
-  if (input.provider !== input.account.provider) return 'new-session';
+  // 网关目标不携带 provider 语义（全局池），不算跨 provider。
+  if (!isAihServerAccount(input.account) && input.provider !== input.account.provider) return 'new-session';
   if (input.draft || !input.runtimeSessionId) return 'new-session';
   return 'retarget';
 }
@@ -152,7 +154,11 @@ function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResol
   // 没有账号时退回会话已绑定的作用域。
   const accountRef = providedIdentity || boundScope;
   if (!accountRef) return blocked('account_required');
-  if (account && account.provider !== input.session.provider) return blocked('provider_mismatch');
+  // 网关目标是全局池，跨 provider 通用 —— 会话 provider 保持原值（harness 目录命名与
+  // 模型元数据解析仍要用它），不触发 provider_mismatch。
+  if (account && !isAihServerAccount(account) && account.provider !== input.session.provider) {
+    return blocked('provider_mismatch');
+  }
   // 会话已绑定的目标与传入账号不同时：**同 provider 就是换执行凭据**（服务端 open 会 rebind，
   // 会话与时间线不变），跨 provider 已在上一步挡住。
   return {

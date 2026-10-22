@@ -320,6 +320,20 @@ async function cli(args, context) {
   return { code, result: JSON.parse(lines.join('\n')) };
 }
 
+test('runPluginCommand：未知子命令打印提示与用法并以 0 退出（不再抛 plugin_command_unknown）', async () => {
+  const lines = [];
+  const errors = [];
+  const consoleImpl = { log: (line) => lines.push(String(line)), error: (line) => errors.push(String(line)) };
+
+  const code = await runPluginCommand(['plugin', 'bogus'], { consoleImpl });
+
+  assert.equal(code, 0);
+  assert.deepEqual(errors, []);
+  const output = lines.join('\n');
+  assert.match(output, /未识别的子命令 'bogus'/);
+  assert.match(output, /Usage: aih plugin <command> \[options\]/);
+});
+
 test('closed loop through aih server and the CLI survives a server restart', async () => {
   const dir = tempDir('aihm1s-');
   const aiHomeDir = path.join(dir, 'home');

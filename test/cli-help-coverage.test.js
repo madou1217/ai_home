@@ -61,12 +61,39 @@ test('aih backup without a subcommand prints usage and exits 0', async () => {
   assert.match(output, /AIH Backup/i);
 });
 
-test('aih backup with an unknown subcommand prints a notice plus usage and exits 0', async () => {
-  const { code, stdout, stderr } = await runCli(['backup', 'bogus']);
+// 未知输入不再报错退出，而是「提示行 + 该层级的用法」并以 0 退出（与 `--help` 同形），
+// 让用户一眼看到有哪些入口，而不是先猜一句报错是什么意思。
+const UNKNOWN_ENTRIES = [
+  { argv: ['backup', 'bogus'], notice: /未识别的子命令 'bogus'/, usage: /AIH Backup/i },
+  { argv: ['edge', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /aih edge status/ },
+  { argv: ['edge', 'remove', 'nginx'], notice: /未识别的用法 'remove nginx'/, usage: /aih edge status/ },
+  { argv: ['node', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /AI Home Node/ },
+  { argv: ['node', 'relay', 'bogus'], notice: /未识别的用法 'relay bogus'/, usage: /AI Home Node/ },
+  { argv: ['fabric', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /AIH Fabric/i },
+  { argv: ['plugin', 'bogus'], notice: /未识别的子命令 'bogus'/, usage: /Usage: aih plugin/ },
+  { argv: ['update', 'bogus'], notice: /未识别的参数 'bogus'/, usage: /AIH Update/i }
+];
+
+test('an unknown subcommand prints a notice plus that level\'s usage and exits 0', async () => {
+  const results = await Promise.all(UNKNOWN_ENTRIES.map(async (entry) => ({
+    entry,
+    ...(await runCli(entry.argv))
+  })));
+
+  for (const { entry, code, stdout, stderr } of results) {
+    const label = `aih ${entry.argv.join(' ')}`;
+    const output = `${stdout}${stderr}`;
+    assert.equal(code, 0, `${label} must exit 0\n${output}`);
+    assert.match(output, entry.notice, `${label} must name the rejected token\n${output}`);
+    assert.match(output, entry.usage, `${label} must print its own usage\n${output}`);
+  }
+});
+
+test('aih edge without an action still fails with usage (exit 1) — only unknown usage exits 0', async () => {
+  const { code, stdout, stderr } = await runCli(['edge']);
   const output = `${stdout}${stderr}`;
-  assert.equal(code, 0);
-  assert.match(output, /未识别的子命令 'bogus'/);
-  assert.match(output, /AIH Backup/i);
+  assert.equal(code, 1);
+  assert.match(output, /aih edge status/);
 });
 
 test('an unknown root command prints a notice plus the root help and exits 0', async () => {

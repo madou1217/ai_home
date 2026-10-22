@@ -1610,3 +1610,45 @@ test('runNodeCommandRouter prints node usage for bootstrap apply help', async ()
   assert.match(writes.join(''), /OpenMPTCPRouter\/MPTCP are underlay optimizers only/);
   assert.match(writes.join(''), /Desktop\/Web clients connect with Server URL \+ Management Key/);
 });
+
+test('runNodeCommandRouter prints node usage and exits 0 for an unknown node usage', async () => {
+  const writes = [];
+  const errors = [];
+  const exits = [];
+
+  await runNodeCommandRouter(['node', 'bogus'], {
+    processObj: {
+      stdout: { write: (value) => writes.push(String(value)) },
+      exit: (code) => exits.push(code)
+    },
+    consoleImpl: {
+      log: (value) => writes.push(String(value)),
+      error: (value) => errors.push(String(value))
+    }
+  });
+
+  assert.equal(errors.length, 0);
+  assert.deepEqual(exits, [0]);
+  assert.match(writes.join(''), /未识别的用法 'bogus'/);
+  assert.match(writes.join(''), /AI Home Node/);
+});
+
+test('runNodeCommandRouter names the whole unknown nested usage and exits 0', async () => {
+  const writes = [];
+  const exits = [];
+
+  await runNodeCommandRouter(['node', 'relay', 'bogus'], {
+    processObj: {
+      stdout: { write: (value) => writes.push(String(value)) },
+      exit: (code) => exits.push(code)
+    },
+    consoleImpl: {
+      log: (value) => writes.push(String(value)),
+      error: () => {}
+    }
+  });
+
+  assert.deepEqual(exits, [0]);
+  assert.match(writes.join(''), /未识别的用法 'relay bogus'/);
+  assert.match(writes.join(''), /AI Home Node/);
+});

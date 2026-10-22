@@ -10,6 +10,7 @@ function createServiceHarness(overrides = {}) {
   const logs = [];
   const errors = [];
   const spawnCalls = [];
+  let fetchCalls = 0;
 
   const packageInfo = {
     name: 'ai_home',
@@ -18,11 +19,14 @@ function createServiceHarness(overrides = {}) {
 
   const service = createSelfUpdateService({
     packageInfo,
-    fetchImpl: async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ version: '1.1.0' })
-    }),
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ version: '1.1.0' })
+      };
+    },
     spawnSyncImpl: (command, args) => {
       spawnCalls.push({ command, args });
       return { status: 0 };
@@ -41,6 +45,7 @@ function createServiceHarness(overrides = {}) {
     logs,
     errors,
     spawnCalls,
+    getFetchCalls: () => fetchCalls,
     ...overrides
   };
 }
@@ -106,6 +111,30 @@ function assertNoSourceLinkMutation(h) {
   assert.equal(h.spawnCalls.some((call) => call.command === 'npm'), false);
   assert.equal(h.spawnCalls.some((call) => call.command === 'git' && call.args.includes('pull')), false);
 }
+
+test('self update --help prints usage and exits 0 without querying the registry', async () => {
+  const h = createServiceHarness();
+
+  const code = await h.service.runUpdateCommand(['--help']);
+
+  assert.equal(code, 0);
+  assert.equal(h.getFetchCalls(), 0);
+  assert.equal(h.logs.some((line) => line.includes('AIH Update')), true);
+  assert.equal(h.logs.some((line) => line.includes('aih update [--check] [--dry-run] [--force]')), true);
+});
+
+test('self update unknown arg prints a notice plus usage and exits 0 without mutating', async () => {
+  const h = createServiceHarness();
+
+  const code = await h.service.runUpdateCommand(['bogus']);
+
+  assert.equal(code, 0);
+  assert.equal(h.getFetchCalls(), 0);
+  assert.equal(h.spawnCalls.length, 0);
+  assert.equal(h.errors.length, 0);
+  assert.equal(h.logs.some((line) => line.includes("未识别的参数 'bogus'")), true);
+  assert.equal(h.logs.some((line) => line.includes('aih update [--check] [--dry-run] [--force]')), true);
+});
 
 test('self update check reports source-link metadata without querying npm registry', async (t) => {
   const h = createSourceLinkHarness(t);

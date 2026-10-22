@@ -97,7 +97,7 @@ test('aih edge apply：写入失败以非零退出并回显内核原话', () => 
   assert.match(errors.join('\n'), /unknown directive/);
 });
 
-test('aih edge：缺动作给帮助并以 1 退出，--help 以 0 退出', () => {
+test('aih edge：缺动作给帮助并以 1 退出，--help 以 0 退出，未知用法给帮助并以 0 退出', () => {
   const missing = capture();
   assert.equal(runEdgeCommand([], missing), 1);
   assert.match(missing.lines.join('\n'), /aih edge status/);
@@ -106,8 +106,13 @@ test('aih edge：缺动作给帮助并以 1 退出，--help 以 0 退出', () =>
   assert.equal(runEdgeCommand(['--help'], asked), 0);
 
   const bogus = capture();
-  assert.equal(runEdgeCommand(['bogus'], bogus), 1);
-  assert.match(bogus.errors.join('\n'), /aih edge status/);
+  assert.equal(runEdgeCommand(['bogus'], bogus), 0);
+  assert.match(bogus.lines.join('\n'), /未识别的用法 'bogus'/);
+  assert.match(bogus.lines.join('\n'), /aih edge status/);
+
+  const wrongKind = capture();
+  assert.equal(runEdgeCommand(['remove', 'nginx'], wrongKind), 0);
+  assert.match(wrongKind.lines.join('\n'), /未识别的用法 'remove nginx'/);
 });
 
 test('aih <cli> resume：统一动词翻译成各 provider 的原生命令/旗标（事实来自合同）', () => {

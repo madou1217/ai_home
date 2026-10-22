@@ -478,3 +478,25 @@ test('runFabricCommandRouter exposes broker connect JSON result', async () => {
   assert.equal(payload.serverId, 'home-server');
   assert.equal(payload.mode, 'once');
 });
+
+test('runFabricCommandRouter prints fabric usage and exits 0 for an unknown fabric usage', async () => {
+  const writes = [];
+  const errors = [];
+  const exits = [];
+
+  await runFabricCommandRouter(['fabric', 'bogus'], {
+    processObj: {
+      stdout: { write: (value) => writes.push(String(value)) },
+      exit: (code) => exits.push(code)
+    },
+    consoleImpl: {
+      log: (value) => writes.push(String(value)),
+      error: (value) => errors.push(String(value))
+    }
+  });
+
+  assert.equal(errors.length, 0);
+  assert.deepEqual(exits, [0]);
+  assert.match(writes.join(''), /未识别的用法 'bogus'/);
+  assert.match(writes.join(''), /AIH Fabric/i);
+});

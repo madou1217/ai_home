@@ -894,3 +894,33 @@ test('a qoder resource-limit 403 is an overload hint, never an account auth fail
   const plain = classifyUpstreamFailure({ provider: 'qoder', statusCode: 403, detail: 'upstream_403' });
   assert.equal(plain.kind, 'auth_invalid');
 });
+
+// 2026-10-22 真机：CodeBuddy/WorkBuddy 免费档对不支持该档位的模型返回
+//   {"code":11158,"msg":"model [gemini-3.5-flash] is not allowed for user type [personal_free_user]"}
+// 此前这条没有登记 → 落进通用 400 分支（invalid_request / shouldRetryAnotherAccount:false）
+// → free 账号把请求一次打死，**同池的其它账号从未被尝试**。
+// 「这个账号的档位不支持该模型」与「模型在端点不存在」语义不同，但对路由的含义一样：
+// 换个账号就能用，所以必须换号。判据按结构化错误码，不从人类可读文本猜（displayMsg 随语言变）。
+test('account-tier model denial retries another account instead of passing the 400 through', () => {
+  const body = JSON.stringify({
+    code: 11158,
+    msg: 'model [gemini-3.5-flash] is not allowed for user type [personal_free_user]',
+    displayMsg: { en: 'Your account type does not support this model.', zh: '当前账号类型暂不支持该模型。' }
+  });
+  const policy = classifyUpstreamFailure({ statusCode: 400, body, provider: 'workbuddy' });
+  assert.equal(policy.kind, 'account_tier_model_denied');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  assert.equal(policy.retryable, true);
+  // 只冷却该 (账号,模型)，账号的其它模型不受影响。
+  assert.equal(policy.scope, 'model');
+});
+
+test('generic 400 stays non-retryable so a real bad request is not fanned out', () => {
+  const policy = classifyUpstreamFailure({
+    statusCode: 400,
+    body: JSON.stringify({ error: { message: 'invalid request: messages is required' } }),
+    provider: 'claude'
+  });
+  assert.equal(policy.kind, 'invalid_request');
+  assert.equal(policy.shouldRetryAnotherAccount, false);
+});

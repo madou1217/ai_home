@@ -10,11 +10,13 @@ const registry = require('../lib/runtime/egress-pool-registry');
 const { openCodeFreeHttpTransport } = require('../lib/server/upstream-endpoints-transport-opencode-free-http');
 const { DEFAULT_MAX_EGRESS_HOPS } = require('../lib/server/opencode-free-egress-rotation');
 
-function freeUsageLimitError() {
+function freeUsageLimitError(responseHeaders) {
   const error = new Error('HTTP_429');
   error.code = 'HTTP_429';
   error.statusCode = 429;
   error.responseBody = JSON.stringify({ type: 'error', error: { type: 'FreeUsageLimitError', message: 'Free usage limit reached' } });
+  // opencode-zen-free-client 会把响应头挂在这里；上游的重置时刻只存在于头上。
+  error.responseHeaders = responseHeaders || {};
   return error;
 }
 
@@ -110,3 +112,51 @@ for (const source of ['url', 'system', '']) {
     assert.deepEqual(action, { action: 'retry_next' });
   });
 }
+
+// 2026-10-22：上游把恢复时刻写在 retry-after 里（opencode 2.1.2 的「Resets at …」）。
+// 这条头必须同时进两处：① 冷却（经 classifyUpstreamFailure 的 headers）；
+// ② 客户端交付（attemptMutable.finalRetryAfterMs，由 upstream-endpoints 写成 retry-after）。
+test('the upstream reset hint reaches both the cooldown and the client-facing retry-after', async (t) => {
+  t.after(() => registry.resetEgressPoolServiceForTests());
+  installPool();
+  const { ctx, failures } = buildCtx('url');
+  ctx.deps.fetchOpenCodeZenFreeChatCompletion = async () => {
+    throw freeUsageLimitError({ 'retry-after': '21600' });
+  };
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'retry_next' });
+  // ① 冷却：端点日额度用尽 → 6 小时，而不是历史固定的 5 分钟。
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].cooldownMs, 6 * 60 * 60 * 1000);
+  assert.equal(failures[0].retryHintMs, 6 * 60 * 60 * 1000);
+  // ② 交付：留给最终响应写 retry-after。
+  assert.equal(ctx.attemptMutable.finalRetryAfterMs, 6 * 60 * 60 * 1000);
+  assert.equal(ctx.attemptMutable.finalStatusCode, 429);
+});
+
+test('a 429 without any hint leaves the client-facing retry-after unset', async (t) => {
+  t.after(() => registry.resetEgressPoolServiceForTests());
+  installPool();
+  const { ctx, failures } = buildCtx('url');
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'retry_next' });
+  assert.equal(failures[0].cooldownMs, 5 * 60 * 1000);
+  // 0 = 上游没给：不写 retry-after，客户端按自己的策略退避。
+  assert.equal(ctx.attemptMutable.finalRetryAfterMs, 0);
+});
+
+test('a rotated exit keeps the hint for the terminal 429 the pool hands back', async (t) => {
+  t.after(() => registry.resetEgressPoolServiceForTests());
+  const rotations = installPool();
+  const { ctx, failures } = buildCtx('pool');
+  ctx.deps.fetchOpenCodeZenFreeChatCompletion = async () => {
+    throw freeUsageLimitError({ 'retry-after-ms': '21600000' });
+  };
+  const action = await openCodeFreeHttpTransport.run(ctx);
+  // 跳数用完 → 交回账号循环；此时客户端拿到的就是这个 429，必须带 retry-after。
+  assert.deepEqual(action, { action: 'retry_next' });
+  assert.equal(rotations(), DEFAULT_MAX_EGRESS_HOPS + 1);
+  assert.equal(failures.length, 0);
+  assert.equal(ctx.attemptMutable.finalStatusCode, 429);
+  assert.equal(ctx.attemptMutable.finalRetryAfterMs, 6 * 60 * 60 * 1000);
+});

@@ -59,14 +59,23 @@ const {
   OPENCODE_FREE_ENDPOINT_URLS,
   OPENCODE_INFERENCE_FREE_URL,
   OPENCODE_ZEN_LEGACY_FREE_URL,
+  fetchOpenCodeZenFreeChatCompletion,
   fetchOpenCodeZenFreeChatCompletionStream
 } = require('../lib/server/opencode-zen-free-client');
 
-function fakeFetch(statusByUrl, calls) {
+function fakeFetch(statusByUrl, calls, headers) {
   return async (url) => {
     calls.push(url);
     const status = statusByUrl[url] || 200;
-    return { status, ok: status >= 200 && status < 300, text: async () => '', body: { cancel: async () => {} } };
+    return { status, ok: status >= 200 && status < 300, headers, text: async () => '', body: { cancel: async () => {} } };
+  };
+}
+
+// fetch 的 Headers 是 forEach 形态（只有 .get/.forEach/.entries，没有可枚举自有属性）。
+function headersBag(entries) {
+  return {
+    forEach: (visit) => Object.entries(entries).forEach(([key, value]) => visit(value, key)),
+    get: (key) => entries[Object.keys(entries).find((name) => name.toLowerCase() === String(key).toLowerCase())] ?? null
   };
 }
 
@@ -112,6 +121,79 @@ test('both endpoints exhausted surfaces the last 429', async () => {
     /HTTP 429/
   );
   assert.equal(calls.length, 2);
+});
+
+// ── 响应头必须留在错误上（2026-10-22，opencode 2.1.2）────────────────────────
+// 免费档的恢复时刻只写在响应头里（retry-after / retry-after-ms），opencode 自己的客户端
+// 就是解析它渲染 "Resets at …"。头在客户端层丢掉，失败策略就只能拍一个固定冷却，
+// 于是端点日额度用尽时每 5 分钟再撞一次墙。
+test('an exhausted free endpoint keeps the upstream reset headers on the error', async () => {
+  const calls = [];
+  await assert.rejects(
+    fetchOpenCodeZenFreeChatCompletionStream({}, { accountRef: 't' }, FREE_REQUEST, 1000, {
+      fetchWithTimeout: fakeFetch(
+        { [OPENCODE_INFERENCE_FREE_URL]: 429, [OPENCODE_ZEN_LEGACY_FREE_URL]: 429 },
+        calls,
+        headersBag({ 'Retry-After': '21600', 'Retry-After-Ms': '21600000' })
+      )
+    }),
+    (error) => {
+      assert.equal(error.statusCode, 429);
+      // 键统一小写：失败策略按小写名读头。
+      assert.deepEqual(error.responseHeaders, { 'retry-after': '21600', 'retry-after-ms': '21600000' });
+      return true;
+    }
+  );
+});
+
+test('the non-stream entry point keeps the reset headers too', async () => {
+  const calls = [];
+  await assert.rejects(
+    fetchOpenCodeZenFreeChatCompletion({}, { accountRef: 't' }, FREE_REQUEST, 1000, {
+      fetchWithTimeout: fakeFetch(
+        { [OPENCODE_INFERENCE_FREE_URL]: 429, [OPENCODE_ZEN_LEGACY_FREE_URL]: 429 },
+        calls,
+        headersBag({ 'retry-after': '60' })
+      )
+    }),
+    (error) => {
+      assert.equal(error.responseHeaders['retry-after'], '60');
+      return true;
+    }
+  );
+});
+
+test('a plain-object header bag is accepted as well', async () => {
+  const calls = [];
+  await assert.rejects(
+    fetchOpenCodeZenFreeChatCompletionStream({}, { accountRef: 't' }, FREE_REQUEST, 1000, {
+      fetchWithTimeout: fakeFetch(
+        { [OPENCODE_INFERENCE_FREE_URL]: 429, [OPENCODE_ZEN_LEGACY_FREE_URL]: 429 },
+        calls,
+        { 'Retry-After-Ms': 60000 }
+      )
+    }),
+    (error) => {
+      assert.deepEqual(error.responseHeaders, { 'retry-after-ms': '60000' });
+      return true;
+    }
+  );
+});
+
+test('a failed response without headers still produces an empty header bag', async () => {
+  const calls = [];
+  await assert.rejects(
+    fetchOpenCodeZenFreeChatCompletionStream({}, { accountRef: 't' }, FREE_REQUEST, 1000, {
+      fetchWithTimeout: fakeFetch(
+        { [OPENCODE_INFERENCE_FREE_URL]: 429, [OPENCODE_ZEN_LEGACY_FREE_URL]: 429 },
+        calls
+      )
+    }),
+    (error) => {
+      assert.deepEqual(error.responseHeaders, {});
+      return true;
+    }
+  );
 });
 
 // ── 门禁 ④(a) 的 read 垫片 ─────────────────────────────────────────────────

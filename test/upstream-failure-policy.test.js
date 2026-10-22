@@ -14,6 +14,41 @@ test('retry hints parses Retry-After seconds header', () => {
   assert.equal(ms, 120000);
 });
 
+// opencode 2.1.2 的 `ra(headers)` 先读毫秒头、再退到 retry-after（它是 "Resets at …" 的
+// 唯一数据源）。两个头同时出现时以毫秒头为准 —— 顺序反了会把 6 小时读成 6 秒。
+test('retry hints parses the millisecond Retry-After header', () => {
+  const ms = parseProviderRetryHintMs({
+    provider: 'opencode',
+    headers: { 'retry-after-ms': '21600000' },
+    nowMs: 1000
+  });
+  assert.equal(ms, 21600000);
+});
+
+test('retry hints prefers retry-after-ms over retry-after', () => {
+  const ms = parseProviderRetryHintMs({
+    provider: 'opencode',
+    headers: { 'retry-after-ms': '60000', 'retry-after': '21600' },
+    nowMs: 1000
+  });
+  assert.equal(ms, 60000);
+});
+
+test('retry hints reads the millisecond header off a Headers-like bag', () => {
+  // fetch 的 Headers 对象只走 `.get` 白名单分支：白名单漏掉这个头，免费档的
+  // 「Resets at …」就永远读不到（实测形态）。
+  const headers = { get: (key) => (key === 'retry-after-ms' ? '3600000' : null) };
+  const ms = parseProviderRetryHintMs({ provider: 'opencode', headers, nowMs: 1000 });
+  assert.equal(ms, 3600000);
+});
+
+test('retry hints ignores a non-positive or unparsable millisecond header', () => {
+  for (const value of ['0', '-1', '', 'soon']) {
+    const ms = parseProviderRetryHintMs({ provider: 'opencode', headers: { 'retry-after-ms': value }, nowMs: 1000 });
+    assert.equal(ms, 0, `value ${JSON.stringify(value)}`);
+  }
+});
+
 test('retry hints parses gemini quotaResetDelay from response body', () => {
   const ms = parseProviderRetryHintMs({
     provider: 'gemini',
@@ -923,4 +958,81 @@ test('generic 400 stays non-retryable so a real bad request is not fanned out', 
   });
   assert.equal(policy.kind, 'invalid_request');
   assert.equal(policy.shouldRetryAnotherAccount, false);
+});
+
+// ── opencode 免费档 429：冷却对齐上游的重置时刻（2026-10-22，opencode 2.1.2）──────
+// 上游把「什么时候恢复」写在 retry-after 里。旧实现固定 5 分钟：端点日额度用尽时
+// （retry-after 指向下一个 UTC 零点）每 5 分钟再撞一次，每次都白耗一轮出口轮换。
+const FREE_LIMIT_BODY = JSON.stringify({
+  type: 'error',
+  error: { type: 'FreeUsageLimitError', message: 'Free usage limit reached' }
+});
+
+test('opencode free-limit 429 cools for the upstream reset hint instead of a fixed 5 minutes', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: FREE_LIMIT_BODY,
+    headers: { 'retry-after': '21600' }
+  });
+  assert.equal(policy.kind, 'rate_limited');
+  assert.equal(policy.scope, 'model');
+  assert.equal(policy.shouldRetryAnotherAccount, true);
+  // 端点日额度：6 小时到 UTC 零点，就冷 6 小时。
+  assert.equal(policy.cooldownMs, 6 * 60 * 60 * 1000);
+  // 交给客户端退避的时刻与实际冷却同源，避免「网关 5 分钟就重试却让客户端等 6 小时」。
+  assert.equal(policy.retryHintMs, policy.cooldownMs);
+  // 出口轮换语义不变：这仍可能是「某个出口 IP 被限」。
+  assert.equal(policy.openCodeFreeEgressLimited, true);
+});
+
+test('opencode free-limit 429 reads the millisecond hint header too', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: FREE_LIMIT_BODY,
+    headers: { 'retry-after-ms': '21600000' }
+  });
+  assert.equal(policy.cooldownMs, 6 * 60 * 60 * 1000);
+  assert.equal(policy.retryHintMs, 6 * 60 * 60 * 1000);
+});
+
+test('opencode free-limit 429 without a hint keeps the historical 5 minutes and tells the client nothing', () => {
+  const policy = classifyUpstreamFailure({ provider: 'opencode', statusCode: 429, body: FREE_LIMIT_BODY });
+  assert.equal(policy.cooldownMs, 5 * 60 * 1000);
+  assert.equal(policy.retryHintMs, 0);
+});
+
+test('opencode free-limit 429 clamps an absurd hint into [60s, 24h]', () => {
+  const tooShort = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: FREE_LIMIT_BODY,
+    headers: { 'retry-after': '5' }
+  });
+  assert.equal(tooShort.cooldownMs, 60 * 1000);
+  assert.equal(tooShort.retryHintMs, 60 * 1000);
+
+  // 日额度窗口最多一天：更大的值只会把这个 (账号,模型) 无理由钉死。
+  const tooLong = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: FREE_LIMIT_BODY,
+    headers: { 'retry-after': '31536000' }
+  });
+  assert.equal(tooLong.cooldownMs, 24 * 60 * 60 * 1000);
+  assert.equal(tooLong.retryHintMs, 24 * 60 * 60 * 1000);
+});
+
+test('opencode free-limit 429 stays model-scoped and never locks the account', () => {
+  const policy = classifyUpstreamFailure({
+    provider: 'opencode',
+    statusCode: 429,
+    body: FREE_LIMIT_BODY,
+    headers: { 'retry-after': '21600' }
+  });
+  assert.equal(policy.clientStatusCode, 429);
+  assert.equal(policy.failureThreshold, 1);
+  assert.notEqual(policy.kind, 'auth_invalid');
+  assert.equal(policy.scope, 'model');
 });

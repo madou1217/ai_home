@@ -13,6 +13,7 @@ const {
   buildNpmPlan,
   buildNpmUpdatePlan,
   buildNpmUninstallPlan,
+  buildPosixScriptPlan,
   buildShellPlan
 } = require('../lib/server/app-installers/official-install');
 
@@ -385,4 +386,49 @@ test('Windows 可执行安装器统一使用静默参数、退出码校验与 UA
     assert.match(script, /--speed-time 60/, provider);
     assert.doesNotMatch(script, /\}\s*;\s*else/, provider);
   }
+});
+
+// 2026-10-22 对齐 OpenCode 2.1.2：v1 安装器源码里写死了版本门禁
+// （「is not an OpenCode 1 release」），不带 VERSION 时也只从 `opencode-ai@latest`
+// 与 GitHub 的 `v1.*` 标签里挑版本 —— 也就是说 `/install` **永远装不出 2.x**。
+// aih 的会话读取 / headless / 三代布局表都已按 2.x 对齐，安装计划必须跟着走 2.x 线。
+test('OpenCode 安装计划走 v2 线：v2 安装器 + @opencode/cli', () => {
+  const opencode = getAppInstaller('opencode');
+  for (const platform of ['darwin', 'linux']) {
+    const plans = opencode.resolveCliInstallPlans({ platform, hostHomeDir: '/home/tester' });
+    const scriptPlan = plans.find((plan) => plan.id === 'opencode_posix_official');
+    assert.ok(scriptPlan, `${platform} 应有 POSIX 官方安装器计划`);
+    const script = scriptPlan.args.join(' ');
+    assert.match(script, /https:\/\/opencode\.ai\/v2\/install/);
+    assert.doesNotMatch(script, /https:\/\/opencode\.ai\/install/);
+    // v2 安装器默认会往 ~/.zshrc / config.fish 追加 PATH；从常驻 server 跑的安装作业
+    // 不该顺手改用户的 shell 配置，必须显式关掉。
+    assert.match(script, /bash "\$script" '--no-modify-path'/);
+  }
+
+  const npmPlans = opencode.resolveCliInstallPlans({ platform: 'darwin', hostHomeDir: '/home/tester' });
+  const npmInstall = npmPlans.find((plan) => plan.id === 'npm_global');
+  assert.ok(npmInstall, '应有 npm 兜底安装计划');
+  assert.ok(npmInstall.args.includes('@opencode/cli'));
+  assert.ok(!npmInstall.args.includes('opencode-ai'));
+
+  const update = opencode.resolveLifecyclePlans('update', { platform: 'darwin', hostHomeDir: '/home/tester' });
+  assert.ok(update.some((plan) => plan.args.includes('@opencode/cli@latest')));
+  assert.ok(update.every((plan) => !plan.args.includes('opencode-ai')));
+
+  const uninstall = opencode.resolveLifecyclePlans('uninstall', { platform: 'darwin', hostHomeDir: '/home/tester' });
+  assert.ok(uninstall.some((plan) => plan.args.includes('@opencode/cli')));
+  assert.ok(uninstall.every((plan) => !plan.args.includes('opencode-ai')));
+});
+
+test('没有 scriptArgs 的 POSIX 安装器保持原样的 bash 调用', () => {
+  // 共享构造器默认不转发任何参数：只有显式声明 scriptArgs 的 provider 才多出这一段。
+  const plan = buildPosixScriptPlan({
+    id: 'probe',
+    label: 'probe',
+    url: 'https://example.com/install.sh',
+    hosts: ['example.com'],
+    options: { platform: 'darwin', hostHomeDir: '/home/tester' }
+  });
+  assert.match(plan.args.join(' '), /bash "\$script"$/);
 });

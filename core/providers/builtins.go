@@ -294,9 +294,12 @@ func builtinOpenCode() Definition {
 			GlobalDir:  ".config/opencode",
 			ConfigFile: "opencode.json",
 			LoginArgs:  []string{"auth", "login"},
-			Package:    "opencode-ai",
-			EnvKeys:    []string{"OPENCODE_API_KEY", "OPENCODE_BASE_URL"},
-			Headless:   &HeadlessConfig{TriggerSubcommands: []string{"run"}},
+			// OpenCode 2 的 npm 包是 `@opencode/cli`；旧的 `opencode-ai` 只发到 1.x
+			// （上游安装器原文：OpenCode 2 ships as @opencode/cli），Node 侧用它做
+			// 版本源（更新检查）与 npm 兜底安装计划，指错了就会拿 1.x 线去比 2.x 安装。
+			Package:  "@opencode/cli",
+			EnvKeys:  []string{"OPENCODE_API_KEY", "OPENCODE_BASE_URL"},
+			Headless: &HeadlessConfig{TriggerSubcommands: []string{"run"}},
 			DesktopClient: desktopClient(
 				"OpenCode",
 				[]string{"OpenCode"},

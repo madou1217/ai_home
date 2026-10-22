@@ -725,7 +725,7 @@
           "auth",
           "login"
         ],
-        "pkg": "opencode-ai",
+        "pkg": "@opencode/cli",
         "envKeys": [
           "OPENCODE_API_KEY",
           "OPENCODE_BASE_URL"

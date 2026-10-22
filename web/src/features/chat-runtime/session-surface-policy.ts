@@ -1,10 +1,11 @@
 import type { ChatAccount, Provider, Session } from '@/types';
 import { chatRuntimeProviders } from './runtime-provider-registry';
 import {
+  AIH_SERVER_PROVIDERS,
   chatAccountIdentity,
   isAihServerAccount,
+  isGatewaySelectionScope,
   makeAihServerAccount,
-  supportsAihServer,
 } from '@/components/chat/aih-server-account';
 
 export type ApprovalMode = 'bypass' | 'confirm' | 'plan';
@@ -99,22 +100,26 @@ export function runtimeAccountsForSession(
  * 就是 15 条同名条目 —— 既是视觉噪音，也让人误以为要按 provider 选。
  *
  * 何时追加：只要**任一**账号声明 `gatewayTargetSupported`（描述符 relay 能力：
- * transport=http 且不依赖本机客户端），或该 provider 有 `gateway_profile` 能力，就有
- * 可用的池。判定来自服务端结论，前端不维护 provider 清单。
+ * transport=http 且不依赖本机客户端），或**任一** provider 有 `gateway_profile` 能力，
+ * 就有可用的池。判定来自服务端结论，前端不维护 provider 清单。
  *
- * @param provider 会话自己的 provider —— 只用来判断「有没有可绑的池」，不进标识。
+ * 注意判定是**全局**的，不看会话 provider：网关目标代表「整个 server 的池」，会话
+ * provider 只是它默认带的上下文。此前按会话 provider 判，会让「会话 provider 恰好没有池」
+ * 时条目直接消失 —— 与「跨 provider 通用」自相矛盾。
+ *
+ * @param provider 会话自己的 provider —— 只写进目标对象供 harness 目录命名与元数据解析，
+ *   不参与「有没有池」的判定，也不进标识。
  */
 export function withGatewayAccounts(
   accounts: readonly ChatAccount[],
   provider?: Provider | null,
 ): readonly ChatAccount[] {
-  const target = String(provider || '').trim();
-  if (!target) return accounts;
-  const gatewayCapable = accounts.some(
-    (account) => account.provider === target && account.gatewayTargetSupported === true,
-  );
-  if (!gatewayCapable && !supportsAihServer(target)) return accounts;
-  return [...accounts, makeAihServerAccount(target as Provider)];
+  const gatewayCapable = accounts.some((account) => account.gatewayTargetSupported === true);
+  if (!gatewayCapable && !AIH_SERVER_PROVIDERS.length) return accounts;
+  // provider 缺省时退回首个账号的 provider（仅用于目标对象的上下文，不影响标识）。
+  const context = String(provider || '').trim() || String(accounts[0]?.provider || '').trim();
+  if (!context) return accounts;
+  return [...accounts, makeAihServerAccount(context as Provider)];
 }
 
 /**
@@ -138,12 +143,23 @@ export function resolveChatAccountChange(input: {
   readonly account: ChatAccount;
 }): ChatAccountChangeAction {
   const identity = chatAccountIdentity(input.account);
-  if (String(input.accountRef || '') === identity) return 'ignore';
+  // 网关目标按**归一化**比较：存量会话列里是旧后缀（`gateway:opencode`），新标识是裸
+  // `gateway`。直接比字符串会把「同一个网关目标」判成变化，从而触发一次无谓的 retarget
+  // （改写会话列 + 重建 pane）。两者都指同一个全局池，视为没变。
+  if (sameChatTarget(input.accountRef, identity)) return 'ignore';
   if (input.mode !== 'chat') return 'new-session';
   // 网关目标不携带 provider 语义（全局池），不算跨 provider。
   if (!isAihServerAccount(input.account) && input.provider !== input.account.provider) return 'new-session';
   if (input.draft || !input.runtimeSessionId) return 'new-session';
   return 'retarget';
+}
+
+/** 两个目标标识是否指同一个目标（网关目标兼容旧 `gateway:<provider>` 后缀）。 */
+function sameChatTarget(left?: string | null, right?: string | null): boolean {
+  const a = String(left || '').trim();
+  const b = String(right || '').trim();
+  if (a === b) return true;
+  return isGatewaySelectionScope(a) && isGatewaySelectionScope(b);
 }
 
 function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResolution {
@@ -152,7 +168,14 @@ function resolveChatTarget(input: ResolveTargetInput): SessionRuntimeTargetResol
   const providedIdentity = chatAccountIdentity(account);
   // 显式传入的账号优先：同 provider 换账号时目标就是新账号（服务端 open 会 rebind）；
   // 没有账号时退回会话已绑定的作用域。
-  const accountRef = providedIdentity || boundScope;
+  //
+  // 例外：**网关目标**且会话已绑定了网关作用域时，沿用已绑定的那个字符串。存量会话列里是
+  // 旧后缀（`gateway:opencode`），直接用新标识会把它改写成裸值 —— 服务端据此 retarget，
+  // 旧 harness home 变孤儿、pane 重建。两者指同一个全局池，沿用旧值即可，无需迁移。
+  const boundIsGateway = isGatewaySelectionScope(boundScope);
+  const accountRef = (isAihServerAccount(account) && boundIsGateway)
+    ? boundScope
+    : (providedIdentity || boundScope);
   if (!accountRef) return blocked('account_required');
   // 网关目标是全局池，跨 provider 通用 —— 会话 provider 保持原值（harness 目录命名与
   // 模型元数据解析仍要用它），不触发 provider_mismatch。

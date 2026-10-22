@@ -77,7 +77,7 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.doesNotMatch(config, /X-Session-Id/);
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v8');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v9');
 });
 
 test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {
@@ -179,3 +179,47 @@ test('gateway-scoped codex sessions use the gateway harness without an account c
   assert.equal(usesChatGateway({ provider: 'opencode', executionAccountRef: 'gateway:opencode' }, noCredentials), true);
 });
 
+
+// 2026-10-21 真机事故：网关标识收敛成裸 `gateway` 后，常驻 pane 按 runtimeScope 键控
+// （`chat-gateway` 一个），但 harness home 仍按 provider 分（gateway-agy / gateway-cline /
+// gateway-workbuddy）。同一 pane 下不同 provider 的会话指向不同 CODEX_HOME →
+// runtime fingerprint 互不相同 → pane 被反复重建（实测 runtimeGeneration 递增 1→2→3），
+// 磁盘上还累积 gateway-<provider> 孤儿目录。home 必须与 pane 键一致。
+test('gateway-scoped harness shares one home across providers', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-harness-gateway-shared-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const makeOptions = () => ({
+    aiHomeDir: root,
+    env: { HOME: '/host' },
+    readAccountCredentialRecord: () => { throw new Error('gateway scope must not read account credentials'); },
+    chatGateway: { port: 9999, clientKey: 'gateway-secret', readModels: async () => ['gpt-5.5'] }
+  });
+
+  const homes = [];
+  for (const provider of ['agy', 'cline', 'workbuddy']) {
+    const gateway = createChatGatewayOptions(
+      { provider, executionAccountRef: 'gateway', sessionId: `session-${provider}` },
+      makeOptions(),
+    );
+    const env = await gateway.buildProviderEnvImpl();
+    homes.push(env.CODEX_HOME);
+  }
+  assert.equal(new Set(homes).size, 1, '所有 provider 共用同一个网关 home');
+  assert.ok(homes[0].includes(path.join('chat-harness', 'gateway')));
+});
+
+
+// 同一 pane 下不同 provider 的会话必须得到同一份执行身份（authRevision），否则
+// runtime fingerprint 各不相同，常驻 pane 会被反复重建。
+test('gateway auth revision ignores the provider', async () => {
+  const crypto = require('node:crypto');
+  // 与 chat-runtime-composition 的 resolve 同式：网关作用域下 provider 不参与哈希。
+  const revisionFor = (provider, runtimeScope) => crypto.createHash('sha256').update(JSON.stringify([
+    String(runtimeScope).startsWith('gateway') ? '' : provider,
+    runtimeScope, 'meta-v1', 9999, 'gateway-secret'
+  ])).digest('hex');
+  assert.equal(revisionFor('agy', 'gateway'), revisionFor('cline', 'gateway'));
+  assert.equal(revisionFor('cline', 'gateway'), revisionFor('workbuddy', 'gateway'));
+  // 账号作用域仍然按 provider 区分（不同 provider 的执行凭据不同，必须分开）。
+  assert.notEqual(revisionFor('agy', 'acct_1'), revisionFor('cline', 'acct_1'));
+});

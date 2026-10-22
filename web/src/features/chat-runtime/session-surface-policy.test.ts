@@ -8,7 +8,7 @@ import {
   usesCanonicalSessionRuntime,
   withGatewayAccounts,
 } from './session-surface-policy';
-import { chatAccountIdentity, makeAihServerAccount } from '@/components/chat/aih-server-account';
+import { AIH_SERVER_PROVIDERS, chatAccountIdentity, makeAihServerAccount } from '@/components/chat/aih-server-account';
 
 const savedSession: Session = {
   id: 'native-thread-1', title: 'Runtime', updatedAt: 1,
@@ -163,10 +163,16 @@ test('aih-server target is appended when a pool exists and skipped otherwise', (
   const accounts = [{ ...account, provider: 'opencode' as const, accountRef: 'account-2' }];
   assert.deepEqual(withGatewayAccounts(accounts, 'opencode').map(chatAccountIdentity),
     ['account-2', 'gateway']);
-  // 没有可绑的池（该 provider 无账号且不声明 gateway_profile）→ 不追加空目标。
-  assert.deepEqual(withGatewayAccounts(accounts, 'grok').map(chatAccountIdentity), ['account-2']);
-  // 缺 provider 时不追加（没有可绑的池，凭空的网关目标会指向不存在的池）。
-  assert.deepEqual(withGatewayAccounts(accounts).map(chatAccountIdentity), ['account-2']);
+  // 判定是**全局**的（网关目标是整个 server 的池）：会话 provider 没有池也不影响 ——
+  // 按会话 provider 判会让条目在跨 provider 场景下直接消失，与「跨 provider 通用」矛盾。
+  assert.deepEqual(withGatewayAccounts(accounts, 'grok').map(chatAccountIdentity),
+    ['account-2', 'gateway']);
+  // 完全没有可用池（没有任何账号声明 gatewayTargetSupported 且合同无 gateway_profile）
+  // → 不追加指向不存在池的空目标。
+  const noPool = [{ ...account, provider: 'opencode' as const, accountRef: 'account-2',
+    gatewayTargetSupported: false }];
+  assert.deepEqual(withGatewayAccounts(noPool, 'opencode').map(chatAccountIdentity),
+    AIH_SERVER_PROVIDERS.length > 0 ? ['account-2', 'gateway'] : ['account-2']);
 });
 
 test('chat account change decides between ignore, retarget and a new session', () => {
@@ -225,3 +231,34 @@ test('a gateway target is accepted regardless of the session provider', () => {
   }), { status: 'blocked', reason: 'provider_mismatch' });
 });
 
+
+// 2026-10-21：网关标识从 `gateway:<provider>` 收敛成裸 `gateway`，但库里已有 9 条旧后缀
+// 会话。两者指同一个全局池，必须按**归一化**比较 —— 否则旧会话一打开就被判成「目标变了」，
+// 触发 retarget（改写会话列 + 旧 harness home 变孤儿 + pane 重建）。
+test('legacy gateway:<provider> sessions are not treated as a changed target', () => {
+  const saved = { mode: 'chat' as const, provider: 'opencode' as const,
+    accountRef: 'gateway:opencode', runtimeSessionId: 'session-legacy' };
+  // 旧后缀 ≡ 裸 gateway：选中态判「没变」，不 retarget。
+  assert.equal(resolveChatAccountChange({ ...saved, account: makeAihServerAccount('opencode') }), 'ignore');
+  // 打开旧会话时沿用已绑定的旧作用域，不改写列值（避免无谓的 pane 重建）。
+  const result = resolveSessionRuntimeTarget({
+    session: { id: 'session-legacy', title: '旧会话', updatedAt: 1, provider: 'opencode',
+      mode: 'chat', accountRef: 'gateway:opencode' },
+    account: makeAihServerAccount('opencode'),
+    approvalMode: 'confirm',
+  });
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.target.executionAccountRef, 'gateway:opencode');
+});
+
+test('a fresh session still writes the bare gateway scope', () => {
+  const result = resolveSessionRuntimeTarget({
+    session: { id: 'draft-new', title: '新对话', updatedAt: 1, provider: 'agy', draft: true, mode: 'chat' },
+    account: makeAihServerAccount('agy'),
+    approvalMode: 'confirm',
+  });
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.target.executionAccountRef, 'gateway');
+});

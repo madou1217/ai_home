@@ -187,6 +187,17 @@ func nativeKimi() *NativeCapability {
 }
 
 // nativeKiro 描述 Kiro CLI 原生配置、会话和权限边界。
+// nativeKiro 描述 Kiro CLI 原生配置、会话和权限边界。
+//
+// 权限旗标（kiro-cli 2.32.0 的 `chat --help` 原文，2026-10-22 实测）：
+//   - `-a, --trust-all-tools`：Allows the model to use any tool to run commands without
+//     asking for confirmation（等价于「不再询问」）；
+//   - `--trust-tools <TOOL_NAMES>`：只信任名单里的工具（`--trust-tools=` 表示一个都不信任）。
+// 这两个旗标属于 **chat 子命令**，不是根命令：`kiro-cli -a` 退出码 2（被拒）、
+// `kiro-cli chat -a` 退出码 0；agent / settings 也不接受。因此落点由
+// lib/runtime/kiro-permission-args.js 声明（插在 `chat` 之后）。
+// kiro 没有「模式枚举」这种形态（不像 claude 的 --permission-mode 收一个值），
+// 所以 Modes 留空而不是编造：能力边界如实表达。
 func nativeKiro() *NativeCapability {
 	return &NativeCapability{
 		Config: NativeConfig{
@@ -208,8 +219,8 @@ func nativeKiro() *NativeCapability {
 			StopRequiresJSONStdout: false,
 		},
 		Permissions: NativePermissions{
-			Flags: []string{},
-			Modes: []string{"default"},
+			Flags: []string{"--trust-all-tools", "--trust-tools"},
+			Modes: []string{},
 		},
 	}
 }

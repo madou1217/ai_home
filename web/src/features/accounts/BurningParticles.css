@@ -7,6 +7,10 @@
   pointer-events: none;
   overflow: visible;
   z-index: 4;
+  /* 粒子动画全部在自己的合成层里跑。否则每帧的 transform 变更会让浏览器
+     对整页做样式重算（实测每 10 秒 100~200 次），账号页因此明显掉帧。 */
+  contain: layout paint style;
+  isolation: isolate;
 }
 
 /* 燃烧点紧贴真实轨道端点；双层光核模拟火药捻子的白热爆点。 */
@@ -26,7 +30,10 @@
     color-mix(in srgb, var(--core-color) 78%, transparent) 48%,
     transparent 72%
   );
-  filter: drop-shadow(0 0 3px var(--core-color));
+  /* 不用 filter: drop-shadow：它会让该元素每帧重��栅格化，且强制脱离合成层。
+     box-shadow 由合成器绘制，效果接近但便宜得多。 */
+  box-shadow: 0 0 3px var(--core-color);
+  will-change: transform, opacity;
   animation: burning-core-flash var(--core-duration, 0.28s) steps(2, end) var(--core-delay, 0s) infinite;
 }
 
@@ -44,6 +51,7 @@
     0 0 2px var(--burning-white),
     0 0 5px color-mix(in srgb, var(--core-color) 58%, var(--burning-hot)),
     0 0 9px var(--core-color);
+  will-change: transform, opacity;
   animation: burning-core-jolt var(--jolt-duration, 0.18s) steps(2, end) var(--jolt-delay, 0s) infinite alternate;
 }
 
@@ -63,9 +71,11 @@
     var(--pc) 68%,
     transparent 100%
   );
-  filter: drop-shadow(0 0 2px var(--pc));
+  /* 同 ::before：不用 filter（逐帧栅格化），用 box-shadow 交给合成器。 */
+  box-shadow: 0 0 2px var(--pc);
   opacity: 0;
   will-change: transform, opacity;
+  backface-visibility: hidden;
   animation: burning-spark-burst var(--dur) cubic-bezier(0.12, 0.72, 0.28, 1) var(--delay) infinite;
 }
 

@@ -14,6 +14,7 @@ const {
   buildDshNodePathEnv,
   buildDshTuiInstallArgs,
   buildDshTuiLaunchArgs,
+  buildDshTuiProfileUpdatePlans,
   buildHomeProjectionEnv,
   ensureDshTuiProfile,
   ensureTuiPreferences,
@@ -205,6 +206,59 @@ test('dsh-tui install and launch args target its own profile, not the DSH web pr
   );
   // 复用 DSH web profile 只会组合 dsh-web-app，必须显式钉住 dsh-tui。
   assert.notEqual(PROFILE_NAME, 'aih');
+});
+
+test('dsh-tui profile updates follow the DSH app card and target every installed profile', (t) => {
+  const aiHomeDir = tempDir(t, 'aih-dsh-tui-update-plans-');
+  const entryPath = writeEntry(aiHomeDir);
+
+  // 没有任何投影时不追加计划：升级行为与只有 npm 计划时完全一致。
+  assert.deepEqual(
+    buildDshTuiProfileUpdatePlans({ fs, path, aiHomeDir, dshPath: entryPath }),
+    []
+  );
+  // 解析不出 DSH 入口时也不追加（npm 计划已经把 DSH 升上去了，下次启动会重新解析）。
+  const dshHome = path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_dsh_tui', 'dsh');
+  writeBundle(dshHome);
+  assert.deepEqual(
+    buildDshTuiProfileUpdatePlans({ fs, path, aiHomeDir, dshPath: path.join(aiHomeDir, 'missing') }),
+    []
+  );
+  // 只有装了 bundle 的 profile 才算数（半成品投影不该被升级）。
+  const emptyDshHome = path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_empty', 'dsh');
+  fs.mkdirSync(emptyDshHome, { recursive: true });
+
+  const plans = buildDshTuiProfileUpdatePlans({ fs, path, aiHomeDir, dshPath: entryPath });
+  assert.equal(plans.length, 1);
+  const plan = plans[0];
+  assert.equal(plan.id, 'dsh_tui_profile_update:acct_dsh_tui');
+  assert.match(plan.label, /acct_dsh_tui/);
+  assert.equal(plan.args[1], 'plugin');
+  assert.equal(plan.args[2], '--profile');
+  assert.equal(plan.args[3], PROFILE_NAME);
+  // `add <pkg>@latest` 而不是 `update`：pnpm update 只在已声明的 semver 范围内升级。
+  assert.deepEqual(plan.args.slice(4), ['add', `${PROFILE_BUNDLE}@latest`]);
+  assert.equal(plan.env.DSH_HOME, dshHome);
+  assert.equal(plan.env.HOME, path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_dsh_tui', 'home'));
+  // 包装器必须落盘：DSH 0.2.x 的 bin 在 Node 22 上直接执行会静默退出。
+  assert.ok(fs.existsSync(path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_dsh_tui', 'run-dsh-tui.mjs')));
+});
+
+test('the DSH app installer appends one profile update plan per installed dsh-tui profile', (t) => {
+  const aiHomeDir = tempDir(t, 'aih-dsh-app-update-');
+  const entryPath = writeEntry(aiHomeDir);
+  const dshHome = path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_dsh_tui', 'dsh');
+  writeBundle(dshHome);
+
+  const installer = getAppInstaller('dsh');
+  const plans = installer.resolveLifecyclePlans('update', { fs, path, aiHomeDir, installedPath: entryPath });
+  assert.equal(plans.length, 2);
+  assert.equal(plans[0].id, 'npm_global_update');
+  assert.equal(plans[1].id, 'dsh_tui_profile_update:acct_dsh_tui');
+
+  // 同一个安装器也服务于 dsh-tui 描述符，且没有 aiHomeDir 时退回单条 npm 计划。
+  assert.equal(getAppInstaller('dsh-tui').provider, 'dsh');
+  assert.equal(installer.resolveLifecyclePlans('update', { fs, path, installedPath: entryPath }).length, 1);
 });
 
 test('dsh-tui node path helper is a no-op when the addon path cannot be resolved', (t) => {

@@ -150,9 +150,13 @@ test('Pi projection writes an env-interpolated provider and loads the hot-refres
   assert.equal(typeof provider.models[0].name, 'string');
   assert.ok(provider.models[0].input.includes('text'));
 
+  // 热更新扩展必须同时覆盖两条路径：aih 重写文件（监听），以及上游在 Pi 运行
+  // 期间新增/下线模型（自己回读网关目录）。执行级验证见 test/pi-extension.test.js。
   const extension = fs.readFileSync(prepared.extensionPath, 'utf8');
-  assert.match(extension, /modelRegistry\.refresh/);
-  assert.match(extension, /allowNetwork: false/);
+  assert.match(extension, /registry\.refresh\(\{ providers: \[PROVIDER_ID\], allowNetwork: false \}\)/);
+  assert.match(extension, /const CATALOG_INTERVAL_MS = 5 \* 60 \* 1000;/);
+  assert.match(extension, /`\$\{baseUrl\}\/models`/);
+  assert.match(extension, /renameSync\(temporary, MODELS_PATH\)/);
   assert.equal(fs.readlinkSync(path.join(prepared.agentDir, 'sessions')), path.join(hostHomeDir, '.pi', 'agent', 'sessions'));
 });
 

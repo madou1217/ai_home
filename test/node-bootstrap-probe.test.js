@@ -1649,6 +1649,36 @@ test('runNodeCommandRouter names the whole unknown nested usage and exits 0', as
   });
 
   assert.deepEqual(exits, [0]);
-  assert.match(writes.join(''), /未识别的用法 'relay bogus'/);
+  assert.match(writes.join(''), /未指定或未识别的 relay 子命令/);
   assert.match(writes.join(''), /AI Home Node/);
+});
+
+test('runNodeCommandRouter treats a missing action/argument as usage, not an error', async () => {
+  const cases = [
+    { argv: ['node'], notice: /未指定子命令/ },
+    { argv: ['node', 'join'], notice: /缺少 join 邀请链接/ },
+    { argv: ['node', 'service'], notice: /未指定 service 子命令/ },
+    { argv: ['node', 'relay'], notice: /未指定或未识别的 relay 子命令/ },
+    { argv: ['node', 'relay', 'connect'], notice: /缺少 relay 连接地址/ },
+    { argv: ['node', 'webrtc'], notice: /未指定或未识别的 webrtc 子命令/ }
+  ];
+
+  for (const entry of cases) {
+    const writes = [];
+    const exits = [];
+    await runNodeCommandRouter(entry.argv, {
+      processObj: {
+        stdout: { write: (value) => writes.push(String(value)) },
+        exit: (code) => exits.push(code)
+      },
+      consoleImpl: {
+        log: (value) => writes.push(String(value)),
+        error: () => {}
+      }
+    });
+    const label = `aih ${entry.argv.join(' ')}`;
+    assert.deepEqual(exits, [0], `${label} must exit 0`);
+    assert.match(writes.join(''), entry.notice, `${label} must say what is missing`);
+    assert.match(writes.join(''), /AI Home Node/, `${label} must print usage`);
+  }
 });

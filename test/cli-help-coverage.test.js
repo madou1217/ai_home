@@ -66,9 +66,9 @@ test('aih backup without a subcommand prints usage and exits 0', async () => {
 const UNKNOWN_ENTRIES = [
   { argv: ['backup', 'bogus'], notice: /未识别的子命令 'bogus'/, usage: /AIH Backup/i },
   { argv: ['edge', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /aih edge status/ },
-  { argv: ['edge', 'remove', 'nginx'], notice: /未识别的用法 'remove nginx'/, usage: /aih edge status/ },
+  { argv: ['edge', 'remove', 'nginx'], notice: /未指定或未识别的类型（可用：frp）/, usage: /aih edge status/ },
   { argv: ['node', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /AI Home Node/ },
-  { argv: ['node', 'relay', 'bogus'], notice: /未识别的用法 'relay bogus'/, usage: /AI Home Node/ },
+  { argv: ['node', 'relay', 'bogus'], notice: /未指定或未识别的 relay 子命令/, usage: /AI Home Node/ },
   { argv: ['fabric', 'bogus'], notice: /未识别的用法 'bogus'/, usage: /AIH Fabric/i },
   { argv: ['plugin', 'bogus'], notice: /未识别的子命令 'bogus'/, usage: /Usage: aih plugin/ },
   { argv: ['update', 'bogus'], notice: /未识别的参数 'bogus'/, usage: /AIH Update/i }
@@ -89,11 +89,45 @@ test('an unknown subcommand prints a notice plus that level\'s usage and exits 0
   }
 });
 
-test('aih edge without an action still fails with usage (exit 1) — only unknown usage exits 0', async () => {
-  const { code, stdout, stderr } = await runCli(['edge']);
-  const output = `${stdout}${stderr}`;
-  assert.equal(code, 1);
-  assert.match(output, /aih edge status/);
+// 输入不完整（缺动作 / 缺子动作 / 缺必需参数）同样不是错误：说明缺了什么，
+// 再把该层级的可用参数摆出来，退出码与 `--help` 完全一致（0）。
+const INCOMPLETE_ENTRIES = [
+  { argv: ['edge'], notice: /未指定动作/, usage: /aih edge status/ },
+  { argv: ['edge', 'plan'], notice: /未指定或未识别的类型（可用：frp \| nginx \| caddy）/, usage: /aih edge status/ },
+  { argv: ['node'], notice: /未指定子命令/, usage: /AI Home Node/ },
+  { argv: ['node', 'join'], notice: /缺少 join 邀请链接/, usage: /AI Home Node/ },
+  { argv: ['node', 'service'], notice: /未指定 service 子命令/, usage: /AI Home Node/ },
+  { argv: ['fabric'], notice: /未指定子命令/, usage: /AIH Fabric/i },
+  { argv: ['fabric', 'transport'], notice: /未指定 transport 子命令/, usage: /AIH Fabric/i },
+  { argv: ['fabric', 'broker'], notice: /未指定 broker 子命令/, usage: /AIH Fabric/i },
+  { argv: ['plugin'], notice: /未指定子命令/, usage: /Usage: aih plugin/ },
+  { argv: ['plugin', 'validate'], notice: /参数不足：aih plugin validate <dir>/, usage: /Usage: aih plugin/ },
+  { argv: ['backup'], notice: /未指定子命令/, usage: /AIH Backup/i },
+  { argv: ['import'], notice: /未指定导入源/, usage: /AIH Backup/i }
+];
+
+test('an incomplete invocation prints a notice plus that level\'s usage and exits 0', async () => {
+  const results = await Promise.all(INCOMPLETE_ENTRIES.map(async (entry) => ({
+    entry,
+    ...(await runCli(entry.argv))
+  })));
+
+  for (const { entry, code, stdout, stderr } of results) {
+    const label = `aih ${entry.argv.join(' ')}`;
+    const output = `${stdout}${stderr}`;
+    assert.equal(code, 0, `${label} must exit 0\n${output}`);
+    assert.match(output, entry.notice, `${label} must say what is missing\n${output}`);
+    assert.match(output, entry.usage, `${label} must print its own usage\n${output}`);
+  }
+});
+
+test('explicit --help stays notice-free at the same levels', async () => {
+  for (const argv of [['edge', '--help'], ['node', '--help'], ['fabric', '--help'], ['plugin', '--help']]) {
+    const { code, stdout, stderr } = await runCli(argv);
+    const output = `${stdout}${stderr}`;
+    assert.equal(code, 0, `aih ${argv.join(' ')} must exit 0\n${output}`);
+    assert.doesNotMatch(output, /未指定/, `aih ${argv.join(' ')} must not warn about missing input`);
+  }
 });
 
 test('an unknown root command prints a notice plus the root help and exits 0', async () => {

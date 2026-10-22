@@ -334,6 +334,28 @@ test('runPluginCommand：未知子命令打印提示与用法并以 0 退出（�
   assert.match(output, /Usage: aih plugin <command> \[options\]/);
 });
 
+test('runPluginCommand：缺动作与缺必需参数都给提示 + 用法并以 0 退出', async () => {
+  const cases = [
+    { args: ['plugin'], notice: /未指定子命令/ },
+    { args: ['plugin', 'validate'], notice: /参数不足：aih plugin validate <dir>/ },
+    { args: ['plugin', 'pack'], notice: /参数不足：aih plugin pack <dir>/ },
+    { args: ['plugin', 'untrust'], notice: /参数不足：aih plugin untrust <keyId>/ }
+  ];
+
+  for (const entry of cases) {
+    const lines = [];
+    const errors = [];
+    const consoleImpl = { log: (line) => lines.push(String(line)), error: (line) => errors.push(String(line)) };
+    const code = await runPluginCommand(entry.args, { consoleImpl });
+    const label = `aih ${entry.args.join(' ')}`;
+    assert.equal(code, 0, `${label} must exit 0`);
+    assert.deepEqual(errors, [], `${label} must not report an error`);
+    const output = lines.join('\n');
+    assert.match(output, entry.notice, `${label} must say what is missing`);
+    assert.match(output, /Usage: aih plugin <command> \[options\]/, `${label} must print usage`);
+  }
+});
+
 test('closed loop through aih server and the CLI survives a server restart', async () => {
   const dir = tempDir('aihm1s-');
   const aiHomeDir = path.join(dir, 'home');

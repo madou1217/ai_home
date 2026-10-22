@@ -500,3 +500,37 @@ test('runFabricCommandRouter prints fabric usage and exits 0 for an unknown fabr
   assert.match(writes.join(''), /未识别的用法 'bogus'/);
   assert.match(writes.join(''), /AIH Fabric/i);
 });
+
+test('runFabricCommandRouter treats a missing action/sub-action as usage, not an error', async () => {
+  const cases = [
+    { argv: ['fabric'], notice: /未指定子命令/ },
+    { argv: ['fabric', 'transport'], notice: /未指定 transport 子命令/ },
+    { argv: ['fabric', 'transport', 'bogus'], notice: /未指定或未识别的 transport 子命令 'bogus'/ },
+    { argv: ['fabric', 'broker'], notice: /未指定 broker 子命令/ },
+    { argv: ['fabric', 'registry'], notice: /未指定 registry 子命令/ },
+    { argv: ['fabric', 'session'], notice: /未指定 session 子命令/ },
+    { argv: ['fabric', 'closure'], notice: /未指定 closure 子命令/ },
+    { argv: ['fabric', 'provider'], notice: /未指定 provider 子命令/ }
+  ];
+
+  for (const entry of cases) {
+    const writes = [];
+    const errors = [];
+    const exits = [];
+    await runFabricCommandRouter(entry.argv, {
+      processObj: {
+        stdout: { write: (value) => writes.push(String(value)) },
+        exit: (code) => exits.push(code)
+      },
+      consoleImpl: {
+        log: (value) => writes.push(String(value)),
+        error: (value) => errors.push(String(value))
+      }
+    });
+    const label = `aih ${entry.argv.join(' ')}`;
+    assert.deepEqual(exits, [0], `${label} must exit 0`);
+    assert.deepEqual(errors, [], `${label} must not report an error`);
+    assert.match(writes.join(''), entry.notice, `${label} must say what is missing`);
+    assert.match(writes.join(''), /AIH Fabric/i, `${label} must print usage`);
+  }
+});

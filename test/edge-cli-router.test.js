@@ -97,22 +97,45 @@ test('aih edge apply：写入失败以非零退出并回显内核原话', () => 
   assert.match(errors.join('\n'), /unknown directive/);
 });
 
-test('aih edge：缺动作给帮助并以 1 退出，--help 以 0 退出，未知用法给帮助并以 0 退出', () => {
+test('aih edge：缺动作/未知用法都给提示 + 用法并以 0 退出，--help 以 0 退出', () => {
   const missing = capture();
-  assert.equal(runEdgeCommand([], missing), 1);
+  assert.equal(runEdgeCommand([], missing), 0);
+  assert.match(missing.lines.join('\n'), /未指定动作/);
   assert.match(missing.lines.join('\n'), /aih edge status/);
 
   const asked = capture();
   assert.equal(runEdgeCommand(['--help'], asked), 0);
+  assert.doesNotMatch(asked.lines.join('\n'), /未指定动作/);
+  assert.match(asked.lines.join('\n'), /aih edge status/);
 
   const bogus = capture();
   assert.equal(runEdgeCommand(['bogus'], bogus), 0);
   assert.match(bogus.lines.join('\n'), /未识别的用法 'bogus'/);
   assert.match(bogus.lines.join('\n'), /aih edge status/);
 
+  // 缺/错类型不再丢一句裸报错，而是提示可用类型 + 完整用法。
   const wrongKind = capture();
   assert.equal(runEdgeCommand(['remove', 'nginx'], wrongKind), 0);
-  assert.match(wrongKind.lines.join('\n'), /未识别的用法 'remove nginx'/);
+  assert.match(wrongKind.lines.join('\n'), /未指定或未识别的类型（可用：frp）/);
+  assert.match(wrongKind.lines.join('\n'), /aih edge status/);
+
+  const missingKind = capture();
+  assert.equal(runEdgeCommand(['plan'], missingKind), 0);
+  assert.match(missingKind.lines.join('\n'), /未指定或未识别的类型（可用：frp \| nginx \| caddy）/);
+});
+
+test('aih edge：service 层的缺参数错误码转成提示 + 用法 + exit 0，运行失败仍 exit 1', () => {
+  const usageService = fakeService({
+    plan: () => {
+      const error = new Error('edge_domain_required');
+      error.code = 'edge_domain_required';
+      throw error;
+    }
+  });
+  const usage = capture();
+  assert.equal(runEdgeCommand(['plan', 'nginx'], { service: usageService, consoleImpl: usage.consoleImpl }), 0);
+  assert.match(usage.lines.join('\n'), /缺少 --domain/);
+  assert.match(usage.lines.join('\n'), /aih edge status/);
 });
 
 test('aih <cli> resume：统一动词翻译成各 provider 的原生命令/旗标（事实来自合同）', () => {

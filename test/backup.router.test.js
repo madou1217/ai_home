@@ -770,7 +770,7 @@ test('runBackupCommand handles `aih backup --help` by printing usage and exiting
   assert.match(logs[0], /aih import/);
 });
 
-test('runBackupCommand treats bare `aih backup` as help and exits 0', async () => {
+test('runBackupCommand treats bare `aih backup` as usage: notice + help, exit 0', async () => {
   const logs = [];
   let exitCode = null;
   const handled = await runBackupCommand('backup', ['backup'], {
@@ -779,7 +779,51 @@ test('runBackupCommand treats bare `aih backup` as help and exits 0', async () =
   });
   assert.equal(handled, true);
   assert.equal(exitCode, 0);
-  assert.match(logs[0], /AIH Backup/);
+  assert.equal(logs.length, 2);
+  assert.match(logs[0], /未指定子命令/);
+  assert.match(logs[1], /AIH Backup/);
+});
+
+test('runBackupCommand: bare `aih import` and `aih import --help` print usage and exit 0', async () => {
+  for (const args of [['import'], ['import', '--help']]) {
+    const logs = [];
+    let exitCode = null;
+    const handled = await runBackupCommand('import', args, {
+      fs,
+      path,
+      os,
+      fse,
+      execSync: () => {},
+      readline: {},
+      consoleImpl: { log: (msg) => logs.push(String(msg)), error: () => {} },
+      processImpl: { exit: (code) => { exitCode = code; } },
+      runUnifiedImport: async () => {
+        throw new Error('runUnifiedImport must not run for an incomplete invocation');
+      }
+    });
+    const label = `aih ${args.join(' ')}`;
+    assert.equal(handled, true, label);
+    assert.equal(exitCode, 0, label);
+    const output = logs.join('\n');
+    assert.match(output, /AIH Backup/, label);
+    if (args.length === 1) {
+      assert.match(output, /未指定导入源/, label);
+    } else {
+      assert.doesNotMatch(output, /未指定导入源/, label);
+    }
+  }
+});
+
+test('runBackupCommand handles `aih export --help` without writing a `--help.zip`', async () => {
+  const logs = [];
+  let exitCode = null;
+  const handled = await runBackupCommand('export', ['export', '--help'], {
+    consoleImpl: { log: (msg) => logs.push(String(msg)), error: () => {} },
+    processImpl: { exit: (code) => { exitCode = code; } }
+  });
+  assert.equal(handled, true);
+  assert.equal(exitCode, 0);
+  assert.match(logs.join('\n'), /AIH Backup/);
 });
 
 test('runBackupCommand rejects an unknown `aih backup` subcommand with a notice, usage and exit 0', async () => {

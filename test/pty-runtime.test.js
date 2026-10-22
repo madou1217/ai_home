@@ -3790,13 +3790,86 @@ test('runtime injects bypass keyring environment variables for agy provider', ()
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
+test('runtime puts a mid-session API error in the title rotation and clears it on new input', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness();
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('agy', '3', [], false);
+
+    // 子进程输出里出现上游错误 → 标题立刻切到错误项（不等轮播节拍）。
+    harness.spawns[0].proc._onData('\r\nAPI Error: 429 rate limit\r\n');
+    const titles = () => harness.writes.filter((line) => /\x1b\]0;/.test(line));
+    assert.ok(titles().some((line) => /\x1b\]0;.*API 429\x07/.test(line)));
+
+    // 用户发出新输入：上一回合的故障翻篇，错误项撤下。
+    proc.stdin.emit('data', Buffer.from('\r'));
+    assert.equal(titles().at(-1).includes('API 429'), false);
+
+    const cycle = intervals.find((interval) => interval.ms === 5000);
+    assert.ok(cycle);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
+});
+
+test('runtime spins the title while the child is producing output and settles when idle', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
+
+  try {
+    const harness = createRuntimeHarness();
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('agy', '3', [], false);
+
+    const titles = () => harness.writes.filter((line) => /\x1b\]0;/.test(line));
+    const before = titles().length;
+    // 子进程持续输出 = 生成中：标题挂转圈帧。
+    harness.spawns[0].proc._onData('thinking...\r\n');
+    const spinner = intervals.find((interval) => interval.ms === 120);
+    assert.ok(spinner, 'spinner timer should run while busy');
+    spinner.cb();
+    const busyTitle = titles().at(-1).replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
+    assert.match(busyTitle, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /);
+    assert.ok(titles().length > before);
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
+});
+
 test('runtime publishes account title for non-usage-managed interactive providers', () => {
-  const { runtime, proc, writes } = createRuntimeHarness();
-  runtime.runCliPtyTracked('agy', '3', [], false);
+  const { intervals, restore } = captureRuntimeIntervals();
+  let proc;
 
-  assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[a:3\]\x07/.test(line)));
+  try {
+    const harness = createRuntimeHarness();
+    ({ proc } = harness);
+    harness.runtime.runCliPtyTracked('agy', '3', [], false);
 
-  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+    // 标题在「会话名」与「账号」之间轮播：首帧是会话名，轮过一个节拍后
+    // 账号项 `Agy:3` 出现（agy 没有用量托管，因此不带 [a:]/[o:] 标签）。
+    const cycle = intervals.find((interval) => interval.ms === 5000);
+    assert.ok(cycle, 'title cycler should be running');
+    assert.ok(harness.writes.some((line) => /\x1b\]0;/.test(line)), 'session title should be published');
+    cycle.cb();
+    assert.ok(
+      harness.writes.some((line) => /\x1b\]0;[^\x07]*agy:3[^\x07]*\x07/i.test(line)),
+      'account title should follow the session title'
+    );
+  } finally {
+    if (proc) {
+      try { proc.emit('SIGINT'); } catch (_error) {}
+    }
+    restore();
+  }
 });
 
 test('runtime publishes claude title without provider text or fake icon', () => {
@@ -3818,11 +3891,13 @@ test('runtime publishes claude title without provider text or fake icon', () => 
 
   runtime.runCliPtyTracked('claude', '4', [], false);
 
-  const title = writes.find((line) => /\x1b\]0;[^\x07]*\[o:4:5h:58% 7days:95%\]\x07/.test(line));
-  assert.ok(title);
-  assert.equal(title.includes(' CL '), false);
-  assert.equal(title.includes('Claude'), false);
-  assert.equal(title.includes('◇'), false);
+  // 标题里的账号项带用量后缀，但绝不带徽标式 provider 文字或假图标。
+  const titles = writes.filter((line) => /\x1b\]0;/.test(line));
+  assert.ok(titles.length > 0);
+  for (const title of titles) {
+    assert.equal(title.includes(' CL '), false);
+    assert.equal(title.includes('◇'), false);
+  }
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
@@ -4066,6 +4141,7 @@ test('runtime redraws drawer frame after shell output and keeps usage summary ab
 });
 
 test('runtime publishes usage to the terminal title without reserving a screen row', () => {
+  const { intervals, restore } = captureRuntimeIntervals();
   const now = Date.now();
   const { runtime, proc, writes, spawns } = createRuntimeHarness({}, {
     readUsageCache: () => ({
@@ -4078,28 +4154,36 @@ test('runtime publishes usage to the terminal title without reserving a screen r
     }
   });
 
+  try {
   runtime.runCliPtyTracked('codex', '10086', [], false);
 
-  // Usage rides in the terminal title (OSC 0) with a compact oauth tag:
-  // [o:<accid>:<remaining>]. 64.2% → 64%.
+  // 标题在「会话名」与「账号」之间轮播。账号项 = 可读的账号标识 + 用量标签
+  // （[o:<accid>:<remaining>]，这里 64.2% → 64%）。首帧是会话名，驱动一个循环
+  // 节拍后账号项出现。
+  const cycle = intervals.find((interval) => interval.ms === 5000);
+  assert.ok(cycle, 'title cycler should be running');
+  cycle.cb();
   assert.equal(
     writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:64%\]\x07/.test(line)),
     true
   );
   const titleWriteCountBeforeResize = writes
-    .filter((line) => /\x1b\]0;\[o:10086:64%\]\x07/.test(line))
+    .filter((line) => /\[o:10086:64%\]/.test(line))
     .length;
   proc.stdout.emit('resize');
+  // resize 只重绘当前项，不会把账号项重复写一遍。
   assert.equal(
-    writes.filter((line) => /\x1b\]0;\[o:10086:64%\]\x07/.test(line)).length,
+    writes.filter((line) => /\[o:10086:64%\]/.test(line)).length,
     titleWriteCountBeforeResize
   );
   // No scroll-region reservation, no in-screen status row, full-height child.
   assert.equal(writes.some((line) => line.includes('\x1b[1;23r')), false);
   assert.equal(writes.some((line) => /\x1b\[\d+;1H\x1b\[2K/.test(line)), false);
   assert.equal(spawns[0].options.rows, 24);
-
-  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  } finally {
+    try { proc.emit('SIGINT'); } catch (_error) {}
+    restore();
+  }
 });
 
 test('runtime forwards PTY output verbatim without injecting viewport sequences', () => {
@@ -4620,6 +4704,7 @@ test('runtime can disable windows clipboard mirror explicitly', () => {
 });
 
 test('runtime fixed status bar works when stdin is TTY even if stdout.isTTY is absent', async () => {
+  const { intervals, restore } = captureRuntimeIntervals();
   const now = Date.now();
   const { runtime, proc, writes } = createRuntimeHarness({}, {
     readUsageCache: () => ({
@@ -4632,17 +4717,24 @@ test('runtime fixed status bar works when stdin is TTY even if stdout.isTTY is a
     }
   });
 
-  runtime.runCliPtyTracked('codex', '10086', [], false);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  try {
+    runtime.runCliPtyTracked('codex', '10086', [], false);
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
-  // Usage is published to the terminal title (OSC 0) with [o:<accid>:<remaining>],
-  // never painted on screen, so it can't disturb the child's cursor/rendering.
-  assert.equal(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:91%\]\x07/.test(line)), true);
-  // It must NOT reserve an in-screen row or scroll region.
-  assert.equal(writes.some((line) => /\x1b\[\d+;1H\x1b\[2K/.test(line)), false);
-  assert.equal(writes.some((line) => line.startsWith('\r\n')), false);
-
-  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+    // 标题只在终端面写 OSC 0（账号项带用量 [o:<accid>:<remaining>]），从不画在
+    // 屏幕上，因此不会干扰子进程的光标/渲染。首帧是会话名，驱动一个循环节拍后
+    // 账号项出现。
+    const cycle = intervals.find((interval) => interval.ms === 5000);
+    assert.ok(cycle, 'title cycler should be running');
+    cycle.cb();
+    assert.equal(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:91%\]\x07/.test(line)), true);
+    // It must NOT reserve an in-screen row or scroll region.
+    assert.equal(writes.some((line) => /\x1b\[\d+;1H\x1b\[2K/.test(line)), false);
+    assert.equal(writes.some((line) => line.startsWith('\r\n')), false);
+  } finally {
+    try { proc.emit('SIGINT'); } catch (_error) {}
+    restore();
+  }
 });
 
 test('runtime enforces single clipboard mirror process across multiple windows PTY instances', () => {
@@ -4738,6 +4830,7 @@ test('runtime releases clipboard mirror lock when all mirror spawn candidates fa
 });
 
 test('runtime shows usage in PTY and auto-updates after direct no-cache refresh', async () => {
+  const { intervals, restore } = captureRuntimeIntervals();
   const now = Date.now();
   let cache = {
     capturedAt: now - (6 * 60 * 1000),
@@ -4760,25 +4853,35 @@ test('runtime shows usage in PTY and auto-updates after direct no-cache refresh'
     }
   });
 
-  runtime.runCliPtyTracked('codex', '10086', [], false);
-  // Initial title from the stale cache: 75.5% → 76%.
-  assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:76%\]\x07/.test(line)));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(refreshCalls >= 1, true);
-  // After the no-cache refresh the title auto-updates: 63.2% → 63%.
-  assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:63%\]\x07/.test(line)));
-
-  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  try {
+    runtime.runCliPtyTracked('codex', '10086', [], false);
+    const cycle = intervals.find((interval) => interval.ms === 5000);
+    assert.ok(cycle, 'title cycler should be running');
+    // 首帧是会话名；轮播到账号项时才带用量（陈旧缓存 75.5% → 76%）。
+    cycle.cb();
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:76%\]\x07/.test(line)));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(refreshCalls >= 1, true);
+    // After the no-cache refresh the account item auto-updates: 63.2% → 63%.
+    cycle.cb();
+    cycle.cb();
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:63%\]\x07/.test(line)));
+  } finally {
+    try { proc.emit('SIGINT'); } catch (_error) {}
+    restore();
+  }
 });
 
 test('runtime shows api-key mode without usage remaining and does not threshold-switch it', () => {
   const realSetInterval = global.setInterval;
   const realClearInterval = global.clearInterval;
   const intervalTicks = [];
+  const cycleTicks = [];
   let nextAccountLookups = 0;
 
   global.setInterval = (cb, ms) => {
     if (ms >= 30_000 && typeof cb === 'function') intervalTicks.push(cb);
+    if (ms === 5000 && typeof cb === 'function') cycleTicks.push(cb);
     return { unref() {} };
   };
   global.clearInterval = () => {};
@@ -4809,7 +4912,10 @@ test('runtime shows api-key mode without usage remaining and does not threshold-
 
     assert.equal(spawns.length, 1);
     assert.equal(nextAccountLookups, 0);
-    // API-key accounts show a bare tag with no usage figure.
+    // API-key accounts show a bare tag with no usage figure. 首帧是会话名，
+    // 轮播一个节拍后账号项出现。
+    assert.ok(cycleTicks.length > 0, 'title cycler should be running');
+    for (const cb of cycleTicks) cb();
     assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[a:10014\]\x07/.test(line)));
     assert.equal(writes.some((line) => line.includes('usage remaining')), false);
 
@@ -4824,10 +4930,12 @@ test('runtime suppresses fixed usage status for built-in aih server profile full
   const realSetInterval = global.setInterval;
   const realClearInterval = global.clearInterval;
   const intervalTicks = [];
+  const cycleTicks = [];
   let nextAccountLookups = 0;
 
   global.setInterval = (cb, ms) => {
     if (ms >= 30_000 && typeof cb === 'function') intervalTicks.push(cb);
+    if (ms === 5000 && typeof cb === 'function') cycleTicks.push(cb);
     return { unref() {} };
   };
   global.clearInterval = () => {};
@@ -5030,6 +5138,7 @@ test('runtime preserves explicit resume target when output contains auth expired
 });
 
 test('runtime shows usage for gemini interactive PTY as well', async () => {
+  const { intervals, restore } = captureRuntimeIntervals();
   const now = Date.now();
   let cache = {
     capturedAt: now - (6 * 60 * 1000),
@@ -5052,15 +5161,23 @@ test('runtime shows usage for gemini interactive PTY as well', async () => {
     }
   });
 
-  runtime.runCliPtyTracked('gemini', '2', [], false);
-  // Initial title from the stale cache: 42.8% → 43%.
-  assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:43%\]\x07/.test(line)));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(refreshCalls >= 1, true);
-  // After refresh: 39.1% → 39%.
-  assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:39%\]\x07/.test(line)));
-
-  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+  try {
+    runtime.runCliPtyTracked('gemini', '2', [], false);
+    const cycle = intervals.find((interval) => interval.ms === 5000);
+    assert.ok(cycle, 'title cycler should be running');
+    // 首帧是会话名；轮播到账号项时才带用量（陈旧缓存 42.8% → 43%）。
+    cycle.cb();
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:43%\]\x07/.test(line)));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(refreshCalls >= 1, true);
+    // After refresh: 39.1% → 39%.
+    cycle.cb();
+    cycle.cb();
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:39%\]\x07/.test(line)));
+  } finally {
+    try { proc.emit('SIGINT'); } catch (_error) {}
+    restore();
+  }
 });
 
 test('runtime resumes usage refresh after idle when user input returns', async () => {

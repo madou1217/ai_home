@@ -33,6 +33,7 @@ const {
 } = require('../lib/harness/dsh');
 const {
   buildExternalHarnessEnv,
+  buildHarnessProgressNotifier,
   prepareExternalHarness,
   spawnExternalHarness
 } = require('../lib/harness/run');
@@ -326,6 +327,23 @@ test('prepareDshHarness fails closed when the shim target cannot be resolved', a
     catalog: CATALOG,
     dshPath: path.join(aiHomeDir, 'missing-dsh')
   }), (error) => error.message === 'dsh_entry_not_found');
+});
+
+test('harness progress notifications are best-effort and never break a launch', () => {
+  const seen = [];
+  const notify = buildHarnessProgressNotifier((event) => {
+    seen.push(event);
+    if (event.phase === 'install:start') throw new Error('terminal exploded');
+  });
+  // 事件有 phase 才转发，回调抛错被吞掉（进度是装饰，不是启动条件）。
+  assert.doesNotThrow(() => notify({ phase: 'install:start' }));
+  notify({ harness: 'dsh-tui' });
+  notify(null);
+  assert.equal(seen.length, 1);
+
+  // 没有 progress 回调时是一个安全的空实现。
+  const noop = buildHarnessProgressNotifier(null);
+  assert.equal(noop({ phase: 'install:end' }), undefined);
 });
 
 test('external harness env keeps gateway credentials but drops native provider credentials', () => {

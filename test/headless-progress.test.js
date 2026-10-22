@@ -95,3 +95,45 @@ test('Windows 回退到 ASCII 帧', () => {
   assert.equal(/[⠋⠙⠹]/.test(errorWrites[0]), false);
   progress.stop();
 });
+
+test('finish 用 ✔/✖ 收尾并带耗时与附注，而不是「首字节」/「无输出」', () => {
+  const { processObj, errorWrites } = createProcessStub();
+  const clock = createClock();
+  const ok = createHeadlessProgress({ processObj, label: '安装 dsh-tui', now: clock.now });
+
+  ok.start();
+  clock.advance(18400);
+  ok.finish({ ok: true, note: '已安装' });
+  const rendered = errorWrites.join('');
+  assert.match(rendered, /✔/);
+  assert.match(rendered, /已安装 18\.4s/);
+  assert.equal(rendered.includes('首字节'), false);
+  assert.equal(rendered.includes('无输出'), false);
+  assert.equal(rendered.endsWith('\n'), true);
+
+  const { processObj: failing, errorWrites: failedWrites } = createProcessStub();
+  const fail = createHeadlessProgress({ processObj: failing, label: '安装 dsh-tui' });
+  fail.start();
+  fail.finish({ ok: false, note: '安装失败' });
+  const failed = failedWrites.join('');
+  assert.match(failed, /✖/);
+  assert.match(failed, /安装失败/);
+});
+
+test('finish 与其它收尾方式一样只生效一次，非 TTY 不写字节', () => {
+  const { processObj, errorWrites } = createProcessStub();
+  const progress = createHeadlessProgress({ processObj, label: '安装 dsh-tui' });
+  progress.start();
+  progress.finish({ ok: true });
+  const afterFinish = errorWrites.length;
+  progress.finish({ ok: false });
+  progress.markFirstOutput();
+  progress.stop();
+  assert.equal(errorWrites.length, afterFinish);
+
+  const { processObj: quiet, errorWrites: quietWrites } = createProcessStub({ isTTY: false });
+  const plain = createHeadlessProgress({ processObj: quiet, label: '安装 dsh-tui' });
+  plain.start();
+  plain.finish({ ok: true, note: '已安装' });
+  assert.equal(quietWrites.join(''), '');
+});

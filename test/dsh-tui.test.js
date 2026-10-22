@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
 const YAML = require('yaml');
 
 const {
@@ -309,6 +310,98 @@ test('prepareDshTuiHarness wires the projection, profile and launch args', async
   );
   const onboarding = JSON.parse(fs.readFileSync(prepared.preferences.onboardingPath, 'utf8'));
   assert.equal(onboarding.completed, true);
+});
+
+test('dsh-tui first install reports progress phases so the launcher is not silent', async (t) => {
+  const aiHomeDir = tempDir(t, 'aih-dsh-tui-progress-');
+  const entryPath = writeEntry(aiHomeDir);
+  const dshHome = path.join(aiHomeDir, 'run', 'harness', 'dsh-tui', 'acct_dsh_tui', 'dsh');
+  const events = [];
+  const spawnImpl = () => {
+    // 模拟真实安装：子进程结束时 bundle 才出现在投影里。
+    writeBundle(dshHome);
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    setImmediate(() => child.emit('close', 0));
+    return child;
+  };
+
+  const prepared = await prepareDshTuiHarness({
+    fs,
+    path,
+    aiHomeDir,
+    dshPath: entryPath,
+    accountRef: 'acct_dsh_tui',
+    provider: 'codex',
+    model: 'gpt-test',
+    gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' },
+    catalog: CATALOG,
+    sharedSessions: false,
+    spawnImpl,
+    notify: (event) => events.push(event)
+  });
+
+  assert.equal(prepared.installed, true);
+  assert.deepEqual(events.map((event) => event.phase), ['install:start', 'install:end']);
+  assert.equal(events[0].harness, 'dsh-tui');
+  assert.match(events[0].label, /dsh-tui/);
+  assert.equal(events[1].ok, true);
+  assert.equal(typeof events[1].durationMs, 'number');
+
+  // 已经装好的投影不再触发安装，也就没有阶段事件。
+  const repeated = [];
+  await prepareDshTuiHarness({
+    fs,
+    path,
+    aiHomeDir,
+    dshPath: entryPath,
+    accountRef: 'acct_dsh_tui',
+    provider: 'codex',
+    model: 'gpt-test',
+    gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' },
+    catalog: CATALOG,
+    sharedSessions: false,
+    spawnImpl: () => { throw new Error('must not install twice'); },
+    notify: (event) => repeated.push(event)
+  });
+  assert.deepEqual(repeated, []);
+});
+
+test('dsh-tui install failure still reports the phase before throwing', async (t) => {
+  const aiHomeDir = tempDir(t, 'aih-dsh-tui-progress-fail-');
+  const entryPath = writeEntry(aiHomeDir);
+  const events = [];
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    setImmediate(() => {
+      child.stderr.emit('data', 'pnpm: network unreachable');
+      child.emit('close', 1);
+    });
+    return child;
+  };
+
+  await assert.rejects(
+    prepareDshTuiHarness({
+      fs,
+      path,
+      aiHomeDir,
+      dshPath: entryPath,
+      accountRef: 'acct_dsh_tui',
+      provider: 'codex',
+      model: 'gpt-test',
+      gateway: { baseUrl: 'http://127.0.0.1:9527/v1', apiKey: 'gateway-key' },
+      catalog: CATALOG,
+      sharedSessions: false,
+      spawnImpl,
+      notify: (event) => events.push(event)
+    }),
+    (error) => error.code === 'dsh_tui_profile_install_failed'
+  );
+  assert.deepEqual(events.map((event) => event.phase), ['install:start', 'install:end']);
+  assert.equal(events[1].ok, false);
 });
 
 test('prepareDshTuiHarness fails closed without a bundle or gateway credentials', async (t) => {

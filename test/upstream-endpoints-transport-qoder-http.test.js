@@ -574,3 +574,120 @@ test('HTTP usage event key is shared with the session scanner', () => {
   assert.equal(__private.qoderHttpUsageEventKey('qodercn', '', 'req'), 'qodercn:http:req');
   assert.equal(__private.qoderHttpUsageEventKey('qodercn', '', ''), undefined);
 });
+
+// 排队短路（2026-10-22）：上游回「被排队 / RESOURCE_LIMIT」时**不回落 CLI**。
+//
+// 为什么必须钉住：回落的前提是「换条路径可能成功」，但 qoder 的排队是服务端资源限制，
+// CLI 走的是**同一个队列**（2026-10-21 取证注释自己写了这一点）。上游此刻没有在处理
+// 我们的内容，等或重试都不会更快。实测排队 16.6s/115.4s/177.3s 三次，而 CLI 预算 180s——
+// 177.3s 只剩 2.7s 余量，再长就变成空等 5 分钟。所以这里断言：立刻 429 说清状况，
+// 且**链上的 CLI transport 一次都不能被调用**。
+const QODER_QUEUE_BODY = JSON.stringify({
+  code: '403',
+  message: JSON.stringify({
+    code: '10605',
+    message: JSON.stringify({
+      isQueued: true,
+      modelKey: 'cmodel',
+      queueCount: 0,
+      queueType: 'p3',
+      retryAfterSeconds: 30,
+      serviceAvailable: false,
+      subCode: 'RESOURCE_LIMIT',
+      waitTime: 30
+    }),
+    subCode: 'RESOURCE_LIMIT'
+  })
+});
+
+test('上游排队时短路：不回落 CLI，直接 429 说明状况', async () => {
+  let cliCalled = false;
+  const { ctx, sink, logs, attemptMutable } = makeCtx({
+    deps: {
+      fetchQoderHttpChatCompletion: async () => {
+        const error = new Error(QODER_QUEUE_BODY);
+        error.code = 'qoder_http_upstream_error';
+        error.statusCode = 403;
+        error.upstreamBody = QODER_QUEUE_BODY;
+        throw error;
+      },
+      fetchQoderCliChatCompletion: async () => { cliCalled = true; return null; }
+    }
+  });
+  // 走整条链：HTTP 在前、CLI 在后。排队必须让链在 HTTP 这一步就结束。
+  const action = await runTransportChain(ctx, [qoderHttpTransport, qoderCliTransport]);
+
+  assert.equal(cliCalled, false, '排队时 CLI transport 不应被调用（它等的是同一个队列）');
+  assert.deepEqual(action, { action: 'return' }, '应返回终止动作，让链停在这里');
+  assert.equal(sink.res.statusCode, 429, '排队是 429（可重试的资源限制），不是 502/504 故障');
+  assert.equal(sink.headers['retry-after'], '30', '应透出上游给的 retryAfterSeconds');
+  assert.equal(sink.headers['x-aih-qoder-queue'], '1');
+  const payload = JSON.parse(sink.body());
+  assert.match(payload.error.message, /排队/);
+  assert.match(payload.error.message, /30 秒后可重试/);
+  // 给用户的话必须点明「等也不会更快」，否则他只会一直等下去。
+  assert.match(payload.error.message, /等待或立即重试都不会更快/);
+  // 记账语义不变：与凭据无关，不记账号失败、不换号。
+  // 注解走 attempt.annotations 袋子（annotateAttempt 的存储位置），不是顶层属性。
+  assert.equal(attemptMutable.annotations.qoderQueueShortCircuit, true);
+  assert.equal(attemptMutable.annotations.qoderQueueRetryAfterMs, 30000);
+  const attemptLog = logs.find((entry) => entry.streamTransport === 'qoder_http_queued');
+  assert.ok(attemptLog, '应留下 qoder_http_queued 证据行');
+  assert.equal(attemptLog.status, 429);
+});
+
+test('排队短路也覆盖流式请求（首字节前就排队）', async () => {
+  const { ctx, sink } = makeCtx({
+    streamRequested: true,
+    deps: {
+      fetchQoderHttpChatCompletionStream: async () => {
+        const error = new Error(QODER_QUEUE_BODY);
+        error.code = 'qoder_http_upstream_error';
+        error.statusCode = 403;
+        error.upstreamBody = QODER_QUEUE_BODY;
+        throw error;
+      }
+    }
+  });
+  const action = await qoderHttpTransport.run(ctx);
+  assert.deepEqual(action, { action: 'return' });
+  assert.equal(sink.res.statusCode, 429);
+  assert.equal(sink.headers['x-aih-stream-refused'], 'queued');
+});
+
+test('非排队的首字节前失败仍然回落 CLI（短路不能误伤正常兜底）', async () => {
+  // 关键断言只有一条：CLI 被调用了。短路若写宽了（例如按 statusCode===403 判），
+  // 这个用例会红——普通网络失败必须继续走兜底。
+  let cliCalled = false;
+  const { ctx } = makeCtx({
+    deps: {
+      fetchQoderHttpChatCompletion: async () => {
+        const error = new Error('connection refused');
+        error.code = 'ECONNREFUSED';
+        throw error;
+      },
+      fetchQoderCliChatCompletion: async () => { cliCalled = true; return null; }
+    }
+  });
+  await runTransportChain(ctx, [qoderHttpTransport, qoderCliTransport]);
+  assert.equal(cliCalled, true, '普通网络失败仍应交给 CLI 兜底');
+});
+
+test('排队短路只认排队：其他 overloaded（529 过载）仍回落 CLI', async () => {
+  // 529 与排队**同为 kind=overloaded**，但语义完全不同：529 是上游过载，
+  // 换 CLI 可能真的落到别的容量上，应当继续兜底。短路若只判 kind 就会误伤这里。
+  let cliCalled = false;
+  const { ctx } = makeCtx({
+    deps: {
+      fetchQoderHttpChatCompletion: async () => {
+        const error = new Error('upstream overloaded');
+        error.code = 'qoder_http_upstream_error';
+        error.statusCode = 529;
+        throw error;
+      },
+      fetchQoderCliChatCompletion: async () => { cliCalled = true; return null; }
+    }
+  });
+  await runTransportChain(ctx, [qoderHttpTransport, qoderCliTransport]);
+  assert.equal(cliCalled, true, '529 过载不是排队，必须继续走 CLI 兜底');
+});

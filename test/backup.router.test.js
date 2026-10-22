@@ -754,3 +754,50 @@ test('runBackupCommand routes import sources to unified import executor', async 
   assert.equal(typeof calls[0].opts.renderStageProgress, 'function');
   assert.equal(progressEvents.length, 0);
 });
+
+test('runBackupCommand handles `aih backup --help` by printing usage and exiting 0', async () => {
+  const logs = [];
+  let exitCode = null;
+  const handled = await runBackupCommand('backup', ['backup', '--help'], {
+    consoleImpl: { log: (msg) => logs.push(String(msg)), error: () => {} },
+    processImpl: { exit: (code) => { exitCode = code; } }
+  });
+  assert.equal(handled, true);
+  assert.equal(exitCode, 0);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /AIH Backup/);
+  assert.match(logs[0], /aih export/);
+  assert.match(logs[0], /aih import/);
+});
+
+test('runBackupCommand treats bare `aih backup` as help and exits 0', async () => {
+  const logs = [];
+  let exitCode = null;
+  const handled = await runBackupCommand('backup', ['backup'], {
+    consoleImpl: { log: (msg) => logs.push(String(msg)), error: () => {} },
+    processImpl: { exit: (code) => { exitCode = code; } }
+  });
+  assert.equal(handled, true);
+  assert.equal(exitCode, 0);
+  assert.match(logs[0], /AIH Backup/);
+});
+
+test('runBackupCommand rejects an unknown `aih backup` subcommand with usage and exit 1', async () => {
+  const logs = [];
+  let exitCode = null;
+  const handled = await runBackupCommand('backup', ['backup', 'bogus'], {
+    consoleImpl: { log: (msg) => logs.push(String(msg)), error: () => {} },
+    processImpl: { exit: (code) => { exitCode = code; } }
+  });
+  assert.equal(handled, true);
+  assert.equal(exitCode, 1);
+  assert.match(logs[0], /AIH Backup/);
+});
+
+test('runBackupCommand still ignores unrelated root commands', async () => {
+  const handled = await runBackupCommand('count', ['count'], {
+    consoleImpl: { log: () => {}, error: () => {} },
+    processImpl: { exit: () => {} }
+  });
+  assert.equal(handled, false);
+});

@@ -15,6 +15,7 @@ test('root help explains remote defaults and the Server Management Key contract'
   assert.match(output, /relay is the default no-public-IP path/);
   assert.match(output, /aih fabric transport probe <endpoint\.\.\.>/);
   assert.match(output, /aih fabric transport tcp-echo <tcp-url>/);
+  assert.match(output, /aih backup --help/);
   assert.match(output, /aih usage recalculate-costs/);
   assert.match(output, /aih usage scan --reindex-codex-forks/);
   assert.match(output, /aih node service status/);

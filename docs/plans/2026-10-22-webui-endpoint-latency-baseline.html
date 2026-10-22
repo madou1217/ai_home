@@ -1,0 +1,440 @@
+<title>WebUI 接口延迟基线</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* 布局：单一纵向流，顶部结论 + 超阈值表 + 可筛选全量清单 */
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-sunk: #efefec;
+  --fg: #1b1c1a;
+  --fg-mute: #62655f;
+  --line: #dcdcd6;
+  --line-strong: #c2c3bb;
+  --accent: #2a5f52;
+  --accent-soft: #e2ece8;
+  --danger: #a63a24;
+  --danger-soft: #f6e4de;
+  --warn: #8a6414;
+  --warn-soft: #f6ecd6;
+  --ok: #2f6b3f;
+  --ok-soft: #e3efe5;
+  --font-body: "IBM Plex Sans", -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171815;
+    --surface: #1f211e;
+    --surface-sunk: #141512;
+    --fg: #e8e8e2;
+    --fg-mute: #9b9e94;
+    --line: #33352f;
+    --line-strong: #474a42;
+    --accent: #7fc0ab;
+    --accent-soft: #22332e;
+    --danger: #e08a72;
+    --danger-soft: #3a241e;
+    --warn: #d9b25f;
+    --warn-soft: #362c17;
+    --ok: #86c295;
+    --ok-soft: #1e2e21;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171815;
+  --surface: #1f211e;
+  --surface-sunk: #141512;
+  --fg: #e8e8e2;
+  --fg-mute: #9b9e94;
+  --line: #33352f;
+  --line-strong: #474a42;
+  --accent: #7fc0ab;
+  --accent-soft: #22332e;
+  --danger: #e08a72;
+  --danger-soft: #3a241e;
+  --warn: #d9b25f;
+  --warn-soft: #362c17;
+  --ok: #86c295;
+  --ok-soft: #1e2e21;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 72px;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+
+header.masthead {
+  padding-block: 44px 30px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 40px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+h1 {
+  font-size: clamp(26px, 4vw, 38px);
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+  font-weight: 700;
+  text-wrap: balance;
+}
+.sub { margin: 0; color: var(--fg-mute); max-width: 60ch; font-size: 14.5px; }
+.meta-line {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  display: flex;
+  gap: 8px 18px;
+  flex-wrap: wrap;
+}
+.meta-line b { color: var(--fg); font-weight: 600; }
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-block: 26px 0;
+}
+.tile { background: var(--surface); padding: 16px 18px 14px; }
+.tile .k {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  display: block;
+  margin-bottom: 6px;
+}
+.tile .v { font-size: 27px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.1; }
+.tile .v small { font-size: 13px; font-weight: 500; color: var(--fg-mute); margin-left: 2px; }
+.tile.hot .v { color: var(--danger); }
+
+section { margin-top: 52px; }
+h2 {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.lede { margin: 0 0 18px; color: var(--fg-mute); font-size: 14px; max-width: 76ch; }
+
+.over-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.over-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  font-weight: 500;
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.over-table td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.over-table td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.over-table tr:last-child td { border-bottom: 1px solid var(--line-strong); }
+.route { font-family: var(--font-mono); font-size: 12.5px; word-break: break-all; }
+.mtag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--surface-sunk);
+  color: var(--fg-mute);
+  white-space: nowrap;
+}
+.ms-bad { color: var(--danger); font-weight: 600; font-size: 14px; }
+.bar-cell { width: 120px; }
+.bar { height: 7px; background: var(--surface-sunk); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--danger); }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg-mute);
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.chip:hover { border-color: var(--accent); color: var(--fg); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.chip:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="search"] {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding: 7px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg);
+  flex: 1 1 240px;
+  max-width: 340px;
+  min-width: 0;
+}
+.count { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-mute); letter-spacing: 0.03em; }
+
+.table-scroll { overflow-x: auto; border-top: 1px solid var(--line-strong); }
+table.full { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 760px; }
+table.full th {
+  text-align: left;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  font-weight: 500;
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--line-strong);
+  z-index: 1;
+  white-space: nowrap;
+}
+table.full td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.full td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.full tr.dom-head td {
+  background: var(--surface-sunk);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  padding: 8px 12px 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  display: inline-block;
+}
+.pill.sse { background: var(--accent-soft); color: var(--accent); }
+.pill.bad { background: var(--danger-soft); color: var(--danger); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.none { background: var(--surface-sunk); color: var(--fg-mute); }
+
+.finding { display: grid; gap: 14px; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  padding: 16px 18px;
+}
+.card.neutral { border-left-color: var(--line-strong); }
+.card h3 { margin: 0 0 6px; font-size: 14.5px; font-weight: 600; }
+.card p { margin: 0; font-size: 13.5px; color: var(--fg-mute); }
+.card p + p { margin-top: 8px; }
+code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surface-sunk); padding: 1px 5px; border-radius: 3px; }
+.card pre {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  background: var(--surface-sunk);
+  padding: 10px 12px;
+  margin: 10px 0 0;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+footer {
+  margin-top: 56px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--fg-mute);
+}
+footer p { margin: 0 0 6px; }
+
+@media (max-width: 640px) {
+  header.masthead { padding-block: 30px 22px; }
+  .over-table .c-cost, .over-table th.c-cost { display: none; }
+  .tile .v { font-size: 23px; }
+  section { margin-top: 38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <h1>WebUI 接口延迟基线</h1>
+      <p class="sub">第一阶段：只统计。全部 <code>/v0/webui/*</code> 接口的用途、请求方式与真实响应时间，目标是除 WSS/SSE 外全部进 300ms。</p>
+    </div>
+    <div class="meta-line">
+      <span>采集日 <b>2026-10-22</b></span>
+      <span>目标 <b>127.0.0.1:9527</b></span>
+      <span>Owner <b>Node</b></span>
+    </div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section>
+    <h2>超出 300ms 的接口</h2>
+    <p class="lede">以纯内存接口 <code>GET /v0/webui/tasks</code> 为基准，测量前后各采样 7 次取中位，净耗时 = 接口中位 − 基准中位。基准本身超过 300ms 时该轮作废重测。</p>
+    <div class="table-scroll">
+      <table class="over-table" id="overTable"></table>
+    </div>
+  </section>
+
+  <section>
+    <h2>全量接口清单</h2>
+    <p class="lede">284 条路由，按业务域分组。响应时间列优先取校准后净耗时，其次取生产日志中位数。</p>
+    <div class="controls">
+      <div class="chips" id="chips"></div>
+      <input type="search" id="q" placeholder="筛选路径或用途…" aria-label="筛选接口">
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="full" id="fullTable"></table>
+    </div>
+  </section>
+
+  <section>
+    <h2>关键发现</h2>
+    <div class="finding">
+      <div class="card">
+        <h3>服务器存在周期性事件循环阻塞</h3>
+        <p>对最轻的 <code>/healthz</code> 做 40 次、间隔 150ms 的串行探测，仍反复出现卡顿：</p>
+        <pre>stall  558 ms  t+1161      stall 1033 ms  t+4040
+stall 1876 ms  t+~3900     stall  739 ms  t+4931
+stall  734 ms  t+7926      stall  287 ms  t+9439</pre>
+        <p>纯内存读的 <code>/v0/webui/tasks</code> 同样出现过 1840ms 单次延迟。这不是某个接口写得慢，而是进程内有同步阻塞，任何接口都可能被拖到秒级。</p>
+      </div>
+      <div class="card">
+        <h3>阻塞源：toolkit 在请求线程里同步起子进程</h3>
+        <p><code>lib/cli/services/toolkit/proxy-target-plugins/proxy-command.js:5</code> 的 <code>execCommand()</code> 使用 <code>spawnSync</code>，单次超时 4000ms。proxy 接口要为每个启用中的网络服务各调用 4 次 <code>networksetup</code>。</p>
+        <p>这些调用全部在 Node 主线程，阻塞期间所有 HTTP 请求（含 SSE 心跳、健康检查）一起排队。这解释了为什么 <code>/healthz</code> 会和 <code>/toolkit/proxy</code> 同时卡住。</p>
+      </div>
+      <div class="card neutral">
+        <h3>测量口径告警</h3>
+        <p>未做基准校准的探测产生过 3 次假阳性：<code>app-install/jobs</code> 881ms→0ms、<code>studio/image/sessions</code> 673ms→3ms、<code>accounts</code> 273ms→线上 p50 84ms。都是服务器卡顿所致，不是接口本身。</p>
+      </div>
+      <div class="card neutral">
+        <h3>缓存冷热差异明显</h3>
+        <p><code>projects</code> 冷 447–847ms / 热 12–22ms；<code>toolkit/apps</code> 冷 3621ms / 热 7–17ms；<code>lifecycle-capabilities</code> 冷 1403ms / 热 1ms。命中缓存时都能进 300ms，问题在冷启动的同步扫描。</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>数据来源：源码路由扫描（284 条）· 生产访问日志 24,503 条 <code>kind=access</code> 记录（2026-10-21 12:12 → 2026-10-22 04:34 UTC）· 56 个只读接口主动探测。</p>
+    <p>写操作（POST/PUT/PATCH/DELETE）未主动触发，其响应时间仅取自线上日志；日志无样本的记为 «—»。</p>
+  </footer>
+</div>
+
+<script>
+const DATA = [{"m":"GET","p":"/v0/webui/egress-pool","u":"出口池状态+节点账本","d":"出口与网络","sse":false,"ms":1391,"n":48,"p50":859,"p95":1438,"c":"节点账本 + 网络探测"},{"m":"GET","p":"/v0/webui/egress-upstreams","u":"上游地区策略视图","d":"出口与网络","sse":false,"ms":74,"n":417,"p50":116,"p95":238,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/probe","u":"立即探测节点","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/nodes/{name}/select","u":"切到指定节点","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/nodes/{name}/clear-cooldown","u":"人工解除冷却","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/nodes/{name}/block","u":"手动关闭节点","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/nodes/{name}/unblock","u":"放行节点","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/node-policy","u":"改拦截策略","d":"出口与网络","sse":false,"ms":null,"n":5,"p50":29,"p95":40,"c":""},{"m":"POST","p":"/v0/webui/egress-pool/node-policy/clear-disabled","u":"清除手动关闭标记","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/egress-upstreams/{id}","u":"改上游规则","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-upstreams/{id}/probe","u":"测试节点","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-upstreams/{id}/evidence/reset","u":"重置实测证据","d":"出口与网络","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/egress-upstreams/network/refresh","u":"刷新当前出口网络","d":"出口与网络","sse":false,"ms":null,"n":1,"p50":5,"p95":5,"c":""},{"m":"GET","p":"/v0/webui/toolkit/connectivity","u":"测试上游 AI 连通性","d":"工具箱 Toolkit","sse":false,"ms":4347,"n":19,"p50":2745,"p95":5425,"c":"并发 HEAD 请求外部站点"},{"m":"GET","p":"/v0/webui/toolkit/environments","u":"环境能力清单","d":"工具箱 Toolkit","sse":false,"ms":2751,"n":14,"p50":2170,"p95":2602,"c":"同步子进程环境探测"},{"m":"GET","p":"/v0/webui/toolkit/proxy","u":"代理状态（env/系统/工具）","d":"工具箱 Toolkit","sse":false,"ms":1998,"n":22,"p50":1588,"p95":2201,"c":"同步子进程 scutil/networksetup"},{"m":"GET","p":"/v0/webui/toolkit/mirrors","u":"npm/pip 镜像源状态","d":"工具箱 Toolkit","sse":false,"ms":560,"n":16,"p50":664,"p95":912,"c":"同步子进程读 npm/pip"},{"m":"GET","p":"/v0/webui/toolkit/environments/guide","u":"环境配置指南","d":"工具箱 Toolkit","sse":false,"ms":196,"n":6,"p50":3,"p95":6,"c":"同步子进程环境探测"},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator","u":"订阅聚合器总览","d":"工具箱 Toolkit","sse":false,"ms":100,"n":16,"p50":17,"p95":36,"c":""},{"m":"GET","p":"/v0/webui/toolkit/tools/jobs","u":"工具任务列表","d":"工具箱 Toolkit","sse":false,"ms":32,"n":6,"p50":1,"p95":2,"c":"同步子进程版本探测"},{"m":"GET","p":"/v0/webui/toolkit/terminals","u":"同上（toolkit 别名）","d":"工具箱 Toolkit","sse":false,"ms":19,"n":10,"p50":10,"p95":44,"c":""},{"m":"GET","p":"/v0/webui/terminals","u":"客户端终端任务列表","d":"工具箱 Toolkit","sse":false,"ms":18,"n":8,"p50":3,"p95":14,"c":""},{"m":"GET","p":"/v0/webui/toolkit/edge","u":"本机入口转发状态","d":"工具箱 Toolkit","sse":false,"ms":9,"n":11,"p50":2,"p95":5,"c":""},{"m":"GET","p":"/v0/webui/toolkit/apps","u":"App/CLI 清单","d":"工具箱 Toolkit","sse":false,"ms":7,"n":43,"p50":303,"p95":1689,"c":"同步子进程 mdfind/plutil"},{"m":"GET","p":"/v0/webui/toolkit/tools","u":"受管工具清单","d":"工具箱 Toolkit","sse":false,"ms":1,"n":22,"p50":1,"p95":1970,"c":"同步子进程版本探测"},{"m":"POST","p":"/v0/webui/toolkit/apps/plan","u":"预览生命周期命令","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/apps/install","u":"异步安装任务","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/apps/hooks","u":"安装官方 hooks","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/apps/{appId}/check-update","u":"检查 App 更新","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程 mdfind/plutil"},{"m":"POST","p":"/v0/webui/toolkit/apps/{appId}/open","u":"打开 App","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/apps/{appId}/settings","u":"CLI 启动权限设置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程 mdfind/plutil"},{"m":"PUT","p":"/v0/webui/toolkit/apps/{appId}/settings","u":"写 CLI 启动权限设置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/tools/plan","u":"工具操作计划","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/tools/execute","u":"执行工具操作","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/tools/jobs/{jobId}","u":"工具任务详情/进度","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程版本探测"},{"m":"GET","p":"/v0/webui/toolkit/tools/{toolId}/service","u":"工具服务状态","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程版本探测"},{"m":"GET","p":"/v0/webui/toolkit/tools/{toolId}/service/settings","u":"服务设置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程版本探测"},{"m":"GET","p":"/v0/webui/toolkit/tools/{toolId}/service/config","u":"服务配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程版本探测"},{"m":"GET","p":"/v0/webui/toolkit/tools/{toolId}/service/logs","u":"服务日志","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程版本探测"},{"m":"POST","p":"/v0/webui/toolkit/environments/plan","u":"环境动作计划","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/environments/execute","u":"执行环境动作","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/environments/jobs","u":"环境任务列表","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":"同步子进程环境探测"},{"m":"POST","p":"/v0/webui/toolkit/mirrors/set","u":"设置镜像源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/mirrors/ping","u":"ping 镜像地址","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/proxy/set","u":"设置工具代理","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/edge/plan","u":"生成入口转发配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/edge/apply","u":"落盘并重载入口配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/provider-configs","u":"Provider 配置文件清单","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}","u":"读配置文件","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}","u":"写配置文件","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}/validate","u":"校验配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}/history","u":"配置历史","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}/history/{entryId}","u":"历史条目","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}/history/{entryId}/restore","u":"恢复历史版本","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/provider-configs/{provider}/{fileId}/export","u":"导出配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/local-clients","u":"探测本机代理客户端","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/local-sources","u":"扫描本机订阅源配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/local-sources/import","u":"导入本机订阅源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/relay","u":"本机中转可用性","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/sources/sync/watch","u":"SSE：订阅源同步进度","d":"工具箱 Toolkit","sse":true,"ms":null,"n":4,"p50":1311699,"p95":2019455,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources/sync","u":"立即返回 202 的批量同步任务","d":"工具箱 Toolkit","sse":false,"ms":null,"n":1,"p50":35,"p95":35,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources/{id}/sync","u":"单源同步任务","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/sources/{id}/nodes","u":"源节点列表","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources/{id}/latency","u":"测节点延迟","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources/{id}/enabled","u":"启用/停用订阅源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources","u":"保存订阅源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/sources/preview","u":"预览订阅源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/toolkit/subscription-aggregator/sources/{id}","u":"删除订阅源","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/profiles/{id}/preview","u":"预览聚合订阅","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/profiles/{id}/import-links","u":"导入链接","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/profiles/{id}/token","u":"轮换订阅 token","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/toolkit/subscription-aggregator/profiles/{id}","u":"删除聚合配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/profiles","u":"保存聚合配置","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/profiles/nodes","u":"预览聚合节点","d":"工具箱 Toolkit","sse":false,"ms":null,"n":1,"p50":22,"p95":22,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/profiles/test-route","u":"测试路由","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/probe","u":"探测工具链","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/nodes/parse","u":"解析节点串","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/subscription-aggregator/nodes","u":"全部节点","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/subscription-aggregator/nodes/chain","u":"设置节点前置链","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/terminals/plan","u":"终端命令计划","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/terminals/execute","u":"执行终端命令","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/toolkit/terminals/open","u":"打开客户端终端","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/terminals/jobs/{jobId}","u":"终端任务详情","d":"工具箱 Toolkit","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/toolkit/terminals/jobs/{jobId}/watch","u":"SSE：终端任务进度","d":"工具箱 Toolkit","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat-sessions","u":"本地聊天会话列表","d":"聊天与会话","sse":false,"ms":247,"n":168,"p50":75,"p95":2014,"c":""},{"m":"GET","p":"/v0/webui/sessions/archived","u":"已归档会话列表","d":"聊天与会话","sse":false,"ms":146,"n":6,"p50":44,"p95":113,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions/{id}/composer/catalog","u":"输入区模型/账号目录","d":"聊天与会话","sse":false,"ms":67,"n":51,"p50":79,"p95":1825,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions","u":"Chat Runtime 会话列表","d":"聊天与会话","sse":false,"ms":17,"n":3053,"p50":0,"p95":1,"c":""},{"m":"GET","p":"/v0/webui/sessions/lifecycle-capabilities","u":"原生会话生命周期能力","d":"聊天与会话","sse":false,"ms":1,"n":95,"p50":1,"p95":4799,"c":""},{"m":"POST","p":"/v0/webui/chat","u":"发送聊天消息（SSE 流式回复）","d":"聊天与会话","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat-sessions","u":"新建本地聊天会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat-sessions/{sessionId}","u":"读取单个聊天会话","d":"聊天与会话","sse":false,"ms":null,"n":3,"p50":0,"p95":1,"c":""},{"m":"DELETE","p":"/v0/webui/chat-sessions/{sessionId}","u":"删除聊天会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/sessions","u":"创建 Chat Runtime 会话","d":"聊天与会话","sse":false,"ms":null,"n":49,"p50":72,"p95":199,"c":""},{"m":"POST","p":"/v0/webui/chat/sessions/resolve","u":"按 provider/项目/native id 解析会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions/{id}/snapshot","u":"会话快照","d":"聊天与会话","sse":false,"ms":null,"n":54,"p50":3,"p95":13,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions/{id}/events","u":"SSE：会话事件流","d":"聊天与会话","sse":true,"ms":null,"n":49,"p50":9335,"p95":75151,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions/{id}/timeline","u":"会话时间线","d":"聊天与会话","sse":false,"ms":null,"n":8,"p50":1,"p95":3,"c":""},{"m":"GET","p":"/v0/webui/chat/sessions/{id}/commands/catalog","u":"可用 slash 命令目录","d":"聊天与会话","sse":false,"ms":null,"n":46,"p50":1,"p95":2,"c":""},{"m":"POST","p":"/v0/webui/chat/sessions/{id}/commands","u":"执行 slash 命令","d":"聊天与会话","sse":false,"ms":null,"n":12,"p50":83,"p95":779,"c":""},{"m":"POST","p":"/v0/webui/chat/sessions/{id}/attachments","u":"上传会话附件","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat/attachments","u":"读取聊天附件","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat/artifacts/{artifactId}","u":"读取会话产物","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/chat/runs","u":"活跃原生会话 run 列表","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/runs","u":"启动/恢复原生会话 run","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/runs/{runId}/input","u":"向运行中会话写输入","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/runs/{runId}/resize","u":"调整 PTY 尺寸","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/runs/{runId}/abort","u":"终止运行中会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/runs/{runId}/approvals/{approvalId}","u":"审批决策 allow/deny","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/chat/cli-install-confirmations/{id}","u":"安装缺失 CLI 的一次性确认","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/watch","u":"SSE：会话文件变更","d":"聊天与会话","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/watch/ws","u":"WebSocket：会话 watch","d":"聊天与会话","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/{provider}/{sessionId}","u":"账号的项目与会话数据","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/{provider}/{sessionId}/messages","u":"会话消息内容","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/{provider}/{sessionId}/events","u":"会话增量事件","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/{provider}/{sessionId}/model","u":"会话最近使用的模型","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/sessions/previews","u":"批量取模型+末条消息预览","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/archive","u":"归档会话（GET 形式）","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/sessions/archive","u":"归档会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/sessions/unarchive","u":"还原归档（GET 形式）","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/sessions/unarchive","u":"还原归档会话","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/session-events/provider-hook","u":"provider 官方 hook 的会话变更事件","d":"聊天与会话","sse":false,"ms":null,"n":2110,"p50":1,"p95":3,"c":""},{"m":"POST","p":"/v0/webui/internal/approval-request","u":"claude 权限工具审批请求（长挂）","d":"聊天与会话","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/openai-models","u":"WebUI 模型目录（对齐 /v1/models）","d":"配置与管理面","sse":false,"ms":1309,"n":19,"p50":1003,"p95":1225,"c":"上游模型目录拉取"},{"m":"GET","p":"/v0/webui/management/accounts","u":"管理面账号视图","d":"配置与管理面","sse":false,"ms":125,"n":10,"p50":94,"p95":239,"c":""},{"m":"GET","p":"/v0/webui/nodes/defaults","u":"节点默认值","d":"配置与管理面","sse":false,"ms":82,"n":8,"p50":26,"p95":74,"c":""},{"m":"GET","p":"/v0/webui/management/status","u":"管理面状态","d":"配置与管理面","sse":false,"ms":32,"n":1138,"p50":3,"p95":7,"c":""},{"m":"GET","p":"/v0/webui/upstream-error-mappings","u":"上游错误码映射组","d":"配置与管理面","sse":false,"ms":27,"n":8,"p50":3,"p95":5,"c":""},{"m":"GET","p":"/v0/webui/config","u":"全局用量配置","d":"配置与管理面","sse":false,"ms":16,"n":6,"p50":3,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/server-config","u":"server 配置","d":"配置与管理面","sse":false,"ms":16,"n":7,"p50":3,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/provider-hooks","u":"provider official hook 接入诊断","d":"配置与管理面","sse":false,"ms":16,"n":8,"p50":4,"p95":11,"c":""},{"m":"GET","p":"/v0/webui/provider-cli-upgrade","u":"CLI 自动升级账本与调度","d":"配置与管理面","sse":false,"ms":13,"n":18,"p50":2,"p95":13,"c":""},{"m":"GET","p":"/v0/webui/control-plane/profiles","u":"控制面 server profile 列表","d":"配置与管理面","sse":false,"ms":10,"n":62,"p50":2,"p95":5,"c":""},{"m":"GET","p":"/v0/webui/management/metrics","u":"管理面指标","d":"配置与管理面","sse":false,"ms":8,"n":5285,"p50":1,"p95":3,"c":""},{"m":"GET","p":"/v0/webui/nodes/invites","u":"节点邀请列表","d":"配置与管理面","sse":false,"ms":6,"n":6,"p50":2,"p95":2,"c":""},{"m":"GET","p":"/v0/webui/model-aliases","u":"模型别名列表","d":"配置与管理面","sse":false,"ms":5,"n":11,"p50":2,"p95":7,"c":""},{"m":"GET","p":"/v0/webui/nodes","u":"远程节点列表","d":"配置与管理面","sse":false,"ms":1,"n":8,"p50":1,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/control-plane/endpoints","u":"控制面端点提示","d":"配置与管理面","sse":false,"ms":0,"n":8,"p50":1,"p95":2,"c":""},{"m":"POST","p":"/v0/webui/config","u":"更新全局配置","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/server-config","u":"更新 server 配置","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/server-config/management-key/rotate","u":"轮换管理密钥","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/server/restart","u":"重启 server","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/management/usage","u":"管理面用量","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/management/watch","u":"SSE：管理面状态","d":"配置与管理面","sse":true,"ms":null,"n":9,"p50":1702,"p95":2609,"c":""},{"m":"POST","p":"/v0/webui/management/watch/snapshot","u":"触发管理面快照广播","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/management/usage/dashboard/query","u":"创建用量看板查询任务","d":"配置与管理面","sse":false,"ms":null,"n":1,"p50":520,"p95":520,"c":""},{"m":"GET","p":"/v0/webui/management/usage/dashboard/query/watch","u":"SSE：看板查询进度","d":"配置与管理面","sse":true,"ms":null,"n":1,"p50":1091,"p95":1091,"c":""},{"m":"DELETE","p":"/v0/webui/management/usage/dashboard/query/{id}","u":"取消看板查询","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/management/usage/scan/watch","u":"SSE：用量扫描进度","d":"配置与管理面","sse":true,"ms":null,"n":1,"p50":1078,"p95":1078,"c":""},{"m":"POST","p":"/v0/webui/control-plane/profiles","u":"保存 server profile","d":"配置与管理面","sse":false,"ms":null,"n":72,"p50":3,"p95":16,"c":""},{"m":"GET","p":"/v0/webui/control-plane/profiles/active","u":"当前激活 profile","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/control-plane/profiles/active","u":"切换激活 profile","d":"配置与管理面","sse":false,"ms":null,"n":9,"p50":2,"p95":2,"c":""},{"m":"POST","p":"/v0/webui/control-plane/profiles/{profileId}","u":"更新/删除 profile","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/server-routes/relays","u":"中转出口路线","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes","u":"保存远程节点","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/invites","u":"创建节点邀请","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/nodes/{nodeId}/test","u":"节点连通性测试","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/{nodeId}/test","u":"节点连通性测试","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/nodes/bootstrap-plan","u":"节点引导计划","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/bootstrap-plan","u":"节点引导计划","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/bootstrap-probe","u":"节点引导探测","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/bootstrap-apply","u":"应用节点引导","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/nodes/{nodeId}/management/{rest}","u":"转发到远端节点管理面","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/provider-hooks/install","u":"安装 provider hook（GET 形式）","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/provider-hooks/install","u":"安装 provider official hook","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/provider-cli-upgrade/{provider}/clear-broken","u":"解除升级熔断","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/openai-models","u":"新增自建模型","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PATCH","p":"/v0/webui/openai-models","u":"更新自建模型","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/openai-models/delete","u":"删除自建模型","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/openai-models/refresh","u":"刷新模型目录","d":"配置与管理面","sse":false,"ms":null,"n":3,"p50":1,"p95":51,"c":""},{"m":"GET","p":"/v0/webui/openai-models/watch","u":"SSE：模型目录变更","d":"配置与管理面","sse":true,"ms":null,"n":27,"p50":478334,"p95":2193278,"c":"上游模型目录拉取"},{"m":"POST","p":"/v0/webui/model-aliases","u":"新增别名","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/model-aliases/{id}","u":"更新别名","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/model-aliases/{id}","u":"删除别名","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/model-aliases/{id}/toggle","u":"启用/停用别名","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/upstream-error-mappings","u":"新增映射","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/upstream-error-mappings/{id}","u":"更新映射","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/upstream-error-mappings/{id}","u":"删除映射","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/upstream-error-mappings/{id}/toggle","u":"启用/停用映射","d":"配置与管理面","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/tasks","u":"后台任务列表","d":"任务队列","sse":false,"ms":5,"n":4221,"p50":0,"p95":1,"c":""},{"m":"GET","p":"/v0/webui/app-install/jobs","u":"安装任务列表","d":"任务队列","sse":false,"ms":0,"n":8,"p50":1,"p95":1,"c":""},{"m":"GET","p":"/v0/webui/tasks/watch","u":"SSE：任务进度","d":"任务队列","sse":true,"ms":null,"n":91,"p50":13109,"p95":2638474,"c":""},{"m":"POST","p":"/v0/webui/app-install","u":"创建 CLI/Desktop 安装任务","d":"任务队列","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/app-install/jobs/{jobId}/watch","u":"SSE：安装任务进度","d":"任务队列","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/translation/models","u":"可用翻译模型","d":"图像与翻译","sse":false,"ms":55,"n":13,"p50":5,"p95":25,"c":""},{"m":"GET","p":"/v0/webui/translation/languages","u":"语言白名单","d":"图像与翻译","sse":false,"ms":14,"n":9,"p50":1,"p95":8,"c":""},{"m":"GET","p":"/v0/webui/translation/settings","u":"翻译默认设置","d":"图像与翻译","sse":false,"ms":13,"n":12,"p50":5,"p95":38,"c":""},{"m":"GET","p":"/v0/webui/studio/image/models","u":"图像工作室模型目录","d":"图像与翻译","sse":false,"ms":4,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/studio/image/sessions","u":"图像会话列表","d":"图像与翻译","sse":false,"ms":3,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/studio/image/sessions","u":"新建图像会话","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/studio/image/sessions/{id}","u":"图像会话详情","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PATCH","p":"/v0/webui/studio/image/sessions/{id}","u":"更新图像会话","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/studio/image/sessions/{id}","u":"删除图像会话","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/studio/image/sessions/{id}/runs","u":"生成图像","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/studio/image/sessions/{id}/assets/{assetId}","u":"读取图像资产","d":"图像与翻译","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/translation/settings","u":"写翻译默认设置","d":"图像与翻译","sse":false,"ms":null,"n":2,"p50":4,"p95":4,"c":""},{"m":"POST","p":"/v0/webui/translation/detect","u":"语言检测","d":"图像与翻译","sse":false,"ms":null,"n":9,"p50":1,"p95":3,"c":""},{"m":"POST","p":"/v0/webui/translation/stream","u":"SSE：流式翻译","d":"图像与翻译","sse":true,"ms":null,"n":191,"p50":3241,"p95":10947,"c":""},{"m":"GET","p":"/v0/webui/models","u":"按 provider 分组的模型列表","d":"项目与文件","sse":false,"ms":86,"n":39,"p50":111,"p95":298,"c":""},{"m":"GET","p":"/v0/webui/projects","u":"项目列表（按路径聚合会话）","d":"项目与文件","sse":false,"ms":12,"n":51,"p50":14,"p95":50,"c":""},{"m":"GET","p":"/v0/webui/projects/sessions","u":"单个项目的完整会话集合","d":"项目与文件","sse":false,"ms":null,"n":8,"p50":1,"p95":18,"c":""},{"m":"GET","p":"/v0/webui/projects/watch","u":"SSE：项目级运行态","d":"项目与文件","sse":true,"ms":null,"n":40,"p50":11737,"p95":621247,"c":""},{"m":"POST","p":"/v0/webui/projects/watch/snapshot","u":"触发项目快照刷新","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/projects/pick","u":"在宿主机弹目录选择器","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/projects/browse","u":"服务端本地目录浏览","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/projects/open","u":"手动打开项目目录","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/projects/remove","u":"移除手动打开的项目","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/fs/tree","u":"浏览已登记项目内目录","d":"项目与文件","sse":false,"ms":null,"n":6,"p50":3,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/fs/read","u":"读取本地文件内容","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/fs/access","u":"媒体文件访问预检","d":"项目与文件","sse":false,"ms":null,"n":6,"p50":3,"p95":7,"c":""},{"m":"GET","p":"/v0/webui/fs/media","u":"受权媒体文件预览","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/fs/trust","u":"持久化可信目录","d":"项目与文件","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/git/summary","u":"只读 Git 工作区状态","d":"项目与文件","sse":false,"ms":null,"n":6,"p50":39,"p95":46,"c":""},{"m":"GET","p":"/v0/webui/git/diff","u":"单文件只读 diff","d":"项目与文件","sse":false,"ms":null,"n":3,"p50":3,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/slash-commands","u":"某 provider 的 slash 命令","d":"项目与文件","sse":false,"ms":null,"n":5,"p50":0,"p95":1,"c":""},{"m":"GET","p":"/v0/webui/accounts/codex/{accountRef}/reset-credits","u":"Codex 重置额度库存","d":"账号管理","sse":false,"ms":6261,"n":0,"p50":null,"p95":null,"c":"Codex 上游查询"},{"m":"GET","p":"/v0/webui/app-entries","u":"宿主机实测的 Provider 桌面/CLI 入口","d":"账号管理","sse":false,"ms":214,"n":5647,"p50":94,"p95":222,"c":""},{"m":"GET","p":"/v0/webui/account-outcomes","u":"账号请求结果统计","d":"账号管理","sse":false,"ms":34,"n":363,"p50":223,"p95":653,"c":""},{"m":"GET","p":"/v0/webui/accounts/provider-auth-sources","u":"认证来源链（本机可用/可安装）","d":"账号管理","sse":false,"ms":12,"n":7,"p50":4,"p95":26,"c":""},{"m":"GET","p":"/v0/webui/accounts","u":"账号列表（含状态、绑定、默认号）","d":"账号管理","sse":false,"ms":0,"n":79,"p50":84,"p95":365,"c":""},{"m":"POST","p":"/v0/webui/accounts/add","u":"新增账号（发起 OAuth/插件登录任务）","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/add/jobs/{jobId}","u":"查询添加账号任务进度","d":"账号管理","sse":false,"ms":null,"n":6,"p50":1,"p95":2,"c":""},{"m":"POST","p":"/v0/webui/accounts/add/jobs/{jobId}/cancel","u":"取消添加账号任务","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/add/jobs/{jobId}/install","u":"确认并安装缺失 CLI","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/add/jobs/{jobId}/callback","u":"提交浏览器 OAuth 回调并换 token","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/add/jobs/{jobId}/local-import","u":"从本机登录态完成登录任务","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/detect","u":"扫描本机已登录但未入库账号并登记","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/local-import","u":"从本机登录态直接建账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/plugin-login/start","u":"插件账号登录任务开始","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/plugin-login/{jobId}","u":"插件登录任务轮询","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/plugin-login/{jobId}/submit","u":"插件登录提交输入","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/plugin-login/{jobId}/cancel","u":"取消插件登录","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/export","u":"导出账号配置","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/accounts/export","u":"清理导出产物","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/import","u":"导入账号配置","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/import/jobs/{jobId}","u":"查询导入任务","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/watch","u":"SSE：账号列表增量更新","d":"账号管理","sse":true,"ms":null,"n":66,"p50":18248,"p95":1566444,"c":""},{"m":"POST","p":"/v0/webui/accounts/watch/snapshot","u":"触发账号 watch 后台刷新并快速返回","d":"账号管理","sse":false,"ms":null,"n":1,"p50":1,"p95":1,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}","u":"读取单账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/accounts/{provider}/{accountRef}","u":"删除账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/reauth","u":"重新认证","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/refresh","u":"并发刷新状态/模型/额度","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/refresh-usage","u":"刷新额度","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/status","u":"启用/停用账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/update","u":"更新账号配置（URL/Key）","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/routing-rules","u":"更新调度规则","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/restore-scheduling","u":"人工强制恢复调度","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/set-default","u":"设为默认会话账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/clear-default","u":"取消默认账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/set-mobile","u":"设为 Codex App 账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/clear-mobile","u":"取消 Codex App 账号","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/open-app","u":"打开该账号的桌面 App / CLI","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}/plan-stats","u":"kimi 套餐配额","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/desktop-session/start","u":"kimi 桌面扫码登录开始","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/desktop-session/poll","u":"kimi 桌面登录轮询","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}/quota-reset-events","u":"额度重置事件历史","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}/egress","u":"账号专属出口绑定","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/egress","u":"设置账号专属出口","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}/window-activation","u":"窗口激活设置","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/window-activation","u":"设置窗口激活","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/{provider}/{accountRef}/alias-pool","u":"别名选号池开关","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/alias-pool","u":"设置别名选号池","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/activity/run","u":"供应商作用域异步领取任务","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/activity/jobs/{jobId}","u":"领取任务进度","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/{provider}/{accountRef}/activity/{actionId}","u":"单账号单动作","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/codex/{accountRef}/reset-credits/consume","u":"消费一次重置","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/accounts/codex/{accountRef}/reset-operations/{opId}","u":"查询重置操作","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/accounts/codex/{accountRef}/reset-operations/{opId}/reconcile","u":"对账重置操作","d":"账号管理","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/terminal/open","u":"打开底部 shell PTY","d":"终端 PTY","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/terminal/stream","u":"SSE/流式：PTY 输出","d":"终端 PTY","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/terminal/mux","u":"多路复用通道","d":"终端 PTY","sse":true,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/terminal/input","u":"写入 PTY 输入","d":"终端 PTY","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/terminal/resize","u":"调整 PTY 尺寸","d":"终端 PTY","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/terminal/close","u":"关闭 PTY","d":"终端 PTY","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"GET","p":"/v0/webui/ssh-connections","u":"SSH 连接列表","d":"SSH","sse":false,"ms":90,"n":6,"p50":3,"p95":4,"c":""},{"m":"GET","p":"/v0/webui/ssh-workspaces","u":"SSH 工作区列表","d":"SSH","sse":false,"ms":9,"n":6,"p50":3,"p95":5,"c":""},{"m":"POST","p":"/v0/webui/ssh-connections","u":"新增 SSH 连接","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/ssh-connections/{id}","u":"编辑 SSH 连接","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/ssh-connections/{id}","u":"删除 SSH 连接（级联工作区）","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/ssh-connections/test","u":"SSH 物理连接探测","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/ssh-hosts/browse","u":"浏览远端主机目录","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"POST","p":"/v0/webui/ssh-workspaces","u":"新增工作区","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"PUT","p":"/v0/webui/ssh-workspaces/{id}","u":"编辑工作区","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""},{"m":"DELETE","p":"/v0/webui/ssh-workspaces/{id}","u":"删除工作区","d":"SSH","sse":false,"ms":null,"n":0,"p50":null,"p95":null,"c":""}];
+const STATS = {"total":284,"sse":17,"measured":50,"over":7};
+const OVER = [{"m":"GET","p":"/v0/webui/egress-pool","ms":1391,"c":"节点账本 + 网络探测"},{"m":"GET","p":"/v0/webui/toolkit/connectivity","ms":4347,"c":"并发 HEAD 请求外部站点"},{"m":"GET","p":"/v0/webui/toolkit/environments","ms":2751,"c":"同步子进程环境探测"},{"m":"GET","p":"/v0/webui/toolkit/proxy","ms":1998,"c":"同步子进程 scutil/networksetup"},{"m":"GET","p":"/v0/webui/toolkit/mirrors","ms":560,"c":"同步子进程读 npm/pip"},{"m":"GET","p":"/v0/webui/openai-models","ms":1309,"c":"上游模型目录拉取"},{"m":"GET","p":"/v0/webui/accounts/codex/{accountRef}/reset-credits","ms":6261,"c":"Codex 上游查询"}];
+
+const fmt = (v) => v === null || v === undefined ? '—' : String(v);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+document.getElementById('tiles').innerHTML = [
+  { k: '路由总数', v: STATS.total, cls: '' },
+  { k: 'SSE / WSS', v: STATS.sse, cls: '' },
+  { k: '需进 300ms', v: STATS.total - STATS.sse, cls: '' },
+  { k: '已实测', v: STATS.measured, cls: '' },
+  { k: '超出阈值', v: STATS.over, cls: 'hot' }
+].map(t => `<div class="tile ${t.cls}"><span class="k">${t.k}</span><span class="v">${t.v}</span></div>`).join('');
+
+const maxMs = Math.max(...OVER.map(o => o.ms));
+document.getElementById('overTable').innerHTML =
+  '<thead><tr><th>方法</th><th>路径</th><th class="c-cost">开销</th><th style="text-align:right">净耗时</th><th class="bar-cell"></th></tr></thead><tbody>' +
+  OVER.map(o => `<tr>
+    <td><span class="mtag">${esc(o.m)}</span></td>
+    <td><span class="route">${esc(o.p)}</span></td>
+    <td class="c-cost" style="color:var(--fg-mute);font-size:12.5px">${esc(o.c)}</td>
+    <td class="num ms-bad">${o.ms}ms</td>
+    <td class="bar-cell"><div class="bar"><i style="width:${Math.max(3, Math.round(o.ms / maxMs * 100))}%"></i></div></td>
+  </tr>`).join('') + '</tbody>';
+
+const domains = [...new Set(DATA.map(d => d.d))];
+let activeDomain = '全部';
+document.getElementById('chips').innerHTML =
+  ['全部', ...domains].map(d => `<button class="chip" data-d="${esc(d)}" aria-pressed="${d === '全部'}">${esc(d)}</button>`).join('');
+
+function verdict(row) {
+  if (row.sse) return '<span class="pill sse">SSE</span>';
+  if (row.ms === null) return '<span class="pill none">未实测</span>';
+  if (row.ms > 300) return '<span class="pill bad">超阈值</span>';
+  if (row.ms > 200) return '<span class="pill warn">临界</span>';
+  return '<span class="pill ok">达标</span>';
+}
+
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const rows = DATA.filter(r =>
+    (activeDomain === '全部' || r.d === activeDomain) &&
+    (!q || r.p.toLowerCase().includes(q) || r.u.toLowerCase().includes(q))
+  );
+  let html = '<thead><tr><th>方法</th><th>路径</th><th>用途</th><th style="text-align:right">净耗时</th><th style="text-align:right">日志 n</th><th style="text-align:right">日志 p50</th><th style="text-align:right">日志 p95</th><th>判定</th></tr></thead><tbody>';
+  let cur = null;
+  for (const r of rows) {
+    if (r.d !== cur) { cur = r.d; html += `<tr class="dom-head"><td colspan="8">${esc(cur)}</td></tr>`; }
+    html += `<tr>
+      <td><span class="mtag">${esc(r.m)}</span></td>
+      <td><span class="route">${esc(r.p)}</span></td>
+      <td style="color:var(--fg-mute);font-size:12.5px">${esc(r.u)}</td>
+      <td class="num">${r.sse ? '—' : (r.ms === null ? '—' : r.ms + 'ms')}</td>
+      <td class="num" style="color:var(--fg-mute)">${r.n || '—'}</td>
+      <td class="num" style="color:var(--fg-mute)">${fmt(r.p50)}</td>
+      <td class="num" style="color:var(--fg-mute)">${fmt(r.p95)}</td>
+      <td>${verdict(r)}</td>
+    </tr>`;
+  }
+  html += '</tbody>';
+  document.getElementById('fullTable').innerHTML = html;
+  document.getElementById('count').textContent = `${rows.length} / ${DATA.length} 条`;
+}
+document.getElementById('chips').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  activeDomain = b.dataset.d;
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.d === activeDomain)));
+  render();
+});
+document.getElementById('q').addEventListener('input', render);
+render();
+</script>

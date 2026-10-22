@@ -135,9 +135,25 @@ test('the host reports the upstream error rule takeover state on startup', async
   );
 });
 
+// 合成 manifest：全部 node_owned。这些用例要验的是「禁用 / 无划转」下的失败关闭语义，
+// 与「今天真实 manifest 划转到哪一条」无关 —— 否则每次划转都要改测试。
+function noGoOwnedManifest() {
+  const { loadRouteOwnershipManifest } = require('../lib/server/go-core-route-ownership');
+  const manifest = loadRouteOwnershipManifest();
+  return {
+    ...manifest,
+    entries: manifest.entries.map((entry) => ({
+      ...entry,
+      production_owner: 'node',
+      migration_state: 'node_owned',
+      blockers: []
+    }))
+  };
+}
+
 test('a disabled Go Core never spawns and claims no routes by default', async () => {
   const { factory, calls } = fakeSupervisorFactory();
-  const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog });
+  const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog, manifest: noGoOwnedManifest() });
 
   await host.start();
 
@@ -156,7 +172,8 @@ test('an enabled Go Core gets boot-scoped distinct keys and is stopped with the 
     createGoCoreSupervisor: factory,
     aiHomeDir,
     publicPort: 9527,
-    log: silentLog
+    log: silentLog,
+    manifest: noGoOwnedManifest()
   });
 
   await host.start();
@@ -205,7 +222,7 @@ test('routes assigned to a disabled Go Core are reported as failing closed', asy
 
 test('readiness is ready when Go Core is disabled and owns no routes', async () => {
   const { factory } = fakeSupervisorFactory();
-  const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog });
+  const host = createGoCoreHost({ settings: resolveGoCoreSettings({}, {}), createGoCoreSupervisor: factory, log: silentLog, manifest: noGoOwnedManifest() });
 
   const readiness = await host.readiness();
 
@@ -224,8 +241,10 @@ test('readiness fails closed when routes are assigned but Go Core is disabled', 
 
   const readiness = await host.readiness();
 
+  // 失败关闭：有路由划给 Go 而 Go 被禁用 → 必须报告 not ready。
   assert.equal(readiness.ready, false);
-  assert.deepEqual(readiness.routes, ['gateway.props']);
+  // canary 指定的条目确实进了路由集合（集合还可能含 manifest 已正式划转的条目）。
+  assert.ok(readiness.routes.includes('gateway.props'), JSON.stringify(readiness.routes));
 });
 
 test('readiness merges Go /readyz.ready with forwarding availability', async () => {

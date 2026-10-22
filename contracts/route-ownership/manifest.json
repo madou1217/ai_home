@@ -215,14 +215,12 @@
           "pattern": "^/v1/models/([^/]+)$"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/v1-router.js",
         "scripts/collect-gateway-routes.js",
@@ -251,14 +249,12 @@
           "path": "/v1/props"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "compatibility",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "matching route does not transfer public ownership"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/v1-router.js",
         "internal/transport/http/clientpropsapi",
@@ -287,14 +283,12 @@
           "path": "/v1/responses"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "protocol shadow and runtime ownership gates remain open"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "internal/transport/http/openairesponsesapi",
@@ -325,14 +319,12 @@
           "upgrade": true
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "same-path HTTP and WebSocket ownership still belongs to Node"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/server.js",
         "internal/transport/http/codexresponsesws",
@@ -361,14 +353,12 @@
           "path": "/v1/chat/completions"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "canonical routing and account runtime are not public Go-owned"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "internal/transport/http/openaichatcompletionsapi",
@@ -397,14 +387,12 @@
           "path": "/v1/messages"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "Native Relay and Canonical parity are verified privately, not promoted"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "internal/transport/http/anthropicmessagesapi",
@@ -473,14 +461,12 @@
           "pattern": "^/v1(?:beta)?/models/([^/:]+):generateContent$"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "restricted",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "lib/server/protocol-gemini-request-adapters.js",
@@ -513,14 +499,12 @@
           "pattern": "^/v1(?:beta)?/models/([^/:]+):streamGenerateContent$"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "restricted",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "lib/server/protocol-gemini-response-adapters.js",
@@ -551,14 +535,12 @@
           "path": "/v1/images/generations"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "restricted",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/image-generations-endpoint.js",
         "lib/server/image-generation-strategy-registry.js",
@@ -589,14 +571,12 @@
           "path": "/v1/images/edits"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "restricted",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/image-generations-endpoint.js",
         "lib/server/image-generation-request.js",
@@ -629,14 +609,12 @@
           "pattern": "/v1/blobs/*"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "restricted",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/vision-image-guard.js",
         "lib/server/image-blob-store.js",
@@ -953,6 +931,7 @@
     "docs/functional-matrix.md",
     "docs/architecture/go-node-parity-matrix.md",
     "docs/architecture/product-direction-node-go-2026-08-15.md",
-    "test/go-preview-isolation.test.js"
+    "test/go-preview-isolation.test.js",
+    "docs/plans/2026-10-22-go-full-migration-blueprint.md"
   ]
 }

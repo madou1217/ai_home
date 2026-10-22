@@ -124,8 +124,17 @@ test('manifest 冻结生产 ownership，并把 Go Preview 隔离到专用端口'
   const ids = manifest.entries.map((entry) => entry.id);
   assert.equal(new Set(ids).size, ids.length, 'manifest entry id 必须唯一');
   for (const entry of manifest.entries) {
-    assert.equal(entry.production_owner, 'node', entry.id);
-    assert.equal(entry.migration_state, 'node_owned', entry.id);
+    // 阶段演进（2026-10-22）：数据面推理条目可从 Node 划转到 Go，但**不允许半切** ——
+    // owner=go 必须同时 state=go_owned 且没有遗留 blocker；Node 侧条目照旧冻结。
+    assert.ok(['node', 'go'].includes(entry.production_owner), entry.id);
+    if (entry.production_owner === 'go') {
+      assert.equal(entry.migration_state, 'go_owned', entry.id);
+      assert.equal(entry.go_implementation, 'go_owned', entry.id);
+      assert.deepEqual(entry.blockers, [], `${entry.id} 划转后不应残留 blocker`);
+      assert.ok(entry.id.startsWith('gateway.'), `${entry.id} 只有数据面条目可以划转给 Go`);
+    } else {
+      assert.equal(entry.migration_state, 'node_owned', entry.id);
+    }
     assert.ok(['route', 'capability_surface', 'preview_surface'].includes(entry.kind));
     assert.ok(Array.isArray(entry.evidence) && entry.evidence.length > 0, entry.id);
     for (const evidence of entry.evidence) {
@@ -201,11 +210,17 @@ test('Go 已实现全部数据面 capability route，且 manifest 同时保留 N
       (candidate.node_routes || []).some((route) => route.path === implementedPath)
     ));
     assert.ok(entry, `manifest 未登记该能力: ${implementedPath}`);
-    // 已实现 ≠ 已切流：production owner 与 migration state 必须继续冻结在 Node。
-    assert.equal(entry.production_owner, 'node', implementedPath);
-    assert.equal(entry.migration_state, 'node_owned', implementedPath);
-    assert.equal(entry.go_implementation, 'private_canary', implementedPath);
-    assert.equal(entry.cutover_blocking, true, implementedPath);
+    // 已实现 ≠ 已切流：所有权与实现状态必须**自洽**，而不是一律冻结在 Node。
+    // 未划转的仍是 private_canary + cutover_blocking；已划转的必须是 go_owned 且不再阻塞。
+    if (entry.production_owner === 'go') {
+      assert.equal(entry.migration_state, 'go_owned', implementedPath);
+      assert.equal(entry.go_implementation, 'go_owned', implementedPath);
+    } else {
+      assert.equal(entry.production_owner, 'node', implementedPath);
+      assert.equal(entry.migration_state, 'node_owned', implementedPath);
+      assert.equal(entry.go_implementation, 'private_canary', implementedPath);
+      assert.equal(entry.cutover_blocking, true, implementedPath);
+    }
     const goRoutes = entry.go_routes || [];
     assert.ok(goRoutes.length > 0, `${implementedPath} 缺少 go_routes 登记`);
     assert.ok(

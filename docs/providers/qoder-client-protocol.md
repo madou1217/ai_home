@@ -273,8 +273,59 @@ prepareInferRequest(endpoint, bodyJson, modelKey, modelSource)
 等的是同一个队列，实测首字节 ≥180s（一次成功发生在第 121s），客户端通常已超时。
 这是上游 Free 档容量限制，不是目录/协议推导问题；网关侧已做到语义正确
 （`overloaded` + 429 + `retryAfterSeconds`，不记账号失败）、不锁号、不伪装成功。
-CLI 首字节预算因此从 120s 放宽到 180s（覆盖 121s 那次真实成功），
-但**不承诺**覆盖更长的排队窗口。
+CLI 首字节预算因此从 120s 放宽到 180s（覆盖 121s 那次真实成功）。
+
+> **后续（2026-10-22）**：本节末尾「CLI 兜底等的是同一个队列」这个事实，当时没有改变
+> 实现——回落仍在发生。4.8 据此把回落改成**排队即短路**（实测排队 177.3s 距 180s 预算
+> 只剩 2.7s），所以本节表格里「qoder / Auto」那一行的 `504` 结果现在不再出现，
+> 取而代之的是 1 秒内返回的 429。
+
+### 4.8 排队短路：不再回落 CLI 空等（2026-10-22）
+
+4.7 把「qoder 全球站排队期间不闭环」记成了**上游容量限制、网关侧语义已正确**。
+但当时的实现仍是「HTTP 吃到排队 → 回落 CLI」，而 4.7 自己写明了 CLI 等的是**同一个
+队列**——这个回落从设计上就不成立：上游此刻没有在处理我们的内容，等待不会让它开始处理，
+重试也只是再排一次。4.7 结尾「不承诺覆盖更长的排队窗口」实际上是把这个缺口留在了线上。
+
+**2026-10-22 真机实测的排队时长（qoder 全球站 Free 账号，同一账号连续三次）**：
+
+| 模型 | 排队耗时 | 当时的 CLI 首字节预算 | 余量 |
+| --- | --- | --- | --- |
+| `Fast` | 16.6s | 180s | 充裕 |
+| `Sonus` | 115.4s | 180s | 充裕（但已超 HTTP 侧 120s） |
+| `Cantus` | **177.3s** | 180s | **仅 2.7s** |
+
+排队时长在 16s–177s 之间剧烈波动，而 177.3s 那次只剩 2.7 秒余量——再长一点就变成
+空等 5 分钟拿 504。也就是说「放宽预算」这条路已经走到尽头。
+
+**改为排队即短路**：`handlePreHeaderFailure` 识别到排队时终止 transport 链，直接交付
+429 + `retry-after` + 可读文案，**不再把请求交给 CLI**。
+
+| | 改前 | 改后 |
+| --- | --- | --- |
+| 排队时行为 | 回落 CLI，等同一个队列 | 立即终止链，返回 429 |
+| 客户端耗时 | 115–177s（或 504） | **1.0–1.4s** |
+| 响应头 | —— | `retry-after: <上游秒数>`、`x-aih-qoder-queue: 1` |
+| 响应体 | 超时错误 | 「上游正在排队，本次请求未被处理，约 N 秒后可重试。排队期间上游不会开始处理你的内容，等待或立即重试都不会更快」 |
+| 日志 | `streamTransport: qoder_http_failed`（回退链中间行） | `streamTransport: qoder_http_queued` + 注解 `qoderQueueShortCircuit` |
+
+选 429 而不是 502/504：这不是故障——凭据有效、账号健康、请求本身也没问题，只是上游此刻
+不给跑；429 + `retry-after` 是客户端库普遍认得且会正确退避的形状。**不加重试**：排队时重试
+只是再排一次，何时重试交给客户端按 `retry-after` 决定。
+
+**判定条件必须同时看 `kind` 与 `failureReason`**：
+
+```js
+policy.kind === 'overloaded' && policy.failureReason === 'qoder_resource_limit'
+```
+
+不能只判 `kind === 'overloaded'`：**529 上游过载**同为 `overloaded`，但语义完全不同——过载时
+换 CLI 可能真落到别的容量上，必须继续兜底。这条差异由
+`test/upstream-endpoints-transport-qoder-http.test.js` 的「529 不误伤」用例钉住，并用
+「把条件放宽成只判 kind 即变红」反向验证过。
+
+实测（真实网关）：`Sonus`/`Cantus` 从空等 177s 变为 **1.35s / 0.95s** 返回 429；
+`qodercn` 正常请求仍 200（5.4s），家族不受影响。
 
 ### 4.4 HTTP transport 已进入请求路径（2026-10-20）
 
@@ -422,6 +473,9 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
   `qoder_http_model_substituted` 在首字节前拦下并交还 CLI；
 - qoder 全球站 `10605 / RESOURCE_LIMIT / isQueued / retryAfterSeconds:30` 的
   资源限流语义（`overloaded`，不记账号失败、不锁号）；
+- **排队时长与「回落 CLI 无意义」**（2026-10-22）：同一 Free 账号连续三次实测
+  16.6s / 115.4s / 177.3s，排队期间 CLI 等的是同一队列，故回落不产生任何收益；
+  据此改为排队即短路（429 + `retry-after`），实测 1.0–1.4s 返回（见 4.8）；
 - CLI `--model Qwen3.8-Flash` 冷启动实测 200 且回答正确（约 4.3s）；
 - 账户面 4 条路径与 Free 档字段；
 - warm CLI：`--input-format stream-json` 在 `result` 后继续等待下一条 user 消息。
@@ -445,9 +499,11 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
 1. **P0：共享 idle watchdog（已实现）**。qoder CLI 用
    `--include-partial-messages` 产生流事件；idle 120s 重置计时，单轮硬上限
    30min，消费 `stream_event` / `content_block_delta` / `message_delta`。
-2. **P1：HTTP → CLI 策略链（已实现，2026-10-20）**。
+2. **P1：HTTP → CLI 策略链（已实现，2026-10-20；2026-10-22 加排队短路）**。
    `qoderHttpTransport` 在 `qoderCliTransport` 之前；首字节前失败只留
    `qoder_http_failed` 日志并交还 CLI，不记账号失败；首字节后失败按上游失败记账。
+   **例外：识别到上游排队（`overloaded` + `qoder_resource_limit`）时终止链**，
+   直接 429 + `retry-after`（见 4.8）——CLI 等的是同一个队列，回落无收益。
    两条策略的延迟/上游/结果统一写在 `transportAttempts`（同构字段见 4.5）；
    日志顶层只保留 `qoderHttpFallback` 这个请求级回退标记；endpoint / egress /
    timing / usage 等细节全部在 `transportAttempts[].details` 与
@@ -469,7 +525,8 @@ HTTP 与 CLI 不再各写一套观测字段。两条策略都通过
    模型发现改为 HTTP 优先（`GET /api/v2/model/list?Encode=1`），本地 CLI 兜底；
    上游模型替换检测不再被无条件改写掩盖。
 6. **剩余验证**：付费账号 / 非 auto 模型键的上游真实执行 / `t5e` 推理身份头。
-   没有这些证据前不要把它们写成已证明；HTTP 失败一律由 CLI 兜底。
+   没有这些证据前不要把它们写成已证明；**除排队（已短路）外**的 HTTP 失败一律由
+   CLI 兜底。
 
 ## 8. warm CLI 协议（1.1.73 实测）
 
@@ -513,3 +570,32 @@ node --test test/qoder-client-layouts.test.js
 
 验收标准：布局表的 `cliVersion` / `binary.sha256` / `capturedAt` 与当前二进制一致；
 新增或变更的头常量、端点、签名行为必须同步更新 `unproven` 列表；测试必须通过。
+
+**但只看版本与指纹不够**（2026-10-22 的教训）。上面四步全绿时，链路仍可能已经断了：
+本机 CLI 已自升级到 1.1.74（布局表只钉到 1.1.73），版本/指纹检查都不会报错——
+布局表对未登记版本是「回落 latest 并标记 `version_mismatch`」的宽容策略。所以还要
+**实际打一次真上游**，逐层确认：
+
+```bash
+# 5) 模型目录能否解密（签名/WASM 抽取是否还成立）
+node -e "
+const { createQoderHttpModelDiscovery } = require('./lib/account/qoder-model-catalog');
+const d = createQoderHttpModelDiscovery({ aiHomeDir: process.env.HOME + '/.ai_home' });
+d.discover({ accountRef: '<acct_…>', provider: 'qoder' }).then(r => console.log(r.models || r));
+"
+
+# 6) 真实推理（真账号、真上游）。用**目录里的展示名**，不是内部 key
+#    ——目录条目是 {key: 'cmodel', displayName: 'Sonus'} 这种形状，
+#    网关模型列表暴露的是 displayName，拿 key 去请求会得到 no_available_account。
+curl -s -X POST http://127.0.0.1:9527/v1/chat/completions \
+  -H "Authorization: Bearer <网关 key>" -H 'content-type: application/json' \
+  -H 'x-account-ref: <acct_…>' \
+  -d '{"model":"<displayName>","messages":[{"role":"user","content":"reply with exactly: PONG"}]}'
+```
+
+第 6 步的三种正常结果，都要能解释：`200`（通）、`429` + `x-aih-qoder-queue: 1`
+（上游排队，已短路，见 4.8）、`503 no_available_account`（模型名不在绑定里，检查用的是
+displayName 还是 key）。出现 `qoder_http_model_catalog_missing` 说明目录没读到——
+注意 `readQoderModelCatalog` 的 `cliPath` 必须由调用方传（走
+`buildQoderCliInvocation` → `resolveProviderCliPath`），单独调它而不传 `cliPath`
+会得到 `model_catalog_wasm_missing`，那是调用姿势问题不是链路故障。

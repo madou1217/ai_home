@@ -152,7 +152,12 @@ test('two real AIH Servers use the local Server outbound link as an automatic pr
     const result = await readJson(`http://127.0.0.1:${publicPort}/readyz`);
     return result.payload.gateway?.ready ? result.payload : null;
   });
-  assert.equal(ready.ready, true);
+  // 本用例验的是 **fabric 反向网关**（broker 互连、模型经 broker 转发、凭据不外泄），
+  // 与 Go Core 无关。顶层 `ready` 还汇合了 Go Core 的就绪判定，而它按设计「有路由划给
+  // Go 但 Go 未启用 → 失败关闭」——manifest 里 11 条推理路由已提升为 go_owned 之后，
+  // 这个与 Go 无关的用例就被连累成 not ready（2026-10-23）。
+  // 断言本用例真正要守的那个就绪面：gateway。
+  assert.equal(ready.gateway.ready, true);
   assert.equal(ready.gateway.connectedServers, 1);
   assert.equal(ready.gateway.availableAccounts, 1);
 

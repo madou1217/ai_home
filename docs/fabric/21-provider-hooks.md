@@ -19,6 +19,23 @@ provider CLI (hook/插件/协议事件)
 安装与诊断:`GET/POST /v0/webui/provider-hooks`(webui-provider-hook-routes.js),
 配置写入由 provider-session-hook-config.js 负责(claude settings.json / codex hooks.json / agy hooks.json / gemini settings.json / grok hooks.json,见 §8)。
 
+**用户可见的接管入口是 `PUT /v0/webui/toolkit/apps/:provider/settings` 的 `sessionHook` 开关**
+(2026-10-23 加),在「应用管理 → 高级设置」里,与启动权限并列:
+
+- 默认**关**。安装 Hook 要写用户的全局 CLI 配置,启动时自动写入的行为早已移除
+  (`provider-session-hook-autoinstall.js` 头注释),所以必须由用户显式打开。
+- 打开 = 立刻装一次,之后 aih 会替你守着:自动升级前后发现 Hook 没了会装回去
+  (`provider-cli-upgrade/hook-survival.js`),装不回则按升级失败处理并回滚。
+- 关闭 = 只停掉接管与恢复**行为**,不主动删除已有配置(删除会改写用户配置,
+  而关掉开关的意图通常只是「别再动我的东西」)。
+- 只有 `sessionHook: true` 显式出现在请求里才会动 Hook;改启动权限的 PUT 不会顺手改它。
+
+`POST /v0/webui/toolkit/apps/hooks` 与 `POST /v0/webui/provider-hooks/install` 都是底层
+`installProviderSessionHookConfig` 的薄包装,职责不同:前者带「CLI 已安装 / 支持 Hook」前置检查
+与装后二次诊断(卡片上的动作走这条),后者支持 `dryRun`/`confirm` 并透传 server 实际的
+`receiverUrl`/`senderScriptPath`/`codexVersion`。2026-10-23 起 toolkit 那条也补齐了这三个透传——
+此前它会退回硬编码的 `127.0.0.1:9527`,server 换端口后装出来的 Hook 指向一个不存在的地址。
+
 诊断对象带 `syncMode` 三态(`getProviderSessionSyncMode`,2026-07-24 加):`hook`=官方 hook 已接入、
 `polling`=无官方 hook 但 `resolveSessionFilePath` 有实现,靠 session-event-bus 的 500ms 文件 watch/poll
 兜底、`unavailable`=连会话文件都读不到。WebUI 设置页「会话实时同步」卡(RealtimeSyncCard.tsx)按此三态

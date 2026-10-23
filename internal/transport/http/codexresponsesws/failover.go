@@ -26,10 +26,23 @@ const (
 	retryableFailoverCloseReason = "retryable upstream failure"
 )
 
+// preambleEventTypes 是**不携带任何输出内容**的预备事件：只有它们可以在本轮
+// 尚未交付内容时被扣留、随可重试失败一起丢弃，让 Codex 换号重连。
+//
+// 必须与 internal/adapters/codex/responses/response_state.go 里「无副作用」的那一支保持
+// 同一集合 —— 那边把 created / in_progress / queued / metadata 一视同仁地当作
+// 「不产生输出」（见 responseDecoder.Apply）。漏登记 response.metadata 会直接
+// 关掉换号窗口：上游在 created → in_progress 之后、真正输出之前固定发一帧
+// response.metadata（实测序列 created → in_progress → metadata → error），
+// 它一旦被当成「已交付内容」就会 MarkCommitted，此后的容量不足 / 过载错误
+// 因 !Committed() 不成立而**不再触发 1011 换号关闭**，只能把错误帧原样透传，
+// Codex 侧表现为 "stream disconnected before completion: stream closed before
+// response.completed"。
 var preambleEventTypes = map[string]struct{}{
 	"response.created":     {},
 	"response.in_progress": {},
 	"response.queued":      {},
+	"response.metadata":    {},
 }
 
 // isRetryableFailoverKind 限定可以在尚未输出内容时安全交给 Codex 重连的失败。

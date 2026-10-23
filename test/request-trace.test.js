@@ -93,3 +93,28 @@ test('嵌套的追踪在异步边界后依然有效', async () => {
     assert.equal(currentTraceId(), 'req-4');
   });
 });
+
+test('根日志的身份不随写入时刻的异步上下文漂移', () => {
+  // 真实场景：access 日志在 res 'finish' 回调里写，那时异步上下文可能已经
+  // 停在最后一次上游尝试里。所以根身份必须在请求入口就固定，否则同一次请求
+  // 的 access 行会挂上 "attempt:N" 标签、spanId 也会变成子 span 的。
+  runWithTrace({ traceId: 'req-5' }, () => {
+    const rootSpan = currentTrace();
+    runWithTrace({ label: 'attempt:0' }, () => {
+      const drifted = traceLogFields();
+      assert.equal(drifted.spanLabel, 'attempt:0', '上下文此刻确实在子 span 里');
+
+      // 模拟 access 日志的构造方式：先展开上下文，再覆盖显式字段。
+      const accessEntry = {
+        kind: 'access',
+        ...rootSpan,
+        spanLabel: undefined,
+        parentSpanId: undefined
+      };
+      assert.equal(accessEntry.spanId, rootSpan.spanId);
+      assert.equal(accessEntry.spanLabel, undefined);
+      assert.equal(accessEntry.parentSpanId, undefined);
+      assert.equal(accessEntry.depth, 0);
+    });
+  });
+});

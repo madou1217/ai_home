@@ -53,6 +53,10 @@ import type {
 import type { UseModelCatalogResult } from '@/features/accounts/useModelCatalog';
 import { getAuthJobIdentity, getCallbackUiCopy } from '@/features/accounts/AuthProgressModal';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
+import {
+  confirmOccupiedAccountDeletion,
+  isAccountOccupiedError
+} from '@/features/accounts/account-deletion-confirm';
 import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
 import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-presets';
 
@@ -1336,15 +1340,27 @@ export function useAccountActions({
     }
   };
 
-  const handleDelete = async (provider: string, accountRef: string) => {
+  const handleDelete = async (provider: string, accountRef: string, options?: { force?: boolean }) => {
     try {
-      await accountsAPI.delete(provider, accountRef);
+      await accountsAPI.delete(provider, accountRef, options);
       stageAccountRemoval({ accountRef });
       message.success('删除账号成功');
-    } catch (_error) {
-      message.error('删除账号失败');
+      return;
+    } catch (error: any) {
+      const data = error?.response?.data;
+      // 被占用不是「失败」，而是「需要用户决定」：把后端如实报出的占用者列出来，
+      // 确认后带 force 重发，由后端终止它们再删。这样用户不必自己去猜是谁占着。
+      if (isAccountOccupiedError(data)) {
+        confirmOccupiedAccountDeletion({
+          data,
+          onConfirm: () => handleDelete(provider, accountRef, { force: true })
+        });
+        return;
+      }
+      message.error(data?.message || '删除账号失败');
     }
   };
+
 
   // 所有视图（桌面列表 / 卡片、移动端）共用的删除确认，保证删除行为一致。
   const confirmDeleteAccount = (record: Account) => {

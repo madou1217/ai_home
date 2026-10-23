@@ -872,9 +872,11 @@ export const accountsAPI = {
     return response.data.account;
   },
 
-  // 删除账号
-  delete: async (provider: string, accountRef: string) => {
-    const response = await api.delete(`/webui/accounts/${provider}/${accountRef}`);
+  // 删除账号。force=true 表示用户已确认「终止占用该账号的会话后继续删除」。
+  delete: async (provider: string, accountRef: string, options?: { force?: boolean }) => {
+    const response = await api.delete(`/webui/accounts/${provider}/${accountRef}`, {
+      params: options?.force ? { force: 1 } : undefined
+    });
     return response.data;
   },
 

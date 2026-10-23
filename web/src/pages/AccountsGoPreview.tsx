@@ -90,6 +90,10 @@ import {
   hasKnownUsage
 } from '@/features/accounts/account-state';
 import { getPlanTagColor, getPlanTagLabel } from '@/features/accounts/AccountBadges';
+import {
+  confirmOccupiedAccountDeletion,
+  isAccountOccupiedError
+} from '@/features/accounts/account-deletion-confirm';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -1632,16 +1636,28 @@ export default function Accounts() {
     }
   };
 
-  const handleDelete = async (provider: string, accountRef: string) => {
+  const handleDelete = async (provider: string, accountRef: string, options?: { force?: boolean }) => {
     const key = getAccountRef({ accountRef });
     if (!key || deletingAccountRefsRef.current.has(key)) return;
     deletingAccountRefsRef.current.add(key);
     try {
-      await accountsAPI.delete(provider, accountRef);
+      await accountsAPI.delete(provider, accountRef, options);
       stageAccountRemoval({ accountRef });
       message.success('删除账号成功');
-    } catch (_error) {
-      message.error('删除账号失败');
+    } catch (error: any) {
+      const data = error?.response?.data;
+      // 被占用不是「失败」而是「需要用户决定」：列出占用者，确认后带 force 重发。
+      if (isAccountOccupiedError(data)) {
+        confirmOccupiedAccountDeletion({
+          data,
+          onConfirm: () => {
+            deletingAccountRefsRef.current.delete(key);
+            void handleDelete(provider, accountRef, { force: true });
+          }
+        });
+        return;
+      }
+      message.error(data?.message || '删除账号失败');
     } finally {
       deletingAccountRefsRef.current.delete(key);
     }

@@ -2744,6 +2744,123 @@ test('web ui delete fails closed while the account has an active native run', as
   assert.equal(readAccountCredentials(fs, fixture.aiHomeDir, accountRef).AGY_ACCESS_TOKEN, 'agy-access-33');
 });
 
+test('web ui delete reports the occupants that block it', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-occupancy-report-');
+  const accountRef = fixture.register('agy', '34');
+  const res = createResCapture();
+
+  const handled = await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/agy/${accountRef}`,
+    res,
+    fs,
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    state: {},
+    accountStateService: { deleteAccount: () => true },
+    listNativeChatRuns: () => [{
+      provider: 'agy',
+      accountRef,
+      runId: 'run-1',
+      sessionId: 'session-abc'
+    }],
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 409);
+  assert.equal(body.error, 'account_runtime_active');
+  // 前端要据此弹窗，所以「谁在占用」必须结构化地带出来，而不是一句笼统的失败。
+  assert.equal(Array.isArray(body.occupants), true);
+  assert.equal(body.occupants.length, 1);
+  assert.equal(body.occupants[0].kind, 'native_session');
+  assert.equal(body.occupants[0].sessionId, 'session-abc');
+  assert.match(body.message, /运行中的会话/);
+  assert.equal(readAccountCredentials(fs, fixture.aiHomeDir, accountRef).AGY_ACCESS_TOKEN, 'agy-access-34');
+});
+
+test('web ui delete with force terminates occupants and deletes the account', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-force-');
+  const accountRef = fixture.register('agy', '35');
+  const res = createResCapture();
+  const aborted = [];
+  const unregistered = [];
+
+  const handled = await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/agy/${accountRef}`,
+    url: { searchParams: new URLSearchParams('force=1') },
+    res,
+    fs,
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    state: {},
+    accountStateService: { deleteAccount: () => true },
+    listNativeChatRuns: () => [{ provider: 'agy', accountRef, runId: 'run-1' }],
+    getNativeChatRun: (runId) => ({
+      runId,
+      provider: 'agy',
+      accountRef,
+      abort() { aborted.push(runId); }
+    }),
+    unregisterNativeChatRun: (runId) => { unregistered.push(runId); },
+    agyWarmPool: { async evict() { return true; } },
+    ensureSessionStoreLinks: () => ({ migrated: 0, linked: 0 }),
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).ok, true);
+  assert.deepEqual(aborted, ['run-1']);
+  assert.deepEqual(unregistered, ['run-1']);
+  assert.equal(readAccountCredentials(fs, fixture.aiHomeDir, accountRef).AGY_ACCESS_TOKEN, undefined);
+});
+
+test('web ui delete stays fail-closed when an occupant cannot be terminated', async (t) => {
+  const fixture = createAccountFixture(t, 'aih-web-delete-force-fail-');
+  const accountRef = fixture.register('agy', '36');
+  const res = createResCapture();
+  let stateDeleted = false;
+
+  const handled = await handleDeleteAccountRequest({
+    pathname: `/v0/webui/accounts/agy/${accountRef}`,
+    url: { searchParams: new URLSearchParams('force=1') },
+    res,
+    fs,
+    deps: { aiHomeDir: fixture.aiHomeDir },
+    state: {},
+    accountStateService: {
+      deleteAccount() {
+        stateDeleted = true;
+        return true;
+      }
+    },
+    listNativeChatRuns: () => [{ provider: 'agy', accountRef, runId: 'run-1' }],
+    getNativeChatRun: () => ({
+      runId: 'run-1',
+      provider: 'agy',
+      accountRef,
+      abort() { throw new Error('abort_failed'); }
+    }),
+    unregisterNativeChatRun: () => {},
+    writeJson(response, code, payload) {
+      response.statusCode = code;
+      response.end(JSON.stringify(payload));
+    }
+  });
+
+  const body = JSON.parse(res.body);
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 409);
+  assert.equal(body.error, 'account_runtime_active');
+  assert.equal(stateDeleted, false);
+  assert.equal(readAccountCredentials(fs, fixture.aiHomeDir, accountRef).AGY_ACCESS_TOKEN, 'agy-access-36');
+});
+
 test('web ui reauth rejects DB api key accountRef', async (t) => {
   const fixture = createAccountFixture(t);
   const accountRef = fixture.register('claude', '7', {

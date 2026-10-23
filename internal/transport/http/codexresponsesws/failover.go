@@ -43,6 +43,12 @@ var preambleEventTypes = map[string]struct{}{
 	"response.in_progress": {},
 	"response.queued":      {},
 	"response.metadata":    {},
+	// Codex 专有的旁路事件：只携带限流快照 / 上游响应头，同样不产生任何输出。
+	// 实测序列里它们排在 response.created 之前（codex.rate_limits →
+	// codex.response.metadata → response.created → …），若不登记就会在第一帧
+	// 就把 MarkCommitted 置位，后面所有可重试失败都失去换号窗口。
+	"codex.rate_limits":       {},
+	"codex.response.metadata": {},
 }
 
 // isRetryableFailoverKind 限定可以在尚未输出内容时安全交给 Codex 重连的失败。

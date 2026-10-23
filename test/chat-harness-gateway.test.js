@@ -77,7 +77,7 @@ test('Kimi native metadata preserves its context, reasoning and supported input 
   assert.doesNotMatch(config, /X-Session-Id/);
   const { clientOptions } = require('../lib/server/chat-runtime/codex-session-driver-support');
   assert.equal(clientOptions(options, { executionAccountRef: 'acct_kimi' }, { fingerprint: 'native-v1' })
-    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v9');
+    .runtimeFingerprint, 'native-v1:chat-model-metadata-stream-v10');
 });
 
 test('self-hosted models unknown to models.dev use the context window their /models probe declared', async (t) => {
@@ -222,4 +222,41 @@ test('gateway auth revision ignores the provider', async () => {
   assert.equal(revisionFor('cline', 'gateway'), revisionFor('workbuddy', 'gateway'));
   // 账号作用域仍然按 provider 区分（不同 provider 的执行凭据不同，必须分开）。
   assert.notEqual(revisionFor('agy', 'acct_1'), revisionFor('cline', 'acct_1'));
+});
+
+// 回归：harness 的 wire_api 必须跟随被钉账号声明的 wire。
+// 缺陷形态：写死 responses → 请求走网关 /v1/responses → codex canonical（Go）→ Go 到上游
+// 无条件带循环保护头 X-Aih-Codex-Relay-Hop → 只认 chat/completions 的中转（账号声明
+// OPENAI_WIRE_API=chat）被对端判成代理自环并拒收（实测 508 Gateway proxy loop detected），
+// WebUI 会话表现为 "stream disconnected before completion"。
+test('chat harness speaks the wire declared by the pinned account', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-harness-wire-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const options = {
+    aiHomeDir: root,
+    env: { HOME: '/host' },
+    readAccountCredentialRecord: (_fs, _root, accountRef) => ({
+      provider: 'codex',
+      accountRef,
+      env: accountRef === 'acct_relay'
+        ? { OPENAI_API_KEY: 'relay-key', OPENAI_BASE_URL: 'http://relay.example/v1', OPENAI_WIRE_API: 'chat' }
+        : { OPENAI_API_KEY: 'native-key' }
+    }),
+    chatGateway: { port: 9999, clientKey: 'gateway-secret', readModels: async () => ['gpt-5.6-luna'] }
+  };
+
+  const relay = createChatGatewayOptions(
+    { provider: 'codex', executionAccountRef: 'acct_relay', sessionId: 'session-relay' }, options);
+  // config.toml 由 buildProviderEnvImpl 落盘，必须先调用再读。
+  await relay.buildProviderEnvImpl();
+  const relayToml = fs.readFileSync(path.join(relay.getProfileDir(), '.codex', 'config.toml'), 'utf8');
+  assert.match(relayToml, /^wire_api = "chat"$/m,
+    'chat-wire relay accounts must make the harness speak chat/completions');
+
+  const native = createChatGatewayOptions(
+    { provider: 'codex', executionAccountRef: 'acct_native', sessionId: 'session-native' }, options);
+  await native.buildProviderEnvImpl();
+  const nativeToml = fs.readFileSync(path.join(native.getProfileDir(), '.codex', 'config.toml'), 'utf8');
+  assert.match(nativeToml, /^wire_api = "responses"$/m,
+    'accounts without a declared wire keep the Responses default');
 });

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -279,7 +280,8 @@ func TestAuthenticationAndHopRejectedBeforeRouting(t *testing.T) {
 			case "auth":
 				request.Header.Del("Authorization")
 			case "hop":
-				request.Header.Set(responses.NativeHopHeader, "1")
+				// 超过上限才判环：一跳是合法的跨机中转（本机网关 → 远程 server 网关）。
+				request.Header.Set(responses.NativeHopHeader, strconv.Itoa(responses.MaxNativeRelayHops+1))
 				want = 508
 			case "pin":
 				request.Header.Set("X-Account-Ref", "31")

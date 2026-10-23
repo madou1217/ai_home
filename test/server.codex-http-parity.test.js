@@ -30,7 +30,8 @@ function capture() {
 
 for (const [code, headers, body] of [
   ['unauthorized', { authorization: 'Bearer wrong' }, '{}'],
-  ['infinite_loop_detected', { 'x-aih-codex-relay-hop': '1' }, '{}'],
+  // 超过上限才判环：一跳是合法的跨机中转（本机网关 → 远程 server 网关）。
+  ['infinite_loop_detected', { 'x-aih-codex-relay-hop': '2' }, '{}'],
   ['invalid_account_ref', { 'x-account-ref': 'bad' }, '{}'],
   ['invalid_request_body', {}, '{broken']
 ]) {

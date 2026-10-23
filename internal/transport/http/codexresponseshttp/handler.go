@@ -83,7 +83,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		writeError(response, "unauthorized")
 		return
 	}
-	if len(request.Header.Values(responses.NativeHopHeader)) != 0 {
+	// 跳数上限（不是「有头即拒」）：跨机中转（本机网关 → 远程 server 网关）是正常拓扑，
+	// 只有超过上限才说明出现了 A→B→A 的环。见 responses.MaxNativeRelayHops。
+	if responses.NativeRelayHop(request.Header) > responses.MaxNativeRelayHops {
 		writeError(response, "infinite_loop_detected")
 		return
 	}

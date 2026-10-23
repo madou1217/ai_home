@@ -10,6 +10,25 @@ import TranslationFloatingPanel from "@/features/translation/TranslationFloating
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
 import { resolveHudNavCode } from "@/components/hud/hud-nav";
+import {
+  installCatalogCacheInvalidation,
+  resolveCatalogStorageKey
+} from "@/components/chat/account-model-catalog-cache";
+import { resolveActiveServer } from "@/services/api";
+
+// 账号模型目录的失效订阅装在**应用入口**：它必须在任何页面都生效 —— 用户是在
+// 账号模型页增删模型的，而 chat 的模型缓存要在那时就被清掉（2026-10-23 用户反馈
+// 「手动新增的模型 chat 里不显示」）。装在 chat 页入口不够：账号页没有订阅，
+// 装在懒加载组件里更不够（未挂载就收不到）。
+installCatalogCacheInvalidation((targetKey) => {
+  let serverId = "local";
+  try {
+    serverId = resolveActiveServer()?.serverId || "local";
+  } catch (_error) {
+    serverId = "local";
+  }
+  return resolveCatalogStorageKey(serverId, targetKey);
+});
 // Cyber HUD 字体随包分发（不依赖外网 CDN）：JetBrains Mono 数据字体 + Orbitron 展示字体。
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";

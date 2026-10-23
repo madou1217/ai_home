@@ -213,6 +213,28 @@ export function useAccountModels(params: { provider?: string; accountRef?: strin
     }
   }, [loadModels]);
 
+  /**
+   * 删除手动添加的模型。
+   *
+   * 只对手动补充的模型开放：探测来的模型删掉也会被下一次探测重新写回，
+   * 用户真正想要的是「停用」（updateModelEnabled）而不是删除。
+   */
+  const deleteManualModel = useCallback(async (model: ManagedOpenAIModelItem) => {
+    try {
+      await modelsAPI.deleteModel({
+        id: model.id,
+        accountRef: model.accountRef,
+        provider: model.provider
+      });
+      message.success('模型已删除');
+      await loadModels({ quiet: true });
+      return true;
+    } catch (error: unknown) {
+      message.error(errorText(error, '删除模型失败'));
+      return false;
+    }
+  }, [loadModels]);
+
   /** 自定义模型价：undefined = 不修改该维度；null = 清空覆盖、恢复 models.dev 原价。 */
   const updateModelPricing = useCallback(async (
     model: Pick<ManagedOpenAIModelItem, 'id' | 'accountRef' | 'provider'>,
@@ -305,6 +327,7 @@ export function useAccountModels(params: { provider?: string; accountRef?: strin
     updateModelEnabled,
     updateModelDefault,
     updateModelPricing,
+    deleteManualModel,
     createManualModel,
     copyModelId,
     getModelDisplayLabel: getLabel

@@ -100,3 +100,17 @@ test('ModelCapsuleCard marks account custom pricing as the visible source', () =
   );
   assert.match(html, /自定义/);
 });
+
+// 手动补充的模型必须能删（2026-10-23 用户反馈「手动添加的模型缺少删除」）：
+// 后端 POST /v0/webui/openai-models/delete 与 modelsAPI.deleteModel 一直都在，
+// 只是卡片从未渲染过删除入口。
+test('ModelCapsuleCard renders a delete action only when onDelete is provided', () => {
+  const withDelete = renderToStaticMarkup(
+    <ModelCapsuleCard {...baseProps} onDelete={() => {}} />
+  );
+  assert.match(withDelete, /删除模型/);
+
+  // 不传即不渲染：探测来的模型删掉会被下一次探测写回，只该「停用」。
+  const withoutDelete = renderToStaticMarkup(<ModelCapsuleCard {...baseProps} />);
+  assert.doesNotMatch(withoutDelete, /删除模型/);
+});

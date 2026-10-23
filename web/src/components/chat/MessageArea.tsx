@@ -37,6 +37,12 @@ import { filterRenderableChatMessages } from './message-display-policy.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
 import { normalizePendingStatusText } from './provider-pending-policy.js';
 import { getAccountDefaultModel, getSessionModelKey, listAccountEnabledModels, listAihServerModels, recallSessionModel, rememberSessionModel, resolveEffectiveSelectedModel } from './account-model-selection.js';
+import {
+  invalidateCatalogCache,
+  readCachedCatalog,
+  writeCachedCatalog
+} from './account-model-catalog-cache';
+import { onAccountModelCatalogChanged } from '@/features/models/account-model-catalog-events';
 import { isSessionAccountProviderCompatible } from './session-provider-policy.js';
 import {
   AIH_SERVER_ACCOUNT_LABEL,
@@ -95,7 +101,17 @@ const isChatSelectableAccount = (account: ChatAccount) => {
 // 避免每次点开会话/切账号都清空重拉、闪一下"无可用模型"。
 // 同时**持久化到 localStorage**(按 当前server+accountRef 分键)，页面刷新/冷启动也能立即出模型，
 // 不再等 API 慢半拍(尤其远端 server 往返 + 第三方端点探测)。
-const accountModelCatalogCache = new Map<string, { ids: string[]; defaultModel: string }>();
+// 缓存本体与跨页面失效都在 account-model-catalog-cache 模块里：失效订阅必须是**模块级**
+// 的，组件 effect 只在挂载时注册，而用户完全可能「在账号页加模型 → 切回 chat 但还没进
+// 会话」（本组件未挂载）→ 事件丢失 → 旧缓存原样保留（2026-10-23 用户反馈的正是这个）。
+const accountModelCatalogCache = {
+  get: (key: string) => readCachedCatalog(key),
+  set: (key: string, value: { ids: string[]; defaultModel: string }) => writeCachedCatalog(key, value),
+  delete: (key: string) => invalidateCatalogCache(key)
+};
+
+// 订阅装在应用入口（app.tsx）而不是这里：本组件是懒加载 chunk，用户「在账号页加模型
+// → 切回 chat 但还没进会话」时它根本没求值，事件会丢。
 
 function catalogStorageKey(targetKey: string): string {
   let serverId = 'local';
@@ -227,6 +243,9 @@ const MessageArea = ({
   const [accountModelState, setAccountModelState] = useState<{ targetKey: string; ids: string[]; defaultModel: string; loading: boolean; metadata?: Record<string, ModelMetadata> }>(() => {
     return { targetKey: '', ids: [], defaultModel: '', loading: false };
   });
+  // 模型目录重新加载令牌：账号模型页改了模型（增删/启停）时 +1，让下面的加载 effect
+  // 重跑（它不依赖 selectedTargetKey 之外的东西，切换账号才重跑）。
+  const [catalogReloadToken, setCatalogReloadToken] = useState(0);
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
@@ -363,7 +382,15 @@ const MessageArea = ({
     return () => {
       cancelled = true;
     };
-  }, [selectedAccountRef, selectedTargetKey, aihServerSelected, aihServerProvider]);
+  }, [selectedAccountRef, selectedTargetKey, aihServerSelected, aihServerProvider, catalogReloadToken]);
+
+  // 缓存失效本身由模块级订阅处理（见 account-model-catalog-cache）；这里只负责
+  // 让加载 effect 重跑 —— 它只依赖 selectedTargetKey，切换账号才触发，模型目录变了
+  // 得靠这个 token 显式推一次。
+  useEffect(() => onAccountModelCatalogChanged(() => {
+    setAccountModelState((prev) => ({ ...prev, loading: true }));
+    setCatalogReloadToken((token) => token + 1);
+  }), []);
 
   const hasSession = Boolean(session);
   useEffect(() => {

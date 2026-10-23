@@ -123,3 +123,76 @@ test('findAccountsForModel resolves model ids with dot/dash version variations',
   assert.deepEqual(findAccountsForModel(index, 'gpt-5-6-luna'), [GLM_REF]);
 });
 
+// 手动补充的模型必须进调度索引（2026-10-23 用户反馈）：
+// 账号模型页手动加的模型在目录页看得见，但调度选号不认识它 →
+// 一发消息就 no_available_account。展示层与调度层的池子必须同源。
+test('model account index routes a manually added model to its account', () => {
+  const state = createState();
+  state.modelCatalogSettings = {
+    accountModels: [
+      {
+        id: 'deepseek/deepseek-v4.1-flash-1017',
+        provider: 'claude',
+        accountRef: DEEPSEEK_REF,
+        manual: true,
+        enabled: true
+      }
+    ]
+  };
+
+  const index = buildModelAccountIndex(state, {});
+
+  assert.equal(hasModelInIndex(index, 'deepseek/deepseek-v4.1-flash-1017'), true);
+  assert.deepEqual(
+    findAccountsForModel(index, 'deepseek/deepseek-v4.1-flash-1017'),
+    [DEEPSEEK_REF]
+  );
+  assert.equal(
+    findModelsForAccount(index, DEEPSEEK_REF).has('deepseek/deepseek-v4.1-flash-1017'),
+    true
+  );
+  // 没有该模型的账号不受影响。
+  assert.deepEqual(findAccountsForModel(index, 'glm-4.5'), [GLM_REF]);
+});
+
+test('a disabled manual model does not enter the routing index', () => {
+  const state = createState();
+  state.modelCatalogSettings = {
+    accountModels: [
+      {
+        id: 'deepseek/disabled-manual',
+        provider: 'claude',
+        accountRef: DEEPSEEK_REF,
+        manual: true,
+        enabled: false
+      }
+    ]
+  };
+
+  const index = buildModelAccountIndex(state, {});
+
+  assert.equal(hasModelInIndex(index, 'deepseek/disabled-manual'), false);
+});
+
+test('a manual model is only routed to its own account', () => {
+  const state = createState();
+  state.modelCatalogSettings = {
+    accountModels: [
+      {
+        id: 'deepseek/only-on-glm',
+        provider: 'claude',
+        accountRef: GLM_REF,
+        manual: true,
+        enabled: true
+      }
+    ]
+  };
+
+  const index = buildModelAccountIndex(state, {});
+
+  assert.deepEqual(findAccountsForModel(index, 'deepseek/only-on-glm'), [GLM_REF]);
+  assert.equal(
+    findModelsForAccount(index, DEEPSEEK_REF).has('deepseek/only-on-glm'),
+    false
+  );
+});

@@ -1,4 +1,5 @@
 import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
+import { notifyAccountModelCatalogChanged } from '@/features/models/account-model-catalog-events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@/components/mobile/mobile-icon-button.css';
 import './Models.css';
@@ -248,6 +249,8 @@ export default function Models() {
       message.success('模型已添加');
       setManualModalOpen(false);
       manualForm.resetFields();
+      // 新增的模型必须让 chat 立刻看到：它按账号缓存模型列表（见事件模块注释）。
+      notifyAccountModelCatalogChanged(values.accountRef);
       await loadModels({ quiet: true });
       return true;
     } catch (error: any) {
@@ -255,6 +258,26 @@ export default function Models() {
       return false;
     }
   }, [accountByRef, loadModels, manualForm]);
+
+  /**
+   * 删除手动补充的模型。探测来的模型不提供这个动作 —— 删掉也会被下一次探测写回，
+   * 用户想要的是「停用」（updateModelEnabled）。
+   */
+  const deleteManualModel = useCallback(async (model: ManagedOpenAIModelItem) => {
+    try {
+      await modelsAPI.deleteModel({
+        id: model.id,
+        accountRef: model.accountRef,
+        provider: model.provider
+      });
+      message.success('模型已删除');
+      // chat 的模型列表按账号缓存，不通知就会停在删除前的列表（见事件模块注释）。
+      notifyAccountModelCatalogChanged(model.accountRef);
+      await loadModels({ quiet: true });
+    } catch (error: any) {
+      message.error(error?.response?.data?.message || error?.message || '删除模型失败');
+    }
+  }, [loadModels]);
 
   const updateModelEnabled = useCallback(async (model: ManagedOpenAIModelItem, enabled: boolean) => {
     try {
@@ -265,6 +288,7 @@ export default function Models() {
         enabled
       });
       message.success(enabled ? '模型已启用' : '模型已停用');
+      notifyAccountModelCatalogChanged(model.accountRef);
       await loadModels({ quiet: true });
     } catch (error: any) {
       message.error(error?.response?.data?.message || error?.message || '更新模型状态失败');
@@ -457,6 +481,8 @@ export default function Models() {
           onToggleEnabled={(checked) => updateModelEnabled(model, checked)}
           onSetDefault={!model.defaultModel && enabled ? () => updateModelDefault(model, true) : undefined}
           onCopyId={() => copyModelId(model.id)}
+          // 只有手动补充的模型能删：探测来的删掉会被下一次探测写回。
+          onDelete={model.manual ? () => deleteManualModel(model) : undefined}
         />
       </div>
     );

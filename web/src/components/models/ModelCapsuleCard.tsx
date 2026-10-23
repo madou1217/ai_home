@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Button, Switch, Tooltip } from 'antd';
+import { Button, Switch, Tooltip, Popconfirm } from 'antd';
 import {
   ThunderboltFilled,
   StarFilled,
@@ -9,6 +9,7 @@ import {
   CloseCircleOutlined,
   PayCircleOutlined,
   EditOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import {
   formatPricePerM,
@@ -114,6 +115,11 @@ export interface ModelCapsuleCardProps {
   onToggleEnabled?: (enabled: boolean) => void;
   onSetDefault?: () => void;
   onCopyId?: () => void;
+  /**
+   * 删除这个模型。只有**手动补充**的模型才该传它 —— 探测来的模型删掉也会被下一次
+   * 探测重新写回，用户想要的是「停用」（onToggleEnabled）。不传即不渲染删除入口。
+   */
+  onDelete?: () => void;
 }
 
 export function formatTokensK(n?: number): string {
@@ -142,6 +148,7 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
   onToggleEnabled,
   onSetDefault,
   onCopyId,
+  onDelete,
 }: ModelCapsuleCardProps) {
   const priceCells = resolveModelPriceCells(pricing, customPricing);
   const customPricingActive = hasCustomPricingValues(customPricing);
@@ -228,6 +235,28 @@ export const ModelCapsuleCard = memo(function ModelCapsuleCard({
                 icon={isDefault ? <StarFilled /> : <StarOutlined />}
               />
             </Tooltip>
+          )}
+          {onDelete && (
+            // 删除不可撤销，用 Popconfirm 二次确认（手动补充的模型常是用户手敲的 ID）。
+            <Popconfirm
+              title="删除这个模型？"
+              description="仅从该账号的模型目录移除，不影响其它账号。"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={onDelete}
+            >
+              <Tooltip title="删除模型">
+                <Button
+                  type="text"
+                  shape="circle"
+                  size="small"
+                  className={styles.deleteBtn}
+                  aria-label="删除模型"
+                  icon={<DeleteOutlined />}
+                />
+              </Tooltip>
+            </Popconfirm>
           )}
         </div>
       </div>

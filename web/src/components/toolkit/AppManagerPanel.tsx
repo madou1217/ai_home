@@ -48,6 +48,7 @@ export default function AppManagerPanel() {
     runningCliAccountPids,
     loading,
     error,
+    installingHooks,
     checkingUpdates,
     hookReadyCount,
     hookSupportedCount,
@@ -55,7 +56,8 @@ export default function AppManagerPanel() {
     refreshRunningApps,
     busyActionFor,
     checkAppUpdate,
-    runAppAction
+    runAppAction,
+    installHooks
   } = useManagedApps();
   // 自动升级结论挂在应用卡片上（同 provider 只给一处结论），不再有独立的升级面板。
   const {
@@ -212,12 +214,14 @@ export default function AppManagerPanel() {
                   accounts={accounts}
                   runningAccountPids={runningAccountPids}
                   runningCliAccountPids={runningCliAccountPids}
+                  installingHooks={installingHooks}
                   upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
                   clearingUpgrade={clearingProvider === app.provider}
                   onAction={(target, action) => void runAppAction(target, action)}
                   onCheckUpdate={(target) => void checkAppUpdate(target)}
                   onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
                   onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
+                  onInstallHooks={(provider) => void installHooks([provider])}
                   onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
                   onEditConfig={(target) => setAdvancedApp(target)}
                 />

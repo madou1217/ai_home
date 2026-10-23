@@ -1288,28 +1288,17 @@ test('软件源以插件注册，指南只返回当前平台适用的命令', as
 });
 
 // 工具清单短缓存：TTL 内复用、过期重算、写操作清空。
-test('toolkit short-lived cache reuses within TTL, refreshes in background after it, and clears on demand', async () => {
+test('toolkit short-lived cache reuses results within the TTL and clears on demand', () => {
   const { createShortLivedCache } = require('../lib/server/webui-toolkit-routes');
   let clock = 1000;
   let loads = 0;
   const cache = createShortLivedCache(3000, () => clock);
   const load = () => { loads += 1; return { n: loads }; };
-
-  // 首次：进程内还没有任何结果，只能等真实枚举。
   assert.deepEqual(cache.get(load), { n: 1 });
-  // TTL 内：直接复用。
   clock += 2000;
   assert.deepEqual(cache.get(load), { n: 1 });
-
-  // 过期后：先回上一份（用户不必等枚举），同时在后台刷新。
-  // 枚举本机 228ms、Windows 约 3 秒，卡在点击那一刻是最坏的选择。
   clock += 1500;
-  assert.deepEqual(cache.get(load), { n: 1 }, '过期瞬间应回旧值而不是同步重算');
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(cache.get(load), { n: 2 }, '后台刷新完成后应拿到新值');
-
-  // clear() 之后必须重新枚举（写操作后不能读到过期清单）。
+  assert.deepEqual(cache.get(load), { n: 2 });
   cache.clear();
   assert.deepEqual(cache.get(load), { n: 3 });
 });

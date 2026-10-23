@@ -82,7 +82,6 @@ export default function AppsPanel() {
     runningCliAccountPids,
     loading,
     error,
-    installingHooks,
     checkingUpdates,
     hookReadyCount,
     hookSupportedCount,
@@ -92,7 +91,6 @@ export default function AppsPanel() {
     busyActionFor,
     checkAppUpdate,
     runAppAction,
-    installHooks
   } = useManagedApps();
   const {
     error: upgradeError,
@@ -350,10 +348,8 @@ export default function AppsPanel() {
             status={rowStatus(detailApp)}
             upgrade={upgradeFor(detailApp)}
             clearResult={clearResult}
-            installingHooks={installingHooks}
             busy={Boolean(busyActionFor(detailApp))}
             clearingUpgrade={clearingProvider === detailApp.provider}
-            onInstallHooks={() => void installHooks([detailApp.provider])}
             onOpenAdvanced={() => setAdvancedApp(detailApp)}
             onClearBroken={() => void handleClearBroken(detailApp.provider)}
           />
@@ -413,15 +409,13 @@ export default function AppsPanel() {
   );
 }
 
-function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, clearingUpgrade, onInstallHooks, onOpenAdvanced, onClearBroken }: {
+function AppDetail({ app, status, upgrade, clearResult, busy, clearingUpgrade, onOpenAdvanced, onClearBroken }: {
   app: ManagedAppItem;
   status: ReactNode;
   upgrade: ManagedAppUpgradeView | null;
   clearResult: { provider: string; ok: boolean; text: string } | null;
-  installingHooks: boolean;
   busy: boolean;
   clearingUpgrade: boolean;
-  onInstallHooks: () => void;
   onOpenAdvanced: () => void;
   onClearBroken: () => void;
 }) {
@@ -483,16 +477,12 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
         </div>
       ) : null}
       {hookDetail ? <Note tone="warn">{hookDetail}</Note> : null}
-      {app.installed && app.hookSupported && !app.hookInstalled ? (
+      {/* 「即时刷新」是一份要记住的设置（打开后自动升级还会替你守着），
+          入口与桌面端一致收进「高级设置」，不再单列一个一次性动作。 */}
+      {app.installed && app.hookSupported && !app.hookInstalled && canOpenAdvanced(app) ? (
         <div className={styles.sheetBlock}>
-          <p className={styles.prose}>{SESSION_SYNC_SUMMARY} 启用后会重新读取配置并验证。</p>
-          <ActionButton
-            icon={<CloudSyncOutlined />}
-            label="启用即时刷新"
-            loading={installingHooks}
-            disabled={busy}
-            onClick={onInstallHooks}
-          />
+          <p className={styles.prose}>{SESSION_SYNC_SUMMARY} 在「高级设置」里打开「即时刷新」。</p>
+          <ActionButton icon={<CloudSyncOutlined />} label="去高级设置开启" disabled={busy} onClick={onOpenAdvanced} />
         </div>
       ) : null}
     </div>

@@ -32,7 +32,13 @@ type exportFormat struct {
 //
 // 2026-10-23：sub2api 已移除（用户要求废弃该格式；账号迁移改走原生静态凭据路径）。
 // 它的注册项连同 internal/adapters/accounts/sub2api 的 exporter 一起删除。
-var exportFormats = []exportFormat{}
+var exportFormats = []exportFormat{
+	{
+		PathSuffix: "cliproxyapi",
+		FileName:   "cliproxyapi-auth.json",
+		Resolve: func(handler *Handler) AccountExporter { return handler.cliProxyAPIExporter },
+	},
+}
 
 // matchExportFormat 按路径后缀找格式（长后缀优先，避免前缀互相遮蔽）。
 func matchExportFormat(suffix string) (exportFormat, bool) {

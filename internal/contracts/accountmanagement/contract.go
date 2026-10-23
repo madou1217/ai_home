@@ -16,6 +16,8 @@ const (
 	AccountModelsSuffix = "/models"
 	// AccountModelsRefreshSuffix 是账号成员下模型目录刷新动作的后缀。
 	AccountModelsRefreshSuffix = "/models/refresh"
+	// AccountCLIProxyAPIExportSuffix 是账号成员下 CLIProxyAPI auth-file 导出资源的后缀。
+	AccountCLIProxyAPIExportSuffix = "/export/cliproxyapi"
 	// AccountUsageSuffix 是账号成员下最近一次成功额度快照的资源后缀。
 	AccountUsageSuffix = "/usage"
 	// AccountUsageRefreshSuffix 是显式刷新账号额度快照的动作资源后缀。

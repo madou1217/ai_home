@@ -18,7 +18,9 @@ export const FAILURE_KIND_LABELS = {
   model_unsupported: '不支持该模型',
   region_unsupported: '地区不支持',
   permission_denied: '无权限',
-  invalid_request: '请求参数被拒',
+  upstream_edge_rejected: '请求被边缘拒绝',
+  // Go/Node 对 400 只归这一档：请求参数不对、上下文超限（context_length_exceeded）都落这里。
+  invalid_request: '请求无效（参数/上下文）',
   not_found: '资源不存在',
   safety_rejected: '安全策略拒绝',
   malformed_response: '响应异常',
@@ -28,8 +30,25 @@ export const FAILURE_KIND_LABELS = {
 
 export type FailureKind = keyof typeof FAILURE_KIND_LABELS;
 
-/** 中立结果：既不计入分子也不计入分母（客户端主动取消，不代表账号/上游健康状况）。 */
-export const NEUTRAL_FAILURE_KIND: FailureKind = 'request_cancelled';
+/**
+ * 中立失败类型：既不计入分子也不计入分母——它们描述的是「这一次请求本身」，不是账号可用性
+ * （Go 侧同样不改账号运行态）。判据不是「不严重」，而是「换成另一个同 provider 的健康账号
+ * 也一样会失败」：参数 / 上下文无效、资源不存在、内容被安全策略拒绝、请求被站点边缘拒绝、
+ * 客户端主动取消。unclassified / malformed_response 证据不足或上游真的坏了，保守计入。
+ */
+export const NEUTRAL_FAILURE_KINDS: readonly FailureKind[] = [
+  'request_cancelled',
+  'invalid_request',
+  'not_found',
+  'safety_rejected',
+  'upstream_edge_rejected'
+];
+
+const NEUTRAL_FAILURE_KIND_SET = new Set<string>(NEUTRAL_FAILURE_KINDS);
+
+export function isNeutralFailureKind(kind: string): boolean {
+  return NEUTRAL_FAILURE_KIND_SET.has(kind);
+}
 
 export function getFailureKindLabel(kind: string): string {
   return (FAILURE_KIND_LABELS as Record<string, string>)[kind] || kind;

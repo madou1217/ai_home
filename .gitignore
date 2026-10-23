@@ -87,3 +87,7 @@ web/pnpm-lock.yaml
 # 在 POSIX 上 path.join 不解析反斜杠，一旦某条代码路径真去写这个"目录"，就会在仓库
 # 根下创建一个名字里带反斜杠的真实目录，永远不是正当内容。
 C:\\*
+
+# macOS Finder metadata: never track, even under the /docs/** exception above.
+.DS_Store
+**/.DS_Store

@@ -11,9 +11,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 )
 
-// maxTransferInputBytes 是有界读取原生 artifact 导入文件的上限（1 MiB）。
-const maxTransferInputBytes = 1024 * 1024
-
 // runAccountArtifactImport is an explicit file import, not broad credential
 // discovery. It uses the same Provider decoder as the server and never opens
 // a local aih.db or turns an unsupported browser login into an implied feature.

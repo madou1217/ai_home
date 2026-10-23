@@ -1,7 +1,7 @@
 // 账号健康状态 —— 纯函数计算层（无 React / 无网络请求，方便单测）。
 // 档位规则、去重聚合规则见 web/src/features/account-status/types.ts 与调用方 AGENTS 任务描述。
 
-import { NEUTRAL_FAILURE_KIND } from './types';
+import { isNeutralFailureKind } from './types';
 import type { AccountOutcomes, HealthTier, OutcomeBucket } from './types';
 
 export interface BucketCounts {
@@ -10,13 +10,13 @@ export interface BucketCounts {
   total: number;
 }
 
-/** 单个桶的有效计数：request_cancelled 中立，既不计分子也不计分母。 */
+/** 单个桶的有效计数：中立失败类型（见 types.ts）既不计分子也不计分母。 */
 export function countBucket(bucket?: OutcomeBucket | null): BucketCounts {
   if (!bucket) return { success: 0, failureTotal: 0, total: 0 };
   const success = Number(bucket.success) || 0;
   let failureTotal = 0;
   for (const [kind, count] of Object.entries(bucket.failures || {})) {
-    if (kind === NEUTRAL_FAILURE_KIND) continue;
+    if (isNeutralFailureKind(kind)) continue;
     failureTotal += Number(count) || 0;
   }
   return { success, failureTotal, total: success + failureTotal };

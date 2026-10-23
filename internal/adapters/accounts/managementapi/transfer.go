@@ -55,6 +55,19 @@ func (input StaticCredentialInput) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte(input.String()))
 }
 
+// ExportCLIProxyAPI 下载一个可直接放入 CLIProxyAPI auth-dir 的 OAuth 文件。
+func (client *Client) ExportCLIProxyAPI(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+) ([]byte, error) {
+	return client.exportAccount(
+		ctx,
+		accountRef,
+		accountcontract.AccountCLIProxyAPIExportSuffix,
+		"cliproxyapi-auth.json",
+	)
+}
+
 // UpdateStaticCredential 原地替换 Codex/Claude 静态凭据并返回同一账号投影。
 func (client *Client) UpdateStaticCredential(
 	ctx context.Context,

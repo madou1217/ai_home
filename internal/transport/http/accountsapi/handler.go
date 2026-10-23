@@ -178,6 +178,7 @@ type Dependencies struct {
 	Selections          LaunchAccountSelection
 	CredentialRotation  StaticCredentialRotation
 	Sub2APIExporter     AccountExporter
+	CLIProxyAPIExporter AccountExporter
 	Registrar           Registrar
 	Importer            Importer
 	StaticCredentials   StaticCredentialFactory
@@ -195,6 +196,7 @@ type Handler struct {
 	defaults            ProviderDefaultManagement
 	selections          LaunchAccountSelection
 	credentialRotation  StaticCredentialRotation
+	cliProxyAPIExporter AccountExporter
 	registrar           Registrar
 	importer            Importer
 	staticCredentials   StaticCredentialFactory
@@ -211,6 +213,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Defaults == nil ||
 		dependencies.Selections == nil ||
 		dependencies.CredentialRotation == nil ||
+		dependencies.CLIProxyAPIExporter == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.Importer == nil ||
 		dependencies.StaticCredentials == nil ||
@@ -226,6 +229,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		defaults:            dependencies.Defaults,
 		selections:          dependencies.Selections,
 		credentialRotation:  dependencies.CredentialRotation,
+		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
 		registrar:           dependencies.Registrar,
 		importer:            dependencies.Importer,
 		staticCredentials:   dependencies.StaticCredentials,

@@ -312,3 +312,8 @@ Fuller layer map:
 - Never commit real tokens or credential exports.
 - Validate import paths and avoid absolute/parent traversal inputs.
 - Prefer environment-based configuration for sensitive runtime settings.
+
+
+#
+永远不要退回别人的(并行的session)代码 
+

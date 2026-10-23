@@ -1720,6 +1720,13 @@ export interface ToolPermissionSettings {
   applyToHost: boolean;
   /** WebUI 逐旗标选择的权限参数（`[]` = 用合同推导的默认最大权限）。 */
   permissionArgs: string[];
+  /**
+   * 是否让 aih 接管该 CLI 的会话 Hook（「即时刷新」）。
+   *
+   * 打开 = 现在装一次，且以后自动升级发现 Hook 掉了会装回去；
+   * 关闭 = aih 不写、不检查、不恢复，但也不主动删除已有配置。
+   */
+  sessionHook: boolean;
   updatedAt: number;
 }
 
@@ -1779,6 +1786,14 @@ export interface ToolPermissionCapability {
   hostWritable: boolean;
   hostRequiresElevation: boolean;
   hostReason: string;
+  /** 该 provider 有没有官方会话 Hook（没有就不显示这个开关）。 */
+  sessionHookSupported: boolean;
+  /** 此刻配置里是不是已经装着（开关的实际状态可能领先或落后于它）。 */
+  sessionHookInstalled: boolean;
+  /** Hook 写进哪个配置文件（给用户看「你在改哪个文件」）。 */
+  sessionHookTargetPath: string;
+  /** 装不上/诊断不出的原因。 */
+  sessionHookReason: string;
 }
 
 export interface ToolPermissionSettingsResponse {

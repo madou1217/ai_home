@@ -33,7 +33,6 @@ const UPGRADE_TAG_COLORS: Record<ManagedAppUpgradeView['statusTone'], string> = 
 export interface ManagedAppCardProps {
   app: ManagedAppItem;
   busyAction?: 'install' | 'update' | 'uninstall';
-  installingHooks: boolean;
   checkingUpdate?: boolean;
   accounts: Account[];
   runningAccountPids: Record<string, number[]>;
@@ -45,7 +44,6 @@ export interface ManagedAppCardProps {
   onCheckUpdate: (app: ManagedAppItem) => void;
   onOpenApp: (app: ManagedAppItem, accountRef?: string, unscoped?: boolean) => void;
   onCloseApp: (app: ManagedAppItem, accountRef: string) => void;
-  onInstallHooks: (provider: string) => void;
   onClearUpgradeBroken?: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }
@@ -53,7 +51,6 @@ export interface ManagedAppCardProps {
 export default function ManagedAppCard({
   app,
   busyAction,
-  installingHooks,
   checkingUpdate,
   accounts,
   runningAccountPids,
@@ -64,7 +61,6 @@ export default function ManagedAppCard({
   onCheckUpdate,
   onOpenApp,
   onCloseApp,
-  onInstallHooks,
   onClearUpgradeBroken,
   onEditConfig
 }: ManagedAppCardProps) {
@@ -198,16 +194,18 @@ export default function ManagedAppCard({
               />
             </>
           ) : null}
-          {app.installed && app.hookSupported && !app.hookInstalled ? (
-            <Tooltip title={`${SESSION_SYNC_SUMMARY} 启用后会重新读取配置并验证。`}>
+          {/* 「即时刷新」不再是卡片上的一个动作按钮：它是一份要记住的设置（打开后
+              自动升级还会替你守着），所以入口统一收进「高级设置」，和启动权限并列。
+              卡片上只在待启用时留一个标签指路。 */}
+          {hookBadge ? (
+            <Tooltip title={`${SESSION_SYNC_SUMMARY} 在「高级设置」里打开「即时刷新」。`}>
               <Button
                 size="small"
                 icon={<CloudSyncOutlined />}
-                loading={installingHooks}
                 disabled={Boolean(busyAction)}
-                onClick={() => onInstallHooks(app.provider)}
+                onClick={() => onEditConfig(app)}
               >
-                启用即时刷新
+                去启用
               </Button>
             </Tooltip>
           ) : null}

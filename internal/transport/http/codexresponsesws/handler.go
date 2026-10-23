@@ -163,7 +163,9 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	if len(request.Header.Values(responseswebsocket.HopHeader)) > 0 {
+	// 跳数上限（不是「有头即拒」）：跨机中转（本机网关 → 远程 server 网关）是正常拓扑，
+	// 只有超过上限才说明出现了 A→B→A 的环。见 responseswebsocket.MaxRelayHops。
+	if responseswebsocket.RelayHop(request.Header) > responseswebsocket.MaxRelayHops {
 		writeHTTPError(
 			response,
 			http.StatusLoopDetected,

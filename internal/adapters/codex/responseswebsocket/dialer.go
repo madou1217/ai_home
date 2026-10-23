@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -23,12 +24,30 @@ const (
 	OAuthEndpoint = "wss://chatgpt.com/backend-api/codex/responses"
 	// BetaHeaderValue 来自当前官方 Codex Responses WS v2 握手合同。
 	BetaHeaderValue = "responses_websockets=2026-02-06"
-	// HopHeader 防止 API Key 自定义端点经代理重新进入当前 Gateway。
+	// HopHeader 记录本请求已被几台 aih 网关转发过（防 A→B→A 无限环）。
 	HopHeader = "X-AIH-Codex-Responses-WebSocket-Hop"
-	// HopValue 是当前单跳代理唯一允许发送的值。
-	HopValue      = "1"
+	// MaxRelayHops 是允许经过的网关跳数上限。一跳中转（本机网关 → 远程 server
+	// 网关）是正常拓扑：历史上这里把「头存在」直接当成自环并 508，于是把远程 server
+	// 当上游时 WebSocket 永远打不通，WebUI 会话表现为
+	// `stream disconnected before completion`。与 HTTP 侧同口径
+	// （internal/adapters/codex/responses/native.go 的 MaxNativeRelayHops）以及
+	// lib/server/codex-relay-hop.js 的 MAX_CODEX_RELAY_HOPS 保持一致。
+	MaxRelayHops  = 1
 	responsesPath = "responses"
 )
+
+// RelayHop 解析请求已走过的网关跳数；缺失/非法一律按 0（未中转���。
+func RelayHop(header http.Header) int {
+	raw := strings.TrimSpace(header.Get(HopHeader))
+	if raw == "" {
+		return 0
+	}
+	hop, err := strconv.Atoi(raw)
+	if err != nil || hop < 0 {
+		return 0
+	}
+	return hop
+}
 
 var (
 	// ErrInvalidDependencies 表示 Dialer 缺少拒绝重定向的 HTTP Client。
@@ -218,6 +237,7 @@ func projectHandshakeHeaders(source http.Header, fallbackVersion string) http.He
 		destination.Set("User-Agent", codexidentity.UserAgent(fallbackVersion))
 		destination.Set("Version", fallbackVersion)
 	}
-	destination.Set(HopHeader, HopValue)
+	// 递增而不是写死 1：对端据此判断这条链还能不能再往下转（见 MaxRelayHops）。
+	destination.Set(HopHeader, strconv.Itoa(RelayHop(source)+1))
 	return destination
 }

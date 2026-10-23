@@ -210,7 +210,7 @@ export function useAccountActions({
   const [routingRulesSubmitting, setRoutingRulesSubmitting] = React.useState(false);
   const [importModalVisible, setImportModalVisible] = React.useState(false);
   const [importMode, setImportMode] = React.useState<ImportMode>('file');
-  const [pasteTemplate, setPasteTemplate] = React.useState<PasteTemplate>('sub2api');
+  const [pasteTemplate, setPasteTemplate] = React.useState<PasteTemplate>('jsonl');
   const [importText, setImportText] = React.useState('');
   const [importFileName, setImportFileName] = React.useState('');
   const [importFiles, setImportFiles] = React.useState<AccountImportUploadFile[]>([]);
@@ -354,7 +354,7 @@ export function useAccountActions({
     resetImportState();
   }, [importingAccounts, resetImportState]);
 
-  const handleExport = async (format: AccountExportFormat = 'sub2api') => {
+  const handleExport = async (format: AccountExportFormat = 'cliproxyapi') => {
     setExportingAccounts(true);
     try {
       await accountsAPI.export(format);

@@ -7,7 +7,7 @@ import type {
   AccountsListResponse
 } from '../../types/index.ts';
 
-export type AccountExportFormat = 'sub2api' | 'antigravity' | 'cliproxyapi';
+export type AccountExportFormat = 'antigravity' | 'cliproxyapi';
 
 export interface AccountImportUploadFile {
   name: string;

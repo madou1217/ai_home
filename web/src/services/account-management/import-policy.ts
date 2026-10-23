@@ -5,19 +5,27 @@ import type { ManagedProvider } from './types.ts';
 
 const MAX_IMPORT_TEXT_BYTES = 1024 * 1024;
 
-export interface DecodedSub2APIImport {
-  document: ServerJsonValue;
+export interface DecodedNativeImport {
+  /** Go 原生导入合同要求的 artifacts（provider 官方 artifact 的 JSON 对象）。 */
+  artifacts: ServerJsonValue;
   providerHint: string;
   providerId: ManagedProvider;
 }
-// decodeLegacySub2APIImport 是上传 UI 与严格单账号 Go 导入合同之间的 ACL。
-export function decodeLegacySub2APIImport(payload: AccountImportPayload): DecodedSub2APIImport {
-  const { text, providerHint } = importTextFromLegacy(payload);
-  const document = decodeSingleSub2APIDocument(text);
+
+/**
+ * decodeNativeImport 是上传 UI 与 Go 原生导入合同之间的 ACL。
+ *
+ * 2026-10-23：原先走 sub2api 迁移文档，该格式已废弃（前后端同时移除）。
+ * 现在只接受**原生 artifact 文档**：`{"provider_id":"codex","artifacts":{...}}`，
+ * 与 Go 的 `/v1/management/account-imports` 完全同形，前端不再做格式翻译。
+ */
+export function decodeNativeImport(payload: AccountImportPayload): DecodedNativeImport {
+  const { text, providerHint } = importTextFromPayload(payload);
+  const document = decodeNativeArtifactDocument(text);
   return { ...document, providerHint };
 }
 
-function importTextFromLegacy(payload: AccountImportPayload): {
+function importTextFromPayload(payload: AccountImportPayload): {
   text: string;
   providerHint: string;
 } {
@@ -36,8 +44,9 @@ function importTextFromLegacy(payload: AccountImportPayload): {
   return { text: file.content, providerHint };
 }
 
-function decodeSingleSub2APIDocument(textValue: string): {
-  document: ServerJsonValue;
+/** 解析一份原生 artifact 文档，并校验 provider 与形状。 */
+function decodeNativeArtifactDocument(textValue: string): {
+  artifacts: ServerJsonValue;
   providerId: ManagedProvider;
 } {
   const text = String(textValue || '');
@@ -54,26 +63,18 @@ function decodeSingleSub2APIDocument(textValue: string): {
     throw new AccountManagementError('account_management_import_document_invalid', 422);
   }
   const document = value as Record<string, unknown>;
-  if (
-    document.type !== 'sub2api-data'
-    || !Array.isArray(document.accounts)
-    || document.accounts.length !== 1
-    || !Array.isArray(document.proxies)
-    || document.proxies.length !== 0
-  ) {
-    throw new AccountManagementError('account_management_import_single_account_required', 422);
-  }
-  const account = document.accounts[0];
-  if (!account || typeof account !== 'object' || Array.isArray(account)) {
+  const providerId = asManagedProviderOrThrow(document.provider_id);
+  const artifacts = document.artifacts;
+  if (!artifacts || typeof artifacts !== 'object' || Array.isArray(artifacts)) {
     throw new AccountManagementError('account_management_import_document_invalid', 422);
   }
-  const platform = (account as Record<string, unknown>).platform;
-  const providerId = platform === 'openai'
-    ? 'codex'
-    : platform === 'anthropic'
-      ? 'claude'
-      : unsupportedAccountOperation<ManagedProvider>(
-        'account_management_import_provider_unsupported'
-      );
-  return { document: value as ServerJsonValue, providerId };
+  return { artifacts: artifacts as ServerJsonValue, providerId };
+}
+
+/** 原生导入只支持有官方 artifact 转换策略的 provider。 */
+function asManagedProviderOrThrow(value: unknown): ManagedProvider {
+  if (value === 'codex' || value === 'claude') return value;
+  return unsupportedAccountOperation<ManagedProvider>(
+    'account_management_import_provider_unsupported'
+  );
 }

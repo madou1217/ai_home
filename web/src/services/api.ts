@@ -197,7 +197,7 @@ export function isSessionRequestCancelled(error: unknown) {
     || maybeError?.message === 'session_request_superseded';
 }
 
-export type AccountExportFormat = 'sub2api' | 'antigravity' | 'cliproxyapi';
+export type AccountExportFormat = 'antigravity' | 'cliproxyapi';
 export type KimiDesktopSessionStatus =
   | 'STATUS_PENDING'
   | 'STATUS_SCANNED'
@@ -881,7 +881,7 @@ export const accountsAPI = {
   },
 
   // 导出账号
-  export: async (format: AccountExportFormat = 'sub2api') => {
+  export: async (format: AccountExportFormat = 'cliproxyapi') => {
     const response = await api.get('/webui/accounts/export', {
       params: { format },
       responseType: 'blob'
@@ -890,7 +890,7 @@ export const accountsAPI = {
     const url = URL.createObjectURL(new Blob([response.data], { type: contentType }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = response.headers['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || 'sub2api-data.json';
+    a.download = response.headers['content-disposition']?.match(/filename="([^"]+)"/)?.[1] || 'accounts.json';
     a.click();
     URL.revokeObjectURL(url);
     return undefined;

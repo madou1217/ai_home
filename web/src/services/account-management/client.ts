@@ -1,5 +1,4 @@
 import type {
-  ServerBlobResponse,
   ServerJsonResponse,
   ServerJsonValue,
   ServerRequest,
@@ -40,11 +39,8 @@ const ACCOUNTS_PATH = '/v1/management/accounts';
 const DEFAULTS_PATH = '/v1/management/account-defaults';
 const OAUTH_JOBS_PATH = '/v1/management/account-auth-jobs';
 const NATIVE_IMPORT_PATH = '/v1/management/account-imports';
-const SUB2API_IMPORT_PATH = '/v1/management/account-imports/sub2api';
 const ACCOUNT_PAGE_SIZE = 255;
 const DEFAULT_TIMEOUT_MS = 15_000;
-const MAX_EXPORT_BYTES = 1024 * 1024;
-const SUB2API_EXPORT_FILENAME = 'sub2api-data.json';
 
 // AccountManagementTransport 是账号客户端实际依赖的最小传输端口。
 export type AccountManagementTransport = Pick<
@@ -288,55 +284,6 @@ export class AccountManagementClient {
       account: decodeAccountEnvelope(response.data),
       created: response.status === 201
     };
-  }
-
-  // importSub2APIAccount 导入一个未经 AIH 私有包装的单账号迁移文档。
-  async importSub2APIAccount(document: ServerJsonValue): Promise<AccountImportResultView> {
-    this.assertJsonObject(document, 'account_management_sub2api_document_invalid');
-    const response = await this.requestJson('POST', SUB2API_IMPORT_PATH, document);
-    this.assertStatus(response, [200, 201]);
-    return {
-      account: decodeAccountEnvelope(response.data),
-      created: response.status === 201
-    };
-  }
-
-  // exportSub2APIAccount 下载标准单账号迁移文档，不解析或重写其字段。
-  async exportSub2APIAccount(accountRef: string): Promise<ServerBlobResponse> {
-    try {
-      const response = await this.transport.requestBlob({
-        profileId: this.profileId,
-        method: 'GET',
-        path: `${this.accountPath(accountRef)}/export`,
-        timeoutMs: this.timeoutMs
-      });
-      this.assertSub2APIExportResponse(response);
-      return response;
-    } catch (error) {
-      throw asAccountManagementError(error);
-    }
-  }
-
-  // assertSub2APIExportResponse 只校验非敏感元数据，不读取或拼接导出 body。
-  private assertSub2APIExportResponse(response: ServerBlobResponse): void {
-    const size = response?.size;
-    const contentType = String(response?.headers?.contentType || '')
-      .split(';', 1)[0]
-      .trim()
-      .toLowerCase();
-    const contentDisposition = String(response?.headers?.contentDisposition || '').trim();
-    const dispositionMatch = /^attachment;\s*filename="([^"]+)"$/i.exec(contentDisposition);
-    if (
-      !(response?.data instanceof Blob)
-      || !Number.isSafeInteger(size)
-      || size < 1
-      || size > MAX_EXPORT_BYTES
-      || response.data.size !== size
-      || contentType !== 'application/json'
-      || dispositionMatch?.[1] !== SUB2API_EXPORT_FILENAME
-    ) {
-      throw new AccountManagementError('account_management_export_response_invalid');
-    }
   }
 
   private staticCredentialBody(

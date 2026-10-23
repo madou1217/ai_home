@@ -9,12 +9,10 @@ import type {
   AddAccountRequest,
   AddAccountResponse
 } from '../../types/index.ts';
-import type { ServerBlobResponse } from '../server-transport/contract.ts';
-import { downloadBrowserBlob } from './browser-download.ts';
 import { AccountManagementClient } from './client.ts';
 import { assertAccountRef, assertOAuthJobId } from './decoders.ts';
 import { AccountManagementError, unsupportedAccountOperation } from './errors.ts';
-import { decodeLegacySub2APIImport } from './import-policy.ts';
+import { decodeNativeImport } from './import-policy.ts';
 import type {
   AccountExportFormat,
   AccountImportPayload,
@@ -49,14 +47,12 @@ export interface AccountManagementFacadeOptions {
   pollIntervalMs?: number;
   visibility?: VisibilitySource | null;
   scheduler?: TimerScheduler;
-  downloadBlob?: (response: ServerBlobResponse, filename: string) => Promise<void>;
 }
 
 // AccountManagementFacade 是旧页面 DTO 与 Go Management API 之间唯一的防腐层。
 export class AccountManagementFacade {
   private readonly clientFactory: () => Promise<AccountManagementClient>;
   private readonly now: () => number;
-  private readonly downloadBlob: (response: ServerBlobResponse, filename: string) => Promise<void>;
   private readonly watches: AccountWatchCoordinator;
   private readonly accountViews = new Map<string, AccountView>();
   private readonly defaultAccountRefs = new Set<string>();
@@ -69,7 +65,6 @@ export class AccountManagementFacade {
   constructor(options: AccountManagementFacadeOptions = {}) {
     this.clientFactory = options.clientFactory || defaultClientFactory;
     this.now = options.now || Date.now;
-    this.downloadBlob = options.downloadBlob || downloadBrowserBlob;
     this.watches = new AccountWatchCoordinator({
       loadSnapshot: () => this.list(),
       now: this.now,
@@ -306,25 +301,27 @@ export class AccountManagementFacade {
     return { ok: true };
   }
 
-  async export(_format: AccountExportFormat = 'sub2api'): Promise<void> {
+  async export(_format: AccountExportFormat): Promise<void> {
     return unsupportedAccountOperation('account_management_global_export_unsupported');
   }
 
   async exportAccount(accountRef: string): Promise<void> {
     assertAccountRef(accountRef);
-    const client = await this.clientFactory();
-    const response = await client.exportSub2APIAccount(accountRef);
-    await this.downloadBlob(response, `sub2api-${accountRef}.json`);
+    // sub2api 导出格式已于 2026-10-23 移除；原生导出端点见迁移蓝图 P2。
+    return unsupportedAccountOperation('account_management_export_unsupported');
   }
 
   // import 是同步单账号导入；成功响应不会伪装成后台 Job。
   async import(payload: AccountImportPayload): Promise<AccountImportResponse> {
-    const decoded = decodeLegacySub2APIImport(payload);
+    const decoded = decodeNativeImport(payload);
     if (decoded.providerHint && asManagedProvider(decoded.providerHint) !== decoded.providerId) {
       throw new AccountManagementError('account_management_import_provider_mismatch', 422);
     }
     const client = await this.clientFactory();
-    const importResult = await client.importSub2APIAccount(decoded.document);
+    const importResult = await client.importNativeAccount({
+      providerId: decoded.providerId,
+      artifacts: decoded.artifacts
+    });
     const imported = importResult.account;
     assertAccountIdentity(imported, decoded.providerId);
     const account = this.emitAccountChange(imported);

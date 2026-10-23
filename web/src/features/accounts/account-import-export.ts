@@ -6,14 +6,9 @@ import type { AccountImportJob, AccountImportResponse } from '@/types';
 // 组件只负责弹窗交互与触发导入导出。
 
 export type ImportMode = 'file' | 'folder' | 'text' | 'cliproxyapi';
-export type PasteTemplate = 'sub2api' | 'antigravity' | 'jsonl';
+export type PasteTemplate = 'antigravity' | 'jsonl';
 
 export const EXPORT_ACTIONS: Array<{ format: AccountExportFormat; label: string; description: string }> = [
-  {
-    format: 'sub2api',
-    label: '导出为迁移 JSON',
-    description: '使用 sub2api-data 结构，不导出 AIH 本地身份字段。'
-  },
   {
     format: 'antigravity',
     label: '导出为 Antigravity Manager JSON',
@@ -27,29 +22,6 @@ export const EXPORT_ACTIONS: Array<{ format: AccountExportFormat; label: string;
 ];
 
 export const PASTE_TEMPLATES: Record<PasteTemplate, { label: string; description: string; value: string }> = {
-  sub2api: {
-    label: '迁移 JSON',
-    description: '粘贴 sub2api-data JSON；本地账号 ID 会重新分配，冲突时按身份去重。',
-    value: JSON.stringify({
-      type: 'sub2api-data',
-      version: 1,
-      proxies: [],
-      accounts: [
-        {
-          name: 'codex-main',
-          platform: 'openai',
-          type: 'oauth',
-          credentials: {
-            email: 'user@example.com',
-            access_token: 'access-token',
-            refresh_token: 'refresh-token',
-            id_token: 'id-token',
-            chatgpt_account_id: 'chatgpt-account-id'
-          }
-        }
-      ]
-    }, null, 2)
-  },
   antigravity: {
     label: 'Antigravity Manager',
     description: '粘贴 Antigravity Manager JSON，账号会导入到 AGY provider。',

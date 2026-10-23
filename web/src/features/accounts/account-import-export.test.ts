@@ -24,7 +24,7 @@ function makeImportJob(overrides: Partial<AccountImportJob> = {}): AccountImport
 test('EXPORT_ACTIONS exposes the three supported export formats', () => {
   assert.deepEqual(
     EXPORT_ACTIONS.map((action) => action.format),
-    ['sub2api', 'antigravity', 'cliproxyapi']
+    ['antigravity', 'cliproxyapi']
   );
   EXPORT_ACTIONS.forEach((action) => {
     assert.ok(action.label.length > 0);
@@ -33,22 +33,12 @@ test('EXPORT_ACTIONS exposes the three supported export formats', () => {
 });
 
 test('PASTE_TEMPLATES covers every template kind with parseable JSON', () => {
-  assert.deepEqual(Object.keys(PASTE_TEMPLATES).sort(), ['antigravity', 'jsonl', 'sub2api']);
+  assert.deepEqual(Object.keys(PASTE_TEMPLATES).sort(), ['antigravity', 'jsonl']);
   for (const template of Object.values(PASTE_TEMPLATES)) {
     assert.ok(template.label.length > 0);
     assert.ok(template.description.length > 0);
     assert.ok(template.value.length > 0);
   }
-  // sub2api 模板是可解析的合法 JSON 且带 accounts 数组
-  const sub2api = JSON.parse(PASTE_TEMPLATES.sub2api.value);
-  assert.equal(sub2api.type, 'sub2api-data');
-  assert.ok(Array.isArray(sub2api.accounts));
-  // JSONL 模板是多行文本，每一行都是可解析 JSON
-  const lines = PASTE_TEMPLATES.jsonl.value.split('\n');
-  assert.ok(lines.length >= 2);
-  lines.forEach((line) => {
-    assert.doesNotThrow(() => JSON.parse(line));
-  });
 });
 
 test('formatImportResult summarizes counts from the summary block', () => {

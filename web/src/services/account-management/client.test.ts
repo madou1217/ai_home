@@ -176,7 +176,7 @@ test('OAuth 注册、查询、回调和取消保持一次性 URL 与 Job 状态�
   });
 });
 
-test('显式 usage 刷新、原生导入、sub2api 导入和导出保持单账号边界', async () => {
+test('显式 usage 刷新与原生导入保持单账号边界', async () => {
   const transport = new FakeTransport([
     json(200, {
       data: {
@@ -209,76 +209,14 @@ test('显式 usage 刷新、原生导入、sub2api 导入和导出保持单账�
     providerId: 'codex',
     artifacts: { auth_json: { tokens: { access_token: 'opaque' } } }
   });
-  const updatedImport = await client.importSub2APIAccount({ type: 'sub2api-data', accounts: [] });
-  const exported = await client.exportSub2APIAccount(ACCOUNT_ONE);
 
   assert.equal(usage.entries[0]?.remainingBasisPoints, 7200);
   assert.equal(createdImport.created, true);
   assert.equal(createdImport.account.accountRef, ACCOUNT_ONE);
-  assert.equal(updatedImport.created, false);
-  assert.equal(updatedImport.account.accountRef, ACCOUNT_TWO);
-  assert.equal(exported.size, 2);
   assert.deepEqual(transport.requests.map(({ method, path, port }) => ({ method, path, port })), [
     { method: 'POST', path: `/v1/management/accounts/${ACCOUNT_ONE}/usage/refresh`, port: 'json' },
-    { method: 'POST', path: '/v1/management/account-imports', port: 'json' },
-    { method: 'POST', path: '/v1/management/account-imports/sub2api', port: 'json' },
-    { method: 'GET', path: `/v1/management/accounts/${ACCOUNT_ONE}/export`, port: 'blob' }
+    { method: 'POST', path: '/v1/management/account-imports', port: 'json' }
   ]);
-});
-
-test('单账号导出拒绝尺寸、媒体类型和附件文件名异常且不泄露 body', async () => {
-  const secret = 'synthetic-export-body-secret';
-  const validHeaders = {
-    contentType: 'application/json; charset=utf-8',
-    contentDisposition: 'attachment; filename="sub2api-data.json"'
-  };
-  const cases: ServerBlobResponse[] = [
-    {
-      headers: validHeaders,
-      data: new Blob(['{}'], { type: 'application/json' }),
-      size: 1
-    },
-    {
-      headers: validHeaders,
-      data: new Blob([], { type: 'application/json' }),
-      size: 0
-    },
-    {
-      headers: validHeaders,
-      data: new Blob([new Uint8Array((1024 * 1024) + 1)], { type: 'application/json' }),
-      size: (1024 * 1024) + 1
-    },
-    {
-      headers: { ...validHeaders, contentType: 'text/html' },
-      data: new Blob([secret], { type: 'text/html' }),
-      size: secret.length
-    },
-    {
-      headers: { ...validHeaders, contentDisposition: 'inline; filename="sub2api-data.json"' },
-      data: new Blob(['{}'], { type: 'application/json' }),
-      size: 2
-    },
-    {
-      headers: { ...validHeaders, contentDisposition: 'attachment; filename="accounts.json"' },
-      data: new Blob(['{}'], { type: 'application/json' }),
-      size: 2
-    }
-  ];
-
-  for (const blobResponse of cases) {
-    const transport = new FakeTransport([], blobResponse);
-    const error = await new AccountManagementClient({
-      transport,
-      profileId: 'profile-local'
-    }).exportSub2APIAccount(ACCOUNT_ONE).then(
-      () => null,
-      (caught: unknown) => caught
-    );
-    assert.ok(error instanceof AccountManagementError);
-    assert.match(String(error), /account_management_export_response_invalid/);
-    assert.doesNotMatch(String(error), new RegExp(secret));
-    assert.doesNotMatch(JSON.stringify(error), new RegExp(secret));
-  }
 });
 
 test('单账号模型列表与手动刷新使用 Go 模型子资源并严格解码完整关系', async () => {

@@ -240,10 +240,9 @@ test('静态账号变更显式通知 watcher，快照请求被合并且 close �
   });
 });
 
-test('导入只接收单份文本 sub2api，立即返回结果且单账号导出直接下载', async () => {
-  const downloads: string[] = [];
+test('导入只接收原生 artifact 文档，且导出格式移除后失败关闭', async () => {
   const transport = new RouteTransport((request) => {
-    if (request.path === '/v1/management/account-imports/sub2api') {
+    if (request.path === '/v1/management/account-imports') {
       return { status: 200, data: { data: account(ACCOUNT_TWO, 'claude', 2, 'auth_token') } };
     }
     throw new Error(`unexpected ${request.method} ${request.path}`);
@@ -253,32 +252,23 @@ test('导入只接收单份文本 sub2api，立即返回结果且单账号导出
       transport,
       profileId: 'profile-test'
     }),
-    visibility: null,
-    downloadBlob: async (_response, filename) => {
-      downloads.push(filename);
-    }
+    visibility: null
   });
+  // 原生 artifact 文档：与 Go 的 /v1/management/account-imports 同形，
+  // 前端不再做 sub2api 格式翻译（该格式 2026-10-23 移除）。
   const document = JSON.stringify({
-    type: 'sub2api-data',
-    version: 1,
-    exported_at: '2026-08-15T01:00:00Z',
-    proxies: [],
-    accounts: [{
-      name: 'claude-account',
-      platform: 'anthropic',
-      type: 'setup-token',
-      credentials: { setup_token: 'opaque' },
-      concurrency: 0,
-      priority: 0
-    }]
+    provider_id: 'claude',
+    artifacts: {
+      credentials_json: { claudeAiOauth: { accessToken: 'opaque' } },
+      global_config_json: { oauthAccount: { accountUuid: 'uuid' } }
+    }
   });
 
   const result = await facade.import({
     mode: 'upload',
     uploadKind: 'file',
-    files: [{ name: 'sub2api.json', content: document, encoding: 'text' }]
+    files: [{ name: 'claude.json', content: document, encoding: 'text' }]
   });
-  await facade.exportAccount(ACCOUNT_TWO);
 
   assert.equal(result.imported, 1);
   assert.equal(result.status, 'succeeded');
@@ -287,12 +277,17 @@ test('导入只接收单份文本 sub2api，立即返回结果且单账号导出
   assert.equal(result.summary?.updated, 1);
   assert.equal(result.summary?.accounts[0]?.status, 'updated');
   assert.equal(result.summary?.accounts[0]?.accountRef, ACCOUNT_TWO);
-  assert.deepEqual(downloads, [`sub2api-${ACCOUNT_TWO}.json`]);
   assert.deepEqual(transport.requests.map(({ method, path }) => ({ method, path })), [
-    { method: 'POST', path: '/v1/management/account-imports/sub2api' },
-    { method: 'GET', path: `/v1/management/accounts/${ACCOUNT_TWO}/export` }
+    { method: 'POST', path: '/v1/management/account-imports' }
   ]);
+
+  // 单账号导出：sub2api 移除后没有可用格式，必须失败关闭而不是产出别的文档。
+  await assert.rejects(
+    facade.exportAccount(ACCOUNT_TWO),
+    /account_management_export_unsupported/
+  );
 });
+
 
 test('Facade 只按显式账号读取和刷新 Go 模型快照，不伪造后台 Job', async () => {
   const transport = new RouteTransport((request) => {
@@ -354,7 +349,7 @@ test('未支持能力 fail closed，且传输异常不会把静态密钥带入�
     /account_management_oauth_device_unsupported/
   );
   await assert.rejects(facade.setMobile('codex', ACCOUNT_ONE), /mobile_role_unsupported/);
-  await assert.rejects(facade.export('sub2api'), /global_export_unsupported/);
+  await assert.rejects(facade.export('cliproxyapi'), /global_export_unsupported/);
   await assert.rejects(
     facade.import({ mode: 'upload', uploadKind: 'folder', files: [] }),
     /bulk_import_unsupported/

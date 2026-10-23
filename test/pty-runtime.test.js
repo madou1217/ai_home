@@ -3790,8 +3790,7 @@ test('runtime injects bypass keyring environment variables for agy provider', ()
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime puts a mid-session API error in the title rotation and clears it on new input', () => {
-  const { intervals, restore } = captureRuntimeIntervals();
+test('runtime marks a mid-session API error with an icon and clears it on new input', () => {
   let proc;
 
   try {
@@ -3799,49 +3798,21 @@ test('runtime puts a mid-session API error in the title rotation and clears it o
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('agy', '3', [], false);
 
-    // 子进程输出里出现上游错误 → 标题立刻切到错误项（不等轮播节拍）。
+    const titles = () => harness.writes.filter((line) => /\x1b\]0;/.test(line));
+    // 子进程输出里出现上游错误 → 标题立刻带上 ⚠（事件驱动，不等任何节拍）。
+    // 具体原因不写进标题：标签栏里读文字费劲，图标就够。
     harness.spawns[0].proc._onData('\r\nAPI Error: 429 rate limit\r\n');
-    const titles = () => harness.writes.filter((line) => /\x1b\]0;/.test(line));
-    assert.ok(titles().some((line) => /\x1b\]0;.*API 429\x07/.test(line)));
+    assert.ok(titles().some((line) => /\x1b\]0;⚠ /.test(line)), 'error should lead the title');
+    assert.equal(titles().some((line) => /429|API Error/.test(line)), false, 'no error text in the title');
 
-    // 用户发出新输入：上一回合的故障翻篇，错误项撤下。
+    // 用户发出新输入：上一回合的故障翻篇，⚠ 撤下。
     proc.stdin.emit('data', Buffer.from('\r'));
-    assert.equal(titles().at(-1).includes('API 429'), false);
-
-    const cycle = intervals.find((interval) => interval.ms === 5000);
-    assert.ok(cycle);
+    const last = titles().at(-1).replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
+    assert.equal(last.startsWith('⚠'), false, 'error icon should be gone');
   } finally {
     if (proc) {
       try { proc.emit('SIGINT'); } catch (_error) {}
     }
-    restore();
-  }
-});
-
-test('runtime spins the title while the child is producing output and settles when idle', () => {
-  const { intervals, restore } = captureRuntimeIntervals();
-  let proc;
-
-  try {
-    const harness = createRuntimeHarness();
-    ({ proc } = harness);
-    harness.runtime.runCliPtyTracked('agy', '3', [], false);
-
-    const titles = () => harness.writes.filter((line) => /\x1b\]0;/.test(line));
-    const before = titles().length;
-    // 子进程持续输出 = 生成中：标题挂转圈帧。
-    harness.spawns[0].proc._onData('thinking...\r\n');
-    const spinner = intervals.find((interval) => interval.ms === 120);
-    assert.ok(spinner, 'spinner timer should run while busy');
-    spinner.cb();
-    const busyTitle = titles().at(-1).replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
-    assert.match(busyTitle, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /);
-    assert.ok(titles().length > before);
-  } finally {
-    if (proc) {
-      try { proc.emit('SIGINT'); } catch (_error) {}
-    }
-    restore();
   }
 });
 
@@ -3854,16 +3825,12 @@ test('runtime publishes account title for non-usage-managed interactive provider
     ({ proc } = harness);
     harness.runtime.runCliPtyTracked('agy', '3', [], false);
 
-    // 标题在「会话名」与「账号」之间轮播：首帧是会话名，轮过一个节拍后
-    // 账号项 `Agy:3` 出现（agy 没有用量托管，因此不带 [a:]/[o:] 标签）。
-    const cycle = intervals.find((interval) => interval.ms === 5000);
-    assert.ok(cycle, 'title cycler should be running');
-    assert.ok(harness.writes.some((line) => /\x1b\]0;/.test(line)), 'session title should be published');
-    cycle.cb();
-    assert.ok(
-      harness.writes.some((line) => /\x1b\]0;[^\x07]*agy:3[^\x07]*\x07/i.test(line)),
-      'account title should follow the session title'
-    );
+    // 标题是**一行完整状态**：会话身份与账号同时在场（不再轮流显示）。
+    // agy 没有用量托管，因此没有用量段。
+    const title = harness.writes
+      .filter((line) => /\x1b\]0;/.test(line))
+      .at(-1).replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
+    assert.match(title, /AGY:3/, 'account segment should be present');
   } finally {
     if (proc) {
       try { proc.emit('SIGINT'); } catch (_error) {}
@@ -4157,23 +4124,21 @@ test('runtime publishes usage to the terminal title without reserving a screen r
   try {
   runtime.runCliPtyTracked('codex', '10086', [], false);
 
-  // 标题在「会话名」与「账号」之间轮播。账号项 = 可读的账号标识 + 用量标签
+  // 标题是**一行完整状态**：会话名与账号同时在场。账号段 = 可读的账号标识 + 用量。
   // （[o:<accid>:<remaining>]，这里 64.2% → 64%）。首帧是会话名，驱动一个循环
   // 节拍后账号项出现。
-  const cycle = intervals.find((interval) => interval.ms === 5000);
-  assert.ok(cycle, 'title cycler should be running');
-  cycle.cb();
+  // 用量是状态行的一段：64.2% → 64%。身份与用量同时在场。
   assert.equal(
-    writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:64%\]\x07/.test(line)),
+    writes.some((line) => /\x1b\]0;[^\x07]*64%[^\x07]*\x07/.test(line)),
     true
   );
   const titleWriteCountBeforeResize = writes
-    .filter((line) => /\[o:10086:64%\]/.test(line))
+    .filter((line) => /\x1b\]0;[^\x07]*64%/.test(line))
     .length;
   proc.stdout.emit('resize');
-  // resize 只重绘当前项，不会把账号项重复写一遍。
+  // resize 重绘的是同一份内容：去重保证不会重复写。
   assert.equal(
-    writes.filter((line) => /\[o:10086:64%\]/.test(line)).length,
+    writes.filter((line) => /\x1b\]0;[^\x07]*64%/.test(line)).length,
     titleWriteCountBeforeResize
   );
   // No scroll-region reservation, no in-screen status row, full-height child.
@@ -4724,10 +4689,7 @@ test('runtime fixed status bar works when stdin is TTY even if stdout.isTTY is a
     // 标题只在终端面写 OSC 0（账号项带用量 [o:<accid>:<remaining>]），从不画在
     // 屏幕上，因此不会干扰子进程的光标/渲染。首帧是会话名，驱动一个循环节拍后
     // 账号项出现。
-    const cycle = intervals.find((interval) => interval.ms === 5000);
-    assert.ok(cycle, 'title cycler should be running');
-    cycle.cb();
-    assert.equal(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:91%\]\x07/.test(line)), true);
+    assert.equal(writes.some((line) => /\x1b\]0;[^\x07]*91%[^\x07]*\x07/.test(line)), true);
     // It must NOT reserve an in-screen row or scroll region.
     assert.equal(writes.some((line) => /\x1b\[\d+;1H\x1b\[2K/.test(line)), false);
     assert.equal(writes.some((line) => line.startsWith('\r\n')), false);
@@ -4855,17 +4817,12 @@ test('runtime shows usage in PTY and auto-updates after direct no-cache refresh'
 
   try {
     runtime.runCliPtyTracked('codex', '10086', [], false);
-    const cycle = intervals.find((interval) => interval.ms === 5000);
-    assert.ok(cycle, 'title cycler should be running');
-    // 首帧是会话名；轮播到账号项时才带用量（陈旧缓存 75.5% → 76%）。
-    cycle.cb();
-    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:76%\]\x07/.test(line)));
+    // 陈旧缓存先出 75.5% → 76%，无需任何节拍（状态行是事件驱动的）。
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*76%[^\x07]*\x07/.test(line)));
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(refreshCalls >= 1, true);
-    // After the no-cache refresh the account item auto-updates: 63.2% → 63%.
-    cycle.cb();
-    cycle.cb();
-    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:10086:63%\]\x07/.test(line)));
+    // 刷新完成后用量事件推动标题自动更新：63.2% → 63%。
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*63%[^\x07]*\x07/.test(line)));
   } finally {
     try { proc.emit('SIGINT'); } catch (_error) {}
     restore();
@@ -4912,11 +4869,11 @@ test('runtime shows api-key mode without usage remaining and does not threshold-
 
     assert.equal(spawns.length, 1);
     assert.equal(nextAccountLookups, 0);
-    // API-key accounts show a bare tag with no usage figure. 首帧是会话名，
-    // 轮播一个节拍后账号项出现。
-    assert.ok(cycleTicks.length > 0, 'title cycler should be running');
-    for (const cb of cycleTicks) cb();
-    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[a:10014\]\x07/.test(line)));
+    // API-key 账号没有用量数字：标题里只有身份段，没有用量段。
+    const title = writes.filter((line) => /\x1b\]0;/.test(line)).at(-1)
+      .replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
+    assert.match(title, /Codex:10014/, 'account segment should be present');
+    assert.equal(/\d+%/.test(title), false, 'api-key accounts carry no usage figure');
     assert.equal(writes.some((line) => line.includes('usage remaining')), false);
 
     assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
@@ -5163,17 +5120,12 @@ test('runtime shows usage for gemini interactive PTY as well', async () => {
 
   try {
     runtime.runCliPtyTracked('gemini', '2', [], false);
-    const cycle = intervals.find((interval) => interval.ms === 5000);
-    assert.ok(cycle, 'title cycler should be running');
-    // 首帧是会话名；轮播到账号项时才带用量（陈旧缓存 42.8% → 43%）。
-    cycle.cb();
-    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:43%\]\x07/.test(line)));
+    // 陈旧缓存 42.8% → 43%，事件驱动，无需节拍。
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*43%[^\x07]*\x07/.test(line)));
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(refreshCalls >= 1, true);
-    // After refresh: 39.1% → 39%.
-    cycle.cb();
-    cycle.cb();
-    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*\[o:2:39%\]\x07/.test(line)));
+    // 刷新后 39.1% → 39%。
+    assert.ok(writes.some((line) => /\x1b\]0;[^\x07]*39%[^\x07]*\x07/.test(line)));
   } finally {
     try { proc.emit('SIGINT'); } catch (_error) {}
     restore();
@@ -6353,6 +6305,7 @@ test('runtime keeps strict zero-client default and does not probe clip-agent wit
 
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
+
 
 test('runtime injects contract-declared max-permission flags when the provider switch is on', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({}, {

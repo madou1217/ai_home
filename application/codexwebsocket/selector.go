@@ -191,7 +191,7 @@ func (selector *Selector) Select(
 		// 钉选是亲和偏好而不是独占：钉住的账号若对目标模型已进入 (账号,模型) 冷却，
 		// 就不能再把它当成唯一候选。
 		//
-		// 不回落会怎样（实测��）：WebUI 会话把账号钉在请求头里，该账号容量不足被记入
+		// 不回落会怎样（实测后）：WebUI 会话把账号钉在请求头里，该账号容量不足被记入
 		// (账号,模型) 冷却后，钉选请求的候选池只剩这一个 —— 扫描落空触发软冷却逃生阀
 		// 重放同一个候选，冷却账号被**强制再次选中**，每次重连都回到同一个已耗尽的
 		// 账号，会话里反复出现 "Selected model is at capacity. Please try a different
@@ -199,7 +199,7 @@ func (selector *Selector) Select(
 		// lib/server/codex-adapter.js）。
 		//
 		// 只有软冷却才回落：凭据/额度/策略是硬阻塞，钉选账号在这种情况下本来就不会被
-		// 选中，回落到整池会让客户端拿到与钉选无关的账号��。
+		// 选中，回落到整池会让客户端拿到与钉选无关的账号。
 		pinUsable, usableErr := selector.pinnedAccountUsable(
 			ctx,
 			accountRef,

@@ -137,20 +137,33 @@ test('the spinner stops by itself once the child goes quiet', () => {
 test('an error is shown as an icon, not as text', () => {
   const h = createTitle();
   h.title.start();
-  h.title.setError('failed');
-  // 标签栏里读文字费劲：只给一个 ⚠，具体原因在会话屏幕里看。
-  assert.equal(h.current(), '⚠ ai_home · Cline:1:deepseek-v4.1 · 5h:91%');
+  h.title.setError('\u26a0');
+  // 标签栏里读文字费劲：只给一个图标，具体原因在会话屏幕里看。
+  assert.equal(h.current(), '\u26a0 ai_home · Cline:1:deepseek-v4.1 · 5h:91%');
 
   h.title.clearError();
   assert.equal(h.current(), 'ai_home · Cline:1:deepseek-v4.1 · 5h:91%');
+});
+
+test('each failure kind carries its own icon', () => {
+  // 限流直接放状态码，断网用带斜线的网络图标。
+  const limited = createTitle();
+  limited.title.start();
+  limited.title.setError('[429]');
+  assert.equal(limited.current(), '[429] ai_home · Cline:1:deepseek-v4.1 · 5h:91%');
+
+  const offline = createTitle();
+  offline.title.start();
+  offline.title.setError('\u2298');
+  assert.equal(offline.current(), '\u2298 ai_home · Cline:1:deepseek-v4.1 · 5h:91%');
 });
 
 test('an error outranks the spinner: the failure is what you need to see', () => {
   const h = createTitle();
   h.title.start();
   h.title.markBusy();
-  h.title.setError('failed');
-  assert.match(h.current(), /^⚠ /);
+  h.title.setError('[429]');
+  assert.match(h.current(), /^\[429\] /);
   assert.equal(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(h.current()), false);
 });
 
@@ -292,16 +305,18 @@ test('model is read from the explicit --model / -m flags first', () => {
   assert.equal(readModelFromArgs([]), '');
 });
 
-test('failure detection answers yes/no for interrupts and upstream errors', () => {
-  assert.equal(detectFailure('Interrupted by user'), true);
-  assert.equal(detectFailure('⎿  Interrupted'), true);
-  assert.equal(detectFailure('API Error: 429'), true);
-  assert.equal(detectFailure('Rate limit reached'), true);
-  assert.equal(detectFailure('connection error, retrying'), true);
-  assert.equal(detectFailure('context window exceeded'), true);
+test('failure detection classifies the fault so the title can pick an icon', () => {
+  assert.equal(detectFailure('Interrupted by user').icon, '\u26a0');
+  assert.equal(detectFailure('⎿  Interrupted').kind, 'interrupted');
+  assert.equal(detectFailure('API Error: 429').kind, 'rate_limited');
+  assert.equal(detectFailure('Rate limit reached').icon, '[429]');
+  assert.equal(detectFailure('connection error, retrying').kind, 'network');
+  assert.equal(detectFailure('fetch failed').icon, '\u2298');
+  assert.equal(detectFailure('API Error: 500').kind, 'upstream');
+  assert.equal(detectFailure('context window exceeded').kind, 'context_limit');
   // 普通正文里的 "error" 不算故障。
-  assert.equal(detectFailure('fixed the error handling bug'), false);
-  assert.equal(detectFailure(''), false);
+  assert.equal(detectFailure('fixed the error handling bug'), null);
+  assert.equal(detectFailure(''), null);
 });
 
 test('the provider segment matches the command the user actually typed', () => {

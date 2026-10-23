@@ -3790,7 +3790,7 @@ test('runtime injects bypass keyring environment variables for agy provider', ()
   assert.deepEqual(rawModeCalls, [true, false]);
 });
 
-test('runtime marks a mid-session API error with an icon and clears it on new input', () => {
+test('runtime marks a rate limit with [429] and clears it on new input', () => {
   let proc;
 
   try {
@@ -3802,13 +3802,13 @@ test('runtime marks a mid-session API error with an icon and clears it on new in
     // 子进程输出里出现上游错误 → 标题立刻带上 ⚠（事件驱动，不等任何节拍）。
     // 具体原因不写进标题：标签栏里读文字费劲，图标就够。
     harness.spawns[0].proc._onData('\r\nAPI Error: 429 rate limit\r\n');
-    assert.ok(titles().some((line) => /\x1b\]0;⚠ /.test(line)), 'error should lead the title');
-    assert.equal(titles().some((line) => /429|API Error/.test(line)), false, 'no error text in the title');
+    // 限流给 [429]（状态码本身就是最好的图标），不写错误文案。
+    assert.ok(titles().some((line) => /\x1b\]0;\[429\] /.test(line)), 'rate limit should lead the title');
 
     // 用户发出新输入：上一回合的故障翻篇，⚠ 撤下。
     proc.stdin.emit('data', Buffer.from('\r'));
     const last = titles().at(-1).replace(/^\x1b\]0;/, '').replace(/\x07$/, '');
-    assert.equal(last.startsWith('⚠'), false, 'error icon should be gone');
+    assert.equal(last.startsWith('['), false, 'error icon should be gone');
   } finally {
     if (proc) {
       try { proc.emit('SIGINT'); } catch (_error) {}

@@ -333,7 +333,7 @@ function goInferenceChannel(provider, entryId = '') {
 
 - Go 账号层：`nativeaccount/decoder.go` 加 `cline` 策略
 - Go 推理上游：cline 是标准 OpenAI chat 形态 → 可复用家族透传的透传范式
-  （`internal/transport/http/codebuddyfamilyrelay` 的请���改写 + SSE 聚合）
+（`internal/transport/http/codebuddyfamilyrelay` 的请求改写 + SSE 聚合）
 - `go-import-translator.js` 加 `translateCline`
 - Go `relayHosts.go` 改为 `supported: true`
 - **验收**：真实 cline 账号端到端推理 200；`claude-*` 别名链路恢复；

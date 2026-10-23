@@ -266,7 +266,7 @@ type Handler struct {
 - 家族新增 `provider.go` 实现 Provider（覆盖六处差异）
 - 家族 `handler.go` 缩为薄壳：构造 `relaycore.Handler{Provider: familyProvider}` 并 ServeHTTP
 - `request_rewrite.go` / `aggregate.go` **原地不动**（它们已是纯函数，被 Provider 调用）
-- **验收**：家族全部既���测试（handler_relay / aggregate / request_rewrite / family_provider）
+- **验收**：家族全部既有测试（handler_relay / aggregate / request_rewrite / family_provider）
   全绿且**一行断言不改**；`goInferenceChannel` 矩阵不变
 
 **M2 — cline 接入**

@@ -30,7 +30,7 @@
     color-mix(in srgb, var(--core-color) 78%, transparent) 48%,
     transparent 72%
   );
-  /* 不用 filter: drop-shadow：它会让该元素每帧重��栅格化，且强制脱离合成层。
+/* 不用 filter: drop-shadow：它会让该元素每帧重新栅格化，且强制脱离合成层。
      box-shadow 由合成器绘制，效果接近但便宜得多。 */
   box-shadow: 0 0 3px var(--core-color);
   will-change: transform, opacity;

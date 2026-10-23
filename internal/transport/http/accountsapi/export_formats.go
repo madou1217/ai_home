@@ -6,7 +6,7 @@ import "strings"
 //
 // 为什么要有它：导出格式原来是硬编码分派 —— 枚举一个 memberResourceXxxExport、
 // 在 parseMemberResource 里加一条 case、在 ServeHTTP 里再加一条 case、
-// 在 Dependencies 里��一个字段。加一种格式要改四处，删一种也要改四处（本仓库
+// 在 Dependencies 里加一个字段。加一种格式要改四处，删一种也要改四处（本仓库
 // 2026-10-23 删除 sub2api 时正是如此）。
 //
 // 改成注册表后：**格式 = 一条注册项**（路径后缀 + 下载文件名 + 导出策略），

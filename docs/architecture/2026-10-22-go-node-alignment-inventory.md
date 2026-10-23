@@ -9,13 +9,13 @@
 | 面 | 现状 | 差距 |
 |---|---|---|
 | **推理数据面**（`/v1/*`） | Go 已实现全部 7 条 capability route | **功能已齐，但所有权仍是 Node**（`private_canary`） |
-| **控���面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **完全没迁** |
+| **控制面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **完全没迁** |
 | **WebUI 面**（`/v0/webui/*`） | Node 203 条，Go 0 | 官方标记 `out_of_scope`（Node 专有） |
 | **Node RPC**（`/v0/node-rpc/*`） | Node 63 条，Go 0 | 官方标记 `out_of_scope` |
 | **Fabric**（`/v0/fabric/*`） | Node 9 条，Go 0 | 官方标记 `out_of_scope` |
 | **PTY / 终端 / 持久会话** | Node ~28 个文件，Go **零依赖、零实现** | **最大的未覆盖能力面** |
 | **Provider 层** | 两侧 16 个 provider，采集面完备 | 已对齐 ✅ |
-| **geo（本次新增）** | Node + Go 双实现，结论��致 | 已对齐 ✅ |
+| **geo（本次新增）** | Node + Go 双实现，结论一致 | 已对齐 ✅ |
 
 路由总数：**Node 356 条 / Go 33 条**（`/v0` 是 336 : 1）。
 

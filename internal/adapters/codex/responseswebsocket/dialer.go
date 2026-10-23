@@ -36,7 +36,7 @@ const (
 	responsesPath = "responses"
 )
 
-// RelayHop 解析请求已走过的网关跳数；缺失/非法一律按 0（未中转���。
+// RelayHop 解析请求已走过的网关跳数；缺失/非法一律按 0（未中转）。
 func RelayHop(header http.Header) int {
 	raw := strings.TrimSpace(header.Get(HopHeader))
 	if raw == "" {

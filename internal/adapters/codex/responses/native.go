@@ -22,7 +22,7 @@ const NativeHopHeader = "X-Aih-Codex-Relay-Hop"
 // `Gateway proxy loop detected`，WebUI 会话表现为
 // `stream disconnected before completion`。要防的是 A→B→A 的无限环，不是一跳中转。
 // 与 fabric 反向网关同一套设计：lib/server/fabric-gateway-protocol.js 的
-// MAX_FABRIC_GATEWAY_HOPS��
+// MAX_FABRIC_GATEWAY_HOPS。
 const MaxNativeRelayHops = 1
 
 // NativeRelayHop 解析请求已走过的网关跳数；缺失/非法一律按 0（未中转）。
@@ -66,7 +66,7 @@ func (adapter *Adapter) RoundTripNative(ctx context.Context, credential accounta
 			request.Header.Set(name, value)
 		}
 	}
-	// 递增而不是写死 1：对端据此判断这条链还���不能再往下转（见 MaxNativeRelayHops）。
+// 递增而不是写死 1：对端据此判断这条链还能不能再往下转（见 MaxNativeRelayHops）。
 	request.Header.Set(NativeHopHeader, strconv.Itoa(NativeRelayHop(header)+1))
 	return adapter.client.Do(request)
 }

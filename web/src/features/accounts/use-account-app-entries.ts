@@ -22,7 +22,7 @@ export interface UseAccountAppEntriesResult {
  */
 /**
  * 轮询回来的入口状态在绝大多数轮次里和上一轮完全一样，而 React 只按引用比较。
- * 直接 setState 会让���张账号表每 2 秒重渲染一次（实测该页面 20 秒内主线程被占 9.8 秒）。
+ * 直接 setState 会让整张账号表每 2 秒重渲染一次（实测该页面 20 秒内主线程被占 9.8 秒）。
  * 内容相同就返回上一份引用，React 便跳过这次渲染。
  */
 function shallowEqualRecord(left: Record<string, unknown> | null, right: Record<string, unknown> | null): boolean {

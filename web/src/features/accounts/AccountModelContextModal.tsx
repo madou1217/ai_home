@@ -105,7 +105,7 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
           tokens: draftTokens,
           accountRefs: [account.accountRef, ...peers]
         });
-        message.success(`已设置 ${editingModel} 的上下文窗口（含 ${peers.length} 个同类型账��）`);
+    message.success(`已设置 ${editingModel} 的上下文窗口（含 ${peers.length} 个同类型账号）`);
       } else {
         await accountsAPI.saveAccountModelContext(account.provider, account.accountRef, {
           model: editingModel,
@@ -120,7 +120,7 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
       await load();
     } catch (error: any) {
       const code = error?.response?.data?.error;
-      message.error(code ? `保存失败：${code}` : error?.message || '保��失败');
+    message.error(code ? `保存失败：${code}` : error?.message || '保存失败');
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +147,7 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Space size={8} wrap>
             <Typography.Text type="secondary">
-              窗口按「账号 × 模型」保存，优先于自动探测与 models.dev 目���。
+      窗口按「账号 × 模型」保存，优先于自动探测与 models.dev 目录。
             </Typography.Text>
             {credentialType ? <Tag>{TYPE_LABELS[credentialType] || credentialType}</Tag> : null}
           </Space>

@@ -127,7 +127,7 @@ export function withGatewayAccounts(
  * - `ignore`：目标没变（网关目标按裸 `gateway` 比较，与 provider 无关）。
  * - `retarget`：**同 provider** 且已有服务端会话 → 换执行凭据、会话不变（服务端 open 时 rebind，
  *   时间线保留、harness 换账号并回填历史）。
- * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草��）→ 按原行为新建。
+ * - `new-session`：跨 provider（协议不同）或还没有服务端会话（草稿）→ 按原行为新建。
  *
  * 注意：选网关目标**不是**跨 provider —— 会话 provider 不变，只是不钉账号。所以它命中
  * retarget（有服务端会话时）而不是 new-session。

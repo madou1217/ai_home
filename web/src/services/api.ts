@@ -390,6 +390,12 @@ const buildAccountWindowActivationPath = (provider: string, accountRef: string) 
 const buildAccountAliasPoolPath = (provider: string, accountRef: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/alias-pool`
 );
+const buildAccountModelContextPath = (provider: string, accountRef: string) => (
+  `${buildAccountScopedPath(provider, accountRef)}/model-context`
+);
+const buildProviderModelContextBulkPath = (provider: string) => (
+  `/webui/accounts/${encodeURIComponent(provider)}/model-context/bulk`
+);
 const buildAccountActivityPath = (provider: string, accountRef: string, actionId: string) => (
   `${buildAccountScopedPath(provider, accountRef)}/activity/${encodeURIComponent(actionId)}`
 );
@@ -660,6 +666,42 @@ export const accountsAPI = {
       buildAccountAliasPoolPath(provider, accountRef),
       setting
     );
+    return response.data;
+  },
+
+  /** 账号 × 模型的上下文窗口：读生效值与来源、同类型账号、可选范围。 */
+  getAccountModelContext: async (
+    provider: string,
+    accountRef: string,
+    models: readonly string[] = []
+  ): Promise<{
+    ok: boolean;
+    models: Array<{ model: string; tokens: number; source: string; override: number }>;
+    sameTypeAccounts: Array<{ accountRef: string; credentialType: string; displayName: string; disabled?: boolean }>;
+    credentialType: string;
+    limits: { min: number; max: number };
+  }> => {
+    const query = models.length > 0 ? `?models=${encodeURIComponent(models.join(','))}` : '';
+    const response = await api.get(buildAccountModelContextPath(provider, accountRef) + query);
+    return response.data;
+  },
+
+  /** 设置单个账号的模型窗口；tokens 传 0/undefined 表示清除手动设置。 */
+  saveAccountModelContext: async (
+    provider: string,
+    accountRef: string,
+    input: { model: string; tokens?: number | null }
+  ): Promise<{ ok: boolean; overrides: Record<string, Record<string, number>> }> => {
+    const response = await api.post(buildAccountModelContextPath(provider, accountRef), input);
+    return response.data;
+  },
+
+  /** 同 provider 下多个账号（通常同类型）一次设置同一个模型的窗口。 */
+  saveAccountModelContextBulk: async (
+    provider: string,
+    input: { model: string; tokens?: number | null; accountRefs: readonly string[] }
+  ): Promise<{ ok: boolean; overrides: Record<string, Record<string, number>> }> => {
+    const response = await api.post(buildProviderModelContextBulkPath(provider), input);
     return response.data;
   },
 
@@ -2295,7 +2337,7 @@ export const toolkitAPI = {
   },
   saveAppPermissionSettings: async (
     appId: string,
-    payload: { maxPermission: boolean; applyToHost: boolean; permissionArgs?: string[] }
+    payload: { maxPermission: boolean; applyToHost: boolean; permissionArgs?: string[]; sessionHook?: boolean }
   ): Promise<ToolPermissionSettingsResponse> => {
     const response = await api.put<ToolPermissionSettingsResponse>(
       `/webui/toolkit/apps/${encodeURIComponent(appId)}/settings`,

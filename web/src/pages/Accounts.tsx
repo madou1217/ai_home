@@ -46,6 +46,7 @@ import {
   ReloadOutlined,
   ClockCircleOutlined,
   BranchesOutlined,
+  FieldNumberOutlined,
   GiftOutlined,
 } from '@ant-design/icons';
 import { accountsAPI } from '@/services/api';
@@ -121,6 +122,7 @@ import AccountFlowModals from '@/features/accounts/AccountFlowModals';
 import { AccountEgressModal } from '@/features/accounts/ZcodeEgressModal';
 import { AccountWindowActivationModal } from '@/features/accounts/AccountWindowActivationModal';
 import { AccountAliasPoolModal } from '@/features/accounts/AccountAliasPoolModal';
+import { AccountModelContextModal } from '@/features/accounts/AccountModelContextModal';
 import { AccountActivityModal } from '@/features/accounts/AccountActivityModal';
 import { AccountEgressBadge } from '@/features/egress-upstream/AccountEgressBadge';
 import AccountEgressBulkPicker from '@/features/egress-upstream/AccountEgressBulkPicker';
@@ -272,6 +274,7 @@ export default function Accounts() {
   const [rewardsJob, setRewardsJob] = useState<AccountActivityJob | null>(null);
   const rewardsPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [aliasPoolAccount, setAliasPoolAccount] = useState<Account | null>(null);
+  const [modelContextAccount, setModelContextAccount] = useState<Account | null>(null);
 
   const renderEgressBadge = (record: Account) => (
     <AccountEgressBadge
@@ -553,6 +556,7 @@ export default function Accounts() {
       menuItems.push({ key: 'window-activation', label: '窗口激活', icon: <ClockCircleOutlined /> });
     }
     menuItems.push({ key: 'alias-pool', label: '别名选号', icon: <BranchesOutlined /> });
+    menuItems.push({ key: 'model-context', label: '上下文窗口', icon: <FieldNumberOutlined /> });
     menuItems.push({ type: 'divider' });
     menuItems.push({ key: 'delete', label: '删除账号', danger: true, icon: <DeleteOutlined /> });
     return menuItems;
@@ -591,6 +595,10 @@ export default function Accounts() {
     }
     if (key === 'alias-pool') {
       setAliasPoolAccount(record);
+      return;
+    }
+    if (key === 'model-context') {
+      setModelContextAccount(record);
       return;
     }
     if (key === 'delete') {
@@ -1235,6 +1243,11 @@ export default function Accounts() {
       <AccountAliasPoolModal
         account={aliasPoolAccount}
         onClose={() => setAliasPoolAccount(null)}
+      />
+      <AccountModelContextModal
+        account={modelContextAccount}
+        models={modelContextAccount ? getAccountModelProbe(modelContextAccount, modelCatalog).models : []}
+        onClose={() => setModelContextAccount(null)}
       />
       <AccountActivityModal
         open={rewardsOpen}

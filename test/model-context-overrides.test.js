@@ -111,13 +111,22 @@ test('the estimator is conservative against the measured real request', () => {
 });
 
 test('a request over the window is caught before it is sent', () => {
-  const requestJson = { messages: [{ role: 'user', content: 'x'.repeat(1_113_365) }] };
+  // 实测被拒的量级（约 450k tokens / 1.4M 字符）。
+  const requestJson = { messages: [{ role: 'user', content: 'x'.repeat(2_000_000) }] };
   const over = checkContextBudget({ windowTokens: 200000, source: 'catalog', requestJson });
   assert.equal(over.exceeded, true);
   assert.equal(over.windowTokens, 200000);
-  // 同一个请求在 1M 窗口下放行 —— 窗口值决定结论，不是��死的阈值。
+  // 同一个请求在 1M 窗口下放行 —— 窗口值决定结论，不是写死的阈值。
   assert.equal(checkContextBudget({ windowTokens: 1_000_000, requestJson }).exceeded, false);
 });
+
+// 预检不得误杀实测能通过的请求 —— 「宁可放行也不误杀」的可执行版本。
+// 实测：deepseek-v4.1-flash-free 声明 200k，1,113,365 字符（225,353 tokens）实测通过。
+test('a request the upstream actually accepts is not blocked', () => {
+  const requestJson = { messages: [{ role: 'user', content: 'x'.repeat(1_113_365) }] };
+  assert.equal(checkContextBudget({ windowTokens: 200000, source: 'catalog', requestJson }).exceeded, false);
+});
+
 
 test('an unknown window never blocks a request', () => {
   // 窗口未知时凭一个猜的值拦截，比放行更危险 —— 交给上游裁决。
@@ -127,7 +136,7 @@ test('an unknown window never blocks a request', () => {
 });
 
 test('the error names the window and where it came from', () => {
-  const requestJson = { messages: [{ role: 'user', content: 'x'.repeat(1_113_365) }] };
+  const requestJson = { messages: [{ role: 'user', content: 'x'.repeat(2_000_000) }] };
   const check = checkContextBudget({ windowTokens: 200000, source: 'override', requestJson });
   const body = buildContextExceededError(check);
   assert.equal(body.error.code, 'context_length_exceeded');

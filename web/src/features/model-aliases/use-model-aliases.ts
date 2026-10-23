@@ -87,14 +87,30 @@ export function useModelAliases() {
     }
   }, [fetchAliases]);
 
-  /** 新增（editingId 为空）或更新别名；成功返回 true。 */
-  const saveAlias = useCallback(async (editingId: string | null, values: Partial<ModelAlias>) => {
+  /**
+   * 新增（editingId 为空）或更新别名；成功返回 true。
+   *
+   * 多选提交时 values 带 `records`（expandAliasSelections 的产物）：每条各自 create
+   * 一次，存储仍是一条一个 (provider, model)，运行时语义不变。编辑态只更新当前这条，
+   * 不因多选把同别名的其他记录一并改写。
+   */
+  const saveAlias = useCallback(async (
+    editingId: string | null,
+    values: Partial<ModelAlias> & { records?: Array<Partial<ModelAlias>> }
+  ) => {
+    const records = Array.isArray(values.records) ? values.records : [];
+    const { records: _records, ...single } = values;
     try {
       if (editingId) {
-        await modelAliasesAPI.update(editingId, values);
+        await modelAliasesAPI.update(editingId, single);
         message.success('更新成功');
+      } else if (records.length > 0) {
+        for (const record of records) {
+          await modelAliasesAPI.create(record);
+        }
+        message.success(records.length > 1 ? `已添加 ${records.length} 条别名` : '添加成功');
       } else {
-        await modelAliasesAPI.create(values);
+        await modelAliasesAPI.create(single);
         message.success('添加成功');
       }
       fetchAliases();

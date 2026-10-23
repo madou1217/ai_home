@@ -17,9 +17,12 @@ export const ALIAS_PROVIDER_SELECT_OPTIONS = ALIAS_PROVIDER_IDS.map((provider) =
   label: getAliasProviderDisplayName(provider)
 }));
 
+// target / targetProvider 在多选表单里是数组，提交前由 expandAliasSelections
+// 展开成单值记录，存储层仍是「一条一个 (provider, model)」。
 export const MODEL_ALIAS_FORM_DEFAULTS = {
   provider: 'all',
-  targetProvider: 'auto',
+  targetProvider: ['auto'],
+  target: [],
   priority: 0,
   enabled: true
 };
@@ -33,9 +36,9 @@ export const MODEL_ALIAS_FIELD_RULES: Record<'alias' | 'target' | 'provider' | '
 
 export const MODEL_ALIAS_FIELD_HELP = {
   alias: '客户端请求的模型名称，通配符只能放在末尾且前缀至少 2 个字符',
-  target: '实际转发到后端的模型名称',
+  target: '实际转发到后端的模型名称；可多选，选中项与目标供应商两两组合，各自存成一条记录',
   provider: "选择 '全部' 表示对所有请求生效，否则只对该特定供应商的请求生效",
-  targetProvider: "选择 '自动' 表示按目标模型自动识别；需要跨客户端固定路由时选择具体供应商",
+  targetProvider: "可多选。选 '自动' 表示按目标模型自动识别归属；多选供应商时只保留该供应商目录里真实存在的模型组合",
   priority: '数字越大优先级越高;同名别名按优先级降序依次尝试,target 无可用账号时自动回退到下一条'
 };
 
@@ -56,11 +59,19 @@ export function sortModelAliases(aliases: ModelAlias[]) {
   });
 }
 
-/** 目标模型下拉分组：目标供应商为自动时列出全部供应商的模型，否则只列该供应商。 */
-export function buildTargetModelGroups(modelsByProvider: Record<string, string[]>, targetProvider: string) {
-  const providers = targetProvider && targetProvider !== 'auto'
-    ? [targetProvider]
-    : ALIAS_PROVIDER_IDS;
+/**
+ * 目标模型下拉分组：目标供应商为自动时列出全部供应商的模型，否则只列这些供应商。
+ *
+ * 支持多选：targetProvider 传数组时按所选供应商逐个分组（自动/空值 = 全部）。
+ */
+export function buildTargetModelGroups(
+  modelsByProvider: Record<string, string[]>,
+  targetProvider: string | string[]
+) {
+  const selected = Array.isArray(targetProvider)
+    ? targetProvider.filter((provider) => provider && provider !== 'auto')
+    : (targetProvider && targetProvider !== 'auto' ? [targetProvider] : []);
+  const providers = selected.length > 0 ? selected : ALIAS_PROVIDER_IDS;
   return providers
     .map((provider) => ({
       provider,
@@ -81,4 +92,107 @@ export function findAliasModelLabel(modelLabels: Record<string, Record<string, s
     if (label) return label;
   }
   return '';
+}
+
+/**
+ * 多选表单值 → 待写入的别名记录列表（笛卡尔积）。
+ *
+ * 表单里目标供应商与目标模型都可多选，但存储仍是「一条一个 (provider, model)」——
+ * 运行时路由、优先级回退、启停都按单条记录工作，多选纯粹是添加时的便利。
+ *
+ * 组合只在「该供应商目录里真的有这个模型」时才保留：选了 cline + opencode 与
+ * cline-pass/… + opencode/… 两个模型，若 opencode 目录没有 cline-pass/… 就不生成
+ * 这条无意义组合（后端 validateAliasTarget 也会以 not_in_catalog 拒绝）。
+ * targetProvider 为 auto/空时无法判定归属，按所选模型的来源供应商展开。
+ */
+export function expandAliasSelections(
+  values: {
+    alias?: string;
+    target?: string | string[];
+    provider?: string;
+    targetProvider?: string | string[];
+    priority?: number;
+    enabled?: boolean;
+    description?: string;
+  },
+  modelsByProvider: Record<string, string[]>
+): Array<Partial<ModelAlias>> {
+  const targets = (Array.isArray(values.target) ? values.target : [values.target])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  const providers = (Array.isArray(values.targetProvider)
+    ? values.targetProvider
+    : [values.targetProvider])
+    .map((item) => String(item || '').trim())
+    .filter((item) => item && item !== 'auto');
+  if (targets.length === 0) return [];
+
+  const base = {
+    alias: String(values.alias || '').trim(),
+    provider: values.provider || 'all',
+    priority: Number(values.priority) || 0,
+    enabled: values.enabled !== false,
+    description: String(values.description || '').trim()
+  };
+
+  // 自动：按每个模型自身的来源供应商归属。
+  if (providers.length === 0) {
+    const out: Array<Partial<ModelAlias>> = [];
+    targets.forEach((target) => {
+      const owners = ALIAS_PROVIDER_IDS.filter((provider) => (
+        (modelsByProvider[provider] || []).includes(target)
+      ));
+      if (owners.length === 0) {
+        out.push({ ...base, target, targetProvider: 'auto' });
+        return;
+      }
+      owners.forEach((owner) => out.push({ ...base, target, targetProvider: owner }));
+    });
+    return out;
+  }
+
+  const out: Array<Partial<ModelAlias>> = [];
+  providers.forEach((targetProvider) => {
+    targets.forEach((target) => {
+      if (!(modelsByProvider[targetProvider] || []).includes(target)) return;
+      out.push({ ...base, target, targetProvider });
+    });
+  });
+  // 全部组合都被目录过滤掉时保留一条，让后端给出可读的 not_in_catalog 错误，
+  // 而不是静默地什么都不提交。
+  if (out.length === 0) {
+    out.push({ ...base, target: targets[0], targetProvider: providers[0] });
+  }
+  return out;
+}
+
+export interface AliasGroup {
+  alias: string;
+  provider: string;
+  description: string;
+  enabled: boolean;
+  records: ModelAlias[];
+}
+
+/** 列表按别名聚合：同一别名（+请求范围）的多条记录合成一行展示。 */
+export function groupModelAliases(aliases: ModelAlias[]): AliasGroup[] {
+  const groups = new Map<string, AliasGroup>();
+  sortModelAliases(aliases).forEach((record) => {
+    const key = `${record.alias}\u0000${record.provider || 'all'}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.records.push(record);
+      if (record.enabled !== false) existing.enabled = true;
+      if (!existing.description && record.description) existing.description = record.description;
+      return;
+    }
+    groups.set(key, {
+      alias: record.alias,
+      provider: record.provider || 'all',
+      description: record.description || '',
+      enabled: record.enabled !== false,
+      records: [record]
+    });
+  });
+  return Array.from(groups.values());
 }

@@ -7,6 +7,7 @@ import {
   MODEL_ALIAS_FIELD_RULES,
   MODEL_ALIAS_FORM_DEFAULTS,
   buildTargetModelGroups,
+  expandAliasSelections,
   getAliasProviderDisplayName
 } from '@/features/model-aliases/model-alias-presentation';
 import { DetailSheet, HudIconButton } from '@/mobile/ui';
@@ -20,7 +21,6 @@ interface Props {
   modelsByProvider: Record<string, string[]>;
   modelsLoading: boolean;
   getModelLabel: (provider: string, model: string) => string;
-  providerHasModel: (provider: string, model: string) => boolean;
   onClose: () => void;
   onSave: (editingId: string | null, values: Partial<ModelAlias>) => Promise<boolean>;
 }
@@ -32,7 +32,6 @@ export default function AliasFormSheet({
   modelsByProvider,
   modelsLoading,
   getModelLabel,
-  providerHasModel,
   onClose,
   onSave
 }: Props) {
@@ -65,7 +64,9 @@ export default function AliasFormSheet({
     }
     setSaving(true);
     try {
-      if (await onSave(editing?.id || null, values)) onClose();
+      // 多选展开成逐条记录（笛卡尔积，只保留目录里真实存在的组合）。
+      const records = expandAliasSelections(values, modelsByProvider);
+      if (await onSave(editing?.id || null, { ...values, records })) onClose();
     } finally {
       setSaving(false);
     }
@@ -97,12 +98,14 @@ export default function AliasFormSheet({
         </Form.Item>
         <Form.Item name="target" label="目标模型 (Target)" rules={MODEL_ALIAS_FIELD_RULES.target} help={MODEL_ALIAS_FIELD_HELP.target}>
           <Select
+            mode="multiple"
             showSearch
             loading={modelsLoading}
-            placeholder="选择真实模型"
+            placeholder="可多选：选中项按供应商展开成多条记录"
             optionFilterProp="label"
             disabled={targetOptions.length === 0}
             options={targetOptions}
+            maxTagCount="responsive"
           />
         </Form.Item>
         <Form.Item name="provider" label="请求范围 (Provider Scope)" rules={MODEL_ALIAS_FIELD_RULES.provider} help={MODEL_ALIAS_FIELD_HELP.provider}>
@@ -115,13 +118,18 @@ export default function AliasFormSheet({
           help={MODEL_ALIAS_FIELD_HELP.targetProvider}
         >
           <Select
+            mode="multiple"
+            maxTagCount="responsive"
             options={[{ value: 'auto', label: '自动 (Auto)' }, ...ALIAS_PROVIDER_SELECT_OPTIONS]}
-            onChange={(nextProvider: string) => {
-              const selectedTarget = form.getFieldValue('target');
-              if (!selectedTarget || nextProvider === 'auto') return;
-              if (!providerHasModel(nextProvider, selectedTarget)) {
-                form.setFieldValue('target', undefined);
-              }
+            onChange={() => {
+              // 供应商集合变化后清掉不在所选目录里的模型，避免留下必然失败的组合。
+              const nextProviders = form.getFieldValue('targetProvider');
+              const selected = form.getFieldValue('target');
+              if (!Array.isArray(selected) || selected.length === 0) return;
+              const groups = buildTargetModelGroups(modelsByProvider, nextProviders);
+              const allowed = new Set(groups.flatMap((group) => group.models));
+              const kept = selected.filter((model: string) => allowed.has(model));
+              if (kept.length !== selected.length) form.setFieldValue('target', kept);
             }}
           />
         </Form.Item>

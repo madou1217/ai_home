@@ -1036,6 +1036,11 @@ export interface ModelAlias {
   priority: number;
   enabled: boolean;
   description: string;
+  /**
+   * 仅用于提交：多选表单展开出的逐条记录（expandAliasSelections 产物）。
+   * 存储层不保留它，服务端也不返回。
+   */
+  records?: Array<Partial<ModelAlias>>;
 }
 
 export const modelAliasesAPI = {

@@ -32,7 +32,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accountauth/staticcredential"
 	"github.com/madou1217/ai_home/internal/adapters/accountruntime/accountrecovery"
 	runtimeinmemory "github.com/madou1217/ai_home/internal/adapters/accountruntime/inmemory"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/deletionprojection"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
@@ -303,17 +302,6 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建启动账号解析用例失败: %w", err)
 	}
-	exportReader, err := accountapp.NewExportReader(store, store, store)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号导出读取器失败: %w", err)
-	}
-	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf(
-			"创建 CLIProxyAPI 账号导出器失败: %w",
-			err,
-		)
-	}
 	modelManagement, err := accountapp.NewModelManagement(
 		store,
 		store,
@@ -555,7 +543,6 @@ func newHandlers(
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,
 		CredentialRotation:  modelRefreshingCredentialRotator,
-		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           scheduledRegistrar,
 		Importer:            accountImporter,
 		StaticCredentials:   credentialFactory,

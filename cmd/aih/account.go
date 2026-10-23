@@ -138,8 +138,6 @@ func runAccount(
 			return fmt.Errorf("%w: 账号目标必须是 account_ref 或 provider:id", errInvalidCommand)
 		}
 		return runAccountDelete(ctx, target, runtime)
-	case "transfer":
-		return runAccountTransfer(ctx, arguments[1:], runtime)
 	case "credential":
 		return runAccountCredential(ctx, arguments[1:], runtime)
 	case "default":

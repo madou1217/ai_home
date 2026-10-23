@@ -293,6 +293,10 @@ Fuller layer map:
   - Background: on 2026-08-14 a session aborted a conflicting rebase and then ran `reset --hard origin/main`, silently dropping 13 local commits (~17k insertions, including the full kimi integration) plus leaving a 3k-line stash. Recovery cost far exceeded the merge it was trying to avoid.
 - When multiple agent sessions share this repository, each session must assume another session may hold unpushed commits; check `git reflog` for recent `reset`/`rebase` operations before rewriting history, and never reset past commits you did not create.
 - **提交时必须带 pathspec（本仓库实测教训，2026-10-16）**：并行会话经常把文件留在**暂存区**，`git commit` 会把它们一并带走（表现为提交里混入不相干的文件、提交信息对不上）。因此一律用 `git commit -m <msg> -- <显式路径...>`（或先 `git add -- <路径>` 后 `git commit -- <路径>`），**禁止裸 `git commit` / `git add -A`**。已经混入的提交不要用 rebase/reset 去"修正"（那是破坏性历史操作，见上），在当次汇报里如实说明即可。
+- **提交前后必须核对暂存区内容（2026-10-23 两次事故）**：`git diff --cached --stat` 是提交前的**强制步骤**——文件数与行数要对得上这次改的范围，对不上就停下查，不要提交。两次事故都不是裸 commit：
+  - 用 `GIT_INDEX_FILE` 临时索引准备提交后，又跑了一次**不带临时索引**的 `git commit --amend`（改提交信息）；amend 重新读取了主索引，于是把并行会话暂存的反向 diff 提交并推送了出去（37 个文件被回退，自己的改动反而没进去）。
+  - 并行会话的 `git add -A` 把工作区里**过时的旧文件**一起暂存，提交时把另一条工作线整个 revert 掉（48 个文件、-2093 行）。
+  - 结论：① 临时索引只用于**一次**提交，之后要改信息就重新走一遍完整流程，绝不在临时索引之外 amend；② `--amend` 前重新核对 `--cached --stat`，它和普通提交一样会重新读索引；③ 提交后 `git show --stat HEAD` 复核一次，确认没有多带文件；④ 发现带错文件时，用独立 worktree 在最新基点上**重建**自己的改动（`git checkout <好提交> -- <自己的文件>`），不要 reset/revert 别人的东西。
 - **`git push` 在本仓库不属高风险操作**（用户 2026-10-15 明确）：本地提交可以直接 `git push origin main`，不必先征求确认（并发会话的本地提交会一并推上去，这是共享 main 的正常流程）。仍必须先确认的是**破坏性历史操作**（`git reset --hard`、丢弃提交的 rebase、删除 worktree/branch）——见上一条。
 
 ## Commit & Pull Request Guidelines

@@ -915,6 +915,8 @@ func newHandlers(
 			Routes:     inference.models,
 			Recruiter:  inference.recruiter,
 			Transports: webSocketDialer,
+			// 钉选账号进入 (账号,模型) 冷却时回落到整个池，而不是死守单候选。
+			Eligibility: inference.Runtime(),
 		},
 	)
 	if err != nil {

@@ -78,6 +78,7 @@ type Dependencies struct {
 type Components struct {
 	executor  *inferencegateway.Coordinator
 	recruiter *accountrouting.Recruiter
+	runtime   AccountRuntime
 }
 
 // Executor 返回已经完成上游协议注册的 Canonical 执行器。
@@ -94,6 +95,17 @@ func (components *Components) Recruiter() *accountrouting.Recruiter {
 		return nil
 	}
 	return components.recruiter
+}
+
+// Runtime 返回与 Executor 共用的账号运行态边界。
+//
+// 需要「账号对某模型当前是否可用」的调用方（例如钉选账号的回落判定）复用它，
+// 避免各自另开一条运行态读取路径而产生分叉。
+func (components *Components) Runtime() AccountRuntime {
+	if components == nil {
+		return nil
+	}
+	return components.runtime
 }
 
 // New 创建共享同一账号运行态和凭据解析器的 Canonical Executor。
@@ -160,6 +172,7 @@ func NewComponents(dependencies Dependencies) (*Components, error) {
 	return &Components{
 		executor:  coordinator,
 		recruiter: recruiter,
+		runtime:   dependencies.Runtime,
 	}, nil
 }
 

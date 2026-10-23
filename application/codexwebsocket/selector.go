@@ -13,6 +13,7 @@ import (
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 	"github.com/madou1217/ai_home/core/inference"
@@ -47,6 +48,9 @@ type Dependencies struct {
 	Routes     inferencegateway.ProtocolRouteResolver
 	Recruiter  AccountRecruiter
 	Transports accountrouting.CredentialTransportPolicy
+	// Eligibility 判定钉选账号对目标模型是否仍然可用；为空时钉选不做回落，
+	// 保持旧行为（仅用于不关心钉选语义的测试装配）。
+	Eligibility accountrouting.RuntimeEligibilitySource
 }
 
 // Request 包含决定路由和账号亲和所需的客户端协议、模型和可选钉选账号。
@@ -120,10 +124,11 @@ func (selection Selection) IsValid() bool {
 
 // Selector 使用同一生产路由快照和 Recruiter 生成连接级固定选择。
 type Selector struct {
-	catalog    *providers.Catalog
-	routes     inferencegateway.ProtocolRouteResolver
-	recruiter  AccountRecruiter
-	transports accountrouting.CredentialTransportPolicy
+	catalog     *providers.Catalog
+	routes      inferencegateway.ProtocolRouteResolver
+	recruiter   AccountRecruiter
+	transports  accountrouting.CredentialTransportPolicy
+	eligibility accountrouting.RuntimeEligibilitySource
 }
 
 // NewSelector 创建不缓存模型、账号或凭据的选择器。
@@ -135,10 +140,11 @@ func NewSelector(dependencies Dependencies) (*Selector, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Selector{
-		catalog:    dependencies.Catalog,
-		routes:     dependencies.Routes,
-		recruiter:  dependencies.Recruiter,
-		transports: dependencies.Transports,
+		catalog:     dependencies.Catalog,
+		routes:      dependencies.Routes,
+		recruiter:   dependencies.Recruiter,
+		transports:  dependencies.Transports,
+		eligibility: dependencies.Eligibility,
 	}, nil
 }
 
@@ -182,12 +188,40 @@ func (selector *Selector) Select(
 		if parseErr != nil {
 			return Selection{}, errors.Join(ErrInvalidPinnedAccount, parseErr)
 		}
-		recruitment, err = accountrouting.NewPinnedRequest(
-			selector.catalog,
-			codexauth.ProviderID,
-			route.EffectiveModel(),
+		// 钉选是亲和偏好而不是独占：钉住的账号若对目标模型已进入 (账号,模型) 冷却，
+		// 就不能再把它当成唯一候选。
+		//
+		// 不回落会怎样（实测��）：WebUI 会话把账号钉在请求头里，该账号容量不足被记入
+		// (账号,模型) 冷却后，钉选请求的候选池只剩这一个 —— 扫描落空触发软冷却逃生阀
+		// 重放同一个候选，冷却账号被**强制再次选中**，每次重连都回到同一个已耗尽的
+		// 账号，会话里反复出现 "Selected model is at capacity. Please try a different
+		// model."。回落语义与 Node 的 resolvePinnedCodexPool 一致（见
+		// lib/server/codex-adapter.js）。
+		//
+		// 只有软冷却才回落：凭据/额度/策略是硬阻塞，钉选账号在这种情况下本来就不会被
+		// 选中，回落到整池会让客户端拿到与钉选无关的账号��。
+		pinUsable, usableErr := selector.pinnedAccountUsable(
+			ctx,
 			accountRef,
+			route.EffectiveModel(),
 		)
+		if usableErr != nil {
+			return Selection{}, usableErr
+		}
+		if pinUsable {
+			recruitment, err = accountrouting.NewPinnedRequest(
+				selector.catalog,
+				codexauth.ProviderID,
+				route.EffectiveModel(),
+				accountRef,
+			)
+		} else {
+			recruitment, err = accountrouting.NewRequest(
+				selector.catalog,
+				codexauth.ProviderID,
+				route.EffectiveModel(),
+			)
+		}
 	} else {
 		recruitment, err = accountrouting.NewRequest(
 			selector.catalog,
@@ -212,4 +246,37 @@ func (selector *Selector) Select(
 		result.Credential(),
 		result.CredentialObservation(),
 	)
+}
+
+// pinnedAccountUsable 判定钉选账号对目标模型是否还能继续服务。
+//
+// 只有明确的「(账号,模型) 软冷却」才算不可用并触发回落：软冷却会随时间自动恢复，
+// 钉选在这段时间里必须让位给池里其它账号。凭据失效、额度耗尽、策略阻塞这些硬阻塞
+// 返回可用（true），让钉选请求照旧只作用于目标账号 —— 客户端钉的是一个具体账号，
+// 这种情况下的失败是账号自身状态，不该被静默替换成别的账号来服务。
+//
+// 未装配 Eligibility 端口时返回可用，保持钉选「只用目标账号」的原有语义。
+func (selector *Selector) pinnedAccountUsable(
+	ctx context.Context,
+	accountRef accountcore.AccountRef,
+	modelID string,
+) (bool, error) {
+	if selector.eligibility == nil {
+		return true, nil
+	}
+	route, err := runtimecore.NewModelRoute(accountRef, modelID)
+	if err != nil {
+		return false, errors.Join(ErrInvalidPinnedAccount, err)
+	}
+	eligibility, err := selector.eligibility.CheckEligibility(ctx, route)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, ctxErr
+		}
+		return false, errors.Join(ErrInvalidRequest, err)
+	}
+	if !eligibility.IsValid() {
+		return false, ErrInvalidSelection
+	}
+	return eligibility.Status() != runtimecore.EligibilityModelCooldown, nil
 }

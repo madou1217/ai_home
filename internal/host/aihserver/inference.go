@@ -11,8 +11,8 @@ import (
 	"github.com/madou1217/ai_home/application/accountcredentials"
 	"github.com/madou1217/ai_home/application/accountrouting"
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/effortalign"
+	"github.com/madou1217/ai_home/application/inferencecatalog"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/core/providers"
@@ -46,10 +46,12 @@ const (
 
 // inferenceComposition 保存推理 HTTP、原子模型目录及其内部生命周期。
 type inferenceComposition struct {
-	handler        http.Handler
-	gemini         http.Handler
-	models         *inferencecatalog.AtomicCatalog
-	recruiter      *accountrouting.Recruiter
+	handler   http.Handler
+	gemini    http.Handler
+	models    *inferencecatalog.AtomicCatalog
+	recruiter *accountrouting.Recruiter
+	// runtime 是征召与推理终态共享的账号运行态；钉选回落判定复用它，避免另开读取路径。
+	runtime        inferenceruntime.AccountRuntime
 	codexUpstream  *codexresponses.Adapter
 	claudeUpstream *claudemessages.Adapter
 	agyUpstream    *agycodeassist.Adapter
@@ -59,6 +61,14 @@ type inferenceComposition struct {
 	// catalogRefresh 在别名投影变更后触发重建，让新别名立即生效。
 	catalogRefresh *inferencecatalog.RefreshCoordinator
 	closers        []io.Closer
+}
+
+// Runtime 返回与征召器共用的账号运行态边界。
+func (composition *inferenceComposition) Runtime() inferenceruntime.AccountRuntime {
+	if composition == nil {
+		return nil
+	}
+	return composition.runtime
 }
 
 // inferenceCompositionDependencies 集中声明生产推理组合所需的窄端口。
@@ -88,7 +98,7 @@ type inferenceCompositionDependencies struct {
 	// effortLadders 提供每个模型的推理强度档位，供上游适配器在编码前对齐。
 	// nil 表示 Go 不承接该能力（请求原样透传，由上游适配器按原规则处理）。
 	effortLadders effortalign.LadderReader
-	agyModelWires   agycodeassist.ModelWireReader
+	agyModelWires agycodeassist.ModelWireReader
 	// upstreamRules 是账号自定义上游错误规则求值端口；nil 表示 Go 未承接该能力。
 	upstreamRules configured.Rules
 	// componentLog 记录不影响启动的组件级失败（如初次目录刷新）；可为空。
@@ -230,6 +240,7 @@ func newInferenceComposition(
 	composition.gemini = module.Gemini
 	composition.models = activeCatalog
 	composition.recruiter = runtimeComponents.Recruiter()
+	composition.runtime = runtimeComponents.Runtime()
 	composition.codexUpstream = codexAdapter
 	composition.claudeUpstream = claudeAdapter
 	composition.agyUpstream = agyAdapter

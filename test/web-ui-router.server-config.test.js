@@ -550,3 +550,50 @@ test('web ui management status route works when management API requires a key', 
   assert.equal(payload.ok, true);
   assert.equal(payload.totalAccounts, 3);
 });
+
+// 回归：/v0/webui/management/* 是 /v0/webui/* 数据面鉴权门之后的**第二跳**，必须复用外层门
+// 已校验的同一个 Management Key。曾经的实现把它写死成空串，于是校验器退回「只信 loopback」：
+// 本机浏览器打开 9527/ui 恰好是 loopback 所以看不出问题，但任何远端部署（AWS 等）的 WebUI
+// 一读管理数据就恒 503 management_key_not_configured，顶栏网关永远显示 offline。
+// 这里用**非 loopback 对端 + 正确 Bearer**构造真实 HTTP 形态：修复前必然 503。
+test('web ui management proxy reuses the authenticated key for non-loopback peers', async () => {
+  const managementKey = 'k'.repeat(48);
+  const deps = {
+    fs,
+    aiHomeDir: os.tmpdir(),
+    writeJson: (res, statusCode, payload) => {
+      res.statusCode = statusCode;
+      res.end(JSON.stringify(payload));
+    },
+    readRequestBody: async () => null,
+    parseAuthorizationBearer: (value) => String(value || '').replace(/^Bearer\s+/i, '').trim(),
+    buildManagementStatusPayload: () => ({ ok: true, totalAccounts: 1, activeAccounts: 1 }),
+    buildManagementMetricsPayload: () => ({ ok: true }),
+    buildManagementAccountsPayload: () => ({ ok: true, accounts: [] })
+  };
+
+  const res = createResCapture();
+  const handled = await handleWebUIRequest({
+    method: 'GET',
+    pathname: '/v0/webui/management/status',
+    url: new URL('http://gateway.local/v0/webui/management/status'),
+    req: {
+      method: 'GET',
+      url: '/v0/webui/management/status',
+      headers: { authorization: `Bearer ${managementKey}` },
+      // 公网对端：没有这一项的实现会被当成 loopback 放行，从而掩盖这个缺陷。
+      socket: { remoteAddress: '203.0.113.9' }
+    },
+    res,
+    options: { port: 9527 },
+    state: {},
+    requiredManagementKey: managementKey,
+    deps
+  });
+
+  assert.equal(handled, true);
+  assert.notEqual(res.statusCode, 503, res.body);
+  assert.equal(res.body.includes('management_key_not_configured'), false, res.body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).ok, true);
+});

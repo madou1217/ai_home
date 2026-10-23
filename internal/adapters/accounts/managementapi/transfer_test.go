@@ -16,104 +16,7 @@ import (
 
 // TestClientTransfersOneAccountAndRotatesStaticCredential 验证迁移和静态凭据
 // 更新使用精确 HTTP 合同，且成功结果不会改变目标账号身份。
-func TestClientTransfersOneAccountAndRotatesStaticCredential(t *testing.T) {
-	t.Parallel()
-
-	transport := &accountTransferHTTPClient{t: t}
-	client, err := managementapi.New(transport, managementapi.Config{
-		BaseURL:       "http://127.0.0.1:9527",
-		ManagementKey: testManagementKey,
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	accountRef := mustManagementAccountRef(t)
-
-	sub2apiDocument, err := client.ExportSub2API(context.Background(), accountRef)
-	if err != nil {
-		t.Fatalf("ExportSub2API() error = %v", err)
-	}
-	if string(sub2apiDocument) != `{"type":"sub2api-data","accounts":[]}` {
-		t.Fatalf("ExportSub2API() = %s", sub2apiDocument)
-	}
-	cliProxyDocument, err := client.ExportCLIProxyAPI(context.Background(), accountRef)
-	if err != nil {
-		t.Fatalf("ExportCLIProxyAPI() error = %v", err)
-	}
-	if string(cliProxyDocument) != `{"type":"claude"}` {
-		t.Fatalf("ExportCLIProxyAPI() = %s", cliProxyDocument)
-	}
-
-	imported, err := client.ImportSub2API(context.Background(), sub2apiDocument)
-	if err != nil {
-		t.Fatalf("ImportSub2API() error = %v", err)
-	}
-	if !imported.Created || imported.Account.AccountRef != accountRef ||
-		imported.Account.ProviderID != "claude" ||
-		imported.Account.CLIAccountID.String() != "9" {
-		t.Fatalf("ImportSub2API() = %+v", imported)
-	}
-
-	credential := managementapi.StaticCredentialInput{
-		Kind:    "api_key",
-		APIKey:  "new-static-secret",
-		BaseURL: "https://api.anthropic.com",
-	}
-	updated, err := client.UpdateStaticCredential(
-		context.Background(),
-		accountRef,
-		credential,
-	)
-	if err != nil {
-		t.Fatalf("UpdateStaticCredential() error = %v", err)
-	}
-	if updated.AccountRef != accountRef || updated.ProviderID != "claude" ||
-		updated.CLIAccountID.String() != "9" || !updated.Enabled {
-		t.Fatalf("UpdateStaticCredential() = %+v", updated)
-	}
-	formatted := fmt.Sprintf("%v %#v", credential, credential)
-	if strings.Contains(formatted, "new-static-secret") ||
-		!strings.Contains(formatted, "<redacted>") {
-		t.Fatalf("StaticCredentialInput formatting leaked secret: %s", formatted)
-	}
-	if transport.calls != 4 {
-		t.Fatalf("management API calls = %d, want 4", transport.calls)
-	}
-}
-
-// TestClientReportsExistingSub2APIImport 验证 200 成功响应不会被误判失败，
 // 同时把“未新建”语义交给 CLI 展示。
-func TestClientReportsExistingSub2APIImport(t *testing.T) {
-	t.Parallel()
-
-	response := transferResponse(
-		http.StatusOK,
-		"application/json",
-		accountImportDocument("acct_11111111111111111111", "claude", 9, true),
-		"",
-	)
-	client, err := managementapi.New(
-		&oneResponseHTTPClient{response: response},
-		managementapi.Config{
-			BaseURL:       "http://127.0.0.1:9527",
-			ManagementKey: testManagementKey,
-		},
-	)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	result, err := client.ImportSub2API(
-		context.Background(),
-		[]byte(`{"type":"sub2api-data"}`),
-	)
-	if err != nil {
-		t.Fatalf("ImportSub2API(existing) error = %v", err)
-	}
-	if result.Created || result.Account.AccountRef != mustManagementAccountRef(t) {
-		t.Fatalf("ImportSub2API(existing) = %+v", result)
-	}
-}
-
 // TestStaticCredentialInputFormattingRedactsUntrustedBaseURL 验证诊断格式不会
 // 回显尚未经过 Server 领域校验的 URL 用户信息、查询参数或路径密钥。
 func TestStaticCredentialInputFormattingRedactsUntrustedBaseURL(t *testing.T) {
@@ -145,14 +48,6 @@ func TestClientRejectsInvalidTransferAndCredentialContracts(t *testing.T) {
 		resp *http.Response
 	}{
 		{
-			name: "sub2api export status",
-			run: func(client *managementapi.Client) error {
-				_, err := client.ExportSub2API(context.Background(), accountRef)
-				return err
-			},
-			resp: transferResponse(http.StatusCreated, "application/json", `{"type":"sub2api-data"}`, "sub2api-data.json"),
-		},
-		{
 			name: "cliproxy export media type",
 			run: func(client *managementapi.Client) error {
 				_, err := client.ExportCLIProxyAPI(context.Background(), accountRef)
@@ -167,16 +62,6 @@ func TestClientRejectsInvalidTransferAndCredentialContracts(t *testing.T) {
 				return err
 			},
 			resp: transferResponse(http.StatusOK, "application/json", `{"type":"claude"}`, "wrong.json"),
-		},
-		{
-			name: "sub2api import status",
-			run: func(client *managementapi.Client) error {
-				_, err := client.ImportSub2API(context.Background(), []byte(`{"type":"sub2api-data"}`))
-				return err
-			},
-			resp: transferResponse(http.StatusAccepted, "application/json", accountDocument(
-				"acct_11111111111111111111", "claude", 9, true,
-			), ""),
 		},
 		{
 			name: "credential mismatched account",
@@ -216,13 +101,6 @@ func TestClientRejectsInvalidTransferAndCredentialContracts(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
-	}
-	oversized := make([]byte, 1024*1024+1)
-	if _, err := client.ImportSub2API(
-		context.Background(),
-		oversized,
-	); !errors.Is(err, managementapi.ErrInvalidRequest) {
-		t.Fatalf("ImportSub2API(oversized) error = %v", err)
 	}
 	for _, input := range []managementapi.StaticCredentialInput{
 		{},

@@ -55,19 +55,6 @@ func (input StaticCredentialInput) Format(state fmt.State, _ rune) {
 	_, _ = state.Write([]byte(input.String()))
 }
 
-// ExportSub2API 下载一个账号的标准 sub2api-data 文档。
-func (client *Client) ExportSub2API(
-	ctx context.Context,
-	accountRef accountcore.AccountRef,
-) ([]byte, error) {
-	return client.exportAccount(
-		ctx,
-		accountRef,
-		accountcontract.AccountSub2APIExportSuffix,
-		"sub2api-data.json",
-	)
-}
-
 // ExportCLIProxyAPI 下载一个可直接放入 CLIProxyAPI auth-dir 的 OAuth 文件。
 func (client *Client) ExportCLIProxyAPI(
 	ctx context.Context,
@@ -79,30 +66,6 @@ func (client *Client) ExportCLIProxyAPI(
 		accountcontract.AccountCLIProxyAPIExportSuffix,
 		"cliproxyapi-auth.json",
 	)
-}
-
-// ImportSub2API 提交有界单账号文档，并区分首建与同身份命中。
-func (client *Client) ImportSub2API(
-	ctx context.Context,
-	document []byte,
-) (AccountImportResult, error) {
-	if !client.isValid() {
-		return AccountImportResult{}, ErrInvalidConfig
-	}
-	if ctx == nil || len(document) == 0 || len(document) > maxTransferDocumentBytes ||
-		!json.Valid(document) {
-		return AccountImportResult{}, ErrInvalidRequest
-	}
-	result, err := client.doResponseRequest(
-		ctx,
-		http.MethodPost,
-		client.baseURL+accountcontract.Sub2APIImportsPath,
-		document,
-	)
-	if err != nil {
-		return AccountImportResult{}, err
-	}
-	return decodeAccountImportResult(result)
 }
 
 // UpdateStaticCredential 原地替换 Codex/Claude 静态凭据并返回同一账号投影。

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,63 +12,6 @@ import (
 
 	accountcontract "github.com/madou1217/ai_home/internal/contracts/accountmanagement"
 )
-
-// TestAccountTransferExportsSub2APIToExclusiveSecretFile 验证单账号导出只写
-// 显式文件、权限为 0600、不会覆盖已有文件，也不会把凭据回显到终端。
-func TestAccountTransferExportsSub2APIToExclusiveSecretFile(t *testing.T) {
-	output := &bytes.Buffer{}
-	secret := "synthetic-transfer-secret"
-	document := `{"type":"sub2api-data","exported_at":"2026-08-10T08:00:00Z","proxies":[],"accounts":[{"credentials":{"access_token":"` + secret + `"}}]}`
-	transport := &accountExportCommandHTTPClient{
-		t:        t,
-		suffix:   accountcontract.AccountSub2APIExportSuffix,
-		fileName: "sub2api-data.json",
-		document: document,
-	}
-	outputPath := filepath.Join(t.TempDir(), "claude-sub2api.json")
-	runtime := transferCommandRuntime(t, transport)
-	runtime.stdout = output
-
-	if err := run(context.Background(), []string{
-		"account", "transfer", "export", "claude:9",
-		"--format", "sub2api", "--output", outputPath,
-	}, runtime); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	content, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	info, err := os.Stat(outputPath)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-	if string(content) != document || info.Mode().Perm() != 0o600 ||
-		transport.calls != 2 {
-		t.Fatalf("content=%s mode=%#o calls=%d", content, info.Mode().Perm(), transport.calls)
-	}
-	if strings.Contains(output.String(), secret) ||
-		!strings.Contains(output.String(), outputPath) ||
-		!strings.Contains(output.String(), "sub2api") {
-		t.Fatalf("export output = %q", output.String())
-	}
-
-	existing := filepath.Join(t.TempDir(), "existing.json")
-	if err := os.WriteFile(existing, []byte("keep-me"), 0o600); err != nil {
-		t.Fatalf("WriteFile(existing) error = %v", err)
-	}
-	blockedRuntime := transferCommandRuntime(t, &unexpectedAccountStateHTTPClient{t: t})
-	if err := run(context.Background(), []string{
-		"account", "transfer", "export", "claude:9",
-		"--format", "sub2api", "--output", existing,
-	}, blockedRuntime); err == nil || !strings.Contains(err.Error(), "已存在") {
-		t.Fatalf("run(existing) error = %v", err)
-	}
-	unchanged, err := os.ReadFile(existing)
-	if err != nil || string(unchanged) != "keep-me" {
-		t.Fatalf("existing file = %q error=%v", unchanged, err)
-	}
-}
 
 // TestAccountTransferExportsCLIProxyAPIAuthFile 验证 CPA 导出走独立成员资源，
 // 并保持官方单 auth-file 结构而不是创建 AIH 私有 envelope。
@@ -93,79 +35,6 @@ func TestAccountTransferExportsCLIProxyAPIAuthFile(t *testing.T) {
 	content, err := os.ReadFile(outputPath)
 	if err != nil || string(content) != document || transport.calls != 2 {
 		t.Fatalf("content=%q calls=%d error=%v", content, transport.calls, err)
-	}
-}
-
-// TestAccountTransferImportsOneBoundedSub2APIDocument 验证导入读取显式文件，
-// 原样 POST 一个标准文档并只输出 Server 返回的公开身份。
-func TestAccountTransferImportsOneBoundedSub2APIDocument(t *testing.T) {
-	output := &bytes.Buffer{}
-	inputPath := filepath.Join(t.TempDir(), "sub2api-data.json")
-	document := `{"type":"sub2api-data","exported_at":"2026-08-10T08:00:00Z","proxies":[],"accounts":[{"name":"claude","platform":"anthropic","type":"oauth","credentials":{"access_token":"synthetic-import-secret"},"concurrency":0,"priority":0}]}`
-	if err := os.WriteFile(inputPath, []byte(document), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	transport := &accountImportCommandHTTPClient{t: t, expected: document}
-	runtime := transferCommandRuntime(t, transport)
-	runtime.stdout = output
-
-	if err := run(context.Background(), []string{
-		"account", "transfer", "import",
-		"--format", "sub2api", "--input", inputPath,
-	}, runtime); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	if transport.calls != 1 || strings.Contains(output.String(), "synthetic-import-secret") {
-		t.Fatalf("calls=%d output=%q", transport.calls, output.String())
-	}
-	for _, expected := range []string{
-		"账号已导入", "Provider: claude", "账号别名: 9",
-		"AccountRef: acct_11111111111111111111",
-	} {
-		if !strings.Contains(output.String(), expected) {
-			t.Fatalf("import output missing %q: %s", expected, output.String())
-		}
-	}
-
-	oversized := filepath.Join(t.TempDir(), "oversized.json")
-	if err := os.WriteFile(oversized, bytes.Repeat([]byte{'x'}, 1024*1024+1), 0o600); err != nil {
-		t.Fatalf("WriteFile(oversized) error = %v", err)
-	}
-	blockedRuntime := transferCommandRuntime(t, &unexpectedAccountStateHTTPClient{t: t})
-	if err := run(context.Background(), []string{
-		"account", "transfer", "import",
-		"--format", "sub2api", "--input", oversized,
-	}, blockedRuntime); err == nil || !strings.Contains(err.Error(), "过大") {
-		t.Fatalf("run(oversized) error = %v", err)
-	}
-}
-
-// TestAccountTransferImportReportsExistingIdentity 验证 200 成功响应不会在
-// 终端伪装成首次创建。
-func TestAccountTransferImportReportsExistingIdentity(t *testing.T) {
-	output := &bytes.Buffer{}
-	inputPath := filepath.Join(t.TempDir(), "sub2api-data.json")
-	document := `{"type":"sub2api-data","accounts":[]}`
-	if err := os.WriteFile(inputPath, []byte(document), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-	transport := &accountImportCommandHTTPClient{
-		t:        t,
-		expected: document,
-		status:   http.StatusOK,
-	}
-	runtime := transferCommandRuntime(t, transport)
-	runtime.stdout = output
-
-	if err := run(context.Background(), []string{
-		"account", "transfer", "import",
-		"--format", "sub2api", "--input", inputPath,
-	}, runtime); err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	if !strings.Contains(output.String(), "账号已匹配（未新建）。") ||
-		strings.Contains(output.String(), "账号已导入。") {
-		t.Fatalf("重复迁移导入输出语义错误: %s", output.String())
 	}
 }
 
@@ -226,35 +95,6 @@ func (client *accountExportCommandHTTPClient) Do(request *http.Request) (*http.R
 		client.t.Fatalf("unexpected request count %d", client.calls)
 		return nil, nil
 	}
-}
-
-// accountImportCommandHTTPClient 断言 sub2api 文档不经私有包装直接提交。
-type accountImportCommandHTTPClient struct {
-	t        *testing.T
-	expected string
-	status   int
-	calls    int
-}
-
-// Do 返回新注册账号的公开投影。
-func (client *accountImportCommandHTTPClient) Do(request *http.Request) (*http.Response, error) {
-	client.t.Helper()
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		client.t.Fatalf("ReadAll(request body) error = %v", err)
-	}
-	client.calls++
-	if request.Method != http.MethodPost || request.URL.Path != accountcontract.Sub2APIImportsPath ||
-		request.Header.Get("Authorization") != "Bearer "+commandTestManagementKey ||
-		request.Header.Get("Content-Type") != "application/json" || string(body) != client.expected {
-		client.t.Fatalf("import request = %s %s %s", request.Method, request.URL, body)
-	}
-	status := client.status
-	if status == 0 {
-		status = http.StatusCreated
-	}
-	return commandTransferResponse(status,
-		commandAccountImportDocument("claude", true), ""), nil
 }
 
 // transferCommandRuntime 创建只允许访问合成 Management API 的命令运行时。

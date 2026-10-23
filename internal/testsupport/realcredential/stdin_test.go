@@ -12,25 +12,23 @@ import (
 	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 )
 
-// TestDecodeCodexSub2APIAcceptsSingleAPIKeyAccount 验证标准迁移格式通过内存读取。
-func TestDecodeCodexSub2APIAcceptsSingleAPIKeyAccount(t *testing.T) {
+// TestDecodeCodexAPIKeyAcceptsSingleAPIKeyAccount 验证原生 JSON 通过内存读取。
+func TestDecodeCodexAPIKeyAcceptsSingleAPIKeyAccount(t *testing.T) {
 	t.Parallel()
 
-	credential, err := DecodeCodexSub2API(strings.NewReader(`{
-  "type":"sub2api-data","version":1,"exported_at":"2026-08-13T12:00:00Z",
-  "proxies":[],"accounts":[{"name":"codex-live","platform":"openai",
-  "type":"apikey","credentials":{"api_key":"sk-test-secret",
-  "base_url":"https://example.com/v1"},"concurrency":0,"priority":0}]
+	credential, err := DecodeCodexAPIKey(strings.NewReader(`{
+  "api_key":"sk-test-secret",
+  "base_url":"https://example.com/v1"
 }`))
 	if err != nil {
-		t.Fatalf("DecodeCodexSub2API() error = %v", err)
+		t.Fatalf("DecodeCodexAPIKey() error = %v", err)
 	}
 	if _, ok := credential.(*codexauth.APIKeyAuth); !ok {
 		t.Fatalf("credential type = %T", credential)
 	}
 }
 
-// TestDecodeCodexAccountFileBindsPersistedIdentity 验证 Codex 标准迁移凭据只能
+// TestDecodeCodexAccountFileBindsPersistedIdentity 验证 Codex 原生凭据只能
 // 与同一个私有 envelope 中的正式账号身份一起进入真实验收。
 func TestDecodeCodexAccountFileBindsPersistedIdentity(t *testing.T) {
 	t.Parallel()
@@ -40,11 +38,8 @@ func TestDecodeCodexAccountFileBindsPersistedIdentity(t *testing.T) {
   "account_ref":"acct_0123456789abcdef0123",
   "models":["gpt-5.6-luna","gpt-5.4"],
   "credential":{
-    "type":"sub2api-data","version":1,
-    "exported_at":"2026-08-13T12:00:00Z","proxies":[],
-    "accounts":[{"name":"codex-live","platform":"openai",
-    "type":"apikey","credentials":{"api_key":"sk-test-secret",
-    "base_url":"https://example.com/v1"},"concurrency":0,"priority":0}]
+    "api_key":"sk-test-secret",
+    "base_url":"https://example.com/v1"
   }
 }`)
 	if err := os.WriteFile(path, payload, 0o600); err != nil {
@@ -88,19 +83,19 @@ func TestDecodeClaudeAuthTokenRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-// TestDecodeCodexSub2APIErrorsNeverEchoCredential 验证固定错误链不会泄漏输入。
-func TestDecodeCodexSub2APIErrorsNeverEchoCredential(t *testing.T) {
+// TestDecodeCodexAPIKeyErrorsNeverEchoCredential 验证固定错误链不会泄漏输入。
+func TestDecodeCodexAPIKeyErrorsNeverEchoCredential(t *testing.T) {
 	t.Parallel()
 
 	const secret = "sk-sensitive-test-secret"
-	credential, err := DecodeCodexSub2API(strings.NewReader(`{
+	credential, err := DecodeCodexAPIKey(strings.NewReader(`{
   "type":"sub2api-data","exported_at":"invalid","proxies":[],
   "accounts":[{"name":"codex-live","platform":"openai","type":"apikey",
   "credentials":{"api_key":"` + secret + `"},"concurrency":0,"priority":0}]
 }`))
 	if credential != nil || !errors.Is(err, ErrInvalidCredential) ||
 		strings.Contains(err.Error(), secret) {
-		t.Fatalf("DecodeCodexSub2API() credential=%T safe_error=%t", credential, err != nil)
+		t.Fatalf("DecodeCodexAPIKey() credential=%T safe_error=%t", credential, err != nil)
 	}
 }
 

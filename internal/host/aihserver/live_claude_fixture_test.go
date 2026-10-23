@@ -1,23 +1,17 @@
 package aihserver_test
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
-	accountcore "github.com/madou1217/ai_home/core/accounts"
-	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 )
@@ -173,41 +167,9 @@ func importRealClaudeFixtureAccount(
 			configPath,
 		)
 	}
-	if strings.TrimSpace(os.Getenv(realClaudeSub2APIFileEnv)) != "" ||
-		strings.TrimSpace(os.Getenv(realClaudeSub2APIEmailEnv)) != "" {
-		externalDocument := readRealClaudeSub2APIDocument(t)
-		defer clear(externalDocument)
-		externalHash := sha256.Sum256(externalDocument)
-		singleAccount := selectRealClaudeSub2APIAccount(t, externalDocument)
-		defer clear(singleAccount)
-		assertRealSub2APIDocument(t, singleAccount)
-		assertRealClaudeCredentialFresh(t, singleAccount)
-		imported := performRequest(
-			t,
-			client,
-			http.MethodPost,
-			baseURL+accountsapi.Sub2APIImportPath,
-			testManagementKey,
-			singleAccount,
-		)
-		if sha256.Sum256(externalDocument) != externalHash {
-			t.Fatal("外部标准导出文档在只读导入期间发生变化")
-		}
-		return imported
-	}
 
-	document := exportRealClaudeAccountFromDatabaseCopy(t)
-	defer clear(document)
-	assertRealSub2APIDocument(t, document)
-	assertRealClaudeCredentialFresh(t, document)
-	return performRequest(
-		t,
-		client,
-		http.MethodPost,
-		baseURL+accountsapi.Sub2APIImportPath,
-		testManagementKey,
-		document,
-	)
+	t.Fatalf("真实 Claude 夹具需要原生 artifact 来源：%s + %s", realClaudeHTTPNativeCredentialsEnv, realClaudeHTTPNativeConfigEnv)
+	return httpExchange{}
 }
 
 // realClaudeNativeArtifactSourceConfigured 报告当前真实夹具是否选择原生来源。
@@ -216,17 +178,12 @@ func realClaudeNativeArtifactSourceConfigured() bool {
 		strings.TrimSpace(os.Getenv(realClaudeHTTPNativeConfigEnv)) != ""
 }
 
-// realClaudeFixtureSourceConfigured 报告三种成对真实来源中是否有一种完整可用。
+// realClaudeFixtureSourceConfigured 报告真实来源是否完整可用。
+//
+// sub2api 文档来源已于 2026-10-23 移除（格式废弃）；原生 artifact 来源仍在，
+// 数据库拷贝来源需要原生导出器（见 docs/plans 的 Go 全量迁移蓝图 P2）。
 func realClaudeFixtureSourceConfigured() bool {
-	if realClaudeNativeArtifactSourceConfigured() {
-		return true
-	}
-	if strings.TrimSpace(os.Getenv(realClaudeSub2APIFileEnv)) != "" &&
-		strings.TrimSpace(os.Getenv(realClaudeSub2APIEmailEnv)) != "" {
-		return true
-	}
-	return strings.TrimSpace(os.Getenv(realClaudeHTTPAccountHomeEnv)) != "" &&
-		strings.TrimSpace(os.Getenv(realClaudeHTTPAccountIDEnv)) != ""
+	return realClaudeNativeArtifactSourceConfigured()
 }
 
 // importRealClaudeNativeArtifacts 把两个官方 JSON 对象原样包装为原生导入 DTO。
@@ -319,95 +276,6 @@ func assertPrivateClaudeArtifactUnchanged(
 // databasePath 返回一次性 Server 的精确数据库路径。
 func (fixture realClaudeFixture) databasePath() string {
 	return filepath.Join(fixture.aiHomeDir, sqliteaccount.DatabaseFileName)
-}
-
-// exportRealClaudeAccountFromDatabaseCopy 只读取源 aih.db，并在私有临时副本上
-// 运行正式 Store/ExportReader/Exporter，避免 migration 或 pragma 写入源文件。
-func exportRealClaudeAccountFromDatabaseCopy(t *testing.T) []byte {
-	t.Helper()
-
-	sourceHome := strings.TrimSpace(os.Getenv(realClaudeHTTPAccountHomeEnv))
-	rawID := strings.TrimSpace(os.Getenv(realClaudeHTTPAccountIDEnv))
-	if sourceHome == "" || rawID == "" {
-		t.Fatalf("%s 和 %s 必须同时指定", realClaudeHTTPAccountHomeEnv, realClaudeHTTPAccountIDEnv)
-	}
-	accountID, err := strconv.ParseInt(rawID, 10, 64)
-	if err != nil || accountID <= 0 {
-		t.Fatalf("%s 必须是正整数", realClaudeHTTPAccountIDEnv)
-	}
-	alias, err := accountcore.NewCLIAccountID(accountID)
-	if err != nil {
-		t.Fatalf("创建 Claude 测试账号别名失败: %v", err)
-	}
-
-	sourcePath, err := sqliteaccount.DatabasePath(sourceHome)
-	if err != nil {
-		t.Fatalf("解析 Claude 源数据库路径失败: %v", err)
-	}
-	sourceBefore := readBoundedPrivateClaudeDatabase(t, sourcePath)
-	defer clear(sourceBefore)
-	sourceHash := sha256.Sum256(sourceBefore)
-
-	copyHome := t.TempDir()
-	copyPath, err := sqliteaccount.DatabasePath(copyHome)
-	if err != nil {
-		t.Fatalf("解析 Claude 数据库副本路径失败: %v", err)
-	}
-	if err := os.WriteFile(copyPath, sourceBefore, 0o600); err != nil {
-		t.Fatalf("创建 Claude 数据库私有副本失败: %v", err)
-	}
-	catalog, err := providers.NewCatalog(providers.BuiltinManifest())
-	if err != nil {
-		t.Fatalf("创建 Provider Catalog 失败: %v", err)
-	}
-	store, err := sqliteaccount.Open(context.Background(), sqliteaccount.OpenOptions{
-		AIHomeDir: copyHome,
-		Catalog:   catalog,
-	})
-	if err != nil {
-		t.Fatalf("打开 Claude 数据库副本失败: %v", err)
-	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Errorf("关闭 Claude 数据库副本失败: %v", err)
-		}
-	}()
-	account, err := store.GetByCLIAccountID(context.Background(), "claude", alias)
-	if err != nil || !account.Enabled() {
-		t.Fatalf("读取启用的 Claude 测试账号失败: enabled=%t error=%v", account.Enabled(), err)
-	}
-	models, err := store.ListAccountModels(context.Background(), account.Ref())
-	if err != nil {
-		t.Fatalf("读取 Claude 账号模型目录失败: %v", err)
-	}
-	selectedModel, err := selectRealClaudeModelFromAccountModels(models)
-	if err != nil {
-		t.Fatal(err)
-	}
-	realClaudeTransferModel = selectedModel
-	realClaudeReasoningModel = selectedModel
-	reader, err := accountapp.NewExportReader(store, store, store)
-	if err != nil {
-		t.Fatalf("创建 Claude 导出读取器失败: %v", err)
-	}
-	exporter, err := sub2api.NewExporter(reader, func() time.Time {
-		return time.Now().UTC()
-	})
-	if err != nil {
-		t.Fatalf("创建 Claude 标准导出器失败: %v", err)
-	}
-	document, err := exporter.ExportAccount(context.Background(), account.Ref())
-	if err != nil {
-		t.Fatalf("从 Claude 数据库副本导出账号失败: %v", err)
-	}
-
-	sourceAfter := readBoundedPrivateClaudeDatabase(t, sourcePath)
-	defer clear(sourceAfter)
-	if sha256.Sum256(sourceAfter) != sourceHash {
-		clear(document)
-		t.Fatal("Claude 源隔离数据库在只读导出期间发生变化")
-	}
-	return document
 }
 
 // selectRealClaudeModelFromAccountModels 只从源账号已有的有效正排模型中选择模型。

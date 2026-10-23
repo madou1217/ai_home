@@ -12,7 +12,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
 	claudeauth "github.com/madou1217/ai_home/core/accounts/claude"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
+	codexauth "github.com/madou1217/ai_home/core/accounts/codex"
 )
 
 const maxCredentialBytes = 1 << 20
@@ -22,18 +22,38 @@ var (
 	ErrInvalidCredential = errors.New("真实验收凭据输入无效")
 )
 
-// DecodeCodexSub2API 从标准单账号 sub2api 文档解码 Codex 凭据。
-func DecodeCodexSub2API(reader io.Reader) (accountapp.Credential, error) {
+// DecodeCodexAPIKey 从一次性原生 JSON 解码 Codex API Key 凭据。
+//
+// 形状与 DecodeClaudeAuthToken 对称：`{"api_key": "...", "base_url": "..."}`。
+// 原先走 sub2api 文档，该格式已于 2026-10-23 移除，这里改用原生字段。
+// 该格式只服务测试进程，不持久化也不作为账号迁移格式。
+func DecodeCodexAPIKey(reader io.Reader) (accountapp.Credential, error) {
 	payload, err := readBounded(reader)
 	if err != nil {
 		return nil, err
 	}
 	defer clear(payload)
-	credential, _, err := sub2api.NewDecoder().DecodeAccount(payload)
+	var input struct {
+		APIKey  string `json:"api_key"`
+		BaseURL string `json:"base_url"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return nil, ErrInvalidCredential
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, ErrInvalidCredential
+	}
+	credential, err := codexauth.NewAPIKeyAuth(codexauth.APIKeyInput{
+		APIKey:  input.APIKey,
+		BaseURL: input.BaseURL,
+	})
 	if err != nil {
 		return nil, errors.Join(ErrInvalidCredential, err)
 	}
-	if credential == nil || credential.ProviderID() != "codex" {
+	if credential.ProviderID() != "codex" {
 		return nil, ErrInvalidCredential
 	}
 	return credential, nil
@@ -71,12 +91,12 @@ func DecodeClaudeAuthToken(reader io.Reader) (accountapp.Credential, error) {
 	return auth, nil
 }
 
-// DecodeCodexAccountFile 从一个 0600 私有 envelope 同时读取正式账号身份和
-// 标准 sub2api 凭据，避免测试把任意身份与真实凭据拼接成伪账号。
+// DecodeCodexAccountFile 从��个 0600 私有 envelope 同时读取正式账号身份和
+// 原生 Codex API Key 凭据，避免���试把任意身份与真实凭据拼接成伪账号。
 func DecodeCodexAccountFile(
 	path string,
 ) (accountcore.AccountRef, accountapp.Credential, []string, error) {
-	return decodeAccountFile(path, DecodeCodexSub2API)
+	return decodeAccountFile(path, DecodeCodexAPIKey)
 }
 
 // DecodeClaudeAccountFile 从一个 0600 私有 envelope 同时读取正式账号身份和

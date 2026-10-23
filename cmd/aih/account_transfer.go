@@ -30,17 +30,6 @@ func runAccountTransfer(
 			return err
 		}
 		return runAccountTransferExport(ctx, options, runtime)
-	case "import":
-		if len(arguments) == 2 && isRootHelp(arguments[1]) {
-			writeAccountTransferImportUsage(runtime.stdout)
-			return nil
-		}
-		options, err := parseTransferImportOptions(arguments[1:])
-		if err != nil {
-			writeAccountTransferImportUsage(runtime.stderr)
-			return err
-		}
-		return runAccountTransferImport(ctx, options, runtime)
 	default:
 		writeAccountTransferUsage(runtime.stderr)
 		return fmt.Errorf("%w: 未知账号迁移子命令 %s", errInvalidCommand, arguments[0])
@@ -75,33 +64,6 @@ func runAccountTransferExport(
 	return nil
 }
 
-// runAccountTransferImport 读取有界标准文件并交给目标 Server 导入或匹配。
-func runAccountTransferImport(
-	ctx context.Context,
-	options transferImportOptions,
-	runtime commandRuntime,
-) error {
-	document, err := readTransferInput(options.inputPath)
-	if err != nil {
-		return err
-	}
-	client, err := newAccountManagementClient(runtime)
-	if err != nil {
-		return err
-	}
-	result, err := client.ImportSub2API(ctx, document)
-	if err != nil {
-		return fmt.Errorf("导入 sub2api Server 账号失败: %w", err)
-	}
-	writeAccountTransferImportResult(
-		runtime.stdout,
-		result.Account,
-		result.Created,
-		options.inputPath,
-	)
-	return nil
-}
-
 // exportAccountDocument 把格式选择限制在两个明确的 Management API 资源。
 func exportAccountDocument(
 	ctx context.Context,
@@ -110,12 +72,6 @@ func exportAccountDocument(
 	format accountTransferFormat,
 ) ([]byte, error) {
 	switch format {
-	case transferFormatSub2API:
-		document, err := client.ExportSub2API(ctx, account.AccountRef)
-		if err != nil {
-			return nil, fmt.Errorf("导出 sub2api 账号失败: %w", err)
-		}
-		return document, nil
 	case transferFormatCLIProxyAPI:
 		document, err := client.ExportCLIProxyAPI(ctx, account.AccountRef)
 		if err != nil {
@@ -143,24 +99,6 @@ func writeAccountTransferExportResult(
 }
 
 // writeAccountTransferImportResult 只输出导入后的公开身份、结果语义和来源。
-func writeAccountTransferImportResult(
-	output io.Writer,
-	account managementapi.AccountView,
-	created bool,
-	inputPath string,
-) {
-	if created {
-		_, _ = fmt.Fprintln(output, "账号已导入。")
-	} else {
-		_, _ = fmt.Fprintln(output, "账号已匹配（未新建）。")
-	}
-	writeAccountDetailField(output, "Provider", account.ProviderID)
-	writeAccountDetailField(output, "账号别名", account.CLIAccountID.String())
-	writeAccountDetailField(output, "AccountRef", account.AccountRef.String())
-	writeAccountDetailField(output, "格式", string(transferFormatSub2API))
-	writeAccountDetailField(output, "来源", inputPath)
-}
-
 // writeAccountTransferUsage 说明两个迁移方向和不支持的有损路径。
 func writeAccountTransferUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "用法:")
@@ -168,7 +106,7 @@ func writeAccountTransferUsage(output io.Writer) {
 	_, _ = fmt.Fprintln(output, "  aih account transfer import --format sub2api --input <file>")
 	_, _ = fmt.Fprintln(output)
 	_, _ = fmt.Fprintln(output, "说明:")
-	_, _ = fmt.Fprintln(output, "  sub2api 支持单账号双向迁移；cliproxyapi 只导出官方 OAuth auth-file。")
+	_, _ = fmt.Fprintln(output, "  cliproxyapi 导出官方 OAuth auth-file。sub2api 迁移格式已于 2026-10-23 移除。")
 	_, _ = fmt.Fprintln(output, "  凭据文件只写入显式路径，权限 0600，不输出到终端，也不覆盖已有文件。")
 }
 

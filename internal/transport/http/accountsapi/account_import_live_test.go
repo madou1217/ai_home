@@ -14,6 +14,105 @@ import (
 
 // TestAccountsAPIConcurrentStaticImportCreatesExactlyOneAggregate 通过真实
 // TCP 和临时 SQLite 验证同一静态身份的并发导入只有一个创建者。
+// nativeImportHTTPDocument 构造原生 artifact 导入文档（原先用 sub2api 文档，
+// 该格式已于 2026-10-23 移除）。签名保留 (platform, authType, credentials, extra)，
+// 内部映射成 `{provider_id, artifacts:{auth_json}}`：
+//   - platform 即 provider_id；
+//   - credentials 直接作为 auth_json（原生契约本就收 api_key / access_token 等字段）。
+// 这样「并发只建一个 / 幂等 / 代际仲裁 / 不泄漏凭据」这些导入语义的覆盖原样保留。
+func nativeImportHTTPDocument(
+	t *testing.T,
+	platform string,
+	authType string,
+	credentials map[string]any,
+	extra map[string]any,
+) []byte {
+	t.Helper()
+
+	merged := map[string]any{}
+	for key, value := range credentials {
+		merged[key] = value
+	}
+	for key, value := range extra {
+		merged[key] = value
+	}
+	providerID := nativeProviderIDForPlatform(platform)
+	// 原生导入收的是**官方 artifact 形状**，不是扁平的 api_key/base_url：
+	//   codex  → auth.json：{"auth_mode":"apikey","OPENAI_API_KEY":...}
+	//   claude → 只支持 OAuth（credentials_json + global_config_json），api_key 走原生导入会被拒。
+	artifacts := map[string]any{}
+	switch providerID {
+	case "codex":
+		authJSON := map[string]any{}
+		if authType == "oauth" {
+			// 官方 OAuth auth.json：tokens 子对象，account_id 承载工作区。
+			authJSON["auth_mode"] = "chatgpt"
+			authJSON["tokens"] = map[string]any{
+				"id_token":      merged["id_token"],
+				"access_token":  merged["access_token"],
+				"refresh_token": merged["refresh_token"],
+				"account_id":    merged["chatgpt_account_id"],
+			}
+		} else {
+			authJSON["auth_mode"] = "apikey"
+			if key, ok := merged["api_key"]; ok {
+				authJSON["OPENAI_API_KEY"] = key
+			}
+		}
+		artifacts["auth_json"] = authJSON
+	case "claude":
+		// Claude 原生导入只支持 OAuth：credentials_json（claudeAiOauth）+ global_config_json（身份）。
+		// expiresAt 必须来自调用方：代际仲裁靠它区分新旧凭据
+		// （写死会让两次导入代际相同，第二次更新不生效）。
+		expiresAt := int64(4102444800000)
+		if raw, ok := merged["expires_at"]; ok {
+			switch typed := raw.(type) {
+			case int64:
+				expiresAt = typed
+			case int:
+				expiresAt = int64(typed)
+			case float64:
+				expiresAt = int64(typed)
+			}
+		}
+		artifacts["credentials_json"] = map[string]any{
+			"claudeAiOauth": map[string]any{
+				"accessToken":      merged["access_token"],
+				"refreshToken":     merged["refresh_token"],
+				"expiresAt":        expiresAt,
+				"clientId":         "claude-code-official-client",
+				"scopes":           []string{"user:inference", "user:profile"},
+				"subscriptionType": "max",
+			},
+		}
+		artifacts["global_config_json"] = map[string]any{
+			"oauthAccount": map[string]any{
+				"accountUuid":  "123e4567-e89b-12d3-a456-426614174000",
+				"emailAddress": "synthetic-native-claude@example.invalid",
+				"displayName":  "Synthetic Native Claude",
+			},
+		}
+	default:
+		artifacts["auth_json"] = merged
+	}
+	return marshalRequestJSON(t, map[string]any{
+		"provider_id": providerID,
+		"artifacts":   artifacts,
+	})
+}
+
+// nativeProviderIDForPlatform 把 sub2api 的上游厂商标识映射成 AIH 的 provider_id。
+func nativeProviderIDForPlatform(platform string) string {
+	switch platform {
+	case "openai":
+		return "codex"
+	case "anthropic":
+		return "claude"
+	default:
+		return platform
+	}
+}
+
 func TestAccountsAPIConcurrentStaticImportCreatesExactlyOneAggregate(t *testing.T) {
 	t.Parallel()
 
@@ -33,12 +132,12 @@ func TestAccountsAPIConcurrentStaticImportCreatesExactlyOneAggregate(t *testing.
 		registeredAt,
 		aiHomeDir,
 	)
-	document := sub2APIHTTPDocument(
+	document := nativeImportHTTPDocument(
 		t,
 		"openai",
 		"apikey",
 		map[string]any{
-			"api_key":  "synthetic-concurrent-sub2api-key",
+			"api_key":  "synthetic-concurrent-native-key",
 			"base_url": "https://api.openai.com/v1",
 		},
 		nil,
@@ -56,7 +155,7 @@ func TestAccountsAPIConcurrentStaticImportCreatesExactlyOneAggregate(t *testing.
 				t,
 				server.Client(),
 				http.MethodPost,
-				server.URL+accountsapi.Sub2APIImportPath,
+				server.URL+accountsapi.NativeImportPath,
 				document,
 			)
 		}()
@@ -104,10 +203,9 @@ func TestAccountsAPIConcurrentStaticImportCreatesExactlyOneAggregate(t *testing.
 			listDocument.Data[0].AccountRef+"/export",
 		nil,
 	)
-	assertLiveStatus(t, exported, http.StatusOK)
-	if strings.Count(exported.responseBody, "synthetic-concurrent-sub2api-key") != 1 {
-		t.Fatal("并发导入后的单账号导出没有且仅有一份静态凭据")
-	}
+	// sub2api 导出格式已移除（2026-10-23）：导出端点暂时没有可用格式，
+	// 这里断言失败关闭（而不是假装导出成功）。原生导出见迁移蓝图 P2。
+	assertLiveStatus(t, exported, http.StatusUnprocessableEntity)
 }
 
 // assertConcurrentStaticImportDatabase 从真实临时 aih.db 校验并发幂等边界。
@@ -247,26 +345,26 @@ func assertConcurrentStaticImportResults(
 	}
 }
 
-// TestAccountsAPIRepeatedSub2APIImportIsIdempotent 通过真实 TCP 和临时
+// TestAccountsAPIRepeatedNativeImportIsIdempotent 通过真实 TCP 和临时
 // aih.db 验证重复外部文档不会创建影子账号。
-func TestAccountsAPIRepeatedSub2APIImportIsIdempotent(t *testing.T) {
+func TestAccountsAPIRepeatedNativeImportIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	server := newAccountsLiveServer(
 		t,
 		time.Date(2026, time.August, 15, 2, 0, 0, 0, time.UTC),
 	)
-	document := sub2APIHTTPDocument(
+	document := nativeImportHTTPDocument(
 		t,
 		"openai",
 		"apikey",
 		map[string]any{
-			"api_key":  "synthetic-repeated-sub2api-key",
+			"api_key":  "synthetic-repeated-native-key",
 			"base_url": "https://api.openai.com/v1",
 		},
 		nil,
 	)
-	url := server.URL + accountsapi.Sub2APIImportPath
+	url := server.URL + accountsapi.NativeImportPath
 
 	created := performLiveRequest(
 		t,
@@ -315,7 +413,7 @@ func TestAccountsAPIReimportsProfilelessRefreshableOAuthInPlace(t *testing.T) {
 		refreshToken string,
 		expiresAt int64,
 	) []byte {
-		return sub2APIHTTPDocument(
+		return nativeImportHTTPDocument(
 			t,
 			"anthropic",
 			"setup-token",
@@ -329,7 +427,7 @@ func TestAccountsAPIReimportsProfilelessRefreshableOAuthInPlace(t *testing.T) {
 			nil,
 		)
 	}
-	url := server.URL + accountsapi.Sub2APIImportPath
+	url := server.URL + accountsapi.NativeImportPath
 	created := performLiveRequest(
 		t,
 		server.Client(),
@@ -375,6 +473,7 @@ func TestAccountsAPIReimportsProfilelessRefreshableOAuthInPlace(t *testing.T) {
 			createdDocument.Data.AccountRef+"/export",
 		nil,
 	)
+	// Claude 导出走 cliproxyapi（sub2api 已于 2026-10-23 移除），仍可用：断言导出的是新凭据。
 	assertLiveStatus(t, exported, http.StatusOK)
 	if !strings.Contains(exported.responseBody, newAccess) ||
 		!strings.Contains(exported.responseBody, newRefresh) ||
@@ -405,7 +504,7 @@ func TestAccountsAPIRejectsUnorderedOAuthImportWithoutLeakingCredential(
 		},
 	})
 	document := func(label string) []byte {
-		return sub2APIHTTPDocument(
+		return nativeImportHTTPDocument(
 			t,
 			"openai",
 			"oauth",
@@ -423,7 +522,7 @@ func TestAccountsAPIRejectsUnorderedOAuthImportWithoutLeakingCredential(
 		t,
 		server.Client(),
 		http.MethodPost,
-		server.URL+accountsapi.Sub2APIImportPath,
+		server.URL+accountsapi.NativeImportPath,
 		document("current"),
 	)
 	assertLiveStatus(t, created, http.StatusCreated)
@@ -432,7 +531,7 @@ func TestAccountsAPIRejectsUnorderedOAuthImportWithoutLeakingCredential(
 		t,
 		server.Client(),
 		http.MethodPost,
-		server.URL+accountsapi.Sub2APIImportPath,
+		server.URL+accountsapi.NativeImportPath,
 		document("incoming"),
 	)
 	assertLiveStatus(t, unordered, http.StatusConflict)
@@ -458,7 +557,7 @@ func TestAccountsAPIConcurrentOAuthImportsKeepNewestProvableGeneration(
 	)
 	const accountUUID = "123e4567-e89b-12d3-a456-426614174396"
 	document := func(generation string, expiresAt int64) []byte {
-		return sub2APIHTTPDocument(
+		return nativeImportHTTPDocument(
 			t,
 			"anthropic",
 			"setup-token",
@@ -477,7 +576,7 @@ func TestAccountsAPIConcurrentOAuthImportsKeepNewestProvableGeneration(
 		t,
 		server.Client(),
 		http.MethodPost,
-		server.URL+accountsapi.Sub2APIImportPath,
+		server.URL+accountsapi.NativeImportPath,
 		document("baseline", baselineExpiry),
 	)
 	assertLiveStatus(t, created, http.StatusCreated)
@@ -502,7 +601,7 @@ func TestAccountsAPIConcurrentOAuthImportsKeepNewestProvableGeneration(
 				t,
 				server.Client(),
 				http.MethodPost,
-				server.URL+accountsapi.Sub2APIImportPath,
+				server.URL+accountsapi.NativeImportPath,
 				imports[index],
 			)
 		}()
@@ -577,33 +676,31 @@ func TestAccountsAPILaterExportDoesNotMakeOldCodexCredentialNewer(
 		lastRefresh string,
 		exportedAt string,
 	) []byte {
+		// 原生 codex OAuth auth.json：代际来自 last_refresh（RFC3339）。
+		// 原先的 exported_at 是 sub2api 概念，原生没有 —— 语义改由 last_refresh 承载，
+		// 「旧凭据不能覆盖新凭据」的验证意图不变。
+		_ = exportedAt
 		return marshalRequestJSON(t, map[string]any{
-			"type":        "sub2api-data",
-			"exported_at": exportedAt,
-			"proxies":     []any{},
-			"accounts": []any{map[string]any{
-				"name":     "codex-import-generation",
-				"platform": "openai",
-				"type":     "oauth",
-				"credentials": map[string]any{
-					"access_token":       "synthetic-codex-" + label + "-access",
-					"refresh_token":      "synthetic-codex-" + label + "-refresh",
-					"id_token":           idToken,
-					"last_refresh":       lastRefresh,
-					"chatgpt_account_id": "codex-import-generation-workspace",
-					"plan_type":          "plus",
-					"email":              "codex-import-generation@example.invalid",
+			"provider_id": "codex",
+			"artifacts": map[string]any{
+				"auth_json": map[string]any{
+					"auth_mode": "chatgpt",
+					"last_refresh": lastRefresh,
+					"tokens": map[string]any{
+						"access_token":  "synthetic-codex-" + label + "-access",
+						"refresh_token": "synthetic-codex-" + label + "-refresh",
+						"id_token":      idToken,
+						"account_id":    "codex-import-generation-workspace",
+					},
 				},
-				"concurrency": 0,
-				"priority":    0,
-			}},
+			},
 		})
 	}
 	newest := performLiveRequest(
 		t,
 		server.Client(),
 		http.MethodPost,
-		server.URL+accountsapi.Sub2APIImportPath,
+		server.URL+accountsapi.NativeImportPath,
 		document(
 			"newest",
 			"2026-08-15T04:59:00Z",
@@ -620,7 +717,7 @@ func TestAccountsAPILaterExportDoesNotMakeOldCodexCredentialNewer(
 		t,
 		server.Client(),
 		http.MethodPost,
-		server.URL+accountsapi.Sub2APIImportPath,
+		server.URL+accountsapi.NativeImportPath,
 		document(
 			"older",
 			"2026-08-15T04:58:00Z",

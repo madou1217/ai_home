@@ -37,7 +37,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/persistentsessionguard"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	agycodeassist "github.com/madou1217/ai_home/internal/adapters/agy/codeassist"
 	claudemessages "github.com/madou1217/ai_home/internal/adapters/claude/messages"
 	"github.com/madou1217/ai_home/internal/adapters/claude/transportpolicy"
@@ -308,10 +307,6 @@ func newHandlers(
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号导出读取器失败: %w", err)
 	}
-	accountExporter, err := sub2api.NewExporter(exportReader, time.Now)
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建账号标准导出器失败: %w", err)
-	}
 	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf(
@@ -530,7 +525,6 @@ func newHandlers(
 		return serverHandlers{}, nil, fmt.Errorf("创建客户端鉴权失败: %w", err)
 	}
 	decoder := nativeaccount.NewDecoder()
-	sub2APIDecoder := sub2api.NewDecoder()
 	credentialFactory := accountsapi.NewBuiltinStaticCredentialFactory()
 	accountOutcomesHandler, err := accountoutcomesapi.NewHandler(authorizer, store)
 	if err != nil {
@@ -561,13 +555,11 @@ func newHandlers(
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,
 		CredentialRotation:  modelRefreshingCredentialRotator,
-		Sub2APIExporter:     accountExporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           scheduledRegistrar,
 		Importer:            accountImporter,
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
-		Sub2APIAccounts:     sub2APIDecoder,
 		Authorizer:          authorizer,
 	})
 	if err != nil {

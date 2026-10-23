@@ -39,19 +39,6 @@ func TestImportHandlersReportCreateAndIdempotentOutcomes(t *testing.T) {
 			alreadyExists: true,
 			wantStatus:    http.StatusOK,
 		},
-		{
-			name:       "sub2api creates",
-			path:       Sub2APIImportPath,
-			body:       `{}`,
-			wantStatus: http.StatusCreated,
-		},
-		{
-			name:          "sub2api idempotent",
-			path:          Sub2APIImportPath,
-			body:          `{}`,
-			alreadyExists: true,
-			wantStatus:    http.StatusOK,
-		},
 	}
 	for _, test := range tests {
 		test := test
@@ -84,7 +71,6 @@ func TestImportHandlersReportCreateAndIdempotentOutcomes(t *testing.T) {
 				management: management,
 				importer:   importer,
 				native:     importHandlerDecoder{credential: credential},
-				sub2api:    importHandlerDecoder{credential: credential},
 			}
 
 			request := httptest.NewRequest(
@@ -94,11 +80,7 @@ func TestImportHandlersReportCreateAndIdempotentOutcomes(t *testing.T) {
 			)
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
-			if test.path == NativeImportPath {
-				handler.handleNativeImport(response, request)
-			} else {
-				handler.handleSub2APIImport(response, request)
-			}
+			handler.handleNativeImport(response, request)
 
 			if response.Code != test.wantStatus {
 				t.Fatalf(

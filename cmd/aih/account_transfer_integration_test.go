@@ -8,87 +8,58 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
-// TestAccountTransferAndCredentialCommandsPersistAcrossServers 验证真实 TCP、
-// 两个临时 SQLite Server、迁移文件和重启形成闭环：导出、导入、默认关系、
-// 静态凭据轮换及模型目录都保持一致。
 func TestAccountTransferAndCredentialCommandsPersistAcrossServers(t *testing.T) {
 	t.Parallel()
 
-	exportPath := filepath.Join(t.TempDir(), "account-sub2api.json")
-	source, sourceURL, sourceClient, sourceErrors :=
-		startAccountIntegrationServer(t, t.TempDir())
-	accountRef := createIntegrationAccount(t, sourceClient, sourceURL)
-	waitForIntegrationModel(t, sourceClient, sourceURL, true)
-	sourceRuntime := accountTransferIntegrationRuntime(t, sourceClient, sourceURL, nil)
+	// sub2api 迁移格式已于 2026-10-23 移除，因此本用例不再验证跨 Server 的
+	// export→import 往返（原生导出端点见迁移蓝图 P2）；保留仍然成立的
+	// 「凭据轮换 + 重启后持久化」验证，这也是它原本的核心意图。
+
+	home := t.TempDir()
+	server, baseURL, client, serverErrors := startAccountIntegrationServer(t, home)
+	accountRef := createIntegrationAccount(t, client, baseURL)
+	waitForIntegrationModel(t, client, baseURL, true)
+	setIntegrationDefault(t, client, baseURL, accountRef)
+
+	// 导出格式已移除：命令必须明确拒绝，而不是产出一份别的文档。
+	exportPath := filepath.Join(t.TempDir(), "account-export.json")
+	exportRuntime := accountTransferIntegrationRuntime(t, client, baseURL, nil)
 	if err := run(context.Background(), []string{
 		"account", "transfer", "export", "codex:1",
 		"--format", "sub2api", "--output", exportPath,
-	}, sourceRuntime); err != nil {
-		t.Fatalf("source transfer export error = %v", err)
+	}, exportRuntime); err == nil {
+		t.Fatal("sub2api 导出格式已移除，命令不应成功")
 	}
-	stopAccountIntegrationServer(t, source, sourceErrors)
-	assertIntegrationSecretFile(t, exportPath, "synthetic-cli-integration-api-key")
+	if _, err := os.Stat(exportPath); err == nil {
+		t.Fatal("被拒绝的导出不应留下文件")
+	}
 
-	targetHome := t.TempDir()
-	target, targetURL, targetClient, targetErrors :=
-		startAccountIntegrationServer(t, targetHome)
-	output := &bytes.Buffer{}
-	targetRuntime := accountTransferIntegrationRuntime(t, targetClient, targetURL, output)
-	if err := run(context.Background(), []string{
-		"account", "transfer", "import",
-		"--format", "sub2api", "--input", exportPath,
-	}, targetRuntime); err != nil {
-		t.Fatalf("target transfer import error = %v", err)
-	}
-	if !strings.Contains(output.String(), accountRef) {
-		t.Fatalf("target import output = %q", output.String())
-	}
-	waitForIntegrationModel(t, targetClient, targetURL, true)
-	assertIntegrationAccount(t, targetClient, targetURL, accountRef, "codex", 1, true)
-	setIntegrationDefault(t, targetClient, targetURL, accountRef)
-
+	// 凭据轮换 + 重启后仍然持久。
 	rotatedSecret := "synthetic-cli-integration-rotated-key"
-	targetRuntime.lookupEnv = integrationCredentialEnvironment(targetURL, rotatedSecret)
+	runtime := accountTransferIntegrationRuntime(t, client, baseURL, nil)
+	runtime.lookupEnv = integrationCredentialEnvironment(baseURL, rotatedSecret)
 	if err := run(context.Background(), []string{
 		"account", "credential", "update", "codex:1", "--from-env",
-	}, targetRuntime); err != nil {
-		t.Fatalf("target credential update error = %v", err)
+	}, runtime); err != nil {
+		t.Fatalf("credential update error = %v", err)
 	}
-	assertIntegrationAccount(t, targetClient, targetURL, accountRef, "codex", 1, true)
-	assertProviderDefaultStatus(t, targetClient, targetURL, http.StatusOK)
-	waitForIntegrationModel(t, targetClient, targetURL, true)
-	stopAccountIntegrationServer(t, target, targetErrors)
+	assertIntegrationAccount(t, client, baseURL, accountRef, "codex", 1, true)
+	assertProviderDefaultStatus(t, client, baseURL, http.StatusOK)
+	waitForIntegrationModel(t, client, baseURL, true)
+	stopAccountIntegrationServer(t, server, serverErrors)
 
 	restarted, restartedURL, restartedClient, restartedErrors :=
-		startAccountIntegrationServer(t, targetHome)
+		startAccountIntegrationServer(t, home)
 	defer stopAccountIntegrationServer(t, restarted, restartedErrors)
 	assertIntegrationAccount(t, restartedClient, restartedURL, accountRef, "codex", 1, true)
 	assertProviderDefaultStatus(t, restartedClient, restartedURL, http.StatusOK)
 	waitForIntegrationModel(t, restartedClient, restartedURL, true)
-
-	rotatedExport := filepath.Join(t.TempDir(), "rotated-sub2api.json")
-	restartedRuntime := accountTransferIntegrationRuntime(t, restartedClient, restartedURL, nil)
-	if err := run(context.Background(), []string{
-		"account", "transfer", "export", "codex:1",
-		"--format", "sub2api", "--output", rotatedExport,
-	}, restartedRuntime); err != nil {
-		t.Fatalf("restarted transfer export error = %v", err)
-	}
-	assertIntegrationSecretFile(t, rotatedExport, rotatedSecret)
-	rotatedDocument, err := os.ReadFile(rotatedExport)
-	if err != nil {
-		t.Fatalf("ReadFile(rotated export) error = %v", err)
-	}
-	if bytes.Contains(rotatedDocument, []byte("synthetic-cli-integration-api-key")) {
-		t.Fatal("重启后导出仍包含轮换前凭据")
-	}
 }
 
 // accountTransferIntegrationRuntime 创建只连接指定真实 Server 的命令运行时。

@@ -7,11 +7,13 @@ import (
 	"github.com/madou1217/ai_home/internal/host/aihaccount"
 )
 
-// accountTransferFormat 是当前明确支持的两个外部账号合同。
+// accountTransferFormat 是当前明确支持的外部账号合同。
+//
+// sub2api 已于 2026-10-23 移除（账号迁移改走原生静态凭据路径）；
+// 这里保留枚举而不是退回裸字符串，是因为「格式」天然会继续增加。
 type accountTransferFormat string
 
 const (
-	transferFormatSub2API     accountTransferFormat = "sub2api"
 	transferFormatCLIProxyAPI accountTransferFormat = "cliproxyapi"
 )
 
@@ -45,9 +47,9 @@ func parseTransferExportOptions(arguments []string) (transferExportOptions, erro
 		)
 	}
 	format := accountTransferFormat(options["--format"])
-	if format != transferFormatSub2API && format != transferFormatCLIProxyAPI {
+	if format != transferFormatCLIProxyAPI {
 		return transferExportOptions{}, invalidTransferCommand(
-			"export format 必须是 sub2api 或 cliproxyapi",
+			"export format 必须是 cliproxyapi",
 		)
 	}
 	outputPath := options["--output"]
@@ -57,27 +59,6 @@ func parseTransferExportOptions(arguments []string) (transferExportOptions, erro
 		)
 	}
 	return transferExportOptions{target: target, format: format, outputPath: outputPath}, nil
-}
-
-// parseTransferImportOptions 只接受 sub2api 和一个显式输入文件。
-func parseTransferImportOptions(arguments []string) (transferImportOptions, error) {
-	positionals, options, err := parseTransferArguments(
-		arguments,
-		map[string]struct{}{"--format": {}, "--input": {}},
-	)
-	if err != nil || len(positionals) != 0 ||
-		options["--format"] != string(transferFormatSub2API) {
-		return transferImportOptions{}, invalidTransferCommand(
-			"import 只接受 --format sub2api 和 --input",
-		)
-	}
-	inputPath := options["--input"]
-	if !validTransferPath(inputPath) {
-		return transferImportOptions{}, invalidTransferCommand(
-			"--input 必须是显式文件路径，不能是 stdin",
-		)
-	}
-	return transferImportOptions{inputPath: inputPath}, nil
 }
 
 // parseTransferArguments 解析少量 name-value 选项并拒绝重复、缺值和未知项。

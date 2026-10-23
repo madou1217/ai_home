@@ -8,8 +8,8 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
-// TestRouterMountsSub2APIImport 验证 Host 不会遗漏独立的标准迁移入口。
-func TestRouterMountsSub2APIImport(t *testing.T) {
+// TestRouterMountsNativeImport 验证 Host 不会遗漏原生的账号 artifact 导入入口。
+func TestRouterMountsNativeImport(t *testing.T) {
 	t.Parallel()
 
 	called := false
@@ -41,14 +41,14 @@ func TestRouterMountsSub2APIImport(t *testing.T) {
 		response,
 		httptest.NewRequest(
 			http.MethodPost,
-			accountsapi.Sub2APIImportPath,
+			accountsapi.NativeImportPath,
 			nil,
 		),
 	)
 
 	if !called || response.Code != http.StatusNoContent {
 		t.Fatalf(
-			"sub2api route called=%t status=%d",
+			"native import route called=%t status=%d",
 			called,
 			response.Code,
 		)

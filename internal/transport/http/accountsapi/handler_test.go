@@ -19,7 +19,6 @@ import (
 	usagecore "github.com/madou1217/ai_home/core/accountusage"
 	"github.com/madou1217/ai_home/core/providers"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
 )
 
@@ -953,66 +952,6 @@ func TestHandlerDeletesAccountWithNoResponseBody(t *testing.T) {
 	assertAPIError(t, missing, http.StatusNotFound, "account_not_found")
 }
 
-// TestHandlerExportsOneAccountAsSub2APIData 验证单账号导出的路由、附件头和原始 JSON。
-func TestHandlerExportsOneAccountAsSub2APIData(t *testing.T) {
-	t.Parallel()
-
-	service := newAccountServiceStub(t)
-	overview := newTestOverview(t, service.catalog, 9, "http-export-account")
-	service.exportDocument = []byte(
-		`{"type":"sub2api-data","exported_at":"2026-07-31T08:09:10Z",` +
-			`"proxies":[],"accounts":[{"credentials":{"api_key":` +
-			`"synthetic-http-export-key"}}]}`,
-	)
-	handler := newTestHandler(t, service)
-	path := accountsapi.CollectionPath + "/" +
-		overview.Account().Ref().String() + "/export"
-
-	unauthorized := httptest.NewRecorder()
-	handler.ServeHTTP(
-		unauthorized,
-		httptest.NewRequest(http.MethodGet, path, nil),
-	)
-	assertAPIError(t, unauthorized, http.StatusUnauthorized, "unauthorized")
-	if service.exportCalls != 0 {
-		t.Fatalf("未授权导出进入应用层: calls=%d", service.exportCalls)
-	}
-
-	response := performAuthorizedRequest(
-		t,
-		handler,
-		http.MethodGet,
-		path,
-		nil,
-	)
-	if response.Code != http.StatusOK ||
-		service.exportCalls != 1 ||
-		service.exportRef != overview.Account().Ref() {
-		t.Fatalf(
-			"GET export status=%d calls=%d ref=%s body=%s",
-			response.Code,
-			service.exportCalls,
-			service.exportRef,
-			response.Body,
-		)
-	}
-	if response.Header().Get("Content-Disposition") !=
-		`attachment; filename="sub2api-data.json"` {
-		t.Fatalf(
-			"Content-Disposition = %q",
-			response.Header().Get("Content-Disposition"),
-		)
-	}
-	if response.Header().Get("Cache-Control") != "no-store" ||
-		response.Header().Get("Content-Type") !=
-			"application/json; charset=utf-8" {
-		t.Fatalf("导出安全响应头 = %#v", response.Header())
-	}
-	if response.Body.String() != string(service.exportDocument)+"\n" {
-		t.Fatalf("导出 body = %q", response.Body.String())
-	}
-}
-
 // TestHandlerExportsOneAccountAsCLIProxyAPIAuth 验证独立 CPA 路径和导出器接线。
 func TestHandlerExportsOneAccountAsCLIProxyAPIAuth(t *testing.T) {
 	t.Parallel()
@@ -1038,11 +977,10 @@ func TestHandlerExportsOneAccountAsCLIProxyAPIAuth(t *testing.T) {
 		exporter.accountRef != overview.Account().Ref() ||
 		service.exportCalls != 0 {
 		t.Fatalf(
-			"GET CPA export status=%d calls=%d ref=%s sub2api_calls=%d body=%s",
+			"GET CPA export status=%d calls=%d ref=%s body=%s",
 			response.Code,
 			exporter.calls,
 			exporter.accountRef,
-			service.exportCalls,
 			response.Body,
 		)
 	}
@@ -2035,13 +1973,11 @@ func newTestHandlerWithCLIProxyAPIExporter(
 		Defaults:            service,
 		Selections:          service,
 		CredentialRotation:  service,
-		Sub2APIExporter:     service,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           service,
 		Importer:            newAccountServiceImporter(t, service),
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      nativeaccount.NewDecoder(),
-		Sub2APIAccounts:     sub2api.NewDecoder(),
 		Authorizer:          authorizer,
 	})
 	if err != nil {

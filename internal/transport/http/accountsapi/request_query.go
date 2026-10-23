@@ -81,14 +81,17 @@ const (
 	memberResourceModelRefresh
 	memberResourceUsage
 	memberResourceUsageRefresh
+	// 导出类资源：具体格式由 export_formats.go 的注册表决定，
+	// 不再为每种格式加一个枚举值（加/删格式只改注册表）。
 	memberResourceExport
-	memberResourceCLIProxyAPIExport
 )
 
 // memberResource 是完成 AccountRef 校验后的成员路由。
 type memberResource struct {
 	accountRef accountcore.AccountRef
 	kind       memberResourceKind
+	// exportFormat 仅在 kind == memberResourceExport 时有意义：这次请求要哪种导出格式。
+	exportFormat exportFormat
 }
 
 // parseMemberResource 严格解析当前声明的账号成员路径。
@@ -103,6 +106,7 @@ func parseMemberResource(path string) (memberResource, error) {
 		return memberResource{}, err
 	}
 	kind := memberResourceAccount
+	var format exportFormat
 	switch {
 	case len(parts) == 1:
 	case len(parts) == 2 && parts[1] == "credential":
@@ -116,13 +120,23 @@ func parseMemberResource(path string) (memberResource, error) {
 	case len(parts) == 3 && parts[1] == "usage" && parts[2] == "refresh":
 		kind = memberResourceUsageRefresh
 	case len(parts) == 2 && parts[1] == "export":
+		// 裸 `export` 默认走第一个注册格式（与注册表顺序一致）。
 		kind = memberResourceExport
-	case len(parts) == 3 && parts[1] == "export" && parts[2] == "cliproxyapi":
-		kind = memberResourceCLIProxyAPIExport
+		if len(exportFormats) > 0 {
+			format = exportFormats[0]
+		}
+	case len(parts) == 3 && parts[1] == "export":
+		// `export/<format>`：格式由注册表匹配，未注册的后缀一律拒绝。
+		matched, ok := matchExportFormat(normalizeExportSuffix(parts[2]))
+		if !ok {
+			return memberResource{}, accountcore.ErrInvalidAccountRef
+		}
+		kind = memberResourceExport
+		format = matched
 	default:
 		return memberResource{}, accountcore.ErrInvalidAccountRef
 	}
-	return memberResource{accountRef: accountRef, kind: kind}, nil
+	return memberResource{accountRef: accountRef, kind: kind, exportFormat: format}, nil
 }
 
 // rejectUnexpectedQuery 拒绝没有声明查询参数的资源操作。

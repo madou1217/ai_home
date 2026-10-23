@@ -26,7 +26,6 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/accounts/cliproxyapi"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/nativeaccount"
 	"github.com/madou1217/ai_home/internal/adapters/accounts/sqliteaccount"
-	"github.com/madou1217/ai_home/internal/adapters/accounts/sub2api"
 	"github.com/madou1217/ai_home/internal/testsupport/accountmodels"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
 	"github.com/madou1217/ai_home/internal/transport/http/accountsapi"
@@ -624,10 +623,6 @@ func newLiveManagementHandler(
 	if err != nil {
 		t.Fatalf("accounts.NewExportReader() error = %v", err)
 	}
-	exporter, err := sub2api.NewExporter(exportReader, clock)
-	if err != nil {
-		t.Fatalf("sub2api.NewExporter() error = %v", err)
-	}
 	cliProxyAPIExporter, err := cliproxyapi.NewExporter(exportReader)
 	if err != nil {
 		t.Fatalf("cliproxyapi.NewExporter() error = %v", err)
@@ -724,13 +719,11 @@ func newLiveManagementHandler(
 		Defaults:            providerDefaults,
 		Selections:          launchAccountSelector,
 		CredentialRotation:  credentialRotator,
-		Sub2APIExporter:     exporter,
 		CLIProxyAPIExporter: cliProxyAPIExporter,
 		Registrar:           registrar,
 		Importer:            importer,
 		StaticCredentials:   credentialFactory,
 		NativeAccounts:      decoder,
-		Sub2APIAccounts:     sub2api.NewDecoder(),
 		Authorizer:          authorizer,
 	})
 	if err != nil {

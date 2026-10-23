@@ -24,7 +24,6 @@ const (
 	// NativeImportPath 是 Codex、Claude 官方 artifact 导入资源的规范路径。
 	NativeImportPath = accountcontract.NativeImportsPath
 	// Sub2APIImportPath 是单账号 sub2api 迁移文档导入资源的规范路径。
-	Sub2APIImportPath = accountcontract.Sub2APIImportsPath
 	// DefaultsPath 是 Provider 默认启动账号资源的规范集合前缀。
 	DefaultsPath = accountcontract.ProviderDefaultsPath
 	// SelectionPath 是启动账号解析命令的规范路径。
@@ -197,13 +196,11 @@ type Handler struct {
 	defaults            ProviderDefaultManagement
 	selections          LaunchAccountSelection
 	credentialRotation  StaticCredentialRotation
-	sub2apiExporter     AccountExporter
 	cliProxyAPIExporter AccountExporter
 	registrar           Registrar
 	importer            Importer
 	staticCredentials   StaticCredentialFactory
 	native              NativeAccountDecoder
-	sub2api             Sub2APIAccountDecoder
 	authorizer          Authorizer
 }
 
@@ -216,13 +213,11 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		dependencies.Defaults == nil ||
 		dependencies.Selections == nil ||
 		dependencies.CredentialRotation == nil ||
-		dependencies.Sub2APIExporter == nil ||
 		dependencies.CLIProxyAPIExporter == nil ||
 		dependencies.Registrar == nil ||
 		dependencies.Importer == nil ||
 		dependencies.StaticCredentials == nil ||
 		dependencies.NativeAccounts == nil ||
-		dependencies.Sub2APIAccounts == nil ||
 		dependencies.Authorizer == nil {
 		return nil, ErrInvalidDependencies
 	}
@@ -234,18 +229,25 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		defaults:            dependencies.Defaults,
 		selections:          dependencies.Selections,
 		credentialRotation:  dependencies.CredentialRotation,
-		sub2apiExporter:     dependencies.Sub2APIExporter,
 		cliProxyAPIExporter: dependencies.CLIProxyAPIExporter,
 		registrar:           dependencies.Registrar,
 		importer:            dependencies.Importer,
 		staticCredentials:   dependencies.StaticCredentials,
 		native:              dependencies.NativeAccounts,
-		sub2api:             dependencies.Sub2APIAccounts,
 		authorizer:          dependencies.Authorizer,
 	}, nil
 }
 
 // ServeHTTP 先完成管理鉴权，再按集合或成员资源分发请求。
+// exporterFor 按注册表取导出策略：未注册（或依赖缺失）返回 nil，
+// 由 handleAccountExport 统一按不可用处理（fail-closed）。
+func (handler *Handler) exporterFor(format exportFormat) AccountExporter {
+	if format.Resolve == nil {
+		return nil
+	}
+	return format.Resolve(handler)
+}
+
 func (handler *Handler) ServeHTTP(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -263,8 +265,6 @@ func (handler *Handler) ServeHTTP(
 		return
 	}
 	switch {
-	case request.URL.Path == Sub2APIImportPath:
-		handler.handleSub2APIImport(response, request)
 	case request.URL.Path == NativeImportPath:
 		handler.handleNativeImport(response, request)
 	case request.URL.Path == CollectionPath:
@@ -333,20 +333,15 @@ func (handler *Handler) handleMember(
 	case memberResourceUsageRefresh:
 		handler.handleAccountUsageRefresh(response, request, accountRef)
 	case memberResourceExport:
+		// 导出格式由注册表决定（export_formats.go）：这里只按解析出的格式取策略，
+		// 不再为每种格式写一条 case。
+		exporter := handler.exporterFor(resource.exportFormat)
 		handler.handleAccountExport(
 			response,
 			request,
 			accountRef,
-			handler.sub2apiExporter,
-			"sub2api-data.json",
-		)
-	case memberResourceCLIProxyAPIExport:
-		handler.handleAccountExport(
-			response,
-			request,
-			accountRef,
-			handler.cliProxyAPIExporter,
-			"cliproxyapi-auth.json",
+			exporter,
+			resource.exportFormat.FileName,
 		)
 	default:
 		writeAPIError(

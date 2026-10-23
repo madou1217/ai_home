@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -536,18 +537,18 @@ func newHandlers(
 		accountUsageEventsHandler = handler
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
-		Management:          management,
-		Models:              recoveringModelManagement,
-		Usage:               usage.service,
-		Deletion:            deleter,
-		Defaults:            providerDefaults,
-		Selections:          launchAccountSelector,
-		CredentialRotation:  modelRefreshingCredentialRotator,
-		Registrar:           scheduledRegistrar,
-		Importer:            accountImporter,
-		StaticCredentials:   credentialFactory,
-		NativeAccounts:      decoder,
-		Authorizer:          authorizer,
+		Management:         management,
+		Models:             recoveringModelManagement,
+		Usage:              usage.service,
+		Deletion:           deleter,
+		Defaults:           providerDefaults,
+		Selections:         launchAccountSelector,
+		CredentialRotation: modelRefreshingCredentialRotator,
+		Registrar:          scheduledRegistrar,
+		Importer:           accountImporter,
+		StaticCredentials:  credentialFactory,
+		NativeAccounts:     decoder,
+		Authorizer:         authorizer,
 	})
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建账号 HTTP Handler 失败: %w", err)
@@ -882,6 +883,22 @@ func newHandlers(
 	if webSocketHTTPClient == nil {
 		webSocketHTTPClient = &http.Client{
 			CheckRedirect: rejectOAuthRedirect,
+			// Codex Responses 上游可以是**另一台 aih 网关**（本机 → 远程 server），
+			// 这类账号的 base_url 是明文 http://，于是 WS 目标也是明文 ws://。
+			// 明文 WS 经 HTTP 代理时会退化成 absolute-form `GET http://…`（不是 CONNECT
+			// 隧道），代理按普通 HTTP 处理，握手 101 之后**永远读不到数据** —— 实测拨号
+			// 成功、首帧写出成功，但 20s 读不到任何响应，WebUI 会话表现为
+			// `stream disconnected before completion: error sending request`。
+			// 修复：明文 ws:// 直连，不交给代理；wss:// 仍按环境代理走 CONNECT。
+			// 只影响 WS 拨号，HTTP 推理路径仍走既有的代理/账号出口配置。
+			Transport: &http.Transport{
+				Proxy: func(request *http.Request) (*url.URL, error) {
+					if request != nil && request.URL != nil && request.URL.Scheme == "http" {
+						return nil, nil
+					}
+					return http.ProxyFromEnvironment(request)
+				},
+			},
 		}
 	}
 	webSocketDialer, err := responseswebsocket.NewDialerWithClientVersion(webSocketHTTPClient, codexVersions)

@@ -6237,6 +6237,37 @@ test('runtime keeps strict zero-client default and does not probe clip-agent wit
   assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
 });
 
+test('runtime hands the account ref to the permission reader so account-level settings apply', () => {
+  // 回归（2026-10-23）：账户级权限设置存得下、读得到（API 层），但启动时如果不把
+  // accountRef 交给读取器，账户级就永远用不上 —— 存了等于没存。
+  const seen = [];
+  let expectedRef = '';
+  const { runtime, proc, spawns, resolveHarnessAccountRef } = createRuntimeHarness({}, {
+    readToolPermissionSettings: (provider, deps) => {
+      seen.push({ provider, accountRef: deps && deps.accountRef });
+      // 只有带对账号时才放开（模拟账户级覆盖 provider 级）
+      return {
+        maxPermission: Boolean(deps && deps.accountRef) && deps.accountRef === expectedRef,
+        applyToHost: false
+      };
+    }
+  });
+  expectedRef = resolveHarnessAccountRef('codex', '1');
+
+  runtime.runCliPtyTracked('codex', '1', [], false);
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].provider, 'codex');
+  assert.equal(seen[0].accountRef, expectedRef, '账号引用必须传给权限读取器');
+  assert.deepEqual(spawns[0].args.slice(0, 4), [
+    '--sandbox',
+    'danger-full-access',
+    '--ask-for-approval',
+    'never'
+  ]);
+  assert.throws(() => proc.emit('SIGINT'), /EXIT:0/);
+});
+
 test('runtime injects contract-declared max-permission flags when the provider switch is on', () => {
   const { runtime, proc, spawns } = createRuntimeHarness({}, {
     readToolPermissionSettings: (provider) => ({

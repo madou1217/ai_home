@@ -104,7 +104,6 @@ test('createBackupExportWiring exposes data exporters and CLIProxyAPI importer',
     createStandardFormatExportService: (arg) => {
       receivedStandardArg = arg;
       return {
-        exportSub2ApiData: () => ({ accounts: 2 }),
         exportAntigravityManagerAccounts: () => ({ accounts: 1 })
       };
     }
@@ -113,7 +112,6 @@ test('createBackupExportWiring exposes data exporters and CLIProxyAPI importer',
   assert.equal('exportCliproxyapiCodexAuths' in out, false);
   assert.equal(typeof out.exportCliproxyapiData, 'function');
   assert.equal(typeof out.importCliproxyapiCodexAuths, 'function');
-  assert.equal(typeof out.exportSub2ApiData, 'function');
   assert.equal(typeof out.exportAntigravityManagerAccounts, 'function');
   assert.equal(receivedArg.aiHomeDir, '/tmp/aih');
   assert.equal(receivedArg.hostHomeDir, '/tmp/home');

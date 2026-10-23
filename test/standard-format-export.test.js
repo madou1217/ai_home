@@ -64,47 +64,6 @@ function resolveTestAccountRef(aiHomeDir, provider, cliAccountId) {
   return record.accountRef;
 }
 
-test('exportSub2ApiData writes sub2api-data JSON with OAuth and api-key accounts', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-export-'));
-  try {
-    const aiHomeDir = path.join(root, '.ai_home');
-    const oauthAccountRef = registerOAuthAccount(aiHomeDir, 'codex', '1', 'worker@example.com');
-    writeAccountNativeAuth(fs, aiHomeDir, oauthAccountRef, { auth: {
-      email: 'worker@example.com',
-      tokens: {
-        access_token: 'access',
-        refresh_token: 'rt_worker',
-        id_token: 'id',
-        account_id: 'acct-worker'
-      }
-    } });
-    const apiKeyEnv = {
-      OPENAI_API_KEY: 'sk-worker',
-      OPENAI_BASE_URL: 'https://api.example.com/v1/'
-    };
-    const apiKeyAccountRef = registerApiKeyAccount(aiHomeDir, 'codex', '2', apiKeyEnv);
-    writeAccountCredentials(fs, aiHomeDir, apiKeyAccountRef, apiKeyEnv);
-
-    const service = createStandardFormatExportService({ fs, path, aiHomeDir });
-    const outPath = path.join(root, 'sub2api.json');
-    const result = service.exportSub2ApiData({ outPath, providers: ['codex'] });
-    const payload = JSON.parse(fs.readFileSync(outPath, 'utf8'));
-
-    assert.equal(result.accounts, 2);
-    assert.equal(payload.type, 'sub2api-data');
-    assert.equal(payload.version, 1);
-    assert.deepEqual(payload.proxies, []);
-    assert.equal(payload.accounts[0].platform, 'openai');
-    assert.equal(payload.accounts[0].type, 'oauth');
-    assert.equal(payload.accounts[0].credentials.refresh_token, 'rt_worker');
-    assert.equal(payload.accounts[1].platform, 'openai');
-    assert.equal(payload.accounts[1].type, 'apikey');
-    assert.equal(payload.accounts[1].credentials.api_key, 'sk-worker');
-    assert.equal(payload.accounts[1].credentials.base_url, 'https://api.example.com/v1');
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test('buildFlatAccountExportEntries names oauth by email and api-key by url plus ref suffix', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-flat-export-'));
@@ -438,87 +397,6 @@ test('importStandardAccountRecords writes opencode auth and deduplicates by auth
   }
 });
 
-test('exportSub2ApiData restores sub2api account metadata and deduplicates proxies', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-export-sub2api-meta-'));
-  try {
-    const aiHomeDir = path.join(root, '.ai_home');
-    const env = {
-      OPENAI_API_KEY: 'sk-export-meta',
-      OPENAI_BASE_URL: 'https://export.example.com/v1/'
-    };
-    const accountRef = registerApiKeyAccount(aiHomeDir, 'codex', '1', env);
-    writeAccountCredentials(fs, aiHomeDir, accountRef, env);
-    writeTransferMetadata(fs, aiHomeDir, accountRef, {
-      version: 1,
-      formats: {
-        sub2api: {
-          name: 'Restored sub2api name',
-          notes: 'export note',
-          extra: {
-            owner: 'ops',
-            ai_home_provider: 'codex',
-            ai_home_account_id: '1',
-            profileDir: '/Users/model/.ai_home/profiles/codex/1',
-            configDir: '/Users/model/.ai_home/profiles/codex/1/.codex'
-          },
-          proxy_key: 'proxy-main',
-          concurrency: 0,
-          priority: 7,
-          rate_multiplier: 1.5,
-          expires_at: 1893456000,
-          auto_pause_on_expired: false,
-          proxies: [
-            {
-              proxy_key: 'proxy-main',
-              name: 'Main proxy',
-              protocol: 'http',
-              host: 'proxy.local',
-              port: 8080,
-              status: 'active',
-              fallback_mode: false,
-              expiry_warn_days: 0
-            },
-            {
-              proxy_key: 'proxy-main',
-              name: 'Duplicate proxy'
-            },
-            {
-              proxy_key: 'proxy-backup',
-              name: 'Backup proxy',
-              protocol: 'socks5',
-              host: 'backup.local',
-              port: 1080,
-              status: 'inactive'
-            }
-          ]
-        }
-      }
-    });
-
-    const service = createStandardFormatExportService({ fs, path, aiHomeDir });
-    const outPath = path.join(root, 'sub2api.json');
-    const result = service.exportSub2ApiData({ outPath, providers: ['codex'] });
-    const payload = JSON.parse(fs.readFileSync(outPath, 'utf8'));
-    const account = payload.accounts[0];
-
-    assert.equal(result.accounts, 1);
-    assert.equal(result.proxies, 2);
-    assert.equal(account.name, 'Restored sub2api name');
-    assert.equal(account.notes, 'export note');
-    assert.equal(account.proxy_key, 'proxy-main');
-    assert.equal(account.concurrency, 0);
-    assert.equal(account.priority, 7);
-    assert.equal(account.rate_multiplier, 1.5);
-    assert.equal(account.expires_at, 1893456000);
-    assert.equal(account.auto_pause_on_expired, false);
-    assert.deepEqual(account.extra, { owner: 'ops' });
-    assert.deepEqual(payload.proxies.map((proxy) => proxy.proxy_key), ['proxy-main', 'proxy-backup']);
-    assert.equal(payload.proxies[0].fallback_mode, 'none');
-    assert.equal(payload.proxies[0].expiry_warn_days, 0);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
 
 test('exportAntigravityManagerAccounts writes Antigravity-Manager accounts JSON', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-standard-export-agy-'));

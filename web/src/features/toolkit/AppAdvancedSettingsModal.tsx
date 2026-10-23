@@ -3,7 +3,6 @@ import { Input, Modal, Select, Spin, Switch, Tabs, Tooltip, message } from 'antd
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
-  CloudSyncOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
   SafetyCertificateOutlined,
@@ -172,8 +171,7 @@ export default function AppAdvancedSettingsModal({ open, app, onClose }: AppAdva
       const response = await toolkitAPI.saveAppPermissionSettings(provider, {
         maxPermission: settings.maxPermission,
         applyToHost: settings.applyToHost,
-        permissionArgs,
-        sessionHook: settings.sessionHook
+        permissionArgs
       });
       setSettings(response.settings);
       setCapability(response.capability);
@@ -446,55 +444,6 @@ export default function AppAdvancedSettingsModal({ open, app, onClose }: AppAdva
                       <code className="aas-path" title={capability.hostDisplayPath}>{capability.hostDisplayPath}</code>
                     ) : null}
                   </section>
-
-                  {/* 会话 Hook 是独立的一件事：它不碰启动参数，只决定 aih 要不要接管
-                      「即时刷新」（本机 CLI 有新回合时通知 WebUI 重读会话文件）。
-                      默认关，因为打开会写用户的全局 CLI 配置。 */}
-                  {capability.sessionHookSupported ? (
-                    <section className="aas-section">
-                      <div className="aas-section-head">
-                        <CloudSyncOutlined />
-                        <div>
-                          <strong>即时刷新</strong>
-                          <span>打开后，本机 CLI 有新回合时通知 WebUI 立即重读会话文件。</span>
-                        </div>
-                        <Switch
-                          checked={settings.sessionHook}
-                          onChange={(checked) => setSettings({ ...settings, sessionHook: checked })}
-                          aria-label="接管会话 Hook"
-                        />
-                      </div>
-                      <div className="aas-host-state" data-tone={settings.sessionHook ? 'ok' : 'muted'}>
-                        {settings.sessionHook ? <CheckCircleOutlined /> : <InfoCircleOutlined />}
-                        <span>
-                          {settings.sessionHook
-                            ? '已接管：现在装一次；以后自动升级发现它被覆盖了会自动装回来。'
-                            : '未接管：aih 不写也不检查你的 CLI 配置。'}
-                        </span>
-                      </div>
-                      {capability.sessionHookInstalled !== settings.sessionHook ? (
-                        <div className="aas-inline-state" data-tone="muted">
-                          <InfoCircleOutlined />
-                          <span>
-                            {capability.sessionHookInstalled
-                              ? `配置文件里当前装着 Hook，但这个开关是关的——保存后 aih 不再维护它（不会删除已有配置）。`
-                              : `开关已打开，但配置文件里还没有 Hook——保存后会写入。`}
-                          </span>
-                        </div>
-                      ) : null}
-                      {settings.sessionHook && capability.sessionHookTargetPath ? (
-                        <code className="aas-path" title={capability.sessionHookTargetPath}>
-                          {capability.sessionHookTargetPath}
-                        </code>
-                      ) : null}
-                      {capability.sessionHookReason ? (
-                        <div className="aas-inline-state" data-tone="muted">
-                          <WarningOutlined />
-                          <span>{capability.sessionHookReason}</span>
-                        </div>
-                      ) : null}
-                    </section>
-                  ) : null}
 
                   {error ? (
                     <div className="aas-inline-state" data-tone="error" role="alert">

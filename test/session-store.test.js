@@ -1226,6 +1226,56 @@ test('ensureSessionStoreLinks touches only the explicitly launched codex account
   assert.equal(fs.lstatSync(path.join(desktopRuntime2, 'sessions')).isSymbolicLink(), false);
 });
 
+test('ensureSessionStoreLinks discards dangling nested symlinks so deletion is not blocked', (t) => {
+  const root = mkTmpDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const hostHomeDir = path.join(root, 'home');
+  const aiHomeDir = path.join(root, '.ai_home');
+  const accountRef = upsertAccountRef(fs, aiHomeDir, {
+    provider: 'codex',
+    cliAccountId: '1',
+    identitySeed: `test:codex:${root}:1`
+  });
+  const hostCodexDir = path.join(hostHomeDir, '.codex');
+  const accountConfigDir = path.join(resolveAccountRuntimeDir(aiHomeDir, 'codex', accountRef), '.codex');
+  const runtimeHome = resolveCodexDesktopRuntimeDir(aiHomeDir, accountRef);
+  const chromeDir = path.join(runtimeHome, 'plugins', 'cache', 'openai-bundled', 'chrome');
+  // The host already owns a plugins tree, so reconciliation must merge into it
+  // rather than move the projection entry wholesale.
+  const hostChromeDir = path.join(hostCodexDir, 'plugins', 'cache', 'openai-bundled', 'chrome');
+  // A previous account's desktop runtime owned this plugin cache. Deleting that
+  // account removed its runtime home, leaving `latest` dangling in this one.
+  const deletedAccountRuntime = path.join(root, 'run', 'codex-desktop', 'acct_a336311cae816e12b741');
+  fs.mkdirSync(accountConfigDir, { recursive: true });
+  fs.mkdirSync(chromeDir, { recursive: true });
+  fs.mkdirSync(path.join(hostChromeDir, '26.1016.61520'), { recursive: true });
+  fs.writeFileSync(path.join(accountConfigDir, 'auth.json'), '{"token":"account-secret"}\n');
+  fs.symlinkSync(
+    path.join(deletedAccountRuntime, 'plugins', 'cache', 'openai-bundled', 'chrome', '26.721.41059'),
+    path.join(chromeDir, 'latest')
+  );
+
+  const service = createSessionStoreService({
+    fs,
+    fse,
+    path,
+    processObj: process,
+    aiHomeDir,
+    hostHomeDir,
+    cliConfigs: { codex: { globalDir: '.codex' } },
+    getProfileDir: (cliName, ref) => resolveAccountRuntimeDir(aiHomeDir, cliName, ref),
+    ensureDir: (dir) => fs.mkdirSync(dir, { recursive: true })
+  });
+
+  const result = service.ensureSessionStoreLinks('codex', accountRef);
+
+  assert.equal(Array.isArray(result.unresolved), false,
+    'a dangling nested link must not leave the enclosing entry unresolved');
+  assert.equal(fs.existsSync(path.join(chromeDir, 'latest')), false);
+  assert.equal(fs.lstatSync(path.join(runtimeHome, 'plugins')).isSymbolicLink(), true);
+});
+
 test('ensureSessionStoreLinks does not create runtime directories for env-auth accounts', (t) => {
   const root = mkTmpDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -341,10 +341,13 @@ test('runBackupCommand routes export cliproxyapi codex to data exporter', async 
   assert.equal(events.some((entry) => entry.includes('accounts=2 oauth=1 api_keys=1')), true);
 });
 
-test('runBackupCommand routes export sub2api to standard JSON exporter', async () => {
+// sub2api 导出格式已废弃（2026-10-23）：账号迁移改走原生静态凭据路径。
+// 关键是不能静默 fallthrough 到通用导出路径（那会把 `sub2api` 当成 provider 选择器，
+// 导出一份完全不同的东西）；行为与既有的「未识别子命令」一致：提示 + 打印可用用法。
+test('runBackupCommand treats the removed sub2api export format as an unknown subcommand', async () => {
   const events = [];
   let exitCode = null;
-  let received = null;
+  let exported = false;
 
   const handled = await runBackupCommand('export', ['export', 'sub2api', 'codex', '/tmp/sub2api.json'], {
     fs,
@@ -366,54 +369,19 @@ test('runBackupCommand routes export sub2api to standard JSON exporter', async (
     parseImportArgs: () => ({}),
     expandSelectorsToPaths: () => [],
     renderStageProgress: () => {},
-    exportSub2ApiData: (arg) => {
-      received = arg;
-      return { outPath: arg.outPath, accounts: 2, proxies: 0 };
-    }
-  });
-
-  assert.equal(handled, true);
-  assert.equal(exitCode, 0);
-  assert.deepEqual(received, { outPath: path.resolve('/tmp/sub2api.json'), providers: ['codex'] });
-  assert.equal(events.some((entry) => entry.includes('Exported sub2api account data')), true);
-  assert.equal(events.some((entry) => entry.includes('accounts=2 proxies=0')), true);
-});
-
-test('runBackupCommand rejects sub2api opencode export because the format cannot represent it', async () => {
-  const events = [];
-  let exitCode = null;
-  let called = false;
-
-  const handled = await runBackupCommand('export', ['export', 'sub2api', 'opencode', '/tmp/opencode.json'], {
-    fs,
-    path,
-    os,
-    fse,
-    execSync: () => {},
-    readline: {},
-    consoleImpl: {
-      log: (msg) => events.push(`log:${msg}`),
-      error: (msg) => events.push(`error:${msg}`)
-    },
-    processImpl: {
-      exit: (code) => { exitCode = code; }
-    },
-    ensureAesSuffix: (value) => value,
-    defaultExportName: () => 'x.zip',
-    parseExportArgs: () => ({ targetFile: 'ignored.zip', selectors: [] }),
-    parseImportArgs: () => ({}),
-    expandSelectorsToPaths: () => [],
-    renderStageProgress: () => {},
     exportSub2ApiData: () => {
-      called = true;
-      return { outPath: '/tmp/opencode.json', accounts: 0, proxies: 0 };
+      exported = true;
+      return { outPath: '/tmp/sub2api.json', accounts: 0, proxies: 0 };
     }
   });
 
   assert.equal(handled, true);
-  assert.equal(exitCode, 1);
-  assert.equal(called, false);
-  assert.equal(events.some((entry) => entry.includes('sub2api export does not support opencode accounts')), true);
+  // 与 `aih backup --help` 同一行为：用法输出、退出码 0。
+  assert.equal(exitCode, 0);
+  assert.equal(exported, false, '废弃格式绝不能落到实际导出');
+  assert.equal(events.some((entry) => entry.includes('未识别的子命令')), true);
+  assert.equal(events.some((entry) => entry.includes('sub2api')), true);
+  assert.equal(events.some((entry) => entry.includes('aih export antigravity')), true, '用法里要列出可用值');
 });
 
 test('runBackupCommand routes export antigravity to Antigravity Manager JSON exporter', async () => {

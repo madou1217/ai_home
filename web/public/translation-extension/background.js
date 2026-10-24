@@ -35,14 +35,32 @@ async function translate(request, sendResponse) {
   const config = await settings();
   const endpoint = String(config.endpoint || '').replace(/\/$/, '');
   if (!/^https?:\/\//.test(endpoint)) return sendResponse({ ok: false, error: '请先在扩展设置中填写 AIH Server 地址' });
+  const target = String(request.target || config.target || '').trim();
+  const targetPolicy = String(request.targetPolicy || 'saved').trim() || 'saved';
   const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
   if (config.token) headers.Authorization = `Bearer ${config.token}`;
   try {
     const response = await fetch(`${endpoint}/v0/webui/translation/stream`, {
       method: 'POST', headers,
-      body: JSON.stringify({ text: request.text, target: config.target, targetPolicy: 'saved', operation: request.operation || 'selection' })
+      body: JSON.stringify({ text: request.text, target, targetPolicy, operation: request.operation || 'selection' })
     });
-    if (!response.ok) return sendResponse({ ok: false, error: `翻译服务返回 HTTP ${response.status}` });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 409 && data?.error === 'translation_target_confirmation_required') {
+        return sendResponse({
+          ok: false,
+          confirmation: {
+            code: data.error,
+            message: data.detail || '请确认目标语言',
+            detected: String(data.detected || ''),
+            confidence: String(data.confidence || 'low'),
+            suggestedTargets: Array.isArray(data.suggestedTargets) ? data.suggestedTargets : [],
+            target
+          }
+        });
+      }
+      return sendResponse({ ok: false, error: data.detail || `翻译服务返回 HTTP ${response.status}` });
+    }
     const reader = response.body?.getReader();
     if (!reader) return sendResponse({ ok: false, error: '翻译服务没有返回流' });
     const decoder = new TextDecoder();

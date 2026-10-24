@@ -95,11 +95,54 @@ export function createBoundedPageTranslator(options: {
 export function applyPageTranslation(progress: TranslationPageProgress[], mode: PageTranslationMode): () => void {
   const snapshots = progress.filter((item) => item.text.trim()).map((item) => ({ item, parent: item.segment.node.parentNode, next: item.segment.node.nextSibling, original: item.segment.node.nodeValue || '' }));
   const markers: HTMLElement[] = [];
+  const replaceAnimations = new Set<number>();
+  const replacementState = new Map<Text, { expected: string; target: string }>();
+  let undone = false;
+
+  function schedule(callback: FrameRequestCallback): number {
+    return typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame(callback)
+      : window.setTimeout(() => callback(performance.now()), 16);
+  }
+
+  function cancelScheduledFrames() {
+    for (const frame of replaceAnimations) {
+      if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frame);
+      else window.clearTimeout(frame);
+    }
+    replaceAnimations.clear();
+  }
+
+  function animateReplacement(node: Text, original: string, target: string) {
+    const characters = Array.from(target);
+    const maxFrames = 48;
+    const chunkSize = Math.max(1, Math.ceil(characters.length / maxFrames));
+    let visibleLength = 0;
+    let expected = original;
+    replacementState.set(node, { expected, target });
+
+    const step = () => {
+      replaceAnimations.delete(frame);
+      if (undone || !node.parentNode || node.nodeValue !== expected) return;
+      visibleLength = Math.min(characters.length, visibleLength + chunkSize);
+      expected = characters.slice(0, visibleLength).join('');
+      node.nodeValue = expected;
+      replacementState.set(node, { expected, target });
+      if (visibleLength < characters.length) frame = schedule(step);
+    };
+    let frame = schedule(step);
+    replaceAnimations.add(frame);
+  }
+
   for (const snapshot of snapshots) {
     const { item, parent, next, original } = snapshot;
     if (!parent) continue;
     if (mode === 'replace') {
-      item.segment.node.nodeValue = item.text;
+      // Do not overwrite a concurrent edit that happened between translation
+      // and applying the result. The same expected-value guard is checked on
+      // every animation frame and again when undoing.
+      if (item.segment.node.nodeValue !== original) continue;
+      animateReplacement(item.segment.node, original, item.text);
       continue;
     }
     const marker = document.createElement('span');
@@ -115,7 +158,21 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
     void original;
   }
   return () => {
-    for (const snapshot of snapshots) snapshot.item.segment.node.nodeValue = snapshot.original;
+    if (undone) return;
+    undone = true;
+    cancelScheduledFrames();
+    for (const snapshot of snapshots) {
+      const state = replacementState.get(snapshot.item.segment.node);
+      if (state) {
+        // Preserve edits made after the translation. Only restore a node that
+        // still contains the text written by this transaction.
+        if (snapshot.item.segment.node.nodeValue === state.expected) {
+          snapshot.item.segment.node.nodeValue = snapshot.original;
+        }
+      } else if (mode !== 'replace') {
+        snapshot.item.segment.node.nodeValue = snapshot.original;
+      }
+    }
     for (const marker of markers) marker.remove();
   };
 }

@@ -62,7 +62,7 @@ async function translate(request, sendResponse) {
       }
       if (done) break;
     }
-    return sendResponse({ ok: true, text: output });
+    return sendResponse({ ok: true, text: output, mode: config.mode === 'replace' ? 'replace' : 'side-by-side' });
   } catch (error) {
     return sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }

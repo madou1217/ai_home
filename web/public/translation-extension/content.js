@@ -46,7 +46,22 @@
   async function translateSelection(text, rect) {
     const body = panel('AIH 翻译选区', rect); body.textContent = '正在识别并翻译…';
     const result = await translateOne(text); if (!result?.ok) { body.textContent = result?.error || '翻译失败'; return; }
-    renderResult(body, text, result.text, null);
+    let undo = null;
+    if (result.mode === 'replace') {
+      const selection = getSelection();
+      if (selection && selection.rangeCount && !selection.isCollapsed) {
+        const range = selection.getRangeAt(0).cloneRange();
+        const original = range.cloneContents();
+        const replacement = document.createElement('span');
+        replacement.setAttribute(ROOT_ATTR, 'replacement');
+        replacement.textContent = result.text;
+        replacement.style.cssText = 'opacity:0;transition:opacity 180ms ease';
+        range.deleteContents(); range.insertNode(replacement);
+        requestAnimationFrame(() => { replacement.style.opacity = '1'; });
+        undo = () => { const restore = document.createRange(); restore.selectNode(replacement); restore.deleteContents(); restore.insertNode(original); };
+      }
+    }
+    renderResult(body, text, result.text, undo);
   }
 
   async function translatePage() {
@@ -57,7 +72,14 @@
     async function worker() {
       while (cursor < segments.length) {
         const item = segments[cursor++]; const result = await translateOne(item.source, 'page'); completed += 1;
-        if (result?.ok && result.text) { snapshots.push({ ...item, original: item.node.nodeValue }); const marker = document.createElement('span'); marker.setAttribute(ROOT_ATTR, 'side-by-side'); marker.textContent = result.text; marker.style.cssText = 'display:block;opacity:0;transition:opacity 160ms ease;color:inherit'; item.node.parentNode.insertBefore(marker, item.node.nextSibling); requestAnimationFrame(() => { marker.style.opacity = '1'; }); snapshots[snapshots.length - 1].marker = marker; }
+        if (result?.ok && result.text) {
+          snapshots.push({ ...item, original: item.node.nodeValue });
+          if (result.mode === 'replace') {
+            item.node.nodeValue = result.text;
+          } else {
+            const marker = document.createElement('span'); marker.setAttribute(ROOT_ATTR, 'side-by-side'); marker.textContent = result.text; marker.style.cssText = 'display:block;opacity:0;transition:opacity 160ms ease;color:inherit'; item.node.parentNode.insertBefore(marker, item.node.nextSibling); requestAnimationFrame(() => { marker.style.opacity = '1'; }); snapshots[snapshots.length - 1].marker = marker;
+          }
+        }
         body.textContent = `正在翻译 ${completed} / ${segments.length} 段…`;
       }
     }

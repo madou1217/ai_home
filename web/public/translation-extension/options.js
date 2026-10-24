@@ -1,3 +1,3 @@
-const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans' };
+const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side' };
 chrome.storage.sync.get(defaults).then((settings) => { for (const key of Object.keys(defaults)) document.getElementById(key).value = settings[key] || ''; });
-document.getElementById('save').onclick = async () => { await chrome.storage.sync.set({ endpoint: document.getElementById('endpoint').value.trim().replace(/\/$/, ''), token: document.getElementById('token').value.trim(), target: document.getElementById('target').value }); document.getElementById('status').textContent = '已保存'; };
+document.getElementById('save').onclick = async () => { await chrome.storage.sync.set({ endpoint: document.getElementById('endpoint').value.trim().replace(/\/$/, ''), token: document.getElementById('token').value.trim(), target: document.getElementById('target').value, mode: document.getElementById('mode').value }); document.getElementById('status').textContent = '已保存'; };

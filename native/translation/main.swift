@@ -137,7 +137,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     switch event["type"] as? String {
     case "configure":
       panel.configure(event)
-      reader.serverPort = event["port"] as? Int ?? 9527
+      reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
       reader.webUIFocusUntil = event["until"] as? Double ?? 0
       // 心跳并非原生焦点的权威：后台/自动化页面仍可能上报聚焦。

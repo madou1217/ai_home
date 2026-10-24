@@ -12,6 +12,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   var defaultTarget = "zh-Hans"
   var autoCopy = false
   var copyScope = "selection"
+  var serverPort = 9527
   private var sameLanguageResult = false
   var output = ""
   private var replacementElement: AXUIElement?
@@ -73,6 +74,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     defaultTarget = event["target"] as? String ?? "zh-Hans"
     autoCopy = event["autoCopy"] as? Bool ?? false
     copyScope = event["copyScope"] as? String ?? "selection"
+    serverPort = event["port"] as? Int ?? serverPort
     let previous = panel.isVisible ? target : defaultTarget
     content.targetMenu.removeAllItems()
     content.serverMenu.removeAllItems()
@@ -260,6 +262,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   @objc func changeServer() {
     guard let target = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
     emit(["type": "server-target", "origin": target["origin"] as? String ?? "", "serverId": target["serverId"] as? String ?? "", "label": target["label"] as? String ?? "AIH Server"])
+  }
+  @objc func openSettings() {
+    if let url = URL(string: "http://127.0.0.1:\(serverPort)/ui/studio/translation?settings=1") {
+      NSWorkspace.shared.open(url)
+    }
   }
   @objc func togglePinned() {
     panel.level = isPinned ? .statusBar : .floating

@@ -59,6 +59,7 @@ import {
 } from '@/features/accounts/account-deletion-confirm';
 import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
 import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-presets';
+import { getAuthOptionValue, splitAuthOptionValue } from '@/features/accounts/auth-option-value';
 
 // 账号页全部业务动作 —— 从 Accounts.tsx 抽取的状态与处理函数（添加 / 授权进度 / 重新认证 /
 // 编辑凭据 / 导入导出 / 启停 / 默认账号 / 用量刷新 / 删除 / 打开 Desktop·CLI / 应用安装 …）。
@@ -246,7 +247,8 @@ export function useAccountActions({
   const previousAddProviderRef = React.useRef<Provider | undefined>(undefined);
   const cliClickTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
-  const addFormAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
+  const addFormAuthSelection = splitAuthOptionValue(Form.useWatch('authMode', form));
+  const addFormAuthMode = addFormAuthSelection.authMode;
   // 添加账号弹窗里的「从本机导入」：来源由服务端来源链解析（可用 + directImport），这里只持有结果。
   const [addLocalImportSource, setAddLocalImportSource] = React.useState<ProviderAuthSourceSummary | null>(null);
   const [addLocalImportSubmitting, setAddLocalImportSubmitting] = React.useState(false);
@@ -940,8 +942,9 @@ export function useAccountActions({
     if (previousAddProviderRef.current === selectedProvider) return;
     previousAddProviderRef.current = selectedProvider;
     const availableOptions = PROVIDER_AUTH_OPTIONS[selectedProvider] || [];
-    const firstActiveMode = availableOptions.find((opt) => !opt.disabled)?.value || availableOptions[0]?.value;
-    form.setFieldValue('authMode', firstActiveMode);
+    const firstActiveMode = availableOptions.find((opt) => !opt.disabled) || availableOptions[0];
+    const firstActiveValue = firstActiveMode ? getAuthOptionValue(firstActiveMode) : undefined;
+    form.setFieldValue('authMode', firstActiveValue);
   }, [form, selectedProvider]);
 
   /**
@@ -1123,6 +1126,7 @@ export function useAccountActions({
     provider: Provider;
     accountRef: string;
     authMode: AccountAuthMode;
+    authStrategy?: string;
     authorizationUrl?: string;
     redirectUri?: string;
     callbackCaptureStatus?: string;
@@ -1146,6 +1150,7 @@ export function useAccountActions({
       provider: result.provider,
       accountRef: result.accountRef,
       authMode: result.authMode,
+      authStrategy: result.authStrategy,
       reauth: flowKind === 'reauth',
       status: 'running',
       createdAt: Date.now(),
@@ -1186,7 +1191,7 @@ export function useAccountActions({
 
   const handleSubmitBrowserCallback = async () => {
     if (!addJob || addJob.status !== 'running' || addJob.pluginLogin) return;
-    const copy = getCallbackUiCopy(addJob.provider);
+    const copy = getCallbackUiCopy(addJob.provider, addJob.authStrategy);
     const callbackUrl = authCallbackUrl.trim();
     if (!callbackUrl) {
       message.warning(copy.emptyWarning);
@@ -1214,7 +1219,7 @@ export function useAccountActions({
   const canSubmitBrowserCallback = React.useMemo(() => {
     if (!addJob || addJob.status !== 'running' || addJob.pluginLogin) return false;
     if (!authCallbackUrl.trim()) return false;
-    if (!getCallbackUiCopy(addJob.provider).requiresAwaitingCode) return true;
+    if (!getCallbackUiCopy(addJob.provider, addJob.authStrategy).requiresAwaitingCode) return true;
     return addJob.authProgressState === 'awaiting_code';
   }, [addJob, authCallbackUrl]);
 
@@ -1247,13 +1252,14 @@ export function useAccountActions({
   const handleAdd = async (values: any) => {
     setSubmitting(true);
     let configPayload: any = undefined;
-    if (values.authMode === 'api-key' || values.authMode === 'auth-token') {
+    const selectedAuth = splitAuthOptionValue(values.authMode);
+    if (selectedAuth.authMode === 'api-key' || selectedAuth.authMode === 'auth-token') {
       configPayload = {
         apiKey: values.apiKey,
         baseUrl: values.baseUrl,
-        credentialType: values.authMode
+        credentialType: selectedAuth.authMode
       };
-    } else if (values.authMode === 'vertex-ai') {
+    } else if (selectedAuth.authMode === 'vertex-ai') {
       configPayload = {
         projectId: values.projectId,
         location: values.location,
@@ -1262,7 +1268,8 @@ export function useAccountActions({
     }
     const requestPayload = {
       provider: values.provider as Provider,
-      authMode: values.authMode as AccountAuthMode,
+      authMode: selectedAuth.authMode as AccountAuthMode,
+      ...(selectedAuth.authStrategy ? { authStrategy: selectedAuth.authStrategy } : {}),
       config: configPayload,
       // 缺省＝参与；只有用户显式关掉才传 false（服务端建账号后立即落账号级偏好）。
       aliasPoolParticipates: values.aliasPoolParticipates !== false

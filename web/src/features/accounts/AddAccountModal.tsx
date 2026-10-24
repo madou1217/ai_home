@@ -6,7 +6,8 @@ import {
   getProviderSiteLabel,
   providerFamilies,
 } from '@/providers/catalog';
-import type { AccountAuthMode, Provider } from '@/types';
+import type { Provider } from '@/types';
+import { getAuthOptionValue, splitAuthOptionValue } from '@/features/accounts/auth-option-value';
 import './account-overlays.css';
 
 interface AddAccountModalProps {
@@ -44,7 +45,8 @@ export function AddAccountModal({
   pluginLogin
 }: AddAccountModalProps) {
   const selectedProvider = Form.useWatch('provider', form) as Provider | undefined;
-  const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
+  const selectedAuth = splitAuthOptionValue(Form.useWatch('authMode', form));
+  const selectedAuthMode = selectedAuth.authMode;
   const providerAuthOptions = selectedProvider
     ? (PROVIDER_AUTH_OPTIONS[selectedProvider] || [])
     : [];
@@ -109,8 +111,8 @@ export function AddAccountModal({
               <Space direction="vertical">
                 {providerAuthOptions.map((option) => (
                   <Radio
-                    key={option.value}
-                    value={option.value}
+                    key={getAuthOptionValue(option)}
+                    value={getAuthOptionValue(option)}
                     disabled={Boolean(option.disabled)}
                   >
                     <Space direction="vertical" size={0}>

@@ -35,7 +35,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/cli/services/usage/{window,credit}-format.js` | **Adapter（保输出兼容）** | 视图模型的 CLI 适配层，输出与历史逐字节一致 | `test/usage.window-format.test.js` |
 | `lib/server/account-usage-view.js` | **Table-Driven Mapping** | 账号 payload 归一：账号字段用声明式字段表，条目交给视图模型 | `test/quota-view-provider-coverage.test.js` |
 | `web/src/components/account/quota-scopes.ts` | **Single Source of Truth（跨端契约）** | WebUI 展示行唯一派生处，只镜像服务端契约，不镜像 provider 名单 | 同上 |
-| `lib/account/native-auth-projection.js` | **Strategy（每 provider 一个投影策略）+ CAS** | 凭据投影/回写；`compareAndSwapAccountNativeAuth` 防并发覆盖 | `test/cline-*`、`test/kiro-*` |
+| `lib/account/native-auth-projection.js` | **Strategy（每 provider 一个投影策略）+ CAS** | 凭据投影/回写；`compareAndSwapAccountNativeAuth` 防并发覆盖。artifact 可声明 `liveStore`（原生客户端**原地续期**同一份文件，如 zcode 的 `v2/credentials.json`）：投影只在磁盘那份缺失/空/损坏/不比账号快照新时才写回，**绝不**用旧快照盖掉客户端刚续期出的活凭据；该判定由描述符驱动，不写 provider 名分支 | `test/cline-*`、`test/kiro-*` |
 | `lib/account/host-account-sync/index.js` | **Observer Registry** | 宿主登录态观察者注册表；与删除墓碑集合互相守卫 | `test/host-account-sync-registry.test.js` |
 | `lib/account/host-generic-detectors.js` + `lib/account/host-account-detectors.js` | **Registry Inversion** | 「扫描本机账号」覆盖面由声明倒排：认证来源 `scan` 钩子（`lib/providers/contract.js` 白名单登记，`host-auth-import` 默认注入）+ 凭据端口 `hostApiKeySlots`（provider 专属 API Key 落点）；不维护 provider 名单 | `test/host-account-detectors.test.js`、`test/auth-sources.test.js` |
 | `lib/account/host-auth-scan.js` / `lib/account/host-api-key-scan.js` | **Template（insert-only 入库链）** | 宿主产物 → 临时登录目录 → `registerProviderAuthProjection({ respectDeletion, insertOnly })`；API Key 走 `buildApiKeyIdentity` 同源身份。只新增、尊重墓碑、比不出代际就不动库 | `test/host-generic-account-scan.test.js` |

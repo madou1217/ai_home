@@ -26,6 +26,13 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     // other AX-aware apps, while the global monitor below keeps the compact
     // contextual menu available when the host app exposes no Services UI.
     NSApp.servicesProvider = self
+    // Register the provider explicitly as well as assigning the app-level
+    // provider.  The helper is a dynamically built, hidden app under AIH's
+    // run directory; explicit registration makes the Services daemon bind the
+    // provider name to this live process instead of relying only on the bundle
+    // metadata discovered by LaunchServices.
+    NSRegisterServicesProvider(self, "com.aihome.translation")
+    NSUpdateDynamicServices()
     contextMenu.autoenablesItems = false
     updateTrust()
     activationObserver = NSWorkspace.shared.notificationCenter.addObserver(

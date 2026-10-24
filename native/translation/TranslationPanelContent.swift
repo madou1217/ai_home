@@ -1,6 +1,6 @@
 import AppKit
 
-enum TranslationPhase { case waiting, confirmation, streaming, done, stopped, failed }
+enum TranslationPhase { case preflight, waiting, confirmation, streaming, done, stopped, failed }
 
 // 仅负责布局与反馈，窗口和请求生命周期由 TranslationPanel 持有。
 final class TranslationPanelContent {
@@ -159,11 +159,11 @@ final class TranslationPanelContent {
 
   func setPhase(_ next: TranslationPhase, animated: Bool = true) {
     phase = next
-    let busy = next == .waiting || next == .streaming
-    let labels: [TranslationPhase: String] = [.waiting: "正在翻译", .confirmation: "需要确认目标语言", .streaming: "正在生成译文", .done: "翻译完成", .stopped: "已停止", .failed: "翻译失败"]
+    let busy = next == .preflight || next == .waiting || next == .streaming
+    let labels: [TranslationPhase: String] = [.preflight: "正在识别语言", .waiting: "正在翻译", .confirmation: "需要确认目标语言", .streaming: "正在生成译文", .done: "翻译完成", .stopped: "已停止", .failed: "翻译失败"]
     phaseLabel.stringValue = labels[next] ?? ""
     phaseLabel.textColor = next == .failed ? .systemRed : next == .done ? .systemGreen : busy ? .controlAccentColor : .secondaryLabelColor
-    hint.stringValue = next == .waiting ? "译文即将出现，生成后会实时显示" : next == .confirmation ? "请选择其它目标语言，或明确选择仍然翻译" : next == .stopped && !hasOutput ? "已停止生成，可以重新翻译" : ""
+    hint.stringValue = next == .preflight ? "正在确认原文与目标语言…" : next == .waiting ? "译文即将出现，生成后会实时显示" : next == .confirmation ? "请选择其它目标语言，或明确选择仍然翻译" : next == .stopped && !hasOutput ? "已停止生成，可以重新翻译" : ""
     hint.isHidden = hint.stringValue.isEmpty
     if busy && !reducedMotion { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     stop.isHidden = !busy
@@ -200,6 +200,13 @@ final class TranslationPanelContent {
     setPhase(.confirmation)
   }
 
+  func showPreflight(_ message: String = "正在确认原文与目标语言…") {
+    hint.stringValue = message
+    hint.textColor = .secondaryLabelColor
+    hint.isHidden = false
+    setPhase(.preflight)
+  }
+
   func serverSwitching(_ label: String) {
     serverSwitchPending = true
     model.stringValue = "正在切换：\(label)"
@@ -227,7 +234,7 @@ final class TranslationPanelContent {
 
   func updateElapsed(_ seconds: TimeInterval) {
     elapsed.stringValue = String(format: "%.1fs", seconds)
-    if (phase == .waiting || phase == .streaming) && seconds >= 6 {
+    if (phase == .preflight || phase == .waiting || phase == .streaming) && seconds >= 6 {
       phaseLabel.stringValue = "模型响应较慢"
       phaseLabel.textColor = .systemOrange
       hint.stringValue = "仍在生成，你可以继续等待或停止"

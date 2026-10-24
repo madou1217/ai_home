@@ -142,7 +142,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     hideTrigger()
     show(panel)
     content.begin(selected)
-    content.showConfirmation("正在确认原文与目标语言…")
+    // Detection is a separate busy phase. Confirmation actions stay hidden
+    // until the helper returns an actual intent decision.
+    content.showPreflight()
     emit(["type": "translate-intent", "id": requestID, "text": selected, "target": target])
   }
 

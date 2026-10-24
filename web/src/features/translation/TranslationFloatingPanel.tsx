@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Select, message } from 'antd';
-import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, CopyOutlined, PushpinOutlined, PushpinFilled, ReloadOutlined, TranslationOutlined } from '@ant-design/icons';
 import type { TranslationLanguage } from '@/types';
 import { translationAPI } from '@/services/api';
 import {
@@ -21,7 +21,6 @@ import {
   MAX_FLOATING_SELECTION_CHARS,
   buildLanguageOptions,
   computeFloatingAnchor,
-  isSameTranslationLanguage,
   languageLabelOf,
   resolveTranslationSelection,
   shortcutLabel,
@@ -31,6 +30,8 @@ import {
 import {
   getTranslationBootstrap,
   loadTranslationBootstrap,
+  shouldAutoCopy,
+  writeTranslationClipboard,
   type TranslationBootstrap,
 } from './translation-settings-store';
 import {
@@ -38,11 +39,15 @@ import {
   subscribeTranslationFloatingPreferences,
 } from './translation-preferences';
 import { useTranslationStream } from './use-translation';
+import { resolveLanguageIntent, type TranslationTargetPolicy } from './language-intent';
 import { useTranslationHistoryRecorder } from './use-translation-history';
+import { useFloatingPanelPosition } from './use-floating-panel-position';
+import { useSystemTranslationFocus } from './use-system-translation-focus';
+import { useTranslationFeedback } from './use-translation-feedback';
 import styles from './translation-floating.module.css';
 
 const TRIGGER_SIZE = 28;
-const PANEL_WIDTH = 380;
+const PANEL_WIDTH = 408;
 const PANEL_ESTIMATED_HEIGHT = 220;
 const DEFAULT_TARGET = 'zh-Hans';
 
@@ -112,15 +117,46 @@ export default function TranslationFloatingPanel() {
   const [languages, setLanguages] = useState<TranslationLanguage[]>([]);
   const [panelTarget, setPanelTarget] = useState(DEFAULT_TARGET);
   const [panelSource, setPanelSource] = useState('');
+  const [panelConfidence, setPanelConfidence] = useState<'high' | 'medium' | 'low' | undefined>();
   const [preparing, setPreparing] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [preparationCancelled, setPreparationCancelled] = useState(false);
+  const [targetPolicy, setTargetPolicy] = useState<TranslationTargetPolicy>('saved');
+  const [autoCopy, setAutoCopy] = useState(false);
+  const [copyScope, setCopyScope] = useState<'selection' | 'page' | 'all'>('selection');
+  const [confirmationDismissed, setConfirmationDismissed] = useState(false);
+  const closeTimer = useRef<number>();
+  const copyTimer = useRef<number>();
+  const autoCopiedRequest = useRef<object | null>(null);
 
   const bootstrapRef = useRef<TranslationBootstrap | null>(getTranslationBootstrap());
   const panelTargetRef = useRef(DEFAULT_TARGET);
   const openTokenRef = useRef(0);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const { position, viewportRevision, dragging, resetPosition, pinToTop, ...dragHandlers } = useFloatingPanelPosition(panelRef);
   const stream = useTranslationStream();
   useTranslationHistoryRecorder(stream.state);
+  useSystemTranslationFocus();
+
+  useEffect(() => () => {
+    window.clearTimeout(closeTimer.current);
+    window.clearTimeout(copyTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const request = stream.state.request;
+    if (!autoCopy || stream.state.status !== 'done' || !request || autoCopiedRequest.current === request) return;
+    const meta = stream.state.meta;
+    if (meta && meta.from && meta.to && meta.from === meta.to) return;
+    if (!shouldAutoCopy({ scope: copyScope, client: 'floating', mode: 'selection', event: { type: 'done', text: stream.state.text } })) return;
+    autoCopiedRequest.current = request;
+    void writeTranslationClipboard(stream.state.text).then(() => {
+      window.clearTimeout(copyTimer.current); setCopied(true); copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
+    }).catch(() => {});
+  }, [autoCopy, copyScope, stream.state.request, stream.state.status, stream.state.text]);
 
   useEffect(
     () =>
@@ -129,6 +165,13 @@ export default function TranslationFloatingPanel() {
         if (!preferences.enabled) {
           setTrigger(null);
           setPanel(null);
+          openTokenRef.current += 1;
+          setPreparing(false);
+          window.clearTimeout(closeTimer.current);
+          setClosing(false);
+          setPinned(false);
+          resetPosition();
+          stream.reset();
         }
       }),
     [],
@@ -136,13 +179,32 @@ export default function TranslationFloatingPanel() {
 
   const closePanel = useCallback(() => {
     openTokenRef.current += 1;
-    setPanel(null);
+    window.clearTimeout(closeTimer.current);
+    setTrigger(null);
+    setClosing(true);
     setPreparing(false);
-    stream.reset();
+    stream.cancel();
+    closeTimer.current = window.setTimeout(() => {
+      setPanel(null);
+      setClosing(false);
+      setPinned(false);
+      resetPosition();
+      stream.reset();
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 160);
   }, [stream]);
 
   const runTranslation = useCallback(
-    (text: string, target: string, bootstrap: TranslationBootstrap | null) => {
+    (text: string, target: string, bootstrap: TranslationBootstrap | null, detected = panelSource, confidence = panelConfidence, policy: TranslationTargetPolicy = targetPolicy) => {
+      const intent = resolveLanguageIntent(
+        { source: AUTO_LANGUAGE, target, detected, confidence, targetPolicy: policy },
+        bootstrap?.languages || languages,
+      );
+      if (intent.state !== 'ready') {
+        setConfirmationDismissed(false);
+        return false;
+      }
+      setCopied(false);
+      setPreparationCancelled(false);
       const selection = resolveTranslationSelection(
         bootstrap?.settings || null,
         bootstrap?.models || [],
@@ -154,20 +216,28 @@ export default function TranslationFloatingPanel() {
       void stream.run({
         text,
         source: AUTO_LANGUAGE,
-        target,
-        model: selection.model,
-        provider: selection.provider,
+        target: intent.target,
+        targetPolicy: policy,
+        ...(bootstrap?.settings.routes.length ? { routes: bootstrap.settings.routes } : { model: selection.model, provider: selection.provider }),
       });
     },
-    [stream],
+    [languages, panelConfidence, panelSource, stream, targetPolicy],
   );
 
   const openPanel = useCallback(
     async (text: string, rect: SelectionRect) => {
       const token = ++openTokenRef.current;
+      window.clearTimeout(closeTimer.current);
+      setClosing(false);
+      setCopied(false);
+      setPreparationCancelled(false);
       setTrigger(null);
+      if (!pinned) resetPosition();
       setPanel({ text, rect });
       setPanelSource('');
+      setPanelConfidence(undefined);
+      setTargetPolicy('saved');
+      setConfirmationDismissed(false);
       setPreparing(true);
       stream.reset();
 
@@ -176,7 +246,7 @@ export default function TranslationFloatingPanel() {
         .detect(text.slice(0, 4000))
         .catch(() => null);
 
-      let bootstrap = bootstrapRef.current || getTranslationBootstrap();
+      let bootstrap = getTranslationBootstrap() || bootstrapRef.current;
       if (!bootstrap) {
         try {
           bootstrap = await loadTranslationBootstrap();
@@ -187,6 +257,8 @@ export default function TranslationFloatingPanel() {
       if (token !== openTokenRef.current) return;
       bootstrapRef.current = bootstrap;
       setLanguages(bootstrap?.languages || []);
+      setAutoCopy(bootstrap?.settings.autoCopy === true);
+      setCopyScope(bootstrap?.settings.copyScope || 'selection');
       const target = bootstrap?.settings.target || DEFAULT_TARGET;
       panelTargetRef.current = target;
       setPanelTarget(target);
@@ -195,17 +267,14 @@ export default function TranslationFloatingPanel() {
       if (token !== openTokenRef.current) return;
       const detected = String(detection?.code || '').trim();
       setPanelSource(detected);
+      const confidence = detection?.confidence;
+      setPanelConfidence(confidence);
       setPreparing(false);
       // 检测/加载期间用户可能已经改过目标语言，以最新选择为准。
       const currentTarget = panelTargetRef.current;
-      // 原文已经是目标语言：停掉准备期间可能已启动的请求，不发翻译、不落历史记录。
-      if (detected && detected === currentTarget) {
-        stream.reset();
-        return;
-      }
-      runTranslation(text, currentTarget, bootstrap);
+      runTranslation(text, currentTarget, bootstrap, detected, confidence, 'saved');
     },
-    [runTranslation, stream],
+    [runTranslation, stream, pinned, resetPosition],
   );
 
   // 选区 → 小图标
@@ -275,7 +344,7 @@ export default function TranslationFloatingPanel() {
 
   // 点击浮层外部关闭
   useEffect(() => {
-    if (!panel) return;
+    if (!panel || pinned || closing) return;
     const handleMouseDown = (event: MouseEvent) => {
       const target = event.target as Element | null;
       if (panelRef.current?.contains(target)) return;
@@ -287,7 +356,7 @@ export default function TranslationFloatingPanel() {
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [panel, closePanel]);
+  }, [panel, pinned, closing, closePanel]);
 
   // 面板实际高度与估算不同时重新夹取位置（长译文可能顶到视口外）
   useLayoutEffect(() => {
@@ -304,9 +373,10 @@ export default function TranslationFloatingPanel() {
       { width: TRIGGER_SIZE, height: TRIGGER_SIZE },
       6,
     );
-  }, [trigger]);
+  }, [trigger, viewportRevision]);
 
   const panelAnchor = useMemo<FloatingAnchor | null>(() => {
+    void viewportRevision;
     if (!panel || typeof window === 'undefined') return null;
     return computeFloatingAnchor(
       panel.rect,
@@ -314,7 +384,7 @@ export default function TranslationFloatingPanel() {
       { width: Math.min(PANEL_WIDTH, window.innerWidth - 24), height: panelHeight },
       12,
     );
-  }, [panel, panelHeight]);
+  }, [panel, panelHeight, viewportRevision]);
 
   const targetOptions = useMemo(
     () => buildLanguageOptions(languages, { includeAuto: false }),
@@ -322,7 +392,14 @@ export default function TranslationFloatingPanel() {
   );
 
   const meta = stream.state.meta;
-  const sameLanguage = isSameTranslationLanguage(AUTO_LANGUAGE, panelTarget, panelSource);
+  const languageIntent = resolveLanguageIntent(
+    { source: AUTO_LANGUAGE, target: panelTarget, detected: panelSource, confidence: panelConfidence, targetPolicy },
+    languages,
+  );
+  const sameLanguage = languageIntent.state === 'same_language';
+  const showConfirmation = Boolean(panel && !preparing && !confirmationDismissed && languageIntent.state !== 'ready');
+  const feedback = useTranslationFeedback(preparationCancelled ? { ...stream.state, status: 'cancelled' } : stream.state, preparing, sameLanguage);
+  const hasOutput = Boolean(stream.state.text.trim());
   const routeLabel = meta
     ? `${meta.fromLabel} → ${meta.toLabel}`
     : `${languageLabelOf(languages, panelSource)} → ${languageLabelOf(languages, panelTarget)}`;
@@ -347,7 +424,7 @@ export default function TranslationFloatingPanel() {
           }}
           onClick={() => void openPanel(trigger.text, trigger.rect)}
         >
-          <span className={styles.triggerGlyph}>译</span>
+          <TranslationOutlined className={styles.triggerGlyph} />
         </button>
       ) : null}
 
@@ -355,34 +432,51 @@ export default function TranslationFloatingPanel() {
         <div
           ref={panelRef}
           data-translation-floating
-          className={styles.panel}
-          style={{ left: panelAnchor.left, top: panelAnchor.top }}
+          className={`${styles.panel} ${pinned ? styles.panelPinned : ''} ${closing ? styles.panelClosing : ''} ${dragging ? styles.panelDragging : ''}`}
+          style={position || { left: panelAnchor.left, top: panelAnchor.top }}
+          data-phase={feedback.phase}
+          data-pinned={pinned}
+          aria-busy={feedback.active}
           role="dialog"
           aria-label="划词翻译"
         >
-          <header className={styles.panelHeader}>
-            <span className={styles.route}>{routeLabel}</span>
-            <div className={styles.headerActions}>
+          <header className={styles.panelHeader} {...dragHandlers} title="拖动标题移动面板">
+            <div className={styles.headerSummary}>
+              <TranslationOutlined className={styles.headerIcon} />
+              <span className={styles.route}>{routeLabel}</span>
+            </div>
+            <div className={styles.headerActions} data-panel-actions>
               <Select
                 size="small"
                 className={styles.targetSelect}
                 value={panelTarget}
                 options={targetOptions}
-                disabled={!targetOptions.length}
+                aria-label="目标语言"
+                disabled={preparing || !targetOptions.length}
                 popupMatchSelectWidth={false}
                 popupClassName={styles.targetSelectPopup}
                 onChange={(value) => {
                   panelTargetRef.current = value;
                   setPanelTarget(value);
                   if (!panel.text) return;
-                  // 切到「原文语言」时立即停掉当前翻译，正文改为提示；切回其它语言重新翻译。
-                  if (isSameTranslationLanguage(AUTO_LANGUAGE, value, panelSource)) {
-                    stream.reset();
-                    return;
-                  }
-                  runTranslation(panel.text, value, bootstrapRef.current);
+                  setTargetPolicy('confirm');
+                  setConfirmationDismissed(false);
+                  runTranslation(panel.text, value, bootstrapRef.current, panelSource, panelConfidence, 'confirm');
                 }}
               />
+              <button
+                type="button"
+                className={`${styles.iconButton} ${pinned ? styles.pinned : ''}`}
+                aria-label={pinned ? '取消置顶' : '置顶面板'}
+                aria-pressed={pinned}
+                title={pinned ? '取消置顶' : '固定并置顶（点击外部不关闭）'}
+                onClick={() => {
+                  if (!pinned) pinToTop();
+                  setPinned((value) => !value);
+                }}
+              >
+                {pinned ? <PushpinFilled /> : <PushpinOutlined />}
+              </button>
               <button
                 type="button"
                 className={styles.iconButton}
@@ -393,68 +487,95 @@ export default function TranslationFloatingPanel() {
               </button>
             </div>
           </header>
-
+          <div className={styles.statusRow}>
+            <span className={styles.phase} role="status">
+              <span className={styles.phaseDot} aria-hidden="true" />
+              <span key={feedback.phase} className={styles.statusLabel}>{feedback.label}</span>
+            </span>
+            <span className={styles.statusAside}>
+              {pinned ? <span className={styles.pinBadge}><PushpinFilled /> 已置顶</span> : null}
+              {feedback.active || stream.state.status !== 'idle' ? <span className={styles.elapsed}>{feedback.elapsedLabel}</span> : null}
+            </span>
+          </div>
+          <div className={styles.sourcePreview} title={panel.text}>{panel.text}</div>
           <div className={styles.panelBody}>
-            {preparing ? (
-              <span className={styles.placeholder}>正在准备翻译…</span>
-            ) : sameLanguage ? (
+            {sameLanguage && !preparing ? (
               <span className={styles.placeholder}>
                 原文已是{languageLabelOf(languages, panelTarget)}，无需翻译
               </span>
-            ) : stream.state.text ? (
+            ) : hasOutput ? (
               <div className={styles.text}>
                 {stream.state.text}
                 {stream.busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
               </div>
-            ) : stream.state.status === 'error' ? null : (
-              <span className={styles.placeholder}>
-                {stream.busy ? '正在翻译…' : '选中文本后点击「译」'}
-              </span>
-            )}
+            ) : feedback.active ? (
+              <div className={styles.loadingState}>
+                <div className={styles.loadingCaption}><span className={styles.loadingOrb} aria-hidden="true" />{feedback.hint}</div>
+                <div className={styles.skeleton} aria-hidden="true"><span /><span /><span /></div>
+              </div>
+            ) : feedback.phase === 'cancelled' ? (
+              <span className={styles.placeholder}>已停止生成，点击「重新翻译」继续。</span>
+            ) : null}
             {stream.state.status === 'error' && stream.state.error ? (
-              <div className={styles.errorRow}>
+              <div className={styles.errorRow} role="alert">
                 <span className={styles.errorText}>{stream.state.error.message}</span>
-                <button
-                  type="button"
-                  className={styles.textButton}
-                  onClick={() => {
-                    if (panel.text) runTranslation(panel.text, panelTarget, bootstrapRef.current);
-                  }}
-                >
-                  重试
-                </button>
+              </div>
+            ) : null}
+            {showConfirmation ? (
+              <div className={styles.languageIntentStrip} role="status">
+                <span>{sameLanguage ? '原文与目标语言相同。请选择目标语言，或确认仍然翻译。' : '目标语言需要确认。'}</span>
+                <button type="button" className={styles.textButton} onClick={() => { stream.reset(); setConfirmationDismissed(true); setTargetPolicy('same-language'); }}>保持原文</button>
+                <button type="button" className={styles.textButton} onClick={() => { setTargetPolicy('explicit'); runTranslation(panel.text, panelTarget, bootstrapRef.current, panelSource, panelConfidence, 'explicit'); }}>仍然翻译</button>
               </div>
             ) : null}
           </div>
 
           <footer className={styles.panelFooter}>
-            <span className={styles.meta}>
-              {meta ? `${meta.model}${meta.provider ? ` · ${meta.provider}` : ''}` : ''}
-              {stream.state.status === 'done' && stream.state.elapsedMs
-                ? ` · ${(stream.state.elapsedMs / 1000).toFixed(1)}s`
-                : ''}
+            <span className={styles.meta} title={meta?.model}>
+              {meta?.model || (preparing ? '正在准备翻译服务' : 'AI 翻译')}
             </span>
             <div className={styles.footerActions}>
-              {stream.busy ? (
-                <button type="button" className={styles.textButton} onClick={stream.cancel}>
+              {feedback.active ? (
+                <button type="button" className={styles.textButton} onClick={() => {
+                  if (preparing) {
+                    openTokenRef.current += 1;
+                    setPreparing(false);
+                    setPreparationCancelled(true);
+                  }
+                  stream.cancel();
+                }}>
+                  <span className={styles.stopGlyph} aria-hidden="true" />
                   停止
                 </button>
               ) : null}
-              <button
+              {!feedback.active && !sameLanguage ? (
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  onClick={() => {
+                    if (preparationCancelled) void openPanel(panel.text, panel.rect);
+                    else if (panel.text) runTranslation(panel.text, panelTarget, bootstrapRef.current, panelSource, panelConfidence, targetPolicy);
+                  }}
+                >
+                  <ReloadOutlined /> {feedback.phase === 'error' ? '重试' : '重新翻译'}
+                </button>
+              ) : null}
+              {hasOutput ? <button
                 type="button"
-                className={styles.textButton}
-                disabled={!stream.state.text.trim()}
+                className={`${styles.textButton} ${copied ? styles.copied : ''}`}
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(stream.state.text);
-                    message.success('译文已复制');
+                    await writeTranslationClipboard(stream.state.text);
+                    window.clearTimeout(copyTimer.current);
+                    setCopied(true);
+                    copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
                   } catch (_error) {
                     message.error('复制失败，请手动选择译文');
                   }
                 }}
               >
-                <CheckOutlined /> 复制
-              </button>
+                <span key={String(copied)} className={styles.copyLabel}>{copied ? <CheckOutlined /> : <CopyOutlined />} {copied ? '已复制' : '复制'}</span>
+              </button> : null}
             </div>
           </footer>
         </div>

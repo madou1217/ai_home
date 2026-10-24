@@ -24,6 +24,7 @@ import { LIFECYCLE_ACTION_LABELS as ACTION_LABELS } from './lifecycle-presentati
 import {
   MANAGED_TOOL_CAPABILITY_LABELS as CAPABILITY_LABELS,
   MANAGED_TOOL_DISCOVERY_SOURCE_LABELS as DISCOVERY_SOURCE_LABELS,
+  MANAGED_TOOL_MANAGEMENT_LABELS as MANAGEMENT_LABELS,
   managedToolConfigSummary as configSummary,
   managedToolRuntimeSummary as runtimeSummary,
   useManagedTools
@@ -32,12 +33,6 @@ import {
 interface ManagedToolsPanelProps {
   category: ToolkitToolCategoryId;
 }
-
-const MANAGEMENT_LABELS: Record<string, string> = {
-  aih: 'AIH 管理',
-  homebrew: 'Homebrew 管理',
-  external: '外部安装'
-};
 
 export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) {
   const {
@@ -132,13 +127,14 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                       label: '程序',
                       value: tool.executablePath || tool.binaryName,
                       tooltip: tool.executablePath || tool.binaryName,
-                      muted: !tool.installed
+                      muted: !tool.installed,
+                      ellipsis: true
                     },
                     ...(tool.runtimeInspectable ? [{
                       label: '运行状态',
                       value: `${runtimeSummary(tool)}${startupSources ? `；自动启动：${startupSources}` : ''}`
                     }] : []),
-                    ...(tool.configState !== 'none' || tool.runtimeInspectable ? [{
+                    ...(tool.configEditable || tool.configState !== 'none' || tool.runtimeInspectable ? [{
                       label: '配置',
                       value: configSummary(tool)
                     }] : []),
@@ -217,8 +213,8 @@ export default function ManagedToolsPanel({ category }: ManagedToolsPanelProps) 
                           size="small"
                           shape="circle"
                           icon={<EditOutlined />}
-                          aria-label={`编辑 ${tool.name} 配置`}
-                          title={`编辑 ${tool.name} 配置`}
+                          aria-label={`${tool.configExists ? '编辑' : '新建'} ${tool.name} 配置`}
+                          title={`${tool.configExists ? '编辑' : '新建'} ${tool.name} 配置`}
                           onClick={() => setEditingTool(tool)}
                         />
                       ) : null}

@@ -207,6 +207,7 @@ func builtinClaude() Definition {
 				MacOS: &DesktopPlatform{
 					ClientName:   "Claude",
 					ExecNames:    []string{"Claude"},
+					BundleID:     "com.anthropic.claudefordesktop",
 					PathIncludes: []string{"/Claude.app/Contents/MacOS/"},
 					InstallPaths: []string{"/Applications/Claude.app", "{hostHomeDir}/Applications/Claude.app"},
 				},

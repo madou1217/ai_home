@@ -1679,6 +1679,8 @@ export interface ManagedAppItem {
   /** 当前宿主实际承载的 Provider 标识，顺序与卡片角标展示一致。 */
   integrationProviders?: string[];
   type: 'cli' | 'desktop' | 'ide';
+  /** 无账号宿主启动能力；由 Desktop 策略下发。 */
+  hostLaunchLabel?: string;
   categories: string[];
   binaryName: string;
   cliPath: string;
@@ -2343,6 +2345,7 @@ export interface ManagedToolItem {
   configWritable: boolean;
   requiresElevation: boolean;
   configEditable: boolean;
+  configNote?: string;
   managedPath?: string;
   managedBy: 'aih' | 'homebrew' | '' | string;
   canInstall: boolean;
@@ -3553,7 +3556,52 @@ export interface TranslationSettings {
   /** 空串 = 未显式设置，由服务端按模型目录兜底 */
   model: string;
   provider: string;
+  systemEnabled: boolean;
+  targetPolicy: 'saved' | 'explicit' | 'confirm' | 'same-language';
+  autoCopy: boolean;
+  copyScope: 'selection' | 'page' | 'all';
+  routes: TranslationRoutePreference[];
   updatedAt: number;
+}
+
+export interface TranslationRoutePreference {
+  id: string;
+  /** Translation engine id; gateway account provider is kept in modelProvider. */
+  provider: string;
+  model: string;
+  modelProvider?: string;
+  enabled: boolean;
+  priority: number;
+  operations: Array<'selection' | 'batch' | 'page' | 'replace'>;
+}
+
+export interface TranslationProviderField {
+  label: string;
+  secret?: boolean;
+  required?: boolean;
+  format?: 'url';
+  defaultValue?: string;
+  placeholder?: string;
+}
+
+export interface TranslationProviderOption {
+  id: string;
+  label: string;
+  operations: TranslationRoutePreference['operations'];
+  capabilities: { streaming?: boolean; detection?: boolean; glossary?: boolean; formality?: boolean };
+  auth: { modes: string[]; required: boolean; fields: string[] };
+  config: {
+    fields: string[];
+    fieldDefinitions?: Record<string, TranslationProviderField>;
+    modelSource?: 'gateway' | 'service';
+    defaultModel?: string;
+  };
+  metadata: { access?: string; accessLabel?: string; accessDescription?: string };
+  executable: boolean;
+  configured: boolean;
+  missingFields: string[];
+  secretConfigured: Record<string, boolean>;
+  values: Record<string, string>;
 }
 
 export interface TranslationSettingsResponse {
@@ -3595,7 +3643,10 @@ export interface TranslationGlossaryEntry {
 export interface TranslationStreamRequest {
   text: string;
   source?: string;
-  target: string;
+  target?: string | null;
+  targetPolicy?: 'saved' | 'explicit' | 'confirm' | 'same-language';
+  routes?: TranslationRoutePreference[];
+  operation?: 'selection' | 'batch' | 'page' | 'replace';
   model?: string;
   provider?: string;
   glossary?: TranslationGlossaryEntry[];
@@ -3603,6 +3654,17 @@ export interface TranslationStreamRequest {
 }
 
 export type TranslationStreamEvent =
+  | {
+    type: 'attempt_start' | 'attempt_success' | 'attempt_failure';
+    attempt: number;
+    routeId: string;
+    provider: string;
+    modelProvider?: string;
+    model: string;
+    retryable?: boolean;
+    code?: string;
+    status?: number;
+  }
   | {
     type: 'start';
     from: string;
@@ -3616,7 +3678,7 @@ export type TranslationStreamEvent =
     provider: string;
   }
   | { type: 'delta'; content: string }
-  | { type: 'done'; text: string; usage: Record<string, unknown> | null; elapsedMs: number }
+  | { type: 'done'; text: string; usage: Record<string, unknown> | null; elapsedMs: number; route?: TranslationRoutePreference | null }
   | {
     type: 'error';
     code: string;
@@ -3625,3 +3687,10 @@ export type TranslationStreamEvent =
     partialText: string;
     elapsedMs: number;
   };
+
+export interface SystemTranslationStatus {
+  supported: boolean;
+  enabled: boolean;
+  status: 'disabled' | 'unsupported' | 'starting' | 'running' | 'permission-required' | 'error';
+  detail: string;
+}

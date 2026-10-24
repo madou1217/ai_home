@@ -1,0 +1,16 @@
+.toolkit-warning-dot {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.toolkit-warning-dot:focus-visible {
+  outline: 2px solid var(--color-warning);
+  outline-offset: 2px;
+}

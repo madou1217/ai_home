@@ -10,10 +10,10 @@ import './account-overlays.css';
 
 const { Text } = Typography;
 
-// agy/claude keep a CLI running and want an authorization code pasted in, while
-// codex/gemini redirect to a URL we forward. Centralizing the strings (and the
-// "must wait for the code prompt" gate) keeps the modal free of scattered
-// per-provider conditionals.
+// Native CLI strategies may keep a CLI running and want an authorization code
+// pasted in, while direct OAuth strategies accept a browser callback URL.
+// Centralizing the strings (and the "must wait for the code prompt" gate) keeps
+// the modal driven by strategy data instead of provider-specific branches.
 type CallbackUiCopy = {
   hint: string;
   placeholder: string;
@@ -23,8 +23,8 @@ type CallbackUiCopy = {
   requiresAwaitingCode: boolean;
 };
 
-export function getCallbackUiCopy(provider?: string): CallbackUiCopy {
-  if (provider === 'agy') {
+export function getCallbackUiCopy(provider?: string, authStrategy = ''): CallbackUiCopy {
+  if (authStrategy === 'native-cli') {
     return {
       hint: '授权后如果页面显示 authorization code，把完整授权码粘贴到这里，系统会写回 Antigravity CLI。',
       placeholder: '粘贴 Google 授权页返回的完整授权码',
@@ -32,6 +32,16 @@ export function getCallbackUiCopy(provider?: string): CallbackUiCopy {
       emptyWarning: '请粘贴授权码',
       submitSuccess: '授权码已提交，正在确认授权结果',
       requiresAwaitingCode: true
+    };
+  }
+  if (authStrategy === 'aih-google-oauth') {
+    return {
+      hint: '授权完成后，把浏览器地址栏里的完整回调地址粘贴到这里。AI Home 会直接换取 Antigravity OAuth 凭据，不需要安装 CLI 或 Desktop。',
+      placeholder: '粘贴 Google 授权完成后的完整回调地址',
+      submitLabel: '提交回调地址',
+      emptyWarning: '请粘贴完整回调地址',
+      submitSuccess: '回调地址已提交，正在确认授权结果',
+      requiresAwaitingCode: false
     };
   }
   // kiro 只有 refresh_token 这一种认证方式会用到这个「粘贴并提交」入口
@@ -408,11 +418,11 @@ export function AuthProgressModal({
               ) : null}
               {addJob.status === 'running' && !addJob.pluginLogin ? (
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
-                  <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider).hint}</Text>
+                  <Text type="secondary" className="aih-overlay-hint">{getCallbackUiCopy(addJob.provider, addJob.authStrategy).hint}</Text>
                   <Input.TextArea
                     value={authCallbackUrl}
                     onChange={(event) => onCallbackUrlChange(event.target.value)}
-                    placeholder={getCallbackUiCopy(addJob.provider).placeholder}
+                    placeholder={getCallbackUiCopy(addJob.provider, addJob.authStrategy).placeholder}
                     autoSize={{ minRows: 2, maxRows: 4 }}
                   />
                   <Button
@@ -421,7 +431,7 @@ export function AuthProgressModal({
                     loading={authCallbackSubmitting}
                     disabled={!canSubmitCallback}
                   >
-                    {getCallbackUiCopy(addJob.provider).submitLabel}
+                    {getCallbackUiCopy(addJob.provider, addJob.authStrategy).submitLabel}
                   </Button>
                 </Space>
               ) : null}

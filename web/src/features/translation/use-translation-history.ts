@@ -27,8 +27,8 @@ export function useTranslationHistoryRecorder(state: TranslationStreamState): vo
     appendTranslationHistory({
       sourceText: request.text,
       resultText,
-      sourceLang: meta.from || (request.source === AUTO_LANGUAGE ? '' : request.source),
-      targetLang: meta.to || request.target,
+      sourceLang: meta.from || (request.source === AUTO_LANGUAGE ? '' : request.source) || '',
+      targetLang: meta.to || request.target || '',
       sourceLabel: meta.fromLabel,
       targetLabel: meta.toLabel,
       model: meta.model,

@@ -174,7 +174,7 @@ function ToolDetail({ tool, status }: { tool: ManagedToolItem; status: ReactNode
             value: `${managedToolRuntimeSummary(tool)}${startupSources ? `；自动启动：${startupSources}` : ''}`,
             mono: false
           }] : []),
-          ...(tool.configState !== 'none' || tool.runtimeInspectable ? [{
+          ...(tool.configEditable || tool.configState !== 'none' || tool.runtimeInspectable ? [{
             key: 'config',
             label: '配置',
             value: managedToolConfigSummary(tool),
@@ -218,7 +218,7 @@ function ToolFooter({ tool, busyAction, onAction, onConfig }: {
   }
   return (
     <>
-      {tool.configEditable ? <ActionButton icon={<EditOutlined />} label="配置" onClick={onConfig} disabled={busy} /> : null}
+      {tool.configEditable ? <ActionButton icon={<EditOutlined />} label={tool.configExists ? '配置' : '新建配置'} onClick={onConfig} disabled={busy} /> : null}
       {installable ? <ActionButton icon={<DownloadOutlined />} label="安装" tone="primary" loading={busyAction === 'install'} disabled={busy} onClick={() => onAction('install')} /> : null}
       {updatable ? <ActionButton icon={<ReloadOutlined />} label="更新" tone="primary" loading={busyAction === 'update'} disabled={busy} onClick={() => onAction('update')} /> : null}
       {removable ? <ActionButton icon={<DeleteOutlined />} label="卸载" tone="danger" loading={busyAction === 'uninstall'} disabled={busy} onClick={() => onAction('uninstall')} /> : null}

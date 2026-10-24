@@ -409,6 +409,7 @@
             "pathIncludes": [
               "/Claude.app/Contents/MacOS/"
             ],
+            "bundleId": "com.anthropic.claudefordesktop",
             "installPaths": [
               "/Applications/Claude.app",
               "{hostHomeDir}/Applications/Claude.app"

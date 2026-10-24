@@ -21,7 +21,8 @@ import { toolkitRequestError as requestError } from './request-error';
 // 与服务端 TOOLKIT_TOOL_CATEGORIES 的 label 一致，只在接口返回前兜底。
 const TOOL_CATEGORY_LABELS: Readonly<Record<ToolkitToolCategoryId, string>> = Object.freeze({
   'session-runtimes': '持久化工具',
-  'network-access': '网络接入与隧道'
+  'network-access': '网络接入与隧道',
+  'edge-entry': '入口与转发'
 });
 
 export const MANAGED_TOOL_DISCOVERY_SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -49,6 +50,7 @@ export const MANAGED_TOOL_MANAGEMENT_LABELS: Readonly<Record<string, string>> = 
   aih: 'AIH 管理',
   homebrew: 'Homebrew 管理',
   apt: '系统包（apt）',
+  winget: 'WinGet 管理',
   external: '外部安装'
 });
 
@@ -62,6 +64,7 @@ export function managedToolConfigSummary(tool: ManagedToolItem) {
   if (tool.configState === 'multiple') return `已发现 ${tool.configCount} 个配置，需先消除歧义`;
   if (tool.configState === 'unresolved') return '运行参数指向的配置当前无法安全读取';
   if (tool.configState === 'token-managed') return '令牌托管模式未使用本地配置文件';
+  if (!tool.configExists && tool.configEditable) return `${tool.configName} 可新建`;
   if (tool.configName) {
     return `${tool.configName} 已发现${tool.configSource ? `（${MANAGED_TOOL_DISCOVERY_SOURCE_LABELS[tool.configSource] || tool.configSource}）` : ''}`;
   }

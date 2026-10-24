@@ -1922,6 +1922,25 @@ export const imageStudioAPI = {
 // 流式翻译必须用裸 fetch（与聊天流同因）：axios 会在浏览器里缓冲响应体，看不出增量。
 // 鉴权头与 server scope 也照抄聊天流，否则远端视图里翻译会打到本地 server。
 export const translationAPI = {
+  listProviders: async (): Promise<import('@/types').TranslationProviderOption[]> => {
+    const response = await api.get<{ providers: import('@/types').TranslationProviderOption[] }>('/webui/translation/providers');
+    return response.data.providers;
+  },
+  saveProvider: async (provider: string, config: Record<string, string>): Promise<import('@/types').TranslationProviderOption[]> => {
+    const response = await api.post<{ providers: import('@/types').TranslationProviderOption[] }>('/webui/translation/providers', { provider, config });
+    return response.data.providers;
+  },
+  getSystemStatus: async () => {
+    const response = await api.get<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system');
+    return response.data.system;
+  },
+  setSystemEnabled: async (enabled: boolean) => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { enabled });
+    return response.data.system;
+  },
+  requestSystemPermission: async () => {
+    await api.post('/webui/translation/system', { action: 'request-permission' });
+  },
   getSettings: async (): Promise<TranslationSettingsResponse> => {
     const response = await api.get<TranslationSettingsResponse>('/webui/translation/settings');
     return response.data;
@@ -1972,14 +1991,22 @@ export const translationAPI = {
 
     if (!response.ok) {
       let message = `HTTP ${response.status}`;
+      let code = '';
+      let details: Record<string, unknown> = {};
       try {
         const data = await response.json();
         message = data?.detail || data?.error || message;
+        code = String(data?.error || '');
+        details = data && typeof data === 'object' ? data : {};
       } catch (_error) {
         const text = await response.text().catch(() => '');
         if (text) message = text;
       }
-      throw new Error(message);
+      const error = new Error(message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
+      error.code = code;
+      error.status = response.status;
+      error.details = details;
+      throw error;
     }
 
     const reader = response.body?.getReader();

@@ -18,7 +18,9 @@ try {
   const {
     resolveClaudeDesktopGatewayCredential
   } = require('../lib/cli/services/ai-cli/claude-desktop-credential');
-  process.stdout.write(`${JSON.stringify(resolveClaudeDesktopGatewayCredential())}\n`);
+  const index = process.argv.indexOf('--ai-home-dir');
+  const aiHomeDir = index >= 0 ? String(process.argv[index + 1] || '') : '';
+  process.stdout.write(`${JSON.stringify(resolveClaudeDesktopGatewayCredential({ aiHomeDir }))}\n`);
 } catch (error) {
   process.stderr.write(`[aih] Claude Desktop credential helper failed: ${error.message}\n`);
   process.exitCode = 1;

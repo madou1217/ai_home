@@ -98,12 +98,18 @@ export function useTranslationStream(): TranslationStreamController {
         },
       });
     } catch (error) {
+      if (controllerRef.current !== controller) return;
       if (controller.signal.aborted) {
         dispatch({ type: 'cancel' });
         return;
       }
       const message = error instanceof Error ? error.message : String(error || '翻译失败');
-      dispatch({ type: 'fail', message });
+      dispatch({
+        type: 'fail',
+        message,
+        status: Number((error as { status?: number })?.status) || 0,
+        code: String((error as { code?: string })?.code || ''),
+      });
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
     }

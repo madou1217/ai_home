@@ -1,5 +1,5 @@
 import { CloudSyncOutlined, EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { Badge, Popconfirm, Space, Tag, Tooltip } from 'antd';
+import { Badge, Popconfirm, Space, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { Account, ManagedAppItem } from '@/types';
 import InstallLifecycleAction from './InstallLifecycleAction';
@@ -11,7 +11,7 @@ import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import {
   getAppAdvancedEntryLabel,
   getAppCurrentVersion,
-  getAppHookStatusDetail as getHookStatusDetail,
+  getManagedAppWarning,
   hasExistingAppConfig as hasExistingConfig
 } from './managed-app-presentation';
 
@@ -20,15 +20,6 @@ import {
  * 红点是「出错了」，有新版是正常且值得做的事，不该被读成故障。
  */
 const UPGRADE_DOT_COLOR = 'var(--color-warning)';
-
-/** 自动升级状态标签的色板：与纯展示映射的 tone 一一对应，不再另设语义。 */
-const UPGRADE_TAG_COLORS: Record<ManagedAppUpgradeView['statusTone'], string> = {
-  success: 'success',
-  warning: 'warning',
-  error: 'error',
-  active: 'processing',
-  neutral: 'default'
-};
 
 export interface ManagedAppCardProps {
   app: ManagedAppItem;
@@ -72,7 +63,7 @@ export default function ManagedAppCard({
   const existingConfig = hasExistingConfig(app);
   const configFileCount = Math.max(0, Number(app.configFileCount) || 0);
   const canOpenAdvanced = app.type === 'cli' || configFileCount > 0;
-  const hookStatusDetail = getHookStatusDetail(app);
+  const warning = getManagedAppWarning(app, upgrade);
   const currentVersion = getAppCurrentVersion(app);
   const details = [
     {
@@ -83,7 +74,8 @@ export default function ManagedAppCard({
     ...(app.installed ? [{
       label: '程序路径',
       value: app.cliPath || '未探测到',
-      tooltip: app.cliPath || '未探测到可执行路径'
+      tooltip: app.cliPath || '未探测到可执行路径',
+      ellipsis: true
     }] : []),
     ...(configFileCount > 0 ? [{
       label: '配置文件',
@@ -92,42 +84,7 @@ export default function ManagedAppCard({
       label: '配置',
       value: `${app.configName} 已存在`
     }] : []),
-    // 自动升级的账本结论挂回这条 provider 卡片：同一个 provider 只在一个地方给版本结论。
-    // 有新版时 statusLabel 为空（那件事由更新图标上的黄点表达），整行不占位：
-    // 「待升级」既不是状态也不是动作，读者看完也不知道该做什么。
-    // 正在装的时候由图标转圈表达，同样不需要一行字。
-    ...(upgrade && upgrade.statusLabel ? [{
-      label: '自动升级',
-      value: upgrade.statusLabel,
-      tooltip: `${upgrade.channelLabel} · 最近检查 ${upgrade.lastCheckText}`,
-      muted: upgrade.statusTone === 'neutral'
-    }] : []),
-    // 不再单列「升级结论」：它在常态下只是把左边那行状态换个说法（「已是最新」→「已是最新版」），
-    // 只有需要人介入时，reasonText 才带着状态标签给不出的原因（熔断原因、回滚后仍失败等）。
-    ...(upgrade?.attention && upgrade.reasonText ? [{
-      label: '原因',
-      value: upgrade.reasonText
-    }] : []),
-    ...(upgrade?.knownGoodVersion ? [{
-      label: '回退锚点',
-      value: upgrade.knownGoodVersion
-    }] : []),
-    ...(upgrade?.blockedVersions.length ? [{
-      label: '已拉黑版本',
-      value: upgrade.blockedVersions.join('、'),
-      tooltip: '验证失败过的版本，不会再被安装'
-    }] : [])
   ];
-
-  // 有新版只交给更新图标上的黄点，不再额外贴标签：同一件事说两遍反而像在催。
-  const upgradeBadge = upgrade?.attention && upgrade.statusLabel ? (
-    <Tag color={UPGRADE_TAG_COLORS[upgrade.statusTone]}>{upgrade.statusLabel}</Tag>
-  ) : null;
-  // 「已启用」是常态，每张卡都挂一个一切正常的标签只是噪音；只有待启用时
-  // 才需要提示——那是一个还没做、且点一下就能做好的动作。
-  const hookBadge = app.installed && app.hookSupported && !app.hookInstalled ? (
-    <Tag color="warning">即时刷新待启用</Tag>
-  ) : null;
 
   return (
     <ManagedResourceCard
@@ -135,10 +92,7 @@ export default function ManagedAppCard({
       name={app.name}
       installed={app.installed}
       icon={<ManagedAppIcon app={app} />}
-      badges={<>
-        {hookBadge}
-        {upgradeBadge}
-      </>}
+      warning={warning}
       details={details}
       actions={(
         <Space size={6} wrap>
@@ -245,11 +199,6 @@ export default function ManagedAppCard({
           ) : null}
         </Space>
       )}
-      footer={hookStatusDetail ? (
-        <div className="toolkit-sync-summary">
-          <span className="toolkit-sync-detail">{hookStatusDetail}</span>
-        </div>
-      ) : null}
     />
   );
 }

@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import { Tag, Tooltip } from 'antd';
+import ToolkitWarningDot from './ToolkitWarningDot';
 
 export interface ManagedResourceDetail {
   label: string;
   value: ReactNode;
   tooltip?: ReactNode;
   muted?: boolean;
+  ellipsis?: boolean;
 }
 
 interface ManagedResourceCardProps {
@@ -14,6 +16,7 @@ interface ManagedResourceCardProps {
   installed: boolean;
   icon: ReactNode;
   badges?: ReactNode;
+  warning?: string;
   details?: ManagedResourceDetail[];
   actions: ReactNode;
   footer?: ReactNode;
@@ -30,6 +33,7 @@ export default function ManagedResourceCard({
   installed,
   icon,
   badges,
+  warning,
   details = [],
   actions,
   footer,
@@ -61,12 +65,13 @@ export default function ManagedResourceCard({
               </div>
             </div>
           </div>
+          <ToolkitWarningDot warning={warning} />
         </div>
         {details.length ? (
           <dl className="toolkit-card-body">
             {details.map((detail) => {
               const value = (
-                <span className={`toolkit-detail-value${detail.muted ? ' is-uninstalled' : ''}`}>
+                <span className={`toolkit-detail-value${detail.muted ? ' is-uninstalled' : ''}${detail.ellipsis ? ' is-truncated' : ''}`}>
                   {detail.value}
                 </span>
               );

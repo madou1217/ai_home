@@ -51,6 +51,172 @@
   color: var(--color-muted);
 }
 
+.providerSettings {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.providerSettings summary {
+  cursor: pointer;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.providerSettingsRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+}
+
+.providerSettingsHeading,
+.providerFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.providerFields {
+  align-items: flex-end;
+}
+
+.providerField {
+  display: flex;
+  flex: 1 1 220px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.routePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.routeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.routeHeader > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.routeHint,
+.routeEmpty {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.routeList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.routeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.routeOrder {
+  width: 20px;
+  flex: 0 0 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.routeProvider {
+  width: 120px;
+}
+
+.routeModel {
+  width: 240px;
+  max-width: 100%;
+}
+
+.routeModelProvider {
+  width: 130px;
+}
+
+.routeOperations {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.routeOperation {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.routeOperation input {
+  margin: 0;
+}
+
+.routeActions {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+@media (max-width: 860px) {
+  .routeHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .routeProvider,
+  .routeModel,
+  .routeModelProvider {
+    flex: 1 1 160px;
+    width: auto;
+  }
+
+  .routeOperations {
+    flex: 1 1 100%;
+  }
+
+  .routeActions {
+    margin-left: 0;
+  }
+}
+
 .floatingToggle {
   display: flex;
   align-items: center;
@@ -163,6 +329,27 @@
   font-size: 14px;
   line-height: 1.75;
   color: var(--color-text);
+  animation: translation-result-in var(--motion-slow) var(--ease-standard);
+}
+
+.translationStatus { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-7) 0; color: var(--color-accent); font-size: var(--text-xs); }
+.statusDot { width: var(--space-3); height: var(--space-3); border-radius: 50%; background: currentColor; }
+.statusElapsed { margin-left: auto; color: var(--color-muted); font-variant-numeric: tabular-nums; }
+.statusCaption { animation: translation-result-in var(--motion-base) var(--ease-standard); }
+.pane[data-phase="done"] .translationStatus { color: var(--color-success); }
+.pane[data-phase="error"] .translationStatus { color: var(--color-danger); }
+.pane[data-phase="cancelled"] .translationStatus { color: var(--color-muted); }
+.pane[data-phase="waiting"] .statusDot, .pane[data-phase="streaming"] .statusDot, .pane[data-phase="preparing"] .statusDot { animation: translation-status-pulse calc(var(--motion-slower) * 4) infinite; }
+.waitingState { display: flex; flex-direction: column; gap: var(--space-8); color: var(--color-muted); font-size: var(--text-base); }
+.waitingSkeleton { display: flex; flex-direction: column; gap: var(--space-6); max-width: 90%; }
+.waitingSkeleton span { height: var(--space-4); background: linear-gradient(100deg, var(--color-surface-muted) 20%, var(--color-accent-soft) 45%, var(--color-surface-muted) 70%); background-size: 220% 100%; border-radius: var(--hos-radius-sm); animation: translation-waiting calc(var(--motion-slower) * 5) var(--ease-in-out) infinite; }
+.waitingSkeleton span:nth-child(2) { width: 86%; }
+.waitingSkeleton span:nth-child(3) { width: 60%; }
+@keyframes translation-result-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes translation-waiting { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@keyframes translation-status-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .workspace *, .history * { animation: none !important; transition: none !important; }
 }
 
 .outputPlaceholder {
@@ -251,6 +438,19 @@
   font-size: 12px;
   color: var(--color-danger);
 }
+
+.languageIntentStrip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-7);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.languageIntentStrip > span { flex: 1 1 240px; }
 
 .errorCode {
   font-family: var(--font-mono);
@@ -359,4 +559,32 @@
   padding: 12px;
   font-size: 12px;
   color: var(--color-muted);
+}
+.translationControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.systemControl {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.systemStatus {
+  font-size: 11px;
+  color: var(--color-muted);
+  max-width: 300px;
+}
+
+.systemAction {
+  border: 0;
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
 }

@@ -17,7 +17,7 @@ import ProviderIcon from '@/components/chat/ProviderIcon';
 import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import {
   getAppCurrentVersion,
-  getAppHookStatusDetail,
+  getManagedAppWarning,
   hasExistingAppConfig,
   managedAppAccountIsRunning,
   managedAppAccountLabel,
@@ -27,6 +27,7 @@ import { toolkitRequestError as requestError } from '@/components/toolkit/reques
 import { APP_CATEGORIES, useManagedApps } from '@/components/toolkit/use-managed-apps';
 import { describeClearBrokenResult, type ManagedAppUpgradeView } from '@/components/toolkit/provider-cli-upgrade-presentation';
 import { useProviderCliUpgrade } from '@/components/toolkit/use-provider-cli-upgrade';
+import ToolkitWarningDot from '@/components/toolkit/ToolkitWarningDot';
 import { KimiDesktopLoginModal } from '@/features/accounts/KimiDesktopLoginModal';
 import { desktopLoginRequiredAction } from '@/features/app-install/launch-required-action';
 import AppAdvancedSettingsModal from '@/features/toolkit/AppAdvancedSettingsModal';
@@ -231,16 +232,6 @@ export default function AppsPanel() {
     return <StatusText tone="ok">已安装</StatusText>;
   };
 
-  /**
-   * 列表行上的升级结论只在「需要人管」时出现；
-   * 有新版交给详情页的更新按钮黄点，「已是最新」「待首轮检查」这类常态不挤进行里。
-   */
-  const upgradeSideStatus = (app: ManagedAppItem) => {
-    const upgrade = upgradeFor(app);
-    if (!upgrade || !upgrade.attention || !upgrade.statusLabel) return null;
-    return <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText>;
-  };
-
   if (loading && !data) return <MobileBoot label="PROBING APPS" />;
 
   return (
@@ -313,7 +304,7 @@ export default function AppsPanel() {
                       <span className="mhud-row__meta">{TYPE_CODES[app.type]} · {getAppCurrentVersion(app)}</span>
                     </span>
                     <span className="mhud-row__side">
-                      {upgradeSideStatus(app)}
+                      <ToolkitWarningDot warning={getManagedAppWarning(app, upgradeFor(app))} />
                       {rowStatus(app)}
                     </span>
                   </SwipeRow>
@@ -371,10 +362,10 @@ export default function AppsPanel() {
         onClose={() => setLaunchId('')}
         code="LAUNCH // ACCOUNT"
         title={launchApp ? `选择账号打开 ${launchApp.name}` : '选择账号'}
-        footer={launchApp && launchApp.type === 'cli' ? (
+        footer={launchApp && (launchApp.type === 'cli' || launchApp.hostLaunchLabel) ? (
           <ActionButton
             icon={<PlusOutlined />}
-            label="无账号新开 CLI"
+            label={launchApp.hostLaunchLabel || '无账号新开 CLI'}
             disabled={Boolean(busyActionFor(launchApp))}
             onClick={() => {
               setLaunchId('');
@@ -425,7 +416,7 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
   onOpenAdvanced: () => void;
   onClearBroken: () => void;
 }) {
-  const hookDetail = getAppHookStatusDetail(app);
+  const warning = getManagedAppWarning(app, upgrade);
   const rows = [
     { key: 'status', label: '状态', value: status },
     { key: 'version', label: '当前版本', value: getAppCurrentVersion(app), tone: app.installed ? undefined : 'muted' as const },
@@ -437,22 +428,6 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
       label: '即时刷新',
       value: <StatusText tone="warn">待启用</StatusText>
     }] : []),
-    // 升级账本的结论与桌面卡片同一份数据、同一套文案。有新版时 statusLabel 为空
-    // （那件事由更新按钮上的黄点表达），这一行同样不占位。
-    ...(upgrade ? [
-      ...(upgrade.statusLabel
-        ? [{ key: 'upgrade', label: '自动升级', value: <StatusText tone={UPGRADE_HUD_TONES[upgrade.statusTone]}>{upgrade.statusLabel}</StatusText> }]
-        : []),
-      ...(upgrade.attention && upgrade.reasonText
-        ? [{ key: 'upgradeReason', label: '原因', value: upgrade.reasonText, mono: false }]
-        : []),
-      { key: 'upgradeChannel', label: '安装渠道', value: upgrade.channelLabel, mono: false },
-      { key: 'upgradeCheck', label: '最近检查', value: upgrade.lastCheckText },
-      ...(upgrade.knownGoodVersion ? [{ key: 'upgradeGood', label: '回退锚点', value: upgrade.knownGoodVersion }] : []),
-      ...(upgrade.blockedVersions.length
-        ? [{ key: 'upgradeBlocked', label: '已拉黑版本', value: upgrade.blockedVersions.join('、') }]
-        : [])
-    ] : [])
   ];
   return (
     <div className={styles.sheetStack}>
@@ -482,7 +457,7 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
           <ActionButton icon={<SettingOutlined />} label="高级设置" disabled={busy} onClick={onOpenAdvanced} />
         </div>
       ) : null}
-      {hookDetail ? <Note tone="warn">{hookDetail}</Note> : null}
+      {warning ? <div className={styles.sheetBlock}><ToolkitWarningDot warning={warning} /></div> : null}
       {app.installed && app.hookSupported && !app.hookInstalled ? (
         <div className={styles.sheetBlock}>
           <p className={styles.prose}>{SESSION_SYNC_SUMMARY} 启用后会重新读取配置并验证。</p>
@@ -565,7 +540,8 @@ function AccountLauncher({ app, accounts, runningPids, disabled, onOpen, onClose
     return (
       <EmptySignal
         title="NO ACCOUNT"
-        description={kind === 'desktop' ? '暂无可用账号' : '当前 Provider 没有账号，可使用下方「无账号新开 CLI」。'}
+        description={app.hostLaunchLabel ? `可使用下方「${app.hostLaunchLabel}」。`
+          : kind === 'desktop' ? '暂无可用账号' : '当前 Provider 没有账号，可使用下方「无账号新开 CLI」。'}
       />
     );
   }

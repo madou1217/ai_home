@@ -51,7 +51,7 @@ export function useManagedToolConfig(tool: ManagedToolItem | null, onSaved?: () 
     try {
       const result = await toolkitAPI.saveToolConfig(tool.id, content, configData.revision, configData.targetRevision);
       if (!result.ok) throw new Error('工具配置保存接口返回失败');
-      setConfigData(result);
+      setConfigData({ ...configData, ...result, content });
       message.success(result.elevated ? '配置已通过系统授权保存' : '配置已保存');
       if (restartAfter) {
         const restarted = await toolkitAPI.controlToolService(tool.id, 'restart');

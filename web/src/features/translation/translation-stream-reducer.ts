@@ -43,13 +43,14 @@ export interface TranslationStreamState {
   error: TranslationStreamError | null;
   /** 本次请求对应的原文（复制/重试时用来判断结果是否已过期） */
   request: TranslationStreamRequest | null;
+  attempts: Array<Extract<TranslationStreamEvent, { type: 'attempt_start' | 'attempt_success' | 'attempt_failure' }>>;
 }
 
 export type TranslationStreamAction =
   | { type: 'reset' }
   | { type: 'begin'; request: TranslationStreamRequest }
   | { type: 'event'; event: TranslationStreamEvent }
-  | { type: 'fail'; message: string; status?: number }
+  | { type: 'fail'; message: string; status?: number; code?: string }
   | { type: 'cancel' };
 
 export function createInitialTranslationStreamState(): TranslationStreamState {
@@ -61,6 +62,7 @@ export function createInitialTranslationStreamState(): TranslationStreamState {
     elapsedMs: 0,
     error: null,
     request: null,
+    attempts: [],
   };
 }
 
@@ -88,7 +90,7 @@ export function reduceTranslationStream(
       ...state,
       status: 'error',
       error: {
-        code: 'translation_stream_failed',
+        code: action.code || 'translation_stream_failed',
         message: action.message || '翻译请求失败',
         status: Number(action.status) || 0,
       },
@@ -101,6 +103,16 @@ export function reduceTranslationStream(
   }
 
   const event = action.event;
+  if (event.type === 'attempt_start' || event.type === 'attempt_success' || event.type === 'attempt_failure') {
+    const previous = state.attempts.filter((attempt) => attempt.attempt !== event.attempt);
+    return {
+      ...state,
+      attempts: [...previous, event],
+      meta: state.meta && event.type === 'attempt_start'
+        ? { ...state.meta, model: event.model, provider: event.modelProvider || event.provider }
+        : state.meta,
+    };
+  }
   if (event.type === 'start') {
     return {
       ...state,
@@ -130,12 +142,14 @@ export function reduceTranslationStream(
     return {
       ...state,
       status: 'done',
+      meta: state.meta && event.route ? { ...state.meta, model: event.route.model, provider: event.route.modelProvider || event.route.provider } : state.meta,
       text: finalText || state.text,
       usage: event.usage || null,
       elapsedMs: Number(event.elapsedMs) || 0,
     };
   }
 
+  if (event.type !== 'error') return state;
   // error
   return {
     ...state,

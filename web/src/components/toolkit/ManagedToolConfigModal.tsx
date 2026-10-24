@@ -51,7 +51,7 @@ export default function ManagedToolConfigModal({ tool, onClose, onSaved }: Manag
             disabled={!configData || loading}
             onClick={() => void save()}
           >
-            保存
+            {configData?.exists === false ? '创建配置' : '保存'}
           </Button>
         </div>
       )}
@@ -66,6 +66,10 @@ export default function ManagedToolConfigModal({ tool, onClose, onSaved }: Manag
               ? '当前目标需要系统授权才能保存，接口不会返回绝对路径。'
               : `格式为 ${configData?.configFormat || tool?.configFormat || 'text'}，保存时会校验并发修改。`}
           </p>
+          {configData?.exists === false ? (
+            <p className="toolkit-section-note">尚无配置文件，保存后会创建。</p>
+          ) : null}
+          {tool?.configNote ? <p className="toolkit-section-note">{tool.configNote}</p> : null}
           {configData && !configData.writable ? (
             <InlineNote tone="warning">当前配置不可写（或需要系统授权），保存时可能被拒绝。</InlineNote>
           ) : null}

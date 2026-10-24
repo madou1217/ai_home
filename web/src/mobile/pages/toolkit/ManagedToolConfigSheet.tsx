@@ -23,14 +23,16 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
   const [initial, setInitial] = useState('');
   const syncedRevision = useRef('');
   const dirty = content !== initial;
+  const canSave = dirty || configData?.exists === false;
 
   // 首次拿到内容时记录基线（用于「撤销改动」与"是否有未保存改动"）。
   useEffect(() => {
-    const revision = configData?.revision || '';
-    if (!revision || syncedRevision.current === revision) return;
+    const revision = configData ? `${tool?.id}:${configData.revision}` : '';
+    if (!revision) { syncedRevision.current = ''; return; }
+    if (syncedRevision.current === revision) return;
     syncedRevision.current = revision;
     setInitial(configData?.content || '');
-  }, [configData]);
+  }, [configData, tool?.id]);
 
   const reset = useCallback(() => setContent(initial), [initial, setContent]);
 
@@ -64,10 +66,10 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
           ) : null}
           <ActionButton
             icon={<SaveOutlined />}
-            label={dirty ? '保存' : '已保存'}
+            label={configData?.exists === false ? '创建配置' : dirty ? '保存' : '已保存'}
             tone="primary"
             onClick={() => void save()}
-            disabled={saving || loading || !configData || !dirty}
+            disabled={saving || loading || !configData || !canSave}
             loading={saving}
           />
         </>
@@ -81,6 +83,8 @@ export default function ManagedToolConfigSheet({ tool, onClose, onSaved }: Manag
       {tool?.requiresElevation || configData?.requiresElevation ? (
         <Note tone="info">该配置保存需要系统授权，接口不会返回绝对路径。</Note>
       ) : null}
+      {configData?.exists === false ? <Note>尚无配置文件，保存后会创建。</Note> : null}
+      {tool?.configNote ? <Note>{tool.configNote}</Note> : null}
       {configData && !loading ? (
         <Input.TextArea
           value={content}

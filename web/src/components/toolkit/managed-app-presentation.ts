@@ -1,4 +1,5 @@
 import type { Account, ManagedAppItem } from '@/types';
+import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
 
 const HOOK_REASON_LABELS: Record<string, string> = {
   disabled: '即时刷新已禁用',
@@ -21,6 +22,17 @@ export function getAppHookStatusDetail(app: ManagedAppItem) {
     reason,
     missingEvents.length > 0 ? `缺少事件：${missingEvents.join('、')}` : ''
   ].filter(Boolean).join('；');
+}
+
+/** 卡片与移动端共用诊断文案；常规版本状态留给原有读数和更新按钮。 */
+export function getManagedAppWarning(app: ManagedAppItem, upgrade?: ManagedAppUpgradeView | null) {
+  const upgradeWarning = Boolean(upgrade && (upgrade.attention || upgrade.statusTone === 'error'
+    || (app.installed && upgrade.statusTone === 'warning' && !upgrade.hasUpdate)));
+  return [
+    app.installed ? getAppHookStatusDetail(app) : '',
+    upgradeWarning ? [upgrade?.statusLabel, upgrade?.reasonText].filter(Boolean).join('：') : '',
+    upgradeWarning && upgrade?.blockedVersions.length ? `已拉黑版本：${upgrade.blockedVersions.join('、')}` : ''
+  ].filter(Boolean).join('\n');
 }
 
 /** 应用卡上的「当前版本」读数：未安装 / 未探测到 / 实测版本。 */

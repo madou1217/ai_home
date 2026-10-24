@@ -18,7 +18,7 @@ import {
 } from './managed-app-presentation';
 import './ManagedAppAccountActions.css';
 
-export type ManagedAppLaunchTarget = Pick<ManagedAppItem, 'id' | 'name' | 'provider' | 'type'>;
+export type ManagedAppLaunchTarget = Pick<ManagedAppItem, 'id' | 'name' | 'provider' | 'type' | 'hostLaunchLabel'>;
 
 interface Props {
   app: ManagedAppLaunchTarget;
@@ -52,6 +52,7 @@ export default function ManagedAppAccountActions({
   const providerAccounts = sortManagedAppAccounts(accounts, app.provider);
   const defaultAccount = providerAccounts.find((account) => account.isDefault && account.configured);
   const hasRunningAccount = providerAccounts.some((account) => accountIsRunning(account, runningPids));
+  const hostLaunchLabel = kind === 'desktop' ? app.hostLaunchLabel : '';
 
   const runAction = (
     event: MouseEvent<HTMLElement>,
@@ -125,13 +126,14 @@ export default function ManagedAppAccountActions({
     ...providerAccounts
       .filter((account) => account.accountRef !== defaultAccount?.accountRef)
       .map((account) => accountItem(account)),
-    ...(providerAccounts.length > 0 && kind === 'cli' ? [{ type: 'divider' as const }] : []),
+    ...(providerAccounts.length > 0 && (kind === 'cli' || hostLaunchLabel) ? [{ type: 'divider' as const }] : []),
+    ...(hostLaunchLabel ? [{ key: 'host-launch', icon: <DesktopOutlined />, label: hostLaunchLabel }] : []),
     ...(kind === 'cli' ? [{
       key: 'unscoped',
       icon: <MoreOutlined />,
       label: '无账号新开 CLI'
     }] : []),
-    ...(kind === 'desktop' && providerAccounts.length === 0 ? [{
+    ...(kind === 'desktop' && !hostLaunchLabel && providerAccounts.length === 0 ? [{
       key: 'no-account',
       disabled: true,
       label: '暂无可用账号'
@@ -139,7 +141,7 @@ export default function ManagedAppAccountActions({
   ];
 
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
-    if (key === 'unscoped') {
+    if (key === 'unscoped' || key === 'host-launch') {
       setMenuOpen(false);
       onOpen(app, undefined, true);
       return;
@@ -149,6 +151,21 @@ export default function ManagedAppAccountActions({
       onOpen(app, String(key).slice('account:'.length));
     }
   };
+
+  if (hostLaunchLabel && providerAccounts.length === 0) return (
+    <Tooltip title={hostLaunchLabel}>
+      <Button
+        size="small"
+        shape={buttonLabel ? undefined : 'circle'}
+        icon={<DesktopOutlined />}
+        disabled={disabled}
+        aria-label={`${app.name}：${hostLaunchLabel}`}
+        onClick={() => onOpen(app, undefined, true)}
+      >
+        {buttonLabel}
+      </Button>
+    </Tooltip>
+  );
 
   return (
     <Dropdown

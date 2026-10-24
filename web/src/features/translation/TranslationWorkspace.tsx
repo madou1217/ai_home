@@ -10,15 +10,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Input, Select, Switch, Tooltip, message } from 'antd';
 import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   CopyOutlined,
   DeleteOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
   SwapOutlined,
   TranslationOutlined,
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import { translationAPI } from '@/services/api';
-import type { TranslationDetectionResponse } from '@/types';
+import type { TranslationDetectionResponse, TranslationRoutePreference, TranslationProviderOption } from '@/types';
 import {
   AUTO_LANGUAGE,
   MAX_TRANSLATION_INPUT_CHARS,
@@ -37,6 +41,8 @@ import {
 } from './translation-utils';
 import {
   saveTranslationSettings,
+  shouldAutoCopy,
+  writeTranslationClipboard,
   type TranslationBootstrap,
 } from './translation-settings-store';
 import {
@@ -46,11 +52,18 @@ import {
 } from './translation-preferences';
 import { useTranslationBootstrap, useTranslationStream } from './use-translation';
 import {
+  resolveLanguageIntent,
+  type TranslationTargetPolicy,
+} from './language-intent';
+import { useTranslationFeedback } from './use-translation-feedback';
+import {
   useTranslationHistory,
   useTranslationHistoryRecorder,
 } from './use-translation-history';
 import { formatTranslationHistoryTime } from './translation-history';
 import styles from './translation.module.css';
+import SystemTranslationControl from './SystemTranslationControl';
+import TranslationProviderSettings from './TranslationProviderSettings';
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   high: '高置信',
@@ -62,6 +75,27 @@ function describeFallback(bootstrap: TranslationBootstrap | null, model: string)
   if (!bootstrap || !model) return '';
   const known = bootstrap.models.some((item) => item.id === model);
   return known ? '' : model;
+}
+
+const ROUTE_OPERATIONS: Array<{ value: TranslationRoutePreference['operations'][number]; label: string }> = [
+  { value: 'selection', label: '选区' },
+  { value: 'batch', label: '批量' },
+  { value: 'page', label: '页面' },
+  { value: 'replace', label: '替换' },
+];
+
+function createRoutePreference(index: number, model: { id: string; provider: string } | undefined): TranslationRoutePreference {
+  const modelId = model?.id || '';
+  const modelProvider = model?.provider || '';
+  return {
+    id: `route:${Date.now().toString(36)}:${index}`,
+    provider: 'aih-gateway',
+    model: modelId,
+    ...(modelProvider ? { modelProvider } : {}),
+    enabled: true,
+    priority: index,
+    operations: ['selection'],
+  };
 }
 
 export default function TranslationWorkspace() {
@@ -78,10 +112,34 @@ export default function TranslationWorkspace() {
   const [detection, setDetection] = useState<TranslationDetectionResponse | null>(null);
   const [detectionText, setDetectionText] = useState('');
   const [detecting, setDetecting] = useState(false);
+  const [targetPolicy, setTargetPolicy] = useState<TranslationTargetPolicy>('saved');
+  const [autoCopy, setAutoCopy] = useState(false);
+  const [copyScope, setCopyScope] = useState<'selection' | 'page' | 'all'>('selection');
+  const [routes, setRoutes] = useState<TranslationRoutePreference[]>([]);
+  const [providers, setProviders] = useState<TranslationProviderOption[]>([]);
+  const [providerDrafts, setProviderDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [savingProvider, setSavingProvider] = useState('');
+  const [providerError, setProviderError] = useState('');
+  const reloadProviders = useCallback(() => {
+    setProviderError('');
+    void translationAPI.listProviders().then(setProviders).catch(() => setProviderError('读取翻译引擎配置失败'));
+  }, []);
+  useEffect(reloadProviders, [reloadProviders]);
+  const saveProvider = useCallback((provider: string, config: Record<string, string>) => {
+    setSavingProvider(provider);
+    setProviderError('');
+    void translationAPI.saveProvider(provider, config).then((catalog) => {
+      setProviders(catalog);
+      setProviderDrafts((current) => ({ ...current, [provider]: {} }));
+      message.success('引擎配置已保存');
+    }).catch(() => setProviderError('保存失败，请检查字段和服务地址')).finally(() => setSavingProvider(''));
+  }, []);
+  const [confirmationDismissed, setConfirmationDismissed] = useState(false);
   const [floatingEnabled, setFloatingEnabled] = useState(
     () => getTranslationFloatingPreferences().enabled,
   );
   const detectionSequence = useRef(0);
+  const intentSequence = useRef(0);
 
   useEffect(() => {
     if (!bootstrap) return;
@@ -90,6 +148,10 @@ export default function TranslationWorkspace() {
     setTarget(settings.target || 'zh-Hans');
     setModelValue(settings.model || '');
     setProviderValue(settings.provider || '');
+    setTargetPolicy(settings.targetPolicy || 'saved');
+    setAutoCopy(settings.autoCopy === true);
+    setCopyScope(settings.copyScope || 'selection');
+    setRoutes(Array.isArray(settings.routes) ? settings.routes : []);
   }, [bootstrap]);
 
   useEffect(
@@ -99,6 +161,23 @@ export default function TranslationWorkspace() {
       }),
     [],
   );
+
+  useEffect(() => {
+    intentSequence.current += 1;
+    setDetecting(false);
+    setConfirmationDismissed(false);
+    setTargetPolicy((policy) => policy === 'same-language' || policy === 'explicit' ? 'saved' : policy);
+  }, [source, target, text]);
+
+  useEffect(() => () => {
+    intentSequence.current += 1;
+  }, []);
+
+  useEffect(() => {
+    if (targetPolicy === 'explicit' && stream.state.status !== 'streaming') {
+      setTargetPolicy('saved');
+    }
+  }, [stream.state.status, targetPolicy]);
 
   // 自动检测：只在源语言为 auto 时探测，且 400ms 防抖——每敲一个字发一次请求既浪费也闪。
   useEffect(() => {
@@ -167,10 +246,29 @@ export default function TranslationWorkspace() {
   const overLimit = exceedsInputLimit(text);
   const busy = stream.busy;
   const resultText = stream.state.text;
+  const feedback = useTranslationFeedback(stream.state, detecting);
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<number>();
+  const autoCopiedRequest = useRef<object | null>(null);
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
+  useEffect(() => setCopied(false), [resultText]);
+  useEffect(() => {
+    const request = stream.state.request;
+    if (!autoCopy || stream.state.status !== 'done' || !request || autoCopiedRequest.current === request) return;
+    const meta = stream.state.meta;
+    if (meta && meta.from && meta.to && meta.from === meta.to) return;
+    if (!shouldAutoCopy({ scope: copyScope, client: 'webui', mode: 'selection', event: { type: 'done', text: resultText } })) return;
+    autoCopiedRequest.current = request;
+    void writeTranslationClipboard(resultText).then(() => {
+      window.clearTimeout(copyTimer.current);
+      setCopied(true);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
+    }).catch(() => {});
+  }, [autoCopy, copyScope, resultText, stream.state.request, stream.state.status]);
   const canCopy = resultText.trim().length > 0;
 
   const persist = useCallback(
-    (patch: { source?: string; target?: string; model?: string; provider?: string }) => {
+    (patch: { source?: string; target?: string; model?: string; provider?: string; targetPolicy?: TranslationTargetPolicy; autoCopy?: boolean; copyScope?: 'selection' | 'page' | 'all'; routes?: TranslationRoutePreference[] }) => {
       void saveTranslationSettings(patch).catch(() => {
         // 默认值保存失败不影响本次翻译；下一次修改会再试。
         message.warning('默认值保存失败，本次翻译不受影响');
@@ -181,6 +279,7 @@ export default function TranslationWorkspace() {
 
   const handleSourceChange = useCallback(
     (value: string) => {
+      intentSequence.current += 1;
       setSource(value);
       persist({ source: value });
     },
@@ -189,7 +288,10 @@ export default function TranslationWorkspace() {
 
   const handleTargetChange = useCallback(
     (value: string) => {
+      intentSequence.current += 1;
       setTarget(value);
+      setTargetPolicy('confirm');
+      setConfirmationDismissed(false);
       persist({ target: value });
     },
     [persist],
@@ -207,6 +309,42 @@ export default function TranslationWorkspace() {
     [models, persist],
   );
 
+  const updateRoutes = useCallback((next: TranslationRoutePreference[]) => {
+    const normalized = next.map((route, priority) => ({ ...route, priority }));
+    setRoutes(normalized);
+    persist({ routes: normalized });
+  }, [persist]);
+
+  const handleAddRoute = useCallback(() => {
+    updateRoutes([...routes, createRoutePreference(routes.length, models[0])]);
+  }, [models, routes, updateRoutes]);
+
+  const handleRemoveRoute = useCallback((index: number) => {
+    updateRoutes(routes.filter((_route, routeIndex) => routeIndex !== index));
+  }, [routes, updateRoutes]);
+
+  const handleMoveRoute = useCallback((index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= routes.length) return;
+    const next = routes.slice();
+    const [route] = next.splice(index, 1);
+    next.splice(nextIndex, 0, route);
+    updateRoutes(next);
+  }, [routes, updateRoutes]);
+
+  const handleRouteChange = useCallback((index: number, patch: Partial<TranslationRoutePreference>) => {
+    updateRoutes(routes.map((route, routeIndex) => routeIndex === index ? { ...route, ...patch } : route));
+  }, [routes, updateRoutes]);
+
+  const toggleRouteOperation = useCallback((index: number, operation: TranslationRoutePreference['operations'][number]) => {
+    const route = routes[index];
+    if (!route) return;
+    const operations = route.operations.includes(operation)
+      ? route.operations.filter((item) => item !== operation)
+      : [...route.operations, operation];
+    handleRouteChange(index, { operations });
+  }, [handleRouteChange, routes]);
+
   const handleSwap = useCallback(() => {
     if (!canSwapLanguages(source, target)) return;
     const next = swapLanguages(source, target);
@@ -215,7 +353,30 @@ export default function TranslationWorkspace() {
     persist({ source: next.source, target: next.target });
   }, [source, target, persist]);
 
-  const handleTranslate = useCallback(async () => {
+  const requestTranslation = useCallback(
+    (detectedCode: string, confidence: 'high' | 'medium' | 'low' | undefined, policy: TranslationTargetPolicy) => {
+      const intent = resolveLanguageIntent(
+        { source, target, detected: detectedCode, confidence, targetPolicy: policy },
+        languages,
+      );
+      if (intent.state !== 'ready') {
+        setConfirmationDismissed(false);
+        return false;
+      }
+      void stream.run({
+        text,
+        source,
+        target: intent.target,
+        targetPolicy: policy,
+        ...(routes.length ? { routes } : { model: selection.model, provider: selection.provider }),
+      });
+      return true;
+    },
+    [languages, routes, selection.model, selection.provider, source, stream, target, text],
+  );
+
+  const handleTranslate = useCallback(async (policyOverride?: TranslationTargetPolicy) => {
+    const intentToken = ++intentSequence.current;
     if (!canTranslate(text)) {
       message.info('先输入要翻译的内容');
       return;
@@ -227,31 +388,29 @@ export default function TranslationWorkspace() {
     // 自动检测时以点击瞬间的检测结果为准：防抖里缓存的可能是上一段文本的结论，
     // 直接拿它判断「同语言」会把刚粘贴的新内容误跳过。
     let detectedCode = '';
+    let detectedConfidence: 'high' | 'medium' | 'low' | undefined;
     if (source === AUTO_LANGUAGE) {
       setDetecting(true);
       try {
         const response = await translationAPI.detect(text.trim().slice(0, 2000));
+        if (intentSequence.current !== intentToken) return;
         detectedCode = response.code || '';
+        detectedConfidence = response.confidence;
         setDetection(response);
         setDetectionText(text.trim());
       } catch (_error) {
+        if (intentSequence.current !== intentToken) return;
         detectedCode = '';
       } finally {
-        setDetecting(false);
+        if (intentSequence.current === intentToken) setDetecting(false);
       }
     }
-    if (isSameTranslationLanguage(source, target, detectedCode)) {
-      message.info('源语言与目标语言相同，无需翻译');
-      return;
+    if (intentSequence.current !== intentToken) return;
+    const policy = policyOverride || targetPolicy;
+    if (requestTranslation(detectedCode, detectedConfidence || detection?.confidence, policy)) {
+      setTargetPolicy(policy);
     }
-    void stream.run({
-      text,
-      source,
-      target,
-      model: selection.model,
-      provider: selection.provider,
-    });
-  }, [text, source, target, selection, stream]);
+  }, [text, source, target, targetPolicy, detection, requestTranslation]);
 
   const handleTextKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -271,21 +430,30 @@ export default function TranslationWorkspace() {
   const handleCopy = useCallback(async () => {
     if (!canCopy) return;
     try {
-      await navigator.clipboard.writeText(resultText);
-      message.success('译文已复制');
+      await writeTranslationClipboard(resultText);
+      window.clearTimeout(copyTimer.current);
+      setCopied(true);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1800);
     } catch (_error) {
       message.error('复制失败，请手动选择译文');
     }
   }, [canCopy, resultText]);
 
   const handleClear = useCallback(() => {
+    intentSequence.current += 1;
+    setDetecting(false);
     setText('');
     stream.reset();
   }, [stream]);
 
+  const handleTextChange = useCallback((value: string) => {
+    intentSequence.current += 1;
+    setText(value);
+  }, []);
+
   const handleCopyHistory = useCallback(async (entry: (typeof history.entries)[number]) => {
     try {
-      await navigator.clipboard.writeText(entry.resultText);
+      await writeTranslationClipboard(entry.resultText);
       message.success('译文已复制');
     } catch (_error) {
       message.error('复制失败，请手动选择译文');
@@ -295,7 +463,7 @@ export default function TranslationWorkspace() {
   const detectionMatchesText = Boolean(
     detection && (!detectionText || text.trim().startsWith(detectionText)),
   );
-  const sameLanguage = isSameTranslationLanguage(
+  const sameLanguage = targetPolicy !== 'explicit' && isSameTranslationLanguage(
     source,
     target,
     detectionMatchesText ? detection?.code : '',
@@ -305,6 +473,25 @@ export default function TranslationWorkspace() {
     source === AUTO_LANGUAGE && detection
       ? `${detection.label} · ${CONFIDENCE_LABEL[detection.confidence] || detection.confidence}`
       : '';
+
+  const languageIntent = resolveLanguageIntent(
+    {
+      source,
+      target,
+      detected: detectionMatchesText ? detection?.code : '',
+      confidence: detectionMatchesText ? detection?.confidence : undefined,
+      targetPolicy,
+    },
+    languages,
+  );
+  const showConfirmation = Boolean(text.trim()) && !confirmationDismissed && languageIntent.state !== 'ready';
+  const handleKeepOriginal = useCallback(() => {
+    intentSequence.current += 1;
+    setDetecting(false);
+    stream.reset();
+    setConfirmationDismissed(true);
+    setTargetPolicy('same-language');
+  }, [stream]);
 
   const meta = stream.state.meta;
   const routeLabel = meta
@@ -317,22 +504,25 @@ export default function TranslationWorkspace() {
       code="TRANSLATE"
       subTitle="粘贴或选中文本即可翻译；划词浮层与页面共用同一套默认值。"
       extra={
-        <div className={styles.floatingToggle}>
-          <Tooltip title={`开启后选中任意页面文本可悬浮翻译（${shortcutLabel()} 直接翻译选区）`}>
-            <span className={styles.floatingToggleLabel}>
-              <TranslationOutlined /> 划词翻译
-            </span>
-          </Tooltip>
-          <Switch
-            size="small"
-            checked={floatingEnabled}
-            onChange={(checked) => {
-              setFloatingEnabled(checked);
-              setTranslationFloatingPreferences({ enabled: checked });
-              message.success(checked ? '划词翻译已开启' : '划词翻译已关闭');
-            }}
-          />
-          <kbd className={styles.kbd}>{shortcutLabel()}</kbd>
+        <div className={styles.translationControls}>
+          <div className={styles.floatingToggle}>
+            <Tooltip title={`开启后选中任意页面文本可悬浮翻译（${shortcutLabel()} 直接翻译选区）`}>
+              <span className={styles.floatingToggleLabel}>
+                <TranslationOutlined /> 划词翻译
+              </span>
+            </Tooltip>
+            <Switch
+              size="small"
+              checked={floatingEnabled}
+              onChange={(checked) => {
+                setFloatingEnabled(checked);
+                setTranslationFloatingPreferences({ enabled: checked });
+                message.success(checked ? '划词翻译已开启' : '划词翻译已关闭');
+              }}
+            />
+            <kbd className={styles.kbd}>{shortcutLabel()}</kbd>
+          </div>
+          <SystemTranslationControl />
         </div>
       }
     >
@@ -389,7 +579,137 @@ export default function TranslationWorkspace() {
             />
             <span className={styles.savedHint}>默认值自动保存</span>
           </div>
+          <div className={styles.toolbarGroup}>
+            <span className={styles.fieldLabel}>完成后复制</span>
+            <Switch size="small" checked={autoCopy} onChange={(checked) => { setAutoCopy(checked); persist({ autoCopy: checked }); }} />
+            {autoCopy ? <Select size="small" value={copyScope} options={[{ value: 'selection', label: '选区' }, { value: 'page', label: '页面' }, { value: 'all', label: '全部' }]} onChange={(value) => { setCopyScope(value); persist({ copyScope: value }); }} /> : null}
+            <span className={styles.savedHint}>仅在整段成功完成后复制</span>
+          </div>
         </div>
+
+        <TranslationProviderSettings
+          providers={providers}
+          drafts={providerDrafts}
+          saving={savingProvider}
+          error={providerError}
+          onChange={(provider, field, value) => setProviderDrafts((current) => ({ ...current, [provider]: { ...current[provider], [field]: value } }))}
+          onSave={saveProvider}
+          onReload={reloadProviders}
+        />
+
+        <section className={styles.routePanel} aria-labelledby="translation-route-title">
+          <header className={styles.routeHeader}>
+            <div>
+              <span id="translation-route-title" className={styles.paneTitle}>翻译路由</span>
+              <span className={styles.routeHint}>按顺序尝试启用的模型；每条路由可限定使用场景。</span>
+            </div>
+            <Button appVariant="secondary" icon={<PlusOutlined />} onClick={handleAddRoute}>
+              添加路由
+            </Button>
+          </header>
+          {routes.length ? (
+            <ol className={styles.routeList}>
+              {routes.map((route, index) => {
+                const descriptor = providers.find((item) => item.id === route.provider);
+                const gatewayModels = descriptor?.config.modelSource === 'gateway';
+                const routeModelOptions = route.model && !modelOptions.some((option) => option.value === route.model)
+                  ? [{ value: route.model, label: route.model, title: route.model }, ...modelOptions]
+                  : modelOptions;
+                return (
+                  <li key={route.id} className={styles.routeRow}>
+                    <span className={styles.routeOrder}>{index + 1}</span>
+                    <Switch
+                      size="small"
+                      checked={route.enabled}
+                      aria-label={`启用路由 ${index + 1}`}
+                      onChange={(enabled) => handleRouteChange(index, { enabled })}
+                    />
+                    <Select
+                      size="small"
+                      className={styles.routeProvider}
+                      value={route.provider}
+                      aria-label={`路由 ${index + 1} 引擎`}
+                      placeholder="引擎"
+                      options={providers.map((item) => ({ value: item.id, label: `${item.label}${item.configured ? '' : ' · 待配置'}` }))}
+                      onChange={(provider) => {
+                        const selected = providers.find((item) => item.id === provider);
+                        handleRouteChange(index, { provider, model: selected?.config.defaultModel || models[0]?.id || '', modelProvider: selected?.config.modelSource === 'gateway' ? models[0]?.provider || '' : '' });
+                      }}
+                    />
+                    {gatewayModels ? <Select
+                      size="small"
+                      className={styles.routeModel}
+                      value={route.model || undefined}
+                      options={routeModelOptions}
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="模型"
+                      aria-label={`路由 ${index + 1} 模型`}
+                      onChange={(model) => {
+                        const selected = models.find((item) => item.id === model);
+                        handleRouteChange(index, {
+                          model,
+                          ...(selected?.provider ? { modelProvider: selected.provider } : {}),
+                        });
+                      }}
+                    /> : <Input
+                      size="small"
+                      className={styles.routeModel}
+                      value={route.model}
+                      aria-label={`路由 ${index + 1} 模型`}
+                      placeholder={descriptor?.config.defaultModel || 'default'}
+                      onChange={(event) => handleRouteChange(index, { model: event.target.value })}
+                    />}
+                    {gatewayModels ? <Input
+                      size="small"
+                      className={styles.routeModelProvider}
+                      value={route.modelProvider || ''}
+                      aria-label={`路由 ${index + 1} 模型提供方`}
+                      placeholder="模型提供方"
+                      onChange={(event) => handleRouteChange(index, { modelProvider: event.target.value })}
+                    /> : null}
+                    <div className={styles.routeOperations} aria-label={`路由 ${index + 1} 操作`}>
+                      {ROUTE_OPERATIONS.map((operation) => (
+                        <label key={operation.value} className={styles.routeOperation}>
+                          <input
+                            type="checkbox"
+                            checked={route.operations.includes(operation.value)}
+                            onChange={() => toggleRouteOperation(index, operation.value)}
+                          />
+                          {operation.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className={styles.routeActions}>
+                      <Button
+                        appVariant="icon"
+                        aria-label={`路由 ${index + 1} 上移`}
+                        icon={<ArrowUpOutlined />}
+                        disabled={index === 0}
+                        onClick={() => handleMoveRoute(index, -1)}
+                      />
+                      <Button
+                        appVariant="icon"
+                        aria-label={`路由 ${index + 1} 下移`}
+                        icon={<ArrowDownOutlined />}
+                        disabled={index === routes.length - 1}
+                        onClick={() => handleMoveRoute(index, 1)}
+                      />
+                      <Button
+                        appVariant="icon"
+                        aria-label={`删除路由 ${index + 1}`}
+                        icon={<MinusCircleOutlined />}
+                        onClick={() => handleRemoveRoute(index)}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div className={styles.routeEmpty}>尚未配置额外路由。添加后可按优先级尝试多个模型。</div>
+          )}
+        </section>
 
         {fallbackFrom ? (
           <div className={styles.inlineNotice}>
@@ -416,7 +736,7 @@ export default function TranslationWorkspace() {
             <Input.TextArea
               className={styles.sourceInput}
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => handleTextChange(event.target.value)}
               onKeyDown={handleTextKeyDown}
               placeholder="粘贴要翻译的内容，或直接在这里输入…"
               autoSize={false}
@@ -460,18 +780,48 @@ export default function TranslationWorkspace() {
                 </Button>
               </div>
             </footer>
+            {showConfirmation ? (
+              <div className={styles.languageIntentStrip} role="status">
+                <span>
+                  {languageIntent.state === 'same_language'
+                    ? '检测到原文与目标语言相同。请选择目标语言，或确认仍然翻译。'
+                    : '目标语言需要确认后才会开始翻译。'}
+                </span>
+                <Select
+                  size="small"
+                  value={target || undefined}
+                  options={buildLanguageOptions(languages, { includeAuto: false })}
+                  aria-label="确认目标语言"
+                  onChange={handleTargetChange}
+                />
+                <Button appVariant="quiet" onClick={handleKeepOriginal}>保持原文</Button>
+                <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button>
+              </div>
+            ) : null}
           </section>
 
-          <section className={styles.pane}>
+          <section className={styles.pane} data-phase={feedback.phase} aria-busy={feedback.active}>
             <header className={styles.paneHeader}>
               <span className={styles.paneTitle}>译文</span>
               <span className={styles.paneMeta}>{routeLabel}</span>
             </header>
+            {stream.state.status !== 'idle' || detecting ? (
+              <div className={styles.translationStatus} role="status">
+                <span className={styles.statusDot} aria-hidden="true" />
+                <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
+                <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
+              </div>
+            ) : null}
             <div className={styles.output}>
               {resultText ? (
                 <div className={styles.outputText}>
                   {resultText}
                   {busy ? <span className={styles.cursor} aria-hidden="true" /> : null}
+                </div>
+              ) : feedback.active ? (
+                <div className={styles.waitingState}>
+                  <span>{feedback.hint}</span>
+                  <div className={styles.waitingSkeleton} aria-hidden="true"><span /><span /><span /></div>
                 </div>
               ) : (
                 <div className={styles.outputPlaceholder}>
@@ -510,17 +860,19 @@ export default function TranslationWorkspace() {
               <div className={styles.paneFooterRight}>
                 {busy ? (
                   <Button appVariant="secondary" onClick={stream.cancel}>
-                    停止
+                    停止生成
                   </Button>
                 ) : null}
-                <Button
+                {stream.state.status === 'cancelled' ? (
+                  <Button appVariant="secondary" onClick={() => void handleTranslate()}>重新翻译</Button>
+                ) : null}
+                {canCopy ? <Button
                   appVariant="secondary"
                   icon={<CopyOutlined />}
-                  disabled={!canCopy}
                   onClick={handleCopy}
                 >
-                  复制
-                </Button>
+                  {copied ? '已复制' : '复制'}
+                </Button> : null}
               </div>
             </footer>
           </section>

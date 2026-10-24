@@ -102,7 +102,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.contextMenu.removeAllItems()
         let item = NSMenuItem(title: "AIH 翻译选中内容", action: #selector(translateContextSelection), keyEquivalent: "")
         item.target = self
-        item.image = NSImage(systemSymbolName: "character.book.closed.fill", accessibilityDescription: "翻译")
+        item.image = NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "翻译")
+          ?? NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "翻译")
         self.contextMenu.addItem(item)
         let location = NSEvent.mouseLocation
         self.contextMenu.popUp(positioning: item, at: location, in: nil)

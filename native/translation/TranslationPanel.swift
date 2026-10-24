@@ -56,11 +56,16 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.stop.target = self
     content.stop.action = #selector(cancel)
     let button = NSButton(title: "", target: self, action: #selector(acceptOffer))
-    button.frame = NSRect(x: 0, y: 0, width: 34, height: 32)
+    button.frame = NSRect(x: 0, y: 0, width: 36, height: 34)
     button.bezelStyle = .texturedRounded
     button.imagePosition = .imageOnly
     button.imageScaling = .scaleProportionallyDown
-    button.image = NSImage(systemSymbolName: "character.book.closed.fill", accessibilityDescription: "翻译")
+    // Use the macOS translation glyph rather than the generic book glyph. The
+    // bubble communicates an action on selected text and remains legible at
+    // the compact floating-trigger size.
+    button.image = NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "翻译")
+      ?? NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "翻译")
+      ?? NSImage(systemSymbolName: "translate", accessibilityDescription: "翻译")
     button.contentTintColor = .controlAccentColor
     button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
@@ -212,9 +217,24 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       finish()
       let code = event["code"] as? String ?? ""
       let upstream = code == "translation_upstream_error" || code == "translation_upstream_unreachable" || code == "translation_upstream_timeout"
-      content.failure(upstream ? "当前翻译模型暂时不可用，请在设置中选择可用模型或同步 AWS Server 账号。" : (event["message"] as? String ?? "翻译失败，请重试"))
+      let message = event["message"] as? String ?? "翻译失败，请重试"
+      content.failure(upstream ? friendlyUpstreamFailure(message) : message)
     default: break
     }
+  }
+
+  private func friendlyUpstreamFailure(_ message: String) -> String {
+    let lower = message.lowercased()
+    if lower.contains("no_available_account") || lower.contains("没有可用于") {
+      return "当前翻译模型暂时没有可用账号。请在高级设置中刷新模型目录，或选择其它模型。"
+    }
+    if lower.contains("model") && (lower.contains("not found") || lower.contains("unavailable")) {
+      return "当前翻译模型不可用。请在高级设置中选择其它模型。"
+    }
+    if lower.contains("timeout") || lower.contains("超时") {
+      return "翻译服务响应超时，请稍后重试或切换模型。"
+    }
+    return "当前翻译模型暂时不可用，请在高级设置中选择其它模型或稍后重试。"
   }
 
   @objc func replaceOutput() {

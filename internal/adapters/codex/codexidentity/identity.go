@@ -7,6 +7,7 @@ package codexidentity
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -55,12 +56,34 @@ func NewResolver(learned *clientversion.LearnedStore) (*clientversion.Resolver, 
 // probeCommands 列出本机可能安装的 Codex CLI：显式路径、PATH 上的 codex，以及
 // ChatGPT.app 捆绑的 codex-cli（桌面端常比 PATH 上的独立版更新）。
 func probeCommands() []string {
-	commands := make([]string, 0, 3)
+	commands := make([]string, 0, 10)
 	if explicit := strings.TrimSpace(os.Getenv("AIH_CODEX_BIN")); explicit != "" {
 		commands = append(commands, explicit)
 	}
+	commands = append(commands, "codex")
+
+	// A supervised Linux service often has a deliberately small PATH.  Codex's
+	// official installer and the package-manager shims used by aih nevertheless
+	// place the executable in these user-level locations.  Keep these candidates
+	// here as a standalone Go Core may be launched without the Node resolver that
+	// normally supplies AIH_CODEX_BIN.
+	home := strings.TrimSpace(os.Getenv("AIH_HOST_HOME"))
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home != "" {
+		commands = append(commands,
+			filepath.Join(home, ".local", "bin", "codex"),
+			filepath.Join(home, ".codex", "packages", "standalone", "current", "bin", "codex"),
+			filepath.Join(home, ".npm-global", "bin", "codex"),
+			filepath.Join(home, ".volta", "bin", "codex"),
+			filepath.Join(home, ".local", "share", "pnpm", "codex"),
+		)
+	}
+
+	// ChatGPT.app is macOS-only, but leaving the explicit candidate in the
+	// shared probe list is harmless and preserves desktop installs.
 	commands = append(commands,
-		"codex",
 		"/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
 	)
 	return commands

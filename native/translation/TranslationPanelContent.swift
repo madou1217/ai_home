@@ -26,6 +26,7 @@ final class TranslationPanelContent {
   private var hasOutput = false
   private var firstOutput = true
   private var copyRevision = 0
+  private var serverSwitchPending = false
   var reducedMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init() {
@@ -200,11 +201,28 @@ final class TranslationPanelContent {
   }
 
   func serverSwitching(_ label: String) {
+    serverSwitchPending = true
     model.stringValue = "正在切换：\(label)"
     model.toolTip = model.stringValue
     hint.stringValue = "正在连接翻译服务…"
     hint.textColor = .secondaryLabelColor
     hint.isHidden = false
+  }
+
+  func serverReady(_ label: String) {
+    guard serverSwitchPending else { return }
+    serverSwitchPending = false
+    model.stringValue = "服务：\(label)"
+    model.toolTip = model.stringValue
+    hint.stringValue = "翻译服务已就绪"
+    hint.textColor = .systemGreen
+    hint.isHidden = false
+    fadeIn(hint)
+  }
+
+  func serverFailure(_ message: String) {
+    serverSwitchPending = false
+    failure(message)
   }
 
   func updateElapsed(_ seconds: TimeInterval) {

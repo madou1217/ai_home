@@ -96,6 +96,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
          return candidateKey == currentKey
        }) {
       content.serverMenu.selectItem(at: index)
+      if let label = current["label"] as? String {
+        content.serverReady(label)
+      }
     }
     for language in event["languages"] as? [[String: Any]] ?? [] {
       content.targetMenu.addItem(withTitle: language["label"] as? String ?? "")
@@ -215,7 +218,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       content.model.stringValue = event["model"] as? String ?? "AIH Translation"
       content.model.toolTip = content.model.stringValue
     case "server-target-error":
-      content.failure(event["message"] as? String ?? "无法切换翻译服务")
+      content.serverFailure(event["message"] as? String ?? "无法切换翻译服务")
     case "done":
       if let text = event["text"] as? String, !text.isEmpty { output = text; content.setOutput(text) }
       finish()
@@ -298,6 +301,13 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   @objc func changeServer() {
     guard let server = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
     let label = server["label"] as? String ?? "AIH Server"
+    // Switching targets is a hard request boundary. Invalidate the current
+    // request before asking the helper to reconfigure so late SSE events from
+    // the previous server cannot overwrite the new target's panel.
+    emit(["type": "cancel"])
+    requestID = ""
+    finish()
+    content.setPhase(.stopped)
     content.serverSwitching(label)
     emit(["type": "server-target", "origin": server["origin"] as? String ?? "", "serverId": server["serverId"] as? String ?? "", "label": server["label"] as? String ?? "AIH Server"])
   }

@@ -31,7 +31,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     // run directory; explicit registration makes the Services daemon bind the
     // provider name to this live process instead of relying only on the bundle
     // metadata discovered by LaunchServices.
-    NSRegisterServicesProvider(self, "com.aihome.translation")
+    // The legacy registration API uses a provider *name*, not the bundle
+    // identifier. Use the same human-readable name that LaunchServices shows
+    // for this helper so older Services hosts can resolve it as well.
+    NSRegisterServicesProvider(self, "AIH Translation")
     NSUpdateDynamicServices()
     contextMenu.autoenablesItems = false
     updateTrust()

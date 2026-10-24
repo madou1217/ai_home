@@ -321,7 +321,7 @@ func (handler *Handler) ServeHTTP(
 		session.Context(),
 		upstream,
 		websocket.MessageText,
-		firstFrame,
+		normalizeClientFrameModel(firstFrame, firstRequest.Model),
 	); err != nil {
 		handler.recordTransportFailure(
 			route,
@@ -512,17 +512,54 @@ func (handler *Handler) writeSelectionError(
 }
 
 // parseClientFrame 只观察路由和串行状态所需字段，不拒绝任何未知字段。
-func parseClientFrame(payload []byte) (clientRequestEnvelope, error) {
+func parseClientFrame(payload []byte, boundModel ...string) (clientRequestEnvelope, error) {
 	var request clientRequestEnvelope
 	if json.Unmarshal(payload, &request) != nil ||
 		request.Type != "response.create" {
 		return clientRequestEnvelope{}, ErrInvalidClientFrame
+	}
+	// Codex sends the model on the first response.create and may omit it on
+	// later turns of the same WebSocket. The connection is already bound to the
+	// first model, so inherit that value for validation while still rejecting a
+	// real model switch.
+	if request.Model == "" && len(boundModel) > 0 {
+		request.Model = strings.TrimSpace(boundModel[0])
 	}
 	modelID, err := runtimecore.NewModelID(request.Model)
 	if err != nil || modelID.String() != request.Model {
 		return clientRequestEnvelope{}, ErrInvalidClientFrame
 	}
 	return request, nil
+}
+
+// normalizeClientFrameModel restores the connection-bound model for a later
+// response.create that omitted it. The upstream Codex endpoint still expects
+// the concrete model in every request body.
+func normalizeClientFrameModel(payload []byte, model string) []byte {
+	bound := strings.TrimSpace(model)
+	if bound == "" {
+		return payload
+	}
+	var frame map[string]json.RawMessage
+	if json.Unmarshal(payload, &frame) != nil {
+		return payload
+	}
+	if raw, ok := frame["model"]; ok {
+		var existing string
+		if json.Unmarshal(raw, &existing) == nil && strings.TrimSpace(existing) != "" {
+			return payload
+		}
+	}
+	encoded, err := json.Marshal(bound)
+	if err != nil {
+		return payload
+	}
+	frame["model"] = encoded
+	normalized, err := json.Marshal(frame)
+	if err != nil {
+		return payload
+	}
+	return normalized
 }
 
 // clientRequestEnvelope 是 response.create 的有界最小观察投影。

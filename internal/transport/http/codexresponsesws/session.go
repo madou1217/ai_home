@@ -195,7 +195,7 @@ func pumpClientToUpstream(
 			session.Context(),
 			upstream,
 			messageType,
-			payload,
+			normalizeClientFrameModel(payload, observer.model),
 		); err != nil {
 			results <- resultFromRead(pumpSourceUpstream, err, true)
 			return

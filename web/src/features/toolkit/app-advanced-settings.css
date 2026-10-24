@@ -69,6 +69,11 @@
   line-height: 1.55;
 }
 
+.aas-sync-ok {
+  color: var(--color-success);
+  font-size: 18px;
+}
+
 .aas-code-line {
   display: flex;
   flex-wrap: wrap;

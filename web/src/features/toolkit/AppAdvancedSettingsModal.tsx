@@ -9,6 +9,7 @@ import {
   WarningOutlined
 } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import InlineNote from '@/components/ui/InlineNote';
 import { toolkitAPI } from '@/services/api';
 import type {
   ManagedAppItem,
@@ -67,9 +68,19 @@ export interface AppAdvancedSettingsModalProps {
   open: boolean;
   app: ManagedAppItem | null;
   onClose: () => void;
+  busy?: boolean;
+  installingHooks?: boolean;
+  onInstallHooks?: (provider: string) => void;
 }
 
-export default function AppAdvancedSettingsModal({ open, app, onClose }: AppAdvancedSettingsModalProps) {
+export default function AppAdvancedSettingsModal({
+  open,
+  app,
+  onClose,
+  busy = false,
+  installingHooks = false,
+  onInstallHooks
+}: AppAdvancedSettingsModalProps) {
   const provider = app?.provider || '';
   const [activeTab, setActiveTab] = useState('permission');
   const [settings, setSettings] = useState<ToolPermissionSettings | null>(null);
@@ -232,6 +243,33 @@ export default function AppAdvancedSettingsModal({ open, app, onClose }: AppAdva
 
           {activeTab === 'permission' && showPermissionTab ? (
             <div className="aas-permission-pane">
+              {app?.installed && app.hookSupported ? (
+                <section className="aas-section aas-sync-section">
+                  <div className="aas-section-head">
+                    <FileTextOutlined />
+                    <div>
+                      <strong>即时刷新</strong>
+                      <span>监听本机 CLI 会话事件；CLI 写入新回合后，WebUI 会立即重新读取本地会话文件并更新列表。</span>
+                    </div>
+                    {app.hookInstalled ? <CheckCircleOutlined className="aas-sync-ok" /> : null}
+                  </div>
+                  <InlineNote tone={app.hookInstalled ? 'success' : 'warning'}>
+                    {app.hookInstalled
+                      ? '已启用。只发送本机刷新通知，不上传账号凭据或聊天正文。'
+                      : '尚未启用。启用后只改写该 CLI 的本地 hooks 配置，不影响已运行的会话。'}
+                  </InlineNote>
+                  {!app.hookInstalled && onInstallHooks ? (
+                    <Button
+                      icon={<FileTextOutlined />}
+                      loading={installingHooks}
+                      disabled={busy}
+                      onClick={() => onInstallHooks(app.provider)}
+                    >
+                      启用即时刷新
+                    </Button>
+                  ) : null}
+                </section>
+              ) : null}
               {loading ? (
                 <div className="aas-loading"><Spin tip="正在读取启动权限设置" /></div>
               ) : error && !settings ? (

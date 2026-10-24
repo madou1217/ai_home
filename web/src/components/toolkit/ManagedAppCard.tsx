@@ -1,4 +1,4 @@
-import { CloudSyncOutlined, EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Badge, Popconfirm, Space, Tooltip } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { Account, ManagedAppItem } from '@/types';
@@ -7,7 +7,6 @@ import ManagedAppIcon from './ManagedAppIcon';
 import ManagedAppAccountActions from './ManagedAppAccountActions';
 import ManagedResourceCard from './ManagedResourceCard';
 import type { ManagedAppUpgradeView } from './provider-cli-upgrade-presentation';
-import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import {
   getAppAdvancedEntryLabel,
   getAppCurrentVersion,
@@ -24,7 +23,6 @@ const UPGRADE_DOT_COLOR = 'var(--color-warning)';
 export interface ManagedAppCardProps {
   app: ManagedAppItem;
   busyAction?: 'install' | 'update' | 'uninstall';
-  installingHooks: boolean;
   checkingUpdate?: boolean;
   accounts: Account[];
   runningAccountPids: Record<string, number[]>;
@@ -36,7 +34,6 @@ export interface ManagedAppCardProps {
   onCheckUpdate: (app: ManagedAppItem) => void;
   onOpenApp: (app: ManagedAppItem, accountRef?: string, unscoped?: boolean) => void;
   onCloseApp: (app: ManagedAppItem, accountRef: string) => void;
-  onInstallHooks: (provider: string) => void;
   onClearUpgradeBroken?: (provider: string) => void;
   onEditConfig: (app: ManagedAppItem) => void;
 }
@@ -44,7 +41,6 @@ export interface ManagedAppCardProps {
 export default function ManagedAppCard({
   app,
   busyAction,
-  installingHooks,
   checkingUpdate,
   accounts,
   runningAccountPids,
@@ -55,7 +51,6 @@ export default function ManagedAppCard({
   onCheckUpdate,
   onOpenApp,
   onCloseApp,
-  onInstallHooks,
   onClearUpgradeBroken,
   onEditConfig
 }: ManagedAppCardProps) {
@@ -151,19 +146,6 @@ export default function ManagedAppCard({
                 onClick={() => onAction(app, 'uninstall')}
               />
             </>
-          ) : null}
-          {app.installed && app.hookSupported && !app.hookInstalled ? (
-            <Tooltip title={`${SESSION_SYNC_SUMMARY} 启用后会重新读取配置并验证。`}>
-              <Button
-                size="small"
-                icon={<CloudSyncOutlined />}
-                loading={installingHooks}
-                disabled={Boolean(busyAction)}
-                onClick={() => onInstallHooks(app.provider)}
-              >
-                启用即时刷新
-              </Button>
-            </Tooltip>
           ) : null}
           {/* 熔断只能人工解除，且服务端会先用升级同一套判据验证当前 CLI，所以入口放在 providers 卡片上。 */}
           {upgrade?.canClearBroken && onClearUpgradeBroken ? (

@@ -72,11 +72,16 @@ export default function AppManagerPanel() {
     clearingProvider
   } = useProviderCliUpgrade();
   const [category, setCategory] = useState('ALL');
-  const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
+  const [advancedAppId, setAdvancedAppId] = useState('');
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{
     app: ManagedAppItem;
     accountRef: string;
   } | null>(null);
+
+  const advancedApp = useMemo(
+    () => data?.apps.find((app) => app.id === advancedAppId) || null,
+    [advancedAppId, data]
+  );
 
   const filteredApps = useMemo(() => {
     if (!data) return [];
@@ -214,16 +219,14 @@ export default function AppManagerPanel() {
                   accounts={accounts}
                   runningAccountPids={runningAccountPids}
                   runningCliAccountPids={runningCliAccountPids}
-                  installingHooks={installingHooks}
                   upgrade={app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null}
                   clearingUpgrade={clearingProvider === app.provider}
                   onAction={(target, action) => void runAppAction(target, action)}
                   onCheckUpdate={(target) => void checkAppUpdate(target)}
                   onOpenApp={(target, accountRef, unscoped) => void openManagedApp(target, accountRef, unscoped)}
                   onCloseApp={(target, accountRef) => void closeManagedApp(target, accountRef)}
-                  onInstallHooks={(provider) => void installHooks([provider])}
                   onClearUpgradeBroken={(provider) => void handleClearUpgradeBroken(provider)}
-                  onEditConfig={(target) => setAdvancedApp(target)}
+                  onEditConfig={(target) => setAdvancedAppId(target.id)}
                 />
               ))}
             </div>
@@ -246,7 +249,10 @@ export default function AppManagerPanel() {
       <AppAdvancedSettingsModal
         open={Boolean(advancedApp)}
         app={advancedApp}
-        onClose={() => setAdvancedApp(null)}
+        busy={Boolean(advancedApp && busyActionFor(advancedApp))}
+        installingHooks={installingHooks}
+        onInstallHooks={(provider) => void installHooks([provider])}
+        onClose={() => setAdvancedAppId('')}
       />
     </section>
   );

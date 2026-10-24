@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { message } from 'antd';
 import {
-  CloudSyncOutlined,
   DeleteOutlined,
   DownloadOutlined,
   PlayCircleOutlined,
@@ -14,7 +13,6 @@ import {
   StopOutlined
 } from '@ant-design/icons';
 import ProviderIcon from '@/components/chat/ProviderIcon';
-import { SESSION_SYNC_SUMMARY } from '@/components/session-sync-copy';
 import {
   getAppCurrentVersion,
   getManagedAppWarning,
@@ -108,7 +106,7 @@ export default function AppsPanel() {
   const [category, setCategory] = useState('ALL');
   const [detailId, setDetailId] = useState('');
   const [launchId, setLaunchId] = useState('');
-  const [advancedApp, setAdvancedApp] = useState<ManagedAppItem | null>(null);
+  const [advancedAppId, setAdvancedAppId] = useState('');
   const [clearResult, setClearResult] = useState<{ provider: string; ok: boolean; text: string } | null>(null);
   const [kimiDesktopLoginTarget, setKimiDesktopLoginTarget] = useState<{ app: ManagedAppItem; accountRef: string } | null>(null);
 
@@ -121,6 +119,7 @@ export default function AppsPanel() {
 
   const detailApp = data?.apps.find((app) => app.id === detailId) || null;
   const launchApp = data?.apps.find((app) => app.id === launchId) || null;
+  const advancedApp = data?.apps.find((app) => app.id === advancedAppId) || null;
   /** 自动升级账本只对 CLI 成立；Desktop/IDE 由各自的更新渠道负责，卡片上不冒充。 */
   const upgradeFor = (app: ManagedAppItem): ManagedAppUpgradeView | null => (
     app.type === 'cli' ? (upgradeByProvider[app.provider] || null) : null
@@ -341,11 +340,9 @@ export default function AppsPanel() {
             status={rowStatus(detailApp)}
             upgrade={upgradeFor(detailApp)}
             clearResult={clearResult}
-            installingHooks={installingHooks}
             busy={Boolean(busyActionFor(detailApp))}
             clearingUpgrade={clearingProvider === detailApp.provider}
-            onInstallHooks={() => void installHooks([detailApp.provider])}
-            onOpenAdvanced={() => setAdvancedApp(detailApp)}
+            onOpenAdvanced={() => setAdvancedAppId(detailApp.id)}
             onClearBroken={() => void handleClearBroken(detailApp.provider)}
           />
         ) : null}
@@ -354,7 +351,10 @@ export default function AppsPanel() {
       <AppAdvancedSettingsModal
         open={Boolean(advancedApp)}
         app={advancedApp}
-        onClose={() => setAdvancedApp(null)}
+        busy={Boolean(advancedApp && busyActionFor(advancedApp))}
+        installingHooks={installingHooks}
+        onInstallHooks={(provider) => void installHooks([provider])}
+        onClose={() => setAdvancedAppId('')}
       />
 
       <DetailSheet
@@ -404,15 +404,13 @@ export default function AppsPanel() {
   );
 }
 
-function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, clearingUpgrade, onInstallHooks, onOpenAdvanced, onClearBroken }: {
+function AppDetail({ app, status, upgrade, clearResult, busy, clearingUpgrade, onOpenAdvanced, onClearBroken }: {
   app: ManagedAppItem;
   status: ReactNode;
   upgrade: ManagedAppUpgradeView | null;
   clearResult: { provider: string; ok: boolean; text: string } | null;
-  installingHooks: boolean;
   busy: boolean;
   clearingUpgrade: boolean;
-  onInstallHooks: () => void;
   onOpenAdvanced: () => void;
   onClearBroken: () => void;
 }) {
@@ -422,12 +420,6 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
     { key: 'version', label: '当前版本', value: getAppCurrentVersion(app), tone: app.installed ? undefined : 'muted' as const },
     ...(app.installed ? [{ key: 'path', label: '程序路径', value: app.cliPath || '未探测到' }] : []),
     ...(hasExistingAppConfig(app) ? [{ key: 'config', label: '配置', value: `${app.configName} 已存在` }] : []),
-    // 与桌面卡片同一套取舍：「已启用」是常态，不占一行；只有待启用才值得说。
-    ...(app.installed && app.hookSupported && !app.hookInstalled ? [{
-      key: 'hook',
-      label: '即时刷新',
-      value: <StatusText tone="warn">待启用</StatusText>
-    }] : []),
   ];
   return (
     <div className={styles.sheetStack}>
@@ -458,18 +450,6 @@ function AppDetail({ app, status, upgrade, clearResult, installingHooks, busy, c
         </div>
       ) : null}
       {warning ? <div className={styles.sheetBlock}><ToolkitWarningDot warning={warning} /></div> : null}
-      {app.installed && app.hookSupported && !app.hookInstalled ? (
-        <div className={styles.sheetBlock}>
-          <p className={styles.prose}>{SESSION_SYNC_SUMMARY} 启用后会重新读取配置并验证。</p>
-          <ActionButton
-            icon={<CloudSyncOutlined />}
-            label="启用即时刷新"
-            loading={installingHooks}
-            disabled={busy}
-            onClick={onInstallHooks}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

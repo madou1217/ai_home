@@ -165,8 +165,14 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   }
 
   func receive(_ event: [String: Any]) {
-    guard event["id"] as? String == requestID else { return }
-    switch event["type"] as? String {
+    let eventType = event["type"] as? String ?? ""
+    // Target configuration errors are out-of-band events: they describe the
+    // selected server profile rather than a translation request and therefore
+    // do not carry the current request id. Keep request-scoped events guarded
+    // so a late stream cannot overwrite a newer request, while still surfacing
+    // a failed server switch immediately in the panel.
+    if eventType != "server-target-error" && event["id"] as? String != requestID { return }
+    switch eventType {
     case "confirmation":
       awaitingConfirmation = true
       let message = (event["state"] as? String) == "same_language"

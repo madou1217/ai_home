@@ -158,11 +158,18 @@ export function resolveTranslationSelection(
   const configured = String(settings?.model || '').trim();
   if (configured && isModelStillAvailable(models, configured)) {
     const hit = models.find((item) => item.id === configured);
-    return {
-      model: configured,
-      provider: String(settings?.provider || hit?.provider || '').trim(),
-      fallback: false,
-    };
+    // A model can remain in the catalog after every matching account has
+    // become unavailable.  Keep it selectable for explicit recovery, but do
+    // not silently send it as the default when the catalog already has a
+    // usable automatic choice.
+    const availability = hit?.availableAccountCount;
+    if (availability === undefined || Number(availability) > 0) {
+      return {
+        model: configured,
+        provider: String(settings?.provider || hit?.provider || '').trim(),
+        fallback: false,
+      };
+    }
   }
   return {
     model: String(autoDetected.model || '').trim(),

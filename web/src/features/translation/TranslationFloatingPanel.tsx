@@ -30,6 +30,7 @@ import {
 import {
   getTranslationBootstrap,
   loadTranslationBootstrap,
+  resolveTranslationRoutesForRequest,
   shouldAutoCopy,
   writeTranslationClipboard,
   type TranslationBootstrap,
@@ -213,12 +214,17 @@ export default function TranslationFloatingPanel() {
           provider: bootstrap?.defaultProvider || bootstrap?.autoProvider || '',
         },
       );
+      const requestRoutes = resolveTranslationRoutesForRequest(bootstrap?.settings.routes || [], {
+        configuredModel: bootstrap?.settings.model || '',
+        configuredProvider: bootstrap?.settings.provider || '',
+        fallback: selection.fallback,
+      });
       void stream.run({
         text,
         source: AUTO_LANGUAGE,
         target: intent.target,
         targetPolicy: policy,
-        ...(bootstrap?.settings.routes.length ? { routes: bootstrap.settings.routes } : { model: selection.model, provider: selection.provider }),
+        ...(requestRoutes.length ? { routes: requestRoutes } : { model: selection.model, provider: selection.provider }),
       });
     },
     [languages, panelConfidence, panelSource, stream, targetPolicy],

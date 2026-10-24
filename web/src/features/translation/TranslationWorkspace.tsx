@@ -41,6 +41,7 @@ import {
 } from './translation-utils';
 import {
   saveTranslationSettings,
+  resolveTranslationRoutesForRequest,
   shouldAutoCopy,
   writeTranslationClipboard,
   type TranslationBootstrap,
@@ -74,8 +75,9 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 
 function describeFallback(bootstrap: TranslationBootstrap | null, model: string): string {
   if (!bootstrap || !model) return '';
-  const known = bootstrap.models.some((item) => item.id === model);
-  return known ? '' : model;
+  const known = bootstrap.models.find((item) => item.id === model);
+  const available = known?.availableAccountCount;
+  return known && (available === undefined || Number(available) > 0) ? '' : model;
 }
 
 const ROUTE_OPERATIONS: Array<{ value: TranslationRoutePreference['operations'][number]; label: string }> = [
@@ -252,6 +254,14 @@ export default function TranslationWorkspace() {
   const fallbackFrom = selection.fallback && models.length
     ? describeFallback(bootstrap, modelValue)
     : '';
+  const requestRoutes = useMemo(
+    () => resolveTranslationRoutesForRequest(routes, {
+      configuredModel: modelValue,
+      configuredProvider: providerValue,
+      fallback: selection.fallback,
+    }),
+    [modelValue, providerValue, routes, selection.fallback],
+  );
   const chars = countCharacters(text);
   const overLimit = exceedsInputLimit(text);
   const busy = stream.busy;
@@ -378,11 +388,11 @@ export default function TranslationWorkspace() {
         source,
         target: intent.target,
         targetPolicy: policy,
-        ...(routes.length ? { routes } : { model: selection.model, provider: selection.provider }),
+        ...(requestRoutes.length ? { routes: requestRoutes } : { model: selection.model, provider: selection.provider }),
       });
       return true;
     },
-    [languages, routes, selection.model, selection.provider, source, stream, target, text],
+    [languages, requestRoutes, selection.model, selection.provider, source, stream, target, text],
   );
 
   const handleTranslate = useCallback(async (policyOverride?: TranslationTargetPolicy) => {
@@ -520,7 +530,7 @@ export default function TranslationWorkspace() {
         const from = detected?.code || source;
         if (from && from !== AUTO_LANGUAGE && from === target) return '';
         let output = '';
-        await translationAPI.stream({ text: segmentText, source: from || AUTO_LANGUAGE, target, targetPolicy: 'saved', ...(routes.length ? { routes, operation: 'page' } : { model: selection.model, provider: selection.provider }), operation: 'page' }, {
+        await translationAPI.stream({ text: segmentText, source: from || AUTO_LANGUAGE, target, targetPolicy: 'saved', ...(requestRoutes.length ? { routes: requestRoutes, operation: 'page' } : { model: selection.model, provider: selection.provider }), operation: 'page' }, {
           signal,
           onEvent: (event) => {
             if (event.type === 'delta') output += event.content;
@@ -544,7 +554,7 @@ export default function TranslationWorkspace() {
       if (pageAbortRef.current === controller) pageAbortRef.current = null;
       setPageBusy(false);
     }
-  }, [pageBusy, pageMode, routes, selection.model, selection.provider, source, target]);
+  }, [pageBusy, pageMode, requestRoutes, selection.model, selection.provider, source, target]);
 
   const meta = stream.state.meta;
   const routeLabel = meta
@@ -613,24 +623,8 @@ export default function TranslationWorkspace() {
 
           <div className={styles.toolbarGroup}>
             <span className={styles.fieldLabel}>模型</span>
-            <Select
-              className={styles.modelSelect}
-              value={modelValue}
-              options={[
-                {
-                  value: '',
-                  label: bootstrap?.defaultModel
-                    ? `自动 · ${bootstrap.defaultModel}`
-                    : '自动选择可用模型',
-                },
-                ...modelOptions,
-              ]}
-              optionFilterProp="label"
-              showSearch
-              popupMatchSelectWidth={false}
-              onChange={handleModelChange}
-            />
-            <span className={styles.savedHint}>默认值自动保存</span>
+            <span className={styles.savedHint}>{selection.model || bootstrap?.defaultModel || '自动选择可用模型'}</span>
+            <span className={styles.savedHint}>高级设置可修改</span>
           </div>
           <div className={styles.toolbarGroup}>
             <span className={styles.fieldLabel}>完成后复制</span>
@@ -666,17 +660,45 @@ export default function TranslationWorkspace() {
           ) : null}
         </section>
 
-        <TranslationProviderSettings
-          providers={providers}
-          drafts={providerDrafts}
-          saving={savingProvider}
-          error={providerError}
-          onChange={(provider, field, value) => setProviderDrafts((current) => ({ ...current, [provider]: { ...current[provider], [field]: value } }))}
-          onSave={saveProvider}
-          onReload={reloadProviders}
-        />
+        <details className={styles.advancedTranslationSettings}>
+          <summary>高级设置 <span className={styles.savedHint}>Provider、模型、路由和服务凭据</span></summary>
+          <section className={styles.modelSettings} aria-labelledby="translation-model-settings-title">
+            <div className={styles.routeHeader}>
+              <div>
+                <span id="translation-model-settings-title" className={styles.paneTitle}>默认模型</span>
+                <span className={styles.routeHint}>用于手动翻译、系统取词和浏览器整页翻译；留空时由服务端按可用账号自动选择。</span>
+              </div>
+              <Select
+                className={styles.modelSelect}
+                value={modelValue}
+                options={[
+                  {
+                    value: '',
+                    label: bootstrap?.defaultModel
+                      ? `自动 · ${bootstrap.defaultModel}`
+                      : '自动选择可用模型',
+                  },
+                  ...modelOptions,
+                ]}
+                optionFilterProp="label"
+                showSearch
+                popupMatchSelectWidth={false}
+                onChange={handleModelChange}
+                aria-label="默认翻译模型"
+              />
+            </div>
+          </section>
+          <TranslationProviderSettings
+            providers={providers}
+            drafts={providerDrafts}
+            saving={savingProvider}
+            error={providerError}
+            onChange={(provider, field, value) => setProviderDrafts((current) => ({ ...current, [provider]: { ...current[provider], [field]: value } }))}
+            onSave={saveProvider}
+            onReload={reloadProviders}
+          />
 
-        <section className={styles.routePanel} aria-labelledby="translation-route-title">
+          <section className={styles.routePanel} aria-labelledby="translation-route-title">
           <header className={styles.routeHeader}>
             <div>
               <span id="translation-route-title" className={styles.paneTitle}>翻译路由</span>
@@ -788,11 +810,12 @@ export default function TranslationWorkspace() {
           ) : (
             <div className={styles.routeEmpty}>尚未配置额外路由。添加后可按优先级尝试多个模型。</div>
           )}
-        </section>
+          </section>
+        </details>
 
         {fallbackFrom ? (
           <div className={styles.inlineNotice}>
-            已保存的模型 {fallbackFrom} 不在当前模型目录中，本次改用{' '}
+            已保存的模型 {fallbackFrom} 当前不可用，本次改用{' '}
             {selection.model || '服务端默认模型'}
           </div>
         ) : null}

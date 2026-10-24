@@ -67,6 +67,33 @@ export function normalizeTranslationRoutes(routes: unknown, legacy: Partial<Pick
   return normalized;
 }
 
+/**
+ * A legacy model/provider pair is materialized as one gateway route so old
+ * settings can use the new route schema.  It remains a migration detail,
+ * though: once that model disappears or becomes unavailable, the request
+ * must be allowed to use the current catalog fallback instead of replaying
+ * the stale route forever.
+ */
+export function resolveTranslationRoutesForRequest(
+  routes: readonly TranslationRoutePreference[],
+  input: { configuredModel: string; configuredProvider: string; fallback: boolean },
+): TranslationRoutePreference[] {
+  if (!routes.length) return [];
+  const configuredModel = String(input.configuredModel || '').trim();
+  const configuredProvider = String(input.configuredProvider || '').trim().toLowerCase();
+  const legacyRoutes = routes.filter((route) => (
+    route.provider === 'aih-gateway'
+      && String(route.id || '').startsWith('aih-gateway:')
+  ));
+  if (legacyRoutes.length !== routes.length) return [...routes];
+  if (input.fallback || !configuredModel || !configuredProvider) return [];
+  const matchesSettings = legacyRoutes.every((route) => (
+    route.model === configuredModel
+      && String(route.modelProvider || '').trim().toLowerCase() === configuredProvider
+  ));
+  return matchesSettings ? [...routes] : [];
+}
+
 export function shouldAutoCopy({ scope, client, mode, event }: { scope: TranslationCopyScope; client: string; mode: TranslationCopyMode; event: TranslationCopyEvent | null | undefined }): boolean {
   if (!event || event.type !== 'done' || !String(event.text || '').trim() || !String(client || '').trim()) return false;
   if (scope === 'all') return true;

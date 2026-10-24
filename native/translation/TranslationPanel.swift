@@ -54,9 +54,13 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.keepOriginal.action = #selector(keepOriginal)
     content.stop.target = self
     content.stop.action = #selector(cancel)
-    let button = NSButton(title: "译", target: self, action: #selector(acceptOffer))
+    let button = NSButton(title: "", target: self, action: #selector(acceptOffer))
     button.frame = NSRect(x: 0, y: 0, width: 34, height: 32)
-    button.font = .systemFont(ofSize: 14, weight: .semibold)
+    button.bezelStyle = .texturedRounded
+    button.imagePosition = .imageOnly
+    button.imageScaling = .scaleProportionallyDown
+    button.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "翻译")
+    button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
     trigger.contentView = button
     trigger.level = .floating

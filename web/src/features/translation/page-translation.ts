@@ -17,6 +17,12 @@ export interface TranslationPageProgress {
 
 export type PageTranslationMode = 'side-by-side' | 'replace';
 
+export interface PageTranslationSnapshot {
+  url: string;
+  title: string;
+  segments: TranslationPageSegment[];
+}
+
 const IGNORED_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'PRE', 'CODE', 'TEXTAREA', 'INPUT']);
 
 function visibleTextNode(node: Text): boolean {
@@ -41,6 +47,12 @@ export function collectPageSegments(root: ParentNode = document): TranslationPag
     index += 1;
   }
   return segments;
+}
+
+/** 外部网站由浏览器工作区调用；只读取正文文本，不把 DOM 或脚本交给翻译服务。 */
+export function collectExternalPageSegments(root: Document = document): TranslationPageSegment[] {
+  const main = root.querySelector('main, article, [role="main"]') || root.body;
+  return collectPageSegments(main || root);
 }
 
 export function createBoundedPageTranslator(options: {

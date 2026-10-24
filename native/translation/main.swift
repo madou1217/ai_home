@@ -15,9 +15,12 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var selectionToken = 0
   var selectionApplicationPID: pid_t = 0
   var activationObserver: NSObjectProtocol?
+  var contextSelection: SelectedText?
+  let contextMenu = NSMenu()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
+    contextMenu.autoenablesItems = false
     updateTrust()
     activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -55,7 +58,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   }
 
   func installMonitors() {
-    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .keyDown, .scrollWheel], handler: { [weak self] event in
+    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .keyDown, .scrollWheel], handler: { [weak self] event in
       guard let self = self else { return }
       if event.type == .leftMouseDown {
         self.selectionToken += 1
@@ -79,6 +82,24 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
                 "hitPID": self.reader.lastHitPID, "focusPID": self.reader.lastFocusedPID,
                 "x": self.reader.lastPoint.x, "y": self.reader.lastPoint.y])
         }
+      } else if event.type == .rightMouseDown {
+        self.selectionToken += 1
+        self.panel.hideTrigger()
+      } else if event.type == .rightMouseUp {
+        let point = event.cgEvent?.location
+        let application = self.reader.applicationAt(point)
+        guard let selection = self.reader.read(explicit: false, application: application, point: point), !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          self.contextSelection = nil
+          return
+        }
+        self.contextSelection = selection
+        self.contextMenu.removeAllItems()
+        let item = NSMenuItem(title: "AIH 翻译选中内容", action: #selector(translateContextSelection), keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "翻译")
+        self.contextMenu.addItem(item)
+        let location = NSEvent.mouseLocation
+        self.contextMenu.popUp(positioning: item, at: location, in: nil)
       } else if event.type == .scrollWheel {
         self.selectionToken += 1
         self.panel.hideTrigger()
@@ -95,7 +116,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         }
       }
     }) { monitors.append(monitor) }
-    if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown], handler: { [weak self] event in
+    if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
       if event.type == .keyDown && event.keyCode == 53 {
         self?.selectionToken += 1
         self?.panel.close()
@@ -104,6 +125,12 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       return event
     }) { monitors.append(monitor) }
     emit(["type": "selection-state", "outcome": "monitors-\(monitors.count)"])
+  }
+
+  @objc func translateContextSelection() {
+    guard let selection = contextSelection else { return }
+    contextSelection = nil
+    panel.offer(selection, explicit: true)
   }
 
   func receive(_ event: [String: Any]) {

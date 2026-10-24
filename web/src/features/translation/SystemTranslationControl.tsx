@@ -4,13 +4,68 @@ import { DesktopOutlined } from '@ant-design/icons';
 import type { SystemTranslationStatus } from '@/types';
 import { translationAPI } from '@/services/api';
 import styles from './translation.module.css';
-import { listControlPlaneProfiles } from '@/services/control-plane-profiles';
+import {
+  addControlPlaneProfilesChangeListener,
+  isControlPlaneProfileReady,
+  listControlPlaneProfiles,
+} from '@/services/control-plane-profiles';
+
+type SystemServerTargetOption = {
+  kind: 'aih-server';
+  label: string;
+  origin: string;
+  serverId?: string;
+  available: boolean;
+};
+
+function targetKey(target: Pick<SystemServerTargetOption, 'origin' | 'serverId'>) {
+  return target.serverId || target.origin;
+}
 
 export default function SystemTranslationControl() {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const serverTargets = useMemo(() => [{ label: '本机 AIH Server', origin: window.location.origin, serverId: '' }, ...listControlPlaneProfiles().filter((profile) => profile.endpoint && profile.endpoint !== window.location.origin).map((profile) => ({ label: profile.name || profile.endpoint, origin: window.location.origin, serverId: profile.id }))], []);
+  const [profileRevision, setProfileRevision] = useState(0);
+  const serverTargets = useMemo<SystemServerTargetOption[]>(() => {
+    // A profile without a management key or a successful health state cannot
+    // service native translation through the local proxy. Keep the list honest
+    // so switching does not lead to an avoidable authorization error.
+    const local: SystemServerTargetOption = {
+      kind: 'aih-server',
+      label: '本机 AIH Server',
+      origin: window.location.origin,
+      serverId: '',
+      available: true,
+    };
+    const candidates: SystemServerTargetOption[] = [local, ...listControlPlaneProfiles()
+      .filter((profile) => profile.endpoint && profile.endpoint !== window.location.origin && isControlPlaneProfileReady(profile))
+      .map((profile) => ({
+        kind: 'aih-server' as const,
+        label: profile.name || profile.endpoint,
+        // The native helper talks to its local server; the profile id selects
+        // the remote server through the authenticated server proxy.
+        origin: window.location.origin,
+        serverId: profile.id,
+        available: true,
+      }))];
+    const current = status?.serverTarget;
+    if (current && !candidates.some((item) => targetKey(item) === targetKey(current))) {
+      // Preserve a persisted selection so the control reflects reality. It is
+      // disabled until the corresponding profile is configured and ready.
+      candidates.push({ ...current, available: false });
+    }
+    const seen = new Set<string>();
+    return candidates.filter((item) => {
+      const key = targetKey(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [profileRevision, status?.serverTarget]);
+  useEffect(() => {
+    return addControlPlaneProfilesChangeListener(() => setProfileRevision((value) => value + 1));
+  }, []);
   useEffect(() => {
     let disposed = false;
     const refresh = () => {
@@ -63,11 +118,12 @@ export default function SystemTranslationControl() {
           finally { setSaving(false); }
         }}
       >
-        {serverTargets.map((item) => <option key={item.serverId || item.origin} value={item.serverId || item.origin}>{item.label}</option>)}
+        {serverTargets.map((item) => <option key={targetKey(item)} value={targetKey(item)} disabled={!item.available}>{item.label}{item.available ? '' : '（未配置）'}</option>)}
       </select>
       <span className={styles.systemStatus} role="status">
         {error || (status?.status === 'running' ? '已就绪' : status?.status === 'disabled' ? '' : status?.detail)}
       </span>
+      {serverTargets.length === 1 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
       {status?.status === 'permission-required' ? (
         <button type="button" className={styles.systemAction} onClick={() => {
           void translationAPI.requestSystemPermission().catch(() => message.error('无法打开辅助功能设置'));

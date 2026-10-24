@@ -16,6 +16,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   private var sameLanguageResult = false
   var output = ""
   private var replacementElement: AXUIElement?
+  private var replacementApplicationPID: pid_t = 0
   private var replacementOriginal = ""
   private var replacementFinal = ""
   private var replacementAppliedState = false
@@ -122,6 +123,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   func offer(_ selection: SelectedText, explicit: Bool, point: NSPoint? = nil) {
     offered = selection.text
     replacementElement = selection.element
+    replacementApplicationPID = 0
+    if let element = selection.element { AXUIElementGetPid(element, &replacementApplicationPID) }
     replacementOriginal = selection.fullValue
     replacementAppliedState = false
     if explicit { acceptOffer() }
@@ -261,10 +264,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   @objc func replaceOutput() {
     guard let element = replacementElement, let range = currentSelectedRange(element), !output.isEmpty else { return }
     if replacementAppliedState {
-      guard readAXValue(element) == replacementFinal else { content.failure("编辑器内容已改变，无法安全撤回"); return }
-      guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, replacementOriginal as CFString) == .success else { content.failure("无法撤回原文"); return }
-      replacementAppliedState = false
-      content.replacementUndone()
+      undoAppliedReplacement(element)
       return
     }
     guard readAXValue(element) == replacementOriginal else { content.failure("原文已经被修改，未执行替换"); return }
@@ -282,6 +282,27 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     }
     replacementAppliedState = true
     content.replacementApplied()
+  }
+
+  /// Observe the host's native undo shortcut without stealing it from the
+  /// editor. If the editor already handled Cmd/Ctrl-Z, its value no longer
+  /// matches replacementFinal and this becomes a no-op. Otherwise we restore
+  /// the exact pre-replacement snapshot after the host has had a chance to
+  /// process its own undo stack.
+  func undoReplacementAfterHostShortcut(frontmostPID: pid_t) {
+    guard replacementAppliedState, replacementApplicationPID == frontmostPID else { return }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+      guard let self = self, self.replacementAppliedState, let element = self.replacementElement else { return }
+      guard self.readAXValue(element) == self.replacementFinal else { return }
+      self.undoAppliedReplacement(element)
+    }
+  }
+
+  private func undoAppliedReplacement(_ element: AXUIElement) {
+    guard readAXValue(element) == replacementFinal else { content.failure("编辑器内容已改变，无法安全撤回"); return }
+    guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, replacementOriginal as CFString) == .success else { content.failure("无法撤回原文"); return }
+    replacementAppliedState = false
+    content.replacementUndone()
   }
 
   private func readAXValue(_ element: AXUIElement) -> String { var value: CFTypeRef?; return AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success ? (value as? String ?? "") : "" }

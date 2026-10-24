@@ -113,6 +113,7 @@ final class TranslationPanelContent {
     override.setAccessibilityLabel("仍然翻译")
     keepOriginal.setAccessibilityLabel("保持原文")
     replace.setAccessibilityLabel("替换原文")
+    replace.toolTip = "替换原文；完成后可用 ⌘Z / Ctrl+Z 撤回"
     copy.setAccessibilityLabel("复制译文")
     let footer = NSStackView(views: [model, stop, retry, override, keepOriginal, replace, copy])
     footer.spacing = 6

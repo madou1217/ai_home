@@ -126,6 +126,14 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
           if let selection = self.reader.read(explicit: true, application: application) { self.panel.offer(selection, explicit: true) }
           emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
         }
+        else if event.keyCode == 6,
+                event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
+          // Let the host editor handle its own undo first. If the AX write
+          // was not recorded by that editor, the panel restores its exact
+          // pre-replacement snapshot after the event has propagated.
+          let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+          self.panel.undoReplacementAfterHostShortcut(frontmostPID: pid)
+        }
       }
     }) { monitors.append(monitor) }
     if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in

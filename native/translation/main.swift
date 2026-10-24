@@ -15,6 +15,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var selectionToken = 0
   var selectionApplicationPID: pid_t = 0
   var activationObserver: NSObjectProtocol?
+  var settingsMonitor: Any?
   var contextSelection: SelectedText?
   let contextMenu = NSMenu()
 
@@ -31,6 +32,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.selectionToken += 1
         self.panel.hideTrigger()
       }
+    }
+    settingsMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+      guard event.modifierFlags.contains(.command), event.keyCode == 43 else { return event }
+      self?.panel.openSettings()
+      return nil
     }
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       if getppid() == 1 { NSApp.terminate(nil) }
@@ -96,7 +102,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.contextMenu.removeAllItems()
         let item = NSMenuItem(title: "AIH 翻译选中内容", action: #selector(translateContextSelection), keyEquivalent: "")
         item.target = self
-        item.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "翻译")
+        item.image = NSImage(systemSymbolName: "character.book.closed.fill", accessibilityDescription: "翻译")
         self.contextMenu.addItem(item)
         let location = NSEvent.mouseLocation
         self.contextMenu.popUp(positioning: item, at: location, in: nil)

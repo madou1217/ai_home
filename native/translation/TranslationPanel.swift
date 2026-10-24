@@ -60,7 +60,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     button.bezelStyle = .texturedRounded
     button.imagePosition = .imageOnly
     button.imageScaling = .scaleProportionallyDown
-    button.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "翻译")
+    button.image = NSImage(systemSymbolName: "character.book.closed.fill", accessibilityDescription: "翻译")
+    button.contentTintColor = .controlAccentColor
     button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
     trigger.contentView = button
@@ -85,7 +86,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     if let current = event["serverTarget"] as? [String: Any],
        let index = content.serverMenu.itemArray.firstIndex(where: {
          guard let candidate = $0.representedObject as? [String: Any] else { return false }
-         return String(candidate["serverId"] as? String ?? candidate["origin"] as? String ?? "") == String(current["serverId"] as? String ?? current["origin"] as? String ?? "")
+         let candidateKey = String(candidate["serverId"] as? String ?? candidate["origin"] as? String ?? "")
+         let currentKey = String(current["serverId"] as? String ?? current["origin"] as? String ?? "")
+         return candidateKey == currentKey
        }) {
       content.serverMenu.selectItem(at: index)
     }
@@ -207,7 +210,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       }
     case "error":
       finish()
-      content.failure(event["message"] as? String ?? "翻译失败，请重试")
+      let code = event["code"] as? String ?? ""
+      let upstream = code == "translation_upstream_error" || code == "translation_upstream_unreachable" || code == "translation_upstream_timeout"
+      content.failure(upstream ? "当前翻译模型暂时不可用，请在设置中选择可用模型或同步 AWS Server 账号。" : (event["message"] as? String ?? "翻译失败，请重试"))
     default: break
     }
   }
@@ -260,8 +265,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     }
   }
   @objc func changeServer() {
-    guard let target = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
-    emit(["type": "server-target", "origin": target["origin"] as? String ?? "", "serverId": target["serverId"] as? String ?? "", "label": target["label"] as? String ?? "AIH Server"])
+    guard let server = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
+    emit(["type": "server-target", "origin": server["origin"] as? String ?? "", "serverId": server["serverId"] as? String ?? "", "label": server["label"] as? String ?? "AIH Server"])
   }
   @objc func openSettings() {
     if let url = URL(string: "http://127.0.0.1:\(serverPort)/ui/studio/translation?settings=1") {

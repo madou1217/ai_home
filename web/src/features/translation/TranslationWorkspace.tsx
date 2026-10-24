@@ -585,7 +585,6 @@ export default function TranslationWorkspace() {
             />
             <kbd className={styles.kbd}>{shortcutLabel()}</kbd>
           </div>
-          <SystemTranslationControl />
         </div>
       }
     >
@@ -687,6 +686,13 @@ export default function TranslationWorkspace() {
                 aria-label="默认翻译模型"
               />
             </div>
+          </section>
+          <section className={styles.systemSettings} aria-labelledby="translation-system-settings-title">
+            <div>
+              <span id="translation-system-settings-title" className={styles.paneTitle}>系统级取词</span>
+              <span className={styles.routeHint}>macOS 全局选词、右键入口和辅助功能授权。</span>
+            </div>
+            <SystemTranslationControl />
           </section>
           <TranslationProviderSettings
             providers={providers}

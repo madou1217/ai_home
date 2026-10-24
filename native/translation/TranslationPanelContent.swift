@@ -6,6 +6,7 @@ enum TranslationPhase { case waiting, confirmation, streaming, done, stopped, fa
 final class TranslationPanelContent {
   let root = NSVisualEffectView()
   let targetMenu = NSPopUpButton()
+  let serverMenu = NSPopUpButton()
   let pin = NSButton(checkboxWithTitle: "置顶", target: nil, action: nil)
   let stop = NSButton(title: "停止", target: nil, action: nil)
   let copy = NSButton(title: "复制", target: nil, action: nil)
@@ -47,10 +48,14 @@ final class TranslationPanelContent {
     heading.textColor = .secondaryLabelColor
     heading.font = .systemFont(ofSize: 12)
     targetMenu.setAccessibilityLabel("目标语言")
+    serverMenu.setAccessibilityLabel("翻译服务")
     targetMenu.setContentHuggingPriority(.defaultLow, for: .horizontal)
     pin.setAccessibilityLabel("置顶面板")
     pin.toolTip = "固定面板并保持在其他窗口上方"
-    let controls = NSStackView(views: [heading, targetMenu, pin])
+    let serverHeading = NSTextField(labelWithString: "服务")
+    serverHeading.textColor = .secondaryLabelColor
+    serverHeading.font = .systemFont(ofSize: 12)
+    let controls = NSStackView(views: [heading, targetMenu, serverHeading, serverMenu, pin])
     controls.spacing = 8
     spinner.style = .spinning
     spinner.controlSize = .small

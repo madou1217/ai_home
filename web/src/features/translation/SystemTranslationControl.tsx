@@ -10,7 +10,7 @@ export default function SystemTranslationControl() {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const serverTargets = useMemo(() => [{ label: '本机 AIH Server', origin: window.location.origin }, ...listControlPlaneProfiles().filter((profile) => profile.endpoint && profile.endpoint !== window.location.origin).map((profile) => ({ label: profile.name || profile.endpoint, origin: profile.endpoint }))], []);
+  const serverTargets = useMemo(() => [{ label: '本机 AIH Server', origin: window.location.origin, serverId: '' }, ...listControlPlaneProfiles().filter((profile) => profile.endpoint && profile.endpoint !== window.location.origin).map((profile) => ({ label: profile.name || profile.endpoint, origin: window.location.origin, serverId: profile.id }))], []);
   useEffect(() => {
     let disposed = false;
     const refresh = () => {
@@ -45,18 +45,18 @@ export default function SystemTranslationControl() {
       <select
         className={styles.systemTargetSelect}
         aria-label="系统取词服务目标"
-        value={status?.serverTarget?.origin || window.location.origin}
+        value={status?.serverTarget?.serverId || status?.serverTarget?.origin || window.location.origin}
         disabled={saving}
         onChange={async (event) => {
-          const found = serverTargets.find((item) => item.origin === event.target.value);
+          const found = serverTargets.find((item) => (item.serverId || item.origin) === event.target.value);
           if (!found) return;
           setSaving(true);
-          try { setStatus(await translationAPI.setSystemServerTarget({ kind: 'aih-server', ...found })); }
+          try { setStatus(await translationAPI.setSystemServerTarget({ kind: 'aih-server', ...found }, serverTargets.map((item) => ({ kind: 'aih-server' as const, ...item })))); }
           catch (_error) { message.error('切换翻译服务失败'); }
           finally { setSaving(false); }
         }}
       >
-        {serverTargets.map((item) => <option key={item.origin} value={item.origin}>{item.label}</option>)}
+        {serverTargets.map((item) => <option key={item.serverId || item.origin} value={item.serverId || item.origin}>{item.label}</option>)}
       </select>
       <span className={styles.systemStatus} role="status">
         {error || (status?.status === 'running' ? '已就绪' : status?.status === 'disabled' ? '' : status?.detail)}

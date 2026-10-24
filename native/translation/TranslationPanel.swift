@@ -40,6 +40,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.pin.action = #selector(togglePinned)
     content.targetMenu.target = self
     content.targetMenu.action = #selector(changeTarget)
+    content.serverMenu.target = self
+    content.serverMenu.action = #selector(changeServer)
     content.copy.target = self
     content.copy.action = #selector(copyOutput)
     content.replace.target = self
@@ -69,6 +71,18 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     copyScope = event["copyScope"] as? String ?? "selection"
     let previous = panel.isVisible ? target : defaultTarget
     content.targetMenu.removeAllItems()
+    content.serverMenu.removeAllItems()
+    for server in event["serverTargets"] as? [[String: Any]] ?? [] {
+      content.serverMenu.addItem(withTitle: server["label"] as? String ?? "AIH Server")
+      content.serverMenu.lastItem?.representedObject = server
+    }
+    if let current = event["serverTarget"] as? [String: Any],
+       let index = content.serverMenu.itemArray.firstIndex(where: {
+         guard let candidate = $0.representedObject as? [String: Any] else { return false }
+         return String(candidate["serverId"] as? String ?? candidate["origin"] as? String ?? "") == String(current["serverId"] as? String ?? current["origin"] as? String ?? "")
+       }) {
+      content.serverMenu.selectItem(at: index)
+    }
     for language in event["languages"] as? [[String: Any]] ?? [] {
       content.targetMenu.addItem(withTitle: language["label"] as? String ?? "")
       content.targetMenu.lastItem?.representedObject = language["code"] as? String
@@ -169,6 +183,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     case "attempt_start":
       content.model.stringValue = event["model"] as? String ?? "AIH Translation"
       content.model.toolTip = content.model.stringValue
+    case "server-target-error":
+      content.failure(event["message"] as? String ?? "无法切换翻译服务")
     case "done":
       if let text = event["text"] as? String, !text.isEmpty { output = text; content.setOutput(text) }
       finish()
@@ -230,6 +246,10 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       if awaitingConfirmation { requestIntent() }
       else { translate() }
     }
+  }
+  @objc func changeServer() {
+    guard let target = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
+    emit(["type": "server-target", "origin": target["origin"] as? String ?? "", "serverId": target["serverId"] as? String ?? "", "label": target["label"] as? String ?? "AIH Server"])
   }
   @objc func togglePinned() {
     panel.level = isPinned ? .statusBar : .floating

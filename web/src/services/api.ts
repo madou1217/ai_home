@@ -1941,8 +1941,8 @@ export const translationAPI = {
   requestSystemPermission: async () => {
     await api.post('/webui/translation/system', { action: 'request-permission' });
   },
-  setSystemServerTarget: async (target: { kind: 'aih-server'; label: string; origin: string }) => {
-    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { serverTarget: target });
+  setSystemServerTarget: async (target: { kind: 'aih-server'; label: string; origin: string; serverId?: string }, serverTargets?: Array<{ kind: 'aih-server'; label: string; origin: string; serverId?: string }>) => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { serverTarget: target, serverTargets });
     return response.data.system;
   },
   getSettings: async (): Promise<TranslationSettingsResponse> => {

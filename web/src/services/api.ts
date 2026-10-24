@@ -1960,8 +1960,10 @@ export const translationAPI = {
     return response.data;
   },
 
-  detect: async (text: string): Promise<TranslationDetectionResponse> => {
-    const response = await api.post<TranslationDetectionResponse>('/webui/translation/detect', { text });
+  detect: async (text: string, options: { signal?: AbortSignal } = {}): Promise<TranslationDetectionResponse> => {
+    const response = await api.post<TranslationDetectionResponse>('/webui/translation/detect', { text }, {
+      signal: options.signal
+    });
     return response.data;
   },
 

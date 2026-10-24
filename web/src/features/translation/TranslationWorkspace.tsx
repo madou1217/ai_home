@@ -127,6 +127,7 @@ export default function TranslationWorkspace() {
   const [pageProgress, setPageProgress] = useState<TranslationPageProgress[]>([]);
   const [pageBusy, setPageBusy] = useState(false);
   const [pageApplied, setPageApplied] = useState(false);
+  const [pageCancelled, setPageCancelled] = useState(false);
   const pageAbortRef = useRef<AbortController | null>(null);
   const pageUndoRef = useRef<(() => void) | null>(null);
   const reloadProviders = useCallback(() => {
@@ -533,11 +534,14 @@ export default function TranslationWorkspace() {
     const controller = new AbortController();
     pageAbortRef.current = controller;
     setPageProgress([]);
+    setPageCancelled(false);
     setPageBusy(true);
     const translator = createBoundedPageTranslator({
       concurrency: 3,
       translate: async (segmentText, signal) => {
-        const detected = source === AUTO_LANGUAGE ? await translationAPI.detect(segmentText.slice(0, 2000)) : null;
+        const detected = source === AUTO_LANGUAGE
+          ? await translationAPI.detect(segmentText.slice(0, 2000), { signal })
+          : null;
         const from = detected?.code || source;
         if (from && from !== AUTO_LANGUAGE && from === target) return '';
         let output = '';
@@ -560,7 +564,7 @@ export default function TranslationWorkspace() {
       if (!controller.signal.aborted) {
         pageUndoRef.current = applyPageTranslation(progress, pageMode);
         setPageApplied(true);
-      }
+      } else setPageCancelled(true);
     } finally {
       if (pageAbortRef.current === controller) pageAbortRef.current = null;
       setPageBusy(false);
@@ -666,9 +670,9 @@ export default function TranslationWorkspace() {
               {pageApplied && !pageBusy ? <Button appVariant="quiet" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
             </div>
           </div>
-          {pageBusy || pageProgress.length ? (
+          {pageBusy || pageProgress.length || pageCancelled ? (
             <div className={styles.pageTranslationProgress} role="status" aria-live="polite">
-              <span>{pageBusy ? '正在翻译页面' : '页面翻译完成'} · {pageProgress.length} 段</span>
+              <span>{pageBusy ? '正在翻译页面' : pageCancelled ? '已停止页面翻译' : '页面翻译完成'} · 已处理 {pageProgress.length} 段</span>
               {pageProgress.some((item) => item.error) ? <span className={styles.limitWarning}>部分段落失败，可重试</span> : null}
             </div>
           ) : null}

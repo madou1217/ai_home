@@ -15,7 +15,14 @@ export default function SystemTranslationControl() {
     let disposed = false;
     const refresh = () => {
       void translationAPI.getSystemStatus().then((next) => {
-        if (!disposed) { setStatus(next); setError(''); }
+        if (!disposed) {
+          setStatus(next);
+          setError('');
+          const current = next.serverTarget || serverTargets[0];
+          if (current && (!next.serverTargets || next.serverTargets.length < serverTargets.length)) {
+            void translationAPI.setSystemServerTarget({ kind: 'aih-server', ...current }, serverTargets.map((item) => ({ kind: 'aih-server' as const, ...item })));
+          }
+        }
       }).catch(() => { if (!disposed) setError('系统取词服务不可用'); });
     };
     refresh();

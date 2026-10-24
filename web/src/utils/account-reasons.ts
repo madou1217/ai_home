@@ -5,7 +5,9 @@ const KNOWN_REASON_MESSAGES: Record<string, string> = {
   billing_blocked: '上游报告余额不足或账单受限，充值或恢复账单后需手动恢复调度。',
   quota_exhausted: '上游报告账号额度耗尽，新可信用量快照确认恢复后自动解除。',
   permission_denied: '上游报告账号权限受限，权限恢复后需手动恢复调度。',
-  zcode_oauth_management_only: '当前 AIH 的 ZCode OAuth 接入用于账号管理、桌面启动和用量查询；网关推理需使用 Coding Plan API Key 账号。',
+  // OAuth 账号已可参与推理（relay 前按描述符声明换取业务 token）。
+  // 保留该键只为兼容历史快照，文案改为说明「凭据不可用需重新登录」。
+  zcode_oauth_management_only: '该 ZCode OAuth 账号的登录凭据当前不可用，请在账号页重新登录。',
   // Go Core 承接流量时记录的账号级硬阻塞（lib/server/go-runtime-overlay.js），外部真相源更新后自动解除。
   go_runtime_credentials_rejected: '上游拒绝了账号凭据，需要重新登录或更新凭据后恢复调度。',
   go_runtime_quota_exhausted: '上游报告账号额度耗尽，下一次额度快照确认恢复后自动解除。',

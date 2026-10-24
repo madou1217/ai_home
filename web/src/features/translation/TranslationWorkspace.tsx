@@ -318,6 +318,11 @@ export default function TranslationWorkspace() {
 
   const handleModelChange = useCallback(
     (value: string) => {
+      // Model/provider changes invalidate an in-flight language preflight. The
+      // continuation captures the selected model and routes, so allowing it
+      // to complete would submit a request against stale routing settings.
+      intentSequence.current += 1;
+      setDetecting(false);
       const normalized = value || '';
       const hit = models.find((item) => item.id === normalized);
       const provider = normalized ? String(hit?.provider || '') : '';
@@ -329,6 +334,10 @@ export default function TranslationWorkspace() {
   );
 
   const updateRoutes = useCallback((next: TranslationRoutePreference[]) => {
+    // Route edits are also request intent changes. Invalidate detection before
+    // persisting the new order so a pending callback cannot use the old chain.
+    intentSequence.current += 1;
+    setDetecting(false);
     const normalized = next.map((route, priority) => ({ ...route, priority }));
     setRoutes(normalized);
     persist({ routes: normalized });

@@ -30,6 +30,12 @@ Fuller layer map:
 - `web/src/` — React WebUI (pages + hooks + services).
 - `test/` — all test files (`*.test.js`, ~155).
 
+## Session Checkpoint and Commit Discipline
+- **会话期间必须短频提交可恢复检查点**：完成一个可解释的逻辑单元、修复或验证阶段后立即创建小而独立的 commit；长会话不得把大量修改一直堆在工作区，避免上下文切换、崩溃或误操作造成污染和丢失。
+- 提交前只暂存本次检查点涉及的路径，检查 `git diff --cached` 和 `git status`；不得把其他会话、用户已有改动、生成物或密钥混入提交。
+- 在上下文压缩、交接、暂停或准备高风险操作前，先提交当前可恢复状态；若代码尚未完整，用明确的 `wip:`/`checkpoint:` 提交保存工作，不要为了“保持干净”而删除或重置未提交改动。
+- 每个检查点提交应保持单一目的、便于回滚；后续继续工作时在新提交中推进，避免用一个大提交覆盖整个会话历史。
+
 ## Build, Test, and Development Commands
 - `npm install`: install dependencies.
 - `npm test`: run full test suite (`node --test test/*.test.js`).

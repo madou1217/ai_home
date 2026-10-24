@@ -235,9 +235,9 @@ final class TranslationPanelContent {
   func updateElapsed(_ seconds: TimeInterval) {
     elapsed.stringValue = String(format: "%.1fs", seconds)
     if (phase == .preflight || phase == .waiting || phase == .streaming) && seconds >= 6 {
-      phaseLabel.stringValue = "模型响应较慢"
+      phaseLabel.stringValue = phase == .preflight ? "语言识别较慢" : "模型响应较慢"
       phaseLabel.textColor = .systemOrange
-      hint.stringValue = "仍在生成，你可以继续等待或停止"
+      hint.stringValue = phase == .preflight ? "识别耗时较长，你可以继续等待或停止" : "仍在生成，你可以继续等待或停止"
       hint.textColor = .secondaryLabelColor
       hint.isHidden = false
     }

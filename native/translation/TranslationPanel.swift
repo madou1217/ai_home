@@ -142,6 +142,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     hideTrigger()
     show(panel)
     content.begin(selected)
+    startElapsedTimer(reset: true)
     // Detection is a separate busy phase. Confirmation actions stay hidden
     // until the helper returns an actual intent decision.
     content.showPreflight()
@@ -157,13 +158,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     output = ""
     content.setReplacementAvailable(false)
     content.begin(selected)
-    startedAt = ProcessInfo.processInfo.systemUptime
-    content.updateElapsed(0)
-    timer?.invalidate()
-    timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-      guard let self = self else { return }
-      self.content.updateElapsed(ProcessInfo.processInfo.systemUptime - self.startedAt)
-    }
+    // Keep the preflight start time so the panel reports total user-visible
+    // latency instead of resetting the clock when streaming begins.
+    startElapsedTimer(reset: false)
     if !panel.isVisible || !isPinned { place(panel, at: NSEvent.mouseLocation) }
     hideTrigger()
     show(panel)
@@ -286,6 +283,18 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     timer?.invalidate()
     timer = nil
     content.updateElapsed(ProcessInfo.processInfo.systemUptime - startedAt)
+  }
+
+  private func startElapsedTimer(reset: Bool) {
+    if reset {
+      startedAt = ProcessInfo.processInfo.systemUptime
+      content.updateElapsed(0)
+    }
+    timer?.invalidate()
+    timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+      guard let self = self else { return }
+      self.content.updateElapsed(ProcessInfo.processInfo.systemUptime - self.startedAt)
+    }
   }
   @objc func copyOutput() {
     guard !output.isEmpty else { return }

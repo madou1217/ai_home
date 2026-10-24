@@ -194,7 +194,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     // do not carry the current request id. Keep request-scoped events guarded
     // so a late stream cannot overwrite a newer request, while still surfacing
     // a failed server switch immediately in the panel.
-    if eventType != "server-target-error" && event["id"] as? String != requestID { return }
+    if eventType != "server-target-error" && eventType != "cancel" && event["id"] as? String != requestID { return }
     switch eventType {
     case "confirmation":
       awaitingConfirmation = true
@@ -218,6 +218,14 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       content.model.toolTip = content.model.stringValue
     case "server-target-error":
       content.serverFailure(event["message"] as? String ?? "无法切换翻译服务")
+    case "cancel":
+      // A remote WebUI target switch cancels work owned by this helper. Treat
+      // it like a local stop so the old request cannot remain visually busy
+      // or accept a late response after the server configuration changes.
+      awaitingConfirmation = false
+      requestID = ""
+      finish()
+      content.setPhase(.stopped)
     case "done":
       if let text = event["text"] as? String, !text.isEmpty { output = text; content.setOutput(text) }
       finish()

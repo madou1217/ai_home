@@ -403,8 +403,15 @@ export const PROVIDER_DEFINITIONS = [
     "authOptions": [
       {
         "value": "oauth-browser",
-        "label": "ZCode 登录",
-        "description": "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"
+        "strategy": "cli-flow",
+        "label": "ZCode 登录（官方 CLI 流程）",
+        "description": "Z.ai 官方服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "custom-scheme",
+        "label": "ZCode 登录（zcode:// 回调）",
+        "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
       },
       {
         "value": "api-key",

@@ -576,7 +576,12 @@ func builtinZcode() Definition {
 		RelayHosts:   relayHostsNodeOnly("Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "ZCode 登录", "使用 ZCode Desktop 的官方浏览器 OAuth 流程（Z.AI 账号，OAuth 凭据安全写入 AIH）。"),
+			// 两条都受上游支持的路径：
+			//   cli-flow      —— Z.ai 官方服务端中介流程（默认；无需本机回调地址/协议处理器/本机浏览器）；
+			//   custom-scheme —— zcode:// 自定义协议，授权后手填回调地址。
+			// loopback 不可用：该 client 的 redirect_uri 白名单已不再接受任何 http://localhost 地址。
+			authOptionWithStrategy(AuthModeOAuthBrowser, "cli-flow", "ZCode 登录（官方 CLI 流程）", "Z.ai 官方服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "custom-scheme", "ZCode 登录（zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},

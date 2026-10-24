@@ -27,6 +27,7 @@ final class TranslationPanelContent {
   private var firstOutput = true
   private var copyRevision = 0
   private var serverSwitchPending = false
+  private var confirmationAllowsOverride = false
   var reducedMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init() {
@@ -126,6 +127,7 @@ final class TranslationPanelContent {
 
   func begin(_ text: String) {
     copyRevision += 1
+    confirmationAllowsOverride = false
     source.stringValue = text.replacingOccurrences(of: "\n", with: " ")
     source.toolTip = text
     textView.string = ""
@@ -169,7 +171,7 @@ final class TranslationPanelContent {
     if busy && !reducedMotion { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     stop.isHidden = !busy
     retry.isHidden = busy
-    override.isHidden = next != .confirmation
+    override.isHidden = next != .confirmation || !confirmationAllowsOverride
     keepOriginal.isHidden = next != .confirmation
     retry.title = next == .failed ? "重试" : "重新翻译"
     copy.isHidden = !hasOutput
@@ -194,10 +196,15 @@ final class TranslationPanelContent {
     fadeIn(replace)
   }
 
-  func showConfirmation(_ message: String) {
+  func showConfirmation(_ message: String, allowsOverride: Bool) {
+    confirmationAllowsOverride = allowsOverride
     hint.stringValue = message
     hint.textColor = .secondaryLabelColor
     hint.isHidden = false
+    // Only a confirmed same-language pair may bypass the guard. Missing or
+    // low-confidence language information must be resolved through the target
+    // picker; showing an override there would make the panel look ready while
+    // the request is still ambiguous.
     setPhase(.confirmation)
   }
 

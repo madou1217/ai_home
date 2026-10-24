@@ -201,10 +201,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     switch eventType {
     case "confirmation":
       awaitingConfirmation = true
-      let message = (event["state"] as? String) == "same_language"
+      let sameLanguage = (event["state"] as? String) == "same_language"
+      let message = sameLanguage
         ? "原文与目标语言相同。请选择其它目标语言，或点击「仍然翻译」"
-        : "目标语言需要确认。请选择目标语言，或点击「仍然翻译」"
-      content.showConfirmation(message)
+        : "目标语言需要确认。请选择目标语言后再开始翻译"
+      content.showConfirmation(message, allowsOverride: sameLanguage)
     case "start":
       panel.title = "\(event["fromLabel"] as? String ?? "自动检测") → \(event["toLabel"] as? String ?? target)"
       let from = event["from"] as? String ?? ""

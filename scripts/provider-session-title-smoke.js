@@ -29,7 +29,7 @@ function key(session) {
 
 function post(body) {
   const output = execFileSync('curl', [
-    '--noproxy', '*', '-sS', '-X', 'POST',
+    '--noproxy', '*', '--connect-timeout', '2', '--max-time', '8', '-sS', '-X', 'POST',
     `${BASE_URL}/v0/webui/session-events/provider-hook`,
     '-H', 'content-type: application/json',
     '--data', JSON.stringify(body),

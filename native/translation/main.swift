@@ -21,6 +21,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
+    // Register the same action as a macOS Services provider. This makes
+    // “AIH 翻译选中内容” available from Services in TextEdit, browsers and
+    // other AX-aware apps, while the global monitor below keeps the compact
+    // contextual menu available when the host app exposes no Services UI.
+    NSApp.servicesProvider = self
     contextMenu.autoenablesItems = false
     updateTrust()
     activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -138,6 +143,25 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     guard let selection = contextSelection else { return }
     contextSelection = nil
     panel.offer(selection, explicit: true)
+  }
+
+  /// macOS Services entry point. The pasteboard is the authoritative text
+  /// payload; AX is only used to retain an editable range when the source app
+  /// exposes one, so Services can still work in apps with a partial AX tree.
+  @objc func translateSelectedText(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+    guard let raw = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+      error.pointee = "AIH 未收到可翻译的选中文本" as NSString
+      return
+    }
+    let application = NSWorkspace.shared.frontmostApplication
+    let selection = reader.read(explicit: true, application: application)
+      ?? SelectedText(text: raw, editable: false, element: nil, fullValue: raw, selectedRange: nil)
+    contextSelection = selection
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.contextSelection = nil
+      self.panel.offer(selection, explicit: true)
+    }
   }
 
   func receive(_ event: [String: Any]) {

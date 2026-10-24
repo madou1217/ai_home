@@ -52,6 +52,27 @@ export function languageLabelOf(
   return found ? found.label : normalized;
 }
 
+/**
+ * Keep the route summary useful when the source and target resolve to the
+ * same language. Showing `英语 → 英语` looks like a successful translation
+ * even though the safe action is to ask for another target first.
+ */
+export function formatTranslationRouteLabel(input: {
+  fromLabel?: string;
+  toLabel?: string;
+  sameLanguage?: boolean;
+}): string {
+  const from = String(input.fromLabel || '').trim();
+  const to = String(input.toLabel || '').trim();
+  if (input.sameLanguage || (from && to && from === to)) {
+    return to ? `无需翻译 · 原文为${to}` : '无需翻译';
+  }
+  if (from && to) return `${from} → ${to}`;
+  if (to) return `目标语言：${to}`;
+  if (from) return `检测到${from}`;
+  return '等待目标语言';
+}
+
 /** 「简繁互换」这类一键动作只需要在中文两种形态之间切换；其它语言返回空串（按钮隐藏）。 */
 export function counterpartLanguage(code: string | undefined): string {
   const normalized = String(code || '').trim();

@@ -21,6 +21,7 @@ import {
   MAX_FLOATING_SELECTION_CHARS,
   buildLanguageOptions,
   computeFloatingAnchor,
+  formatTranslationRouteLabel,
   languageLabelOf,
   resolveTranslationSelection,
   shortcutLabel,
@@ -407,8 +408,19 @@ export default function TranslationFloatingPanel() {
   const feedback = useTranslationFeedback(preparationCancelled ? { ...stream.state, status: 'cancelled' } : stream.state, preparing, sameLanguage);
   const hasOutput = Boolean(stream.state.text.trim());
   const routeLabel = meta
-    ? `${meta.fromLabel} → ${meta.toLabel}`
-    : `${languageLabelOf(languages, panelSource)} → ${languageLabelOf(languages, panelTarget)}`;
+    ? formatTranslationRouteLabel({ fromLabel: meta.fromLabel, toLabel: meta.toLabel, sameLanguage })
+    : formatTranslationRouteLabel({
+      fromLabel: languageLabelOf(languages, panelSource),
+      toLabel: languageLabelOf(languages, panelTarget),
+      sameLanguage,
+    });
+  const intentMessage = sameLanguage
+    ? `原文已是${languageLabelOf(languages, panelTarget)}，请选择其它目标语言后再开始翻译。`
+    : languageIntent.reason === 'source_detection_required'
+      ? '无法确定原文语言，请先重新识别后再开始翻译。'
+      : languageIntent.reason === 'low_confidence'
+        ? '语言识别不确定，请先选择目标语言后再开始翻译。'
+        : '请选择目标语言后再开始翻译。';
 
   if (typeof document === 'undefined') return null;
 
@@ -529,9 +541,9 @@ export default function TranslationFloatingPanel() {
             ) : null}
             {showConfirmation ? (
               <div className={styles.languageIntentStrip} role="status">
-                <span>{sameLanguage ? '原文与目标语言相同。请选择目标语言，或确认仍然翻译。' : '目标语言需要确认。'}</span>
+                <span>{intentMessage}</span>
                 <button type="button" className={styles.textButton} onClick={() => { stream.reset(); setConfirmationDismissed(true); setTargetPolicy('same-language'); }}>保持原文</button>
-                <button type="button" className={styles.textButton} onClick={() => { setTargetPolicy('explicit'); runTranslation(panel.text, panelTarget, bootstrapRef.current, panelSource, panelConfidence, 'explicit'); }}>仍然翻译</button>
+                {sameLanguage ? <button type="button" className={styles.textButton} onClick={() => { setTargetPolicy('explicit'); runTranslation(panel.text, panelTarget, bootstrapRef.current, panelSource, panelConfidence, 'explicit'); }}>仍然翻译</button> : null}
               </div>
             ) : null}
           </div>

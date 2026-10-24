@@ -32,6 +32,7 @@ import {
   canTranslate,
   countCharacters,
   exceedsInputLimit,
+  formatTranslationRouteLabel,
   languageLabelOf,
   modelOptionLabel,
   resolveTranslationSelection,
@@ -508,6 +509,13 @@ export default function TranslationWorkspace() {
   );
   const sameLanguage = languageIntent.state === 'same_language';
   const showConfirmation = Boolean(text.trim()) && !confirmationDismissed && languageIntent.state !== 'ready';
+  const intentMessage = sameLanguage
+    ? `原文已是${languageLabelOf(languages, target)}，请选择其它目标语言后再开始翻译。`
+    : languageIntent.reason === 'source_detection_required'
+      ? '无法确定原文语言，请先重新识别后再开始翻译。'
+      : languageIntent.reason === 'low_confidence'
+        ? '语言识别不确定，请先选择目标语言后再开始翻译。'
+        : '请选择目标语言后再开始翻译。';
   const handleKeepOriginal = useCallback(() => {
     intentSequence.current += 1;
     setDetecting(false);
@@ -561,8 +569,12 @@ export default function TranslationWorkspace() {
 
   const meta = stream.state.meta;
   const routeLabel = meta
-    ? `${meta.fromLabel} → ${meta.toLabel}`
-    : `${languageLabelOf(languages, source)} → ${languageLabelOf(languages, target)}`;
+    ? formatTranslationRouteLabel({ fromLabel: meta.fromLabel, toLabel: meta.toLabel, sameLanguage })
+    : formatTranslationRouteLabel({
+      fromLabel: languageLabelOf(languages, source),
+      toLabel: languageLabelOf(languages, target),
+      sameLanguage,
+    });
 
   return (
     <PageScaffold
@@ -893,11 +905,7 @@ export default function TranslationWorkspace() {
             </footer>
             {showConfirmation ? (
               <div className={styles.languageIntentStrip} role="status">
-                <span>
-                  {languageIntent.state === 'same_language'
-                    ? '检测到原文与目标语言相同。请选择目标语言，或确认仍然翻译。'
-                    : '目标语言需要确认后才会开始翻译。'}
-                </span>
+                <span>{intentMessage}</span>
                 <Select
                   size="small"
                   value={target || undefined}
@@ -906,7 +914,7 @@ export default function TranslationWorkspace() {
                   onChange={handleTargetChange}
                 />
                 <Button appVariant="quiet" onClick={handleKeepOriginal}>保持原文</Button>
-                <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button>
+                {sameLanguage ? <Button appVariant="secondary" onClick={() => void handleTranslate('explicit')}>仍然翻译</Button> : null}
               </div>
             ) : null}
           </section>

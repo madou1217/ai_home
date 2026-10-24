@@ -48,7 +48,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.replace.target = self
     content.replace.action = #selector(replaceOutput)
     content.retry.target = self
-    content.retry.action = #selector(translate)
+    content.retry.action = #selector(retryTranslation)
     content.override.target = self
     content.override.action = #selector(overrideTranslation)
     content.keepOriginal.target = self
@@ -165,11 +165,22 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     emit(["type": "translate", "id": requestID, "text": selected, "target": target, "targetPolicy": "explicit"])
   }
 
+  // A retry starts with the same preflight as a new selection. This keeps the
+  // source/target guard active after a timeout or an upstream failure instead
+  // of silently bypassing the language confirmation state.
+  @objc func retryTranslation() {
+    guard !selected.isEmpty else { return }
+    emit(["type": "cancel"])
+    requestIntent()
+  }
+
   @objc func overrideTranslation() { translate() }
 
   @objc func keepOriginal() {
     awaitingConfirmation = false
     emit(["type": "cancel"])
+    requestID = ""
+    finish()
     content.setPhase(.stopped)
     hide(panel)
   }
@@ -280,12 +291,14 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   @objc func changeTarget() {
     target = content.targetMenu.selectedItem?.representedObject as? String ?? "zh-Hans"
     if panel.isVisible {
-      if awaitingConfirmation { requestIntent() }
-      else { translate() }
+      emit(["type": "cancel"])
+      requestIntent()
     }
   }
   @objc func changeServer() {
     guard let server = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
+    let label = server["label"] as? String ?? "AIH Server"
+    content.serverSwitching(label)
     emit(["type": "server-target", "origin": server["origin"] as? String ?? "", "serverId": server["serverId"] as? String ?? "", "label": server["label"] as? String ?? "AIH Server"])
   }
   @objc func openSettings() {

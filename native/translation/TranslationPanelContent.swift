@@ -50,6 +50,8 @@ final class TranslationPanelContent {
     targetMenu.setAccessibilityLabel("目标语言")
     serverMenu.setAccessibilityLabel("翻译服务")
     targetMenu.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    targetMenu.toolTip = "选择译文目标语言"
+    serverMenu.toolTip = "选择内置或已配置的 AIH Server"
     pin.setAccessibilityLabel("置顶面板")
     pin.toolTip = "固定面板并保持在其他窗口上方"
     let serverHeading = NSTextField(labelWithString: "服务")
@@ -105,6 +107,12 @@ final class TranslationPanelContent {
     retry.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
     copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
     replace.image = NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)
+    stop.setAccessibilityLabel("停止翻译")
+    retry.setAccessibilityLabel("重新翻译")
+    override.setAccessibilityLabel("仍然翻译")
+    keepOriginal.setAccessibilityLabel("保持原文")
+    replace.setAccessibilityLabel("替换原文")
+    copy.setAccessibilityLabel("复制译文")
     let footer = NSStackView(views: [model, stop, retry, override, keepOriginal, replace, copy])
     footer.spacing = 6
     for row in [controls, status, source, hint, scroll, footer] {
@@ -191,11 +199,22 @@ final class TranslationPanelContent {
     setPhase(.confirmation)
   }
 
+  func serverSwitching(_ label: String) {
+    model.stringValue = "正在切换：\(label)"
+    model.toolTip = model.stringValue
+    hint.stringValue = "正在连接翻译服务…"
+    hint.textColor = .secondaryLabelColor
+    hint.isHidden = false
+  }
+
   func updateElapsed(_ seconds: TimeInterval) {
     elapsed.stringValue = String(format: "%.1fs", seconds)
-    if phase == .waiting && seconds >= 6 {
-      phaseLabel.stringValue = "仍在等待译文"
-      hint.stringValue = "模型响应较慢，你可以继续等待或停止"
+    if (phase == .waiting || phase == .streaming) && seconds >= 6 {
+      phaseLabel.stringValue = "模型响应较慢"
+      phaseLabel.textColor = .systemOrange
+      hint.stringValue = "仍在生成，你可以继续等待或停止"
+      hint.textColor = .secondaryLabelColor
+      hint.isHidden = false
     }
   }
 

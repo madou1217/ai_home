@@ -4,7 +4,11 @@ const MENU_PAGE = 'aih-translation-page';
 const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side' };
 
 async function settings() {
-  return { ...DEFAULTS, ...(await chrome.storage.sync.get(DEFAULTS)) };
+  const [shared, privateState] = await Promise.all([
+    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode }),
+    chrome.storage.local.get({ token: DEFAULTS.token })
+  ]);
+  return { ...DEFAULTS, ...shared, ...privateState };
 }
 
 function ensureMenus() {

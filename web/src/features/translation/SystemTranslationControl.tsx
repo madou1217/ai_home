@@ -73,10 +73,6 @@ export default function SystemTranslationControl() {
         if (!disposed) {
           setStatus(next);
           setError('');
-          const current = next.serverTarget || serverTargets[0];
-          if (current && (!next.serverTargets || next.serverTargets.length < serverTargets.length)) {
-            void translationAPI.setSystemServerTarget({ kind: 'aih-server', ...current }, serverTargets.map((item) => ({ kind: 'aih-server' as const, ...item })));
-          }
         }
       }).catch(() => { if (!disposed) setError('系统取词服务不可用'); });
     };
@@ -84,6 +80,20 @@ export default function SystemTranslationControl() {
     const timer = window.setInterval(refresh, 3000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, []);
+  useEffect(() => {
+    if (!status) return;
+    const targets = serverTargets.map(({ available: _available, ...item }) => item);
+    const current = status.serverTarget || targets[0];
+    const stored = status.serverTargets || [];
+    const signature = (items: typeof targets) => JSON.stringify(items.map((item) => [targetKey(item), item.label, item.origin]));
+    if (!current || signature(stored) === signature(targets)) return;
+    let disposed = false;
+    void translationAPI.setSystemServerTarget(current, targets).then((next) => {
+      if (!disposed) setStatus(next);
+    }).catch(() => { if (!disposed) setError('服务目标列表同步失败，请稍后重试'); });
+    return () => { disposed = true; };
+  }, [serverTargets, status]);
+  const alternateTargetCount = serverTargets.filter((item) => item.available && item.serverId).length;
   return (
     <div className={styles.systemControl}>
       <Tooltip title="在此服务器所在电脑的应用或网页中选词翻译；首次开启需授权辅助功能">
@@ -123,7 +133,7 @@ export default function SystemTranslationControl() {
       <span className={styles.systemStatus} role="status">
         {error || (status?.status === 'running' ? '已就绪' : status?.status === 'disabled' ? '' : status?.detail)}
       </span>
-      {serverTargets.length === 1 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
+      {alternateTargetCount === 0 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
       {status?.status === 'permission-required' ? (
         <button type="button" className={styles.systemAction} onClick={() => {
           void translationAPI.requestSystemPermission().catch(() => message.error('无法打开辅助功能设置'));

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Space, Switch, Popconfirm, Form, Input, InputNumber, Select } from 'antd';
+import { Space, Switch, Popconfirm, Form, Input, InputNumber, Select, Tooltip, Typography } from 'antd';
 import { ModalForm } from '@ant-design/pro-components';
 import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
@@ -133,13 +133,21 @@ const ModelAliases: React.FC<{ setActions?: (actions: React.ReactNode) => void }
     {
       title: '目标模型 (Target)',
       key: 'target',
+      // 固定宽度：模型名可以很长（`deepseek/deepseek-v4.1-flash-1017`），
+      // 不约束就会把这一列撑开、把旁边的列挤成窄条。
+      // 宽度给到能读出大多数模型名的程度，超出部分省略，hover 看全文。
+      width: 320,
       render: (_: any, group: AliasGroup) => (
         <div className="model-alias-target-list">
           {group.records.map((record) => {
             const label = findModelLabel(record.target);
             return (
               <span key={record.id} className="model-alias-target">
-                {record.target}
+                <Tooltip title={label ? `${record.target} (${label})` : record.target}>
+                  <Typography.Text className="model-alias-target-id" ellipsis>
+                    {record.target}
+                  </Typography.Text>
+                </Tooltip>
                 {label ? <span className="model-alias-target-label">({label})</span> : null}
                 <span className="model-alias-target-scope">
                   {formatAliasTargetProvider(record.targetProvider)}

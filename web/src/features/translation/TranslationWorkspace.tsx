@@ -32,7 +32,6 @@ import {
   canTranslate,
   countCharacters,
   exceedsInputLimit,
-  isSameTranslationLanguage,
   languageLabelOf,
   modelOptionLabel,
   resolveTranslationSelection,
@@ -483,12 +482,6 @@ export default function TranslationWorkspace() {
   const detectionMatchesText = Boolean(
     detection && (!detectionText || text.trim().startsWith(detectionText)),
   );
-  const sameLanguage = targetPolicy !== 'explicit' && isSameTranslationLanguage(
-    source,
-    target,
-    detectionMatchesText ? detection?.code : '',
-  );
-
   const detectedLabel =
     source === AUTO_LANGUAGE && detection
       ? `${detection.label} · ${CONFIDENCE_LABEL[detection.confidence] || detection.confidence}`
@@ -504,6 +497,7 @@ export default function TranslationWorkspace() {
     },
     languages,
   );
+  const sameLanguage = languageIntent.state === 'same_language';
   const showConfirmation = Boolean(text.trim()) && !confirmationDismissed && languageIntent.state !== 'ready';
   const handleKeepOriginal = useCallback(() => {
     intentSequence.current += 1;

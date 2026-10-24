@@ -30,12 +30,21 @@ function visibleTextNode(node: Text): boolean {
   if (!parent || IGNORED_TAGS.has(parent.tagName) || parent.closest('[data-aih-translation]')) return false;
   const value = node.nodeValue?.replace(/\s+/g, ' ').trim() || '';
   if (value.length < 2) return false;
-  const style = window.getComputedStyle(parent);
+  // BrowserPanel may pass a Document from an iframe. Always resolve style
+  // through that node's realm; the host window cannot reliably inspect nodes
+  // owned by another document.
+  const view = node.ownerDocument?.defaultView;
+  if (!view) return true;
+  const style = view.getComputedStyle(parent);
   return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
 }
 
 export function collectPageSegments(root: ParentNode = document): TranslationPageSegment[] {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const ownerDocument = root.nodeType === 9
+    ? root as Document
+    : (root as Node).ownerDocument || document;
+  const showText = typeof NodeFilter === 'undefined' ? 4 : NodeFilter.SHOW_TEXT;
+  const walker = ownerDocument.createTreeWalker(root as Node, showText);
   const segments: TranslationPageSegment[] = [];
   let current: Node | null;
   let index = 0;
@@ -95,20 +104,19 @@ export function createBoundedPageTranslator(options: {
 export function applyPageTranslation(progress: TranslationPageProgress[], mode: PageTranslationMode): () => void {
   const snapshots = progress.filter((item) => item.text.trim()).map((item) => ({ item, parent: item.segment.node.parentNode, next: item.segment.node.nextSibling, original: item.segment.node.nodeValue || '' }));
   const markers: HTMLElement[] = [];
-  const replaceAnimations = new Set<number>();
+  const replaceAnimations = new Map<number, Window | null>();
   const replacementState = new Map<Text, { expected: string; target: string }>();
   let undone = false;
 
-  function schedule(callback: FrameRequestCallback): number {
-    return typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame(callback)
-      : window.setTimeout(() => callback(performance.now()), 16);
+  function schedule(callback: FrameRequestCallback, view: Window | null): number {
+    if (view && typeof view.requestAnimationFrame === 'function') return view.requestAnimationFrame(callback);
+    return globalThis.setTimeout(() => callback(performance.now()), 16);
   }
 
   function cancelScheduledFrames() {
-    for (const frame of replaceAnimations) {
-      if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frame);
-      else window.clearTimeout(frame);
+    for (const [frame, view] of replaceAnimations) {
+      if (view && typeof view.cancelAnimationFrame === 'function') view.cancelAnimationFrame(frame);
+      else globalThis.clearTimeout(frame);
     }
     replaceAnimations.clear();
   }
@@ -120,6 +128,7 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
     let visibleLength = 0;
     let expected = original;
     replacementState.set(node, { expected, target });
+    const view = node.ownerDocument?.defaultView || null;
 
     const step = () => {
       replaceAnimations.delete(frame);
@@ -128,10 +137,13 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
       expected = characters.slice(0, visibleLength).join('');
       node.nodeValue = expected;
       replacementState.set(node, { expected, target });
-      if (visibleLength < characters.length) frame = schedule(step);
+      if (visibleLength < characters.length) {
+        frame = schedule(step, view);
+        replaceAnimations.set(frame, view);
+      }
     };
-    let frame = schedule(step);
-    replaceAnimations.add(frame);
+    let frame = schedule(step, view);
+    replaceAnimations.set(frame, view);
   }
 
   for (const snapshot of snapshots) {
@@ -145,7 +157,8 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
       animateReplacement(item.segment.node, original, item.text);
       continue;
     }
-    const marker = document.createElement('span');
+    const ownerDocument = parent.ownerDocument || document;
+    const marker = ownerDocument.createElement('span');
     marker.dataset.aihTranslation = 'side-by-side';
     marker.textContent = item.text;
     marker.setAttribute('aria-label', '译文');
@@ -154,7 +167,12 @@ export function applyPageTranslation(progress: TranslationPageProgress[], mode: 
     marker.style.transition = 'opacity 160ms ease';
     parent.insertBefore(marker, next);
     markers.push(marker);
-    requestAnimationFrame(() => { marker.style.opacity = '1'; });
+    const view = ownerDocument.defaultView;
+    if (view && typeof view.requestAnimationFrame === 'function') {
+      view.requestAnimationFrame(() => { marker.style.opacity = '1'; });
+    } else {
+      marker.style.opacity = '1';
+    }
     void original;
   }
   return () => {

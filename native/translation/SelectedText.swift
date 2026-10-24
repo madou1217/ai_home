@@ -31,6 +31,9 @@ func textFromAXRange(_ value: CFTypeRef?, full: String) -> String {
 struct SelectedText {
   let text: String
   let editable: Bool
+  let element: AXUIElement?
+  let fullValue: String
+  let selectedRange: CFRange?
 }
 
 // AX 不支持的画布/图片没有可读取的文字；绝不模拟 Cmd+C 或篡改用户剪贴板。
@@ -159,7 +162,13 @@ final class SelectionReader {
       text = text.trimmingCharacters(in: .whitespacesAndNewlines)
       if !text.isEmpty && text.utf16.count <= 8000 {
         lastOutcome = "offered"
-        return SelectedText(text: text, editable: role == kAXTextAreaRole || role == kAXTextFieldRole)
+          var selectedRange: CFRange?
+          if valueSettable.boolValue, let rangeValue = axValue(node, kAXSelectedTextRangeAttribute), CFGetTypeID(rangeValue) == AXValueGetTypeID() {
+            var range = CFRange()
+            if AXValueGetValue(rangeValue as! AXValue, .cfRange, &range), range.length > 0 { selectedRange = range }
+          }
+          let fullValue = axString(axValue(node, kAXValueAttribute))
+          return SelectedText(text: text, editable: role == kAXTextAreaRole || role == kAXTextFieldRole, element: selectedRange == nil ? nil : node, fullValue: fullValue, selectedRange: selectedRange)
       }
       // Chromium/WebKit 将可选中的 AXStaticText 放在命中节点的子树里；
       // 只沿父链会永远停在 AXWebArea/AXGroup。限制深度和节点数，避免

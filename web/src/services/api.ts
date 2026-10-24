@@ -1941,6 +1941,10 @@ export const translationAPI = {
   requestSystemPermission: async () => {
     await api.post('/webui/translation/system', { action: 'request-permission' });
   },
+  setSystemServerTarget: async (target: { kind: 'aih-server'; label: string; origin: string }) => {
+    const response = await api.post<{ system: import('@/types').SystemTranslationStatus }>('/webui/translation/system', { serverTarget: target });
+    return response.data.system;
+  },
   getSettings: async (): Promise<TranslationSettingsResponse> => {
     const response = await api.get<TranslationSettingsResponse>('/webui/translation/settings');
     return response.data;

@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Switch, Tooltip, message } from 'antd';
 import { DesktopOutlined } from '@ant-design/icons';
 import type { SystemTranslationStatus } from '@/types';
 import { translationAPI } from '@/services/api';
 import styles from './translation.module.css';
+import { listControlPlaneProfiles } from '@/services/control-plane-profiles';
 
 export default function SystemTranslationControl() {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const serverTargets = useMemo(() => [{ label: '本机 AIH Server', origin: window.location.origin }, ...listControlPlaneProfiles().filter((profile) => profile.endpoint && profile.endpoint !== window.location.origin).map((profile) => ({ label: profile.name || profile.endpoint, origin: profile.endpoint }))], []);
   useEffect(() => {
     let disposed = false;
     const refresh = () => {
@@ -40,6 +42,22 @@ export default function SystemTranslationControl() {
           finally { setSaving(false); }
         }}
       />
+      <select
+        className={styles.systemTargetSelect}
+        aria-label="系统取词服务目标"
+        value={status?.serverTarget?.origin || window.location.origin}
+        disabled={saving}
+        onChange={async (event) => {
+          const found = serverTargets.find((item) => item.origin === event.target.value);
+          if (!found) return;
+          setSaving(true);
+          try { setStatus(await translationAPI.setSystemServerTarget({ kind: 'aih-server', ...found })); }
+          catch (_error) { message.error('切换翻译服务失败'); }
+          finally { setSaving(false); }
+        }}
+      >
+        {serverTargets.map((item) => <option key={item.origin} value={item.origin}>{item.label}</option>)}
+      </select>
       <span className={styles.systemStatus} role="status">
         {error || (status?.status === 'running' ? '已就绪' : status?.status === 'disabled' ? '' : status?.detail)}
       </span>

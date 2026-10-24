@@ -73,7 +73,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
           guard token == self.selectionToken, AXIsProcessTrusted() else { return }
           if let selection = self.reader.read(explicit: false, application: application, point: point) {
-            self.panel.offer(selection.text, explicit: false, point: panelPoint)
+            self.panel.offer(selection, explicit: false, point: panelPoint)
           }
           emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication,
                 "hitPID": self.reader.lastHitPID, "focusPID": self.reader.lastFocusedPID,
@@ -90,7 +90,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         }
         else if event.keyCode == 17, event.modifierFlags.contains(.command), event.modifierFlags.contains(.option) {
           let application = NSWorkspace.shared.frontmostApplication
-          if let selection = self.reader.read(explicit: true, application: application) { self.panel.offer(selection.text, explicit: true) }
+          if let selection = self.reader.read(explicit: true, application: application) { self.panel.offer(selection, explicit: true) }
           emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
         }
       }

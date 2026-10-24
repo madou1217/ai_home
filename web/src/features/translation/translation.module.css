@@ -617,6 +617,16 @@
   gap: 6px;
 }
 
+.systemTargetSelect {
+  max-width: 170px;
+  min-width: 120px;
+  padding: 3px 22px 3px 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+  font-size: 11px;
+}
+
 .systemStatus {
   font-size: 11px;
   color: var(--color-muted);

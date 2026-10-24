@@ -3693,4 +3693,5 @@ export interface SystemTranslationStatus {
   enabled: boolean;
   status: 'disabled' | 'unsupported' | 'starting' | 'running' | 'permission-required' | 'error';
   detail: string;
+  serverTarget?: { kind: 'aih-server'; label: string; origin: string };
 }

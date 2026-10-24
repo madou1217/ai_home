@@ -14,6 +14,10 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   var copyScope = "selection"
   private var sameLanguageResult = false
   var output = ""
+  private var replacementElement: AXUIElement?
+  private var replacementOriginal = ""
+  private var replacementFinal = ""
+  private var replacementAppliedState = false
   private var awaitingConfirmation = false
   private var startedAt = ProcessInfo.processInfo.systemUptime
   private var timer: Timer?
@@ -38,6 +42,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.targetMenu.action = #selector(changeTarget)
     content.copy.target = self
     content.copy.action = #selector(copyOutput)
+    content.replace.target = self
+    content.replace.action = #selector(replaceOutput)
     content.retry.target = self
     content.retry.action = #selector(translate)
     content.override.target = self
@@ -82,8 +88,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     window.setFrameOrigin(NSPoint(x: max(frame.minX + 8, min(point.x + 8, frame.maxX - size.width - 8)), y: max(frame.minY + 8, min(point.y - size.height - 8, frame.maxY - size.height - 8))))
   }
 
-  func offer(_ text: String, explicit: Bool, point: NSPoint? = nil) {
-    offered = text
+  func offer(_ selection: SelectedText, explicit: Bool, point: NSPoint? = nil) {
+    offered = selection.text
+    replacementElement = selection.element
+    replacementOriginal = selection.fullValue
+    replacementAppliedState = false
     if explicit { acceptOffer() }
     else { place(trigger, at: point ?? NSEvent.mouseLocation); show(trigger) }
   }
@@ -113,6 +122,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     emit(["type": "cancel"])
     requestID = UUID().uuidString
     output = ""
+    content.setReplacementAvailable(false)
     content.begin(selected)
     startedAt = ProcessInfo.processInfo.systemUptime
     content.updateElapsed(0)
@@ -163,6 +173,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       if let text = event["text"] as? String, !text.isEmpty { output = text; content.setOutput(text) }
       finish()
       content.setPhase(.done)
+      content.setReplacementAvailable(replacementElement != nil)
       if autoCopy && !sameLanguageResult && event["type"] as? String == "done" && !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (copyScope == "all" || copyScope == "selection") {
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(output, forType: .string); content.autoCopied()
       }
@@ -172,6 +183,35 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     default: break
     }
   }
+
+  @objc func replaceOutput() {
+    guard let element = replacementElement, let range = currentSelectedRange(element), !output.isEmpty else { return }
+    if replacementAppliedState {
+      guard readAXValue(element) == replacementFinal else { content.failure("编辑器内容已改变，无法安全撤回"); return }
+      guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, replacementOriginal as CFString) == .success else { content.failure("无法撤回原文"); return }
+      replacementAppliedState = false
+      content.replacementUndone()
+      return
+    }
+    guard readAXValue(element) == replacementOriginal else { content.failure("原文已经被修改，未执行替换"); return }
+    let full = replacementOriginal as NSString
+    let nsRange = NSRange(location: range.location, length: range.length)
+    guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= full.length else { return }
+    replacementFinal = full.replacingCharacters(in: nsRange, with: output)
+    let steps = stride(from: 1, through: max(1, output.count), by: 2).map { index in
+      let end = output.index(output.startIndex, offsetBy: min(index, output.count))
+      return full.replacingCharacters(in: nsRange, with: String(output[..<end]))
+    }
+    for step in steps {
+      guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, step as CFString) == .success else { content.failure("无法写入当前编辑器"); return }
+      if !content.reducedMotion { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025)) }
+    }
+    replacementAppliedState = true
+    content.replacementApplied()
+  }
+
+  private func readAXValue(_ element: AXUIElement) -> String { var value: CFTypeRef?; return AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success ? (value as? String ?? "") : "" }
+  private func currentSelectedRange(_ element: AXUIElement) -> CFRange? { var value: CFTypeRef?; guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success, let value = value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }; var range = CFRange(); return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil }
 
   private func finish() {
     timer?.invalidate()

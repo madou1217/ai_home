@@ -9,6 +9,7 @@ final class TranslationPanelContent {
   let pin = NSButton(checkboxWithTitle: "置顶", target: nil, action: nil)
   let stop = NSButton(title: "停止", target: nil, action: nil)
   let copy = NSButton(title: "复制", target: nil, action: nil)
+  let replace = NSButton(title: "替换原文", target: nil, action: nil)
   let retry = NSButton(title: "重新翻译", target: nil, action: nil)
   let override = NSButton(title: "仍然翻译", target: nil, action: nil)
   let keepOriginal = NSButton(title: "保持原文", target: nil, action: nil)
@@ -90,7 +91,7 @@ final class TranslationPanelContent {
     model.textColor = .tertiaryLabelColor
     model.lineBreakMode = .byTruncatingMiddle
     model.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    for button in [stop, retry, override, keepOriginal, copy] {
+    for button in [stop, retry, override, keepOriginal, replace, copy] {
       button.bezelStyle = .rounded
       button.controlSize = .small
       button.imagePosition = .imageLeading
@@ -98,7 +99,8 @@ final class TranslationPanelContent {
     stop.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
     retry.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
     copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
-    let footer = NSStackView(views: [model, stop, retry, override, keepOriginal, copy])
+    replace.image = NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)
+    let footer = NSStackView(views: [model, stop, retry, override, keepOriginal, replace, copy])
     footer.spacing = 6
     for row in [controls, status, source, hint, scroll, footer] {
       stack.addArrangedSubview(row)
@@ -156,7 +158,25 @@ final class TranslationPanelContent {
     keepOriginal.isHidden = next != .confirmation
     retry.title = next == .failed ? "重试" : "重新翻译"
     copy.isHidden = !hasOutput
+    replace.isHidden = true
     if animated { fadeIn(phaseLabel); if !busy { fadeIn(retry) } }
+  }
+
+  func setReplacementAvailable(_ available: Bool) {
+    replace.isHidden = !available || !hasOutput
+    if available { fadeIn(replace) }
+  }
+
+  func replacementApplied() {
+    replace.title = "已替换（点击撤回）"
+    replace.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: nil)
+    fadeIn(replace)
+  }
+
+  func replacementUndone() {
+    replace.title = "替换原文"
+    replace.image = NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)
+    fadeIn(replace)
   }
 
   func showConfirmation(_ message: String) {

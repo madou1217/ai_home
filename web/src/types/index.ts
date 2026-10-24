@@ -731,6 +731,7 @@ export type AccountAuthMode = 'api-key' | 'auth-token' | 'oauth-browser' | 'oaut
 export interface AddAccountRequest {
   provider: Provider;
   authMode: AccountAuthMode;
+  authStrategy?: string;
   config?: AccountConfig;
   replaceExisting?: boolean;
   /**
@@ -745,6 +746,7 @@ export interface AddAccountResponse {
   provider: Provider;
   accountRef: string;
   authMode: AccountAuthMode;
+  authStrategy?: string;
   status: 'configured' | 'pending';
   jobId?: string;
   expiresAt?: number | null;
@@ -809,6 +811,7 @@ export interface AccountAddJob {
   provider: Provider;
   accountRef: string;
   authMode: AccountAuthMode;
+  authStrategy?: string;
   reauth?: boolean;
   status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired';
   createdAt: number;

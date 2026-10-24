@@ -175,6 +175,15 @@ function getSupportedAuthOptions(provider: SupportedAccountProvider) {
   ));
 }
 
+function authOptionValue(option: { value: string; strategy?: string }) {
+  return option.strategy ? `${option.value}::${option.strategy}` : option.value;
+}
+
+function splitAuthOptionValue(value: string) {
+  const [authMode, authStrategy = ''] = String(value || '').split('::', 2);
+  return { authMode, authStrategy };
+}
+
 function formatImportResult(result: AccountImportResponse) {
   const summary = result.summary;
   const imported = Number(summary?.imported ?? result.imported ?? 0);
@@ -652,7 +661,7 @@ export default function Accounts() {
   const accountsLoadRequestRef = React.useRef(0);
   const previousAddProviderRef = React.useRef<SupportedAccountProvider | undefined>(undefined);
   const selectedProvider = Form.useWatch('provider', form) as SupportedAccountProvider | undefined;
-  const selectedAuthMode = Form.useWatch('authMode', form) as AccountAuthMode | undefined;
+  const selectedAuthMode = Form.useWatch('authMode', form) as string | undefined;
   const selectedEditAuthMode = Form.useWatch('authMode', editForm) as AccountAuthMode | undefined;
   const providerAuthOptions = selectedProvider
     ? getSupportedAuthOptions(selectedProvider)
@@ -1408,8 +1417,8 @@ export default function Accounts() {
     if (previousAddProviderRef.current === selectedProvider) return;
     previousAddProviderRef.current = selectedProvider;
     const availableOptions = getSupportedAuthOptions(selectedProvider);
-    const firstActiveMode = availableOptions.find((opt) => !opt.disabled)?.value || availableOptions[0]?.value;
-    form.setFieldValue('authMode', firstActiveMode);
+    const firstOption = availableOptions.find((opt) => !opt.disabled) || availableOptions[0];
+    form.setFieldValue('authMode', firstOption && authOptionValue(firstOption));
   }, [form, selectedProvider]);
 
   const closeAuthProgress = async (forceCancel = false) => {
@@ -1551,16 +1560,17 @@ export default function Accounts() {
   const handleAdd = async (values: any) => {
     setSubmitting(true);
     let configPayload: any = undefined;
-    if (values.authMode === 'api-key' || values.authMode === 'auth-token') {
+    const selectedOption = splitAuthOptionValue(values.authMode);
+    if (selectedOption.authMode === 'api-key' || selectedOption.authMode === 'auth-token') {
       configPayload = {
         apiKey: values.apiKey,
         baseUrl: values.baseUrl,
-        credentialType: values.authMode
+        credentialType: selectedOption.authMode
       };
     }
     const requestPayload = {
       provider: values.provider as SupportedAccountProvider,
-      authMode: values.authMode as AccountAuthMode,
+      ...selectedOption,
       config: configPayload
     };
     try {
@@ -2663,8 +2673,8 @@ export default function Accounts() {
                 <Space direction="vertical">
                   {providerAuthOptions.map((option) => (
                     <Radio
-                      key={option.value}
-                      value={option.value}
+                      key={authOptionValue(option)}
+                      value={authOptionValue(option)}
                       disabled={Boolean(option.disabled)}
                     >
                       <Space direction="vertical" size={0}>
@@ -2687,11 +2697,11 @@ export default function Accounts() {
             </Form.Item>
           ) : null}
 
-          {selectedAuthMode === 'api-key' || selectedAuthMode === 'auth-token' ? (
+          {splitAuthOptionValue(selectedAuthMode || '').authMode === 'api-key' || splitAuthOptionValue(selectedAuthMode || '').authMode === 'auth-token' ? (
             <>
               <Form.Item
                 name="apiKey"
-                label={selectedAuthMode === 'auth-token' ? 'Auth Token' : '密钥'}
+                label={splitAuthOptionValue(selectedAuthMode || '').authMode === 'auth-token' ? 'Auth Token' : '密钥'}
                 rules={[{ required: true, message: '请输入密钥' }]}
               >
                 <Input.Password autoComplete="new-password" placeholder="请输入密钥" size="large" />

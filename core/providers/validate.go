@@ -211,18 +211,20 @@ func validateAuthOptions(options []AuthOption) error {
 		AuthModeOAuthRefreshToken: {},
 		AuthModeVertexAI:          {},
 	}
-	seen := make(map[AuthMode]struct{}, len(options))
+	seen := make(map[string]struct{}, len(options))
 	for _, option := range options {
 		if _, ok := allowed[option.Value]; !ok {
 			return fmt.Errorf("未知 auth mode: %s", option.Value)
 		}
-		if _, exists := seen[option.Value]; exists {
-			return fmt.Errorf("auth mode 重复: %s", option.Value)
+		strategy := strings.TrimSpace(option.Strategy)
+		key := string(option.Value) + "\x00" + strategy
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("auth mode/strategy 重复: %s/%s", option.Value, strategy)
 		}
 		if strings.TrimSpace(option.Label) == "" || strings.TrimSpace(option.Description) == "" {
 			return fmt.Errorf("auth mode %s 缺少展示文案", option.Value)
 		}
-		seen[option.Value] = struct{}{}
+		seen[key] = struct{}{}
 	}
 	return nil
 }

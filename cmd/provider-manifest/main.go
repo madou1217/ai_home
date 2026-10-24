@@ -216,6 +216,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("/** Client 展示的一条账号认证选项。 */\n")
 	output.WriteString("export interface ProviderAuthOption {\n")
 	output.WriteString("  readonly value: ProviderAuthMode;\n")
+	output.WriteString("  readonly strategy?: string;\n")
 	output.WriteString("  readonly label: string;\n")
 	output.WriteString("  readonly description: string;\n")
 	output.WriteString("  readonly disabled?: boolean;\n")

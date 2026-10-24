@@ -205,6 +205,9 @@ type Presentation struct {
 // AuthOption 描述 Client 可以展示的账号认证选项。
 type AuthOption struct {
 	Value          AuthMode `json:"value"`
+	// Strategy distinguishes multiple implementations of the same auth mode.
+	// Empty keeps the historical single-strategy behavior.
+	Strategy       string `json:"strategy,omitempty"`
 	Label          string   `json:"label"`
 	Description    string   `json:"description"`
 	Disabled       bool     `json:"disabled,omitempty"`

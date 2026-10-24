@@ -158,7 +158,14 @@ export const PROVIDER_DEFINITIONS = [
     "authOptions": [
       {
         "value": "oauth-browser",
-        "label": "Antigravity 登录",
+        "strategy": "aih-google-oauth",
+        "label": "Antigravity 直连 Google 登录",
+        "description": "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"
+      },
+      {
+        "value": "oauth-browser",
+        "strategy": "native-cli",
+        "label": "Antigravity CLI 登录",
         "description": "使用 Antigravity CLI 原生 Google 登录流程。"
       }
     ],

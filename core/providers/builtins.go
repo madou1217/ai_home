@@ -232,7 +232,8 @@ func builtinAntigravity() Definition {
 		Credentials:  &CredentialFacts{VendorID: "antigravity"},
 		Capabilities: []Capability{CapabilityModelCatalog, CapabilityQuotaUsage, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilitySessionHistory, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
-			authOption(AuthModeOAuthBrowser, "Antigravity 登录", "使用 Antigravity CLI 原生 Google 登录流程。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "aih-google-oauth", "Antigravity 直连 Google 登录", "由 AI Home 直接完成 Google OAuth，不需要安装 Antigravity CLI。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "native-cli", "Antigravity CLI 登录", "使用 Antigravity CLI 原生 Google 登录流程。"),
 		},
 		SessionSync: SessionSync{
 			Mode:       SessionSyncHook,
@@ -1108,6 +1109,10 @@ func presentation(id, label, short, terminalIcon, tagColor string) Presentation 
 // authOption 统一构造 Client 认证选项。
 func authOption(value AuthMode, label, description string) AuthOption {
 	return AuthOption{Value: value, Label: label, Description: description}
+}
+
+func authOptionWithStrategy(value AuthMode, strategy, label, description string) AuthOption {
+	return AuthOption{Value: value, Strategy: strategy, Label: label, Description: description}
 }
 
 // disabledAuthOption 构造已停用并带有停用原因的 Client 认证选项。

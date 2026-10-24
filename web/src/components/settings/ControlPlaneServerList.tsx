@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Card, Dropdown, Space } from 'antd';
-import { DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined, EditOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import { isControlPlaneManagementKeyConfigured } from '@/services/control-plane-profiles';
 import { buildServerScopedAppHref } from '@/services/app-navigation';
@@ -133,8 +133,14 @@ function ServerCardActions({
       <Dropdown
         trigger={['click']}
         menu={{
-          items: [{ key: 'remove', danger: true, label: '移除', icon: <DeleteOutlined /> }],
+          items: [
+            // 编辑入口：复用授权弹窗（它已支持改 endpoint / 名称 / managementKey）。
+            // 换 key 是刚需 —— 服务端轮换 managementKey 后，已保存的 server 不该因此作废。
+            { key: 'edit', label: '编辑', icon: <EditOutlined /> },
+            { key: 'remove', danger: true, label: '移除', icon: <DeleteOutlined /> }
+          ],
           onClick: ({ key }) => {
+            if (key === 'edit') onAuthorize(profile);
             if (key === 'remove') onRemove(profile.id);
           }
         }}

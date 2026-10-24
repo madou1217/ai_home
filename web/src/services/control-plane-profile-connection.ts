@@ -38,6 +38,9 @@ export async function connectControlPlaneProfile(input: ConnectControlPlaneProfi
     throw new Error('请输入 Management Key');
   }
 
+  // 编辑已保存的 server 时，managementKey 留空表示「不改动」——
+  // 直接传空串会把已存的 key 清掉，等于把这条 server 弄废。
+  // 上面的校验已保证：留空只在 existing 已配置 key 时允许。
   const saveInput: ControlPlaneProfileSaveInput = {
     name: String(input.name || '').trim(),
     stableServerId: existing?.stableServerId,
@@ -46,7 +49,7 @@ export async function connectControlPlaneProfile(input: ConnectControlPlaneProfi
     activeRouteId: existing?.endpoint === endpoint ? existing.activeRouteId : '',
     authorizationState: existing?.authorizationState,
     state: 'offline',
-    managementKey,
+    ...(managementKey ? { managementKey } : {}),
     managementKeyConfigured: Boolean(managementKey) || existing?.managementKeyConfigured
   };
   return saveControlPlaneProfile(saveInput);

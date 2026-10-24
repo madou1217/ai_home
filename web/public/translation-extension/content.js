@@ -1,6 +1,7 @@
 (() => {
   const ROOT_ATTR = 'data-aih-translation-extension';
   let active = null;
+  let operationSerial = 0;
 
   const ignored = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'PRE', 'CODE', 'TEXTAREA', 'INPUT']);
   function textNodes() {
@@ -33,13 +34,39 @@
     return { text, rect: range.getBoundingClientRect(), range: range.cloneRange() };
   }
 
-  function renderResult(body, source, text, undo) {
+  function copyText(text) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'aih-copy-text', text }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message || '剪贴板写入失败' });
+          return;
+        }
+        resolve(response || { ok: false, error: '扩展无法连接到剪贴板服务' });
+      });
+    });
+  }
+
+  function renderResult(body, source, text, undo, options = {}) {
     body.replaceChildren();
     const output = document.createElement('div'); output.style.cssText = 'white-space:pre-wrap;line-height:1.6'; output.textContent = text; body.append(output);
     const footer = document.createElement('footer'); footer.style.cssText = 'display:flex;gap:8px;margin-top:10px';
-    const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制'; copy.onclick = () => { void navigator.clipboard?.writeText(text); }; footer.append(copy);
+    const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制';
+    const copyStatus = document.createElement('span'); copyStatus.setAttribute('data-copy-status', ''); copyStatus.style.cssText = 'align-self:center;color:#9db8cc;font-size:12px';
+    const copyWithFeedback = async (automatic = false) => {
+      if (!body.isConnected) return;
+      copy.disabled = true; copy.textContent = automatic ? '自动复制中…' : '复制中…'; copyStatus.textContent = automatic ? '自动复制中…' : '复制中…';
+      const result = await copyText(text);
+      if (!body.isConnected) return;
+      if (result?.ok) {
+        copy.textContent = automatic ? '已自动复制' : '已复制'; copyStatus.textContent = automatic ? '已自动复制' : '已复制'; copyStatus.style.color = '#8ee6b0';
+      } else {
+        copy.disabled = false; copy.textContent = '重试复制'; copyStatus.textContent = result?.error || '复制失败，请重试'; copyStatus.style.color = '#f5c77a';
+      }
+    };
+    copy.onclick = () => { void copyWithFeedback(false); }; footer.append(copy, copyStatus);
     if (undo) { const undoButton = document.createElement('button'); undoButton.type = 'button'; undoButton.textContent = '撤回替换'; undoButton.onclick = () => { undo(); undoButton.remove(); }; footer.append(undoButton); }
     body.append(footer);
+    if (options.autoCopy === true && options.operationToken === operationSerial && body.isConnected) void copyWithFeedback(true);
     void source;
   }
 
@@ -77,11 +104,12 @@
     actions.append(confirm, keep); body.append(actions);
   }
 
-  function applySelectionResult(body, source, result, rangeSnapshot) {
+  function applySelectionResult(body, source, result, rangeSnapshot, operationToken) {
+    if (!body.isConnected || operationToken !== operationSerial) return;
     if (result?.confirmation) {
       renderConfirmation(body, result.confirmation, async (target) => {
         const retry = await translateOne(source, 'selection', { target, targetPolicy: 'explicit' });
-        applySelectionResult(body, source, retry, rangeSnapshot);
+        applySelectionResult(body, source, retry, rangeSnapshot, operationToken);
       }, () => { body.textContent = '已保持原文'; });
       return;
     }
@@ -96,22 +124,26 @@
           range.deleteContents(); range.insertNode(replacement); requestAnimationFrame(() => { replacement.style.opacity = '1'; });
           undo = () => { if (!replacement.isConnected) return; const restore = document.createRange(); restore.selectNode(replacement); restore.deleteContents(); restore.insertNode(original); };
         }
-      } catch (_error) { /* The source DOM may have changed while the request was in flight. */ }
+      } catch { /* The source DOM may have changed while the request was in flight. */ }
     }
-    renderResult(body, source, result.text, undo);
+    renderResult(body, source, result.text, undo, { autoCopy: result.autoCopy === true, operationToken });
   }
 
   async function translateSelection(text, rect, rangeSnapshot) {
+    const operationToken = ++operationSerial;
     const body = panel('AIH 翻译选区', rect); body.textContent = '正在识别并翻译…';
     const result = await translateOne(text);
-    applySelectionResult(body, text, result, rangeSnapshot);
+    applySelectionResult(body, text, result, rangeSnapshot, operationToken);
   }
 
   async function translatePage(targetOverride = '') {
+    const operationToken = ++operationSerial;
     const body = panel('AIH 整页翻译', { left: 16, bottom: 16 }); const segments = textNodes();
     if (!segments.length) { body.textContent = '当前页面没有可翻译的正文'; return; }
     const snapshots = []; const failedItems = [];
+    const translatedByIndex = new Map();
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
+    let pageAutoCopyEligible = true; let pageCopyDone = false;
     const concurrency = 3;
 
     function updateProgress(label, total) { body.textContent = `${label} ${processed} / ${total} 段 · 成功 ${succeeded} · 失败 ${failed}`; }
@@ -137,7 +169,11 @@
           const result = await translateOne(item.source, 'page', options); processed += 1;
           if (result?.confirmation) { if (!confirmation) { confirmation = result.confirmation; stopRequested = true; restoreSnapshots(); } continue; }
           if (stopRequested) continue;
-          if (result?.ok && result.text && applyPageResult(item, result)) succeeded += 1;
+          if (result?.ok && result.text && applyPageResult(item, result)) {
+            translatedByIndex.set(item.index, result.text);
+            pageAutoCopyEligible = pageAutoCopyEligible && result.autoCopy === true;
+            succeeded += 1;
+          }
           else { failed += 1; if (!failedItems.includes(item)) failedItems.push(item); }
           updateProgress(label, total);
         }
@@ -147,21 +183,45 @@
     function renderPageConfirmation() {
       renderConfirmation(body, confirmation, async (target) => { await translatePage(target); }, () => { restoreSnapshots(); body.textContent = '已保持原文'; }, '待确认目标语言');
     }
-    function renderSummary() {
+    async function copyPageText(status, button, text, automatic = false) {
+      if (!body.isConnected || operationToken !== operationSerial) return;
+      button.disabled = true; button.textContent = automatic ? '自动复制中…' : '复制中…'; status.textContent = automatic ? '自动复制中…' : '复制中…';
+      const result = await copyText(text);
+      if (!body.isConnected || operationToken !== operationSerial) return;
+      if (result?.ok) {
+        button.textContent = automatic ? '已自动复制' : '已复制'; status.textContent = automatic ? '已自动复制' : '已复制'; status.style.color = '#8ee6b0';
+      } else {
+        button.disabled = false; button.textContent = '重试复制'; status.textContent = result?.error || '复制失败，请重试'; status.style.color = '#f5c77a';
+      }
+    }
+    async function renderSummary() {
+      if (!body.isConnected || operationToken !== operationSerial) return;
       body.replaceChildren(); const summary = document.createElement('span'); summary.textContent = `页面翻译完成 · 成功 ${succeeded} · 失败 ${failed}`; body.append(summary);
       if (failed > 0) { const partial = document.createElement('div'); partial.textContent = '部分段落翻译失败，可重新执行。'; partial.style.cssText = 'margin-top:6px;color:#f5c77a'; body.append(partial); }
       const actions = document.createElement('footer'); actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+      const copiedText = segments.slice().sort((left, right) => left.index - right.index).map((item) => translatedByIndex.get(item.index) || '').filter(Boolean).join('\n');
+      const copyStatus = document.createElement('span'); copyStatus.setAttribute('data-copy-status', ''); copyStatus.style.cssText = 'align-self:center;color:#9db8cc;font-size:12px';
+      if (copiedText) {
+        const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制已完成译文'; copy.onclick = () => { void copyPageText(copyStatus, copy, copiedText); }; actions.append(copy);
+      }
       if (failed > 0) {
         const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重新翻译失败段落';
-        retry.onclick = async () => { const retryItems = failedItems.splice(0); if (!retryItems.length) return; processed = 0; failed = Math.max(0, failed - retryItems.length); updateProgress('正在重试', retryItems.length); confirmation = null; await translateItems(retryItems, '正在重试'); if (confirmation) renderPageConfirmation(); else renderSummary(); };
+        retry.onclick = async () => { const retryItems = failedItems.splice(0); if (!retryItems.length) return; processed = 0; failed = Math.max(0, failed - retryItems.length); updateProgress('正在重试', retryItems.length); confirmation = null; await translateItems(retryItems, '正在重试'); if (confirmation) renderPageConfirmation(); else await renderSummary(); };
         actions.append(retry);
       }
       if (snapshots.length) { const undo = document.createElement('button'); undo.type = 'button'; undo.textContent = '撤回页面译文'; undo.onclick = () => { restoreSnapshots(); body.textContent = '已撤回页面译文'; }; actions.append(undo); }
       if (actions.childElementCount) body.append(actions);
+      if (copyStatus.textContent || copiedText) { actions.append(copyStatus); }
+      const allSucceeded = failed === 0 && translatedByIndex.size === segments.length;
+      if (allSucceeded && pageAutoCopyEligible && !pageCopyDone && copiedText.trim()) {
+        pageCopyDone = true;
+        const automaticCopy = actions.querySelector('button');
+        if (automaticCopy) await copyPageText(copyStatus, automaticCopy, copiedText, true);
+      }
     }
     updateProgress('正在翻译', segments.length); await translateItems(segments, '正在翻译');
     if (confirmation) { renderPageConfirmation(); return; }
-    renderSummary();
+    await renderSummary();
   }
 
   chrome.runtime.onMessage.addListener((message) => {

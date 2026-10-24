@@ -1,14 +1,44 @@
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
-const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side' };
+const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false };
+let clipboardQueue = Promise.resolve();
 
 async function settings() {
   const [shared, privateState] = await Promise.all([
-    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode }),
+    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy }),
     chrome.storage.local.get({ token: DEFAULTS.token })
   ]);
   return { ...DEFAULTS, ...shared, ...privateState };
+}
+
+async function ensureClipboardDocument() {
+  if (!chrome.offscreen || typeof chrome.offscreen.createDocument !== 'function') {
+    throw new Error('当前浏览器不支持扩展剪贴板文档');
+  }
+  const documentUrl = chrome.runtime.getURL('offscreen.html');
+  const contexts = typeof chrome.runtime.getContexts === 'function'
+    ? await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [documentUrl] })
+    : [];
+  if (contexts.length) return;
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['CLIPBOARD'],
+    justification: '为扩展的手动和自动翻译复制提供稳定的扩展上下文'
+  });
+}
+
+function writeClipboard(text) {
+  const value = String(text || '');
+  if (!value.trim()) return Promise.resolve({ ok: false, error: '没有可复制的译文' });
+  const operation = clipboardQueue.then(async () => {
+    await ensureClipboardDocument();
+    const result = await chrome.runtime.sendMessage({ type: 'aih-offscreen-clipboard-write', text: value });
+    if (!result?.ok) throw new Error(result?.error || '剪贴板写入失败');
+    return { ok: true };
+  });
+  clipboardQueue = operation.catch(() => {});
+  return operation.catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }));
 }
 
 function ensureMenus() {
@@ -66,31 +96,79 @@ async function translate(request, sendResponse) {
     const decoder = new TextDecoder();
     let buffer = '';
     let output = '';
+    let streamMeta = null;
+    let sawStart = false;
+    let sawDone = false;
+    let streamError = null;
+    const handleEvent = (event) => {
+      if (!event || typeof event !== 'object') return;
+      if (event.type === 'start') {
+        sawStart = true;
+        streamMeta = {
+          from: String(event.from || ''),
+          to: String(event.to || ''),
+          detected: String(event.detected || ''),
+          fromLabel: String(event.fromLabel || ''),
+          toLabel: String(event.toLabel || ''),
+          detectionConfidence: String(event.detectionConfidence || '')
+        };
+      } else if (event.type === 'delta') {
+        output += String(event.content || '');
+      } else if (event.type === 'done') {
+        sawDone = true;
+        if (event.text !== undefined && event.text !== null) output = String(event.text);
+      } else if (event.type === 'error') {
+        streamError = event.message || '翻译失败';
+      }
+    };
+    const processBlock = (block) => {
+      const data = block.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+      if (!data || data === '[DONE]') return;
+      try {
+        handleEvent(JSON.parse(data));
+      } catch { /* 忽略注释或不完整的诊断帧；最终仍要求 start + done。 */ }
+    };
+    const processBuffer = (flush = false) => {
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        processBlock(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (flush && buffer.trim()) {
+        processBlock(buffer);
+        buffer = '';
+      }
+    };
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary >= 0) {
-        const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
-        const data = block.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
-        if (data && data !== '[DONE]') {
-          try {
-            const event = JSON.parse(data);
-            if (event.type === 'delta') output += String(event.content || '');
-            if (event.type === 'error') return sendResponse({ ok: false, error: event.message || '翻译失败' });
-          } catch (_error) { /* ignore incomplete/diagnostic SSE frames */ }
-        }
-        boundary = buffer.indexOf('\n\n');
-      }
+      processBuffer(done);
+      if (streamError) { await reader.cancel().catch(() => {}); break; }
       if (done) break;
     }
-    return sendResponse({ ok: true, text: output, mode: config.mode === 'replace' ? 'replace' : 'side-by-side' });
+    if (streamError) return sendResponse({ ok: false, error: streamError });
+    if (!sawStart || !sawDone) return sendResponse({ ok: false, error: '翻译流未完成，请重试' });
+    if (!output.trim()) return sendResponse({ ok: false, error: '翻译服务返回空结果' });
+    const canAutoCopy = config.autoCopy === true
+      && Boolean(streamMeta?.from && streamMeta?.to && streamMeta.from !== streamMeta.to);
+    return sendResponse({
+      ok: true,
+      text: output,
+      mode: config.mode === 'replace' ? 'replace' : 'side-by-side',
+      autoCopy: canAutoCopy,
+      meta: streamMeta
+    });
   } catch (error) {
     return sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'aih-copy-text') {
+    void writeClipboard(message.text).then(sendResponse);
+    return true;
+  }
   if (message?.type !== 'aih-translate') return false;
   void translate(message, sendResponse);
   return true;

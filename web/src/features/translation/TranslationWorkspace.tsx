@@ -61,6 +61,7 @@ import {
   useTranslationHistoryRecorder,
 } from './use-translation-history';
 import { formatTranslationHistoryTime } from './translation-history';
+import { applyPageTranslation, collectPageSegments, createBoundedPageTranslator, type PageTranslationMode, type TranslationPageProgress } from './page-translation';
 import styles from './translation.module.css';
 import SystemTranslationControl from './SystemTranslationControl';
 import TranslationProviderSettings from './TranslationProviderSettings';
@@ -120,6 +121,12 @@ export default function TranslationWorkspace() {
   const [providerDrafts, setProviderDrafts] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState('');
   const [providerError, setProviderError] = useState('');
+  const [pageMode, setPageMode] = useState<PageTranslationMode>('side-by-side');
+  const [pageProgress, setPageProgress] = useState<TranslationPageProgress[]>([]);
+  const [pageBusy, setPageBusy] = useState(false);
+  const [pageApplied, setPageApplied] = useState(false);
+  const pageAbortRef = useRef<AbortController | null>(null);
+  const pageUndoRef = useRef<(() => void) | null>(null);
   const reloadProviders = useCallback(() => {
     setProviderError('');
     void translationAPI.listProviders().then(setProviders).catch(() => setProviderError('读取翻译引擎配置失败'));
@@ -171,6 +178,9 @@ export default function TranslationWorkspace() {
 
   useEffect(() => () => {
     intentSequence.current += 1;
+    pageAbortRef.current?.abort();
+    pageUndoRef.current?.();
+    setPageApplied(false);
   }, []);
 
   useEffect(() => {
@@ -493,6 +503,49 @@ export default function TranslationWorkspace() {
     setTargetPolicy('same-language');
   }, [stream]);
 
+  const translateCurrentPage = useCallback(async () => {
+    if (pageBusy) return;
+    const segments = collectPageSegments(document);
+    if (!segments.length) { message.info('当前页面没有可翻译的正文'); return; }
+    pageAbortRef.current?.abort();
+    pageUndoRef.current?.();
+    const controller = new AbortController();
+    pageAbortRef.current = controller;
+    setPageProgress([]);
+    setPageBusy(true);
+    const translator = createBoundedPageTranslator({
+      concurrency: 3,
+      translate: async (segmentText, signal) => {
+        const detected = source === AUTO_LANGUAGE ? await translationAPI.detect(segmentText.slice(0, 2000)) : null;
+        const from = detected?.code || source;
+        if (from && from !== AUTO_LANGUAGE && from === target) return '';
+        let output = '';
+        await translationAPI.stream({ text: segmentText, source: from || AUTO_LANGUAGE, target, targetPolicy: 'saved', ...(routes.length ? { routes, operation: 'page' } : { model: selection.model, provider: selection.provider }), operation: 'page' }, {
+          signal,
+          onEvent: (event) => {
+            if (event.type === 'delta') output += event.content;
+            if (event.type === 'error') throw new Error(event.message || '页面翻译失败');
+          },
+        });
+        return output;
+      },
+    });
+    try {
+      const progress = await translator(segments, controller.signal, (item) => setPageProgress((current) => {
+        const next = current.filter((entry) => entry.segment.id !== item.segment.id);
+        next.push(item);
+        return next.sort((a, b) => a.segment.index - b.segment.index);
+      }));
+      if (!controller.signal.aborted) {
+        pageUndoRef.current = applyPageTranslation(progress, pageMode);
+        setPageApplied(true);
+      }
+    } finally {
+      if (pageAbortRef.current === controller) pageAbortRef.current = null;
+      setPageBusy(false);
+    }
+  }, [pageBusy, pageMode, routes, selection.model, selection.provider, source, target]);
+
   const meta = stream.state.meta;
   const routeLabel = meta
     ? `${meta.fromLabel} → ${meta.toLabel}`
@@ -586,6 +639,32 @@ export default function TranslationWorkspace() {
             <span className={styles.savedHint}>仅在整段成功完成后复制</span>
           </div>
         </div>
+
+        <section className={styles.pageTranslationPanel} aria-labelledby="translation-page-title">
+          <div className={styles.pageTranslationHeader}>
+            <div>
+              <span id="translation-page-title" className={styles.paneTitle}>整页翻译</span>
+              <span className={styles.routeHint}>识别正文段落后有界并发翻译，支持旁注或替换。</span>
+            </div>
+            <div className={styles.pageTranslationActions}>
+              <Select
+                size="small"
+                value={pageMode}
+                aria-label="整页翻译显示方式"
+                options={[{ value: 'side-by-side', label: '原文旁注' }, { value: 'replace', label: '替换原文' }]}
+                onChange={setPageMode}
+              />
+              {pageBusy ? <Button appVariant="quiet" onClick={() => pageAbortRef.current?.abort()}>停止</Button> : <Button appVariant="secondary" onClick={() => void translateCurrentPage()}>翻译当前页面</Button>}
+              {pageApplied && !pageBusy ? <Button appVariant="quiet" onClick={() => { pageUndoRef.current?.(); pageUndoRef.current = null; setPageProgress([]); setPageApplied(false); }}>撤回页面译文</Button> : null}
+            </div>
+          </div>
+          {pageBusy || pageProgress.length ? (
+            <div className={styles.pageTranslationProgress} role="status" aria-live="polite">
+              <span>{pageBusy ? '正在翻译页面' : '页面翻译完成'} · {pageProgress.length} 段</span>
+              {pageProgress.some((item) => item.error) ? <span className={styles.limitWarning}>部分段落失败，可重试</span> : null}
+            </div>
+          ) : null}
+        </section>
 
         <TranslationProviderSettings
           providers={providers}

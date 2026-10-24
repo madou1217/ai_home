@@ -101,6 +101,49 @@
   background: var(--color-surface-raised);
 }
 
+.pageTranslationPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.pageTranslationHeader,
+.pageTranslationActions,
+.pageTranslationProgress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pageTranslationHeader {
+  justify-content: space-between;
+}
+
+.pageTranslationHeader > div:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pageTranslationProgress {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .pageTranslationHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .pageTranslationActions {
+    flex-wrap: wrap;
+  }
+}
+
 .routeHeader {
   display: flex;
   align-items: center;

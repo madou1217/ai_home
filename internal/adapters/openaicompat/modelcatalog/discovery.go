@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 )
 
 const (
@@ -65,6 +66,7 @@ type Source struct {
 	extraHeaders func(credential accountapp.Credential) map[string]string
 	// supportsCredential 判定凭据形态是否支持 HTTP 发现；nil 表示全部支持。
 	supportsCredential func(credential accountapp.Credential) bool
+	descriptors        modelmetadata.ModelDescriptorRegistrar
 }
 
 // 编译期确认实现统一 Provider 发现策略。
@@ -84,6 +86,8 @@ type Options struct {
 	//
 	// grok 需要它：`GET /models` 只认 API Key，OAuth 账号会被 403。
 	SupportsCredential func(credential accountapp.Credential) bool
+	// Descriptors 是可选的运行时能力覆盖接收端；为空时只刷新模型 ID。
+	Descriptors modelmetadata.ModelDescriptorRegistrar
 }
 
 // New 创建目录源。
@@ -99,6 +103,7 @@ func New(client HTTPClient, options Options) (*Source, error) {
 		token:              options.Token,
 		extraHeaders:       options.ExtraHeaders,
 		supportsCredential: options.SupportsCredential,
+		descriptors:        options.Descriptors,
 	}, nil
 }
 
@@ -158,6 +163,14 @@ func (source *Source) DiscoverModels(
 	if len(models) == 0 {
 		return nil, ErrEmptyCatalog
 	}
+	if source.descriptors != nil {
+		descriptors := ParseModelDescriptors(source.providerID, payload)
+		if len(descriptors) > 0 {
+			if err := source.descriptors.ReplaceModelDescriptors(source.providerID, descriptors); err != nil {
+				return nil, fmt.Errorf("发布模型能力描述失败: %w", err)
+			}
+		}
+	}
 	return models, nil
 }
 
@@ -187,4 +200,60 @@ func ParseModels(payload []byte) []string {
 		models = append(models, id)
 	}
 	return models
+}
+
+// ParseModelDescriptors 从标准模型清单中提取已确认的低敏模态事实。
+// 模型 ID 解析保持 ParseModels 的宽容语义；能力字段必须存在且是 JSON bool。
+func ParseModelDescriptors(providerID string, payload []byte) []modelmetadata.ModelDescriptor {
+	var document struct {
+		Data []struct {
+			ID            string          `json:"id"`
+			SupportsImage json.RawMessage `json:"supports_image_in"`
+			SupportsVideo json.RawMessage `json:"supports_video_in"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return nil
+	}
+	descriptors := make([]modelmetadata.ModelDescriptor, 0, len(document.Data))
+	for _, entry := range document.Data {
+		image, imageOK := parseBoolean(entry.SupportsImage)
+		video, videoOK := parseBoolean(entry.SupportsVideo)
+		if !imageOK || !videoOK {
+			continue
+		}
+		input := []string{"text"}
+		if image {
+			input = append(input, "image")
+		}
+		if video {
+			input = append(input, "video")
+		}
+		modalities, err := modelmetadata.NewModalities(input, []string{"text"})
+		if err != nil {
+			continue
+		}
+		descriptor, err := modelmetadata.NewModelDescriptor(modelmetadata.ModelDescriptorInput{
+			ProviderID: providerID,
+			ModelID:    strings.TrimSpace(entry.ID),
+			Modalities: modalities,
+		})
+		if err != nil {
+			continue
+		}
+		descriptors = append(descriptors, descriptor)
+	}
+	return descriptors
+}
+
+func parseBoolean(raw json.RawMessage) (bool, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed != "true" && trimmed != "false" {
+		return false, false
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, false
+	}
+	return value, true
 }

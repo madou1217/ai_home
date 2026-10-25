@@ -230,13 +230,15 @@ for (const token of serviceEnv.split(/\\s+/)) {
 }
 const aiHomeDir = String(env.AIH_HOME_DIR || defaultHome || '').trim();
 try {
-  const { readServerConfig } = require(path.join(stage, 'lib/server/server-config-store'));
+  const { readJsonValue } = require(path.join(stage, 'lib/server/app-state-store'));
+  const { sanitizeServerConfig } = require(path.join(stage, 'lib/server/server-config-store'));
   const {
     loadRouteOwnershipManifest,
     resolveGoOwnedEntryIds,
     resolveEffectiveGoOwnership
   } = require(path.join(stage, 'lib/server/go-core-route-ownership'));
-  const config = readServerConfig({ fs, aiHomeDir });
+  const storedConfig = readJsonValue(fs, aiHomeDir, 'config:server', { strict: true });
+  const config = sanitizeServerConfig(storedConfig || {});
   const manifest = loadRouteOwnershipManifest({ repositoryRoot: stage });
   const enabled = Object.prototype.hasOwnProperty.call(env, 'AIH_GO_CORE_ENABLED')
     ? /^(1|true|yes|on)$/i.test(String(env.AIH_GO_CORE_ENABLED).trim())

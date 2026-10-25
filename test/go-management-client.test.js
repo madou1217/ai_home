@@ -102,6 +102,34 @@ test('getModelCatalog uses the read-only management contract without a request b
   assert.equal(call.init.body, undefined);
 });
 
+test('management status and metrics use read-only Go shadow contracts', async () => {
+  const calls = [];
+  const client = createGoManagementClient({
+    baseUrl: 'http://go.local',
+    managementKey: 'management-secret',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response(200, { ok: true, total_requests: 3 });
+    }
+  });
+
+  const status = await client.getManagementStatus();
+  const metrics = await client.getManagementMetrics();
+
+  assert.equal(status.ok, true);
+  assert.equal(metrics.ok, true);
+  assert.deepEqual(calls.map((call) => call.url), [
+    'http://go.local/v1/management/status',
+    'http://go.local/v1/management/metrics'
+  ]);
+  for (const call of calls) {
+    assert.equal(call.init.method, 'GET');
+    assert.equal(call.init.body, undefined);
+    assert.equal(call.init.headers.authorization, 'Bearer management-secret');
+    assert.equal(Object.hasOwn(call.init.headers, 'content-type'), false);
+  }
+});
+
 test('usage query methods preserve explicit filters and use read-only contracts', async () => {
   const calls = [];
   const client = createGoManagementClient({

@@ -102,6 +102,32 @@ test('getModelCatalog uses the read-only management contract without a request b
   assert.equal(call.init.body, undefined);
 });
 
+test('usage query methods preserve explicit filters and use read-only contracts', async () => {
+  const calls = [];
+  const client = createGoManagementClient({
+    baseUrl: 'http://go.local',
+    managementKey: 'management-secret',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response(200, { ok: true, stats: { total_calls: 1 } });
+    }
+  });
+
+  await client.getUsageStats({ from: '2026-10-01', to: '2026-10-02', provider: 'codex', model: 'gpt-6.1-sol' });
+  await client.getUsageModels({ from: '2026-10-01', to: '2026-10-02' });
+  await client.getUsageSessions({ from: '2026-10-01', to: '2026-10-02', session_id: 's 1' });
+
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].url, 'http://go.local/v1/management/usage/stats?from=2026-10-01&to=2026-10-02&provider=codex&model=gpt-6.1-sol');
+  assert.equal(calls[1].url, 'http://go.local/v1/management/usage/models?from=2026-10-01&to=2026-10-02');
+  assert.equal(calls[2].url, 'http://go.local/v1/management/usage/sessions?from=2026-10-01&to=2026-10-02&session_id=s+1');
+  for (const call of calls) {
+    assert.equal(call.init.method, 'GET');
+    assert.equal(call.init.body, undefined);
+    assert.equal(call.init.headers.authorization, 'Bearer management-secret');
+  }
+});
+
 test('management client preserves structured HTTP errors and does not expose the key', async () => {
   const client = createGoManagementClient({
     baseUrl: 'http://go.local',

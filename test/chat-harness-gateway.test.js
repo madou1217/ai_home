@@ -7,6 +7,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  createChatGatewayOptions,
+  ensurePrivateCodexHomeDir,
   ensurePrivateModelCatalogDir
 } = require('../lib/server/chat-runtime/chat-harness-gateway');
 
@@ -17,6 +19,58 @@ function makeCatalogDir() {
     catalogDir: path.join(root, 'model-catalogs')
   };
 }
+
+test('replaces a dangling codex home symlink before creating model-catalogs', () => {
+  const { root } = makeCatalogDir();
+  const codexHome = path.join(root, '.codex');
+  try {
+    fs.symlinkSync(path.join(root, 'missing-codex-home'), codexHome, 'dir');
+
+    ensurePrivateCodexHomeDir(fs, codexHome);
+
+    const stat = fs.lstatSync(codexHome);
+    assert.equal(stat.isDirectory(), true);
+    assert.equal(stat.isSymbolicLink(), false);
+    ensurePrivateModelCatalogDir(fs, path.join(codexHome, 'model-catalogs'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('builds a WorkBuddy harness environment when its codex home is a dangling symlink', async () => {
+  const { root } = makeCatalogDir();
+  const aiHomeDir = path.join(root, 'ai-home');
+  const harnessHome = path.join(aiHomeDir, 'run', 'chat-harness', 'acct_test');
+  const codexHome = path.join(harnessHome, '.codex');
+  try {
+    fs.mkdirSync(path.dirname(codexHome), { recursive: true });
+    fs.symlinkSync(path.join(root, 'missing-codex-home'), codexHome, 'dir');
+
+    const options = createChatGatewayOptions({
+      provider: 'workbuddy',
+      executionAccountRef: 'acct_test',
+      sessionId: 'session_test'
+    }, {
+      aiHomeDir,
+      env: {},
+      chatGateway: {
+        port: 9527,
+        clientKey: 'test-key',
+        readModels: async () => ['deepseek-v4.1-flash']
+      },
+      readAccountCredentialRecord: () => ({ provider: 'workbuddy', nativeAuth: {} })
+    });
+
+    const env = await options.buildProviderEnvImpl();
+
+    assert.equal(env.CODEX_HOME, codexHome);
+    assert.equal(fs.lstatSync(codexHome).isSymbolicLink(), false);
+    assert.equal(fs.lstatSync(path.join(codexHome, 'model-catalogs')).isDirectory(), true);
+    assert.match(fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8'), /model_catalog_json/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('replaces a dangling model-catalogs symlink with a real directory', () => {
   const { root, catalogDir } = makeCatalogDir();

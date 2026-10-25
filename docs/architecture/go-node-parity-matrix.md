@@ -533,6 +533,7 @@ Go 原先有两个键，都不等于规范键：
 | HTTP 451 地区拒绝 | Go 原先落入 `unclassified` | Node `isRegionDenied` 对 451 直接产生 `location_unsupported`，账号进入地区策略阻断并交给出口证据链 | **已修（2026-10-25）**：Codex/Claude Go classifier 将 451 映射为账号级 `FailureRegionUnsupported`，回归测试覆盖作用域 |
 | 普通 HTTP 403 | Go 原先按 `permission_denied` 做账号模型级策略阻断 | Node 通用 401/403 分支按 `auth_invalid` 做账号级阻断；边缘/WAF、地区和资源限制在前置专用策略中单独处理 | **已修（2026-10-25）**：Codex/Claude Go classifier 的普通 403 改为账号级 `FailureCredentialRejected`，保留专用前置策略的边界 |
 | HTTP 状态失败的冷却时长 | Go 领域策略默认值 | Node：408 为请求级未知状态；503=60s，普通 5xx=5m，529=10m | **已修（2026-10-25）**：Codex/Claude classifier 对齐 Node 的状态分类与显式恢复提示，回归测试覆盖 408/500/503/529 |
+| 通用 OpenAI 兼容 HTTP observer | Go 共享 observer 原先把 403 归为 `permission_denied`、451/529/408 归类和冷却与 Node 不同 | Node 通用 401/403、451、408、5xx/529 规则先经过专用边界再进入统一账号策略 | **已修（2026-10-25）**：`internal/adapters/upstreamfailure.ObserveHTTP` 与 Node 的普通状态语义对齐，回归测试覆盖 403/451/408/500/503/529 及显式 `Retry-After` |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
 
 ### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）

@@ -39,16 +39,28 @@ func ObserveHTTP(
 		return Classification{}, ErrNoFailureEvidence
 	}
 	kind := classifyHTTPStatus(statusCode)
-	if kind == runtimecore.FailureUnclassified {
+	if statusCode == http.StatusPaymentRequired && errorCode == "deactivated_workspace" {
+		kind = runtimecore.FailureWorkspaceDeactivated
+	}
+	if kind == runtimecore.FailureUnclassified && statusCode != http.StatusRequestTimeout {
 		// 有业务错误标识但状态码不常见：按上游不可用处理（可换号），
 		// 而不是留 unclassified 让调用方无从判断。
 		kind = runtimecore.FailureUpstreamUnavailable
 	}
-	if kind == runtimecore.FailurePermissionDenied {
-		return NewBlockingClassification(kind, runtimecore.BlockScopeAccountModel)
+	if kind == runtimecore.FailureCredentialRejected {
+		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
+	}
+	if kind == runtimecore.FailureRegionUnsupported {
+		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
+	}
+	if kind == runtimecore.FailureWorkspaceDeactivated {
+		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
 	}
 	// Retry-After 只在有限提示内采纳（避免上游用超长值绕过上限）。
 	if retryAfter := readRetryAfter(header, observedAt); retryAfter > 0 {
+		return NewClassification(kind, retryAfter)
+	}
+	if retryAfter := defaultRetryAfter(statusCode, kind); retryAfter > 0 {
 		return NewClassification(kind, retryAfter)
 	}
 	return NewClassification(kind, 0)
@@ -62,17 +74,36 @@ func classifyHTTPStatus(statusCode int) runtimecore.FailureKind {
 	case statusCode == http.StatusUnauthorized:
 		return runtimecore.FailureCredentialRejected
 	case statusCode == http.StatusForbidden:
-		return runtimecore.FailurePermissionDenied
+		return runtimecore.FailureCredentialRejected
+	case statusCode == http.StatusUnavailableForLegalReasons:
+		return runtimecore.FailureRegionUnsupported
 	case statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity:
 		return runtimecore.FailureInvalidRequest
 	case statusCode == http.StatusRequestTimeout:
-		return runtimecore.FailureRequestTimeout
+		return runtimecore.FailureUnclassified
+	case statusCode == 529:
+		return runtimecore.FailureModelOverloaded
 	case statusCode == http.StatusNotFound:
 		return runtimecore.FailureNotFound
 	case statusCode >= http.StatusInternalServerError:
 		return runtimecore.FailureUpstreamUnavailable
 	default:
 		return runtimecore.FailureUnclassified
+	}
+}
+
+// defaultRetryAfter mirrors Node's status-specific recovery hints while keeping
+// the domain policy provider-neutral. Explicit Retry-After remains authoritative.
+func defaultRetryAfter(statusCode int, kind runtimecore.FailureKind) time.Duration {
+	switch {
+	case statusCode == http.StatusServiceUnavailable && kind == runtimecore.FailureUpstreamUnavailable:
+		return time.Minute
+	case statusCode >= http.StatusInternalServerError && kind == runtimecore.FailureUpstreamUnavailable:
+		return 5 * time.Minute
+	case statusCode == 529 && kind == runtimecore.FailureModelOverloaded:
+		return 10 * time.Minute
+	default:
+		return 0
 	}
 }
 

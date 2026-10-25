@@ -7,6 +7,7 @@ import AntdThemeProvider from "@/components/theme/AntdThemeProvider";
 import MobileApp from "@/mobile/MobileApp";
 import AppInstallTaskQueue from "@/components/task-queue/AppInstallTaskQueue";
 import TranslationFloatingPanel from "@/features/translation/TranslationFloatingPanel";
+import ChatMiniWindow from "@/features/chat-runtime/ChatMiniWindow";
 import HudEffects from "@/components/hud/HudEffects";
 import { HudBrand, HudTelemetryBar, HudToggles } from "@/components/hud/HudHeader";
 import { resolveHudNavCode } from "@/components/hud/hud-nav";
@@ -259,6 +260,12 @@ export const layout = ({ initialState }: any) => {
           {canRenderDataPlane && (
             <AppErrorBoundary>
               <TranslationFloatingPanel />
+            </AppErrorBoundary>
+          )}
+          {/* Chat 快速窗口挂在应用壳层，快捷键无需切换到 /ui/chat。 */}
+          {canRenderDataPlane && (
+            <AppErrorBoundary>
+              <ChatMiniWindow />
             </AppErrorBoundary>
           )}
         </>

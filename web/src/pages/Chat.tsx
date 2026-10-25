@@ -34,6 +34,10 @@ export default function Chat() {
         // 由当前挂载的 surface 监听并打开各自的检索胶囊
         // (legacy=MessageArea,native=ConversationTimeline)
         window.dispatchEvent(new Event(IN_SESSION_SEARCH_OPEN_EVENT));
+      } else if (shortcut === 'chat-mini-window') {
+        // ChatMiniWindow is mounted by the app shell, so this action stays
+        // route-independent while the page still prevents browser handling.
+        e.preventDefault();
       }
     };
     window.addEventListener('keydown', handleKeyDown);

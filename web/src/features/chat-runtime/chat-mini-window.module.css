@@ -1,0 +1,80 @@
+.window {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1200;
+  display: flex;
+  width: min(460px, calc(100vw - 24px));
+  height: min(650px, calc(100vh - 32px));
+  min-height: 300px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-bg);
+  box-shadow: var(--elevation-5);
+}
+
+.pinned { box-shadow: 0 0 0 1px var(--color-accent), var(--elevation-5); }
+
+.header {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  cursor: move;
+  user-select: none;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--hud-panel-bg);
+}
+
+.titleGroup,
+.headerActions,
+.runtimeToolbar,
+.runtimeActions {
+  display: flex;
+  align-items: center;
+}
+
+.titleGroup { min-width: 0; gap: 7px; font: 11px var(--font-mono); letter-spacing: var(--tracking-wide); color: var(--color-accent); }
+.titleGroup strong { white-space: nowrap; }
+.sessionTitle { min-width: 0; overflow: hidden; color: var(--color-muted-strong); text-overflow: ellipsis; white-space: nowrap; }
+.led { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 7px var(--color-accent); }
+.headerActions { gap: 2px; }
+.headerActions button,
+.runtimeActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted-strong);
+  cursor: pointer;
+  font: 11px var(--font-mono);
+}
+.headerActions button { padding: 4px; font-size: 13px; }
+.headerActions button:hover,
+.runtimeActions button:hover { color: var(--color-accent); }
+.runtimeActions button:disabled { cursor: default; opacity: .45; }
+
+.body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.status { padding: 20px 14px; color: var(--color-muted-strong); font: 12px/1.5 var(--font-mono); }
+.inlineError { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; color: var(--color-danger); font: 11px/1.4 var(--font-mono); }
+.inlineError span { overflow-wrap: anywhere; }
+.inlineError button { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; border: 0; background: transparent; color: var(--color-accent); cursor: pointer; font: inherit; }
+.runtimeToolbar { justify-content: space-between; gap: 8px; min-height: 30px; padding: 4px 10px; border-bottom: 1px solid var(--color-border); color: var(--color-muted-strong); font: 10px var(--font-mono); }
+.runtimeState { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runtimeState[data-state='running'], .runtimeState[data-state='starting'] { color: var(--color-accent); }
+.runtimeActions { gap: 7px; }
+
+/* SessionWorkspace owns the canonical timeline/composer; this wrapper only sets the compact viewport. */
+.body :global(main) { min-height: 0; }
+.body :global(main > header) { flex: 0 0 auto; }
+.body :global(main > .session-runtime_workspaceDock) { padding-bottom: 10px; }
+.body :global(.ant-empty) { margin-block: 30px; }
+
+@media (max-width: 640px) {
+  .window { right: 8px; bottom: 8px; width: calc(100vw - 16px); height: min(640px, calc(100vh - 16px)); }
+}

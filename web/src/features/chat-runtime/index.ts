@@ -1,4 +1,5 @@
 export { default as SessionRuntimeSurface } from './SessionRuntimeSurface';
+export { default as ChatMiniWindow } from './ChatMiniWindow';
 export { default as CanonicalChatRuntime } from './CanonicalChatRuntime';
 export {
   resolveChatAccountChange,

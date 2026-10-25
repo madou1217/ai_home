@@ -74,3 +74,34 @@ The working tree still contains only the unrelated pre-existing `lib/server/web-
 - `web/src/features/translation/` + `page-translation.ts` -> **Capability descriptor projection + Bounded Scheduler + Command** -> WebUI renders declared provider/target capability state and page translation exposes progress, stop, and undo transitions; existing Edge DOM evidence, Web build, ESLint, and Node contracts passed.
 
 SOLID, KISS, DRY, and YAGNI review: no provider-name dispatch was added, no new environment variable or parallel configuration path was introduced, and no additional abstraction was needed for this integration-only review. The design-pattern inventory was updated in `docs/architecture/design-patterns.md` with the concrete modules and evidence above.
+
+## Desktop artifact and protocol handshake follow-up
+
+The current committed native sources were rebuilt with the existing macOS
+builder:
+
+```text
+node - <<'NODE'
+const { buildMacTranslationHelper } = require('./lib/desktop/translation/macos-build');
+(async () => {
+  const executable = await buildMacTranslationHelper('/tmp/aih-task5-artifact-current');
+  process.stdout.write(`${executable}\n`);
+})();
+NODE
+/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app/Contents/MacOS/aih-translation
+```
+
+The generated artifact was verified with the exact strict command:
+
+```text
+/usr/bin/codesign --verify --deep --strict "/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app"
+artifact=/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app
+codesign=verified
+-rwxr-xr-x 281312 /tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app/Contents/MacOS/aih-translation
+```
+
+The desktop launcher now sends a version-1 `hello` immediately after child
+attachment and waits for a version-1 `ready` event before reporting `running`.
+Incompatible versions produce `desktop_protocol_version_unsupported`, stop the
+child, and surface an error state. Deterministic tests cover hello/ready,
+mismatch handling, and per-child generation reset.

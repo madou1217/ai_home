@@ -73,6 +73,17 @@ test('aborted execution returns the normalized non-retryable cancellation result
   assert.equal(result.ok, false);
 });
 
+test('cancellation interrupts an in-flight executor without waiting for transport completion', async () => {
+  const controller = new AbortController();
+  const direct = async () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, text: 'late' }), 100));
+  const started = Date.now();
+  const pending = createTranslationExecutionPort({ direct }).translate(request(), { signal: controller.signal });
+  setTimeout(() => controller.abort(), 5);
+  const result = await pending;
+  assert.deepEqual(result.error, { code: 'translation_aborted', message: '翻译已取消', retryable: false });
+  assert.ok(Date.now() - started < 80);
+});
+
 test('AIH Server executor sends server routing headers and parses SSE fallback', async () => {
   const calls = [];
   const server = createAihServerExecutor({

@@ -75,3 +75,12 @@ test('normalizes helper lifecycle events before service dispatch', () => {
   });
   assert.equal(protocol.normalizeHelperEvent({ type: 'status', trusted: 'yes' }), null);
 });
+
+test('passes Chat JSONL envelopes through the translation helper boundary', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({
+    type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', text: 'hello'
+  }), {
+    version: 1, type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', text: 'hello'
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'chat.submit', requestId: 'r', sessionId: 's', text: 'missing command' }), null);
+});

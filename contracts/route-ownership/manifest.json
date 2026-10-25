@@ -421,20 +421,19 @@
           "path": "/v1/messages/count_tokens"
         }
       ],
-      "production_owner": "node",
-      "migration_state": "node_owned",
+      "production_owner": "go",
+      "migration_state": "go_owned",
       "node_implementation": "stable",
-      "go_implementation": "private_canary",
+      "go_implementation": "go_owned",
       "cutover_blocking": true,
-      "blockers": [
-        "public endpoint remains Node until the full gate passes"
-      ],
+      "blockers": [],
       "evidence": [
         "lib/server/protocol-registry.js",
         "lib/server/v1-router.js",
         "scripts/collect-gateway-routes.js",
         "internal/transport/http/anthropicmessagesapi/token_count.go",
-        "internal/adapters/clientprotocol/anthropicmessages/token_count.go"
+        "internal/adapters/clientprotocol/anthropicmessages/token_count.go",
+        "internal/adapters/clientprotocol/anthropicmessages/token_count_test.go"
       ]
     },
     {

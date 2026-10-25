@@ -17,7 +17,7 @@ Preview Server 使用 `127.0.0.1:19527`，Preview Web 使用 `127.0.0.1:19528`�
 路由采集结果（`node scripts/collect-gateway-routes.js --json`）：
 
 > **下表的 Node 299 / Go 19 是 2026-08-19 的 Go Refactor .1 基线快照，仅作历史记录。**
-> 当前数字见本文「数据面路由补齐」一节（Node 333 / Go 26，`missing_in_go=0`）。
+> 当前数字见本文「数据面路由补齐」一节（`missing_in_go=0`；具体数量以采集器当前输出为准）。
 > 最新基线同时冻结在 `contracts/route-ownership/manifest.json` 的 `route_baseline`，
 > 并由 `test/go-route-ownership-manifest.test.js` 与源码采集结果逐字段比对。
 
@@ -43,13 +43,14 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 | `/v1/blobs/{id}` | ✅ 已实现 | `internal/adapters/imageblob` + `internal/transport/http/blobsapi` |
 | `/v1/images/edits` | ✅ 已实现 | `internal/adapters/images` + `internal/transport/http/imagesapi` |
 | `/v1/images/generations` | ✅ 已实现 | 同上 |
-| `/v1/messages/count_tokens` | ✅ 已实现 | `internal/adapters/clientprotocol/anthropicmessages/token_count.go` |
+| `/v1/messages/count_tokens` | ✅ 已实现并已切 Go ownership | `internal/adapters/clientprotocol/anthropicmessages/token_count.go`、`token_count_test.go` |
 | `/v1/models/{id}` | ✅ 已实现 | `internal/transport/http/modelsapi` |
 
-**已实现 ≠ 已切流。** `127.0.0.1:9527` 的 production owner 仍是 Node，manifest 中这 7 个
-条目全部保持 `production_owner=node`、`migration_state=node_owned`、
-`go_implementation=private_canary`、`cutover_blocking=true`。切流仍需协议 shadow、数据库/
-runtime migration、rollback plan 与显式确认。
+**已实现 ≠ 已切流。** 除 `gateway.anthropic.count_tokens` 已完成本地算法回归并推进到
+`production_owner=go`、`migration_state=go_owned` 外，其余补齐条目仍保持
+`production_owner=node`、`migration_state=node_owned`、`go_implementation=private_canary`、
+`cutover_blocking=true`。count_tokens 不选账号、不写 runtime、不访问上游，因此不需要账号迁移；
+其余条目切流仍需协议 shadow、数据库/runtime migration、rollback plan 与显式确认。
 
 vision guard 的覆盖面已按 Node 的兜底语义对齐（2026-09-16）：索引命中以索引为准；
 未命中但模型名落在已知视觉家族（`claude-`、`gemini-`、`gpt-4o|4.1|5`、`o1|o3`，
@@ -70,7 +71,7 @@ Node 其余 guard 也仍按 `guard` 分类，不能在路由计数中被误读�
 
 ### Ownership 与非数据面
 
-manifest 中每个 production entry 都固定为 `production_owner=node`、
+除 count_tokens 外，manifest 中每个 production entry 都固定为 `production_owner=node`、
 `migration_state=node_owned`。Node 的 WebUI、Fabric、Node RPC、Session、PTY 和 Codex
 app-server surface 仍由 Node 持有；它们不因 Go Preview 已存在就自动变成 Go 的切流范围。
 Go 的账号管理 API `/v1/management/*` 与 Node 的 `/v0/webui/management/*` 是不同语义的
@@ -116,8 +117,8 @@ Go 当前为 25 条 endpoint 记录、24 个去重 HTTP 路径模式，另有 1 
 
 - 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
 - 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
-- 不把「Go 已有路由」等同于「已切流」：7 条路由已实现，但 manifest 中它们仍是
-  `node_owned` + `cutover_blocking`，切流必须走
+- 不把「Go 已有路由」等同于「已切流」：只有 count_tokens 已完成本地 parity gate 并切到
+  `go_owned`；其余路由仍是 `node_owned` + `cutover_blocking`，必须走
   `node_owned -> write_frozen -> migrated_and_verified -> go_owned` 状态机并显式确认。
 - 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
 - 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。

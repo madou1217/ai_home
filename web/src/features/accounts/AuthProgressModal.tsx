@@ -406,14 +406,18 @@ export function AuthProgressModal({
               {addJob.callbackCaptureStatus ? (
                 <InlineNote
                   className="auth-progress-capture-note"
-                  tone={addJob.callbackCaptureStatus === 'unavailable' ? 'warning' : 'info'}
-                  description={addJob.callbackCaptureStatus === 'unavailable'
-                    ? (addJob.callbackCaptureError || '请授权后把浏览器地址栏里的完整回调地址粘贴到下方。')
-                    : (addJob.callbackListeningUrl || addJob.redirectUri || '等待浏览器授权回调。')}
+                  tone={addJob.callbackCaptureStatus === 'listening' ? 'info' : 'warning'}
+                  description={addJob.callbackCaptureStatus === 'listening'
+                    ? (addJob.callbackListeningUrl || addJob.redirectUri || '等待浏览器授权回调。')
+                    : (addJob.callbackCaptureError
+                      || (addJob.callbackCaptureStatus === 'manual_only'
+                        // 自定义协议（zcode://）不是 HTTP，本地收不到回调：唯一路径是手填。
+                        ? '授权完成后浏览器会跳到一个本机应用地址，aih 收不到。请把浏览器地址栏里的完整地址复制粘贴到下方。'
+                        : '请授权后把浏览器地址栏里的完整回调地址粘贴到下方。'))}
                 >
-                  {addJob.callbackCaptureStatus === 'unavailable'
-                    ? '本地自动接收不可用'
-                    : '本地自动接收已启动'}
+                  {addJob.callbackCaptureStatus === 'listening'
+                    ? '本地自动接收已启动'
+                    : (addJob.callbackCaptureStatus === 'manual_only' ? '需要手动粘贴回调地址' : '本地自动接收不可用')}
                 </InlineNote>
               ) : null}
               {addJob.status === 'running' && !addJob.pluginLogin ? (

@@ -19,6 +19,7 @@ Date: 2026-10-25
 ## Review follow-up
 
 - Persisted Chat session lookup now reads selection at open time. A lookup/API failure remains visible as the compact inline error with retry; the fallback draft is created only when lookup succeeds without a match or no persisted session was requested.
+- Automatic post-open loading is suppressed while an error is present, so a failed lookup does not immediately retry and clear the actionable inline error; retries remain user-driven.
 - Account switching now delegates to `resolveChatAccountChange`: same-provider bound sessions retain their canonical `chatSessionId` and rehydrate the existing timeline under the new execution account; draft or cross-provider changes create a fresh target explicitly.
 - The app-shell mini-window uses persisted sessions only when opened away from `/ui/chat`. If navigation into `/ui/chat` occurs while a persisted mini session is open, it is replaced with a separate draft before the canonical page can attach, preventing duplicate controller/SSE subscriptions while keeping the mini runtime's separate-session semantics explicit.
 - Added stable `data-runtime-workspace` and `data-runtime-workspace-dock` hooks for mini-window CSS instead of relying on hashed CSS-module class names.
@@ -28,7 +29,7 @@ Date: 2026-10-25
 - `npx eslint src/features/chat-runtime/ChatMiniWindow.tsx src/features/chat-runtime/SessionWorkspace.tsx src/features/chat-runtime/index.ts src/components/chat/chat-global-shortcuts.ts src/components/chat/KeyboardShortcutsModal.tsx src/pages/Chat.tsx src/app.tsx` — passed.
 - `node --test test/web-chat-mini-window.test.js` — 3 tests passed, 0 failed.
 - `git diff --cached --check` — passed.
-- `cd web && PATH=/Users/model/.nvm/versions/node/v22.21.0/bin:$PATH npm run build` — passed. Webpack compiled successfully in 26.10s, then `stamp-sw-cache` completed with `CACHE_NAME=aih-hos6-pwa-f5072616` and 189 files.
+- `cd web && PATH=/Users/model/.nvm/versions/node/v22.21.0/bin:$PATH npm run build` — passed. Webpack compiled successfully in 23.22s, then `stamp-sw-cache` completed with `CACHE_NAME=aih-hos6-pwa-bdcd707f` and 189 files.
 - `cd web && npx tsc --noEmit --pretty false` — the repository has pre-existing type errors across unrelated files; no diagnostic referenced `ChatMiniWindow.tsx` or the changed shortcut/app-shell files.
 
 ## Design patterns used

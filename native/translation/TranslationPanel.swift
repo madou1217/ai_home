@@ -40,10 +40,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     panel.contentView = content.root
     content.pin.target = self
     content.pin.action = #selector(togglePinned)
+    content.settingsHandler = { [weak self] event in self?.emit(event) }
     content.targetMenu.target = self
     content.targetMenu.action = #selector(changeTarget)
-    content.serverMenu.target = self
-    content.serverMenu.action = #selector(changeServer)
     content.copy.target = self
     content.copy.action = #selector(copyOutput)
     content.replace.target = self
@@ -82,28 +81,18 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     autoCopy = event["autoCopy"] as? Bool ?? false
     copyScope = event["copyScope"] as? String ?? "selection"
     serverPort = event["port"] as? Int ?? serverPort
+    content.settingsTarget = defaultTarget
+    content.settingsAutoCopy = autoCopy
+    content.settingsExecutionTarget = event["executionTarget"] as? String ?? "aih-server"
     let previous = panel.isVisible ? target : defaultTarget
     content.targetMenu.removeAllItems()
-    content.serverMenu.removeAllItems()
-    for server in event["serverTargets"] as? [[String: Any]] ?? [] {
-      content.serverMenu.addItem(withTitle: server["label"] as? String ?? "AIH Server")
-      content.serverMenu.lastItem?.representedObject = server
-    }
-    if let current = event["serverTarget"] as? [String: Any],
-       let index = content.serverMenu.itemArray.firstIndex(where: {
-         guard let candidate = $0.representedObject as? [String: Any] else { return false }
-         let candidateKey = String(candidate["serverId"] as? String ?? candidate["origin"] as? String ?? "")
-         let currentKey = String(current["serverId"] as? String ?? current["origin"] as? String ?? "")
-         return candidateKey == currentKey
-       }) {
-      content.serverMenu.selectItem(at: index)
-      if let label = current["label"] as? String {
-        content.serverReady(label)
-      }
-    }
+    content.settingsLanguages = []
     for language in event["languages"] as? [[String: Any]] ?? [] {
-      content.targetMenu.addItem(withTitle: language["label"] as? String ?? "")
-      content.targetMenu.lastItem?.representedObject = language["code"] as? String
+      let label = language["label"] as? String ?? ""
+      let code = language["code"] as? String ?? ""
+      content.settingsLanguages.append((label, code))
+      content.targetMenu.addItem(withTitle: label)
+      content.targetMenu.lastItem?.representedObject = code
     }
     selectTarget(previous)
   }
@@ -339,23 +328,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       requestIntent()
     }
   }
-  @objc func changeServer() {
-    guard let server = content.serverMenu.selectedItem?.representedObject as? [String: Any] else { return }
-    let label = server["label"] as? String ?? "AIH Server"
-    // Switching targets is a hard request boundary. Invalidate the current
-    // request before asking the helper to reconfigure so late SSE events from
-    // the previous server cannot overwrite the new target's panel.
-    emit(["type": "cancel"])
-    requestID = ""
-    finish()
-    content.setPhase(.stopped)
-    content.serverSwitching(label)
-    emit(["type": "server-target", "origin": server["origin"] as? String ?? "", "serverId": server["serverId"] as? String ?? "", "label": server["label"] as? String ?? "AIH Server"])
-  }
   @objc func openSettings() {
-    if let url = URL(string: "http://127.0.0.1:\(serverPort)/ui/studio/translation?settings=1") {
-      NSWorkspace.shared.open(url)
-    }
+    content.showSettings()
   }
   @objc func togglePinned() {
     panel.level = isPinned ? .statusBar : .floating

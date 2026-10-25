@@ -6,7 +6,6 @@ enum TranslationPhase { case preflight, waiting, confirmation, streaming, done, 
 final class TranslationPanelContent {
   let root = NSVisualEffectView()
   let targetMenu = NSPopUpButton()
-  let serverMenu = NSPopUpButton()
   let pin = NSButton(checkboxWithTitle: "置顶", target: nil, action: nil)
   let stop = NSButton(title: "停止", target: nil, action: nil)
   let copy = NSButton(title: "复制", target: nil, action: nil)
@@ -28,6 +27,12 @@ final class TranslationPanelContent {
   private var copyRevision = 0
   private var serverSwitchPending = false
   private var confirmationAllowsOverride = false
+  private var settingsWindow: TranslationSettingsWindow?
+  var settingsHandler: (([String: Any]) -> Void)?
+  var settingsTarget = "zh-Hans"
+  var settingsAutoCopy = false
+  var settingsExecutionTarget = "aih-server"
+  var settingsLanguages: [(String, String)] = []
   var reducedMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init() {
@@ -50,16 +55,11 @@ final class TranslationPanelContent {
     heading.textColor = .secondaryLabelColor
     heading.font = .systemFont(ofSize: 12)
     targetMenu.setAccessibilityLabel("目标语言")
-    serverMenu.setAccessibilityLabel("翻译服务")
     targetMenu.setContentHuggingPriority(.defaultLow, for: .horizontal)
     targetMenu.toolTip = "选择译文目标语言"
-    serverMenu.toolTip = "选择内置或已配置的 AIH Server"
     pin.setAccessibilityLabel("置顶面板")
     pin.toolTip = "固定面板并保持在其他窗口上方"
-    let serverHeading = NSTextField(labelWithString: "服务")
-    serverHeading.textColor = .secondaryLabelColor
-    serverHeading.font = .systemFont(ofSize: 12)
-    let controls = NSStackView(views: [heading, targetMenu, serverHeading, serverMenu, pin])
+    let controls = NSStackView(views: [heading, targetMenu, pin])
     controls.spacing = 8
     spinner.style = .spinning
     spinner.controlSize = .small
@@ -282,5 +282,26 @@ final class TranslationPanelContent {
       self.copy.title = "复制"
       self.copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
     }
+  }
+
+  /// Raises the single native settings window. Configuration is intentionally
+  /// passed as value state so this view never needs to open or embed WebUI.
+  func showSettings() {
+    if let settingsWindow = settingsWindow {
+      settingsWindow.present(on: NSScreen.main)
+      return
+    }
+    guard let settingsHandler = settingsHandler else { return }
+    let created = TranslationSettingsWindow(
+      target: settingsTarget,
+      autoCopyEnabled: settingsAutoCopy,
+      executionTarget: settingsExecutionTarget,
+      languages: settingsLanguages,
+      reducedMotion: reducedMotion,
+      emit: settingsHandler,
+      onClosed: { [weak self] in self?.settingsWindow = nil }
+    )
+    settingsWindow = created
+    created.present(on: NSScreen.main)
   }
 }

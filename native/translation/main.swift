@@ -107,21 +107,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.selectionToken += 1
         self.panel.hideTrigger()
       } else if event.type == .rightMouseUp {
-        let point = event.cgEvent?.location
-        let application = self.reader.applicationAt(point)
-        guard let selection = self.reader.read(explicit: false, application: application, point: point), !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-          self.contextSelection = nil
-          return
-        }
-        self.contextSelection = selection
-        self.contextMenu.removeAllItems()
-        let item = NSMenuItem(title: "AIH 翻译选中内容", action: #selector(translateContextSelection), keyEquivalent: "")
-        item.target = self
-        item.image = NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "翻译")
-          ?? NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "翻译")
-        self.contextMenu.addItem(item)
-        let location = NSEvent.mouseLocation
-        self.contextMenu.popUp(positioning: item, at: location, in: nil)
+        // Never replace the host application's right-click menu. Translation
+        // is exposed through Services and the explicit shortcut instead.
+        self.contextSelection = nil
       } else if event.type == .scrollWheel {
         self.selectionToken += 1
         self.panel.hideTrigger()
@@ -157,11 +145,6 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     emit(["type": "selection-state", "outcome": "monitors-\(monitors.count)"])
   }
 
-  @objc func translateContextSelection() {
-    guard let selection = contextSelection else { return }
-    contextSelection = nil
-    panel.offer(selection, explicit: true)
-  }
 
   /// macOS Services entry point. The pasteboard is the authoritative text
   /// payload; AX is only used to retain an editable range when the source app

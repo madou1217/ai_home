@@ -368,6 +368,38 @@ test('real full-app service protocol sends host request and never falls back to 
   service.stop();
 });
 
+test('full-app Chat reports an actionable runtime-unavailable error without a bridge', async () => {
+  const child = fakeChild();
+  const service = createSystemTranslationService({
+    fs: {},
+    aiHomeDir: '',
+    platform: 'darwin',
+    mode: 'full-app',
+    build: async () => '/tmp/aih-full-app',
+    spawn: () => child
+  });
+  await service.start();
+  child.stdout.write(JSON.stringify({
+    version: 1,
+    type: 'chat.open',
+    requestId: 'full-app-chat-1',
+    generation: 2,
+    target: { kind: 'aih-server' }
+  }) + '\n');
+  await new Promise((resolve) => setImmediate(resolve));
+  const writes = child.stdin.writes.map((value) => JSON.parse(value));
+  const error = writes.find((event) => event.type === 'chat.error');
+  assert.deepEqual(error, {
+    version: 1,
+    type: 'chat.error',
+    requestId: 'full-app-chat-1',
+    generation: 2,
+    code: 'chat_runtime_unavailable',
+    message: '当前桌面模式没有可用的 Chat Runtime，请连接 AIH Server 后重试'
+  });
+  service.stop();
+});
+
 test('service reconfigures and restores focus after helper auto-restart', async () => {
   const children = [];
   const service = createSystemTranslationService({

@@ -34,9 +34,12 @@ final class TranslationPanelContent {
   var settingsExecutionTarget = "aih-server"
   var settingsShortcut = ShortcutRegistry.defaultTranslationShortcut
   var settingsChatShortcut = ShortcutRegistry.defaultChatShortcut
+  var settingsShortcutEnabled = true
+  var settingsChatShortcutEnabled = true
   var settingsLanguages: [(String, String)] = []
   var settingsServerTargets: [[String: Any]] = []
   var settingsServerTarget: [String: Any]?
+  private var pendingShortcutStatus = ""
   var reducedMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init() {
@@ -302,6 +305,9 @@ final class TranslationPanelContent {
       executionTarget: settingsExecutionTarget,
       shortcut: settingsShortcut,
       chatShortcut: settingsChatShortcut,
+      shortcutEnabled: settingsShortcutEnabled,
+      chatShortcutEnabled: settingsChatShortcutEnabled,
+      shortcutStatus: pendingShortcutStatus,
       languages: settingsLanguages,
       serverTargets: settingsServerTargets,
       selectedServerTarget: settingsServerTarget,
@@ -310,14 +316,18 @@ final class TranslationPanelContent {
       onClosed: { [weak self] in self?.settingsWindow = nil }
     )
     settingsWindow = created
+    created.setShortcutStatus(pendingShortcutStatus)
     created.present(on: NSScreen.main)
   }
 
   /// Keep shortcut registration failures visible without stopping the helper
   /// or replacing the host application's menus.
   func showShortcutStatus(_ message: String) {
+    pendingShortcutStatus = message
     hint.stringValue = message
     hint.textColor = .systemRed
+    hint.isHidden = false
     fadeIn(hint)
+    settingsWindow?.setShortcutStatus(message)
   }
 }

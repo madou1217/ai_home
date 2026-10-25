@@ -20,8 +20,21 @@ test('Chat shortcut has an explicit conflict-safe default and descriptor registr
 
 test('user-configured Chat shortcut is carried through configure and settings boundaries', () => {
   assert.deepEqual(protocol.normalizeDesktopEvent({ type: 'configure', chatShortcut: '⌘⌥J' }).chatShortcut, '⌘⌥J');
-  assert.deepEqual(translationProtocol.normalizeSettingsPatch({ chatShortcut: 'command+option+j' }), { chatShortcut: 'command+option+j' });
+  assert.deepEqual(translationProtocol.normalizeSettingsPatch({ chatShortcut: 'command+option+j', shortcutEnabled: false, chatShortcutEnabled: false }), { chatShortcut: 'command+option+j', shortcutEnabled: false, chatShortcutEnabled: false });
+  assert.deepEqual(require('../lib/account/translation-settings-store').normalizeTranslationSettings({}).shortcutEnabled, true);
+  assert.deepEqual(require('../lib/account/translation-settings-store').normalizeTranslationSettings({}).chatShortcutEnabled, true);
   assert.match(registrySource, /chatShortcut/);
+});
+
+test('shortcut registration errors are visible in the settings window and full-app Chat reports no runtime', () => {
+  const settings = fs.readFileSync(path.join(root, 'native/translation/TranslationSettingsWindow.swift'), 'utf8');
+  const content = fs.readFileSync(path.join(root, 'native/translation/TranslationPanelContent.swift'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'lib/desktop/translation/service.js'), 'utf8');
+  assert.match(settings, /shortcutStatus/);
+  assert.match(settings, /shortcutEnabled/);
+  assert.match(content, /settingsWindow\?\.setShortcutStatus/);
+  assert.match(service, /chat_runtime_unavailable/);
+  assert.match(service, /当前桌面模式没有可用的 Chat Runtime/);
 });
 
 test('shortcut conflicts and disabled descriptors are reported without replacing host right-click', () => {

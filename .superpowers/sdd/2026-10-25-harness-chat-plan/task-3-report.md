@@ -31,3 +31,16 @@ Date: 2026-10-25
 - `lib/desktop/translation/macos-build.js` + `lib/server/source-fingerprint.js -> deterministic source manifest ->` ensures native desktop source changes rebuild and invalidate the helper; verified by focused manifest checks.
 
 SOLID/KISS/DRY/YAGNI review: the registry is the only new abstraction because shortcut conflict and registration lifecycle are shared concerns; Chat remains a native shell action and does not duplicate runtime/provider transport.
+
+## Review follow-up fixes
+
+- Full-app mode now emits a protocol-valid `chat.error` with the original request and generation when no `ChatRuntimeService`/bridge is available. The native panel leaves `connecting` and shows an actionable message to connect an AIH Server; direct translation remains independent.
+- `shortcutEnabled` and `chatShortcutEnabled` now normalize with default `true`, persist through the existing translation settings store, pass through settings/protocol/configure, and are rendered as native settings checkboxes before reaching the registry.
+- Shortcut conflict, invalid-value, and monitor-registration errors now update the settings window's compact inline status label whenever it is visible, with pending status replayed when settings opens.
+- Increased the native settings window to 420 points and constrained the status label to the stack width so the added controls and error text fit without clipping.
+
+Follow-up verification:
+
+- `xcrun swiftc -typecheck native/translation/*.swift native/chat/*.swift native/desktop/*.swift` — passed.
+- `node --test test/desktop-chat-shortcut.test.js test/desktop-runtime.test.js` — 24 tests passed, 0 failed.
+- `node --check` passed for changed JavaScript modules and `git diff --check` passed.

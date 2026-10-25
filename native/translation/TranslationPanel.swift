@@ -86,6 +86,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.settingsExecutionTarget = event["executionTarget"] as? String ?? "aih-server"
     content.settingsShortcut = event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut
     content.settingsChatShortcut = event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut
+    content.settingsShortcutEnabled = event["shortcutEnabled"] as? Bool ?? true
+    content.settingsChatShortcutEnabled = event["chatShortcutEnabled"] as? Bool ?? true
     content.settingsServerTargets = event["serverTargets"] as? [[String: Any]] ?? []
     content.settingsServerTarget = event["serverTarget"] as? [String: Any]
     let previous = panel.isVisible ? target : defaultTarget

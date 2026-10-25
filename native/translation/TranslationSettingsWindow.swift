@@ -10,6 +10,8 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private let configuredExecutionTarget: String
   private let configuredShortcut: String
   private let configuredChatShortcut: String
+  private let configuredShortcutEnabled: Bool
+  private let configuredChatShortcutEnabled: Bool
   private let targetMenu = NSPopUpButton()
   private let autoCopy = NSButton(checkboxWithTitle: "翻译完成后自动复制", target: nil, action: nil)
   private let executionMenu = NSPopUpButton()
@@ -17,18 +19,23 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private let closeButton = NSButton(title: "取消", target: nil, action: nil)
   private let shortcutValue = NSTextField(labelWithString: "⌘⌥T")
   private let chatShortcutValue = NSTextField(string: "⌘⌥C")
+  private let shortcutEnabled = NSButton(checkboxWithTitle: "启用翻译快捷键", target: nil, action: nil)
+  private let chatShortcutEnabled = NSButton(checkboxWithTitle: "启用 Chat 快捷键", target: nil, action: nil)
+  private let shortcutStatus = NSTextField(wrappingLabelWithString: "")
   private var isClosing = false
   private var onClosed: (() -> Void)?
   private var serverTargetsByKey: [String: [String: Any]] = [:]
 
-  init(target: String, autoCopyEnabled: Bool, executionTarget: String, shortcut: String, chatShortcut: String, languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
+  init(target: String, autoCopyEnabled: Bool, executionTarget: String, shortcut: String, chatShortcut: String, shortcutEnabled: Bool, chatShortcutEnabled: Bool, shortcutStatus: String = "", languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
     self.emit = emit
     self.reducedMotion = reducedMotion
     self.configuredExecutionTarget = executionTarget
     self.configuredShortcut = shortcut
     self.configuredChatShortcut = chatShortcut
+    self.configuredShortcutEnabled = shortcutEnabled
+    self.configuredChatShortcutEnabled = chatShortcutEnabled
     self.onClosed = onClosed
-    window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     super.init()
     window.title = "AIH 翻译设置"
     window.isReleasedWhenClosed = false
@@ -45,6 +52,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     if let index = targetMenu.itemArray.firstIndex(where: { $0.representedObject as? String == target }) { targetMenu.selectItem(at: index) }
     if targetMenu.selectedItem == nil { targetMenu.selectItem(at: 0) }
     autoCopy.state = autoCopyEnabled ? .on : .off
+    self.shortcutStatus.stringValue = shortcutStatus
     var options = serverTargets
     if let selectedServerTarget, !options.contains(where: { targetKey($0) == targetKey(selectedServerTarget) }) { options.insert(selectedServerTarget, at: 0) }
     if options.isEmpty { options = [["kind": "aih-server", "label": "本机 AIH Server", "origin": "http://127.0.0.1:9527"]] }
@@ -94,11 +102,18 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     chatShortcutValue.placeholderString = ShortcutRegistry.defaultChatShortcut
     chatShortcutValue.stringValue = configuredChatShortcut
     chatShortcutValue.setAccessibilityLabel("Chat 快捷键")
+    shortcutEnabled.state = configuredShortcutEnabled ? .on : .off
+    chatShortcutEnabled.state = configuredChatShortcutEnabled ? .on : .off
+    shortcutEnabled.setAccessibilityLabel("启用翻译快捷键")
+    chatShortcutEnabled.setAccessibilityLabel("启用 Chat 快捷键")
+    shortcutStatus.textColor = .systemRed
+    shortcutStatus.font = .systemFont(ofSize: 11)
+    shortcutStatus.maximumNumberOfLines = 2
     let shortcutRow = NSStackView(views: [shortcutLabel, NSView(), shortcutValue])
     let chatShortcutRow = NSStackView(views: [NSTextField(labelWithString: "Chat 快捷键"), NSView(), chatShortcutValue])
     shortcutRow.orientation = .horizontal
     shortcutRow.spacing = 8
-    let fields = NSStackView(views: [targetLabel, targetMenu, autoCopy, executionLabel, executionMenu, shortcutRow, chatShortcutRow])
+    let fields = NSStackView(views: [targetLabel, targetMenu, autoCopy, executionLabel, executionMenu, shortcutRow, shortcutEnabled, chatShortcutRow, chatShortcutEnabled, shortcutStatus])
     fields.orientation = .vertical
     fields.alignment = .leading
     fields.spacing = 10
@@ -117,9 +132,15 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
       stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
       stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
       targetMenu.widthAnchor.constraint(equalToConstant: 240),
-      executionMenu.widthAnchor.constraint(equalToConstant: 240)
+      executionMenu.widthAnchor.constraint(equalToConstant: 240),
+      shortcutStatus.widthAnchor.constraint(equalTo: stack.widthAnchor)
     ])
     return root
+  }
+
+  func setShortcutStatus(_ message: String) {
+    shortcutStatus.stringValue = message
+    shortcutStatus.isHidden = message.isEmpty
   }
 
   func present(on screen: NSScreen? = NSScreen.main) {
@@ -151,6 +172,8 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     ]
     patch["shortcut"] = shortcutValue.stringValue
     patch["chatShortcut"] = chatShortcutValue.stringValue
+    patch["shortcutEnabled"] = shortcutEnabled.state == .on
+    patch["chatShortcutEnabled"] = chatShortcutEnabled.state == .on
     if executionKey != "direct-provider", let selectedTarget = serverTargetsByKey[executionKey] {
       patch["serverTarget"] = selectedTarget
     }

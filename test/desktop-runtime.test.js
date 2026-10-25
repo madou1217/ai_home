@@ -215,3 +215,47 @@ test('launcher schedules a fresh start when disable races with a pending build',
   assert.equal(children.length, 1);
   launcher.stop({ permanent: true });
 });
+
+test('launcher queues re-enable until a running child finishes stopping', async () => {
+  const children = [];
+  const launcher = createDesktopLauncher({
+    build: async () => '/tmp/aih-helper',
+    spawn: () => { const child = fakeChild(); children.push(child); return child; },
+    mode: 'helper'
+  });
+  await launcher.start();
+  launcher.stop();
+  const restarted = launcher.start();
+  assert.equal(children.length, 1);
+  children[0].emit('exit', 0, 'SIGTERM');
+  await restarted;
+  assert.equal(children.length, 2);
+  launcher.stop({ permanent: true });
+});
+
+test('real full-app service protocol sends host request and never falls back to AIH Server', async () => {
+  const child = fakeChild();
+  const serverCalls = [];
+  const directCalls = [];
+  const service = createSystemTranslationService({
+    fs: {},
+    aiHomeDir: '',
+    platform: 'darwin',
+    mode: 'full-app',
+    build: async () => '/tmp/aih-full-app',
+    spawn: () => child,
+    directExecutor: async (request) => {
+      directCalls.push(request.target);
+      return { ok: false, attempts: [{ attempt: 1, ok: false }], error: { code: 'translation_network_error', message: 'direct failed', retryable: true } };
+    },
+    serverExecutor: async () => { serverCalls.push(true); return { ok: true, text: 'server result', attempts: [] }; }
+  });
+  await service.start();
+  service.sendEvent({ type: 'host-translate', id: 'host-1', text: 'Hello', target: 'zh-Hans' });
+  const result = await service.translate({ id: 'host-1', text: 'Hello', target: 'zh-Hans', targetPolicy: 'explicit' });
+  assert.equal(result.ok, false);
+  assert.deepEqual(directCalls, ['direct-provider']);
+  assert.deepEqual(serverCalls, []);
+  assert.match(child.stdin.writes.join(''), /host-translate/);
+  service.stop();
+});

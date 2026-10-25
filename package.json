@@ -67,6 +67,7 @@
     "@standard-schema/spec": "1.1.0"
   },
   "bin": {
-    "aih": "./bin/ai-home.js"
+    "aih": "./bin/ai-home.js",
+    "aih-translation": "./bin/aih-translation.js"
   }
 }

@@ -53,6 +53,25 @@ AIH Server.
 - `xcrun swiftc -typecheck native/translation/*.swift` — passed.
 - `git diff --check` — passed.
 
+## Residual fix round
+
+- Added the install-visible `aih-translation` bin entry and executable mode
+  (`bin/aih-translation.js`, 0755).
+- Reset launcher generation epochs for each child, so a restarted child can
+  begin at generation zero without inheriting a previous process's counter.
+- Queued `start()` behind an in-flight stop and covered both pending-build and
+  running-child disable/re-enable races.
+- Standalone full-app direct-provider requests no longer set an AIH Server
+  fallback target. The real service protocol test verifies that a retryable
+  direct failure never invokes the server executor.
+
+Residual-round verification:
+
+- `node --test test/desktop-runtime.test.js test/translation-execution-integration.test.js test/translation-execution-port.test.js test/desktop-translation-protocol.test.js` — 27 passed, 0 failed.
+- `node --check lib/desktop/runtime/*.js lib/desktop/translation/*.js lib/account/translation-settings-store.js bin/aih-translation.js` — passed.
+- `xcrun swiftc -typecheck native/translation/*.swift` — passed.
+- `git diff --check` — passed.
+
 ## Design patterns
 
 - `lib/desktop/runtime/desktop-mode.js` -> explicit mode resolver -> keeps

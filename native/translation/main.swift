@@ -196,6 +196,18 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// macOS Services entry point for Chat. The pasteboard carries only the
+  /// selected text; ChatPanel owns the JSONL request/session identity.
+  @objc func chatSelectedText(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+    guard let raw = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+      error.pointee = "AIH 未收到可发送到 Chat 的选中文本" as NSString
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.chatPanel.openFromService(text: raw)
+    }
+  }
+
   func receive(_ event: [String: Any]) {
     switch event["type"] as? String {
     case "hello":

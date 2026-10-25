@@ -192,6 +192,11 @@ final class ChatPanelContent: NSObject, NSTextFieldDelegate {
 
   func currentText() -> String { composer.stringValue }
 
+  func setComposerText(_ text: String) {
+    composer.stringValue = text
+    updateControls()
+  }
+
   func clearComposer() { composer.stringValue = "" }
 
   func replaceCurrentAssistant(_ text: String) {

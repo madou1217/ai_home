@@ -47,7 +47,10 @@ test('shortcut conflicts and disabled descriptors are reported without replacing
 test('Chat shortcut opens through the existing chat.open shell command', () => {
   const main = fs.readFileSync(path.join(root, 'native/translation/main.swift'), 'utf8');
   assert.match(main, /chatPanel\.openFromShortcut\(\)/);
+  assert.match(main, /chatSelectedText/);
+  assert.match(main, /openFromService\(text: raw\)/);
   assert.match(fs.readFileSync(path.join(root, 'native/chat/ChatPanel.swift'), 'utf8'), /type": "chat\.open/);
+  assert.match(fs.readFileSync(path.join(root, 'native/chat/ChatPanel.swift'), 'utf8'), /submitPendingServiceTextIfReady/);
   assert.deepEqual(protocol.normalizeDesktopEvent({ type: 'chat.open', requestId: 'shortcut-1', target: { kind: 'aih-server' } }), {
     version: 1, type: 'chat.open', requestId: 'shortcut-1', target: { kind: 'aih-server' }
   });
@@ -58,5 +61,8 @@ test('macOS build includes desktop shortcut source in source list and fingerprin
   const fingerprint = fs.readFileSync(path.join(root, 'lib/server/source-fingerprint.js'), 'utf8');
   assert.match(source, /native\/desktop/);
   assert.match(source, /ShortcutRegistry\.swift/);
+  assert.match(source, /AIH Chat 选中内容/);
+  assert.match(source, /chatSelectedText/);
+  assert.match(source, /NSServices/);
   assert.match(fingerprint, /native\/desktop\/ShortcutRegistry\.swift/);
 });

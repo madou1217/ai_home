@@ -14,6 +14,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   private var model = ""
   private var target: [String: Any] = ["kind": "aih-server"]
   private var assistantText = ""
+  private var pendingServiceText = ""
+  private var pendingServiceRequestID = ""
   private var configured = false
 
   init(emit: @escaping ([String: Any]) -> Void) {
@@ -52,6 +54,19 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   /// every other panel launch; the shortcut layer never owns a runtime.
   func openFromShortcut() { show() }
 
+  /// Services supplies only selected text. The existing Chat Runtime session
+  /// and identity guards remain the sole path for submitting it.
+  func openFromService(text: String) {
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty, normalized.count <= 8000 else { return }
+    pendingServiceText = normalized
+    pendingServiceRequestID = ""
+    content.setComposerText(normalized)
+    show()
+    pendingServiceRequestID = requestID
+    submitPendingServiceTextIfReady()
+  }
+
   func hide() { panel.orderOut(nil) }
 
   func close() {
@@ -82,6 +97,18 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func sendCurrentMessage() {
     let text = content.currentText().trimmingCharacters(in: .whitespacesAndNewlines)
+    submitMessage(text)
+  }
+
+  private func submitPendingServiceTextIfReady() {
+    guard !pendingServiceText.isEmpty, pendingServiceRequestID == requestID else { return }
+    let text = pendingServiceText
+    pendingServiceText = ""
+    pendingServiceRequestID = ""
+    submitMessage(text)
+  }
+
+  private func submitMessage(_ text: String) {
     guard !text.isEmpty, state == .idle, !sessionID.isEmpty, !requestID.isEmpty else { return }
     commandGeneration += 1
     commandID = UUID().uuidString
@@ -113,6 +140,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     sessionID = ""
     commandID = ""
     assistantText = ""
+    pendingServiceText = ""
+    pendingServiceRequestID = ""
     setState(.disconnected, message: "未连接")
   }
 
@@ -171,6 +200,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     case "session.created", "session.runtime.bound", "session.runtime.rebound", "session.snapshot.reset":
       if type == "session.snapshot.reset" { restoreSnapshot(runtime) }
       setState(.idle, message: "就绪")
+      submitPendingServiceTextIfReady()
     case "turn.queued", "turn.started", "timeline.item.started", "timeline.item.updated":
       setState(.streaming, message: "生成中")
     case "timeline.item.delta":

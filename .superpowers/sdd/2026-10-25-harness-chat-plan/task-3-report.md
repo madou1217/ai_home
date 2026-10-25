@@ -44,3 +44,21 @@ Follow-up verification:
 - `xcrun swiftc -typecheck native/translation/*.swift native/chat/*.swift native/desktop/*.swift` — passed.
 - `node --test test/desktop-chat-shortcut.test.js test/desktop-runtime.test.js` — 24 tests passed, 0 failed.
 - `node --check` passed for changed JavaScript modules and `git diff --check` passed.
+
+## Services follow-up: Chat selected text
+
+- Added a second `NSServices` bundle entry: `AIH Chat 选中内容` → `chatSelectedText`, alongside the existing translation service.
+- Added `TranslationApp.chatSelectedText(_:userData:error:)`. It validates the pasteboard text, reports empty input through the Services error pointer, and hands text to `ChatPanel.openFromService(text:)` on the main queue.
+- Added identity-bound ChatPanel service submission. Selected text is placed in the composer, the existing `chat.open` session is opened, and the text is submitted only after a matching session lifecycle event. Pending service text is cleared on close, so stale sessions cannot submit it.
+- No provider, HTTP, credential, or host right-click handling was added.
+
+Services verification:
+
+- Rebuilt helper with `buildMacTranslationHelper` into `/tmp/aih-task3-service-check-28795/.../AIH Translation.app`.
+- `plutil -lint` on the generated `Info.plist` — passed.
+- `plutil -p` confirmed both services, including `AIH Chat 选中内容` and `chatSelectedText`.
+- Registered the generated app with LaunchServices using `lsregister -f`.
+- LaunchServices dump confirmed `service id: AIH Chat 选中内容`, `menu: AIH Chat 选中内容`, and `message: chatSelectedText`.
+- `xcrun swiftc -typecheck native/translation/*.swift native/chat/*.swift native/desktop/*.swift` — passed.
+- `node --test test/desktop-chat-shortcut.test.js test/desktop-runtime.test.js` — 24 tests passed, 0 failed.
+- `node --check lib/desktop/translation/macos-build.js` and `git diff --check` — passed.

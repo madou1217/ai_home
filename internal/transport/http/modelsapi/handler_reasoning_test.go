@@ -38,7 +38,7 @@ func (reasoningAuthorizer) Authorized(*http.Request) bool { return true }
 type displayAliasReader struct{}
 
 func (displayAliasReader) ListDisplayModels() []modelalias.DisplayModel {
-	return []modelalias.DisplayModel{{Alias: "work-model", Target: "gpt-6.1-sol", Provider: "codex"}}
+	return []modelalias.DisplayModel{{Alias: "aaa-model", Target: "gpt-6.1-sol", Provider: "codex"}}
 }
 
 func TestModelListIncludesReasoningEffortsFromMetadataReader(t *testing.T) {
@@ -116,7 +116,7 @@ func TestModelListIncludesCompiledAliasDisplayModel(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Data) != 2 || body.Data[1].ID != "work-model" {
+	if len(body.Data) != 2 || body.Data[0].ID != "aaa-model" || body.Data[1].ID != "gpt-6.1-sol" {
 		t.Fatalf("models = %#v, want native plus compiled alias", body.Data)
 	}
 }

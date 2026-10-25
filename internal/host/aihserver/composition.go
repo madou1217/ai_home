@@ -978,6 +978,7 @@ func newHandlers(
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     inference.models,
 		Modalities: modelModalities,
+		Reasoning:  modelModalities,
 		Authorizer: clientAuthorizer,
 	})
 	if err != nil {

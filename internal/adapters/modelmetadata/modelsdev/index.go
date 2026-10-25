@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/madou1217/ai_home/application/modelmetadata"
@@ -34,8 +35,13 @@ type snapshotRecord struct {
 
 // Index 保存启动时构建后不再修改的 O(1) 模态与强度档位查找表。
 type Index struct {
-	models  map[string]modelmetadata.Modalities
-	efforts map[string][]inference.ReasoningEffort
+	models    map[string]modelmetadata.Modalities
+	efforts   map[string][]inference.ReasoningEffort
+	overrides atomic.Pointer[modalityOverrideSnapshot]
+}
+
+type modalityOverrideSnapshot struct {
+	byProvider map[string]map[string]modelmetadata.Modalities
 }
 
 // 编译期确认索引满足 HTTP 模型目录所依赖的应用层端口。
@@ -66,7 +72,53 @@ func New() (*Index, error) {
 			efforts[modelID] = ladder
 		}
 	}
-	return &Index{models: models, efforts: efforts}, nil
+	index := &Index{models: models, efforts: efforts}
+	index.overrides.Store(&modalityOverrideSnapshot{
+		byProvider: map[string]map[string]modelmetadata.Modalities{},
+	})
+	return index, nil
+}
+
+var _ modelmetadata.ModelDescriptorRegistrar = (*Index)(nil)
+
+// ReplaceModelDescriptors 原子替换一个 Provider 的运行时模态覆盖。
+//
+// 空切片表示该 Provider 当前没有覆盖，查询会回退到静态 models.dev 索引。
+// 任一 descriptor 无效时整体拒绝并保留上一代快照。
+func (index *Index) ReplaceModelDescriptors(
+	providerID string,
+	descriptors []modelmetadata.ModelDescriptor,
+) error {
+	if index == nil || index.models == nil {
+		return modelmetadata.ErrInvalidModelDescriptor
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	if provider == "" {
+		return modelmetadata.ErrInvalidModelDescriptor
+	}
+	nextProvider := make(map[string]modelmetadata.Modalities, len(descriptors))
+	for _, descriptor := range descriptors {
+		if !descriptor.IsValid() || descriptor.ProviderID() != provider {
+			return modelmetadata.ErrInvalidModelDescriptor
+		}
+		key := normalizeRuntimeModelID(descriptor.ModelID().String())
+		if key == "" {
+			return modelmetadata.ErrInvalidModelDescriptor
+		}
+		if _, exists := nextProvider[key]; exists {
+			return modelmetadata.ErrInvalidModelDescriptor
+		}
+		nextProvider[key] = descriptor.Modalities()
+	}
+	previous := index.overrides.Load()
+	next := cloneOverrideSnapshot(previous)
+	if len(nextProvider) == 0 {
+		delete(next.byProvider, provider)
+	} else {
+		next.byProvider[provider] = nextProvider
+	}
+	index.overrides.Store(next)
+	return nil
 }
 
 // LookupModalities 按 AIH Provider 和真实模型 ID 返回不可变值对象。
@@ -90,6 +142,9 @@ func (index *Index) LookupModalities(
 	if id == "" {
 		return modelmetadata.Modalities{}, false
 	}
+	if modalities, found := index.lookupRuntimeOverride(providerID, id); found {
+		return modalities, true
+	}
 	stripped := stripKnownModelPrefix(id)
 	for _, namespace := range providerNamespacesFor(providerID, id, stripped) {
 		if modalities, found := index.models[namespace+"/"+stripped]; found {
@@ -102,6 +157,51 @@ func (index *Index) LookupModalities(
 		}
 	}
 	return modelmetadata.Modalities{}, false
+}
+
+func (index *Index) lookupRuntimeOverride(providerID, modelID string) (modelmetadata.Modalities, bool) {
+	if index == nil {
+		return modelmetadata.Modalities{}, false
+	}
+	snapshot := index.overrides.Load()
+	if snapshot == nil {
+		return modelmetadata.Modalities{}, false
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	models := snapshot.byProvider[provider]
+	if len(models) == 0 {
+		return modelmetadata.Modalities{}, false
+	}
+	modalities, found := models[normalizeRuntimeModelID(modelID)]
+	if !found {
+		return modelmetadata.Modalities{}, false
+	}
+	copy, err := modelmetadata.NewModalities(modalities.Input(), modalities.Output())
+	if err != nil {
+		return modelmetadata.Modalities{}, false
+	}
+	return copy, true
+}
+
+func normalizeRuntimeModelID(modelID string) string {
+	return strings.ToLower(strings.TrimSpace(normalizeVersionSeparators(modelID)))
+}
+
+func cloneOverrideSnapshot(previous *modalityOverrideSnapshot) *modalityOverrideSnapshot {
+	next := &modalityOverrideSnapshot{
+		byProvider: make(map[string]map[string]modelmetadata.Modalities),
+	}
+	if previous == nil {
+		return next
+	}
+	for provider, models := range previous.byProvider {
+		copied := make(map[string]modelmetadata.Modalities, len(models))
+		for modelID, modalities := range models {
+			copied[modelID], _ = modelmetadata.NewModalities(modalities.Input(), modalities.Output())
+		}
+		next.byProvider[provider] = copied
+	}
+	return next
 }
 
 // LookupReasoningEfforts 返回该模型声明的推理强度档位（升序）。

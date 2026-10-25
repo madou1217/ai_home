@@ -576,12 +576,17 @@ func builtinZcode() Definition {
 		RelayHosts:   relayHostsNodeOnly("Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
 		AuthOptions: []AuthOption{
-			// 两条都受上游支持的路径：
-			//   cli-flow      —— Z.ai 官方服务端中介流程（默认；无需本机回调地址/协议处理器/本机浏览器）；
-			//   custom-scheme —— zcode:// 自定义协议，授权后手填回调地址。
+			// 两个**正交维度**，策略名是 `<区域>:<流程>`：
+			//   区域：zai（国际站 chat.z.ai）/ bigmodel（国内站 bigmodel.cn）——
+			//         决定授权入口、凭据键前缀（oauth:<region>:*）与套餐目录；
+			//   流程：cli-flow（官方服务端中介，默认；无需本机回调地址/协议处理器/本机浏览器）
+			//         / custom-scheme（zcode:// 自定义协议，授权后手填回调地址）。
 			// loopback 不可用：该 client 的 redirect_uri 白名单已不再接受任何 http://localhost 地址。
-			authOptionWithStrategy(AuthModeOAuthBrowser, "cli-flow", "ZCode 登录（官方 CLI 流程）", "Z.ai 官方服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
-			authOptionWithStrategy(AuthModeOAuthBrowser, "custom-scheme", "ZCode 登录（zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"),
+			// 维度正交：新增区域或流程各加一条，不在派发代码里写 if。
+			authOptionWithStrategy(AuthModeOAuthBrowser, "zai:cli-flow", "ZCode 登录（Z.AI 国际站 · 官方 CLI 流程）", "chat.z.ai 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "bigmodel:cli-flow", "ZCode 登录（BigModel 国内站 · 官方 CLI 流程）", "bigmodel.cn 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "zai:custom-scheme", "ZCode 登录（Z.AI 国际站 · zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"),
+			authOptionWithStrategy(AuthModeOAuthBrowser, "bigmodel:custom-scheme", "ZCode 登录（BigModel 国内站 · zcode:// 回调）", "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"),
 			authOption(AuthModeAPIKey, "Z.ai 密钥", "绑定 ZCODE_API_KEY / ZCODE_BASE_URL（支持 open.bigmodel.cn 与 api.z.ai 双 Anthropic 端点）。"),
 		},
 		SessionSync: SessionSync{Mode: SessionSyncUnavailable, Events: []string{}},

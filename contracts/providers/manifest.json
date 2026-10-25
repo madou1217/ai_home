@@ -1632,14 +1632,26 @@
       "authOptions": [
         {
           "value": "oauth-browser",
-          "strategy": "cli-flow",
-          "label": "ZCode 登录（官方 CLI 流程）",
-          "description": "Z.ai 官方服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+          "strategy": "zai:cli-flow",
+          "label": "ZCode 登录（Z.AI 国际站 · 官方 CLI 流程）",
+          "description": "chat.z.ai 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
         },
         {
           "value": "oauth-browser",
-          "strategy": "custom-scheme",
-          "label": "ZCode 登录（zcode:// 回调）",
+          "strategy": "bigmodel:cli-flow",
+          "label": "ZCode 登录（BigModel 国内站 · 官方 CLI 流程）",
+          "description": "bigmodel.cn 服务端中介授权：无需本机回调地址、不需协议处理器、也不需本机浏览器。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "zai:custom-scheme",
+          "label": "ZCode 登录（Z.AI 国际站 · zcode:// 回调）",
+          "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
+        },
+        {
+          "value": "oauth-browser",
+          "strategy": "bigmodel:custom-scheme",
+          "label": "ZCode 登录（BigModel 国内站 · zcode:// 回调）",
           "description": "用官方注册的 zcode:// 回调，授权后需把回调地址粘贴回来；需本机注册该协议处理器。"
         },
         {

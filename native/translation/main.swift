@@ -85,6 +85,9 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
                          translationEnabled: Bool = true,
                          chatEnabled: Bool = true) {
     _ = shortcutRegistry.update([
+      ShortcutDescriptor(id: "settings", label: "翻译设置", shortcut: "⌘,") { [weak self] in
+        self?.panel.openSettings()
+      },
       ShortcutDescriptor(id: "translation", label: "翻译", shortcut: translation, enabled: translationEnabled) { [weak self] in
         guard let self = self else { return }
         let application = NSWorkspace.shared.frontmostApplication

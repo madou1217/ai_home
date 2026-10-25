@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from '@umijs/max';
 import {
   CloseOutlined,
   DisconnectOutlined,
@@ -19,6 +20,7 @@ import {
 import { chatAccountIdentity } from '@/components/chat/aih-server-account';
 import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
 import {
+  resolveChatAccountChange,
   resolveSessionRuntimeTarget,
   runtimeAccountsForSession,
 } from './session-surface-policy';
@@ -45,6 +47,7 @@ interface ChatMiniWindowProps {
  * requested, so pages that never use Chat pay no SSE/controller cost.
  */
 export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
+  const location = useLocation();
   const initialSelection = useMemo(() => readPersistedSelection(), []);
   const accountCatalog = useChatAccountCatalog(
     initialSelection.provider as Provider | undefined,
@@ -57,6 +60,7 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   const [pinned, setPinned] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState('');
+  const persistedSessionRef = useRef(false);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number }>();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -66,25 +70,49 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
 
   const handleAccountChange = useCallback((account: ChatAccount): void => {
     setAccountOverride(account);
-    setSession((current) => current ? {
-      ...current,
-      id: `mini-draft-${Date.now()}`,
-      title: MINI_SESSION_TITLE,
-      updatedAt: Date.now(),
-      provider: account.provider,
-      accountRef: chatAccountIdentity(account),
-      runtimeSessionId: undefined,
-      draft: true,
-    } : current);
+    setSession((current) => {
+      if (!current) return current;
+      const action = resolveChatAccountChange({
+        mode: 'chat',
+        provider: current.provider,
+        accountRef: current.accountRef,
+        draft: current.draft,
+        runtimeSessionId: current.runtimeSessionId,
+        account,
+      });
+      if (action === 'ignore') return current;
+      if (action === 'retarget') {
+        // Keep the canonical chatSessionId so the new controller rehydrates
+        // the same timeline under the new execution account.
+        return {
+          ...current,
+          accountRef: chatAccountIdentity(account),
+          updatedAt: Date.now(),
+        };
+      }
+      return {
+        ...current,
+        id: `mini-draft-${Date.now()}`,
+        title: MINI_SESSION_TITLE,
+        updatedAt: Date.now(),
+        provider: account.provider,
+        accountRef: chatAccountIdentity(account),
+        runtimeSessionId: undefined,
+        draft: true,
+      };
+    });
   }, []);
 
   const loadSession = useCallback(async (): Promise<void> => {
     if (props.session) {
       setSession(props.session);
+      setSessionError('');
       return;
     }
-    const selection = initialSelection;
-    if (selection.sessionId && !selection.projectPath) {
+    // Read at open time so a Chat page selection changed after app-shell mount
+    // is never mistaken for the current mini-window target.
+    const selection = readPersistedSelection();
+    if (selection.sessionId && !selection.projectPath && !isChatPagePath(location.pathname)) {
       setLoadingSession(true);
       setSessionError('');
       try {
@@ -92,21 +120,25 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
         const match = sessions.find((candidate) => candidate.id === selection.sessionId
           && (!selection.provider || candidate.provider === selection.provider));
         if (match) {
+          persistedSessionRef.current = true;
           setSession({ ...match, mode: 'chat' });
+          setSessionError('');
           return;
         }
       } catch (error) {
         setSessionError(error instanceof Error ? error.message : '读取会话失败');
+        return;
       } finally {
         setLoadingSession(false);
       }
+      setSessionError('');
     }
     const account = selectedAccount || accounts[0];
     if (account) {
       setSession(createDraftSession(account));
       setSessionError('');
     }
-  }, [accounts, initialSelection, props.session, selectedAccount]);
+  }, [accounts, location.pathname, props.session, selectedAccount]);
 
   useEffect(() => {
     const openWindow = () => {
@@ -129,6 +161,15 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   useEffect(() => {
     if (open && !session && !loadingSession) void loadSession();
   }, [loadSession, loadingSession, open, session]);
+
+  useEffect(() => {
+    // A persisted session may be opened from another route and then carried
+    // into /ui/chat. Replace it with a separate draft before the canonical
+    // Chat page can attach to the same runtime session.
+    if (!open || !isChatPagePath(location.pathname) || !persistedSessionRef.current || !selectedAccount) return;
+    persistedSessionRef.current = false;
+    setSession(createDraftSession(selectedAccount));
+  }, [location.pathname, open, selectedAccount]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -399,6 +440,10 @@ function fallbackTarget(session: Session, account: ChatAccount) {
     projectPath: '',
     policy: { workspaceMode: 'chat' as const, approvalMode: 'confirm' as const },
   };
+}
+
+function isChatPagePath(pathname: string): boolean {
+  return /(?:^|\/)chat\/?$/.test(pathname);
 }
 
 function clampPosition(left: number, top: number, panel: HTMLDivElement | null): Position {

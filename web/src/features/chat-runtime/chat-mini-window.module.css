@@ -70,9 +70,9 @@
 .runtimeActions { gap: 7px; }
 
 /* SessionWorkspace owns the canonical timeline/composer; this wrapper only sets the compact viewport. */
-.body :global(main) { min-height: 0; }
-.body :global(main > header) { flex: 0 0 auto; }
-.body :global(main > .session-runtime_workspaceDock) { padding-bottom: 10px; }
+.body :global([data-runtime-workspace]) { min-height: 0; }
+.body :global([data-runtime-workspace] > header) { flex: 0 0 auto; }
+.body :global([data-runtime-workspace-dock]) { padding-bottom: 10px; }
 .body :global(.ant-empty) { margin-block: 30px; }
 
 @media (max-width: 640px) {

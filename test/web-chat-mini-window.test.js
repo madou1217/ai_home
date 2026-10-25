@@ -27,3 +27,16 @@ test('Chat mini-window shortcut is route-independent and keeps failures inline',
   assert.match(mini, /role="alert"/);
   assert.doesNotMatch(mini, /<Alert\b/);
 });
+
+test('mini-window preserves persisted lookup failures, retargets canonical sessions, and avoids Chat-page duplication', () => {
+  assert.match(mini, /setSessionError\(error instanceof Error \? error\.message/);
+  assert.match(mini, /setSessionError\(error[\s\S]*?return;[\s\S]*?finally/);
+  assert.match(mini, /resolveChatAccountChange/);
+  assert.match(mini, /runtimeSessionId: current\.runtimeSessionId/);
+  assert.match(mini, /!isChatPagePath\(location\.pathname\)/);
+  assert.match(mini, /Read at open time/);
+  assert.match(mini, /useLocation/);
+  assert.match(mini, /persistedSessionRef/);
+  assert.match(fs.readFileSync(path.join(root, 'web/src/features/chat-runtime/SessionWorkspace.tsx'), 'utf8'), /data-runtime-workspace/);
+  assert.match(fs.readFileSync(path.join(root, 'web/src/features/chat-runtime/chat-mini-window.module.css'), 'utf8'), /data-runtime-workspace-dock/);
+});

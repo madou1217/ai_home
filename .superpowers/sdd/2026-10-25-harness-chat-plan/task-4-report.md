@@ -16,6 +16,13 @@ Date: 2026-10-25
 - Added the shortcut to `KeyboardShortcutsModal` and exported the component from the Chat Runtime feature index.
 - Added `test/web-chat-mini-window.test.js`, which verifies canonical runtime reuse, app-shell mounting, route-independent shortcut registration, and compact inline error semantics.
 
+## Review follow-up
+
+- Persisted Chat session lookup now reads selection at open time. A lookup/API failure remains visible as the compact inline error with retry; the fallback draft is created only when lookup succeeds without a match or no persisted session was requested.
+- Account switching now delegates to `resolveChatAccountChange`: same-provider bound sessions retain their canonical `chatSessionId` and rehydrate the existing timeline under the new execution account; draft or cross-provider changes create a fresh target explicitly.
+- The app-shell mini-window uses persisted sessions only when opened away from `/ui/chat`. If navigation into `/ui/chat` occurs while a persisted mini session is open, it is replaced with a separate draft before the canonical page can attach, preventing duplicate controller/SSE subscriptions while keeping the mini runtime's separate-session semantics explicit.
+- Added stable `data-runtime-workspace` and `data-runtime-workspace-dock` hooks for mini-window CSS instead of relying on hashed CSS-module class names.
+
 ## Verification
 
 - `npx eslint src/features/chat-runtime/ChatMiniWindow.tsx src/features/chat-runtime/index.ts src/components/chat/chat-global-shortcuts.ts src/components/chat/KeyboardShortcutsModal.tsx src/pages/Chat.tsx src/app.tsx` — passed.

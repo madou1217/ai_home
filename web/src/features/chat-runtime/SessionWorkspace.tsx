@@ -93,7 +93,7 @@ export default function SessionWorkspace(props: Props) {
   }, [freshPlanWorkflow, props.onFreshNativeSessionBound, props.runtimeTarget]);
 
   return (
-    <main className={styles.workspace}>
+    <main className={styles.workspace} data-runtime-workspace="true">
       <WorkspaceHeader title={projection.title || props.title} projection={projection} mobile={props.mobile}
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
       {projection.parentSessionId ? <BranchParentLink parentSessionId={projection.parentSessionId}
@@ -108,7 +108,7 @@ export default function SessionWorkspace(props: Props) {
         mobile={props.mobile}
         onBranchSession={props.onBranchSession}
       />
-      <div className={styles.workspaceDock}>
+      <div className={styles.workspaceDock} data-runtime-workspace-dock="true">
         <fieldset
           className={styles.workspaceDockControls}
           disabled={!connection.interactive}

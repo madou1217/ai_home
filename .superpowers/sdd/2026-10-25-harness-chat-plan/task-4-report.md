@@ -9,7 +9,7 @@ Date: 2026-10-25
   - Resolves the persisted Chat selection through the existing account/session catalog and creates a draft Chat session when no saved session is available.
   - Reuses `useSessionRuntime`, `SessionRuntimeController` through the existing hook, `SessionWorkspace`, `SessionRuntimeActions`, and the existing projection store. There is no second SSE transport or reducer.
   - Reuses the canonical timeline and composer, so streamed output, model selection, slash commands, attachments, queue behavior, and the existing stop command keep the same runtime semantics as the full Chat page.
-  - Adds compact inline connection/loading/error states, explicit reconnect, stop, pin, drag, close, and account-switch controls. Switching accounts starts a fresh mini Chat target through the same runtime path.
+  - Adds compact inline connection/loading/error states, explicit reconnect, stop, pin, drag, close, and account-switch controls. Same-provider account changes retain the canonical runtime session; draft and cross-provider changes start a fresh mini target.
 - Added `web/src/features/chat-runtime/chat-mini-window.module.css` for the compact floating surface. Errors and status are inline rows; no large `Alert` block or left-edge status decoration is used.
 - Mounted the window from `web/src/app.tsx` inside the existing data-plane shell, so it remains available on every WebUI route without navigating to `/ui/chat`.
 - Extended `web/src/components/chat/chat-global-shortcuts.ts` with the route-independent `Cmd/Ctrl+Alt+C` Chat mini-window action and an open event for host integrations. The existing Chat page prevents browser handling while the app-shell component owns the action.
@@ -25,10 +25,10 @@ Date: 2026-10-25
 
 ## Verification
 
-- `npx eslint src/features/chat-runtime/ChatMiniWindow.tsx src/features/chat-runtime/index.ts src/components/chat/chat-global-shortcuts.ts src/components/chat/KeyboardShortcutsModal.tsx src/pages/Chat.tsx src/app.tsx` — passed.
-- `node --test test/web-chat-mini-window.test.js` — 2 tests passed, 0 failed.
+- `npx eslint src/features/chat-runtime/ChatMiniWindow.tsx src/features/chat-runtime/SessionWorkspace.tsx src/features/chat-runtime/index.ts src/components/chat/chat-global-shortcuts.ts src/components/chat/KeyboardShortcutsModal.tsx src/pages/Chat.tsx src/app.tsx` — passed.
+- `node --test test/web-chat-mini-window.test.js` — 3 tests passed, 0 failed.
 - `git diff --cached --check` — passed.
-- `cd web && PATH=/Users/model/.nvm/versions/node/v22.21.0/bin:$PATH npm run build` — passed. Webpack compiled successfully in 26.14s, then `stamp-sw-cache` completed with `CACHE_NAME=aih-hos6-pwa-5817b467` and 189 files.
+- `cd web && PATH=/Users/model/.nvm/versions/node/v22.21.0/bin:$PATH npm run build` — passed. Webpack compiled successfully in 26.10s, then `stamp-sw-cache` completed with `CACHE_NAME=aih-hos6-pwa-f5072616` and 189 files.
 - `cd web && npx tsc --noEmit --pretty false` — the repository has pre-existing type errors across unrelated files; no diagnostic referenced `ChatMiniWindow.tsx` or the changed shortcut/app-shell files.
 
 ## Design patterns used

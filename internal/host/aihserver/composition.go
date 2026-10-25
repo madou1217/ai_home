@@ -995,6 +995,7 @@ func newHandlers(
 	}
 	modelsHandler, err := modelsapi.NewHandler(modelsapi.Dependencies{
 		Models:     inference.models,
+		Catalog:    modelCatalogStore,
 		Modalities: modelModalities,
 		Reasoning:  modelModalities,
 		Aliases:    inference.models,

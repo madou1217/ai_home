@@ -13,6 +13,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelalias"
+	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -48,15 +49,23 @@ type ModelReader interface {
 // Dependencies 声明标准模型目录的只读依赖。
 type Dependencies struct {
 	Models     ModelReader
+	Catalog    CatalogReader
 	Modalities modelmetadata.Reader
 	Reasoning  modelmetadata.ReasoningLadderReader
 	Aliases    modelalias.DisplayReader
 	Authorizer Authorizer
 }
 
+// CatalogReader is the optional public model catalog projection supplied by
+// the Node host. It is deliberately not a ModelReader.
+type CatalogReader interface {
+	Snapshot() modelcatalog.Snapshot
+}
+
 // Handler 把本地 Provider 模型元组渲染为 OpenAI 模型列表。
 type Handler struct {
 	models     ModelReader
+	catalog    CatalogReader
 	modalities modelmetadata.Reader
 	reasoning  modelmetadata.ReasoningLadderReader
 	aliases    modelalias.DisplayReader
@@ -72,6 +81,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	}
 	return &Handler{
 		models:     dependencies.Models,
+		catalog:    dependencies.Catalog,
 		modalities: dependencies.Modalities,
 		reasoning:  dependencies.Reasoning,
 		aliases:    dependencies.Aliases,
@@ -110,28 +120,37 @@ func (handler *Handler) ServeHTTP(
 		writeError(response, http.StatusBadRequest, "invalid_query")
 		return
 	}
-	models, err := handler.models.ListRoutableModels(request.Context())
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, "internal_error")
-		return
-	}
 	// created 与 Node 的 `buildOpenAIModelsList` 一致：整个响应共用同一个「当前秒」。
 	// 目录项没有真实创建时间，此前这里固定输出 0，而同文件的单模型回显用的是 now——
 	// 同一个字段在同一个包里两种语义。0 是 JS 的 falsy 值，客户端 `created || fallback`
 	// 会静默丢掉它；契约要求的又恰好是 unix 秒。
 	now := time.Now().Unix()
-	views, err := newModelViews(
-		models,
-		handler.modalities,
-		options.includeModalities,
-		handler.reasoning,
-		handler.aliases,
-		options.capability,
-		now,
-	)
-	if err != nil {
-		writeError(response, http.StatusInternalServerError, "internal_error")
-		return
+	var views []modelView
+	if handler.catalog != nil {
+		snapshot := handler.catalog.Snapshot()
+		if snapshot.Generation > 0 {
+			views = newProjectedModelViews(snapshot, options.includeModalities, options.capability, now)
+		}
+	}
+	if views == nil {
+		models, err := handler.models.ListRoutableModels(request.Context())
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, "internal_error")
+			return
+		}
+		views, err = newModelViews(
+			models,
+			handler.modalities,
+			options.includeModalities,
+			handler.reasoning,
+			handler.aliases,
+			options.capability,
+			now,
+		)
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, "internal_error")
+			return
+		}
 	}
 	if request.Method == http.MethodHead {
 		writeJSONHeaders(response, http.StatusOK)
@@ -396,6 +415,35 @@ func newModelViews(
 		owners[index] = ordered[index].owner
 	}
 	return filterViewsByCapability(views, owners, modalities, capability), nil
+}
+
+func newProjectedModelViews(snapshot modelcatalog.Snapshot, includeModalities bool, capability string, created int64) []modelView {
+	views := make([]modelView, 0, len(snapshot.Items))
+	for _, item := range snapshot.Items {
+		view := modelView{ID: item.ID, Object: "model", Created: created, OwnedBy: item.OwnedBy}
+		if includeModalities {
+			view.AIHModalities = &modelModalitiesView{
+				Input:  append([]string(nil), item.InputModalities...),
+				Output: append([]string(nil), item.OutputModalities...),
+			}
+		}
+		view.AIHReasoningEfforts = reasoningEffortStrings(item.ReasoningEfforts)
+		views = append(views, view)
+	}
+	if normalizeCapability(capability) == "" {
+		return views
+	}
+	filtered := make([]modelView, 0, len(views))
+	for index, view := range views {
+		modalities := snapshot.Items[index].InputModalities
+		if normalizeCapability(capability) == "image_out" {
+			modalities = snapshot.Items[index].OutputModalities
+		}
+		if containsModality(modalities, "image") {
+			filtered = append(filtered, view)
+		}
+	}
+	return filtered
 }
 
 func reasoningEffortStrings(values []inference.ReasoningEffort) []string {

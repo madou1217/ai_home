@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/modelcatalog"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
@@ -70,6 +71,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
@@ -121,6 +123,8 @@ type serverHandlers struct {
 	// upstreamRules 接收 Node 推送的账号自定义上游错误规则投影
 	// （/v1/management/upstream-error-rules）。
 	upstreamRules http.Handler
+	// modelCatalog 接收 Node 的全局公共模型目录投影；不参与 Go 路由选号。
+	modelCatalog http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -688,6 +692,20 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建模型别名投影接口失败: %w", err)
 	}
+	modelCatalogStore, err := modelcatalog.NewStore()
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建全局模型目录投影 Store 失败: %w", err)
+	}
+	modelCatalogHandler, err := modelcatalogapi.NewHandler(modelcatalogapi.Dependencies{
+		Authorizer: authorizer,
+		Store:      modelCatalogStore,
+		Routable:   store,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建全局模型目录投影接口失败: %w", err)
+	}
 	upstreamRulesHandler, err := upstreamrulesapi.NewHandler(upstreamrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Store:      upstreamRulesStore,
@@ -1087,6 +1105,7 @@ func newHandlers(
 		shutdown:           shutdownHandler,
 		modelAliases:       modelAliasesHandler,
 		upstreamRules:      upstreamRulesHandler,
+		modelCatalog:       modelCatalogHandler,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{

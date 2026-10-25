@@ -17,6 +17,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
+	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openaichatcompletionsapi"
 	"github.com/madou1217/ai_home/internal/transport/http/openairesponsesapi"
@@ -145,6 +146,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	// 账号自定义上游错误规则投影：Node 是规则 owner，Go 只承接自己已能求值的账号。
 	if handlers.upstreamRules != nil {
 		mux.Handle(upstreamrulesapi.Path, handlers.upstreamRules)
+	}
+	if handlers.modelCatalog != nil {
+		mux.Handle(modelcatalogapi.Path, handlers.modelCatalog)
 	}
 	mux.Handle(
 		clauderelayleaseapi.Path,

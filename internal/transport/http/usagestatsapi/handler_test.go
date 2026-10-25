@@ -16,13 +16,19 @@ type testAuthorizer bool
 func (a testAuthorizer) Authorized(*http.Request) bool { return bool(a) }
 
 type testSource struct {
-	stats usageledger.Stats
-	query usageledger.Query
+	stats  usageledger.Stats
+	models []usageledger.ModelStats
+	query  usageledger.Query
 }
 
 func (source *testSource) QueryUsageStats(_ context.Context, query usageledger.Query) (usageledger.Stats, error) {
 	source.query = query
 	return source.stats, nil
+}
+
+func (source *testSource) QueryUsageModels(_ context.Context, query usageledger.Query) ([]usageledger.ModelStats, error) {
+	source.query = query
+	return source.models, nil
 }
 
 func TestHandlerReturnsStatsWithExplicitRangeAndFilters(t *testing.T) {
@@ -61,5 +67,18 @@ func TestHandlerRejectsUnauthorizedAndInvalidRange(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, Path+"?from=bad&to=bad", nil))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid range status = %d", recorder.Code)
+	}
+}
+
+func TestModelsHandlerReturnsProviderModelFacts(t *testing.T) {
+	source := &testSource{models: []usageledger.ModelStats{{Provider: "codex", Model: "gpt-6.1-sol", Calls: 2, AccountCount: 1, TotalTokens: 20}}}
+	handler, err := NewModelsHandler(testAuthorizer(true), source)
+	if err != nil {
+		t.Fatalf("NewModelsHandler() error = %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, ModelsPath+"?from=2026-10-01&to=2026-10-02", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"models":[{"provider":"codex"`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }

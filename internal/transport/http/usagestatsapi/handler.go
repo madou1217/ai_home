@@ -13,7 +13,10 @@ import (
 	"github.com/madou1217/ai_home/core/usageledger"
 )
 
-const Path = "/v1/management/usage/stats"
+const (
+	Path       = "/v1/management/usage/stats"
+	ModelsPath = "/v1/management/usage/models"
+)
 
 type Authorizer interface{ Authorized(*http.Request) bool }
 
@@ -26,11 +29,27 @@ type Handler struct {
 	source     Source
 }
 
+type ModelsSource interface {
+	QueryUsageModels(context.Context, usageledger.Query) ([]usageledger.ModelStats, error)
+}
+
+type ModelsHandler struct {
+	authorizer Authorizer
+	source     ModelsSource
+}
+
 func NewHandler(authorizer Authorizer, source Source) (*Handler, error) {
 	if authorizer == nil || source == nil {
 		return nil, usageledger.ErrInvalidQuery
 	}
 	return &Handler{authorizer: authorizer, source: source}, nil
+}
+
+func NewModelsHandler(authorizer Authorizer, source ModelsSource) (*ModelsHandler, error) {
+	if authorizer == nil || source == nil {
+		return nil, usageledger.ErrInvalidQuery
+	}
+	return &ModelsHandler{authorizer: authorizer, source: source}, nil
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -61,6 +80,34 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 			"to":   query.To.Format(time.RFC3339Nano),
 		},
 		"stats": stats,
+	})
+}
+
+func (handler *ModelsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if !handler.authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
+		return
+	}
+	query, err := parseQuery(request)
+	if err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
+		return
+	}
+	models, err := handler.source.QueryUsageModels(request.Context(), query)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_models_failed", "message": "用量模型统计不可用"}})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":     true,
+		"range":  map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
+		"models": models,
 	})
 }
 

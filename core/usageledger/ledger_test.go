@@ -50,6 +50,20 @@ func TestStatsAccumulateRecordsAndApplyFilters(t *testing.T) {
 	}
 }
 
+func TestAggregateModelsGroupsProviderAndModel(t *testing.T) {
+	accountOne, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	accountTwo, _ := accountcore.ParseAccountRef("acct_abcdef0123456789abcd")
+	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: 10, OutputTokens: 5})
+	records := []Record{
+		mustRecord(t, RecordInput{AccountRef: accountOne, Provider: "codex", Model: "gpt-6.1-sol", OccurredAt: time.UnixMilli(1000).UTC(), Usage: usage}),
+		mustRecord(t, RecordInput{AccountRef: accountTwo, Provider: "codex", Model: "gpt-6.1-sol", OccurredAt: time.UnixMilli(2000).UTC(), Usage: usage}),
+	}
+	models := AggregateModels(records, Query{From: time.UnixMilli(0).UTC(), To: time.UnixMilli(3000).UTC()})
+	if len(models) != 1 || models[0].Provider != "codex" || models[0].Model != "gpt-6.1-sol" || models[0].Calls != 2 || models[0].AccountCount != 2 || models[0].TotalTokens != 30 {
+		t.Fatalf("models = %#v", models)
+	}
+}
+
 func mustRecord(t *testing.T, input RecordInput) Record {
 	t.Helper()
 	record, err := NewRecord(input)

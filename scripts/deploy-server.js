@@ -233,9 +233,11 @@ try {
   const { readServerConfig } = require(path.join(stage, 'lib/server/server-config-store'));
   const {
     loadRouteOwnershipManifest,
-    resolveGoOwnedEntryIds
+    resolveGoOwnedEntryIds,
+    resolveEffectiveGoOwnership
   } = require(path.join(stage, 'lib/server/go-core-route-ownership'));
   const config = readServerConfig({ fs, aiHomeDir });
+  const manifest = loadRouteOwnershipManifest({ repositoryRoot: stage });
   const enabled = Object.prototype.hasOwnProperty.call(env, 'AIH_GO_CORE_ENABLED')
     ? /^(1|true|yes|on)$/i.test(String(env.AIH_GO_CORE_ENABLED).trim())
     : config.goCoreEnabled === true;
@@ -245,15 +247,24 @@ try {
   const routes = (Array.isArray(routesValue) ? routesValue : String(routesValue || '').split(','))
     .map((item) => String(item || '').trim())
     .filter(Boolean);
+  const configuredOwnership = resolveGoOwnedEntryIds(manifest, routes);
+  const effectiveOwnership = resolveEffectiveGoOwnership(manifest, routes, enabled);
+  if (effectiveOwnership.errors.length > 0) {
+    process.stderr.write('invalid effective Go Core route ownership: ' + effectiveOwnership.errors.join('; '));
+    process.exit(1);
+  }
   if (enabled) {
-    const ownership = resolveGoOwnedEntryIds(loadRouteOwnershipManifest({ repositoryRoot: stage }), routes);
-    if (ownership.errors.length > 0) {
-      process.stderr.write('invalid Go Core route ownership: ' + ownership.errors.join('; '));
+    if (configuredOwnership.errors.length > 0) {
+      process.stderr.write('invalid Go Core route ownership: ' + configuredOwnership.errors.join('; '));
       process.exit(1);
     }
     process.stdout.write('enabled_valid');
   } else {
-    process.stdout.write(routes.length > 0 ? 'disabled_nonempty' : 'disabled_empty');
+    // Persisted non-empty routes remain a deployment error even though the
+    // staged runtime deliberately exposes an empty effective ownership set.
+    process.stdout.write(routes.length > 0 || effectiveOwnership.entryIds.size > 0
+      ? 'disabled_nonempty'
+      : 'disabled_empty');
   }
 } catch (error) {
   process.stderr.write('cannot read Go Core configuration: ' + (error && error.message ? error.message : error));
@@ -270,6 +281,10 @@ if [ "$GO_CORE_CONFIG_CHECK" = "disabled_nonempty" ]; then
   echo "[remote] go_core disabled but route ownership is non-empty" >&2
   echo "[remote] deploy refused before rsync/restart; clear routes or enable Go Core" >&2
   exit 5
+fi
+STAGED_EFFECTIVE_GO_STATE="$GO_CORE_CONFIG_CHECK"
+if [ "$STAGED_EFFECTIVE_GO_STATE" = "disabled_empty" ]; then
+  echo "[remote] staged Go Core ownership: disabled with empty effective routes"
 fi
 RUNNING_READYZ="$(curl -fsS -m 5 "http://127.0.0.1:${options.port}/readyz" 2>/dev/null || true)"
 SERVICE_ACTIVE="$(systemctl --user is-active ${shQuote(options.unit)} 2>/dev/null || true)"
@@ -291,9 +306,13 @@ try {
 NODE
 )"
   if [ "$RUNNING_GO_STATE" = "disabled_nonempty" ]; then
-    echo "[remote] running Go Core route ownership is non-empty while disabled" >&2
-    echo "[remote] deploy refused before rsync/restart; reconcile the running service first" >&2
-    exit 5
+    if [ "$STAGED_EFFECTIVE_GO_STATE" != "disabled_empty" ]; then
+      echo "[remote] running Go Core route ownership is non-empty while disabled" >&2
+      echo "[remote] staged runtime did not prove an empty effective ownership set" >&2
+      echo "[remote] deploy refused before rsync/restart; reconcile the running service first" >&2
+      exit 5
+    fi
+    echo "[remote] stale running Go ownership will be repaired by the staged runtime"
   fi
   if [ "$RUNNING_GO_STATE" = "unreadable" ]; then
     echo "[remote] running /readyz is unreadable; refusing deploy" >&2

@@ -21,6 +21,8 @@ test('remote deploy preflight rejects Go disabled route ownership before restart
   assert.match(script, /SERVICE_ACTIVE/);
   assert.match(script, /running Go Core route ownership/);
   assert.match(script, /go_core disabled but route ownership is non-empty/);
+  assert.match(script, /resolveEffectiveGoOwnership/);
+  assert.match(script, /STAGED_EFFECTIVE_GO_STATE/);
   assert.match(script, /resolveGoOwnedEntryIds/);
   assert.ok(script.indexOf('go_core disabled but route ownership is non-empty') < script.indexOf('rsync -a --delete'));
   assert.ok(script.indexOf('go_core disabled but route ownership is non-empty') < script.indexOf('systemctl --user restart'));

@@ -9,7 +9,7 @@ Date: 2026-10-25
   - Resolves the persisted Chat selection through the existing account/session catalog and creates a draft Chat session when no saved session is available.
   - Reuses `useSessionRuntime`, `SessionRuntimeController` through the existing hook, `SessionWorkspace`, `SessionRuntimeActions`, and the existing projection store. There is no second SSE transport or reducer.
   - Reuses the canonical timeline and composer, so streamed output, model selection, slash commands, attachments, queue behavior, and the existing stop command keep the same runtime semantics as the full Chat page.
-  - Adds compact inline connection/loading/error states, explicit reconnect, stop, pin, drag, and close controls.
+  - Adds compact inline connection/loading/error states, explicit reconnect, stop, pin, drag, close, and account-switch controls. Switching accounts starts a fresh mini Chat target through the same runtime path.
 - Added `web/src/features/chat-runtime/chat-mini-window.module.css` for the compact floating surface. Errors and status are inline rows; no large `Alert` block or left-edge status decoration is used.
 - Mounted the window from `web/src/app.tsx` inside the existing data-plane shell, so it remains available on every WebUI route without navigating to `/ui/chat`.
 - Extended `web/src/components/chat/chat-global-shortcuts.ts` with the route-independent `Cmd/Ctrl+Alt+C` Chat mini-window action and an open event for host integrations. The existing Chat page prevents browser handling while the app-shell component owns the action.

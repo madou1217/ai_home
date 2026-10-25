@@ -43,7 +43,7 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 | `/v1/blobs/{id}` | ✅ 已实现 | `internal/adapters/imageblob` + `internal/transport/http/blobsapi` |
 | `/v1/images/edits` | ✅ 已实现 | `internal/adapters/images` + `internal/transport/http/imagesapi` |
 | `/v1/images/generations` | ✅ 已实现 | 同上 |
-| `/v1/messages/count_tokens` | ✅ 已实现 | `internal/adapters/clientprotocol/anthropicmessages/token_count.go` |
+| `/v1/messages/count_tokens` | ✅ 已实现并已 Go-owned | `internal/adapters/clientprotocol/anthropicmessages/token_count.go`、`token_count_test.go` |
 | `/v1/models/{id}` | ✅ 已实现 | `internal/transport/http/modelsapi` |
 
 **已实现 ≠ 已切换公开监听端口。** manifest 中 12 个数据面条目已经是
@@ -117,7 +117,7 @@ Go 当前为 25 条 endpoint 记录、24 个去重 HTTP 路径模式，另有 1 
 
 - 不切换 Node 9527，不启动 Go 作为正式 sidecar，不接入正式 `aih` CLI 或默认 WebUI。
 - 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
-- 不把「Go 已有路由」等同于「公开端口由 Go 直接监听」：11 条能力已经按 manifest
+- 不把「Go 已有路由」等同于「公开端口由 Go 直接监听」：12 条能力已经按 manifest
   进入 `go_owned`，公开端口仍由 Node 宿主持有，Node 只负责鉴权、转发和宿主面能力。
 - 剩余 3 个 blocker 必须分别完成对应的 shadow、目录语义核对和回滚证据，不能用
   一次性修改 manifest 代替验证。

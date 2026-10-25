@@ -92,7 +92,7 @@ Go 在该入口按 policy 声明交付 502；账号面语义（不记账 / 不�
 3. **manifest 驱动的透明转发**（`lib/server/go-core-gateway-forwarder.js`）：
    - 转发集合 = manifest 中 `production_owner=go && migration_state=go_owned` 的条目
      ∪ 运维显式 canary `AIH_GO_CORE_ROUTES=<entry id,...>`。当前默认转发集合包含已
-     `go_owned` 的 11 个数据面条目；显式 canary 只用于尚未切换且满足实现闸门的条目。
+     `go_owned` 的 12 个数据面条目；显式 canary 只用于尚未切换且满足实现闸门的条目。
    - 只接受 `gateway.*` 数据面条目；`/healthz`、`/readyz` 始终属于 Node 宿主；
      `gateway.openai.responses` 与其 WebSocket 条目必须成对划转（共享路径整条切流）。
      配置非法时整个 canary 作废并报错，不做部分生效。

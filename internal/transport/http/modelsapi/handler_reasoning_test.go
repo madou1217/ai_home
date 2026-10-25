@@ -41,6 +41,15 @@ func (displayAliasReader) ListDisplayModels() []modelalias.DisplayModel {
 	return []modelalias.DisplayModel{{Alias: "aaa-model", Target: "gpt-6.1-sol", Provider: "codex"}}
 }
 
+type duplicateDisplayAliasReader struct{}
+
+func (duplicateDisplayAliasReader) ListDisplayModels() []modelalias.DisplayModel {
+	return []modelalias.DisplayModel{
+		{Alias: "duplicate-model", Target: "gpt-6.1-sol", Provider: "codex"},
+		{Alias: "duplicate-model", Target: "gpt-6.1-sol", Provider: "codex"},
+	}
+}
+
 func TestModelListIncludesReasoningEffortsFromMetadataReader(t *testing.T) {
 	manifest := providers.BuiltinManifest()
 	catalog, err := providers.NewCatalog(manifest)
@@ -118,6 +127,43 @@ func TestModelListIncludesCompiledAliasDisplayModel(t *testing.T) {
 	}
 	if len(body.Data) != 2 || body.Data[0].ID != "aaa-model" || body.Data[1].ID != "gpt-6.1-sol" {
 		t.Fatalf("models = %#v, want native plus compiled alias", body.Data)
+	}
+}
+
+func TestModelListDeduplicatesCompiledAliasIDs(t *testing.T) {
+	catalog := providers.BuiltinManifest()
+	providerCatalog, err := providers.NewCatalog(catalog)
+	if err != nil {
+		t.Fatalf("providers.NewCatalog() error = %v", err)
+	}
+	model, err := accountapp.NewRoutableModel(providerCatalog, "codex", "gpt-6.1-sol")
+	if err != nil {
+		t.Fatalf("NewRoutableModel() error = %v", err)
+	}
+	handler, err := NewHandler(Dependencies{
+		Models:     reasoningModelReader{models: []accountapp.RoutableModel{model}},
+		Modalities: staticMetadataReader{},
+		Aliases:    duplicateDisplayAliasReader{},
+		Authorizer: reasoningAuthorizer{},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, Path, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
+	}
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("models = %#v, want one native and one alias model", body.Data)
 	}
 }
 

@@ -351,20 +351,18 @@ func newModelViews(
 		previousProviderID = model.ProviderID()
 	}
 	if aliases != nil {
+		seenIDs := make(map[string]struct{}, len(views))
+		for _, view := range views {
+			seenIDs[view.ID] = struct{}{}
+		}
 		for _, alias := range aliases.ListDisplayModels() {
 			if strings.TrimSpace(alias.Alias) == "" || strings.TrimSpace(alias.Target) == "" {
 				continue
 			}
-			duplicate := false
-			for _, view := range views {
-				if view.ID == alias.Alias {
-					duplicate = true
-					break
-				}
-			}
-			if duplicate {
+			if _, duplicate := seenIDs[alias.Alias]; duplicate {
 				continue
 			}
+			seenIDs[alias.Alias] = struct{}{}
 			view := modelView{
 				ID: alias.Alias, Object: "model", Created: created,
 				OwnedBy: resolveModelOwner(alias.Provider, alias.Alias),

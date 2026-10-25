@@ -59,6 +59,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   func openFromService(text: String) {
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalized.isEmpty, normalized.count <= 8000 else { return }
+    if state == .failed { closeSession(emitEvent: false) }
     pendingServiceText = normalized
     pendingServiceRequestID = ""
     content.setComposerText(normalized)
@@ -213,8 +214,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       setState(.streaming, message: "生成中")
     case "turn.interrupted":
       setState(.idle, message: "已停止")
+      submitPendingServiceTextIfReady()
     case "turn.completed":
       setState(.idle, message: "就绪")
+      submitPendingServiceTextIfReady()
     case "turn.failed", "stream.error", "run.lost":
       let payload = runtime["payload"] as? [String: Any] ?? [:]
       receiveError(["requestId": requestID, "sessionId": sessionID, "commandId": commandID,

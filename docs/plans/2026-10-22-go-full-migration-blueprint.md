@@ -35,13 +35,16 @@ Go 侧现有：`application/*` 21 包 + `internal/*` + `core/*`，已覆盖推�
 
 原则：**每一阶段结束时，系统都处于可发布状态**（不是「半年后一起切」）。
 
-### P0 推理面切所有权（功能已就绪，只差切换）
+### P0 推理面切所有权（11 条已完成，4 条收尾中）
 
-- **入口条件**：无（Go 已实现全部 7 条 capability route）
-- **动作**：跑 `npm run gateway:shadow -- --node <url> --go <url>` 全量对比 →
-  逐 entry 走 `node_owned → write_frozen → migrated_and_verified → go_owned`
-- **出口条件**：15 条 `cutover_blocking` entry 全部 `go_owned`
-- **风险**：低。Go 已在跑（`private_canary`），只是流量没切
+- **入口条件**：无（Go 已实现全部推理数据面 route）
+- **现状**：15 个 cutover blocker 中 11 个已经 `go_owned`，由 Node 宿主透明转发；
+  `health`、`readiness`、`models.list`、`anthropic.count_tokens` 仍是 Node-owned。
+- **动作**：为 `count_tokens` 补 shadow 与运行证据；为 `models.list` 完成目录所有权核对；
+  health/readiness 保持宿主边界并由测试守卫，不把它们伪装成 Go 业务 owner。
+- **出口条件**：剩余业务 blocker 完成验证；宿主边界的保留理由、回滚路径和 manifest
+  状态一致。
+- **风险**：中。已接管能力有真实流量，剩余目录与计数入口仍可能暴露 Node/Go 语义差异。
 - **收益**：最高（唯一「已做完只差临门一脚」的部分）
 
 ### P1 控制面 `/v0/management/*`（30 条）
@@ -50,7 +53,7 @@ Go 侧现有：`application/*` 21 包 + `internal/*` + `core/*`，已覆盖推�
 - **动作**：`usage/*`（15 条）优先——Go 已有 `accountusage`/`accountusagefeed` 领域包，复用度高；
   其余按 `docs/functional-matrix.md` 判定归属
 - **需决策**：`/reload`、`/restart`、`/shutdown` 属进程生命周期，**建议保持 Node**（Go 管不了自己的重启）
-- **出口条件**：usage 类全部 go_owned；生命周期类明确标注保留理由
+- **出口条件**：usage 类按独立迁移计划推进；生命周期类明确标注保留理由
 
 ### P2 PTY / 多路复用（28 文件，地基已验证）
 

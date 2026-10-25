@@ -8,7 +8,7 @@
 
 | 面 | 现状 | 差距 |
 |---|---|---|
-| **推理数据面**（`/v1/*`） | Go 已实现全部 7 条 capability route | **功能已齐，但所有权仍是 Node**（`private_canary`） |
+| **推理数据面**（`/v1/*`） | Go 已实现全部 capability route；11 条已 `go_owned` | **剩余 4 个 blocker：health/readiness、models.list、count_tokens** |
 | **控制面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **完全没迁** |
 | **WebUI 面**（`/v0/webui/*`） | Node 203 条，Go 0 | 官方标记 `out_of_scope`（Node 专有） |
 | **Node RPC**（`/v0/node-rpc/*`） | Node 63 条，Go 0 | 官方标记 `out_of_scope` |
@@ -23,23 +23,21 @@
 
 ## 1. 推理数据面（`/v1/*`）—— 功能已齐，缺的是「切换所有权」
 
-`contracts/route-ownership/manifest.json` 的 15 条 `cutover_blocking` entry **全部仍是 `production_owner: node`**，
-Go 侧状态是 `private_canary`（私有金丝雀，可跑但没接生产流量）。
+`contracts/route-ownership/manifest.json` 的 15 条 `cutover_blocking` entry 中，11 条已经是
+`production_owner: go` / `migration_state: go_owned`，4 条仍由 Node 持有。公开 9527 仍由
+Node 宿主监听；Node 按 manifest 将已切换能力透明转发到 Go。
 
 | entry | Go 状态 | 切生产还缺什么 |
 |---|---|---|
-| `gateway.health` / `gateway.readiness` | private_canary | 全量闸门通过 |
-| `gateway.models.list` / `models.detail` / `props` | private_canary | 同上 |
-| `gateway.openai.responses`（含 WebSocket） | private_canary | 同上 |
-| `gateway.openai.chat_completions` | private_canary | 同上 |
-| `gateway.anthropic.messages` / `count_tokens` | private_canary | 同上 |
-| `gateway.gemini.generate_content` / `stream_generate_content` | private_canary | 同上 |
-| `gateway.images.generations` / `edits` | private_canary | 同上 |
-| `gateway.vision.blobs` | private_canary | 同上 |
+| `gateway.health` / `gateway.readiness` | Node-owned | 宿主健康与就绪边界保留在 Node |
+| `gateway.models.list` | Node-owned | Go catalog 仍是受限投影，需先完成目录所有权核对 |
+| `gateway.anthropic.count_tokens` | Node-owned | 已有 Go 实现，尚未完成公开切换证据 |
+| 其余 11 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
 
-**要做的事**：不是补功能，而是走 `migration_state_machine`：
-`node_owned → write_frozen → migrated_and_verified → go_owned`。
-验证手段是既有的 `npm run gateway:shadow -- --node <url> --go <url>`（同请求双发对比）。
+**剩余工作**：不是重做已经接管的能力，而是逐项完成 4 个 blocker 的语义核验和证据。
+`gateway.models.list` 需要先解决目录全集与账号所有权，`count_tokens` 需要独立 shadow；
+health/readiness 保持 Node 宿主边界并由 ownership 测试守住。验证手段仍是既有的
+`npm run gateway:shadow -- --node <url> --go <url>`（同请求双发对比）及对应 live tests。
 
 > 注意：manifest 明确写着「Go 侧控制面管理接口（如 `PUT,GET /v1/management/upstream-error-rules`）不是数据面 capability route，
 > production owner 仍为 Node」。所以 `/v1/management/*` 也不在「该迁」清单里。
@@ -129,8 +127,8 @@ manifest 明确列出 5 条，**不该要求 Go 对齐**：
 
 按「依赖关系 + 收益」排，而不是按规模：
 
-1. **推理面切所有权**（收益最大、功能已就绪）：跑 `gateway:shadow` 全量对比 → 逐 entry 走
-   `write_frozen → migrated_and_verified → go_owned`。这是唯一「已经做完、只差临门一脚」的部分。
+1. **收尾剩余 4 个推理 blocker**：先完成 `count_tokens` 的 shadow，再评估 models catalog；
+   health/readiness 保持 Node 宿主所有权并补齐文档与回归守卫。
 2. **控制面 `usage/*` 迁移**（Go 已有 `accountusage` 领域包，复用度高）。
 3. **审批传输补声明**（10 个 provider；不依赖 Go，能独立推进，且直接解锁 confirm/plan）。
 4. **PTY / 会话能力迁 Go**（规模最大，需先定「Go 是否要全量」这个前提）。

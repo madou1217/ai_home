@@ -12,6 +12,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/modelmetadata"
+	"github.com/madou1217/ai_home/core/inference"
 )
 
 const (
@@ -46,6 +47,7 @@ type ModelReader interface {
 type Dependencies struct {
 	Models     ModelReader
 	Modalities modelmetadata.Reader
+	Reasoning  modelmetadata.ReasoningLadderReader
 	Authorizer Authorizer
 }
 
@@ -53,6 +55,7 @@ type Dependencies struct {
 type Handler struct {
 	models     ModelReader
 	modalities modelmetadata.Reader
+	reasoning  modelmetadata.ReasoningLadderReader
 	authorizer Authorizer
 }
 
@@ -66,6 +69,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 	return &Handler{
 		models:     dependencies.Models,
 		modalities: dependencies.Modalities,
+		reasoning:  dependencies.Reasoning,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -115,6 +119,7 @@ func (handler *Handler) ServeHTTP(
 		models,
 		handler.modalities,
 		options.includeModalities,
+		handler.reasoning,
 		options.capability,
 		now,
 	)
@@ -259,11 +264,12 @@ type modelList struct {
 
 // modelView 是不会暴露账号数量或身份的标准模型项。
 type modelView struct {
-	ID            string               `json:"id"`
-	Object        string               `json:"object"`
-	Created       int64                `json:"created"`
-	OwnedBy       string               `json:"owned_by"`
-	AIHModalities *modelModalitiesView `json:"aih_modalities,omitempty"`
+	ID                  string               `json:"id"`
+	Object              string               `json:"object"`
+	Created             int64                `json:"created"`
+	OwnedBy             string               `json:"owned_by"`
+	AIHModalities       *modelModalitiesView `json:"aih_modalities,omitempty"`
+	AIHReasoningEfforts []string             `json:"aih_reasoning_efforts,omitempty"`
 }
 
 // modelModalitiesView 是 AIH 模态扩展（与 Node 一致总是输出）。
@@ -289,6 +295,7 @@ func newModelViews(
 	models []accountapp.RoutableModel,
 	modalities modelmetadata.Reader,
 	includeModalities bool,
+	reasoning modelmetadata.ReasoningLadderReader,
 	capability string,
 	created int64,
 ) ([]modelView, error) {
@@ -327,11 +334,29 @@ func newModelViews(
 				modelID,
 			)
 		}
+		if reasoning != nil {
+			if ladder, found := reasoning.LookupReasoningEfforts(model.ProviderID(), modelID); found {
+				view.AIHReasoningEfforts = reasoningEffortStrings(ladder)
+			}
+		}
 		views = append(views, view)
 		owners = append(owners, model.ProviderID())
 		previousProviderID = model.ProviderID()
 	}
 	return filterViewsByCapability(views, owners, modalities, capability), nil
+}
+
+func reasoningEffortStrings(values []inference.ReasoningEffort) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value.IsValid() {
+			result = append(result, string(value))
+		}
+	}
+	return result
 }
 
 // filterViewsByCapability 按能力过滤已去重的模型项；空或未知能力不过滤（失败开放）。

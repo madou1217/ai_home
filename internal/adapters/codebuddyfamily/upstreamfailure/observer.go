@@ -124,7 +124,9 @@ func Classify(statusCode int, envelope Envelope) (sharedfailure.Classification, 
 	case statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity:
 		kind = runtimecore.FailureInvalidRequest
 	case statusCode == http.StatusRequestTimeout:
-		kind = runtimecore.FailureRequestTimeout
+		// HTTP 408 是请求级终态；与 Node 的 unknown_status 和共享 observer
+		// 保持一致，不进入 FailureRequestTimeout 的模型 cooldown。
+		kind = runtimecore.FailureUnclassified
 	case statusCode == http.StatusNotFound:
 		kind = runtimecore.FailureNotFound
 	case statusCode >= http.StatusInternalServerError:
@@ -163,9 +165,10 @@ func ObserveHTTP(
 	if err != nil {
 		return sharedfailure.Classification{}, err
 	}
-	// Retry-After 只在有限提示内采纳（与 Claude observer 同口径，避免上游用超长值绕过上限）。
-	if retryAfter := parseRetryAfter(header); retryAfter > 0 && retryAfter <= runtimecore.MaxCooldownHint {
-		if classification.Kind() != runtimecore.FailurePermissionDenied {
+	// Retry-After 只对领域允许进入 cooldown 的瞬态分类生效；请求级无状态失败
+	// （例如 400/408）必须忽略该头并保持原始响应可透传。
+	if policy, policyErr := runtimecore.PolicyFor(classification.Kind()); policyErr == nil && policy.EntersCooldown() {
+		if retryAfter := parseRetryAfter(header); retryAfter > 0 && retryAfter <= runtimecore.MaxCooldownHint {
 			return sharedfailure.NewClassification(classification.Kind(), retryAfter)
 		}
 	}

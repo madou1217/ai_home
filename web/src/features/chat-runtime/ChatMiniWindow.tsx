@@ -120,6 +120,12 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
         const match = sessions.find((candidate) => candidate.id === selection.sessionId
           && (!selection.provider || candidate.provider === selection.provider));
         if (match) {
+          if (isChatPagePath(typeof window === 'undefined' ? location.pathname : window.location.pathname)) {
+            const account = selectedAccount || accounts[0];
+            if (account) setSession(createDraftSession(account));
+            setSessionError('');
+            return;
+          }
           persistedSessionRef.current = true;
           setSession({ ...match, mode: 'chat' });
           setSessionError('');

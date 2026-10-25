@@ -60,7 +60,7 @@ SOLID, KISS, DRY, and YAGNI review: the selector and provider status remain pres
 
 Fix-round verification:
 
-- `node --experimental-strip-types --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 17 passed, 0 failed.
+- `node --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 17 passed, 0 failed. The focused UI test spawns Node's built-in type-strip mode for the pure TypeScript helper, so the repository's normal `node --test` runner remains compatible.
 - `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
 - `cd web && npm run build` — still blocked before project compilation by the existing Umi/http-deceiver `No such module: http_parser` runtime failure under Node v22.16.0.
 - `git diff --check` — passed.

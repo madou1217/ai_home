@@ -50,6 +50,8 @@ func resolveModelOwner(providerID string, modelID string) string {
 func inferOwnerFromModelID(modelID string) string {
 	id := strings.ToLower(strings.TrimSpace(modelID))
 	switch {
+	case strings.HasPrefix(id, "cline-pass/"):
+		return "cline"
 	case strings.HasPrefix(id, "opencode-go/"):
 		return ownerOpenCodeGo
 	case strings.HasPrefix(id, "opencode/"):
@@ -93,6 +95,8 @@ func inferOwnerFromProvider(providerID string) string {
 		return ownerMoonshot
 	case "zcode":
 		return ownerZhipu
+	case "cline":
+		return "cline"
 	default:
 		return ""
 	}

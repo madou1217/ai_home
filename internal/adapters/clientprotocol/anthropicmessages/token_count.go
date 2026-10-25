@@ -114,6 +114,7 @@ func estimateMessageTokens(raw json.RawMessage) int {
 	}
 	var message struct {
 		Role    string          `json:"role"`
+		Name    string          `json:"name"`
 		Content json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(raw, &message); err != nil {
@@ -121,6 +122,7 @@ func estimateMessageTokens(raw json.RawMessage) int {
 	}
 	return perMessageOverhead +
 		estimateTextTokens(message.Role) +
+		estimateTextTokens(message.Name) +
 		estimateContentTokens(message.Content)
 }
 

@@ -266,7 +266,7 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | GW-004 | `POST /v1/responses` | OpenAI Responses，支持 stream、tool、reasoning 与 canonical bridge；Go 私有路径已对 Codex 与 Claude 真实账号完成验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/openairesponsesapi`、`internal/adapters/clientprotocol/openairesponses`、`contracts/route-ownership/manifest.json` |
 | GW-004-WS | `GET /v1/responses` + WebSocket Upgrade | Go 私有 Gateway 支持原生 Codex Responses-over-WebSocket：首帧按真实模型公平征召账号，单连接固定 `(accountRef, model)`，文本帧双向原样转发，支持同连接 `previous_response_id` 双轮、`generate:false` 预热、permessage-deflate、16 MiB 消息上限、终态/cooldown 旁路观察和 Server.Close 清理；正式 ownership 仍是 Node | 已实现（私有真实验收） | `application/codexwebsocket`、`internal/adapters/codex/responseswebsocket`、`internal/transport/http/codexresponsesws`、`contracts/route-ownership/manifest.json` |
 | GW-005 | `POST /v1/messages` | Anthropic Messages，按 provider 能力选择 Native Relay 或 Canonical；Go 私有路径已对 Claude 原生文本/工具/签名回放与 Codex 跨协议文本/工具/thinking 完成流/非流真实验收，正式 ownership 仍是 Node | 稳定/迁移中 | `internal/transport/http/{anthropicmessagesapi,claudenativerelay}`、`internal/adapters/clientprotocol/anthropicmessages`、`contracts/route-ownership/manifest.json` |
-| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理；Go 已实现等价估算（规则与 Node 逐条同构，带 `-count=1` 期望值对照），正式 ownership 仍是 Node | 稳定/迁移中 | `detectClientProtocol`、`createAnthropicTokenCountResponse`、`internal/adapters/clientprotocol/anthropicmessages/token_count.go`、`contracts/route-ownership/manifest.json` |
+| GW-006 | `POST /v1/messages/count_tokens` | 本地 token count 响应，不发起上游推理；Go 已实现等价估算并通过 Node fixture 回归，正式 ownership 已切到 Go | 稳定/Go owned | `detectClientProtocol`、`createAnthropicTokenCountResponse`、`internal/adapters/clientprotocol/anthropicmessages/token_count.go`、`token_count_test.go`、`contracts/route-ownership/manifest.json` |
 | GW-007 | `/v1{beta?}/models/*:generateContent` | Gemini generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 已实现同一路径形态与 Gemini 客户端协议，正式 ownership 仍是 Node | 稳定/受限/迁移中 | `protocol-gemini-*`、`internal/adapters/clientprotocol/gemini`、`internal/transport/http/geminiapi`、`contracts/route-ownership/manifest.json` |
 | GW-008 | `/v1{beta?}/models/*:streamGenerateContent` | Gemini streaming generateContent；Node 同时接受 `/v1` 与 `/v1beta`，Go 已实现同一路径形态与 data-only SSE 渲染，正式 ownership 仍是 Node | 稳定/受限/迁移中 | `protocol-gemini-*`、`internal/adapters/clientprotocol/gemini/response.go`、`contracts/route-ownership/manifest.json` |
 | GW-009 | `GET /v1/props` | Codex-compatible properties/model metadata；Go 有私有对应路由，正式入口仍由 Node 持有 | 兼容/迁移中 | `v1-router.js`、`internal/transport/http/clientpropsapi` |
@@ -336,8 +336,9 @@ WebUI 和 Provider 迁移均不在本阶段范围内。
 `/v1/blobs/{id}`、image `generations`/`edits`、`/v1/messages/count_tokens`、
 `/v1/models/{id}`）已全部补齐。
 
-**已实现不等于已切流**：这 7 条的 `production_owner` 仍为 `node`、`migration_state` 仍为
-`node_owned`、`cutover_blocking` 仍为 `true`，切流必须走
+**已实现不等于已切流**：除已切到 Go 的 `gateway.anthropic.count_tokens` 外，其余补齐条目的
+`production_owner` 仍为 `node`、`migration_state` 仍为 `node_owned`、`cutover_blocking` 仍为
+`true`，切流必须走
 `node_owned -> write_frozen -> migrated_and_verified -> go_owned` 状态机并显式确认。
 生产 ownership、迁移状态与证据文件由
 [`contracts/route-ownership/manifest.json`](../contracts/route-ownership/manifest.json)

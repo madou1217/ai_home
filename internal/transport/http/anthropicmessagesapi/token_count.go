@@ -31,6 +31,24 @@ type TokenCountHandler struct {
 	maxBodyBytes int64
 }
 
+// writeNodeTokenCountError preserves the legacy Node v1-router error envelope
+// for this local endpoint. It intentionally does not use the Anthropic
+// Messages envelope because count_tokens is handled before protocol routing
+// in Node and therefore returns {ok:false,error:...}.
+func writeNodeTokenCountError(response http.ResponseWriter, status int, code string, allowed []string) {
+	payload := struct {
+		OK      bool     `json:"ok"`
+		Error   string   `json:"error"`
+		Allowed []string `json:"allowed,omitempty"`
+	}{OK: false, Error: code, Allowed: allowed}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		http.Error(response, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(response, status, data)
+}
+
 // NewTokenCountHandler 创建默认失败关闭的本地计数 Handler。
 func NewTokenCountHandler(
 	dependencies TokenCountDependencies,
@@ -59,41 +77,21 @@ func (handler *TokenCountHandler) ServeHTTP(
 	if handler == nil ||
 		handler.authorizer == nil ||
 		!handler.authorizer.Authorized(request) {
-		writeAPIError(
-			response,
-			http.StatusUnauthorized,
-			"authentication_error",
-			"invalid client key",
-		)
+		writeNodeTokenCountError(response, http.StatusUnauthorized, "unauthorized_client", nil)
 		return
 	}
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", http.MethodPost)
-		writeAPIError(
-			response,
-			http.StatusMethodNotAllowed,
-			"invalid_request_error",
-			"method not allowed",
-		)
+		writeNodeTokenCountError(response, http.StatusMethodNotAllowed, "method_not_allowed", []string{"POST"})
 		return
 	}
 	body, err := readTokenCountBody(response, request, handler.maxBodyBytes)
 	if err != nil {
 		if errors.Is(err, errTokenCountBodyTooLarge) {
-			writeAPIError(
-				response,
-				http.StatusRequestEntityTooLarge,
-				"invalid_request_error",
-				"request body too large",
-			)
+			writeNodeTokenCountError(response, http.StatusRequestEntityTooLarge, "request_body_too_large", nil)
 			return
 		}
-		writeAPIError(
-			response,
-			http.StatusBadRequest,
-			"invalid_request_error",
-			"invalid request body",
-		)
+		writeNodeTokenCountError(response, http.StatusBadRequest, "invalid_request_body", nil)
 		return
 	}
 	result := anthropicmessages.EstimateInputTokens(body)

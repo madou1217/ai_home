@@ -210,6 +210,68 @@ if ! PREFLIGHT="$(cd "$STAGE" && "$NODE_BIN/node" -e "require('./lib/server/serv
   exit 3
 fi
 
+# Read the configuration that the already-running service will use before touching
+# the production tree.  A stale route list with Go disabled is unsafe for older
+# binaries (the forwarder would fail closed with 503), so fail closed before both
+# rsync and restart.  The unit environment wins over persisted config, matching
+# resolveGoCoreSettings() in the server process.
+SERVICE_ENV="$(systemctl --user show ${shQuote(options.unit)} -p Environment --value 2>/dev/null || true)"
+GO_CORE_CONFIG_CHECK="$(SERVICE_ENV="$SERVICE_ENV" "$NODE_BIN/node" - "$STAGE" "$HOME/.ai_home" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const stage = process.argv[2];
+const defaultHome = process.argv[3];
+const serviceEnv = process.env.SERVICE_ENV || '';
+const env = {};
+for (const token of serviceEnv.split(/\\s+/)) {
+  const index = token.indexOf('=');
+  if (index > 0) env[token.slice(0, index)] = token.slice(index + 1);
+}
+const aiHomeDir = String(env.AIH_HOME_DIR || defaultHome || '').trim();
+try {
+  const { readServerConfig } = require(path.join(stage, 'lib/server/server-config-store'));
+  const {
+    loadRouteOwnershipManifest,
+    resolveGoOwnedEntryIds
+  } = require(path.join(stage, 'lib/server/go-core-route-ownership'));
+  const config = readServerConfig({ fs, aiHomeDir });
+  const enabled = Object.prototype.hasOwnProperty.call(env, 'AIH_GO_CORE_ENABLED')
+    ? /^(1|true|yes|on)$/i.test(String(env.AIH_GO_CORE_ENABLED).trim())
+    : config.goCoreEnabled === true;
+  const routesValue = Object.prototype.hasOwnProperty.call(env, 'AIH_GO_CORE_ROUTES')
+    ? env.AIH_GO_CORE_ROUTES
+    : config.goCoreRoutes;
+  const routes = (Array.isArray(routesValue) ? routesValue : String(routesValue || '').split(','))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  if (enabled) {
+    const ownership = resolveGoOwnedEntryIds(loadRouteOwnershipManifest({ repositoryRoot: stage }), routes);
+    if (ownership.errors.length > 0) {
+      process.stderr.write('invalid Go Core route ownership: ' + ownership.errors.join('; '));
+      process.exit(1);
+    }
+    process.stdout.write('enabled_valid');
+  } else {
+    process.stdout.write(routes.length > 0 ? 'disabled_nonempty' : 'disabled_empty');
+  }
+} catch (error) {
+  process.stderr.write('cannot read Go Core configuration: ' + (error && error.message ? error.message : error));
+  process.exit(1);
+}
+NODE
+)" || {
+  echo "[remote] cannot verify Go Core configuration; nothing changed" >&2
+  exit 5
+}
+if [ "$GO_CORE_CONFIG_CHECK" = "disabled_nonempty" ]; then
+  echo "[remote] go_core.enabled=false"
+  echo "[remote] go_core.routes is non-empty"
+  echo "[remote] go_core disabled but route ownership is non-empty" >&2
+  echo "[remote] deploy refused before rsync/restart; clear routes or enable Go Core" >&2
+  exit 5
+fi
+
 echo "[remote] sync code -> $DIR"
 rsync -a --delete ${preserved} "$STAGE"/ "$DIR"/
 if [ "$DEPS_CHANGED" = 1 ]; then

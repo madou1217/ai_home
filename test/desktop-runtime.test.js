@@ -329,3 +329,24 @@ test('real full-app service protocol sends host request and never falls back to 
   assert.match(child.stdin.writes.join(''), /host-translate/);
   service.stop();
 });
+
+test('service reconfigures and restores focus after helper auto-restart', async () => {
+  const children = [];
+  const service = createSystemTranslationService({
+    fs: require('node:fs'),
+    aiHomeDir: `/tmp/aih-desktop-restart-${process.pid}`,
+    platform: 'darwin',
+    mode: 'helper',
+    build: async () => '/tmp/aih-helper',
+    spawn: () => { const child = fakeChild(); children.push(child); return child; }
+  });
+  await service.setEnabled(true);
+  assert.equal(children.length, 1);
+  children[0].emit('exit', 1, null);
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  assert.equal(children.length, 2);
+  const writes = children[1].stdin.writes.join('');
+  assert.match(writes, /"type":"configure"/);
+  assert.match(writes, /"type":"webui-focus"/);
+  service.stop();
+});

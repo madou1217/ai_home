@@ -124,3 +124,16 @@ The strict artifact check remains:
 artifact=/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app
 codesign=verified
 ```
+
+## Final restart reconfiguration correction
+
+The helper restart path now emits a `ready` lifecycle event after every
+successful handshake. The translation service listens to that event and sends
+the current `configure` payload plus `webui-focus` heartbeat to every new
+child, including an automatic crash/handshake-timeout restart. The latest
+deterministic regression asserts that the second helper receives both frames.
+
+After this regression was added, the exact current totals are:
+
+- `node --test test/*.test.js` — **43 passed, 0 failed**.
+- `node --test test/desktop-runtime.test.js test/translation-execution-integration.test.js test/translation-execution-port.test.js test/desktop-translation-protocol.test.js` — **31 passed, 0 failed**.

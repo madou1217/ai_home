@@ -151,6 +151,21 @@ node scripts/gateway-shadow-compare.js \
   --include-inference
 ```
 
+**当前 live 证据（2026-10-25）**：在正在运行的 Node `9527` 与 Go Core
+`19550` 上，用各自运行时 client key 只读探测 `props`、`models`、两个 capability
+过滤和 `healthz`。`props` 与 `healthz` 均为 200 且结构一致；模型目录两侧均为 200，
+但全目录为 Node 204 项 / Go 52 项，Go 没有额外项，Node 独有 152 项。其中 Node
+独有项按 ID 前缀归类为 `opencode/*` 85、`opencode-go/*` 38、`cline-*` 16、
+其他命名空间 2、无命名空间的原生/远端模型 11。共同 ID 的顺序和 `owned_by` 全部
+一致，但有 8 个共同 ID 的 `aih_modalities` 不同（Node 还保留 image/video/audio
+输入能力，Go 当前按本地索引投影为 text）。`capability=vision` 为 Node 145 / Go 30
+（Node 独有 115），`capability=image_out` 两侧均为 1 且 ID 集合一致。
+
+这份证据确认 `gateway.models.list` 仍不能切给 Go：差异来自 Node 的远端探测、插件
+模型和中转 Provider 全集，而不是响应字段形状；Go 侧的 alias、reasoning efforts、
+禁用策略同步和本地 modality 投影已工作，但不足以覆盖对外全集。下次复测仍使用上面的
+shadow 脚本，不能把这份快照当成永久目录结果。
+
 ### 1. `/v1/models` 的 `aih_modalities`：不照抄 Node 的做法
 
 Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:81`），数据源

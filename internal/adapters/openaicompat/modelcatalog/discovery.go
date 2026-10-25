@@ -217,11 +217,8 @@ func ParseModelDescriptors(providerID string, payload []byte) []modelmetadata.Mo
 	}
 	descriptors := make([]modelmetadata.ModelDescriptor, 0, len(document.Data))
 	for _, entry := range document.Data {
-		image, imageOK := parseBoolean(entry.SupportsImage)
-		video, videoOK := parseBoolean(entry.SupportsVideo)
-		if !imageOK || !videoOK {
-			continue
-		}
+		image := parseBoolean(entry.SupportsImage)
+		video := parseBoolean(entry.SupportsVideo)
 		input := []string{"text"}
 		if image {
 			input = append(input, "image")
@@ -246,14 +243,7 @@ func ParseModelDescriptors(providerID string, payload []byte) []modelmetadata.Mo
 	return descriptors
 }
 
-func parseBoolean(raw json.RawMessage) (bool, bool) {
+func parseBoolean(raw json.RawMessage) bool {
 	trimmed := strings.TrimSpace(string(raw))
-	if trimmed != "true" && trimmed != "false" {
-		return false, false
-	}
-	var value bool
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return false, false
-	}
-	return value, true
+	return trimmed == "true"
 }

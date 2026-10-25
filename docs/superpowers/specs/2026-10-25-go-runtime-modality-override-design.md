@@ -50,7 +50,7 @@ descriptor 不包含账号引用。相同 Provider 的多个账号探测到的�
 - 保留现有 `DiscoverModels()` 返回模型 ID，保证账号模型刷新和持久化行为不变；
 - 在解析同一份标准 `/models` JSON 时，额外读取已确认的布尔字段 `supports_image_in`、`supports_video_in`；
 - 输出 descriptor 的输入模态从 `text` 开始，按布尔字段追加 `image` / `video`，输出模态固定为 `text`；
-- 缺失、类型错误或未知字段不构造 descriptor，但不影响 ID 列表解析；
+- 对每个有效模型 ID 都构造 descriptor；缺失、类型错误或非 `true` 的能力字段按 Node 的 `=== true` 语义视为 false，不把原始字段带入 descriptor；
 - 仅当 descriptor 集合非空且全部通过低敏校验时，调用组合根注入的 registrar 做 Kimi Provider 级替换；
 - HTTP 失败、空目录、解析失败保持现有 last-known-good 账号模型语义，也不清空模态覆盖。
 

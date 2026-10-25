@@ -61,10 +61,10 @@
 
 **Produces:** an optional ModelDescriptorSink in modelcatalog.Options, while DiscoverModels still returns only []string.
 
-- [ ] Write failing tests with a fixture containing image/video flags, missing flags, and malformed optional flag types. Assert IDs remain discoverable while only valid descriptors are emitted.
+- [ ] Write failing tests with a fixture containing image/video flags, missing flags, and malformed optional flag types. Assert every valid ID gets a descriptor, while only literal true values add image/video modalities.
 - [ ] Add source tests that the sink is called once after a successful non-empty response and is not called after HTTP failure, empty catalog, malformed JSON, or an all-invalid descriptor set.
 - [ ] Run go test ./internal/adapters/openaicompat/modelcatalog -run TestKimi -count=1 and confirm red.
-- [ ] Implement a parser that models only id, supports_image_in, and supports_video_in. Start input modalities with text, append image/video for true booleans, and use text output. Do not retain raw response text.
+- [ ] Implement a parser that models only id, supports_image_in, and supports_video_in. Start every valid ID with text input, append image/video only for literal true booleans, and use text output. Do not retain raw response text.
 - [ ] Invoke the optional sink only after existing status, size, and non-empty ID checks pass. Sink rejection returns a refresh error without exposing provider content.
 - [ ] Run go test ./internal/adapters/openaicompat/modelcatalog -count=1.
 - [ ] Commit only the Kimi source and tests with message feat(go): publish Kimi runtime modality descriptors.

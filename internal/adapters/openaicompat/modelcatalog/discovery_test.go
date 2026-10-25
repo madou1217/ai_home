@@ -11,7 +11,7 @@ import (
 	"github.com/madou1217/ai_home/application/modelmetadata"
 )
 
-func TestParseModelDescriptorsKeepsOnlyCompleteBooleanCapabilityFacts(t *testing.T) {
+func TestParseModelDescriptorsMatchesNodeBooleanProjection(t *testing.T) {
 	payload := []byte(`{"data":[
     {"id":"kimi-image","supports_image_in":true,"supports_video_in":false},
     {"id":"kimi-missing","supports_image_in":true},
@@ -19,8 +19,8 @@ func TestParseModelDescriptorsKeepsOnlyCompleteBooleanCapabilityFacts(t *testing
     {"id":"kimi-text","supports_image_in":false,"supports_video_in":false}
   ]}`)
 	descriptors := ParseModelDescriptors("kimi", payload)
-	if len(descriptors) != 2 {
-		t.Fatalf("descriptor count = %d, want 2", len(descriptors))
+	if len(descriptors) != 4 {
+		t.Fatalf("descriptor count = %d, want 4", len(descriptors))
 	}
 	byID := make(map[string]modelmetadata.ModelDescriptor, len(descriptors))
 	for _, descriptor := range descriptors {
@@ -35,6 +35,12 @@ func TestParseModelDescriptorsKeepsOnlyCompleteBooleanCapabilityFacts(t *testing
 	}
 	if got := byID["kimi-image"].Modalities().Output(); len(got) != 1 || got[0] != "text" {
 		t.Fatalf("output modalities = %#v, want [text]", got)
+	}
+	if got := byID["kimi-missing"].Modalities().Input(); len(got) != 2 || got[1] != "image" {
+		t.Fatalf("kimi-missing input modalities = %#v, want [text image]", got)
+	}
+	if got := byID["kimi-malformed"].Modalities().Input(); len(got) != 1 || got[0] != "text" {
+		t.Fatalf("kimi-malformed input modalities = %#v, want [text]", got)
 	}
 }
 

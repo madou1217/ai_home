@@ -32,12 +32,20 @@ func TestRuntimeModalityOverrideTakesPrecedenceAndRevertsByProviderReplacement(t
 		t.Fatalf("uncovered runtime model unexpectedly found static modalities: %#v", fallback.Input())
 	}
 
-	if err := index.ReplaceModelDescriptors("kimi", nil); err != nil {
-		t.Fatalf("empty provider replacement error = %v", err)
+	other := mustDescriptor(t, "kimi", "runtime-other-model", []string{"text"}, []string{"text"})
+	if err := index.ReplaceModelDescriptors("kimi", []modelmetadata.ModelDescriptor{other}); err != nil {
+		t.Fatalf("second provider replacement error = %v", err)
 	}
 	reverted, found := index.LookupModalities("kimi", modelID)
 	if !found || len(reverted.Input()) != len(static.Input()) {
-		t.Fatalf("replacement did not revert to static modalities: %#v found=%v", reverted.Input(), found)
+		t.Fatalf("replacement did not revert omitted model to static modalities: %#v found=%v", reverted.Input(), found)
+	}
+	if err := index.ReplaceModelDescriptors("kimi", nil); err != nil {
+		t.Fatalf("empty provider replacement error = %v", err)
+	}
+	kept, found := index.LookupModalities("kimi", "runtime-other-model")
+	if !found || len(kept.Input()) != 1 || kept.Input()[0] != "text" {
+		t.Fatalf("empty replacement cleared last-known-good override: %#v found=%v", kept.Input(), found)
 	}
 }
 

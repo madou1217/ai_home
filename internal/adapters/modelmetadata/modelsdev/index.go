@@ -96,6 +96,11 @@ func (index *Index) ReplaceModelDescriptors(
 	if provider == "" {
 		return modelmetadata.ErrInvalidModelDescriptor
 	}
+	if len(descriptors) == 0 {
+		// 与 Node registerProbedModelModalities 一致：空探测结果不清掉
+		// 上一代 last-known-good 覆盖。
+		return nil
+	}
 	nextProvider := make(map[string]modelmetadata.Modalities, len(descriptors))
 	for _, descriptor := range descriptors {
 		if !descriptor.IsValid() || descriptor.ProviderID() != provider {
@@ -112,11 +117,7 @@ func (index *Index) ReplaceModelDescriptors(
 	}
 	previous := index.overrides.Load()
 	next := cloneOverrideSnapshot(previous)
-	if len(nextProvider) == 0 {
-		delete(next.byProvider, provider)
-	} else {
-		next.byProvider[provider] = nextProvider
-	}
+	next.byProvider[provider] = nextProvider
 	index.overrides.Store(next)
 	return nil
 }

@@ -72,6 +72,13 @@ const DIRECT_REGISTER_AUTH_MODES: AccountAuthMode[] = ['api-key', 'auth-token', 
 
 const AUTH_JOB_FALLBACK_POLL_MS = 5000;
 const ACCOUNT_REFRESH_FALLBACK_CLEAR_MS = 70_000;
+// 刷新分支的中文名（与服务端 webui-account-refresh.js 的 BRANCH_LABELS 同口径）：
+// 部分失败时用来告诉用户到底是哪一面没拿到。
+const REFRESH_BRANCH_LABELS: Record<string, string> = {
+  status: '状态',
+  models: '模型',
+  usage: '额度'
+};
 const CLI_WORKDIR_HISTORY_STORAGE_KEY = 'accounts-cli-workdir-history:v1';
 const CLI_WORKDIR_HISTORY_LIMIT = 10;
 
@@ -647,7 +654,13 @@ export function useAccountActions({
         return next;
       });
       if (!active) {
-        if (job.status === 'failed') message.warning(job.error || '账号部分刷新失败');
+        // 部分失败（failedBranches 非空但作业成功）不能笼统报「刷新失败」：其它面已经
+        // 刷新成功，报失败会让用户以为整次刷新白做。说清是哪一面没拿到。
+        const failedLabels = (job.failedBranches || [])
+          .map((name) => REFRESH_BRANCH_LABELS[name] || name)
+          .filter(Boolean);
+        if (job.status === 'failed') message.warning(job.error || '账号刷新失败');
+        else if (failedLabels.length > 0) message.warning(`已刷新，但${failedLabels.join('、')}未成功`);
         else if (job.recovered === true) message.success('账号已刷新，轻探测成功，已自动恢复调度');
         else message.success('账号已刷新');
       }

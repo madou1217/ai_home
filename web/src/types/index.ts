@@ -440,6 +440,11 @@ export interface AccountRefreshJob {
   scope?: 'account';
   /** 本次刷新里的轻探测成功并因此自动清掉了运行态阻塞（服务端门禁判定，客户端只展示）。 */
   recovered?: boolean;
+  /**
+   * 部分失败：作业整体仍算成功（其它面已刷新），这些面没拿到。界面据此提示
+   * 「已刷新，但模型未成功」，而不是笼统报「刷新失败」。
+   */
+  failedBranches?: Array<'status' | 'models' | 'usage'>;
   branches?: Partial<Record<'status' | 'models' | 'usage', {
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
     error?: string;

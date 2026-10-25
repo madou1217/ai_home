@@ -11,6 +11,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   let fullApp = CommandLine.arguments.contains("--full-app")
   let reader = SelectionReader()
   let panel = TranslationPanel(emit: emit)
+  let chatPanel = ChatPanel(emit: emit)
   var monitors: [Any] = []
   var lastTrusted: Bool?
   var selectionToken = 0
@@ -189,6 +190,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       }
     case "configure":
       panel.configure(event)
+      chatPanel.configure(event)
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
       reader.webUIFocusUntil = event["until"] as? Double ?? 0
@@ -202,6 +204,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
             let text = event["text"] as? String,
             let id = event["id"] as? String else { return }
       panel.beginHostTranslation(text: text, target: event["target"] as? String ?? "zh-Hans", id: id)
+    case "chat.open", "chat.submit", "chat.stop", "chat.close", "chat.event", "chat.error":
+      chatPanel.receive(event)
     default: panel.receive(event)
     }
   }

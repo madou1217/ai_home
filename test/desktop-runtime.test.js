@@ -187,6 +187,37 @@ test('desktop protocol negotiates version and normalizes request generations and
   assert.ok(nested.patch.nested.token.length <= 400);
 });
 
+test('desktop protocol passes strict Chat JSONL identities through the translation launcher', () => {
+  assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
+    type: 'chat.open', requestId: 'request-1', generation: 2, target: { kind: 'aih-server', secret: 'drop-me' }
+  }), {
+    version: 1, type: 'chat.open', requestId: 'request-1', generation: 2,
+    target: { kind: 'aih-server', secret: 'drop-me' }
+  });
+  assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
+    type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1',
+    generation: 3, text: 'hello'
+  }), {
+    version: 1, type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1',
+    generation: 3, text: 'hello'
+  });
+  assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
+    type: 'chat.event', requestId: 'request-1', sessionId: 'session-1', event: { schema: 'aih.chat.event.v1', seq: 4 }
+  }), {
+    version: 1, type: 'chat.event', requestId: 'request-1', sessionId: 'session-1',
+    event: { schema: 'aih.chat.event.v1', seq: 4 }
+  });
+  assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
+    type: 'chat.error', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', code: 'runtime_failed', message: 'retry'
+  }), {
+    version: 1, type: 'chat.error', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1',
+    code: 'runtime_failed', message: 'retry'
+  });
+  assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.submit', requestId: 'r', sessionId: 's', text: 'missing command' }), null);
+  assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.event', requestId: 'r', sessionId: 's', event: 'not-an-object' }), null);
+  assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.error', requestId: 'r' }), null);
+});
+
 test('full-app preflight detects language locally without an AIH Server', async () => {
   const calls = [];
   const service = createSystemTranslationService({

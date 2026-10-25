@@ -58,9 +58,12 @@ func ObserveHTTP(
 	if kind == runtimecore.FailureWorkspaceDeactivated {
 		return NewBlockingClassification(kind, runtimecore.BlockScopeAccount)
 	}
-	// Retry-After 只在有限提示内采纳（避免上游用超长值绕过上限）。
-	if retryAfter := readRetryAfter(header, observedAt); retryAfter > 0 {
-		return NewClassification(kind, retryAfter)
+	// Retry-After 只对领域允许进入 cooldown 的瞬态分类生效；请求级无状态失败
+	// （例如普通 402/408）必须忽略该头并保持原始响应可透传。
+	if policy, policyErr := runtimecore.PolicyFor(kind); policyErr == nil && policy.EntersCooldown() {
+		if retryAfter := readRetryAfter(header, observedAt); retryAfter > 0 {
+			return NewClassification(kind, retryAfter)
+		}
 	}
 	if retryAfter := defaultRetryAfter(statusCode, kind); retryAfter > 0 {
 		return NewClassification(kind, retryAfter)

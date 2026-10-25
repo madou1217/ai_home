@@ -102,3 +102,25 @@ func TestObserveHTTPPaymentRequiredOnlyBlocksDeactivatedWorkspace(t *testing.T) 
 		t.Fatalf("deactivated 402 scope = %q, want %q", deactivated.BlockDirective().Scope(), runtimecore.BlockScopeAccount)
 	}
 }
+
+func TestObserveHTTPIgnoresRetryAfterForRequestScopedStatuses(t *testing.T) {
+	header := http.Header{}
+	header.Set("Retry-After", "2")
+	for _, statusCode := range []int{http.StatusPaymentRequired, http.StatusRequestTimeout} {
+		classification, err := ObserveHTTP(
+			statusCode,
+			header,
+			[]byte(`{"error":{"type":"upstream_error"}}`),
+			time.Unix(1_700_000_000, 0),
+		)
+		if err != nil {
+			t.Fatalf("status %d ObserveHTTP() error = %v", statusCode, err)
+		}
+		if classification.Kind() != runtimecore.FailureUnclassified {
+			t.Fatalf("status %d kind = %q, want %q", statusCode, classification.Kind(), runtimecore.FailureUnclassified)
+		}
+		if classification.RetryAfter() != 0 {
+			t.Fatalf("status %d retry after = %s, want 0", statusCode, classification.RetryAfter())
+		}
+	}
+}

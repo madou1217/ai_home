@@ -9,6 +9,7 @@ Date: 2026-10-25
   - Supports configurable symbols or `command+option+<key>` values, enabled/disabled descriptors, duplicate binding conflict reports, and monitor registration failures.
   - Global monitor failure is surfaced through a compact status event and the native panel hint while the helper remains alive.
   - The registry owns no provider, HTTP, WebUI, or runtime logic.
+- Preserved the existing `⌘,` native translation-settings shortcut as a third shell descriptor while keeping translation and Chat actions independently configurable.
 - Routed the existing translation shortcut through the descriptor registry and routed Chat shortcuts through `ChatPanel.openFromShortcut()`, which uses the existing `chat.open` JSONL shell command. Existing host right-click monitoring remains non-consuming.
 - Added Chat shortcut persistence/configuration to the existing translation settings boundary (`chatShortcut`) and included both shortcut values in helper configure messages. No new `AIH_*` environment variable was introduced.
 - Added an editable Chat shortcut row to the native settings window and compact inline shortcut status feedback.

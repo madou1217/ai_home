@@ -69,6 +69,11 @@ final class ShortcutRegistry {
     } else {
       registrationError = nil
     }
+    let invalid = next.filter { $0.enabled && binding(for: $0.shortcut) == nil }
+    if !invalid.isEmpty {
+      registrationError = "快捷键无效：\(invalid.map { $0.label }.joined(separator: "、"))"
+      status(registrationError!)
+    }
 
     let active = next.filter { $0.enabled && binding(for: $0.shortcut) != nil && !isConflicted($0) }
     guard !active.isEmpty else {

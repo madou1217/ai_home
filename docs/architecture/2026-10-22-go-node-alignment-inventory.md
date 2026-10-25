@@ -8,7 +8,7 @@
 
 | 面 | 现状 | 差距 |
 |---|---|---|
-| **推理数据面**（`/v1/*`） | Go 已实现全部 capability route；11 条已 `go_owned` | **剩余 4 个 blocker：health/readiness、models.list、count_tokens** |
+| **推理数据面**（`/v1/*`） | Go 已实现全部 capability route；12 条已 `go_owned` | **剩余 3 个 blocker：health/readiness、models.list** |
 | **控制面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **完全没迁** |
 | **WebUI 面**（`/v0/webui/*`） | Node 203 条，Go 0 | 官方标记 `out_of_scope`（Node 专有） |
 | **Node RPC**（`/v0/node-rpc/*`） | Node 63 条，Go 0 | 官方标记 `out_of_scope` |
@@ -23,19 +23,19 @@
 
 ## 1. 推理数据面（`/v1/*`）—— 功能已齐，缺的是「切换所有权」
 
-`contracts/route-ownership/manifest.json` 的 15 条 `cutover_blocking` entry 中，11 条已经是
-`production_owner: go` / `migration_state: go_owned`，4 条仍由 Node 持有。公开 9527 仍由
+`contracts/route-ownership/manifest.json` 的 15 条 `cutover_blocking` entry 中，12 条已经是
+`production_owner: go` / `migration_state: go_owned`，3 条仍由 Node 持有。公开 9527 仍由
 Node 宿主监听；Node 按 manifest 将已切换能力透明转发到 Go。
 
 | entry | Go 状态 | 切生产还缺什么 |
 |---|---|---|
 | `gateway.health` / `gateway.readiness` | Node-owned | 宿主健康与就绪边界保留在 Node |
 | `gateway.models.list` | Node-owned | Go catalog 仍是受限投影，需先完成目录所有权核对 |
-| `gateway.anthropic.count_tokens` | Node-owned | 已有 Go 实现，尚未完成公开切换证据 |
+| `gateway.anthropic.count_tokens` | Go-owned | 已通过本地 parity gate，由 Node 转发到 Go |
 | 其余 11 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
 
-**剩余工作**：不是重做已经接管的能力，而是逐项完成 4 个 blocker 的语义核验和证据。
-`gateway.models.list` 需要先解决目录全集与账号所有权，`count_tokens` 需要独立 shadow；
+**剩余工作**：不是重做已经接管的能力，而是逐项完成 3 个 blocker 的语义核验和证据。
+`gateway.models.list` 需要先解决目录全集与账号所有权；
 health/readiness 保持 Node 宿主边界并由 ownership 测试守住。验证手段仍是既有的
 `npm run gateway:shadow -- --node <url> --go <url>`（同请求双发对比）及对应 live tests。
 
@@ -127,7 +127,7 @@ manifest 明确列出 5 条，**不该要求 Go 对齐**：
 
 按「依赖关系 + 收益」排，而不是按规模：
 
-1. **收尾剩余 4 个推理 blocker**：先完成 `count_tokens` 的 shadow，再评估 models catalog；
+1. **收尾剩余 3 个推理 blocker**：评估 models catalog；
    health/readiness 保持 Node 宿主所有权并补齐文档与回归守卫。
 2. **控制面 `usage/*` 迁移**（Go 已有 `accountusage` 领域包，复用度高）。
 3. **审批传输补声明**（10 个 provider；不依赖 Go，能独立推进，且直接解锁 confirm/plan）。

@@ -35,16 +35,16 @@ Go 侧现有：`application/*` 21 包 + `internal/*` + `core/*`，已覆盖推�
 
 原则：**每一阶段结束时，系统都处于可发布状态**（不是「半年后一起切」）。
 
-### P0 推理面切所有权（11 条已完成，4 条收尾中）
+### P0 推理面切所有权（12 条已完成，3 条收尾中）
 
 - **入口条件**：无（Go 已实现全部推理数据面 route）
-- **现状**：15 个 cutover blocker 中 11 个已经 `go_owned`，由 Node 宿主透明转发；
-  `health`、`readiness`、`models.list`、`anthropic.count_tokens` 仍是 Node-owned。
-- **动作**：为 `count_tokens` 补 shadow 与运行证据；为 `models.list` 完成目录所有权核对；
+- **现状**：15 个 cutover blocker 中 12 个已经 `go_owned`，由 Node 宿主透明转发；
+  `health`、`readiness`、`models.list` 仍是 Node-owned。
+- **动作**：为 `models.list` 完成目录所有权核对；
   health/readiness 保持宿主边界并由测试守卫，不把它们伪装成 Go 业务 owner。
 - **出口条件**：剩余业务 blocker 完成验证；宿主边界的保留理由、回滚路径和 manifest
   状态一致。
-- **风险**：中。已接管能力有真实流量，剩余目录与计数入口仍可能暴露 Node/Go 语义差异。
+- **风险**：中。已接管能力有真实流量，剩余目录入口仍可能暴露 Node/Go 语义差异。
 - **收益**：最高（唯一「已做完只差临门一脚」的部分）
 
 ### P1 控制面 `/v0/management/*`（30 条）

@@ -11,7 +11,7 @@
 
 Go Refactor .1 的交付物是可复核的路由基线和 ownership manifest。当前公开
 `127.0.0.1:9527` 仍由 Node 宿主监听和转发，但 manifest 中 11 个已验证的数据面能力的
-逻辑 owner 已切到 Go；4 个入口仍是 Node-owned。Go Core 使用隔离的内部监听地址，
+逻辑 owner 已切到 Go；3 个入口仍是 Node-owned。Go Core 使用隔离的内部监听地址，
 不得直接声明 9527 ownership。
 
 路由采集结果（`node scripts/collect-gateway-routes.js --json`）：
@@ -48,9 +48,9 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 
 **已实现 ≠ 已切换公开监听端口。** manifest 中 11 个数据面条目已经是
 `production_owner=go`、`migration_state=go_owned`、`go_implementation=go_owned`；公开
-请求仍先进入 Node 宿主，再按 manifest 转发到 Go。剩余 4 个 blocker 是
+请求仍先进入 Node 宿主，再按 manifest 转发到 Go。剩余 3 个 blocker 是
 `gateway.health`、`gateway.readiness`（宿主边界）、`gateway.models.list`（模型目录所有权）
-和 `gateway.anthropic.count_tokens`（尚未完成切换）。
+；`gateway.anthropic.count_tokens` 已完成本地 parity gate 并切到 Go。
 
 vision guard 的覆盖面已按 Node 的兜底语义对齐（2026-09-16）：索引命中以索引为准；
 未命中但模型名落在已知视觉家族（`claude-`、`gemini-`、`gpt-4o|4.1|5`、`o1|o3`，
@@ -119,7 +119,7 @@ Go 当前为 25 条 endpoint 记录、24 个去重 HTTP 路径模式，另有 1 
 - 不迁移 Provider，不修改生产账号数据库，不执行真实上游请求。
 - 不把「Go 已有路由」等同于「公开端口由 Go 直接监听」：11 条能力已经按 manifest
   进入 `go_owned`，公开端口仍由 Node 宿主持有，Node 只负责鉴权、转发和宿主面能力。
-- 剩余 4 个 blocker 必须分别完成对应的 shadow、目录/计数语义核对和回滚证据，不能用
+- 剩余 3 个 blocker 必须分别完成对应的 shadow、目录语义核对和回滚证据，不能用
   一次性修改 manifest 代替验证。
 - 不迁移 Node 的 WebUI、Provider CLI、PTY、Session、Fabric 和 Codex app-server surface。
 - 下一阶段若要推进，必须在 capability parity、协议 shadow、数据库/runtime migration、

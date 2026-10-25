@@ -23,8 +23,8 @@
 | 网关/Server (`lib/server` ↔ `internal`+`application`) | 146k 行 | 74k 行（非测试） |
 | CLI/PTY/tmux (`lib/cli`, `lib/runtime`) | 94k 行 | `cmd/aih` 预览 CLI |
 | 账号域 (`lib/account` ↔ `core/accounts`) | 12.5k 行 | 11.6k 行（非测试，含 core 全部） |
-| 数据面路由 | 14 | 14（全部实现；11 条已 `go_owned`） |
-| 生产 owner（`contracts/route-ownership/manifest.json`） | 4 条 Node-owned / 11 条 Go-owned | 公开 9527 仍由 Node 宿主监听 |
+| 数据面路由 | 14 | 14（全部实现；12 条已 `go_owned`） |
+| 生产 owner（`contracts/route-ownership/manifest.json`） | 3 条 Node-owned / 12 条 Go-owned | 公开 9527 仍由 Node 宿主监听 |
 
 ### 2.1 阻止 Go 承接流量的缺口
 
@@ -141,12 +141,11 @@ aih server restart
 前置：补齐 G5（Go 支持 `x-account-ref` 钉选语义；Fabric 网关仍由 Node 在转发前处理，
 或明确该主机不启用 Fabric）。建议顺序从只读、无状态到有状态、长连接：
 
-1. `gateway.anthropic.count_tokens`（已有 Go 实现，先补独立 shadow 证据）
-2. `gateway.models.list`（模型全集与账号目录所有权满足后再切）
-3. `gateway.health` / `gateway.readiness` 继续由 Node 宿主持有，不纳入 Go 公开端口切换
+1. `gateway.models.list`（模型全集与账号目录所有权满足后再切）
+2. `gateway.health` / `gateway.readiness` 继续由 Node 宿主持有，不纳入 Go 公开端口切换
 
-已完成的 11 个数据面 entry（含 Responses HTTP/WS、Chat、Messages、Gemini、Images 和
-Blobs）不再重复走 canary；后续只需持续验证其转发和回滚闸门。
+已完成的 12 个数据面 entry（含 count_tokens、Responses HTTP/WS、Chat、Messages、Gemini、
+Images 和 Blobs）不再重复走 canary；后续只需持续验证其转发和回滚闸门。
 
 每步证据：`npm run gateway:shadow -- --include-inference` 差异逐条按「provider 契约高于
 Node」裁决；真实 provider 流式终态、取消、attempt 审计；canary 运行 ≥ 1 个完整额度周期。

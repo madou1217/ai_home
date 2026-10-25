@@ -21,7 +21,7 @@ Date: 2026-10-25
 - `npx eslint src/features/chat-runtime/ChatMiniWindow.tsx src/features/chat-runtime/index.ts src/components/chat/chat-global-shortcuts.ts src/components/chat/KeyboardShortcutsModal.tsx src/pages/Chat.tsx src/app.tsx` — passed.
 - `node --test test/web-chat-mini-window.test.js` — 2 tests passed, 0 failed.
 - `git diff --cached --check` — passed.
-- `cd web && npm run build` — blocked before Web compilation by the installed Umi dependency `http-deceiver` calling the removed Node `http_parser` binding (`No such module: http_parser`, Node `v22.16.0`). This is an environment/toolchain failure; no application TypeScript error was emitted by the build process.
+- `cd web && PATH=/Users/model/.nvm/versions/node/v22.21.0/bin:$PATH npm run build` — passed. Webpack compiled successfully in 26.14s, then `stamp-sw-cache` completed with `CACHE_NAME=aih-hos6-pwa-5817b467` and 189 files.
 - `cd web && npx tsc --noEmit --pretty false` — the repository has pre-existing type errors across unrelated files; no diagnostic referenced `ChatMiniWindow.tsx` or the changed shortcut/app-shell files.
 
 ## Design patterns used
@@ -35,4 +35,4 @@ SOLID/KISS/DRY/YAGNI review: the only new runtime composition is the floating-su
 
 ## Concerns
 
-- The Web build needs a dependency/runtime repair (or Node version with the legacy `http_parser` binding) before it can provide full bundle evidence. The implementation itself was linted and statically type-checked against the repository's existing baseline errors.
+- `cd web && npx tsc --noEmit --pretty false` still reports pre-existing diagnostics in unrelated files (including the existing `siderWidth` typing error in `app.tsx`); no diagnostic referenced `ChatMiniWindow.tsx` or the changed shortcut files. The production Webpack build and focused checks pass with Node v22.21.0.

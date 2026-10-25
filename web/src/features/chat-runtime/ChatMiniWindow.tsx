@@ -159,8 +159,10 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   }, [loadSession]);
 
   useEffect(() => {
-    if (open && !session && !loadingSession) void loadSession();
-  }, [loadSession, loadingSession, open, session]);
+    if (open && !session && !loadingSession && !sessionError && accounts.length > 0) {
+      void loadSession();
+    }
+  }, [accounts.length, loadSession, loadingSession, open, session, sessionError]);
 
   useEffect(() => {
     // A persisted session may be opened from another route and then carried

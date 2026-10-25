@@ -35,7 +35,8 @@ Node 宿主监听；Node 按 manifest 将已切换能力透明转发到 Go。
 | 其余 11 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
 
 **剩余工作**：不是重做已经接管的能力，而是逐项完成 3 个 blocker 的语义核验和证据。
-`gateway.models.list` 需要先解决目录全集与账号所有权；
+模型目录的账号/模型禁用策略已经由 Node→Go 对账同步；`gateway.models.list` 仍需要解决
+远端探测、全局合并目录与账号所有权；
 health/readiness 保持 Node 宿主边界并由 ownership 测试守住。验证手段仍是既有的
 `npm run gateway:shadow -- --node <url> --go <url>`（同请求双发对比）及对应 live tests。
 

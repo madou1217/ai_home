@@ -46,7 +46,7 @@ Go 现已全部实现，`missing_in_go=0`。** 下表保留这 7 条曾经的缺
 | `/v1/messages/count_tokens` | ✅ 已实现 | `internal/adapters/clientprotocol/anthropicmessages/token_count.go` |
 | `/v1/models/{id}` | ✅ 已实现 | `internal/transport/http/modelsapi` |
 
-**已实现 ≠ 已切换公开监听端口。** manifest 中 11 个数据面条目已经是
+**已实现 ≠ 已切换公开监听端口。** manifest 中 12 个数据面条目已经是
 `production_owner=go`、`migration_state=go_owned`、`go_implementation=go_owned`；公开
 请求仍先进入 Node 宿主，再按 manifest 转发到 Go。剩余 3 个 blocker 是
 `gateway.health`、`gateway.readiness`（宿主边界）、`gateway.models.list`（模型目录所有权）
@@ -168,15 +168,17 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   字段都被剥掉，因为 Claude Code 这类严格客户端可能拒绝带未知字段的模型对象。
 
 结论不变但理由要改：Node 是在「所有客户端都会调用」的最热路径上，为了一个**只有内部过滤
-在用**的字段长期担着 schema 风险。这是本仓的设计选择，不是 provider 契约。Go 侧因此**默认
-不带该字段、改由 opt-in 暴露**；但 Go 若日后要实现 `?capability=` 过滤，必须自己持有等价能力
-数据，不能假设可以依赖响应体里的自定义字段。
+在用**的字段长期担着 schema 风险。这是本仓的设计选择，不是 provider 契约。Go 侧已经持有
+等价的模态索引，并把已编译 alias、reasoning efforts 和本地禁用策略纳入目录投影；但 Go
+仍不能在远端探测与全局模型全集归属未闭合前接管 `/v1/models`。
 
-**Go 侧已实现：`/v1/models` 默认严格标准形状，模态经显式 opt-in 暴露，能力过滤独立持有数据。**
+**Go 侧已实现：`/v1/models` 目录投影包含本地可路由模型、已编译具体 alias、reasoning efforts
+和模态过滤，并通过 Node→Go 对账同步账号/模型启停策略；公开 ownership 仍保留给 Node，直到
+远端探测与全局模型全集能够由 Go 单一持有。**
 
-- `GET /v1/models` 仍只返回 `id/object/created/owned_by`，不会泄漏自定义字段。
-- `GET /v1/models?include=modalities` 才为每项增加
-  `aih_modalities: {input,output}`。
+- `GET /v1/models` 返回 `id/object/created/owned_by`，并按 Node 兼容合同附带模态与已知推理档位；
+  已编译的具体 alias 也会进入列表，通配 alias 继续隐藏。
+- `GET /v1/models?include=modalities` 继续接受，用于兼容旧客户端，不改变当前投影语义。
 - `GET /v1/models?capability=vision|image_out`（2026-09-15 补齐）：Go 不再依赖响应体里的
   自定义字段，而是直接读模态索引判定，因此**不需要** `include=modalities` 就能过滤。
   两条语义与 Node 的 `filterOpenAIModelsBodyByCapability` 对齐：
@@ -548,7 +550,8 @@ Go 原先有两个键，都不等于规范键：
 | 同协议透传的凭据拒绝 failover | Go relaycore 已记录 `FailureCredentialRejected`，但换号白名单只含限流、5xx、超时，401/403 后会直接把失败账号交给客户端 | Node 通用 401/403 在刷新尝试后继续 `retry_next`，未钉选请求会尝试其他账号；边缘格式拒绝仍不换号 | **已修（2026-10-25）**：`relaycore.retryableKind` 纳入 `FailureCredentialRejected`，只在尚未向客户端写出时继续账号池尝试；回归测试覆盖白名单 |
 | CodeBuddy / WorkBuddy HTTP 408 与 Retry-After | 家族 observer 原先把 408 映射为 `FailureRequestTimeout`，且对 400/408 无条件消费 `Retry-After`，可能写入错误 cooldown 或返回非法分类 | Node 家族通用状态策略把 408 当请求级 `unknown_status`，不记失败、不 cooldown、不换号；Retry-After 只服务瞬态 cooldown | **已修（2026-10-25）**：家族 observer 将 408 对齐为 `FailureUnclassified`，仅对 `PolicyFor(kind).EntersCooldown()` 的分类消费 Retry-After；回归测试覆盖 400/408 |
 | AGY Code Assist 失败证据 | Go 原先把所有 403/`permission_denied` 固定成账号模型级 `permission_denied`，且 529/5xx 使用领域默认冷却；地区资格正文未投影 | Node 普通 AGY 403 进入账号凭据阻塞，地区资格文案进入 `location_unsupported`，529/5xx 使用状态级恢复提示 | **已修（2026-10-25）**：Go AGY classifier 对齐普通 403、408、500/503/529；adapter 仅把已确认地区文案投影为 `RegionDenied`，回归测试覆盖作用域与延迟归因 |
-| `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
+| `aih_modalities` / `aih_reasoning_efforts` | 目录字段由 Node 投影 | Go 从 models.dev 与已发布 runtime descriptor 投影 | ✅ 模态与推理档位已接入 Go；目录全集仍 Node-owned |
+| 模型目录禁用策略 | `model-catalog-settings` 的 global/account 记录同时影响目录与选号 | `account_models.manual_policy` 的 `force_disable/force_enable` | ✅ Node→Go 对账已接入；测试见 `test/go-model-policy-sync.test.js` |
 
 ### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）
 

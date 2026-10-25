@@ -576,8 +576,10 @@ export default function TranslationWorkspace() {
         setPageApplied(true);
       } else setPageCancelled(true);
     } finally {
-      if (pageAbortRef.current === controller) pageAbortRef.current = null;
-      setPageBusy(false);
+      if (pageAbortRef.current === controller) {
+        pageAbortRef.current = null;
+        setPageBusy(false);
+      }
     }
   }, [pageBusy, pageMode, requestRoutes, selection.model, selection.provider, source, target]);
 

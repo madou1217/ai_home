@@ -75,3 +75,14 @@ Final fix-round verification after this correction:
 - `node --experimental-strip-types --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 17 passed, 0 failed.
 - `cd web && npm run build` — still blocked before project compilation by `No such module: http_parser` in the installed Umi/http-deceiver dependency.
 - `git diff --check` — passed.
+
+## Final page-translation race fix
+
+`translateCurrentPage` now guards its `finally` cleanup by controller identity. An old aborted controller can no longer clear `pageBusy` or `pageAbortRef` after a newer page translation has started. The focused contract test asserts this identity guard in the live workspace source.
+
+Final verification:
+
+- `node --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 18 passed, 0 failed.
+- `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
+- `cd web && npm run build` — blocked before project compilation by the installed Umi/http-deceiver dependency (`No such module: http_parser` under Node v22.16.0).
+- `git diff --check` — passed.

@@ -47,3 +47,11 @@ test('translation UI source has no full-page Alert or left-border decoration', (
     assert.equal(evaluateHelper(expression), false, `${file} contains a forbidden Alert or left-border decoration`);
   }
 });
+
+test('page translation cleanup cannot clear a newer run state', () => {
+  const workspace = fs.readFileSync(path.resolve(__dirname, '../web/src/features/translation/TranslationWorkspace.tsx'), 'utf8');
+  assert.match(
+    workspace,
+    /if \(pageAbortRef\.current === controller\) \{\s*pageAbortRef\.current = null;\s*setPageBusy\(false\);\s*\}/,
+  );
+});

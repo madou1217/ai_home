@@ -979,6 +979,7 @@ func newHandlers(
 		Models:     inference.models,
 		Modalities: modelModalities,
 		Reasoning:  modelModalities,
+		Aliases:    inference.models,
 		Authorizer: clientAuthorizer,
 	})
 	if err != nil {

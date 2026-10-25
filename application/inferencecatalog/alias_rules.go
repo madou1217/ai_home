@@ -1,6 +1,8 @@
 package inferencecatalog
 
 import (
+	"strings"
+
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
 	"github.com/madou1217/ai_home/application/modelalias"
@@ -32,10 +34,11 @@ type AliasDrop struct {
 // Generation 是编译时读取的投影代次，Applied 为真表示这份结果已随快照发布；
 // AcceptedIDs 只含真正产出路由的别名，Node 据此对未接受的别名继续保守交还。
 type AliasCompilation struct {
-	Generation  int64
-	Rules       []inferencegateway.RouteRule
-	AcceptedIDs []string
-	Dropped     []AliasDrop
+	Generation    int64
+	Rules         []inferencegateway.RouteRule
+	AcceptedIDs   []string
+	DisplayModels []modelalias.DisplayModel
+	Dropped       []AliasDrop
 }
 
 // ruleIdentity 是目录内不可重复的规则身份，与 inferencegateway 内部一致。
@@ -122,7 +125,8 @@ func (builder *Builder) compileAliases(
 			continue
 		}
 		added := 0
-		for _, providerID := range aliasTargetProviders(record, providersByModel[targetID.String()]) {
+		targetProviders := aliasTargetProviders(record, providersByModel[targetID.String()])
+		for _, providerID := range targetProviders {
 			rule, ok := builder.buildAliasRule(record, scope, providerID, targetID)
 			if !ok {
 				continue
@@ -150,6 +154,19 @@ func (builder *Builder) compileAliases(
 		}
 		if record.ID != "" {
 			compilation.AcceptedIDs = append(compilation.AcceptedIDs, record.ID)
+		}
+		// Wildcard aliases are useful for request routing but cannot be selected
+		// as a concrete model by clients, so the directory omits them.
+		if !strings.HasSuffix(record.Alias, "*") {
+			provider := ""
+			if record.ResolvedTargetProvider() != modelalias.TargetProviderAuto {
+				provider = record.ResolvedTargetProvider()
+			} else if len(targetProviders) == 1 {
+				provider = string(targetProviders[0])
+			}
+			compilation.DisplayModels = append(compilation.DisplayModels, modelalias.DisplayModel{
+				Alias: record.Alias, Target: record.Target, Provider: provider,
+			})
 		}
 	}
 	return compilation

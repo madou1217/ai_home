@@ -17,15 +17,20 @@ export default function TranslationProviderSettings({ providers, drafts, saving,
   const renderProvider = (provider: TranslationProviderOption) => {
     const fields = Object.entries(provider.config.fieldDefinitions || {}).filter(([name]) => provider.config.fields.includes(name));
     const draft = drafts[provider.id] || {};
+    const statusLabel = !provider.executable ? '不可用' : provider.configured ? '已配置' : '待配置';
+    const statusColor = !provider.executable ? 'error' : provider.configured ? 'success' : 'warning';
+    const missingFields = provider.missingFields.map((name) => provider.config.fieldDefinitions?.[name]?.label || name);
     return (
       <section className={styles.providerSettingsRow} aria-label={`${provider.label} 设置`}>
         <div className={styles.providerSettingsHeading}>
           <strong>{provider.label}</strong>
-          <Tag color={provider.configured && provider.executable ? 'success' : 'default'}>{provider.configured && provider.executable ? '可用' : '待配置'}</Tag>
+          <Tag color={statusColor}>{statusLabel}</Tag>
           <span className={styles.savedHint}>{provider.metadata.accessLabel}</span>
         </div>
         <span className={styles.savedHint}>{provider.metadata.accessDescription}</span>
         <span className={styles.savedHint}>支持：{provider.operations.join(' / ')}{provider.capabilities.streaming ? ' · 流式输出' : ' · 完整结果'}</span>
+        {missingFields.length ? <span className={styles.providerMissingFields} role="status">待补充：{missingFields.join('、')}</span> : null}
+        {!provider.executable ? <span className={styles.providerMissingFields} role="status">当前环境无法执行此引擎</span> : null}
         {fields.length ? <div className={styles.providerFields}>
           {fields.map(([name, field]) => (
             <label key={name} className={styles.providerField}>

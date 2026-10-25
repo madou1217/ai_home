@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Switch, Tooltip, message } from 'antd';
 import { DesktopOutlined } from '@ant-design/icons';
-import type { SystemTranslationStatus } from '@/types';
+import type { SystemTranslationStatus, TranslationExecutionTarget } from '@/types';
 import { translationAPI } from '@/services/api';
 import styles from './translation.module.css';
 import {
@@ -22,11 +22,34 @@ function targetKey(target: Pick<SystemServerTargetOption, 'origin' | 'serverId'>
   return target.serverId || target.origin;
 }
 
+function executionTargetState(target: TranslationExecutionTarget) {
+  if (!target.available) return '不可用';
+  if (!target.configured) return '待配置';
+  return '已配置';
+}
+
+function executionTargetHint(target: TranslationExecutionTarget) {
+  const operations = target.capabilities.operations || [];
+  const operationLabel: Record<string, string> = {
+    selection: '选区',
+    batch: '批量',
+    page: '页面',
+    replace: '替换',
+  };
+  const operationText = operations.map((operation) => operationLabel[operation] || operation).join('、');
+  const providerCount = target.providers?.filter((provider) => provider.configured).length;
+  const providerText = providerCount === undefined ? '' : ` · 已配置 ${providerCount}/${target.providers?.length || 0} 个 Provider`;
+  return `${target.capabilities.streaming ? '支持流式输出' : '完整结果'}${operationText ? ` · ${operationText}` : ''}${providerText}`;
+}
+
 export default function SystemTranslationControl() {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [profileRevision, setProfileRevision] = useState(0);
+  const executionTargets = status?.executionTargets || [];
+  const selectedExecutionTarget = status?.executionTarget || executionTargets.find((target) => target.configured)?.id || executionTargets[0]?.id || '';
+  const selectedExecutionTargetDetails = executionTargets.find((target) => target.id === selectedExecutionTarget);
   const serverTargets = useMemo<SystemServerTargetOption[]>(() => {
     // A profile without a management key or a successful health state cannot
     // service native translation through the local proxy. Keep the list honest
@@ -114,6 +137,41 @@ export default function SystemTranslationControl() {
           finally { setSaving(false); }
         }}
       />
+      {executionTargets.length ? (
+        <div className={styles.executionTargetControl}>
+          <span className={styles.fieldLabel}>执行目标</span>
+          <select
+            className={styles.executionTargetSelect}
+            aria-label="系统取词执行目标"
+            value={selectedExecutionTarget}
+            disabled={saving}
+            onChange={async (event) => {
+              const target = executionTargets.find((item) => item.id === event.target.value);
+              if (!target || !target.available || !target.configured) return;
+              setSaving(true);
+              try {
+                setStatus(await translationAPI.setSystemExecutionTarget(target.id as 'aih-server' | 'direct-provider'));
+                setError('');
+              } catch (_error) {
+                setError('切换执行目标失败，请检查目标配置');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {executionTargets.map((target) => (
+              <option key={target.id} value={target.id} disabled={!target.available || !target.configured}>
+                {target.label} · {executionTargetState(target)}
+              </option>
+            ))}
+          </select>
+          {selectedExecutionTargetDetails ? (
+            <span className={styles.executionTargetHint} role="status">
+              {executionTargetHint(selectedExecutionTargetDetails)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <select
         className={styles.systemTargetSelect}
         aria-label="系统取词服务目标"
@@ -123,7 +181,7 @@ export default function SystemTranslationControl() {
           const found = serverTargets.find((item) => (item.serverId || item.origin) === event.target.value);
           if (!found) return;
           setSaving(true);
-          try { setStatus(await translationAPI.setSystemServerTarget({ kind: 'aih-server', ...found }, serverTargets.map((item) => ({ kind: 'aih-server' as const, ...item })))); }
+          try { setStatus(await translationAPI.setSystemServerTarget({ ...found }, serverTargets.map((item) => ({ ...item })))); }
           catch (_error) { message.error('切换翻译服务失败'); }
           finally { setSaving(false); }
         }}
@@ -131,7 +189,7 @@ export default function SystemTranslationControl() {
         {serverTargets.map((item) => <option key={targetKey(item)} value={targetKey(item)} disabled={!item.available}>{item.label}{item.available ? '' : '（未配置）'}</option>)}
       </select>
       <span className={styles.systemStatus} role="status">
-        {error || (status?.status === 'running' ? '已就绪' : status?.status === 'disabled' ? '' : status?.detail)}
+        {error || (!status ? '正在读取服务状态…' : status.status === 'running' ? '已就绪' : status.status === 'disabled' ? '' : status.detail)}
       </span>
       {alternateTargetCount === 0 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
       {status?.status === 'permission-required' ? (

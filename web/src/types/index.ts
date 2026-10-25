@@ -3556,6 +3556,8 @@ export interface TranslationSettings {
   /** 空串 = 未显式设置，由服务端按模型目录兜底 */
   model: string;
   provider: string;
+  /** Effective desktop translation lane. */
+  executionTarget: 'aih-server' | 'direct-provider';
   systemEnabled: boolean;
   targetPolicy: 'saved' | 'explicit' | 'confirm' | 'same-language';
   autoCopy: boolean;
@@ -3693,6 +3695,29 @@ export interface SystemTranslationStatus {
   enabled: boolean;
   status: 'disabled' | 'unsupported' | 'starting' | 'running' | 'permission-required' | 'error';
   detail: string;
+  executionTarget?: 'aih-server' | 'direct-provider';
+  executionTargets?: TranslationExecutionTarget[];
   serverTarget?: { kind: 'aih-server'; label: string; origin: string; serverId?: string };
   serverTargets?: Array<{ kind: 'aih-server'; label: string; origin: string; serverId?: string }>;
+}
+
+export interface TranslationExecutionTargetProvider {
+  id: string;
+  label: string;
+  available: boolean;
+  configured: boolean;
+  operations: TranslationRoutePreference['operations'];
+  streaming: boolean;
+}
+
+export interface TranslationExecutionTarget {
+  id: string;
+  label: string;
+  available: boolean;
+  configured: boolean;
+  capabilities: {
+    streaming?: boolean;
+    operations?: TranslationRoutePreference['operations'];
+  };
+  providers?: TranslationExecutionTargetProvider[];
 }

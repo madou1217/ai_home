@@ -111,7 +111,7 @@ export function normalizeTranslationSettings(raw: Partial<TranslationSettings> |
   const target = String(input.target || 'zh-Hans').trim();
   const normalizeProvider = (value: unknown) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
   const normalizeModel = (value: unknown) => String(value || '').trim().slice(0, 200);
-  return { source: source || 'auto', target: target || 'zh-Hans', model: normalizeModel(input.model), provider: normalizeProvider(input.provider), systemEnabled: input.systemEnabled === true, targetPolicy: targetPolicy === 'explicit' || targetPolicy === 'confirm' || targetPolicy === 'same-language' ? targetPolicy : 'saved', autoCopy: input.autoCopy === true, copyScope: copyScope === 'page' || copyScope === 'all' ? copyScope : 'selection', routes: normalizeTranslationRoutes(input.routes, input), updatedAt: Number.isFinite(Number(input.updatedAt)) ? Math.max(0, Math.floor(Number(input.updatedAt))) : 0 };
+  return { source: source || 'auto', target: target || 'zh-Hans', model: normalizeModel(input.model), provider: normalizeProvider(input.provider), executionTarget: input.executionTarget === 'direct-provider' ? 'direct-provider' : 'aih-server', systemEnabled: input.systemEnabled === true, targetPolicy: targetPolicy === 'explicit' || targetPolicy === 'confirm' || targetPolicy === 'same-language' ? targetPolicy : 'saved', autoCopy: input.autoCopy === true, copyScope: copyScope === 'page' || copyScope === 'all' ? copyScope : 'selection', routes: normalizeTranslationRoutes(input.routes, input), updatedAt: Number.isFinite(Number(input.updatedAt)) ? Math.max(0, Math.floor(Number(input.updatedAt))) : 0 };
 }
 
 function notify() {
@@ -171,7 +171,7 @@ export async function loadTranslationBootstrap(force = false): Promise<Translati
  * 保存默认值（部分字段）。成功后才更新缓存并广播，失败时抛出由调用方提示。
  */
 export async function saveTranslationSettings(
-  patch: Partial<Pick<TranslationSettings, 'source' | 'target' | 'model' | 'provider' | 'targetPolicy' | 'autoCopy' | 'copyScope' | 'routes'>>,
+  patch: Partial<Pick<TranslationSettings, 'source' | 'target' | 'model' | 'provider' | 'executionTarget' | 'targetPolicy' | 'autoCopy' | 'copyScope' | 'routes'>>,
 ): Promise<TranslationSettings> {
   const sequence = ++saveSequence;
   const response = await translationAPI.saveSettings(patch);

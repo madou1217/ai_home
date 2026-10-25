@@ -161,6 +161,11 @@
   gap: 4px;
 }
 
+.providerMissingFields {
+  color: var(--color-warning, var(--color-muted-strong));
+  font-size: 12px;
+}
+
 .routePanel {
   display: flex;
   flex-direction: column;
@@ -349,6 +354,30 @@
   gap: 6px;
   color: var(--color-muted-strong);
   cursor: default;
+}
+
+.executionTargetControl {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: min(100%, 320px);
+}
+
+.executionTargetSelect {
+  min-width: 180px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.executionTargetHint {
+  flex: 1 1 100%;
+  color: var(--color-muted);
+  font-size: 11px;
 }
 
 .kbd {

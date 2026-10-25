@@ -338,12 +338,15 @@ export default function TranslationWorkspace() {
   const updateRoutes = useCallback((next: TranslationRoutePreference[]) => {
     // Route edits are also request intent changes. Invalidate detection before
     // persisting the new order so a pending callback cannot use the old chain.
+    // Cancel the active stream as well; otherwise buffered deltas from the old
+    // route could appear after the user has selected a new route.
     intentSequence.current += 1;
     setDetecting(false);
+    stream.cancel();
     const normalized = next.map((route, priority) => ({ ...route, priority }));
     setRoutes(normalized);
     persist({ routes: normalized });
-  }, [persist]);
+  }, [persist, stream]);
 
   const handleAddRoute = useCallback(() => {
     updateRoutes([...routes, createRoutePreference(routes.length, models[0])]);

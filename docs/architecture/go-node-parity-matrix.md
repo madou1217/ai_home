@@ -308,25 +308,27 @@ modalities 交付扩大为尚无消费者的 context/pricing 设计。
 
 | 字段 | 上游 | Go |
 | --- | --- | --- |
-| `stop_details` | `null`（refusal 时有值） | 模型里没有该字段 |
+| `stop_details` | `null`（refusal 时有值） | Canonical 已承载 refusal category；Anthropic renderer 按真实类别重建 |
 | `usage.service_tier` | 字符串 | 模型里没有该字段 |
 | `usage.inference_geo` | 字符串 | 恒 `null` |
 | `usage.cache_creation` | 对象（1h/5m 分项） | 恒 `null` |
 
-这四个不是打 tag 能解决的，需要 Canonical 响应模型承载它们。计费与缓存可观测性
-依赖 `usage.*`，`stop_details` 是 refusal 分类的唯一出口。
+后三个不是打 tag 能解决的，需要协议专属的透传或边界建模。计费与缓存可观测性
+依赖 `usage.*`；`stop_details` 的 refusal category 已由 Canonical 承载并在
+Anthropic renderer 恢复。
 
 同协议的 Claude Messages 请求现在统一进入 Native Relay：官方端点 OAuth 且满足
 请求合同时字节透传，`stop_details`、`service_tier`、`inference_geo` 和
 `cache_creation` 不再经过 Canonical 因而不会丢失；非官方端点凭据、跨协议模型或
-不满足透传合同的请求才交回 Canonical。跨协议没有等价字段时继续丢弃是有意的，
-`stop_details` 的跨协议细化仍是独立的 Canonical 课题。
+不满足透传合同的请求才交回 Canonical。跨协议没有等价字段时，Anthropic 专属的
+usage 细分继续丢弃是有意的；`stop_details` 已不再属于待建模差异。
 
 ### 结论
 
 - 1：不照抄，按 opt-in 重新设计；模态数据源仍要补。
 - 2：已按 OpenAI 契约收口；Go 必需字段补齐，协议私有回显保持在 Exchange 边界。
-- 3：(A) 已修；(B) 同协议 Native Relay 已修；跨协议的 `stop_details` 细化仍待独立建模。
+- 3：(A) 已修；(B) 同协议 Native Relay 已修；Canonical 的 refusal category 与
+  Anthropic `stop_details` 重建也已修。
 
 影子比对应在每次改动 Canonical 编解码后重跑。
 
@@ -365,14 +367,15 @@ Canonical。** 同协议时这些信息是 1:1 的，重建一遍只会丢；跨
 `RequiresNativeOAuth` 判定是否可以保留官方证明，第三方 Base URL 的 OAuth 形态
 凭据不会被错误地送往官方端点。
 
-## 例外：`stop_details` 应该进 Canonical
+## 例外：`stop_details` 已进入 Canonical
 
 按语义而不是按它在 Anthropic 响应里的位置重新归类，`stop_details` 与上面三个不同。
 
-**现状**：refusal 这件事本身没丢——`response_decoder.go:1108` 把 Anthropic 的
+**现状**：refusal 这件事本身没丢——`response_decoder.go` 把 Anthropic 的
 `stop_reason: "refusal"` 映射为 `inference.StopReasonContentFilter`，Canonical 也有
-`ContentRefusal` / `EventRefusalDelta`。丢的是**类别**（`cyber` / `bio` /
-`reasoning_extraction` / `frontier_llm` 等），Go 侧完全没有解码也没有建模。
+`ContentRefusal` / `EventRefusalDelta`。refusal 类别（`cyber` / `bio` /
+`reasoning_extraction` / `frontier_llm` 等）现在由 `ResponseCompletedEvent` 承载，
+Anthropic renderer 只在类别真实存在时恢复 `stop_details`。
 
 **为什么这会影响任务效果**：refusal 的类别决定该回退到哪个模型（例如 cyber 类
 拒绝的推荐落点是 Opus 4.8）。类别丢失后，客户端只知道「被拒了」不知道为什么，
@@ -386,8 +389,10 @@ Canonical。** 同协议时这些信息是 1:1 的，重建一遍只会丢；跨
 同源问题：`refusal → StopReasonContentFilter` 这个映射本身也是有损的——Anthropic
 的 refusal 与通用「内容过滤」不是一回事。
 
-**结论**：`stop_details` 独立于分发改造，即使同协议走了透传，跨协议路径仍然需要
-它。应作为 refusal 分类的细化进入 Canonical。
+**结论**：`stop_details` 已作为 refusal 分类的细化进入 Canonical。Native Relay
+继续负责同协议的字节级无损路径；Canonical 路径负责跨协议和非透传场景的类别保留，
+对应测试见 `claude/messages/refusal_category_test.go` 与
+`clientprotocol/anthropicmessages/refusal_category_test.go`。
 
 ## Codex workspace 与账号身份对齐（2026-09-15）
 

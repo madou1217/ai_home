@@ -31,3 +31,23 @@ func TestClassifyForbiddenAsAccountCredentialRejection(t *testing.T) {
 		t.Fatalf("scope = %q, want account", classification.BlockDirective().Scope())
 	}
 }
+
+func TestClassifyWorkspaceDeactivatedRequiresPaymentRequiredStatus(t *testing.T) {
+	for _, status := range []int{200, 400, 401, 403, 500} {
+		classification, err := Classify(Input{StatusCode: status, ErrorCode: "deactivated_workspace"})
+		if err != nil {
+			t.Fatalf("status %d: Classify() error = %v", status, err)
+		}
+		if classification.Kind() == runtimecore.FailureWorkspaceDeactivated {
+			t.Fatalf("status %d: classified deactivated workspace without HTTP 402", status)
+		}
+	}
+
+	classification, err := Classify(Input{StatusCode: 402, ErrorCode: "deactivated_workspace"})
+	if err != nil {
+		t.Fatalf("HTTP 402: Classify() error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureWorkspaceDeactivated {
+		t.Fatalf("HTTP 402: kind = %q, want %q", classification.Kind(), runtimecore.FailureWorkspaceDeactivated)
+	}
+}

@@ -93,7 +93,7 @@ func classifyResponse(
 		return runtimecore.FailureBillingBlocked, false
 	case errorType == "quota_error":
 		return runtimecore.FailureQuotaExhausted, false
-	case errorCode == "deactivated_workspace":
+	case response.StatusCode() == 402 && errorCode == "deactivated_workspace":
 		return runtimecore.FailureWorkspaceDeactivated, false
 	case errorCode == "model_not_found":
 		return runtimecore.FailureModelUnsupported, false

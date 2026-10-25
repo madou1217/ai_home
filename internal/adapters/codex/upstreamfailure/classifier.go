@@ -95,7 +95,7 @@ func classifyResponse(
 		return runtimecore.FailureBillingBlocked, false
 	case errorCode == "invalid_api_key":
 		return runtimecore.FailureCredentialRejected, false
-	case errorCode == "deactivated_workspace":
+	case response.StatusCode() == 402 && errorCode == "deactivated_workspace":
 		return runtimecore.FailureWorkspaceDeactivated, false
 	case errorCode == "model_at_capacity":
 		return runtimecore.FailureModelOverloaded, true

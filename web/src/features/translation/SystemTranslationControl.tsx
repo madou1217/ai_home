@@ -9,6 +9,11 @@ import {
   isControlPlaneProfileReady,
   listControlPlaneProfiles,
 } from '@/services/control-plane-profiles';
+import { getTranslationTargetStatus } from './translation-targets';
+
+interface Props {
+  persistedExecutionTarget?: 'aih-server' | 'direct-provider';
+}
 
 type SystemServerTargetOption = {
   kind: 'aih-server';
@@ -20,12 +25,6 @@ type SystemServerTargetOption = {
 
 function targetKey(target: Pick<SystemServerTargetOption, 'origin' | 'serverId'>) {
   return target.serverId || target.origin;
-}
-
-function executionTargetState(target: TranslationExecutionTarget) {
-  if (!target.available) return '不可用';
-  if (!target.configured) return '待配置';
-  return '已配置';
 }
 
 function executionTargetHint(target: TranslationExecutionTarget) {
@@ -42,13 +41,13 @@ function executionTargetHint(target: TranslationExecutionTarget) {
   return `${target.capabilities.streaming ? '支持流式输出' : '完整结果'}${operationText ? ` · ${operationText}` : ''}${providerText}`;
 }
 
-export default function SystemTranslationControl() {
+export default function SystemTranslationControl({ persistedExecutionTarget }: Props) {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [profileRevision, setProfileRevision] = useState(0);
   const executionTargets = status?.executionTargets || [];
-  const selectedExecutionTarget = status?.executionTarget || executionTargets.find((target) => target.configured)?.id || executionTargets[0]?.id || '';
+  const selectedExecutionTarget = status?.executionTarget || persistedExecutionTarget || executionTargets.find((target) => target.configured)?.id || executionTargets[0]?.id || '';
   const selectedExecutionTargetDetails = executionTargets.find((target) => target.id === selectedExecutionTarget);
   const serverTargets = useMemo<SystemServerTargetOption[]>(() => {
     // A profile without a management key or a successful health state cannot
@@ -160,8 +159,8 @@ export default function SystemTranslationControl() {
             }}
           >
             {executionTargets.map((target) => (
-              <option key={target.id} value={target.id} disabled={!target.available || !target.configured}>
-                {target.label} · {executionTargetState(target)}
+              <option key={target.id} value={target.id} disabled={!getTranslationTargetStatus(target).selectable}>
+                {target.label} · {getTranslationTargetStatus(target).label}
               </option>
             ))}
           </select>

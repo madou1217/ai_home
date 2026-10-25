@@ -343,10 +343,17 @@ export default function TranslationWorkspace() {
     intentSequence.current += 1;
     setDetecting(false);
     stream.cancel();
+    const pageWasBusy = pageBusy || Boolean(pageAbortRef.current);
+    pageAbortRef.current?.abort();
+    pageAbortRef.current = null;
+    if (pageWasBusy) {
+      setPageBusy(false);
+      setPageCancelled(true);
+    }
     const normalized = next.map((route, priority) => ({ ...route, priority }));
     setRoutes(normalized);
     persist({ routes: normalized });
-  }, [persist, stream]);
+  }, [pageBusy, persist, stream]);
 
   const handleAddRoute = useCallback(() => {
     updateRoutes([...routes, createRoutePreference(routes.length, models[0])]);
@@ -714,7 +721,7 @@ export default function TranslationWorkspace() {
               <span id="translation-system-settings-title" className={styles.paneTitle}>系统级取词</span>
               <span className={styles.routeHint}>macOS 全局选词、右键入口和辅助功能授权。</span>
             </div>
-            <SystemTranslationControl />
+            <SystemTranslationControl persistedExecutionTarget={bootstrap?.settings.executionTarget} />
           </section>
           <TranslationProviderSettings
             providers={providers}

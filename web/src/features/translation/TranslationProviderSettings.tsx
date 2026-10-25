@@ -1,6 +1,7 @@
 import { Input, Tabs, Tag } from 'antd';
 import Button from '@/components/ui/AppButton';
 import type { TranslationProviderOption } from '@/types';
+import { getTranslationProviderStatus } from './translation-targets';
 import styles from './translation.module.css';
 
 interface Props {
@@ -17,14 +18,14 @@ export default function TranslationProviderSettings({ providers, drafts, saving,
   const renderProvider = (provider: TranslationProviderOption) => {
     const fields = Object.entries(provider.config.fieldDefinitions || {}).filter(([name]) => provider.config.fields.includes(name));
     const draft = drafts[provider.id] || {};
-    const statusLabel = !provider.executable ? '不可用' : provider.configured ? '已配置' : '待配置';
-    const statusColor = !provider.executable ? 'error' : provider.configured ? 'success' : 'warning';
+    const providerStatus = getTranslationProviderStatus(provider);
+    const statusColor = providerStatus.state === 'unavailable' ? 'error' : providerStatus.state === 'configured' ? 'success' : 'warning';
     const missingFields = provider.missingFields.map((name) => provider.config.fieldDefinitions?.[name]?.label || name);
     return (
       <section className={styles.providerSettingsRow} aria-label={`${provider.label} 设置`}>
         <div className={styles.providerSettingsHeading}>
           <strong>{provider.label}</strong>
-          <Tag color={statusColor}>{statusLabel}</Tag>
+          <Tag color={statusColor}>{providerStatus.label}</Tag>
           <span className={styles.savedHint}>{provider.metadata.accessLabel}</span>
         </div>
         <span className={styles.savedHint}>{provider.metadata.accessDescription}</span>

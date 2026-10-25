@@ -50,3 +50,17 @@ The pre-existing unrelated `lib/server/web-account-auth.js` modification was lef
 - `/webui/translation/system` route -> narrow API adapter -> maps the UI target selection to the existing service `setExecutionTarget` contract without introducing a second persistence path -> desktop runtime and translation integration tests pass.
 
 SOLID, KISS, DRY, and YAGNI review: the selector and provider status remain presentational projections of existing descriptors; no provider dispatch table, new environment variable, or additional state machine was introduced.
+
+## Review fix round 1
+
+- Added `web/src/features/translation/translation-targets.ts`, a pure status projection used by both the execution target selector and Provider settings. It maps configured, pending, and unavailable capabilities without provider-name branching and exposes the UI decoration invariant used by the focused contract test.
+- Added `test/translation-web-targets.test.js`. It runs with Node's built-in `--experimental-strip-types` support and covers all target/provider status states plus the no-`Alert`/no-`border-left` invariant across the four translation UI files.
+- Route changes now abort `pageAbortRef.current`, clear its reference, and mark an active page translation stopped while preserving route/provider drafts.
+- `TranslationWorkspace` passes `bootstrap.settings.executionTarget` into the control for the initial persisted selection. `/webui/translation/system` remains the runtime capability/status source and selection mutation endpoint; the existing translation settings store remains the persistence source. Status descriptors enrich the persisted value with availability and capability details.
+
+Fix-round verification:
+
+- `node --experimental-strip-types --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 17 passed, 0 failed.
+- `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
+- `cd web && npm run build` — still blocked before project compilation by the existing Umi/http-deceiver `No such module: http_parser` runtime failure under Node v22.16.0.
+- `git diff --check` — passed.

@@ -41,6 +41,11 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     else if let configuredTarget = event["serverTarget"] as? [String: Any] { target = configuredTarget }
     if let configuredModel = event["chatModel"] as? String { model = configuredModel }
     content.setState(state, sessionID: sessionID, model: model, message: "")
+    if !pendingServiceText.isEmpty && state == .disconnected {
+      show()
+      pendingServiceRequestID = requestID
+      submitPendingServiceTextIfReady()
+    }
   }
 
   func show() {

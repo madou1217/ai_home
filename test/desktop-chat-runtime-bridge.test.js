@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createDesktopChatRuntimeBridge } = require('../lib/desktop/chat/chat-runtime-bridge');
 
-function runtimeFixture() {
+function runtimeFixture({ synchronousTurnEvent = false } = {}) {
   const listeners = new Map();
   const calls = [];
   const session = { sessionId: 'session-1', provider: 'codex', executionAccountRef: 'gateway', policy: { model: 'gpt-6.1-sol' } };
@@ -18,7 +18,11 @@ function runtimeFixture() {
       async openChatSession(input) { calls.push(['open', input]); return session; },
       subscribe(sessionId, listener) { listeners.set(sessionId, listener); return () => listeners.delete(sessionId); },
       async readEvents() { return { events: [event('session.created', 1, { state: 'idle' })] }; },
-      async dispatchCommand(sessionId, command) { calls.push(['dispatch', sessionId, command]); return { sessionId, commandId: command.commandId, acceptedSeq: calls.filter((call) => call[0] === 'dispatch').length + 1, duplicate: false }; },
+      async dispatchCommand(sessionId, command) {
+        calls.push(['dispatch', sessionId, command]);
+        if (synchronousTurnEvent && command.type === 'turn.submit') listeners.get(session.sessionId)?.(event('turn.started', 2, { turnId: 'turn-sync' }));
+        return { sessionId, commandId: command.commandId, acceptedSeq: calls.filter((call) => call[0] === 'dispatch').length + 1, duplicate: false };
+      },
       emit(type, payload, seq = 3) { listeners.get(session.sessionId)?.(event(type, seq, payload)); }
     }
   };
@@ -80,11 +84,37 @@ test('desktop Chat bridge does not tag stale sequence events with a newer comman
   const send = (event) => outgoing.push(event);
   await bridge.handle({ type: 'chat.open', requestId: 'request-1', target: {} }, { send });
   await bridge.handle({ type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', generation: 1, text: 'one' }, { send });
+  fixture.runtime.emit('turn.started', { turnId: 'turn-old' }, 3);
   await bridge.handle({ type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-2', generation: 2, text: 'two' }, { send });
   fixture.runtime.emit('timeline.item.delta', { itemId: 'old', chunk: 'old' }, 2);
   const latest = outgoing.filter((event) => event.event && event.event.type === 'timeline.item.delta').at(-1);
   assert.equal(latest.commandId, undefined);
   assert.equal(latest.generation, undefined);
+});
+
+test('desktop Chat bridge tags synchronously emitted turn events with the provisional command identity', async () => {
+  const fixture = runtimeFixture({ synchronousTurnEvent: true });
+  const outgoing = [];
+  const bridge = createDesktopChatRuntimeBridge({ runtime: fixture.runtime, resolveTarget: () => ({ provider: 'codex', model: 'm', executionAccountRef: 'gateway' }) });
+  const send = (event) => outgoing.push(event);
+  await bridge.handle({ type: 'chat.open', requestId: 'request-1', target: {} }, { send });
+  await bridge.handle({ type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', generation: 1, text: 'hello' }, { send });
+  const turn = outgoing.find((event) => event.event && event.event.type === 'turn.started');
+  assert.equal(turn.commandId, 'command-1');
+  assert.equal(turn.generation, 1);
+});
+
+test('desktop Chat bridge tags active stream errors with command identity', async () => {
+  const fixture = runtimeFixture();
+  const outgoing = [];
+  const bridge = createDesktopChatRuntimeBridge({ runtime: fixture.runtime, resolveTarget: () => ({ provider: 'codex', model: 'm', executionAccountRef: 'gateway' }) });
+  const send = (event) => outgoing.push(event);
+  await bridge.handle({ type: 'chat.open', requestId: 'request-1', target: {} }, { send });
+  await bridge.handle({ type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', generation: 1, text: 'hello' }, { send });
+  fixture.runtime.emit('stream.error', { error: 'stream_failed' }, 0);
+  const error = outgoing.find((event) => event.event && event.event.type === 'stream.error');
+  assert.equal(error.commandId, 'command-1');
+  assert.equal(error.generation, 1);
 });
 
 test('desktop Chat bridge unsubscribes on close', async () => {

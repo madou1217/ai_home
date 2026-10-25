@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -382,6 +383,19 @@ func newModelViews(
 			views = append(views, view)
 			owners = append(owners, alias.Provider)
 		}
+	}
+	type modelViewWithOwner struct {
+		view  modelView
+		owner string
+	}
+	ordered := make([]modelViewWithOwner, len(views))
+	for index := range views {
+		ordered[index] = modelViewWithOwner{view: views[index], owner: owners[index]}
+	}
+	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].view.ID < ordered[right].view.ID })
+	for index := range ordered {
+		views[index] = ordered[index].view
+		owners[index] = ordered[index].owner
 	}
 	return filterViewsByCapability(views, owners, modalities, capability), nil
 }

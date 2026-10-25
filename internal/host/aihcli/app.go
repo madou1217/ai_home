@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	claudecli "github.com/madou1217/ai_home/internal/adapters/claude/clilaunch"
 	codexcli "github.com/madou1217/ai_home/internal/adapters/codex/clilaunch"
 	"github.com/madou1217/ai_home/internal/runtime/providercli"
+	"github.com/madou1217/ai_home/internal/runtime/pty"
 )
 
 const oauthHTTPTimeout = 15 * time.Second
@@ -198,6 +200,8 @@ func New(ctx context.Context, options Options) (*App, error) {
 		Stdout:      options.Stdout,
 		Stderr:      options.Stderr,
 		HTTPClient:  options.ProviderHTTPClient,
+		Interactive: isInteractiveTTY(options.Stdin, options.Stdout),
+		PTYStarter:  pty.NewStarter(),
 	})
 	if err != nil {
 		return fail("创建 Provider CLI Runtime 失败", err)
@@ -206,6 +210,12 @@ func New(ctx context.Context, options Options) (*App, error) {
 		return newApp(catalog, planner, runner)
 	}
 	return newApp(catalog, planner, runner, store)
+}
+
+func isInteractiveTTY(input io.Reader, output io.Writer) bool {
+	stdin, inputOK := input.(*os.File)
+	stdout, outputOK := output.(*os.File)
+	return inputOK && outputOK && stdin == os.Stdin && stdout == os.Stdout
 }
 
 // newApp 统一生产和包内测试的不变量校验。

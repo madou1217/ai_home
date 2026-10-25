@@ -11,6 +11,7 @@ import (
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/providerlaunch"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
+	"github.com/madou1217/ai_home/internal/runtime/pty"
 )
 
 var (
@@ -40,6 +41,9 @@ type Options struct {
 	Stderr io.Writer
 	// HTTPClient 供 Claude OAuth/Gateway 本地代理转发流式请求。
 	HTTPClient *http.Client
+	// Interactive selects the PTY-backed direct process path for foreground TTY runs.
+	Interactive bool
+	PTYStarter  pty.Starter
 }
 
 // Runner 是 LaunchPlan 到官方进程拓扑的唯一执行入口。
@@ -49,6 +53,8 @@ type Runner struct {
 	stdout      io.Writer
 	stderr      io.Writer
 	httpClient  *http.Client
+	interactive bool
+	ptyStarter  pty.Starter
 	environ     func() []string
 	binaries    binaryResolver
 	processes   processFactory
@@ -70,6 +76,8 @@ func NewRunner(options Options) (*Runner, error) {
 		stdout:      options.Stdout,
 		stderr:      options.Stderr,
 		httpClient:  client,
+		interactive: options.Interactive,
+		ptyStarter:  options.PTYStarter,
 		environ:     os.Environ,
 		binaries:    defaultBinaryResolver(),
 		processes:   execProcessFactory{},
@@ -156,10 +164,14 @@ func (runner *Runner) runDirect(
 	if err != nil {
 		return err
 	}
+	env := applyEnvironment(runner.environ(), environment)
+	if runner.interactive && runner.ptyStarter != nil {
+		return runner.runInteractiveDirect(ctx, path, arguments, env)
+	}
 	process, err := runner.processes.Start(ctx, processSpec{
 		path:   path,
 		args:   append([]string(nil), arguments...),
-		env:    applyEnvironment(runner.environ(), environment),
+		env:    env,
 		stdin:  runner.stdin,
 		stdout: runner.stdout,
 		stderr: runner.stderr,
@@ -168,4 +180,39 @@ func (runner *Runner) runDirect(
 		return err
 	}
 	return process.Wait()
+}
+
+func (runner *Runner) runInteractiveDirect(
+	ctx context.Context,
+	path string,
+	arguments []string,
+	environment []string,
+) error {
+	if runner == nil || runner.ptyStarter == nil || ctx == nil || path == "" {
+		return ErrInvalidRunRequest
+	}
+	session, err := runner.ptyStarter.Start(ctx, pty.Spec{
+		Path: path,
+		Args: append([]string(nil), arguments...),
+		Env:  append([]string(nil), environment...),
+		Size: pty.Size{Rows: 24, Cols: 80},
+	})
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	inputDone := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(session, runner.stdin)
+		inputDone <- copyErr
+	}()
+	_, outputErr := io.Copy(runner.stdout, session)
+	waitErr := session.Wait()
+	if outputErr != nil && outputErr != io.EOF {
+		return outputErr
+	}
+	if waitErr != nil {
+		return waitErr
+	}
+	return <-inputDone
 }

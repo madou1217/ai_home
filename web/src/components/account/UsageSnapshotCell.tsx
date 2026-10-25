@@ -316,8 +316,81 @@ interface UsageRendererProps {
 // 每模型余额桶（zcode）走的是同一条路径 —— 新增 provider 不需要在这里加分支。
 //
 // 只有 agy 的「按模型分组 + 每组限额」是真正特殊的展示，仍单独注册（见渲染器表）。
+// 套餐分组渲染：zcode 的「领臭鸡蛋」叠加新套餐后，同一账号有多个独立额度池。
+// 每组一个标题（套餐名）+ 组内额度行，模型同名也不会互相混淆。
+// 组内条目走与扁平路径**同一个** scope 投影与行组件，因此标签/单位/旁路标记的口径一致。
+function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKeyPrefix }: {
+  groups: NonNullable<Extract<AccountUsageSnapshot, { kind: 'zcode_plan_balance' }>['planGroups']>;
+  hideModels: boolean;
+  running: boolean;
+  activityRate: number;
+  effectKeyPrefix: string;
+}) {
+  return (
+    <div className="usage-snapshot-content usage-snapshot-content--scopes">
+      <div className="usage-meta-list usage-meta-list--groups">
+        {groups.map((group, groupIndex) => {
+          const rows = getQuotaScopes({
+            kind: 'zcode_plan_balance',
+            capturedAt: 0,
+            entries: group.entries
+          });
+          if (rows.length === 0) return null;
+          // 组内按窗口升序（与扁平路径同规则），但模型行保留全部：一个套餐的模型
+          // 数量本就少，截断会让「这个套餐有哪些模型」看不全。
+          const visibleRows = hideModels ? rows.slice(0, 1) : rows;
+          const label = group.name || group.planId || group.planGroupId;
+          return (
+            <div key={group.planGroupId || group.planId || `group-${groupIndex}`} className="usage-plan-group">
+              <div className="usage-group-title usage-group-title--plan" title={label}>
+                <span className="usage-group-title-text">{label}</span>
+              </div>
+              <div className="usage-meta-list">
+                {visibleRows.map((row, index) => {
+                  const unitsLines = buildUsageUnitsTooltipLines(row);
+                  return (
+                    <UsageMetaLine
+                      key={`${groupIndex}:${row.key}`}
+                      label={row.label}
+                      tag={row.category === 'gift' ? '赠送' : (row.category === 'detail' ? '明细' : undefined)}
+                      value={row.remainingPct}
+                      resetIn={row.resetIn}
+                      resetAtMs={row.resetAtMs}
+                      running={running}
+                      activityRate={activityRate}
+                      effectKey={`${effectKeyPrefix}:plan:${group.planGroupId || groupIndex}:${row.bucket || row.model || 'usage'}:${index}`}
+                      progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effectKeyPrefix }: UsageRendererProps) {
   const [expanded, setExpanded] = useState(false);
+  // 套餐分组（zcode 的「领臭鸡蛋」是**叠加**一个新套餐，同一账号可能同时有多个，
+  // 各有独立额度池）。有分组就按套餐分开渲染 —— 扁平 entries 会把两个套餐的同一模型
+  // 混成重复行，标题也只能退化成套餐名的拼接串。
+  const planGroups = 'planGroups' in snapshot && Array.isArray(snapshot.planGroups)
+    ? snapshot.planGroups
+    : [];
+  if (planGroups.length > 1) {
+    return (
+      <PlanGroupedUsage
+        groups={planGroups}
+        hideModels={hideModels}
+        running={running}
+        activityRate={activityRate}
+        effectKeyPrefix={effectKeyPrefix}
+      />
+    );
+  }
   // 全部 scope（含 gift/detail）：聚合行 + 每包明细都要看得见；账号级 min 另在
   // account-state 里只吃主额度，两者不冲突。
   const rows = getQuotaScopes(snapshot);

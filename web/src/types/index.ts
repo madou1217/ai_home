@@ -153,8 +153,21 @@ export type AccountUsageSnapshot =
       capturedAt: number;
       account?: {
         planType: string; // 套餐名，如 ZCode Start Plan
+        planIds?: string[]; // 推理端点按 plan_id 分叉（start-plan vs coding-plan）
       } | null;
       entries: CodexUsageEntry[]; // bucket = 模型 ID（billing/balance 的 capabilities model:*）
+      // 套餐分组：同账号可能**同时**有多个套餐（「领臭鸡蛋」是叠加一个新套餐，
+      // 各有独立额度池）。每个组的 entries 与顶层 entries 同构，只是限定在该套餐内。
+      // 界面据此按套餐分开渲染；缺失时退回扁平 entries（旧快照/其它 provider）。
+      planGroups?: Array<{
+        planGroupId: string;
+        planId: string;
+        name: string;
+        status: string;
+        endsAtMs: number;
+        priority: number;
+        entries: CodexUsageEntry[];
+      }>;
     }
   | {
       kind: 'gemini_oauth_stats';

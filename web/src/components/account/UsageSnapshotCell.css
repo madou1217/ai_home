@@ -339,3 +339,14 @@
     gap: var(--hos-space-1-5, 6px);
   }
 }
+
+/* 套餐分组（zcode 多套餐叠加）：每组一个套餐标题 + 组内额度行。 */
+.usage-plan-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.usage-plan-group .usage-meta-list {
+  padding-left: var(--hos-space-1, 4px);
+}

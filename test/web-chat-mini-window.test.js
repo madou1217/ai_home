@@ -37,6 +37,8 @@ test('mini-window preserves persisted lookup failures, retargets canonical sessi
   assert.match(mini, /Read at open time/);
   assert.match(mini, /useLocation/);
   assert.match(mini, /persistedSessionRef/);
+  assert.match(mini, /persistedSessionOwnsCanonicalRoute/);
+  assert.match(mini, /!persistedSessionOwnsCanonicalRoute/);
   assert.match(fs.readFileSync(path.join(root, 'web/src/features/chat-runtime/SessionWorkspace.tsx'), 'utf8'), /data-runtime-workspace/);
   assert.match(fs.readFileSync(path.join(root, 'web/src/features/chat-runtime/chat-mini-window.module.css'), 'utf8'), /data-runtime-workspace-dock/);
 });

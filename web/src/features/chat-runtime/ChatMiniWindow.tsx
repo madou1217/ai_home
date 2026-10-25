@@ -218,6 +218,8 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   const endDrag = useCallback(() => { dragRef.current = undefined; }, []);
 
   if (!open || typeof document === 'undefined') return null;
+  const persistedSessionOwnsCanonicalRoute = isChatPagePath(location.pathname)
+    && persistedSessionRef.current;
   const style: CSSProperties | undefined = position
     ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' }
     : undefined;
@@ -261,7 +263,10 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
             {accounts.length ? '正在准备 Chat Runtime…' : '暂无可用账号，请先配置 Chat 账号'}
           </div>
         ) : null}
-        {session && selectedAccount ? (
+        {persistedSessionOwnsCanonicalRoute ? (
+          <div className={styles.status} role="status">正在切换到独立 Chat 窗口…</div>
+        ) : null}
+        {session && selectedAccount && !persistedSessionOwnsCanonicalRoute ? (
           <MiniRuntime
             key={`${session.id}:${chatAccountIdentity(selectedAccount)}`}
             session={session}

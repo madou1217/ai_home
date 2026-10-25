@@ -8,6 +8,7 @@ func emit(_ event: [String: Any]) {
 }
 
 final class TranslationApp: NSObject, NSApplicationDelegate {
+  let fullApp = CommandLine.arguments.contains("--full-app")
   let reader = SelectionReader()
   let panel = TranslationPanel(emit: emit)
   var monitors: [Any] = []
@@ -20,7 +21,17 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   let contextMenu = NSMenu()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.accessory)
+    NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
+    if fullApp {
+      panel.configure([
+        "target": "zh-Hans",
+        "autoCopy": false,
+        "executionTarget": "direct-provider",
+        "languages": [["label": "简体中文", "code": "zh-Hans"]],
+        "serverTargets": []
+      ])
+      panel.openSettings()
+    }
     // Register the same action as a macOS Services provider. This makes
     // “AIH 翻译选中内容” available from Services in TextEdit, browsers and
     // other AX-aware apps, while the global monitor below keeps the compact
@@ -54,9 +65,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       return nil
     }
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-      if getppid() == 1 { NSApp.terminate(nil) }
+      if self?.fullApp != true && getppid() == 1 { NSApp.terminate(nil) }
       self?.updateTrust()
     }
+    if fullApp { return }
     DispatchQueue.global(qos: .utility).async { [weak self] in
       while let line = readLine() {
         guard line.utf8.count < 100000, let bytes = line.data(using: .utf8), let event = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { continue }

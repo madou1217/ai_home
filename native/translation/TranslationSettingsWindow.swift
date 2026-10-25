@@ -7,6 +7,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   let window: NSWindow
   private let emit: ([String: Any]) -> Void
   private let reducedMotion: Bool
+  private let configuredExecutionTarget: String
   private let targetMenu = NSPopUpButton()
   private let autoCopy = NSButton(checkboxWithTitle: "翻译完成后自动复制", target: nil, action: nil)
   private let executionMenu = NSPopUpButton()
@@ -20,6 +21,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   init(target: String, autoCopyEnabled: Bool, executionTarget: String, languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
     self.emit = emit
     self.reducedMotion = reducedMotion
+    self.configuredExecutionTarget = executionTarget
     self.onClosed = onClosed
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     super.init()
@@ -72,7 +74,10 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     let root = NSView()
     let title = NSTextField(labelWithString: "翻译")
     title.font = .boldSystemFont(ofSize: 18)
-    let subtitle = NSTextField(wrappingLabelWithString: "设置会保存到当前 AIH 桌面环境。")
+    let targetStatus = configuredExecutionTarget == "direct-provider"
+      ? "当前执行目标：Provider 直连（无需运行 AIH Server）"
+      : "当前执行目标：AIH Server（需要可用的服务目标）"
+    let subtitle = NSTextField(wrappingLabelWithString: "设置会保存到当前 AIH 桌面环境。\n\(targetStatus)")
     subtitle.textColor = .secondaryLabelColor
     let targetLabel = NSTextField(labelWithString: "目标语言")
     let executionLabel = NSTextField(labelWithString: "执行目标")

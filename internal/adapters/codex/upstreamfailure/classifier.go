@@ -36,9 +36,14 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 
 	kind, carriesRetryAfter := classifyResponse(response)
 	retryAfter := time.Duration(0)
-	if carriesRetryAfter &&
-		response.RetryAfter() <= runtimecore.MaxCooldownHint {
+	if carriesRetryAfter {
 		retryAfter = response.RetryAfter()
+		if retryAfter == 0 {
+			retryAfter = defaultRetryAfter(response, kind)
+		}
+		if retryAfter > runtimecore.MaxCooldownHint {
+			retryAfter = 0
+		}
 	}
 	if kind == runtimecore.FailureQuotaExhausted {
 		return sharedfailure.NewBlockingClassification(
@@ -59,6 +64,21 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 		)
 	}
 	return sharedfailure.NewClassification(kind, retryAfter)
+}
+
+// defaultRetryAfter mirrors Node's status-specific cooldowns. The domain policy
+// remains provider-neutral; HTTP status evidence supplies the concrete hint.
+func defaultRetryAfter(response sharedfailure.Response, kind runtimecore.FailureKind) time.Duration {
+	switch {
+	case response.StatusCode() == 503 && kind == runtimecore.FailureUpstreamUnavailable:
+		return time.Minute
+	case response.StatusCode() >= 500 && kind == runtimecore.FailureUpstreamUnavailable:
+		return 5 * time.Minute
+	case response.StatusCode() == 529 && kind == runtimecore.FailureModelOverloaded:
+		return 10 * time.Minute
+	default:
+		return 0
+	}
 }
 
 // codexQuotaScope 区分明确账号额度与仅有当前模型长窗口的证据。
@@ -117,7 +137,7 @@ func classifyResponse(
 	case response.StatusCode() == 529:
 		return runtimecore.FailureModelOverloaded, true
 	case response.StatusCode() == 408:
-		return runtimecore.FailureRequestTimeout, true
+		return runtimecore.FailureUnclassified, false
 	case response.StatusCode() >= 500:
 		return runtimecore.FailureUpstreamUnavailable, true
 	case response.StatusCode() == 400 ||

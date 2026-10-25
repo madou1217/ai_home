@@ -2,6 +2,7 @@ package upstreamfailure
 
 import (
 	"testing"
+	"time"
 
 	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 )
@@ -55,5 +56,33 @@ func TestClassifyWorkspaceDeactivatedRequiresPaymentRequiredStatus(t *testing.T)
 	}
 	if classification.Kind() != runtimecore.FailureWorkspaceDeactivated {
 		t.Fatalf("HTTP 402: kind = %q, want %q", classification.Kind(), runtimecore.FailureWorkspaceDeactivated)
+	}
+}
+
+func TestClassifyHTTPStatusCooldownMatchesNode(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantKind   runtimecore.FailureKind
+		wantRetry  time.Duration
+	}{
+		{name: "request timeout is request scoped", statusCode: 408, wantKind: runtimecore.FailureUnclassified},
+		{name: "server error", statusCode: 500, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: 5 * time.Minute},
+		{name: "service unavailable", statusCode: 503, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: time.Minute},
+		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: 10 * time.Minute},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classification, err := Classify(Input{StatusCode: test.statusCode})
+			if err != nil {
+				t.Fatalf("Classify() error = %v", err)
+			}
+			if classification.Kind() != test.wantKind {
+				t.Fatalf("kind = %q, want %q", classification.Kind(), test.wantKind)
+			}
+			if classification.RetryAfter() != test.wantRetry {
+				t.Fatalf("retry after = %s, want %s", classification.RetryAfter(), test.wantRetry)
+			}
+		})
 	}
 }

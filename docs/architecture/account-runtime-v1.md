@@ -82,7 +82,7 @@ Codex 分类器使用以下稳定证据：
 | `deactivated_workspace` | `workspace_deactivated` |
 | 529、`model_at_capacity` | `model_overloaded` |
 | `model_not_found` | `model_unsupported` |
-| 408 | `request_timeout` |
+| 408 | `unclassified`（请求级终态，不写账号模型 cooldown） |
 | 5xx | `upstream_unavailable` |
 | 400/422、`invalid_request_error` | `invalid_request` |
 | `content_policy_violation` | `safety_rejected` |

@@ -727,7 +727,8 @@ func retryableKind(kind runtimecore.FailureKind) bool {
 	switch kind {
 	case runtimecore.FailureRateLimited,
 		runtimecore.FailureUpstreamUnavailable,
-		runtimecore.FailureRequestTimeout:
+		runtimecore.FailureRequestTimeout,
+		runtimecore.FailureCredentialRejected:
 		return true
 	default:
 		return false

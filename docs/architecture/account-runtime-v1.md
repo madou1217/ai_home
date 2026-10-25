@@ -78,7 +78,7 @@ Codex 分类器使用以下稳定证据：
 | 限流恢复提示超过 24 小时、`insufficient_quota` | `quota_exhausted` |
 | `billing_not_active` | `billing_blocked` |
 | 401、`invalid_api_key` | `credential_rejected` |
-| 无明确 code 的 403 | `permission_denied` |
+| 普通 403（边缘/WAF、地区和资源限制专用规则未命中） | `credential_rejected` |
 | `deactivated_workspace` | `workspace_deactivated` |
 | 529、`model_at_capacity` | `model_overloaded` |
 | `model_not_found` | `model_unsupported` |
@@ -100,7 +100,7 @@ Claude 分类器使用以下稳定证据：
 | 明确统一额度窗口、限流恢复提示超过 24 小时、`quota_error` | `quota_exhausted` |
 | 529、`overloaded_error` | `model_overloaded` |
 | 401、`authentication_error` | `credential_rejected` |
-| 403、`permission_error` | `permission_denied` |
+| 普通 403、`permission_error`（边缘/WAF、地区和资源限制专用规则未命中） | `credential_rejected` |
 | `oauth_token_revoked` | `reauthentication_required` |
 | `billing_error` | `billing_blocked` |
 | `deactivated_workspace` | `workspace_deactivated` |
@@ -142,7 +142,7 @@ Claude 统一额度只在 `anthropic-ratelimit-unified-status=rejected` 且 over
 - Codex `insufficient_quota` 是账号级；仅由超长模型限流窗口推导时是账号模型级；
 - Claude unified rate-limit 或 `quota_error` 是账号级；非 unified 的超长窗口是账号
   模型级；
-- Codex/Claude 泛化 403 或 Claude `permission_error` 当前使用最小账号模型级作用域；
+- Codex/Claude 普通 403 或 Claude `permission_error` 当前使用账号级凭据阻断；边缘/WAF、地区和资源限制由专用前置规则处理，不落入该分支；
 - 凭据、billing、workspace 和 model-not-found 使用上表固定作用域。
 
 `RecoveryTrigger` 只声明哪个外部真相源可以解除对应阻塞。v1 不传播、不比较也不持久化

@@ -18,3 +18,16 @@ func TestClassifyHTTP451AsRegionUnsupported(t *testing.T) {
 		t.Fatalf("scope = %q, want account", classification.BlockDirective().Scope())
 	}
 }
+
+func TestClassifyForbiddenAsAccountCredentialRejection(t *testing.T) {
+	classification, err := Classify(Input{StatusCode: 403})
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
+	}
+	if classification.Kind() != runtimecore.FailureCredentialRejected {
+		t.Fatalf("kind = %q, want %q", classification.Kind(), runtimecore.FailureCredentialRejected)
+	}
+	if classification.BlockDirective().Scope() != runtimecore.BlockScopeAccount {
+		t.Fatalf("scope = %q, want account", classification.BlockDirective().Scope())
+	}
+}

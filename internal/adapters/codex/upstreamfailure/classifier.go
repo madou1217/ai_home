@@ -111,7 +111,7 @@ func classifyResponse(
 	case response.StatusCode() == 401:
 		return runtimecore.FailureCredentialRejected, false
 	case response.StatusCode() == 403:
-		return runtimecore.FailurePermissionDenied, false
+		return runtimecore.FailureCredentialRejected, false
 	case response.StatusCode() == 451:
 		return runtimecore.FailureRegionUnsupported, false
 	case response.StatusCode() == 529:

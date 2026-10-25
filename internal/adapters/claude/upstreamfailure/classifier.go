@@ -113,7 +113,7 @@ func classifyResponse(
 		return runtimecore.FailureCredentialRejected, false
 	case errorType == "permission_error" ||
 		response.StatusCode() == 403:
-		return runtimecore.FailurePermissionDenied, false
+		return runtimecore.FailureCredentialRejected, false
 	case response.StatusCode() == 451:
 		return runtimecore.FailureRegionUnsupported, false
 	case errorType == "invalid_request_error" ||

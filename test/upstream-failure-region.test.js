@@ -18,4 +18,18 @@ for (const provider of ['codex', 'claude']) {
     assert.equal(policy.egressRegionDenied, true);
     assert.equal(policy.regionSignature, 'http_451');
   });
+
+  test(`${provider} ordinary HTTP 403 is an account credential rejection`, () => {
+    const policy = classifyUpstreamFailure({
+      provider,
+      statusCode: 403,
+      body: provider === 'claude'
+        ? JSON.stringify({ type: 'error', error: { type: 'permission_error' } })
+        : JSON.stringify({ error: { type: 'forbidden' } })
+    });
+
+    assert.equal(policy.kind, 'auth_invalid');
+    assert.equal(policy.scope, 'account');
+    assert.equal(policy.shouldMarkFailure, true);
+  });
 }

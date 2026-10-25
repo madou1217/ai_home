@@ -12,7 +12,7 @@ const { createSystemTranslationService } = require('../lib/desktop/translation/s
 const { createFullAppHost } = require('../lib/desktop/runtime/full-app-host');
 const { normalizeTranslationSettings } = require('../lib/account/translation-settings-store');
 
-function fakeChild() {
+function fakeChild(autoReady = true) {
   const child = new EventEmitter();
   child.killed = false;
   child.stdin = {
@@ -22,7 +22,8 @@ function fakeChild() {
     end() { this.writable = false; }
   };
   child.stderr = new EventEmitter();
-  child.stdout = new EventEmitter();
+  child.stdout = new PassThrough();
+  if (autoReady) process.nextTick(() => child.stdout.write('{"version":1,"type":"ready"}\n'));
   child.kill = (signal) => { child.killed = true; child.killSignal = signal; };
   return child;
 }
@@ -83,42 +84,72 @@ test('launcher stop is atomic and send does not log or leak event data', async (
 });
 
 test('launcher suppresses stale child events by generation', async () => {
-  const child = fakeChild();
+  const child = fakeChild(false);
   child.stdout = new PassThrough();
   const events = [];
   const launcher = createDesktopLauncher({ build: async () => '/tmp/aih-helper', spawn: () => child, mode: 'helper' });
   launcher.on('event', (event) => events.push(event));
-  await launcher.start();
+  const started = launcher.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  child.stdout.write('{"version":1,"type":"ready"}\n');
+  await started;
   child.stdout.write(`${JSON.stringify({ version: 1, type: 'status', generation: 4, trusted: true })}\n`);
   child.stdout.write(`${JSON.stringify({ version: 1, type: 'status', generation: 3, trusted: false })}\n`);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(events.length, 1);
-  assert.equal(events[0].trusted, true);
+  const statuses = events.filter((event) => event.type === 'status');
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].trusted, true);
   launcher.stop({ permanent: true });
 });
 
 test('launcher performs versioned hello/ready handshake and rejects mismatched children', async () => {
-  const child = fakeChild();
+  const child = fakeChild(false);
   child.stdout = new PassThrough();
   const statuses = [];
   const launcher = createDesktopLauncher({ build: async () => '/tmp/aih-helper', spawn: () => child, mode: 'helper' });
   launcher.on('status', (status) => statuses.push(status));
-  await launcher.start();
+  const started = launcher.start();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.match(child.stdin.writes[0], /"type":"hello"/);
   child.stdout.write('{"version":1,"type":"ready"}\n');
+  await started;
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(launcher.status().handshake, true);
   assert.equal(statuses.includes('running'), true);
-  const incompatible = fakeChild();
+  const incompatible = fakeChild(false);
   incompatible.stdout = new PassThrough();
   const second = createDesktopLauncher({ build: async () => '/tmp/aih-helper', spawn: () => incompatible, mode: 'helper' });
-  await second.start();
+  const secondStart = second.start();
+  await new Promise((resolve) => setImmediate(resolve));
   incompatible.stdout.write('{"version":2,"type":"ready"}\n');
+  await secondStart;
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(second.status().status, 'stopping');
   assert.equal(incompatible.killSignal, 'SIGTERM');
   launcher.stop({ permanent: true });
   second.stop({ permanent: true });
+});
+
+test('handshake timeout terminates helper and uses bounded restart policy', async () => {
+  const children = [];
+  const launcher = createDesktopLauncher({
+    build: async () => '/tmp/aih-helper',
+    spawn: () => {
+      const child = fakeChild(false);
+      const kill = child.kill;
+      child.kill = (signal) => { kill(signal); child.emit('exit', null, signal); };
+      children.push(child);
+      return child;
+    },
+    mode: 'helper',
+    config: { handshakeTimeoutMs: 10, restartDelayMs: 1, maxRestarts: 1 }
+  });
+  const started = await launcher.start();
+  assert.equal(started, false);
+  assert.equal(children[0].killSignal, 'SIGTERM');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(children.length, 2);
+  launcher.stop({ permanent: true });
 });
 
 test('full-app launcher does not restart after an unexpected exit', async () => {

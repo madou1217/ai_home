@@ -105,3 +105,22 @@ attachment and waits for a version-1 `ready` event before reporting `running`.
 Incompatible versions produce `desktop_protocol_version_unsupported`, stop the
 child, and surface an error state. Deterministic tests cover hello/ready,
 mismatch handling, and per-child generation reset.
+
+## Final verification correction
+
+The verification table above predates the final desktop handshake and timeout
+regressions. At the current HEAD, the exact fresh commands report:
+
+- `node --test test/*.test.js` — **42 passed, 0 failed**.
+- `node --test test/desktop-runtime.test.js test/translation-execution-integration.test.js test/translation-execution-port.test.js test/desktop-translation-protocol.test.js` — **30 passed, 0 failed**.
+- `node --check lib/desktop/runtime/*.js lib/desktop/translation/*.js lib/account/translation-settings-store.js bin/aih-translation.js` — passed.
+- `xcrun swiftc -typecheck native/translation/*.swift` — passed.
+- `git diff --check` — passed.
+
+The strict artifact check remains:
+
+```text
+/usr/bin/codesign --verify --deep --strict "/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app"
+artifact=/tmp/aih-task5-artifact-current/run/desktop-translation/AIH Translation.app
+codesign=verified
+```

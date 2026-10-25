@@ -86,3 +86,7 @@ Final verification:
 - `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
 - `cd web && npm run build` — blocked before project compilation by the installed Umi/http-deceiver dependency (`No such module: http_parser` under Node v22.16.0).
 - `git diff --check` — passed.
+
+### Build environment correction
+
+The first build attempts used Node v22.16.0, whose removed `process.binding('http_parser')` caused Umi to stop before compilation. Re-running the required build with the installed Node v22.21.0 completed successfully: Webpack compiled in 28.16s and `stamp-sw-cache` finished with 206 cached files.

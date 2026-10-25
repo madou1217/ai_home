@@ -271,6 +271,35 @@ if [ "$GO_CORE_CONFIG_CHECK" = "disabled_nonempty" ]; then
   echo "[remote] deploy refused before rsync/restart; clear routes or enable Go Core" >&2
   exit 5
 fi
+RUNNING_READYZ="$(curl -fsS -m 5 "http://127.0.0.1:${options.port}/readyz" 2>/dev/null || true)"
+SERVICE_ACTIVE="$(systemctl --user is-active ${shQuote(options.unit)} 2>/dev/null || true)"
+if [ "$SERVICE_ACTIVE" = "active" ] && [ -z "$RUNNING_READYZ" ]; then
+  echo "[remote] running service is active but /readyz is unreadable; refusing deploy" >&2
+  exit 5
+fi
+if [ -n "$RUNNING_READYZ" ]; then
+  RUNNING_GO_STATE="$(RUNNING_READYZ="$RUNNING_READYZ" "$NODE_BIN/node" - <<'NODE'
+const body = process.env.RUNNING_READYZ || '';
+try {
+  const parsed = JSON.parse(body);
+  const go = parsed && parsed.go_core && typeof parsed.go_core === 'object' ? parsed.go_core : null;
+  const routes = go && Array.isArray(go.routes) ? go.routes.filter(Boolean) : [];
+  process.stdout.write(go && go.enabled === false && routes.length > 0 ? 'disabled_nonempty' : 'ok');
+} catch (_error) {
+  process.stdout.write('unreadable');
+}
+NODE
+)"
+  if [ "$RUNNING_GO_STATE" = "disabled_nonempty" ]; then
+    echo "[remote] running Go Core route ownership is non-empty while disabled" >&2
+    echo "[remote] deploy refused before rsync/restart; reconcile the running service first" >&2
+    exit 5
+  fi
+  if [ "$RUNNING_GO_STATE" = "unreadable" ]; then
+    echo "[remote] running /readyz is unreadable; refusing deploy" >&2
+    exit 5
+  fi
+fi
 
 echo "[remote] sync code -> $DIR"
 rsync -a --delete ${preserved} "$STAGE"/ "$DIR"/

@@ -80,3 +80,28 @@ The full app shares the native settings and translation panel source with the
 helper. It intentionally does not install global AX selection monitors in
 standalone mode; users can still configure the direct-provider target and use
 the native shell without a server. Helper AX behavior remains unchanged.
+
+## Fix round 1
+
+Review identified that the first implementation opened the native full-app
+window but had no independent Node consumer. The fix adds
+`lib/desktop/runtime/full-app-host.js` and `bin/aih-translation.js`: the host
+starts the native `--full-app` child, consumes its protocol, persists settings,
+and exposes a direct-provider `translate()` path. The native app now keeps its
+stdin protocol open in standalone mode, skips helper-only AX monitors and
+parent checks, accepts `host-translate`, and renders streamed results in the
+same request-guarded panel.
+
+The desktop protocol now requires bounded ids for translation requests, rejects
+oversized text before truncation, validates generation values, suppresses stale
+child generations in the launcher, and bounds nested settings/configuration/
+usage payloads. The launcher also schedules a fresh start when a stop/re-enable
+race invalidates a pending build. `setEnabled(true)` waits for launcher startup
+so the standalone host cannot send its first request before the child exists.
+
+Fix-round verification:
+
+- `node --test test/desktop-runtime.test.js test/translation-execution-integration.test.js test/translation-execution-port.test.js test/desktop-translation-protocol.test.js` — 25 passed, 0 failed.
+- `node --check lib/desktop/runtime/*.js lib/desktop/translation/*.js lib/account/translation-settings-store.js bin/aih-translation.js` — passed.
+- `xcrun swiftc -typecheck native/translation/*.swift` — passed.
+- `git diff --check` — passed.

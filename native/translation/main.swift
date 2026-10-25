@@ -48,7 +48,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     NSRegisterServicesProvider(self, "AIH Translation")
     NSUpdateDynamicServices()
     contextMenu.autoenablesItems = false
-    updateTrust()
+    if !fullApp { updateTrust() }
     activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
     ) { [weak self] notification in
@@ -66,15 +66,16 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     }
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       if self?.fullApp != true && getppid() == 1 { NSApp.terminate(nil) }
-      self?.updateTrust()
+      if self?.fullApp != true { self?.updateTrust() }
     }
-    if fullApp { return }
     DispatchQueue.global(qos: .utility).async { [weak self] in
       while let line = readLine() {
         guard line.utf8.count < 100000, let bytes = line.data(using: .utf8), let event = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { continue }
         DispatchQueue.main.async { self?.receive(event) }
       }
-      DispatchQueue.main.async { NSApp.terminate(nil) }
+      // A standalone app is not owned by a pipe. EOF only terminates the
+      // helper; the full app keeps its settings shell alive.
+      if self?.fullApp != true { DispatchQueue.main.async { NSApp.terminate(nil) } }
     }
   }
 
@@ -189,6 +190,11 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     case "request-permission":
       _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
       if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
+    case "host-translate":
+      guard fullApp,
+            let text = event["text"] as? String,
+            let id = event["id"] as? String else { return }
+      panel.beginHostTranslation(text: text, target: event["target"] as? String ?? "zh-Hans", id: id)
     default: panel.receive(event)
     }
   }

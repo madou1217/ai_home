@@ -161,6 +161,23 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     emit(["type": "translate", "id": requestID, "text": selected, "target": target, "targetPolicy": "explicit"])
   }
 
+  /// Standalone full-app host entry point. The Node host sends this event
+  /// before streaming the result so the panel has a request identity to guard
+  /// against stale response frames.
+  func beginHostTranslation(text: String, target: String, id: String) {
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !id.isEmpty else { return }
+    selected = text
+    offered = text
+    self.target = target.isEmpty ? defaultTarget : target
+    requestID = id
+    output = ""
+    awaitingConfirmation = false
+    content.begin(text)
+    if !panel.isVisible { place(panel, at: NSEvent.mouseLocation) }
+    hideTrigger()
+    show(panel)
+  }
+
   // A retry starts with the same preflight as a new selection. This keeps the
   // source/target guard active after a timeout or an upstream failure instead
   // of silently bypassing the language confirmation state.

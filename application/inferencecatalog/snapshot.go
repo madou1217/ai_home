@@ -8,6 +8,7 @@ import (
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
 	"github.com/madou1217/ai_home/application/inferencegateway"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/core/inference"
 )
 
@@ -59,10 +60,11 @@ func (snapshot *Snapshot) AliasCompilation() AliasCompilation {
 		return AliasCompilation{}
 	}
 	return AliasCompilation{
-		Generation:  snapshot.aliases.Generation,
-		Rules:       append([]inferencegateway.RouteRule(nil), snapshot.aliases.Rules...),
-		AcceptedIDs: append([]string(nil), snapshot.aliases.AcceptedIDs...),
-		Dropped:     append([]AliasDrop(nil), snapshot.aliases.Dropped...),
+		Generation:    snapshot.aliases.Generation,
+		Rules:         append([]inferencegateway.RouteRule(nil), snapshot.aliases.Rules...),
+		AcceptedIDs:   append([]string(nil), snapshot.aliases.AcceptedIDs...),
+		DisplayModels: append([]modelalias.DisplayModel(nil), snapshot.aliases.DisplayModels...),
+		Dropped:       append([]AliasDrop(nil), snapshot.aliases.Dropped...),
 	}
 }
 
@@ -154,6 +156,7 @@ type AtomicCatalog struct {
 var _ inferencegateway.RouteResolver = (*AtomicCatalog)(nil)
 var _ inferencegateway.ProtocolRouteResolver = (*AtomicCatalog)(nil)
 var _ accountapp.RoutableModelReader = (*AtomicCatalog)(nil)
+var _ modelalias.DisplayReader = (*AtomicCatalog)(nil)
 
 // NewAtomicCatalog 创建尚未发布快照的失败关闭目录。
 func NewAtomicCatalog(clock Clock) (*AtomicCatalog, error) {
@@ -266,6 +269,18 @@ func (catalog *AtomicCatalog) AliasCompilation() AliasCompilation {
 		return AliasCompilation{}
 	}
 	return snapshot.AliasCompilation()
+}
+
+// ListDisplayModels 返回已发布且可安全展示的具体别名。
+func (catalog *AtomicCatalog) ListDisplayModels() []modelalias.DisplayModel {
+	if catalog == nil {
+		return nil
+	}
+	snapshot := catalog.current.Load()
+	if snapshot == nil {
+		return nil
+	}
+	return append([]modelalias.DisplayModel(nil), snapshot.aliases.DisplayModels...)
 }
 
 // Status 返回不会与内部状态共享可变内存的健康快照。

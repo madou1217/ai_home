@@ -40,6 +40,19 @@ type Record struct {
 	Description    string `json:"description"`
 }
 
+// DisplayModel 是已经通过 Go 别名编译、可以安全展示到模型目录的别名。
+// 它不携带请求运行态；真实目标和 Provider 仅用于目录字段与能力查找。
+type DisplayModel struct {
+	Alias    string
+	Target   string
+	Provider string
+}
+
+// DisplayReader 提供当前已发布快照中的可展示别名。
+type DisplayReader interface {
+	ListDisplayModels() []DisplayModel
+}
+
 // IsEnabled 报告别名是否启用；未提供 Enabled 时按启用处理。
 func (record Record) IsEnabled() bool {
 	return record.Enabled == nil || *record.Enabled

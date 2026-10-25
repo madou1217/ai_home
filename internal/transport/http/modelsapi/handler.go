@@ -11,6 +11,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	"github.com/madou1217/ai_home/application/modelalias"
 	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/core/inference"
 )
@@ -48,6 +49,7 @@ type Dependencies struct {
 	Models     ModelReader
 	Modalities modelmetadata.Reader
 	Reasoning  modelmetadata.ReasoningLadderReader
+	Aliases    modelalias.DisplayReader
 	Authorizer Authorizer
 }
 
@@ -56,6 +58,7 @@ type Handler struct {
 	models     ModelReader
 	modalities modelmetadata.Reader
 	reasoning  modelmetadata.ReasoningLadderReader
+	aliases    modelalias.DisplayReader
 	authorizer Authorizer
 }
 
@@ -70,6 +73,7 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		models:     dependencies.Models,
 		modalities: dependencies.Modalities,
 		reasoning:  dependencies.Reasoning,
+		aliases:    dependencies.Aliases,
 		authorizer: dependencies.Authorizer,
 	}, nil
 }
@@ -120,6 +124,7 @@ func (handler *Handler) ServeHTTP(
 		handler.modalities,
 		options.includeModalities,
 		handler.reasoning,
+		handler.aliases,
 		options.capability,
 		now,
 	)
@@ -296,6 +301,7 @@ func newModelViews(
 	modalities modelmetadata.Reader,
 	includeModalities bool,
 	reasoning modelmetadata.ReasoningLadderReader,
+	aliases modelalias.DisplayReader,
 	capability string,
 	created int64,
 ) ([]modelView, error) {
@@ -342,6 +348,40 @@ func newModelViews(
 		views = append(views, view)
 		owners = append(owners, model.ProviderID())
 		previousProviderID = model.ProviderID()
+	}
+	if aliases != nil {
+		for _, alias := range aliases.ListDisplayModels() {
+			if strings.TrimSpace(alias.Alias) == "" || strings.TrimSpace(alias.Target) == "" {
+				continue
+			}
+			duplicate := false
+			for _, view := range views {
+				if view.ID == alias.Alias {
+					duplicate = true
+					break
+				}
+			}
+			if duplicate {
+				continue
+			}
+			view := modelView{
+				ID: alias.Alias, Object: "model", Created: created,
+				OwnedBy: resolveModelOwner(alias.Provider, alias.Alias),
+			}
+			if includeModalities {
+				// Node builds the public model object from the alias ID itself;
+				// the target is routing metadata and is not used to fabricate
+				// public capabilities for the alias.
+				view.AIHModalities = newModelModalitiesView(modalities, alias.Provider, alias.Alias)
+			}
+			if reasoning != nil {
+				if ladder, found := reasoning.LookupReasoningEfforts(alias.Provider, alias.Alias); found {
+					view.AIHReasoningEfforts = reasoningEffortStrings(ladder)
+				}
+			}
+			views = append(views, view)
+			owners = append(owners, alias.Provider)
+		}
 	}
 	return filterViewsByCapability(views, owners, modalities, capability), nil
 }

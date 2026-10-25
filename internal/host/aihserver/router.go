@@ -24,6 +24,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/pluginapi"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 )
 
 // systemStatusResponse 是公开存活和就绪检查的稳定响应。
@@ -109,6 +110,9 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	if handlers.accountUsageEvents != nil {
 		mux.Handle(accountusageeventsapi.Path, handlers.accountUsageEvents)
+	}
+	if handlers.usageStats != nil {
+		mux.Handle(usagestatsapi.Path, handlers.usageStats)
 	}
 	mux.Handle(modelsapi.Path, handlers.models)
 	// /v1/models/ 同时承载两条能力：单模型查询 GET /v1/models/{id}，

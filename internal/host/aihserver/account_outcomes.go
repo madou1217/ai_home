@@ -26,6 +26,10 @@ type outcomeRecordingRuntime struct {
 	outcomes *accountoutcomes.Recorder
 	// usage 收集成功尝试的 token 用量，Node 增量拉取后计入账号 Token 用量。
 	usage *accountusagefeed.Feed
+	// usageLedger 是 Go 自有的跨重启 token 事实账本；写失败只记录日志，不改变上游结果。
+	usageLedger usageLedgerWriter
+	accounts    usageLedgerAccountReader
+	errorLog    *log.Logger
 }
 
 // RecordSuccess 记账后计入 success。
@@ -38,6 +42,15 @@ func (runtime outcomeRecordingRuntime) RecordSuccess(
 	runtime.outcomes.Record(route.AccountRef(), accountoutcomes.OutcomeSuccess)
 	if usage, ok := success.Usage(); ok {
 		runtime.usage.Append(route.AccountRef(), route.ModelID().String(), success.HappenedAt(), usage)
+		if runtime.usageLedger != nil && runtime.accounts != nil {
+			record, recordErr := buildUsageLedgerRecord(ctx, runtime.accounts, route, success)
+			if recordErr == nil {
+				recordErr = runtime.usageLedger.AppendUsageRecord(ctx, record)
+			}
+			if recordErr != nil && runtime.errorLog != nil {
+				runtime.errorLog.Printf("写入 Go token 用量账本失败（本次推理不受影响）: %v", recordErr)
+			}
+		}
 	}
 	return err
 }

@@ -76,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/usagestatsapi"
 )
 
 const (
@@ -114,6 +115,8 @@ type serverHandlers struct {
 	accountRuntime http.Handler
 	// accountUsageEvents 是成功尝试 token 用量事件的增量只读管理接口。
 	accountUsageEvents http.Handler
+	// usageStats 是 Go 持久化 token 账本的只读统计接口。
+	usageStats http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
 	plugins pluginHandlers
 	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
@@ -193,6 +196,9 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		serverAccountRuntime: inMemoryRuntime,
 		outcomes:             outcomeRecorder,
 		usage:                accountusagefeed.NewFeed(accountusagefeed.DefaultCapacity, time.Now()),
+		usageLedger:          store,
+		accounts:             store,
+		errorLog:             options.ErrorLog,
 	}
 	deletionGuard, err := persistentsessionguard.New(options.AIHomeDir)
 	if err != nil {
@@ -548,6 +554,10 @@ func newHandlers(
 			return serverHandlers{}, nil, fmt.Errorf("创建账号用量事件 Handler 失败: %w", err)
 		}
 		accountUsageEventsHandler = handler
+	}
+	usageStatsHandler, err := usagestatsapi.NewHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 用量统计 Handler 失败: %w", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:         management,
@@ -1100,6 +1110,7 @@ func newHandlers(
 		accountOutcomes:    accountOutcomesHandler,
 		accountRuntime:     accountRuntimeHandler,
 		accountUsageEvents: accountUsageEventsHandler,
+		usageStats:         usageStatsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		familyRelay:        familyRelayHandler,

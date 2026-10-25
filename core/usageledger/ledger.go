@@ -94,14 +94,14 @@ func (query Query) Validate() error {
 }
 
 type Stats struct {
-	TotalCalls            uint64
-	TotalSessions         uint64
-	InputTokens           uint64
-	OutputTokens          uint64
-	CacheReadInputTokens  uint64
-	CacheWriteInputTokens uint64
-	ReasoningOutputTokens uint64
-	TotalTokens           uint64
+	TotalCalls            uint64 `json:"total_calls"`
+	TotalSessions         uint64 `json:"total_sessions"`
+	InputTokens           uint64 `json:"input_tokens"`
+	OutputTokens          uint64 `json:"output_tokens"`
+	CacheReadInputTokens  uint64 `json:"cache_read_input_tokens"`
+	CacheWriteInputTokens uint64 `json:"cache_write_input_tokens"`
+	ReasoningOutputTokens uint64 `json:"reasoning_output_tokens"`
+	TotalTokens           uint64 `json:"total_tokens"`
 }
 
 func Aggregate(records []Record, query Query) Stats {

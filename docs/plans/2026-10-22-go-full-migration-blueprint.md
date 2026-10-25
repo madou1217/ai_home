@@ -50,7 +50,9 @@ Go 侧现有：`application/*` 21 包 + `internal/*` + `core/*`，已覆盖推�
 ### P1 控制面 `/v0/management/*`（30 条）
 
 - **入口条件**：P0 完成
-- **动作**：`usage/*`（15 条）优先——Go 已有 `accountusage`/`accountusagefeed` 领域包，复用度高；
+- **动作**：先定义 usage 查询投影和合同，再从可 shadow 的只读子接口开始；Go 现有
+  `accountusage`/`accountusagefeed` 只有额度快照与 Node 消费的增量 token event feed，
+  不能直接替代 Node 的日期范围、定价、模型/会话/请求查询和扫描任务；
   其余按 `docs/functional-matrix.md` 判定归属
 - **需决策**：`/reload`、`/restart`、`/shutdown` 属进程生命周期，**建议保持 Node**（Go 管不了自己的重启）
 - **出口条件**：usage 类按独立迁移计划推进；生命周期类明确标注保留理由

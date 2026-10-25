@@ -9,7 +9,7 @@
 | 面 | 现状 | 差距 |
 |---|---|---|
 | **推理数据面**（`/v1/*`） | Go 已实现全部 capability route；12 条已 `go_owned` | **剩余 3 个 blocker：health/readiness、models.list** |
-| **控制面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **完全没迁** |
+| **控制面 / 管理面**（`/v0/management/*`） | Node 30 条，Go 0 | **usage 查询合同尚未迁移；Go 只有 Node 消费的增量事件 feed** |
 | **WebUI 面**（`/v0/webui/*`） | Node 203 条，Go 0 | 官方标记 `out_of_scope`（Node 专有） |
 | **Node RPC**（`/v0/node-rpc/*`） | Node 63 条，Go 0 | 官方标记 `out_of_scope` |
 | **Fabric**（`/v0/fabric/*`） | Node 9 条，Go 0 | 官方标记 `out_of_scope` |
@@ -57,8 +57,15 @@ Node 30 条，Go 0 条。这些是**内部管理接口**，按 `docs/functional-
 | `watch/*`（变更订阅） | 2 | `/watch`、`/watch/snapshot` |
 | 单条 | 9 | `/status`、`/accounts`、`/models`、`/metrics`、`/cooldown/clear`、`/reload`、`/restart`、`/shutdown`、`/ui` |
 
-**需要决策**：Go 已经有 `accountusage` / `accountusagefeed` 领域包，
-所以 `usage/*` 大概率**该迁**；`/reload`、`/restart`、`/shutdown` 属于进程生命周期，可能保持 Node。
+**当前证据不支持直接迁移 usage dashboard。** Go 的 `accountusage` 是账号当前额度快照，
+`accountusagefeed` 是给 Node 汇总器消费的 `(boot_id, seq)` 增量 token event feed；两者都不
+提供 Node `usage/*` 所需的日期范围、定价、模型/会话/请求明细和扫描任务合同。2026-10-25
+live probe 结果：Node 的 `/v0/management/usage/stats|models|sessions|requests` 均返回 200
+和对应完整 payload；Go `GET /v1/management/account-usage-events?after_seq=0` 返回
+`boot_id/latest_seq/truncated/data`，本轮 `data` 为空。下一步应先为持久化 usage projection
+定义独立 Go 查询合同并做 Node shadow，再决定哪些 `/v0/management/usage/*` 子接口可以迁移；
+不能把 event feed 描述成 dashboard 等价物。`/reload`、`/restart`、`/shutdown` 属于进程
+生命周期，仍可单独评估是否保持 Node。
 
 ---
 
@@ -131,7 +138,9 @@ manifest 明确列出 5 条，**不该要求 Go 对齐**：
 
 1. **收尾剩余 3 个推理 blocker**：评估 models catalog；
    health/readiness 保持 Node 宿主所有权并补齐文档与回归守卫。
-2. **控制面 `usage/*` 迁移**（Go 已有 `accountusage` 领域包，复用度高）。
+2. **先建立 usage 查询投影与合同**：把 `accountusage` 快照、推理 token event 和 Node
+   持久化 usage records 的边界对齐，先 shadow 一个只读子接口，再迁移 `usage/*`；当前
+   event feed 不足以直接接管 dashboard。
 3. **审批传输补声明**（10 个 provider；不依赖 Go，能独立推进，且直接解锁 confirm/plan）。
 4. **PTY / 会话能力迁 Go**（规模最大，需先定「Go 是否要全量」这个前提）。
 5. **web 表面注册剩余 provider + 支持 API-key 账号**（legacy 退役的前提）。

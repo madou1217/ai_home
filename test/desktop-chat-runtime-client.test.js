@@ -10,7 +10,9 @@ const {
 const {
   encodeChatMessage,
   decodeChatLine,
-  createChatJsonlParser
+  createChatJsonlParser,
+  chatSubmit,
+  chatError
 } = require('../lib/desktop/chat/chat-runtime-protocol');
 
 function response(payload, status = 200) {
@@ -72,6 +74,43 @@ test('replays events from the supplied cursor and ignores stale session or seque
   assert.equal(started.cursor, 8);
 });
 
+test('rejects malformed event sequence values before they reach listeners', () => {
+  const stream = {};
+  const received = [];
+  const client = createDesktopChatRuntimeClient({
+    idFactory: () => 'request-events',
+    fetch: async () => response({ ok: true }),
+    openEvents: () => stream
+  });
+  const started = client.start('session-1', 7);
+  started.onEvent((event) => received.push(event));
+  for (const seq of [undefined, 0, -1, 1.5, '8']) {
+    stream.onmessage({ data: JSON.stringify({ sessionId: 'session-1', seq, type: 'turn.started' }) });
+  }
+  assert.deepEqual(received, []);
+  assert.equal(started.cursor, 7);
+});
+
+test('rejects sessions with invalid state, timestamps, or DTO record shapes', async () => {
+  for (const [field, value, code] of [
+    ['state', 'bogus', 'chat_runtime_state_invalid'],
+    ['lastEventSeq', -1, 'chat_runtime_session_seq_invalid'],
+    ['createdAt', 'yesterday', 'chat_runtime_session_created_at_invalid'],
+    ['updatedAt', null, 'chat_runtime_session_updated_at_invalid'],
+    ['policy', null, 'chat_runtime_session_policy_invalid'],
+    ['runtimeBinding', [], 'chat_runtime_session_binding_invalid'],
+    ['capabilitySnapshot', 'invalid', 'chat_runtime_capabilities_invalid']
+  ]) {
+    const invalid = { ...session(), [field]: value };
+    const client = createDesktopChatRuntimeClient({
+      fetch: async () => response({ ok: true, session: invalid }),
+      openEvents: () => ({ close() {} })
+    });
+    await assert.rejects(client.createSession({ provider: 'codex', executionAccountRef: 'account-1' }),
+      (error) => error instanceof DesktopChatRuntimeError && error.code === code);
+  }
+});
+
 test('uses caller command id for idempotent submit and stop commands', async () => {
   const bodies = [];
   const client = createDesktopChatRuntimeClient({
@@ -130,4 +169,19 @@ test('projects the helper protocol as strict JSONL and preserves request identit
   assert.deepEqual(parsed, [{
     type: 'chat.event', requestId: 'r', sessionId: 's', event: { seq: 1 }
   }]);
+});
+
+test('protocol constructors preserve canonical identity fields over caller extras', () => {
+  const submit = decodeChatLine(encodeChatMessage(chatSubmit('request-1', 'session-1', 'turn-1', 'hello', {
+    type: 'wrong', requestId: 'wrong', sessionId: 'wrong', commandId: 'wrong'
+  })));
+  assert.deepEqual(submit, {
+    type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'turn-1', text: 'hello'
+  });
+  const error = decodeChatLine(encodeChatMessage(chatError('request-1', 'runtime_failed', 'safe', {
+    type: 'wrong', requestId: 'wrong', code: 'wrong', sessionId: 'session-1'
+  })));
+  assert.deepEqual(error, {
+    type: 'chat.error', requestId: 'request-1', code: 'runtime_failed', message: 'safe', sessionId: 'session-1'
+  });
 });

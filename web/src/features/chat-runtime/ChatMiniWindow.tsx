@@ -52,6 +52,7 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   );
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(props.session || null);
+  const [accountOverride, setAccountOverride] = useState<ChatAccount | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [pinned, setPinned] = useState(false);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -60,7 +61,22 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   const accounts = props.accounts || accountCatalog.accounts;
-  const selectedAccount = props.account || resolveAccount(session, accounts, accountCatalog.selectedAccount);
+  const selectedAccount = props.account || accountOverride
+    || resolveAccount(session, accounts, accountCatalog.selectedAccount);
+
+  const handleAccountChange = useCallback((account: ChatAccount): void => {
+    setAccountOverride(account);
+    setSession((current) => current ? {
+      ...current,
+      id: `mini-draft-${Date.now()}`,
+      title: MINI_SESSION_TITLE,
+      updatedAt: Date.now(),
+      provider: account.provider,
+      accountRef: chatAccountIdentity(account),
+      runtimeSessionId: undefined,
+      draft: true,
+    } : current);
+  }, []);
 
   const loadSession = useCallback(async (): Promise<void> => {
     if (props.session) {
@@ -202,6 +218,7 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
             session={session}
             account={selectedAccount}
             accounts={runtimeAccountsForSession(session, accounts)}
+            onAccountChange={handleAccountChange}
             onSessionResolved={(runtimeSession) => {
               setSession((current) => current ? {
                 ...current,
@@ -222,11 +239,13 @@ function MiniRuntime({
   session,
   account,
   accounts,
+  onAccountChange,
   onSessionResolved,
 }: {
   session: Session;
   account: ChatAccount;
   accounts: readonly ChatAccount[];
+  onAccountChange: (account: ChatAccount) => void;
   onSessionResolved: (session: import('@/chat-runtime').ChatRuntimeSession) => void;
 }) {
   const [model, setModel] = useState(session.model || '');
@@ -262,6 +281,7 @@ function MiniRuntime({
       session={session}
       account={account}
       accounts={accounts}
+      onAccountChange={onAccountChange}
       model={model}
       approvalMode={approvalMode}
       setModel={setModel}
@@ -277,6 +297,7 @@ function MiniRuntimeReady({
   session,
   account,
   accounts,
+  onAccountChange,
   model,
   approvalMode,
   setModel,
@@ -288,6 +309,7 @@ function MiniRuntimeReady({
   session: Session;
   account: ChatAccount;
   accounts: readonly ChatAccount[];
+  onAccountChange: (account: ChatAccount) => void;
   model: string;
   approvalMode: 'bypass' | 'confirm' | 'plan';
   setModel: (model: string) => void;
@@ -325,7 +347,7 @@ function MiniRuntimeReady({
         accountRef={chatAccountIdentity(account)}
         selectedModel={model}
         approvalMode={approvalMode}
-        onAccountChange={() => {}}
+        onAccountChange={onAccountChange}
         onModelChange={setModel}
         onApprovalModeChange={setApprovalMode}
         onFreshNativeSessionBound={() => {}}

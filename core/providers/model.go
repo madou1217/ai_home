@@ -204,14 +204,14 @@ type Presentation struct {
 
 // AuthOption 描述 Client 可以展示的账号认证选项。
 type AuthOption struct {
-	Value          AuthMode `json:"value"`
+	Value AuthMode `json:"value"`
 	// Strategy distinguishes multiple implementations of the same auth mode.
 	// Empty keeps the historical single-strategy behavior.
 	Strategy       string `json:"strategy,omitempty"`
-	Label          string   `json:"label"`
-	Description    string   `json:"description"`
-	Disabled       bool     `json:"disabled,omitempty"`
-	DisabledReason string   `json:"disabledReason,omitempty"`
+	Label          string `json:"label"`
+	Description    string `json:"description"`
+	Disabled       bool   `json:"disabled,omitempty"`
+	DisabledReason string `json:"disabledReason,omitempty"`
 }
 
 // SessionSync 保存会话同步的声明，具体写文件或读数据库仍由 Integration Adapter 实现。
@@ -274,11 +274,30 @@ type DesktopPlatform struct {
 
 // NativeCapability 描述原生 CLI 对配置、会话、MCP、Hook 和权限的边界。
 type NativeCapability struct {
-	Config      NativeConfig      `json:"config"`
-	Sessions    NativeSessions    `json:"sessions"`
-	MCP         NativeMCP         `json:"mcp"`
+	Config   NativeConfig   `json:"config"`
+	Sessions NativeSessions `json:"sessions"`
+	MCP      NativeMCP      `json:"mcp"`
+	// Plugins/Skills describe native installation or projection boundaries. Empty
+	// declarations are intentional: consumers must report unsupported instead of
+	// guessing a provider's filesystem layout.
+	Plugins     NativePlugins     `json:"plugins"`
+	Skills      NativeSkills      `json:"skills"`
 	Hooks       NativeHooks       `json:"hooks"`
 	Permissions NativePermissions `json:"permissions"`
+}
+
+// NativePlugins describes the native plugin management boundary.
+type NativePlugins struct {
+	Commands []string `json:"commands"`
+	Paths    []string `json:"paths"`
+	Mode     string   `json:"mode"`
+}
+
+// NativeSkills describes the native skill or instruction projection boundary.
+type NativeSkills struct {
+	Commands []string `json:"commands"`
+	Paths    []string `json:"paths"`
+	Mode     string   `json:"mode"`
 }
 
 // NativeConfig 描述原生配置文件和 CLI 参数入口。

@@ -140,6 +140,20 @@
             "config.toml"
           ]
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": null,
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [
             "hooks.json"
@@ -283,6 +297,16 @@
           "configFiles": [
             "settings.json"
           ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
         },
         "hooks": {
           "files": [
@@ -470,6 +494,20 @@
             ".claude.json"
           ]
         },
+        "plugins": {
+          "commands": null,
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [
             "settings.json",
@@ -648,6 +686,16 @@
             ".agents/mcp_config.json"
           ]
         },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
         "hooks": {
           "files": [
             ".gemini/config/hooks.json",
@@ -807,6 +855,22 @@
             "opencode.json"
           ]
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugin"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "AGENTS.md"
+          ],
+          "mode": "projection-only"
+        },
         "hooks": {
           "files": [
             "plugin/aih-session-hook.js"
@@ -945,6 +1009,16 @@
           "configFiles": [
             ".grok/mcp.json"
           ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
         },
         "hooks": {
           "files": [
@@ -1112,6 +1186,16 @@
           "commands": null,
           "configFiles": null
         },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
         "hooks": {
           "files": null,
           "stopRequiresJsonStdout": false
@@ -1272,6 +1356,16 @@
           "commands": null,
           "configFiles": null
         },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
         "hooks": {
           "files": null,
           "stopRequiresJsonStdout": false
@@ -1412,6 +1506,16 @@
         "mcp": {
           "commands": [],
           "configFiles": []
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
         },
         "hooks": {
           "files": [],
@@ -1580,6 +1684,16 @@
           "configFiles": [
             "settings/mcp.json"
           ]
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
         },
         "hooks": {
           "files": [],
@@ -1843,6 +1957,22 @@
           ],
           "configFiles": []
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [],
           "stopRequiresJsonStdout": false
@@ -1999,6 +2129,22 @@
           ],
           "configFiles": []
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [],
           "stopRequiresJsonStdout": false
@@ -2146,6 +2292,22 @@
           ],
           "configFiles": []
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [],
           "stopRequiresJsonStdout": false
@@ -2290,6 +2452,22 @@
           ],
           "configFiles": []
         },
+        "plugins": {
+          "commands": [
+            "plugin"
+          ],
+          "paths": [
+            "plugins"
+          ],
+          "mode": "native"
+        },
+        "skills": {
+          "commands": null,
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
+        },
         "hooks": {
           "files": [],
           "stopRequiresJsonStdout": false
@@ -2420,6 +2598,16 @@
             "mcp"
           ],
           "configFiles": []
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
         },
         "hooks": {
           "files": [],

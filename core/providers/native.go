@@ -17,6 +17,8 @@ func nativeCodex() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"config.toml"},
 		},
+		Plugins: NativePlugins{Commands: []string{"plugin"}, Mode: "native"},
+		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"hooks.json"},
 			StopRequiresJSONStdout: true,
@@ -45,6 +47,8 @@ func nativeClaude() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{".mcp.json", ".claude.json"},
 		},
+		Plugins: NativePlugins{Paths: []string{"plugins"}, Mode: "native"},
+		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"settings.json", "plugins/hooks.json"},
 			StopRequiresJSONStdout: true,
@@ -156,6 +160,7 @@ func nativeGrok() *NativeCapability {
 //   - 不带旗标 = Always Ask：执行命令/改文件前都问；
 //   - `-y` / `--yolo` = Ask When Needed：常规编辑与命令自动执行，但有风险的操作、提问与计划仍会问；
 //   - `--auto` = Never Ask：不再打断，一切自动决定。
+//
 // 所以「不再询问」对应 `--auto`，不是 `--yolo` —— 只声明 `--yolo` 会让最大权限注入成一个
 // 官方说明里仍会询问的旗标。Modes 用 kimi 自己配置里的取值（PermissionModeSchema：
 // yolo / manual / auto），不自造名称。
@@ -193,6 +198,7 @@ func nativeKimi() *NativeCapability {
 //   - `-a, --trust-all-tools`：Allows the model to use any tool to run commands without
 //     asking for confirmation（等价于「不再询问」）；
 //   - `--trust-tools <TOOL_NAMES>`：只信任名单里的工具（`--trust-tools=` 表示一个都不信任）。
+//
 // 这两个旗标属于 **chat 子命令**，不是根命令：`kiro-cli -a` 退出码 2（被拒）、
 // `kiro-cli chat -a` 退出码 0；agent / settings 也不接受。因此落点由
 // lib/runtime/kiro-permission-args.js 声明（插在 `chat` 之后）。
@@ -288,6 +294,8 @@ func nativeOpenCode() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"opencode.json"},
 		},
+		Plugins: NativePlugins{Commands: []string{"plugin"}, Paths: []string{"plugin"}, Mode: "native"},
+		Skills:  NativeSkills{Paths: []string{"AGENTS.md"}, Mode: "projection-only"},
 		Hooks: NativeHooks{
 			Files:                  []string{"plugin/aih-session-hook.js"},
 			StopRequiresJSONStdout: false,
@@ -327,6 +335,8 @@ func nativeCodebuddy() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{},
 		},
+		Plugins: NativePlugins{Commands: []string{"plugin"}, Paths: []string{"plugins"}, Mode: "native"},
+		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{},
 			StopRequiresJSONStdout: false,

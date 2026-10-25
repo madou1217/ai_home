@@ -73,9 +73,9 @@ test('launcher stop is atomic and send does not log or leak event data', async (
   await Promise.all([launcher.start(), launcher.start()]);
   assert.equal(builds, 1);
   launcher.send({ type: 'configure', secret: 'do-not-log', target: 'zh-Hans' });
-  assert.equal(child.stdin.writes.length, 1);
-  assert.doesNotMatch(child.stdin.writes[0], /do-not-log/);
-  assert.match(child.stdin.writes[0], /zh-Hans/);
+  assert.equal(child.stdin.writes.length, 2);
+  assert.doesNotMatch(child.stdin.writes[1], /do-not-log/);
+  assert.match(child.stdin.writes[1], /zh-Hans/);
   launcher.stop();
   launcher.stop();
   assert.equal(child.killSignal, 'SIGTERM');
@@ -95,6 +95,30 @@ test('launcher suppresses stale child events by generation', async () => {
   assert.equal(events.length, 1);
   assert.equal(events[0].trusted, true);
   launcher.stop({ permanent: true });
+});
+
+test('launcher performs versioned hello/ready handshake and rejects mismatched children', async () => {
+  const child = fakeChild();
+  child.stdout = new PassThrough();
+  const statuses = [];
+  const launcher = createDesktopLauncher({ build: async () => '/tmp/aih-helper', spawn: () => child, mode: 'helper' });
+  launcher.on('status', (status) => statuses.push(status));
+  await launcher.start();
+  assert.match(child.stdin.writes[0], /"type":"hello"/);
+  child.stdout.write('{"version":1,"type":"ready"}\n');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(launcher.status().handshake, true);
+  assert.equal(statuses.includes('running'), true);
+  const incompatible = fakeChild();
+  incompatible.stdout = new PassThrough();
+  const second = createDesktopLauncher({ build: async () => '/tmp/aih-helper', spawn: () => incompatible, mode: 'helper' });
+  await second.start();
+  incompatible.stdout.write('{"version":2,"type":"ready"}\n');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.status().status, 'stopping');
+  assert.equal(incompatible.killSignal, 'SIGTERM');
+  launcher.stop({ permanent: true });
+  second.stop({ permanent: true });
 });
 
 test('full-app launcher does not restart after an unexpected exit', async () => {
@@ -178,12 +202,27 @@ test('standalone full-app host consumes native events and returns a direct resul
   await host.start();
   const result = await host.translate('Hello world', 'zh-Hans');
   assert.equal(receivedOptions.mode, 'full-app');
-  assert.equal(receivedOptions.executionTarget, 'direct-provider');
+  assert.equal(receivedOptions.executionTarget, undefined);
   assert.equal(persisted, true);
   assert.equal(result.text, '你好');
   assert.equal(events[0].type, 'host-translate');
   assert.equal(events[1].type, 'done');
   host.stop();
+});
+
+test('standalone host preserves an explicitly persisted execution target across recreation', async () => {
+  const targets = [];
+  const factory = (options) => {
+    targets.push(options.executionTarget || 'persisted');
+    return { async setEnabled() {}, getStatus() { return {}; }, sendEvent() {}, async translate() { return { ok: true, text: '' }; }, stop() {} };
+  };
+  const first = createFullAppHost({ serviceFactory: factory, executionTarget: 'aih-server', platform: 'linux', fsImpl: {}, aiHomeDir: '/tmp/aih-persisted' });
+  await first.start();
+  first.stop();
+  const second = createFullAppHost({ serviceFactory: factory, executionTarget: 'direct-provider', platform: 'linux', fsImpl: {}, aiHomeDir: '/tmp/aih-persisted' });
+  await second.start();
+  second.stop();
+  assert.deepEqual(targets, ['aih-server', 'direct-provider']);
 });
 
 test('execution target survives the existing translation settings normalizer', () => {

@@ -180,6 +180,13 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
 
   func receive(_ event: [String: Any]) {
     switch event["type"] as? String {
+    case "hello":
+      let version = event["version"] as? Int ?? 1
+      if version == 1 {
+        emit(["version": 1, "type": "ready"])
+      } else {
+        emit(["version": 1, "type": "error", "code": "desktop_protocol_version_unsupported", "message": "桌面协议版本不受支持", "retryable": false])
+      }
     case "configure":
       panel.configure(event)
       reader.serverPort = event["port"] as? Int ?? reader.serverPort

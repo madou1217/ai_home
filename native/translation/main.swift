@@ -12,12 +12,16 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   let reader = SelectionReader()
   let panel = TranslationPanel(emit: emit)
   let chatPanel = ChatPanel(emit: emit)
+  lazy var shortcutRegistry = ShortcutRegistry { [weak self] message in
+    guard let self = self else { return }
+    emit(["type": "status", "trusted": AXIsProcessTrusted(), "detail": message])
+    self.panel.content.showShortcutStatus(message)
+  }
   var monitors: [Any] = []
   var lastTrusted: Bool?
   var selectionToken = 0
   var selectionApplicationPID: pid_t = 0
   var activationObserver: NSObjectProtocol?
-  var settingsMonitor: Any?
   var contextSelection: SelectedText?
   let contextMenu = NSMenu()
 
@@ -33,6 +37,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       ])
       panel.openSettings()
     }
+    registerShortcuts()
     // Register the same action as a macOS Services provider. This makes
     // “AIH 翻译选中内容” available from Services in TextEdit, browsers and
     // other AX-aware apps, while the global monitor below keeps the compact
@@ -60,11 +65,6 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         self.panel.hideTrigger()
       }
     }
-    settingsMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-      guard event.modifierFlags.contains(.command), event.keyCode == 43 else { return event }
-      self?.panel.openSettings()
-      return nil
-    }
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       if self?.fullApp != true && getppid() == 1 { NSApp.terminate(nil) }
       if self?.fullApp != true { self?.updateTrust() }
@@ -78,6 +78,25 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       // helper; the full app keeps its settings shell alive.
       if self?.fullApp != true { DispatchQueue.main.async { NSApp.terminate(nil) } }
     }
+  }
+
+  func registerShortcuts(translation: String = ShortcutRegistry.defaultTranslationShortcut,
+                         chat: String = ShortcutRegistry.defaultChatShortcut,
+                         translationEnabled: Bool = true,
+                         chatEnabled: Bool = true) {
+    _ = shortcutRegistry.update([
+      ShortcutDescriptor(id: "translation", label: "翻译", shortcut: translation, enabled: translationEnabled) { [weak self] in
+        guard let self = self else { return }
+        let application = NSWorkspace.shared.frontmostApplication
+        if let selection = self.reader.read(explicit: true, application: application) {
+          self.panel.offer(selection, explicit: true)
+        }
+        emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
+      },
+      ShortcutDescriptor(id: "chat", label: "Chat", shortcut: chat, enabled: chatEnabled) { [weak self] in
+        self?.chatPanel.openFromShortcut()
+      }
+    ])
   }
 
   func updateTrust() {
@@ -133,11 +152,6 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
           self.selectionToken += 1
           self.panel.close()
         }
-        else if event.keyCode == 17, event.modifierFlags.contains(.command), event.modifierFlags.contains(.option) {
-          let application = NSWorkspace.shared.frontmostApplication
-          if let selection = self.reader.read(explicit: true, application: application) { self.panel.offer(selection, explicit: true) }
-          emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication])
-        }
         else if event.keyCode == 6,
                 event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
           // Let the host editor handle its own undo first. If the AX write
@@ -191,6 +205,12 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
     case "configure":
       panel.configure(event)
       chatPanel.configure(event)
+      registerShortcuts(
+        translation: event["shortcut"] as? String ?? ShortcutRegistry.defaultTranslationShortcut,
+        chat: event["chatShortcut"] as? String ?? ShortcutRegistry.defaultChatShortcut,
+        translationEnabled: event["shortcutEnabled"] as? Bool ?? true,
+        chatEnabled: event["chatShortcutEnabled"] as? Bool ?? true
+      )
       reader.serverPort = event["port"] as? Int ?? reader.serverPort
     case "webui-focus":
       reader.webUIFocusUntil = event["until"] as? Double ?? 0

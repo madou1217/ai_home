@@ -32,6 +32,8 @@ final class TranslationPanelContent {
   var settingsTarget = "zh-Hans"
   var settingsAutoCopy = false
   var settingsExecutionTarget = "aih-server"
+  var settingsShortcut = ShortcutRegistry.defaultTranslationShortcut
+  var settingsChatShortcut = ShortcutRegistry.defaultChatShortcut
   var settingsLanguages: [(String, String)] = []
   var settingsServerTargets: [[String: Any]] = []
   var settingsServerTarget: [String: Any]?
@@ -298,6 +300,8 @@ final class TranslationPanelContent {
       target: settingsTarget,
       autoCopyEnabled: settingsAutoCopy,
       executionTarget: settingsExecutionTarget,
+      shortcut: settingsShortcut,
+      chatShortcut: settingsChatShortcut,
       languages: settingsLanguages,
       serverTargets: settingsServerTargets,
       selectedServerTarget: settingsServerTarget,
@@ -307,5 +311,13 @@ final class TranslationPanelContent {
     )
     settingsWindow = created
     created.present(on: NSScreen.main)
+  }
+
+  /// Keep shortcut registration failures visible without stopping the helper
+  /// or replacing the host application's menus.
+  func showShortcutStatus(_ message: String) {
+    hint.stringValue = message
+    hint.textColor = .systemRed
+    fadeIn(hint)
   }
 }

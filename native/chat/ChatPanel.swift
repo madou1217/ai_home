@@ -48,6 +48,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if state == .disconnected && configured { openSession() }
   }
 
+  /// Shortcut actions enter through the same chat.open JSONL shell command as
+  /// every other panel launch; the shortcut layer never owns a runtime.
+  func openFromShortcut() { show() }
+
   func hide() { panel.orderOut(nil) }
 
   func close() {

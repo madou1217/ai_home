@@ -8,20 +8,25 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private let emit: ([String: Any]) -> Void
   private let reducedMotion: Bool
   private let configuredExecutionTarget: String
+  private let configuredShortcut: String
+  private let configuredChatShortcut: String
   private let targetMenu = NSPopUpButton()
   private let autoCopy = NSButton(checkboxWithTitle: "翻译完成后自动复制", target: nil, action: nil)
   private let executionMenu = NSPopUpButton()
   private let saveButton = NSButton(title: "保存", target: nil, action: nil)
   private let closeButton = NSButton(title: "取消", target: nil, action: nil)
   private let shortcutValue = NSTextField(labelWithString: "⌘⌥T")
+  private let chatShortcutValue = NSTextField(string: "⌘⌥C")
   private var isClosing = false
   private var onClosed: (() -> Void)?
   private var serverTargetsByKey: [String: [String: Any]] = [:]
 
-  init(target: String, autoCopyEnabled: Bool, executionTarget: String, languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
+  init(target: String, autoCopyEnabled: Bool, executionTarget: String, shortcut: String, chatShortcut: String, languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
     self.emit = emit
     self.reducedMotion = reducedMotion
     self.configuredExecutionTarget = executionTarget
+    self.configuredShortcut = shortcut
+    self.configuredChatShortcut = chatShortcut
     self.onClosed = onClosed
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     super.init()
@@ -84,10 +89,16 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     let shortcutLabel = NSTextField(labelWithString: "快捷键")
     shortcutValue.alignment = .right
     shortcutValue.textColor = .secondaryLabelColor
+    shortcutValue.stringValue = configuredShortcut
+    chatShortcutValue.alignment = .right
+    chatShortcutValue.placeholderString = ShortcutRegistry.defaultChatShortcut
+    chatShortcutValue.stringValue = configuredChatShortcut
+    chatShortcutValue.setAccessibilityLabel("Chat 快捷键")
     let shortcutRow = NSStackView(views: [shortcutLabel, NSView(), shortcutValue])
+    let chatShortcutRow = NSStackView(views: [NSTextField(labelWithString: "Chat 快捷键"), NSView(), chatShortcutValue])
     shortcutRow.orientation = .horizontal
     shortcutRow.spacing = 8
-    let fields = NSStackView(views: [targetLabel, targetMenu, autoCopy, executionLabel, executionMenu, shortcutRow])
+    let fields = NSStackView(views: [targetLabel, targetMenu, autoCopy, executionLabel, executionMenu, shortcutRow, chatShortcutRow])
     fields.orientation = .vertical
     fields.alignment = .leading
     fields.spacing = 10
@@ -138,6 +149,8 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
       "autoCopy": autoCopy.state == .on,
       "executionTarget": executionKey == "direct-provider" ? "direct-provider" : "aih-server"
     ]
+    patch["shortcut"] = shortcutValue.stringValue
+    patch["chatShortcut"] = chatShortcutValue.stringValue
     if executionKey != "direct-provider", let selectedTarget = serverTargetsByKey[executionKey] {
       patch["serverTarget"] = selectedTarget
     }

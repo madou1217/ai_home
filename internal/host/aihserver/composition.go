@@ -70,6 +70,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
 	"github.com/madou1217/ai_home/internal/transport/http/inferenceapi"
 	"github.com/madou1217/ai_home/internal/transport/http/kimirelay"
+	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
@@ -129,7 +130,8 @@ type serverHandlers struct {
 	// （/v1/management/upstream-error-rules）。
 	upstreamRules http.Handler
 	// modelCatalog 接收 Node 的全局公共模型目录投影；不参与 Go 路由选号。
-	modelCatalog http.Handler
+	modelCatalog     http.Handler
+	managementStatus http.Handler
 }
 
 // serverAccountRuntime 是账号恢复、征召读取和推理终态共享的唯一运行态。
@@ -726,6 +728,25 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建全局模型目录投影接口失败: %w", err)
 	}
+	managementStatusHandler, err := managementstatusapi.NewHandler(authorizer, managementStatusSource{
+		catalog: catalog,
+		store:   store,
+		status: func() catalogReadiness {
+			state := inference.models.Status()
+			return catalogReadiness{
+				ready:      state.Ready,
+				stale:      state.Stale,
+				modelCount: state.ModelCount,
+				routeCount: state.RouteCount,
+				accounts:   accountCountsByProvider(catalog, store),
+			}
+		},
+		strategy: selectionStrategy,
+	})
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建管理状态 Handler 失败: %w", err)
+	}
 	upstreamRulesHandler, err := upstreamrulesapi.NewHandler(upstreamrulesapi.Dependencies{
 		Authorizer: authorizer,
 		Store:      upstreamRulesStore,
@@ -1130,6 +1151,7 @@ func newHandlers(
 		modelAliases:       modelAliasesHandler,
 		upstreamRules:      upstreamRulesHandler,
 		modelCatalog:       modelCatalogHandler,
+		managementStatus:   managementStatusHandler,
 		catalogStatus: func() catalogReadiness {
 			status := inference.models.Status()
 			return catalogReadiness{

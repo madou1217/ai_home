@@ -281,14 +281,24 @@ aih usage recalculate-costs                 # 用当前价格表重算历史费�
 ## 插件
 
 ```bash
-aih plugin validate <dir>
-aih plugin pack <dir>
-aih plugin install <file.aih-plugin>
-aih plugin list
-aih plugin enable <pluginId>
-aih plugin disable <instanceId>
-aih plugin doctor
+aih plugin validate examples/plugins/echo --load
+aih plugin pack examples/plugins/echo /tmp/aih-sample-echo.aih-plugin
+aih plugin install /tmp/aih-sample-echo.aih-plugin
+aih plugin enable aih.sample.echo
+aih plugin call sample.echo.call --value-json '{"marker":"AIH_PLUGIN_DEMO_OK"}' --json
+aih plugin list --json
+aih plugin disable aih.sample.echo --remove
+aih plugin doctor --json
+aih plugin uninstall aih.sample.echo
 ```
+
+完整闭环（使用临时 AIH home，不触碰用户账号）:
+
+```bash
+node scripts/plugin-closure-demo.js --json
+```
+
+它会依次验证 `pack → install → enable → use → restart → use-after-restart → disable → uninstall → doctor`。可运行样例见 [examples/plugins/echo](examples/plugins/echo)。
 
 ## 开发
 

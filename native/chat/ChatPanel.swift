@@ -151,8 +151,15 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if let generation = integer(wrapper["generation"]), generation < sessionGeneration { return }
     if let generation = integer(runtime["generation"]), generation < sessionGeneration { return }
     if let runtimeSession = runtime["sessionId"] as? String, runtimeSession != incomingSession { return }
+    let runtimeType = runtime["type"] as? String
+    if isCommandEvent(runtimeType) {
+      guard let wrapperCommand = wrapper["commandId"] as? String,
+            let wrapperGeneration = integer(wrapper["generation"]),
+            !commandID.isEmpty, wrapperCommand == commandID,
+            wrapperGeneration == commandGeneration else { return }
+    }
     if let incomingCommand = commandIdentity(runtime), !commandID.isEmpty,
-       incomingCommand != commandID && isCommandEvent(runtime["type"] as? String) { return }
+       incomingCommand != commandID && isCommandEvent(runtimeType) { return }
     if sessionID.isEmpty { sessionID = incomingSession }
     if let runtimeModel = modelValue(runtime) { model = runtimeModel }
     let type = runtime["type"] as? String ?? ""
@@ -237,7 +244,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func isCommandEvent(_ type: String?) -> Bool {
     guard let type else { return false }
-    return type.hasPrefix("turn.") || type.hasPrefix("timeline.")
+    return type.hasPrefix("turn.") || type.hasPrefix("timeline.") || type == "stream.error"
   }
 
   private func modelValue(_ runtime: [String: Any]) -> String? {

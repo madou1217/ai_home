@@ -166,6 +166,20 @@ node scripts/gateway-shadow-compare.js \
 禁用策略同步和本地 modality 投影已工作，但不足以覆盖对外全集。下次复测仍使用上面的
 shadow 脚本，不能把这份快照当成永久目录结果。
 
+**第一阶段目录投影已落地（2026-10-25）**：Node 全局缓存现在通过新的
+`PUT /v1/management/model-catalog` 推送到 Go，Go 以独立的 immutable projection store
+渲染私有 `/v1/models`。投影只包含模型 ID、`owned_by`、模态和 reasoning efforts，
+不包含凭据或账号身份；Go 同时返回独立的 `routable_model_ids`，路由判定继续读取本地
+账号倒排索引，公共目录不会把 Node-only 模型变成 Go 可路由模型。Go 重启后 Node 会从
+当前 global cache 重新推送，revision 未变化时跳过重复 PUT。
+
+真实临时 Go Server 验收（`aih-server`，临时 AIH_HOME、临时 loopback 端口）结果：
+PUT 两项投影返回 `generation=1 / accepted_count=2 / routable_model_ids=[]`；随后
+`GET /v1/models` 返回 `node-only` 与 `text-only`，`?capability=vision` 只返回
+`node-only`，管理 GET 返回相同 revision 和模型项。这个结果证明「展示目录全量化」与
+「推理路由能力」已经分离，但还不足以把 `gateway.models.list` 的公开 ownership 切给 Go：
+Node 仍是远端探测、全局缓存和公开入口 owner。
+
 ### 1. `/v1/models` 的 `aih_modalities`：不照抄 Node 的做法
 
 Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:81`），数据源

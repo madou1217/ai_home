@@ -40,7 +40,9 @@ Go 侧现有：`application/*` 21 包 + `internal/*` + `core/*`，已覆盖推�
 - **入口条件**：无（Go 已实现全部推理数据面 route）
 - **现状**：15 个 cutover blocker 中 12 个已经 `go_owned`，由 Node 宿主透明转发；
   `health`、`readiness`、`models.list` 仍是 Node-owned。
-- **动作**：为 `models.list` 完成目录所有权核对；
+- **动作**：第一阶段已完成 Node→Go 公共目录投影（展示目录与 Go routable IDs 分离）；
+  下一阶段才是把远端探测、插件模型和中转 Provider 全集的真相源迁到 Go，再评估
+  `models.list` ownership；
   health/readiness 保持宿主边界并由测试守卫，不把它们伪装成 Go 业务 owner。
 - **出口条件**：剩余业务 blocker 完成验证；宿主边界的保留理由、回滚路径和 manifest
   状态一致。

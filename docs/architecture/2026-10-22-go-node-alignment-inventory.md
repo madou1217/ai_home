@@ -30,14 +30,16 @@ Node 宿主监听；Node 按 manifest 将已切换能力透明转发到 Go。
 | entry | Go 状态 | 切生产还缺什么 |
 |---|---|---|
 | `gateway.health` / `gateway.readiness` | Node-owned | 宿主健康与就绪边界保留在 Node |
-| `gateway.models.list` | Node-owned | 当前 live shadow 仍显示 Node 204 / Go 52；需先补齐远端探测、插件模型和中转 Provider 全集 |
+| `gateway.models.list` | Node-owned | 展示投影已同步到 Go；公开 ownership 仍需远端探测、插件模型和中转 Provider 全集由 Go 自持 |
 | `gateway.anthropic.count_tokens` | Go-owned | 已通过本地 parity gate，由 Node 转发到 Go |
 | 其余 12 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
 
 **剩余工作**：不是重做已经接管的能力，而是逐项完成 3 个 blocker 的语义核验和证据。
 模型目录的账号/模型禁用策略已经由 Node→Go 对账同步；2026-10-25 的 live shadow 显示
 Node 204 / Go 52，Node 独有 152（其中 `opencode/*` 85、`opencode-go/*` 38、
-`cline-*` 16）；`gateway.models.list` 仍需要解决远端探测、全局合并目录与账号所有权；
+`cline-*` 16）。第一阶段 Node→Go 公共目录投影已完成，Go 私有目录可展示 Node-only
+模型且 `routable_model_ids` 仍独立为空/本地集合；`gateway.models.list` 仍需要解决远端
+探测、全局合并目录与账号所有权，不能因为展示投影完成就切换公开 owner；
 health/readiness 保持 Node 宿主边界并由 ownership 测试守住。验证手段仍是既有的
 `npm run gateway:shadow -- --node <url> --go <url>`（同请求双发对比）及对应 live tests。
 

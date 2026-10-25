@@ -101,23 +101,31 @@ function call 往返；marker 最终返回，退出码为 0。
 
 Canonical `StopReason` 七个取值。两侧映射：
 
-| Canonical | ← Claude 上游 | → Claude 客户端 | → OpenAI 客户端 | 状态 |
-| --- | --- | --- | --- | --- |
-| `end_turn` | `end_turn` | `end_turn` | `completed` | ✅ |
-| `stop_sequence` | `stop_sequence` | `stop_sequence` | `completed` | ⚠️ OpenAI 侧无独立表达 |
-| `max_tokens` | `max_tokens` | `max_tokens` | `completed` | ⚠️ **应为 `incomplete`**，见下 |
-| `tool_use` | `tool_use` | `tool_use` | `completed` | ✅ |
-| `pause_turn` | `pause_turn` | `pause_turn` | `completed` | ⚠️ 同上 |
-| `content_filter` | `refusal` | `refusal` | `completed` | ⚠️ 同上 |
-| `cancelled` | — | ⛔ `ErrUnsupportedResponseEvent` | — | ❌ Claude 侧无表达 |
+| Canonical | ← Claude 上游 | → Claude 客户端 | → OpenAI Responses | → OpenAI Chat | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| `end_turn` | `end_turn` | `end_turn` | `completed` | `stop` | ✅ |
+| `stop_sequence` | `stop_sequence` | `stop_sequence` | `completed` | `stop` | ⚠️ 两个 OpenAI 协议都无独立表达 |
+| `max_tokens` | `max_tokens` | `max_tokens` | `incomplete` | `length` | ✅ 已按协议分别表达 |
+| `tool_use` | `tool_use` | `tool_use` | `completed` | `tool_calls` | ✅ |
+| `pause_turn` | `pause_turn` | `pause_turn` | `completed` | ⛔ `ErrUnsupportedResponseEvent` | ⚠️ Chat 无等价字段 |
+| `content_filter` | `refusal` | `refusal` | `incomplete` | `content_filter` | ✅ 已按协议分别表达 |
+| `cancelled` | — | ⛔ `ErrUnsupportedResponseEvent` | `incomplete/cancelled` | ⛔ `ErrUnsupportedResponseEvent` | ⚠️ 只有 Responses 有正式取消终态 |
 
 依据：`anthropicmessages/response_wire.go:279-296`（Canonical→Claude）、
 `claude/messages/response_decoder.go:1077-1115`（Claude→Canonical）。
 
-**截断终态已修复。** `openairesponses/terminal_status.go` 让 `max_tokens` 与
-`content_filter` 生成 `status:"incomplete"` 和对应 `incomplete_details.reason`；
+**截断终态已修复。** `openairesponses/terminal_status.go` 让 `max_tokens`、
+`content_filter` 和 `cancelled` 生成 `status:"incomplete"` 及对应
+`incomplete_details.reason`；
 `pause_turn` 表示可续跑的完整服务端工具轮次，保持 `completed`。流式和非流式共享
 `buildTerminalResponseWire`，不会再把半截回答冒充完整结果。
+
+**取消终态按协议分开处理。** Codex `response.incomplete` 的
+`incomplete_details.reason:"cancelled"` 在 Responses 中是正式终态；Node 的 Chat
+转换器（`lib/server/codex-response-stream.js`）会把同一事件当成上游不完整错误，Go 的
+Chat 与 Anthropic renderer 也拒绝把 `StopReasonCancelled` 映射成正常的
+`finish_reason` / `stop_reason`。因此不能把 Responses 的 `incomplete/cancelled` 机械
+复制到另外两个协议。
 
 **`stop_details` 已修复。** Claude Decoder 把 refusal category 放入 Canonical
 `ResponseCompletedEvent`，Anthropic Renderer 只在真实存在类别时重建 `stop_details`；

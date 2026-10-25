@@ -25,6 +25,8 @@ func terminalStatusFor(reason inference.StopReason) (string, string) {
 		return statusIncomplete, "max_output_tokens"
 	case inference.StopReasonContentFilter:
 		return statusIncomplete, "content_filter"
+	case inference.StopReasonCancelled:
+		return statusIncomplete, "cancelled"
 	default:
 		// end_turn、stop_sequence、tool_use 都是模型自主结束，输出完整。
 		//

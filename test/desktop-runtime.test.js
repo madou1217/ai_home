@@ -192,7 +192,7 @@ test('desktop protocol passes strict Chat JSONL identities through the translati
     type: 'chat.open', requestId: 'request-1', generation: 2, target: { kind: 'aih-server', secret: 'drop-me' }
   }), {
     version: 1, type: 'chat.open', requestId: 'request-1', generation: 2,
-    target: { kind: 'aih-server', secret: 'drop-me' }
+    target: { kind: 'aih-server' }
   });
   assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
     type: 'chat.submit', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1',
@@ -202,10 +202,16 @@ test('desktop protocol passes strict Chat JSONL identities through the translati
     generation: 3, text: 'hello'
   });
   assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
-    type: 'chat.event', requestId: 'request-1', sessionId: 'session-1', event: { schema: 'aih.chat.event.v1', seq: 4 }
+    type: 'chat.event', requestId: 'request-1', sessionId: 'session-1', event: {
+      schema: 'aih.chat.event.v1', eventId: 'event-1', sessionId: 'session-1', seq: 4, type: 'turn.started', at: 10,
+      source: { provider: 'codex', runtimeId: 'runtime-1' }, payload: { safe: true, secret: 'drop-me' }, unknown: 'drop-me'
+    }
   }), {
     version: 1, type: 'chat.event', requestId: 'request-1', sessionId: 'session-1',
-    event: { schema: 'aih.chat.event.v1', seq: 4 }
+    event: {
+      schema: 'aih.chat.event.v1', eventId: 'event-1', sessionId: 'session-1', seq: 4, type: 'turn.started', at: 10,
+      source: { provider: 'codex', runtimeId: 'runtime-1' }, payload: { safe: true }
+    }
   });
   assert.deepEqual(desktopProtocol.normalizeDesktopEvent({
     type: 'chat.error', requestId: 'request-1', sessionId: 'session-1', commandId: 'command-1', code: 'runtime_failed', message: 'retry'
@@ -215,6 +221,7 @@ test('desktop protocol passes strict Chat JSONL identities through the translati
   });
   assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.submit', requestId: 'r', sessionId: 's', text: 'missing command' }), null);
   assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.event', requestId: 'r', sessionId: 's', event: 'not-an-object' }), null);
+  assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.open', requestId: 'r', target: { secret: 'drop-me' } }), null);
   assert.equal(desktopProtocol.normalizeDesktopEvent({ type: 'chat.error', requestId: 'r' }), null);
 });
 

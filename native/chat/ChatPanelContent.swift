@@ -11,7 +11,7 @@ enum ChatPanelState: Equatable {
 
 // The content object owns only layout and state-derived controls. ChatPanel
 // owns the request/session lifecycle and supplies the JSONL callbacks.
-final class ChatPanelContent: NSObject {
+final class ChatPanelContent: NSObject, NSTextFieldDelegate {
   let root = NSVisualEffectView()
   let transcript = NSTextView()
   let composer = NSTextField()
@@ -24,6 +24,8 @@ final class ChatPanelContent: NSObject {
 
   private(set) var state: ChatPanelState = .disconnected
   private var transcriptRevision = 0
+  private var transcriptLines: [String] = []
+  private var assistantLineIndex: Int?
   var sendHandler: (() -> Void)?
   var stopHandler: (() -> Void)?
   var reconnectHandler: (() -> Void)?
@@ -92,6 +94,7 @@ final class ChatPanelContent: NSObject {
     composer.lineBreakMode = .byTruncatingTail
     composer.setAccessibilityLabel("Chat 输入")
     composer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    composer.delegate = self
     composer.target = self
     composer.action = #selector(submitFromComposer)
 
@@ -127,6 +130,8 @@ final class ChatPanelContent: NSObject {
 
   @objc private func reconnectChat() { reconnectHandler?() }
 
+  func controlTextDidChange(_ notification: Notification) { updateControls() }
+
   func setState(_ next: ChatPanelState, sessionID: String, model: String, message: String) {
     state = next
     let labels: [ChatPanelState: String] = [
@@ -135,27 +140,33 @@ final class ChatPanelContent: NSObject {
     ]
     stateLabel.stringValue = message.isEmpty ? (labels[next] ?? "") : message
     stateLabel.textColor = next == .failed ? .systemRed : next == .streaming ? .controlAccentColor : .secondaryLabelColor
-    sessionLabel.stringValue = sessionID.isEmpty ? "会话：未连接" : "会话：(sessionID)"
+    sessionLabel.stringValue = sessionID.isEmpty ? "会话：未连接" : "会话：\(sessionID)"
     sessionLabel.toolTip = sessionID
-    modelLabel.stringValue = model.isEmpty ? "模型：—" : "模型：(model)"
+    modelLabel.stringValue = model.isEmpty ? "模型：—" : "模型：\(model)"
     modelLabel.toolTip = model
 
-    let canSend = next == .idle && !composer.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let canStop = next == .streaming
+    updateControls()
+  }
+
+  private func updateControls() {
+    let canSend = state == .idle && !composer.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    let canStop = state == .streaming
     sendStop.title = canStop ? "停止" : "发送"
     sendStop.image = canStop
       ? NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
       : NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: nil)
     sendStop.setAccessibilityLabel(canStop ? "停止 Chat 生成" : "发送 Chat 消息")
     sendStop.isEnabled = canSend || canStop
-    composer.isEnabled = next == .idle
-    reconnect.isHidden = !(next == .disconnected || next == .failed)
-    reconnect.isEnabled = next == .disconnected || next == .failed
+    composer.isEnabled = state == .idle
+    reconnect.isHidden = !(state == .disconnected || state == .failed)
+    reconnect.isEnabled = state == .disconnected || state == .failed
     if !reducedMotion { fadeIn(stateLabel) }
   }
 
   func clearTranscript() {
     transcriptRevision += 1
+    transcriptLines = []
+    assistantLineIndex = nil
     transcript.string = ""
     scroll.contentView.scroll(to: .zero)
   }
@@ -163,15 +174,17 @@ final class ChatPanelContent: NSObject {
   func append(role: String, text: String) {
     let value = text
     guard !value.isEmpty else { return }
-    let prefix = transcript.string.isEmpty ? "" : "\n\n"
-    let line = "\(prefix)\(role)：\(value)"
-    transcript.textStorage?.append(NSAttributedString(string: line))
+    assistantLineIndex = nil
+    transcriptLines.append("\(role)：\(value)")
+    renderTranscript()
     transcriptRevision += 1
     scrollToBottom()
     if !reducedMotion { fadeIn(transcript) }
   }
 
   func replaceTranscript(_ text: String) {
+    transcriptLines = text.isEmpty ? [] : [text]
+    assistantLineIndex = nil
     transcript.string = text
     transcriptRevision += 1
     scrollToBottom()
@@ -180,6 +193,24 @@ final class ChatPanelContent: NSObject {
   func currentText() -> String { composer.stringValue }
 
   func clearComposer() { composer.stringValue = "" }
+
+  func replaceCurrentAssistant(_ text: String) {
+    guard !text.isEmpty else { return }
+    if let index = assistantLineIndex, transcriptLines.indices.contains(index) {
+      transcriptLines[index] = "AIH：\(text)"
+    } else {
+      transcriptLines.append("AIH：\(text)")
+      assistantLineIndex = transcriptLines.index(before: transcriptLines.endIndex)
+    }
+    renderTranscript()
+    transcriptRevision += 1
+    scrollToBottom()
+    if !reducedMotion { fadeIn(transcript) }
+  }
+
+  private func renderTranscript() {
+    transcript.string = transcriptLines.joined(separator: "\n\n")
+  }
 
   private func scrollToBottom() {
     transcript.layoutManager?.ensureLayout(for: transcript.textContainer!)

@@ -167,7 +167,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       let chunk = payload["chunk"] as? String ?? ""
       if !chunk.isEmpty {
         assistantText += chunk
-        content.replaceTranscriptWithAssistant(assistantText)
+        content.replaceCurrentAssistant(assistantText)
       }
       setState(.streaming, message: "生成中")
     case "turn.interrupted":
@@ -177,6 +177,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     case "turn.failed", "stream.error", "run.lost":
       let payload = runtime["payload"] as? [String: Any] ?? [:]
       receiveError(["requestId": requestID, "sessionId": sessionID, "commandId": commandID,
+                    "generation": commandGeneration,
                     "code": payload["error"] as? String ?? "chat_runtime_failed",
                     "message": payload["message"] as? String ?? "Chat 运行失败"])
     case "session.closed":
@@ -188,8 +189,17 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func receiveError(_ event: [String: Any]) {
     guard requestMatches(event) else { return }
-    if let incomingSession = event["sessionId"] as? String, !sessionID.isEmpty, incomingSession != sessionID { return }
-    if let incomingCommand = event["commandId"] as? String, !commandID.isEmpty, incomingCommand != commandID { return }
+    let activeCommand = state == .streaming || state == .stopping
+    if activeCommand {
+      guard !sessionID.isEmpty, !commandID.isEmpty,
+            event["sessionId"] as? String == sessionID,
+            event["commandId"] as? String == commandID,
+            integer(event["generation"]) == commandGeneration else { return }
+    } else {
+      if let incomingSession = event["sessionId"] as? String, !sessionID.isEmpty, incomingSession != sessionID { return }
+      if let incomingCommand = event["commandId"] as? String, !commandID.isEmpty, incomingCommand != commandID { return }
+      if let generation = integer(event["generation"]), generation < sessionGeneration { return }
+    }
     let message = (event["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Chat 连接失败"
     setState(.failed, message: message.isEmpty ? "Chat 连接失败" : message)
   }
@@ -198,7 +208,9 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     guard let payload = runtime["payload"] as? [String: Any], let timeline = payload["timeline"] as? [[String: Any]] else { return }
     let text = timeline.compactMap { item -> String? in
       guard let content = item["content"] as? String, !content.isEmpty else { return nil }
-      let role = (item["kind"] as? String) == "user" ? "你" : "AIH"
+      let detail = item["detail"] as? [String: Any]
+      let roleValue = (detail?["role"] as? String) ?? (item["role"] as? String)
+      let role = roleValue == "user" ? "你" : "AIH"
       return "\(role)：\(content)"
     }.joined(separator: "\n\n")
     content.replaceTranscript(text)
@@ -247,13 +259,5 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     closeSession()
-  }
-}
-
-private extension ChatPanelContent {
-  func replaceTranscriptWithAssistant(_ text: String) {
-    let prefix = transcript.string.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
-    let userPrefix = prefix.hasPrefix("你：") ? prefix : ""
-    replaceTranscript(userPrefix.isEmpty ? "AIH：\(text)" : "\(userPrefix)\n\nAIH：\(text)")
   }
 }

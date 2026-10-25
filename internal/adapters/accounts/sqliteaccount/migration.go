@@ -81,6 +81,20 @@ var expectedSchemaColumns = map[string][]string{
 		"cooldown_until_ms",
 		"last_failure_at_ms",
 	},
+	"usage_ledger": {
+		"usage_id",
+		"account_ref",
+		"provider_id",
+		"model_id",
+		"session_id",
+		"occurred_at_ms",
+		"input_tokens",
+		"output_tokens",
+		"cached_input_tokens",
+		"cache_write_input_tokens",
+		"reasoning_tokens",
+		"total_tokens",
+	},
 }
 
 // initialize 校验数据库身份、执行首次 migration 并启用 WAL。
@@ -139,6 +153,7 @@ var forwardMigrations = []string{
 	SchemaV6,
 	SchemaV7,
 	SchemaV8,
+	SchemaV9,
 }
 
 // migrateConnection 在立即事务中创建最新结构或逐版执行前向 migration。

@@ -57,6 +57,12 @@ func Classify(input Input) (sharedfailure.Classification, error) {
 			runtimecore.BlockScopeAccountModel,
 		)
 	}
+	if kind == runtimecore.FailureRegionUnsupported {
+		return sharedfailure.NewBlockingClassification(
+			kind,
+			runtimecore.BlockScopeAccount,
+		)
+	}
 	return sharedfailure.NewClassification(kind, retryAfter)
 }
 
@@ -108,6 +114,8 @@ func classifyResponse(
 	case errorType == "permission_error" ||
 		response.StatusCode() == 403:
 		return runtimecore.FailurePermissionDenied, false
+	case response.StatusCode() == 451:
+		return runtimecore.FailureRegionUnsupported, false
 	case errorType == "invalid_request_error" ||
 		response.StatusCode() == 400 ||
 		response.StatusCode() == 422:

@@ -530,6 +530,7 @@ Go 原先有两个键，都不等于规范键：
 | Gateway provider 认证 | `env_key=OPENAI_API_KEY` + 命令行字面 `http_headers.X-Account-Ref=acct_…` | 同左；宿主持久配置使用互斥的 `auth` 命令表 | **已修（2026-09-22）**：Go 改为 Node 正式契约；旧 Go 私有 env 名仅清理不再设置 |
 | 刷新被拒后的抑制 | `suppressesRefresh`（按 AccountRef + credential.updated_at 精确匹配） | `lib/server/kimi-token-refresh.js` 的 `reason:'suppressed'`、`lib/server/token-refresh-result.js` 的 `invalid_grant` 分类、`codex-auth-invalid-reconciler.js` 的 `refresh_rejected_access_token_still_valid` | **Node 已有等价能力**，不是缺口 |
 | `deactivated_workspace` | 按错误码映射为 `FailureWorkspaceDeactivated` → 账号级阻断 | 已有：`upstream-failure-policy.js:286` + `:720`，但**门控不同**——Node 要求 `statusCode === 402` 且 detail 命中，Go 只看错误码 | 两边都处理了，但门控不一致；改任何一边都需要上游真实响应证据，本轮只登记不改 |
+| HTTP 451 地区拒绝 | Go 原先落入 `unclassified` | Node `isRegionDenied` 对 451 直接产生 `location_unsupported`，账号进入地区策略阻断并交给出口证据链 | **已修（2026-10-25）**：Codex/Claude Go classifier 将 451 映射为账号级 `FailureRegionUnsupported`，回归测试覆盖作用域 |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
 
 ### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）

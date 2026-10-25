@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	Path       = "/v1/management/usage/stats"
-	ModelsPath = "/v1/management/usage/models"
+	Path         = "/v1/management/usage/stats"
+	ModelsPath   = "/v1/management/usage/models"
+	SessionsPath = "/v1/management/usage/sessions"
 )
 
 type Authorizer interface{ Authorized(*http.Request) bool }
@@ -38,6 +39,15 @@ type ModelsHandler struct {
 	source     ModelsSource
 }
 
+type SessionsSource interface {
+	QueryUsageSessions(context.Context, usageledger.Query) ([]usageledger.SessionStats, error)
+}
+
+type SessionsHandler struct {
+	authorizer Authorizer
+	source     SessionsSource
+}
+
 func NewHandler(authorizer Authorizer, source Source) (*Handler, error) {
 	if authorizer == nil || source == nil {
 		return nil, usageledger.ErrInvalidQuery
@@ -50,6 +60,13 @@ func NewModelsHandler(authorizer Authorizer, source ModelsSource) (*ModelsHandle
 		return nil, usageledger.ErrInvalidQuery
 	}
 	return &ModelsHandler{authorizer: authorizer, source: source}, nil
+}
+
+func NewSessionsHandler(authorizer Authorizer, source SessionsSource) (*SessionsHandler, error) {
+	if authorizer == nil || source == nil {
+		return nil, usageledger.ErrInvalidQuery
+	}
+	return &SessionsHandler{authorizer: authorizer, source: source}, nil
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -108,6 +125,34 @@ func (handler *ModelsHandler) ServeHTTP(response http.ResponseWriter, request *h
 		"ok":     true,
 		"range":  map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
 		"models": models,
+	})
+}
+
+func (handler *SessionsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if !handler.authorizer.Authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(response, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "需要管理密钥"}})
+		return
+	}
+	if request.Method != http.MethodGet {
+		response.Header().Set("Allow", http.MethodGet)
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]any{"error": map[string]string{"code": "method_not_allowed", "message": "只支持 GET"}})
+		return
+	}
+	query, err := parseQuery(request)
+	if err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]any{"error": map[string]string{"code": "invalid_query", "message": "时间范围无效"}})
+		return
+	}
+	sessions, err := handler.source.QueryUsageSessions(request.Context(), query)
+	if err != nil {
+		writeJSON(response, http.StatusInternalServerError, map[string]any{"error": map[string]string{"code": "usage_sessions_failed", "message": "用量会话统计不可用"}})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{
+		"ok":       true,
+		"range":    map[string]string{"from": query.From.Format(time.RFC3339Nano), "to": query.To.Format(time.RFC3339Nano)},
+		"sessions": sessions,
 	})
 }
 

@@ -74,4 +74,11 @@ func TestUsageLedgerPersistsAndQueriesStatsAcrossReopen(t *testing.T) {
 	if len(models) != 1 || models[0].Calls != 2 || models[0].AccountCount != 1 || models[0].TotalTokens != 25 {
 		t.Fatalf("models = %#v", models)
 	}
+	sessions, err := store.QueryUsageSessions(ctx, usageledger.Query{From: time.UnixMilli(0).UTC(), To: time.UnixMilli(3000).UTC()})
+	if err != nil {
+		t.Fatalf("QueryUsageSessions() error = %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionID != "s1" || sessions[0].Calls != 2 || sessions[0].TotalTokens != 25 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
 }

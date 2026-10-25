@@ -31,6 +31,11 @@ func (source *testSource) QueryUsageModels(_ context.Context, query usageledger.
 	return source.models, nil
 }
 
+func (source *testSource) QueryUsageSessions(_ context.Context, query usageledger.Query) ([]usageledger.SessionStats, error) {
+	source.query = query
+	return nil, nil
+}
+
 func TestHandlerReturnsStatsWithExplicitRangeAndFilters(t *testing.T) {
 	source := &testSource{stats: usageledger.Stats{TotalCalls: 2, TotalSessions: 1, InputTokens: 12, OutputTokens: 8, TotalTokens: 20}}
 	handler, err := NewHandler(testAuthorizer(true), source)
@@ -79,6 +84,19 @@ func TestModelsHandlerReturnsProviderModelFacts(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, ModelsPath+"?from=2026-10-01&to=2026-10-02", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"models":[{"provider":"codex"`) {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestSessionsHandlerOmitsRecordsWithoutIdentity(t *testing.T) {
+	source := &testSource{}
+	handler, err := NewSessionsHandler(testAuthorizer(true), source)
+	if err != nil {
+		t.Fatalf("NewSessionsHandler() error = %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, SessionsPath+"?from=2026-10-01&to=2026-10-02", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"sessions":null`) {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }

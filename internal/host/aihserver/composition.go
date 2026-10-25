@@ -116,8 +116,9 @@ type serverHandlers struct {
 	// accountUsageEvents 是成功尝试 token 用量事件的增量只读管理接口。
 	accountUsageEvents http.Handler
 	// usageStats 是 Go 持久化 token 账本的只读统计接口。
-	usageStats  http.Handler
-	usageModels http.Handler
+	usageStats    http.Handler
+	usageModels   http.Handler
+	usageSessions http.Handler
 	// plugins 是插件发布投影的管理接口与推理入口的 gateway.request 闸门，见 plugin_runtime.go。
 	plugins pluginHandlers
 	// shutdown 是优雅退出端点；为空表示嵌入方没有提供退出回调，该端点不挂载。
@@ -563,6 +564,10 @@ func newHandlers(
 	usageModelsHandler, err := usagestatsapi.NewModelsHandler(authorizer, store)
 	if err != nil {
 		return serverHandlers{}, nil, fmt.Errorf("创建 Go 模型用量 Handler 失败: %w", err)
+	}
+	usageSessionsHandler, err := usagestatsapi.NewSessionsHandler(authorizer, store)
+	if err != nil {
+		return serverHandlers{}, nil, fmt.Errorf("创建 Go 会话用量 Handler 失败: %w", err)
 	}
 	accountsHandler, err := accountsapi.NewHandler(accountsapi.Dependencies{
 		Management:         management,
@@ -1117,6 +1122,7 @@ func newHandlers(
 		accountUsageEvents: accountUsageEventsHandler,
 		usageStats:         usageStatsHandler,
 		usageModels:        usageModelsHandler,
+		usageSessions:      usageSessionsHandler,
 		claudeRelayLeases:  relayLeaseHandler,
 		claudeNativeRelay:  nativeRelayHandler,
 		familyRelay:        familyRelayHandler,

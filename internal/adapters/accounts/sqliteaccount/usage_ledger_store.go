@@ -87,6 +87,14 @@ func (store *Store) QueryUsageModels(ctx context.Context, query usageledger.Quer
 	return usageledger.AggregateModels(records, query), nil
 }
 
+func (store *Store) QueryUsageSessions(ctx context.Context, query usageledger.Query) ([]usageledger.SessionStats, error) {
+	records, err := store.readUsageRecords(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return usageledger.AggregateSessions(records, query), nil
+}
+
 func (store *Store) readUsageRecords(ctx context.Context, query usageledger.Query) ([]usageledger.Record, error) {
 	if store == nil || store.db == nil || ctx == nil || query.Validate() != nil {
 		return nil, usageledger.ErrInvalidQuery
@@ -151,4 +159,6 @@ func normalizeUsageFilter(value string) string {
 var _ interface {
 	AppendUsageRecord(context.Context, usageledger.Record) error
 	QueryUsageStats(context.Context, usageledger.Query) (usageledger.Stats, error)
+	QueryUsageModels(context.Context, usageledger.Query) ([]usageledger.ModelStats, error)
+	QueryUsageSessions(context.Context, usageledger.Query) ([]usageledger.SessionStats, error)
 } = (*Store)(nil)

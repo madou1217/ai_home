@@ -64,6 +64,19 @@ func TestAggregateModelsGroupsProviderAndModel(t *testing.T) {
 	}
 }
 
+func TestAggregateSessionsRequiresExplicitSessionIdentity(t *testing.T) {
+	accountRef, _ := accountcore.ParseAccountRef("acct_0123456789abcdef0123")
+	usage, _ := inference.NewUsage(inference.UsageInput{InputTokens: 10, OutputTokens: 5})
+	records := []Record{
+		mustRecord(t, RecordInput{AccountRef: accountRef, Provider: "codex", Model: "gpt-6.1-sol", SessionID: "s1", OccurredAt: time.UnixMilli(1000).UTC(), Usage: usage}),
+		mustRecord(t, RecordInput{AccountRef: accountRef, Provider: "codex", Model: "gpt-6.1-sol", SessionID: "", OccurredAt: time.UnixMilli(2000).UTC(), Usage: usage}),
+	}
+	sessions := AggregateSessions(records, Query{From: time.UnixMilli(0).UTC(), To: time.UnixMilli(3000).UTC()})
+	if len(sessions) != 1 || sessions[0].SessionID != "s1" || sessions[0].Calls != 1 || sessions[0].TotalTokens != 15 {
+		t.Fatalf("sessions = %#v", sessions)
+	}
+}
+
 func mustRecord(t *testing.T, input RecordInput) Record {
 	t.Helper()
 	record, err := NewRecord(input)

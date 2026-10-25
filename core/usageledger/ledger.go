@@ -118,6 +118,19 @@ type ModelStats struct {
 	AccountRefs           []string `json:"account_refs,omitempty"`
 }
 
+type SessionStats struct {
+	Provider              string `json:"provider"`
+	SessionID             string `json:"session_id"`
+	Calls                 uint64 `json:"calls"`
+	InputTokens           uint64 `json:"input_tokens"`
+	OutputTokens          uint64 `json:"output_tokens"`
+	CacheReadInputTokens  uint64 `json:"cache_read_input_tokens"`
+	CacheWriteInputTokens uint64 `json:"cache_creation_input_tokens"`
+	ReasoningOutputTokens uint64 `json:"reasoning_output_tokens"`
+	TotalTokens           uint64 `json:"total_tokens"`
+	AccountCount          uint64 `json:"account_count"`
+}
+
 func Aggregate(records []Record, query Query) Stats {
 	if query.Validate() != nil {
 		return Stats{}
@@ -200,6 +213,54 @@ func AggregateModels(records []Record, query Query) []ModelStats {
 		return models[left].Model < models[right].Model
 	})
 	return models
+}
+
+func AggregateSessions(records []Record, query Query) []SessionStats {
+	if query.Validate() != nil {
+		return nil
+	}
+	groups := make(map[string]*SessionStats)
+	accounts := make(map[string]map[string]struct{})
+	provider := strings.TrimSpace(strings.ToLower(query.Provider))
+	for _, record := range records {
+		if !record.IsValid() || record.SessionID() == "" || record.OccurredAt().Before(query.From) || record.OccurredAt().After(query.To) {
+			continue
+		}
+		if provider != "" && record.Provider() != provider || query.Model != "" && record.Model() != query.Model {
+			continue
+		}
+		key := record.Provider() + "\x00" + record.SessionID()
+		item := groups[key]
+		if item == nil {
+			item = &SessionStats{Provider: record.Provider(), SessionID: record.SessionID()}
+			groups[key] = item
+			accounts[key] = make(map[string]struct{})
+		}
+		item.Calls++
+		usage := record.Usage()
+		item.InputTokens += usage.InputTokens()
+		item.OutputTokens += usage.OutputTokens()
+		item.CacheReadInputTokens += usage.CachedInputTokens()
+		item.CacheWriteInputTokens += usage.CacheWriteInputTokens()
+		item.ReasoningOutputTokens += usage.ReasoningTokens()
+		item.TotalTokens += usage.TotalTokens()
+		accounts[key][record.AccountRef().String()] = struct{}{}
+	}
+	result := make([]SessionStats, 0, len(groups))
+	for key, item := range groups {
+		item.AccountCount = uint64(len(accounts[key]))
+		result = append(result, *item)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].TotalTokens != result[right].TotalTokens {
+			return result[left].TotalTokens > result[right].TotalTokens
+		}
+		if result[left].Provider != result[right].Provider {
+			return result[left].Provider < result[right].Provider
+		}
+		return result[left].SessionID < result[right].SessionID
+	})
+	return result
 }
 
 func Sort(records []Record) {

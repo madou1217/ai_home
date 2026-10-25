@@ -62,3 +62,5 @@ Services verification:
 - `xcrun swiftc -typecheck native/translation/*.swift native/chat/*.swift native/desktop/*.swift` — passed.
 - `node --test test/desktop-chat-shortcut.test.js test/desktop-runtime.test.js` — 24 tests passed, 0 failed.
 - `node --check lib/desktop/translation/macos-build.js` and `git diff --check` — passed.
+
+Service queue hardening: `openFromService` now replaces a failed session before opening a new one, and queued selected text is submitted after a matching `turn.completed` or `turn.interrupted` event when a prior turn was active. The request ID guard still prevents stale session delivery. Verified again with the same Swift typecheck and 24 focused tests.

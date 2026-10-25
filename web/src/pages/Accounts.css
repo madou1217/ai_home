@@ -65,6 +65,25 @@
   pointer-events: auto;
 }
 
+.account-secondary-label {
+  max-width: 100%;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-plan-tag {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(100%, 300px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 导入粘贴区域 */
 .accounts-import-paste {
   display: flex;

@@ -335,9 +335,11 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
     ? String(('account' in snapshot ? snapshot.account?.planType : '') || '')
     : '';
   return (
-    <div style={{ minWidth: 200 }}>
+    <div className="usage-snapshot-content usage-snapshot-content--scopes">
       {planName ? (
-        <div className="usage-group-title usage-group-title--plan">{planName}</div>
+        <div className="usage-group-title usage-group-title--plan" title={planName}>
+          <span className="usage-group-title-text">{planName}</span>
+        </div>
       ) : null}
       <div className="usage-meta-list">
         {visibleRows.map((row, index) => {
@@ -388,7 +390,7 @@ function AgyQuotaUsage({ record, snapshot: rawSnapshot, hideModels, running, act
   );
 
   return (
-    <div style={{ minWidth: 220 }}>
+    <div className="usage-snapshot-content usage-snapshot-content--agy">
       <div className="usage-meta-list usage-meta-list--groups">
         {groups.map((group) => {
           const visibleLimits = hideModels

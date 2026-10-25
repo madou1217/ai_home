@@ -626,6 +626,7 @@ export default function Accounts() {
         const cliEntryClassName = cliInstalled
           ? undefined
           : 'account-client-entry-button--uninstalled';
+        const secondaryLabel = getAccountSecondaryLabel(record);
 
         return (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -667,14 +668,21 @@ export default function Accounts() {
               onConfirm={handleRefreshUsage}
               confirming={Boolean(refreshingUsageAccountRefs[getAccountRef(record)])}
             />
-            {getAccountSecondaryLabel(record) ? (
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {getAccountSecondaryLabel(record)}
-              </div>
+            {secondaryLabel ? (
+              <Tooltip title={secondaryLabel}>
+                <div className="account-secondary-label">
+                  {secondaryLabel}
+                </div>
+              </Tooltip>
             ) : null}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
               {renderAccountRoleTags(record)}
-              <Tag color={getPlanTagColor(record)} style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}>
+              <Tag
+                color={getPlanTagColor(record)}
+                className="account-plan-tag"
+                title={getPlanTagLabel(record)}
+                style={{ fontSize: 11, lineHeight: '18px', padding: '0 4px', margin: 0 }}
+              >
                 {getPlanTagLabel(record)}
               </Tag>
               {renderAccountRegionTag(record)}

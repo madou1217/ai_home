@@ -9,6 +9,13 @@
   gap: var(--hos-space-1-5, 6px);
 }
 
+/* 账号表的额度列使用 fixed layout；快照内容必须允许收缩，不能再用内联
+ * min-width 把套餐标题顶出单元格。 */
+.usage-snapshot-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .usage-meta-list--groups {
   gap: var(--hos-space-2, 8px);
 }
@@ -92,7 +99,20 @@
 }
 
 .usage-group-title--plan {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: var(--hos-space-1, 4px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-group-title--plan .usage-group-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .usage-group-title--help {

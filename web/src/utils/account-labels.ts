@@ -3,6 +3,7 @@ import type { Account, Provider } from '@/types';
 // 内部合成展示名（例如 codex-1、claude-2）不出现在 UI 上，展示层统一回落为
 // 真实的身份标签；这里按 Provider 前缀枚举，新增 Provider 需同步补进来。
 const INTERNAL_ACCOUNT_LABEL_RE = /^(agy|codex|gemini|claude|opencode|grok|qoder|qodercn|kimi|kiro|zcode|codebuddy|codebuddycn|workbuddy)-\d+$/i;
+const OPAQUE_UUID_LABEL_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // API Key 账号缺少 baseUrl 时的展示回落（裸域名，与 getBaseDomain 的输出口径一致）。
 // 该映射是 Record<Provider, string>，必须覆盖全部 Provider，否则会在全量 TS
 // 编译（npm run build）中报 TS2739；zcode / codebuddy 之前缺失，且因为 Umi 构建
@@ -29,7 +30,8 @@ const DEFAULT_API_KEY_DOMAINS: Record<Provider, string> = {
 };
 
 export function isInternalAccountLabel(value?: string) {
-  return INTERNAL_ACCOUNT_LABEL_RE.test(String(value || '').trim());
+  const normalized = String(value || '').trim();
+  return INTERNAL_ACCOUNT_LABEL_RE.test(normalized) || OPAQUE_UUID_LABEL_RE.test(normalized);
 }
 
 // 手机号类身份（z.ai 合成的 <phone>@phone.local、裸手机号/带区号手机号）在展示层

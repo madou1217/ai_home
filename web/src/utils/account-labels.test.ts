@@ -33,3 +33,14 @@ test('UUID-only OAuth accounts fall back to a stable generic label', () => {
 
   assert.equal(getAccountIdentityLabel(account), '账号待识别');
 });
+
+test('real identity wins when a provider puts its UUID in the email field', () => {
+  const account = {
+    ...baseAccount,
+    email: '409f887f-b00d-4c65-be21-123456789abc',
+    displayName: 'madou1217@gmail.com'
+  };
+
+  assert.equal(getAccountIdentityLabel(account), 'madou1217@gmail.com');
+  assert.equal(getAccountSecondaryIdentity(account), '');
+});

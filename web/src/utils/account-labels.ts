@@ -83,7 +83,7 @@ export function getAccountIdentityLabel(account: Pick<Account, 'provider' | 'ema
   }
 
   const email = String(account.email || '').trim();
-  if (email) return maskPhoneIdentity(email);
+  if (email && !isInternalAccountLabel(email)) return maskPhoneIdentity(email);
 
   if (displayName) return maskPhoneIdentity(displayName);
 
@@ -105,6 +105,6 @@ export function getAccountSecondaryIdentity(account: Pick<Account, 'provider' | 
   }
 
   // 副标题只在主标题显示邮箱时补充名称；没有邮箱时主标题本身就是名称，再显示一遍就重复了。
-  if (!email || !displayName || displayName === email) return '';
+  if (!email || isInternalAccountLabel(email) || !displayName || displayName === email) return '';
   return maskPhoneIdentity(displayName);
 }

@@ -17,4 +17,18 @@ for (const provider of ['codex', 'claude']) {
     assert.equal(policy.failureReason, 'deactivated_workspace');
     assert.equal(policy.scope, 'account');
   });
+
+  test(`${provider} ordinary HTTP 402 is request scoped`, () => {
+    const policy = classifyUpstreamFailure({
+      provider,
+      statusCode: 402,
+      body: JSON.stringify({ error: { code: 'insufficient_credits' } })
+    });
+    assert.equal(policy.kind, 'payment_required');
+    assert.equal(policy.shouldMarkFailure, false);
+    assert.equal(policy.shouldRetryAnotherAccount, false);
+    assert.equal(policy.cooldownMs, 0);
+    assert.equal(policy.scope, 'none');
+    assert.equal(policy.shouldPassthroughToClient, true);
+  });
 }

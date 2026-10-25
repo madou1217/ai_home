@@ -19,6 +19,7 @@ func TestObserveHTTPUsesNodeGenericStatusSemantics(t *testing.T) {
 		{name: "forbidden is credential rejection", statusCode: http.StatusForbidden, wantKind: runtimecore.FailureCredentialRejected, wantScope: runtimecore.BlockScopeAccount},
 		{name: "legal restriction is region policy", statusCode: http.StatusUnavailableForLegalReasons, wantKind: runtimecore.FailureRegionUnsupported, wantScope: runtimecore.BlockScopeAccount},
 		{name: "request timeout is request scoped", statusCode: http.StatusRequestTimeout, wantKind: runtimecore.FailureUnclassified},
+		{name: "ordinary payment required is request scoped", statusCode: http.StatusPaymentRequired, wantKind: runtimecore.FailureUnclassified},
 		{name: "server error", statusCode: http.StatusInternalServerError, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: 5 * time.Minute},
 		{name: "service unavailable", statusCode: http.StatusServiceUnavailable, wantKind: runtimecore.FailureUpstreamUnavailable, wantRetry: time.Minute},
 		{name: "model overloaded", statusCode: 529, wantKind: runtimecore.FailureModelOverloaded, wantRetry: 10 * time.Minute},
@@ -65,5 +66,39 @@ func TestObserveHTTPRetryAfterOverridesStatusDefault(t *testing.T) {
 	}
 	if classification.RetryAfter() != 2*time.Second {
 		t.Fatalf("retry after = %s, want 2s", classification.RetryAfter())
+	}
+}
+
+func TestObserveHTTPPaymentRequiredOnlyBlocksDeactivatedWorkspace(t *testing.T) {
+	ordinary, err := ObserveHTTP(
+		http.StatusPaymentRequired,
+		http.Header{},
+		[]byte(`{"error":{"code":"insufficient_credits"}}`),
+		time.Unix(1_700_000_000, 0),
+	)
+	if err != nil {
+		t.Fatalf("ordinary 402 ObserveHTTP() error = %v", err)
+	}
+	if ordinary.Kind() != runtimecore.FailureUnclassified {
+		t.Fatalf("ordinary 402 kind = %q, want %q", ordinary.Kind(), runtimecore.FailureUnclassified)
+	}
+	if ordinary.RetryAfter() != 0 || !ordinary.BlockDirective().IsZero() {
+		t.Fatalf("ordinary 402 should not carry stateful recovery: retry=%s block=%v", ordinary.RetryAfter(), ordinary.BlockDirective())
+	}
+
+	deactivated, err := ObserveHTTP(
+		http.StatusPaymentRequired,
+		http.Header{},
+		[]byte(`{"error":{"code":"deactivated_workspace"}}`),
+		time.Unix(1_700_000_000, 0),
+	)
+	if err != nil {
+		t.Fatalf("deactivated 402 ObserveHTTP() error = %v", err)
+	}
+	if deactivated.Kind() != runtimecore.FailureWorkspaceDeactivated {
+		t.Fatalf("deactivated 402 kind = %q, want %q", deactivated.Kind(), runtimecore.FailureWorkspaceDeactivated)
+	}
+	if deactivated.BlockDirective().Scope() != runtimecore.BlockScopeAccount {
+		t.Fatalf("deactivated 402 scope = %q, want %q", deactivated.BlockDirective().Scope(), runtimecore.BlockScopeAccount)
 	}
 }

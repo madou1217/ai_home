@@ -42,7 +42,9 @@ func ObserveHTTP(
 	if statusCode == http.StatusPaymentRequired && errorCode == "deactivated_workspace" {
 		kind = runtimecore.FailureWorkspaceDeactivated
 	}
-	if kind == runtimecore.FailureUnclassified && statusCode != http.StatusRequestTimeout {
+	if kind == runtimecore.FailureUnclassified &&
+		statusCode != http.StatusRequestTimeout &&
+		statusCode != http.StatusPaymentRequired {
 		// 有业务错误标识但状态码不常见：按上游不可用处理（可换号），
 		// 而不是留 unclassified 让调用方无从判断。
 		kind = runtimecore.FailureUpstreamUnavailable

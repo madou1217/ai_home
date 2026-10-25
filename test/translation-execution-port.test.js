@@ -113,6 +113,33 @@ test('AIH Server executor sends server routing headers and parses SSE fallback',
   assert.equal(events.some((event) => event.type === 'delta' && event.content === '你好'), true);
 });
 
+test('AIH Server executor keeps partial text failed when SSE reports an error', async () => {
+  const events = [];
+  const server = createAihServerExecutor({
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      body: (async function* stream() {
+        yield new TextEncoder().encode('data: {"type":"delta","content":"部分"}\n\n');
+        yield new TextEncoder().encode('data: {"type":"error","code":"translation_upstream_error","message":"上游失败","retryable":true}\n\n');
+        yield new TextEncoder().encode('data: {"type":"error","code":"translation_generic_error","message":"重复错误"}\n\n');
+        yield new TextEncoder().encode('data: {"type":"done","text":"不应完成"}\n\n');
+      })()
+    })
+  });
+  const result = await createTranslationExecutionPort({ server }).translate(request({
+    target: 'aih-server', origin: 'https://server.test'
+  }), { emit: (event) => events.push(event) });
+  assert.equal(result.ok, false);
+  assert.equal(result.text, '部分');
+  assert.deepEqual(result.error, {
+    code: 'translation_upstream_error',
+    message: '上游失败',
+    retryable: true
+  });
+  assert.deepEqual(events.map((event) => event.type), ['delta', 'error']);
+});
+
 test('stale request events are suppressed by request generation predicate', async () => {
   const events = [];
   const direct = async (_request, context) => {

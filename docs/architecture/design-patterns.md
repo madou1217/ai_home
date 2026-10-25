@@ -96,6 +96,18 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/server/zcode-project-key-location.js` + `lib/server/zcode-region.js` | **Strategy Data（区域表扩展）+ Fail-Soft Enrichment（附加产物不阻断主流程）** | ZCode 推理凭据是 Project Access Token（PAT），签发前必须先知道「用哪个 org/project/apiKey」——桌面端把这个定位写进 credentials.json 的 `project-key-location:v1:<encoded JSON>` 键，aih 此前漏写，于是每次推理都要重新发现，上游抖动时直接表现为推理失败。发现链（`getCustomerInfo` → 项目 api_keys）收进独立模块：区域差异（zai 的 biz origin 是 `api.z.ai`、Authorization 用 `Bearer <token>`；bigmodel 用 `bigmodel.cn` 与**裸 token**）作为 `apiOrigin` / `bizAuthScheme` **两列加进区域表**，模块里没有 provider 名分支；键名组装是纯函数，六元组顺序与 `encodeURIComponent(JSON.stringify(…))` 逐字节对齐桌面端。整条链失败一律返回 `null` 并经 `observe` 上报原因（`project_token_*`），登录照常成功、只是不写这个键——它只是附加产物。团队项目（键形状与建 key 参数都不同）显式拒绝而非写错形状 | 真机（2026-10-25）：bigmodel 账号 `acct_cf38e720d4aeb8a7934c` 的生成键与桌面端**逐字节相同**（键 132 字符、值与桌面端完全一致，org/project/apiKeyId 三项对齐）；zai 账号 `acct_9c4ef724b3695d6e3ffd` 因 access_token 已过期（上游 `{"code":401}`）如实返回 `null` 且登录 job 仍 `succeeded`；11 条失败路径（网络异常 / HTTP 5xx / 非 JSON / 业务码 401 / 缺 token / 坏 origin / 空机构 / 团队模式 / apiKey 为空）全部 `null` 且无 observe 回调时也不抛错 |
 
 
+### 2026-10-25 翻译桌面集成验收证据（Task 5）
+
+本轮把已有模式与可观察的运行证据对齐，未新增 provider 派发分支或第二份配置来源：
+
+- `lib/translation/executors/direct-provider.js` + `lib/translation/adapters/{microsoft,google,libretranslate,deepl}.js` -> **Adapter + Factory Registry + Dependency Injection** -> 四个服务都通过注入的 fake `fetch` 完成 `selection` 路由；Microsoft、Google、LibreTranslate、DeepL 各 1 次成功请求，`attempts` 均为 1，结果和事件序列均包含 `delta`/`attempt_success`，而 API secret 不出现在序列化结果或事件中。验证脚本同时确认 secret 只到达 fake transport 的请求边界。
+- `lib/translation/route-planner.js` + `lib/translation/route-runner.js` -> **Chain of Responsibility + observable attempts** -> 路由按 descriptor/operation/priority 规划，失败分类、取消和 attempt 事件仍由统一链路处理；`test/translation-execution-port.test.js`、`test/translation-execution-integration.test.js` 与其余 Node 测试在 Node v22.21.0 下共 39/39 通过。
+- `lib/desktop/translation/service.js` + `lib/desktop/runtime/desktop-launcher.js` -> **Target Adapter + lifecycle state machine** -> 重启后的本机 Server 报告 `ready: true`（PID 95344），桌面 helper 由该 Server 托管运行（PID 98791，父 PID 95344）；helper/full-app、取消、重试和代际抑制由 `test/desktop-runtime.test.js` / `test/desktop-translation-protocol.test.js` 覆盖。
+- `native/translation/main.swift` + `native/translation/TranslationSettingsWindow.swift` -> **Host Capability Boundary + Services adapter** -> helper artifact 的 `Info.plist` 暴露 `AIH Translation` Services，接收 `public.utf8-plain-text`、`public.plain-text`、`NSStringPboardType`；`NSApp.servicesProvider`、`NSRegisterServicesProvider` 与 host-owned right-click 语义均保持在原生宿主边界内。`xcrun swiftc -typecheck native/translation/*.swift` 通过；本轮没有把“原生 GUI 已人工点击验收”写成结论。
+- `web/src/features/translation/{SystemTranslationControl,TranslationProviderSettings,TranslationWorkspace}.tsx` + `web/src/features/translation/page-translation.ts` -> **Capability descriptor projection + Bounded Scheduler + Command** -> 现有 Edge 登录 tab 的 `/ui/studio/translation` DOM 实证显示 AIH Gateway/四个 Provider tabs、AIH Server/Provider 直连 target selector、禁用的待配置状态；短文本请求依次观察到 `翻译中` 与 `翻译完成`；整页动作观察到 `正在翻译页面 · 已处理 25 段`、停止后的 `已停止页面翻译 · 已处理 165 段`、完成后的 `页面翻译完成 · 已处理 274 段` 和 `撤回页面译文`，点击撤回后按钮消失。`cd web && npm run build`（Node v22.21.0）与三份改动组件的 ESLint 均通过。
+
+这些证据支持现有模式的运行时结论；未覆盖的系统权限弹窗、跨应用 Services 菜单点击和视觉像素验收仍需人工桌面验收，不能由类型检查或 DOM 快照替代。
+
 ## 2. 反模式清单（该改的地方）
 
 扫描口径：`grep -rn "provider === \|provider !== \|normalizedProvider ===" lib/ --include='*.js'`（排除测试）。

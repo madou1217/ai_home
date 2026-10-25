@@ -22,6 +22,7 @@ import (
 	"github.com/madou1217/ai_home/application/claudegateway"
 	"github.com/madou1217/ai_home/application/clauderelay"
 	"github.com/madou1217/ai_home/application/codexwebsocket"
+	"github.com/madou1217/ai_home/application/modelmetadata"
 	"github.com/madou1217/ai_home/application/upstreamrules"
 	"github.com/madou1217/ai_home/application/visionguard"
 	accountcore "github.com/madou1217/ai_home/core/accounts"
@@ -153,8 +154,14 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("创建 Codex 客户端版本解析器失败: %w", err)
 	}
+	modelModalities, err := modelsdev.New()
+	if err != nil {
+		_ = codexVersions.Close()
+		_ = store.Close()
+		return nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
+	}
 	agyModelWires := newAgyModelWires(options.AIHomeDir)
-	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires)
+	modelDiscovery, err := newModelDiscovery(catalog, options.ModelDiscoverers, codexVersions, agyModelWires, modelModalities)
 	if err != nil {
 		_ = codexVersions.Close()
 		_ = store.Close()
@@ -225,6 +232,7 @@ func New(ctx context.Context, options Options) (*Server, error) {
 		options.UpstreamErrorRuleProviders,
 		codexVersions,
 		agyModelWires,
+		modelModalities,
 	)
 	if err != nil {
 		_ = codexVersions.Close()
@@ -264,6 +272,7 @@ func newHandlers(
 	upstreamErrorRuleProviders []string,
 	codexVersions *clientversion.Resolver,
 	agyModelWires *agycodeassist.ModelWireStore,
+	modelModalities *modelsdev.Index,
 ) (_ serverHandlers, _ []io.Closer, resultErr error) {
 	var usage *usageComposition
 	var modelRefresh *accountapp.ModelRefreshCoordinator
@@ -601,11 +610,8 @@ func newHandlers(
 		relayClient = relayHTTPClient
 	}
 	// 模态索引与图片仓必须在推理组合之前创建：vision guard 同时需要两者，
-	// 而它要在推理运行时装配时就注入。这里只创建一次，后续 modelsapi 与图片入口复用。
-	modelModalities, err := modelsdev.New()
-	if err != nil {
-		return serverHandlers{}, nil, fmt.Errorf("创建 models.dev 模态索引失败: %w", err)
-	}
+	// 而它要在推理运行时装配时就注入。这里只创建一次，后续 modelsapi、Kimi runtime
+	// descriptor sink 与图片入口复用。
 	imageBlobs := imageblob.NewStore(0)
 	visionGuard, err := visionguard.New(visionguard.Dependencies{
 		Modalities: modelModalities,
@@ -1268,6 +1274,7 @@ func newModelDiscovery(
 	injected []accountapp.ProviderModelDiscoverer,
 	codexVersions clientversion.Source,
 	agyModelWires agycodeassist.ModelWireWriter,
+	modalityRegistrar modelmetadata.ModelDescriptorRegistrar,
 ) (*accountapp.ModelDiscovery, error) {
 	strategies := injected
 	if len(strategies) == 0 {
@@ -1298,9 +1305,10 @@ func newModelDiscovery(
 		// 两者都是标准 OpenAI 兼容端点（GET {base}/models），因此共用同一实现，
 		// 差异只在端点与凭据取法。
 		kimiSource, err := openaicompatmodelcatalog.New(client, openaicompatmodelcatalog.Options{
-			ProviderID: kimirelay.ProviderID,
-			Endpoint:   kimirelay.KimiCodeBaseURL + openaicompatmodelcatalog.ModelsPath,
-			Token:      kimirelay.AccessTokenFromCredential,
+			ProviderID:  kimirelay.ProviderID,
+			Endpoint:    kimirelay.KimiCodeBaseURL + openaicompatmodelcatalog.ModelsPath,
+			Token:       kimirelay.AccessTokenFromCredential,
+			Descriptors: modalityRegistrar,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("创建 kimi 模型目录源失败: %w", err)

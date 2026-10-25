@@ -249,10 +249,14 @@ Node 给每个模型对象内联一个 `aih_modalities`（`lib/server/models.js:
   目录里出现 `gpt-6-astra` 之后会把能看图的 gpt-6 判成纯文本，进而剥掉它的图片。放宽边界
   逐条对当前快照验证过：`gpt-3.5-turbo` 与 `gpt-oss-*` 在快照里是纯文本，仍被排除在外。
 
-- 已知**未对齐**项（有意保留）：Node 的模态索引还有一层运行时覆盖
-  `registerProbedModelModalities`（上游 OAuth/API 实时 `/models` 探测结果会覆盖快照，
-  见 `lib/server/http-utils.js`）。Go 侧没有这层——快照是唯一数据源，因为 Go 的模型目录
-  不走上游探测。探测结果与快照不一致时，两端对同一模型的 `?capability=` 判定可能不同。
+- **已修（2026-10-25）**：Go 的 `modelsdev.Index` 增加进程内原子 `provider|model`
+  模态覆盖；Kimi 标准 `/models` 探测把每个有效模型 ID 的
+  `supports_image_in` / `supports_video_in` 投影为低敏 descriptor，成功非空代次覆盖静态
+  models.dev，空结果/失败保留 last-known-good。Node 的字面 `=== true` 语义、Provider 级
+  replacement、静态回退和并发快照由 `application/modelmetadata/descriptor_test.go`、
+  `internal/adapters/modelmetadata/modelsdev/index_test.go`、
+  `internal/adapters/openaicompat/modelcatalog/discovery_test.go` 守住；其他 Provider
+  没有可靠 descriptor 合同，继续使用静态快照。
 
 升级 SDK 依赖后重新生成索引：
 

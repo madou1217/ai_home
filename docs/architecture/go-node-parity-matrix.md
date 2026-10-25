@@ -534,6 +534,7 @@ Go 原先有两个键，都不等于规范键：
 | 普通 HTTP 403 | Go 原先按 `permission_denied` 做账号模型级策略阻断 | Node 通用 401/403 分支按 `auth_invalid` 做账号级阻断；边缘/WAF、地区和资源限制在前置专用策略中单独处理 | **已修（2026-10-25）**：Codex/Claude Go classifier 的普通 403 改为账号级 `FailureCredentialRejected`，保留专用前置策略的边界 |
 | HTTP 状态失败的冷却时长 | Go 领域策略默认值 | Node：408 为请求级未知状态；503=60s，普通 5xx=5m，529=10m | **已修（2026-10-25）**：Codex/Claude classifier 对齐 Node 的状态分类与显式恢复提示，回归测试覆盖 408/500/503/529 |
 | 通用 OpenAI 兼容 HTTP observer | Go 共享 observer 原先把 403 归为 `permission_denied`、451/529/408 归类和冷却与 Node 不同 | Node 通用 401/403、451、408、5xx/529 规则先经过专用边界再进入统一账号策略 | **已修（2026-10-25）**：`internal/adapters/upstreamfailure.ObserveHTTP` 与 Node 的普通状态语义对齐，回归测试覆盖 403/451/408/500/503/529 及显式 `Retry-After` |
+| AGY Code Assist 失败证据 | Go 原先把所有 403/`permission_denied` 固定成账号模型级 `permission_denied`，且 529/5xx 使用领域默认冷却；地区资格正文未投影 | Node 普通 AGY 403 进入账号凭据阻塞，地区资格文案进入 `location_unsupported`，529/5xx 使用状态级恢复提示 | **已修（2026-10-25）**：Go AGY classifier 对齐普通 403、408、500/503/529；adapter 仅把已确认地区文案投影为 `RegionDenied`，回归测试覆盖作用域与延迟归因 |
 | `aih_modalities` | 默认不返回，`?include=modalities` 才暴露 | 每个模型项内联 | Node 内部过滤在用（已更正本文早先的错误说法），不是死字段 |
 
 ### Codex OAuth 身份向量：已决策，ADR 已落地（2026-09-16）

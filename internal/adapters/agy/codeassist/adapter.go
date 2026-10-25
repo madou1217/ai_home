@@ -202,8 +202,9 @@ func classifyHTTPFailure(
 ) (inferencegateway.AttemptResult, error) {
 	var envelope struct {
 		Error struct {
-			Code   json.RawMessage `json:"code"`
-			Status string          `json:"status"`
+			Code    json.RawMessage `json:"code"`
+			Status  string          `json:"status"`
+			Message string          `json:"message"`
 		} `json:"error"`
 	}
 	if err := sharedfailure.DecodeErrorPayload(response.Body, &envelope); err != nil {
@@ -223,10 +224,11 @@ func classifyHTTPFailure(
 		observedAt,
 	)
 	classification, deferred, err := agyfailure.Classify(agyfailure.Input{
-		StatusCode: response.StatusCode,
-		Status:     envelope.Error.Status,
-		Code:       code,
-		RetryAfter: retryAfter,
+		StatusCode:   response.StatusCode,
+		Status:       envelope.Error.Status,
+		Code:         code,
+		RegionDenied: isRegionDeniedMessage(envelope.Error.Message),
+		RetryAfter:   retryAfter,
 	})
 	if err != nil {
 		return malformedAttempt()
@@ -236,6 +238,13 @@ func classifyHTTPFailure(
 		return malformedAttempt()
 	}
 	return inferencegateway.FailedAttempt(failure), nil
+}
+
+func isRegionDeniedMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(normalized, "eligibility check failed") &&
+		(strings.Contains(normalized, "not currently available in your location") ||
+			strings.Contains(normalized, "not eligible for antigravity"))
 }
 
 func newAgyAttemptFailure(

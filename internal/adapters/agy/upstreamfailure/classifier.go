@@ -13,10 +13,11 @@ const httpStatusTooManyRequests = http.StatusTooManyRequests
 
 // Input 只携带 Google RPC 稳定 status/code 和可靠 Retry-After。
 type Input struct {
-	StatusCode int
-	Status     string
-	Code       string
-	RetryAfter time.Duration
+	StatusCode   int
+	Status       string
+	Code         string
+	RegionDenied bool
+	RetryAfter   time.Duration
 }
 
 // Classify 返回运行态分类和是否应延迟到完整请求结果再归因账号。
@@ -36,6 +37,13 @@ func Classify(
 	}
 	status := response.ErrorType()
 	code := response.ErrorCode()
+	if input.RegionDenied {
+		classification, err := sharedfailure.NewBlockingClassification(
+			runtimecore.FailureRegionUnsupported,
+			runtimecore.BlockScopeAccount,
+		)
+		return classification, false, err
+	}
 	switch {
 	case status == "unauthenticated" || response.StatusCode() == http.StatusUnauthorized:
 		classification, err := sharedfailure.NewClassification(
@@ -45,8 +53,14 @@ func Classify(
 		return classification, false, err
 	case status == "permission_denied" || response.StatusCode() == http.StatusForbidden:
 		classification, err := sharedfailure.NewBlockingClassification(
-			runtimecore.FailurePermissionDenied,
-			runtimecore.BlockScopeAccountModel,
+			runtimecore.FailureCredentialRejected,
+			runtimecore.BlockScopeAccount,
+		)
+		return classification, false, err
+	case response.StatusCode() == http.StatusUnavailableForLegalReasons:
+		classification, err := sharedfailure.NewBlockingClassification(
+			runtimecore.FailureRegionUnsupported,
+			runtimecore.BlockScopeAccount,
 		)
 		return classification, false, err
 	case status == "not_found" || response.StatusCode() == http.StatusNotFound:
@@ -69,10 +83,24 @@ func Classify(
 			0,
 		)
 		return classification, false, err
+	case response.StatusCode() == http.StatusRequestTimeout:
+		classification, err := sharedfailure.NewClassification(
+			runtimecore.FailureUnclassified,
+			0,
+		)
+		return classification, false, err
+	case response.StatusCode() == 529:
+		retryAfter := defaultRetryAfter(response.StatusCode(), runtimecore.FailureModelOverloaded, response.RetryAfter())
+		classification, err := sharedfailure.NewClassification(
+			runtimecore.FailureModelOverloaded,
+			retryAfter,
+		)
+		return classification, false, err
 	case response.StatusCode() >= http.StatusInternalServerError:
+		retryAfter := defaultRetryAfter(response.StatusCode(), runtimecore.FailureUpstreamUnavailable, response.RetryAfter())
 		classification, err := sharedfailure.NewClassification(
 			runtimecore.FailureUpstreamUnavailable,
-			response.RetryAfter(),
+			retryAfter,
 		)
 		return classification, false, err
 	default:
@@ -81,5 +109,27 @@ func Classify(
 			0,
 		)
 		return classification, false, err
+	}
+}
+
+// defaultRetryAfter mirrors Node's status-specific recovery hints. Explicit
+// Retry-After remains authoritative when it is within the shared upper bound.
+func defaultRetryAfter(
+	statusCode int,
+	kind runtimecore.FailureKind,
+	explicit time.Duration,
+) time.Duration {
+	if explicit > 0 && explicit <= runtimecore.MaxCooldownHint {
+		return explicit
+	}
+	switch {
+	case statusCode == http.StatusServiceUnavailable && kind == runtimecore.FailureUpstreamUnavailable:
+		return time.Minute
+	case statusCode >= http.StatusInternalServerError && kind == runtimecore.FailureUpstreamUnavailable:
+		return 5 * time.Minute
+	case statusCode == 529 && kind == runtimecore.FailureModelOverloaded:
+		return 10 * time.Minute
+	default:
+		return 0
 	}
 }

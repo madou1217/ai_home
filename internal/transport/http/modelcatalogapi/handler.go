@@ -163,7 +163,7 @@ func (handler *Handler) writeView(response http.ResponseWriter, status int, rout
 		Generation:       snapshot.Generation,
 		Revision:         snapshot.Revision,
 		AcceptedCount:    len(snapshot.Items),
-		RoutableModelIDs: append([]string(nil), routableIDs...),
+		RoutableModelIDs: append([]string{}, routableIDs...),
 	}
 	if includeModels {
 		view.Models = make([]modelView, 0, len(snapshot.Items))

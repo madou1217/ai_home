@@ -31,11 +31,10 @@
   - 2026-09-25 前置已完成：Go 已支持 `x-account-ref` 独占路由；转发前由 Node 判定（可用钉选→Go，不可用/未知/非法钉选与 Fabric 在线时的未钉选推理→Node），去掉 501。真实 Claude 上游影子：非流式与 SSE 状态、结构、事件序列一致。
   - 2026-09-25 切流缺口已补（3d148724）：命中启用 Node 别名的推理请求由转发前判定交还 Node（Node 复用已缓冲请求体）；Go 推理响应带 `x-aih-server-account-ref` / `x-aih-server-provider`。
   - 2026-09-25 隔离端到端（真实 Node 宿主 → 真实 Go → 真实 Claude 上游，aih.db 快照、委托刷新、临时目录用后即删）：非流式 200 `message`、SSE 完整事件序列、取消流后下一请求 200 且 Go 仍 ready、别名请求留在 Node、未知钉选 Node 404；响应头 `x-aih-server-account-ref` 为实际账号（修复 Claude 原生中继路径漏写）。
-  - 未完成：生产 canary 需运维者本人执行（自动化权限拒绝了生产切流）：`scripts/go-core-canary.sh gateway.anthropic.messages`（近 10 条 5xx≥3 或 Go 20s 不可转发即自动回滚）。
+  - 历史限制：自动化曾因生产权限无法执行 canary；该限制已由后续运维执行覆盖。
   - 2026-09-25 生产切流完成（`scripts/go-core-canary.sh`，30 分钟无回滚）：00:21:48 起 `/v1/messages` 由 Go 应答，canary 期间 10/10 200，之后持续 200。
 - [x] S9 依次：chat completions → responses（HTTP+WS 成对）→ gemini → images/blobs；每步 shadow + 改 manifest 为 `go_owned`
-  - 2026-09-25 影子证据：chat completions / responses 200/200 且 Go 为结构超集；Gemini generateContent 修复 Go 思考模型 400 与 Node 信封泄漏后 200/200。切流同 S8 需确认。
-  - 切流方式同 S8：`scripts/go-core-canary.sh gateway.openai.chat_completions` → `gateway.openai.responses,gateway.openai.responses.websocket`（必须成对）→ `gateway.gemini.generate_content,gateway.gemini.stream_generate_content`；images/blobs 尚无影子证据（生图有真实成本）。
+  - 2026-09-25 影子证据：chat completions / responses 200/200 且 Go 为结构超集；Gemini generateContent 修复 Go 思考模型 400 与 Node 信封泄漏后 200/200。
   - 2026-09-25 生产切流全部完成，每步 30 分钟 canary 无回滚：chat completions → responses（HTTP+WS 成对；真实 codex CLI 经 WS 一轮验证）→ Gemini generateContent/stream → images.generations/edits + vision.blobs（成对）。
   - 切流中发现并修复：Go 本地编码拒绝被报成 503（改 400，2cdb92dc）；agy 刷新漏写 `expires_at_ms` 致 Go 全部 401（8a5fdd12）；agy 生图缺 Code Assist 信封、blob URL 指向 Go 私有端口（a91d4840）；Gemini 思考吃光答案预算（c1e4db84）；Go 路由不了的模型与 Go 重启窗口交还 Node（170319e8）。
   - `gateway.models.list` 保持 Node：共存期 Node 独有 Provider（kimi/grok/opencode/zcode…）永久留在 Node，网关对外的模型全集是 Node∪Go，Go 目录只含 Go 能路由的模型。manifest 仍为 `node_owned`，生产所有权由 server config 表达；Go Core 随发布默认开启时再改 manifest（否则未启用 Go 的安装会报 not ready）。

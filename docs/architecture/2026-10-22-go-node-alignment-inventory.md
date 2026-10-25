@@ -32,7 +32,7 @@ Node 宿主监听；Node 按 manifest 将已切换能力透明转发到 Go。
 | `gateway.health` / `gateway.readiness` | Node-owned | 宿主健康与就绪边界保留在 Node |
 | `gateway.models.list` | Node-owned | Go catalog 仍是受限投影，需先完成目录所有权核对 |
 | `gateway.anthropic.count_tokens` | Go-owned | 已通过本地 parity gate，由 Node 转发到 Go |
-| 其余 11 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
+| 其余 12 个推理数据面 entry | Go-owned | 已通过现有 ownership 闸门并由 Node 转发到 Go |
 
 **剩余工作**：不是重做已经接管的能力，而是逐项完成 3 个 blocker 的语义核验和证据。
 模型目录的账号/模型禁用策略已经由 Node→Go 对账同步；`gateway.models.list` 仍需要解决

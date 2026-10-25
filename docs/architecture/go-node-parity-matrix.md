@@ -71,7 +71,7 @@ Node 其余 guard 也仍按 `guard` 分类，不能在路由计数中被误读�
 
 ### Ownership 与非数据面
 
-manifest 中的数据面 entry 按能力记录实际 owner；当前 11 个由 Go 持有，4 个仍由 Node
+manifest 中的数据面 entry 按能力记录实际 owner；当前 12 个由 Go 持有，3 个仍由 Node
 持有。Node 的 WebUI、Fabric、Node RPC、Session、PTY 和 Codex app-server surface 仍由
 Node 持有；它们不因 Go Core 已接管推理数据面就自动进入 Go 的切流范围。
 Go 的账号管理 API `/v1/management/*` 与 Node 的 `/v0/webui/management/*` 是不同语义的

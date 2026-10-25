@@ -33,6 +33,8 @@ final class TranslationPanelContent {
   var settingsAutoCopy = false
   var settingsExecutionTarget = "aih-server"
   var settingsLanguages: [(String, String)] = []
+  var settingsServerTargets: [[String: Any]] = []
+  var settingsServerTarget: [String: Any]?
   var reducedMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   init() {
@@ -297,6 +299,8 @@ final class TranslationPanelContent {
       autoCopyEnabled: settingsAutoCopy,
       executionTarget: settingsExecutionTarget,
       languages: settingsLanguages,
+      serverTargets: settingsServerTargets,
+      selectedServerTarget: settingsServerTarget,
       reducedMotion: reducedMotion,
       emit: settingsHandler,
       onClosed: { [weak self] in self?.settingsWindow = nil }

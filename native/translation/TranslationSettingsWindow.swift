@@ -15,8 +15,9 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   private let shortcutValue = NSTextField(labelWithString: "⌘⌥T")
   private var isClosing = false
   private var onClosed: (() -> Void)?
+  private var serverTargetsByKey: [String: [String: Any]] = [:]
 
-  init(target: String, autoCopyEnabled: Bool, executionTarget: String, languages: [(String, String)], reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
+  init(target: String, autoCopyEnabled: Bool, executionTarget: String, languages: [(String, String)], serverTargets: [[String: Any]], selectedServerTarget: [String: Any]?, reducedMotion: Bool, emit: @escaping ([String: Any]) -> Void, onClosed: (() -> Void)? = nil) {
     self.emit = emit
     self.reducedMotion = reducedMotion
     self.onClosed = onClosed
@@ -37,12 +38,19 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     if let index = targetMenu.itemArray.firstIndex(where: { $0.representedObject as? String == target }) { targetMenu.selectItem(at: index) }
     if targetMenu.selectedItem == nil { targetMenu.selectItem(at: 0) }
     autoCopy.state = autoCopyEnabled ? .on : .off
-    executionMenu.addItem(withTitle: "本机 AIH Server")
-    executionMenu.lastItem?.representedObject = "aih-server"
+    var options = serverTargets
+    if let selectedServerTarget, !options.contains(where: { targetKey($0) == targetKey(selectedServerTarget) }) { options.insert(selectedServerTarget, at: 0) }
+    if options.isEmpty { options = [["kind": "aih-server", "label": "本机 AIH Server", "origin": "http://127.0.0.1:9527"]] }
+    for (index, target) in options.enumerated() {
+      let key = targetKey(target).isEmpty ? "aih-server-\(index)" : targetKey(target)
+      serverTargetsByKey[key] = target
+      executionMenu.addItem(withTitle: String(target["label"] as? String ?? "AIH Server").isEmpty ? "AIH Server" : target["label"] as? String ?? "AIH Server")
+      executionMenu.lastItem?.representedObject = key
+    }
     executionMenu.addItem(withTitle: "Provider 直连")
     executionMenu.lastItem?.representedObject = "direct-provider"
-    let executionValue = executionTarget == "direct-provider" ? "direct-provider" : "aih-server"
-    if let index = executionMenu.itemArray.firstIndex(where: { $0.representedObject as? String == executionValue }) { executionMenu.selectItem(at: index) }
+    let selectedKey = executionTarget == "direct-provider" ? "direct-provider" : targetKey(selectedServerTarget ?? options[0])
+    if let index = executionMenu.itemArray.firstIndex(where: { $0.representedObject as? String == selectedKey }) { executionMenu.selectItem(at: index) }
     targetMenu.setAccessibilityLabel("默认目标语言")
     autoCopy.setAccessibilityLabel("翻译完成后自动复制")
     executionMenu.setAccessibilityLabel("翻译执行目标")
@@ -52,6 +60,12 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
     closeButton.action = #selector(close)
     saveButton.keyEquivalent = "\r"
     closeButton.keyEquivalent = "\u{1b}"
+  }
+
+  private func targetKey(_ target: [String: Any]) -> String {
+    let serverId = String(target["serverId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let origin = String(target["origin"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    return serverId.isEmpty ? origin : serverId
   }
 
   private func makeView() -> NSView {
@@ -113,24 +127,28 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   }
 
   @objc private func save() {
-    let patch: [String: Any] = [
+    let executionKey = executionMenu.selectedItem?.representedObject as? String ?? ""
+    var patch: [String: Any] = [
       "target": targetMenu.selectedItem?.representedObject as? String ?? "zh-Hans",
       "autoCopy": autoCopy.state == .on,
-      "executionTarget": executionMenu.selectedItem?.representedObject as? String ?? "aih-server"
+      "executionTarget": executionKey == "direct-provider" ? "direct-provider" : "aih-server"
     ]
-    emit(["type": "settings", "action": "save", "patch": patch])
+    if executionKey != "direct-provider", let selectedTarget = serverTargetsByKey[executionKey] {
+      patch["serverTarget"] = selectedTarget
+    }
+    emit(["version": 1, "type": "settings", "action": "save", "patch": patch])
     closeWindow(emitClose: false)
   }
 
   @objc private func close() {
-    emit(["type": "settings", "action": "close"])
+    emit(["version": 1, "type": "settings", "action": "close"])
     closeWindow(emitClose: false)
   }
 
   private func closeWindow(emitClose: Bool) {
     guard !isClosing else { return }
     isClosing = true
-    if emitClose { emit(["type": "settings", "action": "close"]) }
+    if emitClose { emit(["version": 1, "type": "settings", "action": "close"]) }
     let finish = { [weak self] in
       guard let self = self else { return }
       self.window.orderOut(nil)
@@ -149,7 +167,7 @@ final class TranslationSettingsWindow: NSObject, NSWindowDelegate {
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    emit(["type": "settings", "action": "close"])
+    emit(["version": 1, "type": "settings", "action": "close"])
     closeWindow(emitClose: false)
     return false
   }

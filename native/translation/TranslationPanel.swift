@@ -84,6 +84,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.settingsTarget = defaultTarget
     content.settingsAutoCopy = autoCopy
     content.settingsExecutionTarget = event["executionTarget"] as? String ?? "aih-server"
+    content.settingsServerTargets = event["serverTargets"] as? [[String: Any]] ?? []
+    content.settingsServerTarget = event["serverTarget"] as? [String: Any]
     let previous = panel.isVisible ? target : defaultTarget
     content.targetMenu.removeAllItems()
     content.settingsLanguages = []

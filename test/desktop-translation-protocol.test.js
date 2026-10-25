@@ -62,3 +62,16 @@ test('caps settings patch fields and removes text from settings events', () => {
     version: 1, type: 'settings', action: 'close'
   });
 });
+
+test('normalizes helper lifecycle events before service dispatch', () => {
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'status', trusted: true }), {
+    version: 1, type: 'status', trusted: true
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'selection-state', outcome: 'mouse-up', application: 'TextEdit' }), {
+    version: 1, type: 'selection-state', outcome: 'mouse-up', application: 'TextEdit'
+  });
+  assert.deepEqual(protocol.normalizeHelperEvent({ type: 'server-target', origin: 'http://127.0.0.1:9527', label: '本机 AIH Server' }), {
+    version: 1, type: 'server-target', origin: 'http://127.0.0.1:9527', label: '本机 AIH Server'
+  });
+  assert.equal(protocol.normalizeHelperEvent({ type: 'status', trusted: 'yes' }), null);
+});

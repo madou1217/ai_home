@@ -64,3 +64,14 @@ Fix-round verification:
 - `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
 - `cd web && npm run build` — still blocked before project compilation by the existing Umi/http-deceiver `No such module: http_parser` runtime failure under Node v22.16.0.
 - `git diff --check` — passed.
+
+### Persisted-target precedence correction
+
+The selector now gives the bootstrap-persisted `executionTarget` precedence during initial rendering, while a successful user selection is held locally until the persisted settings broadcast catches up. Runtime `/system` descriptors still provide capabilities and configured/available status; they do not silently replace the persisted selection.
+
+Final fix-round verification after this correction:
+
+- `cd web && npx eslint src/features/translation/SystemTranslationControl.tsx src/features/translation/TranslationProviderSettings.tsx src/features/translation/TranslationWorkspace.tsx src/features/translation/translation-targets.ts src/types/index.ts src/services/api.ts` — passed with 0 errors.
+- `node --experimental-strip-types --test test/translation-web-targets.test.js test/translation-execution-integration.test.js test/desktop-runtime.test.js` — 17 passed, 0 failed.
+- `cd web && npm run build` — still blocked before project compilation by `No such module: http_parser` in the installed Umi/http-deceiver dependency.
+- `git diff --check` — passed.

@@ -46,9 +46,13 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [profileRevision, setProfileRevision] = useState(0);
+  const [selectedExecutionTargetOverride, setSelectedExecutionTargetOverride] = useState<'aih-server' | 'direct-provider' | undefined>();
   const executionTargets = status?.executionTargets || [];
-  const selectedExecutionTarget = status?.executionTarget || persistedExecutionTarget || executionTargets.find((target) => target.configured)?.id || executionTargets[0]?.id || '';
+  const selectedExecutionTarget = selectedExecutionTargetOverride || persistedExecutionTarget || status?.executionTarget || executionTargets.find((target) => target.configured)?.id || executionTargets[0]?.id || '';
   const selectedExecutionTargetDetails = executionTargets.find((target) => target.id === selectedExecutionTarget);
+  useEffect(() => {
+    setSelectedExecutionTargetOverride(undefined);
+  }, [persistedExecutionTarget]);
   const serverTargets = useMemo<SystemServerTargetOption[]>(() => {
     // A profile without a management key or a successful health state cannot
     // service native translation through the local proxy. Keep the list honest
@@ -150,6 +154,7 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
               setSaving(true);
               try {
                 setStatus(await translationAPI.setSystemExecutionTarget(target.id as 'aih-server' | 'direct-provider'));
+                setSelectedExecutionTargetOverride(target.id as 'aih-server' | 'direct-provider');
                 setError('');
               } catch (_error) {
                 setError('切换执行目标失败，请检查目标配置');

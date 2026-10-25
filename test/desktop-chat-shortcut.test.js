@@ -66,3 +66,41 @@ test('macOS build includes desktop shortcut source in source list and fingerprin
   assert.match(source, /NSServices/);
   assert.match(fingerprint, /native\/desktop\/ShortcutRegistry\.swift/);
 });
+
+test('macOS Services registration refreshes LaunchServices and PBS after helper rebuilds', async () => {
+  const calls = [];
+  await build.registerMacTranslationServices('/tmp/AIH Translation.app', {
+    homeDir: '/Users/tester',
+    runImpl: async (command, args) => {
+      calls.push({ command, args });
+    }
+  });
+  assert.deepEqual(calls, [
+    {
+      command: '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+      args: ['-u', '/Users/tester/Applications/AIH Translation.app']
+    },
+    {
+      command: '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+      args: ['-f', '/tmp/AIH Translation.app']
+    },
+    {
+      command: '/System/Library/CoreServices/pbs',
+      args: ['-update']
+    }
+  ]);
+});
+
+test('macOS Services registration tolerates an already-removed legacy bundle', async () => {
+  const calls = [];
+  await build.registerMacTranslationServices('/tmp/AIH Translation.app', {
+    homeDir: '/Users/tester',
+    runImpl: async (command, args) => {
+      calls.push({ command, args });
+      if (args[0] === '-u') throw new Error('legacy_bundle_missing');
+    }
+  });
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[1].args, ['-f', '/tmp/AIH Translation.app']);
+  assert.deepEqual(calls[2].args, ['-update']);
+});

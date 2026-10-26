@@ -6,10 +6,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const os = require('node:os');
+const crypto = require('node:crypto');
 const { createProviderResourceDoctor } = require('../lib/native-resources/provider-resource-doctor');
+const { createNativePluginManager } = require('../lib/native-resources/native-plugin-manager');
+const { createSkillManager } = require('../lib/native-resources/skill-manager');
+const { createMcpManager } = require('../lib/native-resources/mcp-manager');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const DEMO_PLUGIN = path.join(ROOT, 'examples/native-plugins/aih-demo');
+const DEMO_SKILL = path.join(ROOT, 'assets/provider-skills/aih-demo');
+const DEMO_MCP = path.join(ROOT, 'examples/mcp/aih-demo-server.js');
 
 function parseArgs(argv) {
   const options = { json: false, timeoutMs: DEFAULT_TIMEOUT_MS, skip: new Set(), geminiBinary: '' };
@@ -83,6 +91,65 @@ function readCapabilities() {
   }).capabilities();
   if (!report || !Array.isArray(report.providers)) throw new Error('provider_capabilities_failed');
   return report;
+}
+
+async function runManagementLifecycle(capabilities) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-resource-management-'));
+  const aiHomeDir = path.join(root, 'aih');
+  const hostHomeDir = path.join(root, 'host');
+  const pluginManager = createNativePluginManager({ aiHomeDir, hostHomeDir });
+  const skillManager = createSkillManager({ aiHomeDir, hostHomeDir });
+  const mcpManager = createMcpManager({ aiHomeDir, hostHomeDir });
+  const result = { providers: {}, passed: true };
+  try {
+    for (const row of capabilities.providers || []) {
+      const provider = row.provider;
+      const resources = {};
+      const record = (resource, value) => { resources[resource] = value; if (value.status === 'failed') result.passed = false; };
+      if (row.resources?.plugin?.state === 'supported') {
+        try {
+          pluginManager.install(DEMO_PLUGIN, { provider });
+          const listed = pluginManager.list({ provider }).resources.length === 1;
+          pluginManager.disable('aih-demo', { provider });
+          pluginManager.enable('aih-demo', { provider });
+          const healthy = pluginManager.doctor({ provider }).healthy;
+          pluginManager.remove('aih-demo', { provider });
+          record('plugin', { status: listed && healthy ? 'verified' : 'failed', lifecycle: 'install-disable-enable-remove-doctor' });
+        } catch (error) {
+          record('plugin', { status: 'unavailable', reason: error.code || error.message });
+        }
+      } else record('plugin', { status: 'unsupported', reason: row.resources?.plugin?.reason || 'unsupported' });
+      if (row.resources?.skill?.state !== 'unsupported') {
+        try {
+          skillManager.install(DEMO_SKILL, { provider });
+          const listed = skillManager.list({ provider }).resources.length === 1;
+          skillManager.disable('aih-demo', { provider });
+          skillManager.enable('aih-demo', { provider });
+          const healthy = skillManager.doctor({ provider }).healthy;
+          skillManager.remove('aih-demo', { provider });
+          record('skill', { status: listed && healthy ? 'verified' : 'failed', lifecycle: 'install-disable-enable-remove-doctor' });
+        } catch (error) {
+          record('skill', { status: 'unavailable', reason: error.code || error.message });
+        }
+      } else record('skill', { status: 'unsupported', reason: row.resources?.skill?.reason || 'unsupported' });
+      if (row.resources?.mcp?.projection) {
+        try {
+          const name = `aih-demo-${crypto.randomUUID().slice(0, 8)}`;
+          mcpManager.add(name, { command: process.execPath, args: [DEMO_MCP] }, { provider });
+          const test = await mcpManager.test(name, { provider });
+          mcpManager.enable(name, { provider });
+          const healthy = mcpManager.doctor({ provider }).healthy;
+          mcpManager.disable(name, { provider });
+          mcpManager.remove(name, { provider });
+          record('mcp', { status: test?.ok && healthy ? 'verified' : 'failed', lifecycle: 'add-test-enable-disable-remove-doctor' });
+        } catch (error) {
+          record('mcp', { status: 'unavailable', reason: error.code || error.message });
+        }
+      } else record('mcp', { status: 'unsupported', reason: row.resources?.mcp?.reason || 'projection_missing' });
+      result.providers[provider] = resources;
+    }
+    return result;
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
 function addEvidence(map, key, evidence) {
@@ -194,10 +261,11 @@ function summarizeResource(capability, entries) {
   };
 }
 
-function buildReport(options) {
+async function buildReport(options) {
   const capabilities = readCapabilities();
   const evidence = new Map();
   const demos = [];
+  const management = await runManagementLifecycle(capabilities);
   const run = (id, args, indexer) => {
     if (options.skip.has(id)) return;
     const result = runJsonCommand(args, options.timeoutMs);
@@ -261,18 +329,19 @@ function buildReport(options) {
   return {
     generatedAt: new Date().toISOString(),
     evidenceBoundary: 'local deterministic fixtures and installed native clients; no remote-model success claim',
-    passed: demos.filter(item => !item.skipped).every(item => item.passed === true),
+    passed: management.passed && demos.filter(item => !item.skipped).every(item => item.passed === true),
     demos: demos.map(({ value, ...item }) => ({ ...item, ...(value ? { report: value } : {}) })),
+    management,
     providers,
     hosts,
     gaps
   };
 }
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) { console.log(usage()); return 0; }
-  const report = buildReport(options);
+  const report = await buildReport(options);
   if (options.json) console.log(JSON.stringify(report, null, 2));
   else {
     console.log(`Resource closure: ${report.passed ? 'demo commands passed' : 'demo failures present'}`);
@@ -284,8 +353,7 @@ function main() {
 }
 
 if (require.main === module) {
-  try { process.exitCode = main(); }
-  catch (error) { console.error(error.message || error); process.exitCode = 1; }
+  main().then(result => { process.exitCode = result; }).catch(error => { console.error(error.message || error); process.exitCode = 1; });
 }
 
 module.exports = { buildReport, parseArgs, summarizeResource };

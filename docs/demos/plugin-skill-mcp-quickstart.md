@@ -8,7 +8,7 @@
 和 MCP 的管理状态、真实使用证据与差距：
 
 ```sh
-npm run resources:closure
+npm run --silent resources:closure
 ```
 
 机器可读结果：
@@ -21,6 +21,9 @@ node scripts/resource-closure-demo.js --json > /tmp/aih-resource-closure.json
 报告中的 `management` 表示安装/启用/停用/移除和 doctor 是否闭环，`use` 表示
 原生客户端是否真的把资源带进请求、工具循环或 Skill 激活。`unverified`、
 `not_proven` 和 `gaps` 必须继续保留，不能按“命令返回 0”解释成已完成。
+报告还会单独给出 `management`：即使某个 Provider 的原生 CLI 没安装，只要它的
+声明式投影可以完成 install、enable、disable、remove、doctor（MCP 还会做直接 stdio
+test），管理闭环和原生模型使用也会分别显示，避免把两者混成一个状态。
 
 ### 插件的实际使用
 

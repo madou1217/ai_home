@@ -1,7 +1,8 @@
+/* global chrome, AbortController, setTimeout, clearTimeout, fetch, TextDecoder */
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
-const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false };
+const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '' };
 let clipboardQueue = Promise.resolve();
 const translationRequests = new Map();
 
@@ -27,7 +28,7 @@ function translationFailure(status, message, errorCode = '') {
 
 async function settings() {
   const [shared, privateState] = await Promise.all([
-    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy }),
+    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy, model: DEFAULTS.model, provider: DEFAULTS.provider }),
     chrome.storage.local.get({ token: DEFAULTS.token })
   ]);
   return { ...DEFAULTS, ...shared, ...privateState };
@@ -100,7 +101,7 @@ async function translate(request, sendResponse, sender) {
     if (config.token) headers.Authorization = `Bearer ${config.token}`;
     const response = await fetch(`${endpoint}/v0/webui/translation/stream`, {
       method: 'POST', headers, signal: controller.signal,
-      body: JSON.stringify({ text: request.text, source: request.source || 'auto', target, targetPolicy, operation: request.operation || 'selection' })
+      body: JSON.stringify({ text: request.text, source: request.source || 'auto', target, targetPolicy, operation: request.operation || 'selection', ...(config.model ? { model: config.model, provider: config.provider || '' } : {}) })
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -129,6 +130,13 @@ async function translate(request, sendResponse, sender) {
     let sawStart = false;
     let sawDone = false;
     let streamError = null;
+    let lastProgressAt = 0;
+    const publishProgress = (force = false) => {
+      if (request.operation !== 'selection' || !sender.tab?.id) return;
+      if (!force && Date.now() - lastProgressAt < 70) return;
+      lastProgressAt = Date.now();
+      void chrome.tabs.sendMessage(sender.tab.id, { type: 'aih-translation-progress', operationId: request.operationId, text: output, meta: streamMeta }, { frameId: sender.frameId || 0 }).catch(() => {});
+    };
     const handleEvent = (event) => {
       if (!event || typeof event !== 'object') return;
       if (event.type === 'start') {
@@ -141,8 +149,10 @@ async function translate(request, sendResponse, sender) {
           toLabel: String(event.toLabel || ''),
           detectionConfidence: String(event.detectionConfidence || '')
         };
+        publishProgress(true);
       } else if (event.type === 'delta') {
         output += String(event.content || '');
+        publishProgress();
       } else if (event.type === 'done') {
         sawDone = true;
         if (event.text !== undefined && event.text !== null) output = String(event.text);

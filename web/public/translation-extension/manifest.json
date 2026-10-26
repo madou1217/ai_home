@@ -3,13 +3,48 @@
   "name": "AIH Translation",
   "version": "0.1.0",
   "description": "通过 AIH Server 翻译选中文本或当前页面，支持旁注、替换和撤回。",
-  "permissions": ["contextMenus", "storage", "activeTab", "scripting", "commands", "offscreen", "clipboardWrite"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "https://*/*"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_title": "AIH 翻译设置", "default_popup": "options.html" },
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting",
+    "commands",
+    "offscreen",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "AIH 翻译设置",
+    "default_popup": "options.html"
+  },
   "options_page": "options.html",
-  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "panel.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
   "commands": {
-    "translate-selection": { "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "MacCtrl+Shift+Y" }, "description": "翻译当前选区" }
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "MacCtrl+Shift+Y"
+      },
+      "description": "翻译当前选区"
+    }
   }
 }

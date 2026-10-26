@@ -240,9 +240,9 @@
     const body = panel('整页翻译', { left: 16, bottom: 16 }, { compact: true }); const segments = globalThis.AIHTranslationPageSegments.collect();
     if (!segments.length) { body.textContent = '当前页面没有可翻译的正文'; return; }
     const snapshots = []; const failedItems = [];
-    let translationTheme = 'solid';
-    const placeholders = new Map(segments.map((item) => [item, globalThis.AIHTranslationPageSegments.stage(item, { theme: translationTheme })]));
-    let cacheHits = 0; let missingCache = 0; let pageFinished = false;
+    let translationTheme = 'plain';
+    const placeholders = new Map();
+    let cacheHits = 0; let missingCache = 0; let skippedSameLanguage = 0; let pageFinished = false;
     const translatedByIndex = new Map();
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
     let pageAutoCopyEligible = true; let pageCopyDone = false;
@@ -264,7 +264,7 @@
       for (const placeholder of placeholders.values()) placeholder?.remove(); placeholders.clear();
     }
 
-    function updateProgress(label, total) { progress.lastChild.textContent = `${label} ${processed} / ${total} 段`; progressBar.max = total; progressBar.value = processed; pageActions.replaceChildren(stop); body.replaceChildren(progress, progressBar, pageActions); }
+    function updateProgress(label, total) { progress.lastChild.textContent = `${label} ${processed} / ${total} 段${skippedSameLanguage ? ` · 已是目标语言 ${skippedSameLanguage} 段` : ''}`; progressBar.max = total || 1; progressBar.value = processed; pageActions.replaceChildren(stop); body.replaceChildren(progress, progressBar, pageActions); }
     function restoreSnapshots() {
       snapshots.slice().reverse().forEach((snapshot) => snapshot.undo());
       snapshots.length = 0;
@@ -287,7 +287,7 @@
         while (!stopRequested && !cancelled && body.isConnected && operationToken === operationSerial && itemCursor < total) {
           const item = orderedItems[itemCursor++];
           const segmentId = `${operationToken}:${++requestSequence}`;
-          const options = { operationId: operationToken, segmentId, source: item.sourceLanguage, restoring, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
+          const options = { operationId: operationToken, segmentId, source: 'auto', restoring, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
           if (!placeholders.has(item)) placeholders.set(item, globalThis.AIHTranslationPageSegments.stage(item, { theme: translationTheme }));
           placeholders.get(item)?.update({ state: 'loading' });
           pageStreams.set(segmentId, { operationToken, stage: placeholders.get(item), sequence: 0 });
@@ -330,7 +330,7 @@
       if (!body.isConnected || operationToken !== operationSerial) return;
       clearPlaceholders();
       pageFinished = true;
-      body.replaceChildren(); const summary = document.createElement('span'); summary.textContent = `${fatalError ? '翻译已暂停' : cancelled ? '翻译已停止' : restoring ? '已恢复页面译文' : '页面翻译完成'} · 成功 ${succeeded} · 失败 ${failed}`; body.append(summary);
+      body.replaceChildren(); const summary = document.createElement('span'); summary.textContent = `${fatalError ? '翻译已暂停' : cancelled ? '翻译已停止' : restoring ? '已恢复页面译文' : '页面翻译完成'} · 成功 ${succeeded} · 跳过 ${skippedSameLanguage} · 失败 ${failed}`; body.append(summary);
       if (cacheHits) { const restored = document.createElement('p'); restored.className = 'muted'; restored.textContent = `${restoring ? '已恢复' : '已复用'} ${cacheHits} 段本机缓存`; body.append(restored); }
       if (fatalError) { const reason = document.createElement('p'); reason.textContent = fatalError; body.append(reason, settingsButton()); }
       if (failed > 0 && !fatalError) { const partial = document.createElement('div'); partial.textContent = missingCache ? `${missingCache} 段暂无缓存，点击继续翻译后再请求模型。` : '部分段落翻译失败，可重新执行。'; partial.style.cssText = 'margin-top:6px;color:var(--warning)'; body.append(partial); }
@@ -349,7 +349,7 @@
       if (actions.childElementCount) body.append(actions);
       if (copyStatus.textContent || copiedText) { actions.append(copyStatus); }
       const allSucceeded = !cancelled && !fatalError && failed === 0 && translatedByIndex.size === segments.length;
-      if (!restoring && allSucceeded && pageAutoCopyEligible && !pageCopyDone && copiedText.trim()) {
+      if (!restoring && allSucceeded && succeeded > 0 && pageAutoCopyEligible && !pageCopyDone && copiedText.trim()) {
         pageCopyDone = true;
         const automaticCopy = actions.querySelector('button');
         if (automaticCopy) await copyPageText(copyStatus, automaticCopy, copiedText, true);
@@ -359,18 +359,21 @@
     const preference = await new Promise((resolve) => chrome.runtime.sendMessage({ type: 'aih-translation-preferences' }, (result) => {
       void chrome.runtime.lastError; resolve(result || {});
     }));
+    if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
     concurrency = Math.max(1, Math.min(8, Math.floor(Number(preference.concurrency) || 3)));
-    translationTheme = String(preference?.theme || 'solid');
+    translationTheme = String(preference?.theme || 'plain');
     const targetLanguage = targetOverride || preference?.target || '';
-    const normalizeLanguage = (value) => String(value || '').trim().toLowerCase().replace(/_/g, '-').replace(/^zh$/, 'zh-hans').replace(/^zh-(cn|sg)$/, 'zh-hans').replace(/^zh-(tw|hk|mo)$/, 'zh-hant').split('-')[0];
-    const skipped = segments.filter((item) => item.languageSource === 'local-declaration' && normalizeLanguage(item.sourceLanguage) && normalizeLanguage(item.sourceLanguage) === normalizeLanguage(targetLanguage));
+    const skipped = segments.filter((item) => globalThis.AIHTranslationPageLanguage?.decide(item, targetLanguage)?.skip === true);
+    skippedSameLanguage = skipped.length;
     skipped.forEach((item) => {
       placeholders.get(item)?.remove(); placeholders.delete(item);
-      const marker = globalThis.AIHTranslationPageSegments.markSameLanguage?.(item, targetLanguage, { theme: translationTheme });
+      const marker = globalThis.AIHTranslationPageSegments.markSameLanguage?.(item, languageLabel(targetLanguage), { theme: 'plain' });
       if (marker) snapshots.push(marker);
-      translatedByIndex.set(item.index, item.source); processed += 1;
+      translatedByIndex.set(item.index, item.source);
     });
     const translatableSegments = segments.filter((item) => !skipped.includes(item));
+    translatableSegments.forEach((item) => placeholders.set(item, globalThis.AIHTranslationPageSegments.stage(item, { theme: translationTheme })));
+    updateProgress(restoring ? '正在恢复译文' : '正在翻译', translatableSegments.length);
     if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
     await pageState('set', { operationId: operationToken, ...(targetOverride ? { target: targetOverride } : {}), restoring });
     if (!body.isConnected || operationToken !== operationSerial || cancelled) return;

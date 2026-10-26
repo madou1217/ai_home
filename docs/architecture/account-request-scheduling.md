@@ -32,6 +32,18 @@
 
 容量错误可能是上游共享模型资源紧张，不一定由账号并发引起。负载分流与退避能减少重复冲击，不能承诺任意请求量都成功；现有队列/并发闸门仍有边界。本轮没有新增伪造的每号 QPS/TPS 硬限制，也没有降低模型、推理强度或输出质量来掩盖失败。
 
+## Codex 额度耗尽与代理消息恢复
+
+- `usage_limit_reached` / `insufficient_quota` / `quota_exceeded` 是明确额度拒绝，默认按 Codex 共享套餐额度阻塞账号，而不是按某一个模型短时限流。上游明确标记 `scope` / `limit_scope = model` 时仍只冷却该模型；`rate_limit_exceeded` 保持普通模型级限流。没有足够信息推断更细的额度桶时采用账号级保守隔离，不通过降级模型继续碰撞同一额度池。
+- `routingBlock` 中保存额度原因、观察时间和 `until`，沿现有账号运行态事件链持久化。恢复时间取结构化 `resets_at` / `resets_in_seconds` / Retry-After 中较晚的有效提示；无提示按现有 5 分钟复核，不猜终端日期的时区，也不套 24 小时封锁。冷却不能被会话亲和或全池兜底绕过。
+- 到期允许一个账号级恢复请求（HTTP / Node WS 共用 accountActivity）；旧池快照的 `blocked_by_runtime_status` 不得盖过已重算的运行态。成功请求清除已过期额度块；到期前的其它在途请求即使成功，也不能撤销该块。更新且可信、额度为正的用量快照仍可提前恢复。
+- 握手阶段的 HTTP 429 与已连接后的 WS 错误走同一个记账入口，保留 Retry-After，不再只对自定义规则执行握手换号。全池额度耗尽的 HTTP 可用性响应为 429 `account_pool_usage_exhausted`，包含已知最早复核时间。
+- `agent_message` 保留作者、接收者和全部内容。其 `content[].encrypted_content` 是代理间消息正文，不是可丢弃的 reasoning 缓存；不能只留 `Message Type...Payload:` 的文本前缀。仅对这个已验证的协议位置放行密文，真实文件引用、其它类型的密文引用和未完成工具仍拒绝跨号重放。
+
+2026-10-26 运行证据：Mac 失败子会话 124 条历史在内存中生成 92 条可重放项（仅略去 reasoning），6 条代理消息内容逐字保留，`xhigh` 未变；另一主会话完整落盘历史包含未完成工具，仍被 `pending_tool_output` 拒绝，不以落盘全历史代替实际单次请求。取原生历史中的一条代理消息，两个不同官方账号均接受并返回 OK。隔离双 WS 链路验证第二轮额度耗尽后换号及第三轮续接、握手 429、全池耗尽、已输出后禁止重放、持久化和重置单飞；现有 Node 检查 105/105 通过。
+
+真实官方额度故障验证：仅在隔离探针池中选择当前耗尽账号发出一次最小请求，上游真实返回 `usage_limit_reached`（2420 秒恢复提示），随后经生产模块自动换到另一官方账号，两轮 `response.completed` / OK，客户端错误数 0，结束后两号 inFlight 均为 0。未改生产账号状态、未重放用户整段任务。代理消息协议依据：[OpenAI Multi-agent](https://developers.openai.com/api/docs/guides/responses-multi-agent)。
+
 ## 依据与验证
 
 - 官方 Codex 用量说明：https://developers.openai.com/codex/pricing/ （2026-10-26 获取）。

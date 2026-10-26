@@ -124,7 +124,7 @@ returned `AIH_MCP_DEMO_OK` only from a real `tools/call` response; it does not s
 upstream model tokens.
 
 The The latest focused MCP, skill, native-plugin, provider-doctor, resource-matrix
-and existing AIH plugin lifecycle suites all pass; the full Node suite is 169/169
+and existing AIH plugin lifecycle suites all pass; the full Node suite is 173/173
 and `npm run providers:check` also passes. Providers whose descriptor has MCP commands/config paths but no verified
 projection adapter remain explicitly projection-only or unsupported. This avoids
 claiming closure for provider-native formats that have not been observed.
@@ -176,7 +176,7 @@ has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](pro
 Fresh runs on this branch:
 
 ```sh
-node --test test/*.test.js                         # 169 passed, 0 failed
+node --test test/*.test.js                         # 173 passed, 0 failed
 npm run providers:check                            # passed
 node scripts/plugin-closure-demo.js --json         # passed
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude

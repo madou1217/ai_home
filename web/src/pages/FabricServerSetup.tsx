@@ -32,6 +32,7 @@ import '@/components/settings/settings-shared.css';
 import '@/components/ui/kpi-strip.css';
 import SectionCard from '@/components/ui/SectionCard';
 import ListTable from '@/components/ui/ListTable';
+import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 
 const PROFILE_STATUS_LED: Record<string, string> = {
   green: 'hud-led hud-led--ok',
@@ -310,9 +311,13 @@ export default function FabricServerSetup() {
               name="managementKey"
               label="Management Key"
               help="可通过 aih server config --show-secrets 查看。"
-              rules={[{ required: true, message: '请输入 Management Key' }]}
+              required={effectiveDialog.mode !== 'authorize'}
+              rules={[{ required: effectiveDialog.mode !== 'authorize', message: '请输入 Management Key' }]}
             >
-              <Input.Password autoComplete="new-password" placeholder="Management Key" />
+              <ManagementKeyInput
+                expectedEndpoint={effectiveDialog.profileId ? dialogDefaults.endpoint : undefined}
+                onCredentials={(credentials) => saveForm.setFieldsValue(credentials)}
+              />
             </Form.Item>
           </div>
           <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} loading={saving}>

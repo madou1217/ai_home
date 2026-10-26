@@ -48,13 +48,19 @@ import logo from '../../../../assets/brand/ai-home-app-icon.png';
 import FabricFormItem from './fabric/FabricFormItem';
 import fabric from './fabric/fabric.module.css';
 import styles from './MobileServerSetup.module.css';
+import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
+import type { ServerCredentialsQr } from '@/services/management-key-qr-reader';
 
 const submitLabel = (mode: ServerSetupDialogState['mode']) => (
   mode === 'authorize' ? '授权并连接' : mode === 'initial' ? '连接并进入工作台' : '探测并保存'
 );
 
 /** 连接表单：与桌面首启弹窗同样的 3 个字段、校验与说明。 */
-function SetupFields({ mode }: { mode: ServerSetupDialogState['mode'] }) {
+function SetupFields({ mode, expectedEndpoint, onCredentials }: {
+  mode: ServerSetupDialogState['mode'];
+  expectedEndpoint?: string;
+  onCredentials: (credentials: ServerCredentialsQr) => void;
+}) {
   return (
     <>
       <FabricFormItem
@@ -79,11 +85,11 @@ function SetupFields({ mode }: { mode: ServerSetupDialogState['mode'] }) {
       <FabricFormItem
         name="managementKey"
         label="Management Key"
-        required
+        required={mode !== 'authorize'}
         hint="可通过 aih server config --show-secrets 查看。"
-        rules={[{ required: true, message: '请输入 Management Key' }]}
+        rules={[{ required: mode !== 'authorize', message: '请输入 Management Key' }]}
       >
-        <Input.Password autoComplete="new-password" placeholder="Management Key" aria-label="Management Key" />
+        <ManagementKeyInput expectedEndpoint={expectedEndpoint} onCredentials={onCredentials} />
       </FabricFormItem>
     </>
   );
@@ -155,7 +161,9 @@ export default function MobileServerSetup(_props: MobilePageProps) {
       clearOnDestroy
       onFinish={handleSaveServer}
     >
-      <SetupFields mode={effectiveDialog.mode} />
+      <SetupFields mode={effectiveDialog.mode}
+        expectedEndpoint={effectiveDialog.profileId ? dialogDefaults.endpoint : undefined}
+        onCredentials={(credentials) => form.setFieldsValue(credentials)} />
     </Form>
   );
 

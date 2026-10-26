@@ -45,6 +45,7 @@ import { confirmAction } from '@/utils/confirm-action';
 import FabricFormItem from './fabric/FabricFormItem';
 import fabric from './fabric/fabric.module.css';
 import styles from './MobileServers.module.css';
+import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 
 const STATUS_TONE: Record<string, HudTone> = { ready: 'ok', degraded: 'warn', offline: 'muted' };
 const ROUTE_HEALTH_TONE: Record<string, HudTone> = { green: 'ok', orange: 'warn', red: 'err', default: 'muted' };
@@ -386,11 +387,14 @@ export default function MobileServers(_props: MobilePageProps) {
             <FabricFormItem
               name="managementKey"
               label="Management Key"
-              required
-              hint="Server 管理密钥，用于读取账号和会话。可通过 aih server config --show-secrets 查看。"
-              rules={[{ required: true, message: '请输入 Management Key' }]}
+              required={!isControlPlaneManagementKeyConfigured(servers.profiles.find((profile) => profile.id === formSeed.authorizingProfileId) || null)}
+              hint="可扫码填写；编辑已保存的 Server 时留空保留原 Key。"
+              rules={[{ required: !isControlPlaneManagementKeyConfigured(servers.profiles.find((profile) => profile.id === formSeed.authorizingProfileId) || null), message: '请输入 Management Key' }]}
             >
-              <Input.Password autoComplete="new-password" placeholder="Management Key" aria-label="Management Key" />
+              <ManagementKeyInput
+                expectedEndpoint={formSeed.authorizingProfileId ? formSeed.values.endpoint : undefined}
+                onCredentials={(credentials) => form.setFieldsValue(credentials)}
+              />
             </FabricFormItem>
           </Form>
         ) : null}

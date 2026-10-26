@@ -240,7 +240,8 @@
     const body = panel('整页翻译', { left: 16, bottom: 16 }, { compact: true }); const segments = globalThis.AIHTranslationPageSegments.collect();
     if (!segments.length) { body.textContent = '当前页面没有可翻译的正文'; return; }
     const snapshots = []; const failedItems = [];
-    const placeholders = new Map(segments.map((item) => [item, globalThis.AIHTranslationPageSegments.stage(item)]));
+    let translationTheme = 'solid';
+    const placeholders = new Map(segments.map((item) => [item, globalThis.AIHTranslationPageSegments.stage(item, { theme: translationTheme })]));
     let cacheHits = 0; let missingCache = 0; let pageFinished = false;
     const translatedByIndex = new Map();
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
@@ -270,7 +271,7 @@
       clearPlaceholders();
     }
     function applyPageResult(item, result) {
-      const snapshot = globalThis.AIHTranslationPageSegments.apply(item, result.text, result.mode, { stage: placeholders.get(item) });
+      const snapshot = globalThis.AIHTranslationPageSegments.apply(item, result.text, result.mode, { stage: placeholders.get(item), theme: translationTheme });
       if (!snapshot) return false;
       placeholders.delete(item);
       snapshots.push(snapshot);
@@ -287,7 +288,7 @@
           const item = orderedItems[itemCursor++];
           const segmentId = `${operationToken}:${++requestSequence}`;
           const options = { operationId: operationToken, segmentId, source: item.sourceLanguage, restoring, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
-          if (!placeholders.has(item)) placeholders.set(item, globalThis.AIHTranslationPageSegments.stage(item));
+          if (!placeholders.has(item)) placeholders.set(item, globalThis.AIHTranslationPageSegments.stage(item, { theme: translationTheme }));
           placeholders.get(item)?.update({ state: 'loading' });
           pageStreams.set(segmentId, { operationToken, stage: placeholders.get(item), sequence: 0 });
           const result = await translateOne(item.source, 'page', options);
@@ -356,13 +357,24 @@
     }
     updateProgress(restoring ? '正在恢复译文' : '正在翻译', segments.length);
     const preference = await new Promise((resolve) => chrome.runtime.sendMessage({ type: 'aih-translation-preferences' }, (result) => {
-      void chrome.runtime.lastError; resolve(result?.concurrency || 3);
+      void chrome.runtime.lastError; resolve(result || {});
     }));
-    concurrency = Math.max(1, Math.min(8, Math.floor(Number(preference) || 3)));
+    concurrency = Math.max(1, Math.min(8, Math.floor(Number(preference.concurrency) || 3)));
+    translationTheme = String(preference?.theme || 'solid');
+    const targetLanguage = targetOverride || preference?.target || '';
+    const normalizeLanguage = (value) => String(value || '').trim().toLowerCase().replace(/_/g, '-').replace(/^zh$/, 'zh-hans').replace(/^zh-(cn|sg)$/, 'zh-hans').replace(/^zh-(tw|hk|mo)$/, 'zh-hant').split('-')[0];
+    const skipped = segments.filter((item) => item.languageSource === 'local-declaration' && normalizeLanguage(item.sourceLanguage) && normalizeLanguage(item.sourceLanguage) === normalizeLanguage(targetLanguage));
+    skipped.forEach((item) => {
+      placeholders.get(item)?.remove(); placeholders.delete(item);
+      const marker = globalThis.AIHTranslationPageSegments.markSameLanguage?.(item, targetLanguage, { theme: translationTheme });
+      if (marker) snapshots.push(marker);
+      translatedByIndex.set(item.index, item.source); processed += 1;
+    });
+    const translatableSegments = segments.filter((item) => !skipped.includes(item));
     if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
     await pageState('set', { operationId: operationToken, ...(targetOverride ? { target: targetOverride } : {}), restoring });
     if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
-    await translateItems(segments, '正在翻译');
+    await translateItems(translatableSegments, '正在翻译');
     if (confirmation) { renderPageConfirmation(); return; }
     await renderSummary();
   }

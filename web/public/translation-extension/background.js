@@ -3,7 +3,7 @@ import { createTranslationCache, translationHash } from './cache.js';
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
-const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3 };
+const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'solid' };
 let clipboardQueue = Promise.resolve();
 const translationRequests = new Map();
 const resultCache = createTranslationCache(chrome.storage.local);
@@ -120,7 +120,7 @@ function translationFailure(status, message, errorCode = '') {
 
 async function settings() {
   const [shared, privateState] = await Promise.all([
-    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy, model: DEFAULTS.model, provider: DEFAULTS.provider, concurrency: DEFAULTS.concurrency }),
+    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy, model: DEFAULTS.model, provider: DEFAULTS.provider, concurrency: DEFAULTS.concurrency, theme: DEFAULTS.theme }),
     chrome.storage.local.get({ token: DEFAULTS.token })
   ]);
   return { ...DEFAULTS, ...shared, ...privateState };
@@ -343,7 +343,7 @@ async function translate(request, sendResponse, sender) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'aih-translation-preferences') {
-    void settings().then((config) => sendResponse({ ok: true, concurrency: Math.max(1, Math.min(8, Math.floor(Number(config.concurrency) || 3))) }));
+    void settings().then((config) => sendResponse({ ok: true, concurrency: Math.max(1, Math.min(8, Math.floor(Number(config.concurrency) || 3))), target: config.target, theme: config.theme }));
     return true;
   }
   if (message?.type === 'aih-page-translation-state') {

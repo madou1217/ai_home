@@ -2,6 +2,10 @@
 
 状态：实现闭环证据（能力子集先行；未验证宿主保持显式边界）
 
+统一入口：`npm run resources:closure`（或 `node scripts/resource-closure-demo.js --json`）。
+它组合本文件列出的宿主 demo 与 provider capability，逐项输出 Plugin、Skill、MCP
+的 management/use 证据和 gaps；聚合命令通过不等于所有 provider 已完成。
+
 本文件记录插件、Skill、MCP 和原生 provider 管理的实际闭环证据。每个资源必须证明安装/投影、启用、实际使用、停用和移除；静态 manifest 或目录存在不能单独证明完成。
 
 用户入口：[插件、Skill、MCP 与原生插件快速上手](../demos/plugin-skill-mcp-quickstart.md)。跨宿主设计：[Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)。

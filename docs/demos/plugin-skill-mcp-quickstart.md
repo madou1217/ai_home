@@ -2,6 +2,53 @@
 
 这份 quickstart 对应当前已经能运行的管理面。统一插件设计见 [Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；实现证据见 [Plugin Management Closure Evidence](../architecture/plugin-management-closure.md)。管理命令操作本机资源；下列 demo 脚本使用确定性 fixture，不消耗上游模型额度。手工原生对话按各 CLI 的模型配置运行。
 
+## 一条命令看完整闭环
+
+先运行聚合 demo，查看当前主机上所有已声明 Provider、外部 Host、Plugin、Skill
+和 MCP 的管理状态、真实使用证据与差距：
+
+```sh
+npm run resources:closure
+```
+
+机器可读结果：
+
+```sh
+node scripts/resource-closure-demo.js --json > /tmp/aih-resource-closure.json
+```
+
+这条命令复用各宿主的真实 demo，而不是用目录存在或静态 manifest 冒充使用成功。
+报告中的 `management` 表示安装/启用/停用/移除和 doctor 是否闭环，`use` 表示
+原生客户端是否真的把资源带进请求、工具循环或 Skill 激活。`unverified`、
+`not_proven` 和 `gaps` 必须继续保留，不能按“命令返回 0”解释成已完成。
+
+### 插件的实际使用
+
+同一份 `examples/native-plugins/aih-demo` 包按宿主投影：
+
+```sh
+aih native plugin install examples/native-plugins/aih-demo --provider codex --json
+aih native plugin install examples/native-plugins/aih-demo --provider claude --json
+aih native plugin install examples/native-plugins/aih-demo --provider opencode --json
+aih native plugin install examples/native-plugins/aih-demo --host pi --json
+aih native plugin install examples/native-plugins/aih-demo --host deepseek --json
+```
+
+安装只是投影。实际使用和四阶段生命周期验证：
+
+```sh
+node scripts/native-plugin-use-demo.js codex
+node scripts/native-plugin-use-demo.js claude
+node scripts/opencode-plugin-native-demo.js
+node scripts/pi-plugin-native-demo.js --managed
+node scripts/deepseek-plugin-managed-demo.mjs
+node scripts/aih-portable-plugin-demo.js
+```
+
+Codex 的 Skill 入口是 `$aih-demo:aih-demo`，Claude 是 `/aih-demo:aih-demo`；
+OpenCode、Pi、DeepSeek 和 AIH 走同一个 portable core 的宿主入口。每个 demo 都会
+验证 enabled、disabled、re-enabled、removed，而不是只检查配置文件。
+
 如果要做一次不触碰真实账号的演示，优先运行下面的脚本。它们各自创建临时 home，结束后清理临时文件，并且输出会刻意省略凭据、完整请求正文和管理密钥：
 
 ```bash

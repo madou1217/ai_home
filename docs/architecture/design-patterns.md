@@ -447,3 +447,10 @@ existing descriptor callback, with no provider condition added to dispatch.
 The focused host demo keeps Anthropic event handling outside runtime modules;
 KISS/YAGNI avoid a new protocol framework, DRY reuses the manager/server, and SOLID
 keeps native conformance separate from resource lifecycle implementation.
+
+Codex native MCP evidence (2026-10-27): `scripts/codex-mcp-tool-loop-demo.js`
+uses the existing MCP Facade and TOML projection Strategy; a local Responses
+fixture handles namespace and call-ID correlation without modifying runtime code.
+The aggregate uses its existing descriptor callback. SOLID keeps native protocol
+verification separate from management, DRY reuses the manager/server, and
+KISS/YAGNI avoid introducing a new general protocol framework for this proof.

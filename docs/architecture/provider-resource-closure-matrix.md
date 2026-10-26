@@ -65,3 +65,9 @@ Claude Code 2.1.310 also has native MCP execution evidence through
 `scripts/claude-mcp-tool-loop-demo.js`: deferred ToolSearch, echo, file listing,
 correlated results and four-stage lifecycle. The aggregate includes both Claude
 and OpenCode native loops; Codex/Cline rows retain their existing evidence scope.
+
+Codex CLI 0.164.0 now also has native MCP execution evidence through
+`scripts/codex-mcp-tool-loop-demo.js`: namespaced Responses calls, correlated
+results and native successful MCP completion events across four lifecycle stages.
+The aggregate covers Codex/Claude/OpenCode native loops; Cline remains at the
+management/connection evidence level. Static descriptor states remain unchanged.

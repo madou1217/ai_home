@@ -666,3 +666,31 @@ Evidence: `/tmp/aih-claude-mcp-loop.json` and the combined
 `/tmp/aih-mcp-claude-opencode-loops.json`. This establishes native execution with
 a deterministic local Anthropic protocol fixture, not remote-model reasoning,
 Web/TUI coverage or parity for other providers. No harness code is changed.
+
+## Codex native MCP tool loop (2026-10-27)
+
+`node scripts/codex-mcp-tool-loop-demo.js [native-cli-path]` verifies Codex CLI
+0.164.0 through the existing MCP manager. The Responses tool catalog places the
+two tools under `mcp__aih_demo`; fixture calls preserve that namespace. Results
+are accepted only from matching `function_call_output.call_id` entries, and native
+completed `mcp_tool_call` events must name server `aih-demo`, the correct tool,
+and a successful result containing the nonce or unique filename.
+
+Default non-interactive approval rejected the first real call. The demo now passes
+`-c mcp_servers.aih-demo.tools.aih_echo.approval_mode="approve"` and the corresponding
+file-list override only for enabled stages. These are process-local overrides for
+the two known demo tools, not global sandbox/approval bypasses. Disabled/removed
+stages omit them so no partial server config is recreated. The relevant official
+settings are documented in [Codex MCP](https://developers.openai.com/codex/mcp/)
+and [configuration reference](https://developers.openai.com/codex/config-reference/).
+
+Positive stages require three requests, both schemas and successful native events,
+correlated tool outputs, and exact final `AIH_NATIVE_MCP_OK`. Negative stages
+require one request, neither schema nor completed tool event, and `MCP_NOT_LOADED`.
+Temporary HOME/AIH/config/work directories and local Responses fixture avoid real
+credentials or remote inference. This does not prove remote-model reasoning or
+Web/TUI entrypoints. No harness implementation changes are made.
+
+Evidence: `/tmp/aih-codex-mcp-loop.json`; the aggregate
+`/tmp/aih-mcp-three-native-loops.json` now includes Codex, Claude and OpenCode
+native loops. Cline retains the management/connection evidence level.

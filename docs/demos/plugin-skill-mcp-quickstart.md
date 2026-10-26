@@ -317,3 +317,20 @@ Claude Code 2.1.310 的 MCP 工具采用延迟加载：demo 先通过原生 `Too
 一轮请求。全部在临时配置和工作目录内运行，使用本地协议 fixture，不需要
 真实账号或远程模型额度。总 demo 现在分别包含 Claude 和 OpenCode 的原生
 MCP 执行证据；其他宿主仍按各自已有证据报告。
+
+## Codex 内部实际调用 MCP 工具
+
+```sh
+node scripts/codex-mcp-tool-loop-demo.js /absolute/path/to/codex
+node scripts/mcp-native-demo.js
+```
+
+已验证 Codex CLI 0.164.0。demo 使用受管 MCP 配置和真实 Codex，依次执行
+随机值 echo、临时目录读取，再检查 Responses 结果回传和原生完成事件。
+启用、重新启用各要求三轮请求；停用、移除各要求一轮且两个工具均消失。
+
+非交互调用需要授权：脚本只为当前子进程的 `aih_echo` 和 `aih_list_files`
+传入工具级 `approval_mode="approve"`，不更改用户配置、不全局跳过审批。
+配置字段见 [官方 MCP 文档](https://developers.openai.com/codex/mcp/)。
+本地确定性 Responses fixture 不消耗远程模型额度。总 demo 已包含
+Codex、Claude、OpenCode 的原生调用；Cline 仍只按现有管理与连接证据报告。

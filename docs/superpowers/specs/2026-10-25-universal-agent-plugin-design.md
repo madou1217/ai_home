@@ -573,3 +573,10 @@ Claude Code 2.1.310 passes the native deferred MCP loop via
 `scripts/claude-mcp-tool-loop-demo.js`: ToolSearch, echo, file listing and correlated
 results across enable/disable/re-enable/remove. The deterministic local fixture
 proves actual native execution; remote inference and Web/TUI remain separate.
+
+### Codex MCP runtime evidence update (2026-10-27)
+
+Codex CLI 0.164.0 passes native MCP execution via
+`scripts/codex-mcp-tool-loop-demo.js`: namespaced Responses calls, two real MCP
+tools, correlated outputs, native completed events and four management stages.
+The fixture is local and deterministic; Web/TUI and remote inference are separate.

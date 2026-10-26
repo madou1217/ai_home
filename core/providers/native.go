@@ -82,6 +82,8 @@ func nativeGemini() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"settings.json"},
 		},
+		Plugins: NativePlugins{Adapter: "gemini-extension", Commands: []string{"extensions"}, Paths: []string{"extensions"}, Mode: "native"},
+		Skills:  NativeSkills{Commands: []string{"skills"}, Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"settings.json"},
 			StopRequiresJSONStdout: true,

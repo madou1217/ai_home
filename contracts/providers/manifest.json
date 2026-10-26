@@ -308,14 +308,23 @@
           ]
         },
         "plugins": {
-          "commands": null,
-          "paths": null,
-          "mode": ""
+          "adapter": "gemini-extension",
+          "commands": [
+            "extensions"
+          ],
+          "paths": [
+            "extensions"
+          ],
+          "mode": "native"
         },
         "skills": {
-          "commands": null,
-          "paths": null,
-          "mode": ""
+          "commands": [
+            "skills"
+          ],
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
         },
         "hooks": {
           "files": [

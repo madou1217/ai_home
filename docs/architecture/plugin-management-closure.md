@@ -694,3 +694,47 @@ Web/TUI entrypoints. No harness implementation changes are made.
 Evidence: `/tmp/aih-codex-mcp-loop.json`; the aggregate
 `/tmp/aih-mcp-three-native-loops.json` now includes Codex, Claude and OpenCode
 native loops. Cline retains the management/connection evidence level.
+
+## Gemini native extension and Skill closure (2026-10-27)
+
+Official `@google/gemini-cli@0.65.0` was installed only under
+`/tmp/aih-gemini-resource-runtime` for verification. Its real `extensions` and
+`skills` commands and loader confirm `.gemini/extensions/<id>/gemini-extension.json`
+and `.gemini/skills/<id>` native discovery. The provider descriptor now declares
+these paths. A focused `gemini-extension` adapter validates manifest name/version
+before using the existing owned-directory lifecycle; invalid replacement manifests
+are rejected before deleting the old version. Native extensions manually disabled
+through Gemini's own settings remain subject to those settings; this adapter
+materializes/removes owned directories and does not overwrite native preferences.
+
+The canonical `aih-demo` package adds only a native extension manifest and reuses
+its existing bundled Skill. `scripts/gemini-resource-native-demo.js` verifies both
+that extension Skill and the independent managed Skill using actual Gemini:
+enabled/re-enabled require native `activate_skill` success, installed body in the
+next request, exactly two requests and the exact marker; disabled/removed require
+no advertisement/activation/body, one request and `RESOURCE_NOT_LOADED`.
+The local Google protocol fixture never supplies the body itself. Temporary
+HOME/settings/workspace isolate state, `--skip-trust` trusts only the fresh demo
+workspace for that process, and `--allowed-tools activate_skill` grants that tool
+without broad YOLO mode (the CLI warns this flag is deprecated for future 1.0).
+
+Fresh evidence: `/tmp/aih-gemini-resource-demo.json`, eight passing native stages.
+A separate isolated ownership probe rejected modified-target removal, preserved
+the previous extension on malformed replacement, then passed disable/re-enable/
+remove. Provider generation/check, JavaScript syntax and diff checks pass.
+This closes native extension-bundled Skill and standalone Skill use for the tested
+version, not arbitrary Gemini extension features, JavaScript host API equivalence,
+MCP model execution, remote reasoning, account launch propagation or Web/TUI parity.
+No harness implementation is modified.
+
+The canonical package with the Gemini manifest also passed all seven existing
+host lanes (`/tmp/aih-gemini-package-regression.json`): Codex, Claude, OpenCode,
+Pi, DeepSeek, AIH and WorkBuddy. This checks that the additive native manifest
+does not break their existing native plugin proofs.
+
+Independent review exposed invalid-manifest snapshot poisoning: validation inside
+the adapter originally occurred after snapshot creation. The manager now invokes
+an optional adapter preflight before writing the immutable snapshot. An isolated
+probe verified malformed Gemini JSON leaves no snapshot, then a corrected package
+with the same id/version installs successfully. Existing adapters without a
+preflight retain their prior behavior.

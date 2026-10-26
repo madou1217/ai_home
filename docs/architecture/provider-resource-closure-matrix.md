@@ -7,7 +7,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | Provider | Plugin | Skill | MCP | Evidence source |
 |---|---|---|---|---|
 | codex | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
-| gemini | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
+| gemini | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | claude | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | agy | unsupported (plugin_boundary_not_declared) | projection-only (skill_projection_only) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | opencode | supported | projection-only (skill_projection_only) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
@@ -71,3 +71,10 @@ Codex CLI 0.164.0 now also has native MCP execution evidence through
 results and native successful MCP completion events across four lifecycle stages.
 The aggregate covers Codex/Claude/OpenCode native loops; Cline remains at the
 management/connection evidence level. Static descriptor states remain unchanged.
+
+Gemini CLI 0.65.0 now has native extension and standalone Skill execution evidence
+through `scripts/gemini-resource-native-demo.js`. The same canonical package carries
+`gemini-extension.json`; native `activate_skill` loads its existing bundled Skill.
+Each resource passes enable/disable/re-enable/remove with native activation events
+and request-body evidence. This does not claim arbitrary JavaScript plugin API
+compatibility or native model-driven MCP execution for Gemini.

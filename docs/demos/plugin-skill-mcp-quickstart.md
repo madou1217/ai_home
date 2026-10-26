@@ -334,3 +334,28 @@ node scripts/mcp-native-demo.js
 配置字段见 [官方 MCP 文档](https://developers.openai.com/codex/mcp/)。
 本地确定性 Responses fixture 不消耗远程模型额度。总 demo 已包含
 Codex、Claude、OpenCode 的原生调用；Cline 仍只按现有管理与连接证据报告。
+
+## Gemini 原生扩展和 Skill
+
+```sh
+# 同一个插件包，投影到 Gemini 原生扩展目录
+aih native plugin install examples/native-plugins/aih-demo --provider gemini --json
+aih native plugin doctor --provider gemini --json
+aih native plugin disable aih-demo --provider gemini --json
+aih native plugin enable aih-demo --provider gemini --json
+aih native plugin remove aih-demo --provider gemini --json
+
+# 独立 Skill
+aih skill install assets/provider-skills/aih-demo --provider gemini --json
+# disable / enable / remove 同样使用 --provider gemini
+
+# 临时 HOME 中运行两种资源的四阶段真实使用验证
+node scripts/gemini-resource-native-demo.js /absolute/path/to/gemini
+```
+
+已验证 Gemini CLI 0.65.0。会话中请求使用 `aih-demo` Skill，Gemini 通过
+`activate_skill` 加载正文。插件包需有名称、版本与 canonical package 一致
+的 `gemini-extension.json`。AIH 管理其拥有的目录；如果用户另外用 Gemini
+原生命令禁用了扩展，原生禁用设置仍然有效，不会被 AIH 静默覆盖。
+demo 使用本地确定性 Google 协议服务和隔离配置，不消耗远程额度；本轮
+证明扩展内 Skill 和独立 Skill，不宣称任意 JS 插件 API 已兼容。

@@ -580,3 +580,10 @@ Codex CLI 0.164.0 passes native MCP execution via
 `scripts/codex-mcp-tool-loop-demo.js`: namespaced Responses calls, two real MCP
 tools, correlated outputs, native completed events and four management stages.
 The fixture is local and deterministic; Web/TUI and remote inference are separate.
+
+### Gemini extension/Skill evidence update (2026-10-27)
+
+Gemini CLI 0.65.0 loads the same canonical package via `gemini-extension.json`
+and its existing bundled Skill. `scripts/gemini-resource-native-demo.js` proves
+both extension and standalone Skill activation across four lifecycle stages.
+This is a native Skill capability subset, not arbitrary JavaScript API portability.

@@ -456,3 +456,18 @@ fixture handles namespace and call-ID correlation without modifying runtime code
 The aggregate uses its existing descriptor callback. SOLID keeps native protocol
 verification separate from management, DRY reuses the manager/server, and
 KISS/YAGNI avoid introducing a new general protocol framework for this proof.
+
+Gemini resource adapter (2026-10-27): `core/providers/native.go` declares native
+extension/Skill paths and commands; `native-plugin-adapters.js` registers the
+`gemini-extension` Strategy. Its focused adapter validates host manifest identity
+before delegating to the existing owned-directory adapter, including validation
+before replacement deletion. The same canonical example adds a native manifest
+without duplicating its Skill. SOLID separates host validation from lifecycle,
+DRY reuses ownership/storage, and KISS/YAGNI avoid introducing an extension package
+manager for unrelated native features. Verification uses actual Gemini 0.65.0
+activation and isolated ownership/error probes.
+
+The native plugin Facade now invokes an optional adapter `validate(pkg)` preflight
+before immutable snapshot creation. Gemini uses it to reject invalid native
+identity without poisoning same-version retries; an isolated malformed-then-valid
+install probe verifies the ordering. Operation-level validation remains defensive.

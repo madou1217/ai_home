@@ -638,6 +638,12 @@ func (session *RecruitmentSession) admits(
 	if eligibility.Status() != runtimecore.EligibilityModelCooldown {
 		return false
 	}
+	// An upstream throttle is not a local transport hiccup. Preserve its
+	// backoff even when every account is cooling or affinity is requested.
+	switch eligibility.FailureKind() {
+	case runtimecore.FailureRateLimited, runtimecore.FailureModelOverloaded:
+		return false
+	}
 	if session.softCooldown.bypassesCooldown() {
 		return true
 	}

@@ -2,6 +2,7 @@
 (() => {
   const ownedNodes = new WeakSet();
   const ROOT_ATTR = 'data-aih-translation-extension';
+  const THEMES = new Set(['solid', 'dashed', 'dotted', 'underline-solid', 'underline-dashed', 'underline-wavy', 'soft', 'hud', 'cyberpunk']);
   const excluded = 'script,style,noscript,svg,canvas,pre,code,textarea,input,select,button,form,iframe,object,embed,[contenteditable]:not([contenteditable="false"]),[translate="no"],[inert],[aria-hidden="true"],[hidden]';
   const semanticBlocks = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'DT', 'DD', 'TD', 'TH', 'CAPTION', 'FIGCAPTION', 'BLOCKQUOTE', 'ADDRESS']);
 
@@ -21,6 +22,7 @@
     return node.nodeType !== 1 || node.attributes.length === attributes.length
       && attributes.every(([name, value]) => node.getAttribute(name) === value);
   }
+  function normalizeTheme(value) { return THEMES.has(String(value || '')) ? String(value) : 'solid'; }
   function sourceText(node) {
     if (node.nodeType === 3) return node.nodeValue;
     if (node.nodeName === 'BR') return '\n';
@@ -37,7 +39,8 @@
     };
     const isExcluded = (element) => element.hasAttribute(ROOT_ATTR) || element.matches(excluded)
       || styleOf(element).display === 'none' || ['hidden', 'collapse'].includes(styleOf(element).visibility);
-    const isBoundary = (element) => semanticBlocks.has(element.tagName)
+    const hasLanguageBoundary = (element) => element.hasAttribute('lang') && declaredLanguage(element) !== (element.parentElement ? declaredLanguage(element.parentElement) : '');
+    const isBoundary = (element) => semanticBlocks.has(element.tagName) || hasLanguageBoundary(element)
       || !['inline', 'contents'].includes(styleOf(element).display)
       || (element.tagName === 'A' && Boolean(element.closest('nav,[role="navigation"]')));
 
@@ -74,7 +77,8 @@
       roots.forEach(snapshot);
       const source = roots.map(sourceText).join('').replace(/[\t\r ]+/g, ' ').trim();
       if (source.length < 2) return;
-      segments.push({ owner, ownerParent: owner.parentNode, ownerAttributes: attributesOf(owner), ownerChildren: [...owner.childNodes].filter((node) => !ownedNodes.has(node)), roots, records, source, sourceLanguage: declaredLanguage(owner), index: segments.length });
+      const declaration = owner.closest('[lang]');
+      segments.push({ owner, ownerParent: owner.parentNode, ownerAttributes: attributesOf(owner), ownerChildren: [...owner.childNodes].filter((node) => !ownedNodes.has(node)), roots, records, source, sourceLanguage: declaredLanguage(owner), languageSource: declaration && !['HTML', 'BODY'].includes(declaration.tagName) ? 'local-declaration' : 'document-default', index: segments.length });
     }
     if (!isExcluded(root)) { const run = { nodes: [] }; walk(root, root, run); flush(root, run); }
     return segments;
@@ -91,29 +95,31 @@
       && segment.roots.every((node, index) => index === 0 || segment.roots[index - 1].nextSibling === node);
   }
 
-  function surface(segment, kind) {
+  function surface(segment, kind, theme = 'solid') {
     const anchor = segment.roots[segment.roots.length - 1];
     const parent = anchor.parentNode;
     const marker = document.createElement('span');
-    marker.setAttribute(ROOT_ATTR, kind); marker.style.cssText = 'display:block;margin-block:0.4em 0.7em;';
+    marker.setAttribute(ROOT_ATTR, kind); marker.style.cssText = 'display:block;min-inline-size:0;max-inline-size:100%;margin-block:0.4em 0.7em;';
     ownedNodes.add(marker);
     const shadow = marker.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
+    const themeClass = normalizeTheme(theme);
     style.textContent = `
-      :host{color:inherit;font:inherit}*{box-sizing:border-box}.content{font:inherit;color:inherit;overflow-wrap:anywhere;white-space:pre-wrap;line-height:1.75}
+      :host{color:inherit;font:inherit}*{box-sizing:border-box}.frame{min-inline-size:0;max-inline-size:100%}.content{font:inherit;color:inherit;min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;word-break:normal;white-space:pre-wrap;line-height:1.75}.frame.theme-solid,.frame.theme-dashed,.frame.theme-dotted{padding:8px 10px;border:1px solid color-mix(in srgb,currentColor 22%,transparent);border-radius:10px}.frame.theme-dashed{border-style:dashed}.frame.theme-dotted{border-style:dotted}.frame.theme-underline-solid .content,.frame.theme-underline-dashed .content,.frame.theme-underline-wavy .content{text-decoration-line:underline;text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-color:color-mix(in srgb,currentColor 48%,transparent)}.frame.theme-underline-dashed .content{text-decoration-style:dashed}.frame.theme-underline-wavy .content{text-decoration-style:wavy}.frame.theme-soft{padding:8px 10px;border-radius:10px;background:color-mix(in srgb,currentColor 6%,transparent)}.frame.theme-hud{padding:9px 11px;border:1px solid color-mix(in srgb,#38bdf8 45%,currentColor 18%);border-radius:9px;background:color-mix(in srgb,#38bdf8 7%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,#38bdf8 10%,transparent),0 5px 18px color-mix(in srgb,#38bdf8 10%,transparent)}.frame.theme-cyberpunk{padding:9px 11px;border:1px solid color-mix(in srgb,#d946ef 58%,currentColor 16%);border-radius:8px;background:linear-gradient(135deg,color-mix(in srgb,#22d3ee 8%,transparent),color-mix(in srgb,#d946ef 8%,transparent));box-shadow:0 0 12px color-mix(in srgb,#d946ef 18%,transparent)}
       .status,summary,button,.hint{font:12px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.status,.hint{opacity:.66}.status{display:flex;align-items:center;gap:7px}.dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
       .bars{max-width:560px;margin:9px 0}.bar{height:7px;border-radius:9px;background:currentColor;opacity:.09;margin:8px 0;animation:breathe 1.6s ease-in-out infinite}.bar:last-child{width:64%;animation-delay:.2s}summary{cursor:pointer;opacity:.7;width:fit-content}details .content{margin:8px 0;max-height:200px;overflow:auto;overscroll-behavior:contain;font-size:.94em}button{cursor:pointer;padding:3px 9px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:7px;background:transparent;color:inherit}button:focus-visible,summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}.hint{margin-bottom:4px} @keyframes breathe{50%{opacity:.18}} @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
     `;
-    const body = document.createElement('div'); shadow.append(style, body);
+    const frame = document.createElement('div'); frame.className = `frame theme-${themeClass}`;
+    const body = document.createElement('div'); frame.append(body); shadow.append(style, frame);
     parent.insertBefore(marker, anchor.nextSibling);
     const attributes = attributesOf(marker);
     const current = () => marker.isConnected && marker.parentNode === parent && attributesMatch(marker, attributes) && marker.childNodes.length === 0;
     return { body, current, remove() { if (current()) marker.remove(); } };
   }
 
-  function stage(segment) {
+  function stage(segment, options = {}) {
     if (!isCurrent(segment)) return null;
-    const shell = surface(segment, 'pending');
+    const shell = surface(segment, 'pending', options.theme);
     const status = document.createElement('div'); status.className = 'status'; status.setAttribute('role', 'status');
     const dot = document.createElement('span'); dot.className = 'dot'; dot.setAttribute('aria-hidden', 'true');
     const label = document.createElement('span'); status.append(dot, label);
@@ -145,7 +151,7 @@
     // keeps its links, emphasis and listeners; translated text is an annotation.
     if (mode === 'replace' && plain) {
       const writes = segment.roots.map((node, index) => ({ node, parent: node.parentNode, original: node.nodeValue, written: index === 0 ? text : '' }));
-      const shell = surface(segment, 'original');
+      const shell = surface(segment, 'original', options.theme);
       const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = '查看原文';
       const original = document.createElement('div'); original.className = 'content'; original.textContent = writes.map((item) => item.original).join('');
       const restore = document.createElement('button'); restore.type = 'button'; restore.textContent = '还原这一段';
@@ -161,7 +167,7 @@
       writes.forEach(({ node, written }) => { node.nodeValue = written; });
       return { mode: 'replace', undo };
     }
-    const shell = surface(segment, 'side-by-side');
+    const shell = surface(segment, 'side-by-side', options.theme);
     if (mode === 'replace') {
       const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = '保留原文与链接'; shell.body.append(hint);
     }
@@ -169,5 +175,13 @@
     return { mode: 'side-by-side', undo: shell.remove };
   }
 
-  globalThis.AIHTranslationPageSegments = { collect, stage, apply, isCurrent };
+  function markSameLanguage(segment, label, options = {}) {
+    if (!isCurrent(segment)) return null;
+    const shell = surface(segment, 'same-language', 'plain');
+    const content = document.createElement('div'); content.className = 'hint'; content.textContent = `✓ 已是${label || '目标语言'} · 保留原文`;
+    shell.body.append(content);
+    return { undo: shell.remove };
+  }
+
+  globalThis.AIHTranslationPageSegments = { collect, stage, apply, markSameLanguage, isCurrent };
 })();

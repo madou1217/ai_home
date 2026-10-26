@@ -1,5 +1,5 @@
 /* global chrome, document, URL, AbortController, setTimeout, clearTimeout, fetch */
-const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3 };
+const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'solid' };
 const field = (id) => document.getElementById(id);
 let modelCatalog = [];
 let catalogRequest = 0;
@@ -80,14 +80,14 @@ field('settings-form').onsubmit = async (event) => {
   try {
     const endpoint = validEndpoint(); const model = selection();
     if (field('model').value === 'manual' && !model.model) throw new Error('请填写模型 ID，或选择 Server 默认模型');
-    await Promise.all([chrome.storage.sync.set({ endpoint, target: field('target').value, mode: field('mode').value, concurrency: Number(field('concurrency').value) || 3, autoCopy: field('autoCopy').checked, ...model }), chrome.storage.local.set({ token: field('token').value.trim() })]);
+    await Promise.all([chrome.storage.sync.set({ endpoint, target: field('target').value, mode: field('mode').value, concurrency: Number(field('concurrency').value) || 3, theme: field('theme').value, autoCopy: field('autoCopy').checked, ...model }), chrome.storage.local.set({ token: field('token').value.trim() })]);
     field('status').textContent = '已保存 · 下次翻译立即生效'; field('save').textContent = '已保存';
   } catch (error) { field('status').textContent = error.message || '保存失败，请重试'; field('save').textContent = '重新保存'; }
   finally { field('save').disabled = false; }
 };
-Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defaults.target, mode: defaults.mode, concurrency: defaults.concurrency, autoCopy: defaults.autoCopy, model: defaults.model, provider: defaults.provider }), chrome.storage.local.get({ token: defaults.token })]).then(([shared, privateState]) => {
+Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defaults.target, mode: defaults.mode, concurrency: defaults.concurrency, theme: defaults.theme, autoCopy: defaults.autoCopy, model: defaults.model, provider: defaults.provider }), chrome.storage.local.get({ token: defaults.token })]).then(([shared, privateState]) => {
   const settings = { ...defaults, ...shared, ...privateState };
   for (const name of ['endpoint', 'token', 'target', 'mode']) field(name).value = settings[name];
-  field('concurrency').value = String(Math.max(1, Math.min(8, Number(settings.concurrency) || 3))); field('autoCopy').checked = settings.autoCopy === true; selectedModel = { model: settings.model, provider: settings.provider };
+  field('concurrency').value = String(Math.max(1, Math.min(8, Number(settings.concurrency) || 3))); field('theme').value = settings.theme || defaults.theme; field('autoCopy').checked = settings.autoCopy === true; selectedModel = { model: settings.model, provider: settings.provider };
   fillModels({}); void refreshModels();
 }).catch(() => { field('status').textContent = '无法读取设置，请重新打开扩展'; });

@@ -39,3 +39,5 @@
 - 真实运行态方法验证：模型 A 冷却不能被 allowModelCooled 越过，模型 B 可用；无提示的连续容量失败退避为 60/120/240/480/600/600 秒。
 
 - 官方真实上游小请求：通过当前改动的 Node WS 处理链两轮 `gpt-6.1-sol`（low，短输入），两次 response.completed，输出 OK/OK，previous_response_id 续接正常，结束后全部 inFlight=0。未进行生产容量压测。
+- AWS 生效验证（2026-10-26）：经 `aih server restart` 加载已提交代码，仍使用 Node 路径、监听 9527；完整生产网关的两轮 WebSocket 小请求均 response.completed，输出 OK/OK，previous_response_id 续接正常。现有 Node 检查 105/105，通过 `go test ./...`。
+- 同次生产观察中，一条 HTTP Responses 请求先收到 `server_is_overloaded`（分类 `model_capacity_unavailable`，冷却 60 秒），随后换到另一账号，同一 requestId 最终返回 200。此记录证明实际 HTTP 换号生效；WS 容量故障换号证据仍来自本地双上游验证，不将正常官方 WS 续接宣称为容量故障验证。

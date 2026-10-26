@@ -128,3 +128,45 @@ resource matrix and existing AIH plugin lifecycle tests; `npm run providers:chec
 also passes. Providers whose descriptor has MCP commands/config paths but no verified
 projection adapter remain explicitly projection-only or unsupported. This avoids
 claiming closure for provider-native formats that have not been observed.
+
+## Native plugin closure checkpoint (2026-10-26)
+
+The portable fixture is [examples/native-plugins/aih-demo](../../examples/native-plugins/aih-demo). One `package.json` declares `agentPlugin` metadata, and host projections are generated from the same package:
+
+```sh
+node bin/ai-home.js native plugin install examples/native-plugins/aih-demo --provider claude --json
+node bin/ai-home.js native plugin list --provider claude --json
+node bin/ai-home.js native plugin disable aih-demo --provider claude --json
+node bin/ai-home.js native plugin enable aih-demo --provider claude --json
+node bin/ai-home.js native plugin remove aih-demo --provider claude --json
+node scripts/native-plugin-demo.js
+```
+
+The actual demo used isolated homes and real native binaries:
+
+| Host | Native version | Native evidence | Result |
+|---|---:|---|---|
+| Codex | 0.164.0 | `plugin marketplace add` + `plugin add` + `plugin list --json`; removal made installed list empty | passed |
+| Claude Code | 2.1.310 | `plugin list --json` showed `aih-demo@skills-dir`; disable removed it | passed |
+| OpenCode | 1.17.18 | local package path projected into `opencode.json`; native executable accepted the config path and manager removed it | passed projection; plugin execution remains host-specific |
+| Pi | unavailable | package contains `pi.extensions` entry and shape is preserved | runtime-unavailable |
+| DeepSeek Harness | unregistered in AIH provider catalog | canonical `agentPlugin` fields are preserved; no DSH adapter/CLI was found | adapter-needed |
+
+`aih native plugin list/doctor` reports only metadata and redacts package
+arguments. User-owned files are preserved; edited owned projections fail closed.
+Codex's marketplace is local and disposable under the isolated `CODEX_HOME`.
+OpenCode server, TUI and RPC entrypoints remain separate host capabilities as
+specified by the universal plugin design; this checkpoint verifies the server
+package/config projection and records the remaining host execution gap.
+
+## Provider-wide audit command
+
+```sh
+node bin/ai-home.js provider capabilities --json
+node bin/ai-home.js provider doctor --json
+```
+
+The output includes every generated provider ID, plugin/skill/MCP state, source
+contract path, local native CLI availability and imported host rows for DeepSeek,
+OpenCode, Pi and AIH. Unknown providers fail closed and every non-supported state
+has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](provider-resource-closure-matrix.md).

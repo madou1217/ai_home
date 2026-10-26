@@ -351,3 +351,11 @@ lifecycle Facade, `mcp-config-adapters.js` is a format Strategy registry, and
 manager has no provider-name dispatch. `scripts/mcp-native-demo.js` verified Codex,
 Claude, OpenCode and Cline native list/config loading after enable and disable, with
 `examples/mcp/aih-demo-server.js` providing the real local tool call.
+
+Native plugin checkpoint: `lib/native-resources/native-plugin-manager.js` is a
+Facade over host-specific projection strategies. The Codex adapter creates a
+local `.agents/plugins/marketplace.json` and uses Codex's own marketplace/add/remove
+commands; Claude projects a skills-dir plugin; OpenCode projects a local package
+path in `opencode.json`. `scripts/native-plugin-demo.js` proves Codex, Claude and
+OpenCode management and records Pi/DeepSeek gaps. `provider-resource-doctor.js`
+aggregates descriptor facts and runtime evidence without provider dispatch branches.

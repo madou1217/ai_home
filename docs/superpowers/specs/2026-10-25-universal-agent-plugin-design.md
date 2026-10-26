@@ -551,10 +551,10 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 | OpenCode native server plugin | 同一 portable core 的原生 agent/tool loop 四阶段已验证 | `scripts/opencode-plugin-native-demo.js`；1.17.18/1.18.18，本地推理 fixture |
 | Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |
 | Codex、Claude、OpenCode、Cline MCP tool calls | 真实本地 stdio tool call 已验证 | `node scripts/mcp-native-demo.js` |
-| DeepSeek Harness/Cordis adapter | 原生包管理、统一 AIH host lifecycle、原生 Loader 与工具生命周期已验证 | `scripts/deepseek-plugin-managed-demo.mjs`：AIH CLI 四阶段、DSH profile composition、boot/Loader/ToolRuntime、账号参数、scope cleanup；原生 package add/remove 另有 probe |
-| Pi extension runtime | 原生包管理和统一 AIH host lifecycle 已接入；工具、命令、shutdown 与账号隔离启动已验证 | `scripts/pi-plugin-native-demo.js --managed`：真实 AIH CLI、Pi SDK loader、四阶段、旧 handler 失效 |
+| DeepSeek Harness/Cordis adapter | 原生包管理、统一 AIH host lifecycle、原生 Loader/清理和官方 headless 工具循环已验证 | `scripts/deepseek-plugin-managed-demo.mjs` 包含 `deepseek-plugin-tool-loop-demo.js`：同包 AIH CLI 四阶段、官方 base/headless 请求/工具/最终回答；既有账号参数和 scope cleanup 单独保留；Web/TUI 未验证 |
+| Pi extension runtime | 原生包管理、统一 AIH host lifecycle、工具/命令/shutdown 和账号投影的原生 CLI 工具循环已验证 | `scripts/pi-plugin-native-demo.js --managed` 包含 `pi-plugin-tool-loop-demo.js`：真实 AIH CLI、preparePiHarness 同状态投影、原生四阶段模型循环；TUI/RPC 未验证 |
 | OpenCode TUI/RPC | 未独立验证 | server/local projection 已验证，TUI/RPC 需分别安装和探测 |
 
 因此，安装包形状或 `project` 成功不能升级为宿主运行成功；只有真实宿主加载、调用、停用和移除证据才能把状态写成 `supported`。未知宿主必须保留 `unsupported`、`projection-only` 或 `runtime-unavailable` 及其原因，不能用空适配器伪装支持。
 
-后续 M2/M3/M4 门禁仍按本文件执行：Pi/DSH 继续验证真实 agent loop；OpenCode TUI/RPC 需独立准备入口和运行证据。`provider doctor` 现在按外部 harness 描述符查找已安装的 package（包括 pnpm store），并用 CLI 版本 probe 判断是否可运行，不再把不在 PATH 等同于未安装。未验证的能力仍保持显式边界。
+后续 M2/M3/M4 门禁仍按本文件执行：Pi/DSH headless 工具循环已通过本地确定性推理 fixture；DSH 的 AIH Web profile、Web/TUI 以及 Pi/OpenCode TUI/RPC 需独立准备入口和运行证据。`provider doctor` 现在按外部 harness 描述符查找已安装的 package（包括 pnpm store），并用 CLI 版本 probe 判断是否可运行，不再把不在 PATH 等同于未安装。未验证的能力仍保持显式边界。

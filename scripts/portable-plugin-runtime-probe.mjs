@@ -3,10 +3,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // Runs in an isolated subprocess: the real host owns discovery and registration.
-const [runtimePackage, agentDir, cwd, expected] = process.argv.slice(2);
+const [runtimePackage, agentDir, cwd, expected, extraExtensions = '[]'] = process.argv.slice(2);
 const sdk = await import(pathToFileURL(path.join(runtimePackage, 'dist/index.js')));
 const loader = new sdk.DefaultResourceLoader({
   cwd, agentDir, noSkills: true, noPromptTemplates: true, noThemes: true,
+  additionalExtensionPaths: JSON.parse(extraExtensions),
   agentsFilesOverride: () => ({ agentsFiles: [] })
 });
 await loader.reload();
@@ -27,5 +28,6 @@ try {
   }
   process.stdout.write(JSON.stringify({ discovered: Boolean(tool), called: Boolean(tool), command: Boolean(tool), cleanup: Boolean(tool) }) + '\n');
 } finally {
+  await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'exit' });
   session.dispose();
 }

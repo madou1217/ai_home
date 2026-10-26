@@ -37,9 +37,39 @@ hosts were wholly absent. Both demos now discover packages when the optional
 directory argument is omitted. Doctor uses the external harness catalog and
 targeted npm/pnpm package lookup, then runs the real CLI version probe (including
 DSH's Node 22 `runCli` wrapper). Both report `runtime.available: true` on this
-machine. Unified AIH lifecycle commands for these external harnesses still need
-integration, so their management state remains `projection-only`. The demos pass
-on both Node 26.12.1 and the supported Node 22.21.0 runtime.
+machine. DSH still needs unified AIH lifecycle integration and remains
+`projection-only`; Pi's completed host-management follow-up is described below.
+The demos pass on both Node 26.12.1 and the supported Node 22.21.0 runtime.
+
+### Pi unified host management follow-up
+
+`aih native plugin install/enable/disable/remove/list/doctor --host pi` now uses
+the external harness descriptor and the same managed-resource store and ownership
+checks as provider-native plugins. Records carry `host: pi`, never `provider: pi`.
+The native directory adapter writes the canonical package into
+`.pi/agent/extensions/<id>`, where Pi's loader discovers `pi.extensions`.
+
+```sh
+node scripts/pi-plugin-native-demo.js --managed
+```
+
+This runs the actual AIH CLI for enabled/disabled/re-enabled/removed stages,
+checks list/doctor, and loads the result with real Pi. It also calls
+`preparePiHarness` for an isolated account, then uses its generated extension
+arguments in the actual SDK loader; all four account-harness stages pass too.
+Modified owned projections fail before launch; enabled resource paths are carried
+through the descriptor's `launchArgument` rather than copying credentials or
+account state. Node 22.21.0 and Node 26.12.1 probes pass. This proves package,
+tool, command and shutdown behavior; remote inference and Pi-specific UI remain
+separate evidence.
+
+The aggregate `scripts/native-plugin-demo.js` now runs the Pi managed demo and
+the DSH profile/SDK demo when runtime packages are available. Provider list/config
+checks explicitly carry `toolExecutionVerified: false`; they cannot establish
+that Codex/Claude/OpenCode invoked plugin behavior. The separate OpenCode tool
+probe is still a checkpoint: its native CLI currently stalls during initialization
+before the local inference fixture is reached, on both 1.17.18 and 1.18.18.
+No OpenCode plugin execution success is claimed from that probe.
 
 ## AIH Plugin baseline
 

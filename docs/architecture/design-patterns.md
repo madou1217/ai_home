@@ -15,6 +15,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `lib/harness/catalog.js` + `host-resource-registry.js` + `native-plugin-manager.js` + `host-plugin-runtime.js` | **Descriptor + Registry + Facade + Adapter** | Pi 等外部 harness 有独立 host 身份，复用受管插件 store/目录策略；账号隔离启动按声明转发已启用扩展，摘要变化时 fail closed，不把 harness 当成 gateway 账号 provider | 真实 `aih native plugin … --host pi` 四阶段 + Pi SDK 工具/命令/shutdown；`preparePiHarness` 隔离账号四阶段；Node 22 全量回归 |
 | `lib/native-resources/portable-plugin-conformance.js` 的 native manifest validators | **Strategy Registry + Contract Validation** | 每宿主验证器与入口描述符放在一起；OpenCode 原生 `./server`、Pi extensions、DSH bundle patch 必须与 canonical 入口一致，避免仅凭 exports 存在声称可加载 | 现有 conformance/command 套件 6 项；真实 package 副本缺少三种 native projection 时均返回 `projection-invalid` |
 | `lib/native-resources/host-runtime-discovery.js` + `provider-resource-doctor.js` | **Descriptor + Adapter + Runtime Probe** | 外部 harness 从既有 catalog 取得包身份，定点查全局包/pnpm store；版本 probe 区分包存在与 CLI 可运行，管理状态独立于 runtime 可用性，不把 Pi/DSH 塞进 gateway provider 目录 | Node 22/26 的 Pi/DSH 原生 demo、provider doctor、未安装/显式错误位置/禁 probe 的运行时断言 |
 | `examples/native-plugins/aih-demo/dist/core.mjs` + `dist/hosts/{pi,deepseek}.mjs` | **Ports and Adapters + Scoped Resource** | 同一业务操作经窄工具/命令端口注册到真实 Pi ExtensionAPI 和 DSH ToolRuntime；Pi `session_shutdown`、Cordis `ctx.effect` 各自拥有清理，旧 handler 在停用后拒绝调用 | `scripts/pi-plugin-native-demo.js`（原生 install/remove、工具与命令、shutdown、再启用）；`scripts/deepseek-plugin-native-demo.mjs`（原生 bundle add/remove/dump、ToolRuntime 执行、Fiber dispose） |

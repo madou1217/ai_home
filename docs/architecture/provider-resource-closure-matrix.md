@@ -29,7 +29,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 |---|---|---|---|
 | deepseek | projection-only | native_profile_and_sdk_tool_lifecycle_verified; unified_aih_lifecycle_pending | scripts/deepseek-plugin-native-demo.mjs |
 | opencode | supported | server_plugin_local_projection_verified; TUI/RPC entrypoints remain separate | scripts/native-plugin-demo.js |
-| pi | projection-only (runtime availability is probed locally) | native_tool_command_cleanup_verified; unified_aih_lifecycle_pending | scripts/pi-plugin-native-demo.js |
+| pi | supported when runtime probe passes; otherwise runtime-unavailable | native_directory_tool_command_cleanup_verified; agent_loop_inference_not_verified | scripts/pi-plugin-native-demo.js --managed |
 | aih | supported | signed_artifact_and_supervised_host | scripts/plugin-closure-demo.js |
 
 `provider doctor` adds a targeted installed-package discovery and real version

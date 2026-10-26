@@ -526,9 +526,9 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 | Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |
 | Codex、Claude、OpenCode、Cline MCP tool calls | 真实本地 stdio tool call 已验证 | `node scripts/mcp-native-demo.js` |
 | DeepSeek Harness/Cordis adapter | 原生包管理与 SDK 工具生命周期已验证；统一 AIH lifecycle 尚待接入 | `scripts/deepseek-plugin-native-demo.mjs`：profile add/remove/dump、ToolRuntime 调用、Fiber 撤销与 cleanup |
-| Pi extension runtime | 原生包管理、工具、命令、shutdown 已验证；统一 AIH lifecycle 尚待接入 | `scripts/pi-plugin-native-demo.js`：原生 install/remove、SDK loader、四阶段、旧 handler 失效 |
+| Pi extension runtime | 原生包管理和统一 AIH host lifecycle 已接入；工具、命令、shutdown 与账号隔离启动已验证 | `scripts/pi-plugin-native-demo.js --managed`：真实 AIH CLI、Pi SDK loader、四阶段、旧 handler 失效 |
 | OpenCode TUI/RPC | 未独立验证 | server/local projection 已验证，TUI/RPC 需分别安装和探测 |
 
 因此，安装包形状或 `project` 成功不能升级为宿主运行成功；只有真实宿主加载、调用、停用和移除证据才能把状态写成 `supported`。未知宿主必须保留 `unsupported`、`projection-only` 或 `runtime-unavailable` 及其原因，不能用空适配器伪装支持。
 
-后续 M2/M3/M4 门禁仍按本文件执行：Pi/DSH 需把已验证的原生安装与 SDK adapter 接入统一 AIH 管理，并继续验证真实 agent loop；OpenCode TUI/RPC 需独立准备入口和运行证据。`provider doctor` 现在按外部 harness 描述符查找已安装的 package（包括 pnpm store），并用 CLI 版本 probe 判断是否可运行，不再把不在 PATH 等同于未安装。未接入统一管理或未验证的能力仍保持显式边界。
+后续 M2/M3/M4 门禁仍按本文件执行：DSH 需把已验证的原生安装与 SDK adapter 接入统一 AIH 管理；Pi/DSH 继续验证真实 agent loop；OpenCode TUI/RPC 需独立准备入口和运行证据。`provider doctor` 现在按外部 harness 描述符查找已安装的 package（包括 pnpm store），并用 CLI 版本 probe 判断是否可运行，不再把不在 PATH 等同于未安装。未接入统一管理或未验证的能力仍保持显式边界。

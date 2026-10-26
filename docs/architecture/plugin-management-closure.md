@@ -320,6 +320,13 @@ contract path, local native CLI availability and imported host rows for DeepSeek
 OpenCode, Pi and AIH. Unknown providers fail closed and every non-supported state
 has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](provider-resource-closure-matrix.md).
 
+The CLI composition root now resolves these executables with the same
+`resolveProviderCliPath` facade used by native launches. Descriptor binary names
+and managed install roots are honored; a provider ID is not assumed to be its
+command name. The current machine resolves Codex, Claude, OpenCode and Cline.
+Other provider runtime rows remain unavailable until a native runtime can be
+resolved and its version probe succeeds; capability declarations are independent.
+
 ## Final verification checkpoint (2026-10-26)
 
 Fresh runs on this branch:

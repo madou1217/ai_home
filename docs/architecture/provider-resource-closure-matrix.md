@@ -1,5 +1,7 @@
 # Provider resource closure matrix
 
+Status: descriptor-complete; runtime evidence is recorded in `docs/architecture/plugin-management-closure.md`.
+
 Generated from `contracts/providers/manifest.json`; runtime availability is intentionally omitted from this checked-in static matrix. Refresh with `node bin/ai-home.js provider capabilities --json`.
 
 | Provider | Plugin | Skill | MCP | Evidence source |

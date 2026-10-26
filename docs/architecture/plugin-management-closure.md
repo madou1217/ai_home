@@ -170,3 +170,41 @@ The output includes every generated provider ID, plugin/skill/MCP state, source
 contract path, local native CLI availability and imported host rows for DeepSeek,
 OpenCode, Pi and AIH. Unknown providers fail closed and every non-supported state
 has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](provider-resource-closure-matrix.md).
+
+## Final verification checkpoint (2026-10-26)
+
+Fresh runs on this branch:
+
+```sh
+node --test test/*.test.js                         # 165 passed, 0 failed
+npm run providers:check                            # passed
+node scripts/plugin-closure-demo.js --json         # passed
+node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
+node scripts/skill-native-demo.js --provider codex --binary /Users/model/.codex/packages/standalone/releases/0.164.0-aarch64-apple-darwin/bin/codex.aih-original
+node scripts/skill-native-demo.js --provider opencode --binary /Users/model/Library/pnpm/bin/opencode
+node scripts/mcp-native-demo.js                    # Codex/Claude/OpenCode/Cline passed
+node scripts/native-plugin-demo.js                 # Codex/Claude/OpenCode passed
+node bin/ai-home.js provider doctor --json         # healthy, 16 providers, 4 host rows
+```
+
+The skill probes each passed four stages. The MCP probe performed two real tool
+calls per provider (`aih_echo`, `aih_list_files`) and checked native enable/disable
+output. The native plugin probe checked native list/config discovery. All temporary
+homes and local fixture processes were removed by their runners.
+
+Overall closure status is now:
+
+- AIH plugin lifecycle: complete and restart-proven.
+- Managed skills: complete for Codex, Claude, OpenCode and AGY projection; actual
+  native use proven for Codex, Claude and OpenCode.
+- Managed MCP: complete for Codex, Claude, OpenCode and Cline; provider-specific
+  account projection and native config loading proven.
+- Native plugin projections: complete for Codex, Claude and OpenCode; the portable
+  package also preserves Pi extension shape. Pi remains runtime-unavailable here.
+- DeepSeek: adapter-needed. Its Harness/Cordis profile and bundle projection are
+  documented in the universal design spec, but no DeepSeek host executable or
+  registered AIH provider adapter exists in this environment. The doctor reports
+  this explicitly instead of treating a package shape as runtime success.
+
+No claim of full cross-host parity is made for OpenCode TUI/RPC, Pi execution or
+DeepSeek Harness execution until those hosts are installed and exercised.

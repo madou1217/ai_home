@@ -6,6 +6,21 @@ let catalogRequest = 0;
 let catalogController = null;
 let selectedModel = { model: '', provider: '' };
 
+async function updateCacheStatus(action = 'status') {
+  const button = field('clear-cache');
+  button.disabled = true;
+  if (action === 'clear') { button.textContent = '清除中…'; field('cache-status').textContent = '正在清除本机缓存…'; }
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'aih-translation-cache', action });
+    if (!result?.ok) throw new Error('暂时无法读取缓存，请重试');
+    const size = result.bytes < 1024 * 1024 ? `${Math.ceil(result.bytes / 1024)} KB` : `${(result.bytes / 1024 / 1024).toFixed(1)} MB`;
+    field('cache-status').textContent = action === 'clear' ? '缓存与页面恢复记录已清除' : `${result.entries} 段译文 · ${size} · ${result.pages} 个可恢复页面`;
+  } catch (error) { field('cache-status').textContent = error.message || '缓存操作失败，请重试'; }
+  finally { button.disabled = false; button.textContent = '清除缓存'; }
+}
+field('clear-cache').onclick = () => void updateCacheStatus('clear');
+void updateCacheStatus();
+
 function showManual() { field('manual-fields').hidden = field('model').value !== 'manual'; }
 function selection() {
   if (field('model').value === 'manual') return { model: field('manual-model').value.trim(), provider: field('manual-provider').value.trim() };

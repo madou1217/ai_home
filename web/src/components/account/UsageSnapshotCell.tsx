@@ -326,22 +326,31 @@ function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKey
   activityRate: number;
   effectKeyPrefix: string;
 }) {
+  // 每个套餐组各自记住是否展开（默认收起，只显示 1 条）。
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
+  const toggleGroup = (key: string) => setExpandedGroups((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   return (
     <div className="usage-snapshot-content usage-snapshot-content--scopes">
       <div className="usage-meta-list usage-meta-list--groups">
         {groups.map((group, groupIndex) => {
+          const groupKey = group.planGroupId || group.planId || `group-${groupIndex}`;
           const rows = getQuotaScopes({
             kind: 'zcode_plan_balance',
             capturedAt: 0,
             entries: group.entries
           });
           if (rows.length === 0) return null;
-          // 组内按窗口升序（与扁平路径同规则），但模型行保留全部：一个套餐的模型
-          // 数量本就少，截断会让「这个套餐有哪些模型」看不全。
-          const visibleRows = hideModels ? rows.slice(0, 1) : rows;
+          // 每组默认只显示 **1 条**用量，多余的收进「展开 N 项」——与扁平路径同规矩，
+          // 避免一个账号的多个套餐把账号行撑得很高（真机：2 个套餐 × 各 2 个模型
+          // = 4 行，横向也挤）。展开状态按组独立记，展开一个组不影响别的组。
+          const visibleRows = hideModels ? rows.slice(0, 1) : (expandedGroups.has(groupKey) ? rows : rows.slice(0, 1));
           const label = group.name || group.planId || group.planGroupId;
           return (
-            <div key={group.planGroupId || group.planId || `group-${groupIndex}`} className="usage-plan-group">
+            <div key={groupKey} className="usage-plan-group">
               <div className="usage-group-title usage-group-title--plan" title={label}>
                 <span className="usage-group-title-text">{label}</span>
               </div>
@@ -364,6 +373,16 @@ function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKey
                   );
                 })}
               </div>
+              {!hideModels && rows.length > 1 ? (
+                <Button
+                  type="link"
+                  size="small"
+                  className="usage-expand-toggle"
+                  onClick={() => toggleGroup(groupKey)}
+                >
+                  {expandedGroups.has(groupKey) ? '收起' : `展开 ${rows.length - 1} 项`}
+                </Button>
+              ) : null}
             </div>
           );
         })}

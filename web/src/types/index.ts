@@ -302,7 +302,14 @@ export interface Account {
   lastUsedAt?: number | null;
   planType: string; // free/pro/ultra/plus/team/business/api-key/oauth
   planName?: string; // 订阅品牌档（如 kimi 的 Allegretto），展示优先于 planType
-  region?: AccountRegion; // 当前账号客户端实际生效区域
+  region?: AccountRegion; // 当前账号客户端实际生效区域（kimi 的网络区域：china/overseas）
+  /**
+   * zcode 的**服务区域**：`zai`（国际站）/ `bigmodel`（国内站）。
+   * 与上面的 region 语义不同（那是网络区域），因此单独一个字段。
+   * 用途：同一用户可能在两个区域都有账号、邮箱相同或被上游打码，
+   * 账号列表靠它区分（见 lib/account/zcode-account-region.js）。
+   */
+  zcodeRegion?: string;
   email: string;
   baseUrl?: string;
   /**

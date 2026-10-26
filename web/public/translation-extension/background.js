@@ -1,10 +1,99 @@
-/* global chrome, AbortController, setTimeout, clearTimeout, fetch, TextDecoder */
+/* global chrome, AbortController, setTimeout, clearTimeout, fetch, TextDecoder, URL */
+import { createTranslationCache, translationHash } from './cache.js';
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
 const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '' };
 let clipboardQueue = Promise.resolve();
 const translationRequests = new Map();
+const resultCache = createTranslationCache(chrome.storage.local);
+const operationProfiles = new Map();
+const pendingPages = new Map();
+const cancelledOperations = new Map();
+const pageRevisions = new Map();
+let cacheGeneration = 0;
+let nextPageRevision = 0;
+
+function advancePageRevision(url) {
+  const revision = ++nextPageRevision;
+  pageRevisions.delete(url); pageRevisions.set(url, revision);
+  while (pageRevisions.size > 256) pageRevisions.delete(pageRevisions.keys().next().value);
+  return revision;
+}
+
+function pageURL(sender) {
+  try { const url = new URL(sender.url || ''); if (!/^https?:$/.test(url.protocol)) return ''; url.hash = ''; return url.href; } catch { return ''; }
+}
+
+async function resolveCacheProfile(config, sender, operationId, operation = 'selection') {
+  const endpoint = String(config.endpoint || '').replace(/\/$/, '');
+  const base = await translationHash(JSON.stringify(['translation-v1', endpoint, config.token || '', config.model || '', config.provider || '', config.target, config.mode]));
+  if (config.model) return { profile: base, model: config.model, provider: config.provider || '' };
+  const operationKey = operationId ? `${taskKey(sender, operationId)}:${base}` : '';
+  if (operationKey && operationProfiles.has(operationKey)) return operationProfiles.get(operationKey);
+  const lookup = (async () => {
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const headers = config.token ? { Authorization: `Bearer ${config.token}` } : {};
+      const responses = await Promise.all(['models', 'settings'].map((resource) => fetch(`${endpoint}/v0/webui/translation/${resource}`, { headers, signal: controller.signal })));
+      if (responses.some((response) => !response.ok)) return null;
+      const [catalog, preferences] = await Promise.all(responses.map((response) => response.json()));
+      if (!catalog.defaultModel) return null;
+      const routes = preferences.settings?.routes || [];
+      const operationRoutes = routes.filter((route) => route && route.enabled !== false
+        && (!Array.isArray(route.operations) || route.operations.includes(operation)));
+      const selected = operationRoutes.find((route) => String(route.model || '').trim());
+      const model = String(selected?.model || catalog.defaultModel || '').trim();
+      const provider = String(selected?.modelProvider || selected?.provider || catalog.defaultProvider || '').trim();
+      if (!model) return null;
+      const profile = await translationHash(JSON.stringify([base, model, provider, operationRoutes]));
+      return { profile, model, provider };
+    } catch { return null; }
+    finally { clearTimeout(timer); }
+  })();
+  if (operationKey) {
+    operationProfiles.set(operationKey, lookup);
+    while (operationProfiles.size > 128) operationProfiles.delete(operationProfiles.keys().next().value);
+  }
+  return lookup;
+}
+
+async function rememberPage(sender, operationId, profile, target) {
+  const pending = pendingPages.get(taskKey(sender, operationId));
+  if (!pending || pending.profile !== profile || pending.target !== target || pending.generation !== cacheGeneration) return;
+  const isCurrent = () => pageRevisions.get(pending.url) === pending.revision && pendingPages.get(taskKey(sender, operationId)) === pending && pending.generation === cacheGeneration;
+  if (isCurrent()) await resultCache.setPage(await translationHash(pending.url), pending, isCurrent).catch(() => {});
+}
+
+async function pageState(message, sender) {
+  const url = pageURL(sender);
+  if (!url) return { ok: false, state: null };
+  if (message.action === 'clear') {
+    advancePageRevision(url);
+    for (const [key, pending] of pendingPages) if (pending.url === url) pendingPages.delete(key);
+    await resultCache.clearPage(await translationHash(url));
+    return { ok: true, state: null };
+  }
+  const operationKey = message.operationId ? taskKey(sender, message.operationId) : '';
+  const cancelEpoch = operationKey ? (cancelledOperations.get(operationKey) || 0) : 0;
+  const revision = message.action === 'set' ? advancePageRevision(url) : pageRevisions.get(url) || 0;
+  const generation = cacheGeneration;
+  const config = await settings();
+  const context = await resolveCacheProfile(config, sender, message.operationId, 'page');
+  if (operationKey && cancelEpoch !== (cancelledOperations.get(operationKey) || 0)) return { ok: false, state: null };
+  if (!context || generation !== cacheGeneration || (pageRevisions.get(url) || 0) !== revision) return { ok: true, state: null };
+  if (message.action === 'get') {
+    const state = await resultCache.getPage(await translationHash(url), context.profile);
+    return { ok: true, state: generation === cacheGeneration && (pageRevisions.get(url) || 0) === revision ? state : null };
+  }
+  if (message.action !== 'set' || !message.operationId) return { ok: false, state: null };
+  const target = String(message.target || config.target || '').trim();
+  if (!target || target.length > 100) return { ok: false, state: null };
+  const mode = (message.mode || config.mode) === 'replace' ? 'replace' : 'side-by-side';
+  pendingPages.set(operationKey, { url, revision, generation, target, mode, profile: context.profile });
+  while (pendingPages.size > 128) pendingPages.delete(pendingPages.keys().next().value);
+  return { ok: true, profile: context.profile };
+}
 
 function taskKey(sender, operationId) {
   return `${sender.tab?.id}:${sender.frameId || 0}:${operationId}`;
@@ -13,6 +102,9 @@ function taskKey(sender, operationId) {
 function cancelTask(key) {
   for (const controller of translationRequests.get(key) || []) controller.abort();
   translationRequests.delete(key);
+  pendingPages.delete(key);
+  cancelledOperations.set(key, (cancelledOperations.get(key) || 0) + 1);
+  while (cancelledOperations.size > 256) cancelledOperations.delete(cancelledOperations.keys().next().value);
 }
 
 function translationFailure(status, message, errorCode = '') {
@@ -84,6 +176,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 });
 
 async function translate(request, sendResponse, sender) {
+  const generation = cacheGeneration;
   const key = taskKey(sender, request.operationId);
   const controller = new AbortController();
   const pending = translationRequests.get(key) || new Set();
@@ -97,6 +190,22 @@ async function translate(request, sendResponse, sender) {
     if (!/^https?:\/\//.test(endpoint)) return sendResponse({ ok: false, fatal: true, error: '请先在扩展设置中填写 AIH Server 地址' });
     const target = String(request.target || config.target || '').trim();
     const targetPolicy = String(request.targetPolicy || 'saved').trim() || 'saved';
+    const cacheContext = await resolveCacheProfile(config, sender, request.operationId, request.operation || 'selection');
+    const cacheEligible = targetPolicy !== 'confirm';
+    const cacheKey = cacheEligible && cacheContext ? await translationHash(JSON.stringify([cacheContext.profile, request.source || 'auto', target, request.operation || 'selection', await translationHash(String(request.text || ''))])) : '';
+    if (controller.signal.aborted) throw controller.signal.reason;
+    if (cacheKey && generation === cacheGeneration) {
+      const cached = await resultCache.read(cacheKey).catch(() => null);
+      if (controller.signal.aborted) throw controller.signal.reason;
+      if (cached && generation === cacheGeneration) {
+        if (request.operation === 'page') await rememberPage(sender, request.operationId, cacheContext.profile, target);
+        if (controller.signal.aborted) throw controller.signal.reason;
+        return sendResponse({ ok: true, ...cached, cached: true, mode: config.mode === 'replace' ? 'replace' : 'side-by-side', autoCopy: request.restoring !== true && config.autoCopy === true && Boolean(cached.meta?.from && cached.meta?.to && cached.meta.from !== cached.meta.to) });
+      }
+    }
+    if (request.restoring === true) {
+      return sendResponse({ ok: false, cacheMiss: true, error: '此段暂无本机缓存，请点击继续翻译' });
+    }
     const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
     if (config.token) headers.Authorization = `Bearer ${config.token}`;
     const response = await fetch(`${endpoint}/v0/webui/translation/stream`, {
@@ -127,6 +236,8 @@ async function translate(request, sendResponse, sender) {
     let buffer = '';
     let output = '';
     let streamMeta = null;
+    let completedModel = '';
+    let completedProvider = '';
     let sawStart = false;
     let sawDone = false;
     let streamError = null;
@@ -141,6 +252,8 @@ async function translate(request, sendResponse, sender) {
       if (!event || typeof event !== 'object') return;
       if (event.type === 'start') {
         sawStart = true;
+        completedModel = String(event.model || '');
+        completedProvider = String(event.provider || '');
         streamMeta = {
           from: String(event.from || ''),
           to: String(event.to || ''),
@@ -150,6 +263,9 @@ async function translate(request, sendResponse, sender) {
           detectionConfidence: String(event.detectionConfidence || '')
         };
         publishProgress(true);
+      } else if (event.type === 'attempt_start') {
+        completedModel = String(event.model || completedModel);
+        completedProvider = String(event.modelProvider || '');
       } else if (event.type === 'delta') {
         output += String(event.content || '');
         publishProgress();
@@ -187,9 +303,19 @@ async function translate(request, sendResponse, sender) {
       if (done) break;
     }
     if (streamError) return sendResponse(streamError);
+    if (controller.signal.aborted) throw controller.signal.reason;
     if (!sawStart || !sawDone) return sendResponse({ ok: false, error: '翻译流未完成，请重试' });
     if (!output.trim()) return sendResponse({ ok: false, error: '翻译服务返回空结果' });
-    const canAutoCopy = config.autoCopy === true
+    // A fallback that actually used another model must not masquerade as the
+    // configured default on the next operation's cache lookup.
+    const matchesModel = cacheContext && completedModel === cacheContext.model && (!cacheContext.provider || completedProvider === cacheContext.provider);
+    let cacheStored = false;
+    if (cacheKey && matchesModel && generation === cacheGeneration) {
+      cacheStored = await resultCache.write(cacheKey, { text: output, meta: streamMeta }, () => !controller.signal.aborted && generation === cacheGeneration).catch(() => false);
+    }
+    if (request.operation === 'page' && cacheStored && cacheContext && !controller.signal.aborted && generation === cacheGeneration) await rememberPage(sender, request.operationId, cacheContext.profile, target);
+    if (controller.signal.aborted) throw controller.signal.reason;
+    const canAutoCopy = request.restoring !== true && config.autoCopy === true
       && Boolean(streamMeta?.from && streamMeta?.to && streamMeta.from !== streamMeta.to);
     return sendResponse({
       ok: true,
@@ -208,6 +334,19 @@ async function translate(request, sendResponse, sender) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'aih-page-translation-state') {
+    void pageState(message, sender).then(sendResponse).catch(() => sendResponse({ ok: false, state: null }));
+    return true;
+  }
+  if (message?.type === 'aih-translation-cache') {
+    // Cache administration belongs to extension pages, never website scripts.
+    if (!String(sender.url || '').startsWith(chrome.runtime.getURL(''))) { sendResponse({ ok: false }); return false; }
+    if (message.action === 'clear') {
+      cacheGeneration += 1; pendingPages.clear(); operationProfiles.clear();
+      void resultCache.clear().then(() => resultCache.status()).then((status) => sendResponse({ ok: true, ...status })).catch(() => sendResponse({ ok: false }));
+    } else void resultCache.status().then((status) => sendResponse({ ok: true, ...status })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.type === 'aih-cancel-translation') {
     cancelTask(taskKey(sender, message.operationId));
     sendResponse({ ok: true });

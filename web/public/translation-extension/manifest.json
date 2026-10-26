@@ -36,6 +36,7 @@
       ],
       "js": [
         "panel.js",
+        "page-segments.js",
         "content.js"
       ],
       "run_at": "document_idle"

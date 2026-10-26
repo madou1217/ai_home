@@ -15,6 +15,7 @@ node scripts/native-plugin-use-demo.js codex
 node scripts/native-plugin-use-demo.js claude
 node scripts/pi-plugin-native-demo.js
 node scripts/pi-plugin-native-demo.js --managed
+node scripts/pi-plugin-tool-loop-demo.js
 node scripts/deepseek-plugin-native-demo.mjs
 node scripts/deepseek-plugin-managed-demo.mjs
 ```
@@ -187,6 +188,11 @@ node scripts/pi-plugin-native-demo.js --managed
 `--managed` probe 通过真实 AIH CLI 执行四阶段，再通过真实 Pi loader 调用工具/命令。
 它同时验证 AIH 账号隔离的 Pi harness：启动参数只转发已启用且摘要未被修改的
 受管扩展路径；停用/移除后后续启动不再加载。
+
+该 probe 还会执行 `pi-plugin-tool-loop-demo.js`：真实 Pi CLI 使用本地模型
+fixture 完成工具声明、调用、结果回传和最终回答。启用/重新启用各两次请求，
+停用/移除各一次请求且不含插件工具。可单独运行该脚本观察 JSON 结果；它不
+消耗上游额度，也不把 headless CLI 的通过宣称为 Pi TUI/RPC 验证。
 
 DeepSeek 使用相同生命周期和独立 host 身份：
 

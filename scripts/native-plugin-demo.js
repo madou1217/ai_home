@@ -17,7 +17,7 @@ const CLIENTS = [
   { host: 'aih', demo: 'aih-portable-plugin-demo.js', args: [], localRuntime: true },
   { host: 'workbuddy', resourceProvider: 'workbuddy', demo: 'workbuddy-resource-native-demo.js', args: [], timeoutMs: 180000 }
 ];
-function run(binary, args, env, cwd, timeoutMs = 30000) { const r=spawnSync(binary,args,{env,cwd,encoding:'utf8',timeout:timeoutMs,maxBuffer:1024*1024}); return {status:r.status,signal:r.signal,stdout:String(r.stdout||'').slice(0,5000),stderr:String(r.stderr||'').slice(0,1500)}; }
+function run(binary, args, env, cwd, timeoutMs = 30000) { const r=spawnSync(binary,args,{env,cwd,encoding:'utf8',timeout:timeoutMs,maxBuffer:1024*1024}); return {status:r.status,signal:r.signal,stdout:String(r.stdout||'').slice(0,65536),stderr:String(r.stderr||'').slice(0,1500)}; }
 async function runNativePluginDemo() {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'aih-native-plugin-demo-')); const host=path.join(root,'host'); const opts={aiHomeDir:path.join(root,'aih'),hostHomeDir:host,nativeBinaries:Object.fromEntries(CLIENTS.filter(x=>x.provider).map(x=>[x.provider,x.binary]))}; const manager=createNativePluginManager(opts); const stages=[];
   for(const client of CLIENTS) {

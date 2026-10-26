@@ -382,6 +382,25 @@ standalone CLIs, plus WorkBuddy through its installed desktop bundle. Other
 provider runtime rows remain unavailable until a native runtime can be resolved
 and its version probe succeeds; capability declarations are independent.
 
+## Pi native CLI tool loop (2026-10-27)
+
+`node scripts/pi-plugin-tool-loop-demo.js` runs Pi 0.84.4 as a real child CLI
+with an isolated HOME and model configuration, the unchanged canonical demo
+package, and a local Chat Completions fixture. All four managed lifecycle stages
+pass. Enabled/re-enabled each require two requests, a native
+`tool_execution_end` event with the shared core result, the exact result in the
+next model request, and the final assistant message. Disabled/removed each send
+one request without the tool schema or execution event and return
+`PLUGIN_NOT_LOADED`. A nonzero exit, timeout, absent request or fixture error
+fails the probe.
+
+`pi-plugin-native-demo.js --managed` now includes this loop in addition to its
+existing SDK loader/command/shutdown and account-launch-argument checks. The
+combined runner passes under Node 22.23.2; the standalone loop also passes under
+Node 26.12.1. The existing regression suite remains 111/111 and provider contract
+check passes. This closes the Pi headless agent-loop evidence gap; TUI/RPC and
+DSH model-loop evidence remain separate. No `lib/harness/` code is changed.
+
 ## WorkBuddy ownership hardening checkpoint (2026-10-27)
 
 The WorkBuddy marketplace adapter now uses a distinct deterministic marketplace
@@ -492,14 +511,16 @@ Overall closure status is now:
 - Native plugins: Codex/Claude bundled skills and the OpenCode shared-core tool
   loop pass all four stages. Pi/DSH unified host management, native SDK tools,
   cleanup and account-isolated launch propagation are runtime-proven above.
+  Pi additionally passes the native headless CLI tool loop across all four stages.
 - Remaining provider resource projections retain their explicit capability and
   runtime status; this does not establish behavior on every installed provider.
 - Canonical-to-AIH artifact subset: the same package's shared core is now called
   through a signed artifact and supervised Host. Full common SDK extraction and
   the remaining M1 migration gates are distinct from this proven subset.
 
-No claim of full cross-host parity is made for OpenCode TUI/RPC or Pi/DSH
-model-selected agent loops. The native SDK execution subset is proven separately.
+No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DSH
+model-selected agent loop. Pi headless inference uses a deterministic local
+model fixture; this proves runtime execution, not a remote model's tool-selection quality.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
 (`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,

@@ -29,7 +29,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 |---|---|---|---|
 | deepseek | supported when runtime probe passes; otherwise projection-only | native_owned_patch_boot_tool_cleanup_verified; agent_loop_inference_not_verified | scripts/deepseek-plugin-managed-demo.mjs |
 | opencode | supported | server_plugin_native_tool_loop_verified; TUI/RPC entrypoints remain separate | scripts/opencode-plugin-native-demo.js |
-| pi | supported when runtime probe passes; otherwise runtime-unavailable | native_directory_tool_command_cleanup_verified; agent_loop_inference_not_verified | scripts/pi-plugin-native-demo.js --managed |
+| pi | supported when runtime probe passes; otherwise runtime-unavailable | native_directory_tool_command_cleanup_and_cli_tool_loop_verified; TUI/RPC entrypoints remain separate | scripts/pi-plugin-native-demo.js --managed |
 | aih | supported | canonical_signed_artifact_and_shared_core_supervised_host_verified | scripts/aih-portable-plugin-demo.js |
 
 WorkBuddy provider runtime evidence (the static MCP state remains projection-only

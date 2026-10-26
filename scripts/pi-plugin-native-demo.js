@@ -7,6 +7,7 @@ const { spawnSync } = require('node:child_process');
 const { findRuntimePackage } = require('../lib/native-resources/host-runtime-discovery');
 const { IMPORTED_HOSTS } = require('../lib/native-resources/provider-resource-doctor');
 const { preparePiHarness } = require('../lib/harness/pi');
+const { runPiToolLoopDemo } = require('./pi-plugin-tool-loop-demo');
 
 async function runPiPluginDemo(runtimePackage, { managed = false } = {}) {
   runtimePackage ||= findRuntimePackage(IMPORTED_HOSTS.find(host => host.host === 'pi'), { hostHomeDir: os.homedir() })?.packageDir;
@@ -58,7 +59,8 @@ async function runPiPluginDemo(runtimePackage, { managed = false } = {}) {
       }
       steps.push({ stage, ...result, passed: true });
     }
-    return { host: 'pi', version, packageManager: managed ? 'AIH CLI host lifecycle + native Pi discovery' : 'native Pi install/remove', inference: 'none', steps, passed: true };
+    const toolLoop = await runPiToolLoopDemo(runtimePackage);
+    return { host: 'pi', version, packageManager: managed ? 'AIH CLI host lifecycle + native Pi discovery' : 'native Pi install/remove', inference: toolLoop.inference, toolExecutionVerified: toolLoop.toolExecutionVerified, steps, toolLoop, passed: true };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 if (require.main === module) {

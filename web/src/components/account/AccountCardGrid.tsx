@@ -14,7 +14,7 @@ import {
   getAccountPrimaryLabel,
   getAccountSecondaryLabel,
   getPlanTagColor,
-  getPlanTagLabel,
+  getPlanTagLabels,
   renderAccountDisplayBadge,
   renderAccountRegionTag,
   renderAccountRoleIcons,
@@ -136,7 +136,12 @@ export const AccountCardGrid = memo(function AccountCardGrid({
               <div className={styles.statusRow}>
                 {renderAccountDisplayBadge(acc)}
                 <span className={styles.tagGroup}>
-                  <Tag color={getPlanTagColor(acc)} className={styles.planTag}>{getPlanTagLabel(acc)}</Tag>
+                  {/* 套餐标签**逐个渲染**：后端会把叠加的多个套餐拼成 `A + B` 塞进
+                      planType，整串当一个标签会随套餐增减变宽、且在窄列里被截断。
+                      拆开后每个标签宽度稳定，行内自动换行。 */}
+                  {getPlanTagLabels(acc).map((label) => (
+                    <Tag key={label} color={getPlanTagColor(acc)} className={styles.planTag}>{label}</Tag>
+                  ))}
                   {renderAccountRegionTag(acc)}
                   {renderExtraTags ? renderExtraTags(acc) : null}
                 </span>

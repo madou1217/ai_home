@@ -84,8 +84,13 @@ final class TranslationPanelContent {
     source.textColor = .secondaryLabelColor
     source.lineBreakMode = .byTruncatingTail
     source.maximumNumberOfLines = 1
+    // The preview is allowed to truncate within the chosen window width.
+    // Its intrinsic single-line width must never enlarge the NSPanel.
+    source.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    source.setContentHuggingPriority(.defaultLow, for: .horizontal)
     hint.font = .systemFont(ofSize: 12)
     hint.textColor = .secondaryLabelColor
+    hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     textView.isEditable = false
     textView.isSelectable = true
     textView.drawsBackground = false
@@ -93,11 +98,16 @@ final class TranslationPanelContent {
     textView.textContainerInset = NSSize(width: 0, height: 4)
     textView.isHorizontallyResizable = false
     textView.isVerticallyResizable = true
+    textView.minSize = .zero
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     textView.autoresizingMask = [.width]
+    textView.textContainer?.containerSize = NSSize(width: 388, height: CGFloat.greatestFiniteMagnitude)
     textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.lineBreakMode = .byWordWrapping
     textView.setAccessibilityLabel("译文")
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = false
     scroll.autohidesScrollers = true
     scroll.borderType = .noBorder
     scroll.documentView = textView

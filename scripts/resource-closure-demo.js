@@ -84,10 +84,18 @@ function runJsonCommand(args, timeoutMs) {
   };
 }
 
-function readCapabilities() {
+function readCapabilities(options = {}) {
+  // A demo may use an explicitly supplied native binary that is intentionally
+  // outside PATH (for example an isolated Gemini fixture).  Pass that same
+  // binary to the doctor so the report does not combine positive native-use
+  // evidence with an unrelated PATH-only "runtime unavailable" result.
+  const nativeBinaries = options.geminiBinary
+    ? { gemini: options.geminiBinary }
+    : undefined;
   const report = createProviderResourceDoctor({
     hostHomeDir: process.env.HOME || process.env.USERPROFILE,
-    probeRuntime: true
+    probeRuntime: true,
+    ...(nativeBinaries ? { nativeBinaries } : {})
   }).capabilities();
   if (!report || !Array.isArray(report.providers)) throw new Error('provider_capabilities_failed');
   return report;
@@ -262,7 +270,7 @@ function summarizeResource(capability, entries) {
 }
 
 async function buildReport(options) {
-  const capabilities = readCapabilities();
+  const capabilities = readCapabilities(options);
   const evidence = new Map();
   const demos = [];
   const management = await runManagementLifecycle(capabilities);

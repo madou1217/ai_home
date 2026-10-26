@@ -522,7 +522,8 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 |---|---|---|
 | Portable manifest、host entry、DeepSeek/Pi projection | 已交付 | `aih native plugin inspect/project examples/native-plugins/aih-demo --host deepseek\|pi`；`test/portable-plugin-conformance.test.js` |
 | AIH plugin lifecycle | 运行时已验证 | `node scripts/plugin-closure-demo.js --json`：pack/install/enable/use/restart/use-after-restart/disable/uninstall/doctor |
-| Codex、Claude、OpenCode native plugin projection | 运行时已验证（OpenCode 以 server/local projection 为边界） | `node scripts/native-plugin-demo.js` |
+| Codex、Claude native plugin | 原生包内 Skill 四阶段调用已验证 | `scripts/native-plugin-use-demo.js`，参数为 codex 或 claude；非 JavaScript 工具执行 |
+| OpenCode native server plugin | 同一 portable core 的原生 agent/tool loop 四阶段已验证 | `scripts/opencode-plugin-native-demo.js`；1.17.18/1.18.18，本地推理 fixture |
 | Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |
 | Codex、Claude、OpenCode、Cline MCP tool calls | 真实本地 stdio tool call 已验证 | `node scripts/mcp-native-demo.js` |
 | DeepSeek Harness/Cordis adapter | 原生包管理、统一 AIH host lifecycle、原生 Loader 与工具生命周期已验证 | `scripts/deepseek-plugin-managed-demo.mjs`：AIH CLI 四阶段、DSH profile composition、boot/Loader/ToolRuntime、账号参数、scope cleanup；原生 package add/remove 另有 probe |

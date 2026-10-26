@@ -7,7 +7,14 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createNativePluginManager } = require('../lib/native-resources/native-plugin-manager');
-const execute = promisify(execFile);
+const executeFile = promisify(execFile);
+function execute(binary, args, options) {
+  const pending = executeFile(binary, args, options);
+  // Non-interactive `opencode run` reads piped input until EOF before sending
+  // its first request. execFile leaves that pipe open unless we close it.
+  pending.child.stdin.end();
+  return pending;
+}
 const MARKER = 'AIH_PLUGIN_DEMO_OK:portable-input';
 
 async function runOpenCodePluginDemo(binary = 'opencode', dependencyDir = path.join(os.homedir(), '.config/opencode')) {
@@ -34,7 +41,7 @@ async function runOpenCodePluginDemo(binary = 'opencode', dependencyDir = path.j
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const env = { PATH: process.env.PATH, HOME: host, USERPROFILE: host, TERM: 'dumb', NO_PROXY: '127.0.0.1,localhost', XDG_CONFIG_HOME: path.join(host, '.config'), XDG_DATA_HOME: path.join(host, '.local/share'), XDG_CACHE_HOME: path.join(host, '.cache') };
-  Object.assign(env, { npm_config_fetch_retries: '0', npm_config_fetch_timeout: '10000', OPENCODE_DISABLE_MODELS_FETCH: '1', OPENCODE_DISABLE_DEFAULT_PLUGINS: '1' });
+  Object.assign(env, { npm_config_fetch_retries: '0', npm_config_fetch_timeout: '10000' });
   try {
     fs.mkdirSync(work, { recursive: true });
     const configDir = path.join(host, '.config/opencode');
@@ -63,7 +70,7 @@ async function runOpenCodePluginDemo(binary = 'opencode', dependencyDir = path.j
       if (stage === 're-enabled') manager.enable('aih-demo', { provider: 'opencode' });
       if (stage === 'removed') manager.remove('aih-demo', { provider: 'opencode' });
       observations.length = 0;
-      const { stdout } = await execute(binary, ['run', '--format', 'json', '--model', 'fixture/demo', 'Use the aih_demo tool if available.'], { cwd: work, env, timeout: 120000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+      const { stdout } = await execute(binary, ['run', '--format', 'json', '--model', 'fixture/demo', 'Use the aih_demo tool if available.'], { cwd: work, env, timeout: 45000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
       const expected = ['enabled', 're-enabled'].includes(stage);
       const events = stdout.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch (_) { return []; } });
       const toolEvent = events.some(event => event.type === 'tool_use' && event.part?.tool === 'aih_demo' && event.part?.state?.status === 'completed' && event.part?.state?.output === MARKER);
@@ -73,12 +80,15 @@ async function runOpenCodePluginDemo(binary = 'opencode', dependencyDir = path.j
       assert.equal(toolEvent, expected, 'native completed tool event');
       steps.push({ stage, toolSchema: expected, toolCall: toolEvent, resultObserved: expected, requests: observations.length, passed: true });
     }
-    return { host: 'opencode', binary, version: (await execute(binary, ['--version'], { env, timeout: 5000 })).stdout.trim(), dependencySdk: sdkVersion || 'native bootstrap', inference: 'local-deterministic-tool-fixture', steps, passed: true };
+    return { host: 'opencode', binary, version: (await execute(binary, ['--version'], { env, timeout: 5000 })).stdout.trim(), dependencySdk: sdkVersion || 'native bootstrap', inference: 'local-deterministic-tool-fixture', toolExecutionVerified: true, steps, passed: true };
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
-if (require.main === module) runOpenCodePluginDemo(process.argv[2], process.argv[3]).then(report => console.log(JSON.stringify(report, null, 2))).catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) {
+  if (process.argv.includes('--help')) console.log('Usage: node scripts/opencode-plugin-native-demo.js [native-cli-path] [dependency-directory]');
+  else runOpenCodePluginDemo(process.argv[2], process.argv[3]).then(report => console.log(JSON.stringify(report, null, 2))).catch(error => { console.error(error.message); process.exitCode = 1; });
+}
 module.exports = { runOpenCodePluginDemo };

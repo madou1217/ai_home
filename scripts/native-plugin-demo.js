@@ -8,9 +8,9 @@ const { probeHostRuntime } = require('../lib/native-resources/host-runtime-disco
 const { IMPORTED_HOSTS } = require('../lib/native-resources/provider-resource-doctor');
 const SOURCE = path.resolve(__dirname, '../examples/native-plugins/aih-demo');
 const CLIENTS = [
-  { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js' },
-  { provider: 'claude', binary: '/Users/model/.local/bin/claude', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js' },
-  { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', list: null, version: ['--version'] },
+  { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js', useProviderArgument: true },
+  { provider: 'claude', binary: '/Users/model/.local/bin/claude', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js', useProviderArgument: true },
+  { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', list: null, version: ['--version'], useDemo: 'opencode-plugin-native-demo.js' },
   { host: 'pi', demo: 'pi-plugin-native-demo.js', args: ['--managed'] },
   { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] }
 ];
@@ -40,11 +40,11 @@ async function runNativePluginDemo() {
       manager.disable('aih-demo',{provider:client.provider}); const disabled=client.list?run(client.binary,client.list,env,root):{status:0,stdout:'config projection removed'}; manager.remove('aih-demo',{provider:client.provider});
       let pluginUse;
       if (client.useDemo) {
-        const demo = run(process.execPath, [path.join(__dirname, client.useDemo), client.provider, client.binary], process.env, root);
+        const demo = run(process.execPath, [path.join(__dirname, client.useDemo), ...(client.useProviderArgument ? [client.provider] : []), client.binary], process.env, root);
         try { pluginUse = JSON.parse(demo.stdout); } catch (_) { pluginUse = { passed: false, status: demo.status, error: 'native_plugin_use_demo_failed' }; }
         if (demo.status !== 0) pluginUse.passed = false;
       }
-      stages.push({provider:client.provider,version:runtime.stdout.trim(),projection:installed.target,nativeInstallStatus:enabled.status, nativeListed, disabledStatus:disabled.status, doctorHealthy:doctor.healthy, toolExecutionVerified:false, ...(pluginUse?{pluginUse,pluginUseVerified:pluginUse.passed}:{}), passed:enabled.status===0&&disabled.status===0&&doctor.healthy&&nativeListed&&(!client.useDemo||pluginUse.passed)});
+      stages.push({provider:client.provider,version:runtime.stdout.trim(),projection:installed.target,nativeInstallStatus:enabled.status, nativeListed, disabledStatus:disabled.status, doctorHealthy:doctor.healthy, toolExecutionVerified:Boolean(pluginUse?.toolExecutionVerified), ...(pluginUse?{pluginUse,pluginUseVerified:pluginUse.passed}:{}), passed:enabled.status===0&&disabled.status===0&&doctor.healthy&&nativeListed&&(!client.useDemo||pluginUse.passed)});
     } catch(error) { stages.push({provider:client.provider,state:'error',error:error.code||error.message,passed:false}); }
   }
   fs.rmSync(root,{recursive:true,force:true}); return {fixture:'aih-demo',stages,passed:stages.every(x=>x.passed||x.state==='runtime-unavailable'||x.state==='unsupported')};

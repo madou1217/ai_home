@@ -122,12 +122,35 @@ tool, command and shutdown behavior; remote inference and Pi-specific UI remain
 separate evidence.
 
 The aggregate `scripts/native-plugin-demo.js` now runs the Pi and DSH managed
-demos when runtime packages are available. Provider list/config
-checks explicitly carry `toolExecutionVerified: false`; they cannot establish
-that Codex/Claude/OpenCode invoked plugin behavior. The separate OpenCode tool
-probe is still a checkpoint: its native CLI currently stalls during initialization
-before the local inference fixture is reached, on both 1.17.18 and 1.18.18.
-No OpenCode plugin execution success is claimed from that probe.
+demos when runtime packages are available. Codex/Claude list/config checks carry
+`toolExecutionVerified: false`; their separate bundled-skill invocation evidence
+is under `pluginUse`. OpenCode's completed tool loop has its own execution proof.
+
+## OpenCode tool-loop follow-up (2026-10-26)
+
+```sh
+node scripts/opencode-plugin-native-demo.js /opt/homebrew/bin/opencode
+node scripts/opencode-plugin-native-demo.js /Users/model/Library/pnpm/bin/opencode
+```
+
+Both OpenCode 1.18.18 and 1.17.18 pass enabled/disabled/re-enabled/removed stages.
+Each stage runs the native CLI with an isolated home. Positive stages advertise
+`aih_demo`, execute the same `dist/core.mjs` used by Pi/DSH, emit a completed
+native `tool_use` event, and send the returned value into the next model request.
+Negative stages reach the fixture but contain neither tool schema nor result.
+The aggregate demo now requires this evidence and reports
+`toolExecutionVerified: true` for OpenCode.
+
+The earlier initialization timeout was a probe input bug: `execFile` left its
+stdin pipe open while native `run` awaited `Bun.stdin.text()`. Closing that pipe
+before waiting for exit fixes the stall. Direct-entry probes used `spawn` with
+stdin ignored and therefore did not reproduce the problem. The canonical root
+export remains the portable core; native loading uses `./server` or `main`.
+
+This is a real native agent/tool loop against a local deterministic inference
+fixture, not remote model reasoning. TUI/RPC and hot-reload cleanup remain
+separate capabilities. Node 22.21.0 and Node 26.12.1 runs pass; only local package
+artifacts are seeded into the isolated home, never auth or user configuration.
 
 ## AIH Plugin baseline
 
@@ -267,7 +290,8 @@ node bin/ai-home.js native plugin remove aih-demo --provider claude --json
 node scripts/native-plugin-demo.js
 ```
 
-The actual demo used isolated homes and real native binaries:
+The initial projection checkpoint used isolated homes and real native binaries.
+The runtime follow-up sections above supersede this historical table:
 
 | Host | Native version | Native evidence | Result |
 |---|---:|---|---|
@@ -314,7 +338,8 @@ node bin/ai-home.js provider doctor --json         # healthy, 16 providers, 4 ho
 
 The skill probes each passed four stages. The MCP probe performed two real tool
 calls per provider (`aih_echo`, `aih_list_files`) and checked native enable/disable
-output. The native plugin probe checked native list/config discovery. All temporary
+output. The initial native plugin probe checked native list/config discovery; the
+follow-ups above add actual bundled-skill and native tool execution. All temporary
 homes and local fixture processes were removed by their runners.
 
 Overall closure status is now:
@@ -324,19 +349,18 @@ Overall closure status is now:
   native use proven for Codex, Claude and OpenCode.
 - Managed MCP: complete for Codex, Claude, OpenCode and Cline; provider-specific
   account projection and native config loading proven.
-- Native plugin projections: complete for Codex, Claude and OpenCode; the portable
-  package also preserves Pi extension shape. Pi remains runtime-unavailable here.
-- DeepSeek: canonical projection is verified with `aih native plugin inspect`
-  and `aih native plugin project`; its Harness/Cordis runtime adapter remains
-  unavailable because no DeepSeek host executable or registered AIH provider
-  adapter exists in this environment. The doctor reports this explicitly instead
-  of treating package shape as runtime success.
+- Native plugins: Codex/Claude bundled skills and the OpenCode shared-core tool
+  loop pass all four stages. Pi/DSH unified host management, native SDK tools,
+  cleanup and account-isolated launch propagation are runtime-proven above.
+- Remaining provider resource projections retain their explicit capability and
+  runtime status; this does not establish behavior on every installed provider.
 
-No claim of full cross-host parity is made for OpenCode TUI/RPC, Pi execution or
-DeepSeek Harness execution until those hosts are installed and exercised.
+No claim of full cross-host parity is made for OpenCode TUI/RPC or Pi/DSH
+model-selected agent loops. The native SDK execution subset is proven separately.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
-(`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`).
+(`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,
+`cordis-patch`).
 The manager contains no provider-name execution branches. Codex marketplace paths,
 OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
 snapshot tamper detection, and native remove/re-enable behavior are covered by the

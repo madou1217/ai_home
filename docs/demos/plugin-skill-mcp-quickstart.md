@@ -116,6 +116,21 @@ node scripts/native-plugin-use-demo.js codex
 node scripts/native-plugin-use-demo.js claude
 ```
 
+OpenCode 使用同一插件包的 server 入口注册 `aih_demo` 工具：
+
+```bash
+aih native plugin install examples/native-plugins/aih-demo --provider opencode --json
+opencode run 'Use the aih_demo tool if available.'
+aih native plugin disable aih-demo --provider opencode --json
+aih native plugin enable aih-demo --provider opencode --json
+aih native plugin remove aih-demo --provider opencode --json
+node scripts/opencode-plugin-native-demo.js
+```
+
+交互使用需要 OpenCode 自己可用的模型配置。最后一条 demo 则使用隔离目录与
+本地推理 fixture，证明四阶段的工具 schema、原生执行事件和结果回传，
+不需要远程推理；可选位置参数为 CLI 路径和已安装的 SDK 依赖目录。
+
 同一个 canonical `package.json` 可以先做宿主导入检查和投影：
 
 ```bash

@@ -42,5 +42,5 @@ Files: new `scripts/workbuddy-resource-native-demo.js`, shared native fixture/cl
 
 - [ ] Use isolated HOME/config/user-data roots and a local deterministic inference fixture. Skill and installed plugin prompts must omit the expected marker; require the native request to contain the installed Skill body.
 - [ ] Prove positive/negative stages for Skill and plugin behavior, and MCP native discovery/connect plus two real stdio tool calls. Record unsupported native entrypoints explicitly if the vendor lite runtime omits them.
-- [ ] Run the original Node suite, provider check and prior six-host aggregate. Review runtime/ownership changes before integration; fix Important findings.
+- [x] Run the original Node suite, provider check and prior aggregate. Review runtime/ownership changes before integration; fix Important findings.
 - [ ] Commit exact paths, integrate into main preserving peer changes, verify main and push. Preserve honest evidence boundaries for the other provider/site variants.

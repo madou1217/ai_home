@@ -359,6 +359,12 @@ func nativeCodebuddy() *NativeCapability {
 
 func nativeWorkbuddy() *NativeCapability {
 	native := nativeCodebuddy()
+	native.Plugins.Adapter = "native-marketplace"
+	native.MCP = NativeMCP{
+		Projection:  &NativeMCPProjection{Path: ".codebuddy.json", Format: "json-stdio"},
+		Commands:    []string{"mcp"},
+		ConfigFiles: []string{".codebuddy.json"},
+	}
 	native.Runtime = &NativeResourceRuntime{
 		Handler: "desktop-node",
 		Entry:   "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",

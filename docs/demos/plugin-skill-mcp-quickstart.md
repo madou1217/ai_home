@@ -10,6 +10,7 @@ node scripts/aih-portable-plugin-demo.js
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
 node scripts/mcp-native-demo.js
 node scripts/native-plugin-demo.js
+node scripts/workbuddy-resource-native-demo.js
 node scripts/native-plugin-use-demo.js codex
 node scripts/native-plugin-use-demo.js claude
 node scripts/pi-plugin-native-demo.js

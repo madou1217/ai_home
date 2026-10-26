@@ -176,15 +176,37 @@ The first subset supports declared `lifecycle@1` and `tool.register@1`; required
 unknown capabilities or adapter/transport versions are rejected. AIH tools map
 to `command` contributions, not an AIH model-selected tool registry. The common
 SDK publication, other Portable ports, hot upgrades and complete M1 migration
-remain separate work. The aggregate native demo now includes this sixth host.
+remain separate work. The aggregate native demo now includes this AIH host and
+the WorkBuddy provider runtime as a seventh resource lane.
 
 Independent review reproduced and closed two contract issues before integration:
 the reader now uses AIH's dotted IDs and artifact limits (a 5 MiB, 274-file
 package passed), and canonical transport 2 is checked against the real RPC
 contract independently of legacy manifest protocol 1. A changed virtual manifest
 byte fails digest verification. The corrected nine-stage Node 26 demo was also
-rerun independently. The final six-host aggregate and original 105-test Node 22
+rerun independently. The final seven-lane aggregate and original 105-test Node 22
 regression suite pass, with no new test files.
+
+### WorkBuddy native resource follow-up (2026-10-26)
+
+```sh
+node scripts/workbuddy-resource-native-demo.js
+```
+
+WorkBuddy AI 2.161.0 ships a CodeBuddy runtime inside the installed app. The
+descriptor selects its lite bundle through the declared bundled runtime handler;
+it is not misreported as a standalone CLI installation. The native plugin
+adapter owns an AIH marketplace and uses WorkBuddy's real marketplace registry,
+so the native `plugin list` row appears only after marketplace installation.
+Disable/uninstall, re-enable and marketplace removal are checked against the
+returned install path and owned package digest.
+
+The demo passes four plugin stages and four separate Skill stages. Positive
+stages send the installed body to a deterministic local fixture and return
+`AIH_PLUGIN_DEMO_OK` / `AIH_SKILL_DEMO_OK`; negative stages send neither. MCP
+uses the observed `.codebuddy.json` JSON-stdio projection, finds `aih_echo` and
+`aih_list_files`, performs a real `WORKBUDDY_MCP_OK` call, and verifies native
+MCP reports the server connected.
 
 The deterministic harness is:
 
@@ -355,9 +377,10 @@ has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](pro
 The CLI composition root now resolves these executables with the same
 `resolveProviderCliPath` facade used by native launches. Descriptor binary names
 and managed install roots are honored; a provider ID is not assumed to be its
-command name. The current machine resolves Codex, Claude, OpenCode and Cline.
-Other provider runtime rows remain unavailable until a native runtime can be
-resolved and its version probe succeeds; capability declarations are independent.
+command name. The current machine resolves Codex, Claude, OpenCode and Cline as
+standalone CLIs, plus WorkBuddy through its installed desktop bundle. Other
+provider runtime rows remain unavailable until a native runtime can be resolved
+and its version probe succeeds; capability declarations are independent.
 
 ## Final verification checkpoint (2026-10-26)
 
@@ -371,11 +394,12 @@ Fresh checks after removing those files: Node 22.21.0 original regression suite
 103 passed, 0 failed; AIH pack/install/enable/call/restart/disable/uninstall/doctor
 passed; Codex/Claude/OpenCode skill demos each passed four stages; the MCP demo
 passed native discovery/configuration plus two AIH stdio tool calls for each of
-Codex/Claude/OpenCode/Cline. The five-host native plugin aggregate passed,
+Codex/Claude/OpenCode/Cline. The native plugin aggregate passed across the
+original hosts plus WorkBuddy,
 including the OpenCode tool loop and Pi/DSH managed SDK execution described above.
 
 Integration into `main` preserved its concurrent changes. The integrated Node 22
-suite passes 105 tests, the five-host native aggregate passes again, provider
+ suite passes 105 tests, the seven-lane native aggregate passes again, provider
 contract generation/check passes, and native-plugin/skill/MCP CLI help exits
 successfully. Relative to the pre-integration `main`, this task changes no
 `web/` source or existing test file.
@@ -391,6 +415,7 @@ node scripts/skill-native-demo.js --provider codex --binary /Users/model/.codex/
 node scripts/skill-native-demo.js --provider opencode --binary /Users/model/Library/pnpm/bin/opencode
 node scripts/mcp-native-demo.js                    # Codex/Claude/OpenCode/Cline passed
 node scripts/native-plugin-demo.js                 # Codex/Claude/OpenCode passed
+node scripts/workbuddy-resource-native-demo.js     # WorkBuddy plugin/Skill/MCP passed
 node bin/ai-home.js provider doctor --json         # healthy, 16 providers, 4 host rows
 ```
 
@@ -407,6 +432,9 @@ Overall closure status is now:
   native use proven for Codex, Claude and OpenCode.
 - Managed MCP: complete for Codex, Claude, OpenCode and Cline; provider-specific
   account projection and native config loading proven.
+- WorkBuddy: native marketplace plugin, Skill and `.codebuddy.json` MCP execution
+  all pass isolated positive/negative or connected stages on the installed lite
+  runtime.
 - Native plugins: Codex/Claude bundled skills and the OpenCode shared-core tool
   loop pass all four stages. Pi/DSH unified host management, native SDK tools,
   cleanup and account-isolated launch propagation are runtime-proven above.
@@ -421,7 +449,7 @@ model-selected agent loops. The native SDK execution subset is proven separately
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
 (`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,
-`cordis-patch`).
+`cordis-patch`, `native-marketplace`).
 The manager contains no provider-name execution branches. Codex marketplace paths,
 OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
 snapshot tamper detection, and native remove/re-enable behavior were checked by

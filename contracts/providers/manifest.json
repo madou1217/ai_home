@@ -2330,13 +2330,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".codebuddy.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".codebuddy.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],

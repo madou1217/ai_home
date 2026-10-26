@@ -32,6 +32,13 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | pi | supported when runtime probe passes; otherwise runtime-unavailable | native_directory_tool_command_cleanup_verified; agent_loop_inference_not_verified | scripts/pi-plugin-native-demo.js --managed |
 | aih | supported | canonical_signed_artifact_and_shared_core_supervised_host_verified | scripts/aih-portable-plugin-demo.js |
 
+WorkBuddy provider runtime evidence (the static MCP state remains projection-only
+because the provider contract separates declaration from machine-specific execution):
+
+| Provider | Runtime | Plugin | Skill | MCP | Evidence |
+|---|---|---|---|---|---|
+| workbuddy | WorkBuddy AI 2.161.0 bundled CodeBuddy lite runtime | native marketplace + four-stage use | native skills + four-stage use | `.codebuddy.json`, native connected + stdio call | `scripts/workbuddy-resource-native-demo.js` |
+
 `provider doctor` adds a targeted installed-package discovery and real version
 probe for the external Pi/DSH harnesses. Absence from PATH is not proof that the
 runtime is absent. `runtime.available` is independent of management adapter

@@ -5,10 +5,12 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { createNativePluginManager } = require('../lib/native-resources/native-plugin-manager');
 const { findRuntimePackage } = require('../lib/native-resources/host-runtime-discovery');
 const { IMPORTED_HOSTS } = require('../lib/native-resources/provider-resource-doctor');
 const { runNativePrompt } = require('./skill-native-demo');
+const { preparePiHarness } = require('../lib/harness/pi');
 
 const MARKER = 'AIH_PLUGIN_DEMO_OK:portable-input';
 const MISSING = 'PLUGIN_NOT_LOADED';
@@ -48,21 +50,23 @@ async function runPiToolLoopDemo(runtimePackage) {
   try {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     fs.mkdirSync(agentDir, { recursive: true });
-    fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { fixture: {
-      baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: 'openai-completions', apiKey: 'fixture-key',
-      models: [{ id: 'demo', reasoning: false, contextWindow: 32000, maxTokens: 1024 }]
-    } } }));
-    const manager = createNativePluginManager({ aiHomeDir: path.join(root, 'aih'), hostHomeDir: home });
+    const aiHomeDir = path.join(root, 'aih');
+    const manager = createNativePluginManager({ aiHomeDir, hostHomeDir: home });
     const cli = path.join(runtimePackage, 'dist/bundle/cli.js');
     const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TERM: 'dumb', NO_PROXY: '127.0.0.1,localhost', PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', PI_TELEMETRY: '0' };
     const steps = [];
     for (const stage of ['enabled', 'disabled', 're-enabled', 'removed']) {
-      if (stage === 'enabled') manager.install(path.resolve(__dirname, '../examples/native-plugins/aih-demo'), { host: 'pi' });
-      if (stage === 'disabled') manager.disable('aih-demo', { host: 'pi' });
-      if (stage === 're-enabled') manager.enable('aih-demo', { host: 'pi' });
-      if (stage === 'removed') manager.remove('aih-demo', { host: 'pi' });
+      const action = { enabled: 'install', disabled: 'disable', 're-enabled': 'enable', removed: 'remove' }[stage];
+      const managed = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/ai-home.js'), 'native', 'plugin', action, action === 'install' ? path.resolve(__dirname, '../examples/native-plugins/aih-demo') : 'aih-demo', '--host', 'pi', '--json'], { cwd: root, env: { ...env, AIH_HOME_DIR: aiHomeDir }, encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
+      assert.equal(managed.status, 0, 'managed_cli_lifecycle_failed');
+      assert.equal(JSON.parse(managed.stdout).ok, true);
+      const prepared = await preparePiHarness({
+        aiHomeDir, hostHomeDir: home, accountRef: 'acct_demo', provider: 'codex', model: 'demo',
+        gateway: { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'fixture-key' },
+        catalog: { models: [{ id: 'demo', contextWindow: 32000, maxTokens: 1024 }] }
+      });
       observations.length = 0;
-      const result = await runNativePrompt(process.execPath, [cli, '--print', '--mode', 'json', '--no-session', '--no-builtin-tools', '--no-context-files', '--no-skills', '--no-prompt-templates', '--offline', '--provider', 'fixture', '--model', 'demo', 'Use the aih_demo tool if available.'], { cwd: root, env });
+      const result = await runNativePrompt(process.execPath, [cli, ...prepared.args, '--print', '--mode', 'json', '--no-session', '--no-builtin-tools', '--no-context-files', '--no-skills', '--no-prompt-templates', '--offline', 'Use the aih_demo tool if available.'], { cwd: root, env: { ...env, ...prepared.env } });
       assert.equal(result.exitCode, 0, 'pi_native_exit');
       assert.equal(result.timedOut, false, 'pi_native_timeout');
       assert.deepEqual(fixtureErrors, [], 'fixture_errors');
@@ -81,7 +85,7 @@ async function runPiToolLoopDemo(runtimePackage) {
       }
       assert.equal(text, expected ? MARKER : MISSING, 'native_final_answer');
       assert.equal(manager.doctor({ host: 'pi' }).healthy, true);
-      steps.push({ stage, requests: observations.length, toolSchema: expected, toolExecuted: Boolean(toolEvent), resultReturned: expected, finalAnswer: text, exitCode: result.exitCode, passed: true });
+      steps.push({ stage, managedCli: true, accountHarness: true, requests: observations.length, toolSchema: expected, toolExecuted: Boolean(toolEvent), resultReturned: expected, finalAnswer: text, exitCode: result.exitCode, passed: true });
     }
     return { host: 'pi', version: JSON.parse(fs.readFileSync(path.join(runtimePackage, 'package.json'))).version, inference: 'local-deterministic-tool-fixture', toolExecutionVerified: true, steps, passed: true };
   } finally {

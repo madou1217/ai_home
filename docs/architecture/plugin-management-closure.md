@@ -384,9 +384,11 @@ and its version probe succeeds; capability declarations are independent.
 
 ## Pi native CLI tool loop (2026-10-27)
 
-`node scripts/pi-plugin-tool-loop-demo.js` runs Pi 0.84.4 as a real child CLI
-with an isolated HOME and model configuration, the unchanged canonical demo
-package, and a local Chat Completions fixture. All four managed lifecycle stages
+`node scripts/pi-plugin-tool-loop-demo.js` invokes the actual AIH CLI host
+lifecycle, then runs Pi 0.84.4 with the exact account-specific arguments and
+environment returned by `preparePiHarness` for that same managed state. It uses
+an isolated HOME, the unchanged canonical demo package, and a local Chat
+Completions fixture. All four managed lifecycle stages
 pass. Enabled/re-enabled each require two requests, a native
 `tool_execution_end` event with the shared core result, the exact result in the
 next model request, and the final assistant message. Disabled/removed each send

@@ -189,7 +189,8 @@ node scripts/pi-plugin-native-demo.js --managed
 它同时验证 AIH 账号隔离的 Pi harness：启动参数只转发已启用且摘要未被修改的
 受管扩展路径；停用/移除后后续启动不再加载。
 
-该 probe 还会执行 `pi-plugin-tool-loop-demo.js`：真实 Pi CLI 使用本地模型
+该 probe 还会执行 `pi-plugin-tool-loop-demo.js`：每阶段通过真实 AIH CLI 管理
+插件，再用同一受管状态的 `preparePiHarness` 账号参数启动 Pi，以本地模型
 fixture 完成工具声明、调用、结果回传和最终回答。启用/重新启用各两次请求，
 停用/移除各一次请求且不含插件工具。可单独运行该脚本观察 JSON 结果；它不
 消耗上游额度，也不把 headless CLI 的通过宣称为 Pi TUI/RPC 验证。

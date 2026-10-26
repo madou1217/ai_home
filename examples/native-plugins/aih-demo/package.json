@@ -8,14 +8,41 @@
     "portableApiVersion": 1,
     "pluginId": "aih-demo",
     "core": "./dist/core.mjs",
-    "engines": { "deepseek": ">=0.2.1", "opencode": ">=1.17.0", "pi": ">=1.0.0", "aih": ">=1.0.0" },
-    "capabilities": [{ "id": "lifecycle", "version": 1, "required": true }, { "id": "tool.register", "version": 1, "required": false }],
-    "permissions": { "network": [], "filesystem": ["private-state"], "secrets": [] }
+    "engines": {
+      "deepseek": ">=0.2.1",
+      "opencode": ">=1.17.0",
+      "pi": ">=1.0.0",
+      "aih": ">=1.0.0"
+    },
+    "capabilities": [
+      {
+        "id": "lifecycle",
+        "version": 1,
+        "required": true
+      },
+      {
+        "id": "tool.register",
+        "version": 1,
+        "required": false
+      }
+    ],
+    "permissions": {
+      "network": [],
+      "filesystem": [
+        "private-state"
+      ],
+      "secrets": []
+    }
   },
   "exports": {
     ".": "./dist/core.mjs",
     "./opencode/server": "./dist/hosts/opencode-server.mjs",
-    "./pi": "./dist/hosts/pi.mjs"
+    "./pi": "./dist/hosts/pi.mjs",
+    "./deepseek": "./dist/hosts/deepseek.mjs"
   },
-  "pi": { "extensions": ["./dist/hosts/pi.mjs"] }
+  "pi": {
+    "extensions": [
+      "./dist/hosts/pi.mjs"
+    ]
+  }
 }

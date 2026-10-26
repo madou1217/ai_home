@@ -14,3 +14,10 @@ test('native plugin CLI performs local projection lifecycle and help', async (t)
  for(const command of ['list','doctor','disable','enable','remove']) { const args=['native','plugin',command,...(command==='list'||command==='doctor'?[]:['aih-demo']),'--provider','claude','--json']; assert.equal(await runNativePluginCommand(args,f.context),0); }
 });
 test('native plugin CLI rejects unsupported import and unknown options', async (t) => { const f=ctx(t); for(const args of [['install',fixture,'--provider','deepseek'],['install',fixture,'--provider','claude','--bad'],['list','--provider']]) assert.equal(await runNativePluginCommand(['native','plugin',...args,'--json'],f.context),1); });
+test('native plugin inspect/project reports DeepSeek and Pi projections without runtime claims', async (t) => {
+  const f=ctx(t); const outDir=path.join(f.context.aiHomeDir,'projected-deepseek');
+  assert.equal(await runNativePluginCommand(['native','plugin','inspect',fixture,'--host','deepseek','--json'],f.context),0);
+  const inspect=JSON.parse(f.out.at(-1)); assert.equal(inspect.hosts.deepseek.state,'projection-ready');
+  assert.equal(await runNativePluginCommand(['native','plugin','project',fixture,'--host','deepseek','--out',outDir,'--json'],f.context),0);
+  const result=JSON.parse(f.out.at(-1)); assert.equal(result.state,'projection-ready'); assert.equal(fs.existsSync(path.join(outDir,'host-projection.json')),true);
+});

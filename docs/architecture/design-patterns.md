@@ -366,3 +366,10 @@ looks up `nativeBoundary.plugins.adapter`; execution lives in
 branches from the manager and makes Codex marketplace, Claude skills-dir, OpenCode
 local package, and CodeBuddy native-directory projections independently testable.
 Fresh native plugin tests and demo passed after the refactor.
+
+Portable host conformance checkpoint: `lib/native-resources/portable-plugin-conformance.js`
+uses a Host Adapter Capability Matrix over one canonical `agentPlugin` package. It
+verifies DeepSeek, OpenCode, Pi and AIH entries, and `aih native plugin project`
+materializes a sanitized host projection report without pretending that an absent
+host runtime executed the plugin. `test/portable-plugin-conformance.test.js` covers
+missing entries and projection output.

@@ -150,7 +150,7 @@ The actual demo used isolated homes and real native binaries:
 | Claude Code | 2.1.310 | `plugin list --json` showed `aih-demo@skills-dir`; disable removed it | passed |
 | OpenCode | 1.17.18 | local package path projected into `opencode.json`; native executable accepted the config path and manager removed it | passed projection; plugin execution remains host-specific |
 | Pi | unavailable | package contains `pi.extensions` entry and shape is preserved | runtime-unavailable |
-| DeepSeek Harness | unregistered in AIH provider catalog | canonical `agentPlugin` fields are preserved; no DSH adapter/CLI was found | adapter-needed |
+| DeepSeek Harness | unregistered in AIH provider catalog | canonical `agentPlugin` fields and `./deepseek` host entry are projection-verified; no DSH adapter/CLI was found | projection-only / runtime adapter needed |
 
 `aih native plugin list/doctor` reports only metadata and redacts package
 arguments. User-owned files are preserved; edited owned projections fail closed.
@@ -201,10 +201,11 @@ Overall closure status is now:
   account projection and native config loading proven.
 - Native plugin projections: complete for Codex, Claude and OpenCode; the portable
   package also preserves Pi extension shape. Pi remains runtime-unavailable here.
-- DeepSeek: adapter-needed. Its Harness/Cordis profile and bundle projection are
-  documented in the universal design spec, but no DeepSeek host executable or
-  registered AIH provider adapter exists in this environment. The doctor reports
-  this explicitly instead of treating a package shape as runtime success.
+- DeepSeek: canonical projection is verified with `aih native plugin inspect`
+  and `aih native plugin project`; its Harness/Cordis runtime adapter remains
+  unavailable because no DeepSeek host executable or registered AIH provider
+  adapter exists in this environment. The doctor reports this explicitly instead
+  of treating package shape as runtime success.
 
 No claim of full cross-host parity is made for OpenCode TUI/RPC, Pi execution or
 DeepSeek Harness execution until those hosts are installed and exercised.
@@ -215,3 +216,18 @@ The manager contains no provider-name execution branches. Codex marketplace path
 OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
 snapshot tamper detection, and native remove/re-enable behavior are covered by the
 latest native plugin tests.
+
+Portable host import commands now make the remaining gap executable:
+
+```sh
+aih native plugin inspect examples/native-plugins/aih-demo --host deepseek --json
+aih native plugin project examples/native-plugins/aih-demo --host deepseek \
+  --out /tmp/aih-demo-deepseek --json
+aih native plugin inspect examples/native-plugins/aih-demo --host pi --json
+```
+
+The canonical fixture has `agentPlugin.engines.deepseek`, `exports["./deepseek"]`,
+`agentPlugin.engines.pi`, and `pi.extensions`. `project` writes a sanitized
+`host-projection.json` and copies the package. This proves imported host shape and
+projection while clearly leaving runtime execution for a machine with the actual
+DeepSeek Harness or Pi host.

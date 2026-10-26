@@ -295,6 +295,8 @@ type NativePlugins struct {
 
 // NativeSkills describes the native skill or instruction projection boundary.
 type NativeSkills struct {
+	// PathBase is native-root by default; host-home resolves home-relative projections.
+	PathBase string   `json:"pathBase,omitempty"`
 	Commands []string `json:"commands"`
 	Paths    []string `json:"paths"`
 	Mode     string   `json:"mode"`

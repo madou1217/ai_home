@@ -692,9 +692,12 @@
           "mode": ""
         },
         "skills": {
+          "pathBase": "host-home",
           "commands": null,
-          "paths": null,
-          "mode": ""
+          "paths": [
+            ".gemini/GEMINI.md"
+          ],
+          "mode": "projection-only"
         },
         "hooks": {
           "files": [

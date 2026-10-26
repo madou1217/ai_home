@@ -312,3 +312,20 @@ Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-clie
 - `npm run providers:audit` 显示该面的通道与依赖；CLI-only 必须带原因。
 - 该 provider 的**纯 API 路径有真实账号实测证据**（不是「应该可以」）。
 - 失败时账号页只呈现**原因**（结构化 reason + attempts）；不要给用户写「操作建议」——修复是开发者的责任，不是用户的作业。
+
+### Managed native skills (2026-10-26)
+
+- `lib/native-resources/skill-manager.js`: Facade coordinates install, enable,
+  disable, remove and doctor using the provider resource descriptor. Skills are
+  host-shared resources under the existing storage policy, not account credentials.
+- `skill-projections.js`: Strategy registry selects native directory or managed
+  instruction projection by mode. Ownership is checked against the accepted digest
+  before replacing or removing files; user changes fail closed and remain intact.
+- `managed-resource-store.js`: SQLite transaction serializes resource transitions
+  under `native-resources.managed.v1` in the existing app-state database. Disabled
+  and removed records remain durable so launch reconciliation cannot resurrect them.
+- `skill-package.js`: immutable content snapshot supports re-enable after the
+  original source disappears. Bounded package reading rejects symlinks.
+- Evidence: `node --test test/skill-manager.test.js test/native-resource-registry.test.js`
+  (12 passing); `npm run providers:check`. These prove management/projection,
+  not native model execution. CLI and native usage probes are separate gates.

@@ -110,6 +110,8 @@ func nativeAntigravity() *NativeCapability {
 				".agents/mcp_config.json",
 			},
 		},
+		// Existing AIH instruction projection; no claim of native skill execution.
+		Skills: NativeSkills{Paths: []string{".gemini/GEMINI.md"}, PathBase: "host-home", Mode: "projection-only"},
 		Hooks: NativeHooks{
 			Files: []string{
 				".gemini/config/hooks.json",

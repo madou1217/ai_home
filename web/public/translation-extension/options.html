@@ -20,6 +20,11 @@
 <div class="columns"><div><label for="target">译为</label><select id="target"><option value="zh-Hans">简体中文</option><option value="zh-Hant">繁體中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="es">Español</option></select></div><div><label for="mode">网页呈现</label><select id="mode"><option value="side-by-side">保留原文与译文</option><option value="replace">替换原文</option></select></div></div>
 <label class="toggle-row" for="autoCopy"><span>完成后自动复制<small>整页翻译全部完成后复制</small></span><input id="autoCopy" type="checkbox" role="switch"></label>
 </section>
+<section aria-labelledby="cache-heading">
+<div class="section-title"><h2 id="cache-heading">本机阅读缓存</h2><button id="clear-cache" class="text-button" type="button">清除缓存</button></div>
+<p id="cache-status" class="help" role="status">正在读取缓存…</p>
+<p class="help">刷新后继续已翻译的页面。译文仅保存在此浏览器，保留 7 天；清除后也会移除页面恢复记录。</p>
+</section>
 <footer><span id="status" role="status" aria-live="polite">设置仅影响之后发起的翻译</span><button id="save" class="primary" type="submit">保存设置</button></footer>
 </form><p class="shortcut">选中文字后右键翻译 · 整页翻译可停止或撤回</p>
 </main><script src="options.js"></script></body></html>

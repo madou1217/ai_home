@@ -8,7 +8,7 @@ const { defaultProviderResourceRegistry: registry } = require('../lib/native-res
 const SOURCE = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
 const CLIENTS = [
   { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', version: ['--version'], list: ['mcp', 'list'] },
-  { provider: 'claude', binary: '/Users/model/.local/bin/claude', version: ['--version'], list: ['mcp', 'list'] },
+  { provider: 'claude', binary: '/Users/model/.local/bin/claude', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./claude-mcp-tool-loop-demo').runClaudeMcpDemo },
   { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./opencode-mcp-tool-loop-demo').runOpenCodeMcpDemo },
   { provider: 'cline', binary: '/opt/homebrew/bin/cline', version: ['--version'], list: ['config', '--json'] }
 ];

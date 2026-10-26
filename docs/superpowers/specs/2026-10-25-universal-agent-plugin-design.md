@@ -566,3 +566,10 @@ OpenCode 1.17.18 additionally passes the actual native MCP model/tool loop throu
 back into model requests, native completion events, and all four management
 stages. This uses a local deterministic model fixture and does not extend the
 claim to other hosts, remote reasoning, or Web/TUI entrypoints.
+
+### Claude MCP runtime evidence update (2026-10-27)
+
+Claude Code 2.1.310 passes the native deferred MCP loop via
+`scripts/claude-mcp-tool-loop-demo.js`: ToolSearch, echo, file listing and correlated
+results across enable/disable/re-enable/remove. The deterministic local fixture
+proves actual native execution; remote inference and Web/TUI remain separate.

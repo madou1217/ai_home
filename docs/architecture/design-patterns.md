@@ -439,3 +439,11 @@ correlating results by call ID and checking native completion events. The aggreg
 `scripts/mcp-native-demo.js` selects this optional proof through a client descriptor
 callback. KISS/YAGNI keep this a focused conformance demo, not a new harness; DRY
 reuses the manager and existing MCP server, and SOLID keeps fixtures out of runtime.
+
+Claude native MCP evidence (2026-10-27): `scripts/claude-mcp-tool-loop-demo.js`
+uses the existing MCP Facade/config Strategy and models the native deferred-tool
+protocol in its local fixture. `scripts/mcp-native-demo.js` selects it through the
+existing descriptor callback, with no provider condition added to dispatch.
+The focused host demo keeps Anthropic event handling outside runtime modules;
+KISS/YAGNI avoid a new protocol framework, DRY reuses the manager/server, and SOLID
+keeps native conformance separate from resource lifecycle implementation.

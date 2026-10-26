@@ -303,3 +303,17 @@ node scripts/mcp-native-demo.js
 `MCP_NOT_LOADED`。这是本地确定性模型服务驱动的原生 MCP 调用，不需要真实
 账号或远程模型额度。已验证 OpenCode 1.17.18；其他宿主不会因此自动获得
 相同的原生 MCP 执行结论。
+
+## Claude 内部实际调用 MCP 工具
+
+```sh
+node scripts/claude-mcp-tool-loop-demo.js /absolute/path/to/claude
+node scripts/mcp-native-demo.js
+```
+
+Claude Code 2.1.310 的 MCP 工具采用延迟加载：demo 先通过原生 `ToolSearch`
+取得工具定义，再实际执行 `aih_echo`、`aih_list_files`，检查结果回传和最终
+回答。启用、重新启用要求四轮请求；停用、移除要求两个工具都消失，且只有
+一轮请求。全部在临时配置和工作目录内运行，使用本地协议 fixture，不需要
+真实账号或远程模型额度。总 demo 现在分别包含 Claude 和 OpenCode 的原生
+MCP 执行证据；其他宿主仍按各自已有证据报告。

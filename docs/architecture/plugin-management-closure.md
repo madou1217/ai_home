@@ -643,3 +643,26 @@ execution and result propagation, not remote-model reasoning or TUI/Web parity.
 Fresh evidence: `/tmp/aih-mcp-with-native-loop.json` passes Codex, Claude, OpenCode
 and Cline management/connection checks, and embeds all four passing OpenCode
 native-loop stages. The other three rows retain their earlier evidence limits.
+
+## Claude native MCP tool loop (2026-10-27)
+
+`node scripts/claude-mcp-tool-loop-demo.js [native-cli-path]` adds native Claude
+Code 2.1.310 MCP execution to the same aggregate `scripts/mcp-native-demo.js`.
+The initial request contains deferred MCP names rather than their schemas. The
+fixture follows the actual host protocol: invoke `ToolSearch` for the advertised
+echo/file-list tools, consume its result, invoke echo with a random nonce, invoke
+file listing, then check both returned results before emitting the final marker.
+
+Enabled and re-enabled stages require four requests, native ToolSearch output,
+both tool schemas, matching `tool_use_id` results, native non-error tool-result
+events, process success, and an exact final `AIH_NATIVE_MCP_OK`. Disabled/removed
+stages require one request, neither deferred name nor schema, no MCP result
+events and `MCP_NOT_LOADED`. A unique nonce-bearing file exists only in the
+temporary working directory. The native command authorizes only the two MCP tools
+through `--allowedTools`; it does not bypass all permissions. Managed config, HOME
+and working state are isolated and removed on exit.
+
+Evidence: `/tmp/aih-claude-mcp-loop.json` and the combined
+`/tmp/aih-mcp-claude-opencode-loops.json`. This establishes native execution with
+a deterministic local Anthropic protocol fixture, not remote-model reasoning,
+Web/TUI coverage or parity for other providers. No harness code is changed.

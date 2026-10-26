@@ -60,3 +60,8 @@ model/tool loop: `scripts/opencode-mcp-tool-loop-demo.js` requires two native to
 completion events and tool results returning to subsequent model requests, across
 all four management stages. The static projection-only descriptor state above
 is unchanged; machine/version evidence is recorded separately (OpenCode 1.17.18).
+
+Claude Code 2.1.310 also has native MCP execution evidence through
+`scripts/claude-mcp-tool-loop-demo.js`: deferred ToolSearch, echo, file listing,
+correlated results and four-stage lifecycle. The aggregate includes both Claude
+and OpenCode native loops; Codex/Cline rows retain their existing evidence scope.

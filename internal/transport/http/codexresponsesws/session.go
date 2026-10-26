@@ -54,6 +54,24 @@ func (session *managedSession) SetUpstream(
 	return true
 }
 
+// ReplaceUpstream swaps a closed model-bound peer for a new one while the
+// client WebSocket remains connected. Only the proxy's serialized switch path
+// calls this method, so an in-flight old peer cannot overwrite the replacement.
+func (session *managedSession) ReplaceUpstream(
+	upstream responseswebsocket.Connection,
+) bool {
+	if session == nil || upstream == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.closed {
+		return false
+	}
+	session.upstream = upstream
+	return true
+}
+
 // Client 返回客户端连接。
 func (session *managedSession) Client() responseswebsocket.Connection {
 	session.mu.Lock()
@@ -141,6 +159,11 @@ type pumpResult struct {
 	closeCode        websocket.StatusCode
 	closeReason      string
 	recordIncomplete bool
+	// modelSwitch is set when a completed serial turn starts with another
+	// model. The client socket stays open; the handler replaces the upstream
+	// model-bound connection and replays this full frame.
+	modelSwitch []byte
+	model       string
 }
 
 // pumpClientToUpstream 保持文本帧字节不变，并在写入前验证串行模型绑定。
@@ -173,6 +196,17 @@ func pumpClientToUpstream(
 			return
 		}
 		if err := observer.Begin(payload); err != nil {
+			if errors.Is(err, ErrModelChanged) {
+				request, parseErr := parseClientFrame(payload)
+				if parseErr == nil && request.Model != "" {
+					results <- pumpResult{
+						source:      pumpSourceClient,
+						modelSwitch: append([]byte(nil), payload...),
+						model:       request.Model,
+					}
+					return
+				}
+			}
 			code := "invalid_response_create"
 			message := "请求必须是同模型的串行 response.create"
 			if errors.Is(err, ErrConcurrentTurn) {

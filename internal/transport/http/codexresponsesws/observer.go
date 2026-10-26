@@ -64,12 +64,21 @@ func newTurnObserver(
 
 // Begin 校验后续每轮仍使用同一模型，并拒绝同连接并行请求。
 func (observer *turnObserver) Begin(payload []byte) error {
+	if observer == nil {
+		return ErrInvalidObserverState
+	}
 	request, err := parseClientFrame(payload, observer.model)
-	if err != nil || observer == nil || request.Model != observer.model {
+	if err != nil {
 		return ErrInvalidClientFrame
 	}
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
+	if request.Model != observer.model {
+		if observer.active {
+			return ErrConcurrentTurn
+		}
+		return ErrModelChanged
+	}
 	if observer.active {
 		return ErrConcurrentTurn
 	}

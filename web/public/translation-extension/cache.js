@@ -65,7 +65,8 @@ export function createTranslationCache(storage, now = () => Date.now()) {
     getPage: (urlKey, profile) => serial(async () => {
       const state = await load();
       const page = state.pages[urlKey];
-      return fresh(page) && page.profile === profile ? { target: page.target, mode: page.mode, profile: page.profile } : null;
+      return fresh(page) && (!profile || page.profile === profile) && state.entries.some(fresh)
+        ? { target: page.target, mode: page.mode, profile: page.profile } : null;
     }),
     setPage: (urlKey, page, isCurrent = () => true) => serial(async () => {
       const state = await load();

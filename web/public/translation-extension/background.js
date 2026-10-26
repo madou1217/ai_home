@@ -3,7 +3,7 @@ import { createTranslationCache, translationHash } from './cache.js';
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
-const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'solid' };
+const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'plain' };
 let clipboardQueue = Promise.resolve();
 const translationRequests = new Map();
 const resultCache = createTranslationCache(chrome.storage.local);
@@ -11,6 +11,7 @@ const operationProfiles = new Map();
 const pendingPages = new Map();
 const cancelledOperations = new Map();
 const pageRevisions = new Map();
+const pageOperations = new Map();
 let cacheGeneration = 0;
 let nextPageRevision = 0;
 
@@ -29,7 +30,7 @@ async function resolveCacheProfile(config, sender, operationId, operation = 'sel
   const endpoint = String(config.endpoint || '').replace(/\/$/, '');
   const base = await translationHash(JSON.stringify(['translation-v1', endpoint, config.token || '', config.model || '', config.provider || '', config.target, config.mode]));
   if (config.model) return { profile: base, model: config.model, provider: config.provider || '' };
-  const operationKey = operationId ? `${taskKey(sender, operationId)}:${base}` : '';
+  const operationKey = operationId ? `${taskKey(sender, operationId)}:${operation}:${base}` : '';
   if (operationKey && operationProfiles.has(operationKey)) return operationProfiles.get(operationKey);
   const lookup = (async () => {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 2000);
@@ -38,16 +39,20 @@ async function resolveCacheProfile(config, sender, operationId, operation = 'sel
       const responses = await Promise.all(['models', 'settings'].map((resource) => fetch(`${endpoint}/v0/webui/translation/${resource}`, { headers, signal: controller.signal })));
       if (responses.some((response) => !response.ok)) return null;
       const [catalog, preferences] = await Promise.all(responses.map((response) => response.json()));
-      if (!catalog.defaultModel) return null;
       const routes = preferences.settings?.routes || [];
       const operationRoutes = routes.filter((route) => route && route.enabled !== false
-        && (!Array.isArray(route.operations) || route.operations.includes(operation)));
+        && (Array.isArray(route.operations) ? route.operations : ['selection']).includes(operation))
+        .sort((left, right) => (Number(left.priority) || 0) - (Number(right.priority) || 0));
       const selected = operationRoutes.find((route) => String(route.model || '').trim());
+      // A nonempty route chain with no matching operation is not the catalog
+      // default. Leave legacy/unknown migration semantics uncached safely.
+      if (routes.length && !selected) return null;
       const model = String(selected?.model || catalog.defaultModel || '').trim();
-      const provider = String(selected?.modelProvider || selected?.provider || catalog.defaultProvider || '').trim();
+      const provider = String(selected ? selected.modelProvider || '' : catalog.defaultProvider || '').trim();
+      const routeProvider = String(selected?.provider || '').trim();
       if (!model) return null;
       const profile = await translationHash(JSON.stringify([base, model, provider, operationRoutes]));
-      return { profile, model, provider };
+      return { profile, model, provider, routeProvider };
     } catch { return null; }
     finally { clearTimeout(timer); }
   })();
@@ -69,19 +74,34 @@ async function pageState(message, sender) {
   const url = pageURL(sender);
   if (!url) return { ok: false, state: null };
   if (message.action === 'clear') {
+    const currentOperation = pageOperations.get(url);
+    if (message.operationId && currentOperation && currentOperation !== taskKey(sender, message.operationId)) return { ok: true, state: null };
     advancePageRevision(url);
+    pageOperations.delete(url);
     for (const [key, pending] of pendingPages) if (pending.url === url) pendingPages.delete(key);
     await resultCache.clearPage(await translationHash(url));
     return { ok: true, state: null };
   }
   const operationKey = message.operationId ? taskKey(sender, message.operationId) : '';
+  if (message.action === 'set' && operationKey && cancelledOperations.has(operationKey)) return { ok: false, state: null };
   const cancelEpoch = operationKey ? (cancelledOperations.get(operationKey) || 0) : 0;
   const revision = message.action === 'set' ? advancePageRevision(url) : pageRevisions.get(url) || 0;
   const generation = cacheGeneration;
+  const preparing = message.action === 'set' && operationKey ? { url, revision, generation } : null;
+  if (preparing) {
+    pendingPages.set(operationKey, preparing); pageOperations.set(url, operationKey);
+    while (pendingPages.size > 128) pendingPages.delete(pendingPages.keys().next().value);
+    while (pageOperations.size > 256) pageOperations.delete(pageOperations.keys().next().value);
+  }
+  if (message.action === 'get' && !await resultCache.getPage(await translationHash(url))) return { ok: true, state: null };
   const config = await settings();
   const context = await resolveCacheProfile(config, sender, message.operationId, 'page');
   if (operationKey && cancelEpoch !== (cancelledOperations.get(operationKey) || 0)) return { ok: false, state: null };
-  if (!context || generation !== cacheGeneration || (pageRevisions.get(url) || 0) !== revision) return { ok: true, state: null };
+  if (preparing && pendingPages.get(operationKey) !== preparing) return { ok: false, state: null };
+  if (!context || generation !== cacheGeneration || (pageRevisions.get(url) || 0) !== revision) {
+    if (preparing && pendingPages.get(operationKey) === preparing) pendingPages.delete(operationKey);
+    return { ok: true, state: null };
+  }
   if (message.action === 'get') {
     const state = await resultCache.getPage(await translationHash(url), context.profile);
     return { ok: true, state: generation === cacheGeneration && (pageRevisions.get(url) || 0) === revision ? state : null };
@@ -238,6 +258,7 @@ async function translate(request, sendResponse, sender) {
     let streamMeta = null;
     let completedModel = '';
     let completedProvider = '';
+    let completedRouteProvider = '';
     let sawStart = false;
     let sawDone = false;
     let streamError = null;
@@ -273,6 +294,7 @@ async function translate(request, sendResponse, sender) {
       } else if (event.type === 'attempt_start') {
         completedModel = String(event.model || completedModel);
         completedProvider = String(event.modelProvider || '');
+        completedRouteProvider = String(event.provider || '');
       } else if (event.type === 'delta') {
         output += String(event.content || '');
         publishProgress(!publishedText);
@@ -316,7 +338,9 @@ async function translate(request, sendResponse, sender) {
     if (!output.trim()) return sendResponse({ ok: false, error: '翻译服务返回空结果' });
     // A fallback that actually used another model must not masquerade as the
     // configured default on the next operation's cache lookup.
-    const matchesModel = cacheContext && completedModel === cacheContext.model && (!cacheContext.provider || completedProvider === cacheContext.provider);
+    const matchesModel = cacheContext && completedModel === cacheContext.model
+      && (!cacheContext.provider || completedProvider === cacheContext.provider)
+      && (!cacheContext.routeProvider || completedRouteProvider === cacheContext.routeProvider);
     let cacheStored = false;
     if (cacheKey && matchesModel && generation === cacheGeneration) {
       cacheStored = await resultCache.write(cacheKey, { text: output, meta: streamMeta }, () => !controller.signal.aborted && generation === cacheGeneration).catch(() => false);

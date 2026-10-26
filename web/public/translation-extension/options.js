@@ -1,6 +1,20 @@
 /* global chrome, document, URL, AbortController, setTimeout, clearTimeout, fetch */
-const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'solid' };
+const defaults = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3, theme: 'plain' };
 const field = (id) => document.getElementById(id);
+const readingThemes = globalThis.AIHReadingThemes;
+for (const theme of readingThemes.list) {
+  const option = document.createElement('option'); option.value = theme.id; option.textContent = theme.label; field('theme').append(option);
+}
+const preview = readingThemes.mount(field('theme-preview'));
+const sample = document.createElement('div'); sample.className = 'content translation'; sample.dir = 'auto';
+sample.textContent = '让译文自然融入阅读。长段落会随页面宽度换行，保留清晰的行距与原文结构。\nRead comfortably, one paragraph at a time.';
+preview.body.append(sample);
+function updateThemePreview() {
+  const theme = readingThemes.normalize(field('theme').value); preview.setTheme(theme);
+  field('theme-description').textContent = readingThemes.list.find((item) => item.id === theme).description;
+}
+field('theme').onchange = updateThemePreview;
+updateThemePreview();
 let modelCatalog = [];
 let catalogRequest = 0;
 let catalogController = null;
@@ -80,7 +94,7 @@ field('settings-form').onsubmit = async (event) => {
   try {
     const endpoint = validEndpoint(); const model = selection();
     if (field('model').value === 'manual' && !model.model) throw new Error('请填写模型 ID，或选择 Server 默认模型');
-    await Promise.all([chrome.storage.sync.set({ endpoint, target: field('target').value, mode: field('mode').value, concurrency: Number(field('concurrency').value) || 3, theme: field('theme').value, autoCopy: field('autoCopy').checked, ...model }), chrome.storage.local.set({ token: field('token').value.trim() })]);
+    await Promise.all([chrome.storage.sync.set({ endpoint, target: field('target').value, mode: field('mode').value, concurrency: Number(field('concurrency').value) || 3, theme: readingThemes.normalize(field('theme').value), autoCopy: field('autoCopy').checked, ...model }), chrome.storage.local.set({ token: field('token').value.trim() })]);
     field('status').textContent = '已保存 · 下次翻译立即生效'; field('save').textContent = '已保存';
   } catch (error) { field('status').textContent = error.message || '保存失败，请重试'; field('save').textContent = '重新保存'; }
   finally { field('save').disabled = false; }
@@ -88,6 +102,6 @@ field('settings-form').onsubmit = async (event) => {
 Promise.all([chrome.storage.sync.get({ endpoint: defaults.endpoint, target: defaults.target, mode: defaults.mode, concurrency: defaults.concurrency, theme: defaults.theme, autoCopy: defaults.autoCopy, model: defaults.model, provider: defaults.provider }), chrome.storage.local.get({ token: defaults.token })]).then(([shared, privateState]) => {
   const settings = { ...defaults, ...shared, ...privateState };
   for (const name of ['endpoint', 'token', 'target', 'mode']) field(name).value = settings[name];
-  field('concurrency').value = String(Math.max(1, Math.min(8, Number(settings.concurrency) || 3))); field('theme').value = settings.theme || defaults.theme; field('autoCopy').checked = settings.autoCopy === true; selectedModel = { model: settings.model, provider: settings.provider };
+  field('concurrency').value = String(Math.max(1, Math.min(8, Number(settings.concurrency) || 3))); field('theme').value = readingThemes.normalize(settings.theme); updateThemePreview(); field('autoCopy').checked = settings.autoCopy === true; selectedModel = { model: settings.model, provider: settings.provider };
   fillModels({}); void refreshModels();
 }).catch(() => { field('status').textContent = '无法读取设置，请重新打开扩展'; });

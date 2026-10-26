@@ -34,7 +34,7 @@ Files: new `native-plugin-adapters/native-marketplace.js`, adapter registry, pro
 - [x] Disable/re-enable through native disable/enable, preserving data. Remove through native uninstall with `--keep-data`, marketplace removal and owned-cache cleanup. Reject modified owned packages, marketplace manifests or foreign registrations. Accept only the observed native `.orphaned_at` timestamp after uninstall.
 - [x] Handle the prior directory-only record as an explicit legacy projection: allow owned cleanup/migration on reinstall, never report it as a native installation.
 - [x] Declare `.codebuddy.json` with the proven `json-stdio` codec. Verify managed global MCP projection through native list/connect and actual AIH stdio tool calls.
-- [ ] Exercise install, disable, re-enable and remove with the real bundled runtime, then commit.
+- [x] Exercise install, disable, re-enable and remove with the real bundled runtime, then commit. Follow-up checkpoints cover multi-plugin ownership, legacy migration, version replacement and invalid-upgrade preflight.
 
 ## Task 3: Actual use demos and delivery
 

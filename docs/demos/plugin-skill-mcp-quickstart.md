@@ -205,6 +205,36 @@ profile 的 `--patch` 参数使用。AIH 的 DSH 账号启动会自动携带已�
 probe 验证原生 profile composition、真实 boot/Loader/ToolRuntime 和清理，
 支持依赖已打包的 portable adapter 包；任意第三方 bundle 仍由 DSH 原生包管理器安装。
 
+## WorkBuddy AI 插件、Skill 和 MCP
+
+已安装的 WorkBuddy AI 桌面包提供内嵌资源运行时，无需另装 standalone CLI。
+AIH 按描述符找到该入口，并保持 WorkBuddy AI 与国内版的配置目录隔离。
+使用同一份 canonical 插件包：
+
+```bash
+aih native plugin install examples/native-plugins/aih-demo --provider workbuddy --json
+aih native plugin doctor --provider workbuddy --json
+aih native plugin disable aih-demo --provider workbuddy --json
+aih native plugin enable aih-demo --provider workbuddy --json
+aih native plugin remove aih-demo --provider workbuddy --json
+```
+
+安装后在新的原生会话输入 `/aih-demo`。安装独立 Skill 时使用
+`aih skill install assets/provider-skills/aih-demo --provider workbuddy --json`，
+同样用 `/aih-demo` 调用；演示将插件和独立 Skill 分阶段安装以避免同名覆盖。
+MCP 使用上面的 `aih mcp` 命令，将 `--provider` 改为 `workbuddy`。
+
+```bash
+node scripts/workbuddy-resource-native-demo.js
+```
+
+该脚本在隔离 HOME 中验证插件、独立 Skill 各四个阶段，检查每次原生请求和
+最终响应；随后验证原生 MCP Connected，并实际调用 `aih_echo` 与
+`aih_list_files`。推理服务为本地 fixture，MCP 工具调用由 AIH stdio client
+执行，因此这条证据不代表 WorkBuddy 模型自主选择 MCP 工具。
+禁用保留插件安装和数据；移除使用原生 `--keep-data`。
+升级使用同一 plugin ID 的新版本包，清单错误或目标冲突会在删除旧版本前拒绝。
+
 ## 查看所有 provider 的真实边界
 
 ```bash

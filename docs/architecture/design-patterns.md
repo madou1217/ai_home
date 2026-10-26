@@ -15,6 +15,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `lib/plugins/control/source-manifest.js` + artifact/CLI + canonical AIH entry | **Projection + Adapter + Scoped Resource** | 单一 canonical 声明生成 AIH 原生清单，虚拟文件只进制品；AIH 入口将 shared core 工具映射为受管 command contribution，复用签名、权限和 Host 代次 | 真实 CLI validate/load/signed pack、监督 Host 调用/停用/重启/移除；源目录摘要不变；旧 Echo 制品链回归 |
 | `lib/cli/app.js` provider resource context | **Facade** | provider doctor 和资源管理复用原生 CLI 定位门面，按描述符二进制别名及受管路径定位，不把 provider ID 当作可执行文件名 | 真实 provider doctor、CLI help、现有 Node 回归 |
 | `scripts/opencode-plugin-native-demo.js` + aggregate native demo | **Adapter + Contract Probe** | 使用同一 canonical 包，按 OpenCode 原生工具轮验证 schema、执行事件和结果回传；关闭子进程 stdin，使非交互输入生命周期完整 | OpenCode 1.17.18/1.18.18 四阶段真实 CLI + 本地确定性 fixture；Node 22/26 |
 | `native-plugin-adapters/cordis-patch.js` + DSH harness launchers | **Adapter + Owned Projection + Scope** | canonical 包的 DeepSeek 入口生成受管绝对路径 patch；目录与 patch 双摘要校验，启停与账号启动共用声明式 `--patch` 投影，不修改原生 profile 的用户层 | 真实 AIH CLI 四阶段、原生 DSH dump/boot/Loader/ToolRuntime、账号参数检查、scope dispose 与修改后拒绝 |

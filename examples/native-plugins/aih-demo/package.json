@@ -15,6 +15,15 @@
       "pi": ">=0.84.4",
       "aih": ">=1.0.0"
     },
+    "hosts": {
+      "aih": {
+        "hostAdapterApiVersion": 1,
+        "transportProtocolVersion": 1,
+        "contributes": [
+          { "id": "aih-demo.tool.aih_demo", "capability": "command", "version": 1 }
+        ]
+      }
+    },
     "capabilities": [
       {
         "id": "lifecycle",
@@ -40,6 +49,7 @@
     "./server": "./dist/hosts/opencode-server.mjs",
     "./opencode/server": "./dist/hosts/opencode-server.mjs",
     "./pi": "./dist/hosts/pi.mjs",
+    "./aih": "./dist/hosts/aih.mjs",
     "./deepseek": "./dist/hosts/deepseek.mjs"
   },
   "pi": {

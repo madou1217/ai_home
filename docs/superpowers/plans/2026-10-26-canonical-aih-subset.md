@@ -36,11 +36,11 @@
 - Supported required portable capability pairs are `lifecycle@1` and `tool.register@1`. Missing optional capabilities do not create fake ports.
 - Artifact file reading uses an explicit Buffer for virtual `plugin.json`; ordinary files retain existing source-file digest handling.
 
-- [ ] Reproduce the current failure with real `aih plugin validate examples/native-plugins/aih-demo --json` (`plugin_manifest_missing`).
-- [ ] Implement the focused reader and artifact virtual-file path, preserving legacy source behavior.
-- [ ] Add the sample AIH adapter and canonical metadata, then run real `validate --load`, `pack`, and artifact inspection; verify the source still has no `plugin.json`.
-- [ ] Use temporary package copies to check missing AIH export, unsupported required capability, permission scope and version rejection; create no test files.
-- [ ] Run existing Node regression and legacy Echo runtime demo, inspect staged paths and commit.
+- [x] Reproduce the current failure with real `aih plugin validate examples/native-plugins/aih-demo --json` (`plugin_manifest_missing`).
+- [x] Implement the focused reader and artifact virtual-file path, preserving legacy source behavior.
+- [x] Add the sample AIH adapter and canonical metadata, then run real `validate --load`, `pack`, and artifact inspection; verify the source still has no `plugin.json`.
+- [x] Use temporary package copies to check missing AIH export, unsupported required capability, permission scope and version rejection; create no test files.
+- [x] Run existing Node regression and legacy Echo runtime demo, inspect staged paths and commit.
 
 ## Task 2: Same-package lifecycle evidence and documentation
 

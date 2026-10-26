@@ -411,11 +411,27 @@ Node 22.23.2 and Node 26.12.1. No test files or web source were added or changed
 
 Independent review found the malformed-registry issue and a Codex macOS
 `/tmp`/`/private/tmp` path-normalization regression; both were corrected, and the
-reviewer independently re-ran the Codex lifecycle successfully. The review
-service failed before a final full re-review, so this checkpoint is not recorded
-as independently approved. Integration/push and the remaining provider gaps are
-still outstanding; the seven demonstrated lanes do not establish all-provider
-closure or model-driven MCP tool selection on WorkBuddy.
+reviewer independently re-ran those cases successfully. Follow-up review also
+reproduced a version replacement defect: the new package had been used to verify
+the old marketplace. The manager now supplies the verified old snapshot for
+cleanup and delegates marketplace replacement to its adapter. A real
+`1.0.0` to `1.0.1` upgrade passed. A foreign new-version target is rejected before
+removing the old installation; independent verification preserved both the old
+healthy installation and the foreign sentinel.
+
+Malformed native manifests exposed another vendor behavior: native validation
+can succeed, install records an `unknown` version, and native list hides that
+broken row. AIH now parses the immutable package's native manifest and requires
+its name/version to match the canonical package before mutation. A fresh invalid
+upgrade probe confirmed rejection with the previous installation still healthy.
+Replacement includes best-effort compensation for runtime failures, but arbitrary
+mid-command failures are not claimed to be transactionally reversible.
+
+After merging concurrent main changes into the existing worktree, the original
+suite now has 111 passing checks on Node 22.23.2, all seven aggregate lanes pass,
+and provider contract/help/doctor checks pass. Integration/push and remaining
+provider gaps are still outstanding; these seven lanes do not establish
+all-provider closure or model-driven MCP tool selection on WorkBuddy.
 
 ## Earlier verification checkpoint (2026-10-26)
 

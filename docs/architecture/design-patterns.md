@@ -16,6 +16,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
 | `nativeBoundary.runtime` + provider facade + `provider-native-runtime.js` | **Descriptor + Strategy Registry + Facade** | 原生资源命令按声明选择独立 CLI 或桌面内嵌 Node 入口；WorkBuddy lite bundle flag 随描述符传递，资源运行时与用户 CLI 分开表达 | 真实 WorkBuddy AI 2.161.0 version/help；doctor 显示 desktop-node 来源；既有回归与 provider 合同检查 |
+| `native-plugin-manager.js` + marketplace adapter `replace` | **Strategy + Compensating Action** | 管理器将版本替换委托给拥有原生生命周期的适配器；旧快照用于旧资源校验，新包在任何破坏性步骤前校验清单与目标冲突，运行失败时尝试恢复旧状态 | 真实版本升级成功；坏清单与外来目标在旧插件仍健康时拒绝；补偿不宣称跨 SQLite/原生命令的原子事务 |
 | `native-plugin-adapters/native-marketplace.js` + `marketplace-ownership.js` + WorkBuddy demo | **Owned Projection + Native Facade** | canonical 包进入厂商 marketplace 后才声明原生安装成功；市场按 AIH home/provider/plugin 隔离，归属策略集中校验完整目录摘要和原生登记文件；原生 disable/enable 保留数据，卸载只接受已观测的时间戳元数据 | WorkBuddy 插件/Skill 四阶段、MCP connected 和两次 tool call；隔离运行验证双插件、外部禁用恢复、禁用后卸载、旧投影迁移及损坏/外来状态拒绝 |
 | `lib/plugins/control/source-manifest.js` + artifact/CLI + canonical AIH entry | **Projection + Adapter + Scoped Resource** | 单一 canonical 声明生成 AIH 原生清单，虚拟文件只进制品；AIH 入口将 shared core 工具映射为受管 command contribution，复用签名、权限和 Host 代次 | 真实 CLI validate/load/signed pack、监督 Host 调用/停用/重启/移除；源目录摘要不变；旧 Echo 制品链回归 |
 | `lib/cli/app.js` provider resource context | **Facade** | provider doctor 和资源管理复用原生 CLI 定位门面，按描述符二进制别名及受管路径定位，不把 provider ID 当作可执行文件名 | 真实 provider doctor、CLI help、现有 Node 回归 |

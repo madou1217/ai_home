@@ -3,7 +3,7 @@ import { createTranslationCache, translationHash } from './cache.js';
 const MENU_SELECTION = 'aih-translation-selection';
 const MENU_PAGE = 'aih-translation-page';
 
-const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '' };
+const DEFAULTS = { endpoint: 'http://127.0.0.1:9527', token: '', target: 'zh-Hans', mode: 'side-by-side', autoCopy: false, model: '', provider: '', concurrency: 3 };
 let clipboardQueue = Promise.resolve();
 const translationRequests = new Map();
 const resultCache = createTranslationCache(chrome.storage.local);
@@ -120,7 +120,7 @@ function translationFailure(status, message, errorCode = '') {
 
 async function settings() {
   const [shared, privateState] = await Promise.all([
-    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy, model: DEFAULTS.model, provider: DEFAULTS.provider }),
+    chrome.storage.sync.get({ endpoint: DEFAULTS.endpoint, target: DEFAULTS.target, mode: DEFAULTS.mode, autoCopy: DEFAULTS.autoCopy, model: DEFAULTS.model, provider: DEFAULTS.provider, concurrency: DEFAULTS.concurrency }),
     chrome.storage.local.get({ token: DEFAULTS.token })
   ]);
   return { ...DEFAULTS, ...shared, ...privateState };
@@ -242,11 +242,18 @@ async function translate(request, sendResponse, sender) {
     let sawDone = false;
     let streamError = null;
     let lastProgressAt = 0;
+    let progressSequence = 0;
+    let publishedText = '';
     const publishProgress = (force = false) => {
-      if (request.operation !== 'selection' || !sender.tab?.id) return;
+      if (!['selection', 'page'].includes(request.operation) || !sender.tab?.id || controller.signal.aborted) return;
       if (!force && Date.now() - lastProgressAt < 70) return;
       lastProgressAt = Date.now();
-      void chrome.tabs.sendMessage(sender.tab.id, { type: 'aih-translation-progress', operationId: request.operationId, text: output, meta: streamMeta }, { frameId: sender.frameId || 0 }).catch(() => {});
+      publishedText = output;
+      void chrome.tabs.sendMessage(sender.tab.id, {
+        type: 'aih-translation-progress', operationId: request.operationId,
+        ...(request.segmentId ? { segmentId: request.segmentId } : {}),
+        sequence: ++progressSequence, text: output, meta: streamMeta
+      }, { frameId: sender.frameId || 0 }).catch(() => {});
     };
     const handleEvent = (event) => {
       if (!event || typeof event !== 'object') return;
@@ -268,10 +275,11 @@ async function translate(request, sendResponse, sender) {
         completedProvider = String(event.modelProvider || '');
       } else if (event.type === 'delta') {
         output += String(event.content || '');
-        publishProgress();
+        publishProgress(!publishedText);
       } else if (event.type === 'done') {
         sawDone = true;
         if (event.text !== undefined && event.text !== null) output = String(event.text);
+        publishProgress(true);
       } else if (event.type === 'error') {
         streamError = translationFailure(event.status, event.message || '翻译失败', event.code);
       }
@@ -334,6 +342,10 @@ async function translate(request, sendResponse, sender) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'aih-translation-preferences') {
+    void settings().then((config) => sendResponse({ ok: true, concurrency: Math.max(1, Math.min(8, Math.floor(Number(config.concurrency) || 3))) }));
+    return true;
+  }
   if (message?.type === 'aih-page-translation-state') {
     void pageState(message, sender).then(sendResponse).catch(() => sendResponse({ ok: false, state: null }));
     return true;

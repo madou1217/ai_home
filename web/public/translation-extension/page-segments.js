@@ -118,13 +118,20 @@
     const dot = document.createElement('span'); dot.className = 'dot'; dot.setAttribute('aria-hidden', 'true');
     const label = document.createElement('span'); status.append(dot, label);
     const bars = document.createElement('div'); bars.className = 'bars'; bars.setAttribute('aria-hidden', 'true');
+    let content = null;
     for (let index = 0; index < 2; index += 1) { const bar = document.createElement('div'); bar.className = 'bar'; bars.append(bar); }
     shell.body.append(status, bars);
     const update = (value = {}) => {
       if (!shell.current()) return;
       const state = value.state || 'pending';
       label.textContent = value.text || ({ pending: '等待翻译', loading: '正在生成译文…', error: '翻译失败，可重试', stopped: '翻译已停止' }[state] || '等待翻译');
-      bars.hidden = !['pending', 'loading'].includes(state);
+      bars.hidden = !['pending', 'loading'].includes(state) || Boolean(value.content);
+      if (typeof value.content === 'string') {
+        if (!content) { content = document.createElement('div'); content.className = 'content'; shell.body.append(content); }
+        const previous = content.textContent;
+        if (content.firstChild && value.content.startsWith(previous)) content.firstChild.appendData(value.content.slice(previous.length));
+        else content.textContent = value.content;
+      }
     };
     update();
     return { update, remove: shell.remove };

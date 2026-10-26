@@ -2,6 +2,7 @@
 (() => {
   const ROOT_ATTR = 'data-aih-translation-extension';
   let active = null;
+  const pageStreams = new Map();
   let selectionProgress = null;
   let operationSerial = Date.now();
   let activeCleanup = () => {};
@@ -66,7 +67,7 @@
       const actions = document.createElement('footer'); actions.append(again); body.append(actions);
     };
     footer.append(stop); body.replaceChildren(status, skeleton, output, footer);
-    selectionProgress = { operationToken, body, status, output, skeleton };
+    selectionProgress = { operationToken, body, status, output, skeleton, sequence: 0 };
   }
 
   const languageNames = new Intl.DisplayNames(['zh-CN'], { type: 'language' });
@@ -131,7 +132,8 @@
       ...(options.source ? { source: options.source } : {}),
       ...(options.target ? { target: options.target } : {}),
       ...(options.targetPolicy ? { targetPolicy: options.targetPolicy } : {}),
-      ...(options.restoring ? { restoring: true } : {})
+      ...(options.restoring ? { restoring: true } : {}),
+      ...(options.segmentId ? { segmentId: options.segmentId } : {})
     }, (response) => { const error = chrome.runtime.lastError; resolve(response || { ok: false, fatal: true, error: error?.message || '扩展无法连接到翻译服务' }); }));
   }
 
@@ -244,16 +246,22 @@
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
     let pageAutoCopyEligible = true; let pageCopyDone = false;
     let fatalError = ''; let cancelled = false;
-    let pageLanguage = '';
-    const concurrency = 3;
+    let concurrency = 3;
+    let requestSequence = 0;
     const progress = statusLine('准备翻译页面…', true);
     const progressBar = document.createElement('progress'); progressBar.setAttribute('aria-label', '页面翻译进度');
     const pageActions = document.createElement('footer');
     const stop = document.createElement('button'); stop.type = 'button'; stop.textContent = '停止';
-    stop.onclick = () => { cancelled = true; stopRequested = true; cancelTranslation(operationToken); void pageState('clear', { operationId: operationToken }); stop.disabled = true; stop.textContent = '正在停止…'; };
+    stop.onclick = () => { cancelled = true; stopRequested = true; clearStreams(); cancelTranslation(operationToken); void pageState('clear', { operationId: operationToken }); stop.disabled = true; stop.textContent = '正在停止…'; };
     activeCleanup = () => { if (!pageFinished) { cancelled = true; stopRequested = true; cancelTranslation(operationToken); } clearPlaceholders(); };
     pagePresentation = { undo: restoreSnapshots };
-    function clearPlaceholders() { for (const placeholder of placeholders.values()) placeholder?.remove(); placeholders.clear(); }
+    function clearStreams() {
+      for (const [key, stream] of pageStreams) if (stream.operationToken === operationToken) pageStreams.delete(key);
+    }
+    function clearPlaceholders() {
+      clearStreams();
+      for (const placeholder of placeholders.values()) placeholder?.remove(); placeholders.clear();
+    }
 
     function updateProgress(label, total) { progress.lastChild.textContent = `${label} ${processed} / ${total} 段`; progressBar.max = total; progressBar.value = processed; pageActions.replaceChildren(stop); body.replaceChildren(progress, progressBar, pageActions); }
     function restoreSnapshots() {
@@ -270,23 +278,25 @@
     }
     async function translateItems(items, label) {
       let itemCursor = 0; const total = items.length; stopRequested = false;
-      // A navigation word cannot establish a page's language. Translate a
-      // representative passage first, then reuse its resolved source for
-      // unlabelled fragments; explicit per-element lang always takes priority.
+      // Start longer passages early without making them a serial gate. Every
+      // unlabelled segment retains auto-source, including multilingual pages.
       const representative = items.reduce((best, item) => !best || item.source.length > best.source.length ? item : best, null);
       const orderedItems = representative ? [representative, ...items.filter((item) => item !== representative)] : [];
-      async function worker(limit = total) {
-        while (!stopRequested && !cancelled && body.isConnected && operationToken === operationSerial && itemCursor < limit) {
-          const item = orderedItems[itemCursor++]; const options = { operationId: operationToken, source: item.sourceLanguage || pageLanguage, restoring, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
+      async function worker() {
+        while (!stopRequested && !cancelled && body.isConnected && operationToken === operationSerial && itemCursor < total) {
+          const item = orderedItems[itemCursor++];
+          const segmentId = `${operationToken}:${++requestSequence}`;
+          const options = { operationId: operationToken, segmentId, source: item.sourceLanguage, restoring, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
           if (!placeholders.has(item)) placeholders.set(item, globalThis.AIHTranslationPageSegments.stage(item));
           placeholders.get(item)?.update({ state: 'loading' });
-          const result = await translateOne(item.source, 'page', options); processed += 1;
+          pageStreams.set(segmentId, { operationToken, stage: placeholders.get(item), sequence: 0 });
+          const result = await translateOne(item.source, 'page', options);
+          pageStreams.delete(segmentId); processed += 1;
           if (cancelled || !body.isConnected || operationToken !== operationSerial) return;
-          if (result?.confirmation) { if (!confirmation) { confirmation = result.confirmation; stopRequested = true; restoreSnapshots(); } continue; }
+          if (result?.confirmation) { if (!confirmation) { confirmation = result.confirmation; stopRequested = true; cancelTranslation(operationToken); restoreSnapshots(); } continue; }
           if (stopRequested) continue;
-          if (result?.fatal) { fatalError = result.error || '翻译服务不可用'; stopRequested = true; failed += 1; cancelTranslation(operationToken); return; }
+          if (result?.fatal) { fatalError = result.error || '翻译服务不可用'; stopRequested = true; failed += 1; clearStreams(); cancelTranslation(operationToken); return; }
           if (result?.ok && result.text && applyPageResult(item, result)) {
-            if (!pageLanguage && result.meta?.from) pageLanguage = result.meta.from;
             translatedByIndex.set(item.index, result.text);
             pageAutoCopyEligible = pageAutoCopyEligible && result.autoCopy === true;
             succeeded += 1;
@@ -296,8 +306,10 @@
           updateProgress(label, total);
         }
       }
-      await worker(Math.min(1, total));
-      await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(0, total - 1)) }, () => worker()));
+      // Every worker owns one request and its own segment placeholder. Start
+      // them together so page translation is truly concurrent; each response
+      // still settles into its original segment and can stream independently.
+      await Promise.all(Array.from({ length: Math.min(concurrency, total) }, () => worker()));
     }
     function renderPageConfirmation() {
       renderConfirmation(body, confirmation, async (target) => { await translatePage(target); }, () => { restoreSnapshots(); body.textContent = '已保持原文'; });
@@ -343,9 +355,14 @@
       }
     }
     updateProgress(restoring ? '正在恢复译文' : '正在翻译', segments.length);
+    const preference = await new Promise((resolve) => chrome.runtime.sendMessage({ type: 'aih-translation-preferences' }, (result) => {
+      void chrome.runtime.lastError; resolve(result?.concurrency || 3);
+    }));
+    concurrency = Math.max(1, Math.min(8, Math.floor(Number(preference) || 3)));
+    if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
     await pageState('set', { operationId: operationToken, ...(targetOverride ? { target: targetOverride } : {}), restoring });
     if (!body.isConnected || operationToken !== operationSerial || cancelled) return;
-        await translateItems(segments, '正在翻译');
+    await translateItems(segments, '正在翻译');
     if (confirmation) { renderPageConfirmation(); return; }
     await renderSummary();
   }
@@ -399,7 +416,16 @@
   });
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === 'aih-translation-progress' && selectionProgress?.operationToken === message.operationId && message.operationId === operationSerial && selectionProgress.body.isConnected) {
+    if (message?.type === 'aih-translation-progress' && message.segmentId && message.operationId === operationSerial && active?.body?.isConnected) {
+      const stream = pageStreams.get(message.segmentId);
+      if (stream && Number.isSafeInteger(message.sequence) && message.sequence > stream.sequence) {
+        stream.sequence = message.sequence;
+        stream.stage?.update({ state: 'loading', content: String(message.text || '') });
+      }
+    }
+    if (message?.type === 'aih-translation-progress' && selectionProgress?.operationToken === message.operationId && !message.segmentId && message.operationId === operationSerial && selectionProgress.body.isConnected) {
+      if (!Number.isSafeInteger(message.sequence) || message.sequence <= selectionProgress.sequence) return;
+      selectionProgress.sequence = message.sequence;
       const { status, output, skeleton } = selectionProgress;
       status.lastChild.textContent = message.text ? '正在生成译文…' : '模型已连接，正在翻译…';
       if (message.text) {

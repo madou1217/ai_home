@@ -133,6 +133,10 @@
           "nativeStore": "state_*.sqlite"
         },
         "mcp": {
+          "projection": {
+            "path": "config.toml",
+            "format": "toml-stdio"
+          },
           "commands": [
             "mcp"
           ],
@@ -291,6 +295,10 @@
           "nativeStore": "sessions"
         },
         "mcp": {
+          "projection": {
+            "path": "settings.json",
+            "format": "json-command"
+          },
           "commands": [
             "mcp"
           ],
@@ -486,6 +494,10 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".claude.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
@@ -678,6 +690,10 @@
           "nativeStore": "workspace-scoped conversations"
         },
         "mcp": {
+          "projection": {
+            "path": "mcp_config.json",
+            "format": "json-command"
+          },
           "commands": [
             "/mcp"
           ],
@@ -851,6 +867,14 @@
           "nativeStore": "opencode.db"
         },
         "mcp": {
+          "projection": {
+            "path": ".config/opencode/opencode.json",
+            "pathBase": "host-home",
+            "format": "json-opencode",
+            "alternatives": [
+              ".config/opencode/opencode.jsonc"
+            ]
+          },
           "commands": [
             "mcp"
           ],
@@ -1682,6 +1706,10 @@
           "nativeStore": "data.sqlite3"
         },
         "mcp": {
+          "projection": {
+            "path": "settings/mcp.json",
+            "format": "json-command"
+          },
           "commands": [
             "mcp"
           ],
@@ -2598,10 +2626,17 @@
           "nativeStore": "data/db/sessions.db"
         },
         "mcp": {
+          "projection": {
+            "path": "data/settings/cline_mcp_settings.json",
+            "format": "json-cline",
+            "accountScoped": true
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            "data/settings/cline_mcp_settings.json"
+          ]
         },
         "plugins": {
           "commands": null,

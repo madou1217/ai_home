@@ -343,3 +343,11 @@ protocol parsing. `examples/mcp/aih-demo-server.js` is an independent real stdio
 server, with an echo tool and a working-directory-confined file listing tool.
 `test/mcp-stdio-client.test.js` exercises actual child processes, tool calls,
 EOF/malformed/id/size/time/cancellation failures and disposal (7 passing).
+
+MCP management checkpoint: `lib/native-resources/mcp-manager.js` is the resource
+lifecycle Facade, `mcp-config-adapters.js` is a format Strategy registry, and
+`mcp-stdio-client.js` is the bounded transport boundary. Provider descriptors select
+`toml-stdio`, `json-stdio`, `json-opencode`, `json-cline`, or `json-command`; the
+manager has no provider-name dispatch. `scripts/mcp-native-demo.js` verified Codex,
+Claude, OpenCode and Cline native list/config loading after enable and disable, with
+`examples/mcp/aih-demo-server.js` providing the real local tool call.

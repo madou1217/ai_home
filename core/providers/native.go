@@ -14,6 +14,7 @@ func nativeCodex() *NativeCapability {
 			NativeStore: "state_*.sqlite",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: "config.toml", Format: "toml-stdio"},
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"config.toml"},
 		},
@@ -44,6 +45,7 @@ func nativeClaude() *NativeCapability {
 			NativeStore: "projects/<project>/<session-id>.jsonl",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: ".claude.json", Format: "json-stdio"},
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{".mcp.json", ".claude.json"},
 		},
@@ -76,6 +78,7 @@ func nativeGemini() *NativeCapability {
 			NativeStore: "sessions",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: "settings.json", Format: "json-command"},
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"settings.json"},
 		},
@@ -104,7 +107,8 @@ func nativeAntigravity() *NativeCapability {
 			NativeStore: "workspace-scoped conversations",
 		},
 		MCP: NativeMCP{
-			Commands: []string{"/mcp"},
+			Projection: &NativeMCPProjection{Path: "mcp_config.json", Format: "json-command"},
+			Commands:   []string{"/mcp"},
 			ConfigFiles: []string{
 				".gemini/antigravity-cli/mcp_config.json",
 				".agents/mcp_config.json",
@@ -219,6 +223,7 @@ func nativeKiro() *NativeCapability {
 			NativeStore: "data.sqlite3",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: "settings/mcp.json", Format: "json-command"},
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"settings/mcp.json"},
 		},
@@ -254,8 +259,9 @@ func nativeCline() *NativeCapability {
 			NativeStore: "data/db/sessions.db",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: "data/settings/cline_mcp_settings.json", Format: "json-cline", AccountScoped: true},
 			Commands:    []string{"mcp"},
-			ConfigFiles: []string{},
+			ConfigFiles: []string{"data/settings/cline_mcp_settings.json"},
 		},
 		Hooks: NativeHooks{
 			Files:                  []string{},
@@ -293,6 +299,7 @@ func nativeOpenCode() *NativeCapability {
 			NativeStore: "opencode.db",
 		},
 		MCP: NativeMCP{
+			Projection:  &NativeMCPProjection{Path: ".config/opencode/opencode.json", PathBase: "host-home", Alternatives: []string{".config/opencode/opencode.jsonc"}, Format: "json-opencode"},
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"opencode.json"},
 		},

@@ -318,8 +318,19 @@ type NativeSessions struct {
 
 // NativeMCP 描述原生 MCP 命令和配置文件。
 type NativeMCP struct {
-	Commands    []string `json:"commands"`
-	ConfigFiles []string `json:"configFiles"`
+	// Projection is an explicitly verified editable stdio configuration boundary.
+	Projection  *NativeMCPProjection `json:"projection,omitempty"`
+	Commands    []string             `json:"commands"`
+	ConfigFiles []string             `json:"configFiles"`
+}
+
+// NativeMCPProjection declares the configuration adapter without provider dispatch.
+type NativeMCPProjection struct {
+	Path          string   `json:"path"`
+	PathBase      string   `json:"pathBase,omitempty"`
+	Format        string   `json:"format"`
+	Alternatives  []string `json:"alternatives,omitempty"`
+	AccountScoped bool     `json:"accountScoped,omitempty"`
 }
 
 // NativeHooks 描述原生 Hook 文件和 Stop 事件输出要求。

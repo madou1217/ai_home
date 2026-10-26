@@ -77,3 +77,54 @@ stages with actual native CLIs and a local deterministic inference fixture.
 The probe exposed and fixed OpenCode's config-root/data-root mismatch. Latest
 focused validation is 27/27, including the existing AIH plugin lifecycle suite.
 Remote inference and remaining provider/native-plugin/MCP closures remain open.
+
+## Managed MCP: CLI and native demo checkpoint (2026-10-26)
+
+The MCP manager now owns the lifecycle below:
+
+```sh
+node bin/ai-home.js mcp add aih-demo --provider claude \
+  --command "$PWD/examples/mcp/aih-demo-server.js" --json
+node bin/ai-home.js mcp test aih-demo --provider claude --json
+node bin/ai-home.js mcp tools aih-demo --provider claude --json
+node bin/ai-home.js mcp enable aih-demo --provider claude --json
+node bin/ai-home.js mcp call aih-demo aih_echo \
+  --args-json '{"text":"AIH_MCP_DEMO_OK"}' --provider claude --json
+node bin/ai-home.js mcp disable aih-demo --provider claude --json
+node bin/ai-home.js mcp remove aih-demo --provider claude --json
+```
+
+`add` records a bounded stdio definition; `enable` writes only the provider's
+verified configuration shape; `test`, `tools`, and `call` run the server directly
+through the bounded JSON-RPC client. `list` and `doctor` redact argument values and
+environment values. Existing provider entries remain untouched. User-modified AIH
+entries fail closed before remove/replace. Cline's account-scoped
+`data/settings/cline_mcp_settings.json` is projected again during provider runtime
+preparation so an enabled host resource reaches isolated account sessions.
+
+Verified native configuration formats:
+
+| Provider | Projection | Native executable | Evidence |
+|---|---|---|---|
+| Codex | `config.toml` `[mcp_servers.<name>]` | codex-cli 0.164.0 | `codex mcp list` showed enabled and then empty |
+| Claude | `.claude/.claude.json` `mcpServers` | Claude Code 2.1.310 | `claude mcp list` reported Connected and then empty |
+| OpenCode | `.config/opencode/opencode.json` `mcp` local command array | OpenCode 1.17.18 | `opencode mcp list` reported connected and then empty |
+| Cline | `.cline/data/settings/cline_mcp_settings.json` `mcpServers.*.transport` | Cline 3.0.74 | `cline config --json` reported the global server and then `mcp: []` |
+
+The native probe is reproducible with:
+
+```sh
+node scripts/mcp-native-demo.js
+```
+
+It created isolated homes, ran manager `test → tools → call` against the real
+`aih-demo-server.js`, invoked each locally installed native CLI after enable and
+disable, and removed all temporary files. All four providers passed. The fixture
+returned `AIH_MCP_DEMO_OK` only from a real `tools/call` response; it does not spend
+upstream model tokens.
+
+The complete focused suite currently has 44 passing tests across MCP, skill,
+resource matrix and existing AIH plugin lifecycle tests; `npm run providers:check`
+also passes. Providers whose descriptor has MCP commands/config paths but no verified
+projection adapter remain explicitly projection-only or unsupported. This avoids
+claiming closure for provider-native formats that have not been observed.

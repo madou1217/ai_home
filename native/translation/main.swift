@@ -25,6 +25,14 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var contextSelection: SelectedText?
   let contextMenu = NSMenu()
 
+  // Reopening the bundle is an explicit user action, unlike the server-owned
+  // background launch. Give the hidden helper a discoverable window entry.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    if fullApp { panel.openSettings() }
+    else { chatPanel.openFromShortcut() }
+    return true
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
     if fullApp {

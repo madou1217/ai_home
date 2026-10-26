@@ -274,9 +274,10 @@ type DesktopPlatform struct {
 
 // NativeCapability 描述原生 CLI 对配置、会话、MCP、Hook 和权限的边界。
 type NativeCapability struct {
-	Config   NativeConfig   `json:"config"`
-	Sessions NativeSessions `json:"sessions"`
-	MCP      NativeMCP      `json:"mcp"`
+	Runtime  *NativeResourceRuntime `json:"runtime,omitempty"`
+	Config   NativeConfig           `json:"config"`
+	Sessions NativeSessions         `json:"sessions"`
+	MCP      NativeMCP              `json:"mcp"`
 	// Plugins/Skills describe native installation or projection boundaries. Empty
 	// declarations are intentional: consumers must report unsupported instead of
 	// guessing a provider's filesystem layout.
@@ -284,6 +285,14 @@ type NativeCapability struct {
 	Skills      NativeSkills      `json:"skills"`
 	Hooks       NativeHooks       `json:"hooks"`
 	Permissions NativePermissions `json:"permissions"`
+}
+
+// NativeResourceRuntime declares a bundled execution lane for resource management.
+// It does not imply that a standalone user CLI is distributed by this provider.
+type NativeResourceRuntime struct {
+	Handler string            `json:"handler"`
+	Entry   string            `json:"entry"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // NativePlugins describes the native plugin management boundary.

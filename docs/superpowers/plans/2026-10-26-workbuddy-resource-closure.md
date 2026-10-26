@@ -18,12 +18,12 @@
 
 Files: `core/providers/model.go`, `native.go`, `builtins.go`, `catalog.go`, generated provider manifest, `lib/providers/index.js`, new `lib/native-resources/provider-native-runtime.js`, `provider-resource-doctor.js`, and native plugin manager context.
 
-- [ ] Declare optional `nativeBoundary.runtime` with `handler`, relative `entry` and static `env`; WorkBuddy selects `desktop-node`, the observed bundled entry, and its existing native lite flag.
-- [ ] Deep-copy the runtime's environment map in the Go catalog and regenerate/check the manifest.
-- [ ] Add `Facade.getNativeResourceRuntimeStrategy(provider)`; expose runtime descriptor, declared desktop paths, native config home keys and desktop user-data key.
-- [ ] Implement `resolveProviderResourceRuntime(provider, options)` returning `{ command, args, env, source }` or null, with native CLI resolution followed by the descriptor-selected desktop handler.
-- [ ] Doctor probes command plus fixed args/environment and reports bundled entry provenance. Plugin adapters receive this process specification without adding provider branches.
-- [ ] Run actual WorkBuddy version/help and provider doctor, existing regression, provider check, inspect staged paths and commit.
+- [x] Declare optional `nativeBoundary.runtime` with `handler`, relative `entry` and static `env`; WorkBuddy selects `desktop-node`, the observed bundled entry, and its existing native lite flag.
+- [x] Deep-copy the runtime's environment map in the Go catalog and regenerate/check the manifest.
+- [x] Add `Facade.getNativeResourceRuntimeStrategy(provider)`; expose runtime descriptor, declared desktop paths, native config home keys and desktop user-data key.
+- [x] Implement `resolveProviderResourceRuntime(provider, options)` returning `{ command, args, env, source }` or null, with native CLI resolution followed by the descriptor-selected desktop handler.
+- [x] Doctor probes command plus fixed args/environment and reports bundled entry provenance. Plugin adapters receive this process specification without adding provider branches.
+- [x] Run actual WorkBuddy version/help and provider doctor, existing regression, provider check, inspect staged paths and commit.
 
 ## Task 2: Real native marketplace and MCP management
 

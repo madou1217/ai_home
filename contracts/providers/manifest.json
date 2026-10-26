@@ -2299,6 +2299,13 @@
         }
       },
       "nativeBoundary": {
+        "runtime": {
+          "handler": "desktop-node",
+          "entry": "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+          "env": {
+            "CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"
+          }
+        },
         "config": {
           "envHomeKeys": [
             "CODEBUDDY_CONFIG_DIR",

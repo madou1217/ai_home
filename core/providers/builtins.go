@@ -860,7 +860,7 @@ func builtinWorkbuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:             "workbuddy",
-		NativeBoundary: nativeCodebuddy(),
+		NativeBoundary: nativeWorkbuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
 		Gateway:        GatewayActive,

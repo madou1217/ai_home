@@ -356,3 +356,13 @@ func nativeCodebuddy() *NativeCapability {
 		},
 	}
 }
+
+func nativeWorkbuddy() *NativeCapability {
+	native := nativeCodebuddy()
+	native.Runtime = &NativeResourceRuntime{
+		Handler: "desktop-node",
+		Entry:   "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+		Env:     map[string]string{"CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"},
+	}
+	return native
+}

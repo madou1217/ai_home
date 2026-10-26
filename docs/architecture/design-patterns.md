@@ -329,3 +329,10 @@ Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-clie
 - Evidence: `node --test test/skill-manager.test.js test/native-resource-registry.test.js`
   (12 passing); `npm run providers:check`. These prove management/projection,
   not native model execution. CLI and native usage probes are separate gates.
+
+Native skill conformance now uses `scripts/skill-native-demo.js` with the local
+protocol fixture in `examples/skills/prompt-fixture.js`. The descriptor's
+`pathBase=host-home` covers OpenCode/AGY configuration paths without adding provider
+branches to the manager. Actual Codex/Claude/OpenCode CLI probes passed all four
+lifecycle stages; details and evidence limits are in
+`docs/demos/2026-10-26-skill-native-closure.md`.

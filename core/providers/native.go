@@ -297,7 +297,7 @@ func nativeOpenCode() *NativeCapability {
 			ConfigFiles: []string{"opencode.json"},
 		},
 		Plugins: NativePlugins{Commands: []string{"plugin"}, Paths: []string{"plugin"}, Mode: "native"},
-		Skills:  NativeSkills{Paths: []string{"AGENTS.md"}, Mode: "projection-only"},
+		Skills:  NativeSkills{Paths: []string{".config/opencode/AGENTS.md"}, PathBase: "host-home", Mode: "projection-only"},
 		Hooks: NativeHooks{
 			Files:                  []string{"plugin/aih-session-hook.js"},
 			StopRequiresJSONStdout: false,

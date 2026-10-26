@@ -110,3 +110,18 @@ test('two skills in one instruction file can be independently removed', (t) => {
   assert.match(text, /SECOND_MARKER/);
   assert.doesNotMatch(text, /AIH_SKILL_DEMO_OK/);
 });
+test('OpenCode projects into its configuration directory rather than auth data directory', (t) => {
+  const f = fixture(t);
+  const record = f.manager.install(f.source, { provider: 'opencode' });
+  assert.equal(record.target, path.join(f.hostHomeDir, '.config', 'opencode', 'AGENTS.md'));
+});
+test('corrupted durable state cannot be reported as an empty healthy installation', (t) => {
+  const f = fixture(t);
+  f.manager.install(f.source, { provider: 'codex' });
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(f.aiHomeDir, 'app-state.db'));
+  try { db.prepare('UPDATE app_kv SET value = ? WHERE key = ?').run('{broken', 'native-resources.managed.v1'); }
+  finally { db.close(); }
+  assert.throws(() => f.manager.doctor());
+  assert.throws(() => f.manager.list());
+});

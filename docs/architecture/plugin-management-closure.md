@@ -70,3 +70,10 @@ registry and native-resource-management, including a subprocess invoking the rea
 AIH CLI with an isolated home. `aih skill --help` and `aih skill doctor --json`
 exit 0. These checks establish management and projection, not real model use.
 Native use probes are still being added; Task 4 is not complete yet.
+
+Native probe follow-up: [2026-10-26 skill native closure evidence](../demos/2026-10-26-skill-native-closure.md)
+records Codex, Claude and OpenCode passing enabled/disabled/re-enabled/removed
+stages with actual native CLIs and a local deterministic inference fixture.
+The probe exposed and fixed OpenCode's config-root/data-root mismatch. Latest
+focused validation is 27/27, including the existing AIH plugin lifecycle suite.
+Remote inference and remaining provider/native-plugin/MCP closures remain open.

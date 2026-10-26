@@ -868,9 +868,10 @@
           "mode": "native"
         },
         "skills": {
+          "pathBase": "host-home",
           "commands": null,
           "paths": [
-            "AGENTS.md"
+            ".config/opencode/AGENTS.md"
           ],
           "mode": "projection-only"
         },

@@ -1,5 +1,12 @@
 # Plugin Management and Provider Closure Implementation Plan
 
+**Repository policy override (2026-10-26):** The user's instruction forbids new
+test files and asks for real runtime verification. All test-file creation and
+test-writing steps below are superseded by the checked-in executable demos and
+isolated native-host probes. The 13 test files previously introduced by this
+task have been removed; existing repository tests may still be run as regression
+checks. No new unit tests are required or authorized by this historical plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the existing AIH plugin runtime into a user-visible, end-to-end management system for AIH plugins, native plugins, skills, and MCP servers, with descriptor-driven coverage reports for every supported provider and runnable demos proving install, enable, use, disable, and removal.

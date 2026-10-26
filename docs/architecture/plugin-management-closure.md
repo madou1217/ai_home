@@ -329,6 +329,19 @@ resolved and its version probe succeeds; capability declarations are independent
 
 ## Final verification checkpoint (2026-10-26)
 
+The 173-test counts below are historical results from the earlier task
+checkpoints. This task had added 13 test files despite the user's no-new-tests
+rule. Those files have now been removed; none existed on `main`. Current
+acceptance uses the executable native demos and the repository's original
+regression suite. The original repository test files are preserved.
+
+Fresh checks after removing those files: Node 22.21.0 original regression suite
+103 passed, 0 failed; AIH pack/install/enable/call/restart/disable/uninstall/doctor
+passed; Codex/Claude/OpenCode skill demos each passed four stages; the MCP demo
+passed native discovery/configuration plus two AIH stdio tool calls for each of
+Codex/Claude/OpenCode/Cline. The five-host native plugin aggregate passed,
+including the OpenCode tool loop and Pi/DSH managed SDK execution described above.
+
 Fresh runs on this branch:
 
 ```sh

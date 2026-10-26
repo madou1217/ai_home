@@ -6,6 +6,7 @@
 
 ```bash
 node scripts/plugin-closure-demo.js --json
+node scripts/aih-portable-plugin-demo.js
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
 node scripts/mcp-native-demo.js
 node scripts/native-plugin-demo.js
@@ -35,6 +36,24 @@ aih plugin uninstall aih.sample.echo
 ```
 
 `node scripts/plugin-closure-demo.js --json` 会另外验证重启后的 `use-after-restart`。插件停用先撤销可见贡献，正在进行的调用仍归属于原 generation；制品和状态目录由 AIH 管理。
+
+同一份在 Pi、DeepSeek、OpenCode 运行的 canonical 包也可以直接交给 AIH。
+安装和调用需要已启动的 `aih server`：
+
+```bash
+aih plugin validate examples/native-plugins/aih-demo --load
+aih plugin pack examples/native-plugins/aih-demo /tmp/aih-demo.aih-plugin
+aih plugin install /tmp/aih-demo.aih-plugin
+aih plugin enable aih-demo --accept-permissions
+aih plugin call aih-demo.tool.aih_demo --value-json '{"text":"portable-input"}' --json
+aih plugin disable aih-demo --remove
+aih plugin uninstall aih-demo
+node scripts/aih-portable-plugin-demo.js
+```
+
+预期调用值为 `AIH_PLUGIN_DEMO_OK:portable-input`。最后一条脚本使用临时 home、
+真实签名和受监督 Host 验证完整链路，无需修改正在运行的服务。源包无需维护
+`plugin.json`；生成的清单只存在于制品内。首期工具通过 AIH command contribution 调用。
 
 ## Managed Skill
 

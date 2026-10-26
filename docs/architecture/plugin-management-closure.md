@@ -154,6 +154,38 @@ artifacts are seeded into the isolated home, never auth or user configuration.
 
 ## AIH Plugin baseline
 
+### Canonical package artifact follow-up (2026-10-26)
+
+```sh
+node scripts/aih-portable-plugin-demo.js
+```
+
+The same `examples/native-plugins/aih-demo` package now declares `./aih` and
+`agentPlugin.hosts.aih`. Offline validate/pack share `source-manifest.js`;
+artifact packaging generates a virtual `plugin.json`, without changing source
+files. The AIH adapter runs the unchanged portable core through a declared
+command contribution in the real supervised Cordis Host and RPC boundary.
+
+The demo passes on Node 22.21.0 and Node 26.12.1: CLI validate/load, Ed25519
+signed pack and trusted acceptance, permission rejection before acknowledgement,
+enabled call, disabled rejection, re-enable, process restart/recovery, removal
+and empty doctor. A source digest comparison proves projection did not modify
+the canonical package. The legacy Echo lifecycle continues to pass.
+
+The first subset supports declared `lifecycle@1` and `tool.register@1`; required
+unknown capabilities or adapter/transport versions are rejected. AIH tools map
+to `command` contributions, not an AIH model-selected tool registry. The common
+SDK publication, other Portable ports, hot upgrades and complete M1 migration
+remain separate work. The aggregate native demo now includes this sixth host.
+
+Independent review reproduced and closed two contract issues before integration:
+the reader now uses AIH's dotted IDs and artifact limits (a 5 MiB, 274-file
+package passed), and canonical transport 2 is checked against the real RPC
+contract independently of legacy manifest protocol 1. A changed virtual manifest
+byte fails digest verification. The corrected nine-stage Node 26 demo was also
+rerun independently. The final six-host aggregate and original 105-test Node 22
+regression suite pass, with no new test files.
+
 The deterministic harness is:
 
 ```bash
@@ -380,11 +412,9 @@ Overall closure status is now:
   cleanup and account-isolated launch propagation are runtime-proven above.
 - Remaining provider resource projections retain their explicit capability and
   runtime status; this does not establish behavior on every installed provider.
-- Canonical-to-AIH artifact migration remains open: the AIH runtime demo uses
-  the existing Echo package and `plugin.json` artifact path. The native canonical
-  package's core/shape inspection does not prove that same package can yet be
-  packed and loaded by AIH's supervised Host. This is the M1 adapter/projection
-  work from the universal design, not evidence supplied by the Echo lifecycle.
+- Canonical-to-AIH artifact subset: the same package's shared core is now called
+  through a signed artifact and supervised Host. Full common SDK extraction and
+  the remaining M1 migration gates are distinct from this proven subset.
 
 No claim of full cross-host parity is made for OpenCode TUI/RPC or Pi/DSH
 model-selected agent loops. The native SDK execution subset is proven separately.

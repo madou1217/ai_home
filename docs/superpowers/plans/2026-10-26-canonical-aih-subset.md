@@ -53,7 +53,7 @@
 - Use the actual offline CLI for validate/pack, existing `createPluginSystem` for a real supervised Host, and acknowledge declared permissions explicitly in the isolated fixture.
 - After disable, the contribution must reject. Re-enable/restart must call the same core again; remove must leave no installed artifact/instance. Always stop Host processes and remove temporary homes.
 
-- [ ] Run the new demo on Node 22.21.0 and current Node 26, and retain structured stage evidence.
-- [ ] Run the three native shared-core host demos after changing the canonical package to prove no adapter regression.
-- [ ] Report the subset precisely: canonical artifact/call is proven; standalone SDK publication, hot upgrade, full common API, TUI/RPC and remote model reasoning remain separate.
+- [x] Run the new demo on Node 22.21.0 and current Node 26, and retain structured stage evidence.
+- [x] Run the three native shared-core host demos after changing the canonical package to prove no adapter regression.
+- [x] Report the subset precisely: canonical artifact/call is proven; standalone SDK publication, hot upgrade, full common API, TUI/RPC and remote model reasoning remain separate.
 - [ ] Run existing regression and provider check, commit exact paths, integrate into `main` preserving peer changes, and push after verification.

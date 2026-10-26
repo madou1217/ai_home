@@ -19,3 +19,18 @@ bundled skill through the actual native client, then repeats after disable,
 re-enable, and removal. Its local fixture returns `AIH_PLUGIN_DEMO_OK` only when
 the native request contains the installed plugin's skill body. This is native
 plugin instruction loading evidence, separate from JavaScript tool execution.
+
+The unchanged `dist/core.mjs` also runs through OpenCode, Pi, DeepSeek and AIH:
+
+```sh
+node scripts/opencode-plugin-native-demo.js
+node scripts/pi-plugin-native-demo.js --managed
+node scripts/deepseek-plugin-managed-demo.mjs
+node scripts/aih-portable-plugin-demo.js
+```
+
+AIH reads `agentPlugin.hosts.aih` and `exports["./aih"]`, generates its native
+manifest only inside the artifact, and retains signing and permission gates.
+Its tool subset is a command contribution named `aih-demo.tool.aih_demo`.
+The AIH demo verifies signed acceptance, calls, disable/re-enable, restart,
+removal and source immutability using the actual supervised Host.

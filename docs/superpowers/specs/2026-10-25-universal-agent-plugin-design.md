@@ -229,6 +229,30 @@ OpenCode 的 canonical 分面名 `./opencode/server` 同时需要原生 loader �
 同样，Pi 的 `pi.extensions` 必须列出 canonical 入口，DSH 的 `dsh.bundle.patch`
 必须存在并引用包的 DeepSeek 入口；单独的 `exports` 文件存在不足以满足宿主发现。
 
+当前 AIH 首批能力子集还要求在同一 canonical 声明中提供原生贡献元数据：
+
+```json
+{
+  "hosts": {
+    "aih": {
+      "hostAdapterApiVersion": 1,
+      "transportProtocolVersion": 2,
+      "contributes": [
+        { "id": "aih-demo.tool.aih_demo", "capability": "command", "version": 1 }
+      ]
+    }
+  }
+}
+```
+
+该对象位于 `agentPlugin` 内，入口取 `exports["./aih"]`。validate/pack 共享
+投影器；生成的 `plugin.json` 只进入制品。与手工 `plugin.json` 同时存在时明确
+拒绝，避免双事实源。首期只暴露 lifecycle 和工具贡献子集，工具映射成 AIH
+command contribution；`private-state` 显式投影为 AIH `state` 权限并保留用户确认门。
+其中真实 RPC wire 版本从现有生成合同读取（当前为 2），旧 artifact manifest 的
+`protocolVersion: 1` 只为旧格式兼容保留，两者独立。AIH canonical 读取使用
+AIH 自身的标识与制品额度，不继承原生插件/Skill 的 ID、体积或文件数限制。
+
 ### 5.3 目录布局
 
 ```text
@@ -522,7 +546,7 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 |---|---|---|
 | Portable manifest、host entry、DeepSeek/Pi projection | 已交付 | `aih native plugin inspect/project examples/native-plugins/aih-demo --host deepseek\|pi`；真实 managed host demos |
 | AIH plugin lifecycle | 运行时已验证 | `node scripts/plugin-closure-demo.js --json`：pack/install/enable/use/restart/use-after-restart/disable/uninstall/doctor |
-| Canonical package → AIH artifact/adapter | M1 尚未交付 | 当前 AIH demo 使用旧 Echo 包与 `plugin.json`；不能替代同一 canonical 包的运行证据 |
+| Canonical package → AIH artifact/adapter | M1 首批能力子集已验证 | `scripts/aih-portable-plugin-demo.js`：同包签名制品、共享 core、权限门、启停/重启/卸载；完整 SDK 抽离尚未交付 |
 | Codex、Claude native plugin | 原生包内 Skill 四阶段调用已验证 | `scripts/native-plugin-use-demo.js`，参数为 codex 或 claude；非 JavaScript 工具执行 |
 | OpenCode native server plugin | 同一 portable core 的原生 agent/tool loop 四阶段已验证 | `scripts/opencode-plugin-native-demo.js`；1.17.18/1.18.18，本地推理 fixture |
 | Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |

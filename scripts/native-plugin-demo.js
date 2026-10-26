@@ -12,7 +12,8 @@ const CLIENTS = [
   { provider: 'claude', binary: '/Users/model/.local/bin/claude', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js', useProviderArgument: true },
   { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', list: null, version: ['--version'], useDemo: 'opencode-plugin-native-demo.js' },
   { host: 'pi', demo: 'pi-plugin-native-demo.js', args: ['--managed'] },
-  { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] }
+  { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] },
+  { host: 'aih', demo: 'aih-portable-plugin-demo.js', args: [], localRuntime: true }
 ];
 function run(binary, args, env, cwd) { const r=spawnSync(binary,args,{env,cwd,encoding:'utf8',timeout:30000,maxBuffer:1024*1024}); return {status:r.status,signal:r.signal,stdout:String(r.stdout||'').slice(0,5000),stderr:String(r.stderr||'').slice(0,1500)}; }
 async function runNativePluginDemo() {
@@ -20,9 +21,9 @@ async function runNativePluginDemo() {
   for(const client of CLIENTS) {
     if (client.host) {
       const descriptor = IMPORTED_HOSTS.find(row => row.host === client.host);
-      const runtime = probeHostRuntime(descriptor, { hostHomeDir: os.homedir() });
+      const runtime = client.localRuntime ? { available: true, version: process.versions.node } : probeHostRuntime(descriptor, { hostHomeDir: os.homedir() });
       if (!runtime.available) { stages.push({ host: client.host, state: 'runtime-unavailable', reason: runtime.reason }); continue; }
-      const demo = run(process.execPath, [path.join(__dirname, client.demo), runtime.packageDir, ...client.args], process.env, root);
+      const demo = run(process.execPath, [path.join(__dirname, client.demo), ...(runtime.packageDir ? [runtime.packageDir] : []), ...client.args], process.env, root);
       try {
         const evidence = JSON.parse(demo.stdout);
         stages.push({ host: client.host, version: runtime.version, evidence, passed: demo.status === 0 && evidence.passed });

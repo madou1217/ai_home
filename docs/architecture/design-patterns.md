@@ -120,6 +120,12 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 这些证据支持现有模式的运行时结论；未覆盖的系统权限弹窗、跨应用 Services 菜单点击和视觉像素验收仍需人工桌面验收，不能由类型检查或 DOM 快照替代。
 
+### 2026-10-26 翻译预检与宿主边界
+
+`lib/desktop/translation/service.js` 的语言预检统一复用纯函数 `detectLanguage`（最多 4,000 字符），不再因执行目标不同而发起 `/translation/detect` 请求。连接、鉴权、流式译文及网络错误仍由既有 execution port/executor 负责；不增加 provider 分支或另一套检测算法。取消、代际与语言意图守卫保持原有边界。
+
+浏览器扩展的后台适配器按 tab/frame/operation 管理 AbortController，HTTP 与 SSE 错误归入同一分类函数；内容脚本持有页面快照、有限并发及旧任务写入守卫。网页声明的语言优先；无声明时用首段完整正文的已解析源语言支持短片段。macOS 菜单入口继续使用 Services 描述符，不替换宿主右键。真实菜单、长文本布局和仍未完成的验收范围见 [桌面翻译验收记录](../verification/2026-10-26-translation-desktop-acceptance.md)。
+
 ## 2. 反模式清单（该改的地方）
 
 扫描口径：`grep -rn "provider === \|provider !== \|normalizedProvider ===" lib/ --include='*.js'`（排除测试）。

@@ -25,6 +25,7 @@ This is a partial runtime acceptance record, not a completion claim. All browser
 - `web/public/translation-extension/content.js`: validate service with the first segment, then run bounded parallel workers. Stop, close and replacement tasks cancel old requests; generation and connection guards suppress stale DOM writes. Closing also restores task-owned page changes.
 - `native/translation/TranslationPanelContent.swift`: allow the source preview to truncate instead of determining window width; explicitly configure the result text container for bounded-width wrapping and vertical scrolling.
 - Follow-up page-language fix: forward normalized element `lang` when available. For pages without language metadata, translate a representative full passage before short fragments and reuse its resolved source. Explicit fragment language takes priority. This avoids repeating source-detection confirmation for short navigation labels.
+- Native language preflight now uses the same existing bounded local detector for both execution targets. Removed the separate AIH Server `/translation/detect` request; execution, authentication, cancellation and language intent guards retain their existing boundaries.
 
 ## Validation
 
@@ -35,6 +36,8 @@ This is a partial runtime acceptance record, not a completion claim. All browser
 - Full `web` build: passed with Node 22.21.0. Initial Homebrew npm invocation selected an incompatible runtime and failed at Umi's `http_parser` dependency; using the installed Node 22 toolchain resolved it.
 - Independent one-off VM probes: cancellation while settings are pending sends zero fetches; cancellation isolates tab and frame identities; HTTP 401 and HTTP-200 SSE errors with status 401/429/503/0 are fatal. No test files added.
 - Live authorized API comparison: `Domains` with `source:auto` returned 409 `source_detection_required`; the same text with `source:en` completed SSE with `域名`. A one-off content-script probe verified representative-passage ordering, inherited source for unlabelled fragments, and explicit `fr-FR` normalization/precedence.
+- Local detector benchmark (100 warmups, 1,000 samples): 54-character English p50/p95/max 0.0086/0.0100/0.0937 ms; 4,000-character English 0.7245/0.8254/1.0014 ms; 4,000-character Chinese 0.4436/0.5009/2.1557 ms. Eleven scripts/input classes were measured. These are computation timings, not UI-to-result latency or an accuracy claim.
+- Native runtime/protocol/execution/integration/Web-target suites: 37 passed. One-off two-target probes sent zero language-detection fetches; same-language and unknown-language guards still prevented automatic execution. The existing server process has not loaded this source change yet.
 
 ## Still unverified or incomplete
 
@@ -42,6 +45,7 @@ This is a partial runtime acceptance record, not a completion claim. All browser
 - Terminal's native context menu has not been exercised: the computer-use tool denied access to `com.apple.Terminal`. TextEdit results are not evidence of Terminal acceptance.
 - Wikipedia's per-text-node segmentation produces 4,127 requests and remains unsuitable as evidence of a polished paragraph-level reading experience.
 - Native typography, trigger appearance, and overall visual polish remain below the requested product quality even though long-text layout now passes the focused live check.
-- Local millisecond language detection, selection-trigger false positives, refined native trigger design, and the expanded provider settings model require their own implementation and acceptance.
+- Local millisecond language detection is implemented and benchmarked, but the shared server still needs to load it before an end-to-end desktop latency check. Selection-trigger false positives, refined native trigger design, and the expanded provider settings model remain open.
 - The existing server process retains its previously imported builder module. A helper restart during this run regenerated the old Services metadata; rebuilding with the current module restored both menu entries. The next server restart must load the committed builder. The shared server was not restarted during this acceptance run.
 - Edge was reloaded after the final SSE classifier refinement. The subsequent representative-passage source-context patch is the version still awaiting a confirmed reload.
+- The user explicitly deferred desktop acceptance while operating Edge. Stop all browser/desktop interaction until they resume it; source validation and scoped checkpoints may finish without taking focus.

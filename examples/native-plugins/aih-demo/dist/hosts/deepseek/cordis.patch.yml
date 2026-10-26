@@ -1,0 +1,3 @@
+- insert:
+    - id: aih-demo
+      name: aih-demo-plugin/deepseek

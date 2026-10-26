@@ -6,6 +6,36 @@
 
 用户入口：[插件、Skill、MCP 与原生插件快速上手](../demos/plugin-skill-mcp-quickstart.md)。跨宿主设计：[Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)。
 
+## Pi / DeepSeek runtime follow-up (2026-10-26)
+
+The earlier PATH-only runtime-unavailable conclusion below was incomplete. Both
+packages are present in this machine's pnpm v11 store: Pi
+`@earendil-works/pi-coding-agent@0.84.4` and DSH `@deepseek-ai/dsh@0.2.1-rc.2`.
+The original sample entries only returned marker objects; the following demos
+first failed on absent native registration and now exercise a shared portable
+operation from `dist/core.mjs` through real host adapters:
+
+```sh
+node scripts/pi-plugin-native-demo.js <installed-pi-package-directory>
+node scripts/deepseek-plugin-native-demo.mjs <installed-dsh-package-directory>
+```
+
+- Pi uses its native `install/remove`, then its real SDK ResourceLoader and
+  AgentSession. Enabled and re-enabled stages execute `aih_demo` and `/aih-demo`;
+  disabled/removed stages discover no tool. `session_shutdown` invalidates the
+  shared core so retained handlers reject. All four stages pass without inference.
+- DSH uses native `plugin --profile demo add/remove` and `--dump-config` in a
+  temporary profile. Its bundle patch resolves the installed package's
+  `./deepseek` entry. The actual DSH ToolRuntime executes `aih_demo`; Cordis Fiber
+  disposal withdraws registration and runs core cleanup. A fresh Fiber repeats
+  the call. This proves native profile package management and SDK tool lifecycle,
+  not a browser/TUI agent loop or a model-selected tool call.
+
+The same package's Pi and DSH engine ranges now match the exercised versions.
+These SDK/native-package proofs supersede the historical statements that the
+hosts were wholly absent; automatic discovery and unified AIH lifecycle commands
+for these external harnesses still require integration.
+
 ## AIH Plugin baseline
 
 The deterministic harness is:

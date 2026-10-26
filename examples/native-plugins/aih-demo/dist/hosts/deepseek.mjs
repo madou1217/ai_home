@@ -1,3 +1,20 @@
-export default async function aihDemoDeepSeekPlugin(context) {
-  return { pluginId: 'aih-demo', marker: 'AIH_PLUGIN_DEMO_OK', context: Boolean(context) };
+import { setupDemo } from '../core.mjs';
+
+export const name = 'aih-demo';
+export const inject = ['tools'];
+export function apply(ctx) {
+  ctx.effect(() => setupDemo({
+    tools: {
+      register(definition) {
+        return ctx.tools.register({
+          name: definition.name,
+          description: definition.description,
+          parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+          output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+          execute: (args, exec) => definition.invoke(args, { signal: exec.signal })
+        });
+      }
+    }
+  }));
 }
+export default { name, inject, apply };

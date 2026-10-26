@@ -9,9 +9,9 @@
     "pluginId": "aih-demo",
     "core": "./dist/core.mjs",
     "engines": {
-      "deepseek": ">=0.2.1",
+      "deepseek": ">=0.2.1-rc.2",
       "opencode": ">=1.17.0",
-      "pi": ">=1.0.0",
+      "pi": ">=0.84.4",
       "aih": ">=1.0.0"
     },
     "capabilities": [
@@ -44,5 +44,10 @@
     "extensions": [
       "./dist/hosts/pi.mjs"
     ]
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./dist/hosts/deepseek/cordis.patch.yml"
+    }
   }
 }

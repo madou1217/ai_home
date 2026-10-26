@@ -15,6 +15,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `examples/native-plugins/aih-demo/dist/core.mjs` + `dist/hosts/{pi,deepseek}.mjs` | **Ports and Adapters + Scoped Resource** | 同一业务操作经窄工具/命令端口注册到真实 Pi ExtensionAPI 和 DSH ToolRuntime；Pi `session_shutdown`、Cordis `ctx.effect` 各自拥有清理，旧 handler 在停用后拒绝调用 | `scripts/pi-plugin-native-demo.js`（原生 install/remove、工具与命令、shutdown、再启用）；`scripts/deepseek-plugin-native-demo.mjs`（原生 bundle add/remove/dump、ToolRuntime 执行、Fiber dispose） |
 | `lib/providers/contract.js` | **Contract / Schema 校验** | provider 描述符契约：能力必须显式回答（`supported` + `reason`/策略），transport↔clientDependent 自洽，只有客户端通道必须写 `clientFreeReason` | `test/provider-capability-registry.test.js`、`test/quota-provider-coverage.test.js` |
 | `lib/providers/registry.js` | **Registry + 倒排索引** | 能力名 → provider 集合；`getProviderCapability(provider, face)` / `listProviders(face)`，消费方问能力不问 provider | 同上 |
 | `lib/translation/{provider-contract,provider-registry,provider-facade,index}.js` | **Contract + Registry 倒排索引 + Facade** | 翻译引擎以声明式描述符提供操作、认证、配置和无客户端通道事实；注册表按操作倒排，消费者经门面查询，新增引擎无需派发分支 | Node 22 运行时冒烟：5 个内置描述符通过校验，操作索引与能力查询一致 |

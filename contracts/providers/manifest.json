@@ -145,6 +145,7 @@
           ]
         },
         "plugins": {
+          "adapter": "codex-marketplace",
           "commands": [
             "plugin"
           ],
@@ -507,6 +508,7 @@
           ]
         },
         "plugins": {
+          "adapter": "claude-skills-dir",
           "commands": null,
           "paths": [
             "plugins"
@@ -883,9 +885,9 @@
           ]
         },
         "plugins": {
-          "commands": [
-            "plugin"
-          ],
+          "adapter": "opencode-local",
+          "pathBase": "host-home",
+          "commands": null,
           "paths": [
             "plugin"
           ],
@@ -1990,6 +1992,7 @@
           "configFiles": []
         },
         "plugins": {
+          "adapter": "native-directory",
           "commands": [
             "plugin"
           ],
@@ -2162,6 +2165,7 @@
           "configFiles": []
         },
         "plugins": {
+          "adapter": "native-directory",
           "commands": [
             "plugin"
           ],
@@ -2325,6 +2329,7 @@
           "configFiles": []
         },
         "plugins": {
+          "adapter": "native-directory",
           "commands": [
             "plugin"
           ],
@@ -2485,6 +2490,7 @@
           "configFiles": []
         },
         "plugins": {
+          "adapter": "native-directory",
           "commands": [
             "plugin"
           ],

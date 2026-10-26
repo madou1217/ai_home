@@ -359,3 +359,10 @@ commands; Claude projects a skills-dir plugin; OpenCode projects a local package
 path in `opencode.json`. `scripts/native-plugin-demo.js` proves Codex, Claude and
 OpenCode management and records Pi/DeepSeek gaps. `provider-resource-doctor.js`
 aggregates descriptor facts and runtime evidence without provider dispatch branches.
+
+Native plugin adapter refactor (2026-10-26): `native-plugin-manager.js` now only
+looks up `nativeBoundary.plugins.adapter`; execution lives in
+`native-plugin-adapters/{codex,opencode,directory}.js`. This removes provider-name
+branches from the manager and makes Codex marketplace, Claude skills-dir, OpenCode
+local package, and CodeBuddy native-directory projections independently testable.
+Fresh native plugin tests and demo passed after the refactor.

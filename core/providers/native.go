@@ -18,7 +18,7 @@ func nativeCodex() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"config.toml"},
 		},
-		Plugins: NativePlugins{Commands: []string{"plugin"}, Mode: "native"},
+		Plugins: NativePlugins{Adapter: "codex-marketplace", Commands: []string{"plugin"}, Mode: "native"},
 		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"hooks.json"},
@@ -49,7 +49,7 @@ func nativeClaude() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{".mcp.json", ".claude.json"},
 		},
-		Plugins: NativePlugins{Paths: []string{"plugins"}, Mode: "native"},
+		Plugins: NativePlugins{Adapter: "claude-skills-dir", Paths: []string{"plugins"}, Mode: "native"},
 		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"settings.json", "plugins/hooks.json"},
@@ -303,7 +303,7 @@ func nativeOpenCode() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"opencode.json"},
 		},
-		Plugins: NativePlugins{Commands: []string{"plugin"}, Paths: []string{"plugin"}, Mode: "native"},
+		Plugins: NativePlugins{Adapter: "opencode-local", Paths: []string{"plugin"}, PathBase: "host-home", Mode: "native"},
 		Skills:  NativeSkills{Paths: []string{".config/opencode/AGENTS.md"}, PathBase: "host-home", Mode: "projection-only"},
 		Hooks: NativeHooks{
 			Files:                  []string{"plugin/aih-session-hook.js"},
@@ -344,7 +344,7 @@ func nativeCodebuddy() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{},
 		},
-		Plugins: NativePlugins{Commands: []string{"plugin"}, Paths: []string{"plugins"}, Mode: "native"},
+		Plugins: NativePlugins{Adapter: "native-directory", Commands: []string{"plugin"}, Paths: []string{"plugins"}, Mode: "native"},
 		Skills:  NativeSkills{Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{},

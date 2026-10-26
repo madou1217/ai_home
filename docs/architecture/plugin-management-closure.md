@@ -208,3 +208,10 @@ Overall closure status is now:
 
 No claim of full cross-host parity is made for OpenCode TUI/RPC, Pi execution or
 DeepSeek Harness execution until those hosts are installed and exercised.
+
+The native plugin manager now uses the descriptor's `plugins.adapter` registry
+(`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`).
+The manager contains no provider-name execution branches. Codex marketplace paths,
+OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
+snapshot tamper detection, and native remove/re-enable behavior are covered by the
+latest native plugin tests.

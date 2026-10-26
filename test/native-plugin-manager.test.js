@@ -89,3 +89,56 @@ test('CodeBuddy family uses its declared native root/plugins projection while ru
   assert.equal(record.mode, 'native');
   f.manager.remove('aih-demo', { provider: 'codebuddy' });
 });
+test('foreign same-name directories cannot be adopted on a first install', (t) => {
+  const f = fixture(t);
+  const target = path.join(f.options.hostHomeDir, '.claude/skills/aih-demo');
+  fs.mkdirSync(target, { recursive: true });
+  fs.writeFileSync(path.join(target, 'user.txt'), 'USER CONTENT');
+  assert.throws(() => f.manager.install(fixtureSource, { provider: 'claude' }), { code: 'native_plugin_target_conflict' });
+  assert.equal(f.manager.list().resources.length, 0);
+  assert.equal(fs.readFileSync(path.join(target, 'user.txt'), 'utf8'), 'USER CONTENT');
+});
+test('OpenCode re-enable restores config, honors jsonc, and doctor catches config drift', (t) => {
+  const f = fixture(t);
+  const file = path.join(f.options.hostHomeDir, '.config/opencode/opencode.jsonc');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{\n// keep comment\n"plugin":["foreign-plugin"],"theme":"keep"\n}');
+  const record = f.manager.install(fixtureSource, { provider: 'opencode' });
+  assert.equal(fs.existsSync(file.slice(0, -1)), false, 'must not create a competing opencode.json');
+  const jsonc = require('jsonc-parser');
+  assert.deepEqual(jsonc.parse(fs.readFileSync(file, 'utf8')).plugin, ['foreign-plugin', record.target]);
+  f.manager.disable('aih-demo', { provider: 'opencode' });
+  assert.deepEqual(jsonc.parse(fs.readFileSync(file, 'utf8')).plugin, ['foreign-plugin']);
+  f.manager.enable('aih-demo', { provider: 'opencode' });
+  assert.deepEqual(jsonc.parse(fs.readFileSync(file, 'utf8')).plugin, ['foreign-plugin', record.target]);
+  fs.writeFileSync(file, '{"plugin":["foreign-plugin"]}');
+  assert.equal(f.manager.doctor().healthy, false);
+});
+test('plugin version must be semver and snapshot tampering blocks re-enable', (t) => {
+  const f = fixture(t);
+  const source = path.join(f.dir, 'source');
+  fs.cpSync(fixtureSource, source, { recursive: true });
+  const file = path.join(source, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(file));
+  pkg.version = '../../escape'; fs.writeFileSync(file, JSON.stringify(pkg));
+  assert.throws(() => f.manager.install(source, { provider: 'claude' }), { code: 'native_plugin_version_invalid' });
+  pkg.version = '1.0.0'; fs.writeFileSync(file, JSON.stringify(pkg));
+  const record = f.manager.install(source, { provider: 'claude' });
+  f.manager.disable(record.id, { provider: 'claude' });
+  const snapshot = path.join(f.options.aiHomeDir, 'managed-resources/native-plugins', record.id, record.version);
+  fs.appendFileSync(path.join(snapshot, 'skills/aih-demo/SKILL.md'), '\nTAMPERED');
+  assert.throws(() => f.manager.enable(record.id, { provider: 'claude' }), { code: 'native_plugin_snapshot_modified' });
+  assert.equal(fs.existsSync(record.target), false);
+});
+test('Codex remove while enabled removes actual native installation and marketplace, and re-enable restores it', (t) => {
+  const f = fixture(t);
+  const binary = f.options.nativeBinaries.codex;
+  f.manager.install(fixtureSource, { provider: 'codex' });
+  f.manager.disable('aih-demo', { provider: 'codex' });
+  f.manager.enable('aih-demo', { provider: 'codex' });
+  assert.equal(f.manager.doctor({ provider: 'codex' }).healthy, true);
+  f.manager.remove('aih-demo', { provider: 'codex' });
+  const result = spawnSync(binary, ['plugin', 'list', '--json'], { cwd: f.dir, env: envFor('codex', f.options.hostHomeDir), encoding: 'utf8', timeout: 20000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).installed, []);
+});

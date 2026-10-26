@@ -288,6 +288,10 @@ type NativeCapability struct {
 
 // NativePlugins describes the native plugin management boundary.
 type NativePlugins struct {
+	// Adapter selects a registered host projection strategy. Consumers must not
+	// dispatch on provider identity when this field is present.
+	Adapter  string   `json:"adapter,omitempty"`
+	PathBase string   `json:"pathBase,omitempty"`
 	Commands []string `json:"commands"`
 	Paths    []string `json:"paths"`
 	Mode     string   `json:"mode"`

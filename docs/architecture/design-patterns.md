@@ -310,6 +310,12 @@ Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-clie
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
    记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。
 
+**桌面 Chat 边界（2026-10-26）**
+
+- `lib/desktop/chat/chat-runtime-bridge.js` 是 Chat Runtime 的适配器：原生端只发会话/命令意图；桥接持有 request/session/command 身份与等待中的停止请求，不创建独立 provider 执行路径。
+- `lib/desktop/runtime/desktop-protocol.js` 将目标元数据与 canonical 消息内容分开规范化。可选目标字段允许缺省；正文保留完整内容，超过帧限制显式报错。进程 launcher 不比较 Chat 的独立会话/命令计数器。
+- `native/chat/ChatPanel.swift` 持有会话状态机，按 item 身份与角色投影助手消息；`ChatPanelContent.swift` 为被动视图，以稳定文本节点增量呈现，并保留原生选择、滚动及输入法语义。
+
 **验收标准（每个 provider × 每个采集面）**
 - `npm run providers:audit` 显示该面的通道与依赖；CLI-only 必须带原因。
 - 该 provider 的**纯 API 路径有真实账号实测证据**（不是「应该可以」）。

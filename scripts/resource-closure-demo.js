@@ -5,9 +5,9 @@
 // composes their bounded JSON reports and joins them with the descriptor report.
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { runProcess } = require('./process-runner');
 const { createProviderResourceDoctor } = require('../lib/native-resources/provider-resource-doctor');
 const { createNativePluginManager } = require('../lib/native-resources/native-plugin-manager');
 const { createSkillManager } = require('../lib/native-resources/skill-manager');
@@ -83,13 +83,12 @@ function usage() {
   ].join('\n');
 }
 
-function runJsonCommand(args, timeoutMs) {
-  const result = spawnSync(process.execPath, args, {
+async function runJsonCommand(args, timeoutMs) {
+  const result = await runProcess(process.execPath, args, {
     cwd: ROOT,
     env: { ...process.env, NO_PROXY: '127.0.0.1,localhost' },
-    encoding: 'utf8',
-    timeout: timeoutMs,
-    maxBuffer: 8 * 1024 * 1024
+    timeoutMs,
+    maxOutput: 8 * 1024 * 1024
   });
   const stdout = String(result.stdout || '').trim();
   const stderr = String(result.stderr || '').trim();
@@ -99,10 +98,10 @@ function runJsonCommand(args, timeoutMs) {
     command: args.slice(1),
     status: result.status,
     signal: result.signal || null,
-    timedOut: Boolean(result.error && result.error.code === 'ETIMEDOUT'),
+    timedOut: result.timedOut === true,
     passed: result.status === 0 && Boolean(value && value.passed !== false),
     value,
-    error: result.error ? String(result.error.code || result.error.message || result.error) : '',
+    error: result.error ? String(result.error) : '',
     stderr: stderr.slice(0, 2000)
   };
 }
@@ -319,29 +318,29 @@ async function buildReport(options) {
   const evidence = new Map();
   const demos = [];
   const management = await runManagementLifecycle(capabilities, options);
-  const run = (id, args, indexer) => {
+  const run = async (id, args, indexer) => {
     if (options.skip.has(id)) return;
-    const result = runJsonCommand(args, options.timeoutMs);
+    const result = await runJsonCommand(args, options.timeoutMs);
     demos.push({ id, ...result });
     if (result.value) indexer(result.value, evidence);
   };
 
-  run('plugin', ['scripts/native-plugin-demo.js'], indexNativePlugin);
+  await run('plugin', ['scripts/native-plugin-demo.js'], indexNativePlugin);
   if (!options.skip.has('skill')) {
     for (const provider of ['codex', 'claude', 'opencode']) {
-      const result = runJsonCommand(['scripts/skill-native-demo.js', '--provider', provider], options.timeoutMs);
+      const result = await runJsonCommand(['scripts/skill-native-demo.js', '--provider', provider], options.timeoutMs);
       demos.push({ id: `skill:${provider}`, ...result });
       if (result.value) indexSkill(result.value, evidence);
     }
   }
-  run('mcp', ['scripts/mcp-native-demo.js'], indexMcp);
+  await run('mcp', ['scripts/mcp-native-demo.js'], indexMcp);
   if (!options.skip.has('gemini')) {
     const binary = options.geminiBinary || (() => {
       const candidates = ['/tmp/aih-gemini-resource-runtime/node_modules/.bin/gemini', 'gemini'];
       return candidates.find(candidate => candidate === 'gemini' || fs.existsSync(candidate)) || '';
     })();
     if (binary && (binary === 'gemini' || fs.existsSync(binary))) {
-      const result = runJsonCommand(['scripts/gemini-resource-native-demo.js', binary], options.timeoutMs);
+      const result = await runJsonCommand(['scripts/gemini-resource-native-demo.js', binary], options.timeoutMs);
       demos.push({ id: 'gemini', ...result });
       if (result.value) indexGemini(result.value, evidence);
     } else {
@@ -349,7 +348,7 @@ async function buildReport(options) {
     }
   }
   if (!options.skip.has('workbuddy')) {
-    const result = runJsonCommand(['scripts/workbuddy-resource-native-demo.js'], options.timeoutMs);
+    const result = await runJsonCommand(['scripts/workbuddy-resource-native-demo.js'], options.timeoutMs);
     demos.push({ id: 'workbuddy', ...result });
     if (result.value) indexWorkBuddy(result.value, evidence);
   }
@@ -360,7 +359,7 @@ async function buildReport(options) {
   ];
   for (const [provider, binary] of importedProviderDemos) {
     if (!binary || options.skip.has(provider)) continue;
-    const result = runJsonCommand([
+    const result = await runJsonCommand([
       'scripts/workbuddy-resource-native-demo.js',
       '--provider', provider,
       '--binary', binary

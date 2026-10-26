@@ -11,6 +11,7 @@ const { createMcpManager } = require('../lib/native-resources/mcp-manager');
 const { resolveProviderResourceRuntime, nativeResourceEnvironment } = require('../lib/native-resources/provider-native-runtime');
 const { createPromptFixture } = require('../examples/skills/prompt-fixture');
 const { runNativePrompt } = require('./skill-native-demo');
+const { runProcess } = require('./process-runner');
 
 const SOURCE = path.resolve(__dirname, '../examples/native-plugins/aih-demo');
 const SKILL_SOURCE = path.resolve(__dirname, '../assets/provider-skills/aih-demo');
@@ -75,7 +76,7 @@ async function main(options = {}) {
     const pluginManager = createNativePluginManager({ aiHomeDir, hostHomeDir: home, nativeBinaries });
     const skillManager = createSkillManager({ aiHomeDir, hostHomeDir: home });
     const mcpManager = createMcpManager({ aiHomeDir, hostHomeDir: home });
-    const version = childProcess.spawnSync(runtime.command, [...runtime.args, '--version'], { env, encoding: 'utf8', timeout: 30000 });
+    const version = await runProcess(runtime.command, [...runtime.args, '--version'], { env, cwd: root, timeoutMs: 30000, maxOutput: 256000 });
     assert.equal(version.status, 0);
     const result = { host: provider, runtime: version.stdout.trim(), runtimeSource: runtime.source, stages: [], passed: false };
     for (const stage of ['enabled', 'disabled', 're-enabled', 'removed']) {
@@ -122,11 +123,11 @@ async function main(options = {}) {
     const filesCall = await mcpManager.call('aih-demo', 'aih_list_files', { path: '.' }, { provider });
     assert.ok(!filesCall.isError && filesCall.content?.[0]?.text, 'mcp_list_files_failed');
     mcpManager.enable('aih-demo', { provider });
-    const nativeList = childProcess.spawnSync(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, encoding: 'utf8', timeout: 30000, maxBuffer: 256000 });
+    const nativeList = await runProcess(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, timeoutMs: 30000, maxOutput: 256000 });
     assert.equal(nativeList.status, 0, nativeList.stderr);
     assert.match(nativeList.stdout, /aih-demo[^\n]*\bConnected\b/);
     mcpManager.disable('aih-demo', { provider });
-    const disabledList = childProcess.spawnSync(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    const disabledList = await runProcess(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, timeoutMs: 30000, maxOutput: 256000 });
     assert.equal(disabledList.status, 0, disabledList.stderr);
     assert.doesNotMatch(disabledList.stdout, /aih-demo/);
     mcpManager.remove('aih-demo', { provider });

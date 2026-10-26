@@ -4,8 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { findRuntimePackage } = require('../lib/native-resources/host-runtime-discovery');
+const { IMPORTED_HOSTS } = require('../lib/native-resources/provider-resource-doctor');
 
 function runPiPluginDemo(runtimePackage) {
+  runtimePackage ||= findRuntimePackage(IMPORTED_HOSTS.find(host => host.host === 'pi'), { hostHomeDir: os.homedir() })?.packageDir;
   assert.ok(runtimePackage, 'Usage: node scripts/pi-plugin-native-demo.js <pi-package-directory>');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-pi-plugin-'));
   const home = path.join(root, 'home');
@@ -34,7 +37,10 @@ function runPiPluginDemo(runtimePackage) {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 if (require.main === module) {
-  try { console.log(JSON.stringify(runPiPluginDemo(process.argv[2]), null, 2)); }
+  try {
+    if (process.argv.includes('--help')) console.log('Usage: node scripts/pi-plugin-native-demo.js [installed-pi-package-directory]');
+    else console.log(JSON.stringify(runPiPluginDemo(process.argv[2]), null, 2));
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 module.exports = { runPiPluginDemo };

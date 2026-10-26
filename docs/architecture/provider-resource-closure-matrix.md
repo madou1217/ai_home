@@ -27,7 +27,12 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 
 | Host | State | Reason | Evidence |
 |---|---|---|---|
-| deepseek | projection-only | canonical_deepseek_entry_verified; harness_runtime_adapter_not_registered | aih native plugin inspect/project + spec:2026-10-25-universal-agent-plugin-design §4.1 |
+| deepseek | projection-only | native_profile_and_sdk_tool_lifecycle_verified; unified_aih_lifecycle_pending | scripts/deepseek-plugin-native-demo.mjs |
 | opencode | supported | server_plugin_local_projection_verified; TUI/RPC entrypoints remain separate | scripts/native-plugin-demo.js |
-| pi | runtime-unavailable | pi_binary_not_found_on_this_machine; package_projection_only | examples/native-plugins/aih-demo/package.json |
+| pi | projection-only (runtime availability is probed locally) | native_tool_command_cleanup_verified; unified_aih_lifecycle_pending | scripts/pi-plugin-native-demo.js |
 | aih | supported | signed_artifact_and_supervised_host | scripts/plugin-closure-demo.js |
+
+`provider doctor` adds a targeted installed-package discovery and real version
+probe for the external Pi/DSH harnesses. Absence from PATH is not proof that the
+runtime is absent. `runtime.available` is independent of management adapter
+closure; it never upgrades the whole host to supported by itself.

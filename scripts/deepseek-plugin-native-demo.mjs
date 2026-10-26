@@ -5,8 +5,14 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import discovery from '../lib/native-resources/host-runtime-discovery.js';
+import doctors from '../lib/native-resources/provider-resource-doctor.js';
 
-const runtimePackage = process.argv[2];
+if (process.argv.includes('--help')) {
+  console.log('Usage: node scripts/deepseek-plugin-native-demo.mjs [installed-dsh-package-directory]');
+  process.exit(0);
+}
+const runtimePackage = process.argv[2] || discovery.findRuntimePackage(doctors.IMPORTED_HOSTS.find(host => host.host === 'deepseek'), { hostHomeDir: os.homedir() })?.packageDir;
 assert.ok(runtimePackage, 'Usage: node scripts/deepseek-plugin-native-demo.mjs <dsh-package-directory>');
 const require = createRequire(path.join(runtimePackage, 'package.json'));
 const base = createRequire(require.resolve('@deepseek-ai/dsh-base'));

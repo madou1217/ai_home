@@ -2,13 +2,15 @@
 
 这份 quickstart 对应当前已经能运行的管理面。统一插件设计见 [Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；实现证据见 [Plugin Management Closure Evidence](../architecture/plugin-management-closure.md)。命令只管理本机资源，示例中的 `aih-demo` 是仓库内的确定性 fixture，不会消耗上游模型额度。
 
-如果要做一次不触碰真实账号的演示，优先运行下面四个脚本。它们各自创建临时 home，结束后清理临时文件，并且输出会刻意省略凭据、完整请求正文和管理密钥：
+如果要做一次不触碰真实账号的演示，优先运行下面的脚本。它们各自创建临时 home，结束后清理临时文件，并且输出会刻意省略凭据、完整请求正文和管理密钥：
 
 ```bash
 node scripts/plugin-closure-demo.js --json
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
 node scripts/mcp-native-demo.js
 node scripts/native-plugin-demo.js
+node scripts/pi-plugin-native-demo.js
+node scripts/deepseek-plugin-native-demo.mjs
 ```
 
 ## AIH 自有插件
@@ -112,11 +114,15 @@ aih native plugin inspect examples/native-plugins/aih-demo \
   --host pi --json
 ```
 
-`inspect/project` 验证 `agentPlugin`、`exports`、入口文件和 `pi.extensions` 的一致性，并写入不含秘密的 `host-projection.json`。它不等同于 DeepSeek Harness 或 Pi runtime 执行；当前机器没有可用 DSH/Pi runtime，OpenCode 也要把 server、TUI、RPC 分开验收。可运行的 Codex/Claude/OpenCode projection probe 是：
+`inspect/project` 验证 `agentPlugin`、`exports`、入口文件和 `pi.extensions` 的一致性，并写入不含秘密的 `host-projection.json`。真实调用使用单独的 probe：
 
 ```bash
 node scripts/native-plugin-demo.js
+node scripts/pi-plugin-native-demo.js [installed-pi-package-directory]
+node scripts/deepseek-plugin-native-demo.mjs [installed-dsh-package-directory]
 ```
+
+后两条的 package directory 是可选位置参数；省略时会按外部 harness 描述符查找全局安装和 pnpm store，并用真实 CLI 的版本输出确认可运行性。Pi probe 通过原生 install/remove、SDK ResourceLoader、工具、命令和 shutdown 验证；DSH probe 通过原生 profile add/remove/dump、DSH ToolRuntime 和 Cordis scope 验证。它们不调用远程模型，也不证明 DSH browser/TUI 或 OpenCode TUI/RPC 的专用能力。Pi/DSH 目前仍用各自原生命令管理安装，`aih native plugin install --provider` 的统一管理接入尚待完成。
 
 ## 查看所有 provider 的真实边界
 

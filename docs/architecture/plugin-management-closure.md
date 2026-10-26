@@ -16,8 +16,8 @@ first failed on absent native registration and now exercise a shared portable
 operation from `dist/core.mjs` through real host adapters:
 
 ```sh
-node scripts/pi-plugin-native-demo.js <installed-pi-package-directory>
-node scripts/deepseek-plugin-native-demo.mjs <installed-dsh-package-directory>
+node scripts/pi-plugin-native-demo.js [installed-pi-package-directory]
+node scripts/deepseek-plugin-native-demo.mjs [installed-dsh-package-directory]
 ```
 
 - Pi uses its native `install/remove`, then its real SDK ResourceLoader and
@@ -33,8 +33,13 @@ node scripts/deepseek-plugin-native-demo.mjs <installed-dsh-package-directory>
 
 The same package's Pi and DSH engine ranges now match the exercised versions.
 These SDK/native-package proofs supersede the historical statements that the
-hosts were wholly absent; automatic discovery and unified AIH lifecycle commands
-for these external harnesses still require integration.
+hosts were wholly absent. Both demos now discover packages when the optional
+directory argument is omitted. Doctor uses the external harness catalog and
+targeted npm/pnpm package lookup, then runs the real CLI version probe (including
+DSH's Node 22 `runCli` wrapper). Both report `runtime.available: true` on this
+machine. Unified AIH lifecycle commands for these external harnesses still need
+integration, so their management state remains `projection-only`. The demos pass
+on both Node 26.12.1 and the supported Node 22.21.0 runtime.
 
 ## AIH Plugin baseline
 

@@ -25,7 +25,21 @@ export function getAccountSecondaryLabel(record: Account) {
   return getAccountSecondaryIdentity(record);
 }
 
-export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region'>) {
+// zcode 的**服务区域**（zai 国际站 / bigmodel 国内站）。与 kimi 的 region 语义不同
+// （那是网络区域 china/overseas），因此读的是独立字段 zcodeRegion。
+// 用途：同一用户能在两个区域各有账号、邮箱相同或被上游打码，只有区域能分开。
+// 标签文案与 lib/server/zcode-region.js 的区域表同源。
+const ZCODE_REGION_META: Record<string, { color: string; label: string }> = {
+  zai: { color: 'blue', label: 'Z.AI 国际站' },
+  bigmodel: { color: 'orange', label: 'BigModel 国内站' }
+};
+
+export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region' | 'zcodeRegion'>) {
+  if (record.provider === 'zcode') {
+    const meta = ZCODE_REGION_META[String(record.zcodeRegion || '').trim()];
+    // 未判定区域时不渲染标签（不要谎报一个区域）。
+    return meta ? { ...meta, endpoint: '' } : null;
+  }
   if (record.provider !== 'kimi') return null;
   if (record.region === 'china') {
     return { color: 'blue', label: '中国区', endpoint: 'www.kimi.com' };
@@ -272,12 +286,14 @@ const accountRoleTagStyle: React.CSSProperties = {
   marginInlineEnd: 0
 };
 
-export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region'>) {
+export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region' | 'zcodeRegion'>) {
   const meta = getAccountRegionMeta(record);
   if (!meta) return null;
-  const detail = meta.endpoint
-    ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
-    : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。';
+  const detail = record.provider === 'zcode'
+    ? `ZCode 服务区域：${meta.label}（凭据里的 oauth:active_provider）`
+    : (meta.endpoint
+      ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
+      : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。');
   return (
     <Tooltip title={detail}>
       <Tag color={meta.color} style={accountRoleTagStyle}>

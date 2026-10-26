@@ -210,6 +210,7 @@ pluginVersion             插件发布版本
   "exports": {
     ".": "./dist/core.mjs",
     "./deepseek": "./dist/hosts/deepseek.mjs",
+    "./server": "./dist/hosts/opencode-server.mjs",
     "./opencode/server": "./dist/hosts/opencode-server.mjs",
     "./opencode/tui": "./dist/hosts/opencode-tui.mjs",
     "./pi": "./dist/hosts/pi.mjs",
@@ -222,6 +223,11 @@ pluginVersion             插件发布版本
 ```
 
 DSH 的 patch projection 和 AIH `plugin.json` projection 应由构建工具生成或由安装器在接受前验证，不成为另一份作者维护的事实源。
+
+OpenCode 的 canonical 分面名 `./opencode/server` 同时需要原生 loader 的
+`./server` export（或等价 `main`）。只有前者、缺少后者时不能报告 projection-ready。
+同样，Pi 的 `pi.extensions` 必须列出 canonical 入口，DSH 的 `dsh.bundle.patch`
+必须存在并引用包的 DeepSeek 入口；单独的 `exports` 文件存在不足以满足宿主发现。
 
 ### 5.3 目录布局
 

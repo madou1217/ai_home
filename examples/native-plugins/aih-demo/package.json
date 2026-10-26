@@ -2,6 +2,7 @@
   "name": "aih-demo-plugin",
   "version": "1.0.0",
   "type": "module",
+  "main": "./dist/hosts/opencode-server.mjs",
   "description": "AIH portable native plugin demo",
   "agentPlugin": {
     "manifestVersion": 1,
@@ -36,6 +37,7 @@
   },
   "exports": {
     ".": "./dist/core.mjs",
+    "./server": "./dist/hosts/opencode-server.mjs",
     "./opencode/server": "./dist/hosts/opencode-server.mjs",
     "./pi": "./dist/hosts/pi.mjs",
     "./deepseek": "./dist/hosts/deepseek.mjs"

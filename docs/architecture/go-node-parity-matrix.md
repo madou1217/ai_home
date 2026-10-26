@@ -612,6 +612,8 @@ Node 的 email 取值链**优先读存储字段**（`payload.email`/`credentials
 
 ## `/readyz`：同一条路径上的两套语义（2026-09-16 已按方案 1 闭合）
 
+2026-10-26 补充：显式关闭 Go Core 时，宿主所有请求沿现有 `go_not_forwarding` 分支交还完整 Node 实现；Go 的 `go_ready` / `forwarding` 仍为 false，但 manifest 中的 Go 所有权本身不构成宿主未就绪。配置合同错误仍阻止就绪；启用 Go 后继续核对实际转发与 Go 健康状态。
+
 manifest 的 `gateway.readiness` 条目曾写着 blocker：**「readiness semantics are not yet the
 public Node contract」**，但本文此前从未解释这条 blocker 具体指什么。补上核对结论与解法。
 

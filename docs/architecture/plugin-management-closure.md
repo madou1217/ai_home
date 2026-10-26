@@ -382,6 +382,27 @@ standalone CLIs, plus WorkBuddy through its installed desktop bundle. Other
 provider runtime rows remain unavailable until a native runtime can be resolved
 and its version probe succeeds; capability declarations are independent.
 
+## DeepSeek official headless tool loop (2026-10-27)
+
+`node scripts/deepseek-plugin-tool-loop-demo.js` uses the real AIH CLI to
+install/disable/enable/remove the canonical package, resolves that same managed
+state through `buildManagedHostPluginArgs`, and runs the installed DSH
+0.2.1-rc.2 CLI against an isolated official `dsh-base + dsh-headless` profile.
+Node 22 and the existing `resolveDshNodePath` helper provide its native module
+lookup. No installed runtime or `lib/harness/` source is modified.
+
+The local Chat Completions fixture is shared with the Pi demo. Enabled and
+re-enabled each produce two requests, an `aih_demo` tool call, a completed
+native result event containing the unchanged shared core's result, that result
+in the following request and the exact final answer. Disabled and removed each
+produce one request with no plugin tool and return `PLUGIN_NOT_LOADED`.
+Telemetry and auxiliary title generation are disabled in this temporary profile.
+The existing DSH managed SDK/profile/cleanup runner includes the new headless
+loop while keeping those evidence layers explicitly separate.
+
+This proves official headless execution of AIH-managed patches, not the existing
+AIH Web profile's model loop or DSH Web/TUI parity. Those remain outstanding.
+
 ## Pi native CLI tool loop (2026-10-27)
 
 `node scripts/pi-plugin-tool-loop-demo.js` invokes the actual AIH CLI host
@@ -401,7 +422,7 @@ existing SDK loader/command/shutdown and account-launch-argument checks. The
 combined runner passes under Node 22.23.2; the standalone loop also passes under
 Node 26.12.1. The existing regression suite remains 111/111 and provider contract
 check passes. This closes the Pi headless agent-loop evidence gap; TUI/RPC and
-DSH model-loop evidence remain separate. No `lib/harness/` code is changed.
+DSH Web model-loop evidence remain separate. No `lib/harness/` code is changed.
 
 ## WorkBuddy ownership hardening checkpoint (2026-10-27)
 
@@ -521,7 +542,7 @@ Overall closure status is now:
   the remaining M1 migration gates are distinct from this proven subset.
 
 No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DSH
-model-selected agent loop. Pi headless inference uses a deterministic local
+Web/TUI model-selected agent loop. Pi and DSH headless inference use a deterministic local
 model fixture; this proves runtime execution, not a remote model's tool-selection quality.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry

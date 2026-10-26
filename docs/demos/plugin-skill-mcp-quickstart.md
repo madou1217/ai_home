@@ -18,6 +18,7 @@ node scripts/pi-plugin-native-demo.js --managed
 node scripts/pi-plugin-tool-loop-demo.js
 node scripts/deepseek-plugin-native-demo.mjs
 node scripts/deepseek-plugin-managed-demo.mjs
+node scripts/deepseek-plugin-tool-loop-demo.js
 ```
 
 ## AIH 自有插件
@@ -211,6 +212,12 @@ DeepSeek 安装结果的 `nativeInstall.launchPath` 是生成的 DSH patch，供
 profile 的 `--patch` 参数使用。AIH 的 DSH 账号启动会自动携带已启用的 patch。
 probe 验证原生 profile composition、真实 boot/Loader/ToolRuntime 和清理，
 支持依赖已打包的 portable adapter 包；任意第三方 bundle 仍由 DSH 原生包管理器安装。
+
+现在该 probe 还调用 `deepseek-plugin-tool-loop-demo.js`，用同一包和 AIH CLI
+管理的 patch，在隔离的官方 `dsh-base + dsh-headless` profile 中执行真实模型
+工具循环。启用/重新启用各两次本地推理请求，停用/移除各一次；校验原生
+`tool_call`、`tool_result` 和 `final` 事件。该路径验证不等于现有 AIH Web
+profile 或 DSH Web/TUI 已通过；那些入口继续单独跟踪。使用项目支持的 Node 22。
 
 ## WorkBuddy AI 插件、Skill 和 MCP
 

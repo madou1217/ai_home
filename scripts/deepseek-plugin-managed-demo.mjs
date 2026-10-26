@@ -9,6 +9,7 @@ import yaml from 'yaml';
 import discovery from '../lib/native-resources/host-runtime-discovery.js';
 import doctors from '../lib/native-resources/provider-resource-doctor.js';
 import harness from '../lib/harness/dsh.js';
+import toolLoop from './deepseek-plugin-tool-loop-demo.js';
 
 if (process.argv.includes('--help')) {
   console.log('Usage: node scripts/deepseek-plugin-managed-demo.mjs [installed-dsh-package-directory]');
@@ -80,5 +81,6 @@ try {
     if (tool) await assert.rejects(() => tool.execute({ text: 'stale' }, { signal: new AbortController().signal }), /portable_plugin_disposed/);
     steps.push({ stage, profileComposed: expected, nativeToolCalled: Boolean(tool), cleanup: Boolean(tool), accountHarnessVerified: true, passed: true });
   }
-  console.log(JSON.stringify({ host: 'deepseek', version: JSON.parse(fs.readFileSync(path.join(runtimePackage, 'package.json'))).version, packageManager: 'AIH CLI + owned DSH patch', runtime: 'native DSH boot/Loader/ToolRuntime/Cordis', inference: 'none', steps, passed: true }, null, 2));
+  const headlessLoop = await toolLoop.runDeepSeekToolLoopDemo(runtimePackage);
+  console.log(JSON.stringify({ host: 'deepseek', version: JSON.parse(fs.readFileSync(path.join(runtimePackage, 'package.json'))).version, packageManager: 'AIH CLI + owned DSH patch', runtime: 'native DSH boot/Loader/ToolRuntime/Cordis', inference: headlessLoop.inference, toolExecutionVerified: true, steps, headlessLoop, passed: true }, null, 2));
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

@@ -82,3 +82,10 @@ test('modified owned plugin and foreign same-name paths are protected', (t) => {
   fs.mkdirSync(foreign, { recursive: true }); fs.writeFileSync(path.join(foreign, 'mine'), 'keep');
   assert.equal(fs.readFileSync(path.join(foreign, 'mine'), 'utf8'), 'keep');
 });
+test('CodeBuddy family uses its declared native root/plugins projection while runtime remains doctor-visible', (t) => {
+  const f = fixture(t);
+  const record = f.manager.install(fixtureSource, { provider: 'codebuddy' });
+  assert.equal(record.target, path.join(f.options.hostHomeDir, '.codebuddy', 'plugins', 'aih-demo'));
+  assert.equal(record.mode, 'native');
+  f.manager.remove('aih-demo', { provider: 'codebuddy' });
+});

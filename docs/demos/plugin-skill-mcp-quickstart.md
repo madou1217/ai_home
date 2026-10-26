@@ -383,7 +383,20 @@ node scripts/mcp-native-demo.js
 传入工具级 `approval_mode="approve"`，不更改用户配置、不全局跳过审批。
 配置字段见 [官方 MCP 文档](https://developers.openai.com/codex/mcp/)。
 本地确定性 Responses fixture 不消耗远程模型额度。总 demo 已包含
-Codex、Claude、OpenCode 的原生调用；Cline 仍只按现有管理与连接证据报告。
+Codex、Claude、OpenCode 和 Cline 的原生调用。Cline 使用临时隔离的
+`openai-compatible` provider 配置，并通过自身 `auth` 命令写入临时
+`providers.json`，不会触碰用户真实 Cline 配置。
+
+Cline 的单独 native loop 可复核：
+
+```sh
+node scripts/cline-mcp-tool-loop-demo.js /absolute/path/to/cline
+```
+
+启用和重新启用阶段会看到 `AIH_NATIVE_MCP_OK`，停用和移除阶段会看到
+`MCP_NOT_LOADED`；这证明模型请求、原生 MCP 工具事件和 stdio 结果回传都
+发生了。该 fixture 只证明本地协议和当前 CLI 版本，不代表远程模型质量或
+所有 Cline provider 的配置都已验证。
 
 ## Gemini 原生扩展和 Skill
 

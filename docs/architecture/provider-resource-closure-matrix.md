@@ -21,7 +21,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | codebuddycn | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
-| cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
+| cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (native model/tool loop verified on Cline 3.0.74; descriptor remains projection-only) | core/providers/native.go |
 
 ## Imported host gaps
 
@@ -64,13 +64,23 @@ is unchanged; machine/version evidence is recorded separately (OpenCode 1.17.18)
 Claude Code 2.1.310 also has native MCP execution evidence through
 `scripts/claude-mcp-tool-loop-demo.js`: deferred ToolSearch, echo, file listing,
 correlated results and four-stage lifecycle. The aggregate includes both Claude
-and OpenCode native loops; Codex/Cline rows retain their existing evidence scope.
+and OpenCode native loops; Codex and Cline have separate native-loop evidence
+below. The static descriptor state remains projection-only so descriptor
+capability and machine/version evidence stay separate.
 
 Codex CLI 0.164.0 now also has native MCP execution evidence through
 `scripts/codex-mcp-tool-loop-demo.js`: namespaced Responses calls, correlated
 results and native successful MCP completion events across four lifecycle stages.
-The aggregate covers Codex/Claude/OpenCode native loops; Cline remains at the
-management/connection evidence level. Static descriptor states remain unchanged.
+The aggregate covers Codex/Claude/OpenCode/Cline native loops. Static descriptor
+states remain unchanged.
+
+Cline CLI 3.0.74 also passes `scripts/cline-mcp-tool-loop-demo.js`: its native
+`openai-compatible` provider is configured in an isolated temporary profile,
+the AIH-projected `cline_mcp_settings.json` is loaded by the real CLI, and
+enabled/re-enabled stages produce a native tool event plus a follow-up model
+request containing the stdio result. Disabled/removed stages contain no MCP
+schema or tool event. This is local deterministic protocol evidence, not remote
+model or Web/TUI parity.
 
 Gemini CLI 0.65.0 now has native extension and standalone Skill execution evidence
 through `scripts/gemini-resource-native-demo.js`. The same canonical package carries

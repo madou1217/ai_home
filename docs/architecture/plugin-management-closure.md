@@ -622,6 +622,27 @@ and `/tmp/aih-codebuddycn-resource-final.json` (mode-specific loading checks),
 passed, including WorkBuddy MCP absence after disable). `npm run providers:check`,
 CLI help/capability output, JavaScript syntax and diff/encoding checks also pass.
 
+## Cline native MCP tool loop (2026-10-27)
+
+`node scripts/cline-mcp-tool-loop-demo.js [native-cli-path]` now proves the
+missing Cline execution layer with Cline 3.0.74. The demo first uses Cline's
+native `auth --provider openai-compatible --baseurl ...` command to create an
+isolated temporary `providers.json`; it never reads or writes the user's real
+Cline profile. The existing AIH MCP manager then projects the server into
+`data/settings/cline_mcp_settings.json`, which the real CLI loads.
+
+Enabled and re-enabled stages require two OpenAI-compatible streaming requests,
+the native MCP schema, a completed `aih_echo` tool event, the returned nonce in
+the following model request, and the exact final `AIH_NATIVE_MCP_OK`. Disabled
+and removed stages require one request, no MCP schema or tool event, and
+`MCP_NOT_LOADED`. This verifies Cline's native model/tool loop and the managed
+projection lifecycle with a deterministic local fixture. It does not claim
+remote-model reasoning, every Cline provider configuration, or Web/TUI parity.
+
+The aggregate `scripts/mcp-native-demo.js` includes this demo, so the current
+machine's Codex, Claude, OpenCode and Cline rows each carry native execution
+evidence in addition to management and direct stdio checks.
+
 ## OpenCode native MCP tool loop (2026-10-27)
 
 `node scripts/opencode-mcp-tool-loop-demo.js [native-cli-path]` now proves the
@@ -645,8 +666,10 @@ The local protocol fixture determines the tool selection; this proves real nativ
 execution and result propagation, not remote-model reasoning or TUI/Web parity.
 
 Fresh evidence: `/tmp/aih-mcp-with-native-loop.json` passes Codex, Claude, OpenCode
-and Cline management/connection checks, and embeds all four passing OpenCode
-native-loop stages. The other three rows retain their earlier evidence limits.
+and Cline management/connection checks, and embeds the passing native-loop stages
+for all four clients. Each client still has its own protocol and provider
+configuration boundary; one client's local fixture does not establish parity for
+the others.
 
 ## Claude native MCP tool loop (2026-10-27)
 
@@ -696,8 +719,8 @@ credentials or remote inference. This does not prove remote-model reasoning or
 Web/TUI entrypoints. No harness implementation changes are made.
 
 Evidence: `/tmp/aih-codex-mcp-loop.json`; the aggregate
-`/tmp/aih-mcp-three-native-loops.json` now includes Codex, Claude and OpenCode
-native loops. Cline retains the management/connection evidence level.
+`/tmp/aih-mcp-three-native-loops.json` now includes Codex, Claude, OpenCode and
+Cline native loops.
 
 ## Gemini native extension and Skill closure (2026-10-27)
 

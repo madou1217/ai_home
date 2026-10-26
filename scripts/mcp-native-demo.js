@@ -10,7 +10,7 @@ const CLIENTS = [
   { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./codex-mcp-tool-loop-demo').runCodexMcpDemo },
   { provider: 'claude', binary: '/Users/model/.local/bin/claude', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./claude-mcp-tool-loop-demo').runClaudeMcpDemo },
   { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./opencode-mcp-tool-loop-demo').runOpenCodeMcpDemo },
-  { provider: 'cline', binary: '/opt/homebrew/bin/cline', version: ['--version'], list: ['config', '--json'] }
+  { provider: 'cline', binary: '/opt/homebrew/bin/cline', version: ['--version'], list: ['config', '--json'], toolLoop: require('./cline-mcp-tool-loop-demo').runClineMcpDemo }
 ];
 function run(binary, args, options) {
   const result = spawnSync(binary, args, { ...options, encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 });

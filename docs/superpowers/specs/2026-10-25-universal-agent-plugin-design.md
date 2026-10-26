@@ -581,6 +581,17 @@ Codex CLI 0.164.0 passes native MCP execution via
 tools, correlated outputs, native completed events and four management stages.
 The fixture is local and deterministic; Web/TUI and remote inference are separate.
 
+### Cline MCP runtime evidence update (2026-10-27)
+
+Cline CLI 3.0.74 passes native MCP execution through
+`scripts/cline-mcp-tool-loop-demo.js`. The demo uses Cline's native
+`openai-compatible` provider configuration in an isolated temporary profile,
+loads the AIH-projected `cline_mcp_settings.json`, and verifies native tool
+events plus the result in the following model request across enable, disable,
+re-enable and remove. This proves the current Cline CLI's local model/tool
+protocol and managed projection; remote inference, other provider settings and
+Web/TUI parity remain separate evidence.
+
 ### Gemini extension/Skill evidence update (2026-10-27)
 
 Gemini CLI 0.65.0 loads the same canonical package via `gemini-extension.json`

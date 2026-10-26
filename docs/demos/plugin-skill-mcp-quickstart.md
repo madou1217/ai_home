@@ -287,3 +287,19 @@ node scripts/workbuddy-resource-native-demo.js --provider codebuddycn --binary /
 进程。两者 MCP 使用各自配置根中的 `.mcp.json`；WorkBuddy 2.161.0 仍使用
 `.codebuddy.json`。MCP demo 证明原生 Connected 和 AIH 的两个 stdio 工具
 调用，尚未证明原生模型选择 MCP 工具。WorkBuddy CN 未纳入本次运行结论。
+
+## OpenCode 内部实际调用 MCP 工具
+
+```sh
+node scripts/opencode-mcp-tool-loop-demo.js /absolute/path/to/opencode
+# 也已包含在现有总 demo 中
+node scripts/mcp-native-demo.js
+```
+
+该 demo 使用临时 HOME 和工作目录，复用 `aih mcp` 的管理器进行启用、停用、
+重新启用和移除。真实 OpenCode 依次执行 `aih_echo` 和 `aih_list_files`，
+随后把结果送回模型请求，最终输出 `AIH_NATIVE_MCP_OK`。启用阶段要求三轮
+请求和两个原生完成事件；停用、移除阶段要求工具不存在，返回
+`MCP_NOT_LOADED`。这是本地确定性模型服务驱动的原生 MCP 调用，不需要真实
+账号或远程模型额度。已验证 OpenCode 1.17.18；其他宿主不会因此自动获得
+相同的原生 MCP 执行结论。

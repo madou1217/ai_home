@@ -430,3 +430,12 @@ uses an explicit runtime override and keeps real install/disable/enable/remove,
 native Skill execution and MCP connection evidence separate. SOLID keeps vendor
 data in descriptors and I/O in adapters; DRY reuses the marketplace and demo;
 KISS/YAGNI avoid a second plugin manager or general host scripting framework.
+
+OpenCode native MCP evidence (2026-10-27):
+`scripts/opencode-mcp-tool-loop-demo.js` consumes the existing MCP Facade and native
+config Strategy without introducing a second lifecycle implementation. The demo
+separates deterministic protocol responses from actual native tool execution,
+correlating results by call ID and checking native completion events. The aggregate
+`scripts/mcp-native-demo.js` selects this optional proof through a client descriptor
+callback. KISS/YAGNI keep this a focused conformance demo, not a new harness; DRY
+reuses the manager and existing MCP server, and SOLID keeps fixtures out of runtime.

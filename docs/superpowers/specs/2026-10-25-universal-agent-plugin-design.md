@@ -558,3 +558,11 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 因此，安装包形状或 `project` 成功不能升级为宿主运行成功；只有真实宿主加载、调用、停用和移除证据才能把状态写成 `supported`。未知宿主必须保留 `unsupported`、`projection-only` 或 `runtime-unavailable` 及其原因，不能用空适配器伪装支持。
 
 后续 M2/M3/M4 门禁仍按本文件执行：Pi/DSH headless 工具循环已通过本地确定性推理 fixture；DSH 的 AIH Web profile、Web/TUI 以及 Pi/OpenCode TUI/RPC 需独立准备入口和运行证据。`provider doctor` 现在按外部 harness 描述符查找已安装的 package（包括 pnpm store），并用 CLI 版本 probe 判断是否可运行，不再把不在 PATH 等同于未安装。未验证的能力仍保持显式边界。
+
+### OpenCode MCP runtime evidence update (2026-10-27)
+
+OpenCode 1.17.18 additionally passes the actual native MCP model/tool loop through
+`scripts/opencode-mcp-tool-loop-demo.js`: echo and file listing, results correlated
+back into model requests, native completion events, and all four management
+stages. This uses a local deterministic model fixture and does not extend the
+claim to other hosts, remote reasoning, or Web/TUI entrypoints.

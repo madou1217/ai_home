@@ -617,3 +617,29 @@ and `/tmp/aih-codebuddycn-resource-final.json` (mode-specific loading checks),
 `/tmp/aih-codebuddy-family-aggregate.json` (all seven pre-existing runtime lanes
 passed, including WorkBuddy MCP absence after disable). `npm run providers:check`,
 CLI help/capability output, JavaScript syntax and diff/encoding checks also pass.
+
+## OpenCode native MCP tool loop (2026-10-27)
+
+`node scripts/opencode-mcp-tool-loop-demo.js [native-cli-path]` now proves the
+missing native execution layer using OpenCode 1.17.18 and the existing MCP
+manager. `scripts/mcp-native-demo.js` includes this evidence in its OpenCode row.
+
+Each run uses a temporary HOME, AIH state and working directory. The same managed
+server goes through enable, disable, re-enable and remove. A local Chat Completions
+fixture requests `aih_echo` with a fresh nonce, then `aih_list_files`; only the
+isolated working directory contains the nonce-bearing filename. The fixture
+accepts results only from tool-role messages with the matching call IDs, and the
+demo separately checks both completed native tool events and exact final answer.
+Enabled stages require three requests and both results; disabled/removed stages
+require one request, no schema, no tool events and `MCP_NOT_LOADED`. The demo never
+calls the AIH MCP client's `call` method to produce this native execution evidence.
+
+The isolated OpenCode config disables its title agent, whose extra inference
+request otherwise confounds the tool-loop count. Native permissions deny other
+tools and allow the demo MCP namespace. No production harness is modified.
+The local protocol fixture determines the tool selection; this proves real native
+execution and result propagation, not remote-model reasoning or TUI/Web parity.
+
+Fresh evidence: `/tmp/aih-mcp-with-native-loop.json` passes Codex, Claude, OpenCode
+and Cline management/connection checks, and embeds all four passing OpenCode
+native-loop stages. The other three rows retain their earlier evidence limits.

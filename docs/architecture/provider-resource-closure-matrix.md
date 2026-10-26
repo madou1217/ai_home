@@ -54,3 +54,9 @@ local fixture requests an advertised skill, then verifies the loaded body in the
 following request. Both mechanisms were observed, including within the CN version. MCP evidence
 is native connection plus two AIH stdio calls, not model-selected MCP execution.
 WorkBuddy CN and other CodeBuddy versions remain unverified.
+
+OpenCode MCP execution evidence now additionally includes the actual native
+model/tool loop: `scripts/opencode-mcp-tool-loop-demo.js` requires two native tool
+completion events and tool results returning to subsequent model requests, across
+all four management stages. The static projection-only descriptor state above
+is unchanged; machine/version evidence is recorded separately (OpenCode 1.17.18).

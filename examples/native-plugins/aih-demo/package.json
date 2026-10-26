@@ -18,7 +18,7 @@
     "hosts": {
       "aih": {
         "hostAdapterApiVersion": 1,
-        "transportProtocolVersion": 1,
+        "transportProtocolVersion": 2,
         "contributes": [
           { "id": "aih-demo.tool.aih_demo", "capability": "command", "version": 1 }
         ]

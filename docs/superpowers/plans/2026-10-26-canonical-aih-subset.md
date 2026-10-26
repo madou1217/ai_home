@@ -27,7 +27,7 @@
 - Modify `lib/plugins/control/artifact.js`: use the shared source reader and inject a virtual `plugin.json` into canonical artifacts without changing source files.
 - Modify `lib/plugins/control/cli.js`: share the reader for validate/pack and document canonical input in help.
 - Create `examples/native-plugins/aih-demo/dist/hosts/aih.mjs`: default Cordis plugin; `ctx.effect` owns `setupDemo`, tool registration delegates to `ctx.aih.register`.
-- Modify canonical sample `package.json`: add `./aih` and `agentPlugin.hosts.aih` with version 1 adapter/transport, and one `command` contribution `aih-demo.tool.aih_demo` version 1.
+- Modify canonical sample `package.json`: add `./aih` and `agentPlugin.hosts.aih` with adapter version 1, RPC transport version 2 from the generated contract, and one `command` contribution `aih-demo.tool.aih_demo` version 1. Legacy artifact `protocolVersion: 1` stays independent.
 - Modify `lib/native-resources/portable-plugin-conformance.js`: require the AIH entry and validate its projected native manifest.
 
 **Interfaces:**

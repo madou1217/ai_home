@@ -421,3 +421,12 @@ verifies DeepSeek, OpenCode, Pi and AIH entries, and `aih native plugin project`
 materializes a sanitized host projection report without pretending that an absent
 host runtime executed the plugin. `test/portable-plugin-conformance.test.js` covers
 missing entries and projection output.
+
+CodeBuddy native resource follow-up (2026-10-27): `core/providers/native.go`
+declares marketplace/MCP format and the CN runtime region. The existing provider
+Facade and runtime resolver propagate descriptor environment for both native CLI
+and desktop runtimes; no provider-name dispatch is added. The shared family demo
+uses an explicit runtime override and keeps real install/disable/enable/remove,
+native Skill execution and MCP connection evidence separate. SOLID keeps vendor
+data in descriptors and I/O in adapters; DRY reuses the marketplace and demo;
+KISS/YAGNI avoid a second plugin manager or general host scripting framework.

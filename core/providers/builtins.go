@@ -651,7 +651,7 @@ func builtinCodebuddy() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:             "codebuddy",
-		NativeBoundary: nativeCodebuddy(),
+		NativeBoundary: nativeCodebuddyCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
 		Gateway:        GatewayActive,
@@ -768,7 +768,7 @@ func builtinCodebuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:             "codebuddycn",
-		NativeBoundary: nativeCodebuddy(),
+		NativeBoundary: nativeCodebuddyCNCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
 		Gateway:        GatewayActive,

@@ -1986,13 +1986,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".mcp.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],
@@ -2135,6 +2141,14 @@
         }
       },
       "nativeBoundary": {
+        "runtime": {
+          "handler": "native-cli",
+          "entry": "",
+          "env": {
+            "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
+            "CODEBUDDY_INTERNET_ENVIRONMENT": "internal"
+          }
+        },
         "config": {
           "envHomeKeys": [
             "CODEBUDDY_CONFIG_DIR",
@@ -2159,13 +2173,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".mcp.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],

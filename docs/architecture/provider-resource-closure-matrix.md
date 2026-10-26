@@ -17,8 +17,8 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | kimi | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | unsupported (mcp_not_declared) | core/providers/native.go |
 | kiro | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | zcode | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | core/providers/native.go |
-| codebuddy | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
-| codebuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
+| codebuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
+| codebuddycn | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
 | cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
@@ -43,3 +43,14 @@ because the provider contract separates declaration from machine-specific execut
 probe for the external Pi/DSH harnesses. Absence from PATH is not proof that the
 runtime is absent. `runtime.available` is independent of management adapter
 closure; it never upgrades the whole host to supported by itself.
+
+CodeBuddy 2.177.0 uses the native marketplace adapter and `.mcp.json`. Its
+international and CN descriptors select independent native roots; CN also supplies
+the vendor's two `internal` region values to native resource commands. The family
+demo accepts `--provider codebuddy|codebuddycn --binary <codebuddy-path>`. Both
+variants passed plugin and standalone Skill use across all four lifecycle stages.
+Plugin use records direct expansion or a two-request native `Skill` loop: the
+local fixture requests an advertised skill, then verifies the loaded body in the
+following request. Both mechanisms were observed, including within the CN version. MCP evidence
+is native connection plus two AIH stdio calls, not model-selected MCP execution.
+WorkBuddy CN and other CodeBuddy versions remain unverified.

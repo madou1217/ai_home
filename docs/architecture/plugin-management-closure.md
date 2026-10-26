@@ -567,3 +567,53 @@ The canonical fixture has `agentPlugin.engines.deepseek`, `exports["./deepseek"]
 `host-projection.json` and copies the package. This proves imported host shape and
 projection. Native execution on the installed DeepSeek Harness and Pi packages
 is proven separately by the managed follow-up demos above.
+
+## CodeBuddy / CodeBuddy CN resource follow-up (2026-10-27)
+
+Official `@tencent-ai/codebuddy-code@2.177.0` was installed in an isolated `/tmp`
+prefix for verification, without changing the user's global CLI installation.
+Both `codebuddy` and `codebuddycn` use the existing native marketplace adapter.
+The CN runtime supplies the vendor's two `internal` region values; config roots
+remain `.codebuddy` and `.codebuddy-cn`. This proves local config and execution
+selection, not live CN account authentication.
+
+The first real plugin-use probe failed despite successful installation/listing: the
+new CLI can advertise plugin skills through its native `Skill` tool rather than
+directly expanding the prompt. Repeated CN runs also showed direct expansion, so
+the demo records the actual loading mode instead of assuming a fixed mechanism.
+The local fixture now requests `Skill({skill: "aih-demo"})`
+only when that skill is advertised, and returns success only after the following
+model request contains the installed body. When a native Skill call is requested,
+the demo requires exactly two requests
+with body observations `[false, true]`. Direct expansion requires one request
+with the expected body. Disabled/removed stages require one request without body
+or Skill invocation. `loadingMode` distinguishes these outcomes in the evidence.
+Standalone Skill stages retain their direct expansion.
+All stages require a successful native process exit, no timeout and an exact final
+answer. A `native-skill-tool` result proves the native tool loop; a
+`direct-expansion` result proves prompt loading. Both use a deterministic local
+model fixture and do not establish remote model reasoning.
+
+CodeBuddy 2.177.0 reads MCP from `.mcp.json`; WorkBuddy AI's bundled 2.161.0
+reads `.codebuddy.json`. Their descriptors now keep these facts separate. The
+shared `scripts/workbuddy-resource-native-demo.js` accepts `--provider` and
+`--binary`, exercises both resource lifecycles and two actual AIH stdio MCP calls,
+and checks native MCP Connected plus absence after disable. Model-selected native
+MCP calls and WorkBuddy CN remain unverified. Other versions require fresh probes.
+
+The earlier 111-check regression count is historical: those resource test files
+are absent from the current tracked checkout. This checkpoint uses actual native
+demos and provider-manifest validation; it does not claim to have rerun absent
+tests or recreate them. No harness implementation or WebUI source is changed.
+
+After full resource closure, the user's requested harness audit must trace WebUI
+CLI launch, terminology and module ownership, capability/parameter propagation,
+account isolation, PTY/session lifecycle, reconnect/cancel/cleanup, and native
+versus gateway entrypoints. That follow-up is read-only: deliver concrete findings
+and a prioritized remediation plan before changing harness implementation.
+
+Verification artifacts for this checkpoint: `/tmp/aih-codebuddy-resource-final.json`
+and `/tmp/aih-codebuddycn-resource-final.json` (mode-specific loading checks),
+`/tmp/aih-codebuddy-family-aggregate.json` (all seven pre-existing runtime lanes
+passed, including WorkBuddy MCP absence after disable). `npm run providers:check`,
+CLI help/capability output, JavaScript syntax and diff/encoding checks also pass.

@@ -12,7 +12,6 @@ const { resolveProviderResourceRuntime, nativeResourceEnvironment } = require('.
 const { createPromptFixture } = require('../examples/skills/prompt-fixture');
 const { runNativePrompt } = require('./skill-native-demo');
 
-const PROVIDER = 'workbuddy';
 const SOURCE = path.resolve(__dirname, '../examples/native-plugins/aih-demo');
 const SKILL_SOURCE = path.resolve(__dirname, '../assets/provider-skills/aih-demo');
 const MCP_SERVER = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
@@ -32,48 +31,58 @@ function verifyRun(run, fixture, expected, marker, missing) {
   assert.equal(result.result?.trim(), expected ? marker : missing);
   const loaded = fixture.observations.some(row => row.loaded);
   assert.equal(loaded, expected);
-  return { exitCode: run.exitCode, timedOut: run.timedOut, requestCount: fixture.observations.length, marker: result.result.trim() === marker, loaded };
+  return { exitCode: run.exitCode, timedOut: run.timedOut, requestCount: fixture.observations.length, skillToolRequested: fixture.observations.some(row => row.skillToolRequested), marker: result.result.trim() === marker, loaded };
 }
 
-async function main() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-workbuddy-resource-demo-'));
+async function main(options = {}) {
+  const provider = options.provider || 'workbuddy';
+  const nativeBinaries = options.binary ? { [provider]: options.binary } : undefined;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `aih-${provider}-resource-demo-`));
   let fixture;
   let skillFixture;
   try {
-  const home = path.join(root, 'home');
-  const aiHomeDir = path.join(root, 'aih');
-  const runtime = resolveProviderResourceRuntime(PROVIDER, { hostHomeDir: home });
-  assert.ok(runtime, 'workbuddy_runtime_required');
-  fs.mkdirSync(home, { recursive: true });
-  fixture = await createPromptFixture({ marker: 'AIH_PLUGIN_DEMO_OK', missing: 'PLUGIN_NOT_LOADED' });
-  skillFixture = await createPromptFixture({ marker: 'AIH_SKILL_DEMO_OK', missing: 'SKILL_NOT_LOADED' });
-  const baseEnv = nativeResourceEnvironment(PROVIDER, { hostHomeDir: home, env: { PATH: process.env.PATH } }, runtime);
-  const env = { ...baseEnv, NO_PROXY: '127.0.0.1,localhost', CODEBUDDY_API_KEY: 'fixture-key', CODEBUDDY_BASE_URL: fixture.url };
-  const skillEnv = { ...baseEnv, NO_PROXY: '127.0.0.1,localhost', CODEBUDDY_API_KEY: 'fixture-key', CODEBUDDY_BASE_URL: skillFixture.url };
-  const pluginManager = createNativePluginManager({ aiHomeDir, hostHomeDir: home });
-  const skillManager = createSkillManager({ aiHomeDir, hostHomeDir: home });
-  const mcpManager = createMcpManager({ aiHomeDir, hostHomeDir: home });
-  const version = childProcess.spawnSync(runtime.command, [...runtime.args, '--version'], { env, encoding: 'utf8', timeout: 30000 });
-  assert.equal(version.status, 0);
-  const result = { host: PROVIDER, runtime: version.stdout.trim(), runtimeSource: runtime.source, stages: [], passed: false };
+    const home = path.join(root, 'home');
+    const aiHomeDir = path.join(root, 'aih');
+    const runtime = resolveProviderResourceRuntime(provider, { hostHomeDir: home, nativeBinaries });
+    assert.ok(runtime, 'native_runtime_required');
+    fs.mkdirSync(home, { recursive: true });
+    fixture = await createPromptFixture({ marker: 'AIH_PLUGIN_DEMO_OK', missing: 'PLUGIN_NOT_LOADED', invokeSkill: true });
+    skillFixture = await createPromptFixture({ marker: 'AIH_SKILL_DEMO_OK', missing: 'SKILL_NOT_LOADED', invokeSkill: true });
+    const baseEnv = nativeResourceEnvironment(provider, { hostHomeDir: home, env: { PATH: process.env.PATH } }, runtime);
+    const env = { ...baseEnv, NO_PROXY: '127.0.0.1,localhost', CODEBUDDY_API_KEY: 'fixture-key', CODEBUDDY_BASE_URL: fixture.url };
+    const skillEnv = { ...baseEnv, NO_PROXY: '127.0.0.1,localhost', CODEBUDDY_API_KEY: 'fixture-key', CODEBUDDY_BASE_URL: skillFixture.url };
+    const pluginManager = createNativePluginManager({ aiHomeDir, hostHomeDir: home, nativeBinaries });
+    const skillManager = createSkillManager({ aiHomeDir, hostHomeDir: home });
+    const mcpManager = createMcpManager({ aiHomeDir, hostHomeDir: home });
+    const version = childProcess.spawnSync(runtime.command, [...runtime.args, '--version'], { env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(version.status, 0);
+    const result = { host: provider, runtime: version.stdout.trim(), runtimeSource: runtime.source, stages: [], passed: false };
     for (const stage of ['enabled', 'disabled', 're-enabled', 'removed']) {
-      if (stage === 'enabled') pluginManager.install(SOURCE, { provider: PROVIDER });
-      if (stage === 'disabled') pluginManager.disable('aih-demo', { provider: PROVIDER });
-      if (stage === 're-enabled') pluginManager.enable('aih-demo', { provider: PROVIDER });
-      if (stage === 'removed') pluginManager.remove('aih-demo', { provider: PROVIDER });
+      if (stage === 'enabled') pluginManager.install(SOURCE, { provider });
+      if (stage === 'disabled') pluginManager.disable('aih-demo', { provider });
+      if (stage === 're-enabled') pluginManager.enable('aih-demo', { provider });
+      if (stage === 'removed') pluginManager.remove('aih-demo', { provider });
       fixture.observations.length = 0;
       const run = await invoke(runtime, env, root, '/aih-demo');
       const expected = stage === 'enabled' || stage === 're-enabled';
       const { loaded, ...evidence } = verifyRun(run, fixture, expected, 'AIH_PLUGIN_DEMO_OK', 'PLUGIN_NOT_LOADED');
-      result.stages.push({ stage, pluginBodyObserved: loaded, ...evidence, passed: true });
+      const loadingMode = evidence.skillToolRequested ? 'native-skill-tool' : loaded ? 'direct-expansion' : 'absent';
+      if (evidence.skillToolRequested) {
+        assert.equal(expected, true, 'disabled_skill_tool_requested');
+        assert.equal(evidence.requestCount, 2, 'native_skill_tool_roundtrip_missing');
+        assert.deepEqual(fixture.observations.map(row => row.loaded), [false, true]);
+      } else {
+        assert.equal(evidence.requestCount, 1, 'unexpected_direct_request_count');
+      }
+      result.stages.push({ stage, loadingMode, pluginBodyObserved: loaded, ...evidence, passed: true });
     }
 
     const skillStages = [];
     for (const stage of ['enabled', 'disabled', 're-enabled', 'removed']) {
-      if (stage === 'enabled') skillManager.install(SKILL_SOURCE, { provider: PROVIDER });
-      if (stage === 'disabled') skillManager.disable('aih-demo', { provider: PROVIDER });
-      if (stage === 're-enabled') skillManager.enable('aih-demo', { provider: PROVIDER });
-      if (stage === 'removed') skillManager.remove('aih-demo', { provider: PROVIDER });
+      if (stage === 'enabled') skillManager.install(SKILL_SOURCE, { provider });
+      if (stage === 'disabled') skillManager.disable('aih-demo', { provider });
+      if (stage === 're-enabled') skillManager.enable('aih-demo', { provider });
+      if (stage === 'removed') skillManager.remove('aih-demo', { provider });
       skillFixture.observations.length = 0;
       const run = await invoke(runtime, skillEnv, root, '/aih-demo');
       const expected = stage === 'enabled' || stage === 're-enabled';
@@ -83,21 +92,24 @@ async function main() {
     result.skillStages = skillStages;
 
     const server = { command: process.execPath, args: [MCP_SERVER] };
-    mcpManager.add('aih-demo', server, { provider: PROVIDER });
-    const mcpTest = await mcpManager.test('aih-demo', { provider: PROVIDER });
-    const mcpTools = await mcpManager.tools('aih-demo', { provider: PROVIDER });
-    const mcpCall = await mcpManager.call('aih-demo', 'aih_echo', { text: 'WORKBUDDY_MCP_OK' }, { provider: PROVIDER });
+    mcpManager.add('aih-demo', server, { provider });
+    const mcpTest = await mcpManager.test('aih-demo', { provider });
+    const mcpTools = await mcpManager.tools('aih-demo', { provider });
+    const mcpCall = await mcpManager.call('aih-demo', 'aih_echo', { text: 'AIH_RESOURCE_MCP_OK' }, { provider });
     assert.deepEqual(mcpTools.map(tool => tool.name), ['aih_echo', 'aih_list_files']);
-    assert.equal(mcpCall.content?.[0]?.text, 'WORKBUDDY_MCP_OK');
-    const filesCall = await mcpManager.call('aih-demo', 'aih_list_files', { path: '.' }, { provider: PROVIDER });
+    assert.equal(mcpCall.content?.[0]?.text, 'AIH_RESOURCE_MCP_OK');
+    const filesCall = await mcpManager.call('aih-demo', 'aih_list_files', { path: '.' }, { provider });
     assert.ok(!filesCall.isError && filesCall.content?.[0]?.text, 'mcp_list_files_failed');
-    mcpManager.enable('aih-demo', { provider: PROVIDER });
+    mcpManager.enable('aih-demo', { provider });
     const nativeList = childProcess.spawnSync(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, encoding: 'utf8', timeout: 30000, maxBuffer: 256000 });
     assert.equal(nativeList.status, 0, nativeList.stderr);
     assert.match(nativeList.stdout, /aih-demo[^\n]*\bConnected\b/);
-    mcpManager.disable('aih-demo', { provider: PROVIDER });
-    mcpManager.remove('aih-demo', { provider: PROVIDER });
-    result.mcp = { tools: mcpTools.map(tool => tool.name), call: mcpCall.content[0].text, filesCall: filesCall.content[0].text, nativeConnected: true, serverInfo: mcpTest.serverInfo, passed: true };
+    mcpManager.disable('aih-demo', { provider });
+    const disabledList = childProcess.spawnSync(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(disabledList.status, 0, disabledList.stderr);
+    assert.doesNotMatch(disabledList.stdout, /aih-demo/);
+    mcpManager.remove('aih-demo', { provider });
+    result.mcp = { tools: mcpTools.map(tool => tool.name), call: mcpCall.content[0].text, filesCall: filesCall.content[0].text, nativeConnected: true, nativeAbsentAfterDisable: true, serverInfo: mcpTest.serverInfo, passed: true };
     result.passed = true;
     console.log(JSON.stringify(result, null, 2));
   } finally {
@@ -108,8 +120,11 @@ async function main() {
 }
 
 if (require.main === module) {
-  if (process.argv.includes('--help')) console.log('Usage: node scripts/workbuddy-resource-native-demo.js');
-  else main().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });
+  if (process.argv.includes('--help')) console.log('Usage: node scripts/workbuddy-resource-native-demo.js [--provider <id>] [--binary <path>]');
+  else {
+    const value = flag => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : undefined;
+    main({ provider: value('--provider'), binary: value('--binary') }).catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });
+  }
 }
 
 module.exports = { main };

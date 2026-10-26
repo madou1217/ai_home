@@ -266,3 +266,24 @@ aih provider doctor --json
 | `unsupported` | provider 没有声明可安全使用的原生边界，AIH 不猜路径 |
 
 provider doctor 是能力审计，不会把静态目录存在或单元测试通过写成完整运行时兼容。需要新增宿主时，先在 canonical manifest 声明入口与能力，再通过 Host Adapter 生成 Native Projection，最后用真实宿主证明加载、调用、停用和移除。
+
+## CodeBuddy / CodeBuddy CN 原生资源
+
+已验证 CodeBuddy CLI 2.177.0。使用已有的 CodeBuddy 可执行文件：
+
+```sh
+node scripts/workbuddy-resource-native-demo.js --provider codebuddy --binary /absolute/path/to/codebuddy
+node scripts/workbuddy-resource-native-demo.js --provider codebuddycn --binary /absolute/path/to/codebuddy
+```
+
+脚本只在临时 HOME 安装相同的 `aih-demo` 包，分别验证插件与独立 Skill
+的启用、停用、重新启用和移除。新版插件 Skill 可通过原生 `Skill` 工具按需
+加载，也观察到直接展开。demo 分别断言并记录实际模式；本地确定性
+协议服务触发所需调用并检查请求中的正文，不消耗远程
+模型额度。实际使用时仍可输入 `/aih-demo`。
+
+日常管理沿用 `aih native plugin ... --provider codebuddy` 或 `codebuddycn`，
+独立 Skill 用 `aih skill ...`，MCP 用 `aih mcp ...`。CN 地区由描述符传入原生
+进程。两者 MCP 使用各自配置根中的 `.mcp.json`；WorkBuddy 2.161.0 仍使用
+`.codebuddy.json`。MCP demo 证明原生 Connected 和 AIH 的两个 stdio 工具
+调用，尚未证明原生模型选择 MCP 工具。WorkBuddy CN 未纳入本次运行结论。

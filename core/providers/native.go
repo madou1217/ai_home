@@ -357,6 +357,28 @@ func nativeCodebuddy() *NativeCapability {
 	}
 }
 
+// CodeBuddy 2.177.0 uses the native marketplace and user .mcp.json.
+// The older WorkBuddy bundle has its own verified projection below.
+func nativeCodebuddyCLI() *NativeCapability {
+	native := nativeCodebuddy()
+	native.Plugins.Adapter = "native-marketplace"
+	native.MCP = NativeMCP{
+		Projection:  &NativeMCPProjection{Path: ".mcp.json", Format: "json-stdio"},
+		Commands:    []string{"mcp"},
+		ConfigFiles: []string{".mcp.json"},
+	}
+	return native
+}
+
+func nativeCodebuddyCNCLI() *NativeCapability {
+	native := nativeCodebuddyCLI()
+	native.Runtime = &NativeResourceRuntime{Handler: "native-cli", Env: map[string]string{
+		"CODEBUDDY_INTERNET_ENVIRONMENT":         "internal",
+		"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
+	}}
+	return native
+}
+
 func nativeWorkbuddy() *NativeCapability {
 	native := nativeCodebuddy()
 	native.Plugins.Adapter = "native-marketplace"

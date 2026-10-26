@@ -1,7 +1,18 @@
 (() => {
   const ROOT_ATTR = 'data-aih-translation-extension';
   let active = null;
-  let operationSerial = 0;
+  let operationSerial = Date.now();
+  let activeCleanup = () => {};
+
+  function cancelTranslation(operationId) {
+    chrome.runtime.sendMessage({ type: 'aih-cancel-translation', operationId }, () => { void chrome.runtime.lastError; });
+  }
+
+  function settingsButton() {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = '连接设置';
+    button.onclick = () => chrome.runtime.sendMessage({ type: 'aih-open-translation-settings' });
+    return button;
+  }
 
   const ignored = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'PRE', 'CODE', 'TEXTAREA', 'INPUT']);
   function textNodes() {
@@ -19,11 +30,13 @@
   }
 
   function panel(title, rect) {
+    activeCleanup();
+    activeCleanup = () => {};
     active?.remove();
     const root = document.createElement('section'); root.setAttribute(ROOT_ATTR, 'panel');
     root.style.cssText = `position:fixed;z-index:2147483647;left:${Math.max(8, rect?.left || 16)}px;top:${Math.max(8, (rect?.bottom || 16) + 8)}px;width:360px;max-height:70vh;overflow:auto;padding:12px;background:#0c1524;color:#e2f1f8;border:1px solid #23405f;box-shadow:0 8px 30px #0008;font:13px system-ui,sans-serif`;
     root.innerHTML = `<header style="display:flex;justify-content:space-between;gap:8px;align-items:center"><strong>${title}</strong><button data-close type="button">×</button></header><div data-body style="margin-top:8px"></div>`;
-    root.querySelector('[data-close]').onclick = () => root.remove();
+    root.querySelector('[data-close]').onclick = () => { activeCleanup(); root.remove(); };
     document.body.append(root); active = root; return root.querySelector('[data-body]');
   }
 
@@ -73,9 +86,10 @@
   function translateOne(text, operation = 'selection', options = {}) {
     return new Promise((resolve) => chrome.runtime.sendMessage({
       type: 'aih-translate', text, operation,
+      operationId: options.operationId,
       ...(options.target ? { target: options.target } : {}),
       ...(options.targetPolicy ? { targetPolicy: options.targetPolicy } : {})
-    }, (response) => resolve(response || { ok: false, error: '扩展无法连接到翻译服务' })));
+    }, (response) => { const error = chrome.runtime.lastError; resolve(response || { ok: false, fatal: true, error: error?.message || '扩展无法连接到翻译服务' }); }));
   }
 
   function renderConfirmation(body, confirmation, onConfirm, onKeep, label = '') {
@@ -108,12 +122,12 @@
     if (!body.isConnected || operationToken !== operationSerial) return;
     if (result?.confirmation) {
       renderConfirmation(body, result.confirmation, async (target) => {
-        const retry = await translateOne(source, 'selection', { target, targetPolicy: 'explicit' });
+        const retry = await translateOne(source, 'selection', { target, targetPolicy: 'explicit', operationId: operationToken });
         applySelectionResult(body, source, retry, rangeSnapshot, operationToken);
       }, () => { body.textContent = '已保持原文'; });
       return;
     }
-    if (!result?.ok || !result.text) { body.textContent = result?.error || '翻译失败'; return; }
+    if (!result?.ok || !result.text) { body.textContent = result?.error || '翻译失败'; if (result?.fatal) body.append(settingsButton()); return; }
     let undo = null;
     if (result.mode === 'replace' && rangeSnapshot && (rangeSnapshot.startContainer?.isConnected || rangeSnapshot.startContainer === document)) {
       try {
@@ -132,7 +146,8 @@
   async function translateSelection(text, rect, rangeSnapshot) {
     const operationToken = ++operationSerial;
     const body = panel('AIH 翻译选区', rect); body.textContent = '正在识别并翻译…';
-    const result = await translateOne(text);
+    activeCleanup = () => cancelTranslation(operationToken);
+    const result = await translateOne(text, 'selection', { operationId: operationToken });
     applySelectionResult(body, text, result, rangeSnapshot, operationToken);
   }
 
@@ -144,9 +159,14 @@
     const translatedByIndex = new Map();
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
     let pageAutoCopyEligible = true; let pageCopyDone = false;
+    let fatalError = ''; let cancelled = false;
     const concurrency = 3;
+    const progress = document.createElement('span');
+    const stop = document.createElement('button'); stop.type = 'button'; stop.textContent = '停止';
+    stop.onclick = () => { cancelled = true; stopRequested = true; cancelTranslation(operationToken); stop.disabled = true; stop.textContent = '正在停止…'; };
+    activeCleanup = () => { cancelled = true; stopRequested = true; cancelTranslation(operationToken); restoreSnapshots(); };
 
-    function updateProgress(label, total) { body.textContent = `${label} ${processed} / ${total} 段 · 成功 ${succeeded} · 失败 ${failed}`; }
+    function updateProgress(label, total) { progress.textContent = `${label} ${processed} / ${total} 段 · 成功 ${succeeded} · 失败 ${failed}`; body.replaceChildren(progress, stop); }
     function restoreSnapshots() {
       snapshots.slice().reverse().forEach((item) => { if (item.node?.isConnected) item.node.nodeValue = item.original; item.marker?.remove(); });
       snapshots.length = 0;
@@ -163,12 +183,14 @@
     }
     async function translateItems(items, label) {
       let itemCursor = 0; const total = items.length; stopRequested = false;
-      async function worker() {
-        while (!stopRequested && itemCursor < total) {
-          const item = items[itemCursor++]; const options = targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {};
+      async function worker(limit = total) {
+        while (!stopRequested && !cancelled && body.isConnected && operationToken === operationSerial && itemCursor < limit) {
+          const item = items[itemCursor++]; const options = { operationId: operationToken, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
           const result = await translateOne(item.source, 'page', options); processed += 1;
+          if (cancelled || !body.isConnected || operationToken !== operationSerial) return;
           if (result?.confirmation) { if (!confirmation) { confirmation = result.confirmation; stopRequested = true; restoreSnapshots(); } continue; }
           if (stopRequested) continue;
+          if (result?.fatal) { fatalError = result.error || '翻译服务不可用'; stopRequested = true; failed += 1; cancelTranslation(operationToken); return; }
           if (result?.ok && result.text && applyPageResult(item, result)) {
             translatedByIndex.set(item.index, result.text);
             pageAutoCopyEligible = pageAutoCopyEligible && result.autoCopy === true;
@@ -178,7 +200,8 @@
           updateProgress(label, total);
         }
       }
-      await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, total)) }, worker));
+      await worker(Math.min(1, total));
+      await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(0, total - 1)) }, () => worker()));
     }
     function renderPageConfirmation() {
       renderConfirmation(body, confirmation, async (target) => { await translatePage(target); }, () => { restoreSnapshots(); body.textContent = '已保持原文'; }, '待确认目标语言');
@@ -196,15 +219,16 @@
     }
     async function renderSummary() {
       if (!body.isConnected || operationToken !== operationSerial) return;
-      body.replaceChildren(); const summary = document.createElement('span'); summary.textContent = `页面翻译完成 · 成功 ${succeeded} · 失败 ${failed}`; body.append(summary);
-      if (failed > 0) { const partial = document.createElement('div'); partial.textContent = '部分段落翻译失败，可重新执行。'; partial.style.cssText = 'margin-top:6px;color:#f5c77a'; body.append(partial); }
+      body.replaceChildren(); const summary = document.createElement('span'); summary.textContent = `${fatalError ? '翻译已暂停' : cancelled ? '翻译已停止' : '页面翻译完成'} · 成功 ${succeeded} · 失败 ${failed}`; body.append(summary);
+      if (fatalError) { const reason = document.createElement('p'); reason.textContent = fatalError; body.append(reason, settingsButton()); }
+      if (failed > 0 && !fatalError) { const partial = document.createElement('div'); partial.textContent = '部分段落翻译失败，可重新执行。'; partial.style.cssText = 'margin-top:6px;color:#f5c77a'; body.append(partial); }
       const actions = document.createElement('footer'); actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
       const copiedText = segments.slice().sort((left, right) => left.index - right.index).map((item) => translatedByIndex.get(item.index) || '').filter(Boolean).join('\n');
       const copyStatus = document.createElement('span'); copyStatus.setAttribute('data-copy-status', ''); copyStatus.style.cssText = 'align-self:center;color:#9db8cc;font-size:12px';
       if (copiedText) {
         const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制已完成译文'; copy.onclick = () => { void copyPageText(copyStatus, copy, copiedText); }; actions.append(copy);
       }
-      if (failed > 0) {
+      if (failed > 0 && !fatalError && !cancelled) {
         const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '重新翻译失败段落';
         retry.onclick = async () => { const retryItems = failedItems.splice(0); if (!retryItems.length) return; processed = 0; failed = Math.max(0, failed - retryItems.length); updateProgress('正在重试', retryItems.length); confirmation = null; await translateItems(retryItems, '正在重试'); if (confirmation) renderPageConfirmation(); else await renderSummary(); };
         actions.append(retry);
@@ -212,7 +236,7 @@
       if (snapshots.length) { const undo = document.createElement('button'); undo.type = 'button'; undo.textContent = '撤回页面译文'; undo.onclick = () => { restoreSnapshots(); body.textContent = '已撤回页面译文'; }; actions.append(undo); }
       if (actions.childElementCount) body.append(actions);
       if (copyStatus.textContent || copiedText) { actions.append(copyStatus); }
-      const allSucceeded = failed === 0 && translatedByIndex.size === segments.length;
+      const allSucceeded = !cancelled && !fatalError && failed === 0 && translatedByIndex.size === segments.length;
       if (allSucceeded && pageAutoCopyEligible && !pageCopyDone && copiedText.trim()) {
         pageCopyDone = true;
         const automaticCopy = actions.querySelector('button');

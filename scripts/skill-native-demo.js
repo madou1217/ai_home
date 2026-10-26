@@ -43,11 +43,19 @@ function run(binary, args, options) {
     let stoppedEarly = false;
     let stopTimer = null;
     let settled = false;
+    const terminateChild = (signal = 'SIGTERM') => {
+      try {
+        if (process.platform === 'win32') child.kill();
+        else process.kill(-child.pid, signal);
+      } catch (_) {
+        try { child.kill(); } catch (_error) {}
+      }
+    };
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (stopTimer) clearTimeout(stopTimer);
+      if (stopTimer && !stoppedEarly) clearTimeout(stopTimer);
       resolve(result);
     };
     const timer = setTimeout(() => {
@@ -58,14 +66,11 @@ function run(binary, args, options) {
       output = (output + chunk).slice(-256000);
       if (!stoppedEarly && typeof options.stopWhen === 'function' && options.stopWhen(output)) {
         stoppedEarly = true;
-        // Give the native client a short chance to flush the result event, then
-        // terminate the supervised process group. CodeBuddy can keep the
-        // session worker alive after emitting a completed result even with
-        // --no-session-persistence; waiting for close would turn a successful
-        // deterministic probe into a timeout.
-        stopTimer = setTimeout(() => {
-          try { if (process.platform === 'win32') child.kill(); else process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
-        }, 25);
+        // The result event is already complete in this chunk. Terminate the
+        // supervised process group before resolving so a native worker that
+        // remains alive after a completed request cannot keep the probe (or an
+        // aggregate closure run) open indefinitely.
+        terminateChild();
         // The result event itself is the evidence boundary. Do not wait for a
         // host worker that intentionally remains alive after the result.
         finish({ exitCode: 0, timedOut: false, output, stoppedEarly });

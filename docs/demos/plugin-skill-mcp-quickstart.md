@@ -9,6 +9,8 @@ node scripts/plugin-closure-demo.js --json
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
 node scripts/mcp-native-demo.js
 node scripts/native-plugin-demo.js
+node scripts/native-plugin-use-demo.js codex
+node scripts/native-plugin-use-demo.js claude
 node scripts/pi-plugin-native-demo.js
 node scripts/pi-plugin-native-demo.js --managed
 node scripts/deepseek-plugin-native-demo.mjs
@@ -102,6 +104,15 @@ aih native plugin disable aih-demo --provider claude --json
 aih native plugin enable aih-demo --provider claude --json
 aih native plugin doctor --provider claude --json
 aih native plugin remove aih-demo --provider claude --json
+```
+
+在新开的原生会话里，Codex 使用 `$aih-demo:aih-demo`，Claude 使用
+`/aih-demo:aih-demo` 调用包内 Skill。下面两条 probe 通过真实 native client
+验证插件正文进入请求，并覆盖启用/停用/重新启用/移除四阶段：
+
+```bash
+node scripts/native-plugin-use-demo.js codex
+node scripts/native-plugin-use-demo.js claude
 ```
 
 同一个 canonical `package.json` 可以先做宿主导入检查和投影：

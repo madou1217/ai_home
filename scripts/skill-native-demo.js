@@ -18,15 +18,15 @@ function finalAnswer(output, provider) {
   }).join('').trim();
 }
 const HOSTS = {
-  claude({ host, url }) {
+  claude({ host, url, prompt = '/aih-demo' }) {
     return { env: { CLAUDE_CONFIG_DIR: path.join(host, '.claude'), ANTHROPIC_API_KEY: 'fixture-key', ANTHROPIC_BASE_URL: url, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' },
-      args: ['-p', '/aih-demo', '--model', 'claude-sonnet-4-5', '--output-format', 'json', '--no-session-persistence'] };
+      args: ['-p', prompt, '--model', 'claude-sonnet-4-5', '--output-format', 'json', '--no-session-persistence'] };
   },
-  codex({ host, url }) {
+  codex({ host, url, prompt = 'Use the $aih-demo skill. Reply only as instructed by that skill.' }) {
     const config = path.join(host, '.codex');
     fs.mkdirSync(config, { recursive: true });
     fs.writeFileSync(path.join(config, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[model_providers.fixture]\nname = "Local skill fixture"\nbase_url = "${url}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
-    return { env: { CODEX_HOME: config }, args: ['exec', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json', 'Use the $aih-demo skill. Reply only as instructed by that skill.'] };
+    return { env: { CODEX_HOME: config }, args: ['exec', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json', prompt] };
   },
   opencode({ host, url }) {
     const config = path.join(host, '.config', 'opencode');
@@ -89,4 +89,4 @@ if (require.main === module) {
       .catch((error) => { console.error(JSON.stringify({ error: error.code || error.message })); process.exitCode = 1; });
   }
 }
-module.exports = { runSkillNativeDemo };
+module.exports = { runSkillNativeDemo, NATIVE_CLIENTS: HOSTS, runNativePrompt: run, finalAnswer };

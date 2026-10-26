@@ -6,6 +6,30 @@
 
 用户入口：[插件、Skill、MCP 与原生插件快速上手](../demos/plugin-skill-mcp-quickstart.md)。跨宿主设计：[Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)。
 
+## Codex / Claude native plugin use follow-up (2026-10-26)
+
+```sh
+node scripts/native-plugin-use-demo.js codex
+node scripts/native-plugin-use-demo.js claude
+```
+
+Both pass enabled/disabled/re-enabled/removed stages with the actual native
+client and isolated homes. The installed package is the native plugin fixture,
+not the standalone managed skill fixture. Its prompt contains the skill name
+but not the expected response. The local inference fixture returns the marker
+only when it sees the installed plugin's skill body in the native request.
+Each positive and negative stage reached the fixture and exited successfully;
+only positive stages contained the body and returned `AIH_PLUGIN_DEMO_OK`.
+
+Codex 0.164.0 reports the skill as `aih-demo:aih-demo` through its own
+`skills/list`; using only `$aih-demo` did not load that body. The demo invokes
+`$aih-demo:aih-demo`, and Claude Code 2.1.310 uses `/aih-demo:aih-demo`.
+The Codex compatibility manifest now explicitly declares `skills: "./skills/"`,
+matching the [official plugin packaging guide](https://developers.openai.com/plugins/build/plugins).
+The aggregate native plugin demo includes these probes as `pluginUse` evidence.
+They prove bundled native skill invocation, not JavaScript tool execution or
+account-isolated launch propagation.
+
 ## Pi / DeepSeek runtime follow-up (2026-10-26)
 
 The earlier PATH-only runtime-unavailable conclusion below was incomplete. Both

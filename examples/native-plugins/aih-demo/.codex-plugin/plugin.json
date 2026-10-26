@@ -1,5 +1,6 @@
 {
   "name": "aih-demo",
   "version": "1.0.0",
-  "description": "AIH portable native plugin demo"
+  "description": "AIH portable native plugin demo",
+  "skills": "./skills/"
 }

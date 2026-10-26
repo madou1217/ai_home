@@ -4,7 +4,7 @@
 // It does not emulate reasoning and is never evidence of remote inference.
 const http = require('node:http');
 const MARKER = 'AIH_SKILL_DEMO_OK';
-async function createPromptFixture() {
+async function createPromptFixture({ marker = MARKER, missing = 'SKILL_NOT_LOADED' } = {}) {
   const observations = [];
   const server = http.createServer(async (request, response) => {
     try {
@@ -17,9 +17,9 @@ async function createPromptFixture() {
       }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const text = JSON.stringify({ messages: body.messages, input: body.input, instructions: body.instructions, system: body.system });
-      const loaded = text.includes(MARKER);
+      const loaded = text.includes(marker);
       observations.push({ route: request.url.split('?')[0], loaded, skillMentioned: text.includes('aih-demo') });
-      const answer = loaded ? MARKER : 'SKILL_NOT_LOADED';
+      const answer = loaded ? marker : missing;
       const emit = (type, value) => response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
       if (request.url.includes('/messages')) {
         const message = { id: 'msg_fixture', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: answer }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 8 } };

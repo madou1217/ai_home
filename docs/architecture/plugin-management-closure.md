@@ -1,8 +1,10 @@
 # Plugin Management Closure Evidence
 
-状态：Task 1 baseline harness
+状态：实现闭环证据（能力子集先行；未验证宿主保持显式边界）
 
 本文件记录插件、Skill、MCP 和原生 provider 管理的实际闭环证据。每个资源必须证明安装/投影、启用、实际使用、停用和移除；静态 manifest 或目录存在不能单独证明完成。
+
+用户入口：[插件、Skill、MCP 与原生插件快速上手](../demos/plugin-skill-mcp-quickstart.md)。跨宿主设计：[Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)。
 
 ## AIH Plugin baseline
 

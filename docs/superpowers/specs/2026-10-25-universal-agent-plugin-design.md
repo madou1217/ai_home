@@ -2,7 +2,7 @@
 
 日期：2026-10-25
 
-状态：设计已确认，等待实现计划
+状态：设计已确认；M0 合同与跨宿主投影已落地，AIH/Codex/Claude/OpenCode 有运行时证据，DeepSeek Harness 与 Pi 仍保留明确的环境边界
 
 范围：DeepSeek Harness、OpenCode、Pi Agent 与 AIH 的统一插件发行与宿主适配
 
@@ -508,6 +508,21 @@ SOLID 评审：单一职责由 core/adapter/projection 分层保证；依赖倒�
 
 KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统一 UI 或远程插件市场；第一版只实现宿主交集，其余能力保持宿主专用。
 
-## 13. 当前结论与后续门
+## 13. 当前实现证据与后续门
 
-本 spec 只定义架构和验收边界，不宣称四宿主兼容已经实现。下一步必须先依据本文件生成 implementation plan，再从 M0 合同与无宿主依赖 sample 开始。任何代码实现前，需要通过该 spec 的用户评审，并且实现时遵守仓库的短频 checkpoint commit、测试和设计模式报告要求。
+本 spec 是正式设计和验收边界；当前实现按“能力子集先行”的决策交付，运行时状态必须与投影状态分开报告。可复核的证据集中在 [插件管理闭环证据](../../architecture/plugin-management-closure.md)、[Provider 资源闭环矩阵](../../architecture/provider-resource-closure-matrix.md) 和仓库内的 deterministic demos。
+
+| 范围 | 当前状态 | 可复核证据 |
+|---|---|---|
+| Portable manifest、host entry、DeepSeek/Pi projection | 已交付 | `aih native plugin inspect/project examples/native-plugins/aih-demo --host deepseek\|pi`；`test/portable-plugin-conformance.test.js` |
+| AIH plugin lifecycle | 运行时已验证 | `node scripts/plugin-closure-demo.js --json`：pack/install/enable/use/restart/use-after-restart/disable/uninstall/doctor |
+| Codex、Claude、OpenCode native plugin projection | 运行时已验证（OpenCode 以 server/local projection 为边界） | `node scripts/native-plugin-demo.js` |
+| Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |
+| Codex、Claude、OpenCode、Cline MCP tool calls | 真实本地 stdio tool call 已验证 | `node scripts/mcp-native-demo.js` |
+| DeepSeek Harness/Cordis adapter | 未交付 | 本机没有可用 DSH runtime，doctor 返回 `projection-only` |
+| Pi extension runtime | 未交付 | 本机没有 Pi binary，doctor 返回 `runtime-unavailable` |
+| OpenCode TUI/RPC | 未独立验证 | server/local projection 已验证，TUI/RPC 需分别安装和探测 |
+
+因此，安装包形状或 `project` 成功不能升级为宿主运行成功；只有真实宿主加载、调用、停用和移除证据才能把状态写成 `supported`。未知宿主必须保留 `unsupported`、`projection-only` 或 `runtime-unavailable` 及其原因，不能用空适配器伪装支持。
+
+后续 M2/M3/M4 门禁仍按本文件执行：先为 DeepSeek Harness、Pi 和 OpenCode TUI/RPC 准备真实宿主，再补对应 adapter 的 preflight、activate、cleanup、reload 和 failure evidence；在这些证据出现前，报告应保持当前边界。

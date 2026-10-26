@@ -300,6 +300,8 @@ node scripts/plugin-closure-demo.js --json
 
 它会依次验证 `pack → install → enable → use → restart → use-after-restart → disable → uninstall → doctor`。可运行样例见 [examples/plugins/echo](examples/plugins/echo)。
 
+Skill、MCP、原生插件以及 DeepSeek/OpenCode/Pi 的投影检查见 [插件、Skill、MCP 与原生插件快速上手](docs/demos/plugin-skill-mcp-quickstart.md)。统一跨宿主设计见 [Universal Agent Plugin Architecture](docs/superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；`provider doctor` 会把已验证的 runtime、仅投影和本机缺少宿主的状态分开报告。
+
 ## 开发
 
 ```bash

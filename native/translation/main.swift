@@ -165,7 +165,10 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
           self.selectionDragged = self.selectionDragged || hypot(point.x - start.x, point.y - start.y) >= 4
         }
       } else if event.type == .leftMouseUp {
-        let selectionGesture = self.selectionDragged || event.clickCount >= 2
+        let directTranslation = event.modifierFlags.contains(.control)
+          && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
+          && !self.selectionDragged
+        let selectionGesture = directTranslation || self.selectionDragged || event.clickCount >= 2
         self.selectionMouseDown = nil
         self.selectionDragged = false
         guard selectionGesture else { return }
@@ -174,6 +177,14 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         // 全局监听副本的 eventTargetUnixProcessID 指向本 helper，不能用来定位选词应用。
         let point = event.cgEvent?.location
         let application = self.reader.applicationAt(point)
+        // Web pages own this explicit chord through the browser extension.
+        // The host descriptor avoids duplicate native and webpage requests.
+        if directTranslation, let application = application,
+           let bundleURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: application.bundleIdentifier ?? ""),
+           let types = Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]],
+           types.contains(where: { (($0["CFBundleURLSchemes"] as? [String]) ?? []).contains(where: { $0 == "http" || $0 == "https" }) }) {
+          return
+        }
         self.selectionApplicationPID = application?.processIdentifier ?? 0
         // CGEvent/AX 使用屏幕左上原点；AppKit 面板位置使用主屏左下原点。
         let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
@@ -181,7 +192,7 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
           guard token == self.selectionToken, AXIsProcessTrusted() else { return }
           if let selection = self.reader.read(explicit: false, application: application, point: point) {
-            self.panel.offer(selection, explicit: false, point: panelPoint)
+            self.panel.offer(selection, explicit: directTranslation, point: panelPoint)
           }
           emit(["type": "selection-state", "outcome": self.reader.lastOutcome, "application": self.reader.lastApplication,
                 "hitPID": self.reader.lastHitPID, "focusPID": self.reader.lastFocusedPID,
@@ -236,8 +247,12 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
       return
     }
     let application = NSWorkspace.shared.frontmostApplication
-    let selection = reader.read(explicit: true, application: application)
-      ?? SelectedText(text: raw, editable: false, element: nil, fullValue: raw, selectedRange: nil)
+    let observed = reader.read(explicit: true, application: application)
+    // Services owns the payload. AX may still expose an older selection; use
+    // it only to retain a replacement target when its text matches exactly.
+    let selection = observed?.text == raw
+      ? observed!
+      : SelectedText(text: raw, editable: false, element: nil, fullValue: raw, selectedRange: nil)
     contextSelection = selection
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }

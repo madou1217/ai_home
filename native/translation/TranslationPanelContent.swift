@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 enum TranslationPhase { case preflight, waiting, confirmation, streaming, done, stopped, failed }
 
@@ -6,7 +7,9 @@ enum TranslationPhase { case preflight, waiting, confirmation, streaming, done, 
 final class TranslationPanelContent {
   let root = NSVisualEffectView()
   let targetMenu = NSPopUpButton()
-  let pin = NSButton(checkboxWithTitle: "置顶", target: nil, action: nil)
+  let pin = NSButton(title: "", target: nil, action: nil)
+  let settingsButton = NSButton(title: "", target: nil, action: nil)
+  let modelPicker = NSComboBox()
   let stop = NSButton(title: "停止", target: nil, action: nil)
   let copy = NSButton(title: "复制", target: nil, action: nil)
   let replace = NSButton(title: "替换原文", target: nil, action: nil)
@@ -49,14 +52,14 @@ final class TranslationPanelContent {
     let stack = NSStackView()
     stack.orientation = .vertical
     stack.alignment = .leading
-    stack.spacing = 12
+    stack.spacing = 10
     stack.translatesAutoresizingMaskIntoConstraints = false
     root.addSubview(stack)
     NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 16),
-      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
-      stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
-      stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12)
+      stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
+      stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
+      stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+      stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16)
     ])
     let heading = NSTextField(labelWithString: "译为")
     heading.textColor = .secondaryLabelColor
@@ -64,9 +67,21 @@ final class TranslationPanelContent {
     targetMenu.setAccessibilityLabel("目标语言")
     targetMenu.setContentHuggingPriority(.defaultLow, for: .horizontal)
     targetMenu.toolTip = "选择译文目标语言"
-    pin.setAccessibilityLabel("置顶面板")
-    pin.toolTip = "固定面板并保持在其他窗口上方"
-    let controls = NSStackView(views: [heading, targetMenu, pin])
+    pin.setButtonType(.toggle)
+    for button in [pin, settingsButton] {
+      button.bezelStyle = .recessed
+      button.isBordered = false
+      button.imagePosition = .imageOnly
+      button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    }
+    updatePin(false)
+    settingsButton.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "翻译设置")
+    settingsButton.toolTip = "翻译设置 · ⌘,"
+    settingsButton.setAccessibilityLabel("翻译设置")
+    let headerSpacer = NSView()
+    headerSpacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+    let controls = NSStackView(views: [heading, targetMenu, headerSpacer, pin, settingsButton])
     controls.spacing = 8
     spinner.style = .spinning
     spinner.controlSize = .small
@@ -80,28 +95,35 @@ final class TranslationPanelContent {
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     let status = NSStackView(views: [spinner, phaseLabel, spacer, elapsed])
     status.spacing = 6
-    source.font = .systemFont(ofSize: 11)
+    source.font = .systemFont(ofSize: 12)
     source.textColor = .secondaryLabelColor
     source.lineBreakMode = .byTruncatingTail
-    source.maximumNumberOfLines = 1
+    source.cell?.usesSingleLineMode = false
+    source.cell?.wraps = true
+    source.maximumNumberOfLines = 2
+    source.heightAnchor.constraint(lessThanOrEqualToConstant: 36).isActive = true
     // The preview is allowed to truncate within the chosen window width.
     // Its intrinsic single-line width must never enlarge the NSPanel.
     source.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     source.setContentHuggingPriority(.defaultLow, for: .horizontal)
     hint.font = .systemFont(ofSize: 12)
     hint.textColor = .secondaryLabelColor
+    hint.maximumNumberOfLines = 2
+    hint.lineBreakMode = .byTruncatingTail
+    hint.heightAnchor.constraint(lessThanOrEqualToConstant: 36).isActive = true
     hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     textView.isEditable = false
     textView.isSelectable = true
     textView.drawsBackground = false
-    textView.font = .systemFont(ofSize: 15)
-    textView.textContainerInset = NSSize(width: 0, height: 4)
+    textView.font = .systemFont(ofSize: 16)
+    textView.textColor = .labelColor
+    textView.textContainerInset = NSSize(width: 0, height: 10)
     textView.isHorizontallyResizable = false
     textView.isVerticallyResizable = true
     textView.minSize = .zero
     textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     textView.autoresizingMask = [.width]
-    textView.textContainer?.containerSize = NSSize(width: 388, height: CGFloat.greatestFiniteMagnitude)
+    textView.textContainer?.containerSize = NSSize(width: 440, height: CGFloat.greatestFiniteMagnitude)
     textView.textContainer?.widthTracksTextView = true
     textView.textContainer?.lineBreakMode = .byWordWrapping
     textView.setAccessibilityLabel("译文")
@@ -113,6 +135,19 @@ final class TranslationPanelContent {
     scroll.documentView = textView
     scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 82).isActive = true
     scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+    modelPicker.isEditable = true
+    modelPicker.completes = true
+    modelPicker.numberOfVisibleItems = 8
+    modelPicker.placeholderString = "默认模型 · 可输入模型 ID"
+    modelPicker.font = .systemFont(ofSize: 12)
+    modelPicker.setAccessibilityLabel("翻译模型，可选择或手动输入模型 ID")
+    modelPicker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    modelPicker.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let modelHeading = NSTextField(labelWithString: "模型")
+    modelHeading.font = .systemFont(ofSize: 12)
+    modelHeading.textColor = .secondaryLabelColor
+    let modelRow = NSStackView(views: [modelHeading, modelPicker])
+    modelRow.spacing = 8
     model.font = .systemFont(ofSize: 10)
     model.textColor = .tertiaryLabelColor
     model.lineBreakMode = .byTruncatingMiddle
@@ -133,9 +168,11 @@ final class TranslationPanelContent {
     replace.setAccessibilityLabel("替换原文")
     replace.toolTip = "替换原文；完成后可用 ⌘Z / Ctrl+Z 撤回"
     copy.setAccessibilityLabel("复制译文")
-    let footer = NSStackView(views: [model, stop, retry, override, keepOriginal, replace, copy])
+    let actionSpacer = NSView()
+    actionSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let footer = NSStackView(views: [stop, retry, override, keepOriginal, actionSpacer, replace, copy])
     footer.spacing = 6
-    for row in [controls, status, source, hint, scroll, footer] {
+    for row in [controls, modelRow, source, status, hint, scroll, model, footer] {
       stack.addArrangedSubview(row)
       row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }
@@ -153,13 +190,37 @@ final class TranslationPanelContent {
     copy.title = "复制"
     copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
     hint.textColor = .secondaryLabelColor
-    model.stringValue = "正在连接翻译服务"
+    model.stringValue = ""
+    replace.title = "替换原文"
+    replace.image = NSImage(systemSymbolName: "arrow.down.doc", accessibilityDescription: nil)
     setPhase(.waiting)
     scroll.contentView.scroll(to: .zero)
   }
 
   func setOutput(_ text: String) {
-    textView.string = text
+    // Append deltas without resetting the reader's selection or scroll position.
+    let visibleOrigin = scroll.contentView.bounds.origin
+    let selectedRanges = textView.selectedRanges
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineSpacing = 5
+    paragraph.paragraphSpacing = 12
+    paragraph.lineBreakMode = .byWordWrapping
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 16), .foregroundColor: NSColor.labelColor,
+      .paragraphStyle: paragraph
+    ]
+    let previous = textView.string
+    if text.hasPrefix(previous), let storage = textView.textStorage {
+      storage.append(NSAttributedString(string: String(text.dropFirst(previous.count)), attributes: attributes))
+    } else {
+      textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: attributes))
+    }
+    if !previous.isEmpty {
+      let length = (text as NSString).length
+      textView.selectedRanges = selectedRanges.filter { NSMaxRange($0.rangeValue) <= length }
+      scroll.contentView.scroll(to: visibleOrigin)
+      scroll.reflectScrolledClipView(scroll.contentView)
+    }
     hasOutput = !text.isEmpty
     if firstOutput && hasOutput {
       firstOutput = false
@@ -179,15 +240,16 @@ final class TranslationPanelContent {
 
   func setPhase(_ next: TranslationPhase, animated: Bool = true) {
     phase = next
+    elapsed.isHidden = next == .preflight || next == .confirmation
     let busy = next == .preflight || next == .waiting || next == .streaming
-    let labels: [TranslationPhase: String] = [.preflight: "正在识别语言", .waiting: "正在翻译", .confirmation: "需要确认目标语言", .streaming: "正在生成译文", .done: "翻译完成", .stopped: "已停止", .failed: "翻译失败"]
+    let labels: [TranslationPhase: String] = [.preflight: "正在准备翻译", .waiting: "等待模型响应", .confirmation: "需要确认目标语言", .streaming: "正在生成译文", .done: "翻译完成", .stopped: "已停止", .failed: "翻译失败"]
     phaseLabel.stringValue = labels[next] ?? ""
-    phaseLabel.textColor = next == .failed ? .systemRed : next == .done ? .systemGreen : busy ? .controlAccentColor : .secondaryLabelColor
+    phaseLabel.textColor = next == .failed ? .systemRed : next == .done ? .secondaryLabelColor : busy ? .controlAccentColor : .secondaryLabelColor
     hint.stringValue = next == .preflight ? "正在确认原文与目标语言…" : next == .waiting ? "译文即将出现，生成后会实时显示" : next == .confirmation ? "请选择其它目标语言，或明确选择仍然翻译" : next == .stopped && !hasOutput ? "已停止生成，可以重新翻译" : ""
     hint.isHidden = hint.stringValue.isEmpty
     if busy && !reducedMotion { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     stop.isHidden = !busy
-    retry.isHidden = busy
+    retry.isHidden = busy || next == .confirmation
     override.isHidden = next != .confirmation || !confirmationAllowsOverride
     keepOriginal.isHidden = next != .confirmation
     retry.title = next == .failed ? "重试" : "重新翻译"
@@ -215,21 +277,21 @@ final class TranslationPanelContent {
 
   func showConfirmation(_ message: String, allowsOverride: Bool) {
     confirmationAllowsOverride = allowsOverride
-    hint.stringValue = message
-    hint.textColor = .secondaryLabelColor
-    hint.isHidden = false
     // Only a confirmed same-language pair may bypass the guard. Missing or
     // low-confidence language information must be resolved through the target
     // picker; showing an override there would make the panel look ready while
     // the request is still ambiguous.
     setPhase(.confirmation)
-  }
-
-  func showPreflight(_ message: String = "正在确认原文与目标语言…") {
     hint.stringValue = message
     hint.textColor = .secondaryLabelColor
     hint.isHidden = false
+  }
+
+  func showPreflight(_ message: String = "正在确认原文与目标语言…") {
     setPhase(.preflight)
+    hint.stringValue = message
+    hint.textColor = .secondaryLabelColor
+    hint.isHidden = false
   }
 
   func serverSwitching(_ label: String) {
@@ -257,12 +319,20 @@ final class TranslationPanelContent {
     failure(message)
   }
 
+  func updatePin(_ pinned: Bool) {
+    pin.image = NSImage(systemSymbolName: pinned ? "pin.fill" : "pin", accessibilityDescription: nil)
+    pin.contentTintColor = pinned ? .controlAccentColor : .secondaryLabelColor
+    pin.setAccessibilityLabel(pinned ? "取消置顶" : "置顶面板")
+    pin.toolTip = pinned ? "已置顶 · 点击取消" : "保持在其他窗口上方，不改变位置"
+    fadeIn(pin)
+  }
+
   func updateElapsed(_ seconds: TimeInterval) {
-    elapsed.stringValue = String(format: "%.1fs", seconds)
-    if (phase == .preflight || phase == .waiting || phase == .streaming) && seconds >= 6 {
-      phaseLabel.stringValue = phase == .preflight ? "语言识别较慢" : "模型响应较慢"
-      phaseLabel.textColor = .systemOrange
-      hint.stringValue = phase == .preflight ? "识别耗时较长，你可以继续等待或停止" : "仍在生成，你可以继续等待或停止"
+    guard phase != .confirmation && phase != .preflight else { elapsed.stringValue = ""; return }
+    elapsed.stringValue = seconds < 1 ? String(format: "%.0f ms", max(0, seconds) * 1000) : String(format: "%.1f s", seconds)
+    if phase == .waiting && seconds >= 8 {
+      phaseLabel.stringValue = "仍在等待模型响应"
+      hint.stringValue = "尚未收到译文。可以停止，或换一个模型重试。"
       hint.textColor = .secondaryLabelColor
       hint.isHidden = false
     }
@@ -339,5 +409,32 @@ final class TranslationPanelContent {
     hint.isHidden = false
     fadeIn(hint)
     settingsWindow?.setShortcutStatus(message)
+  }
+}
+
+// The selection entry is a circular system-material control, without a nested bezel.
+final class TranslationTriggerButton: NSButton {
+  private var hoverTracking: NSTrackingArea?
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let area = hoverTracking { removeTrackingArea(area) }
+    let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+    addTrackingArea(area)
+    hoverTracking = area
+  }
+  override func mouseEntered(with event: NSEvent) { setHovered(true) }
+  override func mouseExited(with event: NSEvent) { setHovered(false) }
+  private func setHovered(_ value: Bool) {
+    wantsLayer = true
+    layer?.cornerRadius = 19
+    let color = (value ? NSColor.controlAccentColor.withAlphaComponent(0.12) : NSColor.clear).cgColor
+    if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      let animation = CABasicAnimation(keyPath: "backgroundColor")
+      animation.fromValue = layer?.presentation()?.backgroundColor ?? layer?.backgroundColor
+      animation.toValue = color
+      animation.duration = 0.12
+      layer?.add(animation, forKey: "hover")
+    }
+    layer?.backgroundColor = color
   }
 }

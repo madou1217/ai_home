@@ -20,6 +20,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var monitors: [Any] = []
   var lastTrusted: Bool?
   var selectionToken = 0
+  private var selectionMouseDown: CGPoint?
+  private var selectionDragged = false
   var selectionApplicationPID: pid_t = 0
   var activationObserver: NSObjectProtocol?
   var contextSelection: SelectedText?
@@ -151,12 +153,22 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   }
 
   func installMonitors() {
-    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .keyDown, .scrollWheel], handler: { [weak self] event in
+    if let monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown, .rightMouseUp, .keyDown, .scrollWheel], handler: { [weak self] event in
       guard let self = self else { return }
       if event.type == .leftMouseDown {
         self.selectionToken += 1
+        self.selectionMouseDown = event.cgEvent?.location
+        self.selectionDragged = false
         self.panel.outsideClick()
+      } else if event.type == .leftMouseDragged {
+        if let start = self.selectionMouseDown, let point = event.cgEvent?.location {
+          self.selectionDragged = self.selectionDragged || hypot(point.x - start.x, point.y - start.y) >= 4
+        }
       } else if event.type == .leftMouseUp {
+        let selectionGesture = self.selectionDragged || event.clickCount >= 2
+        self.selectionMouseDown = nil
+        self.selectionDragged = false
+        guard selectionGesture else { return }
         emit(["type": "selection-state", "outcome": "mouse-up"])
         let token = self.selectionToken
         // 全局监听副本的 eventTargetUnixProcessID 指向本 helper，不能用来定位选词应用。
@@ -176,6 +188,8 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
                 "x": self.reader.lastPoint.x, "y": self.reader.lastPoint.y])
         }
       } else if event.type == .rightMouseDown {
+        self.selectionMouseDown = nil
+        self.selectionDragged = false
         self.selectionToken += 1
         self.panel.hideTrigger()
       } else if event.type == .rightMouseUp {

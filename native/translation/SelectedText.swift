@@ -86,6 +86,23 @@ final class SelectionReader {
     lastPoint = quartzPoint
     var hit: AXUIElement?
     AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(quartzPoint.x), Float(quartzPoint.y), &hit)
+    // Passive selection must originate in content, never in a menu/control
+    // that happens to leave an older editor selection alive.
+    if !explicit, let hit = hit {
+      AXUIElementSetMessagingTimeout(hit, 0.1)
+      var ancestor: AXUIElement? = hit
+      let excludedRoles = [kAXMenuRole, kAXMenuItemRole, kAXMenuBarRole, kAXMenuBarItemRole,
+                           kAXButtonRole, kAXPopUpButtonRole, kAXToolbarRole, kAXSliderRole,
+                           kAXScrollBarRole, kAXCheckBoxRole, kAXRadioButtonRole]
+      for _ in 0..<8 {
+        guard let node = ancestor else { break }
+        if excludedRoles.contains(axString(axValue(node, kAXRoleAttribute))) {
+          lastOutcome = "control-interaction"
+          return nil
+        }
+        ancestor = axElement(node, kAXParentAttribute)
+      }
+    }
     var hitPID: pid_t = 0
     if let hit = hit { AXUIElementGetPid(hit, &hitPID) }
     lastHitPID = hitPID

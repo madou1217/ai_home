@@ -12,7 +12,7 @@ const CLIENTS = [
   { provider: 'claude', binary: '/Users/model/.local/bin/claude', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js' },
   { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', list: null, version: ['--version'] },
   { host: 'pi', demo: 'pi-plugin-native-demo.js', args: ['--managed'] },
-  { host: 'deepseek', demo: 'deepseek-plugin-native-demo.mjs', args: [] }
+  { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] }
 ];
 function run(binary, args, env, cwd) { const r=spawnSync(binary,args,{env,cwd,encoding:'utf8',timeout:30000,maxBuffer:1024*1024}); return {status:r.status,signal:r.signal,stdout:String(r.stdout||'').slice(0,5000),stderr:String(r.stderr||'').slice(0,1500)}; }
 async function runNativePluginDemo() {

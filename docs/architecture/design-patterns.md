@@ -15,6 +15,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `native-plugin-adapters/cordis-patch.js` + DSH harness launchers | **Adapter + Owned Projection + Scope** | canonical 包的 DeepSeek 入口生成受管绝对路径 patch；目录与 patch 双摘要校验，启停与账号启动共用声明式 `--patch` 投影，不修改原生 profile 的用户层 | 真实 AIH CLI 四阶段、原生 DSH dump/boot/Loader/ToolRuntime、账号参数检查、scope dispose 与修改后拒绝 |
 | `scripts/native-plugin-use-demo.js` + `scripts/skill-native-demo.js` + `examples/skills/prompt-fixture.js` | **Dependency Injection + Shared Native Client Adapter** | 插件和独立 Skill 复用真实客户端启动与协议 fixture，但由各自 manager 安装不同资源；marker 可注入，正文必须由 native client 加载，避免把目录或列表存在当作使用成功 | Codex/Claude native plugin 四阶段，独立 Skill 回归，Node 22 全量套件 |
 | `lib/harness/catalog.js` + `host-resource-registry.js` + `native-plugin-manager.js` + `host-plugin-runtime.js` | **Descriptor + Registry + Facade + Adapter** | Pi 等外部 harness 有独立 host 身份，复用受管插件 store/目录策略；账号隔离启动按声明转发已启用扩展，摘要变化时 fail closed，不把 harness 当成 gateway 账号 provider | 真实 `aih native plugin … --host pi` 四阶段 + Pi SDK 工具/命令/shutdown；`preparePiHarness` 隔离账号四阶段；Node 22 全量回归 |
 | `lib/native-resources/portable-plugin-conformance.js` 的 native manifest validators | **Strategy Registry + Contract Validation** | 每宿主验证器与入口描述符放在一起；OpenCode 原生 `./server`、Pi extensions、DSH bundle patch 必须与 canonical 入口一致，避免仅凭 exports 存在声称可加载 | 现有 conformance/command 套件 6 项；真实 package 副本缺少三种 native projection 时均返回 `projection-invalid` |

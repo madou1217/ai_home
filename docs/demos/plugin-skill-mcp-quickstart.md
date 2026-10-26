@@ -14,6 +14,7 @@ node scripts/native-plugin-use-demo.js claude
 node scripts/pi-plugin-native-demo.js
 node scripts/pi-plugin-native-demo.js --managed
 node scripts/deepseek-plugin-native-demo.mjs
+node scripts/deepseek-plugin-managed-demo.mjs
 ```
 
 ## AIH 自有插件
@@ -150,7 +151,24 @@ node scripts/pi-plugin-native-demo.js --managed
 
 `--managed` probe 通过真实 AIH CLI 执行四阶段，再通过真实 Pi loader 调用工具/命令。
 它同时验证 AIH 账号隔离的 Pi harness：启动参数只转发已启用且摘要未被修改的
-受管扩展路径；停用/移除后后续启动不再加载。DeepSeek 的统一 AIH lifecycle 仍待接入。
+受管扩展路径；停用/移除后后续启动不再加载。
+
+DeepSeek 使用相同生命周期和独立 host 身份：
+
+```bash
+aih native plugin install examples/native-plugins/aih-demo --host deepseek --json
+aih native plugin list --host deepseek --json
+aih native plugin disable aih-demo --host deepseek --json
+aih native plugin enable aih-demo --host deepseek --json
+aih native plugin doctor --host deepseek --json
+aih native plugin remove aih-demo --host deepseek --json
+node scripts/deepseek-plugin-managed-demo.mjs
+```
+
+DeepSeek 安装结果的 `nativeInstall.launchPath` 是生成的 DSH patch，供已有
+profile 的 `--patch` 参数使用。AIH 的 DSH 账号启动会自动携带已启用的 patch。
+probe 验证原生 profile composition、真实 boot/Loader/ToolRuntime 和清理，
+支持依赖已打包的 portable adapter 包；任意第三方 bundle 仍由 DSH 原生包管理器安装。
 
 ## 查看所有 provider 的真实边界
 

@@ -1,3 +1,5 @@
 - insert:
     - id: aih-demo
       name: aih-demo-plugin/deepseek
+      config:
+        description: Portable core projected by DeepSeek Harness

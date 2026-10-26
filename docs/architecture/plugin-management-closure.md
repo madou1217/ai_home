@@ -32,6 +32,40 @@ account-isolated launch propagation.
 
 ## Pi / DeepSeek runtime follow-up (2026-10-26)
 
+### DeepSeek unified host management follow-up
+
+`aih native plugin install/enable/disable/remove/list/doctor --host deepseek`
+now copies the canonical package to an owned host directory and generates a
+digest-checked DSH patch. The registered `cordis-patch` adapter resolves
+`exports["./deepseek"]` to a file URL; no package-manager state or credentials
+are copied into account state. `prepareDshHarness` and `prepareDshTuiHarness`
+forward enabled patches via the descriptor's `--patch` launch argument.
+
+```sh
+node scripts/deepseek-plugin-managed-demo.mjs
+```
+
+The actual AIH CLI performs all four lifecycle stages. DSH's native
+`--dump-config` composes the generated patch, then its own `boot` / Loader
+mounts that projection and ToolRuntime executes the shared core. Account-specific
+DSH_HOME and generated patch arguments are checked at each stage. Disposing the
+native root withdraws contributions and invalidates retained handlers. Disabled
+and removed stages contain no managed row or native tool. Editing the package
+or generated patch fails closed before cleanup or launch. The aggregate native
+plugin demo now runs this managed path; the separate original DSH demo still
+proves native package-manager `add/remove` behavior.
+
+This establishes the self-contained portable adapter subset. It does not install
+arbitrary third-party bundle dependencies or prove browser/TUI/model-selected
+agent-loop behavior.
+
+The owned projection accepts one `insert` with one enabled entry containing
+`id`, `name`, `config` and an optional `disabled: false`. It preserves native
+configuration and rebases only the entry module name. Grouping, conditions,
+multi-entry patches and profile overrides are rejected during conformance,
+rather than silently losing their semantics. The demo verifies a configured
+tool description through the real Loader and ToolRuntime.
+
 The earlier PATH-only runtime-unavailable conclusion below was incomplete. Both
 packages are present in this machine's pnpm v11 store: Pi
 `@earendil-works/pi-coding-agent@0.84.4` and DSH `@deepseek-ai/dsh@0.2.1-rc.2`.
@@ -61,8 +95,8 @@ hosts were wholly absent. Both demos now discover packages when the optional
 directory argument is omitted. Doctor uses the external harness catalog and
 targeted npm/pnpm package lookup, then runs the real CLI version probe (including
 DSH's Node 22 `runCli` wrapper). Both report `runtime.available: true` on this
-machine. DSH still needs unified AIH lifecycle integration and remains
-`projection-only`; Pi's completed host-management follow-up is described below.
+machine. Subsequent Pi and DSH unified host-management evidence is described in
+the follow-up sections; runtime availability is independent of that evidence.
 The demos pass on both Node 26.12.1 and the supported Node 22.21.0 runtime.
 
 ### Pi unified host management follow-up
@@ -87,8 +121,8 @@ account state. Node 22.21.0 and Node 26.12.1 probes pass. This proves package,
 tool, command and shutdown behavior; remote inference and Pi-specific UI remain
 separate evidence.
 
-The aggregate `scripts/native-plugin-demo.js` now runs the Pi managed demo and
-the DSH profile/SDK demo when runtime packages are available. Provider list/config
+The aggregate `scripts/native-plugin-demo.js` now runs the Pi and DSH managed
+demos when runtime packages are available. Provider list/config
 checks explicitly carry `toolExecutionVerified: false`; they cannot establish
 that Codex/Claude/OpenCode invoked plugin behavior. The separate OpenCode tool
 probe is still a checkpoint: its native CLI currently stalls during initialization

@@ -27,7 +27,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 
 | Host | State | Reason | Evidence |
 |---|---|---|---|
-| deepseek | projection-only | native_profile_and_sdk_tool_lifecycle_verified; unified_aih_lifecycle_pending | scripts/deepseek-plugin-native-demo.mjs |
+| deepseek | supported when runtime probe passes; otherwise projection-only | native_owned_patch_boot_tool_cleanup_verified; agent_loop_inference_not_verified | scripts/deepseek-plugin-managed-demo.mjs |
 | opencode | supported | server_plugin_local_projection_verified; TUI/RPC entrypoints remain separate | scripts/native-plugin-demo.js |
 | pi | supported when runtime probe passes; otherwise runtime-unavailable | native_directory_tool_command_cleanup_verified; agent_loop_inference_not_verified | scripts/pi-plugin-native-demo.js --managed |
 | aih | supported | signed_artifact_and_supervised_host | scripts/plugin-closure-demo.js |

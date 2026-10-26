@@ -56,4 +56,4 @@
 - [x] Run the new demo on Node 22.21.0 and current Node 26, and retain structured stage evidence.
 - [x] Run the three native shared-core host demos after changing the canonical package to prove no adapter regression.
 - [x] Report the subset precisely: canonical artifact/call is proven; standalone SDK publication, hot upgrade, full common API, TUI/RPC and remote model reasoning remain separate.
-- [ ] Run existing regression and provider check, commit exact paths, integrate into `main` preserving peer changes, and push after verification.
+- [x] Run existing regression and provider check, commit exact paths, integrate into `main` preserving peer changes, and push after verification.

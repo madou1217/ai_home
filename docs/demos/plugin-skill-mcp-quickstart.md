@@ -1,6 +1,6 @@
 # 插件、Skill、MCP 与原生插件快速上手
 
-这份 quickstart 对应当前已经能运行的管理面。统一插件设计见 [Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；实现证据见 [Plugin Management Closure Evidence](../architecture/plugin-management-closure.md)。命令只管理本机资源，示例中的 `aih-demo` 是仓库内的确定性 fixture，不会消耗上游模型额度。
+这份 quickstart 对应当前已经能运行的管理面。统一插件设计见 [Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；实现证据见 [Plugin Management Closure Evidence](../architecture/plugin-management-closure.md)。管理命令操作本机资源；下列 demo 脚本使用确定性 fixture，不消耗上游模型额度。手工原生对话按各 CLI 的模型配置运行。
 
 如果要做一次不触碰真实账号的演示，优先运行下面的脚本。它们各自创建临时 home，结束后清理临时文件，并且输出会刻意省略凭据、完整请求正文和管理密钥：
 

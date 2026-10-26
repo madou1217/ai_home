@@ -15,7 +15,7 @@ test('provider doctor reports every contract provider and resource with evidence
 test('provider doctor exposes imported host gaps without claiming runtime support', () => {
   const report = createProviderResourceDoctor({ definitions: listProviderDefinitions(), nativeBinaries: {} }).capabilities();
   assert.deepEqual(report.hostAdapters.map(x => x.host), ['deepseek', 'opencode', 'pi', 'aih']);
-  assert.equal(report.hostAdapters.find(x => x.host === 'deepseek').state, 'adapter-needed');
+  assert.equal(report.hostAdapters.find(x => x.host === 'deepseek').state, 'projection-only');
   assert.equal(report.hostAdapters.find(x => x.host === 'pi').state, 'runtime-unavailable');
   assert.equal(report.hostAdapters.find(x => x.host === 'opencode').state, 'supported');
 });

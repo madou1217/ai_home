@@ -367,6 +367,41 @@ export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' 
   return record.planName || record.planType || 'free';
 }
 
+/**
+ * 套餐标签**拆分成多个**。
+ *
+ * 为什么不能只给一个标签：zcode 同账号可能叠加多个套餐（「领臭鸡蛋」），后端把展示名
+ * 拼成 `A + B` 塞进 planType。整串当一个标签会有两个问题——**宽度随套餐增减而变**，
+ * 且 `+` 拼接在窄列里被截断（真机：「ZCODE GLOBAL BUILD + ZCode Start Plan」显示成
+ * 半截）。拆开渲染后每个标签宽度稳定，行内自动换行。
+ *
+ * 数据来源优先级：
+ *   1. 额度快照的 planGroups（**结构化**，每个套餐一个 name，最可靠）；
+ *   2. planName（其它 provider 的订阅档，单值）；
+ *   3. 把 planType 按分隔符拆开（兜底，兼容没有 planGroups 的快照）。
+ */
+export function getPlanTagLabels(
+  record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>
+): string[] {
+  if (record.apiKeyMode) return ['密钥'];
+  // 1. 结构化套餐分组。
+  const snapshot = record.usageSnapshot;
+  const groups = snapshot && typeof snapshot === 'object' && 'planGroups' in snapshot
+    && Array.isArray(snapshot.planGroups) ? snapshot.planGroups : [];
+  const groupNames = groups
+    .map((g) => String((g && g.name) || '').trim())
+    .filter(Boolean);
+  if (groupNames.length > 0) return Array.from(new Set(groupNames));
+  // 2. 订阅档（kimi 等）优先于枚举值。
+  const planName = String(record.planName || '').trim();
+  if (planName) return [planName];
+  // 3. 兜底拆分：` + ` 是后端拼多套餐用的分隔符（见 zcode-quota-probe 的 planType 汇总）。
+  const planType = String(record.planType || '').trim();
+  if (!planType) return ['free'];
+  const parts = planType.split(/\s*\+\s*/).map((p) => p.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [planType];
+}
+
 export function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
   if (record.apiKeyMode) return 'cyan';
   // kimi 订阅档位（按速度术语递增）：Andante < Moderato < Allegretto < Allegro

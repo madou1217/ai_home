@@ -301,6 +301,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     shell.wantsLayer = true
     mount(shell)
     composer.isRichText = false
+    composer.allowsUndo = true
     composer.isAutomaticQuoteSubstitutionEnabled = false
     composer.isAutomaticDataDetectionEnabled = false
     composer.drawsBackground = false

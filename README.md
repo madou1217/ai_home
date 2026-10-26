@@ -186,6 +186,8 @@ aih server config set --client-key <key>
 aih server config set --open-network --generate-management-key
 aih server restart
 aih server config show --show-secrets   # 查看密钥（只在受信任的终端里用）
+aih server config show --show-secrets --qr  # 手机扫码填写 Server URL 和 Management Key
+aih server config show --show-secrets --qr --qr-url https://aih.example.com
 aih node doctor                         # 打印其他机器应使用的 endpoint candidate
 ```
 
@@ -209,6 +211,10 @@ aih server remove home
 ```
 
 浏览器里在「Server 管理」页填写同样的 URL 和 Management Key。已认证的客户端可以在该页轮换密钥，也可以在 Server 上执行 `aih server config set --generate-management-key`。
+
+手机可在 Management Key 输入框旁点「扫描二维码」，识别终端里的凭据二维码，填入地址和密钥后再提交。二维码包含完整管理密钥，只应展示给你信任的设备。`--qr` 默认从监听配置和可用网卡选择地址；公网、HTTPS 或 VPN 地址可用 `--qr-url` 指定。终端二维码需要足够的窗口宽度；过长的自定义密钥可能超过二维码容量，仍可手动输入。
+
+普通配置更新和空白输入会保留已有 Management Key。清理密钥会关闭管理面，必须显式执行 `aih server config set --clear-management-key --confirm-clear-management-key`，随后重启生效。诊断和页面验收应使用隔离数据目录，保留用户正在使用的密钥；不要临时替换后再清空。
 
 > `aih codex` 等使用的内置 `.aih-server` 是 provider 的启动 profile，和这里保存的远程 Server 是两回事。
 

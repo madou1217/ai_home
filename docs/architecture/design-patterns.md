@@ -15,6 +15,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `lib/server/server-config-store.js` | **Transaction + 单一写入边界** | 严格读、合并、写入在同一 SQLite 事务中；普通空白 Management Key 保留现值，只有 CLI 显式确认携带清理意图 | 隔离真实 SQLite 与 CLI：空白保留、未确认拒绝、确认清空、损坏配置拒绝覆盖 |
+| `lib/protocol/server-credentials-qr.js` + `lib/cli/services/server/management-key-qr.js` | **共享协议契约 + Adapter** | CLI 和浏览器共用版本化凭据校验；终端绘制与纯 payload、服务器配置分离，QR 编码器离线运行 | 真实 CLI 输出经独立 jsQR 解码，还原地址/密钥一致；原始密钥没有额外回显 |
 | `lib/providers/contract.js` | **Contract / Schema 校验** | provider 描述符契约：能力必须显式回答（`supported` + `reason`/策略），transport↔clientDependent 自洽，只有客户端通道必须写 `clientFreeReason` | `test/provider-capability-registry.test.js`、`test/quota-provider-coverage.test.js` |
 | `lib/providers/registry.js` | **Registry + 倒排索引** | 能力名 → provider 集合；`getProviderCapability(provider, face)` / `listProviders(face)`，消费方问能力不问 provider | 同上 |
 | `lib/translation/{provider-contract,provider-registry,provider-facade,index}.js` | **Contract + Registry 倒排索引 + Facade** | 翻译引擎以声明式描述符提供操作、认证、配置和无客户端通道事实；注册表按操作倒排，消费者经门面查询，新增引擎无需派发分支 | Node 22 运行时冒烟：5 个内置描述符通过校验，操作索引与能力查询一致 |

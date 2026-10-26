@@ -126,6 +126,16 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 浏览器扩展的后台适配器按 tab/frame/operation 管理 AbortController，HTTP 与 SSE 错误归入同一分类函数；内容脚本持有页面快照、有限并发及旧任务写入守卫。网页声明的语言优先；无声明时用首段完整正文的已解析源语言支持短片段。macOS 菜单入口继续使用 Services 描述符，不替换宿主右键。真实菜单、长文本布局和仍未完成的验收范围见 [桌面翻译验收记录](../verification/2026-10-26-translation-desktop-acceptance.md)。
 
+#### 原生与扩展阅读交互修正
+
+- `native/translation/TranslationPanel.swift` → 请求状态控制器：预检、等待模型、确认、流式输出分别驱动状态；确认停止计时；Pin 只改变窗口层级和外部点击关闭策略，不改变几何位置。待选内容与已接受的替换快照分开，写回前核对原文和选区。
+- `TranslationPanelContent.swift` → 被动视图：固定宽度阅读区使用文本容器换行和增量追加，保存选择与滚动位置；模型编辑草稿不被异步目录覆盖，服务目标变化清除旧临时选择。
+- `lib/desktop/translation/model-catalog.js` → 目标隔离缓存与代际取消：模型目录异步加载，不阻塞翻译；当前服务的默认与可选模型通过 JSONL 投影到原生可编辑选择器。
+- `lib/translation/source-policy.js` → 描述符能力策略：仅实际执行路由全部声明 `sourceAuto` 时允许自动源语言，未知适配器继续要求具体来源；没有新增 provider 名称分派。
+- `web/public/translation-extension/panel.js` → Shadow DOM 视图边界：宿主网页样式与浮层样式隔离；交互外壳持有固定、拖动、关闭与销毁，内容脚本继续持有任务取消和页面变更快照。
+- 验证边界：原生离屏布局/状态探针、现有测试、扩展 ESLint 和完整 Web 构建；用户正在操作桌面，更新后的前台视觉、Pin 跨应用与整页翻译验收仍待恢复。
+
+
 ## 2. 反模式清单（该改的地方）
 
 扫描口径：`grep -rn "provider === \|provider !== \|normalizedProvider ===" lib/ --include='*.js'`（排除测试）。

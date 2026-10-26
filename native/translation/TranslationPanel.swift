@@ -72,8 +72,13 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
     button.frame = NSRect(x: 0, y: 0, width: 38, height: 38)
     button.isBordered = false
     button.imagePosition = .imageOnly
-    button.image = NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "翻译选中内容")
-    button.contentTintColor = .controlAccentColor
+    if let logoURL = Bundle.main.url(forResource: "ai-home-app-icon", withExtension: "png"),
+       let logo = NSImage(contentsOf: logoURL) {
+      logo.isTemplate = false
+      logo.size = NSSize(width: 32, height: 32)
+      button.image = logo
+    }
+    button.imageScaling = .scaleProportionallyDown
     button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
     let surface = NSVisualEffectView(frame: button.frame)

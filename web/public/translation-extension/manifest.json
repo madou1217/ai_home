@@ -23,7 +23,10 @@
   },
   "action": {
     "default_title": "AIH 翻译设置",
-    "default_popup": "options.html"
+    "default_popup": "options.html",
+    "default_icon": {
+      "128": "ai-home-logo.png"
+    }
   },
   "options_page": "options.html",
   "content_scripts": [
@@ -46,5 +49,18 @@
       },
       "description": "翻译当前选区"
     }
-  }
+  },
+  "icons": {
+    "128": "ai-home-logo.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "ai-home-logo.png"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

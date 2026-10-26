@@ -314,6 +314,7 @@ Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-clie
 
 - `lib/desktop/chat/chat-runtime-bridge.js` 是 Chat Runtime 的适配器：原生端只发会话/命令意图；桥接持有 request/session/command 身份与等待中的停止请求，不创建独立 provider 执行路径。
 - `lib/desktop/runtime/desktop-protocol.js` 将目标元数据与 canonical 消息内容分开规范化。可选目标字段允许缺省；正文保留完整内容，超过帧限制显式报错。进程 launcher 不比较 Chat 的独立会话/命令计数器。
+- `lib/server/chat-runtime/codex-session-driver.js` 在准备、提交中、已取得原生回合身份三个阶段处理取消：准备阶段在安全边界结束，提交中保留回执恢复并等待精确身份，确认未提交或原生终止后才释放线程所有权。
 - `native/chat/ChatPanel.swift` 持有会话状态机，按 item 身份与角色投影助手消息；`ChatPanelContent.swift` 为被动视图，以稳定文本节点增量呈现，并保留原生选择、滚动及输入法语义。
 
 **验收标准（每个 provider × 每个采集面）**

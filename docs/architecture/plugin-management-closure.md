@@ -123,9 +123,9 @@ disable, and removed all temporary files. All four providers passed. The fixture
 returned `AIH_MCP_DEMO_OK` only from a real `tools/call` response; it does not spend
 upstream model tokens.
 
-The complete focused suite currently has 49 passing tests across MCP, skill,
-resource matrix and existing AIH plugin lifecycle tests; `npm run providers:check`
-also passes. Providers whose descriptor has MCP commands/config paths but no verified
+The The latest focused MCP, skill, native-plugin, provider-doctor, resource-matrix
+and existing AIH plugin lifecycle suites all pass; the full Node suite is 169/169
+and `npm run providers:check` also passes. Providers whose descriptor has MCP commands/config paths but no verified
 projection adapter remain explicitly projection-only or unsupported. This avoids
 claiming closure for provider-native formats that have not been observed.
 

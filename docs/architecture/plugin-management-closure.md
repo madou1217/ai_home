@@ -342,6 +342,12 @@ passed native discovery/configuration plus two AIH stdio tool calls for each of
 Codex/Claude/OpenCode/Cline. The five-host native plugin aggregate passed,
 including the OpenCode tool loop and Pi/DSH managed SDK execution described above.
 
+Integration into `main` preserved its concurrent changes. The integrated Node 22
+suite passes 105 tests, the five-host native aggregate passes again, provider
+contract generation/check passes, and native-plugin/skill/MCP CLI help exits
+successfully. Relative to the pre-integration `main`, this task changes no
+`web/` source or existing test file.
+
 Fresh runs on this branch:
 
 ```sh
@@ -374,6 +380,11 @@ Overall closure status is now:
   cleanup and account-isolated launch propagation are runtime-proven above.
 - Remaining provider resource projections retain their explicit capability and
   runtime status; this does not establish behavior on every installed provider.
+- Canonical-to-AIH artifact migration remains open: the AIH runtime demo uses
+  the existing Echo package and `plugin.json` artifact path. The native canonical
+  package's core/shape inspection does not prove that same package can yet be
+  packed and loaded by AIH's supervised Host. This is the M1 adapter/projection
+  work from the universal design, not evidence supplied by the Echo lifecycle.
 
 No claim of full cross-host parity is made for OpenCode TUI/RPC or Pi/DSH
 model-selected agent loops. The native SDK execution subset is proven separately.
@@ -383,8 +394,8 @@ The native plugin manager now uses the descriptor's `plugins.adapter` registry
 `cordis-patch`).
 The manager contains no provider-name execution branches. Codex marketplace paths,
 OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
-snapshot tamper detection, and native remove/re-enable behavior are covered by the
-latest native plugin tests.
+snapshot tamper detection, and native remove/re-enable behavior were checked by
+the earlier checkpoint assertions and the real native probes.
 
 Portable host import commands now make the remaining gap executable:
 
@@ -398,5 +409,5 @@ aih native plugin inspect examples/native-plugins/aih-demo --host pi --json
 The canonical fixture has `agentPlugin.engines.deepseek`, `exports["./deepseek"]`,
 `agentPlugin.engines.pi`, and `pi.extensions`. `project` writes a sanitized
 `host-projection.json` and copies the package. This proves imported host shape and
-projection while clearly leaving runtime execution for a machine with the actual
-DeepSeek Harness or Pi host.
+projection. Native execution on the installed DeepSeek Harness and Pi packages
+is proven separately by the managed follow-up demos above.

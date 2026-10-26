@@ -520,8 +520,9 @@ KISS/YAGNI 评审：没有引入跨宿主大基类、统一 SessionStore、统�
 
 | 范围 | 当前状态 | 可复核证据 |
 |---|---|---|
-| Portable manifest、host entry、DeepSeek/Pi projection | 已交付 | `aih native plugin inspect/project examples/native-plugins/aih-demo --host deepseek\|pi`；`test/portable-plugin-conformance.test.js` |
+| Portable manifest、host entry、DeepSeek/Pi projection | 已交付 | `aih native plugin inspect/project examples/native-plugins/aih-demo --host deepseek\|pi`；真实 managed host demos |
 | AIH plugin lifecycle | 运行时已验证 | `node scripts/plugin-closure-demo.js --json`：pack/install/enable/use/restart/use-after-restart/disable/uninstall/doctor |
+| Canonical package → AIH artifact/adapter | M1 尚未交付 | 当前 AIH demo 使用旧 Echo 包与 `plugin.json`；不能替代同一 canonical 包的运行证据 |
 | Codex、Claude native plugin | 原生包内 Skill 四阶段调用已验证 | `scripts/native-plugin-use-demo.js`，参数为 codex 或 claude；非 JavaScript 工具执行 |
 | OpenCode native server plugin | 同一 portable core 的原生 agent/tool loop 四阶段已验证 | `scripts/opencode-plugin-native-demo.js`；1.17.18/1.18.18，本地推理 fixture |
 | Codex、Claude、OpenCode skill native use | 运行时已验证 | `node scripts/skill-native-demo.js --provider ...` |

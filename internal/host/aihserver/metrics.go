@@ -55,6 +55,12 @@ type metricsResponseWriter struct {
 	status int
 }
 
+// Unwrap preserves the underlying writer's upgrade and deadline capabilities
+// for WebSocket and http.ResponseController without bypassing status recording.
+func (writer *metricsResponseWriter) Unwrap() http.ResponseWriter {
+	return writer.ResponseWriter
+}
+
 func (writer *metricsResponseWriter) WriteHeader(status int) {
 	writer.status = status
 	writer.ResponseWriter.WriteHeader(status)

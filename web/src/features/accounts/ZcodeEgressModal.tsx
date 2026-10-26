@@ -140,6 +140,13 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     ),
     tun: (
       <>仅在检测到外部 TUN 已激活时使用：账号直连，由 TUN 接管；AIH 不创建、不启停，也不接管该 TUN。</>
+    ),
+    direct: (
+      <>
+        该账号不走任何代理：网关请求明确绕开服务端配置的全局上游代理，CLI 不注入代理变量，桌面端以 --no-proxy-server 启动
+        （该客户端原生设置里由 AIH 写入的托管代理会被清除）。与「未绑定出口」的区别是它会覆盖全局代理；
+        本机已开启的系统代理或 TUN 属于系统级网络，AIH 不改写它们。
+      </>
     )
   };
 
@@ -400,7 +407,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
                   <p>
                     {usesNativeSettings
                       ? '该客户端统一读取账号隔离的 setting.json（原生代理字段只支持 HTTP(S) 地址）；用户手工设置会安全合并。'
-                      : '在 CLI、桌面端与网关请求边界都直接使用该代理；外部 TUN 模式下不注入代理。'}
+                      : '在 CLI、桌面端与网关请求边界都直接使用该代理；外部 TUN 与直连模式下不注入代理。'}
                     {' 桌面端正在运行时，保存后会以新出口重启该实例。'}
                   </p>
                 </EgressHint>
@@ -413,7 +420,8 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
                   ['pool', 'AIH 出口池（自动轮换代理池节点）'],
                   ['url', '外部代理地址（HTTP(S) 或 SOCKS5）'],
                   ['system', '现有系统代理（只读复用）'],
-                  ['tun', '现有外部 TUN（只读复用）']
+                  ['tun', '现有外部 TUN（只读复用）'],
+                  ['direct', '直连（绕过任何代理）']
                 ] as const).map(([value, label]) => (
                   <Radio key={value} value={value} className="egress-choice-tile">
                     <span className="aih-choice-tile-title">{label}</span>

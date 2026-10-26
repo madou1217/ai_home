@@ -170,36 +170,36 @@ type Sub2APIAccountDecoder interface {
 
 // Dependencies 集中声明账号 HTTP 入站适配器的依赖。
 type Dependencies struct {
-	Management          Management
-	Models              ModelManagement
-	Usage               UsageManagement
-	Deletion            AccountDeletion
-	Defaults            ProviderDefaultManagement
-	Selections          LaunchAccountSelection
-	CredentialRotation  StaticCredentialRotation
-	Sub2APIExporter     AccountExporter
-	Registrar           Registrar
-	Importer            Importer
-	StaticCredentials   StaticCredentialFactory
-	NativeAccounts      NativeAccountDecoder
-	Sub2APIAccounts     Sub2APIAccountDecoder
-	Authorizer          Authorizer
+	Management         Management
+	Models             ModelManagement
+	Usage              UsageManagement
+	Deletion           AccountDeletion
+	Defaults           ProviderDefaultManagement
+	Selections         LaunchAccountSelection
+	CredentialRotation StaticCredentialRotation
+	Sub2APIExporter    AccountExporter
+	Registrar          Registrar
+	Importer           Importer
+	StaticCredentials  StaticCredentialFactory
+	NativeAccounts     NativeAccountDecoder
+	Sub2APIAccounts    Sub2APIAccountDecoder
+	Authorizer         Authorizer
 }
 
 // Handler 是可挂载到未来 Go Server Composition Root 的账号管理路由。
 type Handler struct {
-	management          Management
-	models              ModelManagement
-	usage               UsageManagement
-	deletion            AccountDeletion
-	defaults            ProviderDefaultManagement
-	selections          LaunchAccountSelection
-	credentialRotation  StaticCredentialRotation
-	registrar           Registrar
-	importer            Importer
-	staticCredentials   StaticCredentialFactory
-	native              NativeAccountDecoder
-	authorizer          Authorizer
+	management         Management
+	models             ModelManagement
+	usage              UsageManagement
+	deletion           AccountDeletion
+	defaults           ProviderDefaultManagement
+	selections         LaunchAccountSelection
+	credentialRotation StaticCredentialRotation
+	registrar          Registrar
+	importer           Importer
+	staticCredentials  StaticCredentialFactory
+	native             NativeAccountDecoder
+	authorizer         Authorizer
 }
 
 // NewHandler 创建依赖完整且默认失败关闭的账号 HTTP Handler。
@@ -219,18 +219,18 @@ func NewHandler(dependencies Dependencies) (*Handler, error) {
 		return nil, ErrInvalidDependencies
 	}
 	return &Handler{
-		management:          dependencies.Management,
-		models:              dependencies.Models,
-		usage:               dependencies.Usage,
-		deletion:            dependencies.Deletion,
-		defaults:            dependencies.Defaults,
-		selections:          dependencies.Selections,
-		credentialRotation:  dependencies.CredentialRotation,
-		registrar:           dependencies.Registrar,
-		importer:            dependencies.Importer,
-		staticCredentials:   dependencies.StaticCredentials,
-		native:              dependencies.NativeAccounts,
-		authorizer:          dependencies.Authorizer,
+		management:         dependencies.Management,
+		models:             dependencies.Models,
+		usage:              dependencies.Usage,
+		deletion:           dependencies.Deletion,
+		defaults:           dependencies.Defaults,
+		selections:         dependencies.Selections,
+		credentialRotation: dependencies.CredentialRotation,
+		registrar:          dependencies.Registrar,
+		importer:           dependencies.Importer,
+		staticCredentials:  dependencies.StaticCredentials,
+		native:             dependencies.NativeAccounts,
+		authorizer:         dependencies.Authorizer,
 	}, nil
 }
 
@@ -306,6 +306,10 @@ func (handler *Handler) handleMember(
 ) {
 	resource, err := parseMemberResource(request.URL.Path)
 	if err != nil {
+		if errors.Is(err, accountapp.ErrUnsupportedAccountExport) {
+			writeApplicationError(response, err)
+			return
+		}
 		writeAPIError(
 			response,
 			http.StatusBadRequest,
@@ -425,6 +429,10 @@ func (handler *Handler) handleAccountExport(
 	}
 	if rejectUnexpectedQuery(response, request) ||
 		rejectUnexpectedBody(response, request) {
+		return
+	}
+	if exporter == nil {
+		writeApplicationError(response, accountapp.ErrUnsupportedAccountExport)
 		return
 	}
 	document, err := exporter.ExportAccount(

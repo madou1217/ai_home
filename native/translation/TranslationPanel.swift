@@ -1,20 +1,28 @@
 import AppKit
 
-final class TranslationPanel: NSObject, NSWindowDelegate {
+final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
   let emit: ([String: Any]) -> Void
-  let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-  let trigger = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 34, height: 32), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+  let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 440), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+  let trigger = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 38, height: 38), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
   let content = TranslationPanelContent()
   var selected = ""
   var offered = ""
   var requestID = ""
   var target = "zh-Hans"
   var defaultTarget = "zh-Hans"
+  private var modelCandidates: [[String: Any]] = []
+  private var selectedModel = ""
+  private var selectedProvider = ""
+  private var modelWasEdited = false
+  private var modelScope = ""
+  private var pendingModelConfiguration: [String: Any]?
   var autoCopy = false
   var copyScope = "selection"
   var serverPort = 9527
   private var sameLanguageResult = false
   var output = ""
+  private var offeredSelection: SelectedText?
+  private var replacementRange: CFRange?
   private var replacementElement: AXUIElement?
   private var replacementApplicationPID: pid_t = 0
   private var replacementOriginal = ""
@@ -31,13 +39,18 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     super.init()
     panel.title = "AIH 划词翻译"
     panel.delegate = self
-    panel.level = .floating
+    panel.level = .normal
     panel.hidesOnDeactivate = false
     panel.isReleasedWhenClosed = false
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-    panel.minSize = NSSize(width: 360, height: 260)
-    panel.maxSize = NSSize(width: 900, height: 900)
+    panel.minSize = NSSize(width: 420, height: 360)
+    panel.maxSize = NSSize(width: 760, height: 900)
     panel.contentView = content.root
+    content.modelPicker.delegate = self
+    content.modelPicker.target = self
+    content.modelPicker.action = #selector(commitModel)
+    content.settingsButton.target = self
+    content.settingsButton.action = #selector(openSettings)
     content.pin.target = self
     content.pin.action = #selector(togglePinned)
     content.settingsHandler = { [weak self] event in self?.emit(event) }
@@ -55,21 +68,30 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.keepOriginal.action = #selector(keepOriginal)
     content.stop.target = self
     content.stop.action = #selector(cancel)
-    let button = NSButton(title: "", target: self, action: #selector(acceptOffer))
-    button.frame = NSRect(x: 0, y: 0, width: 36, height: 34)
-    button.bezelStyle = .texturedRounded
+    let button = TranslationTriggerButton(title: "", target: self, action: #selector(acceptOffer))
+    button.frame = NSRect(x: 0, y: 0, width: 38, height: 38)
+    button.isBordered = false
     button.imagePosition = .imageOnly
+    if let logoURL = Bundle.main.url(forResource: "ai-home-app-icon", withExtension: "png"),
+       let logo = NSImage(contentsOf: logoURL) {
+      logo.isTemplate = false
+      logo.size = NSSize(width: 32, height: 32)
+      button.image = logo
+    }
     button.imageScaling = .scaleProportionallyDown
-    // Use the macOS translation glyph rather than the generic book glyph. The
-    // bubble communicates an action on selected text and remains legible at
-    // the compact floating-trigger size.
-    button.image = NSImage(systemSymbolName: "character.bubble.fill", accessibilityDescription: "翻译")
-      ?? NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "翻译")
-      ?? NSImage(systemSymbolName: "translate", accessibilityDescription: "翻译")
-    button.contentTintColor = .controlAccentColor
     button.toolTip = "翻译选中内容"
     button.setAccessibilityLabel("翻译选中内容")
-    trigger.contentView = button
+    let surface = NSVisualEffectView(frame: button.frame)
+    surface.material = .popover
+    surface.state = .active
+    surface.wantsLayer = true
+    surface.layer?.cornerRadius = 19
+    surface.layer?.masksToBounds = true
+    surface.addSubview(button)
+    trigger.isOpaque = false
+    trigger.backgroundColor = .clear
+    trigger.hasShadow = true
+    trigger.contentView = surface
     trigger.level = .floating
     trigger.hidesOnDeactivate = false
     trigger.isReleasedWhenClosed = false
@@ -101,6 +123,39 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       content.targetMenu.lastItem?.representedObject = code
     }
     selectTarget(previous)
+    configureModels(event)
+  }
+
+  private func scopeForModels(_ event: [String: Any]) -> String {
+    let server = event["serverTarget"] as? [String: Any] ?? [:]
+    return "\(event["executionTarget"] as? String ?? "aih-server"):\(server["origin"] as? String ?? ""):\(server["serverId"] as? String ?? "")"
+  }
+
+  private func modelTitle(_ candidate: [String: Any]) -> String {
+    let id = candidate["id"] as? String ?? ""
+    let provider = candidate["provider"] as? String ?? ""
+    return provider.isEmpty ? id : "\(id) · \(provider)"
+  }
+
+  private func configureModels(_ event: [String: Any]) {
+    // Catalog completion must not replace text while the user is editing it.
+    if content.modelPicker.currentEditor() != nil {
+      pendingModelConfiguration = event
+      return
+    }
+    let scope = scopeForModels(event)
+    if scope != modelScope { modelWasEdited = false; modelScope = scope }
+    modelCandidates = event["models"] as? [[String: Any]] ?? []
+    content.modelPicker.removeAllItems()
+    content.modelPicker.addItems(withObjectValues: modelCandidates.map(modelTitle))
+    if !modelWasEdited {
+      let defaults = [event["defaultModel"] as? String, event["model"] as? String]
+      selectedModel = defaults.compactMap { $0 }.first(where: { !$0.isEmpty }) ?? ""
+      let providers = [event["defaultProvider"] as? String, event["provider"] as? String]
+      selectedProvider = providers.compactMap { $0 }.first(where: { !$0.isEmpty }) ?? ""
+    }
+    content.modelPicker.stringValue = selectedModel
+    content.modelPicker.toolTip = selectedModel.isEmpty ? "使用已配置的默认模型；也可选择或填写模型 ID" : selectedModel
   }
 
   private func selectTarget(_ value: String) {
@@ -117,11 +172,7 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
 
   func offer(_ selection: SelectedText, explicit: Bool, point: NSPoint? = nil) {
     offered = selection.text
-    replacementElement = selection.element
-    replacementApplicationPID = 0
-    if let element = selection.element { AXUIElementGetPid(element, &replacementApplicationPID) }
-    replacementOriginal = selection.fullValue
-    replacementAppliedState = false
+    offeredSelection = selection
     if explicit { acceptOffer() }
     else { place(trigger, at: point ?? NSEvent.mouseLocation); show(trigger) }
   }
@@ -129,22 +180,30 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   @objc func acceptOffer() {
     if !panel.isVisible { selectTarget(defaultTarget) }
     selected = offered
+    replacementElement = offeredSelection?.element
+    replacementRange = offeredSelection?.selectedRange
+    replacementApplicationPID = 0
+    if let element = replacementElement { AXUIElementGetPid(element, &replacementApplicationPID) }
+    replacementOriginal = offeredSelection?.fullValue ?? ""
+    replacementAppliedState = false
     requestIntent()
   }
 
   @objc func requestIntent() {
     guard !selected.isEmpty else { return }
+    emit(["type": "cancel"])
     awaitingConfirmation = true
     requestID = UUID().uuidString
-    if !panel.isVisible || !isPinned { place(panel, at: NSEvent.mouseLocation) }
+    if !panel.isVisible { place(panel, at: NSEvent.mouseLocation) }
     hideTrigger()
     show(panel)
+    output = ""
     content.begin(selected)
     startElapsedTimer(reset: true)
     // Detection is a separate busy phase. Confirmation actions stay hidden
     // until the helper returns an actual intent decision.
     content.showPreflight()
-    emit(["type": "translate-intent", "id": requestID, "text": selected, "target": target])
+    emit(["type": "translate-intent", "id": requestID, "text": selected, "target": target, "model": modelWasEdited ? selectedModel : "", "provider": modelWasEdited ? selectedProvider : ""])
   }
 
   @objc func translate() {
@@ -156,13 +215,12 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     output = ""
     content.setReplacementAvailable(false)
     content.begin(selected)
-    // Keep the preflight start time so the panel reports total user-visible
-    // latency instead of resetting the clock when streaming begins.
-    startElapsedTimer(reset: false)
-    if !panel.isVisible || !isPinned { place(panel, at: NSEvent.mouseLocation) }
+    // Human confirmation time is never included in model execution latency.
+    startElapsedTimer(reset: true)
+    if !panel.isVisible { place(panel, at: NSEvent.mouseLocation) }
     hideTrigger()
     show(panel)
-    emit(["type": "translate", "id": requestID, "text": selected, "target": target, "targetPolicy": "explicit"])
+    emit(["type": "translate", "id": requestID, "text": selected, "target": target, "targetPolicy": "explicit", "model": modelWasEdited ? selectedModel : "", "provider": modelWasEdited ? selectedProvider : ""])
   }
 
   /// Standalone full-app host entry point. The Node host sends this event
@@ -172,11 +230,16 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !id.isEmpty else { return }
     selected = text
     offered = text
+    offeredSelection = nil
+    replacementElement = nil
+    replacementRange = nil
+    replacementAppliedState = false
     self.target = target.isEmpty ? defaultTarget : target
     requestID = id
     output = ""
     awaitingConfirmation = false
     content.begin(text)
+    startElapsedTimer(reset: true)
     if !panel.isVisible { place(panel, at: NSEvent.mouseLocation) }
     hideTrigger()
     show(panel)
@@ -212,6 +275,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     if eventType != "server-target-error" && eventType != "cancel" && event["id"] as? String != requestID { return }
     switch eventType {
     case "confirmation":
+      timer?.invalidate()
+      timer = nil
       awaitingConfirmation = true
       let sameLanguage = (event["state"] as? String) == "same_language"
       let message = sameLanguage
@@ -219,6 +284,10 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
         : "目标语言需要确认。请选择目标语言后再开始翻译"
       content.showConfirmation(message, allowsOverride: sameLanguage)
     case "start":
+      awaitingConfirmation = false
+      let needsExecutionClock = content.phase == .preflight || content.phase == .confirmation
+      content.setPhase(.waiting)
+      if needsExecutionClock || timer == nil { startElapsedTimer(reset: true) }
       panel.title = "\(event["fromLabel"] as? String ?? "自动检测") → \(event["toLabel"] as? String ?? target)"
       let from = event["from"] as? String ?? ""
       let to = event["to"] as? String ?? ""
@@ -230,6 +299,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
       content.setOutput(output)
       if content.phase != .streaming { content.setPhase(.streaming) }
     case "attempt_start":
+      awaitingConfirmation = false
+      content.setPhase(.waiting)
       content.model.stringValue = event["model"] as? String ?? "AIH Translation"
       content.model.toolTip = content.model.stringValue
     case "server-target-error":
@@ -275,9 +346,13 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
   }
 
   @objc func replaceOutput() {
-    guard let element = replacementElement, let range = currentSelectedRange(element), !output.isEmpty else { return }
+    guard let element = replacementElement, let range = replacementRange, !output.isEmpty else { return }
     if replacementAppliedState {
       undoAppliedReplacement(element)
+      return
+    }
+    guard let currentRange = currentSelectedRange(element), currentRange.location == range.location, currentRange.length == range.length else {
+      content.failure("原文选区已改变，未执行替换")
       return
     }
     guard readAXValue(element) == replacementOriginal else { content.failure("原文已经被修改，未执行替换"); return }
@@ -285,13 +360,11 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     let nsRange = NSRange(location: range.location, length: range.length)
     guard nsRange.location >= 0, nsRange.length > 0, nsRange.location + nsRange.length <= full.length else { return }
     replacementFinal = full.replacingCharacters(in: nsRange, with: output)
-    let steps = stride(from: 1, through: max(1, output.count), by: 2).map { index in
-      let end = output.index(output.startIndex, offsetBy: min(index, output.count))
-      return full.replacingCharacters(in: nsRange, with: String(output[..<end]))
-    }
-    for step in steps {
-      guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, step as CFString) == .success else { content.failure("无法写入当前编辑器"); return }
-      if !content.reducedMotion { RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.025)) }
+    // Write one complete snapshot. Animating partial AX values can lose the
+    // final character and permits user edits to race a nested run loop.
+    guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, replacementFinal as CFString) == .success else {
+      content.failure("无法写入当前编辑器")
+      return
     }
     replacementAppliedState = true
     content.replacementApplied()
@@ -355,14 +428,52 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     content.showSettings()
   }
   @objc func togglePinned() {
-    panel.level = isPinned ? .statusBar : .floating
-    content.pin.setAccessibilityLabel(isPinned ? "取消置顶" : "置顶面板")
-    if isPinned, let screen = panel.screen ?? NSScreen.main {
-      var frame = panel.frame
-      frame.origin.y = screen.visibleFrame.maxY - frame.height - 12
-      panel.setFrame(frame, display: true, animate: !content.reducedMotion)
-      panel.orderFrontRegardless()
+    // Pin changes stacking and dismissal only. Never move or resize the window.
+    panel.level = isPinned ? .floating : .normal
+    content.updatePin(isPinned)
+    if isPinned { panel.orderFrontRegardless() }
+  }
+
+  func comboBoxSelectionDidChange(_ notification: Notification) {
+    let index = content.modelPicker.indexOfSelectedItem
+    guard modelCandidates.indices.contains(index) else { return }
+    let candidate = modelCandidates[index]
+    selectedModel = candidate["id"] as? String ?? ""
+    selectedProvider = candidate["provider"] as? String ?? ""
+    modelWasEdited = true
+    // AppKit commits the selected string after sending its delegate callback.
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.content.modelPicker.stringValue = self.selectedModel
+      self.restartForModel()
     }
+  }
+
+  @objc func commitModel() {
+    let value = content.modelPicker.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    let candidate = modelCandidates.first(where: { modelTitle($0) == value })
+    let model = candidate?["id"] as? String ?? value
+    let provider = candidate?["provider"] as? String ?? ""
+    guard model != selectedModel || (candidate != nil && provider != selectedProvider) else { return }
+    selectedModel = model
+    selectedProvider = provider
+    modelWasEdited = true
+    restartForModel()
+  }
+
+  func controlTextDidEndEditing(_ notification: Notification) {
+    let pending = pendingModelConfiguration
+    pendingModelConfiguration = nil
+    // A server switch invalidates a draft belonging to the previous server.
+    if pending == nil || scopeForModels(pending!) == modelScope { commitModel() }
+    if let pending = pending {
+      DispatchQueue.main.async { [weak self] in self?.configureModels(pending) }
+    }
+  }
+
+  private func restartForModel() {
+    content.modelPicker.toolTip = selectedModel
+    if panel.isVisible && !selected.isEmpty { retryTranslation() }
   }
   private func show(_ window: NSWindow) {
     let key = ObjectIdentifier(window)
@@ -402,8 +513,8 @@ final class TranslationPanel: NSObject, NSWindowDelegate {
     hideTrigger()
     hide(panel)
     content.pin.state = .off
-    content.pin.setAccessibilityLabel("置顶面板")
-    panel.level = .floating
+    content.updatePin(false)
+    panel.level = .normal
   }
   func outsideClick() { hideTrigger(); if !isPinned { close() } }
   func windowShouldClose(_ sender: NSWindow) -> Bool { close(); return false }

@@ -104,3 +104,18 @@ test('macOS Services registration tolerates an already-removed legacy bundle', a
   assert.deepEqual(calls[1].args, ['-f', '/tmp/AIH Translation.app']);
   assert.deepEqual(calls[2].args, ['-update']);
 });
+
+test('native Chat surface follows the WebUI conversation and composer language', () => {
+  const source = fs.readFileSync(path.join(root, 'native/chat/ChatPanelContent.swift'), 'utf8');
+  assert.match(source, /final class ChatMessageRow/);
+  assert.match(source, /NSTextViewDelegate/);
+  assert.match(source, /func textDidChange/);
+  assert.match(source, /hasMarkedText\(\)/);
+  assert.match(source, /mount\(scroll\)/);
+  assert.match(source, /placeholderLabel/);
+  assert.match(source, /正在连接/);
+  assert.match(source, /正在回复/);
+  assert.match(source, /ChatPanelState/);
+  assert.match(source, /accessibilityDisplayShouldReduceMotion/);
+  assert.match(source, /NSVisualEffectView/);
+});

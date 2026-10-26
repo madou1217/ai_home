@@ -16,6 +16,8 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/codexresponsesws"
 	"github.com/madou1217/ai_home/internal/transport/http/geminiapi"
 	"github.com/madou1217/ai_home/internal/transport/http/imagesapi"
+	"github.com/madou1217/ai_home/internal/transport/http/managementmetricsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/managementstatusapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
@@ -159,6 +161,12 @@ func newRouter(handlers serverHandlers) http.Handler {
 	}
 	if handlers.modelCatalog != nil {
 		mux.Handle(modelcatalogapi.Path, handlers.modelCatalog)
+	}
+	if handlers.managementStatus != nil {
+		mux.Handle(managementstatusapi.Path, handlers.managementStatus)
+	}
+	if handlers.managementMetrics != nil {
+		mux.Handle(managementmetricsapi.Path, handlers.managementMetrics)
 	}
 	mux.Handle(
 		clauderelayleaseapi.Path,

@@ -1,6 +1,7 @@
 import type { ControlPlaneProfile } from '@/types';
 import {
   isControlPlaneManagementKeyConfigured,
+  fetchControlPlaneDeviceStatus,
   normalizeControlPlaneEndpoint,
   saveControlPlaneProfile,
   type ControlPlaneProfileSaveInput
@@ -36,6 +37,12 @@ export async function connectControlPlaneProfile(input: ConnectControlPlaneProfi
   const managementKey = String(input.managementKey || '').trim();
   if (!managementKey && !isControlPlaneManagementKeyConfigured(existing)) {
     throw new Error('请输入 Management Key');
+  }
+
+  // Verify a replacement before persisting it. A mistyped/scanned stale key
+  // must not overwrite a working credential and leave the client locked out.
+  if (managementKey) {
+    await fetchControlPlaneDeviceStatus({ endpoint, managementKey });
   }
 
   // 编辑已保存的 server 时，managementKey 留空表示「不改动」——

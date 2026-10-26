@@ -1923,7 +1923,7 @@ export interface AccountAppLaunchResponse {
   egressWarning?: string;
 }
 
-export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool';
+export type AccountEgressMode = 'system' | 'tun' | 'url' | 'pool' | 'direct';
 /** 已下线的历史出口模式（节点 / 分组）：只读展示，提示改绑。 */
 export type RetiredAccountEgressMode = 'node' | 'group';
 

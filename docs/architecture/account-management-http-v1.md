@@ -2,6 +2,12 @@
 
 ## 1. 状态与边界
 
+**当前导出边界（2026-10-26）**：sub2api 导出已移除，Go 导出格式注册表当前为空。
+裸 `GET /v1/management/accounts/{account_ref}/export` 返回 `422 account_export_unsupported`，
+不会调用 nil exporter。下文旧 sub2api / CLIProxyAPI 导出表格仅保留历史合同背景，
+不表示这些路由当前可用。Node 的 Go 独有账号收养改用已有本机只读 SQLite 快照，
+经 provider 凭据策略和反向身份校验登记并立即建立同步映射，不再调用旧导出端点。
+
 > **状态注记（2026-10-18）**：『只由独立 Preview 进程验收』已过时——Go 核心现由 Node server supervisor 监督运行（`aih server config set --go-core`），Node 侧 `lib/account/go-bridge/`（`go-management-client.js`、`go-import-translator.js`；使用方含 `lib/server/go-core-host.js`）已在生产链路调用 `/v1/management/accounts`、`/v1/management/account-imports[/sub2api]`。资源形状 / 幂等 / 错误码等领域合同仍有效。
 
 本合同实现于 `internal/transport/http/accountsapi`，并由 `cmd/aih-server` 的 Go

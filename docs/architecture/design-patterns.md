@@ -23,6 +23,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/native-resources/portable-plugin-conformance.js` 的 native manifest validators | **Strategy Registry + Contract Validation** | 每宿主验证器与入口描述符放在一起；OpenCode 原生 `./server`、Pi extensions、DSH bundle patch 必须与 canonical 入口一致，避免仅凭 exports 存在声称可加载 | 现有 conformance/command 套件 6 项；真实 package 副本缺少三种 native projection 时均返回 `projection-invalid` |
 | `lib/native-resources/host-runtime-discovery.js` + `provider-resource-doctor.js` | **Descriptor + Adapter + Runtime Probe** | 外部 harness 从既有 catalog 取得包身份，定点查全局包/pnpm store；版本 probe 区分包存在与 CLI 可运行，管理状态独立于 runtime 可用性，不把 Pi/DSH 塞进 gateway provider 目录 | Node 22/26 的 Pi/DSH 原生 demo、provider doctor、未安装/显式错误位置/禁 probe 的运行时断言 |
 | `examples/native-plugins/aih-demo/dist/core.mjs` + `dist/hosts/{pi,deepseek}.mjs` | **Ports and Adapters + Scoped Resource** | 同一业务操作经窄工具/命令端口注册到真实 Pi ExtensionAPI 和 DSH ToolRuntime；Pi `session_shutdown`、Cordis `ctx.effect` 各自拥有清理，旧 handler 在停用后拒绝调用 | `scripts/pi-plugin-native-demo.js`（原生 install/remove、工具与命令、shutdown、再启用）；`scripts/deepseek-plugin-native-demo.mjs`（原生 bundle add/remove/dump、ToolRuntime 执行、Fiber dispose） |
+| `lib/server/server-config-store.js` | **Transaction + 单一写入边界** | 严格读、合并、写入在同一 SQLite 事务中；普通空白 Management Key 保留现值，只有 CLI 显式确认携带清理意图 | 隔离真实 SQLite 与 CLI：空白保留、未确认拒绝、确认清空、损坏配置拒绝覆盖 |
+| `lib/protocol/server-credentials-qr.js` + `lib/cli/services/server/management-key-qr.js` | **共享协议契约 + Adapter** | CLI 和浏览器共用版本化凭据校验；终端绘制与纯 payload、服务器配置分离，QR 编码器离线运行 | 真实 CLI 输出经独立 jsQR 解码，还原地址/密钥一致；原始密钥没有额外回显 |
 | `lib/providers/contract.js` | **Contract / Schema 校验** | provider 描述符契约：能力必须显式回答（`supported` + `reason`/策略），transport↔clientDependent 自洽，只有客户端通道必须写 `clientFreeReason` | `test/provider-capability-registry.test.js`、`test/quota-provider-coverage.test.js` |
 | `lib/providers/registry.js` | **Registry + 倒排索引** | 能力名 → provider 集合；`getProviderCapability(provider, face)` / `listProviders(face)`，消费方问能力不问 provider | 同上 |
 | `lib/translation/{provider-contract,provider-registry,provider-facade,index}.js` | **Contract + Registry 倒排索引 + Facade** | 翻译引擎以声明式描述符提供操作、认证、配置和无客户端通道事实；注册表按操作倒排，消费者经门面查询，新增引擎无需派发分支 | Node 22 运行时冒烟：5 个内置描述符通过校验，操作索引与能力查询一致 |
@@ -89,6 +91,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/server/go-core-route-deferral.js` 的 custom-upstream gate | **Boundary Gate（上游所有权隔离）+ Capability Predicate** | 第三方或另一台 AIH gateway 的 API Key 账号不进入 Go native quota/failure runtime；HTTP/WS 统一交还 Node，由 Node 保留远端 pool、relay 头和错误范围语义。官方 API Key 仍走既有 Go canonical 路径，新增 fallback reason 进入 `/readyz` 合同 | `test/go-core-relay-boundary.test.js`：远端 custom upstream 钉选/未钉选、陈旧 Go quota overlay、官方 API Key 保持 Go 路径；`NODE_FALLBACK_REASONS` 稳定原因守卫 |
 | `internal/host/aihserver/relay_providers.go` | **Single Source of Truth（声明倒排）** | Go 侧「由透传通道直接服务」的 Provider 集合只声明一处（家族四支 + cline/grok/kimi），推理目录构建（`inference.go` 的 `WithRelayProviders`）与模型刷新队列（`composition.go`）共同消费。两处各写一份曾造成真实故障：刷新队列登记了 cline/grok/kimi，目录构建未声明 → `buildRule` 因缺 Factory 硬失败 → 整份模型快照永不发布（`/v1/models` 5xx、路由判定拿不到可路由集合、未钉选请求全部交还 Node） | `internal/host/aihserver/relay_providers_test.go`（刷新队列 ⊆ canonical ∪ relay，且每个 relay 必须有刷新队列）；真机重启后 Go `/v1/models` 200、`appliedGeneration` 追平 |
 | `lib/server/go-account-sync.js` | **Terminal-State Cache（按内容指纹的终态缓存）** | Node→Go 推送的拒绝分两类：内容永久无效（`invalid_native_artifacts`）与代际仲裁拒绝（`account_import_generation_unordered`，Go 已有同代或更新凭据）。两类都按「计划指纹 + Go 目标账号」缓存：同一份内容不再每 15s 重发，内容变化或 Go 账号消失才重新尝试。**循环是收敛机制（凭据回写/推送/启停/模型策略/删除/收养）本身，不是被缓存掉的东西**；被缓存的是「同一份内容再推一次结论也不会变」的请求 | `test/go-account-sync-rejections.test.js`（内容不变零请求、重启保持、内容变化/Go 账号删除即重试） |
+| `lib/account/go-bridge/go-account-adoption.js` + `provider-credentials/{codex,claude}.js` + `lib/providers/index.js` | **Strategy Registry + Anti-Corruption Adapter + Identity Guard** | 收养直接消费已有本机只读 Go 快照，通过门面按 `authKind:authMode` 取 provider 凭据策略，反向导入计划确认身份后复用账号注册/凭据存储端口并立即建立 link。未声明的类型保留为 Go 独有账号；不调用已删除的 sub2api `/export`。历史 Node 引用可与当前端点身份不同，先比对真实凭据再注册，禁止因收养覆盖现有配置；刷新代际与启停状态沿用源事实 | macmini 真实 SQLite 副本：2 个 Codex API Key、1 个 Claude API Key 均身份往返一致、密钥一致、重复收养幂等；原有全部凭据不变，仅新增 1 个 Go 独有账号 |
+| `internal/transport/http/accountsapi/{request_query,handler}.go` | **Guard Clause + Error Adapter** | 空导出注册表在解析阶段返回已有 `account_export_unsupported`（HTTP 422），执行边界再次检查 nil exporter；所有不可用分支经同一错误映射返回 JSON，禁止 nil 接口调用引发 panic | `go test ./...` 通过；发布工件用隔离真实 HTTP 验收，生产不重启 |
 | `lib/server/kiro-dialect.js` | **Adapter（上游方言适配器）** | kiro 的 CodeWhisperer 方言规则与 HTTP / 重试 / SSE 分离：`encodeKiroConversation` 编码 tools / toolUses / toolResults / images 并落实四条上游硬规则（description 非空、带工具历史必须带 tools、结果与紧邻调用一一对应、tool_choice 等价 auto），`createKiroFrameDecoder` 解码 `toolUseEvent` / `contextUsageEvent` / `meteringEvent`。方言规则可单测穷举，新增规则 = 改这一个文件 | `test/kiro-dialect.test.js` + 真机（Builder ID / Google social，haiku-4.5 / sonnet-4.5 / opus-5.5）工具轮跑通 |
 | `lib/server/kiro-chat-transport.js` | **State Machine（流生命周期）+ Outcome（`completion`）** | 每个流恰好一个终止事件：首字节前失败（400/401/429/容量提示）返回 `completion` 交回策略链换号；首字节后失败发原生错误帧，绝不补一个「干净的 end_turn」；超时是「首事件 180s + 空闲 120s」而不是整轮墙钟；上游静默发保活；客户端主动中断不计失败 | `test/kiro-chat-transport.test.js`（19 条）、`test/kiro-transport-strategy.test.js`（4 条） |
 | `lib/server/protocol-stream-errors.js` | **Table + Strategy（错误帧读 / 写两张表）** | canonical `{ type: 'stream_error', code, message, statusCode }` 的读、写各一张按客户端协议索引的表（Anthropic `event: error`、Responses `response.failed`、Chat / Gemini error 帧）；新增协议只加一行，parser 不再在 EOF 补 `message_stop` 伪装成功 | `test/protocol-stream-errors.test.js`、`test/protocol-conformance-matrix.test.js` |
@@ -97,6 +101,12 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/usage/registry-scope-ownership.js` | **Single Source of Truth（共享会话库的账号作用域归属）** | cline / kiro 的会话写在宿主共享目录、文件本身没有账号边界：归属只来自持久会话注册表的「账号 × cwd × 时间窗」作用域；唯一命中才归属，否则记未归属、绝不猜。supervisor 托管的 pane 仍存活时作用域开放到现在（修复「运行中会话最近事件被判未归属」） | `test/kiro-session-usage.test.js`、`test/cline-session-outcomes.test.js` |
 | `lib/usage/kiro-session-usage.js` | **Estimator（有来源的估算，绝不造数）** | kiro 会话只有 `contextUsage` 百分比与 credits，没有 token 字段：上下文 token = 百分比 × 模型 `maxInputTokens`、前缀重叠按 5 分钟 prompt-cache TTL 计缓存读、输出按字符估算，`sourceKind: native_kiro_session_estimated`；扫描按字节偏移增量、事件键去重 | `test/kiro-session-usage.test.js`；真实会话只读试跑（10-18 99 次、10-19 568 次请求全部正确归属） |
 | `lib/server/codex-responses-ws-http-bridge.js` | **Adapter（WebSocket → HTTP 管线）** | 宿主 Codex 声明 `supports_websockets = true` 时，WS 通道过去只能转给 Codex 账号，别名 / 其它 provider 的模型首帧 503。桥把这类请求改走网关 HTTP `/v1/responses` 管线，结果再按 WS 帧返回；`previous_response_id` 展开成完整上下文；Codex 自己的模型不走桥 | `test/codex-responses-ws-http-bridge.test.js`（5 条，含端到端）、原有 WebSocket 与配额回退用例 |
+| `lib/server/codex-responses-session.js` + `internal/transport/http/codexresponsesws/{handler,session,observer}.go` | **Connection-bound State Machine + Transport Adapter** | Codex Responses WebSocket 的上游连接按模型绑定；客户端完成一轮后切换模型时只替换上游连接，保留客户端 socket，并把省略的 `model` 补成当前绑定模型。切换中的在途请求仍按串行合同拒绝，避免把并发请求误当成安全换模 | 2026-10-26 真机隔离验证（`9900fe6`）：macmini 的 Node 22 / Go 两条路径分别经 AWS 网关连接 ChatGPT OAuth 账号，同一客户端 socket 执行 `gpt-6-astra → gpt-6.1-sol → omitted model`，两条路径均为三轮 `response.completed`、零错误、正常关闭码 1000；Go 全量检查通过；不以隔离验证宣称 macmini 生产旧进程已经加载修复 |
+| `internal/host/aihserver/metrics.go` | **Decorator + ResponseWriter Adapter** | 统计包装器通过 `Unwrap()` 保留底层 HTTP writer 的能力，让 WebSocket 升级和 `http.ResponseController` 的 deadline 操作穿过统计层；不在 middleware 里复制传输实现 | 真实隔离 Go 实例修复前握手返回 HTTP 501；`9900fe6` 工件修复后握手成功，同一连接三轮真实推理完成；`go test ./...` 通过 |
+| `lib/server/upstream-failure-policy.js` + `codex-responses-websocket.js` + `codex-responses-session.js` | **Shared Policy + State Machine** | HTTP/SSE/WS 的结构化容量错误共用分类；WS 按 policy 决定记账与换号，移除只接额度错误的局部白名单；不可重试错误不重放，已交付输出仍禁止重放；换号/停止原因默认可观察 | 本地真实 HTTP upgrade / WebSocket 双上游冒烟：容量错误 → 第二账号完成，客户端不见中间错误；既有 upstream failure 回归通过 |
+| `lib/server/codex-response-recovery.js` + `codex-responses-session.js` + `codex-responses-websocket.js` | **Protocol Adapter + Result Object** | 重放器识别 `additional_tools` 并保留工具定义；返回低敏结构化拒绝原因，传输层只负责关联 session/request，兼容接口继续委托同一实现 | 用户实际长会话的 116 个历史项可生成重放且保留工具定义；真实双 WS 上游容量换号完成；未知项/文件引用/不成对工具结果仍阻止；105 项现有检查通过 |
+| `lib/server/account-selection-load.js` + `account-selector.js` + `account-activity.js` | **Policy + Dependency Injection + Soft Affinity** | 额度/实时请求压力纯策略与选号、活动采样分离；新请求按负载修正权重，旧会话偏好可因低额度/过载让位，闲置窗口不计负载 | 真实选择器抽样及本地 WS 多轮换号冒烟；细则见 `account-request-scheduling.md` |
+| `lib/server/model-cooldown-policy.js` + `account-runtime-state.js` + `application/accountrouting/recruiter.go` | **Circuit Breaker + Exponential Backoff** | 明确容量/速率拒绝不被末路 fallback 绕过；Node 按账号模型退避，恢复只放行一个在途请求，其它模型隔离 | 实际状态调用得到 60/120/240/480/600 秒；模型隔离/逃生阀检查；Go 包编译通过 |
 | `lib/account/kiro-account-label.js` | **Information Expert（唯一推导点）** | kiro 的展示名与身份键只在这一处推导（登录方式 + `identityEvidence.subject`）；CLI 列表判重优先身份键、展示名兜底，服务端 `displayName` 同源，不再各自维护占位名（曾导致「同邮箱两个账号被误标重复」） | `aih kiro ls` 真机输出（`Kiro (AWS Builder ID)` / `Kiro (Google)`，无重复标记）、`test/profile.list.test.js` |
 | `core/providers/builtins.go` 的 kiro `usage_scan` | **Descriptor-Driven Dispatch（描述符声明能力）** | 「kiro 支持原生会话用量扫描」声明进 Go 契约（`CapabilityUsageScan`）并重新生成 `contracts/providers/manifest.json`；扫描器按能力倒排发现，不写 provider 名单 | Go provider 测试、`npm run providers:check`、`test/provider-catalog.test.js` |
 | `lib/runtime/egress-pool-node-policy.js` | **Specification（策略即数据）+ Single Source of Truth（判定唯一）** | 出口池的「哪些节点不许用」收敛成一份可存的策略（延迟阈值 / 连不上 / 手动关闭三个独立开关，app_kv 的 `egress:node-policy`）加一个纯函数判定 `decideNode`：账本的 `pickNext`（轮换）与规划器的车道 `allowed` 集合都调它，因此轮换、车道、面板三处结论必然一致，不会出现「面板说拦了、轮换还在用」。手动关闭按**出口身份**记（重启与节点重排后仍有效）；判定跟最近一次探测走而不按时间自动过期（10s 的节点不能过几分钟又被选中），防误伤靠 dueForProbe 重探自动放行；从未探测 = 未知而非不可用；策略读不出来时退化为「不拦截」而不是让池空掉 | `test/egress-pool-node-policy.test.js`（11 条：三开关互相独立、未知不拦、10s 持续被拦、手动优先且局部更新不丢、阈值钳制、探测超时随阈值放宽、pickNext 跳过与恢复、策略读失败降级）、`test/egress-pool-lanes.test.js`（被拦节点不进车道 + 全被拦的原因）、`test/egress-pool-node-health.test.js`（路由 block/unblock 与策略写入）；真机 517 节点账本：>3000ms 的 13 个被拦、手动关闭的节点 40 次轮换不再出现；浏览器经隔离 harness 验证开关/筛选/关闭-放行往返 |
@@ -117,6 +127,22 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 - `web/src/features/translation/{SystemTranslationControl,TranslationProviderSettings,TranslationWorkspace}.tsx` + `web/src/features/translation/page-translation.ts` -> **Capability descriptor projection + Bounded Scheduler + Command** -> 现有 Edge 登录 tab 的 `/ui/studio/translation` DOM 实证显示 AIH Gateway/四个 Provider tabs、AIH Server/Provider 直连 target selector、禁用的待配置状态；短文本请求依次观察到 `翻译中` 与 `翻译完成`；整页动作观察到 `正在翻译页面 · 已处理 25 段`、停止后的 `已停止页面翻译 · 已处理 165 段`、完成后的 `页面翻译完成 · 已处理 274 段` 和 `撤回页面译文`，点击撤回后按钮消失。`cd web && npm run build`（Node v22.21.0）与三份改动组件的 ESLint 均通过。
 
 这些证据支持现有模式的运行时结论；未覆盖的系统权限弹窗、跨应用 Services 菜单点击和视觉像素验收仍需人工桌面验收，不能由类型检查或 DOM 快照替代。
+
+### 2026-10-26 翻译预检与宿主边界
+
+`lib/desktop/translation/service.js` 的语言预检统一复用纯函数 `detectLanguage`（最多 4,000 字符），不再因执行目标不同而发起 `/translation/detect` 请求。连接、鉴权、流式译文及网络错误仍由既有 execution port/executor 负责；不增加 provider 分支或另一套检测算法。取消、代际与语言意图守卫保持原有边界。
+
+浏览器扩展的后台适配器按 tab/frame/operation 管理 AbortController，HTTP 与 SSE 错误归入同一分类函数；内容脚本持有页面快照、有限并发及旧任务写入守卫。网页声明的语言优先；无声明时用首段完整正文的已解析源语言支持短片段。macOS 菜单入口继续使用 Services 描述符，不替换宿主右键。真实菜单、长文本布局和仍未完成的验收范围见 [桌面翻译验收记录](../verification/2026-10-26-translation-desktop-acceptance.md)。
+
+#### 原生与扩展阅读交互修正
+
+- `native/translation/TranslationPanel.swift` → 请求状态控制器：预检、等待模型、确认、流式输出分别驱动状态；确认停止计时；Pin 只改变窗口层级和外部点击关闭策略，不改变几何位置。待选内容与已接受的替换快照分开，写回前核对原文和选区。
+- `TranslationPanelContent.swift` → 被动视图：固定宽度阅读区使用文本容器换行和增量追加，保存选择与滚动位置；模型编辑草稿不被异步目录覆盖，服务目标变化清除旧临时选择。
+- `lib/desktop/translation/model-catalog.js` → 目标隔离缓存与代际取消：模型目录异步加载，不阻塞翻译；当前服务的默认与可选模型通过 JSONL 投影到原生可编辑选择器。
+- `lib/translation/source-policy.js` → 描述符能力策略：仅实际执行路由全部声明 `sourceAuto` 时允许自动源语言，未知适配器继续要求具体来源；没有新增 provider 名称分派。
+- `web/public/translation-extension/panel.js` → Shadow DOM 视图边界：宿主网页样式与浮层样式隔离；交互外壳持有固定、拖动、关闭与销毁，内容脚本继续持有任务取消和页面变更快照。
+- 验证边界：原生离屏布局/状态探针、现有测试、扩展 ESLint 和完整 Web 构建；用户正在操作桌面，更新后的前台视觉、Pin 跨应用与整页翻译验收仍待恢复。
+
 
 ## 2. 反模式清单（该改的地方）
 
@@ -315,6 +341,13 @@ Zen（`/zen/v1/models`，86 个含**全部免费档**）。`opencode-server-clie
 **Phase 4 — 收口守卫**
 11. ✅ 收口守卫：`test/design-pattern-guard.test.js` —— 描述符声明的 handler 必须已注册；63 个已知文件
    记录基线（只能减不能增）；`lib/` 下新增文件 ≥2 处 provider 名比较即红；基线里已清零的文件必须移除条目。
+
+**桌面 Chat 边界（2026-10-26）**
+
+- `lib/desktop/chat/chat-runtime-bridge.js` 是 Chat Runtime 的适配器：原生端只发会话/命令意图；桥接持有 request/session/command 身份与等待中的停止请求，不创建独立 provider 执行路径。
+- `lib/desktop/runtime/desktop-protocol.js` 将目标元数据与 canonical 消息内容分开规范化。可选目标字段允许缺省；正文保留完整内容，超过帧限制显式报错。进程 launcher 不比较 Chat 的独立会话/命令计数器。
+- `lib/server/chat-runtime/codex-session-driver.js` 在准备、提交中、已取得原生回合身份三个阶段处理取消：准备阶段在安全边界结束，提交中保留回执恢复并等待精确身份，确认未提交或原生终止后才释放线程所有权。
+- `native/chat/ChatPanel.swift` 持有会话状态机，按 item 身份与角色投影助手消息；`ChatPanelContent.swift` 为被动视图，以稳定文本节点增量呈现，并保留原生选择、滚动及输入法语义。
 
 **验收标准（每个 provider × 每个采集面）**
 - `npm run providers:audit` 显示该面的通道与依赖；CLI-only 必须带原因。

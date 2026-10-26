@@ -45,6 +45,7 @@ import ModelAliases from './ModelAliases';
 import UpstreamErrorMappings from './UpstreamErrorMappings';
 import SshHostsPanel from './SshHostsPanel';
 import ControlPlaneProfileSelect from '@/components/control-plane/ControlPlaneProfileSelect';
+import ManagementKeyInput from '@/components/control-plane/ManagementKeyInput';
 import ControlPlaneServerList from '@/components/settings/ControlPlaneServerList';
 import { buildServerRouteRows } from '@/services/server-route-presentation';
 import { buildAppHref } from '@/services/app-navigation';
@@ -848,10 +849,13 @@ const Settings = ({ section }: SettingsProps) => {
           <Form.Item
             name="managementKey"
             label="Management Key"
-            help="Server 管理密钥，用于读取账号和会话。可通过 aih server config --show-secrets 查看。"
-            rules={[{ required: true, message: '请输入 Management Key' }]}
+            help="可扫码填写；编辑已保存的 Server 时留空保留原 Key。"
+            rules={[{ required: !isControlPlaneManagementKeyConfigured(controlPlaneProfiles.find((profile) => profile.id === authorizingControlPlaneId) || null), message: '请输入 Management Key' }]}
           >
-            <Input.Password autoComplete="new-password" placeholder="Management Key" />
+            <ManagementKeyInput
+              expectedEndpoint={authorizingControlPlaneId ? controlPlaneProfiles.find((profile) => profile.id === authorizingControlPlaneId)?.endpoint : undefined}
+              onCredentials={(credentials) => controlPlaneForm.setFieldsValue(credentials)}
+            />
           </Form.Item>
           </div>
 

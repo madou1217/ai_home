@@ -121,10 +121,11 @@ func parseMemberResource(path string) (memberResource, error) {
 		kind = memberResourceUsageRefresh
 	case len(parts) == 2 && parts[1] == "export":
 		// 裸 `export` 默认走第一个注册格式（与注册表顺序一致）。
-		kind = memberResourceExport
-		if len(exportFormats) > 0 {
-			format = exportFormats[0]
+		if len(exportFormats) == 0 {
+			return memberResource{}, accountapp.ErrUnsupportedAccountExport
 		}
+		kind = memberResourceExport
+		format = exportFormats[0]
 	case len(parts) == 3 && parts[1] == "export":
 		// `export/<format>`：格式由注册表匹配，未注册的后缀一律拒绝。
 		matched, ok := matchExportFormat(normalizeExportSuffix(parts[2]))

@@ -45,6 +45,10 @@ var (
 	ErrInvalidClientFrame = errors.New("Codex Responses WebSocket 客户端帧无效")
 	// ErrConcurrentTurn 表示同一连接在前一轮终态前又提交了新请求。
 	ErrConcurrentTurn = errors.New("Codex Responses WebSocket 只允许串行请求")
+	// ErrModelChanged 表示客户端在上一轮完成后切换了模型。模型切换不是
+	// 非法请求：Responses WebSocket 的连接缓存按模型绑定，代理需要换一条
+	// 上游连接后继续复用客户端连接。
+	ErrModelChanged = errors.New("Codex Responses WebSocket 模型已切换")
 )
 
 // Authorizer 是标准推理客户端密钥的最小鉴权端口。
@@ -336,7 +340,14 @@ func (handler *Handler) ServeHTTP(
 		)
 		return
 	}
-	handler.proxy(session, observer)
+	handler.proxy(
+		session,
+		observer,
+		request.Header,
+		request.Host,
+		strings.TrimSpace(request.Header.Get("X-Account-Ref")),
+		strings.TrimSpace(request.Header.Get("Session-Id")),
+	)
 }
 
 // available 防止零值或关闭后的 Handler 接受新连接。
@@ -356,34 +367,158 @@ func (handler *Handler) available() bool {
 func (handler *Handler) proxy(
 	session *managedSession,
 	observer *turnObserver,
+	clientHeader http.Header,
+	localAuthority string,
+	pinnedAccountRef string,
+	sessionID string,
 ) {
-	results := make(chan pumpResult, 2)
-	go pumpClientToUpstream(session, observer, results)
-	go pumpUpstreamToClient(session, observer, results)
-	result := <-results
-	if result.source == pumpSourceUpstream &&
-		result.recordIncomplete &&
-		!session.Closing() &&
-		observer.ActiveGenerating() {
-		failure, err := attemptfailure.NewIncompleteStream(result.err)
-		if err == nil {
-			recorded, recordErr := recordCodexFailure(
-				context.Background(),
-				handler.attempts,
-				handler.modelRefreshes,
-				observer.Route(),
-				observer.CredentialObservation(),
-				failure,
+	for {
+		results := make(chan pumpResult, 2)
+		go pumpClientToUpstream(session, observer, results)
+		go pumpUpstreamToClient(session, observer, results)
+		result := <-results
+		if len(result.modelSwitch) > 0 {
+			// The client pump has consumed the new response.create. Close only the
+			// old upstream so the other pump can leave, then establish a fresh
+			// model-bound upstream while keeping the client WebSocket alive.
+			oldUpstream := session.Upstream()
+			if oldUpstream != nil {
+				_ = oldUpstream.CloseNow()
+			}
+			<-results
+			nextObserver, switched := handler.switchModel(
+				session,
+				result.modelSwitch,
+				result.model,
+				clientHeader,
+				localAuthority,
+				pinnedAccountRef,
+				sessionID,
 			)
-			if recordErr == nil && recorded && !observer.Committed() && isRetryableFailoverKind(failure.RuntimeKind()) {
-				result.closeCode = websocket.StatusInternalError
-				result.closeReason = retryableFailoverCloseReason
+			if !switched {
+				session.Cancel()
+				return
+			}
+			observer = nextObserver
+			continue
+		}
+		if result.source == pumpSourceUpstream &&
+			result.recordIncomplete &&
+			!session.Closing() &&
+			observer.ActiveGenerating() {
+			failure, err := attemptfailure.NewIncompleteStream(result.err)
+			if err == nil {
+				recorded, recordErr := recordCodexFailure(
+					context.Background(),
+					handler.attempts,
+					handler.modelRefreshes,
+					observer.Route(),
+					observer.CredentialObservation(),
+					failure,
+				)
+				if recordErr == nil && recorded && !observer.Committed() && isRetryableFailoverKind(failure.RuntimeKind()) {
+					result.closeCode = websocket.StatusInternalError
+					result.closeReason = retryableFailoverCloseReason
+				}
 			}
 		}
+		propagateClose(result, session.Other(result.source))
+		session.Cancel()
+		<-results
+		return
 	}
-	propagateClose(result, session.Other(result.source))
-	session.Cancel()
-	<-results
+}
+
+// switchModel moves a completed client session to a new connection-bound
+// model. The current response.create is already a full non-incremental frame
+// when Codex changes models, so it is safe to send it to a fresh upstream WS.
+func (handler *Handler) switchModel(
+	session *managedSession,
+	frame []byte,
+	model string,
+	clientHeader http.Header,
+	localAuthority string,
+	pinnedAccountRef string,
+	sessionID string,
+) (*turnObserver, bool) {
+	if handler == nil || session == nil || strings.TrimSpace(model) == "" {
+		return nil, false
+	}
+	selection, err := handler.selector.Select(
+		session.Context(),
+		codexwebsocket.Request{
+			ClientProtocol:   inference.ClientProtocolOpenAIResponses,
+			Model:            model,
+			PinnedAccountRef: pinnedAccountRef,
+		},
+	)
+	if err != nil {
+		handler.writeSelectionError(session.Client(), err)
+		return nil, false
+	}
+	route, err := runtimecore.NewModelRoute(
+		selection.AccountRef(),
+		selection.Route().EffectiveModel(),
+	)
+	if err != nil {
+		writeWebSocketError(session.Client(), http.StatusInternalServerError, "invalid_runtime_route", "账号运行态路由无效")
+		return nil, false
+	}
+	if previous, found := handler.sessionAccounts.Swap(sessionID, selection.AccountRef(), handler.clock()); found && previous != selection.AccountRef() {
+		session.stripForeignReasoning = true
+		frame = stripForeignReasoning(frame)
+	}
+	dialCtx, cancelDial := context.WithTimeout(session.Context(), upstreamDialTimeout)
+	upstream, upstreamResponse, dialErr := handler.upstream.Connect(
+		dialCtx,
+		selection.Credential(),
+		clientHeader,
+		localAuthority,
+	)
+	cancelDial()
+	if dialErr != nil {
+		handler.handleDialFailure(
+			session.Client(),
+			route,
+			selection.CredentialObservation(),
+			upstreamResponse,
+			dialErr,
+		)
+		return nil, false
+	}
+	if upstream == nil || !session.ReplaceUpstream(upstream) {
+		if upstream != nil {
+			_ = upstream.CloseNow()
+		}
+		return nil, false
+	}
+	upstream.SetReadLimit(MaxMessageBytes)
+	observer := newTurnObserver(
+		model,
+		route,
+		selection.CredentialObservation(),
+		handler.attempts,
+		handler.modelRefreshes,
+		handler.clock,
+		handler.rules,
+	)
+	if err := observer.Begin(frame); err != nil {
+		_ = upstream.CloseNow()
+		writeWebSocketError(session.Client(), http.StatusBadRequest, "invalid_response_create", "首帧必须是有效的 response.create")
+		return nil, false
+	}
+	if err := writeMessage(
+		session.Context(),
+		upstream,
+		websocket.MessageText,
+		normalizeClientFrameModel(frame, model),
+	); err != nil {
+		handler.recordTransportFailure(route, selection.CredentialObservation(), err)
+		_ = upstream.CloseNow()
+		writeWebSocketError(session.Client(), http.StatusBadGateway, "upstream_write_failed", "Codex WebSocket 上游写入失败")
+		return nil, false
+	}
+	return observer, true
 }
 
 // handleDialFailure 把真实握手 HTTP 错误或传输错误提交到统一运行态。

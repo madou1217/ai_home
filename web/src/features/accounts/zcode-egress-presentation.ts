@@ -9,7 +9,8 @@ export const ACCOUNT_EGRESS_SOURCE_LABELS: Record<AccountEgressMode, string> = {
   url: '代理地址',
   system: '系统代理',
   tun: '外部 TUN',
-  pool: 'AIH 出口池'
+  pool: 'AIH 出口池',
+  direct: '直连'
 };
 
 const EGRESS_ERROR_LABELS: Record<string, string> = {
@@ -70,7 +71,13 @@ export function describeRuntimeStatus(runtime?: AccountEgressRuntimeStatus | nul
   const resolved = runtime?.resolved;
   if (!resolved) return { state: 'idle' as const, text: '未绑定出口' };
   if (!resolved.ok) return { state: 'error' as const, text: `出口不可用：${describeEgressError(resolved.error)}` };
-  if (resolved.direct) return { state: 'ready' as const, text: '外部 TUN 已激活，账号流量由 TUN 接管' };
+  // direct 目标有两种来源：外部 TUN（tun）与显式直连（direct）。两者都不注入代理，
+  // 但语义不同 —— TUN 是「交给外部 TUN」，直连是「明确不使用任何代理」。
+  if (resolved.direct) {
+    return resolved.source === 'direct'
+      ? { state: 'ready' as const, text: '直连：该账号不使用任何代理' }
+      : { state: 'ready' as const, text: '外部 TUN 已激活，账号流量由 TUN 接管' };
+  }
   const label = ACCOUNT_EGRESS_SOURCE_LABELS[resolved.source as AccountEgressMode] || '外部代理';
   return { state: 'ready' as const, text: `经${label}出口` };
 }

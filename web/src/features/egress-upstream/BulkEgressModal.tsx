@@ -77,7 +77,8 @@ export default function BulkEgressModal({ open, upstream, groups, poolReady, tar
               { value: 'pool', label: 'AIH 出口池' },
               { value: 'url', label: '代理地址' },
               { value: 'system', label: '系统代理' },
-              { value: 'tun', label: '外部 TUN' }
+              { value: 'tun', label: '外部 TUN' },
+              { value: 'direct', label: '直连' }
             ]}
           />
         </Form.Item>

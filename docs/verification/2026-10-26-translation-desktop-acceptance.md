@@ -76,3 +76,12 @@ Validation after final changes:
 - Independent read-only review found and verified the corrections above; `git diff --check` passed. SOLID/KISS/DRY/YAGNI review retained existing execution and view boundaries, reused one route resolver for advertised/executed defaults, and added only the scoped catalog/source-policy and extension-view modules needed for this behavior.
 
 Still pending: load this source into the shared server/helper, reload the existing Edge extension, then verify actual Pin stacking without movement, native visual/layout transitions and replacement/undo in an editor, and successful whole-page translation/undo. The earlier Wikipedia segmentation issue and broader native provider-management redesign are not closed by this checkpoint.
+
+
+## Follow-up: page-language confirmation screenshot
+
+The next user screenshot showed the old `AIH 整页翻译` title, raw `zh-Hans` option, and conflicting light header/footer on the dark panel. These match the historical light-DOM renderer (before `29a92380`): host-page `header`/`footer`/control styles could reach the extension content. This is source/screenshot correlation, not a live inspection of the current Edge tab.
+
+The current Shadow DOM shell already isolates those selectors. The confirmation state now has a dedicated, consistently styled form: localized language names, title and secondary explanation, full-width language picker, quiet keep-original action and primary start action. It includes keyboard form submission, busy feedback, duplicate-submit suppression, recoverable inline errors, and a disabled empty-language state with a settings action. Existing task orchestration and cleanup callbacks remain in the content script.
+
+Validation: scoped ESLint on content/panel passed; 14 existing translation Web-target/execution tests passed; full Web build passed after the narrow-window review fix (Webpack 21.32 seconds, Node 22.21.0). One-off DOM-model probes exercised localization, candidate deduplication, busy state, duplicate submission, error recovery, empty targets and keep-original status. No test files were added. These checks do not establish visual quality or live CSS isolation; actual Edge reloading and visual acceptance remain pending the user's response to the desktop-availability question.

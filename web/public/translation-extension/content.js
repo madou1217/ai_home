@@ -151,30 +151,62 @@
     }, (response) => { const error = chrome.runtime.lastError; resolve(response || { ok: false, fatal: true, error: error?.message || '扩展无法连接到翻译服务' }); }));
   }
 
-  function renderConfirmation(body, confirmation, onConfirm, onKeep, label = '') {
+  function renderConfirmation(body, confirmation, onConfirm, onKeep) {
     body.dataset.state = 'confirmation'; selectionProgress = null; body.replaceChildren();
-    if (label) { const status = document.createElement('div'); status.textContent = label; status.style.cssText = 'margin-bottom:6px;font-weight:600;color:var(--warning)'; body.append(status); }
-    const message = document.createElement('div'); message.textContent = confirmation?.message || '请确认目标语言后再翻译'; message.style.cssText = 'line-height:1.5'; body.append(message);
+    const form = document.createElement('form'); form.className = 'confirmation';
+    const heading = document.createElement('h3'); heading.className = 'confirmation-title'; heading.textContent = '选择译文语言';
+    const description = document.createElement('p'); description.className = 'confirmation-description';
+    description.textContent = '确认这次翻译使用的语言，或保留当前原文。';
     const detected = String(confirmation?.detected || '').trim();
-    if (detected) { const hint = document.createElement('div'); hint.textContent = `原文：${languageLabel(detected)}${confirmation?.confidence === 'low' ? '（请确认）' : ''}`; hint.style.cssText = 'margin-top:5px;color:var(--muted);font-size:12px'; body.append(hint); }
+    form.append(heading, description);
+    if (detected) {
+      const source = document.createElement('div'); source.className = 'source-language';
+      source.textContent = `原文${confirmation?.confidence === 'low' ? '可能是' : '语言'} · ${languageLabel(detected)}`;
+      form.append(source);
+    }
     const candidates = [confirmation?.target, ...(Array.isArray(confirmation?.suggestedTargets) ? confirmation.suggestedTargets : [])]
       .map((value) => String(value || '').trim()).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
-    const selectorRow = document.createElement('label'); selectorRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px';
-    const selectorLabel = document.createElement('span'); selectorLabel.textContent = '目标语言';
-    const select = document.createElement('select'); select.setAttribute('aria-label', '目标语言'); select.style.flex = '1';
+    const field = document.createElement('label'); field.className = 'language-field';
+    const label = document.createElement('span'); label.className = 'field-label'; label.textContent = '翻译为';
+    const select = document.createElement('select'); select.setAttribute('aria-label', '目标语言');
     candidates.forEach((value) => { const option = document.createElement('option'); option.value = value; option.textContent = languageLabel(value); select.append(option); });
-    if (!candidates.length) { const option = document.createElement('option'); option.value = ''; option.textContent = '暂无可选目标语言'; option.selected = true; select.append(option); select.disabled = true; }
-    selectorRow.append(selectorLabel, select); body.append(selectorRow);
-    const actions = document.createElement('footer'); actions.style.cssText = 'display:flex;gap:8px;margin-top:10px';
-    const confirm = document.createElement('button'); confirm.type = 'button'; confirm.className = 'primary'; confirm.textContent = '翻译'; confirm.disabled = !candidates.length;
-    const keep = document.createElement('button'); keep.type = 'button'; keep.textContent = '保持原文';
-    confirm.onclick = async () => {
-      const target = select.value; if (!target) return;
-      confirm.disabled = true; keep.disabled = true; select.disabled = true; body.replaceChildren(statusLine('正在翻译…', true));
-      try { await onConfirm(target); } catch (error) { body.textContent = error instanceof Error ? error.message : String(error); }
+    if (!candidates.length) {
+      const option = document.createElement('option'); option.value = ''; option.textContent = '暂时没有可选语言'; select.append(option); select.disabled = true;
+    }
+    const selectWrap = document.createElement('span'); selectWrap.className = 'language-select'; selectWrap.append(select);
+    field.append(label, selectWrap); form.append(field);
+    const feedback = document.createElement('p'); feedback.className = 'confirmation-feedback'; feedback.setAttribute('role', 'status'); feedback.hidden = true;
+    form.append(feedback);
+    const actions = document.createElement('div'); actions.className = 'confirmation-actions';
+    const keep = document.createElement('button'); keep.type = 'button'; keep.className = 'quiet'; keep.textContent = '保持原文';
+    const confirm = document.createElement('button'); confirm.type = 'submit'; confirm.className = 'primary'; confirm.textContent = '开始翻译'; confirm.disabled = !candidates.length;
+    if (!candidates.length) {
+      feedback.hidden = false; feedback.textContent = '请在翻译设置中选择目标语言后重试。';
+      actions.append(settingsButton());
+    }
+    let submitting = false;
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const target = select.value;
+      if (!target || submitting || !body.isConnected) return;
+      submitting = true; confirm.disabled = true; keep.disabled = true; select.disabled = true;
+      form.setAttribute('aria-busy', 'true'); confirm.textContent = '正在开始…'; feedback.hidden = true;
+      try { await onConfirm(target); }
+      catch (error) {
+        if (!form.isConnected) return;
+        feedback.textContent = error instanceof Error ? error.message : String(error); feedback.hidden = false;
+      } finally {
+        if (form.isConnected) {
+          submitting = false; form.removeAttribute('aria-busy'); confirm.disabled = false; keep.disabled = false; select.disabled = false; confirm.textContent = '开始翻译';
+        }
+      }
     };
-    keep.onclick = () => { confirm.disabled = true; keep.disabled = true; select.disabled = true; onKeep(); };
-    actions.append(confirm, keep); body.append(actions);
+    keep.onclick = () => {
+      if (submitting || !body.isConnected) return;
+      onKeep();
+      if (body.isConnected) { body.dataset.state = 'stopped'; body.replaceChildren(statusLine('已保持原文')); }
+    };
+    actions.append(keep, confirm); form.append(actions); body.append(form);
   }
 
   function applySelectionResult(body, source, result, rangeSnapshot, operationToken) {
@@ -279,7 +311,7 @@
       await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(0, total - 1)) }, () => worker()));
     }
     function renderPageConfirmation() {
-      renderConfirmation(body, confirmation, async (target) => { await translatePage(target); }, () => { restoreSnapshots(); body.textContent = '已保持原文'; }, '待确认目标语言');
+      renderConfirmation(body, confirmation, async (target) => { await translatePage(target); }, () => { restoreSnapshots(); body.textContent = '已保持原文'; });
     }
     async function copyPageText(status, button, text, automatic = false) {
       if (!body.isConnected || operationToken !== operationSerial) return;

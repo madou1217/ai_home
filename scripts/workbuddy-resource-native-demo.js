@@ -17,15 +17,36 @@ const SKILL_SOURCE = path.resolve(__dirname, '../assets/provider-skills/aih-demo
 const MCP_SERVER = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
 
 function invoke(runtime, env, cwd, prompt) {
-  return runNativePrompt(runtime.command, [...runtime.args, '-p', prompt, '--model', 'primary-model', '--output-format', 'json', '--no-session-persistence', '--max-turns', '2'], { cwd, env });
+  // Stream JSON keeps the native result observable even when a host emits a
+  // large tool transcript. Some CodeBuddy builds buffer a pretty JSON array
+  // and can leave that array unterminated when the process exits after a tool
+  // turn; line-delimited events preserve the completed result event.
+  return runNativePrompt(runtime.command, [...runtime.args, '-p', prompt, '--model', 'primary-model', '--output-format', 'stream-json', '--no-session-persistence', '--max-turns', '2'], {
+    cwd,
+    env,
+    stopWhen: (output) => /"type"\s*:\s*"result"/.test(output)
+  });
+}
+
+function parseNativeEvents(output) {
+  const text = String(output || '').trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (_error) {
+    return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).flatMap((line) => {
+      try { return [JSON.parse(line)]; } catch (_lineError) { return []; }
+    });
+  }
 }
 
 function verifyRun(run, fixture, expected, marker, missing) {
   assert.equal(run.exitCode, 0, 'native_prompt_failed');
   assert.equal(run.timedOut, false, 'native_prompt_timeout');
   assert.ok(fixture.observations.length > 0, 'native_request_missing');
-  const events = JSON.parse(run.output);
-  assert.ok(Array.isArray(events), 'native_result_invalid');
+  const events = parseNativeEvents(run.output);
+  assert.ok(events.length > 0, 'native_result_invalid');
   const result = events.filter(event => event.type === 'result').at(-1);
   assert.ok(result && !result.is_error, 'native_result_failed');
   assert.equal(result.result?.trim(), expected ? marker : missing);

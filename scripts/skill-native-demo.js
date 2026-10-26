@@ -40,14 +40,42 @@ function run(binary, args, options) {
     const child = spawn(binary, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let output = '';
     let timedOut = false;
+    let stoppedEarly = false;
+    let stopTimer = null;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (stopTimer) clearTimeout(stopTimer);
+      resolve(result);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
       try { if (process.platform === 'win32') child.kill(); else process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
     }, 45000);
-    child.stdout.on('data', (chunk) => { output = (output + chunk).slice(-256000); });
+    child.stdout.on('data', (chunk) => {
+      output = (output + chunk).slice(-256000);
+      if (!stoppedEarly && typeof options.stopWhen === 'function' && options.stopWhen(output)) {
+        stoppedEarly = true;
+        // Give the native client a short chance to flush the result event, then
+        // terminate the supervised process group. CodeBuddy can keep the
+        // session worker alive after emitting a completed result even with
+        // --no-session-persistence; waiting for close would turn a successful
+        // deterministic probe into a timeout.
+        stopTimer = setTimeout(() => {
+          try { if (process.platform === 'win32') child.kill(); else process.kill(-child.pid, 'SIGTERM'); } catch (_) {}
+        }, 25);
+        // The result event itself is the evidence boundary. Do not wait for a
+        // host worker that intentionally remains alive after the result.
+        finish({ exitCode: 0, timedOut: false, output, stoppedEarly });
+      }
+    });
     child.stderr.resume();
-    child.on('error', (error) => { clearTimeout(timer); resolve({ exitCode: null, error: error.code, marker: false }); });
-    child.on('close', (exitCode) => { clearTimeout(timer); resolve({ exitCode, timedOut, output }); });
+    child.on('error', (error) => { finish({ exitCode: stoppedEarly ? 0 : null, error: error.code, marker: false, stoppedEarly }); });
+    child.on('close', (exitCode) => {
+      finish({ exitCode: stoppedEarly ? 0 : exitCode, timedOut, output, stoppedEarly });
+    });
   });
 }
 async function runSkillNativeDemo({ provider, binary = provider }) {

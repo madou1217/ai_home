@@ -20,7 +20,15 @@ const DEMO_SKILL = path.join(ROOT, 'assets/provider-skills/aih-demo');
 const DEMO_MCP = path.join(ROOT, 'examples/mcp/aih-demo-server.js');
 
 function parseArgs(argv) {
-  const options = { json: false, timeoutMs: DEFAULT_TIMEOUT_MS, skip: new Set(), geminiBinary: '' };
+  const options = {
+    json: false,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    skip: new Set(),
+    geminiBinary: '',
+    codebuddyBinary: '',
+    codebuddyCnBinary: '',
+    workbuddyCnBinary: ''
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
     if (arg === '--json') options.json = true;
@@ -33,6 +41,18 @@ function parseArgs(argv) {
       const value = String(argv[++index] || '').trim();
       if (!value) throw new Error('gemini_binary_required');
       options.geminiBinary = value;
+    } else if (arg === '--codebuddy-binary') {
+      const value = String(argv[++index] || '').trim();
+      if (!value) throw new Error('codebuddy_binary_required');
+      options.codebuddyBinary = value;
+    } else if (arg === '--codebuddycn-binary') {
+      const value = String(argv[++index] || '').trim();
+      if (!value) throw new Error('codebuddycn_binary_required');
+      options.codebuddyCnBinary = value;
+    } else if (arg === '--workbuddycn-binary') {
+      const value = String(argv[++index] || '').trim();
+      if (!value) throw new Error('workbuddycn_binary_required');
+      options.workbuddyCnBinary = value;
     } else if (arg.startsWith('--skip-')) {
       options.skip.add(arg.slice('--skip-'.length));
     } else {
@@ -55,6 +75,9 @@ function usage() {
     '  --skip-skill           Skip Codex/Claude/OpenCode Skill demos',
     '  --skip-mcp             Skip mcp-native-demo.js',
     '  --gemini-binary <path> Use this Gemini CLI for extension/Skill evidence',
+    '  --codebuddy-binary <path>   Use this CodeBuddy CLI for native resource evidence',
+    '  --codebuddycn-binary <path> Use this CodeBuddy CN CLI for native resource evidence',
+    '  --workbuddycn-binary <path> Use this WorkBuddy CN bundled CLI for native resource evidence',
     '  --skip-gemini          Skip the Gemini extension/Skill demo',
     '  --skip-workbuddy       Skip the WorkBuddy provider demo'
   ].join('\n');
@@ -89,24 +112,38 @@ function readCapabilities(options = {}) {
   // outside PATH (for example an isolated Gemini fixture).  Pass that same
   // binary to the doctor so the report does not combine positive native-use
   // evidence with an unrelated PATH-only "runtime unavailable" result.
-  const nativeBinaries = options.geminiBinary
-    ? { gemini: options.geminiBinary }
-    : undefined;
+  const nativeBinaries = Object.fromEntries([
+    ['gemini', options.geminiBinary],
+    ['codebuddy', options.codebuddyBinary],
+    ['codebuddycn', options.codebuddyCnBinary],
+    ['workbuddycn', options.workbuddyCnBinary]
+  ].filter(([, binary]) => Boolean(binary)));
   const report = createProviderResourceDoctor({
     hostHomeDir: process.env.HOME || process.env.USERPROFILE,
     probeRuntime: true,
-    ...(nativeBinaries ? { nativeBinaries } : {})
+    ...(Object.keys(nativeBinaries).length ? { nativeBinaries } : {})
   }).capabilities();
   if (!report || !Array.isArray(report.providers)) throw new Error('provider_capabilities_failed');
   return report;
 }
 
-async function runManagementLifecycle(capabilities) {
+async function runManagementLifecycle(capabilities, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-resource-management-'));
   const aiHomeDir = path.join(root, 'aih');
   const hostHomeDir = path.join(root, 'host');
-  const pluginManager = createNativePluginManager({ aiHomeDir, hostHomeDir });
-  const skillManager = createSkillManager({ aiHomeDir, hostHomeDir });
+  const nativeBinaries = Object.fromEntries([
+    ['gemini', options.geminiBinary],
+    ['codebuddy', options.codebuddyBinary],
+    ['codebuddycn', options.codebuddyCnBinary],
+    ['workbuddycn', options.workbuddyCnBinary]
+  ].filter(([, binary]) => Boolean(binary)));
+  const managerOptions = {
+    aiHomeDir,
+    hostHomeDir,
+    ...(Object.keys(nativeBinaries).length ? { nativeBinaries } : {})
+  };
+  const pluginManager = createNativePluginManager(managerOptions);
+  const skillManager = createSkillManager(managerOptions);
   const mcpManager = createMcpManager({ aiHomeDir, hostHomeDir });
   const result = { providers: {}, passed: true };
   try {
@@ -239,9 +276,17 @@ function indexWorkBuddy(report, evidence) {
   if (!report || !report.host) return;
   const passed = report.passed === true;
   for (const resource of ['plugin', 'skill', 'mcp']) {
+    // The WorkBuddy-family probe proves native plugin/Skill loading through the
+    // model fixture. Its MCP section currently proves projection, connection,
+    // direct tools/list and tools/call, but not that the model autonomously
+    // selected the MCP tool and received the result. Keep that evidence level
+    // explicit instead of upgrading direct stdio use to native agent use.
+    const nativeUse = resource === 'mcp'
+      ? report.mcp?.nativeAgentToolLoopVerified === true
+      : passed;
     addEvidence(evidence, `provider:${report.host}:` + resource, {
       source: 'workbuddy-resource-native-demo', passed, managementLifecycle: passed,
-      nativeUse: passed, version: report.runtime || null,
+      nativeUse, version: report.runtime || null,
       detail: resource === 'mcp' ? 'native connected and direct tools called' : 'native body/resource observed'
     });
   }
@@ -273,7 +318,7 @@ async function buildReport(options) {
   const capabilities = readCapabilities(options);
   const evidence = new Map();
   const demos = [];
-  const management = await runManagementLifecycle(capabilities);
+  const management = await runManagementLifecycle(capabilities, options);
   const run = (id, args, indexer) => {
     if (options.skip.has(id)) return;
     const result = runJsonCommand(args, options.timeoutMs);
@@ -306,6 +351,21 @@ async function buildReport(options) {
   if (!options.skip.has('workbuddy')) {
     const result = runJsonCommand(['scripts/workbuddy-resource-native-demo.js'], options.timeoutMs);
     demos.push({ id: 'workbuddy', ...result });
+    if (result.value) indexWorkBuddy(result.value, evidence);
+  }
+  const importedProviderDemos = [
+    ['codebuddy', options.codebuddyBinary],
+    ['codebuddycn', options.codebuddyCnBinary],
+    ['workbuddycn', options.workbuddyCnBinary]
+  ];
+  for (const [provider, binary] of importedProviderDemos) {
+    if (!binary || options.skip.has(provider)) continue;
+    const result = runJsonCommand([
+      'scripts/workbuddy-resource-native-demo.js',
+      '--provider', provider,
+      '--binary', binary
+    ], options.timeoutMs);
+    demos.push({ id: provider, ...result });
     if (result.value) indexWorkBuddy(result.value, evidence);
   }
 

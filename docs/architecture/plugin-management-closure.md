@@ -31,7 +31,7 @@ The matrix will be upgraded as Tasks 3–7 add descriptor-driven managers and re
 
 | Platform | Existing source model | AIH closure status at baseline |
 |---|---|---|
-| DeepSeek Harness | npm bundle, `dsh.bundle.patch`, profile ordered layers, Cordis lifecycle | Adapter/projection planned; no AIH manager demo yet |
+| DeepSeek Harness | npm bundle, `dsh.bundle.patch`, profile ordered layers, Cordis lifecycle | canonical package projection now verified; runtime adapter remains unavailable |
 | OpenCode | npm/local server/TUI/RPC plugin entrypoints, Effect Scope/generation | Existing session hook bridge only; native plugin manager not yet closed |
 | Pi | npm/git/local package with `pi.extensions`, extension factory and session events | Runtime package may be absent; projection/conformance required before runtime claim |
 | AIH | signed/hashed `.aih-plugin`, supervised Host, generation and RPC | Echo lifecycle harness is the first executable closure |
@@ -123,7 +123,7 @@ disable, and removed all temporary files. All four providers passed. The fixture
 returned `AIH_MCP_DEMO_OK` only from a real `tools/call` response; it does not spend
 upstream model tokens.
 
-The The latest focused MCP, skill, native-plugin, provider-doctor, resource-matrix
+The latest focused MCP, skill, native-plugin, provider-doctor, resource-matrix
 and existing AIH plugin lifecycle suites all pass; the full Node suite is 173/173
 and `npm run providers:check` also passes. Providers whose descriptor has MCP commands/config paths but no verified
 projection adapter remain explicitly projection-only or unsupported. This avoids

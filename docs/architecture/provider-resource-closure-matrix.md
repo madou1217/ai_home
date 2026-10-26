@@ -27,7 +27,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 
 | Host | State | Reason | Evidence |
 |---|---|---|---|
-| deepseek | adapter-needed | deepseek_harness_manifest_adapter_not_registered | spec:2026-10-25-universal-agent-plugin-design §4.1 |
+| deepseek | projection-only | canonical_deepseek_entry_verified; harness_runtime_adapter_not_registered | aih native plugin inspect/project + spec:2026-10-25-universal-agent-plugin-design §4.1 |
 | opencode | supported | server_plugin_local_projection_verified; TUI/RPC entrypoints remain separate | scripts/native-plugin-demo.js |
 | pi | runtime-unavailable | pi_binary_not_found_on_this_machine; package_projection_only | examples/native-plugins/aih-demo/package.json |
 | aih | supported | signed_artifact_and_supervised_host | scripts/plugin-closure-demo.js |

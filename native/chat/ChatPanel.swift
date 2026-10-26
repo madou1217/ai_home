@@ -13,10 +13,13 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   private var commandID = ""
   private var model = ""
   private var target: [String: Any] = ["kind": "aih-server"]
-  private var assistantText = ""
+  private var assistantItems: [String: String] = [:]
+  private var assistantItemIDs = Set<String>()
   private var pendingServiceText = ""
   private var pendingServiceRequestID = ""
   private var configured = false
+  private var connectionTimeout: Timer?
+  private var pinned = true
 
   init(emit: @escaping ([String: Any]) -> Void) {
     self.emit = emit
@@ -33,6 +36,14 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     content.sendHandler = { [weak self] in self?.sendCurrentMessage() }
     content.stopHandler = { [weak self] in self?.stopCurrentMessage() }
     content.reconnectHandler = { [weak self] in self?.reconnect() }
+    content.pinHandler = { [weak self] value in
+      guard let self else { return }
+      self.pinned = value
+      self.panel.level = self.pinned ? .floating : .normal
+      self.content.setPinned(self.pinned)
+    }
+    content.setPinned(pinned)
+    content.closeHandler = { [weak self] in self?.hide() }
   }
 
   func configure(_ event: [String: Any]) {
@@ -41,7 +52,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     else if let configuredTarget = event["serverTarget"] as? [String: Any] { target = configuredTarget }
     if let configuredModel = event["chatModel"] as? String { model = configuredModel }
     content.setState(state, sessionID: sessionID, model: model, message: "")
-    if !pendingServiceText.isEmpty && state == .disconnected {
+    if panel.isVisible && state == .disconnected {
       show()
       pendingServiceRequestID = requestID
       submitPendingServiceTextIfReady()
@@ -63,8 +74,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   /// and identity guards remain the sole path for submitting it.
   func openFromService(text: String) {
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalized.isEmpty, normalized.count <= 8000 else { return }
-    if state == .failed { closeSession(emitEvent: false) }
+    guard !normalized.isEmpty, normalized.utf16.count <= 8000 else { return }
+    if state == .failed { closeSession() }
     pendingServiceText = normalized
     pendingServiceRequestID = ""
     content.setComposerText(normalized)
@@ -89,16 +100,26 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     requestID = UUID().uuidString
     sessionID = ""
     commandID = ""
-    assistantText = ""
+    assistantItems.removeAll()
+    assistantItemIDs.removeAll()
     content.clearTranscript()
     setState(.connecting, message: "正在连接")
+    let openingRequest = requestID
+    connectionTimeout?.invalidate()
+    connectionTimeout = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+      guard let self, self.requestID == openingRequest, self.state == .connecting else { return }
+      self.setState(.failed, message: "连接超时，请重试")
+    }
     emit(["type": "chat.open", "requestId": requestID, "target": target, "generation": sessionGeneration])
   }
 
   private func reconnect() {
     if state == .streaming || state == .stopping { return }
-    closeSession(emitEvent: false)
+    let pending = pendingServiceText
+    closeSession()
+    pendingServiceText = pending
     openSession()
+    pendingServiceRequestID = requestID
   }
 
   private func sendCurrentMessage() {
@@ -107,7 +128,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func submitPendingServiceTextIfReady() {
-    guard !pendingServiceText.isEmpty, pendingServiceRequestID == requestID else { return }
+    guard state == .idle, !sessionID.isEmpty, !requestID.isEmpty,
+          !pendingServiceText.isEmpty, pendingServiceRequestID == requestID else { return }
     let text = pendingServiceText
     pendingServiceText = ""
     pendingServiceRequestID = ""
@@ -115,10 +137,11 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func submitMessage(_ text: String) {
-    guard !text.isEmpty, state == .idle, !sessionID.isEmpty, !requestID.isEmpty else { return }
+    guard !text.isEmpty, text.utf16.count <= 8000, state == .idle, !sessionID.isEmpty, !requestID.isEmpty else { return }
     commandGeneration += 1
     commandID = UUID().uuidString
-    assistantText = ""
+    assistantItems.removeAll()
+    assistantItemIDs.removeAll()
     content.clearComposer()
     content.append(role: "你", text: text)
     setState(.streaming, message: "生成中")
@@ -138,6 +161,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func closeSession(emitEvent: Bool = true) {
+    connectionTimeout?.invalidate()
+    connectionTimeout = nil
     guard !requestID.isEmpty else { return }
     if emitEvent { emit(["type": "chat.close", "requestId": requestID, "generation": sessionGeneration]) }
     sessionGeneration += 1
@@ -145,7 +170,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     requestID = ""
     sessionID = ""
     commandID = ""
-    assistantText = ""
+    assistantItems.removeAll()
+    assistantItemIDs.removeAll()
     pendingServiceText = ""
     pendingServiceRequestID = ""
     setState(.disconnected, message: "未连接")
@@ -205,18 +231,21 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     switch type {
     case "session.created", "session.runtime.bound", "session.runtime.rebound", "session.snapshot.reset":
       if type == "session.snapshot.reset" { restoreSnapshot(runtime) }
-      setState(.idle, message: "就绪")
-      submitPendingServiceTextIfReady()
-    case "turn.queued", "turn.started", "timeline.item.started", "timeline.item.updated":
-      setState(.streaming, message: "生成中")
+      if state == .connecting {
+        setState(.idle, message: "就绪")
+        submitPendingServiceTextIfReady()
+      }
+    case "turn.queued", "turn.started":
+      if state != .stopping { setState(.streaming, message: "正在回复") }
+    case "timeline.item.started", "timeline.item.updated", "timeline.item.completed":
+      receiveTimelineItem(runtime)
     case "timeline.item.delta":
       let payload = runtime["payload"] as? [String: Any] ?? [:]
-      let chunk = payload["chunk"] as? String ?? ""
-      if !chunk.isEmpty {
-        assistantText += chunk
-        content.replaceCurrentAssistant(assistantText)
-      }
-      setState(.streaming, message: "生成中")
+      let id = (runtime["itemId"] as? String) ?? (payload["itemId"] as? String) ?? ""
+      guard assistantItemIDs.contains(id), let chunk = payload["chunk"] as? String, !chunk.isEmpty else { return }
+      assistantItems[id, default: ""] += chunk
+      content.upsertAssistant(id: id, text: assistantItems[id] ?? "")
+      if state != .stopping { setState(.streaming, message: "正在回复") }
     case "turn.interrupted":
       setState(.idle, message: "已停止")
       submitPendingServiceTextIfReady()
@@ -234,6 +263,21 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     default:
       break
     }
+  }
+
+  private func receiveTimelineItem(_ runtime: [String: Any]) {
+    guard let payload = runtime["payload"] as? [String: Any],
+          let item = payload["item"] as? [String: Any],
+          let id = item["id"] as? String, !id.isEmpty,
+          item["kind"] as? String == "message" else { return }
+    let detail = item["detail"] as? [String: Any] ?? [:]
+    guard (detail["role"] as? String ?? item["role"] as? String) == "assistant" else { return }
+    assistantItemIDs.insert(id)
+    if let text = item["content"] as? String {
+      assistantItems[id] = text
+      if !text.isEmpty { content.upsertAssistant(id: id, text: text) }
+    }
+    if state != .stopping { setState(.streaming, message: "正在回复") }
   }
 
   private func receiveError(_ event: [String: Any]) {
@@ -255,14 +299,14 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func restoreSnapshot(_ runtime: [String: Any]) {
     guard let payload = runtime["payload"] as? [String: Any], let timeline = payload["timeline"] as? [[String: Any]] else { return }
-    let text = timeline.compactMap { item -> String? in
-      guard let content = item["content"] as? String, !content.isEmpty else { return nil }
+    let messages = timeline.compactMap { item -> (role: String, text: String)? in
+      guard let text = item["content"] as? String, !text.isEmpty,
+            item["kind"] as? String == "message" else { return nil }
       let detail = item["detail"] as? [String: Any]
-      let roleValue = (detail?["role"] as? String) ?? (item["role"] as? String)
-      let role = roleValue == "user" ? "你" : "AIH"
-      return "\(role)：\(content)"
-    }.joined(separator: "\n\n")
-    content.replaceTranscript(text)
+      let role = (detail?["role"] as? String) ?? (item["role"] as? String)
+      return (role: role == "user" ? "你" : "AIH", text: text)
+    }
+    content.restoreMessages(messages)
   }
 
   private func matches(_ event: [String: Any], session: Bool, command: Bool) -> Bool {
@@ -302,6 +346,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func setState(_ next: ChatPanelState, message: String) {
+    if next != .connecting {
+      connectionTimeout?.invalidate()
+      connectionTimeout = nil
+    }
     state = next
     content.setState(next, sessionID: sessionID, model: model, message: message)
   }

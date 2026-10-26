@@ -25,8 +25,44 @@ final class TranslationApp: NSObject, NSApplicationDelegate {
   var contextSelection: SelectedText?
   let contextMenu = NSMenu()
 
+  // Reopening the bundle is an explicit user action, unlike the server-owned
+  // background launch. Give the hidden helper a discoverable window entry.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    if fullApp { panel.openSettings() }
+    else { chatPanel.openFromShortcut() }
+    return true
+  }
+
+  private func installApplicationMenu() {
+    // Accessory apps still need menu key equivalents for the native text
+    // responder chain (copy/paste/undo); editable NSTextViews alone are not enough.
+    let menu = NSMenu()
+    let appItem = NSMenuItem()
+    let appMenu = NSMenu(title: "AIH")
+    let services = NSMenu(title: "Services")
+    let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+    servicesItem.submenu = services
+    appMenu.addItem(servicesItem)
+    NSApp.servicesMenu = services
+    appItem.submenu = appMenu
+    menu.addItem(appItem)
+    let editItem = NSMenuItem()
+    let edit = NSMenu(title: "Edit")
+    for (title, action, key) in [
+      ("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+      ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+      ("Paste", "pasteAsPlainText:", "v"), ("Select All", "selectAll:", "a")
+    ] {
+      edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+    }
+    editItem.submenu = edit
+    menu.addItem(editItem)
+    NSApp.mainMenu = menu
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(fullApp ? .regular : .accessory)
+    installApplicationMenu()
     if fullApp {
       panel.configure([
         "target": "zh-Hans",

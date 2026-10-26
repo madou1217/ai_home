@@ -123,7 +123,7 @@ disable, and removed all temporary files. All four providers passed. The fixture
 returned `AIH_MCP_DEMO_OK` only from a real `tools/call` response; it does not spend
 upstream model tokens.
 
-The complete focused suite currently has 44 passing tests across MCP, skill,
+The complete focused suite currently has 49 passing tests across MCP, skill,
 resource matrix and existing AIH plugin lifecycle tests; `npm run providers:check`
 also passes. Providers whose descriptor has MCP commands/config paths but no verified
 projection adapter remain explicitly projection-only or unsupported. This avoids
@@ -176,7 +176,7 @@ has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](pro
 Fresh runs on this branch:
 
 ```sh
-node --test test/*.test.js                         # 165 passed, 0 failed
+node --test test/*.test.js                         # 169 passed, 0 failed
 npm run providers:check                            # passed
 node scripts/plugin-closure-demo.js --json         # passed
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude

@@ -382,7 +382,42 @@ standalone CLIs, plus WorkBuddy through its installed desktop bundle. Other
 provider runtime rows remain unavailable until a native runtime can be resolved
 and its version probe succeeds; capability declarations are independent.
 
-## Final verification checkpoint (2026-10-26)
+## WorkBuddy ownership hardening checkpoint (2026-10-27)
+
+The WorkBuddy marketplace adapter now uses a distinct deterministic marketplace
+per AIH home/provider/plugin. Its ownership helper validates the complete local
+marketplace tree, native install path and bounded regular JSON registry files
+before native operations. This is necessary because WorkBuddy itself turns a
+malformed `installed_plugins.json` into an empty successful list and may overwrite
+that malformed registry on install. AIH rejects that state instead.
+
+Disable/enable uses native toggles and retains plugin data. Remove uses native
+uninstall with `--keep-data`, removes the owned marketplace even after disable,
+and validates the observed `.orphaned_at` timestamp before deleting the remaining
+cache. Legacy directory-only projections are unhealthy while enabled; reinstall
+migrates a matching owned package into the actual marketplace and then removes
+the old directory. Draft installations using the old fixed marketplace name are
+explicitly rejected for migration rather than silently adopted.
+
+Fresh isolated evidence: `/tmp/aih-workbuddy-hardened-demo.json` proves plugin and
+Skill enable/disable/re-enable/remove with zero exit, no timeout, a real native
+request and exact final result in every stage, plus native MCP Connected and two
+AIH stdio calls. `/tmp/aih-workbuddy-ownership-evidence-final.log` records 16 real
+checks including two simultaneous plugins, edited/foreign/oversize/symlink state,
+malformed installation/settings files preserved on refusal, native command
+failure, external disable recovery, remove after disable and legacy migration.
+The seven-lane aggregate passed on Node 22.23.2; the existing 105 checks passed on
+Node 22.23.2 and Node 26.12.1. No test files or web source were added or changed.
+
+Independent review found the malformed-registry issue and a Codex macOS
+`/tmp`/`/private/tmp` path-normalization regression; both were corrected, and the
+reviewer independently re-ran the Codex lifecycle successfully. The review
+service failed before a final full re-review, so this checkpoint is not recorded
+as independently approved. Integration/push and the remaining provider gaps are
+still outstanding; the seven demonstrated lanes do not establish all-provider
+closure or model-driven MCP tool selection on WorkBuddy.
+
+## Earlier verification checkpoint (2026-10-26)
 
 The 173-test counts below are historical results from the earlier task
 checkpoints. This task had added 13 test files despite the user's no-new-tests
@@ -399,7 +434,7 @@ original hosts plus WorkBuddy,
 including the OpenCode tool loop and Pi/DSH managed SDK execution described above.
 
 Integration into `main` preserved its concurrent changes. The integrated Node 22
- suite passes 105 tests, the seven-lane native aggregate passes again, provider
+suite passes 105 tests, the seven-lane native aggregate passes again, provider
 contract generation/check passes, and native-plugin/skill/MCP CLI help exits
 successfully. Relative to the pre-integration `main`, this task changes no
 `web/` source or existing test file.
@@ -407,7 +442,7 @@ successfully. Relative to the pre-integration `main`, this task changes no
 Fresh runs on this branch:
 
 ```sh
-node --test test/*.test.js                         # 173 passed, 0 failed
+node --test test/*.test.js                         # current original suite: 105 passed
 npm run providers:check                            # passed
 node scripts/plugin-closure-demo.js --json         # passed
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude

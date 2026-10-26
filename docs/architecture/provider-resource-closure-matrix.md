@@ -19,7 +19,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | zcode | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | core/providers/native.go |
 | codebuddy | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
 | codebuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
-| workbuddy | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
+| workbuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
 | cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 
@@ -37,7 +37,7 @@ because the provider contract separates declaration from machine-specific execut
 
 | Provider | Runtime | Plugin | Skill | MCP | Evidence |
 |---|---|---|---|---|---|
-| workbuddy | WorkBuddy AI 2.161.0 bundled CodeBuddy lite runtime | native marketplace + four-stage use | native skills + four-stage use | `.codebuddy.json`, native connected + stdio call | `scripts/workbuddy-resource-native-demo.js` |
+| workbuddy | WorkBuddy AI 2.161.0 bundled CodeBuddy lite runtime | native marketplace + four-stage use | native skills + four-stage use | `.codebuddy.json`, native connected + two stdio tool calls | `scripts/workbuddy-resource-native-demo.js` |
 
 `provider doctor` adds a targeted installed-package discovery and real version
 probe for the external Pi/DSH harnesses. Absence from PATH is not proof that the

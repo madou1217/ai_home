@@ -6,6 +6,7 @@ const { spawnSync } = require('node:child_process');
 const { createNativePluginManager } = require('../lib/native-resources/native-plugin-manager');
 const { probeHostRuntime } = require('../lib/native-resources/host-runtime-discovery');
 const { IMPORTED_HOSTS } = require('../lib/native-resources/provider-resource-doctor');
+const { resolveProviderResourceRuntime } = require('../lib/native-resources/provider-native-runtime');
 const SOURCE = path.resolve(__dirname, '../examples/native-plugins/aih-demo');
 const CLIENTS = [
   { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', list: ['plugin', 'list', '--json'], version: ['--version'], useDemo: 'native-plugin-use-demo.js', useProviderArgument: true },
@@ -14,7 +15,7 @@ const CLIENTS = [
   { host: 'pi', demo: 'pi-plugin-native-demo.js', args: ['--managed'] },
   { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] },
   { host: 'aih', demo: 'aih-portable-plugin-demo.js', args: [], localRuntime: true },
-  { host: 'workbuddy', demo: 'workbuddy-resource-native-demo.js', args: [], localRuntime: true }
+  { host: 'workbuddy', resourceProvider: 'workbuddy', demo: 'workbuddy-resource-native-demo.js', args: [], timeoutMs: 180000 }
 ];
 function run(binary, args, env, cwd, timeoutMs = 30000) { const r=spawnSync(binary,args,{env,cwd,encoding:'utf8',timeout:timeoutMs,maxBuffer:1024*1024}); return {status:r.status,signal:r.signal,stdout:String(r.stdout||'').slice(0,5000),stderr:String(r.stderr||'').slice(0,1500)}; }
 async function runNativePluginDemo() {
@@ -22,9 +23,11 @@ async function runNativePluginDemo() {
   for(const client of CLIENTS) {
     if (client.host) {
       const descriptor = IMPORTED_HOSTS.find(row => row.host === client.host);
-      const runtime = client.localRuntime ? { available: true, version: process.versions.node } : probeHostRuntime(descriptor, { hostHomeDir: os.homedir() });
+      const resourceRuntime = client.resourceProvider && resolveProviderResourceRuntime(client.resourceProvider, { hostHomeDir: os.homedir() });
+      const probe = resourceRuntime && run(resourceRuntime.command, [...resourceRuntime.args, '--version'], { ...process.env, ...resourceRuntime.env }, root);
+      const runtime = client.resourceProvider ? { available: probe?.status === 0, version: probe?.stdout.trim(), reason: 'native_resource_runtime_unavailable' } : client.localRuntime ? { available: true, version: process.versions.node } : probeHostRuntime(descriptor, { hostHomeDir: os.homedir() });
       if (!runtime.available) { stages.push({ host: client.host, state: 'runtime-unavailable', reason: runtime.reason }); continue; }
-      const demo = run(process.execPath, [path.join(__dirname, client.demo), ...(runtime.packageDir ? [runtime.packageDir] : []), ...client.args], process.env, root, client.localRuntime ? 180000 : 30000);
+      const demo = run(process.execPath, [path.join(__dirname, client.demo), ...(runtime.packageDir ? [runtime.packageDir] : []), ...client.args], process.env, root, client.timeoutMs || (client.localRuntime ? 180000 : 30000));
       try {
         const evidence = JSON.parse(demo.stdout);
         stages.push({ host: client.host, version: runtime.version, evidence, passed: demo.status === 0 && evidence.passed });

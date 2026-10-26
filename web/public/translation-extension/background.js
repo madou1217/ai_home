@@ -20,7 +20,7 @@ function translationFailure(status, message, errorCode = '') {
     ok: false,
     status: code,
     code: errorCode,
-    fatal: code === 0 || code === 401 || code === 403 || code === 404 || code === 429 || code >= 500,
+    fatal: code === 0 || code === 400 || code === 401 || code === 403 || code === 404 || code === 429 || code >= 500,
     error: message || `翻译服务返回 HTTP ${code}`
   };
 }
@@ -100,7 +100,7 @@ async function translate(request, sendResponse, sender) {
     if (config.token) headers.Authorization = `Bearer ${config.token}`;
     const response = await fetch(`${endpoint}/v0/webui/translation/stream`, {
       method: 'POST', headers, signal: controller.signal,
-      body: JSON.stringify({ text: request.text, target, targetPolicy, operation: request.operation || 'selection' })
+      body: JSON.stringify({ text: request.text, source: request.source || 'auto', target, targetPolicy, operation: request.operation || 'selection' })
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));

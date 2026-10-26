@@ -15,6 +15,16 @@
   }
 
   const ignored = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'PRE', 'CODE', 'TEXTAREA', 'INPUT']);
+  function declaredLanguage(element) {
+    const value = element.closest('[lang]')?.getAttribute('lang') || '';
+    if (!value.trim()) return '';
+    try {
+      const locale = new Intl.Locale(value.trim().replace(/_/g, '-'));
+      if (locale.language === 'zh') return locale.maximize().script === 'Hant' ? 'zh-Hant' : 'zh-Hans';
+      return locale.language;
+    } catch { return ''; }
+  }
+
   function textNodes() {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const result = []; let current;
@@ -24,7 +34,7 @@
       if (!parent || ignored.has(parent.tagName) || parent.closest(`[${ROOT_ATTR}]`) || source.length < 2) continue;
       const style = getComputedStyle(parent);
       if (style.display === 'none' || style.visibility === 'hidden') continue;
-      result.push({ node, source, index: result.length });
+      result.push({ node, source, sourceLanguage: declaredLanguage(parent), index: result.length });
     }
     return result;
   }
@@ -87,6 +97,7 @@
     return new Promise((resolve) => chrome.runtime.sendMessage({
       type: 'aih-translate', text, operation,
       operationId: options.operationId,
+      ...(options.source ? { source: options.source } : {}),
       ...(options.target ? { target: options.target } : {}),
       ...(options.targetPolicy ? { targetPolicy: options.targetPolicy } : {})
     }, (response) => { const error = chrome.runtime.lastError; resolve(response || { ok: false, fatal: true, error: error?.message || '扩展无法连接到翻译服务' }); }));
@@ -160,6 +171,7 @@
     let processed = 0; let succeeded = 0; let failed = 0; let stopRequested = false; let confirmation = null;
     let pageAutoCopyEligible = true; let pageCopyDone = false;
     let fatalError = ''; let cancelled = false;
+    let pageLanguage = '';
     const concurrency = 3;
     const progress = document.createElement('span');
     const stop = document.createElement('button'); stop.type = 'button'; stop.textContent = '停止';
@@ -183,15 +195,21 @@
     }
     async function translateItems(items, label) {
       let itemCursor = 0; const total = items.length; stopRequested = false;
+      // A navigation word cannot establish a page's language. Translate a
+      // representative passage first, then reuse its resolved source for
+      // unlabelled fragments; explicit per-element lang always takes priority.
+      const representative = items.reduce((best, item) => !best || item.source.length > best.source.length ? item : best, null);
+      const orderedItems = representative ? [representative, ...items.filter((item) => item !== representative)] : [];
       async function worker(limit = total) {
         while (!stopRequested && !cancelled && body.isConnected && operationToken === operationSerial && itemCursor < limit) {
-          const item = items[itemCursor++]; const options = { operationId: operationToken, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
+          const item = orderedItems[itemCursor++]; const options = { operationId: operationToken, source: item.sourceLanguage || pageLanguage, ...(targetOverride ? { target: targetOverride, targetPolicy: 'explicit' } : {}) };
           const result = await translateOne(item.source, 'page', options); processed += 1;
           if (cancelled || !body.isConnected || operationToken !== operationSerial) return;
           if (result?.confirmation) { if (!confirmation) { confirmation = result.confirmation; stopRequested = true; restoreSnapshots(); } continue; }
           if (stopRequested) continue;
           if (result?.fatal) { fatalError = result.error || '翻译服务不可用'; stopRequested = true; failed += 1; cancelTranslation(operationToken); return; }
           if (result?.ok && result.text && applyPageResult(item, result)) {
+            if (!pageLanguage && result.meta?.from) pageLanguage = result.meta.from;
             translatedByIndex.set(item.index, result.text);
             pageAutoCopyEligible = pageAutoCopyEligible && result.autoCopy === true;
             succeeded += 1;

@@ -27,6 +27,8 @@
 - Node 容量冷却到期后，同一账号同一模型只允许一个在途恢复请求；并发请求等它结束或走其它号。失败重新冷却，成功清除连击。HTTP 与 WS 共用 accountActivity。
 - WS 每轮在可安全展开公开上下文时重新评估账号。换号时展开 previous_response_id 并保留公开历史；无法安全重建上下文时，只能保留仍健康的原账号，原账号不可用则明确返回 replay_context_unavailable。
 - 换号与不可恢复原因默认打印低敏日志，不依赖 debug。没有把每条正常请求正文写进日志。
+- Responses Lite 的 `additional_tools` 是可携带的工具定义，换号时保留原位置、namespace、schema 和已完成工具结果；不把工具 schema 内的 `file_id` 属性名当作已上传文件引用。真实输入里的账号绑定文件引用、未知历史类型和不成对的工具结果仍拒绝重放。
+- Node WS 同时接收/透传原生 `session-id`（Mac Go 中继的写法）与兼容 `session_id`，保留 `thread-id`。换号日志为单行 JSON，携带时间、请求/会话/线程标识；失败细分为不支持的历史项、缺少 previous_response、未完成工具结果、已输出等，不记录正文或工具定义。
 
 容量错误可能是上游共享模型资源紧张，不一定由账号并发引起。负载分流与退避能减少重复冲击，不能承诺任意请求量都成功；现有队列/并发闸门仍有边界。本轮没有新增伪造的每号 QPS/TPS 硬限制，也没有降低模型、推理强度或输出质量来掩盖失败。
 
@@ -41,3 +43,4 @@
 - 官方真实上游小请求：通过当前改动的 Node WS 处理链两轮 `gpt-6.1-sol`（low，短输入），两次 response.completed，输出 OK/OK，previous_response_id 续接正常，结束后全部 inFlight=0。未进行生产容量压测。
 - AWS 生效验证（2026-10-26）：经 `aih server restart` 加载已提交代码，仍使用 Node 路径、监听 9527；完整生产网关的两轮 WebSocket 小请求均 response.completed，输出 OK/OK，previous_response_id 续接正常。现有 Node 检查 105/105，通过 `go test ./...`。
 - 同次生产观察中，一条 HTTP Responses 请求先收到 `server_is_overloaded`（分类 `model_capacity_unavailable`，冷却 60 秒），随后换到另一账号，同一 requestId 最终返回 200。此记录证明实际 HTTP 换号生效；WS 容量故障换号证据仍来自本地双上游验证，不将正常官方 WS 续接宣称为容量故障验证。
+- 动态工具恢复补充验证（2026-10-26）：原生长会话的 116 条历史项在内存中经新版重放器处理成功，4 组工具定义完整保留，未把该长会话发往上游。隔离真实 WS 链路先由本地端点返回 capacity，再由真实官方账号接收带 `additional_tools` 的小请求并返回 OK；容量拒绝为本地注入，官方返回为真实响应。

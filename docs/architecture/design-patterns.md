@@ -336,3 +336,10 @@ protocol fixture in `examples/skills/prompt-fixture.js`. The descriptor's
 branches to the manager. Actual Codex/Claude/OpenCode CLI probes passed all four
 lifecycle stages; details and evidence limits are in
 `docs/demos/2026-10-26-skill-native-closure.md`.
+
+MCP transport checkpoint (2026-10-26): `lib/native-resources/mcp-stdio-client.js`
+encapsulates the stdio JSON-RPC session lifecycle, request correlation and bounded
+protocol parsing. `examples/mcp/aih-demo-server.js` is an independent real stdio
+server, with an echo tool and a working-directory-confined file listing tool.
+`test/mcp-stdio-client.test.js` exercises actual child processes, tool calls,
+EOF/malformed/id/size/time/cancellation failures and disposal (7 passing).

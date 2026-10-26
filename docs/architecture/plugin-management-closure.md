@@ -37,3 +37,36 @@ The matrix will be upgraded as Tasks 3–7 add descriptor-driven managers and re
 | AIH | signed/hashed `.aih-plugin`, supervised Host, generation and RPC | Echo lifecycle harness is the first executable closure |
 
 The final evidence must replace each planned status with a command, test, or real runtime output. Unsupported provider capabilities stay visible with a stable reason.
+
+## Managed skills: CLI checkpoint (2026-10-26)
+
+On the `codex/plugin-management-closure` branch:
+
+```sh
+node bin/ai-home.js skill install assets/provider-skills/aih-demo --provider claude --json
+node bin/ai-home.js skill list --provider claude --json
+node bin/ai-home.js skill disable aih-demo --provider claude --json
+node bin/ai-home.js skill enable aih-demo --provider claude --json
+node bin/ai-home.js skill doctor --provider claude --json
+node bin/ai-home.js skill remove aih-demo --provider claude --json
+```
+
+`install` enables immediately; `--all-supported` selects all declared projection
+adapters, even if their native executable is absent. This is a projection operation,
+not evidence of native execution. Without `--provider`, enable/disable/remove act
+on the selected skill's existing installations. Each provider result is returned,
+and a partial failure yields exit 1. All actions support `--help`.
+
+Skill resources follow the existing host-shared storage policy; account launches
+reuse those resources. There is no account-private skill override in this checkpoint.
+Native directories are used for Codex/Claude and declared CodeBuddy-family entries;
+OpenCode and AGY use managed instruction blocks. Unmodified legacy `aih-collab`
+symlinks/copies/blocks are adopted; foreign or edited content is preserved. Explicit
+CLI disable/remove survives subsequent launch reconciliation. `skillInject=0`
+continues to disable the resource through the same manager.
+
+Validation: 22 tests passed across skill-manager, skill-command, native-resource-
+registry and native-resource-management, including a subprocess invoking the real
+AIH CLI with an isolated home. `aih skill --help` and `aih skill doctor --json`
+exit 0. These checks establish management and projection, not real model use.
+Native use probes are still being added; Task 4 is not complete yet.

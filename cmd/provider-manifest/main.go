@@ -40,7 +40,7 @@ type clientDefinition struct {
 	AccentVar         string                 `json:"accentVar"`
 	SoftVar           string                 `json:"softVar"`
 	TagColor          string                 `json:"tagColor"`
-	// APIHost 是默认 API 域名（展示用）：账号只有 baseUrl 时，前端据此回��到
+	// APIHost 是默认 API 域名（展示用）：账号只有 baseUrl 时，前端据此回落到
 	// 厂商默认域名。放进契约是为了让前端**不必**维护 `Record<Provider, string>`
 	// 那张手写表——漏项会在全量 TS 编译时报 TS2739（workbuddycn/cline 曾漏）。
 	APIHost           string                 `json:"apiHost,omitempty"`

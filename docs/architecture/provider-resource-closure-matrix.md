@@ -108,3 +108,13 @@ through `scripts/gemini-resource-native-demo.js`. The same canonical package car
 Each resource passes enable/disable/re-enable/remove with native activation events
 and request-body evidence. This does not claim arbitrary JavaScript plugin API
 compatibility or native model-driven MCP execution for Gemini.
+
+Gemini CLI 0.65.0 also has a native MCP agent/tool-loop probe:
+`scripts/gemini-mcp-tool-loop-demo.js`. It uses the native `settings.json ->
+mcpServers` projection and the real CLI to observe the MCP schema, a native
+`tool_use`, the stdio `tool_result`, the following model request, and the final
+`AIH_GEMINI_MCP_OK` answer across enabled, disabled, re-enabled, and removed
+stages. This is headless/native CLI evidence against a local deterministic
+fixture; it does not claim Gemini Web/TUI or remote-model parity. The static
+descriptor remains `projection-only` so capability declaration and machine
+evidence stay separate.

@@ -166,6 +166,19 @@ node scripts/mcp-native-demo.js
 
 该 probe 当前覆盖 Codex、Claude、OpenCode 和 Cline。`list`/`doctor` 只显示参数数量和环境变量键名，不输出值；用户修改过的原生配置会 fail closed，避免覆盖非 AIH 内容。
 
+Gemini CLI 也有独立的原生 MCP tool loop probe。它使用隔离的 Gemini 0.65.0
+runtime、`settings.json -> mcpServers` 和本地 deterministic fixture，验证工具
+schema、`tool_use`、stdio `tool_result`、后续模型请求和最终回答：
+
+```bash
+node scripts/gemini-mcp-tool-loop-demo.js \
+  /tmp/aih-gemini-resource-runtime/node_modules/.bin/gemini
+```
+
+这条证据只覆盖 Gemini CLI 的 headless/native MCP 入口；Gemini Web/TUI 或远程模型
+行为仍然单独记录。没有 Gemini runtime 时，聚合报告会显示
+`gemini_binary_unavailable`，不会把 projection 当作 native loop。
+
 WorkBuddy 的 MCP 还有一个宿主专用的 deferred tool loop：
 
 ```bash

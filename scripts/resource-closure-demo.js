@@ -395,6 +395,17 @@ async function buildReport(options) {
       demos.push({ id: `mcp-loop:${host}`, ...result });
       if (result.value) indexNativeMcpLoop(result.value, evidence);
     }
+    const geminiBinary = options.geminiBinary || (() => {
+      const candidates = ['/tmp/aih-gemini-resource-runtime/node_modules/.bin/gemini', 'gemini'];
+      return candidates.find(candidate => candidate === 'gemini' || fs.existsSync(candidate)) || '';
+    })();
+    if (geminiBinary && (geminiBinary === 'gemini' || fs.existsSync(geminiBinary))) {
+      const result = await runJsonCommand(['scripts/gemini-mcp-tool-loop-demo.js', geminiBinary], options.timeoutMs);
+      demos.push({ id: 'mcp-loop:gemini', ...result });
+      if (result.value) indexNativeMcpLoop(result.value, evidence);
+    } else {
+      demos.push({ id: 'mcp-loop:gemini', skipped: true, reason: 'gemini_binary_unavailable' });
+    }
   }
   if (!options.skip.has('plugin')) {
     for (const [host, script] of [['pi', 'pi-plugin-tool-loop-demo.js'], ['deepseek', 'deepseek-plugin-tool-loop-demo.js']]) {

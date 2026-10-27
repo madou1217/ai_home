@@ -530,8 +530,9 @@ Overall closure status is now:
 - AIH plugin lifecycle: complete and restart-proven.
 - Managed skills: complete for Codex, Claude, OpenCode and AGY projection; actual
   native use proven for Codex, Claude and OpenCode.
-- Managed MCP: complete for Codex, Claude, OpenCode and Cline; provider-specific
-  account projection and native config loading proven.
+- Managed MCP: complete for Codex, Claude, OpenCode, Cline and the tested Gemini
+  CLI 0.65.0; provider-specific account projection and native config loading are
+  proven per host.
 - WorkBuddy: native marketplace plugin, Skill and `.codebuddy.json` MCP execution
   all pass isolated positive/negative or connected stages on the installed lite
   runtime.
@@ -548,6 +549,12 @@ Overall closure status is now:
 No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DSH
 Web/TUI model-selected agent loop. Pi and DSH headless inference use a deterministic local
 model fixture; this proves runtime execution, not a remote model's tool-selection quality.
+
+The current machine-level aggregate is `/tmp/aih-resource-closure-gemini-final2.json`:
+19 demos passed, including Codex, Claude, OpenCode, Cline, Gemini, Pi, DeepSeek,
+AIH, WorkBuddy AI, CodeBuddy and CodeBuddy CN resource lanes. The aggregate's only
+remaining gaps are the independent WorkBuddy CN desktop plugin and Skill lanes;
+that runtime is absent and is not substituted with the CodeBuddy CN CLI.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
 (`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,
@@ -780,6 +787,29 @@ This closes native extension-bundled Skill and standalone Skill use for the test
 version, not arbitrary Gemini extension features, JavaScript host API equivalence,
 MCP model execution, remote reasoning, account launch propagation or Web/TUI parity.
 No harness implementation is modified.
+
+## Gemini native MCP tool loop (2026-10-27)
+
+`node scripts/gemini-mcp-tool-loop-demo.js [native-cli-path]` now exercises the
+same managed MCP lifecycle with the real Gemini CLI 0.65.0. Gemini's native
+`settings.json -> mcpServers` configuration is projected by the AIH MCP manager;
+the demo also performs direct `test`, `tools` and `call` operations before starting
+the model loop.
+
+The deterministic local Google-compatible fixture exposes the MCP schema only when
+the managed resource is enabled. Enabled and re-enabled stages require a native
+`mcp_aih-demo_aih_echo` tool event, a successful stdio result, a second model
+request containing that result, and the exact final `AIH_GEMINI_MCP_OK`. Disabled
+and removed stages require one request, no MCP schema or tool event, and
+`MCP_NOT_LOADED`. The fresh run reported version `0.65.0`, direct tools
+`aih_echo`/`aih_list_files`, and all four lifecycle stages passed.
+
+The evidence is headless/native CLI execution against a local fixture. It does not
+claim Gemini Web/TUI, remote-model reasoning, or account launch propagation. The
+static provider descriptor remains `projection-only` so machine/version evidence
+does not silently become a universal capability claim. The aggregate runner now
+includes this demo as `mcp-loop:gemini` when a Gemini binary is available and
+reports `gemini_binary_unavailable` otherwise.
 
 The canonical package with the Gemini manifest also passed all seven existing
 host lanes (`/tmp/aih-gemini-package-regression.json`): Codex, Claude, OpenCode,

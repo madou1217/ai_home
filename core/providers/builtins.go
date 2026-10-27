@@ -568,10 +568,14 @@ func builtinKiro() Definition {
 // ~/.zcode/v2/credentials.json（无 refresh token，过期需重新 login 导入）。
 func builtinZcode() Definition {
 	return Definition{
-		ID:           "zcode",
-		Presentation: withAPIHost(presentation("zcode", "ZCode", "ZC", "◈", "geekblue"), "z.ai"),
-		Gateway:      GatewayActive,
-		Clients:      clientSupport(false, true),
+		ID:             "zcode",
+		NativeBoundary: nativeZcode(),
+		Presentation:   withAPIHost(presentation("zcode", "ZCode", "ZC", "◈", "geekblue"), "z.ai"),
+		Gateway:        GatewayActive,
+		// cli=true：ZCode CLI（0.17.0，随 Desktop 分发的 glm/zcode.cjs）已接入 aih 的
+		// 启动/会话/非交互链路；此前声明为 false，于是 `aih zcode` 是「未识别的命令」，
+		// 只能开 Desktop。
+		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
 		RelayHosts:   relayHostsNodeOnly("Go 无 zcode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities: []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionHistory, CapabilityQuotaUsage, CapabilityUsageScan},
@@ -597,6 +601,8 @@ func builtinZcode() Definition {
 			BinaryName: "zcode",
 			Package:    "",
 			EnvKeys:    []string{"ZCODE_API_KEY", "ZCODE_BASE_URL", "ZCODE_DATA_BASE_DIR"},
+			// 非交互入口：`-p/--prompt`（ZCode 0.17.0 实测）。
+			Headless: &HeadlessConfig{TriggerFlags: []string{"-p", "--prompt"}},
 			DesktopClient: desktopClient(
 				"ZCode",
 				[]string{"ZCode"},

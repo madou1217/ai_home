@@ -1833,7 +1833,7 @@
         "events": []
       },
       "clients": {
-        "cli": false,
+        "cli": true,
         "desktop": true
       },
       "cli": {
@@ -1878,6 +1878,67 @@
               "zcode"
             ]
           }
+        },
+        "headless": {
+          "triggerFlags": [
+            "-p",
+            "--prompt"
+          ]
+        }
+      },
+      "nativeBoundary": {
+        "config": {
+          "envHomeKeys": [
+            "ZCODE_DATA_BASE_DIR"
+          ],
+          "userSettings": [
+            "provider_config.json"
+          ],
+          "projectSettings": [],
+          "cliFlags": [
+            "--cwd",
+            "--mode",
+            "--resume",
+            "--continue",
+            "--prompt"
+          ]
+        },
+        "sessions": {
+          "flags": [
+            "--resume",
+            "--continue"
+          ],
+          "nativeStore": "cli/db/db.sqlite"
+        },
+        "mcp": {
+          "commands": null,
+          "configFiles": null
+        },
+        "plugins": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "skills": {
+          "commands": null,
+          "paths": null,
+          "mode": ""
+        },
+        "hooks": {
+          "files": null,
+          "stopRequiresJsonStdout": false
+        },
+        "permissions": {
+          "flags": [
+            "--mode"
+          ],
+          "modes": [
+            "build",
+            "edit",
+            "plan",
+            "yolo",
+            "guarded"
+          ]
         }
       },
       "credentials": {

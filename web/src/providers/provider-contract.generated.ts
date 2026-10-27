@@ -443,7 +443,7 @@ export const PROVIDER_DEFINITIONS = [
       }
     ],
     "clients": {
-      "cli": false,
+      "cli": true,
       "desktop": true
     }
   },

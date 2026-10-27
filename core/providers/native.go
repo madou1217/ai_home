@@ -240,6 +240,38 @@ func nativeKiro() *NativeCapability {
 	}
 }
 
+// nativeZcode 描述 ZCode CLI（随 ZCode Desktop 一起分发）的原生配置、会话与权限边界。
+//
+// 事实来源（2026-10-27 本机实测 ZCode 0.17.0，`ZCode.app/Contents/Resources/glm/zcode.cjs --help`）：
+//   - 数据根：`ZCODE_DATA_BASE_DIR`（CLI 语义 = `<base>/.zcode`，见 desktop-launch/zcode-strategy）；
+//     个人 provider 配置是 `<base>/.zcode/v2/provider_config.json`；
+//   - 无 `login` 子命令的替代路径不适用：它有 `login [zai|bigmodel]`；
+//   - 会话：`--resume <sessionId>`（`sess_…`）与 `-c/--continue`（同 cwd 最近一段）；
+//   - 非交互：`-p/--prompt <text>`（配 `--json` 出机器可读结果）；
+//   - 权限：`--mode build|edit|plan|yolo|guarded`（`--prompt` 默认 yolo）。
+//
+// **未声明**的面（能力 = 已落地适配器的声明，未实现就不声明）：
+//   - mcp / plugins / skills / hooks：ZCode CLI 有 `plugins`、`skills`、`/mcp` 入口，
+//     但 aih 侧尚未接入投影，声明了就会出现「声称支持但无实现」的链路。
+func nativeZcode() *NativeCapability {
+	return &NativeCapability{
+		Config: NativeConfig{
+			EnvHomeKeys:     []string{"ZCODE_DATA_BASE_DIR"},
+			UserSettings:    []string{"provider_config.json"},
+			ProjectSettings: []string{},
+			CLIFlags:        []string{"--cwd", "--mode", "--resume", "--continue", "--prompt"},
+		},
+		Sessions: NativeSessions{
+			Flags:       []string{"--resume", "--continue"},
+			NativeStore: "cli/db/db.sqlite",
+		},
+		Permissions: NativePermissions{
+			Flags: []string{"--mode"},
+			Modes: []string{"build", "edit", "plan", "yolo", "guarded"},
+		},
+	}
+}
+
 // nativeCline 描述 Cline CLI 原生配置、会话和权限边界。
 //
 // 配置/状态两个根各有一个 env（CLINE_DIR / CLINE_DATA_DIR）与同名 CLI 参数

@@ -34,18 +34,76 @@ export function isInternalAccountLabel(value?: string) {
   return INTERNAL_ACCOUNT_LABEL_RE.test(normalized) || OPAQUE_UUID_LABEL_RE.test(normalized);
 }
 
-// 手机号类身份（z.ai 合成的 <phone>@phone.local、裸手机号/带区号手机号）在展示层
-// 脱敏为 189****1630 形式，避免截图泄露；复制等逻辑仍使用原始值。
+// z.ai 给手机号账号合成的**内部邮箱后缀**：`<phone>@phone.local`。
+// 它在界面上一无意义（不是真实可收信的域名），展示时整段去掉，只留手机号本身。
+const PHONE_LOCAL_SUFFIX_RE = /@phone\.local$/i;
+// 手机号类身份（`<phone>@phone.local`、裸手机号、带区号手机号）。
 const PHONE_LOCAL_EMAIL_RE = /^\+?[\d\s-]{5,}@phone\.local$/i;
 const BARE_PHONE_RE = /^\+?\d[\d\s-]{6,}\d$/;
 
+/** 手机号脱敏：`18997991630` → `189****1630`。 */
+function maskPhoneDigits(digits: string) {
+  return digits.length > 7
+    ? `${digits.slice(0, 3)}****${digits.slice(-4)}`
+    : `${digits.slice(0, 3)}****`;
+}
+
+/**
+ * **展示用**身份脱敏。目的：账号列表会被截图分享，原始邮箱/手机号不应直接暴露；
+ * 而复制按钮（onCopy）读的是账号记录里的**原始值**，不受这里影响。
+ *
+ * 规则：
+ *   * 手机号类（含 `@phone.local` 合成邮箱）→ `189****1630`，并**去掉
+ *     `@phone.local` 后缀**（它没有意义，留着只是噪音）；
+ *   * 普通邮箱 → 本地部分脱敏（`madou1217@126.com` → `ma****17@126.com`），
+ *     域名保留（域名是服务商信息，不是隐私，且有助于辨认）；
+ *   * 其它值原样返回。
+ */
 export function maskPhoneIdentity(value?: string) {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  if (!PHONE_LOCAL_EMAIL_RE.test(raw) && !BARE_PHONE_RE.test(raw)) return raw;
-  return raw.replace(/\d{7,}/g, (digits) =>
-    digits.length > 7 ? `${digits.slice(0, 3)}****${digits.slice(-4)}` : `${digits.slice(0, 3)}****`
-  );
+
+  // 1) 手机号类：`18997991630@phone.local` / 裸手机号。
+  if (PHONE_LOCAL_EMAIL_RE.test(raw) || BARE_PHONE_RE.test(raw)) {
+    const digits = raw.replace(PHONE_LOCAL_SUFFIX_RE, '');
+    return digits.replace(/\d{7,}/g, maskPhoneDigits);
+  }
+
+  // 2) 上游**已经打码**的邮箱（bigmodel 侧返回 `ma****17@126.com`）原样保留：
+  //    再打一次会变成 `ma****26@126.com`，比原文更难辨认。
+  if (isMaskedEmail(raw)) return raw;
+
+  // 3) 普通邮箱：本地部分脱敏，域名保留��
+  const at = raw.lastIndexOf('@');
+  if (at > 0) {
+    const local = raw.slice(0, at);
+    const domain = raw.slice(at + 1);
+    if (local && domain) return `${maskLocalPart(local)}@${domain}`;
+  }
+
+  return raw;
+}
+
+/**
+ * 邮箱本地部分脱敏：保留首 2 位与末 2 位，中间打码。
+ * 太短（≤4）时只保留首位，避免打码后长度反而暴露原文。
+ */
+function maskLocalPart(local: string) {
+  const value = String(local || '');
+  if (value.length <= 2) return `${value.slice(0, 1)}****`;
+  if (value.length <= 4) return `${value.slice(0, 1)}****${value.slice(-1)}`;
+  return `${value.slice(0, 2)}****${value.slice(-2)}`;
+}
+
+/**
+ * 上游已打码的邮箱原样保留（例如 bigmodel 侧返回的 `ma****17@126.com`）：
+ * 再打一次会变成 `ma****26@126.com` 这种更难认的形式。识别方式是本地部分已含 `*`。
+ */
+export function isMaskedEmail(value?: string) {
+  const raw = String(value || '').trim();
+  const at = raw.lastIndexOf('@');
+  if (at <= 0) return false;
+  return raw.slice(0, at).includes('*');
 }
 
 export function getBaseDomain(value?: string) {

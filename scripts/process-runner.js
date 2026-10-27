@@ -71,8 +71,18 @@ function runProcess(command, args = [], options = {}) {
       // our ends immediately and escalate the detached process group shortly.
       child.stdout?.destroy();
       child.stderr?.destroy();
-      if (killGraceMs === 0) terminateChild(child, 'SIGKILL');
-      else killTimer = setTimeout(() => terminateChild(child, 'SIGKILL'), killGraceMs);
+      if (killGraceMs === 0) {
+        terminateChild(child, 'SIGKILL');
+        // Native CLIs can leave descendants holding the stdio pipe after the
+        // direct child has been signalled.  The runner's contract is bounded
+        // supervision, so do not wait for a late `close` event in that case.
+        if (timedOut) finish({ status: null, signal: 'SIGKILL' });
+      } else {
+        killTimer = setTimeout(() => {
+          terminateChild(child, 'SIGKILL');
+          if (timedOut) finish({ status: null, signal: 'SIGKILL' });
+        }, killGraceMs);
+      }
     };
 
     const timeoutTimer = setTimeout(() => stop('timeout'), timeoutMs);

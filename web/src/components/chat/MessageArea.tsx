@@ -612,7 +612,9 @@ const MessageArea = ({
   // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
   const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
   const hasAccountModel = Boolean(effectiveSelectedModel);
-  const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
+  const hasPendingAttachments = addFiles.pending.length > 0;
+  const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && !hasPendingAttachments
+    && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
     && !embeddedSlashMatch;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

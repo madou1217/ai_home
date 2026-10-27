@@ -69,7 +69,7 @@ async function runCodexMcpDemo(binary = 'codex') {
     fs.mkdirSync(work, { recursive: true });
     fs.writeFileSync(path.join(work, filename), 'Native MCP directory evidence.\n');
     fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[model_providers.fixture]\nname = "Local MCP fixture"\nbase_url = "http://127.0.0.1:${server.address().port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
+    fs.writeFileSync(path.join(configDir, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[features]\nremote_plugin = false\n[model_providers.fixture]\nname = "Local MCP fixture"\nbase_url = "http://127.0.0.1:${server.address().port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
     const manager = createMcpManager({ aiHomeDir: path.join(root, 'aih'), hostHomeDir: host });
     manager.add('aih-demo', { command: process.execPath, args: [path.resolve(__dirname, '../examples/mcp/aih-demo-server.js')] }, { provider: 'codex' });
     manager.enable('aih-demo', { provider: 'codex' });

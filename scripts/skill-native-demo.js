@@ -25,7 +25,7 @@ const HOSTS = {
   codex({ host, url, prompt = 'Use the $aih-demo skill. Reply only as instructed by that skill.' }) {
     const config = path.join(host, '.codex');
     fs.mkdirSync(config, { recursive: true });
-    fs.writeFileSync(path.join(config, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[model_providers.fixture]\nname = "Local skill fixture"\nbase_url = "${url}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
+    fs.writeFileSync(path.join(config, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[features]\nremote_plugin = false\n[model_providers.fixture]\nname = "Local skill fixture"\nbase_url = "${url}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
     return { env: { CODEX_HOME: config }, args: ['exec', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json', prompt] };
   },
   opencode({ host, url }) {

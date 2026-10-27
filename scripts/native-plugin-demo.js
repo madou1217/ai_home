@@ -37,7 +37,16 @@ async function runNativePluginDemo() {
       } catch (_) { stages.push({ host: client.host, passed: false, error: 'native_host_demo_failed', status: demo.status }); }
       continue;
     }
-    const env={...process.env,HOME:host,USERPROFILE:host,CODEX_HOME:path.join(host,'.codex'),CLAUDE_CONFIG_DIR:path.join(host,'.claude'),XDG_CONFIG_HOME:path.join(host,'.config'),XDG_DATA_HOME:path.join(host,'.local/share'),XDG_CACHE_HOME:path.join(host,'.cache'),NO_PROXY:'127.0.0.1,localhost'};
+    const codexHome = path.join(host, '.codex');
+    const env={...process.env,HOME:host,USERPROFILE:host,CODEX_HOME:codexHome,CLAUDE_CONFIG_DIR:path.join(host,'.claude'),XDG_CONFIG_HOME:path.join(host,'.config'),XDG_DATA_HOME:path.join(host,'.local/share'),XDG_CACHE_HOME:path.join(host,'.cache'),NO_PROXY:'127.0.0.1,localhost'};
+    if (client.provider === 'codex') {
+      fs.mkdirSync(codexHome, { recursive: true });
+      const configPath = path.join(codexHome, 'config.toml');
+      const existing = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
+      if (!/^\[features\][\s\S]*?^remote_plugin\s*=/m.test(existing)) {
+        fs.writeFileSync(configPath, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}[features]\nremote_plugin = false\n`);
+      }
+    }
     const capability=manager.capability(client.provider);
     const runtime=await run(client.binary,client.version,env,root); if(capability.state==='unsupported') { stages.push({provider:client.provider,state:'unsupported',reason:capability.reason||'provider_not_registered',runtime:runtime.status===0?'available':'unavailable'}); continue; }
     if(runtime.status===null&&runtime.signal===null&&runtime.stderr.includes('ENOENT')) { stages.push({provider:client.provider,state:'runtime-unavailable',reason:'native_cli_missing'}); continue; }

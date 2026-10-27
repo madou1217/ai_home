@@ -1060,7 +1060,10 @@ const MessageArea = ({
             <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
             {/* 多模态附件画廊 */}
             <ComposerAttachmentGallery images={images} onRemove={removeImage}
-              documents={documents} onRemoveDocument={(index) => onDocumentsChange?.(documents.filter((_, i) => i !== index))} />
+              documents={documents} onRemoveDocument={(index) => onDocumentsChange?.(documents.filter((_, i) => i !== index))}
+              pending={addFiles.pending}
+              onRetryPending={(key) => { void addFiles.retryPending(key); }}
+              onRemovePending={addFiles.removePending} />
             <textarea
               ref={textareaRef}
               className={styles.inputTextarea}

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import styles from './composer/composer.module.css';
 import type { ChatDocumentAttachment } from './attachment-files';
+import type { PendingChatAttachment } from './use-chat-file-input';
 
 export interface ComposerAttachmentGalleryProps {
   images: string[];
@@ -9,6 +10,9 @@ export interface ComposerAttachmentGalleryProps {
   documents?: readonly ChatDocumentAttachment[];
   onRemoveDocument?: (index: number) => void;
   onRetryDocument?: (index: number) => void;
+  pending?: readonly PendingChatAttachment[];
+  onRetryPending?: (key: string) => void;
+  onRemovePending?: (key: string) => void;
 }
 
 /**
@@ -21,8 +25,11 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
   documents = [],
   onRemoveDocument,
   onRetryDocument,
+  pending = [],
+  onRetryPending,
+  onRemovePending,
 }: ComposerAttachmentGalleryProps) {
-  if (images.length === 0 && documents.length === 0) return null;
+  if (images.length === 0 && documents.length === 0 && pending.length === 0) return null;
 
   return (
     <div className={styles.attachmentGalleryRow} aria-label="待发送附件">
@@ -41,6 +48,25 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
           ) : null}
           <button type="button" className={styles.attachmentRemoveBadge}
             onClick={() => onRemoveDocument?.(index)} aria-label={`移除 ${document.name}`}>
+            <CloseOutlined style={{ fontSize: 9 }} />
+          </button>
+        </div>
+      ))}
+      {pending.map((attachment) => (
+        <div key={attachment.key} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={attachment.error || attachment.name} data-status={attachment.status}>
+          <FileTextOutlined className={styles.attachmentDocIcon} />
+          <span className={styles.attachmentDocumentName} title={attachment.error || attachment.name}>
+            {attachment.name}
+            <small>{formatBytes(attachment.size)} · {attachment.status === 'preparing' ? '准备中' : '失败'}{attachment.error ? ` · ${attachment.error}` : ''}</small>
+          </span>
+          {attachment.status === 'failed' && onRetryPending ? (
+            <button type="button" className={styles.attachmentRetryBadge}
+              onClick={() => onRetryPending(attachment.key)} aria-label={`重试 ${attachment.name}`}>
+              重试
+            </button>
+          ) : null}
+          <button type="button" className={styles.attachmentRemoveBadge}
+            onClick={() => onRemovePending?.(attachment.key)} aria-label={`移除 ${attachment.name}`}>
             <CloseOutlined style={{ fontSize: 9 }} />
           </button>
         </div>

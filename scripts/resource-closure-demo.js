@@ -88,7 +88,20 @@ async function runJsonCommand(args, timeoutMs) {
     cwd: ROOT,
     env: { ...process.env, NO_PROXY: '127.0.0.1,localhost' },
     timeoutMs,
-    maxOutput: 8 * 1024 * 1024
+    maxOutput: 8 * 1024 * 1024,
+    // Some native hosts keep a worker alive after emitting their complete
+    // JSON report and inherit the child's stdio pipes.  The report is the
+    // evidence boundary; once it parses as a successful report, stop the
+    // supervised process group so an idle worker cannot hold the aggregate
+    // run open indefinitely.
+    stopWhen: (output) => {
+      try {
+        const value = JSON.parse(String(output || '').trim());
+        return value && value.passed === true;
+      } catch (_error) {
+        return false;
+      }
+    }
   });
   const stdout = String(result.stdout || '').trim();
   const stderr = String(result.stderr || '').trim();
@@ -258,6 +271,34 @@ function indexMcp(report, evidence) {
   }
 }
 
+function indexNativeMcpLoop(report, evidence) {
+  if (!report || !report.host || report.resource !== 'mcp') return;
+  addEvidence(evidence, `provider:${report.host}:mcp`, {
+    source: `${report.host}-mcp-tool-loop-demo`,
+    passed: report.passed === true,
+    managementLifecycle: report.passed === true,
+    nativeUse: report.toolExecutionVerified === true,
+    version: report.version || null,
+    detail: report.toolExecutionVerified === true
+      ? 'native model/tool loop observed'
+      : 'native MCP loop not proven'
+  });
+}
+
+function indexNativePluginLoop(report, evidence) {
+  if (!report || !report.host || report.resource === 'mcp') return;
+  addEvidence(evidence, `host:${report.host}:plugin`, {
+    source: `${report.host}-plugin-tool-loop-demo`,
+    passed: report.passed === true,
+    managementLifecycle: report.passed === true,
+    nativeUse: report.toolExecutionVerified === true,
+    version: report.version || null,
+    detail: report.toolExecutionVerified === true
+      ? 'native plugin tool loop observed'
+      : 'native plugin loop not proven'
+  });
+}
+
 function indexGemini(report, evidence) {
   if (!report || report.host !== 'gemini') return;
   const passed = report.passed === true;
@@ -289,6 +330,20 @@ function indexWorkBuddy(report, evidence) {
       detail: resource === 'mcp' ? 'native connected and direct tools called' : 'native body/resource observed'
     });
   }
+}
+
+function indexWorkBuddyMcpLoop(report, evidence) {
+  if (!report || report.host !== 'workbuddy') return;
+  addEvidence(evidence, 'provider:workbuddy:mcp', {
+    source: 'workbuddy-mcp-tool-loop-demo',
+    passed: report.passed === true,
+    managementLifecycle: report.passed === true,
+    nativeUse: report.nativeAgentToolLoopVerified === true,
+    version: null,
+    detail: report.nativeAgentToolLoopVerified === true
+      ? 'native ToolSearch and deferred MCP tool loop observed'
+      : 'native deferred MCP loop not proven'
+  });
 }
 
 function summarizeResource(capability, entries) {
@@ -334,6 +389,20 @@ async function buildReport(options) {
     }
   }
   await run('mcp', ['scripts/mcp-native-demo.js'], indexMcp);
+  if (!options.skip.has('mcp')) {
+    for (const host of ['codex', 'claude', 'opencode', 'cline']) {
+      const result = await runJsonCommand([`scripts/${host}-mcp-tool-loop-demo.js`], options.timeoutMs);
+      demos.push({ id: `mcp-loop:${host}`, ...result });
+      if (result.value) indexNativeMcpLoop(result.value, evidence);
+    }
+  }
+  if (!options.skip.has('plugin')) {
+    for (const [host, script] of [['pi', 'pi-plugin-tool-loop-demo.js'], ['deepseek', 'deepseek-plugin-tool-loop-demo.js']]) {
+      const result = await runJsonCommand([`scripts/${script}`], options.timeoutMs);
+      demos.push({ id: `plugin-loop:${host}`, ...result });
+      if (result.value) indexNativePluginLoop(result.value, evidence);
+    }
+  }
   if (!options.skip.has('gemini')) {
     const binary = options.geminiBinary || (() => {
       const candidates = ['/tmp/aih-gemini-resource-runtime/node_modules/.bin/gemini', 'gemini'];
@@ -351,6 +420,9 @@ async function buildReport(options) {
     const result = await runJsonCommand(['scripts/workbuddy-resource-native-demo.js'], options.timeoutMs);
     demos.push({ id: 'workbuddy', ...result });
     if (result.value) indexWorkBuddy(result.value, evidence);
+    const mcpLoop = await runJsonCommand(['scripts/workbuddy-mcp-tool-loop-demo.js'], options.timeoutMs);
+    demos.push({ id: 'workbuddy-mcp-loop', ...mcpLoop });
+    if (mcpLoop.value) indexWorkBuddyMcpLoop(mcpLoop.value, evidence);
   }
   const importedProviderDemos = [
     ['codebuddy', options.codebuddyBinary],

@@ -1,6 +1,6 @@
 import { MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { ReactNode } from 'react';
+import { isValidElement, type ReactNode } from 'react';
 import type { ChatMessage, Provider } from '@/types';
 import MessageIconActions from './MessageIconActions';
 import { getProviderLabel } from './provider-registry';
@@ -32,6 +32,22 @@ function formatMessageTime(timestamp?: ChatMessage['timestamp']): string {
   return date.isValid() ? date.format('HH:mm') : '';
 }
 
+function textFromNode(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textFromNode).join('');
+  if (isValidElement<{ children?: ReactNode }>(node)) return textFromNode(node.props.children);
+  return '';
+}
+
+function formatProgressLabel(progress: ReactNode): ReactNode {
+  const text = textFromNode(progress).replace(/\s+/g, ' ').trim();
+  if (!text) return progress;
+  const state = text.match(/^(生成中|思考中|等待响应|正在停止|正在恢复连接|正在收尾)/)?.[1];
+  if (!state) return progress;
+  const seconds = text.match(/(?:已用时\s*)?(\d+(?:\.\d+)?)\s*(?:秒|s)/)?.[1];
+  return seconds === undefined ? progress : `${state} · ${Number(seconds).toFixed(1)}s`;
+}
+
 export default function MessageMetadata({
   role,
   timestamp,
@@ -55,6 +71,8 @@ export default function MessageMetadata({
   const durationLabel = progress ? '' : formatDurationLabel(metrics?.durationMs);
   const ttftLabel = progress ? '' : formatTtftLabel(metrics?.ttftMs);
   const tpsLabel = progress ? '' : formatTokensPerSecLabel(metrics?.tokensPerSec);
+  const progressLabel = progress ? formatProgressLabel(progress) : null;
+  const hasMetricSlot = role === 'assistant' && Boolean(progress || durationLabel || ttftLabel || tpsLabel);
 
   const alignmentClass = role === 'user'
     ? styles.messageMetaRowUser
@@ -86,31 +104,45 @@ export default function MessageMetadata({
             <MobileOutlined /> Codex Mobile
           </span>
         ) : null}
-        {role === 'assistant' && durationLabel ? (
+        {hasMetricSlot ? (
           <>
             <span aria-hidden="true">·</span>
-            <span className={styles.messageMetricItem} title={metrics?.durationMs === undefined ? undefined : `总用时 ${metrics.durationMs}ms`}>
-              用时 {durationLabel}
+            <span className={styles.messageMetricSlot}>
+              <span className={styles.messageMetricReserve} aria-hidden="true">
+                用时 99分钟 · 首字 99秒 · 999 tok/s
+              </span>
+              <span className={styles.messageMetricValue}>
+                {progressLabel ? (
+                  <span className={`${styles.messageMetricItem} ${styles.messageMetaProgress}`}>{progressLabel}</span>
+                ) : (
+                  <>
+                    {durationLabel ? (
+                      <span className={styles.messageMetricItem} title={metrics?.durationMs === undefined ? undefined : `总用时 ${metrics.durationMs}ms`}>
+                        用时 {durationLabel}
+                      </span>
+                    ) : null}
+                    {ttftLabel ? (
+                      <>
+                        <span aria-hidden="true"> · </span>
+                        <span className={styles.messageMetricItem} title={metrics?.ttftMs === undefined ? undefined : `首个思考或正文输出耗时 ${metrics.ttftMs}ms`}>
+                          首字 {ttftLabel}
+                        </span>
+                      </>
+                    ) : null}
+                    {tpsLabel ? (
+                      <>
+                        <span aria-hidden="true"> · </span>
+                        <span className={styles.messageMetricItem} title={metrics?.outputTokens === undefined ? undefined : `输出 ${metrics.outputTokens} tokens`}>
+                          {tpsLabel}
+                        </span>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </span>
             </span>
           </>
         ) : null}
-        {role === 'assistant' && ttftLabel ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className={styles.messageMetricItem} title={metrics?.ttftMs === undefined ? undefined : `首个思考或正文输出耗时 ${metrics.ttftMs}ms`}>
-              首字 {ttftLabel}
-            </span>
-          </>
-        ) : null}
-        {role === 'assistant' && tpsLabel ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className={styles.messageMetricItem} title={metrics?.outputTokens === undefined ? undefined : `输出 ${metrics.outputTokens} tokens`}>
-              {tpsLabel}
-            </span>
-          </>
-        ) : null}
-        {role === 'assistant' && progress ? <span className={`${styles.messageMetricItem} ${styles.messageMetaProgress}`}>{progress}</span> : null}
       </div>
       <div className={`${styles.messageMetaActions} ${actionsVisible ? styles.messageMetaActionsVisible : ''}`}>
         <MessageIconActions

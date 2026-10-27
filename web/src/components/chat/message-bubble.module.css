@@ -657,10 +657,28 @@
   white-space: nowrap;
 }
 
+.messageMetricSlot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.messageMetricReserve {
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.messageMetricValue {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .messageMetaProgress {
   display: inline-flex;
   align-items: center;
-  min-width: 9ch;
 }
 
 .messageMetaActions {

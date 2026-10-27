@@ -333,8 +333,8 @@ function indexWorkBuddy(report, evidence) {
 }
 
 function indexWorkBuddyMcpLoop(report, evidence) {
-  if (!report || report.host !== 'workbuddy') return;
-  addEvidence(evidence, 'provider:workbuddy:mcp', {
+  if (!report || !report.host) return;
+  addEvidence(evidence, `provider:${report.host}:mcp`, {
     source: 'workbuddy-mcp-tool-loop-demo',
     passed: report.passed === true,
     managementLifecycle: report.passed === true,
@@ -438,6 +438,13 @@ async function buildReport(options) {
     ], options.timeoutMs);
     demos.push({ id: provider, ...result });
     if (result.value) indexWorkBuddy(result.value, evidence);
+    const mcpLoop = await runJsonCommand([
+      'scripts/workbuddy-mcp-tool-loop-demo.js',
+      binary,
+      '--provider', provider
+    ], options.timeoutMs);
+    demos.push({ id: `${provider}-mcp-loop`, ...mcpLoop });
+    if (mcpLoop.value) indexWorkBuddyMcpLoop(mcpLoop.value, evidence);
   }
 
   const providers = (capabilities.providers || []).map(row => ({

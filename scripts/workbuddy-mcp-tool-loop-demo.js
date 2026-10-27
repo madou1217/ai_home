@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createMcpManager } = require('../lib/native-resources/mcp-manager');
 const { resolveProviderResourceRuntime, nativeResourceEnvironment } = require('../lib/native-resources/provider-native-runtime');
+const { resolveProviderNativeRoot } = require('../lib/runtime/provider-storage-policy');
 const { runProcess } = require('./process-runner');
 
 const MCP_SERVER = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
@@ -174,19 +175,19 @@ async function runStage(runtime, env, cwd, configPath, fixture) {
   };
 }
 
-async function runWorkbuddyMcpDemo(binary) {
+async function runWorkbuddyMcpDemo(binary, provider = 'workbuddy') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-workbuddy-mcp-'));
   const hostHomeDir = path.join(root, 'home');
   const aiHomeDir = path.join(root, 'aih');
   fs.mkdirSync(hostHomeDir, { recursive: true });
-  const runtime = resolveProviderResourceRuntime('workbuddy', {
+  const runtime = resolveProviderResourceRuntime(provider, {
     hostHomeDir,
-    nativeBinaries: binary ? { workbuddy: binary } : undefined
+    nativeBinaries: binary ? { [provider]: binary } : undefined
   });
   assert.ok(runtime, 'workbuddy_native_runtime_required');
   const fixture = createFixture();
   await new Promise((resolve) => fixture.server.listen(0, '127.0.0.1', resolve));
-  const baseEnv = nativeResourceEnvironment('workbuddy', {
+  const baseEnv = nativeResourceEnvironment(provider, {
     hostHomeDir,
     env: { PATH: process.env.PATH }
   }, runtime);
@@ -198,20 +199,23 @@ async function runWorkbuddyMcpDemo(binary) {
   };
   const manager = createMcpManager({ aiHomeDir, hostHomeDir });
   try {
-    manager.add('aih-demo', { command: process.execPath, args: [MCP_SERVER] }, { provider: 'workbuddy' });
-    const direct = await manager.test('aih-demo', { provider: 'workbuddy' });
-    const tools = await manager.tools('aih-demo', { provider: 'workbuddy' });
-    const call = await manager.call('aih-demo', 'aih_echo', { text: 'AIH_RESOURCE_MCP_OK' }, { provider: 'workbuddy' });
+    manager.add('aih-demo', { command: process.execPath, args: [MCP_SERVER] }, { provider });
+    const direct = await manager.test('aih-demo', { provider });
+    const tools = await manager.tools('aih-demo', { provider });
+    const call = await manager.call('aih-demo', 'aih_echo', { text: 'AIH_RESOURCE_MCP_OK' }, { provider });
     assert.deepEqual(tools.map((tool) => tool.name), ['aih_echo', 'aih_list_files']);
     assert.equal(call.content?.[0]?.text, 'AIH_RESOURCE_MCP_OK');
     const stages = [];
-    const configPath = path.join(hostHomeDir, '.workbuddy-ai', '.codebuddy.json');
-    manager.enable('aih-demo', { provider: 'workbuddy' });
+    const configRoot = resolveProviderNativeRoot(hostHomeDir, provider);
+    const configPath = provider === 'workbuddy'
+      ? path.join(configRoot, '.codebuddy.json')
+      : path.join(configRoot, '.mcp.json');
+    manager.enable('aih-demo', { provider });
     for (const stage of ['enabled', 'disabled', 're-enabled', 'removed']) {
-      if (stage === 'enabled') manager.enable('aih-demo', { provider: 'workbuddy' });
-      if (stage === 'disabled') manager.disable('aih-demo', { provider: 'workbuddy' });
-      if (stage === 're-enabled') manager.enable('aih-demo', { provider: 'workbuddy' });
-      if (stage === 'removed') manager.remove('aih-demo', { provider: 'workbuddy' });
+      if (stage === 'enabled') manager.enable('aih-demo', { provider });
+      if (stage === 'disabled') manager.disable('aih-demo', { provider });
+      if (stage === 're-enabled') manager.enable('aih-demo', { provider });
+      if (stage === 'removed') manager.remove('aih-demo', { provider });
       fixture.observations.length = 0;
       const expected = stage === 'enabled' || stage === 're-enabled';
       fixture.setEnabled(expected);
@@ -226,7 +230,7 @@ async function runWorkbuddyMcpDemo(binary) {
       stages.push({ stage, ...evidence, expectedEnabled: expected, nativeAgentToolLoopVerified: expected && evidence.answer === MARKER, passed: true });
     }
     const report = {
-      host: 'workbuddy',
+      host: provider,
       resource: 'mcp',
       binary: runtime.command,
       runtimeSource: runtime.source,
@@ -245,8 +249,12 @@ async function runWorkbuddyMcpDemo(binary) {
 }
 
 if (require.main === module) {
-  if (process.argv.includes('--help')) console.log('Usage: node scripts/workbuddy-mcp-tool-loop-demo.js [native-cli-path]');
-  else runWorkbuddyMcpDemo(process.argv[2]).then((report) => console.log(JSON.stringify(report, null, 2))).catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });
+  if (process.argv.includes('--help')) console.log('Usage: node scripts/workbuddy-mcp-tool-loop-demo.js [native-cli-path] [--provider workbuddy|codebuddy|codebuddycn]');
+  else {
+    const providerIndex = process.argv.indexOf('--provider');
+    const provider = providerIndex >= 0 ? process.argv[providerIndex + 1] : 'workbuddy';
+    runWorkbuddyMcpDemo(process.argv[2], provider).then((report) => console.log(JSON.stringify(report, null, 2))).catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });
+  }
 }
 
 module.exports = { runWorkbuddyMcpDemo };

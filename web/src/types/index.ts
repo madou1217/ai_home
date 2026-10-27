@@ -152,7 +152,10 @@ export type AccountUsageSnapshot =
       kind: 'zcode_plan_balance';
       capturedAt: number;
       account?: {
-        planType: string; // 套餐名，如 ZCode Start Plan
+        planType: string; // 首个套餐名（兼容旧消费方；多套餐请用 planNames）
+        // 多套餐时**逐个**给出套餐名。展示层据此渲染多个标签，
+        // 不解析 `A + B` 拼接串（拼接串宽度不稳定且在窄列会被截断）。
+        planNames?: string[];
         planIds?: string[]; // 推理端点按 plan_id 分叉（start-plan vs coding-plan）
       } | null;
       entries: CodexUsageEntry[]; // bucket = 模型 ID（billing/balance 的 capabilities model:*）

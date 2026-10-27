@@ -360,11 +360,16 @@ export function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMo
   );
 }
 
-export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
-  // 认证方式只展示一次，避免密钥模式在账号行里重复出现。
-  if (record.apiKeyMode) return '密钥';
-  // kimi 等 provider 有订阅页品牌档（Allegretto 等），优先于 LEVEL_* 枚举值。
-  return record.planName || record.planType || 'free';
+/**
+ * 单个套餐标签（多套餐场景请用 getPlanTagLabels）。
+ *
+ * **不再回退到拼接的 planType**：zcode 叠加套餐时后端把展示名拼成
+ * `A + B` 塞进 planType，直接返回它会让调用方（移动端行/详情页）显示那串
+ * `+` 拼接——用户明确要求拆开。这里改为返回**第一个**套餐名，
+ * 需要全部时用 getPlanTagLabels()。
+ */
+export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>) {
+  return getPlanTagLabels(record)[0] || 'free';
 }
 
 /**
@@ -386,6 +391,14 @@ export function getPlanTagLabels(
   if (record.apiKeyMode) return ['密钥'];
   // 1. 结构化套餐分组。
   const snapshot = record.usageSnapshot;
+  // 0. 服务端**已经拆好的**套餐名列表（最直接，不依赖 planGroups 是否随 payload 下发）。
+  const rawPlanNames = snapshot && typeof snapshot === 'object' && 'account' in snapshot
+    ? (snapshot.account as { planNames?: unknown } | null | undefined)?.planNames
+    : undefined;
+  const accountPlanNames = Array.isArray(rawPlanNames)
+    ? rawPlanNames.map((n) => String(n || '').trim()).filter(Boolean)
+    : [];
+  if (accountPlanNames.length > 0) return Array.from(new Set(accountPlanNames));
   const groups = snapshot && typeof snapshot === 'object' && 'planGroups' in snapshot
     && Array.isArray(snapshot.planGroups) ? snapshot.planGroups : [];
   const groupNames = groups

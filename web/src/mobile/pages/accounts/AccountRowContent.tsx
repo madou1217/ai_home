@@ -3,7 +3,7 @@ import AccountActivityIcon from '@/features/accounts/AccountActivityIcon';
 import {
   getAccountDisplayBadgeMeta,
   getAccountPrimaryLabel,
-  getPlanTagLabel,
+  getPlanTagLabels,
   getQuotaStateMeta
 } from '@/features/accounts/AccountBadges';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
@@ -42,7 +42,8 @@ export default function AccountRowContent({ record, activity, removing, desktopR
   const remaining = record.apiKeyMode ? null : getEffectiveRemainingPct(record);
   const meta = [
     providerNames[record.provider] || record.provider,
-    getPlanTagLabel(record),
+    // 多套餐逐个列出（不再用 `A + B` 的拼接串，见 getPlanTagLabels）。
+    ...getPlanTagLabels(record),
     record.isDefault ? '默认' : '',
     record.isMobile ? 'APP' : '',
     desktopRunning ? 'DESKTOP' : ''

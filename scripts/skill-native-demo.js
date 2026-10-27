@@ -25,7 +25,7 @@ const HOSTS = {
   codex({ host, url, prompt = 'Use the $aih-demo skill. Reply only as instructed by that skill.' }) {
     const config = path.join(host, '.codex');
     fs.mkdirSync(config, { recursive: true });
-    fs.writeFileSync(path.join(config, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[model_providers.fixture]\nname = "Local skill fixture"\nbase_url = "${url}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
+    fs.writeFileSync(path.join(config, 'config.toml'), `model = "fixture-model"\nmodel_provider = "fixture"\n[features]\nremote_plugin = false\n[model_providers.fixture]\nname = "Local skill fixture"\nbase_url = "${url}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n`);
     return { env: { CODEX_HOME: config }, args: ['exec', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--json', prompt] };
   },
   opencode({ host, url }) {
@@ -40,14 +40,47 @@ function run(binary, args, options) {
     const child = spawn(binary, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     let output = '';
     let timedOut = false;
+    let stoppedEarly = false;
+    let stopTimer = null;
+    let settled = false;
+    const terminateChild = (signal = 'SIGTERM') => {
+      try {
+        if (process.platform === 'win32') child.kill();
+        else process.kill(-child.pid, signal);
+      } catch (_) {
+        try { child.kill(); } catch (_error) {}
+      }
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (stopTimer && !stoppedEarly) clearTimeout(stopTimer);
+      resolve(result);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
       try { if (process.platform === 'win32') child.kill(); else process.kill(-child.pid, 'SIGKILL'); } catch (_) {}
     }, 45000);
-    child.stdout.on('data', (chunk) => { output = (output + chunk).slice(-256000); });
+    child.stdout.on('data', (chunk) => {
+      output = (output + chunk).slice(-256000);
+      if (!stoppedEarly && typeof options.stopWhen === 'function' && options.stopWhen(output)) {
+        stoppedEarly = true;
+        // The result event is already complete in this chunk. Terminate the
+        // supervised process group before resolving so a native worker that
+        // remains alive after a completed request cannot keep the probe (or an
+        // aggregate closure run) open indefinitely.
+        terminateChild();
+        // The result event itself is the evidence boundary. Do not wait for a
+        // host worker that intentionally remains alive after the result.
+        finish({ exitCode: 0, timedOut: false, output, stoppedEarly });
+      }
+    });
     child.stderr.resume();
-    child.on('error', (error) => { clearTimeout(timer); resolve({ exitCode: null, error: error.code, marker: false }); });
-    child.on('close', (exitCode) => { clearTimeout(timer); resolve({ exitCode, timedOut, output }); });
+    child.on('error', (error) => { finish({ exitCode: stoppedEarly ? 0 : null, error: error.code, marker: false, stoppedEarly }); });
+    child.on('close', (exitCode) => {
+      finish({ exitCode: stoppedEarly ? 0 : exitCode, timedOut, output, stoppedEarly });
+    });
   });
 }
 async function runSkillNativeDemo({ provider, binary = provider }) {

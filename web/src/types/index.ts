@@ -152,7 +152,10 @@ export type AccountUsageSnapshot =
       kind: 'zcode_plan_balance';
       capturedAt: number;
       account?: {
-        planType: string; // 套餐名，如 ZCode Start Plan
+        planType: string; // 首个套餐名（兼容旧消费方；多套餐请用 planNames）
+        // 多套餐时**逐个**给出套餐名。展示层据此渲染多个标签，
+        // 不解析 `A + B` 拼接串（拼接串宽度不稳定且在窄列会被截断）。
+        planNames?: string[];
         planIds?: string[]; // 推理端点按 plan_id 分叉（start-plan vs coding-plan）
       } | null;
       entries: CodexUsageEntry[]; // bucket = 模型 ID（billing/balance 的 capabilities model:*）
@@ -302,7 +305,14 @@ export interface Account {
   lastUsedAt?: number | null;
   planType: string; // free/pro/ultra/plus/team/business/api-key/oauth
   planName?: string; // 订阅品牌档（如 kimi 的 Allegretto），展示优先于 planType
-  region?: AccountRegion; // 当前账号客户端实际生效区域
+  region?: AccountRegion; // 当前账号客户端实际生效区域（kimi 的网络区域：china/overseas）
+  /**
+   * zcode 的**服务区域**：`zai`（国际站）/ `bigmodel`（国内站）。
+   * 与上面的 region 语义不同（那是网络区域），因此单独一个字段。
+   * 用途：同一用户可能在两个区域都有账号、邮箱相同或被上游打码，
+   * 账号列表靠它区分（见 lib/account/zcode-account-region.js）。
+   */
+  zcodeRegion?: string;
   email: string;
   baseUrl?: string;
   /**
@@ -2776,6 +2786,100 @@ export interface ConnectivityResponse {
   networkLayer?: NetworkLayerStatus;
   error?: string;
   results: ConnectivityTargetResult[];
+}
+
+export type NativeResourceKind = 'plugin' | 'skill' | 'mcp';
+export type NativeResourceAction = 'install' | 'enable' | 'disable' | 'remove' | 'test' | 'tools' | 'call' | 'demo';
+
+export interface NativeResourceManagedRecord {
+  kind: NativeResourceKind;
+  id: string;
+  provider?: string;
+  host?: string;
+  enabled?: boolean;
+  removed?: boolean;
+  target?: string;
+  mode?: string;
+  digest?: string;
+  projection?: string;
+  command?: string;
+  argCount?: number;
+  envKeys?: string[];
+}
+
+export interface NativeResourceCapability {
+  state: string;
+  reason?: string;
+  commands?: string[];
+  paths?: string[];
+  mode?: string;
+  adapter?: string;
+  projection?: { path?: string; format?: string; [key: string]: unknown };
+  managed: NativeResourceManagedRecord[];
+  demo: { source?: string; command: string; args?: string[] };
+}
+
+export interface NativeResourceProviderRow {
+  provider: string;
+  runtime: { available: boolean; version?: string; binary?: string; reason?: string; [key: string]: unknown };
+  resources: Record<NativeResourceKind, NativeResourceCapability>;
+}
+
+export interface NativeResourceHostRow {
+  host: string;
+  state: string;
+  reason?: string;
+  runtime?: { available?: boolean; versionObserved?: string; [key: string]: unknown };
+  resources: { plugin: NativeResourceCapability };
+}
+
+export interface NativeResourceReport {
+  ok: boolean;
+  source: string;
+  providers: NativeResourceProviderRow[];
+  hosts: NativeResourceHostRow[];
+  managed: Record<NativeResourceKind, NativeResourceManagedRecord[]>;
+  lifecycle: string[];
+  evidenceBoundary: string;
+}
+
+export interface NativeResourceDemoResult {
+  command: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AihPluginInstalled {
+  pluginId: string;
+  version: string;
+  digest: string;
+  installedAt: number;
+  signature?: { status?: string; keyId?: string; [key: string]: unknown };
+  permissions?: Record<string, unknown> | null;
+  contributes?: string[];
+}
+
+export interface AihPluginInstance {
+  instanceId: string;
+  pluginId: string;
+  version: string;
+  enabled: boolean;
+  configurationKeys?: string[];
+  permissionsAcceptedAt?: number | null;
+  updatedAt?: number;
+}
+
+export interface AihPluginReport {
+  ok: boolean;
+  revision: number;
+  installed: AihPluginInstalled[];
+  instances: AihPluginInstance[];
+  runtime?: Record<string, unknown> | null;
+}
+
+export interface AihPluginDoctorReport extends AihPluginReport {
+  issues?: Array<Record<string, unknown>>;
+  warnings?: Array<Record<string, unknown>>;
+  capabilities?: Record<string, number>;
 }
 
 export interface ChatMessage {

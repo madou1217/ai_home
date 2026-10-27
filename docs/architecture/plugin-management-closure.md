@@ -2,6 +2,10 @@
 
 状态：实现闭环证据（能力子集先行；未验证宿主保持显式边界）
 
+统一入口：`npm run resources:closure`（或 `node scripts/resource-closure-demo.js --json`）。
+它组合本文件列出的宿主 demo 与 provider capability，逐项输出 Plugin、Skill、MCP
+的 management/use 证据和 gaps；聚合命令通过不等于所有 provider 已完成。
+
 本文件记录插件、Skill、MCP 和原生 provider 管理的实际闭环证据。每个资源必须证明安装/投影、启用、实际使用、停用和移除；静态 manifest 或目录存在不能单独证明完成。
 
 用户入口：[插件、Skill、MCP 与原生插件快速上手](../demos/plugin-skill-mcp-quickstart.md)。跨宿主设计：[Universal Agent Plugin Architecture](../superpowers/specs/2026-10-25-universal-agent-plugin-design.md)。
@@ -176,15 +180,37 @@ The first subset supports declared `lifecycle@1` and `tool.register@1`; required
 unknown capabilities or adapter/transport versions are rejected. AIH tools map
 to `command` contributions, not an AIH model-selected tool registry. The common
 SDK publication, other Portable ports, hot upgrades and complete M1 migration
-remain separate work. The aggregate native demo now includes this sixth host.
+remain separate work. The aggregate native demo now includes this AIH host and
+the WorkBuddy provider runtime as a seventh resource lane.
 
 Independent review reproduced and closed two contract issues before integration:
 the reader now uses AIH's dotted IDs and artifact limits (a 5 MiB, 274-file
 package passed), and canonical transport 2 is checked against the real RPC
 contract independently of legacy manifest protocol 1. A changed virtual manifest
 byte fails digest verification. The corrected nine-stage Node 26 demo was also
-rerun independently. The final six-host aggregate and original 105-test Node 22
+rerun independently. The final seven-lane aggregate and original 105-test Node 22
 regression suite pass, with no new test files.
+
+### WorkBuddy native resource follow-up (2026-10-26)
+
+```sh
+node scripts/workbuddy-resource-native-demo.js
+```
+
+WorkBuddy AI 2.161.0 ships a CodeBuddy runtime inside the installed app. The
+descriptor selects its lite bundle through the declared bundled runtime handler;
+it is not misreported as a standalone CLI installation. The native plugin
+adapter owns an AIH marketplace and uses WorkBuddy's real marketplace registry,
+so the native `plugin list` row appears only after marketplace installation.
+Disable/uninstall, re-enable and marketplace removal are checked against the
+returned install path and owned package digest.
+
+The demo passes four plugin stages and four separate Skill stages. Positive
+stages send the installed body to a deterministic local fixture and return
+`AIH_PLUGIN_DEMO_OK` / `AIH_SKILL_DEMO_OK`; negative stages send neither. MCP
+uses the observed `.codebuddy.json` JSON-stdio projection, finds `aih_echo` and
+`aih_list_files`, performs a real `WORKBUDDY_MCP_OK` call, and verifies native
+MCP reports the server connected.
 
 The deterministic harness is:
 
@@ -355,11 +381,108 @@ has a reason. The checked-in matrix is [provider-resource-closure-matrix.md](pro
 The CLI composition root now resolves these executables with the same
 `resolveProviderCliPath` facade used by native launches. Descriptor binary names
 and managed install roots are honored; a provider ID is not assumed to be its
-command name. The current machine resolves Codex, Claude, OpenCode and Cline.
-Other provider runtime rows remain unavailable until a native runtime can be
-resolved and its version probe succeeds; capability declarations are independent.
+command name. The current machine resolves Codex, Claude, OpenCode and Cline as
+standalone CLIs, plus WorkBuddy through its installed desktop bundle. Other
+provider runtime rows remain unavailable until a native runtime can be resolved
+and its version probe succeeds; capability declarations are independent.
 
-## Final verification checkpoint (2026-10-26)
+## DeepSeek official headless tool loop (2026-10-27)
+
+`node scripts/deepseek-plugin-tool-loop-demo.js` uses the real AIH CLI to
+install/disable/enable/remove the canonical package, resolves that same managed
+state through `buildManagedHostPluginArgs`, and runs the installed DSH
+0.2.1-rc.2 CLI against an isolated official `dsh-base + dsh-headless` profile.
+Node 22 and the existing `resolveDshNodePath` helper provide its native module
+lookup. No installed runtime or `lib/harness/` source is modified.
+
+The local Chat Completions fixture is shared with the Pi demo. Enabled and
+re-enabled each produce two requests, an `aih_demo` tool call, a completed
+native result event containing the unchanged shared core's result, that result
+in the following request and the exact final answer. Disabled and removed each
+produce one request with no plugin tool and return `PLUGIN_NOT_LOADED`.
+Telemetry and auxiliary title generation are disabled in this temporary profile.
+The existing DSH managed SDK/profile/cleanup runner includes the new headless
+loop while keeping those evidence layers explicitly separate.
+
+This proves official headless execution of AIH-managed patches, not the existing
+AIH Web profile's model loop or DSH Web/TUI parity. Those remain outstanding.
+
+## Pi native CLI tool loop (2026-10-27)
+
+`node scripts/pi-plugin-tool-loop-demo.js` invokes the actual AIH CLI host
+lifecycle, then runs Pi 0.84.4 with the exact account-specific arguments and
+environment returned by `preparePiHarness` for that same managed state. It uses
+an isolated HOME, the unchanged canonical demo package, and a local Chat
+Completions fixture. All four managed lifecycle stages
+pass. Enabled/re-enabled each require two requests, a native
+`tool_execution_end` event with the shared core result, the exact result in the
+next model request, and the final assistant message. Disabled/removed each send
+one request without the tool schema or execution event and return
+`PLUGIN_NOT_LOADED`. A nonzero exit, timeout, absent request or fixture error
+fails the probe.
+
+`pi-plugin-native-demo.js --managed` now includes this loop in addition to its
+existing SDK loader/command/shutdown and account-launch-argument checks. The
+combined runner passes under Node 22.23.2; the standalone loop also passes under
+Node 26.12.1. The existing regression suite remains 111/111 and provider contract
+check passes. This closes the Pi headless agent-loop evidence gap; TUI/RPC and
+DSH Web model-loop evidence remain separate. No `lib/harness/` code is changed.
+
+## WorkBuddy ownership hardening checkpoint (2026-10-27)
+
+The WorkBuddy marketplace adapter now uses a distinct deterministic marketplace
+per AIH home/provider/plugin. Its ownership helper validates the complete local
+marketplace tree, native install path and bounded regular JSON registry files
+before native operations. This is necessary because WorkBuddy itself turns a
+malformed `installed_plugins.json` into an empty successful list and may overwrite
+that malformed registry on install. AIH rejects that state instead.
+
+Disable/enable uses native toggles and retains plugin data. Remove uses native
+uninstall with `--keep-data`, removes the owned marketplace even after disable,
+and validates the observed `.orphaned_at` timestamp before deleting the remaining
+cache. Legacy directory-only projections are unhealthy while enabled; reinstall
+migrates a matching owned package into the actual marketplace and then removes
+the old directory. Draft installations using the old fixed marketplace name are
+explicitly rejected for migration rather than silently adopted.
+
+Fresh isolated evidence: `/tmp/aih-workbuddy-hardened-demo.json` proves plugin and
+Skill enable/disable/re-enable/remove with zero exit, no timeout, a real native
+request and exact final result in every stage, plus native MCP Connected and two
+AIH stdio calls. `/tmp/aih-workbuddy-ownership-evidence-final.log` records 16 real
+checks including two simultaneous plugins, edited/foreign/oversize/symlink state,
+malformed installation/settings files preserved on refusal, native command
+failure, external disable recovery, remove after disable and legacy migration.
+The seven-lane aggregate passed on Node 22.23.2; the existing 105 checks passed on
+Node 22.23.2 and Node 26.12.1. No test files or web source were added or changed.
+
+Independent review found the malformed-registry issue and a Codex macOS
+`/tmp`/`/private/tmp` path-normalization regression; both were corrected, and the
+reviewer independently re-ran those cases successfully. Follow-up review also
+reproduced a version replacement defect: the new package had been used to verify
+the old marketplace. The manager now supplies the verified old snapshot for
+cleanup and delegates marketplace replacement to its adapter. A real
+`1.0.0` to `1.0.1` upgrade passed. A foreign new-version target is rejected before
+removing the old installation; independent verification preserved both the old
+healthy installation and the foreign sentinel.
+
+Malformed native manifests exposed another vendor behavior: native validation
+can succeed, install records an `unknown` version, and native list hides that
+broken row. AIH now parses the immutable package's native manifest and requires
+its name/version to match the canonical package before mutation. A fresh invalid
+upgrade probe confirmed rejection with the previous installation still healthy.
+Replacement includes best-effort compensation for runtime failures, but arbitrary
+mid-command failures are not claimed to be transactionally reversible.
+
+After merging concurrent main changes into the existing worktree, the original
+suite now has 111 passing checks on Node 22.23.2, all seven aggregate lanes pass,
+and provider contract/help/doctor checks pass. The WorkBuddy checkpoint was
+integrated and pushed as `fe2a3ed7`, preserving concurrent changes; main and
+origin/main were equal at verification. A final focused independent review found
+no remaining Critical/Important issue after the fixes. Remaining provider gaps
+are still outstanding; these seven lanes do not establish all-provider closure
+or model-driven MCP tool selection on WorkBuddy.
+
+## Earlier verification checkpoint (2026-10-26)
 
 The 173-test counts below are historical results from the earlier task
 checkpoints. This task had added 13 test files despite the user's no-new-tests
@@ -371,11 +494,12 @@ Fresh checks after removing those files: Node 22.21.0 original regression suite
 103 passed, 0 failed; AIH pack/install/enable/call/restart/disable/uninstall/doctor
 passed; Codex/Claude/OpenCode skill demos each passed four stages; the MCP demo
 passed native discovery/configuration plus two AIH stdio tool calls for each of
-Codex/Claude/OpenCode/Cline. The five-host native plugin aggregate passed,
+Codex/Claude/OpenCode/Cline. The native plugin aggregate passed across the
+original hosts plus WorkBuddy,
 including the OpenCode tool loop and Pi/DSH managed SDK execution described above.
 
 Integration into `main` preserved its concurrent changes. The integrated Node 22
-suite passes 105 tests, the five-host native aggregate passes again, provider
+suite passes 105 tests, the seven-lane native aggregate passes again, provider
 contract generation/check passes, and native-plugin/skill/MCP CLI help exits
 successfully. Relative to the pre-integration `main`, this task changes no
 `web/` source or existing test file.
@@ -383,7 +507,7 @@ successfully. Relative to the pre-integration `main`, this task changes no
 Fresh runs on this branch:
 
 ```sh
-node --test test/*.test.js                         # 173 passed, 0 failed
+node --test test/*.test.js                         # current original suite: 105 passed
 npm run providers:check                            # passed
 node scripts/plugin-closure-demo.js --json         # passed
 node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local/bin/claude
@@ -391,6 +515,7 @@ node scripts/skill-native-demo.js --provider codex --binary /Users/model/.codex/
 node scripts/skill-native-demo.js --provider opencode --binary /Users/model/Library/pnpm/bin/opencode
 node scripts/mcp-native-demo.js                    # Codex/Claude/OpenCode/Cline passed
 node scripts/native-plugin-demo.js                 # Codex/Claude/OpenCode passed
+node scripts/workbuddy-resource-native-demo.js     # WorkBuddy plugin/Skill/MCP passed
 node bin/ai-home.js provider doctor --json         # healthy, 16 providers, 4 host rows
 ```
 
@@ -407,21 +532,26 @@ Overall closure status is now:
   native use proven for Codex, Claude and OpenCode.
 - Managed MCP: complete for Codex, Claude, OpenCode and Cline; provider-specific
   account projection and native config loading proven.
+- WorkBuddy: native marketplace plugin, Skill and `.codebuddy.json` MCP execution
+  all pass isolated positive/negative or connected stages on the installed lite
+  runtime.
 - Native plugins: Codex/Claude bundled skills and the OpenCode shared-core tool
   loop pass all four stages. Pi/DSH unified host management, native SDK tools,
   cleanup and account-isolated launch propagation are runtime-proven above.
+  Pi additionally passes the native headless CLI tool loop across all four stages.
 - Remaining provider resource projections retain their explicit capability and
   runtime status; this does not establish behavior on every installed provider.
 - Canonical-to-AIH artifact subset: the same package's shared core is now called
   through a signed artifact and supervised Host. Full common SDK extraction and
   the remaining M1 migration gates are distinct from this proven subset.
 
-No claim of full cross-host parity is made for OpenCode TUI/RPC or Pi/DSH
-model-selected agent loops. The native SDK execution subset is proven separately.
+No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DSH
+Web/TUI model-selected agent loop. Pi and DSH headless inference use a deterministic local
+model fixture; this proves runtime execution, not a remote model's tool-selection quality.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
 (`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,
-`cordis-patch`).
+`cordis-patch`, `native-marketplace`).
 The manager contains no provider-name execution branches. Codex marketplace paths,
 OpenCode JSON/JSONC selection, foreign-target protection, semver validation,
 snapshot tamper detection, and native remove/re-enable behavior were checked by
@@ -441,3 +571,220 @@ The canonical fixture has `agentPlugin.engines.deepseek`, `exports["./deepseek"]
 `host-projection.json` and copies the package. This proves imported host shape and
 projection. Native execution on the installed DeepSeek Harness and Pi packages
 is proven separately by the managed follow-up demos above.
+
+## CodeBuddy / CodeBuddy CN resource follow-up (2026-10-27)
+
+Official `@tencent-ai/codebuddy-code@2.177.0` was installed in an isolated `/tmp`
+prefix for verification, without changing the user's global CLI installation.
+Both `codebuddy` and `codebuddycn` use the existing native marketplace adapter.
+The CN runtime supplies the vendor's two `internal` region values; config roots
+remain `.codebuddy` and `.codebuddy-cn`. This proves local config and execution
+selection, not live CN account authentication.
+
+The first real plugin-use probe failed despite successful installation/listing: the
+new CLI can advertise plugin skills through its native `Skill` tool rather than
+directly expanding the prompt. Repeated CN runs also showed direct expansion, so
+the demo records the actual loading mode instead of assuming a fixed mechanism.
+The local fixture now requests `Skill({skill: "aih-demo"})`
+only when that skill is advertised, and returns success only after the following
+model request contains the installed body. When a native Skill call is requested,
+the demo requires exactly two requests
+with body observations `[false, true]`. Direct expansion requires one request
+with the expected body. Disabled/removed stages require one request without body
+or Skill invocation. `loadingMode` distinguishes these outcomes in the evidence.
+Standalone Skill stages retain their direct expansion.
+All stages require a successful native process exit, no timeout and an exact final
+answer. A `native-skill-tool` result proves the native tool loop; a
+`direct-expansion` result proves prompt loading. Both use a deterministic local
+model fixture and do not establish remote model reasoning.
+
+CodeBuddy 2.177.0 reads MCP from `.mcp.json`; WorkBuddy AI's bundled 2.161.0
+reads `.codebuddy.json`. Their descriptors now keep these facts separate. The
+shared `scripts/workbuddy-resource-native-demo.js` accepts `--provider` and
+`--binary`, exercises both resource lifecycles and two actual AIH stdio MCP calls,
+and checks native MCP Connected plus absence after disable. Model-selected native
+MCP calls and WorkBuddy CN remain unverified. Other versions require fresh probes.
+
+## WorkBuddy deferred MCP model/tool loop (2026-10-27)
+
+`node scripts/workbuddy-mcp-tool-loop-demo.js` closes the remaining WorkBuddy
+MCP evidence gap on WorkBuddy AI 2.161.0. The real bundled CodeBuddy runtime
+loads the AIH-projected `.codebuddy.json`; enabled and re-enabled stages expose
+the deferred MCP protocol and complete `ToolSearch`, `DeferExecuteTool`, the
+stdio MCP result, and the final `WORKBUDDY_MCP_OK` marker. Disabled and removed
+stages have no connected MCP server, no deferred MCP schema or tool call, and
+return `MCP_NOT_LOADED`.
+
+The probe also runs the AIH MCP manager's direct `test`, `tools`, and `call`
+operations against the same stdio server. Its fixture recognizes the nested
+OpenAI-compatible `assistant.tool_calls` shape used by WorkBuddy and waits for
+the native process's final result instead of terminating on the first result
+event. This is local deterministic native protocol evidence; it does not claim
+remote model reasoning, Web/TUI parity, or WorkBuddy CN parity.
+
+The resource aggregate indexes this probe separately from the WorkBuddy
+plugin/Skill/direct-MCP probe. A full aggregate run remains subject to external
+host dependencies; for example, Codex can attempt a curated-plugin git fetch
+before its isolated fixture starts. Such a timeout is an aggregate-run failure,
+not a downgrade of the standalone WorkBuddy or Codex evidence.
+
+The earlier 111-check regression count is historical: those resource test files
+are absent from the current tracked checkout. This checkpoint uses actual native
+demos and provider-manifest validation; it does not claim to have rerun absent
+tests or recreate them. No harness implementation or WebUI source is changed.
+
+After full resource closure, the user's requested harness audit must trace WebUI
+CLI launch, terminology and module ownership, capability/parameter propagation,
+account isolation, PTY/session lifecycle, reconnect/cancel/cleanup, and native
+versus gateway entrypoints. That follow-up is read-only: deliver concrete findings
+and a prioritized remediation plan before changing harness implementation.
+
+Verification artifacts for this checkpoint: `/tmp/aih-codebuddy-resource-final.json`
+and `/tmp/aih-codebuddycn-resource-final.json` (mode-specific loading checks),
+`/tmp/aih-codebuddy-family-aggregate.json` (all seven pre-existing runtime lanes
+passed, including WorkBuddy MCP absence after disable). `npm run providers:check`,
+CLI help/capability output, JavaScript syntax and diff/encoding checks also pass.
+
+## Cline native MCP tool loop (2026-10-27)
+
+`node scripts/cline-mcp-tool-loop-demo.js [native-cli-path]` now proves the
+missing Cline execution layer with Cline 3.0.74. The demo first uses Cline's
+native `auth --provider openai-compatible --baseurl ...` command to create an
+isolated temporary `providers.json`; it never reads or writes the user's real
+Cline profile. The existing AIH MCP manager then projects the server into
+`data/settings/cline_mcp_settings.json`, which the real CLI loads.
+
+Enabled and re-enabled stages require two OpenAI-compatible streaming requests,
+the native MCP schema, a completed `aih_echo` tool event, the returned nonce in
+the following model request, and the exact final `AIH_NATIVE_MCP_OK`. Disabled
+and removed stages require one request, no MCP schema or tool event, and
+`MCP_NOT_LOADED`. This verifies Cline's native model/tool loop and the managed
+projection lifecycle with a deterministic local fixture. It does not claim
+remote-model reasoning, every Cline provider configuration, or Web/TUI parity.
+
+The aggregate `scripts/mcp-native-demo.js` includes this demo, so the current
+machine's Codex, Claude, OpenCode and Cline rows each carry native execution
+evidence in addition to management and direct stdio checks.
+
+## OpenCode native MCP tool loop (2026-10-27)
+
+`node scripts/opencode-mcp-tool-loop-demo.js [native-cli-path]` now proves the
+missing native execution layer using OpenCode 1.17.18 and the existing MCP
+manager. `scripts/mcp-native-demo.js` includes this evidence in its OpenCode row.
+
+Each run uses a temporary HOME, AIH state and working directory. The same managed
+server goes through enable, disable, re-enable and remove. A local Chat Completions
+fixture requests `aih_echo` with a fresh nonce, then `aih_list_files`; only the
+isolated working directory contains the nonce-bearing filename. The fixture
+accepts results only from tool-role messages with the matching call IDs, and the
+demo separately checks both completed native tool events and exact final answer.
+Enabled stages require three requests and both results; disabled/removed stages
+require one request, no schema, no tool events and `MCP_NOT_LOADED`. The demo never
+calls the AIH MCP client's `call` method to produce this native execution evidence.
+
+The isolated OpenCode config disables its title agent, whose extra inference
+request otherwise confounds the tool-loop count. Native permissions deny other
+tools and allow the demo MCP namespace. No production harness is modified.
+The local protocol fixture determines the tool selection; this proves real native
+execution and result propagation, not remote-model reasoning or TUI/Web parity.
+
+Fresh evidence: `/tmp/aih-mcp-with-native-loop.json` passes Codex, Claude, OpenCode
+and Cline management/connection checks, and embeds the passing native-loop stages
+for all four clients. Each client still has its own protocol and provider
+configuration boundary; one client's local fixture does not establish parity for
+the others.
+
+## Claude native MCP tool loop (2026-10-27)
+
+`node scripts/claude-mcp-tool-loop-demo.js [native-cli-path]` adds native Claude
+Code 2.1.310 MCP execution to the same aggregate `scripts/mcp-native-demo.js`.
+The initial request contains deferred MCP names rather than their schemas. The
+fixture follows the actual host protocol: invoke `ToolSearch` for the advertised
+echo/file-list tools, consume its result, invoke echo with a random nonce, invoke
+file listing, then check both returned results before emitting the final marker.
+
+Enabled and re-enabled stages require four requests, native ToolSearch output,
+both tool schemas, matching `tool_use_id` results, native non-error tool-result
+events, process success, and an exact final `AIH_NATIVE_MCP_OK`. Disabled/removed
+stages require one request, neither deferred name nor schema, no MCP result
+events and `MCP_NOT_LOADED`. A unique nonce-bearing file exists only in the
+temporary working directory. The native command authorizes only the two MCP tools
+through `--allowedTools`; it does not bypass all permissions. Managed config, HOME
+and working state are isolated and removed on exit.
+
+Evidence: `/tmp/aih-claude-mcp-loop.json` and the combined
+`/tmp/aih-mcp-claude-opencode-loops.json`. This establishes native execution with
+a deterministic local Anthropic protocol fixture, not remote-model reasoning,
+Web/TUI coverage or parity for other providers. No harness code is changed.
+
+## Codex native MCP tool loop (2026-10-27)
+
+`node scripts/codex-mcp-tool-loop-demo.js [native-cli-path]` verifies Codex CLI
+0.164.0 through the existing MCP manager. The Responses tool catalog places the
+two tools under `mcp__aih_demo`; fixture calls preserve that namespace. Results
+are accepted only from matching `function_call_output.call_id` entries, and native
+completed `mcp_tool_call` events must name server `aih-demo`, the correct tool,
+and a successful result containing the nonce or unique filename.
+
+Default non-interactive approval rejected the first real call. The demo now passes
+`-c mcp_servers.aih-demo.tools.aih_echo.approval_mode="approve"` and the corresponding
+file-list override only for enabled stages. These are process-local overrides for
+the two known demo tools, not global sandbox/approval bypasses. Disabled/removed
+stages omit them so no partial server config is recreated. The relevant official
+settings are documented in [Codex MCP](https://developers.openai.com/codex/mcp/)
+and [configuration reference](https://developers.openai.com/codex/config-reference/).
+
+Positive stages require three requests, both schemas and successful native events,
+correlated tool outputs, and exact final `AIH_NATIVE_MCP_OK`. Negative stages
+require one request, neither schema nor completed tool event, and `MCP_NOT_LOADED`.
+Temporary HOME/AIH/config/work directories and local Responses fixture avoid real
+credentials or remote inference. This does not prove remote-model reasoning or
+Web/TUI entrypoints. No harness implementation changes are made.
+
+Evidence: `/tmp/aih-codex-mcp-loop.json`; the aggregate
+`/tmp/aih-mcp-three-native-loops.json` now includes Codex, Claude, OpenCode and
+Cline native loops.
+
+## Gemini native extension and Skill closure (2026-10-27)
+
+Official `@google/gemini-cli@0.65.0` was installed only under
+`/tmp/aih-gemini-resource-runtime` for verification. Its real `extensions` and
+`skills` commands and loader confirm `.gemini/extensions/<id>/gemini-extension.json`
+and `.gemini/skills/<id>` native discovery. The provider descriptor now declares
+these paths. A focused `gemini-extension` adapter validates manifest name/version
+before using the existing owned-directory lifecycle; invalid replacement manifests
+are rejected before deleting the old version. Native extensions manually disabled
+through Gemini's own settings remain subject to those settings; this adapter
+materializes/removes owned directories and does not overwrite native preferences.
+
+The canonical `aih-demo` package adds only a native extension manifest and reuses
+its existing bundled Skill. `scripts/gemini-resource-native-demo.js` verifies both
+that extension Skill and the independent managed Skill using actual Gemini:
+enabled/re-enabled require native `activate_skill` success, installed body in the
+next request, exactly two requests and the exact marker; disabled/removed require
+no advertisement/activation/body, one request and `RESOURCE_NOT_LOADED`.
+The local Google protocol fixture never supplies the body itself. Temporary
+HOME/settings/workspace isolate state, `--skip-trust` trusts only the fresh demo
+workspace for that process, and `--allowed-tools activate_skill` grants that tool
+without broad YOLO mode (the CLI warns this flag is deprecated for future 1.0).
+
+Fresh evidence: `/tmp/aih-gemini-resource-demo.json`, eight passing native stages.
+A separate isolated ownership probe rejected modified-target removal, preserved
+the previous extension on malformed replacement, then passed disable/re-enable/
+remove. Provider generation/check, JavaScript syntax and diff checks pass.
+This closes native extension-bundled Skill and standalone Skill use for the tested
+version, not arbitrary Gemini extension features, JavaScript host API equivalence,
+MCP model execution, remote reasoning, account launch propagation or Web/TUI parity.
+No harness implementation is modified.
+
+The canonical package with the Gemini manifest also passed all seven existing
+host lanes (`/tmp/aih-gemini-package-regression.json`): Codex, Claude, OpenCode,
+Pi, DeepSeek, AIH and WorkBuddy. This checks that the additive native manifest
+does not break their existing native plugin proofs.
+
+Independent review exposed invalid-manifest snapshot poisoning: validation inside
+the adapter originally occurred after snapshot creation. The manager now invokes
+an optional adapter preflight before writing the immutable snapshot. An isolated
+probe verified malformed Gemini JSON leaves no snapshot, then a corrected package
+with the same id/version installs successfully. Existing adapters without a
+preflight retain their prior behavior.

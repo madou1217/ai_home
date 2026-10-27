@@ -200,6 +200,14 @@ type Presentation struct {
 	AccentVar         string `json:"accentVar"`
 	SoftVar           string `json:"softVar"`
 	TagColor          string `json:"tagColor"`
+	// APIHost 是该 Provider 的**默认 API 域名**（不含 scheme，例如 api.openai.com）。
+	//
+	// 为什么放在描述符里：前端展示 API Key 账号的身份时需要它（账号只有 baseUrl 时
+	// 回落到厂商默认域名）。此前这份映射手写在 web/src/utils/account-labels.ts 的
+	// `DEFAULT_API_KEY_DOMAINS: Record<Provider, string>` 里，于是**每加一个 Provider
+	// 都要记得去改那张表**——漏了就在全量 TS 编译时报 TS2739（workbuddycn / cline
+	// 就是这样漏的）。放进描述符后由 provider-manifest 生成，前端查表即可。
+	APIHost string `json:"apiHost,omitempty"`
 }
 
 // AuthOption 描述 Client 可以展示的账号认证选项。
@@ -274,9 +282,10 @@ type DesktopPlatform struct {
 
 // NativeCapability 描述原生 CLI 对配置、会话、MCP、Hook 和权限的边界。
 type NativeCapability struct {
-	Config   NativeConfig   `json:"config"`
-	Sessions NativeSessions `json:"sessions"`
-	MCP      NativeMCP      `json:"mcp"`
+	Runtime  *NativeResourceRuntime `json:"runtime,omitempty"`
+	Config   NativeConfig           `json:"config"`
+	Sessions NativeSessions         `json:"sessions"`
+	MCP      NativeMCP              `json:"mcp"`
 	// Plugins/Skills describe native installation or projection boundaries. Empty
 	// declarations are intentional: consumers must report unsupported instead of
 	// guessing a provider's filesystem layout.
@@ -284,6 +293,14 @@ type NativeCapability struct {
 	Skills      NativeSkills      `json:"skills"`
 	Hooks       NativeHooks       `json:"hooks"`
 	Permissions NativePermissions `json:"permissions"`
+}
+
+// NativeResourceRuntime declares a bundled execution lane for resource management.
+// It does not imply that a standalone user CLI is distributed by this provider.
+type NativeResourceRuntime struct {
+	Handler string            `json:"handler"`
+	Entry   string            `json:"entry"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // NativePlugins describes the native plugin management boundary.

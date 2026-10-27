@@ -9,6 +9,12 @@ export interface LanguageIntentInput {
   detected?: string | null;
   confidence?: string | null;
   targetPolicy?: TranslationTargetPolicy | null;
+  /**
+   * The selected execution route can infer the source language in the model
+   * request. When this is true, a known target is enough to start translation;
+   * an empty or low-confidence local detector result must not block the user.
+   */
+  allowAutoSource?: boolean;
 }
 
 export interface LanguageIntentResult {
@@ -87,6 +93,13 @@ export function resolveLanguageIntent(
   }
 
   const resolvedSource = source === AUTO_LANGUAGE ? detected : source;
+  // For an LLM-capable route, changing the target is already the user's
+  // confirmation. Do not ask for source confirmation a second time when local
+  // detection is missing or low-confidence; send source:auto instead.
+  if (source === AUTO_LANGUAGE && input.allowAutoSource === true
+    && (!resolvedSource || String(input.confidence || '').toLowerCase() === 'low')) {
+    return { state: 'ready', source: AUTO_LANGUAGE, target, reason: 'provider_auto_source' };
+  }
   if (!resolvedSource) {
     return { state: 'needs_target_confirmation', source: '', target, reason: 'source_detection_required' };
   }

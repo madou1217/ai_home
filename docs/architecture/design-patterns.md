@@ -15,6 +15,9 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
+| `nativeBoundary.runtime` + provider facade + `provider-native-runtime.js` | **Descriptor + Strategy Registry + Facade** | 原生资源命令按声明选择独立 CLI 或桌面内嵌 Node 入口；WorkBuddy lite bundle flag 随描述符传递，资源运行时与用户 CLI 分开表达 | 真实 WorkBuddy AI 2.161.0 version/help；doctor 显示 desktop-node 来源；既有回归与 provider 合同检查 |
+| `native-plugin-manager.js` + marketplace adapter `replace` | **Strategy + Compensating Action** | 管理器将版本替换委托给拥有原生生命周期的适配器；旧快照用于旧资源校验，新包在任何破坏性步骤前校验清单与目标冲突，运行失败时尝试恢复旧状态 | 真实版本升级成功；坏清单与外来目标在旧插件仍健康时拒绝；补偿不宣称跨 SQLite/原生命令的原子事务 |
+| `native-plugin-adapters/native-marketplace.js` + `marketplace-ownership.js` + WorkBuddy demo | **Owned Projection + Native Facade** | canonical 包进入厂商 marketplace 后才声明原生安装成功；市场按 AIH home/provider/plugin 隔离，归属策略集中校验完整目录摘要和原生登记文件；原生 disable/enable 保留数据，卸载只接受已观测的时间戳元数据 | WorkBuddy 插件/Skill 四阶段、MCP connected 和两次 tool call；隔离运行验证双插件、外部禁用恢复、禁用后卸载、旧投影迁移及损坏/外来状态拒绝 |
 | `lib/plugins/control/source-manifest.js` + artifact/CLI + canonical AIH entry | **Projection + Adapter + Scoped Resource** | 单一 canonical 声明生成 AIH 原生清单，虚拟文件只进制品；AIH 入口将 shared core 工具映射为受管 command contribution，复用签名、权限和 Host 代次 | 真实 CLI validate/load/signed pack、监督 Host 调用/停用/重启/移除；源目录摘要不变；旧 Echo 制品链回归 |
 | `lib/cli/app.js` provider resource context | **Facade** | provider doctor 和资源管理复用原生 CLI 定位门面，按描述符二进制别名及受管路径定位，不把 provider ID 当作可执行文件名 | 真实 provider doctor、CLI help、现有 Node 回归 |
 | `scripts/opencode-plugin-native-demo.js` + aggregate native demo | **Adapter + Contract Probe** | 使用同一 canonical 包，按 OpenCode 原生工具轮验证 schema、执行事件和结果回传；关闭子进程 stdin，使非交互输入生命周期完整 | OpenCode 1.17.18/1.18.18 四阶段真实 CLI + 本地确定性 fixture；Node 22/26 |
@@ -34,6 +37,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/translation/replacement/transaction.js` | **Transaction + State Machine + Host Adapter** | 写作替换只保存一次性选区快照和版本号；宿主适配器负责真实写入/原生撤回，事务负责冲突检测、过期、逐步替换帧和幂等状态边界，不把编辑器或平台分支塞进翻译服务 | Node 22 真实内存宿主冒烟：逐步替换、成功撤回、外部编辑冲突、取消和 bounded TTL |
 | `lib/desktop/translation/service.js` + `native/translation/TranslationPanel.swift` | **Target Adapter + Host Capability Boundary + explicit language-intent state machine** | macOS 原生面板默认走内置 AIH Server，也可切换到已配置的其他 AIH Server；NSServices、AX 选区与剪贴板 fallback 统一收敛到 host capability 边界，目标只携带 origin/label，provider 直连仍复用统一 descriptor/adapter 链；语言意图在 `preflight → confirmation → translating → completed/cancelled` 状态间显式流转，同语言或低置信度时阻止误发起 | Swift strict typecheck、Node syntax、Web build；服务目标校验拒绝非 HTTP(S) 和未知 kind；macOS helper `Info.plist` 已验证三种文本服务类型，AX/Services 路径均有取消与慢响应反馈 |
 | `web/public/translation-extension/{background,content}.js` + `web/src/features/translation/page-translation.ts` | **Browser Adapter + Bounded Scheduler + realm-safe DOM Adapter + Command** | 浏览器右键菜单只是宿主适配器；选区/整页动作统一送到 AIH Server，内容脚本按页面所属 `ownerDocument/defaultView` 分段，使用有界并发、进度/停止/失败状态、旁注或逐字替换动画与事务撤回，不复制 provider 路由 | Node syntax + Web build；Manifest V3 artifact includes selection/page commands and target-first settings；iframe 页面使用自身 DOM realm，取消不会应用半成品 |
+| `web/public/translation-extension/reading-themes.js` + options/page-segments | **Descriptor Registry + Renderer Facade + DOM Adapter** | 11 个阅读效果由唯一描述符生成设置选项、即时预览和 closed Shadow DOM 译文；语义段保持原文节点身份，替换只写任务拥有的文本，撤回用 compare-and-swap 保护宿主并发编辑 | 11 主题/RTL/换行/替换/原文详情/宿主修改的一次性 VM 探针、独立只读审查、限定 ESLint 与完整 Web build；真实视觉验收单独记录 |
+| `web/public/translation-extension/page-language.js` + content/background/cache | **Conservative Policy Facade + Bounded Worker Pool + Generation Guard + Local Cache** | 按段本地判断目标语一致时跳过模型和重复译文；其余段以独立 segmentId/sequence 流式并发，停止立即移除流路由；恢复只读成功缓存，以 operation/revision/provider 身份防止旧任务迟到覆盖 | 27 语言样例与毫秒计算 benchmark、并发/乱序/取消 VM、11 项缓存恢复探针、49 相关测试、完整 Web build；Edge 真实看到多个 generating 状态和完成前部分译文 |
 | `lib/server/zcode-egress-resolver.js` + `lib/server/socks5-connector.js` | **Capability Table（消费方能力表）+ Adapter（协议适配）** | 出口代理的 scheme 白名单按**消费方能力**声明在 provider 描述符 `egress.proxySchemes`（契约只允许收窄、必须写 reason；解析器经门面查询，不持有 provider 名单）：网关/Go/Chromium 支持 socks5，ZCode 原生 `httpProxy` 与 Bun 运行时的 opencode 只收 HTTP(S)，因此同一份绑定在不同 provider 上结论不同 —— 收窄发生在**入口校验**（保存即报 `zcode_native_proxy_scheme_unsupported`），不是写进绑定后由消费方静默降级。`socks5-connector` 把 `socks5://` 适配成 undici `Agent` 的 `connect`（ProxyAgent 只收 http(s)），`socks5`/`socks5h` 分别实现（本地解析 vs 代理侧解析）。**硬约束：放行的 scheme 必须真能建隧道** —— 曾经 socks 被 `resolveProxyConfig` 静默丢弃成直连（fail-open、泄漏真实出口 IP），所以白名单与 dispatcher 分支必须成对修改 | `test/socks5-connector.test.js`（真实 SOCKS5 服务端 + 端到端隧道）、`test/zcode-egress-target-resolver.test.js`、`test/server.http-utils.test.js` |
 | `lib/server/provider-session-state-store.js` + `lib/server/provider-hook-event-normalizer.js` + `lib/server/webui-session-event-routes.js` | **Revisioned State Store + Event Normalizer + Observer Adapter** | 官方 hook、Codex interaction/retry、PTY fallback 与 route facts 都写入同一份 provider-neutral snapshot；主键固定为 `(provider,nativeSessionId,projectPath)`，correlation 只是可持久化别名。事件按 `eventId` 去重，正 revision 单调接受，早于官方绑定的 correlation 事件进入有界 pending 队列并在绑定时排入目标会话；hook payload 只保留有界交互/状态栏/错误字段，持久化使用原子 rename；跨进程读取会刷新较新的 snapshot，标题侧只读快照，不接触 provider 文件或凭据 | `/tmp/aih-provider-session-state.test.js`、`/tmp/aih-provider-hook-events.test.js`、`/tmp/aih-correlation-restart.test.js`、`/tmp/aih-correlation-conflict-restart.test.js`、`/tmp/aih-cross-process-refresh.test.js`、`/tmp/aih-corrupt-correlation.test.js`、`/tmp/aih-pending-correlation.test.js`、`/tmp/aih-route-state.test.js`、`/tmp/aih-codex-session-state.test.js`、`/tmp/aih-title-state-source.test.js`（16 项通过）；真实 `aih server restart` 后 Claude Statusline + StopFailure 与 Codex SessionStart + Stop POST 均 HTTP 200，状态文件含 `contextPct:68`、`tokens:12000`、`error.message:network unavailable`，标题来源输出 `⚠ network unavailable` 与 `context 68% · 12000 tokens`；Cline 无官方 hook，保留 fallback 口径 |
 | `lib/cli/services/pty/terminal-title/` | **Facade + Strategy + Factory + Registry** | 终端标题的两条轴各自抽象：**终端轴** `transports.js`（工厂，按 `supports()` 选通道：OSC 0 / null）与 **Provider 轴** `registry.js`（倒排 + priority 出帧）+ `sources/`（会话名 / 身份 / 路由 / 额度 / 账号 / interaction / retry / error / statusline）。契约 `contract.js` 要求每个来源只回答 `provide(ctx) -> string[]`（**轮播帧数组**），门面 `index.js` 独占三件横切事：抑制、轮播、去重与写；新增一种标题事实 = 注册一个来源；新增一种终端 = 加一个 transport 工厂；**派发代码里没有 provider 名**。网关模式的「当前路由到哪个账号」由 `lib/server/route-observer.js`（写入，挂两个 orchestrator 调用点）与 `lib/runtime/route-observation.js`（读回，fail-soft；统一状态 store 也可作为跨进程刷新来源）解耦送达，关联键经 relay profile 声明的 `sessionKeyTransport`（`session-key-delivery.js`）从 CLI 送进网关请求头 | 临时 title source 测试通过；真实 PTY/title 运行沿用 tmux-backed facade；实时 hook smoke 读取的 Claude frames 为 `Claude:1:gpt-6.1-sol`、`⚠ network unavailable`、`context 68% · 12000 tokens` |
@@ -419,3 +424,65 @@ verifies DeepSeek, OpenCode, Pi and AIH entries, and `aih native plugin project`
 materializes a sanitized host projection report without pretending that an absent
 host runtime executed the plugin. `test/portable-plugin-conformance.test.js` covers
 missing entries and projection output.
+
+CodeBuddy native resource follow-up (2026-10-27): `core/providers/native.go`
+declares marketplace/MCP format and the CN runtime region. The existing provider
+Facade and runtime resolver propagate descriptor environment for both native CLI
+and desktop runtimes; no provider-name dispatch is added. The shared family demo
+uses an explicit runtime override and keeps real install/disable/enable/remove,
+native Skill execution and MCP connection evidence separate. SOLID keeps vendor
+data in descriptors and I/O in adapters; DRY reuses the marketplace and demo;
+KISS/YAGNI avoid a second plugin manager or general host scripting framework.
+
+OpenCode native MCP evidence (2026-10-27):
+`scripts/opencode-mcp-tool-loop-demo.js` consumes the existing MCP Facade and native
+config Strategy without introducing a second lifecycle implementation. The demo
+separates deterministic protocol responses from actual native tool execution,
+correlating results by call ID and checking native completion events. The aggregate
+`scripts/mcp-native-demo.js` selects this optional proof through a client descriptor
+callback. KISS/YAGNI keep this a focused conformance demo, not a new harness; DRY
+reuses the manager and existing MCP server, and SOLID keeps fixtures out of runtime.
+
+Claude native MCP evidence (2026-10-27): `scripts/claude-mcp-tool-loop-demo.js`
+uses the existing MCP Facade/config Strategy and models the native deferred-tool
+protocol in its local fixture. `scripts/mcp-native-demo.js` selects it through the
+existing descriptor callback, with no provider condition added to dispatch.
+The focused host demo keeps Anthropic event handling outside runtime modules;
+KISS/YAGNI avoid a new protocol framework, DRY reuses the manager/server, and SOLID
+keeps native conformance separate from resource lifecycle implementation.
+
+Codex native MCP evidence (2026-10-27): `scripts/codex-mcp-tool-loop-demo.js`
+uses the existing MCP Facade and TOML projection Strategy; a local Responses
+fixture handles namespace and call-ID correlation without modifying runtime code.
+The aggregate uses its existing descriptor callback. SOLID keeps native protocol
+verification separate from management, DRY reuses the manager/server, and
+KISS/YAGNI avoid introducing a new general protocol framework for this proof.
+
+WorkBuddy deferred MCP evidence (2026-10-27):
+`scripts/workbuddy-mcp-tool-loop-demo.js` uses the existing MCP Facade and the
+bundled host's deferred-tool protocol, with a small message-shape normalizer for
+nested `assistant.tool_calls`. `scripts/resource-closure-demo.js` indexes the
+focused report through host/resource evidence functions and stops a supervised
+native process group after a complete JSON report, so inherited stdio workers do
+not hold aggregation open. This is Adapter + Evidence Aggregator: host protocol
+details stay in the focused demo while management/projection/native-use states
+remain separate. SOLID keeps fixture protocol handling out of runtime code, DRY
+reuses the manager and demo server, and KISS/YAGNI avoid a general WorkBuddy
+protocol framework. Verification: two consecutive four-stage WorkBuddy runs and
+a WorkBuddy-only aggregate both passed; full aggregation remains explicitly
+subject to provider-owned external dependencies.
+
+Gemini resource adapter (2026-10-27): `core/providers/native.go` declares native
+extension/Skill paths and commands; `native-plugin-adapters.js` registers the
+`gemini-extension` Strategy. Its focused adapter validates host manifest identity
+before delegating to the existing owned-directory adapter, including validation
+before replacement deletion. The same canonical example adds a native manifest
+without duplicating its Skill. SOLID separates host validation from lifecycle,
+DRY reuses ownership/storage, and KISS/YAGNI avoid introducing an extension package
+manager for unrelated native features. Verification uses actual Gemini 0.65.0
+activation and isolated ownership/error probes.
+
+The native plugin Facade now invokes an optional adapter `validate(pkg)` preflight
+before immutable snapshot creation. Gemini uses it to reject invalid native
+identity without poisoning same-version retries; an isolated malformed-then-valid
+install probe verifies the ordering. Operation-level validation remains defensive.

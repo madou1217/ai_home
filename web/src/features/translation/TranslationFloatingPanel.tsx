@@ -198,7 +198,17 @@ export default function TranslationFloatingPanel() {
   const runTranslation = useCallback(
     (text: string, target: string, bootstrap: TranslationBootstrap | null, detected = panelSource, confidence = panelConfidence, policy: TranslationTargetPolicy = targetPolicy) => {
       const intent = resolveLanguageIntent(
-        { source: AUTO_LANGUAGE, target, detected, confidence, targetPolicy: policy },
+        {
+          source: AUTO_LANGUAGE,
+          target,
+          detected,
+          confidence,
+          targetPolicy: policy,
+          // AIH Server/LLM routes can infer source from the prompt. Direct
+          // service providers keep the local source guard unless their route
+          // capability is explicitly surfaced by the server.
+          allowAutoSource: bootstrap?.settings.executionTarget === 'aih-server',
+        },
         bootstrap?.languages || languages,
       );
       if (intent.state !== 'ready') {
@@ -399,8 +409,16 @@ export default function TranslationFloatingPanel() {
   );
 
   const meta = stream.state.meta;
+  const allowAutoSource = bootstrapRef.current?.settings.executionTarget === 'aih-server';
   const languageIntent = resolveLanguageIntent(
-    { source: AUTO_LANGUAGE, target: panelTarget, detected: panelSource, confidence: panelConfidence, targetPolicy },
+    {
+      source: AUTO_LANGUAGE,
+      target: panelTarget,
+      detected: panelSource,
+      confidence: panelConfidence,
+      targetPolicy,
+      allowAutoSource,
+    },
     languages,
   );
   const sameLanguage = languageIntent.state === 'same_language';
@@ -417,7 +435,7 @@ export default function TranslationFloatingPanel() {
   const intentMessage = sameLanguage
     ? `原文已是${languageLabelOf(languages, panelTarget)}，请选择其它目标语言后再开始翻译。`
     : languageIntent.reason === 'source_detection_required'
-      ? '无法确定原文语言，请先重新识别后再开始翻译。'
+      ? (allowAutoSource ? '正在交给翻译模型自动判断原文语言。' : '此翻译引擎需要源语言，请先重新识别或选择源语言。')
       : languageIntent.reason === 'low_confidence'
         ? '语言识别不确定，请先选择目标语言后再开始翻译。'
         : '请选择目标语言后再开始翻译。';

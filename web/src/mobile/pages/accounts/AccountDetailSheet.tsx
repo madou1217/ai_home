@@ -39,7 +39,7 @@ import {
   getAccountStatusDetailLines,
   getClinePlanSubscription,
   getKimiPlanSubscription,
-  getPlanTagLabel
+  getPlanTagLabels
 } from '@/features/accounts/AccountBadges';
 import { describeCodexSubscription, getCodexSubscription } from '@/features/accounts/codex-subscription';
 import { getAccountRef } from '@/features/accounts/account-model-catalog';
@@ -258,12 +258,12 @@ export default function AccountDetailSheet({
       key: 'plan',
       label: '套餐',
       value: kimiPlan && kimiPlanUntil
-        ? `${kimiPlan.name || getPlanTagLabel(record)} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
+        ? `${kimiPlan.name || getPlanTagLabels(record).join(' · ')} · ${kimiPlanUntil}${kimiPlan.status === 'canceled' ? ' · 已取消续费' : ''}`
         : clinePlan && clinePlanUntil
-          ? `${clinePlan.name || getPlanTagLabel(record)} · ${clinePlanUntil}`
+          ? `${clinePlan.name || getPlanTagLabels(record).join(' · ')} · ${clinePlanUntil}`
         : codexSubscription
-          ? `${getPlanTagLabel(record)} · ${describeCodexSubscription(codexSubscription).label}`
-          : getPlanTagLabel(record)
+          ? `${getPlanTagLabels(record).join(' · ')} · ${describeCodexSubscription(codexSubscription).label}`
+          : getPlanTagLabels(record).join(' · ')
     },
     ...(region ? [{ key: 'region', label: '区域', value: region.endpoint ? `${region.label} · ${region.endpoint}` : region.label, mono: false }] : []),
     ...(roles ? [{ key: 'roles', label: '角色', value: roles, mono: false }] : []),

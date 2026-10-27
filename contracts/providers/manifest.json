@@ -14,7 +14,8 @@
         "terminalIconAsset": "assets/provider-icons/codex.png",
         "accentVar": "var(--provider-codex)",
         "softVar": "var(--provider-codex-soft)",
-        "tagColor": "green"
+        "tagColor": "green",
+        "apiHost": "api.openai.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -209,7 +210,8 @@
         "terminalIconAsset": "assets/provider-icons/gemini.png",
         "accentVar": "var(--provider-gemini)",
         "softVar": "var(--provider-gemini-soft)",
-        "tagColor": "blue"
+        "tagColor": "blue",
+        "apiHost": "generativelanguage.googleapis.com"
       },
       "gateway": "deprecated",
       "capabilities": [
@@ -308,14 +310,23 @@
           ]
         },
         "plugins": {
-          "commands": null,
-          "paths": null,
-          "mode": ""
+          "adapter": "gemini-extension",
+          "commands": [
+            "extensions"
+          ],
+          "paths": [
+            "extensions"
+          ],
+          "mode": "native"
         },
         "skills": {
-          "commands": null,
-          "paths": null,
-          "mode": ""
+          "commands": [
+            "skills"
+          ],
+          "paths": [
+            "skills"
+          ],
+          "mode": "native"
         },
         "hooks": {
           "files": [
@@ -371,7 +382,8 @@
         "terminalIconAsset": "assets/provider-icons/claude.png",
         "accentVar": "var(--provider-claude)",
         "softVar": "var(--provider-claude-soft)",
-        "tagColor": "orange"
+        "tagColor": "orange",
+        "apiHost": "api.anthropic.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -580,7 +592,8 @@
         "terminalIconAsset": "assets/provider-icons/agy.png",
         "accentVar": "var(--provider-agy)",
         "softVar": "var(--provider-agy-soft)",
-        "tagColor": "purple"
+        "tagColor": "purple",
+        "apiHost": "daily-cloudcode-pa.googleapis.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -764,7 +777,8 @@
         "terminalIconAsset": "assets/provider-icons/opencode.png",
         "accentVar": "var(--provider-opencode)",
         "softVar": "var(--provider-opencode-soft)",
-        "tagColor": "default"
+        "tagColor": "default",
+        "apiHost": "opencode.ai"
       },
       "gateway": "active",
       "capabilities": [
@@ -948,7 +962,8 @@
         "terminalIconAsset": "assets/provider-icons/grok.png",
         "accentVar": "var(--provider-grok)",
         "softVar": "var(--provider-grok-soft)",
-        "tagColor": "cyan"
+        "tagColor": "cyan",
+        "apiHost": "api.x.ai"
       },
       "gateway": "active",
       "capabilities": [
@@ -1107,7 +1122,8 @@
         "terminalIconAsset": "assets/provider-icons/qoder.png",
         "accentVar": "var(--provider-qoder)",
         "softVar": "var(--provider-qoder-soft)",
-        "tagColor": "blue"
+        "tagColor": "blue",
+        "apiHost": "qoder.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -1272,7 +1288,8 @@
         "terminalIconAsset": "assets/provider-icons/qodercn.png",
         "accentVar": "var(--provider-qodercn)",
         "softVar": "var(--provider-qodercn-soft)",
-        "tagColor": "purple"
+        "tagColor": "purple",
+        "apiHost": "qoder.com.cn"
       },
       "gateway": "active",
       "capabilities": [
@@ -1442,7 +1459,8 @@
         "terminalIconAsset": "assets/provider-icons/kimi.png",
         "accentVar": "var(--provider-kimi)",
         "softVar": "var(--provider-kimi-soft)",
-        "tagColor": "geekblue"
+        "tagColor": "geekblue",
+        "apiHost": "api.moonshot.cn"
       },
       "gateway": "active",
       "capabilities": [
@@ -1598,7 +1616,8 @@
         "terminalIconAsset": "assets/provider-icons/kiro.png",
         "accentVar": "var(--provider-kiro)",
         "softVar": "var(--provider-kiro-soft)",
-        "tagColor": "volcano"
+        "tagColor": "volcano",
+        "apiHost": "kiro.dev"
       },
       "gateway": "active",
       "capabilities": [
@@ -1767,7 +1786,8 @@
         "terminalIconAsset": "assets/provider-icons/zcode.png",
         "accentVar": "var(--provider-zcode)",
         "softVar": "var(--provider-zcode-soft)",
-        "tagColor": "geekblue"
+        "tagColor": "geekblue",
+        "apiHost": "z.ai"
       },
       "gateway": "active",
       "capabilities": [
@@ -1891,7 +1911,8 @@
         "terminalIconAsset": "assets/provider-icons/codebuddy.png",
         "accentVar": "var(--provider-codebuddy)",
         "softVar": "var(--provider-codebuddy-soft)",
-        "tagColor": "blue"
+        "tagColor": "blue",
+        "apiHost": "codebuddy.ai"
       },
       "gateway": "active",
       "capabilities": [
@@ -1986,13 +2007,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".mcp.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],
@@ -2063,7 +2090,8 @@
         "terminalIconAsset": "assets/provider-icons/codebuddycn.png",
         "accentVar": "var(--provider-codebuddycn)",
         "softVar": "var(--provider-codebuddycn-soft)",
-        "tagColor": "purple"
+        "tagColor": "purple",
+        "apiHost": "copilot.tencent.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -2135,6 +2163,14 @@
         }
       },
       "nativeBoundary": {
+        "runtime": {
+          "handler": "native-cli",
+          "entry": "",
+          "env": {
+            "CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
+            "CODEBUDDY_INTERNET_ENVIRONMENT": "internal"
+          }
+        },
         "config": {
           "envHomeKeys": [
             "CODEBUDDY_CONFIG_DIR",
@@ -2159,13 +2195,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".mcp.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".mcp.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],
@@ -2236,7 +2278,8 @@
         "terminalIconAsset": "assets/provider-icons/workbuddy.png",
         "accentVar": "var(--provider-workbuddy)",
         "softVar": "var(--provider-workbuddy-soft)",
-        "tagColor": "green"
+        "tagColor": "green",
+        "apiHost": "workbuddy.cn"
       },
       "gateway": "active",
       "capabilities": [
@@ -2299,6 +2342,13 @@
         }
       },
       "nativeBoundary": {
+        "runtime": {
+          "handler": "desktop-node",
+          "entry": "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+          "env": {
+            "CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"
+          }
+        },
         "config": {
           "envHomeKeys": [
             "CODEBUDDY_CONFIG_DIR",
@@ -2323,13 +2373,19 @@
           "nativeStore": "projects/<project>/<session-id>.jsonl"
         },
         "mcp": {
+          "projection": {
+            "path": ".codebuddy.json",
+            "format": "json-stdio"
+          },
           "commands": [
             "mcp"
           ],
-          "configFiles": []
+          "configFiles": [
+            ".codebuddy.json"
+          ]
         },
         "plugins": {
-          "adapter": "native-directory",
+          "adapter": "native-marketplace",
           "commands": [
             "plugin"
           ],
@@ -2397,7 +2453,8 @@
         "terminalIconAsset": "assets/provider-icons/workbuddycn.png",
         "accentVar": "var(--provider-workbuddycn)",
         "softVar": "var(--provider-workbuddycn-soft)",
-        "tagColor": "gold"
+        "tagColor": "gold",
+        "apiHost": "copilot.tencent.com"
       },
       "gateway": "active",
       "capabilities": [
@@ -2558,7 +2615,8 @@
         "terminalIconAsset": "assets/provider-icons/cline.png",
         "accentVar": "var(--provider-cline)",
         "softVar": "var(--provider-cline-soft)",
-        "tagColor": "magenta"
+        "tagColor": "magenta",
+        "apiHost": "cline.bot"
       },
       "gateway": "active",
       "capabilities": [

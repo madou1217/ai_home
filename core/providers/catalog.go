@@ -102,6 +102,14 @@ func cloneDefinition(source Definition) Definition {
 	}
 	if source.NativeBoundary != nil {
 		native := *source.NativeBoundary
+		if source.NativeBoundary.Runtime != nil {
+			runtime := *source.NativeBoundary.Runtime
+			runtime.Env = make(map[string]string, len(source.NativeBoundary.Runtime.Env))
+			for key, value := range source.NativeBoundary.Runtime.Env {
+				runtime.Env[key] = value
+			}
+			native.Runtime = &runtime
+		}
 		native.Config.EnvHomeKeys = append([]string(nil), source.NativeBoundary.Config.EnvHomeKeys...)
 		native.Config.UserSettings = append([]string(nil), source.NativeBoundary.Config.UserSettings...)
 		native.Config.ProjectSettings = append([]string(nil), source.NativeBoundary.Config.ProjectSettings...)

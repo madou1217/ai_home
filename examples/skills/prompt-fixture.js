@@ -4,7 +4,7 @@
 // It does not emulate reasoning and is never evidence of remote inference.
 const http = require('node:http');
 const MARKER = 'AIH_SKILL_DEMO_OK';
-async function createPromptFixture({ marker = MARKER, missing = 'SKILL_NOT_LOADED' } = {}) {
+async function createPromptFixture({ marker = MARKER, missing = 'SKILL_NOT_LOADED', invokeSkill = false } = {}) {
   const observations = [];
   const server = http.createServer(async (request, response) => {
     try {
@@ -19,6 +19,7 @@ async function createPromptFixture({ marker = MARKER, missing = 'SKILL_NOT_LOADE
       const text = JSON.stringify({ messages: body.messages, input: body.input, instructions: body.instructions, system: body.system });
       const loaded = text.includes(marker);
       observations.push({ route: request.url.split('?')[0], loaded, skillMentioned: text.includes('aih-demo') });
+      const skillTool = invokeSkill && !loaded && body.tools?.find(tool => tool.function?.name === 'Skill' && tool.function.description?.includes('- aih-demo:'));
       const answer = loaded ? marker : missing;
       const emit = (type, value) => response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...value })}\n\n`);
       if (request.url.includes('/messages')) {
@@ -45,9 +46,11 @@ async function createPromptFixture({ marker = MARKER, missing = 'SKILL_NOT_LOADE
         emit('response.completed', { response: result });
       } else {
         response.writeHead(200, { 'content-type': 'text/event-stream' });
-        const chunk = { id: 'chatcmpl_fixture', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: body.model, choices: [{ index: 0, delta: { role: 'assistant', content: answer }, finish_reason: null }] };
+        const toolCalls = skillTool ? [{ index: 0, id: 'call_aih_skill', type: 'function', function: { name: 'Skill', arguments: JSON.stringify({ skill: 'aih-demo' }) } }] : null;
+        observations.at(-1).skillToolRequested = Boolean(toolCalls);
+        const chunk = { id: 'chatcmpl_fixture', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: body.model, choices: [{ index: 0, delta: toolCalls ? { role: 'assistant', tool_calls: toolCalls } : { role: 'assistant', content: answer }, finish_reason: null }] };
         response.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
+        response.write(`data: ${JSON.stringify({ ...chunk, choices: [{ index: 0, delta: {}, finish_reason: toolCalls ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`);
       }
       response.end();
     } catch (_) { if (!response.headersSent) response.writeHead(400); response.end(); }

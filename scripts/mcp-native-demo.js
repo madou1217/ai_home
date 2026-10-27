@@ -7,10 +7,10 @@ const { createMcpManager } = require('../lib/native-resources/mcp-manager');
 const { defaultProviderResourceRegistry: registry } = require('../lib/native-resources/provider-resource-registry');
 const SOURCE = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
 const CLIENTS = [
-  { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', version: ['--version'], list: ['mcp', 'list'] },
-  { provider: 'claude', binary: '/Users/model/.local/bin/claude', version: ['--version'], list: ['mcp', 'list'] },
-  { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', version: ['--version'], list: ['mcp', 'list'] },
-  { provider: 'cline', binary: '/opt/homebrew/bin/cline', version: ['--version'], list: ['config', '--json'] }
+  { provider: 'codex', binary: '/Users/model/.codex/packages/standalone/current/bin/codex.aih-original', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./codex-mcp-tool-loop-demo').runCodexMcpDemo },
+  { provider: 'claude', binary: '/Users/model/.local/bin/claude', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./claude-mcp-tool-loop-demo').runClaudeMcpDemo },
+  { provider: 'opencode', binary: '/Users/model/Library/pnpm/bin/opencode', version: ['--version'], list: ['mcp', 'list'], toolLoop: require('./opencode-mcp-tool-loop-demo').runOpenCodeMcpDemo },
+  { provider: 'cline', binary: '/opt/homebrew/bin/cline', version: ['--version'], list: ['config', '--json'], toolLoop: require('./cline-mcp-tool-loop-demo').runClineMcpDemo }
 ];
 function run(binary, args, options) {
   const result = spawnSync(binary, args, { ...options, encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 });
@@ -41,7 +41,8 @@ async function runMcpNativeDemo() {
       const called = await manager.call('aih-demo', 'aih_echo', { text: 'AIH_MCP_DEMO_OK' }, { provider: client.provider });
       manager.disable('aih-demo', { provider: client.provider });
       const disabled = run(client.binary, client.list, { cwd: root, env: { ...process.env, HOME: fixture.hostHomeDir, USERPROFILE: fixture.hostHomeDir, CODEX_HOME: path.join(fixture.hostHomeDir, '.codex'), CLAUDE_CONFIG_DIR: path.join(fixture.hostHomeDir, '.claude'), XDG_CONFIG_HOME: path.join(fixture.hostHomeDir, '.config'), XDG_DATA_HOME: path.join(fixture.hostHomeDir, '.local/share'), CLINE_DIR: path.join(fixture.hostHomeDir, '.cline'), CLINE_DATA_DIR: path.join(fixture.hostHomeDir, '.cline/data'), NO_PROXY: '127.0.0.1,localhost' } });
-      stages.push({ provider: client.provider, binary: client.binary, version: summarize(run(client.binary, client.version, { env: process.env })), projection: rootConfig, managerTest: test.ok, tools: tools.map(x => x.name), call: called.content?.[0]?.text || '', nativeEnabled: summarize(enabled), nativeDisabled: summarize(disabled), passed: test.ok && tools.length === 2 && called.content?.[0]?.text === 'AIH_MCP_DEMO_OK' && enabled.status === 0 && disabled.status === 0 });
+      const nativeToolLoop = client.toolLoop ? await client.toolLoop(client.binary) : undefined;
+      stages.push({ ...(nativeToolLoop ? { nativeToolLoop } : {}), provider: client.provider, binary: client.binary, version: summarize(run(client.binary, client.version, { env: process.env })), projection: rootConfig, managerTest: test.ok, tools: tools.map(x => x.name), call: called.content?.[0]?.text || '', nativeEnabled: summarize(enabled), nativeDisabled: summarize(disabled), passed: (!nativeToolLoop || nativeToolLoop.passed) && test.ok && tools.length === 2 && called.content?.[0]?.text === 'AIH_MCP_DEMO_OK' && enabled.status === 0 && disabled.status === 0 });
       manager.remove('aih-demo', { provider: client.provider });
     } catch (error) {
       stages.push({ provider: client.provider, passed: false, error: error.code || error.message });

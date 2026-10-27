@@ -30,7 +30,8 @@
     "web:dev": "cd web && npm run dev",
     "build": "npm run web:build",
     "providers:audit": "node scripts/provider-collection-audit.js",
-    "providers:family-drift": "node scripts/codebuddy-family-drift-check.js"
+    "providers:family-drift": "node scripts/codebuddy-family-drift-check.js",
+    "resources:closure": "node scripts/resource-closure-demo.js --json"
   },
   "keywords": [],
   "author": "",

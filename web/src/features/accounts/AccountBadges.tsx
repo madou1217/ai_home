@@ -25,7 +25,21 @@ export function getAccountSecondaryLabel(record: Account) {
   return getAccountSecondaryIdentity(record);
 }
 
-export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region'>) {
+// zcode 的**服务区域**（zai 国际站 / bigmodel 国内站）。与 kimi 的 region 语义不同
+// （那是网络区域 china/overseas），因此读的是独立字段 zcodeRegion。
+// 用途：同一用户能在两个区域各有账号、邮箱相同或被上游打码，只有区域能分开。
+// 标签文案与 lib/server/zcode-region.js 的区域表同源。
+const ZCODE_REGION_META: Record<string, { color: string; label: string }> = {
+  zai: { color: 'blue', label: 'Z.AI 国际站' },
+  bigmodel: { color: 'orange', label: 'BigModel 国内站' }
+};
+
+export function getAccountRegionMeta(record: Pick<Account, 'provider' | 'region' | 'zcodeRegion'>) {
+  if (record.provider === 'zcode') {
+    const meta = ZCODE_REGION_META[String(record.zcodeRegion || '').trim()];
+    // 未判定区域时不渲染标签（不要谎报一个区域）。
+    return meta ? { ...meta, endpoint: '' } : null;
+  }
   if (record.provider !== 'kimi') return null;
   if (record.region === 'china') {
     return { color: 'blue', label: '中国区', endpoint: 'www.kimi.com' };
@@ -272,12 +286,14 @@ const accountRoleTagStyle: React.CSSProperties = {
   marginInlineEnd: 0
 };
 
-export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region'>) {
+export function renderAccountRegionTag(record: Pick<Account, 'provider' | 'region' | 'zcodeRegion'>) {
   const meta = getAccountRegionMeta(record);
   if (!meta) return null;
-  const detail = meta.endpoint
-    ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
-    : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。';
+  const detail = record.provider === 'zcode'
+    ? `ZCode 服务区域：${meta.label}（凭据里的 oauth:active_provider）`
+    : (meta.endpoint
+      ? `Kimi Desktop 当前生效区域：${meta.label}（${meta.endpoint}）`
+      : '尚未从该账号的 Kimi Desktop profile 读取到有效区域。');
   return (
     <Tooltip title={detail}>
       <Tag color={meta.color} style={accountRoleTagStyle}>
@@ -344,11 +360,59 @@ export function renderAccountRoleIcons(record: Pick<Account, 'isDefault' | 'isMo
   );
 }
 
-export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {
-  // 认证方式只展示一次，避免密钥模式在账号行里重复出现。
-  if (record.apiKeyMode) return '密钥';
-  // kimi 等 provider 有订阅页品牌档（Allegretto 等），优先于 LEVEL_* 枚举值。
-  return record.planName || record.planType || 'free';
+/**
+ * 单个套餐标签（多套餐场景请用 getPlanTagLabels）。
+ *
+ * **不再回退到拼接的 planType**：zcode 叠加套餐时后端把展示名拼成
+ * `A + B` 塞进 planType，直接返回它会让调用方（移动端行/详情页）显示那串
+ * `+` 拼接——用户明确要求拆开。这里改为返回**第一个**套餐名，
+ * 需要全部时用 getPlanTagLabels()。
+ */
+export function getPlanTagLabel(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>) {
+  return getPlanTagLabels(record)[0] || 'free';
+}
+
+/**
+ * 套餐标签**拆分成多个**。
+ *
+ * 为什么不能只给一个标签：zcode 同账号可能叠加多个套餐（「领臭鸡蛋」），后端把展示名
+ * 拼成 `A + B` 塞进 planType。整串当一个标签会有两个问题——**宽度随套餐增减而变**，
+ * 且 `+` 拼接在窄列里被截断（真机：「ZCODE GLOBAL BUILD + ZCode Start Plan」显示成
+ * 半截）。拆开渲染后每个标签宽度稳定，行内自动换行。
+ *
+ * 数据来源优先级：
+ *   1. 额度快照的 planGroups（**结构化**，每个套餐一个 name，最可靠）；
+ *   2. planName（其它 provider 的订阅档，单值）；
+ *   3. 把 planType 按分隔符拆开（兜底，兼容没有 planGroups 的快照）。
+ */
+export function getPlanTagLabels(
+  record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName' | 'usageSnapshot'>
+): string[] {
+  if (record.apiKeyMode) return ['密钥'];
+  // 1. 结构化套餐分组。
+  const snapshot = record.usageSnapshot;
+  // 0. 服务端**已经拆好的**套餐名列表（最直接，不依赖 planGroups 是否随 payload 下发）。
+  const rawPlanNames = snapshot && typeof snapshot === 'object' && 'account' in snapshot
+    ? (snapshot.account as { planNames?: unknown } | null | undefined)?.planNames
+    : undefined;
+  const accountPlanNames = Array.isArray(rawPlanNames)
+    ? rawPlanNames.map((n) => String(n || '').trim()).filter(Boolean)
+    : [];
+  if (accountPlanNames.length > 0) return Array.from(new Set(accountPlanNames));
+  const groups = snapshot && typeof snapshot === 'object' && 'planGroups' in snapshot
+    && Array.isArray(snapshot.planGroups) ? snapshot.planGroups : [];
+  const groupNames = groups
+    .map((g) => String((g && g.name) || '').trim())
+    .filter(Boolean);
+  if (groupNames.length > 0) return Array.from(new Set(groupNames));
+  // 2. 订阅档（kimi 等）优先于枚举值。
+  const planName = String(record.planName || '').trim();
+  if (planName) return [planName];
+  // 3. 兜底拆分：` + ` 是后端拼多套餐用的分隔符（见 zcode-quota-probe 的 planType 汇总）。
+  const planType = String(record.planType || '').trim();
+  if (!planType) return ['free'];
+  const parts = planType.split(/\s*\+\s*/).map((p) => p.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [planType];
 }
 
 export function getPlanTagColor(record: Pick<Account, 'apiKeyMode' | 'planType' | 'planName'>) {

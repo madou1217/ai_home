@@ -15,6 +15,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-codex)",
     "softVar": "var(--provider-codex-soft)",
     "tagColor": "green",
+    "apiHost": "api.openai.com",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -59,6 +60,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-gemini)",
     "softVar": "var(--provider-gemini-soft)",
     "tagColor": "blue",
+    "apiHost": "generativelanguage.googleapis.com",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -103,6 +105,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-claude)",
     "softVar": "var(--provider-claude-soft)",
     "tagColor": "orange",
+    "apiHost": "api.anthropic.com",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -147,6 +150,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-agy)",
     "softVar": "var(--provider-agy-soft)",
     "tagColor": "purple",
+    "apiHost": "daily-cloudcode-pa.googleapis.com",
     "capabilities": [
       "model_catalog",
       "quota_usage",
@@ -185,6 +189,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-opencode)",
     "softVar": "var(--provider-opencode-soft)",
     "tagColor": "default",
+    "apiHost": "opencode.ai",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -218,6 +223,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-grok)",
     "softVar": "var(--provider-grok-soft)",
     "tagColor": "cyan",
+    "apiHost": "api.x.ai",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -254,6 +260,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-qoder)",
     "softVar": "var(--provider-qoder-soft)",
     "tagColor": "blue",
+    "apiHost": "qoder.com",
     "capabilities": [
       "model_catalog",
       "session_history",
@@ -288,6 +295,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-qodercn)",
     "softVar": "var(--provider-qodercn-soft)",
     "tagColor": "purple",
+    "apiHost": "qoder.com.cn",
     "capabilities": [
       "model_catalog",
       "session_history",
@@ -322,6 +330,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-kimi)",
     "softVar": "var(--provider-kimi-soft)",
     "tagColor": "geekblue",
+    "apiHost": "api.moonshot.cn",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -358,6 +367,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-kiro)",
     "softVar": "var(--provider-kiro-soft)",
     "tagColor": "volcano",
+    "apiHost": "kiro.dev",
     "capabilities": [
       "model_catalog",
       "session_history",
@@ -393,6 +403,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-zcode)",
     "softVar": "var(--provider-zcode-soft)",
     "tagColor": "geekblue",
+    "apiHost": "z.ai",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -447,6 +458,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-codebuddy)",
     "softVar": "var(--provider-codebuddy-soft)",
     "tagColor": "blue",
+    "apiHost": "codebuddy.ai",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -483,6 +495,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-codebuddycn)",
     "softVar": "var(--provider-codebuddycn-soft)",
     "tagColor": "purple",
+    "apiHost": "copilot.tencent.com",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -519,6 +532,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-workbuddy)",
     "softVar": "var(--provider-workbuddy-soft)",
     "tagColor": "green",
+    "apiHost": "workbuddy.cn",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -555,6 +569,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-workbuddycn)",
     "softVar": "var(--provider-workbuddycn-soft)",
     "tagColor": "gold",
+    "apiHost": "copilot.tencent.com",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -591,6 +606,7 @@ export const PROVIDER_DEFINITIONS = [
     "accentVar": "var(--provider-cline)",
     "softVar": "var(--provider-cline-soft)",
     "tagColor": "magenta",
+    "apiHost": "cline.bot",
     "capabilities": [
       "api_key_account",
       "model_catalog",
@@ -633,6 +649,7 @@ export const PROVIDER_CATALOG = Object.freeze(Object.fromEntries(
     accentVar: definition.accentVar,
     softVar: definition.softVar,
     tagColor: definition.tagColor,
+    apiHost: definition.apiHost,
     capabilities: definition.capabilities,
     clients: definition.clients,
   }]),

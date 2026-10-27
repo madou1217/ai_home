@@ -36,6 +36,9 @@
       ],
       "js": [
         "panel.js",
+        "reading-themes.js",
+        "page-language.js",
+        "page-segments.js",
         "content.js"
       ],
       "run_at": "document_idle"

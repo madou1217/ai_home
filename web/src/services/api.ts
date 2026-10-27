@@ -2354,6 +2354,41 @@ export const sshHostsAPI = {
 };
 
 export const toolkitAPI = {
+  getAihPlugins: async (): Promise<import('@/types').AihPluginReport> => {
+    const response = await api.get<import('@/types').AihPluginReport>('/plugins');
+    return response.data;
+  },
+  getAihPluginDoctor: async (): Promise<import('@/types').AihPluginDoctorReport> => {
+    const response = await api.get<import('@/types').AihPluginDoctorReport>('/plugins/doctor');
+    return response.data;
+  },
+  operateAihPlugin: async (action: 'enable' | 'disable' | 'uninstall', input: Record<string, unknown>) => {
+    const response = await api.post(`/plugins/${action}`, input);
+    return response.data;
+  },
+  runAihPluginDemo: async (): Promise<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }> => {
+    const response = await api.post<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }>('/plugins/demo', {});
+    return response.data;
+  },
+  getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
+    const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
+    return response.data;
+  },
+  operateNativeResource: async (input: {
+    kind: import('@/types').NativeResourceKind;
+    action: import('@/types').NativeResourceAction;
+    id?: string;
+    provider?: string;
+    host?: string;
+    source?: string;
+    tool?: string;
+    args?: Record<string, unknown>;
+  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }> => {
+    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }>(
+      '/webui/toolkit/native-resources', input
+    );
+    return response.data;
+  },
   // 只读：这条接口不触发任何检查或安装，纯粹回放账本与调度器状态。
   getProviderCliUpgradeStatus: async (): Promise<ProviderCliUpgradeStatusResponse> => {
     const response = await api.get<ProviderCliUpgradeStatusResponse>('/webui/provider-cli-upgrade');

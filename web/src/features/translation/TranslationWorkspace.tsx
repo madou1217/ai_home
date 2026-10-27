@@ -396,7 +396,14 @@ export default function TranslationWorkspace() {
   const requestTranslation = useCallback(
     (detectedCode: string, confidence: 'high' | 'medium' | 'low' | undefined, policy: TranslationTargetPolicy) => {
       const intent = resolveLanguageIntent(
-        { source, target, detected: detectedCode, confidence, targetPolicy: policy },
+        {
+          source,
+          target,
+          detected: detectedCode,
+          confidence,
+          targetPolicy: policy,
+          allowAutoSource: bootstrap?.settings.executionTarget === 'aih-server',
+        },
         languages,
       );
       if (intent.state !== 'ready') {
@@ -412,7 +419,7 @@ export default function TranslationWorkspace() {
       });
       return true;
     },
-    [languages, requestRoutes, selection.model, selection.provider, source, stream, target, text],
+    [bootstrap, languages, requestRoutes, selection.model, selection.provider, source, stream, target, text],
   );
 
   const handleTranslate = useCallback(async (policyOverride?: TranslationTargetPolicy) => {
@@ -515,15 +522,17 @@ export default function TranslationWorkspace() {
       detected: detectionMatchesText ? detection?.code : '',
       confidence: detectionMatchesText ? detection?.confidence : undefined,
       targetPolicy,
+      allowAutoSource: bootstrap?.settings.executionTarget === 'aih-server',
     },
     languages,
   );
   const sameLanguage = languageIntent.state === 'same_language';
+  const allowAutoSource = bootstrap?.settings.executionTarget === 'aih-server';
   const showConfirmation = Boolean(text.trim()) && !confirmationDismissed && languageIntent.state !== 'ready';
   const intentMessage = sameLanguage
     ? `原文已是${languageLabelOf(languages, target)}，请选择其它目标语言后再开始翻译。`
     : languageIntent.reason === 'source_detection_required'
-      ? '无法确定原文语言，请先重新识别后再开始翻译。'
+      ? (allowAutoSource ? '正在交给翻译模型自动判断原文语言。' : '此翻译引擎需要源语言，请先重新识别或选择源语言。')
       : languageIntent.reason === 'low_confidence'
         ? '语言识别不确定，请先选择目标语言后再开始翻译。'
         : '请选择目标语言后再开始翻译。';

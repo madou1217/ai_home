@@ -82,6 +82,8 @@ func nativeGemini() *NativeCapability {
 			Commands:    []string{"mcp"},
 			ConfigFiles: []string{"settings.json"},
 		},
+		Plugins: NativePlugins{Adapter: "gemini-extension", Commands: []string{"extensions"}, Paths: []string{"extensions"}, Mode: "native"},
+		Skills:  NativeSkills{Commands: []string{"skills"}, Paths: []string{"skills"}, Mode: "native"},
 		Hooks: NativeHooks{
 			Files:                  []string{"settings.json"},
 			StopRequiresJSONStdout: true,
@@ -355,4 +357,42 @@ func nativeCodebuddy() *NativeCapability {
 			Modes: []string{"default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"},
 		},
 	}
+}
+
+// CodeBuddy 2.177.0 uses the native marketplace and user .mcp.json.
+// The older WorkBuddy bundle has its own verified projection below.
+func nativeCodebuddyCLI() *NativeCapability {
+	native := nativeCodebuddy()
+	native.Plugins.Adapter = "native-marketplace"
+	native.MCP = NativeMCP{
+		Projection:  &NativeMCPProjection{Path: ".mcp.json", Format: "json-stdio"},
+		Commands:    []string{"mcp"},
+		ConfigFiles: []string{".mcp.json"},
+	}
+	return native
+}
+
+func nativeCodebuddyCNCLI() *NativeCapability {
+	native := nativeCodebuddyCLI()
+	native.Runtime = &NativeResourceRuntime{Handler: "native-cli", Env: map[string]string{
+		"CODEBUDDY_INTERNET_ENVIRONMENT":         "internal",
+		"CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT": "internal",
+	}}
+	return native
+}
+
+func nativeWorkbuddy() *NativeCapability {
+	native := nativeCodebuddy()
+	native.Plugins.Adapter = "native-marketplace"
+	native.MCP = NativeMCP{
+		Projection:  &NativeMCPProjection{Path: ".codebuddy.json", Format: "json-stdio"},
+		Commands:    []string{"mcp"},
+		ConfigFiles: []string{".codebuddy.json"},
+	}
+	native.Runtime = &NativeResourceRuntime{
+		Handler: "desktop-node",
+		Entry:   "Contents/Resources/app.asar.unpacked/cli/bin/codebuddy",
+		Env:     map[string]string{"CODEBUDDY_FORCE_LITE_WB_BUNDLE": "1"},
+	}
+	return native
 }

@@ -40,6 +40,10 @@ type clientDefinition struct {
 	AccentVar         string                 `json:"accentVar"`
 	SoftVar           string                 `json:"softVar"`
 	TagColor          string                 `json:"tagColor"`
+	// APIHost 是默认 API 域名（展示用）：账号只有 baseUrl 时，前端据此回落到
+	// 厂商默认域名。放进契约是为了让前端**不必**维护 `Record<Provider, string>`
+	// 那张手写表——漏项会在全量 TS 编译时报 TS2739（workbuddycn/cline 曾漏）。
+	APIHost           string                 `json:"apiHost,omitempty"`
 	Capabilities      []providers.Capability `json:"capabilities"`
 	AuthOptions       []providers.AuthOption `json:"authOptions"`
 	Clients           clientSupport          `json:"clients"`
@@ -129,6 +133,7 @@ func buildClientDefinitions(manifest providers.Manifest) []clientDefinition {
 			AccentVar:         presentation.AccentVar,
 			SoftVar:           presentation.SoftVar,
 			TagColor:          presentation.TagColor,
+			APIHost:           presentation.APIHost,
 			Capabilities:      definition.Capabilities,
 			AuthOptions:       definition.AuthOptions,
 			Clients: clientSupport{
@@ -234,6 +239,8 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("  readonly accentVar: string;\n")
 	output.WriteString("  readonly softVar: string;\n")
 	output.WriteString("  readonly tagColor: string;\n")
+	output.WriteString("  /** 默认 API 域名（展示用，见 Presentation.APIHost）。 */\n")
+	output.WriteString("  readonly apiHost?: string;\n")
 	output.WriteString("  readonly capabilities: readonly string[];\n")
 	output.WriteString("  readonly clients: { readonly cli: boolean; readonly desktop: boolean };\n")
 	output.WriteString("}\n\n")
@@ -252,6 +259,7 @@ func renderClientTypeScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("    accentVar: definition.accentVar,\n")
 	output.WriteString("    softVar: definition.softVar,\n")
 	output.WriteString("    tagColor: definition.tagColor,\n")
+	output.WriteString("    apiHost: definition.apiHost,\n")
 	output.WriteString("    capabilities: definition.capabilities,\n")
 	output.WriteString("    clients: definition.clients,\n")
 	output.WriteString("  }]),\n")
@@ -313,6 +321,7 @@ func renderClientJavaScript(manifest providers.Manifest) ([]byte, error) {
 	output.WriteString("    accentVar: definition.accentVar,\n")
 	output.WriteString("    softVar: definition.softVar,\n")
 	output.WriteString("    tagColor: definition.tagColor,\n")
+	output.WriteString("    apiHost: definition.apiHost,\n")
 	output.WriteString("    capabilities: definition.capabilities,\n")
 	output.WriteString("    clients: definition.clients,\n")
 	output.WriteString("  }]),\n")

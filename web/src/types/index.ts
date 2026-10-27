@@ -2788,6 +2788,61 @@ export interface ConnectivityResponse {
   results: ConnectivityTargetResult[];
 }
 
+export type NativeResourceKind = 'plugin' | 'skill' | 'mcp';
+export type NativeResourceAction = 'install' | 'enable' | 'disable' | 'remove' | 'test' | 'tools' | 'call' | 'demo';
+
+export interface NativeResourceManagedRecord {
+  kind: NativeResourceKind;
+  id: string;
+  provider?: string;
+  host?: string;
+  enabled?: boolean;
+  removed?: boolean;
+  target?: string;
+  mode?: string;
+  digest?: string;
+  projection?: string;
+  command?: string;
+  argCount?: number;
+  envKeys?: string[];
+}
+
+export interface NativeResourceCapability {
+  state: string;
+  reason?: string;
+  commands?: string[];
+  paths?: string[];
+  mode?: string;
+  adapter?: string;
+  projection?: { path?: string; format?: string; [key: string]: unknown };
+  managed: NativeResourceManagedRecord[];
+  demo: { source: string; command: string };
+}
+
+export interface NativeResourceProviderRow {
+  provider: string;
+  runtime: { available: boolean; version?: string; binary?: string; reason?: string; [key: string]: unknown };
+  resources: Record<NativeResourceKind, NativeResourceCapability>;
+}
+
+export interface NativeResourceHostRow {
+  host: string;
+  state: string;
+  reason?: string;
+  runtime?: { available?: boolean; versionObserved?: string; [key: string]: unknown };
+  resources: { plugin: NativeResourceCapability };
+}
+
+export interface NativeResourceReport {
+  ok: boolean;
+  source: string;
+  providers: NativeResourceProviderRow[];
+  hosts: NativeResourceHostRow[];
+  managed: Record<NativeResourceKind, NativeResourceManagedRecord[]>;
+  lifecycle: string[];
+  evidenceBoundary: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;

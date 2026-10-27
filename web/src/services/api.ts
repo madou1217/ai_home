@@ -2354,6 +2354,25 @@ export const sshHostsAPI = {
 };
 
 export const toolkitAPI = {
+  getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
+    const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
+    return response.data;
+  },
+  operateNativeResource: async (input: {
+    kind: import('@/types').NativeResourceKind;
+    action: import('@/types').NativeResourceAction;
+    id?: string;
+    provider?: string;
+    host?: string;
+    source?: string;
+    tool?: string;
+    args?: Record<string, unknown>;
+  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }> => {
+    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }>(
+      '/webui/toolkit/native-resources', input
+    );
+    return response.data;
+  },
   // 只读：这条接口不触发任何检查或安装，纯粹回放账本与调度器状态。
   getProviderCliUpgradeStatus: async (): Promise<ProviderCliUpgradeStatusResponse> => {
     const response = await api.get<ProviderCliUpgradeStatusResponse>('/webui/provider-cli-upgrade');

@@ -23,6 +23,7 @@ import SubscriptionAggregatorPanel from '@/components/toolkit/subscription-aggre
 import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import GeoResourcePanel from '@/features/geo-resource/GeoResourcePanel';
+import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
@@ -61,6 +62,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '持久化工具',
       description: 'tmux / psmux 持久会话',
       icon: <ToolOutlined />
+    },
+    {
+      id: 'native-resources',
+      label: '插件与资源',
+      description: 'Plugin / Skill / MCP 原生投影',
+      icon: <CodeOutlined />
     }
   ],
   runtime: [
@@ -135,6 +142,8 @@ function renderPanel(panelId: string) {
       return <AppManagerPanel />;
     case 'session-runtimes':
       return <ManagedToolsPanel category="session-runtimes" />;
+    case 'native-resources':
+      return <NativeResourcesPanel />;
     case 'terminals':
       return <TerminalManagerPanel />;
     case 'edge-forwarding':

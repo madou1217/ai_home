@@ -207,7 +207,11 @@ async function runWorkbuddyMcpDemo(binary, provider = 'workbuddy') {
     assert.equal(call.content?.[0]?.text, 'AIH_RESOURCE_MCP_OK');
     const stages = [];
     const configRoot = resolveProviderNativeRoot(hostHomeDir, provider);
-    const configPath = provider === 'workbuddy'
+    // Both WorkBuddy desktop bundles own the `.codebuddy.json` projection.
+    // CodeBuddy/CodeBuddy CN use `.mcp.json`; keep the imported-host choice
+    // descriptor-shaped instead of treating every non-workbuddy provider as a
+    // CodeBuddy CLI.
+    const configPath = ['workbuddy', 'workbuddycn'].includes(provider)
       ? path.join(configRoot, '.codebuddy.json')
       : path.join(configRoot, '.mcp.json');
     manager.enable('aih-demo', { provider });

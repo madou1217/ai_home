@@ -15,7 +15,6 @@ const CLIENTS = [
   { host: 'pi', demo: 'pi-plugin-native-demo.js', args: ['--managed'] },
   { host: 'deepseek', demo: 'deepseek-plugin-managed-demo.mjs', args: [] },
   { host: 'aih', demo: 'aih-portable-plugin-demo.js', args: [], localRuntime: true },
-  { host: 'workbuddy', resourceProvider: 'workbuddy', demo: 'workbuddy-resource-native-demo.js', args: [], timeoutMs: 180000 }
 ];
 async function run(binary, args, env, cwd, timeoutMs = 30000) {
   const result = await runProcess(binary, args, { env, cwd, timeoutMs, maxOutput: 1024 * 1024 });

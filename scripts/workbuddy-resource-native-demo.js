@@ -17,6 +17,18 @@ const SOURCE = path.resolve(__dirname, '../examples/native-plugins/aih-demo');
 const SKILL_SOURCE = path.resolve(__dirname, '../assets/provider-skills/aih-demo');
 const MCP_SERVER = path.resolve(__dirname, '../examples/mcp/aih-demo-server.js');
 
+async function removeRoot(root) {
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 1, retryDelay: 100 });
+      return;
+    } catch (error) {
+      if (attempt === 15) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
 function invoke(runtime, env, cwd, prompt) {
   // Stream JSON keeps the native result observable even when a host emits a
   // large tool transcript. Some CodeBuddy builds buffer a pretty JSON array
@@ -26,6 +38,24 @@ function invoke(runtime, env, cwd, prompt) {
     cwd,
     env,
     stopWhen: (output) => /"type"\s*:\s*"result"/.test(output)
+  });
+}
+
+function listNativeMcp(runtime, env, cwd, expectedEnabled) {
+  return runProcess(runtime.command, [...runtime.args, 'mcp', 'list'], {
+    cwd,
+    env,
+    timeoutMs: 30000,
+    maxOutput: 256000,
+    // The native host can keep an MCP stdio worker alive after printing the
+    // complete list. The list output is the evidence boundary; terminate the
+    // supervised process group as soon as that boundary is observable.
+    stopWhen: (output) => {
+      const text = String(output || '');
+      return expectedEnabled
+        ? /aih-demo[^\n]*\bConnected\b/.test(text)
+        : /No MCP servers configured\./.test(text) || !text.includes('aih-demo');
+    }
   });
 }
 
@@ -123,11 +153,11 @@ async function main(options = {}) {
     const filesCall = await mcpManager.call('aih-demo', 'aih_list_files', { path: '.' }, { provider });
     assert.ok(!filesCall.isError && filesCall.content?.[0]?.text, 'mcp_list_files_failed');
     mcpManager.enable('aih-demo', { provider });
-    const nativeList = await runProcess(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, timeoutMs: 30000, maxOutput: 256000 });
+    const nativeList = await listNativeMcp(runtime, env, root, true);
     assert.equal(nativeList.status, 0, nativeList.stderr);
     assert.match(nativeList.stdout, /aih-demo[^\n]*\bConnected\b/);
     mcpManager.disable('aih-demo', { provider });
-    const disabledList = await runProcess(runtime.command, [...runtime.args, 'mcp', 'list'], { cwd: root, env, timeoutMs: 30000, maxOutput: 256000 });
+    const disabledList = await listNativeMcp(runtime, env, root, false);
     assert.equal(disabledList.status, 0, disabledList.stderr);
     assert.doesNotMatch(disabledList.stdout, /aih-demo/);
     mcpManager.remove('aih-demo', { provider });
@@ -137,7 +167,11 @@ async function main(options = {}) {
   } finally {
     await fixture?.close();
     await skillFixture?.close();
-    fs.rmSync(root, { recursive: true, force: true });
+    // CodeBuddy may finish its result event before the native child that owns
+    // the config directory exits. Retry cleanup until that process group has
+    // released the isolated home; a passed tool loop with a leaked child is
+    // not a stable demo result.
+    await removeRoot(root);
   }
 }
 

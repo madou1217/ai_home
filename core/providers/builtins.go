@@ -952,7 +952,13 @@ func builtinWorkbuddyCN() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:             "workbuddycn",
-		NativeBoundary: nativeCodebuddy(),
+		// WorkBuddy CN owns the same embedded CodeBuddy runtime as WorkBuddy AI,
+		// but uses the domestic provider's HOME/config root and auth projection.
+		// Keep the native boundary aligned with the actual WorkBuddy app bundle:
+		// native marketplace resources, `.codebuddy.json` MCP projection and the
+		// descriptor-declared lite bundle runtime. The provider-specific identity
+		// and storage scope remain on this Definition/CLI descriptor.
+		NativeBoundary: nativeWorkbuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Presentation:   withAPIHost(presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,

@@ -35,7 +35,8 @@ export function useCanonicalSessionRestore(input: CanonicalSessionRestoreInput):
       selectedSession: input.selectedSession,
     });
     if (!resolution) return;
-    const project = input.catalogProjects.find(({ path }) => path === resolution.projectPath);
+    const project = input.catalogProjects.find(({ path }) => path === resolution.projectPath)
+      || input.directoryProjects.find(({ path }) => path === resolution.projectPath);
     if (!project) return;
     input.setSelectedProject(project);
     input.setSelectedSession(resolution.session);

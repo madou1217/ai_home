@@ -195,7 +195,17 @@ export function mergeCanonicalSessionDirectory(
   canonicalSessions: readonly Session[],
 ): AggregatedProject[] {
   const sessionsByProject = groupSessionsByProject(canonicalSessions);
-  return sortProjectsByActivity(projects.map((project) => {
+  const knownPaths = new Set(projects.map((project) => project.path));
+  const missingProjects = [...sessionsByProject.entries()]
+    .filter(([projectPath]) => !knownPaths.has(projectPath))
+    .map(([projectPath, sessions]) => ({
+      id: `canonical:${projectPath}`,
+      name: projectPath.split('/').filter(Boolean).slice(-1)[0] || projectPath,
+      path: projectPath,
+      providers: [...new Set(sessions.map((session) => session.provider))],
+      sessions: sortSessionsByActivity(sessions),
+    }));
+  return sortProjectsByActivity([...projects, ...missingProjects].map((project) => {
     const canonical = sessionsByProject.get(project.path);
     if (!canonical?.length) return project;
     return mergeProjectSessions(project, canonical);

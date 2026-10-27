@@ -200,6 +200,14 @@ type Presentation struct {
 	AccentVar         string `json:"accentVar"`
 	SoftVar           string `json:"softVar"`
 	TagColor          string `json:"tagColor"`
+	// APIHost 是该 Provider 的**默认 API 域名**（不含 scheme，例如 api.openai.com）。
+	//
+	// 为什么放在描述符里：前端展示 API Key 账号的身份时需要它（账号只有 baseUrl 时
+	// 回落到厂商默认域名）。此前这份映射手写在 web/src/utils/account-labels.ts 的
+	// `DEFAULT_API_KEY_DOMAINS: Record<Provider, string>` 里，于是**每加一个 Provider
+	// 都要记得去改那张表**——漏了就在全量 TS 编译时报 TS2739（workbuddycn / cline
+	// 就是这样漏的）。放进描述符后由 provider-manifest 生成，前端查表即可。
+	APIHost string `json:"apiHost,omitempty"`
 }
 
 // AuthOption 描述 Client 可以展示的账号认证选项。

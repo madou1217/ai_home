@@ -81,7 +81,7 @@ func relayHostsNodeOnly(reason string) map[string]RelayHost {
 func builtinCodex() Definition {
 	return Definition{
 		ID:           "codex",
-		Presentation: presentation("codex", "ChatGPT", "GPT", "◎", "green"),
+		Presentation: withAPIHost(presentation("codex", "ChatGPT", "GPT", "◎", "green"), "api.openai.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "openai", APIKeyEnv: []string{"OPENAI_API_KEY"}, BaseURLEnv: []string{"OPENAI_BASE_URL"}},
@@ -135,7 +135,7 @@ func builtinCodex() Definition {
 func builtinGemini() Definition {
 	return Definition{
 		ID:           "gemini",
-		Presentation: presentation("gemini", "Gemini", "GM", "✦", "blue"),
+		Presentation: withAPIHost(presentation("gemini", "Gemini", "GM", "✦", "blue"), "generativelanguage.googleapis.com"),
 		Gateway:      GatewayDeprecated,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "gemini", APIKeyEnv: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, BaseURLEnv: []string{"GEMINI_BASE_URL", "GOOGLE_BASE_URL"}},
@@ -174,7 +174,7 @@ func builtinClaude() Definition {
 	reloadsHostAuth := false
 	return Definition{
 		ID:           "claude",
-		Presentation: presentation("claude", "Claude", "CL", "◇", "orange"),
+		Presentation: withAPIHost(presentation("claude", "Claude", "CL", "◇", "orange"), "api.anthropic.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "anthropic", APIKeyEnv: []string{"ANTHROPIC_API_KEY"}, AuthTokenEnv: []string{"ANTHROPIC_AUTH_TOKEN"}, BaseURLEnv: []string{"ANTHROPIC_BASE_URL"}},
@@ -227,7 +227,7 @@ func builtinClaude() Definition {
 func builtinAntigravity() Definition {
 	return Definition{
 		ID:           "agy",
-		Presentation: presentation("agy", "Antigravity", "AGY", "▲", "purple"),
+		Presentation: withAPIHost(presentation("agy", "Antigravity", "AGY", "▲", "purple"), "daily-cloudcode-pa.googleapis.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "antigravity"},
@@ -275,7 +275,7 @@ func builtinAntigravity() Definition {
 func builtinOpenCode() Definition {
 	return Definition{
 		ID:             "opencode",
-		Presentation:   presentation("opencode", "OpenCode", "OC", "⌘", "default"),
+		Presentation:   withAPIHost(presentation("opencode", "OpenCode", "OC", "⌘", "default"), "opencode.ai"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
@@ -319,7 +319,7 @@ func builtinOpenCode() Definition {
 func builtinGrok() Definition {
 	return Definition{
 		ID:           "grok",
-		Presentation: presentation("grok", "Grok", "GK", "⚡", "cyan"),
+		Presentation: withAPIHost(presentation("grok", "Grok", "GK", "⚡", "cyan"), "api.x.ai"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, false),
 		Credentials:  &CredentialFacts{VendorID: "xai", APIKeyEnv: []string{"XAI_API_KEY"}, BaseURLEnv: []string{"XAI_BASE_URL"}, CLIRequiresAuthFile: true},
@@ -353,7 +353,7 @@ func builtinGrok() Definition {
 func builtinQoder() Definition {
 	return Definition{
 		ID:           "qoder",
-		Presentation: presentation("qoder", "Qoder", "QD", "◆", "blue"),
+		Presentation: withAPIHost(presentation("qoder", "Qoder", "QD", "◆", "blue"), "qoder.com"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
@@ -422,7 +422,7 @@ func builtinQoder() Definition {
 func builtinQoderCN() Definition {
 	return Definition{
 		ID:           "qodercn",
-		Presentation: presentation("qodercn", "Qoder CN", "QCN", "◇", "purple"),
+		Presentation: withAPIHost(presentation("qodercn", "Qoder CN", "QCN", "◇", "purple"), "qoder.com.cn"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"QODER_PERSONAL_ACCESS_TOKEN"}},
@@ -484,7 +484,7 @@ func builtinQoderCN() Definition {
 func builtinKimi() Definition {
 	return Definition{
 		ID:           "kimi",
-		Presentation: presentation("kimi", "Kimi", "KM", "☾", "geekblue"),
+		Presentation: withAPIHost(presentation("kimi", "Kimi", "KM", "☾", "geekblue"), "api.moonshot.cn"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "moonshot", APIKeyEnv: []string{"MOONSHOT_API_KEY"}, BaseURLEnv: []string{"KIMI_BASE_URL"}},
@@ -522,7 +522,7 @@ func builtinKimi() Definition {
 func builtinKiro() Definition {
 	return Definition{
 		ID:           "kiro",
-		Presentation: presentation("kiro", "Kiro", "KR", "⬡", "volcano"),
+		Presentation: withAPIHost(presentation("kiro", "Kiro", "KR", "⬡", "volcano"), "kiro.dev"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(true, true),
 		Credentials:  &CredentialFacts{VendorID: "kiro"},
@@ -569,7 +569,7 @@ func builtinKiro() Definition {
 func builtinZcode() Definition {
 	return Definition{
 		ID:           "zcode",
-		Presentation: presentation("zcode", "ZCode", "ZC", "◈", "geekblue"),
+		Presentation: withAPIHost(presentation("zcode", "ZCode", "ZC", "◈", "geekblue"), "z.ai"),
 		Gateway:      GatewayActive,
 		Clients:      clientSupport(false, true),
 		Credentials:  &CredentialFacts{APIKeyEnv: []string{"ZCODE_API_KEY"}, BaseURLEnv: []string{"ZCODE_BASE_URL"}},
@@ -653,7 +653,7 @@ func builtinCodebuddy() Definition {
 		ID:             "codebuddy",
 		NativeBoundary: nativeCodebuddyCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
-		Presentation:   presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"),
+		Presentation:   withAPIHost(presentation("codebuddy", "CodeBuddy", "CB", "❖", "blue"), "codebuddy.ai"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
@@ -770,7 +770,7 @@ func builtinCodebuddyCN() Definition {
 		ID:             "codebuddycn",
 		NativeBoundary: nativeCodebuddyCNCLI(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
-		Presentation:   presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"),
+		Presentation:   withAPIHost(presentation("codebuddycn", "CodeBuddy CN", "CBCN", "✦", "purple"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}, BaseURLEnv: []string{"CODEBUDDY_BASE_URL"}},
@@ -862,7 +862,7 @@ func builtinWorkbuddy() Definition {
 		ID:             "workbuddy",
 		NativeBoundary: nativeWorkbuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
-		Presentation:   presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"),
+		Presentation:   withAPIHost(presentation("workbuddy", "WorkBuddy", "WB", "◉", "green"), "workbuddy.cn"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
@@ -948,7 +948,7 @@ func builtinWorkbuddyCN() Definition {
 		ID:             "workbuddycn",
 		NativeBoundary: nativeCodebuddy(),
 		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
-		Presentation:   presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"),
+		Presentation:   withAPIHost(presentation("workbuddycn", "WorkBuddy CN", "WBCN", "◍", "gold"), "copilot.tencent.com"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(false, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"CODEBUDDY_API_KEY"}},
@@ -1026,7 +1026,7 @@ func builtinWorkbuddyCN() Definition {
 func builtinCline() Definition {
 	return Definition{
 		ID:             "cline",
-		Presentation:   presentation("cline", "Cline", "CLN", "⟡", "magenta"),
+		Presentation:   withAPIHost(presentation("cline", "Cline", "CLN", "⟡", "magenta"), "cline.bot"),
 		Gateway:        GatewayActive,
 		Clients:        clientSupport(true, false),
 		Credentials:    &CredentialFacts{VendorID: "cline", APIKeyEnv: []string{"CLINE_API_KEY"}, BaseURLEnv: []string{"CLINE_API_BASE_URL"}, CLIRequiresAuthFile: true},
@@ -1115,6 +1115,13 @@ func presentation(id, label, short, terminalIcon, tagColor string) Presentation 
 		SoftVar:           "var(--provider-" + id + "-soft)",
 		TagColor:          tagColor,
 	}
+}
+
+// withAPIHost 给描述符补上**默认 API 域名**（展示用，见 Presentation.APIHost）。
+// 独立于 presentation() 是为了不改那 17 处既有调用签名。
+func withAPIHost(p Presentation, host string) Presentation {
+	p.APIHost = host
+	return p
 }
 
 // authOption 统一构造 Client 认证选项。

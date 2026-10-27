@@ -9,6 +9,7 @@
       "accentVar": "var(--provider-codex)",
       "softVar": "var(--provider-codex-soft)",
       "tagColor": "green",
+      "apiHost": "api.openai.com",
       "family": "codex",
       "site": "global"
     },
@@ -21,6 +22,7 @@
       "accentVar": "var(--provider-gemini)",
       "softVar": "var(--provider-gemini-soft)",
       "tagColor": "blue",
+      "apiHost": "generativelanguage.googleapis.com",
       "family": "gemini",
       "site": "global"
     },
@@ -33,6 +35,7 @@
       "accentVar": "var(--provider-claude)",
       "softVar": "var(--provider-claude-soft)",
       "tagColor": "orange",
+      "apiHost": "api.anthropic.com",
       "family": "claude",
       "site": "global"
     },
@@ -45,6 +48,7 @@
       "accentVar": "var(--provider-agy)",
       "softVar": "var(--provider-agy-soft)",
       "tagColor": "purple",
+      "apiHost": "daily-cloudcode-pa.googleapis.com",
       "family": "agy",
       "site": "global"
     },
@@ -57,6 +61,7 @@
       "accentVar": "var(--provider-opencode)",
       "softVar": "var(--provider-opencode-soft)",
       "tagColor": "default",
+      "apiHost": "opencode.ai",
       "family": "opencode",
       "site": "global"
     },
@@ -69,6 +74,7 @@
       "accentVar": "var(--provider-grok)",
       "softVar": "var(--provider-grok-soft)",
       "tagColor": "cyan",
+      "apiHost": "api.x.ai",
       "family": "grok",
       "site": "global"
     },
@@ -81,6 +87,7 @@
       "accentVar": "var(--provider-qoder)",
       "softVar": "var(--provider-qoder-soft)",
       "tagColor": "blue",
+      "apiHost": "qoder.com",
       "family": "qoder",
       "site": "global"
     },
@@ -93,6 +100,7 @@
       "accentVar": "var(--provider-qodercn)",
       "softVar": "var(--provider-qodercn-soft)",
       "tagColor": "purple",
+      "apiHost": "qoder.com.cn",
       "family": "qoder",
       "site": "cn"
     },
@@ -105,6 +113,7 @@
       "accentVar": "var(--provider-kimi)",
       "softVar": "var(--provider-kimi-soft)",
       "tagColor": "geekblue",
+      "apiHost": "api.moonshot.cn",
       "family": "kimi",
       "site": "global"
     },
@@ -117,6 +126,7 @@
       "accentVar": "var(--provider-kiro)",
       "softVar": "var(--provider-kiro-soft)",
       "tagColor": "volcano",
+      "apiHost": "kiro.dev",
       "family": "kiro",
       "site": "global"
     },
@@ -129,6 +139,7 @@
       "accentVar": "var(--provider-zcode)",
       "softVar": "var(--provider-zcode-soft)",
       "tagColor": "geekblue",
+      "apiHost": "z.ai",
       "family": "zcode",
       "site": "global"
     },
@@ -141,6 +152,7 @@
       "accentVar": "var(--provider-codebuddy)",
       "softVar": "var(--provider-codebuddy-soft)",
       "tagColor": "blue",
+      "apiHost": "codebuddy.ai",
       "family": "codebuddy",
       "site": "global"
     },
@@ -153,6 +165,7 @@
       "accentVar": "var(--provider-codebuddycn)",
       "softVar": "var(--provider-codebuddycn-soft)",
       "tagColor": "purple",
+      "apiHost": "copilot.tencent.com",
       "family": "codebuddy",
       "site": "cn"
     },
@@ -165,6 +178,7 @@
       "accentVar": "var(--provider-workbuddy)",
       "softVar": "var(--provider-workbuddy-soft)",
       "tagColor": "green",
+      "apiHost": "workbuddy.cn",
       "family": "workbuddy",
       "site": "global"
     },
@@ -177,6 +191,7 @@
       "accentVar": "var(--provider-workbuddycn)",
       "softVar": "var(--provider-workbuddycn-soft)",
       "tagColor": "gold",
+      "apiHost": "copilot.tencent.com",
       "family": "workbuddy",
       "site": "cn"
     },
@@ -189,6 +204,7 @@
       "accentVar": "var(--provider-cline)",
       "softVar": "var(--provider-cline-soft)",
       "tagColor": "magenta",
+      "apiHost": "cline.bot",
       "family": "cline",
       "site": "global"
     }

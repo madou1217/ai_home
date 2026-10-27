@@ -882,9 +882,10 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            provider={provider}
             effort={message.effort}
             source={message.source}
-            copyText={messageText || message.content}
+            copyText={message.content}
             actionsVisible={metaVisible}
             onFork={onFork}
           />
@@ -916,7 +917,10 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            provider={provider}
             effort={message.effort}
+            source={message.source}
+            metrics={message.metrics}
             copyText={message.content}
             actionsVisible={metaVisible}
           />
@@ -953,8 +957,12 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
             role={message.role}
             timestamp={message.timestamp}
             model={message.model}
+            provider={provider}
             effort={message.effort}
-            copyText={message.content || ''}
+            source={message.source}
+            metrics={message.metrics}
+            progress={progress}
+            copyText={message.content}
             actionsVisible={metaVisible}
           />
         </div>
@@ -985,10 +993,12 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
           role={message.role}
           timestamp={message.timestamp}
           model={message.model}
+          provider={provider}
           effort={message.effort}
+          source={message.source}
           metrics={message.metrics}
           progress={progress}
-          copyText={messageText || message.content}
+          copyText={message.content}
           actionsVisible={metaVisible}
           onRetry={onRetry}
           onFork={onFork}

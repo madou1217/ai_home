@@ -44,12 +44,13 @@ function TimelineItemView({
 }: Props) {
   const filePaths = useMemo(() => collectTimelineFileReferences(item), [item]);
   if (item.kind === 'message') {
+    const messageContent = item.content ?? '';
     return (
       <CaptureIdentityBoundary provider={getProviderLabel(provider)} model={item.detail.model || ''}>
         <MessageBubble
           message={{
             role: item.detail.role,
-            content: item.content || '',
+            content: messageContent,
             timestamp: item.updatedAt || item.createdAt,
             model: item.detail.model,
             effort: item.detail.effort,

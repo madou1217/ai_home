@@ -657,6 +657,12 @@
   white-space: nowrap;
 }
 
+.messageMetaProgress {
+  display: inline-flex;
+  align-items: center;
+  min-width: 9ch;
+}
+
 .messageMetaActions {
   opacity: 0;
   pointer-events: none;

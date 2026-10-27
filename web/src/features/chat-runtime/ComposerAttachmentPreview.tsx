@@ -24,10 +24,11 @@ export default function ComposerAttachmentPreview({ attachments, onRemove, onRet
             </span>
           )}
           <span className={attachmentStyles.composerAttachmentMeta}>
-            {attachment.status === 'preparing' ? '准备中' : attachment.status === 'uploading' ? '上传中' : attachment.status === 'uploaded' ? '已上传' : attachment.status === 'failed' ? '失败' : formatBytes(attachment.size)}
+            <strong>{attachment.name}</strong>
+            <small>{formatBytes(attachment.size)} · {statusLabel(attachment.status)}{attachment.error ? ` · ${attachment.error}` : ''}</small>
           </span>
           {attachment.status === 'failed' ? (
-            <button type="button" className={attachmentStyles.composerAttachmentRetry} onClick={() => onRetry(attachment.key)}>
+            <button type="button" className={attachmentStyles.composerAttachmentRetry} onClick={() => onRetry(attachment.key)} aria-label={`重试 ${attachment.name}`}>
               重试
             </button>
           ) : null}
@@ -48,4 +49,12 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function statusLabel(status: PendingComposerAttachment['status']): string {
+  if (status === 'preparing') return '准备中';
+  if (status === 'uploading') return '上传中';
+  if (status === 'uploaded') return '已上传';
+  if (status === 'failed') return '失败';
+  return '就绪';
 }

@@ -97,8 +97,14 @@ export function useComposerAttachments(): ComposerAttachmentsController {
     pending.current = pending.current.then(async () => {
       try {
         const attachment = await readPendingAttachment(current.file);
+        const otherItems = itemsRef.current.filter((item) => item.key !== key);
+        const otherBytes = otherItems.reduce((total, item) => total + (item.status === 'preparing' ? 0 : item.size), 0);
+        const capacityError = otherItems.length + 1 > MAX_COMPOSER_ATTACHMENTS
+          || otherBytes + attachment.size > CHAT_ATTACHMENT_LIMITS.maxTotalBytes;
         const next = itemsRef.current.map((item) => item.key === key
-          ? { ...attachment, key, file: current.file, status: 'ready' as const }
+          ? capacityError
+            ? { ...item, status: 'failed' as const, error: COMPOSER_ATTACHMENT_LIMIT_MESSAGE }
+            : { ...attachment, key, file: current.file, status: 'ready' as const }
           : item);
         itemsRef.current = next;
         setItems(next);

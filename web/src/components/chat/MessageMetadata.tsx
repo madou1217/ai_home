@@ -1,6 +1,6 @@
 import { MobileOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { isValidElement, type ReactNode } from 'react';
+import { cloneElement, isValidElement, type ReactNode } from 'react';
 import type { ChatMessage, Provider } from '@/types';
 import MessageIconActions from './MessageIconActions';
 import { getProviderLabel } from './provider-registry';
@@ -44,8 +44,19 @@ function formatProgressLabel(progress: ReactNode): ReactNode {
   if (!text) return progress;
   const state = text.match(/^(生成中|思考中|等待响应|正在停止|正在恢复连接|正在收尾)/)?.[1];
   if (!state) return progress;
-  const seconds = text.match(/(?:已用时\s*)?(\d+(?:\.\d+)?)\s*(?:秒|s)/)?.[1];
-  return seconds === undefined ? progress : `${state} · ${Number(seconds).toFixed(1)}s`;
+  const elapsedText = text.split('首字', 1)[0];
+  const duration = elapsedText.match(/(?:已用时\s*)?(?:(\d+)\s*分钟|(\d+)\s*分(?:(\d+)\s*秒)?|(\d+(?:\.\d+)?)\s*(?:秒|s))/);
+  if (!duration) return progress;
+  const totalSeconds = duration[1] !== undefined
+    ? Number(duration[1]) * 60
+    : duration[2] !== undefined
+      ? Number(duration[2]) * 60 + Number(duration[3] || 0)
+      : Number(duration[4]);
+  if (!Number.isFinite(totalSeconds)) return progress;
+  const label = `${state} · ${totalSeconds.toFixed(1)}s`;
+  return isValidElement<{ children?: ReactNode }>(progress)
+    ? cloneElement(progress, {}, label)
+    : label;
 }
 
 export default function MessageMetadata({
@@ -108,9 +119,6 @@ export default function MessageMetadata({
           <>
             <span aria-hidden="true">·</span>
             <span className={styles.messageMetricSlot}>
-              <span className={styles.messageMetricReserve} aria-hidden="true">
-                用时 99分钟 · 首字 99秒 · 999 tok/s
-              </span>
               <span className={styles.messageMetricValue}>
                 {progressLabel ? (
                   <span className={`${styles.messageMetricItem} ${styles.messageMetaProgress}`}>{progressLabel}</span>

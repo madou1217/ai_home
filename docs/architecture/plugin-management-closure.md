@@ -605,6 +605,29 @@ shared `scripts/workbuddy-resource-native-demo.js` accepts `--provider` and
 and checks native MCP Connected plus absence after disable. Model-selected native
 MCP calls and WorkBuddy CN remain unverified. Other versions require fresh probes.
 
+## WorkBuddy deferred MCP model/tool loop (2026-10-27)
+
+`node scripts/workbuddy-mcp-tool-loop-demo.js` closes the remaining WorkBuddy
+MCP evidence gap on WorkBuddy AI 2.161.0. The real bundled CodeBuddy runtime
+loads the AIH-projected `.codebuddy.json`; enabled and re-enabled stages expose
+the deferred MCP protocol and complete `ToolSearch`, `DeferExecuteTool`, the
+stdio MCP result, and the final `WORKBUDDY_MCP_OK` marker. Disabled and removed
+stages have no connected MCP server, no deferred MCP schema or tool call, and
+return `MCP_NOT_LOADED`.
+
+The probe also runs the AIH MCP manager's direct `test`, `tools`, and `call`
+operations against the same stdio server. Its fixture recognizes the nested
+OpenAI-compatible `assistant.tool_calls` shape used by WorkBuddy and waits for
+the native process's final result instead of terminating on the first result
+event. This is local deterministic native protocol evidence; it does not claim
+remote model reasoning, Web/TUI parity, or WorkBuddy CN parity.
+
+The resource aggregate indexes this probe separately from the WorkBuddy
+plugin/Skill/direct-MCP probe. A full aggregate run remains subject to external
+host dependencies; for example, Codex can attempt a curated-plugin git fetch
+before its isolated fixture starts. Such a timeout is an aggregate-run failure,
+not a downgrade of the standalone WorkBuddy or Codex evidence.
+
 The earlier 111-check regression count is historical: those resource test files
 are absent from the current tracked checkout. This checkpoint uses actual native
 demos and provider-manifest validation; it does not claim to have rerun absent

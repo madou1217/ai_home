@@ -457,6 +457,20 @@ The aggregate uses its existing descriptor callback. SOLID keeps native protocol
 verification separate from management, DRY reuses the manager/server, and
 KISS/YAGNI avoid introducing a new general protocol framework for this proof.
 
+WorkBuddy deferred MCP evidence (2026-10-27):
+`scripts/workbuddy-mcp-tool-loop-demo.js` uses the existing MCP Facade and the
+bundled host's deferred-tool protocol, with a small message-shape normalizer for
+nested `assistant.tool_calls`. `scripts/resource-closure-demo.js` indexes the
+focused report through host/resource evidence functions and stops a supervised
+native process group after a complete JSON report, so inherited stdio workers do
+not hold aggregation open. This is Adapter + Evidence Aggregator: host protocol
+details stay in the focused demo while management/projection/native-use states
+remain separate. SOLID keeps fixture protocol handling out of runtime code, DRY
+reuses the manager and demo server, and KISS/YAGNI avoid a general WorkBuddy
+protocol framework. Verification: two consecutive four-stage WorkBuddy runs and
+a WorkBuddy-only aggregate both passed; full aggregation remains explicitly
+subject to provider-owned external dependencies.
+
 Gemini resource adapter (2026-10-27): `core/providers/native.go` declares native
 extension/Skill paths and commands; `native-plugin-adapters.js` registers the
 `gemini-extension` Strategy. Its focused adapter validates host manifest identity

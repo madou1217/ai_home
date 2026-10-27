@@ -61,6 +61,7 @@ node scripts/skill-native-demo.js --provider claude --binary /Users/model/.local
 node scripts/mcp-native-demo.js
 node scripts/native-plugin-demo.js
 node scripts/workbuddy-resource-native-demo.js
+node scripts/workbuddy-mcp-tool-loop-demo.js
 node scripts/native-plugin-use-demo.js codex
 node scripts/native-plugin-use-demo.js claude
 node scripts/pi-plugin-native-demo.js
@@ -164,6 +165,17 @@ node scripts/mcp-native-demo.js
 ```
 
 该 probe 当前覆盖 Codex、Claude、OpenCode 和 Cline。`list`/`doctor` 只显示参数数量和环境变量键名，不输出值；用户修改过的原生配置会 fail closed，避免覆盖非 AIH 内容。
+
+WorkBuddy 的 MCP 还有一个宿主专用的 deferred tool loop：
+
+```bash
+node scripts/workbuddy-mcp-tool-loop-demo.js
+```
+
+启用和重新启用阶段会真实观察 `ToolSearch → DeferExecuteTool → MCP result`
+以及最终 `WORKBUDDY_MCP_OK`；停用和移除阶段必须没有 MCP schema/tool call，返回
+`MCP_NOT_LOADED`。这条 probe 使用 WorkBuddy 2.161.0 bundled runtime 和本地
+deterministic fixture，不代表远程模型推理或 Web/TUI parity。
 
 ## 原生插件管理与 Portable Projection
 

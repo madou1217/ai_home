@@ -37,7 +37,7 @@ because the provider contract separates declaration from machine-specific execut
 
 | Provider | Runtime | Plugin | Skill | MCP | Evidence |
 |---|---|---|---|---|---|
-| workbuddy | WorkBuddy AI 2.161.0 bundled CodeBuddy lite runtime | native marketplace + four-stage use | native skills + four-stage use | `.codebuddy.json`, native connected + two stdio tool calls | `scripts/workbuddy-resource-native-demo.js` |
+| workbuddy | WorkBuddy AI 2.161.0 bundled CodeBuddy lite runtime | native marketplace + four-stage use | native skills + four-stage use | `.codebuddy.json`, native connected + direct stdio calls + deferred native model/tool loop | `scripts/workbuddy-resource-native-demo.js`, `scripts/workbuddy-mcp-tool-loop-demo.js` |
 
 `provider doctor` adds a targeted installed-package discovery and real version
 probe for the external Pi/DSH harnesses. Absence from PATH is not proof that the
@@ -54,6 +54,16 @@ local fixture requests an advertised skill, then verifies the loaded body in the
 following request. Both mechanisms were observed, including within the CN version. MCP evidence
 is native connection plus two AIH stdio calls, not model-selected MCP execution.
 WorkBuddy CN and other CodeBuddy versions remain unverified.
+
+WorkBuddy AI 2.161.0 now also has a dedicated native MCP model/tool-loop probe:
+`scripts/workbuddy-mcp-tool-loop-demo.js`. Enabled and re-enabled stages observe
+the real deferred protocol (`ToolSearch` → `DeferExecuteTool` → MCP result →
+final `WORKBUDDY_MCP_OK`); disabled and removed stages expose no MCP schema or
+tool call and return `MCP_NOT_LOADED`. This is deterministic local model
+protocol evidence, not remote-model reasoning or Web/TUI parity. The aggregate
+runner includes this probe, but a full aggregate run can still be blocked by a
+provider-owned external dependency such as Codex curated-plugin synchronization;
+that condition is reported separately from the passed standalone evidence.
 
 OpenCode MCP execution evidence now additionally includes the actual native
 model/tool loop: `scripts/opencode-mcp-tool-loop-demo.js` requires two native tool

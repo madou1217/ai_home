@@ -12,11 +12,14 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   private var sessionID = ""
   private var commandID = ""
   private var model = ""
+  private var provider = ""
   private var target: [String: Any] = ["kind": "aih-server"]
   private var assistantItems: [String: String] = [:]
   private var assistantItemIDs = Set<String>()
   private var pendingServiceText = ""
   private var pendingServiceRequestID = ""
+  private var failedDraftText = ""
+  private var lastSubmittedText = ""
   private var configured = false
   private var connectionTimeout: Timer?
   private var pinned = true
@@ -51,7 +54,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if let configuredTarget = event["chatTarget"] as? [String: Any] { target = configuredTarget }
     else if let configuredTarget = event["serverTarget"] as? [String: Any] { target = configuredTarget }
     if let configuredModel = event["chatModel"] as? String { model = configuredModel }
-    content.setState(state, sessionID: sessionID, model: model, message: "")
+    content.setState(state, sessionID: sessionID, model: model, provider: provider, message: "")
     if panel.isVisible && state == .disconnected {
       show()
       pendingServiceRequestID = requestID
@@ -74,7 +77,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   /// and identity guards remain the sole path for submitting it.
   func openFromService(text: String) {
     let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalized.isEmpty, normalized.utf16.count <= 8000 else { return }
+    guard !normalized.isEmpty else { return }
     if state == .failed { closeSession() }
     pendingServiceText = normalized
     pendingServiceRequestID = ""
@@ -115,9 +118,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func reconnect() {
     if state == .streaming || state == .stopping { return }
-    let pending = pendingServiceText
+    let pending = pendingServiceText.isEmpty ? failedDraftText : pendingServiceText
     closeSession()
     pendingServiceText = pending
+    failedDraftText = ""
     openSession()
     pendingServiceRequestID = requestID
   }
@@ -137,18 +141,27 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   }
 
   private func submitMessage(_ text: String) {
-    guard !text.isEmpty, text.utf16.count <= 8000, state == .idle, !sessionID.isEmpty, !requestID.isEmpty else { return }
+    guard !text.isEmpty, state == .idle, !sessionID.isEmpty, !requestID.isEmpty else { return }
     commandGeneration += 1
     commandID = UUID().uuidString
     assistantItems.removeAll()
     assistantItemIDs.removeAll()
+    failedDraftText = ""
+    lastSubmittedText = text
     content.clearComposer()
     content.append(role: "你", text: text)
     setState(.streaming, message: "生成中")
-    emit([
+    var event: [String: Any] = [
       "type": "chat.submit", "requestId": requestID, "sessionId": sessionID,
-      "commandId": commandID, "text": text, "generation": commandGeneration
-    ])
+      "commandId": commandID, "generation": commandGeneration
+    ]
+    if text.utf16.count > 8000 {
+      event["text"] = "[附件: selected-text.txt]"
+      event["fileReference"] = ["name": "selected-text.txt", "mimeType": "text/plain", "text": text]
+    } else {
+      event["text"] = text
+    }
+    emit(event)
   }
 
   private func stopCurrentMessage() {
@@ -227,6 +240,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
        incomingCommand != commandID && isCommandEvent(runtimeType) { return }
     if sessionID.isEmpty { sessionID = incomingSession }
     if let runtimeModel = modelValue(runtime) { model = runtimeModel }
+    if let source = runtime["source"] as? [String: Any], let runtimeProvider = source["provider"] as? String, !runtimeProvider.isEmpty { provider = runtimeProvider }
     let type = runtime["type"] as? String ?? ""
     switch type {
     case "session.created", "session.runtime.bound", "session.runtime.rebound", "session.snapshot.reset":
@@ -237,6 +251,11 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       }
     case "turn.queued", "turn.started":
       if state != .stopping { setState(.streaming, message: "正在回复") }
+    case "turn.metrics.updated":
+      let payload = runtime["payload"] as? [String: Any] ?? [:]
+      if let turnID = runtime["turnId"] as? String {
+        content.updateAssistantMetadata(turnID: turnID, metadata: metadataText(model: model, provider: provider, metrics: payload["metrics"] as? [String: Any]))
+      }
     case "timeline.item.started", "timeline.item.updated", "timeline.item.completed":
       receiveTimelineItem(runtime)
     case "timeline.item.delta":
@@ -273,9 +292,12 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     let detail = item["detail"] as? [String: Any] ?? [:]
     guard (detail["role"] as? String ?? item["role"] as? String) == "assistant" else { return }
     assistantItemIDs.insert(id)
+    let itemModel = (detail["model"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? model
+    let itemTurnID = item["turnId"] as? String ?? runtime["turnId"] as? String ?? ""
+    let itemMetadata = metadataText(model: itemModel, provider: provider, metrics: detail["metrics"] as? [String: Any])
     if let text = item["content"] as? String {
       assistantItems[id] = text
-      if !text.isEmpty { content.upsertAssistant(id: id, text: text) }
+      if !text.isEmpty { content.upsertAssistant(id: id, text: text, metadata: itemMetadata, turnID: itemTurnID) }
     }
     if state != .stopping { setState(.streaming, message: "正在回复") }
   }
@@ -294,6 +316,8 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       if let generation = integer(event["generation"]), generation < sessionGeneration { return }
     }
     let message = (event["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Chat 连接失败"
+    failedDraftText = lastSubmittedText
+    if !failedDraftText.isEmpty { content.setComposerText(failedDraftText) }
     setState(.failed, message: message.isEmpty ? "Chat 连接失败" : message)
   }
 
@@ -339,6 +363,24 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     return nil
   }
 
+  private func metadataText(model: String, provider: String, metrics: [String: Any]?) -> String {
+    var fields: [String] = []
+    if !provider.isEmpty { fields.append(provider) }
+    if !model.isEmpty { fields.append(model) }
+    if let metrics {
+      if let duration = number(metrics["durationMs"]) { fields.append(String(format: "用时 %.1fs", duration / 1000)) }
+      if let ttft = number(metrics["ttftMs"]) { fields.append(String(format: "首字 %.1fs", ttft / 1000)) }
+      if let rate = number(metrics["tokensPerSec"]) { fields.append(String(format: "%.1f tok/s", rate)) }
+    }
+    return fields.joined(separator: " · ")
+  }
+
+  private func number(_ value: Any?) -> Double? {
+    if let value = value as? Double, value.isFinite, value >= 0 { return value }
+    if let value = value as? NSNumber, value.doubleValue.isFinite, value.doubleValue >= 0 { return value.doubleValue }
+    return nil
+  }
+
   private func integer(_ value: Any?) -> Int? {
     if let number = value as? Int { return number }
     if let number = value as? NSNumber { return number.intValue }
@@ -351,7 +393,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       connectionTimeout = nil
     }
     state = next
-    content.setState(next, sessionID: sessionID, model: model, message: message)
+    content.setState(next, sessionID: sessionID, model: model, provider: provider, message: message)
   }
 
   func windowWillClose(_ notification: Notification) {

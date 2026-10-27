@@ -494,15 +494,14 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
   }
 
   private var canSubmit: Bool {
-    state == .idle && composer.string.utf16.count <= 8000
-      && !composer.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    state == .idle && !composer.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private func updateControls() {
     let canSend = canSubmit
     let count = composer.string.utf16.count
-    composerHint.stringValue = count > 8000 ? "\(count) / 8000 · 请缩短消息" : "↵ 发送 · ⇧↵ 换行"
-    composerHint.textColor = count > 8000 ? .systemRed : .secondaryLabelColor
+    composerHint.stringValue = count > 8000 ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
+    composerHint.textColor = .secondaryLabelColor
     let canStop = state == .streaming
     let actionLabel = canStop ? "停止回复" : "发送消息"
     sendStop.image = NSImage(systemSymbolName: canStop ? "stop.fill" : "arrow.up", accessibilityDescription: actionLabel)

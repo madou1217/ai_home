@@ -16,10 +16,14 @@ final class ChatPanel: NSObject, NSWindowDelegate {
   private var target: [String: Any] = ["kind": "aih-server"]
   private var assistantItems: [String: String] = [:]
   private var assistantItemIDs = Set<String>()
+  private var assistantMetadataByID: [String: String] = [:]
+  private var assistantTurnByID: [String: String] = [:]
+  private var turnMetrics: [String: [String: Any]] = [:]
   private var pendingServiceText = ""
   private var pendingServiceRequestID = ""
   private var failedDraftText = ""
   private var lastSubmittedText = ""
+  private var pendingFileReferencePath = ""
   private var configured = false
   private var connectionTimeout: Timer?
   private var pinned = true
@@ -105,6 +109,9 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     commandID = ""
     assistantItems.removeAll()
     assistantItemIDs.removeAll()
+    assistantMetadataByID.removeAll()
+    assistantTurnByID.removeAll()
+    turnMetrics.removeAll()
     content.clearTranscript()
     setState(.connecting, message: "正在连接")
     let openingRequest = requestID
@@ -146,6 +153,9 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     commandID = UUID().uuidString
     assistantItems.removeAll()
     assistantItemIDs.removeAll()
+    assistantMetadataByID.removeAll()
+    assistantTurnByID.removeAll()
+    turnMetrics.removeAll()
     failedDraftText = ""
     lastSubmittedText = text
     content.clearComposer()
@@ -156,8 +166,15 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       "commandId": commandID, "generation": commandGeneration
     ]
     if text.utf16.count > 8000 {
+      guard let path = persistLargeText(text) else {
+        failedDraftText = text
+        content.setComposerText(text)
+        setState(.failed, message: "无法准备大文本附件，请重试")
+        return
+      }
       event["text"] = "[附件: selected-text.txt]"
-      event["fileReference"] = ["name": "selected-text.txt", "mimeType": "text/plain", "text": text]
+      pendingFileReferencePath = path
+      event["fileReference"] = ["name": "selected-text.txt", "mimeType": "text/plain", "path": path]
     } else {
       event["text"] = text
     }
@@ -187,6 +204,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     assistantItemIDs.removeAll()
     pendingServiceText = ""
     pendingServiceRequestID = ""
+    if !pendingFileReferencePath.isEmpty {
+      try? FileManager.default.removeItem(atPath: pendingFileReferencePath)
+      pendingFileReferencePath = ""
+    }
     setState(.disconnected, message: "未连接")
   }
 
@@ -254,7 +275,11 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     case "turn.metrics.updated":
       let payload = runtime["payload"] as? [String: Any] ?? [:]
       if let turnID = runtime["turnId"] as? String {
-        content.updateAssistantMetadata(turnID: turnID, metadata: metadataText(model: model, provider: provider, metrics: payload["metrics"] as? [String: Any]))
+        let metrics = payload["metrics"] as? [String: Any] ?? [:]
+        turnMetrics[turnID] = (turnMetrics[turnID] ?? [:]).merging(metrics) { _, next in next }
+        let metadata = metadataText(model: model, provider: provider, metrics: turnMetrics[turnID])
+        content.updateAssistantMetadata(turnID: turnID, metadata: metadata)
+        for (id, rowTurn) in assistantTurnByID where rowTurn == turnID { assistantMetadataByID[id] = metadata }
       }
     case "timeline.item.started", "timeline.item.updated", "timeline.item.completed":
       receiveTimelineItem(runtime)
@@ -263,7 +288,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       let id = (runtime["itemId"] as? String) ?? (payload["itemId"] as? String) ?? ""
       guard assistantItemIDs.contains(id), let chunk = payload["chunk"] as? String, !chunk.isEmpty else { return }
       assistantItems[id, default: ""] += chunk
-      content.upsertAssistant(id: id, text: assistantItems[id] ?? "")
+      content.upsertAssistant(id: id, text: assistantItems[id] ?? "", metadata: assistantMetadataByID[id] ?? "", turnID: assistantTurnByID[id] ?? "")
       if state != .stopping { setState(.streaming, message: "正在回复") }
     case "turn.interrupted":
       setState(.idle, message: "已停止")
@@ -294,7 +319,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     assistantItemIDs.insert(id)
     let itemModel = (detail["model"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? model
     let itemTurnID = item["turnId"] as? String ?? runtime["turnId"] as? String ?? ""
-    let itemMetadata = metadataText(model: itemModel, provider: provider, metrics: detail["metrics"] as? [String: Any])
+    let mergedMetrics = (turnMetrics[itemTurnID] ?? [:]).merging(detail["metrics"] as? [String: Any] ?? [:]) { _, next in next }
+    let itemMetadata = metadataText(model: itemModel, provider: provider, metrics: mergedMetrics)
+    assistantMetadataByID[id] = itemMetadata
+    assistantTurnByID[id] = itemTurnID
     if let text = item["content"] as? String {
       assistantItems[id] = text
       if !text.isEmpty { content.upsertAssistant(id: id, text: text, metadata: itemMetadata, turnID: itemTurnID) }
@@ -361,6 +389,16 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if let value = runtime["model"] as? String, !value.isEmpty { return value }
     if let payload = runtime["payload"] as? [String: Any], let value = payload["model"] as? String, !value.isEmpty { return value }
     return nil
+  }
+
+  private func persistLargeText(_ text: String) -> String? {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("aih-chat-\(UUID().uuidString).txt")
+    do {
+      try Data(text.utf8).write(to: url, options: .atomic)
+      return url.path
+    } catch {
+      return nil
+    }
   }
 
   private func metadataText(model: String, provider: String, metrics: [String: Any]?) -> String {

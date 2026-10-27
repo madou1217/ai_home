@@ -602,8 +602,12 @@ CodeBuddy 2.177.0 reads MCP from `.mcp.json`; WorkBuddy AI's bundled 2.161.0
 reads `.codebuddy.json`. Their descriptors now keep these facts separate. The
 shared `scripts/workbuddy-resource-native-demo.js` accepts `--provider` and
 `--binary`, exercises both resource lifecycles and two actual AIH stdio MCP calls,
-and checks native MCP Connected plus absence after disable. Model-selected native
-MCP calls and WorkBuddy CN remain unverified. Other versions require fresh probes.
+and checks native MCP Connected plus absence after disable. The generalized
+`scripts/workbuddy-mcp-tool-loop-demo.js` also verifies the deferred native model
+tool loop for both `codebuddy` and `codebuddycn` on the tested 2.177.0 binary.
+WorkBuddy CN remains unverified because no separate WorkBuddy CN native runtime is
+installed on this machine; a CodeBuddy binary is not treated as that desktop host.
+Other versions require fresh probes.
 
 ## WorkBuddy deferred MCP model/tool loop (2026-10-27)
 

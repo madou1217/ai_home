@@ -1094,6 +1094,47 @@
   font-size: 12px;
 }
 
+.attachmentDocumentName small {
+  display: block;
+  color: var(--color-muted);
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.composerAttachmentMeta {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 2px;
+  padding: 1px 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-on-accent);
+  background: color-mix(in srgb, var(--color-bg) 78%, transparent);
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+}
+
+.composerAttachmentRetry {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  border: 1px solid var(--color-warning);
+  border-radius: 2px;
+  padding: 1px 4px;
+  color: var(--color-warning);
+  background: var(--color-surface);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.composerAttachment[data-status='failed'] {
+  border-color: var(--color-danger);
+}
+
 .statsLineSummary {
   display: flex;
   align-items: center;

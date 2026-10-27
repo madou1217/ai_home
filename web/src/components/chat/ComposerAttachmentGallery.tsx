@@ -27,7 +27,10 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
       {documents.map((document, index) => (
         <div key={`${document.name}-${index}`} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={document.name}>
           <FileTextOutlined className={styles.attachmentDocIcon} />
-          <span className={styles.attachmentDocumentName}>{document.name}</span>
+          <span className={styles.attachmentDocumentName} title={document.error || document.name}>
+            {document.name}
+            <small>{document.status === 'failed' ? '失败' : formatBytes(document.size || new TextEncoder().encode(document.text).byteLength)}</small>
+          </span>
           <button type="button" className={styles.attachmentRemoveBadge}
             onClick={() => onRemoveDocument?.(index)} aria-label={`移除 ${document.name}`}>
             <CloseOutlined style={{ fontSize: 9 }} />
@@ -59,5 +62,11 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
     </div>
   );
 });
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default ComposerAttachmentGallery;

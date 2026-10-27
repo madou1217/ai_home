@@ -20,7 +20,7 @@ import FileReferencePopover, { type FileReferenceCandidate } from './FileReferen
 import { useFileReferenceCandidates } from './use-file-reference-candidates';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
-import { CHAT_ATTACHMENT_ACCEPT, type ChatDocumentAttachment } from './attachment-files';
+import { CHAT_ATTACHMENT_ACCEPT, shouldConvertLargePaste, type ChatDocumentAttachment } from './attachment-files';
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
@@ -294,9 +294,15 @@ const MessageArea = ({
   // 处理粘贴图片
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const files = Array.from(e.clipboardData?.files || []);
-    if (!files.length) return;
+    if (files.length) {
+      e.preventDefault();
+      void addFiles(files);
+      return;
+    }
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (!shouldConvertLargePaste(text)) return;
     e.preventDefault();
-    void addFiles(files);
+    void addFiles.addPastedText(text);
   }, [addFiles]);
 
   // 处理文件选择

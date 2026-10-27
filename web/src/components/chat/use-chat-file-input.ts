@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { message } from 'antd';
-import { CHAT_ATTACHMENT_LIMITS, readChatAttachment, type ChatDocumentAttachment } from './attachment-files';
+import { CHAT_ATTACHMENT_LIMITS, buildPastedTextFile, readChatAttachment, type ChatDocumentAttachment } from './attachment-files';
 
 const ATTACHMENT_LIMIT_MESSAGE = `每次最多附加 ${CHAT_ATTACHMENT_LIMITS.maxFiles} 个文件，总大小不超过 ${Math.round(CHAT_ATTACHMENT_LIMITS.maxTotalBytes / 1048576)} MB`;
 
@@ -11,11 +11,16 @@ interface Options {
   onDocumentsChange?: (documents: ChatDocumentAttachment[]) => void;
 }
 
-export function useChatFileInput(options: Options) {
+export interface ChatFileInputHandler {
+  (files: readonly File[]): Promise<void>;
+  addPastedText: (text: string) => Promise<void>;
+}
+
+export function useChatFileInput(options: Options): ChatFileInputHandler {
   const latest = useRef(options);
   latest.current = options;
   const pending = useRef(Promise.resolve());
-  return useCallback((files: readonly File[]) => {
+  const addFiles = useCallback((files: readonly File[]) => {
     // Serialize batches so simultaneous drops/selects cannot overwrite each other.
     pending.current = pending.current.then(async () => {
       const results = await Promise.allSettled(files.map(readChatAttachment));
@@ -45,4 +50,7 @@ export function useChatFileInput(options: Options) {
     }).catch(() => { message.error('附件读取失败'); });
     return pending.current;
   }, []);
+  return Object.assign(addFiles, {
+    addPastedText: (text: string) => addFiles([buildPastedTextFile(text)]),
+  });
 }

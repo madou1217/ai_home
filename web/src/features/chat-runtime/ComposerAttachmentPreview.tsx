@@ -1,18 +1,20 @@
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { PendingComposerAttachment } from './use-composer-attachments';
 import styles from './session-runtime.module.css';
+import attachmentStyles from '@/components/chat/composer/composer.module.css';
 
 interface Props {
   readonly attachments: readonly PendingComposerAttachment[];
   readonly onRemove: (key: string) => void;
+  readonly onRetry: (key: string) => void;
 }
 
-export default function ComposerAttachmentPreview({ attachments, onRemove }: Props) {
+export default function ComposerAttachmentPreview({ attachments, onRemove, onRetry }: Props) {
   if (attachments.length === 0) return null;
   return (
     <div className={styles.composerAttachments} aria-label="待发送附件">
       {attachments.map((attachment) => (
-        <div key={attachment.key} className={styles.composerAttachment} title={attachment.name}>
+        <div key={attachment.key} className={styles.composerAttachment} title={attachment.error || attachment.name} data-status={attachment.status}>
           {attachment.mimeType.startsWith('image/') ? <img src={attachment.dataUrl} alt={attachment.name} />
             : attachment.mimeType.startsWith('video/') ? (
               <video src={attachment.dataUrl} muted preload="metadata" aria-label={attachment.name} />
@@ -21,6 +23,14 @@ export default function ComposerAttachmentPreview({ attachments, onRemove }: Pro
               <FileTextOutlined /><span title={attachment.name}>{attachment.name}</span>
             </span>
           )}
+          <span className={attachmentStyles.composerAttachmentMeta}>
+            {attachment.status === 'preparing' ? '准备中' : attachment.status === 'uploading' ? '上传中' : attachment.status === 'uploaded' ? '已上传' : attachment.status === 'failed' ? '失败' : formatBytes(attachment.size)}
+          </span>
+          {attachment.status === 'failed' ? (
+            <button type="button" className={attachmentStyles.composerAttachmentRetry} onClick={() => onRetry(attachment.key)}>
+              重试
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label={`移除 ${attachment.name}`}
@@ -32,4 +42,10 @@ export default function ComposerAttachmentPreview({ attachments, onRemove }: Pro
       ))}
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

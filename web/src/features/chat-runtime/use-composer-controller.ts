@@ -14,7 +14,7 @@ import {
   selectLastAssistantModel,
 } from './composer-model-policy';
 import { useComposerAttachments } from './use-composer-attachments';
-import type { PendingComposerAttachment } from './use-composer-attachments';
+import type { PendingComposerAttachment, PendingComposerAttachmentStatus } from './use-composer-attachments';
 
 export interface ComposerController {
   readonly policy: ComposerPolicy;
@@ -30,6 +30,8 @@ export interface ComposerController {
   readonly setInput: (value: string) => void;
   readonly addAttachments: (files: readonly File[]) => Promise<void>;
   readonly removeAttachment: (key: string) => void;
+  readonly retryAttachment: (key: string) => Promise<void>;
+  readonly setAttachmentStatus: (keys: readonly string[], status: PendingComposerAttachmentStatus, error?: string) => void;
   readonly setDelivery: (value: ComposerDelivery) => void;
   readonly setReasoningEffort: (value: string) => void;
   readonly selectModel: (value: string) => void;
@@ -114,6 +116,7 @@ function useComposerViewState(props: ComposerProps) {
   const canAttach = delivery === 'turn' && !policy.turnActive && !busy && !pendingSlash;
   const canSend = Boolean(selection.model)
     && !(pendingSlash && attachments.items.length > 0)
+    && attachments.items.every((item) => item.status === 'ready' || item.status === 'uploaded')
     && canSubmitComposerInput(input, delivery, busy, attachments.items.length);
   return {
     policy, input, setInput, delivery, setDelivery,
@@ -123,6 +126,8 @@ function useComposerViewState(props: ComposerProps) {
     attachments: attachments.items,
     addAttachments: attachments.addFiles,
     removeAttachment: attachments.remove,
+    retryAttachment: attachments.retry,
+    setAttachmentStatus: attachments.setStatus,
     clearAttachments: attachments.clear,
     slashMatches: slashSuggestions(input, policy.slashCommands),
   };
@@ -159,17 +164,25 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
   if (view.pendingSlash) {
     await props.actions.executeSlash(view.pendingSlash.name, view.pendingSlash.arguments);
   } else if (view.delivery === 'turn') {
-    const uploaded = view.attachments.length > 0
-      ? await props.uploadAttachments(view.attachments.map(({ name, mimeType, dataUrl }) => ({
-        name, mimeType, dataUrl,
-      })))
-      : [];
-    await props.actions.submit({
-      content,
-      attachmentIds: uploaded.map(({ attachmentId }) => attachmentId),
-      model: view.model,
-      reasoningEffort: view.reasoningEffort || undefined,
-    });
+    const attachmentKeys = view.attachments.map(({ key }) => key);
+    view.setAttachmentStatus(attachmentKeys, 'uploading');
+    try {
+      const uploaded = view.attachments.length > 0
+        ? await props.uploadAttachments(view.attachments.map(({ name, mimeType, dataUrl }) => ({
+          name, mimeType, dataUrl,
+        })))
+        : [];
+      await props.actions.submit({
+        content,
+        attachmentIds: uploaded.map(({ attachmentId }) => attachmentId),
+        model: view.model,
+        reasoningEffort: view.reasoningEffort || undefined,
+      });
+      view.setAttachmentStatus(attachmentKeys, 'uploaded');
+    } catch (error) {
+      view.setAttachmentStatus(attachmentKeys, 'failed', errorText(error, '附件上传失败'));
+      throw error;
+    }
   } else if (view.delivery) await props.actions.deliver(content, view.delivery);
 }
 

@@ -17,6 +17,7 @@ export interface SessionRuntimeTarget {
   readonly nativeSessionId?: string;
   readonly sessionId?: string;
   readonly chatSessionId?: string;
+  readonly readOnly?: boolean;
   readonly policy: Readonly<{ approvalMode: ApprovalMode; workspaceMode?: 'chat' }>;
 }
 

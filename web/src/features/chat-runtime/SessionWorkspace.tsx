@@ -98,6 +98,11 @@ export default function SessionWorkspace(props: Props) {
         chat={props.runtimeTarget.policy.workspaceMode === 'chat'} />
       {projection.parentSessionId ? <BranchParentLink parentSessionId={projection.parentSessionId}
         regenerated={projection.regenerated} target={props.runtimeTarget} /> : null}
+      {props.runtimeTarget.readOnly ? (
+        <div className={styles.runtimeNotice} role="status">
+          当前会话正在运行，此窗口仅提供实时预览；回复结束后可继续发送。
+        </div>
+      ) : null}
       <ConversationTimeline
         controller={props.controller}
         actions={actions}
@@ -107,12 +112,13 @@ export default function SessionWorkspace(props: Props) {
         workspaceMode={props.runtimeTarget.policy.workspaceMode}
         mobile={props.mobile}
         onBranchSession={props.onBranchSession}
+        readOnly={props.runtimeTarget.readOnly}
       />
       <div className={styles.workspaceDock} data-runtime-workspace-dock="true">
         <fieldset
           className={styles.workspaceDockControls}
-          disabled={!connection.interactive}
-          data-disabled={!connection.interactive}
+          disabled={!connection.interactive || props.runtimeTarget.readOnly}
+          data-disabled={!connection.interactive || props.runtimeTarget.readOnly}
         >
           {props.runtimeTarget.policy.workspaceMode !== 'chat' ? <PlanImplementationPrompt
             store={props.controller.store}

@@ -35,6 +35,7 @@ interface Props {
   readonly workspaceMode?: string;
   readonly mobile?: boolean;
   readonly onBranchSession?: (session: Session) => void;
+  readonly readOnly?: boolean;
 }
 
 export default function ConversationTimeline({
@@ -46,6 +47,7 @@ export default function ConversationTimeline({
   workspaceMode,
   mobile = false,
   onBranchSession,
+  readOnly = false,
 }: Props) {
   const items = useSessionSelector(controller.store, selectItems);
   const presentation = useSessionSelector(controller.store, selectTimelinePresentation);
@@ -99,7 +101,7 @@ export default function ConversationTimeline({
       toast.error(messageOperationFailure(error));
     } finally { setBranching(false); }
   };
-  const messageActions = idle && connection.interactive && !branching && onBranchSession;
+  const messageActions = idle && connection.interactive && !readOnly && !branching && onBranchSession;
   useLayoutEffect(() => {
     firstTextPaintProbe.observeCommittedTimeline(items);
   }, [firstTextPaintProbe, items]);
@@ -165,7 +167,7 @@ export default function ConversationTimeline({
       {!presentation.progressItemId ? <div className={styles.turnProgressPlaceholder}>
         <TurnProgress store={controller.store} />
       </div> : null}
-      <TurnFeedback store={controller.store} actions={actions} />
+      <TurnFeedback store={controller.store} actions={actions} readOnly={readOnly} />
       </div>
       <FileDrawer
         open={preview.open}

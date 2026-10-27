@@ -180,6 +180,7 @@ function normalizeResolutionInput(input: ResolveSessionInput): ResolveSessionInp
     ...(input.nativeSessionId ? { nativeSessionId: requiredIdentity(
       input.nativeSessionId, 'chat_runtime_native_session_id_invalid',
     ) } : {}),
+    ...(input.readOnly ? { readOnly: true } : {}),
   };
 }
 

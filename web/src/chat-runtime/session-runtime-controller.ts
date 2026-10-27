@@ -18,6 +18,8 @@ import type { ChatRuntimeCommand, ChatRuntimeCommandName } from './types';
 const RECONNECT_DELAY_MS = 1000;
 
 export class SessionRuntimeController {
+  /** True when this browser surface attached only for read-only observation. */
+  readOnly = false;
   readonly store: SessionProjectionStore;
   private readonly scheduleReconnect: (callback: () => void) => () => void;
   private eventStream?: ReturnType<ChatRuntimeApi['openEvents']>;

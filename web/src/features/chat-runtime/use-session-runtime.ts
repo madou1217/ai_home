@@ -20,7 +20,7 @@ export type SessionRuntimeConnection =
   | { readonly phase: 'pending' }
   | { readonly phase: 'blocked'; readonly reason: RuntimeTargetBlockReason }
   | { readonly phase: 'connecting' }
-  | { readonly phase: 'ready'; readonly controller: SessionRuntimeController }
+  | { readonly phase: 'ready'; readonly controller: SessionRuntimeController; readonly readOnly?: boolean }
   | { readonly phase: 'error'; readonly failure: RuntimeFailure };
 
 const browserApi = createBrowserChatRuntimeApiClient();
@@ -66,7 +66,7 @@ export function useSessionRuntime(
       (opened) => {
         controller = opened;
         if (disposed) opened.dispose();
-        else setConnection({ phase: 'ready', controller: opened });
+        else setConnection({ phase: 'ready', controller: opened, readOnly: opened.readOnly });
       },
       (error: unknown) => {
         if (!disposed) setConnection({ phase: 'error', failure: runtimeFailure(error) });
@@ -86,12 +86,34 @@ export async function openSessionRuntime(
   api: ChatRuntimeApi,
   onSessionResolved?: (session: ChatRuntimeSession) => void,
 ): Promise<SessionRuntimeController> {
-  const session = target.nativeSessionId || target.sessionId
-    ? (await api.resolveSession(target)).session
-    : await api.createSession(target);
+  let session: ChatRuntimeSession;
+  let readOnly = Boolean(target.readOnly);
+  try {
+    session = target.nativeSessionId || target.sessionId
+      ? (await api.resolveSession(target)).session
+      : await api.createSession(target);
+    // An already-running native turn belongs to the surface that started it.
+    // Other surfaces still attach for live preview, but remain read-only until
+    // the turn is over.
+    if (!target.readOnly && (target.sessionId || target.chatSessionId || target.nativeSessionId)
+      && isActiveSessionState(session.state)) {
+      readOnly = true;
+    }
+  } catch (error) {
+    // A running session may be observed by another WebUI surface. Retry as a
+    // read-only attach so the timeline remains available while writes stay locked.
+    if (readOnly || !(error instanceof ChatRuntimeApiError)
+      || error.code !== 'chat_execution_credential_change_conflict') throw error;
+    readOnly = true;
+    const observerTarget = { ...target, readOnly: true };
+    session = observerTarget.nativeSessionId || observerTarget.sessionId
+      ? (await api.resolveSession(observerTarget)).session
+      : await api.createSession(observerTarget);
+  }
   const controller = new SessionRuntimeController(session.sessionId, api, {
     visibilitySource: typeof document === 'undefined' ? undefined : document,
   });
+  Object.defineProperty(controller, 'readOnly', { value: readOnly, enumerable: false });
   try {
     await controller.start();
     onSessionResolved?.(session);
@@ -100,6 +122,11 @@ export async function openSessionRuntime(
     controller.dispose();
     throw error;
   }
+}
+
+function isActiveSessionState(state: ChatRuntimeSession['state']): boolean {
+  return state === 'starting' || state === 'running' || state === 'waiting_input'
+    || state === 'interrupting' || state === 'completing' || state === 'recovering';
 }
 
 function targetKey(

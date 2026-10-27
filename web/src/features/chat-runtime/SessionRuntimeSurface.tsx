@@ -42,7 +42,7 @@ export default function SessionRuntimeSurface(props: Props) {
     return (
       <SessionWorkspace
         controller={connection.controller}
-        runtimeTarget={runtimeTarget}
+        runtimeTarget={{ ...runtimeTarget, ...(connection.readOnly ? { readOnly: true } : {}) }}
         title={props.title}
         mobile={props.mobile}
         accounts={props.accounts}

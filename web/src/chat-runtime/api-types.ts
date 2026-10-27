@@ -29,6 +29,8 @@ export interface CreateSessionInput {
   readonly executionAccountRef: string;
   readonly projectPath?: string;
   readonly policy?: Readonly<Record<string, unknown>>;
+  /** 打开已有会话时只读取时间线，不重绑定执行凭据。 */
+  readonly readOnly?: boolean;
 }
 
 export interface ResolveSessionInput extends CreateSessionInput {

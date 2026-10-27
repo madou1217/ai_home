@@ -177,6 +177,20 @@ node scripts/workbuddy-mcp-tool-loop-demo.js
 `MCP_NOT_LOADED`。这条 probe 使用 WorkBuddy 2.161.0 bundled runtime 和本地
 deterministic fixture，不代表远程模型推理或 Web/TUI parity。
 
+CodeBuddy 与 CodeBuddy CN 使用同一个 deferred MCP probe，但配置根和地区环境
+由 provider descriptor 分别选择。显式传入各自的原生 binary 后，四个阶段都会
+验证 `ToolSearch → DeferExecuteTool → MCP result → final`：
+
+```bash
+node scripts/workbuddy-mcp-tool-loop-demo.js \
+  /absolute/path/to/codebuddy --provider codebuddy
+node scripts/workbuddy-mcp-tool-loop-demo.js \
+  /absolute/path/to/codebuddy --provider codebuddycn
+```
+
+这证明测试版本的 CodeBuddy CLI 原生模型/tool loop；不把它扩展成桌面 Web/RPC
+入口或其它版本的兼容承诺。
+
 ## 原生插件管理与 Portable Projection
 
 原生插件仍由各宿主拥有安装语义；AIH 管理器保存 package digest、生成投影、执行启用/停用/移除并做所有权检查。以 Claude 为例：

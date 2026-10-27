@@ -17,8 +17,8 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | kimi | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | unsupported (mcp_not_declared) | core/providers/native.go |
 | kiro | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | zcode | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | unsupported (native_boundary_missing) | core/providers/native.go |
-| codebuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
-| codebuddycn | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
+| codebuddy | supported | supported | projection-only (native model/tool loop verified on the tested CodeBuddy CLI; descriptor remains projection-only) | core/providers/native.go |
+| codebuddycn | supported | supported | projection-only (native model/tool loop verified on the tested CodeBuddy CLI; descriptor remains projection-only) | core/providers/native.go |
 | workbuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
 | workbuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
 | cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (native model/tool loop verified on Cline 3.0.74; descriptor remains projection-only) | core/providers/native.go |
@@ -64,6 +64,16 @@ protocol evidence, not remote-model reasoning or Web/TUI parity. The aggregate
 runner includes this probe, but a full aggregate run can still be blocked by a
 provider-owned external dependency such as Codex curated-plugin synchronization;
 that condition is reported separately from the passed standalone evidence.
+
+CodeBuddy family MCP loop evidence uses the same deferred native protocol probe with
+a provider-specific configuration root. `codebuddy` and `codebuddycn` each pass
+enabled/disabled/re-enabled/removed stages with `ToolSearch`, `DeferExecuteTool`,
+the stdio result, and the final `WORKBUDDY_MCP_OK` marker. This is evidence for the
+tested CodeBuddy CLI binary and local deterministic fixture; the static descriptor
+continues to say `projection-only` so descriptor capability and machine/version
+evidence remain separate. `workbuddycn` remains unverified on this machine because
+no native WorkBuddy CN runtime was available; a CodeBuddy binary is not treated as
+proof of the separate WorkBuddy CN desktop host.
 
 OpenCode MCP execution evidence now additionally includes the actual native
 model/tool loop: `scripts/opencode-mcp-tool-loop-demo.js` requires two native tool

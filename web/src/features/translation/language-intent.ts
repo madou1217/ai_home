@@ -93,7 +93,10 @@ export function resolveLanguageIntent(
   }
 
   const resolvedSource = source === AUTO_LANGUAGE ? detected : source;
-  if (source === AUTO_LANGUAGE && input.allowAutoSource === true && input.targetPolicy !== 'confirm'
+  // For an LLM-capable route, changing the target is already the user's
+  // confirmation. Do not ask for source confirmation a second time when local
+  // detection is missing or low-confidence; send source:auto instead.
+  if (source === AUTO_LANGUAGE && input.allowAutoSource === true
     && (!resolvedSource || String(input.confidence || '').toLowerCase() === 'low')) {
     return { state: 'ready', source: AUTO_LANGUAGE, target, reason: 'provider_auto_source' };
   }

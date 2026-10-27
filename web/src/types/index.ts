@@ -2843,6 +2843,45 @@ export interface NativeResourceReport {
   evidenceBoundary: string;
 }
 
+export interface NativeResourceDemoResult {
+  command: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface AihPluginInstalled {
+  pluginId: string;
+  version: string;
+  digest: string;
+  installedAt: number;
+  signature?: { status?: string; keyId?: string; [key: string]: unknown };
+  permissions?: Record<string, unknown> | null;
+  contributes?: string[];
+}
+
+export interface AihPluginInstance {
+  instanceId: string;
+  pluginId: string;
+  version: string;
+  enabled: boolean;
+  configurationKeys?: string[];
+  permissionsAcceptedAt?: number | null;
+  updatedAt?: number;
+}
+
+export interface AihPluginReport {
+  ok: boolean;
+  revision: number;
+  installed: AihPluginInstalled[];
+  instances: AihPluginInstance[];
+  runtime?: Record<string, unknown> | null;
+}
+
+export interface AihPluginDoctorReport extends AihPluginReport {
+  issues?: Array<Record<string, unknown>>;
+  warnings?: Array<Record<string, unknown>>;
+  capabilities?: Record<string, number>;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;

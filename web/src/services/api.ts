@@ -2354,6 +2354,22 @@ export const sshHostsAPI = {
 };
 
 export const toolkitAPI = {
+  getAihPlugins: async (): Promise<import('@/types').AihPluginReport> => {
+    const response = await api.get<import('@/types').AihPluginReport>('/plugins');
+    return response.data;
+  },
+  getAihPluginDoctor: async (): Promise<import('@/types').AihPluginDoctorReport> => {
+    const response = await api.get<import('@/types').AihPluginDoctorReport>('/plugins/doctor');
+    return response.data;
+  },
+  operateAihPlugin: async (action: 'enable' | 'disable' | 'uninstall', input: Record<string, unknown>) => {
+    const response = await api.post(`/plugins/${action}`, input);
+    return response.data;
+  },
+  runAihPluginDemo: async (): Promise<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }> => {
+    const response = await api.post<{ ok: boolean; demo: import('@/types').NativeResourceDemoResult }>('/plugins/demo', {});
+    return response.data;
+  },
   getNativeResources: async (): Promise<import('@/types').NativeResourceReport> => {
     const response = await api.get<import('@/types').NativeResourceReport>('/webui/toolkit/native-resources');
     return response.data;

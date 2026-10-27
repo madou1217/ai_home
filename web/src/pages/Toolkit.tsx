@@ -7,6 +7,7 @@ import {
   CloudServerOutlined,
   CloudSyncOutlined,
   CodeOutlined,
+  ExperimentOutlined,
   ForkOutlined,
   GatewayOutlined,
   GlobalOutlined,
@@ -24,6 +25,7 @@ import EdgeProxyPanel from '@/components/toolkit/edge-proxy/EdgeProxyPanel';
 import EgressPoolPanel from '@/features/egress-pool/EgressPoolPanel';
 import GeoResourcePanel from '@/features/geo-resource/GeoResourcePanel';
 import NativeResourcesPanel from '@/components/toolkit/NativeResourcesPanel';
+import AihPluginPanel from '@/components/toolkit/AihPluginPanel';
 import EgressUpstreamPanel from '@/features/egress-upstream/EgressUpstreamPanel';
 import { resolveToolkitPanelAlias, subscribeToolkitPanel, writeToolkitPanel } from './toolkit-url-state';
 import './Toolkit.css';
@@ -68,6 +70,12 @@ const SECTION_ITEMS: Record<ToolkitSection, ToolkitSecondaryItem[]> = {
       label: '插件与资源',
       description: 'Plugin / Skill / MCP 原生投影',
       icon: <CodeOutlined />
+    },
+    {
+      id: 'aih-plugins',
+      label: 'AIH 插件宿主',
+      description: '签名插件、权限与 Host/RPC',
+      icon: <ExperimentOutlined />
     }
   ],
   runtime: [
@@ -144,6 +152,8 @@ function renderPanel(panelId: string) {
       return <ManagedToolsPanel category="session-runtimes" />;
     case 'native-resources':
       return <NativeResourcesPanel />;
+    case 'aih-plugins':
+      return <AihPluginPanel />;
     case 'terminals':
       return <TerminalManagerPanel />;
     case 'edge-forwarding':

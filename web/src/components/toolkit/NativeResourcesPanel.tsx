@@ -52,6 +52,7 @@ function ResourceCard({ provider, kind, capability, onAction, busy }: {
   const id = managedId(capability, kind);
   const enabled = record?.enabled !== false && Boolean(record);
   const supported = capability.state !== 'unsupported';
+  const canInstall = supported && provider !== 'host/aih';
   const action = (name: NativeResourceAction) => `${provider}:${kind}:${name}`;
   return (
     <Card size="small" title={<Space>{KIND_ICONS[kind]}<span>{KIND_LABELS[kind]}</span></Space>}>
@@ -70,7 +71,7 @@ function ResourceCard({ provider, kind, capability, onAction, busy }: {
           <Button
             size="small"
             icon={<DownloadOutlined />}
-            disabled={!supported || Boolean(busy)}
+            disabled={!canInstall || Boolean(busy)}
             loading={busy === action('install')}
             onClick={() => onAction('install', capability)}
           >安装 demo</Button>
@@ -102,7 +103,7 @@ function ResourceCard({ provider, kind, capability, onAction, busy }: {
               onClick={() => onAction('test', capability)}
             >测试连接</Button>
           ) : null}
-          {capability.demo.command && (capability.state === 'supported' || record) ? (
+          {capability.demo.command && (capability.state === 'supported' || record) && provider !== 'host/aih' ? (
             <Button
               size="small"
               icon={<PlayCircleOutlined />}

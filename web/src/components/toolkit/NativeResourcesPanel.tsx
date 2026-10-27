@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Row, Space, Spin, Tag, Typography, message } from 'antd';
+import { Card, Col, Empty, Modal, Row, Space, Spin, Tag, Typography, message } from 'antd';
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -175,6 +175,7 @@ export default function NativeResourcesPanel() {
   const [report, setReport] = useState<NativeResourceReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [demoEvidence, setDemoEvidence] = useState<Record<string, unknown> | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     try { setReport(await toolkitAPI.getNativeResources()); }
@@ -194,7 +195,10 @@ export default function NativeResourcesPanel() {
         action,
         id: record?.id || (kind === 'mcp' ? 'aih-demo' : 'aih-demo')
       });
-      if (result.result) message.success(`${provider} ${KIND_LABELS[kind]} ${action} 完成`);
+      if (action === 'demo' && result.demo?.evidence) {
+        setDemoEvidence(result.demo.evidence);
+        message.success(`${provider} ${KIND_LABELS[kind]} demo 已通过`);
+      } else if (result.result) message.success(`${provider} ${KIND_LABELS[kind]} ${action} 完成`);
       await load();
     } catch (error) { message.error(error instanceof Error ? error.message : `${KIND_LABELS[kind]} 操作失败`); }
     finally { setBusy(''); }
@@ -216,6 +220,9 @@ export default function NativeResourcesPanel() {
         {report?.hosts?.map((row) => <HostRow key={row.host} row={row} onAction={onAction} busy={busy} />)}
       </Space>
       {report ? <Typography.Text type="secondary" style={{ display: 'block', marginTop: 16 }}>{report.evidenceBoundary}</Typography.Text> : null}
+      <Modal open={Boolean(demoEvidence)} title="Native demo 证据" footer={null} onCancel={() => setDemoEvidence(null)}>
+        <pre style={{ maxHeight: 420, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{JSON.stringify(demoEvidence, null, 2)}</pre>
+      </Modal>
     </section>
   );
 }

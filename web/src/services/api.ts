@@ -2383,8 +2383,8 @@ export const toolkitAPI = {
     source?: string;
     tool?: string;
     args?: Record<string, unknown>;
-  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }> => {
-    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; selection?: Record<string, string> }>(
+  }): Promise<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }> => {
+    const response = await api.post<import('@/types').NativeResourceReport & { result?: unknown; demo?: import('@/types').NativeResourceDemoResult; selection?: Record<string, string> }>(
       '/webui/toolkit/native-resources', input
     );
     return response.data;

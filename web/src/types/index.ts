@@ -2816,7 +2816,7 @@ export interface NativeResourceCapability {
   adapter?: string;
   projection?: { path?: string; format?: string; [key: string]: unknown };
   managed: NativeResourceManagedRecord[];
-  demo: { source: string; command: string };
+  demo: { source?: string; command: string; args?: string[] };
 }
 
 export interface NativeResourceProviderRow {

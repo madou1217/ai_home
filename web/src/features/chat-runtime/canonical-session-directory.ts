@@ -218,10 +218,16 @@ function projectRuntimeSession(
   }
   return [{
     id: nativeSessionId,
+    // Keep the canonical runtime identity on the project session. Without
+    // this, a deep link selects the provider's default account and the
+    // runtime surface rejects the existing session as an account mismatch.
+    runtimeSessionId: session.sessionId,
     title: '新会话',
     updatedAt: session.updatedAt,
     provider: query.provider,
+    accountRef: session.executionAccountRef,
     projectPath: query.projectPath,
+    model: typeof session.policy.model === 'string' ? session.policy.model : undefined,
     status: session.state,
   }];
 }

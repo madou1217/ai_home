@@ -48,7 +48,12 @@ export function usesCanonicalSessionRuntime(
   if (!session.projectPath) return false;
   const descriptor = chatRuntimeProviders.resolve(session.provider);
   if (!descriptor) return false;
-  return account === undefined || Boolean(account && descriptor.acceptsAccount(account));
+  // A persisted native session can always be opened as a read-only observer.
+  // Account discovery is asynchronous on deep links; requiring it here would
+  // route the session to the legacy surface before the bound credential arrives.
+  return account === undefined || Boolean(
+    account && descriptor.acceptsAccount(account),
+  ) || Boolean(session.accountRef && !session.draft);
 }
 
 export function resolveSessionRuntimeTarget(
@@ -59,19 +64,29 @@ export function resolveSessionRuntimeTarget(
   const descriptor = chatRuntimeProviders.resolve(input.session.provider);
   if (!descriptor) return blocked('runtime_provider_unsupported');
   if (!projectPath) return blocked('project_path_required');
-  if (!input.account) return blocked('account_required');
-  if (input.account.provider !== input.session.provider) return blocked('provider_mismatch');
-  if (input.session.accountRef && input.session.accountRef !== input.account.accountRef) return blocked('provider_mismatch');
-  if (!descriptor.acceptsAccount(input.account)) return blocked('account_required');
+  const boundAccountRef = String(input.session.accountRef || '').trim();
+  const selectedAccount = input.account;
+  const selectedCompatible = Boolean(
+    selectedAccount
+    && selectedAccount.provider === input.session.provider
+    && descriptor.acceptsAccount(selectedAccount),
+  );
+  if (!selectedCompatible && !boundAccountRef) return blocked('account_required');
+  if (selectedAccount && selectedAccount.provider !== input.session.provider && !boundAccountRef) {
+    return blocked('provider_mismatch');
+  }
+  const observer = Boolean(boundAccountRef && (!selectedCompatible
+    || selectedAccount?.accountRef !== boundAccountRef));
 
   return {
     status: 'ready',
     target: {
       provider: input.session.provider,
-      executionAccountRef: input.account.accountRef,
+      executionAccountRef: boundAccountRef || (selectedAccount as ChatAccount).accountRef,
       projectPath,
       ...(!input.session.draft ? { nativeSessionId: input.session.id } : {}),
       ...(input.session.runtimeSessionId ? { sessionId: input.session.runtimeSessionId } : {}),
+      ...(observer ? { readOnly: true } : {}),
       policy: { approvalMode: input.approvalMode },
     },
   };

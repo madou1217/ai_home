@@ -44,7 +44,7 @@
 | `grok` | `oauth:grok:auth:<sha256(身份集)[:16]>` | 每条 profile：**`email` 优先**，其次 `user_id`/`principal_id` | ❌ 见下 |
 | `kimi` | `oauth:kimi:user:<hash(subject)>`，回退 `oauth:kimi:token:<hash(token)>` | `user_id`/`userId`/`sub` → JWT `sub` → token | ⚠️ token 回退会随轮换改变 |
 | `kiro` | `oauth:kiro:token:<hash(refresh_token\|\|access_token)>` | 只有 token | ❌ 见下 |
-| `zcode` | `oauth:zcode:user:<hash(id\|email\|jwt sub)>`，回退 `oauth:zcode:token:<hash>` | `oauth:zai:user_info` 的 `user_id` → `email` → JWT `sub` → token | ⚠️ 邮箱回退 + token 回退 |
+| `zcode` | `oauth:zcode:user:<hash(<region>\|id\|jwt sub)>`，回退 `oauth:zcode:token:<hash>` | `oauth:active_provider`（区域）+ `oauth:<region>:user_info` 的 `user_id` → JWT `sub` → token | ⚠️ 邮箱回退 + token 回退；**区域参与身份**（2026-10-27）：同一用户在 `zai` 与 `bigmodel` 是两条独立账号，互不覆盖。改口径前的旧 ref 仍按旧口径（不含区域）接受 |
 | `codebuddy` / `codebuddycn` / 同族 | `oauth:<provider>:user:<hash(subject)>`，回退 `oauth:<provider>:<email>`，再回退 `oauth:<provider>:token:<hash>` | `user_id`/`uid`/`sub` → JWT `sub` → `email` → `account_id` → token | ⚠️ 邮箱回退 + token 回退 |
 | `qoder` / `qodercn` | 由 `resolveQoderNativeAuthPayload` 专门解析；PAT-only 时 `api_key:<provider>:pat:<sha256(pat)[:16]>` | — | 未实测 |
 

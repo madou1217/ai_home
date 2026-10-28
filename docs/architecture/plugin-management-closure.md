@@ -550,8 +550,9 @@ No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DS
 Web/TUI model-selected agent loop. Pi and DSH headless inference use a deterministic local
 model fixture; this proves runtime execution, not a remote model's tool-selection quality.
 
-The current machine-level aggregate `/tmp/aih-resource-closure-workbuddycn.json`
-contains 21 demo entries. WorkBuddy CN is independently verified through the
+The current machine-level aggregate `/tmp/aih-resource-closure-final-proof.json`
+contains 24 focused demo entries and reports `passed: true` with `gaps: []`.
+WorkBuddy CN is independently verified through the
 official WorkBuddy.app 5.9.2 bundle and its embedded CodeBuddy 2.165.0 runtime;
 Plugin, Skill and deferred MCP loop all pass four lifecycle stages. One aggregate
 run also recorded an unrelated native-plugin runner failure while an external

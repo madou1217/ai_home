@@ -99,3 +99,21 @@
 - [ ] **Step 3:** Verify browser-visible attachment state contains ID/name only while provider prompt receives a controlled persisted path; redact credentials and file contents.
 - [ ] **Step 4:** Review projection/facade, attachment state machine, capability-preserving adapter boundaries, and unrelated worktree paths.
 - [ ] **Step 5:** Report commits, tests/build/lint, real UI evidence, and remaining limitations; do not claim completion without fresh evidence for every acceptance item.
+
+### Task 5: macOS native Chat parity
+
+**Files:**
+- Modify: `native/chat/ChatPanel.swift`
+- Modify: `native/chat/ChatPanelContent.swift`
+- Modify: `lib/desktop/chat/chat-runtime-bridge.js`
+- Modify: `lib/desktop/chat/chat-runtime-protocol.js`
+
+**Interfaces:**
+- Consumes: native timeline events, runtime model/metrics detail, existing JSONL chat bridge and text submission path.
+- Produces: native Chat message rows with actual model/provider, elapsed/TTFT metadata, copy action, and large pasted-text file reference instead of an 8,000-character hard rejection.
+
+- [ ] **Step 1: Trace native event payloads.** Identify the runtime timeline item/detail fields carrying model and metrics and the existing native composer event path; preserve identity guards.
+- [ ] **Step 2: Write a failing Swift/Node protocol probe.** Assert a message event with model/metrics reaches the native projection and that a large text reference payload is accepted by the bridge protocol without putting the full body in the normal text field.
+- [ ] **Step 3: Render native metadata and copy.** Add compact metadata below assistant rows and a copy button that writes only the row content to the pasteboard with temporary “已复制” feedback; preserve streaming selection.
+- [ ] **Step 4: Add native large-text reference path.** For text beyond the shared threshold, emit a file-reference attachment command through the existing host bridge; keep short text inline and retain failure/retry state in the native composer.
+- [ ] **Step 5: Verify and commit.** Run Swift typecheck, Node protocol/bridge tests or probes, and native helper build checks; commit only Task 5 paths with `feat(desktop-chat): add message metadata and file references`.

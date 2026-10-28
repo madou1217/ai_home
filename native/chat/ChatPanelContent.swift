@@ -31,14 +31,19 @@ private final class ChatDocument: NSView {
 /// Each message retains its text system while streaming, preserving selection.
 private final class ChatMessageRow: NSView {
   let textView = NSTextView()
+  private let metadataLabel = NSTextField(labelWithString: "")
+  private let copyButton = NSButton(title: "复制", target: nil, action: nil)
+  private var copiedTimer: Timer?
   private var textHeight: NSLayoutConstraint!
   private var lastWidth: CGFloat = 0
   private var horizontalInset: CGFloat = 24
   private let surface = ChatSurface()
+  private let isAssistant: Bool
 
   init(role: String, text: String) {
     super.init(frame: .zero)
     let isUser = role == "你" || role == "user"
+    self.isAssistant = !isUser
     horizontalInset = isUser ? 52 : 24
     surface.fill = isUser ? .controlBackgroundColor : .clear
     surface.border = isUser ? ChatPalette.accent.withAlphaComponent(0.2) : .clear
@@ -63,8 +68,22 @@ private final class ChatMessageRow: NSView {
     textView.isVerticallyResizable = false
     textView.translatesAutoresizingMaskIntoConstraints = false
     textView.setAccessibilityLabel(isUser ? "用户消息" : "AIH 回复")
+    metadataLabel.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
+    metadataLabel.textColor = .secondaryLabelColor
+    metadataLabel.lineBreakMode = .byTruncatingMiddle
+    metadataLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    metadataLabel.isHidden = true
+    copyButton.bezelStyle = .inline
+    copyButton.font = .systemFont(ofSize: 10)
+    copyButton.title = "复制"
+    copyButton.target = self
+    copyButton.action = #selector(copyContent)
+    copyButton.isHidden = !self.isAssistant
+    copyButton.setAccessibilityLabel("复制回复")
     surface.addSubview(author)
     surface.addSubview(textView)
+    surface.addSubview(metadataLabel)
+    surface.addSubview(copyButton)
     textHeight = textView.heightAnchor.constraint(equalToConstant: 20)
     NSLayoutConstraint.activate([
       surface.leadingAnchor.constraint(equalTo: leadingAnchor, constant: isUser ? 28 : 0),
@@ -77,13 +96,21 @@ private final class ChatMessageRow: NSView {
       textView.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 12),
       textView.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -12),
       textView.topAnchor.constraint(equalTo: author.bottomAnchor, constant: 7),
-      textView.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -12),
+      textView.bottomAnchor.constraint(equalTo: metadataLabel.topAnchor, constant: -6),
+      metadataLabel.leadingAnchor.constraint(equalTo: surface.leadingAnchor, constant: 12),
+      metadataLabel.trailingAnchor.constraint(lessThanOrEqualTo: copyButton.leadingAnchor, constant: -8),
+      metadataLabel.bottomAnchor.constraint(equalTo: surface.bottomAnchor, constant: -10),
+      copyButton.trailingAnchor.constraint(equalTo: surface.trailingAnchor, constant: -10),
+      copyButton.centerYAnchor.constraint(equalTo: metadataLabel.centerYAnchor),
+      copyButton.widthAnchor.constraint(equalToConstant: 34),
       textHeight
     ])
     update(text)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  deinit { copiedTimer?.invalidate() }
 
   func update(_ text: String) {
     let old = textView.string
@@ -101,6 +128,23 @@ private final class ChatMessageRow: NSView {
     }
     if NSMaxRange(selection) <= (text as NSString).length { textView.setSelectedRange(selection) }
     measureText()
+  }
+
+  func updateMetadata(_ text: String) {
+    metadataLabel.stringValue = text
+    metadataLabel.isHidden = text.isEmpty
+  }
+
+  @objc private func copyContent() {
+    let value = textView.string
+    guard !value.isEmpty else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(value, forType: .string)
+    copyButton.title = "已复制"
+    copiedTimer?.invalidate()
+    copiedTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
+      self?.copyButton.title = "复制"
+    }
   }
 
   func prepare(width: CGFloat) {
@@ -164,6 +208,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
   private var rows: [ChatMessageRow] = []
   private var assistantRow: ChatMessageRow?
   private var assistantRows: [String: ChatMessageRow] = [:]
+  private var assistantTurnIDs: [String: String] = [:]
   private let composerHint = NSTextField(labelWithString: "↵ 发送 · ⇧↵ 换行")
   private var composerHeight: NSLayoutConstraint!
   private var measuringComposer = false
@@ -412,7 +457,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     composerHeight.constant = min(132, max(52, ceil(manager.usedRect(for: container).height) + 20))
   }
 
-  func setState(_ next: ChatPanelState, sessionID: String, model: String, message: String) {
+  func setState(_ next: ChatPanelState, sessionID: String, model: String, provider: String = "", message: String) {
     let changed = state != next
     state = next
     stateMessage = message
@@ -426,8 +471,8 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     }
     sessionLabel.stringValue = sessionID.isEmpty ? "新对话" : "对话中"
     sessionLabel.toolTip = nil
-    modelLabel.stringValue = model
-    modelLabel.toolTip = model
+    modelLabel.stringValue = provider.isEmpty ? model : (model.isEmpty ? provider : "\(provider) · \(model)")
+    modelLabel.toolTip = modelLabel.stringValue
     updateStatusText()
     updateControls()
     if changed { animate(stateLabel) }
@@ -449,15 +494,15 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
   }
 
   private var canSubmit: Bool {
-    state == .idle && composer.string.utf16.count <= 8000
-      && !composer.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    state == .idle && !composer.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private func updateControls() {
     let canSend = canSubmit
-    let count = composer.string.utf16.count
-    composerHint.stringValue = count > 8000 ? "\(count) / 8000 · 请缩短消息" : "↵ 发送 · ⇧↵ 换行"
-    composerHint.textColor = count > 8000 ? .systemRed : .secondaryLabelColor
+    let count = composer.string.count
+    let bytes = composer.string.utf8.count
+    composerHint.stringValue = (count >= 12_000 || bytes >= 48 * 1024) ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
+    composerHint.textColor = .secondaryLabelColor
     let canStop = state == .streaming
     let actionLabel = canStop ? "停止回复" : "发送消息"
     sendStop.image = NSImage(systemSymbolName: canStop ? "stop.fill" : "arrow.up", accessibilityDescription: actionLabel)
@@ -476,6 +521,7 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     rows.removeAll()
     assistantRow = nil
     assistantRows.removeAll()
+    assistantTurnIDs.removeAll()
     emptyState.isHidden = false
   }
 
@@ -486,14 +532,21 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     scrollToBottom()
   }
 
-  func restoreMessages(_ messages: [(role: String, text: String)]) {
+  func restoreMessages(_ messages: [(id: String, role: String, text: String, metadata: String, turnID: String)]) {
     clearTranscript()
-    for message in messages where !message.text.isEmpty { _ = addRow(role: message.role, text: message.text, animated: false) }
+    for message in messages where !message.text.isEmpty {
+      let row = addRow(role: message.role, text: message.text, animated: false)
+      row.updateMetadata(message.metadata)
+      if message.role == "AIH", !message.id.isEmpty {
+        assistantRows[message.id] = row
+        assistantTurnIDs[message.id] = message.turnID
+      }
+    }
     scrollToBottom()
   }
 
   func replaceTranscript(_ text: String) {
-    restoreMessages(text.isEmpty ? [] : [(role: "AIH", text: text)])
+    restoreMessages(text.isEmpty ? [] : [(id: "", role: "AIH", text: text, metadata: "", turnID: "")])
   }
 
   func currentText() -> String { composer.string }
@@ -503,15 +556,24 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
   }
   func clearComposer() { setComposerText("") }
 
-  func upsertAssistant(id: String, text: String) {
+  func upsertAssistant(id: String, text: String, metadata: String = "", turnID: String = "") {
     guard !id.isEmpty else { return }
     let follow = isNearBottom
     if let row = assistantRows[id] {
       row.update(text)
+      row.updateMetadata(metadata)
     } else if !text.isEmpty {
-      assistantRows[id] = addRow(role: "AIH", text: text)
+      let newRow = addRow(role: "AIH", text: text)
+      newRow.updateMetadata(metadata)
+      assistantRows[id] = newRow
     }
+    if !turnID.isEmpty { assistantTurnIDs[id] = turnID }
     if follow { scrollToBottom() }
+  }
+
+  func updateAssistantMetadata(turnID: String, metadata: String) {
+    guard !turnID.isEmpty else { return }
+    for (id, row) in assistantRows where assistantTurnIDs[id] == turnID { row.updateMetadata(metadata) }
   }
 
   func replaceCurrentAssistant(_ text: String) {

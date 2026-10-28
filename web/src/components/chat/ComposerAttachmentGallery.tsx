@@ -2,12 +2,17 @@ import { memo } from 'react';
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import styles from './composer/composer.module.css';
 import type { ChatDocumentAttachment } from './attachment-files';
+import type { PendingChatAttachment } from './use-chat-file-input';
 
 export interface ComposerAttachmentGalleryProps {
   images: string[];
   onRemove: (index: number) => void;
   documents?: readonly ChatDocumentAttachment[];
   onRemoveDocument?: (index: number) => void;
+  onRetryDocument?: (index: number) => void;
+  pending?: readonly PendingChatAttachment[];
+  onRetryPending?: (key: string) => void;
+  onRemovePending?: (key: string) => void;
 }
 
 /**
@@ -19,17 +24,49 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
   onRemove,
   documents = [],
   onRemoveDocument,
+  onRetryDocument,
+  pending = [],
+  onRetryPending,
+  onRemovePending,
 }: ComposerAttachmentGalleryProps) {
-  if (images.length === 0 && documents.length === 0) return null;
+  if (images.length === 0 && documents.length === 0 && pending.length === 0) return null;
 
   return (
     <div className={styles.attachmentGalleryRow} aria-label="待发送附件">
       {documents.map((document, index) => (
-        <div key={`${document.name}-${index}`} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={document.name}>
+        <div key={`${document.name}-${index}`} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={document.error || document.name} data-status={document.status || 'ready'}>
           <FileTextOutlined className={styles.attachmentDocIcon} />
-          <span className={styles.attachmentDocumentName}>{document.name}</span>
+          <span className={styles.attachmentDocumentName} title={document.error || document.name}>
+            {document.name}
+            <small>{formatBytes(document.size || new TextEncoder().encode(document.text).byteLength)} · {statusLabel(document.status)}{document.error ? ` · ${document.error}` : ''}</small>
+          </span>
+          {document.status === 'failed' && onRetryDocument ? (
+            <button type="button" className={styles.attachmentRetryBadge}
+              onClick={() => onRetryDocument(index)} aria-label={`重试 ${document.name}`}>
+              重试
+            </button>
+          ) : null}
           <button type="button" className={styles.attachmentRemoveBadge}
             onClick={() => onRemoveDocument?.(index)} aria-label={`移除 ${document.name}`}>
+            <CloseOutlined style={{ fontSize: 9 }} />
+          </button>
+        </div>
+      ))}
+      {pending.map((attachment) => (
+        <div key={attachment.key} className={`${styles.attachmentGalleryCard} ${styles.attachmentDocumentCard}`} title={attachment.error || attachment.name} data-status={attachment.status}>
+          <FileTextOutlined className={styles.attachmentDocIcon} />
+          <span className={styles.attachmentDocumentName} title={attachment.error || attachment.name}>
+            {attachment.name}
+            <small>{formatBytes(attachment.size)} · {attachment.status === 'preparing' ? '准备中' : '失败'}{attachment.error ? ` · ${attachment.error}` : ''}</small>
+          </span>
+          {attachment.status === 'failed' && onRetryPending ? (
+            <button type="button" className={styles.attachmentRetryBadge}
+              onClick={() => onRetryPending(attachment.key)} aria-label={`重试 ${attachment.name}`}>
+              重试
+            </button>
+          ) : null}
+          <button type="button" className={styles.attachmentRemoveBadge}
+            onClick={() => onRemovePending?.(attachment.key)} aria-label={`移除 ${attachment.name}`}>
             <CloseOutlined style={{ fontSize: 9 }} />
           </button>
         </div>
@@ -59,5 +96,19 @@ export const ComposerAttachmentGallery = memo(function ComposerAttachmentGallery
     </div>
   );
 });
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function statusLabel(status: ChatDocumentAttachment['status']): string {
+  if (status === 'preparing') return '准备中';
+  if (status === 'uploading') return '上传中';
+  if (status === 'uploaded') return '已上传';
+  if (status === 'failed') return '失败';
+  return '就绪';
+}
 
 export default ComposerAttachmentGallery;

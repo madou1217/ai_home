@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CopyOutlined,
   CheckOutlined,
@@ -31,15 +31,24 @@ export default function MessageIconActions({
 }: MessageIconActionsProps) {
   const [copied, setCopied] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const copyResetTimer = useRef<number | undefined>(undefined);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  useEffect(() => () => {
+    if (copyResetTimer.current !== undefined) window.clearTimeout(copyResetTimer.current);
+  }, []);
+
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
+    if (!text || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       antdMessage.success('已复制到剪贴板', 1.2);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
+      if (copyResetTimer.current !== undefined) window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      antdMessage.error('复制失败', 1.2);
+    }
   };
 
   const handleRetry = (e: React.MouseEvent) => {

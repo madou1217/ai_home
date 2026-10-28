@@ -40,9 +40,13 @@ export default function Composer(props: ComposerProps) {
     });
   }, [props.actions]);
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (!controller.canAttach) return;
     const files = Array.from(event.clipboardData?.files || []);
     if (files.length > 0) {
+      if (!controller.canAttach) {
+        event.preventDefault();
+        message.error('当前投递方式不支持附件');
+        return;
+      }
       event.preventDefault();
       void controller.addAttachments(files);
       return;
@@ -50,6 +54,10 @@ export default function Composer(props: ComposerProps) {
     const text = event.clipboardData?.getData('text/plain') || '';
     if (!shouldConvertLargePaste(text)) return;
     event.preventDefault();
+    if (!controller.canAttach) {
+      message.error('当前投递方式不支持大文本附件');
+      return;
+    }
     void controller.addAttachments([buildPastedTextFile(text)]);
   }, [controller]);
   return (

@@ -113,9 +113,16 @@ function useComposerViewState(props: ComposerProps) {
     props.onModelChange(next.model);
     setReasoningEffort(next.effort);
   }, [props.catalog, props.onModelChange, reasoningEffort, sessionModelKey, setReasoningEffort]);
-  const canAttach = delivery === 'turn' && !policy.turnActive && !busy && !pendingSlash;
+  // Attachments may be prepared while a new session is still starting. The
+  // initial delivery is `after_turn`, but it becomes a normal turn once the
+  // session reaches idle; keep the chip pending across that transition. An
+  // already running turn must stay attachment-free for queue/intervention
+  // deliveries because those payloads cannot carry attachment IDs.
+  const canAttach = !busy && !pendingSlash
+    && (delivery === 'turn' || projection.state === 'starting');
   const canSend = Boolean(selection.model)
     && !(pendingSlash && attachments.items.length > 0)
+    && (delivery === 'turn' || attachments.items.length === 0)
     && attachments.items.every((item) => item.status === 'ready' || item.status === 'uploaded')
     && canSubmitComposerInput(input, delivery, busy, attachments.items.length);
   return {

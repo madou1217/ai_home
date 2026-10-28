@@ -3,7 +3,7 @@
   "manifest_id": "ai-home-route-ownership-2026-08-24",
   "baseline_date": "2026-10-28",
   "source_revision": {
-    "git_commit": "881b2d68a7f35e06c4ebc3d9246d7471049b6cb5",
+    "git_commit": "79ae50c9794c3ea762a02d71c690eb0164caddfd",
     "collection_script": "scripts/collect-gateway-routes.js",
     "source_mode": "read_only_source_scan",
     "note": "按当前 HEAD 重新采集 Node 与 Go 路由基线；路由数据面差异已由 collector 验证。"
@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 365,
-      "endpoint_records": 354,
-      "unique_endpoint_patterns": 265,
-      "unique_http_endpoint_patterns": 260,
+      "route_records": 366,
+      "endpoint_records": 355,
+      "unique_endpoint_patterns": 266,
+      "unique_http_endpoint_patterns": 261,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 11,
       "fallback_records": 0

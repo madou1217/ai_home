@@ -24,7 +24,7 @@ test('capability refresh keeps native catalog entries and marks Chat slash as cl
     capabilitySnapshot: { slashCommands: ['custom'] }
   });
   assert.deepEqual(native.slashCommands, ['custom', 'agent', 'app', 'approve', 'archive', 'clear', 'compact', 'copy', 'delete', 'diff', 'exit', 'experimental', 'fast', 'feedback', 'fork', 'goal', 'hooks', 'ide', 'import', 'init', 'keymap', 'logout', 'mcp', 'memories', 'mention', 'model', 'new', 'permissions', 'personality', 'pets', 'plan', 'plugins', 'ps', 'raw', 'rename', 'resume', 'review', 'side', 'skills', 'status', 'statusline', 'stop', 'theme', 'title', 'usage', 'vim']);
-  assert.equal(native.slashPassthrough, undefined);
+  assert.equal(native.slashPassthrough, true);
   const chat = refreshSlashCapabilities({
     provider: 'codex',
     policy: { workspaceMode: 'chat' },

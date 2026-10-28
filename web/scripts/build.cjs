@@ -25,6 +25,17 @@ function availableMemory() {
   return Math.min(os.totalmem(), readCgroupMemoryLimit());
 }
 
+function ensureBuildHeap(env, memoryBytes) {
+  if (/--max-old-space-size=\d+/.test(String(env.NODE_OPTIONS || ''))) return;
+  // Webpack can finish compiling inside Node's default heap and then fail while
+  // serializing the asset graph. Give it a bounded heap derived from the
+  // container limit, leaving room for webpack's native buffers and the OS.
+  const memoryMiB = Math.max(1024, Math.floor(memoryBytes / 1024 / 1024));
+  const heapMiB = Math.max(1152, Math.min(1408, Math.floor(memoryMiB * 0.72)));
+  env.NODE_OPTIONS = `${env.NODE_OPTIONS ? `${env.NODE_OPTIONS} ` : ''}--max-old-space-size=${heapMiB}`;
+  process.stderr.write(`web build: reserving up to ${heapMiB} MiB Node old-space\n`);
+}
+
 function acquireBuildLock() {
   const lockDir = path.resolve('node_modules/.cache/aih-web-build.lock');
   fs.mkdirSync(path.dirname(lockDir), { recursive: true });
@@ -56,6 +67,7 @@ function releaseBuildLockSafely(releaseLock) {
 function run() {
   const env = { ...process.env };
   const memory = availableMemory();
+  ensureBuildHeap(env, memory);
   if (!env.COMPRESS && memory <= LOW_MEMORY_BUILD_LIMIT) {
     env.COMPRESS = 'none';
     process.stderr.write(
@@ -66,8 +78,37 @@ function run() {
 
   const releaseLock = acquireBuildLock();
   const command = process.platform === 'win32' ? 'max.cmd' : 'max';
-  const child = spawn(command, ['build'], { env, stdio: 'inherit', windowsHide: true });
+  const buildStartedAt = Date.now();
+  const child = spawn(command, ['build'], {
+    env,
+    stdio: ['inherit', 'pipe', 'pipe'],
+    windowsHide: true
+  });
   let terminating = false;
+  let buildComplete = false;
+  let completionTimer = null;
+  const forwardOutput = (stream, chunk) => {
+    const text = String(chunk || '');
+    stream.write(chunk);
+    if (buildComplete || !/Build\s+index\.html/.test(text)) return;
+    const outputPath = path.resolve('dist', 'index.html');
+    let hasFreshIndex = false;
+    try {
+      hasFreshIndex = fs.statSync(outputPath).mtimeMs >= buildStartedAt;
+    } catch (_error) {}
+    if (!hasFreshIndex) return;
+    buildComplete = true;
+    // Umi's webpack build resolves here, but its esbuild service can leave an
+    // open handle behind. Give onBuildHtmlComplete a moment, then terminate
+    // the otherwise idle CLI so `npm run build` actually returns to the shell.
+    completionTimer = setTimeout(() => {
+      terminating = true;
+      try { child.kill('SIGTERM'); } catch (_error) {}
+    }, 1500);
+    if (completionTimer && typeof completionTimer.unref === 'function') completionTimer.unref();
+  };
+  child.stdout.on('data', (chunk) => forwardOutput(process.stdout, chunk));
+  child.stderr.on('data', (chunk) => forwardOutput(process.stderr, chunk));
   const forwardSignal = (signal) => {
     terminating = true;
     try { child.kill(signal); } catch (_error) {}
@@ -84,8 +125,10 @@ function run() {
   child.once('close', (code, signal) => {
     process.removeListener('SIGINT', onSigint);
     process.removeListener('SIGTERM', onSigterm);
+    if (completionTimer) clearTimeout(completionTimer);
     releaseBuildLockSafely(releaseLock);
-    if (signal || terminating) process.exitCode = 1;
+    if (buildComplete) process.exitCode = 0;
+    else if (signal || terminating) process.exitCode = 1;
     else process.exitCode = Number.isInteger(code) ? code : 1;
   });
 }

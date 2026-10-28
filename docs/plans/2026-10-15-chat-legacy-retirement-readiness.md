@@ -202,3 +202,10 @@ smoke are required before claiming browser/native Chat completion. The next
 implementation gate remains the Web provider registry and approval capability
 coverage, followed by a real Web and native stop/reconnect/duplicate-suppression
 run.
+
+The same smoke was rerun on the current checkout after this checkpoint and now
+fails earlier with `codex_app_server_account_identity_missing`; it still does not
+launch a session or provide live Chat acceptance evidence. The exact failure is
+host-state dependent, so both runs remain diagnostic rather than completion
+proof. The readable account identity/projection prerequisite and the Web/native
+runtime acceptance gate remain open.

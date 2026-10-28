@@ -3,10 +3,10 @@
   "manifest_id": "ai-home-route-ownership-2026-08-24",
   "baseline_date": "2026-10-28",
   "source_revision": {
-    "git_commit": "4e25f863",
+    "git_commit": "881b2d68a7f35e06c4ebc3d9246d7471049b6cb5",
     "collection_script": "scripts/collect-gateway-routes.js",
     "source_mode": "read_only_source_scan",
-    "note": "按当前 HEAD 重新采集 Node 与 Go 路由基线，不包含工作区未提交改动；Go 已实现全部 14 条数据面 capability route，production owner 仍为 Node。本次（2026-10-28）基线刷新：Node endpoint 348 / route 359，Go endpoint 37 / route 38；数据面候选 14 条全部有 Go 实现（missing_in_go 为空）。WebUI 管理面由 node.webui_and_session_surface 等 Node capability surface 覆盖，Go 侧控制面接口不是数据面 capability route。"
+    "note": "按当前 HEAD 重新采集 Node 与 Go 路由基线；路由数据面差异已由 collector 验证。"
   },
   "migration_state_machine": [
     "node_owned",
@@ -51,10 +51,10 @@
   "route_baseline": {
     "collector_schema_version": 2,
     "node": {
-      "route_records": 359,
-      "endpoint_records": 348,
-      "unique_endpoint_patterns": 262,
-      "unique_http_endpoint_patterns": 257,
+      "route_records": 365,
+      "endpoint_records": 354,
+      "unique_endpoint_patterns": 265,
+      "unique_http_endpoint_patterns": 260,
       "unique_websocket_endpoint_patterns": 7,
       "guard_records": 11,
       "fallback_records": 0

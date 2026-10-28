@@ -126,6 +126,10 @@ export default defineConfig({
       type: 'filesystem',
       cacheDirectory: path.resolve(process.cwd(), 'node_modules/.cache/aih-webpack'),
       compression: false,
+      idleTimeout: 0,
+      idleTimeoutForInitialStore: 0,
+      idleTimeoutAfterLargeChanges: 0,
+      maxMemoryGenerations: 0,
       buildDependencies: { config: [__filename] },
     });
     memo.resolve.alias.set(

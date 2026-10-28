@@ -99,12 +99,14 @@ function run() {
     if (!hasFreshIndex) return;
     buildComplete = true;
     // Umi's webpack build resolves here, but its esbuild service can leave an
-    // open handle behind. Give onBuildHtmlComplete a moment, then terminate
-    // the otherwise idle CLI so `npm run build` actually returns to the shell.
+    // open handle behind. Keep the child alive long enough for webpack's
+    // filesystem cache pack to finish writing before terminating that idle
+    // service; killing after 1.5s leaves the cache directory empty and makes
+    // every production build pay the full compilation cost again.
     completionTimer = setTimeout(() => {
       terminating = true;
       try { child.kill('SIGTERM'); } catch (_error) {}
-    }, 1500);
+    }, 30_000);
     if (completionTimer && typeof completionTimer.unref === 'function') completionTimer.unref();
   };
   child.stdout.on('data', (chunk) => forwardOutput(process.stdout, chunk));

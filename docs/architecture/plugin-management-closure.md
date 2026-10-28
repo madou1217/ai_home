@@ -843,3 +843,17 @@ stdio result sequence and returned `WORKBUDDY_MCP_OK`; disabled and removed stag
 returned `MCP_NOT_LOADED` without a tool schema or call. This is fresh local
 deterministic native evidence for WorkBuddy AI 2.161.0. It does not establish
 WorkBuddy CN, arbitrary CodeBuddy versions, remote reasoning, or Web/TUI parity.
+
+## Current-main Cline runtime recheck (2026-10-29)
+
+`node scripts/cline-mcp-tool-loop-demo.js` passed against Cline 3.0.74 from
+`/opt/homebrew/bin/cline` with its local deterministic inference fixture. The
+enabled and re-enabled stages each advertised and executed the projected MCP
+tool, observed its result in the next request, and returned
+`AIH_NATIVE_MCP_OK`. Disabled and removed stages sent one request without an MCP
+schema or tool call and returned `MCP_NOT_LOADED`.
+
+This rerun confirms the managed projection and local native MCP loop only. It
+does not resolve the separate Cline refresh-token/account duplication and
+model/plan validation investigation, nor does it provide an upstream response
+body or Web/TUI parity.

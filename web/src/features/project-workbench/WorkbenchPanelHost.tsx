@@ -29,7 +29,13 @@ export default function WorkbenchPanelHost({ state, projectPath, mobile, onClose
             {...(!active ? { inert: '' } : {})}
           >
             {tab.kind === 'terminal' ? (
-              <ShellTerminalPanel visible={active} cwd={projectPath} onClose={() => onClose(tab.id)} />
+              <ShellTerminalPanel
+                visible={active}
+                cwd={projectPath}
+                persistent
+                sessionKey={`workbench:${encodeURIComponent(projectPath)}`}
+                onClose={() => onClose(tab.id)}
+              />
             ) : null}
             {tab.kind === 'browser' ? <BrowserPanel initialUrl={tab.url} /> : null}
             {tab.kind === 'files' && projectPath ? <FilesPanel projectPath={projectPath} mobile={mobile} /> : null}

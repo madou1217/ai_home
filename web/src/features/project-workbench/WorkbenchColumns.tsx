@@ -382,7 +382,14 @@ export default function WorkbenchColumns({
             <div {...paneProps(rightPane === 'terminal')}>
               {/* 无项目时不挂载终端（cwd 无意义且会自动连接），与其他面板空态一致。 */}
               {projectPath ? (
-                <ShellTerminalPanel visible cwd={projectPath} onClose={closeTerminal} compactChrome />
+                <ShellTerminalPanel
+                  visible
+                  cwd={projectPath}
+                  persistent
+                  sessionKey={`workbench:${encodeURIComponent(projectPath)}`}
+                  onClose={closeTerminal}
+                  compactChrome
+                />
               ) : (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择项目" />
               )}

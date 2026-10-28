@@ -219,8 +219,34 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false, sess
       if (!inst) return;
       applyFrame(tabId, inst, msg);
     };
+    // EventSource 会自动重连，但服务端会在旧连接关闭时回收 mux。重连后的
+    // connected 帧必须把持久 session 重新绑定到新的 mux，否则 shell 仍在运行，
+    // 但后续输出会继续广播到已删除的旧 mux，表现为“终端还活着但页面没字”。
+    const reattachPersistentTabs = () => {
+      if (!sessionKey) return;
+      for (const [tabId, inst] of instancesRef.current) {
+        if (!inst.termId) continue;
+        const previousTermId = inst.termId;
+        void terminalAPI.attach(sessionKey, muxIdRef.current).then((attached) => {
+          if (!attached.ok || !attached.termId) return;
+          if (previousTermId !== attached.termId) byTermIdRef.current.delete(previousTermId);
+          registerTermId(tabId, attached.termId, inst);
+          setTabs((prev) => prev.map((tab) => tab.id === tabId
+            ? { ...tab, termId: attached.termId!, status: 'ready' }
+            : tab));
+        }).catch(() => {});
+      }
+    };
     es.onerror = () => {
       if (!panelReadyRef.current) setPanelStatus('error');
+    };
+    const previousOnMessage = es.onmessage;
+    es.onmessage = (ev) => {
+      previousOnMessage?.(ev);
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'connected') reattachPersistentTabs();
+      } catch { /* ignore malformed heartbeat/event */ }
     };
 
     setHeight(readStoredHeight());

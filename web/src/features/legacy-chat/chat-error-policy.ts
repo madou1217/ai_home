@@ -13,6 +13,7 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   model_not_found: '该模型在当前 server 上不可用，请改用其他模型。',
   rate_limited: '该账号当前被上游限流/熔断，请稍后重试或改用其他账号。',
   cooldown: '该账号当前被上游限流/熔断，请稍后重试或改用其他账号。',
+  remote_pool_unavailable: '远端 Codex 账号池暂时不可用，请稍后重试；如果持续出现，请检查 Mac 上的远程 Server 配置。',
 });
 
 function asPayload(value: unknown): ErrorPayload {

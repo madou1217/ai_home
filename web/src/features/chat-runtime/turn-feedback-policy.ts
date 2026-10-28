@@ -6,6 +6,9 @@ export function turnFailureMessage(failure: FailedTurn): string {
   if (/auth_invalid|invalid_grant|invalid_authentication|reauth_required/i.test(diagnostic)) {
     return '此账号的登录凭据已失效，请重新登录后重试。';
   }
+  if (/remote_pool_unavailable|no_available_account/i.test(diagnostic)) {
+    return '远端 Codex 账号池暂时不可用，请稍后重试；如果持续出现，请检查远程 Server 配置。';
+  }
   return '本轮执行失败。';
 }
 

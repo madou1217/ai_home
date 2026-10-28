@@ -333,6 +333,9 @@ final class TranslationPanel: NSObject, NSWindowDelegate, NSComboBoxDelegate {
 
   private func friendlyUpstreamFailure(_ message: String) -> String {
     let lower = message.lowercased()
+    if lower.contains("remote_pool_unavailable") || lower.contains("remote codex account pool") {
+      return "远端 Codex 账号池暂时不可用，请稍后重试；如果持续出现，请检查 AIH Server 配置。"
+    }
     if lower.contains("no_available_account") || lower.contains("没有可用于") {
       return "当前翻译模型暂时没有可用账号。请在高级设置中刷新模型目录，或选择其它模型。"
     }

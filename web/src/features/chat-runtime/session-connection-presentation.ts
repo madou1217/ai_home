@@ -70,6 +70,10 @@ const FAILURE_PRESENTATION_BY_CODE: Readonly<Record<string, RuntimeFailurePresen
     title: 'Codex CLI 无法启动',
     description: 'PATH 默认的 Codex CLI 启动后立即退出，请修复默认安装后重试。',
   },
+  remote_pool_unavailable: {
+    title: '远端 Codex 账号池暂时不可用',
+    description: '远程 Server 的账号池正在冷却或暂时没有可用账号，请稍后重试；本机凭据不一定有问题。',
+  },
 };
 
 const PRESENTATION_BY_STATE: Readonly<

@@ -322,7 +322,8 @@ aih shell remove                 # 摘掉 aih 写入的那一段
 支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。
-- 位置感知的深一层补全：`aih codex resume <TAB>` 给**该 CLI 自己的会话 id**（带标题与时间），`aih codex set-default <TAB>` 给账号 id 与 `.aih-server` 档，`aih server config set --<TAB>` 给服务端配置选项（直接来自 `server-config-schema` 那张唯一描述符表，和 `config list` / `--help` 永远同源）。
+- 位置感知的深一层补全：`aih codex resume <TAB>` 直接给**该 CLI 自己最近 10 条会话**（id + 标题 + 时间，zsh 一次 TAB 进入菜单，↑/↓ 挑；fish/pwsh 用各自的候选 UI），`aih codex set-default <TAB>` 给账号 id 与 `.aih-server` 档，`aih server config set --<TAB>` 给服务端配置选项（直接来自 `server-config-schema` 那张唯一描述符表，和 `config list` / `--help` 永远同源）。
+- **会话存储按账号投影 ≠ 读不到**：cline / kiro / qoder / qodercn / grok 的会话存在账号投影里，但账号隔离只针对凭据——读取器会枚举**每个账号**的存储再合并，所以 `aih cline sessions --history`、`aih cline resume <TAB>` 都能列出它们的会话（cline 实测 53 条）；一条都没有时明确回「本机还没用过」，不再拿「账号隔离」当借口。
 - 命令打错时不再只报 `command not found`：`ahi`、`aih codx`、`gti status` 都会列出最接近的候选（相邻字母写反 / 打错一位 / 缩写 / 前缀 / 历史），**确认序号后才运行**；输入 `e` 把纠正后的命令放回命令行自己编辑。
 - 确认过的纠正会被记住，下次同一个错法排第一；用 `aih shell typo` 查看，`aih shell typo --forget <打错的命令>` 遗忘。
 - 写入前先让**该 shell 自己的解析器**验一遍片段语法（`zsh -n` / `bash -n` / `fish -n` / PowerShell Parser），语法不过就拒绝写入——宁可失败，也不给一个打不开的 rc。

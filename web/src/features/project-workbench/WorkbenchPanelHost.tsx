@@ -3,17 +3,18 @@ import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 import BrowserPanel from './browser/BrowserPanel';
 import FilesPanel from './files/FilesPanel';
 import ReviewPanel from './review/ReviewPanel';
-import type { WorkbenchState } from './workbench-types';
+import type { WorkbenchState, WorkbenchWorkspaceDescriptor } from './workbench-types';
 import styles from './project-workbench.module.css';
 
 interface Props {
   state: WorkbenchState;
   projectPath?: string;
+  workspace?: WorkbenchWorkspaceDescriptor;
   mobile?: boolean;
   onClose: (id: string) => void;
 }
 
-export default function WorkbenchPanelHost({ state, projectPath, mobile, onClose }: Props) {
+export default function WorkbenchPanelHost({ state, projectPath, workspace, mobile, onClose }: Props) {
   const toolTabs = state.tabs.filter((tab) => tab.kind !== 'chat');
   if (toolTabs.length === 0) return <Empty description="请从上方添加项目工具" />;
 
@@ -33,7 +34,7 @@ export default function WorkbenchPanelHost({ state, projectPath, mobile, onClose
                 visible={active}
                 cwd={projectPath}
                 persistent
-                sessionKey={`workbench:${encodeURIComponent(projectPath)}`}
+                sessionKey={`workbench:${workspace?.kind || 'local-server'}:${encodeURIComponent(workspace?.serverId || 'local')}:${encodeURIComponent(projectPath)}`}
                 onClose={() => onClose(tab.id)}
               />
             ) : null}

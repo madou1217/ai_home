@@ -16,6 +16,8 @@ import {
 } from '@/features/chat-runtime';
 import ChatRuntimeBoundary from '@/features/chat-runtime/ChatRuntimeBoundary';
 import ProjectWorkbench from '@/features/project-workbench/ProjectWorkbench';
+import type { WorkbenchWorkspaceDescriptor } from '@/features/project-workbench/workbench-types';
+import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { resolveWorkbenchSessions } from '@/features/project-workbench/workbench-sessions';
 import LegacyChatRuntime from '@/features/legacy-chat/LegacyChatRuntime';
 import { useChatAccountCatalog } from '@/features/legacy-chat/use-chat-account-catalog';
@@ -418,6 +420,12 @@ export function ChatConversationContent({
   ) : (
     <ProjectWorkbench
       projectPath={projectCatalog.selectedProject?.path}
+      workspace={projectCatalog.selectedProject?.path ? {
+        kind: resolveActiveServer().isRemote ? 'remote-server' : 'local-server',
+        serverId: resolveActiveServer().serverId || undefined,
+        root: projectCatalog.selectedProject.path,
+        label: resolveActiveServer().isRemote ? '远程 Server' : '本机 Server',
+      } satisfies WorkbenchWorkspaceDescriptor : undefined}
       mobile={mobile}
       chat={runtimeContent}
       sessions={resolveWorkbenchSessions(

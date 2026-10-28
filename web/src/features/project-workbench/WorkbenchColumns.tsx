@@ -14,10 +14,12 @@ import type { ColumnCollapsed, ColumnDivider, ColumnWidths } from './workbench-l
 import { applyDividerDrag, clampColumnWidths, COLLAPSED_COLUMN_WIDTH, DIVIDER_WIDTH, resolveColumnVisibility } from './workbench-layout';
 import { loadColumnLayout, saveColumnLayout } from './workbench-layout-persistence';
 import { PANEL_LABELS } from './workbench-types';
+import type { WorkbenchWorkspaceDescriptor } from './workbench-types';
 import styles from './project-workbench.module.css';
 
 interface Props {
   projectPath?: string;
+  workspace?: WorkbenchWorkspaceDescriptor;
   chat: ReactNode;
   // 左栏 Sessions 页签数据：来自 Chat.tsx 的 canonicalDirectory.projects（只读复用）。
   sessions?: readonly Session[];
@@ -67,6 +69,7 @@ function ColumnToolbar<K extends string>({ panes, active, onSelect, ariaLabel, a
 // 面板一律「首次访问后常驻挂载 + CSS 显隐」，避免树状态丢失与终端 xterm 重复 init。
 export default function WorkbenchColumns({
   projectPath,
+  workspace,
   chat,
   sessions = [],
   selectedSession = null,
@@ -386,7 +389,7 @@ export default function WorkbenchColumns({
                   visible
                   cwd={projectPath}
                   persistent
-                  sessionKey={`workbench:${encodeURIComponent(projectPath)}`}
+                  sessionKey={`workbench:${workspace?.kind || 'local-server'}:${encodeURIComponent(workspace?.serverId || 'local')}:${encodeURIComponent(projectPath)}`}
                   onClose={closeTerminal}
                   compactChrome
                 />

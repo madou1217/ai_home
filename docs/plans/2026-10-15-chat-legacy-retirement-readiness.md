@@ -182,3 +182,23 @@ canonical 与 legacy 同时恢复。
 2. 条件 3（web 同源注册表）+ 条件 5（守卫检查，先红后绿）。
 3. 条件 4（slash/terminal 对齐；能补则补，补不了就在能力快照里显式标 `unsupported` 并让 UI 可见）。
 4. 全绿后先做一次灰度（work 会话在 canonical 下真机跑各 provider 一轮），再删 legacy surface。
+
+## 6. Current-main audit rerun (2026-10-29)
+
+The current `main` checkout reran `node scripts/chat-legacy-readiness.js`. The
+canonical server driver registry contains all 15 native-session providers, but
+the Web canonical surface registers only `codex`; 13 providers still fall back
+to the legacy surface. The canonical Web surface also rejects API-key accounts
+that the legacy surface accepts. Confirm/plan approval transport is declared
+only for Claude and OpenCode; ten providers fail closed as undeclared and Grok
+is declared but not wired. The command therefore still exits with the conclusion
+that legacy is required.
+
+An attempted real Codex runtime smoke (`node scripts/chat-runtime-real-codex-smoke.js
+--skip-interaction`) stopped before launching a session with
+`codex_oauth_projection_not_found` on this host. It provides no live Chat
+acceptance evidence; a fresh readable Codex projection and a rerun of the real
+smoke are required before claiming browser/native Chat completion. The next
+implementation gate remains the Web provider registry and approval capability
+coverage, followed by a real Web and native stop/reconnect/duplicate-suppression
+run.

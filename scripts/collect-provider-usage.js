@@ -34,6 +34,29 @@ const DOC_PATH = path.join(ROOT, 'docs', 'providers', 'agent-cli-usage.md');
 const SNAPSHOT_PATH = path.join(ROOT, 'docs', 'providers', 'agent-cli-usage.snapshot.json');
 const HELP_LINE_LIMIT = 90;
 
+/**
+ * 采集用的环境：把**仓库自己的** `node_modules/.bin` 从 PATH 里剔除。
+ *
+ * 为什么：`npm run providers:usage` 会让 npm 把 `node_modules/.bin` 插到 PATH 最前面，
+ * 于是 codex 这类「既是 provider CLI、又是本仓库依赖」的工具会被采成**仓库里那份**
+ * （实测 0.142.3），而不是宿主真正在用的那份（实测 0.165.0）。这份基线描述的是
+ * 「用户机器上的 CLI」，采错对象会让快照和 `aih <cli> version` 长期对不上。
+ */
+function buildCollectorEnv(baseEnv = process.env) {
+  const delimiter = path.delimiter;
+  const repoBinDir = path.resolve(path.join(ROOT, 'node_modules', '.bin'));
+  const entries = String(baseEnv.PATH || '')
+    .split(delimiter)
+    .filter((entry) => entry && path.resolve(entry) !== repoBinDir);
+  return {
+    ...baseEnv,
+    PATH: entries.join(delimiter),
+    NO_COLOR: '1'
+  };
+}
+
+const COLLECTOR_ENV = buildCollectorEnv(process.env);
+
 // provider → 该 CLI 的二进制名（缺省用 provider id）。
 const BINARY_OVERRIDES = Object.freeze({
   qoder: 'qodercli',
@@ -51,7 +74,11 @@ const EXTRA_HELP = Object.freeze({
 });
 
 function which(binary) {
-  const result = spawnSync(process.platform === 'win32' ? 'where' : 'which', [binary], { encoding: 'utf8', windowsHide: true });
+  const result = spawnSync(process.platform === 'win32' ? 'where' : 'which', [binary], {
+    encoding: 'utf8',
+    windowsHide: true,
+    env: COLLECTOR_ENV
+  });
   if (result.status !== 0) return '';
   const first = String(result.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0];
   return first || '';
@@ -63,7 +90,7 @@ function run(binary, args, timeoutMs = 8000) {
       encoding: 'utf8',
       timeout: timeoutMs,
       windowsHide: true,
-      env: { ...process.env, NO_COLOR: '1' }
+      env: COLLECTOR_ENV
     });
     const text = `${result.stdout || ''}\n${result.stderr || ''}`.replace(/\x1b\[[0-9;]*m/g, '').trim();
     return { ok: result.status === 0, text };

@@ -72,7 +72,7 @@
 
 - [ ] **Step 1: Write a temporary failing assertion script.** Create `/tmp/aih-management-key-qr-check.cjs` with assertions for exact payload JSON, rejection of a short key and non-HTTP endpoint, a rendered matrix containing equal-width rows and quiet-zone blank cells, and `parseServerConfigArgs(['show','--qr'])` requiring `--show-secrets`. Run it and confirm the missing module/flag behavior fails before implementation.
 
-- [ ] **Step 2: Implement payload validation.** In `management-key-qr.js`, normalize endpoint with `new URL`, accept only `http:`/`https:`, require a 32–8192 character key without CR/LF/NUL, and serialize `{v:1,type:'aih-server-credentials',endpoint,managementKey}` with stable key order. Export a parser that returns only endpoint and key after checking all fields.
+- [x] **Step 2: Implement payload validation.** In `management-key-qr.js`, normalize endpoint with `new URL`, accept only `http:`/`https:`, require a 32–4096 character key without CR/LF/NUL (matching the WebUI profile and browser transport limit), and serialize `{v:1,type:'aih-server-credentials',endpoint,managementKey}` with stable key order. Export a parser that returns only endpoint and key after checking all fields.
 
 - [ ] **Step 3: Implement the package-free QR encoder.** Add the MIT-licensed byte-mode QR implementation required for this payload (Nayuki-style `QrCode.encodeText`/matrix logic) inside the focused module or a sibling private helper. Select the smallest supported version at error-correction level M, choose the best mask, and expose a boolean matrix with a four-module quiet zone. Do not read from the network or shell out to `qrencode`.
 

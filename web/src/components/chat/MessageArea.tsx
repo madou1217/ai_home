@@ -252,6 +252,7 @@ const MessageArea = ({
   // 重跑（它不依赖 selectedTargetKey 之外的东西，切换账号才重跑）。
   const [catalogReloadToken, setCatalogReloadToken] = useState(0);
   const [slashCommands, setSlashCommands] = useState<NativeSlashCommand[]>([]);
+  const [slashPassthrough, setSlashPassthrough] = useState(false);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -430,16 +431,23 @@ const MessageArea = ({
   useEffect(() => {
     if (!hasSession) {
       setSlashCommands([]);
+      setSlashPassthrough(false);
       return;
     }
     const provider = activeProvider;
     let cancelled = false;
     chatAPI.getSlashCommands(provider)
-      .then((commands) => {
-        if (!cancelled) setSlashCommands(commands);
+      .then((response) => {
+        if (!cancelled) {
+          setSlashCommands(response.commands || []);
+          setSlashPassthrough(response.slashPassthrough === true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setSlashCommands([]);
+        if (!cancelled) {
+          setSlashCommands([]);
+          setSlashPassthrough(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -577,7 +585,8 @@ const MessageArea = ({
       || item.aliases.some((alias) => alias.startsWith(slashToken))
     )
     : [];
-  const hasUnsupportedSlashCommand = Boolean(slashToken) && !matchedSlashCommand && slashMatches.length === 0;
+  const hasUnsupportedSlashCommand = Boolean(slashToken) && !matchedSlashCommand
+    && slashMatches.length === 0 && !slashPassthrough;
   const embeddedSlashMatch = !trimmedInput.startsWith('/')
     ? slashCommands.find((item) => {
         const tokens = trimmedInput.split(/\s+/).filter(Boolean);
@@ -643,7 +652,7 @@ const MessageArea = ({
   const hasPendingAttachments = addFiles.pending.length > 0;
   const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && !hasPendingAttachments
     && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
-    && !embeddedSlashMatch;
+    && !embeddedSlashMatch && !hasUnsupportedSlashCommand;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -884,6 +893,7 @@ const MessageArea = ({
     onInputChange,
     selectedFileRefIndex,
     selectedSlashIndex,
+    slashPassthrough,
     slashMatches,
     slashToken
   ]);
@@ -1119,8 +1129,10 @@ const MessageArea = ({
                 </>
               ) : hasUnsupportedSlashCommand ? (
                 <>
-                  未识别的命令 <strong>{slashToken}</strong>（将作为普通文本发送）。
+                  未识别的命令 <strong>{slashToken}</strong>（当前 provider 不支持透传）。
                 </>
+              ) : slashPassthrough ? (
+                <>命令将透传给 provider CLI：<strong>{slashToken}</strong>，可附带参数。</>
               ) : (
                 <>
                   正在选择命令。Slash 命令必须单独发送，可在命令后附带参数，但不能和普通聊天文本混发。

@@ -65,7 +65,6 @@ import type {
   TranslationSettingsResponse,
   TranslationStreamEvent,
   TranslationStreamRequest,
-  NativeSlashCommand,
   Provider,
   SlashCommandsResponse,
   ManagementStatus,
@@ -141,7 +140,6 @@ import type {
   ScheduledTask,
   ScheduledTaskSchedule,
   ScheduledTaskSchedulePreview,
-  ScheduledTaskRecord,
   ScheduledTaskRecordsPage,
   ScheduledTasksResponse
 } from '@/types';
@@ -1937,9 +1935,9 @@ export const chatAPI = {
     }
   },
 
-  getSlashCommands: async (provider: string): Promise<NativeSlashCommand[]> => {
+  getSlashCommands: async (provider: string): Promise<SlashCommandsResponse> => {
     const response = await api.get<SlashCommandsResponse>(`/webui/slash-commands?provider=${encodeURIComponent(provider)}`);
-    return response.data.commands || [];
+    return response.data;
   }
 };
 

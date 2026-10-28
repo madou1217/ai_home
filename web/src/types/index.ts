@@ -3491,6 +3491,8 @@ export interface SlashCommandsResponse {
   ok: boolean;
   provider: string;
   commands: NativeSlashCommand[];
+  /** Native interactive CLIs may accept provider/plugin slash commands absent from the catalog. */
+  slashPassthrough?: boolean;
 }
 
 export interface Session {

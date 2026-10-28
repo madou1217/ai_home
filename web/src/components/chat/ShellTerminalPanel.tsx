@@ -471,18 +471,16 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false, sess
           </button>
         </div>
       </div>
-      {minimized ? null : (
-        <div className={styles.shellTerminalBodies}>
-          {tabs.map((t) => (
-            <div
-              key={t.id}
-              ref={attachBody(t.id)}
-              className={styles.shellTerminalBody}
-              style={{ display: t.id === activeId ? 'block' : 'none' }}
-            />
-          ))}
-        </div>
-      )}
+      <div className={styles.shellTerminalBodies} style={{ display: minimized ? 'none' : undefined }}>
+        {tabs.map((t) => (
+          <div
+            key={t.id}
+            ref={attachBody(t.id)}
+            className={styles.shellTerminalBody}
+            style={{ display: t.id === activeId ? 'block' : 'none' }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

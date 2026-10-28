@@ -20,6 +20,7 @@ import {
   deleteScheduledTask,
   listScheduledTaskRecords,
   listScheduledTasks,
+  previewScheduledTaskSchedule,
   runScheduledTask,
   saveScheduledTask,
   toggleScheduledTask
@@ -47,6 +48,8 @@ type EditorState = {
   weekday: number;
   hours: number;
   minutes: number;
+  /** cron 表达式（原生 5 段） */
+  expression: string;
   enabled: boolean;
 };
 
@@ -62,6 +65,7 @@ const EMPTY_EDITOR: EditorState = {
   weekday: 1,
   hours: 6,
   minutes: 0,
+  expression: '0 20 * * *',
   enabled: true
 };
 
@@ -144,6 +148,58 @@ export default function ScheduledTasks() {
     [editor.eventId, events]
   );
 
+  // 调度预览（含 cron 的中文解读）：防抖 400ms，避免边打字边打服务端。
+  const [preview, setPreview] = useState<{ label: string; nextRunAt: number } | null>(null);
+  const [previewError, setPreviewError] = useState('');
+  useEffect(() => {
+    if (!editor.open) return undefined;
+    const schedule: ScheduledTaskSchedule | null = editor.scheduleKind === 'interval'
+      ? { kind: 'interval', hours: Number(editor.hours) || 0, minutes: Number(editor.minutes) || 0 }
+      : editor.scheduleKind === 'weekly'
+        ? { kind: 'weekly', weekday: Number(editor.weekday), at: editor.at }
+        : editor.scheduleKind === 'cron'
+          ? { kind: 'cron', expression: editor.expression.trim() }
+          : { kind: 'daily', at: editor.at };
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await previewScheduledTaskSchedule(schedule);
+        if (cancelled) return;
+        if (result.ok) {
+          setPreview({ label: result.label || '', nextRunAt: Number(result.nextRunAt || 0) });
+          setPreviewError('');
+        } else {
+          setPreview(null);
+          setPreviewError(result.error || 'schedule_invalid');
+        }
+      } catch (_error) {
+        if (!cancelled) setPreviewError('preview_failed');
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [editor.open, editor.scheduleKind, editor.at, editor.weekday, editor.hours, editor.minutes, editor.expression]);
+
+  // 单个任务的独立执行记录（入口就在任务行上）。
+  const [recordsTask, setRecordsTask] = useState<ScheduledTask | null>(null);
+  const [taskRecords, setTaskRecords] = useState<ScheduledTaskRecord[]>([]);
+  const [taskRecordsLoading, setTaskRecordsLoading] = useState(false);
+  const openTaskRecords = useCallback(async (task: ScheduledTask) => {
+    setRecordsTask(task);
+    setTaskRecordsLoading(true);
+    try {
+      const result = await listScheduledTaskRecords(recordDays, task.id);
+      setTaskRecords(Array.isArray(result.records) ? result.records : []);
+    } catch (_error) {
+      setTaskRecords([]);
+      message.error('读取该任务的执行记录失败');
+    } finally {
+      setTaskRecordsLoading(false);
+    }
+  }, [recordDays]);
+
   const openCreate = () => {
     const first = events.find((event) => event.available !== false) || null;
     setEditor({
@@ -168,6 +224,7 @@ export default function ScheduledTasks() {
       weekday: Number(schedule.weekday ?? 1),
       hours: Number(schedule.hours ?? 6),
       minutes: Number(schedule.minutes ?? 0),
+      expression: schedule.expression || '0 20 * * *',
       enabled: task.enabled !== false
     });
   };
@@ -181,7 +238,9 @@ export default function ScheduledTasks() {
       ? { kind: 'interval', hours: Number(editor.hours) || 0, minutes: Number(editor.minutes) || 0 }
       : editor.scheduleKind === 'weekly'
         ? { kind: 'weekly', weekday: Number(editor.weekday), at: editor.at }
-        : { kind: 'daily', at: editor.at };
+        : editor.scheduleKind === 'cron'
+          ? { kind: 'cron', expression: editor.expression.trim() }
+          : { kind: 'daily', at: editor.at };
     const eventParams = selectedEvent?.kind === 'custom'
       ? { command: editor.command.trim(), ...(editor.cwd.trim() ? { cwd: editor.cwd.trim() } : {}) }
       : {};
@@ -310,6 +369,7 @@ export default function ScheduledTasks() {
                     >
                       立即执行
                     </Button>
+                    <Button size="small" onClick={() => void openTaskRecords(task)}>记录</Button>
                     <Button size="small" onClick={() => openEdit(task)}>编辑</Button>
                     <Popconfirm title="删除该计划任务？" onConfirm={() => void handleDelete(task)}>
                       <Button size="small" danger>删除</Button>
@@ -430,7 +490,8 @@ export default function ScheduledTasks() {
                 options={[
                   { value: 'daily', label: '每天' },
                   { value: 'weekly', label: '每周' },
-                  { value: 'interval', label: '按间隔' }
+                  { value: 'interval', label: '按间隔' },
+                  { value: 'cron', label: 'cron 表达式' }
                 ]}
               />
               {editor.scheduleKind === 'weekly' ? (
@@ -462,6 +523,13 @@ export default function ScheduledTasks() {
                     onChange={(event) => setEditor((prev) => ({ ...prev, minutes: Number(event.target.value) }))}
                   />
                 </>
+              ) : editor.scheduleKind === 'cron' ? (
+                <Input
+                  style={{ width: 240 }}
+                  value={editor.expression}
+                  placeholder="分 时 日 月 周，例如 0 20 * * *"
+                  onChange={(event) => setEditor((prev) => ({ ...prev, expression: event.target.value }))}
+                />
               ) : (
                 <TimePicker
                   format="HH:mm"
@@ -474,6 +542,14 @@ export default function ScheduledTasks() {
                 />
               )}
             </Space>
+            {/* 解读与下次运行由服务端算（唯一实现处），前端只展示。 */}
+            {previewError ? (
+              <div className="scheduled-tasks-preview is-error">无法识别该调度：{previewError}</div>
+            ) : preview ? (
+              <div className="scheduled-tasks-preview">
+                {preview.label} · 下次运行 {formatTime(preview.nextRunAt)}
+              </div>
+            ) : null}
           </Form.Item>
           <Form.Item label="启用">
             <Switch
@@ -482,6 +558,37 @@ export default function ScheduledTasks() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 单个任务的独立执行记录：入口在任务行的「记录」按钮上。 */}
+      <Modal
+        open={Boolean(recordsTask)}
+        title={recordsTask ? `执行记录 · ${recordsTask.name}` : '执行记录'}
+        footer={null}
+        width={760}
+        onCancel={() => setRecordsTask(null)}
+      >
+        {taskRecords.length === 0 ? (
+          <Empty description={taskRecordsLoading ? '读取中…' : `最近 ${recordDays} 天没有执行记录`} />
+        ) : (
+          <Table<ScheduledTaskRecord>
+            rowKey="id"
+            size="small"
+            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            dataSource={taskRecords}
+            columns={[
+              { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
+              { title: '触发', render: (_value, row) => (row.trigger === 'schedule' ? '定时' : '手动') },
+              { title: '结果', render: (_value, row) => statusTag(row.status) },
+              {
+                title: '摘要',
+                render: (_value, row) => (
+                  <span className="scheduled-tasks-summary">{row.error || row.summary || '—'}</span>
+                )
+              }
+            ]}
+          />
+        )}
       </Modal>
     </div>
   );

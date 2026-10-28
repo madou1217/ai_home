@@ -2116,7 +2116,7 @@ export interface WebUiTask extends AppInstallJob {
 }
 
 // ── 计划任务（含账号活动的定时触发：签到 / 领臭鸡蛋）──
-export type ScheduledTaskScheduleKind = 'daily' | 'weekly' | 'interval';
+export type ScheduledTaskScheduleKind = 'daily' | 'weekly' | 'interval' | 'cron';
 
 export interface ScheduledTaskSchedule {
   kind: ScheduledTaskScheduleKind;
@@ -2127,6 +2127,17 @@ export interface ScheduledTaskSchedule {
   /** interval 用 */
   hours?: number;
   minutes?: number;
+  /** cron 用：标准 5 段表达式（分 时 日 月 周） */
+  expression?: string;
+}
+
+export interface ScheduledTaskSchedulePreview {
+  ok: boolean;
+  schedule?: ScheduledTaskSchedule;
+  /** 中文解读（服务端算，前端不重复实现） */
+  label?: string;
+  nextRunAt?: number;
+  error?: string;
 }
 
 export interface ScheduledTaskEvent {

@@ -58,3 +58,14 @@
   color: var(--color-muted);
   font-size: 12px;
 }
+
+/* 调度解读（含 cron 的中文解读 + 下次运行时间）：行内说明，不用告警容器。 */
+.scheduled-tasks-preview {
+  margin-top: var(--hos-space-1);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.scheduled-tasks-preview.is-error {
+  color: var(--color-danger, var(--color-accent));
+}

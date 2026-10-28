@@ -140,6 +140,7 @@ import type {
   CustomPricing,
   ScheduledTask,
   ScheduledTaskSchedule,
+  ScheduledTaskSchedulePreview,
   ScheduledTaskRecord,
   ScheduledTasksResponse
 } from '@/types';
@@ -1021,6 +1022,17 @@ export async function listScheduledTaskRecords(
   const response = await api.get<{ ok: boolean; records: ScheduledTaskRecord[]; days: number }>(
     '/webui/scheduled-tasks/records',
     { params: { days, ...(taskId ? { taskId } : {}) } }
+  );
+  return response.data;
+}
+
+// 调度预览（校验 + 下次运行时间 + 中文解读）：解读逻辑只在服务端一处。
+export async function previewScheduledTaskSchedule(
+  schedule: ScheduledTaskSchedule
+): Promise<ScheduledTaskSchedulePreview> {
+  const response = await api.post<ScheduledTaskSchedulePreview>(
+    '/webui/scheduled-tasks/preview',
+    { schedule }
   );
   return response.data;
 }

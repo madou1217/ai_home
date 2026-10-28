@@ -165,6 +165,13 @@ export default defineConfig({
     title: "AI Home",
     locale: true,
   },
+  // Route preloading eagerly injects every CSS dependency for the current
+  // route as `rel=preload as=style`.  Large pages such as Usage do not consume
+  // several of those chunks during the first paint, which creates browser
+  // warnings and competes with the API/bootstrap requests.  CJS route loading
+  // keeps the same split points but lets the browser load styles when their
+  // route chunk is actually mounted.
+  routeLoader: { moduleType: "cjs" },
   favicons: [`${publicPath}ai-home-logo.png`],
   // 首帧前写入主题，避免深色 HUD 默认主题出现浅色闪屏。键名与 src/services/theme-persistence.ts 一致。
   headScripts: [

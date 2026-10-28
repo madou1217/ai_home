@@ -122,3 +122,18 @@ The existing Microsoft Edge profile was used. No new browser or login was create
 - Playwright Edge attach did not establish a browser handle during this run; native CUA was used with the already-open Edge instead. The user's existing tabs were preserved.
 
 Final validation for this continuation: scoped extension ESLint passed; JavaScript syntax checks passed; relevant existing desktop/translation tests **28/28** passed; complete Web build passed with Node 22.21.0 and Webpack 26.85 seconds; native Services-source Swift compile passed. No test files were added. Unrelated account/ZCode files remain unstaged and were not included in translation commits.
+
+### Current-main follow-up (2026-10-29)
+
+The follow-up WebUI workspace/status and Windows clipboard-capture changes are
+committed in `941e441c` and `89f2121b`. On the current checkout, `cd web && npm
+run build` completed with the serialized Umi build entry; changed TypeScript
+files passed ESLint with zero warnings, and the existing desktop/translation
+focused run passed **29/29**. `node --test test/*.test.js` passed **115/115**;
+`go test ./...` and `npm run providers:check` also passed.
+
+The changed Windows helper was reviewed and remains cross-target source only on
+this host: a repeat `dotnet publish` was not possible because the `dotnet`
+executable is unavailable, and no Windows GUI/runtime, shortcut, or clipboard
+restoration acceptance exists. The prior macOS-hosted cross-target publish is
+still the available build evidence; Windows native completion remains open.

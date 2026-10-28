@@ -18,5 +18,7 @@ export interface CapabilitySnapshot {
   readonly capturedAt?: number;
   readonly capabilities?: Readonly<Partial<Record<ChatCapabilityName, CapabilityDescriptor>>>;
   readonly slashCommands?: readonly string[];
+  /** Native interactive providers accept provider-defined slash commands beyond the catalog. */
+  readonly slashPassthrough?: boolean;
   readonly turnInterveneModes?: readonly string[];
 }

@@ -72,7 +72,11 @@ export function resolveNativeSessionAdoption(
         // directory already has the real title from the first prompt. Preserve
         // that title when adopting/reconnecting a chat session.
         title: resolvedTitle,
-        updatedAt: resolved.updatedAt,
+        // Resolving a legacy chat id materializes a canonical row and therefore
+        // has a fresh storage timestamp. That is an identity migration, not a
+        // new user message; retain the list timestamp while observing an
+        // existing session. Draft creation still gets the canonical timestamp.
+        updatedAt: current.draft ? resolved.updatedAt : current.updatedAt,
       },
     };
   }

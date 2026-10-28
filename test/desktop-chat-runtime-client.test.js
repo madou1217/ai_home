@@ -163,7 +163,7 @@ test('validates capability snapshot fields, nested names, descriptors, and valid
   const validSnapshot = {
     revision: 'v1', capturedAt: 12,
     capabilities: { 'turn.interrupt': { support: 'native', alternatives: ['queue.add'] } },
-    slashCommands: ['/compact'], turnInterveneModes: ['steer_current']
+    slashCommands: ['/compact'], slashPassthrough: true, turnInterveneModes: ['steer_current']
   };
   const client = createDesktopChatRuntimeClient({
     fetch: async () => response({ ok: true, session: { ...session(), capabilitySnapshot: validSnapshot } }),
@@ -171,6 +171,18 @@ test('validates capability snapshot fields, nested names, descriptors, and valid
   });
   const result = await client.createSession({ provider: 'codex', executionAccountRef: 'account-1' });
   assert.deepEqual(result.capabilitySnapshot, validSnapshot);
+});
+
+test('accepts the native slash passthrough capability flag', async () => {
+  const validSnapshot = {
+    capabilities: { 'slash.execute': { support: 'native' } },
+    slashCommands: ['compact'],
+    slashPassthrough: true
+  };
+  const fetch = async () => response({ ok: true, session: { ...session(), capabilitySnapshot: validSnapshot } });
+  const client = createDesktopChatRuntimeClient({ fetch, openEvents: () => ({ close() {} }) });
+  const result = await client.createSession({ provider: 'claude', executionAccountRef: 'acct-1' });
+  assert.equal(result.capabilitySnapshot.slashPassthrough, true);
 });
 
 test('uses caller command id for idempotent submit and stop commands', async () => {

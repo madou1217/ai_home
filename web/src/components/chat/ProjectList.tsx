@@ -252,19 +252,22 @@ const ProjectList = ({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {chatSessions.map((session) => (
-                  <div
+                  (() => {
+                    const isRunning = isSessionRunning(session, runningSessionKeys);
+                    const title = session.title || '新对话';
+                    return <div
                     key={session.id}
                     className={`${styles.sessionItem} ${
                       isSameSession(selectedSession, session) ? styles.sessionItemActive : ''
-                    }`}
+                    } ${isRunning ? styles.sessionItemRunning : ''}`}
                     onClick={() => onSelectSession(session)}
                     style={{ padding: '10px 12px' }}
                   >
                     <div className={styles.sessionHeader}>
-                      <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
+                      <span className={`${styles.sessionProviderSlot} ${isRunning ? styles.sessionProviderSlotRunning : ''}`} style={providerAccentStyle(session.provider)}>
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
-                      <span className={styles.sessionTitle} title={session.title || '新对话'}>{session.title || '新对话'}</span>
+                      <span className={styles.sessionTitle} title={title}>{title}</span>
                       <Button
                         type="text"
                         size="small"
@@ -281,9 +284,10 @@ const ProjectList = ({
                       />
                     </div>
                     <span className={styles.sessionTime}>
-                      <SessionRelativeTime timestamp={session.updatedAt} />
+                      {isRunning ? <><span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />进行中</> : <SessionRelativeTime timestamp={session.updatedAt} />}
                     </span>
-                  </div>
+                  </div>;
+                  })()
                 ))}
               </div>
             )}

@@ -9,6 +9,7 @@ export interface ComposerPolicy {
   readonly turnActive: boolean;
   readonly deliveries: readonly ComposerDelivery[];
   readonly slashCommands: readonly string[];
+  readonly slashPassthrough: boolean;
   readonly canInterrupt: boolean;
 }
 
@@ -17,6 +18,7 @@ export function resolveComposerPolicy(
   capabilities?: CapabilitySnapshot,
   compacting = false,
   allowToolBoundary = true,
+  allowNativeSlash = false,
 ): ComposerPolicy {
   const turnActive = ACTIVE_STATES.has(state);
   const deliveries: ComposerDelivery[] = turnActive ? [] : ['turn'];
@@ -32,6 +34,8 @@ export function resolveComposerPolicy(
     turnActive,
     deliveries,
     slashCommands: turnActive ? [] : capabilities?.slashCommands || [],
+    slashPassthrough: !turnActive && allowNativeSlash
+      && capabilities?.slashPassthrough === true,
     canInterrupt: turnActive && supports(capabilities, 'turn.interrupt'),
   };
 }

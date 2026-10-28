@@ -19,7 +19,7 @@ const CAPABILITIES = new Set<ChatCapabilityName>([
 ]);
 const SUPPORT = new Set<CapabilitySupport>(['native', 'emulated', 'unsupported', 'unknown']);
 const SNAPSHOT_FIELDS = new Set([
-  'revision', 'capturedAt', 'capabilities', 'slashCommands', 'turnInterveneModes',
+  'revision', 'capturedAt', 'capabilities', 'slashCommands', 'slashPassthrough', 'turnInterveneModes',
 ]);
 const DESCRIPTOR_FIELDS = new Set(['support', 'reason', 'alternatives']);
 
@@ -42,10 +42,18 @@ export function parseCapabilitySnapshot(value: unknown): CapabilitySnapshot {
     ...(source.slashCommands === undefined ? {} : {
       slashCommands: parseStringList(source.slashCommands, 'slash_commands'),
     }),
+    ...(source.slashPassthrough === undefined ? {} : {
+      slashPassthrough: boolean(source.slashPassthrough, 'chat_runtime_slash_passthrough_invalid'),
+    }),
     ...(source.turnInterveneModes === undefined ? {} : {
       turnInterveneModes: parseStringList(source.turnInterveneModes, 'turn_intervene_modes'),
     }),
   };
+}
+
+function boolean(value: unknown, code: string): boolean {
+  if (typeof value !== 'boolean') protocolFailure(code);
+  return value;
 }
 
 function parseCapabilities(value: unknown) {

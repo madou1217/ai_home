@@ -64,7 +64,13 @@ export function useComposerController(props: ComposerProps): ComposerController 
 function useComposerViewState(props: ComposerProps) {
   const projection = useSessionSelector(props.store, selectComposerProjection);
   const policy = useMemo(
-    () => resolveComposerPolicy(projection.state, projection.capabilities, projection.compacting, props.workspaceMode !== 'chat'),
+    () => resolveComposerPolicy(
+      projection.state,
+      projection.capabilities,
+      projection.compacting,
+      props.workspaceMode !== 'chat',
+      props.workspaceMode !== 'chat',
+    ),
     [projection, props.workspaceMode],
   );
   const draftIdentity = useMemo<ComposerDraftIdentity>(() => ({
@@ -103,7 +109,7 @@ function useComposerViewState(props: ComposerProps) {
   const delivery = policy.deliveries.includes(requestedDelivery)
     ? requestedDelivery
     : policy.deliveries[0];
-  const pendingSlash = parseSlash(input.trim(), policy.slashCommands);
+  const pendingSlash = parseSlash(input.trim(), policy.slashCommands, policy.slashPassthrough);
   const selection = resolveComposerModelSelection(
     props.catalog,
     props.selectedModel,
@@ -255,9 +261,9 @@ function slashSuggestions(input: string, commands: readonly string[]): readonly 
   return input.trim().startsWith('/') ? commands.filter((command) => command.startsWith(token)) : [];
 }
 
-function parseSlash(input: string, commands: readonly string[]) {
+function parseSlash(input: string, commands: readonly string[], allowPassthrough = false) {
   const match = input.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
-  if (!match || !commands.includes(match[1])) return null;
+  if (!match || (!allowPassthrough && !commands.includes(match[1]))) return null;
   return { name: match[1], arguments: match[2]?.trim() || undefined };
 }
 

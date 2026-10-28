@@ -123,6 +123,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   const renderChatSession = (session: Session) => {
     const pinned = sessions.pinnedSessionIds.has(session.id);
     const active = isSameSession(selectedSession, session);
+    const running = isSessionRunning(session, runningSessionKeys);
     const actions: SwipeAction[] = [
       {
         key: 'pin',
@@ -147,13 +148,13 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
         ariaLabel={session.title || '新对话'}
       >
         <span
-          className={`mhud-row__icon ${styles.providerSlot}${active ? ` ${styles.rowActive}` : ''}`}
+          className={`mhud-row__icon ${styles.providerSlot}${active ? ` ${styles.rowActive}` : ''}${running ? ` ${styles.providerSlotRunning}` : ''}`}
           style={providerAccentStyle(session.provider)}
         >
           <ProviderIcon provider={session.provider} size={18} />
         </span>
         <div className="mhud-row__main">
-          <span className="mhud-row__title">
+          <span className="mhud-row__title" title={session.title || '新对话'}>
             {pinned ? <PushpinFilled className={`${styles.pin} mhud-tone--warn`} aria-label="已置顶" /> : null}
             {session.title || '新对话'}
           </span>
@@ -162,7 +163,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
           </span>
         </div>
         <div className="mhud-row__side">
-          <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>
+          {running ? <span className="mhud-status mhud-tone--ok"><span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" />RUN</span> : <span className={styles.time}><SessionRelativeTime timestamp={session.updatedAt} /></span>}
           {active ? <span className="mhud-status mhud-tone--info"><span className="hud-led hud-led--info" aria-hidden="true" />OPEN</span> : null}
         </div>
       </SwipeRow>
@@ -191,13 +192,13 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
       >
         <span className={styles.nest} aria-hidden="true" />
         <span
-          className={`mhud-row__icon ${styles.providerSlot}${active ? ` ${styles.rowActive}` : ''}`}
+          className={`mhud-row__icon ${styles.providerSlot}${active ? ` ${styles.rowActive}` : ''}${running ? ` ${styles.providerSlotRunning}` : ''}`}
           style={providerAccentStyle(session.provider)}
         >
           <ProviderIcon provider={session.provider} size={18} />
         </span>
         <div className="mhud-row__main">
-          <span className="mhud-row__title">{session.title}</span>
+          <span className="mhud-row__title" title={session.title}>{session.title}</span>
           <span className="mhud-row__meta">{session.model || getProviderLabel(session.provider)}</span>
         </div>
         <div className="mhud-row__side">

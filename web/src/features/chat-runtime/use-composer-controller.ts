@@ -14,7 +14,7 @@ import {
   selectLastAssistantModel,
 } from './composer-model-policy';
 import { useComposerAttachments } from './use-composer-attachments';
-import type { PendingComposerAttachment } from './use-composer-attachments';
+import type { PendingComposerAttachment, PendingComposerAttachmentStatus } from './use-composer-attachments';
 import {
   clearComposerDraft,
   composerDraftKey,
@@ -37,6 +37,9 @@ export interface ComposerController {
   readonly setInput: (value: string) => void;
   readonly addAttachments: (files: readonly File[]) => Promise<void>;
   readonly removeAttachment: (key: string) => void;
+  readonly retryAttachment: (key: string) => Promise<void>;
+  readonly setAttachmentStatus: (keys: readonly string[], status: PendingComposerAttachmentStatus, error?: string) => void;
+  readonly markAttachmentsUploaded: (uploads: readonly { key: string; attachmentId: string }[]) => void;
   readonly setDelivery: (value: ComposerDelivery) => void;
   readonly setReasoningEffort: (value: string) => void;
   readonly selectModel: (value: string) => void;
@@ -85,8 +88,6 @@ function useComposerViewState(props: ComposerProps) {
     const timer = window.setTimeout(() => writeComposerDraft(draftIdentity, input), 180);
     return () => {
       window.clearTimeout(timer);
-      // Identity changes (session/account/provider/server switch) must flush the
-      // previous buffer before the next identity hydrates its own draft.
       writeComposerDraft(draftIdentity, input);
     };
   }, [draftIdentity, draftKey, input]);
@@ -144,9 +145,17 @@ function useComposerViewState(props: ComposerProps) {
     props.onModelChange(next.model);
     setReasoningEffort(next.effort);
   }, [props.catalog, props.onModelChange, reasoningEffort, sessionModelKey, setReasoningEffort]);
-  const canAttach = delivery === 'turn' && !policy.turnActive && !busy && !pendingSlash;
+  // Attachments may be prepared while a new session is still starting. The
+  // initial delivery is `after_turn`, but it becomes a normal turn once the
+  // session reaches idle; keep the chip pending across that transition. An
+  // already running turn must stay attachment-free for queue/intervention
+  // deliveries because those payloads cannot carry attachment IDs.
+  const canAttach = !busy && !pendingSlash
+    && (delivery === 'turn' || projection.state === 'starting');
   const canSend = Boolean(selection.model)
     && !(pendingSlash && attachments.items.length > 0)
+    && (delivery === 'turn' || attachments.items.length === 0)
+    && attachments.items.every((item) => item.status === 'ready' || item.status === 'uploaded')
     && canSubmitComposerInput(input, delivery, busy, attachments.items.length);
   return {
     policy, input, setInput, delivery, setDelivery, draftIdentity,
@@ -156,6 +165,9 @@ function useComposerViewState(props: ComposerProps) {
     attachments: attachments.items,
     addAttachments: attachments.addFiles,
     removeAttachment: attachments.remove,
+    retryAttachment: attachments.retry,
+    setAttachmentStatus: attachments.setStatus,
+    markAttachmentsUploaded: attachments.markUploaded,
     clearAttachments: attachments.clear,
     slashMatches: slashSuggestions(input, policy.slashCommands),
   };
@@ -193,17 +205,36 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
   if (view.pendingSlash) {
     await props.actions.executeSlash(view.pendingSlash.name, view.pendingSlash.arguments);
   } else if (view.delivery === 'turn') {
-    const uploaded = view.attachments.length > 0
-      ? await props.uploadAttachments(view.attachments.map(({ name, mimeType, dataUrl }) => ({
-        name, mimeType, dataUrl,
-      })))
-      : [];
-    await props.actions.submit({
-      content,
-      attachmentIds: uploaded.map(({ attachmentId }) => attachmentId),
-      model: view.model,
-      reasoningEffort: view.reasoningEffort || undefined,
-    });
+    const pending = view.attachments.filter((attachment) => !attachment.attachmentId);
+    const pendingKeys = pending.map(({ key }) => key);
+    if (pendingKeys.length > 0) view.setAttachmentStatus(pendingKeys, 'uploading');
+    const uploadedByKey = new Map<string, string>();
+    try {
+      if (pending.length > 0) {
+        const uploaded = await props.uploadAttachments(pending.map(({ name, mimeType, dataUrl }) => ({
+          name, mimeType, dataUrl,
+        })));
+        if (uploaded.length !== pending.length || uploaded.some(({ attachmentId }) => !attachmentId)) {
+          throw new Error('附件上传结果无效');
+        }
+        uploaded.forEach(({ attachmentId }, index) => uploadedByKey.set(pending[index].key, attachmentId));
+        view.markAttachmentsUploaded(pending.map(({ key }) => ({ key, attachmentId: uploadedByKey.get(key)! })));
+      }
+      const attachmentIds = view.attachments
+        .map((attachment) => attachment.attachmentId || uploadedByKey.get(attachment.key) || '')
+        .filter(Boolean);
+      await props.actions.submit({
+        content,
+        attachmentIds,
+        model: view.model,
+        reasoningEffort: view.reasoningEffort || undefined,
+      });
+    } catch (error) {
+      if (pendingKeys.length > 0 && uploadedByKey.size === 0) {
+        view.setAttachmentStatus(pendingKeys, 'failed', errorText(error, '附件上传失败'));
+      }
+      throw error;
+    }
   } else if (view.delivery) await props.actions.deliver(content, view.delivery);
 }
 

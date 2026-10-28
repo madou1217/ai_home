@@ -33,6 +33,7 @@ function taskName(task: WebUiTask) {
 }
 
 function taskAction(task: WebUiTask) {
+  if (task.kind === 'activity') return '领取';
   if (task.action === 'install') return '安装';
   if (task.action === 'update') return '更新';
   if (task.action === 'uninstall') return '卸载';
@@ -40,6 +41,22 @@ function taskAction(task: WebUiTask) {
   if (task.kind === 'cli') return 'CLI 安装';
   return '后台操作';
 }
+
+// 队列分 tab：账号活动（签到 / 领臭鸡蛋）与安装卸载**同队列同页面**，但可分开看。
+// 判定按 `kind`/`source` 数据，不按名字猜。
+const ACTIVITY_SOURCES = new Set(['account-activity']);
+
+function isActivityTask(task: WebUiTask) {
+  return task.kind === 'activity' || ACTIVITY_SOURCES.has(String(task.source || ''));
+}
+
+type TaskQueueTab = 'all' | 'install' | 'activity';
+
+const TASK_QUEUE_TABS: Array<{ key: TaskQueueTab; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'install', label: '安装 / 卸载' },
+  { key: 'activity', label: '账号活动' }
+];
 
 function phaseLabel(task: WebUiTask) {
   if (task.phase === 'queued') return '等待执行';
@@ -65,6 +82,7 @@ export default function AppInstallTaskQueue() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const knownTerminalTaskIdsRef = useRef<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<TaskQueueTab>('all');
   const [dismissedTaskIds, setDismissedTaskIds] = useState<Set<string>>(new Set());
   const [retryingTaskIds, setRetryingTaskIds] = useState<Set<string>>(new Set());
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -79,6 +97,31 @@ export default function AppInstallTaskQueue() {
   const visibleTasks = useMemo(
     () => mergeWebUiTaskQueueEntries(tasks, recentTasks, dismissedTaskIds),
     [dismissedTaskIds, recentTasks, tasks]
+  );
+  // tab 计数与过滤：账号活动（领取）与安装/卸载分开看，默认「全部」。
+  const activityTasks = useMemo(() => visibleTasks.filter(isActivityTask), [visibleTasks]);
+  const installTasks = useMemo(() => visibleTasks.filter((task) => !isActivityTask(task)), [visibleTasks]);
+  const tabTasks = activeTab === 'activity'
+    ? activityTasks
+    : activeTab === 'install'
+      ? installTasks
+      : visibleTasks;
+  const tabCount = (key: TaskQueueTab) => (
+    key === 'activity' ? activityTasks.length : key === 'install' ? installTasks.length : visibleTasks.length
+  );
+  // 队列分页：任务多时只渲染当前页（面板是浮层，不能无限长）；单页时不显示页码。
+  const [page, setPage] = useState(1);
+  const QUEUE_PAGE_SIZE = 8;
+  const pageCount = Math.max(1, Math.ceil(tabTasks.length / QUEUE_PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
+  const pageTasks = useMemo(
+    () => tabTasks.slice((page - 1) * QUEUE_PAGE_SIZE, page * QUEUE_PAGE_SIZE),
+    [tabTasks, page]
   );
   const hasActiveTask = visibleTasks.some((task) => !getAppInstallStatusPresentation(task.status).terminal);
   const hasFailedTask = visibleTasks.some((task) => String(task.status || '').toLowerCase() === 'failed');
@@ -252,8 +295,23 @@ export default function AppInstallTaskQueue() {
             {streamStatusLabel(streamStatus)}
           </span>
         </header>
+        <div className="webui-task-queue-tabs" role="tablist" aria-label="任务类型">
+          {TASK_QUEUE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              className={`webui-task-queue-tab${activeTab === tab.key ? ' is-active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+              <span className="webui-task-queue-tab-count">{tabCount(tab.key)}</span>
+            </button>
+          ))}
+        </div>
         <div className="webui-task-queue-list">
-          {visibleTasks.map((task) => {
+          {pageTasks.map((task) => {
             const status = getAppInstallStatusPresentation(task.status);
             const percent = status.tone === 'success'
               ? 100
@@ -329,6 +387,25 @@ export default function AppInstallTaskQueue() {
             );
           })}
         </div>
+        {pageCount > 1 ? (
+          <div className="webui-task-queue-pager">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            >
+              上一页
+            </button>
+            <span>{page} / {pageCount}（共 {tabTasks.length} 项）</span>
+            <button
+              type="button"
+              disabled={page >= pageCount}
+              onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+            >
+              下一页
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           className="webui-task-queue-collapse-hint"

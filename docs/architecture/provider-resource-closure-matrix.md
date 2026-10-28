@@ -20,7 +20,7 @@ Generated from `contracts/providers/manifest.json`; runtime availability is inte
 | codebuddy | supported | supported | projection-only (native model/tool loop verified on the tested CodeBuddy CLI; descriptor remains projection-only) | core/providers/native.go |
 | codebuddycn | supported | supported | projection-only (native model/tool loop verified on the tested CodeBuddy CLI; descriptor remains projection-only) | core/providers/native.go |
 | workbuddy | supported | supported | projection-only (mcp_native_execution_unverified) | core/providers/native.go |
-| workbuddycn | supported | supported | projection-only (mcp_projection_not_declared) | core/providers/native.go |
+| workbuddycn | supported | supported | projection-only (native model/tool loop verified on WorkBuddy.app 5.9.2 / embedded CodeBuddy 2.165.0; descriptor projects `.codebuddy.json`) | core/providers/native.go |
 | cline | unsupported (plugin_boundary_not_declared) | unsupported (skill_boundary_not_declared) | projection-only (native model/tool loop verified on Cline 3.0.74; descriptor remains projection-only) | core/providers/native.go |
 
 ## Imported host gaps
@@ -53,7 +53,10 @@ Plugin use records direct expansion or a two-request native `Skill` loop: the
 local fixture requests an advertised skill, then verifies the loaded body in the
 following request. Both mechanisms were observed, including within the CN version. MCP evidence
 is native connection plus two AIH stdio calls, not model-selected MCP execution.
-WorkBuddy CN and other CodeBuddy versions remain unverified.
+WorkBuddy CN is now verified separately on the official WorkBuddy.app 5.9.2
+cask. Its embedded CodeBuddy 2.165.0 runtime passes the Plugin/Skill lifecycle
+probe and the deferred MCP loop. The independent CodeBuddy CN CLI remains a
+separate evidence lane; other CodeBuddy versions require fresh probes.
 
 WorkBuddy AI 2.161.0 now also has a dedicated native MCP model/tool-loop probe:
 `scripts/workbuddy-mcp-tool-loop-demo.js`. Enabled and re-enabled stages observe
@@ -71,9 +74,10 @@ enabled/disabled/re-enabled/removed stages with `ToolSearch`, `DeferExecuteTool`
 the stdio result, and the final `WORKBUDDY_MCP_OK` marker. This is evidence for the
 tested CodeBuddy CLI binary and local deterministic fixture; the static descriptor
 continues to say `projection-only` so descriptor capability and machine/version
-evidence remain separate. `workbuddycn` remains unverified on this machine because
-no native WorkBuddy CN runtime was available; a CodeBuddy binary is not treated as
-proof of the separate WorkBuddy CN desktop host.
+evidence remain separate. WorkBuddy CN now has its own WorkBuddy.app runtime
+evidence; its embedded CodeBuddy 2.165.0 passes the same deferred MCP lifecycle
+on the `.codebuddy.json` projection. The independent CodeBuddy CN CLI remains a
+separate evidence lane.
 
 OpenCode MCP execution evidence now additionally includes the actual native
 model/tool loop: `scripts/opencode-mcp-tool-loop-demo.js` requires two native tool

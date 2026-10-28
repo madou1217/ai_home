@@ -1094,6 +1094,82 @@
   font-size: 12px;
 }
 
+.attachmentDocumentName small {
+  display: block;
+  color: var(--color-muted);
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.attachmentDocumentCard[data-status='failed'] {
+  border-color: var(--color-danger);
+}
+
+.attachmentRetryBadge {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-warning);
+  border-radius: 2px;
+  padding: 2px 5px;
+  color: var(--color-warning);
+  background: var(--color-surface);
+  font-size: 10px;
+  line-height: 13px;
+  cursor: pointer;
+}
+
+.composerAttachmentMeta {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 2px;
+  padding: 1px 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-on-accent);
+  background: color-mix(in srgb, var(--color-bg) 78%, transparent);
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+}
+
+.composerAttachmentMeta strong,
+.composerAttachmentMeta small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerAttachmentMeta small {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.composerAttachmentRetry {
+  position: absolute !important;
+  top: auto !important;
+  right: auto !important;
+  left: 50% !important;
+  bottom: 18px !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 34px;
+  transform: translateX(-50%);
+  border: 1px solid var(--color-warning) !important;
+  border-radius: 2px !important;
+  padding: 1px 4px !important;
+  color: var(--color-warning) !important;
+  background: var(--color-surface) !important;
+  font-size: 10px !important;
+  line-height: 13px;
+  cursor: pointer;
+}
+
+.composerAttachment[data-status='failed'] {
+  border-color: var(--color-danger);
+}
+
 .statsLineSummary {
   display: flex;
   align-items: center;

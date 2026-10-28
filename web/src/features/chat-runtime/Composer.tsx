@@ -11,10 +11,7 @@ import SessionMetrics from './SessionMetrics';
 import ChatSessionSettings from './ChatSessionSettings';
 import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
-import {
-  CHAT_ATTACHMENT_ACCEPT,
-} from '@/components/chat/attachment-files';
-import { PASTED_TEXT_ATTACHMENT_THRESHOLD } from './use-composer-attachments';
+import { CHAT_ATTACHMENT_ACCEPT, buildPastedTextFile, shouldConvertLargePaste } from '@/components/chat/attachment-files';
 
 export interface ComposerProps {
   readonly workspaceMode?: 'chat' | 'work';
@@ -47,16 +44,23 @@ export default function Composer(props: ComposerProps) {
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = Array.from(event.clipboardData?.files || []);
     if (files.length > 0) {
-      if (!controller.canAttach) return;
+      if (!controller.canAttach) {
+        event.preventDefault();
+        message.error('当前投递方式不支持附件');
+        return;
+      }
       event.preventDefault();
       void controller.addAttachments(files);
       return;
     }
-    if (!controller.canAttach) return;
     const text = event.clipboardData?.getData('text/plain') || '';
-    if (Array.from(text).length <= PASTED_TEXT_ATTACHMENT_THRESHOLD) return;
+    if (!shouldConvertLargePaste(text)) return;
     event.preventDefault();
-    void controller.addPastedText(text);
+    if (!controller.canAttach) {
+      message.error('当前投递方式不支持大文本附件');
+      return;
+    }
+    void controller.addAttachments([buildPastedTextFile(text)]);
   }, [controller]);
   return (
     <div className={styles.composerStack}>
@@ -86,6 +90,7 @@ export default function Composer(props: ComposerProps) {
       <ComposerAttachmentPreview
         attachments={controller.attachments}
         onRemove={controller.removeAttachment}
+        onRetry={(key) => { void controller.retryAttachment(key); }}
       />
       <Input.TextArea
         value={controller.input}

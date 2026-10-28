@@ -137,7 +137,13 @@ import type {
   SessionEventItem,
   SshHostTestResult,
   InteractivePrompt,
-  CustomPricing
+  CustomPricing,
+  ScheduledTask,
+  ScheduledTaskSchedule,
+  ScheduledTaskSchedulePreview,
+  ScheduledTaskRecord,
+  ScheduledTaskRecordsPage,
+  ScheduledTasksResponse
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 
@@ -972,6 +978,77 @@ export async function getAppInstallJob(jobId: string): Promise<AppInstallJob> {
 export async function listActiveWebUiTasks(): Promise<WebUiTask[]> {
   const response = await api.get<{ ok: boolean; tasks?: WebUiTask[] }>('/webui/tasks');
   return Array.isArray(response.data.tasks) ? response.data.tasks : [];
+}
+
+// ── 计划任务（含账号活动定时触发：签到 / 领臭鸡蛋）──
+export async function listScheduledTasks(): Promise<ScheduledTasksResponse> {
+  const response = await api.get<ScheduledTasksResponse>('/webui/scheduled-tasks');
+  return response.data;
+}
+
+export async function saveScheduledTask(
+  input: Partial<ScheduledTask> & { eventId: string; schedule: ScheduledTaskSchedule }
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    '/webui/scheduled-tasks',
+    input
+  );
+  return response.data;
+}
+
+export async function runScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/run`
+  );
+  return response.data;
+}
+
+export async function toggleScheduledTask(
+  taskId: string,
+  enabled: boolean
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/toggle`,
+    { enabled }
+  );
+  return response.data;
+}
+
+export async function deleteScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/delete`
+  );
+  return response.data;
+}
+
+export async function listScheduledTaskRecords(
+  days = 7,
+  taskId = '',
+  page: { limit?: number; offset?: number } = {}
+): Promise<ScheduledTaskRecordsPage> {
+  const response = await api.get<ScheduledTaskRecordsPage>(
+    '/webui/scheduled-tasks/records',
+    {
+      params: {
+        days,
+        ...(taskId ? { taskId } : {}),
+        ...(page.limit ? { limit: page.limit } : {}),
+        ...(page.offset ? { offset: page.offset } : {})
+      }
+    }
+  );
+  return response.data;
+}
+
+// 调度预览（校验 + 下次运行时间 + 中文解读）：解读逻辑只在服务端一处。
+export async function previewScheduledTaskSchedule(
+  schedule: ScheduledTaskSchedule
+): Promise<ScheduledTaskSchedulePreview> {
+  const response = await api.post<ScheduledTaskSchedulePreview>(
+    '/webui/scheduled-tasks/preview',
+    { schedule }
+  );
+  return response.data;
 }
 
 export function watchWebUiTasks(): EventSource {

@@ -308,6 +308,28 @@ node scripts/plugin-closure-demo.js --json
 
 Skill、MCP、原生插件以及 DeepSeek/OpenCode/Pi 的投影检查见 [插件、Skill、MCP 与原生插件快速上手](docs/demos/plugin-skill-mcp-quickstart.md)。统一跨宿主设计见 [Universal Agent Plugin Architecture](docs/superpowers/specs/2026-10-25-universal-agent-plugin-design.md)；`provider doctor` 会把已验证的 runtime、仅投影和本机缺少宿主的状态分开报告。
 
+## 终端集成（补全 / 打错纠正）
+
+```bash
+aih shell status                 # 当前 shell + 各 shell 的安装状态
+aih shell plan                   # 只打印将要写入的片段（不写文件）
+aih shell apply                  # 写入当前 shell 的 rc，带备份
+aih shell apply --all            # 本机装了的每个 shell 都写一遍
+aih shell doctor                 # 逐项体检（语法 / 是否最新 / 入口真能出候选）
+aih shell remove                 # 摘掉 aih 写入的那一段
+```
+
+支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）**。装上之后：
+
+- `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。
+- 位置感知的深一层补全：`aih codex resume <TAB>` 直接给**该 CLI 自己最近 10 条会话**（id + 标题 + 时间，zsh 一次 TAB 进入菜单，↑/↓ 挑；fish/pwsh 用各自的候选 UI），`aih codex set-default <TAB>` 给账号 id 与 `.aih-server` 档，`aih server config set --<TAB>` 给服务端配置选项（直接来自 `server-config-schema` 那张唯一描述符表，和 `config list` / `--help` 永远同源）。
+- **会话存储按账号投影 ≠ 读不到**：cline / kiro / qoder / qodercn / grok 的会话存在账号投影里，但账号隔离只针对凭据——读取器会枚举**每个账号**的存储再合并，所以 `aih cline sessions --history`、`aih cline resume <TAB>` 都能列出它们的会话（cline 实测 53 条）；一条都没有时明确回「本机还没用过」，不再拿「账号隔离」当借口。
+- 命令打错时不再只报 `command not found`：`ahi`、`aih codx`、`gti status` 都会列出最接近的候选（相邻字母写反 / 打错一位 / 缩写 / 前缀 / 历史），**确认序号后才运行**；输入 `e` 把纠正后的命令放回命令行自己编辑。
+- 确认过的纠正会被记住，下次同一个错法排第一；用 `aih shell typo` 查看，`aih shell typo --forget <打错的命令>` 遗忘。
+- 写入前先让**该 shell 自己的解析器**验一遍片段语法（`zsh -n` / `bash -n` / `fish -n` / PowerShell Parser），语法不过就拒绝写入——宁可失败，也不给一个打不开的 rc。
+
+只动 rc 里 `# >>> aih:shell >>>` 标记之间的一段，其余内容逐字节保留；写入前备份到 `<rc>.aih-backup-<时间戳>`，并原子替换。rc 目标固定落在宿主家目录（沙箱会话里不会写进投影目录）。
+
 ## 开发
 
 ```bash

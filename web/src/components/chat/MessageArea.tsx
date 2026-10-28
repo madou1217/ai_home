@@ -20,7 +20,7 @@ import FileReferencePopover, { type FileReferenceCandidate } from './FileReferen
 import { useFileReferenceCandidates } from './use-file-reference-candidates';
 import ContextMeter from './ContextMeter';
 import ComposerAttachmentGallery from './ComposerAttachmentGallery';
-import { CHAT_ATTACHMENT_ACCEPT, type ChatDocumentAttachment } from './attachment-files';
+import { CHAT_ATTACHMENT_ACCEPT, shouldConvertLargePaste, type ChatDocumentAttachment } from './attachment-files';
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
@@ -322,9 +322,15 @@ const MessageArea = ({
   // 处理粘贴图片
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const files = Array.from(e.clipboardData?.files || []);
-    if (!files.length) return;
+    if (files.length) {
+      e.preventDefault();
+      void addFiles(files);
+      return;
+    }
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (!shouldConvertLargePaste(text)) return;
     e.preventDefault();
-    void addFiles(files);
+    void addFiles.addPastedText(text);
   }, [addFiles]);
 
   // 处理文件选择
@@ -634,7 +640,9 @@ const MessageArea = ({
   // 加载中且暂无模型 → "加载中…"；确实空 → "无可用模型"。避免刷新窗口误显示"无可用模型"。
   const emptyModelHint = modelsLoading && models.length === 0 ? '加载中…' : '无可用模型';
   const hasAccountModel = Boolean(effectiveSelectedModel);
-  const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
+  const hasPendingAttachments = addFiles.pending.length > 0;
+  const canSend = !isTerminated && !nativeWriteBlock && hasAccountModel && !hasPendingAttachments
+    && (trimmedInput.length > 0 || images.length > 0 || documents.length > 0)
     && !embeddedSlashMatch;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1082,7 +1090,10 @@ const MessageArea = ({
             <div className={`${styles.inputBox} ${mobile ? styles.inputBoxMobile : ''}`}>
             {/* 多模态附件画廊 */}
             <ComposerAttachmentGallery images={images} onRemove={removeImage}
-              documents={documents} onRemoveDocument={(index) => onDocumentsChange?.(documents.filter((_, i) => i !== index))} />
+              documents={documents} onRemoveDocument={(index) => onDocumentsChange?.(documents.filter((_, i) => i !== index))}
+              pending={addFiles.pending}
+              onRetryPending={(key) => { void addFiles.retryPending(key); }}
+              onRemovePending={addFiles.removePending} />
             <textarea
               ref={textareaRef}
               className={styles.inputTextarea}

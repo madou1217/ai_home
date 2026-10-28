@@ -9,10 +9,28 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   ...Object.keys(limits.videoExtensionTypes).map((extension) => `.${extension}`),
 ].join(',');
 
+/** Paste is converted to a text attachment once either limit is reached. */
+export const LARGE_PASTE_CHAR_LIMIT = 12_000;
+export const LARGE_PASTE_BYTE_LIMIT = 48 * 1024;
+
+export function shouldConvertLargePaste(text: string): boolean {
+  return Array.from(text).length >= LARGE_PASTE_CHAR_LIMIT
+    || new TextEncoder().encode(text).byteLength >= LARGE_PASTE_BYTE_LIMIT;
+}
+
+export function buildPastedTextFile(text: string, now: Date = new Date()): File {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  const name = `pasted-text-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.txt`;
+  return new File([text], name, { type: 'text/plain;charset=utf-8' });
+}
+
 export interface ChatDocumentAttachment {
   readonly name: string;
   readonly mimeType: string;
   readonly text: string;
+  readonly size?: number;
+  readonly status?: 'preparing' | 'ready' | 'uploading' | 'uploaded' | 'failed';
+  readonly error?: string;
 }
 
 export interface ReadChatAttachment {
@@ -74,7 +92,7 @@ export async function readChatAttachment(file: File): Promise<ReadChatAttachment
       const code = character.charCodeAt(0);
       return code <= 8 || (code >= 14 && code <= 31);
     })) throw new Error(`${name}：文件包含二进制内容`);
-    document = { name, mimeType, text };
+    document = { name, mimeType, text, size: file.size, status: 'ready' };
   }
   const rawUrl = await readFile(file, 'dataUrl') as string;
   return { name, mimeType, size: file.size, dataUrl: `data:${mimeType};base64,${rawUrl.split(',')[1]}`, document };

@@ -586,3 +586,73 @@
 .webui-task-queue-item.is-neutral .webui-task-queue-item-heading > span {
   color: var(--color-faint);
 }
+
+/* 队列分 tab（安装/卸载 ↔ 账号活动）：紧凑行内切换，不用大块提示容器。 */
+.webui-task-queue-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hos-space-1);
+  margin: var(--hos-space-1-5) 0;
+  padding: 2px;
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--hos-radius-pill, 999px);
+  background: var(--color-surface-sunken, transparent);
+}
+
+.webui-task-queue-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hos-space-1);
+  padding: 3px var(--hos-space-2-5);
+  border: 0;
+  border-radius: var(--hos-radius-pill, 999px);
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.webui-task-queue-tab:hover {
+  color: var(--color-accent);
+}
+
+.webui-task-queue-tab.is-active {
+  background: var(--color-accent-soft, var(--color-surface));
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.webui-task-queue-tab-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* 队列分页：任务多时只渲染当前页，翻页器只在多于一页时出现。 */
+.webui-task-queue-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hos-space-2);
+  margin-top: var(--hos-space-1);
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.webui-task-queue-pager button {
+  padding: 2px var(--hos-space-2);
+  border: 1px solid var(--color-border-subtle, var(--color-border));
+  border-radius: var(--hos-radius-sm, 6px);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.webui-task-queue-pager button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

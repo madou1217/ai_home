@@ -12,14 +12,15 @@ const NAV_CODES: Record<string, HudNavCode> = {
   '/chat': { no: '03', code: 'SESSIONS' },
   '/usage': { no: '04', code: 'USAGE' },
   '/models': { no: '05', code: 'MODELS' },
-  '/toolkit': { no: '06', code: 'TOOLKIT' },
-  '/studio': { no: '07', code: 'STUDIO' },
+  '/scheduled-tasks': { no: '06', code: 'SCHEDULE' },
+  '/toolkit': { no: '07', code: 'TOOLKIT' },
+  '/studio': { no: '08', code: 'STUDIO' },
   '/studio/image': { code: 'IMAGE' },
   '/studio/translation': { code: 'TRANSLATE' },
-  '/fabric': { no: '08', code: 'SERVER' },
+  '/fabric': { no: '09', code: 'SERVER' },
   '/fabric/servers': { code: 'NODES' },
   '/fabric/ssh-hosts': { code: 'SSH' },
-  '/settings': { no: '09', code: 'CONFIG' },
+  '/settings': { no: '10', code: 'CONFIG' },
 };
 
 export function resolveHudNavCode(path: string | undefined): HudNavCode | null {

@@ -2117,6 +2117,94 @@ export interface WebUiTask extends AppInstallJob {
   taskName: string;
 }
 
+// ── 计划任务（含账号活动的定时触发：签到 / 领臭鸡蛋）──
+export type ScheduledTaskScheduleKind = 'daily' | 'weekly' | 'interval' | 'cron';
+
+export interface ScheduledTaskSchedule {
+  kind: ScheduledTaskScheduleKind;
+  /** daily / weekly 用：`HH:MM` */
+  at?: string;
+  /** weekly 用：0=周日 … 6=周六 */
+  weekday?: number;
+  /** interval 用 */
+  hours?: number;
+  minutes?: number;
+  /** cron 用：标准 5 段表达式（分 时 日 月 周） */
+  expression?: string;
+}
+
+export interface ScheduledTaskSchedulePreview {
+  ok: boolean;
+  schedule?: ScheduledTaskSchedule;
+  /** 中文解读（服务端算，前端不重复实现） */
+  label?: string;
+  nextRunAt?: number;
+  error?: string;
+}
+
+export interface ScheduledTaskEvent {
+  id: string;
+  kind: 'activity' | 'custom' | string;
+  label: string;
+  description?: string;
+  provider?: string;
+  actionId?: string;
+  available?: boolean;
+}
+
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  eventId: string;
+  eventLabel: string;
+  eventParams: Record<string, unknown>;
+  schedule: ScheduledTaskSchedule;
+  scheduleLabel: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt: number;
+  lastStatus: string;
+  lastSummary: string;
+  nextRunAt: number;
+  running: boolean;
+}
+
+export interface ScheduledTaskRecord {
+  id: string;
+  taskId: string;
+  taskName: string;
+  eventId: string;
+  eventLabel: string;
+  trigger: 'manual' | 'schedule' | string;
+  status: string;
+  summary: string;
+  error: string;
+  startedAt: number;
+  finishedAt: number;
+}
+
+export interface ScheduledTaskRecordsPage {
+  ok: boolean;
+  records: ScheduledTaskRecord[];
+  days: number;
+  /** 时间窗内的总条数（真分页依据） */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface ScheduledTasksResponse {
+  ok: boolean;
+  tasks: ScheduledTask[];
+  events: ScheduledTaskEvent[];
+  tickIntervalMs: number;
+  recordRetentionDays: number;
+  schedulerRunning: boolean;
+  lastTickAt: number;
+}
+
 export type ToolkitLifecycleAction = 'install' | 'update' | 'uninstall';
 
 export type ClientPlatform = 'macos' | 'windows' | 'linux';

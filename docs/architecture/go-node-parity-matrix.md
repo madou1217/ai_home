@@ -195,6 +195,16 @@ shadow 脚本，不能把这份快照当成永久目录结果。
 `source_sha=a7aa5307252f209111b83f2006227fb99168f62a`，所以仍未完成在线重启、公开 shadow
 或 ownership/cut-over 验收。
 
+**后续当前 HEAD 构件复测（2026-10-29）**：在提交
+`31589163dc5e870522a31e685d156e0852019896` 后重新执行 `npm run go:build`。构件 stamp 的
+`source_sha` 与当前 HEAD 一致，`binary_sha256=b812c03c5963740463cf1a4cf87f3327afd0da4745e9e98a1f7ac6d94db9c097`，
+实际二进制摘要与 stamp 一致，`route_manifest_sha256=74fcf69447f78c45e4d0e6dfd1d99eec3de5dae30d245168e4182c8190badc2`。
+在临时 AIH_HOME、随机 loopback 端口和抛弃式 key 上启动该构件后，`/healthz` 为 200；无 key 的
+`/v1/props` 与 `/v1/models` 均为 `401 {"error":"unauthorized_client","ok":false}`，带临时
+key 的两条请求分别为 200（`props` 空数据、`models` 空目录）。临时进程和状态目录已清理。
+运行中的 `19550` PID 未重启，仍加载旧 inode；因此这只是当前 HEAD 构件与隔离运行证据，
+不是生产在线验证或 ownership/cut-over。
+
 **第一阶段目录投影已落地（2026-10-25）**：Node 全局缓存现在通过新的
 `PUT /v1/management/model-catalog` 推送到 Go，Go 以独立的 immutable projection store
 渲染私有 `/v1/models`。投影只包含模型 ID、`owned_by`、模态和 reasoning efforts，

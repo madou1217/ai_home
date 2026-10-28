@@ -50,6 +50,10 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private string target = "zh-Hans";
     private string shortcut = "Ctrl+Alt+T";
     private int generation;
+    private bool captureInProgress;
+    private IDataObject? originalClipboard;
+    private System.Windows.Forms.Timer? captureTimer;
+    private int captureAttempts;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -116,6 +120,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                     break;
                 case "cancel":
                     generation++;
+                    FinishCapture();
                     window.SetStatus("已停止");
                     break;
                 case "settings":
@@ -173,49 +178,99 @@ internal sealed class TranslationApplicationContext : ApplicationContext
 
     private void OnHotKey()
     {
+        if (captureInProgress) return;
         var currentGeneration = ++generation;
+        captureInProgress = true;
+        window.Hide();
+        captureTimer = new System.Windows.Forms.Timer { Interval = 40 };
+        captureTimer.Tick += (_, _) => BeginClipboardCapture(currentGeneration);
+        captureTimer.Start();
+    }
+
+    private void BeginClipboardCapture(int currentGeneration)
+    {
+        StopCaptureTimer();
+        if (currentGeneration != generation)
+        {
+            FinishCapture();
+            return;
+        }
         try
         {
-            window.Hide();
-            var clipboard = Clipboard.GetDataObject();
-            try
-            {
-                Clipboard.Clear();
-                SendKeys.SendWait("^c");
-                var text = string.Empty;
-                for (var attempt = 0; attempt < 12 && string.IsNullOrWhiteSpace(text); attempt++)
-                {
-                    Thread.Sleep(25);
-                    if (Clipboard.ContainsText(TextDataFormat.UnicodeText)) text = Clipboard.GetText(TextDataFormat.UnicodeText).Trim();
-                }
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_capture_failed", Message = "没有读取到选中文本", Retryable = true });
-                    return;
-                }
-                window.BeginTranslation(text, target);
-                Emit(new DesktopEvent { Version = 1, Type = "translate-intent", Id = Guid.NewGuid().ToString("N"), Text = text, Target = target, Generation = currentGeneration });
-            }
-            finally
-            {
-                try
-                {
-                    if (clipboard is not null) Clipboard.SetDataObject(clipboard, true);
-                }
-                catch (ExternalException error)
-                {
-                    Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_restore_failed", Message = error.Message, Retryable = true });
-                }
-            }
+            originalClipboard = Clipboard.GetDataObject();
+            Clipboard.Clear();
+            SendKeys.SendWait("^c");
+            captureAttempts = 0;
+            captureTimer = new System.Windows.Forms.Timer { Interval = 25 };
+            captureTimer.Tick += (_, _) => PollClipboard(currentGeneration);
+            captureTimer.Start();
         }
         catch (ExternalException error)
         {
             Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_capture_failed", Message = error.Message, Retryable = true });
+            FinishCapture();
         }
+    }
+
+    private void PollClipboard(int currentGeneration)
+    {
+        if (currentGeneration != generation)
+        {
+            FinishCapture();
+            return;
+        }
+        try
+        {
+            var text = Clipboard.ContainsText(TextDataFormat.UnicodeText)
+                ? Clipboard.GetText(TextDataFormat.UnicodeText).Trim()
+                : string.Empty;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                StopCaptureTimer();
+                window.BeginTranslation(text, target);
+                Emit(new DesktopEvent { Version = 1, Type = "translate-intent", Id = Guid.NewGuid().ToString("N"), Text = text, Target = target, Generation = currentGeneration });
+                FinishCapture();
+                return;
+            }
+            captureAttempts++;
+            if (captureAttempts < 12) return;
+            Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_capture_failed", Message = "没有读取到选中文本", Retryable = true });
+            FinishCapture();
+        }
+        catch (ExternalException error)
+        {
+            Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_capture_failed", Message = error.Message, Retryable = true });
+            FinishCapture();
+        }
+    }
+
+    private void StopCaptureTimer()
+    {
+        if (captureTimer is null) return;
+        captureTimer.Stop();
+        captureTimer.Dispose();
+        captureTimer = null;
+    }
+
+    private void FinishCapture()
+    {
+        StopCaptureTimer();
+        try
+        {
+            if (originalClipboard is not null) Clipboard.SetDataObject(originalClipboard, true);
+        }
+        catch (ExternalException error)
+        {
+            Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_restore_failed", Message = error.Message, Retryable = true });
+        }
+        originalClipboard = null;
+        captureAttempts = 0;
+        captureInProgress = false;
     }
 
     private void OnWindowClosed()
     {
+        FinishCapture();
         hotKeyWindow.Dispose();
         window.Dispose();
         ExitThread();

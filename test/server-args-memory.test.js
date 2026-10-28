@@ -26,8 +26,8 @@ test('small cgroup hosts disable background usage scans by default', () => {
   );
   assert.equal(
     shouldEnableModelUsageScan({
-      fs: fakeCgroup(2 * 1024 * 1024 * 1024),
-      totalMemoryFn: () => 2 * 1024 * 1024 * 1024
+      fs: fakeCgroup(3 * 1024 * 1024 * 1024),
+      totalMemoryFn: () => 3 * 1024 * 1024 * 1024
     }),
     true
   );

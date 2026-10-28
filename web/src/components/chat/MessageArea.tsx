@@ -274,7 +274,10 @@ const MessageArea = ({
   useEffect(() => {
     if (hydratedLegacyDraftKey.current !== legacyDraftKey) return;
     const timer = window.setTimeout(() => writeComposerDraft(legacyDraftIdentity, input), 180);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      writeComposerDraft(legacyDraftIdentity, input);
+    };
   }, [input, legacyDraftIdentity, legacyDraftKey]);
   const [inSessionSearchOpen, setInSessionSearchOpen] = useState(false);
   // Cmd/Ctrl+F 唤起检索胶囊:事件源在 Chat.tsx(chat-global-shortcuts 是全局快捷键单一事实源)

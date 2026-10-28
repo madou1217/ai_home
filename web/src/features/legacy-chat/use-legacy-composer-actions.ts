@@ -91,7 +91,10 @@ export function useLegacyComposerActions({
   useEffect(() => {
     if (hydratedDraftKey.current !== draftKey) return;
     const timer = window.setTimeout(() => writeComposerDraft(draftIdentity, input), 180);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      writeComposerDraft(draftIdentity, input);
+    };
   }, [draftIdentity, draftKey, input]);
 
   const replaceDraft = useCallback((content: string, nextImages: string[], nextDocuments: ChatDocumentAttachment[] = []): void => {

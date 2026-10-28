@@ -83,7 +83,12 @@ function useComposerViewState(props: ComposerProps) {
   useEffect(() => {
     if (hydratedDraftKey.current !== draftKey) return;
     const timer = window.setTimeout(() => writeComposerDraft(draftIdentity, input), 180);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      // Identity changes (session/account/provider/server switch) must flush the
+      // previous buffer before the next identity hydrates its own draft.
+      writeComposerDraft(draftIdentity, input);
+    };
   }, [draftIdentity, draftKey, input]);
   const [requestedDelivery, setDelivery] = useState<ComposerDelivery>(props.workspaceMode === 'chat' ? 'after_turn' : 'turn');
   const [effortChoice, setEffortChoice] = useState<{ sessionId: string; value: string }>();

@@ -18,6 +18,17 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const DEMO_PLUGIN = path.join(ROOT, 'examples/native-plugins/aih-demo');
 const DEMO_SKILL = path.join(ROOT, 'assets/provider-skills/aih-demo');
 const DEMO_MCP = path.join(ROOT, 'examples/mcp/aih-demo-server.js');
+const WORKBUDDY_CN_BUNDLED_CLI = path.join(
+  'Contents', 'Resources', 'app.asar.unpacked', 'cli', 'bin', 'codebuddy'
+);
+
+function discoverWorkbuddyCnBinary() {
+  const candidates = [
+    path.join('/Applications/WorkBuddy.app', WORKBUDDY_CN_BUNDLED_CLI),
+    path.join(os.homedir(), 'Applications/WorkBuddy.app', WORKBUDDY_CN_BUNDLED_CLI)
+  ];
+  return candidates.find(candidate => fs.existsSync(candidate)) || '';
+}
 
 function parseArgs(argv) {
   const options = {
@@ -438,7 +449,7 @@ async function buildReport(options) {
   const importedProviderDemos = [
     ['codebuddy', options.codebuddyBinary],
     ['codebuddycn', options.codebuddyCnBinary],
-    ['workbuddycn', options.workbuddyCnBinary]
+    ['workbuddycn', options.workbuddyCnBinary || discoverWorkbuddyCnBinary()]
   ];
   for (const [provider, binary] of importedProviderDemos) {
     if (!binary || options.skip.has(provider)) continue;

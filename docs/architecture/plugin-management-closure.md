@@ -550,11 +550,13 @@ No claim of full cross-host parity is made for OpenCode or Pi TUI/RPC, or the DS
 Web/TUI model-selected agent loop. Pi and DSH headless inference use a deterministic local
 model fixture; this proves runtime execution, not a remote model's tool-selection quality.
 
-The current machine-level aggregate is `/tmp/aih-resource-closure-gemini-final2.json`:
-19 demos passed, including Codex, Claude, OpenCode, Cline, Gemini, Pi, DeepSeek,
-AIH, WorkBuddy AI, CodeBuddy and CodeBuddy CN resource lanes. The aggregate's only
-remaining gaps are the independent WorkBuddy CN desktop plugin and Skill lanes;
-that runtime is absent and is not substituted with the CodeBuddy CN CLI.
+The current machine-level aggregate `/tmp/aih-resource-closure-workbuddycn.json`
+contains 21 demo entries. WorkBuddy CN is independently verified through the
+official WorkBuddy.app 5.9.2 bundle and its embedded CodeBuddy 2.165.0 runtime;
+Plugin, Skill and deferred MCP loop all pass four lifecycle stages. One aggregate
+run also recorded an unrelated native-plugin runner failure while an external
+plugin synchronization process was still running; that runner failure is kept
+separate from the passing WorkBuddy CN evidence.
 
 The native plugin manager now uses the descriptor's `plugins.adapter` registry
 (`codex-marketplace`, `claude-skills-dir`, `opencode-local`, `native-directory`,
@@ -612,9 +614,10 @@ shared `scripts/workbuddy-resource-native-demo.js` accepts `--provider` and
 and checks native MCP Connected plus absence after disable. The generalized
 `scripts/workbuddy-mcp-tool-loop-demo.js` also verifies the deferred native model
 tool loop for both `codebuddy` and `codebuddycn` on the tested 2.177.0 binary.
-WorkBuddy CN remains unverified because no separate WorkBuddy CN native runtime is
-installed on this machine; a CodeBuddy binary is not treated as that desktop host.
-Other versions require fresh probes.
+The official WorkBuddy.app 5.9.2 bundle separately embeds CodeBuddy 2.165.0;
+its WorkBuddy CN Plugin/Skill stages and `.codebuddy.json` deferred MCP loop pass
+all four lifecycle stages. This is separate from the CodeBuddy CN CLI lane and
+does not establish arbitrary Web/TUI parity. Other versions require fresh probes.
 
 ## WorkBuddy deferred MCP model/tool loop (2026-10-27)
 

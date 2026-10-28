@@ -137,7 +137,11 @@ import type {
   SessionEventItem,
   SshHostTestResult,
   InteractivePrompt,
-  CustomPricing
+  CustomPricing,
+  ScheduledTask,
+  ScheduledTaskSchedule,
+  ScheduledTaskRecord,
+  ScheduledTasksResponse
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
 
@@ -967,6 +971,58 @@ export async function getAppInstallJob(jobId: string): Promise<AppInstallJob> {
 export async function listActiveWebUiTasks(): Promise<WebUiTask[]> {
   const response = await api.get<{ ok: boolean; tasks?: WebUiTask[] }>('/webui/tasks');
   return Array.isArray(response.data.tasks) ? response.data.tasks : [];
+}
+
+// ── 计划任务（含账号活动定时触发：签到 / 领臭鸡蛋）──
+export async function listScheduledTasks(): Promise<ScheduledTasksResponse> {
+  const response = await api.get<ScheduledTasksResponse>('/webui/scheduled-tasks');
+  return response.data;
+}
+
+export async function saveScheduledTask(
+  input: Partial<ScheduledTask> & { eventId: string; schedule: ScheduledTaskSchedule }
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    '/webui/scheduled-tasks',
+    input
+  );
+  return response.data;
+}
+
+export async function runScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/run`
+  );
+  return response.data;
+}
+
+export async function toggleScheduledTask(
+  taskId: string,
+  enabled: boolean
+): Promise<{ ok: boolean; task?: ScheduledTask; error?: string }> {
+  const response = await api.post<{ ok: boolean; task?: ScheduledTask; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/toggle`,
+    { enabled }
+  );
+  return response.data;
+}
+
+export async function deleteScheduledTask(taskId: string): Promise<{ ok: boolean; error?: string }> {
+  const response = await api.post<{ ok: boolean; error?: string }>(
+    `/webui/scheduled-tasks/${encodeURIComponent(taskId)}/delete`
+  );
+  return response.data;
+}
+
+export async function listScheduledTaskRecords(
+  days = 7,
+  taskId = ''
+): Promise<{ ok: boolean; records: ScheduledTaskRecord[]; days: number }> {
+  const response = await api.get<{ ok: boolean; records: ScheduledTaskRecord[]; days: number }>(
+    '/webui/scheduled-tasks/records',
+    { params: { days, ...(taskId ? { taskId } : {}) } }
+  );
+  return response.data;
 }
 
 export function watchWebUiTasks(): EventSource {

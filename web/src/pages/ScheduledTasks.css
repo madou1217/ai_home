@@ -1,0 +1,60 @@
+/* 计划任务页：紧凑信息密度，状态用标签/文字表达，不用大块告警容器或左侧色条。 */
+.scheduled-tasks-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hos-space-3);
+  padding: var(--hos-space-4);
+}
+
+.scheduled-tasks-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hos-space-3);
+  flex-wrap: wrap;
+}
+
+.scheduled-tasks-head h2 {
+  margin: 0 0 var(--hos-space-1);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.scheduled-tasks-head p {
+  margin: 0;
+  max-width: 720px;
+  color: var(--color-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.scheduled-tasks-scheduler {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.scheduled-tasks-scheduler.is-on {
+  color: var(--color-accent);
+}
+
+.scheduled-tasks-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scheduled-tasks-name span {
+  color: var(--color-faint);
+  font-size: 11.5px;
+}
+
+.scheduled-tasks-hint {
+  color: var(--color-faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.scheduled-tasks-summary {
+  color: var(--color-muted);
+  font-size: 12px;
+}

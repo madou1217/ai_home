@@ -34,6 +34,12 @@ const nodeRoutes = [
     icon: "database",
   },
   {
+    name: "计划任务",
+    path: "/scheduled-tasks",
+    component: "./ScheduledTasks",
+    icon: "schedule",
+  },
+  {
     path: "/toolkit/install-guide",
     component: "./ToolkitInstallGuide",
     hideInMenu: true,

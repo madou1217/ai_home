@@ -826,3 +826,20 @@ an optional adapter preflight before writing the immutable snapshot. An isolated
 probe verified malformed Gemini JSON leaves no snapshot, then a corrected package
 with the same id/version installs successfully. Existing adapters without a
 preflight retain their prior behavior.
+
+## Current-main WorkBuddy runtime recheck (2026-10-29)
+
+The current `main` checkout reran both WorkBuddy probes after the historical
+closure commit. `node scripts/workbuddy-resource-native-demo.js` passed against
+WorkBuddy 2.161.0 using the bundled `desktop-node` runtime: plugin and Skill
+stages (`enabled`, `disabled`, `re-enabled`, `removed`) all exited successfully,
+and the installed body was observed only in the enabled stages. Direct native
+MCP management connected to the local fixture and exposed `aih_echo` and
+`aih_list_files`; disabling the resource removed the native connection.
+
+`node scripts/workbuddy-mcp-tool-loop-demo.js` also passed on the same runtime.
+Enabled and re-enabled stages each observed the native `ToolSearch` → tool call →
+stdio result sequence and returned `WORKBUDDY_MCP_OK`; disabled and removed stages
+returned `MCP_NOT_LOADED` without a tool schema or call. This is fresh local
+deterministic native evidence for WorkBuddy AI 2.161.0. It does not establish
+WorkBuddy CN, arbitrary CodeBuddy versions, remote reasoning, or Web/TUI parity.

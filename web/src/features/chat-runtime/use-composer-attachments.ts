@@ -15,6 +15,7 @@ export interface PendingComposerAttachment extends ChatRuntimeAttachmentUpload {
   readonly file: File;
   readonly document?: ChatDocumentAttachment;
   readonly status: PendingComposerAttachmentStatus;
+  readonly attachmentId?: string;
   readonly error?: string;
 }
 
@@ -24,6 +25,7 @@ export interface ComposerAttachmentsController {
   readonly remove: (key: string) => void;
   readonly retry: (key: string) => Promise<void>;
   readonly setStatus: (keys: readonly string[], status: PendingComposerAttachmentStatus, error?: string) => void;
+  readonly markUploaded: (uploads: readonly { key: string; attachmentId: string }[]) => void;
   readonly clear: () => void;
 }
 
@@ -127,12 +129,21 @@ export function useComposerAttachments(): ComposerAttachmentsController {
     itemsRef.current = next;
     setItems(next);
   }, []);
+  const markUploaded = useCallback((uploads: readonly { key: string; attachmentId: string }[]): void => {
+    const ids = new Map(uploads.map(({ key, attachmentId }) => [key, attachmentId]));
+    const next = itemsRef.current.map((item) => {
+      const attachmentId = ids.get(item.key);
+      return attachmentId ? { ...item, attachmentId, status: 'uploaded' as const, error: undefined } : item;
+    });
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
   const clear = useCallback((): void => {
     generation.current += 1;
     itemsRef.current = [];
     setItems([]);
   }, []);
-  return { items, addFiles, remove, retry, setStatus, clear };
+  return { items, addFiles, remove, retry, setStatus, markUploaded, clear };
 }
 
 async function readPendingAttachment(file: File): Promise<PendingComposerAttachment> {

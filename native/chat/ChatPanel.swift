@@ -165,7 +165,7 @@ final class ChatPanel: NSObject, NSWindowDelegate {
       "type": "chat.submit", "requestId": requestID, "sessionId": sessionID,
       "commandId": commandID, "generation": commandGeneration
     ]
-    if text.utf16.count > 8000 {
+    if shouldUseFileReference(text) {
       guard let path = persistLargeText(text) else {
         failedDraftText = text
         content.setComposerText(text)
@@ -351,12 +351,21 @@ final class ChatPanel: NSObject, NSWindowDelegate {
 
   private func restoreSnapshot(_ runtime: [String: Any]) {
     guard let payload = runtime["payload"] as? [String: Any], let timeline = payload["timeline"] as? [[String: Any]] else { return }
-    let messages = timeline.compactMap { item -> (role: String, text: String)? in
+    let messages = timeline.compactMap { item -> (id: String, role: String, text: String, metadata: String, turnID: String)? in
       guard let text = item["content"] as? String, !text.isEmpty,
             item["kind"] as? String == "message" else { return nil }
       let detail = item["detail"] as? [String: Any]
       let role = (detail?["role"] as? String) ?? (item["role"] as? String)
-      return (role: role == "user" ? "你" : "AIH", text: text)
+      let displayRole = role == "user" ? "你" : "AIH"
+      let itemModel = (detail?["model"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? model
+      let metrics = detail?["metrics"] as? [String: Any]
+      return (
+        id: item["id"] as? String ?? "",
+        role: displayRole,
+        text: text,
+        metadata: displayRole == "AIH" ? metadataText(model: itemModel, provider: provider, metrics: metrics) : "",
+        turnID: item["turnId"] as? String ?? ""
+      )
     }
     content.restoreMessages(messages)
   }
@@ -389,6 +398,10 @@ final class ChatPanel: NSObject, NSWindowDelegate {
     if let value = runtime["model"] as? String, !value.isEmpty { return value }
     if let payload = runtime["payload"] as? [String: Any], let value = payload["model"] as? String, !value.isEmpty { return value }
     return nil
+  }
+
+  private func shouldUseFileReference(_ text: String) -> Bool {
+    text.count >= 12_000 || text.utf8.count >= 48 * 1024
   }
 
   private func persistLargeText(_ text: String) -> String? {

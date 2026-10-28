@@ -499,8 +499,9 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
 
   private func updateControls() {
     let canSend = canSubmit
-    let count = composer.string.utf16.count
-    composerHint.stringValue = count > 8000 ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
+    let count = composer.string.count
+    let bytes = composer.string.utf8.count
+    composerHint.stringValue = (count >= 12_000 || bytes >= 48 * 1024) ? "\(count) · 将作为文件引用发送" : "↵ 发送 · ⇧↵ 换行"
     composerHint.textColor = .secondaryLabelColor
     let canStop = state == .streaming
     let actionLabel = canStop ? "停止回复" : "发送消息"
@@ -531,14 +532,21 @@ final class ChatPanelContent: NSObject, NSTextViewDelegate {
     scrollToBottom()
   }
 
-  func restoreMessages(_ messages: [(role: String, text: String)]) {
+  func restoreMessages(_ messages: [(id: String, role: String, text: String, metadata: String, turnID: String)]) {
     clearTranscript()
-    for message in messages where !message.text.isEmpty { _ = addRow(role: message.role, text: message.text, animated: false) }
+    for message in messages where !message.text.isEmpty {
+      let row = addRow(role: message.role, text: message.text, animated: false)
+      row.updateMetadata(message.metadata)
+      if message.role == "AIH", !message.id.isEmpty {
+        assistantRows[message.id] = row
+        assistantTurnIDs[message.id] = message.turnID
+      }
+    }
     scrollToBottom()
   }
 
   func replaceTranscript(_ text: String) {
-    restoreMessages(text.isEmpty ? [] : [(role: "AIH", text: text)])
+    restoreMessages(text.isEmpty ? [] : [(id: "", role: "AIH", text: text, metadata: "", turnID: "")])
   }
 
   func currentText() -> String { composer.string }

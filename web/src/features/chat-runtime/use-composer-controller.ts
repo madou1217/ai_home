@@ -32,6 +32,7 @@ export interface ComposerController {
   readonly removeAttachment: (key: string) => void;
   readonly retryAttachment: (key: string) => Promise<void>;
   readonly setAttachmentStatus: (keys: readonly string[], status: PendingComposerAttachmentStatus, error?: string) => void;
+  readonly markAttachmentsUploaded: (uploads: readonly { key: string; attachmentId: string }[]) => void;
   readonly setDelivery: (value: ComposerDelivery) => void;
   readonly setReasoningEffort: (value: string) => void;
   readonly selectModel: (value: string) => void;
@@ -135,6 +136,7 @@ function useComposerViewState(props: ComposerProps) {
     removeAttachment: attachments.remove,
     retryAttachment: attachments.retry,
     setAttachmentStatus: attachments.setStatus,
+    markAttachmentsUploaded: attachments.markUploaded,
     clearAttachments: attachments.clear,
     slashMatches: slashSuggestions(input, policy.slashCommands),
   };
@@ -171,23 +173,34 @@ async function dispatchComposerInput(props: ComposerProps, view: ComposerViewSta
   if (view.pendingSlash) {
     await props.actions.executeSlash(view.pendingSlash.name, view.pendingSlash.arguments);
   } else if (view.delivery === 'turn') {
-    const attachmentKeys = view.attachments.map(({ key }) => key);
-    view.setAttachmentStatus(attachmentKeys, 'uploading');
+    const pending = view.attachments.filter((attachment) => !attachment.attachmentId);
+    const pendingKeys = pending.map(({ key }) => key);
+    if (pendingKeys.length > 0) view.setAttachmentStatus(pendingKeys, 'uploading');
+    const uploadedByKey = new Map<string, string>();
     try {
-      const uploaded = view.attachments.length > 0
-        ? await props.uploadAttachments(view.attachments.map(({ name, mimeType, dataUrl }) => ({
+      if (pending.length > 0) {
+        const uploaded = await props.uploadAttachments(pending.map(({ name, mimeType, dataUrl }) => ({
           name, mimeType, dataUrl,
-        })))
-        : [];
+        })));
+        if (uploaded.length !== pending.length || uploaded.some(({ attachmentId }) => !attachmentId)) {
+          throw new Error('附件上传结果无效');
+        }
+        uploaded.forEach(({ attachmentId }, index) => uploadedByKey.set(pending[index].key, attachmentId));
+        view.markAttachmentsUploaded(pending.map(({ key }) => ({ key, attachmentId: uploadedByKey.get(key)! })));
+      }
+      const attachmentIds = view.attachments
+        .map((attachment) => attachment.attachmentId || uploadedByKey.get(attachment.key) || '')
+        .filter(Boolean);
       await props.actions.submit({
         content,
-        attachmentIds: uploaded.map(({ attachmentId }) => attachmentId),
+        attachmentIds,
         model: view.model,
         reasoningEffort: view.reasoningEffort || undefined,
       });
-      view.setAttachmentStatus(attachmentKeys, 'uploaded');
     } catch (error) {
-      view.setAttachmentStatus(attachmentKeys, 'failed', errorText(error, '附件上传失败'));
+      if (pendingKeys.length > 0 && uploadedByKey.size === 0) {
+        view.setAttachmentStatus(pendingKeys, 'failed', errorText(error, '附件上传失败'));
+      }
       throw error;
     }
   } else if (view.delivery) await props.actions.deliver(content, view.delivery);

@@ -322,6 +322,7 @@ aih shell remove                 # 摘掉 aih 写入的那一段
 支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。
+- 位置感知的深一层补全：`aih codex resume <TAB>` 给**该 CLI 自己的会话 id**（带标题与时间），`aih codex set-default <TAB>` 给账号 id 与 `.aih-server` 档，`aih server config set --<TAB>` 给服务端配置选项（直接来自 `server-config-schema` 那张唯一描述符表，和 `config list` / `--help` 永远同源）。
 - 命令打错时不再只报 `command not found`：`ahi`、`aih codx`、`gti status` 都会列出最接近的候选（相邻字母写反 / 打错一位 / 缩写 / 前缀 / 历史），**确认序号后才运行**；输入 `e` 把纠正后的命令放回命令行自己编辑。
 - 确认过的纠正会被记住，下次同一个错法排第一；用 `aih shell typo` 查看，`aih shell typo --forget <打错的命令>` 遗忘。
 - 写入前先让**该 shell 自己的解析器**验一遍片段语法（`zsh -n` / `bash -n` / `fish -n` / PowerShell Parser），语法不过就拒绝写入——宁可失败，也不给一个打不开的 rc。

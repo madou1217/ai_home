@@ -39,6 +39,7 @@ function nativeCredentialProvider(provider: Provider): RuntimeProviderDescriptor
 
 export const chatRuntimeProviders = new RuntimeProviderRegistry([
   nativeCredentialProvider('codex'),
+  nativeCredentialProvider('claude'),
 ]);
 
 function isGatewayAccount(account: ChatAccount): boolean {

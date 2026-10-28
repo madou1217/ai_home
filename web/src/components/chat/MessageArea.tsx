@@ -1273,6 +1273,8 @@ const MessageArea = ({
       {/* VSCode 风格底部终端面板：置于输入框下方，成为最底部 dock */}
       <ShellTerminalPanel
         visible={shellTerminalOpen}
+        persistent
+        sessionKey={`chat-shell:${resolveActiveServer().serverId || 'local'}:${encodeURIComponent(session?.id || terminalCwd || 'default')}`}
         onClose={() => setShellTerminalOpen(false)}
         cwd={terminalCwd}
       />

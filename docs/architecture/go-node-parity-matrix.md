@@ -166,6 +166,19 @@ node scripts/gateway-shadow-compare.js \
 禁用策略同步和本地 modality 投影已工作，但不足以覆盖对外全集。下次复测仍使用上面的
 shadow 脚本，不能把这份快照当成永久目录结果。
 
+**鉴权 shadow 复测（2026-10-29）**：无 client key 的只读探针重新运行后，当前仍运行的 Go
+`19550` 工件对 `/v1/props` 返回旧的 `200 {object,data}`，而 Node 返回
+`401 {ok:false,error:"unauthorized_client"}`；这是旧进程尚未加载 `0f891930` 的运行态证据。
+当前源码已把 `clientauth.Authorizer` 注入 `clientpropsapi`，并在未授权时返回 Node 形状的
+`401`；`go test ./internal/transport/http/clientpropsapi ./internal/host/aihserver` 通过，
+临时 httptest 也观察到未授权 `401` 与带 key `200`。因此该修复是**源码/隔离验证完成、运行中
+工件未重启验证**，不能把当前 `19550` 的 shadow 结果写成修复已在线。
+
+同一无 key 复测显示 `/v1/models`、`?capability=vision`、`?capability=image_out` 两侧状态码
+均为 `401`，但 Node 仍返回扁平 `{ok:false,error:"unauthorized_client"}`，Go 返回嵌套
+`{error:{code:"unauthorized_client",message:"请求模型目录失败"}}`。这属于独立的错误 envelope
+合同差异；本轮没有修改模型目录实现，也没有切换 Go artifact。
+
 **第一阶段目录投影已落地（2026-10-25）**：Node 全局缓存现在通过新的
 `PUT /v1/management/model-catalog` 推送到 Go，Go 以独立的 immutable projection store
 渲染私有 `/v1/models`。投影只包含模型 ID、`owned_by`、模态和 reasoning efforts，

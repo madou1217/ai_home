@@ -11,7 +11,10 @@ import SessionMetrics from './SessionMetrics';
 import ChatSessionSettings from './ChatSessionSettings';
 import { useComposerController } from './use-composer-controller';
 import styles from './session-runtime.module.css';
-import { CHAT_ATTACHMENT_ACCEPT } from '@/components/chat/attachment-files';
+import {
+  CHAT_ATTACHMENT_ACCEPT,
+} from '@/components/chat/attachment-files';
+import { PASTED_TEXT_ATTACHMENT_THRESHOLD } from './use-composer-attachments';
 
 export interface ComposerProps {
   readonly workspaceMode?: 'chat' | 'work';
@@ -40,11 +43,18 @@ export default function Composer(props: ComposerProps) {
     });
   }, [props.actions]);
   const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (!controller.canAttach) return;
     const files = Array.from(event.clipboardData?.files || []);
-    if (files.length === 0) return;
+    if (files.length > 0) {
+      if (!controller.canAttach) return;
+      event.preventDefault();
+      void controller.addAttachments(files);
+      return;
+    }
+    if (!controller.canAttach) return;
+    const text = event.clipboardData?.getData('text/plain') || '';
+    if (Array.from(text).length <= PASTED_TEXT_ATTACHMENT_THRESHOLD) return;
     event.preventDefault();
-    void controller.addAttachments(files);
+    void controller.addPastedText(text);
   }, [controller]);
   return (
     <div className={styles.composerStack}>

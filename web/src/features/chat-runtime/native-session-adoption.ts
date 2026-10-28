@@ -87,8 +87,14 @@ export function resolveNativeSessionAdoption(
       draft: false,
       updatedAt: Math.max(current.updatedAt, resolved.updatedAt),
       projectPath: resolved.projectPath || current.projectPath || fallbackProjectPath,
+      title: meaningfulTitle(resolved.policy.title) ? String(resolved.policy.title) : current.title,
     },
   };
+}
+
+function meaningfulTitle(value: unknown): boolean {
+  const title = String(value || '').trim();
+  return Boolean(title) && title !== '新会话' && title !== '新对话';
 }
 
 export function resolveBoundNativeSessionId(

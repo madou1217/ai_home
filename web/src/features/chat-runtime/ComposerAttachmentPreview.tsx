@@ -18,7 +18,12 @@ export default function ComposerAttachmentPreview({ attachments, onRemove }: Pro
               <video src={attachment.dataUrl} muted preload="metadata" aria-label={attachment.name} />
             ) : (
             <span style={{ display: 'flex', flexDirection: 'column', maxWidth: '100%', overflow: 'hidden', fontSize: 11 }}>
-              <FileTextOutlined /><span title={attachment.name}>{attachment.name}</span>
+              <FileTextOutlined /><span title={attachment.document?.text || attachment.name}>{attachment.name}</span>
+              {attachment.document?.text ? (
+                <span style={{ opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {attachment.document.text.slice(0, 72)}
+                </span>
+              ) : null}
             </span>
           )}
           <button

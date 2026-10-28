@@ -44,7 +44,11 @@ function acquireBuildLock() {
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
     let ownerPid = 0;
-    try { ownerPid = Number(fs.readFileSync(path.join(lockDir, 'pid'), 'utf8')); } catch (_readError) {}
+    try {
+      ownerPid = Number(fs.readFileSync(path.join(lockDir, 'pid'), 'utf8'));
+    } catch {
+      // A stale lock may not have a readable owner marker.
+    }
     if (ownerPid > 0) {
       try {
         process.kill(ownerPid, 0);
@@ -61,7 +65,11 @@ function acquireBuildLock() {
 }
 
 function releaseBuildLockSafely(releaseLock) {
-  try { releaseLock(); } catch (_error) {}
+  try {
+    releaseLock();
+  } catch {
+    // Cleanup must not mask the child process result.
+  }
 }
 
 function run() {
@@ -95,7 +103,9 @@ function run() {
     let hasFreshIndex = false;
     try {
       hasFreshIndex = fs.statSync(outputPath).mtimeMs >= buildStartedAt;
-    } catch (_error) {}
+    } catch {
+      // The output file may not exist until webpack has flushed it.
+    }
     if (!hasFreshIndex) return;
     buildComplete = true;
     // Umi's webpack build resolves here, but its esbuild service can leave an
@@ -103,7 +113,11 @@ function run() {
     // keeping the CLI around for the full webpack idle timeout.
     completionTimer = setTimeout(() => {
       terminating = true;
-      try { child.kill('SIGTERM'); } catch (_error) {}
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // The child may have exited between the timer and the signal.
+      }
     }, 8_000);
     if (completionTimer && typeof completionTimer.unref === 'function') completionTimer.unref();
   };
@@ -111,7 +125,11 @@ function run() {
   child.stderr.on('data', (chunk) => forwardOutput(process.stderr, chunk));
   const forwardSignal = (signal) => {
     terminating = true;
-    try { child.kill(signal); } catch (_error) {}
+    try {
+      child.kill(signal);
+    } catch {
+      // The child may already have exited.
+    }
   };
   const onSigint = () => forwardSignal('SIGINT');
   const onSigterm = () => forwardSignal('SIGTERM');

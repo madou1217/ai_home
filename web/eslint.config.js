@@ -35,7 +35,22 @@ export default [
         module: 'readonly',
         process: 'readonly',
         require: 'readonly',
-        window: 'readonly'
+        window: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
+      }
+    }
+  },
+  {
+    files: ['config/**/*.{js,cjs,mjs,ts}'],
+    languageOptions: {
+      globals: {
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        process: 'readonly',
+        require: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
       }
     }
   },

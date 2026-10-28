@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createRemoteUsageRelay } = require('../lib/usage/remote-usage-relay');
+const { __private: managementPrivate } = require('../lib/server/management-router');
 
 test('remote usage relay retries are idempotent and advance after acknowledgement', async () => {
   const requests = [];
@@ -36,4 +37,33 @@ test('remote usage relay retries are idempotent and advance after acknowledgemen
   assert.equal(requests[0].options.headers['x-aih-usage-source'], 'server-local-test');
   const payload = JSON.parse(requests[0].options.body);
   assert.equal(payload.records[0].eventKey, record.eventKey);
+});
+
+test('usage import forwards the request body and preserves idempotency', async () => {
+  const writes = [];
+  const body = Buffer.from(JSON.stringify({ records: [{ eventKey: 'event-1' }] }));
+  const ctx = {
+    method: 'POST',
+    pathname: '/v0/management/usage/import',
+    req: { headers: {} },
+    res: {},
+    state: { serverIdentity: { id: 'server-aws' } },
+    readRequestBody: async () => body
+  };
+  const result = await managementPrivate.handleModelUsageManagementRequest(
+    ctx,
+    {
+      recordUsageBatch: (records) => {
+        writes.push(records);
+        return 1;
+      }
+    },
+    (_res, status, payload) => { ctx.result = { status, payload }; },
+    null
+  );
+  assert.equal(result, true);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0], [{ eventKey: 'event-1' }]);
+  assert.equal(ctx.result.status, 200);
+  assert.equal(ctx.result.payload.inserted, 1);
 });

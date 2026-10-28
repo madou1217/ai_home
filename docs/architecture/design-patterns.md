@@ -152,7 +152,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 
 `lib/desktop/runtime/desktop-protocol.js` + `lib/desktop/translation/protocol.js` -> **Shared Protocol Contract + Bounded Normalizer** -> `platform`、`captureModes`、`permission`、`shortcut` 和状态详情经过共同版本化 JSONL 边界，字段数量和长度受限，不把凭据或任意 native payload 放行到服务层。
 
-`lib/desktop/translation/windows-build.js` + `native/translation/windows/Program.cs` -> **Build Adapter + Host Capability Boundary** -> Windows helper 通过 .NET publish、源文件哈希、临时目录和原子目录替换生成运行时产物；helper 只负责快捷键、剪贴板快照/恢复、窗口和 JSONL，不持有凭据或监听 HTTP。当前证据为 Node 22.21.0 的 Web build、29 项现有 Node 测试、限定 ESLint、`node --check`、macOS 主机上的 `win-x64` cross-target publish；没有 Windows 实机 GUI、焦点切换、剪贴板或 helper runtime 证据，因此不能宣称 Windows native 完整对齐。
+`lib/desktop/translation/windows-build.js` + `native/translation/windows/Program.cs` -> **Build Adapter + Host Capability Boundary** -> Windows helper 通过 .NET publish、源文件哈希、临时目录和原子目录替换生成运行时产物；helper 只负责快捷键、剪贴板快照/恢复、窗口和 JSONL，不持有凭据或监听 HTTP。当前可复现证据为 Node v22.16.0 下 focused 翻译/桌面测试 24/24、完整 Node 测试 115/115、限定 ESLint、`node --check`、Web build；注入式 builder 探针确认相同源码只 publish 一次并清理 staging，macOS 主机没有 `dotnet` SDK，因此真实 Windows publish、GUI、焦点切换、剪贴板和 helper runtime 仍未验证，不能宣称 Windows native 完整对齐。
 
 `web/src/features/translation/SystemTranslationControl.tsx` -> **Capability Projection** -> WebUI 根据服务端 `platform`、`captureModes`、`permission` 和 `shortcut` 投影 macOS、Windows、Linux 三种可用性，Linux 系统开关保持禁用且普通 WebUI 翻译仍可用。
 

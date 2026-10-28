@@ -41,6 +41,25 @@ function executionTargetHint(target: TranslationExecutionTarget) {
   return `${target.capabilities.streaming ? '支持流式输出' : '完整结果'}${operationText ? ` · ${operationText}` : ''}${providerText}`;
 }
 
+function platformCopy(status: SystemTranslationStatus | null) {
+  const platform = String(status?.platform || '').toLowerCase();
+  if (platform === 'win32') return {
+    title: '桌面取词',
+    description: '使用全局快捷键复制选区后翻译，不需要辅助功能授权。',
+    permission: '请允许 AIH Translation 使用快捷键和剪贴板。',
+  };
+  if (platform === 'linux') return {
+    title: '桌面取词',
+    description: 'Linux 桌面版暂未提供；你仍可使用 WebUI 划词翻译。',
+    permission: '',
+  };
+  return {
+    title: '系统取词',
+    description: '在本机应用或网页中选词翻译；首次开启需授权辅助功能。',
+    permission: '请在系统设置 → 隐私与安全性 → 辅助功能中允许 AIH Translation。',
+  };
+}
+
 export default function SystemTranslationControl({ persistedExecutionTarget }: Props) {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -120,16 +139,19 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
     return () => { disposed = true; };
   }, [serverTargets, status]);
   const alternateTargetCount = serverTargets.filter((item) => item.available && item.serverId).length;
+  const copy = platformCopy(status);
+  const unsupported = status?.platform === 'linux' || status?.status === 'unsupported';
+  const shortcut = status?.shortcut || (status?.platform === 'win32' ? 'Ctrl+Alt+T' : '⌥⌘T');
   return (
     <div className={styles.systemControl}>
-      <Tooltip title="在此服务器所在电脑的应用或网页中选词翻译；首次开启需授权辅助功能">
-        <span className={styles.floatingToggleLabel}><DesktopOutlined /> 系统取词</span>
+      <Tooltip title={copy.description}>
+        <span className={styles.floatingToggleLabel}><DesktopOutlined /> {copy.title}</span>
       </Tooltip>
       <Switch
         size="small"
         aria-label="系统取词"
         checked={status?.enabled || false}
-        disabled={!status?.supported}
+        disabled={!status?.supported || unsupported}
         loading={saving}
         onChange={async (enabled) => {
           setSaving(true);
@@ -140,6 +162,7 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
           finally { setSaving(false); }
         }}
       />
+      {status?.supported ? <kbd className={styles.kbd}>{shortcut}</kbd> : null}
       {executionTargets.length ? (
         <div className={styles.executionTargetControl}>
           <span className={styles.fieldLabel}>执行目标</span>
@@ -193,7 +216,7 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
         {serverTargets.map((item) => <option key={targetKey(item)} value={targetKey(item)} disabled={!item.available}>{item.label}{item.available ? '' : '（未配置）'}</option>)}
       </select>
       <span className={styles.systemStatus} role="status">
-        {error || (!status ? '正在读取服务状态…' : status.status === 'running' ? '已就绪' : status.status === 'disabled' ? '' : status.detail)}
+        {error || (!status ? '正在读取服务状态…' : status.status === 'running' ? '已就绪' : status.status === 'disabled' ? '' : status.detail || copy.permission)}
       </span>
       {alternateTargetCount === 0 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
       {status?.status === 'permission-required' ? (

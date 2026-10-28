@@ -3905,6 +3905,10 @@ export interface SystemTranslationStatus {
   enabled: boolean;
   status: 'disabled' | 'unsupported' | 'starting' | 'running' | 'permission-required' | 'error';
   detail: string;
+  platform?: 'darwin' | 'win32' | 'linux' | string;
+  captureModes?: string[];
+  permission?: string;
+  shortcut?: string;
   executionTarget?: 'aih-server' | 'direct-provider';
   executionTargets?: TranslationExecutionTarget[];
   serverTarget?: { kind: 'aih-server'; label: string; origin: string; serverId?: string };

@@ -172,6 +172,9 @@ export default defineConfig({
   // keeps the same split points but lets the browser load styles when their
   // route chunk is actually mounted.
   routeLoader: { moduleType: "cjs" },
+  // Keep webpack's persistent cache in a stable, project-local location. Umi
+  // maps this directory to its bundler-webpack cache before chainWebpack runs.
+  cacheDirectoryPath: path.resolve(process.cwd(), "node_modules/.cache/aih-webpack"),
   favicons: [`${publicPath}ai-home-logo.png`],
   // 首帧前写入主题，避免深色 HUD 默认主题出现浅色闪屏。键名与 src/services/theme-persistence.ts 一致。
   headScripts: [

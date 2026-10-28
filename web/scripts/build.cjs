@@ -2,7 +2,8 @@
 
 const os = require('node:os');
 const fs = require('node:fs');
-const { spawnSync } = require('node:child_process');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const LOW_MEMORY_BUILD_LIMIT = 2048 * 1024 * 1024;
 
@@ -24,14 +25,36 @@ function availableMemory() {
   return Math.min(os.totalmem(), readCgroupMemoryLimit());
 }
 
+function acquireBuildLock() {
+  const lockDir = path.resolve('node_modules/.cache/aih-web-build.lock');
+  fs.mkdirSync(path.dirname(lockDir), { recursive: true });
+  try {
+    fs.mkdirSync(lockDir);
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    let ownerPid = 0;
+    try { ownerPid = Number(fs.readFileSync(path.join(lockDir, 'pid'), 'utf8')); } catch (_readError) {}
+    if (ownerPid > 0) {
+      try {
+        process.kill(ownerPid, 0);
+        throw new Error(`web build already running (pid=${ownerPid})`);
+      } catch (probeError) {
+        if (probeError.message.includes('already running')) throw probeError;
+      }
+    }
+    fs.rmSync(lockDir, { recursive: true, force: true });
+    fs.mkdirSync(lockDir);
+  }
+  fs.writeFileSync(path.join(lockDir, 'pid'), String(process.pid), 'utf8');
+  return () => fs.rmSync(lockDir, { recursive: true, force: true });
+}
+
+function releaseBuildLockSafely(releaseLock) {
+  try { releaseLock(); } catch (_error) {}
+}
+
 function run() {
   const env = { ...process.env };
-  // Umi/webpack can exceed Node's default ~1 GiB old-space limit while it
-  // serializes the production asset graph. Keep the limit explicit so a build
-  // fails for real errors instead of dying after compilation with OOM.
-  if (!env.NODE_OPTIONS || !/--max-old-space-size=\d+/.test(env.NODE_OPTIONS)) {
-    env.NODE_OPTIONS = `${env.NODE_OPTIONS ? `${env.NODE_OPTIONS} ` : ''}--max-old-space-size=1536`;
-  }
   const memory = availableMemory();
   if (!env.COMPRESS && memory <= LOW_MEMORY_BUILD_LIMIT) {
     env.COMPRESS = 'none';
@@ -41,9 +64,30 @@ function run() {
     );
   }
 
-  const result = spawnSync('max', ['build'], { env, stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  const releaseLock = acquireBuildLock();
+  const command = process.platform === 'win32' ? 'max.cmd' : 'max';
+  const child = spawn(command, ['build'], { env, stdio: 'inherit', windowsHide: true });
+  let terminating = false;
+  const forwardSignal = (signal) => {
+    terminating = true;
+    try { child.kill(signal); } catch (_error) {}
+  };
+  const onSigint = () => forwardSignal('SIGINT');
+  const onSigterm = () => forwardSignal('SIGTERM');
+  process.once('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+  child.once('error', (error) => {
+    releaseBuildLockSafely(releaseLock);
+    process.stderr.write(`web build failed to start: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+  child.once('close', (code, signal) => {
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
+    releaseBuildLockSafely(releaseLock);
+    if (signal || terminating) process.exitCode = 1;
+    else process.exitCode = Number.isInteger(code) ? code : 1;
+  });
 }
 
 run();

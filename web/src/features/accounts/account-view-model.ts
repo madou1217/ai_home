@@ -236,11 +236,12 @@ export interface AccountAppSupport {
 export function getAccountAppSupport(
   record: Pick<Account, 'provider'>,
   appEntries: AccountAppEntryMap | null,
-  appCapabilities: AccountAppEntryMap
+  appCapabilities: AccountAppEntryMap,
+  serverRuntime = false
 ): AccountAppSupport {
   return {
     desktopInstalled: Boolean(appEntries?.[record.provider]?.desktop),
-    desktopSupported: Boolean(
+    desktopSupported: !serverRuntime && Boolean(
       appEntries?.[record.provider]?.desktop || appCapabilities[record.provider]?.desktop
     ),
     cliInstalled: Boolean(appEntries?.[record.provider]?.cli),

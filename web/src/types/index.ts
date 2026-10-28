@@ -1925,6 +1925,8 @@ export interface AccountAppLaunchResponse {
   pid?: number | null;
   pids?: number[];
   terminalId?: string;
+  sessionKey?: string;
+  launchMode?: 'webui-pty' | 'interactive-task' | string;
   executable?: string;
   installRequired?: boolean;
   installAvailable?: boolean;

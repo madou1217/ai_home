@@ -311,19 +311,22 @@ Skill、MCP、原生插件以及 DeepSeek/OpenCode/Pi 的投影检查见 [插件
 ## 终端集成（补全 / 打错纠正）
 
 ```bash
-aih shell status                 # 当前 shell、目标 rc 文件、是否已装
+aih shell status                 # 当前 shell + 各 shell 的安装状态
 aih shell plan                   # 只打印将要写入的片段（不写文件）
-aih shell apply                  # 写入 ~/.zshrc（或 ~/.bashrc），带备份
+aih shell apply                  # 写入当前 shell 的 rc，带备份
+aih shell apply --all            # 本机装了的每个 shell 都写一遍
+aih shell doctor                 # 逐项体检（语法 / 是否最新 / 入口真能出候选）
 aih shell remove                 # 摘掉 aih 写入的那一段
 ```
 
-装上之后（zsh / bash）：
+支持 **zsh / bash / fish / PowerShell（5.1 与 7.x）**。装上之后：
 
 - `aih <TAB>` 列出所有命令与 CLI，`aih co<TAB>` 补到 provider，`aih codex <TAB>` 列出该 CLI 的动作、账号 id、以及**你自己用过的那几条命令**（来自 shell 的活历史）。
-- 命令打错时不再只报 `command not found`：`ahi`、`aih codx`、`gti status` 都会列出最接近的候选（相邻字母写反 / 打错一位 / 缩写 / 前缀 / 历史），**确认序号后才运行**；输入 `e` 只把纠正后的命令放进历史，自己编辑后再回车。
+- 命令打错时不再只报 `command not found`：`ahi`、`aih codx`、`gti status` 都会列出最接近的候选（相邻字母写反 / 打错一位 / 缩写 / 前缀 / 历史），**确认序号后才运行**；输入 `e` 把纠正后的命令放回命令行自己编辑。
 - 确认过的纠正会被记住，下次同一个错法排第一；用 `aih shell typo` 查看，`aih shell typo --forget <打错的命令>` 遗忘。
+- 写入前先让**该 shell 自己的解析器**验一遍片段语法（`zsh -n` / `bash -n` / `fish -n` / PowerShell Parser），语法不过就拒绝写入——宁可失败，也不给一个打不开的 rc。
 
-只动 rc 里 `# >>> aih:shell >>>` 标记之间的一段，其余内容逐字节保留；写入前备份到 `<rc>.aih-backup-<时间戳>`，并原子替换。当前只覆盖 zsh / bash。
+只动 rc 里 `# >>> aih:shell >>>` 标记之间的一段，其余内容逐字节保留；写入前备份到 `<rc>.aih-backup-<时间戳>`，并原子替换。rc 目标固定落在宿主家目录（沙箱会话里不会写进投影目录）。
 
 ## 开发
 

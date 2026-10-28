@@ -10,6 +10,92 @@
   gap: 12px;
 }
 
+.heroBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  box-shadow: var(--elevation-1, 0 2px 8px rgb(0 0 0 / 4%));
+}
+
+.languageToolbar,
+.languageField,
+.heroMeta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.languageToolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.heroLanguageControl {
+  flex: 1 1 auto;
+}
+
+.languageField {
+  gap: 8px;
+}
+
+.targetLanguageField {
+  padding: 4px 8px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: var(--hos-radius-sm);
+}
+
+.targetLanguageSelect {
+  min-width: 150px;
+}
+
+.heroMeta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 10px;
+  text-align: right;
+}
+
+.settingsSummaryTitle {
+  font-weight: 600;
+}
+
+.settingsSummaryHint {
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.copySettings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.copySettings > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.copySettingsControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.taskStrip {
+  box-shadow: none;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -67,6 +153,9 @@
 }
 
 .advancedTranslationSettings > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 12px;
   cursor: pointer;
   color: var(--color-text);
@@ -416,6 +505,24 @@
     box-shadow var(--motion-base) var(--ease-standard);
 }
 
+.paneSource,
+.paneResult,
+.pane--source,
+.pane--result {
+  box-shadow: var(--elevation-1, 0 2px 8px rgb(0 0 0 / 3%));
+}
+
+.paneResult[data-phase="waiting"],
+.paneResult[data-phase="preparing"],
+.paneResult[data-phase="streaming"] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft), var(--elevation-1, 0 2px 8px rgb(0 0 0 / 3%));
+}
+
+.paneResult[data-phase="done"] {
+  border-color: var(--color-success);
+}
+
 .paneHeader {
   display: flex;
   align-items: center;
@@ -510,6 +617,62 @@
 .outputPlaceholder {
   font-size: 13px;
   color: var(--color-muted);
+}
+
+.outputEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.outputEmpty strong {
+  color: var(--color-muted-strong);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.outputEmptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.primaryAction {
+  min-width: 96px;
+  box-shadow: 0 0 0 0 var(--color-accent-soft);
+  transition: box-shadow var(--motion-base) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+
+.resultToolbar {
+  align-items: center;
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.copyConfirmed {
+  color: var(--color-success) !important;
+  border-color: var(--color-success) !important;
+  animation: translation-copy-confirmed var(--motion-base) var(--ease-standard);
+}
+
+@keyframes translation-copy-confirmed {
+  from { transform: scale(0.98); }
+  50% { transform: scale(1.02); }
+  to { transform: scale(1); }
 }
 
 .cursor {
@@ -644,6 +807,10 @@
   border-top: 1px solid var(--color-border-subtle);
 }
 
+.historyItemLatest {
+  background: var(--color-surface-muted);
+}
+
 .historyItemHeader {
   display: flex;
   align-items: center;
@@ -711,9 +878,31 @@
 }
 
 .historyEmpty {
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 16px 14px;
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.historyEmpty strong {
+  color: var(--color-muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.historyEmptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 .translationControls {
   display: flex;
@@ -752,4 +941,37 @@
   cursor: pointer;
   font-size: 12px;
   padding: 0;
+}
+
+@media (max-width: 720px) {
+  .heroBar,
+  .copySettings {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .heroMeta {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .languageToolbar,
+  .languageField,
+  .targetLanguageField,
+  .targetLanguageSelect,
+  .languageSelect {
+    width: 100%;
+  }
+
+  .languageToolbar {
+    align-items: stretch;
+  }
+
+  .languageField {
+    justify-content: space-between;
+  }
+
+  .copySettingsControl {
+    justify-content: flex-start;
+  }
 }

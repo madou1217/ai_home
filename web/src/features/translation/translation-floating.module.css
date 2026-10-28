@@ -108,7 +108,10 @@
 .languageIntentStrip > span { flex: 1 1 220px; }
 .textButton:hover { background: var(--color-accent-soft); }
 .textButton:active { transform: scale(0.95); }
-.copied { color: var(--color-success); }
+.copied {
+  color: var(--color-success);
+  animation: translation-copy-confirmed var(--motion-base) var(--ease-standard);
+}
 .stopGlyph { width: var(--space-4); height: var(--space-4); border-radius: var(--hos-radius-2xs); background: currentColor; }
 @keyframes translation-trigger-in { from { opacity: 0; transform: translateY(4px) scale(0.85); } to { opacity: 1; transform: none; } }
 @keyframes translation-panel-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
@@ -117,6 +120,7 @@
 @keyframes translation-sheen { from { background-position: 130% 0; } to { background-position: -30% 0; } }
 @keyframes translation-spin { to { transform: rotate(360deg); } }
 @keyframes translation-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+@keyframes translation-copy-confirmed { from { transform: scale(0.98); } 50% { transform: scale(1.02); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
   .panel, .panel *, .trigger { animation: none !important; transition: none !important; }
   .panelClosing { opacity: 0; }

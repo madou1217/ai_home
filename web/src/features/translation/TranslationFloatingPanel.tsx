@@ -523,10 +523,10 @@ export default function TranslationFloatingPanel() {
               </button>
             </div>
           </header>
-          <div className={styles.statusRow}>
-            <span className={styles.phase} role="status">
+          <div className={styles.statusRow} role="status" aria-live="polite">
+            <span className={styles.phase}>
               <span className={styles.phaseDot} aria-hidden="true" />
-              <span key={feedback.phase} className={styles.statusLabel}>{feedback.label}</span>
+              <span key={feedback.phase} className={styles.statusLabel} aria-live="polite">{feedback.label}</span>
             </span>
             <span className={styles.statusAside}>
               {pinned ? <span className={styles.pinBadge}><PushpinFilled /> 已置顶</span> : null}
@@ -534,7 +534,7 @@ export default function TranslationFloatingPanel() {
             </span>
           </div>
           <div className={styles.sourcePreview} title={panel.text}>{panel.text}</div>
-          <div className={styles.panelBody}>
+          <div className={styles.panelBody} aria-label="译文输出" aria-live="polite">
             {sameLanguage && !preparing ? (
               <span className={styles.placeholder}>
                 原文已是{languageLabelOf(languages, panelTarget)}，无需翻译
@@ -588,6 +588,7 @@ export default function TranslationFloatingPanel() {
                 <button
                   type="button"
                   className={styles.textButton}
+                  aria-label={feedback.phase === 'error' ? '重试翻译' : '重新翻译'}
                   onClick={() => {
                     if (preparationCancelled) void openPanel(panel.text, panel.rect);
                     else if (panel.text) runTranslation(panel.text, panelTarget, bootstrapRef.current, panelSource, panelConfidence, targetPolicy);
@@ -599,6 +600,8 @@ export default function TranslationFloatingPanel() {
               {hasOutput ? <button
                 type="button"
                 className={`${styles.textButton} ${copied ? styles.copied : ''}`}
+                aria-label={copied ? '已复制译文' : '复制译文'}
+                title={copied ? '已复制译文' : '复制译文'}
                 onClick={async () => {
                   try {
                     await writeTranslationClipboard(stream.state.text);

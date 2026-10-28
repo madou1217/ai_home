@@ -177,7 +177,9 @@ shadow 脚本，不能把这份快照当成永久目录结果。
 同一无 key 复测显示 `/v1/models`、`?capability=vision`、`?capability=image_out` 两侧状态码
 均为 `401`，但 Node 仍返回扁平 `{ok:false,error:"unauthorized_client"}`，Go 返回嵌套
 `{error:{code:"unauthorized_client",message:"请求模型目录失败"}}`。这属于独立的错误 envelope
-合同差异；本轮没有修改模型目录实现，也没有切换 Go artifact。
+合同差异；当前源码已由 `48dafa60` 将**仅客户端鉴权失败**改为 Node 形状，模型目录其它
+错误继续保留结构化 envelope。两个修复均只完成源码与隔离验证，运行中的 `19550` 未重启，
+因此不能把 shadow 结果写成在线切换证据。
 
 **第一阶段目录投影已落地（2026-10-25）**：Node 全局缓存现在通过新的
 `PUT /v1/management/model-catalog` 推送到 Go，Go 以独立的 immutable projection store

@@ -45,7 +45,7 @@ export default function SessionsPanel({ sessions, selectedSession, runningSessio
               >
                 <ProviderIcon provider={session.provider} size={14} />
               </span>
-              <span className={chatStyles.sessionTitle}>{session.title || '新会话'}</span>
+              <span className={chatStyles.sessionTitle} title={session.title || '新会话'}>{session.title || '新会话'}</span>
             </div>
             <span className={chatStyles.sessionTime}>
               {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}

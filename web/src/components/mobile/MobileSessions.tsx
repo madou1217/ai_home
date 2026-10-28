@@ -261,7 +261,7 @@ const MobileSessions = ({
                             </span>
                             <div className="msx-sbody">
                               <div className="msx-titrow">
-                                <span className={`msx-tit${preview ? '' : ' twoline'}`}>{session.title}</span>
+                                <span className={`msx-tit${preview ? '' : ' twoline'}`} title={session.title}>{session.title}</span>
                                 <span className={`msx-time${running ? ' run' : ''}`}>
                                   {running ? '进行中' : <SessionRelativeTime timestamp={session.updatedAt} />}
                                 </span>

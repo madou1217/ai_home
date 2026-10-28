@@ -264,7 +264,7 @@ const ProjectList = ({
                       <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
-                      <span className={styles.sessionTitle}>{session.title || '新对话'}</span>
+                      <span className={styles.sessionTitle} title={session.title || '新对话'}>{session.title || '新对话'}</span>
                       <Button
                         type="text"
                         size="small"
@@ -437,7 +437,7 @@ const ProjectList = ({
                       <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
-                      <span className={styles.sessionTitle}>{session.title || '新对话'}</span>
+                      <span className={styles.sessionTitle} title={session.title || '新对话'}>{session.title || '新对话'}</span>
                       <button
                         className={styles.archiveBtn}
                         onClick={(e) => handleTogglePin(session.id, e)}
@@ -678,7 +678,7 @@ const ProjectList = ({
                                   >
                                     <ProviderIcon provider={session.provider} size={14} />
                                   </span>
-                                  <span className={styles.sessionTitle}>{session.title}</span>
+                                  <span className={styles.sessionTitle} title={session.title}>{session.title}</span>
                                   <SessionArchiveAction
                                     action={archiveAction}
                                     session={session}

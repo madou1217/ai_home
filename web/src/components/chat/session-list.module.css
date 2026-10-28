@@ -713,9 +713,16 @@
   animation: sessionLedBreathe 1.6s ease-in-out infinite;
 }
 
-/* 会话行的运行态改由时间列前的 .hud-led--ok.hud-led--live 表达，provider 图标不再叠加圆点 */
-.sessionProviderSlotRunning::after {
-  display: none;
+/* 运行中的 provider 图标保持轻量动效，用户能一眼区分活动会话；状态 LED
+   仍由时间列表达，图标自身不再叠加第二个圆点。 */
+.sessionProviderSlotRunning > img,
+.sessionProviderSlotRunning > [data-provider-icon-fallback] {
+  animation: sessionProviderPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes sessionProviderPulse {
+  0%, 100% { transform: scale(1); opacity: 0.88; }
+  50% { transform: scale(1.12); opacity: 1; }
 }
 
 @keyframes sessionLedBreathe {
@@ -724,7 +731,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .projectProviderRunning::after,
-  .sessionProviderSlotRunning::after { animation: none; }
+  .sessionProviderSlotRunning::after,
+  .sessionProviderSlotRunning > img,
+  .sessionProviderSlotRunning > [data-provider-icon-fallback] { animation: none; }
 }
 
 .sessionTitle {

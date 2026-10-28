@@ -146,5 +146,25 @@ function runtimeFailure(error: unknown): RuntimeFailure {
     return { code: error.code, message: error.message };
   }
   if (error instanceof Error) return { code: error.name, message: error.message };
-  return { code: 'chat_runtime_failed', message: String(error) };
+  return { code: 'chat_runtime_failed', message: formatUnknownFailure(error) };
+}
+
+function formatUnknownFailure(value: unknown): string {
+  if (value === undefined || value === null) return 'Chat Runtime 连接失败';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['message', 'detail', 'error', 'reason']) {
+      if (record[key] === undefined) continue;
+      const nested = formatUnknownFailure(record[key]);
+      if (nested) return nested;
+    }
+    try {
+      const encoded = JSON.stringify(value);
+      if (encoded && encoded !== '{}') return encoded;
+    } catch (_error) {
+      return Object.prototype.toString.call(value);
+    }
+  }
+  return 'Chat Runtime 连接失败';
 }

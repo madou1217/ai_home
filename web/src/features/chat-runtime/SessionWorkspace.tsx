@@ -143,6 +143,8 @@ export default function SessionWorkspace(props: Props) {
             actions={actions}
             accounts={props.accounts}
             accountRef={props.accountRef}
+            provider={props.runtimeTarget.provider}
+            projectPath={props.runtimeTarget.projectPath}
             catalog={composerCatalog}
             selectedModel={props.selectedModel}
             approvalMode={projection.approvalMode || props.approvalMode}

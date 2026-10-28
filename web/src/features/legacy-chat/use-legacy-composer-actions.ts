@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { message } from 'antd';
 import { providerNames } from '@/components/chat/ProviderIcon';
 import { chatAPI } from '@/services/api';
@@ -13,6 +13,12 @@ import { humanizeChatError } from './chat-error-policy';
 import { resolveLegacyComposerSubmission } from './legacy-composer-submission-policy.js';
 import type { LegacySessionRuntime } from './use-legacy-session-orchestration';
 import type { ChatDocumentAttachment } from '@/components/chat/attachment-files';
+import {
+  clearComposerDraft,
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '@/features/chat-runtime/composer-draft-store';
 
 interface LegacyComposerActionOptions {
   readonly selection: Pick<
@@ -54,7 +60,18 @@ export function useLegacyComposerActions({
   refreshProjects,
   runtime,
 }: LegacyComposerActionOptions): LegacyComposerActions {
-  const [input, setInput] = useState('');
+  const draftIdentity = useMemo(() => ({
+    sessionId: selection.session.id,
+    provider: selection.session.provider,
+    accountRef: selection.account?.accountRef || '',
+    workspaceMode: selection.session.mode || 'chat',
+    projectPath: selection.session.projectPath || selection.project?.path || '',
+  }), [selection.account?.accountRef, selection.project?.path, selection.session.id,
+    selection.session.mode, selection.session.projectPath, selection.session.provider]);
+  const draftKey = composerDraftKey(draftIdentity);
+  const hydratedDraftKey = useRef('');
+  const [input, setInputState] = useState('');
+  const setInput = useCallback((value: string): void => setInputState(value), []);
   const [images, setImages] = useState<string[]>([]);
   const [documents, setDocuments] = useState<ChatDocumentAttachment[]>([]);
   const suppressAbortToastRef = useRef(false);
@@ -67,8 +84,15 @@ export function useLegacyComposerActions({
   const clearWatchPending = history.clearWatchPending;
 
   useEffect(() => {
-    if (selection.session.draft) setInput('');
-  }, [selection.session.draft, selection.session.id]);
+    if (hydratedDraftKey.current === draftKey) return;
+    hydratedDraftKey.current = draftKey;
+    setInputState(readComposerDraft(draftIdentity));
+  }, [draftIdentity, draftKey]);
+  useEffect(() => {
+    if (hydratedDraftKey.current !== draftKey) return;
+    const timer = window.setTimeout(() => writeComposerDraft(draftIdentity, input), 180);
+    return () => window.clearTimeout(timer);
+  }, [draftIdentity, draftKey, input]);
 
   const replaceDraft = useCallback((content: string, nextImages: string[], nextDocuments: ChatDocumentAttachment[] = []): void => {
     setInput(content);
@@ -179,10 +203,11 @@ export function useLegacyComposerActions({
     // 先清草稿再跑：保持与原始实现一致的时序（输入框立即清空，不等 run 结束）
     await submitContent(input, images, () => {
       setInput('');
+      clearComposerDraft(draftIdentity);
       setImages([]);
       setDocuments([]);
     }, documents);
-  }, [images, documents, input, submitContent]);
+  }, [draftIdentity, images, documents, input, submitContent]);
 
   const sendPrompt = useCallback(async (content: string): Promise<void> => {
     await submitContent(content, []);

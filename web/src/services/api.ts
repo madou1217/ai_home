@@ -142,6 +142,7 @@ import type {
   ScheduledTaskSchedule,
   ScheduledTaskSchedulePreview,
   ScheduledTaskRecord,
+  ScheduledTaskRecordsPage,
   ScheduledTasksResponse
 } from '@/types';
 import type { AccountOutcomesResponse } from '@/features/account-status/types';
@@ -1017,11 +1018,19 @@ export async function deleteScheduledTask(taskId: string): Promise<{ ok: boolean
 
 export async function listScheduledTaskRecords(
   days = 7,
-  taskId = ''
-): Promise<{ ok: boolean; records: ScheduledTaskRecord[]; days: number }> {
-  const response = await api.get<{ ok: boolean; records: ScheduledTaskRecord[]; days: number }>(
+  taskId = '',
+  page: { limit?: number; offset?: number } = {}
+): Promise<ScheduledTaskRecordsPage> {
+  const response = await api.get<ScheduledTaskRecordsPage>(
     '/webui/scheduled-tasks/records',
-    { params: { days, ...(taskId ? { taskId } : {}) } }
+    {
+      params: {
+        days,
+        ...(taskId ? { taskId } : {}),
+        ...(page.limit ? { limit: page.limit } : {}),
+        ...(page.offset ? { offset: page.offset } : {})
+      }
+    }
   );
   return response.data;
 }

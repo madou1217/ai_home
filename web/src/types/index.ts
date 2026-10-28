@@ -2182,6 +2182,17 @@ export interface ScheduledTaskRecord {
   finishedAt: number;
 }
 
+export interface ScheduledTaskRecordsPage {
+  ok: boolean;
+  records: ScheduledTaskRecord[];
+  days: number;
+  /** 时间窗内的总条数（真分页依据） */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export interface ScheduledTasksResponse {
   ok: boolean;
   tasks: ScheduledTask[];

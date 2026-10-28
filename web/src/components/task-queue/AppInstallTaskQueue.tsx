@@ -109,6 +109,20 @@ export default function AppInstallTaskQueue() {
   const tabCount = (key: TaskQueueTab) => (
     key === 'activity' ? activityTasks.length : key === 'install' ? installTasks.length : visibleTasks.length
   );
+  // 队列分页：任务多时只渲染当前页（面板是浮层，不能无限长）；单页时不显示页码。
+  const [page, setPage] = useState(1);
+  const QUEUE_PAGE_SIZE = 8;
+  const pageCount = Math.max(1, Math.ceil(tabTasks.length / QUEUE_PAGE_SIZE));
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab]);
+  const pageTasks = useMemo(
+    () => tabTasks.slice((page - 1) * QUEUE_PAGE_SIZE, page * QUEUE_PAGE_SIZE),
+    [tabTasks, page]
+  );
   const hasActiveTask = visibleTasks.some((task) => !getAppInstallStatusPresentation(task.status).terminal);
   const hasFailedTask = visibleTasks.some((task) => String(task.status || '').toLowerCase() === 'failed');
   const hasLaunchableTask = visibleTasks.some((task) => (
@@ -297,7 +311,7 @@ export default function AppInstallTaskQueue() {
           ))}
         </div>
         <div className="webui-task-queue-list">
-          {tabTasks.map((task) => {
+          {pageTasks.map((task) => {
             const status = getAppInstallStatusPresentation(task.status);
             const percent = status.tone === 'success'
               ? 100
@@ -373,6 +387,25 @@ export default function AppInstallTaskQueue() {
             );
           })}
         </div>
+        {pageCount > 1 ? (
+          <div className="webui-task-queue-pager">
+            <button
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            >
+              上一页
+            </button>
+            <span>{page} / {pageCount}（共 {tabTasks.length} 项）</span>
+            <button
+              type="button"
+              disabled={page >= pageCount}
+              onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+            >
+              下一页
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           className="webui-task-queue-collapse-hint"

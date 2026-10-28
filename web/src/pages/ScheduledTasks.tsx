@@ -104,6 +104,10 @@ export default function ScheduledTasks() {
   const [events, setEvents] = useState<ScheduledTaskEvent[]>([]);
   const [records, setRecords] = useState<ScheduledTaskRecord[]>([]);
   const [recordDays, setRecordDays] = useState(7);
+  // 执行记录分页（**服务端分页**：后端按 days/taskId 过滤出全集再切页，响应带 total）。
+  const [recordPage, setRecordPage] = useState(1);
+  const [recordPageSize, setRecordPageSize] = useState(20);
+  const [recordTotal, setRecordTotal] = useState(0);
   const [schedulerRunning, setSchedulerRunning] = useState(false);
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
   const [busyId, setBusyId] = useState('');
@@ -113,22 +117,31 @@ export default function ScheduledTasks() {
     try {
       const [tasksResponse, recordsResponse] = await Promise.all([
         listScheduledTasks(),
-        listScheduledTaskRecords(recordDays)
+        listScheduledTaskRecords(recordDays, '', {
+          limit: recordPageSize,
+          offset: (recordPage - 1) * recordPageSize
+        })
       ]);
       setTasks(Array.isArray(tasksResponse.tasks) ? tasksResponse.tasks : []);
       setEvents(Array.isArray(tasksResponse.events) ? tasksResponse.events : []);
       setSchedulerRunning(Boolean(tasksResponse.schedulerRunning));
       setRecords(Array.isArray(recordsResponse.records) ? recordsResponse.records : []);
+      setRecordTotal(Number(recordsResponse.total || 0));
     } catch (_error) {
       message.error('读取计划任务失败');
     } finally {
       setLoading(false);
     }
-  }, [recordDays]);
+  }, [recordDays, recordPage, recordPageSize]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 时间窗变化时回到第 1 页（否则会停在窗口内不存在的页码上）。
+  useEffect(() => {
+    setRecordPage(1);
+  }, [recordDays]);
 
   useEffect(() => {
     const timer = window.setInterval(() => { void load(); }, 15000);
@@ -182,23 +195,39 @@ export default function ScheduledTasks() {
     };
   }, [editor.open, editor.scheduleKind, editor.at, editor.weekday, editor.hours, editor.minutes, editor.expression]);
 
-  // 单个任务的独立执行记录（入口就在任务行上）。
+  // 单个任务的独立执行记录（入口就在任务行上）；同样**服务端分页**。
   const [recordsTask, setRecordsTask] = useState<ScheduledTask | null>(null);
   const [taskRecords, setTaskRecords] = useState<ScheduledTaskRecord[]>([]);
   const [taskRecordsLoading, setTaskRecordsLoading] = useState(false);
-  const openTaskRecords = useCallback(async (task: ScheduledTask) => {
-    setRecordsTask(task);
+  const [taskRecordsPage, setTaskRecordsPage] = useState(1);
+  const [taskRecordsPageSize, setTaskRecordsPageSize] = useState(10);
+  const [taskRecordsTotal, setTaskRecordsTotal] = useState(0);
+  const loadTaskRecords = useCallback(async (
+    task: ScheduledTask,
+    page: number,
+    pageSize: number
+  ) => {
     setTaskRecordsLoading(true);
     try {
-      const result = await listScheduledTaskRecords(recordDays, task.id);
+      const result = await listScheduledTaskRecords(recordDays, task.id, {
+        limit: pageSize,
+        offset: (page - 1) * pageSize
+      });
       setTaskRecords(Array.isArray(result.records) ? result.records : []);
+      setTaskRecordsTotal(Number(result.total || 0));
     } catch (_error) {
       setTaskRecords([]);
+      setTaskRecordsTotal(0);
       message.error('读取该任务的执行记录失败');
     } finally {
       setTaskRecordsLoading(false);
     }
   }, [recordDays]);
+  const openTaskRecords = useCallback(async (task: ScheduledTask) => {
+    setRecordsTask(task);
+    setTaskRecordsPage(1);
+    await loadTaskRecords(task, 1, taskRecordsPageSize);
+  }, [loadTaskRecords, taskRecordsPageSize]);
 
   const openCreate = () => {
     const first = events.find((event) => event.available !== false) || null;
@@ -318,7 +347,12 @@ export default function ScheduledTasks() {
           <Table<ScheduledTask>
             rowKey="id"
             size="small"
-            pagination={false}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50],
+              showTotal: (total) => `共 ${total} 个任务`
+            }}
             dataSource={tasks}
             columns={[
               {
@@ -409,7 +443,18 @@ export default function ScheduledTasks() {
           <Table<ScheduledTaskRecord>
             rowKey="id"
             size="small"
-            pagination={{ pageSize: 20, hideOnSinglePage: true }}
+            pagination={{
+              current: recordPage,
+              pageSize: recordPageSize,
+              total: recordTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100],
+              showTotal: (total) => `共 ${total} 条记录`,
+              onChange: (page, pageSize) => {
+                setRecordPage(page);
+                if (pageSize !== recordPageSize) setRecordPageSize(pageSize);
+              }
+            }}
             dataSource={records}
             columns={[
               { title: '时间', render: (_value, row) => formatTime(row.startedAt) },
@@ -574,7 +619,20 @@ export default function ScheduledTasks() {
           <Table<ScheduledTaskRecord>
             rowKey="id"
             size="small"
-            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            pagination={{
+              current: taskRecordsPage,
+              pageSize: taskRecordsPageSize,
+              total: taskRecordsTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50],
+              showTotal: (total) => `共 ${total} 条记录`,
+              onChange: (page, pageSize) => {
+                if (!recordsTask) return;
+                setTaskRecordsPage(page);
+                if (pageSize !== taskRecordsPageSize) setTaskRecordsPageSize(pageSize);
+                void loadTaskRecords(recordsTask, page, pageSize);
+              }
+            }}
             dataSource={taskRecords}
             columns={[
               { title: '时间', render: (_value, row) => formatTime(row.startedAt) },

@@ -190,6 +190,7 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
       />
       {webTerminal.launch ? (
         <ShellTerminalPanel
+          key={webTerminal.launch.sessionKey}
           visible
           persistent
           sessionKey={webTerminal.launch.sessionKey}

@@ -253,6 +253,9 @@ Go 重构路径实时核对的外部合同基准为 sub2api
 | CLI-030 | `claudecodex` 源码启动入口 | `bin/claudecodex.js` | 启动 vendored `cli/` 源码；只算 AI Home 集成/兼容入口，不把上游内部功能计入本矩阵 | 兼容 | `bin/claudecodex.js`、`cli/src/` |
 | CLI-031 | 选择器关闭会话 | `aih sessions`/`ss`、provider sessions picker | `x` 只关闭选中 tmux session；`X` 关闭当前列表全部 idle session，不关闭 live session | 稳定 | `persistent-session-list.js`、`closePersistentSession` |
 | CLI-032 | 全局数字 ID 快捷路由 | `aih <id>`、`aih usage <id>` | 仅当该数字别名在所有 provider 中唯一时，自动解析到对应 provider；有歧义时不猜测 | 稳定/受限 | `resolveUniqueCliForAccountId`、`root/router.js` |
+| CLI-033 | 终端集成：TAB 补全 | `aih shell apply`（zsh / bash） | `aih <TAB>` 列命令与 CLI；`aih co<TAB>` 补 provider；`aih codex <TAB>` 列动作/账号/历史候选；按分组带说明展示；`--` 之后一律不补（原生参数不猜） | 稳定（zsh/bash） | `lib/cli/complete/{command-tree,resolve,index}.js`、`lib/cli/services/shell/snippet-zsh.js` |
+| CLI-034 | 终端集成：命令打错纠正 | `aih shell apply` + `command_not_found_handler` | 命令不存在时列最接近候选（相邻换位 / 一位错打 / 缩写 / 前缀 / 历史），**确认后**才运行；`e` 只把纠正后的命令放进历史；`aih codx` 走同一套（退出码 2 → 包装函数接话） | 稳定（zsh/bash） | `lib/cli/complete/typo.js`、`lib/cli/services/shell/snippet-*.js` |
+| CLI-035 | 终端集成：自学习与 rc 管理 | `aih shell status\|plan\|apply\|remove\|snippet\|typo` | 用户确认过的纠正记在 `<aiHomeDir>/run/shell/corrections.json`；rc 片段按 `# >>> aih:shell >>>` 受管块替换（写前备份 + 原子替换），`plan` 只打印 | 稳定 | `lib/cli/services/shell/shell-integration.js`、`lib/runtime/managed-text-block.js` |
 
 ## 6. 统一 API 网关与协议
 

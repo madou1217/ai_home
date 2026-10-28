@@ -88,6 +88,12 @@ const ROUTE_OPERATIONS: Array<{ value: TranslationRoutePreference['operations'][
   { value: 'replace', label: '替换' },
 ];
 
+const QUICK_START_EXAMPLES = [
+  '你好，世界！',
+  '请把这段产品说明翻译得更自然。',
+  '展示本地 Server 调度、熔断、恢复和队列的真实运行态。',
+];
+
 function createRoutePreference(index: number, model: { id: string; provider: string } | undefined): TranslationRoutePreference {
   const modelId = model?.id || '';
   const modelProvider = model?.provider || '';
@@ -515,6 +521,12 @@ export default function TranslationWorkspace() {
     source === AUTO_LANGUAGE && detection
       ? `${detection.label} · ${CONFIDENCE_LABEL[detection.confidence] || detection.confidence}`
       : '';
+  const detectedStatus = detecting
+    ? '正在检测原文'
+    : detectedLabel || (source === AUTO_LANGUAGE ? '等待输入后自动检测' : languageLabelOf(languages, source));
+  const executionTarget = bootstrap?.settings.executionTarget === 'direct-provider'
+    ? 'Provider 直连'
+    : 'AIH Server';
 
   const languageIntent = resolveLanguageIntent(
     {
@@ -606,9 +618,9 @@ export default function TranslationWorkspace() {
 
   return (
     <PageScaffold
-      title="AI 翻译"
+      title="灵感工坊 / 翻译"
       code="TRANSLATE"
-      subTitle="粘贴或选中文本即可翻译；划词浮层与页面共用同一套默认值。"
+      subTitle="把选区、页面和长文本放进同一条工作流；划词浮层与页面共用默认值。"
       extra={
         <div className={styles.translationControls}>
           <div className={styles.floatingToggle}>
@@ -671,10 +683,14 @@ export default function TranslationWorkspace() {
             </div>
           </div>
           <div className={styles.heroMeta}>
-            <span className={styles.savedHint} title={selection.model || bootstrap?.defaultModel || '自动选择可用模型'}>
-              {selection.model || bootstrap?.defaultModel || '自动选择可用模型'}
+            <span className={styles.statusPill} data-tone="accent">
+              <span className={styles.statusPillDot} aria-hidden="true" />
+              {detectedStatus}
             </span>
-            <span className={styles.savedHint}>模型与复制选项在高级设置</span>
+            <span className={styles.statusPill} title={selection.model || bootstrap?.defaultModel || '自动选择可用模型'}>
+              模型 · {selection.model || bootstrap?.defaultModel || '自动选择'}
+            </span>
+            <span className={styles.statusPill}>执行 · {executionTarget}</span>
           </div>
         </div>
 
@@ -694,6 +710,23 @@ export default function TranslationWorkspace() {
               autoSize={false}
               spellCheck={false}
             />
+            {!text && !busy ? (
+              <div className={styles.sourceEmptyState} aria-label="快速开始示例">
+                <span className={styles.sourceEmptyEyebrow}>从一个句子开始</span>
+                <div className={styles.quickExamples}>
+                  {QUICK_START_EXAMPLES.map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      className={styles.quickExample}
+                      onClick={() => handleTextChange(example)}
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <footer className={styles.paneFooter}>
               <div className={styles.paneFooterLeft}>
                 {sameLanguage ? (
@@ -759,11 +792,11 @@ export default function TranslationWorkspace() {
             {stream.state.status !== 'idle' || detecting ? (
               <div className={styles.translationStatus} role="status" aria-live="polite">
                 <span className={styles.statusDot} aria-hidden="true" />
-                <span key={feedback.phase} className={styles.statusCaption} aria-live="polite">{feedback.label}</span>
+                <span key={feedback.phase} className={styles.statusCaption}>{feedback.label}</span>
                 <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
               </div>
             ) : null}
-            <div className={styles.output} aria-label="译文输出" aria-live="polite">
+            <div className={styles.output} aria-label="译文输出">
               {resultText ? (
                 <div className={styles.outputText}>
                   {resultText}

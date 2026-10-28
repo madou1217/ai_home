@@ -60,6 +60,13 @@ function platformCopy(status: SystemTranslationStatus | null) {
   };
 }
 
+function permissionErrorCopy(status: SystemTranslationStatus | null) {
+  const platform = String(status?.platform || '').toLowerCase();
+  if (platform === 'win32') return '无法请求 Windows 快捷键和剪贴板状态';
+  if (platform === 'linux') return 'Linux 桌面版暂未提供；可继续使用 WebUI 划词翻译';
+  return '无法打开辅助功能设置';
+}
+
 export default function SystemTranslationControl({ persistedExecutionTarget }: Props) {
   const [status, setStatus] = useState<SystemTranslationStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -221,7 +228,7 @@ export default function SystemTranslationControl({ persistedExecutionTarget }: P
       {alternateTargetCount === 0 ? <span className={styles.systemStatus}>仅本机 AIH Server；在服务器设置中添加并授权其他 Server 后可切换</span> : null}
       {status?.status === 'permission-required' ? (
         <button type="button" className={styles.systemAction} onClick={() => {
-          void translationAPI.requestSystemPermission().catch(() => message.error('无法打开辅助功能设置'));
+          void translationAPI.requestSystemPermission().catch(() => message.error(permissionErrorCopy(status)));
         }}>去授权</button>
       ) : null}
     </div>

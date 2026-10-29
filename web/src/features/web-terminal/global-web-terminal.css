@@ -6,6 +6,7 @@
   filter: drop-shadow(var(--elevation-4));
   border-radius: 10px;
   overflow: visible;
+  animation: aih-scale-in var(--motion-base, 160ms) var(--ease-standard, ease) backwards;
 }
 .global-web-terminal-window > div {
   height: 100%;
@@ -34,6 +35,7 @@
   color: var(--color-accent);
   cursor: pointer;
   transition: transform 160ms ease, background 160ms ease;
+  animation: aih-scale-in var(--motion-base, 160ms) var(--ease-emphasized, ease-out) backwards;
 }
 .global-web-terminal-restore:hover { transform: scale(1.06); }
 .global-web-terminal-restore span { font-size: 12px; }

@@ -31,3 +31,12 @@ test('composer catalog reads share an in-flight task and a short cache', async (
   assert.equal(acquisitions, 1);
   assert.equal(reads, 1);
 });
+
+test('recent chat catalog prewarm is bounded and uses the same cache path', async () => {
+  const service = Object.create(ChatRuntimeService.prototype);
+  const calls = [];
+  service.store = { listSessions: ({ limit }) => Array.from({ length: 5 }, (_, index) => ({ sessionId: `s${index}` })).slice(0, limit) };
+  service.prewarmComposerCatalog = async (sessionId) => { calls.push(sessionId); };
+  await service.prewarmRecentComposerCatalogs(3);
+  assert.deepEqual(calls, ['s0', 's1', 's2']);
+});

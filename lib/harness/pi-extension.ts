@@ -142,7 +142,10 @@ export default function (pi) {
     if (!profile || typeof profile !== 'object') return;
     const baseUrl = normalizeText(profile.baseUrl).replace(/\/+$/, '');
     if (!baseUrl) return;
-    const apiKey = normalizeText(process.env && process.env.OPENAI_API_KEY);
+    const apiKey = normalizeText(
+      (process.env && (process.env.OPENAI_API_KEY || process.env['$OPENAI_API_KEY']))
+      || (profile.apiKey && !profile.apiKey.startsWith('$') ? profile.apiKey : '')
+    );
     if (!apiKey) return;
     catalogBusy = true;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;

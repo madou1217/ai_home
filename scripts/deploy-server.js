@@ -188,8 +188,8 @@ function buildRemoteScript(options) {
   return `set -euo pipefail
 ARCHIVE="$1"; SHA="$2"
 DIR=${remotePath(options.remoteDir)}
-NODE_BIN="$DIR/.node-runtime/node-v22.16.0-linux-x64/bin"
-if [ ! -x "$NODE_BIN/node" ]; then NODE_BIN="$(dirname "$(ls -d "$DIR"/.node-runtime/*/bin/node 2>/dev/null | head -n1)")"; fi
+NODE_BIN="$(dirname "$(ls -d "$DIR"/.node-runtime/*/bin/node 2>/dev/null | sort -V | tail -n1)")"
+if [ ! -x "$NODE_BIN/node" ]; then NODE_BIN="$DIR/.node-runtime/node-v22.16.0-linux-x64/bin"; fi
 if [ ! -x "$NODE_BIN/node" ]; then echo "remote node runtime missing under $DIR/.node-runtime" >&2; rm -f "$ARCHIVE"; exit 2; fi
 STAGE="$(mktemp -d "\${TMPDIR:-/tmp}/aih-deploy.XXXXXX")"
 cleanup() { rm -rf "$STAGE" "$ARCHIVE"; }

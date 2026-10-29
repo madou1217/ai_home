@@ -223,7 +223,11 @@ export function aggregateFamilyActivity(
  * Desktop / CLI 客户端入口（按宿主机实测结果控制）
  * ------------------------------------------------------------------------ */
 
-export type AccountAppEntryFlags = { desktop: boolean; cli: boolean };
+export type AccountAppEntryFlags = {
+  desktop: boolean;
+  cli: boolean;
+  crossProviderHarness?: boolean;
+};
 export type AccountAppEntryMap = Record<string, AccountAppEntryFlags>;
 
 export interface AccountAppSupport {
@@ -239,16 +243,21 @@ export function getAccountAppSupport(
   appCapabilities: AccountAppEntryMap,
   serverRuntime = false
 ): AccountAppSupport {
+  const serverCliHarnessAvailable = serverRuntime && Object.values(appCapabilities).some((entry) => (
+    entry.cli === true || entry.crossProviderHarness === true
+  ));
   return {
     desktopInstalled: Boolean(appEntries?.[record.provider]?.desktop),
     desktopSupported: !serverRuntime && Boolean(
       appEntries?.[record.provider]?.desktop || appCapabilities[record.provider]?.desktop
     ),
     cliInstalled: Boolean(appEntries?.[record.provider]?.cli),
-    cliSupported: Boolean(
-      PROVIDER_CATALOG[record.provider as Provider]?.clients?.cli
-        && (appEntries?.[record.provider]?.cli || appCapabilities[record.provider]?.cli)
-    )
+    cliSupported: serverRuntime
+      ? serverCliHarnessAvailable
+      : Boolean(
+        PROVIDER_CATALOG[record.provider as Provider]?.clients?.cli
+          && (appEntries?.[record.provider]?.cli || appCapabilities[record.provider]?.cli)
+      )
   };
 }
 

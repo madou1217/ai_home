@@ -5,7 +5,8 @@ import {
   accountsAPI,
   modelsAPI,
   toolkitAPI,
-  waitForAppInstallJob
+  waitForAppInstallJob,
+  resolveActiveServer
 } from '@/services/api';
 import type { AccountExportFormat, AccountImportUploadFile, PluginAccountLoginJob, ProviderAuthMethodSources, ProviderAuthSourceSummary, TokenConsumedEvent } from '@/services/api';
 import type {
@@ -60,6 +61,7 @@ import {
 import { useServerDirectoryPicker } from '@/features/legacy-chat/use-server-directory-picker';
 import { normalizeUpstreamErrorRulesForForm } from './upstream-error-mapping-presets';
 import { getAuthOptionValue, splitAuthOptionValue } from '@/features/accounts/auth-option-value';
+import { useWebTerminalManager } from '@/features/web-terminal/web-terminal-context';
 
 // 账号页全部业务动作 —— 从 Accounts.tsx 抽取的状态与处理函数（添加 / 授权进度 / 重新认证 /
 // 编辑凭据 / 导入导出 / 启停 / 默认账号 / 用量刷新 / 删除 / 打开 Desktop·CLI / 应用安装 …）。
@@ -131,53 +133,14 @@ export interface AccountAppInstallPrompt {
   message: string;
 }
 
-export interface AccountWebTerminalLaunch {
-  account?: Account;
-  sessionKey: string;
-  cwd: string;
-  harness: string;
-  model: string;
-  label: string;
-}
-
-const WEB_TERMINAL_STORAGE_KEY = 'aih:account-web-terminal:v1';
-
-function buildWebTerminalSessionKey(accountRef: string, harness: string, model: string, cwd: string): string {
-  const raw = [accountRef, harness, model, cwd].map((value) => String(value || '').trim()).join('|');
+function buildWebTerminalSessionKey(serverId: string, accountRef: string, harness: string, model: string, cwd: string): string {
+  const nonce = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const raw = [serverId, nonce, accountRef, harness, model, cwd].map((value) => String(value || '').trim()).join('|');
   // The server accepts printable keys only; URI encoding keeps paths such as
   // /workspace/foo and Windows drive letters unambiguous across refreshes.
   return `account-cli:${encodeURIComponent(raw).slice(0, 150)}`;
-}
-
-function readStoredWebTerminalLaunch(): AccountWebTerminalLaunch | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(WEB_TERMINAL_STORAGE_KEY) || 'null');
-    if (!parsed || typeof parsed !== 'object' || !String(parsed.sessionKey || '').trim()) return null;
-    return {
-      sessionKey: String(parsed.sessionKey).trim(),
-      cwd: String(parsed.cwd || ''),
-      harness: String(parsed.harness || ''),
-      model: String(parsed.model || ''),
-      label: String(parsed.label || 'Server CLI')
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
-function persistWebTerminalLaunch(launch: AccountWebTerminalLaunch | null): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (!launch) window.localStorage.removeItem(WEB_TERMINAL_STORAGE_KEY);
-    else window.localStorage.setItem(WEB_TERMINAL_STORAGE_KEY, JSON.stringify({
-      sessionKey: launch.sessionKey,
-      cwd: launch.cwd,
-      harness: launch.harness,
-      model: launch.model,
-      label: launch.label
-    }));
-  } catch (_error) { /* browser storage may be disabled */ }
 }
 
 export interface AccountAppInstallResult {
@@ -230,6 +193,7 @@ export function useAccountActions({
   onOpenAppResponse
 }: UseAccountActionsOptions) {
   const navigate = useNavigate();
+  const webTerminalManager = useWebTerminalManager();
   const { setAccounts, requestAccountsSnapshotUpdate, stageAccountRemoval } = snapshot;
   const { clearModelAccountRefreshing, loadModelCatalog } = modelCatalog;
   const onOpenAppResponseRef = React.useRef(onOpenAppResponse);
@@ -295,7 +259,6 @@ export function useAccountActions({
   const [cliPickerModelLabels, setCliPickerModelLabels] = React.useState<Record<string, string>>({});
   const [cliPickerDefaultModel, setCliPickerDefaultModel] = React.useState('');
   const [selectedCliModel, setSelectedCliModel] = React.useState('');
-  const [webTerminalLaunch, setWebTerminalLaunch] = React.useState<AccountWebTerminalLaunch | null>(readStoredWebTerminalLaunch);
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const importFolderInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
@@ -1571,7 +1534,13 @@ export function useAccountActions({
         terminalId,
         workdir,
         kind === 'cli' && serverRuntime
-          ? { ...launchOptions, transport: 'webui', sessionKey: launchOptions?.sessionKey || buildWebTerminalSessionKey(record.accountRef, launchOptions?.harness || record.provider, launchOptions?.model || '', workdir || cliHomeDir) }
+          ? { ...launchOptions, transport: 'webui', sessionKey: launchOptions?.sessionKey || buildWebTerminalSessionKey(
+            resolveActiveServer().serverId || 'local',
+            record.accountRef,
+            launchOptions?.harness || record.provider,
+            launchOptions?.model || '',
+            workdir || cliHomeDir
+          ) }
           : (kind === 'cli' ? { ...launchOptions, transport: 'native' } : launchOptions)
       );
       onOpenAppResponseRef.current?.(result);
@@ -1598,16 +1567,14 @@ export function useAccountActions({
       if (openedWebTerminal) {
         const key = String(result.sessionKey || launchOptions?.sessionKey || '').trim();
         if (key) {
-          const launch = {
-            account: record,
-          sessionKey: key,
-          cwd: String(workdir || cliHomeDir || '').trim(),
-          harness: String(launchOptions?.harness || record.provider),
-          model: String(launchOptions?.model || ''),
-          label: `${launchOptions?.harness || record.provider} · ${getAccountPrimaryLabel(record)}`
-          };
-          setWebTerminalLaunch(launch);
-          persistWebTerminalLaunch(launch);
+          webTerminalManager.openTab({
+            sessionKey: key,
+            cwd: String(workdir || cliHomeDir || '').trim(),
+            harness: String(launchOptions?.harness || record.provider),
+            model: String(launchOptions?.model || ''),
+            kind: 'account-cli',
+            label: `${launchOptions?.harness || record.provider} · ${getAccountPrimaryLabel(record)}`
+          });
         }
       }
       loadAppEntries({ refresh: true });
@@ -2054,13 +2021,6 @@ export function useAccountActions({
         onCancel: () => setCliPickerAccount(null),
         onOpen: openCliFromPicker,
         directoryPicker: cliDirectoryPicker
-      },
-      webTerminal: {
-        launch: webTerminalLaunch,
-        onClose: () => {
-          setWebTerminalLaunch(null);
-          persistWebTerminalLaunch(null);
-        }
       },
       kimiDesktopLogin: {
         request: kimiDesktopLoginRequest,

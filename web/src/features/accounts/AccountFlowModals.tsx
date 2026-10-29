@@ -17,7 +17,6 @@ import { getAccountRef } from '@/features/accounts/account-model-catalog';
 import { IMPORT_FILE_ACCEPT, PASTE_TEMPLATES } from '@/features/accounts/account-import-export';
 import type { ImportUploadKind } from '@/features/accounts/account-import-export';
 import type { AccountActions } from '@/features/accounts/use-account-actions';
-import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
 
 // 目录上传依赖非标准属性 webkitdirectory（Chromium / Safari / Firefox 均支持）。
 const FOLDER_INPUT_PROPS = { webkitdirectory: '', directory: '' } as Record<string, string>;
@@ -51,7 +50,6 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
 
   const installRecord = appInstall.prompt?.record;
   const installResultRecord = appInstall.result?.prompt.record;
-  const webTerminal = actions.modals.webTerminal;
 
   return (
     <>
@@ -188,16 +186,6 @@ export default function AccountFlowModals({ actions }: { actions: AccountActions
         onCancel={cliPicker.onCancel}
         onOpen={cliPicker.onOpen}
       />
-      {webTerminal.launch ? (
-        <ShellTerminalPanel
-          key={webTerminal.launch.sessionKey}
-          visible
-          persistent
-          sessionKey={webTerminal.launch.sessionKey}
-          cwd={webTerminal.launch.cwd}
-          onClose={webTerminal.onClose}
-        />
-      ) : null}
       <DirectoryPickerDialog
         open={cliPicker.directoryPicker.visible}
         currentPath={cliPicker.directoryPicker.currentPath}

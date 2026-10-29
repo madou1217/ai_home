@@ -54,6 +54,8 @@ import {
 import { resolveAppRoutePathname } from "@/services/app-navigation";
 import { DynamicWallpaperEngine } from "@/services/dynamic-wallpaper-engine";
 import logo from "../../assets/brand/ai-home-app-icon.png";
+import { WebTerminalManagerProvider } from '@/features/web-terminal/web-terminal-context';
+import GlobalWebTerminalHost from '@/features/web-terminal/GlobalWebTerminalHost';
 
 // Go 账号 Preview 使用独立的管理端口，不依赖正式 Node Server profile。
 // 该开关只由 scripts/go-accounts-preview.js 注入，正式 Web 构建保持原有门禁。
@@ -158,7 +160,10 @@ export async function getInitialState(): Promise<{
 export function rootContainer(container: ReactNode) {
   return (
     <AntdThemeProvider>
-      {container}
+      <WebTerminalManagerProvider>
+        {container}
+        <GlobalWebTerminalHost />
+      </WebTerminalManagerProvider>
       {/* CRT 扫描线 + Web Audio 微反馈：全局一次挂载，含 Server 配置页 */}
       <HudEffects />
     </AntdThemeProvider>

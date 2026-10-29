@@ -738,6 +738,10 @@ export default function Accounts() {
                     disabled={requiresReauth || !record.configured}
                     onClick={(event: any) => {
                       event?.stopPropagation?.();
+                      if (serverRuntime) {
+                        scheduleCliTerminalPicker(record);
+                        return;
+                      }
                       if (!cliInstalled) {
                         void handleOpenApp(record, 'cli');
                         return;
@@ -746,7 +750,9 @@ export default function Accounts() {
                     }}
                     onDoubleClick={(event: any) => {
                       event?.stopPropagation?.();
-                      if (cliInstalled) openCliWithDefaultTerminal(record);
+                      if (serverRuntime) {
+                        void accountActions.chooseCliTerminal(record);
+                      } else if (cliInstalled) openCliWithDefaultTerminal(record);
                     }}
                   />
                 </Tooltip>
@@ -1185,6 +1191,10 @@ export default function Accounts() {
               }}
               onOpenCli={(record) => {
                 if (!guardAccountLaunch(record, 'CLI')) return;
+                if (serverRuntime) {
+                  scheduleCliTerminalPicker(record);
+                  return;
+                }
                 if (!appEntries?.[record.provider]?.cli) {
                   void handleOpenApp(record, 'cli');
                   return;

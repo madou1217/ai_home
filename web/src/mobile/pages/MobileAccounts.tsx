@@ -209,6 +209,10 @@ export default function MobileAccounts(_props: MobilePageProps) {
 
   const openCli = (record: Account) => {
     if (!actions.guardAccountLaunch(record, 'CLI')) return;
+    if (serverRuntime) {
+      void actions.chooseCliTerminal(record);
+      return;
+    }
     if (!appEntries?.[record.provider]?.cli) {
       void actions.handleOpenApp(record, 'cli');
       return;

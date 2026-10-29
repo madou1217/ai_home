@@ -1,0 +1,12 @@
+.global-web-terminal-window {
+  position: fixed;
+  z-index: 1250;
+  min-width: 420px;
+  max-width: calc(100vw - 16px);
+  filter: drop-shadow(var(--elevation-4));
+}
+@media (max-width: 720px) {
+  .global-web-terminal-window {
+    min-width: 0;
+  }
+}

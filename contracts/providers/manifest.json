@@ -2381,7 +2381,10 @@
           "WORKBUDDY_CONFIG_DIR",
           "WORKBUDDY_USER_DATA_DIR",
           "CODEBUDDY_CONFIG_DIR",
-          "CODEBUDDY_INTERNET_ENVIRONMENT"
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN"
         ],
         "desktopClient": {
           "reloadsHostAuth": false,
@@ -2486,6 +2489,9 @@
       "credentials": {
         "apiKeyEnv": [
           "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
         ]
       },
       "relayHosts": {
@@ -2556,7 +2562,10 @@
           "WORKBUDDY_CONFIG_DIR",
           "WORKBUDDY_USER_DATA_DIR",
           "CODEBUDDY_CONFIG_DIR",
-          "CODEBUDDY_INTERNET_ENVIRONMENT"
+          "CODEBUDDY_INTERNET_ENVIRONMENT",
+          "CODEBUDDY_API_KEY",
+          "CODEBUDDY_BASE_URL",
+          "CODEBUDDY_AUTH_TOKEN"
         ],
         "desktopClient": {
           "reloadsHostAuth": false,
@@ -2661,6 +2670,9 @@
       "credentials": {
         "apiKeyEnv": [
           "CODEBUDDY_API_KEY"
+        ],
+        "baseUrlEnv": [
+          "CODEBUDDY_BASE_URL"
         ]
       },
       "relayHosts": {

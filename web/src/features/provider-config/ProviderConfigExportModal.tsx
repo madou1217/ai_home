@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useEffect, useState } from 'react';
 import { Modal, Segmented, Spin, Tag, message } from 'antd';
 import {
@@ -25,22 +26,10 @@ function describeError(error: unknown): string {
 
 async function copyText(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboardText(text);
     return true;
   } catch (_error) {
-    try {
-      const area = document.createElement('textarea');
-      area.value = text;
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.appendChild(area);
-      area.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(area);
-      return ok;
-    } catch (_copyError) {
-      return false;
-    }
+    return false;
   }
 }
 

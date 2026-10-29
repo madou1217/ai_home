@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 // AI 翻译的运行时设置缓存（页面与全局划词浮层共用）。
 //
 // 需求：from / to / model 三项都能设默认值，且「页面里改一次」与「划词浮层里用一次」
@@ -101,7 +102,7 @@ export function shouldAutoCopy({ scope, client, mode, event }: { scope: Translat
   return scope === 'page' && (mode === 'page-side-by-side' || mode === 'page-replace');
 }
 
-export async function writeTranslationClipboard(text: string): Promise<void> { await navigator.clipboard.writeText(text); }
+export async function writeTranslationClipboard(text: string): Promise<void> { await writeClipboardText(text); }
 
 export function normalizeTranslationSettings(raw: Partial<TranslationSettings> | null | undefined): TranslationSettings {
   const input = raw && typeof raw === 'object' ? raw : {};

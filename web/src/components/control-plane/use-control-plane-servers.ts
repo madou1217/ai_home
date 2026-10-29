@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useEffect, useState } from 'react';
 import { message } from 'antd';
 import { serverProfilesAPI } from '@/services/api';
@@ -183,8 +184,7 @@ export function useControlPlaneServers() {
   // 复制页面上已展示的 Server URL（与桌面一致）
   const copyEndpoint = async (endpoint: string) => {
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('当前浏览器不支持剪贴板写入');
-      await navigator.clipboard.writeText(endpoint);
+      await writeClipboardText(endpoint);
       message.success('Server URL 已复制');
     } catch (error) {
       message.error(`复制失败：${errorMessage(error) || '无法写入剪贴板'}`);

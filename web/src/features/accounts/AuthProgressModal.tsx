@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { Button, Card, Collapse, Input, Modal, Space, Tooltip, Typography, message } from 'antd';
 import { CopyOutlined, GlobalOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -248,7 +249,7 @@ export function AuthProgressModal({
     const text = String(value || '').trim();
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       message.success(successMessage);
     } catch (_error) {
       message.error('复制失败');

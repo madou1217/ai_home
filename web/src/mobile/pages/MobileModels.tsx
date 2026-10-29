@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { CopyOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Input, Select, message } from 'antd';
 import { useMemo, useState } from 'react';
@@ -46,7 +47,7 @@ const PAGE_STEP = 40;
 
 async function copyText(text: string, success: string) {
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboardText(text);
     message.success(success);
   } catch (_error) {
     message.error('复制失败');

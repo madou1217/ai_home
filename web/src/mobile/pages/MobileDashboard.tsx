@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, message } from 'antd';
@@ -136,7 +137,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
 
   const copyErrorText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       message.success('错误详情已复制到剪贴板');
     } catch (_err) {
       message.error('复制失败，请手动复制');

@@ -4,6 +4,7 @@ import type { AccountUsageSnapshot } from '@/types';
 import Button from '@/components/ui/AppButton';
 import BurningParticles from '@/features/accounts/BurningParticles';
 import { getQuotaStateMeta, renderQuotaStateBadge } from '@/features/accounts/AccountBadges';
+import { writeClipboardText } from '@/utils/clipboard';
 import {
   buildUsageUnitsTooltipLines,
   formatResetAt,
@@ -81,16 +82,7 @@ function CopyableModelId({ modelId }: { modelId: string }) {
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(modelId);
-      } else {
-        const input = document.createElement('input');
-        input.value = modelId;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
-      }
+      await writeClipboardText(modelId);
       message.success({ content: `已复制: ${modelId}`, duration: 1.5, key: 'copy-model-id' });
     } catch (_err) {
       message.error({ content: '复制失败', duration: 1.5 });

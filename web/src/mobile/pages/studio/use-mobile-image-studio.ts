@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { message, Modal } from 'antd';
 import { useSearchParams } from 'react-router-dom';
@@ -585,7 +586,7 @@ export function useMobileImageStudio() {
 
   const copyPrompt = async (value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       message.success('提示词已复制');
     } catch (_error) {
       message.error('浏览器未允许写入剪贴板');

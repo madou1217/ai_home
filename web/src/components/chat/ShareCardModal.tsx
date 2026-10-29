@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { memo, useRef, useState } from 'react';
 import { Modal, Button, Tag, message as antdMessage } from 'antd';
 import {
@@ -89,11 +90,11 @@ export const ShareCardModal = memo(function ShareCardModal({
 
   const handleCopyText = () => {
     if (!content) return;
-    navigator.clipboard.writeText(content).then(() => {
+    writeClipboardText(content).then(() => {
       setCopied(true);
       antdMessage.success('已复制卡片文本内容', 1.2);
       window.setTimeout(() => setCopied(false), 2000);
-    });
+    }).catch(() => antdMessage.error('复制失败，请手动选择文本'));
   };
 
   return (

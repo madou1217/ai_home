@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { modelsAPI } from '@/services/api';
@@ -202,7 +203,7 @@ export function useModelCatalogPage(queryFilters: { provider: ProviderFilter; ac
 
   const copyModelId = useCallback(async (modelId: string) => {
     try {
-      await navigator.clipboard.writeText(modelId);
+      await writeClipboardText(modelId);
       message.success('模型 ID 已复制');
     } catch (_error) {
       message.error('复制失败');

@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Select, message } from 'antd';
 import { CopyOutlined, SwapOutlined } from '@ant-design/icons';
@@ -137,7 +138,7 @@ export default function MobileTranslation() {
 
   const copyResult = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(stream.state.text);
+      await writeClipboardText(stream.state.text);
       message.success('译文已复制');
     } catch (_error) {
       message.error('复制失败，请手动选择译文');
@@ -344,7 +345,7 @@ export default function MobileTranslation() {
                     className={styles.linkButton}
                     onClick={async () => {
                       try {
-                        await navigator.clipboard.writeText(entry.resultText);
+                        await writeClipboardText(entry.resultText);
                         message.success('译文已复制');
                       } catch (_error) {
                         message.error('复制失败，请手动选择译文');

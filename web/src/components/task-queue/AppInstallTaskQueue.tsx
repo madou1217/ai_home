@@ -3,6 +3,7 @@ import { message, Progress } from 'antd';
 import {
   CheckCircleOutlined,
   CloseOutlined,
+  CopyOutlined,
   ExclamationCircleOutlined,
   LoadingOutlined,
   ReloadOutlined,
@@ -24,6 +25,7 @@ import {
   mergeWebUiTaskQueueEntries
 } from '@/features/app-install/app-install-presentation';
 import type { Account, WebUiTask } from '@/types';
+import { writeClipboardText } from '@/utils/clipboard';
 import './AppInstallTaskQueue.css';
 
 function taskName(task: WebUiTask) {
@@ -354,6 +356,12 @@ export default function AppInstallTaskQueue() {
                     <ul>
                       {failureReasons.map((reason) => <li key={reason}>{reason}</li>)}
                     </ul>
+                    <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => {
+                      void writeClipboardText(failureReasons.join('\n')).then(
+                        () => message.success('失败原因已复制'),
+                        () => message.error('复制失败，请手动选择失败原因')
+                      );
+                    }}>复制失败原因</Button>
                   </details>
                 ) : null}
                 {status.terminal ? (

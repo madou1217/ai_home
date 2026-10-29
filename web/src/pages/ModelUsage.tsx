@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import './ModelUsage.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -474,7 +475,7 @@ export default function ModelUsage() {
     const value = String(sessionId || '').trim();
     if (!value) return;
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       message.success('会话 ID 已复制');
     } catch {
       message.error('复制失败');

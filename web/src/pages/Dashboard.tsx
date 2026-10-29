@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import ServiceWidgetGrid from '@/components/dashboard/ServiceWidgetGrid';
 import { useState } from 'react';
 import { message, Tag, Tooltip } from 'antd';
@@ -78,7 +79,7 @@ export default function Dashboard() {
 
   const copyErrorText = async (text: string, key: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       setCopiedKey(key);
       message.success('错误详情已复制到剪贴板');
       setTimeout(() => {

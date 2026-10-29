@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CameraOutlined,
@@ -133,10 +134,10 @@ export default function HtmlCodeBlock({ code }: Props) {
 
   const handleCopy = () => {
     if (copied) return;
-    navigator.clipboard.writeText(code).then(() => {
+    writeClipboardText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => message.error('复制失败，请手动选择代码'));
   };
 
   const handleOpenWindow = (device: 'desktop' | 'mobile') => {

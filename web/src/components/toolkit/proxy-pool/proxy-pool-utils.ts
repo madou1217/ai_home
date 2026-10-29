@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { message } from 'antd';
 
 export function getErrorMessage(error: unknown, fallback: string) {
@@ -22,7 +23,7 @@ export function isHttpUrl(value: string) {
 
 export async function copyText(value: string, successMessage: string) {
   try {
-    await navigator.clipboard.writeText(value);
+    await writeClipboardText(value);
     message.success(successMessage);
   } catch {
     message.error('无法访问剪贴板，请手动复制');

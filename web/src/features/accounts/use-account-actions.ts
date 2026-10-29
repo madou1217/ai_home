@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import React from 'react';
 import { Form, Modal, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
@@ -300,7 +301,7 @@ export function useAccountActions({
       : String(record.email || '').trim();
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       message.success('账号已复制');
     } catch (_error) {
       message.error('复制失败');

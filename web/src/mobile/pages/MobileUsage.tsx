@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useState } from 'react';
 import { Button, Input, Select, Spin, message } from 'antd';
 import { CopyOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
@@ -85,7 +86,7 @@ export default function MobileUsage(_props: MobilePageProps) {
     const value = String(sessionId || '').trim();
     if (!value) return;
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       message.success('会话 ID 已复制');
     } catch {
       message.error('复制失败');

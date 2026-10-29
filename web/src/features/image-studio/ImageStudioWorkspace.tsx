@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import {
@@ -604,7 +605,7 @@ const ImageStudioWorkspace: React.FC = () => {
 
   const handleCopyPrompt = async (value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       message.success('提示词已复制');
     } catch (_error) {
       message.error('浏览器未允许写入剪贴板');

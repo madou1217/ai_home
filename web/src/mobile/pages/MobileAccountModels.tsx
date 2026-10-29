@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { useState } from 'react';
 import type { MouseEvent, PointerEvent } from 'react';
 import { Input, Switch, message } from 'antd';
@@ -145,7 +146,7 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
 
   const copyRawProbeError = async (raw: string) => {
     try {
-      await navigator.clipboard.writeText(raw);
+      await writeClipboardText(raw);
       message.success('已复制');
     } catch (_error) {
       message.error('复制失败');

@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import SettingsGroupCard, { SettingsItem } from '@/components/settings/SettingsGroupCard';
 import CaptureSettingsCard from '@/features/capture/CaptureSettingsCard';
 import InlineNote from '@/components/ui/InlineNote';
@@ -216,8 +217,7 @@ const Settings = ({ section }: SettingsProps) => {
   // 复制页面上已展示的默认 Server URL（与 Models / ModelUsage 的复制交互一致）
   const handleCopyServerEndpoint = async (endpoint: string) => {
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('当前浏览器不支持剪贴板写入');
-      await navigator.clipboard.writeText(endpoint);
+      await writeClipboardText(endpoint);
       message.success('Server URL 已复制');
     } catch (error: unknown) {
       message.error(`复制失败：${error instanceof Error ? error.message : '无法写入剪贴板'}`);

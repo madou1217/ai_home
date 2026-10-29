@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { Drawer, Empty, Space, Spin, Tabs, Tooltip, Typography, message } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import { CopyOutlined, QuestionCircleOutlined } from '@ant-design/icons';
@@ -83,7 +84,7 @@ export default function UsageBreakdownDrawer({
   const copySessionId = async () => {
     if (!target || target.kind !== 'session') return;
     try {
-      await navigator.clipboard.writeText(target.row.sessionId);
+      await writeClipboardText(target.row.sessionId);
       message.success('会话 ID 已复制');
     } catch {
       message.error('复制失败');

@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import { formatRuntimeUntil } from '@/components/runtime/RuntimeStatusTag';
 import './Accounts.css';
 import '@/features/accounts/account-overlays.css';
@@ -689,7 +690,7 @@ export default function Accounts() {
       : String(record.email || '').trim();
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       message.success('账号已复制');
     } catch (_error) {
       message.error('复制失败');
@@ -700,7 +701,7 @@ export default function Accounts() {
     const text = String(value || '').trim();
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       message.success(successMessage);
     } catch (_error) {
       message.error('复制失败');

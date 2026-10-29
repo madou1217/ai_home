@@ -1,3 +1,4 @@
+import { writeClipboardText } from '@/utils/clipboard';
 import ModelCapsuleCard from '@/components/models/ModelCapsuleCard';
 import { notifyAccountModelCatalogChanged } from '@/features/models/account-model-catalog-events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -409,7 +410,7 @@ export default function Models() {
 
   const copyModelId = async (modelId: string) => {
     try {
-      await navigator.clipboard.writeText(modelId);
+      await writeClipboardText(modelId);
       message.success('模型 ID 已复制');
     } catch (_error) {
       message.error('复制失败');

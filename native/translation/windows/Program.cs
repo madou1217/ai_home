@@ -6,13 +6,41 @@ using System.Text.Json.Serialization;
 
 namespace AihTranslation;
 
+internal static class ProtocolIo
+{
+    internal static readonly StreamReader Input = new(
+        Console.OpenStandardInput(),
+        new UTF8Encoding(false),
+        detectEncodingFromByteOrderMarks: true,
+        bufferSize: 4096,
+        leaveOpen: true);
+    internal static readonly StreamWriter Output = new(
+        Console.OpenStandardOutput(),
+        new UTF8Encoding(false),
+        bufferSize: 4096,
+        leaveOpen: true)
+    {
+        AutoFlush = true
+    };
+
+}
+
 internal static class Program
 {
     [STAThread]
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        Console.OutputEncoding = Encoding.UTF8;
+        // A WinExe launched with redirected pipes (the normal AIH helper mode)
+        // may not have a console handle. Setting OutputEncoding calls the
+        // Windows console API and throws when that handle is unavailable;
+        // protocol output must still be allowed to start in that mode.
+        try
+        {
+            Console.OutputEncoding = Encoding.UTF8;
+        }
+        catch (IOException) { }
+        catch (InvalidOperationException) { }
         var fullApp = Environment.GetCommandLineArgs().Contains("--full-app", StringComparer.OrdinalIgnoreCase);
         using var context = new TranslationApplicationContext(fullApp);
         _ = Task.Run(() => ReadInputAsync(context));
@@ -23,7 +51,7 @@ internal static class Program
     {
         try
         {
-            while (await Console.In.ReadLineAsync() is { } line)
+            while (await ProtocolIo.Input.ReadLineAsync() is { } line)
             {
                 if (line.Length > 100_000) continue;
                 context.Post(line);
@@ -52,6 +80,9 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private int generation;
     private bool captureInProgress;
     private IDataObject? originalClipboard;
+    private string? originalClipboardText;
+    private bool clipboardSnapshotTaken;
+    private IntPtr captureTargetWindow;
     private System.Windows.Forms.Timer? captureTimer;
     private int captureAttempts;
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -64,6 +95,12 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     {
         this.fullApp = fullApp;
         window = new TranslationWindow();
+        // Helper mode keeps the window hidden, but protocol messages are
+        // marshalled onto the WinForms UI thread through BeginInvoke. Create
+        // the hidden form handle eagerly so that hello/configure events are
+        // not dropped before the first visible window is shown.
+        window.CreateControl();
+        _ = window.Handle;
         hotKeyWindow = new HotKeyWindow(HotKeyId, OnHotKey, OnWindowClosed);
         if (fullApp)
         {
@@ -181,8 +218,12 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         if (captureInProgress) return;
         var currentGeneration = ++generation;
         captureInProgress = true;
+        // RegisterHotKey delivers the callback while the foreground app is
+        // still the source of the selection. Keep that HWND before hiding or
+        // focusing any AIH UI so Ctrl+C is sent back to the real editor.
+        captureTargetWindow = GetForegroundWindow();
         window.Hide();
-        captureTimer = new System.Windows.Forms.Timer { Interval = 40 };
+        captureTimer = new System.Windows.Forms.Timer { Interval = 100 };
         captureTimer.Tick += (_, _) => BeginClipboardCapture(currentGeneration);
         captureTimer.Start();
     }
@@ -198,10 +239,15 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         try
         {
             originalClipboard = Clipboard.GetDataObject();
+            originalClipboardText = Clipboard.ContainsText(TextDataFormat.UnicodeText)
+                ? Clipboard.GetText(TextDataFormat.UnicodeText)
+                : null;
+            clipboardSnapshotTaken = true;
             Clipboard.Clear();
-            SendKeys.SendWait("^c");
+            if (captureTargetWindow != IntPtr.Zero) SetForegroundWindow(captureTargetWindow);
+            SendCtrlC();
             captureAttempts = 0;
-            captureTimer = new System.Windows.Forms.Timer { Interval = 25 };
+            captureTimer = new System.Windows.Forms.Timer { Interval = 40 };
             captureTimer.Tick += (_, _) => PollClipboard(currentGeneration);
             captureTimer.Start();
         }
@@ -224,6 +270,8 @@ internal sealed class TranslationApplicationContext : ApplicationContext
             var text = Clipboard.ContainsText(TextDataFormat.UnicodeText)
                 ? Clipboard.GetText(TextDataFormat.UnicodeText).Trim()
                 : string.Empty;
+            // The clipboard was cleared before sending Ctrl+C, so matching the
+            // previous text is still a valid new selection.
             if (!string.IsNullOrWhiteSpace(text))
             {
                 StopCaptureTimer();
@@ -233,7 +281,7 @@ internal sealed class TranslationApplicationContext : ApplicationContext
                 return;
             }
             captureAttempts++;
-            if (captureAttempts < 12) return;
+            if (captureAttempts < 25) return;
             Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_capture_failed", Message = "没有读取到选中文本", Retryable = true });
             FinishCapture();
         }
@@ -255,15 +303,68 @@ internal sealed class TranslationApplicationContext : ApplicationContext
     private void FinishCapture()
     {
         StopCaptureTimer();
-        try
+        if (!clipboardSnapshotTaken)
         {
-            if (originalClipboard is not null) Clipboard.SetDataObject(originalClipboard, true);
+            captureTargetWindow = IntPtr.Zero;
+            captureAttempts = 0;
+            captureInProgress = false;
+            return;
         }
-        catch (ExternalException error)
+        var restoreText = originalClipboardText;
+        var restoreObject = originalClipboard;
+        var restored = false;
+        if (restoreText is not null)
         {
-            Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_restore_failed", Message = error.Message, Retryable = true });
+            // The foreground editor may still own the clipboard for a short
+            // interval after Ctrl+C. Prefer the captured text and retry while
+            // that ownership is released; this is more reliable than replaying
+            // a delayed IDataObject from another process.
+            for (var attempt = 0; attempt < 8 && !restored; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetText(restoreText, TextDataFormat.UnicodeText);
+                    restored = true;
+                }
+                catch (ExternalException)
+                {
+                    Thread.Sleep(25);
+                }
+            }
+            for (var attempt = 0; attempt < 8 && !restored; attempt++)
+            {
+                restored = TryRestoreClipboardTextNative(restoreText, window.Handle);
+                if (!restored) Thread.Sleep(25);
+            }
+        }
+        if (!restored && restoreObject is not null)
+        {
+            for (var attempt = 0; attempt < 4 && !restored; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetDataObject(restoreObject, true);
+                    restored = true;
+                }
+                catch (ExternalException)
+                {
+                    Thread.Sleep(25);
+                }
+            }
+        }
+        if (!restored && restoreObject is null && restoreText is null)
+        {
+            try { Clipboard.Clear(); restored = true; }
+            catch (ExternalException) { }
+        }
+        if (!restored)
+        {
+            Emit(new DesktopEvent { Version = 1, Type = "error", Code = "windows_clipboard_restore_failed", Message = "Requested Clipboard operation did not succeed.", Retryable = true });
         }
         originalClipboard = null;
+        originalClipboardText = null;
+        clipboardSnapshotTaken = false;
+        captureTargetWindow = IntPtr.Zero;
         captureAttempts = 0;
         captureInProgress = false;
     }
@@ -281,13 +382,65 @@ internal sealed class TranslationApplicationContext : ApplicationContext
         var json = JsonSerializer.Serialize(value, JsonOptions);
         lock (outputLock)
         {
-            Console.Out.WriteLine(json);
-            Console.Out.Flush();
+            ProtocolIo.Output.WriteLine(json);
         }
     }
 
     private static string? GetString(JsonElement root, string name)
         => root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    private static void SendCtrlC()
+    {
+        const byte vkControl = 0x11;
+        const byte vkC = 0x43;
+        const uint keyUp = 0x0002;
+        keybd_event(vkControl, 0, 0, UIntPtr.Zero);
+        keybd_event(vkC, 0, 0, UIntPtr.Zero);
+        keybd_event(vkC, 0, keyUp, UIntPtr.Zero);
+        keybd_event(vkControl, 0, keyUp, UIntPtr.Zero);
+    }
+
+    [DllImport("user32.dll")] private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+
+    private static bool TryRestoreClipboardTextNative(string value, IntPtr owner)
+    {
+        const uint globalMoveable = 0x0002;
+        const uint globalZeroInit = 0x0040;
+        const uint unicodeTextFormat = 13;
+        var bytes = Encoding.Unicode.GetBytes(value + "\0");
+        if (!OpenClipboard(owner)) return false;
+        IntPtr memory = IntPtr.Zero;
+        try
+        {
+            if (!EmptyClipboard()) return false;
+            memory = GlobalAlloc(globalMoveable | globalZeroInit, (UIntPtr)bytes.Length);
+            if (memory == IntPtr.Zero) return false;
+            var locked = GlobalLock(memory);
+            if (locked == IntPtr.Zero) return false;
+            try { Marshal.Copy(bytes, 0, locked, bytes.Length); }
+            finally { GlobalUnlock(memory); }
+            if (SetClipboardData(unicodeTextFormat, memory) == IntPtr.Zero) return false;
+            memory = IntPtr.Zero;
+            return true;
+        }
+        finally
+        {
+            CloseClipboard();
+            if (memory != IntPtr.Zero) GlobalFree(memory);
+        }
+    }
+
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool OpenClipboard(IntPtr newOwner);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool CloseClipboard();
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool EmptyClipboard();
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SetClipboardData(uint format, IntPtr data);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalLock(IntPtr memory);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GlobalUnlock(IntPtr memory);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GlobalFree(IntPtr memory);
 }
 
 internal sealed class HotKeyWindow : NativeWindow, IDisposable

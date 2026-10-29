@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
+import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
 
 export type WebTerminalTabKind = 'account-cli' | 'shell';
 
@@ -35,6 +36,7 @@ export interface OpenWebTerminalTabInput {
 }
 
 interface WebTerminalManagerValue extends WebTerminalLayoutState {
+  serverId: string;
   openTab: (input: OpenWebTerminalTabInput) => void;
   closeTab: (id: string) => void;
   closeAll: () => void;
@@ -145,14 +147,27 @@ function makeTabId(sessionKey: string): string {
 }
 
 export function WebTerminalManagerProvider({ children }: { children: React.ReactNode }) {
-  const serverId = currentServerId();
-  const [state, setState] = useState<WebTerminalLayoutState>(() => readStoredState(serverId));
+  const [{ serverId, state }, setScopedState] = useState(() => {
+    const id = currentServerId();
+    return { serverId: id, state: readStoredState(id) };
+  });
+
+  // Server selection can change without remounting the application shell. Swap
+  // to that server's persisted terminal layout and let the host remount its
+  // xterm panel; persistent PTYs from the previous server remain attachable.
+  useEffect(() => addActiveControlPlaneProfileChangeListener(() => {
+    const nextServerId = currentServerId();
+    setScopedState((current) => current.serverId === nextServerId
+      ? current
+      : { serverId: nextServerId, state: readStoredState(nextServerId) });
+  }), []);
 
   const update = useCallback((next: WebTerminalLayoutState | ((current: WebTerminalLayoutState) => WebTerminalLayoutState)) => {
-    setState((current) => {
-      const value = typeof next === 'function' ? next(current) : next;
-      persistState(serverId, value);
-      return value;
+    setScopedState((current) => {
+      if (current.serverId !== serverId) return current;
+      const value = typeof next === 'function' ? next(current.state) : next;
+      persistState(current.serverId, value);
+      return { ...current, state: value };
     });
   }, [serverId]);
 
@@ -199,13 +214,14 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
 
   const value = useMemo<WebTerminalManagerValue>(() => ({
     ...state,
+    serverId,
     openTab,
     closeTab,
     closeAll,
     setActiveTab,
     setMinimized,
     setPosition
-  }), [closeAll, closeTab, openTab, setActiveTab, setMinimized, setPosition, state]);
+  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setMinimized, setPosition, state]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

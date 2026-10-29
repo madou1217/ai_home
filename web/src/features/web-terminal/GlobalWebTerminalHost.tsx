@@ -99,6 +99,7 @@ export default function GlobalWebTerminalHost() {
         <span key={edge} className={`global-web-terminal-resize global-web-terminal-resize-${edge}`} onMouseDown={(event) => onResizeStart(edge, event)} />
       ))}
       <ShellTerminalPanel
+        key={manager.serverId}
         visible
         persistent
         title="Web Terminal"

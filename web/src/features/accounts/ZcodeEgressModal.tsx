@@ -10,6 +10,7 @@ import { ApiOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import { accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
+import AccountEgressRuntimePanel from './AccountEgressRuntimePanel';
 import type {
   Account,
   AccountEgressApplyResult,
@@ -19,6 +20,7 @@ import type {
   AccountEgressResponse,
   AccountEgressRuntimeStatus
 } from '@/types';
+import type { AccountEgressRuntimeView } from '@/types';
 import {
   describeApplyResult,
   describeEgressError,
@@ -109,6 +111,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
   const [applyResult, setApplyResult] = useState<AccountEgressApplyResult | null>(null);
   const [runtime, setRuntime] = useState<AccountEgressRuntimeStatus | null>(null);
   const [runtimeError, setRuntimeError] = useState('');
+  const [accountRuntimeView, setAccountRuntimeView] = useState<AccountEgressRuntimeView | null>(null);
   const mode = Form.useWatch('mode', form) || 'url';
   // 上游判定（节点能否访问该账号的上游、当前网络是否被拒）与出口池节点范围。
   const [upstreamView, setUpstreamView] = useState<EgressUpstreamView | null>(null);
@@ -218,6 +221,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
     setApplyResult(null);
     setRuntime(null);
     setRuntimeError('');
+    setAccountRuntimeView(null);
     form.setFieldsValue({ mode: 'url', proxyUrl: '' });
 
     setUpstreamView(null);
@@ -227,6 +231,9 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
       .then((response) => {
         if (cancelled) return;
         showBinding(response);
+        void accountsAPI.getAccountEgressRuntime(account.provider, account.accountRef)
+          .then((result) => { if (!cancelled) setAccountRuntimeView(result.runtime || null); })
+          .catch(() => { if (!cancelled) setAccountRuntimeView(null); });
         const current = response.binding;
         if (current && !current.retired) {
           form.setFieldsValue({ mode: current.mode as AccountEgressMode, proxyUrl: current.proxyUrl || '' });
@@ -344,6 +351,7 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
       ]}
     >
       <Spin spinning={loading}>
+        {binding?.mode === 'pool' || mode === 'pool' ? <AccountEgressRuntimePanel runtime={accountRuntimeView} loading={loading} /> : null}
         <div className="egress-runtime hud-panel hud-panel--sm">
           <span className={`egress-runtime-state egress-runtime-state--${runtimeDescription.state}`}>
             <span className={`hud-led${RUNTIME_LED_CLASS[runtimeDescription.state]}`} aria-hidden="true" />

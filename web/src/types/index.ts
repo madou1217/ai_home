@@ -1997,6 +1997,31 @@ export interface AccountEgressRuntimeStatus {
   desktopPid: number | null;
 }
 
+export interface AccountEgressAssignment {
+  accountRef: string;
+  poolGroupId?: string;
+  poolId?: string;
+  selectionMode: 'auto' | 'pinned';
+  pinnedNodeId?: string;
+  strategy: AccountEgressPoolStrategy;
+  scope: AccountEgressPoolScope;
+  fallbackPolicy?: string;
+  updatedAt?: number;
+}
+
+export interface AccountEgressRuntimeView {
+  accountRef: string;
+  assignment: AccountEgressAssignment | null;
+  lane: Record<string, unknown> | null;
+  node: Record<string, unknown> | null;
+  nodeId: string;
+  runtimeName: string;
+  proxyUrl: string;
+  exitIp: string;
+  evidence: Array<Record<string, unknown>>;
+  verdict: Record<string, unknown> | null;
+}
+
 export interface AccountEgressResponse {
   ok: boolean;
   binding: AccountEgressBinding | null;

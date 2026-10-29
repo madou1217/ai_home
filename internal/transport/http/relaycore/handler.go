@@ -453,6 +453,7 @@ func (handler *Handler) attemptRelay(
 	provider, ok := handler.provider.Resolve(ResolveInput{
 		ProviderID: binding.ProviderID(),
 		AccountRef: accountRef.String(),
+		ModelID:    modelID,
 		Credential: binding.Credential(),
 	})
 	if !ok {

@@ -280,7 +280,7 @@ func builtinOpenCode() Definition {
 		Clients:        clientSupport(true, true),
 		Credentials:    &CredentialFacts{APIKeyEnv: []string{"OPENCODE_API_KEY"}, BaseURLEnv: []string{"OPENCODE_BASE_URL"}, CLIRequiresAuthFile: true},
 		NativeBoundary: nativeOpenCode(),
-		RelayHosts:     relayHostsNodeOnly("Go 无 opencode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
+		RelayHosts:     relayHostsGoRelay("gateway.openai.chat_completions"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),

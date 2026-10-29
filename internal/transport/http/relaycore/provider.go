@@ -6,6 +6,7 @@ import (
 	"time"
 
 	accountapp "github.com/madou1217/ai_home/application/accounts"
+	runtimecore "github.com/madou1217/ai_home/core/accountruntime"
 	sharedfailure "github.com/madou1217/ai_home/internal/adapters/upstreamfailure"
 )
 
@@ -24,6 +25,9 @@ type ResolveInput struct {
 	ProviderID string
 	// AccountRef 是账号引用。设备指纹这类「必须按账号稳定」的值以它为派生输入。
 	AccountRef string
+	// ModelID 是当前请求的模型。大多数 Provider 不需要它；同一 Provider
+	// 按模型前缀选择不同官方端点时可用它构造账号级变体。
+	ModelID runtimecore.ModelID
 	// Credential 是该账号的领域凭据，可能为 nil（调用方只做能力判定时不必读凭据）。
 	//
 	// 为什么放进这里：有些差异面**同时**依赖账号与凭据 —— kimi 的设备 id 优先取凭据里

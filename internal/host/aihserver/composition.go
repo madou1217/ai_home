@@ -50,6 +50,7 @@ import (
 	"github.com/madou1217/ai_home/internal/adapters/images"
 	"github.com/madou1217/ai_home/internal/adapters/modelmetadata/modelsdev"
 	openaicompatmodelcatalog "github.com/madou1217/ai_home/internal/adapters/openaicompat/modelcatalog"
+	opencodemodelcatalog "github.com/madou1217/ai_home/internal/adapters/opencode/modelcatalog"
 	"github.com/madou1217/ai_home/internal/adapters/upstreamfailure/configured"
 	"github.com/madou1217/ai_home/internal/host/inferenceruntime"
 	"github.com/madou1217/ai_home/internal/transport/http/accountauthapi"
@@ -75,6 +76,7 @@ import (
 	"github.com/madou1217/ai_home/internal/transport/http/modelaliasapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelcatalogapi"
 	"github.com/madou1217/ai_home/internal/transport/http/modelsapi"
+	"github.com/madou1217/ai_home/internal/transport/http/opencoderelay"
 	"github.com/madou1217/ai_home/internal/transport/http/relaycore"
 	"github.com/madou1217/ai_home/internal/transport/http/shutdownapi"
 	"github.com/madou1217/ai_home/internal/transport/http/upstreamrulesapi"
@@ -919,6 +921,18 @@ func newHandlers(
 		_ = inference.Close()
 		return serverHandlers{}, nil, fmt.Errorf("创建 kimi 透传账号来源失败: %w", err)
 	}
+	// OpenCode 官方 API Key 透传：只承接 native api-key 凭据。OAuth/CLI/free-tier
+	// 语义依赖 Node 客户端，凭据策略会把它们留在 Node。
+	opencodeRelayAccounts, err := newProviderRelayAccountSource(
+		opencoderelay.ProviderID,
+		catalog,
+		inference.recruiter,
+		opencodeRelayTransportPolicy{},
+	)
+	if err != nil {
+		_ = inference.Close()
+		return serverHandlers{}, nil, fmt.Errorf("创建 opencode 透传账号来源失败: %w", err)
+	}
 	// 同一入口上挂多个透传 Provider：**一个** relaycore.Handler + ProviderChain
 	// + 合并的账号来源。
 	//
@@ -931,6 +945,7 @@ func newHandlers(
 				clineRelayAccounts,
 				grokRelayAccounts,
 				kimiRelayAccounts,
+				opencodeRelayAccounts,
 				familyRelayAccounts,
 			),
 			Fallback:    inference.handler,
@@ -944,6 +959,7 @@ func newHandlers(
 				clinerelay.NewProvider(""),
 				grokrelay.NewProvider(""),
 				newKimiRelayProvider(kimiClientVersion()),
+				opencoderelay.NewProvider(),
 			},
 		},
 	)
@@ -1402,12 +1418,17 @@ func newModelDiscovery(
 		if err != nil {
 			return nil, fmt.Errorf("创建 grok 模型目录源失败: %w", err)
 		}
+		opencodeSource, err := opencodemodelcatalog.New(client)
+		if err != nil {
+			return nil, fmt.Errorf("创建 opencode 模型目录源失败: %w", err)
+		}
 		strategies = []accountapp.ProviderModelDiscoverer{
 			codexSource,
 			claudeSource,
 			agySource,
 			kimiSource,
 			grokSource,
+			opencodeSource,
 		}
 		strategies = append(strategies, familySources...)
 	}

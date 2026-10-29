@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Select, Space, Tag, Typography } from 'antd';
+import { Modal, Select, Space, Tag, Typography } from 'antd';
 import { aggregatorErrorText, chainCandidateNodes, chainIssue, chainPath, responseErrorCode, skipReasonText } from './aggregator-presentation';
 import type { AggregatorNodeOption } from './types';
+import InlineNote from '@/components/ui/InlineNote';
 
 const { Text } = Typography;
 
@@ -96,7 +97,7 @@ export default function NodeChainModal({ open, node, nodes, onSubmit, onClose }:
             ))}
           </Space>
         ) : null}
-        {issue ? <Alert type="warning" showIcon message={skipReasonText(issue)} /> : null}
+        {issue ? <InlineNote tone="warning">{skipReasonText(issue)}</InlineNote> : null}
         <Text type="secondary">
           注意：链式代理要用支持它的输出格式（mihomo / Clash 系、sing-box、Surge 系），其它格式会跳过配了前置的节点。
         </Text>

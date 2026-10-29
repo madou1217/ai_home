@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, Empty, InputNumber, Modal, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { Button, Checkbox, Empty, InputNumber, Modal, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
 import { accountsAPI } from '@/services/api';
 import { getAccountPrimaryLabel } from '@/features/accounts/AccountBadges';
 import type { Account } from '@/types';
 import './account-overlays.css';
+import InlineNote from '@/components/ui/InlineNote';
 
 interface ModelContextRow {
   model: string;
@@ -255,12 +256,12 @@ export function AccountModelContextModal({ account, models = [], onClose }: Acco
             </Space>
           ) : null}
 
-          <Alert
-            type="info"
-            showIcon
-            message="上游不声明窗口时无法自动获取"
+          <InlineNote
+            tone="info"
             description="此时请以实测为准（例如二分探测请求直到被拒），不要凭经验填写 —— 填小了会误拦合法请求，填大了超限请求会挂到超时。"
-          />
+          >
+            上游不声明窗口时无法自动获取
+          </InlineNote>
         </Space>
       </Spin>
     </Modal>

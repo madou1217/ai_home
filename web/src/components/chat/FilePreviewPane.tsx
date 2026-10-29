@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Radio, Segmented, Spin, Switch } from 'antd';
+import { Button, Radio, Segmented, Spin, Switch } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -28,6 +28,7 @@ import {
 } from './html-preview-window';
 import filePreviewStyles from './file-preview.module.css';
 import bubbleStyles from './message-bubble.module.css';
+import InlineNote from '@/components/ui/InlineNote';
 
 // filePreviewInlineImage 与 markdownCarouselSlide 共选择器，归入 message-bubble 域；类名无交集，合并后引用行为不变
 const styles = { ...filePreviewStyles, ...bubbleStyles };
@@ -161,7 +162,7 @@ function ImagePreview({ mediaUrl }: { mediaUrl: string }) {
   if (loadError || media.error) {
     return (
       <div className={styles.filePreviewState}>
-        <Alert type="error" showIcon message="图片加载失败" description="请确认文件仍在当前项目目录内。" />
+        <InlineNote tone="error" description="请确认文件仍在当前项目目录内。">图片加载失败</InlineNote>
       </div>
     );
   }
@@ -302,12 +303,9 @@ function FileTrustPrompt({
 
   if (candidates.length === 0) {
     return (
-      <Alert
-        type="warning"
-        showIcon
-        message="此位置不能直接授权"
-        description="文件位于用户主目录或系统根级范围。请将文件移动到更具体的文件夹后再预览。"
-      />
+      <InlineNote tone="warning" description="文件位于用户主目录或系统根级范围。请将文件移动到更具体的文件夹后再预览。">
+        此位置不能直接授权
+      </InlineNote>
     );
   }
 
@@ -338,7 +336,7 @@ function FileTrustPrompt({
           </Radio>
         ))}
       </Radio.Group>
-      {trustError ? <Alert type="error" showIcon message="授权失败" description={trustError} /> : null}
+      {trustError ? <InlineNote tone="error" description={trustError}>授权失败</InlineNote> : null}
       <div className={styles.fileTrustFooter}>
         <span>确认后会保存到当前 Server 的文件预览白名单。</span>
         <Button
@@ -427,7 +425,7 @@ function FilePreviewPane({
               onTrust={onTrust}
             />
           ) : (
-            <Alert type="error" showIcon message="文件读取失败" description={error.message} />
+            <InlineNote tone="error" description={error.message}>文件读取失败</InlineNote>
           )}
         </div>
       </div>
@@ -454,7 +452,7 @@ function FilePreviewPane({
           )
         ) : (
           <div className={styles.filePreviewState}>
-            <Alert type="error" showIcon message="图片预览地址缺失" />
+            <InlineNote tone="error">图片预览地址缺失</InlineNote>
           </div>
         )}
       </div>

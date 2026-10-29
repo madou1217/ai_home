@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Empty, Spin, Tag } from 'antd';
+import { Empty, Spin, Tag } from 'antd';
 import { BranchesOutlined, ReloadOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
 import FileTypeIcon from '@/components/chat/FileTypeIcon';
 import { gitReviewAPI } from '@/services/api';
 import type { GitChangedFile, GitSummary } from '@/services/api';
 import styles from '../project-workbench.module.css';
+import InlineNote from '@/components/ui/InlineNote';
 
 interface Props {
   projectPath: string;
@@ -95,7 +96,7 @@ export default function ReviewPanel({ projectPath, mobile, registerRefresh, onSu
           <div className={styles.reviewUpstream}>{summary.upstream} · ↑{summary.ahead} ↓{summary.behind}</div>
         ) : null}
         {loading ? <div className={styles.filesCentered}><Spin size="small" /></div> : null}
-        {error ? <Alert type="error" message="无法读取 Git 状态" description={error} showIcon /> : null}
+        {error ? <InlineNote tone="error" description={error}>无法读取 Git 状态</InlineNote> : null}
         {!loading && !error && groups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="工作区无变更" /> : null}
         <div className={styles.reviewGroups}>
           {groups.map((group) => (

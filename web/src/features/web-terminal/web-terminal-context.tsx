@@ -17,7 +17,7 @@ interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
   activeTabId: string;
   minimized: boolean;
-  position: { x: number; y: number; width: number };
+  position: { x: number; y: number; width: number; height: number };
 }
 interface StoredState {
   version: 1;
@@ -49,7 +49,7 @@ const DEFAULT_STATE: WebTerminalLayoutState = {
   tabs: [],
   activeTabId: '',
   minimized: false,
-  position: { x: 0, y: 0, width: DEFAULT_WIDTH }
+  position: { x: 0, y: 0, width: DEFAULT_WIDTH, height: 420 }
 };
 
 const WebTerminalManagerContext = createContext<WebTerminalManagerValue | null>(null);
@@ -92,6 +92,7 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
   const x = Number((sourcePosition as { x?: number }).x);
   const y = Number((sourcePosition as { y?: number }).y);
   const width = Number((sourcePosition as { width?: number }).width);
+  const height = Number((sourcePosition as { height?: number }).height);
   return {
     tabs,
     activeTabId,
@@ -99,7 +100,8 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
     position: {
       x: Number.isFinite(x) ? x : 0,
       y: Number.isFinite(y) ? y : 0,
-      width: Number.isFinite(width) && width >= 420 ? width : DEFAULT_WIDTH
+      width: Number.isFinite(width) && width >= 420 ? width : DEFAULT_WIDTH,
+      height: Number.isFinite(height) && height >= 180 ? height : 420
     }
   };
 }

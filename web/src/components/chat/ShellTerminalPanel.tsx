@@ -36,6 +36,7 @@ interface ShellTerminalPanelProps {
   minimized?: boolean;
   onMinimizedChange?: (value: boolean) => void;
   onHeaderMouseDown?: (event: MouseEvent) => void;
+  panelHeight?: number;
 }
 
 type TabStatus = 'connecting' | 'ready' | 'closed' | 'error';
@@ -129,7 +130,8 @@ function ShellTerminalPanel({
   allowNewTab = true,
   minimized: controlledMinimized,
   onMinimizedChange,
-  onHeaderMouseDown
+  onHeaderMouseDown,
+  panelHeight
 }: ShellTerminalPanelProps) {
   const muxIdRef = useRef<string>('');
   // 用 ref 持有最新 cwd：切项目后新开/重连的终端应进入新项目目录，避免闭包捕获旧值。
@@ -496,11 +498,11 @@ function ShellTerminalPanel({
     <div
       ref={panelRef}
       className={styles.shellTerminalPanel}
-      style={{ height: minimized ? 38 : height }}
+      style={{ height: minimized ? 38 : (panelHeight ?? height) }}
       data-compact={compactChrome ? 'true' : undefined}
     >
       {/* 嵌入栏内时高度由栏布局接管（100%），隐藏底部停靠场景的调高把手。 */}
-      {compactChrome ? null : (
+      {compactChrome || panelHeight !== undefined ? null : (
         <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
       )}
       <div className={styles.shellTerminalHeader} onMouseDown={onHeaderMouseDown}>

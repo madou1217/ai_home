@@ -4,6 +4,56 @@
   min-width: 420px;
   max-width: calc(100vw - 16px);
   filter: drop-shadow(var(--elevation-4));
+  border-radius: 10px;
+  overflow: visible;
+}
+.global-web-terminal-window > div {
+  height: 100%;
+  border-radius: 10px;
+}
+.global-web-terminal-window.is-minimized {
+  left: auto;
+  top: auto;
+  right: 20px;
+  bottom: 90px;
+  min-width: 0;
+  width: 52px;
+  height: 52px;
+}
+.global-web-terminal-window.is-minimized > div { display: none; }
+.global-web-terminal-restore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease;
+}
+.global-web-terminal-restore:hover { transform: scale(1.06); }
+.global-web-terminal-restore span { font-size: 12px; }
+.global-web-terminal-resize {
+  position: absolute;
+  z-index: 4;
+}
+.global-web-terminal-resize-n, .global-web-terminal-resize-s { left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+.global-web-terminal-resize-n { top: -4px; }
+.global-web-terminal-resize-s { bottom: -4px; }
+.global-web-terminal-resize-e, .global-web-terminal-resize-w { top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
+.global-web-terminal-resize-e { right: -4px; }
+.global-web-terminal-resize-w { left: -4px; }
+.global-web-terminal-resize-ne, .global-web-terminal-resize-sw, .global-web-terminal-resize-se, .global-web-terminal-resize-nw { width: 12px; height: 12px; }
+.global-web-terminal-resize-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.global-web-terminal-resize-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.global-web-terminal-resize-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.global-web-terminal-resize-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+@media (prefers-reduced-motion: reduce) {
+  .global-web-terminal-restore { transition: none; }
 }
 @media (max-width: 720px) {
   .global-web-terminal-window {

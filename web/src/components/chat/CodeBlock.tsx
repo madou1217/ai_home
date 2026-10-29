@@ -2,6 +2,7 @@ import { memo, useState, useCallback, useMemo } from 'react';
 import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import styles from './message-bubble.module.css';
+import { writeClipboardText } from '@/utils/clipboard';
 
 interface Props {
   code: string;
@@ -19,10 +20,12 @@ export const CodeBlock = memo(function CodeBlock({
 
   const onCopy = useCallback(() => {
     if (copied || !cleanCode) return;
-    navigator.clipboard.writeText(cleanCode).then(() => {
+    writeClipboardText(cleanCode).then(() => {
       setCopied(true);
       message.success('代码已复制', 1);
       window.setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      message.error('复制失败，请手动选择代码');
     });
   }, [cleanCode, copied]);
 

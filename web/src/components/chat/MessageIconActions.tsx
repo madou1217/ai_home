@@ -9,6 +9,7 @@ import {
 import { Tooltip, message as antdMessage } from 'antd';
 import ShareCardModal from './ShareCardModal';
 import styles from './message-bubble.module.css';
+import { writeClipboardText } from '@/utils/clipboard';
 
 export interface MessageIconActionsProps {
   text: string;
@@ -39,9 +40,9 @@ export default function MessageIconActions({
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!text || !navigator.clipboard?.writeText) return;
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       setCopied(true);
       antdMessage.success('已复制到剪贴板', 1.2);
       if (copyResetTimer.current !== undefined) window.clearTimeout(copyResetTimer.current);

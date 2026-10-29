@@ -202,6 +202,12 @@ export const PROVIDER_DEFINITIONS = [
     ],
     "authOptions": [
       {
+        "value": "oauth-browser",
+        "strategy": "opencode:device",
+        "label": "OpenCode Console 登录（设备码）",
+        "description": "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"
+      },
+      {
         "value": "api-key",
         "label": "OpenCode 密钥",
         "description": "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"

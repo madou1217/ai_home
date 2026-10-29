@@ -283,6 +283,11 @@ func builtinOpenCode() Definition {
 		RelayHosts:     relayHostsNodeOnly("Go 无 opencode 推理上游适配器（规划见 2026-10-17-inference-capability-registry.md P2）"),
 		Capabilities:   []Capability{CapabilityAPIKeyAccount, CapabilityModelCatalog, CapabilitySessionRuntime, CapabilityFabricRuntime, CapabilityGatewayProfile, CapabilitySessionHistory, CapabilityUsageScan, CapabilityACPSession},
 		AuthOptions: []AuthOption{
+			// Console 登录（设备码）：策略在 lib/server/oauth-strategies/opencode.js，
+			// 跑的是官方 `opencode auth login opencode --method device`（方法枚举实测
+			// `Available: device, key`），凭据落 opencode 的 credential 存储而不是 auth.json，
+			// 登录成功后由宿主观察者登记成账号（lib/account/opencode-native-credential-sync.js）。
+			authOptionWithStrategy(AuthModeOAuthBrowser, "opencode:device", "OpenCode Console 登录（设备码）", "官方 CLI 设备码流程：在任意设备打开验证地址完成授权（无需本机回调地址与协议处理器）。"),
 			authOption(AuthModeAPIKey, "OpenCode 密钥", "绑定 OpenCode / OpenCode Go API Key（从 https://opencode.ai/auth 获取，默认端点 https://opencode.ai/zen/go/v1，支持全量 Zen / Go 模型）。"),
 		},
 		SessionSync: SessionSync{

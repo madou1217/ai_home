@@ -15,6 +15,13 @@ import {
 } from './composer-model-policy';
 import { useComposerAttachments } from './use-composer-attachments';
 import type { PendingComposerAttachment, PendingComposerAttachmentStatus } from './use-composer-attachments';
+import {
+  clearComposerDraft,
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+  type ComposerDraftIdentity,
+} from './composer-draft-store';
 
 export interface ComposerController {
   readonly policy: ComposerPolicy;
@@ -40,6 +47,7 @@ export interface ComposerController {
   readonly interrupt: () => Promise<void>;
   readonly changeApprovalMode: (mode: ApprovalMode) => Promise<void>;
   readonly handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  readonly draftIdentity: ComposerDraftIdentity;
 }
 
 export function useComposerController(props: ComposerProps): ComposerController {
@@ -59,7 +67,30 @@ function useComposerViewState(props: ComposerProps) {
     () => resolveComposerPolicy(projection.state, projection.capabilities, projection.compacting, props.workspaceMode !== 'chat'),
     [projection, props.workspaceMode],
   );
-  const [input, setInput] = useState('');
+  const draftIdentity = useMemo<ComposerDraftIdentity>(() => ({
+    sessionId: projection.sessionId,
+    provider: props.provider,
+    accountRef: props.accountRef,
+    workspaceMode: props.workspaceMode,
+    projectPath: props.projectPath,
+  }), [projection.sessionId, props.accountRef, props.projectPath, props.provider, props.workspaceMode]);
+  const draftKey = composerDraftKey(draftIdentity);
+  const hydratedDraftKey = useRef('');
+  const [input, setInputState] = useState('');
+  const setInput = useCallback((value: string): void => setInputState(value), []);
+  useEffect(() => {
+    if (hydratedDraftKey.current === draftKey) return;
+    hydratedDraftKey.current = draftKey;
+    setInputState(readComposerDraft(draftIdentity));
+  }, [draftIdentity, draftKey]);
+  useEffect(() => {
+    if (hydratedDraftKey.current !== draftKey) return;
+    const timer = window.setTimeout(() => writeComposerDraft(draftIdentity, input), 180);
+    return () => {
+      window.clearTimeout(timer);
+      writeComposerDraft(draftIdentity, input);
+    };
+  }, [draftIdentity, draftKey, input]);
   const [requestedDelivery, setDelivery] = useState<ComposerDelivery>(props.workspaceMode === 'chat' ? 'after_turn' : 'turn');
   const [effortChoice, setEffortChoice] = useState<{ sessionId: string; value: string }>();
   const reasoningEffort = effortChoice?.sessionId === projection.sessionId
@@ -127,7 +158,7 @@ function useComposerViewState(props: ComposerProps) {
     && attachments.items.every((item) => item.status === 'ready' || item.status === 'uploaded')
     && canSubmitComposerInput(input, delivery, busy, attachments.items.length);
   return {
-    policy, input, setInput, delivery, setDelivery,
+    policy, input, setInput, delivery, setDelivery, draftIdentity,
     model: selection.model, reasoningEffort: selection.effort,
     setReasoningEffort, selectModel,
     busy, setBusy, canSend, canAttach, pendingSlash,
@@ -151,6 +182,7 @@ function useComposerCommands(props: ComposerProps, view: ComposerViewState) {
     try {
       await dispatchComposerInput(props, view);
       view.setInput('');
+      clearComposerDraft(view.draftIdentity);
       view.clearAttachments();
     } catch (error) { toast.error(errorText(error, '命令提交失败')); }
     finally { view.setBusy(false); }

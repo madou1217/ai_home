@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined } from '@ant-design/icons';
+import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
@@ -15,6 +15,9 @@ interface ShellTerminalPanelProps {
   cwd?: string;
   // 三栏嵌入模式：隐藏自带标题/状态文案与调高把手（栏工具行已表达面板语义，栏内充满即可）。
   compactChrome?: boolean;
+  /** Keep the Server PTY alive while the page unmounts; a later mount attaches by key. */
+  sessionKey?: string;
+  persistent?: boolean;
 }
 
 type TabStatus = 'connecting' | 'ready' | 'closed' | 'error';
@@ -91,7 +94,7 @@ function newTerm(): Terminal {
 // VSCode 风格底部终端「面板」：多 tab、可拖拽调高、底部停靠。
 // 每个 tab = 独立 PTY + 独立 xterm；整个面板复用一条 mux SSE 承载全部 tab 输出（帧带 termId），
 // 规避浏览器每域 ~6 连接上限（此前多 tab / 慢开会永远卡「连接中」的根因）。
-function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: ShellTerminalPanelProps) {
+function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false, sessionKey = '', persistent = false }: ShellTerminalPanelProps) {
   const muxIdRef = useRef<string>('');
   // 用 ref 持有最新 cwd：切项目后新开/重连的终端应进入新项目目录，避免闭包捕获旧值。
   const cwdRef = useRef<string | undefined>(cwd);
@@ -109,6 +112,7 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
   const [activeId, setActiveId] = useState<string>('');
   const [panelStatus, setPanelStatus] = useState<TabStatus>('connecting');
   const [height, setHeight] = useState<number>(DEFAULT_HEIGHT);
+  const [minimized, setMinimized] = useState(false);
 
   // 应用一帧（output/exit）到某个 tab 的 xterm。
   const applyFrame = useCallback((tabId: string, inst: TermInstance, msg: any) => {
@@ -155,7 +159,13 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
     setActiveId(id);
 
     try {
-      const res = await terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, cwdRef.current);
+      const res = sessionKey
+        ? await (async () => {
+          const attached = await terminalAPI.attach(sessionKey, muxIdRef.current);
+          if (attached.ok) return attached;
+          return terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, cwdRef.current, sessionKey);
+        })()
+        : await terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, cwdRef.current);
       if (!res.ok || !res.termId) {
         term.writeln(`\x1b[31m终端启动失败: ${res.error || 'unknown'}\x1b[0m`);
         setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
@@ -209,8 +219,34 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
       if (!inst) return;
       applyFrame(tabId, inst, msg);
     };
+    // EventSource 会自动重连，但服务端会在旧连接关闭时回收 mux。重连后的
+    // connected 帧必须把持久 session 重新绑定到新的 mux，否则 shell 仍在运行，
+    // 但后续输出会继续广播到已删除的旧 mux，表现为“终端还活着但页面没字”。
+    const reattachPersistentTabs = () => {
+      if (!sessionKey) return;
+      for (const [tabId, inst] of instancesRef.current) {
+        if (!inst.termId) continue;
+        const previousTermId = inst.termId;
+        void terminalAPI.attach(sessionKey, muxIdRef.current).then((attached) => {
+          if (!attached.ok || !attached.termId) return;
+          if (previousTermId !== attached.termId) byTermIdRef.current.delete(previousTermId);
+          registerTermId(tabId, attached.termId, inst);
+          setTabs((prev) => prev.map((tab) => tab.id === tabId
+            ? { ...tab, termId: attached.termId!, status: 'ready' }
+            : tab));
+        }).catch(() => {});
+      }
+    };
     es.onerror = () => {
       if (!panelReadyRef.current) setPanelStatus('error');
+    };
+    const previousOnMessage = es.onmessage;
+    es.onmessage = (ev) => {
+      previousOnMessage?.(ev);
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'connected') reattachPersistentTabs();
+      } catch { /* ignore malformed heartbeat/event */ }
     };
 
     setHeight(readStoredHeight());
@@ -220,7 +256,7 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
       try { es.close(); } catch { /* ignore */ }
       esRef.current = null;
       for (const inst of instancesRef.current.values()) {
-        if (inst.termId) terminalAPI.close(inst.termId).catch(() => {});
+        if (inst.termId && !persistent) terminalAPI.close(inst.termId).catch(() => {});
         try { inst.term.dispose(); } catch { /* ignore */ }
       }
       instancesRef.current.clear();
@@ -306,6 +342,13 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
     });
   }, [onClose]);
 
+  const closePanel = useCallback(() => {
+    for (const inst of instancesRef.current.values()) {
+      if (inst.termId) terminalAPI.close(inst.termId).catch(() => {});
+    }
+    onClose();
+  }, [onClose]);
+
   // 重启激活 tab：关掉旧 PTY，清屏，开新 PTY（复用同一 tab 槽 / xterm）。
   const reloadActiveTab = useCallback(async () => {
     const id = activeId;
@@ -320,7 +363,9 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
     inst.term.reset();
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, termId: '', status: 'connecting' } : t)));
     try {
-      const res = await terminalAPI.open(inst.term.cols || 80, inst.term.rows || 24, muxIdRef.current, cwdRef.current);
+      const res = sessionKey
+        ? await terminalAPI.open(inst.term.cols || 80, inst.term.rows || 24, muxIdRef.current, cwdRef.current, sessionKey)
+        : await terminalAPI.open(inst.term.cols || 80, inst.term.rows || 24, muxIdRef.current, cwdRef.current);
       if (res.ok && res.termId) {
         registerTermId(id, res.termId, inst);
         setTabs((prev) => prev.map((t) => (t.id === id
@@ -378,7 +423,7 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
     <div
       ref={panelRef}
       className={styles.shellTerminalPanel}
-      style={{ height }}
+      style={{ height: minimized ? 38 : height }}
       data-compact={compactChrome ? 'true' : undefined}
     >
       {/* 嵌入栏内时高度由栏布局接管（100%），隐藏底部停靠场景的调高把手。 */}
@@ -420,6 +465,7 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
             className={styles.shellTerminalIconBtn}
             title="新建终端"
             onClick={() => { void createTab(); }}
+            style={sessionKey ? { display: 'none' } : undefined}
           >
             <PlusOutlined />
           </button>
@@ -436,14 +482,22 @@ function ShellTerminalPanel({ visible, onClose, cwd, compactChrome = false }: Sh
           <button
             type="button"
             className={styles.shellTerminalIconBtn}
+            title={minimized ? '恢复终端面板' : '最小化终端面板'}
+            onClick={() => setMinimized((current) => !current)}
+          >
+            {minimized ? <ExpandOutlined /> : <MinusOutlined />}
+          </button>
+          <button
+            type="button"
+            className={styles.shellTerminalIconBtn}
             title="关闭终端面板"
-            onClick={onClose}
+            onClick={closePanel}
           >
             <CloseOutlined />
           </button>
         </div>
       </div>
-      <div className={styles.shellTerminalBodies}>
+      <div className={styles.shellTerminalBodies} style={{ display: minimized ? 'none' : undefined }}>
         {tabs.map((t) => (
           <div
             key={t.id}

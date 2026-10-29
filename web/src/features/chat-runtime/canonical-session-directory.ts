@@ -232,7 +232,7 @@ function projectRuntimeSession(
     // this, a deep link selects the provider's default account and the
     // runtime surface rejects the existing session as an account mismatch.
     runtimeSessionId: session.sessionId,
-    title: '新会话',
+    title: sessionTitle(session.policy.title),
     updatedAt: session.updatedAt,
     provider: query.provider,
     accountRef: session.executionAccountRef,
@@ -280,16 +280,31 @@ function mergeProjectSessions(
 }
 
 function mergeSessionHistory(history: Session, canonical: Session): Session {
+  const canonicalTitle = sessionTitle(canonical.title);
+  const historyTitle = sessionTitle(history.title);
   return {
     ...canonical,
     ...history,
     ...(canonical.runtimeSessionId ? {
       runtimeSessionId: canonical.runtimeSessionId, mode: canonical.mode,
-      accountRef: canonical.accountRef, title: canonical.title,
+      accountRef: canonical.accountRef,
+      // A freshly created canonical row has a placeholder title until its
+      // first prompt is persisted. Keep the native/history title in that
+      // window instead of regressing the visible row to "新会话".
+      title: isPlaceholderTitle(canonicalTitle) && !isPlaceholderTitle(historyTitle)
+        ? history.title : canonical.title,
     } : {}),
     updatedAt: Math.max(history.updatedAt, canonical.updatedAt),
     status: canonical.status,
   };
+}
+
+function sessionTitle(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function isPlaceholderTitle(value: string): boolean {
+  return !value || value === '新会话' || value === '新对话';
 }
 
 function sessionIdentity(value: Pick<Session, 'provider' | 'id'> | CanonicalSessionDirectoryQuery): string {

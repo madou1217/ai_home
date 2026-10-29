@@ -197,10 +197,20 @@
   align-items: center;
   justify-content: center;
 }
-/* running provider: static success ring + soft glow instead of a spinning avatar */
+/* running provider: subtle icon pulse + success ring */
 .msx-avatars .av.spin {
   border-color: var(--msx-run);
   box-shadow: 0 0 6px color-mix(in srgb, var(--msx-run) 60%, transparent);
+}
+.msx-avatars .av.spin > img,
+.msx-avatars .av.spin > [data-provider-icon-fallback],
+.msx-avi.spin > img,
+.msx-avi.spin > [data-provider-icon-fallback] {
+  animation: msxProviderPulse 1.8s ease-in-out infinite;
+}
+@keyframes msxProviderPulse {
+  0%, 100% { transform: scale(1); opacity: .88; }
+  50% { transform: scale(1.1); opacity: 1; }
 }
 .msx-chev {
   transition: transform var(--motion-base, 160ms) var(--msx-ease);
@@ -257,7 +267,7 @@
   justify-content: center;
   background: var(--color-surface-sunken);
 }
-/* running session: static success ring (the breathing LED in .msx-time carries the live signal) */
+/* running session: success ring and provider icon pulse */
 .msx-avi.spin {
   border-color: var(--msx-run);
   box-shadow: inset 0 0 6px color-mix(in srgb, var(--msx-run) 35%, transparent);
@@ -323,7 +333,11 @@
   animation: hud-led-breathe 1.6s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .msx-time.run::before { animation: none; }
+  .msx-time.run::before,
+  .msx-avatars .av.spin > img,
+  .msx-avatars .av.spin > [data-provider-icon-fallback],
+  .msx-avi.spin > img,
+  .msx-avi.spin > [data-provider-icon-fallback] { animation: none; }
 }
 .msx-metarow { display: flex; align-items: center; justify-content: space-between; gap: var(--hos-space-2, 8px); margin-top: var(--hos-space-2, 8px); }
 .msx-provtag {

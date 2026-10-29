@@ -202,6 +202,7 @@ export default function Accounts() {
   const {
     appEntries,
     appCapabilities,
+    serverRuntime,
     runningAccounts,
     applyAppEntries,
     markAppEntriesUnavailable,
@@ -221,6 +222,7 @@ export default function Accounts() {
     handlersRef: accountsHandlersRef,
     modelCatalog: { clearModelAccountRefreshing, loadModelCatalog },
     loadAppEntries,
+    serverRuntime,
     onOpenAppResponse: (result) => {
       if (result.egressWarning) {
         message.warning(`账号出口未生效：${result.egressWarning}`);
@@ -619,7 +621,7 @@ export default function Accounts() {
           desktopSupported,
           cliInstalled,
           cliSupported
-        } = getAccountAppSupport(record, appEntries, appCapabilities);
+        } = getAccountAppSupport(record, appEntries, appCapabilities, serverRuntime);
         const desktopEntryClassName = desktopInstalled
           ? undefined
           : 'account-client-entry-button--uninstalled';
@@ -1177,7 +1179,7 @@ export default function Accounts() {
               onConfirmSubscription={handleRefreshUsage}
               isConfirmingSubscription={(record) => Boolean(refreshingUsageAccountRefs[getAccountRef(record)])}
               onCopy={copyAccountEmail}
-              isDesktopSupported={(record) => Boolean(appEntries) && getAccountAppSupport(record, appEntries, appCapabilities).desktopSupported}
+              isDesktopSupported={(record) => Boolean(appEntries) && getAccountAppSupport(record, appEntries, appCapabilities, serverRuntime).desktopSupported}
               onOpenApp={(record) => {
                 if (guardAccountLaunch(record, 'Desktop')) void handleOpenApp(record, 'desktop');
               }}

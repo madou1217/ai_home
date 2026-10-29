@@ -16,19 +16,19 @@ Go Refactor .1 的交付物是可复核的路由基线和 ownership manifest。�
 
 路由采集结果（`node scripts/collect-gateway-routes.js --json`）：
 
-> **下表的 Node 299 / Go 19 是 2026-08-19 的 Go Refactor .1 基线快照，仅作历史记录。**
-> 当前数字见本文「数据面路由补齐」一节（Node 333 / Go 26，`missing_in_go=0`）。
+> 下表是 2026-10-28 的当前源码扫描；旧的 Node 299 / Go 19 数字仅保留在历史提交中。
+> 当前扫描确认 Node 359 / Go 38，`missing_in_go=0`。
 > 最新基线同时冻结在 `contracts/route-ownership/manifest.json` 的 `route_baseline`，
 > 并由 `test/go-route-ownership-manifest.test.js` 与源码采集结果逐字段比对。
 
 | 项目 | Node | Go Preview | 口径 |
 | --- | ---: | ---: | --- |
-| 路由记录 | 299 | 19 | 按方法、传输和协议证据保留记录 |
-| endpoint 记录 | 292 | 18 | 实际交给处理器的入口 |
-| guard 记录 | 7 | 0 | 作用域/派发判断，不是 endpoint |
+| 路由记录 | 359 | 38 | 2026-10-28 当前扫描 |
+| endpoint 记录 | 348 | 37 | 实际交给处理器的入口 |
+| guard 记录 | 11 | 0 | 作用域/派发判断，不是 endpoint |
 | fallback 记录 | 0 | 1 | Go `/` 未命中兜底 |
-| endpoint 路径模式 | 220 | 17 | 去重后的标准化 `path` |
-| HTTP endpoint 路径模式 | 215 | 17 | 仅 HTTP 传输 |
+| endpoint 路径模式 | 262 | 36 | 去重后的标准化 `path` |
+| HTTP endpoint 路径模式 | 257 | 36 | 仅 HTTP 传输 |
 | WebSocket endpoint 路径模式 | 7 | 1 | 仅 WebSocket 传输 |
 
 ### 当前可比较数据面与缺口状态（2026-09-15 更新）
@@ -77,9 +77,9 @@ Node 持有；它们不因 Go Core 已接管推理数据面就自动进入 Go �
 Go 的账号管理 API `/v1/management/*` 与 Node 的 `/v0/webui/management/*` 是不同语义的
 控制面，不通过兼容别名伪装成同一路由。
 
-## Go Preview 当前 endpoint 记录（2026-09-15）
+## Go Preview 当前 endpoint 记录（2026-10-28）
 
-Go 当前为 25 条 endpoint 记录、24 个去重 HTTP 路径模式，另有 1 条 `/` fallback 和 1 条
+Go 当前为 37 条 endpoint 记录、36 个去重 HTTP 路径模式，另有 1 条 `/` fallback 和 1 条
 `/v1/responses` WebSocket endpoint。HTTP 路由的标准化路径如下：
 
 ```
@@ -557,7 +557,7 @@ Go 原先有两个键，都不等于规范键：
 | `POST /v1{beta?}/models/{model}:generateContent`、`:streamGenerateContent` | ✅ 已补（`17357be8`，新增 Gemini 客户端协议） |
 | `/v1/images/generations`、`/v1/images/edits` | ✅ 已补（`545b217d`，含 codex / agy / passthrough / unsupported 四个策略） |
 
-**当前采集结果：`node_endpoint=14`、`go_endpoint=24`、`missing_in_go=0`。7 条缺口全部闭环。**
+**当前采集结果：`node_endpoint=14`、`go_endpoint=36`、`missing_in_go=0`。7 条历史缺口全部闭环。**
 
 ### 补齐时必须同时改采集器
 

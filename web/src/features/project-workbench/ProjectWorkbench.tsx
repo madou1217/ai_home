@@ -9,12 +9,13 @@ import { WorkbenchProvider } from './WorkbenchContext';
 import { createInitialState, nextTabId, workbenchReducer } from './workbench-reducer';
 import { loadWorkbenchState, saveWorkbenchState } from './workbench-persistence';
 import { resolveLayoutMode } from './workbench-layout';
-import type { WorkbenchPanelKind, WorkbenchTab } from './workbench-types';
+import type { WorkbenchPanelKind, WorkbenchTab, WorkbenchWorkspaceDescriptor } from './workbench-types';
 import { PANEL_LABELS, PANEL_LIMITS } from './workbench-types';
 import styles from './project-workbench.module.css';
 
 interface Props {
   projectPath?: string;
+  workspace?: WorkbenchWorkspaceDescriptor;
   mobile: boolean;
   chat: ReactNode;
   // 三栏左栏 Sessions 页签数据（Chat.tsx canonicalDirectory 派生，只读）。
@@ -35,6 +36,7 @@ function createTab(kind: WorkbenchPanelKind): WorkbenchTab {
 
 export default function ProjectWorkbench({
   projectPath,
+  workspace,
   mobile,
   chat,
   sessions = [],
@@ -80,6 +82,7 @@ export default function ProjectWorkbench({
         {layoutMode === 'columns' ? (
           <WorkbenchColumns
             projectPath={projectPath}
+            workspace={workspace}
             chat={chat}
             sessions={sessions}
             selectedSession={selectedSession}
@@ -104,6 +107,7 @@ export default function ProjectWorkbench({
                 <WorkbenchPanelHost
                   state={state}
                   projectPath={projectPath}
+                  workspace={workspace}
                   mobile={mobile}
                   onClose={(id) => dispatch({ type: 'tab/close', id })}
                 />

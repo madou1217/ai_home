@@ -7,6 +7,14 @@ export type WorkbenchPanelKind =
 
 export type WorkbenchToolKind = Exclude<WorkbenchPanelKind, 'chat'>;
 
+export interface WorkbenchWorkspaceDescriptor {
+  readonly kind: 'local-server' | 'remote-server' | 'ssh-workspace';
+  readonly serverId?: string;
+  readonly workspaceId?: string;
+  readonly root: string;
+  readonly label?: string;
+}
+
 interface BaseTab {
   readonly id: string;
   readonly kind: WorkbenchPanelKind;

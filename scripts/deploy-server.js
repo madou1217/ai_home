@@ -23,6 +23,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const crypto = require('node:crypto');
 const { buildGoServer } = require('./build-go-server');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -51,6 +52,7 @@ const REMOTE_PRESERVED = Object.freeze(['node_modules', '.node-runtime', 'data',
 // 跳过 Go 构建时必须一并保留远端 bin/native：`rsync --delete` 会在归档里没有该目录时
 // 删掉远端正在运行的 Go 二进制，服务随后起不来。
 const REMOTE_PRESERVED_WITHOUT_GO = Object.freeze([...REMOTE_PRESERVED, 'bin/native']);
+const WEB_BUILD_MANIFEST = '.aih-build.json';
 
 /** 按本次运行是否携带 Go 构件，决定 rsync 的保留名单。 */
 function remotePreserved(options = {}) {
@@ -89,7 +91,8 @@ Options:
   --port <n>             Server port for the readiness check, default ${DEFAULTS.port}
   --go-target <t>        Go Core build target <platform>-<arch>, default: probe the remote
                          (linux-x64 / linux-arm64 / win32-x64 / darwin-arm64)
-  --skip-web-build       Reuse the web/dist committed state (no local web build)
+  --skip-web-build       Skip local Umi build (use --web-dist for a prebuilt artifact)
+  --web-dist <path>      Copy a prebuilt web/dist from this machine (for example a Mac mini build)
   --skip-go-build        Do not cross-compile Go Core; keep the remote bin/native as is
   --no-restart           Update files only
   --dry-run              Print the steps without changing anything
@@ -103,6 +106,7 @@ function parseArgs(argv, env = process.env) {
     ...DEFAULTS,
     goTarget: '',
     skipWebBuild: false,
+    webDist: '',
     skipGoBuild: false,
     restart: true,
     dryRun: false,
@@ -125,6 +129,7 @@ function parseArgs(argv, env = process.env) {
     else if (arg === '--port') options.port = Number(next());
     else if (arg === '--go-target') options.goTarget = next();
     else if (arg === '--skip-web-build') options.skipWebBuild = true;
+    else if (arg === '--web-dist') options.webDist = next();
     else if (arg === '--skip-go-build') options.skipGoBuild = true;
     else if (arg === '--no-restart') options.restart = false;
     else if (arg === '--dry-run') options.dryRun = true;
@@ -137,6 +142,8 @@ function parseArgs(argv, env = process.env) {
     if (!/^[~A-Za-z0-9._/-]+$/.test(options.remoteDir)) throw new Error('invalid --remote-dir');
     if (options.goTarget && !/^[a-z0-9]+-[a-z0-9]+$/.test(options.goTarget)) throw new Error('invalid --go-target');
     if (options.goTarget && options.skipGoBuild) throw new Error('--go-target and --skip-go-build are mutually exclusive');
+    if (options.webDist && !options.skipWebBuild) throw new Error('--web-dist requires --skip-web-build');
+    if (options.skipWebBuild && !options.webDist) throw new Error('--skip-web-build requires --web-dist <path>; web/dist is not tracked in git');
   }
   return options;
 }
@@ -188,6 +195,19 @@ STAGE="$(mktemp -d "\${TMPDIR:-/tmp}/aih-deploy.XXXXXX")"
 cleanup() { rm -rf "$STAGE" "$ARCHIVE"; }
 trap cleanup EXIT
 tar -xzf "$ARCHIVE" -C "$STAGE"
+if [ ! -f "$STAGE/web/dist/.aih-build.json" ]; then
+  echo "[remote] web artifact manifest missing; build with npm run build or pass --web-dist from a verified build" >&2
+  exit 3
+fi
+WEB_ARTIFACT="$($NODE_BIN/node -e "const fs=require('fs'); const crypto=require('crypto'); const path=require('path'); const dir=process.argv[1]; const manifest=JSON.parse(fs.readFileSync(path.join(dir,'.aih-build.json'),'utf8')); const rows=[]; const walk=(base,rel='')=>{ for(const e of fs.readdirSync(base,{withFileTypes:true})){ const p=path.join(base,e.name), r=rel ? rel+'/'+e.name : e.name; if(e.isDirectory()) walk(p,r); else if(e.isFile() && r!=='.aih-build.json'){ const b=fs.readFileSync(p); rows.push(r+'\\0'+b.length+'\\0'+crypto.createHash('sha256').update(b).digest('hex')+'\\n'); } else if(e.isSymbolicLink()) throw new Error('symlink:'+r); } }; walk(dir); rows.sort(); const digest=crypto.createHash('sha256').update(rows.join('')).digest('hex'); process.stdout.write(JSON.stringify({source_sha:String(manifest.source_sha||''),artifact_sha256:digest}));" "$STAGE/web/dist")"
+WEB_SOURCE_SHA="$($NODE_BIN/node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p.source_sha);" "$WEB_ARTIFACT")"
+WEB_ARTIFACT_SHA="$($NODE_BIN/node -e "const p=JSON.parse(process.argv[1]); process.stdout.write(p.artifact_sha256);" "$WEB_ARTIFACT")"
+WEB_DECLARED_SHA="$($NODE_BIN/node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(p.artifact_sha256 || ''));" "$STAGE/web/dist/.aih-build.json")"
+if [ "$WEB_SOURCE_SHA" != "$SHA" ] || [ -z "$WEB_DECLARED_SHA" ] || [ "$WEB_ARTIFACT_SHA" != "$WEB_DECLARED_SHA" ]; then
+  echo "[remote] web artifact verification failed (source_sha=$WEB_SOURCE_SHA artifact_sha256=$WEB_ARTIFACT_SHA declared=$WEB_DECLARED_SHA deploy_sha=$SHA)" >&2
+  exit 3
+fi
+echo "[remote] web artifact verified sha256=\${WEB_ARTIFACT_SHA:0:12}"
 echo "[remote] previous: $(cat "$DIR/DEPLOYED_GIT_HEAD" 2>/dev/null || echo unknown)"
 
 DEPS_CHANGED=0
@@ -260,6 +280,58 @@ function resolveGoTarget(options) {
   return target;
 }
 
+
+function digestWebDist(distDir) {
+  const records = [];
+  const walk = (directory, prefix = '') => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(absolute, relative);
+      else if (entry.isFile()) {
+        const content = fs.readFileSync(absolute);
+        records.push({ relative, bytes: content.length, sha256: crypto.createHash('sha256').update(content).digest('hex') });
+      } else if (entry.isSymbolicLink()) {
+        throw new Error(`web dist contains unsupported symlink: ${relative}`);
+      }
+    }
+  };
+  walk(distDir);
+  records.sort((a, b) => a.relative.localeCompare(b.relative));
+  const input = records.map((item) => `${item.relative}\0${item.bytes}\0${item.sha256}\n`).join('');
+  return {
+    artifact_sha256: crypto.createHash('sha256').update(input).digest('hex'),
+    file_count: records.length
+  };
+}
+
+function prepareWebDist(worktree, options, sourceSha) {
+  const distDir = path.join(worktree, 'web', 'dist');
+  if (options.webDist) {
+    const source = path.resolve(options.webDist);
+    if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) {
+      throw new Error(`--web-dist must point to an existing directory: ${source}`);
+    }
+    fs.rmSync(distDir, { recursive: true, force: true });
+    fs.cpSync(source, distDir, { recursive: true, force: true, dereference: true });
+  }
+  if (!fs.existsSync(distDir) || !fs.statSync(distDir).isDirectory()) {
+    throw new Error('web build did not produce web/dist; build on a capable machine and pass --web-dist');
+  }
+  const manifestPath = path.join(distDir, WEB_BUILD_MANIFEST);
+  if (fs.existsSync(manifestPath)) {
+    let existing;
+    try { existing = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch { throw new Error(`invalid ${WEB_BUILD_MANIFEST} in web/dist`); }
+    if (existing.source_sha && existing.source_sha !== sourceSha) {
+      throw new Error(`web artifact source_sha ${existing.source_sha} does not match deploy ref ${sourceSha}`);
+    }
+  }
+  fs.rmSync(manifestPath, { force: true });
+  const digest = digestWebDist(distDir);
+  fs.writeFileSync(manifestPath, `${JSON.stringify({ schema_version: 1, source_sha: sourceSha, ...digest }, null, 2)}\n`);
+  return digest;
+}
+
 function buildLocalArchive(options, sha) {
   const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-deploy-worktree-'));
   const archive = path.join(os.tmpdir(), `aih-deploy-${sha.slice(0, 8)}-${process.pid}.tgz`);
@@ -270,7 +342,11 @@ function buildLocalArchive(options, sha) {
       fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(worktree, 'node_modules'));
       fs.symlinkSync(path.join(REPO_ROOT, 'web', 'node_modules'), path.join(worktree, 'web', 'node_modules'));
       console.log('[local] building web …');
-      run('npx', ['max', 'build'], { cwd: path.join(worktree, 'web'), capture: true });
+      run('npm', ['run', 'build'], { cwd: path.join(worktree, 'web'), capture: true });
+      prepareWebDist(worktree, options, sha);
+    } else {
+      const digest = prepareWebDist(worktree, options, sha);
+      console.log(`[local] using prebuilt web/dist (${digest.file_count} files, sha256 ${digest.artifact_sha256.slice(0, 12)})`);
     }
     if (!options.skipGoBuild) {
       // bin/native 是 gitignore 的，worktree 里本来就没有：必须在这里产出远端平台的
@@ -308,6 +384,9 @@ function main(argv = process.argv.slice(2)) {
   if (!pushed) throw new Error(`${options.ref} (${sha.slice(0, 8)}) is not on any pushed branch; push it first`);
   console.log(`[local] deploying ${sha.slice(0, 8)} (${options.ref}) to ${options.ssh}:${options.remoteDir}`);
 
+  if (options.skipWebBuild && !options.webDist) {
+    throw new Error('--skip-web-build requires --web-dist <path>; web/dist is not tracked in git');
+  }
   const remoteScript = buildRemoteScript(options);
   const remoteArchive = `/tmp/aih-deploy-${sha.slice(0, 8)}.tgz`;
   if (options.dryRun) {
@@ -352,6 +431,9 @@ module.exports = {
   REMOTE_PRESERVED_WITHOUT_GO,
   TAR_EXCLUDES,
   buildRemoteScript,
+  digestWebDist,
+  prepareWebDist,
+  WEB_BUILD_MANIFEST,
   parseArgs,
   parseRemoteGoTarget,
   remotePath,

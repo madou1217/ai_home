@@ -33,7 +33,7 @@ test('resolves the WorkBuddy runtime with the lite-wb bundle env patch', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-wb-cli-'));
   try {
     makeAppRoot(root, HOST_IDS.workbuddy);
-    const launch = resolveWorkbuddyNativeCli('workbuddy', { fs, volumeRoots: [], getProviderCLIConfig: () => ({ desktopClient: { macos: { installPaths: [root] } } }) });
+    const launch = resolveWorkbuddyNativeCli('workbuddy', { platform: 'darwin', fs, volumeRoots: [], getProviderCLIConfig: () => ({ desktopClient: { macos: { installPaths: [root] } } }) });
 
     assert.equal(typeof launch.command, 'string');
     assert.equal(launch.prefixArgs.length, 1);
@@ -50,7 +50,7 @@ test('rejects an installation root whose product identity is not WorkBuddy', () 
   try {
     makeAppRoot(root, 'codebuddy-desktop');
     assert.throws(
-      () => resolveWorkbuddyNativeCli('workbuddy', { fs, volumeRoots: [], getProviderCLIConfig: () => ({ desktopClient: { macos: { installPaths: [root] } } }) }),
+      () => resolveWorkbuddyNativeCli('workbuddy', { platform: 'darwin', fs, volumeRoots: [], getProviderCLIConfig: () => ({ desktopClient: { macos: { installPaths: [root] } } }) }),
       (error) => error && error.code === 'workbuddy_native_runtime_missing'
     );
   } finally {

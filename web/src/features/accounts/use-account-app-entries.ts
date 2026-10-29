@@ -8,6 +8,7 @@ export interface UseAccountAppEntriesResult {
   /** 宿主机实测的 Desktop / CLI 安装情况；null 表示尚未加载（入口图标全部隐藏，避免闪烁）。 */
   appEntries: AccountAppEntryMap | null;
   appCapabilities: AccountAppEntryMap;
+  serverRuntime: boolean;
   /** Desktop 运行中的账号（accountRef），用于给入口挂角标。 */
   runningAccounts: string[];
   applyAppEntries: (result: AccountAppEntriesResult) => void;
@@ -53,11 +54,13 @@ export function useAccountAppEntries(): UseAccountAppEntriesResult {
   const [appEntries, setAppEntries] = React.useState<AccountAppEntryMap | null>(null);
   const [appCapabilities, setAppCapabilities] = React.useState<AccountAppEntryMap>({});
   const [runningAccounts, setRunningAccounts] = React.useState<string[]>([]);
+  const [serverRuntime, setServerRuntime] = React.useState(false);
 
   const applyAppEntries = React.useCallback((result: AccountAppEntriesResult) => {
     setAppEntries((current) => (shallowEqualRecord(current, result.entries) ? current : result.entries));
     setAppCapabilities((current) => (shallowEqualRecord(current, result.capabilities) ? current : result.capabilities));
     setRunningAccounts((current) => (equalStringList(current, result.runningAccounts) ? current : result.runningAccounts));
+    setServerRuntime(result.serverRuntime === true);
   }, []);
 
   const markAppEntriesUnavailable = React.useCallback(() => {
@@ -77,6 +80,7 @@ export function useAccountAppEntries(): UseAccountAppEntriesResult {
     appEntries,
     appCapabilities,
     runningAccounts,
+    serverRuntime,
     applyAppEntries,
     markAppEntriesUnavailable,
     loadAppEntries

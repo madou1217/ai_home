@@ -59,13 +59,19 @@ export function resolveNativeSessionAdoption(
 ): ResolvedSessionAdoption | null {
   if (resolved.provider !== current.provider) return null;
   if (current.mode === 'chat') {
+    const resolvedTitle = meaningfulTitle(resolved.policy.title)
+      ? String(resolved.policy.title)
+      : current.title;
     return {
       nativeSessionId: resolved.sessionId,
       session: current.runtimeSessionId === resolved.sessionId ? null : {
         ...current, id: resolved.sessionId, runtimeSessionId: resolved.sessionId,
         accountRef: resolved.executionAccountRef, draft: !resolved.runtimeBinding.nativeSessionId,
         projectPath: undefined, projectDirName: undefined,
-        title: String(resolved.policy.title || current.title),
+        // A runtime snapshot can still carry the creation placeholder while the
+        // directory already has the real title from the first prompt. Preserve
+        // that title when adopting/reconnecting a chat session.
+        title: resolvedTitle,
         updatedAt: resolved.updatedAt,
       },
     };
@@ -87,8 +93,14 @@ export function resolveNativeSessionAdoption(
       draft: false,
       updatedAt: Math.max(current.updatedAt, resolved.updatedAt),
       projectPath: resolved.projectPath || current.projectPath || fallbackProjectPath,
+      title: meaningfulTitle(resolved.policy.title) ? String(resolved.policy.title) : current.title,
     },
   };
+}
+
+function meaningfulTitle(value: unknown): boolean {
+  const title = String(value || '').trim();
+  return Boolean(title) && title !== '新会话' && title !== '新对话';
 }
 
 export function resolveBoundNativeSessionId(

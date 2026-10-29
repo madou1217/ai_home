@@ -80,8 +80,12 @@ function run(command, args) {
 async function main() {
   await acquireLock();
   try {
-    const maxBin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'max.cmd' : 'max');
-    await run(maxBin, ['build']);
+    // 内层交给 build.cjs：低内存主机上的堆自适应（--max-old-space-size / 低内存时
+    // COMPRESS=none）与「Umi 构建结束后回收空闲子进程」都在那里实现；外层保留本文件的
+    // **等待式**串行锁（并发构建排队而不是直接失败）与 SW 缓存戳。
+    // 两侧改动都保留：见本次合并提交说明（本地 5b5977b4 的串行锁+戳 / 远端 2a388382 的
+    // 低内存适配 + 6b2aae63 的构建结束回收）。
+    await run(process.execPath, [path.join(root, 'scripts', 'build.cjs')]);
     await run(process.execPath, [path.join(root, 'scripts', 'stamp-sw-cache.cjs')]);
   } finally {
     await releaseLock();

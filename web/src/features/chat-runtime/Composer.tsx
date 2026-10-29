@@ -19,6 +19,8 @@ export interface ComposerProps {
   readonly actions: SessionRuntimeActions;
   readonly accounts: readonly ChatAccount[];
   readonly accountRef: string;
+  readonly provider: string;
+  readonly projectPath?: string;
   readonly catalog: RuntimeComposerCatalogState;
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;

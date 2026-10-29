@@ -110,6 +110,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const {
     appEntries,
     appCapabilities,
+    serverRuntime,
     runningAccounts,
     applyAppEntries,
     markAppEntriesUnavailable,
@@ -126,6 +127,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
     handlersRef,
     modelCatalog: { clearModelAccountRefreshing, loadModelCatalog },
     loadAppEntries,
+    serverRuntime,
     onOpenAppResponse: (result) => {
       if (result.egressWarning) {
         message.warning(`账号出口未生效：${result.egressWarning}`);
@@ -246,7 +248,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
       ];
     }
     const list: SwipeAction[] = [];
-    const support = getAccountAppSupport(record, appEntries, appCapabilities);
+    const support = getAccountAppSupport(record, appEntries, appCapabilities, serverRuntime);
     if (appEntries && support.cliSupported) {
       list.push({
         key: 'cli',
@@ -354,7 +356,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
     </MobileToolbar>
   );
 
-  const selectedSupport = selectedAccount ? getAccountAppSupport(selectedAccount, appEntries, appCapabilities) : null;
+  const selectedSupport = selectedAccount ? getAccountAppSupport(selectedAccount, appEntries, appCapabilities, serverRuntime) : null;
 
   return (
     <MobilePage

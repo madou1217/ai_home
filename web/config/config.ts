@@ -1,5 +1,6 @@
 import { defineConfig } from "@umijs/max";
 import MonacoEditorWebpackPlugin from "monaco-editor-webpack-plugin";
+import path from "node:path";
 import routes from "./routes";
 
 const isGoAccountsPreview = process.env.AIH_GO_ACCOUNTS_PREVIEW === "1";
@@ -118,6 +119,19 @@ export default defineConfig({
   // 循环 class 继承的基类重排为 null，运行时抛 "Super constructor null"。
   // 强制解析到自包含的 CJS UMD 产物（对 concatenation 不透明），规避该 bug。
   chainWebpack(memo: any) {
+    // Persist webpack's module and dependency graph between production builds.
+    // This keeps the first build unchanged while making the common edit/build
+    // loop reuse the expensive Monaco/Ant Design compilation work.
+    memo.set('cache', {
+      type: 'filesystem',
+      cacheDirectory: path.resolve(process.cwd(), 'node_modules/.cache/aih-webpack'),
+      compression: false,
+      idleTimeout: 0,
+      idleTimeoutForInitialStore: 0,
+      idleTimeoutAfterLargeChanges: 0,
+      maxMemoryGenerations: 0,
+      buildDependencies: { config: [__filename] },
+    });
     memo.resolve.alias.set(
       '@xterm/xterm$',
       require.resolve('@xterm/xterm/lib/xterm.js')

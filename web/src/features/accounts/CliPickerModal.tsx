@@ -15,6 +15,7 @@ interface CliPickerModalProps {
   models: string[];
   modelLabels: Record<string, string>;
   selectedModel: string;
+  serverRuntime?: boolean;
   onHarnessChange: (harness: string) => void;
   onModelChange: (model: string) => void;
   onTerminalChange: (terminalId: string) => void;
@@ -37,6 +38,7 @@ export function CliPickerModal({
   models,
   modelLabels,
   selectedModel,
+  serverRuntime = false,
   onHarnessChange,
   onModelChange,
   onTerminalChange,
@@ -108,17 +110,25 @@ export function CliPickerModal({
           跨 Provider 启动不会使用 harness 自己的默认模型；请选择上方的身份账号模型。
         </Typography.Text>
       ) : null}
-      <span className="hud-label cli-picker-caption">终端</span>
-      <Select
-        style={{ width: '100%' }}
-        value={selectedTerminalId}
-        onChange={onTerminalChange}
-        options={terminals.map((terminal) => ({
-          value: terminal.id,
-          label: `${terminal.name}${terminal.default ? '（系统默认）' : ''}`,
-          title: terminal.description
-        }))}
-      />
+      {serverRuntime ? (
+        <Typography.Text type="secondary" className="aih-overlay-hint cli-picker-hint">
+          当前连接的是 Server，CLI 将在 Server 的 Web 虚拟终端中运行；浏览器刷新后仍可重新打开。
+        </Typography.Text>
+      ) : (
+        <>
+          <span className="hud-label cli-picker-caption">终端</span>
+          <Select
+            style={{ width: '100%' }}
+            value={selectedTerminalId}
+            onChange={onTerminalChange}
+            options={terminals.map((terminal) => ({
+              value: terminal.id,
+              label: `${terminal.name}${terminal.default ? '（系统默认）' : ''}`,
+              title: terminal.description
+            }))}
+          />
+        </>
+      )}
       <span className="hud-label cli-picker-caption">项目目录</span>
       <Space.Compact style={{ width: '100%' }}>
         <Input

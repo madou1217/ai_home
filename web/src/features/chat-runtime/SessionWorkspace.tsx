@@ -44,6 +44,7 @@ interface Props {
   readonly onFreshNativeSessionBound: (nativeSessionId: string) => void;
   readonly onNativeSessionBound?: (nativeSessionId: string) => void;
   readonly onBranchSession?: (session: Session) => void;
+  readonly onProjectsRefresh: (selection: { readonly sessionId?: string; readonly provider?: Provider; readonly projectPath?: string }) => Promise<void>;
 }
 
 export default function SessionWorkspace(props: Props) {
@@ -72,10 +73,18 @@ export default function SessionWorkspace(props: Props) {
   );
   useEffect(() => () => freshPlanWorkflow.dispose(), [freshPlanWorkflow]);
   useEffect(() => {
-    if (props.runtimeTarget.policy.workspaceMode === 'chat' && projection.state === 'idle') {
+    if (projection.state !== 'idle') return;
+    if (props.runtimeTarget.policy.workspaceMode === 'chat') {
       window.dispatchEvent(new Event('aih:chat-sessions-changed'));
+      return;
     }
-  }, [projection.state, props.runtimeTarget.policy.workspaceMode]);
+    void props.onProjectsRefresh({
+      sessionId: props.controller.sessionId,
+      provider: props.runtimeTarget.provider as Provider,
+      projectPath: props.runtimeTarget.projectPath,
+    });
+  }, [projection.state, props.controller.sessionId, props.onProjectsRefresh,
+    props.runtimeTarget.policy.workspaceMode, props.runtimeTarget.projectPath, props.runtimeTarget.provider]);
   const implementCurrent = useCallback(async (sourceTurnId: string): Promise<void> => {
     await currentPlanWorkflow.execute(sourceTurnId);
     props.onApprovalModeChange('confirm');
@@ -134,6 +143,8 @@ export default function SessionWorkspace(props: Props) {
             actions={actions}
             accounts={props.accounts}
             accountRef={props.accountRef}
+            provider={props.runtimeTarget.provider}
+            projectPath={props.runtimeTarget.projectPath}
             catalog={composerCatalog}
             selectedModel={props.selectedModel}
             approvalMode={projection.approvalMode || props.approvalMode}

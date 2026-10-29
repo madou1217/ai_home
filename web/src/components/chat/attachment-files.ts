@@ -98,6 +98,24 @@ export async function readChatAttachment(file: File): Promise<ReadChatAttachment
   return { name, mimeType, size: file.size, dataUrl: `data:${mimeType};base64,${rawUrl.split(',')[1]}`, document };
 }
 
+/**
+ * Turn clipboard text into the same document attachment envelope used by the
+ * file picker. Keeping this in the attachment reader means pasted content
+ * follows the normal upload/attachmentIds protocol after the composer sends.
+ */
+export function readPastedTextAttachment(text: string): Promise<ReadChatAttachment> {
+  const content = String(text || '');
+  const file = new File([content], 'pasted-text.txt', { type: 'text/plain' });
+  return readChatAttachment(file).then((attachment) => ({
+    ...attachment,
+    name: `粘贴文本 · ${Array.from(content).length} 字符.txt`,
+    document: attachment.document ? {
+      ...attachment.document,
+      name: `粘贴文本 · ${Array.from(content).length} 字符.txt`,
+    } : attachment.document,
+  }));
+}
+
 function readFile(file: File, format: 'dataUrl' | 'arrayBuffer'): Promise<string | ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

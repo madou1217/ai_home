@@ -608,7 +608,7 @@ export const accountsAPI = {
     action: 'open' | 'close' = 'open',
     terminalId?: string,
     workdir?: string,
-    options?: { harness?: string; model?: string }
+    options?: { harness?: string; model?: string; transport?: 'webui' | 'native'; sessionKey?: string }
   ): Promise<AccountAppLaunchResponse> => {
     const response = await api.post<AccountAppLaunchResponse>(
       `/webui/accounts/${provider}/${accountRef}/open-app`,
@@ -618,7 +618,9 @@ export const accountsAPI = {
         ...(terminalId ? { terminalId } : {}),
         ...(workdir ? { workdir } : {}),
         ...(options?.harness ? { harness: options.harness } : {}),
-        ...(options?.model ? { model: options.model } : {})
+        ...(options?.model ? { model: options.model } : {}),
+        ...(options?.transport ? { transport: options.transport } : {}),
+        ...(options?.sessionKey ? { sessionKey: options.sessionKey } : {})
       }
     );
     return response.data;
@@ -762,6 +764,7 @@ export const accountsAPI = {
   listAppEntries: async (options: { refresh?: boolean } = {}): Promise<{
     entries: Record<string, { desktop: boolean; cli: boolean }>;
     capabilities: Record<string, { desktop: boolean; cli: boolean; crossProviderHarness?: boolean; label?: string; externalHarness?: boolean; interactiveKind?: string; managedAppId?: string }>;
+    serverRuntime?: boolean;
     runningAccounts: string[];
     runningAccountPids: Record<string, number[]>;
     runningCliAccounts: string[];
@@ -775,6 +778,7 @@ export const accountsAPI = {
       runningAccountPids?: Record<string, number[]>;
       runningCliAccounts?: string[];
       runningCliAccountPids?: Record<string, number[]>;
+      serverRuntime?: boolean;
   }>('/webui/app-entries', options.refresh ? { params: { refresh: '1' } } : undefined);
     return {
       entries: response.data.entries || {},
@@ -782,7 +786,8 @@ export const accountsAPI = {
       runningAccounts: Array.isArray(response.data.runningAccounts) ? response.data.runningAccounts : [],
       runningAccountPids: response.data.runningAccountPids || {},
       runningCliAccounts: Array.isArray(response.data.runningCliAccounts) ? response.data.runningCliAccounts : [],
-      runningCliAccountPids: response.data.runningCliAccountPids || {}
+      runningCliAccountPids: response.data.runningCliAccountPids || {},
+      serverRuntime: response.data.serverRuntime === true
     };
   },
 
@@ -2149,12 +2154,24 @@ export const terminalAPI = {
     cols: number,
     rows: number,
     muxId?: string,
-    cwd?: string
+    cwd?: string,
+    sessionKey?: string
   ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; error?: string }> =>
-    terminalPost('open', { cols, rows, muxId, cwd }),
+    terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string) => terminalPost('input', { termId, data }),
   resize: (termId: string, cols: number, rows: number) => terminalPost('resize', { termId, cols, rows }),
   close: (termId: string) => terminalPost('close', { termId }),
+  attach: async (sessionKey: string, muxId?: string): Promise<{
+    ok: boolean;
+    termId?: string;
+    sessionKey?: string;
+    muxId?: string;
+    cols?: number;
+    rows?: number;
+    cwd?: string;
+    shell?: string;
+    error?: string;
+  }> => terminalPost('attach', { sessionKey, muxId }),
   // 整个面板一条 SSE，承载所有 tab 的输出（帧带 termId），规避浏览器每域 ~6 连接上限。
   // Management Key 与远端 server id 均通过 header 传递，不进入 URL。
   openMuxStream: (muxId: string): EventSource => guardedWebUiEventSource(

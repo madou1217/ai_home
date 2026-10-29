@@ -264,7 +264,7 @@ const ProjectList = ({
                       <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
-                      <span className={styles.sessionTitle}>{session.title || '新对话'}</span>
+                      <span className={styles.sessionTitle} title={session.title || '新对话'}>{session.title || '新对话'}</span>
                       <Button
                         type="text"
                         size="small"
@@ -425,19 +425,23 @@ const ProjectList = ({
                     return (b.updatedAt || 0) - (a.updatedAt || 0);
                   })
                   .map((session) => (
-                  <div
+                  (() => {
+                    const isRunning = isSessionRunning(session, runningSessionKeys);
+                    return <div
                     key={session.id}
                     className={`${styles.sessionItem} ${
                       isSameSession(selectedSession, session) ? styles.sessionItemActive : ''
-                    }`}
+                    } ${isRunning ? styles.sessionItemRunning : ''}`}
                     onClick={() => onSelectSession(session)}
                     style={{ padding: '8px 10px' }}
                   >
                     <div className={styles.sessionHeader}>
-                      <span className={styles.sessionProviderSlot} style={providerAccentStyle(session.provider)}>
+                      <span className={`${styles.sessionProviderSlot} ${
+                        isRunning ? styles.sessionProviderSlotRunning : ''
+                      }`} style={providerAccentStyle(session.provider)}>
                         <ProviderIcon provider={session.provider} size={14} />
                       </span>
-                      <span className={styles.sessionTitle}>{session.title || '新对话'}</span>
+                      <span className={styles.sessionTitle} title={session.title || '新对话'}>{session.title || '新对话'}</span>
                       <button
                         className={styles.archiveBtn}
                         onClick={(e) => handleTogglePin(session.id, e)}
@@ -471,9 +475,11 @@ const ProjectList = ({
                       </Popconfirm>
                     </div>
                     <span className={styles.sessionTime}>
-                      <SessionRelativeTime timestamp={session.updatedAt} />
+                      {isRunning ? <span className="hud-led hud-led--ok hud-led--live" aria-hidden="true" /> : null}
+                      {isRunning ? '进行中' : <SessionRelativeTime timestamp={session.updatedAt} />}
                     </span>
-                  </div>
+                  </div>;
+                  })()
                 ))}
               </div>
             )}
@@ -678,7 +684,7 @@ const ProjectList = ({
                                   >
                                     <ProviderIcon provider={session.provider} size={14} />
                                   </span>
-                                  <span className={styles.sessionTitle}>{session.title}</span>
+                                  <span className={styles.sessionTitle} title={session.title}>{session.title}</span>
                                   <SessionArchiveAction
                                     action={archiveAction}
                                     session={session}

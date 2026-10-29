@@ -279,7 +279,7 @@ aih usage recalculate-costs                 # 用当前价格表重算历史费�
 
 ## SSH 图片粘贴
 
-通过普通 SSH 在远端运行 `aih <cli> <id>` 时，如果本地终端支持 OSC 5522，或者能通过 OSC 52 读回图片，直接粘贴（或按 `Alt+V`）就能把剪贴板图片发过去。
+通过普通 SSH 在远端运行 `aih <cli> <id>` 时，如果本地终端支持 OSC 5522，或者能通过 OSC 52 读回图片，直接粘贴（或按 `Alt+V` / `Ctrl+V`）就能把剪贴板图片发过去。
 
 - 诊断：`aih ssh-clipboard probe --json`。
 - 终端不支持时，可以改用 `aih ssh user@host -- aih claude`，或 `aih clip-agent start` 配合 SSH RemoteForward。

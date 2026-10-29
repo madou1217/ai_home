@@ -32,6 +32,11 @@ import { useMobileOverscrollFeedback } from '@/components/mobile/use-mobile-over
 import PlanChoiceDock from './PlanChoiceDock';
 import TerminalDock, { type TerminalRunState } from './TerminalDock';
 import ShellTerminalPanel from './ShellTerminalPanel';
+import {
+  composerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '@/features/chat-runtime/composer-draft-store';
 import { decorateMessagesWithPendingState } from './live-message-state.js';
 import { filterRenderableChatMessages } from './message-display-policy.js';
 import { resolvePendingTailState } from './pending-tail-state.js';
@@ -251,6 +256,29 @@ const MessageArea = ({
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
+  const legacyDraftIdentity = useMemo(() => ({
+    sessionId: session?.id,
+    provider: session?.provider,
+    accountRef: selectedAccount?.accountRef,
+    workspaceMode: session?.mode || 'chat',
+    projectPath: session?.projectPath || terminalCwd,
+  }), [selectedAccount?.accountRef, session?.id, session?.mode, session?.projectPath, session?.provider, terminalCwd]);
+  const legacyDraftKey = composerDraftKey(legacyDraftIdentity);
+  const hydratedLegacyDraftKey = useRef('');
+  useEffect(() => {
+    if (hydratedLegacyDraftKey.current === legacyDraftKey) return;
+    hydratedLegacyDraftKey.current = legacyDraftKey;
+    const stored = readComposerDraft(legacyDraftIdentity);
+    if (stored !== input) onInputChange(stored);
+  }, [input, legacyDraftIdentity, legacyDraftKey, onInputChange]);
+  useEffect(() => {
+    if (hydratedLegacyDraftKey.current !== legacyDraftKey) return;
+    const timer = window.setTimeout(() => writeComposerDraft(legacyDraftIdentity, input), 180);
+    return () => {
+      window.clearTimeout(timer);
+      writeComposerDraft(legacyDraftIdentity, input);
+    };
+  }, [input, legacyDraftIdentity, legacyDraftKey]);
   const [inSessionSearchOpen, setInSessionSearchOpen] = useState(false);
   // Cmd/Ctrl+F 唤起检索胶囊:事件源在 Chat.tsx(chat-global-shortcuts 是全局快捷键单一事实源)
   useEffect(() => {
@@ -1259,6 +1287,8 @@ const MessageArea = ({
       {/* VSCode 风格底部终端面板：置于输入框下方，成为最底部 dock */}
       <ShellTerminalPanel
         visible={shellTerminalOpen}
+        persistent
+        sessionKey={`chat-shell:${resolveActiveServer().serverId || 'local'}:${encodeURIComponent(session?.id || terminalCwd || 'default')}`}
         onClose={() => setShellTerminalOpen(false)}
         cwd={terminalCwd}
       />

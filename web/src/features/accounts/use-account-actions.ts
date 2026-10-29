@@ -131,6 +131,55 @@ export interface AccountAppInstallPrompt {
   message: string;
 }
 
+export interface AccountWebTerminalLaunch {
+  account?: Account;
+  sessionKey: string;
+  cwd: string;
+  harness: string;
+  model: string;
+  label: string;
+}
+
+const WEB_TERMINAL_STORAGE_KEY = 'aih:account-web-terminal:v1';
+
+function buildWebTerminalSessionKey(accountRef: string, harness: string, model: string, cwd: string): string {
+  const raw = [accountRef, harness, model, cwd].map((value) => String(value || '').trim()).join('|');
+  // The server accepts printable keys only; URI encoding keeps paths such as
+  // /workspace/foo and Windows drive letters unambiguous across refreshes.
+  return `account-cli:${encodeURIComponent(raw).slice(0, 150)}`;
+}
+
+function readStoredWebTerminalLaunch(): AccountWebTerminalLaunch | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(WEB_TERMINAL_STORAGE_KEY) || 'null');
+    if (!parsed || typeof parsed !== 'object' || !String(parsed.sessionKey || '').trim()) return null;
+    return {
+      sessionKey: String(parsed.sessionKey).trim(),
+      cwd: String(parsed.cwd || ''),
+      harness: String(parsed.harness || ''),
+      model: String(parsed.model || ''),
+      label: String(parsed.label || 'Server CLI')
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function persistWebTerminalLaunch(launch: AccountWebTerminalLaunch | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!launch) window.localStorage.removeItem(WEB_TERMINAL_STORAGE_KEY);
+    else window.localStorage.setItem(WEB_TERMINAL_STORAGE_KEY, JSON.stringify({
+      sessionKey: launch.sessionKey,
+      cwd: launch.cwd,
+      harness: launch.harness,
+      model: launch.model,
+      label: launch.label
+    }));
+  } catch (_error) { /* browser storage may be disabled */ }
+}
+
 export interface AccountAppInstallResult {
   prompt: AccountAppInstallPrompt;
   job: AppInstallJob | null;
@@ -167,6 +216,7 @@ export interface UseAccountActionsOptions {
   handlersRef: React.MutableRefObject<UseAccountsSnapshotHandlers>;
   modelCatalog: Pick<UseModelCatalogResult, 'clearModelAccountRefreshing' | 'loadModelCatalog'>;
   loadAppEntries: (options?: { refresh?: boolean }) => Promise<void>;
+  serverRuntime?: boolean;
   /** openApp 请求成功返回后立即回调（页面据此提示账号出口未生效等附加信息）。 */
   onOpenAppResponse?: (result: AccountAppLaunchResponse) => void;
 }
@@ -176,6 +226,7 @@ export function useAccountActions({
   handlersRef,
   modelCatalog,
   loadAppEntries,
+  serverRuntime = false,
   onOpenAppResponse
 }: UseAccountActionsOptions) {
   const navigate = useNavigate();
@@ -244,6 +295,7 @@ export function useAccountActions({
   const [cliPickerModelLabels, setCliPickerModelLabels] = React.useState<Record<string, string>>({});
   const [cliPickerDefaultModel, setCliPickerDefaultModel] = React.useState('');
   const [selectedCliModel, setSelectedCliModel] = React.useState('');
+  const [webTerminalLaunch, setWebTerminalLaunch] = React.useState<AccountWebTerminalLaunch | null>(readStoredWebTerminalLaunch);
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const importFolderInputRef = React.useRef<HTMLInputElement>(null);
   const successAutoCloseTimerRef = React.useRef<number | null>(null);
@@ -1507,7 +1559,7 @@ export function useAccountActions({
     kind: 'desktop' | 'cli',
     terminalId?: string,
     workdir?: string,
-    options?: { harness?: string; model?: string }
+    options?: { harness?: string; model?: string; transport?: 'webui' | 'native'; sessionKey?: string }
   ): Promise<boolean> => {
     const launchOptions = kind === 'cli' ? options : undefined;
     try {
@@ -1518,7 +1570,9 @@ export function useAccountActions({
         'open',
         terminalId,
         workdir,
-        launchOptions
+        kind === 'cli' && serverRuntime
+          ? { ...launchOptions, transport: 'webui', sessionKey: launchOptions?.sessionKey || buildWebTerminalSessionKey(record.accountRef, launchOptions?.harness || record.provider, launchOptions?.model || '', workdir || cliHomeDir) }
+          : (kind === 'cli' ? { ...launchOptions, transport: 'native' } : launchOptions)
       );
       onOpenAppResponseRef.current?.(result);
       if (kind === 'desktop' && result.status === 'already_running') {
@@ -1539,7 +1593,23 @@ export function useAccountActions({
         });
         return false;
       }
-      message.success(kind === 'desktop' ? '已打开 Desktop 应用' : '已打开 CLI 终端');
+      const openedWebTerminal = kind === 'cli' && result.launchMode === 'webui-pty';
+      message.success(kind === 'desktop' ? '已打开 Desktop 应用' : (openedWebTerminal ? '已打开 Server Web 终端' : '已打开 CLI 终端'));
+      if (openedWebTerminal) {
+        const key = String(result.sessionKey || launchOptions?.sessionKey || '').trim();
+        if (key) {
+          const launch = {
+            account: record,
+          sessionKey: key,
+          cwd: String(workdir || cliHomeDir || '').trim(),
+          harness: String(launchOptions?.harness || record.provider),
+          model: String(launchOptions?.model || ''),
+          label: `${launchOptions?.harness || record.provider} · ${getAccountPrimaryLabel(record)}`
+          };
+          setWebTerminalLaunch(launch);
+          persistWebTerminalLaunch(launch);
+        }
+      }
       loadAppEntries({ refresh: true });
       return true;
     } catch (error: any) {
@@ -1679,10 +1749,10 @@ export function useAccountActions({
         accountsAPI.listAppEntries(),
         modelsAPI.listCatalog()
       ]);
-      if (terminalsResult.status !== 'fulfilled') throw terminalsResult.reason;
-      const response = terminalsResult.value;
-      const available = (response.terminals || []).filter((terminal) => terminal.installed);
-      if (!available.length) {
+      if (!serverRuntime && terminalsResult.status !== 'fulfilled') throw terminalsResult.reason;
+      const response = terminalsResult.status === 'fulfilled' ? terminalsResult.value : { terminals: [], homeDir: '' };
+      const available = serverRuntime ? [] : (response.terminals || []).filter((terminal) => terminal.installed);
+      if (!serverRuntime && !available.length) {
         message.info('当前主机没有可用终端，请到 Toolkit > 终端管理安装。');
         return;
       }
@@ -1731,7 +1801,7 @@ export function useAccountActions({
       const defaultHarness = harnesses[0].id;
 
       setCliTerminals(available);
-      setSelectedCliTerminalId(available.find((terminal) => terminal.default)?.id || available[0].id);
+      setSelectedCliTerminalId(available.find((terminal) => terminal.default)?.id || available[0]?.id || 'server-webui');
       const homeDir = String(response.homeDir || '').trim();
       setCliHomeDir(homeDir);
       setCliWorkdir(homeDir);
@@ -1828,6 +1898,7 @@ export function useAccountActions({
   }, [navigate]);
 
   return {
+    serverRuntime,
     // 行级状态
     updatingStatusAccountRefs,
     refreshingUsageAccountRefs,
@@ -1983,6 +2054,13 @@ export function useAccountActions({
         onCancel: () => setCliPickerAccount(null),
         onOpen: openCliFromPicker,
         directoryPicker: cliDirectoryPicker
+      },
+      webTerminal: {
+        launch: webTerminalLaunch,
+        onClose: () => {
+          setWebTerminalLaunch(null);
+          persistWebTerminalLaunch(null);
+        }
       },
       kimiDesktopLogin: {
         request: kimiDesktopLoginRequest,

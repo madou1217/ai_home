@@ -493,8 +493,12 @@ export default function ModelUsage() {
       dataIndex: 'model',
       width: 220,
       ellipsis: true,
-      render: (value) => {
-        const fullName = String(value || '').trim();
+      // ProTable passes the already-rendered cell node as the first argument
+      // to render. For a string field that node is an object, so coercing it
+      // produces the visible "[object Object]". Read the canonical value from
+      // the row instead.
+      render: (_, row) => {
+        const fullName = String(row.model || '').trim();
         if (!fullName) return '-';
         return <Tooltip title={fullName}>{formatModelShortName(fullName)}</Tooltip>;
       }

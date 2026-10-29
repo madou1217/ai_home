@@ -119,6 +119,15 @@ export default defineConfig({
   // 循环 class 继承的基类重排为 null，运行时抛 "Super constructor null"。
   // 强制解析到自包含的 CJS UMD 产物（对 concatenation 不透明），规避该 bug。
   chainWebpack(memo: any) {
+    const lowMemoryBuild = process.env.COMPRESS === "none";
+    if (lowMemoryBuild) {
+      // Webpack's module concatenation and parallel graph walks duplicate a
+      // large portion of the module graph at the exact point where a 1 GiB
+      // builder has the least headroom. The low-memory build already opts out
+      // of minification; keep the same explicit mode bounded and predictable.
+      memo.set('parallelism', 1);
+      memo.optimization.concatenateModules(false);
+    }
     // Persist webpack's module and dependency graph between production builds.
     // This keeps the first build unchanged while making the common edit/build
     // loop reuse the expensive Monaco/Ant Design compilation work.

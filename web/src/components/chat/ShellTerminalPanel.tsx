@@ -253,7 +253,11 @@ function ShellTerminalPanel({
         const key = String(definition?.sessionKey || sessionKey || '').trim();
         if (!key) continue;
         void terminalAPI.attach(key, muxIdRef.current).then((attached) => {
-          if (!attached.ok || !attached.termId) return;
+          if (!attached.ok || !attached.termId) {
+            inst.term.writeln('\r\n\x1b[31mServer session 已结束，请重新打开终端。\x1b[0m');
+            setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'error' } : tab));
+            return;
+          }
           if (previousTermId !== attached.termId) byTermIdRef.current.delete(previousTermId);
           registerTermId(tabId, attached.termId, inst);
           setTabs((prev) => prev.map((tab) => tab.id === tabId

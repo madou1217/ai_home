@@ -25,6 +25,7 @@ import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { useAppendEnter } from '@/hooks/use-append-enter';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
@@ -687,6 +688,16 @@ const MessageArea = ({
     }
     return filterRenderableChatMessages(pendingState.messages);
   }, [activeProvider, externalPending, externalPendingStatusText, loading, loadingStatusText, messages]);
+
+  // 追加一条消息：只让新出现的消息行淡入上移（流式内容变化 id 不变，不会重播）。
+  // 气泡 key 是「角色-位置」，切会话时位置会重合，所以用会话 id 做基线重置。
+  const messageKeys = useMemo(
+    () => displayMessages.map((msg, index) => `${msg.role}-${index}`),
+    [displayMessages]
+  );
+  useAppendEnter(threadRef, messageKeys, session ? String(session.id || 'draft') : 'draft', {
+    selector: '[data-chat-anchor-key]',
+  });
 
   const renderedMessageNodes = useMemo(() => (
     displayMessages.map((msg, i) => {

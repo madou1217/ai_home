@@ -178,6 +178,17 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `web/src/components/ui/ListTable.tsx` + `styles/unified.css` | **Adapter wrapper（容器淡入外包一层，不碰行元素）** | 表格行上一轮没法接 FLIP：`<tr>` 上加 transform 会让 sticky 表头和 fixed 列错位。所以由 ListTable 统一包一层 `.unified-list-table-fade` 做容器淡入，`onRow` 只补 `data-flip-key` 供去重/测量；同时把 SectionCard「贴边」的直接子选择器延伸到新 wrapper，并在内层把 table 的 margin 归零，避免新增一层 div 打断布局。移动端卡片降级（`ListTableMobileCards`）没有固定列约束，直接逐卡 FLIP（`data-flip-key`，>80 项自动退化为容器淡入）；骨架屏与真表两侧都用挂载淡入衔接，首屏数据到达不再硬切 | `/ui/settings` → 模型别名（`SectionCard > ListTable` 唯一可达组合）实测：wrapper `margin-left = -16px`、内层 `.unified-list-table` `margin = 0`、wrapper 左右边界 273/1415 与 card body 完全一致（card 272/1416，差 1px 边框），1 个 `tr[data-flip-key]`，控制台零异常；账号表「全部(26)」→「Claude(1)」重排实测 `animateCalls = 1`（容器淡入）、`rectCalls = 1`、连续两次提交零逐行动画；900×900 下模型别名 wrapper `animation-name = aih-fade-in`（挂载淡入生效）。移动端卡片分支在当前路由各断点都先被专属移动 UI 接管，未取到真机触发证据，属代码级验证 |
 | `web/src/components/ui/Reveal.tsx` + `styles/motion.css`（`data-tall`） | **Threshold-based fallback（超高内容退化为瞬时高度 + 内容淡入）** | `grid-template-rows` 插值每一帧都会重排子树；上千像素的工具输出 / diff 展开时能单独把帧拖过 16ms。展开前量一次 `scrollHeight`，超过 1200px 就标 `data-tall="true"`：关掉高度过渡，改成高度瞬时切换 + 内容 `aih-fade-in`，视觉上仍是「展开」而不是硬切，但零逐帧布局 | tsc + ESLint + 构建通过，`dist` 含 `aih-reveal[data-tall` 规则；当前数据下各路由没有处于展开态的 Reveal（会话里的工具块未展开），该分支属代码级验证，未取得真机触发证据 |
 
+### 2026-10-30 补齐「切换 / 出现」类交互
+
+背景：上一轮把展开、重排、离场补齐后，剩下的硬切集中在「同一块区域换内容」和「条件出现的控件」：切会话时整条时间线瞬间换掉、等待状态行/回到底部按钮硬闪、移动端换屏没有过渡、底部导航选中条突然出现、账号健康状态的展开/收起整块替换。
+
+| 模块 | 模式 | 解决什么 | 验证 |
+| --- | --- | --- | --- |
+| `web/src/hooks/use-switch-fade.ts` + `ConversationTimeline`（原生会话时间线）/ `MessageArea`（legacy 会话） | **Module-scoped switch presence（模块级「上一次 key」+ 单次 opacity 过渡）** | 切会话时内容整体换掉：跨会话没有可比的旧坐标（FLIP 不适用），也不能靠 `key` 重挂载（长会话重挂全部气泡的代价远超一条动画）。统一原语只做「上一次 key ≠ 这一次 key 就淡入」——只碰 opacity、180ms、起始 0.3 不从 0 开始（避免闪白）。上一次 key 记在模块级而不是组件 ref：部分聊天外壳切会话会连带整块重挂载，组件内状态会丢 | 用 esbuild 打包该 hook + React 18 在无头 Chrome 里跑真机 DOM：首次挂载 0 次动画；A→B 产生 1 条 `opacity 0.3→1 / 180ms`；同 key 再设不重播；B→A 再播 1 条；`prefers-reduced-motion: reduce` 下 0 条。两处接入点经 tsc + 构建校验，`/ui/chat` 多次加载控制台零异常 |
+| `message-area.module.css`（welcome / pendingTailRow / scrollBottomBtn）+ `composer.module.css`（模式切换按钮） | **Mount enter（挂载淡入）+ 关键帧保留基础 transform** | 欢迎语、等待状态行、回到底部按钮都是条件挂载：现在挂载即淡入；`scrollBottomBtn` 本身有 `translateX(-50%)` 居中，关键帧里显式带上该位移，否则动画会把按钮弹到左边。Chat/Work 模式按钮的底色、外光、文字辉光补上过渡，切换不再硬跳 | 计算样式校验：`mhud-page`/关键帧产物在 `dist` 中存在；`/ui/chat` 加载与切会话多次无异常 |
+| `mobile/styles/mobile-hud.css`（`.mhud-page` / `.mhud-nav__item::before`） | **Screen enter + indicator interpolation** | 移动端换屏是按路由 key 重挂载，之前是瞬间替换：`.mhud-page` 挂载即淡入上移 6px（只碰 opacity/transform）；底部导航选中条改为常驻 ::before（默认 `scaleX(0.35)`、透明），选中时展开到 1，切换有「跑去哪边」的连续感 | 390×844 无头 Chrome：`.mhud-page` 计算动画 = `mhud-page-in / 0.16s`；点底部导航后新页面节点 `sameAsOld=false`，逐帧采样到 `opacity 0 → 0.17`、`mhud-page-in` running、transform 6px→4.96px；导航 ::before `transition-property = opacity, transform`，非选中态 `scaleX(0.35)` |
+| `features/account-status/GlobalStatusPanel.tsx` | **Panel mount enter（展开/收起两侧同节奏）** | 「账号健康状态」收起是 90 天色条、展开是整块面板，之前互相硬替换；两侧容器都加 `.aih-panel-enter`，切换时内容淡入上移，卡片本身尺寸不变 | 代码级验证（tsc + ESLint + 构建）；该卡片需要账号状态数据，未在无头环境取到切换时帧证据 |
+
 ### 2026-10-25 翻译桌面集成验收证据（Task 5）
 
 本轮把已有模式与可观察的运行证据对齐，未新增 provider 派发分支或第二份配置来源：

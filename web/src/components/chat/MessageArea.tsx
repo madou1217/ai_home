@@ -24,6 +24,7 @@ import { CHAT_ATTACHMENT_ACCEPT, shouldConvertLargePaste, type ChatDocumentAttac
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
@@ -243,6 +244,7 @@ const MessageArea = ({
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
@@ -293,6 +295,11 @@ const MessageArea = ({
   }, []);
   const dictation = useDictation();
   const addFiles = useChatFileInput({ images, documents, onImagesChange, onDocumentsChange });
+  // 切换会话：消息内容整体换掉（跨会话没有可比的旧坐标），用一次只碰 opacity 的淡入表达「切换」。
+  // 不做重挂载——长会话重挂全部气泡的代价远超一条合成器动画；key 记在模块级，
+  // 外壳整块重挂载时同样能判断出「换过会话」。
+  useSwitchFade(threadRef, session ? String(session.id || 'draft') : '');
+
   useMobileOverscrollFeedback(scrollContainerRef);
   const startDictation = useCallback(() => {
     dictation.start(input, onInputChange);
@@ -936,7 +943,7 @@ const MessageArea = ({
         data-provider={sessionProvider}
         style={providerAccentStyle(sessionProvider)}
       >
-        <div className={styles.messageThread}>
+        <div className={styles.messageThread} ref={threadRef}>
           {displayMessages.length === 0 ? (
             <div className={styles.welcomeState}>
               <div className={styles.welcomeTitle}>你今天想聊些什么？</div>

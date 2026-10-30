@@ -1173,7 +1173,9 @@
   background: transparent;
   cursor: pointer;
   transition: color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard);
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    text-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .modeOptionBtn:hover {

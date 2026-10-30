@@ -25,6 +25,7 @@ import TurnFeedback from './TurnFeedback';
 import TurnProgress from './TurnProgress';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './session-runtime.module.css';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 
 interface Props {
   readonly controller: SessionRuntimeController;
@@ -57,6 +58,9 @@ export default function ConversationTimeline({
   const connectionState = useSessionSelector(controller.store, selectConnectionState);
   const connection = sessionConnectionPresentation(connectionState);
   const viewport = useTimelineViewport(controller, items);
+  // 切换会话时整条时间线内容换掉：一次只碰 opacity 的淡入表达「切换」。
+  // key 记在模块级，会话外壳整块重挂载（controller 换实例）时同样能判断出来。
+  useSwitchFade(viewport.containerRef, controller.sessionId);
   const preview = useTimelineFilePreview(projectPath);
   const idle = useSessionSelector(controller.store, (projection) => projection.state === 'idle');
   const operation = useMemo(() => new MessageOperation(actions, controller.sessionId), [actions, controller.sessionId]);

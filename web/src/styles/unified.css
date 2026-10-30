@@ -89,9 +89,16 @@
 
 /* 卡内表格统一贴边：表格作为卡片 body 的直接子级时，用负 margin 抵消卡片内距，
  *  让表头/数据行铺满卡片宽度，全站表格卡片视觉一致（无需逐页加 class）。
- *  卡片已 overflow:hidden，任何 1px 溢出都被裁剪，不会产生横向滚动。 */
-.ant-pro-card.unified-section-card > .ant-pro-card-body > .unified-list-table {
+ *  卡片已 overflow:hidden，任何 1px 溢出都被裁剪，不会产生横向滚动。
+ *  ListTable 现在外面包了一层 .unified-list-table-fade（重排淡入的动画目标），
+ *  负 margin 交给这层承担，避免子级负 margin 穿透折叠。 */
+.ant-pro-card.unified-section-card > .ant-pro-card-body > .unified-list-table,
+.ant-pro-card.unified-section-card > .ant-pro-card-body > .unified-list-table-fade {
   margin: calc(var(--unified-card-padding) * -1);
+}
+
+.ant-pro-card.unified-section-card > .ant-pro-card-body > .unified-list-table-fade > .unified-list-table {
+  margin: 0;
 }
 
 /* 贴边表格的分页区补回内距，避免贴卡片边缘 */

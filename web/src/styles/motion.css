@@ -71,6 +71,16 @@
   visibility: hidden;
   transition: visibility 0s linear var(--aih-reveal-ms, 170ms);
 }
+/* 超高内容（>1200px）：不做逐帧高度插值（每帧重排整棵子树会掉帧），高度瞬时切换、内容淡入。 */
+.aih-reveal[data-tall='true'] {
+  transition: none;
+}
+.aih-reveal[data-tall='true'] > .aih-reveal-inner {
+  transition: none;
+}
+.aih-reveal[data-tall='true'].aih-reveal-open > .aih-reveal-inner {
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
 
 @keyframes aih-leave-out {
   from { opacity: 1; transform: none; }

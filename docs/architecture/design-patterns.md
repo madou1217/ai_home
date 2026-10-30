@@ -168,6 +168,16 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `web/src/hooks/use-presence-list.ts` + `.aih-leaving` + `web/src/features/web-terminal/GlobalWebTerminalHost.tsx`（FLIP 最小化） | **Exit presence（离场保留）+ FLIP 到停靠点** | 删除附件、关闭页签、关闭终端面板原先都是「点一下整块消失」。离场保留让被删项先播完退出动画再移除，其余项用 FLIP 滑进空位；浮窗终端最小化改成真实 FLIP：按窗口矩形与右下角停靠气泡矩形算出 `translate + scale`，窗口缩进气泡、气泡在交接时淡入，恢复时反向摊开——「从哪来回哪去」 | 附件画廊 / 终端页签 / TerminalDock 关闭 / Web Terminal 最小化恢复；无头 Chrome 冒烟无异常，`prefers-reduced-motion` 下直接切换状态 |
 | 同一套原语接到浮层：`GlobalCommandPalette` / `SlashCommandMenu` / `PlanChoiceDock` / `ArchivedDrawer` | **Overlay presence + 离场保留** | 浮层此前是 `if (!open) return null`：Cmd+K 指令面板、slash 命令菜单、计划选项卡关掉就瞬间消失，过滤结果瞬间跳位；归档抽屉「还原」后该行直接消失。现在退出先置 `data-state="closing"` 播完 140–160ms 的退场（淡出 + 反向位移，`pointer-events:none`）再由 presence 卸载；父级 dock 栈用同一个 presence 决定是否保留（否则栈先卸载、动画看不到）；归档行按原顺序淡出、其余行 FLIP 补位 | 无头 Chrome（1440×900，注入本机管理密钥）实测 Cmd+K：`data-state=open`、卡片播 `commandPaletteCardIn`、7 个 `data-flip-key` 条目，输入过滤后收到 1 条，Esc 后 40ms 处于 `closing`（opacity 0.0013）并在 160ms 后卸载，控制台零异常；slash 菜单 / 计划选项卡 / 归档抽屉本轮只过 tsc + ESLint + 构建产物校验（工作区里的重会话页会卡住无头渲染器，未取到运行时证据） |
 
+### 2026-10-30 WebUI 动效的帧预算（大列表退化 / 表格淡入 / 超高内容）
+
+背景：上一轮把展开、重排、离场三类动效接满全站，但「每个交互都有动画」不等于「每帧都稳」——会话侧栏 186 项、账号表格 1w 行这类规模下，逐项测量和逐项补间会把主线程拖过 16ms 预算。这一轮只改帧预算：同一套原语，按规模换实现。
+
+| 模块 | 模式 | 解决什么 | 验证 |
+| --- | --- | --- | --- |
+| `web/src/hooks/use-flip-reorder.ts` | **Compositor-only degradation（规模阈值退化）+ Read-then-write 批处理** | 逐项 FLIP 要每项一次 `getBoundingClientRect` + 一次 WAAPI，大列表下测量本身就是掉帧源。现在：容器不可见（`getClientRects().length === 0`）直接跳过并丢弃快照；条目数 > 80 或 `mode:'fade'` 时退化为**一次**容器 opacity 淡入；顺序签名未变（逐个比较 key 序列，不变即提前返回）时完全不做每项工作；逐项分支内先读完所有矩形再统一写，一次提交最多一次强制布局。所有动画只碰 transform/opacity，走合成器 | `/ui/chat` 186 个 `data-flip-key` 条目下切换 work/chat 视图，重排期间 `getBoundingClientRect` 计数为 **0**（走容器淡入）；`/ui/accounts` 卡片视图状态筛选 26→14 时恰好 24 次 rect（读）+ 12 个 WAAPI 动画；账号表格切 provider A/B（正常动效 vs `prefers-reduced-motion`）稳态均为 **0 longtask**，控制台零异常 |
+| `web/src/components/ui/ListTable.tsx` + `styles/unified.css` | **Adapter wrapper（容器淡入外包一层，不碰行元素）** | 表格行上一轮没法接 FLIP：`<tr>` 上加 transform 会让 sticky 表头和 fixed 列错位。所以由 ListTable 统一包一层 `.unified-list-table-fade` 做容器淡入，`onRow` 只补 `data-flip-key` 供去重/测量；同时把 SectionCard「贴边」的直接子选择器延伸到新 wrapper，并在内层把 table 的 margin 归零，避免新增一层 div 打断布局 | `/ui/settings` → 模型别名（`SectionCard > ListTable` 唯一可达组合）实测：wrapper `margin-left = -16px`、内层 `.unified-list-table` `margin = 0`、wrapper 左右边界 273/1415 与 card body 完全一致（card 272/1416，差 1px 边框），1 个 `tr[data-flip-key]`，控制台零异常 |
+| `web/src/components/ui/Reveal.tsx` + `styles/motion.css`（`data-tall`） | **Threshold-based fallback（超高内容退化为瞬时高度 + 内容淡入）** | `grid-template-rows` 插值每一帧都会重排子树；上千像素的工具输出 / diff 展开时能单独把帧拖过 16ms。展开前量一次 `scrollHeight`，超过 1200px 就标 `data-tall="true"`：关掉高度过渡，改成高度瞬时切换 + 内容 `aih-fade-in`，视觉上仍是「展开」而不是硬切，但零逐帧布局 | tsc + ESLint + 构建通过，`dist` 含 `aih-reveal[data-tall` 规则；当前数据下各路由没有处于展开态的 Reveal（会话里的工具块未展开），该分支属代码级验证，未取得真机触发证据 |
+
 ### 2026-10-25 翻译桌面集成验收证据（Task 5）
 
 本轮把已有模式与可观察的运行证据对齐，未新增 provider 派发分支或第二份配置来源：

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
+import { updateTerminalScope } from './web-terminal-scope';
 
 export type WebTerminalTabKind = 'account-cli' | 'shell';
 
@@ -168,10 +169,8 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
 
   const update = useCallback((next: WebTerminalLayoutState | ((current: WebTerminalLayoutState) => WebTerminalLayoutState)) => {
     setScopedState((current) => {
-      if (current.serverId !== serverId) return current;
-      const value = typeof next === 'function' ? next(current.state) : next;
-      persistState(current.serverId, value);
-      return { ...current, state: value };
+      const change = typeof next === 'function' ? next : () => next;
+      return updateTerminalScope(current, serverId, change, readStoredState, persistState);
     });
   }, [serverId]);
 
@@ -179,27 +178,28 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     const sessionKey = String(input.sessionKey || '').trim();
     if (!sessionKey) return;
     const targetServerId = String(input.serverId || serverId).trim() || serverId;
-    // A tab opened through the current browser must never attach to another
-    // server's PTY. The server-scoped storage keeps the other server's tabs.
-    if (targetServerId !== serverId) return;
     const tab: WebTerminalTab = {
       id: makeTabId(sessionKey),
       sessionKey,
       label: String(input.label || 'Web Terminal').trim() || 'Web Terminal',
       cwd: String(input.cwd || ''),
-      serverId,
+      serverId: targetServerId,
       kind: input.kind || 'account-cli',
       harness: String(input.harness || '').trim() || undefined,
       model: String(input.model || '').trim() || undefined
     };
-    update((current) => {
-    const existing = current.tabs.findIndex((item) => item.id === tab.id);
-      const tabs = current.tabs.slice();
-      if (existing >= 0) tabs[existing] = { ...tabs[existing], ...tab };
-      else tabs.push(tab);
-      return { ...current, tabs, activeTabId: tab.id };
+    setScopedState((current) => {
+      // A launch may finish after the user switches servers. Preserve it in
+      // the originating server's layout instead of attaching it to this one.
+      return updateTerminalScope(current, targetServerId, (targetState) => {
+        const existing = targetState.tabs.findIndex((item) => item.id === tab.id);
+        const tabs = targetState.tabs.slice();
+        if (existing >= 0) tabs[existing] = { ...tabs[existing], ...tab };
+        else tabs.push(tab);
+        return { ...targetState, tabs, activeTabId: tab.id };
+      }, readStoredState, persistState);
     });
-  }, [serverId, update]);
+  }, [serverId]);
 
   const closeTab = useCallback((id: string) => {
     update((current) => {

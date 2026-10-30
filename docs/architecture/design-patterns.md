@@ -16,7 +16,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
 | `web/src/components/chat/terminal-input.ts` + `ShellTerminalPanel.tsx` | **Serialized Queue + Connection State** | 断流后暂停发送并在会话接管后按序排空；仅对明确未写入的 `terminal_not_found` 重试，不重放执行状态未知的命令 | `test/web-terminal-input.test.js` 覆盖断线排队、404 重试、发送结果未知及在途重连竞态 |
-| `lib/server/terminal-replay.js` | **Replay Filter** | 快照回放移除过期终端探测请求，实时流保持原样，防止浏览器将迟到的探测回复送进 shell | `test/webui-terminal-output.test.js` 验证分片快照与实时查询；隔离浏览器验证重启前后命令均成功执行 |
+| `web/src/features/web-terminal/web-terminal-scope.ts` | **Scoped State Update** | 异步创建或关闭完成时按发起服务器更新其布局，避免服务器切换后会话丢失或误入当前服务器 | `test/web-terminal-scope.test.js` 覆盖跨服务器的迟到创建与关闭，以及当前服务器的同步状态更新 |
+| `lib/server/terminal-replay.js` | **Replay Filter** | tmux 快照回放移除过期外层探测请求，普通 PTY 回放与实时流保持原样，防止迟到的探测回复进入 shell，又不丢弃直连程序仍在等待的查询 | `test/webui-terminal-output.test.js` 验证 tmux 快照、直连 PTY 与实时查询；隔离浏览器验证重启前后命令均成功执行 |
 | `webui-terminal-routes.js` + `webui-terminal-persistence.js` | **Lifecycle Adapter + Scoped Resource** | keyed Web 终端用每会话独立 tmux socket 持有进程；HTTP/SSE 层在服务重启后按 key 收养连接，显式关闭时按身份核对并销毁，失败不报告成功；凭据不经命令行传递。无 tmux 或 Windows 回退普通 PTY，并返回不可跨服务重启的信息 | `test/webui-terminal-persistence.test.js`：独立服务进程退出后重新接入和关闭、旧 ID 与身份错配、30 分钟空闲保留、外层 tmux 环境及无 tmux 回退 |
 | `nativeBoundary.runtime` + provider facade + `provider-native-runtime.js` | **Descriptor + Strategy Registry + Facade** | 原生资源命令按声明选择独立 CLI 或桌面内嵌 Node 入口；WorkBuddy lite bundle flag 随描述符传递，资源运行时与用户 CLI 分开表达 | 真实 WorkBuddy AI 2.161.0 version/help；doctor 显示 desktop-node 来源；既有回归与 provider 合同检查 |
 | `native-plugin-manager.js` + marketplace adapter `replace` | **Strategy + Compensating Action** | 管理器将版本替换委托给拥有原生生命周期的适配器；旧快照用于旧资源校验，新包在任何破坏性步骤前校验清单与目标冲突，运行失败时尝试恢复旧状态 | 真实版本升级成功；坏清单与外来目标在旧插件仍健康时拒绝；补偿不宣称跨 SQLite/原生命令的原子事务 |

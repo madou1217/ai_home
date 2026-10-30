@@ -3,7 +3,7 @@ import type { MouseEvent } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined, LoadingOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
@@ -37,6 +37,8 @@ interface ShellTerminalPanelProps {
   onTabClose?: (id: string) => void;
   allowNewTab?: boolean;
   onNewTab?: () => void;
+  creatingTab?: boolean;
+  isCreatingTab?: () => boolean;
   layout?: 'tabs' | 'sidebar';
   onLayoutChange?: (layout: 'tabs' | 'sidebar') => void;
   minimized?: boolean;
@@ -121,6 +123,8 @@ function ShellTerminalPanel({
   onTabClose,
   allowNewTab = true,
   onNewTab,
+  creatingTab = false,
+  isCreatingTab,
   layout = 'tabs',
   onLayoutChange,
   minimized: controlledMinimized,
@@ -150,6 +154,7 @@ function ShellTerminalPanel({
   const [panelStatus, setPanelStatus] = useState<TabStatus>('connecting');
   const [height, setHeight] = useState<number>(DEFAULT_HEIGHT);
   const [internalMinimized, setInternalMinimized] = useState(false);
+  const [closingCount, setClosingCount] = useState(0);
   const minimized = controlledMinimized ?? internalMinimized;
   const flushInput = useCallback((inst: TermInstance) => {
     void flushTerminalInput(inst, terminalAPI.input, () => {
@@ -427,14 +432,17 @@ function ShellTerminalPanel({
   }, [visible]);
 
   const closeTab = useCallback(async (id: string, closeLast = true): Promise<boolean> => {
+    if (isCreatingTab?.()) return false;
     if (closingRef.current.has(id)) return false;
     closingRef.current.add(id);
+    setClosingCount((count) => count + 1);
     const inst = instancesRef.current.get(id);
     const key = inst?.sessionKey || sessionTabsRef.current?.find((tab) => tab.id === id)?.sessionKey || '';
     if (inst?.termId || key) {
       const result = await terminalAPI.close(inst?.termId || '', key);
       if (!result.ok) {
         closingRef.current.delete(id);
+        setClosingCount((count) => count - 1);
         message.error(`关闭终端失败: ${result.error || 'unknown'}`);
         return false;
       }
@@ -459,8 +467,9 @@ function ShellTerminalPanel({
     if (onTabClose) onTabClose(id);
     else if (isLast && closeLast) onClose();
     closingRef.current.delete(id);
+    setClosingCount((count) => count - 1);
     return true;
-  }, [activeId, onClose, onTabClose, tabs.length]);
+  }, [activeId, isCreatingTab, onClose, onTabClose, tabs.length]);
 
   // The global host is controlled by the application root. New account launches
   // append definitions here without remounting the xterm panel or losing old tabs.
@@ -473,13 +482,14 @@ function ShellTerminalPanel({
     for (const tab of tabs) {
       if (!wanted.has(tab.id)) void closeTab(tab.id);
     }
-  }, [closeTab, createTab, sessionTabs, tabs, visible]);
+  }, [closeTab, createTab, creatingTab, sessionTabs, tabs, visible]);
 
   const closePanel = useCallback(async () => {
+    if (isCreatingTab?.()) return;
     const ids = new Set([...instancesRef.current.keys(), ...(sessionTabsRef.current || []).map((tab) => tab.id)]);
     const results = await Promise.all(Array.from(ids, (id) => closeTab(id, false)));
     if (results.every(Boolean)) onClose();
-  }, [closeTab, onClose]);
+  }, [closeTab, isCreatingTab, onClose]);
 
   // 重启激活 tab：关掉旧 PTY，清屏，开新 PTY（复用同一 tab 槽 / xterm）。
   const reloadActiveTab = useCallback(async () => {
@@ -578,7 +588,7 @@ function ShellTerminalPanel({
     >
       <span className={styles.shellTerminalTabDot} data-status={t.status} />
       <span className={styles.shellTerminalTabLabel}>{t.label}</span>
-      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title="关闭此终端" onClick={(event) => { event.stopPropagation(); void closeTab(t.id); }}>
+      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title={creatingTab ? '正在新建终端' : '关闭此终端'} disabled={creatingTab || closingRef.current.has(t.id)} onClick={(event) => { event.stopPropagation(); void closeTab(t.id); }}>
         <CloseOutlined />
       </button>
     </div>
@@ -608,12 +618,14 @@ function ShellTerminalPanel({
           <button
             type="button"
             className={styles.shellTerminalIconBtn}
-            title="新建终端"
+            title={creatingTab ? '正在新建终端' : '新建终端'}
             aria-label="新建终端"
-            onClick={() => { if (onNewTab) onNewTab(); else void createTab(); }}
+            aria-busy={creatingTab}
+            disabled={creatingTab || closingCount > 0}
+            onClick={() => { if (closingRef.current.size) return; if (onNewTab) onNewTab(); else void createTab(); }}
             style={allowNewTab && !sessionKey ? undefined : { display: 'none' }}
           >
-            <PlusOutlined />
+            {creatingTab ? <LoadingOutlined /> : <PlusOutlined />}
           </button>
         </div>
         <div className={styles.shellTerminalActions}>
@@ -626,7 +638,7 @@ function ShellTerminalPanel({
             type="button"
             className={styles.shellTerminalIconBtn}
             title="重启当前终端"
-            disabled={sessionTabs?.find((definition) => definition.id === activeId)?.kind === 'account-cli'}
+            disabled={creatingTab || closingCount > 0 || sessionTabs?.find((definition) => definition.id === activeId)?.kind === 'account-cli'}
             onClick={() => { void reloadActiveTab(); }}
           >
             <ReloadOutlined />
@@ -647,6 +659,7 @@ function ShellTerminalPanel({
             type="button"
             className={styles.shellTerminalIconBtn}
             title="关闭终端面板"
+            disabled={creatingTab || closingCount > 0}
             onClick={() => { void closePanel(); }}
           >
             <CloseOutlined />

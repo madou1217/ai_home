@@ -411,6 +411,8 @@
   color: var(--term-text-strong);
 }
 
+.shellTerminalTabClose:disabled { opacity: 0.35; cursor: not-allowed; }
+
 .shellTerminalActions {
   display: inline-flex;
   align-items: center;

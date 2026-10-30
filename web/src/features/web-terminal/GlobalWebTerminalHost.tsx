@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { CodeOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
@@ -14,6 +14,9 @@ function clampPosition(x: number, y: number, width: number, height = 420) {
 }
 export default function GlobalWebTerminalHost() {
   const manager = useWebTerminalManager();
+  const [creatingTab, setCreatingTab] = useState(false);
+  const creatingRef = useRef(false);
+  const isCreatingTab = useCallback(() => creatingRef.current, []);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const resizeRef = useRef<{ edge: string; startX: number; startY: number; originX: number; originY: number; width: number; height: number } | null>(null);
   const sessionTabs = useMemo(() => manager.tabs.map((tab) => ({
@@ -25,19 +28,27 @@ export default function GlobalWebTerminalHost() {
     persistent: true
   })), [manager.tabs]);
   const onNewTab = useCallback(async () => {
-    const active = manager.tabs.find((tab) => tab.id === manager.activeTabId);
-    const random = new Uint8Array(16);
-    globalThis.crypto.getRandomValues(random);
-    const key = `shell-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-    const result = await terminalAPI.open(80, 24, undefined, active?.cwd, key);
-    if (!result.ok || !result.termId) {
-      message.error(`新建终端失败: ${result.error || 'unknown'}`);
-      return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreatingTab(true);
+    try {
+      const active = manager.tabs.find((tab) => tab.id === manager.activeTabId);
+      const random = new Uint8Array(16);
+      globalThis.crypto.getRandomValues(random);
+      const key = `shell-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+      const result = await terminalAPI.open(80, 24, undefined, active?.cwd, key);
+      if (!result.ok || !result.termId) {
+        message.error(`新建终端失败: ${result.error || 'unknown'}`);
+        return;
+      }
+      const labels = new Set(manager.tabs.map((tab) => tab.label));
+      let number = 1;
+      while (labels.has(`Shell ${number}`)) number += 1;
+      manager.openTab({ sessionKey: key, serverId: manager.serverId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
+    } finally {
+      creatingRef.current = false;
+      setCreatingTab(false);
     }
-    const labels = new Set(manager.tabs.map((tab) => tab.label));
-    let number = 1;
-    while (labels.has(`Shell ${number}`)) number += 1;
-    manager.openTab({ sessionKey: key, serverId: manager.serverId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
   }, [manager]);
   const onHeaderMouseDown = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement;
@@ -131,6 +142,8 @@ export default function GlobalWebTerminalHost() {
         activeTabId={activeTab.id}
         onActiveTabChange={manager.setActiveTab}
         onNewTab={onNewTab}
+        creatingTab={creatingTab}
+        isCreatingTab={isCreatingTab}
         layout={manager.layout}
         onLayoutChange={manager.setLayout}
       />

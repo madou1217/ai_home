@@ -172,6 +172,56 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
+// Chromium input exercises actual hit testing and pointer delivery, not just
+// synthetic DOM dispatch. Check the window while held as well as after release.
+async function verifyRealPointerHandles(cdp) {
+  const edges = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+  for (const edge of edges) {
+    const dx = edge.includes('w') ? -35 : edge.includes('e') ? 35 : 0;
+    const dy = edge.includes('n') ? -28 : edge.includes('s') ? 28 : 0;
+    for (const direction of [1, -1]) {
+      const start = await evaluate(cdp, `(async () => {
+        const p=document.querySelector('[aria-label="Web Terminal"]');
+        const h=p.querySelector('.global-web-terminal-resize-${edge}');
+        const r=p.getBoundingClientRect(),hr=h.getBoundingClientRect();
+        const x=hr.left+hr.width/2,y=hr.top+hr.height/2;
+        const status=await (await fetch('/__benchmark/status')).json();
+        return {x,y,left:r.left,right:r.right,top:r.top,bottom:r.bottom,resizeCount:status.resizeCount,hit:document.elementFromPoint(x,y)===h};
+      })()`);
+      if (!start.hit) throw new Error(`resize handle ${edge} cannot be hit by the pointer`);
+      const x = start.x + dx * direction;
+      const y = start.y + dy * direction;
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x, y: start.y });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: start.x, y: start.y, button: 'left', buttons: 1, clickCount: 1 });
+      try {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', buttons: 1 });
+        await delay(100);
+        const current = await evaluate(cdp, `(() => {const r=document.querySelector('[aria-label="Web Terminal"]').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})()`);
+        const close = (actual, expected) => Math.abs(actual - expected) <= 2;
+        if (!close(current.left, start.left + (edge.includes('w') ? dx * direction : 0))
+          || !close(current.right, start.right + (edge.includes('e') ? dx * direction : 0))
+          || !close(current.top, start.top + (edge.includes('n') ? dy * direction : 0))
+          || !close(current.bottom, start.bottom + (edge.includes('s') ? dy * direction : 0))) {
+          throw new Error(`resize handle ${edge} did not follow the pointer while held`);
+        }
+      } finally {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+      }
+      const converged = await evaluate(cdp, `(async () => {
+        for(let i=0;i<80;i++){
+          await new Promise(resolve=>setTimeout(resolve,50));
+          const status=await (await fetch('/__benchmark/status')).json();
+          const match=document.querySelector('.xterm-rows')?.textContent.match(/BENCH_TUI ([0-9]+)x([0-9]+)/);
+          if(status.resizeCount>${start.resizeCount}&&match&&status.lastResize&&Number(match[1])===status.lastResize.rows&&Number(match[2])===status.lastResize.cols)return true;
+        }
+        return false;
+      })()`);
+      if (!converged) throw new Error(`PTY did not converge after pointer resize ${edge}`);
+    }
+  }
+  return { edges, drags: edges.length * 2 };
+}
+
 function metricDelta(before, after) {
   const names = ['LayoutCount', 'LayoutDuration', 'RecalcStyleDuration', 'ScriptDuration', 'TaskDuration'];
   return Object.fromEntries(after.filter((item) => names.includes(item.name)).map((item) => [
@@ -421,6 +471,7 @@ async function run(options) {
       }
       return {edges,drags:edges.length*2};
     })()`);
+    const pointerChecks = await verifyRealPointerHandles(cdp);
     // FitAddon must size the screen to the unpadded content area. Sweeping
     // through more than one cell height catches clipped bottom rows that a
     // single final grid/PTY comparison cannot see.
@@ -463,7 +514,7 @@ async function run(options) {
       return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
     })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, gridBounds };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, pointerChecks, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);

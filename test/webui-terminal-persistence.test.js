@@ -31,6 +31,22 @@ test('terminal remains usable with an explicit non-durable result when tmux is m
   assert.equal(result.durable, false);
 });
 
+test('adoption reports capacity errors rather than claiming the session ended', () => {
+  const child = spawnSync(process.execPath, ['-e', `
+    const loader = require('./lib/runtime/node-pty-loader');
+    loader.loadNodePty = () => ({ spawn: () => ({ onData() {}, onExit() {}, kill() {} }) });
+    const routes = require('./lib/server/webui-terminal-routes');
+    for (let i = 0; i < 24; i++) {
+      if (!routes.openWebUiTerminalSession({}).ok) process.exit(1);
+    }
+    routes.handleWebUiTerminalRequest({ method: 'POST', pathname: '/v0/webui/terminal/attach', res: {},
+      readRequestBody: async () => Buffer.from(JSON.stringify({ sessionKey: 'still-running' })),
+      writeJson: (_res, status, body) => console.log(JSON.stringify({ status, ...body })) });
+  `], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000 });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), { status: 429, ok: false, error: 'too_many_terminals' });
+});
+
 test('keyed terminal survives the server process and can be closed after adoption', { skip: !tmuxAvailable, timeout: 15000 }, async () => {
   const key = `restart-test-${process.pid}-${Date.now()}`;
   try {
@@ -42,7 +58,17 @@ test('keyed terminal survives the server process and can be closed after adoptio
     `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
       env: { ...process.env, TMUX: '/tmp/outer-tmux,123,0' } });
     assert.equal(child.status, 0, child.stderr);
-    assert.equal(persistence.exists(key), true);
+    assert.equal(persistence.probe(key).state, 'alive');
+    const unavailable = spawnSync(process.execPath, ['-e', `
+      const { handleWebUiTerminalRequest } = require('./lib/server/webui-terminal-routes');
+      handleWebUiTerminalRequest({ method: 'POST', pathname: '/v0/webui/terminal/attach', res: {},
+        readRequestBody: async () => Buffer.from(JSON.stringify({ sessionKey: process.argv[1] })),
+        writeJson: (_res, status, body) => console.log(JSON.stringify({ status, ...body })) });
+    `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
+      env: { ...process.env, PATH: '' } });
+    assert.equal(unavailable.status, 0, unavailable.stderr);
+    assert.deepEqual(JSON.parse(unavailable.stdout), { status: 503, ok: false, error: 'persistent_terminal_unavailable' });
+    assert.equal(persistence.probe(key).state, 'alive');
     const muxId = `test-mux-${Date.now()}`;
     const req = new EventEmitter();
     const res = new EventEmitter();
@@ -57,7 +83,7 @@ test('keyed terminal survives the server process and can be closed after adoptio
     assert.match(output, /SURVIVED/);
     assert.match(output, /TMUX_CLEARED/);
     await post('close', { termId: attached.termId });
-    assert.equal(persistence.exists(key), false);
+    assert.equal(persistence.probe(key).state, 'missing');
     req.emit('close');
     assert.equal((await post('attach', { sessionKey: key })).error, 'terminal_not_found');
   } finally {

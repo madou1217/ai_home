@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { hudSfx } from '@/services/hud-sfx';
 import { useHudPreferences } from './use-hud-preferences';
+import { forEachHudAddedElement } from './hud-mutations';
 
 // 会触发「按键」音效的可交互元素；链接按钮、菜单、Tabs、分段、开关、选择器都在内。
 const INTERACTIVE_SELECTOR = [
@@ -53,16 +54,13 @@ export default function HudEffects() {
     const observer = typeof MutationObserver === 'undefined'
       ? null
       : new MutationObserver((records) => {
-        for (const record of records) {
-          record.addedNodes.forEach((node) => {
-            if (!(node instanceof Element)) return;
-            if (node.matches('.ant-modal-root, .ant-drawer') || node.querySelector('.ant-modal-content, .ant-drawer-content')) {
-              hudSfx.open();
-              return;
-            }
-            playForAddedNode(node);
-          });
-        }
+        forEachHudAddedElement(records, (node) => {
+          if (node.matches('.ant-modal-root, .ant-drawer') || node.querySelector('.ant-modal-content, .ant-drawer-content')) {
+            hudSfx.open();
+            return;
+          }
+          playForAddedNode(node);
+        });
       });
     observer?.observe(document.body, { childList: true, subtree: true });
 

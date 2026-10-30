@@ -125,3 +125,23 @@ const unregisterAccountRuntimeListeners = [
   已存在模型的 `contextWindow` / `maxTokens` 保留；`account.runtime.changed` 不触发刷新。
 - 非生命周期事件（运行态成功/限流）被监听者显式忽略，避免刷新风暴。
 - 去抖 + 单飞：同一批导入的 N 个事件合并为一次目录读取；进行中再次触发只记一个 pending。
+- **真实 server 联调（2026-10-30 12:54:56）**：重启加载新代码后，经
+  `POST /v0/management/state-index/operational-status`（同状态重放，不改变路由）发布一次生命周期事件，
+  服务端日志出现一条 `GET /v1/models` 与三行刷新结果：
+
+  ```
+  [aih] model projection refreshed: pi scanned=6 updated=5
+  [aih] model projection refreshed: dsh scanned=2 updated=2
+  [aih] model projection refreshed: dsh-tui scanned=1 updated=1
+  ```
+
+  落盘核对：pi 投影 81 个模型、59 个保留 `contextWindow`、`apiKey` 仍是 `$OPENAI_API_KEY`；
+  dsh-tui patch 的 `aih-model-refresh` 插件条目仍在。
+
+## 8. 尚未解决（明确的边界）
+
+`/v1/models` 是**池级**目录：它按能力索引发布「任一账号曾提供过的模型」，
+关闭账号只影响路由，不会让目录收缩。因此「关闭账号后 Pi 菜单变短」还差一步：
+目录需要按「至少一个启用账号可服务」收窄（备选方案 C）。这会改变所有客户端看到的目录，
+属于产品口径变更，未在本轮擅自实施；事件机制已经就位，届时只需在发布侧改口径，
+监听者与投影层不需要再动。

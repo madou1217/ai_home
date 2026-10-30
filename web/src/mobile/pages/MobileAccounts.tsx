@@ -316,7 +316,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
     const probe = getAccountModelProbe(record, modelCatalog);
     const refreshingModels = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
     return {
-      label: getModelProbeTagLabel(probe, refreshingModels, record.provider),
+      label: getModelProbeTagLabel(probe, refreshingModels, record.provider, record.status),
       tone: badgeStatusTone(getModelProbeTagColor(probe, refreshingModels)),
       refreshing: refreshingModels
     };

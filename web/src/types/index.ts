@@ -554,6 +554,12 @@ export interface WebUiModelsResponse {
   selectableByAccountRef?: Record<string, string[]>;
   defaultByAccountRef?: Record<string, string>;
   errorsByAccountRef: Record<string, string>;
+  /**
+   * accountRef -> 上次真正探测上游的时刻（毫秒）。
+   * byAccountRef 不收录「探测成功但目录为空」的账号，所以单看 byAccountRef 无法区分
+   * 「探测过、没有模型」与「从未探测」——后者才该显示「待探测」。
+   */
+  accountProbedAt?: Record<string, number>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
   labels?: Record<string, Record<string, string>>;
   metadata?: Record<string, ModelMetadata>;
@@ -720,6 +726,8 @@ export interface WebUiOpenAIModelsResponse {
   byProvider: Record<string, string[]>;
   byAccountRef: Record<string, string[]>;
   errorsByAccountRef: Record<string, string>;
+  /** accountRef -> 上次探测时刻；语义同 WebUiModelsResponse.accountProbedAt。 */
+  accountProbedAt?: Record<string, number>;
   settingsUpdatedAt?: number;
 }
 

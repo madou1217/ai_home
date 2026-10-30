@@ -802,7 +802,7 @@ export default function Accounts() {
         const requiresReauth = requiresAccountReauth(record);
         const probe = getAccountModelProbe(record, modelCatalog);
         const modelRefreshing = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
-        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing, record.provider);
+        const tagLabel = getModelProbeTagLabel(probe, modelRefreshing, record.provider, record.status);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} className="accounts-model-probe">
             <span

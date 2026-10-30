@@ -48,6 +48,8 @@
 .request-detail-load-error {
   display: block;
   margin-bottom: var(--hos-space-2);
+  /* 请求明细按需加载：失败文案只在加载完成后挂载，淡入出现。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 @media (max-width: 767.98px) {

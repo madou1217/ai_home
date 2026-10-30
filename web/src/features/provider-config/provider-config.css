@@ -285,6 +285,8 @@
   color: var(--color-muted-strong);
   font-size: var(--text-2xs);
   line-height: var(--leading-normal);
+  /* 提示/错误都是条件挂载：出现即淡入，不再凭空整块弹出。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .pc-inline-note[data-tone='warning'] {
@@ -639,6 +641,8 @@
   padding: var(--space-6);
   border: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
   background: color-mix(in srgb, var(--color-danger) 6%, var(--color-surface));
+  /* 目录读取失败时替换整个编辑区：淡入衔接，避免整块硬切。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .pc-error-state > .anticon {

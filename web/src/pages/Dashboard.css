@@ -172,6 +172,8 @@
   font-size: var(--hos-text-body-sm, 13px);
   line-height: var(--leading-snug, 1.4);
   color: var(--color-muted-strong);
+  /* 网关离线/加载失败才会挂载：出现即淡入，恢复后直接消失。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 .dash-inline-note-icon {
   flex: none;

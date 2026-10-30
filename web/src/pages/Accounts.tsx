@@ -2,6 +2,7 @@ import AccountCardGrid from '@/components/account/AccountCardGrid';
 import './Accounts.css';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StatisticCard } from '@ant-design/pro-components';
+import AnimatedValue from '@/components/ui/AnimatedValue';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
 import SectionCard from '@/components/ui/SectionCard';
@@ -1081,7 +1082,8 @@ export default function Accounts() {
           className={activeStats.healthy > 0 ? 'accounts-stat--success' : 'accounts-stat--accent'}
           statistic={{
             title: '正常可用',
-            value: `${activeStats.healthy} / ${activeStats.total}`
+            value: `${activeStats.healthy} / ${activeStats.total}`,
+            valueRender: (node) => <AnimatedValue changeKey={`${activeStats.healthy}/${activeStats.total}`}>{node}</AnimatedValue>
           }}
         />
         <StatisticCard
@@ -1089,6 +1091,7 @@ export default function Accounts() {
           statistic={{
             title: '待处理问题',
             value: pendingIssueCount,
+            valueRender: (node) => <AnimatedValue changeKey={pendingIssueCount}>{node}</AnimatedValue>,
             description: `需登录 ${activeStats.reauthRequired} · 阻塞 ${activeStats.runtimeBlocked}`,
             valueStyle: {
               color: pendingIssueCount > 0
@@ -1102,6 +1105,7 @@ export default function Accounts() {
           statistic={{
             title: '耗尽/停用',
             value: unavailableCount,
+            valueRender: (node) => <AnimatedValue changeKey={unavailableCount}>{node}</AnimatedValue>,
             description: `耗尽 ${activeStats.exhausted} · 停池 ${activeStats.policyBlocked}`,
             valueStyle: {
               color: unavailableCount > 0

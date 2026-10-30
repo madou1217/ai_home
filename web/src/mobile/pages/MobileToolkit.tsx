@@ -115,7 +115,7 @@ export default function MobileToolkit(_props: MobilePageProps) {
           }))}
         />
       </div>
-      <div className={styles.panel} key={panelId}>
+      <div className={`${styles.panel} aih-fade-in`} key={panelId}>
         {renderPanel(panelId)}
       </div>
     </MobilePage>

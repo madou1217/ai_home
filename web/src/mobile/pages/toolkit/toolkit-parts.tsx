@@ -47,7 +47,7 @@ export function InlineError({ title, detail, onRetry, retrying, onDismiss }: {
   onDismiss?: () => void;
 }) {
   return (
-    <div className={styles.error} role="alert">
+    <div className={`${styles.error} aih-fade-in`} role="alert">
       <span className={styles.errorHead}>
         <span className="hud-led hud-led--err" aria-hidden="true" />
         <strong>{title}</strong>
@@ -66,7 +66,7 @@ export function InlineError({ title, detail, onRetry, retrying, onDismiss }: {
 /** 提示条（信息 / 警告），用于原面板里的 InlineNote 说明。 */
 export function Note({ tone = 'info', title, children }: { tone?: 'info' | 'warn' | 'err'; title?: ReactNode; children?: ReactNode }) {
   return (
-    <div className={`${styles.note} ${styles[`note_${tone}`]}`} role="note">
+    <div className={`${styles.note} ${styles[`note_${tone}`]} aih-fade-in`} role="note">
       {title ? <strong className={styles.noteTitle}>{title}</strong> : null}
       {children ? <span className={styles.noteBody}>{children}</span> : null}
     </div>

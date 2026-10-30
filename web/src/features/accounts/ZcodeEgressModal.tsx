@@ -439,30 +439,33 @@ export function AccountEgressModal({ account, onClose }: AccountEgressModalProps
               </Space>
             </Radio.Group>
           </Form.Item>
-          {mode === 'pool' ? (
-            <PoolScopePicker
-              upstream={upstream}
-              groups={upstreamView?.groups || []}
-              poolReady={Boolean(upstreamView?.pool.ready)}
-              value={poolSelection}
-              onChange={setPoolSelection}
-              probing={probing}
-              onProbe={(nodes) => void probeNodes(nodes)}
-            />
-          ) : null}
-          {mode === 'url' ? (
-            <Form.Item
-              name="proxyUrl"
-              label="代理地址"
-              rules={[{ required: true, whitespace: true, message: '请输入代理地址' }]}
-            >
-              <Input
-                placeholder={usesNativeSettings ? '127.0.0.1:6152' : 'socks5://127.0.0.1:6153'}
-                autoComplete="off"
-                className="aih-mono-input"
+          {/* 出口来源切换会换掉整块表单（池选择器 ↔ 代理地址）：按 mode 重挂一次再淡入。 */}
+          <div key={mode} className="aih-fade-in">
+            {mode === 'pool' ? (
+              <PoolScopePicker
+                upstream={upstream}
+                groups={upstreamView?.groups || []}
+                poolReady={Boolean(upstreamView?.pool.ready)}
+                value={poolSelection}
+                onChange={setPoolSelection}
+                probing={probing}
+                onProbe={(nodes) => void probeNodes(nodes)}
               />
-            </Form.Item>
-          ) : null}
+            ) : null}
+            {mode === 'url' ? (
+              <Form.Item
+                name="proxyUrl"
+                label="代理地址"
+                rules={[{ required: true, whitespace: true, message: '请输入代理地址' }]}
+              >
+                <Input
+                  placeholder={usesNativeSettings ? '127.0.0.1:6152' : 'socks5://127.0.0.1:6153'}
+                  autoComplete="off"
+                  className="aih-mono-input"
+                />
+              </Form.Item>
+            ) : null}
+          </div>
         </Form>
       </Spin>
     </Modal>

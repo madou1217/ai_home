@@ -64,6 +64,8 @@ export function ImportAccountsModal({
         />
         {mode === 'file' ? (
           <InlineNote
+            key="file"
+            className="aih-fade-in"
             tone={fileName ? 'success' : 'info'}
             description="支持迁移 JSON、Antigravity Manager、JSONL 和 zip 导入包。"
             action={
@@ -77,6 +79,8 @@ export function ImportAccountsModal({
         ) : null}
         {mode === 'folder' ? (
           <InlineNote
+            key="folder"
+            className="aih-fade-in"
             tone={fileName ? 'success' : 'info'}
             description="支持包含 provider 目录、账号目录、JSON 文件或嵌套 ZIP 的文件夹，上传后由统一导入器自动发现。"
             action={
@@ -89,7 +93,7 @@ export function ImportAccountsModal({
           </InlineNote>
         ) : null}
         {mode === 'text' ? (
-          <div className="accounts-import-paste">
+          <div key="text" className="accounts-import-paste aih-fade-in">
             <Select
               value={pasteTemplate}
               onChange={(value) => onTemplateChange(value as PasteTemplate)}
@@ -123,6 +127,8 @@ export function ImportAccountsModal({
         ) : null}
         {mode === 'cliproxyapi' ? (
           <InlineNote
+            key="cliproxyapi"
+            className="aih-fade-in"
             tone="info"
             description="读取本机 CLIProxyAPI 配置和账号凭据，导入到 AI Home 账号池；无需上传文件。"
           >

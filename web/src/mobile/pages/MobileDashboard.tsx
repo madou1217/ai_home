@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import { useGatewayDashboard, type DashboardLiveState } from '@/features/dashboard/use-gateway-dashboard';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import {
   buildChatJumpPath,
   buildRuntimeParams,
@@ -116,6 +117,16 @@ export default function MobileDashboard(_props: MobilePageProps) {
   const idleProviders = providerRows.filter((row) => row.total === 0);
   const selectedProvider = providerRows.find((row) => row.key === providerKey) || null;
 
+  // 「未接入账号的 Provider」是列表里的条件行：收起时整组直接消失太硬。
+  // 展开的新行本来就走 aih-fade-in 进场；收起改为离场保留 170ms 播完退出再移除。
+  const providerListEntries = useMemo(
+    () => providerRows
+      .filter((row) => row.total > 0 || showIdleProviders)
+      .map((row) => ({ row, idle: row.total === 0 })),
+    [providerRows, showIdleProviders]
+  );
+  const providerPresence = usePresenceList(providerListEntries, (entry) => entry.row.key, 170);
+
   const errorViews = useMemo<RecentErrorView[]>(() => recentErrors.slice(0, 8).map((item, index) => ({
     key: `${item.at || 'unknown'}-${index}`,
     item,
@@ -159,7 +170,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
     setErrorOpen(true);
   };
 
-  const renderProviderRow = (row: ProviderRow, entering = false) => {
+  const renderProviderRow = (row: ProviderRow, entering = false, leaving = false) => {
     const pct = row.total > 0 ? Math.round((row.active / row.total) * 100) : 0;
     const offline = row.total === 0;
     const running = normalizeQueueCount(row.queue?.running);
@@ -167,7 +178,12 @@ export default function MobileDashboard(_props: MobilePageProps) {
     const conc = normalizeQueueCount(row.queue?.maxConcurrency, 1);
     const ratioTone: HudTone = offline ? 'muted' : pct < 100 ? 'warn' : 'ok';
     return (
-      <SwipeRow key={row.key} onTap={() => openProvider(row)} ariaLabel={`查看 ${providerLabel(row.provider)} 运行状态`} className={entering ? 'aih-fade-in' : undefined}>
+      <SwipeRow
+        key={row.key}
+        onTap={() => openProvider(row)}
+        ariaLabel={`查看 ${providerLabel(row.provider)} 运行状态`}
+        className={leaving ? 'aih-leaving' : entering ? 'aih-fade-in' : undefined}
+      >
         <span className={`mhud-row__icon${offline ? ` ${styles.idle}` : ''}`}>
           <ProviderIcon provider={row.provider} size={20} />
         </span>
@@ -293,9 +309,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
 
       <HudSection title="Provider 运行状态" code="PROV" count={`${activeProviders.length}/${providerRows.length}`}>
         <MonoList ariaLabel="Provider 运行状态">
-          {activeProviders.map((row) => renderProviderRow(row))}
-          {/* 展开「未接入账号的 Provider」是条件挂载：行逐行淡入，收起时直接消失。 */}
-          {showIdleProviders ? idleProviders.map((row) => renderProviderRow(row, true)) : null}
+          {providerPresence.render.map(({ item, leaving }) => renderProviderRow(item.row, item.idle, leaving))}
         </MonoList>
         {idleProviders.length > 0 ? (
           <button

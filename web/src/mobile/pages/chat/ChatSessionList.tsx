@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CodeOutlined,
   DeleteOutlined,
@@ -82,6 +82,13 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   // 而聚合项目 id 会随 provider 顺序漂移，path 才是稳定键。
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
+  // 收起项目时行是整批卸载：留 170ms 让这些行播完离场（.aih-leaving）再真正移除，
+  // 否则手风琴收起就是「点一下整块消失」。展开侧给子行挂 .aih-fade-in（类名不变就只在挂载时播一次）。
+  const [closingPath, setClosingPath] = useState<string | null>(null);
+  const closingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (closingTimer.current) clearTimeout(closingTimer.current);
+  }, []);
   // CHAT ↔ WORK 是整块换一批会话/项目行：列表容器淡入一次（只碰 opacity）。
   const listBodyRef = useRef<HTMLDivElement | null>(null);
   useSwitchFade(listBodyRef, workspaceMode, { scope: 'mobile-chat-mode' });
@@ -105,6 +112,19 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   );
 
   const toggleProject = (project: AggregatedProject) => {
+    if (closingTimer.current) {
+      clearTimeout(closingTimer.current);
+      closingTimer.current = null;
+    }
+    if (openPath === project.path) {
+      setClosingPath(project.path);
+      closingTimer.current = setTimeout(() => {
+        closingTimer.current = null;
+        setClosingPath(null);
+      }, 170);
+    } else {
+      setClosingPath(null);
+    }
     setOpenPath((current) => (current === project.path ? null : project.path));
     // 与桌面项目行点击一致：选中项目（补全会话）+ 切换展开
     handleSelectProject(project);
@@ -174,7 +194,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
     );
   };
 
-  const renderWorkSession = (session: Session) => {
+  const renderWorkSession = (session: Session, leaving = false) => {
     const running = isSessionRunning(session, runningSessionKeys);
     const active = isSameSession(selectedSession, session);
     const archive = sessions.archiveAction(session);
@@ -193,6 +213,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
         actions={actions}
         onTap={() => handleSelectSession(session)}
         ariaLabel={session.title}
+        className={leaving ? 'aih-leaving' : 'aih-fade-in'}
       >
         <span className={styles.nest} aria-hidden="true" />
         <span
@@ -218,13 +239,15 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
 
   const renderProject = (project: AggregatedProject) => {
     const isOpen = openPath === project.path;
+    const leavingProject = closingPath === project.path;
+    const effectiveOpen = isOpen || leavingProject;
     const isSelected = selectedProject?.path === project.path;
     const runningProviders = getRunningProviders(project.sessions, runningSessionKeys);
     const runCount = project.sessions.filter((s) => isSessionRunning(s, runningSessionKeys)).length;
     const isShowAll = showAll.has(project.path);
     const visible = getVisibleProjectSessions(
       sortByActivity(project.sessions, runningSessionKeys),
-      isOpen,
+      effectiveOpen,
       isShowAll,
       COLLAPSED_LIMIT,
       project.sessions.length,
@@ -269,21 +292,21 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
           <DownOutlined className={`${styles.chevron}${isOpen ? ` ${styles.chevronOpen}` : ''}`} aria-hidden="true" />
         </div>
       </SwipeRow>,
-      ...(isOpen ? [
+      ...(effectiveOpen ? [
         ...(hydrating ? [
-          <div key={`h:${project.path}`} className={styles.listNote}>
+          <div key={`h:${project.path}`} className={`${styles.listNote} ${leavingProject ? 'aih-leaving' : 'aih-fade-in'}`}>
             <LoadingOutlined spin /> 加载完整会话列表
           </div>,
         ] : []),
         ...(visible.length === 0 && !hydrating ? [
-          <div key={`e:${project.path}`} className={styles.listNote}>暂无会话，点击下方新建</div>,
+          <div key={`e:${project.path}`} className={`${styles.listNote} ${leavingProject ? 'aih-leaving' : 'aih-fade-in'}`}>暂无会话，点击下方新建</div>,
         ] : []),
-        ...visible.map(renderWorkSession),
+        ...visible.map((session) => renderWorkSession(session, leavingProject)),
         ...(canExpandMore ? [
           <button
             key={`m:${project.path}`}
             type="button"
-            className={styles.listMore}
+            className={`${styles.listMore} ${leavingProject ? 'aih-leaving' : 'aih-fade-in'}`}
             onClick={() => toggleShowAll(project.path)}
           >
             {isShowAll ? '收起' : `展开更多 · ${project.sessions.length}`}

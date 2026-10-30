@@ -200,7 +200,8 @@ function UsageMetaLine({
   activityRate,
   effectKey,
   progressTooltip,
-  unknownLabel
+  unknownLabel,
+  enterClass
 }: {
   label: string;
   tag?: string;
@@ -212,12 +213,14 @@ function UsageMetaLine({
   effectKey: string;
   progressTooltip?: React.ReactNode;
   unknownLabel?: string;
+  /** 「展开更多」时才挂载的行带进场类，避免首屏一批卡片同时逐行淡入。 */
+  enterClass?: string;
 }) {
   const resetInLabel = formatResetIn(resetIn, resetAtMs);
   const resetLabel = formatResetAt(resetAtMs);
 
   return (
-    <div className="usage-meta-line">
+    <div className={`usage-meta-line${enterClass ? ` ${enterClass}` : ''}`}>
       <div className="usage-meta-line-head">
         <span className="usage-meta-line-label">{label}</span>
         {tag ? <span className="usage-meta-line-tag">{tag}</span> : null}
@@ -361,6 +364,7 @@ function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKey
                       activityRate={activityRate}
                       effectKey={`${effectKeyPrefix}:plan:${group.planGroupId || groupIndex}:${row.bucket || row.model || 'usage'}:${index}`}
                       progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
+                      enterClass={expandedGroups.has(groupKey) ? 'aih-fade-in' : undefined}
                     />
                   );
                 })}
@@ -440,6 +444,7 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
               activityRate={activityRate}
               effectKey={`${effectKeyPrefix}:scope:${row.shape}:${row.bucket || row.model || 'usage'}:${index}`}
               progressTooltip={unitsLines ? <UsageUnitsTooltipBody content={unitsLines} /> : undefined}
+              enterClass={expanded ? 'aih-fade-in' : undefined}
             />
           );
         })}

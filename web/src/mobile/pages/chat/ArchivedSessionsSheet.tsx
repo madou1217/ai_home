@@ -12,6 +12,7 @@ import {
 import { lifecycleErrorMessage } from '@/components/chat/useSessionLifecycle';
 import MobileBoot from '@/mobile/MobileBoot';
 import { DetailSheet, EmptySignal, HudIconButton, MonoList, SwipeRow } from '@/mobile/ui';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import { sessionsAPI } from '@/services/api';
 import type { ArchivedSession } from '@/types';
 import { confirmAction } from '@/utils/confirm-action';
@@ -54,6 +55,10 @@ export default function ArchivedSessionsSheet({ open, onClose, onRestored }: Pro
     if (open) void loadArchived();
   }, [loadArchived, open]);
 
+  // 还原成功后该行会从 sessions 里移除：先留 170ms 播完退出动画再真正卸载，
+  // 与桌面 ArchivedDrawer 的离场语义一致。
+  const sessionPresence = usePresenceList(sessions, (session) => getSessionRunKey(session), 170);
+
   const restore = async (session: ArchivedSession) => {
     const ok = await confirmAction({
       title: '还原此会话？',
@@ -82,16 +87,17 @@ export default function ArchivedSessionsSheet({ open, onClose, onRestored }: Pro
         <HudIconButton icon={<ReloadOutlined />} label="重试" showLabel onClick={() => { void loadArchived(); }} />
       </div>
     );
-  } else if (sessions.length === 0) {
+  } else if (sessions.length === 0 && sessionPresence.render.length === 0) {
     body = <EmptySignal title="NO ARCHIVE" description="暂无归档会话" />;
   } else {
     body = (
       <MonoList ariaLabel="已归档的会话">
-        {sessions.map((session) => {
+        {sessionPresence.render.map(({ item: session, leaving }) => {
           const restorable = canUnarchiveSession(session);
           return (
             <SwipeRow
               key={getSessionRunKey(session)}
+              className={leaving ? 'aih-leaving' : undefined}
               actions={restorable ? [{
                 key: 'restore',
                 label: '还原',

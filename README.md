@@ -338,4 +338,12 @@ npm run test:web     # WebUI 单元测试（bun）
 npm run build        # 构建 WebUI
 ```
 
+Web Terminal 缩放性能可用隔离的全屏 PTY 和 Chromium 测量，不会连接或重启正在运行的 Server：
+
+```bash
+npm run web:terminal-bench -- --browser /path/to/chromium --runs 3
+```
+
+输出包含模拟拖拽的帧间隔（毫秒）、浏览器布局工作时间（秒）和最终终端行列数；`--compare-styles` 在同一页面交替测试样式写入优化的开关。结果受设备和系统负载影响，比较时应使用相同浏览器、窗口尺寸和参数。更多选项见 `npm run web:terminal-bench -- --help`。
+
 贡献者与 agent 的工作约定见 [AGENTS.md](./AGENTS.md)。

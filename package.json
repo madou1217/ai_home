@@ -28,6 +28,7 @@
     "web:install": "cd web && npm install",
     "web:build": "cd web && npm run build",
     "web:dev": "cd web && npm run dev",
+    "web:terminal-bench": "node scripts/web-terminal-resize-benchmark.js",
     "build": "npm run web:build",
     "providers:audit": "node scripts/provider-collection-audit.js",
     "providers:family-drift": "node scripts/codebuddy-family-drift-check.js",

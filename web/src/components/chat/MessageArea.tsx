@@ -755,6 +755,8 @@ const MessageArea = ({
   const showTerminalDock = Boolean(terminalRun && terminalRun.runId);
   // 选项卡退场期间仍需留在 dock 栈里，否则整个栈会随判定一起卸载、退场动画看不到
   const planChoicePresence = useCollapsePresence(showPlanChoiceDock, 160);
+  // 回到底部按钮：隐藏时留 140ms 播放退场（否则滚到顶部/底部时按钮直接消失，是整段交互里最突兀的硬切）
+  const scrollBtnPresence = useCollapsePresence(showScrollBottom, 140);
   const hasComposerDock = Boolean(activeChecklist) || planChoicePresence.present || showTerminalDock || queuedMessages.length > 0;
   const helperFontSize = mobile ? 13 : 12;
 
@@ -989,8 +991,11 @@ const MessageArea = ({
           )}
         </div>
 
-        {showScrollBottom && (
-          <button onClick={scrollToBottom} className={styles.scrollBottomBtn}>
+        {scrollBtnPresence.present && (
+          <button
+            onClick={scrollToBottom}
+            className={`${styles.scrollBottomBtn} ${scrollBtnPresence.expanded ? '' : styles.scrollBottomBtnLeaving}`}
+          >
             <ArrowDownOutlined />
           </button>
         )}

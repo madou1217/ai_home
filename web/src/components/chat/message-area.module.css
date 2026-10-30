@@ -177,6 +177,23 @@
   }
 }
 
+/* 退场：隐藏前留 140ms（useCollapsePresence），按钮落回下沿再卸载 */
+.scrollBottomBtnLeaving {
+  pointer-events: none;
+  animation: chatScrollBtnOut 140ms var(--ease-standard) forwards;
+}
+
+@keyframes chatScrollBtnOut {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}
+
 .scrollBottomBtn:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);

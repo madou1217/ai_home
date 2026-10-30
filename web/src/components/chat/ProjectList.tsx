@@ -424,7 +424,8 @@ const ProjectList = ({
                 </Button>
               </Empty>
             ) : (
-              <div ref={chatSessionsFlipRef} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              // 骨架 → 真列表：整列淡入衔接，数据到达不再硬切（重排仍由 flipRef 逐行补间）
+              <div ref={chatSessionsFlipRef} className="aih-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[...chatSessions]
                   .sort((a, b) => {
                     const aPinned = pinnedSessionIds.has(a.id);
@@ -547,7 +548,8 @@ const ProjectList = ({
             ) : projects.length === 0 ? (
               <Empty description="暂无项目" style={{ marginTop: 24 }} />
             ) : (
-              <div ref={projectSessionsFlipRef} style={{ padding: '4px 0' }}>
+              // 骨架 → 真列表：整列淡入衔接，数据到达不再硬切
+              <div ref={projectSessionsFlipRef} className="aih-fade-in" style={{ padding: '4px 0' }}>
                 {projects.map((project) => {
                   const isExpanded = expandedProjects.has(project.id);
                   const isHovered = hoveredProject === project.id;

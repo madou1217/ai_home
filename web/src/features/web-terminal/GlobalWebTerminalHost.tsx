@@ -1,6 +1,8 @@
 import React, { useCallback, useMemo, useRef } from 'react';
 import { CodeOutlined } from '@ant-design/icons';
+import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
+import { terminalAPI } from '@/services/api';
 import { useWebTerminalManager } from './web-terminal-context';
 import './global-web-terminal.css';
 
@@ -19,8 +21,24 @@ export default function GlobalWebTerminalHost() {
     sessionKey: tab.sessionKey,
     label: tab.label,
     cwd: tab.cwd,
+    kind: tab.kind,
     persistent: true
   })), [manager.tabs]);
+  const onNewTab = useCallback(async () => {
+    const active = manager.tabs.find((tab) => tab.id === manager.activeTabId);
+    const random = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(random);
+    const key = `shell-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+    const result = await terminalAPI.open(80, 24, undefined, active?.cwd, key);
+    if (!result.ok || !result.termId) {
+      message.error(`新建终端失败: ${result.error || 'unknown'}`);
+      return;
+    }
+    const labels = new Set(manager.tabs.map((tab) => tab.label));
+    let number = 1;
+    while (labels.has(`Shell ${number}`)) number += 1;
+    manager.openTab({ sessionKey: key, serverId: manager.serverId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
+  }, [manager]);
   const onHeaderMouseDown = useCallback((event: React.MouseEvent) => {
     const target = event.target as HTMLElement;
     if (target.closest('button') || target.closest('[data-terminal-tab]')) return;
@@ -112,7 +130,9 @@ export default function GlobalWebTerminalHost() {
         onClose={manager.closeAll}
         activeTabId={activeTab.id}
         onActiveTabChange={manager.setActiveTab}
-        allowNewTab={false}
+        onNewTab={onNewTab}
+        layout={manager.layout}
+        onLayoutChange={manager.setLayout}
       />
     </div>
   );

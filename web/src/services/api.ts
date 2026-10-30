@@ -2169,8 +2169,9 @@ async function terminalPost(path: string, body: unknown): Promise<any> {
     const response = await api.post(`/webui/terminal/${path}`, body);
     return response.data;
   } catch (error) {
-    const status = Number((error as AxiosError)?.response?.status) || 0;
-    return { ok: false, error: status ? `terminal_http_${status}` : 'terminal_request_failed' };
+    const response = (error as AxiosError<{ error?: string }>)?.response;
+    const status = Number(response?.status) || 0;
+    return { ok: false, error: response?.data?.error || (status ? `terminal_http_${status}` : 'terminal_request_failed') };
   }
 }
 
@@ -2181,7 +2182,7 @@ export const terminalAPI = {
     muxId?: string,
     cwd?: string,
     sessionKey?: string
-  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; error?: string }> =>
+  ): Promise<{ ok: boolean; termId?: string; muxId?: string; shell?: string; durable?: boolean; error?: string }> =>
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string) => terminalPost('input', { termId, data }),
   resize: (termId: string, cols: number, rows: number) => terminalPost('resize', { termId, cols, rows }),
@@ -2195,6 +2196,7 @@ export const terminalAPI = {
     rows?: number;
     cwd?: string;
     shell?: string;
+    durable?: boolean;
     error?: string;
   }> => terminalPost('attach', { sessionKey, muxId }),
   // 整个面板一条 SSE，承载所有 tab 的输出（帧带 termId），规避浏览器每域 ~6 连接上限。

@@ -3,7 +3,7 @@ import type { MouseEvent } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined } from '@ant-design/icons';
+import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
@@ -28,11 +28,15 @@ interface ShellTerminalPanelProps {
     label: string;
     cwd?: string;
     persistent?: boolean;
+    kind?: 'account-cli' | 'shell';
   }>;
   activeTabId?: string;
   onActiveTabChange?: (id: string) => void;
   onTabClose?: (id: string) => void;
   allowNewTab?: boolean;
+  onNewTab?: () => void;
+  layout?: 'tabs' | 'sidebar';
+  onLayoutChange?: (layout: 'tabs' | 'sidebar') => void;
   minimized?: boolean;
   onMinimizedChange?: (value: boolean) => void;
   onHeaderMouseDown?: (event: MouseEvent) => void;
@@ -128,6 +132,9 @@ function ShellTerminalPanel({
   onActiveTabChange,
   onTabClose,
   allowNewTab = true,
+  onNewTab,
+  layout = 'tabs',
+  onLayoutChange,
   minimized: controlledMinimized,
   onMinimizedChange,
   onHeaderMouseDown,
@@ -203,21 +210,32 @@ function ShellTerminalPanel({
     setActiveId(id);
 
     try {
-      const res = tabSessionKey
-        ? await (async () => {
+      const openOrAttach = async () => (tabSessionKey
+        ? (async () => {
           const attached = await terminalAPI.attach(tabSessionKey, muxIdRef.current);
           if (attached.ok) return attached;
           // A missing controlled account session must not silently become a
           // different shell. A persistent session is created only for an
           // explicit open/restart path; attach failures remain visible in the tab.
-          if (definition?.sessionKey) return { ok: false, error: 'terminal_not_found' };
+          if (definition?.sessionKey) return attached;
+          if (attached.error !== 'terminal_not_found') return attached;
           return terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, tabCwd, tabSessionKey);
         })()
-        : await terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, tabCwd);
+        : terminalAPI.open(term.cols || 80, term.rows || 24, muxIdRef.current, tabCwd));
+      let res = await openOrAttach();
+      while (definition?.sessionKey && !res.ok && res.error !== 'terminal_not_found' && instancesRef.current.get(id) === inst) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (instancesRef.current.get(id) !== inst) return;
+        res = await openOrAttach();
+      }
+      if (instancesRef.current.get(id) !== inst) return;
       if (!res.ok || !res.termId) {
-        term.writeln(`\x1b[31m终端启动失败: ${res.error || 'unknown'}${definition?.sessionKey ? '（Server session 已结束，请重新打开）' : ''}\x1b[0m`);
+        term.writeln(`\x1b[31m终端启动失败: ${res.error || 'unknown'}${res.error === 'terminal_not_found' ? '（Server session 已结束，请重新打开）' : ''}\x1b[0m`);
         setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'error' } : t)));
         return;
+      }
+      if (tabSessionKey && res.durable === false) {
+        term.writeln('\x1b[33m当前服务器未提供持久终端后端，服务重启后此会话无法恢复。\x1b[0m');
       }
       registerTermId(id, res.termId, inst);
       setTabs((prev) => prev.map((t) => (
@@ -243,6 +261,8 @@ function ShellTerminalPanel({
 
     const es = terminalAPI.openMuxStream(muxId);
     esRef.current = es;
+    let disposed = false;
+    const retryTimers = new Set<ReturnType<typeof setTimeout>>();
     // EventSource 会自动重连，但服务端会在旧连接关闭时回收 mux。重连后的
     // connected 帧必须把持久 session 重新绑定到新的 mux，否则 shell 仍在运行，
     // 但后续输出会继续广播到已删除的旧 mux，表现为“终端还活着但页面没字”。
@@ -254,10 +274,17 @@ function ShellTerminalPanel({
         const definition = definitions?.find((item) => item.id === tabId);
         const key = String(definition?.sessionKey || sessionKey || '').trim();
         if (!key) continue;
-        void terminalAPI.attach(key, muxIdRef.current).then((attached) => {
+        const attach = () => void terminalAPI.attach(key, muxIdRef.current).then((attached) => {
+          if (disposed || instancesRef.current.get(tabId) !== inst) return;
           if (!attached.ok || !attached.termId) {
-            inst.term.writeln('\r\n\x1b[31mServer session 已结束，请重新打开终端。\x1b[0m');
-            setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'error' } : tab));
+            if (attached.error === 'terminal_not_found') {
+              inst.term.writeln('\r\n\x1b[31mServer session 已结束，请重新打开终端。\x1b[0m');
+              setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'error' } : tab));
+            } else {
+              setTabs((prev) => prev.map((tab) => tab.id === tabId ? { ...tab, status: 'connecting' } : tab));
+              const timer = setTimeout(() => { retryTimers.delete(timer); attach(); }, 3000);
+              retryTimers.add(timer);
+            }
             return;
           }
           if (previousTermId !== attached.termId) byTermIdRef.current.delete(previousTermId);
@@ -266,6 +293,7 @@ function ShellTerminalPanel({
             ? { ...tab, termId: attached.termId!, status: 'ready' }
             : tab));
         }).catch(() => {});
+        attach();
       }
     };
     es.onerror = () => {
@@ -306,6 +334,8 @@ function ShellTerminalPanel({
     }
 
     return () => {
+      disposed = true;
+      for (const timer of retryTimers) clearTimeout(timer);
       try { es.close(); } catch { /* ignore */ }
       esRef.current = null;
       for (const inst of instancesRef.current.values()) {
@@ -358,7 +388,7 @@ function ShellTerminalPanel({
       inst.term.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, height, tabs.length]);
+  }, [activeId, height, layout, tabs.length]);
 
   // 三栏分隔条拖拽/窗口缩放只改容器宽度，上面的 effect 感知不到 → 换行宽度滞后。
   // 用 ResizeObserver 监听面板容器，rAF 合并后 fit 当前激活 tab。
@@ -428,7 +458,7 @@ function ShellTerminalPanel({
     const inst = instancesRef.current.get(id);
     if (!inst) return;
     if (inst.termId) {
-      terminalAPI.close(inst.termId).catch(() => {});
+      await terminalAPI.close(inst.termId).catch(() => {});
       byTermIdRef.current.delete(inst.termId);
       inst.termId = '';
     }
@@ -493,6 +523,31 @@ function ShellTerminalPanel({
   const badgeStatus: TabStatus = activeTab
     ? (activeTab.status === 'ready' && panelStatus !== 'ready' ? 'connecting' : activeTab.status)
     : panelStatus;
+  const tabList = tabs.map((t) => (
+    <div
+      key={t.id}
+      data-terminal-tab="true"
+      role="tab"
+      tabIndex={0}
+      aria-selected={t.id === activeId}
+      className={`${styles.shellTerminalTab} ${t.id === activeId ? styles.shellTerminalTabActive : ''}`}
+      onClick={() => { setActiveId(t.id); onActiveTabChange?.(t.id); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setActiveId(t.id);
+          onActiveTabChange?.(t.id);
+        }
+      }}
+      title={t.label}
+    >
+      <span className={styles.shellTerminalTabDot} data-status={t.status} />
+      <span className={styles.shellTerminalTabLabel}>{t.label}</span>
+      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title="关闭此终端" onClick={(event) => { event.stopPropagation(); closeTab(t.id); }}>
+        <CloseOutlined />
+      </button>
+    </div>
+  ));
 
   return (
     <div
@@ -514,46 +569,29 @@ function ShellTerminalPanel({
               <span className={styles.shellTerminalStatus} data-status={badgeStatus}>{statusLabel(badgeStatus)}</span>
             </div>
           )}
-          {tabs.map((t) => (
-            <div
-              key={t.id}
-              data-terminal-tab="true"
-              className={`${styles.shellTerminalTab} ${t.id === activeId ? styles.shellTerminalTabActive : ''}`}
-              onClick={() => {
-                setActiveId(t.id);
-                onActiveTabChange?.(t.id);
-              }}
-              title={t.label}
-            >
-              <span
-                className={styles.shellTerminalTabDot}
-                data-status={t.status}
-              />
-              <span className={styles.shellTerminalTabLabel}>{t.label}</span>
-              <span
-                className={styles.shellTerminalTabClose}
-                title="关闭此终端"
-                onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}
-              >
-                <CloseOutlined />
-              </span>
-            </div>
-          ))}
+          {layout === 'tabs' ? tabList : null}
           <button
             type="button"
             className={styles.shellTerminalIconBtn}
             title="新建终端"
-            onClick={() => { void createTab(); }}
+            aria-label="新建终端"
+            onClick={() => { if (onNewTab) onNewTab(); else void createTab(); }}
             style={allowNewTab && !sessionKey ? undefined : { display: 'none' }}
           >
             <PlusOutlined />
           </button>
         </div>
         <div className={styles.shellTerminalActions}>
+          {onLayoutChange ? (
+            <button type="button" className={styles.shellTerminalIconBtn} title={layout === 'tabs' ? '切换到左侧会话列表' : '切换到顶部标签'} aria-label={layout === 'tabs' ? '切换到左侧会话列表' : '切换到顶部标签'} onClick={() => onLayoutChange(layout === 'tabs' ? 'sidebar' : 'tabs')}>
+              {layout === 'tabs' ? <MenuFoldOutlined /> : <AppstoreOutlined />}
+            </button>
+          ) : null}
           <button
             type="button"
             className={styles.shellTerminalIconBtn}
             title="重启当前终端"
+            disabled={sessionTabs?.find((definition) => definition.id === activeId)?.kind === 'account-cli'}
             onClick={() => { void reloadActiveTab(); }}
           >
             <ReloadOutlined />
@@ -580,7 +618,9 @@ function ShellTerminalPanel({
           </button>
         </div>
       </div>
-      <div className={styles.shellTerminalBodies} style={{ display: minimized ? 'none' : undefined }}>
+      <div className={styles.shellTerminalContent} style={{ display: minimized ? 'none' : undefined }}>
+        {layout === 'sidebar' ? <div className={styles.shellTerminalSidebar} role="tablist" aria-label="终端会话">{tabList}</div> : null}
+        <div className={styles.shellTerminalBodies}>
         {tabs.map((t) => (
           <div
             key={t.id}
@@ -589,6 +629,7 @@ function ShellTerminalPanel({
             style={{ display: t.id === activeId ? 'block' : 'none' }}
           />
         ))}
+        </div>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
   activeTabId: string;
   minimized: boolean;
+  layout: 'tabs' | 'sidebar';
   position: { x: number; y: number; width: number; height: number };
 }
 interface StoredState {
@@ -42,6 +43,7 @@ interface WebTerminalManagerValue extends WebTerminalLayoutState {
   closeAll: () => void;
   setActiveTab: (id: string) => void;
   setMinimized: (value: boolean) => void;
+  setLayout: (layout: WebTerminalLayoutState['layout']) => void;
   setPosition: (position: Partial<WebTerminalLayoutState['position']>) => void;
 }
 
@@ -51,6 +53,7 @@ const DEFAULT_STATE: WebTerminalLayoutState = {
   tabs: [],
   activeTabId: '',
   minimized: false,
+  layout: 'tabs',
   position: { x: 0, y: 0, width: DEFAULT_WIDTH, height: 420 }
 };
 
@@ -99,6 +102,7 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
     tabs,
     activeTabId,
     minimized: item.minimized === true,
+    layout: item.layout === 'sidebar' ? 'sidebar' : 'tabs',
     position: {
       x: Number.isFinite(x) ? x : 0,
       y: Number.isFinite(y) ? y : 0,
@@ -207,6 +211,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
   const closeAll = useCallback(() => update((current) => ({ ...current, tabs: [], activeTabId: '' })), [update]);
   const setActiveTab = useCallback((id: string) => update((current) => current.tabs.some((tab) => tab.id === id) ? { ...current, activeTabId: id } : current), [update]);
   const setMinimized = useCallback((value: boolean) => update((current) => ({ ...current, minimized: value })), [update]);
+  const setLayout = useCallback((layout: WebTerminalLayoutState['layout']) => update((current) => ({ ...current, layout })), [update]);
   const setPosition = useCallback((position: Partial<WebTerminalLayoutState['position']>) => update((current) => ({
     ...current,
     position: { ...current.position, ...position }
@@ -220,8 +225,9 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     closeAll,
     setActiveTab,
     setMinimized,
+    setLayout,
     setPosition
-  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setMinimized, setPosition, state]);
+  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setLayout, setMinimized, setPosition, state]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

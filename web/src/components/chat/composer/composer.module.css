@@ -400,6 +400,10 @@
   font-size: var(--hos-text-micro);
   color: var(--term-text-faint);
   flex: 0 0 auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .shellTerminalTabClose:hover {
@@ -434,6 +438,28 @@
   background: var(--term-hover-strong);
   color: var(--term-accent);
 }
+
+.shellTerminalIconBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.shellTerminalContent {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.shellTerminalSidebar {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  max-width: 35%;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  background: var(--term-bg-header);
+  border-right: 1px solid var(--term-border);
+}
+
+.shellTerminalSidebar .shellTerminalTab { max-width: none; min-height: 30px; }
+.shellTerminalSidebar .shellTerminalTabLabel { flex: 1; }
 
 .shellTerminalBodies {
   flex: 1;

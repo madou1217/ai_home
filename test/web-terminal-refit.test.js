@@ -69,3 +69,20 @@ test('interactive fits are paced and release flushes the latest size immediately
   assert.equal(fitted, 2);
   refitter.dispose();
 });
+
+test('release callback runs after the final local fit in the scheduled frame', () => {
+  let frame;
+  const order = [];
+  const refitter = createTerminalRefitter(
+    () => { order.push('fit'); },
+    (callback) => { frame = callback; return 1; },
+    () => {},
+    { afterFlush: () => order.push('send') }
+  );
+  refitter.notifyResize();
+  refitter.flush();
+  assert.deepEqual(order, []);
+  frame();
+  assert.deepEqual(order, ['fit', 'send']);
+  refitter.dispose();
+});

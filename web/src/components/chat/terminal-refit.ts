@@ -37,10 +37,12 @@ export function createTerminalRefitter(
     now?: () => number;
     setTimer?: (cb: () => void, delay: number) => ReturnType<typeof setTimeout>;
     clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+    afterFlush?: () => void;
   } = {},
 ): TerminalRefitter {
   let pendingFrame: number | null = null;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let flushRequested = false;
   let lastFit = -Infinity;
   const now = options.now || Date.now;
   const setTimer = options.setTimer || setTimeout;
@@ -51,6 +53,10 @@ export function createTerminalRefitter(
       pendingFrame = null;
       lastFit = now();
       fitActive();
+      if (flushRequested) {
+        flushRequested = false;
+        options.afterFlush?.();
+      }
     });
   };
   return {
@@ -63,6 +69,7 @@ export function createTerminalRefitter(
     flush() {
       if (pendingTimer !== null) clearTimer(pendingTimer);
       pendingTimer = null;
+      flushRequested = true;
       scheduleFrame();
     },
     dispose() {
@@ -70,6 +77,7 @@ export function createTerminalRefitter(
       if (pendingTimer !== null) clearTimer(pendingTimer);
       pendingFrame = null;
       pendingTimer = null;
+      flushRequested = false;
     },
   };
 }

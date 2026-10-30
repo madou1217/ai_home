@@ -481,7 +481,10 @@ function ShellTerminalPanel({
     const gestureHost = el.closest('.global-web-terminal-window');
     const refitter = createTerminalRefitter(() => {
       fitActiveTerminal(instancesRef.current, activeIdRef.current);
-    }, undefined, undefined, { minInterval: () => 64 });
+    }, undefined, undefined, {
+      minInterval: () => 64,
+      afterFlush: () => instancesRef.current.get(activeIdRef.current)?.resizeSender.flush(),
+    });
     const observer = new ResizeObserver(() => refitter.notifyResize());
     const finishResize = () => refitter.flush();
     gestureHost?.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);

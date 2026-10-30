@@ -74,3 +74,35 @@ test('clearing a resize before its send starts prevents a stale request', async 
   await tick();
   assert.deepEqual(calls, []);
 });
+
+test('release flush sends the latest pending size without waiting for the pacing timer', async () => {
+  const calls = [];
+  const { sender, advance } = fixture(async (...args) => { calls.push(args); });
+  sender.enqueue('one', 80, 24);
+  await tick();
+  advance(10);
+  sender.enqueue('one', 100, 30);
+  sender.flush();
+  await tick();
+  assert.deepEqual(calls, [['one', 80, 24], ['one', 100, 30]]);
+  advance(100);
+  await tick();
+  assert.equal(calls.length, 2);
+});
+
+test('release flush waits for an in-flight resize, then sends the newest size immediately', async () => {
+  const calls = [];
+  const releases = [];
+  const { sender } = fixture((...args) => { calls.push(args); return new Promise((resolve) => releases.push(resolve)); });
+  sender.enqueue('one', 80, 24);
+  await tick();
+  sender.enqueue('one', 90, 25);
+  sender.flush();
+  sender.enqueue('one', 100, 30);
+  assert.deepEqual(calls, [['one', 80, 24]]);
+  releases.shift()();
+  await tick();
+  assert.deepEqual(calls, [['one', 80, 24], ['one', 100, 30]]);
+  releases.shift()();
+  await tick();
+});

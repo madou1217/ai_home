@@ -174,6 +174,127 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
+function summarizeSamples(values) {
+  const samples = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!samples.length) return { samples: 0, p50: null, p95: null, max: null };
+  const round = (value) => Number(value.toFixed(2));
+  return { samples: samples.length, p50: round(samples[Math.floor(samples.length * 0.5)]), p95: round(samples[Math.floor(samples.length * 0.95)]), max: round(samples[samples.length - 1]) };
+}
+
+async function waitForPointerGrid(cdp, width, height, afterResize) {
+  return evaluate(cdp, `(async () => {
+    for(let i=0;i<80;i++){
+      await new Promise(resolve=>setTimeout(resolve,50));
+      const p=document.querySelector('[aria-label="Web Terminal"]'),r=p.getBoundingClientRect();
+      const status=await (await fetch('/__benchmark/status')).json();
+      const match=p.querySelector('.xterm-rows')?.textContent.match(/BENCH_TUI ([0-9]+)x([0-9]+)/);
+      const root=p.querySelector('.xterm')?.getBoundingClientRect(),screen=p.querySelector('.xterm-screen')?.getBoundingClientRect();
+      if(!match||!root||!screen||!status.lastResize)continue;
+      const rows=Number(match[1]),cols=Number(match[2]);
+      const unusedHeight=root.height-screen.height,unusedWidth=root.width-screen.width-14;
+      if(Math.abs(r.width-${width})<=2&&Math.abs(r.height-${height})<=2&&status.resizeCount>${afterResize}&&rows===status.lastResize.rows&&cols===status.lastResize.cols&&unusedHeight>=-1&&unusedHeight<screen.height/rows+1&&unusedWidth>=-1&&unusedWidth<screen.width/cols+1)return {resizeCount:status.resizeCount};
+    }return null;
+  })()`);
+}
+
+// Drive a time-based mouse drag over CDP. DOM inline dimensions are read in
+// the frame callback, avoiding a layout read that would distort the workload.
+async function measureRealPointerDrag(cdp, continuousOutput) {
+  const start = await evaluate(cdp, `(async () => {
+    const panel=document.querySelector('[aria-label="Web Terminal"]');
+    const handle=panel.querySelector('.global-web-terminal-resize-se');
+    const r=panel.getBoundingClientRect(),h=handle.getBoundingClientRect();
+    const x=h.left+h.width/2,y=h.top+h.height/2;
+    if(document.elementFromPoint(x,y)!==handle)throw new Error('south-east handle cannot be hit');
+    const sequence=()=>Number(panel.querySelector('.xterm-rows')?.textContent.match(/LIVE #([0-9]+)/)?.[1] || 0);
+    const monitor={x,y,width:r.width,height:r.height,events:0,lags:[],frames:[],lastInput:null,frame:null,previous:null,initialLive:sequence(),sequence};
+    monitor.onMove=(event)=>{if(event.buttons===1){monitor.events++;monitor.lastInput={x:event.clientX,y:event.clientY};}};
+    const tick=(now)=>{
+      if(monitor.previous!==null)monitor.frames.push(now-monitor.previous);
+      monitor.previous=now;
+      if(monitor.lastInput){
+        const width=parseFloat(panel.style.width),height=parseFloat(panel.style.height);
+        if(Number.isFinite(width)&&Number.isFinite(height)){
+          const dx=monitor.width+monitor.lastInput.x-monitor.x-width;
+          const dy=monitor.height+monitor.lastInput.y-monitor.y-height;
+          monitor.lags.push(Math.hypot(dx,dy));
+        }
+      }
+      monitor.frame=requestAnimationFrame(tick);
+    };
+    window.addEventListener('pointermove',monitor.onMove,true);
+    monitor.frame=requestAnimationFrame(tick);window.__terminalPointerMonitor=monitor;
+    const status=await (await fetch('/__benchmark/status')).json();
+    return {x,y,width:r.width,height:r.height,resizeCount:status.resizeCount};
+  })()`);
+  const dispatchTimes = [];
+  const distanceX = 230, distanceY = 160;
+  let sent = 0;
+  let skipped = 0;
+  let elapsed = 0;
+  let pointerX = start.x, pointerY = start.y;
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pointerX, y: pointerY });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pointerX, y: pointerY, button: 'left', buttons: 1, clickCount: 1 });
+  let measured;
+  try {
+    const began = performance.now();
+    let nextSend = began;
+    let sendError = null;
+    const pending = new Set();
+    while (elapsed < 1500) {
+      const now = performance.now();
+      if (now < nextSend) {
+        await delay(Math.max(1, nextSend - now));
+        elapsed = performance.now() - began;
+        continue;
+      }
+      nextSend = Math.max(nextSend + 16, now);
+      const progress = Math.min(1, elapsed / 1500);
+      pointerX = start.x + distanceX * progress;
+      pointerY = start.y + distanceY * progress;
+      if (pending.size >= 4) {
+        skipped += 1;
+      } else {
+        const sendStart = performance.now();
+        let request;
+        request = cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pointerX, y: pointerY, button: 'left', buttons: 1 })
+          .then(() => { dispatchTimes.push(performance.now() - sendStart); }, (error) => { sendError ||= error; })
+          .finally(() => pending.delete(request));
+        pending.add(request);
+        sent += 1;
+      }
+      elapsed = performance.now() - began;
+    }
+    await Promise.all(pending);
+    if (sendError) throw sendError;
+    pointerX = start.x + distanceX;
+    pointerY = start.y + distanceY;
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pointerX, y: pointerY, button: 'left', buttons: 1 });
+    await delay(80);
+    measured = await evaluate(cdp, `(() => {
+      const m=window.__terminalPointerMonitor;cancelAnimationFrame(m.frame);
+      window.removeEventListener('pointermove',m.onMove,true);delete window.__terminalPointerMonitor;
+      return {events:m.events,lags:m.lags,frames:m.frames,initialLive:m.initialLive,finalLive:m.sequence()};
+    })()`);
+  } finally {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pointerX, y: pointerY, button: 'left', buttons: 0, clickCount: 1 });
+    if (!measured) await evaluate(cdp, `(() => {const m=window.__terminalPointerMonitor;if(m){cancelAnimationFrame(m.frame);window.removeEventListener('pointermove',m.onMove,true);delete window.__terminalPointerMonitor;}})()`).catch(() => {});
+  }
+  if (!measured.events || !measured.lags.length) throw new Error('real pointer drag produced no measurable frames');
+  if (continuousOutput && (!measured.initialLive || measured.finalLive <= measured.initialLive)) throw new Error('live terminal output did not advance during the real pointer drag');
+  const final = await waitForPointerGrid(cdp, start.width + distanceX, start.height + distanceY, start.resizeCount);
+  if (!final) throw new Error('real pointer drag did not converge');
+  // Restore the original size for the remaining directional checks.
+  const restoredHandle = await evaluate(cdp, `(() => {const r=document.querySelector('.global-web-terminal-resize-se').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...restoredHandle });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...restoredHandle, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: restoredHandle.x - distanceX, y: restoredHandle.y - distanceY, button: 'left', buttons: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: restoredHandle.x - distanceX, y: restoredHandle.y - distanceY, button: 'left', buttons: 0, clickCount: 1 });
+  const restored = await waitForPointerGrid(cdp, start.width, start.height, final.resizeCount);
+  if (!restored) throw new Error('real pointer drag did not restore the terminal grid');
+  return { durationMs: Number(elapsed.toFixed(2)), sentEvents: sent, skippedEvents: skipped, receivedEvents: measured.events, liveSequenceAdvance: continuousOutput ? measured.finalLive - measured.initialLive : null, pointerLagPx: summarizeSamples(measured.lags), frameIntervalMs: summarizeSamples(measured.frames), protocolDispatchMs: summarizeSamples(dispatchTimes) };
+}
+
 // Chromium input exercises actual hit testing and pointer delivery, not just
 // synthetic DOM dispatch. Check the window while held as well as after release.
 async function verifyRealPointerHandles(cdp) {
@@ -477,6 +598,7 @@ async function run(options) {
       }
       return {edges,drags:edges.length*2};
     })()`);
+    const realPointerDrag = await measureRealPointerDrag(cdp, options.continuousOutput);
     const pointerChecks = await verifyRealPointerHandles(cdp);
     // FitAddon must size the screen to the unpadded content area. Sweeping
     // through more than one cell height catches clipped bottom rows that a
@@ -520,7 +642,7 @@ async function run(options) {
       return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
     })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, continuousOutput: options.continuousOutput, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, pointerChecks, gridBounds };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, continuousOutput: options.continuousOutput, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, realPointerDrag, pointerChecks, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);
@@ -558,4 +680,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { parseArgs, metricDelta, run };
+module.exports = { parseArgs, metricDelta, summarizeSamples, run };

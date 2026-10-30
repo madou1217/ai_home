@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseArgs, metricDelta } = require('../scripts/web-terminal-resize-benchmark');
+const { parseArgs, metricDelta, summarizeSamples } = require('../scripts/web-terminal-resize-benchmark');
 
 test('benchmark accepts explicit browser, repeat count and isolation options', () => {
   assert.deepEqual(parseArgs(['--browser', '/opt/chromium', '--runs', '2', '--tmpdir', '/tmp/fixtures', '--software', '--no-sandbox', '--compare-styles']), {
@@ -23,4 +23,9 @@ test('browser work reports deltas only for relevant metrics', () => {
   const before = [{ name: 'LayoutCount', value: 10 }, { name: 'TaskDuration', value: 1.25 }];
   const after = [{ name: 'LayoutCount', value: 16 }, { name: 'TaskDuration', value: 1.57523 }, { name: 'Irrelevant', value: 100 }];
   assert.deepEqual(metricDelta(before, after), { LayoutCount: 6, TaskDuration: 0.3252 });
+});
+
+test('pointer measurements report percentiles without invalid samples', () => {
+  assert.deepEqual(summarizeSamples([8.456, 1, NaN, 4, Infinity]), { samples: 3, p50: 4, p95: 8.46, max: 8.46 });
+  assert.deepEqual(summarizeSamples([]), { samples: 0, p50: null, p95: null, max: null });
 });

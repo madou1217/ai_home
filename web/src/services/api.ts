@@ -2618,6 +2618,10 @@ export const toolkitAPI = {
     const response = await api.post<{ ok: boolean; results: any[] }>('/webui/toolkit/apps/hooks', { providers });
     return response.data;
   },
+  uninstallHooks: async (providers: string[]): Promise<{ ok: boolean; results: any[] }> => {
+    const response = await api.post<{ ok: boolean; results: any[] }>('/webui/toolkit/apps/hooks', { providers, action: 'uninstall' });
+    return response.data;
+  },
   getAppConfig: async (appId: string): Promise<ToolkitAppConfigResponse> => {
     const response = await api.get<ToolkitAppConfigResponse>(`/webui/toolkit/apps/${encodeURIComponent(appId)}/config`);
     return response.data;

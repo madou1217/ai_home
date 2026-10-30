@@ -265,6 +265,35 @@ export function useManagedApps() {
     }
   };
 
+  const uninstallHooks = async (providers?: string[]) => {
+    if (!data) return;
+    const targets = providers || data.apps
+      .filter((app) => app.hookSupported && app.hookInstalled)
+      .map((app) => app.provider);
+    if (!targets.length) {
+      message.info('没有需要停用的即时刷新');
+      return;
+    }
+
+    setInstallingHooks(true);
+    try {
+      const response = await toolkitAPI.uninstallHooks(targets);
+      const failed = (response.results || []).filter((result) => !result.ok);
+      if (!response.ok || failed.length) {
+        throw new Error(
+          failed.map((result) => `${result.provider}: ${result.error || result.reason || '验证失败'}`).join('；')
+          || '即时刷新停用未通过验证'
+        );
+      }
+      message.success('即时刷新已停用');
+      await fetchApps();
+    } catch (requestFailure: unknown) {
+      message.error(requestError(requestFailure, '即时刷新停用失败'));
+    } finally {
+      setInstallingHooks(false);
+    }
+  };
+
   return {
     data,
     accounts,
@@ -282,6 +311,7 @@ export function useManagedApps() {
     busyActionFor,
     checkAppUpdate,
     runAppAction,
-    installHooks
+    installHooks,
+    uninstallHooks
   };
 }

@@ -137,6 +137,14 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | `lib/server/zcode-project-key-location.js` + `lib/server/zcode-region.js` | **Strategy Data（区域表扩展）+ Fail-Soft Enrichment（附加产物不阻断主流程）** | ZCode 推理凭据是 Project Access Token（PAT），签发前必须先知道「用哪个 org/project/apiKey」——桌面端把这个定位写进 credentials.json 的 `project-key-location:v1:<encoded JSON>` 键，aih 此前漏写，于是每次推理都要重新发现，上游抖动时直接表现为推理失败。发现链（`getCustomerInfo` → 项目 api_keys）收进独立模块：区域差异（zai 的 biz origin 是 `api.z.ai`、Authorization 用 `Bearer <token>`；bigmodel 用 `bigmodel.cn` 与**裸 token**）作为 `apiOrigin` / `bizAuthScheme` **两列加进区域表**，模块里没有 provider 名分支；键名组装是纯函数，六元组顺序与 `encodeURIComponent(JSON.stringify(…))` 逐字节对齐桌面端。整条链失败一律返回 `null` 并经 `observe` 上报原因（`project_token_*`），登录照常成功、只是不写这个键——它只是附加产物。团队项目（键形状与建 key 参数都不同）显式拒绝而非写错形状 | 真机（2026-10-25）：bigmodel 账号 `acct_cf38e720d4aeb8a7934c` 的生成键与桌面端**逐字节相同**（键 132 字符、值与桌面端完全一致，org/project/apiKeyId 三项对齐）；zai 账号 `acct_9c4ef724b3695d6e3ffd` 因 access_token 已过期（上游 `{"code":401}`）如实返回 `null` 且登录 job 仍 `succeeded`；11 条失败路径（网络异常 / HTTP 5xx / 非 JSON / 业务码 401 / 缺 token / 坏 origin / 空机构 / 团队模式 / apiKey 为空）全部 `null` 且无 observe 回调时也不抛错 |
 
 
+### 2026-10-30 账号生命周期事件与 harness 配置对称性
+
+| 模块 | 模式 | 解决什么 | 验证 |
+| --- | --- | --- | --- |
+| `lib/server/account-lifecycle-event-types.js` + `account-lifecycle-event-publisher.js` + `account-lifecycle-bus.js` + `account-runtime-event-hub.js` | **Observer / Pub-Sub（进程级总线 + 通配订阅 + 监听者隔离）** | 账号新增/导入/启停/删除只在一个权威点发布事实事件；下游消费面（模型投影、未来的 WebUI 推送/审计）各自注册监听者，发布点不随消费面增长。事件与运行态事件刻意分开，自动下线不会被伪装成用户关闭。CLI 进程不设 hub → 发布是 no-op，永不反向破坏写入 | 真实临时目录 + 本地 stub 网关：一次 `account.lifecycle.changed` → 1 次 `GET /v1/models` → pi/dsh/dsh-tui 三个投影同时更新；`account.runtime.changed` 不触发刷新；重复订阅同一监听函数只调用一次 |
+| `lib/harness/model-projection-refresh.js` + `lib/server/account-lifecycle-event-listeners.js` | **Descriptor Table（投影适配器表）+ Debounce / Single-flight Consumer** | 每个 harness 只声明「模型事实源路径 + 格式 + 怎么改」；批量导入的 N 个事件合并成一次目录读取，进行中再次触发记一个 pending 补跑。合并语义与 harness 自己的扩展（`pi-extension.ts` / `aih-model-refresh.mjs`）逐条对齐，避免 server 与扩展互相写回 | 三投影 E2E：已存在条目的 `contextWindow` / `maxTokens` 保留，新 id 最小字段补入，DSH patch 的其它条目与刷新插件保留；Web 构建通过 |
+| `provider-session-hook-config.js` 的 `HOOK_ADAPTERS.remove/uninstall` + `uninstallProviderSessionHookConfig` + `uninstallAppHooks` | **Symmetric Strategy Table（安装/卸载同源）** | hook 配置从「只能装」变成可撤销：只删除带 `--aih-provider-session-hook` marker 的 handler（或 AIH 具名 hook / 生成插件），用户自建 hook 与其它配置键原样保留；`POST /v0/webui/toolkit/apps/hooks` 用 `action` 选择策略 | 真实临时 HOME：Claude 用户 Stop hook 与 permissions 保留、managed marker 清零且诊断回到未安装；agy 具名 hook 删除后其它键保留；opencode 只删 AIH 插件、用户插件保留；不支持的 provider 返回 `unsupported_provider` |
+
 ### 2026-10-25 翻译桌面集成验收证据（Task 5）
 
 本轮把已有模式与可观察的运行证据对齐，未新增 provider 派发分支或第二份配置来源：

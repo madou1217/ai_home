@@ -201,8 +201,19 @@ Authorization: Bearer <zcodejwttoken>
 | acct_a09b9d… | 200 `{code:0}` **无 data** | `plans:[] balances:[]` |
 
 即：**preview 对全部可测账号都不返回 data，而 balance 明确显示套餐已被领到**（`balances: 0` =
-已领取、生效时间未到）。同一批账号换 app_version（3.16.3 ~ 3.20.0）、换 platform、
-带/不带 `X-Device-Mid` 的结果此前实测一致（未逐个存证）。
+已领取、生效时间未到）。
+
+preview 的空返回与参数无关（`/tmp/zcap/preview-matrix.json`，同一账号逐格实测）：
+
+| app_version | darwin-arm64 | win32-x64 |
+|---|---|---|
+| 3.16.3 | 200 `{code:0}` 无 data | 200 `{code:0}` 无 data |
+| 3.17.1 | 200 `{code:0}` 无 data | 200 `{code:0}` 无 data |
+| 3.18.0 | 200 `{code:0}` 无 data | 200 `{code:0}` 无 data |
+| 3.20.0 | 200 `{code:0}` 无 data | 200 `{code:0}` 无 data |
+
+带 / 不带 `X-Device-Mid` 也一致（两次都是 `{"code":0,"msg":""}`）。所以「WebUI 看不到活动」
+不是版本门槛或设备头的问题，而是**这条通道当天就是空的**。
 
 另 3 个账号（acct_6738589e / acct_bc54735c / acct_d88d9008）在本次采集里读不出 JWT：
 它们的 `zcodejwttoken` 是 `enc:v1:` 密文，而解密密钥由 `ZCODE_CREDENTIAL_SECRET` 或
@@ -265,6 +276,7 @@ preview 恒空，WebUI 只能靠「balance 里出现新 plan 但 balances 为空
 
 `/tmp/zcap/wire-claim.json`（同样本机临时产物）保存了 §3.1 两次请求的完整报文：
 请求头清单（含 `hasCaptchaHeader: false`）、请求体、状态码与响应原文。
+`/tmp/zcap/preview-matrix.json` 是 §4 那张「版本 × 平台」矩阵的原始结果。
 
 抓包日志同理：`/tmp/zcap/cap10.out` 为桌面端主进程 hook 输出，`marketing-touch.query`
 的 4 次超时记录见 §3；它是临时文件，重跑桌面端后需重新采集。
@@ -283,4 +295,5 @@ dd if=$A bs=1 skip=311265511 count=900  2>/dev/null | tr -d '\000'   # 投放按
 grep -an 'marketing-touch.query\|billing/balance' /tmp/zcap/cap10.out | head
 node /tmp/zcap/collect-preview-evidence.js   # preview/balance 只读对照（需本机账号凭据）
 node /tmp/zcap/wire-claim.js                 # §3.1 的 wire 复放（claim 用不存在的 plan_id，零状态变更）
+node /tmp/zcap/preview-matrix.js             # §4 的版本 × 平台矩阵（只读 GET）
 ```

@@ -4,6 +4,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { openWebUiTerminalSession, handleWebUiTerminalRequest } = require('../lib/server/webui-terminal-routes');
+const { replayableTerminalOutput } = require('../lib/server/terminal-replay');
+
+test('replayed terminal snapshots omit stale queries but preserve screen controls', () => {
+  const output = replayableTerminalOutput(['\x1b[31mred\x1b[', 'c\x1b[>c\x1b[6n\x1b[18t\x1b[>q\x1b]10;?\x1b\\', '\x1b[0m$ ']);
+  assert.equal(output, '\x1b[31mred\x1b[0m$ ');
+});
 
 test('PTY mux preserves burst output before exit', { timeout: 5000 }, async () => {
   const muxId = `test-${process.pid}-${Date.now()}`;
@@ -67,5 +73,37 @@ test('a late close from an old mux cannot disconnect the replacement stream', { 
     assert.match(output, /AFTER_RECONNECT/);
   } finally {
     second.req.emit('close');
+  }
+});
+
+test('mux replay drops old terminal queries while forwarding live queries', { timeout: 5000 }, async () => {
+  const muxId = `replay-query-${process.pid}-${Date.now()}`;
+  const session = openWebUiTerminalSession({ muxId, file: process.execPath, args: ['-e', "process.stdout.write('SNAPSHOT\\x1b[c');setTimeout(() => process.stdout.write('LIVE\\x1b[>c'), 700);setTimeout(() => process.exit(), 900)"] });
+  assert.equal(session.ok, true);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const req = new EventEmitter();
+  const res = new EventEmitter();
+  res.writeHead = () => {};
+  const frames = [];
+  let resolveExit;
+  const exited = new Promise((resolve) => { resolveExit = resolve; });
+  res.write = (text) => {
+    if (text.startsWith('data: ')) {
+      const frame = JSON.parse(text.slice(6));
+      frames.push(frame);
+      if (frame.type === 'exit') resolveExit();
+    }
+    return true;
+  };
+  await handleWebUiTerminalRequest({ method: 'GET', pathname: '/v0/webui/terminal/mux', url: new URL(`http://localhost/?muxId=${muxId}`), req, res });
+  try {
+    await exited;
+    const output = frames.filter((frame) => frame.termId === session.termId && frame.type === 'output')
+      .map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');
+    assert.match(output, /SNAPSHOT/);
+    assert.equal(output.includes('\x1b[c'), false);
+    assert.equal(output.includes('LIVE\x1b[>c'), true);
+  } finally {
+    req.emit('close');
   }
 });

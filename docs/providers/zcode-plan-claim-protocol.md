@@ -309,18 +309,37 @@ WebUI 领取失败是两条独立缺陷叠加：
 换句话说：桌面端能领，不是因为它跳过了验证码，而是因为它解得动；WebUI 领不到，是因为把
 一个「客户端自选动作」变成了「不成功就不领」的开关。
 
-## 6. 修复对照（commit `96acc06e`）
+## 6. 修复对照
 
-| 缺陷 | 修复 |
-|---|---|
-| preview 缺 data 判成 nothing_claimable | 返回 `zcode_preview_missing_data`（可重试），与桌面端 `manual_claim_preview_missing_data` 同义 |
-| 验证码前置 | 改为「先裸领；只有上游回 3007 才解一次并重试一次」，解不出来按 3007 如实报错 |
-| 已领取但未生效的套餐在 WebUI 不可见 | 额度探针产出结构化结论快照（`planGroups` + `account.planNames` + `pendingEffectiveAtMs`），界面显示「套餐未生效 · 10-30 23:00 起可用」 |
+| 缺陷 | 修复 | commit |
+|---|---|---|
+| preview 缺 data 判成 nothing_claimable | 返回 `zcode_preview_missing_data`（可重试），与桌面端 `manual_claim_preview_missing_data` 同义 | `96acc06e` |
+| 验证码前置 | 改为「先裸领；只有上游回 3007 才解一次并重试一次」，解不出来按 3007 如实报错 | `96acc06e` |
+| 已领取但未生效的套餐在 WebUI 不可见 | 额度探针产出结构化结论快照（`planGroups` + `account.planNames` + `pendingEffectiveAtMs`），界面显示「套餐未生效 · 10-30 23:00 起可用」 | `96acc06e` |
+| 只有 preview 一条发现通道，preview 恒空就永远「暂无可领」 | 补 marketing/touch 发现通道：preview 空/缺 data 时回落取投放里的 `claim_zcode_plan` plan_id | 本次 |
 
-仍未做（需要时可再讨论）：WebUI 目前没有 marketing/touch 这条发现通道。今天的活动
-preview 恒空，WebUI 只能靠「balance 里出现新 plan 但 balances 为空」来识别已领取，
-无法主动发现「有活动可领」。若要补齐，等价实现是 `GET /api/v1/marketing/touch?seq=N`
-取 `deliveries[].banner.buttons[].action.args.plan_id`。
+发现通道的实现（`lib/account/activity-claim/zcode-plan.js`）：
+
+- `GET /api/v1/marketing/touch?seq=0`，请求头与 preview 同源（`Authorization` / `X-ZCode-App-Version` /
+  `X-Device-Mid` / `X-Client-Language`）；
+- 解析 `data.deliveries[]`，按 `resource_position` 去重（banner 只取第一条），
+  只认 `buttons[].action.type === 'claim_zcode_plan'`，取 `action.args.plan_id`；
+- `result.discovery` 记录本次 plan_id 来自 `preview` 还是 `marketing_touch`，
+  `result.marketingTouch` 记录投放条数 / 可领数 / 错误，便于排障；
+- preview 缺 data **且**投放也为空时，仍按 `zcode_preview_missing_data` 报错（可重试），
+  不会被误判成「活动没开」。
+
+线上只读验证（2026-10-30 15:00Z，dryRun 只发 GET，不产生 claim）：
+
+| 账号 | preview | 投放 | 结论 |
+|---|---|---|---|
+| acct_9fe1dc… | `{code:0}` 无 data | 1 条 banner，`claimable=1` | `zcode-v3-start-plan-1030-wk` 可领 —— 旧代码在这里判「暂无可领」 |
+| acct_a09b9d… | `{code:0}` 无 data | 1 条 banner，`claimable=1` | 同上 |
+| acct_91aa805b… | `{code:0}` 无 data | 0 条 | 已领过（投放已撤） |
+| acct_ae47a462… | `{code:0}` 无 data | 0 条 | 已领过 |
+
+仍未做（记录在案，不影响领取）：投放的 `POST /api/v1/marketing/touch/action` 回执（`confirm`）没有回发，
+只影响投放侧统计。
 
 ## 7. 附录：本次只读采集的原始结论
 

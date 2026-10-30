@@ -184,3 +184,112 @@ test('有余额桶时不走未生效结论', () => {
   };
   assert.strictEqual(zcodeProbePrivate.buildPendingPlanSnapshot(payload, 1), null);
 });
+
+// —— 发现通道：preview 空/缺 data 时，plan_id 来自营销投放（桌面端横幅同源） ——
+
+function createRoutedHarness({ previewJson, touchJson, claimJson }) {
+  const requests = [];
+  const fetchWithTimeout = async (url, init) => {
+    const target = String(url);
+    requests.push({ url: target, init });
+    let body = claimJson;
+    if (target.includes('/billing/preview')) body = previewJson;
+    else if (target.includes('/marketing/touch')) body = touchJson;
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  };
+  return {
+    requests,
+    fetchWithTimeout,
+    claimHeaders: () => requests.filter((r) => r.url.includes('/billing/claim')),
+    touchCalls: () => requests.filter((r) => r.url.includes('/marketing/touch'))
+  };
+}
+
+function bannerDelivery(planId, extra = {}) {
+  return {
+    code: 0,
+    data: {
+      server_time: 1793300000,
+      language: 'zh-CN',
+      deliveries: [{
+        campaign_id: '2101141259813175296',
+        priority: 100,
+        resource_position: 'banner',
+        banner: {
+          buttons: [
+            { text: { format: 'plaintext', content: 'Close' }, action: { type: 'close' } },
+            {
+              text: { format: 'plaintext', content: 'Claim' },
+              action: { type: 'claim_zcode_plan', args: { plan_id: planId } }
+            }
+          ]
+        },
+        ...extra
+      }]
+    }
+  };
+}
+
+test('preview 缺 data 时改从营销投放取 plan_id 并领取成功', async () => {
+  const harness = createRoutedHarness({
+    previewJson: { code: 0, msg: '' },
+    touchJson: bannerDelivery('zcode-v3-start-plan-1030-wk'),
+    claimJson: { code: 0, data: { plan: { plan_id: 'zcode-v3-start-plan-1030-wk', status: 'active' } } }
+  });
+  const { result, solveCalls } = await runClaim(harness);
+  assert.strictEqual(result.status, 'claimed');
+  assert.strictEqual(result.discovery, 'marketing_touch');
+  assert.strictEqual(result.plan.planId, 'zcode-v3-start-plan-1030-wk');
+  assert.strictEqual(result.marketingTouch.deliveries, 1);
+  assert.strictEqual(solveCalls.length, 0);
+  const [claim] = harness.claimHeaders();
+  assert.deepStrictEqual(JSON.parse(claim.init.body), { plan_id: 'zcode-v3-start-plan-1030-wk' });
+  assert.ok(!('X-Aliyun-Captcha-Verify-Param' in claim.init.headers));
+});
+
+test('preview 返回空 plans 时同样回落到投放', async () => {
+  const harness = createRoutedHarness({
+    previewJson: { code: 0, data: { plans: [] } },
+    touchJson: bannerDelivery('zcode-v3-start-plan-1030-wk'),
+    claimJson: { code: 0, data: { plan: { plan_id: 'zcode-v3-start-plan-1030-wk' } } }
+  });
+  const { result } = await runClaim(harness);
+  assert.strictEqual(result.status, 'claimed');
+  assert.strictEqual(result.discovery, 'marketing_touch');
+});
+
+test('投放里没有 claim_zcode_plan 动作时不算可领', async () => {
+  const harness = createRoutedHarness({
+    previewJson: { code: 0, data: { plans: [] } },
+    touchJson: {
+      code: 0,
+      data: {
+        server_time: 1793300000,
+        language: 'zh-CN',
+        deliveries: [{
+          campaign_id: 'c1',
+          priority: 10,
+          resource_position: 'banner',
+          banner: { buttons: [{ text: { format: 'plaintext', content: 'Go' }, action: { type: 'open_url', args: { url: 'https://z.ai' } } }] }
+        }]
+      }
+    },
+    claimJson: { code: 0 }
+  });
+  const { result } = await runClaim(harness);
+  assert.strictEqual(result.status, 'nothing_claimable');
+  assert.strictEqual(result.discovery, 'preview');
+  assert.strictEqual(harness.claimHeaders().length, 0);
+});
+
+test('投放去重：同位置只取第一条，popup 通道也能取到 plan_id', () => {
+  const { collectMarketingClaimPlans } = require('../lib/account/activity-claim/zcode-plan');
+  const plans = collectMarketingClaimPlans([
+    { campaign_id: 'c1', priority: 10, resource_position: 'banner', banner: { buttons: [{ action: { type: 'claim_zcode_plan', args: { plan_id: 'plan-a' } } }] } },
+    { campaign_id: 'c2', priority: 20, resource_position: 'banner', banner: { buttons: [{ action: { type: 'claim_zcode_plan', args: { plan_id: 'plan-b' } } }] } },
+    { campaign_id: 'c3', priority: 30, resource_position: 'popup', popup: { buttons: [{ action: { type: 'claim_zcode_plan', args: { plan_id: 'plan-c' } } }] } }
+  ]);
+  assert.deepStrictEqual(plans.map((p) => p.planId), ['plan-a', 'plan-c']);
+  assert.deepStrictEqual(plans.map((p) => p.position), ['banner', 'popup']);
+  assert.strictEqual(plans[1].campaignId, 'c3');
+});

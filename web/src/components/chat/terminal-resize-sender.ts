@@ -14,6 +14,7 @@ export function createTerminalResizeSender(
   let inFlight = false;
   let lastSentAt = -Infinity;
   let disposed = false;
+  let generation = 0;
 
   const schedule = () => {
     if (disposed || !pending || inFlight || timer !== null) return;
@@ -26,7 +27,11 @@ export function createTerminalResizeSender(
     pending = null;
     inFlight = true;
     lastSentAt = Date.now();
-    void Promise.resolve().then(() => send(size.termId, size.cols, size.rows)).catch(() => {}).finally(() => {
+    const sendGeneration = generation;
+    void Promise.resolve().then(() => {
+      if (!disposed && sendGeneration === generation) return send(size.termId, size.cols, size.rows);
+      return undefined;
+    }).catch(() => {}).finally(() => {
       inFlight = false;
       schedule();
     });
@@ -38,12 +43,14 @@ export function createTerminalResizeSender(
       schedule();
     },
     clear() {
+      generation += 1;
       pending = null;
       if (timer !== null) clearTimeout(timer);
       timer = null;
     },
     dispose() {
       disposed = true;
+      generation += 1;
       pending = null;
       if (timer !== null) clearTimeout(timer);
       timer = null;

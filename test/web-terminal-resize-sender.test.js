@@ -65,3 +65,12 @@ test('rapid resizes are paced and pending work is cancelled on dispose', async (
   await tick();
   assert.equal(calls.length, 2);
 });
+
+test('clearing a resize before its send starts prevents a stale request', async () => {
+  const calls = [];
+  const { sender } = fixture(async (...args) => { calls.push(args); });
+  sender.enqueue('old', 80, 24);
+  sender.clear();
+  await tick();
+  assert.deepEqual(calls, []);
+});

@@ -6,7 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined, LoadingOutlined } from '@ant-design/icons';
 import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
-import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
+import { createTerminalRefitter, fitActiveTerminal, TERMINAL_RESIZE_FINISHED } from './terminal-refit';
 import { createTerminalResizeSender } from './terminal-resize-sender';
 import { flushTerminalInput } from './terminal-input';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
@@ -477,13 +477,17 @@ function ShellTerminalPanel({
     if (!visible) return;
     const el = panelRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
+    const gestureHost = el.closest('.global-web-terminal-window');
     const refitter = createTerminalRefitter(() => {
       fitActiveTerminal(instancesRef.current, activeIdRef.current);
-    });
+    }, undefined, undefined, { minInterval: () => gestureHost?.classList.contains('is-interacting') ? 64 : 0 });
     const observer = new ResizeObserver(() => refitter.notifyResize());
+    const finishResize = () => refitter.flush();
+    gestureHost?.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
     observer.observe(el);
     return () => {
       observer.disconnect();
+      gestureHost?.removeEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
       refitter.dispose();
     };
   }, [visible, layout]);

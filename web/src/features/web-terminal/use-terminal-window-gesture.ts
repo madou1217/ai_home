@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { PointerEvent, RefObject } from 'react';
+import type { CSSProperties, PointerEvent, RefObject } from 'react';
+import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
 import { moveTerminalWindow } from './terminal-window-geometry';
 import type { TerminalWindowRect } from './terminal-window-geometry';
 
@@ -8,8 +9,11 @@ export function useTerminalWindowGesture(
   windowRef: RefObject<HTMLDivElement>,
   setPosition: (position: Partial<TerminalWindowRect>) => void,
   scope: string,
+  style: CSSProperties | undefined,
 ) {
   const cleanupRef = useRef<(() => void) | null>(null);
+  const styleRef = useRef(style);
+  styleRef.current = style;
   useEffect(() => () => cleanupRef.current?.(), [scope]);
 
   return useCallback((edge: string, event: PointerEvent<HTMLElement>) => {
@@ -26,7 +30,6 @@ export function useTerminalWindowGesture(
     const startY = event.clientY;
     const previousSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
-    const previousStyle = { left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height };
     let latest = start;
     let frame: number | null = null;
     let changed = false;
@@ -60,7 +63,13 @@ export function useTerminalWindowGesture(
       document.body.style.userSelect = previousSelect;
       document.body.style.cursor = previousCursor;
       node.classList.remove('is-interacting');
-      if (!finishing) Object.assign(node.style, previousStyle);
+      if (!finishing) {
+        const current = styleRef.current;
+        node.style.left = String(current?.left ?? '');
+        node.style.top = String(current?.top ?? '');
+        node.style.width = String(current?.width ?? '');
+        node.style.height = String(current?.height ?? '');
+      }
       cleanupRef.current = null;
     };
     const finish = (next: Event) => {
@@ -70,6 +79,7 @@ export function useTerminalWindowGesture(
       finishing = true;
       cleanup();
       if (changed) setPosition(edge === 'move' ? { x: latest.x, y: latest.y } : latest);
+      if (changed && edge !== 'move') node.dispatchEvent(new Event(TERMINAL_RESIZE_FINISHED));
     };
     cleanupRef.current = cleanup;
     window.addEventListener('pointermove', move);

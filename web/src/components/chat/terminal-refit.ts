@@ -5,8 +5,11 @@ export interface TerminalRefitInstance {
 
 export interface TerminalRefitter {
   notifyResize: () => void;
+  flush: () => void;
   dispose: () => void;
 }
+
+export const TERMINAL_RESIZE_FINISHED = 'aih-terminal-resize-finished';
 
 /**
  * fit 当前激活且已挂载的终端实例。
@@ -29,20 +32,44 @@ export function createTerminalRefitter(
   fitActive: () => void,
   raf: (cb: () => void) => number = (cb) => requestAnimationFrame(cb),
   cancelRaf: (handle: number) => void = (handle) => cancelAnimationFrame(handle),
+  options: {
+    minInterval?: () => number;
+    now?: () => number;
+    setTimer?: (cb: () => void, delay: number) => ReturnType<typeof setTimeout>;
+    clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+  } = {},
 ): TerminalRefitter {
   let pendingFrame: number | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastFit = -Infinity;
+  const now = options.now || Date.now;
+  const setTimer = options.setTimer || setTimeout;
+  const clearTimer = options.clearTimer || clearTimeout;
+  const scheduleFrame = () => {
+    if (pendingFrame !== null) return;
+    pendingFrame = raf(() => {
+      pendingFrame = null;
+      lastFit = now();
+      fitActive();
+    });
+  };
   return {
     notifyResize() {
-      if (pendingFrame !== null) return;
-      pendingFrame = raf(() => {
-        pendingFrame = null;
-        fitActive();
-      });
+      if (pendingFrame !== null || pendingTimer !== null) return;
+      const wait = Math.max(0, (options.minInterval?.() || 0) - (now() - lastFit));
+      if (wait === 0) scheduleFrame();
+      else pendingTimer = setTimer(() => { pendingTimer = null; scheduleFrame(); }, wait);
+    },
+    flush() {
+      if (pendingTimer !== null) clearTimer(pendingTimer);
+      pendingTimer = null;
+      scheduleFrame();
     },
     dispose() {
-      if (pendingFrame === null) return;
-      cancelRaf(pendingFrame);
+      if (pendingFrame !== null) cancelRaf(pendingFrame);
+      if (pendingTimer !== null) clearTimer(pendingTimer);
       pendingFrame = null;
+      pendingTimer = null;
     },
   };
 }

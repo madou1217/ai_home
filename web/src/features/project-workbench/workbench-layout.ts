@@ -74,6 +74,15 @@ export function clampColumnWidths(
   return clampPolicyColumnWidths(widths, availableWidth, visibility) as ColumnWidths;
 }
 
+/** Render the same grid for React and for the transient divider preview. */
+export function columnGridTemplate(widths: ColumnWidths, visibility: ColumnVisibility, collapsed: ColumnCollapsed): string {
+  return [
+    collapsed.left ? `${COLLAPSED_COLUMN_WIDTH}px` : visibility.left ? `${widths.left}px ${DIVIDER_WIDTH}px` : '',
+    'minmax(0, 1fr)',
+    collapsed.right ? `${COLLAPSED_COLUMN_WIDTH}px` : visibility.right ? `${DIVIDER_WIDTH}px ${widths.right}px` : '',
+  ].filter(Boolean).join(' ');
+}
+
 export function serializeColumnLayout(layout: ColumnLayout): string {
   return serializePolicyColumnLayout(layout) as string;
 }

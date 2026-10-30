@@ -336,6 +336,7 @@
   position: relative;
   cursor: col-resize;
   background: transparent;
+  touch-action: none;
 }
 .columnDivider::after {
   position: absolute;

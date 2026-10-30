@@ -1,5 +1,5 @@
 import { writeClipboardText } from '@/utils/clipboard';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Input, Select, Spin, message } from 'antd';
 import { CopyOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -20,6 +20,7 @@ import {
 } from '@/features/model-usage/model-usage-query';
 import { useModelUsageDashboard } from '@/features/model-usage/use-model-usage-dashboard';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import {
   EmptySignal,
   HudChips,
@@ -62,6 +63,9 @@ const providerLabel = (provider: string) => providerNames[provider as keyof type
 export default function MobileUsage(_props: MobilePageProps) {
   const usage = useModelUsageDashboard();
   const [view, setView] = useState<'model' | 'session'>('model');
+  // 「按模型 / 按会话」切换是整列换一批行：只碰 opacity 的淡入表达「换掉了」。
+  const rankListRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(rankListRef, view, { scope: 'mobile-usage-rank' });
   const {
     rangeMode,
     range,
@@ -240,6 +244,7 @@ export default function MobileUsage(_props: MobilePageProps) {
               { key: 'session', label: '按会话', count: sessions.length }
             ]}
           />
+          <div ref={rankListRef}>
           {loading && listRows.length === 0 ? (
             <div className={styles.listLoading}><Spin /></div>
           ) : listRows.length === 0 ? (
@@ -302,6 +307,7 @@ export default function MobileUsage(_props: MobilePageProps) {
               ))}
             </MonoList>
           )}
+          </div>
         </HudSection>
 
         <UsageRequestDetails

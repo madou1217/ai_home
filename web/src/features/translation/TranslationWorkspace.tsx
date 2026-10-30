@@ -314,9 +314,13 @@ export default function TranslationWorkspace() {
     [],
   );
 
+  // 改语言 = 用户想看新语言的译文：有原文就直接重译，不再要求再点一次「翻译」。
+  const retranslateOnLanguageChange = useRef(false);
+
   const handleSourceChange = useCallback(
     (value: string) => {
       intentSequence.current += 1;
+      retranslateOnLanguageChange.current = true;
       setSource(value);
       persist({ source: value });
     },
@@ -326,6 +330,7 @@ export default function TranslationWorkspace() {
   const handleTargetChange = useCallback(
     (value: string) => {
       intentSequence.current += 1;
+      retranslateOnLanguageChange.current = true;
       setTarget(value);
       setTargetPolicy('confirm');
       setConfirmationDismissed(false);
@@ -404,6 +409,7 @@ export default function TranslationWorkspace() {
   const handleSwap = useCallback(() => {
     if (!canSwapLanguages(source, target)) return;
     const next = swapLanguages(source, target);
+    retranslateOnLanguageChange.current = true;
     setSource(next.source);
     setTarget(next.target);
     persist({ source: next.source, target: next.target });
@@ -474,6 +480,15 @@ export default function TranslationWorkspace() {
       setTargetPolicy(policy);
     }
   }, [text, source, target, targetPolicy, detection, requestTranslation]);
+
+  useEffect(() => {
+    if (!retranslateOnLanguageChange.current) return;
+    retranslateOnLanguageChange.current = false;
+    if (!canTranslate(text) || exceedsInputLimit(text)) return;
+    stream.cancel();
+    void handleTranslate('confirm');
+    // 只响应语言变化；handleTranslate 每次渲染都会换引用。
+  }, [source, target]);
 
   const handleTextKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {

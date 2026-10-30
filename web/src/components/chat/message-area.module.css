@@ -51,7 +51,7 @@
   display: flex;
   align-items: center;
   /* 等待态出现/结束是挂载/卸载，用淡入衔接，避免状态行硬闪 */
-  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
 }
 
 .pendingTailStatus {
@@ -364,7 +364,7 @@
   text-align: center;
   padding: var(--hos-space-6);
   /* 空会话 / 新建会话时的欢迎语淡入上移，与消息线程的切入节奏一致 */
-  animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
+  animation: global(aih-fade-up) var(--motion-slow) var(--ease-standard) backwards;
 }
 
 .welcomeTitle {

@@ -734,7 +734,7 @@
   color: var(--color-faint);
   font-size: var(--hos-text-micro);
   /* 选中模型后才有这行读数：挂载淡入。 */
-  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+  animation: global(aih-fade-in) var(--motion-base) var(--ease-standard) backwards;
 }
 
 .modelReadout code {

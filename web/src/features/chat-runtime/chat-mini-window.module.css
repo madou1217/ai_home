@@ -13,6 +13,36 @@
   border-radius: 4px;
   background: var(--color-bg);
   box-shadow: var(--elevation-5);
+  /* 打开：从右下角微抬进入（只碰 opacity/transform） */
+  animation: miniWindowIn var(--motion-base) var(--ease-emphasized) backwards;
+}
+
+@keyframes miniWindowIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 关闭：useCollapsePresence 保留 160ms，缩回右下角后再卸载 */
+.windowLeaving {
+  pointer-events: none;
+  animation: miniWindowOut 160ms var(--ease-standard) forwards;
+}
+
+@keyframes miniWindowOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
 }
 
 .pinned { box-shadow: 0 0 0 1px var(--color-accent), var(--elevation-5); }

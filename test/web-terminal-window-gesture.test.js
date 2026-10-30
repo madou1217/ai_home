@@ -36,6 +36,7 @@ function fixture(supported = true) {
     removeEventListener: (type, fn) => { if (listeners.get(type) === fn) listeners.delete(type); },
   };
   const body = { style: { userSelect: 'text', cursor: 'crosshair' } };
+  let blurSuspended = 0;
   const react = {
     useCallback: (fn) => fn,
     useRef: (value) => ({ current: value }),
@@ -44,7 +45,7 @@ function fixture(supported = true) {
   const loaded = { exports: {} };
   vm.runInNewContext(transpile(source), {
     module: loaded, exports: loaded.exports,
-    require: (name) => name === 'react' ? react : name === './terminal-window-geometry' ? geometryModule.exports : { TERMINAL_RESIZE_FINISHED: 'resize-finished' },
+    require: (name) => name === 'react' ? react : name === './terminal-window-geometry' ? geometryModule.exports : name.endsWith('terminal-resize-effects') ? { suspendBackgroundBlur: () => { blurSuspended += 1; return () => { blurSuspended -= 1; }; } } : { TERMINAL_RESIZE_FINISHED: 'resize-finished' },
     window, document: { body }, PointerEvent, Event,
     CSS: { supports: () => supported },
     getComputedStyle: () => ({ cursor: 'nwse-resize' }),
@@ -55,12 +56,13 @@ function fixture(supported = true) {
   const start = (edge) => startGesture(edge, { button: 0, isPrimary: true, pointerId: 1, clientX: 100, clientY: 100, target: { closest: () => null }, currentTarget: {}, preventDefault() {}, stopPropagation() {} });
   const emit = (type, x, y, pointerId = 1) => listeners.get(type)?.(new PointerEvent(type, { clientX: x, clientY: y, pointerId }));
   const paint = () => { const callback = [...frames.values()][0]; frames.clear(); callback(); };
-  return { node, body, classes, commits, events, listeners, frames, start, emit, paint, cleanup: () => effectCleanup() };
+  return { node, body, classes, commits, events, listeners, frames, start, emit, paint, cleanup: () => effectCleanup(), blurSuspended: () => blurSuspended };
 }
 
 test('window movement uses compositor translation until the final position is committed', () => {
   const f = fixture();
   f.start('move');
+  assert.equal(f.blurSuspended(), 0);
   f.emit('pointermove', 200, 150);
   f.emit('pointermove', 250, 200);
   assert.equal(f.frames.size, 1);
@@ -101,6 +103,7 @@ test('cleanup removes temporary translation and older browsers retain position-b
 test('edge resizing continues to update size and signals the final fit', () => {
   const f = fixture();
   f.start('nw');
+  assert.equal(f.blurSuspended(), 1);
   f.emit('pointermove', 80, 70);
   f.paint();
   assert.equal(f.node.style.left, '80px');
@@ -110,4 +113,17 @@ test('edge resizing continues to update size and signals the final fit', () => {
   f.emit('pointerup', 80, 70);
   assert.deepEqual(f.commits, [{ x: 80, y: 70, width: 720, height: 430 }]);
   assert.deepEqual(f.events, ['resize-finished']);
+  assert.equal(f.blurSuspended(), 0);
+});
+
+test('interrupted resize restores background effects', () => {
+  const f = fixture();
+  f.start('se');
+  assert.equal(f.blurSuspended(), 1);
+  f.cleanup();
+  assert.equal(f.blurSuspended(), 0);
+  const canceled = fixture();
+  canceled.start('e');
+  canceled.emit('pointercancel', 100, 100);
+  assert.equal(canceled.blurSuspended(), 0);
 });

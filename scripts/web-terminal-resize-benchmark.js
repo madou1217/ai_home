@@ -13,15 +13,15 @@ const { handleWebUiTerminalRequest, openWebUiTerminalSession } = require('../lib
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'web', 'dist');
 const MIME = { '.js': 'application/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
-const HELP = `Usage: node scripts/web-terminal-resize-benchmark.js --browser <chromium> [--runs 3] [--tmpdir <directory>] [--software] [--no-sandbox] [--compare-styles]
+const HELP = `Usage: node scripts/web-terminal-resize-benchmark.js --browser <chromium> [--runs 3] [--tmpdir <directory>] [--software] [--no-sandbox] [--compare-styles | --compare-blur]
 
 Uses a loopback-only fixture server and a temporary full-screen PTY; it does not connect to the running aih server.
 Build the WebUI first. Reports synthetic drag frame intervals and browser layout work; results vary with hardware and load.
---compare-styles alternates the xterm style-write optimization off/on to compare the same page and workload;
-in that mode --runs specifies the number of before/after pairs.`;
+--compare-styles alternates the xterm style-write optimization off/on; --compare-blur alternates
+the temporary backdrop blur suppression off/on. In either mode --runs specifies before/after pairs.`;
 
 function parseArgs(args) {
-  const options = { browser: '', runs: 3, tmpdir: '', software: false, noSandbox: false, compareStyles: false, help: false };
+  const options = { browser: '', runs: 3, tmpdir: '', software: false, noSandbox: false, compareStyles: false, compareBlur: false, help: false };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') options.help = true;
@@ -35,9 +35,11 @@ function parseArgs(args) {
     else if (arg === '--software') options.software = true;
     else if (arg === '--no-sandbox') options.noSandbox = true;
     else if (arg === '--compare-styles') options.compareStyles = true;
+    else if (arg === '--compare-blur') options.compareBlur = true;
     else throw new Error(`unknown option: ${arg}`);
   }
   if (!options.help && !options.browser) throw new Error('--browser is required');
+  if (options.compareStyles && options.compareBlur) throw new Error('choose one comparison mode');
   if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 10) throw new Error('--runs must be an integer from 1 to 10');
   return options;
 }
@@ -279,8 +281,29 @@ async function run(options) {
       return {styles:styles.length,optimized:window.__benchStyles.filter(item=>!!item.descriptor?.set).length};
     })()`);
     if (options.compareStyles && !setup.optimized) throw new Error('xterm style-write optimization is not present in the WebUI build');
-    await evaluate(cdp, `window.__benchRun=async(mode)=>{
-      if(mode!==null)for(const {el,descriptor} of window.__benchStyles){if(!descriptor)continue;if(mode)Object.defineProperty(el,'textContent',descriptor);else delete el.textContent;}
+    if (options.compareBlur) {
+      const effects = await evaluate(cdp, `(() => {
+        const panel=document.querySelector('[aria-label="Web Terminal"]');
+        const handle=panel.querySelector('.global-web-terminal-resize-se');
+        const rect=panel.getBoundingClientRect();
+        const opts={bubbles:true,cancelable:true,button:0,buttons:1,pointerId:42,pointerType:'mouse',isPrimary:true,clientX:rect.right,clientY:rect.bottom};
+        const value=()=>getComputedStyle(document.documentElement).getPropertyValue('--hud-panel-blur').trim();
+        const before=value();
+        handle.dispatchEvent(new PointerEvent('pointerdown',opts));
+        const during=value();
+        window.dispatchEvent(new PointerEvent('pointercancel',opts));
+        return {before,during,after:value(),classAfter:document.documentElement.classList.contains('aih-terminal-resizing')};
+      })()`);
+      if (effects.before === 'none' || effects.during !== 'none' || effects.after !== effects.before || effects.classAfter) {
+        throw new Error(`background blur did not restore after cancellation: ${JSON.stringify(effects)}`);
+      }
+    }
+    await evaluate(cdp, `window.__benchRun=async(mode,comparison)=>{
+      if(comparison==='styles' && mode!==null)for(const {el,descriptor} of window.__benchStyles){if(!descriptor)continue;if(mode)Object.defineProperty(el,'textContent',descriptor);else delete el.textContent;}
+      if(comparison==='blur'){
+        if(!window.__benchBlurOverride){window.__benchBlurOverride=document.createElement('style');document.head.appendChild(window.__benchBlurOverride);}
+        window.__benchBlurOverride.textContent=mode===false?'html.aih-terminal-resizing { --hud-panel-blur: blur(10px) !important; }':'';
+      }
       window.__benchMutations=0;
       const panel=document.querySelector('[aria-label="Web Terminal"]'), handle=panel.querySelector('.global-web-terminal-resize-se');
       const opts={bubbles:true,cancelable:true,button:0,buttons:1,pointerId:1,pointerType:'mouse',isPrimary:true};
@@ -306,9 +329,12 @@ async function run(options) {
       const before=panel.getBoundingClientRect(), x=before.right, y=before.bottom;
       const initial=await (await fetch('/__benchmark/status')).json();
       handle.dispatchEvent(new PointerEvent('pointerdown',{...opts,clientX:x,clientY:y}));
+      const blurDuring=getComputedStyle(document.documentElement).getPropertyValue('--hud-panel-blur').trim();
+      if(comparison==='blur' && (!document.documentElement.classList.contains('aih-terminal-resizing') || (mode && blurDuring!=='none') || (!mode && blurDuring==='none')))throw new Error('background blur comparison did not take effect');
       const frames=[];let previous=performance.now();
       for(let i=1;i<=90;i++){await new Promise(resolve=>requestAnimationFrame(resolve));const now=performance.now();frames.push(now-previous);previous=now;for(let j=0;j<4;j++)document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+230*(i+j/4)/90,clientY:y+160*(i+j/4)/90}));}
       document.dispatchEvent(new PointerEvent('pointerup',{...opts,buttons:0,clientX:x+230,clientY:y+160}));
+      if(comparison==='blur' && document.documentElement.classList.contains('aih-terminal-resizing'))throw new Error('background blur was not restored after release');
       let status, match, lastCount=-1, stableSince=performance.now();
       for(let i=0;i<80;i++){
         await sleep(50);status=await (await fetch('/__benchmark/status')).json();
@@ -337,16 +363,17 @@ async function run(options) {
       if(restoredStatus.resizeCount<=status.resizeCount||performance.now()-restoredStableSince<200||!restoredGrid||!restoredStatus.lastResize||Number(restoredGrid[1])!==restoredStatus.lastResize.rows||Number(restoredGrid[2])!==restoredStatus.lastResize.cols)throw new Error('PTY did not converge after shrinking: '+JSON.stringify({restoredGrid,status,restoredStatus}));
       checkHeader(Number(restoredGrid[2]));
       frames.shift();frames.sort((a,b)=>a-b);
-      return {styleOptimization:mode,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
+      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
     }`);
-    await evaluate(cdp, 'window.__benchRun(null)'); // Warm fonts, terminal and browser caches.
-    const modes = options.compareStyles
+    await evaluate(cdp, 'window.__benchRun(null, null)'); // Warm fonts, terminal and browser caches.
+    const comparison = options.compareStyles ? 'styles' : options.compareBlur ? 'blur' : null;
+    const modes = comparison
       ? Array.from({ length: options.runs }, (_unused, index) => index % 2 ? [true, false] : [false, true]).flat()
       : Array(options.runs).fill(null);
     const results = [];
     for (const mode of modes) {
       const before = (await cdp.send('Performance.getMetrics')).metrics;
-      const result = await evaluate(cdp, `window.__benchRun(${JSON.stringify(mode)})`);
+      const result = await evaluate(cdp, `window.__benchRun(${JSON.stringify(mode)}, ${JSON.stringify(comparison)})`);
       const after = (await cdp.send('Performance.getMetrics')).metrics;
       results.push({ ...result, browserWork: metricDelta(before, after) });
     }

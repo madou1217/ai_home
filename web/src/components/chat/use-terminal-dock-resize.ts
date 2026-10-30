@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { PointerEvent, RefObject } from 'react';
 import { TERMINAL_RESIZE_FINISHED } from './terminal-refit';
+import { suspendBackgroundBlur } from './terminal-resize-effects';
 
 export function useTerminalDockResize(
   panelRef: RefObject<HTMLDivElement>,
@@ -29,6 +30,7 @@ export function useTerminalDockResize(
     let latest = height;
     let frame: number | null = null;
     let finishing = false;
+    const restoreBackgroundBlur = suspendBackgroundBlur();
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'row-resize';
 
@@ -47,6 +49,7 @@ export function useTerminalDockResize(
       window.removeEventListener('blur', finish);
       document.body.style.userSelect = previousSelect;
       document.body.style.cursor = previousCursor;
+      restoreBackgroundBlur();
       if (!finishing) node.style.height = currentStyle.current;
       cleanupRef.current = null;
     };

@@ -1168,6 +1168,9 @@ a.ant-typography:hover { text-shadow: var(--hud-text-glow); }
 /* -------------------------------------------------------------------------
  * 8. CRT 扫描线覆盖层（组件：components/hud/CrtOverlay）
  * ---------------------------------------------------------------------- */
+/* Backdrop blur behind a resizing terminal is repainted on every frame. */
+html.aih-terminal-resizing { --hud-panel-blur: none; }
+
 .hud-crt-overlay {
   position: fixed;
   inset: 0;

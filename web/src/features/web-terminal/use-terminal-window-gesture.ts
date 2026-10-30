@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { CSSProperties, PointerEvent, RefObject } from 'react';
 import { TERMINAL_RESIZE_FINISHED } from '@/components/chat/terminal-refit';
+import { suspendBackgroundBlur } from '@/components/chat/terminal-resize-effects';
 import { moveTerminalWindow } from './terminal-window-geometry';
 import type { TerminalWindowRect } from './terminal-window-geometry';
 
@@ -36,6 +37,7 @@ export function useTerminalWindowGesture(
     let frame: number | null = null;
     let changed = false;
     let finishing = false;
+    const restoreBackgroundBlur = edge === 'move' ? undefined : suspendBackgroundBlur();
     document.body.style.userSelect = 'none';
     document.body.style.cursor = edge === 'move' ? 'move' : getComputedStyle(event.currentTarget).cursor;
     node.classList.add('is-interacting');
@@ -69,6 +71,7 @@ export function useTerminalWindowGesture(
       window.removeEventListener('blur', finish);
       document.body.style.userSelect = previousSelect;
       document.body.style.cursor = previousCursor;
+      restoreBackgroundBlur?.();
       node.classList.remove('is-interacting');
       node.classList.remove('is-moving');
       if (useTranslate) node.style.translate = previousTranslate;

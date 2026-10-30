@@ -26,6 +26,7 @@ function fixture() {
     removeEventListener: (type, fn) => { if (listeners.get(type) === fn) listeners.delete(type); },
   };
   const body = { style: { userSelect: 'text', cursor: 'crosshair' } };
+  let blurSuspended = 0;
   const loaded = { exports: {} };
   const react = {
     useCallback: (fn) => fn,
@@ -34,7 +35,7 @@ function fixture() {
   };
   vm.runInNewContext(compiled, {
     module: loaded, exports: loaded.exports,
-    require: (name) => name === 'react' ? react : { TERMINAL_RESIZE_FINISHED: 'resize-finished' },
+    require: (name) => name === 'react' ? react : name === './terminal-resize-effects' ? { suspendBackgroundBlur: () => { blurSuspended += 1; return () => { blurSuspended -= 1; }; } } : { TERMINAL_RESIZE_FINISHED: 'resize-finished' },
     document: { body }, window: win, PointerEvent, Event,
     requestAnimationFrame: (fn) => { const id = ++frameId; frames.set(id, fn); return id; },
     cancelAnimationFrame: (id) => frames.delete(id),
@@ -42,12 +43,13 @@ function fixture() {
   const resize = loaded.exports.useTerminalDockResize({ current: node }, 300, '300px', true, 120, () => 630, (height) => commits.push(height));
   const emit = (type, y, pointerId = 1) => listeners.get(type)?.(new PointerEvent(type, { clientY: y, pointerId }));
   const start = () => resize.onPointerDown({ button: 0, isPrimary: true, pointerId: 1, clientY: 500, preventDefault() {} });
-  return { node, body, resize, frames, listeners, commits, events, emit, start, cleanup: () => effectCleanup() };
+  return { node, body, resize, frames, listeners, commits, events, emit, start, cleanup: () => effectCleanup(), blurSuspended: () => blurSuspended };
 }
 
 test('dock drag coalesces pointer movement and commits the final height', () => {
   const f = fixture();
   f.start();
+  assert.equal(f.blurSuspended(), 1);
   for (let y = 499; y >= 370; y -= 1) f.emit('pointermove', y);
   assert.equal(f.frames.size, 1);
   const frame = [...f.frames.values()][0]; f.frames.clear(); frame();
@@ -59,6 +61,7 @@ test('dock drag coalesces pointer movement and commits the final height', () => 
   assert.equal(f.listeners.size, 0);
   assert.equal(f.body.style.userSelect, 'text');
   assert.equal(f.body.style.cursor, 'crosshair');
+  assert.equal(f.blurSuspended(), 0);
 });
 
 test('interrupted dock gestures clean up and keyboard resizing respects bounds', () => {
@@ -66,6 +69,7 @@ test('interrupted dock gestures clean up and keyboard resizing respects bounds',
   f.start();
   f.emit('pointermove', 0);
   f.cleanup();
+  assert.equal(f.blurSuspended(), 0);
   assert.equal(f.node.style.height, '300px');
   assert.equal(f.frames.size, 0);
   assert.equal(f.listeners.size, 0);

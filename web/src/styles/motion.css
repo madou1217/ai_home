@@ -31,7 +31,8 @@
 
 /* ── 1. 路由进场：页面骨架挂载时淡入上移（每次切页都是新元素，CSS 动画自动重放） ── */
 .unified-page-wrapper,
-.unified-page-scaffold--fullbleed {
+.unified-page-scaffold--fullbleed,
+.scheduled-tasks-page {
   animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
 }
 
@@ -155,6 +156,25 @@ details[open]::details-content {
   animation: aih-value-flash var(--motion-slower) var(--ease-standard);
 }
 
+/* 数值变化的承载节点（components/ui/AnimatedValue.tsx）：inline-block 才能吃 transform，
+ * 变化时由 WAAPI 播一次只碰 opacity/transform 的「跳字」。 */
+.aih-value {
+  display: inline-block;
+}
+
+/* 进度/比例条：宽度不做逐帧插值（width 过渡每帧都要重排），改成满宽 + scaleX。
+ * 用法：<span class="aih-meter-fill" style="--aih-fill: 0.42">；首次挂载从 0 长到目标值。 */
+.aih-meter-fill {
+  width: 100% !important;
+  transform: scaleX(var(--aih-fill, 0));
+  transform-origin: left center;
+  transition: transform var(--motion-slow) var(--ease-standard);
+  animation: aih-meter-grow var(--motion-slow) var(--ease-emphasized) backwards;
+}
+@keyframes aih-meter-grow {
+  from { transform: scaleX(0); }
+}
+
 /* ── 3. 交互反馈 ─────────────────────────────────────────────────────────── */
 
 /* 按钮按下：轻微下沉（App.css 规定按钮平面无投影，这里只给按压瞬间的 2% 缩放反馈） */
@@ -167,7 +187,46 @@ details[open]::details-content {
     background-color var(--motion-fast) var(--ease-standard),
     border-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard),
     transform var(--motion-fast) var(--ease-standard);
+}
+
+/* 悬停才出现的行内复制按钮（账号 / 模型 / 用量列表）：透明度淡入淡出，而不是硬切。
+ * 选择器带上 .ant-btn 才能盖过上面的按钮过渡（否则 opacity 不在过渡列表里）。 */
+.ant-btn.copy-icon-btn {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+/* 侧栏导航：ProLayout 内联菜单把 transition 设成了 none，悬停底色/选中描边都是硬切。 */
+.ant-pro-sider .ant-menu .ant-menu-item,
+.ant-pro-sider .ant-menu .ant-menu-submenu-title {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+.ant-pro-sider .ant-menu-item .hud-nav-no,
+.ant-pro-sider .ant-menu-item .hud-nav-code,
+.ant-pro-sider-collapsed-button {
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+
+/* 分页页码 / 面包屑：hud.css 的悬停描边与当前页辉光此前没有过渡 */
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+.ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+.ant-pagination .ant-pagination-item a,
+.ant-breadcrumb a {
+  transition: color var(--motion-fast) var(--ease-standard);
 }
 
 /* 可点击的卡片：悬停微抬起 + 描边加强（只作用于有点击语义的元素）。

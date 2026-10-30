@@ -544,3 +544,13 @@
   .modelMenuPanel { width: min(358px, calc(100vw - 24px)); }
   .modelGroupList { max-height: min(300px, 46vh); }
 }
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.modelChip,
+.modelOptionButton {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}

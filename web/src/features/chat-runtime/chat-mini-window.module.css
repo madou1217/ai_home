@@ -108,3 +108,12 @@
 @media (max-width: 640px) {
   .window { right: 8px; bottom: 8px; width: calc(100vw - 16px); height: min(640px, calc(100vh - 16px)); }
 }
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.headerActions button,
+.runtimeActions button {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}

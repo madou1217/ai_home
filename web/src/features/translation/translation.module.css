@@ -687,6 +687,23 @@
 @keyframes translation-waiting { from { background-position: 130% 0; } to { background-position: -30% 0; } }
 @keyframes translation-status-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 @keyframes translation-panel-enter { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+/* 条件挂载的状态块（快速示例 / 语言确认条 / 状态行 / 等待 / 空态 / 错误 / 页面翻译进度 / 检测标签）：
+ * 出现时一次轻量淡入上移，不再硬切（只碰 opacity/transform）。 */
+.sourceEmptyState,
+.languageIntentStrip,
+.translationStatus,
+.waitingState,
+.outputEmpty,
+.inlineError,
+.inlineNotice,
+.pageTranslationProgress,
+.historyEmpty {
+  animation: translation-panel-enter var(--motion-base) var(--ease-standard) backwards;
+}
+.detectChip,
+.limitWarning {
+  animation: translation-result-in var(--motion-fast) var(--ease-standard) backwards;
+}
 @media (prefers-reduced-motion: reduce) {
   .workspace *, .history * { animation: none !important; transition: none !important; }
 }
@@ -1051,4 +1068,13 @@
   .copySettingsControl {
     justify-content: flex-start;
   }
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.pane .sourceInput {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }

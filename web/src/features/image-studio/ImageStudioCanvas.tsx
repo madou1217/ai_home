@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Tooltip } from 'antd';
 import type { ImageStudioAsset, ImageStudioRevision, ImageStudioSession } from '@/types';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { formatAssetSize, imageStudioAssetKey, mapAssetsById } from './image-studio-utils';
 import styles from './image-studio.module.css';
 
@@ -46,6 +47,12 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
     : '';
   const revisedPrompt = String(selectedAsset?.revisedPrompt || '').trim();
 
+  // 选另一帧/另一个产物时只是换 <img src>（同一节点），挂载动画不会重播；
+  // 用切换淡入表达「换了一张」，不重挂 img（避免已缓存的图重新加载）。
+  const stageRef = React.useRef<HTMLDivElement | null>(null);
+  const stageKey = `${revision?.id || 'none'}|${selectedAsset?.id || 'none'}`;
+  useSwitchFade(stageRef, stageKey, { scope: 'image-studio-canvas' });
+
   return (
     <section className={styles.canvasPanel} aria-label="影像画布">
       <header className={styles.canvasHeader}>
@@ -62,7 +69,7 @@ export const ImageStudioCanvas: React.FC<ImageStudioCanvasProps> = ({
         )}
       </header>
 
-      <div className={styles.canvasStage}>
+      <div ref={stageRef} className={styles.canvasStage}>
         {running && (
           <div className={styles.canvasProgress} role="status" aria-live="polite">
             <LoadingOutlined spin />

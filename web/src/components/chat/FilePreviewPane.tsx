@@ -446,7 +446,7 @@ function FilePreviewPane({
         />
         {mediaUrl ? (
           mode === 'image' ? <ImagePreview mediaUrl={mediaUrl} /> : (
-            <div className={styles.filePreviewViewport}>
+            <div className={`${styles.filePreviewViewport} aih-fade-in`}>
               <RawMediaPreview mediaUrl={mediaUrl} />
             </div>
           )
@@ -459,6 +459,7 @@ function FilePreviewPane({
     );
   }
 
+  // 渲染/源码是同一个 viewport 里换子树：挂载动画不会重播，靠 key 重挂一次再淡入。
   const previewMode = markdown || html ? mode : 'source';
   const fileContent = content || '';
 
@@ -477,7 +478,7 @@ function FilePreviewPane({
       {html && previewMode === 'rendered' ? (
         <HtmlPreviewLauncher content={fileContent} path={path} />
       ) : (
-        <div className={styles.filePreviewViewport}>
+        <div key={previewMode} className={`${styles.filePreviewViewport} aih-fade-in`}>
           {previewMode === 'rendered' ? (
             <RenderedMarkdownPreview
               content={fileContent}

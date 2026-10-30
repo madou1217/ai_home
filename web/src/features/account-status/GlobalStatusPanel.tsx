@@ -77,7 +77,7 @@ export default function GlobalStatusPanel({ outcomes }: { outcomes: UseAccountOu
       {!data ? (
         <p className="account-status-unavailable">{loading ? '加载中…' : '暂无数据（从现在开始记录）'}</p>
       ) : collapsed ? (
-        <div className="aih-panel-enter">
+        <div key="collapsed" className="aih-panel-enter">
           <BucketStrip
             starts={data.dayStarts}
             buckets={globalDayBuckets}
@@ -87,7 +87,7 @@ export default function GlobalStatusPanel({ outcomes }: { outcomes: UseAccountOu
           />
         </div>
       ) : (
-        <div className="account-status-global aih-panel-enter">
+        <div key="expanded" className="account-status-global aih-panel-enter">
           <div className="account-status-global__kpi">
             <span
               className={`account-status-global__kpi-value${overallUptime.hasData ? '' : ' account-status-uptime--none'}`}

@@ -116,6 +116,7 @@ import {
   useModelCatalog
 } from '@/features/accounts/useModelCatalog';
 import { useAccountActions } from '@/features/accounts/use-account-actions';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { useAccountAppEntries } from '@/features/accounts/use-account-app-entries';
 import { useAccountActivity } from '@/features/accounts/use-account-activity';
 import AccountFlowModals from '@/features/accounts/AccountFlowModals';
@@ -173,6 +174,10 @@ function isActivityJobTerminal(status: string): boolean {
 
 export default function Accounts() {
   const [viewMode, setViewMode] = useState<'card' | 'list'>(readStoredAccountsViewMode);
+  const viewBodyRef = useRef<HTMLDivElement | null>(null);
+  // 卡片/列表两个分支的根都是 div，React 会复用节点 → 分支上的挂载动画不会重播。
+  // 这里只做一次只碰 opacity 的切换淡入，不强制重挂（否则列表的排序/展开态会丢）。
+  useSwitchFade(viewBodyRef, viewMode, { scope: 'accounts-view-mode' });
   const location = useLocation();
   const accountsHandlersRef = React.useRef<UseAccountsSnapshotHandlers>({});
   const accountsSnapshot = useAccountsSnapshot(accountsHandlersRef);
@@ -1156,6 +1161,7 @@ export default function Accounts() {
             {renderProviderActivityActions()}
           </div>
         ) : null}
+        <div ref={viewBodyRef}>
         {viewMode === 'card' ? (
           <div className="aih-panel-enter" style={{ marginBottom: 16 }}>
             <AccountCardGrid
@@ -1239,6 +1245,7 @@ export default function Accounts() {
             />
           </div>
         )}
+        </div>
       </SectionCard>
 
       <AccountFlowModals actions={accountActions} />

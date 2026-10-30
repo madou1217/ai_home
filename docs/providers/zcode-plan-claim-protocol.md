@@ -139,15 +139,50 @@ let r = await n.codingPlanSubscriptionService.claimManualPlan({ planId: e.args.p
 
 **没抓到的那一段（如实记录）**：上述 cap*.out 里没有 `billing/preview`、也没有
 `billing/claim` 的请求记录 —— 用户点「领取」成功的那两次落在 hook 未接管的窗口里。
-因此 claim 的报文契约来自 **app.asar 逐字实现**（§2.2）+ **真实账号复现**（带正确
-`plan_id`、不带验证码头直接成功），而不是点击瞬间的 wire capture。这一点不要当成
-「已抓到 claim 请求」。
+补上这一段的方式见 §3.1（非破坏性复放），但那是「我发的同形请求」，不是「桌面端点击瞬间的
+那一次 POST」；后者需要点击时 hook 在线才能拿到。
 
 **关于「点了两次才成功」**：点击处理链有三个非成功出口 ——
 `verifying` 阶段被取消 → `{status:'cancelled'}`；验证码解算抛错 → `{status:'failure'}`；
 已进入 `submitting` 后请求异常 → `{status:'uncertain'}`（文案「结果不确定」）。
 第一次点击若停在 `verifying`（预热未就绪 / 交互式验证弹出）或 `uncertain`，
 用户再点一次才会走完整条链 —— 与「点两次成功」的现场一致。这是推断，不是抓包结论。
+
+### 3.1 claim / preview 的 wire 报文（非破坏性复放）
+
+桌面端点击的那一次没录到，但**端点契约可以在线上验证**：用同一账号的 jwt、同一套客户端头，
+直接打两个端点，其中 claim 用一个**必然不存在**的 `plan_id`（不存在的套餐无法被领取，
+账号状态零变化）。原始报文：`/tmp/zcap/wire-claim.json`。
+
+```http
+GET /api/v1/zcode-plan/billing/preview?app_version=3.20.0&platform=darwin-arm64
+Authorization: Bearer <zcodejwttoken>   (+ X-Device-Mid / X-Platform / X-ZCode-App-Version …)
+
+200 {"code":0,"msg":"","logid":"2026103014302742e2e5d7733001edb114"}
+```
+
+**没有 `data` 字段** —— 这就是旧代码拿到的那份响应，它被判成了「暂无可领」。
+
+```http
+POST /api/v1/zcode-plan/billing/claim
+Content-Type: application/json
+Authorization: Bearer <zcodejwttoken>
+（**没有任何 X-Aliyun-Captcha-* 头**）
+
+{"plan_id":"zcode-v3-start-plan-0000-does-not-exist"}
+
+200 {"code":1001,"msg":"target not found",
+     "data":{"server_time":1793370627,"message":"This plan does not exist or is no longer available."},
+     "logid":"20261030143027713bb5e1f8ae60ba306f"}
+```
+
+三条结论（都是线上事实，不是读代码推的）：
+
+1. claim 端点接受**不带验证码**的请求并直接进入 plan 查找（返回 1001，而不是 3007）。
+   旧注释「服务端先校验验证码、再校验 plan_id」被推翻 —— 验证码不是 claim 的服务端前置。
+2. 错误信封形状确认：HTTP 200 + `code/msg/data.message`（客户端必须按业务码判错）。
+3. preview 的原始 body 就是 `{"code":0,"msg":"","logid":…}`，`data` 整个缺席 ——
+   与桌面端 `if(!r.data) throw manual_claim_preview_missing_data` 的判断依据一致。
 
 方法论注意（为什么之前的 MITM 代理无效）：`marketing/touch` 与 `billing/*` 都在
 **host 进程**里发（日志前缀 `[zcode-host] [rpc:call]`），渲染层 `fetch`/`XMLHttpRequest` 钩子
@@ -185,8 +220,10 @@ WebUI 领取失败是两条独立缺陷叠加：
    上游回 `{code:0}` 无 data 时，WebUI 直接结论「暂无可领」，**从不发 claim**，
    定时任务同样静默跳过整个活动窗口。
 2. **验证码被当成前置条件**（旧 `:235-259`）：每次领取先拉起本机 Chrome 解阿里云无痕验证，
-   解算失败即整体失败（`zcode_captcha_solve_failed`）。而实测上游**不校验**：
-   带正确 `plan_id` 的 claim 不带任何 `X-Aliyun-Captcha-*` 头直接成功。
+   解算失败即整体失败（`zcode_captcha_solve_failed`）。而上游**不校验**：
+   带正确 `plan_id` 的 claim 不带任何 `X-Aliyun-Captcha-*` 头直接成功
+   （2026-10-30 早些时候用真实账号复现，未留原始报文；§3.1 的 1001 结果是同向的线上证据 ——
+   没有验证码头也照样进了 plan 查找）。
 
 桌面端没有第一个问题：横幅走 marketing/touch（preview 为空无所谓），`plan_id` 由投放下发。
 第二个问题上，桌面端虽然也解验证码（`WOt` 拿不到参数就取消领取），但它在**真实浏览器渲染进程**
@@ -226,6 +263,9 @@ preview 恒空，WebUI 只能靠「balance 里出现新 plan 但 balances 为空
 ]
 ```
 
+`/tmp/zcap/wire-claim.json`（同样本机临时产物）保存了 §3.1 两次请求的完整报文：
+请求头清单（含 `hasCaptchaHeader: false`）、请求体、状态码与响应原文。
+
 抓包日志同理：`/tmp/zcap/cap10.out` 为桌面端主进程 hook 输出，`marketing-touch.query`
 的 4 次超时记录见 §3；它是临时文件，重跑桌面端后需重新采集。
 
@@ -242,4 +282,5 @@ dd if=$A bs=1 skip=311265511 count=900  2>/dev/null | tr -d '\000'   # 投放按
 
 grep -an 'marketing-touch.query\|billing/balance' /tmp/zcap/cap10.out | head
 node /tmp/zcap/collect-preview-evidence.js   # preview/balance 只读对照（需本机账号凭据）
+node /tmp/zcap/wire-claim.js                 # §3.1 的 wire 复放（claim 用不存在的 plan_id，零状态变更）
 ```

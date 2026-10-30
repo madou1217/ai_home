@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MouseEvent, PointerEvent } from 'react';
+import type { PointerEvent } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -8,6 +8,7 @@ import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal, TERMINAL_RESIZE_FINISHED } from './terminal-refit';
 import { createTerminalResizeSender } from './terminal-resize-sender';
+import { useTerminalDockResize } from './use-terminal-dock-resize';
 import { flushTerminalInput } from './terminal-input';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
 import styles from './composer/composer.module.css';
@@ -456,7 +457,7 @@ function ShellTerminalPanel({
     }
   }), []);
 
-  // 切换 tab / 改高度后，重新 fit + 聚焦当前 tab。
+  // 切换 tab 或布局时重新适配并聚焦；尺寸变化交给 ResizeObserver，避免抢走调整手柄的键盘焦点。
   useEffect(() => {
     if (!activeId) return;
     const inst = instancesRef.current.get(activeId);
@@ -466,10 +467,10 @@ function ShellTerminalPanel({
       inst.term.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, height, layout, tabs.length]);
+  }, [activeId, layout, tabs.length]);
 
   // 三栏分隔条拖拽/窗口缩放只改容器宽度，上面的 effect 感知不到 → 换行宽度滞后。
-  // 用 ResizeObserver 监听面板容器，rAF 合并后 fit 当前激活 tab。
+  // 用 ResizeObserver 合并容器变化并限制重排频率；拖拽结束立即补齐最终尺寸。
   const panelRef = useRef<HTMLDivElement | null>(null);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -480,14 +481,16 @@ function ShellTerminalPanel({
     const gestureHost = el.closest('.global-web-terminal-window');
     const refitter = createTerminalRefitter(() => {
       fitActiveTerminal(instancesRef.current, activeIdRef.current);
-    }, undefined, undefined, { minInterval: () => gestureHost?.classList.contains('is-interacting') ? 64 : 0 });
+    }, undefined, undefined, { minInterval: () => 64 });
     const observer = new ResizeObserver(() => refitter.notifyResize());
     const finishResize = () => refitter.flush();
     gestureHost?.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
+    el.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
     observer.observe(el);
     return () => {
       observer.disconnect();
       gestureHost?.removeEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
+      el.removeEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
       refitter.dispose();
     };
   }, [visible, layout]);
@@ -603,32 +606,14 @@ function ShellTerminalPanel({
     }
   }, [activeId, registerTermId, sessionKey]);
 
-  // ── 顶边拖拽调高 ──
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
-  const onDragStart = useCallback((e: MouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragRef.current = { startY: e.clientY, startH: height };
-    const onMove = (ev: globalThis.MouseEvent) => {
-      if (!dragRef.current) return;
-      const delta = dragRef.current.startY - ev.clientY; // 往上拖 = 变高
-      const next = Math.max(MIN_HEIGHT, Math.min(maxHeight(), dragRef.current.startH + delta));
-      setHeight(next);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.userSelect = '';
-      try { window.localStorage.setItem(HEIGHT_STORAGE_KEY, String(Math.round(heightRef.current))); } catch { /* ignore */ }
-    };
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [height]);
-
-  // 拖拽结束时用最新 height 持久化。
-  const heightRef = useRef(height);
-  heightRef.current = height;
+  const panelStyleHeight = minimized ? '38px' : (panelHeight !== undefined ? '100%' : `${height}px`);
+  const commitDockHeight = useCallback((next: number) => {
+    setHeight(next);
+    try { window.localStorage.setItem(HEIGHT_STORAGE_KEY, String(Math.round(next))); } catch { /* ignore */ }
+  }, []);
+  const dockResize = useTerminalDockResize(panelRef, height, panelStyleHeight,
+    visible && !minimized && !compactChrome && panelHeight === undefined,
+    MIN_HEIGHT, maxHeight, commitDockHeight);
 
   if (!visible) return null;
 
@@ -672,12 +657,29 @@ function ShellTerminalPanel({
     <div
       ref={panelRef}
       className={styles.shellTerminalPanel}
-      style={{ height: minimized ? 38 : (panelHeight !== undefined ? '100%' : height) }}
+      style={{ height: panelStyleHeight }}
       data-compact={compactChrome ? 'true' : undefined}
     >
       {/* 嵌入栏内时高度由栏布局接管（100%），隐藏底部停靠场景的调高把手。 */}
       {compactChrome || panelHeight !== undefined ? null : (
-        <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
+        <div
+          className={styles.shellTerminalResizer}
+          onPointerDown={dockResize.onPointerDown}
+          role="separator"
+          tabIndex={0}
+          aria-label="调整终端高度（方向键调整，Shift 加速）"
+          aria-orientation="horizontal"
+          aria-valuemin={MIN_HEIGHT}
+          aria-valuemax={Math.max(MIN_HEIGHT, maxHeight())}
+          aria-valuenow={Math.min(height, Math.max(MIN_HEIGHT, maxHeight()))}
+          title="拖拽调整高度"
+          onKeyDown={(event) => {
+            const direction = event.key === 'ArrowUp' ? 1 : event.key === 'ArrowDown' ? -1 : 0;
+            if (!direction) return;
+            event.preventDefault();
+            dockResize.resizeWithKeyboard(direction * (event.shiftKey ? 48 : 12));
+          }}
+        />
       )}
       <div className={styles.shellTerminalHeader} onPointerDown={onHeaderPointerDown} data-draggable={onHeaderPointerDown ? true : undefined}>
         <div className={styles.shellTerminalTabs}>

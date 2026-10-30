@@ -267,10 +267,12 @@
   cursor: row-resize;
   z-index: 3;
   background: transparent;
+  touch-action: none;
 }
 
 .shellTerminalResizer:hover,
-.shellTerminalResizer:active {
+.shellTerminalResizer:active,
+.shellTerminalResizer:focus-visible {
   background: color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 

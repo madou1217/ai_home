@@ -454,7 +454,7 @@ export default function Models() {
     const rowKey = getModelRowKey(model);
     const displayLabel = getModelDisplayLabel(model.provider, model.id);
     return (
-      <div key={rowKey} className="models-capsule-slot">
+      <div key={rowKey} data-flip-key={rowKey} className="models-capsule-slot">
         <ModelCapsuleCard
           modelId={model.id}
           displayName={displayLabel}
@@ -493,7 +493,7 @@ export default function Models() {
     const visible = isGlobalModelVisible(model);
     const displayLabel = getGlobalModelDisplayLabel(catalog, model);
     return (
-      <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
+      <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id} data-flip-key={model.id}>
         <div className="models-global-main">
           <div className="models-global-title-line">
             <h3 title={model.id}>{displayLabel || model.id}</h3>

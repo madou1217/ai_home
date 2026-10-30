@@ -45,6 +45,18 @@ export const InSessionSearchBar = memo(function InSessionSearchBar({
     }
   }, [open]);
 
+  // 关闭时先播一次淡出再卸载（之前是 `if (!open) return null` 的硬切）。
+  const [visible, setVisible] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setVisible(true);
+      return undefined;
+    }
+    if (!visible) return undefined;
+    const timer = window.setTimeout(() => setVisible(false), 160);
+    return () => window.clearTimeout(timer);
+  }, [open, visible]);
+
   useEffect(() => {
     setCurrentMatchIndex(0);
     if (matchedIndices.length > 0 && onScrollToMessage) {
@@ -77,10 +89,10 @@ export const InSessionSearchBar = memo(function InSessionSearchBar({
     }
   };
 
-  if (!open) return null;
+  if (!visible) return null;
 
   return (
-    <div className={styles.inSessionSearchCapsule}>
+    <div className={`${styles.inSessionSearchCapsule}${open ? '' : ' aih-leaving'}`}>
       <SearchOutlined className={styles.inSessionSearchIcon} />
       <input
         ref={inputRef}

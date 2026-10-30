@@ -221,8 +221,32 @@
   background: var(--term-bg);
 }
 
+/* 折叠：高度收到 0（不是 display:none），配合 .terminalDockBodyAnimating 的过渡从哪来回收回去。
+ * 过渡只在切换瞬间挂类，拖拽调高时逐帧改 height 不能带 transition。 */
+.terminalDockBody {
+  overflow: hidden;
+}
+.terminalDockBodyAnimating {
+  transition:
+    height 200ms var(--ease-emphasized),
+    min-height 200ms var(--ease-emphasized),
+    padding 200ms var(--ease-emphasized);
+}
 .terminalDockBodyCollapsed {
-  display: none;
+  height: 0 !important;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* 关闭：整块 dock 先下沉淡出，父级 160ms 后再卸载并终止 run。 */
+.terminalDock[data-closing='true'] {
+  pointer-events: none;
+  animation: terminalDockOut 160ms var(--ease-standard) forwards;
+}
+@keyframes terminalDockOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.99); }
 }
 
 /* 顶边拖拽把手:往上拖 = 终端变高(对齐 shellTerminalResizer 交互) */
@@ -252,6 +276,22 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 最小化 / 恢复的高度过渡只在切换瞬间挂上：拖拽调高时逐帧改 height，不能带 transition。 */
+.shellTerminalPanelAnimating {
+  transition: height 220ms var(--ease-emphasized);
+}
+
+/* 关闭面板：整块收起（高度归零 + 淡出），180ms 后父级再卸载并关闭 PTY。 */
+.shellTerminalPanelClosing {
+  overflow: hidden;
+  pointer-events: none;
+  animation: shellTerminalPanelOut 180ms var(--ease-standard) forwards;
+}
+@keyframes shellTerminalPanelOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 6px, 0); }
 }
 
 /* 顶边拖拽把手 */
@@ -359,6 +399,28 @@
   box-shadow: var(--hud-glow-accent);
 }
 
+/* 页签进场：新开的终端从右侧轻轻推出；关闭时先收成 0 宽再真正移除。 */
+@keyframes shellTerminalTabIn {
+  from { opacity: 0; transform: translate3d(6px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes shellTerminalTabOut {
+  from { opacity: 1; max-width: 160px; padding-left: var(--hos-space-2); padding-right: var(--hos-space-2); transform: none; }
+  to { opacity: 0; max-width: 0; padding-left: 0; padding-right: 0; transform: scale(0.94); }
+}
+
+.shellTerminalTab {
+  animation: shellTerminalTabIn var(--motion-base) var(--ease-standard) backwards;
+}
+
+.shellTerminalTabLeaving {
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: shellTerminalTabOut 160ms var(--ease-standard) forwards;
+}
+
 /* 状态 LED：连接中琥珀呼吸（真实进行中）/ 已连接绿 / 已结束暗 / 异常玫红 */
 .shellTerminalTabDot {
   width: 6px;
@@ -446,6 +508,27 @@
   height: 100%;
   padding: var(--hos-space-1-5) var(--hos-space-2) var(--hos-space-1);
   background: var(--term-bg);
+}
+
+/* 切换页签：新激活的终端画布淡入，避免内容硬切。 */
+.shellTerminalBodyActive {
+  animation: shellTerminalBodyIn var(--motion-fast) var(--ease-standard) backwards;
+}
+
+@keyframes shellTerminalBodyIn {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shellTerminalTab,
+  .shellTerminalTabLeaving,
+  .shellTerminalBodyActive {
+    animation: none;
+  }
+  .shellTerminalPanelAnimating {
+    transition: none;
+  }
 }
 
 .planChoiceDock {

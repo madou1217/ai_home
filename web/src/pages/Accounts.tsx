@@ -1157,7 +1157,7 @@ export default function Accounts() {
           </div>
         ) : null}
         {viewMode === 'card' ? (
-          <div style={{ marginBottom: 16 }}>
+          <div className="aih-panel-enter" style={{ marginBottom: 16 }}>
             <AccountCardGrid
               accounts={filteredAccounts}
               provider={activeProvider as any}
@@ -1204,38 +1204,40 @@ export default function Accounts() {
             />
           </div>
         ) : (
-          <ListTable
-            headerTitle={
-              <Space size={12}>
-                <Badge status="success" text={`可用 ${activeStats.healthy}`} />
-                {pendingIssueCount > 0 && (
-                  <Badge status="warning" text={`待处理 ${pendingIssueCount}`} />
-                )}
-                {unavailableCount > 0 && (
-                  <Badge status="error" text={`不可用 ${unavailableCount}`} />
-                )}
-              </Space>
-            }
-            toolBarRender={() => (
-              visibleActivityActions.length > 0 || rewardsProgressText
-                ? [renderProviderActivityActions()]
-                : []
-            )}
-            dataSource={filteredAccounts}
-            columns={columns}
-            rowKey={(record) => record.accountRef}
-            rowClassName={(record) => [
-              accountRouteTarget?.accountRef === getAccountRef(record) ? 'accounts-row-target' : '',
-              getAccountExitClassName(record)
-            ].filter(Boolean).join(' ')}
-            onRow={(record) => ({
-              'data-account-ref': getAccountRef(record)
-            } as React.HTMLAttributes<HTMLElement>)}
-            loading={loading}
-            toolbar={false as any}
-            tableLayout="fixed"
-            scroll={{ x: 1462 }}
-          />
+          <div className="aih-panel-enter">
+            <ListTable
+              headerTitle={
+                <Space size={12}>
+                  <Badge status="success" text={`可用 ${activeStats.healthy}`} />
+                  {pendingIssueCount > 0 && (
+                    <Badge status="warning" text={`待处理 ${pendingIssueCount}`} />
+                  )}
+                  {unavailableCount > 0 && (
+                    <Badge status="error" text={`不可用 ${unavailableCount}`} />
+                  )}
+                </Space>
+              }
+              toolBarRender={() => (
+                visibleActivityActions.length > 0 || rewardsProgressText
+                  ? [renderProviderActivityActions()]
+                  : []
+              )}
+              dataSource={filteredAccounts}
+              columns={columns}
+              rowKey={(record) => record.accountRef}
+              rowClassName={(record) => [
+                accountRouteTarget?.accountRef === getAccountRef(record) ? 'accounts-row-target' : '',
+                getAccountExitClassName(record)
+              ].filter(Boolean).join(' ')}
+              onRow={(record) => ({
+                'data-account-ref': getAccountRef(record)
+              } as React.HTMLAttributes<HTMLElement>)}
+              loading={loading}
+              toolbar={false as any}
+              tableLayout="fixed"
+              scroll={{ x: 1462 }}
+            />
+          </div>
         )}
       </SectionCard>
 

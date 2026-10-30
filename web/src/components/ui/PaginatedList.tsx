@@ -1,6 +1,7 @@
 import { Empty, Pagination } from 'antd';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 
 interface PaginatedListProps<T> {
   items: T[];
@@ -27,6 +28,8 @@ export default function PaginatedList<T>({
     const start = (currentPage - 1) * safePageSize;
     return items.slice(start, start + safePageSize);
   }, [currentPage, items, safePageSize]);
+  // 筛选/排序/翻页后子项若带 data-flip-key，就从旧位置滑到新位置（见 hooks/use-flip-reorder.ts）。
+  const flipRef = useFlipReorder<HTMLDivElement>(visibleItems);
 
   if (total === 0) {
     return <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
@@ -34,7 +37,7 @@ export default function PaginatedList<T>({
 
   return (
     <div className={`paginated-list ${className}`.trim()}>
-      <div className="paginated-list-grid">
+      <div ref={flipRef} className="paginated-list-grid">
         {visibleItems.map((item, index) => renderItem(item, (currentPage - 1) * safePageSize + index))}
       </div>
       {total > safePageSize ? (

@@ -10,18 +10,60 @@
 }
 .global-web-terminal-window > div {
   height: 100%;
-  border-radius: 10px;
+  border-radius: inherit;
 }
-.global-web-terminal-window.is-minimized {
-  left: auto;
-  top: auto;
+
+/* ── 最小化 / 恢复 ────────────────────────────────────────────────────────────
+ * 窗口不是「消失再出现」，而是自己缩回右下角停靠气泡（FLIP：--aih-terminal-tx/ty/sx/sy
+ * 由 GlobalWebTerminalHost 按窗口矩形与气泡矩形算出），恢复时再从气泡摊开回原来的
+ * 位置与尺寸 —— 从哪来回哪去。动画期间 overflow:hidden 让子面板跟着父级圆角收成圆形。
+ * 停靠气泡的位置/尺寸常量与 GlobalWebTerminalHost 的 DOCK_* 保持同源。 */
+.global-web-terminal-window.is-collapsing {
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: 0 0;
+  animation: aih-terminal-collapse 260ms var(--ease-emphasized, ease-out) forwards;
+  will-change: transform, opacity;
+}
+.global-web-terminal-window.is-expanding {
+  overflow: hidden;
+  transform-origin: 0 0;
+  animation: aih-terminal-expand 300ms var(--ease-emphasized, ease-out) both;
+  will-change: transform, opacity;
+}
+.global-web-terminal-window.is-closing {
+  pointer-events: none;
+  animation: aih-terminal-close 160ms var(--ease-standard, ease) forwards;
+}
+
+@keyframes aih-terminal-collapse {
+  from { opacity: 1; transform: none; border-radius: 10px; }
+  to {
+    opacity: 0;
+    transform: translate(var(--aih-terminal-tx, 0px), var(--aih-terminal-ty, 0px)) scale(var(--aih-terminal-sx, 1), var(--aih-terminal-sy, 1));
+    border-radius: 50%;
+  }
+}
+@keyframes aih-terminal-expand {
+  from {
+    opacity: 0;
+    transform: translate(var(--aih-terminal-tx, 0px), var(--aih-terminal-ty, 0px)) scale(var(--aih-terminal-sx, 1), var(--aih-terminal-sy, 1));
+    border-radius: 50%;
+  }
+  to { opacity: 1; transform: none; border-radius: 10px; }
+}
+@keyframes aih-terminal-close {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96) translate3d(0, -6px, 0); }
+}
+
+/* 停靠气泡：右下角固定停靠点（与 GlobalWebTerminalHost 的 DOCK_RIGHT/DOCK_BOTTOM/SIZE 同源）。 */
+.global-web-terminal-dock {
+  position: fixed;
   right: 20px;
   bottom: 90px;
-  min-width: 0;
-  width: 52px;
-  height: 52px;
+  z-index: 1250;
 }
-.global-web-terminal-window.is-minimized > div { display: none; }
 .global-web-terminal-restore {
   display: flex;
   align-items: center;
@@ -34,11 +76,30 @@
   background: var(--color-surface);
   color: var(--color-accent);
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease;
-  animation: aih-scale-in var(--motion-base, 160ms) var(--ease-emphasized, ease-out) backwards;
+  transition: transform 160ms var(--ease-standard, ease), background 160ms var(--ease-standard, ease);
+  transform-origin: center;
 }
 .global-web-terminal-restore:hover { transform: scale(1.06); }
+.global-web-terminal-restore:active { transform: scale(0.97); }
 .global-web-terminal-restore span { font-size: 12px; }
+
+/* 气泡与窗口交接：窗口缩到气泡位置时气泡才浮现（80ms 延迟 + 180ms ≈ 折叠的 260ms），
+ * 恢复时气泡随窗口摊开而先淡出，避免两个「窗口」同时停在停靠点上。 */
+.global-web-terminal-dock[data-phase='collapsing'] .global-web-terminal-restore {
+  animation: aih-terminal-bubble-in 180ms var(--ease-emphasized, ease-out) 80ms both;
+}
+.global-web-terminal-dock[data-phase='expanding'] .global-web-terminal-restore {
+  animation: aih-terminal-bubble-out 170ms var(--ease-standard, ease) both;
+}
+@keyframes aih-terminal-bubble-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes aih-terminal-bubble-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.7); }
+}
+
 .global-web-terminal-resize {
   position: absolute;
   z-index: 4;
@@ -54,8 +115,17 @@
 .global-web-terminal-resize-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .global-web-terminal-resize-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .global-web-terminal-resize-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+
 @media (prefers-reduced-motion: reduce) {
   .global-web-terminal-restore { transition: none; }
+  .global-web-terminal-window.is-collapsing,
+  .global-web-terminal-window.is-expanding,
+  .global-web-terminal-window.is-closing,
+  .global-web-terminal-dock[data-phase='collapsing'] .global-web-terminal-restore,
+  .global-web-terminal-dock[data-phase='expanding'] .global-web-terminal-restore {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
+  }
 }
 @media (max-width: 720px) {
   .global-web-terminal-window {

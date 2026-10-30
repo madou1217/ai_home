@@ -23,6 +23,7 @@ import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import { CHAT_ATTACHMENT_ACCEPT, shouldConvertLargePaste, type ChatDocumentAttachment } from './attachment-files';
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
@@ -244,6 +245,8 @@ const MessageArea = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
+  // 排队消息的增删/换序：其余条目滑到新位置，而不是整列瞬间重排。
+  const queueFlipRef = useFlipReorder<HTMLDivElement>(queuedMessages);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [accountModelState, setAccountModelState] = useState<{ targetKey: string; ids: string[]; defaultModel: string; loading: boolean; metadata?: Record<string, ModelMetadata> }>(() => {
     return { targetKey: '', ids: [], defaultModel: '', loading: false };
@@ -1007,7 +1010,7 @@ const MessageArea = ({
               />
             ) : null}
             {queuedMessages.length > 0 ? (
-              <div className={`${styles.queueDock} ${styles.composerDockCard}`}>
+              <div ref={queueFlipRef} className={`${styles.queueDock} ${styles.composerDockCard}`}>
                 <div className={styles.queueDockHeader}>
                   <span className={styles.queueDockTitle}>{`排队消息 ${queuedMessages.length}`}</span>
                   <span className={styles.queueDockHint}>
@@ -1015,7 +1018,7 @@ const MessageArea = ({
                   </span>
                 </div>
             {queuedMessages.map((item, index) => (
-              <div key={item.id} className={styles.queueItem}>
+              <div key={item.id} data-flip-key={item.id} className={styles.queueItem}>
                 <div className={styles.queueGrip} aria-hidden="true">⋮⋮</div>
                 <button
                   type="button"

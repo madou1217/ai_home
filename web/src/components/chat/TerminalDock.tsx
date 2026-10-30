@@ -47,7 +47,11 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [height, setHeight] = useState<number>(DEFAULT_HEIGHT);
+  // 折叠/展开的高度过渡期间不做 fit：逐帧尺寸变化会向前端吐一串 resize。
+  const animatingRef = useRef(false);
   const heightRef = useRef(height);
   heightRef.current = height;
   // 客户端挂载后读持久化高度(SSR 安全)。
@@ -108,6 +112,7 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
     term.focus();
 
     const observer = new ResizeObserver(() => {
+      if (animatingRef.current) return;
       const node = containerRef.current;
       if (!node || node.clientWidth === 0 || node.clientHeight === 0) return;
       try {
@@ -177,10 +182,41 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
     document.addEventListener('mouseup', onUp);
   }, []);
 
+  const toggleCollapsed = useCallback(() => {
+    animatingRef.current = true;
+    setAnimating(true);
+    setCollapsed((value) => !value);
+    window.setTimeout(() => {
+      animatingRef.current = false;
+      setAnimating(false);
+      const fit = fitRef.current;
+      const term = termRef.current;
+      if (!fit || !term) return;
+      try {
+        fit.fit();
+      } catch {
+        /* ignore */
+      }
+      if (active) term.focus();
+    }, 220);
+  }, [active]);
+
+  // 关闭先播一次收起动画，再通知父级终止 run（避免整块 dock 凭空消失）。
+  const handleClose = useCallback(() => {
+    if (closing) return;
+    const reduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      onClose(runId);
+      return;
+    }
+    setClosing(true);
+    window.setTimeout(() => onClose(runId), 160);
+  }, [closing, onClose, runId]);
+
   if (!visible || !runId) return null;
 
   return (
-    <div className={`${styles.terminalDock} ${styles.composerDockCard}`}>
+    <div className={`${styles.terminalDock} ${styles.composerDockCard}`} data-closing={closing ? 'true' : undefined}>
       {!collapsed && (
         <div
           className={styles.terminalDockResizer}
@@ -192,7 +228,7 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
         <button
           type="button"
           className={styles.terminalDockToggle}
-          onClick={() => setCollapsed((value) => !value)}
+          onClick={toggleCollapsed}
           aria-label={collapsed ? '展开终端' : '折叠终端'}
         >
           {collapsed ? <RightOutlined /> : <DownOutlined />}
@@ -207,7 +243,7 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
         <button
           type="button"
           className={styles.terminalDockClose}
-          onClick={() => onClose(runId)}
+          onClick={handleClose}
           aria-label="关闭终端"
         >
           <CloseOutlined />
@@ -215,7 +251,7 @@ function TerminalDock({ visible, run, onRegisterWriter, onInput, onResize, onClo
       </div>
       <div
         ref={containerRef}
-        className={`${styles.terminalDockBody} ${collapsed ? styles.terminalDockBodyCollapsed : ''}`}
+        className={`${styles.terminalDockBody} ${collapsed ? styles.terminalDockBodyCollapsed : ''} ${animating ? styles.terminalDockBodyAnimating : ''}`}
         style={collapsed ? undefined : { height }}
       />
     </div>

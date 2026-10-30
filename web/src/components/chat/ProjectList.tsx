@@ -23,6 +23,8 @@ import MobileSessions from '../mobile/MobileSessions';
 import ArchivedDrawer from './ArchivedDrawer';
 import SessionArchiveAction from './SessionArchiveAction';
 import Button from '@/components/ui/AppButton';
+import Reveal from '@/components/ui/Reveal';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import ModeSelector, { type WorkspaceMode } from './ModeSelector';
 import { providerAccentStyle } from './provider-registry';
 import { resolveArchiveAction } from './session-lifecycle-policy.js';
@@ -97,11 +99,14 @@ const ProjectList = ({
   const [mobileConfirm, setMobileConfirm] = useState<MobileConfirmState | null>(null);
   const [mobileConfirmLoading, setMobileConfirmLoading] = useState(false);
   const { capabilities: lifecycleCapabilities } = useSessionLifecycleCapabilities();
+  // 项目会话按 updatedAt 实时重排：FLIP 让条目滑到新位置，而不是瞬间跳走。
+  const projectSessionsFlipRef = useFlipReorder<HTMLDivElement>(projects);
 
   // 纯聊天 (Chat 模式) 会话列表状态
   const [chatSessions, setChatSessions] = useState<Session[]>([]);
   const [loadingChatSessions, setLoadingChatSessions] = useState(false);
   const [pinnedSessionIds, setPinnedSessionIds] = useState<Set<string>>(() => getPinnedSessionIds());
+  const chatSessionsFlipRef = useFlipReorder<HTMLDivElement>(chatSessions);
 
   const handleTogglePin = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -231,7 +236,7 @@ const ProjectList = ({
           <ModeSelector mode={mode} onChange={onModeChange} mobile={mobile} />
         )}
         {mode === 'chat' ? (
-          <div className={styles.sidebarContent} style={{ padding: '8px 12px' }}>
+          <div className={`${styles.sidebarContent} aih-panel-enter`} style={{ padding: '8px 12px' }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <Button
                 type="primary"
@@ -398,7 +403,7 @@ const ProjectList = ({
       {mode === 'chat' ? (
         <>
 
-          <div className={styles.sidebarContent} style={{ padding: '4px 8px' }}>
+          <div className={`${styles.sidebarContent} aih-panel-enter`} style={{ padding: '4px 8px' }}>
             {loadingChatSessions && chatSessions.length === 0 ? (
               <div className={styles.sidebarSkeleton}>
                 {Array.from({ length: 4 }).map((_, index) => (
@@ -419,7 +424,7 @@ const ProjectList = ({
                 </Button>
               </Empty>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div ref={chatSessionsFlipRef} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[...chatSessions]
                   .sort((a, b) => {
                     const aPinned = pinnedSessionIds.has(a.id);
@@ -433,6 +438,7 @@ const ProjectList = ({
                     const isRunning = isSessionRunning(session, runningSessionKeys);
                     return <div
                     key={session.id}
+                    data-flip-key={session.id}
                     className={`${styles.sessionItem} ${
                       isSameSession(selectedSession, session) ? styles.sessionItemActive : ''
                     } ${isRunning ? styles.sessionItemRunning : ''}`}
@@ -528,7 +534,7 @@ const ProjectList = ({
 
           {remoteSessionsPanel}
 
-          <div className={styles.sidebarContent}>
+          <div className={`${styles.sidebarContent} aih-panel-enter`}>
             {loading && projects.length === 0 ? (
               <div className={styles.sidebarSkeleton}>
                 {Array.from({ length: 6 }).map((_, index) => (
@@ -541,7 +547,7 @@ const ProjectList = ({
             ) : projects.length === 0 ? (
               <Empty description="暂无项目" style={{ marginTop: 24 }} />
             ) : (
-              <div style={{ padding: '4px 0' }}>
+              <div ref={projectSessionsFlipRef} style={{ padding: '4px 0' }}>
                 {projects.map((project) => {
                   const isExpanded = expandedProjects.has(project.id);
                   const isHovered = hoveredProject === project.id;
@@ -647,7 +653,7 @@ const ProjectList = ({
                       </div>
 
                       {/* 会话列表 */}
-                      {isExpanded && (
+                      <Reveal open={isExpanded}>
                         <div className={styles.sessionList}>
                           {displaySessions.length === 0 && (
                             <div className={styles.sessionMore}>暂无会话，点击上方 + 新建</div>
@@ -674,6 +680,7 @@ const ProjectList = ({
                             return (
                               <div
                                 key={getSessionRunKey(session)}
+                                data-flip-key={getSessionRunKey(session)}
                                 className={`${styles.sessionItem} ${
                                   isSameSession(selectedSession, session) ? styles.sessionItemActive : ''
                                 } ${isRunning ? styles.sessionItemRunning : ''}`}
@@ -727,7 +734,7 @@ const ProjectList = ({
                             </div>
                           )}
                         </div>
-                      )}
+                      </Reveal>
                     </div>
                   );
                 })}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Reveal from '@/components/ui/Reveal';
 import type { StructuredChecklist } from './message-structure';
 import { countChecklistProgress, getChecklistState, getChecklistStateLabel, getTaskStatusLabel } from './message-structure';
 import styles from './message-bubble.module.css';
@@ -36,7 +37,7 @@ const TaskDock = ({ checklist, className }: Props) => {
         </span>
       </button>
 
-      {expanded ? (
+      <Reveal open={expanded}>
         <div className={styles.taskDockBody}>
           {checklist.explanation ? (
             <div className={styles.taskDockExplanation}>{checklist.explanation}</div>
@@ -69,7 +70,7 @@ const TaskDock = ({ checklist, className }: Props) => {
             ))}
           </div>
         </div>
-      ) : null}
+      </Reveal>
     </div>
   );
 };

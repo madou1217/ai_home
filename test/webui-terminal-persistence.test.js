@@ -25,7 +25,8 @@ test('keyed terminal survives the server process and can be closed after adoptio
       const result = openWebUiTerminalSession({ sessionKey: process.argv[1], file: '/bin/sh', args: ['-c', 'echo SURVIVED; exec /bin/sh'] });
       if (!result.ok) { console.error(result); process.exit(1); }
       setTimeout(() => process.exit(0), 300);
-    `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000 });
+    `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
+      env: { ...process.env, TMUX: '/tmp/outer-tmux,123,0' } });
     assert.equal(child.status, 0, child.stderr);
     assert.equal(persistence.exists(key), true);
     const muxId = `test-mux-${Date.now()}`;
@@ -45,6 +46,26 @@ test('keyed terminal survives the server process and can be closed after adoptio
     req.emit('close');
     assert.equal((await post('attach', { sessionKey: key })).error, 'terminal_not_found');
   } finally {
+    persistence.close(key);
+  }
+});
+
+test('idle collection keeps keyed terminals after 30 minutes', { skip: process.platform === 'win32' }, async () => {
+  const key = `idle-test-${process.pid}-${Date.now()}`;
+  const originalNow = Date.now;
+  let terminal;
+  let other;
+  try {
+    terminal = await post('open', { sessionKey: key });
+    assert.equal(terminal.ok, true);
+    Date.now = () => originalNow() + 31 * 60 * 1000;
+    other = await post('open', {}); // Triggers the idle collector.
+    assert.equal(other.ok, true);
+    assert.equal((await post('attach', { sessionKey: key })).termId, terminal.termId);
+  } finally {
+    Date.now = originalNow;
+    if (terminal?.termId) await post('close', { termId: terminal.termId });
+    if (other?.termId) await post('close', { termId: other.termId });
     persistence.close(key);
   }
 });

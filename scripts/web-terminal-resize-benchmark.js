@@ -13,15 +13,16 @@ const { handleWebUiTerminalRequest, openWebUiTerminalSession } = require('../lib
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'web', 'dist');
 const MIME = { '.js': 'application/javascript', '.css': 'text/css', '.html': 'text/html', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
-const HELP = `Usage: node scripts/web-terminal-resize-benchmark.js --browser <chromium> [--runs 3] [--tmpdir <directory>] [--software] [--no-sandbox] [--compare-styles | --compare-blur]
+const HELP = `Usage: node scripts/web-terminal-resize-benchmark.js --browser <chromium> [--runs 3] [--tmpdir <directory>] [--software] [--no-sandbox] [--continuous-output] [--compare-styles | --compare-blur]
 
 Uses a loopback-only fixture server and a temporary full-screen PTY; it does not connect to the running aih server.
 Build the WebUI first. Reports synthetic drag frame intervals and browser layout work; results vary with hardware and load.
+--continuous-output adds a live PTY update every 50ms and verifies output advances while dragging.
 --compare-styles alternates the xterm style-write optimization off/on; --compare-blur alternates
 the temporary backdrop blur suppression off/on. In either mode --runs specifies before/after pairs.`;
 
 function parseArgs(args) {
-  const options = { browser: '', runs: 3, tmpdir: '', software: false, noSandbox: false, compareStyles: false, compareBlur: false, help: false };
+  const options = { browser: '', runs: 3, tmpdir: '', software: false, noSandbox: false, continuousOutput: false, compareStyles: false, compareBlur: false, help: false };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') options.help = true;
@@ -34,6 +35,7 @@ function parseArgs(args) {
     }
     else if (arg === '--software') options.software = true;
     else if (arg === '--no-sandbox') options.noSandbox = true;
+    else if (arg === '--continuous-output') options.continuousOutput = true;
     else if (arg === '--compare-styles') options.compareStyles = true;
     else if (arg === '--compare-blur') options.compareBlur = true;
     else throw new Error(`unknown option: ${arg}`);
@@ -282,7 +284,7 @@ async function run(options) {
   try {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     if (interrupted) throw new Error('benchmark interrupted');
-    terminal = openWebUiTerminalSession({ sessionKey: key, cwd: temp, file: process.execPath, args: [path.join(__dirname, 'fixtures', 'web-terminal-resize-tui.js')] });
+    terminal = openWebUiTerminalSession({ sessionKey: key, cwd: temp, file: process.execPath, args: [path.join(__dirname, 'fixtures', 'web-terminal-resize-tui.js'), ...(options.continuousOutput ? ['--continuous-output'] : [])] });
     if (!terminal.ok) throw new Error(`fixture terminal failed: ${terminal.error}`);
     const args = ['--headless', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${profile}`];
     if (options.software) args.push('--disable-gpu');
@@ -308,7 +310,7 @@ async function run(options) {
     let ready = false;
     for (let i = 0; i < 150 && !interrupted; i += 1) {
       if (cdp.isClosed()) throw new Error(`browser connection closed: ${browserError.slice(0, 1800)}`);
-      try { ready = await evaluate(cdp, "!!document.querySelector('[aria-label=\"Web Terminal\"] .xterm-rows') && document.querySelector('.xterm-rows').textContent.includes('BENCH_TUI') && document.querySelector('.xterm-rows').textContent.includes('汉字')"); } catch (error) {
+      try { ready = await evaluate(cdp, `!!document.querySelector('[aria-label="Web Terminal"] .xterm-rows') && document.querySelector('.xterm-rows').textContent.includes('BENCH_TUI') && document.querySelector('.xterm-rows').textContent.includes('汉字') && (${options.continuousOutput ? "document.querySelector('.xterm-rows').textContent.includes('LIVE #')" : 'true'})`); } catch (error) {
         if (cdp.isClosed()) throw new Error(`${error.message}: ${browserError.slice(0, 1800)}`);
       }
       if (ready) break;
@@ -348,7 +350,7 @@ async function run(options) {
         throw new Error(`background blur did not restore after cancellation: ${JSON.stringify(effects)}`);
       }
     }
-    await evaluate(cdp, `window.__benchRun=async(mode,comparison)=>{
+    await evaluate(cdp, `window.__benchRun=async(mode,comparison,continuous)=>{
       if(comparison==='styles' && mode!==null)for(const {el,descriptor} of window.__benchStyles){if(!descriptor)continue;if(mode)Object.defineProperty(el,'textContent',descriptor);else delete el.textContent;}
       if(comparison==='blur'){
         if(!window.__benchBlurOverride){window.__benchBlurOverride=document.createElement('style');document.head.appendChild(window.__benchBlurOverride);}
@@ -378,6 +380,8 @@ async function run(options) {
       await sleep(300);
       const before=panel.getBoundingClientRect(), x=before.right, y=before.bottom;
       const initial=await (await fetch('/__benchmark/status')).json();
+      const liveSequence=()=>Number(panel.querySelector('.xterm-rows')?.textContent.match(/LIVE #([0-9]+)/)?.[1] || 0);
+      const initialLive=liveSequence();
       const downStart=performance.now();
       handle.dispatchEvent(new PointerEvent('pointerdown',{...opts,clientX:x,clientY:y}));
       const pointerDownMs=performance.now()-downStart;
@@ -393,6 +397,8 @@ async function run(options) {
         for(let j=0;j<4;j++)document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+230*progress,clientY:y+160*progress}));
       }
       const dragDurationMs=performance.now()-dragStart;
+      const finalLive=liveSequence();
+      if(continuous && (!initialLive || finalLive<=initialLive))throw new Error('live terminal output did not advance during the drag');
       document.dispatchEvent(new PointerEvent('pointerup',{...opts,buttons:0,clientX:x+230,clientY:y+160}));
       if(comparison==='blur' && document.documentElement.classList.contains('aih-terminal-resizing'))throw new Error('background blur was not restored after release');
       let status, match, lastCount=-1, stableSince=performance.now();
@@ -424,9 +430,9 @@ async function run(options) {
       checkHeader(Number(restoredGrid[2]));
       if(frames.length<3)throw new Error('too few animation frames to measure the drag');
       const firstFrameMs=frames.shift();frames.sort((a,b)=>a-b);
-      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,pointerDownMs,firstFrameMs,dragDurationMs,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
+      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,pointerDownMs,firstFrameMs,dragDurationMs,liveSequenceAdvance:continuous?finalLive-initialLive:null,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
     }`);
-    await evaluate(cdp, 'window.__benchRun(null, null)'); // Warm fonts, terminal and browser caches.
+    await evaluate(cdp, `window.__benchRun(null, null, ${Boolean(options.continuousOutput)})`); // Warm fonts, terminal and browser caches.
     const comparison = options.compareStyles ? 'styles' : options.compareBlur ? 'blur' : null;
     const modes = comparison
       ? Array.from({ length: options.runs }, (_unused, index) => index % 2 ? [true, false] : [false, true]).flat()
@@ -434,7 +440,7 @@ async function run(options) {
     const results = [];
     for (const mode of modes) {
       const before = (await cdp.send('Performance.getMetrics')).metrics;
-      const result = await evaluate(cdp, `window.__benchRun(${JSON.stringify(mode)}, ${JSON.stringify(comparison)})`);
+      const result = await evaluate(cdp, `window.__benchRun(${JSON.stringify(mode)}, ${JSON.stringify(comparison)}, ${Boolean(options.continuousOutput)})`);
       const after = (await cdp.send('Performance.getMetrics')).metrics;
       results.push({ ...result, browserWork: metricDelta(before, after) });
     }
@@ -514,7 +520,7 @@ async function run(options) {
       return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
     })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, pointerChecks, gridBounds };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, continuousOutput: options.continuousOutput, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, pointerChecks, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);

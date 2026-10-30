@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, useMemo, useRef } from 'react';
-import { applyThemeMode } from '@/services/theme-persistence';
+import { applyThemeModeAnimated } from '@/services/theme-transition';
 import { history } from '@umijs/max';
 import { useCollapsePresence } from '@/hooks/use-collapse-presence';
 import { useFlipReorder } from '@/hooks/use-flip-reorder';
@@ -93,7 +93,7 @@ export const GlobalCommandPalette = memo(function GlobalCommandPalette({
       icon: <BgColorsOutlined />,
       action: () => {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        applyThemeMode(isDark ? 'light' : 'dark');
+        applyThemeModeAnimated(isDark ? 'light' : 'dark');
         try {
           import('@/services/cross-tab-session-sync').then((m) =>
             m.crossTabSync.broadcast('THEME_CHANGED', { theme: isDark ? 'light' : 'dark' })

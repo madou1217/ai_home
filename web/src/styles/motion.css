@@ -241,6 +241,14 @@ details[open]::details-content {
 }
 
 /* ── 4. 减少动态效果 ─────────────────────────────────────────────────────── */
+/* 主题切换：View Transitions 的整页交叉淡入（旧帧/新帧各一张快照，合成器完成）。
+ * 触发见 services/theme-transition.ts；不支持的浏览器直接切换，这里只调时长。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

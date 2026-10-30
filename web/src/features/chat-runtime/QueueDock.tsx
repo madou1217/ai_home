@@ -11,6 +11,7 @@ import type {
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import { runCommandOperation } from './command-operation';
 import { queueRowPolicy } from './queue-row-policy';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import styles from './session-runtime.module.css';
 
 interface Props {
@@ -23,17 +24,24 @@ export default function QueueDock({ store, actions }: Props) {
   const state = useSessionSelector(store, selectState);
   const paused = useSessionSelector(store, (projection) =>
     (projection.policy.queueControl as { paused?: boolean } | undefined)?.paused === true);
-  if (queue.length === 0) return null;
+  // 删除/发出队列项时先留 170ms 播退场（.aih-leaving）再卸载，队列不会「点一下整行消失」。
+  const presence = usePresenceList([...queue], (entry) => entry.queueId, 170);
+  if (presence.render.length === 0) return null;
   return (
     <section className={styles.queueDock} aria-label="消息队列">
       <header><strong>接下来</strong><span>{queue.length} 条</span>
         {paused ? <span role="status">已暂停，待发消息已保留</span> : null}
       </header>
-      {queue.map((entry, index) => {
-        const policy = queueRowPolicy(queue, index, state);
+      {presence.render.map(({ item: entry, leaving }) => {
+        // 离场行不参与策略计算（它已不在 queue 里，位置/可操作性都失效）
+        const liveIndex = leaving ? -1 : queue.findIndex((item) => item.queueId === entry.queueId);
+        const policy = liveIndex < 0
+          ? { mutable: false, canDispatch: false, moveUp: undefined, moveDown: undefined }
+          : queueRowPolicy(queue, liveIndex, state);
         return <QueueRow
           key={entry.queueId}
           entry={entry}
+          leaving={leaving}
           mutable={policy.mutable}
           canDispatch={policy.canDispatch}
           onSave={(content) => actions.editQueue(entry.queueId, content)}
@@ -53,6 +61,8 @@ export default function QueueDock({ store, actions }: Props) {
 
 interface QueueRowProps {
   readonly entry: SessionQueueEntry;
+  /** 正在播退场：只渲染不可操作 */
+  readonly leaving?: boolean;
   readonly mutable: boolean;
   readonly canDispatch: boolean;
   readonly onSave: (content: string) => Promise<unknown>;
@@ -92,7 +102,11 @@ function QueueRow(props: QueueRowProps) {
   };
 
   return (
-    <article className={styles.queueRow} data-status={props.entry.status}>
+    <article
+      className={`${styles.queueRow}${props.leaving ? ' aih-leaving' : ''}`}
+      data-status={props.entry.status}
+      aria-hidden={props.leaving || undefined}
+    >
       <div className={styles.queueOrder}>#{props.entry.position}</div>
       <div className={styles.queueBody}>
         {editingActive ? (

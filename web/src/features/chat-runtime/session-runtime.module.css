@@ -368,6 +368,12 @@
   animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
 }
 
+/* 离场：比全局 .aih-leaving 更具体，压过上面的进场动画 */
+.queueRow.aih-leaving {
+  pointer-events: none;
+  animation: aih-leave-out var(--motion-base) var(--ease-standard) forwards;
+}
+
 .queueRow + .queueRow { border-top: 1px solid var(--color-border); }
 .queueOrder { color: var(--color-accent); font: 11px var(--font-mono); }
 .queueBody { display: grid; min-width: 0; gap: var(--hos-space-0-5); }
@@ -446,6 +452,12 @@
   background: var(--color-surface-muted);
   /* 新附件挂载：从略小处淡入，避免输入区突然多出一块 */
   animation: attachmentChipIn var(--motion-fast) var(--ease-emphasized) backwards;
+}
+
+/* 离场：比 .aih-leaving 更具体，确保压过上面的进场动画（两份样式表加载顺序不定） */
+.composerAttachment.aih-leaving {
+  pointer-events: none;
+  animation: aih-leave-out var(--motion-base) var(--ease-standard) forwards;
 }
 
 @keyframes attachmentChipIn {

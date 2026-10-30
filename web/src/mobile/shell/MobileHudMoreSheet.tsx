@@ -2,7 +2,7 @@ import { RightOutlined } from '@ant-design/icons';
 import { history, useLocation } from '@umijs/max';
 import { useThemeMode } from '@/hooks/use-theme-mode';
 import { crossTabSync } from '@/services/cross-tab-session-sync';
-import { applyThemeMode } from '@/services/theme-persistence';
+import { applyThemeModeAnimated } from '@/services/theme-transition';
 import DetailSheet from '../ui/DetailSheet';
 import { MOBILE_MORE_ITEMS } from './mobile-nav';
 
@@ -14,7 +14,7 @@ export default function MobileHudMoreSheet({ open, onClose }: { open: boolean; o
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
-    applyThemeMode(next);
+    applyThemeModeAnimated(next);
     crossTabSync.broadcast('THEME_CHANGED', { theme: next });
   };
 

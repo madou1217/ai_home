@@ -1,5 +1,6 @@
 import { CloseOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { PendingComposerAttachment } from './use-composer-attachments';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import styles from './session-runtime.module.css';
 import attachmentStyles from '@/components/chat/composer/composer.module.css';
 
@@ -10,11 +11,18 @@ interface Props {
 }
 
 export default function ComposerAttachmentPreview({ attachments, onRemove, onRetry }: Props) {
-  if (attachments.length === 0) return null;
+  // 移除附件先留 140ms 播退场（.aih-leaving）再卸载，和 legacy 附件画廊同一套语义。
+  const presence = usePresenceList([...attachments], (attachment) => attachment.key, 170);
+  if (presence.render.length === 0) return null;
   return (
     <div className={styles.composerAttachments} aria-label="待发送附件">
-      {attachments.map((attachment) => (
-        <div key={attachment.key} className={styles.composerAttachment} title={attachment.error || attachment.name} data-status={attachment.status}>
+      {presence.render.map(({ item: attachment, leaving }) => (
+        <div
+          key={attachment.key}
+          className={`${styles.composerAttachment}${leaving ? ' aih-leaving' : ''}`}
+          title={attachment.error || attachment.name}
+          data-status={attachment.status}
+        >
           {attachment.mimeType.startsWith('image/') ? <img src={attachment.dataUrl} alt={attachment.name} />
             : attachment.mimeType.startsWith('video/') ? (
               <video src={attachment.dataUrl} muted preload="metadata" aria-label={attachment.name} />

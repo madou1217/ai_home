@@ -5,7 +5,7 @@ import { useHudPreferences } from '@/components/hud/use-hud-preferences';
 import { useThemeMode } from '@/hooks/use-theme-mode';
 import { crossTabSync } from '@/services/cross-tab-session-sync';
 import { DynamicWallpaperEngine } from '@/services/dynamic-wallpaper-engine';
-import { applyThemeMode } from '@/services/theme-persistence';
+import { applyThemeModeAnimated } from '@/services/theme-transition';
 import { validateWallpaperFile } from './settings-config';
 
 /**
@@ -20,7 +20,7 @@ export function useAppearanceSettings() {
 
   const handleThemeModeChange = useCallback((dark: boolean) => {
     const next = dark ? 'dark' : 'light';
-    applyThemeMode(next);
+    applyThemeModeAnimated(next);
     crossTabSync.broadcast('THEME_CHANGED', { theme: next });
   }, []);
 

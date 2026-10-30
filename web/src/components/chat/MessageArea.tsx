@@ -62,6 +62,7 @@ import {
 } from './aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
 import { useCollapsePresence } from '@/hooks/use-collapse-presence';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import { throttle } from '@/utils/timing';
 import {
   getQueueModeDescription,
@@ -757,7 +758,10 @@ const MessageArea = ({
   const planChoicePresence = useCollapsePresence(showPlanChoiceDock, 160);
   // 回到底部按钮：隐藏时留 140ms 播放退场（否则滚到顶部/底部时按钮直接消失，是整段交互里最突兀的硬切）
   const scrollBtnPresence = useCollapsePresence(showScrollBottom, 140);
-  const hasComposerDock = Boolean(activeChecklist) || planChoicePresence.present || showTerminalDock || queuedMessages.length > 0;
+  // 移除排队消息：先留 170ms 播退场（.aih-leaving）再卸载，队列不会「点一下整行消失」。
+  const queuePresence = usePresenceList(queuedMessages, (item) => item.id, 170);
+  const hasComposerDock = Boolean(activeChecklist) || planChoicePresence.present || showTerminalDock
+    || queuePresence.render.length > 0;
   const helperFontSize = mobile ? 13 : 12;
 
   // 会话模型默认值的唯一解析处（切会话按会话键重算，不靠"模型失效"触发，避免与父组件竞争）：
@@ -1035,7 +1039,7 @@ const MessageArea = ({
                 onClose={(runId) => onCloseTerminal?.(runId)}
               />
             ) : null}
-            {queuedMessages.length > 0 ? (
+            {queuePresence.render.length > 0 ? (
               <div ref={queueFlipRef} className={`${styles.queueDock} ${styles.composerDockCard}`}>
                 <div className={styles.queueDockHeader}>
                   <span className={styles.queueDockTitle}>{`排队消息 ${queuedMessages.length}`}</span>
@@ -1043,8 +1047,13 @@ const MessageArea = ({
                     运行中继续输入的需求会在这里排队
                   </span>
                 </div>
-            {queuedMessages.map((item, index) => (
-              <div key={item.id} data-flip-key={item.id} className={styles.queueItem}>
+            {queuePresence.render.map(({ item, leaving }, index) => (
+              <div
+                key={item.id}
+                data-flip-key={item.id}
+                className={`${styles.queueItem}${leaving ? ' aih-leaving' : ''}`}
+                aria-hidden={leaving || undefined}
+              >
                 <div className={styles.queueGrip} aria-hidden="true">⋮⋮</div>
                 <button
                   type="button"

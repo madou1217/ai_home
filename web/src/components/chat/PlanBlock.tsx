@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import {
   countChecklistProgress,
   getChecklistState,
@@ -56,7 +56,7 @@ function PlanBlock({ checklist, result = '', mobile = false }: Props) {
       aria-label={title}
     >
       <div className={evt.progressTrack} aria-hidden="true">
-        <span className={evt.progressBar} style={{ width: `${progressRatio}%` }} />
+        <span className={evt.progressBar} style={{ '--aih-fill': Math.min(100, progressRatio) / 100 } as CSSProperties} />
       </div>
 
       {checklist.explanation ? <div className={evt.explanation}>{checklist.explanation}</div> : null}

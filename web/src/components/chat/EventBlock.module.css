@@ -378,7 +378,11 @@
   border-radius: 0;
   background: var(--evt);
   box-shadow: 0 0 8px var(--evt);
-  transition: width var(--motion-slow) var(--ease-standard);
+  /* 进度由 --aih-fill（0~1）驱动 scaleX，只碰 transform，不逐帧重排宽度 */
+  width: 100%;
+  transform: scaleX(var(--aih-fill, 0));
+  transform-origin: left center;
+  transition: transform var(--motion-slow) var(--ease-standard);
 }
 .explanation {
   font-family: var(--font-prose);

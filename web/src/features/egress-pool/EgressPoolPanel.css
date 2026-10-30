@@ -201,7 +201,11 @@
   height: 100%;
   border-radius: inherit;
   background: var(--color-success);
-  transition: width var(--motion-slower) var(--ease-standard);
+  /* 成功率由 --aih-fill（0~1）驱动 scaleX，只碰 transform */
+  width: 100%;
+  transform: scaleX(var(--aih-fill, 0));
+  transform-origin: left center;
+  transition: transform var(--motion-slow) var(--ease-standard);
 }
 
 .egress-failure {

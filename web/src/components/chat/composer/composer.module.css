@@ -1559,7 +1559,11 @@
   height: 100%;
   border-radius: 0;
   box-shadow: 0 0 8px currentColor;
-  transition: width 0.3s ease;
+  /* 占用比例由 --aih-fill（0~1）驱动 scaleX，只碰 transform */
+  width: 100%;
+  transform: scaleX(var(--aih-fill, 0));
+  transform-origin: left center;
+  transition: transform var(--motion-slow) var(--ease-standard);
 }
 
 .contextMeterNumbers {
@@ -2056,4 +2060,15 @@
   .sendBtn {
     --hud-cut: 6px;
   }
+}
+
+/* 动效补齐（styles/motion.css 约定）：下列控件的悬停/聚焦此前是硬切，这里只过渡颜色类属性
+ * （paint-only，不触发重排）；prefers-reduced-motion 由全局层归零。 */
+.terminalDockClose,
+.terminalDockResizer,
+.shellTerminalResizer {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
 }

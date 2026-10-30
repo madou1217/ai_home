@@ -1,6 +1,6 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import ServiceWidgetGrid from '@/components/dashboard/ServiceWidgetGrid';
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { message, Tag, Tooltip } from 'antd';
 import {
   ReloadOutlined,
@@ -16,6 +16,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/ui/AppButton';
 import PageScaffold from '@/components/ui/PageScaffold';
+import AnimatedValue from '@/components/ui/AnimatedValue';
 import type { Provider } from '@/types';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import RuntimeStatusTag from '@/components/runtime/RuntimeStatusTag';
@@ -132,10 +133,10 @@ export default function Dashboard() {
         <div className="dash-pcard-head">
           <ProviderIcon provider={row.provider} size={18} />
           <span className="dash-pcard-name">{providerNames[row.provider as keyof typeof providerNames] || row.provider}</span>
-          <span className={`dash-pcard-ratio${pct < 100 && !offline ? ' warn' : ''}`}>{row.active}/{row.total}</span>
+          <span className={`dash-pcard-ratio${pct < 100 && !offline ? ' warn' : ''}`}><AnimatedValue changeKey={`${row.active}/${row.total}`}>{row.active}/{row.total}</AnimatedValue></span>
         </div>
         <div className="dash-bar">
-          <span className={`dash-bar-fill${pct < 100 ? ' warn' : ''}`} style={{ width: `${offline ? 0 : pct}%` }} />
+          <span className={`dash-bar-fill${pct < 100 ? ' warn' : ''}`} style={{ '--aih-fill': (offline ? 0 : pct) / 100 } as CSSProperties} />
         </div>
         <div className="dash-pcard-stats">
           <span>队列 {running}/{queued}<i>并发 {conc}</i></span>
@@ -201,6 +202,7 @@ export default function Dashboard() {
               subtitle: `后端 ${status?.backend || 'Node'}`,
               status: 'healthy',
               valueTone: 'accent',
+              animateValue: false,
             },
           ]}
         />
@@ -216,23 +218,23 @@ export default function Dashboard() {
         </div>
         <div className="dash-hero-body">
           <div className="dash-hero-metric">
-            <div className={`dash-hero-value dash-hero-value--${heroSuccessTone} hud-display ${HERO_VALUE_GLOW[heroSuccessTone]}`}>{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</div>
+            <div className={`dash-hero-value dash-hero-value--${heroSuccessTone} hud-display ${HERO_VALUE_GLOW[heroSuccessTone]}`}><AnimatedValue>{Number(status?.totalRequests || 0) > 0 ? formatPercent(status?.successRate) : '—'}</AnimatedValue></div>
             <div className="dash-hero-cap hud-label">{Number(status?.totalRequests || 0) > 0 ? '请求成功率' : '暂无请求'}</div>
           </div>
           <div className="dash-hero-side">
             <div className="dash-hero-health">
               <div className="dash-hero-health-row">
                 <span>健康账号</span>
-                <span><b>{healthyAccounts}</b> / {totalAccounts}</span>
+                <span><b><AnimatedValue>{healthyAccounts}</AnimatedValue></b> / {totalAccounts}</span>
               </div>
               <div className="dash-bar">
-                <span className={`dash-bar-fill${healthPct < 100 ? ' warn' : ''}`} style={{ width: `${healthPct}%` }} />
+                <span className={`dash-bar-fill${healthPct < 100 ? ' warn' : ''}`} style={{ '--aih-fill': healthPct / 100 } as CSSProperties} />
               </div>
             </div>
             <div className="dash-hero-chips">
-              <span className="dash-chip"><b>{status?.totalRequests || 0}</b> 请求</span>
-              <span className="dash-chip"><b>{formatPercent(status?.timeoutRate)}</b> 超时</span>
-              <span className="dash-chip"><b>{totalQueueRunning}</b> 运行中</span>
+              <span className="dash-chip"><b><AnimatedValue>{status?.totalRequests || 0}</AnimatedValue></b> 请求</span>
+              <span className="dash-chip"><b><AnimatedValue>{formatPercent(status?.timeoutRate)}</AnimatedValue></b> 超时</span>
+              <span className="dash-chip"><b><AnimatedValue>{totalQueueRunning}</AnimatedValue></b> 运行中</span>
             </div>
           </div>
         </div>
@@ -396,10 +398,10 @@ export default function Dashboard() {
               <div className="dash-route-item" key={r.key}>
                 <div className="dash-route-line">
                   <span className="dash-route-name" title={r.route}>{r.route}</span>
-                  <span className="dash-route-count">{r.count}</span>
+                  <span className="dash-route-count"><AnimatedValue>{r.count}</AnimatedValue></span>
                 </div>
                 <div className="dash-bar dash-bar--slim">
-                  <span className="dash-bar-fill acc" style={{ width: `${Math.round((r.count / routeTotalMax) * 100)}%` }} />
+                  <span className="dash-bar-fill acc" style={{ '--aih-fill': routeTotalMax > 0 ? r.count / routeTotalMax : 0 } as CSSProperties} />
                 </div>
               </div>
             ))}

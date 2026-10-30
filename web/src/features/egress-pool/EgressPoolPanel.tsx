@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Empty, Input, InputNumber, Segmented, Spin, Switch, Table, Tag, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -278,7 +278,7 @@ export default function EgressPoolPanel() {
           <div className="egress-usage-cell">
             <span>{node.uses} 次 · {rate === null ? '—' : `${rate}%`}</span>
             <span className="egress-rate-bar" aria-hidden="true">
-              <span style={{ width: `${rate ?? 0}%` }} />
+              <span style={{ '--aih-fill': (rate ?? 0) / 100 } as CSSProperties} />
             </span>
           </div>
         );

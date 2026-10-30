@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from 'react';
+import AnimatedValue from '@/components/ui/AnimatedValue';
 import styles from './ServiceWidgetGrid.module.css';
 
 export interface ServiceWidgetProps {
@@ -15,6 +16,8 @@ export interface ServiceWidgetProps {
    */
   valueTone?: 'status' | 'accent';
   onClick?: () => void;
+  /** 数值变化时是否播跳字反馈；每秒都在走的值（运行时长）应关掉，否则一直在动 */
+  animateValue?: boolean;
 }
 
 export interface ServiceWidgetGridProps {
@@ -31,6 +34,7 @@ export const ServiceWidget = memo(function ServiceWidget({
   trend,
   valueTone = 'status',
   onClick,
+  animateValue = true,
 }: ServiceWidgetProps) {
   const statusClass =
     status === 'healthy'
@@ -70,7 +74,9 @@ export const ServiceWidget = memo(function ServiceWidget({
       </div>
 
       <div className={styles.widgetBody}>
-        <strong className={`${styles.widgetValue} hud-display ${valueToneClass}`}>{value}</strong>
+        <strong className={`${styles.widgetValue} hud-display ${valueToneClass}`}>
+          {animateValue ? <AnimatedValue>{value}</AnimatedValue> : value}
+        </strong>
         {subtitle && <span className={styles.widgetSubtitle}>{subtitle}</span>}
       </div>
 

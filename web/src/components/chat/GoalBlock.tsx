@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import { AimOutlined } from '@ant-design/icons';
 import EventBlock, { type StatusTone } from './EventBlock';
 import evt from './EventBlock.module.css';
@@ -176,7 +176,7 @@ function GoalBlock({ body = '', result = '', context = '' }: Props) {
       {goal.objective ? <div className={evt.prose} style={{ marginBottom: 'var(--space-6)' }}>{goal.objective}</div> : null}
       {budgetRatio > 0 ? (
         <div className={evt.progressTrack} aria-hidden="true">
-          <span className={evt.progressBar} style={{ width: `${budgetRatio}%` }} />
+          <span className={evt.progressBar} style={{ '--aih-fill': Math.min(100, budgetRatio) / 100 } as CSSProperties} />
         </div>
       ) : null}
       {hasMeta ? (

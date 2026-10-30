@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, type CSSProperties } from 'react';
 import { Tooltip, Popover } from 'antd';
 import { DashboardOutlined, CompressOutlined } from '@ant-design/icons';
 import type { ChatMessage } from '@/types';
@@ -57,10 +57,10 @@ export const ContextMeter = memo(function ContextMeter({
         <div
           className={styles.contextMeterBarFill}
           style={{
-            width: `${stats.percent}%`,
+            '--aih-fill': Math.min(100, Math.max(0, stats.percent)) / 100,
             background: strokeColor,
             color: strokeColor,
-          }}
+          } as CSSProperties}
         />
       </div> : null}
       {compacting ? <div className={styles.contextMeterNumbers}>正在压缩当前上下文…</div>

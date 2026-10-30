@@ -350,18 +350,3 @@
 .usage-plan-group .usage-meta-list {
   padding-left: var(--hos-space-1, 4px);
 }
-
-/* 「已领取、未生效」的套餐：额度池还没生成，只有套餐名 + 生效时间可展示。 */
-.usage-plan-pending {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--hos-space-1-5, 6px);
-  color: var(--color-muted);
-  font-size: var(--hos-text-caption, 12px);
-  line-height: 1.4;
-}
-
-.usage-plan-pending .usage-empty-state-dot {
-  background: var(--color-warning);
-  box-shadow: 0 0 6px var(--color-warning);
-}

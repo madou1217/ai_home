@@ -311,29 +311,12 @@ interface UsageRendererProps {
 // 套餐分组渲染：zcode 的「领臭鸡蛋」叠加新套餐后，同一账号有多个独立额度池。
 // 每组一个标题（套餐名）+ 组内额度行，模型同名也不会互相混淆。
 // 组内条目走与扁平路径**同一个** scope 投影与行组件，因此标签/单位/旁路标记的口径一致。
-/**
- * 快照里有「已领取但还没有额度桶」的套餐组（zcode 领完臭鸡蛋、生效时间未到）。
- * 这类快照的 entries 是空的，但它**有内容可展示**：套餐名 + 生效时间。
- */
-function hasPendingPlanGroups(snapshot: AccountUsageSnapshot | null | undefined): boolean {
-  if (!snapshot || !('planGroups' in snapshot)) return false;
-  const groups = snapshot.planGroups;
-  if (!Array.isArray(groups)) return false;
-  return groups.some((group) => !Array.isArray(group?.entries) || group.entries.length === 0);
-}
-
-function readPendingEffectiveAtMs(snapshot: AccountUsageSnapshot | null | undefined): number {
-  if (!snapshot || !('pendingEffectiveAtMs' in snapshot)) return 0;
-  return Number(snapshot.pendingEffectiveAtMs) || 0;
-}
-
-function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKeyPrefix, pendingEffectiveAtMs }: {
+function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKeyPrefix }: {
   groups: NonNullable<Extract<AccountUsageSnapshot, { kind: 'zcode_plan_balance' }>['planGroups']>;
   hideModels: boolean;
   running: boolean;
   activityRate: number;
   effectKeyPrefix: string;
-  pendingEffectiveAtMs?: number;
 }) {
   // 每个套餐组各自记住是否展开（默认收起，只显示 1 条）。
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
@@ -352,32 +335,12 @@ function PlanGroupedUsage({ groups, hideModels, running, activityRate, effectKey
             capturedAt: 0,
             entries: group.entries
           });
+          if (rows.length === 0) return null;
           // 每组默认只显示 **1 条**用量，多余的收进「展开 N 项」——与扁平路径同规矩，
           // 避免一个账号的多个套餐把账号行撑得很高（真机：2 个套餐 × 各 2 个模型
           // = 4 行，横向也挤）。展开状态按组独立记，展开一个组不影响别的组。
           const visibleRows = hideModels ? rows.slice(0, 1) : (expandedGroups.has(groupKey) ? rows : rows.slice(0, 1));
           const label = group.name || group.planId || group.planGroupId;
-          // 0 条额度行 = 套餐已领取但还没生效（上游 balances 为空）。
-          // 不能像以前那样 return null —— 那样界面上只剩「额度不适用」，
-          // 用户看不到自己已经领到的那只臭鸡蛋。
-          if (rows.length === 0) {
-            const effectiveAtMs = Number(group.effectiveAtMs) || Number(pendingEffectiveAtMs) || 0;
-            const effectiveLabel = formatResetAt(effectiveAtMs);
-            const hint = effectiveLabel
-              ? `套餐已领取，${effectiveLabel} 起生效`
-              : '套餐已领取，等待上游生效';
-            return (
-              <div key={groupKey} className="usage-plan-group">
-                <div className="usage-group-title usage-group-title--plan" title={label}>
-                  <span className="usage-group-title-text">{label}</span>
-                </div>
-                <span className="usage-plan-pending" title={hint}>
-                  <span className="usage-empty-state-dot" aria-hidden="true" />
-                  <span>{effectiveLabel ? `未生效 · ${effectiveLabel} 起可用` : '未生效 · 等待上游生效'}</span>
-                </span>
-              </div>
-            );
-          }
           return (
             <div key={groupKey} className="usage-plan-group">
               <div className="usage-group-title usage-group-title--plan" title={label}>
@@ -428,9 +391,7 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
   const planGroups = 'planGroups' in snapshot && Array.isArray(snapshot.planGroups)
     ? snapshot.planGroups
     : [];
-  // 多套餐，或者「有套餐但一条额度都没有」（已领取、未生效）都走分组渲染：
-  // 后者用扁平路径只会得到一行 "-"，套餐名与生效时间全丢。
-  if (planGroups.length > 1 || (planGroups.length > 0 && !hasRenderableScopes(snapshot))) {
+  if (planGroups.length > 1) {
     return (
       <PlanGroupedUsage
         groups={planGroups}
@@ -438,7 +399,6 @@ function ScopesUsage({ record, snapshot, hideModels, running, activityRate, effe
         running={running}
         activityRate={activityRate}
         effectKeyPrefix={effectKeyPrefix}
-        pendingEffectiveAtMs={readPendingEffectiveAtMs(snapshot)}
       />
     );
   }
@@ -615,9 +575,8 @@ function UsageSnapshotBody({
   }
 
   // 任何声明了条目形态的快照（window / bucket / models）都能由通用渲染器列出全部额度行；
-  // 「已领取、未生效」的快照条目为空但套餐结构在，同样要渲染（否则只剩一个 "-"）；
-  // 只有真的什么都没有时才回落到单条账号级进度条。
-  if (snapshot && (hasRenderableScopes(snapshot) || hasPendingPlanGroups(snapshot))) {
+  // 只有真的没有可渲染条目时才回落到单条账号级进度条。
+  if (snapshot && hasRenderableScopes(snapshot)) {
     return (
       <ScopesUsage
         record={record}
@@ -675,10 +634,8 @@ export default function UsageSnapshotCell(props: UsageSnapshotCellProps) {
       </>
     );
   }
-  // 「额度不适用」是结论态：没有额度行可渲染，徽章即完整信息（不再补一个无意义的 "-"）。
-  // 例外是「已领取、未生效」的套餐 —— 那是可展示的事实（套餐名 + 生效时间），
-  // 必须把 body 渲染出来，否则用户只看到「套餐未生效」却看不到是哪个套餐。
-  const showBody = (record.quotaStatus !== 'not_applicable' || hasPendingPlanGroups(record.usageSnapshot))
+  // 「额度不适用」是结论态：没有额度行可渲染，徽章即完整信息（不再补一个无意义的 “-”）。
+  const showBody = record.quotaStatus !== 'not_applicable'
     && Boolean(record.usageSnapshot || record.remainingPct != null || record.usageRefreshing);
   return (
     <div className="usage-meta-list" data-quota-status={record.quotaStatus}>

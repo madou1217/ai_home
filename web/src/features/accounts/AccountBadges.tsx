@@ -145,11 +145,6 @@ export function getQuotaStateMeta(record: Pick<Account, 'quotaStatus' | 'quotaRe
   if (!status || ['available', 'exhausted'].includes(status)) return null;
   const rawReason = String(record.quotaReason || '').trim();
   if (status === 'not_applicable') {
-    // 「套餐已领取、额度还没生效」是**另一种结论**：不是没有套餐，也不是采集失败，
-    // 而是生效时间还没到（zcode 领完臭鸡蛋的常态）。单独出徽章，别混进「额度不适用」。
-    if (/^plan_not_effective_yet/i.test(rawReason)) {
-      return { status: 'processing', label: '套餐未生效' };
-    }
     // 「额度不适用」是来源给出的**结论**（该账号没有可消耗的额度池：未订阅/已到期/Free 档），
     // 有结论原因才出徽章，让用户明白「为什么看不到额度」；空 reason（API Key 模式、
     // provider 无额度能力）保持静默，避免给每个密钥账号加噪音。

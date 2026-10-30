@@ -39,22 +39,6 @@ function normalizeReason(reason?: string) {
   return String(reason || '').trim();
 }
 
-// 「套餐已领取、额度还没生效」：zcode 额度探针把最早生效时间编码在 reason 里
-// （`plan_not_effective_yet:<ms>`，无时间时就是裸 reason）。它不是故障，账号照常
-// 可调度，只是额度池还没生成 —— 文案必须说清「已领到、什么时候生效」。
-function findPendingPlanEffectiveAt(reason: string) {
-  const match = reason.match(/^plan_not_effective_yet(?::(\d+))?$/i);
-  if (!match) return null;
-  return { effectiveAtMs: Number(match[1]) || 0 };
-}
-
-function formatLocalDateTime(ms: number) {
-  const date = new Date(ms);
-  if (!Number.isFinite(date.getTime())) return '';
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function findDirectHttpStatus(reason: string) {
   const match = reason.match(/direct_http_status_([0-9]{3}|unknown)/i);
   return match ? match[1].toUpperCase() : '';
@@ -95,14 +79,6 @@ export function formatAccountIssueReason(reason?: string) {
       return `账号认证已失效，${httpStatus.source}返回 HTTP ${httpStatus.status}。请重新登录或重新授权后再使用。`;
     }
     return '账号认证已失效，需要重新登录或重新授权后再使用。';
-  }
-
-  const pendingPlan = findPendingPlanEffectiveAt(text);
-  if (pendingPlan) {
-    const at = pendingPlan.effectiveAtMs > 0 ? formatLocalDateTime(pendingPlan.effectiveAtMs) : '';
-    return at
-      ? `套餐已领取但尚未生效，${at} 起可用；生效前不会产生额度池。`
-      : '套餐已领取但尚未生效（上游未给出生效时间）；生效前不会产生额度池。';
   }
 
   if (lower.includes('zcode_balance_parameter_error')) {

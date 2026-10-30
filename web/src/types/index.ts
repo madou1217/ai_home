@@ -168,15 +168,9 @@ export type AccountUsageSnapshot =
         name: string;
         status: string;
         endsAtMs: number;
-        // 套餐生效时间（entitlements[].effective_at，ms）。0 = 上游未给。
-        // 刚领到但还没生效的套餐 balances 为空，界面靠它说明「什么时候可用」。
-        effectiveAtMs?: number;
         priority: number;
         entries: CodexUsageEntry[];
       }>;
-      // 快照里所有套餐都还没生效时的最早生效时间（ms，0 = 未知）。
-      // 由 zcode 额度探针在「plans 非空、balances 为空」时写入。
-      pendingEffectiveAtMs?: number;
     }
   | {
       kind: 'gemini_oauth_stats';

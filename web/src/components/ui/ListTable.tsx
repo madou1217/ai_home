@@ -82,6 +82,8 @@ function ListTableMobileCards<T extends Record<string, any>>({
   rowKey?: string | ((row: T) => string);
 }) {
   const rows = Array.isArray(dataSource) ? dataSource : [];
+  // 卡片没有固定列/粘性表头的定位约束，可以逐项 FLIP；条目多时 hook 自行退化为容器淡入
+  const flipRef = useFlipReorder<HTMLDivElement>(rows);
   if (rows.length === 0) return <>{emptyText}</>;
 
   // 操作类列（无标题，或 key/dataIndex/标题指向“操作”）汇到卡片脚整行排布、按钮可换行；
@@ -99,11 +101,11 @@ function ListTableMobileCards<T extends Record<string, any>>({
   const actionCols = restCols.filter((c) => isActionColumn(c));
 
   return (
-    <div className="mobile-card-list">
+    <div className="mobile-card-list" ref={flipRef}>
       {rows.map((row, index) => {
         const key = typeof rowKey === 'function' ? rowKey(row) : (rowKey ? (row as any)[rowKey] : index);
         return (
-          <div className="mobile-card" key={String(key ?? index)}>
+          <div className="mobile-card" key={String(key ?? index)} data-flip-key={String(key ?? index)}>
             {titleCol ? <div className="ltcard-title">{renderColumnCell(titleCol, row, index)}</div> : null}
             {labelled.map((col, ci) => (
               <div className="ltcard-row" key={ci}>

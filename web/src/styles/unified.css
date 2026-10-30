@@ -131,6 +131,13 @@
 /* 表头底色 / 行 hover 已迁到 antd 主题 token（config.ts > antd.theme.components.Table），
  * 此处不再用 !important 覆盖。 */
 
+/* 骨架屏 ⇄ 真表：两侧都以挂载淡入衔接，首屏数据到达时不再硬切。
+ * 只做 opacity，不产生逐帧布局。 */
+.unified-list-table-skeleton,
+.unified-list-table-fade {
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
 /* 全站统一列表骨架屏（ListTable 首屏加载） */
 .unified-list-table-skeleton {
   display: flex;

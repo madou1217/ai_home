@@ -36,7 +36,7 @@ test('keyed terminal survives the server process and can be closed after adoptio
   try {
     const child = spawnSync(process.execPath, ['-e', `
       const { openWebUiTerminalSession } = require('./lib/server/webui-terminal-routes');
-      const result = openWebUiTerminalSession({ sessionKey: process.argv[1], file: '/bin/sh', args: ['-c', 'echo SURVIVED; exec /bin/sh'] });
+      const result = openWebUiTerminalSession({ sessionKey: process.argv[1], file: '/bin/sh', args: ['-c', 'test -z "$TMUX" && echo TMUX_CLEARED; echo SURVIVED; exec /bin/sh'] });
       if (!result.ok) { console.error(result); process.exit(1); }
       setTimeout(() => process.exit(0), 300);
     `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
@@ -55,6 +55,7 @@ test('keyed terminal survives the server process and can be closed after adoptio
     await new Promise((resolve) => setTimeout(resolve, 300));
     const output = frames.filter((frame) => frame.type === 'output').map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');
     assert.match(output, /SURVIVED/);
+    assert.match(output, /TMUX_CLEARED/);
     await post('close', { termId: attached.termId });
     assert.equal(persistence.exists(key), false);
     req.emit('close');

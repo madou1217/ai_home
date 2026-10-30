@@ -256,19 +256,29 @@ Authorization: Bearer <zcodejwttoken>
 
 ## 4. WebUI 侧实测（只读 GET）
 
-`/tmp/zcap/preview-evidence.json`（app_version 3.20.0，7 个 zcode 账号中 4 个可解出 JWT）：
+### 4.1 全量三通道矩阵（2026-10-30 15:05Z 复测，app_version 3.20.0）
 
-| 账号 | preview | balance |
-|---|---|---|
-| acct_91aa805b… | 200 `{code:0}` **无 data** | `plans:[zcode-v3-start-plan-1030-wk "ZCODE WEEKEND BUILD" active]`，`balances: 0` |
-| acct_ae47a462… | 200 `{code:0}` **无 data** | 同上 |
-| acct_9fe1dc… | 200 `{code:0}` **无 data** | `plans:[] balances:[]` |
-| acct_a09b9d… | 200 `{code:0}` **无 data** | `plans:[] balances:[]` |
+| 账号 | balance | preview | marketing/touch | 判定 |
+|---|---|---|---|---|
+| acct_91aa805b… | `plans:[zcode-v3-start-plan-1030-wk active]`，`balances:1` | 200 `{code:0}` **无 data** | 0 条投放 | **已领到且已生效** |
+| acct_ae47a462… | 同上 | 200 `{code:0}` **无 data** | 0 条投放 | **已领到且已生效** |
+| acct_9fe1dc… | `plans:[] balances:0` | 200 `{code:0}` **无 data** | **1 条 banner，claimable `zcode-v3-start-plan-1030-wk`** | **真的没领到** |
+| acct_a09b9d… | `plans:[] balances:0` | 200 `{code:0}` **无 data** | **1 条 banner，claimable 同上** | **真的没领到** |
+| acct_6738589e… / acct_bc54735c… / acct_d88d9008… | — | — | — | 本机 shell 解不出 JWT（见 4.3） |
 
-即：**preview 对全部可测账号都不返回 data，而 balance 明确显示套餐已被领到**（`balances: 0` =
-已领取、生效时间未到）。
+这张表就是「其他账号为什么还是没领到」的答案：
 
-preview 的空返回与参数无关（`/tmp/zcap/preview-matrix.json`，同一账号逐格实测）：
+- 两个账号**已经领到了**（balance 里 plan `active` + 一个额度桶），只是旧 WebUI 的列表里看不出来；
+- 两个账号**真的没领到**，而它们的领取入口只存在于投放通道 —— preview 是空的，
+  旧代码在这里判「暂无可领」，永远不会发出 claim（桌面端横幅照样有「领取」按钮）；
+- 剩下三个账号的判定必须在 WebUI 进程里做：凭据解密只在那个进程里有密钥（4.3）。
+
+注意 `balances` 的口径：早前（14:30Z）采集时 91aa805b / ae47a462 是 `balances:0`（已领取、未生效），
+现在变成 `1` —— 生效时间到点后额度桶才出现，这正好是 §6「未生效套餐」要展示的那段窗口。
+
+### 4.2 preview 的空返回与参数无关
+
+`/tmp/zcap/preview-matrix.json`（同一账号逐格实测）：
 
 | app_version | darwin-arm64 | win32-x64 |
 |---|---|---|
@@ -278,14 +288,16 @@ preview 的空返回与参数无关（`/tmp/zcap/preview-matrix.json`，同一�
 | 3.20.0 | 200 `{code:0}` 无 data | 200 `{code:0}` 无 data |
 
 带 / 不带 `X-Device-Mid` 也一致（两次都是 `{"code":0,"msg":""}`）。所以「WebUI 看不到活动」
-不是版本门槛或设备头的问题，而是**这条通道当天就是空的**。
+不是版本门槛或设备头的问题，而是**这条通道当天就是空的** —— 真正有内容的是投放通道。
 
-另 3 个账号（acct_6738589e / acct_bc54735c / acct_d88d9008）在本次采集里读不出 JWT：
-它们的 `zcodejwttoken` 是 `enc:v1:` 密文，而解密密钥由 `ZCODE_CREDENTIAL_SECRET` 或
-`zcode-credential-fallback:<platform>:<homedir>:<username>` 派生 —— 本采集进程跑在
-**HOME 被投影到沙箱**的环境里（`HOME=<aiHome>/run/auth-projections/...`），派生出的密钥与
-加密时不同，解密返回空。**这是采集环境的限制，不是账号故障**：服务端进程用真实 homedir，
-同一份凭据可正常解密（桌面端 20:26 的 balance 日志即证明 acct_6738589e 凭据可用）。
+### 4.3 三个账号在本机 shell 里解不出 JWT
+
+`acct_6738589e` / `acct_bc54735c` / `acct_d88d9008` 的 `zcodejwttoken` 是 `enc:v1:` 密文，
+解密密钥由 `ZCODE_CREDENTIAL_SECRET` 或 `zcode-credential-fallback:<platform>:<homedir>:<username>` 派生。
+本采集进程跑在 **HOME 被投影到沙箱**的环境里（`HOME=<aiHome>/run/auth-projections/...`），
+派生出的密钥与加密时不同，解密返回空。**这是采集环境的限制，不是账号故障**：
+WebUI/服务端进程用真实 homedir，同一份凭据可正常解密（桌面端 20:26 的 balance 日志即证明
+acct_6738589e 凭据可用）。
 
 ## 5. 归因
 

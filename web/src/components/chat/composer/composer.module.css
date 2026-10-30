@@ -250,6 +250,9 @@
   border-top: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--term-border));
   background: var(--term-bg);
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
@@ -280,6 +283,8 @@
   background: var(--term-bg-header);
   border-bottom: 1px solid var(--term-border);
   user-select: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .shellTerminalTabs {
@@ -447,33 +452,74 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .shellTerminalSidebar {
   display: flex;
   flex-direction: column;
-  width: 180px;
-  max-width: 35%;
+  width: clamp(132px, 28%, 220px);
+  max-width: 40%;
   flex: 0 0 auto;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
   background: var(--term-bg-header);
   border-right: 1px solid var(--term-border);
 }
 
-.shellTerminalSidebar .shellTerminalTab { max-width: none; min-height: 30px; }
+.shellTerminalSidebar .shellTerminalTab {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 30px;
+  box-sizing: border-box;
+}
 .shellTerminalSidebar .shellTerminalTabLabel { flex: 1; }
 
 .shellTerminalBodies {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 0;
   position: relative;
   background: var(--term-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .shellTerminalBody {
+  box-sizing: border-box;
+  width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   padding: var(--hos-space-1-5) var(--hos-space-2) var(--hos-space-1);
   background: var(--term-bg);
+  overflow: hidden;
+}
+
+.shellTerminalBody :global(.xterm) {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.shellTerminalBody :global(.xterm-viewport) {
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.shellTerminalBody :global(.xterm-screen) {
+  min-width: 0;
 }
 
 .planChoiceDock {

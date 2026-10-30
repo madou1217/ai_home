@@ -1574,7 +1574,7 @@ export function useAccountActions({
             harness: String(launchOptions?.harness || record.provider),
             model: String(launchOptions?.model || ''),
             kind: 'account-cli',
-            label: `${launchOptions?.harness || record.provider} · ${getAccountPrimaryLabel(record)}`
+            label: String(result.sessionTitle || `${launchOptions?.harness || record.provider} · ${getAccountPrimaryLabel(record)}`)
           });
         }
       }

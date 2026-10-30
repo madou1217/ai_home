@@ -98,6 +98,10 @@ function newTerm(): Terminal {
   return new Terminal({
     convertEol: false,
     cursorBlink: true,
+    // Keep long prompts and status lines as xterm soft wraps. The PTY still
+    // receives the real column count on every fit, so shell redraws remain in
+    // sync with Warp-style visual wrapping.
+    reflowCursorLine: true,
     fontFamily: TERMINAL_FONT_FAMILY,
     fontSize: 12,
     scrollback: 8000,
@@ -429,7 +433,7 @@ function ShellTerminalPanel({
       observer.disconnect();
       refitter.dispose();
     };
-  }, [visible]);
+  }, [visible, layout]);
 
   const closeTab = useCallback(async (id: string, closeLast = true): Promise<boolean> => {
     if (isCreatingTab?.()) return false;
@@ -598,7 +602,7 @@ function ShellTerminalPanel({
     <div
       ref={panelRef}
       className={styles.shellTerminalPanel}
-      style={{ height: minimized ? 38 : (panelHeight ?? height) }}
+      style={{ height: minimized ? 38 : (panelHeight !== undefined ? '100%' : height) }}
       data-compact={compactChrome ? 'true' : undefined}
     >
       {/* 嵌入栏内时高度由栏布局接管（100%），隐藏底部停靠场景的调高把手。 */}

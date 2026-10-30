@@ -328,8 +328,10 @@ async function run(options) {
       await sleep(300);
       const before=panel.getBoundingClientRect(), x=before.right, y=before.bottom;
       const initial=await (await fetch('/__benchmark/status')).json();
+      const downStart=performance.now();
       handle.dispatchEvent(new PointerEvent('pointerdown',{...opts,clientX:x,clientY:y}));
-      const blurDuring=getComputedStyle(document.documentElement).getPropertyValue('--hud-panel-blur').trim();
+      const pointerDownMs=performance.now()-downStart;
+      const blurDuring=comparison==='blur'?getComputedStyle(document.documentElement).getPropertyValue('--hud-panel-blur').trim():null;
       if(comparison==='blur' && (!document.documentElement.classList.contains('aih-terminal-resizing') || (mode && blurDuring!=='none') || (!mode && blurDuring==='none')))throw new Error('background blur comparison did not take effect');
       const frames=[];let previous=performance.now();
       for(let i=1;i<=90;i++){await new Promise(resolve=>requestAnimationFrame(resolve));const now=performance.now();frames.push(now-previous);previous=now;for(let j=0;j<4;j++)document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+230*(i+j/4)/90,clientY:y+160*(i+j/4)/90}));}
@@ -362,8 +364,8 @@ async function run(options) {
       if(Math.abs(restored.width-before.width)>2||Math.abs(restored.height-before.height)>2)throw new Error('window size did not restore');
       if(restoredStatus.resizeCount<=status.resizeCount||performance.now()-restoredStableSince<200||!restoredGrid||!restoredStatus.lastResize||Number(restoredGrid[1])!==restoredStatus.lastResize.rows||Number(restoredGrid[2])!==restoredStatus.lastResize.cols)throw new Error('PTY did not converge after shrinking: '+JSON.stringify({restoredGrid,status,restoredStatus}));
       checkHeader(Number(restoredGrid[2]));
-      frames.shift();frames.sort((a,b)=>a-b);
-      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
+      const firstFrameMs=frames.shift();frames.sort((a,b)=>a-b);
+      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,pointerDownMs,firstFrameMs,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
     }`);
     await evaluate(cdp, 'window.__benchRun(null, null)'); // Warm fonts, terminal and browser caches.
     const comparison = options.compareStyles ? 'styles' : options.compareBlur ? 'blur' : null;
@@ -377,6 +379,39 @@ async function run(options) {
       const after = (await cdp.send('Performance.getMetrics')).metrics;
       results.push({ ...result, browserWork: metricDelta(before, after) });
     }
+    // Verify all eight handles, including the opposite-edge anchor and the
+    // final PTY grid. The timed benchmark above measures the south-east handle.
+    const handleChecks = await evaluate(cdp, `(async () => {
+      const panel=document.querySelector('[aria-label="Web Terminal"]');
+      const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const opts={bubbles:true,cancelable:true,button:0,buttons:1,pointerId:13,pointerType:'mouse',isPrimary:true};
+      const edges=['n','ne','e','se','s','sw','w','nw'];
+      const drag=async(edge,dx,dy)=>{
+        const before=panel.getBoundingClientRect();
+        const x=edge.includes('w')?before.left:edge.includes('e')?before.right:before.left+before.width/2;
+        const y=edge.includes('n')?before.top:edge.includes('s')?before.bottom:before.top+before.height/2;
+        const handle=panel.querySelector('.global-web-terminal-resize-'+edge);
+        const initial=await (await fetch('/__benchmark/status')).json();
+        handle.dispatchEvent(new PointerEvent('pointerdown',{...opts,clientX:x,clientY:y}));
+        document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+dx,clientY:y+dy}));
+        document.dispatchEvent(new PointerEvent('pointerup',{...opts,buttons:0,clientX:x+dx,clientY:y+dy}));
+        const after=panel.getBoundingClientRect(),near=(a,b)=>Math.abs(a-b)<=2;
+        if(!near(after.left,before.left+(edge.includes('w')?dx:0))||!near(after.right,before.right+(edge.includes('e')?dx:0))||!near(after.top,before.top+(edge.includes('n')?dy:0))||!near(after.bottom,before.bottom+(edge.includes('s')?dy:0)))throw new Error('incorrect window geometry for '+edge);
+        let status,match;
+        for(let i=0;i<80;i++){
+          await sleep(50);status=await (await fetch('/__benchmark/status')).json();
+          match=panel.querySelector('.xterm-rows')?.textContent.match(/BENCH_TUI ([0-9]+)x([0-9]+)/);
+          if(status.resizeCount>initial.resizeCount&&match&&status.lastResize&&Number(match[1])===status.lastResize.rows&&Number(match[2])===status.lastResize.cols)break;
+        }
+        if(!match||status.resizeCount<=initial.resizeCount||!status.lastResize||Number(match[1])!==status.lastResize.rows||Number(match[2])!==status.lastResize.cols)throw new Error('PTY did not converge for '+edge);
+      };
+      for(const edge of edges){
+        const dx=edge.includes('w')?-35:edge.includes('e')?35:0;
+        const dy=edge.includes('n')?-28:edge.includes('s')?28:0;
+        await drag(edge,dx,dy);await drag(edge,-dx,-dy);
+      }
+      return {edges,drags:edges.length*2};
+    })()`);
     // FitAddon must size the screen to the unpadded content area. Sweeping
     // through more than one cell height catches clipped bottom rows that a
     // single final grid/PTY comparison cannot see.
@@ -419,7 +454,7 @@ async function run(options) {
       return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
     })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, gridBounds };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);

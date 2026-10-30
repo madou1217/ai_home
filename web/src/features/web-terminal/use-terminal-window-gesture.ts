@@ -32,6 +32,9 @@ export function useTerminalWindowGesture(
     const previousSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
     const previousTranslate = node.style.translate;
+    // Read before changing the document-wide blur class: reading computed
+    // styles after that write forces a full style recalculation on pointerdown.
+    const gestureCursor = edge === 'move' ? 'move' : getComputedStyle(event.currentTarget).cursor;
     const useTranslate = edge === 'move' && typeof CSS !== 'undefined' && CSS.supports('translate', '1px 1px');
     let latest = start;
     let frame: number | null = null;
@@ -39,7 +42,7 @@ export function useTerminalWindowGesture(
     let finishing = false;
     const restoreBackgroundBlur = edge === 'move' ? undefined : suspendBackgroundBlur();
     document.body.style.userSelect = 'none';
-    document.body.style.cursor = edge === 'move' ? 'move' : getComputedStyle(event.currentTarget).cursor;
+    document.body.style.cursor = gestureCursor;
     node.classList.add('is-interacting');
     if (useTranslate) node.classList.add('is-moving');
 

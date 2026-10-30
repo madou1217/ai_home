@@ -37,6 +37,7 @@ function fixture(supported = true) {
   };
   const body = { style: { userSelect: 'text', cursor: 'crosshair' } };
   let blurSuspended = 0;
+  const reads = [];
   const react = {
     useCallback: (fn) => fn,
     useRef: (value) => ({ current: value }),
@@ -48,7 +49,7 @@ function fixture(supported = true) {
     require: (name) => name === 'react' ? react : name === './terminal-window-geometry' ? geometryModule.exports : name.endsWith('terminal-resize-effects') ? { suspendBackgroundBlur: () => { blurSuspended += 1; return () => { blurSuspended -= 1; }; } } : { TERMINAL_RESIZE_FINISHED: 'resize-finished' },
     window, document: { body }, PointerEvent, Event,
     CSS: { supports: () => supported },
-    getComputedStyle: () => ({ cursor: 'nwse-resize' }),
+    getComputedStyle: () => { reads.push({ blurSuspended, userSelect: body.style.userSelect }); return { cursor: 'nwse-resize' }; },
     requestAnimationFrame: (fn) => { const id = ++frameId; frames.set(id, fn); return id; },
     cancelAnimationFrame: (id) => frames.delete(id),
   });
@@ -56,7 +57,7 @@ function fixture(supported = true) {
   const start = (edge) => startGesture(edge, { button: 0, isPrimary: true, pointerId: 1, clientX: 100, clientY: 100, target: { closest: () => null }, currentTarget: {}, preventDefault() {}, stopPropagation() {} });
   const emit = (type, x, y, pointerId = 1) => listeners.get(type)?.(new PointerEvent(type, { clientX: x, clientY: y, pointerId }));
   const paint = () => { const callback = [...frames.values()][0]; frames.clear(); callback(); };
-  return { node, body, classes, commits, events, listeners, frames, start, emit, paint, cleanup: () => effectCleanup(), blurSuspended: () => blurSuspended };
+  return { node, body, classes, commits, events, listeners, frames, reads, start, emit, paint, cleanup: () => effectCleanup(), blurSuspended: () => blurSuspended };
 }
 
 test('window movement uses compositor translation until the final position is committed', () => {
@@ -104,6 +105,8 @@ test('edge resizing continues to update size and signals the final fit', () => {
   const f = fixture();
   f.start('nw');
   assert.equal(f.blurSuspended(), 1);
+  assert.deepEqual(f.reads, [{ blurSuspended: 0, userSelect: 'text' }]);
+  assert.equal(f.body.style.cursor, 'nwse-resize');
   f.emit('pointermove', 80, 70);
   f.paint();
   assert.equal(f.node.style.left, '80px');

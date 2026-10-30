@@ -338,6 +338,16 @@ WebUI 领取失败是两条独立缺陷叠加：
 | acct_91aa805b… | `{code:0}` 无 data | 0 条 | 已领过（投放已撤） |
 | acct_ae47a462… | `{code:0}` 无 data | 0 条 | 已领过 |
 
+**端到端演练**（同一账号 `acct_9fe1dc…`，把 claim 的 `plan_id` 改写成必然不存在的值，账号状态零变化）：
+
+```
+discovery=marketing_touch  deliveries=1  claimable=1  plans=[zcode-v3-start-plan-1030-wk]
+POST /billing/claim → { code:1001, msg:"target not found" }
+```
+
+返回 1001 而不是 401 / 3007，说明鉴权头、版本/平台头都被接受、验证码不是前置，
+请求确实带着投放下发的 plan_id 走到了服务端的套餐查找 —— 旧代码在这个账号上根本没发出过这个请求。
+
 仍未做（记录在案，不影响领取）：投放的 `POST /api/v1/marketing/touch/action` 回执（`confirm`）没有回发，
 只影响投放侧统计。
 

@@ -193,7 +193,7 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
       ) : null}
 
       {probeError ? (
-        <HudCard code="PROBE" title="部分账号模型探测失败" tone={state.catalog?.source === 'remote' ? 'warn' : 'err'}>
+        <HudCard code="PROBE" title="部分账号模型探测失败" tone={state.catalog?.source === 'remote' ? 'warn' : 'err'} className="aih-fade-in">
           <div className={styles.probeError}>
             {probeError.statusCode ? <span className="mhud-status mhud-tone--err">HTTP {probeError.statusCode}</span> : null}
             <p className={styles.probeMessage}>{probeError.message}</p>

@@ -127,6 +127,8 @@
   align-items: flex-start;
   gap: 10px;
   padding: 16px 0;
+  /* 启动骨架 → 读取失败是条件替换：整块淡入，不再硬切。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .loadErrorText {

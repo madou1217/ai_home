@@ -40,6 +40,12 @@
   animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
 }
 
+/* 通用挂载淡入：条件挂载的节点（骨架→列表、展开的分组、提示条）直接挂
+ * class="aih-fade-in" 即获得一次只碰 opacity 的进场；节点复用不重播。 */
+.aih-fade-in {
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
 /* Tabs：切换后的面板淡入（antd 默认无内容过渡） */
 .ant-tabs-tabpane-active {
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;

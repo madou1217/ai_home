@@ -18,6 +18,8 @@
   font-family: var(--font-mono);
   font-size: 12px;
   overflow-wrap: anywhere;
+  /* 刷新任务失败是条件挂载：出现即淡入。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .probeError {

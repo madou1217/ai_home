@@ -333,8 +333,16 @@ async function run(options) {
       const pointerDownMs=performance.now()-downStart;
       const blurDuring=comparison==='blur'?getComputedStyle(document.documentElement).getPropertyValue('--hud-panel-blur').trim():null;
       if(comparison==='blur' && (!document.documentElement.classList.contains('aih-terminal-resizing') || (mode && blurDuring!=='none') || (!mode && blurDuring==='none')))throw new Error('background blur comparison did not take effect');
-      const frames=[];let previous=performance.now();
-      for(let i=1;i<=90;i++){await new Promise(resolve=>requestAnimationFrame(resolve));const now=performance.now();frames.push(now-previous);previous=now;for(let j=0;j<4;j++)document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+230*(i+j/4)/90,clientY:y+160*(i+j/4)/90}));}
+      // Use elapsed time rather than a fixed number of frames: a slower page
+      // must not receive a longer drag and more PTY redraws than a faster one.
+      const frames=[];const dragStart=performance.now();let previous=dragStart, progress=0;
+      while(progress<1){
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        const now=performance.now();frames.push(now-previous);previous=now;
+        progress=Math.min(1,(now-dragStart)/1500);
+        for(let j=0;j<4;j++)document.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+230*progress,clientY:y+160*progress}));
+      }
+      const dragDurationMs=performance.now()-dragStart;
       document.dispatchEvent(new PointerEvent('pointerup',{...opts,buttons:0,clientX:x+230,clientY:y+160}));
       if(comparison==='blur' && document.documentElement.classList.contains('aih-terminal-resizing'))throw new Error('background blur was not restored after release');
       let status, match, lastCount=-1, stableSince=performance.now();
@@ -364,8 +372,9 @@ async function run(options) {
       if(Math.abs(restored.width-before.width)>2||Math.abs(restored.height-before.height)>2)throw new Error('window size did not restore');
       if(restoredStatus.resizeCount<=status.resizeCount||performance.now()-restoredStableSince<200||!restoredGrid||!restoredStatus.lastResize||Number(restoredGrid[1])!==restoredStatus.lastResize.rows||Number(restoredGrid[2])!==restoredStatus.lastResize.cols)throw new Error('PTY did not converge after shrinking: '+JSON.stringify({restoredGrid,status,restoredStatus}));
       checkHeader(Number(restoredGrid[2]));
+      if(frames.length<3)throw new Error('too few animation frames to measure the drag');
       const firstFrameMs=frames.shift();frames.sort((a,b)=>a-b);
-      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,pointerDownMs,firstFrameMs,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
+      return {comparison,optimization:mode,styleOptimization:comparison==='styles'?mode:null,blurDuring,pointerDownMs,firstFrameMs,dragDurationMs,frameIntervalMs:{p50:frames[Math.floor(frames.length*.5)],p95:frames[Math.floor(frames.length*.95)],max:frames[frames.length-1],over33ms:frames.filter(value=>value>33).length,samples:frames.length},styleMutations,resizeRequests:status.resizeCount-initial.resizeCount,finalGrid:{rows:Number(match[1]),cols:Number(match[2])}};
     }`);
     await evaluate(cdp, 'window.__benchRun(null, null)'); // Warm fonts, terminal and browser caches.
     const comparison = options.compareStyles ? 'styles' : options.compareBlur ? 'blur' : null;

@@ -344,6 +344,6 @@ Web Terminal 缩放性能可用隔离的全屏 PTY 和 Chromium 测量，不会�
 npm run web:terminal-bench -- --browser /path/to/chromium --runs 3
 ```
 
-输出包含手柄按下处理时间、首帧及模拟拖拽的帧间隔（毫秒）、浏览器布局工作时间（秒）和最终终端行列数；基准还检查八个缩放手柄及 PTY 收敛。`--compare-styles` 在同一页面交替测试样式写入优化，`--compare-blur` 比较拖拽期间暂停背景模糊的效果。结果受设备和系统负载影响，比较时应使用相同浏览器、窗口尺寸和参数。更多选项见 `npm run web:terminal-bench -- --help`。
+输出包含手柄按下处理时间、首帧及 1.5 秒模拟拖拽的帧间隔（毫秒）、浏览器布局工作时间（秒）和最终终端行列数；基准还检查八个缩放手柄及 PTY 收敛。`--compare-styles` 在同一页面交替测试样式写入优化，`--compare-blur` 比较拖拽期间暂停背景模糊的效果。结果受设备和系统负载影响，比较时应使用相同浏览器、窗口尺寸和参数。更多选项见 `npm run web:terminal-bench -- --help`。
 
 贡献者与 agent 的工作约定见 [AGENTS.md](./AGENTS.md)。

@@ -154,3 +154,17 @@ test('closing rejects a terminal id paired with a different session key', { skip
     await post('close', { termId: opened.termId, sessionKey: key });
   }
 });
+
+test('closing by key works before the browser receives a terminal id', { skip: !tmuxAvailable }, async () => {
+  const key = `close-pending-test-${process.pid}-${Date.now()}`;
+  const opened = await post('open', { sessionKey: key });
+  assert.equal(opened.ok, true);
+  try {
+    assert.equal((await post('close', { sessionKey: key })).ok, true);
+    assert.equal(persistence.probe(key).state, 'missing');
+    assert.equal((await post('attach', { sessionKey: key })).error, 'terminal_not_found');
+  } finally {
+    await post('close', { termId: opened.termId });
+    persistence.close(key);
+  }
+});

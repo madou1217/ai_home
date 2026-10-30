@@ -8,7 +8,8 @@ import {
   MODEL_ALIAS_FORM_DEFAULTS,
   buildTargetModelGroups,
   expandAliasSelections,
-  getAliasProviderDisplayName
+  getAliasProviderDisplayName,
+  type AliasGroup
 } from '@/features/model-aliases/model-alias-presentation';
 import { DetailSheet, HudIconButton } from '@/mobile/ui';
 import type { ModelAlias } from '@/services/api';
@@ -16,16 +17,19 @@ import styles from './MobileSettings.module.css';
 
 interface Props {
   open: boolean;
-  /** 编辑的别名；null 为新增 */
-  editing: ModelAlias | null;
+  /** 编辑的别名聚合行（同名的全部记录）；null 为新增 */
+  editing: AliasGroup | null;
   modelsByProvider: Record<string, string[]>;
   modelsLoading: boolean;
   getModelLabel: (provider: string, model: string) => string;
   onClose: () => void;
-  onSave: (editingId: string | null, values: Partial<ModelAlias>) => Promise<boolean>;
+  onSave: (
+    replaceIds: string[] | null,
+    values: Partial<ModelAlias> & { records?: Array<Partial<ModelAlias>> }
+  ) => Promise<boolean>;
 }
 
-/** 新增 / 编辑模型别名：字段、校验、说明与桌面 ModalForm 一致，提交走 modelAliasesAPI.create / update。 */
+/** 新增 / 编辑模型别名：字段、校验、说明与桌面 ModalForm 一致，提交走 modelAliasesAPI.replace。 */
 export default function AliasFormSheet({
   open,
   editing,
@@ -37,23 +41,35 @@ export default function AliasFormSheet({
 }: Props) {
   const [form] = Form.useForm<Partial<ModelAlias>>();
   const [saving, setSaving] = useState(false);
-  const targetProvider = (Form.useWatch('targetProvider', form) as string | undefined) || 'auto';
+  const watchedTargetProvider = Form.useWatch('targetProvider', form) as string | string[] | undefined;
+  const targetProvider = watchedTargetProvider || 'auto';
+  const keepRecords = useMemo(() => editing?.records || [], [editing]);
 
   useEffect(() => {
     if (!open) return;
     form.resetFields();
     if (editing) {
-      form.setFieldsValue({ ...editing, targetProvider: editing.targetProvider || 'auto' });
+      // 多选控件要数组：此前回填的是逗号拼接串，下拉匹配不到任何选项，目标模型看起来不可选。
+      const targetProviders = Array.from(new Set(editing.records.map((record) => record.targetProvider || 'auto')));
+      form.setFieldsValue({
+        alias: editing.alias,
+        target: Array.from(new Set(editing.records.map((record) => record.target))),
+        provider: editing.provider,
+        targetProvider: targetProviders.length > 0 ? targetProviders : ['auto'],
+        priority: editing.records[0]?.priority ?? 0,
+        enabled: editing.enabled,
+        description: editing.description
+      } as unknown as Partial<ModelAlias>);
     }
   }, [editing, form, open]);
 
-  const targetOptions = useMemo(() => buildTargetModelGroups(modelsByProvider, targetProvider).map((group) => ({
+  const targetOptions = useMemo(() => buildTargetModelGroups(modelsByProvider, targetProvider, keepRecords).map((group) => ({
     label: getAliasProviderDisplayName(group.provider),
     options: group.models.map((model) => {
       const label = getModelLabel(group.provider, model);
       return { key: `${group.provider}:${model}`, value: model, label: label ? `${model} — ${label}` : model };
     })
-  })), [getModelLabel, modelsByProvider, targetProvider]);
+  })), [getModelLabel, keepRecords, modelsByProvider, targetProvider]);
 
   const submit = async () => {
     let values: Partial<ModelAlias>;
@@ -66,7 +82,8 @@ export default function AliasFormSheet({
     try {
       // 多选展开成逐条记录（笛卡尔积，只保留目录里真实存在的组合）。
       const records = expandAliasSelections(values, modelsByProvider);
-      if (await onSave(editing?.id || null, { ...values, records })) onClose();
+      const replaceIds = editing ? editing.records.map((record) => record.id) : null;
+      if (await onSave(replaceIds, { ...values, records })) onClose();
     } finally {
       setSaving(false);
     }
@@ -126,7 +143,7 @@ export default function AliasFormSheet({
               const nextProviders = form.getFieldValue('targetProvider');
               const selected = form.getFieldValue('target');
               if (!Array.isArray(selected) || selected.length === 0) return;
-              const groups = buildTargetModelGroups(modelsByProvider, nextProviders);
+              const groups = buildTargetModelGroups(modelsByProvider, nextProviders, keepRecords);
               const allowed = new Set(groups.flatMap((group) => group.models));
               const kept = selected.filter((model: string) => allowed.has(model));
               if (kept.length !== selected.length) form.setFieldValue('target', kept);

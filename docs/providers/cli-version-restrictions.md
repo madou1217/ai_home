@@ -83,3 +83,31 @@
 2. 表格里的「实测报错」逐字复制上游原文。
 3. 附一张最小实测矩阵（至少包含「能过」和「不能过」各一条命令）。
 4. 如果限制已经被 aih 规避，把「当前处置」改成 `已规避` 并写明规避代码位置。
+
+## zcode
+
+### ZCode Desktop 3.17.1：plan 端点的 `app_version` 与 body `system` 必须同源成对
+
+| 项目 | 内容 |
+| --- | --- |
+| CLI / 版本 | ZCode Desktop 3.17.1（macOS，`~/Applications/ZCode.app`，`CFBundleShortVersionString` 实测 3.17.1）；对照版本 3.16.3 |
+| 取证日期 | 2026-10-31 |
+| 触发条件 | 请求打到 `POST https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages`，且 `x-zcode-app-version` 与 body `system` 里的 harness **不是同一个客户端版本产出的** |
+| 实测报错 | `HTTP 405 {"code":3012,"msg":"request has been blocked due to unusual activity."}` |
+| aih 影响 | relay（`lib/server/upstream-endpoints-transport-general.js`）与 `aih zcode -p`（app-server 通道）全线 |
+| 当前处置 | **已规避**：画像成对学习/成对发送，见 `docs/providers/zcode-3012-harness-upgrade-incident.md` |
+
+四格矩阵（同账号、9s 间隔）：
+
+| app_version | harness | 结果 |
+| --- | --- | --- |
+| 3.16.3 | 42/3155/8672 | 200 |
+| 3.17.1 | 42/3155/8672 | 405 3012 |
+| 3.16.3 | 35/3173/1703 | 405 3012 |
+| 3.17.1 | 35/3173/1703 | 200 |
+
+**不要给这个端点加「最低版本」判断**：旧版本 + 旧 harness 依然放行，单方面抬版本号只会
+制造错配。判断依据是「这份组合有没有被上游放行过」（缓存画像），不是版本号大小。
+
+另：`x-zcode-app-version` 在 CLI 通道里自报的是 **bundle 版本**（实测 `0.17.1`），
+与桌面端版本不是一回事；直接透传同样命中 3012。

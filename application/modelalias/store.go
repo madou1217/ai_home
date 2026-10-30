@@ -56,6 +56,8 @@ func (store *Store) Replace(records []Record) (int64, error) {
 			seen[record.ID] = struct{}{}
 		}
 		normalized := record
+		// 名单是切片：复制一份，推送方后续改动不会穿透到已发布投影。
+		normalized.DisplayModels = append([]string(nil), record.DisplayModels...)
 		if normalized.Provider == "" {
 			normalized.Provider = ScopeAll
 		}

@@ -155,21 +155,35 @@ func (builder *Builder) compileAliases(
 		if record.ID != "" {
 			compilation.AcceptedIDs = append(compilation.AcceptedIDs, record.ID)
 		}
-		// Wildcard aliases are useful for request routing but cannot be selected
-		// as a concrete model by clients, so the directory omits them.
-		if !strings.HasSuffix(record.Alias, "*") {
-			provider := ""
-			if record.ResolvedTargetProvider() != modelalias.TargetProviderAuto {
-				provider = record.ResolvedTargetProvider()
-			} else if len(targetProviders) == 1 {
-				provider = string(targetProviders[0])
-			}
-			compilation.DisplayModels = append(compilation.DisplayModels, modelalias.DisplayModel{
-				Alias: record.Alias, Target: record.Target, Provider: provider,
-			})
+		provider := ""
+		if record.ResolvedTargetProvider() != modelalias.TargetProviderAuto {
+			provider = record.ResolvedTargetProvider()
+		} else if len(targetProviders) == 1 {
+			provider = string(targetProviders[0])
 		}
+		compilation.DisplayModels = append(compilation.DisplayModels, aliasDisplayModels(record, provider)...)
 	}
 	return compilation
+}
+
+// aliasDisplayModels 返回一条已接受别名在模型目录里展示的条目。
+//
+// 具体别名展示自身。通配别名本身不能当模型名发送，展示 Node 展开好的常见型号
+// （与 Node /v1/models 同一份名单）；只收以该前缀开头、且不含通配符的名字，
+// 防止投影把无关模型挂到这条别名上。
+func aliasDisplayModels(record modelalias.Record, provider string) []modelalias.DisplayModel {
+	if !strings.HasSuffix(record.Alias, "*") {
+		return []modelalias.DisplayModel{{Alias: record.Alias, Target: record.Target, Provider: provider}}
+	}
+	prefix := strings.TrimSuffix(record.Alias, "*")
+	out := make([]modelalias.DisplayModel, 0, len(record.DisplayModels))
+	for _, displayID := range record.DisplayModels {
+		if !strings.HasPrefix(displayID, prefix) || strings.Contains(displayID, "*") {
+			continue
+		}
+		out = append(out, modelalias.DisplayModel{Alias: displayID, Target: record.Target, Provider: provider})
+	}
+	return out
 }
 
 // aliasTargetProviders 选择别名目标要指向的 Provider。

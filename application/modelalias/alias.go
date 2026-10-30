@@ -38,6 +38,9 @@ type Record struct {
 	Priority       int32  `json:"priority"`
 	Enabled        *bool  `json:"enabled"`
 	Description    string `json:"description"`
+	// DisplayModels 只对通配别名有意义：Node 按 models.dev 快照展开好的常见型号
+	// （每个 family 最新 3 代且发布不超过一年）。Go 没有该快照，只按这份名单展示，不自行推导。
+	DisplayModels []string `json:"displayModels,omitempty"`
 }
 
 // DisplayModel 是已经通过 Go 别名编译、可以安全展示到模型目录的别名。

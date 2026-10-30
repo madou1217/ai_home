@@ -186,7 +186,7 @@ export const ImageStudioComposer: React.FC<ImageStudioComposerProps> = ({
       </div>
 
       {mode === 'edit' && (
-        <div className={styles.controlSection}>
+        <div className={`${styles.controlSection} ${styles.mountSection}`}>
           <div className={styles.fieldLabelRow}>
             <label className={styles.fieldLabel}>参考图与遮罩</label>
             <span className={styles.sourceLimit}>{sources.length}/{sourceLimit} REFERENCES</span>

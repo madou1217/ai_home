@@ -8,6 +8,7 @@ import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal, TERMINAL_RESIZE_FINISHED } from './terminal-refit';
 import { createTerminalResizeSender } from './terminal-resize-sender';
+import { avoidDuplicateTerminalStyleWrites } from './terminal-render-styles';
 import { useTerminalDockResize } from './use-terminal-dock-resize';
 import { flushTerminalInput } from './terminal-input';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
@@ -70,6 +71,7 @@ interface TermInstance {
   sending: boolean;
   inputReady: boolean;
   resizeSender: ReturnType<typeof createTerminalResizeSender>;
+  restoreRenderStyles?: () => void;
 }
 
 const HEIGHT_STORAGE_KEY = 'aih:webui-terminal-height:v1';
@@ -419,6 +421,7 @@ function ShellTerminalPanel({
         inst.inputBuf = '';
         if (inst.termId && !persistent) terminalAPI.close(inst.termId).catch(() => {});
         inst.resizeSender.dispose();
+        inst.restoreRenderStyles?.();
         try { inst.term.dispose(); } catch { /* ignore */ }
       }
       instancesRef.current.clear();
@@ -443,6 +446,7 @@ function ShellTerminalPanel({
     const inst = instancesRef.current.get(id);
     if (!inst || !el || inst.opened) return;
     inst.term.open(el);
+    if (inst.term.element) inst.restoreRenderStyles = avoidDuplicateTerminalStyleWrites(inst.term.element);
     inst.opened = true;
     requestAnimationFrame(() => {
       try { inst.fit.fit(); } catch { /* 容器暂无尺寸 */ }
@@ -532,6 +536,7 @@ function ShellTerminalPanel({
         byTermIdRef.current.delete(inst.termId);
       }
       inst.resizeSender.dispose();
+      inst.restoreRenderStyles?.();
       try { inst.term.dispose(); } catch { /* ignore */ }
       instancesRef.current.delete(id);
     }

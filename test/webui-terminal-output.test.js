@@ -6,9 +6,11 @@ const { EventEmitter } = require('node:events');
 const { openWebUiTerminalSession, handleWebUiTerminalRequest } = require('../lib/server/webui-terminal-routes');
 const { replayableTerminalOutput } = require('../lib/server/terminal-replay');
 
-test('replayed terminal snapshots omit stale queries but preserve screen controls', () => {
-  const output = replayableTerminalOutput(['\x1b[31mred\x1b[', 'c\x1b[>c\x1b[6n\x1b[18t\x1b[>q\x1b]10;?\x1b\\', '\x1b[0m$ ']);
+test('tmux snapshots omit stale queries but direct PTYs keep pending queries', () => {
+  const buffer = ['\x1b[31mred\x1b[', 'c\x1b[>c\x1b[6n\x1b[18t\x1b[>q\x1b]10;?\x1b\\', '\x1b[0m$ '];
+  const output = replayableTerminalOutput({ durable: true, buffer });
   assert.equal(output, '\x1b[31mred\x1b[0m$ ');
+  assert.equal(replayableTerminalOutput({ durable: false, buffer }), buffer.join(''));
 });
 
 test('PTY mux preserves burst output before exit', { timeout: 5000 }, async () => {
@@ -76,7 +78,7 @@ test('a late close from an old mux cannot disconnect the replacement stream', { 
   }
 });
 
-test('mux replay drops old terminal queries while forwarding live queries', { timeout: 10000 }, async () => {
+test('a direct PTY forwards its pending query on replay and later live queries', { timeout: 10000 }, async () => {
   const muxId = `replay-query-${process.pid}-${Date.now()}`;
   const session = openWebUiTerminalSession({ muxId, file: process.execPath, args: ['-e', "process.stdin.setRawMode(true);process.stdin.once('data', () => { process.stdout.write('LIVE\\x1b[>c', () => process.exit()); });process.stdin.resume();process.stdout.write('SNAPSHOT\\x1b[c');"] });
   assert.equal(session.ok, true);
@@ -121,7 +123,7 @@ test('mux replay drops old terminal queries while forwarding live queries', { ti
     const output = frames.filter((frame) => frame.termId === session.termId && frame.type === 'output')
       .map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');
     assert.match(output, /SNAPSHOT/);
-    assert.equal(output.includes('\x1b[c'), false);
+    assert.equal(output.includes('\x1b[c'), true);
     assert.equal(output.includes('LIVE\x1b[>c'), true);
   } finally {
     req.emit('close');

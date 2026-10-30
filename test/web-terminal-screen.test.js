@@ -24,3 +24,8 @@ test('ordinary terminals, login and failed CLI runs keep their output', () => {
   assert.equal(clearWebTerminalScreen(web, { exitCode: 0, headless: true }), false);
   assert.deepEqual(writes, []);
 });
+
+test('a closed output stream cannot prevent CLI cleanup', () => {
+  const processObj = { env: { AIH_RUNTIME_MARKER: 'web=1' }, stdout: { isTTY: true, write() { throw new Error('closed'); } } };
+  assert.equal(clearWebTerminalScreen(processObj, { exitCode: 0 }), false);
+});

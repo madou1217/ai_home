@@ -207,10 +207,13 @@ async function measureRealPointerDrag(cdp, continuousOutput) {
     const x=h.left+h.width/2,y=h.top+h.height/2;
     if(document.elementFromPoint(x,y)!==handle)throw new Error('south-east handle cannot be hit');
     const sequence=()=>Number(panel.querySelector('.xterm-rows')?.textContent.match(/LIVE #([0-9]+)/)?.[1] || 0);
-    const monitor={x,y,width:r.width,height:r.height,events:0,lags:[],frames:[],lastInput:null,frame:null,previous:null,initialLive:sequence(),sequence};
-    monitor.onMove=(event)=>{if(event.buttons===1){monitor.events++;monitor.lastInput={x:event.clientX,y:event.clientY};}};
+    const monitor={x,y,width:r.width,height:r.height,events:0,lags:[],frames:[],earlyFrames:[],firstInputAt:null,lastInput:null,frame:null,previous:null,initialLive:sequence(),sequence};
+    monitor.onMove=(event)=>{if(event.buttons===1){monitor.events++;if(monitor.firstInputAt===null)monitor.firstInputAt=performance.now();monitor.lastInput={x:event.clientX,y:event.clientY};}};
     const tick=(now)=>{
-      if(monitor.previous!==null)monitor.frames.push(now-monitor.previous);
+      if(monitor.previous!==null){
+        const interval=now-monitor.previous;monitor.frames.push(interval);
+        if(monitor.firstInputAt!==null && now>=monitor.firstInputAt && now-monitor.firstInputAt<300)monitor.earlyFrames.push(interval);
+      }
       monitor.previous=now;
       if(monitor.lastInput){
         const width=parseFloat(panel.style.width),height=parseFloat(panel.style.height);
@@ -274,7 +277,7 @@ async function measureRealPointerDrag(cdp, continuousOutput) {
     measured = await evaluate(cdp, `(() => {
       const m=window.__terminalPointerMonitor;cancelAnimationFrame(m.frame);
       window.removeEventListener('pointermove',m.onMove,true);delete window.__terminalPointerMonitor;
-      return {events:m.events,lags:m.lags,frames:m.frames,initialLive:m.initialLive,finalLive:m.sequence()};
+      return {events:m.events,lags:m.lags,frames:m.frames,earlyFrames:m.earlyFrames,initialLive:m.initialLive,finalLive:m.sequence()};
     })()`);
   } finally {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pointerX, y: pointerY, button: 'left', buttons: 0, clickCount: 1 });
@@ -292,7 +295,7 @@ async function measureRealPointerDrag(cdp, continuousOutput) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: restoredHandle.x - distanceX, y: restoredHandle.y - distanceY, button: 'left', buttons: 0, clickCount: 1 });
   const restored = await waitForPointerGrid(cdp, start.width, start.height, final.resizeCount);
   if (!restored) throw new Error('real pointer drag did not restore the terminal grid');
-  return { durationMs: Number(elapsed.toFixed(2)), sentEvents: sent, skippedEvents: skipped, receivedEvents: measured.events, liveSequenceAdvance: continuousOutput ? measured.finalLive - measured.initialLive : null, pointerLagPx: summarizeSamples(measured.lags), frameIntervalMs: summarizeSamples(measured.frames), protocolDispatchMs: summarizeSamples(dispatchTimes) };
+  return { durationMs: Number(elapsed.toFixed(2)), sentEvents: sent, skippedEvents: skipped, receivedEvents: measured.events, liveSequenceAdvance: continuousOutput ? measured.finalLive - measured.initialLive : null, pointerLagPx: summarizeSamples(measured.lags), frameIntervalMs: summarizeSamples(measured.frames), earlyFrameIntervalMs: summarizeSamples(measured.earlyFrames), protocolDispatchMs: summarizeSamples(dispatchTimes) };
 }
 
 // Chromium input exercises actual hit testing and pointer delivery, not just

@@ -91,7 +91,8 @@ export default function AppsPanel() {
     busyActionFor,
     checkAppUpdate,
     runAppAction,
-    installHooks
+    installHooks,
+    uninstallHooks
   } = useManagedApps();
   const {
     error: upgradeError,
@@ -354,6 +355,7 @@ export default function AppsPanel() {
         busy={Boolean(advancedApp && busyActionFor(advancedApp))}
         installingHooks={installingHooks}
         onInstallHooks={(provider) => void installHooks([provider])}
+        onUninstallHooks={(provider) => void uninstallHooks([provider])}
         onClose={() => setAdvancedAppId('')}
       />
 

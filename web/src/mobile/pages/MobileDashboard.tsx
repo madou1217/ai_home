@@ -159,7 +159,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
     setErrorOpen(true);
   };
 
-  const renderProviderRow = (row: ProviderRow) => {
+  const renderProviderRow = (row: ProviderRow, entering = false) => {
     const pct = row.total > 0 ? Math.round((row.active / row.total) * 100) : 0;
     const offline = row.total === 0;
     const running = normalizeQueueCount(row.queue?.running);
@@ -167,7 +167,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
     const conc = normalizeQueueCount(row.queue?.maxConcurrency, 1);
     const ratioTone: HudTone = offline ? 'muted' : pct < 100 ? 'warn' : 'ok';
     return (
-      <SwipeRow key={row.key} onTap={() => openProvider(row)} ariaLabel={`查看 ${providerLabel(row.provider)} 运行状态`}>
+      <SwipeRow key={row.key} onTap={() => openProvider(row)} ariaLabel={`查看 ${providerLabel(row.provider)} 运行状态`} className={entering ? 'aih-fade-in' : undefined}>
         <span className={`mhud-row__icon${offline ? ` ${styles.idle}` : ''}`}>
           <ProviderIcon provider={row.provider} size={20} />
         </span>
@@ -293,8 +293,9 @@ export default function MobileDashboard(_props: MobilePageProps) {
 
       <HudSection title="Provider 运行状态" code="PROV" count={`${activeProviders.length}/${providerRows.length}`}>
         <MonoList ariaLabel="Provider 运行状态">
-          {activeProviders.map(renderProviderRow)}
-          {showIdleProviders ? idleProviders.map(renderProviderRow) : null}
+          {activeProviders.map((row) => renderProviderRow(row))}
+          {/* 展开「未接入账号的 Provider」是条件挂载：行逐行淡入，收起时直接消失。 */}
+          {showIdleProviders ? idleProviders.map((row) => renderProviderRow(row, true)) : null}
         </MonoList>
         {idleProviders.length > 0 ? (
           <button
@@ -310,7 +311,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
       </HudSection>
 
       {errorViews.length > 0 ? (
-        <HudSection title="最近错误" code="ERR" count={errorViews.length}>
+        <HudSection title="最近错误" code="ERR" count={errorViews.length} className="aih-fade-in">
           <MonoList ariaLabel="最近错误">
             {errorViews.map((view) => {
               const provider = getRecentErrorProvider(view.item);
@@ -351,7 +352,7 @@ export default function MobileDashboard(_props: MobilePageProps) {
       ) : null}
 
       {routeRows.length > 0 ? (
-        <HudSection title="热点路由" code="ROUTE" count={routeRows.length}>
+        <HudSection title="热点路由" code="ROUTE" count={routeRows.length} className="aih-fade-in">
           <HudCard>
             <div className={styles.routeList}>
               {routeRows.map((row) => (

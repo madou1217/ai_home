@@ -159,6 +159,14 @@
   color: var(--color-success);
   box-shadow: 0 0 6px currentColor;
   transition: width var(--motion-slow, 240ms) var(--ease-standard);
+  /* 首次出现时从左侧长出来：只碰 transform（合成器），真实宽度仍由 inline width 决定，
+   * 后续数值刷新继续走上面的 width 过渡。 */
+  transform-origin: left center;
+  animation: dash-bar-grow var(--motion-slow, 240ms) var(--ease-emphasized) backwards;
+}
+@keyframes dash-bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 .dash-bar-fill.warn { background: var(--color-warning); color: var(--color-warning); }
 .dash-bar-fill.acc { background: var(--color-accent); color: var(--color-accent); }
@@ -172,6 +180,8 @@
   font-size: var(--hos-text-body-sm, 13px);
   line-height: var(--leading-snug, 1.4);
   color: var(--color-muted-strong);
+  /* 网关离线/加载失败才会挂载：出现即淡入，恢复后直接消失。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 .dash-inline-note-icon {
   flex: none;

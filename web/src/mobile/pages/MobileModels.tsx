@@ -1,7 +1,7 @@
 import { writeClipboardText } from '@/utils/clipboard';
 import { CopyOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { Input, Select, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ProviderIcon, { providerNames } from '@/components/chat/ProviderIcon';
 import {
@@ -20,6 +20,7 @@ import {
   type ProviderFilter
 } from '@/features/models/model-catalog';
 import { useModelCatalogPage, type ManualModelValues } from '@/features/models/use-model-catalog-page';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import MobileBoot from '@/mobile/MobileBoot';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
 import {
@@ -74,6 +75,9 @@ export default function MobileModels(_props: MobilePageProps) {
   const refreshing = page.loading || page.catalogJobActive;
   const visibleRows = page.rows.slice(0, limit);
   const probeError = page.probeError ? parseUpstreamError(page.probeError) : null;
+  // Provider / 账号 / 状态筛选切换时整列换一批模型行：只碰 opacity 的淡入表达「换掉了」。
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(listRef, `${page.providerFilter}|${page.accountFilter}|${page.statusFilter}`, { scope: 'mobile-models' });
 
   const providerChips = useMemo(() => [
     { key: 'all', label: '全部', count: page.providerCounts.all || 0 },
@@ -142,7 +146,7 @@ export default function MobileModels(_props: MobilePageProps) {
       </TelemetryGrid>
 
       {probeError ? (
-        <HudCard code="PROBE" title="部分账号模型探测失败" tone={catalog?.source === 'remote' ? 'warn' : 'err'}>
+        <HudCard code="PROBE" title="部分账号模型探测失败" tone={catalog?.source === 'remote' ? 'warn' : 'err'} className="aih-fade-in">
           <div className={styles.probeBody} role="status">
             {probeError.statusCode ? <span className={styles.probeCode}>HTTP {probeError.statusCode}</span> : null}
             <p className={styles.probeMessage}>{probeError.message}</p>
@@ -173,6 +177,7 @@ export default function MobileModels(_props: MobilePageProps) {
           code="REFRESH"
           title="刷新状态"
           tone={catalogJob.status === 'failed' ? 'err' : catalogJob.status === 'succeeded' ? 'ok' : 'info'}
+          className="aih-fade-in"
           extra={(
             <span className={`mhud-status mhud-tone--${catalogJob.status === 'failed' ? 'err' : page.catalogJobActive ? 'info' : 'ok'}`}>
               <span
@@ -248,6 +253,7 @@ export default function MobileModels(_props: MobilePageProps) {
           />
         </div>
 
+        <div ref={listRef}>
         {page.rows.length === 0 ? (
           page.loadError && !catalog ? (
             <EmptySignal
@@ -264,7 +270,7 @@ export default function MobileModels(_props: MobilePageProps) {
             />
           )
         ) : (
-          <MonoList ariaLabel="模型目录">
+          <MonoList ariaLabel="模型目录" className="aih-fade-in">
             {visibleRows.map((row) => {
               const visible = isGlobalModelVisible(row);
               const displayLabel = getGlobalModelDisplayLabel(catalog, row);
@@ -308,6 +314,7 @@ export default function MobileModels(_props: MobilePageProps) {
             })}
           </MonoList>
         )}
+        </div>
 
         {page.rows.length > visibleRows.length ? (
           <div className={styles.more}>

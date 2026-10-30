@@ -56,6 +56,7 @@ import {
   type ProviderFilter
 } from '@/features/models/model-catalog';
 import MobileBackButton from '@/components/mobile/MobileBackButton';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { parseUpstreamError } from '@/utils/format-upstream-error';
 import { openExternalUrl } from '@/services/open-external-url';
 import {
@@ -92,6 +93,12 @@ export default function Models() {
   const manualProvider = Form.useWatch('provider', manualForm) as Provider | undefined;
   const [queryKeyword, setQueryKeyword] = useState('');
   const completedCatalogJobIdsRef = useRef<Set<string>>(new Set());
+  const modelListRef = useRef<HTMLDivElement | null>(null);
+  // 筛选轴（Provider / 账号 / 状态 / OpenCode 分组）切换时整列换一批行：
+  // 用一次只碰 opacity 的淡入表达「换掉了」，行本身仍由 flip 补间滑到新位置。
+  // 关键词输入不参与——逐字过滤每敲一个字都淡一次会闪。
+  const modelListSwitchKey = `${accountScoped ? `account:${accountFilter}` : 'global'}|${providerFilter}|${statusFilter}|${groupFilter}`;
+  useSwitchFade(modelListRef, modelListSwitchKey, { scope: 'models-catalog', duration: 200 });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQueryKeyword(keyword), 220);
@@ -454,7 +461,7 @@ export default function Models() {
     const rowKey = getModelRowKey(model);
     const displayLabel = getModelDisplayLabel(model.provider, model.id);
     return (
-      <div key={rowKey} className="models-capsule-slot">
+      <div key={rowKey} data-flip-key={rowKey} className="models-capsule-slot">
         <ModelCapsuleCard
           modelId={model.id}
           displayName={displayLabel}
@@ -493,7 +500,7 @@ export default function Models() {
     const visible = isGlobalModelVisible(model);
     const displayLabel = getGlobalModelDisplayLabel(catalog, model);
     return (
-      <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id}>
+      <article className={`models-global-row hud-panel hud-panel--sm ${visible ? '' : 'models-global-row--disabled'}`.trim()} key={model.id} data-flip-key={model.id}>
         <div className="models-global-main">
           <div className="models-global-title-line">
             <h3 title={model.id}>{displayLabel || model.id}</h3>
@@ -741,23 +748,25 @@ export default function Models() {
           )}
         />
 
-        {accountScoped ? (
-          <PaginatedList<ManagedOpenAIModelItem>
-            className="models-list models-list--account"
-            items={accountModelRows}
-            pageSize={16}
-            emptyText="暂无数据"
-            renderItem={(model) => renderModelRow(model)}
-          />
-        ) : (
-          <PaginatedList<GlobalModelRow>
-            className="models-list"
-            items={globalRows}
-            pageSize={14}
-            emptyText="暂无数据"
-            renderItem={(model) => renderGlobalModelRow(model)}
-          />
-        )}
+        <div ref={modelListRef}>
+          {accountScoped ? (
+            <PaginatedList<ManagedOpenAIModelItem>
+              className="models-list models-list--account"
+              items={accountModelRows}
+              pageSize={16}
+              emptyText="暂无数据"
+              renderItem={(model) => renderModelRow(model)}
+            />
+          ) : (
+            <PaginatedList<GlobalModelRow>
+              className="models-list"
+              items={globalRows}
+              pageSize={14}
+              emptyText="暂无数据"
+              renderItem={(model) => renderGlobalModelRow(model)}
+            />
+          )}
+        </div>
       </SectionCard>
 
       <EditModelPricingModal

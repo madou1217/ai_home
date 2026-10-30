@@ -554,6 +554,12 @@ export interface WebUiModelsResponse {
   selectableByAccountRef?: Record<string, string[]>;
   defaultByAccountRef?: Record<string, string>;
   errorsByAccountRef: Record<string, string>;
+  /**
+   * accountRef -> 上次真正探测上游的时刻（毫秒）。
+   * byAccountRef 不收录「探测成功但目录为空」的账号，所以单看 byAccountRef 无法区分
+   * 「探测过、没有模型」与「从未探测」——后者才该显示「待探测」。
+   */
+  accountProbedAt?: Record<string, number>;
   /** provider -> modelId -> 上游 displayName(id 与显示名可能完全错位) */
   labels?: Record<string, Record<string, string>>;
   metadata?: Record<string, ModelMetadata>;
@@ -720,6 +726,8 @@ export interface WebUiOpenAIModelsResponse {
   byProvider: Record<string, string[]>;
   byAccountRef: Record<string, string[]>;
   errorsByAccountRef: Record<string, string>;
+  /** accountRef -> 上次探测时刻；语义同 WebUiModelsResponse.accountProbedAt。 */
+  accountProbedAt?: Record<string, number>;
   settingsUpdatedAt?: number;
 }
 
@@ -3184,15 +3192,17 @@ export interface ManagementStatus {
 export interface ManagementAccountActivity {
   provider: string;
   accountRef: string;
-  /** 网关 attempt 的 in-flight，外加「原生会话回合 / 持久 CLI 会话正在跑」的折算位。 */
+  /** 真正在干活的量：网关 attempt 的 in-flight + 原生会话回合。终端只是开着不算。 */
   inFlight: number;
   /** 原生 CLI 会话（不经网关）当前是否有回合在跑。 */
   sessionTurnActive?: boolean;
   /** aih 托管的持久 CLI 会话是否存活（所有 provider 通用，含无 hook 的 provider）。 */
   runtimeActive?: boolean;
+  /** 有人正坐在终端里（attached），只用于展示，不计入 inFlight。 */
+  runtimeServing?: boolean;
   /** 存活的持久 CLI 会话数。 */
   runtimeSessions?: number;
-  /** 其中「用户正在其中」（attached）的会话数；只有它会把 inFlight 折算 +1。 */
+  /** 其中「用户正在其中」（attached）的会话数。 */
   runtimeAttached?: number;
   rate: number;
   activeModels?: string[];

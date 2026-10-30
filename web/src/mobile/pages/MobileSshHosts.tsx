@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Form, Input, Radio, Select, Spin } from 'antd';
 import {
   ApiOutlined,
@@ -39,6 +39,7 @@ import {
 } from '@/features/ssh-hosts/ssh-hosts-model';
 import { useSshDirectoryBrowser, useSshHosts } from '@/features/ssh-hosts/use-ssh-hosts';
 import type { SshTestState } from '@/features/ssh-hosts/use-ssh-hosts';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import { confirmAction } from '@/utils/confirm-action';
 import FabricFormItem from './fabric/FabricFormItem';
 import SshDiagnostics from './fabric/SshDiagnostics';
@@ -85,6 +86,9 @@ export default function MobileSshHosts(_props: MobilePageProps) {
   const [wsFormInstance] = Form.useForm();
   const authType = Form.useWatch('authType', connFormInstance) as SshAuthType | undefined;
   const wsConnectionId = Form.useWatch('connectionId', wsFormInstance) as string | undefined;
+  // 连接 ↔ 工作空间切换是整块换内容：分组面板淡入一次，只碰 opacity。
+  const tabBodyRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(tabBodyRef, tab, { scope: 'mobile-ssh-tab' });
 
   const detailConn = connections.find((item) => item.id === detailConnId) || null;
   const detailWs = workspaces.find((item) => item.id === detailWsId) || null;
@@ -210,6 +214,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
         ]}
       />
 
+      <div ref={tabBodyRef}>
       {tab === 'connections' ? (
         <HudSection title="远程连接" code="SSH" count={connections.length}>
           {ssh.loadingConns && connections.length === 0 ? (
@@ -221,7 +226,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
               action={<Button type="primary" icon={<LinkOutlined />} onClick={() => showConnForm()}>添加连接</Button>}
             />
           ) : (
-            <MonoList ariaLabel="远程连接">
+            <MonoList ariaLabel="远程连接" className="aih-fade-in">
               {connections.map((conn) => {
                 const badge = testBadge(testStates[conn.id]);
                 return (
@@ -254,7 +259,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
       ) : (
         <HudSection title="项目工作空间" code="WS" count={filteredWorkspaces.length}>
           {filterConnectionId ? (
-            <div className={styles.filter}>
+            <div className={`${styles.filter} aih-fade-in`}>
               <span className={fabric.note}>
                 当前正在筛选连接 <strong>{filterConnection?.label || '已未知'}</strong> 的工作空间。
               </span>
@@ -274,7 +279,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
               ) : undefined}
             />
           ) : (
-            <MonoList ariaLabel="项目工作空间">
+            <MonoList ariaLabel="项目工作空间" className="aih-fade-in">
               {filteredWorkspaces.map((ws) => {
                 const conn = connectionOf(ws);
                 return (
@@ -302,6 +307,7 @@ export default function MobileSshHosts(_props: MobilePageProps) {
           )}
         </HudSection>
       )}
+      </div>
 
       {/* 连接详情 + 诊断 */}
       <DetailSheet

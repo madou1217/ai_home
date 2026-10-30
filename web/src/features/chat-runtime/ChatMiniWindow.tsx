@@ -25,6 +25,7 @@ import {
   runtimeAccountsForSession,
 } from './session-surface-policy';
 import { useSessionRuntime } from './use-session-runtime';
+import { useCollapsePresence } from '@/hooks/use-collapse-presence';
 import SessionWorkspace from './SessionWorkspace';
 import { useSessionSelector } from '@/chat-runtime';
 import type { SessionProjection } from '@/chat-runtime';
@@ -217,7 +218,10 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   }, []);
   const endDrag = useCallback(() => { dragRef.current = undefined; }, []);
 
-  if (!open || typeof document === 'undefined') return null;
+  // 关闭时留 160ms 播退场再卸载：快速窗口打开从右下角微抬进入，关闭缩回原处，
+  // 不再是一下子凭空出现/消失。
+  const presence = useCollapsePresence(open, 160);
+  if (!presence.present || typeof document === 'undefined') return null;
   const persistedSessionOwnsCanonicalRoute = isChatPagePath(location.pathname)
     && persistedSessionRef.current;
   const style: CSSProperties | undefined = position
@@ -226,7 +230,7 @@ export default function ChatMiniWindow(props: ChatMiniWindowProps = {}) {
   return createPortal(
     <section
       ref={panelRef}
-      className={`${styles.window} ${pinned ? styles.pinned : ''}`}
+      className={`${styles.window} ${pinned ? styles.pinned : ''} ${open ? '' : styles.windowLeaving}`}
       style={style}
       aria-label="AIH Chat 快速窗口"
     >

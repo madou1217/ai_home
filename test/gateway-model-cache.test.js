@@ -32,5 +32,10 @@ test('gateway model cache round trips the public snapshot', () => {
     projection: { revision: 'r1', models: [{ id: 'gpt-6.1-sol' }] }
   };
   writePersistedGatewayModelCache({ cacheWriteJson: memory.writeCacheJson }, input);
-  assert.deepEqual(readPersistedGatewayModelCache({ cacheReadJson: memory.readCacheJson }), input);
+  // 归一化后固定形状：模型→账号/provider 绑定缺席时显式为 null（消费方据此判定「无归属证据」）。
+  assert.deepEqual(readPersistedGatewayModelCache({ cacheReadJson: memory.readCacheJson }), {
+    ...input,
+    modelAccounts: null,
+    modelProviders: null
+  });
 });

@@ -1146,6 +1146,8 @@
   background: color-mix(in srgb, var(--color-danger) 4%, transparent);
   color: var(--color-danger);
   font-size: var(--hos-text-body-sm);
+  /* 读取失败是条件挂载的：出现即淡入，重试成功后随数据一起消失。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .toolkit-inline-error > span:last-child {

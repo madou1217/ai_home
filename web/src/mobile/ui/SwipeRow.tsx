@@ -17,6 +17,8 @@ interface Props {
   /** 点按整行（通常打开详情抽屉） */
   onTap?: () => void;
   ariaLabel?: string;
+  /** 附加到行根节点的 class（用于逐行进场等一次性动画） */
+  className?: string;
 }
 
 const ACTION_WIDTH = 76;
@@ -28,7 +30,7 @@ const OPEN_THRESHOLD = 0.35;
  * - 操作按钮始终在 DOM 中且可聚焦；键盘用户可 Tab 到它们（聚焦时自动展开）。
  * - 同一时刻只展开一行：展开时广播事件关闭其它行。
  */
-export default function SwipeRow({ children, actions = [], onTap, ariaLabel }: Props) {
+export default function SwipeRow({ children, actions = [], onTap, ariaLabel, className }: Props) {
   const rowRef = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number; offset: number; locked: 'x' | 'y' | null } | null>(null);
   const moved = useRef(false);
@@ -101,7 +103,7 @@ export default function SwipeRow({ children, actions = [], onTap, ariaLabel }: P
   };
 
   return (
-    <div className="mhud-swipe" ref={rowRef}>
+    <div className={`mhud-swipe${className ? ` ${className}` : ''}`} ref={rowRef}>
       {maxOffset > 0 && (
         <div className="mhud-swipe__actions" style={{ width: maxOffset }}>
           {actions.map((action) => (
@@ -149,9 +151,9 @@ export default function SwipeRow({ children, actions = [], onTap, ariaLabel }: P
 }
 
 /** 发丝分隔的等宽列表容器。 */
-export function MonoList({ children, ariaLabel }: { children: ReactNode; ariaLabel?: string }) {
+export function MonoList({ children, ariaLabel, className }: { children: ReactNode; ariaLabel?: string; className?: string }) {
   return (
-    <div className="mhud-list" role="list" aria-label={ariaLabel}>
+    <div className={`mhud-list${className ? ` ${className}` : ''}`} role="list" aria-label={ariaLabel}>
       {children}
     </div>
   );

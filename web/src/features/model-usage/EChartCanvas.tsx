@@ -151,5 +151,5 @@ export default function EChartCanvas({ ariaLabel, buildOption, onDataClick }: EC
     renderOption(chart, host, buildOption);
   }, [buildOption]);
 
-  return <div ref={hostRef} className="usage-chart-canvas" role="img" aria-label={ariaLabel} />;
+  return <div ref={hostRef} className="usage-chart-canvas aih-fade-in" role="img" aria-label={ariaLabel} />;
 }

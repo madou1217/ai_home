@@ -71,6 +71,7 @@ export interface AppAdvancedSettingsModalProps {
   busy?: boolean;
   installingHooks?: boolean;
   onInstallHooks?: (provider: string) => void;
+  onUninstallHooks?: (provider: string) => void;
 }
 
 export default function AppAdvancedSettingsModal({
@@ -79,7 +80,8 @@ export default function AppAdvancedSettingsModal({
   onClose,
   busy = false,
   installingHooks = false,
-  onInstallHooks
+  onInstallHooks,
+  onUninstallHooks
 }: AppAdvancedSettingsModalProps) {
   const provider = app?.provider || '';
   const [activeTab, setActiveTab] = useState('permission');
@@ -266,6 +268,16 @@ export default function AppAdvancedSettingsModal({
                       onClick={() => onInstallHooks(app.provider)}
                     >
                       启用即时刷新
+                    </Button>
+                  ) : null}
+                  {app.hookInstalled && onUninstallHooks ? (
+                    <Button
+                      danger
+                      loading={installingHooks}
+                      disabled={busy}
+                      onClick={() => onUninstallHooks(app.provider)}
+                    >
+                      停用即时刷新
                     </Button>
                   ) : null}
                 </section>

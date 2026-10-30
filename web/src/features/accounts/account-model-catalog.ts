@@ -46,7 +46,8 @@ export function buildAccountModelCatalogFromOpenAI(catalog: WebUiOpenAIModelsRes
     firstError: catalog.firstError,
     models: catalog.byProvider || {},
     byAccountRef: catalog.byAccountRef || {},
-    errorsByAccountRef: catalog.errorsByAccountRef || {}
+    errorsByAccountRef: catalog.errorsByAccountRef || {},
+    accountProbedAt: catalog.accountProbedAt || {}
   };
 }
 
@@ -54,10 +55,14 @@ export function getAccountModelProbe(record: Account, catalog: WebUiModelsRespon
   const accountRef = getAccountRef(record);
   const modelsByAccountRef = catalog?.byAccountRef || {};
   const errorsByAccountRef = catalog?.errorsByAccountRef || {};
+  const probedAtByAccountRef = catalog?.accountProbedAt || {};
   const hasModels = Boolean(accountRef && Object.prototype.hasOwnProperty.call(modelsByAccountRef, accountRef));
   const hasError = Boolean(accountRef && Object.prototype.hasOwnProperty.call(errorsByAccountRef, accountRef));
+  const probedAt = Number(accountRef ? probedAtByAccountRef[accountRef] : 0) || 0;
   return {
-    probed: Boolean(hasModels || hasError),
+    // 服务端不把「探测成功但为空」写进 byAccountRef，只有探测时间戳能证明探过。
+    probed: Boolean(hasModels || hasError || probedAt > 0),
+    probedAt,
     models: hasModels && Array.isArray(modelsByAccountRef[accountRef]) ? modelsByAccountRef[accountRef] : [],
     error: String(hasError ? errorsByAccountRef[accountRef] : '')
   };
@@ -79,7 +84,12 @@ export function formatModelProbeErrorLabel(error: string) {
   return '探测失败';
 }
 
-export function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelProbe>, modelRefreshing: boolean, provider?: string) {
+export function getModelProbeTagLabel(
+  probe: ReturnType<typeof getAccountModelProbe>,
+  modelRefreshing: boolean,
+  provider?: string,
+  accountStatus?: string
+) {
   if (probe.models.length > 0) {
     if (provider === 'opencode') {
       const goCount = probe.models.filter((m: string) => String(m).startsWith('opencode-go/')).length;
@@ -95,8 +105,11 @@ export function getModelProbeTagLabel(probe: ReturnType<typeof getAccountModelPr
     }
     return `模型 ${probe.models.length}`;
   }
-  if (probe.error) return formatModelProbeErrorLabel(probe.error);
   if (modelRefreshing) return '探测中';
+  // 关闭的账号不参与调度，后台也不会替它探测——显示「待探测」等于给用户一个永远不会兑现的承诺。
+  if (String(accountStatus || '').trim().toLowerCase() === 'down') return '已关闭';
+  if (probe.error) return formatModelProbeErrorLabel(probe.error);
+  // 已经探测过（含「成功但目录为空」）：模型很少随账号变化，不该长期挂「待探测」。
   if (probe.probed) return '未发现模型';
   return '待探测';
 }

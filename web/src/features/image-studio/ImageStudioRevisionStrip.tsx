@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
   CheckOutlined,
   EditOutlined,
@@ -7,6 +7,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import type { ImageStudioRevision, ImageStudioSession } from '@/types';
+import { useAppendEnter } from '@/hooks/use-append-enter';
 import {
   formatRevisionClock,
   getRevisionPreviewAssetId,
@@ -36,6 +37,14 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
 }) => {
   const assets = mapAssetsById(session);
   const revisions = session?.revisions || [];
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // 修订只会在末尾追加（新一帧生成/编辑完成）：纯追加且增量小才逐帧进场，
+  // 切会话/首屏整批挂载不播。运行中→完成是同一 id 更新，不会重播。
+  const revisionKeys = useMemo(() => revisions.map((revision) => revision.id), [revisions]);
+  useAppendEnter(scrollerRef, revisionKeys, session?.id || '', {
+    selector: '[data-revision-card]',
+    distance: 4,
+  });
 
   return (
     <section className={styles.revisionStrip} aria-label="修订时间线">
@@ -46,7 +55,7 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
         </div>
         <span>{revisions.length} 帧</span>
       </div>
-      <div className={styles.revisionScroller}>
+      <div ref={scrollerRef} className={styles.revisionScroller}>
         {revisions.length === 0 ? (
           <div className={styles.revisionEmpty}>首张图像生成后，修订链会固定在这里。</div>
         ) : revisions.map((revision, index) => {
@@ -60,6 +69,7 @@ export const ImageStudioRevisionStrip: React.FC<ImageStudioRevisionStripProps> =
             <button
               type="button"
               key={revision.id}
+              data-revision-card
               className={`${styles.revisionCard} ${selected ? styles.revisionCardSelected : ''}`}
               onClick={() => onSelect(revision)}
               aria-pressed={selected}

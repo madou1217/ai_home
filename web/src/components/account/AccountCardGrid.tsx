@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from 'react';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import { Button, Dropdown, Tag, Tooltip, type MenuProps } from 'antd';
 import {
   CopyOutlined,
@@ -73,16 +74,19 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   onOpenApp,
   onOpenCli,
 }: AccountCardGridProps) {
+  // 切换 provider / 状态筛选后卡片按 FLIP 滑到新位置（与列表模式的 FLIP 同一套）。
+  const flipRef = useFlipReorder<HTMLDivElement>(accounts);
   if (accounts.length === 0 && !loading) {
     return (
-      <div className={styles.emptyGrid}>
+      <div key="empty" className={`${styles.emptyGrid} aih-fade-in`}>
         <span>暂无配置的 {provider.toUpperCase()} 账号</span>
       </div>
     );
   }
 
+  // 空态 ↔ 卡片网格两个分支的根都是 div，不加 key 会复用节点、挂载动画不重播。
   return (
-    <div className={styles.gridContainer}>
+    <div key="grid" ref={flipRef} className={`${styles.gridContainer} aih-fade-in`}>
       {accounts.map((acc) => {
         const primaryLabel = getAccountPrimaryLabel(acc);
         const secondaryLabel = getAccountSecondaryLabel(acc);
@@ -92,6 +96,7 @@ export const AccountCardGrid = memo(function AccountCardGrid({
         return (
           <div
             key={acc.accountRef}
+            data-flip-key={acc.accountRef}
             data-account-ref={acc.accountRef}
             className={`${styles.accountCard} hud-panel hud-panel--sm`}
           >

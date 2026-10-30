@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   CodeOutlined,
   DeleteOutlined,
@@ -14,6 +14,7 @@ import {
   PushpinOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import SessionRelativeTime from '@/components/chat/SessionRelativeTime';
 import ProviderIcon from '@/components/chat/ProviderIcon';
 import {
@@ -81,6 +82,9 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
   // 而聚合项目 id 会随 provider 顺序漂移，path 才是稳定键。
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [showAll, setShowAll] = useState<Set<string>>(new Set());
+  // CHAT ↔ WORK 是整块换一批会话/项目行：列表容器淡入一次（只碰 opacity）。
+  const listBodyRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(listBodyRef, workspaceMode, { scope: 'mobile-chat-mode' });
   const chatMode = workspaceMode === 'chat';
   const projects = canonicalDirectory.projects;
   const loading = chatMode ? sessions.loadingChatSessions : projectCatalog.loadingProjects;
@@ -293,7 +297,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
     if (sessions.loadingChatSessions && sessions.chatSessions.length === 0) return <MobileBoot label="SYNC" />;
     if (sessions.chatSessionsFailed && sessions.chatSessions.length === 0) {
       return (
-        <div className={styles.errorLine} role="alert">
+        <div className={`${styles.errorLine} aih-fade-in`} role="alert">
           <span className="hud-led hud-led--err" aria-hidden="true" />
           <span className={styles.errorText}>纯聊天会话列表加载失败</span>
           <HudIconButton icon={<ReloadOutlined />} label="重试" showLabel onClick={refresh} />
@@ -303,7 +307,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
     if (sessions.chatSessions.length === 0) {
       return <EmptySignal title="NO SESSIONS" description="暂无纯聊天会话，点击下方「发起新对话」开始。" />;
     }
-    return <MonoList ariaLabel="纯聊天会话">{sessions.chatSessions.map(renderChatSession)}</MonoList>;
+    return <MonoList ariaLabel="纯聊天会话" className="aih-fade-in">{sessions.chatSessions.map(renderChatSession)}</MonoList>;
   };
 
   const workBody = () => {
@@ -317,7 +321,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
         />
       );
     }
-    return <MonoList ariaLabel="工作区项目">{orderedProjects.flatMap(renderProject)}</MonoList>;
+    return <MonoList ariaLabel="工作区项目" className="aih-fade-in">{orderedProjects.flatMap(renderProject)}</MonoList>;
   };
 
   return (
@@ -358,7 +362,7 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
       </MobileToolbar>
 
       {!chatMode && canonicalDirectory.status === 'failed' ? (
-        <div className={styles.errorLine} role="alert">
+        <div className={`${styles.errorLine} aih-fade-in`} role="alert">
           <span className="hud-led hud-led--warn" aria-hidden="true" />
           <span className={styles.errorText}>
             {canonicalDirectory.offlineCached
@@ -374,14 +378,17 @@ export default function ChatSessionList({ state, sessions, onOpenArchived }: Pro
         title={chatMode ? '纯聊天会话' : '工作区项目'}
         count={chatMode ? sessions.chatSessions.length : projects.length}
       >
-        {chatMode ? chatBody() : workBody()}
+        <div ref={listBodyRef}>
+          {chatMode ? chatBody() : workBody()}
+        </div>
       </HudSection>
 
       <div className={styles.dock}>
+        {/* 两段提示是同一位置的两个分支，给 key 强制重挂 + 挂载淡入，切换时不再硬换字 */}
         {createDisabled ? (
-          <span className={styles.dockHint}>先点选一个项目，再新建工作区会话</span>
+          <span key="dock-hint-disabled" className={`${styles.dockHint} aih-fade-in`}>先点选一个项目，再新建工作区会话</span>
         ) : !chatMode && selectedProject ? (
-          <span className={styles.dockHint}>项目 · {selectedProject.name}</span>
+          <span key={`dock-hint-project:${selectedProject.path}`} className={`${styles.dockHint} aih-fade-in`}>项目 · {selectedProject.name}</span>
         ) : null}
         <HudIconButton
           icon={<PlusOutlined />}

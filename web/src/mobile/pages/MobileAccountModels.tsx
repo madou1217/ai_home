@@ -193,7 +193,7 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
       ) : null}
 
       {probeError ? (
-        <HudCard code="PROBE" title="部分账号模型探测失败" tone={state.catalog?.source === 'remote' ? 'warn' : 'err'}>
+        <HudCard code="PROBE" title="部分账号模型探测失败" tone={state.catalog?.source === 'remote' ? 'warn' : 'err'} className="aih-fade-in">
           <div className={styles.probeError}>
             {probeError.statusCode ? <span className="mhud-status mhud-tone--err">HTTP {probeError.statusCode}</span> : null}
             <p className={styles.probeMessage}>{probeError.message}</p>
@@ -269,7 +269,7 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
             )}
           />
         ) : (
-          <MonoList ariaLabel="账号模型列表">
+          <MonoList ariaLabel="账号模型列表" className="aih-fade-in">
             {state.rows.map((model) => {
               const rowKey = getModelRowKey(model);
               const enabled = model.enabled !== false;

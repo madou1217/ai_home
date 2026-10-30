@@ -254,8 +254,8 @@ export default function Dashboard() {
       {/* ── 最近错误:有才显示 ── */}
       {recentErrorRows.length > 0 ? (
         <>
-          <div className="dash-block-title">最近错误<span className="dash-block-count">{recentErrorRows.length}</span></div>
-          <div className="dash-error-list">
+          <div className="dash-block-title aih-fade-in">最近错误<span className="dash-block-count">{recentErrorRows.length}</span></div>
+          <div className="dash-error-list aih-fade-in">
             {recentErrorRows.map((item) => {
               const provider = getRecentErrorProvider(item);
               const account = item.accountRef ? accountByRef.get(item.accountRef) : undefined;
@@ -390,8 +390,8 @@ export default function Dashboard() {
       {/* ── 热点路由:有才显示,用占比条 ── */}
       {routeRows.length > 0 ? (
         <>
-          <div className="dash-block-title">热点路由</div>
-          <div className="dash-route-list hud-panel">
+          <div className="dash-block-title aih-fade-in">热点路由</div>
+          <div className="dash-route-list hud-panel aih-fade-in">
             {routeRows.map((r) => (
               <div className="dash-route-item" key={r.key}>
                 <div className="dash-route-line">

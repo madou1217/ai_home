@@ -174,6 +174,51 @@ function ShellTerminalPanel({
       }
     });
   }, []);
+  // 最小化/恢复的高度过渡：动画期间暂停 ResizeObserver 的逐帧 fit（否则 xterm 会在
+  // 每一帧里按新行数重排，画面抖动），结束后补一次 fit。折叠时正文延迟到动画结束再
+  // display:none，让内容跟着面板一起被裁掉，而不是瞬间消失。
+  const [heightAnimating, setHeightAnimating] = useState(false);
+  const [bodiesHidden, setBodiesHidden] = useState(minimized);
+  const animatingRef = useRef(false);
+  // 关闭页签的退场：先给 chrome 一个 is-leaving 动画，元素从 tabs 里移除后仍渲染 160ms。
+  const [leavingTabs, setLeavingTabs] = useState<TabMeta[]>([]);
+  const previousTabsRef = useRef<TabMeta[]>([]);
+  useEffect(() => {
+    const previous = previousTabsRef.current;
+    previousTabsRef.current = tabs;
+    const current = new Set(tabs.map((tab) => tab.id));
+    const removed = previous.filter((tab) => !current.has(tab.id));
+    if (!removed.length) return;
+    setLeavingTabs((list) => list.concat(removed.filter((tab) => !list.some((item) => item.id === tab.id))));
+    const timer = setTimeout(() => {
+      setLeavingTabs((list) => list.filter((item) => !removed.some((tab) => tab.id === item.id)));
+    }, 170);
+    return () => clearTimeout(timer);
+  }, [tabs]);
+  const minimizedMountedRef = useRef(false);
+  useEffect(() => {
+    // 首次挂载不做高度过渡：面板应按当前状态直接以目标高度出现。
+    if (!minimizedMountedRef.current) {
+      minimizedMountedRef.current = true;
+      setBodiesHidden(minimized);
+      return undefined;
+    }
+    // 恢复：正文立刻回来，面板高度一升上去内容就在；折叠：正文跟着高度动画一起被裁掉，
+    // 动画结束后再 display:none（否则内容会先「啪」消失，只剩空壳在收缩）。
+    animatingRef.current = minimized;
+    setHeightAnimating(true);
+    if (!minimized) setBodiesHidden(false);
+    const timer = setTimeout(() => {
+      animatingRef.current = false;
+      setHeightAnimating(false);
+      if (minimized) setBodiesHidden(true);
+    }, 230);
+    return () => {
+      clearTimeout(timer);
+      animatingRef.current = false;
+      setHeightAnimating(false);
+    };
+  }, [minimized]);
 
   // 应用一帧（output/exit）到某个 tab 的 xterm。
   const applyFrame = useCallback((tabId: string, inst: TermInstance, msg: any) => {
@@ -489,7 +534,11 @@ function ShellTerminalPanel({
       minInterval: () => 64,
       afterFlush: () => instancesRef.current.get(activeIdRef.current)?.resizeSender.flush(),
     });
-    const observer = new ResizeObserver(() => refitter.notifyResize());
+    const observer = new ResizeObserver(() => {
+      // 高度过渡期间每一帧都会触发，逐帧 fit 会让 xterm 反复重排；过渡结束补一次即可。
+      if (animatingRef.current) return;
+      refitter.notifyResize();
+    });
     const finishResize = () => refitter.flush();
     gestureHost?.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
     el.addEventListener(TERMINAL_RESIZE_FINISHED, finishResize);
@@ -568,12 +617,22 @@ function ShellTerminalPanel({
     }
   }, [closeTab, createTab, creatingTab, sessionTabs, tabs, visible]);
 
+  // 关闭面板：先确认所有 PTY 关闭成功，再播一次收起动画（高度归零 + 淡出）并通知父级卸载。
+  // 浮窗宿主自己有更完整的 FLIP 收起（GlobalWebTerminalHost），这里只覆盖停靠在输入框上的形态。
+  const [closing, setClosing] = useState(false);
   const closePanel = useCallback(async () => {
-    if (isCreatingTab?.()) return;
+    if (closing || isCreatingTab?.()) return;
     const ids = new Set([...instancesRef.current.keys(), ...(sessionTabsRef.current || []).map((tab) => tab.id)]);
     const results = await Promise.all(Array.from(ids, (id) => closeTab(id, false)));
-    if (results.every(Boolean)) onClose();
-  }, [closeTab, isCreatingTab, onClose]);
+    if (!results.every(Boolean)) return;
+    const reduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !visible || persistent) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    window.setTimeout(() => { setClosing(false); onClose(); }, 180);
+  }, [closeTab, closing, isCreatingTab, onClose, persistent, visible]);
 
   // 重启激活 tab：关掉旧 PTY，清屏，开新 PTY（复用同一 tab 槽 / xterm）。
   const reloadActiveTab = useCallback(async () => {
@@ -664,7 +723,7 @@ function ShellTerminalPanel({
   return (
     <div
       ref={panelRef}
-      className={styles.shellTerminalPanel}
+      className={`${styles.shellTerminalPanel}${heightAnimating ? ` ${styles.shellTerminalPanelAnimating}` : ''}${closing ? ` ${styles.shellTerminalPanelClosing}` : ''}`}
       style={{ height: panelStyleHeight }}
       data-compact={compactChrome ? 'true' : undefined}
     >
@@ -699,6 +758,18 @@ function ShellTerminalPanel({
             </div>
           )}
           {layout === 'tabs' ? tabList : null}
+          {/* 已关闭的页签在 tabs 里消失后仍渲染 170ms，播放宽度收拢的退场动画。 */}
+          {layout === 'tabs' ? leavingTabs.map((t) => (
+            <div
+              key={`leaving-${t.id}`}
+              aria-hidden="true"
+              className={`${styles.shellTerminalTab} ${styles.shellTerminalTabLeaving}`}
+              title={t.label}
+            >
+              <span className={styles.shellTerminalTabDot} data-status={t.status} />
+              <span className={styles.shellTerminalTabLabel}>{t.label}</span>
+            </div>
+          )) : null}
           <button
             type="button"
             className={styles.shellTerminalIconBtn}
@@ -750,13 +821,13 @@ function ShellTerminalPanel({
           </button>
         </div>
       </div>
-      <div className={styles.shellTerminalContent} style={{ display: minimized ? 'none' : undefined }}>
+      <div className={styles.shellTerminalContent} style={{ display: bodiesHidden ? 'none' : undefined }}>
         {layout === 'sidebar' ? <div className={styles.shellTerminalSidebar} role="tablist" aria-label="终端会话">{tabList}</div> : null}
         <div className={styles.shellTerminalBodies}>
         {tabs.map((t) => (
           <div
             key={t.id}
-            className={styles.shellTerminalBody}
+            className={`${styles.shellTerminalBody}${t.id === activeId ? ` ${styles.shellTerminalBodyActive}` : ''}`}
             style={{ display: t.id === activeId ? 'block' : 'none' }}
           >
             <div ref={attachBody(t.id)} className={styles.shellTerminalMount} />

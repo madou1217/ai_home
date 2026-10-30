@@ -689,6 +689,23 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+/* 生成 / 编辑模式切换时才挂载的整块参数区：从上一行位置淡入下移，
+   输入区不是「突然长出一截」。只碰 opacity/transform，不参与布局。 */
+.mountSection {
+  animation: mountSectionIn var(--motion-base) var(--ease-emphasized) backwards;
+}
+
+@keyframes mountSectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .fieldLabel,
 .parameterGrid label > span {
   display: block;
@@ -716,6 +733,8 @@
   margin-top: var(--hos-space-1-5);
   color: var(--color-faint);
   font-size: var(--hos-text-micro);
+  /* 选中模型后才有这行读数：挂载淡入。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
 .modelReadout code {

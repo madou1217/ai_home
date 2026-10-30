@@ -57,7 +57,8 @@ export default function AppManagerPanel() {
     busyActionFor,
     checkAppUpdate,
     runAppAction,
-    installHooks
+    installHooks,
+    uninstallHooks
   } = useManagedApps();
   // 自动升级结论挂在应用卡片上（同 provider 只给一处结论），不再有独立的升级面板。
   const {
@@ -196,7 +197,7 @@ export default function AppManagerPanel() {
             ]}
           />
 
-          <div className="toolkit-category-bar">
+          <div className="toolkit-category-bar aih-fade-in">
             <div className="toolkit-filter-scroll">
               <Segmented
                 aria-label="应用分类"
@@ -209,7 +210,7 @@ export default function AppManagerPanel() {
           </div>
 
           {filteredApps.length ? (
-            <div className="toolkit-grid">
+            <div className="toolkit-grid aih-fade-in">
               {filteredApps.map((app) => (
                 <ManagedAppCard
                   key={app.id}
@@ -252,6 +253,7 @@ export default function AppManagerPanel() {
         busy={Boolean(advancedApp && busyActionFor(advancedApp))}
         installingHooks={installingHooks}
         onInstallHooks={(provider) => void installHooks([provider])}
+        onUninstallHooks={(provider) => void uninstallHooks([provider])}
         onClose={() => setAdvancedAppId('')}
       />
     </section>

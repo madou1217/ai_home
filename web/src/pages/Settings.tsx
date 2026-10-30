@@ -782,7 +782,7 @@ const Settings = ({ section }: SettingsProps) => {
               label: 'Server',
               children: (
                 serverRouteRows.length === 0 ? (
-                  <div className="settings-control-plane-empty">
+                  <div key="cp-empty" className="settings-control-plane-empty aih-fade-in">
                     <InlineNote tone="info">暂无已保存 Server</InlineNote>
                     <Button
                       type="primary"
@@ -793,15 +793,17 @@ const Settings = ({ section }: SettingsProps) => {
                     </Button>
                   </div>
                 ) : (
-                  <ControlPlaneServerList
-                    rows={serverRouteRows}
-                    activeControlPlaneId={activeControlPlaneId}
-                    checkingControlPlaneId={checkingControlPlaneId}
-                    onSelect={handleSelectControlPlane}
-                    onRefresh={handleRefreshControlPlane}
-                    onRemove={handleRemoveControlPlane}
-                    onAuthorize={openDiscoveredServerAuthorization}
-                  />
+                  <div key="cp-list" className="aih-fade-in">
+                    <ControlPlaneServerList
+                      rows={serverRouteRows}
+                      activeControlPlaneId={activeControlPlaneId}
+                      checkingControlPlaneId={checkingControlPlaneId}
+                      onSelect={handleSelectControlPlane}
+                      onRefresh={handleRefreshControlPlane}
+                      onRemove={handleRemoveControlPlane}
+                      onAuthorize={openDiscoveredServerAuthorization}
+                    />
+                  </div>
                 )
               )
             }

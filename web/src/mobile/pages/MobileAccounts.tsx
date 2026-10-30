@@ -27,6 +27,7 @@ import {
   TelemetryTile
 } from '@/mobile/ui';
 import type { HudChipItem, SwipeAction } from '@/mobile/ui';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import type { MobilePageProps } from '@/mobile/mobile-routes';
 import MobileBoot from '@/mobile/MobileBoot';
 import { accountsAPI } from '@/services/api';
@@ -173,6 +174,9 @@ export default function MobileAccounts(_props: MobilePageProps) {
   const providerActivity = aggregateFamilyActivity(accounts, getAccountActivity);
   const pendingIssues = countPendingIssues(activeStats);
   const unavailable = countUnavailable(activeStats);
+  // 切换 Provider / 状态筛选时整列换一批账号行：只碰 opacity 的淡入表达「换掉了」。
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(listRef, `${activeProvider}|${filterStatus}`, { scope: 'mobile-accounts' });
 
   const selectedAccount = selectedRef
     ? accounts.find((account) => getAccountRef(account) === selectedRef) || null
@@ -316,7 +320,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
     const probe = getAccountModelProbe(record, modelCatalog);
     const refreshingModels = Boolean(refreshingModelAccountRefs[getModelRefreshAccountRef(record)]);
     return {
-      label: getModelProbeTagLabel(probe, refreshingModels, record.provider),
+      label: getModelProbeTagLabel(probe, refreshingModels, record.provider, record.status),
       tone: badgeStatusTone(getModelProbeTagColor(probe, refreshingModels)),
       refreshing: refreshingModels
     };
@@ -401,7 +405,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
       <MobileGlobalStatusCard outcomes={accountOutcomes} />
 
       {actions.hasActiveImportJob ? (
-        <HudCard code="IMPORT" title="账号导入正在后台运行" tone="info">
+        <HudCard code="IMPORT" title="账号导入正在后台运行" tone="info" className="aih-fade-in">
           <span className={styles.importProgress} role="status" aria-live="polite">
             <SyncOutlined spin aria-hidden="true" />
             {formatImportJobProgress(actions.importJob)}
@@ -425,6 +429,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
       </HudSection>
 
       <HudSection title="账号列表" code="POOL" count={filteredAccounts.length}>
+        <div ref={listRef}>
         {loading && accounts.length === 0 ? (
           <MobileBoot label="LOADING ACCOUNTS" />
         ) : filteredAccounts.length === 0 ? (
@@ -450,7 +455,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
             />
           )
         ) : (
-          <MonoList ariaLabel="账号列表">
+          <MonoList ariaLabel="账号列表" className="aih-fade-in">
             {filteredAccounts.map((record) => {
               const accountRef = getAccountRef(record);
               return (
@@ -471,6 +476,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
             })}
           </MonoList>
         )}
+        </div>
       </HudSection>
 
       <AccountDetailSheet

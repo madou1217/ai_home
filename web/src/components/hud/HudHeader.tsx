@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useThemeMode } from '@/hooks/use-theme-mode';
-import { applyThemeMode } from '@/services/theme-persistence';
+import { applyThemeModeAnimated } from '@/services/theme-transition';
 import { crossTabSync } from '@/services/cross-tab-session-sync';
 import type { HudGatewayState } from './use-hud-telemetry';
 import { useHudTelemetry } from './use-hud-telemetry';
@@ -112,7 +112,7 @@ export function HudToggles() {
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
-    applyThemeMode(next);
+    applyThemeModeAnimated(next);
     crossTabSync.broadcast('THEME_CHANGED', { theme: next });
   };
 

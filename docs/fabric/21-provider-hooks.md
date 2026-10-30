@@ -225,3 +225,66 @@ webUI 的 headless 路径已直接从 stream-json/JSONL 输出拿到**每个工�
 ## 9. slash 清单来源(附录)
 
 各 provider autocomplete 清单 = `lib/server/native-slash-command-catalog.js`,来源为 2026-07-04 tmux 起真实 TUI 输 `/` 抓补全面板全量(claude 另与官方 commands 文档求交集剔除本机技能);更新方式=重跑同法。claude 81 / codex 45 / opencode 20 / agy 30 / gemini 10;未列命令由 passthrough 放行(权威=CLI)。
+
+## 10. 复核:完整 harness 矩阵与接入规划(2026-10-30)
+
+> 本节把「哪些 harness 有 hook / 扩展面、哪些已接入、下一批怎么接」收敛成一张表。
+> 结论来自 2026-10-30 对 `core/providers/builtins.go`、`contracts/providers/manifest.json`、
+> `lib/providers/defs/*`、`provider-session-hook-config.js` 与各 launch strategy 的逐文件核对;
+> 上游能力未验证的条目一律标注「未验证」,不按传闻接入。
+
+### 10.1 两套独立机制,不要混为一谈
+
+| 方向 | 机制 | 入口 | 覆盖 |
+| --- | --- | --- | --- |
+| harness → aih | 会话 hook / 插件,把本地会话事件 POST 给 server | `provider-session-hook-config.js` + sender | codex / claude / gemini / agy / grok / opencode |
+| aih → harness | 账号生命周期事件触发模型投影刷新 | `lib/harness/model-projection-refresh.js` | pi / dsh / dsh-tui(见 `docs/architecture/account-lifecycle-events.md`) |
+| aih → harness | 启动期配置投影(模型目录 / 端点 / 凭据) | `lib/cli/services/ai-cli/launch-profile/*` | codex / claude / opencode / kimi / cline / zcode 等 |
+
+### 10.2 矩阵
+
+| 工具 | hook / 扩展面 | 会话 hook 已接? | 模型目录已接? | 缺口 / 下一步 |
+| --- | --- | --- | --- | --- |
+| Codex | `~/.codex/hooks.json` + feature flag + Stop notify + 二进制 wrapper | ✅ | ✅ 启动参数 `model_catalog_json` | 桌面/IDE 应用卡片仍固定 `hookSupported:false`,但 wrapper 已存在;需按安装器实际能力解析 |
+| Claude | `~/.claude/settings.json` 5 事件 | ✅ | ✅ 启动期 `modelPicker.options` | Toolkit 只提供安装,2026-10-30 起已支持停用 |
+| Gemini | `settings.json` 4 事件 + extension | ✅ | — | 扩展与 hook 两个配置面尚未统一展示 |
+| agy | `~/.gemini/config/hooks.json` 具名 hook | ✅ | — | 事件推断在 normalizer 内做 |
+| Grok | `~/.grok/hooks/aih-session-sync.json` | ✅(仅一键启用,不进自动安装白名单) | — | 待真机端到端验证后转自动 |
+| OpenCode | `opencode/plugin/aih-session-hook.js` | ✅ | ✅ 启动注入 + zen overlay | 插件桥与 opencode 自有 `plugin` 数组两个概念待统一 |
+| Pi | Host extension 目录 + `--extension` | ❌(无会话 hook) | ✅ 事件驱动 + 扩展轮询 | 保持扩展兜底,server 刷新为即时路径 |
+| DSH / dsh-tui | Cordis patch 插件 | ❌(无会话 hook) | ✅ 事件驱动 + Cordis 5 分钟轮询 | 同上 |
+| Cline | 上游有 `CLINE_DIR/hooks` 目录(launch strategy 注释提及) | 未验证 | — | 先读上游源码确认格式,再决定是否加 `hooks` 能力描述符 |
+| Qoder / QoderCN | 疑似 Claude 兼容 hooks | 未验证 | — | 官方文档核对 + 同名项目排除后再接 |
+| Kiro | 上游 agent hook 概念,事件命名不同 | 未验证 | — | 同上 |
+| Kimi | 无 hook;会话文件读取都没做 | ❌ | — | 先补 `resolveSessionFilePath`,再谈 hook |
+| ZCode | 无 hook 描述符 | ❌ | — | 维持轮询/不可用 |
+
+### 10.3 接入一个新 hook 的固定步骤
+
+1. **合同**:`core/providers/builtins.go` 的 `SessionSyncHook` 声明 adapter / target / events;
+   重新生成 `contracts/providers/manifest.json`。
+2. **描述符**:`lib/providers/defs/<provider>.js` 增加 `hooks` 能力(target、timeoutUnit、eventMatchers)。
+3. **适配器**:若格式不是 `json_hooks` / `agy_named_hooks` / `opencode_plugin`,
+   在 `HOOK_ADAPTERS` 加一个 adapter,只回答「写在哪 / 怎么写 / 怎么诊断 / 怎么安装 / 怎么卸载」。
+4. **卸载对称**:`uninstallProviderSessionHookConfig` 必须只删带 `--aih-provider-session-hook`
+   marker 的 handler(或具名 hook / 生成的插件文件),用户自建 hook 一律保留。
+5. **归一化**:`provider-hook-event-normalizer.js` 补原始事件 → `session:*` 映射。
+6. **UI**:`GET/POST /v0/webui/provider-hooks` 的诊断自动出现;应用卡片通过
+   `diagnoseProviderSessionHookConfig` 复用同一结论,不另写一份判断。
+
+### 10.4 应用管理侧的配置能力(2026-10-30)
+
+| 配置 | 状态 |
+| --- | --- |
+| 安装 / 更新 / 卸载应用 | ✅ |
+| 启动 / 关闭(账号级) | ✅ |
+| 检查升级 | ✅ |
+| 启用即时刷新(hook 安装) | ✅ |
+| 停用即时刷新(hook 卸载) | ✅ 本次新增:只撤销 AIH 托管条目,用户 hook 保留 |
+| 启动权限设置 | ✅ 持久化在 `app_kv` |
+| 原始配置文件编辑 | ✅ |
+| 默认模型 / 支持模型 | 已进入 DTO(`defaultModel` / `supportedModels`),UI 尚未消费 |
+| 应用级启用/停用、每应用环境变量 | 未做(需先定义启动语义,避免双份真相) |
+
+后续优化优先级:`defaultModel` 在卡片上只读展示 → 统一桌面/移动两份应用面板的展示逻辑 →
+把硬编码的 provider 文案(ZCode 出口、Kimi 登录)迁到 provider 元数据。

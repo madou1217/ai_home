@@ -15,6 +15,8 @@
   flex-wrap: wrap;
   min-height: 24px;
   margin: -4px 0 12px;
+  /* 切 tab / 卡片视图时才出现：挂载淡入，不硬挤进来 */
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
 }
 
 /* 额度列缩窄后，取消内部各快照渲染器的旧最小宽度。 */
@@ -126,6 +128,8 @@
   margin-bottom: var(--hos-space-4, 16px);
   color: var(--color-text);
   font-size: var(--hos-text-body-sm, 13px);
+  /* 后台导入开始/结束是条件挂载：出现即淡入 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 .accounts-import-running > span:last-child {
   color: var(--color-muted);

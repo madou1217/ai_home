@@ -1,5 +1,6 @@
 import { memo, useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
+import Reveal from '@/components/ui/Reveal';
 import styles from './EventBlock.module.css';
 
 export type EventTone =
@@ -128,10 +129,12 @@ function EventBlock({
         {meta ? <span className={styles.meta}>{meta}</span> : null}
         {status ? <StatusBadge {...status} /> : null}
       </HeaderTag>
-      {isOpen && hasBody ? (
-        <div className={`${styles.body}${flushBody ? ` ${styles.bodyFlush}` : ''}${barePadding ? ` ${styles.bodyBare}` : ''}${bodyClassName ? ` ${bodyClassName}` : ''}`}>
-          {children}
-        </div>
+      {hasBody ? (
+        <Reveal open={isOpen} keepMounted={false}>
+          <div className={`${styles.body}${flushBody ? ` ${styles.bodyFlush}` : ''}${barePadding ? ` ${styles.bodyBare}` : ''}${bodyClassName ? ` ${bodyClassName}` : ''}`}>
+            {children}
+          </div>
+        </Reveal>
       ) : null}
     </section>
   );

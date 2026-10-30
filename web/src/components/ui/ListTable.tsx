@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ProTable } from '@ant-design/pro-components';
 import type { ProColumns, ProTableProps } from '@ant-design/pro-components';
 import { Empty, Skeleton, Grid } from 'antd';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import '../../styles/unified.css';
 import '../mobile/mobile-cards.css';
 
@@ -81,6 +82,8 @@ function ListTableMobileCards<T extends Record<string, any>>({
   rowKey?: string | ((row: T) => string);
 }) {
   const rows = Array.isArray(dataSource) ? dataSource : [];
+  // 卡片没有固定列/粘性表头的定位约束，可以逐项 FLIP；条目多时 hook 自行退化为容器淡入
+  const flipRef = useFlipReorder<HTMLDivElement>(rows);
   if (rows.length === 0) return <>{emptyText}</>;
 
   // 操作类列（无标题，或 key/dataIndex/标题指向“操作”）汇到卡片脚整行排布、按钮可换行；
@@ -98,11 +101,11 @@ function ListTableMobileCards<T extends Record<string, any>>({
   const actionCols = restCols.filter((c) => isActionColumn(c));
 
   return (
-    <div className="mobile-card-list">
+    <div className="mobile-card-list" ref={flipRef}>
       {rows.map((row, index) => {
         const key = typeof rowKey === 'function' ? rowKey(row) : (rowKey ? (row as any)[rowKey] : index);
         return (
-          <div className="mobile-card" key={String(key ?? index)}>
+          <div className="mobile-card" key={String(key ?? index)} data-flip-key={String(key ?? index)}>
             {titleCol ? <div className="ltcard-title">{renderColumnCell(titleCol, row, index)}</div> : null}
             {labelled.map((col, ci) => (
               <div className="ltcard-row" key={ci}>
@@ -144,6 +147,13 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
 }: ListTableProps<T, U>) {
   const screens = Grid.useBreakpoint();
   const isMobile = !screens.md;
+  // 表格行不做 transform 补间（会破坏固定列/粘性列定位），改成「顺序真变了才淡入一次」
+  const fadeRef = useFlipReorder<HTMLDivElement>(rest.dataSource, { mode: 'fade' });
+  const resolveRowKey = (row: T, index?: number) => {
+    if (typeof rowKey === 'function') return rowKey(row);
+    if (rowKey) return (row as any)[rowKey];
+    return (row as any).key ?? (row as any).id ?? index;
+  };
 
   // 首屏（loading 且无数据）走骨架屏；有缓存数据时即便 loading 也保持表格可见，
   // 仅由 ProTable 的轻量 overlay 提示刷新中，避免整表被遮罩闪白。
@@ -173,10 +183,21 @@ export default function ListTable<T extends Record<string, any>, U extends Recor
     toolbar,
     locale: { emptyText },
     ...rest,
+    // 在调用方 onRow 之上补 data-flip-key：容器据此判断行顺序是否真的变了
+    onRow: (record: T, index?: number) => {
+      const caller = (rest as ProTableProps<T, U>).onRow;
+      const callerProps = typeof caller === 'function' ? caller(record, index) : undefined;
+      return {
+        ...(callerProps || {}),
+        'data-flip-key': String(resolveRowKey(record, index)),
+      } as any;
+    },
   };
   return (
-    <ProTable {...(fixedProps as Omit<typeof fixedProps, 'rowKey'>)} rowKey={rowKey as never}>
-      {children ? <span style={{ display: 'none' }}>{children}</span> : null}
-    </ProTable>
+    <div ref={fadeRef} className="unified-list-table-fade">
+      <ProTable {...(fixedProps as Omit<typeof fixedProps, 'rowKey'>)} rowKey={rowKey as never}>
+        {children ? <span style={{ display: 'none' }}>{children}</span> : null}
+      </ProTable>
+    </div>
   );
 }

@@ -7,6 +7,8 @@
   margin-bottom: var(--hos-space-4);
   color: var(--color-muted-strong);
   font-size: var(--hos-text-body-sm);
+  /* 探测失败是条件挂载的临时状态条：出现即淡入，刷新成功后消失不闪。 */
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 .models-probe-status > .hud-led {
   align-self: center;

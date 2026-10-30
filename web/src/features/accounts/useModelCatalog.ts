@@ -55,12 +55,14 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           models: {},
           byAccountRef: {},
           errorsByAccountRef: {},
+          accountProbedAt: {},
           labels: {}
         };
 
         const nextModels = { ...baseCatalog.models };
         const nextByAccountRef = { ...baseCatalog.byAccountRef };
         const nextErrorsByAccountRef = { ...baseCatalog.errorsByAccountRef };
+        const nextAccountProbedAt = { ...(baseCatalog.accountProbedAt || {}) };
         const nextLabels = { ...baseCatalog.labels };
 
         if (mappedCatalog) {
@@ -81,6 +83,11 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
               nextModels[provider] = models;
             });
           }
+          // 探测时间戳是「探过但为空」的唯一证据；只改 byAccountRef 会把这类账号
+          // 一直留在「待探测」。
+          Object.entries(mappedCatalog.accountProbedAt || {}).forEach(([ref, at]) => {
+            if (Number(at) > 0) nextAccountProbedAt[ref] = Number(at);
+          });
           if (mappedCatalog.labels) {
             Object.entries(mappedCatalog.labels).forEach(([provider, labels]) => {
               nextLabels[provider] = {
@@ -95,8 +102,11 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           if (job.status === 'failed') {
             nextErrorsByAccountRef[accountRef] = job.error || '探测失败';
             delete nextByAccountRef[accountRef];
+            nextAccountProbedAt[accountRef] = Number(job.finishedAt || 0) || Date.now();
           } else if (job.status === 'succeeded') {
             delete nextErrorsByAccountRef[accountRef];
+            // 成功但目录为空也要记时刻，否则这个账号永远停在「待探测」。
+            nextAccountProbedAt[accountRef] = Number(job.finishedAt || 0) || Date.now();
           }
         }
 
@@ -112,6 +122,7 @@ export function useModelCatalog(accounts: Account[]): UseModelCatalogResult {
           models: nextModels,
           byAccountRef: nextByAccountRef,
           errorsByAccountRef: nextErrorsByAccountRef,
+          accountProbedAt: nextAccountProbedAt,
           labels: nextLabels
         };
       });

@@ -40,12 +40,95 @@
   animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
 }
 
+/* 通用挂载淡入：条件挂载的节点（骨架→列表、展开的分组、提示条）直接挂
+ * class="aih-fade-in" 即获得一次只碰 opacity 的进场；节点复用不重播。 */
+.aih-fade-in {
+  animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
+}
+
 /* Tabs：切换后的面板淡入（antd 默认无内容过渡） */
 .ant-tabs-tabpane-active {
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
-/* ── 2. 列表 / 卡片组的错峰进场：父级加 .aih-stagger，前 10 个子元素依次延迟 ── */
+/* 原生 antd Table（计划任务 / 上游映射 / egress 等旧页面直接用 Table）：
+ * 数据到达时行挂载淡入，不再整表硬替换。
+ * 只碰 opacity（不碰 transform），不会破坏粘性表头/固定列。
+ * ProTable（ListTable）由 .unified-list-table-fade 统一做容器淡入，这里排除，避免大表逐行动画。 */
+.ant-table-tbody > tr {
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
+.ant-pro-table .ant-table-tbody > tr {
+  animation: none;
+}
+
+/* ── 2. 展开 / 收起 / 离场原语 ──────────────────────────────────────────────
+ * .aih-reveal 由 components/ui/Reveal.tsx 使用：外层 grid-template-rows 0fr↔1fr 撑开内容，
+ * 内层 overflow:hidden 裁剪。收起动画播完后组件才卸载内容（见 use-collapse-presence）。
+ * 离场项（删除的附件 / 队列项 / 列表行）在真正移除前先加 .aih-leaving 播一次退出动画，
+ * 由 hooks/use-presence-list.ts 负责保留时长。 */
+.aih-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--aih-reveal-ms, 170ms) var(--ease-emphasized);
+}
+.aih-reveal-open {
+  grid-template-rows: 1fr;
+}
+.aih-reveal-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.aih-reveal-open > .aih-reveal-inner {
+  visibility: visible;
+  transition: visibility 0s;
+}
+/* 收起后延迟到动画结束再隐藏（同时把子元素移出 Tab 顺序），展开时立即可见。 */
+.aih-reveal-closed > .aih-reveal-inner {
+  visibility: hidden;
+  transition: visibility 0s linear var(--aih-reveal-ms, 170ms);
+}
+/* 超高内容（>1200px）：不做逐帧高度插值（每帧重排整棵子树会掉帧），高度瞬时切换、内容淡入。 */
+.aih-reveal[data-tall='true'] {
+  transition: none;
+}
+.aih-reveal[data-tall='true'] > .aih-reveal-inner {
+  transition: none;
+}
+.aih-reveal[data-tall='true'].aih-reveal-open > .aih-reveal-inner {
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
+@keyframes aih-leave-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.96); }
+}
+.aih-leaving {
+  pointer-events: none;
+  animation: aih-leave-out var(--motion-base) var(--ease-standard) forwards;
+}
+
+/* 原生 <details>（计划块、仪表盘参数等）：在支持 ::details-content 的浏览器里把展开/收起
+ * 变成高度过渡，其余浏览器保持原生瞬时行为（渐进增强，不影响可读性）。 */
+:root {
+  interpolate-size: allow-keywords;
+}
+details::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    block-size var(--motion-base) var(--ease-emphasized),
+    opacity var(--motion-base) var(--ease-standard),
+    content-visibility var(--motion-base) allow-discrete;
+}
+details[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+/* ── 3. 列表 / 卡片组的错峰进场：父级加 .aih-stagger，前 10 个子元素依次延迟 ── */
 .aih-stagger > * {
   animation: aih-fade-up var(--motion-slow) var(--ease-standard) backwards;
 }
@@ -164,6 +247,14 @@
 }
 
 /* ── 4. 减少动态效果 ─────────────────────────────────────────────────────── */
+/* 主题切换：View Transitions 的整页交叉淡入（旧帧/新帧各一张快照，合成器完成）。
+ * 触发见 services/theme-transition.ts；不支持的浏览器直接切换，这里只调时长。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

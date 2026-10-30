@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CodeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 import Button from '@/components/ui/AppButton';
+import Reveal from '@/components/ui/Reveal';
 import {
   formatAppActionPlan,
   type AppActionPlanPresentation
@@ -43,7 +44,7 @@ export default function AppActionConfirmContent({
       >
         {detailsOpen ? '收起命令详情' : '查看命令详情'}
       </Button>
-      {detailsOpen ? (
+      <Reveal open={detailsOpen}>
         <div className="app-action-confirm-content__plans">
           {plans.length ? plans.map((plan) => (
             <section key={plan.id}>
@@ -54,7 +55,7 @@ export default function AppActionConfirmContent({
             <span className="app-action-confirm-content__empty">该操作由应用生命周期服务执行，没有可展示的命令。</span>
           )}
         </div>
-      ) : null}
+      </Reveal>
     </div>
   );
 }

@@ -28,6 +28,8 @@ import {
 import { useTranslationFeedback } from '@/features/translation/use-translation-feedback';
 import { formatTranslationHistoryTime } from '@/features/translation/translation-history';
 import { translationAPI } from '@/services/api';
+import { useAppendEnter } from '@/hooks/use-append-enter';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import MobileBoot from '@/mobile/MobileBoot';
 import { HudSection, MobilePage, MobileToolbar } from '@/mobile/ui';
 import type { TranslationDetectionResponse } from '@/types';
@@ -179,6 +181,18 @@ export default function MobileTranslation() {
   useEffect(() => setCopied(false), [stream.state.text]);
   const feedback = useTranslationFeedback(stream.state, detecting);
 
+  // 译文区在「空态 ↔ 实时译文」之间切换时整块淡入一次（只碰 opacity，不触发重排）；
+  // 翻译记录是「新的在最上面」，用 head 模式的追加判定只让新插入的那一条进场。
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  const resultPhaseKey = `${stream.state.status === 'idle' ? 'idle' : 'active'}|${stream.state.text ? 'text' : 'empty'}`;
+  useSwitchFade(resultRef, resultPhaseKey, { scope: 'mobile-translation-result' });
+  const historyListRef = useRef<HTMLDivElement | null>(null);
+  const historyKeys = useMemo(() => history.entries.map((entry) => entry.id), [history.entries]);
+  useAppendEnter(historyListRef, historyKeys, 'mobile-translation-history', {
+    selector: '[data-history-item]',
+    direction: 'head'
+  });
+
   if (status === 'loading' && !bootstrap) {
     return <MobileBoot label="LOADING TRANSLATE" />;
   }
@@ -208,7 +222,7 @@ export default function MobileTranslation() {
       }
     >
       {status === 'error' ? (
-        <div className={styles.inlineError}>
+        <div className={`${styles.inlineError} aih-fade-in`}>
           {error || '加载翻译设置失败'}
           <button type="button" className={styles.linkButton} onClick={reload}>
             重试
@@ -328,19 +342,19 @@ export default function MobileTranslation() {
         }
       >
         {meta ? (
-          <div className={styles.resultMeta}>
+          <div className={`${styles.resultMeta} aih-fade-in`}>
             {meta.fromLabel} → {meta.toLabel}
             {meta.model ? ` · ${meta.model}` : ''}
           </div>
         ) : null}
         {stream.state.status !== 'idle' || detecting ? (
-          <div className={styles.translationStatus} data-phase={feedback.phase} role="status" aria-live="polite">
+          <div className={`${styles.translationStatus} aih-fade-in`} data-phase={feedback.phase} role="status" aria-live="polite">
             <span className={styles.statusDot} aria-hidden="true" />
             <span>{feedback.label}</span>
             <span className={styles.statusElapsed}>{feedback.elapsedLabel}</span>
           </div>
         ) : null}
-        <div className={styles.result} data-phase={feedback.phase} aria-label="译文输出" aria-live="polite">
+        <div ref={resultRef} className={styles.result} data-phase={feedback.phase} aria-label="译文输出" aria-live="polite">
           {resultText ? (
             <div className={styles.resultText}>
               {resultText}
@@ -354,7 +368,7 @@ export default function MobileTranslation() {
           )}
         </div>
         {stream.state.status === 'error' && stream.state.error ? (
-            <div className={styles.inlineError} role="alert">
+            <div className={`${styles.inlineError} aih-fade-in`} role="alert">
             {stream.state.error.message}
             <button type="button" className={styles.linkButton} onClick={handleTranslate}>
               重试
@@ -379,9 +393,9 @@ export default function MobileTranslation() {
             完成一次翻译后，原文 / 译文 / 模型会记录在这里。
           </span>
         ) : (
-          <div className={styles.historyList}>
+          <div ref={historyListRef} className={`${styles.historyList} aih-fade-in`}>
             {history.entries.map((entry) => (
-              <div key={entry.id} className={styles.historyItem}>
+              <div key={entry.id} data-history-item className={styles.historyItem}>
                 <div className={styles.historyItemHeader}>
                   <span className={styles.historyRoute}>
                     {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}

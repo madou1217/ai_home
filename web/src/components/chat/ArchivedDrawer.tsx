@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Drawer, List, Tag, Empty, Skeleton, Popconfirm, message, Grid } from 'antd';
 import { UndoOutlined } from '@ant-design/icons';
 import type { ArchivedSession } from '@/types';
@@ -6,6 +6,8 @@ import { sessionsAPI } from '@/services/api';
 import ProviderIcon from './ProviderIcon';
 import { getProviderLabel, getProviderTagColor } from '@/providers/catalog';
 import { getSessionRunKey, isSameSession } from './project-runtime-state.js';
+import { usePresenceList } from '@/hooks/use-presence-list';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
 import {
   archivedSessionTime,
   canUnarchiveSession
@@ -45,6 +47,14 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
   useEffect(() => {
     if (open) loadArchived();
   }, [open]);
+
+  // 还原后该行按原位淡出 170ms，其余行 FLIP 滑上来补位，避免整列瞬间跳一下
+  const { render } = usePresenceList(sessions, (session) => getSessionRunKey(session));
+  const leavingKeys = useMemo(
+    () => new Set(render.filter((entry) => entry.leaving).map((entry) => getSessionRunKey(entry.item))),
+    [render]
+  );
+  const listFlipRef = useFlipReorder<HTMLDivElement>(render);
 
   const handleUnarchive = async (session: ArchivedSession) => {
     try {
@@ -87,63 +97,71 @@ const ArchivedDrawer = ({ open, onClose, onRestored }: Props) => {
       ) : sessions.length === 0 ? (
         <Empty description={<span className="hud-label">暂无归档会话</span>} className={styles.archivedEmpty} />
       ) : (
-        <List
-          dataSource={sessions}
-          split={false}
-          className={styles.archivedList}
-          renderItem={(session) => (
-            <List.Item
-              key={getSessionRunKey(session)}
-              className={`hud-panel hud-panel--sm ${styles.archivedItem}`}
-              actions={canUnarchiveSession(session) ? [
-                <Popconfirm
-                  key="restore"
-                  title="还原此会话？"
-                  description="还原后会话将重新出现在项目列表中"
-                  onConfirm={() => handleUnarchive(session)}
-                  okText="确定"
-                  cancelText="取消"
+        <div ref={listFlipRef}>
+          <List
+            dataSource={render.map((entry) => entry.item)}
+            split={false}
+            className={styles.archivedList}
+            renderItem={(session) => {
+              const sessionKey = getSessionRunKey(session);
+              const leaving = leavingKeys.has(sessionKey);
+              return (
+                <List.Item
+                  key={sessionKey}
+                  data-flip-key={sessionKey}
+                  aria-hidden={leaving ? true : undefined}
+                  className={`hud-panel hud-panel--sm ${styles.archivedItem}${leaving ? ' aih-leaving' : ''}`}
+                  actions={canUnarchiveSession(session) ? [
+                    <Popconfirm
+                      key="restore"
+                      title="还原此会话？"
+                      description="还原后会话将重新出现在项目列表中"
+                      onConfirm={() => handleUnarchive(session)}
+                      okText="确定"
+                      cancelText="取消"
+                    >
+                      <Button
+                        type="text"
+                        icon={<UndoOutlined />}
+                        size="small"
+                        className={styles.archivedRestoreButton}
+                      >
+                        还原
+                      </Button>
+                    </Popconfirm>
+                  ] : []}
                 >
-                  <Button
-                    type="text"
-                    icon={<UndoOutlined />}
-                    size="small"
-                    className={styles.archivedRestoreButton}
-                  >
-                    还原
-                  </Button>
-                </Popconfirm>
-              ] : []}
-            >
-              <List.Item.Meta
-                avatar={<ProviderIcon provider={session.provider} size={18} />}
-                title={
-                  <span className={styles.archivedTitle} data-mobile={isMobile ? 'true' : undefined}>
-                    {session.title}
-                  </span>
-                }
-                description={
-                  <div className={styles.archivedMeta} data-mobile={isMobile ? 'true' : undefined}>
-                    <Tag
-                      color={getProviderTagColor(session.provider)}
-                      style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
-                    >
-                      {getProviderLabel(session.provider)}
-                    </Tag>
-                    <Tag
-                      bordered={false}
-                      color={session.origin === 'native' ? 'green' : 'gold'}
-                      style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
-                    >
-                      {session.origin === 'native' ? '原生归档' : '历史归档'}
-                    </Tag>
-                    <span className={styles.archivedTime}>最后更新 <SessionRelativeTime timestamp={archivedSessionTime(session)} /></span>
-                  </div>
-                }
-              />
-            </List.Item>
-          )}
-        />
+                  <List.Item.Meta
+                    avatar={<ProviderIcon provider={session.provider} size={18} />}
+                    title={
+                      <span className={styles.archivedTitle} data-mobile={isMobile ? 'true' : undefined}>
+                        {session.title}
+                      </span>
+                    }
+                    description={
+                      <div className={styles.archivedMeta} data-mobile={isMobile ? 'true' : undefined}>
+                        <Tag
+                          color={getProviderTagColor(session.provider)}
+                          style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
+                        >
+                          {getProviderLabel(session.provider)}
+                        </Tag>
+                        <Tag
+                          bordered={false}
+                          color={session.origin === 'native' ? 'green' : 'gold'}
+                          style={{ fontSize: isMobile ? 11 : 10, lineHeight: isMobile ? '18px' : '16px', padding: '0 4px', margin: 0 }}
+                        >
+                          {session.origin === 'native' ? '原生归档' : '历史归档'}
+                        </Tag>
+                        <span className={styles.archivedTime}>最后更新 <SessionRelativeTime timestamp={archivedSessionTime(session)} /></span>
+                      </div>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
+          />
+        </div>
       )}
     </Drawer>
   );

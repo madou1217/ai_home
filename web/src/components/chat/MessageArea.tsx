@@ -23,6 +23,9 @@ import ComposerAttachmentGallery from './ComposerAttachmentGallery';
 import { CHAT_ATTACHMENT_ACCEPT, shouldConvertLargePaste, type ChatDocumentAttachment } from './attachment-files';
 import { useChatFileInput } from './use-chat-file-input';
 import InSessionSearchBar from './InSessionSearchBar';
+import { useFlipReorder } from '@/hooks/use-flip-reorder';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { useAppendEnter } from '@/hooks/use-append-enter';
 import { IN_SESSION_SEARCH_OPEN_EVENT } from './chat-global-shortcuts';
 import PromptPresetsCapsule from './PromptPresetsCapsule';
 import { findLatestActiveChecklist } from './message-structure';
@@ -58,6 +61,8 @@ import {
   supportsAihServer
 } from './aih-server-account';
 import { getAccountIdentityLabel } from '@/utils/account-labels';
+import { useCollapsePresence } from '@/hooks/use-collapse-presence';
+import { usePresenceList } from '@/hooks/use-presence-list';
 import { throttle } from '@/utils/timing';
 import {
   getQueueModeDescription,
@@ -241,9 +246,12 @@ const MessageArea = ({
 }: Props) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingVisualTsRef = useRef<number>(Date.now());
+  // 排队消息的增删/换序：其余条目滑到新位置，而不是整列瞬间重排。
+  const queueFlipRef = useFlipReorder<HTMLDivElement>(queuedMessages);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [accountModelState, setAccountModelState] = useState<{ targetKey: string; ids: string[]; defaultModel: string; loading: boolean; metadata?: Record<string, ModelMetadata> }>(() => {
     return { targetKey: '', ids: [], defaultModel: '', loading: false };
@@ -289,6 +297,11 @@ const MessageArea = ({
   }, []);
   const dictation = useDictation();
   const addFiles = useChatFileInput({ images, documents, onImagesChange, onDocumentsChange });
+  // 切换会话：消息内容整体换掉（跨会话没有可比的旧坐标），用一次只碰 opacity 的淡入表达「切换」。
+  // 不做重挂载——长会话重挂全部气泡的代价远超一条合成器动画；key 记在模块级，
+  // 外壳整块重挂载时同样能判断出「换过会话」。
+  useSwitchFade(threadRef, session ? String(session.id || 'draft') : '');
+
   useMobileOverscrollFeedback(scrollContainerRef);
   const startDictation = useCallback(() => {
     dictation.start(input, onInputChange);
@@ -677,6 +690,16 @@ const MessageArea = ({
     return filterRenderableChatMessages(pendingState.messages);
   }, [activeProvider, externalPending, externalPendingStatusText, loading, loadingStatusText, messages]);
 
+  // 追加一条消息：只让新出现的消息行淡入上移（流式内容变化 id 不变，不会重播）。
+  // 气泡 key 是「角色-位置」，切会话时位置会重合，所以用会话 id 做基线重置。
+  const messageKeys = useMemo(
+    () => displayMessages.map((msg, index) => `${msg.role}-${index}`),
+    [displayMessages]
+  );
+  useAppendEnter(threadRef, messageKeys, session ? String(session.id || 'draft') : 'draft', {
+    selector: '[data-chat-anchor-key]',
+  });
+
   const renderedMessageNodes = useMemo(() => (
     displayMessages.map((msg, i) => {
       const isFollowup = msg.role === 'assistant' && i > 0 && displayMessages[i - 1].role === 'assistant';
@@ -731,7 +754,14 @@ const MessageArea = ({
   ]);
   const showPlanChoiceDock = Boolean(interactivePrompt && onSelectPlanChoice && !isTerminated);
   const showTerminalDock = Boolean(terminalRun && terminalRun.runId);
-  const hasComposerDock = Boolean(activeChecklist) || showPlanChoiceDock || showTerminalDock || queuedMessages.length > 0;
+  // 选项卡退场期间仍需留在 dock 栈里，否则整个栈会随判定一起卸载、退场动画看不到
+  const planChoicePresence = useCollapsePresence(showPlanChoiceDock, 160);
+  // 回到底部按钮：隐藏时留 140ms 播放退场（否则滚到顶部/底部时按钮直接消失，是整段交互里最突兀的硬切）
+  const scrollBtnPresence = useCollapsePresence(showScrollBottom, 140);
+  // 移除排队消息：先留 170ms 播退场（.aih-leaving）再卸载，队列不会「点一下整行消失」。
+  const queuePresence = usePresenceList(queuedMessages, (item) => item.id, 170);
+  const hasComposerDock = Boolean(activeChecklist) || planChoicePresence.present || showTerminalDock
+    || queuePresence.render.length > 0;
   const helperFontSize = mobile ? 13 : 12;
 
   // 会话模型默认值的唯一解析处（切会话按会话键重算，不靠"模型失效"触发，避免与父组件竞争）：
@@ -930,7 +960,7 @@ const MessageArea = ({
         data-provider={sessionProvider}
         style={providerAccentStyle(sessionProvider)}
       >
-        <div className={styles.messageThread}>
+        <div className={styles.messageThread} ref={threadRef}>
           {displayMessages.length === 0 ? (
             <div className={styles.welcomeState}>
               <div className={styles.welcomeTitle}>你今天想聊些什么？</div>
@@ -965,8 +995,11 @@ const MessageArea = ({
           )}
         </div>
 
-        {showScrollBottom && (
-          <button onClick={scrollToBottom} className={styles.scrollBottomBtn}>
+        {scrollBtnPresence.present && (
+          <button
+            onClick={scrollToBottom}
+            className={`${styles.scrollBottomBtn} ${scrollBtnPresence.expanded ? '' : styles.scrollBottomBtnLeaving}`}
+          >
             <ArrowDownOutlined />
           </button>
         )}
@@ -1006,16 +1039,21 @@ const MessageArea = ({
                 onClose={(runId) => onCloseTerminal?.(runId)}
               />
             ) : null}
-            {queuedMessages.length > 0 ? (
-              <div className={`${styles.queueDock} ${styles.composerDockCard}`}>
+            {queuePresence.render.length > 0 ? (
+              <div ref={queueFlipRef} className={`${styles.queueDock} ${styles.composerDockCard}`}>
                 <div className={styles.queueDockHeader}>
                   <span className={styles.queueDockTitle}>{`排队消息 ${queuedMessages.length}`}</span>
                   <span className={styles.queueDockHint}>
                     运行中继续输入的需求会在这里排队
                   </span>
                 </div>
-            {queuedMessages.map((item, index) => (
-              <div key={item.id} className={styles.queueItem}>
+            {queuePresence.render.map(({ item, leaving }, index) => (
+              <div
+                key={item.id}
+                data-flip-key={item.id}
+                className={`${styles.queueItem}${leaving ? ' aih-leaving' : ''}`}
+                aria-hidden={leaving || undefined}
+              >
                 <div className={styles.queueGrip} aria-hidden="true">⋮⋮</div>
                 <button
                   type="button"

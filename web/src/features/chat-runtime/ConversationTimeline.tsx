@@ -25,6 +25,8 @@ import TurnFeedback from './TurnFeedback';
 import TurnProgress from './TurnProgress';
 import type { SessionRuntimeActions } from './session-runtime-actions';
 import styles from './session-runtime.module.css';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
+import { useAppendEnter } from '@/hooks/use-append-enter';
 
 interface Props {
   readonly controller: SessionRuntimeController;
@@ -57,6 +59,18 @@ export default function ConversationTimeline({
   const connectionState = useSessionSelector(controller.store, selectConnectionState);
   const connection = sessionConnectionPresentation(connectionState);
   const viewport = useTimelineViewport(controller, items);
+  // 切换会话时整条时间线内容换掉：一次只碰 opacity 的淡入表达「切换」。
+  // key 记在模块级，会话外壳整块重挂载（controller 换实例）时同样能判断出来。
+  useSwitchFade(viewport.containerRef, controller.sessionId);
+  // 追加一条消息：只让新出现的消息行做一次淡入上移，历史消息不动。
+  // 消息 id 序列是「纯追加」判定的依据；切会话/加载更早记录不满足前缀，不会误播。
+  const messageKeys = useMemo(
+    () => presentation.items.filter((item) => item.kind === 'message').map((item) => item.id),
+    [presentation.items],
+  );
+  useAppendEnter(viewport.containerRef, messageKeys, controller.sessionId, {
+    selector: '[data-chat-anchor-key]',
+  });
   const preview = useTimelineFilePreview(projectPath);
   const idle = useSessionSelector(controller.store, (projection) => projection.state === 'idle');
   const operation = useMemo(() => new MessageOperation(actions, controller.sessionId), [actions, controller.sessionId]);

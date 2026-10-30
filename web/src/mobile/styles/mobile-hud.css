@@ -241,11 +241,11 @@ html[data-mobile-hud] .mhud-shell .ant-select-single .ant-select-selector { alig
   color: var(--color-faint);
   font-family: var(--font-body);
   cursor: pointer;
+  transition: color var(--motion-fast) var(--ease-standard), text-shadow var(--motion-fast) var(--ease-standard);
 }
-.mhud-nav__icon { font-size: 19px; line-height: 1; }
-.mhud-nav__label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
-.mhud-nav__item.is-active { color: var(--color-accent); text-shadow: var(--hud-text-glow); }
-.mhud-nav__item.is-active::before {
+
+/* 选中指示条常驻但收起：切换 tab 时从中心展开而不是突然出现 */
+.mhud-nav__item::before {
   content: '';
   position: absolute;
   top: -1px;
@@ -254,6 +254,18 @@ html[data-mobile-hud] .mhud-shell .ant-select-single .ant-select-selector { alig
   height: 2px;
   background: var(--color-accent);
   box-shadow: 0 0 10px var(--color-accent);
+  opacity: 0;
+  transform: scaleX(0.35);
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-base) var(--ease-emphasized);
+}
+.mhud-nav__icon { font-size: 19px; line-height: 1; }
+.mhud-nav__label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
+.mhud-nav__item.is-active { color: var(--color-accent); text-shadow: var(--hud-text-glow); }
+.mhud-nav__item.is-active::before {
+  opacity: 1;
+  transform: scaleX(1);
 }
 .mhud-nav__item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -4px; }
 
@@ -267,10 +279,17 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
  * 2. 页面容器 / 工具条 / 分区
  * ---------------------------------------------------------------------- */
 .mhud-page {
+  /* 移动端页面按路由 key 重新挂载：一次轻量淡入上移就是「换屏」的过渡。
+   * 只碰 opacity/transform，时长走 base，返回上一屏同样从下方进入（统一节奏）。 */
+  animation: mhud-page-in var(--motion-base) var(--ease-standard) backwards;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 14px var(--mhud-gutter) 24px;
+}
+@keyframes mhud-page-in {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
 }
 .mhud-page__lead {
   margin: 0;
@@ -353,6 +372,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   color: inherit;
   font: inherit;
   text-align: left;
+  transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .mhud-tile::before {
   content: '';
@@ -449,7 +469,8 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   padding: 10px 14px;
   background: var(--color-surface);
   touch-action: pan-y;
-  transition: transform var(--motion-base) var(--ease-emphasized);
+  /* 按下态只换底色：和滑动位移共用一条声明，按下反馈不再瞬间跳色。 */
+  transition: transform var(--motion-base) var(--ease-emphasized), background var(--motion-fast) var(--ease-standard);
   -webkit-tap-highlight-color: transparent;
 }
 .mhud-swipe__content.is-dragging { transition: none; }
@@ -499,6 +520,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .mhud-icon-btn .anticon { font-size: 16px; }
 .mhud-icon-btn:active:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
@@ -538,6 +560,8 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
   scroll-snap-align: start;
   cursor: pointer;
+  /* 选中 / 按下只是边框、底色、文字变色：给一次短过渡，筛选不再硬跳（只碰 paint，不触发布局）。 */
+  transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .mhud-chip.is-active { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface-sunken)); color: var(--color-accent); text-shadow: var(--hud-text-glow-soft); }
 .mhud-chip:disabled { opacity: 0.4; }
@@ -608,6 +632,7 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   text-align: left;
   clip-path: polygon(0 var(--hud-cut), var(--hud-cut) 0, 100% 0, 100% 100%, 0 100%);
   cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
 }
 .mhud-more__item.is-active { border-color: var(--color-accent); box-shadow: inset 2px 0 0 var(--color-accent), inset 0 0 16px color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .mhud-more__item:active { border-color: var(--color-accent); }
@@ -623,7 +648,8 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
 /* -------------------------------------------------------------------------
  * 8. 空状态 / 加载
  * ---------------------------------------------------------------------- */
-.mhud-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; }
+/* 空状态是「加载中 → 没有数据」的条件挂载：出现时淡入一次，只碰 opacity。 */
+.mhud-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards; }
 .mhud-empty__frame { position: relative; width: 56px; height: 40px; border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
 .mhud-empty__frame span { position: absolute; inset: 50% 8px auto; height: 1px; background: color-mix(in srgb, var(--color-accent) 60%, transparent); box-shadow: 0 0 6px var(--color-accent); }
 .mhud-empty__title { font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; color: var(--color-accent); text-shadow: var(--hud-text-glow); }

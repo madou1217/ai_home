@@ -20,15 +20,18 @@ async function post(route, body) {
 
 test('terminal remains usable with an explicit non-durable result when tmux is missing', { skip: process.platform === 'win32' }, () => {
   const child = spawnSync(process.execPath, ['-e', `
-    const { openWebUiTerminalSession } = require('./lib/server/webui-terminal-routes');
+    const { openWebUiTerminalSession, handleWebUiTerminalRequest } = require('./lib/server/webui-terminal-routes');
     const result = openWebUiTerminalSession({ sessionKey: 'without-tmux', file: '/bin/sh', args: [] });
-    console.log(JSON.stringify(result));
-    process.exit(0);
+    handleWebUiTerminalRequest({ method: 'POST', pathname: '/v0/webui/terminal/close', res: {},
+      readRequestBody: async () => Buffer.from(JSON.stringify({ sessionKey: 'without-tmux' })),
+      writeJson: (_res, status, body) => { process.stdout.write(JSON.stringify({ ...result, closeStatus: status, closeOk: body.ok }), () => process.exit(0)); } });
   `], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, PATH: '' }, timeout: 8000 });
   assert.equal(child.status, 0, child.stderr);
   const result = JSON.parse(child.stdout);
   assert.equal(result.ok, true);
   assert.equal(result.durable, false);
+  assert.equal(result.closeStatus, 200);
+  assert.equal(result.closeOk, true);
 });
 
 test('adoption reports capacity errors rather than claiming the session ended', () => {
@@ -63,10 +66,14 @@ test('keyed terminal survives the server process and can be closed after adoptio
   const key = `restart-test-${process.pid}-${Date.now()}`;
   try {
     const child = spawnSync(process.execPath, ['-e', `
-      const { openWebUiTerminalSession } = require('./lib/server/webui-terminal-routes');
+      const { openWebUiTerminalSession, findSessionByKey } = require('./lib/server/webui-terminal-routes');
       const result = openWebUiTerminalSession({ sessionKey: process.argv[1], file: '/bin/sh', args: ['-c', 'test -z "$TMUX" && echo TMUX_CLEARED; echo SURVIVED; exec /bin/sh'] });
       if (!result.ok) { console.error(result); process.exit(1); }
-      setTimeout(() => process.exit(0), 300);
+      const poll = setInterval(() => {
+        const session = findSessionByKey(process.argv[1]);
+        if (session && session.buffer.join('').includes('SURVIVED')) process.exit(0);
+      }, 50);
+      setTimeout(() => { clearInterval(poll); process.exit(2); }, 6000);
     `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
       env: { ...process.env, TMUX: '/tmp/outer-tmux,123,0' } });
     assert.equal(child.status, 0, child.stderr);
@@ -90,8 +97,12 @@ test('keyed terminal survives the server process and can be closed after adoptio
     await handleWebUiTerminalRequest({ method: 'GET', pathname: '/v0/webui/terminal/mux', url: new URL(`http://localhost/?muxId=${muxId}`), req, res });
     const attached = await post('attach', { sessionKey: key, muxId });
     assert.equal(attached.ok, true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const output = frames.filter((frame) => frame.type === 'output').map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');
+    let output = '';
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      output = frames.filter((frame) => frame.type === 'output').map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');
+      if (output.includes('SURVIVED')) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     assert.match(output, /SURVIVED/);
     assert.match(output, /TMUX_CLEARED/);
     await post('close', { termId: attached.termId });

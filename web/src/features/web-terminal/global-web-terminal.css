@@ -27,6 +27,7 @@
 }
 .global-web-terminal-window [data-draggable] { touch-action: none; }
 .global-web-terminal-window.is-interacting { box-shadow: 0 0 0 1px rgba(0, 134, 160, 0.15); }
+.global-web-terminal-window.is-moving { will-change: translate; }
 .global-web-terminal-window.is-minimized > div { display: none; }
 .global-web-terminal-restore {
   display: flex;

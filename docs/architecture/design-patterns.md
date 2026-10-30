@@ -16,7 +16,7 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
 | `web/src/components/chat/terminal-input.ts` + `ShellTerminalPanel.tsx` | **Serialized Queue + Connection State** | 断流后暂停发送并在会话接管后按序排空；仅对明确未写入的 `terminal_not_found` 重试，不重放执行状态未知的命令 | `test/web-terminal-input.test.js` 覆盖断线排队、404 重试、发送结果未知及在途重连竞态 |
-| `use-terminal-window-gesture.ts` + `terminal-window-geometry.ts` | **Frame Coalescing + Geometry Boundary** | 拖拽与缩放只在动画帧更新窗口，结束时持久化一次；几何计算独立处理视口边界和固定对侧边缘 | `test/web-terminal-window-geometry.test.js` 覆盖拖拽、边界、最小尺寸和窄屏；隔离浏览器检查拖拽与保存 |
+| `use-terminal-window-gesture.ts` + `terminal-window-geometry.ts` | **Frame Coalescing + Geometry Boundary** | 拖拽与缩放只在动画帧更新窗口；移动时用合成位移减少页面布局，结束时持久化一次，旧浏览器回退坐标更新；几何计算独立处理视口边界和固定对侧边缘 | `test/web-terminal-window-gesture.test.js`、`test/web-terminal-window-geometry.test.js` 覆盖位移、回退、拖拽中断、边界和缩放；隔离浏览器检查拖拽与保存 |
 | `use-terminal-dock-resize.ts` | **Frame Coalescing + Lifecycle Cleanup** | 聊天及工作台的底部终端拖拽只更新局部高度，结束时提交；中断、卸载及最小化会恢复指针状态 | `test/web-terminal-dock-resize.test.js` 覆盖高频指针、边界和中断清理；隔离浏览器检查触控、键盘和最终高度 |
 | `terminal-resize-sender.ts` | **Latest-value Serialized Queue** | 限速并按序同步 PTY 尺寸，慢请求期间只保留最后尺寸，避免过期尺寸覆盖最终尺寸 | `test/web-terminal-resize-sender.test.js` 覆盖慢请求、最终尺寸、限速及关闭取消 |
 | `web/src/features/web-terminal/web-terminal-scope.ts` | **Scoped State Update** | 异步创建或关闭完成时按发起服务器更新其布局，避免服务器切换后会话丢失或误入当前服务器 | `test/web-terminal-scope.test.js` 覆盖跨服务器的迟到创建与关闭，以及当前服务器的同步状态更新 |

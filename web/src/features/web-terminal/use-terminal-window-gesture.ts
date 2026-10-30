@@ -30,6 +30,8 @@ export function useTerminalWindowGesture(
     const startY = event.clientY;
     const previousSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
+    const previousTranslate = node.style.translate;
+    const useTranslate = edge === 'move' && typeof CSS !== 'undefined' && CSS.supports('translate', '1px 1px');
     let latest = start;
     let frame: number | null = null;
     let changed = false;
@@ -37,14 +39,19 @@ export function useTerminalWindowGesture(
     document.body.style.userSelect = 'none';
     document.body.style.cursor = edge === 'move' ? 'move' : getComputedStyle(event.currentTarget).cursor;
     node.classList.add('is-interacting');
+    if (useTranslate) node.classList.add('is-moving');
 
     const paint = () => {
       frame = null;
-      node.style.left = `${latest.x}px`;
-      node.style.top = `${latest.y}px`;
-      if (edge !== 'move') {
-        node.style.width = `${latest.width}px`;
-        node.style.height = `${latest.height}px`;
+      if (useTranslate) {
+        node.style.translate = `${latest.x - start.x}px ${latest.y - start.y}px`;
+      } else {
+        node.style.left = `${latest.x}px`;
+        node.style.top = `${latest.y}px`;
+        if (edge !== 'move') {
+          node.style.width = `${latest.width}px`;
+          node.style.height = `${latest.height}px`;
+        }
       }
     };
     const move = (next: globalThis.PointerEvent) => {
@@ -63,6 +70,8 @@ export function useTerminalWindowGesture(
       document.body.style.userSelect = previousSelect;
       document.body.style.cursor = previousCursor;
       node.classList.remove('is-interacting');
+      node.classList.remove('is-moving');
+      if (useTranslate) node.style.translate = previousTranslate;
       if (!finishing) {
         const current = styleRef.current;
         node.style.left = String(current?.left ?? '');
@@ -76,6 +85,10 @@ export function useTerminalWindowGesture(
       if (next instanceof globalThis.PointerEvent && next.pointerId !== pointerId) return;
       if (next.type === 'pointerup') move(next as globalThis.PointerEvent);
       if (frame !== null) { cancelAnimationFrame(frame); paint(); }
+      if (edge === 'move') {
+        node.style.left = `${latest.x}px`;
+        node.style.top = `${latest.y}px`;
+      }
       finishing = true;
       cleanup();
       if (changed) setPosition(edge === 'move' ? { x: latest.x, y: latest.y } : latest);

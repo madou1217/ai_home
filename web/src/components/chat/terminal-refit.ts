@@ -1,6 +1,7 @@
 export interface TerminalRefitInstance {
   readonly opened: boolean;
-  readonly fit: { fit(): void };
+  readonly fit: { proposeDimensions(): { cols: number; rows: number } | undefined };
+  readonly term: { readonly cols: number; readonly rows: number; resize(cols: number, rows: number): void };
 }
 
 export interface TerminalRefitter {
@@ -12,8 +13,9 @@ export interface TerminalRefitter {
 export const TERMINAL_RESIZE_FINISHED = 'aih-terminal-resize-finished';
 
 /**
- * fit 当前激活且已挂载的终端实例。
- * 容器尚无尺寸（如隐藏页签）时 FitAddon 抛错，吞掉等下一轮回调。
+ * Measure with FitAddon's public API, then resize through xterm's public API.
+ * The DOM renderer redraws every row on resize; FitAddon.fit() first clears
+ * those same rows, creating unnecessary DOM churn during a drag.
  */
 export function fitActiveTerminal(
   instances: ReadonlyMap<string, TerminalRefitInstance>,
@@ -21,7 +23,11 @@ export function fitActiveTerminal(
 ): void {
   const inst = instances.get(activeId);
   if (!inst || !inst.opened) return;
-  try { inst.fit.fit(); } catch { /* 容器暂无尺寸 */ }
+  try {
+    const size = inst.fit.proposeDimensions();
+    if (!size || !Number.isFinite(size.cols) || !Number.isFinite(size.rows)) return;
+    if (size.cols !== inst.term.cols || size.rows !== inst.term.rows) inst.term.resize(size.cols, size.rows);
+  } catch { /* 容器暂无尺寸 */ }
 }
 
 /**

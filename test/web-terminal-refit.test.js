@@ -34,12 +34,29 @@ test('resize notifications are coalesced and fit the active terminal', () => {
 test('fitActiveTerminal never fits a hidden session and tolerates fit errors', () => {
   let fitted = 0;
   const instances = new Map([
-    ['hidden', { opened: false, fit: { fit: () => { fitted += 1; } } }],
-    ['active', { opened: true, fit: { fit: () => { throw new Error('no size'); } } }]
+    ['hidden', { opened: false, fit: { proposeDimensions: () => { fitted += 1; } } }],
+    ['active', { opened: true, fit: { proposeDimensions: () => { throw new Error('no size'); } } }]
   ]);
   fitActiveTerminal(instances, 'hidden');
   fitActiveTerminal(instances, 'active');
   assert.equal(fitted, 0);
+});
+
+test('resize uses measured dimensions and skips unchanged or unavailable grids', () => {
+  const sizes = [];
+  let proposed = { cols: 90, rows: 30 };
+  const inst = {
+    opened: true,
+    fit: { proposeDimensions: () => proposed },
+    term: { cols: 80, rows: 24, resize: (cols, rows) => sizes.push([cols, rows]) }
+  };
+  const instances = new Map([['active', inst]]);
+  fitActiveTerminal(instances, 'active');
+  proposed = { cols: 80, rows: 24 };
+  fitActiveTerminal(instances, 'active');
+  proposed = undefined;
+  fitActiveTerminal(instances, 'active');
+  assert.deepEqual(sizes, [[90, 30]]);
 });
 
 test('interactive fits are paced and release flushes the latest size immediately', () => {

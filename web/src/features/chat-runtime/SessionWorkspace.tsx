@@ -145,6 +145,8 @@ export default function SessionWorkspace(props: Props) {
             accountRef={props.accountRef}
             provider={props.runtimeTarget.provider}
             projectPath={props.runtimeTarget.projectPath}
+            draft={!props.runtimeTarget.nativeSessionId && !props.runtimeTarget.sessionId
+              && !props.runtimeTarget.chatSessionId}
             catalog={composerCatalog}
             selectedModel={props.selectedModel}
             approvalMode={projection.approvalMode || props.approvalMode}

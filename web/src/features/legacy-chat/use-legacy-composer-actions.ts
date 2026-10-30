@@ -62,12 +62,11 @@ export function useLegacyComposerActions({
 }: LegacyComposerActionOptions): LegacyComposerActions {
   const draftIdentity = useMemo(() => ({
     sessionId: selection.session.id,
-    provider: selection.session.provider,
-    accountRef: selection.account?.accountRef || '',
+    draft: Boolean(selection.session.draft),
     workspaceMode: selection.session.mode || 'chat',
     projectPath: selection.session.projectPath || selection.project?.path || '',
-  }), [selection.account?.accountRef, selection.project?.path, selection.session.id,
-    selection.session.mode, selection.session.projectPath, selection.session.provider]);
+  }), [selection.project?.path, selection.session.draft, selection.session.id,
+    selection.session.mode, selection.session.projectPath]);
   const draftKey = composerDraftKey(draftIdentity);
   const hydratedDraftKey = useRef('');
   const [input, setInputState] = useState('');

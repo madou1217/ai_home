@@ -25,6 +25,7 @@ import { chatAccountIdentity } from '@/components/chat/aih-server-account';
 import { useProjectDialogs } from '@/features/legacy-chat/use-project-dialogs';
 import { useProjectCatalog } from '@/features/legacy-chat/use-project-catalog';
 import type { PersistedChatSelection } from '@/features/legacy-chat/runtime-types';
+import { carryComposerDraftToNextSession } from '@/features/chat-runtime/composer-draft-store';
 import {
   readPersistedSelection,
 } from './chat-selection-state.js';
@@ -352,6 +353,8 @@ export function ChatConversationContent({
                 return;
               }
               if (session.mode === 'chat') {
+                // 跨 provider 换账号 = 新会话；用户已输入的内容跟着走。
+                carryComposerDraftToNextSession();
                 projectCatalog.setSelectedSession({
                   id: `draft-${Date.now()}`, title: '新对话', updatedAt: Date.now(),
                   provider: account.provider, draft: true, mode: 'chat',
@@ -362,6 +365,7 @@ export function ChatConversationContent({
               // Work 草稿换到另一个 provider 的账号：按新 provider 重建草稿（项目不变），
               // 否则草稿仍是旧 provider，运行目标会被判成 provider_mismatch。
               if (session.draft && session.provider !== account.provider) {
+                carryComposerDraftToNextSession();
                 projectCatalog.setSelectedSession({
                   id: `draft-${Date.now()}`, title: session.title || '新会话', updatedAt: Date.now(),
                   provider: account.provider, projectPath: session.projectPath, draft: true, mode: 'work',

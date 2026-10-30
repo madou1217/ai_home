@@ -21,6 +21,8 @@ export interface ComposerProps {
   readonly accountRef: string;
   readonly provider: string;
   readonly projectPath?: string;
+  /** 会话尚未绑定原生/运行时会话（新会话草稿）。 */
+  readonly draft?: boolean;
   readonly catalog: RuntimeComposerCatalogState;
   readonly selectedModel: string;
   readonly approvalMode: ApprovalMode;

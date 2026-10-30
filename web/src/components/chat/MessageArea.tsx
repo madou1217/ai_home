@@ -267,11 +267,10 @@ const MessageArea = ({
   const [shellTerminalOpen, setShellTerminalOpen] = useState(false);
   const legacyDraftIdentity = useMemo(() => ({
     sessionId: session?.id,
-    provider: session?.provider,
-    accountRef: selectedAccount?.accountRef,
+    draft: Boolean(session?.draft),
     workspaceMode: session?.mode || 'chat',
     projectPath: session?.projectPath || terminalCwd,
-  }), [selectedAccount?.accountRef, session?.id, session?.mode, session?.projectPath, session?.provider, terminalCwd]);
+  }), [session?.draft, session?.id, session?.mode, session?.projectPath, terminalCwd]);
   const legacyDraftKey = composerDraftKey(legacyDraftIdentity);
   const hydratedLegacyDraftKey = useRef('');
   useEffect(() => {

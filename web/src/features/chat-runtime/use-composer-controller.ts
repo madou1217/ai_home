@@ -73,13 +73,13 @@ function useComposerViewState(props: ComposerProps) {
     ),
     [projection, props.workspaceMode],
   );
+  // 草稿只跟会话走：换账号/换 provider 不换槽位（见 composer-draft-store）。
   const draftIdentity = useMemo<ComposerDraftIdentity>(() => ({
     sessionId: projection.sessionId,
-    provider: props.provider,
-    accountRef: props.accountRef,
+    draft: props.draft,
     workspaceMode: props.workspaceMode,
     projectPath: props.projectPath,
-  }), [projection.sessionId, props.accountRef, props.projectPath, props.provider, props.workspaceMode]);
+  }), [projection.sessionId, props.draft, props.projectPath, props.workspaceMode]);
   const draftKey = composerDraftKey(draftIdentity);
   const hydratedDraftKey = useRef('');
   const [input, setInputState] = useState('');

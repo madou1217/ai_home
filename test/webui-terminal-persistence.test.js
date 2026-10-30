@@ -47,6 +47,18 @@ test('adoption reports capacity errors rather than claiming the session ended', 
   assert.deepEqual(JSON.parse(child.stdout), { status: 429, ok: false, error: 'too_many_terminals' });
 });
 
+test('closing an untracked key reports an unavailable backend instead of claiming success', { skip: process.platform === 'win32' }, () => {
+  const child = spawnSync(process.execPath, ['-e', `
+    const { handleWebUiTerminalRequest } = require('./lib/server/webui-terminal-routes');
+    handleWebUiTerminalRequest({ method: 'POST', pathname: '/v0/webui/terminal/close', res: {},
+      readRequestBody: async () => Buffer.from(JSON.stringify({ termId: 'old', sessionKey: 'possibly-live' })),
+      writeJson: (_res, status, body) => console.log(JSON.stringify({ status, ...body })) });
+  `], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000,
+    env: { ...process.env, PATH: '' } });
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout), { status: 503, ok: false, error: 'persistent_terminal_unavailable' });
+});
+
 test('keyed terminal survives the server process and can be closed after adoption', { skip: !tmuxAvailable, timeout: 15000 }, async () => {
   const key = `restart-test-${process.pid}-${Date.now()}`;
   try {
@@ -108,5 +120,37 @@ test('idle collection keeps keyed terminals after 30 minutes', { skip: !tmuxAvai
     if (terminal?.termId) await post('close', { termId: terminal.termId });
     if (other?.termId) await post('close', { termId: other.termId });
     persistence.close(key);
+  }
+});
+
+test('closing with a stale terminal id removes the detached session after server restart', { skip: !tmuxAvailable, timeout: 15000 }, async () => {
+  const key = `close-restart-test-${process.pid}-${Date.now()}`;
+  try {
+    const child = spawnSync(process.execPath, ['-e', `
+      const result = require('./lib/server/webui-terminal-routes').openWebUiTerminalSession({ sessionKey: process.argv[1], file: '/bin/sh', args: [] });
+      if (!result.ok) { console.error(result); process.exit(1); }
+      setTimeout(() => process.exit(0), 200);
+    `, key], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 8000 });
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(persistence.probe(key).state, 'alive');
+    assert.equal((await post('close', { termId: 'obsolete-id', sessionKey: key })).ok, true);
+    assert.equal(persistence.probe(key).state, 'missing');
+    assert.equal((await post('attach', { sessionKey: key })).error, 'terminal_not_found');
+  } finally {
+    persistence.close(key);
+  }
+});
+
+test('closing rejects a terminal id paired with a different session key', { skip: !tmuxAvailable }, async () => {
+  const key = `close-identity-test-${process.pid}-${Date.now()}`;
+  const opened = await post('open', { sessionKey: key });
+  assert.equal(opened.ok, true);
+  try {
+    const result = await post('close', { termId: opened.termId, sessionKey: `${key}-other` });
+    assert.equal(result.status, 409);
+    assert.equal(result.error, 'terminal_identity_mismatch');
+    assert.equal(persistence.probe(key).state, 'alive');
+  } finally {
+    await post('close', { termId: opened.termId, sessionKey: key });
   }
 });

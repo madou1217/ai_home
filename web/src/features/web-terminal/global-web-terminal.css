@@ -48,7 +48,8 @@
 .global-web-terminal-restore span { font-size: 12px; }
 .global-web-terminal-resize {
   position: absolute;
-  z-index: 4;
+  /* xterm positions its transparent input at the cursor in a z-index: 5 helper. */
+  z-index: 6;
   touch-action: none;
 }
 .global-web-terminal-resize:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }

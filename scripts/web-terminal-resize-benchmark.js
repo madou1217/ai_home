@@ -445,6 +445,27 @@ async function run(options) {
       }))()`).catch(() => null);
       throw new Error(`benchmark terminal did not become ready: ${JSON.stringify(details)}`);
     }
+    // The invisible xterm textarea follows the terminal cursor. Place it over
+    // each handle so hit-testing catches stacking regressions deterministically.
+    const overlappingInputChecks = await evaluate(cdp, `(() => {
+      const panel=document.querySelector('[aria-label="Web Terminal"]');
+      const textarea=panel.querySelector('.xterm-helper-textarea');
+      if(!textarea || !textarea.offsetParent)throw new Error('terminal input not ready for hit testing');
+      const original=textarea.style.cssText, parent=textarea.offsetParent.getBoundingClientRect();
+      const edges=['n','ne','e','se','s','sw','w','nw'];
+      try {
+        for(const edge of edges){
+          const handle=panel.querySelector('.global-web-terminal-resize-'+edge),rect=handle.getBoundingClientRect();
+          const x=rect.left+rect.width/2,y=rect.top+rect.height/2;
+          Object.assign(textarea.style,{left:(x-parent.left-10)+'px',top:(y-parent.top-10)+'px',width:'20px',height:'20px'});
+          const input=textarea.getBoundingClientRect();
+          if(x<input.left||x>input.right||y<input.top||y>input.bottom)throw new Error('could not position terminal input over '+edge);
+          const hit=document.elementFromPoint(x,y);
+          if(hit!==handle)throw new Error('resize handle '+edge+' obscured by '+(hit?.className||hit?.tagName||'nothing'));
+        }
+      } finally { textarea.style.cssText=original; }
+      return {edges};
+    })()`);
     const setup = await evaluate(cdp, `(() => {
       const styles=[...document.querySelectorAll('.xterm-screen > style')];
       window.__benchStyles=styles.map(el=>({el,descriptor:Object.getOwnPropertyDescriptor(el,'textContent')}));
@@ -642,7 +663,7 @@ async function run(options) {
       return { sizesChecked: 20, worstBottomOverflowPx: Number(worstOverflow.toFixed(2)), worstRightOverflowPx: Number(worstRightOverflow.toFixed(2)) };
     })()`);
     const indexHash = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIST, 'index.html'))).digest('hex');
-    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, continuousOutput: options.continuousOutput, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, handleChecks, realPointerDrag, pointerChecks, gridBounds };
+    return { browser: await cdp.send('Browser.getVersion'), viewport: { width: 1440, height: 900 }, forcedSoftware: options.software, continuousOutput: options.continuousOutput, buildIndexSha256: indexHash, terminalDurable: terminal.durable, styleAdapter: setup, results, overlappingInputChecks, handleChecks, realPointerDrag, pointerChecks, gridBounds };
   } finally {
     if (cdp && !cdp.isClosed()) {
       await withTimeout(cdp.send('Browser.close').catch(() => {}), 2000);

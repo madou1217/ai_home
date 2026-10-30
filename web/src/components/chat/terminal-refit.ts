@@ -1,16 +1,21 @@
 export interface TerminalRefitInstance {
   readonly opened: boolean;
-  readonly fit: { fit(): void };
+  readonly fit: { proposeDimensions(): { cols: number; rows: number } | undefined };
+  readonly term: { readonly cols: number; readonly rows: number; resize(cols: number, rows: number): void };
 }
 
 export interface TerminalRefitter {
   notifyResize: () => void;
+  flush: () => void;
   dispose: () => void;
 }
 
+export const TERMINAL_RESIZE_FINISHED = 'aih-terminal-resize-finished';
+
 /**
- * fit 当前激活且已挂载的终端实例。
- * 容器尚无尺寸（如隐藏页签）时 FitAddon 抛错，吞掉等下一轮回调。
+ * Measure with FitAddon's public API, then resize through xterm's public API.
+ * The DOM renderer redraws every row on resize; FitAddon.fit() first clears
+ * those same rows, creating unnecessary DOM churn during a drag.
  */
 export function fitActiveTerminal(
   instances: ReadonlyMap<string, TerminalRefitInstance>,
@@ -18,7 +23,11 @@ export function fitActiveTerminal(
 ): void {
   const inst = instances.get(activeId);
   if (!inst || !inst.opened) return;
-  try { inst.fit.fit(); } catch { /* 容器暂无尺寸 */ }
+  try {
+    const size = inst.fit.proposeDimensions();
+    if (!size || !Number.isFinite(size.cols) || !Number.isFinite(size.rows)) return;
+    if (size.cols !== inst.term.cols || size.rows !== inst.term.rows) inst.term.resize(size.cols, size.rows);
+  } catch { /* 容器暂无尺寸 */ }
 }
 
 /**
@@ -29,20 +38,52 @@ export function createTerminalRefitter(
   fitActive: () => void,
   raf: (cb: () => void) => number = (cb) => requestAnimationFrame(cb),
   cancelRaf: (handle: number) => void = (handle) => cancelAnimationFrame(handle),
+  options: {
+    minInterval?: () => number;
+    now?: () => number;
+    setTimer?: (cb: () => void, delay: number) => ReturnType<typeof setTimeout>;
+    clearTimer?: (handle: ReturnType<typeof setTimeout>) => void;
+    afterFlush?: () => void;
+  } = {},
 ): TerminalRefitter {
   let pendingFrame: number | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let flushRequested = false;
+  let lastFit = -Infinity;
+  const now = options.now || Date.now;
+  const setTimer = options.setTimer || setTimeout;
+  const clearTimer = options.clearTimer || clearTimeout;
+  const scheduleFrame = () => {
+    if (pendingFrame !== null) return;
+    pendingFrame = raf(() => {
+      pendingFrame = null;
+      lastFit = now();
+      fitActive();
+      if (flushRequested) {
+        flushRequested = false;
+        options.afterFlush?.();
+      }
+    });
+  };
   return {
     notifyResize() {
-      if (pendingFrame !== null) return;
-      pendingFrame = raf(() => {
-        pendingFrame = null;
-        fitActive();
-      });
+      if (pendingFrame !== null || pendingTimer !== null) return;
+      const wait = Math.max(0, (options.minInterval?.() || 0) - (now() - lastFit));
+      if (wait === 0) scheduleFrame();
+      else pendingTimer = setTimer(() => { pendingTimer = null; scheduleFrame(); }, wait);
+    },
+    flush() {
+      if (pendingTimer !== null) clearTimer(pendingTimer);
+      pendingTimer = null;
+      flushRequested = true;
+      scheduleFrame();
     },
     dispose() {
-      if (pendingFrame === null) return;
-      cancelRaf(pendingFrame);
+      if (pendingFrame !== null) cancelRaf(pendingFrame);
+      if (pendingTimer !== null) clearTimer(pendingTimer);
       pendingFrame = null;
+      pendingTimer = null;
+      flushRequested = false;
     },
   };
 }

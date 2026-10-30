@@ -10,9 +10,10 @@ import BrowserPanel from './browser/BrowserPanel';
 import FilesPanel from './files/FilesPanel';
 import ReviewPanel from './review/ReviewPanel';
 import SessionsPanel from './sessions/SessionsPanel';
-import type { ColumnCollapsed, ColumnDivider, ColumnWidths } from './workbench-layout';
-import { applyDividerDrag, clampColumnWidths, COLLAPSED_COLUMN_WIDTH, DIVIDER_WIDTH, resolveColumnVisibility } from './workbench-layout';
+import type { ColumnCollapsed, ColumnWidths } from './workbench-layout';
+import { clampColumnWidths, columnGridTemplate, DIVIDER_WIDTH, resolveColumnVisibility } from './workbench-layout';
 import { loadColumnLayout, saveColumnLayout } from './workbench-layout-persistence';
+import { useWorkbenchDividerDrag } from './use-workbench-divider-drag';
 import { PANEL_LABELS } from './workbench-types';
 import type { WorkbenchWorkspaceDescriptor } from './workbench-types';
 import styles from './project-workbench.module.css';
@@ -105,7 +106,6 @@ export default function WorkbenchColumns({
   const registerRightReviewRefresh = useCallback((refresh: () => void) => { rightReviewRefreshRef.current = refresh; }, []);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ divider: ColumnDivider; startX: number; start: ColumnWidths } | null>(null);
 
   // 栏可见性三档：全显 / 隐藏右栏 / 只剩中栏（阈值见 workbench-layout-policy）。
   const visibility = resolveColumnVisibility(containerWidth);
@@ -124,37 +124,14 @@ export default function WorkbenchColumns({
   collapsedRef.current = collapsed;
   const shownRef = useRef(shown);
   shownRef.current = shown;
-
-  const availableWidth = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return 0;
-    const current = shownRef.current;
-    return el.clientWidth - DIVIDER_WIDTH * ((current.left ? 1 : 0) + (current.right ? 1 : 0));
-  }, []);
-
-  // 拖拽分隔条调宽：移动中实时钳制并直接写期望宽度（用户显式拖拽是最高优先级），
-  // 松手时持久化期望值（模式同 ShellTerminalPanel 调高拖拽）。
-  const onDividerDown = useCallback((divider: ColumnDivider) => (event: React.MouseEvent) => {
-    event.preventDefault();
-    dragRef.current = { divider, startX: event.clientX, start: widthsRef.current };
-    const onMove = (ev: MouseEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const availableNow = availableWidth();
-      if (availableNow <= 0) return;
-      setDesired(applyDividerDrag(drag.start, drag.divider, ev.clientX - drag.startX, availableNow));
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.userSelect = '';
-      saveColumnLayout({ widths: desiredRef.current, collapsed: collapsedRef.current });
-    };
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [availableWidth]);
+  const visibilityRef = useRef(visibility);
+  visibilityRef.current = visibility;
+  const gridTemplate = columnGridTemplate(widths, visibility, collapsed);
+  const templateRef = useRef(gridTemplate);
+  templateRef.current = gridTemplate;
+  const onDividerDown = useWorkbenchDividerDrag({
+    containerRef, widthsRef, desiredRef, collapsedRef, visibilityRef, shownRef, templateRef, setDesired,
+  });
 
   // 观察容器实测宽度：驱动栏可见性降级与渲染宽度重算。用 ResizeObserver 而非
   // window resize：项目列表列开合也会改变工作台容器宽度。栏本身保持挂载，
@@ -271,14 +248,6 @@ export default function WorkbenchColumns({
   const leftActions = <>{leftToolbarActions}{collapseSide('left')}{leftOverlayActive ? overlayClose : null}</>;
   const rightActions = <>{rightToolbarActions}{rightOverlayActive ? overlayClose : null}{collapseSide('right')}</>;
 
-  // 网格模板按可见性动态生成：折叠的栏只占栏头条宽度且无分隔条；
-  // 被策略隐藏的栏与其分隔条都不进模板，中栏吃满剩余宽度。
-  const gridTemplate = [
-    collapsed.left ? `${COLLAPSED_COLUMN_WIDTH}px` : visibility.left ? `${widths.left}px ${DIVIDER_WIDTH}px` : '',
-    'minmax(0, 1fr)',
-    collapsed.right ? `${COLLAPSED_COLUMN_WIDTH}px` : visibility.right ? `${DIVIDER_WIDTH}px ${widths.right}px` : '',
-  ].filter(Boolean).join(' ');
-
   // 栏的四种呈现：折叠栏头条（网格内固定宽）/ 网格内（可见）/ 覆盖层（显式打开）/ 隐藏保活。
   const sideClass = (side: 'left' | 'right') => {
     if (collapsed[side]) {
@@ -352,7 +321,7 @@ export default function WorkbenchColumns({
           role="separator"
           aria-orientation="vertical"
           aria-label="调整左栏宽度"
-          onMouseDown={onDividerDown('left')}
+          onPointerDown={onDividerDown('left')}
         />
       ) : null}
       <section className={styles.columnCenter}>{chat}</section>
@@ -362,7 +331,7 @@ export default function WorkbenchColumns({
           role="separator"
           aria-orientation="vertical"
           aria-label="调整右栏宽度"
-          onMouseDown={onDividerDown('right')}
+          onPointerDown={onDividerDown('right')}
         />
       ) : null}
       <aside className={sideClass('right')} style={sideStyle('right')}>

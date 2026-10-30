@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { resolveActiveServer } from '@/services/webui-auth-transport';
 import { addActiveControlPlaneProfileChangeListener } from '@/services/control-plane-selection';
+import { updateTerminalScope } from './web-terminal-scope';
 
 export type WebTerminalTabKind = 'account-cli' | 'shell';
 
@@ -18,6 +19,7 @@ interface WebTerminalLayoutState {
   tabs: WebTerminalTab[];
   activeTabId: string;
   minimized: boolean;
+  layout: 'tabs' | 'sidebar';
   position: { x: number; y: number; width: number; height: number };
 }
 interface StoredState {
@@ -42,6 +44,7 @@ interface WebTerminalManagerValue extends WebTerminalLayoutState {
   closeAll: () => void;
   setActiveTab: (id: string) => void;
   setMinimized: (value: boolean) => void;
+  setLayout: (layout: WebTerminalLayoutState['layout']) => void;
   setPosition: (position: Partial<WebTerminalLayoutState['position']>) => void;
 }
 
@@ -51,6 +54,7 @@ const DEFAULT_STATE: WebTerminalLayoutState = {
   tabs: [],
   activeTabId: '',
   minimized: false,
+  layout: 'tabs',
   position: { x: 0, y: 0, width: DEFAULT_WIDTH, height: 420 }
 };
 
@@ -99,11 +103,12 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
     tabs,
     activeTabId,
     minimized: item.minimized === true,
+    layout: item.layout === 'sidebar' ? 'sidebar' : 'tabs',
     position: {
       x: Number.isFinite(x) ? x : 0,
       y: Number.isFinite(y) ? y : 0,
-      width: Number.isFinite(width) && width >= 420 ? width : DEFAULT_WIDTH,
-      height: Number.isFinite(height) && height >= 180 ? height : 420
+      width: Number.isFinite(width) && width > 0 ? width : DEFAULT_WIDTH,
+      height: Number.isFinite(height) && height > 0 ? height : 420
     }
   };
 }
@@ -164,10 +169,8 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
 
   const update = useCallback((next: WebTerminalLayoutState | ((current: WebTerminalLayoutState) => WebTerminalLayoutState)) => {
     setScopedState((current) => {
-      if (current.serverId !== serverId) return current;
-      const value = typeof next === 'function' ? next(current.state) : next;
-      persistState(current.serverId, value);
-      return { ...current, state: value };
+      const change = typeof next === 'function' ? next : () => next;
+      return updateTerminalScope(current, serverId, change, readStoredState, persistState);
     });
   }, [serverId]);
 
@@ -175,27 +178,28 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     const sessionKey = String(input.sessionKey || '').trim();
     if (!sessionKey) return;
     const targetServerId = String(input.serverId || serverId).trim() || serverId;
-    // A tab opened through the current browser must never attach to another
-    // server's PTY. The server-scoped storage keeps the other server's tabs.
-    if (targetServerId !== serverId) return;
     const tab: WebTerminalTab = {
       id: makeTabId(sessionKey),
       sessionKey,
       label: String(input.label || 'Web Terminal').trim() || 'Web Terminal',
       cwd: String(input.cwd || ''),
-      serverId,
+      serverId: targetServerId,
       kind: input.kind || 'account-cli',
       harness: String(input.harness || '').trim() || undefined,
       model: String(input.model || '').trim() || undefined
     };
-    update((current) => {
-    const existing = current.tabs.findIndex((item) => item.id === tab.id);
-      const tabs = current.tabs.slice();
-      if (existing >= 0) tabs[existing] = { ...tabs[existing], ...tab };
-      else tabs.push(tab);
-      return { ...current, tabs, activeTabId: tab.id };
+    setScopedState((current) => {
+      // A launch may finish after the user switches servers. Preserve it in
+      // the originating server's layout instead of attaching it to this one.
+      return updateTerminalScope(current, targetServerId, (targetState) => {
+        const existing = targetState.tabs.findIndex((item) => item.id === tab.id);
+        const tabs = targetState.tabs.slice();
+        if (existing >= 0) tabs[existing] = { ...tabs[existing], ...tab };
+        else tabs.push(tab);
+        return { ...targetState, tabs, activeTabId: tab.id };
+      }, readStoredState, persistState);
     });
-  }, [serverId, update]);
+  }, [serverId]);
 
   const closeTab = useCallback((id: string) => {
     update((current) => {
@@ -207,6 +211,7 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
   const closeAll = useCallback(() => update((current) => ({ ...current, tabs: [], activeTabId: '' })), [update]);
   const setActiveTab = useCallback((id: string) => update((current) => current.tabs.some((tab) => tab.id === id) ? { ...current, activeTabId: id } : current), [update]);
   const setMinimized = useCallback((value: boolean) => update((current) => ({ ...current, minimized: value })), [update]);
+  const setLayout = useCallback((layout: WebTerminalLayoutState['layout']) => update((current) => ({ ...current, layout })), [update]);
   const setPosition = useCallback((position: Partial<WebTerminalLayoutState['position']>) => update((current) => ({
     ...current,
     position: { ...current.position, ...position }
@@ -220,8 +225,9 @@ export function WebTerminalManagerProvider({ children }: { children: React.React
     closeAll,
     setActiveTab,
     setMinimized,
+    setLayout,
     setPosition
-  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setMinimized, setPosition, state]);
+  }), [closeAll, closeTab, openTab, serverId, setActiveTab, setLayout, setMinimized, setPosition, state]);
   return <WebTerminalManagerContext.Provider value={value}>{children}</WebTerminalManagerContext.Provider>;
 }
 

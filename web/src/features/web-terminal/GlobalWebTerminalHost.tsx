@@ -1,12 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CodeOutlined } from '@ant-design/icons';
+import { message } from 'antd';
 import ShellTerminalPanel from '@/components/chat/ShellTerminalPanel';
+import { terminalAPI } from '@/services/api';
 import { useWebTerminalManager } from './web-terminal-context';
+import { useTerminalWindowGesture } from './use-terminal-window-gesture';
+import { moveTerminalWindow } from './terminal-window-geometry';
 import './global-web-terminal.css';
 
 function clampPosition(x: number, y: number, width: number, height = 420) {
   if (typeof window === 'undefined') return { x, y };
-  const maxX = Math.max(8, window.innerWidth - Math.min(width, window.innerWidth - 16) - 8);
+  const effectiveWidth = window.innerWidth > 720 ? Math.max(420, width) : width;
+  const maxX = Math.max(8, window.innerWidth - Math.min(effectiveWidth, window.innerWidth - 16) - 8);
   const maxY = Math.max(8, window.innerHeight - Math.min(height, window.innerHeight - 16) - 8);
   return { x: Math.min(Math.max(8, x), maxX), y: Math.min(Math.max(8, y), maxY) };
 }
@@ -69,11 +74,33 @@ function flipVars(rect: RectLike): Record<string, string> {
 
 export default function GlobalWebTerminalHost() {
   const manager = useWebTerminalManager();
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
-  const resizeRef = useRef<{ edge: string; startX: number; startY: number; originX: number; originY: number; width: number; height: number } | null>(null);
-  const windowRef = useRef<HTMLDivElement | null>(null);
+  const [creatingTab, setCreatingTab] = useState(false);
+  const [, setViewportRevision] = useState(0);
+  const hasTabs = manager.tabs.length > 0;
+  useEffect(() => {
+    if (!hasTabs) return;
+    let frame: number | null = null;
+    const resize = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => { frame = null; setViewportRevision((value) => value + 1); });
+    };
+    window.addEventListener('resize', resize);
+    return () => { window.removeEventListener('resize', resize); if (frame !== null) cancelAnimationFrame(frame); };
+  }, [hasTabs]);
+  const creatingRef = useRef(false);
+  const isCreatingTab = useCallback(() => creatingRef.current, []);
+  const windowRef = useRef<HTMLDivElement>(null);
   const [motion, setMotion] = useState<TerminalMotion | null>(null);
   const motionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const position = clampPosition(manager.position.x, manager.position.y, manager.position.width, manager.position.height);
+  const windowStyle: React.CSSProperties = {
+    left: `${position.x}px`,
+    top: `${position.y}px`,
+    width: `min(${manager.position.width}px, calc(100vw - 16px))`,
+    height: `min(${manager.position.height}px, calc(100vh - 16px))`,
+    ...(motion && motion.phase !== 'closing' ? motion.vars : null)
+  };
+  const startGesture = useTerminalWindowGesture(windowRef, manager.setPosition, `${manager.serverId}:${manager.minimized}:${hasTabs}`, windowStyle);
 
   const clearMotionTimer = useCallback(() => {
     if (motionTimer.current) {
@@ -122,6 +149,8 @@ export default function GlobalWebTerminalHost() {
     scheduleMotionEnd(EXPAND_MS, () => manager.setMinimized(false));
   }, [manager, motion, scheduleMotionEnd]);
 
+  // 关闭需要先确认所有 PTY 都关掉（ShellTerminalPanel.closePanel 负责），这里只给成功关闭后的
+  // 卸载播一次淡出：onClose 被调用时 PTY 已关闭，动画结束后再清空页签。
   const beginClose = useCallback(() => {
     if (motion) return;
     const reduce = typeof window !== 'undefined' && prefersReducedMotion();
@@ -138,75 +167,52 @@ export default function GlobalWebTerminalHost() {
     sessionKey: tab.sessionKey,
     label: tab.label,
     cwd: tab.cwd,
+    kind: tab.kind,
     persistent: true
   })), [manager.tabs]);
-  const onHeaderMouseDown = useCallback((event: React.MouseEvent) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('button') || target.closest('[data-terminal-tab]')) return;
+  const onNewTab = useCallback(async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreatingTab(true);
+    try {
+      const active = manager.tabs.find((tab) => tab.id === manager.activeTabId);
+      const random = new Uint8Array(16);
+      globalThis.crypto.getRandomValues(random);
+      const key = `shell-${Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+      const result = await terminalAPI.open(80, 24, undefined, active?.cwd, key);
+      if (!result.ok || !result.termId) {
+        message.error(`新建终端失败: ${result.error || 'unknown'}`);
+        return;
+      }
+      const labels = new Set(manager.tabs.map((tab) => tab.label));
+      let number = 1;
+      while (labels.has(`Shell ${number}`)) number += 1;
+      manager.openTab({ sessionKey: key, serverId: manager.serverId, label: `Shell ${number}`, cwd: active?.cwd, kind: 'shell' });
+    } finally {
+      creatingRef.current = false;
+      setCreatingTab(false);
+    }
+  }, [manager]);
+  const onResizeKeyDown = useCallback((edge: string, event: React.KeyboardEvent) => {
+    const horizontal = edge === 'e' || edge === 'w';
+    const direction = event.key === (horizontal ? 'ArrowRight' : 'ArrowDown') ? 1
+      : event.key === (horizontal ? 'ArrowLeft' : 'ArrowUp') ? -1 : 0;
+    const node = windowRef.current;
+    if (!direction || !node) return;
     event.preventDefault();
-    dragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: manager.position.x,
-      originY: manager.position.y
-    };
-    const onMove = (move: globalThis.MouseEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const next = clampPosition(
-        drag.originX + move.clientX - drag.startX,
-        drag.originY + move.clientY - drag.startY,
-        manager.position.width,
-        manager.position.height
-      );
-      manager.setPosition(next);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.userSelect = '';
-    };
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [manager.position.x, manager.position.y, manager.position.width, manager.position.height, manager.setPosition]);
-
-  const onResizeStart = useCallback((edge: string, event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resizeRef.current = { edge, startX: event.clientX, startY: event.clientY, originX: manager.position.x, originY: manager.position.y, width: manager.position.width, height: manager.position.height };
-    const onMove = (move: globalThis.MouseEvent) => {
-      const item = resizeRef.current;
-      if (!item) return;
-      const dx = move.clientX - item.startX;
-      const dy = move.clientY - item.startY;
-      const left = item.edge.includes('w');
-      const top = item.edge.includes('n');
-      const horizontal = left || item.edge.includes('e');
-      const vertical = top || item.edge.includes('s');
-      const width = horizontal ? Math.max(420, Math.min(window.innerWidth - 16, item.width + (left ? -dx : dx))) : item.width;
-      const height = vertical ? Math.max(180, Math.min(window.innerHeight - 16, item.height + (top ? -dy : dy))) : item.height;
-      const rawX = left ? item.originX + item.width - width : item.originX;
-      const rawY = top ? item.originY + item.height - height : item.originY;
-      const clamped = clampPosition(rawX, rawY, width, height);
-      manager.setPosition({ x: clamped.x, y: clamped.y, width, height });
-    };
-    const onUp = () => {
-      resizeRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.userSelect = '';
-    };
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [manager.position.height, manager.position.width, manager.position.x, manager.position.y, manager.setPosition]);
+    const rect = node.getBoundingClientRect();
+    const delta = direction * (event.shiftKey ? 48 : 12);
+    manager.setPosition(moveTerminalWindow(
+      { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      edge, horizontal ? delta : 0, horizontal ? 0 : delta, window.innerWidth, window.innerHeight,
+    ));
+  }, [manager.setPosition]);
 
   const closings = motion?.phase === 'closing';
   if (!manager.tabs.length && !closings) return null;
   const activeTab = manager.tabs.find((tab) => tab.id === manager.activeTabId) || manager.tabs[0];
-  const position = clampPosition(manager.position.x, manager.position.y, manager.position.width, manager.position.height);
+  const availableWidth = typeof window === 'undefined' ? manager.position.width : Math.max(1, window.innerWidth - 16);
+  const availableHeight = typeof window === 'undefined' ? manager.position.height : Math.max(1, window.innerHeight - 16);
   // 折叠/展开动画期间，窗口与停靠气泡同时在场：窗口做 FLIP，气泡做交汇淡入/淡出。
   const showWindow = closings || !manager.minimized || motion?.phase === 'expanding';
   const showDock = !closings && (manager.minimized || motion?.phase === 'collapsing');
@@ -225,16 +231,24 @@ export default function GlobalWebTerminalHost() {
           className={windowClass}
           role="region"
           aria-label="Web Terminal"
-          style={{
-            left: position.x,
-            top: position.y,
-            width: `min(${manager.position.width}px, calc(100vw - 16px))`,
-            height: `min(${manager.position.height}px, calc(100vh - 16px))`,
-            ...(motion && motion.phase !== 'closing' ? motion.vars : null)
-          }}
+          style={windowStyle}
         >
           {['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => (
-            <span key={edge} className={`global-web-terminal-resize global-web-terminal-resize-${edge}`} onMouseDown={(event) => onResizeStart(edge, event)} />
+            <span
+              key={edge}
+              className={`global-web-terminal-resize global-web-terminal-resize-${edge}`}
+              onPointerDown={(event) => startGesture(edge, event)}
+              {...(edge.length === 1 ? {
+                role: 'separator',
+                tabIndex: 0,
+                'aria-label': `调整终端${edge === 'e' || edge === 'w' ? '宽度' : '高度'}（方向键调整，Shift 加速）`,
+                'aria-orientation': (edge === 'e' || edge === 'w' ? 'vertical' : 'horizontal') as 'vertical' | 'horizontal',
+                'aria-valuemin': edge === 'e' || edge === 'w' ? Math.min(420, availableWidth) : Math.min(180, availableHeight),
+                'aria-valuemax': edge === 'e' || edge === 'w' ? availableWidth : availableHeight,
+                'aria-valuenow': edge === 'e' || edge === 'w' ? Math.min(Math.max(manager.position.width, Math.min(420, availableWidth)), availableWidth) : Math.min(Math.max(manager.position.height, Math.min(180, availableHeight)), availableHeight),
+                onKeyDown: (event: React.KeyboardEvent) => onResizeKeyDown(edge, event),
+              } : { 'aria-hidden': true })}
+            />
           ))}
           <ShellTerminalPanel
             key={manager.serverId}
@@ -243,14 +257,18 @@ export default function GlobalWebTerminalHost() {
             title="Web Terminal"
             minimized={panelMinimized}
             onMinimizedChange={(value) => { if (value) beginMinimize(); else beginRestore(); }}
-            onHeaderMouseDown={onHeaderMouseDown}
+            onHeaderPointerDown={(event) => startGesture('move', event)}
             panelHeight={Math.min(manager.position.height, typeof window === 'undefined' ? manager.position.height : window.innerHeight - 16)}
             sessionTabs={sessionTabs}
             onTabClose={manager.closeTab}
             onClose={beginClose}
             activeTabId={activeTab?.id || ''}
             onActiveTabChange={manager.setActiveTab}
-            allowNewTab={false}
+            onNewTab={onNewTab}
+            creatingTab={creatingTab}
+            isCreatingTab={isCreatingTab}
+            layout={manager.layout}
+            onLayoutChange={manager.setLayout}
           />
         </div>
       ) : null}

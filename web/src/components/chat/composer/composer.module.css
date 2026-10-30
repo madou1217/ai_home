@@ -274,6 +274,9 @@
   border-top: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--term-border));
   background: var(--term-bg);
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
@@ -304,10 +307,12 @@
   cursor: row-resize;
   z-index: 3;
   background: transparent;
+  touch-action: none;
 }
 
 .shellTerminalResizer:hover,
-.shellTerminalResizer:active {
+.shellTerminalResizer:active,
+.shellTerminalResizer:focus-visible {
   background: color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 
@@ -320,6 +325,8 @@
   background: var(--term-bg-header);
   border-bottom: 1px solid var(--term-border);
   user-select: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .shellTerminalTabs {
@@ -462,12 +469,18 @@
   font-size: var(--hos-text-micro);
   color: var(--term-text-faint);
   flex: 0 0 auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .shellTerminalTabClose:hover {
   background: var(--term-hover-strong);
   color: var(--term-text-strong);
 }
+
+.shellTerminalTabClose:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .shellTerminalActions {
   display: inline-flex;
@@ -497,17 +510,92 @@
   color: var(--term-accent);
 }
 
+.shellTerminalIconBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.shellTerminalContent {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shellTerminalSidebar {
+  display: flex;
+  flex-direction: column;
+  width: clamp(132px, 28%, 220px);
+  max-width: 40%;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  background: var(--term-bg-header);
+  border-right: 1px solid var(--term-border);
+}
+
+.shellTerminalSidebar .shellTerminalTab {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 30px;
+  box-sizing: border-box;
+}
+.shellTerminalSidebar .shellTerminalTabLabel { flex: 1; }
+
 .shellTerminalBodies {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 0;
   position: relative;
   background: var(--term-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .shellTerminalBody {
+  box-sizing: border-box;
+  width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   padding: var(--hos-space-1-5) var(--hos-space-2) var(--hos-space-1);
   background: var(--term-bg);
+  overflow: hidden;
+}
+
+/* FitAddon measures the terminal's parent. Keep padding on the outer body so
+ * the measured dimensions describe only the area available to the grid. */
+.shellTerminalMount {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.shellTerminalBody :global(.xterm) {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  /* The HUD's inherited tracking changes xterm's hidden glyph measurements,
+   * making rendered columns drift and exposing offscreen cells after resize. */
+  letter-spacing: normal;
+}
+
+.shellTerminalBody :global(.xterm-viewport) {
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.shellTerminalBody :global(.xterm-screen) {
+  min-width: 0;
 }
 
 /* 切换页签：新激活的终端画布淡入，避免内容硬切。 */

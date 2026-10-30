@@ -45,6 +45,18 @@
   animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards;
 }
 
+/* 原生 antd Table（计划任务 / 上游映射 / egress 等旧页面直接用 Table）：
+ * 数据到达时行挂载淡入，不再整表硬替换。
+ * 只碰 opacity（不碰 transform），不会破坏粘性表头/固定列。
+ * ProTable（ListTable）由 .unified-list-table-fade 统一做容器淡入，这里排除，避免大表逐行动画。 */
+.ant-table-tbody > tr {
+  animation: aih-fade-in var(--motion-fast) var(--ease-standard) backwards;
+}
+
+.ant-pro-table .ant-table-tbody > tr {
+  animation: none;
+}
+
 /* ── 2. 展开 / 收起 / 离场原语 ──────────────────────────────────────────────
  * .aih-reveal 由 components/ui/Reveal.tsx 使用：外层 grid-template-rows 0fr↔1fr 撑开内容，
  * 内层 overflow:hidden 裁剪。收起动画播完后组件才卸载内容（见 use-collapse-presence）。

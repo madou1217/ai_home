@@ -201,18 +201,27 @@ details[open]::details-content {
     background-color var(--motion-fast) var(--ease-standard);
 }
 
-/* 侧栏导航：ProLayout 内联菜单把 transition 设成了 none，悬停底色/选中描边都是硬切。 */
+/* 侧栏导航：ProLayout 给内联菜单项写了 `transition: none !important`，悬停底色/选中描边都是硬切。
+ * 这里必须同样 !important 才能盖过；只过渡颜色类属性（不碰 padding，折叠侧栏时不会逐帧重排）。
+ * reduced-motion 下 --motion-* token 归零，依然静止。 */
+.ant-pro-sider .ant-pro-base-menu-inline .ant-pro-base-menu-inline-menu-item,
 .ant-pro-sider .ant-menu .ant-menu-item,
 .ant-pro-sider .ant-menu .ant-menu-submenu-title {
   transition:
     background-color var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+    box-shadow var(--motion-base) var(--ease-standard) !important;
 }
 .ant-pro-sider .ant-menu-item .hud-nav-no,
-.ant-pro-sider .ant-menu-item .hud-nav-code,
-.ant-pro-sider-collapsed-button {
+.ant-pro-sider .ant-menu-item .hud-nav-code {
   transition: color var(--motion-fast) var(--ease-standard);
+}
+/* 折叠按钮：保留 ProLayout 的箭头旋转，同时让悬停颜色过渡 */
+.ant-pro-sider-collapsed-button {
+  transition:
+    transform var(--motion-slow) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 /* 分页页码 / 面包屑：hud.css 的悬停描边与当前页辉光此前没有过渡 */

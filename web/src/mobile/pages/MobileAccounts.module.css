@@ -202,3 +202,12 @@
   font-size: 12px;
   line-height: 1.55;
 }
+
+/* 动效补齐（styles/motion.css 约定）：触屏按下态此前是硬切，这里只过渡颜色/透明度（paint-only），
+ * 120ms 内跟手；prefers-reduced-motion 下 --motion-* 归零，全局层再兜底。 */
+.actionItem,
+.inlineIconBtn {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}

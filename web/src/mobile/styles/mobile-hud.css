@@ -668,3 +668,11 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
   html[data-mobile-hud] .ant-message .ant-message-notice-wrapper { animation: none; }
   .mhud-swipe__content { transition: none; }
 }
+
+/* 动效补齐（styles/motion.css 约定）：触屏按下态此前是硬切，这里只过渡颜色/透明度（paint-only），
+ * 120ms 内跟手；prefers-reduced-motion 下 --motion-* 归零，全局层再兜底。 */
+.mhud-toggle {
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    text-shadow var(--motion-fast) var(--ease-standard);
+}

@@ -648,7 +648,8 @@ body[data-mobile-immersive] .mhud-main { min-height: 100dvh; }
 /* -------------------------------------------------------------------------
  * 8. 空状态 / 加载
  * ---------------------------------------------------------------------- */
-.mhud-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; }
+/* 空状态是「加载中 → 没有数据」的条件挂载：出现时淡入一次，只碰 opacity。 */
+.mhud-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; animation: aih-fade-in var(--motion-base) var(--ease-standard) backwards; }
 .mhud-empty__frame { position: relative; width: 56px; height: 40px; border: 1px dashed color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
 .mhud-empty__frame span { position: absolute; inset: 50% 8px auto; height: 1px; background: color-mix(in srgb, var(--color-accent) 60%, transparent); box-shadow: 0 0 6px var(--color-accent); }
 .mhud-empty__title { font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; color: var(--color-accent); text-shadow: var(--hud-text-glow); }

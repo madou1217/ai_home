@@ -52,6 +52,7 @@ import {
   setTranslationFloatingPreferences,
   subscribeTranslationFloatingPreferences,
 } from './translation-preferences';
+import { useAppendEnter } from '@/hooks/use-append-enter';
 import { useTranslationBootstrap, useTranslationStream } from './use-translation';
 import {
   resolveLanguageIntent,
@@ -113,6 +114,14 @@ export default function TranslationWorkspace() {
   const stream = useTranslationStream();
   const history = useTranslationHistory();
   useTranslationHistoryRecorder(stream.state);
+
+  // 翻译记录是「新的在最上面」：只让新插入的那一条进场（head 模式追加判定）。
+  const historyListRef = useRef<HTMLUListElement | null>(null);
+  const historyKeys = useMemo(() => history.entries.map((entry) => entry.id), [history.entries]);
+  useAppendEnter(historyListRef, historyKeys, 'translation-history', {
+    selector: '[data-history-item]',
+    direction: 'head'
+  });
 
   const [text, setText] = useState('');
   const [source, setSource] = useState(AUTO_LANGUAGE);
@@ -1112,9 +1121,9 @@ export default function TranslationWorkspace() {
             <span>完成一次翻译后，原文、译文和模型信息会保存在本机。</span>
           </div>
         ) : (
-          <ul className={styles.historyList}>
+          <ul ref={historyListRef} className={`${styles.historyList} aih-fade-in`}>
             {history.entries.map((entry, index) => (
-              <li key={entry.id} className={`${styles.historyItem} ${index === 0 ? styles.historyItemLatest : ''}`}>
+              <li key={entry.id} data-history-item className={`${styles.historyItem} ${index === 0 ? styles.historyItemLatest : ''}`}>
                 <div className={styles.historyItemHeader}>
                   <span className={styles.historyRoute}>
                     {entry.sourceLabel || entry.sourceLang || '自动检测'} → {entry.targetLabel || entry.targetLang}

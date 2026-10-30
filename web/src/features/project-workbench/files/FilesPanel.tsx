@@ -139,7 +139,7 @@ export default function FilesPanel({ projectPath, mobile, registerRefresh }: Pro
             }
             showLine={false}
             blockNode
-            className={styles.filesTreeBody}
+            className={`${styles.filesTreeBody} aih-fade-in`}
           />
         )}
       </div>

@@ -270,7 +270,7 @@ export default function MobileModels(_props: MobilePageProps) {
             />
           )
         ) : (
-          <MonoList ariaLabel="模型目录">
+          <MonoList ariaLabel="模型目录" className="aih-fade-in">
             {visibleRows.map((row) => {
               const visible = isGlobalModelVisible(row);
               const displayLabel = getGlobalModelDisplayLabel(catalog, row);

@@ -255,7 +255,7 @@ export default function MobileUsage(_props: MobilePageProps) {
                 : <Button icon={<ReloadOutlined />} onClick={usage.handleRefreshUsage}>刷新</Button>}
             />
           ) : view === 'model' ? (
-            <MonoList ariaLabel="按模型用量">
+            <MonoList ariaLabel="按模型用量" className="aih-fade-in">
               {models.map((row) => (
                 <SwipeRow
                   key={`${row.provider}:${row.model || 'unknown'}`}
@@ -279,7 +279,7 @@ export default function MobileUsage(_props: MobilePageProps) {
               ))}
             </MonoList>
           ) : (
-            <MonoList ariaLabel="按会话用量">
+            <MonoList ariaLabel="按会话用量" className="aih-fade-in">
               {sessions.map((row) => (
                 <SwipeRow
                   key={`${row.provider}:${row.sessionId}`}

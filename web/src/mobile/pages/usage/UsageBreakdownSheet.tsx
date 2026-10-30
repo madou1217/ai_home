@@ -11,6 +11,7 @@ import {
   formatTokens,
   getCacheTokens
 } from '@/features/model-usage/model-usage-presentation';
+import { useSwitchFade } from '@/hooks/use-switch-fade';
 import type { Account, ModelUsageBreakdownResponse } from '@/types';
 import { DetailSheet, EmptySignal, HudChips, KeyValue, MonoList, SwipeRow } from '@/mobile/ui';
 import styles from '../MobileUsage.module.css';
@@ -46,6 +47,9 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
   }, [target]);
   const shown = target || lastRef.current?.target || null;
   const shownData = target ? data : lastRef.current?.data || null;
+  // 账号分量 ↔ 模型分量是两套行：整块换内容时淡入一次（抽屉壳自身已有展开动画）。
+  const mixRef = useRef<HTMLDivElement | null>(null);
+  useSwitchFade(mixRef, tab, { scope: 'usage-breakdown' });
   if (!shown) return null;
 
   const summary = shownData?.summary;
@@ -75,7 +79,7 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
       {loading ? (
         <div className={styles.sheetLoading}><Spin /></div>
       ) : shownData && summary ? (
-        <div className={styles.sheetStack}>
+        <div className={`${styles.sheetStack} aih-fade-in`}>
           <KeyValue
             rows={[
               { key: 'scope', label: '账号范围', value: formatAccountScope(summary.accountCount, summary.unattributedCalls) },
@@ -96,6 +100,7 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
               { key: 'models', label: '模型分量', count: shownData.models.length }
             ]}
           />
+          <div ref={mixRef}>
           {tab === 'accounts' ? (
             shownData.accounts.length > 0 ? (
               <MonoList ariaLabel="账号分量">
@@ -155,6 +160,7 @@ export default function UsageBreakdownSheet({ target, data, loading, accountsByR
           ) : (
             <EmptySignal description="暂无模型分量" />
           )}
+          </div>
         </div>
       ) : (
         <EmptySignal description="暂无分量数据" />

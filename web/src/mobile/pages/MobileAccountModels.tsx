@@ -269,7 +269,7 @@ export default function MobileAccountModels({ params }: MobilePageProps) {
             )}
           />
         ) : (
-          <MonoList ariaLabel="账号模型列表">
+          <MonoList ariaLabel="账号模型列表" className="aih-fade-in">
             {state.rows.map((model) => {
               const rowKey = getModelRowKey(model);
               const enabled = model.enabled !== false;

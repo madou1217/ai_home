@@ -37,7 +37,8 @@ export default function PaginatedList<T>({
 
   return (
     <div className={`paginated-list ${className}`.trim()}>
-      <div ref={flipRef} className="paginated-list-grid">
+      {/* 空态（antd Empty）→ 真列表是整块替换：grid 挂载即淡入，已有节点重排仍交给 FLIP。 */}
+      <div ref={flipRef} className="paginated-list-grid aih-fade-in">
         {visibleItems.map((item, index) => renderItem(item, (currentPage - 1) * safePageSize + index))}
       </div>
       {total > safePageSize ? (

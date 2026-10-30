@@ -115,7 +115,7 @@ function SessionView({ studio }: { studio: MobileImageStudio }) {
   }, []);
 
   return (
-    <div className={styles.view}>
+    <div className={`${styles.view} aih-fade-in`}>
       <header className={styles.header}>
         <HudIconButton icon={<ArrowLeftOutlined />} label="返回会话列表" onClick={studio.closeSession} />
         <div className={styles.headerTitles}>

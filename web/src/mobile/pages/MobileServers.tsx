@@ -251,7 +251,7 @@ export default function MobileServers(_props: MobilePageProps) {
             )}
           />
         ) : (
-          <MonoList ariaLabel="已保存 Server">
+          <MonoList ariaLabel="已保存 Server" className="aih-fade-in">
             {serverRouteRows.map((row) => {
               const { profile } = row;
               const status = rowStatus(row);

@@ -197,7 +197,7 @@ export default function AppManagerPanel() {
             ]}
           />
 
-          <div className="toolkit-category-bar">
+          <div className="toolkit-category-bar aih-fade-in">
             <div className="toolkit-filter-scroll">
               <Segmented
                 aria-label="应用分类"
@@ -210,7 +210,7 @@ export default function AppManagerPanel() {
           </div>
 
           {filteredApps.length ? (
-            <div className="toolkit-grid">
+            <div className="toolkit-grid aih-fade-in">
               {filteredApps.map((app) => (
                 <ManagedAppCard
                   key={app.id}

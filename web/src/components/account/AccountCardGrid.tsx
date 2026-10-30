@@ -78,14 +78,15 @@ export const AccountCardGrid = memo(function AccountCardGrid({
   const flipRef = useFlipReorder<HTMLDivElement>(accounts);
   if (accounts.length === 0 && !loading) {
     return (
-      <div className={styles.emptyGrid}>
+      <div key="empty" className={`${styles.emptyGrid} aih-fade-in`}>
         <span>暂无配置的 {provider.toUpperCase()} 账号</span>
       </div>
     );
   }
 
+  // 空态 ↔ 卡片网格两个分支的根都是 div，不加 key 会复用节点、挂载动画不重播。
   return (
-    <div ref={flipRef} className={styles.gridContainer}>
+    <div key="grid" ref={flipRef} className={`${styles.gridContainer} aih-fade-in`}>
       {accounts.map((acc) => {
         const primaryLabel = getAccountPrimaryLabel(acc);
         const secondaryLabel = getAccountSecondaryLabel(acc);

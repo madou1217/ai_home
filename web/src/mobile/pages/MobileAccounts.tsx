@@ -455,7 +455,7 @@ export default function MobileAccounts(_props: MobilePageProps) {
             />
           )
         ) : (
-          <MonoList ariaLabel="账号列表">
+          <MonoList ariaLabel="账号列表" className="aih-fade-in">
             {filteredAccounts.map((record) => {
               const accountRef = getAccountRef(record);
               return (

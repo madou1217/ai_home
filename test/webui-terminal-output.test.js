@@ -76,11 +76,29 @@ test('a late close from an old mux cannot disconnect the replacement stream', { 
   }
 });
 
-test('mux replay drops old terminal queries while forwarding live queries', { timeout: 5000 }, async () => {
+test('mux replay drops old terminal queries while forwarding live queries', { timeout: 10000 }, async () => {
   const muxId = `replay-query-${process.pid}-${Date.now()}`;
-  const session = openWebUiTerminalSession({ muxId, file: process.execPath, args: ['-e', "process.stdout.write('SNAPSHOT\\x1b[c');setTimeout(() => process.stdout.write('LIVE\\x1b[>c'), 700);setTimeout(() => process.exit(), 900)"] });
+  const session = openWebUiTerminalSession({ muxId, file: process.execPath, args: ['-e', "process.stdin.setRawMode(true);process.stdin.once('data', () => { process.stdout.write('LIVE\\x1b[>c', () => process.exit()); });process.stdin.resume();process.stdout.write('SNAPSHOT\\x1b[c');"] });
   assert.equal(session.ok, true);
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  const initialReq = new EventEmitter();
+  const initialRes = new EventEmitter();
+  initialRes.writeHead = () => {};
+  let resolveSnapshot;
+  const snapshotSeen = new Promise((resolve) => { resolveSnapshot = resolve; });
+  let initialOutput = '';
+  initialRes.write = (text) => {
+    if (text.startsWith('data: ')) {
+      const frame = JSON.parse(text.slice(6));
+      if (frame.type === 'output') {
+        initialOutput += Buffer.from(frame.data, 'base64').toString();
+        if (initialOutput.includes('SNAPSHOT')) resolveSnapshot();
+      }
+    }
+    return true;
+  };
+  await handleWebUiTerminalRequest({ method: 'GET', pathname: '/v0/webui/terminal/stream', url: new URL(`http://localhost/?termId=${session.termId}`), req: initialReq, res: initialRes });
+  await snapshotSeen;
+  initialReq.emit('close');
   const req = new EventEmitter();
   const res = new EventEmitter();
   res.writeHead = () => {};
@@ -97,6 +115,8 @@ test('mux replay drops old terminal queries while forwarding live queries', { ti
   };
   await handleWebUiTerminalRequest({ method: 'GET', pathname: '/v0/webui/terminal/mux', url: new URL(`http://localhost/?muxId=${muxId}`), req, res });
   try {
+    await handleWebUiTerminalRequest({ method: 'POST', pathname: '/v0/webui/terminal/input', req: {}, res: {},
+      readRequestBody: async () => Buffer.from(JSON.stringify({ termId: session.termId, data: 'go' })), writeJson: () => {} });
     await exited;
     const output = frames.filter((frame) => frame.termId === session.termId && frame.type === 'output')
       .map((frame) => Buffer.from(frame.data, 'base64').toString()).join('');

@@ -29,9 +29,10 @@ const AccountActivityIcon = ({ provider, activity, size = 18 }: Props) => {
       }
     : undefined;
   // 活跃原因按来源说清楚：持久 CLI 会话（所有 provider）→ 原生会话回合 → 网关请求。
+  // 「终端只是开着」不是服务中：只有真实回合/请求才点亮转圈，否则标题明确写「空闲」。
   const title = !active
     ? runtimeActive
-      ? `CLI 会话已开启（${runtimeSessions} 个，${runtimeAttached} 个已进入）`
+      ? `CLI 终端已打开（${runtimeSessions} 个会话，${runtimeAttached} 个在用，当前空闲）`
       : undefined
     : runtimeAttached > 0
       ? `服务中 · CLI 会话 ${runtimeAttached}/${runtimeSessions} 已进入 · 请求速率 ${(activity as ManagementAccountActivity).rate} 次/10s`

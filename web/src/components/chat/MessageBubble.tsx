@@ -34,6 +34,7 @@ import { toProviderBlocks, isGoalContextTag, type ProviderBlock } from './provid
 import { basenameLike, getFileTabKey } from './file-reference-utils';
 import { buildFileBackedImageUrl, buildMarkdownImageSource, getFilePreviewKind } from './file-preview-utils';
 import ImageReferenceContent, { ImageGallery } from './MessageImages';
+import { UserDocumentAttachments, splitUserDocumentBlocks } from './user-document-attachments';
 import {
   buildPathScopedImageFallbackMap,
   buildSingleImageReferenceSourceList,
@@ -562,10 +563,17 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
     [parsedAttachmentBlock.imagePaths]
   );
   const renderedImages = inlineImages.length > 0 ? inlineImages : persistedImages;
-  const messageText = renderedImages.length > 0
+  const rawMessageText = renderedImages.length > 0
     ? parsedAttachmentBlock.text
     : message.content;
-  const blockSource = renderedImages.length > 0 ? messageText : (messageText || message.content);
+  // 用户消息里的文档附件信封（长文本粘贴、文本文件）折叠成卡片，不把全文铺进气泡。
+  const userDocuments = useMemo(
+    () => (isUser ? splitUserDocumentBlocks(rawMessageText) : { text: rawMessageText, documents: [] }),
+    [isUser, rawMessageText]
+  );
+  const messageText = userDocuments.text;
+  const blockSource = renderedImages.length > 0 || userDocuments.documents.length > 0
+    ? messageText : (messageText || message.content);
   const blocks = useMemo(() => parseMessageBlocks(blockSource), [blockSource]);
   const toolImageFallbackMap = useMemo(
     () => buildToolImageFallbackMap(blocks, renderedImages),
@@ -863,6 +871,7 @@ const MessageBubble = ({ message, provider, session, mobile = false, isFollowup 
         <div className={`${styles.messageWrapper} ${styles.messageWrapperUser}`} onClick={handleMessageTap}>
           <div className={`${styles.bubbleUser} ${hasStructuredUserBlocks ? styles.bubbleUserStructured : ''}`}>
             <ImageGallery images={galleryImages} />
+            <UserDocumentAttachments documents={userDocuments.documents} />
             {hasStructuredUserBlocks ? (
               renderBlockList(assistantBlocks, 'user')
             ) : (

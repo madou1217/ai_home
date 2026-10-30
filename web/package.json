@@ -27,6 +27,7 @@
     "echarts": "^6.1.0",
     "gifenc": "^1.0.3",
     "jsqr": "1.4.0",
+    "mermaid": "11.17.2",
     "modern-screenshot": "^4.7.0",
     "monaco-editor": "0.56.0",
     "prettier": "3.9.6",

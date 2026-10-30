@@ -1347,6 +1347,66 @@
   line-height: 12px;
 }
 
+/* 文档类附件（含长文本粘贴）：横向芯片，名称与大小各占一行并截断，高度与图片缩略图一致。 */
+/* 双类名提高权重：基础 .composerAttachment(58px 方块)定义在另一份样式表，加载顺序不定。 */
+.composerDocumentAttachment.composerDocumentAttachment {
+  width: 180px;
+  max-width: 60vw;
+  flex: 0 0 180px;
+}
+
+.composerDocumentChip {
+  display: flex;
+  font-family: var(--font-body);
+  align-items: center;
+  gap: var(--hos-space-2);
+  width: 100%;
+  height: 100%;
+  /* 右侧给外凸的移除按钮让位 */
+  padding: 0 calc(var(--hos-space-4) + 4px) 0 var(--hos-space-2);
+  overflow: hidden;
+  color: var(--color-muted-strong);
+  font-size: var(--hos-text-h3);
+}
+
+.composerDocumentChipText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 16px;
+}
+
+.composerDocumentChipText strong,
+.composerDocumentChipText small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.composerDocumentChipText strong {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.composerDocumentChipText small {
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.composerDocumentAttachment[data-status='failed'] .composerDocumentChipText small {
+  padding-right: 40px;
+  color: var(--color-danger);
+}
+
+/* 失败时「重试」放在第二行（大小/状态行）右侧，不压住文件名。 */
+.composerDocumentAttachment .composerAttachmentRetry {
+  left: auto !important;
+  right: 8px !important;
+  bottom: 9px !important;
+  transform: none !important;
+}
+
 .composerAttachmentRetry {
   position: absolute !important;
   top: auto !important;

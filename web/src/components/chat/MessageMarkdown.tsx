@@ -3,6 +3,7 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import HtmlCodeBlock from './HtmlCodeBlock';
 import CodeBlock from './CodeBlock';
+import MermaidBlock from './MermaidBlock';
 import { parseMarkdownCarouselSlides } from './file-preview-utils';
 import { shouldRenderMarkdown } from './markdown-detection';
 import styles from './message-bubble.module.css';
@@ -35,6 +36,14 @@ function resolveCarouselSlides(children: ReactNode) {
   }>;
   const language = String(codeNode.props.className || '').match(/(?:^|\s)language-([^\s]+)/)?.[1] || '';
   return parseMarkdownCarouselSlides(language, String(codeNode.props.children || ''));
+}
+
+function resolveMermaidCode(children: ReactNode): string {
+  const nodes = Children.toArray(children);
+  if (nodes.length !== 1 || !isValidElement(nodes[0])) return '';
+  const codeNode = nodes[0] as ReactElement<{ className?: string; children?: ReactNode }>;
+  const language = String(codeNode.props.className || '').match(/(?:^|\s)language-([^\s]+)/)?.[1] || '';
+  return language.toLowerCase() === 'mermaid' ? String(codeNode.props.children || '') : '';
 }
 
 function isHtmlOrSvgBlock(children: ReactNode) {
@@ -108,6 +117,9 @@ function MessageMarkdown({
           if (slides.length > 0) {
             return <MarkdownCarousel slides={slides} components={components} />;
           }
+
+          const mermaidCode = resolveMermaidCode(children);
+          if (mermaidCode) return <MermaidBlock code={mermaidCode} />;
 
           const htmlBlock = isHtmlOrSvgBlock(children);
           if (htmlBlock) {

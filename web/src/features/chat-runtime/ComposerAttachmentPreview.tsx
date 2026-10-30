@@ -16,10 +16,12 @@ export default function ComposerAttachmentPreview({ attachments, onRemove, onRet
   if (presence.render.length === 0) return null;
   return (
     <div className={styles.composerAttachments} aria-label="待发送附件">
-      {presence.render.map(({ item: attachment, leaving }) => (
+      {presence.render.map(({ item: attachment, leaving }) => {
+        const isMedia = attachment.mimeType.startsWith('image/') || attachment.mimeType.startsWith('video/');
+        return (
         <div
           key={attachment.key}
-          className={`${styles.composerAttachment}${leaving ? ' aih-leaving' : ''}`}
+          className={`${styles.composerAttachment}${isMedia ? '' : ` ${attachmentStyles.composerDocumentAttachment}`}${leaving ? ' aih-leaving' : ''}`}
           title={attachment.error || attachment.name}
           data-status={attachment.status}
         >
@@ -27,19 +29,21 @@ export default function ComposerAttachmentPreview({ attachments, onRemove, onRet
             : attachment.mimeType.startsWith('video/') ? (
               <video src={attachment.dataUrl} muted preload="metadata" aria-label={attachment.name} />
             ) : (
-            <span style={{ display: 'flex', flexDirection: 'column', maxWidth: '100%', overflow: 'hidden', fontSize: 11 }}>
-              <FileTextOutlined /><span title={attachment.document?.text || attachment.name}>{attachment.name}</span>
-              {attachment.document?.text ? (
-                <span style={{ opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {attachment.document.text.slice(0, 72)}
-                </span>
-              ) : null}
+            // 文档芯片：图标 + 单行文件名 + 单行大小/状态，全部在卡片内截断，不撑高附件行。
+            <span className={attachmentStyles.composerDocumentChip}>
+              <FileTextOutlined aria-hidden />
+              <span className={attachmentStyles.composerDocumentChipText}>
+                <strong>{attachment.name}</strong>
+                <small>{formatBytes(attachment.size)} · {attachment.error || statusLabel(attachment.status)}</small>
+              </span>
             </span>
           )}
-          <span className={attachmentStyles.composerAttachmentMeta}>
-            <strong>{attachment.name}</strong>
-            <small>{formatBytes(attachment.size)} · {statusLabel(attachment.status)}{attachment.error ? ` · ${attachment.error}` : ''}</small>
-          </span>
+          {isMedia ? (
+            <span className={attachmentStyles.composerAttachmentMeta}>
+              <strong>{attachment.name}</strong>
+              <small>{formatBytes(attachment.size)} · {statusLabel(attachment.status)}{attachment.error ? ` · ${attachment.error}` : ''}</small>
+            </span>
+          ) : null}
           {attachment.status === 'failed' ? (
             <button type="button" className={attachmentStyles.composerAttachmentRetry} onClick={() => onRetry(attachment.key)} aria-label={`重试 ${attachment.name}`}>
               重试
@@ -53,7 +57,8 @@ export default function ComposerAttachmentPreview({ attachments, onRemove, onRet
             <CloseOutlined />
           </button>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

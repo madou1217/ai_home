@@ -1593,3 +1593,210 @@
   0%, 100% { opacity: 0.9; }
   50% { opacity: 0.2; }
 }
+
+/* 已发送用户消息里的文档附件（长文本粘贴 / 文本文件）：默认折叠成单行卡片，点开看全文。 */
+.userDocumentList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  white-space: normal;
+}
+
+.userDocumentList:last-child {
+  margin-bottom: 0;
+}
+
+.userDocumentCard {
+  /* 定宽：气泡是 shrink-to-fit，百分比宽度会被忽略，nowrap 的预览行会把气泡撑满整行。 */
+  width: 360px;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.userDocumentHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border: 0;
+  background: transparent;
+  color: var(--color-muted-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.userDocumentHeader:disabled {
+  cursor: default;
+}
+
+.userDocumentHeader:not(:disabled):hover {
+  background: var(--color-surface-muted);
+}
+
+.userDocumentHeader:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.userDocumentIcon {
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
+.userDocumentMeta {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  line-height: 18px;
+}
+
+.userDocumentMeta strong,
+.userDocumentMeta small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.userDocumentMeta strong {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.userDocumentMeta small {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.userDocumentBody {
+  max-height: 320px;
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  overflow: auto;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ```mermaid 流程图：卡片 + 工具条（源码/复制/放大），图居中、过宽时横向滚动而不是被压扁。 */
+.mermaidBlock {
+  margin: var(--space-4) 0;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.mermaidHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-strong);
+  font-size: 12px;
+}
+
+.mermaidTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mermaidActions {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.mermaidActions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-muted-strong);
+  cursor: pointer;
+}
+
+.mermaidActions button:hover,
+.mermaidActions button[aria-pressed='true'] {
+  border-color: var(--color-border);
+  color: var(--color-accent);
+  background: var(--color-surface);
+}
+
+.mermaidActions button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.mermaidCanvas {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6) var(--space-5);
+  overflow-x: auto;
+  white-space: normal;
+}
+
+.mermaidCanvas svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaidCanvas svg :global(.flowchart-link) {
+  stroke-width: 1.6px;
+}
+
+.mermaidCanvas svg :global(.edgeLabel rect),
+.mermaidCanvas svg :global(.labelBkg) {
+  opacity: 1 !important;
+  fill: var(--color-surface) !important;
+}
+
+.mermaidCanvasZoomed {
+  max-height: 78vh;
+  overflow: auto;
+}
+
+.mermaidCanvasZoomed svg {
+  max-width: none;
+  min-width: min(100%, 900px);
+}
+
+.mermaidStale {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-warning);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.mermaidPending {
+  position: relative;
+}
+
+.mermaidPendingHint {
+  position: absolute;
+  top: var(--space-3);
+  right: 48px;
+  color: var(--color-muted);
+  font-size: 11px;
+}

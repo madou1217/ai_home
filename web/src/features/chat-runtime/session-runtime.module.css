@@ -437,8 +437,12 @@
 .composerAttachments {
   display: flex;
   gap: var(--hos-space-2);
-  padding: var(--hos-space-0-5) var(--hos-space-1) var(--hos-space-2); /* 归级:原 3px */
+  /* 顶部/右侧留出移除按钮外凸的 6px：overflow-x:auto 会把 overflow-y 也算成 auto，
+     按钮(top:-6px)或卡片内容一越界就会冒出纵向滚动条。 */
+  padding: var(--hos-space-2) var(--hos-space-2) var(--hos-space-2) var(--hos-space-1);
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .composerAttachment {

@@ -142,9 +142,12 @@ export default function (pi) {
     if (!profile || typeof profile !== 'object') return;
     const baseUrl = normalizeText(profile.baseUrl).replace(/\/+$/, '');
     if (!baseUrl) return;
+    // 两代 Pi 的 apiKey 语义不同（0.78.0 起只认 $VAR 模板，之前是环境变量名），
+    // 这里两个候选都认，和 models.json 的 `$OPENAI_API_KEY` + 双 env 注入保持一致。
+    const configured = normalizeText(profile.apiKey);
     const apiKey = normalizeText(
       (process.env && (process.env.OPENAI_API_KEY || process.env['$OPENAI_API_KEY']))
-      || (profile.apiKey && !profile.apiKey.startsWith('$') ? profile.apiKey : '')
+      || (configured && !configured.startsWith('$') ? configured : '')
     );
     if (!apiKey) return;
     catalogBusy = true;

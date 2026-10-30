@@ -10,7 +10,7 @@ const { preparePiHarness, buildPiModelsDocument } = require('../lib/harness/pi')
 const { buildCodexGatewayConnection } = require('../lib/server/codex-gateway-connection');
 const { collectLocalRuntimePathEntries } = require('../lib/cli/services/ai-cli/provider-runtime-env');
 
-test('preparePiHarness populates both OPENAI_API_KEY and $OPENAI_API_KEY in child env for compatibility', async () => {
+test('preparePiHarness keeps the $OPENAI_API_KEY placeholder resolvable on both Pi apiKey conventions', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aih-pi-test-'));
   try {
     const fakeCatalog = {
@@ -33,7 +33,9 @@ test('preparePiHarness populates both OPENAI_API_KEY and $OPENAI_API_KEY in chil
     });
 
     assert.equal(prepared.ok, true);
+    // Pi >= 0.78.0 把 `$OPENAI_API_KEY` 当模板，从 OPENAI_API_KEY 展开。
     assert.equal(prepared.env.OPENAI_API_KEY, 'secret_client_key_123');
+    // Pi <= 0.77.x 把 apiKey 整串当环境变量名，所以真的要有名字带 `$` 的变量。
     assert.equal(prepared.env['$OPENAI_API_KEY'], 'secret_client_key_123');
 
     const modelsDoc = buildPiModelsDocument({

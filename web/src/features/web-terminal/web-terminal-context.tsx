@@ -107,8 +107,8 @@ function normalizeState(value: unknown, serverId: string): WebTerminalLayoutStat
     position: {
       x: Number.isFinite(x) ? x : 0,
       y: Number.isFinite(y) ? y : 0,
-      width: Number.isFinite(width) && width >= 420 ? width : DEFAULT_WIDTH,
-      height: Number.isFinite(height) && height >= 180 ? height : 420
+      width: Number.isFinite(width) && width > 0 ? width : DEFAULT_WIDTH,
+      height: Number.isFinite(height) && height > 0 ? height : 420
     }
   };
 }

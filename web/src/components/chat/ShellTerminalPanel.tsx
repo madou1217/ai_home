@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, PointerEvent } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -7,6 +7,7 @@ import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutline
 import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
+import { createTerminalResizeSender } from './terminal-resize-sender';
 import { flushTerminalInput } from './terminal-input';
 import { readTerminalTheme, subscribeTerminalTheme, TERMINAL_FONT_FAMILY } from './terminal-theme';
 import styles from './composer/composer.module.css';
@@ -43,7 +44,7 @@ interface ShellTerminalPanelProps {
   onLayoutChange?: (layout: 'tabs' | 'sidebar') => void;
   minimized?: boolean;
   onMinimizedChange?: (value: boolean) => void;
-  onHeaderMouseDown?: (event: MouseEvent) => void;
+  onHeaderPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   panelHeight?: number;
 }
 
@@ -67,6 +68,7 @@ interface TermInstance {
   inputBuf: string;
   sending: boolean;
   inputReady: boolean;
+  resizeSender: ReturnType<typeof createTerminalResizeSender>;
 }
 
 const HEIGHT_STORAGE_KEY = 'aih:webui-terminal-height:v1';
@@ -133,7 +135,7 @@ function ShellTerminalPanel({
   onLayoutChange,
   minimized: controlledMinimized,
   onMinimizedChange,
-  onHeaderMouseDown,
+  onHeaderPointerDown,
   panelHeight
 }: ShellTerminalPanelProps) {
   const muxIdRef = useRef<string>('');
@@ -176,6 +178,7 @@ function ShellTerminalPanel({
       inst.term.write(base64ToBytes(msg.data));
     } else if (msg.type === 'exit') {
       inst.inputReady = false;
+      inst.resizeSender.clear();
       inst.term.options.disableStdin = true;
       inst.term.writeln('\r\n\x1b[90m[进程已退出]\x1b[0m');
       setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, status: 'closed' } : t)));
@@ -192,7 +195,7 @@ function ShellTerminalPanel({
       pendingRef.current.delete(termId);
       for (const m of queued) applyFrame(tabId, inst, m);
     }
-    if (inst.opened) void terminalAPI.resize(termId, inst.term.cols, inst.term.rows);
+    if (inst.opened) inst.resizeSender.enqueue(termId, inst.term.cols, inst.term.rows);
     flushInput(inst);
   }, [applyFrame, flushInput]);
 
@@ -255,7 +258,7 @@ function ShellTerminalPanel({
     const term = newTerm();
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, opened: false, inputBuf: '', sending: false, inputReady: false };
+    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, opened: false, inputBuf: '', sending: false, inputReady: false, resizeSender: createTerminalResizeSender(terminalAPI.resize) };
     instancesRef.current.set(id, inst);
 
     term.onData((data) => {
@@ -263,7 +266,7 @@ function ShellTerminalPanel({
       flushInput(inst);
     });
     term.onResize(({ cols, rows }) => {
-      if (inst.termId) terminalAPI.resize(inst.termId, cols, rows).catch(() => {});
+      if (inst.termId) inst.resizeSender.enqueue(inst.termId, cols, rows);
     });
 
     setTabs((prev) => [...prev, { id, termId: '', label, status: 'connecting' }]);
@@ -414,6 +417,7 @@ function ShellTerminalPanel({
         inst.inputReady = false;
         inst.inputBuf = '';
         if (inst.termId && !persistent) terminalAPI.close(inst.termId).catch(() => {});
+        inst.resizeSender.dispose();
         try { inst.term.dispose(); } catch { /* ignore */ }
       }
       instancesRef.current.clear();
@@ -517,6 +521,7 @@ function ShellTerminalPanel({
       if (inst.termId) {
         byTermIdRef.current.delete(inst.termId);
       }
+      inst.resizeSender.dispose();
       try { inst.term.dispose(); } catch { /* ignore */ }
       instancesRef.current.delete(id);
     }
@@ -568,6 +573,7 @@ function ShellTerminalPanel({
       }
       byTermIdRef.current.delete(inst.termId);
       inst.termId = '';
+      inst.resizeSender.clear();
     }
     inst.inputReady = false;
     inst.inputBuf = '';
@@ -669,7 +675,7 @@ function ShellTerminalPanel({
       {compactChrome || panelHeight !== undefined ? null : (
         <div className={styles.shellTerminalResizer} onMouseDown={onDragStart} title="拖拽调整高度" />
       )}
-      <div className={styles.shellTerminalHeader} onMouseDown={onHeaderMouseDown}>
+      <div className={styles.shellTerminalHeader} onPointerDown={onHeaderPointerDown} data-draggable={onHeaderPointerDown ? true : undefined}>
         <div className={styles.shellTerminalTabs}>
           {compactChrome ? null : (
             <div className={styles.shellTerminalTitle}>

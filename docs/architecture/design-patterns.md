@@ -16,6 +16,8 @@ provider 从 4 个长到 16 个、且还会加：**每加一个 provider，散�
 | 模块 | 模式 | 作用 | 验证 |
 | --- | --- | --- | --- |
 | `web/src/components/chat/terminal-input.ts` + `ShellTerminalPanel.tsx` | **Serialized Queue + Connection State** | 断流后暂停发送并在会话接管后按序排空；仅对明确未写入的 `terminal_not_found` 重试，不重放执行状态未知的命令 | `test/web-terminal-input.test.js` 覆盖断线排队、404 重试、发送结果未知及在途重连竞态 |
+| `use-terminal-window-gesture.ts` + `terminal-window-geometry.ts` | **Frame Coalescing + Geometry Boundary** | 拖拽与缩放只在动画帧更新窗口，结束时持久化一次；几何计算独立处理视口边界和固定对侧边缘 | `test/web-terminal-window-geometry.test.js` 覆盖拖拽、边界、最小尺寸和窄屏；隔离浏览器检查拖拽与保存 |
+| `terminal-resize-sender.ts` | **Latest-value Serialized Queue** | 限速并按序同步 PTY 尺寸，慢请求期间只保留最后尺寸，避免过期尺寸覆盖最终尺寸 | `test/web-terminal-resize-sender.test.js` 覆盖慢请求、最终尺寸、限速及关闭取消 |
 | `web/src/features/web-terminal/web-terminal-scope.ts` | **Scoped State Update** | 异步创建或关闭完成时按发起服务器更新其布局，避免服务器切换后会话丢失或误入当前服务器 | `test/web-terminal-scope.test.js` 覆盖跨服务器的迟到创建与关闭，以及当前服务器的同步状态更新 |
 | `lib/server/webui-terminal-title.js` + `account-app-launcher.js` | **Facade + Shared Strategy Registry** | WebUI 会话标题直接消费 CLI 的标题来源优先级和 provider 短标签，避免浏览器另建一套 provider 标题规则 | `test/webui-terminal-title.test.js` 验证 session title 优先于 identity、provider/account/model 标题及安全回退；Web 全量构建通过 |
 | `ShellTerminalPanel.tsx` + `composer.module.css` | **Responsive Layout Boundary + Resize Observer** | 外层窗口高度由父容器控制，内容区用最小尺寸和独立滚动边界隔离 session 菜单与 xterm；每次布局尺寸变化只 fit 当前会话并同步 PTY 列数 | `test/web-terminal-refit.test.js`、隔离浏览器 360×300 与 1100×650 实测：无 viewport overflow、菜单不遮挡、xterm 不越界 |

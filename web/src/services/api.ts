@@ -2186,7 +2186,8 @@ export const terminalAPI = {
     terminalPost('open', { cols, rows, muxId, cwd, sessionKey }),
   input: (termId: string, data: string) => terminalPost('input', { termId, data }),
   resize: (termId: string, cols: number, rows: number) => terminalPost('resize', { termId, cols, rows }),
-  close: (termId: string) => terminalPost('close', { termId }),
+  close: (termId: string, sessionKey?: string): Promise<{ ok: boolean; error?: string }> =>
+    terminalPost('close', { termId, sessionKey }),
   attach: async (sessionKey: string, muxId?: string): Promise<{
     ok: boolean;
     termId?: string;

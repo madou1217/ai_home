@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { CloseOutlined, ReloadOutlined, CodeOutlined, PlusOutlined, MinusOutlined, ExpandOutlined, MenuFoldOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { message } from 'antd';
 import { terminalAPI } from '@/services/api';
 import { createTerminalRefitter, fitActiveTerminal } from './terminal-refit';
 import { flushTerminalInput } from './terminal-input';
@@ -59,6 +60,7 @@ interface TermInstance {
   term: Terminal;
   fit: FitAddon;
   termId: string;
+  sessionKey: string;
   opened: boolean;
   inputBuf: string;
   sending: boolean;
@@ -139,6 +141,7 @@ function ShellTerminalPanel({
   const tabSeqRef = useRef(0);
   const panelReadyRef = useRef(false);
   const recoverRef = useRef<() => void>(() => {});
+  const closingRef = useRef<Set<string>>(new Set());
   const sessionTabsRef = useRef<SessionTabDefinition[] | undefined>(sessionTabs);
   sessionTabsRef.current = sessionTabs;
 
@@ -194,7 +197,7 @@ function ShellTerminalPanel({
     const term = newTerm();
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: TermInstance = { term, fit, termId: '', opened: false, inputBuf: '', sending: false, inputReady: false };
+    const inst: TermInstance = { term, fit, termId: '', sessionKey: tabSessionKey, opened: false, inputBuf: '', sending: false, inputReady: false };
     instancesRef.current.set(id, inst);
 
     term.onData((data) => {
@@ -423,13 +426,23 @@ function ShellTerminalPanel({
     };
   }, [visible]);
 
-  const closeTab = useCallback((id: string) => {
+  const closeTab = useCallback(async (id: string, closeLast = true): Promise<boolean> => {
+    if (closingRef.current.has(id)) return false;
+    closingRef.current.add(id);
     const inst = instancesRef.current.get(id);
+    const key = inst?.sessionKey || sessionTabsRef.current?.find((tab) => tab.id === id)?.sessionKey || '';
+    if (inst?.termId || key) {
+      const result = await terminalAPI.close(inst?.termId || '', key);
+      if (!result.ok) {
+        closingRef.current.delete(id);
+        message.error(`关闭终端失败: ${result.error || 'unknown'}`);
+        return false;
+      }
+    }
     if (inst) {
       inst.inputReady = false;
       inst.inputBuf = '';
       if (inst.termId) {
-        terminalAPI.close(inst.termId).catch(() => {});
         byTermIdRef.current.delete(inst.termId);
       }
       try { inst.term.dispose(); } catch { /* ignore */ }
@@ -444,7 +457,9 @@ function ShellTerminalPanel({
       return next;
     });
     if (onTabClose) onTabClose(id);
-    else if (isLast) onClose();
+    else if (isLast && closeLast) onClose();
+    closingRef.current.delete(id);
+    return true;
   }, [activeId, onClose, onTabClose, tabs.length]);
 
   // The global host is controlled by the application root. New account launches
@@ -456,24 +471,27 @@ function ShellTerminalPanel({
     }
     const wanted = new Set(sessionTabs.map((definition) => definition.id));
     for (const tab of tabs) {
-      if (!wanted.has(tab.id)) closeTab(tab.id);
+      if (!wanted.has(tab.id)) void closeTab(tab.id);
     }
   }, [closeTab, createTab, sessionTabs, tabs, visible]);
 
-  const closePanel = useCallback(() => {
-    for (const inst of instancesRef.current.values()) {
-      if (inst.termId) terminalAPI.close(inst.termId).catch(() => {});
-    }
-    onClose();
-  }, [onClose]);
+  const closePanel = useCallback(async () => {
+    const ids = new Set([...instancesRef.current.keys(), ...(sessionTabsRef.current || []).map((tab) => tab.id)]);
+    const results = await Promise.all(Array.from(ids, (id) => closeTab(id, false)));
+    if (results.every(Boolean)) onClose();
+  }, [closeTab, onClose]);
 
   // 重启激活 tab：关掉旧 PTY，清屏，开新 PTY（复用同一 tab 槽 / xterm）。
   const reloadActiveTab = useCallback(async () => {
     const id = activeId;
     const inst = instancesRef.current.get(id);
     if (!inst) return;
-    if (inst.termId) {
-      await terminalAPI.close(inst.termId).catch(() => {});
+    if (inst.termId || inst.sessionKey) {
+      const result = await terminalAPI.close(inst.termId, inst.sessionKey);
+      if (!result.ok) {
+        message.error(`重启终端失败: ${result.error || 'unknown'}`);
+        return;
+      }
       byTermIdRef.current.delete(inst.termId);
       inst.termId = '';
     }
@@ -560,7 +578,7 @@ function ShellTerminalPanel({
     >
       <span className={styles.shellTerminalTabDot} data-status={t.status} />
       <span className={styles.shellTerminalTabLabel}>{t.label}</span>
-      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title="关闭此终端" onClick={(event) => { event.stopPropagation(); closeTab(t.id); }}>
+      <button type="button" className={styles.shellTerminalTabClose} aria-label={`关闭 ${t.label}`} title="关闭此终端" onClick={(event) => { event.stopPropagation(); void closeTab(t.id); }}>
         <CloseOutlined />
       </button>
     </div>
@@ -629,7 +647,7 @@ function ShellTerminalPanel({
             type="button"
             className={styles.shellTerminalIconBtn}
             title="关闭终端面板"
-            onClick={closePanel}
+            onClick={() => { void closePanel(); }}
           >
             <CloseOutlined />
           </button>
